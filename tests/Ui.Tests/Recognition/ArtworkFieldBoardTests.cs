@@ -38,6 +38,7 @@ public sealed class ArtworkFieldBoardTests : IDisposable
 
         var (result, circuit) = ArtworkRecognition.Circuit(RecognitionInput.FromFile(clay), new RecognitionEmitOptions());
         Assert.True(result.Ok && circuit is not null, $"{board}: {result.Refusal}");
+        RecognitionBoards.CopperAgrees(result, board);
 
         // The .cnl is written outside the board's folder, which is the user's: its references are relative to where it lands.
         Directory.CreateDirectory(_root);

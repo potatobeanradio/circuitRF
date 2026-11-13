@@ -89,6 +89,14 @@ public sealed record TraceImpedanceOptions
     /// </summary>
     public double ViaTransitionMicrons { get; init; } = DefaultViaTransitionMicrons;
 
+    /// <summary>
+    /// The end trim takes an end piece off a chain as its land only below <see cref="TraceImpedanceAnalysis.SelectedMinAspect"/>
+    /// of its widths, not <see cref="TraceImpedanceAnalysis.MinAspect"/>: a 2–4-width section wider than the line it ends is a
+    /// stretch of the trace. Artwork recognition's alone (<c>ArtworkRecognition.ReviewOf</c>), where such a section from a pad to
+    /// shunt parts must be a line element; every review a person runs, scoped or not, trims as it always did.
+    /// </summary>
+    internal bool KeepLongEndSections { get; init; }
+
     public const double DefaultTargetOhms = 50;
 
     /// <summary>
@@ -1576,7 +1584,9 @@ public static partial class TraceImpedanceAnalysis
         foreach (var b in barrels.GetValueOrDefault(band.Index) ?? [])
             if (cu.Contains(b.X, b.Y)) transitionVias.Add(b);
 
-        var chains = Chain(pieces, cu, islandOfRing, out var junctionCentres, out var junctionArms, out var tooShort);
+        // Artwork recognition reads a chain's 2–4-width end section as part of it (Chain's land rule); a review does not.
+        double landAspect = options.KeepLongEndSections ? SelectedMinAspect : MinAspect;
+        var chains = Chain(pieces, cu, islandOfRing, landAspect, out var junctionCentres, out var junctionArms, out var tooShort);
         return new LayerWork(key, name, band, cu, chains, pours, maxW)
         {
             Vias = bandVias, TransitionVias = transitionVias, IslandOfRing = islandOfRing, JunctionCentres = junctionCentres,
@@ -1861,7 +1871,7 @@ public static partial class TraceImpedanceAnalysis
         public List<ChainWork> TooShort { get; init; } = [];
     }
 
-    private static List<ChainWork> Chain(List<Piece> pieces, TraceCopper cu, int[] islandOfRing,
+    private static List<ChainWork> Chain(List<Piece> pieces, TraceCopper cu, int[] islandOfRing, double landAspect,
                                          out Dictionary<int, (double X, double Y)> junctionCentres,
                                          out Dictionary<int, List<(ChainWork Chain, bool AtStart)>> junctionArms,
                                          out List<ChainWork> tooShort)
@@ -1978,9 +1988,15 @@ public static partial class TraceImpedanceAnalysis
         // a pad only a little wider than itself (a fine-pitch land, a 0402 pad on a 0.3 mm line) kept
         // the pad as its last stretch and read its Z0 there, while the same trace into a wider pad did
         // not — "through the pad, but not always" (round-10 field report).
-        static bool Land((Piece Piece, bool) end, (Piece Piece, bool) next) =>
+        // For artwork recognition the second test's length is SelectedMinAspect widths (landAspect, the options'
+        // KeepLongEndSections), the length from which a chosen chain is a trace: at MinAspect a 1.7 mm wide, 5.6 mm long
+        // section from a pad to two shunt parts on a 1.1 mm line — 3.3 of its widths — was trimmed as the line's land, and
+        // its length vanished from the recognised circuit with no word (a board drawn as DXF outlines, 2026-11-12). Every
+        // land the cases above name is a width or so long, and is trimmed either way. A review keeps MinAspect: its report
+        // of a trace's length and Z0 is unchanged.
+        bool Land((Piece Piece, bool) end, (Piece Piece, bool) next) =>
             end.Piece.Length < end.Piece.Width
-            || (end.Piece.Width > PadWidthStep * next.Piece.Width && end.Piece.Length < MinAspect * end.Piece.Width);
+            || (end.Piece.Width > PadWidthStep * next.Piece.Width && end.Piece.Length < landAspect * end.Piece.Width);
         foreach (var c in chains)
         {
             while (c.Pieces.Count > 1 && Land(c.Pieces[0], c.Pieces[1])) { c.Pieces.RemoveAt(0); c.StartJunction = false; c.StartKey = -1; }

@@ -195,10 +195,17 @@ places; when they all agree, the report says that in one line.
 ### Designators on the silkscreen {#silkscreen}
 
 When nothing else names a part &mdash; no placed footprint, no placement file &mdash; the designator printed
-beside it on the silkscreen does. Stroked silkscreen text is read at any rotation, and mirrored on the bottom
+beside it on the silkscreen does. Text typed on the silkscreen, as a DXF drawing's `TEXT` and `MTEXT` arrive, is read
+as it is, each line of it on its own: a designator over its value is the designator. Stroked silkscreen text is read at any rotation, and mirrored on the bottom
 side; each designator goes to the part it stands beside, even where it is printed a little nearer a
 neighbour. Its prefix gives the part's kind (`C`, `L`, `R`, `FB`, &hellip;). Values are never read from the
 silkscreen. Text drawn as filled outlines is not read.
+
+A board drawn with no lands &mdash; a series part across a gap cut in a line, a shunt part from a line's edge to the
+pour, as in many drawings of RF boards &mdash; still has each part's body on the silkscreen. A closed, part-sized
+rectangle there whose two ends lie on two different pieces of copper is read as a two-pad part, its pads where its
+ends meet the copper, and is named by the designator beside it. Its confidence is amber: the drawing says where it is,
+nothing says what it is.
 
 A board's font may draw a character unlike the built-in one, and then a designator is misread or not read at
 all &mdash; the report lists lines that look like designators but have a glyph that fits two characters. Correct
@@ -220,7 +227,8 @@ the dialog and from the command line alike. They are kept with your own settings
 | A junction of more than four lines | A plain node |
 | A short piece between two lines | Merged into its neighbours; no line is ever dropped for being short |
 | A two-pad part across a gap in a line | `R`, `L`, `C` or a two-port `SnP`, in series |
-| A two-pad part from a line to ground | The same, shunt; where its pad stands on the line, the line is split there |
+| A two-pad part from a line to ground | The same, shunt; where its pad stands on the line, the line is split there, and two parts either side of one point share that node |
+| A pad where several lines and parts meet | One node: the pad is an ideal short |
 | A via joining two signal layers | `VIA` |
 | A via grounding a pad or a line end | `VIAGND` (or `GND`) |
 | Stitching and plane-tie vias | Nothing &mdash; counted |
@@ -287,7 +295,9 @@ After **Create**, the schematic opens focused and the report goes to **Messages*
 with its count: the ground chosen, vias dropped and kept, ports and where they came from, parts by source (including those from the pads the Gerber files declare, and
 whether the nets they declare agree with the copper),
 silkscreen text read and designators that named no part, unknown kinds and values, `TLIN` fallbacks by reason, coupled pairs, copper read as nothing, and lines left out because
-they reach no port and no part. A line about
+they reach no port and no part. Last, the circuit is checked against the copper: every place where the copper joins
+two part terminals, ports or vias and the circuit does not (or the other way round), and every terminal joined across
+copper no line models, is a line naming both places; when they agree, the report says that in one line. A line about
 places on the board has a toggle that expands it to them; **double-click** one to select and zoom the artwork
 there. The same report is in the dialog's bottom strip while you work.
 

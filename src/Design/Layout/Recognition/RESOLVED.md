@@ -766,3 +766,169 @@ next attempt used the same 4.26 µm-a-pixel Line impedance scale and showed two 
   the drill. At the true scale, 0.35–0.45 mm drills keep the 0.6 mm pad.
 - The board's size is now also the canvas prompt whenever a scale is set and no tool is armed, with Two points…, Board
   corners… and Line impedance… beside it (`SizeCheckPrompt`). The same size in the side pane alone was not seen.
+
+## A board drawn as DXF outlines, recognised (2026-11-12)
+
+A two-layer RF board drawn as a DXF of outlines — copper, drill marks, a silkscreen body rectangle and a typed designator
+for every part, no lands and no mask — imported with a `--layer-map` and recognised. Each finding below left the circuit
+wrong with no hand correction possible from the report alone. The fixture is synthetic
+(`testdata/interchange/dxf-board/make_boards.py`, six spellings of one board).
+
+- **Typed designators are read** (R-as10-2, R-as10-4, R-as10-6, R-as4-1 (4), R-as4-9). `SilkscreenText` reads stroked shapes
+  only and skipped every `LabelShape`, so a DXF's `TEXT`/`MTEXT` designators — exact characters — named nothing, and with
+  no other evidence the report said nothing about the silkscreen at all. `TypedSilkscreenEvidence` makes each label whose
+  text passes the designator rule a `SilkTextLine` with no glyphs and a `PartClaim`, the claim the picture reader
+  (`RasterSilkscreenEvidence`) makes through `IPartEvidenceSource`; `PartReading` reads it itself rather than through that
+  seam, since it goes first and is reported regardless. Its claims go first, then the strokes name what is left.
+  MTEXT's inline codes are stripped first (`{\fArial|b0;C2}` is C2). Typed text only NAMES parts another rung found
+  (`PartReading`'s association, unchanged). The strokes are read only while some part is unnamed, so the typed count is
+  reported regardless (`SilkscreenLabelsRead`): with no part found it is what says the designators were there. A typed
+  line has no glyphs, which `Lesson` already answers with nothing to learn. Gate: `TypedSilkscreenTests`.
+- **Parts with no land, from their body outline over a gap** (F8 of the DXF board; R-as4-1, R-as4-7). RF boards put a series
+  chip across a gap cut in a line and a shunt chip from the line's edge to a pour; drawn with no mask and no pad-shaped
+  copper, land-pattern matching has nothing to match, and `PartReading` found 0 parts on the board. Its body rectangle on
+  the silkscreen is still there, so a new rung (3½, below land patterns) reads a closed, near-rectangular outline no longer
+  than a land pattern spans as a two-terminal part when its two halves along its length lie over two different pieces of
+  copper; each terminal is the middle of the copper under its half. Kind and value come from the designator and the bill
+  of materials, as for every rung, and the confidence is `medium`. An outline round pads another rung found makes nothing,
+  so a Gerber board's silkscreen round its land patterns reads as before. A part's outline drawn as four lines or as a closed
+  stroke reads as a polygon does. Gate: `PartReadingTests.ABodyOutlineOverAGap_IsAPart_NamedByItsLabel_AndOneOverUnbrokenCopperIsNot`.
+- **The circuit is checked against its copper, and every difference is said** (F4; R-as3-5, R-as5-6, D16). The three
+  readings below each left the circuit split where the copper is one piece, and passed with "none was dropped".
+  `CircuitCopperCheck`, after line recognition and before the emit drops stray lines, unions each line's, junction's and
+  VIA's nodes and compares that with the islands: copper joins every part terminal, port and kept via end on one island,
+  so a split is `CircuitSplitsCopper` ("copper joins C1.2 at … and C3.1 at …, the circuit does not") and a node across two
+  islands `CircuitJoinsAcrossCopper`; agreement is one permanent `CircuitAgreesWithCopper` line. A split is not the only
+  way a line goes missing: an attachment no line reached was joined to the nearest line end on its island however far,
+  and a line the review never handed over became an ideal short with the circuit still connected. That join beyond a line
+  end's reach (2·W + 1 mm) is `CopperJoinedWithoutLine`. LVS was not reused: `LvsRun` is the only caller its comparison
+  allows (`ComparisonTests.LvsRunIsTheOnlyCallerOfTheComparison`), and the check needs no schematic; it follows
+  `DeclaredPads.CrossCheck`'s pattern instead (R-as12-5). Gate: `CircuitCopperCheckTests`; the DXF board's tests hold all
+  three at zero.
+- **A line from a pad to a pair of shunt parts was trimmed as the next line's land** (F6; R-as5-1, R-as5-5). The trace
+  review's end trim (`TraceImpedanceAnalysis.Chain`, `Land`) takes an end piece off a chain when it is more than
+  `PadWidthStep` (1.2×) wider than the piece it joins and shorter than `MinAspect` (4) of its widths. A 1.7 × 5.6 mm section
+  from a pad to two shunt capacitors, on a 1.1 mm line, is 3.3 widths: after the pad itself was trimmed, the section was
+  the chain's end piece and went too, so the circuit had no element for it and the capacitor's node joined the pad's
+  8.33 mm away. The asymmetric-gap TLIN rewrite was not the cause (it replaces in place). Under a scope — recognition reads
+  every trace through one — the land's length limit is now `SelectedMinAspect` (2), the length from which a chosen chain
+  is a trace; every land the earlier cases name (0201 and 0402 lands, a square pad) is a width or so long and still
+  trimmed, and a review with no scope is unchanged. The same geometry with equal gaps (CPWG) and with no coplanar ground
+  (MLIN) is in the gate: `PadsAndTapsTests.ALineFromAPad_IsKept_WhateverItsCoplanarGround`.
+- **Everything on one pad is one node** (F5; R-as5-5, R-as5-6, R-as3-5). Where an input line, two bias lines and two shunt
+  capacitors meet on a 5 mm device pad, each line end attached to the nearest part terminal within its reach (2·W + 1 mm)
+  or stayed loose, so the pad came out as three nodes, none joined, and one line end open; the pad itself is not modelled
+  (D14). The end kinds were right — every end there reads `"pad"`; nothing joined what stands on one pad. Line
+  recognition now takes each signal island's copper minus every trace piece's strip as pad copper, and per connected
+  region joins the nodes of the `"pad"` ends running into it and of the attachments inside it, the pad an ideal short
+  (`PadsJoinTheirMembers`). Junction centres are untouched: their arms end as `"junction"`. Modelling the pad as a wide
+  line or a junction is left for later. Gate: `PadsAndTapsTests.EverythingOnAWidePad_IsOneNode`.
+- **A shunt part partway along a line floated; the reading depended on which way the line was walked** (F7; R-as5-3,
+  R-as5-6). The taps loop (`LineSegmentation`) splits a trace where a part terminal, via or port it runs past lands, and
+  marks the attachment reached. Two faults made a terminal a node that nothing touches while the line ran on past it. A
+  second tap at the point a first had split (two shunt capacitors either side of one line, C6 and C7 on the DXF board)
+  OVERWROTE the first's `TapAfter`, so whichever came first in the part order floated. And a tap's atom was the first
+  ending at or after it, with no tolerance, while the split test allowed one of 1e-6: a tap a hair past an atom's start
+  took that atom's END, a whole atom late, and on a trace's last atom the walk never closed a line there at all. Which
+  side of the hair a projection falls on is the direction the review walked the trace, which a mirror image reverses —
+  the two mirrored halves of one board read differently. A tap within half a micron of a split is now at it, either side,
+  and a second tap at a taken point is aliased to that tap's node (`TraceLines.TapAliases`). `TapBetween`'s and step 4's
+  ties go to the first candidate but give isomorphic circuits under a mirror, so they are unchanged. Gates:
+  `PadsAndTapsTests.TwoPartsTappingOneLineAtOnePoint_ShareTheNodeThatSplitsIt_EitherWayUp` holds the overwrite (it mirrors
+  across the line, so the walk keeps its direction); `LineSegmentationTests.TwoTapsAtOnePointOfADiagonalLine_AreOneNode_
+  WhicheverWayItIsWalked` holds the tolerance — two terminals 8 nm either side of a 3:1 diagonal project 1.9e-9 nm apart,
+  ahead one way and behind the other. Without the tolerance it fails: with main's atom lookup and split test the walk that
+  has the second tap ahead floats it, and with only the lookup restored both walks fail on a near-zero line between the
+  two taps (three line drafts, not two); and
+  `DxfBoardRecognitionTests.TheMirrorImage_IsTheSameCircuit_UpToWhichHalfIsWhich` reads the whole board turned over top to
+  bottom as the same circuit.
+- **Six spellings of one board, one circuit.** `make_boards.py` (Python standard library; DXF is text) writes the board as
+  R12 closed `POLYLINE`/`VERTEX` with `TEXT`; R2000 `LWPOLYLINE` with bulges, solid `HATCH` pours with their holes, `MTEXT`,
+  a `LAYER` table and drill marks and part bodies in `INSERT`ed blocks, one block placing two others; the same in inches
+  with `$INSUNITS` 1; R12 in inches with no `$INSUNITS` (`--dxf-units 1` answers it); every outline stroked as `LINE` and
+  `ARC`; and the mirror image. Drill marks are circles, squares (closed, and four lines), octagons and two-arc
+  polylines. With the hand-written expected circuit (`DxfBoardRecognitionTests`: 14 parts and ports by what shares each of
+  their nodes, 11 lines by type, width and length to 1 %) every spelling, circuitRF's own export of it read back with a map
+  of the technology's names, and `convert` → `recognize` → `check` from the command line give the same circuit with the
+  copper check agreeing. The shipped Artwork to Schematic example writes the same `.cnl` byte for byte as before, with
+  and without its placement and bill of materials; its report gains only the agreement line.
+- **Left open: a signal island holding copper wider than any trace reads as a separate pour**, and a separate pour gets no
+  edge port. `ArtworkRecognition` marks a piece a pour when it survives erosion by half the widest trace the review reads
+  (`BoardCopper.IsWide`, 5.08 mm on a 0.508 mm laminate); a 6 mm device pad on the line made the whole island a pour and its
+  output line lost its port at the board's edge. The board's pad is 5 mm, under the limit. The trace review's own pour rule
+  (area against piece area, vias) would not have called it one; making the two agree is its own change.
+- **A body outline is not a letter** (F8, kept narrow). A board's stroked legend is letters, and a D, or a 0 chained from its
+  strokes, is near enough a box. Only a closed stroke, a closed shape or a drawing's lines of no width chain into a body,
+  and each half of a body must have copper of its side under a quarter of it (`MinEndCover`): a part's end sits on its
+  copper, while a letter printed over the edge of a pad does not.
+- **The long end section is recognition's alone** (F6, corrected). The first fix keyed the land limit on the review having a
+  scope, which reached every scoped impedance review too: the Impedance panel with a selector, `circuitrf impedance` with a
+  pick or a saved scope, and the MCP tool. On a 1.1 mm line ending in a 1.7 × 5.6 mm section, a pick then reported 25.6 mm at
+  34.2–45.5 Ω, 78 % in tolerance, where main reports 20 mm at 45.5 Ω, 100 %. The limit is now an internal option,
+  `TraceImpedanceOptions.KeepLongEndSections`, which only `ArtworkRecognition.ReviewOf` sets; every review, scoped or not,
+  trims as before. Gate: `TraceImpedanceAnalysisTests.AWideEndSection_IsTheLinesLand_ScopedOrNot_AndOnlyRecognitionKeepsIt`.
+- **A pad's copper can hold a trace the review did not read** (F5; the cores below were corrected, see the next note but
+  one). Pad copper is an island less the strips of the
+  traces the review returned, so a trace it dropped is in it: a 7.85 mm quarter-arc trace between two 3 mm pads, which the
+  review does not read as a trace, made one 9.5 × 9.5 mm "pad", joined C1.2 and C2.1 by an ideal short, and the copper check
+  agreed. A distance between members cannot tell that from a real pad (a line in and a line out of a 4.5 mm device pad are
+  4.5 mm apart, past a 1.1 mm line end's 3.2 mm reach), so each pad region is eroded to its cores, by its largest inscribed
+  radius over `PadWidthStep` — every part narrower than its widest by the review's own pad-to-trace step goes — and members
+  on two cores are still joined but reported as `CopperJoinedWithoutLine`, naming both. The agreement line is no longer said
+  while such a join is in the report. Reading the arc as a line is not done. Gate:
+  `PadsAndTapsTests.TwoPadsJoinedByATraceTheReviewDoesNotRead_AreNamedAsJoinedAcrossCopper`.
+- **Body outlines, narrowed again on review** (F8). A legend exploded into zero-width lines still chained into loops, and a
+  0 drawn as a box with cut corners is 98 % of its box: a chained loop is a body now only as a rectangle, four corners
+  filling their box. Requiring a closed shape outright would have dropped part bodies drawn as four lines, which drawings of
+  outlines do. And `CopperUnder` took the largest piece under each half, so an outline over three pieces of copper — a
+  three-terminal part's body — read as a two-terminal part; one over a third piece covering a twentieth of it is now left
+  out and said (`BodyOutlinesOverManyPieces`). Gate: `PartReadingTests.ABodyOutlineOverAGap_IsAPart_…`.
+- **Typed text: every code stripped, and the other labels counted in scope** (F3, on review). The strip took only codes
+  ending in a semicolon, so `\LC1\l` (underlined) was an "other label"; MTEXT's toggles and breaks (`\L \l \O \o \K \k \P
+  \N \X \~`), the true-colour `\c…;` and TEXT's `%%u`/`%%o`/`%%k` go too now (a `\U+` escape is a character and is left). The count of labels that are no designator is the scope's, as the
+  designators' is. Gate: `TypedSilkscreenTests`.
+- **The board's device pad is 4.5 mm** (on review). At 5 mm it stood 80 µm under `BoardCopper.IsWide`'s 5.08 mm, the size
+  from which a signal island reads as a separate pour and loses its edge ports; 4.5 mm is still a several-millimetre pad,
+  and the pad join and the copper check read it as before (one node, 4 line ends and 2 terminals). The expected line
+  lengths into and out of it follow: 5.25, 5.25, 5.25 and 6.25 mm.
+- **The pad cores are cut by the lines' width, not the pad's** (F5, on re-review). The first cut eroded a region by its own
+  largest inscribed radius over `PadWidthStep`, so it caught an unread trace only between two pads of nearly one size: with
+  the 7.85 mm arc running from a 3 mm pad to a 2.2 mm one, or straight to C2's body with no second pad, the smaller end went
+  with the arc, its member was given to the nearest core, and the check agreed — a silent short. The erosion is now half of
+  `PadWidthStep` times the widest line ending in the region, else the widest trace on its layer: what is no wider than the
+  lines by the review's own step goes. The cores are grown back by as much, and a member on none of them is named too, as
+  is a member on another core. The 4.5 mm device pad (widest line 2 mm, cut by 1.2 mm) and every existing board read as
+  before. Gate: `PadsAndTapsTests.PadsJoinedByATraceTheReviewDoesNotRead_AreNamedAsJoinedAcrossCopper` (far pad 3 mm,
+  2.2 mm, none).
+- **A pour beside a body is no third terminal** (F8, on re-review). The three-piece check counted any piece under a twentieth
+  of the body, so an 0603 body across a gap in a 0.5 mm coplanar line, its long edges 0.05 mm over the pours, was refused:
+  "C1 names no part", both line ends open. A third piece now counts only where it covers what an end must (a quarter of a
+  half, `MinEndCover`) under either end or the body's middle. Gate: `PartReadingTests.ABodyWiderThanItsCoplanarLine_IsStillASeriesPart`.
+- **Both cuts, not one** (F5, third review). The lines' cut alone left two silent shorts the region's own cut had named.
+  On a layer with no trace there is no line width to cut by: two 3 mm via pads on an inner layer joined only by the
+  unread 8.85 mm, 1.1 mm arc were one pad, and the check said the circuit agreed. And an unread arc wider than the lines
+  (1.5 mm, the lines 1.1 mm) outlasts a cut of 0.66 mm. Each region is now cut both ways — by the lines, and by its own
+  largest inscribed radius over `PadWidthStep` — and a member either cut parts from the first is named. Neither cut alone
+  flags the 4.5 mm device pad, the 5 mm `DevicePad` board, or a shunt part on a 1.5 mm stub of a 3 mm pad, and their union
+  flags none of them either. Gates: `PadsAndTapsTests.PadsJoinedByATraceTheReviewDoesNotRead_AreNamedAsJoinedAcrossCopper`
+  (the 1.5 mm arc row) and `PadsAndTapsTests.ViaPadsJoinedByAnUnreadTrace_OnALayerWithNoTrace_AreNamedAsJoinedAcrossCopper`.
+- **Typed text: each line on its own** (F3, third review). MTEXT's breaks were stripped as codes, so a designator over its
+  value ran together with it: `\c255;C2\P10` read as C210, `{\c255;C2}\P47` as C247, and `\c255;C2\P10pF` as C210PF, no
+  designator at all, so C2 was lost. The breaks (`\P`, `\N`, `\X`, and a line break) now part the label into lines before
+  the codes are stripped, and each line is tested on its own: a designator's box is its line's, 5/3 of a height down a line.
+  Gate: `TypedSilkscreenTests.MTextBreaks_PartItsLines_EachReadOnItsOwn` (eight spellings, two designators in one label
+  among them).
+- **An island under a body's middle is a terminal, whatever its size** (F8, third review). Counting a third piece only where
+  it covers a quarter of a half let a 0.3 × 0.3 mm island in the gap under an 0603's middle through: the body read as a
+  two-terminal series part, where the rule before had refused it. A separate piece with half or more of its own area under
+  the body's middle now counts whatever its size; a pour's finger reaching in keeps the quarter-of-a-half rule, so a
+  0.3 mm finger is a third terminal and a 0.2 mm one is not. Gate:
+  `PartReadingTests.CopperUnderABodysMiddle_IsAThirdTerminal_AnIslandWhateverItsSize`.
+- **A body over one pour at both ends is set aside, not skipped** (F8, third review). A 1206 body across the 0.5 mm coplanar
+  gap has more of a pour than of the line under each half — the same pour for both — and `a.Piece == b.Piece` skipped it
+  with no word: no part, two open line ends, and nothing in the report. A piece the most under both halves is now beside
+  the part: it is set aside, each half takes its copper again (here the other pour is set aside next, then the line either
+  side of the gap is each end), and the three-terminal check does not count what was set aside. An outline left with no
+  two ends — over a line running on unbroken, say — is said (`BodyOutlinesOverOnePiece`). Gates:
+  `PartReadingTests.ABodyWiderThanItsCoplanarLineAndGaps_IsStillASeriesPart` (the 0805 and the 1206) and the outline over an
+  unbroken line in `ABodyOutlineOverAGap_IsAPart_…`.

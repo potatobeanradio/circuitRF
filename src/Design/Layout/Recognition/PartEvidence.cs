@@ -26,6 +26,10 @@ public enum PartEvidenceSource
     /// <summary>Two pads whose sizes and gap match a case's land pattern.</summary>
     LandPattern,
 
+    /// <summary>A body outline on the silkscreen whose ends lie on two pieces of copper across a gap: a part with no land of
+    /// its own.</summary>
+    BodyOutline,
+
     /// <summary>A designator read off the silkscreen (AS-10).</summary>
     Silkscreen,
 
@@ -90,6 +94,7 @@ public static class PartEvidenceText
         PartEvidenceSource.DeclaredPads => "declared",
         PartEvidenceSource.Bom => "bom",
         PartEvidenceSource.LandPattern => "land",
+        PartEvidenceSource.BodyOutline => "body",
         PartEvidenceSource.Silkscreen => "silk",
         PartEvidenceSource.Picture => "picture",
         PartEvidenceSource.Refdes => "refdes",

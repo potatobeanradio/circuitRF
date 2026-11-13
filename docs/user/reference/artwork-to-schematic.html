@@ -605,10 +605,16 @@ of copper (a short) or one net on copper that does not join (an open) is a line 
 places; when they all agree, the report says that in one line.</p>
 <h3 id="silkscreen">Designators on the silkscreen</h3>
 <p>When nothing else names a part — no placed footprint, no placement file — the designator printed
-beside it on the silkscreen does. Stroked silkscreen text is read at any rotation, and mirrored on the bottom
+beside it on the silkscreen does. Text typed on the silkscreen, as a DXF drawing's <code>TEXT</code> and <code>MTEXT</code> arrive, is read
+as it is, each line of it on its own: a designator over its value is the designator. Stroked silkscreen text is read at any rotation, and mirrored on the bottom
 side; each designator goes to the part it stands beside, even where it is printed a little nearer a
 neighbour. Its prefix gives the part's kind (<code>C</code>, <code>L</code>, <code>R</code>, <code>FB</code>, …). Values are never read from the
 silkscreen. Text drawn as filled outlines is not read.</p>
+<p>A board drawn with no lands — a series part across a gap cut in a line, a shunt part from a line's edge to the
+pour, as in many drawings of RF boards — still has each part's body on the silkscreen. A closed, part-sized
+rectangle there whose two ends lie on two different pieces of copper is read as a two-pad part, its pads where its
+ends meet the copper, and is named by the designator beside it. Its confidence is amber: the drawing says where it is,
+nothing says what it is.</p>
 <p>A board's font may draw a character unlike the built-in one, and then a designator is misread or not read at
 all — the report lists lines that look like designators but have a glyph that fits two characters. Correct
 the <strong>Refdes</strong> of a part named from the silkscreen, or of a made-up one beside such a line, and click <strong>Learn
@@ -665,7 +671,11 @@ the dialog and from the command line alike. They are kept with your own settings
 </tr>
 <tr>
 <td>A two-pad part from a line to ground</td>
-<td>The same, shunt; where its pad stands on the line, the line is split there</td>
+<td>The same, shunt; where its pad stands on the line, the line is split there, and two parts either side of one point share that node</td>
+</tr>
+<tr>
+<td>A pad where several lines and parts meet</td>
+<td>One node: the pad is an ideal short</td>
 </tr>
 <tr>
 <td>A via joining two signal layers</td>
@@ -750,7 +760,9 @@ pin, say — place a port label on the copper there before you run the command.<
 with its count: the ground chosen, vias dropped and kept, ports and where they came from, parts by source (including those from the pads the Gerber files declare, and
 whether the nets they declare agree with the copper),
 silkscreen text read and designators that named no part, unknown kinds and values, <code>TLIN</code> fallbacks by reason, coupled pairs, copper read as nothing, and lines left out because
-they reach no port and no part. A line about
+they reach no port and no part. Last, the circuit is checked against the copper: every place where the copper joins
+two part terminals, ports or vias and the circuit does not (or the other way round), and every terminal joined across
+copper no line models, is a line naming both places; when they agree, the report says that in one line. A line about
 places on the board has a toggle that expands it to them; <strong>double-click</strong> one to select and zoom the artwork
 there. The same report is in the dialog's bottom strip while you work.</p>
 <p>A recognition is never refused for being imperfect. It is refused only when the layout has no technology,

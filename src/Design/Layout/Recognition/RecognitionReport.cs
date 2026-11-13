@@ -105,6 +105,15 @@ public enum RecognitionFindingClass
     /// <summary>Parts found from land patterns alone, given generated designators.</summary>
     PartsFromLandPatternOnly,
 
+    /// <summary>Parts read from a body outline over a gap in the copper — no land of their own.</summary>
+    PartsFromBodyOutlines,
+
+    /// <summary>Body outlines over more than two pieces of copper, not read as two-terminal parts.</summary>
+    BodyOutlinesOverManyPieces,
+
+    /// <summary>Body outlines with one piece of copper the most under both ends and no other under each, not read as parts.</summary>
+    BodyOutlinesOverOnePiece,
+
     /// <summary>Parts whose kind is unknown — generated as a capacitor.</summary>
     PartKindsUnknown,
 
@@ -164,6 +173,9 @@ public enum RecognitionFindingClass
     /// <summary>Filled silkscreen shapes, which are not read.</summary>
     SilkscreenFilledNotRead,
 
+    /// <summary>Designators typed as text labels on the silkscreen (a drawing's TEXT and MTEXT), read exactly.</summary>
+    SilkscreenLabelsRead,
+
     // ── AS-5: lines (R-as5-9) ───────────────────────────────────────────────────────────────────
 
     /// <summary>The line elements read from the traces, by type.</summary>
@@ -194,11 +206,29 @@ public enum RecognitionFindingClass
     /// <summary>Short pieces and lines with no length left, absorbed into a neighbour.</summary>
     SliversAbsorbed,
 
+    /// <summary>Pads whose line ends and part terminals were joined into one node, the pad an ideal short.</summary>
+    PadsJoinTheirMembers,
+
     /// <summary>Pairs of lines close and parallel for more than λ/20: coupled, modelled uncoupled.</summary>
     CoupledPairs,
 
     /// <summary>Segments with no solved cross-section, written as TLIN at a neighbour's Z and εeff.</summary>
     UnsolvedSegments,
+
+    /// <summary>Part terminals, ports and via ends no line reached, joined to a line end farther than a line end reaches:
+    /// copper no line models, shorted.</summary>
+    CopperJoinedWithoutLine,
+
+    // ── recognition's check on itself: the circuit against the copper (CircuitCopperCheck) ─────────────
+
+    /// <summary>Two attachments the copper joins and the circuit does not.</summary>
+    CircuitSplitsCopper,
+
+    /// <summary>Two attachments the circuit joins on islands the copper keeps apart.</summary>
+    CircuitJoinsAcrossCopper,
+
+    /// <summary>The circuit joins what the copper joins. Said once, with what was checked.</summary>
+    CircuitAgreesWithCopper,
 
     // ── AS-6: the circuit, the drawing and the target (R-as6-2 … R-as6-6) ────────────────────────
 

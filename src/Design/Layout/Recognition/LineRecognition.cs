@@ -10,12 +10,16 @@
 //   3. each junction resolved (LineJunctions): an MTEE or MCROSS, or a plain node;
 //   4. each remaining end attached: the nearest attachment on its island within reach — a via's line stops at
 //      its land's edge — else the nearest other loose end within two widths, else an open end, listed;
+//   4½. each pad one node: an island's copper that no trace piece covers is pad copper, and the line ends running into
+//      one pad and the part terminals, via ends and ports on it are joined by an ideal short (PadNodes);
 //   5. a line with no length left is absorbed (its nodes become one), and anything on an island no line
 //      reached joins the nearest line end there, or the island's other attachments;
 //   6. the elements written in SI, a TLIN's Z, εeff and loss from its cuts (R-as5-7);
 //   7. coupled pairs (R-as5-8) and the report (R-as5-9).
 
+using Clipper2Lib;
 using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.Layout.Extraction;
 using CircuitRF.Design.RailRf;
 
 namespace CircuitRF.Design.Layout.Recognition;
@@ -157,6 +161,7 @@ public static class LineRecognition
                                : name.StartsWith('O') ? (int)LineNodeKind.Open : (int)LineNodeKind.Between;
 
         var reached = traces.SelectMany(t => t.Taps).ToHashSet();
+        foreach (var (tap, same) in traces.SelectMany(t => t.TapAliases)) Union(tap, same);
         var loose = new List<(TraceLines T, bool AtStart, ChainEnd End, string Placeholder)>();
         (Attachment? Best, double D) Nearest(TraceLines t, ChainEnd end, Attachment? except)
         {
@@ -229,6 +234,21 @@ public static class LineRecognition
             SetEnd(atStart ? t.First : t.Last, atStart, looseNode[i]!);
         }
 
+        // ── 4½. pads: everything on one piece of pad copper is one node ──────────────────────────────
+        // A line ends at a pad's edge and a part's terminal stands on the pad (R-as5-5), so step 4 meets them only within a
+        // line end's reach. On a wide pad that is not enough: a device pad where the input line, two bias lines and two shunt
+        // parts meet came out as one node per line end, none joined, with the pad itself not modelled. The pad is modelled as
+        // an ideal short now; modelling it as a wide line or a junction is a later step.
+        var pads = PadNodes(ctx, traces, attachments, dbu);
+        var onPads = new HashSet<string>();
+        foreach (var pad in pads)
+        {
+            for (int i = 1; i < pad.Members.Count; i++) Union(pad.Members[0], pad.Members[i]);
+            onPads.UnionWith(pad.Members);
+        }
+        reached.UnionWith(onPads.Where(attachmentOf.ContainsKey));
+        openEnds.RemoveAll(o => onPads.Contains(o.Node));
+
         // A "junction" of two arms is the review's reading of a sliver between two pieces — both ends of a
         // short piece near both of its neighbours. The piece is gone but its length is in the arms, run to the
         // centre; where they are one line type and one width they are ONE line, and the sliver is absorbed.
@@ -268,22 +288,34 @@ public static class LineRecognition
             if (d.Anchor.Count > 0) absorbed.Add(d.Anchor[0]);
         }
 
-        // Attachments no line reached: the nearest line end on their island, else the island's first attachment.
-        var endsOnIsland = new Dictionary<int, List<(string Node, double X, double Y)>>();
+        // Attachments no line reached: the nearest line end on their island, else the island's first attachment. A line end
+        // farther than a line end reaches (step 4) is copper no line models — a trace the review did not hand over — and is
+        // said: the join is an ideal short across it.
+        var endsOnIsland = new Dictionary<int, List<(string Node, double X, double Y, double W)>>();
         foreach (var t in traces)
         {
             if (!endsOnIsland.TryGetValue(t.Island, out var list)) endsOnIsland[t.Island] = list = [];
-            list.Add((t.First.Nodes[0], t.Start.X, t.Start.Y));
-            list.Add((t.Last.Nodes[^1], t.End.X, t.End.Y));
+            list.Add((t.First.Nodes[0], t.Start.X, t.Start.Y, t.Start.Width));
+            list.Add((t.Last.Nodes[^1], t.End.X, t.End.Y, t.End.Width));
         }
         foreach (var j in junctionElements)
             if (islandOfJunction.TryGetValue(j.Source, out int ji))
-                endsOnIsland[ji].Add((j.Nodes[0], j.Anchor[0].X, j.Anchor[0].Y));
+                endsOnIsland[ji].Add((j.Nodes[0], j.Anchor[0].X, j.Anchor[0].Y, j.Widths.DefaultIfEmpty(0).Max()));
         var firstOnIsland = new Dictionary<int, string>();
+        // Each: what was joined, where, what to, where — an attachment to a line end out of reach, or two members of a pad
+        // its own copper does not make one pad (PadNodes).
+        var farJoins = new List<(string A, long Ax, long Ay, LayerKey? Layer, string B, long Bx, long By)>();
+        foreach (var pad in pads) farJoins.AddRange(pad.Split);
         foreach (var a in attachments.Where(a => !reached.Contains(a.Name)))
         {
             if (endsOnIsland.TryGetValue(a.Island, out var ends) && ends.Count > 0)
-                Union(a.Name, ends.MinBy(e => Sq(e.X - a.X) + Sq(e.Y - a.Y)).Node);
+            {
+                var e = ends.MinBy(e => Sq(e.X - a.X) + Sq(e.Y - a.Y));
+                Union(a.Name, e.Node);
+                double d = Math.Sqrt(Sq(e.X - a.X) + Sq(e.Y - a.Y));
+                if (d > AttachReachWidths * e.W + AttachReachMicrons * dbu)
+                    farJoins.Add((a.Name, a.X, a.Y, a.Layer, "the line end", (long)Math.Round(e.X), (long)Math.Round(e.Y)));
+            }
             else if (firstOnIsland.TryGetValue(a.Island, out var first)) Union(a.Name, first);
             else firstOnIsland[a.Island] = a.Name;
         }
@@ -367,12 +399,168 @@ public static class LineRecognition
 
         var joined = parent.Keys.Concat(nodes.Keys).Concat(attachments.Select(a => a.Name)).Distinct()
                            .ToDictionary(k => k, Find);
-        var result = new LineRecognitionResult(elements, [.. nodes.Values]) { Joined = joined };
+        var result = new LineRecognitionResult(elements, [.. nodes.Values])
+        {
+            Joined = joined, Attachments = [.. attachments.Select(Node)],
+        };
 
         // ── 7. coupled pairs, and the report ──────────────────────────────────────────────────────────
         var coupled = CoupledPairs(elements, ctx.TopFrequencyHz, dbu);
         Report(result, report, options, counts, plainJunctions, coplanarJunctions, openEnds, absorbed, coupled, fmt);
+        report.Add(RecognitionFindingClass.PadsJoinTheirMembers, pads.Count,
+            $"{Plural(pads.Count, "pad joins its", "pads each join their")} line ends and part terminals into one node, the pad an " +
+            "ideal short (it is not modelled as a line or a junction): " +
+            string.Join("; ", pads.Take(8).Select(p => $"{fmt.Point((p.Box.MinX + p.Box.MaxX) / 2, (p.Box.MinY + p.Box.MaxY) / 2)}, " +
+                                                    $"{(p.Box.MaxX - p.Box.MinX) / (1000.0 * dbu):0.##} × {(p.Box.MaxY - p.Box.MinY) / (1000.0 * dbu):0.##} mm, " +
+                                                    $"{Plural(p.Ends, "line end", "line ends")} and {Plural(p.Terminals, "terminal", "terminals")}")) +
+            (pads.Count > 8 ? "; …" : "") + ".",
+            [.. pads.Select(p => new RecognitionAnchor((p.Box.MinX + p.Box.MaxX) / 2, (p.Box.MinY + p.Box.MaxY) / 2))]);
+        report.Add(RecognitionFindingClass.CopperJoinedWithoutLine, farJoins.Count,
+            $"{Plural(farJoins.Count, "join was", "joins were")} made across copper no line models — a trace the reading did not " +
+            "take, shorted: " +
+            string.Join("; ", farJoins.Take(8).Select(f => $"{f.A} at {fmt.Point(f.Ax, f.Ay)} and {f.B} at {fmt.Point(f.Bx, f.By)}, " +
+                                                           $"{Math.Sqrt(Sq(f.Bx - f.Ax) + Sq(f.By - f.Ay)) / dbu / 1000:0.##} mm apart")) +
+            (farJoins.Count > 8 ? "; …" : "") + ".",
+            [.. farJoins.SelectMany(f => new[] { new RecognitionAnchor(f.Ax, f.Ay, f.Layer), new RecognitionAnchor(f.Bx, f.By, f.Layer) })]);
         return result;
+    }
+
+    /// <summary>
+    /// The pads of the signal islands, each with what is on it: an island's copper that no trace piece's strip covers, split
+    /// into its connected regions, and in each the node of every line end the trace review names a "pad" end whose step
+    /// beyond it lands there, and every part terminal, via end and port inside it. A region with fewer than two members is
+    /// no join. A junction's centre is not a pad: its arms end on it as "junction", never "pad".
+    /// <para>The region is only what the review RETURNED taken away, so a trace it did not read (an arc, for one) is still in
+    /// it. So each region is also cut to its cores, twice. By the lines: eroded by half of
+    /// <see cref="TraceImpedanceAnalysis.PadWidthStep"/> times the widest line ending in it (else the widest trace on its layer),
+    /// which takes away all copper no wider than the lines by the review's own pad-to-trace step, and grown back by as much; a
+    /// member on no core, or on another core than the first, is named, and in a region with no core at all a member farther than
+    /// a line end reaches from the first. By the region itself: eroded by its largest inscribed radius over that step, which
+    /// takes away every part narrower than its widest, and a member nearest another core than the first's is named. The first
+    /// catches an unread trace into a smaller pad or straight to a part; the second one on a layer with no trace, or wider than
+    /// the lines. A member either names is still joined, but in <c>Split</c>: a join across copper no line models. A distance
+    /// alone could not tell a pad: a line in and a line out of a 4.5 mm device pad are 4.5 mm apart, past a 1.1 mm line end's
+    /// reach.</para>
+    /// </summary>
+    private static List<(List<string> Members, int Ends, int Terminals, Bbox Box,
+                         List<(string A, long Ax, long Ay, LayerKey? Layer, string B, long Bx, long By)> Split)> PadNodes(
+        LineRecognitionContext ctx, List<TraceLines> traces, List<Attachment> attachments, int dbu)
+    {
+        var board = ctx.Board;
+        var copper = board.Copper;
+        var strips = new Dictionary<LayerKey, List<(Bbox Box, Path64 Path)>>();
+        foreach (var layer in ctx.Review.Layers)
+            foreach (var run in layer.Traces)
+                foreach (var (x0, y0, x1, y1, w) in run.Pieces)
+                {
+                    double len = Math.Sqrt(Sq(x1 - x0) + Sq(y1 - y0));
+                    if (len <= 0) continue;
+                    // The strip a piece covers, a micron wider each side so the copper along its edges goes with it.
+                    double h = 0.5 * w + dbu, nx = -(y1 - y0) / len * h, ny = (x1 - x0) / len * h;
+                    var path = Clipper.MakePath(new[] { (long)(x0 + nx), (long)(y0 + ny), (long)(x1 + nx), (long)(y1 + ny),
+                                                        (long)(x1 - nx), (long)(y1 - ny), (long)(x0 - nx), (long)(y0 - ny) });
+                    long r = (long)Math.Ceiling(h);
+                    var box = new Bbox(Math.Min(x0, x1) - r, Math.Min(y0, y1) - r, Math.Max(x0, x1) + r, Math.Max(y0, y1) + r);
+                    (strips.TryGetValue(run.Layer, out var list) ? list : strips[run.Layer] = []).Add((box, path));
+                }
+
+        var widestOn = ctx.Review.Layers.Where(l => l.Traces.Count > 0).GroupBy(l => l.Layer)
+                              .ToDictionary(g => g.Key, g => g.SelectMany(l => l.Traces).Max(t => t.WidthMax));
+        var pads = new List<(List<string>, int, int, Bbox, List<(string, long, long, LayerKey?, string, long, long)>)>();
+        for (int piece = 0; piece < copper.Count && piece < board.IslandOfPiece.Length; piece++)
+        {
+            int island = board.IslandOfPiece[piece];
+            if (island < 0 || board.Islands[island].Kind != IslandKind.Signal) continue;
+            var layer = copper.LayerOfPiece(piece);
+            var ends = new List<(double X, double Y, string Node, double W)>();
+            foreach (var t in traces.Where(t => t.Island == island && t.Run.Layer == layer))
+                foreach (var (end, node) in new[] { (t.Start, t.First.Nodes[0]), (t.End, t.Last.Nodes[^1]) })
+                    if (end.Kind == "pad")
+                        ends.Add((end.X + 0.5 * end.Width * end.Dx, end.Y + 0.5 * end.Width * end.Dy, node, end.Width));
+            var on = attachments.Where(a => a.Island == island && (a.Layer is null || a.Layer == layer)).ToList();
+            if (ends.Count + on.Count < 2) continue;
+
+            var bounds = copper.BoundsOfPiece(piece);
+            var cut = new Paths64(strips.GetValueOrDefault(layer, []).Where(s => s.Box.Intersects(bounds)).Select(s => s.Path));
+            var rest = cut.Count == 0 ? copper.PathsOfPiece(piece) : Clipper.Difference(copper.PathsOfPiece(piece), cut, LayoutClipper.Rule);
+            foreach (var region in Drc.DrcRegions.Components(rest))
+            {
+                var endsIn = ends.Where(e => Regions.Contains(region, (long)Math.Round(e.X), (long)Math.Round(e.Y))).ToList();
+                var onIt = on.Where(a => Regions.Contains(region, a.X, a.Y)).ToList();
+                var members = endsIn.Select(e => e.Node).Concat(onIt.Select(a => a.Name)).Distinct().ToList();
+                if (members.Count < 2) continue;
+                var box = Bbox.Empty;
+                foreach (var path in region) foreach (var pt in path) box = box.Union(new Bbox(pt.X, pt.Y, pt.X, pt.Y));
+
+                var points = onIt.Select(a => (Name: a.Name, X: a.X, Y: a.Y))
+                                 .Concat(endsIn.Select(e => (Name: "the line end", X: (long)Math.Round(e.X), Y: (long)Math.Round(e.Y)))).ToList();
+                // Two cuts, and a member either one parts from the first is named. The lines': what is no wider than the lines by
+                // the review's pad-to-trace step is cut away, and what is left — the cores — grown back by as much to the copper
+                // it stands for; a member on none of them, or on another core than the first, is joined to it across copper no
+                // line models. With no core at all, a member past a line end's reach from the first is. The region's own: every
+                // part of it narrower than its widest by that step is cut away, and a member nearest another core than the
+                // first's is named — the only cut on a layer with no trace, and the one an unread trace wider than the lines
+                // does not pass.
+                var named = new SortedSet<int>();
+                int firstAt = 0;
+                double wLine = endsIn.Count > 0 ? endsIn.Max(e => e.W) : widestOn.GetValueOrDefault(layer);
+                if (wLine > 0)
+                {
+                    double r = 0.5 * TraceImpedanceAnalysis.PadWidthStep * wLine;
+                    var cores = Drc.DrcRegions.Components(Clipper.InflatePaths(region, -r, JoinType.Miter, EndType.Polygon))
+                                    .Select(c => Clipper.InflatePaths(c, r + dbu, JoinType.Miter, EndType.Polygon)).ToList();
+                    if (cores.Count == 0)
+                    {
+                        double reach = AttachReachWidths * wLine + AttachReachMicrons * dbu;
+                        for (int i = 1; i < points.Count; i++)
+                            if (Math.Sqrt(Sq(points[i].X - points[0].X) + Sq(points[i].Y - points[0].Y)) > reach) named.Add(i);
+                    }
+                    else
+                    {
+                        var coreOf = points.Select(p => cores.FindIndex(c => Regions.Contains(c, p.X, p.Y))).ToList();
+                        firstAt = Math.Max(0, coreOf.FindIndex(c => c >= 0));
+                        var seen = new HashSet<int> { coreOf[firstAt] >= 0 ? coreOf[firstAt] : -2 };
+                        for (int i = 0; i < points.Count; i++)
+                            if (i != firstAt && (coreOf[i] < 0 || seen.Add(coreOf[i]))) named.Add(i);
+                    }
+                }
+                var own = Cores(region, box);
+                if (own.Count > 1)
+                {
+                    var nearest = points.Select(p => Enumerable.Range(0, own.Count).MinBy(c => Distance(own[c], p.X, p.Y))).ToList();
+                    var seen = new HashSet<int> { nearest[firstAt] };
+                    for (int i = 0; i < points.Count; i++)
+                        if (i != firstAt && seen.Add(nearest[i])) named.Add(i);
+                }
+                var first = points[firstAt];
+                var split = named.Select(i => (first.Name, first.X, first.Y, (LayerKey?)layer, points[i].Name, points[i].X, points[i].Y)).ToList();
+                pads.Add((members, endsIn.Count, onIt.Count, box, split));
+            }
+        }
+        return pads;
+    }
+
+    /// <summary>A pad region's own cores: the region eroded by its largest inscribed radius (found to a percent) over the
+    /// review's pad-to-trace step, so every part of it narrower than its widest by that step is gone.</summary>
+    private static List<Paths64> Cores(Paths64 region, Bbox box)
+    {
+        double lo = 0, hi = 0.5 * Math.Min(box.MaxX - box.MinX, box.MaxY - box.MinY);
+        for (int i = 0; i < 7; i++)
+        {
+            double r = 0.5 * (lo + hi);
+            if (Clipper.InflatePaths(region, -r, JoinType.Miter, EndType.Polygon).Count > 0) lo = r; else hi = r;
+        }
+        if (lo <= 0) return [region];
+        return Drc.DrcRegions.Components(Clipper.InflatePaths(region, -lo / TraceImpedanceAnalysis.PadWidthStep, JoinType.Miter, EndType.Polygon));
+    }
+
+    /// <summary>How far a point is from a core: 0 inside it, else to its bounding box.</summary>
+    private static double Distance(Paths64 core, long x, long y)
+    {
+        if (Regions.Contains(core, x, y)) return 0;
+        var b = Clipper.GetBounds(core);
+        double dx = Math.Max(0, Math.Max(b.left - x, x - b.right)), dy = Math.Max(0, Math.Max(b.top - y, y - b.bottom));
+        return Math.Sqrt(dx * dx + dy * dy);
     }
 
     /// <summary>The attachment on <paramref name="island"/> between two arms' trace ends — within the wider arm's width

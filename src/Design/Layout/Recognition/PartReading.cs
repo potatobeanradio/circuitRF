@@ -8,6 +8,9 @@
 //      designator, ahead of everything else, because the file says which pads form a part;
 //   3. land patterns — two pads matching a case's generated lands, from the mask or paste openings where
 //      the technology has those layers, else from pad-shaped copper and the trace review's "pad" ends;
+//   3½. a body outline over a gap in the copper — a silkscreen or assembly rectangle whose two short ends lie on two
+//      different pieces of copper, for a part bridging a gap cut in a line or a line's edge and a pour with no land of
+//      its own (BodyOutlineParts); below land patterns, so it names no pads a land pattern already took;
 //   4. silkscreen designators (AS-10, Silkscreen/), and any IPartEvidenceSource — each source's designators given
 //      to the unnamed parts one to one (RefdesAssociation);
 //   5. nothing — the pads matched, and kind and value are unknown.
@@ -162,6 +165,10 @@ public static class PartReading
             drafts.Add(d);
         }
 
+        // ── 3½. body outlines over gaps in the copper: parts with no land of their own ─────────────
+        var bodies = BodyOutlineParts(ctx, drafts, out var overMany, out var onOne);
+        drafts.AddRange(bodies);
+
         // ── 2a. the placement file, landed where RailPartMarks puts the part's body ────────────────
         var byRefdes = new Dictionary<string, Draft>(StringComparer.OrdinalIgnoreCase);
         foreach (var d in drafts) if (d.Refdes is { } r) byRefdes[r] = d;
@@ -208,6 +215,9 @@ public static class PartReading
         // ── 4. the silkscreen, then any further source: each one's designators given to the unnamed parts ──
         var silk = SilkscreenReading.Empty;
         var unassociated = new List<PartClaim>();
+        // Designators typed as text first: they are exact, so a stroked reading only names what they leave (R-as10-4).
+        var typed = new TypedSilkscreenEvidence(input.Shapes, tech);
+        Name(typed.Claims());
         if (drafts.Any(d => d.Refdes is null))
         {
             silk = SilkscreenText.Read(input.Shapes, tech, GlyphTemplates.ForUser());
@@ -259,6 +269,24 @@ public static class PartReading
             d.RefdesSource = PartEvidenceSource.Generated;
         }
 
+        report.Add(RecognitionFindingClass.PartsFromBodyOutlines, bodies.Count,
+            $"{Plural(bodies.Count, "part was", "parts were")} read from {(bodies.Count == 1 ? "its body outline" : "their body outlines")} " +
+            $"on the silkscreen, over a gap in the copper with no land of {(bodies.Count == 1 ? "its" : "their")} own: " +
+            $"{string.Join(", ", bodies.Take(12).Select(d => d.Refdes))}{(bodies.Count > 12 ? ", …" : "")}.",
+            [.. bodies.Select(d => new RecognitionAnchor(d.X, d.Y, d.Pads[0].Layer))]);
+        report.Add(RecognitionFindingClass.BodyOutlinesOverManyPieces, overMany.Count,
+            $"{Plural(overMany.Count, "body outline lies", "body outlines lie")} over more than two pieces of copper — a part of more " +
+            $"than two terminals, or an outline that is not a part's body — and {(overMany.Count == 1 ? "was" : "were")} not read as " +
+            $"{(overMany.Count == 1 ? "a part" : "parts")}: {string.Join(", ", overMany.Take(8).Select(b => fmt.Point((b.MinX + b.MaxX) / 2, (b.MinY + b.MaxY) / 2)))}" +
+            $"{(overMany.Count > 8 ? ", …" : "")}.",
+            [.. overMany.Select(b => new RecognitionAnchor((b.MinX + b.MaxX) / 2, (b.MinY + b.MaxY) / 2))]);
+        report.Add(RecognitionFindingClass.BodyOutlinesOverOnePiece, onOne.Count,
+            $"{Plural(onOne.Count, "body outline has", "body outlines have")} one piece of copper the most under both ends — copper " +
+            $"running on under {(onOne.Count == 1 ? "it" : "them")}, no gap — and no other piece under each end as a part's end sits " +
+            $"on its copper, and {(onOne.Count == 1 ? "was" : "were")} not read as {(onOne.Count == 1 ? "a part" : "parts")}: " +
+            $"{string.Join(", ", onOne.Take(8).Select(b => fmt.Point((b.MinX + b.MaxX) / 2, (b.MinY + b.MaxY) / 2)))}{(onOne.Count > 8 ? ", …" : "")}.",
+            [.. onOne.Select(b => new RecognitionAnchor((b.MinX + b.MaxX) / 2, (b.MinY + b.MaxY) / 2))]);
+
         // ── 2b. the bill of materials, by designator ─────────────────────────────────────────────
         var bom = input.Bom is { Refusal: null } table ? table : null;
         var resolver = new PartModelResolver(baseDir);
@@ -277,7 +305,7 @@ public static class PartReading
             $"{Plural(placementRenamed.Count, "placement row names", "placement rows name")} pads the artwork declares as another part, and " +
             $"the placement file's designator was taken: {string.Join(", ", placementRenamed.Take(12).Select(r => $"{r.Row.Refdes} (declared {r.Declared})"))}" +
             $"{(placementRenamed.Count > 12 ? ", …" : "")}.", [.. placementRenamed.Select(r => new RecognitionAnchor(r.Row.X, r.Row.Y))]);
-        ReportSilkscreen(ctx, silk, unassociated, report);
+        ReportSilkscreen(ctx, silk, typed, unassociated, report);
         return new PartsTable(rows, fmt, baseDir);
     }
 
@@ -660,6 +688,180 @@ public static class PartReading
     private static SmtCase? CaseOfToken(string? token) =>
         FootprintTokens.Match(token) is { Outcome: FootprintTokenOutcome.Matched, Case: { } c } ? c : null;
 
+    // ── body outlines over a gap (3½) ─────────────────────────────────────────────────────────────
+
+    /// <summary>A body is at least this many times as long as it is wide, so its two ends are known.</summary>
+    public const double MinBodyAspect = 1.2;
+
+    /// <summary>Each half of a body has copper under at least this share of it: a part's end sits on its copper.</summary>
+    public const double MinEndCover = 0.25;
+
+    private const string BodyOutlineNote = "read from its body outline over a gap in the copper; it has no land of its own";
+
+    /// <summary>
+    /// R-as4-1 (3½): the parts whose body outline straddles a gap in the copper. A body is a closed, near-rectangular
+    /// outline (<see cref="MinRectangularity"/>) on a silkscreen or assembly layer, longer than it is wide
+    /// (<see cref="MinBodyAspect"/>) and no longer than a land pattern spans; drawn as one shape, a closed stroke, or lines
+    /// of no width that chain into one loop. Its two halves along its length each have copper of its side under a quarter
+    /// of them at least (<see cref="MinEndCover"/>), and the copper with the most of each half under it is a different piece
+    /// at either end: a series part across a gap cut in a line, or a shunt part
+    /// from a line's edge to a pour. A piece that has the most under both halves — a pour along a body wider than its line,
+    /// or the line itself running on unbroken — is beside the part, not an end: it is set aside and each half's copper taken
+    /// again, and an outline left with no two ends is said, never skipped silently. A terminal is the middle of the copper under its half. Below land patterns: an outline
+    /// round pads another rung found makes nothing, and one over a third piece of copper is a part of more terminals and is said
+    /// instead. Kind and value come from the designator and the bill of materials, as
+    /// for any rung; the pads are only where the drawing says the part is, so it is a medium confidence reading.
+    /// </summary>
+    private static List<Draft> BodyOutlineParts(PartReadingContext ctx, List<Draft> found, out List<Bbox> overMany, out List<Bbox> onOne)
+    {
+        var tech = ctx.Input.Technology!;
+        var conductors = Conductors.Of(tech);
+        var parts = new List<Draft>();
+        overMany = [];
+        onOne = [];
+        if (conductors.Count == 0) return parts;
+        int dbu = ctx.Input.View.DbuPerMicron;
+        long maxLong = (long)(LandPatternMatch.References.MaxSpanUm * dbu), minShort = 100L * dbu;
+
+        var layers = SilkscreenText.Layers(tech).ToList();
+        foreach (var l in tech.Layers)
+        {
+            string alias = l.Interchange?.PcbLayerName ?? "", name = (l.Name ?? "").ToLowerInvariant();
+            if ((alias.EndsWith(".Fab", StringComparison.OrdinalIgnoreCase) || name.Contains("assembly")) && layers.All(x => x.Layer != l.Key))
+                layers.Add((l.Key, alias.StartsWith("B.", StringComparison.OrdinalIgnoreCase) || name.Contains("bottom") || name.Contains("bot")));
+        }
+
+        foreach (var (layer, bottom) in layers)
+        {
+            var side = (bottom ? conductors[^1] : conductors[0]).DrawingLayers.ToHashSet();
+            var rings = new List<long[]>();
+            var open = new List<long[]>();
+            foreach (var shape in ctx.Input.Shapes)
+            {
+                if (shape.Layer != layer) continue;
+                long tol = LayoutFlattener.ResolveTolDbu(shape, tech);
+                switch (shape)
+                {
+                    case RectShape r: rings.Add([r.X1, r.Y1, r.X2, r.Y1, r.X2, r.Y2, r.X1, r.Y2]); break;
+                    case PolygonShape { Holes: null or { Count: 0 } } or CurveShape { Holes: null or { Count: 0 } }:
+                        rings.AddRange(LayoutFlattener.Flatten(shape, tol)); break;
+                    // A closed stroke is an outline; open ones chain only when they are a drawing's lines (no width): a
+                    // board's stroked legend is letters, and a D or a 0 chained from its strokes is near enough a box.
+                    case PathShape path:
+                        var xy = LayoutFlattener.FlattenOpenEdgeList(path.Xy, path.Edges, tol);
+                        if (xy.Length >= 8 && xy[0] == xy[^2] && xy[1] == xy[^1]) rings.Add(xy[..^2]);
+                        else if (path.Width <= 0) open.Add(xy);
+                        break;
+                }
+            }
+            // Lines a loop is chained from make a body only as a rectangle — four corners filling their box — so a legend
+            // exploded into lines, whose 0s and Ds chain into loops too, makes none.
+            if (open.Count > 0) rings.AddRange(DxfCopperLoops.Chain(open, [], Math.Max(1, dbu)).Loops.Where(IsRectangle));
+
+            foreach (var ring in rings)
+            {
+                var box = BoundsOf(Clipper.MakePath(ring));
+                long w = box.MaxX - box.MinX, h = box.MaxY - box.MinY, lo = Math.Min(w, h), hi = Math.Max(w, h);
+                if (lo < minShort || hi > maxLong || hi < MinBodyAspect * lo) continue;
+                if (Math.Abs(Clipper.Area(Clipper.MakePath(ring))) < MinRectangularity * w * h) continue;
+                long cx = (box.MinX + box.MaxX) / 2, cy = (box.MinY + box.MaxY) / 2;
+                if (!InScope(ctx, cx, cy)) continue;
+                // An outline round a part another rung found — its pads under it, or its pads' box meeting it.
+                if (found.Concat(parts).Any(d => d.Body.Intersects(box) || d.Pads.Any(p => box.Contains(p.X, p.Y)))) continue;
+
+                bool alongX = w >= h;
+                var halves = alongX
+                    ? new[] { new Bbox(box.MinX, box.MinY, cx, box.MaxY), new Bbox(cx, box.MinY, box.MaxX, box.MaxY) }
+                    : new[] { new Bbox(box.MinX, box.MinY, box.MaxX, cy), new Bbox(box.MinX, cy, box.MaxX, box.MaxY) };
+                // One piece the most under both halves is beside the part — a pour along a body wider than its line, both ends
+                // over it — or runs on under it unbroken: set aside, and each half's copper taken again.
+                var beside = new HashSet<int>();
+                var ends = halves.Select(half => CopperUnder(ctx.Copper, half, side, beside)).ToArray();
+                while (ends[0] is { } same && ends[1]?.Piece == same.Piece)
+                {
+                    beside.Add(same.Piece);
+                    ends = halves.Select(half => CopperUnder(ctx.Copper, half, side, beside)).ToArray();
+                }
+                double halfArea = 0.5 * (double)w * h;
+                if (ends[0] is not { } a || ends[1] is not { } b || a.Area < MinEndCover * halfArea || b.Area < MinEndCover * halfArea)
+                {
+                    if (beside.Count > 0) onOne.Add(box);
+                    continue;
+                }
+                // A third piece of copper under it as an end sits on its copper — under an end or the middle — or an island lying
+                // mostly under its middle, whatever its size: the body of a part of three terminals or more, which two ends would
+                // misread. A pour's sliver along the long edges, or a finger of it reaching in, is no terminal unless it is that big.
+                var middle = alongX ? new Bbox(box.MinX + w / 4, box.MinY, box.MaxX - w / 4, box.MaxY)
+                                    : new Bbox(box.MinX, box.MinY + h / 4, box.MaxX, box.MaxY - h / 4);
+                if (PiecesUnder(ctx.Copper, halves, middle, MinEndCover * halfArea, side, beside) > 2) { overMany.Add(box); continue; }
+
+                var d = new Draft { PadSource = PartEvidenceSource.BodyOutline, Body = box };
+                d.Pads.Add(new PlacedPin(null, "1", null, a.X, a.Y, PinSource.Artwork) { Layer = a.Layer });
+                d.Pads.Add(new PlacedPin(null, "2", null, b.X, b.Y, PinSource.Artwork) { Layer = b.Layer });
+                d.Notes.Add(BodyOutlineNote);
+                parts.Add(d);
+            }
+        }
+        return parts;
+    }
+
+    /// <summary>Four corners, filling their axis-aligned box: a rectangle drawn as lines.</summary>
+    private static bool IsRectangle(long[] ring)
+    {
+        int n = ring.Length / 2, corners = 0;
+        for (int i = 0; i < n; i++)
+        {
+            long ax = ring[2 * ((i + n - 1) % n)], ay = ring[2 * ((i + n - 1) % n) + 1], bx = ring[2 * i], by = ring[2 * i + 1];
+            long cx = ring[2 * ((i + 1) % n)], cy = ring[2 * ((i + 1) % n) + 1];
+            if ((double)(bx - ax) * (cy - by) - (double)(by - ay) * (cx - bx) != 0) corners++;
+        }
+        var box = BoundsOf(Clipper.MakePath(ring));
+        return corners == 4 && Math.Abs(Clipper.Area(Clipper.MakePath(ring))) >= 0.98 * (box.MaxX - box.MinX) * (double)(box.MaxY - box.MinY);
+    }
+
+    /// <summary>How many pieces of copper on <paramref name="side"/> are a terminal under a body: <paramref name="least"/> or
+    /// more under one of its <paramref name="halves"/> or its <paramref name="middle"/>, unless it is copper
+    /// <paramref name="beside"/> the body, or half or more of the piece under its middle — an island there, whatever its size.</summary>
+    private static int PiecesUnder(BoardCopper copper, Bbox[] halves, Bbox middle, double least, HashSet<LayerKey> side, HashSet<int> beside)
+    {
+        var paths = halves.Append(middle).Select(b => new Paths64 { Clipper.MakePath(new[] { b.MinX, b.MinY, b.MaxX, b.MinY, b.MaxX, b.MaxY, b.MinX, b.MaxY }) }).ToList();
+        var all = halves.Aggregate(middle, (u, b) => u.Union(b));
+        int count = 0;
+        for (int p = 0; p < copper.Pieces.Count; p++)
+        {
+            if (!copper.IsConductor[p] || !side.Contains(copper.Pieces.LayerOfPiece(p)) || !copper.Pieces.BoundsOfPiece(p).Intersects(all)) continue;
+            var own = copper.Pieces.PathsOfPiece(p);
+            double Under(Paths64 w) => Math.Abs(Clipper.Area(Clipper.Intersect(own, w, LayoutClipper.Rule)));
+            if ((!beside.Contains(p) && paths.Any(w => Under(w) >= least)) || Under(paths[^1]) >= 0.5 * Math.Abs(Clipper.Area(own))) count++;
+        }
+        return count;
+    }
+
+    /// <summary>The piece of copper on <paramref name="side"/>, not one set <paramref name="beside"/>, with the most area under
+    /// <paramref name="half"/>, and a point on it there: the middle of that area's box, or one of its corners where the middle
+    /// is off the copper; and that area.</summary>
+    private static (int Piece, long X, long Y, LayerKey Layer, double Area)? CopperUnder(BoardCopper copper, Bbox half, HashSet<LayerKey> side,
+                                                                                       HashSet<int> beside)
+    {
+        var window = new Paths64 { Clipper.MakePath(new[] { half.MinX, half.MinY, half.MaxX, half.MinY, half.MaxX, half.MaxY, half.MinX, half.MaxY }) };
+        (int Piece, long X, long Y, LayerKey Layer, double Area)? best = null;
+        double most = 0;
+        for (int p = 0; p < copper.Pieces.Count; p++)
+        {
+            var layer = copper.Pieces.LayerOfPiece(p);
+            if (!copper.IsConductor[p] || beside.Contains(p) || !side.Contains(layer) || !copper.Pieces.BoundsOfPiece(p).Intersects(half)) continue;
+            var under = Clipper.Intersect(copper.Pieces.PathsOfPiece(p), window, LayoutClipper.Rule);
+            double area = Math.Abs(Clipper.Area(under));
+            if (area <= most || under.Count == 0) continue;
+            var box = Bbox.Empty;
+            foreach (var path in under) box = box.Union(BoundsOf(path));
+            long x = (box.MinX + box.MaxX) / 2, y = (box.MinY + box.MaxY) / 2;
+            if (copper.Pieces.IndexAt(x, y, layer) != p) (x, y) = (under[0][0].X, under[0][0].Y);
+            (best, most) = ((p, x, y, layer, area), area);
+        }
+        return best;
+    }
+
     // ── pad outlines: mask or paste openings where the technology has them, else copper ────────────
 
     private static List<PadOutline> Outlines(PartReadingContext ctx, RecognitionReport report)
@@ -862,7 +1064,9 @@ public static class PartReading
             $"{Plural(silk.Count, "part was", "parts were")} named by the silkscreen: {Names(silk)}.");
         var land = bySource.GetValueOrDefault(PartEvidenceSource.Generated) ?? [];
         Add(RecognitionFindingClass.PartsFromLandPatternOnly, land,
-            $"{Plural(land.Count, "part was", "parts were")} found from land patterns alone and given generated designators: {Names(land)}.");
+            $"{Plural(land.Count, "part was", "parts were")} found from land patterns " +
+            (land.Any(r => r.Notes.Any(n => n.StartsWith(BodyOutlineNote, StringComparison.Ordinal))) ? "or body outlines " : "") +
+            $"alone and given generated designators: {Names(land)}.");
 
         var unknown = rows.Where(r => r.Kind == PartKind.Unknown && r.IsModelled).ToList();
         Add(RecognitionFindingClass.PartKindsUnknown, unknown,
@@ -922,10 +1126,19 @@ public static class PartReading
     }
 
     /// <summary>R-as10-6: what the silkscreen read, what it named, what it could not place, what it left out.</summary>
-    private static void ReportSilkscreen(PartReadingContext ctx, SilkscreenReading silk, List<PartClaim> unassociated, RecognitionReport report)
+    private static void ReportSilkscreen(PartReadingContext ctx, SilkscreenReading silk, TypedSilkscreenEvidence typed,
+                                         List<PartClaim> unassociated, RecognitionReport report)
     {
         var fmt = ctx.Format;
         static RecognitionAnchor At(SilkTextLine l) => new(l.X, l.Y, l.Layer);
+        // Said whether or not any part was left to name: with none found, it is what says the designators were there.
+        var labels = typed.Lines.Where(l => InScope(ctx, l.X, l.Y)).ToList();
+        int others = typed.OtherLabels.Count(l => InScope(ctx, l.X, l.Y));
+        report.Add(RecognitionFindingClass.SilkscreenLabelsRead, labels.Count,
+            $"{Plural(labels.Count, "designator was", "designators were")} read from text labels on the silkscreen: " +
+            $"{string.Join(", ", labels.Take(16).Select(l => l.Refdes))}{(labels.Count > 16 ? ", …" : "")}" +
+            (others > 0 ? $"; {Plural(others, "other label there is", "other labels there are")} no designator." : "."),
+            [.. labels.Select(At)]);
         var lines = silk.Lines.Where(l => InScope(ctx, l.X, l.Y)).ToList();
         int designators = lines.Count(l => l.Refdes is not null);
         report.Add(RecognitionFindingClass.SilkscreenTextRead, lines.Count,

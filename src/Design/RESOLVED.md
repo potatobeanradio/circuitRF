@@ -172,6 +172,12 @@ version gate): see `HznCoverageTests`. **None of the 58 translates, and that is 
   `WorkspaceViewModel.ConvertHznDesignAsync(hznPath, design)`; it asks the dialog and posts the result to Messages.
 - The converted view's `TechRef` stays null, so it resolves the workspace's default like any new view. A cell that already holds other 3D views gets a note that
   more than one now exists.
+- **A `convert` source is a Hertzon project by its extension only** (2026-11-12). `HznConvertVerb.IsSource` also asked `HznCli.IsHertzon`, which
+  says yes to a read refused as `hzn.file.not-json` or `hzn.file.not-utf8` so that `check` reports a damaged project as one. In a dispatch that
+  same yes took every source that is not JSON: a DXF got the "not valid JSON" refusal, a GDSII or OASIS file the UTF-8 one, and STEP, `.kicad_pcb`,
+  IPC-2581, a single Gerber or drill file and `--list-cells` all went the same way, ahead of their own readers. A `.hzn`, damaged or not, still reaches
+  `HznConvert` and its refusal; `DocumentKinds` asks `IsHertzon` only of a `.hzn`, so `check` is unchanged. Gate: the `ConvertCliVerbTests` matrix
+  and `ADamagedHzn_IsStillRefusedAsAHertzonProject`.
 
 ### HZN-3 — the Project Tree node and the editor's document source (2026-11-11)
 
@@ -29776,6 +29782,66 @@ Checked on a real evaluation board drawn this way (not in the repo): `PATTERN` r
 counted only what model space reaches; 16 copper polygons with 2 holes, 2 overlaps resolved, nothing left open, 87 vias, 50 unused
 blocks skipped. Its part-number digits read as copper. `check` then reports 6 design-rule errors on that board against the
 technology's own rules, which are the board's and not the import's. Nothing was solved.
+
+**R-dfr38-1-4 revised: a small closed outline on a drill layer is a hole, whatever its corners** (2026-11-12). The requirement said a
+non-circular entity is reported, not guessed at. Drawings mark drills as squares, octagons, two-bulge polylines or four `LINE`s as
+often as circles, and on a stitched board each one left as drawing cut a pour from its plane. `DxfBoardReading.ViasOf` now reads a
+closed outline as a hole when its box is square within 5 %, it fills at least 0.7 of the box (a circle π/4, an octagon 0.83; a
+triangle or an L half or less), and it is no wider than the layer's widest circle or 3 mm, whichever is more. Lines and arcs chain
+into loops as copper outlines do (`DxfCopperLoops`). The hole is the box's centre and its width across, which for a square is the
+inscribed circle: the smaller reading, so a via is never larger than the mark. The cap is what keeps a pad, a frame or a part
+outline drawn on the layer out, and a long rectangle fails the square test anyway; whatever is not a hole is still left as drawn and
+said. A pad candidate on the filled copper gets the same test, so a square pad round a square drill is taken as that via's pad, as a
+circle was. This is not `ImageTrace.RoundHole`'s rule (R-dfr30-3-2), which keeps a square out of a picture's holes on purpose: a
+square blob in a picture may be a pad, while a layer the user mapped as the drill layer declares that what is on it is holes. The
+message counts each kind read ("11 circles, 11 squares, …, read as holes"). Gate:
+`DxfBoardImportTests.SquaresOctagonsAndArcOutlinesOnADrillLayer_AreVias_AndALongRectangleIsLeftAsDrawn`.
+
+**… revised again on review.** The box test turned a regular hexagon away (its box is 13 % wider than tall) and a 45°
+diamond (it fills half its box). A hole is now a closed outline that is a regular polygon: every corner within 5 % of
+their mean distance from their centre, and at least 0.95 of the area of the regular polygon of that many corners on that
+circle — a rectangle's corners are on one circle too, and it has 0.8 of a square's area at 2:1. Its hole is the circle
+inside it. The cap is the layer's widest circle when it has circles (a pad or frame there is wider than any of them), and
+3 mm only on a layer with none. Two marks at one centre — a drill symbol drawn as a circle in a square — are one hole, the
+circle's, and said. And a pad that pairs with a drill and is no circle keeps its own shape: replaced by the circle inside it,
+a square pad lost a fifth of its copper and a trace meeting its edge touched the via's land at one point. Gates:
+`DxfBoardImportTests.RegularPolygonsOnADrillLayer_AreVias_OneSymbolIsOneVia_AndARectangleOrAnOversizeSquareIsLeftAsDrawn`
+and `ASquarePadRoundADrill_IsTheViasPad_AndKeepsItsShape`.
+
+**… and settled on re-review.** The regular-polygon rule alone let a rectangle up to about 1.38:1 through (its corners lie on
+one circle and its area was within the 0.95) and turned rounded squares away (about 0.8 of the regular polygon), and a
+square whose closing vertex is drawn again, or with one corner drawn twice, was no longer a hole: the repeated point gave a
+zero-length neighbour, and the corner beside it was dropped as collinear. Points drawn twice in a row are now one point
+before the collinear test. A hole is a closed, convex outline that is EITHER square to its box within 5 % and filling 0.7
+of it (circles, rounded squares, squares, octagons; the hole the box's width) OR a regular polygon — corners within 5 % of
+their mean radius, edges within 5 % of their mean length, 0.95 of the regular polygon's area (triangles, which drill charts
+use as symbols, squares at any angle, hexagons; the hole the circle inside it). Two marks at one centre are the smaller hole,
+the conservative reading. Four `LINE`s of a turned square are consumed by their own box, not the hole's, so its corners are
+not left as drawn beside its via. The cap stays the widest circle when the layer has circles; the trade-off is that on a
+layer mixing drill sizes, a polygon mark wider than every circle is left as drawn.
+
+**… and its hole the circle inside it (third review).** The square branch took the box's width as the hole, which is the
+circle inside only for a square: an octagon with a corner on the axis was read as 432.956 µm across where 400 fits, a
+trapezoid of 0.4 and 0.2 mm sides 0.4 mm high as 400 where about 291 fits, and a square with one corner cut by half its side
+as 400 where about 283 fits. In both branches the hole is now twice the least distance from its centre — the regular
+polygon's own, else the box's — to an edge, so the message and the reference ("the circle inside it") are true again. Gate:
+`DxfBoardImportTests.AMarksHole_IsTheCircleInsideIt` (those three and an octagon turned 10°).
+
+**… and once round (third review).** Every turn one way was taken for convex, and a star drawn as one closed polyline — an
+octagram, every third corner of an octagon — turns one way at every corner too: it was read as a 600 µm hole. The turns
+must now also sum to one full turn; the octagram's sum to three, and it is left as drawn and said. Gate:
+`DxfBoardImportTests.AnOutlineThatCrossesItself_IsNoHole`.
+
+**… and a point on an edge within two database units (third review).** A point was dropped as no corner only when exactly
+on the line through its neighbours (to a part in 10⁹), and the midpoint of a turned edge falls between grid points: a 45°
+diamond drawn with one point mid-edge, or as eight `LINE`s two to an edge, kept that point as a corner and was left as
+drawn. A point within two database units of the line through its neighbours is now on the edge. Gate:
+`DxfBoardImportTests.APointOnATurnedEdge_IsNoCorner`.
+
+**… and a rectangle no regular polygon (third review).** "Edges within 5 % of their mean length" let a rectangle's two
+lengths differ by up to 10 %: its corners lie on one circle and its area is within the 0.95, so 1.06:1 and 1.10:1
+rectangles were holes, past the 5 % the square branch allows. The longest edge must now be within 5 % of the shortest; a
+1.03:1 rectangle is still a hole, square to its box. Gate: `DxfBoardImportTests.ARectangle_IsNoRegularPolygon`.
 
 ## A Palace run in the Linux subsystem: the Touchstone waited 23 minutes for the saved fields (2026-11-07)
 

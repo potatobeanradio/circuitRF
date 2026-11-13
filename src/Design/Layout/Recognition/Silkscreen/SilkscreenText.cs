@@ -4,7 +4,7 @@
 // name a Gerber import gave it ("Silk Top", "Legend", …). Each layer is read on its own — top and bottom text never
 // share a line — and a bottom layer prefers a mirrored reading. Only stroked shapes (paths) are text; a filled shape
 // on a silkscreen layer is a logo, a pin-1 dot, or text drawn as filled outlines, which this reader does not read and
-// says so.
+// says so. A label is typed text, which needs no reading: TypedSilkscreenEvidence takes it as it is.
 
 namespace CircuitRF.Design.Layout.Recognition.Silkscreen;
 

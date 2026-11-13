@@ -239,6 +239,22 @@ case=land;value=bom;pn=bom;model=file`):
    parts the reading already found, and declared pads form them. The declared NETS are a check only
    (`DeclaredPads.CrossCheck`): ground copper and every island a via joins straight to ground is one node; a node with
    two nets is `DeclaredNetsShorted`, a net on two nodes `DeclaredNetsOpen`, else one `DeclaredNetsAgree` line.
+3½. **Body outlines over a gap** (`PartReading.BodyOutlineParts`) — for a board drawn with no lands and no mask, where
+   a series part bridges a gap cut in a line and a shunt part a line's edge and a pour. A body is a closed outline on a
+   silkscreen or assembly layer (one shape, a closed stroke, or a drawing's lines of no width that chain into a rectangle,
+   as `DxfCopperLoops` chains copper; a stroked legend's open strokes are letters and never chain), at least 82 % of its
+   box, at least 1.2 times as long as it is wide and no longer than a land pattern spans. Each half along its length takes
+   the copper piece of its side with the most area under it, which must cover a quarter of the half. One piece the most
+   under both halves is beside the part (a pour along a body wider than its line and gaps) or runs on under it unbroken:
+   it is set aside, and each half takes its copper again; an outline left with no two ends is said
+   (`BodyOutlinesOverOnePiece`), never skipped silently. Two different pieces make a two-terminal part, a terminal at the middle of the copper under each half; an outline with a third piece
+   under an end or its middle as an end sits on copper (a quarter of a half), or an island lying mostly under its middle
+   whatever its size, is a part of more terminals and is said instead (`BodyOutlinesOverManyPieces`) — a pour's sliver
+   along its long edges, or a narrow finger of it reaching in, is not. An outline
+   whose box meets a
+   part another rung found, or holds its pads, makes none. Below land patterns, so the pads it reads are only where the
+   drawing says the part is: confidence `medium`, `Evidence` `refdes=silk` once named. Reported as
+   `PartsFromBodyOutlines`.
 4. **The silkscreen** (AS-10, §9), then any further `IPartEvidenceSource`: each source's `PartClaim`s are given to the
    unnamed parts one to one by `RefdesAssociation` — never to a part a stronger source named, never a designator a
    stronger source already gave.
@@ -286,7 +302,7 @@ is the identity.
 
 ### 5.4 The report (R-as4-9)
 
-Parts by source (instances, placement, silkscreen, land pattern alone), unknown kinds, unknown values (the variables),
+Parts by source (instances, placement, silkscreen, land pattern alone, body outlines over a gap), unknown kinds, unknown values (the variables),
 values in the wrong dimension, SnP models, land-pattern ambiguities, shorted / bridged / off-copper parts left out,
 multi-pin parts and connectors cut out (with their part numbers, for Import Component), BOM designators and placement
 rows not found on the board, sides with no mask or paste layer, and a parts table's notes and unknown designators.
@@ -311,6 +327,9 @@ rows not found on the board, sides with no mask or paste layer, and a parts tabl
 **One** trace review per recognition, shared with AS-4's part reading (`RecognitionResult.ReviewRuns` holds it at one).
 It is run with a scope of one region round all the copper in scope: a chain a selector chooses is a trace from
 `SelectedMinAspect` (2) widths rather than `MinAspect` (4), so a short line between two parts is a line and not a pad.
+For recognition only (`TraceImpedanceOptions.KeepLongEndSections`, set by `ReviewOf` and nowhere else) the review's end
+trim takes an end piece off a chain as its land, when it is wider than the piece it joins, only below the same 2 widths:
+a 1.7 mm by 5.6 mm section from a pad on a 1.1 mm line is a line, not the line's land. A review, scoped or not, trims at 4.
 Its target, tolerance and findings are not read.
 
 What recognition needed and the review did not return was **added to its output records**, computed where the review
@@ -361,6 +380,9 @@ One walk along each trace's pieces and joins:
   absorbed: its two nodes become one, and it is counted.
 - **Taps.** A part's terminal, a via or a port the trace runs *through* — within a width of its centre line, more than a
   width from either end — splits the line there: a shunt part's pad standing on a line is a node in it, not at its end.
+  A tap within half a micron of an existing split is at that split, whichever side of it rounding put it, so the walk's
+  direction (which a mirror image reverses) never moves it; and a second tap at a point another has taken is that tap's
+  node — two shunt parts either side of a line at one point are one node.
 
 ### 6.4 Junctions (R-as5-4, R-as5-5)
 
@@ -386,8 +408,21 @@ Nodes are named for what they are: `R1.2` (a part's terminal, AS-4's row and ter
 island), `P1` (a port), `J2` / `J2.3` (a plain junction / an MTEE or MCROSS arm), `T5_2` (between two elements of trace
 T5), `O1` (an open end). A trace's end attaches to the nearest part terminal, port or via on its island within
 2·W + 1 mm (a via within its land's radius plus a width); else to another loose end within two widths on the island
-(a gentle bend the review did not join); else it is an **open end** — an open line, no open-end model, listed. A part
-terminal, via or port no line reaches joins the nearest line end on its island, or the island's other attachments.
+(a gentle bend the review did not join); else it is an **open end** — an open line, no open-end model, listed. **A pad is
+one node**: an island's copper that no trace piece covers (each piece's strip taken away, a micron wider each side) is pad
+copper, and in each connected region of it every line end the review names a `"pad"` end (half a width past it) and every
+part terminal, via end and port is joined by an ideal short, reported as `PadsJoinTheirMembers` with the pad's size. A
+junction's centre is no pad: its arms end on it as `"junction"`. Pad copper is the island less what the review
+returned, so a trace it did not read (an arc) is in it too: each region is cut to its cores twice, and a member either
+cut parts from the first is still joined but reported as `CopperJoinedWithoutLine`. By the lines: eroded by half of
+`PadWidthStep` times the widest line ending in it (else the widest trace on the layer), so that all copper no wider than
+the lines by the review's pad-to-trace step goes, and grown back by as much; a member on no core, or on another core than
+the first, is named (with no core left at all, a member farther than a line end reaches from the first is). By the region
+itself: eroded by its largest inscribed radius over `PadWidthStep`, so every part narrower than its widest goes; a member
+nearest another core than the first's is named. The first catches an unread trace into a smaller pad or straight to a
+part, the second one on a layer with no trace or one wider than the lines. Modelling
+a pad as a wide line or a junction is a later step. A part terminal, via or port no line reaches joins the nearest line end on its island, or the island's other
+attachments.
 `LineRecognitionResult.NodeOf(name)` gives the node any of those names ended up as.
 
 ### 6.6 Parameters (R-as5-7)
@@ -413,9 +448,20 @@ changes. The report adds: elements by type; TLIN fallbacks by reason; segments r
 reading in force (and how many MLINs had ground both sides); junctions over four arms; bends, junctions and steps outside
 microstrip (one finding); open ends; slivers and lines absorbed; coupled pairs; unsolved segments.
 
+### 6.7½ The circuit against the copper
+
+Recognition checks its own result before the emit drops stray lines (`CircuitCopperCheck`): every part terminal, port
+and kept via end on one signal island is joined to the others there by copper, so the circuit must join them too through
+its lines, junctions and VIAs — direct current only, no part crossed. An island the circuit splits is
+`CircuitSplitsCopper` and a node joining two islands `CircuitJoinsAcrossCopper`, each naming both places; agreement is
+one `CircuitAgreesWithCopper` line, said every time with what was checked, unless a join across copper no line models
+stands in the report. A part terminal, port or via end no line
+reached that joins a line end farther than a line end reaches (§6.5) is `CopperJoinedWithoutLine`: copper between them
+that no line models — a trace the review did not hand over — shorted. Tests treat all three as errors.
+
 ### 6.8 Gates
 
-`LineSegmentationTests`, `LineJunctionTests`, `LineTypeChoiceTests`, `LineRecognitionCountersTests` (a 40 mm line solves
+`LineSegmentationTests`, `LineJunctionTests`, `LineTypeChoiceTests`, `CircuitCopperCheckTests`, `LineRecognitionCountersTests` (a 40 mm line solves
 one cut; the review runs once) and `LineRecognitionFieldTests` (`FixtureFact`; the field board's `expected.json` gains
 `"lines": { "MLIN": [min, max], … }`).
 
@@ -627,6 +673,15 @@ legend or overlay); each layer is read on its own and a bottom layer prefers a m
 silkscreen layer is not read and is counted (`SilkscreenFilledNotRead`) — text drawn as filled outlines needs a
 different reader.
 
+**Typed text is read as itself.** A drawing exported as DXF carries its designators as `TEXT`/`MTEXT`, which the import
+keeps as labels with the exact characters. `TypedSilkscreenEvidence` parts each label on a silkscreen layer into its lines
+at MTEXT's breaks (`\P`, `\N`, `\X`) and line breaks, and reads each line whose text (MTEXT's codes and toggles and
+TEXT's `%%u`/`%%o`/`%%k` stripped, upper-cased) passes the designator rule of §9.2 as a line with no glyphs, its box from
+the anchor, the height, 0.6 of a height per character, 5/3 of a height a line down, and the rotation, and as the same
+`PartClaim`s a picture's legend makes through `IPartEvidenceSource` — read by `PartReading` itself, not through that seam,
+because it is given first and reported whatever else is found. Then the stroked reading names what they leave. A label only names a
+part another rung found; with no glyphs, correcting it teaches nothing (`SilkscreenText.Lesson`).
+
 `StrokeGlyphs`: strokes whose centre lines touch (within 0.3 of the pen width) or cross are one **unit**. A unit is
 TALL in a family — reading along x (0°/180°) or along y (90°/270°) — when its extent across the line is at least
 1/1.6 of its extent along it. Tall units of one height (±35 %) overlapping 70 % across the line, at most 0.6 cap heights
@@ -687,12 +742,14 @@ as 9s, because a glyph resembles its own font's other characters more than anoth
 
 `SilkscreenTextRead` (lines read, how many designators), `PartsFromSilkscreen` (named), `SilkscreenRefdesNotAssociated`,
 `SilkscreenGlyphsUncertain` (glyphs of designator-shaped lines under a known prefix that failed only the margin),
-`SilkscreenStrokesExcluded`, `SilkscreenFilledNotRead`. Silkscreen is read only when some part is still unnamed after
-placed footprints and the placement file.
+`SilkscreenStrokesExcluded`, `SilkscreenFilledNotRead`, and `SilkscreenLabelsRead` (designators typed as labels, and how
+many other labels there are). The strokes are read only when some part is still unnamed after placed footprints, the
+placement file and the typed labels; the typed labels are reported whatever was found, so a board with no part says that
+its designators were there.
 
 ### 9.6 Gates
 
-`StrokeGlyphTests`, `RefdesAssociationTests`, `SilkscreenFieldTests` (`FixtureFact`; expected.json gains
+`StrokeGlyphTests`, `RefdesAssociationTests`, `TypedSilkscreenTests`, `SilkscreenFieldTests` (`FixtureFact`; expected.json gains
 `"silkscreen": [{refdes, x, y}]` in mm and `"silkscreenFraction"`) in `tests/Ui.Tests/Recognition/Silkscreen/`, and
 `PartsTableCsvTests.ARowAtAGuessedPartsPlaceRenamesItButNeverABoardDesignator`.
 

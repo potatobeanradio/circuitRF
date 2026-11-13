@@ -73,4 +73,32 @@ public sealed class LineSegmentationTests
         Assert.Equal(6_050, line.Micro("L"), 1.0);
         Assert.Equal(1, result.Report.Count(RecognitionFindingClass.SliversAbsorbed));
     }
+
+    /// <summary>
+    /// Two terminals at one point either side of a 3:1 diagonal line, 8 nm off its centre line, project 1.9e-9 nm apart: the
+    /// second ahead of the first when the line is walked one way, behind it the other way. Walked either way, both close a line
+    /// at the one point — the second is the first's node — and neither floats; with no tolerance the one ahead took the end of
+    /// the atom after the split, the line's last, where no line closes.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TwoTapsAtOnePointOfADiagonalLine_AreOneNode_WhicheverWayItIsWalked(bool reversed)
+    {
+        var (a, b) = ((0L, 0L), (30_000_000L, 10_000_000L));
+        if (reversed) (a, b) = (b, a);
+        var run = new TraceRun { Id = "T1", Layer = Top, Pieces = [(a.Item1, a.Item2, b.Item1, b.Item2, 1_000_000.0)] };
+        var counts = new SegmentationCounts();
+        var lines = LineSegmentation.Segment(run, 0, new RecognitionOptions(), new LineBinder(TwoLayer(), "Top"),
+                                             CircuitRF.Design.Layout.LayoutUnits.DefaultDbuPerMicron, counts,
+                                             [("C6.1", 15_000_000 - 8, 5_000_000 + 24), ("C7.1", 15_000_000 + 8, 5_000_000 - 24)]);
+
+        Assert.Equal(["C6.1", "C7.1"], lines.Taps.Order());
+        var drafts = lines.Drafts.Where(d => d.IsLine).ToList();
+        Assert.Equal(2, drafts.Count);
+        string at = drafts[0].Nodes[^1];
+        Assert.Equal(at, drafts[1].Nodes[0]);
+        string other = at == "C6.1" ? "C7.1" : "C6.1";
+        Assert.Contains((other, at), lines.TapAliases);
+    }
 }
