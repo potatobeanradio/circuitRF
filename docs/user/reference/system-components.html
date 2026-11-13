@@ -284,7 +284,9 @@ which is exactly how an intercept has to be read off a bench measurement too.</p
 <p><strong>A 90° hybrid with PIM on works in every analysis.</strong> It is the one PIM-capable block whose
 S-matrix is genuinely complex, and half of it rides in a frequency-domain factor. Single- and
 multi-tone harmonic balance and both envelope modes carry that factor at every harmonic and mixing
-product, so its product comes out at the level you typed, split and in quadrature like the signal.</p>
+product, so its product comes out at the level you typed, split and in quadrature like the signal.
+With PIM on, the block passes nothing at DC (an ideal 90° hybrid's admittance is all quadrature, and
+quadrature has no DC part), so give any DC path through it, such as a mixer's DC return, a return of its own.</p>
 <h2 id="catalogue">The blocks, one by one</h2>
 <p>One entry each, in the order the palette lists them under <strong>System</strong>. The parameter tables live in
 <a href="components.html">Components</a>, one section per block, and each entry below links to its own.</p>

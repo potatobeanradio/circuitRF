@@ -243,6 +243,8 @@ which is exactly how an intercept has to be read off a bench measurement too.
 S-matrix is genuinely complex, and half of it rides in a frequency-domain factor. Single- and
 multi-tone harmonic balance and both envelope modes carry that factor at every harmonic and mixing
 product, so its product comes out at the level you typed, split and in quadrature like the signal.
+With PIM on, the block passes nothing at DC (an ideal 90&deg; hybrid's admittance is all quadrature, and
+quadrature has no DC part), so give any DC path through it, such as a mixer's DC return, a return of its own.
 
 ## The blocks, one by one {#catalogue}
 

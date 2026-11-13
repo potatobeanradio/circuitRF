@@ -4416,9 +4416,10 @@ products (one drive-level offset at the first and third power: the envelope's ow
 `MaxMixOrder = 3` up to 7e-4, which is the fifth-order content the lattice drops and the reference keeps on the same
 frequencies (`3f1 − 2f2 = 2f2 − f3`). An SDD under a low-pass `H[2]` at 0 dBm: 6e-5, again truncation.
 
-**The FD Jacobian oracle's relative metric is floored here.** On near-zero entries it reads ~3e-4 for the hybrid and
-2.5e-4 for an in-phase coupler that has no bucket at all; the worst ABSOLUTE error against the Jacobian's scale
-(4e-10–6e-10) is the meaningful number, since a missing or misrotated bucket is an error of the scale itself.
+**The FD Jacobian oracle's relative metric is floored here.** At mixing order 2 it reads 1.7e-5 (lattice) / 1.5e-5
+(FFT path) for the hybrid on near-zero entries, and 2.1e-4 / 2.1e-5 for an in-phase coupler that has no bucket at all;
+the worst ABSOLUTE error against the Jacobian's scale (4e-10–6e-10) is the meaningful number, since a missing or
+misrotated bucket is an error of the scale itself.
 
 **Now visible, not new:** the quadrature hybrid's PIM product also leaves the isolated port, about 3 dB under the
 through port. Single-tone HB has always shown the same; it is the overlay's memoryless projection of the incident

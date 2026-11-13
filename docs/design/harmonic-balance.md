@@ -138,7 +138,7 @@ Every solver folds a bucket in exactly as it folds the charge, with `jω` replac
 
 - **Residual and reported injection:** `+ Σ_w H[w](ω_k)·FFT{I_w}_k` at every harmonic or retained mixing product. The same total is what the linear back-solve injects (§9) and what a device terminal current reports.
 - **Jacobian:** `H[w](ω_row)` times the bucket's own conversion block — the `Dw[k−i]`/`Dw[k+i]` block of §7.2 on the single-tone and two-tone FFT paths, `A·diag(dw)·Γ` on the lattice (§6.5).
-- **Negative frequencies:** a lattice representative can sit at `ω < 0`. `H[w]` there is `conj(H[w](|ω|))` (`HbNewton.WeightAt`), never a model call at a negative argument — the rule `Y_NN` follows (§3).
+- **Negative frequencies:** a lattice representative can sit at `ω < 0`. `H[w]` there is `conj(H[w](|ω|))` (`HbNewton.WeightAt`), never a model call at a negative argument — the rule `Y_NN` follows (`HbSmallSignal.YNNAt`; `src/Engine/HarmonicBalance/CLAUDE.md`, "Models are evaluated only at ω ≥ 0").
 - **Envelope:** both envelope engines add the bucket to each step's injection with `H[w]` at the harmonic's or mixing product's own frequency, so the residual and the linear state they report from carry the same total. The small-signal conversion matrix around a lattice point (§7.5) carries the bucket spectra as the single-tone one does.
 
 Until 2026-11-13 only the single-tone `HbNewton` did this. The two-tone and lattice loops never read `Terms`, and the single envelope balanced the bucket but left it out of its linear state, so all three dropped it silently (`src/Engine/RESOLVED.md`).

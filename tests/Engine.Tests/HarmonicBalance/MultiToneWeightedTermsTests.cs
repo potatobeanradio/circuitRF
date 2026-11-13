@@ -317,10 +317,12 @@ public class MultiToneWeightedTermsTests(ITestOutputHelper output)
         var nd  = HbNewtonNd.CompareJacobianNumericalNd(V, yNN, iSrc, apft, N, [f1, f2], nl, ifNodes);
         var two = HbNewton2D.CompareJacobianNumerical2D(V, yNN, iSrc, grid, N, n1, n2, f1, f2, nl, ifNodes);
         // Judged by the worst ABSOLUTE error against the Jacobian's own scale: the relative metric is floored on the
-        // near-zero entries (2.5e-4 for an in-phase coupler at this drive, which has no bucket at all), while a
-        // missing or misrotated bucket is an error of the scale itself. Measured 6e-10 (lattice) and 4e-10 (FFT path).
+        // near-zero entries (here 1.7e-5 lattice / 1.5e-5 FFT path, and 2.1e-4 / 2.1e-5 for an in-phase coupler at the
+        // same point, which has no bucket at all), while a missing or misrotated bucket is an error of the scale
+        // itself. Measured 6e-10 (lattice) and 4e-10 (FFT path).
         double ndErr = nd.MaxAbsError / scale, twoErr = two.MaxAbsError / scale;
-        output.WriteLine($"FD oracle, worst |analytic − FD| / scale: lattice {ndErr:E2}, FFT path {twoErr:E2} (dof {nd.Dof}, scale {scale:E2})");
+        output.WriteLine($"FD oracle, worst |analytic − FD| / scale: lattice {ndErr:E2}, FFT path {twoErr:E2} (dof {nd.Dof}, scale {scale:E2}); "
+                       + $"worst relative: lattice {nd.MaxRelError:E2}, FFT path {two.MaxRelError:E2}");
         Assert.True(ndErr < 1e-7, $"lattice Jacobian vs finite differences: {ndErr:E3} of its scale");
         Assert.True(twoErr < 1e-7, $"two-tone FFT Jacobian vs finite differences: {twoErr:E3} of its scale");
     }
