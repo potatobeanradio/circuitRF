@@ -1439,8 +1439,9 @@ writes nothing but `-o`'s PDF.
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter --form bandpass --response Chebyshev --order 5 --f1 1GHz --f2 2GHz --ap 0.1 --series e24 -o filter.cnl</code></pre>
 
 `filter` is the Filter Designer with no window. It synthesises the same ladder the window does —
-Butterworth, Chebyshev, Bessel or Gaussian, as a lowpass, highpass, bandpass or bandstop — and
-prints each element as exact value and, with `--series`, the nearest IEC preferred number.
+Maximally Flat, Chebyshev, inverse Chebyshev, elliptic, Bessel or Gaussian, as a lowpass, highpass,
+bandpass or bandstop — and prints each element as exact value and, with `--series`, the nearest
+IEC preferred number.
 `--first parallel` starts the ladder on a shunt arm. `--fc` (or `--fp`) is the cutoff of a lowpass
 or highpass. `--f1` and `--f2` are the passband edges of a bandpass and the stopband edges of a
 bandstop. `Order` is the prototype order, so a bandpass or bandstop of order 3 is six elements.
@@ -1449,9 +1450,10 @@ The load the ladder prints is the one the family produces. An even-order Chebysh
 out equal to the source; that ratio is the family's. The ideal Filter block can take any pair of
 port impedances, and the verb says so rather than building a ladder that does not have them.
 
-Inverse Chebyshev and elliptic are refused. Their ladders are tanks, and the ideal Filter already
-has those responses. A frequency is a number and a unit (`1GHz`, `100MHz`). Exit 0 when a ladder
-was written, 1 when the family has no ladder, 2 when an argument does not parse.
+Inverse Chebyshev and elliptic of odd order are ladders of tanks. `--as` is their stopband floor.
+An even order of either keeps a finite floor at infinite frequency, which a ladder cannot, and the
+verb refuses it. A frequency is a number and a unit (`1GHz`, `100MHz`). Exit 0 when a ladder was
+written, 1 when the family has no ladder, 2 when an argument does not parse.
 
 ## `smith` — a matching network, headless {#smith}
 

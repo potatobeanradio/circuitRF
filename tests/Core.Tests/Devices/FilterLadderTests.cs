@@ -129,13 +129,25 @@ public class FilterLadderTests
     }
 
     [Fact]
-    public void AnAxisZeroFamilyIsRefusedByName()
+    public void AnOddEllipticLowpassIsALadderOfTanks()
     {
         var built = FilterLadder.Synthesize(
             FilterResponse.Elliptic, NetworkForm.Lowpass, 3,
-            1e9, 0, 0, 0.1, 50, FilterFirstElement.Series);
+            1e9, 0, 0, 0.1, 50, FilterFirstElement.Series, 40);
+        Assert.True(built.Ok, built.Refusal?.Message);
+        // Order 3 has one finite zero: a series LC to ground, plus the series L that is the zero
+        // at infinity. The stub inductor leaves the through path.
+        Assert.Contains(built.Realization!.Elements, e => e.Shunt && e.NodeB != "0");
+    }
+
+    [Fact]
+    public void AnEvenEllipticIsRefusedBecauseTheFloorDoesNotReachZero()
+    {
+        var built = FilterLadder.Synthesize(
+            FilterResponse.Elliptic, NetworkForm.Lowpass, 4,
+            1e9, 0, 0, 0.1, 50, FilterFirstElement.Series, 40);
         Assert.False(built.Ok);
-        Assert.Contains("Elliptic", built.Refusal!.Message);
+        Assert.Contains("even order", built.Refusal!.Message);
     }
 
     [Fact]

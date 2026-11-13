@@ -39,8 +39,11 @@ Gaussian is the partial exponential `Σ α^k/k! · Ω^{2k}`, with `α` chosen so
 2. `E` is the Hurwitz factor scaled to `E(0) = 1`, so `|S21| = 1/|E|` and the cutoff is −3.01 dB
 at every order. `F` is the Feldtkeller step Bessel already uses.
 
-Inverse Chebyshev and elliptic are refused for the ladder. Their zeros lie on the axis, and a
-continued fraction of an all-pole impedance is the wrong network. The ideal block already has them.
+Inverse Chebyshev and elliptic put zeros on the axis. Each finite zero is removed as a tank — a
+parallel LC in the through path, or a series LC to ground — after a partial removal at infinity
+when that zero is not yet a pole of the open-circuit reactance. An even order of either family
+keeps a finite floor at infinite frequency. A ladder of inductors and capacitors is an open there,
+so that order is refused and the window says why. The ideal block still has the response.
 
 `NetworkForm.Bandstop` is appended, so existing Match payloads keep their meaning. Match refuses
 the value by name.

@@ -48,6 +48,8 @@ public static class FilterVerb
                 case "--rl": spec.Rl = Num(Next()); break;
                 case "--ap": spec.Ap = Num(Next()); break;
                 case "--ripple": spec.Ap = Num(Next()); break;
+                case "--as":
+                case "--astop": spec.As = Num(Next()); break;
                 case "--series":
                     if (!Enum.TryParse<FilterSeriesKind>(Next(), true, out spec.Series))
                         return Fail("--series is exact, e6, e12, e24 or e96.");
@@ -75,7 +77,8 @@ public static class FilterVerb
 
         double fc = spec.Fc ?? 0, f1 = spec.F1 ?? 0, f2 = spec.F2 ?? 0;
         var built = FilterLadder.Synthesize(spec.Response, spec.Form, spec.Order, fc, f1, f2,
-                                             spec.Ap > 0 ? spec.Ap : 0.1, spec.Rs, spec.First);
+                                             spec.Ap > 0 ? spec.Ap : 0.1, spec.Rs, spec.First,
+                                             spec.As > 0 ? spec.As : 40);
         if (!built.Ok)
         {
             Console.Error.WriteLine(built.Refusal!.Message);
@@ -123,11 +126,13 @@ public static class FilterVerb
                              passband edges for a bandpass, stopband edges for a bandstop
           --rs 50 --rl 50    ohms. The ladder's load is the family's own ratio when that differs.
           --ap 0.1           passband ripple, dB, for Chebyshev and elliptic
+          --as 40            stopband floor, dB, for inverse Chebyshev and elliptic
           --series exact|e6|e12|e24|e96
           -o out.cnl         the ladder as a netlist
 
-        Inverse Chebyshev and elliptic are refused: their ladders are tanks, and the ideal Filter
-        block already has those responses. A frequency is a number and a unit (Hz, kHz, MHz, GHz).
+        Inverse Chebyshev and elliptic of odd order are ladders of tanks. An even order of either
+        keeps a finite floor at infinite frequency, which a ladder cannot, and is refused.
+        A frequency is a number and a unit (Hz, kHz, MHz, GHz).
         """;
 
     private static int Fail(string message)
@@ -157,7 +162,7 @@ public static class FilterVerb
         public int Order = 3;
         public FilterFirstElement First = FilterFirstElement.Series;
         public double? Fc, F1, F2;
-        public double Rs = 50, Rl = 50, Ap = 0.1;
+        public double Rs = 50, Rl = 50, Ap = 0.1, As = 40;
         public FilterSeriesKind Series = FilterSeriesKind.Exact;
         public string? Out;
     }

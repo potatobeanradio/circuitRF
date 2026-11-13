@@ -109,7 +109,7 @@ Drawing circuits, the component library, and synthesis.
 ## The Filter Designer
 
 - A specification — form, family, order, the mask edges, source and load — and the LC ladder that realises it.
-- Lowpass, highpass, bandpass and **bandstop**. Butterworth, Chebyshev, Bessel and Gaussian as ladders; the ideal Filter keeps inverse Chebyshev and elliptic.
+- Lowpass, highpass, bandpass and **bandstop**. Maximally flat, Chebyshev, inverse Chebyshev, elliptic, Bessel and Gaussian as ladders. An even-order inverse Chebyshev or elliptic keeps a floor at infinite frequency, which a ladder cannot.
 - Exact values, an IEC series, or the nearest part in a library series. The curves are the Data Display's own plots.
 
 ## The Match component

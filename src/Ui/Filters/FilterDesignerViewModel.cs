@@ -34,6 +34,13 @@ public sealed class FilterElementRow
     public string Part { get; init; } = "";
 }
 
+/// <summary>A response family as the specification names it. <see cref="Value"/> is what the Filter block stores.</summary>
+public sealed record FilterResponseChoice(FilterResponse Value, string Label)
+{
+    /// <inheritdoc/>
+    public override string ToString() => Label;
+}
+
 /// <summary>
 /// The Filter Assistant. The specification is the one on the assistant screenshots — source and
 /// load, first element, order, the mask frequencies, Ap and As, and the response family — and the
@@ -42,8 +49,16 @@ public sealed class FilterElementRow
 /// </summary>
 public sealed partial class FilterDesignerViewModel : ObservableObject
 {
-    /// <summary>The families, in the order the assistant offers them.</summary>
-    public IReadOnlyList<FilterResponse> Responses { get; } = Enum.GetValues<FilterResponse>();
+    /// <summary>The response list, in the names the specification uses.</summary>
+    public IReadOnlyList<FilterResponseChoice> ResponseChoices { get; } =
+    [
+        new(FilterResponse.Butterworth, "Maximally Flat"),
+        new(FilterResponse.Chebyshev, "Chebyshev"),
+        new(FilterResponse.InvChebyshev, "Inverse Chebyshev"),
+        new(FilterResponse.Elliptic, "Elliptic"),
+        new(FilterResponse.Bessel, "Bessel-Thomson"),
+        new(FilterResponse.Gaussian, "Gaussian"),
+    ];
 
     /// <summary>Lowpass, highpass, bandpass, bandstop.</summary>
     public IReadOnlyList<NetworkForm> Forms { get; } =
@@ -97,6 +112,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     public string? WorkspaceRoot { get; set; }
 
     [ObservableProperty] private FilterResponse _response = FilterResponse.Butterworth;
+    [ObservableProperty] private FilterResponseChoice? _responseChoice;
     [ObservableProperty] private NetworkForm _form = NetworkForm.Bandpass;
     [ObservableProperty] private FilterFirstElement _first = FilterFirstElement.Parallel;
     [ObservableProperty] private FilterSeriesKind _series = FilterSeriesKind.Exact;
@@ -131,6 +147,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
     public FilterDesignerViewModel()
     {
+        ResponseChoice = ResponseChoices[0];
         MagnitudeContainer = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, 0, 0, 640, 280);
         PhaseContainer = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, 0, 280, 640, 220);
         MagnitudePlot.Axes.LockedPanning = true;
@@ -140,7 +157,19 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     }
 
     partial void OnFormChanged(NetworkForm value) => ApplyLabels();
-    partial void OnResponseChanged(FilterResponse value) => Design();
+    partial void OnResponseChanged(FilterResponse value)
+    {
+        var match = ResponseChoices.First(c => c.Value == value);
+        if (!Equals(ResponseChoice, match)) ResponseChoice = match;
+        Design();
+    }
+
+    partial void OnResponseChoiceChanged(FilterResponseChoice? value)
+    {
+        if (value is not null && value.Value != Response) Response = value.Value;
+    }
+
+    partial void OnDbPerDivTextChanged(string value) => Design();
     partial void OnFirstChanged(FilterFirstElement value) => Design();
     partial void OnSeriesChanged(FilterSeriesKind value) => Design();
     partial void OnUnitChanged(string value) => Design();
@@ -201,7 +230,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
         var built = FilterLadder.Synthesize(spec.Response, spec.Form, spec.Order,
                                              spec.FcHz, spec.F1Hz, spec.F2Hz, spec.RippleDb,
-                                             spec.SourceOhms, spec.First);
+                                             spec.SourceOhms, spec.First, spec.AsDb);
         var freqs = Frequencies(spec);
         var idealSnp = IdealSnp(ideal, freqs, spec.SourceOhms, built.Realization?.LoadOhms ?? spec.LoadOhms);
 

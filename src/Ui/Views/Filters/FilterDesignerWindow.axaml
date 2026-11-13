@@ -1,5 +1,5 @@
-<!-- The Filter Designer, in the Match Designer's panel language: a specification column, the ladder
-     drawn by the schematic editor's own renderer, and the Data Display's plots. -->
+<!-- The Filter Designer: a specification column, the two response plots side by side with the
+     response choice above them, and the ladder drawn by the schematic editor's own renderer. -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:flt="using:CircuitRF.Ui.Filters"
@@ -70,10 +70,10 @@
         </Style>
     </Window.Styles>
 
-    <Grid ColumnDefinitions="292,*,340">
+    <Grid ColumnDefinitions="292,*" RowDefinitions="*,*">
 
         <!-- ── Specification ─────────────────────────────────────────────── -->
-        <Border Classes="pane">
+        <Border Grid.RowSpan="2" Classes="pane">
             <ScrollViewer HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
                     <TextBlock Classes="panelhdr" Text="Specification"/>
@@ -100,15 +100,14 @@
                                 <TextBlock Grid.Row="1" Classes="lbl" Text="Order"/>
                                 <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding OrderText}"/>
                             </Grid>
-                            <TextBlock Classes="note" Text="Order is the prototype order. A bandpass or bandstop of order 3 is six elements."/>
+                            <TextBlock Classes="note" Text="Order is the prototype order. A bandpass or bandstop replaces each element by a resonator. An even-order inverse Chebyshev or elliptic has no ladder."/>
                         </StackPanel>
                     </Border>
 
                     <Border Classes="card">
                         <StackPanel Spacing="3">
-                            <TextBlock Classes="cardhdr" Text="Response"/>
-                            <ComboBox ItemsSource="{Binding Responses}" SelectedItem="{Binding Response}"/>
-                            <Grid ColumnDefinitions="70,*" Margin="0,3,0,0">
+                            <TextBlock Classes="cardhdr" Text="Shape"/>
+                            <Grid ColumnDefinitions="70,*">
                                 <TextBlock Classes="lbl" Text="Form"/>
                                 <ComboBox Grid.Column="1" ItemsSource="{Binding Forms}" SelectedItem="{Binding Form}"/>
                             </Grid>
@@ -189,7 +188,7 @@
         </Border>
 
         <!-- ── The ladder, drawn ─────────────────────────────────────────── -->
-        <Border Grid.Column="1" Classes="pane">
+        <Border Grid.Row="1" Grid.Column="1" Classes="pane">
             <Grid RowDefinitions="Auto,*,Auto,Auto">
                 <TextBlock Classes="panelhdr" Text="Filter network"/>
                 <Border Grid.Row="1" BorderThickness="1" CornerRadius="4" ClipToBounds="True"
@@ -228,18 +227,27 @@
             </Grid>
         </Border>
 
-        <!-- ── Response, the Data Display's own plots ────────────────────── -->
-        <Border Grid.Column="2" Classes="pane">
-            <Grid RowDefinitions="Auto,*,*">
-                <TextBlock Classes="panelhdr" Text="Response"/>
-                <ddc:PlotControl Grid.Row="1" Name="MagnitudePlotControl"
-                                 Plot="{Binding MagnitudePlot}"
-                                 Library="{Binding PlotHost.Library}"
-                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
-                <ddc:PlotControl Grid.Row="2" Name="PhasePlotControl" Margin="0,6,0,0"
-                                 Plot="{Binding PhasePlot}"
-                                 Library="{Binding PlotHost.Library}"
-                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
+        <!-- ── Response plots, side by side, with the family above them ──── -->
+        <Border Grid.Column="1" Classes="pane">
+            <Grid RowDefinitions="Auto,*">
+                <Grid ColumnDefinitions="Auto,Auto,*,Auto,72" Margin="0,0,0,6">
+                    <TextBlock Classes="lbl" Text="Response" Margin="0,0,8,0"/>
+                    <ComboBox Grid.Column="1" MinWidth="180"
+                              ItemsSource="{Binding ResponseChoices}" SelectedItem="{Binding ResponseChoice}"
+                              HorizontalAlignment="Left"/>
+                    <TextBlock Grid.Column="3" Classes="lbl" Text="dB/div" Margin="0,0,8,0"/>
+                    <TextBox Grid.Column="4" Classes="num" Text="{Binding DbPerDivText}"/>
+                </Grid>
+                <Grid Grid.Row="1" ColumnDefinitions="*,*">
+                    <ddc:PlotControl Name="MagnitudePlotControl"
+                                     Plot="{Binding MagnitudePlot}"
+                                     Library="{Binding PlotHost.Library}"
+                                     CanDeletePlot="False" CanEditPlotProperties="False"/>
+                    <ddc:PlotControl Grid.Column="1" Name="PhasePlotControl" Margin="6,0,0,0"
+                                     Plot="{Binding PhasePlot}"
+                                     Library="{Binding PlotHost.Library}"
+                                     CanDeletePlot="False" CanEditPlotProperties="False"/>
+                </Grid>
             </Grid>
         </Border>
     </Grid>

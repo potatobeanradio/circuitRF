@@ -621,6 +621,13 @@ Duplexer:D1  n1 0 n2 0 n3 0  Zant=50 Ohm   TxResponse=Chebyshev TxForm=Bandpass 
     [InlineData(FilterResponse.Chebyshev,   NetworkForm.Lowpass,  FilterFirstElement.Series,   5)]
     [InlineData(FilterResponse.Gaussian,    NetworkForm.Bandpass, FilterFirstElement.Series,   4)]
     [InlineData(FilterResponse.Bessel,      NetworkForm.Highpass, FilterFirstElement.Parallel, 3)]
+    [InlineData(FilterResponse.Elliptic,    NetworkForm.Lowpass,  FilterFirstElement.Series,   3)]
+    [InlineData(FilterResponse.Elliptic,    NetworkForm.Lowpass,  FilterFirstElement.Parallel, 5)]
+    [InlineData(FilterResponse.Elliptic,    NetworkForm.Highpass, FilterFirstElement.Series,   3)]
+    [InlineData(FilterResponse.Elliptic,    NetworkForm.Bandpass, FilterFirstElement.Series,   3)]
+    [InlineData(FilterResponse.InvChebyshev, NetworkForm.Lowpass, FilterFirstElement.Series,   3)]
+    [InlineData(FilterResponse.InvChebyshev, NetworkForm.Lowpass, FilterFirstElement.Parallel, 5)]
+    [InlineData(FilterResponse.InvChebyshev, NetworkForm.Bandstop, FilterFirstElement.Series,  3)]
     public void TheLadderAgreesWithTheIdealResponse(
         FilterResponse response, NetworkForm form, FilterFirstElement first, int order)
     {
@@ -641,14 +648,19 @@ Duplexer:D1  n1 0 n2 0 n3 0  Zant=50 Ohm   TxResponse=Chebyshev TxForm=Bandpass 
             freqs[i] = lo * Math.Pow(hi / lo, i / (freqs.Length - 1.0));
 
         var sim = Sweep(built.Realization.Cnl, freqs);
+        double worst = 0;
+        string worstAt = "";
         for (int i = 0; i < freqs.Length; i++)
         {
             double mag = ideal.At(2 * Math.PI * freqs[i]).S21.Magnitude;
             double got = sim[i][1, 0].Magnitude;
-            Assert.True(Math.Abs(got - mag) < 2e-3,
-                $"{response} {form} {first} n={order} at {freqs[i]:G4} Hz: " +
-                $"ladder |S21| = {got:G6}, ideal {mag:G6}");
+            double d = Math.Abs(got - mag);
+            if (d > worst)
+                worstAt = $"{response} {form} {first} n={order} at {freqs[i]:G4} Hz: " +
+                          $"ladder |S21| = {got:G6}, ideal {mag:G6}\n{built.Realization.Cnl}";
+            worst = Math.Max(worst, d);
         }
+        Assert.True(worst < 2e-3, worstAt);
     }
 
     [Fact]
