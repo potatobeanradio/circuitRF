@@ -338,8 +338,8 @@ public static class ComponentTypeRegistry
             IsCommon: false),
         [SymbolKind.Filter]        = new("Filter", "FLT",
             Category: ComponentCategory.System,
-            SearchTerms: ["Filter", "flt", "lowpass", "highpass", "bandpass", "Butterworth",
-                          "Chebyshev", "passband", "stopband"],
+            SearchTerms: ["Filter", "flt", "lowpass", "highpass", "bandpass", "bandstop",
+                          "Butterworth", "Chebyshev", "Gaussian", "passband", "stopband"],
             IsCommon: true),
         [SymbolKind.Atten]         = new("Attenuator", "ATT",
             Category: ComponentCategory.System,
@@ -1812,33 +1812,36 @@ public static class ComponentTypeRegistry
         (SymbolKind.Switch or SymbolKind.SwitchD, "RL") =>
             "Return loss of the closed path. 200 dB means the closed switch is exactly matched.",
         (SymbolKind.Filter, "Form") =>
-            "Lowpass, Bandpass or Highpass. The symbol strikes a line through every wave the "
-          + "network blocks, so the shape is read off the glyph. Lowpass and Highpass read Fc; "
-          + "Bandpass reads F1 and F2 and ignores it.",
+            "Lowpass, Highpass, Bandpass or Bandstop. The symbol strikes a line through every wave "
+          + "the network blocks, so the shape is read off the glyph. Lowpass and Highpass read Fc; "
+          + "Bandpass and Bandstop read F1 and F2. For a Bandstop those two edges are the STOPBAND.",
         (SymbolKind.Filter, "Response") =>
             "Which prototype family the response comes from: Butterworth (maximally flat "
           + "magnitude), Chebyshev (equiripple passband, reads Ripple), InvChebyshev (flat "
           + "passband and an equiripple stopband floor, reads Astop), Bessel (maximally flat GROUP "
-          + "DELAY — chosen for its phase, not its shape) or Elliptic (equiripple in both bands, "
-          + "reads Ripple and Astop). A parameter the family does not read is ignored, so you never "
-          + "have to clear a field to change family.",
+          + "DELAY — the Bessel-Thomson response, chosen for its phase), Gaussian (a Gaussian "
+          + "magnitude, −3.01 dB at the cutoff) or Elliptic (equiripple in both bands, reads Ripple "
+          + "and Astop). A parameter the family does not read is ignored, so you never have to "
+          + "clear a field to change family.",
         (SymbolKind.Filter, "Order") =>
-            "The PROTOTYPE order. A Bandpass transformation doubles the degree, so Order = 3 as a "
-          + "bandpass is a 6th-degree network — both conventions exist in the wild, and this one is "
-          + "the prototype's. The stopband slope of an all-pole family is 20 x Order dB per decade; "
-          + "InvChebyshev and Elliptic level off at their own floor instead.",
+            "The PROTOTYPE order. A Bandpass or Bandstop transformation doubles the degree, so "
+          + "Order = 3 as a bandpass or a bandstop is a 6th-degree network — both conventions exist "
+          + "in the wild, and this one is the prototype's. The stopband slope of an all-pole family "
+          + "is 20 x Order dB per decade; InvChebyshev and Elliptic level off at their own floor "
+          + "instead.",
         (SymbolKind.Filter, "Fc") =>
             "The cutoff, for Lowpass and Highpass. For Chebyshev and Elliptic it is the RIPPLE "
-          + "bandwidth edge (where the response leaves the ripple band), for Butterworth the 3.01 dB "
-          + "point, for InvChebyshev the STOPBAND edge — where Astop is first met — and for Bessel "
-          + "the reciprocal of the group delay. Ignored when Form is Bandpass.",
+          + "bandwidth edge (where the response leaves the ripple band), for Butterworth and "
+          + "Gaussian the 3.01 dB point, for InvChebyshev the STOPBAND edge — where Astop is first "
+          + "met — and for Bessel the reciprocal of the group delay. Ignored for Bandpass and "
+          + "Bandstop.",
         (SymbolKind.Filter, "F1") =>
-            "Lower band edge, for Bandpass. The band centre is the GEOMETRIC mean of F1 and F2 and "
-          + "the response is geometrically symmetric about it, not arithmetically. Ignored for "
-          + "Lowpass and Highpass.",
+            "Lower edge, for Bandpass and Bandstop. On a Bandpass it is the passband edge; on a "
+          + "Bandstop it is the stopband edge. The centre is the GEOMETRIC mean of F1 and F2 and "
+          + "the response is geometrically symmetric about it. Ignored for Lowpass and Highpass.",
         (SymbolKind.Filter, "F2") =>
-            "Upper band edge, for Bandpass. Read with F1 — the two set both the centre and the "
-          + "width. Ignored for Lowpass and Highpass.",
+            "Upper edge, for Bandpass and Bandstop. Read with F1 — the two set both the centre and "
+          + "the width. Ignored for Lowpass and Highpass.",
         (SymbolKind.Filter, "Ripple") =>
             "Passband ripple, in dB, for Chebyshev and Elliptic. The passband swings between 0 and "
           + "-Ripple exactly this many times, which is what the order buys. Ignored by the other "
@@ -3730,10 +3733,11 @@ public static class ComponentTypeRegistry
     private static readonly string[] FilterResponseOptions =
         [nameof(FilterResponse.Butterworth), nameof(FilterResponse.Chebyshev),
          nameof(FilterResponse.InvChebyshev), nameof(FilterResponse.Bessel),
-         nameof(FilterResponse.Elliptic)];
+         nameof(FilterResponse.Gaussian), nameof(FilterResponse.Elliptic)];
 
     private static readonly string[] NetworkFormOptions =
-        [nameof(NetworkForm.Lowpass), nameof(NetworkForm.Highpass), nameof(NetworkForm.Bandpass)];
+        [nameof(NetworkForm.Lowpass), nameof(NetworkForm.Highpass),
+         nameof(NetworkForm.Bandpass), nameof(NetworkForm.Bandstop)];
 
     private static readonly string[] CirculatorDirectionOptions =
         [nameof(CirculatorDirection.CW), nameof(CirculatorDirection.CCW)];

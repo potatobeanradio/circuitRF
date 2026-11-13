@@ -1,0 +1,121 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:flt="using:CircuitRF.Ui.Filters"
+        xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
+        x:Class="CircuitRF.Ui.Views.Filters.FilterDesignerWindow"
+        x:DataType="flt:FilterDesignerViewModel"
+        Title="Filter Designer"
+        Width="1100" Height="720"
+        MinWidth="860" MinHeight="560"
+        CanResize="True">
+    <Grid ColumnDefinitions="300,*" Margin="10">
+        <ScrollViewer>
+            <StackPanel Spacing="8" Margin="0,0,10,0">
+                <TextBlock Text="Impedances" FontWeight="SemiBold"/>
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                    <StackPanel>
+                        <TextBlock Text="Source" FontSize="11"/>
+                        <TextBox Text="{Binding SourceText}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="Load" FontSize="11"/>
+                        <TextBox Text="{Binding LoadText}"/>
+                    </StackPanel>
+                </Grid>
+                <TextBlock Text="First element" FontSize="11"/>
+                <ComboBox ItemsSource="{Binding FirstElements}" SelectedItem="{Binding First}"/>
+
+                <TextBlock Text="Order (N)" FontSize="11"/>
+                <TextBox Text="{Binding OrderText}" Width="80" HorizontalAlignment="Left"/>
+
+                <TextBlock Text="Response" FontWeight="SemiBold"/>
+                <ComboBox ItemsSource="{Binding Responses}" SelectedItem="{Binding Response}"/>
+                <TextBlock Text="Form" FontSize="11"/>
+                <ComboBox ItemsSource="{Binding Forms}" SelectedItem="{Binding Form}"/>
+
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                    <StackPanel>
+                        <TextBlock Text="Ap (dB)" Foreground="{DynamicResource CrfAccentBrush}" FontSize="11"/>
+                        <TextBox Text="{Binding ApText}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="As (dB)" FontSize="11"/>
+                        <TextBox Text="{Binding AsText}"/>
+                    </StackPanel>
+                </Grid>
+
+                <TextBlock Text="Edges" FontWeight="SemiBold"/>
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="6" RowDefinitions="Auto,Auto,Auto,Auto">
+                    <TextBlock Text="{Binding LabelA}" FontSize="11"/>
+                    <TextBox Grid.Column="1" Text="{Binding FaText}"/>
+                    <TextBlock Grid.Row="1" Text="{Binding LabelB}" FontSize="11"/>
+                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding FbText}"/>
+                    <TextBlock Grid.Row="2" Text="{Binding LabelC}" FontSize="11" IsVisible="{Binding ShowC}"/>
+                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding FcText}" IsVisible="{Binding ShowC}"/>
+                    <TextBlock Grid.Row="3" Text="{Binding LabelD}" FontSize="11" IsVisible="{Binding ShowD}"/>
+                    <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding FdText}" IsVisible="{Binding ShowD}"/>
+                </Grid>
+                <ComboBox ItemsSource="{Binding Units}" SelectedItem="{Binding Unit}" HorizontalAlignment="Left"/>
+
+                <TextBlock Text="Values" FontWeight="SemiBold"/>
+                <ComboBox ItemsSource="{Binding SeriesKinds}" SelectedItem="{Binding Series}"
+                          ToolTip.Tip="Exact theoretical values, or the nearest IEC preferred number."/>
+                <Button Content="Load library series" Command="{Binding LoadLibrariesCommand}"
+                        HorizontalAlignment="Left"
+                        ToolTip.Tip="Index the workspace's vendor libraries. A selected series replaces each element with the nearest part."/>
+                <TextBlock Text="Inductors" FontSize="11" IsVisible="{Binding LibraryAvailable}"/>
+                <ComboBox ItemsSource="{Binding InductorSeries}" SelectedItem="{Binding InductorChoice}"
+                          DisplayMemberBinding="{Binding Label}" IsVisible="{Binding LibraryAvailable}"/>
+                <TextBlock Text="Capacitors" FontSize="11" IsVisible="{Binding LibraryAvailable}"/>
+                <ComboBox ItemsSource="{Binding CapacitorSeries}" SelectedItem="{Binding CapacitorChoice}"
+                          DisplayMemberBinding="{Binding Label}" IsVisible="{Binding LibraryAvailable}"/>
+
+                <TextBlock Text="dB / division" FontSize="11"/>
+                <TextBox Text="{Binding DbPerDivText}" Width="80" HorizontalAlignment="Left"/>
+
+                <TextBlock Text="Design information" FontWeight="SemiBold"/>
+                <TextBlock Text="{Binding DesignInfo}" TextWrapping="Wrap" FontFamily="Consolas,monospace"/>
+                <TextBlock Text="{Binding Status}" TextWrapping="Wrap"
+                           Foreground="{DynamicResource CrfWarningBrush}"/>
+
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Design" Command="{Binding DesignCommand}"/>
+                    <Button Content="Redraw" Command="{Binding DesignCommand}"/>
+                    <Button Content="Apply to Filter" Click="OnApply"
+                            IsVisible="{Binding CanApply}"/>
+                    <Button Content="Save netlist…" Click="OnSave"/>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+
+        <DockPanel Grid.Column="1">
+            <Border DockPanel.Dock="Bottom" MaxHeight="220" Margin="0,8,0,0">
+                <ScrollViewer>
+                    <ItemsControl ItemsSource="{Binding Elements}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="flt:FilterElementRow">
+                                <Grid ColumnDefinitions="70,110,110,110,*" Margin="0,1">
+                                    <TextBlock Text="{Binding Name}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Kind}"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Exact}"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding Used}"/>
+                                    <TextBlock Grid.Column="4" Text="{Binding Part}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Border>
+            <Grid RowDefinitions="*,*">
+                <ddc:PlotControl Name="MagnitudePlotControl"
+                                 Plot="{Binding MagnitudePlot}"
+                                 Library="{Binding PlotHost.Library}"
+                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
+                <ddc:PlotControl Name="PhasePlotControl" Grid.Row="1" Margin="0,6,0,0"
+                                 Plot="{Binding PhasePlot}"
+                                 Library="{Binding PlotHost.Library}"
+                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
+            </Grid>
+        </DockPanel>
+    </Grid>
+</Window>

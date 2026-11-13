@@ -586,6 +586,71 @@ Duplexer:D1  n1 0 n2 0 n3 0  Zant=50 Ohm   TxResponse=Chebyshev TxForm=Bandpass 
 
     // ══ Refusals ══════════════════════════════════════════════════════════════
 
+    /// <summary>
+    /// The ladder the assistant writes, simulated, is the ideal response. The expectation is
+    /// <see cref="FilterNetwork"/>, which is the rational S and not the continued fraction.
+    /// </summary>
+    [Fact]
+    public void AnEvenChebyshevLadderKeepsTheFamilysOwnLoad()
+    {
+        var built = FilterLadder.Synthesize(
+            FilterResponse.Chebyshev, NetworkForm.Lowpass, 2, 1e9, 0, 0, 0.5, 50,
+            FilterFirstElement.Series);
+        Assert.True(built.Ok, built.Refusal?.Message);
+        Assert.NotEqual(50, built.Realization!.LoadOhms, 1);
+
+        var ideal = FilterNetwork.Create(
+            FilterResponse.Chebyshev, NetworkForm.Lowpass, 2, 1e9, 0, 0, 0.5, 40, 0);
+        double[] freqs = [2e8, 5e8, 1e9, 2e9];
+        var sim = Sweep(built.Realization.Cnl, freqs);
+        for (int i = 0; i < freqs.Length; i++)
+        {
+            double mag = ideal.At(2 * Math.PI * freqs[i]).S21.Magnitude;
+            Assert.True(Math.Abs(sim[i][1, 0].Magnitude - mag) < 2e-3,
+                $"at {freqs[i]:G4}: ladder {sim[i][1, 0].Magnitude:G6}, ideal {mag:G6}, " +
+                $"load {built.Realization.LoadOhms:G6}");
+        }
+    }
+
+    [Theory]
+    [InlineData(FilterResponse.Butterworth, NetworkForm.Lowpass,  FilterFirstElement.Series,   5)]
+    [InlineData(FilterResponse.Butterworth, NetworkForm.Lowpass,  FilterFirstElement.Parallel, 4)]
+    [InlineData(FilterResponse.Butterworth, NetworkForm.Highpass, FilterFirstElement.Series,   3)]
+    [InlineData(FilterResponse.Butterworth, NetworkForm.Bandpass, FilterFirstElement.Series,   3)]
+    [InlineData(FilterResponse.Butterworth, NetworkForm.Bandstop, FilterFirstElement.Series,   3)]
+    [InlineData(FilterResponse.Chebyshev,   NetworkForm.Lowpass,  FilterFirstElement.Series,   5)]
+    [InlineData(FilterResponse.Gaussian,    NetworkForm.Bandpass, FilterFirstElement.Series,   4)]
+    [InlineData(FilterResponse.Bessel,      NetworkForm.Highpass, FilterFirstElement.Parallel, 3)]
+    public void TheLadderAgreesWithTheIdealResponse(
+        FilterResponse response, NetworkForm form, FilterFirstElement first, int order)
+    {
+        const double fc = 1e9, f1 = 0.8e9, f2 = 1.25e9, ripple = 0.1;
+        var built = FilterLadder.Synthesize(response, form, order, fc, f1, f2, ripple, 50,
+                                             first);
+        Assert.True(built.Ok, built.Refusal?.Message);
+        Assert.Equal(50, built.Realization!.LoadOhms, 3);
+
+        var ideal = form is NetworkForm.Bandpass or NetworkForm.Bandstop
+            ? FilterNetwork.Create(response, form, order, fc, f1, f2, ripple, 40, 0)
+            : FilterNetwork.Create(response, form, order, fc, f1, f2, ripple, 40, 0);
+
+        double lo = form == NetworkForm.Highpass ? fc / 20 : form == NetworkForm.Lowpass ? fc / 50 : f1 / 5;
+        double hi = form == NetworkForm.Lowpass ? fc * 20 : form == NetworkForm.Highpass ? fc * 30 : f2 * 5;
+        var freqs = new double[41];
+        for (int i = 0; i < freqs.Length; i++)
+            freqs[i] = lo * Math.Pow(hi / lo, i / (freqs.Length - 1.0));
+
+        var sim = Sweep(built.Realization.Cnl, freqs);
+        for (int i = 0; i < freqs.Length; i++)
+        {
+            double mag = ideal.At(2 * Math.PI * freqs[i]).S21.Magnitude;
+            double got = sim[i][1, 0].Magnitude;
+            Assert.True(Math.Abs(got - mag) < 2e-3,
+                $"{response} {form} {first} n={order} at {freqs[i]:G4} Hz: " +
+                $"ladder |S21| = {got:G6}, ideal {mag:G6}");
+        }
+    }
+
     [Fact]
     public void AFilterWithTheWrongNetCountIsRefusedByName()
     {

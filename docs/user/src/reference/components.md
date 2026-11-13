@@ -2248,18 +2248,22 @@ In depth: [System Components › 180° Hybrid](system-components.html#hybrid180)
 
 {{symbol: filter}}
 
-A two-port filter synthesised from a prototype — Butterworth, Chebyshev, inverse Chebyshev, Bessel
-or elliptic, as lowpass, bandpass or highpass. **Its symbol is the [Match](#match) symbol** — the
-same picture, not a related one. Impedance matching is a form of filtering, the two are built out of
-the same idea, and the library says so. The three stacked waves read as a frequency axis with the
-highest at the top, and a slash is struck through every wave the network blocks, following the
-`Form` parameter:
+A two-port filter synthesised from a prototype — Butterworth, Chebyshev, inverse Chebyshev, Bessel,
+Gaussian or elliptic, as lowpass, highpass, bandpass or bandstop. **Its symbol is the [Match](#match)
+symbol** — the same picture, not a related one. Impedance matching is a form of filtering, the two
+are built out of the same idea, and the library says so. The three stacked waves read as a frequency
+axis with the highest at the top, and a slash is struck through every wave the network blocks,
+following the `Form` parameter:
 
 | `Form` | Struck | Passes |
 |---|---|---|
 | `Lowpass` | the top two | the lowest |
 | `Bandpass` | the top and the bottom | the middle |
 | `Highpass` | the bottom two | the highest |
+| `Bandstop` | the middle | the lowest and the highest |
+
+The [Filter Designer](filter-designer.html) builds the LC ladder for the all-pole families and can
+snap each value onto a standard series or a library part. This block stays the ideal response.
 
 Tell a filter from a matching network by its type label and its instance name — `FLT1` against `MN1`
 — the same way the five FET laws, which also share one glyph, are told apart. `Order` is the

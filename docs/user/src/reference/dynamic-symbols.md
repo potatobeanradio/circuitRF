@@ -140,6 +140,7 @@ shape is read straight off the schematic:
 | `Lowpass` | the high wave struck through | low frequencies |
 | `Highpass` | the low wave struck through | high frequencies |
 | `Bandpass` | the outer waves struck through | the band between `F1` and `F2` |
+| `Bandstop` | the middle wave struck through | everything outside the stopband `F1` to `F2` |
 
 Both pins stay where they are, so changing `Form` never disturbs your wiring. Because the glyph
 already says which shape the network is, `Form` is **not** captioned beside the symbol — it would

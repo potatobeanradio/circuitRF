@@ -192,6 +192,15 @@
                      the label come to disagree. The `Design` blob is filtered out of the generic rows
                      above (IsMatchPanelParameter); the ECHO rows stay, because they are what a
                      user reads on the schematic page itself. -->
+                <StackPanel IsVisible="{Binding IsFilter}" Margin="6,4" Spacing="4">
+                    <TextBlock TextWrapping="Wrap" FontSize="11"
+                               Text="The Filter Assistant draws this response and the LC ladder that realises it, including a bandstop, and can snap each element to a standard series or a library part."/>
+                    <Button Content="Open Filter Designer…"
+                            HorizontalAlignment="Right"
+                            FontSize="11" Padding="8,3"
+                            Command="{Binding OpenFilterDesignerCommand}"/>
+                </StackPanel>
+
                 <StackPanel IsVisible="{Binding IsMatch}" Margin="6,4" Spacing="4">
                     <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="Band" FontSize="11"/>

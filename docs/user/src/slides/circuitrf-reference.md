@@ -106,6 +106,12 @@ Drawing circuits, the component library, and synthesis.
 
 {{ui: cv-editor}}
 
+## The Filter Designer
+
+- A specification — form, family, order, the mask edges, source and load — and the LC ladder that realises it.
+- Lowpass, highpass, bandpass and **bandstop**. Butterworth, Chebyshev, Bessel and Gaussian as ladders; the ideal Filter keeps inverse Chebyshev and elliptic.
+- Exact values, an IEC series, or the nearest part in a library series. The curves are the Data Display's own plots.
+
 ## The Match component
 
 - **Direct synthesis** of a bandpass matching network that absorbs both terminations — closed form, no optimiser.

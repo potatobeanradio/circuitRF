@@ -448,9 +448,11 @@ Parameters: {{anchor: components#duplexer|Components › Duplexer}}.
 {{symbol: filter}}
 
 A two-port filter synthesised from a prototype: `Response` picks the family — **Butterworth**,
-**Chebyshev**, **InvChebyshev**, **Bessel** or **Elliptic** — and `Form` picks Lowpass, Bandpass or
-Highpass. A parameter the chosen family does not read is ignored rather than refused, so changing
-family never means clearing a field first.
+**Chebyshev**, **InvChebyshev**, **Bessel**, **Gaussian** or **Elliptic** — and `Form` picks
+Lowpass, Highpass, Bandpass or Bandstop. A parameter the chosen family does not read is ignored
+rather than refused, so changing family never means clearing a field first. The
+[Filter Designer](filter-designer.html) builds the LC ladder for the all-pole families; this block
+stays the rational response, which is what an arbitrary impedance pair and a complex port need.
 
 <div class="callout note">
 <span class="label">It wears the Match component's symbol, and that is deliberate</span>
@@ -462,9 +464,9 @@ you tell the five FET laws apart: by the <b>type label</b> and the <b>instance n
 band follows <code>Form</code> — see <a href="dynamic-symbols.html#form">Dynamic symbols</a>.</p>
 </div>
 
-**`Order` is the PROTOTYPE order.** The bandpass transformation doubles the degree, so `Order = 3`
-as a bandpass is a **6th-degree network**. Both conventions exist in the wild; this one is the
-prototype's. For the three all-pole families the far stopband falls at 20 × `Order` dB per decade;
+**`Order` is the PROTOTYPE order.** The bandpass and bandstop transformations double the degree, so
+`Order = 3` as a bandpass or a bandstop is a **6th-degree network**. Both conventions exist in the
+wild; this one is the prototype's. On a bandstop, `F1` and `F2` are the stopband edges. For the three all-pole families the far stopband falls at 20 × `Order` dB per decade;
 InvChebyshev and Elliptic put transmission zeros on the jω axis instead, which is what buys their
 sharp transition and why their stopbands **level off** at `Astop` rather than continuing to fall.
 

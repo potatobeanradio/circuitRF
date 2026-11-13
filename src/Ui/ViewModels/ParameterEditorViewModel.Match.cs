@@ -61,6 +61,19 @@ public partial class ParameterEditorViewModel
     /// </summary>
     public event Action<EditableComponent>? OpenMatchDesignerRequested;
 
+    /// <summary>True when the selected component is a Filter — gates the assistant button.</summary>
+    public bool IsFilter => _target?.Symbol == SymbolKind.Filter;
+
+    /// <summary>Raised by <see cref="OpenFilterDesignerCommand"/>. The view opens the window.</summary>
+    public event Action<EditableComponent>? OpenFilterDesignerRequested;
+
+    /// <summary>Opens the Filter Designer for the selected instance.</summary>
+    [RelayCommand]
+    private void OpenFilterDesigner()
+    {
+        if (_target is { Symbol: SymbolKind.Filter }) OpenFilterDesignerRequested?.Invoke(_target);
+    }
+
     /// <summary>Opens the Match Designer for the selected instance.</summary>
     [RelayCommand]
     private void OpenMatchDesigner()

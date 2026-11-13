@@ -592,9 +592,11 @@ deliberately no hidden length inside the component.</p>
 	</text></svg></span>
 </span><figcaption>Filter</figcaption></figure>
 <p>A two-port filter synthesised from a prototype: <code>Response</code> picks the family — <strong>Butterworth</strong>,
-<strong>Chebyshev</strong>, <strong>InvChebyshev</strong>, <strong>Bessel</strong> or <strong>Elliptic</strong> — and <code>Form</code> picks Lowpass, Bandpass or
-Highpass. A parameter the chosen family does not read is ignored rather than refused, so changing
-family never means clearing a field first.</p>
+<strong>Chebyshev</strong>, <strong>InvChebyshev</strong>, <strong>Bessel</strong>, <strong>Gaussian</strong> or <strong>Elliptic</strong> — and <code>Form</code> picks
+Lowpass, Highpass, Bandpass or Bandstop. A parameter the chosen family does not read is ignored
+rather than refused, so changing family never means clearing a field first. The
+<a href="filter-designer.html">Filter Designer</a> builds the LC ladder for the all-pole families; this block
+stays the rational response, which is what an arbitrary impedance pair and a complex port need.</p>
 <div class="callout note">
 <span class="label">It wears the Match component's symbol, and that is deliberate</span>
 <p>The Filter and the <a href="match.html">Match</a> network share <b>one glyph</b> — the same
@@ -604,9 +606,9 @@ you tell the five FET laws apart: by the <b>type label</b> and the <b>instance n
 <code>FLT1</code> against <code>MN1</code>. The stack of waves with a slash through each blocked
 band follows <code>Form</code> — see <a href="dynamic-symbols.html#form">Dynamic symbols</a>.</p>
 </div>
-<p><strong><code>Order</code> is the PROTOTYPE order.</strong> The bandpass transformation doubles the degree, so <code>Order = 3</code>
-as a bandpass is a <strong>6th-degree network</strong>. Both conventions exist in the wild; this one is the
-prototype's. For the three all-pole families the far stopband falls at 20 × <code>Order</code> dB per decade;
+<p><strong><code>Order</code> is the PROTOTYPE order.</strong> The bandpass and bandstop transformations double the degree, so
+<code>Order = 3</code> as a bandpass or a bandstop is a <strong>6th-degree network</strong>. Both conventions exist in the
+wild; this one is the prototype's. On a bandstop, <code>F1</code> and <code>F2</code> are the stopband edges. For the three all-pole families the far stopband falls at 20 × <code>Order</code> dB per decade;
 InvChebyshev and Elliptic put transmission zeros on the jω axis instead, which is what buys their
 sharp transition and why their stopbands <strong>level off</strong> at <code>Astop</code> rather than continuing to fall.</p>
 <p>How much that selectivity is worth, at order 5 with 0.1 dB of passband ripple and a 60 dB floor: the

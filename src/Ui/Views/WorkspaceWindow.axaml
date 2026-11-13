@@ -537,6 +537,7 @@
                     <NativeMenu>
                         <NativeMenuItem Header="harmonicaRF" Command="{Binding NewHarmonicaCommand}"/>
                         <NativeMenuItem Header="Match Designer" Command="{Binding NewMatchDesignerCommand}"/>
+                        <NativeMenuItem Header="Filter Designer" Command="{Binding NewFilterDesignerCommand}"/>
                         <!-- The Signal Designer on no MOD_Source: design or read a signal, export it. Mirrored below. -->
                         <NativeMenuItem Header="Signal Designer" Command="{Binding NewSignalDesignerCommand}"/>
                         <!-- railRF (railrf.md §11.4). Needs NO workspace to open, for harmonicaRF's
@@ -1604,6 +1605,11 @@
                           Command="{Binding NewMatchDesignerCommand}"
                           ToolTip.Tip="Synthesise an impedance-matching network from two terminations and a band, then flatten it to a cell. Opens with or without a workspace.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="TransitConnectionVariant" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Filter Designer"
+                          Command="{Binding NewFilterDesignerCommand}"
+                          ToolTip.Tip="Synthesise a lowpass, highpass, bandpass or bandstop ladder and see it on the Data Display plots. Opens with or without a workspace.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="Waveform" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <!-- The Signal Designer on no MOD_Source — hand-mirrored with the macOS NativeMenu above. -->
                 <MenuItem Header="Si_gnal Designer"

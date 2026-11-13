@@ -10397,6 +10397,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         Views.Match.MatchDesignerWindow.ShowStandalone(CurrentWorkspaceRoot, ResolveOwner(null));
 
     /// <summary>
+    /// Tools ▸ Filter Designer. No schematic is required: the assistant synthesises from the
+    /// specification. A workspace, when one is open, is where Load library series looks.
+    /// </summary>
+    [RelayCommand]
+    private void NewFilterDesigner() =>
+        Views.Filters.FilterDesignerWindow.ShowStandalone(CurrentWorkspaceRoot, ResolveOwner(null));
+
+    /// <summary>
     /// Tools ▸ Signal Designer: the Designer on no MOD_Source, to design a signal — or read an I/Q file — preview it and
     /// export it. Needs no workspace; opens unowned and cascaded as the standalone Match Designer does.
     /// </summary>

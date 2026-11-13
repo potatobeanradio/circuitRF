@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — The Filter Designer</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/filter-designer.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="index.html">Reference Guide</a>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Filter Designer</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="match.html" title="Previous: The Match Component"><span class="arrow">‹</span><span class="name">The Match Component</span></a>
+      <a class="next" href="simulations.html" title="Next: Simulations"><span class="name">Simulations</span><span class="arrow">›</span></a>
+    </nav>
+  </div>
+
+  <h1>The Filter Designer</h1>
+  <p class="lede">An LC ladder from a filter specification, drawn on the Data Display&#39;s own plots.</p>
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#what">What it is</a></li>
+<li><a href="#spec">The specification</a></li>
+<li><a href="#mask">The plot</a></li>
+<li><a href="#values">Exact, standard, library</a></li>
+<li><a href="#place">Where the result goes</a></li>
+<li><a href="#headless">The same thing from the command line</a></li>
+</ol>
+</nav>
+<h2 id="what">What it is</h2>
+<p><strong>Filter Designer</strong> (Tools ▸ Filter Designer) synthesises a doubly terminated LC ladder from a
+prototype and shows the response on the same plots a Data Display uses. Open it on a placed
+<a href="components.html#filter">Filter</a> from that component's properties, and <strong>Apply to Filter</strong> writes
+the specification back onto the ideal block.</p>
+<p>The ideal Filter and the ladder answer different questions. The block is a rational scattering
+matrix, so its two port impedances are independent and either may be complex. A ladder cannot do
+that: its load is the ratio the family produces (1 for Butterworth, a particular ratio for an
+even-order Chebyshev). When the two disagree, the window says what the ladder's load is and Apply
+keeps the impedances you typed on the block.</p>
+<p>It is direct synthesis. There is no optimiser in the window. A mask the snapped ladder misses is
+the existing optimizer's problem, on an E-series or on a part.</p>
+<h2 id="spec">The specification</h2>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>What it sets</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Source, Load</td>
+<td>The two resistances, in ohms.</td>
+</tr>
+<tr>
+<td>First element</td>
+<td>Series or parallel. Parallel starts the ladder on a shunt arm.</td>
+</tr>
+<tr>
+<td>Order</td>
+<td>The <strong>prototype</strong> order. A bandpass or bandstop of order 3 is six elements.</td>
+</tr>
+<tr>
+<td>Response</td>
+<td>Butterworth (maximally flat), Chebyshev, inverse Chebyshev, Bessel (Bessel-Thomson), Gaussian, elliptic.</td>
+</tr>
+<tr>
+<td>Form</td>
+<td>Lowpass, highpass, bandpass, bandstop.</td>
+</tr>
+<tr>
+<td>Ap, As</td>
+<td>Passband and stopband figures, in dB. Chebyshev and elliptic read Ap as the ripple. Inverse Chebyshev and elliptic read As as the stopband floor. The others ignore them for the synthesis and the mask still draws them.</td>
+</tr>
+<tr>
+<td>Edges</td>
+<td>Two for lowpass and highpass (Fp and Fs), four for bandpass (Fs1, Fp1, Fp2, Fs2) and bandstop (Fp1, Fs1, Fs2, Fp2). The unit sits on the row.</td>
+</tr>
+</tbody>
+</table>
+<p>The cutoff the ladder is built at is Fp for a lowpass or highpass, the passband edges for a
+bandpass, and the stopband edges for a bandstop. Fs on a lowpass or highpass is the mask: where
+you want the stopband floor, not a second cutoff.</p>
+<p>Gaussian is scaled so the cutoff is the −3.01 dB point at every order. Bessel is chosen for its
+group delay, which is the second plot.</p>
+<p>Inverse Chebyshev and elliptic are drawn as the ideal response. Their ladders have transmission
+zeros, so an arm is a tank rather than one element, and that extraction is not in this designer.
+The window says so.</p>
+<h2 id="mask">The plot</h2>
+<p>Both plots are Data Display plots. The magnitude plot carries the ideal |S21|, the ladder's |S21|,
+and the ladder's |S11| on the right axis. The second plot is the ladder's phase and its group
+delay, in the same nanoseconds the rest of the application uses. <strong>dB / division</strong> is the
+magnitude plot's vertical grid.</p>
+<p><strong>Design</strong> and <strong>Redraw</strong> both rebuild the ladder and the curves. The synthesis is closed form, so
+there is no separate long step to wait for.</p>
+<p>Design information reports the order, the ladder's load, and the minimum insertion loss in the
+passband — 0 for a lossless ladder that touches 0 dB, and the passband's worst-case best
+transmission after a snap.</p>
+<h2 id="values">Exact, standard, library</h2>
+<p>The realization table has the theoretical value and the value that is written.</p>
+<table>
+<thead>
+<tr>
+<th>Choice</th>
+<th>What each element becomes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Exact</td>
+<td>The continued-fraction value, in henries or farads.</td>
+</tr>
+<tr>
+<td>E6, E12, E24, E96</td>
+<td>The nearest IEC 60063 preferred number, nearest by ratio — the same snap the Smith chart and the optimizer use.</td>
+</tr>
+<tr>
+<td>A library series</td>
+<td><strong>Load library series</strong> indexes the workspace's vendor libraries. Pick one inductor series and one capacitor series. Each element becomes the nearest stated value in that series, and the row names the part.</td>
+</tr>
+</tbody>
+</table>
+<p>A workspace with no vendor library leaves the series lists empty and says so. It does not fall
+back to an E-series. The power-integrity part library is a different drawer and is not read here.</p>
+<h2 id="place">Where the result goes</h2>
+<p><strong>Apply to Filter</strong>, when the window was opened on a placed Filter, writes Response, Form, Order,
+the cutoff, Ap, As and the two impedances onto that instance. The snap is not applied to the
+block, because the block has no elements.</p>
+<p><strong>Save netlist…</strong> writes the ladder as a <code>.cnl</code>: two terminations and the inductors and capacitors
+between them, at the values the table shows. That file is what <code>sparam</code> simulates, and it is the
+same netlist the plot was drawn from.</p>
+<h2 id="headless">The same thing from the command line</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter --form bandstop --response Butterworth --order 3 --f1 1GHz --f2 2GHz --series e24 -o filter.cnl</code></pre>
+<p>The verb calls the same synthesis the window calls. The options are in <a href="cli.html#filter">CLI › filter</a>.</p>
+
+<nav class="page-nav">
+  <a class="prev" href="match.html"><span class="dir">Previous</span><span class="name">The Match Component</span></a>
+  <a class="next" href="simulations.html"><span class="dir">Next</span><span class="name">Simulations</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

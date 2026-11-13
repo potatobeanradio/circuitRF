@@ -45,6 +45,7 @@ reference/sdd.html                 | The Symbolically-Defined Device: writing a 
 reference/nonlinear-capacitor.html | C(V) as a Taylor series, and the C–V Editor that fits one.
 reference/veriloga.html            | Running a compact model you supply, from Verilog-A source or a compiled artefact.
 reference/match.html               | Direct synthesis of a bandpass matching network that absorbs both terminations.
+reference/filter-designer.html     | An LC ladder from a filter specification: lowpass, highpass, bandpass and bandstop, on the Data Display's own plots.
 
 == Simulate
 reference/simulations.html  | DC, S-parameters, harmonic balance, parametric sweeps, loadpull and pursuit.

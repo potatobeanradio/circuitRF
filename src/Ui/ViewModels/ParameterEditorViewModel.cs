@@ -1080,6 +1080,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         if (comp.Symbol == SymbolKind.SpiceModel) RefreshSpiceModelProperties();
         if (comp.Symbol == SymbolKind.WBond) RefreshWBondProperties();
         RefreshMatchProperties();
+        OnPropertyChanged(nameof(IsFilter));
         RefreshVerilogAPanel();
         SyncVerilogAFromModelFile();
         SyncComposedFetSymbol();
