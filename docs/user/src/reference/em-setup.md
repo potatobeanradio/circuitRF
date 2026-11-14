@@ -429,8 +429,11 @@ run's return: the ground plane on Planar, a sheet to the return in 3D. With a ba
 reference terminal goes on its own port's node in the netlist. A pin can instead name another pin of the same instance as
 its reference (**Pins** ▸ the pin's **Reference**, `"Pins": { "B": { "Reference": "E" } }`). The port is then built
 between the two pins' faces, and the reference pin carries no port of its own. That needs the two faces to face each other
-across one axis on one layer; where they do not, the port is refused and the pin builds against ground. Several pins may
-share one reference where their gaps do not overlap across it. `"Common"`, one node shared by all of an instance's ports,
+across one axis on one layer. Where they do not, or the reference pin has nothing at its face, or two gaps would overlap
+on it, the pin falls back to ground: its port is built against the run's ground, as `"Reference": "Ground"` builds it, and
+the run, **Check**, `check` and `explain` warn naming the pin, the reference it asked for and why. A reference pin that no
+port returns through any more takes a port of its own, so the instance keeps a port on every routed pin and the
+co-simulation netlist places it. Several pins may share one reference where their gaps do not overlap across it. `"Common"`, one node shared by all of an instance's ports,
 is refused: neither solver has a construction for it. A pin unticked under **Port** (`"Port": false`) is only the return
 of other pins' ports.
 
@@ -451,7 +454,13 @@ in the layout.
 A pin that is only a return is reported as one; a pin left out of the run is reported with why: its layer is not an
 analysis level, its face is outside the **Solve region**, two separate conductors meet it, or the pin's name is at more
 than one face (a multi-finger device, refused). A floating pin is a warning because the model then sees an open there,
-which is easy to miss.
+which is easy to miss. So is a pin unticked under **Port** that no port returns through.
+
+A routed pin whose conductor, followed through the vias between the analysis levels, reaches no other port and no ground
+is reported as **not connected**, with a warning naming the pin and its port: the port drives an isolated piece of metal
+and reads an open, |S| = 0 dB. The usual cause is a via that lands on no metal, such as a via stack that misses the finger it
+was drawn to reach; the run's mesh note counts those vias as dropped. An instance that ends up with no port at all is
+missing from the co-simulation netlist, and the run says so by name.
 
 **Each cut face is an Uncalibrated Port** on Planar: driven against the ground plane at the face and not de-embedded, so
 the launch is in the result. [The Uncalibrated Port](mom-engine.html#uncalibrated-port) says what that costs and why
@@ -459,7 +468,22 @@ there is no other choice at a device's pins. In 3D each is a lumped sheet from t
 height is in the result ([A cell instance cut out](em-3d.html#cell-instance-ports)).
 
 **Ports are named by path and pin**, `X1.G` or `X1/Q3.G`, in the port list, the run's notes and the Touchstone header
-(`! Port[3] = X1.G`), numbered after the drawn ports and the gap ports. The layout marks each cut instance while the
+(`! Port[3] = X1.G`), numbered after the drawn ports and the gap ports. A drawn port is named by its label's text, on
+Planar and in 3D alike. The header also carries one line per port saying what it is, and one saying whether the file has a
+DC row:
+
+```
+! Port 1 = P01  in    net=rf_in  ref=ground  uncalibrated
+! Port 3 = P03  X1.G  net=g      ref=ground  uncalibrated
+! Port 4 = P04  X1.D  net=d      ref=X1.S    uncalibrated
+! DC: none, the lowest row is 1 GHz; a circuit's DC solve through this file takes that row as DC
+```
+
+Each port line gives the port's number and a fixed-width name, what it is (a drawn label, a part, or a cut instance's
+pin), the net the layout's schematic puts on it (`?` where the schematic does not say, as for a nested instance), what it
+returns through (the run's ground, a pin of the same instance, or in 3D the conductor its sheet lands on), and whether its
+launch was de-embedded. A 3D lumped sheet reads `uncalibrated`, since its launch is in the result, and a wave port
+`calibrated`. The `Port[N] = name` lines and each port's own line are written as before. The layout marks each cut instance while the
 `.cem` is open: a hatched region for what leaves, an arrow at each cut face, a glyph for each pin's class and a cross with
 its reason for a pin or instance left out.
 
@@ -1017,7 +1041,8 @@ models each conductor's resistance, a perfect conductor as a short and a lumped 
 open; it does not model leakage through a dielectric. A series DC block is therefore an open at 0 Hz and a choke a
 short, which is what a circuit's bias point needs. It meshes the conductors with Gmsh, so it needs Gmsh even for an
 openEMS run. Without Gmsh the run still succeeds, the file has no 0 Hz row and the run's warning says why: a circuit's
-DC solve through that file then uses its lowest frequency. The `.sNp`'s header says which it was (`circuitRF-EM 3D DC
+DC solve through that file then uses its lowest frequency, and says so when it runs (a DC analysis, or the bias point of an
+S-parameter, harmonic-balance or envelope run), naming the block and that frequency. The `.sNp`'s header says which it was (`circuitRF-EM 3D DC
 row:`), including what each lumped element became.
 
 ### The openEMS grid {#openems-grid}

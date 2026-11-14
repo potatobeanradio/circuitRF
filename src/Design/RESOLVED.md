@@ -31833,3 +31833,58 @@ the 2×2. Fixtures and harness: `testdata/phased-array/`.
   `netlist --to-schematic` does not pass `existingCells`, so a hierarchical bench cannot be drawn from the command line today.
 - **A loadpull grid path in a `.csch` is workspace-relative** (`4 PA Loadpull/schematic/load_grid.gam`), as the Loadpull example's is;
   written bare it resolves against the workspace root and the run fails "Grid file not found".
+## Component ports on an open SiGe kit, run end to end: what the runs found (2026-11-14)
+
+Cascode, coupled-coil and HBT-core layouts on the kit's own PCells, run on Planar and on EMerge with 1.8.4.
+
+- **A pin whose Reference could not be built took its instance out of `_cosim`.** B and C referenced to E on an HBT whose E
+  face is on Metal2 and B/C on Metal1: the faces do not face, so each referencing pin was refused, E (only a return) had nothing
+  returning through it and became floating, the instance had no port, and `_cosim` had no device, contrary to the page, which
+  said the pin builds against ground. `EmCellCutout` now falls back: the referencing pin keeps its plain Uncalibrated Port
+  against ground (the label it had before the gap was marked) with `EmCutPin.FellBack` as the run's warning, and a reference pin
+  that is no port's return any more is routed with its own port (its label is made with the others and kept aside). A pin that
+  is a return by its own entry (`Port: false`) stays an open the model sees. That pin's report used the projected point of an
+  area pin (`(0, -0)`) and said "nothing meets it"; it now carries its face and says it is a return no port uses. Only the shared
+  facing decision falls back; a gap that passes it and then fails its solver's own construction (Planar strip, 3D sheet) is still
+  left out. An instance cut out with no port left on it now warns that `_cosim` cannot place it (placing a portless model would
+  need the netlist writer to take the cut list as well as the ports).
+- **A routed pin whose conductor went nowhere read "routed".** A via stack that missed its top-metal finger left the emitter's
+  Metal2 stub and its pads isolated; the mesher dropped the via's cells with a note, `check`/`explain` said routed and the port
+  read |S| = 0 dB. `EmCellCutout.Dangling` follows each routed pin's conductor through the vias between the analysis levels (a
+  via joins the pieces under its middle on the two levels its stack entry spans, or every level when it spans none, and the
+  ground when one end is a ground-reference conductor) and flags a pin whose piece reaches no other port and no ground
+  (`EmCutPin.Unconnected`): the build warns naming the pin and its port, and the pin check says "not connected". A footprint
+  part's gap port is built after the cut and is not seen by it.
+- **`check` said "will be solved as Uncalibrated Ports" and the run refused the same ports for their feeds.** On the
+  cascode with its four drawn ports calibrated, `check` priced the standards at 370.6 GB against 51.5 GB, and the run refused
+  for the feeds' clearance. The run makes its own memory decision (`StandardsFallback`, at admission) on the mesh it solves,
+  with the feed leads it grows, and that decision did not find the run past memory where the check's did; the clearance
+  question at port resolution then refused. Why the two pricings part was not isolated further. On a clearance refusal the run
+  now asks `Preflight` (what `check` and the panel say); when it predicted those ports Uncalibrated, the run solves them so and
+  warns naming the feeds too. A clearance breach with no such
+  prediction is still PCAL2's refusal: making every refused feed Uncalibrated would undo that design for every board, and its
+  gates (`PortClearanceRefusalTests`, `UncalibratedPortTests` gate 2) say so.
+- **`_cosim.cnl` named the compiled model by its absolute path.** The extraction rebases a library cell's relative file to
+  absolute (`FileReferences.Rebase`), and the writer wrote it so. `EmCoSimNetlist.Text` takes the netlist's folder and writes
+  a file under the workspace, or under a library its `.cws` references by a relative path, relative to it, which is what the
+  reader resolves a relative file against; any other path stays as it was.
+- **DC through an SnP with no 0 Hz row was silent.** The interpolator clamps to the lowest row and its out-of-range sentence
+  goes to `RFNetwork.OnWarning`, which nothing subscribes to. `SnpModel` is now an `IReportsWarnings` and queues, at ω = 0, the
+  block's name and lowest frequency; every DC stamp site already drains models (DC, the bias of S-parameter, HB's DC harmonic).
+  A DC row exists already, on both solvers, by starting the sweep at 0 Hz (LF1, brief-emdc-2), so the sentence points there.
+- **Non-passive rows.** The planar solve's NOT PASSIVE warning and Touchstone caveat existed (de-embedded runs only); a 3D
+  run had nothing. `EmRunService.WithPassivity` measures the written file's rows (uniform real reference, 1e-3 as the planar
+  check) and warns naming each frequency and the worst value, unless the planar solve already said it. Both now list the
+  frequencies (up to eight) rather than a range.
+- **Port names.** A `.cem` run through its in-memory 3D view named drawn ports `P1`…, its Planar run by the labels (`1`…); the
+  view now takes the label (`Em3dGenerator` carries it as `SourceLabel`), and the generator's own 3D runs name them so too.
+  `EmPortHeader` writes one line per port in every EM result (what it is, its net from the layout's schematic, what it returns
+  through, calibrated or not) and a DC line; the older lines are untouched.
+- **LVS on a kit's pin-purpose layers.** A terminal was looked up on its pin's own layer (`Metal1.pin`), where no copper is
+  drawn; it now falls back to the conductor that layer is a purpose of, through `EmPinConductor` (the cut's mapping). On the
+  cascode the eight pin-on-no-copper errors go; three remain, each a device whose layout cell is the PCell's generated cell
+  (the generator's name with a hash) against the schematic's kit part, which is a separate matter.
+- Gates: `CellPinReferenceTests` (the fallback and `_cosim`, not connected, the 3D names and header),
+  `UncalibratedPortTests.WhereTheCheckSaysUncalibrated_TheRunAgrees_RatherThanRefusingTheFeeds`,
+  `CoSimNetlistTests.AModelsFile_IsWrittenRelativeToTheWorkspace_WhereItTravelsWithIt`, `SnpNoDcRowTests`,
+  `RunPassivityWarningTests`, `EmPortHeaderTests`.

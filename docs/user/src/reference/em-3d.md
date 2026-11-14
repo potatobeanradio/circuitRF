@@ -226,6 +226,11 @@ full description.
   about the delay of 30 µm of that line at each face (the sheet is 100 µm tall, 1/28 of a wavelength in GaAs at
   30 GHz). On a thick substrate or at mm-wave, compare that against what the model needs.
 
+  The result names a drawn port by its label's text, as the Planar result of the same `.cem` does, and its header has
+  the same line per port and DC line ([Cutting out a cell instance](em-setup.html#cell-instances)): a lumped sheet reads
+  `uncalibrated`, and its `ref=` is the run's ground where the sheet lands on the air box's floor, or the conductor it
+  lands on otherwise. A run whose rows are not passive warns naming them.
+
   **A port's Uncalibrated port box changes nothing here.** On Planar it takes the de-embedding away from an edge port
   ([The Uncalibrated Port](mom-engine.html#uncalibrated-port)); a 3D run de-embeds no edge port, because each one is
   already a lumped sheet whose launch is in the result.
