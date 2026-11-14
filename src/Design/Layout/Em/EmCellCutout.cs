@@ -68,6 +68,14 @@ public sealed record EmCutPin(string Path, string Cell, string Pin, EmPinClass C
 
     /// <summary>brief-icp-4 — a pin that is only a return (<c>Port: false</c>) and that no built port returns through: floating.</summary>
     public bool Unreturned { get; init; }
+
+    /// <summary>Why this pin's port is not what its entry asked for: its Reference could not be built, so it is built against
+    /// ground (or, for a reference pin no port returns through any more, it takes a port of its own). A warning; null otherwise.</summary>
+    public string? FellBack { get; init; }
+
+    /// <summary>A routed pin whose conductor, followed through the vias, reaches no other port and no ground: its port drives an
+    /// isolated piece of metal and reads an open.</summary>
+    public bool Unconnected { get; init; }
 }
 
 /// <summary>A setup's cut instances applied to its layout's flattened geometry.</summary>
@@ -231,6 +239,7 @@ public static class EmCellCutout
 
             var built = new List<(EmCutPin Pin, long Px, long Py, StackupLayer Conductor)>();
             var vias = new Dictionary<EmCutPin, RectShape>();
+            var returnLabels = new Dictionary<EmCutPin, LabelShape>();
             var areaPins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);       // brief-icp-10 — faces read from the interconnect
             foreach (var (pin, _) in ordered)
             {
@@ -378,13 +387,6 @@ public static class EmCellCutout
                     built.Add((grounded, inside.Px, inside.Py, conductor));
                     continue;
                 }
-                // R-icp4-1 — a pin that is only a return: its face is another pin's reference, no port of its own.
-                if (plan.Returns.Contains(pin.Name))
-                {
-                    built.Add((new EmCutPin(inst.Path, label, pin.Name, EmPinClass.Return, null, widthM, q * 90.0, pin.Layer, null, null) { Face = faceSeg },
-                               inside.Px, inside.Py, conductor));
-                    continue;
-                }
                 // brief-icp-10 — the port names its level by a layer the conductor draws on: a pin-purpose layer names none, so its port
                 // was left to infer the level from geometry and read two levels where a shield or a crossing lies over it.
                 var portLayer = conductor.DrawingLayers.Contains(pin.Layer) || conductor.DrawingLayers.Count == 0 ? pin.Layer : conductor.DrawingLayers[0];
@@ -395,6 +397,15 @@ public static class EmCellCutout
                     PortDirection = q switch { 0 => LayoutRotation.R0, 1 => LayoutRotation.R90, 2 => LayoutRotation.R180, _ => LayoutRotation.R270 },
                     PortUseEdgeWidth = true, PortUncalibrated = true,
                 };
+                // R-icp4-1 — a pin that is only a return: its face is another pin's reference, no port of its own. Its port label is
+                // kept aside: when no port returns through it after all (every reference to it fell back to ground), it takes one.
+                if (plan.Returns.Contains(pin.Name))
+                {
+                    var ret = new EmCutPin(inst.Path, label, pin.Name, EmPinClass.Return, null, widthM, q * 90.0, pin.Layer, null, null) { Face = faceSeg };
+                    returnLabels[ret] = portLabel;
+                    built.Add((ret, inside.Px, inside.Py, conductor));
+                    continue;
+                }
                 var cut = new EmCutPin(inst.Path, label, pin.Name, EmPinClass.Routed, portLabel, widthM, q * 90.0, pin.Layer, null, null)
                     { Face = faceSeg, Reference = plan.ReferenceOf(pin.Name) };
                 built.Add((cut, inside.Px, inside.Py, conductor));
@@ -432,21 +443,30 @@ public static class EmCellCutout
             // between two faces that face each other across one axis on one layer: LCP's strip and delta gap on Planar
             // (EmPlanarComponentPorts), the 3D gap sheet (C3dCellCuts). A Planar edge port returning through drawn metal is refused by
             // the port extraction itself (its calibration standards are single conductors over the plane), so it is not one.
+            // A reference that cannot be built is not a reason to lose the pin: it falls back to the run's ground, as Reference Ground
+            // builds it (its label is still the plain Uncalibrated Port made above), and the run warns naming what was asked.
             var sheetsOn = new Dictionary<string, List<(long Lo, long Hi, string Pin)>>(StringComparer.OrdinalIgnoreCase);
+            var fellTo = new List<(string Ref, string Pin)>();
             for (int i = 0; i < built.Count; i++)
             {
                 var (pin, _, _, _) = built[i];
                 if (pin.Reference is not { } refName || refused.ContainsKey(pin)) continue;
                 string pn = $"{inst.Path}.{pin.Pin}";
+                void FallBack(string why)
+                {
+                    fellTo.Add((refName, pn));
+                    built[i] = built[i] with { Pin = pin with { Reference = null, FellBack =
+                        $"{why} {pn} is built against {EmComponentPort.GroundReference} instead of its Reference {refName}: an Uncalibrated Port " +
+                        "at its face, returning through the run's ground." } };
+                }
                 var r = built.Select(b => b.Pin).FirstOrDefault(b => b.Pin.Equals(refName, StringComparison.OrdinalIgnoreCase));
                 if (r is null || refused.ContainsKey(r))
                 {
                     var said = pins.FirstOrDefault(x => x.Path == inst.Path && x.Pin.Equals(refName, StringComparison.OrdinalIgnoreCase));
-                    refused[pin] = $"{pn}: its Reference {refName} " + (r is not null ? $"is left out ({refused[r]})"
+                    FallBack($"{pn}: its Reference {refName} " + (r is not null ? $"is left out ({refused[r]})"
                         : said is { Why: { } w } ? $"is left out ({w})"
                         : said is { Class: EmPinClass.Abutting } ? $"touches only {said.Abuts}, so it has no face of its own to return through"
-                        : "has nothing connected at its face to return through") +
-                        $". With Reference {EmComponentPort.GroundReference} it builds.";
+                        : "has nothing connected at its face to return through") + ".");
                     continue;
                 }
                 var (sx0, sy0, sx1, sy1) = pin.Face!.Value;
@@ -464,16 +484,15 @@ public static class EmCellCutout
                     bool facing = sameLevel && sAlongX == rAlongX && ((sq + 2) & 3) == rq && (rAt - sAt) * sign < 0 && hi - lo >= 2;
                     if (!facing)
                     {
-                        refused[pin] = $"{pn}: its face and its Reference {refName}'s face do not face each other across one axis on one layer " +
-                                       $"({FaceWords(pin, Mm)} against {FaceWords(r, Mm)}), so no gap port can be built between them. " +
-                                       $"With Reference {EmComponentPort.GroundReference} it builds.";
+                        FallBack($"{pn}: its face and its Reference {refName}'s face do not face each other across one axis on one layer " +
+                                 $"({FaceWords(pin, Mm)} against {FaceWords(r, Mm)}), so no gap port can be built between them.");
                         continue;
                     }
                     var onR = sheetsOn.TryGetValue(r.Pin, out var have) ? have : sheetsOn[r.Pin] = [];
                     if (onR.FirstOrDefault(o => o.Lo < hi && lo < o.Hi) is { Pin: { } clash })
                     {
-                        refused[pin] = $"{pn}: its gap port and {inst.Path}.{clash}'s land on {inst.Path}.{refName}'s face across the same width; " +
-                                       "two may share a face only where they do not overlap.";
+                        FallBack($"{pn}: its gap port and {inst.Path}.{clash}'s land on {inst.Path}.{refName}'s face across the same width; " +
+                                 "two may share a face only where they do not overlap.");
                         continue;
                     }
                     onR.Add((lo, hi, pin.Pin));
@@ -485,24 +504,92 @@ public static class EmCellCutout
                 two.PortReturn = returnAt;
                 two.PortUncalibrated = false;
             }
-            // A return pin no port returns through is an open the model sees, as a floating pin is.
-            foreach (var (pin, _, _, _) in built)
-                if (pin.Class == EmPinClass.Return && !refused.ContainsKey(pin) &&
-                    !built.Any(b => !refused.ContainsKey(b.Pin) && b.Pin.Label is not null &&
-                                    string.Equals(b.Pin.Reference, pin.Pin, StringComparison.OrdinalIgnoreCase)))
-                    pins.Add(new EmCutPin(inst.Path, label, pin.Pin, EmPinClass.Floating, null, pin.WidthM, pin.OutwardDeg, pin.Layer, null, null)
-                             { Face = pin.Face, Unreturned = true });
-            foreach (var (pin, _, _, _) in built)
+            foreach (var (built0, _, _, _) in built)
             {
-                if (pin.Class == EmPinClass.Return && !refused.ContainsKey(pin) && pins.Any(x => x.Unreturned && x.Path == pin.Path && x.Pin == pin.Pin))
-                    continue;
+                var pin = built0;
                 if (refused.TryGetValue(pin, out var why)) { pins.Add(pin with { Label = null, Why = why }); continue; }
+                if (pin.Class == EmPinClass.Return && !built.Any(b => !refused.ContainsKey(b.Pin) && b.Pin.Label is not null &&
+                                                                     string.Equals(b.Pin.Reference, pin.Pin, StringComparison.OrdinalIgnoreCase)))
+                {
+                    var from = fellTo.Where(t => t.Ref.Equals(pin.Pin, StringComparison.OrdinalIgnoreCase)).Select(t => t.Pin).ToList();
+                    pin = plan.ExplicitReturns.Contains(pin.Pin) || from.Count == 0
+                        // Only a return by its entry (Port: false), and no port returns through it: an open the model sees, as a
+                        // floating pin is — but its face is where it is, not where the projection put a pin drawn as an area.
+                        ? new EmCutPin(inst.Path, label, pin.Pin, EmPinClass.Floating, null, pin.WidthM, pin.OutwardDeg, pin.Layer, null, null)
+                              { Face = pin.Face, Unreturned = true }
+                        // The return of pins that all fell back to ground: nothing returns through it now, so it is routed like them.
+                        : pin with
+                        {
+                            Class = EmPinClass.Routed, Label = returnLabels[pin],
+                            FellBack = $"{pin.Name} was the Reference of {string.Join(" and ", from)}, which {(from.Count == 1 ? "is" : "are")} built " +
+                                       $"against {EmComponentPort.GroundReference} instead, so it takes a port of its own, against the run's ground.",
+                        };
+                }
                 if (vias.TryGetValue(pin, out var via)) shapes.Add(via);
                 pins.Add(pin.Face is { } f && areaPins.Contains(pin.Pin) ? pin with { FaceAtM = ((f.X0 + f.X1) / 2.0 * per, (f.Y0 + f.Y1) / 2.0 * per) } : pin);
             }
         }
 
+        // A routed pin whose conductor, followed through the vias, reaches no other port and no ground: its port drives an isolated
+        // piece of metal (a via stack that misses the metal above it is the usual case) and reads an open, which "routed" hides.
+        if (pins.Any(p => p.HasPort))
+            foreach (int i in Dangling(pins, shapes, levels, stack, tech))
+                pins[i] = pins[i] with { Unconnected = true };
+
         return new EmCellCutoutResult(shapes, pins, excluded, notes, flat.GeneratorIds) { Regions = regions };
+    }
+
+    /// <summary>
+    /// The indices of <paramref name="pins"/> whose port's conductor, followed through the vias between this setup's analysis levels,
+    /// reaches no other port (a drawn port label, another cut pin's port) and no ground-reference conductor.
+    /// </summary>
+    // ponytail: a footprint part's gap port is built after the cut and is not seen here, so a cut pin wired only to such a part's pad
+    // would read as reaching nothing; hand those ports in if a layout ever mixes the two.
+    private static HashSet<int> Dangling(IReadOnlyList<EmCutPin> pins, IReadOnlyList<LayoutShape> shapes, List<StackupLayer> levels,
+                                         IReadOnlyList<StackupLayer> stack, Technology? tech)
+    {
+        var metal = shapes.Where(s => s is not LabelShape and not BitmapShape).ToList();
+        var pieces = levels.Select(l => Pieces(metal.Where(s => l.DrawingLayers.Contains(s.Layer)))).ToList();
+        var first = new int[levels.Count + 1];
+        for (int k = 0; k < levels.Count; k++) first[k + 1] = first[k] + pieces[k].Count;
+        int ground = first[^1];
+        var parent = Enumerable.Range(0, ground + 1).ToArray();
+        int Find(int x) { while (parent[x] != x) x = parent[x] = parent[parent[x]]; return x; }
+        IEnumerable<int> At(int level, Point64 pt)
+        {
+            for (int i = 0; i < pieces[level].Count; i++) if (Inside(pieces[level][i], pt)) yield return first[level] + i;
+        }
+
+        // Each via joins the pieces under its middle on the two levels it spans (every level when its entry names no span, as the
+        // landing check above reads it), and the ground when one end is a ground-reference conductor.
+        foreach (var via in stack.Where(l => l.Kind == StackupKind.Via && l.DrawingLayers.Count > 0))
+        {
+            bool toGround = stack.Any(g => g.Kind == StackupKind.Conductor && g.IsGroundReference && (g.Name == via.SpanFromLayer || g.Name == via.SpanToLayer));
+            var ends = via.SpanFromLayer is null || via.SpanToLayer is null ? [.. Enumerable.Range(0, levels.Count)]
+                     : new[] { levels.FindIndex(l => l.Name == via.SpanFromLayer), levels.FindIndex(l => l.Name == via.SpanToLayer) }.Where(k => k >= 0).ToList();
+            foreach (var v in metal.Where(m => via.DrawingLayers.Contains(m.Layer)))
+            {
+                var b = LayoutGeometry.BboxOf(v);
+                var mid = new Point64((b.MinX + b.MaxX) / 2, (b.MinY + b.MaxY) / 2);
+                var hit = ends.SelectMany(k => At(k, mid)).ToList();
+                if (toGround && hit.Count > 0) hit.Add(ground);
+                for (int k = 1; k < hit.Count; k++) parent[Find(hit[k])] = Find(hit[0]);
+            }
+        }
+
+        int? PieceOf(LabelShape l)
+        {
+            var pt = new Point64(l.X, l.Y);
+            int k = EmPinConductor.Of(tech, l.PortLayer ?? l.Layer) is { } on ? levels.IndexOf(on) : -1;
+            return (k >= 0 ? At(k, pt) : Enumerable.Range(0, levels.Count).SelectMany(j => At(j, pt))).Select(x => (int?)Find(x)).FirstOrDefault();
+        }
+        var own = pins.Select(p => p.HasPort ? PieceOf(p.Label!) : null).ToList();
+        var ports = shapes.OfType<LabelShape>().Where(l => l.IsPort).Select(PieceOf).Concat(own).OfType<int>()
+                          .GroupBy(x => x).ToDictionary(g => g.Key, g => g.Count());
+        var dangling = new HashSet<int>();
+        for (int i = 0; i < pins.Count; i++)
+            if (own[i] is { } piece && piece != Find(ground) && ports[piece] < 2) dangling.Add(i);
+        return dangling;
     }
 
     /// <summary>brief-icp-10 — the face of an AREA pin, or null when the pin's face is where it says (or nothing meets it).</summary>
@@ -580,6 +667,8 @@ public static class EmCellCutout
     {
         public HashSet<string> Grounded { get; } = new(StringComparer.OrdinalIgnoreCase);
         public HashSet<string> Returns { get; } = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>The returns the entry made so itself (<c>Port: false</c>), not only by being another pin's Reference.</summary>
+        public HashSet<string> ExplicitReturns { get; } = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, string> _reference = new(StringComparer.OrdinalIgnoreCase);
         public string? Refusal { get; private set; }
 
@@ -599,7 +688,7 @@ public static class EmCellCutout
                 if (entry.GroundNames.Contains(n, StringComparer.OrdinalIgnoreCase) || options.GetValueOrDefault(n)?.Ground == true) plan.Grounded.Add(n);
             string? RefOf(string n) => options.GetValueOrDefault(n)?.Reference ?? entry.Reference;
             foreach (var n in names)
-                if (options.GetValueOrDefault(n)?.Port == false && !plan.Grounded.Contains(n)) plan.Returns.Add(n);
+                if (options.GetValueOrDefault(n)?.Port == false && !plan.Grounded.Contains(n)) { plan.Returns.Add(n); plan.ExplicitReturns.Add(n); }
             foreach (var n in names)
             {
                 if (plan.Grounded.Contains(n) || plan.Returns.Contains(n)) continue;

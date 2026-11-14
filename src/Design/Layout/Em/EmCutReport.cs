@@ -65,6 +65,9 @@ public static class EmCutReport
             string text = pin.Why is { } why ? $"{name}: left out — {why}"
                 : pin.Class switch
                 {
+                    EmPinClass.Routed when pin.Unconnected && port is { Refusal: null } dangling =>
+                        $"{name}: not connected, {face}; port {dangling.Number} '{dangling.Name}' drives metal that reaches no other port and no " +
+                        "ground, so it reads an open",
                     EmPinClass.Routed when port is { Refusal: null } built =>
                         $"{name}: routed, {face}; port {built.Number} '{built.Name}', " +
                         (built.ReferencePin is { } rp ? $"referenced to pin {rp}" : "returning through the run's ground"),
@@ -74,6 +77,8 @@ public static class EmCutReport
                     EmPinClass.Grounded => $"{name}: grounded, {face}; no port: tied to the run's ground at its face",
                     EmPinClass.Return => $"{name}: a return, {face}; no port of its own: " +
                                          $"{string.Join(" and ", ports.Where(p => p.Refusal is null && p.ReferencePin is { } r && r.Equals(pin.Name, StringComparison.OrdinalIgnoreCase) && Mine(p.Name)).Select(p => p.Name).DefaultIfEmpty("no built port"))} return through it",
+                    EmPinClass.Floating when pin.Unreturned => $"{name}: a return only (Port: false), {face}; no port of its own and no built " +
+                                                               "port returns through it, so the model sees an open there",
                     EmPinClass.Floating => $"{name}: floating, {face}; no port: nothing meets it, so the model sees an open there",
                     _ => $"{name}: {face}",
                 };

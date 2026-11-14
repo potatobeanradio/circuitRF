@@ -40,23 +40,44 @@ public sealed class CellPinReferenceTests(CellPinReferenceTests.Fixture fx, ITes
         Assert.True(worst < 1e-9, $"max |ΔS| {worst}");
         string snp = File.ReadAllText(built.SnpPath!);
         Assert.Contains("! Port[3] = X1.A", snp, StringComparison.Ordinal);
-        Assert.DoesNotContain("X1.B", snp, StringComparison.Ordinal);
+        Assert.DoesNotContain("] = X1.B", snp, StringComparison.Ordinal);            // B is A's return, no port of its own
     }
 
-    // ── Gate 2: faces that do not face each other are left out; with no Reference they build ───────────────────────────────
+    // ── Gate 2: faces that do not face each other fall back to ground, as the same entry with no Reference builds ─────────────
 
     [Fact]
-    public void FacesThatDoNotFace_AreLeftOut_AndWithoutAReferenceTheyBuild()
+    public void FacesThatDoNotFace_FallBackToGround_AsWithoutAReference()
     {
         var referenced = fx.Build(fx.GsLine(withCell: true), [new EmComponentPort("X1", Reference: "S")]);
-        var g = Assert.Single(referenced.Ports, p => p.Name == "X1.G");
-        Assert.False(g.Ok);
-        output.WriteLine(g.Refusal);
-        Assert.Contains("do not face each other across one axis on one layer", g.Refusal, StringComparison.Ordinal);
-        Assert.Contains("With Reference Ground it builds", g.Refusal, StringComparison.Ordinal);
-
         var plain = fx.Build(fx.GsLine(withCell: true), [new EmComponentPort("X1")]);
         Assert.Equal(["X1.G", "X1.S"], plain.Ports.Where(p => p.Ok).Select(p => p.Name));
+        // G is built against ground, and S, which no port returns through now, takes a port of its own: the two ports a plain entry builds.
+        Assert.Equal(["X1.G", "X1.S"], referenced.Ports.Where(p => p.Ok).Select(p => p.Name));
+        Assert.All(referenced.Ports, p => Assert.Null(p.ReferencePin));
+        foreach (var w in referenced.Warnings) output.WriteLine(w);
+        Assert.Contains(referenced.Warnings, w => w.Contains("do not face each other across one axis on one layer", StringComparison.Ordinal)
+                                               && w.Contains("X1.G is built against Ground instead of its Reference S", StringComparison.Ordinal));
+        Assert.Contains(referenced.Warnings, w => w.StartsWith("X1.S was the Reference of X1.G", StringComparison.Ordinal));
+    }
+
+    // ── A pin whose reference cannot be built keeps its instance in the run and in _cosim ───────────────────────────────────
+
+    [Fact]
+    public void AnUnbuildablePinReference_StillBuildsAgainstGround_AndCoSimPlacesTheDevice()
+    {
+        var entry = new EmComponentPort("X1").WithPins(new Dictionary<string, EmPinOptions> { ["G"] = new(Reference: "S") });
+        var run = fx.Run("gs-fallback", fx.GsLine(withCell: true), [entry]);
+        Assert.True(run.Status == EmRunStatus.Ok, run.Error);
+        Assert.Contains(run.Warnings ?? [], w => w.Contains("X1.G is built against Ground instead of its Reference S", StringComparison.Ordinal));
+        string snp = File.ReadAllText(run.SnpPath!);
+        Assert.Contains("! Port[3] = X1.G", snp, StringComparison.Ordinal);
+        Assert.Contains("! Port[4] = X1.S", snp, StringComparison.Ordinal);
+        // The device is in the co-simulation: its terminals on the two ports (a placeholder each here, as this layout has no schematic).
+        string cnl = run.CoSim?.Text ?? "";
+        output.WriteLine(cnl);
+        Assert.Contains("X1_G", cnl, StringComparison.Ordinal);
+        Assert.Contains("X1_S", cnl, StringComparison.Ordinal);
+        Assert.DoesNotContain(run.Warnings ?? [], w => w.Contains("missing from it", StringComparison.Ordinal));
     }
 
     // ── Gate 3: 3D — facing faces make one gap sheet; faces that do not face are left out ──────────────────────────────────
@@ -77,11 +98,13 @@ public sealed class CellPinReferenceTests(CellPinReferenceTests.Fixture fx, ITes
         Assert.Equal(1e-3, sheet.Max.Y - sheet.Min.Y, 9);
         Assert.Equal(3, g.Problem.Ports.Count);                                  // the two drawn ports and the one sheet; none at B
 
+        // Faces that do not face: A falls back to an edge sheet against the return, and B, no port's return now, takes its own.
         var ell = Em3dSetupProblem.Of(fx.Setup3D([new EmComponentPort("X1", Reference: "B")]), fx.Source3D("ell", fx.PcbEll()), fx.Pcb);
         var left = Assert.Single(ell.ComponentPorts!.Ports, p => p.Cutout && p.Pin == "A");
-        Assert.False(left.Ok);
-        output.WriteLine(left.Refusal);
-        Assert.Contains("do not face each other across one axis on one layer", left.Refusal, StringComparison.Ordinal);
+        Assert.True(left.Ok, left.Refusal);
+        Assert.Null(left.ReferencePin);
+        Assert.True(Assert.Single(ell.ComponentPorts.Ports, p => p.Cutout && p.Pin == "B").Ok);
+        Assert.Contains(ell.ComponentPorts.Warnings, w => w.Contains("do not face each other across one axis on one layer", StringComparison.Ordinal));
     }
 
     // ── Gate 5: a Pins map; every pin on ground; a pin both referenced and ported ──────────────────────────────────────────
@@ -150,6 +173,43 @@ public sealed class CellPinReferenceTests(CellPinReferenceTests.Fixture fx, ITes
         output.WriteLine(refused.Refusal);
         Assert.False(refused.Ok);
         Assert.StartsWith("X1: Reference Common (one node shared by its ports) has no construction", refused.Refusal, StringComparison.Ordinal);
+    }
+
+    // ── A cut pin whose conductor reaches nothing is not connected, and said ───────────────────────────────────────────────
+
+    [Fact]
+    public void ACutPinWhoseViaMissesTheMetalAbove_IsNotConnected_AndWarned()
+    {
+        // B's line is a short Metal1 stub with a post up to a Metal2 finger carrying port 2; drawn 60 µm off, the post lands on nothing.
+        var missed = fx.Build(StubToFinger(postOnFinger: false), [new EmComponentPort("X1")]);
+        foreach (var w in missed.Warnings) output.WriteLine(w);
+        Assert.Equal(["X1.A", "X1.B"], missed.Ports.Where(p => p.Ok).Select(p => p.Name));
+        Assert.Contains(missed.Warnings, w => w.StartsWith("X1.B (port 4) is not connected", StringComparison.Ordinal));
+        Assert.DoesNotContain(missed.Warnings, w => w.StartsWith("X1.A", StringComparison.Ordinal));
+        var (cut, prefix) = Assert.Single(EmCutReport.Cuts(missed.Ports.Select(p => (p.Refdes, p.CutPart))));
+        var lines = EmCutReport.Lines(cut, prefix, EmCutReport.PortsOf(missed), k => k.ToString());
+        Assert.Contains(lines, l => l.Text.StartsWith("X1.B: not connected", StringComparison.Ordinal));
+        Assert.Contains(lines, l => l.Text.StartsWith("X1.A: routed", StringComparison.Ordinal));
+
+        // The post on the finger: B reaches port 2, and nothing is said.
+        var landed = fx.Build(StubToFinger(postOnFinger: true), [new EmComponentPort("X1")]);
+        Assert.DoesNotContain(landed.Warnings, w => w.Contains("is not connected", StringComparison.Ordinal));
+    }
+
+    /// <summary>Seg at 500-700 µm: a Metal1 line from port 1 meets A; B meets a 60 µm Metal1 stub carrying a post, and a Metal2 finger
+    /// running on to port 2 lies over the post or 60 µm past it.</summary>
+    private static LayoutView StubToFinger(bool postOnFinger)
+    {
+        var m2 = new LayerKey(2, 0); var post = new LayerKey(3, 0);
+        var v = new LayoutView { DbuPerMicron = Dbu };
+        v.Shapes.Add(R(M1, 0, -36, 500, 36));
+        v.Shapes.Add(R(M1, 700, -36, 760, 36));
+        v.Shapes.Add(R(post, 730, -20, 750, 20));
+        v.Shapes.Add(R(m2, postOnFinger ? 720 : 780, -36, 1200, 36));
+        v.Shapes.Add(Edge(0, 0, LayoutRotation.R0, "1", true));
+        v.Shapes.Add(Edge(1200, 0, LayoutRotation.R180, "2", true, m2));
+        v.Instances.Add(new LayoutInstance { CellRef = "../../Seg", X = Um(500), Y = 0, Mag = 1.0, SchematicId = "X1" });
+        return v;
     }
 
     // ── fixtures ─────────────────────────────────────────────────────────────────────────────────────────────────────
