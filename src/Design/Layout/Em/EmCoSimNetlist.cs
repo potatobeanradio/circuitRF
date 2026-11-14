@@ -29,6 +29,7 @@ using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Schematic;
+using CircuitRF.Design.Symbol;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Engine.Em3d;
 using CircuitRF.Engine.Mom;
@@ -76,7 +77,11 @@ public enum EmCoSimCloseKind
 /// <param name="Comment">What the netlist says about it.</param>
 /// <param name="SchematicName">The schematic component the part is, when the schematic has one.</param>
 public sealed record EmCoSimClose(EmCoSimCloseKind Kind, EmCoSimPort Port, string? Refdes = null, Instance? Instance = null,
-                                  Variable? Variable = null, string? Comment = null, string? SchematicName = null);
+                                  Variable? Variable = null, string? Comment = null, string? SchematicName = null)
+{
+    /// <summary>brief-icp-5 — what a run warns about it: a cut instance's terminal left open, or its placeholder.</summary>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+}
 
 /// <summary>
 /// brief-lcp-7 R-lcp7-1 — what the netlist reads of one component port: the part, its two pads, every pin of its footprint in pin
@@ -96,11 +101,15 @@ public sealed record EmCoSimPart(string Refdes, string? Pin, string? ReferencePi
 {
     /// <summary>A <c>.c3d</c>'s component port.</summary>
     public static EmCoSimPart Of(C3dComponentPort p)
-        => new(p.Refdes, p.Pin, p.ReferencePin, p.PartPins, p.SchematicId, p.ClayPath, p.Nets, p.Connector);
+        => new(p.Refdes, p.Pin, p.ReferencePin, p.PartPins, p.SchematicId, p.ClayPath, p.Nets, p.Connector) { Cut = p.CutPart };
 
     /// <summary>A layout's Planar component port.</summary>
     public static EmCoSimPart Of(EmPlanarComponentPort p)
-        => new(p.Refdes, p.Pin, p.ReferencePin, p.PartPins, p.SchematicId, p.ClayPath, p.Nets, p.Connector);
+        => new(p.Refdes, p.Pin, p.ReferencePin, p.PartPins, p.SchematicId, p.ClayPath, p.Nets, p.Connector) { Cut = p.CutPart };
+
+    /// <summary>brief-icp-5 R-icp5-1 — a cut instance's pin port: the instance, its schematic chain and every pin by name, with
+    /// <see cref="Refdes"/> its path and <see cref="Pin"/> the pin. Null for a footprint part.</summary>
+    public EmCoSimCut? Cut { get; init; }
 }
 
 /// <summary>The board schematic's parts: each instance by name, and what a netlist of them needs alongside.</summary>
@@ -117,11 +126,19 @@ public sealed record EmCoSimModels(IReadOnlyDictionary<string, Instance> Instanc
     /// <summary>The board schematic's own variables — its VARs and its cell parameters at their defaults, as its extraction
     /// states them. A part whose value is an expression (<c>C=Cshunt</c>) reads them, so the netlist carries them.</summary>
     public IReadOnlyList<Variable> Variables { get; init; } = [];
+
+    /// <summary>brief-icp-5 R-icp5-3 — each instance's terminal names in net order, from its symbol's pin names, where the symbol
+    /// names them: what a cut instance's pins are matched to.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> PinNames { get; init; } = new Dictionary<string, IReadOnlyList<string>>();
 }
 
 /// <summary>What writing the co-simulation netlist did.</summary>
 /// <param name="Text">The netlist this run makes, whether or not the file took it; null when it could not be formed.</param>
-public sealed record EmCoSimResult(EmSnpSchematicOutcome Outcome, string? Path, string Sentence, string? Text = null);
+public sealed record EmCoSimResult(EmSnpSchematicOutcome Outcome, string? Path, string Sentence, string? Text = null)
+{
+    /// <summary>brief-icp-5 — what the netlist warns about a cut instance (a terminal left open, a placeholder).</summary>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+}
 
 /// <summary>A run's record, as the netlist states it: the run kept a far field or a field set.</summary>
 /// <param name="Stored">The record's path as the netlist states it (relative to the netlist's own folder).</param>
@@ -158,6 +175,11 @@ public static class EmCoSimNetlist
     /// <summary>The netlist's file name: <see cref="CellNameFor"/> as a <c>.cnl</c>.</summary>
     public static string FileNameFor(EmSetup setup) => CellNameFor(setup) + ".cnl";
 
+    /// <summary>brief-icp-5 R-icp5-5 — the run's cell must be drawn from the netlist rather than from the top schematic: a cut instance
+    /// is nested (its model is in a sub-cell's schematic) or abuts another (its node is not a net of the schematic).</summary>
+    public static bool DrawnFromNetlist(IReadOnlyList<EmCoSimPort> ports)
+        => ports.Any(p => p.Component?.Cut is { } c && (c.Nested || c.SchematicChain.Count != 1 || c.Pins.Any(q => q.Class == EmPinClass.Abutting)));
+
     /// <summary>The port node a result port is wired at.</summary>
     public static string Node(int number) => "p" + number.ToString(CultureInfo.InvariantCulture);
 
@@ -167,7 +189,10 @@ public static class EmCoSimNetlist
     /// </summary>
     /// <param name="snpStored">The Touchstone's path as the netlist states it (relative to the netlist's own folder).</param>
     /// <param name="record">The run's record when it kept a far field or a field set, which makes the block EM Field Data; null makes it an SnP.</param>
-    public static string Text(EmSetup setup, string snpStored, IReadOnlyList<EmCoSimPort> ports, EmCoSimModels models, EmCoSimRecord? record = null)
+    /// <param name="layoutModels">brief-icp-5 — the models for a cut instance placed on another layout than the first (a 3D view
+    /// placing several); null reads <paramref name="models"/> for every part.</param>
+    public static string Text(EmSetup setup, string snpStored, IReadOnlyList<EmCoSimPort> ports, EmCoSimModels models, EmCoSimRecord? record = null,
+                              Func<string?, EmCoSimModels>? layoutModels = null)
     {
         var tb = new TestBench(setup.Name) { Technology = models.Technology };
         // A part's value may be an expression of the board's variables; without them the circuit names what it never defines.
@@ -180,7 +205,7 @@ public static class EmCoSimNetlist
                 [new ParameterAssignment("NumPorts", n.ToString(CultureInfo.InvariantCulture)), new ParameterAssignment("File", snpStored)]));
 
         int portLine = 0;
-        foreach (var c in Closures(ports, models))
+        foreach (var c in Closures(ports, models, layoutModels))
             switch (c.Kind)
             {
                 case EmCoSimCloseKind.PortLine:
@@ -190,6 +215,7 @@ public static class EmCoSimNetlist
                     break;
                 case EmCoSimCloseKind.Model:
                     tb.Instances.Add(c.Instance!);
+                    if (c.Comment is not null) comments.Add(c.Comment);
                     break;
                 case EmCoSimCloseKind.Open:
                     comments.Add(c.Comment!);
@@ -236,10 +262,15 @@ public static class EmCoSimNetlist
     /// schematic marks it, or a placeholder. The netlist and the cell made from the schematic both read this, so the two never differ
     /// about a part.
     /// </summary>
-    public static IReadOnlyList<EmCoSimClose> Closures(IReadOnlyList<EmCoSimPort> ports, EmCoSimModels models)
+    /// <param name="layoutModels">brief-icp-5 — the models of the layout a cut instance is placed on, by its path; null reads
+    /// <paramref name="models"/>.</param>
+    public static IReadOnlyList<EmCoSimClose> Closures(IReadOnlyList<EmCoSimPort> ports, EmCoSimModels models,
+                                                       Func<string?, EmCoSimModels>? layoutModels = null)
     {
         var list = new List<EmCoSimClose>();
         var parts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // brief-icp-5 R-icp5-4 — a cut instance's name is made from its path, unique against every footprint part's.
+        EmCoSimCuts.Names? names = null;
         foreach (var p in ports)
         {
             if (p.Component is not { } cp || cp.Connector)
@@ -249,6 +280,12 @@ public static class EmCoSimNetlist
             }
             if (!parts.Add(cp.Refdes)) continue;      // a multi-pad part: placed once, at its first port
             var mine = ports.Where(q => q.Component is { } c && c.Refdes.Equals(cp.Refdes, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (cp.Cut is not null)
+            {
+                names ??= new EmCoSimCuts.Names(ports.Where(q => q.Component is { Cut: null }).Select(q => q.Component!.Refdes));
+                list.AddRange(EmCoSimCuts.Close(cp, mine, layoutModels?.Invoke(cp.ClayPath) ?? models, names));
+                continue;
+            }
             var model = models.Instances.GetValueOrDefault(cp.SchematicId ?? cp.Refdes) ?? models.Instances.GetValueOrDefault(cp.Refdes);
             if (mine.Count == 1 && model is not null && TwoTerminal(model))
             {
@@ -335,8 +372,8 @@ public static class EmCoSimNetlist
             var own = C3dPorts.OwnerOf(document, source);
             string name = cp?.Port?.Name ?? (own is not null ? C3dPorts.Label(own) : $"port {source}");
             string z0 = cp?.Port?.Z0 ?? own?.Z0 ?? "50";
-            // brief-icp-3 — a cut instance's pin port is an ordinary port of the netlist until ICP-5 puts its model back on it.
-            list.Add(new EmCoSimPort(p.Number, name, z0, cp is null || cp.Cutout ? null : EmCoSimPart.Of(cp), source));
+            // brief-icp-5 — a cut instance's pin port carries the instance, whose model goes back on it.
+            list.Add(new EmCoSimPort(p.Number, name, z0, cp is null ? null : EmCoSimPart.Of(cp), source));
         }
         return list;
     }
@@ -359,8 +396,8 @@ public static class EmCoSimNetlist
         for (int i = 0; i < ports.Count; i++)
         {
             var p = ports[i];
-            // brief-icp-2 — a cut instance's pin port is an ordinary port of the netlist until ICP-5 puts its model back on it.
-            var cp = build?.Ports.FirstOrDefault(c => c.Ok && !c.Cutout && c.Number == p.Number);
+            // brief-icp-5 — a cut instance's pin port carries the instance, whose model goes back on it.
+            var cp = build?.Ports.FirstOrDefault(c => c.Ok && c.Number == p.Number);
             string name = cp?.Name ?? (i < labels.Count && labels[i].Text is { Length: > 0 } text ? text : $"P{p.Number}");
             // brief-isc-1 D6 — a drawn port's number is its label's text (SDL-5 writes the schematic Port's Num there).
             int? num = cp is null && i < labels.Count && int.TryParse(labels[i].Text?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) ? n : null;
@@ -419,6 +456,7 @@ public static class EmCoSimNetlist
                 Open = Marked(DisableState.Open),
                 Shorted = Marked(DisableState.Short),
                 Variables = [.. extracted.TestBench.GlobalVariables],
+                PinNames = PinNamesOf(model, sch),
             };
         }
         catch (Exception e) when (e is IOException or InvalidDataException or System.Text.Json.JsonException or ArgumentException
@@ -426,6 +464,21 @@ public static class EmCoSimNetlist
         {
             return EmCoSimModels.None;
         }
+    }
+
+    /// <summary>brief-icp-5 R-icp5-3 — each cell instance's symbol pin names, in pin order, where its symbol names them.</summary>
+    private static Dictionary<string, IReadOnlyList<string>> PinNamesOf(SchematicEditModel model, string schematicPath)
+    {
+        var map = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        string dir = Path.GetDirectoryName(Path.GetFullPath(schematicPath)) ?? "";
+        foreach (var c in model.Components)
+        {
+            if (c.InstanceName is not { Length: > 0 } name || c.CellRef is not { Length: > 0 } cellRef) continue;
+            if (CellSymbolResolver.Resolve(cellRef, dir, model.HostWorkspaceRoot).Symbol is not { Pins.Count: > 0 } symbol) continue;
+            var pins = symbol.Pins.OrderBy(p => p.PortIndex).Select(p => p.Name?.Trim() ?? "").ToList();
+            if (pins.Any(SymbolPinNames.IsStated)) map.TryAdd(name, pins);
+        }
+        return map;
     }
 
     /// <summary>The start of the first line every netlist this setup's runs write: what <see cref="Write"/> recognises as its own.</summary>
@@ -445,23 +498,29 @@ public static class EmCoSimNetlist
         try
         {
             var models = ModelsFor(ports.Select(p => p.Component?.ClayPath).FirstOrDefault(c => c is not null));
+            // brief-icp-5 — a cut instance's model is read from its own layout's schematic (a 3D view may place several layouts).
+            var byLayout = new Dictionary<string, EmCoSimModels>(StringComparer.OrdinalIgnoreCase);
+            EmCoSimModels LayoutModels(string? clay) => clay is null ? models
+                : byLayout.TryGetValue(clay, out var m) ? m : byLayout[clay] = ModelsFor(clay);
             string stored = Path.GetRelativePath(workspaceDir, Path.GetFullPath(snpPath)).Replace('\\', '/');
-            string text = Text(setup, stored, ports, models, RecordFor(recordPath, workspaceDir));
+            string text = Text(setup, stored, ports, models, RecordFor(recordPath, workspaceDir), LayoutModels);
+            IReadOnlyList<string> warnings = ports.Any(p => p.Component?.Cut is not null)
+                ? [.. Closures(ports, models, LayoutModels).SelectMany(c => c.Warnings).Distinct()] : [];
             if (File.Exists(path))
             {
                 string old = File.ReadAllText(path);
                 if (old == text)
-                    return new(EmSnpSchematicOutcome.Current, path, $"{Path.GetFileName(path)} is already this run's co-simulation netlist.", text);
+                    return new(EmSnpSchematicOutcome.Current, path, $"{Path.GetFileName(path)} is already this run's co-simulation netlist.", text) { Warnings = warnings };
                 // Ownership is the header up to the port count: a re-run with ports added or removed rewrites its own netlist
                 // (designer round 39 — a 12-port run left the 10-port netlist naming a Touchstone that run superseded).
                 if (!old.StartsWith(OwnerPrefix(setup), StringComparison.Ordinal))
                     return new(EmSnpSchematicOutcome.LeftAlone, path,
-                        $"{Path.GetFileName(path)} exists and was not written by this setup's runs, so it was left alone.", text);
+                        $"{Path.GetFileName(path)} exists and was not written by this setup's runs, so it was left alone.", text) { Warnings = warnings };
             }
             AtomicFile.WriteAllText(path, text);
             return new(EmSnpSchematicOutcome.Created, path,
                 $"Wrote {Path.GetFileName(path)}: the board's S{ports.Count}P with {ports.Count(p => p.Component is { Connector: false })} part " +
-                "port(s) closed by their models, ready to simulate.", text);
+                "port(s) closed by their models, ready to simulate.", text) { Warnings = warnings };
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
         {

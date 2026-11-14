@@ -75,6 +75,10 @@ public sealed record EmPlanarComponentPort(
     /// <summary>brief-icp-2 — a cut instance's cell, as a sentence names it (the generator for a generated cell); null otherwise.</summary>
     public string? Cell { get; init; }
 
+    /// <summary>brief-icp-5 R-icp5-1 — a cut instance's pin port: the instance as the co-simulation netlist reads it (its path, schematic
+    /// chain and every pin by class), shared by its ports; null otherwise.</summary>
+    public EmCoSimCut? CutPart { get; init; }
+
     /// <summary>brief-lcp-7 — a connector by its refdes (<see cref="C3dComponentPorts.IsConnectorRefdes"/>): a Port line of the
     /// co-simulation netlist, not a part across its port. A layout has no 3D shell to bridge, so the refdes is all that says so.</summary>
     public bool Connector { get; init; }
@@ -106,6 +110,10 @@ public sealed record EmPlanarComponentPortBuild(
     /// <summary>brief-icp-2 — the gap ports alone: what the co-simulation netlist puts a part across (a cut instance's model goes
     /// back on its pins in ICP-5).</summary>
     public bool AnyGapPort => Ports.Any(p => p.Ok && !p.Cutout);
+
+    /// <summary>brief-icp-5 — any component port built, a cut instance's pin included: what makes a run write its co-simulation
+    /// netlist, now that a cut instance's model goes back on its pins.</summary>
+    public bool AnyPort => Ports.Any(p => p.Ok);
 
     /// <summary>The port labels to add to what port extraction reads.</summary>
     public IReadOnlyList<LabelShape> Labels => [.. Ports.Where(p => p.Ok).Select(p => p.Gap!)];
@@ -393,12 +401,14 @@ public static class EmPlanarComponentPorts
         if (cut is not null)
         {
             if (cut.Notes.Count > 0) notes.AddRange(cut.Notes.Where(n => !notes.Contains(n)));
+            var coSim = EmCoSimCut.Of(cut, instances);
             foreach (var pin in cut.Pins)
             {
                 var entry = cuts.FirstOrDefault(c => c.Instance.Path.Equals(pin.Path, StringComparison.OrdinalIgnoreCase))?.Entry;
+                var part = coSim.GetValueOrDefault(pin.Path);
                 if (pin.Why is { } why)
                 {
-                    results.Add(Refused(pin.Path, why) with { Name = pin.Name, Pin = pin.Pin.Length > 0 ? pin.Pin : null, Cutout = true, Cell = pin.Cell });
+                    results.Add(Refused(pin.Path, why) with { Name = pin.Name, Pin = pin.Pin.Length > 0 ? pin.Pin : null, Cutout = true, Cell = pin.Cell, CutPart = part });
                     continue;
                 }
                 if (pin.Class == EmPinClass.Floating)
@@ -435,7 +445,7 @@ public static class EmPlanarComponentPorts
                     if (!C3dPorts.TryParseZ0(zText, out var z) || !(z.Real > 0))
                     {
                         results.Add(Refused(pin.Path, $"{pin.Path}'s Z0 '{zText}' is not a reference impedance: write a number of ohms with a " +
-                                                     "positive real part, or a complex one such as 25+j10.") with { Name = pin.Name, Pin = pin.Pin, Cutout = true, Cell = pin.Cell });
+                                                     "positive real part, or a complex one such as 25+j10.") with { Name = pin.Name, Pin = pin.Pin, Cutout = true, Cell = pin.Cell, CutPart = part });
                         continue;
                     }
                     z0 = z;
@@ -462,7 +472,7 @@ public static class EmPlanarComponentPorts
                     if (made is null)
                     {
                         results.Add(Refused(pin.Path, gapWhy!.StartsWith(pin.Name, StringComparison.Ordinal) ? gapWhy : $"{pin.Name}: {gapWhy}")
-                                    with { Name = pin.Name, Pin = pin.Pin, ReferencePin = refPin, Cutout = true, Cell = pin.Cell });
+                                    with { Name = pin.Name, Pin = pin.Pin, ReferencePin = refPin, Cutout = true, Cell = pin.Cell, CutPart = part });
                         continue;
                     }
                     (strip, portLabel, gapM, widthM, alongX) = made.Value;
@@ -474,7 +484,7 @@ public static class EmPlanarComponentPorts
                 {
                     Conductor = source.Technology?.Stackup.Layers
                         .FirstOrDefault(l => l.Kind == StackupKind.Conductor && l.DrawingLayers.Contains(pin.Layer))?.Name,
-                    ClayPath = source.AbsolutePath, Cutout = true, Cell = pin.Cell,
+                    ClayPath = source.AbsolutePath, Cutout = true, Cell = pin.Cell, CutPart = part,
                     SchematicId = instances.At(pin.Path)?.SchematicId,
                 });
             }

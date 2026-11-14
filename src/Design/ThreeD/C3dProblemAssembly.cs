@@ -659,9 +659,8 @@ public static class C3dProblemAssembly
             ViaNetFixes = viaNetFixes,
             WantsDc = wantsDc,
             ComponentPorts = components,
-            // brief-icp-3 — a cut instance's pin port carries no part until ICP-5 puts its model back: a build of those alone writes
-            // no co-simulation netlist, as a Planar run's does not.
-            CoSimPorts = components is null || components.CutOnly ? null : EmCoSimNetlist.PortsOf(problem.Ports, document, components),
+            // brief-icp-5 — a cut instance's pin port carries its instance, whose model the co-simulation netlist puts back on it.
+            CoSimPorts = components is null ? null : EmCoSimNetlist.PortsOf(problem.Ports, document, components),
             ResultPorts = EmCoSimNetlist.PortsOf(problem.Ports, document, components),
             GeometryFindings = geometry,
             Warnings = [.. e.Warnings, .. components?.Warnings ?? [], .. Em3dGeometryCheck.Sentences(geometry), .. Em3dThinMetalLoss.ForRun(problem, setup)],

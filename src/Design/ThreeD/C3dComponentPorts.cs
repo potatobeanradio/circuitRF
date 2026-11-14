@@ -102,6 +102,9 @@ public sealed record C3dComponentPort(
     /// <summary>brief-icp-3 — a cut instance's cell, as a sentence names it; null otherwise.</summary>
     public string? Cell { get; init; }
 
+    /// <summary>brief-icp-5 — a cut instance's pin port: the instance as the co-simulation netlist reads it; null otherwise.</summary>
+    public CircuitRF.Design.Layout.Em.EmCoSimCut? CutPart { get; init; }
+
     public bool Ok => Port is not null && Refusal is null;
 }
 
@@ -123,8 +126,8 @@ public sealed record C3dComponentPortBuild(
     /// rest) unless <see cref="Refusal"/> is set.</summary>
     public bool Ok => FirstRefusal is null;
 
-    /// <summary>brief-icp-3 — every port the build holds is a cut instance's pin: a run with no part across a port, whose
-    /// co-simulation netlist is not written (a Planar run's rule, <see cref="EmPlanarComponentPortBuild.AnyGapPort"/>).</summary>
+    /// <summary>brief-icp-3 — every port the build holds is a cut instance's pin (since ICP-5 such a run writes its co-simulation
+    /// netlist too, each instance's model on its pins).</summary>
     public bool CutOnly => Ports.Count > 0 && Ports.All(p => p.Cutout);
 
     /// <summary>The built ports as document ports, for <see cref="C3dPorts.Resolve(C3dDocument, C3dPortContext)"/>.</summary>

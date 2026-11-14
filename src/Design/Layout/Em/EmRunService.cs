@@ -257,7 +257,7 @@ public static class EmRunService
                 portLabels.Shapes, problem, source.DbuPerMicron, portLabels.Z0For(setup), source.View.DisplayUnit,
                 EmPortExtraction.DefaultGroundPathWidthM(source.Technology), source.Technology);
             if (!extracted.Ok) return null;
-            bool built = portLabels.ComponentBuild is { AnyGapPort: true };
+            bool built = portLabels.ComponentBuild is { AnyPort: true };
             return new EmResultPorts(EmCoSimNetlist.PortsOf(extracted.Ports, extracted.SourceLabels, portLabels.ComponentBuild), built);
         }
         catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException or InvalidOperationException or FormatException)
@@ -804,7 +804,12 @@ public static class EmRunService
         bool hasSnp = snp is not null && File.Exists(snp);
         // A run with component ports and no Touchstone has said so through its netlist's sentence, and makes no cell.
         if (result.CoSim is not null && !hasSnp) return result;
-        if (setup.IncludeSchematicComponents)
+        // brief-icp-5 R-icp5-5 — a nested cut instance is not in the top schematic, and an abutting pin's node is not one of its
+        // nets: the cell is drawn from the co-simulation netlist, which holds both, and the run says so.
+        if (setup.IncludeSchematicComponents && result.CoSim is { Text: not null } && ports is not null && EmCoSimNetlist.DrawnFromNetlist(ports))
+            fallback = $"The cell is drawn from {EmCoSimNetlist.FileNameFor(setup)} rather than from the schematic: a cell instance cut out of " +
+                       "the run is inside a sub-cell, or joins another cut instance directly, and the top schematic holds neither.";
+        else if (setup.IncludeSchematicComponents)
         {
             if (!hasSnp)
                 return result with
@@ -870,7 +875,10 @@ public static class EmRunService
                 "No co-simulation netlist was written: this run wrote no Touchstone, and its board block reads one.") };
         string workspace = Path.GetDirectoryName(Path.GetFullPath(resultsRoot))!;
         // The cell, when Create schematic asks for one, is WithCell's: brief-isc-1 makes it from the schematic in its place.
-        return result with { CoSim = EmCoSimNetlist.Write(workspace, setup, snp, result.RecordPath, ports) };
+        var cosim = EmCoSimNetlist.Write(workspace, setup, snp, result.RecordPath, ports);
+        // brief-icp-5 — a cut instance's terminal left open or a placeholder in its place is the run's warning too.
+        var extra = cosim.Warnings.Where(w => !result.Warnings.Contains(w)).ToList();
+        return extra.Count == 0 ? result with { CoSim = cosim } : result with { CoSim = cosim, Warnings = [.. result.Warnings, .. extra] };
     }
 
     /// <summary>brief-em3d-120 C5 — a .cem's openEMS setup asking for a cylindrical grid, refused before anything is looked for.</summary>
@@ -1405,7 +1413,7 @@ public static class EmRunService
         // reads the Touchstone when a pattern was asked for and none could be stored.
         // brief-isc-1 — every solved port goes to the caller, so a cell made from the schematic can wire them by number; only a run
         // that built a component port writes the _cosim netlist.
-        bool componentPortsBuilt = portLabels.ComponentBuild is { AnyGapPort: true };
+        bool componentPortsBuilt = portLabels.ComponentBuild is { AnyPort: true };
         coSimPorts?.Invoke(new EmResultPorts(EmCoSimNetlist.PortsOf(ports.Ports, ports.SourceLabels, portLabels.ComponentBuild), componentPortsBuilt));
         if (componentPortsBuilt)
         {

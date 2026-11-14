@@ -75,6 +75,10 @@ public sealed record EmCellInstance(string Path, string Cell, string? GeneratorI
     /// layout folder: what a keep-out box stated in the instance's own frame is carried through.</summary>
     public LayoutInstance? Placement { get; init; }
 
+    /// <summary>brief-icp-5 R-icp5-2 — a generated cell's parameters as its parent layout's snapshot records them (SI); null for any
+    /// other cell. What a PCell with no schematic counterpart is written with in the co-simulation netlist.</summary>
+    public IReadOnlyDictionary<string, PCells.PCellValue>? PCellParameters { get; init; }
+
     /// <summary>The path of the instance that places this one, or null at the top level.</summary>
     public string? Parent => Path.LastIndexOf('/') is var at and > 0 ? Path[..at] : null;
 
@@ -185,11 +189,12 @@ public static class EmCellInstances
                 string path = parentPath is null ? paths[i] : $"{parentPath}/{paths[i]}";
                 string cell = Path.GetFileName(own.CellRef.TrimEnd('/', '\\'));
                 var thisChain = chain.Append(own.SchematicId is { Length: > 0 } sid ? sid : null).ToList();
-                string? generator = parentView.PCellSnapshots.TryGetValue(cell, out var snap) ? snap.GeneratorId : null;
+                var snap = parentView.PCellSnapshots.GetValueOrDefault(cell);
+                string? generator = snap?.GeneratorId;
 
                 EmCellInstance Record(EmInstanceKind kind, IReadOnlyList<EmInstancePin> pins, string? why)
                 {
-                    var rec = new EmCellInstance(path, cell, generator, kind, pins, thisChain, why) { Placement = placed };
+                    var rec = new EmCellInstance(path, cell, generator, kind, pins, thisChain, why) { Placement = placed, PCellParameters = snap?.Parameters };
                     found.Add(rec);
                     return rec;
                 }

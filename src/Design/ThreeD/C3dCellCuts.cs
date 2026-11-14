@@ -153,7 +153,7 @@ public static class C3dCellCuts
                 string name = at + cp.Name;
                 C3dComponentPort Refused(string why)
                     => new(at + cp.Refdes, cp.Pin, null, null, 0, cp.WidthM, cp.AlongX, [], $"{name}: {why}", false)
-                       { Cutout = true, Cell = cp.Cell, ClayPath = layout.Frame.DocumentPath, SchematicId = cp.SchematicId, Verdict = why };
+                       { Cutout = true, Cell = cp.Cell, CutPart = cp.CutPart, ClayPath = layout.Frame.DocumentPath, SchematicId = cp.SchematicId, Verdict = why };
                 // brief-icp-4 R-icp4-2/3 — a pin referenced to another: a gap sheet between the two faces, not an edge sheet.
                 if (cp.ReferencePin is { } refPin)
                 {
@@ -197,7 +197,7 @@ public static class C3dCellCuts
                 ports.Add(new C3dComponentPort(at + cp.Refdes, cp.Pin, null, port, Math.Abs(sheet.Max.Z - sheet.Min.Z), cp.WidthM, cp.AlongX, [],
                                                null, false)
                 {
-                    Cutout = true, Cell = cp.Cell, ClayPath = layout.Frame.DocumentPath, SchematicId = cp.SchematicId, Verdict = "verified",
+                    Cutout = true, Cell = cp.Cell, CutPart = cp.CutPart, ClayPath = layout.Frame.DocumentPath, SchematicId = cp.SchematicId, Verdict = "verified",
                 });
             }
         }
@@ -208,7 +208,7 @@ public static class C3dCellCuts
             foreach (var cp in layout.Build.Ports.Where(p => p.Cutout && !p.Ok))
                 ports.Add(new C3dComponentPort(layout.Prefix + cp.Refdes, cp.Pin, cp.ReferencePin, null, 0, cp.WidthM, cp.AlongX, [],
                                                layout.Prefix.Length == 0 ? cp.Refusal : $"{layout.Frame.Path}: {cp.Refusal}", false)
-                          { Cutout = true, Cell = cp.Cell, ClayPath = layout.Frame.DocumentPath, Verdict = cp.Refusal ?? "" });
+                          { Cutout = true, Cell = cp.Cell, CutPart = cp.CutPart, ClayPath = layout.Frame.DocumentPath, Verdict = cp.Refusal ?? "" });
         int built = ports.Count(p => p.Ok);
         if (built > 0)
             notes.Add($"{built} cut face(s) of cell instances left out of the problem carry a lumped sheet from the face to its return, as a " +
@@ -229,7 +229,7 @@ public static class C3dCellCuts
     {
         C3dComponentPort Refused(string why)
             => new(at + cp.Refdes, cp.Pin, refPin, null, 0, cp.WidthM, cp.AlongX, [], $"{name}: {why}", false)
-               { Cutout = true, Cell = cp.Cell, ClayPath = layout.Frame.DocumentPath, SchematicId = cp.SchematicId, Verdict = why };
+               { Cutout = true, Cell = cp.Cell, CutPart = cp.CutPart, ClayPath = layout.Frame.DocumentPath, SchematicId = cp.SchematicId, Verdict = why };
         var cutPins = layout.Build.Cut!.Pins;
         var sPin = cutPins.FirstOrDefault(p => p.Path == cp.Refdes && p.Pin == cp.Pin);
         var rPin = cutPins.FirstOrDefault(p => p.Path == cp.Refdes && p.Pin.Equals(refPin, StringComparison.OrdinalIgnoreCase));
@@ -293,7 +293,7 @@ public static class C3dCellCuts
         };
         return new C3dComponentPort(at + cp.Refdes, cp.Pin, refPin, port, Math.Abs(rAt - sAt), hi - lo, alongX, [], null, false)
         {
-            Cutout = true, Cell = cp.Cell, ClayPath = layout.Frame.DocumentPath, SchematicId = cp.SchematicId, Verdict = "verified",
+            Cutout = true, Cell = cp.Cell, CutPart = cp.CutPart, ClayPath = layout.Frame.DocumentPath, SchematicId = cp.SchematicId, Verdict = "verified",
         };
     }
 }

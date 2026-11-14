@@ -73,3 +73,18 @@ No EM solve: write a small synthetic Touchstone, as LCP-7's gates do. One test p
 ## Not here
 
 Running HB or loadpull on the result (it is an ordinary netlist; nothing here changes how it runs). EM cells (ICP-8).
+
+## Completion note (2026-11-13)
+
+Built: the cut instance carried to the writer on both builders (`EmCoSimCut`), `_cosim` written for runs with cut ports, the model
+found by schematic chain or PCell generator or a placeholder, terminals mapped by name (or by number), nested parameters written as
+the design's values, legal unique names, and a nested or abutting cut drawing `_cosim` from the netlist. Gate
+`tests/Ui.Tests/Em/CellCoSimulationTests.cs` (gates 1-5, 7, 8; gate 6 is LCP-7's `CoSimC3dBytesTests` and `PlanarCoSimTests`,
+unchanged and passing). Where it differs from the requirements, and why — `src/Design/RESOLVED.md` §brief-icp-5:
+- D2's values are evaluated through the expression engine level by level, as elaboration binds them, because elaboration flattens
+  a sub-block and leaves its own parameters nowhere; gate 2 checks the value against the elaborator's;
+- a pin "grounded in its schematic" is grounded in the schematic placing the instance (a Pin grounded inside its own cell is an
+  extraction conflict);
+- gate 3 uses the built-in MIMCAP generator: a kit's cell-to-part mapping is the palette's, and the example kit's MIM capacitor has
+  no model; a kit generator gets the placeholder;
+- a nested instance that is not a sub-cell maps its terminals by number (only top-level symbols are read for pin names).

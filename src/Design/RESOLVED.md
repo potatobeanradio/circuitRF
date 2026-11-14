@@ -31407,3 +31407,47 @@ two builders. Gate: `tests/Ui.Tests/Em/CellPinReferenceTests.cs` (6).
 - **Not done here: `_cosim` (R-icp4-4, gate 4).** A cut port carries no model until ICP-5, so there is no reference terminal to put
   on `0` yet. What ICP-5 reads is carried: `ReferencePin` on both builders' ports, the `.cemr` port's `Pins` (pin, then reference),
   and the cut's per-pin classes (`Grounded`, `Return`).
+
+## brief-icp-5 — `_cosim` puts each cut instance's own model back on its pins (2026-11-13)
+
+- **One record carries the instance to the writer.** `EmCoSimCut` (path, cell folder, generator, schematic chain, every pin with
+  its class and what it abuts, and a PCell's snapshot parameters) is made once per instance from the cut and the projection
+  (`EmCoSimCut.Of`) and set on every cut port record of both builders (`EmPlanarComponentPort.CutPart`, copied by `C3dCellCuts`
+  onto `C3dComponentPort.CutPart`). `EmCoSimPart.Cut` carries it; `PortsOf` (Planar and 3D) no longer drops a cut port's part. A
+  footprint part's `Cut` is null and its netlist is unchanged (`CoSimC3dBytesTests`, `PlanarCoSimTests` pass as before).
+- **A run with cut ports now writes `_cosim`.** `EmPlanarComponentPortBuild.AnyPort` (any built port) replaces `AnyGapPort` as the
+  Planar trigger, and a 3D assembly's `CoSimPorts` no longer drops a cut-only build. ICP-3's `CellCutout3DTests` asserted the old
+  rule and now asserts the instance is carried.
+- **Which model** (`EmCoSimCuts.Model`): the schematic counterpart down the chain through the extracted `Library` (the board
+  extraction already builds every sub-cell into one library, so no second schematic read is needed); else, for a generated cell, the
+  built-in component its generator makes (`DeviceTypes.TryGetSymbolKind`, one generator per kind) with the snapshot's values for
+  the parameters that component declares, written in SI; else LCP-7's placeholder per port with the reason.
+- **D2 is evaluated, not elaborated.** Elaborating the design flattens a sub-block, so its own parameters have no value anywhere
+  in the elaborated netlist. The writer instead walks the chain with the expression engine exactly as `Elaborator.BuildCellScope`
+  binds a level (defaults and variables in the cell's scope, overrides evaluated in the parent's and injected), then evaluates the
+  instance's overrides in the innermost scope. Gate 2 compares the written value with the elaborator's for a primitive. Not
+  covered: cell corners and frequency-dependent overrides — such an override fails to evaluate (`freq` unbound) and the instance
+  becomes a placeholder naming the error, rather than being written wrong.
+- **"Grounded in its schematic" is the schematic that PLACES the instance.** A Pin tied to ground inside the cell's own schematic
+  is an extraction conflict ("Pin net 'A' is tied to ground inside the cell; its interface will not connect to the parent"), and a
+  board schematic with a conflict gives no models at all, so the brief's tee with "C grounded in its schematic" is the tee's C pin
+  wired to ground where the tee is placed: the model instance's net for that terminal is `0`.
+- **Terminal names.** A sub-cell's ports (the extracted cell's `Ports`); a top-level instance's symbol pin names where the symbol
+  states them (`EmCoSimModels.PinNames`, read through `CellSymbolResolver`); otherwise the pin numbers. A nested instance that is
+  not a sub-cell therefore maps by number, so a device whose layout pins are named (G, D, S) inside a sub-cell comes out a
+  placeholder listing both sets: reading every sub-cell's symbols is a follow-up if it is wanted. A cell whose layout pins are
+  numbers maps by number whatever its terminals are called.
+- **Gate 3 uses the built-in MIMCAP generator, not the example kit's `KIT_MIMCAP`.** Which part a kit's layout cell is belongs to
+  the palette (`KitLayoutGenerators`, in `src/Ui`), and the example kit's MIM capacitor ships a symbol and no model, so writing it
+  would place a component no run can simulate. A kit generator falls to the placeholder, naming the generator.
+- **Names.** `EmCoSimCuts.Legal`: letters, digits and `_`, `@` as `at`, a leading letter (`X1/@2` is `X1_at2`), made unique
+  against the footprint parts, `BOARD`, every `P<n>` Port line and each other; the comment names the path. Gate 5 reads all of them
+  back with `CnlReader` and no read warning.
+- **The cell.** With Create SnP schematic and Include schematic components both on, a run whose cut is nested or abutting draws
+  `_cosim` from the netlist (the top schematic holds neither) and the sentence says so; otherwise the routes are LCP-7's and
+  ISC-1's as before.
+- Gate `tests/Ui.Tests/Em/CellCoSimulationTests.cs`, seven tests, ~0.2 s, no solve: a tee closes a synthetic S3P as the
+  terminated-network formula does (1e-6), a nested value equals the elaborated one and is named, a hand-placed PCell gets its
+  component at the snapshot's W and L, mismatched pin names give a placeholder listing both sets, derived names survive the reader,
+  two abutting instances share `j_X1_B` and a grounded pin is on `0`, and ICP-4's pin-referenced ports from the real Planar build
+  put E on `0` with the sentence that this is the N-port's reference, not ground in the chip.

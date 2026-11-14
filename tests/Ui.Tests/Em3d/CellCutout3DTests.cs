@@ -57,7 +57,8 @@ public sealed class CellCutout3DTests(CellCutout3DTests.Fixture fx, ITestOutputH
             Assert.Equal(508e-6, port.Max.Z - port.Min.Z, 9);                   // from the line down to its return
         }
         Assert.All(g.ComponentPorts!.Ports, c => Assert.True(c.Cutout && c.Ok));
-        Assert.Null(g.CoSimPorts);                                               // no part across a cut port until ICP-5
+        // ICP-5: the cut ports go to the co-simulation netlist carrying their instance, whose model it puts back on them.
+        Assert.All(g.CoSimPorts!.Where(p => p.Component is not null), p => Assert.Equal("X1", p.Component!.Cut!.Path));
     }
 
     /// <summary>Gate 2 — a .c3d placing the layout (New 3D View's document) and the 3D .cem on it assemble the same solids and sheets
