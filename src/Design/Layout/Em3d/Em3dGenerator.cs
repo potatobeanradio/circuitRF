@@ -348,6 +348,8 @@ public static class Em3dGenerator
         private readonly Dictionary<int, Em3dPortReturn> _portReturns = [];
         private readonly List<Em3dPortLeftOut> _portsLeftOut = [];
         private readonly List<string> _portsMoved = [];
+        /// <summary>Each drawn port's label by its number: what the result names the port by, as a Planar result does.</summary>
+        private readonly Dictionary<int, LabelShape> _labelOf = [];
         private readonly Dictionary<string, Em3dViaNetFix> _viaNetFixes = new(StringComparer.Ordinal);
 
         public Em3dGenerationResult Go()
@@ -500,6 +502,15 @@ public static class Em3dGenerator
                                   : $": '{ground.Layer.Name}' is drawn or has metal below it, so it is " +
                                     "geometry rather than a floor."));
 
+            // A drawn port is named by its label's text and carries the net its label or the layout's schematic gives it, as a
+            // Planar result's is; a port with no text keeps the generator's name.
+            if (_labelOf.Values.Any(l => l.Text is { Length: > 0 }))
+            {
+                var nets = EmPortHeader.SchematicNets(source.AbsolutePath);
+                for (int i = 0; i < ports.Count; i++)
+                    if (ports[i].SourceLabel is null && _labelOf.TryGetValue(ports[i].Number, out var l) && l.Text is { Length: > 0 } text)
+                        ports[i] = ports[i] with { SourceLabel = text, Net = l.Net is { Length: > 0 } n ? n : nets(l.SchematicId, null) };
+            }
             var problem = new Em3dProblem(solids, sheets, _g.Materials, ports, airBox!, frequency, _tempC)
             {
                 ThinMetalCorrection = setup.ThinMetalCorrection,
@@ -594,6 +605,7 @@ public static class Em3dGenerator
 
             for (int portIndex = 0; portIndex < extracted.Ports.Count; portIndex++)
             {
+                if (portIndex < extracted.SourceLabels.Count) _labelOf[extracted.Ports[portIndex].Number] = extracted.SourceLabels[portIndex];
                 // A translated port (portsEach) that refuses is left out ALONE — its sheet, return and notes rolled back —
                 // and every other port is still built; a solve refuses on the first, as it always has.
                 int portsBefore = ports.Count, wavesBefore = waves.Count, notesBefore = _notes.Count, movedBefore = _portsMoved.Count;

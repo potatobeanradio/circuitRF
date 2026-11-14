@@ -41,6 +41,7 @@ public sealed class CellPinReferenceTests(CellPinReferenceTests.Fixture fx, ITes
         string snp = File.ReadAllText(built.SnpPath!);
         Assert.Contains("! Port[3] = X1.A", snp, StringComparison.Ordinal);
         Assert.DoesNotContain("] = X1.B", snp, StringComparison.Ordinal);            // B is A's return, no port of its own
+        Assert.Contains("! Port 3 = P03  X1.A  net=?  ref=X1.B  uncalibrated", snp, StringComparison.Ordinal);
     }
 
     // ── Gate 2: faces that do not face each other fall back to ground, as the same entry with no Reference builds ─────────────
@@ -72,6 +73,10 @@ public sealed class CellPinReferenceTests(CellPinReferenceTests.Fixture fx, ITes
         string snp = File.ReadAllText(run.SnpPath!);
         Assert.Contains("! Port[3] = X1.G", snp, StringComparison.Ordinal);
         Assert.Contains("! Port[4] = X1.S", snp, StringComparison.Ordinal);
+        // The header line per port: what each is, its net (no schematic here), what it returns through, and the DC row.
+        Assert.Contains("! Port 1 = P01  1     net=?  ref=ground  uncalibrated", snp, StringComparison.Ordinal);
+        Assert.Contains("! Port 3 = P03  X1.G  net=?  ref=ground  uncalibrated", snp, StringComparison.Ordinal);
+        Assert.Contains("! DC: none, the lowest row is 10 GHz; a circuit's DC solve through this file takes that row as DC", snp, StringComparison.Ordinal);
         // The device is in the co-simulation: its terminals on the two ports (a placeholder each here, as this layout has no schematic).
         string cnl = run.CoSim?.Text ?? "";
         output.WriteLine(cnl);
@@ -97,6 +102,11 @@ public sealed class CellPinReferenceTests(CellPinReferenceTests.Fixture fx, ITes
         Assert.Equal(7e-3, sheet.Max.X, 9);                                      // from A's face to B's, across the vacated cell
         Assert.Equal(1e-3, sheet.Max.Y - sheet.Min.Y, 9);
         Assert.Equal(3, g.Problem.Ports.Count);                                  // the two drawn ports and the one sheet; none at B
+        // The drawn ports are named by their labels, as the same .cem's Planar result names them, and the header says what each is.
+        Assert.Equal(["Port[1] = 1", "Port[2] = 2", "Port[3] = X1.A"], CircuitRF.Design.Em3d.Em3dPortMap.NameLines(g.Problem.Ports));
+        var header = CircuitRF.Design.Em3d.Em3dPortMap.HeaderLines(g.Problem.Ports, new RfCore.Data.DataSet());
+        foreach (var h in header) output.WriteLine(h);
+        Assert.Equal("Port 3 = P03  X1.A  net=?  ref=X1.B  uncalibrated", header[2]);
 
         // Faces that do not face: A falls back to an edge sheet against the return, and B, no port's return now, takes its own.
         var ell = Em3dSetupProblem.Of(fx.Setup3D([new EmComponentPort("X1", Reference: "B")]), fx.Source3D("ell", fx.PcbEll()), fx.Pcb);

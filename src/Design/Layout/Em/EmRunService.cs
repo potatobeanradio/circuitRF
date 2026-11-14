@@ -1155,6 +1155,27 @@ public static class EmRunService
         return r;
     }
 
+    /// <summary>Each Planar port as its header line says it (<see cref="EmPortHeader"/>): a component port by what it is built on, a
+    /// drawn port by its label, with the net the layout's schematic gives it.</summary>
+    private static List<EmPortHeaderRow> PlanarHeaderRows(IReadOnlyList<PlanarPort> ports, IReadOnlyList<LabelShape> labels,
+                                                          EmPlanarComponentPortBuild? build, string clayPath)
+    {
+        var nets = EmPortHeader.SchematicNets(clayPath);
+        return [.. ports.Select((p, i) =>
+        {
+            var label = i < labels.Count ? labels[i] : null;
+            var c = build?.Ports.FirstOrDefault(c => c.Ok && c.Number == p.Number);
+            string what = c?.Name ?? (label?.Text is { Length: > 0 } t ? t : $"P{p.Number}");
+            // A nested cut instance's SchematicId names a part of its parent's schematic, not this one's.
+            string? net = c is null ? label?.Net is { Length: > 0 } ln ? ln : nets(label?.SchematicId, null)
+                        : c.Cutout ? (c.Refdes.Contains('/') ? null : nets(c.SchematicId, c.Pin))
+                        : c.Nets.Positive;
+            string reference = c is { ReferencePin: { } rp } ? $"{c.Refdes}.{rp}"
+                             : p.IsConductorReferenced ? "second conductor" : "ground";
+            return new EmPortHeaderRow(p.Number, what, net, reference, p.Kind == PlanarPortKind.Edge && !p.Uncalibrated);
+        })];
+    }
+
     /// <summary>brief-icp-10 — the signal that a planar run is past memory only because of its calibration standards.</summary>
     private sealed class StandardsPastMemoryException(string message) : Exception(message);
 
@@ -1542,9 +1563,11 @@ public static class EmRunService
                                problem, setup, ports.Ports, solved.Solve,
                                // MIM-10 — the port map goes on the FILE, built from the extraction's own
                                // index-aligned labels rather than re-derived from the numbers.
-                               EmSnpProvenance.PortMap([.. problem.Layers.Select(l => l.Name)],
-                                                       ports.Ports, ports.SourceLabels,
-                                                       source.DbuPerMicron, source.View.DisplayUnit), stamp);
+                               [.. EmSnpProvenance.PortMap([.. problem.Layers.Select(l => l.Name)],
+                                                           ports.Ports, ports.SourceLabels,
+                                                           source.DbuPerMicron, source.View.DisplayUnit),
+                                .. EmPortHeader.Lines(PlanarHeaderRows(ports.Ports, ports.SourceLabels, portLabels.ComponentBuild, source.AbsolutePath),
+                                                      EmPortHeader.FrequenciesOf(solved.Data))], stamp);
                 return null;
             })
             {

@@ -63,5 +63,16 @@ public static class Em3dPortMap
     public static IReadOnlyList<string> NameLines(IReadOnlyList<Em3dPort> ports)
         => RfCore.TouchstonePortNames.Lines(ports.Select(p => (p.Number, (string?)Label(p))));
 
+    /// <summary>One line per result port in circuitRF's own form (<see cref="CircuitRF.Design.Layout.Em.EmPortHeader"/>) and the DC
+    /// line, as a Planar result writes them: what each port is, its net, what it returns through (the run's ground where its sheet
+    /// lands on the air box's floor, else the conductor it lands on), and calibrated for a wave port, uncalibrated for a lumped sheet,
+    /// whose launch is in the result.</summary>
+    public static IReadOnlyList<string> HeaderLines(IReadOnlyList<Em3dPort> ports, DataSet data)
+        => CircuitRF.Design.Layout.Em.EmPortHeader.Lines(
+            [.. ports.Select(p => new CircuitRF.Design.Layout.Em.EmPortHeaderRow(p.Number, Label(p), p.Net,
+                p.Reference ?? (p.NegativeObject.StartsWith("airbox", StringComparison.Ordinal) ? "ground" : p.NegativeObject),
+                p.Kind == Em3dPortKind.Wave))],
+            CircuitRF.Design.Layout.Em.EmPortHeader.FrequenciesOf(data));
+
     private static string Ascii(string s) => new([.. s.Select(c => c < 128 ? c : '?')]);
 }

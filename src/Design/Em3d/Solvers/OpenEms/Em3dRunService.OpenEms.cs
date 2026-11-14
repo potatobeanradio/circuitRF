@@ -565,6 +565,7 @@ public static partial class Em3dRunService
                       // brief-em3d-116 — a wave port's terminal: a fed line, measured by probes and referred to Z0 directly
                       (p.Kind == Em3dPortKind.Wave ? "wave (fed line, voltage and current probes at the reference plane)" : "lumped") +
                       $", {R(p.Z0.Real)} Ohm");
+        lines.AddRange(Em3dPortMap.HeaderLines(problem.Ports, data));
         lines.AddRange(Em3dPortMap.Lines(problem.Ports));     // brief-em3d-93 — which document port each is, when one was off
         lines.Add($"circuitRF-EM 3D grid: {grid.X.Lines.Count} x {grid.Y.Lines.Count} x {grid.Z.Lines.Count} = {grid.Cells} cells; " +
                   $"smallest cell {Ascii(FdtdGrid.FormatLength(s0.SmallestCellM))} on {FdtdGrid.AxisName(s0.Axis)}, set by " +

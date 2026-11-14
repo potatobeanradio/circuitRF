@@ -486,6 +486,13 @@ public sealed record Em3dPort(
     /// is its own name (brief-em3d-114), set always.</summary>
     public string? SourceLabel { get; init; }
 
+    /// <summary>The net the layout's schematic puts on this port, for the result's header; null where none says.</summary>
+    public string? Net { get; init; }
+
+    /// <summary>What this port returns through, for the result's header, where it is a pin of a part rather than the object it
+    /// lands on (<see cref="NegativeObject"/>); null otherwise.</summary>
+    public string? Reference { get; init; }
+
     /// <summary>
     /// brief-em3d-114 R-em3d114-2a — the group of a multi-terminal wave port's terminals: every terminal of one port carries
     /// the same value (its lowest document number), shares its rectangle and its reference (<see cref="NegativeObject"/>),

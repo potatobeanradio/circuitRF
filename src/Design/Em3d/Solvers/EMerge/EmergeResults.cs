@@ -296,6 +296,7 @@ public static class EmergeResults
                 : $"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' from '{Ascii(p.NegativeObject)}' " +
                   $"to '{Ascii(p.PositiveObject)}', lumped, {R(p.Z0.Real)} Ohm");
         if (Em3dModePorts.SnpLine(problem.Ports) is { } modeLine) lines.Add(modeLine);     // brief-hzn-11 R-hzn11-4
+        lines.AddRange(Em3dPortMap.HeaderLines(problem.Ports, data));
         lines.AddRange(Em3dPortMap.Lines(problem.Ports));
         lines.Add($"circuitRF-EM 3D mesh: {N(facts.Tetrahedra)} tetrahedra, element order {settings.ElementOrder}" +
                   (problem.MeshFrequencyHz is { } meshedAt ? $", sized at {(meshedAt / 1e9).ToString("R", System.Globalization.CultureInfo.InvariantCulture)} GHz" : ""));
