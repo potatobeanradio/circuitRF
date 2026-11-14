@@ -24,6 +24,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using CircuitRF.Core.Design;
+using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Netlist;
@@ -192,8 +193,11 @@ public static class EmCoSimNetlist
     /// <param name="record">The run's record when it kept a far field or a field set, which makes the block EM Field Data; null makes it an SnP.</param>
     /// <param name="layoutModels">brief-icp-5 — the models for a cut instance placed on another layout than the first (a 3D view
     /// placing several); null reads <paramref name="models"/> for every part.</param>
+    /// <param name="netlistDir">The folder the netlist is written in: a file a model names (a compiled model, a Touchstone) inside the
+    /// workspace, or inside a library the workspace references by a relative path, is written relative to it, so the workspace keeps
+    /// working where it is moved or checked out. Null writes every path as the models state it.</param>
     public static string Text(EmSetup setup, string snpStored, IReadOnlyList<EmCoSimPort> ports, EmCoSimModels models, EmCoSimRecord? record = null,
-                              Func<string?, EmCoSimModels>? layoutModels = null)
+                              Func<string?, EmCoSimModels>? layoutModels = null, string? netlistDir = null)
     {
         var tb = new TestBench(setup.Name) { Technology = models.Technology };
         // A part's value may be an expression of the board's variables; without them the circuit names what it never defines.
@@ -264,8 +268,62 @@ public static class EmCoSimNetlist
         foreach (string c in comments) sb.AppendLine("; " + c);
         sb.AppendLine();
         bool cells = models.Library is { Cells.Count: > 0 } lib && tb.Instances.Any(i => lib.Find(i.Reference) is not null);
-        sb.Append(CnlWriter.Write(tb, cells ? models.Library : null));
+        var library = cells ? models.Library : null;
+        if (netlistDir is not null)
+        {
+            var roots = PortableRoots(netlistDir);
+            for (int i = 0; i < tb.Instances.Count; i++) tb.Instances[i] = Portable(tb.Instances[i], netlistDir, roots);
+            if (library is not null)
+            {
+                var copy = new Library(library.Name);
+                foreach (var c in library.Cells)
+                {
+                    var cc = c.CopyShallow(c.Name);
+                    for (int i = 0; i < cc.Instances.Count; i++) cc.Instances[i] = Portable(cc.Instances[i], netlistDir, roots);
+                    copy.Cells.Add(cc);
+                }
+                library = copy;
+            }
+        }
+        sb.Append(CnlWriter.Write(tb, library));
         return sb.ToString();
+    }
+
+    /// <summary>The folders whose files a netlist in <paramref name="netlistDir"/> names relative to itself: its workspace, and each
+    /// library the workspace's <c>.cws</c> references by a relative path (those travel with it; an absolute one stays where it is).</summary>
+    private static List<string> PortableRoots(string netlistDir)
+    {
+        string dir = Path.GetFullPath(netlistDir);
+        var roots = new List<string> { dir };
+        string cws = Path.Combine(dir, ".cws");
+        if (!File.Exists(cws)) return roots;
+        try
+        {
+            foreach (string lib in WorkspacePersistence.LoadFromFile(cws).LibraryRefs)
+                if (lib.Length > 0 && !Path.IsPathRooted(lib) && !lib.Contains("${", StringComparison.Ordinal))
+                    roots.Add(Path.GetFullPath(Path.Combine(dir, lib)));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or JsonException or ArgumentException) { }
+        return roots;
+    }
+
+    /// <summary><paramref name="inst"/> with each file it names under one of <paramref name="roots"/> written relative to
+    /// <paramref name="netlistDir"/>, which is what the netlist's reader resolves a relative file against.</summary>
+    private static Instance Portable(Instance inst, string netlistDir, IReadOnlyList<string> roots)
+    {
+        bool changed = false;
+        var overrides = inst.Overrides.Select(o =>
+        {
+            if (FileReferences.KindOf(inst.Reference, o.Name) != FileValueKind.Path) return o;
+            string t = o.Expression.Trim();
+            string path = t.Length >= 2 && t[0] == '"' && t[^1] == '"' ? t[1..^1] : t;
+            if (FileReferences.IsVirtual(path) || !Path.IsPathRooted(path)) return o;
+            string full = Path.GetFullPath(path);
+            if (!roots.Any(r => full.StartsWith(Path.TrimEndingDirectorySeparator(r) + Path.DirectorySeparatorChar, StringComparison.Ordinal))) return o;
+            changed = true;
+            return new ParameterAssignment(o.Name, $"\"{Path.GetRelativePath(netlistDir, full).Replace('\\', '/')}\"", o.Unit);
+        }).ToList();
+        return changed ? new Instance(inst.InstanceName, inst.Reference, inst.NetBindings, overrides) { RefNetBinding = inst.RefNetBinding } : inst;
     }
 
     /// <summary>
@@ -519,7 +577,7 @@ public static class EmCoSimNetlist
             EmCoSimModels LayoutModels(string? clay) => clay is null ? models
                 : byLayout.TryGetValue(clay, out var m) ? m : byLayout[clay] = ModelsFor(clay);
             string stored = Path.GetRelativePath(workspaceDir, Path.GetFullPath(snpPath)).Replace('\\', '/');
-            string text = Text(setup, stored, ports, models, RecordFor(recordPath, workspaceDir), LayoutModels);
+            string text = Text(setup, stored, ports, models, RecordFor(recordPath, workspaceDir), LayoutModels, workspaceDir);
             IReadOnlyList<string> warnings = ports.Any(p => p.Component?.Cut is not null)
                 ? [.. Closures(ports, models, LayoutModels).SelectMany(c => c.Warnings).Distinct()] : [];
             if (File.Exists(path))
