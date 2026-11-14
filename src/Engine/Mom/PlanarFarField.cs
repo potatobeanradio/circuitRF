@@ -799,19 +799,45 @@ public static class PlanarFarField
         PlanarProblem problem, PlanarMesh mesh, Vec<Complex> basisCurrents,
         int drivenPortNumber, double fHz, PlanarFarFieldGrid? grid = null,
         int? maxDegreeOfParallelism = null, CancellationToken ct = default)
+        => ComputeAll(problem, mesh, [basisCurrents], [drivenPortNumber], fHz, grid, maxDegreeOfParallelism, ct)[0];
+
+    /// <summary>
+    /// <b>The patterns of SEVERAL driven ports at one frequency, from one pass over the basis.</b> A rooftop's
+    /// spectrum depends on the direction and the basis only, never on which port drove it, so it is evaluated
+    /// once per (basis, direction) and weighed by every port's current there. <see cref="Compute"/> is this with
+    /// one port, so there is one transform.
+    ///
+    /// <para><b>Measured (brief-paa-1):</b> the spectrum is the transform's whole cost, and a run called it once
+    /// per port, so a 3×3 patch array spent 26 s of a 40 s point in the far field and a 6×6 was projected at
+    /// about 7 minutes a frequency. Each port's sum runs over the basis in the same order as before, so every
+    /// pattern is bit-identical to the one-port transform's.</para>
+    /// </summary>
+    /// <param name="basisCurrents">One column per port, each as <see cref="Compute"/>'s.</param>
+    /// <param name="drivenPortNumbers">Each column's port number, in the same order.</param>
+    public static PlanarFarFieldPattern[] ComputeAll(
+        PlanarProblem problem, PlanarMesh mesh, IReadOnlyList<Vec<Complex>> basisCurrents,
+        IReadOnlyList<int> drivenPortNumbers, double fHz, PlanarFarFieldGrid? grid = null,
+        int? maxDegreeOfParallelism = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(mesh);
+        ArgumentNullException.ThrowIfNull(basisCurrents);
+        ArgumentNullException.ThrowIfNull(drivenPortNumbers);
+        if (basisCurrents.Count != drivenPortNumbers.Count)
+            throw new ArgumentException($"{basisCurrents.Count} current column(s) for {drivenPortNumbers.Count} port number(s).",
+                                        nameof(drivenPortNumbers));
         // PMS-6 R-pms6-3 — a block mesh needs nothing here: RooftopSpectrum.Of reads a step rooftop's strips.
 
         var g  = grid ?? PlanarFarFieldGrid.Hemisphere();
         var ok = CanCompute(problem, mesh, fHz, g);
         if (!ok.Ok) throw new InvalidOperationException(ok.Reason);
 
-        if (basisCurrents.Count != mesh.Bases.Count)
-            throw new ArgumentException(
-                $"The solution has {basisCurrents.Count} unknowns and the mesh has {mesh.Bases.Count} " +
-                $"basis functions — these are not the same solve.", nameof(basisCurrents));
+        int nPorts = basisCurrents.Count;
+        foreach (var column in basisCurrents)
+            if (column.Count != mesh.Bases.Count)
+                throw new ArgumentException(
+                    $"The solution has {column.Count} unknowns and the mesh has {mesh.Bases.Count} " +
+                    $"basis functions — these are not the same solve.", nameof(basisCurrents));
 
         var factors = FarFieldElementFactors.For(problem, fHz);
 
@@ -823,9 +849,15 @@ public static class PlanarFarField
                 "needs. PlanarProblem.RequiresGeneralKernel is the single place that choice is made.");
 
         int nt = g.ThetaDeg.Count, np = g.PhiDeg.Count, nLevels = problem.Layers.Count;
-        var eTheta = new Complex[nt * np];
-        var ePhi   = new Complex[nt * np];
-        var u      = new double[nt * np];
+        var eTheta = new Complex[nPorts][];
+        var ePhi   = new Complex[nPorts][];
+        var u      = new double[nPorts][];
+        for (int q = 0; q < nPorts; q++)
+        {
+            eTheta[q] = new Complex[nt * np];
+            ePhi[q]   = new Complex[nt * np];
+            u[q]      = new double[nt * np];
+        }
 
         double k0   = factors.K0;
         double eta0 = FarFieldElementFactors.Eta0;
@@ -846,8 +878,9 @@ public static class PlanarFarField
                 var fTe = new Complex[nLevels];
                 for (int L = 0; L < nLevels; L++) (fTm[L], fTe[L]) = factors.At(theta, L);
 
-                var jx = new Complex[nLevels];
-                var jy = new Complex[nLevels];
+                // [port, level]: each port's spectral current sums, as the one-port transform's jx/jy.
+                var jx = new Complex[nPorts * nLevels];
+                var jy = new Complex[nPorts * nLevels];
 
                 for (int ip = 0; ip < np; ip++)
                 {
@@ -859,31 +892,39 @@ public static class PlanarFarField
                     for (int b = 0; b < mesh.Bases.Count; b++)
                     {
                         var basis = mesh.Bases[b];
-                        Complex t = basisCurrents[b] * RooftopSpectrum.Of(mesh, basis, kx, ky);
-                        if (basis.Direction == PlanarBasisDirection.X) jx[basis.LayerIndex] += t;
-                        else                                          jy[basis.LayerIndex] += t;
+                        Complex spectrum = RooftopSpectrum.Of(mesh, basis, kx, ky);
+                        var sums = basis.Direction == PlanarBasisDirection.X ? jx : jy;
+                        for (int q = 0; q < nPorts; q++)
+                            sums[q * nLevels + basis.LayerIndex] += basisCurrents[q][b] * spectrum;
                     }
-
-                    Complex fth = Complex.Zero, fph = Complex.Zero;
-                    for (int L = 0; L < nLevels; L++)
-                    {
-                        fth += fTm[L] * (jx[L] * cosPhi + jy[L] * sinPhi);
-                        fph += fTe[L] * (-jx[L] * sinPhi + jy[L] * cosPhi);
-                    }
-                    fth *= c;
-                    fph *= c;
 
                     int idx = g.IndexOf(it, ip);
-                    eTheta[idx] = fth;
-                    ePhi[idx]   = fph;
-                    u[idx]      = (fth.Magnitude * fth.Magnitude + fph.Magnitude * fph.Magnitude)
-                                  / (2.0 * eta0);
+                    for (int q = 0; q < nPorts; q++)
+                    {
+                        Complex fth = Complex.Zero, fph = Complex.Zero;
+                        for (int L = 0; L < nLevels; L++)
+                        {
+                            Complex x = jx[q * nLevels + L], y = jy[q * nLevels + L];
+                            fth += fTm[L] * (x * cosPhi + y * sinPhi);
+                            fph += fTe[L] * (-x * sinPhi + y * cosPhi);
+                        }
+                        fth *= c;
+                        fph *= c;
+
+                        eTheta[q][idx] = fth;
+                        ePhi[q][idx]   = fph;
+                        u[q][idx]      = (fth.Magnitude * fth.Magnitude + fph.Magnitude * fph.Magnitude)
+                                         / (2.0 * eta0);
+                    }
                 }
             });
         }
 
         PlanarFanOut.Run(maxDegreeOfParallelism, rows);
 
-        return new PlanarFarFieldPattern(g, eTheta, ePhi, u, drivenPortNumber, fHz);
+        var made = new PlanarFarFieldPattern[nPorts];
+        for (int q = 0; q < nPorts; q++)
+            made[q] = new PlanarFarFieldPattern(g, eTheta[q], ePhi[q], u[q], drivenPortNumbers[q], fHz);
+        return made;
     }
 }

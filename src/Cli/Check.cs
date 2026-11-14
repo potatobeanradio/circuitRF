@@ -1357,7 +1357,7 @@ internal static class Check
             // the mesh budget quotes (or the near-field estimate's when the accelerated solve runs), and the sweep's points.
             int points = 0;
             try { points = setup.ExpandFrequencies().Length; } catch (Exception) { /* the sweep's own refusal is above */ }
-            long memory = pre.NearField is { } nf ? nf.ResidentBytes : mesh.RunResidentBytes;
+            long memory = pre.NearField is { } nf ? nf.PeakBytes : mesh.RunResidentBytes;   // the build's peak, not what it keeps (brief-paa-1)
             double? perPoint = pre.NearField is { } near ? near.FactorSeconds
                              : setup.AcceleratedSolve ? null
                              : SurfaceMesher.EstimatedFactorSeconds(mesh.UnknownCount);
@@ -1368,6 +1368,7 @@ internal static class Check
                 mesh.Verdict.ToString().ToLowerInvariant())
             {
                 MemoryBytes           = memory,
+                MemoryIsLowerBound    = pre.NearField is { FactorNonZeros: null },
                 FactorSecondsPerPoint = perPoint,
                 Points                = points > 0 ? points : null,
                 FactorSecondsTotal    = perPoint is { } s && points > 0 ? s * points : null,

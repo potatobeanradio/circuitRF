@@ -569,10 +569,16 @@ namespace RfCore.Export
         string? CeilingKind,
         string Verdict)
     {
-        /// <summary>EMB-5 R-emb5-2 — one frequency point's resident memory as the run's memory check judges it: the dense
-        /// structure and its calibration standards, or the accelerated solve's near-field estimate when that is what runs.</summary>
+        /// <summary>EMB-5 R-emb5-2 — one frequency point's memory as the run's memory check judges it: the dense
+        /// structure and its calibration standards, or the accelerated solve's PEAK while it factors when that is what
+        /// runs (brief-paa-1 — it was the operator's resident size, a quarter of the peak or less).</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public long? MemoryBytes { get; init; }
+
+        /// <summary>True when <see cref="MemoryBytes"/> is a lower bound: the accelerated solve's near set was too large to
+        /// analyse, so neither its factor's fill nor its time is known before the run.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool MemoryIsLowerBound { get; init; }
 
         /// <summary>The estimated factorisation time of one frequency point, s — the dense c·N³ the mesh budget quotes, or
         /// the accelerated solve's near-field factor. The fill is not in it.</summary>

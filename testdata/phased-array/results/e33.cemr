@@ -1,0 +1,160 @@
+{
+  "FormatVersion": 1,
+  "Stamp": "20261114T205647Z-ce0dc6c2",
+  "Written": "2026-11-14T13:56:47.852749-07:00",
+  "Product": "1.8.4",
+  "Solver": {
+    "Name": "Full-wave planar",
+    "Version": "grounded-edge-port-2026-10-14",
+    "Device": "cpu"
+  },
+  "Files": {
+    "Snp": "e33.s9p",
+    "Npy": "e33_em.npy",
+    "Fields": null
+  },
+  "Ports": [
+    {
+      "Number": 1,
+      "Name": "1",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 2,
+      "Name": "2",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 3,
+      "Name": "3",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 4,
+      "Name": "4",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 5,
+      "Name": "5",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 6,
+      "Name": "6",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 7,
+      "Name": "7",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 8,
+      "Name": "8",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 9,
+      "Name": "9",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    }
+  ],
+  "Frequencies": {
+    "SweepHz": [
+      5900000000
+    ],
+    "FarFieldHz": [
+      5900000000
+    ],
+    "FieldSetHz": []
+  },
+  "FarFieldExcitation": "ShortedOthers",
+  "Setup": {
+    "FormatVersion": 1,
+    "Name": "e33",
+    "SignalStackupLayerName": "Top Copper (1 oz)",
+    "Frequency": {
+      "StartExpr": "5.8",
+      "StopExpr": "6.0",
+      "StepExpr": "",
+      "NumPoints": 3,
+      "Mode": "PointCount",
+      "Kind": "Linear",
+      "StartUnit": "GHz",
+      "StopUnit": "GHz",
+      "StepUnit": "Hz"
+    },
+    "Port1Z0Real": 50,
+    "Port1Z0Imag": 0,
+    "Port2Z0Real": 50,
+    "Port2Z0Imag": 0,
+    "Mesh": {
+      "MinCellsAcrossWidth": 8,
+      "EdgeCells": 4,
+      "EdgeFractionOfWidth": 0.1,
+      "EdgeGrowthRatio": 1.5,
+      "TruncationHeights": 6,
+      "TruncationTailCells": 4
+    },
+    "DispersionCorrection": true,
+    "RadiationPattern": true,
+    "AnalysisKind": "Planar",
+    "PlanarMesh": {
+      "Auto": false,
+      "CellsPerWavelength": 12,
+      "EdgeMesh": false,
+      "EdgeCells": 3,
+      "CurrentModel": "Sheet"
+    }
+  },
+  "SetupSource": {
+    "File": "../e33/em/e33.cem",
+    "Embedded": null
+  },
+  "Geometry": {
+    "GeometryHash": "907b3cf859f14e48",
+    "MeshHash": "0bbae7c1192826ed",
+    "PortHash": "125218ed5d16ecfa",
+    "ModelRevision": "grounded-edge-port-2026-10-14",
+    "MeshSize": 2646,
+    "MeshUnit": "cells",
+    "Unknowns": 4788
+  }
+}

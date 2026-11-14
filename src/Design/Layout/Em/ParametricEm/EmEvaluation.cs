@@ -304,7 +304,7 @@ public static partial class EmEvaluation
             if (!pre.Ok || pre.PlanarMesh is not { } mesh) return null;
             int points = 0;
             try { points = g.Target.Setup.ExpandFrequencies().Length; } catch (Exception) { }
-            long memory = pre.NearField is { } nf ? nf.ResidentBytes : mesh.RunResidentBytes;
+            long memory = pre.NearField is { } nf ? nf.PeakBytes : mesh.RunResidentBytes;
             double? perPoint = pre.NearField is { } near ? near.FactorSeconds
                              : g.Target.Setup.AcceleratedSolve ? null
                              : SurfaceMesher.EstimatedFactorSeconds(mesh.UnknownCount);

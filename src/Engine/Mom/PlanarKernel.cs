@@ -472,7 +472,7 @@ public sealed class PlanarKernel
                 // EMB-4 — an accelerated run on a multi-level or via mesh is judged on the DENSE ceiling; the
                 // sentence says so, says what the accelerator holds, and never quotes a ceiling of 0.
                 DenseCeiling             = aim && !report.AcceleratedCeiling,
-                AcceleratedResidentBytes = report.AcceleratedEstimate?.ResidentBytes,
+                AcceleratedResidentBytes = report.AcceleratedEstimate?.PeakBytes,
                 CoreBytes                = report.CoreBytes,
             };
             if (admit(size) is { } declined) throw new PlanarRunDeclinedException(declined);

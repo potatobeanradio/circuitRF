@@ -300,9 +300,10 @@ public static class SurfaceMesher
     /// </summary>
     public static string AcceleratedClause(long denseBytes, PlanarNearFieldEstimate estimate)
         => $"; that is judged on the dense ceiling ({FormatBytes(denseBytes)}), because this mesh has more than one " +
-           "metal level or a via, and the accelerated solve this run uses holds " +
+           "metal level or a via, and the accelerated solve this run uses peaks at " +
            (estimate.FactorNonZeros is null ? "at least " : "about ") +
-           $"{PlanarNearFieldEstimate.Size(estimate.ResidentBytes)}, estimated " +
+           $"{PlanarNearFieldEstimate.Size(estimate.PeakBytes)} a frequency point while it factors, and holds " +
+           $"{PlanarNearFieldEstimate.Size(estimate.ResidentBytes)} after, estimated " +
            $"({PlanarNearFieldEstimate.Size(estimate.FactorBytes)} of it the " +
            "near-field factor)";
 

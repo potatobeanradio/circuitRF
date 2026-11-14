@@ -118,6 +118,38 @@ public sealed record PlanarNearFieldEstimate(
         }
     }
 
+    /// <summary>
+    /// <b>What one frequency point PEAKS at while its operator is built</b> — the figure a memory judgment needs, where
+    /// <see cref="ResidentBytes"/> is what is held once the build is done. The difference is the factorisation: CSparse's
+    /// SparseLU starts L and U at 4·nnz(A) + n entries EACH, grows either by doubling when it fills, and trims both only at
+    /// the end (<see cref="FactorBuildBytes"/>), while the near matrix's exact entries and the CSC copy handed to it are
+    /// still alive. Measured (brief-paa-1): a 3×3 patch array of 4,788 unknowns and 4.86 million near entries peaked at
+    /// 1.1-1.3 GB against 0.3 GB resident; a 6×6 of 19,152 unknowns, whose factor was too large to analyse, peaked at
+    /// 6.4 GB against a stated 0.9 GB. With an unanalysed factor it is a lower bound, as <see cref="ResidentBytes"/> is.
+    /// </summary>
+    public long PeakBytes =>
+        ResidentBytes - FactorBytes
+        + FactorBuildBytes(NearEntries, HorizontalUnknowns, FactorNonZeros)
+        + 16L * NearEntries                                        // the exact near entries, released after the factor
+        + 20L * NearEntries + 4L * (HorizontalUnknowns + 1);       // FactorNear's CSC copy
+
+    /// <summary>
+    /// The bytes CSparse's complex SparseLU allocates for L and U at their largest: each starts at
+    /// <c>4·<paramref name="nearEntries"/> + n</c> entries, is resized to <c>2·length + n</c> whenever a column would not
+    /// fit (old and new arrays both alive through the copy), and is trimmed to its fill at the end (again a copy). 20 B an
+    /// entry, a complex value and its row index. L and U are taken to share <paramref name="factorNonZeros"/> evenly;
+    /// null (not analysed) prices the starting allocation alone.
+    /// </summary>
+    public static long FactorBuildBytes(long nearEntries, long n, long? factorNonZeros)
+    {
+        long start = 4L * nearEntries + n;
+        long need = (factorNonZeros ?? 0) / 2;
+        long cap = start, previous = 0;
+        while (need > cap) { previous = cap; cap = 2 * cap + n; }
+        long oneArray = Math.Max(cap + previous, cap + need);
+        return 20L * 2 * oneArray;
+    }
+
     /// <summary>Past <see cref="LargeFactorSeconds"/>, or too large to analyse at all.</summary>
     public bool Large => FactorSeconds is { } s ? s > LargeFactorSeconds : NearEntries > AnalysedNearEntriesCap;
 

@@ -63,8 +63,12 @@ internal static class EmDryRun
             if (em.Ceiling is { } ceiling)
                 s += $" against the {em.CeilingKind} ceiling of {ceiling:N0} ({em.Verdict})";
             if (em.MemoryBytes is { } b)
-                s += $", about {PlanarNearFieldEstimate.Size(b)} a frequency point" +
+                s += $", {(em.MemoryIsLowerBound ? "at least" : "about")} {PlanarNearFieldEstimate.Size(b)} a frequency point" +
                      (em.Memory == "past-limit" ? ", past this machine's memory" : "");
+            // An accelerated near set too large to analyse has no factor time: say so rather than leave it out, because a
+            // line with no time reads as a quick run (brief-paa-1: a 6×6 patch array estimated this way ran past 30 minutes).
+            if (em.MemoryIsLowerBound && em.FactorSecondsPerPoint is null)
+                s += ", factor time not estimated (the near set is too large to analyse; it may take many minutes a point)";
             if (em.FactorSecondsPerPoint is { } t)
                 s += $", factoring about {Duration(t)} a point" +
                      (em.FactorSecondsTotal is { } total && em.Points is { } n ? $", about {Duration(total)} for {n:N0} points" : "") +

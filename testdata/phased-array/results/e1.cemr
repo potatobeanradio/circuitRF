@@ -1,0 +1,88 @@
+{
+  "FormatVersion": 1,
+  "Stamp": "20261114T205354Z-f7ae9d33",
+  "Written": "2026-11-14T13:53:54.58821-07:00",
+  "Product": "1.8.4",
+  "Solver": {
+    "Name": "Full-wave planar",
+    "Version": "grounded-edge-port-2026-10-14",
+    "Device": "cpu"
+  },
+  "Files": {
+    "Snp": "e1.s1p",
+    "Npy": "e1_em.npy",
+    "Fields": null
+  },
+  "Ports": [
+    {
+      "Number": 1,
+      "Name": "1",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    }
+  ],
+  "Frequencies": {
+    "SweepHz": [
+      5900000000
+    ],
+    "FarFieldHz": [
+      5900000000
+    ],
+    "FieldSetHz": []
+  },
+  "FarFieldExcitation": "ShortedOthers",
+  "Setup": {
+    "FormatVersion": 1,
+    "Name": "e1",
+    "SignalStackupLayerName": "Top Copper (1 oz)",
+    "Frequency": {
+      "StartExpr": "5.8",
+      "StopExpr": "6.0",
+      "StepExpr": "",
+      "NumPoints": 3,
+      "Mode": "PointCount",
+      "Kind": "Linear",
+      "StartUnit": "GHz",
+      "StopUnit": "GHz",
+      "StepUnit": "Hz"
+    },
+    "Port1Z0Real": 50,
+    "Port1Z0Imag": 0,
+    "Port2Z0Real": 50,
+    "Port2Z0Imag": 0,
+    "Mesh": {
+      "MinCellsAcrossWidth": 8,
+      "EdgeCells": 4,
+      "EdgeFractionOfWidth": 0.1,
+      "EdgeGrowthRatio": 1.5,
+      "TruncationHeights": 6,
+      "TruncationTailCells": 4
+    },
+    "DispersionCorrection": true,
+    "RadiationPattern": true,
+    "AnalysisKind": "Planar",
+    "PlanarMesh": {
+      "Auto": false,
+      "CellsPerWavelength": 12,
+      "EdgeMesh": false,
+      "EdgeCells": 3,
+      "CurrentModel": "Sheet"
+    }
+  },
+  "SetupSource": {
+    "File": "../e1/em/e1.cem",
+    "Embedded": null
+  },
+  "Geometry": {
+    "GeometryHash": "7e172d504dafdac2",
+    "MeshHash": "0bbae7c1192826ed",
+    "PortHash": "7ced4559c4ee958b",
+    "ModelRevision": "grounded-edge-port-2026-10-14",
+    "MeshSize": 294,
+    "MeshUnit": "cells",
+    "Unknowns": 532
+  }
+}

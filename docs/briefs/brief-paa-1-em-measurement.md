@@ -92,3 +92,71 @@ sampling of the stored pattern, never a re-solve, and the README says so.
 ## Not here
 
 Any product code; the engine is PAA-2. Palace runs. Optimising the element.
+
+## Completion note (2026-11-14)
+
+**Decisions handed on (R-paa1-5):**
+
+1. **Default level for a sub-array record: `embedded` (L1). L1 beats L0 in every case**, so the stop rule does not apply.
+   **A 5×5 sub-array is the useful minimum:** predicting the 6×6 it gives 0.75 dB worst peak gain and 0.11 worst
+   active reflection (RMS ≤ 0.04), where a 3×3 gives 1.99 dB and 0.19 and L0 3.61 dB and 0.50. The docs (PAA-10) should
+   recommend a 5×5 sub-array and state these numbers.
+   Worst active-reflection error: L0 0.15–0.50, L1-classes 0.04–0.16. Worst peak realized-gain error: L0 up to 3.6 dB,
+   L1-classes 0.26–1.58 dB.
+2. **Build `Patterns=classes`, and make it the default.** It beat the centre pattern alone in every case: worst RMS pattern
+   error 0.80 vs 2.48 dB (1×9 along x), 1.80 vs 2.65 (1×9 along y), 2.56 vs 4.23 (5×5 from 3×3).
+3. **Tolerances.** The L2 identity is exact arithmetic: 9.4e-16 measured, so gate it at 1e-12, not 1e-9. L1 against a
+   reference array is a physics error, not something the engine can be gated to within; PAA-2's gate 3 should instead
+   require the engine to **reproduce this harness's L1 numbers on the fixtures to 1e-9**, and the measured physics errors go
+   in the user docs. **Power balance:** on a planar record L2's own radiated/accepted is 0.41–0.88 (it is the efficiency,
+   surface-wave loss included), so no absolute band can judge an approximation. Say nothing within 0.1 of the centre
+   element's own embedded efficiency; warn beyond it; **always warn above 1** (L0 reached 1.29).
+4. **Pitch warning at 0.02 λ₀** from the record's pitch (a 0.042 λ₀ move changed nearest-neighbour |S21| by 0.035–0.046).
+
+**What changed from the brief, and why.**
+
+- **Frequencies 5.8/5.9/6.0 GHz, comparisons at 5.9.** At the coarser mesh the patch resonates at about 5.88 GHz (S11
+  −15 dB at 5.9, −5.7 dB at 5.8), so 5.9 is the operating point; the pitch is 0.508 λ₀ there.
+- **7×7 does not fit** (25,704 unknowns, est 28 GB). The fallbacks were taken together: a 3×3 as a second sub-array,
+  **1×9 and 1×16 lines along x and y predicted from 1×4s and 1×9s**, the 5×5 predicted from the 3×3, and **E6 = 6×6**,
+  solved dense at 5.9 GHz only with the owner's go-ahead (dry run 13 GB, past half the machine; actual 251 s and 5.7 GB,
+  after the far-field fix below). The first attempt, with the accelerated solve, peaked at 6.4 GB and was stopped at 30
+  minutes.
+- **E3 is the 1×4 along x** (|S21| −17.06 dB against −17.71 along y).
+- **E7 (thick substrate) and E8 (finite ground on EMerge) were not run.** E8 is not feasible as written: EMerge gives no pattern over a PEC floor (it needs a drawn finite ground and every face absorbing), and the estimate for even the 2×2 is ~153,000 elements (about 38 GB at EMerge's 0.25 MB an element; the 6×6 ~1.4 million). openEMS images a conducting floor and is the route if the edge effect is wanted.
+- **Run cost, fixed after the runs** (`src/Engine/Mom/RESOLVED.md` § brief-paa-1): the far field re-evaluated every rooftop spectrum per port and was 26 of 40 s a point on the 3×3; it is now one pass for all ports, bit-identical, 4.2 s. The accelerated dry run now prices the factorisation's peak (3×3: 1.3 GB, measured 1.1-1.3; 6×6: at least 4.7 GB and no factor time, where it said 0.9 GB).
+- **Fixtures are 5° and one frequency, as stated, but the 5×5 is 1.9 MB, not ~1 MB** (25 ports × 1,368 directions × two
+  components). The 3×3 is included as well, since it is the sub-array the 5×5 was predicted from. They load through
+  `EmFieldDataRecord.Open` (gate 4).
+
+**Gates:** 1 — every run's dry-run and actual numbers are in `src/Design/RESOLVED.md` § brief-paa-1. 2 — 9.4e-16 on E4.
+3 — tables for E2–E6 and the lines, below and in `src/Design/RESOLVED.md`. 4 — met (sizes above; the 6×6 is 2.7 MB).
+
+**Summary (5.9 GHz, scans 0°, and 30/45/60° in each principal plane and the diagonal):**
+
+| target ← sub-array | level | max |ΔGr peak| dB | max RMS pattern err dB | max |ΔΓact| | RMS |ΔΓact| (worst scan) | max |Prad/Pacc − L2's| |
+|---|---|---|---|---|---|---|
+| 1×2 x ← isolated | L0 | 1.24 | 4.15 | 0.158 | 0.158 | 0.198 |
+| 1×2 y ← isolated | L0 | 0.53 | 3.18 | 0.148 | 0.140 | 0.069 |
+| 1×4 x ← isolated | L0 | 2.15 | 3.35 | 0.365 | 0.304 | 0.276 |
+| 1×4 y ← isolated | L0 | 1.18 | 2.78 | 0.259 | 0.230 | 0.091 |
+| 2×2 ← isolated | L0 | 2.03 | 4.72 | 0.276 | 0.219 | 0.298 |
+| 3×3 ← isolated | L0 | 2.79 | 5.08 | 0.483 | 0.315 | 0.457 |
+| 5×5 ← isolated | L0 | 3.56 | 4.80 | 0.498 | 0.380 | 0.624 |
+| 1×9 x ← 1×4 x | L1 centre | 0.43 | 2.48 | 0.052 | 0.038 | 0.053 |
+| 1×9 x ← 1×4 x | L1 classes | 0.26 | 0.80 | 0.042 | 0.035 | 0.041 |
+| 1×9 y ← 1×4 y | L1 centre | 0.34 | 2.65 | 0.095 | 0.070 | 0.078 |
+| 1×9 y ← 1×4 y | L1 classes | 0.29 | 1.80 | 0.091 | 0.069 | 0.063 |
+| 5×5 ← 3×3 | L1 centre | 3.11 | 4.23 | 0.160 | 0.081 | 0.257 |
+| 5×5 ← 3×3 | L1 classes | 1.58 | 2.56 | 0.163 | 0.077 | 0.205 |
+| 6×6 ← isolated | L0 | 3.61 | 4.39 | 0.502 | 0.389 | 0.659 |
+| 6×6 ← 3×3 | L1 classes | 1.99 | 3.32 | 0.190 | 0.096 | 0.255 |
+| 6×6 ← 5×5 | L1 centre | 1.11 | 3.51 | 0.095 | 0.046 | 0.105 |
+| 6×6 ← 5×5 | L1 classes | 0.75 | 2.65 | 0.114 | 0.039 | 0.073 |
+| 1×16 x ← 1×4 x | L1 classes | 0.33 | 0.54 | 0.040 | 0.025 | 0.053 |
+| 1×16 x ← 1×9 x | L1 classes | 0.15 | 0.54 | 0.027 | 0.013 | 0.013 |
+| 1×16 y ← 1×4 y | L1 classes | 0.30 | 0.87 | 0.098 | 0.083 | 0.052 |
+| 1×16 y ← 1×9 y | L1 classes | 0.67 | 1.02 | 0.069 | 0.040 | 0.083 |
+
+L0 rows for the 1×9 lines (from the isolated element): 2.83 / 2.46 / 0.446 and 1.34 / 2.52 / 0.327. Per-scan tables are
+produced by `testdata/phased-array/harness/compare.py <target> <sub-array>`.

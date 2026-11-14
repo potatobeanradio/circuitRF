@@ -31639,3 +31639,55 @@ these were fixed; afterwards Planar solved the 8-port passive and reciprocal (σ
   `RenderCliVerbTests.AComponentPortSetup_IsMarkedOnItsLayout_AndRefusedOnAnother`.
 - The shipped MMIC Component Ports layout recorded `TechIdentity` as a path into the author's export folder, so its four cells
   rebuilt under new names on every run; corrected (artwork identical, so its README's numbers stand).
+
+## brief-paa-1 — how far an element's pattern carries an array, measured (2026-11-14)
+
+Planar patch arrays (the *Patch Antenna* element at 25.86 mm, 0.508 λ₀ at 5.9 GHz; 12 cells/λ, edge mesh off, a
+de-embedded edge port at the end of each 5 mm feed) compared three ways at 5.9 GHz: L0 (the isolated element times the
+array factor, no coupling), L1 (a sub-array's embedded pattern(s) times the array factor, its S extended by element
+offset), L2 (every port's own pattern, the array solved whole). Embedded patterns were taken from the product's own
+`fields` analysis, one drive per port; the harness's L2 equals the product's multi-drive `fields` result to 9.4e-16 on
+the 2×2. Fixtures and harness: `testdata/phased-array/`.
+
+- **L1 beats L0 everywhere, by a wide margin in what a PA sees.** Worst active-reflection error over 0–60° scans:
+  L0 0.15–0.50, L1 with position classes 0.04 (1×9 along x from a 1×4), 0.09 (1×9 along y from a 1×4), 0.16 (5×5 from a
+  3×3). Worst peak realized-gain error: L0 up to 3.6 dB, L1-classes 0.26, 0.29 and 1.58 dB. L0's radiated-over-accepted
+  power reached 1.29 on a scan, i.e. it creates power; L1's stays within 0.04–0.21 of L2's.
+- **Position classes are worth having.** L1 with the centre pattern alone against L1 with the class patterns: worst RMS
+  pattern error (directions within 20 dB of the peak) 2.48 vs 0.80 dB (1×9 x), 2.65 vs 1.80 (1×9 y), 4.23 vs 2.56
+  (5×5); worst peak gain 0.43 vs 0.26, 0.34 vs 0.29, 3.11 vs 1.58 dB. Inside the 5×5, corner and edge embedded patterns
+  differ from the centre's by 1.3–1.65 dB RMS, the next ring in by 0.8 dB.
+- **The E-plane is where L1 is weakest** (scans in the plane of the rows, along y): the largest L1 errors in every case
+  are there (5×5 from 3×3 at 45°: −1.6 dB), consistent with E-plane coupling being the long-range one that a small
+  sub-array truncates. A 3×3 is too small a sub-array to stand for an interior element (its "interior" class is one
+  element with edge neighbours); the 5×5 → 6×6 comparison is what answers whether 5×5 is enough.
+- **The 6×6 reference, solved afterwards (dense, 5.9 GHz, 251 s, 5.7 GB peak against a 13 GB estimate), answers whether a
+  5×5 sub-array is enough.** Predicting the 6×6 with position classes: from the 5×5, worst peak realized-gain error 0.75 dB
+  (≤ 0.3 dB from 45° to 60° in both planes; the worst are boresight −0.47 and 30° E-plane +0.75), active reflection within
+  0.03-0.11 at every scan (RMS ≤ 0.04) — at 60° in the E-plane, where the true |Γ_act| reaches 0.66 and L0 is off by 0.50 —
+  and pointing within 1°. From the 3×3: 1.99 dB and 0.19. L0: 3.61 dB and 0.50. A 5×5 sub-array is the useful minimum; a
+  3×3 is not.
+- **1×16 lines** (7,723 / 8,304 unknowns, ~80 s for 3 points each) predicted from 1×4s: within 0.33 dB (x) and 0.30 dB (y),
+  active reflection 0.04 / 0.10. From 1×9s: 0.15 dB and 0.027 along x (better), 0.67 dB and 0.07 along y (better in Γ_act,
+  RMS 0.040 against 0.083, not in peak gain) — the E-plane coupling is the long-range one, as the squares showed.
+- **Pitch.** Moving the pitch 0.042 λ₀ changes the nearest-neighbour |S21| by 0.035 (y) to 0.046 (x), the size of L1's own
+  active-reflection error, so a coupling solved at one pitch should be warned about at about 0.02 λ₀ from it.
+- **Off resonance** (5.8 and 6.0 GHz, phases set at 5.9, |Γ_act| up to 0.71), the ordering holds: L1-classes 0.04–0.12
+  active-reflection error, L0 0.15–0.24.
+- **Run costs, dry run against actual (this machine, 17 GB, Release).** 1×1 532 unknowns, 4 s; 1×2 6 s; 1×4 and 2×2 2,128,
+  ~20 s, 0.3 GB; 3×3 4,788, est 0.6 GB, 103 s, 0.84 GB; 1×9 4,580/4,788, 96/135 s, 1.0/0.56 GB; **5×5 13,300, est 6.4 GB
+  and ~2 min of factoring, actual 910 s for 3 points and 3.2 GB** (the dense estimate is about twice the measured peak at
+  this size; the fill and far field dominate the time). 7×7 does not fit (25,704 unknowns, est 28 GB). 6×6 dense: 19,152,
+  est 13 GB, not run (past half the machine). **6×6 with the accelerated solve: dry run said 0.9 GB a point; the run peaked
+  at 6.4 GB and was stopped by the watchdog at 30 min in its far-field stage** — the accelerated estimate leaves out what
+  dominates this problem. The accelerated solve itself agreed with dense on the 3×3 to |ΔS| 1.1e-5 and 1e-4 dB.
+- **Found on the way.** The Touchstone header already carries each port's position (`port 1: '1' at (x, y mm)`) although
+  the `.cemr` does not (R-paa2-8 adds it). A reduced `.npy` must keep `__meta__` as bytes (`S`): written as unicode it reads
+  as truncated. **Not a defect, though first reported as one:** `circuitrf fields -o` with several fields analyses writes
+  every one of them; the `.npy` field names are opaque keys, a cube's own name unless it collides (`NpyWriter`), so the
+  first analysis's cubes carry no prefix and the group is in `__meta__`. A reader must take the group from `__meta__`.
+- **The run cost, fixed afterwards (`src/Engine/Mom/RESOLVED.md` § brief-paa-1).** The far field took 26 of every 40 s on
+  the 3×3 because each port's pattern re-evaluated every rooftop spectrum; one pass for all ports is bit-identical and took
+  it to 4.2 s (the whole dense 3×3 run 104 → 27 s). The accelerated dry run quoted the operator's resident size where the
+  run peaks at the factorisation's: it now says 1.3 GB for the 3×3 (measured 1.1-1.3) and "at least 4.7 GB, factor time
+  not estimated" for the 6×6 (measured 6.4 GB, past 30 minutes).

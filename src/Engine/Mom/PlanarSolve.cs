@@ -277,6 +277,10 @@ public sealed class PlanarSolveContext
 
         if (_aimGeometry is not null)
         {
+            // Let the previous point's operator go BEFORE this one is built (brief-paa-1). Assigning the new one over it
+            // kept two operators live through every build after the first: a 3×3 patch array's heap was 56 % free
+            // fragments of the last point's arrays, and the run peaked at 4.7× the operator's own estimate.
+            LastAccelerator = null;
             LastAccelerator = PlanarAimOperator.Build(_aimGeometry.Value, k.VectorPotential, k.Scalar, omega,
                                                       FactorProgress);
             return Excite(LastAccelerator, () => SingleLevelPulse(_aimGeometry.Value.EntryCores, k.Scalar), omega);
@@ -367,6 +371,7 @@ public sealed class PlanarSolveContext
         if (_aimGeometry is not null)
         {
             var bset = kernel.Set!.For(Cores);
+            LastBorderedAccelerator = null;     // as SolveAt: never two operators live through a build
             LastBorderedAccelerator = PlanarBorderedAimOperator.Build(
                 _aimGeometry.Value, bset, Levels, 2.0 * Math.PI * fHz, factorProgress: FactorProgress);
             return Excite(LastBorderedAccelerator, () => MultiLevelPulse(_aimGeometry.Value.EntryCores, bset),
@@ -4756,13 +4761,13 @@ public static class PlanarSolve
         // measuring the whole block, and on a one-port it reset it to "1 of 1" every time.
         if (ownStage)
             control?.BeginStage($"far field at {SurfaceMesher.Eng(fHz)}Hz", ports.Count, "port(s)");
-        var made    = new PlanarFarFieldPattern[ports.Count];
+        // Every port's pattern from one pass over the basis (brief-paa-1): the rooftop spectrum is shared by all of them.
+        var made    = PlanarFarField.ComputeAll(problem, mesh, [.. currents.Take(ports.Count)],
+                                                [.. ports.Select(p => p.Number)], fHz, settings.EffectiveGrid, cap);
         var metrics = new PlanarMetricReport[ports.Count];
         var pol     = new PlanarPolarizationPattern[ports.Count];
         for (int j = 0; j < ports.Count; j++)
         {
-            made[j] = PlanarFarField.Compute(problem, mesh, currents[j], ports[j].Number, fHz,
-                                             settings.EffectiveGrid, cap);
             // ANT-6 reads the SAME context ANT-5's metrics do, which is what makes the derived
             // Ludwig-3 reference angle and the derived beamwidth cut one number rather than two.
             var context = new PlanarMetricContext(

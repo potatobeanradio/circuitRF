@@ -155,7 +155,7 @@ public static class PlanarMemoryCheck
             ? " A mesh with more than one metal level or a via is judged on the dense ceiling even when the accelerated " +
               "solve is on" +
               (size.AcceleratedResidentBytes is { } a
-                  ? $"; the accelerated solve this run uses holds about {MachineMemory.Format(a)}, estimated."
+                  ? $"; the accelerated solve this run uses peaks at about {MachineMemory.Format(a)} a frequency point, estimated."
                   : ".")
             : "";
         return $"This run's {size.Unknowns:N0} unknowns are {past}.{dense} It may run out of memory or take far longer " +

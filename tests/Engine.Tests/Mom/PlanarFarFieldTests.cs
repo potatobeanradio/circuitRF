@@ -694,6 +694,29 @@ public class PlanarFarFieldTests(Xunit.Abstractions.ITestOutputHelper output)
         }
     }
 
+    /// <summary>brief-paa-1 — several ports from one pass over the basis are each bit-identical to that port alone,
+    /// on a meshed line with its currents set port by port.</summary>
+    [Fact]
+    public void SeveralPortsInOnePass_AreEachTheOnePortTransform_BitForBit()
+    {
+        var problem = PlanarLineFixtures.Fr4Line(10e-3, FHz);
+        var mesh    = SurfaceMesher.Mesh(problem, PlanarLineFixtures.Coarse).Mesh;
+        var grid    = PlanarFarFieldGrid.Hemisphere(15, 20);
+        var rng     = new Random(7);
+        Vec<Complex>[] cols = [.. Enumerable.Range(0, 3).Select(_ =>
+            Enumerable.Range(0, mesh.Bases.Count).Select(_ => new Complex(rng.NextDouble() - 0.5, rng.NextDouble() - 0.5)).ToVector())];
+
+        var all = PlanarFarField.ComputeAll(problem, mesh, cols, [1, 2, 3], FHz, grid);
+        for (int q = 0; q < cols.Length; q++)
+        {
+            var one = PlanarFarField.Compute(problem, mesh, cols[q], q + 1, FHz, grid);
+            Assert.Equal(q + 1, all[q].DrivenPort);
+            Assert.Equal(one.ETheta, all[q].ETheta);
+            Assert.Equal(one.EPhi, all[q].EPhi);
+            Assert.Equal(one.U, all[q].U);
+        }
+    }
+
     // ── The refusals, by name ─────────────────────────────────────────────────────────────────
 
     [Fact]

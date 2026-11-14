@@ -14344,3 +14344,36 @@ Its 100 kB machine limit put the structure's matrix alone past the limit, so PMS
 standards and the verdict no longer said "calibration standards". The limit is 100 MB now — past the structure plus its
 standards (~190 MB), not past the matrix alone — which is the case the test describes.
 
+
+## brief-paa-1 — the far field per port, and what an accelerated run peaks at (2026-11-14)
+
+Found running the phased-array measurement's planar patch arrays (`testdata/phased-array/`, `src/Design/RESOLVED.md`
+§ brief-paa-1), where a 6×6 array (19,152 unknowns, 36 ports) was dry-run at 0.9 GB with the accelerated solve and then
+peaked at 6.4 GB and was stopped at 30 minutes in its far-field stage.
+
+- **The far field re-evaluated every rooftop's spectrum once per PORT.** `PlanarSolve.FarFieldAt` called
+  `PlanarFarField.Compute` per port, and `RooftopSpectrum.Of` — the transform's whole cost — depends on the basis and the
+  direction only. Profiled on a 3×3 array (4,788 unknowns, 9 ports, 1° hemisphere): 26 s of far field per frequency
+  against a 4-5 s dense solve, on both solvers. `PlanarFarField.ComputeAll` evaluates each spectrum once and weighs it by
+  every port's current; `Compute` is it with one port, so there is one transform. Each port's sum runs over the basis in
+  the old order: **the run's `Etheta`, `Ephi`, `U`, `S` and every metric are bit-identical** to the pre-change result, and
+  the far field is 4.2 s a frequency (the whole run 104 → 27 s). The cost stated in §3.6 (linear in N and directions) is
+  now per frequency rather than per port. Gate: `PlanarFarFieldTests.SeveralPortsInOnePass_AreEachTheOnePortTransform_BitForBit`.
+- **The accelerated estimate was the operator's RESIDENT size; a run peaks at its factorisation.** CSparse's complex
+  `SparseLU` (4.3.0, read with ilspycmd) starts L and U at `4·nnz(A) + n` entries EACH, grows either to `2·length + n`
+  when a column would not fit, and trims both at the end — so the factor of a near set of 4.86 million entries, which keeps
+  11.2 million non-zeros (0.22 GB), allocates about 0.8 GB first. A heap dump mid-solve showed exactly that: 972 MB of GC
+  heap of which 543 MB free and ~350 MB live (the near entries and the factor, matching the estimate). `PlanarNearFieldEstimate.PeakBytes`
+  is `ResidentBytes` with the factor priced at its build (`FactorBuildBytes`, CSparse's own rule) plus the exact entries
+  and the CSC copy alive through it; the dry run (`check`'s `MemoryBytes`), the EM-cell estimate, the run's own memory
+  admission and the dense-ceiling clause read it. 3×3: 1.3 GB stated, 1.1-1.3 GB measured; 6×6 (too large to analyse):
+  "at least 4.7 GB ... factor time not estimated", where it said "about 0.9 GB" and no time at all. Gate:
+  `HonestEstimatesTests.NearFactor_AllocatesWhatTheBuildEstimatePrices` — the factorisation's thread allocation (exact,
+  not a working set) is at least the build estimate and within 1.5× of it with the copies (19.1 MB against 14.6 + 2.6 MB,
+  for a factor that keeps 5.0 MB).
+- **Two operators were live through every accelerated build after the first**: `LastAccelerator = Build(...)` held the
+  previous point's operator until the new one was assigned. Cleared before the build now (both paths). Bit-identical, and
+  it moved the 3×3's peak little (1.29 → ~1.1-1.3 GB) because the factor's own growth dominates; `DOTNET_GCConserveMemory=7`
+  took a further 0.2 GB off and was not adopted.
+- **Not changed:** the dense estimate runs about twice the measured peak at 13,300 unknowns (6.4 GB stated, 3.2 GB
+  measured); the dry run still states no far-field time (now about 4 s a frequency at 4,788 unknowns on a 1° hemisphere, 9 ports).

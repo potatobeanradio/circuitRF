@@ -133,6 +133,28 @@ public class HonestEstimatesTests(ITestOutputHelper output)
         Assert.Equal((n, (long)n), reports[^1]);
     }
 
+    /// <summary>brief-paa-1 — the factor's BUILD is priced, not only what it keeps: SparseLU allocates L and U at
+    /// 4·nnz + n entries each before trimming them, so what the factorisation allocates on this thread is at least
+    /// <see cref="PlanarNearFieldEstimate.FactorBuildBytes"/> and not far past it with the near matrix's own copies.
+    /// An allocation count, which is exact, not a working-set reading.</summary>
+    [Fact]
+    public void NearFactor_AllocatesWhatTheBuildEstimatePrices()
+    {
+        var (n, rowPtr, colIdx, values) = NearPattern(side: 24, radius: 3);
+        var (predicted, _) = PlanarNearFieldEstimate.SymbolicFactor(n, rowPtr, colIdx);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        var (lu, nnz, factorNnz) = PlanarNearFactor.Factor(n, rowPtr, colIdx, values);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        long build = PlanarNearFieldEstimate.FactorBuildBytes(nnz, n, predicted);
+        long copies = 44L * nnz + 4L * (n + 1);      // the triplet and the CSC handed to SparseLU
+        output.WriteLine($"near {nnz:N0}, factor {factorNnz:N0}: allocated {allocated:N0} B, build estimate {build:N0} B " +
+                         $"(+ copies {copies:N0} B), what the factor keeps {20L * factorNnz:N0} B");
+
+        Assert.NotNull(lu);
+        Assert.True(allocated >= build, $"allocated {allocated:N0} < build estimate {build:N0}");
+        Assert.True(allocated <= 1.5 * (build + copies), $"allocated {allocated:N0} far past {build + copies:N0}");
+    }
+
     // ── R-emb4-2 / R-emb4-3 ─────────────────────────────────────────────────────────────────────
 
     /// <summary>With the accelerated solve on, a mesh with a via is judged on the DENSE ceiling (unchanged), and the
@@ -151,10 +173,10 @@ public class HonestEstimatesTests(ITestOutputHelper output)
         Assert.False(report.AcceleratedCeiling);
         Assert.NotNull(report.AcceleratedEstimate);
         Assert.Contains("judged on the dense ceiling (", report.Budget, StringComparison.Ordinal);
-        Assert.Contains("the accelerated solve this run uses holds about", report.Budget, StringComparison.Ordinal);
+        Assert.Contains("the accelerated solve this run uses peaks at about", report.Budget, StringComparison.Ordinal);
         Assert.True(report.PastMachineLimit);
         Assert.Contains(report.Notes, n => n.StartsWith("This mesh has", StringComparison.Ordinal)
-                                           && n.Contains("the accelerated solve this run uses holds about", StringComparison.Ordinal));
+                                           && n.Contains("the accelerated solve this run uses peaks at about", StringComparison.Ordinal));
 
         // Without the accelerated solve nothing of the kind is said.
         var dense = SurfaceMesher.Mesh(problem, limited);

@@ -66,6 +66,6 @@ public class HonestEstimatesPreflightTests(ITestOutputHelper output)
         Assert.False(near.IsWarning);
         // The mesh has vias, so it is judged on the dense ceiling, and the budget says what the accelerator holds.
         Assert.NotNull(pre.PlanarMesh!.AcceleratedEstimate);
-        Assert.Contains("the accelerated solve this run uses holds about", pre.PlanarMesh.Budget, StringComparison.Ordinal);
+        Assert.Contains("the accelerated solve this run uses peaks at about", pre.PlanarMesh.Budget, StringComparison.Ordinal);
     }
 }
