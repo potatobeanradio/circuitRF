@@ -954,7 +954,7 @@ public partial class TechEditorView : UserControl
             Title = "Add a material library",
             AllowMultiple = false,
             FileTypeFilter = [new Avalonia.Platform.Storage.FilePickerFileType("Material library") { Patterns = ["*.cmat"] }],
-            SuggestedStartLocation = await storage.TryGetFolderFromPathAsync(new System.Uri(System.IO.Path.GetDirectoryName(doc.FilePath)!)),
+            SuggestedStartLocation = await storage.TryGetReachableFolderAsync(new System.Uri(System.IO.Path.GetDirectoryName(doc.FilePath)!)),
         });
         if (files.Count > 0 && files[0].TryGetLocalPath() is { } path) doc.ViewModel.AddLibrary(path);
     }
@@ -968,7 +968,7 @@ public partial class TechEditorView : UserControl
             SuggestedFileName = "materials",
             DefaultExtension = "cmat",
             FileTypeChoices = [new Avalonia.Platform.Storage.FilePickerFileType("Material library") { Patterns = ["*.cmat"] }],
-            SuggestedStartLocation = await storage.TryGetFolderFromPathAsync(new System.Uri(System.IO.Path.GetDirectoryName(doc.FilePath)!)),
+            SuggestedStartLocation = await storage.TryGetReachableFolderAsync(new System.Uri(System.IO.Path.GetDirectoryName(doc.FilePath)!)),
         });
         if (file?.TryGetLocalPath() is { } path) doc.ViewModel.NewLibrary(path);
     }

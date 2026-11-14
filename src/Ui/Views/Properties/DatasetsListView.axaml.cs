@@ -54,8 +54,8 @@ public partial class DatasetsListView : UserControl
         try { startDir = Path.GetDirectoryName(currentPathOrName); } catch { /* ignore malformed hint */ }
 
         IStorageFolder? suggestedDir = null;
-        if (startDir is not null && Directory.Exists(startDir))
-            suggestedDir = await sp.TryGetFolderFromPathAsync(startDir);
+        if (startDir is not null)
+            suggestedDir = await sp.TryGetReachableFolderAsync(startDir);
 
         var files = await sp.OpenFilePickerAsync(new FilePickerOpenOptions
         {

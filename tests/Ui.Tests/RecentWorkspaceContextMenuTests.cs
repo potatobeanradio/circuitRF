@@ -227,7 +227,9 @@ public class RecentWorkspaceContextMenuTests
         var body = ws[at..ws.IndexOf("The awaitable form of", at, StringComparison.Ordinal)];
 
         Assert.Contains("App.OpenWorkspaceInNewWindow(cwsPath);", body, StringComparison.Ordinal);
-        Assert.Contains("File.Exists(cwsPath)", body, StringComparison.Ordinal);
+        // The path is checked off the UI thread with a time limit before the new window is asked for,
+        // so an entry on a drive that is down cannot hold this window while it times out.
+        Assert.Contains("EnsureWorkspaceReachableAsync(cwsPath, deep: false, pruneMissing: false)", body, StringComparison.Ordinal);
         Assert.DoesNotContain("SwitchToWorkspace", body, StringComparison.Ordinal);
         Assert.DoesNotContain("PromptSaveBeforeClose", body, StringComparison.Ordinal);
     }

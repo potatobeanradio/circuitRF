@@ -204,7 +204,7 @@ public partial class WorkspaceViewModel
         // Where the picker opens: beside the workspace that is already open, which is where a
         // sibling project belongs — the same answer the Clone Workspace dialog's Browse gives.
         IStorageFolder? start = null;
-        try { start = await window.StorageProvider.TryGetFolderFromPathAsync(_lastWorkspaceParentDir); }
+        try { start = await window.StorageProvider.TryGetReachableFolderAsync(_lastWorkspaceParentDir); }
         catch { /* the picker opens wherever the platform likes */ }
 
         var folders = await window.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions

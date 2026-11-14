@@ -47,7 +47,7 @@ public partial class RailRfWindow : ICrfDocumentWindow
             if (StorageProvider is not { } sp) return;
 
             IStorageFolder? start = vm.SuggestedSaveFolder is { } folder
-                ? await sp.TryGetFolderFromPathAsync(folder)
+                ? await sp.TryGetReachableFolderAsync(folder)
                 : null;
 
             var file = await sp.SaveFilePickerAsync(new FilePickerSaveOptions

@@ -239,7 +239,7 @@ public partial class SParameterViewerWindow : Window, ICrfMenuWindow
     private async Task<string?> PickDisplayPathAsync(string suggestedName)
     {
         var start = Vm?.FilePath is { } p && Path.GetDirectoryName(p) is { } dir
-            ? await StorageProvider.TryGetFolderFromPathAsync(dir) : null;
+            ? await StorageProvider.TryGetReachableFolderAsync(dir) : null;
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Save as Data Display",

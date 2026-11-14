@@ -1775,7 +1775,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
 
         IStorageFolder? startLocation = null;
-        try { startLocation = await window.StorageProvider.TryGetFolderFromPathAsync(_lastWorkspaceParentDir); }
+        try { startLocation = await window.StorageProvider.TryGetReachableFolderAsync(_lastWorkspaceParentDir); }
         catch { }
 
         var folders = await window.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
@@ -1789,9 +1789,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var workspaceDir = folders[0].Path.LocalPath;
         var cwsPath      = Path.Combine(workspaceDir, ".cws");
 
-        if (!File.Exists(cwsPath))
+        var reach = await WorkspaceReachability.CheckAsync(cwsPath);
+        if (reach.State == CircuitRF.Design.PathState.Missing)
         {
             Messages.Error("That folder is not a circuitRF workspace (no .cws found).");
+            return;
+        }
+        if (!reach.Ok)
+        {
+            Messages.Error($"Workspace '{Path.GetFileName(workspaceDir)}' cannot be opened now. {reach.Message}");
             return;
         }
 
@@ -1828,7 +1834,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (window is null) return;
 
         IStorageFolder? startLocation = null;
-        try { startLocation = await window.StorageProvider.TryGetFolderFromPathAsync(_lastWorkspaceParentDir); }
+        try { startLocation = await window.StorageProvider.TryGetReachableFolderAsync(_lastWorkspaceParentDir); }
         catch { }
 
         var folders = await window.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
@@ -2069,7 +2075,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         try
         {
             if (Path.GetDirectoryName(workspaceDir.TrimEnd(Path.DirectorySeparatorChar)) is { Length: > 0 } parent)
-                start = await window.StorageProvider.TryGetFolderFromPathAsync(parent);
+                start = await window.StorageProvider.TryGetReachableFolderAsync(parent);
         }
         catch { /* the picker opens wherever the platform likes */ }
 
@@ -2146,7 +2152,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (picked.Count == 0) return;
 
         IStorageFolder? startLocation = null;
-        try { startLocation = await window.StorageProvider.TryGetFolderFromPathAsync(_lastWorkspaceParentDir); }
+        try { startLocation = await window.StorageProvider.TryGetReachableFolderAsync(_lastWorkspaceParentDir); }
         catch { }
 
         var folders = await window.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
@@ -2381,11 +2387,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             {
                 Interval = TimeSpan.FromSeconds(3),
             };
-            _cwsSaveTimer.Tick += (_, _) =>
+            _cwsSaveTimer.Tick += async (_, _) =>
             {
                 _cwsSaveTimer.Stop();
-                if (CurrentWorkspacePath is not null)
-                    WriteWorkspaceFile(CurrentWorkspacePath, silent: true);
+                if (CurrentWorkspacePath is not { } cws) return;
+                // This write is unasked-for and synchronous, so it is the one that froze the window
+                // when a share dropped mid-session: rearranging a dock was enough. The folder is
+                // looked at off the UI thread first, and a folder that does not answer is skipped —
+                // the arrangement is written by the next change, the next save, or the close.
+                try
+                {
+                    if (await CircuitRF.Design.PathProbe.ProbeAsync(Path.GetDirectoryName(cws), TimeSpan.FromSeconds(2))
+                        != CircuitRF.Design.PathState.Present) return;
+                }
+                catch { return; }
+                if (CurrentWorkspacePath == cws)
+                    WriteWorkspaceFile(cws, silent: true);
             };
         }
 
@@ -3176,16 +3193,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 return;
         }
 
-        if (!File.Exists(cwsPath))
-        {
-            _recentWorkspaces.RemoveAll(p =>
-                string.Equals(p, cwsPath, StringComparison.OrdinalIgnoreCase));
-            SaveRecent();
-            RebuildRecentMenuItems();
-            var missingName = Path.GetFileName(Path.GetDirectoryName(cwsPath)) ?? cwsPath;
-            Messages.Error($"Workspace '{missingName}' was not found.");
-            return;
-        }
+        // Off the UI thread and time-limited: the switch below reads the workspace synchronously,
+        // and on a share that is down or a cloud folder whose service is unreachable every one of
+        // those reads waits. Refused here with a sentence instead.
+        if (!await EnsureWorkspaceReachableAsync(cwsPath, deep: true, pruneMissing: true)) return;
 
         // SL4 R-sl4-2. This command is the funnel every external open route goes through —
         // OpenWorkspacePathAsync, and therefore a desktop double-click and the launch workspace —
@@ -3202,15 +3213,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// torn-off document is never prompted for here either).
     /// </summary>
     [RelayCommand]
-    private Task OpenSourceWorkspace(string? cwsPath)
+    private async Task OpenSourceWorkspace(string? cwsPath)
     {
-        if (cwsPath is null) return Task.CompletedTask;
+        if (cwsPath is null) return;
 
-        if (!File.Exists(cwsPath))
-        {
-            Messages.Error($"Workspace '{Path.GetFileName(Path.GetDirectoryName(cwsPath))}' was not found.");
-            return Task.CompletedTask;
-        }
+        if (!await EnsureWorkspaceReachableAsync(cwsPath, deep: false, pruneMissing: false)) return;
 
         // IN A NEW WINDOW (MW1 §1), not by replacing this one.
         //
@@ -3220,7 +3227,6 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Nothing is closed, so there is nothing to prompt about; a workspace already open somewhere
         // simply comes to the front (R-mw1-9).
         App.OpenWorkspaceInNewWindow(cwsPath);
-        return Task.CompletedTask;
     }
 
     /// <summary>Close the current workspace and return to the no-workspace shell (Item 2).</summary>
@@ -3547,6 +3553,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         OnPropertyChanged(nameof(HasRecentWorkspaces));
         RecentWorkspacesChanged?.Invoke();
+        _ = ProbeRecentWorkspacesAsync();
     }
 
     // ---- Edit commands (route to the active document's stack) ---------------
@@ -6939,19 +6946,39 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // every one before it.
             PdkLoadLog.Begin(wsRoot);
 
-            var refs = TryLoadCws(CurrentWorkspacePath!).PdkRefs ?? [];
+            var allRefs = TryLoadCws(CurrentWorkspacePath!).PdkRefs ?? [];
+
+            // Every kit folder is looked at FIRST, off this thread, all at once and with a time limit.
+            // A kit on a network share whose server is down does not fail a read, it waits, and the
+            // reads below are waited for on this thread — so one such kit held the window for as long
+            // as the network took to give up, on every workspace open. A kit that does not answer is
+            // reported like any other broken kit and the workspace opens without it.
+            var kitDirs = allRefs.Select(r => WorkspaceRefs.Resolve(r.Path, wsRoot)).ToList();
+            var kitStates = CircuitRF.Design.PathProbe.ProbeAllAsync(kitDirs).GetAwaiter().GetResult();
+            var refs = new List<CwsPdkRef>(allRefs.Count);
+            for (int i = 0; i < allRefs.Count; i++)
+            {
+                var r = allRefs[i];
+                if (kitStates[i] == CircuitRF.Design.PathState.NotResponding)
+                {
+                    PdkLoadLog.Record(wsRoot, r.Provider,
+                        $"the kit's folder '{kitDirs[i]}' is not responding (a network drive that is disconnected, "
+                        + "or a cloud-synced folder whose service cannot be reached).");
+                    broken.Add(r.Provider);
+                    continue;
+                }
+                if (r.IsLibraryOnly && kitStates[i] == CircuitRF.Design.PathState.Missing)
+                {
+                    PdkLoadLog.Record(wsRoot, r.Provider, "the model-library folder does not exist.");
+                    broken.Add(r.Provider);
+                }
+                refs.Add(r);
+            }
 
             // Library packages are resolved FIRST: a part kit's devices are matched against them, so
             // loading a kit before knowing where the models are would settle "no library found" and
             // record it.
             var libraryRoots = PdkReferenceManager.LibraryRootsIn(wsRoot, refs);
-
-            foreach (var r in refs.Where(x => x.IsLibraryOnly))
-                if (!Directory.Exists(WorkspaceRefs.Resolve(r.Path, wsRoot)))
-                {
-                    PdkLoadLog.Record(wsRoot, r.Provider, "the model-library folder does not exist.");
-                    broken.Add(r.Provider);
-                }
 
             // READ on worker threads, APPLY here. Reading a kit is a few hundred milliseconds of
             // file enumeration and netlist parsing (measured at ~390 ms on a real kit: ~120 ms
@@ -14486,15 +14513,102 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <inheritdoc/>
     public IReadOnlyList<(string Name, string Path)> GetRecentWorkspaces()
     {
-        var sep    = new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar };
+        // No disk access here: this runs on the UI thread from the constructor, before the first
+        // window is shown, and a Directory.Exists per entry on a share that is down was the network
+        // timeout once per entry before the window appeared. Entries are hidden only once the
+        // background look (ProbeRecentWorkspacesAsync) has found their folder answering and absent;
+        // one it has not looked at yet, or that did not answer, is shown.
         var result = new List<(string, string)>(_recentWorkspaces.Count);
         foreach (var p in _recentWorkspaces)
         {
-            var dir = Path.GetDirectoryName(p.TrimEnd(sep));
-            if (dir is null || !Directory.Exists(dir)) continue;
+            var dir = RecentWorkspaceDir(p);
+            if (dir is null) continue;
+            if (_recentWorkspaceStates.TryGetValue(dir, out var state) && state == CircuitRF.Design.PathState.Missing) continue;
             result.Add((Path.GetFileName(dir) ?? p, p));
         }
         return result;
+    }
+
+    private static string? RecentWorkspaceDir(string cwsPath)
+        => Path.GetDirectoryName(cwsPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
+    /// <summary>What the last background look found at each recent workspace's folder.</summary>
+    private readonly Dictionary<string, CircuitRF.Design.PathState> _recentWorkspaceStates = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Looks at every recent workspace's folder off the UI thread, all at once, and refreshes the
+    /// no-workspace tree's list when the answers are in. Bounded by one probe timeout however many
+    /// entries sit on a share that is down.
+    /// </summary>
+    private async Task ProbeRecentWorkspacesAsync()
+    {
+        try
+        {
+            var dirs = _recentWorkspaces.Select(RecentWorkspaceDir).OfType<string>()
+                                        .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (dirs.Count == 0) return;
+            var states = await CircuitRF.Design.PathProbe.ProbeAllAsync(dirs).ConfigureAwait(false);
+            // Posted, not continued: where there is no UI synchronisation context the continuation is
+            // on a pool thread, and the tree's list is bound to controls.
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                for (int i = 0; i < dirs.Count; i++) _recentWorkspaceStates[dirs[i]] = states[i];
+                _factory.ProjectTreeTool?.RefreshRecentWorkspaces();
+            });
+        }
+        catch { /* the list stays as it is; this is a nicety */ }
+    }
+
+    /// <summary>
+    /// Whether the workspace at <paramref name="cwsPath"/> can be opened now, asked off the UI thread
+    /// with a time limit (<see cref="WorkspaceReachability"/>). Says why not in Messages and returns
+    /// false otherwise.
+    ///
+    /// <para><b>A workspace whose drive is unavailable is not "not found".</b> A recent entry used to be
+    /// pruned whenever its <c>.cws</c> was not there, and a share that is down reports exactly that —
+    /// so an outage quietly emptied the recent list of everything on it. It is pruned only when the
+    /// folder that held the workspace answers and the workspace is gone from it.</para>
+    /// </summary>
+    /// <param name="deep">Also read the <c>.cws</c> and, on Windows, one online-only document — the
+    /// check for the window that will do the open. False for a route that hands the path on to a
+    /// window that checks again.</param>
+    /// <param name="pruneMissing">Drop the entry from the recent list when it is really gone.</param>
+    private async Task<bool> EnsureWorkspaceReachableAsync(string cwsPath, bool deep, bool pruneMissing)
+    {
+        var reach = deep
+            ? await WorkspaceReachability.CheckAsync(cwsPath)
+            : new WorkspaceReachability.Result(await CircuitRF.Design.PathProbe.ProbeAsync(cwsPath), null);
+        var state = reach.State;
+        if (state == CircuitRF.Design.PathState.Present) return true;
+
+        var workspaceDir = RecentWorkspaceDir(cwsPath);
+        var name = (workspaceDir is not null ? Path.GetFileName(workspaceDir) : null) ?? cwsPath;
+        if (state == CircuitRF.Design.PathState.NotResponding)
+        {
+            var detail = reach.Message;
+            Messages.Error($"Workspace '{name}' cannot be opened now. "
+                           + (detail ?? CircuitRF.Design.PathProbe.NotRespondingSentence(workspaceDir ?? cwsPath)));
+            return false;
+        }
+
+        var parent = workspaceDir is not null ? Path.GetDirectoryName(workspaceDir) : null;
+        bool placeAnswers = parent is not null
+                            && await CircuitRF.Design.PathProbe.ProbeAsync(parent) == CircuitRF.Design.PathState.Present;
+        if (!placeAnswers)
+        {
+            Messages.Error($"Workspace '{name}' was not found, and the folder that held it ('{parent ?? cwsPath}') is "
+                           + "not available either. If it is on a drive that is disconnected, connect it and try again.");
+            return false;
+        }
+
+        if (pruneMissing)
+        {
+            _recentWorkspaces.RemoveAll(p => string.Equals(p, cwsPath, StringComparison.OrdinalIgnoreCase));
+            SaveRecent();
+            RebuildRecentMenuItems();
+        }
+        Messages.Error($"Workspace '{name}' was not found.");
+        return false;
     }
 
     /// <inheritdoc/>
@@ -14507,12 +14621,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // pruning to do: this window keeps what it has. The one check that still matters is that the
         // path is real, since App would otherwise open a window onto a workspace that is not there.
         // Same shape as OpenSourceWorkspace, which is the other "open it beside this one" route.
-        if (!File.Exists(cwsPath))
-        {
-            Messages.Error($"Workspace '{Path.GetFileName(Path.GetDirectoryName(cwsPath))}' was not found.");
-            return;
-        }
+        _ = OpenInNewWindowWhenReachableAsync(cwsPath);
+    }
 
+    private async Task OpenInNewWindowWhenReachableAsync(string cwsPath)
+    {
+        // Asked off the UI thread: a recent entry on a share that is down would otherwise hold the
+        // window for the network timeout. The new window's own open checks the workspace in depth.
+        if (!await EnsureWorkspaceReachableAsync(cwsPath, deep: false, pruneMissing: false)) return;
         App.OpenWorkspaceInNewWindow(cwsPath);
     }
 

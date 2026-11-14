@@ -58,7 +58,7 @@ public partial class SaveWorkspaceAsDialog : Window
     {
         IStorageFolder? startLocation = null;
         if (_parentDir is not null)
-            startLocation = await StorageProvider.TryGetFolderFromPathAsync(_parentDir);
+            startLocation = await StorageProvider.TryGetReachableFolderAsync(_parentDir);
 
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {

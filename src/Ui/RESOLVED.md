@@ -42239,3 +42239,48 @@ left the list on other cards; a click on Silicon from the top did too, stopping 
 - Headless (`UiSnapshot --c3d-setups --editor`), `--key F` does not reach the canvas (no focus), so Face mode cannot be entered and
   the Make Port submenu cannot be pictured there; `CoaxialPortEditorTests` reads it through `DrawMenuItems()` with the face
   selected in Face mode instead.
+
+## A file system that does not answer no longer freezes the window (2026-11-13)
+
+A user reported circuitRF struggling during a cloud-provider outage. The previous round (`src/Design/RESOLVED.md`, 2026-11-12)
+covered renames refused by a sync client; this one covers the other failure: on an unreachable path, `File.Exists`,
+`Directory.Exists` and every read WAIT rather than fail. A share whose server is down holds each call for the SMB timeout, and an
+online-only file in a synced folder holds a read until the sync client gives up downloading it. Made on the UI thread, that is a
+frozen window. Not reproduced here (no such share or outage to test against). Found by reading the code:
+
+- **Startup.** `GetRecentWorkspaces` ran `Directory.Exists` on every recent entry from the `WorkspaceViewModel` constructor,
+  before the first window was shown. Ten entries on one dead share meant ten network timeouts in a row with no window on screen.
+  It now touches no disk: `ProbeRecentWorkspacesAsync` checks all the entries at once, off the UI thread, and refreshes the tree.
+  An entry is hidden only when its folder answers and is gone.
+- **The recent list was pruned by an outage.** `OpenRecentWorkspace` dropped any entry whose `.cws` was not there, and a share
+  that is down reports exactly that. An entry is now pruned only when the folder that held the workspace answers and the workspace
+  is missing from it. A drive that is unavailable says so and keeps the entry.
+- **Opening a workspace** (every route goes through `EnsureWorkspaceReachableAsync`, or `WorkspaceReachability.CheckAsync` from
+  the folder picker). The open reads the `.cws`, cells and restored documents synchronously, so before it starts, three checks run
+  off the UI thread, each with a time limit: the `.cws` exists; the `.cws` can be read (the read is what downloads an online-only
+  file); and, on Windows, if any document is online-only (the `FILE_ATTRIBUTE_OFFLINE`/`RECALL_ON_OPEN`/`RECALL_ON_DATA_ACCESS`
+  bits, which listing a folder does not trigger), one of them can be read. A workspace that fails any check is refused with a
+  sentence instead of opened. macOS has no portable .NET view of a dataless file, so it gets only the first two.
+  **The scan must not skip reparse points**: a sync client's placeholder folders ARE reparse points, so links are recognised by
+  `LinkTarget`.
+- **Referenced kits.** `RestoreInstalledPdks` waited on each kit read on the UI thread with no limit. Kit folders on a shared
+  network drive are routine, so they are now probed together first, and a kit that does not answer is reported in the PDK load log
+  like any other broken kit. The workspace opens without it.
+- **The silent `.cws` write** three seconds after a dock or tree change is the one write nobody asked for, so it is the one that
+  froze the window when a share dropped mid-session. It now checks the folder first and skips the write if the folder does not
+  answer.
+- **File dialogs.** `TryGetFolderFromPathAsync` checks the folder synchronously on the calling thread, and a dialog given an
+  unreachable start folder waits again. All 35 call sites now go through `ReachableStartFolder.TryGetReachableFolderAsync`. It
+  probes for 2 s and suggests nothing if the folder does not answer. The UI-thread `Directory.Exists` checks that used to come
+  before the call are gone. **A direct `TryGetFolderFromPathAsync` call brings this stall back.**
+
+`PathProbe` (`src/Design`) runs each check on a dedicated background thread, not the thread pool: a call stuck in the kernel keeps
+its thread, and stuck pool threads starve the solvers. Only one check per path is in flight at a time. A path that does not answer
+is remembered for 30 s, so repeated dialogs wait once.
+
+Already safe, and checked: the update and plugin feeds (off-thread with timeouts), solver discovery and version checks
+(off-thread, each process with a timeout), preferences (local app data, read once and cached) and the 30 s autosave (scratch
+documents, to local app data).
+
+Not covered: an explicit Save to a share that has dropped since the open, and reading a document, a result or a referenced
+workspace from a cloud folder whose service fails mid-session. Those reads are still synchronous where they happen.

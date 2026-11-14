@@ -138,7 +138,7 @@ public partial class WorkspaceViewModel
         if (window is null) return null;
 
         IStorageFolder? start = null;
-        try { start = await window.StorageProvider.TryGetFolderFromPathAsync(_lastWorkspaceParentDir); }
+        try { start = await window.StorageProvider.TryGetReachableFolderAsync(_lastWorkspaceParentDir); }
         catch { }
 
         var folders = await window.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions

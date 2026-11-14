@@ -28,7 +28,7 @@ public partial class WorkspaceViewModel
         string myRoot = Path.GetDirectoryName(CurrentWorkspacePath)!;
 
         IStorageFolder? startLocation = null;
-        try { startLocation = await window.StorageProvider.TryGetFolderFromPathAsync(_lastWorkspaceParentDir); }
+        try { startLocation = await window.StorageProvider.TryGetReachableFolderAsync(_lastWorkspaceParentDir); }
         catch { }
 
         var folders = await window.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions

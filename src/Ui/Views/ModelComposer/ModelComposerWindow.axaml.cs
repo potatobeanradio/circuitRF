@@ -155,7 +155,7 @@ public partial class ModelComposerWindow : Window, ICrfDocumentWindow
     private async Task<string?> PickSave(ModelComposerViewModel vm, string title, string name, string kind, string pattern,
                                          string? folderPath = null)
     {
-        IStorageFolder? start = (folderPath ?? vm.DocumentFolder) is { } folder ? await StorageProvider.TryGetFolderFromPathAsync(folder) : null;
+        IStorageFolder? start = (folderPath ?? vm.DocumentFolder) is { } folder ? await StorageProvider.TryGetReachableFolderAsync(folder) : null;
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = title,
@@ -180,7 +180,7 @@ public partial class ModelComposerWindow : Window, ICrfDocumentWindow
                                              "Model Composer document", "*" + CmcFile.Extension, prompt.Folder);
         vm.PickFile = async (title, patterns) =>
         {
-            IStorageFolder? start = vm.DocumentFolder is { } folder ? await StorageProvider.TryGetFolderFromPathAsync(folder) : null;
+            IStorageFolder? start = vm.DocumentFolder is { } folder ? await StorageProvider.TryGetReachableFolderAsync(folder) : null;
             var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
                 Title = title,

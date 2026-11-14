@@ -314,7 +314,7 @@ public partial class WorkspaceViewModel
     {
         if (doc.ViewModel.Source is CircuitRF.Ui.ThreeD.Hzn.HznDesignSource held) { await SaveHznDesignAsC3dAsync(doc, held, owner); return; }     // HZN-5
         string? startDir = doc.IsScratch ? WorkspaceRootDir : Path.GetDirectoryName(doc.FilePath);
-        var start = startDir is null ? null : await owner.StorageProvider.TryGetFolderFromPathAsync(new Uri(startDir));
+        var start = startDir is null ? null : await owner.StorageProvider.TryGetReachableFolderAsync(new Uri(startDir));
         var file = await owner.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
         {
             Title = "Save 3D View As",
@@ -894,7 +894,7 @@ public partial class WorkspaceViewModel
     {
         if (StepExportSource() is not { } src) return;
         if (ResolveOwner(owner) is not { } window) return;
-        var start = await window.StorageProvider.TryGetFolderFromPathAsync(new Uri(Path.GetDirectoryName(src.Path)!));
+        var start = await window.StorageProvider.TryGetReachableFolderAsync(new Uri(Path.GetDirectoryName(src.Path)!));
         var file = await window.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Export STEP",
@@ -946,7 +946,7 @@ public partial class WorkspaceViewModel
     {
         if (GltfExportTarget() is not { } src) return;
         if (ResolveOwner(owner) is not { } window) return;
-        var start = await window.StorageProvider.TryGetFolderFromPathAsync(new Uri(Path.GetDirectoryName(src.Path)!));
+        var start = await window.StorageProvider.TryGetReachableFolderAsync(new Uri(Path.GetDirectoryName(src.Path)!));
         var file = await window.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Export glTF",

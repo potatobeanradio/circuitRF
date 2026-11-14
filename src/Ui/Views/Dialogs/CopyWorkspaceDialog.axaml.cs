@@ -59,8 +59,8 @@ public partial class CopyWorkspaceDialog : Window
     {
         try
         {
-            var start = _startIn is { Length: > 0 } && Directory.Exists(_startIn)
-                ? await StorageProvider.TryGetFolderFromPathAsync(_startIn)
+            var start = _startIn is { Length: > 0 }
+                ? await StorageProvider.TryGetReachableFolderAsync(_startIn)
                 : null;
 
             var picked = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions

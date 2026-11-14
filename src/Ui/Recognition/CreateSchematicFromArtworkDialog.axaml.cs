@@ -110,7 +110,7 @@ public partial class CreateSchematicFromArtworkDialog : Window
     private async Task<string?> PickPlotOutput(string suggested, string folder)
     {
         string ext = Path.GetExtension(suggested).TrimStart('.');
-        var start = await StorageProvider.TryGetFolderFromPathAsync(folder);
+        var start = await StorageProvider.TryGetReachableFolderAsync(folder);
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = _vm?.Title,

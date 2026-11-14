@@ -4914,7 +4914,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         {
             string? dir = Path.GetDirectoryName(p);
             if (dir is not null)
-                try { startFolder = await owner.StorageProvider.TryGetFolderFromPathAsync(dir); }
+                try { startFolder = await owner.StorageProvider.TryGetReachableFolderAsync(dir); }
                 catch { }
         }
 

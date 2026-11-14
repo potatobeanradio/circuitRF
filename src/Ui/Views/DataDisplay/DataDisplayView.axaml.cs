@@ -140,8 +140,8 @@ public partial class DataDisplayView : UserControl
         // multi-select is already on, since §3 lets one .cdd hold several.
         IStorageFolder? suggestedStart = null;
         var resultsRoot = doc.ViewModel.Window.GetResultsRootAction?.Invoke();
-        if (resultsRoot is not null && Directory.Exists(resultsRoot))
-            suggestedStart = await sp.TryGetFolderFromPathAsync(resultsRoot);
+        if (resultsRoot is not null)
+            suggestedStart = await sp.TryGetReachableFolderAsync(resultsRoot);
 
         var files = await sp.OpenFilePickerAsync(new FilePickerOpenOptions
         {
@@ -241,8 +241,8 @@ public partial class DataDisplayView : UserControl
 
         IStorageFolder? suggestedStart = null;
         var resultsRoot = doc.ViewModel.Window.GetResultsRootAction?.Invoke();
-        if (resultsRoot is not null && Directory.Exists(resultsRoot))
-            suggestedStart = await sp.TryGetFolderFromPathAsync(resultsRoot);
+        if (resultsRoot is not null)
+            suggestedStart = await sp.TryGetReachableFolderAsync(resultsRoot);
 
         var folders = await sp.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
@@ -304,8 +304,8 @@ public partial class DataDisplayView : UserControl
         string? startDir      = Path.GetDirectoryName(missingFilePath);
 
         IStorageFolder? suggestedDir = null;
-        if (startDir is not null && Directory.Exists(startDir))
-            suggestedDir = await sp.TryGetFolderFromPathAsync(startDir);
+        if (startDir is not null)
+            suggestedDir = await sp.TryGetReachableFolderAsync(startDir);
 
         var files = await sp.OpenFilePickerAsync(new FilePickerOpenOptions
         {
@@ -344,8 +344,8 @@ public partial class DataDisplayView : UserControl
 
         IStorageFolder? suggestedStart = null;
         var resultsRoot = doc.ViewModel.Window.GetResultsRootAction?.Invoke();
-        if (resultsRoot is not null && Directory.Exists(resultsRoot))
-            suggestedStart = await sp.TryGetFolderFromPathAsync(resultsRoot);
+        if (resultsRoot is not null)
+            suggestedStart = await sp.TryGetReachableFolderAsync(resultsRoot);
 
         var files = await sp.OpenFilePickerAsync(new FilePickerOpenOptions
         {

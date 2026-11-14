@@ -196,7 +196,7 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "Touchstone File", AllowMultiple = false, FileTypeFilter = [TouchstoneFiles, FilePickerFileTypes.All],
-            SuggestedStartLocation = start is not null ? await StorageProvider.TryGetFolderFromPathAsync(start) : null,
+            SuggestedStartLocation = start is not null ? await StorageProvider.TryGetReachableFolderAsync(start) : null,
         });
         if (files.FirstOrDefault()?.TryGetLocalPath() is { } path) param.Value = vm.FileReference(path);
     }
@@ -210,7 +210,7 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
             Title = "Save RF Chain Budget",
             // Without the extension: the picker adds DefaultExtension itself (SuggestedFileNameGateTests).
             SuggestedFileName = current is not null ? Path.GetFileNameWithoutExtension(current) : "Chain",
-            SuggestedStartLocation = dir is not null ? await StorageProvider.TryGetFolderFromPathAsync(dir) : null,
+            SuggestedStartLocation = dir is not null ? await StorageProvider.TryGetReachableFolderAsync(dir) : null,
             DefaultExtension = ChainDesignIo.Extension.TrimStart('.'),
             ShowOverwritePrompt = true,
             FileTypeChoices = [ChainFiles],

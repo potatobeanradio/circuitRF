@@ -95,7 +95,7 @@ public partial class MatchFlattenDialog : Window
 
     private async Task OnBrowseAsync()
     {
-        var start = await StorageProvider.TryGetFolderFromPathAsync(_parentDir);
+        var start = await StorageProvider.TryGetReachableFolderAsync(_parentDir);
         var picked = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
             Title = "Choose Where to Create the Cell",

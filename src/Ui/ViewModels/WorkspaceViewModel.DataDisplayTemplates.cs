@@ -183,7 +183,7 @@ public partial class WorkspaceViewModel
     }
 
     private static async Task<IStorageFolder?> FolderAsync(Window window, string? dir)
-        => dir is not null && Directory.Exists(dir) ? await window.StorageProvider.TryGetFolderFromPathAsync(dir) : null;
+        => await window.StorageProvider.TryGetReachableFolderAsync(dir);
 
     /// <summary>Where a template is looked for and saved first: the workspace's <c>templates/</c> folder when a
     /// workspace is open and has one, otherwise the user's own templates folder (created when saving).</summary>

@@ -827,7 +827,7 @@ public partial class Em3dSolverSettingsView : UserControl
             IStorageFolder? start = null;
             if (_found.GetValueOrDefault(boxName[..^"Box".Length]) is { Program: { } program } &&
                 FileReveal.NearestExistingDirectory(Path.GetDirectoryName(program)) is { } folder)
-                start = await topLevel.StorageProvider.TryGetFolderFromPathAsync(folder);
+                start = await topLevel.StorageProvider.TryGetReachableFolderAsync(folder);
             var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
                 Title                  = "Choose the program",

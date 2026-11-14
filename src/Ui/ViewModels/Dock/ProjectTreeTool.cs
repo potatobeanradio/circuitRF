@@ -155,6 +155,10 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
     public ObservableCollection<RecentEntry> RecentWorkspaces { get; } = new();
     public bool HasRecentWorkspaces => RecentWorkspaces.Count > 0;
 
+    /// <summary>Re-reads the recent list from the actions — after a background look at the recent
+    /// workspaces' folders has found which of them are really gone.</summary>
+    public void RefreshRecentWorkspaces() => RefreshRecent();
+
     private void RefreshRecent()
     {
         RecentWorkspaces.Clear();

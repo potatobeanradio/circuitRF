@@ -99,7 +99,7 @@ public static class HznConvertDialog
         {
             try
             {
-                var start = Directory.Exists(folder.Text) ? await dialog.StorageProvider.TryGetFolderFromPathAsync(folder.Text!) : null;
+                var start = await dialog.StorageProvider.TryGetReachableFolderAsync(folder.Text);
                 var picked = await dialog.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
                 {
                     Title = "Folder for the cell", AllowMultiple = false, SuggestedStartLocation = start,
