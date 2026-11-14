@@ -125,6 +125,11 @@ public enum EmComponentConstruction
     Cutout,
 }
 
+/// <summary>brief-icp-4 R-icp4-1 — one pin's overrides in a cut instance's entry: its own reference (a pin name, <c>Ground</c> or
+/// <c>Common</c>), <c>Port: false</c> for a pin that is only a return, <c>Ground: true</c> for a pin tied to ground. Null states
+/// nothing.</summary>
+public sealed record EmPinOptions(string? Reference = null, bool? Port = null, bool? Ground = null);
+
 /// <summary>brief-icp-1 R-icp1-3 — a keep-out box, micrometres, in the instance's own frame.</summary>
 public readonly record struct EmKeepOut(double X0, double Y0, double X1, double Y1);
 
@@ -169,9 +174,79 @@ public sealed record EmComponentPort(string Refdes, string? Z0 = null, string? R
     /// <summary>The names in <see cref="Keep"/>, trimmed, empty ones dropped.</summary>
     public IReadOnlyList<string> KeepNames => Keep is null ? [] : [.. Keep.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
 
+    /// <summary>
+    /// brief-icp-4 R-icp4-1 — a cut instance's per-pin overrides of <see cref="Reference"/>: each pin's own reference (a pin name,
+    /// <see cref="GroundReference"/> or <see cref="CommonReference"/>), <c>Port: false</c> for a pin that is only a return, and
+    /// <c>Ground: true</c> for a pin tied to ground with no port. Held as one normalised string (<c>"B:Reference=E;E:Port=false"</c>,
+    /// pins in name order) so the entry keeps its value equality; <see cref="PinOptions"/> reads it, <see cref="WithPins"/> writes it.
+    /// Null: no pin overrides anything.
+    /// </summary>
+    public string? Pins { get; init; }
+
+    /// <summary>brief-icp-4 R-icp4-5 — pins tied to the run's return at their face, no port (<c>"E, SUB"</c>, normalised like
+    /// <see cref="Keep"/>). Null: none.</summary>
+    public string? Ground { get; init; }
+
+    /// <summary>The names in <see cref="Ground"/>, trimmed, empty ones dropped.</summary>
+    public IReadOnlyList<string> GroundNames => Ground is null ? [] : [.. Ground.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+
+    /// <summary>brief-icp-4 — the <see cref="Reference"/> that names the run's return (the default).</summary>
+    public const string GroundReference = "Ground";
+
+    /// <summary>brief-icp-4 R-icp4-6 — the <see cref="Reference"/> that names one node shared by the instance's ports.</summary>
+    public const string CommonReference = "Common";
+
+    /// <summary><see cref="Pins"/> read: each pin's options, by pin name (case-insensitive).</summary>
+    public IReadOnlyDictionary<string, EmPinOptions> PinOptions
+    {
+        get
+        {
+            var map = new Dictionary<string, EmPinOptions>(StringComparer.OrdinalIgnoreCase);
+            if (Pins is null) return map;
+            foreach (var part in Pins.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                int colon = part.IndexOf(':');
+                if (colon <= 0) continue;
+                string pin = part[..colon].Trim();
+                var o = new EmPinOptions();
+                foreach (var kv in part[(colon + 1)..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    int eq = kv.IndexOf('=');
+                    if (eq <= 0) continue;
+                    string k = kv[..eq].Trim(), v = kv[(eq + 1)..].Trim();
+                    if (k.Equals("Reference", StringComparison.OrdinalIgnoreCase)) o = o with { Reference = v };
+                    else if (k.Equals("Port", StringComparison.OrdinalIgnoreCase)) o = o with { Port = bool.Parse(v) };
+                    else if (k.Equals("Ground", StringComparison.OrdinalIgnoreCase)) o = o with { Ground = bool.Parse(v) };
+                }
+                map[pin] = o;
+            }
+            return map;
+        }
+    }
+
+    /// <summary>This entry with <see cref="Pins"/> written from <paramref name="pins"/> (an empty map writes null).</summary>
+    public EmComponentPort WithPins(IReadOnlyDictionary<string, EmPinOptions> pins)
+        => this with { Pins = NormalisePins(pins) };
+
+    /// <summary>The normalised <see cref="Pins"/> string for <paramref name="pins"/>: pins in name order, each pin's stated options in
+    /// a fixed order; null when nothing is stated.</summary>
+    public static string? NormalisePins(IReadOnlyDictionary<string, EmPinOptions> pins)
+    {
+        var parts = new List<string>();
+        foreach (var (pin, o) in pins.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var kv = new List<string>();
+            if (o.Reference is { Length: > 0 } r) kv.Add($"Reference={r}");
+            if (o.Port is { } port) kv.Add($"Port={(port ? "true" : "false")}");
+            if (o.Ground is { } g) kv.Add($"Ground={(g ? "true" : "false")}");
+            if (kv.Count > 0) parts.Add($"{pin}:{string.Join(",", kv)}");
+        }
+        return parts.Count == 0 ? null : string.Join(";", parts);
+    }
+
     /// <summary>Overrides nothing: written as its refdes alone.</summary>
     public bool IsPlain => Z0 is null && Reference is null && WidthUm is null && Cell is null && PortAt == EmComponentPortAt.Pin
-                           && KeepOutUm is null && Construction is null && Keep is null;
+                           && KeepOutUm is null && Construction is null && Keep is null && Pins is null && Ground is null;
 
     /// <summary>
     /// brief-lcp-3 R-lcp3-3 — <paramref name="list"/> with <paramref name="refdes"/>'s entry changed by <paramref name="change"/>:

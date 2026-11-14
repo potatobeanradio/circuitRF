@@ -1201,7 +1201,7 @@ public sealed class ComponentPortsConverter : JsonConverter<List<EmComponentPort
             if (reader.TokenType == JsonTokenType.String) { list.Add(new EmComponentPort(reader.GetString() ?? "")); continue; }
             if (reader.TokenType != JsonTokenType.StartObject)
                 throw new JsonException("A ComponentPorts entry is a reference designator or an object with Refdes or Cell, Z0, Reference, " +
-                                        "WidthUm, PortAt, KeepOutUm and Construction.");
+                                        "WidthUm, PortAt, KeepOutUm, Construction, Keep, Pins and Ground.");
             using var doc = JsonDocument.ParseValue(ref reader);
             string? Get(string key)
             {
@@ -1261,9 +1261,61 @@ public sealed class ComponentPortsConverter : JsonConverter<List<EmComponentPort
                     throw new JsonException("A ComponentPorts entry's Keep names may not contain a comma.");
                 keep = names.Length > 0 ? string.Join(", ", names) : null;
             }
+            // brief-icp-4 R-icp4-1/5 — Pins: { "B": { "Reference": "E" }, "E": { "Port": false, "Ground": true } }; Ground: a list of pins.
+            string? pins = null, ground = null;
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                if (prop.Value.ValueKind == JsonValueKind.Null) continue;
+                if (prop.Name.Equals("Pins", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (prop.Value.ValueKind != JsonValueKind.Object)
+                        throw new JsonException("A ComponentPorts entry's Pins is an object of pin names, each with Reference, Port or Ground.");
+                    var map = new Dictionary<string, EmPinOptions>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var pin in prop.Value.EnumerateObject())
+                    {
+                        if (pin.Name.IndexOfAny([':', ';', ',', '=']) >= 0 || pin.Name.Trim().Length == 0)
+                            throw new JsonException($"A ComponentPorts entry's Pins names '{pin.Name}', which is not a pin name.");
+                        if (pin.Value.ValueKind != JsonValueKind.Object)
+                            throw new JsonException($"A ComponentPorts entry's Pins.{pin.Name} is an object with Reference, Port or Ground.");
+                        var o = new EmPinOptions();
+                        foreach (var f in pin.Value.EnumerateObject())
+                        {
+                            if (f.Name.Equals("Reference", StringComparison.OrdinalIgnoreCase) && f.Value.ValueKind == JsonValueKind.String)
+                            {
+                                string rn = (f.Value.GetString() ?? "").Trim();
+                                if (rn.IndexOfAny([':', ';', ',', '=']) >= 0)
+                                    throw new JsonException($"A ComponentPorts entry's Pins.{pin.Name}.Reference '{rn}' is not a pin name, Ground or Common.");
+                                o = o with { Reference = rn.Length > 0 ? rn : null };
+                            }
+                            else if (f.Name.Equals("Port", StringComparison.OrdinalIgnoreCase) && f.Value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                                o = o with { Port = f.Value.GetBoolean() };
+                            else if (f.Name.Equals("Ground", StringComparison.OrdinalIgnoreCase) && f.Value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                                o = o with { Ground = f.Value.GetBoolean() };
+                            else
+                                throw new JsonException($"A ComponentPorts entry's Pins.{pin.Name} takes Reference (a pin name, Ground or Common), " +
+                                                        "Port (true or false) and Ground (true or false).");
+                        }
+                        map[pin.Name.Trim()] = o;
+                    }
+                    pins = EmComponentPort.NormalisePins(map);
+                }
+                else if (prop.Name.Equals("Ground", StringComparison.OrdinalIgnoreCase))
+                {
+                    var names = prop.Value.ValueKind switch
+                    {
+                        JsonValueKind.String => (prop.Value.GetString() ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                        JsonValueKind.Array when prop.Value.EnumerateArray().All(e => e.ValueKind == JsonValueKind.String)
+                            => prop.Value.EnumerateArray().Select(e => (e.GetString() ?? "").Trim()).Where(n => n.Length > 0).ToArray(),
+                        _ => throw new JsonException("A ComponentPorts entry's Ground is a list of pin names."),
+                    };
+                    if (names.Any(n => n.Contains(',')))
+                        throw new JsonException("A ComponentPorts entry's Ground names may not contain a comma.");
+                    ground = names.Length > 0 ? string.Join(", ", names) : null;
+                }
+            }
             list.Add(new EmComponentPort(refdes ?? "", Get("Z0"), Get("Reference"), width)
             {
-                Cell = cell, PortAt = portAt, KeepOutUm = keepOut, Construction = construction, Keep = keep,
+                Cell = cell, PortAt = portAt, KeepOutUm = keepOut, Construction = construction, Keep = keep, Pins = pins, Ground = ground,
             });
         }
         return list;
@@ -1295,6 +1347,25 @@ public sealed class ComponentPortsConverter : JsonConverter<List<EmComponentPort
             {
                 writer.WriteStartArray("Keep");
                 foreach (var n in kept) writer.WriteStringValue(n);
+                writer.WriteEndArray();
+            }
+            if (c.PinOptions is { Count: > 0 } pinOptions)
+            {
+                writer.WriteStartObject("Pins");
+                foreach (var (pin, o) in pinOptions.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    writer.WriteStartObject(pin);
+                    if (o.Reference is { } pinRef) writer.WriteString("Reference", pinRef);
+                    if (o.Port is { } port) writer.WriteBoolean("Port", port);
+                    if (o.Ground is { } g) writer.WriteBoolean("Ground", g);
+                    writer.WriteEndObject();
+                }
+                writer.WriteEndObject();
+            }
+            if (c.GroundNames is { Count: > 0 } grounded)
+            {
+                writer.WriteStartArray("Ground");
+                foreach (var n in grounded) writer.WriteStringValue(n);
                 writer.WriteEndArray();
             }
             writer.WriteEndObject();

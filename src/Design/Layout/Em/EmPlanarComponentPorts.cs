@@ -245,7 +245,7 @@ public static class EmPlanarComponentPorts
     /// notice an edit made to the same object.</summary>
     private static string KeyOf(EmSetup setup, EmLayoutSource? source)
         => string.Join("|", setup.ComponentPorts.Select(c => $"{c.Refdes}\u001f{c.Z0}\u001f{c.Reference}\u001f{c.WidthUm?.ToString("R", CultureInfo.InvariantCulture)}" +
-                                                             $"\u001f{c.Cell}\u001f{c.PortAt}\u001f{c.KeepOutUm}\u001f{c.Construction}\u001f{c.Keep}"))
+                                                             $"\u001f{c.Cell}\u001f{c.PortAt}\u001f{c.KeepOutUm}\u001f{c.Construction}\u001f{c.Keep}\u001f{c.Pins}\u001f{c.Ground}"))
            + "#" + string.Join(",", setup.AnalysisLevelNames) + "#" + setup.SolveRegion?.Describe() + (setup.Is3D ? "#3d" : "")
            + "#" + (source is null ? "" : source.View.Shapes.Count + "/" + source.View.Instances.Count + "/" + source.View.EditCount + "/" + source.DbuPerMicron);
 
@@ -295,6 +295,8 @@ public static class EmPlanarComponentPorts
         // ── The copper, one region per connected piece on each layer a pad is on ──────────────────────
         var flat = cut?.Shapes ?? EmGeometry.Flatten(view, source.AbsolutePath, source.Technology).Shapes;
         var padLayers = placed.Parts.SelectMany(p => p.Pads).Select(p => p.Layer).OfType<LayerKey>().ToHashSet();
+        // brief-icp-4 — a pin-referenced cut port is LCP's strip and delta gap between two faces, read against the same copper.
+        if (cut is not null && !threeD) padLayers.UnionWith(cut.Pins.Where(p => p.HasPort && p.Reference is not null).Select(p => p.Layer));
         var regions = new List<Region>();
         foreach (var layer in padLayers)
         {
@@ -401,7 +403,24 @@ public static class EmPlanarComponentPorts
                 }
                 if (pin.Class == EmPinClass.Floating)
                 {
-                    warnings.Add($"{pin.Name} has nothing connected to it, so it gets no port and {pin.Path}'s model sees an open there.");
+                    warnings.Add(pin.Unreturned
+                        ? $"{pin.Name} has Port: false and no port of {pin.Path} returns through it, so {pin.Path}'s model sees an open there."
+                        : $"{pin.Name} has nothing connected to it, so it gets no port and {pin.Path}'s model sees an open there.");
+                    continue;
+                }
+                // brief-icp-4 R-icp4-5 / R-icp4-1 — a grounded pin and a pin that is only a return carry no port.
+                if (pin.Class == EmPinClass.Grounded)
+                {
+                    notes.Add(pin.Face is null
+                        ? $"{pin.Name} is tied to ground and nothing meets its face: no port, and its terminal goes to the N-port's reference."
+                        : $"{pin.Name} is tied to ground at its face by a ground via {Um(pin.WidthM)} µm wide: no port.");
+                    continue;
+                }
+                if (pin.Class == EmPinClass.Return)
+                {
+                    var through = cut.Pins.Where(o => o.Path == pin.Path && o.HasPort && string.Equals(o.Reference, pin.Pin, StringComparison.OrdinalIgnoreCase))
+                                         .Select(o => o.Name).ToList();
+                    notes.Add($"{pin.Name} is the return of {string.Join(" and ", through)}: no port of its own.");
                     continue;
                 }
                 if (pin.Class == EmPinClass.Abutting)
@@ -421,10 +440,37 @@ public static class EmPlanarComponentPorts
                     }
                     z0 = z;
                 }
+                // brief-icp-4 R-icp4-2 — referenced to another pin: on Planar, LCP's strip across the vacated space from this pin's face to
+                // its reference's, cut by a delta gap (Construct, the one a footprint part's port is), verified as that one is.
+                RectShape? strip = null;
+                var portLabel = pin.Label!;
+                double gapM = 0, widthM = pin.WidthM;
+                bool alongX = pin.OutwardDeg is 0 or 180;
+                if (pin.Reference is { } refPin && !threeD)
+                {
+                    var rPin = cut.Pins.FirstOrDefault(o => o.Path == pin.Path && o.Pin.Equals(refPin, StringComparison.OrdinalIgnoreCase));
+                    var pos = FacePad(pin, dbu);
+                    var neg = rPin?.Face is not null ? FacePad(rPin, dbu) : null;
+                    var posRegion = regions.FirstOrDefault(rg => rg.Layer == pin.Layer && C3dThermal.Inside(rg.Poly, new Point3(pos.Cx, pos.Cy, 0.5), 0));
+                    var negRegion = neg is null ? null
+                        : regions.FirstOrDefault(rg => rg.Layer == rPin!.Layer && C3dThermal.Inside(rg.Poly, new Point3(neg.Cx, neg.Cy, 0.5), 0));
+                    string? gapWhy = posRegion is null || negRegion is null ? "the copper at its face or at its Reference's face was not found." : null;
+                    var made = gapWhy is null
+                        ? Construct(pin.Name, pin.Path, (pos, posRegion!), (neg!, negRegion!), regions, setup, source, dbu,
+                                    entry?.WidthUm is > 0 and var ew ? ew * 1e-6 : null, out gapWhy)
+                        : null;
+                    if (made is null)
+                    {
+                        results.Add(Refused(pin.Path, gapWhy!.StartsWith(pin.Name, StringComparison.Ordinal) ? gapWhy : $"{pin.Name}: {gapWhy}")
+                                    with { Name = pin.Name, Pin = pin.Pin, ReferencePin = refPin, Cutout = true, Cell = pin.Cell });
+                        continue;
+                    }
+                    (strip, portLabel, gapM, widthM, alongX) = made.Value;
+                }
                 int number = next++;
-                Numbers.AddOrUpdate(pin.Label!, new StrongBox<int>(number));
-                results.Add(new EmPlanarComponentPort(pin.Path, pin.Name, pin.Pin, null, null, pin.Label, number, z0, 0, pin.WidthM,
-                                                      pin.OutwardDeg is 0 or 180, null)
+                Numbers.AddOrUpdate(portLabel, new StrongBox<int>(number));
+                results.Add(new EmPlanarComponentPort(pin.Path, pin.Name, pin.Pin, pin.Reference, strip, portLabel, number, z0, gapM, widthM,
+                                                      alongX, null)
                 {
                     Conductor = source.Technology?.Stackup.Layers
                         .FirstOrDefault(l => l.Kind == StackupKind.Conductor && l.DrawingLayers.Contains(pin.Layer))?.Name,
@@ -456,6 +502,21 @@ public static class EmPlanarComponentPorts
         return new EmPlanarComponentPortBuild(results, notes, warnings, null) { Cut = cut };
 
         static EmPlanarComponentPort Refused(string rd, string why) => new(rd, rd, null, null, null, null, 0, null, 0, 0, false, why);
+    }
+
+    /// <summary>brief-icp-4 — a cut pin's face as the pad LCP's construction faces: a sliver of its conductor just beyond the face,
+    /// across the face's width, in metres.</summary>
+    private static PartPad FacePad(EmCutPin pin, double dbu)
+    {
+        var (x0, y0, x1, y1) = pin.Face!.Value;
+        bool normalX = x0 == x1;
+        int q = (int)Math.Round(pin.OutwardDeg / 90.0) & 3;
+        double sign = q is 0 or 1 ? 1 : -1;                          // the conductor lies beyond the face, outward of the instance
+        double at = (normalX ? x0 : y0) * dbu, lo = (normalX ? y0 : x0) * dbu, hi = (normalX ? y1 : x1) * dbu;
+        double depth = Math.Min(hi - lo, 5e-6);
+        double n0 = Math.Min(at, at + sign * depth), n1 = Math.Max(at, at + sign * depth);
+        return normalX ? new PartPad(pin.Path, pin.Pin, null, pin.Layer, (n0 + n1) / 2, (lo + hi) / 2, n0, lo, n1, hi)
+                       : new PartPad(pin.Path, pin.Pin, null, pin.Layer, (lo + hi) / 2, (n0 + n1) / 2, lo, n0, hi, n1);
     }
 
     /// <summary>The connected pieces of <paramref name="shapes"/>' copper, each an outline with its holes, in metres and DBU.</summary>
@@ -699,6 +760,11 @@ public static class EmPlanarComponentPorts
             {
                 LayoutRotation.R0 => "+x", LayoutRotation.R90 => "+y", LayoutRotation.R180 => "−x", _ => "−y",
             };
+            if (p.ReferencePin is { } rp)
+                return $"{p.Name}: component port {p.Number}, a delta gap across a strip where {p.Refdes}{(p.Cell is { } cr ? $" ({cr})" : "")} is cut " +
+                       $"out, from pin {p.Pin}'s face to pin {rp}'s, {Um(p.GapM)} µm of air along {(p.AlongX ? "x" : "y")}, {Um(p.WidthM)} µm wide" +
+                       $"{(p.Conductor is { Length: > 0 } cnr ? $" on '{cnr}'" : "")}, cut at ({Mm(p.Gap.X * dbu)}, {Mm(p.Gap.Y * dbu)}) mm; verified; " +
+                       $"{p.Refdes} and the strip are in the solved problem only, not the layout.";
             return $"{p.Name}: component port {p.Number}, an Uncalibrated Port at the face where {p.Refdes}{(p.Cell is { } cl ? $" ({cl})" : "")} " +
                    $"is cut out, pin {p.Pin}, {Um(p.WidthM)} µm wide, driving {facing}{(p.Conductor is { Length: > 0 } cn ? $" on '{cn}'" : "")}, " +
                    $"at ({Mm(p.Gap.X * dbu)}, {Mm(p.Gap.Y * dbu)}) mm; {p.Refdes} is left out of the solved problem only, not the layout.";

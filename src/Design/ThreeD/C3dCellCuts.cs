@@ -154,6 +154,12 @@ public static class C3dCellCuts
                 C3dComponentPort Refused(string why)
                     => new(at + cp.Refdes, cp.Pin, null, null, 0, cp.WidthM, cp.AlongX, [], $"{name}: {why}", false)
                        { Cutout = true, Cell = cp.Cell, ClayPath = layout.Frame.DocumentPath, SchematicId = cp.SchematicId, Verdict = why };
+                // brief-icp-4 R-icp4-2/3 — a pin referenced to another: a gap sheet between the two faces, not an edge sheet.
+                if (cp.ReferencePin is { } refPin)
+                {
+                    ports.Add(GapSheet(cp, refPin, layout, drawn, element, at, name, ref next, D) ?? Refused("unreachable"));
+                    continue;
+                }
                 string? why = g.Problem is null ? g.Refusal ?? "the layout's 3D problem could not be built."
                             : g.PortsLeftOut.FirstOrDefault(l => l.Port == cp.Number)?.Why;
                 var sheet = g.Problem?.Ports.FirstOrDefault(p => p.Number == cp.Number);
@@ -197,6 +203,12 @@ public static class C3dCellCuts
         }
         foreach (var r in ports.Where(p => p.Refusal is not null))
             warnings.Add($"{r.Refusal} {PinName(r)} is left out of this run; the other component ports are built.");
+        // A pin the cut itself left out is listed too, with its reason, as a refused part is; its sentence is among the build's warnings.
+        foreach (var layout in plan.Layouts)
+            foreach (var cp in layout.Build.Ports.Where(p => p.Cutout && !p.Ok))
+                ports.Add(new C3dComponentPort(layout.Prefix + cp.Refdes, cp.Pin, cp.ReferencePin, null, 0, cp.WidthM, cp.AlongX, [],
+                                               layout.Prefix.Length == 0 ? cp.Refusal : $"{layout.Frame.Path}: {cp.Refusal}", false)
+                          { Cutout = true, Cell = cp.Cell, ClayPath = layout.Frame.DocumentPath, Verdict = cp.Refusal ?? "" });
         int built = ports.Count(p => p.Ok);
         if (built > 0)
             notes.Add($"{built} cut face(s) of cell instances left out of the problem carry a lumped sheet from the face to its return, as a " +
@@ -204,5 +216,84 @@ public static class C3dCellCuts
         return (ports, notes, warnings);
 
         static string PinName(C3dComponentPort p) => p.Pin is { } pin ? $"{p.Refdes}.{pin}" : p.Refdes;
+    }
+
+    /// <summary>
+    /// brief-icp-4 R-icp4-2 — the gap sheet between a cut pin's face and its reference pin's face (the cut has checked that they face
+    /// each other across one axis on one layer): flat, at mid-copper height, from face to face across the width the two share, its
+    /// positive end the signal pin's conductor and its negative end the reference pin's. Verified as the 3D gap sheet is: no copper
+    /// inside it (R-icp3-3's addition — a sheet crossing other metal is refused naming it).
+    /// </summary>
+    private static C3dComponentPort? GapSheet(EmPlanarComponentPort cp, string refPin, C3dCellCutLayout layout, C3dElaboration drawn,
+                                              C3dTransform? element, string at, string name, ref int next, Func<double, long> d)
+    {
+        C3dComponentPort Refused(string why)
+            => new(at + cp.Refdes, cp.Pin, refPin, null, 0, cp.WidthM, cp.AlongX, [], $"{name}: {why}", false)
+               { Cutout = true, Cell = cp.Cell, ClayPath = layout.Frame.DocumentPath, SchematicId = cp.SchematicId, Verdict = why };
+        var cutPins = layout.Build.Cut!.Pins;
+        var sPin = cutPins.FirstOrDefault(p => p.Path == cp.Refdes && p.Pin == cp.Pin);
+        var rPin = cutPins.FirstOrDefault(p => p.Path == cp.Refdes && p.Pin.Equals(refPin, StringComparison.OrdinalIgnoreCase));
+        if (sPin?.Face is not { } sf || rPin?.Face is not { } rf) return Refused($"its face or its Reference {refPin}'s face was not found.");
+        if (element is not { } t) return Refused("its layout instance places no solid to carry the sheet's position by.");
+        if (Math.Abs(t.M02) > 1e-12 || Math.Abs(t.M12) > 1e-12 || Math.Abs(t.M20) > 1e-12 || Math.Abs(t.M21) > 1e-12 || Math.Abs(t.M22 - 1) > 1e-12)
+            return Refused("its layout instance is turned out of the horizontal, and a gap sheet lies flat on the copper.");
+        double per = C3dLowering.Metres(1, layout.Source.DbuPerMicron);
+        bool alongX = sf.X0 == sf.X1;                       // the faces' normal runs along x
+        double sAt = (alongX ? sf.X0 : sf.Y0) * per, rAt = (alongX ? rf.X0 : rf.Y0) * per;
+        double lo = Math.Max(alongX ? sf.Y0 : sf.X0, alongX ? rf.Y0 : rf.X0) * per;
+        double hi = Math.Min(alongX ? sf.Y1 : sf.X1, alongX ? rf.Y1 : rf.X1) * per;
+        (double X, double Y) Plan(double n, double tr) => alongX ? (n, tr) : (tr, n);
+        (double X, double Y) World((double X, double Y) q) => (t.M00 * q.X + t.M01 * q.Y + t.Tx, t.M10 * q.X + t.M11 * q.Y + t.Ty);
+
+        // The conductor just outside each face, on its own layer where the elaboration says which layer a conductor came from.
+        string prefix = layout.Frame.Path + "/";
+        var conductors = drawn.Solids.Where(x => x.Role == Em3dRole.Conductor && x.Primitive is Em3dExtrudedPolygon).ToList();
+        double nudge = Math.Max(1e-9, 0.01 * (hi - lo));
+        double mid = (lo + hi) / 2;
+        Em3dSolid? At(double faceAt, double outward, LayerKey layer)
+        {
+            var w = World(Plan(faceAt + outward * nudge, mid));
+            var holding = conductors.Where(x => x.Name.StartsWith(prefix, StringComparison.Ordinal) && x.Primitive is Em3dExtrudedPolygon ep &&
+                                                C3dThermal.Inside(ep, new Point3(w.X, w.Y, (ep.ZBottom + ep.ZTop) / 2), 0)).ToList();
+            return holding.FirstOrDefault(x => drawn.Origins.TryGetValue(x.Name, out var o) && o.DrawingLayer == layer) ?? holding.FirstOrDefault();
+        }
+        double sOut = Math.Sign(sAt - rAt), rOut = -sOut;     // each conductor lies beyond its own face, away from the other
+        var sSolid = At(sAt, sOut, sPin.Layer);
+        var rSolid = At(rAt, rOut, rPin.Layer);
+        if (sSolid is null || rSolid is null)
+            return Refused($"no conductor of the 3D model meets {(sSolid is null ? "its face" : $"its Reference {refPin}'s face")}.");
+        var sp = (Em3dExtrudedPolygon)sSolid.Primitive;
+        var rp = (Em3dExtrudedPolygon)rSolid.Primitive;
+        if (Math.Abs(sp.ZBottom - rp.ZBottom) > per || Math.Abs(sp.ZTop - rp.ZTop) > per)
+            return Refused($"its conductor '{sSolid.Name}' and its Reference {refPin}'s '{rSolid.Name}' are at two heights; a gap sheet lies between two faces on one copper layer.");
+        double z = (sp.ZBottom + sp.ZTop) / 2;
+        // No copper inside the sheet: sampled across it, strictly inside its edges.
+        for (int i = 1; i < 6; i++)
+            for (int j = 1; j < 6; j++)
+            {
+                var w = World(Plan(sAt + (rAt - sAt) * i / 6.0, lo + (hi - lo) * j / 6.0));
+                if (conductors.FirstOrDefault(x => x.Primitive is Em3dExtrudedPolygon ep && ep.ZBottom < z && z < ep.ZTop &&
+                                                   C3dThermal.Inside(ep, new Point3(w.X, w.Y, z), 0)) is { } inside)
+                    return Refused($"copper of '{inside.Name}' lies inside its gap sheet, between its face and its Reference {refPin}'s face.");
+            }
+        var a = World(Plan(Math.Min(sAt, rAt), lo));
+        var b = World(Plan(Math.Max(sAt, rAt), hi));
+        long x0 = d(Math.Min(a.X, b.X)), y0 = d(Math.Min(a.Y, b.Y)), x1 = d(Math.Max(a.X, b.X)), y1 = d(Math.Max(a.Y, b.Y));
+        var port = new C3dPort
+        {
+            Number = next++,
+            Name = name,
+            Kind = Em3dPortKind.Lumped,
+            Plane = C3dPlane.XY,
+            Offset = d(z),
+            Rect = new C3dRect { Min = new C3dPoint2(x0, y0), Size = new C3dPoint2(x1 - x0, y1 - y0) },
+            Z0 = cp.Z0 is { } z0 ? C3dPorts.FormatZ0(z0) : "50",
+            Positive = sSolid.Name,
+            Negative = rSolid.Name,
+        };
+        return new C3dComponentPort(at + cp.Refdes, cp.Pin, refPin, port, Math.Abs(rAt - sAt), hi - lo, alongX, [], null, false)
+        {
+            Cutout = true, Cell = cp.Cell, ClayPath = layout.Frame.DocumentPath, SchematicId = cp.SchematicId, Verdict = "verified",
+        };
     }
 }

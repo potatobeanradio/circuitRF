@@ -954,7 +954,10 @@ public static class C3dComponentPorts
     {
         if (p.Cutout)
             return p.Port is { } sheet
-                ? $"{sheet.Name}: port {sheet.Number}, a sheet at the cut face of {p.Refdes}{(p.Cell is { } c ? $" ({c})" : "")} to its return, " +
+                ? p.ReferencePin is { } rp
+                    ? $"{sheet.Name}: port {sheet.Number}, a gap sheet where {p.Refdes}{(p.Cell is { } cr ? $" ({cr})" : "")} is cut out, from pin {p.Pin}'s " +
+                      $"face on '{sheet.Positive}' to pin {rp}'s on '{sheet.Negative}', {Um(p.GapM)} µm long and {Um(p.WidthM)} µm wide; {p.Verdict}."
+                    : $"{sheet.Name}: port {sheet.Number}, a sheet at the cut face of {p.Refdes}{(p.Cell is { } c ? $" ({c})" : "")} to its return, " +
                   $"{Um(p.WidthM)} µm wide and {Um(p.GapM)} µm tall; {p.Verdict}."
                 : $"{p.Refdes}{(p.Pin is { } pin ? "." + pin : "")}: refused — {p.Refusal}";
         if (p.Port is not { } port) return $"{p.Refdes}: refused — {p.Refusal}";

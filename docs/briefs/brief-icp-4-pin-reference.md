@@ -81,3 +81,17 @@ No solve beyond the ICP-2 fixture. One test per claim:
 
 Differential or multi-mode ports. A pin reference that needs a new construction (faces at an angle, on two layers) is
 refused by name; building one is a later brief with its own measurement.
+
+## Completion note (2026-11-13)
+
+Built: `Pins` and `Ground` on a cut entry, every pin's reference and class decided once in `EmCellCutout` (`PinPlan`), a gap port
+between a pin's face and its reference's on both solvers, grounded pins as a ground via, and `Common` refused. Gate
+`tests/Ui.Tests/Em/CellPinReferenceTests.cs`, six tests: built equals hand-drawn for the Planar gap (0 exactly) and for the ground
+via (0 exactly), faces that do not face refused and building without a reference, the 3D gap sheet and its refusal, the `Pins` map
+(two ports and none at E; three on ground; a pin both return and port refused; the `.cem` round trip), and `Common`. Where it
+differs from the requirements, and why — `src/Design/RESOLVED.md` §brief-icp-4:
+- the Planar construction is LCP's strip and delta gap between facing faces, not a two-cut edge port at one station, which the
+  port extraction refuses (and which has no uncalibrated form), so both solvers take the facing condition;
+- a grounded pin is a ground via in 3D too, not a PEC sheet;
+- R-icp4-4 and gate 4 move to ICP-5, which puts the first model on a cut port; the reference pin and the pin classes are carried
+  for it.

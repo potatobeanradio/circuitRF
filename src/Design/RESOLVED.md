@@ -31366,3 +31366,44 @@ at 30 GHz. Planar's uncalibrated face read 6.1e-2 at 20 GHz on the same cut (ICP
 `Log(a + Sqrt(a² − 1))` picks the conjugate root once βℓ passes 90° (the principal square root's sign follows Im(a²), which
 flips with Re(a)), and the first run read 0.5-0.6 at 25-30 GHz from that alone; take the root with |e^{γℓ}| ≥ 1.
 `PlanarCellCutoutTests.CloseWithLine` has the same expression; its one point (20 GHz, βℓ just under 90°) is on the safe side.
+
+## brief-icp-4 — each cut pin's reference, and pins tied to ground (2026-11-13)
+
+`EmComponentPort.Pins` / `Ground` (`.cem` `Pins: { "B": { "Reference": "E" }, "E": { "Port": false } }`, `Ground: ["E"]`, both held
+as normalised strings like `Keep` so the entry keeps its value equality, omitted at their defaults), `EmCellCutout`'s `PinPlan`
+(every pin's reference, return-only pins, grounded pins, and the refusals), `EmPinClass.Return`, `EmCutPin.Face/Reference`, and the
+two builders. Gate: `tests/Ui.Tests/Em/CellPinReferenceTests.cs` (6).
+
+- **The Planar construction is LCP's strip and delta gap, not a two-cut edge port.** The brief named RP-2a's two-cut edge port at
+  one station. The product refuses it: `EmPortExtraction` turns down an EDGE port returning through drawn metal, because its
+  calibration standards are single conductors over the plane and the port would be calibrated against the wrong line (measured on
+  the first fixture, a G/S pair side by side on one face). The engine also drops `Uncalibrated` on a conductor-referenced port
+  (`PlanarPort.cs`, ICP-2a D5), so there is no uncalibrated two-cut port to fall back on, and a raw two-cut series-gap edge port is
+  an open circuit as a raw single one is. What the product does have is LCP-1's strip joining two facing pads, cut by an internal
+  delta gap — the Planar counterpart of the 3D gap sheet (LCP-0 measured the two agree) — so a pin-referenced port is that on
+  Planar, built by the same `Construct` from two pads synthesised as slivers of conductor just beyond the two faces. **Both solvers
+  therefore take one condition**: the two faces face each other across one axis on one layer. Built equals hand-drawn (strip plus
+  gap label drawn by hand) exactly.
+- **Several ports on one reference.** On both solvers two gaps may land on one reference face only where they do not overlap
+  across it; the cut refuses the second otherwise, naming both. For the record (R-icp4-3): the engine itself accepts two two-cut
+  ports sharing one return cut — `PlanarPorts.RefuseCoincidentCuts` compares only the POSITIVE cuts, on purpose — but no product path
+  builds a two-cut edge port, so it is not reached here.
+- **`Common` has no construction on either solver** (R-icp4-6): a gap needs a pin's face to land on and a floating node of the
+  instance's own is not one. Refused by `<path>`, naming Ground or a pin as what builds.
+- **A grounded pin is a ground via, on both solvers.** A rectangle on the stackup via that joins the pin's conductor to a
+  ground-reference conductor, as wide as the face and as deep, on the conductor just beyond it — the ground attachment a drawn
+  backside via already is on Planar (`PlanarVia.GroundTerminal`), and a solid via to the drawn plane when a 3D view lowers the cut
+  layout. The brief asked for a PEC sheet in 3D; the via is the same construction on both solvers and needs no new 3D object. A
+  technology with no such via, or a conductor shorter than its face is wide, is refused by `<path>.<pin>`. The via is added after
+  R-icp2-9's shorted-pins check, so a refused pin adds nothing.
+- **The pin rules.** A pin named in `Pins` or `Ground` that the instance does not have, a `Reference` naming no pin, a grounded pin
+  named as another's `Reference` (only `Ground` can be), and a pin that is another's reference and also given a port of its own
+  (`Port: true`, or its own `Reference`) are refused. The entry-level `Reference` naming a pin makes that pin the return of every
+  other (its own reference is itself). A `Port: false` pin no port returns through is floating, with the floating warning.
+- **3D.** The cut marks a referenced pin's label with its reference face (`PortReference`, `PortReturn`); the generator's cut run
+  skips such labels, and `C3dCellCuts.GapSheet` builds a flat sheet at mid-copper height from face to face across the width they
+  share, its ends the two conductors, refusing copper inside it. A cut pin the cut itself left out is now listed in the 3D build
+  too, as a refused footprint part is.
+- **Not done here: `_cosim` (R-icp4-4, gate 4).** A cut port carries no model until ICP-5, so there is no reference terminal to put
+  on `0` yet. What ICP-5 reads is carried: `ReferencePin` on both builders' ports, the `.cemr` port's `Pins` (pin, then reference),
+  and the cut's per-pin classes (`Grounded`, `Return`).

@@ -1110,7 +1110,8 @@ public static class EmRunService
     private static EmResultPort CutRecord(EmResultPort r, EmPlanarComponentPort cut)
     {
         r.Part = cut.Refdes;
-        r.Pins = cut.Pin is { } pin ? [pin] : null;
+        // brief-icp-4 — a pin-referenced port records its reference pin after its own, as a footprint part's gap port does.
+        r.Pins = cut.Pin is { } pin ? [pin, .. cut.ReferencePin is { } rp ? new[] { rp } : []] : null;
         r.Cell = cut.Cell;
         return r;
     }

@@ -67,6 +67,8 @@ No EM solve: write a small synthetic Touchstone, as LCP-7's gates do. One test p
 5. Every derived instance name survives `CnlReader`.
 6. A footprint-part netlist is byte-identical to before.
 7. Two abutting instances share one node in the written netlist, and a grounded pin's terminal is on `0`.
+8. ICP-4's gate 4, moved here: a pin-referenced port (`ReferencePin` on the port) puts the model's reference terminal on `0`, and the
+   netlist comment says it is tied to the N-port's reference, which is not the same as the pin being grounded in the chip.
 
 ## Not here
 

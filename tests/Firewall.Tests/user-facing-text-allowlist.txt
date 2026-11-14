@@ -317,6 +317,13 @@ src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's Keep is a li
 src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's Keep names may not contain a comma.
 src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's KeepOutUm [x0, y0, x1, y1] needs x1 > x0 and y1 > y0.
 src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's KeepOutUm is four numbers [x0, y0, x1, y1], micrometres.
+src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's Ground is a list of pin names.
+src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's Ground names may not contain a comma.
+src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's Pins is an object of pin names, each with Reference, Port or Ground.
+src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's Pins names '{pin.Name}', which is not a pin name.
+src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's Pins.{pin.Name} is an object with Reference, Port or Ground.
+src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's Pins.{pin.Name} takes Reference (a pin name, Ground or Common), 
+src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's Pins.{pin.Name}.Reference '{rn}' is not a pin name, Ground or Common.
 src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's {key} is {string.Join(
 src/Design/Layout/Em/EmSetupPersistence.cs|ComponentPorts is \"*\" or a list of reference designators.
 src/Design/Thermal/ThermalFosterNetlist.cs|an empty network

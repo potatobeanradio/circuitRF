@@ -547,7 +547,16 @@ public static class Em3dGenerator
         // ── Ports ────────────────────────────────────────────────────────────────────────────
 
         /// <summary>The port labels this problem's ports come from — <see cref="EmComponentPorts.Collect"/>, once.</summary>
-        private EmComponentPorts.Result PortLabels => _portLabels ??= CutPorts ? EmComponentPorts.Collect(source, setup) : EmComponentPorts.Collect(source);
+        private EmComponentPorts.Result PortLabels => _portLabels ??= CutPorts ? CutLabels() : EmComponentPorts.Collect(source);
+
+        /// <summary>brief-icp-3/4 — the cut's labels, less a pin-referenced port's two-cut label: in 3D that port is a gap sheet between
+        /// the two faces, built by the 3D view (C3dCellCuts), never an edge sheet.</summary>
+        private EmComponentPorts.Result CutLabels()
+        {
+            var all = EmComponentPorts.Collect(source, setup);
+            if (!all.Shapes.Any(s => s is LabelShape { PortReference: not null } l && EmPlanarComponentPorts.StatedNumber(l, out _))) return all;
+            return all with { Shapes = [.. all.Shapes.Where(s => !(s is LabelShape { PortReference: not null } l && EmPlanarComponentPorts.StatedNumber(l, out _)))] };
+        }
         private EmComponentPorts.Result? _portLabels;
 
         /// <summary>
