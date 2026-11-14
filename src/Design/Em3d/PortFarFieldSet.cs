@@ -25,8 +25,10 @@ public sealed class PortFarFieldSet
     private readonly bool _pseudoWave;
 
     private PortFarFieldSet(PlanarFarFieldGrid grid, double[] hz, int[] ports, Complex[] eTheta, Complex[] ePhi, Complex[][,] s,
-                            Complex z0, double referenceDbm, string solver, string name, string excitation, PlanarPortBox[]? boxes, bool pseudoWave)
+                            Complex z0, double referenceDbm, string solver, string name, string excitation, PlanarPortBox[]? boxes, bool pseudoWave,
+                            IReadOnlyList<(double X, double Y)?> positions)
     {
+        PortPositions = positions.Count == ports.Length ? positions : [.. Enumerable.Repeat<(double, double)?>(null, ports.Length)];
         Excitation = excitation;
         _boxes = boxes;
         _pseudoWave = pseudoWave;
@@ -41,6 +43,13 @@ public sealed class PortFarFieldSet
         Solver = solver;
         Name = name;
     }
+
+    /// <summary>brief-paa-2 R-paa2-8 — each port's reference point in the layout's metres, in port order; null where the record does not say.</summary>
+    public IReadOnlyList<(double X, double Y)?> PortPositions { get; }
+
+    /// <summary>brief-paa-2 R-paa2-3 — each port's embedded pattern referred to its own position, per (frequency, port, position): kept with
+    /// these arrays, so it lives exactly as long as the read it came from (<see cref="EmbeddedPatterns.Referred"/>).</summary>
+    internal System.Collections.Concurrent.ConcurrentDictionary<(int Frequency, int Port, double X, double Y), CircuitRF.Engine.AntennaArray.ElementPattern> Referred { get; } = new();
 
     /// <summary>The grid the solver wrote: a θ axis stopping at 90° is an openEMS hemisphere, kept as it is.</summary>
     public PlanarFarFieldGrid Grid { get; }
@@ -234,7 +243,7 @@ public sealed class PortFarFieldSet
         double reference = group.TryGetValue("ReferenceInputPowerDbm", out var refCube) && refCube.DataKind == DataKind.Real && refCube.BufferLength > 0
             ? refCube.RealValues[0] : 0.0;
         string solver = record.Solver.Length > 0 ? record.Solver : "the solver";
-        return (new PortFarFieldSet(grid, hz, ports, eTheta.ComplexValues, ePhi.ComplexValues, s, z0[0], reference, solver, name, excitation, boxes, pseudoWave), null);
+        return (new PortFarFieldSet(grid, hz, ports, eTheta.ComplexValues, ePhi.ComplexValues, s, z0[0], reference, solver, name, excitation, boxes, pseudoWave, record.PortPositions), null);
     }
 
     /// <summary>

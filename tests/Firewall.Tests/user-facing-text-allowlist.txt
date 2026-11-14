@@ -453,7 +453,8 @@ src/Engine/Mom/PlanarDeembed.cs|This calibration standard's static capacitance s
 src/Engine/Mom/PlanarDeembed.cs|{p} ports need {p} error boxes, not {boxes.Count}.
 src/Engine/Mom/PlanarExcitation.cs|A solve needs at least one port.
 src/Engine/Mom/PlanarFarField.cs|The far field and the matrix fill disagree about which spectral kernel this problem 
-src/Engine/Mom/PlanarFarField.cs|The solution has {basisCurrents.Count} unknowns and the mesh has {mesh.Bases.Count} 
+src/Engine/Mom/PlanarFarField.cs|The solution has {column.Count} unknowns and the mesh has {mesh.Bases.Count} 
+src/Engine/Mom/PlanarFarField.cs|{basisCurrents.Count} current column(s) for {drivenPortNumbers.Count} port number(s).
 src/Engine/Mom/PlanarFarField.cs|The two cells of this {basis.Direction} rooftop do not span the same transverse extent 
 src/Engine/Mom/PlanarFeedExtension.cs|{p} ports need {p} lengths and {p} propagation constants.
 src/Engine/Mom/PlanarFill.cs|The cores-only source carries no remainder.
@@ -1641,3 +1642,17 @@ src/Design/ThreeD/C3dFacetedSphere.cs|The points are coplanar.
 src/Engine/Em3d/Em3dScatteringResult.cs|The far field holds {far.Length} values, not {nf}×2×{nt}×{np}.
 src/Engine/Em3d/Em3dScatteringResult.cs|The monostatic field holds {monostatic.Length} values, not {nf}×2.
 src/Design/Em3d/Solvers/Palace/Em3dRunService.Palace.cs|A Palace run reached its solve with no Palace.
+
+# brief-paa-2 — the array engine's argument checks (shapes a caller must get right) and EmbeddedPatterns' frequency refusal. The
+# PhasedArray component's own refusals (PAA-3) are the user-facing ones and are diagnostics there.
+src/Design/Em3d/EmbeddedPatterns.cs|'{far.Name}' holds no far field at {Layout.MaterialDispersion.Hz(hz)}: its patterns are at 
+src/Engine/Array/ArrayCoupling.cs|A sub-array extends to an array of its own lattice kind.
+src/Engine/Array/ArrayCoupling.cs|A {subLattice.Rows} × {subLattice.Cols} sub-array has a {ns}-port S; this one is {sSub.GetLength(0)} × {sSub.GetLength(1)}.
+src/Engine/Array/ArrayCoupling.cs|The matrix must be square.
+src/Engine/Array/ArrayDirections.cs|θ and φ must be as many as each other.
+src/Engine/Array/ArrayPattern.cs|{lattice.Count} elements and {elements.PatternOf.Count} pattern assignments.
+src/Engine/Array/ArrayPattern.cs|{lattice.Count} elements and {weights.Count} weights.
+src/Engine/Array/ArrayUvMap.cs|{lattice.Count} elements and {weights.Count} weights.
+src/Engine/Array/ArrayWaves.cs|A radiated power is integrated over a grid: evaluate the pattern on the record's grid (the overview).
+src/Engine/Array/ArrayWaves.cs|{n} elements and {a.Count} incident waves.
+src/Engine/Array/ElementPattern.cs|An element pattern on a {grid.ThetaDeg.Count} × {grid.PhiDeg.Count} grid has {grid.DirectionCount} samples per component.

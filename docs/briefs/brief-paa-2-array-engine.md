@@ -97,3 +97,51 @@ and says that the numbering is assumed row-major.
 ## Not here
 
 The component (PAA-3), units and expressions (PAA-3/4), any UI.
+
+## Completion note (2026-11-14)
+
+**Built.** `src/Engine/Array` (namespace `CircuitRF.Engine.AntennaArray` — a namespace named `Array` would capture `Array.*` across
+the engine): `ArrayLattice` (R-1), `ArrayDirections`, `ElementPattern` (bilinear magnitude/unwrapped-phase interpolation, kept per
+direction set), `ArrayPattern` (R-2: row/column phase tables per geometry × direction set × frequency, separable path, tri as a
+row-table shift, `Overview` labelled with its grid), `ArrayBeam` (R-2a local evaluation and R-7 metrics: beamwidth in both principal
+planes, first sidelobe, pointing error, scan loss, grating-lobe margin), `ArrayUv` (R-2a (u,v) FFT, ≥8× padding, tri as two
+sub-lattices), `ArrayCoupling` + `ArraySparseMatrix` (R-5, CSR, PAA-1's pair selection exactly), `ArrayWaves` (R-6). In
+`src/Design/Em3d`: `EmbeddedPatterns` (R-3, R-4 through `PortFarFieldSet.Weights`, referred patterns cached in the set) and
+`RecordLattice` (R-9). `EmResultPort.Position` written by Planar and 3D runs (R-8), read optionally by `EmFieldDataRecord` and
+`PortFarFieldSet`.
+
+**Gates.**
+
+1. L2 identity on E5 (30°/45° steer) against the fields analysis: **1.2e-11** of the peak, gated at the brief's 1e-9. Not PAA-1's
+   9.4e-16: the circuit reads the Touchstone's 10 digits and the embedded patterns the `.npy`'s S (PAA-1's harness used one S both
+   sides).
+2. 1×8 tapered line = the Steering bench closed form to 1e-12; 32×32 and 64×64 row/column (general, separable, elements off), a 9×12
+   tri lattice and the (u,v) FFT (16×16, 7×9 tri, 1×12) = direct sums to 1e-12 of Σ|w|.
+3. **As PAA-1 asked:** the engine reproduces the harness's L0 / L1-centre / L1-classes / L2 on the committed fixtures (6×6 from 5×5,
+   ten scans) to **4.6e-10** — `testdata/phased-array/paa2_reference.json`, made by `harness/paa2_reference.py`. On the fixtures,
+   L1-classes' worst |ΔΓ_act| is 0.114 (PAA-1's full runs: 0.114).
+4. E5 → 5×5 returns E5's S for every offset from the pair nearest the centre; a 9×9 is zero beyond ±4 and its note says so.
+5. A new planar 2×2 stub run (0.6 s) records four positions; `RecordLattice` reads 2×2 at the drawn 10 × 8 mm, row-major; the older
+   E5 record reads "positions not recorded", and with RecordRows/Cols/Dx/Dy states the numbering is assumed row-major.
+6. `ArrayPattern.TablesBuilt` does not move on a second and third sum with new weights (one with an element off).
+7. 64×64 of E5's centre pattern, local evaluation against a 0.05° direct sum:
+
+   | θ₀ | beamwidth E / A, local vs fine | first sidelobe E / A, dB | pointing error |
+   |---|---|---|---|
+   | 0° | 1.5638 / 1.5561 vs 1.5640 / 1.5551 | −13.153 / −13.285, equal to 0.001 | 0.0010° vs 0.0008° |
+   | 45° | 2.1935 / 1.5560 vs 2.1943 / 1.5550 | −13.081 / −13.279, equal to 0.001 | 0.0114° vs 0.0134° |
+
+   Read off a 1° grid instead: at 0° a beamwidth of **1.147°** (true 1.564°) and a first sidelobe of **−16.5 dB** (true −13.15); at
+   45° 2.104° and −13.39 dB. The interpolant (E5's centre pattern from its 10° samples at the 5° nodes between) is RMS 5.2e-2 of the
+   peak field, worst 0.22 at θ = 85° where the pattern falls to its grazing zero — at ten times a real record's spacing.
+8. E5 extended to 64×64: ≤ 81 non-zeros per row; `Active` allocates O(N), under 1 % of a dense N×N (268 MB).
+
+Tests: `tests/Engine.Tests/AntennaArray/ArrayEngineTests.cs` (12, 0.6 s), `tests/Ui.Tests/PhasedArray/PhasedArrayRecordTests.cs`
+(6, ~3 s). Findings: `src/Engine/RESOLVED.md` and `src/Design/RESOLVED.md` § brief-paa-2.
+
+**For PAA-3.** The default level and `Patterns=classes` follow PAA-1's decisions; the power-balance band (within 0.1 of the centre
+element's own efficiency, always above 1) is for the component's notes and is not evaluated here. The sparse S is CSR in
+`ArraySparseMatrix`; PAA-8's factorisation will convert it for CSparse.
+
+`tests/Firewall.Tests/user-facing-text-allowlist.txt` lists the engine's argument checks (deliberately: the component's refusals in
+PAA-3 are the user-facing ones), and its `PlanarFarField.cs` entry is brought up to the two messages PAA-1's far-field change wrote.

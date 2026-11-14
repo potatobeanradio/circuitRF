@@ -1466,6 +1466,8 @@ public static class EmRunService
                 Z0Re = p.Z0.Real, Z0Im = p.Z0.Imaginary,
                 Kind = p.Kind == PlanarPortKind.InternalDeltaGap ? EmResultPort.Gap : EmResultPort.Plane,
                 Uncalibrated = p.Uncalibrated,
+                // brief-paa-2 R-paa2-8 — where the run placed the port, in the layout's metres.
+                Position = new EmResultPortPosition { X = p.Location.X, Y = p.Location.Y },
             }).Select(r => portLabels.ComponentBuild?.Ports.FirstOrDefault(c => c.Ok && c.Cutout && c.Number == r.Number) is { } cutPort
                 ? CutRecord(r, cutPort) : r)],
             (stagedBase, stamp) =>

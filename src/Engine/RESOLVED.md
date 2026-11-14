@@ -4581,3 +4581,30 @@ Gate: `EnvelopeDeviceOnlyNetTests` (2 s; 36.4 against 0.002 before the fix).
 - **Loadpull settings (§3 of the issue):** measured in `src/Engine/Loadpull/RESOLVED.md`.
 
 Gates: `CommensurateTonesTests`, `LoadpullSettingsReachTests`, `HbLineSearchTests`.
+
+## brief-paa-2 — the array engine, `src/Engine/Array` (2026-11-14)
+
+- **The namespace is `CircuitRF.Engine.AntennaArray`, not `…Array`.** A namespace named `Array` under `CircuitRF.Engine` would
+  capture every `Array.Empty` / `Array.Copy` written in any `CircuitRF.Engine.*` file (name lookup reaches the enclosing namespace's
+  members before `System`), and the same for a test namespace under `CircuitRF.Engine.Tests`. The folder keeps the brief's name;
+  the tests live in `tests/Engine.Tests/AntennaArray`.
+- **Phase tables, not exponentials.** `exp(j·k·(x·u + y·v))` is an x factor times a y factor; a triangular lattice's half-pitch row
+  shift folds into the row table (`Y[d,r] = exp(j·k·(y_r·v + s_r·u))`), so one table pair serves both lattice kinds and the sum is
+  exact, not a re-gridding. The tables are kept per direction set (`ConditionalWeakTable`), so they die with the set; `TablesBuilt`
+  counts builds and a second sum with new weights adds none (gate 6). A separable weighting is detected by a rank-one check at
+  1e-13 of the largest weight — a steer written as one exponential per element differs from its own row × column product by the
+  rounding of a ~100 rad phase, ~2e-14, so 1e-14 rejected the case it exists for.
+- **Measured against independent sums** (`ArrayEngineTests`): the 1×8 line against the Steering bench's closed form, and the
+  32×32 / 64×64 row-column path, general, separable and with elements off, the triangular lattice and the (u,v) FFT (rectangular,
+  triangular, one row) against one-exponential-per-element direct sums — every one inside 1e-12 of Σ|w|.
+- **The (u,v) map's bins are aliased by construction**, period λ/dx in u: that IS the grating-lobe structure, so no unwrapping is
+  done. A triangular lattice is its even-row and odd-row sub-lattices (row pitch 2·dy) on the same bins, the odd rows' shift an
+  exact phase per bin; a sub-lattice a row short is referred to where its missing row would be, which `RowY` extends linearly.
+- **The local evaluation** (`ArrayBeam`): step = min(estimate, measured)/10 with the estimate 0.886·λ/L of the LARGEST side (the
+  narrowest beam the lattice can make, so the step is never too coarse before the cut confirms it); a tangent-plane patch climbs to
+  the peak and re-centres when the maximum lands on its edge; the two cuts are great circles through the peak along θ̂ and φ̂; each
+  sidelobe is re-sampled ten times finer, and every peak is read by a three-point parabola. Gate 7 (64 × 64 of E5's centre pattern):
+  against a 0.05° direct sum, beamwidths within 0.0010°, sidelobes within 0.001 dB, pointing within 0.002°, at 0° and 45°.
+- **Coupling extension** reproduces PAA-1's `extend_S` selection exactly, ties included (first pair in row-major order), because
+  gate 3 holds the engine to that harness's numbers. On a triangular lattice an odd row offset is keyed with the start row's parity.
+  E5 extended to 64 × 64: at most 81 non-zeros a row; `ArrayWaves.Active` on it allocates O(N), against 268 MB for a dense N×N.

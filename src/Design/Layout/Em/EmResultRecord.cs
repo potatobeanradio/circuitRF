@@ -171,7 +171,19 @@ public sealed class EmResultPort
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Uncalibrated { get; set; }
 
+    /// <summary>brief-paa-2 R-paa2-8 — the port's reference point in the layout's coordinates, metres: the point the run placed the port
+    /// at. Written by every new Planar and 3D run; null on an older record ("positions not recorded"), which is read and never refused.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public EmResultPortPosition? Position { get; set; }
+
     [JsonIgnore] public Complex Z0 => new(Z0Re, Z0Im);
+}
+
+/// <summary>brief-paa-2 R-paa2-8 — a port's reference point, metres, in the layout's coordinates.</summary>
+public sealed class EmResultPortPosition
+{
+    public double X { get; set; }
+    public double Y { get; set; }
 }
 
 /// <summary>The frequencies a result holds, in hertz.</summary>

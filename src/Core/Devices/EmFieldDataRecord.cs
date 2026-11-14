@@ -210,6 +210,10 @@ public sealed class EmFieldDataRecord
     /// <summary>The per-port field set's folder, absolute; null when the run kept none.</summary>
     public string? FieldsFolder { get; init; }
 
+    /// <summary>brief-paa-2 R-paa2-8 — each port's reference point in the layout's metres, in port order; null where the record does not
+    /// say (a record written before positions were recorded).</summary>
+    public IReadOnlyList<(double X, double Y)?> PortPositions { get; init; } = [];
+
     public int PortCount => PortNames.Count;
 
     /// <summary>"EM Field Data 'X1.EM1'": the elaborated instance path, verbatim.</summary>
@@ -245,6 +249,13 @@ public sealed class EmFieldDataRecord
         public int Number { get; set; }
         public string Name { get; set; } = "";
         public string? Kind { get; set; }
+        public PositionDto? Position { get; set; }
+    }
+
+    private sealed class PositionDto
+    {
+        public double X { get; set; }
+        public double Y { get; set; }
     }
 
     private sealed class FrequenciesDto
@@ -317,7 +328,8 @@ public sealed class EmFieldDataRecord
         if (ports.Count == 0) return (null, $"'{name}' lists no ports.", watched);
         return (new EmFieldDataRecord
         {
-            RecordPath = path, SnpPath = snp, PortNames = ports, PortKinds = [.. ordered.Select(p => p.Kind)], FarFieldExcitation = dto.FarFieldExcitation,
+            RecordPath = path, SnpPath = snp, PortNames = ports, PortKinds = [.. ordered.Select(p => p.Kind)],
+            PortPositions = [.. ordered.Select(p => p.Position is { } at ? ((double X, double Y)?)(at.X, at.Y) : null)], FarFieldExcitation = dto.FarFieldExcitation,
             FarFieldPoints = farField, FieldSetPoints = fieldSet,
             NpyPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(path)!, files.Npy)), Solver = dto.Solver?.Name ?? "",
             FieldsFolder = files.Fields is { Length: > 0 } f ? Path.GetFullPath(Path.Combine(Path.GetDirectoryName(path)!, f)) : null,

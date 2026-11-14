@@ -31691,3 +31691,30 @@ the 2×2. Fixtures and harness: `testdata/phased-array/`.
   it to 4.2 s (the whole dense 3×3 run 104 → 27 s). The accelerated dry run quoted the operator's resident size where the
   run peaks at the factorisation's: it now says 1.3 GB for the 3×3 (measured 1.1-1.3) and "at least 4.7 GB, factor time
   not estimated" for the 6×6 (measured 6.4 GB, past 30 minutes).
+
+## brief-paa-2 — port positions in the record, embedded patterns of any record, a record's lattice (2026-11-14)
+
+- **`EmResultPort.Position`** (`{X, Y}`, metres, the layout's frame) is written by every new Planar run (the port's placed point,
+  `PlanarPort.Location`) and 3D run (the port sheet's centre). Null is omitted, so an older record is byte-identical on re-save and
+  reads as "positions not recorded"; `EmFieldDataRecord.PortPositions` and `PortFarFieldSet.PortPositions` carry it, null per port.
+  Adoption writes none (an adopted run's geometry is not known).
+- **`EmbeddedPatterns`** forms port k's terminated pattern through `PortFarFieldSet.Weights` with a = e_k, b = S·e_k — the fields
+  analysis's own path, so a planar record's shorted patterns and its port boxes, and a 3D record's per-volt patterns, need no second
+  formula. Referred to the port's position once per (frequency, port, position) and kept in the `PortFarFieldSet`, which is itself
+  kept per file.
+- **Gate 1 measured 1.2e-11 of the peak, not PAA-1's 9.4e-16, and the cause is the input, not the sum.** The fields analysis's circuit
+  reads the block's Touchstone (10 significant digits) while the embedded patterns take S from the `.npy`; PAA-1's harness took both
+  from the fields analysis and so had one S on both sides. The gate is the brief's 1e-9.
+- **Gate 3: the engine reproduces PAA-1's harness on the committed fixtures to 4.6e-10** (L0, L1-centre, L1-classes and L2, ten
+  scans, peak realized gain, power balance, every Γ_act, RMS pattern error, worst |ΔΓ_act|). The reference is
+  `testdata/phased-array/paa2_reference.json`, made by `harness/paa2_reference.py` — `compare.py`'s own `model()` on the 5° fixtures
+  with each port's pattern from the fields analysis. On the fixtures 6×6 ← 5×5 L1-classes gives worst |ΔΓ_act| 0.114 (PAA-1's full
+  runs: 0.114) and RMS pattern error 0.38–2.55 dB over the scans.
+- **What the 1° overview would have said** (gate 7, 64 × 64): at boresight a beamwidth of 1.147° against 1.564° and a first sidelobe of
+  −16.5 dB against −13.15 dB; at 45°, 2.104° against 2.194° and −13.39 against −13.08 dB. Hence no metric is read off it.
+- **The interpolant's error**, measured as E5's centre pattern interpolated from its 10° samples at the 5° nodes between them (the
+  fixtures hold nothing finer): RMS 5.2e-2 of the peak field, worst 0.22 at θ = 85° where the pattern falls to its grazing zero
+  (1.3e-1 of the peak power). That is ten times a real record's 1° spacing; it bounds the fixture case and says where the error sits.
+- **`RecordLattice`** fits rows by y (top first) and columns by x within a thousandth of the closest two ports, rect or tri (odd rows
+  half a pitch RIGHT, ArrayLattice's convention; LEFT is refused with the mirror remedy), and explains a short row, two pitches, an
+  odd offset or a rotation. A new planar run of a 2×2 of stubs (0.6 s) fits 2×2 at the drawn 10 × 8 mm, row-major.

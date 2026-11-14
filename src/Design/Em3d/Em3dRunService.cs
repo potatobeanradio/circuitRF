@@ -916,6 +916,8 @@ public static partial class Em3dRunService
                    // brief-icp-3 R-icp3-5 — a cut instance's pin port: its path, its pin and its cell, as a Planar run records them.
                    Cell = part?.Cell,
                    ModeNormalised = p.ModeNormalised,
+                   // brief-paa-2 R-paa2-8 — the centre of the port's sheet, in the model's metres, which a view built from a layout keeps.
+                   Position = new EmResultPortPosition { X = (p.Min.X + p.Max.X) / 2, Y = (p.Min.Y + p.Max.Y) / 2 },
                };
            })];
 

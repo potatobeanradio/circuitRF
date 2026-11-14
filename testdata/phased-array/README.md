@@ -40,3 +40,6 @@ The technology file and its laminate layer carry neutral names; the stored resul
 embedded pattern from circuitRF's own `fields` analysis (one drive per port), and `compare.py`, `classes.py` and
 `summary.py` form L0, L1 and L2 and the tables. Set `PAA1_WS` to a scratch workspace holding full results to rerun it;
 `CRF_CLI` overrides the CLI it calls (default: the Release build in this repository).
+
+`paa2_reference.json` is that comparison run on the fixtures themselves (6×6 from the 5×5 and the element, ten scans), made by
+`harness/paa2_reference.py`; the array engine's tests (`PhasedArrayRecordTests`) reproduce it to 1e-9.
