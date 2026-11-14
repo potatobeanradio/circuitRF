@@ -558,6 +558,11 @@ public static class LayoutRead
                 // R-lvs9-5a: ONE query per pin, and here it is.
                 if (hierarchy is not null) hierarchy.Counters.PinQueries++;
                 int index = pieces.IndexAt(pads[p].X, pads[p].Y, origins[p].Layer);
+                // A pin on a PIN-purpose layer ("Metal1.pin", as a kit marks its pins) is on the conductor that layer is a purpose of —
+                // the mapping the EM cut reads pins by (EmPinConductor) — and no copper is drawn on the purpose layer itself.
+                if (index < 0 && Em.EmPinConductor.Of(tech, origins[p].Layer) is { } conductor && !conductor.DrawingLayers.Contains(origins[p].Layer))
+                    foreach (var drawn in conductor.DrawingLayers)
+                        if ((index = pieces.IndexAt(pads[p].X, pads[p].Y, drawn)) >= 0) break;
                 int piece = index < 0 ? -1 : pieces.NetOfPiece(index);
 
                 // Recorded EITHER WAY, including where it landed on nothing: a pad on no copper is

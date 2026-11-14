@@ -343,6 +343,27 @@ public sealed class LayoutNetlistTests : IDisposable
         Assert.Equal("5/0", open.Arguments["layer"]);
     }
 
+    /// <summary>
+    /// A pin a kit draws on a PIN-purpose layer (<c>Top.pin</c>, which no stackup entry claims) is on the conductor that layer
+    /// is a purpose of, as the EM cut reads it — not on no copper.
+    /// </summary>
+    [Fact]
+    public void APinOnAPinPurposeLayer_IsOnTheConductorItIsAPurposeOf()
+    {
+        var pinLayer = new LayerKey(1, 2);
+        var tech = TwoLayerTech(groundReference: true);
+        tech.Layers = [.. tech.Layers, new LayerDef { Key = pinLayer, Name = "Top.pin", ZOrder = 4, Color = new Rgba(200, 80, 40, 255) }];
+        string cell = PartCell("PinPurpose", pinLayer, ("P", 0, 0));
+
+        var netlist = Read(MakeBoard(tech, (view, layoutDir) =>
+        {
+            view.Instances.Add(Place(cell, layoutDir, Mm(2), Mm(2), 0, false, "U1"));
+            view.Shapes.Add(Rect(Top, Mm(1), Mm(1), Mm(3), Mm(3)));
+        }));
+
+        Assert.DoesNotContain(netlist.Notes, n => n.Id == "lvs.pin.no-copper");
+    }
+
     // ══ 13, 14 — the two refusals ════════════════════════════════════════════════════════════════
 
     /// <summary>
