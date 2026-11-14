@@ -4,6 +4,7 @@
 # A MISSING COMPILER PRINTS A MESSAGE AND SUCCEEDS. Same rule as the other workers: a missing worker
 # must never be the reason somebody cannot build the application.
 set -uo pipefail
+CALLER_DIR="$PWD"   # a relative --dest is the caller's, read before the cd below
 cd "$(dirname "$0")"
 
 # --dest <dir>: also copy the built worker there, so the application ships it. Mirrors the other
@@ -30,7 +31,7 @@ ARCH=""
 TARGET_OS=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --dest) DEST="${2:-}"; shift 2 ;;
+    --dest) DEST="${2:-}"; [ -n "$DEST" ] && [ "${DEST#/}" = "$DEST" ] && DEST="$CALLER_DIR/$DEST"; shift 2 ;;
     --arch) ARCH="${2:-}"; shift 2 ;;
     --os)   TARGET_OS="${2:-}"; shift 2 ;;
     *) shift ;;
@@ -214,6 +215,8 @@ fi
 
 if [ -n "$DEST" ] && [ -d "$DEST" ]; then
   cp -f "$BIN" "$DEST/" 2>/dev/null && echo "osdi-worker: copied to $DEST"
+elif [ -n "$DEST" ]; then
+  echo "osdi-worker: --dest $DEST is not a directory, so the worker was not copied there"
 fi
 
 echo "osdi-worker: ok"
