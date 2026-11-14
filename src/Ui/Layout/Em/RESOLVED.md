@@ -1261,3 +1261,45 @@ mesh notes say what each did. The summary line adds
 Looked at with `tools/UiSnapshot --cem <SpiralInductor.cem with LocalGrid> --button Mesh --size 900x2600`: both rows
 align with the column above, Merged shapes greyed with its multi-level reason, and the summary reads "530 unknowns ·
 351 cells · … · 4 refinement steps · Ok".
+
+## brief-icp-7 — the cell-instance tree in Component ports, and the cut drawn on the layout (2026-11-13)
+
+- **The tree reads the listing and the cached build; nothing builds on the UI thread.** `EmComponentPartListing.Instances` is
+  ICP-1's projection (`EmCellInstances.Project`, the one the cut reads) minus footprint parts, read off the UI thread with the
+  parts; a `.c3d`'s host projects each placed layout and prefixes `U1/` when the view places several (R-icp7-4, compile- and
+  code-path-checked; the gates are on a layout's `.cem`). Verdicts come from the build Refresh already made off the UI thread
+  (`_lastComponentBuild`, ICP-2's cached one) and, after a Check, from Check's verdicts.
+- **A cell instance is a tree row, never also a flat row.** The board projection counts any instance with pins on copper as a
+  placed part, so a cut-out `Seg` appeared in both lists; the flat rows now skip the tree's paths, and an entry the tree owns (a
+  path, `@n`, a `Cell` entry) is kept when the flat rows rewrite theirs and is not shown as a "not on the layout" part.
+- **Checking a parent takes its children's entries out in the same undo step** (ICP-0 D8: a nested cut is refused), and the
+  rows under it are disabled; unticking keeps the entry's settings for the session, so ticking again restores them.
+- **Every option writes through `EmComponentPort.Override`, one undo entry each**: Port at, Reference (Ground, Common, a pin),
+  Z0, Keep (a checklist of the layout's nets and the conductor drawing layers — a picker, since both can be listed), the keep-out
+  box (four µm boxes, all empty = its own box), and per pin its reference, Port off and Ground. An option on an unticked
+  instance is not written.
+- **The left-out region is the build's, not the UI's.** `EmCellCutoutResult.Regions` (Design) records, per cut instance, the
+  box in Cell mode and the union of its own metal on the analysis levels in Pin mode; the layout's hatched outline and the
+  preview's shading read it. The marks job now returns `EmComponentPortMarkSet` (ports, cuts, and on request the solver's
+  geometry); a cut face port is a `LayoutComponentPortMark` with `Cut` set.
+- **A cut face port's region is the face plus the routed side.** Drawn with only the face as its region, the canvas's own
+  conductor lookup found the instance's metal (still drawn in the layout) and put each arrow at the far face of the instance.
+  `FaceRegion` reaches twice the half-width toward the routed conductor, so the marker stands at the face it belongs to.
+- **The Planar build never carried its projection** (`EmPlanarComponentPortBuild.Instances` was set only on the 3D path), so the
+  marks had no pins or boxes for an instance left out whole, and ICP-6's passed-over-copper listing was always empty on Planar.
+  Both returns set it now. To keep the Filter Board's `explain --component-ports "*"` byte-identical (ICP-6 R-icp6-6), the
+  passed-over listing appears only when `"*"` cut at least one instance — a board of footprints and copper PCells has no
+  hierarchy for it to walk.
+- **The solver-geometry preview** (R-icp7-6) is `EmGeometry.ForSetup(setup, source).Shapes` built in the marks job when the
+  layout's toggle asks (`LayoutEditorViewModel.ShowSolverGeometry` → `SolverGeometryRequested` → `EmSetupEditorViewModel
+  .SolverGeometryWanted`), drawn over a background wash with the cut regions hatched on top. ForSetup reads the cached cut build;
+  its flatten is the one cost a Refresh had not already paid.
+- **A stale build is discarded whole**: `ShowComponentPortMarks` refuses a set carrying ports, cuts or geometry made at another
+  `EditCount`, and an edit clears all three at once.
+- UiSnapshot: `--solver-geometry`, `--expand-instance <path>`; both its `--clay --component-ports` and `--cem` paths now await
+  `WhenRefreshed` (since ICP-2 a refresh lands off the UI thread, and a listing started before it reads no layout).
+- Gate `tests/Ui.Tests/Em/CellInstanceTreeTests.cs`, five tests, ~0.3 s: the two-level tree and its verdicts, a parent
+  disabling its children in one undo step, each option one entry and one undo step, the marks (a Pin-mode outline, a Cell-mode
+  box, a face port at each face, a refused instance's cross) with a stale build discarded, and the preview equal to ForSetup
+  shape for shape. PNGs looked at: the section (three instances, one refused, children disabled; one instance's options open),
+  the layout with a Pin-mode and a Cell-mode cut and their arrows, and the preview.

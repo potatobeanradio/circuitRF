@@ -151,6 +151,7 @@ public sealed partial class EmSetupEditorViewModel
         }
         foreach (string w in result.Warnings) host.Post(w, true);
         if (result.Refusal is { } whole) host.Post(whole, true);
+        if (current) UpdateInstanceVerdicts(result.Ports);
         if (!current)
         {
             ComponentPortsStatus = "The layout or the list has changed since this Check started; press Check again.";
@@ -187,6 +188,9 @@ public sealed partial class EmSetupEditorViewModel
             _componentPartsKey = null;
             _componentPartsGeneration++;
             ComponentPortRows.Clear();
+            ComponentInstanceRows.Clear();
+            ComponentCellRows.Clear();
+            OnPropertyChanged(nameof(HasComponentInstances));
             return;
         }
         string key = host.PartsKey();
@@ -213,8 +217,10 @@ public sealed partial class EmSetupEditorViewModel
         if (mine != _componentPartsGeneration) return;
         _placedParts = listing.Parts;
         _placedPartsRead = listing.Read;
+        _placedInstances = listing.Instances;
         _componentPortsChecked = false;
         RebuildComponentPortRows();
+        RebuildComponentInstanceRows(listing.Instances);
         ComponentPortsStatus = listing.Status ?? "";
         // The Ports list's component rows name each part's pins in their reference picker.
         if (_lastPlanarPortRows is { } rows && _lastComponentBuild?.Ports.Any(p => p.Ok) == true) RebuildPlanarPortRows(rows);
@@ -225,9 +231,10 @@ public sealed partial class EmSetupEditorViewModel
     private void RebuildComponentPortRows()
     {
         ComponentPortRows.Clear();
-        foreach (var part in _placedParts)
+        // brief-icp-7 — a cell instance that is not a footprint part is the tree's row, not a flat one.
+        foreach (var part in _placedParts.Where(p => !_placedInstances.Any(i => i.Path.Equals(p.Refdes, StringComparison.OrdinalIgnoreCase))))
             ComponentPortRows.Add(new EmComponentPortRow(this, part.Refdes, part.Pads));
-        foreach (var entry in Working.ComponentPorts.Where(c => c.Refdes != EmSetup.AllComponents))
+        foreach (var entry in Working.ComponentPorts.Where(c => c.Refdes != EmSetup.AllComponents && !IsInstanceEntry(c)))
             if (!ComponentPortRows.Any(r => r.Refdes.Equals(entry.Refdes.Trim(), StringComparison.OrdinalIgnoreCase)))
                 ComponentPortRows.Add(new EmComponentPortRow(this, entry.Refdes.Trim(), 0, missing: _placedPartsRead, unread: !_placedPartsRead));
         SyncComponentPortRows();
@@ -238,7 +245,7 @@ public sealed partial class EmSetupEditorViewModel
     {
         // An undo can bring back an entry for a part that is not placed: it gets its row again. An unticked one keeps its row
         // until the parts are next read, so unticking it moves nothing below it (R-lcp3-7).
-        if (_componentPartsKey is not null && Working.ComponentPorts.Any(c => c.Refdes != EmSetup.AllComponents
+        if (_componentPartsKey is not null && Working.ComponentPorts.Any(c => c.Refdes != EmSetup.AllComponents && !IsInstanceEntry(c)
                 && !ComponentPortRows.Any(r => r.Refdes.Equals(c.Refdes.Trim(), StringComparison.OrdinalIgnoreCase))))
         {
             RebuildComponentPortRows();
@@ -256,15 +263,28 @@ public sealed partial class EmSetupEditorViewModel
             row.IsIncluded = named || (all && row.IsTwoTerminal);
             row.Syncing = false;
         }
+        SyncComponentInstanceRows();
     }
+
+    /// <summary>brief-icp-7 — an entry the tree owns, not a footprint row: a <c>Cell</c> entry, or a placed cell instance's path (any
+    /// path, and an unnamed placement's <c>@n</c>).</summary>
+    private bool IsInstanceEntry(EmComponentPort c)
+    {
+        string rd = c.Refdes.Trim();
+        return c.Cell is not null || rd.Length == 0 || rd.Contains('/') || rd.StartsWith('@')
+               || _placedInstances.Any(i => i.Path.Equals(rd, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>The entries the tree owns, kept when the footprint rows rewrite theirs.</summary>
+    private IEnumerable<EmComponentPort> InstanceEntries() => Working.ComponentPorts.Where(c => c.Refdes != EmSetup.AllComponents && IsInstanceEntry(c));
 
     partial void OnAllComponentPartsChanged(bool value)
     {
         if (_suppressCommit) return;
         string before = SnapshotJson();
         // A part's own settings (its Z0, its width) are kept beside "*": ticking every part must not throw them away.
-        Working.ComponentPorts = value ? [new EmComponentPort(EmSetup.AllComponents), .. Working.ComponentPorts.Where(c => c.Refdes != EmSetup.AllComponents && !c.IsPlain)]
-                               : [.. ComponentPortRows.Where(r => r.IsIncluded).Select(r => Keep(r.Refdes))];
+        Working.ComponentPorts = value ? [new EmComponentPort(EmSetup.AllComponents), .. Working.ComponentPorts.Where(c => c.Refdes != EmSetup.AllComponents && (!c.IsPlain || IsInstanceEntry(c)))]
+                               : [.. ComponentPortRows.Where(r => r.IsIncluded).Select(r => Keep(r.Refdes)), .. InstanceEntries()];
         SyncComponentPortRows();
         CommitComponentPorts(before, "Component ports");
     }
@@ -273,7 +293,8 @@ public sealed partial class EmSetupEditorViewModel
     internal void ComponentPortToggled()
     {
         string before = SnapshotJson();
-        Working.ComponentPorts = [.. ComponentPortRows.Where(r => r.IsIncluded).Select(r => Keep(r.Refdes))];
+        Working.ComponentPorts = [.. ComponentPortRows.Where(r => r.IsIncluded).Select(r => Keep(r.Refdes)),
+                                  .. InstanceEntries().Where(c => !ComponentPortRows.Any(r => r.Refdes.Equals(c.Refdes.Trim(), StringComparison.OrdinalIgnoreCase)))];
         _suppressCommit = true;
         AllComponentParts = false;
         _suppressCommit = false;
@@ -304,6 +325,28 @@ public sealed partial class EmSetupEditorViewModel
 
     /// <summary>The built ports' marks, and the layout and edit they were built from. Empty when none are built.</summary>
     public IReadOnlyList<LayoutComponentPortMark> ComponentPortMarks { get; private set; } = [];
+
+    /// <summary>brief-icp-7 R-icp7-3 — the cell instances this setup cuts out, as the layout draws them. Empty when none are.</summary>
+    public IReadOnlyList<LayoutCutMark> ComponentCutMarks { get; private set; } = [];
+
+    /// <summary>brief-icp-7 R-icp7-6 — what this setup's run hands its extractor, built when <see cref="SolverGeometryWanted"/>; null
+    /// otherwise.</summary>
+    public IReadOnlyList<LayoutShape>? SolverGeometry { get; private set; }
+
+    /// <summary>brief-icp-7 R-icp7-6 — set by the workspace while the layout this setup speaks for shows the solver's geometry: the
+    /// marks build then carries it too.</summary>
+    public bool SolverGeometryWanted
+    {
+        get => _solverGeometryWanted;
+        set
+        {
+            if (_solverGeometryWanted == value) return;
+            _solverGeometryWanted = value;
+            ScheduleComponentPortMarks();
+        }
+    }
+
+    private bool _solverGeometryWanted;
 
     /// <summary>The layout <see cref="ComponentPortMarks"/> describe, or null.</summary>
     public LayoutView? ComponentPortMarksView { get; private set; }
@@ -342,6 +385,8 @@ public sealed partial class EmSetupEditorViewModel
         _marksGeneration++;
         _marksKey = null;
         ComponentPortMarks = [];
+        ComponentCutMarks = [];
+        SolverGeometry = null;
         ComponentPortMarksView = null;
     }
 
@@ -350,8 +395,10 @@ public sealed partial class EmSetupEditorViewModel
     {
         var view = _componentSource?.View;
         string viewKey = view is null ? "" : $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(view)}/{view.EditCount}";
-        return viewKey + "#" + ShowComponentPorts + "#" + Is3DSetup + "#" + Working.AnalysisKind + "#"
-             + string.Join(";", Working.ComponentPorts.Select(c => $"{c.Refdes}\u001f{c.Reference}\u001f{c.WidthUm?.ToString("R", CultureInfo.InvariantCulture)}"))
+        // brief-icp-7 — every term of an entry moves a cut (its cell, port-at, box, kept names, pins, ground) as well as a port.
+        return viewKey + "#" + ShowComponentPorts + "#" + Is3DSetup + "#" + Working.AnalysisKind + "#" + _solverGeometryWanted + "#"
+             + string.Join(";", Working.ComponentPorts.Select(c => $"{c.Refdes}\u001f{c.Reference}\u001f{c.WidthUm?.ToString("R", CultureInfo.InvariantCulture)}"
+                                                                 + $"\u001f{c.Cell}\u001f{c.PortAt}\u001f{c.KeepOutUm}\u001f{c.Keep}\u001f{c.Pins}\u001f{c.Ground}\u001f{c.Construction}\u001f{c.Z0}"))
              + "#" + string.Join(",", Working.AnalysisLevelNames) + "#" + Working.SolveRegion?.Describe();
     }
 
@@ -361,22 +408,24 @@ public sealed partial class EmSetupEditorViewModel
         if (mine != _marksGeneration) return;
 
         EmComponentPortMarksJob? job = null;
-        if (ComponentPortsHost is { } host && ShowComponentPorts)
+        if (ComponentPortsHost is { } host && (ShowComponentPorts || _solverGeometryWanted))
         {
-            try { job = host.PrepareMarks(Working); }
+            try { job = host.PrepareMarks(Working, _solverGeometryWanted); }
             catch (Exception e) when (e is InvalidOperationException or ArgumentException or IOException) { job = null; }
         }
 
-        IReadOnlyList<LayoutComponentPortMark> marks = [];
+        var set = EmComponentPortMarkSet.Empty;
         if (job is not null)
         {
-            try { marks = await Task.Run(job.Build); }
+            try { set = await Task.Run(job.Build); }
             // A part the build cannot read is Check's to report; the layout simply draws nothing for it.
-            catch (Exception e) when (e is InvalidOperationException or ArgumentException or IOException or FormatException) { marks = []; }
+            catch (Exception e) when (e is InvalidOperationException or ArgumentException or IOException or FormatException) { set = EmComponentPortMarkSet.Empty; }
         }
         if (mine != _marksGeneration) return;
 
-        ComponentPortMarks = marks;
+        ComponentPortMarks = set.Ports;
+        ComponentCutMarks = set.Cuts;
+        SolverGeometry = set.SolverGeometry;
         ComponentPortMarksView = job?.View;
         ComponentPortMarksEditCount = job?.EditCount ?? 0;
         ComponentPortMarksChanged?.Invoke();

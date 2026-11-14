@@ -566,6 +566,14 @@
                             <mi:MaterialIcon Kind="Grid" Width="16" Height="16"/>
                         </ToggleButton>
 
+                        <!-- brief-icp-7 R-icp7-6 — the solver's geometry: exactly what the open .cem's run hands its extractor (the
+                             cell instances it cuts out removed, kept shapes kept, the solve region clipped), over the layout dimmed.
+                             Session-only, beside the mesh toggles. -->
+                        <ToggleButton IsChecked="{Binding ActiveViewModel.ShowSolverGeometry}" Padding="6,3"
+                                      ToolTip.Tip="Show the solver's geometry: what the open EM setup's run hands the solver, over the layout dimmed">
+                            <mi:MaterialIcon Kind="LayersTriple" Width="16" Height="16"/>
+                        </ToggleButton>
+
                         <!-- brief-dfr26-1 R-dfr26-1-6 — Design ▸ New 3D View from Layout, beside the EM commands. -->
                         <Button Click="OnNewThreeDViewFromLayout" Padding="6,3"
                                 ToolTip.Tip="New 3D View from Layout: a 3D view (.c3d) in this cell holding one instance of this layout, with a copy of every 3D setup naming it">

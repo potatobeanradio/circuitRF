@@ -508,8 +508,9 @@ public static class EmPlanarComponentPorts
             return new EmPlanarComponentPortBuild(results, notes, [],
                 "None of the component ports this setup names could be built, and the layout has no other port to drive: " +
                 (results.FirstOrDefault(p => p.Refusal is not null)?.Refusal
-                 ?? warnings.FirstOrDefault() ?? "every pin of every cut instance is unconnected.")) { Cut = cut };
-        return new EmPlanarComponentPortBuild(results, notes, warnings, null) { Cut = cut };
+                 ?? warnings.FirstOrDefault() ?? "every pin of every cut instance is unconnected.")) { Cut = cut, Instances = instances, InstanceEntries = selection.InstanceEntries };
+        // brief-icp-7 — the projection travels with a Planar build too: the layout's marks and the pin check read its pins and boxes.
+        return new EmPlanarComponentPortBuild(results, notes, warnings, null) { Cut = cut, Instances = instances, InstanceEntries = selection.InstanceEntries };
 
         static EmPlanarComponentPort Refused(string rd, string why) => new(rd, rd, null, null, null, null, 0, null, 0, 0, false, why);
     }

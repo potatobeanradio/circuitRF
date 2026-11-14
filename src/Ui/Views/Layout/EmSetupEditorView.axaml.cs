@@ -223,6 +223,25 @@ public partial class EmSetupEditorView : UserControl
 
     private void OnFieldLostFocus(object? sender, RoutedEventArgs e) => CommitField(sender);
 
+    // brief-icp-7 R-icp7-2 — a cut instance's Z0 and keep-out box commit on Enter or lost focus, through the row.
+    private void OnInstanceZ0Commit(object? sender, RoutedEventArgs e) => ((sender as Control)?.DataContext as EmComponentInstanceRow)?.CommitZ0();
+
+    private void OnInstanceZ0Key(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Enter or Key.Return)) return;
+        ((sender as Control)?.DataContext as EmComponentInstanceRow)?.CommitZ0();
+        e.Handled = true;
+    }
+
+    private void OnInstanceKeepOutCommit(object? sender, RoutedEventArgs e) => ((sender as Control)?.DataContext as EmComponentInstanceRow)?.CommitKeepOut();
+
+    private void OnInstanceKeepOutKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Enter or Key.Return)) return;
+        ((sender as Control)?.DataContext as EmComponentInstanceRow)?.CommitKeepOut();
+        e.Handled = true;
+    }
+
     // brief-em3d-75 R-em3d75-3 — the thermal page: text commits on Enter or lost focus, a picker when it changes.
     private void OnThermalLostFocus(object? sender, RoutedEventArgs e) => Vm?.CommitThermal();
 

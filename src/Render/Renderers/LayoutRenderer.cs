@@ -268,6 +268,14 @@ public readonly struct LayoutRenderOptions
     /// render, picture or export ever carries one (R-lcp4-6).</summary>
     public IReadOnlyList<LayoutComponentPortMark>? ComponentPortMarks { get; init; }
 
+    /// <summary>brief-icp-7 R-icp7-3 — the cell instances the open <c>.cem</c> cuts out, hatched where they leave the problem, with
+    /// each pin's verdict glyph. Only the interactive canvas sets it, as <see cref="ComponentPortMarks"/>.</summary>
+    public IReadOnlyList<LayoutCutMark>? CutMarks { get; init; }
+
+    /// <summary>brief-icp-7 R-icp7-6 — what the open <c>.cem</c>'s run hands its extractor (<c>EmGeometry.ForSetup</c>), drawn over
+    /// the layout dimmed. Null draws the layout as it is; only the interactive canvas sets it.</summary>
+    public IReadOnlyList<LayoutShape>? SolverGeometry { get; init; }
+
     /// <summary>
     /// L5b export (owner request: "copy/paste the DRC markers, just like the mesh"). Copies
     /// <see cref="ShowPlanarMesh"/>'s own contract: false by default, so every export/one-shot render
@@ -978,6 +986,13 @@ public static partial class LayoutRenderer
                         DrawPlanarReferencePlanes(canvas, refPlanes, theme, ps,
                                                   view.DbuPerMicron, scaleUm);
                 }
+
+                // brief-icp-7 R-icp7-6 — the solver's geometry over the layout dimmed; R-icp7-3 — each cut instance hatched over
+                // either, so the mesh preview and the solver-geometry preview shade them the same way.
+                if (opts.SolverGeometry is { } solverGeometry)
+                    DrawSolverGeometry(canvas, solverGeometry, layerMap, theme, ps, vp, scaleUm, counters);
+                if (opts.CutMarks is { Count: > 0 } cutMarks)
+                    DrawCutMarks(canvas, cutMarks, theme, ps, scaleUm, !opts.HidePorts, counters);
 
                 if (opts.EmSolveRegion is { } solveRegion)
                     DrawEmSolveRegion(canvas, solveRegion, theme, ps, scaleUm);
@@ -3521,6 +3536,8 @@ public static partial class LayoutRenderer
         {
             foreach (var (m, _) in marks)
             {
+                // A cut port's region is its face and the routed conductor's side of it: answered there, so the marker stands at the
+                // face rather than on the instance the layout still draws.
                 var s = m.Strip;
                 if ((onLayer is null || onLayer == s.Layer)
                     && x >= Math.Min(s.X1, s.X2) && x <= Math.Max(s.X1, s.X2) && y >= Math.Min(s.Y1, s.Y2) && y <= Math.Max(s.Y1, s.Y2))

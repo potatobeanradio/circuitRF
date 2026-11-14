@@ -166,6 +166,8 @@ bool unsavedSetupDialog = false;     // the question New 3D View from Layout ask
 bool settingsGeneral = false;
 bool settingsSolvers = false;
 bool reviewRun = false;
+bool solverGeometry = false;          // brief-icp-7: with --component-ports, the layout's solver-geometry preview on
+var expandInstances = new List<string>();   // brief-icp-7: --expand-instance <path> opens a cut instance's options in the setup panel
 string? componentPortsCem = null;   // brief-lcp-4: --clay with a .cem's component ports drawn as the open .cem pushes them
 string? planarMeshCem = null;       // brief-pms-4: --clay with a .cem's planar mesh drawn on the canvas, as Mesh draws it
 string? planarRunCem = null;        // brief-pms-6: --clay with a .cem RUN, its mesh and current-density map on the canvas
@@ -350,6 +352,8 @@ for (int i = 0; i < args.Length; i++)
         case "--cell-own-values" when i + 1 < args.Length: cellOwnValues = Path.GetFullPath(args[++i]); break;
         case "--review": reviewRun = true; break;
         case "--component-ports" when i + 1 < args.Length: componentPortsCem = Path.GetFullPath(args[++i]); break;
+        case "--solver-geometry": solverGeometry = true; break;
+        case "--expand-instance" when i + 1 < args.Length: expandInstances.Add(args[++i]); break;
         case "--planar-mesh" when i + 1 < args.Length: planarMeshCem = Path.GetFullPath(args[++i]); break;
         case "--planar-run" when i + 1 < args.Length: planarRunCem = Path.GetFullPath(args[++i]); break;
         case "--place" when i + 1 < args.Length: place = args[++i]; break;
@@ -976,11 +980,18 @@ else if (clay is not null)
             ResolveLayout = _ => new CircuitRF.Design.Layout.Em.EmLayoutSource(clay, layoutVm.Model, layoutVm.Technology, layoutVm.Model.DbuPerMicron),
             ComponentPortMarksSettle = TimeSpan.Zero,
         };
+        // brief-icp-7 R-icp7-6 — the layout's preview toggle, as the workspace routes it to the .cem.
+        if (solverGeometry) { cemVm.SolverGeometryWanted = true; layoutVm.ShowSolverGeometry = true; }
         cemVm.Refresh();
+        Await(cemVm.WhenRefreshed);                  // brief-icp-2 R-icp2-8: the refresh lands off the UI thread, and schedules the marks
         Await(cemVm.ComponentPortMarksBuilding);
-        layoutVm.ShowComponentPortMarks(Path.GetFileName(componentPortsCem), cemVm.ComponentPortMarks, cemVm.ComponentPortMarksEditCount);
+        layoutVm.ShowComponentPortMarks(Path.GetFileName(componentPortsCem), cemVm.ComponentPortMarks, cemVm.ComponentPortMarksEditCount,
+                                        cemVm.ComponentCutMarks, cemVm.SolverGeometry);
         foreach (var m in cemVm.ComponentPortMarks)
-            Console.WriteLine($"mark {m.Text} {m.Name}: gap at ({m.Gap.X}, {m.Gap.Y}) {m.Gap.PortDirection}, strip {m.Strip.X1},{m.Strip.Y1}..{m.Strip.X2},{m.Strip.Y2}");
+            Console.WriteLine($"mark {m.Text} {m.Name}{(m.Cut ? " (cut face)" : "")}: gap at ({m.Gap.X}, {m.Gap.Y}) {m.Gap.PortDirection}, strip {m.Strip.X1},{m.Strip.Y1}..{m.Strip.X2},{m.Strip.Y2}");
+        foreach (var c in cemVm.ComponentCutMarks)
+            Console.WriteLine($"cut {c.Path}: {(c.Box ? "box" : "outline")} of {c.Outline.Count} polygon(s); pins {string.Join(", ", c.Pins.Select(p => $"{p.Kind}@({p.X},{p.Y})"))}");
+        if (cemVm.SolverGeometry is { } geo) Console.WriteLine($"solver geometry: {geo.Count} shape(s)");
         foreach (var n in cemVm.Warnings.Concat(cemVm.Notes).Where(n => n.Contains("component port", StringComparison.OrdinalIgnoreCase) || n.Contains("left out", StringComparison.OrdinalIgnoreCase)))
             Console.WriteLine($"note {n}");
         Pump();
@@ -1079,6 +1090,9 @@ else if (cem is not null)
         CreateSchematicRequested = _ => Task.CompletedTask,
     };
     setupVm.Refresh();
+    // brief-icp-2 R-icp2-8 — the refresh lands off the UI thread, and it is what resolves the layout the list reads.
+    while (!setupVm.WhenRefreshed.IsCompleted) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(5); }
+    Dispatcher.UIThread.RunJobs();
     // brief-lcp-3 — the Component ports list is read off the UI thread: pump until it is; --check-component-ports presses Check.
     while (!setupVm.ComponentPartsListing.IsCompleted) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(5); }
     Dispatcher.UIThread.RunJobs();
@@ -1089,6 +1103,13 @@ else if (cem is not null)
     }
     foreach (var row in setupVm.ComponentPortRows)
         Console.WriteLine($"{row.Refdes} [{(row.IsIncluded ? "x" : " ")}] {row.PadsText}{(row.IsRefused ? " (left out)" : "")}");
+    // brief-icp-7 — the cell instance tree, its by-cell rows and the instances whose options are opened.
+    foreach (var row in setupVm.ComponentCellRows) Console.WriteLine($"cell row [{(row.IsIncluded ? "x" : " ")}] {row.Text}");
+    foreach (var row in setupVm.ComponentInstanceRows)
+    {
+        if (expandInstances.Contains(row.Path, StringComparer.OrdinalIgnoreCase)) row.IsExpanded = true;
+        Console.WriteLine($"{new string(' ', 2 * row.Item.Depth)}{row.Name} ({row.CellLabel}) [{(row.IsIncluded ? "x" : " ")}]{(row.IsEnabled ? "" : " disabled")} {row.Verdict}");
+    }
     foreach (var row in setupVm.PortRows)
         Console.WriteLine($"port row: {row.Label} Z0 '{row.Text}' ({row.Z0Placeholder}){(row.IsComponent ? $" width '{row.WidthText}' ({row.WidthPlaceholder}) ref {row.ReferenceChoice?.Display}" : "")}");
     if (setupVm.ShowComponentPorts) Console.WriteLine($"status: {setupVm.ComponentPortsStatus}");

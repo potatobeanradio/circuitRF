@@ -203,8 +203,8 @@ public sealed class LayoutComponentPort3DTests : IClassFixture<PlanarComponentPo
     public void TheMarks_SitWhereThePlanarOnesDo()
     {
         var host = new LayoutComponentPortsHost(() => board.Source(), () => null);
-        var planar = host.PrepareMarks(PlanarComponentPortTests.Setup(["C1", "C2"]))!.Build();
-        var sheets = host.PrepareMarks(Driven(["C1", "C2"]))!.Build();
+        var planar = host.PrepareMarks(PlanarComponentPortTests.Setup(["C1", "C2"]))!.Build().Ports;
+        var sheets = host.PrepareMarks(Driven(["C1", "C2"]))!.Build().Ports;
         Assert.Equal(2, sheets.Count);
         Assert.Equal(planar.Select(m => (m.Number, m.Refdes, m.Gap.X, m.Gap.Y, m.Gap.PortDirection)),
                      sheets.Select(m => (m.Number, m.Refdes, m.Gap.X, m.Gap.Y, m.Gap.PortDirection)));

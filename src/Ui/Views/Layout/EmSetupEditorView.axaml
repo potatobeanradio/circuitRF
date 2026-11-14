@@ -1183,8 +1183,10 @@
                             <Button Grid.Column="1" Content="Check" Padding="10,2"
                                     Command="{Binding ViewModel.CheckComponentPortsCommand}"/>
                         </Grid>
-                        <CheckBox Name="AllComponentPartsCheck" Content="Every two-terminal part"
-                                  IsChecked="{Binding ViewModel.AllComponentParts}"/>
+                        <!-- brief-icp-7 R-icp7-1 — "*" keeps its row; its tooltip says what it takes and what it passes over. -->
+                        <CheckBox Name="AllComponentPartsCheck" Content="Every part and device (*)"
+                                  IsChecked="{Binding ViewModel.AllComponentParts}"
+                                  ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.AllComponentPartsTip}"/>
                         <!-- A board places dozens of parts: the list scrolls on its own past about six rows rather than
                              pushing the rest of the panel down. -->
                         <ScrollViewer Name="ComponentPortsScroll" MaxHeight="200" VerticalScrollBarVisibility="Auto"
@@ -1202,6 +1204,105 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </ScrollViewer>
+                        <!-- brief-icp-7 R-icp7-1/2 — the placed cell instances as a tree under the footprint rows: path, cell, a box,
+                             the verdict the last build reached, and the options of an included one. A cell placed more than once
+                             also has one "every <cell>" row. Every control is laid out whatever it holds, so nothing shifts. -->
+                        <StackPanel Name="ComponentInstancesSection" Spacing="2" IsVisible="{Binding ViewModel.HasComponentInstances}">
+                            <TextBlock Classes="colhdr" Margin="0,4,0,0" Text="Cell instances"/>
+                            <ItemsControl ItemsSource="{Binding ViewModel.ComponentCellRows}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="em:EmComponentCellRow">
+                                        <CheckBox Content="{Binding Text}" IsChecked="{Binding IsIncluded}" Margin="0,1"
+                                                  ToolTip.Tip="Every instance of this cell, wherever it is placed: one entry for all of them"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <ScrollViewer Name="ComponentInstancesScroll" MaxHeight="320" VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled">
+                                <ItemsControl ItemsSource="{Binding ViewModel.ComponentInstanceRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="em:EmComponentInstanceRow">
+                                          <DockPanel>
+                                            <Border DockPanel.Dock="Left" Width="{Binding IndentWidth}"/>
+                                            <StackPanel Spacing="2">
+                                                <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="6" Margin="0,1">
+                                                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsIncluded}" IsEnabled="{Binding IsEnabled}"
+                                                              VerticalAlignment="Center" Classes.refused="{Binding IsRefused}"
+                                                              ToolTip.Tip="{Binding KindTip}"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding CellLabel}" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="2" Text="{Binding Verdict}" FontSize="11" Opacity="0.7" VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Verdict}"/>
+                                                    <ToggleButton Grid.Column="3" IsChecked="{Binding IsExpanded}" IsEnabled="{Binding IsIncluded}"
+                                                                  Padding="4,1" ToolTip.Tip="This instance's options">
+                                                        <mi:MaterialIcon Kind="Tune" Width="13" Height="13"/>
+                                                    </ToggleButton>
+                                                </Grid>
+                                                <Border IsVisible="{Binding IsExpanded}" Margin="20,0,0,4" Padding="6,4" CornerRadius="3"
+                                                        BorderThickness="1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                                                    <StackPanel Spacing="3">
+                                                        <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="3">
+                                                            <TextBlock Classes="colhdr" VerticalAlignment="Center" Text="Port at"/>
+                                                            <ComboBox Grid.Column="1" FontSize="11" HorizontalAlignment="Stretch"
+                                                                      ItemsSource="{Binding PortAtChoices}" SelectedItem="{Binding PortAt}"/>
+                                                            <TextBlock Grid.Row="1" Classes="colhdr" VerticalAlignment="Center" Text="Reference"/>
+                                                            <ComboBox Grid.Row="1" Grid.Column="1" FontSize="11" HorizontalAlignment="Stretch"
+                                                                      ItemsSource="{Binding ReferenceChoices}" SelectedItem="{Binding Reference}"/>
+                                                            <TextBlock Grid.Row="2" Classes="colhdr" VerticalAlignment="Center" Text="Z0"/>
+                                                            <TextBox Grid.Row="2" Grid.Column="1" FontSize="11" Padding="5,2" Text="{Binding Z0Text}"
+                                                                     PlaceholderText="the setup's" LostFocus="OnInstanceZ0Commit" KeyDown="OnInstanceZ0Key"/>
+                                                        </Grid>
+                                                        <SelectableTextBlock FontSize="10" TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}"
+                                                                             Text="{Binding Z0Error}" MinHeight="0"/>
+                                                        <TextBlock Classes="colhdr" Text="Keep in place (nets, layers)"/>
+                                                        <ItemsControl ItemsSource="{Binding KeepChoices}">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="em:EmKeepChoice">
+                                                                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsKept}" FontSize="11" Margin="0,0,8,0"/>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                        <TextBlock Classes="colhdr" Text="Keep-out box, µm (x0, y0, x1, y1; empty: its own box)"/>
+                                                        <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="4">
+                                                            <TextBox Grid.Column="0" FontSize="11" Padding="4,2" Text="{Binding KeepOutX0}" PlaceholderText="x0"
+                                                                     LostFocus="OnInstanceKeepOutCommit" KeyDown="OnInstanceKeepOutKey"/>
+                                                            <TextBox Grid.Column="1" FontSize="11" Padding="4,2" Text="{Binding KeepOutY0}" PlaceholderText="y0"
+                                                                     LostFocus="OnInstanceKeepOutCommit" KeyDown="OnInstanceKeepOutKey"/>
+                                                            <TextBox Grid.Column="2" FontSize="11" Padding="4,2" Text="{Binding KeepOutX1}" PlaceholderText="x1"
+                                                                     LostFocus="OnInstanceKeepOutCommit" KeyDown="OnInstanceKeepOutKey"/>
+                                                            <TextBox Grid.Column="3" FontSize="11" Padding="4,2" Text="{Binding KeepOutY1}" PlaceholderText="y1"
+                                                                     LostFocus="OnInstanceKeepOutCommit" KeyDown="OnInstanceKeepOutKey"/>
+                                                        </Grid>
+                                                        <SelectableTextBlock FontSize="10" TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}"
+                                                                             Text="{Binding KeepOutError}"/>
+                                                        <TextBlock Classes="colhdr" Text="Pins"/>
+                                                        <ItemsControl ItemsSource="{Binding PinRows}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="em:EmCutPinOptionRow">
+                                                                    <Grid ColumnDefinitions="50,*,Auto,Auto" ColumnSpacing="6" Margin="0,1">
+                                                                        <TextBlock Text="{Binding Pin}" FontSize="11" VerticalAlignment="Center"/>
+                                                                        <ComboBox Grid.Column="1" FontSize="11" HorizontalAlignment="Stretch"
+                                                                                  ItemsSource="{Binding ReferenceChoices}" SelectedItem="{Binding Reference}"
+                                                                                  ToolTip.Tip="This pin's own reference: the pin its port returns through"/>
+                                                                        <CheckBox Grid.Column="2" Content="Port" FontSize="11" IsChecked="{Binding HasPort}"
+                                                                                  ToolTip.Tip="Unticked, the pin carries no port of its own: it is only the return of other pins' ports"/>
+                                                                        <CheckBox Grid.Column="3" Content="Ground" FontSize="11" IsChecked="{Binding IsGrounded}"
+                                                                                  ToolTip.Tip="Tied to ground at its face by a ground via; no port"/>
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </Border>
+                                            </StackPanel>
+                                          </DockPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </StackPanel>
                         <!-- R-lcp3-7: always laid out, so a status appearing or clearing moves nothing below it. -->
                         <TextBlock Text="{Binding ViewModel.ComponentPortsStatus}" FontSize="11" Opacity="0.7" MinHeight="15"/>
                     </StackPanel>

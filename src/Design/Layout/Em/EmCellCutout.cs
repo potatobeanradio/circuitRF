@@ -74,7 +74,15 @@ public sealed record EmCutPin(string Path, string Cell, string Pin, EmPinClass C
 /// <param name="Notes">One line per note: the flatten's, and a component-declared port that left with its instance.</param>
 /// <param name="GeneratorIds">The PCell generators the geometry came from (<see cref="EmGeometry.Result.GeneratorIds"/>).</param>
 public sealed record EmCellCutoutResult(IReadOnlyList<LayoutShape> Shapes, IReadOnlyList<EmCutPin> Pins, IReadOnlySet<string> Excluded,
-                                        IReadOnlyList<string> Notes, IReadOnlyList<string> GeneratorIds);
+                                        IReadOnlyList<string> Notes, IReadOnlyList<string> GeneratorIds)
+{
+    /// <summary>brief-icp-7 R-icp7-3 — what left the problem with each cut instance, root DBU: its box in Cell mode, the outline of its
+    /// own metal on the analysis levels in Pin mode. What the layout's marks hatch and the solver-geometry preview shades.</summary>
+    public IReadOnlyDictionary<string, EmCutRegion> Regions { get; init; } = new Dictionary<string, EmCutRegion>();
+}
+
+/// <summary>brief-icp-7 — one cut instance's left-out region: <paramref name="Box"/> in Cell mode, and its outline polygons.</summary>
+public sealed record EmCutRegion(bool Box, IReadOnlyList<PolygonShape> Outline);
 
 public static class EmCellCutout
 {
@@ -158,6 +166,7 @@ public static class EmCellCutout
         }
 
         // ── Per instance, per pin ─────────────────────────────────────────────────────────────────────────────────────
+        var regions = new Dictionary<string, EmCutRegion>(StringComparer.OrdinalIgnoreCase);
         foreach (var c in cutting)
         {
             var inst = c.Instance;
@@ -176,6 +185,10 @@ public static class EmCellCutout
                 ? [.. LayoutFlatten.FlattenAllLevels(placed, rootBaseDir, tech).Shapes.Where(s => s is not LabelShape and not BitmapShape)]
                 : [];
             var ownBox = inst.Box is { } ib ? new Rect64(D(ib.X0), D(ib.Y0), D(ib.X1), D(ib.Y1)) : (Rect64?)null;
+            // brief-icp-7 — what leaves with it: the box, or its own metal on the analysis levels (its box when it draws none there).
+            regions[inst.Path] = cellMode ? new EmCutRegion(true, [Polygon(boxes[inst.Path].AsPath())])
+                : Union(own.Where(s => levelLayers.Contains(s.Layer))) is { Count: > 0 } outline ? new EmCutRegion(false, [.. outline.Select(Polygon)])
+                : new EmCutRegion(false, ownBox is { } ob ? [Polygon(ob.AsPath())] : []);
 
             // A parent via landing on the instance's metal (pin mode: the via survives the cut, its landing does not).
             if (!cellMode && own.Count > 0)
@@ -456,7 +469,7 @@ public static class EmCellCutout
             }
         }
 
-        return new EmCellCutoutResult(shapes, pins, excluded, notes, flat.GeneratorIds);
+        return new EmCellCutoutResult(shapes, pins, excluded, notes, flat.GeneratorIds) { Regions = regions };
     }
 
     /// <summary>Whether a via entry spans <paramref name="conductor"/>, and the conductor at its other end.</summary>
@@ -555,6 +568,8 @@ public static class EmCellCutout
     }
 
     private static Paths64 Paths(LayoutShape s) => LayoutClipper.ToClipperPaths(s, 1);
+
+    private static PolygonShape Polygon(Path64 p) => new() { Xy = [.. p.SelectMany(q => new[] { q.X, q.Y })] };
 
     private static Paths64 Union(IEnumerable<LayoutShape> shapes)
     {

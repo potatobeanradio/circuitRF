@@ -164,23 +164,64 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// <summary>The <c>.cem</c> whose marks are shown (its file name, for the hover), or null when none are.</summary>
     public string? ComponentPortMarksSetup { get; private set; }
 
+    /// <summary>brief-icp-7 R-icp7-3 — the cell instances that <c>.cem</c> cuts out: hatched where they leave the problem, each pin's
+    /// verdict at its face. Pushed with the component ports, cleared with them.</summary>
+    [ObservableProperty] private IReadOnlyList<LayoutCutMark> _componentCutMarks = [];
+
+    /// <summary>brief-icp-7 R-icp7-6 — the geometry that <c>.cem</c>'s run hands its extractor, pushed when
+    /// <see cref="ShowSolverGeometry"/> asked for it; null when none is.</summary>
+    [ObservableProperty] private IReadOnlyList<LayoutShape>? _solverGeometry;
+
+    /// <summary>brief-icp-7 R-icp7-6 — draw <see cref="SolverGeometry"/> over the layout dimmed. A session-only view preference, as
+    /// the mesh toggles are; the workspace asks the <c>.cem</c> speaking for this layout to build it.</summary>
+    [ObservableProperty] private bool _showSolverGeometry;
+
+    /// <summary>Set by the workspace: tells the <c>.cem</c> speaking for this layout whether the solver's geometry is wanted.</summary>
+    public Action<bool>? SolverGeometryRequested { get; set; }
+
+    partial void OnShowSolverGeometryChanged(bool value) => SolverGeometryRequested?.Invoke(value);
+
     /// <summary>
     /// brief-lcp-4 — shows <paramref name="marks"/>, built from a copy of this layout taken at <paramref name="atEditCount"/>
     /// (<see cref="LayoutView.EditCount"/>). Refused, returning false, when the layout has been edited since: the marks would
     /// be about artwork that has moved, and the edit already cleared the last ones. Empty clears, whatever edit it was made at:
     /// clearing is never about artwork, and a setup that stops building ports has no layout copy to state an edit count from.
     /// </summary>
-    public bool ShowComponentPortMarks(string? setup, IReadOnlyList<LayoutComponentPortMark> marks, long atEditCount)
+    public bool ShowComponentPortMarks(string? setup, IReadOnlyList<LayoutComponentPortMark> marks, long atEditCount,
+                                       IReadOnlyList<LayoutCutMark>? cuts = null, IReadOnlyList<LayoutShape>? solverGeometry = null)
     {
-        if (marks.Count > 0 && atEditCount != Model.EditCount) return false;
-        ComponentPortMarksSetup = marks.Count == 0 ? null : setup;
+        cuts ??= [];
+        // brief-icp-7 — a stale build is discarded whole: its cuts and its geometry describe the artwork before the edit too.
+        if ((marks.Count > 0 || cuts.Count > 0 || solverGeometry is not null) && atEditCount != Model.EditCount) return false;
+        ComponentPortMarksSetup = marks.Count == 0 && cuts.Count == 0 ? null : setup;
         ComponentPortMarks = marks;
+        ComponentCutMarks = cuts;
+        SolverGeometry = solverGeometry;
         return true;
+    }
+
+    /// <summary>brief-icp-7 R-icp7-3 — the top-level placement of the cut instance whose mark is under the press, or null: its
+    /// outline, or one of its pins' glyphs.</summary>
+    private int? CutInstanceAt(long x, long y, long tolDbu)
+    {
+        if (ComponentCutMarks.Count == 0) return null;
+        long tol = Math.Max(tolDbu, 0);
+        foreach (var m in ComponentCutMarks)
+        {
+            var bb = m.Region;
+            bool onPin = m.Pins.Any(p => Math.Abs(p.X - x) <= tol && Math.Abs(p.Y - y) <= tol);
+            if (!onPin && (bb == Bbox.Empty || x < bb.MinX - tol || x > bb.MaxX + tol || y < bb.MinY - tol || y > bb.MaxY + tol)) continue;
+            for (int i = 0; i < Model.Instances.Count; i++)
+                if (string.Equals(LayoutDesignFlatten.PathOf(Model.Instances[i], i), m.TopSegment, StringComparison.OrdinalIgnoreCase))
+                    return i;
+        }
+        return null;
     }
 
     /// <summary>brief-lcp-4 R-lcp4-3 — the placed part whose component port's mark is under the press, or null.</summary>
     private int? ComponentPartAt(long x, long y, long tolDbu)
     {
+        if (CutInstanceAt(x, y, tolDbu) is int cut) return cut;
         if (ComponentPortMarks.Count == 0 || !PortsVisible) return null;
         long tol = Math.Max(tolDbu, 0);
         foreach (var m in ComponentPortMarks)
@@ -188,7 +229,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             var bb = m.Region;
             if (x < bb.MinX - tol || x > bb.MaxX + tol || y < bb.MinY - tol || y > bb.MaxY + tol) continue;
             for (int i = 0; i < Model.Instances.Count; i++)
-                if (string.Equals(Model.Instances[i].DisplayRefDes, m.Refdes, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(Model.Instances[i].DisplayRefDes, m.Refdes, StringComparison.OrdinalIgnoreCase)
+                    || m.Cut && string.Equals(LayoutDesignFlatten.PathOf(Model.Instances[i], i), m.Refdes.Split('/')[0], StringComparison.OrdinalIgnoreCase))
                     return i;
         }
         return null;
@@ -197,14 +239,28 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// <summary>The hover line for the component port under (<paramref name="wx"/>, <paramref name="wy"/>), or null.</summary>
     internal string? ComponentPortTipAt(double wx, double wy, long tolDbu)
     {
-        if (ComponentPortMarks.Count == 0 || !PortsVisible) return null;
         long x = (long)Math.Round(wx), y = (long)Math.Round(wy), tol = Math.Max(tolDbu, 0);
+        // brief-icp-7 R-icp7-3 — a cut pin's glyph says its verdict (a pin left out, why); its outline says the instance's.
+        if (PortsVisible)
+            foreach (var m in ComponentCutMarks)
+                foreach (var p in m.Pins)
+                    if (Math.Abs(p.X - x) <= tol && Math.Abs(p.Y - y) <= tol && p.Kind != LayoutCutPinKind.Routed)
+                        return p.Tip;
+        if (ComponentPortMarks.Count == 0 || !PortsVisible) return CutTipAt(x, y, tol);
         foreach (var m in ComponentPortMarks)
         {
             var bb = m.Region;
             if (x >= bb.MinX - tol && x <= bb.MaxX + tol && y >= bb.MinY - tol && y <= bb.MaxY + tol)
                 return m.HoverText(ComponentPortMarksSetup);
         }
+        return CutTipAt(x, y, tol);
+    }
+
+    private string? CutTipAt(long x, long y, long tol)
+    {
+        foreach (var m in ComponentCutMarks)
+            if (m.Region is var bb && bb != Bbox.Empty && x >= bb.MinX - tol && x <= bb.MaxX + tol && y >= bb.MinY - tol && y <= bb.MaxY + tol)
+                return m.Tip;
         return null;
     }
 
@@ -594,6 +650,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             // brief-lcp-4 R-lcp4-4 — and the component ports: they sit on the parts, and an edit may have moved one. The .cem
             // builds them again once the edit settles; until then none is drawn over artwork it no longer describes.
             ComponentPortMarks = [];
+            ComponentCutMarks = [];
+            SolverGeometry = null;
 
             // ── THE PORT TYPES ARE NOT MESH, AND THERE IS NOTHING LEFT TO INVALIDATE ─────────
             //

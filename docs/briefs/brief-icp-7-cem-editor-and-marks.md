@@ -59,3 +59,19 @@ metal from the run. The mesh preview, where it is already shown, shades the cut-
 ## Not here
 
 Dragging a port or the box on the canvas (LCP's D2: a component port moves with its instance; the box is typed).
+
+## Completion note (2026-11-13)
+
+Built: the cell-instance tree under the footprint rows (path, cell, box, the build's verdict; a parent disabling its children; one
+"every <cell>" row per repeated cell; `*`'s tooltip), each included instance's options written through `EmComponentPort.Override`
+one undo entry at a time, the cut drawn on the layout (hatched region from the build, an arrow at each face, a glyph per pin
+class, a cross with its reason for a pin or an instance left out, a press selecting the placement, a hover reading `explain`'s
+line), the `.c3d` host's tree under its layout instances, and the solver-geometry toggle drawing `EmGeometry.ForSetup`'s shapes
+over the layout dimmed. Gate `tests/Ui.Tests/Em/CellInstanceTreeTests.cs` (gates 1, 3, 4); UiSnapshot PNGs looked at (gate 2,
+gate 4's picture). Where it differs, and why — `src/Ui/Layout/Em/RESOLVED.md` §brief-icp-7:
+- the left-out region is recorded by the cut (`EmCellCutoutResult.Regions`) rather than recomputed for the marks;
+- the preview's geometry is built in the marks job when the toggle is on: `ForSetup` reads the cached cut, and its flatten is
+  the one cost Refresh had not already paid;
+- the `.c3d` rows (R-icp7-4) share the tree and are checked by code path, not by their own gate;
+- the Planar build now carries its projection, and ICP-6's passed-over listing shows only when `"*"` cut something, which keeps
+  the Filter Board's explain byte-identical.

@@ -2663,6 +2663,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         Warnings = [.. EmFindings.WarningTexts(planar.Findings)];
 
         _lastComponentBuild = portLabels.ComponentBuild;
+        UpdateInstanceVerdicts();     // brief-icp-7 R-icp7-5 — the tree's verdicts, from the build just made off the UI thread
         _lastPlanarPortRows = ports.Rows;
         RebuildPlanarPortRows(ports.Rows);
         RaiseState();

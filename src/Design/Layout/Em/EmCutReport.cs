@@ -86,11 +86,12 @@ public static class EmCutReport
 
     /// <summary>
     /// R-icp6-2 — the copper instances <c>"*"</c> passed over: placed metal the solver solves, which only a name or a cell entry cuts
-    /// out. Each once, the top-most of a branch; none when the setup names no <c>"*"</c>.
+    /// out. Each once, the top-most of a branch; none when the setup names no <c>"*"</c>, and none when nothing was cut — a board of
+    /// footprint parts and copper PCells walks as it always did (R-icp6-6), since there was no hierarchy for <c>"*"</c> to walk.
     /// </summary>
     public static IReadOnlyList<string> PassedOver(EmPlanarComponentPortBuild build, IReadOnlyList<EmComponentPort> entries)
     {
-        if (!entries.Any(e => e.Cell is null && e.Refdes.Trim() == "*")) return [];
+        if (!entries.Any(e => e.Cell is null && e.Refdes.Trim() == "*") || build.Cut is not { Excluded.Count: > 0 }) return [];
         var cut = build.Cut?.Excluded ?? new HashSet<string>();
         bool UnderCut(string path) => cut.Any(c => path.Equals(c, StringComparison.OrdinalIgnoreCase) || path.StartsWith(c + "/", StringComparison.OrdinalIgnoreCase)
                                                    || c.StartsWith(path + "/", StringComparison.OrdinalIgnoreCase));

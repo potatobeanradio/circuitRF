@@ -49,9 +49,14 @@ public partial class WorkspaceViewModel
         if (_componentPortMarksOwner.TryGetValue(path, out var owner) && !ReferenceEquals(owner, vm))
             return;
         _componentPortMarksOwner[path] = vm;
+        // brief-icp-7 R-icp7-6 — the layout's solver-geometry toggle asks the .cem speaking for it.
+        layout.SolverGeometryRequested = wanted => vm.SolverGeometryWanted = wanted;
+        vm.SolverGeometryWanted = layout.ShowSolverGeometry;
         // Built from another copy of the layout (the .cem resolved it before the editor opened): build again from the editor's.
-        if (vm.ComponentPortMarks.Count > 0 && !ReferenceEquals(vm.ComponentPortMarksView, layout.Model)) return;
-        layout.ShowComponentPortMarks(Path.GetFileName(vm.FilePath), vm.ComponentPortMarks, vm.ComponentPortMarksEditCount);
+        if ((vm.ComponentPortMarks.Count > 0 || vm.ComponentCutMarks.Count > 0 || vm.SolverGeometry is not null)
+            && !ReferenceEquals(vm.ComponentPortMarksView, layout.Model)) return;
+        layout.ShowComponentPortMarks(Path.GetFileName(vm.FilePath), vm.ComponentPortMarks, vm.ComponentPortMarksEditCount,
+                                      vm.ComponentCutMarks, vm.SolverGeometry);
     }
 
     /// <summary>A <c>.cem</c> became the active document: its marks replace any other setup's on its layout.</summary>
@@ -75,6 +80,12 @@ public partial class WorkspaceViewModel
     /// the editor's model now, so its marks have somewhere to go.</summary>
     private void RefreshComponentPortMarksFor(LayoutDocument layoutDoc)
     {
+        // brief-icp-7 R-icp7-6 — the solver-geometry toggle reaches the .cem that owns this layout's marks.
+        if (layoutDoc.FilePath is { } lp && _componentPortMarksOwner.TryGetValue(Path.GetFullPath(lp), out var owner))
+        {
+            layoutDoc.ViewModel.SolverGeometryRequested = wanted => owner.SolverGeometryWanted = wanted;
+            owner.SolverGeometryWanted = layoutDoc.ViewModel.ShowSolverGeometry;
+        }
         foreach (var cem in _openDocsByPath.Values.OfType<EmSetupDocument>().ToList())
             if (cem.ViewModel.Working.ComponentPorts.Count > 0
                 && OpenLayoutOfEmSetup(cem.ViewModel) is var (layout, _)
