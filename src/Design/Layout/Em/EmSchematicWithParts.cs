@@ -352,7 +352,10 @@ public static class EmSchematicWithParts
             else open.Add(p.Comp.InstanceName);
         }
         foreach (string name in openFootprint)
-            warnings.Add($"{name} has a footprint but no component port, so the EM result has no port at its pads and its pins are left open.");
+            warnings.Add(model.Components.FirstOrDefault(c => c.InstanceName == name) is { Footprint: { Length: > 0 } }
+                ? $"{name} has a footprint but no component port, so the EM result has no port at its pads and its pins are left open."
+                // brief-icp-9 — a device cell (a kit device, or a cell whose schematic is a model) has pins, not pads.
+                : $"{name} is a device with no component port, so the EM result has no port at its pins and they are left open.");
         foreach (string name in open)
             warnings.Add($"{name} is not on the board and was joined only to copper the EM result now stands for, so those pins are left open.");
 

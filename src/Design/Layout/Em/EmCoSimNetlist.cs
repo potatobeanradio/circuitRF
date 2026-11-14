@@ -562,7 +562,8 @@ public static class EmCoSimNetlist
             if (exists && !replace) return ExistingCell(workspaceDir, cellDir, cellName, snpPath, recordPath);
 
             var (lib, tb) = new CnlReader().Read(text, cellName, workspaceDir);
-            var drawn = NetlistSchematic.Build(lib, tb, CellFolder.SubFolderPath(cellDir, ViewType.Schematic));
+            string schematicDir = CellFolder.SubFolderPath(cellDir, ViewType.Schematic);
+            var drawn = NetlistSchematic.Build(lib, tb, schematicDir, existingCells: ExistingCells(lib, workspaceDir, schematicDir));
             if (drawn.Schematic is not { } model)
                 return new(EmSnpSchematicOutcome.NotCreated, cellName, null,
                            $"No schematic was created for this run: {string.Join(" ", drawn.Refusals)} {cellName}.cnl states the same circuit.");
@@ -586,6 +587,27 @@ public static class EmCoSimNetlist
     }
 
     /// <summary>A cell of that name exists. Reading it never changes it: the only question is which sentence the run says.</summary>
+    /// <summary>
+    /// brief-icp-9 — the cells a co-simulation netlist defines that are cell folders of the workspace (a cut device's own cell,
+    /// whose definition the netlist carries from the board's schematic): each by name, with the <c>CellRef</c> the drawing stores
+    /// and its symbol's pins in port order. A cell found nowhere, or whose symbol does not have one pin per port, is left out, and
+    /// the drawing refuses it as before.
+    /// </summary>
+    internal static Dictionary<string, ExactCell> ExistingCells(Library lib, string workspaceDir, string schematicDir)
+    {
+        var map = new Dictionary<string, ExactCell>(StringComparer.Ordinal);
+        foreach (var cell in lib.Cells)
+        {
+            string dir = Path.Combine(workspaceDir, cell.Name);
+            if (!File.Exists(Path.Combine(dir, ".ccell"))) continue;
+            string cellRef = CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(schematicDir, dir))!;
+            var symbol = CellSymbolResolver.ResolveCellDirOrRef(dir, workspaceDir).Symbol;
+            if (symbol is not { Pins.Count: > 0 } || symbol.Pins.Count != cell.Ports.Count) continue;
+            map[cell.Name] = new ExactCell(cellRef, [.. symbol.Pins.OrderBy(p => p.PortIndex).Select(p => ((float)p.LocalX, (float)p.LocalY))]);
+        }
+        return map;
+    }
+
     internal static EmSnpSchematicResult ExistingCell(string workspaceDir, string cellDir, string cellName, string snpPath, string? recordPath)
     {
         string? schematic = null;

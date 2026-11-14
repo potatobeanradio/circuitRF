@@ -31468,7 +31468,8 @@ two builders. Gate: `tests/Ui.Tests/Em/CellPinReferenceTests.cs` (6).
   whose model the bench cannot put back. The parts come from `EmPartKinds` over the schematic, the same rule `"*"` reads.
 - **A copper sub-cell is still not taken automatically** (ICP-0 D3: a cell with a layout view is metal the solver can solve). A
   device the user draws as a sub-cell with its own layout is cut out only when the EM view names it; the gate's fixture does that.
-  The automatic path is footprint parts and `pdk://` devices.
+  The automatic path is footprint parts and `pdk://` devices. *brief-icp-9 narrowed "copper": a sub-cell whose own schematic
+  places a part with no layout is now a device, so a model cell like the gate's is taken by `"*"` and by an EM cell's own entries.*
 - **The N-port's ports are planned at the schematic's own values, from the geometry every point builds**
   (`EmEvaluation.Geometry` → `EmRunService.PlannedPorts`, or the 3D problem's `ResultPorts`), and closed by
   `EmCoSimNetlist.Closures` — the decision `_cosim` makes — with the bench's own instances as the models. Every closure net is
@@ -31502,3 +31503,57 @@ two builders. Gate: `tests/Ui.Tests/Em/CellPinReferenceTests.cs` (6).
   equals the `.cem` run closed by the `_cosim` it writes, |ΔS| 1.7e-15 (two planar solves, ~30 s, `Category=Benchmark`); a sweep
   of `cm` counts two evaluations of one geometry and solves once with two different answers (stand-in solver); a port that cannot
   be built refuses naming Q1. `ParametricEmStubTests`' F1 test now asserts C1 is put back on its gap port instead of refused.
+
+## brief-icp-9 — the user pages, the MMIC example, and what building them found (2026-11-13)
+
+Pages: `em-setup.md` §cell-instances (and a `#port-storage` row), `mom-engine.md` §uncalibrated-port, `layout-editor.md`
+`#ports`, `em-3d.md`, `cosimulation.md` §cut-models, `em-cells.md` §what-runs, `cli.md`; the format reference
+(`src/Cli/DocumentSchema.cs`) gains `PortUncalibrated`. Example: `examples/MMIC Component Ports`. Fixed on the way:
+
+- **A sub-cell whose schematic is a model is a device** (`EmPartKinds.Of`). ICP-0 D3 says `"*"` takes cells "whose model is a
+  device … anything the EM cannot represent as metal", but the rule called any sub-cell with a layout view copper, so the brief's
+  own example — a three-pin device cell with a layout, a symbol and a small-signal schematic — was passed over by `"*"`. A
+  sub-cell is now a Part when its primary schematic places a physical part that has no layout of its own (by the shallow rule:
+  no footprint, no PCell generator, no layout-bearing cell); one made of lines, PCells, footprint parts or further sub-cells stays
+  copper and `"*"` walks down through it as before. Memoised per schematic path and write time. `EmSchematicWithParts`' warning
+  for such a part no longer says it "has a footprint". Gate `EmCellPartsTests.AModelCell_IsAPart_ALineCell_IsCopper`.
+- **The `_cosim` cell was never made when a cut device is a cell** — the netlist defines that cell, and `NetlistSchematic.Build`
+  refuses any netlist defining cells, so every run cutting out a device cell warned "No schematic was created". `Build` now takes
+  `existingCells` (cell name → `ExactCell`): a defined cell that is a cell folder of the workspace with one symbol pin per port is
+  drawn as that cell's instance (its `CellRef`, its symbol's pins, its line's overrides as parameters — `CellItem` dropped them);
+  any other still refuses. The drawn instance extracts to the cell's own schematic, which is what the run's netlist carried.
+- **A MIM capacitor (any MMIC passive) drawn with its process stated extracted with each value twice**: `NetExtractor` appended
+  `MmicPassiveInjection.Build`'s list beside the part's own, where the netlist binding (`CnlTechnologyBinding`) already skips a
+  stated one. The `_cosim` drawing states them all, so its re-extraction read `Er=6.8 … Er=6.8 …`. Now a stated one wins, as in
+  the netlist. Gate `EmCellPartsTests.ACoSimCell_PlacesTheDeviceCell_AndStatesEachProcessParameterOnce` (both of the above).
+- **Every cut read "selected by name"**: `EmPartPads.Select` rewrites each chosen entry to the instance's own path, and
+  `EmCoSimCut.Of` derived the label from that entry. `EmCellSelection.Selected` is set where the choice is made (named, cell,
+  `"*"`/`"X1/*"`). `explain`'s line for a cut port also described the footprint gap; it has its own sentence. Gate
+  `EmCellPartsTests.Star_CutsTheModelCell_AndSaysSo`.
+- **A drawn port on metal a cut removes** was refused by port extraction as "not on any conductor", which reads as a drawing
+  mistake. `EmComponentPorts.Collect` now refuses first, naming the instance, when a port label lies inside or on a cut region
+  (`EmCellCutoutResult.Regions`). Gate `EmCellPartsTests.ADrawnPortOnACutInstance_IsRefused_NamingIt`.
+- **DocGen never copied an example README's pictures**: `ExamplePages.Load` rewrites a picture alone on its line as an `<img>`
+  before `CopyPictures` reads the body, which looked only for the Markdown form. The two existing examples with pictures had them
+  from before that rewrite; the new one had none. `CopyPictures` reads both forms. Gate
+  `DocsFactoryTests.EveryExampleReadmePicture_IsBesideItsPage`.
+
+**The example** was written through the functions the GUI's commands call (`WorkspaceCreate`, `CellCreate`,
+`SchematicLayoutPlanner.Plan` with `DiskCellResolver`, `EmSetupCreate`; the flat parts drawn by `NetlistSchematic`, the FET cell
+put where a placeholder part was drawn, its model joined to its Pins by labelled stubs). Things worth knowing:
+
+- **MLIN and MTEE default to the top metal (Metal2)** on the shipped GaAs stack while the MMIC passives and the device's pads are
+  on Metal1, so nothing joined until the lines stated `SignalLayer=Metal1`.
+- **The spiral's underpass makes it a two-level problem**, and the two-level fill is most of the solve: 1,758 unknowns took
+  2 min 12 s on Release (8 min 57 s on Debug) for 7 points. The narrowest metal sets the pitch everywhere: the defaults (edge mesh
+  on, 4 across, 10 µm turns) were 20,048 unknowns and ~20 GB a point. Shipped: 15 µm turns, edge mesh off, 2 across. Cells
+  across 4 moved |S21| and |S11| by at most 0.04 dB at 8 and 16 GHz (measured, in the README).
+- **The planner's ground tie starts at the pin itself**, so a device whose pins sit on its pads' outer edges is cut in Pin mode
+  with its grounded source routed; ICP-8's F7 fixture needed Cell mode only because PKG3's emitter pin is not at its pad's edge.
+- **R-icp9-7, the SpiralResonator by hand (PDK PCells, `--trust-kit`):** its two drawn ports stand on the spiral's and the MIM
+  cap's outer pin faces, and the layout is nothing but those two instances. Cutting both leaves nothing to solve (refused: no
+  artwork on a signal conductor); cutting either alone takes the metal from under a drawn port (now refused naming the instance,
+  above). To run it cut, draw a short feed outside each instance and move the ports onto them. Not changed here: the example is
+  PDK PCells', and treating a drawn port on a floating cut pin as that pin's port would be engine behaviour (out of scope).
+- The requester's HBT cascode is theirs to run and report on the issue; nothing of their kit is in the repository.
+

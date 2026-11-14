@@ -3760,7 +3760,10 @@ public static class NetExtractor
             else
             {
                 var (mmicOverrides, mmicWarning) = MmicPassiveInjection.Build(microstripTech, comp.Symbol, film);
-                overrides2.AddRange(mmicOverrides);
+                // brief-icp-9 — a parameter the part states is not stated twice: the netlist's binding (CnlTechnologyBinding)
+                // already leaves a stated one alone, and a part drawn from a netlist (a _cosim cell) states them all, so
+                // appending the technology's copy wrote each one twice on the extracted line.
+                overrides2.AddRange(mmicOverrides.Where(m => !overrides2.Any(o => o.Name.Equals(m.Name, StringComparison.Ordinal))));
                 if (mmicWarning is not null)
                     warningsOut?.Add($"{comp.InstanceName}: {mmicWarning}");
             }

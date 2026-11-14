@@ -50,7 +50,8 @@
 <li><a href="#frequency">Frequency</a></li>
 <li><a href="#ports">Ports</a>
   <ul><li><a href="#port-storage">Where a port is stored</a></li>
-  <li><a href="#component-ports">Component ports</a></li></ul></li>
+  <li><a href="#component-ports">Component ports</a></li>
+  <li><a href="#cell-instances">Cutting out a cell instance</a></li></ul></li>
 <li><a href="#mesh">Mesh — the uniform-line kernel</a></li>
 <li><a href="#surface-mesh">Surface mesh — the full-wave kernel</a></li>
 <li><a href="#solver">Solver options</a>
@@ -942,6 +943,11 @@ setup that names it.</strong></p>
 <td><strong>The <code>.cem</code>, or the <code>.c3d</code>'s setup</strong></td>
 <td><strong>Move the part</strong></td>
 </tr>
+<tr>
+<td><strong>The ports of a <a href="#cell-instances">cut cell instance</a></strong></td>
+<td><strong>The <code>.cem</code>, or the <code>.c3d</code>'s setup — never the <code>.clay</code></strong></td>
+<td><strong>Move the instance</strong>: each port is at its pin's face, found again at every run</td>
+</tr>
 </tbody>
 </table>
 <p>A <code>.cem</code> also stores <em>settings</em> for the drawn ports, by number: each one's reference impedance (<code>PortZ0s</code>) and, on
@@ -953,7 +959,8 @@ layout can be measured at 50 Ω by one setup and at 75 Ω by another.</p>
 drawn for it. <strong>Component ports</strong> (<code>ComponentPorts</code>) lists every part placed on the setup's layout with its pad
 count. It is there on a Planar setup and on a driven 3D one, in a <code>.cem</code> or in a 3D view's setup, and not on a
 thermal, electrostatic or cross-section setup. A ticked part gets a port across its pads, numbered after the drawn
-ports; <strong>Every two-terminal part</strong> writes <code>&quot;*&quot;</code>. <strong>Check</strong> builds and verifies the ports exactly as a run would and
+ports; <strong>Every part and device (*)</strong> writes <code>&quot;*&quot;</code>. A placed cell instance that is not a footprint part is listed under
+<strong>Cell instances</strong>, and ticking it cuts it out: <a href="#cell-instances">Cutting out a cell instance</a>. <strong>Check</strong> builds and verifies the ports exactly as a run would and
 posts each part's port and verdict to Messages, a part left out as a warning saying why; the list marks that part.
 Each built port has a row in the port list, <em>Port 3 · C1</em>, whose Z₀, width and, for a part of more than two pads,
 reference pin are written into that part's entry. In the file it is <code>&quot;ComponentPorts&quot;: [&quot;C1&quot;, &quot;L2&quot;]</code>,
@@ -996,6 +1003,155 @@ S directly, so a series part's pads are bridged by 50 Ω: S(2,1) across a series
 board with nothing fitted reads tens of dB down. The Data Display a run opens plots the board as it is drawn instead, with
 every part's port open: the <code>PartsOpen</code> group of <code>&lt;name&gt;_em.npy</code>, which holds <code>S</code> and <code>Z0</code> over the other ports. A
 connector's port is a real port and stays in it. To see the board with its parts fitted, run the <code>_cosim</code> netlist.</p>
+<h3 id="cell-instances">Cutting out a cell instance</h3>
+<p>On a chip the parts are cell instances: a transistor from a kit, a device cell from your own library, a MIM capacitor
+or a spiral placed as a PCell, a sub-block that places several of these. <strong>Component ports</strong> takes them too. A cell
+instance named there is <strong>cut out</strong>: its metal leaves the solved problem, and each of its connected pins gets a port at
+its face. The co-simulation netlist then puts the instance's own model back on those ports
+(<a href="cosimulation.html#cut-models">Where each model comes from</a>). The <code>.clay</code> is not changed.</p>
+<p><strong>Two constructions, chosen by what the instance is.</strong> A footprint part (a land pattern, a part with <code>Footprint</code> set, an
+instance carrying its own designator) keeps the gap across its pads described above. Any other cell instance is cut out.
+An entry's <strong>Construction</strong> (<code>&quot;Gap&quot;</code> or <code>&quot;Cutout&quot;</code>) overrides the choice.</p>
+<p><strong>Naming an instance.</strong> An entry names an instance by its path, the same path LVS reports: its designator, or <code>@n</code> for an
+instance with none (the n-th placement in its parent, counting from 0), joined by <code>/</code> down the hierarchy. <code>X1</code> is a
+top-level instance, <code>X1/Q3</code> the <code>Q3</code> inside it, <code>@2</code> the third unnamed placement. <code>@n</code> changes when the instances are
+reordered, so give an instance a designator when the name has to last. <code>X1/*</code> takes the first device on each branch under
+<code>X1</code>. <code>{ &quot;Cell&quot;: &quot;Seg&quot; }</code>, with an empty <code>Refdes</code>, takes every instance of a cell, by its folder name or its PCell
+generator. The most specific entry wins. Naming an instance and an instance inside it (<code>X1</code> and <code>X1/Q3</code>) is refused:
+the inner one has already left with the outer.</p>
+<p><strong>What <code>&quot;*&quot;</code> takes.</strong> Every footprint part and every <strong>device</strong>: a kit device (<code>pdk://</code>), or a cell whose own schematic
+places a part with no layout of its own, such as a transistor or the controlled source of a small-signal model. Its layout
+is pads drawn round something the solver cannot see. <code>&quot;*&quot;</code> never takes copper the solver can solve: a PCell (a line, a
+MIM capacitor, a spiral) or a cell drawn from such parts. It walks down through those to the devices inside them. To cut
+out copper, name it or its cell, as the <a href="../examples/mmic-component-ports/index.html">MMIC Component Ports</a> example
+does with its MIM capacitor.</p>
+<p><strong>Where the ports sit: Port at Pin or Cell.</strong></p>
+<figure class="figure">
+<svg viewBox="0 0 760 250" role="img" aria-label="The same three-pin device cut out two ways. Left, Port at Pin: the device's own metal is removed and a port arrow stands at each pin's face, where the gate line, the drain line and the source tie meet it. Right, Port at Cell: everything inside the dashed box is removed, the lines are trimmed at the box, and each port stands where a line crosses the box edge." style="width:100%;height:auto">
+<defs>
+<marker id="cut-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--link)"/></marker>
+</defs>
+<text x="190" y="22" font-size="14" fill="var(--text)" text-anchor="middle" font-family="IBM Plex Sans" font-weight="600">Port at Pin (the default)</text>
+<text x="570" y="22" font-size="14" fill="var(--text)" text-anchor="middle" font-family="IBM Plex Sans" font-weight="600">Port at Cell</text>
+<g>
+<rect x="20" y="96" width="110" height="28" fill="var(--surface-2)" stroke="var(--text)" stroke-width="1.4"/>
+<rect x="250" y="96" width="110" height="28" fill="var(--surface-2)" stroke="var(--text)" stroke-width="1.4"/>
+<rect x="176" y="168" width="28" height="60" fill="var(--surface-2)" stroke="var(--text)" stroke-width="1.4"/>
+<rect x="130" y="92" width="34" height="36" fill="none" stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="4 3"/>
+<rect x="216" y="92" width="34" height="36" fill="none" stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="4 3"/>
+<rect x="172" y="134" width="36" height="34" fill="none" stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="4 3"/>
+<rect x="164" y="100" width="52" height="34" fill="none" stroke="var(--muted)" stroke-width="1" stroke-dasharray="2 3"/>
+<path d="M130 82 V138" stroke="var(--link)" stroke-width="2.2"/>
+<path d="M250 82 V138" stroke="var(--link)" stroke-width="2.2"/>
+<path d="M162 168 H218" stroke="var(--link)" stroke-width="2.2"/>
+<path d="M104 72 H128" fill="none" stroke="var(--link)" stroke-width="1.6" marker-end="url(#cut-a)"/>
+<path d="M276 72 H252" fill="none" stroke="var(--link)" stroke-width="1.6" marker-end="url(#cut-a)"/>
+<path d="M226 190 V170" fill="none" stroke="var(--link)" stroke-width="1.6" marker-end="url(#cut-a)"/>
+<text x="75" y="150" font-size="11" fill="var(--muted)" text-anchor="middle" font-family="IBM Plex Sans">gate line</text>
+<text x="305" y="150" font-size="11" fill="var(--muted)" text-anchor="middle" font-family="IBM Plex Sans">drain line</text>
+<text x="232" y="214" font-size="11" fill="var(--muted)" text-anchor="start" font-family="IBM Plex Sans">source tie to a via</text>
+<text x="190" y="62" font-size="11" fill="var(--muted)" text-anchor="middle" font-family="IBM Plex Sans">ports at G, D, S faces</text>
+<text x="190" y="246" font-size="11" fill="var(--muted)" text-anchor="middle" font-family="IBM Plex Sans">dashed: the device's own metal, left out</text>
+</g>
+<g transform="translate(380,0)">
+<rect x="20" y="96" width="92" height="28" fill="var(--surface-2)" stroke="var(--text)" stroke-width="1.4"/>
+<rect x="268" y="96" width="92" height="28" fill="var(--surface-2)" stroke="var(--text)" stroke-width="1.4"/>
+<rect x="176" y="186" width="28" height="42" fill="var(--surface-2)" stroke="var(--text)" stroke-width="1.4"/>
+<rect x="112" y="74" width="156" height="112" fill="none" stroke="var(--muted)" stroke-width="1.4" stroke-dasharray="6 4"/>
+<rect x="130" y="92" width="34" height="36" fill="none" stroke="var(--muted)" stroke-width="1" stroke-dasharray="2 3"/>
+<rect x="216" y="92" width="34" height="36" fill="none" stroke="var(--muted)" stroke-width="1" stroke-dasharray="2 3"/>
+<rect x="172" y="134" width="36" height="34" fill="none" stroke="var(--muted)" stroke-width="1" stroke-dasharray="2 3"/>
+<path d="M112 86 V134" stroke="var(--link)" stroke-width="2.2"/>
+<path d="M268 86 V134" stroke="var(--link)" stroke-width="2.2"/>
+<path d="M164 186 H216" stroke="var(--link)" stroke-width="2.2"/>
+<path d="M86 72 H110" fill="none" stroke="var(--link)" stroke-width="1.6" marker-end="url(#cut-a)"/>
+<path d="M294 72 H270" fill="none" stroke="var(--link)" stroke-width="1.6" marker-end="url(#cut-a)"/>
+<path d="M226 208 V188" fill="none" stroke="var(--link)" stroke-width="1.6" marker-end="url(#cut-a)"/>
+<text x="190" y="62" font-size="11" fill="var(--muted)" text-anchor="middle" font-family="IBM Plex Sans">ports where each line crosses the box</text>
+<text x="190" y="246" font-size="11" fill="var(--muted)" text-anchor="middle" font-family="IBM Plex Sans">dashed box: everything inside it is left out</text>
+</g>
+</svg>
+<figcaption style="text-align:left"><b>Figure 1.</b> One three-pin device cut out both ways. With <b>Port at Pin</b> only the
+device's own metal leaves, and each port stands at its pin's face. With <b>Port at Cell</b> everything on the analysis
+levels inside the box leaves — the ends of the lines and the start of the source tie included — and each port stands
+where the interconnect crosses the box.</figcaption>
+</figure>
+<ul>
+<li><strong>Pin</strong> (<code>&quot;PortAt&quot;: &quot;Pin&quot;</code>, the default) puts each port at its pin's face, the plane a kit's model is usually
+characterised at. Only the instance's own metal leaves. If parent metal lies on the instance beyond its pin (a line drawn
+past the pin onto the device, or a ground tie that starts inside a pad), the pin is refused, naming the place: the cut
+would leave that metal touching nothing it was drawn to touch. Cell mode cuts it.</li>
+<li><strong>Cell</strong> (<code>&quot;PortAt&quot;: &quot;Cell&quot;</code>) removes everything on the analysis levels inside a box, and puts each port where the
+interconnect crosses the box's edge. At mm-wave the two planes differ by the box's margin; only you know which plane the
+model was characterised at.</li>
+</ul>
+<p><strong>The keep-out box</strong> (<strong>Keep-out box, µm</strong>, <code>KeepOutUm: [x0, y0, x1, y1]</code>) is in micrometres in the instance's own frame,
+so it turns with the instance. Empty, it is the bounding box of the instance's own shapes on the analysis levels.</p>
+<p><strong>Keep</strong> (<strong>Keep in place</strong>, <code>&quot;Keep&quot;: &quot;GND, Metal2&quot;</code>) names nets and drawing layers the cut leaves alone: a Cell-mode box
+does not cut them, and a Pin-mode cut does not remove them. A ground pour that runs under a device, or a bridge on the top
+metal that crosses it, is the usual case.</p>
+<p><strong>Reference — what each port returns through.</strong> By default (<code>&quot;Reference&quot;: &quot;Ground&quot;</code>) every port is driven against the
+run's return: the ground plane on Planar, a sheet to the return in 3D. With a backside ground this loses nothing: the model's
+reference terminal goes on its own port's node in the netlist. A pin can instead name another pin of the same instance as
+its reference (<strong>Pins</strong> ▸ the pin's <strong>Reference</strong>, <code>&quot;Pins&quot;: { &quot;B&quot;: { &quot;Reference&quot;: &quot;E&quot; } }</code>). The port is then built
+between the two pins' faces, and the reference pin carries no port of its own. That needs the two faces to face each other
+across one axis on one layer; where they do not, the port is refused and the pin builds against ground. Several pins may
+share one reference where their gaps do not overlap across it. <code>&quot;Common&quot;</code>, one node shared by all of an instance's ports,
+is refused: neither solver has a construction for it. A pin unticked under <strong>Port</strong> (<code>&quot;Port&quot;: false</code>) is only the return
+of other pins' ports.</p>
+<p><strong>Grounded pins</strong> (<strong>Ground</strong>, <code>&quot;Ground&quot;: [&quot;E&quot;]</code>) are tied to the ground plane at their face by a ground via as wide as
+the face, and take no port. Use it for an emitter or a source that sits on a via in the real chip but has none drawn
+in the layout.</p>
+<p><strong>The pin check.</strong> Before anything is meshed, every pin of a cut instance is put in a class, and <strong>Check</strong>, <code>check</code> and
+<code>explain --component-ports</code> report it:</p>
+<table>
+<thead>
+<tr>
+<th>Class</th>
+<th>What it means</th>
+<th>Port?</th>
+<th>In the netlist</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Routed</strong></td>
+<td>Interconnect meets its face</td>
+<td>One port per pin name</td>
+<td>The model's terminal on the port's node</td>
+</tr>
+<tr>
+<td><strong>Abutting</strong></td>
+<td>Its face touches only another cut instance</td>
+<td>None</td>
+<td>The two models' terminals joined directly</td>
+</tr>
+<tr>
+<td><strong>Grounded</strong></td>
+<td>Tied to ground by <strong>Ground</strong></td>
+<td>None</td>
+<td>The terminal on ground</td>
+</tr>
+<tr>
+<td><strong>Floating</strong></td>
+<td>Nothing meets its face</td>
+<td>None, and a <strong>warning</strong></td>
+<td>On ground where the schematic grounds it, else on an unconnected node named for it</td>
+</tr>
+</tbody>
+</table>
+<p>A pin that is only a return is reported as one; a pin left out of the run is reported with why: its layer is not an
+analysis level, its face is outside the <strong>Solve region</strong>, two separate conductors meet it, or the pin's name is at more
+than one face (a multi-finger device, refused). A floating pin is a warning because the model then sees an open there,
+which is easy to miss.</p>
+<p><strong>Each cut face is an Uncalibrated Port</strong> on Planar: driven against the ground plane at the face and not de-embedded, so
+the launch is in the result. <a href="mom-engine.html#uncalibrated-port">The Uncalibrated Port</a> says what that costs and why
+there is no other choice at a device's pins. In 3D each is a lumped sheet from the face to the return, and the sheet's
+height is in the result (<a href="em-3d.html#cell-instance-ports">A cell instance cut out</a>).</p>
+<p><strong>Ports are named by path and pin</strong>, <code>X1.G</code> or <code>X1/Q3.G</code>, in the port list, the run's notes and the Touchstone header
+(<code>! Port[3] = X1.G</code>), numbered after the drawn ports and the gap ports. The layout marks each cut instance while the
+<code>.cem</code> is open: a hatched region for what leaves, an arrow at each cut face, a glyph for each pin's class and a cross with
+its reason for a pin or instance left out.</p>
 <h2 id="mesh">Mesh — the uniform-line kernel</h2>
 <p>This group appears for the <strong>cross-section</strong> kernel. It meshes a 2D cross-section, so its knobs are about
 the width of a conductor and how far out the truncation goes.</p>

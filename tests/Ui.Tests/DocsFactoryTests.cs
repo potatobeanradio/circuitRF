@@ -179,6 +179,25 @@ public class DocsFactoryTests
           + "a finding to report, not a PNG to ship. Found: " + string.Join(", ", bitmaps));
     }
 
+    /// <summary>brief-icp-9 — every picture an example's README shows is beside its page. DocGen rewrites such a picture as an
+    /// <c>&lt;img&gt;</c> before copying, and the copy looked only for the Markdown form, so a new example's page shipped with none.</summary>
+    [Fact]
+    public void EveryExampleReadmePicture_IsBesideItsPage()
+    {
+        string examples = Path.GetFullPath(Path.Combine(DocsRoot(), "..", "..", "examples"));
+        var missing = new List<string>();
+        foreach (string readme in Directory.EnumerateFiles(examples, "README.md", SearchOption.AllDirectories))
+        {
+            string folder = Path.GetFileName(Path.GetDirectoryName(readme)!);
+            string page = Path.Combine(DocsRoot(), "examples", folder.ToLowerInvariant().Replace(' ', '-'));
+            if (!File.Exists(Path.Combine(page, "index.html"))) continue;
+            foreach (System.Text.RegularExpressions.Match m in Regex.Matches(File.ReadAllText(readme), @"(?m)^!\[[^\]]*\]\((?<src>[^)\s]+)\)"))
+                if (!File.Exists(Path.Combine(page, Uri.UnescapeDataString(m.Groups["src"].Value))))
+                    missing.Add($"{folder}: {m.Groups["src"].Value}");
+        }
+        Assert.True(missing.Count == 0, "Example pictures missing beside their pages: " + string.Join(", ", missing));
+    }
+
     // ── §10.3 — the anchor contract ───────────────────────────────────────────
 
     [Fact]

@@ -305,7 +305,10 @@ internal static class DocumentSchema
           * An EM port is a Label with IsPort true, placed ON the conductor's edge. Its Text is the
             port number. PortDirection is the way current flows INTO the metal (R0 = +x, R90 = +y,
             R180 = -x, R270 = -y); omitted, it is inferred from the geometry, and an ambiguous
-            inference is refused at run time rather than guessed.
+            inference is refused at run time rather than guessed. PortUncalibrated true (omitted when
+            false) makes an edge port an Uncalibrated Port on a planar run: driven against the ground
+            plane at its cut and never de-embedded, so it needs no clear feed. Every port a cut cell
+            instance gets is one. A 3D run reads no difference: its edge ports are lumped sheets.
           * Net, Component and Pin on a shape are optional labels, and none of them changes what is
             connected — copper is connected by touching. Net stamps a net NAME on the copper the shape
             belongs to: `lvs` reads it as a name to match against the schematic's net of that name,
@@ -423,8 +426,9 @@ internal static class DocumentSchema
             with a port at each connected pin's face. An entry names it by its LVS path: the placement's
             designator, or "@n" for an unnamed one, joined by "/" down the hierarchy ("X1", "X1/Q3", "@2");
             "X1/*" takes the first device on each branch under X1, and "*" takes every footprint part and
-            every device cell (never copper the solver can solve: a PCell, a line, a spiral — name those,
-            or select their cell). {"Cell": "Seg"} (with Refdes "") takes every instance of a cell, by
+            every device cell: a kit device, or a cell whose own schematic places a part with no layout
+            (a transistor, a controlled source). Never copper the solver can solve: a PCell, a line, a
+            spiral, a cell drawn from those — name those, or select their cell. {"Cell": "Seg"} (with Refdes "") takes every instance of a cell, by
             folder name or PCell generator id. The most specific entry wins. Its keys:
             PortAt "Pin" (default: each pin's face) or "Cell" (where the interconnect crosses the
             instance's box); KeepOutUm [x0, y0, x1, y1] the box in micrometres in the instance's own

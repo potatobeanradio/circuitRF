@@ -943,8 +943,9 @@ circuitrf explain board.c3d|board.cem --component-ports ["C1,C2"|"*"|"X1/Q3,cell
 circuitrf check board.c3d|board.cem [--component-ports <list> [--port-at pin|cell]]
 ```
 
-**Spellings (brief-icp-6 R-icp6-1).** A comma list of `"*"` (every placed two-terminal part and every device cell — never
-copper the solver solves), a reference designator or LVS instance path (`Q1`, `X1/Q3`, `@2` for an unnamed placement, `X1/*`
+**Spellings (brief-icp-6 R-icp6-1).** A comma list of `"*"` (every placed two-terminal part and every device cell — a kit
+device, or since brief-icp-9 a cell whose own schematic places a part with no layout, `EmPartKinds.Of` — never copper the
+solver solves), a reference designator or LVS instance path (`Q1`, `X1/Q3`, `@2` for an unnamed placement, `X1/*`
 for the first device on each branch under `X1`) and `cell:<name>` (every instance of a cell, by folder or PCell generator
 id). `--port-at pin|cell` sets `PortAt` on every entry. Parsing is `ComponentPortSpellings` in `src/Cli`; what each entry
 selects is ICP-1's `EmPartPads.Select`, so a spelling means what the same entry means in a `.cem`. A spelling that is none of

@@ -1,0 +1,352 @@
+{
+  "FormatVersion": 2,
+  "SelectedDataSource": "Stage.npy",
+  "SourceAliases": {},
+  "Tabs": [
+    {
+      "Name": "Tab 1",
+      "ZoomLevel": 1,
+      "ViewOffsetX": 0,
+      "ViewOffsetY": 0,
+      "Plots": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Width": 520,
+          "Height": 321.3844252163164,
+          "PlotType": "Rect",
+          "FreqUnit": "GHz",
+          "CustomTitle": "GaAs stage: |S21|",
+          "CustomTitleOn": true,
+          "CustomXLabel": "",
+          "CustomXLabelOn": false,
+          "CustomYLabel": "dB",
+          "CustomYLabelOn": true,
+          "CustomY2Label": "",
+          "CustomY2LabelOn": false,
+          "TableViewAscendingSortOrder": true,
+          "TableViewScrollIndex": 0,
+          "FontSize": 12,
+          "FreqColumnWidth": 115,
+          "TableOptimum": "Mxp",
+          "TableReadMode": "Interp",
+          "TableCompression": 3,
+          "SummaryLoadpullGroup": null,
+          "PolarRadial": "Linear",
+          "PolarDbFloor": -40,
+          "PolarDbRingStep": 10,
+          "PolarDbReference": "Peak",
+          "PolarDbReferenceValue": 0,
+          "PolarDbUnit": "",
+          "PolarAngleLabels": false,
+          "SmithAdmittanceGrid": false,
+          "SurfaceAzimuthDeg": 35,
+          "SurfaceElevationDeg": 25,
+          "SurfaceZoom": 1,
+          "SurfaceColorMap": "Cool",
+          "SurfaceShowGroundDisc": true,
+          "SurfaceShowAxes": true,
+          "SurfaceShowLegend": true,
+          "Traces": [
+            {
+              "SourcePath": "Stage.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": "S",
+              "CubeSlice": [
+                {
+                  "AxisName": "freq",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "i",
+                  "Role": "PinToIndex",
+                  "Index": 1,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "j",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "dB20",
+              "Expression": null,
+              "Label": "Circuit models",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 12,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 12,
+                "MarkerType": "Circle"
+              },
+              "Markers": []
+            },
+            {
+              "SourcePath": "Stage EM_cosim.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": "S",
+              "CubeSlice": [
+                {
+                  "AxisName": "freq",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "i",
+                  "Role": "PinToIndex",
+                  "Index": 1,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "j",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "dB20",
+              "Expression": null,
+              "Label": "EM, parts on component ports",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 1,
+                "LineType": "Solid",
+                "MarkerEnabled": true,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 1,
+                "MarkerType": "Circle"
+              },
+              "Markers": []
+            }
+          ],
+          "Axes": {
+            "AutoscaleX": true,
+            "AutoscaleY": true,
+            "AutoscaleRightY": true,
+            "AutoscaleMag": true,
+            "WindowX": 0,
+            "WindowY": -35,
+            "WindowWidth": 0,
+            "WindowHeight": 36,
+            "WindowSecondaryX": 0,
+            "WindowSecondaryY": 0,
+            "WindowSecondaryWidth": 0,
+            "WindowSecondaryHeight": 0,
+            "XScale": "Linear"
+          }
+        },
+        {
+          "Left": 0,
+          "Top": 341.3844252163164,
+          "Width": 520,
+          "Height": 321.3844252163164,
+          "PlotType": "Rect",
+          "FreqUnit": "GHz",
+          "CustomTitle": "GaAs stage: |S11|",
+          "CustomTitleOn": true,
+          "CustomXLabel": "",
+          "CustomXLabelOn": false,
+          "CustomYLabel": "dB",
+          "CustomYLabelOn": true,
+          "CustomY2Label": "",
+          "CustomY2LabelOn": false,
+          "TableViewAscendingSortOrder": true,
+          "TableViewScrollIndex": 0,
+          "FontSize": 12,
+          "FreqColumnWidth": 115,
+          "TableOptimum": "Mxp",
+          "TableReadMode": "Interp",
+          "TableCompression": 3,
+          "SummaryLoadpullGroup": null,
+          "PolarRadial": "Linear",
+          "PolarDbFloor": -40,
+          "PolarDbRingStep": 10,
+          "PolarDbReference": "Peak",
+          "PolarDbReferenceValue": 0,
+          "PolarDbUnit": "",
+          "PolarAngleLabels": false,
+          "SmithAdmittanceGrid": false,
+          "SurfaceAzimuthDeg": 35,
+          "SurfaceElevationDeg": 25,
+          "SurfaceZoom": 1,
+          "SurfaceColorMap": "Cool",
+          "SurfaceShowGroundDisc": true,
+          "SurfaceShowAxes": true,
+          "SurfaceShowLegend": true,
+          "Traces": [
+            {
+              "SourcePath": "Stage.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 1,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": "S",
+              "CubeSlice": [
+                {
+                  "AxisName": "freq",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "i",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "j",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "dB20",
+              "Expression": null,
+              "Label": "Circuit models",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 12,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 12,
+                "MarkerType": "Circle"
+              },
+              "Markers": []
+            },
+            {
+              "SourcePath": "Stage EM_cosim.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 1,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": "S",
+              "CubeSlice": [
+                {
+                  "AxisName": "freq",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "i",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "j",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "dB20",
+              "Expression": null,
+              "Label": "EM, parts on component ports",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 1,
+                "LineType": "Solid",
+                "MarkerEnabled": true,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 1,
+                "MarkerType": "Circle"
+              },
+              "Markers": []
+            }
+          ],
+          "Axes": {
+            "AutoscaleX": true,
+            "AutoscaleY": true,
+            "AutoscaleRightY": true,
+            "AutoscaleMag": true,
+            "WindowX": 0,
+            "WindowY": -35,
+            "WindowWidth": 0,
+            "WindowHeight": 36,
+            "WindowSecondaryX": 0,
+            "WindowSecondaryY": 0,
+            "WindowSecondaryWidth": 0,
+            "WindowSecondaryHeight": 0,
+            "XScale": "Linear"
+          }
+        }
+      ]
+    }
+  ],
+  "ActiveTabIndex": 0,
+  "WindowWidth": 0,
+  "WindowHeight": 0,
+  "WindowLeft": 0,
+  "WindowTop": 0,
+  "Plots": [],
+  "ZoomLevel": 1,
+  "ViewOffsetX": 0,
+  "ViewOffsetY": 0
+}

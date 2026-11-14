@@ -24,6 +24,9 @@ public static class ExamplePages
 
     private static readonly Regex Picture = new(@"!\[[^\]]*\]\((?<src>[^)\s]+)\)", RegexOptions.Compiled);
 
+    /// <summary>A picture after <see cref="Pictures"/> has written it as an <c>&lt;img&gt;</c>.</summary>
+    private static readonly Regex ReadmeImg = new("<img class=\"readme-picture\" src=\"(?<src>[^\"]+)\"", RegexOptions.Compiled);
+
     /// <summary>The folder's page slug: <c>examples/loop-sensor/index.html</c> for <c>Loop Sensor</c>.</summary>
     public static string Slug(string folder) => "examples/" + folder.ToLowerInvariant().Replace(' ', '-') + "/index.html";
 
@@ -73,7 +76,11 @@ public static class ExamplePages
     public static IEnumerable<string> CopyPictures(DocPage page, string outDir)
     {
         string from = Path.GetDirectoryName(Path.GetFullPath(page.SourcePath))!;
-        foreach (var src in Picture.Matches(page.Body).Select(m => Uri.UnescapeDataString(m.Groups["src"].Value)).Distinct())
+        // The body has been through Pictures() already, which writes a picture alone on its line as an <img>: read both forms, or
+        // no picture shown that way is ever copied (a new example's page came out with none).
+        var sources = Picture.Matches(page.Body).Concat(ReadmeImg.Matches(page.Body))
+                             .Select(m => Uri.UnescapeDataString(System.Net.WebUtility.HtmlDecode(m.Groups["src"].Value))).Distinct();
+        foreach (var src in sources)
         {
             if (src.Contains("://", StringComparison.Ordinal) || Path.IsPathRooted(src)) continue;
             string source = Path.GetFullPath(Path.Combine(from, src));

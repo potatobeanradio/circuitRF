@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — MMIC Component Ports</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/MMIC Component Ports/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › MMIC Component Ports</p>
+  </div>
+
+  <h1>MMIC Component Ports</h1>
+  <p class="lede">A small GaAs stage — input and output lines, a series MIM capacitor, a shunt spiral and a three-pin device cell — solved once on the Planar solver with the device and the MIM capacitor cut out of the layout and a port at each of their pins, then closed by their own models beside the circuit-model answer.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ MMIC Component Ports</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p><strong>Run order: 1. Simulate the EM setup <code>Stage EM</code>. 2. Simulate <code>Stage EM_cosim</code>, the cell that run makes. 3. Simulate
+<code>Stage</code>, and open <code>Stage.cdd</code>.</strong></p>
+<p>A small amplifier stage on the shipped 100 µm GaAs technology: an input line, a series MIM capacitor, a tee to a shunt spiral
+inductor, a three-pin device and an output line. The device and the MIM capacitor are <strong>cut out</strong> of the EM problem. Their
+metal leaves the solved layout, each pin they connect by gets a port at its face, and a netlist puts each one's own model back
+on its ports. The spiral, the tee and the lines stay in the EM, where their lumped models are least sure.</p>
+<p><img class="readme-picture" src="pictures/stage-layout.png" alt="The stage's layout: port 1 on the left, the MIM capacitor, the tee with the spiral below it, the device with its source on a backside via, and port 2 on the right." width="600"></p>
+<h2 id="the-cells">The cells</h2>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>Views</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Stage</strong></td>
+<td>schematic, layout, EM setup</td>
+<td>The stage. Its schematic is the circuit, with <code>P1</code> and <code>P2</code> and the <code>Circuit</code> analysis, 4–16 GHz; its layout was made from it by Update Layout from Schematic</td>
+</tr>
+<tr>
+<td><strong>FET</strong></td>
+<td>schematic, symbol, layout</td>
+<td>The device: pins <code>G</code>, <code>D</code> and <code>S</code>. Its schematic is a small-signal model (an 80 mS transconductance, 0.25 pF gate capacitance, 250 Ω output resistance and their parasitics); its layout is three pads on Metal1</td>
+</tr>
+</tbody>
+</table>
+<p>The device is a cell of your own here so that the example needs no kit. A transistor from a kit is taken the same way.</p>
+<h2 id="how-it-was-built">How it was built</h2>
+<ol>
+<li><strong>The schematic.</strong> <code>TL1</code> and <code>TL2</code> are 70 µm MLINs on Metal1, <code>C1</code> a 60 × 60 µm MIMCAP, <code>T1</code> an MTEE, <code>L1</code> a 2.5-turn
+SPIRAL to ground, and <code>X1</code> the FET cell with its source on ground.</li>
+<li><strong>Design ▸ Update Layout from Schematic.</strong> It places every part, joins them, and puts a backside via beside the spiral's
+inner end and beside the device's source pad, each tied to its pin.</li>
+<li><strong>The EM setup, <code>Stage EM</code></strong> (<code>Stage/em</code>). Under <strong>Component ports</strong>, <strong>Every part and device (*)</strong> is ticked, and
+<code>C1</code> is ticked under <strong>Cell instances</strong>. <code>&quot;*&quot;</code> takes the FET because its schematic is a model: its layout is pads round
+something the EM cannot see. It does not take <code>C1</code>, <code>L1</code> or the lines, which are copper the solver can solve, so <code>C1</code>
+is named to be cut out too. In the file it is <code>&quot;ComponentPorts&quot;: [&quot;*&quot;, &quot;C1&quot;]</code>.</li>
+<li><strong>Check.</strong> <code>circuitrf explain &quot;Stage/em/Stage EM.cem&quot; --component-ports</code> lists each cut instance and each pin:
+<code>X1 (FET), selected by &quot;*&quot;</code> and <code>C1 (MIMCAP), selected by name</code>, every pin routed, each with its port.</li>
+</ol>
+<h2 id="run-it">Run it</h2>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>What</th>
+<th>Time on a 10-core Mac</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Simulate the EM setup <strong>Stage EM</strong></td>
+<td>about 2 min</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Simulate <strong>Stage EM_cosim</strong></td>
+<td>under a second</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Simulate <strong>Stage</strong>, then open <code>Stage.cdd</code></td>
+<td>under a second</td>
+</tr>
+</tbody>
+</table>
+<p>The run writes <code>results/Stage EM.s7p</code>, <code>Stage EM_cosim.cnl</code> and the cell <strong>Stage EM_cosim</strong>, the same circuit drawn as a
+schematic. The Touchstone has seven ports, the two drawn ones and one at each cut pin, and its header names them:</p>
+<pre><code>! Port[1] = 1
+! Port[2] = 2
+! Port[3] = X1.G
+! Port[4] = X1.D
+! Port[5] = X1.S
+! Port[6] = C1.1
+! Port[7] = C1.2
+! circuitRF-EM port 3: 'X1.G' on 'Metal1' at (528, 135 um), edge, uncalibrated (not de-embedded), 50 Ohm
+</code></pre>
+<p><code>Stage EM_cosim.cnl</code> puts the parts back. Each model is the schematic's own part, with its terminals on the ports by pin name:</p>
+<pre><code>SnP:BOARD  p1  p2  p3  p4  p5  p6  p7  NumPorts=7  File=&quot;results/Stage EM.s7p&quot;
+Port:P1  p1  0  Num=1  Z=50 Ohm
+Port:P2  p2  0  Num=2  Z=50 Ohm
+FET:X1  p3  p4  p5
+MIMCAP:C1  p6  p7  W=60 um  L=60 um  …
+</code></pre>
+<p>The device's source, <code>X1.S</code>, is a port of its own and not ground: its pad reaches ground through the tie and the via in the
+EM result, so their inductance is in the answer, as it is on the chip.</p>
+<h2 id="what-you-will-see">What you will see</h2>
+<p><img class="readme-picture" src="pictures/stage-results.png" alt="Stage.cdd: |S21| and |S11| of the stage, circuit models in red against the EM result with the parts on their ports in blue." width="500"></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>4 GHz</th>
+<th>8 GHz</th>
+<th>12 GHz</th>
+<th>16 GHz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S21|, circuit models</td>
+<td>16.0 dB</td>
+<td>14.6 dB</td>
+<td>11.7 dB</td>
+<td>9.4 dB</td>
+</tr>
+<tr>
+<td>|S21|, EM with the parts on their ports</td>
+<td>16.9 dB</td>
+<td>13.3 dB</td>
+<td>10.3 dB</td>
+<td>8.1 dB</td>
+</tr>
+<tr>
+<td>|S11|, circuit models</td>
+<td>−2.1 dB</td>
+<td>−1.4 dB</td>
+<td>−1.3 dB</td>
+<td>−1.3 dB</td>
+</tr>
+<tr>
+<td>|S11|, EM with the parts on their ports</td>
+<td>−1.1 dB</td>
+<td>−2.7 dB</td>
+<td>−3.6 dB</td>
+<td>−4.1 dB</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The EM answer reads about 1.4 dB less gain from 8 GHz up, and a different input match.</strong> The device and the capacitor
+are the same models in both: what differs is everything between them. The spiral's lumped model is valid to a twentieth of a
+wavelength along its trace, about 3.4 GHz here, and says so when the circuit runs; the tee's arms are narrower than its model
+was fitted for; and the circuit knows nothing of the pads, the ties and the vias. The EM result has all of them.</p>
+<p><strong>The cut faces are Uncalibrated Ports.</strong> Each port at a cut pin is driven against the ground plane at its face and not
+de-embedded, so the half cell beyond the face and the port's own small launch are in the result. A calibrated port needs its
+feed clear of other metal for hundreds of µm on this stack, which no device's pins are; on isolated lines the difference from
+a calibrated port is between 5e-3 and 7e-2 in S from 5 to 30 GHz. See
+<a href="../../reference/mom-engine.html#uncalibrated-port">The Uncalibrated Port</a> for what that means for a result. The drawn ports
+<code>1</code> and <code>2</code> are ordinary calibrated edge ports.</p>
+<h2 id="things-to-try">Things to try</h2>
+<ul>
+<li><strong>Change the device.</strong> Edit a value in the FET's schematic and simulate <code>Stage EM_cosim</code> again. The answer moves with no
+EM run, because the device is not in the EM result.</li>
+<li><strong>Run the stage itself by EM.</strong> Add an S-parameter analysis to Stage's schematic and set its <strong>Model</strong> to <strong>EM of this
+schematic's layout</strong>. It solves the same cut, closes it with the parts from the schematic being run, and lays the result
+beside <code>Circuit</code> in one run. That is a second solve of about 2 minutes, kept in the EM cache afterwards.</li>
+<li><strong>Cut at the cell edge.</strong> Give <code>X1</code> its own entry with <strong>Port at</strong> set to <strong>Cell</strong>. The ports move to where the lines cross
+the device's box, and the box's margin enters the answer.</li>
+<li><strong>Leave the capacitor in the EM.</strong> Untick <code>C1</code>. The MIM capacitor is then solved as metal, and only the device goes back as a
+model.</li>
+</ul>
+<h2 id="what-was-traded-for-speed">What was traded for speed</h2>
+<ul>
+<li><strong>The mesh: Cells across a conductor 2 and the edge mesh off</strong> (the setup's surface mesh settings). The narrowest metal, the
+spiral's 15 µm turns, sets the cell size over the whole layout, so these two are the levers. They give 1,758 unknowns and
+about 0.2 GB a frequency point, about 17 s a point. Cells across 4 gives 5,664 unknowns (1.6 GB) and about 55 s a point,
+and moves the answer by at most 0.04 dB (the table below). The edge mesh on, at 2 across, gives 8,101 unknowns (3.2 GB).
+The defaults with 10 µm turns gave 20,048 unknowns and about 20 GB a frequency point.</li>
+<li><strong>Seven frequency points</strong>, 2 GHz apart. The EM curve in <code>Stage.cdd</code> joins them with straight lines.</li>
+<li><strong>The spiral's turns are 15 µm wide</strong> where 10 µm is the generator's default, for the same reason.</li>
+<li><strong>The parts are ideal models</strong>, and the device's model is a small-signal one: there is no bias, so this is not a run for
+harmonic balance or compression.</li>
+</ul>
+<p>The mesh against a finer one, the parts on their ports in both:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>|S21| at 8 GHz</th>
+<th>|S21| at 16 GHz</th>
+<th>|S11| at 8 GHz</th>
+<th>|S11| at 16 GHz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cells across 2 (shipped)</td>
+<td>13.26 dB</td>
+<td>8.08 dB</td>
+<td>−2.67 dB</td>
+<td>−4.07 dB</td>
+</tr>
+<tr>
+<td>Cells across 4</td>
+<td>13.26 dB</td>
+<td>8.04 dB</td>
+<td>−2.70 dB</td>
+<td>−4.08 dB</td>
+</tr>
+</tbody>
+</table>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

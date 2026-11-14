@@ -99,7 +99,8 @@ internal static class ExplainComponentPorts
         if (build.Refusal is { } refused)
             walks.Add(new ResolutionStepJson("component ports", full, $"refused: {refused}", PlanarHow));
         foreach (var p in build.Ports)
-            walks.Add(new ResolutionStepJson("component port", source.AbsolutePath, EmPlanarComponentPorts.Describe(p, source), PlanarHow));
+            walks.Add(new ResolutionStepJson("component port", source.AbsolutePath, EmPlanarComponentPorts.Describe(p, source),
+                                             p.Cutout ? CutPortHow : PlanarHow));
         // brief-icp-6 R-icp6-2 — the pin check: each cut instance and its pins' verdicts, from the build; and the copper "*" passed over.
         CutWalk(EmCutReport.Cuts(build.Ports.Select(p => (p.Refdes, p.CutPart))), EmCutReport.PortsOf(build), source.Technology,
                 source.AbsolutePath, walks);
@@ -151,6 +152,12 @@ internal static class ExplainComponentPorts
         "the positive pad, the way positive port current crosses the cut; verified before meshing (pads on two conductors, facing, on an analysis level, " +
         "inside the solve region, no third conductor on the strip, no copper against it at the cut); in the solved problem " +
         "only, never written to the layout";
+
+    /// <summary>brief-icp-9 — a cut instance's pin port is not the gap construction <see cref="PlanarHow"/> describes.</summary>
+    private const string CutPortHow =
+        "built at a cut instance's pin face (ICP-2): the instance's metal leaves the solved problem, and where the interconnect meets " +
+        "the face is an Uncalibrated Port, driven against the ground plane at its cut and not de-embedded; verified before meshing, " +
+        "in the solved problem only, never written to the layout";
 
     private static int Walk3D(Em3dGenerationResult g, EmSetup setup, string full, List<ResolutionStepJson> walks)
     {

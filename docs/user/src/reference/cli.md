@@ -599,6 +599,22 @@ that is not there, such as a drive that is not connected, refuses the run before
 that cannot be built is left out with a warning naming it, and the rest run. A thermal or electrostatic setup has no
 ports and refuses the flag. With `--dry-run` it reports the ports a run would build and writes nothing.
 
+The list takes the spellings a setup's own entries take, comma separated:
+
+| Spelling | Takes |
+|---|---|
+| `C1`, `Q1` | the part or cell instance with that designator at the top of the layout |
+| `X1/Q3` | an instance inside another, by its path — the path LVS reports |
+| `@2` | the third unnamed placement (counting from 0) at that level; it changes when instances are reordered |
+| `X1/*` | the first device on each branch under `X1` |
+| `*` | every footprint part and every device cell; never copper the solver can solve |
+| `cell:Seg` | every instance of the cell `Seg`, by folder name or PCell generator |
+
+`--port-at pin|cell` sets where every entry's ports sit: at each pin's face (the default), or where the interconnect
+crosses the instance's box ([Cutting out a cell instance](em-setup.html#cell-instances)). A spelling that is none of
+these — an empty segment, `*` before the last segment, `cell:` with no name, `--port-at` with no list — is refused, naming
+the grammar. `explain` and `check` take the same two flags.
+
 A `.c3d` runs too — `circuitrf em <view.c3d> --setup <name>` — and a **thermal** setup embedded in it runs through the
 same verb with circuitRF's own thermal solver (Gmsh meshes it). It writes `<cell> <setup>.thermal.npy` and the temperature
 field beside it, and prints the probes, the measures and, when the setup asks for one, the Rth matrix. See
@@ -3094,7 +3110,14 @@ On a `.c3d` or a `.cem`, `--component-ports` lists each [component port](em-setu
 would build it — its pads, conductors, gap, width and verdict, and on a 3D setup its landings — without solving.
 On a Planar `.cem` it describes the strip the solver adds across the part's gap and the delta gap that cuts it. With no
 list it reports the setup's own; `--component-ports "C1,C2"` (or `"*"`) reports that list instead, as
-`em --component-ports` would run it.
+`em --component-ports` would run it, with `--port-at pin|cell` as `em` takes it.
+
+A [cut cell instance](em-setup.html#cell-instances) adds two kinds of line. A **cell instance** line gives its path and
+cell, how it was chosen (`by "*"`, `by name`, `by "X1/*"`, `by its cell (Seg)`) and what left the problem: its own shapes,
+or its box with its size. A **cut pin** line per pin gives its class: routed, with its face (point, width, direction,
+layer), its port's number and name and what it returns through; abutting another cut instance; grounded; the return of
+other pins' ports; floating; or left out, with why. With `"*"`, a copper instance it passed over is listed once, so you
+can see what it did not take. `--json` carries the same lines.
 
 <h3 id="explain-pdk"><code>--pdk</code> — which interpreter does a gdsfactory kit use?</h3>
 

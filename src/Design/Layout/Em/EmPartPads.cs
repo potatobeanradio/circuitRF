@@ -26,7 +26,12 @@ public sealed record PlacedPart(string Refdes, IReadOnlyList<PartPad> Pads, stri
 
 /// <summary>brief-icp-1 R-icp1-6 — one cell instance a setup's component ports cut out, with the entry whose options it takes (its
 /// <see cref="EmComponentPort.Refdes"/> the instance's path).</summary>
-public sealed record EmCellSelection(EmComponentPort Entry, EmCellInstance Instance);
+public sealed record EmCellSelection(EmComponentPort Entry, EmCellInstance Instance)
+{
+    /// <summary>brief-icp-9 — how the setup chose it: <c>by name</c>, <c>by its cell (Seg)</c>, <c>by "*"</c> or <c>by "X1/*"</c>.
+    /// <see cref="Entry"/> is rewritten to the instance's own path, so it can no longer say.</summary>
+    public string Selected { get; init; } = "by name";
+}
 
 /// <summary>One layout's placed parts, the projection's refusal when it could not be made, and its notes.</summary>
 public sealed record PlacedParts(IReadOnlyList<PlacedPart> Parts, string? Refusal, IReadOnlyList<string> Notes);
@@ -269,8 +274,12 @@ public static class EmPartPads
         var chosen = new Dictionary<string, EmComponentPort>(byAll, StringComparer.OrdinalIgnoreCase);
         foreach (var (k, v) in byCell) chosen[k] = v;
         foreach (var (k, v) in named) chosen[k] = v;
+        string How(string path) => named.ContainsKey(path) ? "by name"
+                                 : byCell.TryGetValue(path, out var c) ? $"by its cell ({c.Cell!.Trim()})"
+                                 : $"by \"{byAll[path].Refdes.Trim()}\"";
         var list = instances.Instances.Where(i => chosen.ContainsKey(i.Path))
-                            .Select(i => new EmCellSelection(chosen[i.Path] with { Refdes = i.Path, Cell = null }, i)).ToList();
+                            .Select(i => new EmCellSelection(chosen[i.Path] with { Refdes = i.Path, Cell = null }, i) { Selected = How(i.Path) })
+                            .ToList();
 
         // ICP-0 D8: an instance inside a cut one is already out.
         foreach (var inner in list)

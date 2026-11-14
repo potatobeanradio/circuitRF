@@ -318,6 +318,66 @@ Any <strong>shunt branch in the file does not reach the board's ground plane</st
 pad-to-ground capacitance matters therefore shows it in the wrong place. The pads themselves are in the EM model, and so is their capacitance to the plane.</p>
 <p><strong>The part's body is not in the EM model</strong>, with this method or any other that uses a gap port.</p>
 <p><strong>A part not fitted.</strong> A part whose <strong>Disable</strong> is <em>Open</em> in the board's schematic leaves its port open in the generated netlist and cell, and one set to <em>Short</em> shorts its port. Neither gets a placeholder value.</p>
+<h3 id="cut-models">A cut cell instance's model</h3>
+<p>A <a href="em-setup.html#cell-instances">cut cell instance</a> — a device, or a PCell named in the setup — has a port at each
+connected pin's face, and the netlist puts the instance's own model back on them. Its block's comment says where each
+model came from and how each terminal was wired.</p>
+<p><strong>Where the model comes from, in order:</strong></p>
+<ol>
+<li><strong>The schematic the layout was made from.</strong> An instance placed at the top of the layout is the schematic's part of
+that name, with its parameters as written: <code>W=w_in</code>, an expression of the schematic's VARs, which the netlist carries.</li>
+<li><strong>A sub-cell's schematic,</strong> for an instance placed inside another cell (<code>X1/Q3</code>): the part <code>Q3</code> in the schematic of
+the cell <code>X1</code> is. Its parameters are written as the <strong>values</strong> the design gives them there, each level's expressions
+evaluated in its parent's scope, because a flat netlist has no cell scope to evaluate them in. So <strong>a VAR that drove a
+nested instance no longer tunes it in the netlist</strong>: change the value in the netlist, or run the schematic itself. The
+comment names each value written this way.</li>
+<li><strong>The PCell's own component</strong>, for a generated cell with no schematic counterpart (a MIM capacitor placed by hand in
+the layout): the built-in component its generator makes, at the parameters the layout records for it.</li>
+<li><strong>A placeholder</strong> when none of these is found, one per port, with the reason in the comment, as for a footprint part
+with no model.</li>
+</ol>
+<p><strong>Pins are matched by name.</strong> The model's terminals — a sub-cell's pins, or a symbol's pin names — are matched to the cut
+pins of the same name, and a cell whose layout pins are numbers is matched by number. When the names do not match, the
+instance is a placeholder listing both sets, rather than a guess.</p>
+<p><strong>Terminals with no port of their own:</strong></p>
+<table>
+<thead>
+<tr>
+<th>The pin is</th>
+<th>Its terminal goes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Routed</td>
+<td>On its port's node</td>
+</tr>
+<tr>
+<td>The reference of other pins' ports</td>
+<td>On <code>0</code>, the N-port's reference. The comment says so: that is the result's reference, not the pin grounded in the chip</td>
+</tr>
+<tr>
+<td>Grounded by the setup</td>
+<td>On <code>0</code></td>
+</tr>
+<tr>
+<td>Abutting another cut instance</td>
+<td>On one node shared with the pin it touches, <code>j_&lt;path&gt;_&lt;pin&gt;</code></td>
+</tr>
+<tr>
+<td>Floating, and on ground in the schematic</td>
+<td>On <code>0</code></td>
+</tr>
+<tr>
+<td>Floating otherwise</td>
+<td>On its own unconnected node, <code>nc_&lt;name&gt;_&lt;pin&gt;</code>, with a warning in the run's messages</td>
+</tr>
+</tbody>
+</table>
+<p>Instance names in the netlist are made from paths (<code>X1/Q3</code> is <code>X1_Q3</code>, <code>@2</code> is <code>at2</code>), and the comment names each path.</p>
+<p><strong>The same decision closes an EM cell.</strong> A schematic run with <code>model=em</code> puts its devices back on their ports this way,
+from the schematic being run, so a device value that moves no copper re-evaluates with no new EM run:
+<a href="em-cells.html#what-runs">What the analysis runs on</a>.</p>
 <h3 id="frequencies">Frequencies</h3>
 <p>A pattern exists <strong>only at frequencies the run solved</strong>. Far-field phase across a coarse sweep is not safe to interpolate, so a frequency between stored points
 is refused, listing them. <code>freq=all</code> takes every stored one. S comes from the same result, so a denser S-parameter analysis in the same schematic reads

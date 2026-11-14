@@ -890,6 +890,45 @@ that is not there, such as a drive that is not connected, refuses the run before
 <a href="em-setup.html#component-ports">component ports</a> for this run only; nothing is written back to the setup. A part
 that cannot be built is left out with a warning naming it, and the rest run. A thermal or electrostatic setup has no
 ports and refuses the flag. With <code>--dry-run</code> it reports the ports a run would build and writes nothing.</p>
+<p>The list takes the spellings a setup's own entries take, comma separated:</p>
+<table>
+<thead>
+<tr>
+<th>Spelling</th>
+<th>Takes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>C1</code>, <code>Q1</code></td>
+<td>the part or cell instance with that designator at the top of the layout</td>
+</tr>
+<tr>
+<td><code>X1/Q3</code></td>
+<td>an instance inside another, by its path — the path LVS reports</td>
+</tr>
+<tr>
+<td><code>@2</code></td>
+<td>the third unnamed placement (counting from 0) at that level; it changes when instances are reordered</td>
+</tr>
+<tr>
+<td><code>X1/*</code></td>
+<td>the first device on each branch under <code>X1</code></td>
+</tr>
+<tr>
+<td><code>*</code></td>
+<td>every footprint part and every device cell; never copper the solver can solve</td>
+</tr>
+<tr>
+<td><code>cell:Seg</code></td>
+<td>every instance of the cell <code>Seg</code>, by folder name or PCell generator</td>
+</tr>
+</tbody>
+</table>
+<p><code>--port-at pin|cell</code> sets where every entry's ports sit: at each pin's face (the default), or where the interconnect
+crosses the instance's box (<a href="em-setup.html#cell-instances">Cutting out a cell instance</a>). A spelling that is none of
+these — an empty segment, <code>*</code> before the last segment, <code>cell:</code> with no name, <code>--port-at</code> with no list — is refused, naming
+the grammar. <code>explain</code> and <code>check</code> take the same two flags.</p>
 <p>A <code>.c3d</code> runs too — <code>circuitrf em &lt;view.c3d&gt; --setup &lt;name&gt;</code> — and a <strong>thermal</strong> setup embedded in it runs through the
 same verb with circuitRF's own thermal solver (Gmsh meshes it). It writes <code>&lt;cell&gt; &lt;setup&gt;.thermal.npy</code> and the temperature
 field beside it, and prints the probes, the measures and, when the setup asks for one, the Rth matrix. See
@@ -3844,7 +3883,13 @@ ahead of the parts you asked about. <code>--snp-entries SNP3,SNP4</code> lists t
 would build it — its pads, conductors, gap, width and verdict, and on a 3D setup its landings — without solving.
 On a Planar <code>.cem</code> it describes the strip the solver adds across the part's gap and the delta gap that cuts it. With no
 list it reports the setup's own; <code>--component-ports &quot;C1,C2&quot;</code> (or <code>&quot;*&quot;</code>) reports that list instead, as
-<code>em --component-ports</code> would run it.</p>
+<code>em --component-ports</code> would run it, with <code>--port-at pin|cell</code> as <code>em</code> takes it.</p>
+<p>A <a href="em-setup.html#cell-instances">cut cell instance</a> adds two kinds of line. A <strong>cell instance</strong> line gives its path and
+cell, how it was chosen (<code>by &quot;*&quot;</code>, <code>by name</code>, <code>by &quot;X1/*&quot;</code>, <code>by its cell (Seg)</code>) and what left the problem: its own shapes,
+or its box with its size. A <strong>cut pin</strong> line per pin gives its class: routed, with its face (point, width, direction,
+layer), its port's number and name and what it returns through; abutting another cut instance; grounded; the return of
+other pins' ports; floating; or left out, with why. With <code>&quot;*&quot;</code>, a copper instance it passed over is listed once, so you
+can see what it did not take. <code>--json</code> carries the same lines.</p>
 <h3 id="explain-pdk"><code>--pdk</code> — which interpreter does a gdsfactory kit use?</h3>
 <p><code>explain --pdk &lt;kit&gt; [&lt;workspace&gt;]</code> says which Python interpreter a <a href="gdsfactory-kits.html">gdsfactory kit</a>
 resolves to, and whether the answer came from <code>--python &lt;interp&gt;</code> or from your recorded preference, then

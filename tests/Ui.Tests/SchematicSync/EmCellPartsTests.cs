@@ -16,9 +16,9 @@ namespace CircuitRF.Ui.Tests.SchematicSync;
 /// <summary>
 /// brief-icp-8 — an EM cell whose schematic places parts that are not copper. The design is the schematic-driven layout set's F7
 /// (two lines and a three-terminal part inline, its third pin on ground) with the part made a device sub-cell, Dev: a tee of
-/// two resistors and a capacitor whose value is the schematic's VAR <c>cm</c>, laid out as F7's three-pad package. A sub-cell with
-/// a layout is copper to <c>"*"</c> (ICP-0 D3), so the EM view names Q1; the solve cuts it out at its cell edge with an Uncalibrated
-/// Port where each conductor crosses it (ICP-2), and the bench puts Dev back on them from the schematic being run.
+/// two resistors and a capacitor whose value is the schematic's VAR <c>cm</c>, laid out as F7's three-pad package. Its schematic is a
+/// model, so Q1 is a device (ICP-0 D3); the EM view names it, in Cell mode, so the solve cuts it out at its cell edge with an
+/// Uncalibrated Port where each conductor crosses it (ICP-2), and the bench puts Dev back on them from the schematic being run.
 /// </summary>
 public sealed class EmCellPartsTests(ITestOutputHelper output) : IDisposable
 {
@@ -111,6 +111,102 @@ public sealed class EmCellPartsTests(ITestOutputHelper output) : IDisposable
         string refusal = Assert.Single(count.Refusals);
         output.WriteLine(refusal);
         Assert.Contains("Q1", refusal, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// ICP-0 D3, as brief-icp-9 reads it: a sub-cell whose schematic is a model (a part with no layout of its own) is a device,
+    /// which <c>"*"</c> takes and an EM cell puts on component ports by itself; a sub-cell drawn from lines stays copper.
+    /// </summary>
+    [Fact]
+    public void AModelCell_IsAPart_ALineCell_IsCopper()
+    {
+        string ws = Path.Combine(_scratch, "kinds");
+        Directory.CreateDirectory(Path.Combine(ws, "tech"));
+        Dev(ws, Path.Combine(ws, "tech", "microstrip-0508.ctech"));
+        string line = CellFolder.CreateCellFolder(ws, "Line");
+        Directory.CreateDirectory(CellFolder.SubFolderPath(line, ViewType.Layout));
+        Directory.CreateDirectory(CellFolder.SubFolderPath(line, ViewType.Schematic));
+        File.Copy(Path.Combine(CellFolder.SubFolderPath(Path.Combine(ws, "Dev"), ViewType.Layout), "Dev.clay"),
+                  Path.Combine(CellFolder.SubFolderPath(line, ViewType.Layout), "Line.clay"));
+        var sch = new SchematicEditModel();
+        sch.Components.Add(Pin(1, "A", -400, 0));                                        // port at (-300, 0)
+        sch.Components.Add(Pin(2, "B", 300, 0));                                         // port at (400, 0)
+        sch.Components.Add(Part("TL1", SymbolKind.Mlin, 0, 0, "L", "1", "mm"));            // (-200,0)-(200,0)
+        sch.Wires.Add(Wire((-300, 0), (-200, 0)));
+        sch.Wires.Add(Wire((200, 0), (400, 0)));
+        SchematicPersistence.SaveToFile(Path.Combine(CellFolder.SubFolderPath(line, ViewType.Schematic), "Line.csch"), sch);
+
+        string here = Path.Combine(ws, "Top", "schematic");
+        Directory.CreateDirectory(here);
+        var device = new EditableComponent { InstanceName = "Q1", Symbol = SymbolKind.BjtNpn, CellRef = "../../Dev" };
+        var copper = new EditableComponent { InstanceName = "X1", Symbol = SymbolKind.Resistor, CellRef = "../../Line" };
+        Assert.Equal(EmPartKind.Part, EmPartKinds.Of(device, here));
+        Assert.Equal(EmPartKind.Copper, EmPartKinds.Of(copper, here));
+    }
+
+    /// <summary>brief-icp-9 — <c>"*"</c> cuts the model cell out, and the cut says it was chosen by <c>"*"</c> (every cut read
+    /// "by name": the selection's entry is rewritten to the instance's own path before the label was taken from it).</summary>
+    [Fact]
+    public void Star_CutsTheModelCell_AndSaysSo()
+    {
+        var fx = Fixture("star", AnalysisModel.Em, cem: s => s.ComponentPorts = [new EmComponentPort("*") { PortAt = EmComponentPortAt.Cell }]);
+        var build = EmPlanarComponentPorts.Build(EmSetupPersistence.LoadFromFile(fx.Cem), Source(fx))!;
+        var q1 = build.Ports.Where(p => p.Cutout && p.Refdes == "Q1").ToList();
+        Assert.NotEmpty(q1);
+        Assert.All(q1, p => Assert.Equal("by \"*\"", p.CutPart!.Selected));
+    }
+
+    /// <summary>brief-icp-9 — a drawn port standing on metal a cut removes is refused naming the instance (port extraction said only
+    /// that the port was on no conductor).</summary>
+    [Fact]
+    public void ADrawnPortOnACutInstance_IsRefused_NamingIt()
+    {
+        var fx = Fixture("oncut", AnalysisModel.Em);
+        var source = Source(fx);
+        var setup = EmSetupPersistence.LoadFromFile(fx.Cem);
+        var region = EmPlanarComponentPorts.Build(setup, source)!.Cut!.Regions["Q1"].Outline[0].Xy;
+        var port = source.View.Shapes.OfType<LabelShape>().First(l => l.IsPort);
+        (port.X, port.Y) = ((region.Where((_, k) => k % 2 == 0).Min() + region.Where((_, k) => k % 2 == 0).Max()) / 2,
+                            (region.Where((_, k) => k % 2 == 1).Min() + region.Where((_, k) => k % 2 == 1).Max()) / 2);
+        var collected = EmComponentPorts.Collect(new EmLayoutSource(source.AbsolutePath, source.View, source.Technology, source.DbuPerMicron), setup);
+        Assert.Contains($"The port label '{port.Text}'", collected.Refusal);
+        Assert.Contains("stands on Q1, which this setup cuts out", collected.Refusal);
+    }
+
+    /// <summary>
+    /// brief-icp-9 — a run whose cut device is a cell of the workspace makes its <c>_cosim</c> cell: the drawing places that
+    /// cell's instance (it refused any netlist defining a cell), and a MIM capacitor drawn with its process parameters
+    /// stated extracts with each stated once (the technology's copy was appended beside them).
+    /// </summary>
+    [Fact]
+    public void ACoSimCell_PlacesTheDeviceCell_AndStatesEachProcessParameterOnce()
+    {
+        var ws = CircuitRF.Design.Workspace.WorkspaceCreate.Create(_scratch, "cosim", "mmic-GaAs_2LM_100um");
+        Dev(ws.WorkspaceDir, ws.TechPath!);
+        string text = """
+            define Dev (C B E)
+              R:R1  C  n1  R=20 Ohm
+              R:R2  B  n1  R=30 Ohm
+              C:C1  n1  E  C=1 pF
+            end Dev
+
+            SnP:BOARD  p1  p2  p3  p4  p5  p6  NumPorts=6  File="results/chip.s6p"
+            Port:P1  p1  0  Num=1  Z=50 Ohm
+            Port:P2  p2  0  Num=2  Z=50 Ohm
+            Dev:Q1  p3  p4  0
+            MIMCAP:C2  p5  p6  W=60 um  L=60 um  Er=6.8  Td=2E-07  TanD=0.001  SigmaTop=41000000  Ttop=2.5E-07  SigmaBot=41000000  Tbot=3E-06  H=0.0001  ErSub=12.9
+
+            analysis SP1 type=sparam start=1 stop=3 npts=3 Unit=GHz
+            """;
+        var setup = new EmSetup { Name = "chip", Frequency = new FrequencySpec("1", "3", 3, SweepKind.Linear, "GHz", "GHz") };
+        var made = EmCoSimNetlist.CreateCell(ws.WorkspaceDir, setup, text, Path.Combine(ws.WorkspaceDir, "results", "chip.s6p"), null);
+        Assert.True(made.Outcome == EmSnpSchematicOutcome.Created, made.Sentence);
+
+        string cnl = SchematicCircuit.CnlTextOf(made.SchematicPath!);
+        output.WriteLine(cnl);
+        Assert.Contains("Dev:Q1  p3  p4  0", cnl, StringComparison.Ordinal);
+        string mim = cnl.Split('\n').Single(l => l.StartsWith("MIMCAP:C2", StringComparison.Ordinal));
+        Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(mim, @"\bEr=").Count);
     }
 
     // ── The fixture ─────────────────────────────────────────────────────────────────────────────────────────────────

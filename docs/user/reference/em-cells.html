@@ -92,20 +92,26 @@ Layout from Schematic with <strong>Create or update EM setup</strong> on.</li>
 <p>Anything missing stops the run with a sentence naming it. EM never falls back to the circuit models
 without saying so — <code>circuitrf check</code> reports the same sentence before you run.</p>
 <h2 id="what-runs">What the analysis runs on</h2>
-<p>When every part of the schematic is copper — lines, tees, bends, crosses, coupled lines — the analysis runs
-on the EM N-port between your Ports. An S-parameter analysis then reports exactly the EM S-parameters,
+<p>When every part of the schematic is copper — lines, tees, bends, crosses, coupled lines, spirals, MIM capacitors —
+the analysis runs on the EM N-port between your Ports. An S-parameter analysis then reports exactly the EM S-parameters,
 renormalised to the Ports' <code>Z</code> as any SnP is.</p>
-<p>Two kinds of part stop the run, by name:</p>
-<ul>
-<li><strong>A part with no layout at all</strong>, such as an ideal resistor between two line ends. Nothing in the layout
-stands for it, so it cannot be connected to the EM result. Give it a footprint, or replace it with a line
-model.</li>
-<li><strong>A part that is not copper</strong>, such as a footprinted capacitor or a transistor. Its pads are copper, but
-the part between them is not, and joining its own model to the EM result needs a port at its pads with
-the part's model across it, which an EM cell does not build. Run that analysis by circuit models, or run
-the layout's EM setup with <a href="em-setup.html#component-ports">component ports</a> and simulate the co-simulation
-netlist it writes.</li>
-</ul>
+<p><strong>A part that is not copper is put back on a component port.</strong> A footprinted capacitor, a kit transistor or a device cell
+of your own (a cell whose schematic is a model: a transistor, a controlled source) has pads or pins in the layout, but the
+part itself is not metal the solver can see. Each one becomes a <a href="em-setup.html#component-ports">component port</a> of the run
+— a gap across a footprint's pads, or the device <a href="em-setup.html#cell-instances">cut out</a> with a port at each connected pin
+— and the analysis puts the part's own model from the schematic back across them, as the
+<a href="cosimulation.html#cut-models">co-simulation netlist</a> does. Nothing is written to your setup: the ports are added in
+memory, one for each such part the setup does not already name. Name a part in the setup yourself to choose how it is
+cut, for instance <strong>Port at Cell</strong> for a device whose grounded pin a ground tie meets inside its pad.</p>
+<p>Because the parts are in the circuit and not in the EM, <strong>a part's value that moves no copper solves nothing</strong>: tune a
+transistor's model, sweep a capacitor's value or optimise a bias, and the circuit is evaluated again on the same EM result.
+A part whose port cannot be built stops the run, naming it and why.</p>
+<p>One kind of part still stops the run, by name: <strong>a part with no layout at all</strong>, such as an ideal resistor between two
+line ends. Nothing in the layout stands for it, so it cannot be connected to the EM result. Give it a footprint, or replace
+it with a line model.</p>
+<p><strong>A cell with devices, placed as a part.</strong> A device goes back on its port only when the cell's own schematic is the one
+being run. Placed as a part in a larger schematic with <strong>Model</strong> set to EM, a cell whose schematic places devices is
+refused: run that part by circuit models, or run the cell's own schematic by EM.</p>
 <h2 id="as-a-part">Reusing it as a part</h2>
 <p>The same schematic can be placed as one part in a larger schematic, with terminations or other circuitry
 around it. Place its cell as you place any cell. It needs no symbol of its own: one is made for it, with one

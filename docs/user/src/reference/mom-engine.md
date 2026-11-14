@@ -13,7 +13,9 @@ keywords: EM, electromagnetic, method of moments, MoM, planar solver, full wave,
 <li><a href="#plain">In plain terms</a></li>
 <li><a href="#can-cannot">What can and cannot be simulated</a></li>
 <li><a href="#implementation">For advanced users: how circuitRF implements MoM</a></li>
-<li><a href="#ports">Ports</a></li>
+<li><a href="#ports">Ports</a>
+  <ul><li><a href="#uncalibrated-port">The Uncalibrated Port</a></li>
+  <li><a href="#component-ports">Component ports</a></li></ul></li>
 <li><a href="#deembedding">De-embedding</a>
   <ul><li><a href="#validity">The validity condition: an isolated feed</a></li></ul></li>
 <li><a href="#adaptive">Adaptive frequency sampling</a></li>
@@ -406,6 +408,58 @@ ground-designated conductor in your technology's stackup, and it is the negative
 is <a href="stackup.html">The stackup</a>.</p>
 </div>
 
+### The Uncalibrated Port {#uncalibrated-port}
+
+An edge port can be made an **Uncalibrated Port**: the **Uncalibrated port** box in its Properties
+([Ports](layout-editor.html#ports)), `PortUncalibrated` on its label. Every port a
+[cut cell instance](em-setup.html#cell-instances) gets is one, always.
+
+**What it is.** An edge port driven against the ground plane at its cut, and **never de-embedded**. Its source returns
+through the plane at every frequency, whatever the setup's edge-port return says, and its S-parameters are reported at the
+cut in its own Z₀. It is not an internal port (that one does not cut the trace) and not a delta gap (that one has metal on
+both sides): it is an edge port with the calibration taken away. The run's notes name each one (*"It is an Uncalibrated
+Port: driven against the ground plane at its cut and not de-embedded, so its launch is in the result"*), and so does the
+Touchstone's port line: `edge, uncalibrated (not de-embedded)`.
+
+**What the result carries that a calibrated port removes.** The launch: the half mesh cell beyond the cut, and the grounded
+source's own small series impedance and shunt admittance — the planar counterpart of a 3D lumped port's sheet. Against the
+de-embedded answer of the same layout, on isolated lines on 100 µm GaAs:
+
+| Line | 5 | 10 | 15 | 20 | 25 | 30 GHz |
+|---|---|---|---|---|---|---|
+| 72 µm wide, 1200 µm long: max \|ΔS\| | 1.5e-2 | 2.6e-2 | 2.7e-2 | 1.3e-2 | 2.3e-2 | 2.3e-2 |
+| 10 µm wide, 300 µm long: max \|ΔS\| | 5.4e-3 | 1.0e-2 | 2.1e-2 | 3.4e-2 | 4.2e-2 | 7.0e-2 |
+
+So within 5.4e-3 … 7e-2 of the calibrated answer from 5 to 30 GHz, and passive at every point. The difference depends on
+where the line's standing wave puts the launch: a 72 µm line 600 µm long reads 5.6e-2 at 20 GHz. Judge it against your
+band and the size of the effect you are looking for.
+
+**Why it exists, and when to choose it.** A calibrated port needs its feed clear of other metal: the calibration standard is
+an isolated uniform line, and it is only the feed's own neighbourhood when the feed is isolated
+([The validity condition](#validity)). On a GaAs stack that is hundreds of µm — 5 substrate heights from a neighbour that
+carries a port of its own, 2 from one that does not. No device's pins can be that far apart. This was measured on a
+three-pin site — lines meeting a vacated device from the left, the right and below, an edge port on each face:
+
+| Pin spacing | 20 µm | 40 µm | 80 µm |
+|---|---|---|---|
+| Calibrated edge ports | refused before meshing | refused before meshing | refused before meshing |
+
+The refusal is the feed-isolation rule: the source line runs 5, 15 and 35 µm from the gate's and the drain's feeds, where
+500 µm is needed, and a perpendicular pin cannot be grouped into one calibration. A source grounded on a via, with no port
+of its own, did not help: a passive neighbour still needs 200 µm. Two pins facing each other in line do calibrate. The same
+site with every port uncalibrated solves, passive and reciprocal. Choose an Uncalibrated Port where a calibrated one is
+refused for nearby metal, or where the launch is small next to what you are measuring.
+
+**What it costs and what it saves.** It grows no feed lead, solves no calibration lines, and is never refused for nearby
+metal. A run with uncalibrated ports is 3–8× faster than the calibrated one, which solves its standards beside the
+structure (4.0 s against 13.8 s, and 4.9 s against 39.3 s, on the lines above). What it costs is the launch, above.
+
+**At a cut cell instance's pins.** The faces a cut leaves are Uncalibrated Ports. Cutting a 200 µm section out of a 72 µm
+line and putting it back as an ideal line of its length reads 6.1e-2 against the whole line at 20 GHz, where calibrated
+faces read 1.7e-2. In 3D a cut instance's ports are lumped sheets from the face to the return, and the sheet's height is
+part of the result: the same cut reads 8.0e-2 at 20 GHz on EMerge, almost all a phase lag of about 30 µm of line per face
+([A cell instance cut out](em-3d.html#cell-instance-ports)).
+
 ### What each one looks like in the layout
 
 {{ui: ports-edge}}
@@ -574,7 +628,9 @@ convention you can flip, and it is why the direction is required rather than gue
 
 A **component port** is a port across a placed part's own two pads, named in the EM setup by the part's
 reference designator ([Component ports](em-setup.html#component-ports)). Nothing is drawn for it, and on this
-engine it is an internal delta-gap port.
+engine it is an internal delta-gap port. A placed **cell instance** that is not a footprint part is cut out instead: its
+metal leaves the problem and each connected pin's face is an [Uncalibrated Port](#uncalibrated-port)
+([Cutting out a cell instance](em-setup.html#cell-instances)).
 
 A delta gap cuts metal, and between a part's two pads there is none: the part itself bridges them on the
 board, and the solver does not mesh it. So the setup's problem gains **a strip of metal across the part's gap**,
@@ -611,6 +667,9 @@ Three properties of that are load-bearing:
   straight segment, a port whose level is ambiguous, a lead that would run into other metal: all
   declined, with the warning you would have got anyway. Moving metal you drew would be a worse failure
   than the one being fixed.
+
+An [Uncalibrated Port](#uncalibrated-port) grows no lead at all: it is not de-embedded, so it has no calibration to be
+short of. Where metal leaves no room for a lead or a clear feed, it is the port that still builds.
 
 ### Port Z0
 
@@ -672,6 +731,8 @@ no feed outside it — nothing to calibrate against, nothing to remove, and no l
 reference the answer to. An internal port's S-parameters are reported <strong>at the gap itself, in the
 reference impedance you set for it</strong>, and the run's notes say so whenever one is present.
 Everything below in this section concerns edge ports.</p>
+<p>An edge port can opt out too: an <a href="#uncalibrated-port">Uncalibrated Port</a> is driven at its cut and reported
+there, launch included, and every cut cell instance's ports are such ports.</p>
 </div>
 
 ### Where the reference plane sits

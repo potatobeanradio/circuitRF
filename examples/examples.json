@@ -117,6 +117,11 @@
       "Summary": "A 50 ohm line with a three-part pi low-pass filter, solved once with each part as a component port, on Planar MoM, Palace and EMerge. A test bench puts the parts back and lays the three answers over the schematic alone; change a part value and no EM run is needed."
     },
     {
+      "Folder": "MMIC Component Ports",
+      "Title": "MMIC Component Ports",
+      "Summary": "A small GaAs stage — input and output lines, a series MIM capacitor, a shunt spiral and a three-pin device cell — solved once on the Planar solver with the device and the MIM capacitor cut out of the layout and a port at each of their pins, then closed by their own models beside the circuit-model answer."
+    },
+    {
       "Folder": "Antenna Co-Simulation",
       "Title": "Antenna Co-Simulation",
       "Summary": "A meander antenna on a 45 x 95 mm board, solved once at five frequencies with each of its parts as a port. An EM Field Data block then gives S11, the radiation pattern and realized gain from a schematic, so the optimizer matches it and a sweep shows an inductor's error with no new EM run."

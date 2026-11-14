@@ -1,0 +1,17 @@
+{
+  "FormatVersion": 6, "GridSize": 100, "PortCount": 3,
+  "Primitives": [
+    { "$type": "Line", "ColorRole": "SymbolLine", "StrokeTier": "Normal", "X1": -200.0, "Y1": 0.0, "X2": -60.0, "Y2": 0.0 },
+    { "$type": "Line", "ColorRole": "SymbolLine", "StrokeTier": "Thick", "X1": -60.0, "Y1": -90.0, "X2": -60.0, "Y2": 90.0 },
+    { "$type": "Line", "ColorRole": "SymbolLine", "StrokeTier": "Thick", "X1": -20.0, "Y1": -110.0, "X2": -20.0, "Y2": 110.0 },
+    { "$type": "Line", "ColorRole": "SymbolLine", "StrokeTier": "Normal", "X1": -20.0, "Y1": -80.0, "X2": 200.0, "Y2": -80.0 },
+    { "$type": "Line", "ColorRole": "SymbolLine", "StrokeTier": "Normal", "X1": 200.0, "Y1": -80.0, "X2": 200.0, "Y2": 0.0 },
+    { "$type": "Line", "ColorRole": "SymbolLine", "StrokeTier": "Normal", "X1": -20.0, "Y1": 80.0, "X2": 0.0, "Y2": 80.0 },
+    { "$type": "Line", "ColorRole": "SymbolLine", "StrokeTier": "Normal", "X1": 0.0, "Y1": 80.0, "X2": 0.0, "Y2": 200.0 }
+  ],
+  "Pins": [
+    { "LocalX": -200.0, "LocalY": 0.0, "PortIndex": 0, "Name": "G" },
+    { "LocalX": 200.0, "LocalY": 0.0, "PortIndex": 1, "Name": "D" },
+    { "LocalX": 0.0, "LocalY": 200.0, "PortIndex": 2, "Name": "S" }
+  ]
+}

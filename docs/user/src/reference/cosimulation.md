@@ -237,6 +237,47 @@ pad-to-ground capacitance matters therefore shows it in the wrong place. The pad
 
 **A part not fitted.** A part whose **Disable** is *Open* in the board's schematic leaves its port open in the generated netlist and cell, and one set to *Short* shorts its port. Neither gets a placeholder value.
 
+### A cut cell instance's model {#cut-models}
+
+A [cut cell instance](em-setup.html#cell-instances) — a device, or a PCell named in the setup — has a port at each
+connected pin's face, and the netlist puts the instance's own model back on them. Its block's comment says where each
+model came from and how each terminal was wired.
+
+**Where the model comes from, in order:**
+
+1. **The schematic the layout was made from.** An instance placed at the top of the layout is the schematic's part of
+   that name, with its parameters as written: `W=w_in`, an expression of the schematic's VARs, which the netlist carries.
+2. **A sub-cell's schematic,** for an instance placed inside another cell (`X1/Q3`): the part `Q3` in the schematic of
+   the cell `X1` is. Its parameters are written as the **values** the design gives them there, each level's expressions
+   evaluated in its parent's scope, because a flat netlist has no cell scope to evaluate them in. So **a VAR that drove a
+   nested instance no longer tunes it in the netlist**: change the value in the netlist, or run the schematic itself. The
+   comment names each value written this way.
+3. **The PCell's own component**, for a generated cell with no schematic counterpart (a MIM capacitor placed by hand in
+   the layout): the built-in component its generator makes, at the parameters the layout records for it.
+4. **A placeholder** when none of these is found, one per port, with the reason in the comment, as for a footprint part
+   with no model.
+
+**Pins are matched by name.** The model's terminals — a sub-cell's pins, or a symbol's pin names — are matched to the cut
+pins of the same name, and a cell whose layout pins are numbers is matched by number. When the names do not match, the
+instance is a placeholder listing both sets, rather than a guess.
+
+**Terminals with no port of their own:**
+
+| The pin is | Its terminal goes |
+|---|---|
+| Routed | On its port's node |
+| The reference of other pins' ports | On `0`, the N-port's reference. The comment says so: that is the result's reference, not the pin grounded in the chip |
+| Grounded by the setup | On `0` |
+| Abutting another cut instance | On one node shared with the pin it touches, `j_<path>_<pin>` |
+| Floating, and on ground in the schematic | On `0` |
+| Floating otherwise | On its own unconnected node, `nc_<name>_<pin>`, with a warning in the run's messages |
+
+Instance names in the netlist are made from paths (`X1/Q3` is `X1_Q3`, `@2` is `at2`), and the comment names each path.
+
+**The same decision closes an EM cell.** A schematic run with `model=em` puts its devices back on their ports this way,
+from the schematic being run, so a device value that moves no copper re-evaluates with no new EM run:
+[What the analysis runs on](em-cells.html#what-runs).
+
 ### Frequencies {#frequencies}
 
 A pattern exists **only at frequencies the run solved**. Far-field phase across a coarse sweep is not safe to interpolate, so a frequency between stored points

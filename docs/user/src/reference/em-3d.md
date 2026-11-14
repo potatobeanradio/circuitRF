@@ -226,6 +226,10 @@ full description.
   about the delay of 30 µm of that line at each face (the sheet is 100 µm tall, 1/28 of a wavelength in GaAs at
   30 GHz). On a thick substrate or at mm-wave, compare that against what the model needs.
 
+  **A port's Uncalibrated port box changes nothing here.** On Planar it takes the de-embedding away from an edge port
+  ([The Uncalibrated Port](mom-engine.html#uncalibrated-port)); a 3D run de-embeds no edge port, because each one is
+  already a lumped sheet whose launch is in the result.
+
   **Why a gap port, and not a pad-to-plane port at each pad.** A part between two pad-to-plane ports carries its
   current, as far as the EM is concerned, down one port's sheet, along the plane and up the other's: a loop that is
   not on the board. A gap port puts the part where it is, across its own pads, and the co-simulation connects it from

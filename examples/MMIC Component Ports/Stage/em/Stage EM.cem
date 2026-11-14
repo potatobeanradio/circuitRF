@@ -1,0 +1,54 @@
+{
+  "FormatVersion": 1,
+  "Name": "Stage EM",
+  "LayoutRef": "Stage/layout/Stage.clay",
+  "Frequency": {
+    "StartExpr": "4",
+    "StopExpr": "16",
+    "StepExpr": "",
+    "NumPoints": 7,
+    "Mode": "PointCount",
+    "Kind": "Linear",
+    "StartUnit": "GHz",
+    "StopUnit": "GHz",
+    "StepUnit": "Hz"
+  },
+  "Port1Z0Real": 50,
+  "Port1Z0Imag": 0,
+  "Port2Z0Real": 50,
+  "Port2Z0Imag": 0,
+  "Mesh": {
+    "MinCellsAcrossWidth": 6,
+    "EdgeCells": 3,
+    "EdgeFractionOfWidth": 0.03,
+    "EdgeGrowthRatio": 1.7,
+    "TruncationHeights": 20,
+    "TruncationTailCells": 12
+  },
+  "DispersionCorrection": true,
+  "ConductorThicknessCorrection": true,
+  "CreateSnpSchematic": true,
+  "AnalysisKind": "Planar",
+  "PlanarMesh": {
+    "Auto": true,
+    "CellsPerWavelength": 20,
+    "EdgeMesh": false,
+    "EdgeCells": 3,
+    "MinCellsAcrossConductor": 2
+  },
+  "Palace": {
+    "Quality": "Draft",
+    "SaveFieldsGHz": []
+  },
+  "OpenEms": {
+    "SaveFieldsGHz": []
+  },
+  "EMerge": {
+    "Quality": "Draft",
+    "SaveFieldsGHz": []
+  },
+  "ComponentPorts": [
+    "*",
+    "C1"
+  ]
+}

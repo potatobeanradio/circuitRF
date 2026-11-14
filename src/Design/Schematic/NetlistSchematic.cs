@@ -244,9 +244,13 @@ public static class NetlistSchematic
         return Build(lib, tb, schematicDirectory ?? System.IO.Path.GetDirectoryName(full));
     }
 
+    /// <param name="existingCells">brief-icp-9 — cells the netlist defines that already exist as cell folders, by cell name:
+    /// an instance of one is drawn as that cell's instance (its <c>CellRef</c> and its symbol's pins) rather than refused,
+    /// and its definition in the netlist is the one the cell's own schematic extracts to.</param>
     public static NetlistSchematicResult Build(Library lib, TestBench tb, string? schematicDirectory = null,
                                                IReadOnlyDictionary<string, (long X, long Y)>? hints = null,
-                                               bool artworkSides = true, ExactPlacement? exact = null)
+                                               bool artworkSides = true, ExactPlacement? exact = null,
+                                               IReadOnlyDictionary<string, ExactCell>? existingCells = null)
     {
         ArgumentNullException.ThrowIfNull(lib);
         ArgumentNullException.ThrowIfNull(tb);
@@ -254,16 +258,24 @@ public static class NetlistSchematic
         var refusals = new List<string>();
         var notes    = new List<string>();
 
-        if (lib.Cells.Count > 0)
+        var undrawable = lib.Cells.Where(c => existingCells?.ContainsKey(c.Name) != true).ToList();
+        if (undrawable.Count > 0)
             refusals.Add(
-                $"The netlist defines {lib.Cells.Count} cell(s) ({string.Join(", ", lib.Cells.Select(c => c.Name))}). "
+                $"The netlist defines {undrawable.Count} cell(s) ({string.Join(", ", undrawable.Select(c => c.Name))}). "
               + "A drawing of a hierarchy needs a cell folder for each definition, which this does not "
               + "write; draw each definition as a netlist of its own, or flatten it first.");
 
         var items = new List<Item>();
         foreach (var inst in tb.Instances)
         {
-            if (lib.Find(inst.Reference) is not null) continue;   // already refused above
+            if (lib.Find(inst.Reference) is not null)
+            {
+                if (existingCells?.GetValueOrDefault(inst.Reference) is not { } existing) continue;   // already refused above
+                if (existing.Pins.Count == inst.NetBindings.Count) items.Add(CellItem(inst, existing));
+                else refusals.Add($"{inst.InstanceName}: its cell's symbol has {existing.Pins.Count} pin(s) and the line binds "
+                                + $"{inst.NetBindings.Count} net(s).");
+                continue;
+            }
             if (exact is not null && exact.Cells.TryGetValue(inst.InstanceName, out var cell))
             {
                 if (cell.Pins.Count == inst.NetBindings.Count) items.Add(CellItem(inst, cell));
@@ -670,6 +682,9 @@ public static class NetlistSchematic
             InstanceName = inst.InstanceName, Symbol = SymbolKind.Generic, CellRef = cell.CellRef,
             ShowTypeLabel = true, ShowInstanceName = true,
         };
+        // brief-icp-9 — the instance's own overrides are its parameters, as the line states them.
+        foreach (var o in inst.Overrides)
+            comp.Parameters.Add(new EditableParameter { Name = o.Name, Expression = o.Expression, Unit = o.Unit ?? "" });
         return new Item { Comp = comp, Nets = [.. inst.NetBindings], Local = [.. cell.Pins] };
     }
 

@@ -172,7 +172,11 @@ every run uses, planar and 3D alike. Two rows in the Properties panel set it:
   twice the height to the port's return (H, from the technology's stackup), which the field's grey text shows. On a
   line's end no wider than that, the port is the line's end either way.
 
-Untick it for a port on the side of a wide trace or the edge of a ground pour, where a part's pad meets the metal:
+Beside them, **Uncalibrated port** makes an edge port an [Uncalibrated Port](mom-engine.html#uncalibrated-port): driven
+at its cut and never de-embedded, so its launch stays in the result and metal close to its feed no longer stops the run.
+It is greyed for an internal port, which is never de-embedded anyway, and changes nothing on a 3D run.
+
+Untick **Use edge width** for a port on the side of a wide trace or the edge of a ground pour, where a part's pad meets the metal:
 the whole edge is millimetres of port nobody meant. With several ports selected, a box showing a dash means they
 differ, and a click sets them all. See [How wide a lumped port's sheet is](em-3d.html#port-width) and
 [Ports](em-setup.html#ports). The name is drawn at a fixed size on screen,

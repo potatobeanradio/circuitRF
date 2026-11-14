@@ -70,7 +70,31 @@ public static class EmComponentPorts
         notes.AddRange(build.Notes);
         if (build.Refusal is { } refusal)
             return new Result(found.Shapes, refusal, notes) { Warnings = build.Warnings, ComponentBuild = build };
+        // brief-icp-9 — a port drawn on metal the cut removes has nothing left to drive. Said here, naming the instance, rather
+        // than by port extraction's "not on any conductor", which reads as if the port had been drawn in the wrong place.
+        if (build.Cut is { } cut && OnCutMetal(found.Shapes, cut, source) is { } onCut)
+            return new Result(found.Shapes, onCut, notes) { Warnings = build.Warnings, ComponentBuild = build };
         return new Result([.. found.Shapes, .. build.Labels], null, notes) { Warnings = build.Warnings, ComponentBuild = build };
+    }
+
+    /// <summary>brief-icp-9 — the sentence for the first drawn port label that stands inside (or on the edge of) a region a cut
+    /// leaves out, or null.</summary>
+    private static string? OnCutMetal(IReadOnlyList<LayoutShape> shapes, EmCellCutoutResult cut, EmLayoutSource source)
+    {
+        foreach (var l in shapes.OfType<LabelShape>().Where(l => l.IsPort))
+            foreach (var (path, region) in cut.Regions)
+                foreach (var outline in region.Outline)
+                {
+                    var poly = new Clipper2Lib.Path64(outline.Xy.Length / 2);
+                    for (int k = 0; k + 1 < outline.Xy.Length; k += 2) poly.Add(new Clipper2Lib.Point64(outline.Xy[k], outline.Xy[k + 1]));
+                    if (Clipper2Lib.Clipper.PointInPolygon(new Clipper2Lib.Point64(l.X, l.Y), poly) == Clipper2Lib.PointInPolygonResult.IsOutside)
+                        continue;
+                    string at = $"({LayoutUnits.Format(l.X, source.View.DisplayUnit, source.DbuPerMicron)}, " +
+                                $"{LayoutUnits.Format(l.Y, source.View.DisplayUnit, source.DbuPerMicron)} {LayoutUnits.Suffix(source.View.DisplayUnit)})";
+                    return $"The port label '{l.Text}' at {at} stands on {path}, which this setup cuts out, so the port has no metal left to " +
+                           $"drive. Move the port onto the conductor outside {path}, or leave {path} in the problem.";
+                }
+        return null;
     }
 
     /// <summary>One component-declared port: its label in top-level coordinates and the instance it came from.</summary>

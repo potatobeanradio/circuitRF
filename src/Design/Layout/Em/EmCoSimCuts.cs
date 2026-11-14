@@ -82,14 +82,13 @@ public sealed record EmCoSimCut(string Path, string Cell, string? GeneratorId, I
                             };
                         })
                         .ToList();
-            var entry = selections?.FirstOrDefault(c => c.Instance.Path.Equals(g.Key, StringComparison.OrdinalIgnoreCase))?.Entry;
+            var selection = selections?.FirstOrDefault(c => c.Instance.Path.Equals(g.Key, StringComparison.OrdinalIgnoreCase));
+            var entry = selection?.Entry;
             map[g.Key] = new EmCoSimCut(g.Key, inst?.Cell ?? g.First().Cell, inst?.GeneratorId, inst?.SchematicChain ?? [], pins)
             {
                 PCellParameters = inst?.PCellParameters,
-                Selected = entry is null ? "by name"
-                         : entry.Cell is { Length: > 0 } cell ? $"by its cell ({cell})"
-                         : entry.Refdes.Trim() == "*" || entry.Refdes.TrimEnd().EndsWith("/*", StringComparison.Ordinal) ? $"by \"{entry.Refdes.Trim()}\""
-                         : "by name",
+                // brief-icp-9 — the selection says; its entry's Refdes is the instance's own path by now, so it read "by name" always.
+                Selected = selection?.Selected ?? "by name",
                 LeftOut = entry?.PortAt != EmComponentPortAt.Cell ? "its own shapes"
                         : entry.KeepOutUm is { } k ? $"everything on the analysis levels inside its keep-out box, {Um((k.X1 - k.X0) * 1e-6)} × {Um((k.Y1 - k.Y0) * 1e-6)} µm"
                         : inst?.Box is { } b ? $"everything on the analysis levels inside its box, {Um(b.X1 - b.X0)} × {Um(b.Y1 - b.Y0)} µm"
