@@ -662,7 +662,7 @@ public static class EmRunService
                                  ports => resultPorts = ports);
             // brief-lcp-7 R-lcp7-2 — a run that built component ports writes its _cosim netlist, Planar and 3D alike, and with Create
             // schematic on makes the _cosim cell in place of _sim: a TermG on a part's port has no part on it.
-            result = WithCoSim(result, setup, resultsRoot, target?.WriteCoSim == false ? null : resultPorts is { ComponentPorts: true } built ? built.Ports : null);
+            result = WithCoSim(WithPassivity(result), setup, resultsRoot, target?.WriteCoSim == false ? null : resultPorts is { ComponentPorts: true } built ? built.Ports : null);
             string? cellDir = source is null ? null : CellFolder.SiblingView(source.AbsolutePath, ViewType.Layout, ViewType.Schematic).CellDir;
             return WithCell(result, setup, resultsRoot, cellDir, resultPorts?.Ports,
                             () => source is null ? new Dictionary<int, EmPortFace>() : EmSnpSchematic.FacesOf(source, setup));
@@ -769,7 +769,7 @@ public static class EmRunService
                 CircuitRF.Design.ThreeD.C3dPersistence.Serialize(document));
             foreach (string why in notKept)
                 result = result with { Warnings = [.. result.Warnings, $"The run's inputs could not be kept, so its result cannot be called stale: {why}"] };
-            result = WithCoSim(result, setup, resultsRoot, target?.WriteCoSim == false ? null : assembled?.CoSimPorts);
+            result = WithCoSim(WithPassivity(result), setup, resultsRoot, target?.WriteCoSim == false ? null : assembled?.CoSimPorts);
             // R-cp6-2 — a run with component ports makes its _cosim cell: a TermG on a part's port has no part on it.
             return WithCell(result, setup, resultsRoot, CellFolder.SiblingView(documentPath, ViewType.ThreeD, ViewType.Schematic).CellDir,
                             assembled?.ResultPorts, () => EmSnpSchematic.FacesOf(document));
@@ -863,6 +863,38 @@ public static class EmRunService
     /// </summary>
     /// <param name="ports">The result's ports with their parts (<see cref="EmCoSimNetlist.PortsOf(IReadOnlyList{CircuitRF.Engine.Em3d.Em3dPort}, CircuitRF.Design.ThreeD.C3dDocument, CircuitRF.Design.ThreeD.C3dComponentPortBuild)"/>
     /// for a 3D run, brief-lcp-7's Planar overload for a planar one); null when the run built no component port.</param>
+    /// <summary>The share of σ_max(S) above 1 a row may carry before it is called not passive: an open structure's own
+    /// discretisation noise lands below it (the planar solve's own tolerance).</summary>
+    internal const double PassivityTolerance = 1e-3;
+
+    /// <summary>
+    /// The written Touchstone's rows that are not a passive network (σ_max(S) above 1 + <see cref="PassivityTolerance"/>, measured
+    /// against a uniform real reference), as a warning on the run naming each frequency and the worst value. The planar solve says
+    /// this of its de-embedded points itself, with its cause, and that run is left as it is; every other run (a 3D solver's, a
+    /// planar run that was not de-embedded) used to publish such rows in silence.
+    /// </summary>
+    internal static EmRunResult WithPassivity(EmRunResult result)
+    {
+        if (result.Status != EmRunStatus.Ok || result.SnpPath is not { } path || !File.Exists(path)
+            || result.Warnings.Any(w => w.StartsWith("NOT PASSIVE", StringComparison.Ordinal))) return result;
+        SNP snp;
+        try { snp = TouchstoneIO.ReadFile(path, readComments: false); }
+        catch (Exception e) when (e is IOException or InvalidDataException or FormatException or UnauthorizedAccessException) { return result; }
+        var mats = NetworkMetrics.FullUniformReal(snp.Matrices, [.. Enumerable.Repeat(snp.Z0, snp.Ports)]);
+        var over = new List<(double Hz, double Sigma)>();
+        for (int f = 0; f < mats.Length && f < snp.Frequencies.Length; f++)
+            if (RFNetwork.Passivity(mats[f]) is var sigma && sigma > 1 + PassivityTolerance) over.Add((snp.Frequencies[f], sigma));
+        if (over.Count == 0) return result;
+        var worst = over.MaxBy(o => o.Sigma);
+        return result with
+        {
+            Warnings = [.. result.Warnings,
+                $"NOT PASSIVE: {over.Count} of {snp.Frequencies.Length} row(s) of {Path.GetFileName(path)} have σ_max(S) > 1, at " +
+                $"{PlanarSolve.FrequencyList(over.Select(o => o.Hz).ToList())}; worst {worst.Sigma:F4} at {PlanarSolve.FrequencyList([worst.Hz])}. " +
+                "A passive structure cannot do that, so the excess is the solve, not the design: do not use those rows."],
+        };
+    }
+
     private static EmRunResult WithCoSim(EmRunResult result, EmSetup setup, string resultsRoot, IReadOnlyList<EmCoSimPort>? ports)
     {
         if (ports is null || result.Status != EmRunStatus.Ok || result.MeshOnly is not null ||

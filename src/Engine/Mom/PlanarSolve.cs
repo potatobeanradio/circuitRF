@@ -4849,6 +4849,20 @@ public static class PlanarSolve
         return over;
     }
 
+    /// <summary>Frequencies a reader acts on, ascending: each one up to eight (<c>31 GHz, 34 GHz and 37 GHz</c>), and past that the
+    /// first and the last (<c>31 GHz to 40 GHz, 12 points</c>), since a list of fifty is not read.</summary>
+    public static string FrequencyList(IReadOnlyList<double> hz)
+    {
+        var named = hz.Select(f => $"{SurfaceMesher.Eng(f)}Hz").ToList();
+        return named.Count switch
+        {
+            0 => "",
+            1 => named[0],
+            <= 8 => $"{string.Join(", ", named.Take(named.Count - 1))} and {named[^1]}",
+            _ => $"{named[0]} to {named[^1]}, {named.Count} points",
+        };
+    }
+
     /// <param name="attribution">
     /// The cause clause, from <see cref="NonPassivityCause"/> — the one place it is decided. It is a
     /// PARAMETER rather than a call from inside here because the same string goes onto the
@@ -4870,10 +4884,7 @@ public static class PlanarSolve
         // first, and the numbers there are 30x out. The band is quoted the way PEEL's own drop note
         // quotes its dropped points, because a user acts on it the same way — by moving the sweep's
         // lower edge.
-        string which = over.Count == 1
-            ? $"at {SurfaceMesher.Eng(over[0].FrequencyHz)}Hz"
-            : $"from {SurfaceMesher.Eng(over[0].FrequencyHz)}Hz to " +
-              $"{SurfaceMesher.Eng(over[^1].FrequencyHz)}Hz";
+        string which = $"at {FrequencyList([.. over.Select(e => e.FrequencyHz)])}";
 
         return $"NOT PASSIVE: {over.Count} of {pointCount} de-embedded point(s) have σ_max(S) > 1, " +
                $"{which}, worst {worst:F4} at {SurfaceMesher.Eng(atHz)}Hz. A passive structure cannot " +
