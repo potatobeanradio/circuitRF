@@ -150,20 +150,31 @@ public static class EmCellCache
     {
         var tech = source.Technology;
         var solved = SolvedLayers(tech);
+        // brief-lcp-1 R-lcp1-4: a planar setup's component ports are ports, and their strips are copper of the solved problem.
+        var collected = EmComponentPorts.Collect(source, setup);
         // The copper: top-level shapes, then each instance flattened at every level, in the layout's own order (the
         // planner is deterministic, SDL-0 S5). A label is never copper; a port label is listed below.
         var copper = new LayoutView { DbuPerMicron = source.DbuPerMicron };
-        foreach (var s in source.View.Shapes)
-            if (s is not LabelShape && (solved is null || solved.Contains(s.Layer))) copper.Shapes.Add(s);
-        string baseDir = Path.GetDirectoryName(source.AbsolutePath) ?? "";
-        foreach (var inst in source.View.Instances)
-            foreach (var s in LayoutFlatten.FlattenAllLevels(inst, baseDir, tech).Shapes)
+        if (collected.ComponentBuild?.Cut is { } cut)
+        {
+            // brief-icp-8 R-icp8-3 — with instances cut out, the copper is what the solver is handed (the cut's geometry, ICP-2),
+            // so what changes the solved problem changes the key, and a cut instance's own shapes — a device's parameter that moves
+            // its artwork and nothing else — do not. A setup that cuts nothing keys exactly as before.
+            foreach (var s in cut.Shapes)
                 if (s is not LabelShape && (solved is null || solved.Contains(s.Layer))) copper.Shapes.Add(s);
+        }
+        else
+        {
+            foreach (var s in source.View.Shapes)
+                if (s is not LabelShape && (solved is null || solved.Contains(s.Layer))) copper.Shapes.Add(s);
+            string baseDir = Path.GetDirectoryName(source.AbsolutePath) ?? "";
+            foreach (var inst in source.View.Instances)
+                foreach (var s in LayoutFlatten.FlattenAllLevels(inst, baseDir, tech).Shapes)
+                    if (s is not LabelShape && (solved is null || solved.Contains(s.Layer))) copper.Shapes.Add(s);
+        }
         sb.Append("copper\n").Append(LayoutPersistence.Serialize(copper)).Append('\n');
 
         var ports = new LayoutView { DbuPerMicron = source.DbuPerMicron };
-        // brief-lcp-1 R-lcp1-4: a planar setup's component ports are ports, and their strips are copper of the solved problem.
-        var collected = EmComponentPorts.Collect(source, setup);
         foreach (var s in collected.Shapes)
             if (s is LabelShape { IsPort: true }) ports.Shapes.Add(s);
         if (collected.ComponentBuild is { Strips.Count: > 0 } components) ports.Shapes.AddRange(components.Strips);

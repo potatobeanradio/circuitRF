@@ -47,6 +47,38 @@ public sealed record EmCellTarget(
 
     /// <summary>How a report names the setup: a <c>.cem</c>'s file stem, or <c>&lt;c3d stem&gt;#&lt;setup&gt;</c>.</summary>
     public string SetupName => C3dPath is { } c ? $"{Path.GetFileNameWithoutExtension(c)}#{C3dSetup}" : Path.GetFileNameWithoutExtension(CemPath);
+
+    // Held beside the record rather than in it, so a target's equality stays what its fields say.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<EmCellTarget, Tuple<EmSetup, EmSetup>> _runSetups = new();
+
+    /// <summary>
+    /// brief-icp-8 R-icp8-1 — the setup every evaluation solves and keys on: <see cref="Setup"/> plus a component-port entry for
+    /// each part of the schematic that is not copper (<see cref="EmCellParts.RunSetup"/>), held in memory, never written.
+    /// <see cref="Setup"/> itself for a 3D-parametric cell (its schematic is a circuit model only) and for an all-copper one.
+    /// </summary>
+    public EmSetup RunSetup
+    {
+        get
+        {
+            if (_runSetups.TryGetValue(this, out var held) && ReferenceEquals(held.Item1, Setup)) return held.Item2;
+            var run = Setup;
+            if (!ThreeDOnly && SchematicPath.Length > 0)
+            {
+                try
+                {
+                    var model = SchematicPersistence.LoadFromFile(SchematicPath).model;
+                    run = EmCellParts.RunSetup(Setup, model, Path.GetDirectoryName(SchematicPath));
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+                                               or InvalidDataException or ArgumentException or InvalidOperationException)
+                {
+                    // An unreadable schematic is the evaluation's own refusal, said where it reads it.
+                }
+            }
+            _runSetups.AddOrUpdate(this, Tuple.Create(Setup, run));
+            return run;
+        }
+    }
 }
 
 /// <summary>brief-sdl-8 D1 — one EM view a cell's layout can be solved by: a <c>.cem</c>, or a setup embedded in its 3D view.</summary>

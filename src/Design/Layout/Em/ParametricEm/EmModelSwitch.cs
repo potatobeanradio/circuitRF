@@ -25,12 +25,20 @@ namespace CircuitRF.Design.Layout.Em.ParametricEm;
 /// <param name="Switched">The instances switched to EM (Path B).</param>
 public sealed record EmSwitched(TestBench Tb, Library Lib, EmCellTarget? PathA, IReadOnlyList<string> Switched)
 {
+    /// <summary>brief-icp-8 — the parts put back on the EM result's component ports, each by its model from the schematic.</summary>
+    public IReadOnlyList<string> Parts { get; init; } = [];
+
+    /// <summary>brief-icp-8 — what putting them back says (a cut instance's terminal left open, a nested value written as a number).</summary>
+    public IReadOnlyList<string> Notes { get; init; } = [];
+
     /// <summary>One line for the run's notes: what simulates the analysis.</summary>
     public string Describe(string analysis) =>
-        PathA is { } a
+        (PathA is { } a
             ? $"'{analysis}' runs on the EM result of {a.CellName}'s layout ({a.SetupName})" +
+              (Parts.Count > 0 ? $", with {string.Join(", ", Parts)} on {(Parts.Count == 1 ? "its" : "their")} component ports" : "") +
               (Switched.Count > 0 ? $", and {string.Join(", ", Switched)} by EM" : "") + "."
-            : $"'{analysis}' runs with {string.Join(", ", Switched)} simulated by EM.";
+            : $"'{analysis}' runs with {string.Join(", ", Switched)} simulated by EM.")
+        + string.Concat(Notes.Select(n => " " + n));
 }
 
 public static class EmModelSwitch
@@ -173,9 +181,8 @@ public static class EmModelSwitch
             return null;
         }
 
-        // R-sdl6-2: what each part is to the EM result.
+        // R-sdl6-2: what each part is to the EM result. brief-icp-8 — a part that is not copper is put back on a component port.
         var noLayout = new List<string>();
-        var notCopper = new List<string>();
         string? schematicDir = Path.GetDirectoryName(target.SchematicPath);
         // brief-sdl-10 D1 — a 3D-parametric cell's schematic is a circuit model only: none of its parts is in the EM view's
         // geometry, so none is asked to be copper.
@@ -184,8 +191,8 @@ public static class EmModelSwitch
             if (!SchematicLayoutPlanner.IsPhysical(c) || PortPlacement.IsPort(c) || c.InstanceName.Length == 0) continue;
             switch (EmPartKinds.Of(c, schematicDir))
             {
-                case EmPartKind.Copper: break;
-                case EmPartKind.Part:     notCopper.Add(Label(c)); break;
+                case EmPartKind.Copper:
+                case EmPartKind.Part:     break;
                 case EmPartKind.NoLayout: noLayout.Add(Label(c)); break;
             }
         }
@@ -194,16 +201,6 @@ public static class EmModelSwitch
             refusal = $"{Join(noLayout)} {(noLayout.Count == 1 ? "has" : "have")} no layout, so {(noLayout.Count == 1 ? "it" : "they")} " +
                       $"cannot be connected to the EM result of {target.CellName}'s layout. Give each a footprint, a line " +
                       "model or a layout view, or run this analysis by circuit models.";
-            return null;
-        }
-        if (notCopper.Count > 0)
-        {
-            // brief-sdl-6 R-sdl6-2, stopped and reported (src/Design/RESOLVED.md): the co-simulation netlist puts a part's
-            // model across COMPONENT ports at its pads. A .cem makes those (LCP-1/5), but an EM cell's re-planned run does not.
-            refusal = $"{Join(notCopper)} {(notCopper.Count == 1 ? "is a part" : "are parts")}, not copper: simulating " +
-                      $"{(notCopper.Count == 1 ? "it" : "them")} with the EM result needs component ports at the pads and each " +
-                      "part's model across them, which an EM cell does not build. Run this analysis by " +
-                      "circuit models.";
             return null;
         }
 
@@ -245,13 +242,58 @@ public static class EmModelSwitch
             return null;
         }
 
-        bench.Instances.Add(new Instance("EM_" + ResultsNameOf(target.CellName), PathAReference, [.. byNum.Values],
+        // brief-icp-8 — with component ports, the N-port has a terminal per result port and the parts close the ones that are not
+        // the schematic's Ports. A 3D-parametric cell's schematic is a circuit model only, and its parts are in no EM view.
+        IReadOnlyList<string> terminals = [.. byNum.Values];
+        var parts = new List<string>();
+        var notes = new List<string>();
+        if (!target.ThreeDOnly && target.RunSetup.ComponentPorts.Count > 0)
+        {
+            if (PartsOnPorts(tb, lib, target, model, byNum, out refusal) is not { } closed) return null;
+            terminals = closed.Terminals;
+            foreach (var part in closed.Parts)
+            {
+                bench.Instances.Add(part);
+                parts.Add(part.InstanceName);
+            }
+            notes.AddRange(closed.Notes);
+        }
+
+        bench.Instances.Add(new Instance("EM_" + ResultsNameOf(target.CellName), PathAReference, terminals,
         [
             new ParameterAssignment(ParametricModelRegistry.ModelParameter, ParametricModelRegistry.EmValue),
             new ParameterAssignment(ParametricModelRegistry.CellParameter, Quote(target.CellDir)),
             new ParameterAssignment(ParametricModelRegistry.SetupParameter, Quote(target.CemPath)),
         ]));
-        return new EmSwitched(bench, lib, target, inCells);
+        return new EmSwitched(bench, lib, target, inCells) { Parts = parts, Notes = notes };
+    }
+
+    /// <summary>
+    /// brief-icp-8 R-icp8-2 — the parts of <paramref name="tb"/> put back on the EM result's component ports, and the N-port's
+    /// terminals: the result's ports planned at the schematic's own values (<see cref="EmEvaluation.ResultPorts"/>, the geometry
+    /// every point builds) and closed by <see cref="EmCellParts.Close"/> with the bench's own instances, so their overrides
+    /// evaluate in this run's scope at every point.
+    /// </summary>
+    private static (List<Instance> Parts, List<string> Terminals, List<string> Notes)? PartsOnPorts(
+        TestBench tb, Library lib, EmCellTarget target, SchematicEditModel model, IReadOnlyDictionary<int, string> byNum, out string? refusal)
+    {
+        var g = EmEvaluation.Geometry(target, new Dictionary<string, CircuitRF.Core.Expressions.Value>(), out refusal);
+        if (g is null) return null;
+        if (EmEvaluation.ResultPorts(g) is not { Count: > 0 } ports)
+        {
+            refusal = $"The ports of the EM result of {target.CellName}'s layout ({target.SetupName}) cannot be found before it is " +
+                      "solved, so its parts cannot be put back on them. Run its EM setup on its own to see why.";
+            return null;
+        }
+        var byName = new Dictionary<string, Instance>(StringComparer.OrdinalIgnoreCase);
+        foreach (var inst in tb.Instances)
+            if (inst.InstanceName is { Length: > 0 } n) byName.TryAdd(n, inst);
+        var models = new EmCoSimModels(byName, lib, tb.Technology)
+        {
+            Variables = [.. tb.GlobalVariables],
+            PinNames = EmCoSimNetlist.PinNamesOf(model, target.SchematicPath),
+        };
+        return EmCellParts.Close(ports, byNum, models, target.CellName, out refusal);
     }
 
     private static string Label(EditableComponent c) => $"{c.InstanceName} ({ComponentTypeRegistry.DisplayName(c.Symbol, c.PortCount)})";

@@ -107,6 +107,10 @@ public sealed record EmRunTarget
     /// to move.</summary>
     public bool KeepRecord { get; init; } = true;
 
+    /// <summary>brief-icp-8 — false for a run whose component ports are closed by its caller (an EM cell's evaluation puts the
+    /// schematic's own parts back on them in memory): it writes no <c>_cosim</c> netlist beside its Touchstone.</summary>
+    public bool WriteCoSim { get; init; } = true;
+
     /// <summary>The <c>.cem</c> or <c>.c3d</c> the setup was read from, so a record can compare it later; null when it has none.</summary>
     public string? SetupPath { get; init; }
 

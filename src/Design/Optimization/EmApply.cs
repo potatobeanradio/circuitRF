@@ -337,7 +337,7 @@ public static class EmApply
     /// <summary>The EM cache key of <paramref name="layout"/> (an open layout, saved or not) as <paramref name="target"/>'s
     /// setup would solve it — the GUI's check after its own Update Layout.</summary>
     public static string KeyOfLayout(EmCellTarget target, LayoutView layout, Technology? tech) =>
-        EmCellCache.KeyOf(new CircuitRF.Design.Layout.Em.EmLayoutSource(target.ClayPath, layout, tech, layout.DbuPerMicron), target.Setup);
+        EmCellCache.KeyOf(new CircuitRF.Design.Layout.Em.EmLayoutSource(target.ClayPath, layout, tech, layout.DbuPerMicron), target.RunSetup);
 
     private static EmApplyResult Refused(string why) => new([], [], null, null, why, []);
 }

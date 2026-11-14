@@ -161,6 +161,8 @@ public static class EmCellCutout
                 var b = LayoutGeometry.BboxOf(s);
                 if (b.MaxX <= box.left || b.MinX >= box.right || b.MaxY <= box.top || b.MinY >= box.bottom) continue;
                 shapes.RemoveAt(i);
+                // A via is not cut in two: it leaves with the box when its centre is inside it, and stays whole otherwise.
+                if (s is ViaShape v) { if (!(v.X > box.left && v.X < box.right && v.Y > box.top && v.Y < box.bottom)) shapes.Insert(i, s); continue; }
                 shapes.InsertRange(i, Subtract(s, clip));
             }
         }
@@ -567,7 +569,17 @@ public static class EmCellCutout
         return c.Instance.Box is { } b ? new Rect64(d(b.X0), d(b.Y0), d(b.X1), d(b.Y1)) : null;
     }
 
-    private static Paths64 Paths(LayoutShape s) => LayoutClipper.ToClipperPaths(s, 1);
+    /// <summary>A shape's outline as Clipper paths. A via is its barrel (its drill, or its pad when it states no drill), a circle:
+    /// brief-icp-8 found the landing check handing a <see cref="ViaShape"/> to the polygon flattener, which takes no via and threw.</summary>
+    private static Paths64 Paths(LayoutShape s)
+    {
+        if (s is not ViaShape v) return LayoutClipper.ToClipperPaths(s, 1);
+        double r = Math.Max(v.DrillSize > 0 ? v.DrillSize : v.PadSize, 2) / 2.0;
+        var circle = new Path64(32);
+        for (int k = 0; k < 32; k++)
+            circle.Add(new Point64(v.X + (long)Math.Round(r * Math.Cos(2 * Math.PI * k / 32)), v.Y + (long)Math.Round(r * Math.Sin(2 * Math.PI * k / 32))));
+        return [circle];
+    }
 
     private static PolygonShape Polygon(Path64 p) => new() { Xy = [.. p.SelectMany(q => new[] { q.X, q.Y })] };
 

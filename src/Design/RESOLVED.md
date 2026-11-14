@@ -28126,7 +28126,8 @@ that runs the real launcher), `CompileNetlistTests.Export_WithZig_BuildsEveryRea
   model across COMPONENT ports at its pads, and only a 3D view's setup builds those (`C3dComponentPortBuild`); a planar
   `.cem` makes none (`EmSetupEditorViewModel.ShowComponentPorts` is 3D-only). Making a layout's planar setup grow
   internal gap ports at a footprint's pads is new port placement, not wiring, so F1 with `model=em` is a refusal naming
-  C1 as a part. An ideal R with no layout is a separate refusal by name.
+  C1 as a part. An ideal R with no layout is a separate refusal by name. *Superseded by brief-icp-8 (2026-11-13): LCP and
+  ICP built those ports, and the EM cell now uses them; see that section at the end of this file.*
 - **D7 already held in the elaborator; what it lacked was its two refusals.** `BuildCellScope` binds parameter defaults,
   then the cell's variables, then the overrides — so an instance override of a VAR always replaced it, and
   `NetExtractor.EmitCellInstance` already passed every instance parameter. Added: a name that is both a parameter and a
@@ -31451,3 +31452,53 @@ two builders. Gate: `tests/Ui.Tests/Em/CellPinReferenceTests.cs` (6).
   component at the snapshot's W and L, mismatched pin names give a placeholder listing both sets, derived names survive the reader,
   two abutting instances share `j_X1_B` and a grounded pin is on `0`, and ICP-4's pin-referenced ports from the real Planar build
   put E on `0` with the sentence that this is the N-port's reference, not ground in the chip.
+
+## brief-icp-8 — EM cells whose schematic places devices (2026-11-13)
+
+`src/Design/Layout/Em/ParametricEm/EmCellParts.cs`, with the plumbing in `EmModelSwitch`, `EmEvaluation`, `EmCellCache` and
+`ParametricEmProvider`. What was found building it:
+
+- **The run setup is a property of the target, not of the evaluation** (`EmCellTarget.RunSetup`). Every caller that keys or solves
+  an EM cell — the evaluation, its estimate, the 3D path, and `EmApply.KeyOfLayout` (SDL-7's check that an applied layout is the
+  evaluated one) — must read the same setup, or a key computed by one never matches the other's. It is the `.cem`'s own setup
+  plus one entry per not-copper part the setup does not already name (by designator, or `"*"`), held beside the record in a
+  `ConditionalWeakTable` so the record's equality is unchanged. An all-copper cell's run setup IS its setup, so every existing key
+  is byte-identical.
+- **Per-part entries, not `"*"`.** `"*"` would also take a part placed by hand in the layout that the schematic does not know,
+  whose model the bench cannot put back. The parts come from `EmPartKinds` over the schematic, the same rule `"*"` reads.
+- **A copper sub-cell is still not taken automatically** (ICP-0 D3: a cell with a layout view is metal the solver can solve). A
+  device the user draws as a sub-cell with its own layout is cut out only when the EM view names it; the gate's fixture does that.
+  The automatic path is footprint parts and `pdk://` devices.
+- **The N-port's ports are planned at the schematic's own values, from the geometry every point builds**
+  (`EmEvaluation.Geometry` → `EmRunService.PlannedPorts`, or the 3D problem's `ResultPorts`), and closed by
+  `EmCoSimNetlist.Closures` — the decision `_cosim` makes — with the bench's own instances as the models. Every closure net is
+  prefixed `em_`, so `p3`, `nc_…` and `j_…` cannot meet a schematic net. A part whose closure is a placeholder refuses the
+  analysis: a placeholder value in an EM cell would be a silently wrong answer, not a file someone edits.
+- **A placed EM cell (Path B) with parts is refused before anything is planned.** Its instance connects the schematic's Ports
+  only; the component ports are closed by Path A's bench alone. The provider tells the two apart by the request's port count
+  against the schematic's drawn Ports, since Path A's instance always carries more.
+- **A cut-pin build that refuses a port now refuses the evaluation**, naming the part with the builder's sentence. A `.cem` run
+  leaves such a part out with a warning; an EM cell cannot, because the part left open is not the schematic's circuit.
+- **The key with a cut is the cut's geometry** (`EmCellCutoutResult.Shapes`), so a device parameter that changes only the cut
+  instance's own artwork does not miss. Without a cut the key is the plain flatten, as before.
+- **An EM-cache solve writes no `_cosim`** (`EmRunTarget.WriteCoSim = false`): it would land in the cache folder, one name
+  for every key.
+- **ICP-2's pin-mode via check threw on a `ViaShape`.** `EmCellCutout.Paths` handed every shape to `LayoutClipper`, which flattens
+  polygons only; ICP-2's fixtures drew vias as rectangles on a via layer, so no test reached it. Update Layout from Schematic
+  places a real via for a grounded pin, and the first EM cell with a device threw from inside the cut. A via is now its barrel (a
+  circle of its drill), and a Cell-mode box removes a via whose centre it holds rather than cutting it in two.
+- **A grounded device pin placed by Update Layout refuses pin mode.** The planner's ground tie starts at the pad's centre, so after
+  a pin-mode cut its conductor still lies on the cell's metal; the refusal already names Cell mode as the cure, and Cell mode cuts
+  the tie at the box with the via kept in the EM problem. The automatic entries take the default (pin mode); a user whose device
+  has a grounded pin names it in the EM view with `PortAt: Cell`.
+- **The SDL test harness plans with no cell resolver** (`SdlChecker.Prepared.Plan`), so a sub-cell instance extracts with no nets
+  and joins nothing; a fixture with a sub-cell plans through `SchematicLayoutPlanner.Plan` with `DiskCellResolver.Instance`, as
+  `EmEvaluation` does. A sub-cell also needs a symbol view for its pins to count (`PartTerminals` reads the rendered symbol).
+- Not covered by a gate: R-icp8-4's 3D path is plumbed (the run setup reaches `C3dProblemAssembly.Assemble`, a refused 3D port
+  refuses, the problem's `ResultPorts` plan the bench) but no test solves a 3D EM cell with a device. A nested cut instance's
+  parameters are written as the design's values (ICP-5 D2), so a sweep variable that reaches a device inside a sub-cell does not
+  re-evaluate it; ICP-5's note says so in the run's notes.
+- Gate `tests/Ui.Tests/SchematicSync/EmCellPartsTests.cs` on F7 with its part made a device sub-cell (a tee, `C1 = cm`): model=em
+  equals the `.cem` run closed by the `_cosim` it writes, |ΔS| 1.7e-15 (two planar solves, ~30 s, `Category=Benchmark`); a sweep
+  of `cm` counts two evaluations of one geometry and solves once with two different answers (stand-in solver); a port that cannot
+  be built refuses naming Q1. `ParametricEmStubTests`' F1 test now asserts C1 is put back on its gap port instead of refused.

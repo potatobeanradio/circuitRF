@@ -161,7 +161,15 @@ public static partial class EmEvaluation
         if (target.Is3D)
             return ThreeDGeometry(target, model, saved!, source, applied, notes, Unreached(model, plan, drawnVars), connectivity, out refusal) is { } g3
                 ? g3 with { Schematic = model } : null;
-        string key = EmCellCache.KeyOf(source, target.Setup);
+        // brief-icp-8 R-icp8-1 — the parts that are not copper become component ports, and a port that cannot be built is a
+        // refusal naming the part: left open, it would not be the circuit the schematic draws.
+        var setup = target.RunSetup;
+        if (setup.ComponentPorts.Count > 0 && EmCellParts.Refusal(target.CellName, EmComponentPorts.Collect(source, setup)) is { } partsRefused)
+        {
+            refusal = partsRefused;
+            return null;
+        }
+        string key = EmCellCache.KeyOf(source, setup);
         return new EmCellGeometry(target, source, key, EmCellCache.Find(target.WorkspaceDir, target.CellName, key),
                               Unreached(model, plan, drawnVars), notes, applied, connectivity) { Schematic = model };
     }
@@ -242,10 +250,11 @@ public static partial class EmEvaluation
                 EmCellCache.WriteProvenance(written, target, values);
                 return new EmEvaluationResult(g, written, false, null);
             }
-            var setup = (g.ThreeD?.Setup ?? target.Setup).Clone();
+            var setup = (g.ThreeD?.Setup ?? target.RunSetup).Clone();
             // Written under a name Find never matches, then renamed onto <key>.sNp: a solve stopped mid-write (a crash, a
             // killed process) leaves a file the cache ignores, never a truncated Touchstone read back as solved.
-            var runTarget = new EmRunTarget { TouchstoneDestination = Path.Combine(dir, g.Key + ".partial-" + Guid.NewGuid().ToString("N")[..8]), KeepRecord = false };
+            // brief-icp-8 — the parts go back on the component ports in the bench (EmCellParts.Close), so no _cosim is written.
+            var runTarget = new EmRunTarget { TouchstoneDestination = Path.Combine(dir, g.Key + ".partial-" + Guid.NewGuid().ToString("N")[..8]), KeepRecord = false, WriteCoSim = false };
             setup.CreateSnpSchematic = false;      // a cache entry makes no _sim cell in the user's workspace
             var run = g.ThreeD is { } three
                 // brief-sdl-8 R-sdl8-2 — the 3D view's run, on the point's document and its regenerated layout, in memory.
@@ -276,6 +285,14 @@ public static partial class EmEvaluation
         }
     }
 
+    /// <summary>
+    /// brief-icp-8 R-icp8-2 — the ports <paramref name="g"/>'s result will have, in its Touchstone's order, found as its run finds them
+    /// and with nothing solved: each drawn port by its number, each component port with its part. Null when they cannot be found
+    /// before solving (the run would then refuse).
+    /// </summary>
+    public static IReadOnlyList<EmCoSimPort>? ResultPorts(EmCellGeometry g)
+        => g.ThreeD is { } three ? three.ResultPorts : EmRunService.PlannedPorts(g.Target.RunSetup, g.Source)?.Ports;
+
     /// <summary>What solving <paramref name="g"/> would cost, from the run's own preflight; null when the preflight refuses
     /// (the run would then refuse with the same sentence).</summary>
     public static EmSolveEstimate? Estimate(EmCellGeometry g)
@@ -283,7 +300,7 @@ public static partial class EmEvaluation
         if (g.ThreeD is { } three) return three.Estimate;
         try
         {
-            var pre = EmRunService.Preflight(g.Target.Setup, g.Source);
+            var pre = EmRunService.Preflight(g.Target.RunSetup, g.Source);
             if (!pre.Ok || pre.PlanarMesh is not { } mesh) return null;
             int points = 0;
             try { points = g.Target.Setup.ExpandFrequencies().Length; } catch (Exception) { }

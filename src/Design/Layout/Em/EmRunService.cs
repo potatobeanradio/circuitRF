@@ -663,7 +663,7 @@ public static class EmRunService
                                  ports => resultPorts = ports);
             // brief-lcp-7 R-lcp7-2 — a run that built component ports writes its _cosim netlist, Planar and 3D alike, and with Create
             // schematic on makes the _cosim cell in place of _sim: a TermG on a part's port has no part on it.
-            result = WithCoSim(result, setup, resultsRoot, resultPorts is { ComponentPorts: true } built ? built.Ports : null);
+            result = WithCoSim(result, setup, resultsRoot, target?.WriteCoSim == false ? null : resultPorts is { ComponentPorts: true } built ? built.Ports : null);
             string? cellDir = source is null ? null : CellFolder.SiblingView(source.AbsolutePath, ViewType.Layout, ViewType.Schematic).CellDir;
             return WithCell(result, setup, resultsRoot, cellDir, resultPorts?.Ports,
                             () => source is null ? new Dictionary<int, EmPortFace>() : EmSnpSchematic.FacesOf(source, setup));
@@ -770,7 +770,7 @@ public static class EmRunService
                 CircuitRF.Design.ThreeD.C3dPersistence.Serialize(document));
             foreach (string why in notKept)
                 result = result with { Warnings = [.. result.Warnings, $"The run's inputs could not be kept, so its result cannot be called stale: {why}"] };
-            result = WithCoSim(result, setup, resultsRoot, assembled?.CoSimPorts);
+            result = WithCoSim(result, setup, resultsRoot, target?.WriteCoSim == false ? null : assembled?.CoSimPorts);
             // R-cp6-2 — a run with component ports makes its _cosim cell: a TermG on a part's port has no part on it.
             return WithCell(result, setup, resultsRoot, CellFolder.SiblingView(documentPath, ViewType.ThreeD, ViewType.Schematic).CellDir,
                             assembled?.ResultPorts, () => EmSnpSchematic.FacesOf(document));

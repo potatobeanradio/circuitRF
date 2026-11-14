@@ -128,6 +128,16 @@ public sealed class ParametricEmProvider : IParametricModelProvider
             return ParametricModelAnswer.Refused(refusal!);
         }
 
+        // brief-icp-8 — the parts of the cell's schematic are component ports of its result, and only Path A's bench closes them
+        // (its N-port has a terminal per port, more than the schematic's Ports). Refused before anything is planned or solved.
+        if (!target.ThreeDOnly && target.RunSetup.ComponentPorts.Count > 0 && request.Ports <= EmCellParts.DrawnPorts(target))
+        {
+            string placed = $"{target.CellName}'s parts are put back on its EM result's component ports only when its own schematic " +
+                            $"is run by EM (an analysis with model=em); placed as a part ('{request.InstancePath}'), run it by circuit models.";
+            scope?.Record(new EmEvaluationRecord(request.InstancePath, target.CellName, null, false, placed, null, [], target.SetupName) { ThreeD = target.Is3D });
+            return ParametricModelAnswer.Refused(placed);
+        }
+
         var result = EmEvaluation.Evaluate(target, request.Values, scope?.CountOnly ?? false,
                                            scope?.Control?.Child(), scope?.MaxCores, scope?.Estimate ?? true);
         var unreached = result.Geometry?.Unreached ?? [];

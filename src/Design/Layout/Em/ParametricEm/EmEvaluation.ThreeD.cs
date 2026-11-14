@@ -37,7 +37,12 @@ namespace CircuitRF.Design.Layout.Em.ParametricEm;
 /// <param name="Notes">D2's line per flattened group and D7's line on what is held.</param>
 public sealed record EmThreeDGeometry(
     C3dDocument Document, C3dElaborator Elaborator, EmSetup Setup, EmSolveEstimate? Estimate, double? SmallestElementM,
-    IReadOnlyList<string> Bodies, IReadOnlyList<string> Notes);
+    IReadOnlyList<string> Bodies, IReadOnlyList<string> Notes)
+{
+    /// <summary>brief-icp-8 R-icp8-4 — the problem's ports in its Touchstone's order, a component port with its part: what a Path A
+    /// bench wires the parts on.</summary>
+    public IReadOnlyList<CircuitRF.Design.Layout.Em.EmCoSimPort>? ResultPorts { get; init; }
+}
 
 public static partial class EmEvaluation
 {
@@ -79,9 +84,11 @@ public static partial class EmEvaluation
         C3dResolver.Resolve(savedDoc, cell, savedOverrides);
         var heldRegions = EmMeshHold.HoldRegions(doc, savedDoc);
         var holdNotes = new List<string>();
-        double? savedMinCell = target.Setup.Solver3D.Runs(OpenEmsSolver.Id) && target.Setup.OpenEms?.MinCellUm is null
+        // brief-icp-8 R-icp8-4 — the parts that are not copper are component ports here too, built through ICP-3's cut.
+        var runSetup = target.RunSetup;
+        double? savedMinCell = runSetup.Solver3D.Runs(OpenEmsSolver.Id) && runSetup.OpenEms?.MinCellUm is null
             ? SavedMinCell(target, savedDoc, cell, savedOverrides) : null;
-        var held = EmMeshHold.Hold(target.Setup, savedMinCell, holdNotes);
+        var held = EmMeshHold.Hold(runSetup, savedMinCell, holdNotes);
         if (heldRegions.Count > 0)
             holdNotes.Add($"Mesh region(s) {string.Join(", ", heldRegions.Select(r => $"'{r}'"))} keep the element size the design's own values give.");
 
@@ -90,6 +97,11 @@ public static partial class EmEvaluation
         if (!generated.Ok || generated.Problem is not { } problem)
         {
             refusal = $"{target.CellName}'s 3D view does not build at these values: {generated.Refusal}";
+            return null;
+        }
+        if (EmCellParts.Refusal(target.CellName, generated.ComponentPorts) is { } partsRefused)
+        {
+            refusal = partsRefused;
             return null;
         }
 
@@ -113,7 +125,10 @@ public static partial class EmEvaluation
                                          KeyInputs(generated, target.ClayPath, c3dPath, cell.CcellPath, techDoc.ResolvedPath),
                                          target.WorkspaceDir);
         var three = new EmThreeDGeometry(doc, elaborator, held, Estimate3D(held, problem), EmMeshHold.SmallestElementM(held, problem),
-                                         bodies, [.. lines, .. holdNotes]);
+                                         bodies, [.. lines, .. holdNotes])
+        {
+            ResultPorts = generated.ResultPorts ?? CircuitRF.Design.Layout.Em.EmCoSimNetlist.PortsOf(problem.Ports),
+        };
         return new EmCellGeometry(target, source, key, EmCellCache.Find(target.WorkspaceDir, target.CellName, key),
                                   reached.Distinct(StringComparer.Ordinal).ToList(), [.. notes, .. lines], applied, connectivity)
         {
@@ -316,8 +331,8 @@ public static partial class EmEvaluation
         try
         {
             var e = new C3dElaborator { TopCell = cell, TopOverrides = savedOverrides };
-            var g = C3dProblemAssembly.Assemble(target.Setup, savedDoc, target.C3dPath!, target.CwsPath, e);
-            if (g.Problem is { } p && FdtdGrid.Build(p, CemOpenEms.ResolveGrid(target.Setup.OpenEms)) is { Refusal: null } grid) m = grid.MinCellM;
+            var g = C3dProblemAssembly.Assemble(target.RunSetup, savedDoc, target.C3dPath!, target.CwsPath, e);
+            if (g.Problem is { } p && FdtdGrid.Build(p, CemOpenEms.ResolveGrid(target.RunSetup.OpenEms)) is { Refusal: null } grid) m = grid.MinCellM;
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { }
         lock (_versionsGate) _minCells[k] = m;

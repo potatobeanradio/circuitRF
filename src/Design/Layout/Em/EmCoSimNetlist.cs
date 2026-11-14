@@ -467,7 +467,7 @@ public static class EmCoSimNetlist
     }
 
     /// <summary>brief-icp-5 R-icp5-3 — each cell instance's symbol pin names, in pin order, where its symbol names them.</summary>
-    private static Dictionary<string, IReadOnlyList<string>> PinNamesOf(SchematicEditModel model, string schematicPath)
+    internal static Dictionary<string, IReadOnlyList<string>> PinNamesOf(SchematicEditModel model, string schematicPath)
     {
         var map = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
         string dir = Path.GetDirectoryName(Path.GetFullPath(schematicPath)) ?? "";

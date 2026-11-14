@@ -66,16 +66,22 @@ public sealed class ParametricEmStubTests : IDisposable
         Assert.Equal(before, fx.UserFileBytes());
     }
 
-    /// <summary>Path A, mixed: F1's capacitor is a part, not copper — and a planar setup makes no component ports, so it is
-    /// refused by name (src/Design/RESOLVED.md); an ideal R with no layout is refused by name.</summary>
+    /// <summary>Path A, mixed: F1's capacitor is a part, not copper — brief-icp-8 gives the setup an entry for it, so its pads take a
+    /// component port and the bench puts C1 back across it; an ideal R with no layout is still refused by name.</summary>
     [Fact]
-    public void PathA_APartAndAnIdealR_AreRefusedByName()
+    public void PathA_APartTakesAComponentPort_AndAnIdealR_IsRefusedByName()
     {
         var f1 = EmCellFixture.Create("F1-dc-block", _scratch, AnalysisModel.Em);
-        var r1 = CircuitEvaluation.CountEmSolves(CircuitEvaluation.Plan(PreparedCircuit.FromSchematic(f1.Csch), new CircuitEvaluationRequest()));
-        var refusal = Assert.Single(r1.Refusals);
-        Assert.Contains("C1 (", refusal);
-        Assert.Contains("not copper", refusal);
+        var target = EmCapability.Resolve(f1.P.CellDir, null, null, out _)!;
+        Assert.Empty(target.Setup.ComponentPorts);
+        Assert.Equal("C1", Assert.Single(target.RunSetup.ComponentPorts).Refdes);
+        var (lib, tb) = new CircuitRF.Core.Netlist.CnlReader().Read(CircuitRF.Design.Schematic.SchematicCircuit.CnlTextOf(f1.Csch));
+        var switched = EmModelSwitch.Apply(tb, lib, tb.Analyses.Single(a => a.Name == "SP1"), f1.Csch, null, out var why);
+        Assert.True(switched is not null, why);
+        var c1 = switched.Tb.Instances.Single(i => i.InstanceName == "C1");
+        Assert.Equal(["em_p3", "0"], c1.NetBindings);
+        Assert.Contains("em_p3", switched.Tb.Instances.Single(i => i.Reference == EmModelSwitch.PathAReference).NetBindings);
+        Assert.Empty(CircuitEvaluation.CountEmSolves(CircuitEvaluation.Plan(PreparedCircuit.FromSchematic(f1.Csch), new CircuitEvaluationRequest())).Refusals);
 
         var h1b = EmCellFixture.Create("H1b-through-ideal-r", _scratch, AnalysisModel.Em);
         var r2 = CircuitEvaluation.CountEmSolves(CircuitEvaluation.Plan(PreparedCircuit.FromSchematic(h1b.Csch), new CircuitEvaluationRequest()));
