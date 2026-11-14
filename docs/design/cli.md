@@ -933,14 +933,23 @@ its currents decide the faces in the script. A planar setup is refused by name (
 `--bands` or `-o` beside it (`cli.em.mesh-only-takes`). A comparison meshes Palace's script; a setup with no Palace leg is refused,
 because EMerge meshes inside its own run and openEMS has a grid. `tools/MeshReplay` runs this over a folder of setups.
 
-### 8.11 Component ports: `--component-ports` (brief-emb-1, brief-lcp-2, brief-lcp-5)
+### 8.11 Component ports: `--component-ports` (brief-emb-1, brief-lcp-2, brief-lcp-5, brief-icp-6)
 
 ```
 circuitrf em board.c3d [--setup <name>] --component-ports "C1,C2,L2"|"*"
 circuitrf em board.cem --component-ports "C1,C2,L2"|"*" [--dry-run]
-circuitrf explain board.c3d|board.cem --component-ports ["C1,C2"|"*"]
-circuitrf check board.c3d|board.cem
+circuitrf em chip.cem --component-ports "X1/Q3,X2/*,cell:Seg" [--port-at pin|cell] [--dry-run]
+circuitrf explain board.c3d|board.cem --component-ports ["C1,C2"|"*"|"X1/Q3,cell:Seg"] [--port-at pin|cell]
+circuitrf check board.c3d|board.cem [--component-ports <list> [--port-at pin|cell]]
 ```
+
+**Spellings (brief-icp-6 R-icp6-1).** A comma list of `"*"` (every placed two-terminal part and every device cell — never
+copper the solver solves), a reference designator or LVS instance path (`Q1`, `X1/Q3`, `@2` for an unnamed placement, `X1/*`
+for the first device on each branch under `X1`) and `cell:<name>` (every instance of a cell, by folder or PCell generator
+id). `--port-at pin|cell` sets `PortAt` on every entry. Parsing is `ComponentPortSpellings` in `src/Cli`; what each entry
+selects is ICP-1's `EmPartPads.Select`, so a spelling means what the same entry means in a `.cem`. A spelling that is none of
+these — an empty segment, `*` before the last segment, a character no designator has, `cell:` with no name, `--port-at`
+other than pin or cell, `--port-at` with no list — is refused as `em.component-ports.refused`, naming the grammar.
 
 A setup's `ComponentPorts` for one run, in memory only (nothing is written back), as `--solver` is: one gap port across
 each named part's own pads on the placed layout, numbered after the drawn ports and named by the part (`! Port[3] = C1` in
@@ -978,11 +987,22 @@ width and verdict, plus a 3D port's landings — and with a list builds that lis
 nothing; a 3D one lowers its geometry, a planar one does not even mesh, and its line says "a delta gap across a strip",
 because this is where a user or agent sees what was built. `em --dry-run --component-ports` hands the list to that walk,
 so the dry run reports the ports a run would build and writes nothing; its `check` half reads the file as it is.
+**The pin check (R-icp6-2).** A cut cell instance adds a `cell instance` step (its path and cell, how it was selected —
+`by "*"`, `by name`, `by "X1/*"`, `by its cell (Seg)` — and what left the problem: its own shapes, or its box with its size)
+and a `cut pin` step per pin: routed with its face (point, width, direction, layer), its port's number and name and its
+reference; abutting another cut instance; grounded; a return of other pins' ports; floating; or left out with why. Every
+line is `EmCutReport.Lines` over the build's `EmCoSimCut` (ICP-5's record, carried on both builders' ports), so nothing is
+recomputed and nothing is meshed for it. With `"*"` on a layout, a copper instance it passed over is listed once as a
+`cell instance` step. `--json` carries the same steps.
+
 `check` reports each built port at info and each part left out at warning, a list that cannot be built at all at error:
 on a `.c3d` as `check.c3d.port` / `check.c3d.component-port` / `check.c3d.port-refused`, on a `.cem` as
 `check.cem.component-port` / `check.cem.component-port-warning` / `check.cem.component-port-refused`, without repeating
-the preflight's copies of the same lines. MCP: the `run` tool's `componentPorts` (analysis `em`) and the `explain` tool's
-`componentPorts=true`; `ToolCatalogAgreesWithTheParserTests` reads the flag from both verbs' parsers, so neither tool can
+the preflight's copies of the same lines. A cut instance's line and each pin that takes no port by design (abutting,
+grounded, a return) are info under the same ids; a floating pin or one left out is the build's warning. `check
+--component-ports` checks with a list in place of the setup's own (the override a dry run already used). MCP: the `run`
+tool's `componentPorts` and `portAt` (analysis `em`), the `explain` tool's `componentPorts` (`true` for the setup's own
+list, or an array in the spellings above) and `portAt`, and the `check` tool's `componentPorts` and `portAt`; `ToolCatalogAgreesWithTheParserTests` reads the flag from both verbs' parsers, so neither tool can
 lag behind its verb.
 
 ## 9. Adding a verb

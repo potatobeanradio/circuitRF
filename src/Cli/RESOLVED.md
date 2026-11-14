@@ -3620,3 +3620,39 @@ affected. `CircuitRF.Cli.csproj` now names `SkiaSharp.NativeAssets.Linux` at the
 The same Linux run found one diagnostic id declared twice (`check.path.foreign`, the `.hzn` and `.c3d` sentences as two
 `Diagnostic.Create` calls): `CheckForeignFile` now declares it once and picks the sentence, which is what
 `CliStructuredOutputTests.DiagnosticIds_AreTheCommittedSet_UniqueAndCaseDistinct` holds.
+
+## brief-icp-6 — the CLI names cell instances: spellings, the pin check, check, dry run, MCP (2026-11-13)
+
+- **Spellings are parsed in one place.** `ComponentPortSpellings.Parse` takes `*`, a refdes or LVS path (`Q1`, `X1/Q3`, `@2`,
+  `X1/*`) and `cell:<name>`, and `--port-at pin|cell` sets `PortAt` on every entry; `em`, its dry run, `explain` and `check` all
+  call it. A bad spelling (an empty segment, `*` before the last segment, a character no designator has, `cell:` with no name,
+  `--port-at` other than pin or cell, or with no list) is refused as `em.component-ports.refused` with the grammar sentence.
+  `C3dComponentPorts.ParseList` is no longer called by the CLI. What an entry selects stays ICP-1's.
+- **The pin check is read from ICP-5's record.** Every cut port already carries `EmCoSimCut` (path, cell, chain, pins with
+  their classes); ICP-6 adds each pin's face from ICP-1's projection and how the instance was selected and what left with it
+  (`Selected`, `LeftOut`, from the entry that chose it). `EmCutReport.Lines` (in `src/Design`, so a test compares against it)
+  turns one into a `cell instance` step and a `cut pin` step per pin, on Planar and 3D alike; `EmCutReport.PassedOver` lists the
+  copper `"*"` passed over on a layout (each top-most branch once). A 3D build's walk names layers by number: the view's ports
+  carry no technology.
+- **Check.** A cut instance's line, and each pin that takes no port by design (abutting, grounded, a return), are info under the
+  ids already used (`check.cem.component-port`, `check.c3d.port` on a `.c3d`); a floating or left-out pin is the build's
+  warning, as before. The brief's `check.c3d.component-port` for a `.c3d`'s verdicts was not adopted for built ports: a built
+  `.c3d` port has been `check.c3d.port` (info) since EMB-1, with `check.c3d.component-port` its warning, and renaming either
+  would move a kept id. `check --component-ports <list> [--port-at]` sets the override a dry run already used, now applied to a
+  `.c3d`'s embedded setups too (it was read for a `.cem` only).
+- **A dry run's estimate is the cut problem.** It always was (check meshes with the override); a cut can RAISE the unknowns —
+  ICP-2's segment cut out of a line meshes at 48 against 24 uncut, since each face is now a port the mesh refines at. The
+  gate compares the dry run's number with `EmRunService.Preflight` on the cut setup, not with the uncut one.
+- **MCP.** `run` and `check` take `componentPorts` (array) and `portAt`; `explain`'s `componentPorts` became
+  `OptKind.FlagOrStrList` — `true` still walks the setup's own list, an array walks that one — advertised as
+  `anyOf [boolean, array of string]`. `ServeProtocolAdapterTests`' value probe read `schema.type` and is taught to take an
+  `anyOf`'s first alternative.
+- **The issue's commands.** The Filter Board's `explain --component-ports "*"` output is byte-identical (no instance is cut and
+  its placements are footprints, so nothing is passed over). SpiralResonator with `"*"` refuses naming `@0 (KIT_SPIRAL)` and
+  `@1 (KIT_MIMCAP)`; with `"@1"` pin 2 is routed (port 3) and pin 1 is floating — the layout's own drawn port 2 sits on the MIM
+  cap's left edge, so a run with `@1` cut is then refused at port extraction ("Port 2 … is not on any conductor"). That is the
+  example's geometry, not the cut: a cut instance takes the metal a drawn port stands on with it.
+- Gate `tests/Ui.Tests/Em/CellPortCliTests.cs`, six tests, ~4 s, the CLI as a process: the spellings against a `.cem`'s own
+  entries and a refusal naming the grammar, `explain --json` on ICP-4's Tri cut equal to `EmCutReport` over the in-process build,
+  check exit codes 0 / 0-with-warning / 1, a dry run naming the cut ports with the preflight's unknowns, the Filter Board walk
+  unchanged, and the SpiralResonator (`[PythonFact]`: the kit's generators run).

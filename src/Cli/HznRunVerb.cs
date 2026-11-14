@@ -30,7 +30,7 @@ internal static class HznRunVerb
     private static Diagnostic Refuse(string id, string sentence) => Diagnostic.Create(id, DiagnosticSeverity.Error, "{sentence}", ("sentence", sentence));
 
     private static readonly string[] OwnSolversOnly = ["--device", "--memory-limit", "--cores", "--force", "--bands", "--reference", "--component",
-                                                       "--component-ports", "--dry-run", "--mesh-only", "--adopt", "--freq", "--workspace"];
+                                                       "--component-ports", "--port-at", "--dry-run", "--mesh-only", "--adopt", "--freq", "--workspace"];
 
     internal static int Run(string[] args)
     {

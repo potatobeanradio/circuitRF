@@ -42,6 +42,10 @@ internal enum OptKind
     /// one it asks about all of them, and passing "" as a value asks about a chain called "".
     /// </summary>
     StrOptional,
+    /// <summary>brief-icp-6 R-icp6-5 — a boolean OR a list: <c>true</c> becomes the bare flag (the setup's own list), an array or a
+    /// string the flag with its items joined by commas. <c>explain componentPorts</c> is the case: it was a flag, and now takes the
+    /// spellings <c>run</c> takes too, without breaking a client that sends <c>true</c>.</summary>
+    FlagOrStrList,
     /// <summary>
     /// A JSON OBJECT emitted as the flag repeated, one <c>key=value</c> per entry —
     /// <c>render --layer-colors "Top Copper=#e04030" --layer-colors "Silk Top=#202020"</c>.
@@ -736,11 +740,18 @@ internal static class ToolCatalog
                      // brief-emb-1 R-emb1-8 — `em --component-ports`; brief-lcp-2 R-lcp2-4 — a .cem's as well as a .c3d's.
                      new("componentPorts", "--component-ports", OptKind.StrList,
                          "Component ports for this run only, on a .c3d or a .cem: reference designators of parts placed on its layout, "
-                       + "or [\"*\"] for every two-terminal part. Each gets a gap port across its own pads, built and verified before "
-                       + "meshing and never written to the file: a lumped port on a 3D setup (a .c3d, a .cem naming one, or a 3D .cem on a "
-                       + "layout, built in a 3D view of it made in memory), a delta gap across a strip joining the two pads on a planar "
-                       + ".cem. A thermal setup and an electrostatic one are refused. A finished planar or driven 3D run also writes <setup>_cosim.cnl, the board's N-port with "
-                       + "each part across its port. explain componentPorts=true shows what would be built."),
+                       + "instance paths of cells placed in it (\"X1/Q3\", \"@2\", \"X1/*\" for the first device on each branch under X1), "
+                       + "\"cell:<name>\" for every instance of a cell, or [\"*\"] for every two-terminal part and device. A part gets a gap "
+                       + "port across its own pads, built and verified before meshing and never written to the file: a lumped port on a 3D "
+                       + "setup (a .c3d, a .cem naming one, or a 3D .cem on a layout, built in a 3D view of it made in memory), a delta gap "
+                       + "across a strip joining the two pads on a planar .cem. A cell instance is cut out of the problem with a port at each "
+                       + "connected pin's face. A thermal setup and an electrostatic one are refused. A finished planar or driven 3D run also "
+                       + "writes <setup>_cosim.cnl, the board's N-port with each part's model on its ports. explain componentPorts shows what "
+                       + "would be built, pin by pin."),
+                     // brief-icp-6 R-icp6-1 — `--port-at`.
+                     new("portAt", "--port-at", OptKind.Str,
+                         "With componentPorts: where every named cell instance's ports sit, pin (at each pin's face, the default) or "
+                       + "cell (where the interconnect crosses the instance's box)."),
                      // brief-sar-12 R-sar12-3 — a .c3d's band sweep: one setup per band from its template, run in turn.
                      new("bands", "--bands", OptKind.Str,
                          "Run a .c3d's band sweep, by name: one setup per band made from its template (each at that SAR "
@@ -821,6 +832,13 @@ internal static class ToolCatalog
                         new("recursive", "--recursive", OptKind.Flag, "Descend a plain folder. A workspace always descends."),
                         new("severity",  "--severity",  OptKind.Str,
                             "What decides the exit code: warning or error. Default error; warnings are reported either way."),
+                        // brief-icp-6 R-icp6-5 — the component ports a run given this list would build, in run's spellings.
+                        new("componentPorts", "--component-ports", OptKind.StrList,
+                            "An EM setup (.cem or .c3d) checked with these component ports in place of its own, in run's spellings "
+                          + "(\"*\", \"Q1\", \"X1/Q3\", \"X1/*\", \"cell:<name>\"): each port and cut instance at info, a part, "
+                          + "instance or pin left out or floating at warning, a list that cannot be built at error."),
+                        new("portAt", "--port-at", OptKind.Str,
+                            "With componentPorts: pin or cell, for every entry it names."),
                         Summary,
                         HostWorkspace,
                     ],
@@ -889,10 +907,16 @@ internal static class ToolCatalog
                         new("setup",   "--setup",   OptKind.Str,
                             "Which of a 3D view's (.c3d's) embedded setups to explain, by name. Needed when it embeds several."),
                         // brief-emb-1 R-emb1-8 — `explain --component-ports`; brief-lcp-2 R-lcp2-4 — a .cem's as well.
-                        new("componentPorts", "--component-ports", OptKind.Flag,
+                        new("componentPorts", "--component-ports", OptKind.FlagOrStrList,
                             "An EM setup's component ports (a .c3d's or a .cem's), built as a run would build them and verified, "
                           + "without meshing: per port its refdes, pads, conductors, gap, width and verdict, with the landing "
-                          + "rectangles of a 3D one; a planar .cem's line says it is a delta gap across a strip."),
+                          + "rectangles of a 3D one; a planar .cem's line says it is a delta gap across a strip. Per cut cell "
+                          + "instance, how it was selected and what left the problem, and per pin its class (routed, abutting, "
+                          + "grounded, a return, floating), face, port and reference, or why it was left out. true walks the "
+                          + "setup's own list; an array walks that one instead, in run's spellings (\"*\", \"Q1\", \"X1/Q3\", "
+                          + "\"X1/*\", \"cell:<name>\")."),
+                        new("portAt", "--port-at", OptKind.Str,
+                            "With componentPorts as a list: pin or cell, for every entry it names."),
                         new("device",  "--device",  OptKind.Str,
                             "A 3D setup's report as a run with this device would see it: auto (default), cpu or gpu."),
                         new("memoryLimitGB", "--memory-limit", OptKind.Number,
@@ -2228,6 +2252,24 @@ internal static class ToolCatalog
                 return true;
             }
 
+            case OptKind.FlagOrStrList:
+            {
+                if (node is not JsonArray && node.GetValue<JsonElement>().ValueKind is JsonValueKind.True or JsonValueKind.False)
+                {
+                    if (node.GetValue<bool>()) argv?.Add(opt.Cli);
+                    return true;
+                }
+                var items = AsStrings(node, tool, opt.Json, ref refusal);
+                if (items is null)
+                {
+                    refusal = CliDiagnostics.ServeArgumentWrongType(tool, opt.Json, "a boolean or an array of strings");
+                    return false;
+                }
+                argv?.Add(opt.Cli);
+                if (items.Count > 0 && string.Join(',', items) is { Length: > 0 } joined) argv?.Add(joined);
+                return true;
+            }
+
             case OptKind.StrOptional:
             {
                 string? optional = AsString(node, tool, opt.Json, ref refusal);
@@ -2433,6 +2475,12 @@ internal static class ToolCatalog
         {
             ["type"]        = "array",
             ["items"]       = new JsonObject { ["type"] = "string" },
+            ["description"] = o.Description,
+        },
+        OptKind.FlagOrStrList => new JsonObject
+        {
+            ["anyOf"]       = new JsonArray(new JsonObject { ["type"] = "boolean" },
+                                            new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" } }),
             ["description"] = o.Description,
         },
         OptKind.StrMap or OptKind.PathMap => new JsonObject

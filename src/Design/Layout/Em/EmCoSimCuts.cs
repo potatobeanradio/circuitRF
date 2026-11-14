@@ -26,7 +26,14 @@ namespace CircuitRF.Design.Layout.Em;
 /// <param name="Class">Its class; null when the cut left it out (<paramref name="Why"/>).</param>
 /// <param name="Abuts">For an abutting pin, <c>path.pin</c> of the pin it touches (or the instance's path when no pin was found).</param>
 /// <param name="Why">Why the cut left it out; null when classified.</param>
-public sealed record EmCoSimCutPin(string Name, int? Number, EmPinClass? Class, string? Abuts, string? Why);
+public sealed record EmCoSimCutPin(string Name, int? Number, EmPinClass? Class, string? Abuts, string? Why)
+{
+    /// <summary>brief-icp-6 R-icp6-2 — the pin's face as ICP-1 projected it (layout metres); null when the projection had no pin.</summary>
+    public EmPinFace? Face { get; init; }
+}
+
+/// <summary>brief-icp-6 — a pin face: its middle (layout metres), width, outward direction (degrees) and drawing layer.</summary>
+public sealed record EmPinFace(double X, double Y, double WidthM, double OutwardDeg, LayerKey Layer);
 
 /// <summary>
 /// brief-icp-5 R-icp5-1 — what the co-simulation netlist reads of one cut instance: its path, its cell, the schematic chain its
@@ -43,27 +50,56 @@ public sealed record EmCoSimCut(string Path, string Cell, string? GeneratorId, I
     /// <summary>A generated cell's parameters from its parent layout's snapshot (SI); null for any other cell.</summary>
     public IReadOnlyDictionary<string, PCellValue>? PCellParameters { get; init; }
 
+    /// <summary>brief-icp-6 R-icp6-2 — how the entry chose it: <c>by "*"</c>, <c>by name</c>, <c>by "X1/*"</c> or <c>by its cell (Seg)</c>.</summary>
+    public string Selected { get; init; } = "by name";
+
+    /// <summary>brief-icp-6 R-icp6-2 — what left the problem with it: its own shapes (at its pins' faces), or the box and its size.</summary>
+    public string LeftOut { get; init; } = "its own shapes";
+
+    /// <summary>What a sentence calls its cell: the generator for a generated cell, else the folder.</summary>
+    public string CellLabel => GeneratorId ?? Cell;
+
     /// <summary>Placed inside another cell: its model is in a sub-cell's schematic, which the top schematic does not contain.</summary>
     public bool Nested => Path.Contains('/');
 
     /// <summary>Each cut instance of <paramref name="cut"/>, by path.</summary>
-    public static IReadOnlyDictionary<string, EmCoSimCut> Of(EmCellCutoutResult cut, EmCellInstanceSet instances)
+    /// <param name="selections">The entries that chose each instance (<see cref="EmPartPads.Selection.Instances"/>), for how each was
+    /// chosen and what left with it; null says neither.</param>
+    public static IReadOnlyDictionary<string, EmCoSimCut> Of(EmCellCutoutResult cut, EmCellInstanceSet instances,
+                                                             IReadOnlyList<EmCellSelection>? selections = null)
     {
         var map = new Dictionary<string, EmCoSimCut>(StringComparer.OrdinalIgnoreCase);
         foreach (var g in cut.Pins.GroupBy(p => p.Path, StringComparer.OrdinalIgnoreCase))
         {
             var inst = instances.At(g.Key);
             var pins = g.Where(p => p.Pin.Length > 0)
-                        .Select(p => new EmCoSimCutPin(p.Pin, inst?.Pins.FirstOrDefault(ip => ip.Name.Equals(p.Pin, StringComparison.OrdinalIgnoreCase))?.Number,
-                                                       p.Why is null ? p.Class : null, p.Abuts, p.Why))
+                        .Select(p =>
+                        {
+                            var ip = inst?.Pins.FirstOrDefault(q => q.Name.Equals(p.Pin, StringComparison.OrdinalIgnoreCase));
+                            return new EmCoSimCutPin(p.Pin, ip?.Number, p.Why is null ? p.Class : null, p.Abuts, p.Why)
+                            {
+                                Face = ip is null ? null : new EmPinFace(ip.X, ip.Y, ip.WidthM, ip.OutwardDeg, ip.Layer),
+                            };
+                        })
                         .ToList();
+            var entry = selections?.FirstOrDefault(c => c.Instance.Path.Equals(g.Key, StringComparison.OrdinalIgnoreCase))?.Entry;
             map[g.Key] = new EmCoSimCut(g.Key, inst?.Cell ?? g.First().Cell, inst?.GeneratorId, inst?.SchematicChain ?? [], pins)
             {
                 PCellParameters = inst?.PCellParameters,
+                Selected = entry is null ? "by name"
+                         : entry.Cell is { Length: > 0 } cell ? $"by its cell ({cell})"
+                         : entry.Refdes.Trim() == "*" || entry.Refdes.TrimEnd().EndsWith("/*", StringComparison.Ordinal) ? $"by \"{entry.Refdes.Trim()}\""
+                         : "by name",
+                LeftOut = entry?.PortAt != EmComponentPortAt.Cell ? "its own shapes"
+                        : entry.KeepOutUm is { } k ? $"everything on the analysis levels inside its keep-out box, {Um((k.X1 - k.X0) * 1e-6)} × {Um((k.Y1 - k.Y0) * 1e-6)} µm"
+                        : inst?.Box is { } b ? $"everything on the analysis levels inside its box, {Um(b.X1 - b.X0)} × {Um(b.Y1 - b.Y0)} µm"
+                        : "everything on the analysis levels inside its box",
             };
         }
         return map;
     }
+
+    private static string Um(double m) => CircuitRF.Design.ThreeD.C3dComponentPorts.Um(m);
 }
 
 internal static class EmCoSimCuts

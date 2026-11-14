@@ -133,11 +133,19 @@ internal static class Check
         bool recursive = false;
         var threshold = Threshold.Error;
         string? design = null;
+        string? componentPorts = null, portAt = null;   // brief-icp-6 R-icp6-1/5
 
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
+                // brief-icp-6 R-icp6-5 — an EM setup checked with the component ports a run given this list would build.
+                case "--component-ports" when i + 1 < args.Length:
+                    componentPorts = args[++i];
+                    continue;
+                case "--port-at" when i + 1 < args.Length:
+                    portAt = args[++i];
+                    continue;
                 // HZN-2: which design of a Hertzon project; every 3D design when omitted.
                 case "--design" when i + 1 < args.Length:
                     design = args[++i];
@@ -165,6 +173,22 @@ internal static class Check
 
         if (path is null) { JsonRun.Report(CliDiagnostics.CheckPathRequired()); return Usage(); }
         JsonRun.InputPath = path;
+        if (portAt is not null && componentPorts is null)
+            return JsonRun.Fail(CliDiagnostics.EmComponentPorts("--port-at applies to the entries --component-ports names, and none were given."));
+        if (componentPorts is not null)
+        {
+            if (ComponentPortSpellings.Parse(componentPorts, portAt, out string? spelled) is not { } entries)
+                return JsonRun.Fail(CliDiagnostics.EmComponentPorts(spelled!));
+            var before = ComponentPortsOverride.Value;
+            ComponentPortsOverride.Value = entries;
+            try { return RunChecked(path, recursive, threshold, design); }
+            finally { ComponentPortsOverride.Value = before; }
+        }
+        return RunChecked(path, recursive, threshold, design);
+    }
+
+    private static int RunChecked(string path, bool recursive, Threshold threshold, string? design)
+    {
 
         if (!File.Exists(path) && !Directory.Exists(path))
             return JsonRun.Fail(CliDiagnostics.CheckPathNotFound(path));
@@ -208,7 +232,7 @@ internal static class Check
 
     private static int Usage()
     {
-        Console.Error.WriteLine("Usage: circuitrf check <path> [--recursive] [--severity warning|error] [--design <name>]");
+        Console.Error.WriteLine("Usage: circuitrf check <path> [--recursive] [--severity warning|error] [--design <name>] [--component-ports <list> [--port-at pin|cell]]");
         return 1;
     }
 
@@ -988,8 +1012,11 @@ internal static class Check
         string full = Path.GetFullPath(path);
         foreach (var embedded in C3dSetups.Read(doc))
         {
-            if (embedded is not { Refusal: null, Setup: { Is3D: true, IsThermal: false, ComponentPorts.Count: > 0 } s }) continue;
+            if (embedded is not { Refusal: null, Setup: { Is3D: true, IsThermal: false } s }) continue;
             var run = C3dSetups.ForRun(s, full);
+            // brief-icp-6 — `check --component-ports` (or a dry run's list) in place of the setup's own.
+            if (ComponentPortsOverride.Value is { Count: > 0 } wanted && EmComponentPorts.Inapplicable(run) is null) run.ComponentPorts = [.. wanted];
+            if (run.ComponentPorts.Count == 0) continue;
             var assembled = C3dProblemAssembly.Assemble(run, doc, full, DocumentKinds.AncestorCws(full));
             string at = $"setup '{embedded.Name}': ";
             if (assembled.ComponentPorts is not { } build)
@@ -1003,6 +1030,7 @@ internal static class Check
             else if (assembled.Refusal is { } none) f.Add(CliDiagnostics.CheckThreeDPortRefused(path, at + none));
             foreach (var p in build.Ports.Where(p => p.Ok))
                 f.Add(CliDiagnostics.CheckThreeDPort(path, at + C3dComponentPorts.Describe(p)));
+            foreach (string v in CutVerdicts(build)) f.Add(CliDiagnostics.CheckThreeDPort(path, at + v));
             foreach (string w in build.Warnings) f.Add(CliDiagnostics.CheckThreeDComponentPortWarning(path, at + w));
         }
     }
@@ -1160,6 +1188,24 @@ internal static class Check
             f.Add(CliDiagnostics.CheckTechProblem(path, p.Area.ToString(), p.Message, p.Severity, p.Id));
     }
 
+    /// <summary>brief-icp-6 R-icp6-3 — a 3D build's cut instances, as <see cref="CutVerdicts(IReadOnlyList{ValueTuple{EmCoSimCut, string}}, IReadOnlyList{EmCutReportPort}, Technology?)"/>.</summary>
+    private static IEnumerable<string> CutVerdicts(C3dComponentPortBuild build)
+        => CutVerdicts(EmCutReport.Cuts(build.Ports.Select(p => (p.Refdes, p.CutPart))), EmCutReport.PortsOf(build), null);
+
+    /// <summary>brief-icp-6 R-icp6-3 — each cut instance's line, and the line of each pin that takes no port by design (abutting,
+    /// grounded, a return): info. A floating pin and one left out are the build's warnings already.</summary>
+    private static IEnumerable<string> CutVerdicts(IReadOnlyList<(EmCoSimCut Cut, string Prefix)> cuts, IReadOnlyList<EmCutReportPort> ports, Technology? tech)
+    {
+        foreach (var (cut, prefix) in cuts)
+        {
+            var lines = EmCutReport.Lines(cut, prefix, ports, k => ExplainComponentPorts.LayerName(tech, k));
+            yield return lines[0].Text;
+            for (int k = 0; k < cut.Pins.Count; k++)
+                if (cut.Pins[k] is { Why: null, Class: EmPinClass.Abutting or EmPinClass.Grounded or EmPinClass.Return })
+                    yield return lines[k + 1].Text;
+        }
+    }
+
     /// <summary>brief-lcp-2 — <c>em --dry-run --component-ports</c>'s list, for the <c>.cem</c> this check reads: the estimate is
     /// then made of the problem the run would solve, not of the file's own list. Async-local, because <c>serve</c> runs verbs
     /// side by side; null everywhere else.</summary>
@@ -1195,6 +1241,7 @@ internal static class Check
             if (viewParts is not null)
             {
                 foreach (var p in viewParts.Ports.Where(p => p.Ok)) f.Add(CliDiagnostics.CheckCemComponentPort(path, C3dComponentPorts.Describe(p)));
+                foreach (string v in CutVerdicts(viewParts)) f.Add(CliDiagnostics.CheckCemComponentPort(path, v));
                 foreach (string w in viewParts.Warnings) f.Add(CliDiagnostics.CheckCemComponentPortWarning(path, w));
             }
             foreach (string note in src.Generated?.Notes ?? []) f.Add(CliDiagnostics.CheckEmNote(path, note));
@@ -1264,6 +1311,9 @@ internal static class Check
         {
             foreach (var p in parts.Ports.Where(p => p.Ok))
                 f.Add(CliDiagnostics.CheckCemComponentPort(path, EmPlanarComponentPorts.Describe(p, resolution.Source)));
+            // brief-icp-6 R-icp6-3 — each cut instance, and each pin that takes no port by design (abutting, grounded, a return).
+            foreach (string v in CutVerdicts(EmCutReport.Cuts(parts.Ports.Select(p => (p.Refdes, p.CutPart))), EmCutReport.PortsOf(parts), resolution.Source.Technology))
+                f.Add(CliDiagnostics.CheckCemComponentPort(path, v));
             foreach (string w in parts.Warnings) f.Add(CliDiagnostics.CheckCemComponentPortWarning(path, w));
             if (parts.Refusal is { } refusedParts) f.Add(CliDiagnostics.CheckCemComponentPortRefused(path, refusedParts));
         }
@@ -1381,6 +1431,7 @@ internal static class Check
         if (parts is not null)
         {
             foreach (var p in parts.Ports.Where(p => p.Ok)) f.Add(CliDiagnostics.CheckCemComponentPort(path, C3dComponentPorts.Describe(p)));
+            foreach (string v in CutVerdicts(parts)) f.Add(CliDiagnostics.CheckCemComponentPort(path, v));
             foreach (string w in parts.Warnings) f.Add(CliDiagnostics.CheckCemComponentPortWarning(path, w));
         }
         foreach (string note in generated.Notes) f.Add(CliDiagnostics.CheckEmNote(path, note));

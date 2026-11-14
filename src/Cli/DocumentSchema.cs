@@ -419,6 +419,28 @@ internal static class DocumentSchema
             out with a warning, on either kind of setup.
             `explain --component-ports` lists what would be built, and `em --component-ports "C1,C2"`
             applies a list for one run.
+          * ComponentPorts also CUTS A CELL INSTANCE out of the problem (an IC layout's device or sub-block),
+            with a port at each connected pin's face. An entry names it by its LVS path: the placement's
+            designator, or "@n" for an unnamed one, joined by "/" down the hierarchy ("X1", "X1/Q3", "@2");
+            "X1/*" takes the first device on each branch under X1, and "*" takes every footprint part and
+            every device cell (never copper the solver can solve: a PCell, a line, a spiral — name those,
+            or select their cell). {"Cell": "Seg"} (with Refdes "") takes every instance of a cell, by
+            folder name or PCell generator id. The most specific entry wins. Its keys:
+            PortAt "Pin" (default: each pin's face) or "Cell" (where the interconnect crosses the
+            instance's box); KeepOutUm [x0, y0, x1, y1] the box in micrometres in the instance's own
+            frame (default: its shapes' bounding box on the analysis levels); Construction "Gap" or "Cutout"
+            (default: a footprint part takes a gap across its pads, any other cell is cut); Keep "GND,
+            Metal2" (nets and drawing layers the cut leaves in place); Reference "Ground" (default), a pin
+            name, or "Common" (refused: neither solver has a construction for it); Pins {"B":
+            {"Reference": "E"}, "E": {"Port": false}} per-pin references and pins that are only a return
+            (a pin-referenced port is a gap between two pins' faces that face each other across one axis
+            on one layer); Ground ["E"] pins tied to ground at their face by a ground via, with no port.
+            Every pin is classified before meshing: routed (a port), abutting another cut instance,
+            grounded, a return, floating (warned: the model sees an open), or left out with why. Ports are
+            named path.pin (X1/Q3.G) and numbered after the gap ports. `explain --component-ports` walks
+            each instance and pin; `--component-ports "X1/Q3,cell:Seg" --port-at cell` applies a list for
+            one run, explain or check, and a finished run's <setup>_cosim.cnl puts each instance's own
+            model back on its pins by name.
           * PlanarMesh's two mesh representations are named here because their defaults differ from
             what the field list prints (null means the GUI's default). StackedRegions (default true): a
             region where a via joins two metal levels across its whole area, at least 30 um and 18 cells
@@ -1035,6 +1057,9 @@ internal static class DocumentSchema
             in the solved problem only) and verifies it before meshing; `explain --component-ports` lists
             them, and a driven run writes "<setup>_cosim.cnl" with each part from its port's node to ground, and with
             CreateSnpSchematic draws it as a "<setup>_cosim" cell in place of the "_sim" cell.
+            Its entries may also cut a cell instance out of a placed layout, as a .cem's do (see em-setup:
+            paths, "cell:" entries, PortAt, KeepOutUm, Keep, Pins, Ground): a lumped sheet at each connected
+            pin's face, or a gap sheet between a pin's face and its reference pin's.
             A gap port, not a pad-to-plane port at each pad: a part between two pad-to-plane ports carries
             its current down one sheet, along the plane and up the other — a loop that is not on the board —
             so a hand-drawn pair of them is a different, approximate model of the part.

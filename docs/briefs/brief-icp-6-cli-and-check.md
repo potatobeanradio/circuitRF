@@ -50,3 +50,16 @@ The CLI as a process, as the other verb gates do. One test per claim:
 ## Not here
 
 UI (ICP-7).
+
+## Completion note (2026-11-13)
+
+Built: `--component-ports` spellings (`*`, refdes or path, `X1/*`, `cell:<name>`) and `--port-at` on `em`, its dry run, `explain`
+and `check`, parsed once (`ComponentPortSpellings`) and refused naming the grammar; `explain`'s pin check (a `cell instance` step
+and a `cut pin` step per pin, read from the build through `EmCutReport`, and the copper `"*"` passed over); `check`'s verdicts
+for cut instances and pins; MCP `componentPorts`/`portAt` on `run`, `explain` and `check`; the new keys and the path grammar in
+`reference em-setup`; `docs/design/cli.md` §8.11. Gate `tests/Ui.Tests/Em/CellPortCliTests.cs` (gates 1-4 and R-icp6-4). Where it
+differs, and why — `src/Cli/RESOLVED.md` §brief-icp-6:
+- built `.c3d` ports keep `check.c3d.port` (info) and their warnings `check.c3d.component-port`: renaming a kept id was not worth
+  the letter of R-icp6-3;
+- with `"@1"`, the SpiralResonator's MIM cap pin 1 is floating, because the layout's own drawn port 2 stands on the cap's edge;
+  the walk says so, and a run with that cut is refused at port extraction.

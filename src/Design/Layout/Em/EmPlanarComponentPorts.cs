@@ -401,7 +401,7 @@ public static class EmPlanarComponentPorts
         if (cut is not null)
         {
             if (cut.Notes.Count > 0) notes.AddRange(cut.Notes.Where(n => !notes.Contains(n)));
-            var coSim = EmCoSimCut.Of(cut, instances);
+            var coSim = EmCoSimCut.Of(cut, instances, cuts);
             foreach (var pin in cut.Pins)
             {
                 var entry = cuts.FirstOrDefault(c => c.Instance.Path.Equals(pin.Path, StringComparison.OrdinalIgnoreCase))?.Entry;

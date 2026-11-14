@@ -80,6 +80,7 @@ internal static class Explain
         IReadOnlyList<string>? snpEntries = null;
         bool wantComponentPorts = false;      // brief-emb-1 R-emb1-8
         string? componentPortList = null;
+        string? portAt = null;                // brief-icp-6 R-icp6-1
         ViewType? askedView = null;
         var device = CircuitRF.Design.Em3d.PalaceDevice.Cpu;
         long? memoryLimit = null;
@@ -155,6 +156,10 @@ internal static class Explain
                     wantComponentPorts = true;
                     if (i + 1 < args.Length && !args[i + 1].StartsWith('-') && !File.Exists(args[i + 1]) && !Directory.Exists(args[i + 1]))
                         componentPortList = args[++i];
+                    continue;
+                // brief-icp-6 R-icp6-1 — `--port-at pin|cell` on every entry --component-ports names.
+                case "--port-at" when i + 1 < args.Length:
+                    portAt = args[++i];
                     continue;
                 // brief-em3d-136 R-em3d136-4c — a 3D setup's report as `em --device` would run it: which device, and
                 // (for gpu) whether this Palace can, through the run's own readiness check.
@@ -318,9 +323,9 @@ internal static class Explain
                   : JsonRun.Fail(CliDiagnostics.ExplainOptionNotApplicable("--look", DocumentKinds.Name(kind), "a 3D view's Look and appearances"));
 
         if (wantComponentPorts)
-            exit |= kind == DocumentKind.ThreeD ? ExplainComponentPorts.Walk(path, setupName, componentPortList, walks)
+            exit |= kind == DocumentKind.ThreeD ? ExplainComponentPorts.Walk(path, setupName, componentPortList, walks, portAt)
                   // brief-lcp-2 R-lcp2-2 — a .cem's too: on the 3D view it names, or a strip and a delta gap on its layout.
-                  : kind == DocumentKind.EmSetup ? ExplainComponentPorts.WalkCem(path, componentPortList, walks)
+                  : kind == DocumentKind.EmSetup ? ExplainComponentPorts.WalkCem(path, componentPortList, walks, portAt)
                   : JsonRun.Fail(CliDiagnostics.ExplainOptionNotApplicable("--component-ports", DocumentKinds.Name(kind),
                                                                            "the component ports an EM setup (.c3d or .cem) builds on its layout's parts"));
 
@@ -443,7 +448,7 @@ internal static class Explain
         Console.Error.WriteLine("                            [--analysis [<name>]] [--ref <relative-ref>]");
         Console.Error.WriteLine("                            [--cells [--all]] [--layers] [--extents] [--nets] [--view <name>]");
         Console.Error.WriteLine("                            [--footprints] [--setup <name>] [--object <name>] [--look] [--device cpu|gpu] [--memory-limit <GB>]");
-        Console.Error.WriteLine("                            [--tunables [--snp-entries <SNP3,...|all>]] [--component-ports [\"C1,C2\"|\"*\"]]");
+        Console.Error.WriteLine("                            [--tunables [--snp-entries <SNP3,...|all>]] [--component-ports [\"C1,X1/Q3,cell:Seg\"|\"*\"] [--port-at pin|cell]]");
         Console.Error.WriteLine("       circuitrf explain --pdk <kit> [<workspace>] [--python <interp>]");
         return 1;
     }

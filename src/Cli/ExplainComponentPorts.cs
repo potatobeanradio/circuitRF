@@ -23,8 +23,9 @@ internal static class ExplainComponentPorts
 
     /// <param name="list">The entries to build instead of the setup's own, as <c>em --component-ports</c> takes them; null
     /// builds the setup's.</param>
-    public static int Walk(string path, string? setupName, string? list, List<ResolutionStepJson> walks)
+    public static int Walk(string path, string? setupName, string? list, List<ResolutionStepJson> walks, string? portAt = null)
     {
+        if (Entries(list, portAt, out var entries) is { } badList) return badList;
         string full = Path.GetFullPath(path);
         C3dDocument doc;
         try { doc = C3dPersistence.LoadFromFile(full); }
@@ -32,7 +33,7 @@ internal static class ExplainComponentPorts
         var (embedded, why) = C3dSetups.Select(doc, setupName);
         if (embedded is null) return JsonRun.Fail(CliDiagnostics.EmThreeDSetup(full, why!));
         var setup = C3dSetups.ForRun(embedded, full);
-        if (list is not null) setup.ComponentPorts = C3dComponentPorts.ParseList(list);
+        if (entries is not null) setup.ComponentPorts = entries;
         if (setup.ComponentPorts.Count == 0)
         {
             walks.Add(new ResolutionStepJson("component ports", full, null,
@@ -45,13 +46,14 @@ internal static class ExplainComponentPorts
     }
 
     /// <summary>brief-lcp-2 R-lcp2-2 — a <c>.cem</c>'s component ports: on the 3D view its LayoutRef names, or on its layout.</summary>
-    public static int WalkCem(string path, string? list, List<ResolutionStepJson> walks)
+    public static int WalkCem(string path, string? list, List<ResolutionStepJson> walks, string? portAt = null)
     {
+        if (Entries(list, portAt, out var entries) is { } badList) return badList;
         string full = Path.GetFullPath(path);
         EmSetup setup;
         try { setup = EmSetupPersistence.LoadFromFile(full); }
         catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.ExplainUnreadable(path, ex.Message)); }
-        if (list is not null) setup.ComponentPorts = C3dComponentPorts.ParseList(list);
+        if (entries is not null) setup.ComponentPorts = entries;
         string name = setup.Name is { Length: > 0 } n ? n : Path.GetFileNameWithoutExtension(full);
         if (setup.ComponentPorts.Count == 0)
         {
@@ -98,6 +100,11 @@ internal static class ExplainComponentPorts
             walks.Add(new ResolutionStepJson("component ports", full, $"refused: {refused}", PlanarHow));
         foreach (var p in build.Ports)
             walks.Add(new ResolutionStepJson("component port", source.AbsolutePath, EmPlanarComponentPorts.Describe(p, source), PlanarHow));
+        // brief-icp-6 R-icp6-2 — the pin check: each cut instance and its pins' verdicts, from the build; and the copper "*" passed over.
+        CutWalk(EmCutReport.Cuts(build.Ports.Select(p => (p.Refdes, p.CutPart))), EmCutReport.PortsOf(build), source.Technology,
+                source.AbsolutePath, walks);
+        foreach (string copper in EmCutReport.PassedOver(build, setup.ComponentPorts))
+            walks.Add(new ResolutionStepJson(EmCutReport.InstanceStep, source.AbsolutePath, copper, CutHow));
         foreach (string warning in build.Warnings)
         {
             walks.Add(new ResolutionStepJson("component ports: warning", null, warning, "check warns the same"));
@@ -105,6 +112,38 @@ internal static class ExplainComponentPorts
         }
         return build.Refusal is null ? 0 : 1;
     }
+
+    /// <summary>brief-icp-6 R-icp6-1 — the entries a <c>--component-ports</c> list names, or null for the setup's own; a spelling that
+    /// is not one is refused naming the grammar (the returned exit code).</summary>
+    private static int? Entries(string? list, string? portAt, out List<EmComponentPort>? entries)
+    {
+        entries = null;
+        if (list is null)
+        {
+            if (portAt is null) return null;
+            return JsonRun.Fail(CliDiagnostics.EmComponentPorts("--port-at applies to the entries --component-ports names, and none were given."));
+        }
+        if ((entries = ComponentPortSpellings.Parse(list, portAt, out string? why)) is null)
+            return JsonRun.Fail(CliDiagnostics.EmComponentPorts(why!));
+        return null;
+    }
+
+    private const string CutHow =
+        "read from the cut the run builds (ICP-2): each pin classified before meshing — routed (one conductor meets its face, a port " +
+        "there), abutting (it touches only another cut instance), grounded, a return of other pins' ports, floating (nothing meets it), " +
+        "or left out with why; nothing is meshed to produce it";
+
+    /// <summary>brief-icp-6 R-icp6-2 — one step per cut instance and per pin.</summary>
+    private static void CutWalk(IReadOnlyList<(EmCoSimCut Cut, string Prefix)> cuts, IReadOnlyList<EmCutReportPort> ports,
+                                CircuitRF.Design.Layout.Technology? tech, string? clayPath, List<ResolutionStepJson> walks)
+    {
+        foreach (var (cut, prefix) in cuts)
+            foreach (var (step, text) in EmCutReport.Lines(cut, prefix, ports, k => LayerName(tech, k)))
+                walks.Add(new ResolutionStepJson(step, clayPath, text, CutHow));
+    }
+
+    internal static string LayerName(CircuitRF.Design.Layout.Technology? tech, LayerKey key)
+        => tech?.Layers.FirstOrDefault(l => l.Key == key)?.Name is { Length: > 0 } n ? n : $"{key.Layer}/{key.Datatype}";
 
     private const string PlanarHow =
         "built on the part's own pads from the board projection netlist --placement reads: a strip joining its two pads across " +
@@ -124,6 +163,9 @@ internal static class ExplainComponentPorts
             walks.Add(new ResolutionStepJson("component ports", full, $"refused: {refused}", How));
         foreach (var p in build.Ports)
             walks.Add(new ResolutionStepJson("component port", p.ClayPath, C3dComponentPorts.Describe(p), How));
+        // brief-icp-6 R-icp6-2 — each cut instance of the view's layouts and its pins' verdicts, from the build.
+        CutWalk(EmCutReport.Cuts(build.Ports.Select(p => (p.Refdes, p.CutPart))), EmCutReport.PortsOf(build), null,
+                build.Ports.FirstOrDefault(p => p.Cutout)?.ClayPath, walks);
         foreach (var b in build.Bridges)
             walks.Add(new ResolutionStepJson($"connector shell {b.Name}", null,
                 $"a copper block {C3dComponentPorts.Um(b.Box.X1 - b.Box.X0)} × {C3dComponentPorts.Um(b.Box.Y1 - b.Box.Y0)} µm joining '{b.Top}' " +

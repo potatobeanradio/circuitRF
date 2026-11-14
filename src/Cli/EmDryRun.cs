@@ -22,10 +22,12 @@ internal static class EmDryRun
     /// setup's own, walked by <c>explain --component-ports</c> (built and verified, nothing meshed for them, nothing written).
     /// <c>check</c>'s half reads a <c>.cem</c> with the same list, so the estimate is of the problem the run would solve.</param>
     public static int Run(string input, string? setupName, string? device, string? memoryLimit, int? maxCores = null,
-                          string? componentPorts = null)
+                          string? componentPorts = null, string? portAt = null)
     {
         // The estimate is the run's: check meshes the problem with the list the run would build, not the file's own.
-        var entries = componentPorts is null ? null : CircuitRF.Design.ThreeD.C3dComponentPorts.ParseList(componentPorts);
+        List<CircuitRF.Design.Layout.Em.EmComponentPort>? entries = null;
+        if (componentPorts is not null && (entries = ComponentPortSpellings.Parse(componentPorts, portAt, out string? why)) is null)
+            return JsonRun.Fail(CliDiagnostics.EmComponentPorts(why!));
         Check.ComponentPortsOverride.Value = entries;
         int checkExit;
         try { checkExit = Check.Run([input]); }
@@ -38,6 +40,7 @@ internal static class EmDryRun
         if (memoryLimit is not null) { explainArgs.Add("--memory-limit"); explainArgs.Add(memoryLimit); }
         if (maxCores is { } cores) { explainArgs.Add("--cores"); explainArgs.Add(cores.ToString(CultureInfo.InvariantCulture)); }
         if (componentPorts is not null) { explainArgs.Add("--component-ports"); explainArgs.Add(componentPorts); }
+        if (portAt is not null) { explainArgs.Add("--port-at"); explainArgs.Add(portAt); }
         int explainExit = Explain.Run([.. explainArgs]);
 
         if (Line(JsonRun.Check, JsonRun.Explain) is { } line)

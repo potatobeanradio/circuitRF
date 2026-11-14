@@ -1145,7 +1145,10 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
 
     /// <summary>A syntactically valid value of the schema's own type. It does not have to be
     /// MEANINGFUL — a refusal about the value is fine and is not what this gate reads.</summary>
-    private static JsonNode Plausible(JsonNode schema) => schema["type"]!.GetValue<string>() switch
+    private static JsonNode Plausible(JsonNode schema) => schema["anyOf"] is JsonArray alternatives
+        // brief-icp-6 — `explain componentPorts` is a boolean OR a list: the first alternative is as plausible as any.
+        ? Plausible(alternatives[0]!)
+        : schema["type"]!.GetValue<string>() switch
     {
         "boolean" => JsonValue.Create(true),
         "integer" => JsonValue.Create(1),

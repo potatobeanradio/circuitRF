@@ -1655,6 +1655,8 @@ static int RunEm(string[] args)
     bool meshOnly = false;
     // brief-emb-1 R-emb1-8 — `em x.c3d --component-ports "C1,C2"|"*"`: component ports added to the setup for this run only.
     string? componentPorts = null;
+    // brief-icp-6 R-icp6-1 — `--port-at pin|cell`, applied to every entry --component-ports names.
+    string? portAt = null;
     // brief-cosim-pattern-1 R-cp1-6 — `em --adopt x.sNp`: a record for a result from before records existed. Solves nothing.
     string? adopt = null;
     // HZN-7 — `em x.hzn --design D`: which 3D design of a Hertzon project to run.
@@ -1680,6 +1682,9 @@ static int RunEm(string[] args)
                 break;
             case "--component-ports" when i + 1 < args.Length:
                 componentPorts = args[++i];
+                break;
+            case "--port-at" when i + 1 < args.Length:
+                portAt = args[++i];
                 break;
             case "--freq" when i + 1 < args.Length:
                 componentFreq = args[++i];
@@ -1795,7 +1800,9 @@ static int RunEm(string[] args)
         if (!File.Exists(input)) { JsonRun.InputPath = input; return JsonRun.Fail(CliDiagnostics.FileNotFound(input)); }
         if (DocumentKinds.Classify(input) == DocumentKind.Hertzon)
             return JsonRun.Fail(CliDiagnostics.EmThreeDSetup(input, "--dry-run is not offered for a Hertzon design; explain names the setup that would run."));
-        return EmDryRun.Run(input, setupName, deviceText, memoryLimitText, maxCores, componentPorts);
+        if (portAt is not null && componentPorts is null)
+            return JsonRun.Fail(CliDiagnostics.EmComponentPorts("--port-at applies to the entries --component-ports names, and none were given."));
+        return EmDryRun.Run(input, setupName, deviceText, memoryLimitText, maxCores, componentPorts, portAt);
     }
 
     // The scratch folder Settings ▸ Solvers names, read now so a change there reaches the next run (an MCP server runs many
@@ -1823,7 +1830,7 @@ static int RunEm(string[] args)
     if (input is null)
     {
         int code = JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
-        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name> | --bands <sweep>] [--component-ports \"C1,C2\"|\"*\"] [--dry-run | --mesh-only] [-o out.sNp] [--workspace <file.cws>] [--design <hzn design>] [--solver " + string.Join("|", CircuitRF.Design.Em3d.Em3dSolvers.CliWords) + "|<solver,solver,...>] [--reference <solver>] [--device auto|cpu|gpu] [--memory-limit <GB>] [--cores <n>] [--force] [--set var=expr]");
+        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name> | --bands <sweep>] [--component-ports \"C1,X1/Q3,X1/*,cell:Seg\"|\"*\" [--port-at pin|cell]] [--dry-run | --mesh-only] [-o out.sNp] [--workspace <file.cws>] [--design <hzn design>] [--solver " + string.Join("|", CircuitRF.Design.Em3d.Em3dSolvers.CliWords) + "|<solver,solver,...>] [--reference <solver>] [--device auto|cpu|gpu] [--memory-limit <GB>] [--cores <n>] [--force] [--set var=expr]");
         Console.Error.WriteLine("       circuitrf em --adopt <file.sNp>");
         Console.Error.WriteLine("       circuitrf em [<workspace dir | .cws | .ctech>] --component \"SPIRAL N=3 W=10 um ...\" -o out.sNp [--freq start:stop:step]");
         return code;
@@ -1839,7 +1846,7 @@ static int RunEm(string[] args)
     // HZN-7 R-hzn7-2 — a Hertzon project: the design is translated in memory and run through the same door a .c3d is.
     if (DocumentKinds.Classify(cemPath) == DocumentKind.Hertzon)
         return HznEm.Run(cemPath, hznDesign, setupName, output, solverName,
-                         bandsName is not null ? "--bands" : componentPorts is not null ? "--component-ports" : referenceName is not null ? "--reference" : null,
+                         bandsName is not null ? "--bands" : componentPorts is not null ? "--component-ports" : portAt is not null ? "--port-at" : referenceName is not null ? "--reference" : null,
                          maxCores, force, memoryLimit, emergeDevice, EmProgressToStderr(meshOnly), RunHost.Cancellation,
                          (r, setup, path) => ReportEmRun(r, setup, path));
     if (hznDesign is not null)
@@ -1926,11 +1933,13 @@ static int RunEm(string[] args)
     // brief-emb-1 R-emb1-8 — the setup's component ports for this run, in memory only: nothing is written back.
     // brief-lcp-2 R-lcp2-1 — on a .c3d, a .cem naming one, a planar .cem on a layout (a strip and a delta gap, LCP-1), or a 3D
     // .cem on a layout (an in-memory 3D view of it, LCP-5); the kept id refuses what cannot take them: a thermal or electrostatic setup.
+    if (portAt is not null && componentPorts is null)
+        return JsonRun.Fail(CliDiagnostics.EmComponentPorts("--port-at applies to the entries --component-ports names, and none were given."));
     if (componentPorts is not null)
     {
-        var entries = CircuitRF.Design.ThreeD.C3dComponentPorts.ParseList(componentPorts);
-        if (entries.Count == 0)
-            return JsonRun.Fail(CliDiagnostics.EmComponentPorts("--component-ports takes reference designators, \"C1,C2,L2\", or \"*\" for every placed two-terminal part."));
+        // brief-icp-6 R-icp6-1 — "*", a refdes or path, cell:<name>; --port-at on every entry.
+        if (ComponentPortSpellings.Parse(componentPorts, portAt, out string? spelled) is not { } entries)
+            return JsonRun.Fail(CliDiagnostics.EmComponentPorts(spelled!));
         if (EmComponentPorts.Inapplicable(setup) is { } cannot)
             return JsonRun.Fail(CliDiagnostics.EmComponentPorts(cannot));
         setup.ComponentPorts = entries;
