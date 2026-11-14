@@ -144,6 +144,48 @@ public sealed class EmCellPartsTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(EmPartKind.Copper, EmPartKinds.Of(copper, here));
     }
 
+    /// <summary>
+    /// brief-icp-10 — a sub-block whose schematic places a kit part with no layout view of its own (Q2, a model cell) is copper when
+    /// its own layout PLACES that part (an instance carrying Q2's SchematicId, as a kit's PCell is placed), so <c>"*"</c> walks into it
+    /// and takes the device inside; with no such placement it is still a model, a device. An open SiGe kit's cascode, a transistor
+    /// inside a sub-cell, was cut whole and dropped before this.
+    /// </summary>
+    [Fact]
+    public void ASubBlockWhoseLayoutPlacesItsKitPart_IsCopper()
+    {
+        string ws = Path.Combine(_scratch, "walk");
+        string kit = CellFolder.CreateCellFolder(ws, "Kit");            // a model cell: schematic only, an ideal R inside
+        var model = new SchematicEditModel();
+        model.Components.Add(Part("R1", SymbolKind.Resistor, 0, 0, "R", "50", "Ohm"));
+        SaveSchematic(kit, "Kit", model);
+
+        string block = CellFolder.CreateCellFolder(ws, "Block");
+        var sch = new SchematicEditModel();
+        sch.Components.Add(new EditableComponent { InstanceName = "Q2", Symbol = SymbolKind.Generic, CellRef = "../../Kit" });
+        SaveSchematic(block, "Block", sch);
+        void Layout(string? schematicId)
+            => CellCreate.WriteLayoutView(block, "Block", new LayoutView
+            {
+                Instances = { new LayoutInstance { CellRef = "../../.generated-cells/dev_0", Mag = 1.0, SchematicId = schematicId } },
+            });
+
+        string here = Path.Combine(ws, "Top", "schematic");
+        Directory.CreateDirectory(here);
+        var x1 = new EditableComponent { InstanceName = "X1", Symbol = SymbolKind.Generic, CellRef = "../../Block" };
+        Layout("Q2");
+        Assert.Equal(EmPartKind.Copper, EmPartKinds.Of(x1, here));
+        Layout(null);
+        File.SetLastWriteTimeUtc(Directory.GetFiles(block, "*.clay", SearchOption.AllDirectories).Single(), DateTime.UtcNow.AddMinutes(1));
+        Assert.Equal(EmPartKind.Part, EmPartKinds.Of(x1, here));
+
+        static void SaveSchematic(string cellDir, string name, SchematicEditModel m)
+        {
+            string dir = CellFolder.SubFolderPath(cellDir, ViewType.Schematic);
+            Directory.CreateDirectory(dir);
+            SchematicPersistence.SaveToFile(Path.Combine(dir, name + ".csch"), m);
+        }
+    }
+
     /// <summary>brief-icp-9 — <c>"*"</c> cuts the model cell out, and the cut says it was chosen by <c>"*"</c> (every cut read
     /// "by name": the selection's entry is rewritten to the instance's own path before the label was taken from it).</summary>
     [Fact]

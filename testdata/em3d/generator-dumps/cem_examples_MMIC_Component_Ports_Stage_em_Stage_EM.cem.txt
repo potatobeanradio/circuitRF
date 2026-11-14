@@ -1,0 +1,3 @@
+refusal Port 1 ('1') at (0, 135 µm) is not on any conductor of this EM setup's signal layers. Move it onto the metal, or check that the artwork it names is on a layer bound to a signal conductor in the technology's stackup.
+no-alpha 
+unknown-temperature 

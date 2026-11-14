@@ -39,6 +39,7 @@ public sealed class GeneratedCellsRun : IDisposable
     private readonly HashSet<string> _settled = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<UnbuildableGeneratedCell> _unbuildable = [];
     private readonly List<string> _notes = [];
+    private readonly List<string> _warnings = [];
     private readonly List<KitNotAllowed> _kitsNotAllowed = [];
     private readonly HashSet<string> _asked = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _allowedByAsking = new(StringComparer.OrdinalIgnoreCase);
@@ -57,6 +58,10 @@ public sealed class GeneratedCellsRun : IDisposable
     /// <summary>What was said on the way that is not a failure — a kit's own report, or a cell used
     /// from disk because its generator could not be asked whether it is current.</summary>
     public IReadOnlyList<string> Notes => _notes;
+
+    /// <summary>brief-icp-10 — what a generator said when it ran: a kit cell that drew nothing on a layer the technology lacks says
+    /// so here. A warning, since the cell it built is not what the kit draws.</summary>
+    public IReadOnlyList<string> Warnings => _warnings;
 
     /// <summary>The kits this run needed and was not allowed to run, with what is recorded for each.</summary>
     public IReadOnlyList<KitNotAllowed> KitsNotAllowed => _kitsNotAllowed;
@@ -124,7 +129,7 @@ public sealed class GeneratedCellsRun : IDisposable
             return;
         }
 
-        var snap = GeneratedCellsLifecycle.Canonical(workspaceRoot, recorded);
+        var snap = GeneratedCellsLifecycle.Canonical(workspaceRoot, recorded, referencedFrom, placing);
         if (!PCellRegistry.IsBuiltIn(snap.GeneratorId)) EnsureKitResolver(workspaceRoot);
 
         // SL2: a read-only workspace is never written, whatever the verb would have liked — its cells
@@ -171,7 +176,10 @@ public sealed class GeneratedCellsRun : IDisposable
         try
         {
             int written = GeneratedCellStore.CellsWrittenUnder(workspaceRoot);
-            string dir = GeneratedCellsLifecycle.Rebuild(workspaceRoot, snap, _resolveTech, target);
+            string dir = GeneratedCellsLifecycle.Rebuild(workspaceRoot, snap, _resolveTech, target, out var said);
+            // A kit's (a built-in's notes are design-time, said where the cell is placed, and would repeat on every rebuild).
+            if (said is { Count: > 0 } && !PCellRegistry.IsBuiltIn(snap.GeneratorId))
+                foreach (string line in said) _warnings.Add($"The generated cell '{Path.GetFileName(dir)}' (generator '{snap.GeneratorId}'): {line}");
             rebuilt = Path.TrimEndingDirectorySeparator(Path.GetFullPath(dir));
 
             if (target == GeneratedCellTarget.Disk)

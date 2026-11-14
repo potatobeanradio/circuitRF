@@ -2988,7 +2988,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         var mesh = PlanarMemoryCheck.WithMachineCeiling(Working.PlanarMesh, _pendingMachineLimit, _pendingPhysicalMemory);
         // CAP-1 follow-up — priced with the calibration standards the run will solve beside it, through the
         // function the run and the pre-solve check ask, so the three agree on a de-embedded run.
-        return PlanarMemoryCheck.PriceStandards(
+        // brief-icp-10 — and as the run decides it: past memory only for its calibration, its drawn ports go Uncalibrated.
+        return PlanarMemoryCheck.PriceStandardsAsRun(
             ComputeBarePlanarMesh(problem, mesh, control), problem, _pendingPlanarPorts, _pendingFrequencies,
             mesh, Working.AcceleratedSolve, control);
     }

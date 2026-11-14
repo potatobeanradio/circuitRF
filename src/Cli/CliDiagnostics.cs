@@ -2012,6 +2012,11 @@ internal static class CliDiagnostics
         "check.generated-cell.note", DiagnosticSeverity.Info,
         "{path}: {note}", ("path", path), ("note", note));
 
+    /// <summary>brief-icp-10 — <see cref="GeneratedCellWarning"/> as a <c>check</c> finding.</summary>
+    public static Diagnostic CheckGeneratedCellWarning(string path, string said) => Diagnostic.Create(
+        "check.generated-cell.warning", DiagnosticSeverity.Warning,
+        "{path}: {said}", ("path", path), ("said", said));
+
     /// <summary>brief-bsp-3 R-bsp3-10 — a bottom-side placement on a technology with no bottom copper: there is
     /// nothing to solder it to, and every flat output leaves it out. The sentence is the resolver's.</summary>
     public static Diagnostic CheckLayoutSideRefused(string path, string text) => Diagnostic.Create(
@@ -3317,6 +3322,10 @@ internal static class CliDiagnostics
 
     /// <summary>R-aut12-2. Framing on nothing is not a page — and an empty picture is
     /// indistinguishable from a viewport that missed.</summary>
+    /// <summary>brief-icp-10 — <c>render --component-ports</c> / <c>--solver-geometry</c> cannot draw the setup's marks, and why.</summary>
+    public static Diagnostic RenderComponentPorts(string why) => Diagnostic.Create(
+        "render.component-ports", DiagnosticSeverity.Error, "render: {why}", ("why", why));
+
     public static Diagnostic RenderFitLayersEmpty(string names) => Diagnostic.Create(
         "render.fit-layers.empty", DiagnosticSeverity.Error,
         "render: nothing is drawn on {names}, so there is no box for --fit-layers to frame on. "
@@ -5080,6 +5089,10 @@ internal static class CliDiagnostics
 
     public static Diagnostic GeneratedCellNote(string note) => Diagnostic.Create(
         "cli.generated-cell.note", DiagnosticSeverity.Info, "note: {note}", ("note", note));
+
+    /// <summary>brief-icp-10 — what a generator said when it ran (a kit cell that drew nothing on a layer the technology lacks).</summary>
+    public static Diagnostic GeneratedCellWarning(string said) => Diagnostic.Create(
+        "cli.generated-cell.warning", DiagnosticSeverity.Warning, "warning: {said}", ("said", said));
 
     // ── opt (brief-tuneopt-11) ─────────────────────────────────────────────────
 

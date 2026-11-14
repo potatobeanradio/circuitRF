@@ -906,6 +906,53 @@ public sealed class RenderCliVerbTests(ITestOutputHelper output) : IDisposable
         ],
         [new SymbolPin(20, 60, 0, "in"), new SymbolPin(180, 60, 1, "out")]);
 
+    // ── brief-icp-10: the EM panel's marks, headless ─────────────────────────
+
+    /// <summary><c>render --component-ports</c> draws a setup's cut instance and its face ports from the builder the EM panel calls,
+    /// and <c>--solver-geometry</c> the geometry its run solves; <c>--solver-geometry</c> alone, or a setup of another layout, is
+    /// refused rather than drawn over geometry it does not describe.</summary>
+    [Fact]
+    public void AComponentPortSetup_IsMarkedOnItsLayout_AndRefusedOnAnother()
+    {
+        var m1 = new LayerKey(1, 0);
+        Directory.CreateDirectory(_root);
+        CircuitRF.Design.Layout.TechPersistence.SaveToFile(Path.Combine(_root, "tech.ctech"), ShippedTechnologies.Load("mmic-GaAs_2LM_100um"));
+        WorkspacePersistence.SaveToFile(Path.Combine(_root, ".cws"), new CwsFile { DefaultTechRef = "tech.ctech" });
+        RectShape R(double x0, double y0, double x1, double y1) => new() { Layer = m1, X1 = (long)(x0 * 1000), Y1 = (long)(y0 * 1000), X2 = (long)(x1 * 1000), Y2 = (long)(y1 * 1000) };
+        string seg = CircuitRF.Design.Cells.CellFolder.CreateCellFolder(_root, "Seg");
+        var segView = new LayoutView { DbuPerMicron = 1000 };
+        segView.Shapes.Add(R(0, -36, 200, 36));
+        segView.Pins.Add(new LayoutPin { Name = "A", X = 0, Y = 0, WidthDbu = 72000, OutwardDeg = 180, Layer = m1 });
+        segView.Pins.Add(new LayoutPin { Name = "B", X = 200000, Y = 0, WidthDbu = 72000, OutwardDeg = 0, Layer = m1 });
+        CircuitRF.Design.Cells.CellCreate.WriteLayoutView(seg, "Seg", segView);
+        string top = CircuitRF.Design.Cells.CellFolder.CreateCellFolder(_root, "Top");
+        var topView = new LayoutView { DbuPerMicron = 1000, TechRef = "../../tech.ctech" };
+        topView.Shapes.Add(R(0, -36, 500, 36));
+        topView.Shapes.Add(R(700, -36, 1200, 36));
+        topView.Instances.Add(new LayoutInstance { CellRef = "../../Seg", X = 500000, Mag = 1.0, SchematicId = "X1" });
+        CircuitRF.Design.Cells.CellCreate.WriteLayoutView(top, "Top", topView);
+        string clay = Directory.GetFiles(top, "*.clay", SearchOption.AllDirectories).Single();
+        Directory.CreateDirectory(Path.Combine(top, "em"));
+        string cem = Path.Combine(top, "em", "cut.cem");
+        CircuitRF.Design.Layout.Em.EmSetupPersistence.SaveToFile(cem, new CircuitRF.Design.Layout.Em.EmSetup
+        {
+            Name = "cut", LayoutRef = "Top/layout/" + Path.GetFileName(clay), AnalysisKind = CircuitRF.Engine.Mom.EmAnalysisKind.Planar,
+            ComponentPorts = [new CircuitRF.Design.Layout.Em.EmComponentPort("X1")],
+        });
+        string png = Path.Combine(_root, "marks.png");
+
+        var (exit, _, stderr) = RunCli("render", clay, "-o", png, "--component-ports", cem, "--solver-geometry");
+        output.WriteLine(stderr);
+        Assert.True(exit == 0, stderr);
+        Assert.Contains("marks: 2 component port(s), 1 cut instance(s)", stderr, StringComparison.Ordinal);
+
+        Assert.NotEqual(0, RunCli("render", clay, "-o", png, "--solver-geometry").ExitCode);
+        string seg2 = Directory.GetFiles(seg, "*.clay", SearchOption.AllDirectories).Single();
+        var other = RunCli("render", seg2, "-o", png, "--component-ports", cem);
+        Assert.NotEqual(0, other.ExitCode);
+        Assert.Contains("EM setup of another layout", other.StdErr + other.StdOut, StringComparison.Ordinal);
+    }
+
     // ── driving the verb ─────────────────────────────────────────────────────
 
     private static (int ExitCode, string StdOut, string StdErr) RunCli(params string[] args)

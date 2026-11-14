@@ -468,8 +468,7 @@ public static class EmRunService
         // alone is the conduction solve: no standard and no dense matrix, so nothing is priced and no memory is judged.
         bool conductionOnly = !(fMax > 0);
         if (!conductionOnly)
-            report = PlanarMemoryCheck.PriceStandards(report, meshed, ports.Ports, freqs, preMesh, setup.AcceleratedSolve,
-                                                      control);
+            report = PlanarMemoryCheck.PriceStandardsAsRun(report, meshed, ports.Ports, freqs, preMesh, setup.AcceleratedSolve, control);
 
         // MIM-13 item 3 — AllFindings, not AsNotes(Notes): the mesher classes its own sentences
         // now, and flattening them here is what put a warning at the weight of the core count.
@@ -1124,6 +1123,63 @@ public static class EmRunService
         return r;
     }
 
+    /// <summary>brief-icp-10 — the signal that a planar run is past memory only because of its calibration standards.</summary>
+    private sealed class StandardsPastMemoryException(string message) : Exception(message);
+
+    /// <summary>
+    /// brief-icp-10 — <paramref name="admit"/>, except that a run the memory check would stop (or ask about) while it calibrates
+    /// drawn edge ports is solved once more with those ports Uncalibrated (<see cref="StandardsPastMemoryException"/>, caught by
+    /// <see cref="RunPlanar"/>): an Uncalibrated Port grows no feed lead and builds no calibration standard, and on a die over a
+    /// thick substrate with its ground on the back those two are what the memory goes on — a lead and a standard are several
+    /// substrate heights long, millimetres against a layout of micrometres. Measured on an open SiGe kit's cascode: 87,692
+    /// unknowns with the leads against 1,940 without. The retry is admitted as before, so a structure too large on its own is
+    /// still refused, by its own figure. A run with no calibrated drawn edge port is untouched.
+    /// </summary>
+    private static Func<PlanarRunSize, string?> StandardsFallback(bool already, IReadOnlyList<LayoutShape> labels,
+                                                                  Func<PlanarRunSize, string?> admit, long limitBytes, bool machineLimit)
+        => size =>
+        {
+            if (!already && PlanarMemoryCheck.Evaluate(size, limitBytes, machineLimit).Level == CircuitRF.Design.Em3d.Em3dMemoryLevel.Severe)
+            {
+                UncalibratedCopies(labels, out var switched);
+                if (switched.Count > 0)
+                {
+                    string need = size.DenseResidentBytes is { } total
+                        ? $"about {CircuitRF.Design.Em3d.MachineMemory.Format(total)} at each frequency point" +
+                          (size.StandardBytes > 0 ? $", {CircuitRF.Design.Em3d.MachineMemory.Format(size.StandardBytes)} of it for the calibration standards" : "")
+                        : $"{size.Unknowns:N0} unknowns";
+                    throw new StandardsPastMemoryException(
+                        $"Port(s) {string.Join(", ", switched)} are solved as Uncalibrated Ports: driven against the ground plane at their " +
+                        "cut and not de-embedded, so each launch is in the result. Calibrated, with the feed leads and calibration " +
+                        $"standards that takes, this run has {size.Unknowns:N0} unknowns and needs {need}, past " +
+                        $"{(machineLimit ? "this machine's memory limit of" : "this machine's")} {CircuitRF.Design.Em3d.MachineMemory.Format(limitBytes)}; " +
+                        "a lead and a standard are several substrate heights long, which on a die over a thick substrate is far larger " +
+                        "than the layout. Mark a port Uncalibrated yourself to keep this choice, or solve on a machine with the memory " +
+                        "for its calibration.");
+                }
+            }
+            return admit(size);
+        };
+
+    /// <summary>brief-icp-10 — <paramref name="shapes"/> with each drawn edge port that returns through the ground plane replaced by a
+    /// copy marked Uncalibrated; <paramref name="switched"/> names them by their label text.</summary>
+    private static IReadOnlyList<LayoutShape> UncalibratedCopies(IReadOnlyList<LayoutShape> shapes, out List<string> switched)
+    {
+        var list = new List<string>();
+        var copied = shapes.Select(s =>
+        {
+            if (s is not LabelShape { IsPort: true, PortUncalibrated: false } l
+                || l.PortKind is { } k && k != CircuitRF.Engine.Mom.PlanarPortKind.Edge
+                || l.PortReference == LayoutPortReference.SecondConductor) return s;
+            var c = (LabelShape)LayoutGeometry.Clone(l);
+            c.PortUncalibrated = true;
+            list.Add(l.Text);
+            return (LayoutShape)c;
+        }).ToList();
+        switched = list;
+        return copied;
+    }
+
     private static EmRunResult RunPlanar(
         EmSetup setup, EmLayoutSource source, string resultsRoot,
         PlanarExtractionResult extraction, double[] freqs, EmKernelChoice choice,
@@ -1131,8 +1187,9 @@ public static class EmRunService
         CancellationToken ct, RunControl? control = null, int? maxCores = null,
         Func<CircuitRF.Design.Em3d.Em3dMemoryVerdict, bool>? confirmMemory = null,
         long? memoryCeilingBytes = null, EmRunTarget? target = null,
-        Action<EmResultPorts>? coSimPorts = null)
+        Action<EmResultPorts>? coSimPorts = null, bool drawnPortsUncalibrated = false)
     {
+        int warningsAt = warnings.Count, notesAt = notes.Count, errorsAt = errors.Count;
         var problem = extraction.Problem!;
         var kernel  = new PlanarKernel();
         var paths = EmResultPaths.Planar(resultsRoot, setup, target?.TouchstoneDestination);
@@ -1146,10 +1203,12 @@ public static class EmRunService
         var portLabels = EmComponentPorts.Collect(source, setup);
         notes.AddRange(portLabels.Notes);
         warnings.AddRange(portLabels.Warnings);
+        // brief-icp-10 — the retry below: every drawn edge port solved Uncalibrated, on COPIES of its label (the layout is not touched).
+        var portShapes = drawnPortsUncalibrated ? UncalibratedCopies(portLabels.Shapes, out _) : portLabels.Shapes;
         var ports = portLabels.Refusal is { } duplicate
             ? EmPortExtractionResult.No(duplicate)
             : EmPortExtraction.Extract(
-                portLabels.Shapes, problem, source.DbuPerMicron, portLabels.Z0For(setup),
+                portShapes, problem, source.DbuPerMicron, portLabels.Z0For(setup),
                 source.View.DisplayUnit,
                 EmPortExtraction.DefaultGroundPathWidthM(source.Technology), source.Technology);
 
@@ -1265,9 +1324,11 @@ public static class EmRunService
                 // past 75 %, and past 100 % the question Simulate asks (--force headless). Against the
                 // machine's own memory limit when one is set (Settings ▸ Solvers, `em --memory-limit`),
                 // which every solver is held to.
-                Admit = PlanarMemoryCheck.Admitter(confirmMemory, warnings,
-                                                   memoryCeilingBytes ?? CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes,
-                                                   machineLimit: memoryCeilingBytes is not null),
+                Admit = StandardsFallback(drawnPortsUncalibrated, portLabels.Shapes,
+                    PlanarMemoryCheck.Admitter(confirmMemory, warnings,
+                                               memoryCeilingBytes ?? CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes,
+                                               machineLimit: memoryCeilingBytes is not null),
+                    memoryCeilingBytes ?? CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes, memoryCeilingBytes is not null),
             };
             // ANT-9 — the one combination the panel can express and the engine cannot honour. The
             // search bisects toward a zero crossing of Im(Z_in) that it finds in the interpolant
@@ -1316,6 +1377,19 @@ public static class EmRunService
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
                 ex.Message, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
                 KernelName: choice.KernelName, Diagnostic: d);
+        }
+        catch (StandardsPastMemoryException ex)
+        {
+            // brief-icp-10 — the run is past memory only because of its calibration standards, and fits without them: solved again
+            // with every drawn edge port Uncalibrated, and said, rather than refused (or swapping) for a de-embedding that cannot run
+            // here. The usual case is a die over a thick substrate with its ground on the back, where a standard's feed is hundreds of
+            // micrometres against a layout of tens.
+            warnings.RemoveRange(warningsAt, warnings.Count - warningsAt);
+            notes.RemoveRange(notesAt, notes.Count - notesAt);
+            errors.RemoveRange(errorsAt, errors.Count - errorsAt);
+            warnings.Add(ex.Message);
+            return RunPlanar(setup, source, resultsRoot, extraction, freqs, choice, warnings, notes, errors, ct, control, maxCores,
+                             confirmMemory, memoryCeilingBytes, target, coSimPorts, drawnPortsUncalibrated: true);
         }
         catch (PlanarRunDeclinedException ex)
         {

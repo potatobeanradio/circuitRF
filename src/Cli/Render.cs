@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Symbol;
 using CircuitRF.Design.Theming;
@@ -57,6 +58,10 @@ internal static class Render
     /// about what was drawn.</summary>
     private sealed class Options
     {
+        /// <summary>brief-icp-10 — a layout's EM setup (.cem) whose component ports and cut instances are drawn as the EM panel draws
+        /// them, and with <see cref="SolverGeometry"/> the geometry its run hands the solver.</summary>
+        public string?      ComponentPorts;
+        public bool         SolverGeometry;
         public string?      Path;
         public string?      Output;
         public Format?      Format;
@@ -214,6 +219,8 @@ internal static class Render
             "                        [--layer-colors name=#rrggbb,...] [--detail full|screen|<px>]\n" +
             "                        [--theme name|file.ccolor] [--variant light|dark]\n" +
             "                        [--background opaque|transparent] [--grid] [--no-rulers]\n" +
+            "  a .clay also takes:   [--component-ports setup.cem [--solver-geometry]] (the setup's component ports and cut\n" +
+            "                        instances as the EM panel marks them; with --solver-geometry, the geometry its run solves)\n" +
             "                        [--outline-text] (svg: text as glyph outlines, so no viewer substitutes a font)\n" +
             "  a .cdd adds:          [--data file]... [--tab name|n] [--plot n] [--all-tabs]\n" +
             "  a 3D .cem takes:      --section z=<len> | --section xz@y=<len> | --section yz@x=<len> | --iso\n" +
@@ -358,6 +365,8 @@ internal static class Render
                     continue;
                 case "--grid":      o.Grid = true;     continue;
                 case "--no-rulers": o.NoRulers = true; continue;
+                case "--component-ports" when i + 1 < args.Length: o.ComponentPorts = args[++i]; continue;
+                case "--solver-geometry": o.SolverGeometry = true; continue;
                 case "--outline-text": o.OutlineText = true; continue;
 
                 // ── .cdd only (RND-4) ─────────────────────────────────────────
@@ -800,7 +809,28 @@ internal static class Render
         var (theme, themeName, themeFrom, themeRefusal) = ResolveTheme(o, full);
         if (themeRefusal is { } tr) return tr;
 
-        var opts = LayoutOptionsFor(o, theme, baseDir);
+        // brief-icp-10 — the EM panel's marks, from the one builder the panel calls (CircuitRF.Render.ComponentPortMarkBuilder).
+        ComponentPortMarkSet? marks = null;
+        if (o.SolverGeometry && o.ComponentPorts is null)
+            return JsonRun.Fail(CliDiagnostics.RenderComponentPorts("--solver-geometry draws the geometry an EM setup's run solves; name the setup with --component-ports <setup.cem>."));
+        if (o.ComponentPorts is { } cemPath)
+        {
+            EmSetup setup;
+            try { setup = EmSetupPersistence.LoadFromFile(cemPath); }
+            catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.RenderComponentPorts($"'{cemPath}' cannot be read as an EM setup: {ex.Message}")); }
+            string cws = WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(Path.GetFullPath(cemPath))) ?? "";
+            if (EmSetupResolver.ResolveLayoutPath(Path.GetFullPath(cemPath), setup.LayoutRef, cws.Length > 0 ? cws : null) is not { } laid
+                || !string.Equals(Path.GetFullPath(laid), full, StringComparison.OrdinalIgnoreCase))
+                return JsonRun.Fail(CliDiagnostics.RenderComponentPorts(
+                    $"'{Path.GetFileName(cemPath)}' is the EM setup of another layout, so its marks would stand on geometry this picture does not draw."));
+            var source = new EmLayoutSource(full, view, tech, view.DbuPerMicron);
+            marks = ComponentPortMarkBuilder.Build(setup, source,
+                                                   setup.ComponentPorts.Count > 0 && EmComponentPorts.Inapplicable(setup) is null, o.SolverGeometry);
+            Console.Error.WriteLine($"[circuitRF] marks: {marks.Ports.Count} component port(s), {marks.Cuts.Count} cut instance(s)" +
+                                    (o.SolverGeometry ? $", {marks.SolverGeometry?.Count ?? 0} solver shape(s)" : ""));
+        }
+
+        var opts = LayoutOptionsFor(o, theme, baseDir, marks);
 
         RunHost.Cancellation.ThrowIfCancellationRequested();
         RunHost.Control?.BeginStage("draw");
@@ -859,7 +889,7 @@ internal static class Render
     /// than overlay state: it is in the <c>.clay</c> and an export that dropped it would contradict the
     /// layout design doc.</para>
     /// </summary>
-    private static LayoutRenderOptions LayoutOptionsFor(Options o, ColorTheme theme, string baseDir)
+    private static LayoutRenderOptions LayoutOptionsFor(Options o, ColorTheme theme, string baseDir, ComponentPortMarkSet? marks = null)
     {
         var t = LayoutRenderTheme.FromTheme(theme, o.Variant);
         bool full = o.Detail == Detail.Full;
@@ -890,6 +920,9 @@ internal static class Render
             StrokeElisionPixelThreshold  = full ? -1 : 0,
             HairlineFillPixelThreshold   = full ? -1 : 0,
             CoarseCoverageThreshold      = full ? -1 : 0,
+            ComponentPortMarks           = marks?.Ports,
+            CutMarks                     = marks?.Cuts,
+            SolverGeometry               = marks?.SolverGeometry,
         };
     }
 

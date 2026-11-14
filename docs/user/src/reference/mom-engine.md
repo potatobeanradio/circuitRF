@@ -451,7 +451,8 @@ site with every port uncalibrated solves, passive and reciprocal. Choose an Unca
 refused for nearby metal, or where the launch is small next to what you are measuring.
 
 **What it costs and what it saves.** It grows no feed lead, solves no calibration lines, and is never refused for nearby
-metal. A run with uncalibrated ports is 3–8× faster than the calibrated one, which solves its standards beside the
+metal. A run past memory only because it calibrates its drawn ports is solved with them uncalibrated, and says so
+([the budget](#budget)). A run with uncalibrated ports is 3–8× faster than the calibrated one, which solves its standards beside the
 structure (4.0 s against 13.8 s, and 4.9 s against 39.3 s, on the lines above). What it costs is the launch, above.
 
 **At a cut cell instance's pins.** The faces a cut leaves are Uncalibrated Ports. Cutting a 200 µm section out of a 72 µm
@@ -1397,6 +1398,15 @@ Simulate asks before anything is filled: **Simulate Anyway** starts it, **Don't 
 `--memory-limit` (`memoryLimitGB`) stands in for the Settings ▸ Solvers limit. Short of that, past 75 %
 of the memory the run carries a warning. A run past its machine's physical memory is likely to swap
 heavily or be stopped by the operating system.
+
+**A run past memory because it calibrates its drawn ports is solved with them uncalibrated.** Calibrating an edge port grows a
+feed lead onto it and solves calibration lines beside the structure, each several substrate heights long. Over a thick substrate
+whose ground is on the back — a silicon die, 750 µm of it under a few micrometres of interconnect — those dwarf the layout: one
+cascode measured 87,692 unknowns with its two drawn ports calibrated against 1,940 without. When a run would be past memory and
+it calibrates drawn edge ports, it is solved once more with every drawn edge port an [Uncalibrated Port](#uncalibrated-port),
+and a warning names the ports and the figure that moved them. That run is judged as any other, so a structure too large on its
+own is still asked about, by its own figure. Mark a port Uncalibrated yourself to keep the choice, or solve on a machine with the
+memory to calibrate it.
 
 The memory limit belongs to the computer, not to an EM setup: it is set once, in
 [Settings ▸ Solvers](settings.html#em3d), and holds the planar solver and the 3D solvers alike. Time

@@ -74,15 +74,19 @@ public sealed record C3dFromLayout(C3dDocument? Document, string? Refusal, IRead
 /// it came from, whether that <c>.cem</c> was Planar (so the setup was made, not copied), and its component port list.</summary>
 public sealed record C3dSetupCopied(string Name, string Cem, bool FromPlanar, IReadOnlyList<EmComponentPort> ComponentPorts)
 {
+    /// <summary>brief-icp-10 — a made setup's solver, by name, and whether a preference chose it (else it was found installed).</summary>
+    public string? Solver { get; init; }
+    public bool Chosen { get; init; }
+
     /// <summary>One sentence for the Messages panel and <c>new view3d</c>.</summary>
     public string Describe()
     {
         string from = Path.GetFileName(Cem);
         string head = FromPlanar
-            ? $"Made 3D setup '{Name}' from the Planar setup {from}, with its sweep and the default 3D solver"
+            ? $"Made 3D setup '{Name}' from the Planar setup {from}, with its sweep and {(Solver is { } solver ? $"{solver}, the 3D solver " + (Chosen ? "chosen in Settings" : "found installed") : "the default 3D solver")}"
             : $"Copied 3D setup '{Name}' from {from} as an embedded setup";
         if (ComponentPorts.Count == 0) return head + ".";
-        var named = ComponentPorts.Select(c => c.Refdes == EmSetup.AllComponents ? "every placed two-terminal part" : c.Refdes);
+        var named = ComponentPorts.Select(c => c.Refdes == EmSetup.AllComponents ? "every part and device (\"*\")" : c.Refdes);
         string tail = $", carrying {ComponentPorts.Count} component port entr{(ComponentPorts.Count == 1 ? "y" : "ies")} " +
                       $"({string.Join(", ", named)})";
         return head + tail + (FromPlanar
@@ -924,11 +928,12 @@ public static class C3dHierarchy
     /// view builds no component port, so a part that cannot be a sheet is named when the 3D setup is first checked.</para>
     /// </summary>
     /// <param name="solver3D">The solver a 3D setup made from a Planar <c>.cem</c> runs: the GUI's Preferred 3D solver setting.
-    /// Null is <see cref="Em3dSolvers.Default"/>.</param>
+    /// Null is <see cref="Em3dSolvers.DefaultInstalled"/>, asked only when such a setup is made.</param>
     public static C3dFromLayout NewFromLayout(string cellDir, string c3dPath, string? workspaceCws, TechnologyCache? cache = null,
                                               Em3dSolverChoice? solver3D = null)
     {
         cache ??= new TechnologyCache();
+        bool solverStated = solver3D is { IsNone: false };
         if (ViewFile(cellDir, C3dInstanceView.Layout) is not { } clay)
             return new(null, MissingView(cellDir, C3dInstanceView.Layout), [], []);
         LayoutView view;
@@ -962,7 +967,8 @@ public static class C3dHierarchy
                 // brief-lcp-6 R-lcp6-2 — a Planar .cem crosses only for its component ports, and only what a 3D solver reads.
                 if (setup.ComponentPorts.Count == 0) continue;
                 var made = DefaultPortSetup(setup.LayoutRef);
-                if (solver3D is { IsNone: false } preferred) made.Solver3D = preferred;
+                // brief-icp-10 — nobody chose: the first installed solver, asked once per view (it probes each program).
+                made.Solver3D = solver3D is { IsNone: false } preferred ? preferred : (solver3D = Em3dSolvers.DefaultInstalled());
                 made.Name = setup.Name;
                 made.Frequency = setup.Frequency;
                 made.AdditionalFrequencies = [.. setup.AdditionalFrequencies];
@@ -974,7 +980,10 @@ public static class C3dHierarchy
             for (int n = 2; !names.Add(setup.Name); n++) setup.Name = $"{baseName} {n}";
             doc.Setups.Add(EmSetupPersistence.ToEmbedded(setup));
             copied.Add(setup.Name);
-            setups.Add(new C3dSetupCopied(setup.Name, cem, fromPlanar, [.. setup.ComponentPorts]));
+            setups.Add(new C3dSetupCopied(setup.Name, cem, fromPlanar, [.. setup.ComponentPorts])
+            {
+                Solver = fromPlanar ? Em3dSolvers.Names(Em3dSolvers.Of(setup.Solver3D)) : null, Chosen = solverStated,
+            });
             TranslatePorts(setup, cem, workspaceCws, cache, view, ports, leftOut, moved);
         }
         // R-pw1-6 — a layout no 3D setup names still brings in its ports, translated with a default driven setup.

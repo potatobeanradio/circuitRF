@@ -70,11 +70,17 @@ public static class EmPartKinds
             string sch = Path.Combine(CircuitRF.Design.Cells.CellFolder.SubFolderPath(cellDir, CircuitRF.Design.Cells.ViewType.Schematic), name);
             var info = new FileInfo(sch);
             if (!info.Exists) return false;
-            string stamp = info.FullName + "|" + info.LastWriteTimeUtc.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            // brief-icp-10 — the cell's own layout says which of those parts it draws: a part placed there (an instance carrying its
+            // SchematicId, as Update Layout from Schematic writes) HAS layout, whatever its schematic reference resolves to. A kit cell
+            // has no layout view of its own — its layout is a PCell the kit links to the part — so without this a sub-block whose
+            // schematic places a kit transistor read as a model, "*" stopped at the sub-block, and the transistor inside was never cut.
+            var placed = LayoutPlacedIds(cellDir, out string layoutStamp);
+            string stamp = info.FullName + "|" + info.LastWriteTimeUtc.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture) + "|" + layoutStamp;
             lock (_gate) if (_models.TryGetValue(stamp, out bool known)) return known;
             var model = SchematicPersistence.LoadFromFile(sch).model;
             string dir = Path.GetDirectoryName(sch)!;
             bool device = model.Components.Any(p => SchematicLayoutPlanner.IsPhysical(p) && !PortPlacement.IsPort(p) && p.InstanceName.Length > 0
+                                                    && !placed.Contains(p.InstanceName)
                                                     && Shallow(p, dir, out _) == EmPartKind.NoLayout);
             lock (_gate) _models[stamp] = device;
             return device;
@@ -84,6 +90,30 @@ public static class EmPartKinds
         {
             return false;
         }
+    }
+
+    /// <summary>brief-icp-10 — the SchematicIds the cell's primary layout places, and a stamp of that file; empty when it has none or cannot
+    /// be read.</summary>
+    private static HashSet<string> LayoutPlacedIds(string cellDir, out string stamp)
+    {
+        stamp = "";
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var primary = CircuitRF.Design.Cells.CellFolder.ResolvePrimary(cellDir, CircuitRF.Design.Cells.ViewType.Layout);
+            if (primary.ResolvedName is not { Length: > 0 } name) return ids;
+            string clay = Path.Combine(CircuitRF.Design.Cells.CellFolder.SubFolderPath(cellDir, CircuitRF.Design.Cells.ViewType.Layout), name);
+            var info = new FileInfo(clay);
+            if (!info.Exists) return ids;
+            stamp = info.LastWriteTimeUtc.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            foreach (var inst in LayoutPersistence.LoadFromFile(clay).Instances)
+                if (inst.SchematicId is { Length: > 0 } sid) ids.Add(sid);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException
+                                       or InvalidDataException or InvalidOperationException or System.Text.Json.JsonException)
+        {
+        }
+        return ids;
     }
 
     private static readonly Dictionary<string, bool> _models = new(StringComparer.Ordinal);

@@ -28,6 +28,7 @@ using CircuitRF.Core.Devices;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Design.Cells;
+using CircuitRF.Design.Workspace;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Symbol;
 using CircuitRF.Design.ThreeD;
@@ -246,9 +247,20 @@ public static class EmCoSimNetlist
         comments.Insert(0, $"{BoardInstance}'s ports: {string.Join(", ", ports.Select(p => $"{Node(p.Number)} is {p.Name}"))}.");
 
         var sb = new StringBuilder();
-        sb.AppendLine($"{OwnerPrefix(setup)}{n}-port with each part across its own component port (written by");
-        sb.AppendLine("; circuitRF from the run). A gap port measures the board with the part's pads open, so each part stands from its");
-        sb.AppendLine("; port's node to ground, never between two port nodes.");
+        // brief-icp-10 — a run whose component ports are all cut instances is a chip, not a board with pads: say what a cut is.
+        bool cutOnly = ports.Any(p => p.Component?.Cut is not null) && ports.All(p => p.Component is null || p.Component.Cut is not null);
+        if (cutOnly)
+        {
+            sb.AppendLine($"{CutOwnerPrefix(setup)}{n}-port with each cut-out instance's model back on its ports (written");
+            sb.AppendLine("; by circuitRF from the run). Each port stands at a cut instance's pin face, against the run's ground, and the");
+            sb.AppendLine("; instance's model goes back on those ports by pin name.");
+        }
+        else
+        {
+            sb.AppendLine($"{OwnerPrefix(setup)}{n}-port with each part across its own component port (written by");
+            sb.AppendLine("; circuitRF from the run). A gap port measures the board with the part's pads open, so each part stands from its");
+            sb.AppendLine("; port's node to ground, never between two port nodes.");
+        }
         foreach (string c in comments) sb.AppendLine("; " + c);
         sb.AppendLine();
         bool cells = models.Library is { Cells.Count: > 0 } lib && tb.Instances.Any(i => lib.Find(i.Reference) is not null);
@@ -484,6 +496,10 @@ public static class EmCoSimNetlist
     /// <summary>The start of the first line every netlist this setup's runs write: what <see cref="Write"/> recognises as its own.</summary>
     private static string OwnerPrefix(EmSetup setup) => $"; Co-simulation of '{setup.Name}': the board's ";
 
+    /// <summary>brief-icp-10 — the header of a run whose component ports are all cut instances: a chip, not a board with pads. A
+    /// netlist starting with either prefix is this setup's own, which a re-run rewrites.</summary>
+    private static string CutOwnerPrefix(EmSetup setup) => $"; Co-simulation of '{setup.Name}': the layout's ";
+
     /// <summary>
     /// Writes <see cref="FileNameFor"/> in <paramref name="workspaceDir"/> for the run's Touchstone at <paramref name="snpPath"/>.
     /// An existing file is replaced only when it is one this writer made for the same Touchstone (its first line); any other is
@@ -513,14 +529,17 @@ public static class EmCoSimNetlist
                     return new(EmSnpSchematicOutcome.Current, path, $"{Path.GetFileName(path)} is already this run's co-simulation netlist.", text) { Warnings = warnings };
                 // Ownership is the header up to the port count: a re-run with ports added or removed rewrites its own netlist
                 // (designer round 39 — a 12-port run left the 10-port netlist naming a Touchstone that run superseded).
-                if (!old.StartsWith(OwnerPrefix(setup), StringComparison.Ordinal))
+                if (!old.StartsWith(OwnerPrefix(setup), StringComparison.Ordinal) && !old.StartsWith(CutOwnerPrefix(setup), StringComparison.Ordinal))
                     return new(EmSnpSchematicOutcome.LeftAlone, path,
                         $"{Path.GetFileName(path)} exists and was not written by this setup's runs, so it was left alone.", text) { Warnings = warnings };
             }
             AtomicFile.WriteAllText(path, text);
             return new(EmSnpSchematicOutcome.Created, path,
-                $"Wrote {Path.GetFileName(path)}: the board's S{ports.Count}P with {ports.Count(p => p.Component is { Connector: false })} part " +
-                "port(s) closed by their models, ready to simulate.", text) { Warnings = warnings };
+                text.StartsWith(CutOwnerPrefix(setup), StringComparison.Ordinal)
+                    ? $"Wrote {Path.GetFileName(path)}: the layout's S{ports.Count}P with {ports.Count(p => p.Component is { Connector: false })} " +
+                      "cut-face port(s) closed by their instances' models, ready to simulate."
+                    : $"Wrote {Path.GetFileName(path)}: the board's S{ports.Count}P with {ports.Count(p => p.Component is { Connector: false })} part " +
+                      "port(s) closed by their models, ready to simulate.", text) { Warnings = warnings };
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
         {
@@ -577,7 +596,10 @@ public static class EmCoSimNetlist
                     ? PatternDisplayJson("em_cosim.npy", tb.Analyses.OfType<SParameterAnalysis>().Any(HasSweep))
                     : EmSnpSchematic.DataDisplayJson(circuitPorts, "em_cosim.npy"));
             return new(EmSnpSchematicOutcome.Created, cellName, schematic,
-                       $"{(exists ? "Replaced" : "Created")} cell {cellName}: the board's result with each part on its own port, ready to simulate.");
+                       $"{(exists ? "Replaced" : "Created")} cell {cellName}: " +
+                       (text.StartsWith(CutOwnerPrefix(setup), StringComparison.Ordinal)
+                           ? "the layout's result with each cut-out instance's model on its ports, ready to simulate."
+                           : "the board's result with each part on its own port, ready to simulate."));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or JsonException
                                       or FormatException or ArgumentException or CnlReadException)
@@ -596,11 +618,34 @@ public static class EmCoSimNetlist
     internal static Dictionary<string, ExactCell> ExistingCells(Library lib, string workspaceDir, string schematicDir)
     {
         var map = new Dictionary<string, ExactCell>(StringComparer.Ordinal);
+        CwsFile? cws = null;
+        try { string cwsPath = Path.Combine(workspaceDir, ".cws"); if (File.Exists(cwsPath)) cws = WorkspacePersistence.LoadFromFile(cwsPath); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException) { }
         foreach (var cell in lib.Cells)
         {
             string dir = Path.Combine(workspaceDir, cell.Name);
-            if (!File.Exists(Path.Combine(dir, ".ccell"))) continue;
-            string cellRef = CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(schematicDir, dir))!;
+            string? cellRef = null;
+            if (File.Exists(Path.Combine(dir, ".ccell")))
+                cellRef = CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(schematicDir, dir))!;
+            else
+            {
+                // brief-icp-10 — a kit's cell: through a referenced workspace (ws://alias/cell, how a kit's own schematics name it),
+                // else a library folder of the workspace. Without this a cut device whose model is a kit cell drew no _cosim cell.
+                foreach (var r in cws?.ReferencedWorkspaces ?? [])
+                {
+                    string candidate = ExternalCellRef.RefFor(r.Alias, cell.Name);
+                    if (ExternalCellRef.ResolveCellDir(candidate, schematicDir) is { } found && File.Exists(Path.Combine(found, ".ccell")))
+                    { dir = found; cellRef = candidate; break; }
+                }
+                if (cellRef is null)
+                    foreach (string libRef in cws?.LibraryRefs ?? [])
+                    {
+                        string candidate = Path.GetFullPath(Path.Combine(workspaceDir, libRef, cell.Name));
+                        if (!File.Exists(Path.Combine(candidate, ".ccell"))) continue;
+                        dir = candidate; cellRef = CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(schematicDir, candidate))!; break;
+                    }
+                if (cellRef is null) continue;
+            }
             var symbol = CellSymbolResolver.ResolveCellDirOrRef(dir, workspaceDir).Symbol;
             if (symbol is not { Pins.Count: > 0 } || symbol.Pins.Count != cell.Ports.Count) continue;
             map[cell.Name] = new ExactCell(cellRef, [.. symbol.Pins.OrderBy(p => p.PortIndex).Select(p => ((float)p.LocalX, (float)p.LocalY))]);

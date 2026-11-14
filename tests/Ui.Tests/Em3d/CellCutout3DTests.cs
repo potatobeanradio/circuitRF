@@ -142,6 +142,32 @@ public sealed class CellCutout3DTests(CellCutout3DTests.Fixture fx, ITestOutputH
         Assert.Equal(Ports(before.Problem!), Ports(after.Problem!));
     }
 
+    /// <summary>brief-icp-10 — with the ground plane left undrawn (only the stackup has it), a 3D setup with a cut (built through a 3D
+    /// view of the layout) floors its air box at that plane as one with no cut does (the generator's own floor), so the drawn port
+    /// lands on it in both. The 3D view dropped that floor — an instance draws only what its layout draws — and every port, the cut
+    /// with it, was refused as touching nothing below.</summary>
+    [Fact]
+    public void AnUndrawnGround_FloorsTheView_AsItFloorsTheLayout()
+    {
+        var line = fx.Line();
+        line.Shapes.RemoveAll(s => s.Layer == Bottom);
+        var source = fx.Source("g5", line);
+        var plain = Em3dSetupProblem.Of(fx.Setup([]), source, fx.Tech);
+        var cut = Em3dSetupProblem.Of(fx.Setup([Entry("X1", false)]), source, fx.Tech);
+        Assert.True(plain.Ok, plain.Refusal);
+        Assert.True(cut.Ok, cut.Refusal);
+        foreach (var g in new[] { plain, cut })
+        {
+            var port = g.Problem!.Ports.Single(p => p.Number == 1);
+            Assert.Equal(Em3dAirBox.FaceName("zmin"), port.NegativeObject);
+            Assert.Equal(Em3dBoundaryKind.Pec, g.Problem.Boundary.Faces.ZMin);
+        }
+        Assert.Equal(plain.Problem!.Boundary.Min.Z, cut.Problem!.Boundary.Min.Z, 12);
+        var (a, b) = (plain.Problem.Ports.Single(p => p.Number == 1), cut.Problem.Ports.Single(p => p.Number == 1));
+        Assert.Equal(a.Min.Z, b.Min.Z, 12);
+        Assert.Equal(a.Max.Z, b.Max.Z, 12);
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>The built component ports' names by number: what the Touchstone and the record name each port.</summary>

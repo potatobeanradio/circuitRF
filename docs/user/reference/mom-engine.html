@@ -525,7 +525,8 @@ of its own, did not help: a passive neighbour still needs 200 µm. Two pins faci
 site with every port uncalibrated solves, passive and reciprocal. Choose an Uncalibrated Port where a calibrated one is
 refused for nearby metal, or where the launch is small next to what you are measuring.</p>
 <p><strong>What it costs and what it saves.</strong> It grows no feed lead, solves no calibration lines, and is never refused for nearby
-metal. A run with uncalibrated ports is 3–8× faster than the calibrated one, which solves its standards beside the
+metal. A run past memory only because it calibrates its drawn ports is solved with them uncalibrated, and says so
+(<a href="#budget">the budget</a>). A run with uncalibrated ports is 3–8× faster than the calibrated one, which solves its standards beside the
 structure (4.0 s against 13.8 s, and 4.9 s against 39.3 s, on the lines above). What it costs is the launch, above.</p>
 <p><strong>At a cut cell instance's pins.</strong> The faces a cut leaves are Uncalibrated Ports. Cutting a 200 µm section out of a 72 µm
 line and putting it back as an ideal line of its length reads 6.1e-2 against the whole line at 20 GHz, where calibrated
@@ -1601,6 +1602,14 @@ Simulate asks before anything is filled: <strong>Simulate Anyway</strong> starts
 <code>--memory-limit</code> (<code>memoryLimitGB</code>) stands in for the Settings ▸ Solvers limit. Short of that, past 75 %
 of the memory the run carries a warning. A run past its machine's physical memory is likely to swap
 heavily or be stopped by the operating system.</p>
+<p><strong>A run past memory because it calibrates its drawn ports is solved with them uncalibrated.</strong> Calibrating an edge port grows a
+feed lead onto it and solves calibration lines beside the structure, each several substrate heights long. Over a thick substrate
+whose ground is on the back — a silicon die, 750 µm of it under a few micrometres of interconnect — those dwarf the layout: one
+cascode measured 87,692 unknowns with its two drawn ports calibrated against 1,940 without. When a run would be past memory and
+it calibrates drawn edge ports, it is solved once more with every drawn edge port an <a href="#uncalibrated-port">Uncalibrated Port</a>,
+and a warning names the ports and the figure that moved them. That run is judged as any other, so a structure too large on its
+own is still asked about, by its own figure. Mark a port Uncalibrated yourself to keep the choice, or solve on a machine with the
+memory to calibrate it.</p>
 <p>The memory limit belongs to the computer, not to an EM setup: it is set once, in
 <a href="settings.html#em3d">Settings ▸ Solvers</a>, and holds the planar solver and the 3D solvers alike. Time
 grows faster than memory — the factorisation goes as the cube of the unknown count — so doubling the

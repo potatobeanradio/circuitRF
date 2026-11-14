@@ -336,10 +336,17 @@ the inner one has already left with the outer.
 
 **What `"*"` takes.** Every footprint part and every **device**: a kit device (`pdk://`), or a cell whose own schematic
 places a part with no layout of its own, such as a transistor or the controlled source of a small-signal model. Its layout
-is pads drawn round something the solver cannot see. `"*"` never takes copper the solver can solve: a PCell (a line, a
-MIM capacitor, a spiral) or a cell drawn from such parts. It walks down through those to the devices inside them. To cut
-out copper, name it or its cell, as the [MMIC Component Ports](../examples/mmic-component-ports/index.html) example
+is pads drawn round something the solver cannot see. `"*"` never takes copper the solver can solve: a built-in PCell (a
+line, a MIM capacitor, a spiral) or a cell drawn from such parts. It walks down through those to the devices inside them.
+To cut out copper, name it or its cell, as the [MMIC Component Ports](../examples/mmic-component-ports/index.html) example
 does with its MIM capacitor.
+
+A part placed from a **kit's library cell** whose schematic is a model — a kit's transistor, and its MIM capacitor or
+resistor too, laid out as the kit's PCell — is a device, so `"*"` cuts it and puts the kit's model back. To keep a kit's
+MIM capacitor in the solved problem, list the parts you want cut by name instead of `"*"`. A sub-cell whose own layout
+places the parts its schematic places (each instance carrying its part's designator, as Update Layout from Schematic
+writes) is copper, and `"*"` walks into it to those parts: a cascode with one transistor inside a sub-block cuts both. A
+device with no layout pins and nothing inside it is passed over with a warning naming it.
 
 **Where the ports sit: Port at Pin or Cell.**
 
@@ -401,6 +408,14 @@ where the interconnect crosses the box.</figcaption>
 - **Cell** (`"PortAt": "Cell"`) removes everything on the analysis levels inside a box, and puts each port where the
   interconnect crosses the box's edge. At mm-wave the two planes differ by the box's margin; only you know which plane the
   model was characterised at.
+
+**A pin drawn as an area.** Many kits mark a pin with a box on a pin layer (`Metal1.pin`) rather than with an edge, so the
+pin states no face, only the box's middle and a default direction. Where that stated face is not on the edge of the
+instance's own metal, the face is where the interconnect meets the pin's metal: the side of it the route crosses (Port at
+Pin), or the side of the box the route leaves through (Port at Cell). A route drawn onto the pin is trimmed back to that side,
+as at any face. A route that crosses two sides of the pin's metal, or two routes meeting one pin, is refused naming the pin.
+A pin on a purpose of a conductor's layer (`Metal1.pin` beside `Metal1.drawing`, or the same GDS layer number) is on that
+conductor, and its port is on that conductor's level.
 
 **The keep-out box** (**Keep-out box, µm**, `KeepOutUm: [x0, y0, x1, y1]`) is in micrometres in the instance's own frame,
 so it turns with the instance. Empty, it is the bounding box of the instance's own shapes on the analysis levels.

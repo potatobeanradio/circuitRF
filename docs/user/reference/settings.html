@@ -2025,7 +2025,7 @@ means it would not. The MPI launcher is part of Palace, so it sits inside Palace
 <tr>
 <td><strong>Preferred 3D solver</strong></td>
 <td>Palace (FEM)</td>
-<td>The solver a new analysis setup in a 3D view (<code>.c3d</code>) starts with: Palace, EMerge or openEMS, greyed when not installed, or <strong>Thermal (FEM)</strong>, circuitRF's own thermal solver, greyed when Gmsh is not installed. With Thermal chosen, the Setups panel's <strong>+</strong> adds a thermal setup, as <strong>Add Thermal</strong> does. It also decides the solver of the 3D setup that <strong>New 3D View from Layout</strong> makes from a planar EM setup with component ports; with Thermal chosen that setup uses Palace, since it solves S-parameters.</td>
+<td>The solver a new analysis setup in a 3D view (<code>.c3d</code>) starts with: Palace, EMerge or openEMS, greyed when not installed, or <strong>Thermal (FEM)</strong>, circuitRF's own thermal solver, greyed when Gmsh is not installed. With Thermal chosen, the Setups panel's <strong>+</strong> adds a thermal setup, as <strong>Add Thermal</strong> does. It also decides the solver of the 3D setup that <strong>New 3D View from Layout</strong> makes from a planar EM setup with component ports; with Thermal chosen that setup uses Palace, since it solves S-parameters. Until a solver is chosen here, that setup takes the first one installed — Palace, else EMerge, else openEMS — and the Messages line says which.</td>
 </tr>
 <tr>
 <td><strong>Memory limit</strong></td>

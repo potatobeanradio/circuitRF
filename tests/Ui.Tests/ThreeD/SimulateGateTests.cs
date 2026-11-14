@@ -87,7 +87,8 @@ public sealed class SimulateGateTests(ITestOutputHelper output) : IDisposable
         var doc = Microstrip();
         doc.Ports.Add(EndPort(0, 50));
         Assert.Equal("P1 touches 'gnd' on its bottom edge and nothing on its top. Its top edge misses 'trace' by 50 µm. A lumped port lies " +
-                     "between two conductors, one on each of two opposite edges.", Resolve(doc).Result.Refusal);
+                     "between two conductors, one on each of two opposite edges. Move the port (Move… on the port) so its top edge lies on " +
+                     "the metal it returns through, or draw that metal.", Resolve(doc).Result.Refusal);
 
         // Two conductors on one edge.
         doc = Microstrip();
@@ -171,9 +172,10 @@ public sealed class SimulateGateTests(ITestOutputHelper output) : IDisposable
         var doc = C3dPersistence.LoadFromFile(path);
         var (s, why) = C3dSetups.Select(doc, "Package lid modes");
         Assert.Null(why);
-        var refused = C3dProblemAssembly.Assemble(C3dSetups.ForRun(s!, path), doc, path, cws);
-        Assert.False(refused.Ok);
-        Assert.Contains("nothing on its bottom", refused.Refusal!, StringComparison.Ordinal);
+        // brief-icp-10 — with the floor undrawn the view floors its air box at the stackup's ground, as the .cem's run does, so the
+        // ports resolve (they were refused as touching nothing below until then); drawing the floor, below, still gives the same ports.
+        var undrawn = C3dProblemAssembly.Assemble(C3dSetups.ForRun(s!, path), doc, path, cws);
+        Assert.True(undrawn.Ok, undrawn.Refusal);
 
         // The floor, drawn: the stackup's 3 µm gold Floor entry under the base, as wide as the base.
         var bases = Em3dProblem.Bounds(C3dElaborator.ElaborateOnce(doc, path, cws).Solids.Single(x => x.Name == "U1/Base").Primitive);

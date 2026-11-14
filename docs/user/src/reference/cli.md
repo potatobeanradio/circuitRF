@@ -584,7 +584,8 @@ lifts the disk floor. `explain` on a 3D setup reports both, and takes
 Touchstone, and refuses when no `.npy` matches it. `explain <file.cemr>` reads a record back, and `-o` moves the Touchstone alone.
 
 `--mesh-only` runs a 3D or thermal setup as far as its mesh and stops before any solver starts: it reports the elements and Gmsh's
-warnings, or Gmsh's errors with the objects named and where they are, and writes no result. It exits **0** on a mesh, **1**
+warnings, or Gmsh's errors with the objects named and where they are, and writes no result. It needs Gmsh only: Palace need not
+be installed to mesh a Palace setup. It exits **0** on a mesh, **1**
 on a refusal or a mesher failure, and **130** when cancelled. `--dry-run` also warns about geometry known to stop the
 mesher, naming the object, its layer and the layout coordinates.
 
@@ -2407,6 +2408,8 @@ you check an override landed — a colour change is the one thing a picture alon
 | `--grid` | Draw the grid. Off by default, as every export is. |
 | `--no-rulers` | Leave the rulers out. |
 | `--outline-text` | `.svg` only: write every label as glyph outlines instead of live text. Refused on `.png` and `.pdf`. |
+| `--component-ports <setup.cem>` | A `.clay` only: draw that EM setup's component ports and cut cell instances as the EM panel marks them on the open layout — each port at its face, each cut instance hatched, each pin's class. The setup must be this layout's; another layout's is refused. |
+| `--solver-geometry` | With `--component-ports`: also draw the geometry that setup's run hands the solver, over the layout. |
 
 **`--outline-text` is for an SVG that leaves circuitRF.** By default an SVG's labels are live text that
 names IBM Plex Sans. A browser, vector editor or animation tool that does not have that font installed

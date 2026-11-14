@@ -31557,3 +31557,85 @@ put where a placeholder part was drawn, its model joined to its Pins by labelled
   PDK PCells', and treating a drawn port on a floating cut pin as that pin's port would be engine behaviour (out of scope).
 - The requester's HBT cascode is theirs to run and report on the issue; nothing of their kit is in the repository.
 
+
+## ICP-10 — component ports on an open SiGe kit's own PCells (2026-11-13)
+
+The ICP series was tried on the issue's requester's open SiGe kit and the open PDK it is built on, in a container: a cascode
+with one transistor top-level and one inside a sub-cell, a kit MIM capacitor reached through a via stack, two drawn ports,
+the kit's PCells drawn by the PDK's own Python through the CNI bridge, the kit's technology unmodified. Nothing built until
+these were fixed; afterwards Planar solved the 8-port passive and reciprocal (σ_max ≤ 1.0000, 1e-9) and `_cosim` drew.
+
+- **Area pins.** The kit marks each pin with a box on a pin-purpose layer (`Metal1.pin`, GDS 8/2); the bridge emits its
+  middle, its height as width and 0°. Two defects, one cause: `EmCellCutout` matched the pin's layer to a conductor exactly
+  (every pin "not an analysis level"), and both cut modes take the face from the stated point and direction (every routed pin
+  "floating"; Cell mode assigns crossings by direction too). `EmPinConductor.Of` maps a purpose to its conductor (same name
+  before the purpose, else the same GDS layer number, one match or none). `AreaFace` reads the face from the interconnect
+  where the stated face is not on the edge of the instance's own metal: the single parent conductor meeting the pin's metal,
+  and the side of it that conductor crosses (Pin), or the box side it leaves through, read before the box cut (Cell). The
+  probed span is the crossing itself — a 0.52 µm trace meeting an 8.19 µm plate fell between probes spread over the side. An
+  edge-pinned cell is untouched (the probe outside its face is outside its metal), so every earlier fixture is identical; the
+  report's face is the derived one only for derived pins, so `explain` stays byte-identical elsewhere. The port label names
+  the conductor's drawing layer, not the purpose: a TopMetal1 port under a TopMetal2 shield otherwise read two levels.
+- **Via landing.** A Metal1–Metal2 via over the HBT's Activ ring was refused as landing on the instance's metal: the check
+  judged every level. It now judges the two the via joins (a via with no span still judges all). Likewise "reached through a
+  via the cut removed" needs a via of the instance joining the pin's level to the other one; a shield over a device is not.
+- **`"*"` on a kit.** A kit cell has no layout view — its layout is a PCell the kit links to the part — so ICP-9's model-cell
+  rule read a sub-block placing a kit transistor as a model: `"*"` took the sub-block, which has no pins, and dropped it in
+  silence. `EmPartKinds.IsModelCell` now discounts a part the cell's own layout places (an instance carrying its
+  SchematicId). A pinless device with nothing inside is said (`Selection.PassedOver`); one with instances is walked into. A
+  kit MIM capacitor stays a device — the kit's model is the answer a designer wants, and solving its 40 nm dielectric on
+  Planar was non-passive at 10 GHz on this run (σ_max 1.11) — and em-setup.md says so and how to keep one in the EM.
+- **Kit PCells drew nothing headlessly.** A snapshot with no `TechIdentity` (the kit's own example layout has none) was
+  rebuilt with no technology, and a CNI cell resolves every layer by name against it: empty cells, a blank render, and the
+  generator's "these layers are not defined" dropped (`Rebuild` called the `out _` overload `GetOrCreate`'s own comment says
+  not to). `GeneratedCellsLifecycle.Canonical` takes the placing layout's TechRef for a non-built-in generator (built-ins draw
+  without one and keep their names); `Rebuild` returns diagnostics, a kit generator's reach Messages (GUI) and
+  `cli.generated-cell.warning` / `check.generated-cell.warning`. A built-in's notes are design-time and stay where they were:
+  surfacing them broke `GeneratedCellsHeadlessTests`' present-equals-absent rule.
+- **Drawn ports on a die.** With the ground on the back of 750 µm of silicon, two calibrated drawn ports grew feed leads and
+  standards worth 87,692 unknowns against 1,940 without — refused, or a swap. `EmRunService.StandardsFallback`: a planar run
+  the memory check would stop while it calibrates drawn edge ports is solved once more with them Uncalibrated (on copies of
+  the labels), and warns naming them; the retry is judged as any run. The pre-solve check predicts it when the standards alone
+  tip it. Not done: the EM panel's own memory line still prices the calibrated run; the pre-solve check does not see grown
+  leads at all (its own note says the run "can be a little larger" — here it was 45×).
+- **`_cosim` on a kit.** `ExistingCells` found only workspace cells, so a cut device whose model is a kit cell refused the
+  drawing ("defines 2 cell(s)"). It now finds them through the workspace's referenced workspaces (`ws://alias/cell`, the kit's
+  own spelling) and library folders. A cut-only run's header no longer says board, pads and gap ports.
+- **3D: the undrawn ground is the view's floor.** A layout run in 3D floors its air box at an undrawn ground-reference plane
+  (`Em3dLayoutSolids`' PEC floor) and its port walk lands there; lowered as an INSTANCE (`options.Instance`) the floor was
+  switched off, so a 3D view of the layout — New 3D View, and every 3D `.cem` with component ports, which is lowered as one
+  (LCP-5) — kept the copied sheets and lost what they stood on: every port refused "touches … nothing on its bottom", the cut
+  with it. LCP-5 recorded this on boards and drew the plane; on this stack the backside has no drawing layer, so it could not be.
+  The lowering now reports `UndrawnGroundTopM` (where a standalone run would floor), the elaborator carries it into world z as
+  `C3dElaboration.UndrawnGroundFloorZ` when every placed layout states the same one and is placed upright, and
+  `C3dProblemAssembly.PlaneFloor` floors the view there when nothing modelled lies below and the setup states no ZMin. Planar's
+  ground and the 3D view's are then one plane: the cascode's 3D `.cem` with its cuts, and its New 3D View, build and run on
+  EMerge with nothing drawn (2,169 tetrahedra, Draft). Three tests that pinned the gap now pin the floor
+  (`CemComponentPortsPanelTests.WhereTheSectionShows`, `SimulateGateTests.Gate2`, `C3dElaborationTests.Gate3`).
+- **3D: the rest of a user's way in.** New 3D View made a Palace setup with only EMerge installed: an unstated solver is now
+  `Em3dSolvers.DefaultInstalled()` (Palace, else EMerge, else openEMS, probed off the UI thread in the GUI), and the Messages line
+  names it. `--mesh-only` refused for want of a Palace binary although only Gmsh meshes: the readiness gate drops Palace for a
+  mesh-only run and the Palace leg binds its program only past the mesh stop. A lumped port touching nothing at one end now
+  says what to do (move it onto the metal it returns through, or draw that metal). `"*"` is described as every part and device,
+  not "every placed two-terminal part".
+- **The marks, headless.** The EM panel's component-port and cut marks were built in `src/Ui` (`EmComponentPortsHost`), so a
+  CLI or agent user could not see the preview. The builder moved to `src/Render` (`ComponentPortMarkBuilder`, no logic changed)
+  and `render <clay> --component-ports <setup.cem> [--solver-geometry]` draws it; a setup of another layout is refused.
+- **The EM panel's memory line** asks `PlanarMemoryCheck.PriceStandardsAsRun`, as the pre-solve check does, so it describes the
+  uncalibrated run that will happen instead of a refusal it no longer meets. Still not seen by either: the feed leads a calibrated
+  run grows (the run itself catches them, by the fallback above).
+- **`_cosim` ownership.** The chip header added above did not start with the board's, which is how a re-run recognises its own
+  netlist, so a re-run with a different port count would have left the old one; both headers now count as the setup's own, and
+  the run's two messages say layout and cut instances for a cut-only run.
+- Not changed, said: the port names in the layout's marks are drawn at a fixed screen size by design (readable at every zoom,
+  placed so none overlaps another); at device scale they read normally once zoomed onto the device.
+- Found on the way, not ours: `SimulateEditorGateTests.TheComponentPortsList_FillsWhenTheViewIsBuilt_WithNoEdit` failed at the
+  last commit too (ICP-7 moved a placed cell instance from the flat rows to the instance tree); now looks in both. The MMIC
+  example's generator dump was never written (ICP-9); written with `CRF_WRITE_GENERATOR_DUMPS=1`.
+- Gates: `AreaPinCutTests` (area face in Pin/Cell mode and with the route drawn onto the pin, port on the conductor's layer,
+  a via over device metal on a level it does not join), `EmCellPartsTests.ASubBlockWhoseLayoutPlacesItsKitPart_IsCopper`,
+  `KitSnapshotTechnologyTests`, `UncalibratedPortTests.ARunPastMemory_OnlyForItsCalibration_SolvesItsDrawnPortsUncalibrated`,
+  `CellCutout3DTests.AnUndrawnGround_FloorsTheView_AsItFloorsTheLayout`,
+  `RenderCliVerbTests.AComponentPortSetup_IsMarkedOnItsLayout_AndRefusedOnAnother`.
+- The shipped MMIC Component Ports layout recorded `TechIdentity` as a path into the author's export folder, so its four cells
+  rebuilt under new names on every run; corrected (artwork identical, so its README's numbers stand).

@@ -1640,3 +1640,4 @@ src/Design/ThreeD/C3dFacetedSphere.cs|A hull needs at least four points.
 src/Design/ThreeD/C3dFacetedSphere.cs|The points are coplanar.
 src/Engine/Em3d/Em3dScatteringResult.cs|The far field holds {far.Length} values, not {nf}×2×{nt}×{np}.
 src/Engine/Em3d/Em3dScatteringResult.cs|The monostatic field holds {monostatic.Length} values, not {nf}×2.
+src/Design/Em3d/Solvers/Palace/Em3dRunService.Palace.cs|A Palace run reached its solve with no Palace.

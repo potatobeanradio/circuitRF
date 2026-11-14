@@ -240,9 +240,21 @@ public static class C3dProblemAssembly
 
     /// <summary><see cref="PlaneFloor(EmSetup, C3dElaboration)"/>, and whether any of the floor's metal is on a conductor the
     /// technology does not mark ground-reference (brief-dfr34-2 R-dfr34-2-4: coverage decides, the flag does not).</summary>
-    public static double? PlaneFloor(EmSetup setup, C3dElaboration e, out bool unmarked)
+    public static double? PlaneFloor(EmSetup setup, C3dElaboration e, out bool unmarked) => PlaneFloor(setup, e, out unmarked, out _);
+
+    /// <summary>... and whether the floor is the stackup's UNDRAWN ground (brief-icp-10): every placed layout leaves its
+    /// ground-reference plane undrawn, at one height, with nothing modelled below it — the floor a standalone run of the layout puts
+    /// there, which its ports' walk lands on. A 3D view dropped it (an instance draws only what its layout draws), so a port copied
+    /// from the layout ended on nothing and every port, the cut ones with them, was refused.</summary>
+    public static double? PlaneFloor(EmSetup setup, C3dElaboration e, out bool unmarked, out bool undrawn)
     {
         unmarked = false;
+        undrawn = false;
+        if (setup.AirBox?.ZMin is null && e.UndrawnGroundFloorZ is { } gz && e.ModelledExtent() is { } m && m.Z0 >= gz - 1e-9)
+        {
+            undrawn = true;
+            return gz;
+        }
         if (setup.AirBox?.ZMin is not null || !Em3dGenerator.ByHeightApplies(setup) || e.ModelledExtent() is not { } x) return null;
         // brief-dfr34-2 R-dfr34-2-4 — the bottom-most layout conductor flush with the bottom of everything is the candidate,
         // marked ground-reference or not: the flags on an imported board describe the technology file, not the board.
@@ -510,11 +522,15 @@ public static class C3dProblemAssembly
         // ── The air box, padded by the generator's own rule ─────────────────────────────────────
         double? paddingH = PaddingHeight(e);
         double? paddingHBelow = PaddingHeightBelow(e);
-        double? planeFloor = PlaneFloor(setup, e, out bool unmarkedFloor);
+        double? planeFloor = PlaneFloor(setup, e, out bool unmarkedFloor, out bool undrawnFloor);
         var box = Em3dGenerator.PaddedAirBox(setup, (extent.X0, extent.Y0, extent.X1, extent.Y1, extent.Z0, extent.Z1),
                                              fMin, planeFloor, waves: [], notes, out string? boxRefusal, paddingH, paddingHBelow);
         if (boxRefusal is not null || box is null) return No(boxRefusal ?? "The air box could not be built.", e.Warnings);
-        notes.Add(planeFloor is not null
+        notes.Add(undrawnFloor
+            ? "The air box's floor is the stackup's ground-reference plane, which the placed layout leaves undrawn: a PEC face at its " +
+              "top, where a run of the layout itself puts it, so the ports that return through that plane land on it. State the " +
+              "AirBox's ZMin to pad below it instead."
+            : planeFloor is not null
             ? "The air box's floor is the underside of the ground plane at the bottom of the geometry, as a PEC face: the plane " +
               "has no hole with other metal over it and lies under everything, so nothing below it carries field. State the AirBox's ZMin to pad below it instead." +
               (unmarkedFloor ? " The bottom conductor is treated as a floor because its metal covers at least " +

@@ -482,6 +482,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.generated-cell.kit-not-allowed",
         "check.generated-cell.note",
         "check.generated-cell.unbuildable",
+        "check.generated-cell.warning",
         "check.layout.degenerate-shape",
         "check.layout.side-refused",
         "check.layout.side-role-omitted",
@@ -585,6 +586,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "cli.generated-cell.kit-not-allowed",
         "cli.generated-cell.note",
         "cli.generated-cell.unbuildable",
+        "cli.generated-cell.warning",
         "cli.input.not-found",
         // AUT-11 R-aut11-1. The one id that changed an EXISTING verb: a run of a document that is
         // neither a netlist nor a schematic is refused by KIND, where it used to be handed to
@@ -1191,6 +1193,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "render.cell.no-primary",
         "render.cell.no-view",
         "render.cell.view-required",
+        "render.component-ports",
         "render.data.binds-nothing",
         "render.data.not-found",
         "render.data.unreadable",

@@ -1063,7 +1063,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         return GeneratedCellsLifecycle.Regenerate(
-            Path.GetDirectoryName(cwsPath)!, doc.ViewModel.Model, ResolveTech, m => Messages.Warning(m));
+            Path.GetDirectoryName(cwsPath)!, doc.ViewModel.Model, ResolveTech, m => Messages.Warning(m), doc.FilePath);
     }
 
     private static string? ReadRecordedPythonInterpreter(string workspaceRootDir)

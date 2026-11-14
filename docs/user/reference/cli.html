@@ -878,7 +878,8 @@ lifts the disk floor. <code>explain</code> on a 3D setup reports both, and takes
 <p><code>--adopt &lt;file.sNp&gt;</code> solves nothing: it writes the <code>.cemr</code> record of a result from before records existed, beside its
 Touchstone, and refuses when no <code>.npy</code> matches it. <code>explain &lt;file.cemr&gt;</code> reads a record back, and <code>-o</code> moves the Touchstone alone.</p>
 <p><code>--mesh-only</code> runs a 3D or thermal setup as far as its mesh and stops before any solver starts: it reports the elements and Gmsh's
-warnings, or Gmsh's errors with the objects named and where they are, and writes no result. It exits <strong>0</strong> on a mesh, <strong>1</strong>
+warnings, or Gmsh's errors with the objects named and where they are, and writes no result. It needs Gmsh only: Palace need not
+be installed to mesh a Palace setup. It exits <strong>0</strong> on a mesh, <strong>1</strong>
 on a refusal or a mesher failure, and <strong>130</strong> when cancelled. <code>--dry-run</code> also warns about geometry known to stop the
 mesher, naming the object, its layer and the layout coordinates.</p>
 <p>A 3D or thermal run makes its mesh in the <strong>Scratch folder</strong> that <strong>Settings ▸ Solvers</strong> names, the system temp folder
@@ -3277,6 +3278,14 @@ you check an override landed — a colour change is the one thing a picture alon
 <tr>
 <td><code>--outline-text</code></td>
 <td><code>.svg</code> only: write every label as glyph outlines instead of live text. Refused on <code>.png</code> and <code>.pdf</code>.</td>
+</tr>
+<tr>
+<td><code>--component-ports &lt;setup.cem&gt;</code></td>
+<td>A <code>.clay</code> only: draw that EM setup's component ports and cut cell instances as the EM panel marks them on the open layout — each port at its face, each cut instance hatched, each pin's class. The setup must be this layout's; another layout's is refused.</td>
+</tr>
+<tr>
+<td><code>--solver-geometry</code></td>
+<td>With <code>--component-ports</code>: also draw the geometry that setup's run hands the solver, over the layout.</td>
 </tr>
 </tbody>
 </table>

@@ -60,6 +60,9 @@ public sealed record EmCutPin(string Path, string Cell, string Pin, EmPinClass C
     /// <summary>brief-icp-4 — the cut face, root DBU (x0, y0, x1, y1; x0 = x1 for a face along y); null where none was found.</summary>
     public (long X0, long Y0, long X1, long Y1)? Face { get; init; }
 
+    /// <summary>brief-icp-10 — the middle of <see cref="Face"/> in layout metres, for a report; null where no face was found.</summary>
+    public (double X, double Y)? FaceAtM { get; init; }
+
     /// <summary>brief-icp-4 R-icp4-1 — the pin of the same instance this pin's port returns through; null for the run's return.</summary>
     public string? Reference { get; init; }
 
@@ -131,7 +134,8 @@ public static class EmCellCutout
                           .ToList();
         var levelLayers = levels.SelectMany(l => l.DrawingLayers).ToHashSet();
         var viaLayers = stack.Where(l => l.Kind == StackupKind.Via).SelectMany(l => l.DrawingLayers).ToHashSet();
-        StackupLayer? ConductorOf(LayerKey layer) => stack.FirstOrDefault(l => l.Kind == StackupKind.Conductor && l.DrawingLayers.Contains(layer));
+        // brief-icp-10 — a pin on a PIN-purpose layer ("Metal1.pin") is on the conductor its layer is a purpose of.
+        StackupLayer? ConductorOf(LayerKey layer) => EmPinConductor.Of(tech, layer);
         string LayerName(LayerKey k) => tech?.Layers.FirstOrDefault(d => d.Key == k)?.Name ?? $"{k.Layer}/{k.Datatype}";
         bool Kept(LayoutShape s, IReadOnlyList<string> keep)
             => keep.Count > 0 && (s.Net is { Length: > 0 } net && keep.Contains(net, StringComparer.OrdinalIgnoreCase)
@@ -196,8 +200,20 @@ public static class EmCellCutout
             if (!cellMode && own.Count > 0)
             {
                 var ownAll = Union(own.Where(s => levelLayers.Contains(s.Layer)));
+                // brief-icp-10 — a via lands only on the conductors it joins: a Metal1–Metal2 via over a device's diffusion ring lands on
+                // nothing the cut removes. A via whose stackup entry names no span is judged against every level, as before.
+                var spanned = new Dictionary<LayerKey, Paths64>();
+                Paths64 OwnUnder(LayerKey viaLayer)
+                {
+                    if (spanned.TryGetValue(viaLayer, out var known)) return known;
+                    var entry = stack.FirstOrDefault(l => l.Kind == StackupKind.Via && l.DrawingLayers.Contains(viaLayer));
+                    var ends = entry is { SpanFromLayer: { } from, SpanToLayer: { } to }
+                        ? stack.Where(l => l.Kind == StackupKind.Conductor && (l.Name == from || l.Name == to)).SelectMany(l => l.DrawingLayers).ToHashSet()
+                        : null;
+                    return spanned[viaLayer] = ends is { Count: > 0 } ? Union(own.Where(s => ends.Contains(s.Layer))) : ownAll;
+                }
                 var lands = shapes.FirstOrDefault(s => viaLayers.Contains(s.Layer) && !Kept(s, keep)
-                                                       && Overlaps(Clipper.Intersect(Paths(s), ownAll, FillRule.NonZero)));
+                                                       && Overlaps(Clipper.Intersect(Paths(s), OwnUnder(s.Layer), FillRule.NonZero)));
                 if (lands is not null)
                 {
                     var b = LayoutGeometry.BboxOf(lands);
@@ -215,6 +231,7 @@ public static class EmCellCutout
 
             var built = new List<(EmCutPin Pin, long Px, long Py, StackupLayer Conductor)>();
             var vias = new Dictionary<EmCutPin, RectShape>();
+            var areaPins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);       // brief-icp-10 — faces read from the interconnect
             foreach (var (pin, _) in ordered)
             {
                 EmCutPin Out(string why) => new(inst.Path, label, pin.Name, EmPinClass.Routed, null, pin.WidthM, pin.OutwardDeg, pin.Layer, null, why);
@@ -229,9 +246,14 @@ public static class EmCellCutout
                 { pins.Add(Out($"{pn}: its layer {LayerName(pin.Layer)} is not one of this setup's analysis levels.")); continue; }
 
                 int q = ((int)Math.Round(turns) % 4 + 4) % 4;              // 0 +x, 1 +y, 2 −x, 3 −y
+                long px = D(pin.X), py = D(pin.Y), half = Math.Max(1, D(pin.WidthM) / 2);
+                // brief-icp-10 — an AREA pin (a box on a pin layer, its point the box's middle): the face is where the interconnect meets it.
+                var area = AreaFace(pin.Layer, conductor, own, cellMode ? flat.Shapes : shapes, cellMode ? boxes[inst.Path] : null,
+                                    px, py, q, delta, pn, At);
+                if (area is { Why: { } areaWhy }) { pins.Add(Out(areaWhy)); continue; }
+                if (area is { } af) { (q, px, py, half) = (af.Q, af.Px, af.Py, af.Half); areaPins.Add(pin.Name); }
                 bool alongX = q is 0 or 2;                                   // the normal runs along x
                 int sign = q is 0 or 1 ? 1 : -1;
-                long px = D(pin.X), py = D(pin.Y), half = Math.Max(1, D(pin.WidthM) / 2);
                 long tPin = alongX ? py : px;
                 long face = alongX ? px : py;
                 if (cellMode)
@@ -276,7 +298,12 @@ public static class EmCellCutout
                     }
                     // Through a via the cut removed: metal of another analysis level lies over the pin.
                     var pinPt = new Point64(px, py);
-                    var under = levels.Where(l => l != conductor).FirstOrDefault(l =>
+                    // brief-icp-10 — only through a via OF THE INSTANCE joining the pin's level to that one: metal on another level over
+                    // a device (a shield, a crossing line) is not reached through anything the cut removed.
+                    bool JoinedByOwnVia(StackupLayer other) => stack.Any(v => v.Kind == StackupKind.Via
+                        && (v.SpanFromLayer == conductor.Name && v.SpanToLayer == other.Name || v.SpanToLayer == conductor.Name && v.SpanFromLayer == other.Name)
+                        && Pieces(own.Where(s => v.DrawingLayers.Contains(s.Layer))).Any(p => Inside(p, pinPt)));
+                    var under = levels.Where(l => l != conductor && JoinedByOwnVia(l)).FirstOrDefault(l =>
                         Pieces(shapes.Where(s => s is not LabelShape and not BitmapShape && l.DrawingLayers.Contains(s.Layer))).Any(p => Inside(p, pinPt)));
                     if (under is not null)
                     { pins.Add(Out($"{pn}: the metal at it is on '{under.Name}', reached through a via the cut removed, not on the pin's own layer {LayerName(pin.Layer)}.")); continue; }
@@ -335,7 +362,8 @@ public static class EmCellCutout
                     var viaEntry = stack.FirstOrDefault(l => l.Kind == StackupKind.Via && l.Plated != false && l.DrawingLayers.Count > 0 &&
                         (Joins(l, conductor.Name, out string? other) && stack.Any(g => g.Kind == StackupKind.Conductor && g.IsGroundReference && g.Name == other)));
                     if (viaEntry is null)
-                    { pins.Add(Out($"{pn}: no via of this technology joins '{conductor.Name}' to a ground-reference conductor, so the pin cannot be tied to ground at its face. Give it a port instead.")); continue; }
+                    { pins.Add(Out($"{pn} is marked Ground and interconnect meets its face, so it would be tied to ground there, but no via of this " +
+                                    $"technology joins '{conductor.Name}' to a ground-reference conductor. Give it a port instead (unmark Ground).")); continue; }
                     long depth = t1 - t0;
                     long v0 = sign > 0 ? face : face - depth, v1 = sign > 0 ? face + depth : face;
                     var viaRect = alongX ? new RectShape { Layer = viaEntry.DrawingLayers[0], X1 = v0, Y1 = t0, X2 = v1, Y2 = t1 }
@@ -357,9 +385,12 @@ public static class EmCellCutout
                                inside.Px, inside.Py, conductor));
                     continue;
                 }
+                // brief-icp-10 — the port names its level by a layer the conductor draws on: a pin-purpose layer names none, so its port
+                // was left to infer the level from geometry and read two levels where a shield or a crossing lies over it.
+                var portLayer = conductor.DrawingLayers.Contains(pin.Layer) || conductor.DrawingLayers.Count == 0 ? pin.Layer : conductor.DrawingLayers[0];
                 var portLabel = new LabelShape
                 {
-                    Layer = pin.Layer, PortLayer = pin.Layer, X = alongX ? face : mid, Y = alongX ? mid : face, Text = pn,
+                    Layer = portLayer, PortLayer = portLayer, X = alongX ? face : mid, Y = alongX ? mid : face, Text = pn,
                     Height = Math.Max(1, (t1 - t0) / 2), IsPort = true, PortKind = Engine.Mom.PlanarPortKind.Edge,
                     PortDirection = q switch { 0 => LayoutRotation.R0, 1 => LayoutRotation.R90, 2 => LayoutRotation.R180, _ => LayoutRotation.R270 },
                     PortUseEdgeWidth = true, PortUncalibrated = true,
@@ -467,11 +498,71 @@ public static class EmCellCutout
                     continue;
                 if (refused.TryGetValue(pin, out var why)) { pins.Add(pin with { Label = null, Why = why }); continue; }
                 if (vias.TryGetValue(pin, out var via)) shapes.Add(via);
-                pins.Add(pin);
+                pins.Add(pin.Face is { } f && areaPins.Contains(pin.Pin) ? pin with { FaceAtM = ((f.X0 + f.X1) / 2.0 * per, (f.Y0 + f.Y1) / 2.0 * per) } : pin);
             }
         }
 
         return new EmCellCutoutResult(shapes, pins, excluded, notes, flat.GeneratorIds) { Regions = regions };
+    }
+
+    /// <summary>brief-icp-10 — the face of an AREA pin, or null when the pin's face is where it says (or nothing meets it).</summary>
+    /// <param name="Q">The side the face looks out of: 0 +x, 1 +y, 2 −x, 3 −y.</param>
+    /// <param name="Px">A point on the face (Pin mode: the middle of the pin metal's side; Cell mode: the middle of the crossing).</param>
+    /// <param name="Half">Half the span the face is probed across.</param>
+    /// <param name="Why">Why the pin is left out, when the interconnect meets it in a way no single face describes.</param>
+    private sealed record AreaPinFace(int Q, long Px, long Py, long Half, string? Why);
+
+    /// <summary>
+    /// brief-icp-10 — a kit that marks a pin with a box on a pin layer states no face: its point is the box's middle and its direction a
+    /// default (0°). Where the stated face is not on the edge of the instance's own metal — the probe just outside it is still in that
+    /// metal — the face is read from the interconnect instead: the one parent conductor that meets the pin's metal, and the side of that
+    /// metal it crosses (Pin mode), or the side of the box it leaves through (Cell mode, read before the box was cut). A pin whose stated
+    /// face IS on its metal's edge is untouched, so every edge-pinned cell builds exactly as before; nothing meeting the pin returns null
+    /// too, and the ordinary classification (floating, abutting, through a via) follows.
+    /// </summary>
+    private static AreaPinFace? AreaFace(LayerKey pinLayer, StackupLayer conductor, IReadOnlyList<LayoutShape> own,
+                                         IReadOnlyList<LayoutShape> parent, Rect64? box, long px, long py, int q, long delta, string pn,
+                                         Func<long, long, string> at)
+    {
+        var onConductor = conductor.DrawingLayers.ToHashSet();
+        var pinPt = new Point64(px, py);
+        var region = Pieces(own.Where(s => onConductor.Contains(s.Layer) || s.Layer == pinLayer)).FirstOrDefault(p => Inside(p, pinPt));
+        if (region is null) return null;
+        var outside = q switch { 0 => new Point64(px + delta, py), 1 => new Point64(px, py + delta), 2 => new Point64(px - delta, py), _ => new Point64(px, py - delta) };
+        if (!Inside(region, outside)) return null;                       // an edge pin: its face is where it says
+
+        var grown = Clipper.InflatePaths(region, delta, JoinType.Miter, EndType.Polygon);
+        var meeting = Pieces(parent.Where(s => s is not LabelShape and not BitmapShape && onConductor.Contains(s.Layer)))
+                      .Where(p => Overlaps(Clipper.Intersect(p, grown, FillRule.NonZero))).ToList();
+        if (meeting.Count == 0) return null;
+        if (meeting.Count > 1)
+            return new AreaPinFace(q, px, py, 0, $"{pn}: {meeting.Count} separate conductors meet its metal at {at(px, py)}; a port drives one.");
+        var piece = meeting[0];
+
+        // The four strips just outside a rectangle's sides, each as (side, strip).
+        static (int Side, Rect64 Strip)[] Strips(Rect64 r, long d) =>
+        [
+            (0, new Rect64(r.right, r.top, r.right + d, r.bottom)), (1, new Rect64(r.left, r.bottom, r.right, r.bottom + d)),
+            (2, new Rect64(r.left - d, r.top, r.left, r.bottom)),   (3, new Rect64(r.left, r.top - d, r.right, r.top)),
+        ];
+        var frame = box ?? Clipper.GetBounds(region[0]);
+        var crossing = Strips(frame, delta)
+            .Select(s => (s.Side, Cut: Clipper.Intersect(piece, new Paths64 { s.Strip.AsPath() }, FillRule.NonZero)))
+            .Where(s => Overlaps(s.Cut)).ToList();
+        string where = box is null ? "its metal" : "the keep-out box";
+        if (crossing.Count == 0)
+            return new AreaPinFace(q, px, py, 0, $"{pn}: the conductor meeting it does not cross a side of {where}, so it has no face to put a port at.");
+        if (crossing.Count > 1)
+            return new AreaPinFace(q, px, py, 0, $"{pn}: the conductor meeting it crosses {crossing.Count} sides of {where}; a port's face is one side.");
+        var (side, cut) = crossing[0];
+        bool alongX = side is 0 or 2;
+        long faceAt = side switch { 0 => frame.right, 1 => frame.bottom, 2 => frame.left, _ => frame.top };
+        // The span probed is the crossing itself, not the whole side: a 0.5 µm trace meeting an 8 µm plate falls between probes
+        // spread over the side.
+        var b = Clipper.GetBounds(cut);
+        long lo = (alongX ? b.top : b.left) - delta, hi = (alongX ? b.bottom : b.right) + delta;
+        long mid = (lo + hi) / 2;
+        return new AreaPinFace(side, alongX ? faceAt : mid, alongX ? mid : faceAt, Math.Max(1, (hi - lo) / 2), null);
     }
 
     /// <summary>Whether a via entry spans <paramref name="conductor"/>, and the conductor at its other end.</summary>

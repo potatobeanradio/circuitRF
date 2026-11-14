@@ -65,7 +65,7 @@ public sealed class NewViewComponentPortsTests : IClassFixture<PlanarComponentPo
         var setup = EmSetupPersistence.FromEmbedded(Assert.Single(C3dPersistence.LoadFromFile(C3dPath).Setups));
         Assert.Equal("board", setup.Name);
         Assert.True(setup.Is3D);
-        Assert.Equal(Em3dSolvers.Default, setup.Solver3D);
+        Assert.Equal(Em3dSolvers.DefaultInstalled(), setup.Solver3D);    // brief-icp-10 — nobody chose: the first installed solver
         Assert.Equal(Sweep(planar.Frequency), Sweep(setup.Frequency));
         Assert.Equal(new EmSetup().PlanarMesh, setup.PlanarMesh);
         Assert.Equal(planar.ComponentPorts, setup.ComponentPorts);

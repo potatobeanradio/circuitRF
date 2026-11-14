@@ -74,6 +74,34 @@ public static class PlanarMemoryCheck
         return PlanarRunMemory.WithStandards(report, std, mesh, accelerated);
     }
 
+    /// <summary>
+    /// brief-icp-10 — <see cref="PriceStandards"/>, as the run decides it (<c>EmRunService.StandardsFallback</c>): a run past its
+    /// limit only because of the calibration standards of drawn edge ports is solved with those ports Uncalibrated, so the report
+    /// is the structure's own, with a warning naming the ports. The pre-solve check and the EM panel ask this, so they describe
+    /// the run that will happen rather than a refusal it no longer meets.
+    /// </summary>
+    public static PlanarMeshReport PriceStandardsAsRun(PlanarMeshReport report, PlanarProblem meshed, IReadOnlyList<PlanarPort> ports,
+                                                       IReadOnlyList<double> freqsHz, PlanarMeshSettings mesh, bool accelerated,
+                                                       RunControl? control = null)
+    {
+        var priced = PriceStandards(report, meshed, ports, freqsHz, mesh, accelerated, control);
+        if (accelerated || priced.StandardResidentBytes <= 0 || mesh.MemoryLimitBytes is not { } limit) return priced;
+        var switchable = ports.Where(p => p.Kind == PlanarPortKind.Edge && !p.Uncalibrated && !p.IsConductorReferenced).Select(p => p.Number).ToList();
+        if (switchable.Count == 0) return priced;
+        bool machine = mesh.MemoryLimitSource != PlanarMemoryLimitSource.PhysicalMemory;
+        long total = priced.RunResidentBytes, std = priced.StandardResidentBytes;
+        if (Evaluate(new PlanarRunSize(priced.UnknownCount, priced.CellCount, false, total) { StandardBytes = std }, limit, machine).Level != Em3dMemoryLevel.Severe
+            || Evaluate(new PlanarRunSize(priced.UnknownCount, priced.CellCount, false, total - std), limit, machine).Level == Em3dMemoryLevel.Severe)
+            return priced;
+        var findings = new List<EmFinding>(report.AllFindings)
+        {
+            EmFinding.Warn($"Port(s) {string.Join(", ", switchable)} will be solved as Uncalibrated Ports: their calibration standards need " +
+                           $"{MachineMemory.Format(std)} at each frequency point, past {MachineMemory.Format(limit)}, and the structure alone fits. " +
+                           "Each launch is then in the result."),
+        };
+        return report with { Findings = findings, Notes = EmFindings.Texts(findings) };
+    }
+
     /// <summary>Above this share of physical memory a run is warned about.</summary>
     public const double WarnFraction = 0.75;
 

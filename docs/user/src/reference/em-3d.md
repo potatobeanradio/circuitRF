@@ -177,7 +177,7 @@ full description.
 
   <a id="part-ports"></a>**A port across each part's own pads** (`ComponentPorts`). To co-simulate a board with the
   parts placed on it, each part needs a port of the board's N-port at its own pads. The setup names them by reference
-  designator — `["C1", "C2", "L2"]`, or `"*"` for every placed two-terminal part — in its **Component ports** list (tick
+  designator — `["C1", "C2", "L2"]`, or `"*"` for every footprint part and every device ([what `"*"` takes](em-setup.html#cell-instances)) — in its **Component ports** list (tick
   the parts; **Check** shows what would be built) or with `em <view.c3d> --component-ports "C1,C2"` for one run. That
   setup is a 3D setup of a [3D view](drawing-in-3d.html) that places the board's layout, or a `.cem` on the layout,
   Planar or 3D: the list is stored in the setup that names it, never in the layout
@@ -255,7 +255,10 @@ full description.
   metal. Each is rounded to the nearest 5 % of its axis. No default is more than an eighth of the longest wavelength or the structure's largest extent. On
   a 1.6 mm board whose top dielectric is 0.2 mm that is about 4 mm of air on the sides and 1.6 mm on top; state a
   larger +Z padding when the field above the board needs more room. The floor sits on the lowest ground plane, as a
-  PEC face, when that plane is undrawn, or when it is drawn under all the other metal. A drawn bottom conductor that
+  PEC face, when that plane is undrawn, or when it is drawn under all the other metal. That holds in a 3D view too: when
+  every layout it places leaves its stackup's ground plane undrawn, at one height, with nothing below it, the view's floor
+  is that plane, so the ports a layout brings in (and a cut instance's sheets) land on it as they do when the layout runs
+  on its own. A drawn bottom conductor that
   covers 95 % of the footprint is that floor even when the technology does not mark it as ground, and the notes say so. A hole in that plane is allowed
   when nothing of another net lies in or over it, so the drill holes of ground vias do not keep the floor off. A hole
   with a signal via or other metal of another net in it does, because a floor there would short that metal to

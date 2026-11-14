@@ -294,6 +294,7 @@ public static class EmPlanarComponentPorts
         if (selection.Refusal is { } selectWhy) return Refuse(selectWhy) with { Instances = instances, InstanceEntries = selection.InstanceEntries };
         foreach (var (entry, why) in selection.Unplaced)
             warnings.Add($"{why} That entry is left out of this run; the other component ports are built.");
+        warnings.AddRange(selection.PassedOver);
 
         // brief-icp-2 R-icp2-1 — the cut, in the order the cut instances' ports are numbered (R-icp2-5): by the entry that took each,
         // in list order, then in the hierarchy's walk order.
@@ -482,8 +483,7 @@ public static class EmPlanarComponentPorts
                 results.Add(new EmPlanarComponentPort(pin.Path, pin.Name, pin.Pin, pin.Reference, strip, portLabel, number, z0, gapM, widthM,
                                                       alongX, null)
                 {
-                    Conductor = source.Technology?.Stackup.Layers
-                        .FirstOrDefault(l => l.Kind == StackupKind.Conductor && l.DrawingLayers.Contains(pin.Layer))?.Name,
+                    Conductor = EmPinConductor.Of(source.Technology, pin.Layer)?.Name,
                     ClayPath = source.AbsolutePath, Cutout = true, Cell = pin.Cell, CutPart = part,
                     SchematicId = instances.At(pin.Path)?.SchematicId,
                 });

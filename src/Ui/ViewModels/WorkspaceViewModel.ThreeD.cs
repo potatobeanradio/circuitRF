@@ -422,8 +422,11 @@ public partial class WorkspaceViewModel
         var path = Path.Combine(CircuitRF.Design.Cells.CellFolder.SubFolderPath(cellDir, CircuitRF.Design.Cells.ViewType.ThreeD), name + C3dPersistence.Extension);
         if (File.Exists(path)) { Messages.Error($"A file named '{name}{C3dPersistence.Extension}' already exists."); return; }
         if (!await SaveCellLayoutsBeforeThreeD(cellDir, window)) return;
-        var made = C3dHierarchy.NewFromLayout(cellDir, path, CurrentWorkspacePath, _techCache,
-                                              Em3dSolverChoice.One(CircuitRF.Ui.Layout.Em.EmSolverPreference.ThreeD));
+        // brief-icp-10 — with no 3D solver chosen in Settings, the first one installed (asked off the UI thread: it probes them).
+        var solver = CircuitRF.Ui.Layout.Em.EmSolverPreference.ThreeDStated is { } stated
+            ? Em3dSolverChoice.One(stated)
+            : await Task.Run(CircuitRF.Design.Em3d.Em3dSolvers.DefaultInstalled);
+        var made = C3dHierarchy.NewFromLayout(cellDir, path, CurrentWorkspacePath, _techCache, solver);
         if (made.Document is not { } c3d) { Messages.Error($"New 3D View from Layout: {made.Refusal}"); return; }
         try { CircuitRF.Design.Cells.CellCreate.WriteThreeDView(cellDir, name, c3d); }
         catch (Exception ex) { Messages.Error($"Failed to create the 3D view: {ex.Message}"); return; }

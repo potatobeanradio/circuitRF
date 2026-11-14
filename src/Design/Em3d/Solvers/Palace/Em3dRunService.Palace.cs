@@ -95,13 +95,16 @@ public static partial class Em3dRunService
                 ? readiness.FirstOrDefault(r => r.Tool == SolverTool.Palace)?.Capabilities
                            .FirstOrDefault(c => c.Capability == SolverCapability.Gpu)?.Devices
                 : null;
-            var p = readiness.Single(r => r.Tool == SolverTool.Palace).Installation!;
+            var p = readiness.FirstOrDefault(r => r.Tool == SolverTool.Palace && r.Proceeds)?.Installation;
             var g = readiness.Single(r => r.Tool == SolverTool.Gmsh).Installation!;
-            log.Notes.Add($"Solver: Palace {p.DescribeVersion()} at {SpackInstalls.FoldPadding(p.Where)}; mesher: Gmsh {g.DescribeVersion()} at {g.Path}.");
+            // brief-icp-10 — a mesh-only run needs no Palace (Em3dRunService.Run lets it through without one).
+            log.Notes.Add(p is null
+                ? $"Mesher: Gmsh {g.DescribeVersion()} at {g.Path}; Palace is not installed, and meshing does not need it."
+                : $"Solver: Palace {p.DescribeVersion()} at {SpackInstalls.FoldPadding(p.Where)}; mesher: Gmsh {g.DescribeVersion()} at {g.Path}.");
             // brief-em3d-135 R-em3d135-1e — an untested Gmsh runs, and the run says so among its Warnings.
             if (readiness.Single(r => r.Tool == SolverTool.Gmsh).Warning is { } untested) log.Warnings.Add(untested);
             var settings = _settings = PalaceSettings.Resolve(setup.Palace);
-            if (p.Distribution is not null)
+            if (p?.Distribution is not null)
             {
                 if (SolverDiscovery.For(SolverTool.Palace).Subsystem is not { } wsl)
                     Stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-subsystem",
@@ -162,7 +165,7 @@ public static partial class Em3dRunService
     // ── Palace (brief-em3d-7) ─────────────────────────────────────────────────────────────────
 
     private sealed record PalacePlan(PalaceSettings Settings, GmshLowering Lowering, string ConfigJson,
-                                     SolverInstallation Palace, SolverInstallation Gmsh, IPalaceRunner Runner,
+                                     SolverInstallation? Palace, SolverInstallation Gmsh, IPalaceRunner Runner,
                                      Em3dMemoryScope? Memory, bool FarField = false,
                                      PalaceDevice Device = PalaceDevice.Cpu, int? Gpus = null);
 
@@ -197,7 +200,7 @@ public static partial class Em3dRunService
             (row.Severity == Em3dFidelitySeverity.Warning ? log.Warnings : log.Notes).Add(row.Sentence);
 
         return new PalacePlan(settings, lowering, config.Json!,
-                              readiness.Single(r => r.Tool == SolverTool.Palace).Installation!,
+                              readiness.FirstOrDefault(r => r.Tool == SolverTool.Palace && r.Proceeds)?.Installation,
                               readiness.Single(r => r.Tool == SolverTool.Gmsh).Installation!, runner, memoryScope, farField,
                               device, gpus);
     }
@@ -209,7 +212,7 @@ public static partial class Em3dRunService
         const Em3dSolverId Me = PalaceSolver.Id;
         Leg Failed(string reason) => Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(reason));
         Leg Cancelled() => Leg.Failed(Me, EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
-        var (settings, lowering, palace) = (plan.Settings, plan.Lowering, plan.Palace);
+        var (settings, lowering) = (plan.Settings, plan.Lowering);
         string configJson = plan.ConfigJson;
         // The memory question's answer can trade the setup's direct solver for the iterative one, for this run only: the
         // mesh is the same, so only the configuration is written again.
@@ -287,6 +290,9 @@ public static partial class Em3dRunService
                                                   meshed.Reused, runDir, PalaceRun.GmshWarningLines(meshLog)),
             };
         }
+
+        // Past the mesh-only stop a run solves, and the readiness gate admitted it only with a Palace.
+        var palace = plan.Palace ?? throw new InvalidOperationException("A Palace run reached its solve with no Palace.");
 
         // brief-em3d-21 R-em3d21-2 — the mesh's size is known now, and on a problem whose mesh is mostly
         // refinement (a bond wire) it is the first figure that can say the run will not fit.

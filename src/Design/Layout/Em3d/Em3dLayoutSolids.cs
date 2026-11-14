@@ -107,6 +107,10 @@ public sealed record Em3dLayoutSolidsResult(
     /// <summary>The conductors on ground-reference stackup entries.</summary>
     public IReadOnlyList<string> GroundBandObjects { get; init; } = [];
 
+    /// <summary>brief-icp-10 — lowered as an instance, the top of the stackup's undrawn ground-reference plane (in the layout's own
+    /// z) where a standalone run of the layout floors its air box; null when it would not floor it.</summary>
+    public double? UndrawnGroundTopM { get; init; }
+
     /// <summary>brief-emb-2 R-emb2-3 — the farthest Robust meshing moved any outline point, metres; 0 when it is off or moved
     /// nothing. A port edge that touched the artwork as drawn is within this of the outline the run meshes.</summary>
     public double OutlineMoveM { get; init; }
@@ -184,6 +188,10 @@ public static class Em3dLayoutSolids
         public bool PecFloor { get; private set; }
         public double FloorZ { get; private set; } = double.NaN;
         public bool FloorStatedAway { get; private set; }
+
+        /// <summary>brief-icp-10 — placed as an instance: the top of the undrawn ground-reference plane where a standalone run of
+        /// this layout would put its PEC floor; null when it would not.</summary>
+        public double? UndrawnGroundTopM { get; private set; }
 
         /// <summary>Designer round 33 — the underside of a drawn, unbroken lowest ground plane, where the air box's floor goes
         /// (a PEC face) when the setup states nothing for ZMin; null otherwise.</summary>
@@ -485,6 +493,9 @@ public static class Em3dLayoutSolids
             // An instance has no air box to be floored, and draws only what its layout draws: the undrawn plane
             // the floor would have been is not metal in a 3D view (it was, from brief-em3d-42 R-em3d42-2c, and
             // put copper under a drawn ground plane that nothing in the view could remove).
+            // brief-icp-10 — but the 3D view placing it can floor the box there, and needs to know where: the ports a layout's
+            // port walk lands on the floor reach it only if the view's air box has one (C3dProblemAssembly.PlaneFloor).
+            if (options.Instance && pecFloor) UndrawnGroundTopM = ground!.TopM;
             if (options.Instance) pecFloor = false;
             if (groundPadsOnly && pecFloor)
             {
@@ -1308,6 +1319,7 @@ public static class Em3dLayoutSolids
             ViaNetConflicts = ViaNetConflictMap,
             ViaNetAdoptions = ViaNetAdoptionMap,
             GroundBandObjects = GroundBandObjectList,
+            UndrawnGroundTopM = UndrawnGroundTopM,
             OutlineMoveM = _robust.MaxMoveM,
             Wires = WireBuild?.Reports ?? [],
             NoAlpha = NoAlphaList,

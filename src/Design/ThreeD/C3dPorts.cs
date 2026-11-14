@@ -986,7 +986,9 @@ public static class C3dPorts
         if (a.Count + b.Count == 0)
             return $"{label} touches no conductor on any edge. {Sentence(Enumerable.Range(0, 4).Select(Misses))}{Rule} Draw it so two opposite edges lie on the metal.";
         var (lo, hi) = a.Count >= b.Count ? (2 * best, 2 * best + 1) : (2 * best + 1, 2 * best);
-        return $"{label} touches {Names(touching[lo])} on its {EdgeNames[lo]} edge and nothing on its {EdgeNames[hi]}. {Sentence([Misses(hi)])}{Rule}";
+        // brief-icp-10 — the remedy, said: the sentence named what was wrong and nothing to do about it.
+        return $"{label} touches {Names(touching[lo])} on its {EdgeNames[lo]} edge and nothing on its {EdgeNames[hi]}. {Sentence([Misses(hi)])}{Rule} " +
+               $"Move the port (Move… on the port) so its {EdgeNames[hi]} edge lies on the metal it returns through, or draw that metal.";
     }
 
     /// <summary>The conductor nearest an edge, leaving out <paramref name="except"/>; null when none is left. Measured nearest box first and

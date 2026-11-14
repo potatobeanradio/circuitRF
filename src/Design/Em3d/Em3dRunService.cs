@@ -273,6 +273,9 @@ public static partial class Em3dRunService
         // brief-em3d-136 R-em3d136-3d — and, for a GPU run, whether this Palace solves on a GPU and how many it sees.
         bool standIn = Em3dSolvers.Of(choice).Any(d => LegStandIn?.Invoke(resultsRoot, d) is not null);
         var readiness = standIn ? [] : SolverDiscovery.ReadinessFor(choice, setup, device);
+        // brief-icp-10 — a mesh-only run starts no Palace: Gmsh makes the mesh, so a missing Palace does not stop it.
+        if (control?.MeshOnly == true)
+            readiness = [.. readiness.Where(r => r.Proceeds || r.Tool != SolverTool.Palace)];
         if (readiness.FirstOrDefault(r => !r.Proceeds) is { } blocked)
         {
             var unavailable = EmDiagnostics.SolverUnavailable(blocked.Name, blocked.Refusal!, Install.SolverInstaller.OfferFor(blocked));

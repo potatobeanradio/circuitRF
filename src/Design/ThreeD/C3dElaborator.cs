@@ -197,6 +197,10 @@ public sealed record C3dElaboration(
     /// <summary>The conductors on a layout instance's ground-reference stackup entries.</summary>
     public IReadOnlyList<string> GroundBandObjects { get; init; } = [];
 
+    /// <summary>brief-icp-10 — the world height of the stackup ground every placed layout leaves undrawn, where a standalone run of
+    /// each would floor its air box (one height for all of them, each placed upright); null when any placed layout would not.</summary>
+    public double? UndrawnGroundFloorZ { get; init; }
+
     /// <summary>brief-emb-2 R-emb2-3 — the farthest Robust meshing moved any placed layout's outline, metres (0: nothing moved).
     /// Port inference measures against the moved outline and lets an edge that touched the drawn one follow it.</summary>
     public double OutlineMoveM { get; init; }
@@ -819,6 +823,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         private readonly Dictionary<string, string> _viaNetConflicts = new(StringComparer.Ordinal);
         private readonly Dictionary<string, Em3dViaNetAdoption> _viaNetAdoptions = new(StringComparer.Ordinal);
         private readonly List<string> _groundBand = [];
+        private readonly List<double> _undrawnFloors = [];
+        private bool _layoutWithoutFloor;
         private double _outlineMove;
         private readonly Dictionary<string, Em3dObjectOrigin> _origins = new(StringComparer.Ordinal);
         private readonly List<Em3dWireReport> _wires = [];
@@ -954,6 +960,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 ViaNetConflicts = _viaNetConflicts,
                 ViaNetAdoptions = _viaNetAdoptions,
                 GroundBandObjects = _groundBand,
+                UndrawnGroundFloorZ = _undrawnFloors.Count > 0 && !_layoutWithoutFloor && _undrawnFloors.All(z => Math.Abs(z - _undrawnFloors[0]) <= 1e-12)
+                    ? _undrawnFloors[0] : null,
                 OutlineMoveM = _outlineMove,
                 MaterialSources = sources,
                 SolidMaterials = records,
@@ -1915,6 +1923,10 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             foreach (var (obj, conflict) in solids.ViaNetConflicts) _viaNetConflicts[prefix + obj] = conflict;
             foreach (var (obj, adoption) in solids.ViaNetAdoptions) _viaNetAdoptions[prefix + obj] = adoption;
             _groundBand.AddRange(solids.GroundBandObjects.Select(o => prefix + o));
+            // brief-icp-10 — where this placement's undrawn ground lies in the world, when it is placed upright.
+            if (solids.UndrawnGroundTopM is { } gz && t.M20 == 0 && t.M21 == 0 && t.M02 == 0 && t.M12 == 0 && t.M22 > 0)
+                _undrawnFloors.Add(t.M22 * gz + t.Tz);
+            else _layoutWithoutFloor = true;
             _outlineMove = Math.Max(_outlineMove, solids.OutlineMoveM);
             foreach (var (obj, origin) in solids.Origins) _origins[prefix + obj] = origin;
             // A pad top is a height in the layout's own stack; the thermal chain and its contact patches read it as a WORLD height,

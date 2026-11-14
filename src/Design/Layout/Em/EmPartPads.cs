@@ -135,6 +135,10 @@ public static class EmPartPads
         /// left out, the others run.</summary>
         public IReadOnlyList<(EmComponentPort Entry, string Why)> Unplaced { get; init; } = [];
 
+        /// <summary>brief-icp-10 — devices <c>"*"</c> reached and could not cut (no layout pins, nothing inside to walk into), each a
+        /// sentence. A warning, not a refusal: the rest of the selection builds.</summary>
+        public IReadOnlyList<string> PassedOver { get; init; } = [];
+
         /// <summary>brief-icp-3 R-icp3-4 — the setup's own entries the instance side read (a named instance or path, a <c>Cell</c>,
         /// an <c>X/*</c>), as written; <c>"*"</c> is not among them, since it takes footprint parts too. What a 3D view's footprint
         /// build leaves to the cut.</summary>
@@ -242,6 +246,7 @@ public static class EmPartPads
         // "*" and "X/*": every device with pins, walking down through copper and stopping at the first device on each branch, or
         // at an instance a named or cell entry already took.
         var byAll = new Dictionary<string, EmComponentPort>(StringComparer.OrdinalIgnoreCase);
+        var passed = new List<string>();
         foreach (var entry in setup.ComponentPorts.Where(c => IsAll(c) || IsSubtreeAll(c)))
         {
             string? root = null;
@@ -257,7 +262,15 @@ public static class EmPartPads
                 foreach (var child in instances.ChildrenOf(parent))
                 {
                     if (named.ContainsKey(child.Path) || byCell.ContainsKey(child.Path)) continue;
-                    if (child.Kind == EmInstanceKind.Part) { if (child.Pins.Count > 0) reached.Add(child); }
+                    if (child.Kind == EmInstanceKind.Part)
+                    {
+                        if (child.Pins.Count > 0) reached.Add(child);
+                        // brief-icp-10 — a device with no layout pins has nothing a port could sit on: walk into it when it places
+                        // instances of its own, else say it was passed over (it was dropped without a word).
+                        else if (instances.ChildrenOf(child.Path).Any()) Down(child.Path);
+                        else passed.Add($"{child.Path} ({child.CellLabel}) is a device with no layout pins, so \"{entry.Refdes.Trim()}\" cannot " +
+                                        "cut it out and its geometry stays in the problem; give its cell's layout pins.");
+                    }
                     else if (child.Kind == EmInstanceKind.Copper) Down(child.Path);
                 }
             }
@@ -291,7 +304,7 @@ public static class EmPartPads
             return new([], NothingToTake(where, instances));
         return new(wanted, null)
         {
-            Instances = list, Unplaced = unplaced,
+            Instances = list, Unplaced = unplaced, PassedOver = passed.Distinct(StringComparer.Ordinal).ToList(),
             InstanceEntries = [.. setup.ComponentPorts.Where(c => !footprintEntries.Contains(c))],
         };
     }

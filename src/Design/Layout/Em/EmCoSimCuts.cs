@@ -78,7 +78,10 @@ public sealed record EmCoSimCut(string Path, string Cell, string? GeneratorId, I
                             var ip = inst?.Pins.FirstOrDefault(q => q.Name.Equals(p.Pin, StringComparison.OrdinalIgnoreCase));
                             return new EmCoSimCutPin(p.Pin, ip?.Number, p.Why is null ? p.Class : null, p.Abuts, p.Why)
                             {
-                                Face = ip is null ? null : new EmPinFace(ip.X, ip.Y, ip.WidthM, ip.OutwardDeg, ip.Layer),
+                                // brief-icp-10 — the face the cut built at (an area pin's is where the interconnect meets it), else
+                                // the pin as projected.
+                                Face = p.FaceAtM is { } m ? new EmPinFace(m.X, m.Y, p.WidthM, p.OutwardDeg, ip?.Layer ?? p.Layer)
+                                     : ip is null ? null : new EmPinFace(ip.X, ip.Y, ip.WidthM, ip.OutwardDeg, ip.Layer),
                             };
                         })
                         .ToList();
@@ -176,7 +179,7 @@ internal static class EmCoSimCuts
                     }
                 }
                 var placed = new Instance(name, found.Model.Reference, nets, found.Model.Overrides);
-                var comment = new StringBuilder($"{label}: {cut.Cell} cut out of the layout, its model's terminals on its pins by name.");
+                var comment = new StringBuilder($"{label}: {cut.CellLabel} cut out of the layout, its model's terminals on its pins by name.");
                 if (found.Note is not null) comment.Append(' ').Append(found.Note);
                 foreach (var n in notes) comment.Append(' ').Append(n);
                 foreach (var w in warnings) comment.Append(' ').Append(w);

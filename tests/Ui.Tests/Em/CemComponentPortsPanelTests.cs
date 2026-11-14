@@ -157,9 +157,9 @@ public sealed class CemComponentPortsPanelTests(PlanarComponentPortTests.Board b
         Assert.Equal(["C1", "C2"], vm.ComponentPortRows.Select(r => r.Refdes));
         Assert.Equal(EmSetupEditorViewModel.ComponentPortsTip3D, vm.ComponentPortsTip);
         await vm.CheckComponentPortsCommand.ExecuteAsync(null);
-        // This board's ground is its stackup's and a 3D view solves drawn copper, so its drawn ports do not resolve: Check says the
-        // view's own refusal (LayoutComponentPort3DTests builds the same board with a drawn plane).
-        string why = CircuitRF.Design.ThreeD.Em3dSetupProblem.Of(driven, board.Source(), board.Tech).Refusal!;
-        Assert.Contains(_posted, m => m.Warning && m.Text.Contains(why, StringComparison.Ordinal));
+        // This board's ground is its stackup's only. brief-icp-10: the 3D view floors its air box there, as a run of the layout does,
+        // so its drawn ports resolve and Check refuses nothing (it was refused as touching nothing below until then).
+        Assert.Null(CircuitRF.Design.ThreeD.Em3dSetupProblem.Of(driven, board.Source(), board.Tech).Refusal);
+        Assert.DoesNotContain(_posted, m => m.Warning && m.Text.Contains("nothing on its bottom", StringComparison.Ordinal));
     }
 }

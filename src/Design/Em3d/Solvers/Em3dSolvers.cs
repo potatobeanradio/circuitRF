@@ -82,6 +82,20 @@ public static class Em3dSolvers
         return All.ToDictionary(d => d.Id, d => d.Tools.All(t => found[t]));
     }
 
+    /// <summary>
+    /// brief-icp-10 — the solver a new 3D setup takes when nobody has chosen one: <see cref="Default"/> when it is installed, else
+    /// the first installed of EMerge and openEMS, else <see cref="Default"/> (a setup with nothing installed says so when run).
+    /// A user who installed only EMerge was handed a Palace setup that refused to run. Probes each program once, so a caller
+    /// with a window calls it off its UI thread.
+    /// </summary>
+    public static Em3dSolverChoice DefaultInstalled()
+    {
+        var installed = Installed();
+        foreach (var id in new[] { PalaceSolver.Id, EmergeSolver.Id, OpenEmsSolver.Id })
+            if (installed.TryGetValue(id, out bool yes) && yes) return id;
+        return Default;
+    }
+
     /// <summary>The solver whose <see cref="Em3dSolverDescriptor.ResultToken"/> is <paramref name="token"/>, any case.</summary>
     public static Em3dSolverDescriptor? ByToken(string token)
         => All.FirstOrDefault(d => string.Equals(d.ResultToken, token, StringComparison.OrdinalIgnoreCase));

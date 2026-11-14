@@ -58,6 +58,10 @@ public static class EmSolverPreference
     /// <summary>A new <c>.c3d</c> EM setup's solver: Palace (<see cref="Em3dSolvers.Default"/>) unless another is stored. With
     /// Thermal preferred it is Palace: a setup that must solve the EM problem (one made from a Planar .cem's component ports)
     /// still needs an EM solver.</summary>
+    /// <summary>brief-icp-10 — the 3D solver a user chose in Settings, or null when none is stored (a new setup then takes the
+    /// first installed one, <see cref="Em3dSolvers.DefaultInstalled"/>).</summary>
+    public static Em3dSolverId? ThreeDStated => FromStored(ThreeDStored);
+
     public static Em3dSolverId ThreeD
     {
         get => FromStored(ThreeDStored) ?? Em3dSolvers.Default.Reference;

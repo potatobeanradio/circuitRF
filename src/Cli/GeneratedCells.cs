@@ -251,6 +251,7 @@ internal static class GeneratedCells
         foreach (var cell in run.Unbuildable) add(CliDiagnostics.CheckGeneratedCellUnbuildable(clayPath, cell.Sentence));
         foreach (var kit in run.KitsNotAllowed) add(CliDiagnostics.CheckGeneratedCellKitNotAllowed(clayPath, KitSentence(kit)));
         foreach (string note in run.Notes) add(CliDiagnostics.CheckGeneratedCellNote(clayPath, note));
+        foreach (string said in run.Warnings) add(CliDiagnostics.CheckGeneratedCellWarning(clayPath, said));
         return run;
     }
 
@@ -281,6 +282,7 @@ internal static class GeneratedCells
             foreach (var cell in run.Unbuildable) add(CliDiagnostics.CheckGeneratedCellUnbuildable(clay, cell.Sentence));
             foreach (var kit in run.KitsNotAllowed) add(CliDiagnostics.CheckGeneratedCellKitNotAllowed(clay, KitSentence(kit)));
             foreach (string note in run.Notes) add(CliDiagnostics.CheckGeneratedCellNote(clay, note));
+            foreach (string said in run.Warnings) add(CliDiagnostics.CheckGeneratedCellWarning(clay, said));
             runs.Add(run);
         }
         return runs;
@@ -332,6 +334,7 @@ internal static class GeneratedCells
     private static int? Report(GeneratedCellsRun run)
     {
         foreach (string note in run.Notes) JsonRun.Report(CliDiagnostics.GeneratedCellNote(note));
+        foreach (string said in run.Warnings) JsonRun.Report(CliDiagnostics.GeneratedCellWarning(said));
         if (run.CellsBuilt > 0)
             Console.Error.WriteLine($"[circuitRF] generated cells: {run.CellsBuilt} rebuilt from their layouts' snapshots");
 

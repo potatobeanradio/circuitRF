@@ -44,6 +44,21 @@ public sealed class UncalibratedPortTests(UncalibratedPortTests.Fixture fx, ITes
         Assert.DoesNotContain(raw.Notes ?? [], t => t.StartsWith("De-embedding costs", StringComparison.Ordinal));
     }
 
+    /// <summary>brief-icp-10 — a run past memory only because it calibrates its drawn ports (the feed leads and standards that takes)
+    /// solves them as Uncalibrated Ports instead, and says so, rather than being refused. The limit is half again the structure's own
+    /// figure, which the uncalibrated run fits and the calibrated one does not.</summary>
+    [Fact]
+    public void ARunPastMemory_OnlyForItsCalibration_SolvesItsDrawnPortsUncalibrated()
+    {
+        var top = new FrequencySpec("20", "20", 1, SweepKind.Linear, "GHz", "GHz");
+        long structure = fx.Preflight("budget", Line(uncalibrated: true), top).PlanarMesh!.RunResidentBytes;
+        var run = fx.Run("budget-run", Line(uncalibrated: false), top, memoryCeiling: structure * 3 / 2);
+        output.WriteLine($"structure {structure} B; {run.Error}");
+        Assert.True(run.Status == EmRunStatus.Ok, run.Error);
+        Assert.Contains(run.Warnings ?? [], w => w.StartsWith("Port(s) 1, 2 are solved as Uncalibrated Ports", StringComparison.Ordinal));
+        Assert.Contains(run.Notes ?? [], t => t.Contains("are Uncalibrated Ports", StringComparison.Ordinal));
+    }
+
     /// <summary>Gate 2 — the device-pitch case: three lines meeting a vacated site from three sides. Calibrated, the feeds'
     /// neighbours refuse the run; uncalibrated, it solves, passive.</summary>
     [Fact]
@@ -200,7 +215,19 @@ public sealed class UncalibratedPortTests(UncalibratedPortTests.Fixture fx, ITes
 
         public EmRunResult SiteRaw => _siteRaw.Value;
 
-        public EmRunResult Run(string cell, LayoutView view, FrequencySpec freq, Action<EmSetup>? tweak = null)
+        public EmRunResult Run(string cell, LayoutView view, FrequencySpec freq, Action<EmSetup>? tweak = null, long? memoryCeiling = null)
+        {
+            var (setup, source) = Prepare(cell, view, freq, tweak);
+            return EmRunService.Run(setup, source, Path.Combine(_root, "results-" + cell), memoryCeilingBytes: memoryCeiling);
+        }
+
+        public EmPreflightResult Preflight(string cell, LayoutView view, FrequencySpec freq)
+        {
+            var (setup, source) = Prepare(cell, view, freq, null);
+            return EmRunService.Preflight(setup, source);
+        }
+
+        private (EmSetup Setup, EmLayoutSource Source) Prepare(string cell, LayoutView view, FrequencySpec freq, Action<EmSetup>? tweak)
         {
             string dir = CellFolder.CreateCellFolder(_root, cell);
             CellCreate.WriteLayoutView(dir, cell, view);
@@ -214,8 +241,7 @@ public sealed class UncalibratedPortTests(UncalibratedPortTests.Fixture fx, ITes
                 Frequency = freq, AdaptiveSampling = false,
             };
             tweak?.Invoke(setup);
-            return EmRunService.Run(setup, new EmLayoutSource(clay, LayoutPersistence.LoadFromFile(clay), _tech, Dbu),
-                                    Path.Combine(_root, "results-" + cell));
+            return (setup, new EmLayoutSource(clay, LayoutPersistence.LoadFromFile(clay), _tech, Dbu));
         }
 
         public void Dispose()

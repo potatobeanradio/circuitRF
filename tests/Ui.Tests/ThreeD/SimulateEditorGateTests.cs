@@ -103,7 +103,9 @@ public sealed class SimulateEditorGateTests : IDisposable
         vm.Start();
         Settle(vm);
         await panel.ComponentPartsListing;
-        Assert.Contains(panel.ComponentPortRows, r => r.Refdes == "TL1");          // placed, not named: listed from the view
+        // placed, not named: listed from the view — since ICP-7 a placed cell instance (TL1 is an MLIN PCell) is the instance tree's
+        // row rather than a flat one, and this still looked only at the flat rows.
+        Assert.True(panel.ComponentPortRows.Any(r => r.Refdes == "TL1") || panel.ComponentInstanceRows.Any(r => r.Path == "TL1"));
     }
 
     private static string Em3dTestRoot()

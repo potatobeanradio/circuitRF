@@ -40,7 +40,7 @@ public sealed class C3dElaborationTests(ITestOutputHelper output) : IDisposable
     /// each asserted by name: the <c>U1/</c> prefix; the bounded extent (the layout draws no outline, so the
     /// substrate takes the box round its drawn geometry instead of the air box); the undrawn ground plane the .cem made its
     /// PEC floor, which is not metal in the instance (a placed layout brings only what it draws); and, following from
-    /// both, the air above the stack (the .c3d's background) and the air box's floor.
+    /// both, the air above the stack (the .c3d's background). The air box's floor is the .cem's (brief-icp-10).
     /// </summary>
     [Fact]
     public void Gate3_ALayoutInstanceWithAnEmbeddedCopyOfItsSetup_AssemblesTheCemsProblem_ButForTheNamedDifferences()
@@ -104,8 +104,11 @@ public sealed class C3dElaborationTests(ITestOutputHelper output) : IDisposable
         Assert.Equal((p.Boundary.Min.X, p.Boundary.Min.Y, p.Boundary.Max.X, p.Boundary.Max.Y),
                      (q.Boundary.Min.X, q.Boundary.Min.Y, q.Boundary.Max.X, q.Boundary.Max.Y), new Tol(1e-9));
         Assert.Equal(p.Boundary.Max.Z, q.Boundary.Max.Z);
-        Assert.Equal(p.Boundary.Faces with { ZMin = Em3dBoundaryKind.Absorbing }, q.Boundary.Faces);
+        // brief-icp-10 — and its floor too: the view floors its air box at the undrawn plane, as the .cem does (it was absorbing,
+        // below the geometry, so a port the layout walked to that plane landed on nothing).
+        Assert.Equal(p.Boundary.Faces, q.Boundary.Faces);
         Assert.Equal(Em3dBoundaryKind.Pec, p.Boundary.Faces.ZMin);
+        Assert.Equal(p.Boundary.Min.Z, q.Boundary.Min.Z, 12);
         Assert.Equal((p.Type, p.Frequency, p.OperatingTempC), (q.Type, q.Frequency, q.OperatingTempC));
     }
 
