@@ -1161,6 +1161,29 @@ public static class EmRunService
             return admit(size);
         };
 
+    /// <summary>
+    /// The sentence a run gives when its calibrated drawn ports are refused for their feeds' clearance, but the pre-solve check
+    /// (<see cref="Preflight"/>, what <c>check</c> and the EM panel say) predicted those ports Uncalibrated for the memory their
+    /// calibration standards need: the run then solves them Uncalibrated, as said, rather than refusing what the check passed.
+    /// Null when the check predicted no such thing, and the refusal stands.
+    /// </summary>
+    internal static string? ClearanceFallback(EmSetup setup, EmLayoutSource source, RunControl? control, long? memoryCeilingBytes,
+                                             PlanarFeedClearanceRefusedException refused)
+    {
+        string? predicted;
+        try
+        {
+            predicted = Preflight(setup, source, control, memoryCeilingBytes).Warnings
+                .FirstOrDefault(w => w.Contains(PlanarMemoryCheck.WillBeUncalibrated, StringComparison.Ordinal));
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { return null; }
+        if (predicted is null) return null;
+        var fmt = EmLengthFormat.For(source.View.DisplayUnit, source.DbuPerMicron);
+        string breaches = string.Join("; ", refused.Breaches.Select(b => b.Breach(fmt)));
+        return predicted.Replace(PlanarMemoryCheck.WillBeUncalibrated, "are solved as Uncalibrated Ports, as the pre-solve check said", StringComparison.Ordinal) +
+               (breaches.Length > 0 ? $" Calibrated, their feeds are not isolated either ({breaches}), which would have refused the run." : "");
+    }
+
     /// <summary>brief-icp-10 — <paramref name="shapes"/> with each drawn edge port that returns through the ground plane replaced by a
     /// copy marked Uncalibrated; <paramref name="switched"/> names them by their label text.</summary>
     private static IReadOnlyList<LayoutShape> UncalibratedCopies(IReadOnlyList<LayoutShape> shapes, out List<string> switched)
@@ -1368,6 +1391,17 @@ public static class EmRunService
         catch (OperationCanceledException) { throw; }
         catch (PlanarFeedClearanceRefusedException ex)
         {
+            // The pre-solve check said these drawn ports are solved Uncalibrated, because their calibration standards are past memory;
+            // the run asks the clearance question first and would refuse what the check passed. It does what the check said.
+            if (!drawnPortsUncalibrated && ClearanceFallback(setup, source, control, memoryCeilingBytes, ex) is { } fallback)
+            {
+                warnings.RemoveRange(warningsAt, warnings.Count - warningsAt);
+                notes.RemoveRange(notesAt, notes.Count - notesAt);
+                errors.RemoveRange(errorsAt, errors.Count - errorsAt);
+                warnings.Add(fallback);
+                return RunPlanar(setup, source, resultsRoot, extraction, freqs, choice, warnings, notes, errors, ct, control, maxCores,
+                                 confirmMemory, memoryCeilingBytes, target, coSimPorts, drawnPortsUncalibrated: true);
+            }
             // PCAL2/R-pcal2-1 — a REFUSAL, reported the way the mesh ceiling directly below is
             // reported and for the same reason: it reads as "this geometry cannot be de-embedded,
             // and here is the quantity that says so", not as "circuitRF broke". No .sNp is written
