@@ -111,7 +111,8 @@
               DataContext="{Binding Panel}" x:DataType="tun:TuningPanelViewModel">
 
             <!-- Header: schematic, status dot, last evaluation time / how far behind. The time text has a
-                 minimum width so "0.4 s" becoming "1.4 s behind" does not push the dot sideways. -->
+                 minimum width so "0.4 s" becoming "1.4 s behind" or "0.4 s · estimated" (brief-paa-8: a phased
+                 array's drag off its fast path) does not push the dot sideways. -->
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" Margin="6,4,2,1">
                 <TextBlock Grid.Column="0" Text="{Binding HeaderLabel}"
                            FontWeight="SemiBold" FontSize="12"
@@ -119,7 +120,7 @@
                 <Ellipse Grid.Column="1" x:Name="StatusDot" Width="8" Height="8" Margin="6,0,4,0"
                          VerticalAlignment="Center"/>
                 <TextBlock Grid.Column="2" x:Name="StatusTime" FontSize="11" Opacity="0.7"
-                           MinWidth="80" TextAlignment="Left" VerticalAlignment="Center"/>
+                           MinWidth="104" TextAlignment="Left" VerticalAlignment="Center"/>
                 <Button Grid.Column="3" Classes="tb" Margin="4,0,0,0" VerticalAlignment="Center"
                         ToolTip.Tip="Significant digits for tuned and optimized values">
                     <mi:MaterialIcon Kind="DecimalDecrease"/>

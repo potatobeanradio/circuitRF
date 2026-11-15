@@ -4649,3 +4649,65 @@ Gates: `CommensurateTonesTests`, `LoadpullSettingsReachTests`, `HbLineSearchTest
   (`FieldCosimulation.ArrayFieldsMetrics.EvaluateReceive`) are all formed from T, C and the noise analysis's Cs. `SnrDb` equals the power HB
   delivers through such a channel over Cs to 1e-9 dB.
 - **A sky integral on the record's grid is aliased past a few wavelengths of offset** — see `src/Core/RESOLVED.md`, § brief-paa-7.
+
+## brief-paa-8 — the identical-channel fast path, and what a slider move costs (2026-11-14)
+
+**Measured on** an Apple M4 (10 cores, 16 GB), .NET 10, one evaluation of a Feed-mode array on E5 (5×5 record, 5.9 GHz, extended
+coupling), `Phase=steer(theta0,0,f0)`, one Port at F; the channel is an Amplifier (20 dB), an Attenuator (3 dB) and a shunt 0.3 pF at the
+element side, so a wave does return down it. Medians of 2-3 runs; the harness is a scratch console program (not a test, not committed),
+which times `Elaborator.Elaborate`, the circuit solve (`SParameterEngine.BlockWaves` before, `PhasedArrayFastPath.TryWaves` after),
+`FieldCosimulation.Run` whole (local output, as a drag asks), the closure's factor and back-substitution, `ArrayPattern.Sum` on a 1° and
+a 2° upper hemisphere (first sum on a new direction set, and a second with new weights on the same set), `ArrayBeam.Evaluate` (cuts and
+peak patch) and `ArrayUv.Map`. Milliseconds.
+
+| N | coupling | channel | elaborate | circuit before → after | fields run before → after | factor (once) | back-sub |
+|---|---|---|---|---|---|---|---|
+| 64 | on | yes | 1.1 | 3.2 → 0.1 | 6.9 → 3.0 | 1.5 | 0.03 |
+| 256 | on | yes | 2.1–5.5 | 19.6 → 0.5 | 42.9 → 2.0 | 5.6 | 0.06 |
+| 1024 | on | no | 6.4 | 184.8 → 0.8 | 359.3 → 2.0 | — | — |
+| 1024 | on | yes | 11.7–15 | 210.0 → 8.7 | 415.1 → 2.6 | 35.0 | 0.21 |
+| 1024 | off | yes | 10–14 | 5.3 → 0.3 | 17.3 → 1.4 | — | — |
+| 4096 | on | no | 27–59 | 2080.6 → 2.9 | 3710.6 → 16.3 | — | — |
+| 4096 | on | yes | 56–79 | 2332.5 → 6.0 | 4387.0 → 8.2 | 344.3 | 1.52 |
+| 4096 | off | no | 25 | 9.1 → 2.5 | 23.8 → 5.6 | — | — |
+| 4096 | off | yes | 53–63 | 32.5 → 1.7 | 67.9 → 3.2 | — | — |
+
+Release. Debug is the same to within noise for the circuit (CSparse is a release package either way): 4096 coupled with a channel
+2522 ms → 7.5 ms, fields 4833 → 17 ms, factor 360 ms, back-substitution 1.69 ms. The "before" channel had no shunt capacitor; the full solve
+with it, timed after (fast path off), is 2324 ms at 4096 and 201 ms at 1024 — the same.
+
+The pattern pieces did not move, being the same code (Release; Debug in brackets), 4096 elements: overview on a new 1° hemisphere 56-73 ms
+(175), on the same set with new weights 7-24 ms (48), at 2° 16-20 ms (46) and 1.8-7.9 ms (13); the local evaluation 10-14 ms (31-56); the
+(u,v) map 9-11 ms (31). At 1024: 3.6-7.8 ms (25) for the kept 1° overview, 5-8 ms local, 2.2-2.7 ms (u,v).
+
+- **The beamformer isolates, which is the whole fast path.** Its S is [[0, tᵀ],[t, 0]]: no path reaches another, so a wave reflected up
+  channel k leaves at F and the element side closes on its own, α = (I − S22·S)⁻¹·S21·t·a_F, β = S·α, Γ_F = Σ t_k(S11·t_k + S12·β_k).
+  With no channel S22 = 0 and α = t·a_F with no solve, coupled or not; with Coupling=off S is diagonal and the closure is too; only an
+  identical, reflecting channel on a coupled array factorises anything. The circuit outside the array (the Port and whatever feeds F) is
+  solved by the ordinary engine with the closed array at F as a one-port of reflection Γ_F (`ArrayFeedLoadModel`), so the drive's
+  reflection, the circuit's S and the wave into F are the engine's own; the element waves follow by scaling α̂, β̂ by a_F.
+- **The ordering: minimum degree on A + Aᵀ.** At 4096 (309,136 non-zeros, ±4 rows and columns of offsets): natural row-major 2,050,816 in
+  L+U, 396 ms; MinimumDegreeAtPlusA 1,693,644, 337 ms, 1.52 ms a solve; MinimumDegreeAtA 2,135,714, 543 ms. At 1024: 250,240 / 227,792 /
+  256,174. The fill is 5.4× the matrix; the coupling's pattern is symmetric (reciprocal record), which is what A + Aᵀ assumes.
+- **Off keeps the factor.** The kept factor is of I − S22·S with every element's channel in place; an element switched off (an identical
+  channel is omitted, the element terminated in Z0) replaces its row by the identity's, a rank-|Off| change applied by Woodbury against the
+  kept factor: |Off| back-substitutions and a small dense solve, kept per Off set. Past 256 elements off the closure is factorised for the
+  set instead. Gate 2's third case (three off) agrees with the full solve to 1.1e-13 in Γ_act.
+- **What counts as "only the weights moved" is two hashes of resolved values**: the array's parameters other than PhaseBits, AttenStep and
+  Off (the weights and the receive waves are never in them — the elaborator evaluates those per element) with the record file's stamp; and
+  one channel instance's components — types, paths and node names with the channel's own prefix taken off, multiplicities and resolved
+  values. A VAR that moves only theta0 changes neither; one that moves the channel's attenuator changes the second.
+- **Every fields evaluation of an array solved the whole circuit twice**: once for the block's waves and again for the circuit's S cube
+  (`AddCircuitS`). The fast path gives both from the outer circuit; the full path still pays both.
+- **`ArrayDirections.OnGrid` built a new direction set per call**, and the phase tables and sampled element patterns are kept against the
+  set object, so every evaluation rebuilt the tables for the record's grid (and the beam's overview, and the power balance, each rebuilt
+  them again). One set per grid object now (`ConditionalWeakTable`); since a set now lives as long as its grid, its table list keeps the
+  last 8 geometries and frequencies (a dx sweep would otherwise grow it without bound).
+- **After the fast path the largest cost of a move at 4096 is elaboration** (55-60 ms Release with a channel: 4096 element scopes, the
+  extended coupling rebuilt by `PhasedArrayModel.Create`, 4096 channel flattenings), then the pattern pieces. Not attempted here; it is the
+  next limit for a 4096-element slider. R-paa8-5's coarse overview during a drag is therefore not done: at 4096 the overview with kept
+  tables is 7-24 ms against elaboration's ~56, so a 2° overview would not move the frame.
+- **The estimate (R-paa8-4)** scales each element's waves of the last full solve by w_new/w_old and holds everything else (active
+  reflections, the drive's reflection, the circuit's S). It is used only for a drag (local output), only when nothing but the weights
+  changed since that solve (a hash of every component but the beamformer), and not when an element that carried nothing now carries a
+  weight. On a 4×4 array with a per-element channel and coupling it is 3% off the solve at a 15° move; the release solves.

@@ -128,7 +128,10 @@ public sealed partial class Elaborator
                                                     "its first port in, from the beamformer, and its second out, to the element.");
             var reads = ElementNamesRead(channel);
             var omitted = reads.Count == 0 ? lattice.Off.OrderBy(k => k).ToList() : [];
-            channels = new PhasedArrayChannels(channel.Name, channel.Ports[0], channel.Ports[1], reads.Count == 0, reads, omitted);
+            channels = new PhasedArrayChannels(channel.Name, channel.Ports[0], channel.Ports[1], reads.Count == 0, reads, omitted)
+            {
+                Sites = reads.Count == 0 ? [] : ElementNameSites(channel, "", []),
+            };
             array.Channels = channels;
             netlist.AddNoteOnce($"phased-array-channel:{childPath}", channels.Sentence(childPath));
         }
@@ -190,6 +193,35 @@ public sealed partial class Elaborator
         if (NamesReadIn(cell, []) is not { } names) return ["an expression that could not be read"];
         var own = cell.Parameters.Select(q => q.Name).Concat(cell.Variables.Select(v => v.Name)).ToHashSet(StringComparer.Ordinal);
         return [.. ElementScope.Names.Where(x => names.Contains(x) && !own.Contains(x))];
+    }
+
+    /// <summary>brief-paa-8 R-paa8-2 — the expressions in <paramref name="cell"/> and the cells below it that read one of element scope's names,
+    /// each as the parameter it sets (<c>T1.Loss=3+0.1*n</c>, the instance path from the channel), so a fallback names what made the channel
+    /// differ per element. A cell's own parameter or variable of the same name shadows it there.</summary>
+    private List<string> ElementNameSites(Cell cell, string prefix, HashSet<string> visiting)
+    {
+        var sites = new List<string>();
+        if (!visiting.Add(cell.Name)) return sites;
+        var own = cell.Parameters.Select(q => q.Name).Concat(cell.Variables.Select(v => v.Name)).ToHashSet(StringComparer.Ordinal);
+        bool Reads(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            try
+            {
+                return new Tokenizer(text).Tokenize().Any(t => t.Kind == TokenKind.Identifier && ElementScope.Names.Contains(t.Text) && !own.Contains(t.Text));
+            }
+            catch (Exception) { return false; }
+        }
+        foreach (var q in cell.Parameters.Where(q => Reads(q.DefaultExpression))) sites.Add($"{prefix}parameter {q.Name}={q.DefaultExpression}");
+        foreach (var v in cell.Variables.Where(v => Reads(v.Expression))) sites.Add($"{prefix}{v.Name}={v.Expression}");
+        foreach (var inst in cell.Instances)
+        {
+            foreach (var ov in inst.Overrides.Where(o => Reads(o.Expression))) sites.Add($"{prefix}{inst.InstanceName}.{ov.Name}={ov.Expression}");
+            if (!ComponentModelFactory.IsPrimitive(inst.Reference) && FindCell(inst.Reference) is { } child)
+                sites.AddRange(ElementNameSites(child, $"{prefix}{inst.InstanceName}.", visiting));
+        }
+        visiting.Remove(cell.Name);
+        return sites;
     }
 
     /// <summary>brief-paa-7 — the node of each element's source, after its pins (PhasedArrayModel.SourceNode).</summary>

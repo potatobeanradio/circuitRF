@@ -709,7 +709,10 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         bool lagging = s is not null && ShowsLag(_lagSince, Clock());
 
         Status = s is null ? TuningStatus.Idle : lagging ? TuningStatus.Lagging : TuningStatus.Running;
-        LastEvalText = s?.LastDuration is { } d ? $"{d.TotalSeconds:0.0} s" : "";
+        // brief-paa-8 R-paa8-4 — a drag off a phased array's fast path shows an estimate until the release solves it
+        bool estimated = s?.DisplayedResult?.Notes.Any(n => n.Contains(CircuitRF.Engine.AntennaArray.PhasedArrayFastPath.EstimatedSentence,
+                                                                        StringComparison.Ordinal)) == true;
+        LastEvalText = s?.LastDuration is { } d ? $"{d.TotalSeconds:0.0} s{(estimated ? " · estimated" : "")}" : "";
         BehindText   = lagging && s!.DisplayedAge is { } age ? $"{age.TotalSeconds:0.0} s behind" : "";
 
         var shown   = s?.DisplayedValues;

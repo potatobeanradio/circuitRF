@@ -159,6 +159,8 @@ public static partial class SParameterEngine
         {
             SnpModel { Inverse: false } s => s.PortBranchIndices,
             PhasedArrayModel pa           => pa.PortBranchIndices,
+            // brief-paa-8 — the closed array standing at its feed, in the circuit outside it (PhasedArrayFastPath)
+            AntennaArray.ArrayFeedLoadModel load => load.PortBranchIndices,
             _ => throw new InvalidOperationException(block is null
                 ? $"The circuit has no instance '{instancePath}'."
                 : $"'{instancePath}' is a {block.ComponentType}, not an S-parameter block."),

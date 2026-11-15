@@ -41,8 +41,14 @@ public sealed class ArrayDirections
 
     public int Count => ThetaRad.Length;
 
-    /// <summary>Every direction of a grid, row-major [theta, phi].</summary>
-    public static ArrayDirections OnGrid(PlanarFarFieldGrid grid)
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PlanarFarFieldGrid, ArrayDirections> _onGrid = new();
+
+    /// <summary>Every direction of a grid, row-major [theta, phi]. brief-paa-8 R-paa8-1 — one set per grid object, so the phase tables and the
+    /// sampled element patterns kept against it (ArrayPattern.Tables, ElementPattern.Sample) survive from one evaluation to the next: a new set
+    /// per call rebuilt the tables at every slider move.</summary>
+    public static ArrayDirections OnGrid(PlanarFarFieldGrid grid) => _onGrid.GetValue(grid, Build);
+
+    private static ArrayDirections Build(PlanarFarFieldGrid grid)
     {
         int nt = grid.ThetaDeg.Count, np = grid.PhiDeg.Count;
         var t = new double[nt * np];

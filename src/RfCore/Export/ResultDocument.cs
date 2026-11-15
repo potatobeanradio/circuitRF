@@ -2492,7 +2492,9 @@ namespace RfCore.Export
         // channels omitted for elements switched off). Null in Elements mode.
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Feed = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Channel = null,
-        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ChannelIdentical = null);
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ChannelIdentical = null,
+        // brief-paa-8 R-paa8-2 — Feed mode: how a change is solved — the identical-channel fast path or the whole circuit — and why.
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Solve = null);
 
     /// <summary>One pattern of an array: the record port (1-based) it is taken from and the elements that take it.</summary>
     public sealed record ExplainArrayPatternJson(int RecordPort, IReadOnlyList<int> Elements);

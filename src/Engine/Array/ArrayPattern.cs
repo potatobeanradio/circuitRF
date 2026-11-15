@@ -109,6 +109,9 @@ public static class ArrayPattern
     private static readonly ConditionalWeakTable<ArrayDirections, List<ArrayPhaseTables>> _tables = new();
     private static long _built, _separable;
 
+    /// <summary>Phase tables kept per direction set (geometry and frequency), the oldest dropped first.</summary>
+    public const int KeptTables = 8;
+
     /// <summary>Phase tables built in this process: a second sum with new weights over the same directions must not add to it.</summary>
     public static long TablesBuilt => Interlocked.Read(ref _built);
 
@@ -125,6 +128,9 @@ public static class ArrayPattern
                 if (t.Key == lattice.GeometryKey && t.Hz == hz) return t;
             var built = new ArrayPhaseTables(lattice, directions, hz);
             Interlocked.Increment(ref _built);
+            // brief-paa-8 — the direction set of a grid now lives as long as the grid, so a sweep of dx or of the frequency must not grow
+            // its tables without bound: the oldest go first
+            if (list.Count >= KeptTables) list.RemoveAt(0);
             list.Add(built);
             return built;
         }

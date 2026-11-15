@@ -69,12 +69,24 @@ public static partial class FieldCosimulation
         var waves = new CosimWaves[at.Length];
         var points = new Em3dPatternPoint[at.Length];
         var elements = new ArrayElements[at.Length];
+        for (int f = 0; f < at.Length; f++) freqs[f] = far.FrequenciesHz[at[f]];
+
+        // brief-paa-8 R-paa8-2 — a Feed-mode array whose channel is identical closes without solving the whole circuit; R-paa8-4 — where it
+        // cannot, a slider's drag (FieldsOutput.Local) shows the last full solve with the new weights, and the release solves.
+        PhasedArrayFastPath.Solved? quick = null;
+        if (hb is null && pa.Feed is not null)
+        {
+            control?.ThrowIfCancellationRequested();
+            quick = PhasedArrayFastPath.TryWaves(nl, fa.Block, freqs, drives);
+            if (quick is null && output == CircuitRF.Design.Circuit.FieldsOutput.Local) quick = PhasedArrayFastPath.Estimate(nl, fa.Block, freqs, drives);
+        }
+        var solved = new SParameterEngine.BlockPortDrive[at.Length];
         for (int f = 0; f < at.Length; f++)
         {
             control?.ThrowIfCancellationRequested();
-            freqs[f] = far.FrequenciesHz[at[f]];
+            if (hb is null) solved[f] = quick?.Waves[f] ?? SParameterEngine.BlockWaves(nl, freqs[f], fa.Block, drives);
             // brief-paa-6 — a harmonic-balance solution's waves at its one frequency, in place of the linear solve's
-            waves[f] = SwitchedOff(pa, hb?.Waves ?? Weigh(fa, z0, SParameterEngine.BlockWaves(nl, freqs[f], fa.Block, drives)));
+            waves[f] = SwitchedOff(pa, hb?.Waves ?? Weigh(fa, z0, solved[f]));
             elements[f] = Elements(pa, far, freqs[f]);
             points[f] = ArrayPointOf(fa, pa, far, at[f], waves[f], elements[f]);
         }
@@ -116,7 +128,16 @@ public static partial class FieldCosimulation
             }
             return data;
         }
-        AddCircuitS(data, nl, freqs);
+        if (quick is not null)
+            foreach (var (cube, value) in quick.CircuitS.Cubes) data.Add(cube, value);
+        else
+        {
+            var circuit = SParameterEngine.Run(nl, freqs);
+            var s = new DataSet();
+            foreach (string cube in (string[])["S", "Z0"])
+                if (circuit.Cubes.TryGetValue(cube, out var value)) { data.Add(cube, value); s.Add(cube, value); }
+            if (pa.Feed is not null) PhasedArrayFastPath.Remember(nl, fa.Block, freqs, drives, solved, s);
+        }
 
         var first = waves[0];
         lines.Add($"Fields '{fa.Name}' at {where}: the pattern of the {n}-element array '{fa.Block}' with this circuit around it, " +
@@ -124,8 +145,10 @@ public static partial class FieldCosimulation
                   $"({Pct(first.Accepts)} of the available power accepted) and referred to 1 V at port {drives[0].Port}. Gain is per watt accepted and realized gain includes mismatch.");
         lines.Add(pa.LevelNote);
         if (pa.CouplingNote is { } coupling) lines.Add(coupling);
+        if (pa.Feed is not null && (quick?.Path ?? PhasedArrayFastPath.Decide(nl, fa.Block)) is { } path) lines.Add(path.Sentence);
         lines.AddRange(sentences.Skip(1));
         Interlocked.Increment(ref _runs);
+        if (quick is { Path.Fast: false }) notes.Add($"Fields '{fa.Name}': {PhasedArrayFastPath.EstimatedSentence}");
 
         if (sweepPoint is not null)
             foreach (string line in lines) nl.AddNoteOnce($"fields:{fa.Name}:{line}", line);

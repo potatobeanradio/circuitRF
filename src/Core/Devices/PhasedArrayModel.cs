@@ -616,6 +616,10 @@ public sealed class PhasedArrayModel : ComponentModel, IReportsWarnings
 /// </summary>
 public sealed record PhasedArrayChannels(string Cell, string In, string Out, bool Identical, IReadOnlyList<string> Reads, IReadOnlyList<int> Omitted)
 {
+    /// <summary>brief-paa-8 R-paa8-2 — where a channel that differs per element reads an element name: each parameter, as
+    /// <c>T1.Loss=3+0.1*n</c> (an instance's override, the cell's path to it from the channel) or <c>parameter G=…</c>.</summary>
+    public IReadOnlyList<string> Sites { get; init; } = [];
+
     /// <summary>The instance path of element <paramref name="n"/>'s (1-based) channel under array <paramref name="array"/>.</summary>
     public static string PathOf(string array, int n) => $"{array}.ch[{n}]";
 
@@ -624,7 +628,7 @@ public sealed record PhasedArrayChannels(string Cell, string In, string Out, boo
     {
         string what = Identical
             ? $"identical across elements (its parameters read none of n, row, col, x, y)"
-            : $"different per element (it reads {string.Join(", ", Reads)})";
+            : $"different per element (it reads {string.Join(", ", Reads)}){(Sites.Count > 0 ? $", in {string.Join("; ", Sites)}" : "")}";
         string off = Omitted.Count == 0 ? ""
             : $" The channel of {(Omitted.Count == 1 ? "element" : "elements")} {string.Join(", ", Omitted)}, switched off, is omitted and the element terminated in Z0 " +
               "at the beamformer; a channel that differs per element would be kept, its own noise still reaching the feed.";

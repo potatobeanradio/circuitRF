@@ -1793,7 +1793,8 @@ internal static class Explain
                                          .Select(g => new ExplainArrayPatternJson(g.Key + 1, [.. g.Where(pa.Lattice.IsOn).Select(e => e + 1)]))
                                          .Where(p => p.Elements.Count > 0).ToList();
                 arrays[fa.Name] = new ExplainArrayJson(fa.Block, pa.LevelNote, pa.CouplingNote, patterns,
-                                                       Feed: pa.FeedNote, Channel: pa.Channels?.Sentence(fa.Block), ChannelIdentical: pa.Channels?.Identical);
+                                                       Feed: pa.FeedNote, Channel: pa.Channels?.Sentence(fa.Block), ChannelIdentical: pa.Channels?.Identical,
+                                                       Solve: pa.Feed is null ? null : CircuitRF.Engine.AntennaArray.PhasedArrayFastPath.Decide(nl, fa.Block)?.Sentence);
             }
         }
         catch (Exception e) when (e is InvalidOperationException)
@@ -2577,6 +2578,7 @@ internal static class Explain
                         if (arr.Coupling is { } c) Console.WriteLine($"      {c}");
                         if (arr.Feed is { } fd) Console.WriteLine($"      {fd}");
                         if (arr.Channel is { } ch) Console.WriteLine($"      {ch}");
+                        if (arr.Solve is { } solve) Console.WriteLine($"      {solve}");
                         foreach (var p in arr.Patterns ?? [])
                             Console.WriteLine($"      pattern of record port {p.RecordPort}: element{(p.Elements.Count == 1 ? "" : "s")} {Ranges(p.Elements)}");
                     }
