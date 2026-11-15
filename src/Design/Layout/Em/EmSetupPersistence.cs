@@ -1584,6 +1584,7 @@ public sealed class CemFile
     /// byte-identically.
     /// </summary>
     public bool?   ConductorThicknessCorrection { get; set; }
+    public bool?   MergeViaArrays { get; set; }
 
     /// <summary>
     /// LFE — the planar edge port's return (<c>EmSetup.EdgePortReturn</c>). <b>Null means the
@@ -1830,6 +1831,7 @@ public static class EmSetupPersistence
         DirectVerticalKernel  = s.DirectVerticalKernel ? true : null,
         AcceleratedSolve      = s.AcceleratedSolve ? true : null,
         ConductorThicknessCorrection = s.ConductorThicknessCorrection ? true : null,
+        MergeViaArrays = s.MergeViaArrays ? null : false,
         EdgePortReturn        = s.EdgePortReturn == EmSetup.DefaultEdgePortReturn ? null : s.EdgePortReturn,
         DeembedOutsideCalibrationValidity =
             s.DeembedOutsideCalibrationValidity ? true : null,
@@ -1961,6 +1963,7 @@ public static class EmSetupPersistence
         DirectVerticalKernel  = f.DirectVerticalKernel ?? false,
         AcceleratedSolve      = f.AcceleratedSolve ?? false,
         ConductorThicknessCorrection = f.ConductorThicknessCorrection ?? false,
+        MergeViaArrays = f.MergeViaArrays ?? true,
         EdgePortReturn        = f.EdgePortReturn ?? EmSetup.DefaultEdgePortReturn,
         LegacyRawSolveRequested = f.Deembed == false,
         DeembedOutsideCalibrationValidity = f.DeembedOutsideCalibrationValidity ?? false,

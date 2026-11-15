@@ -20,6 +20,7 @@
 // rule (the ground plane is the TOP SURFACE of the highest ground-designated conductor below the
 // signal). Both are load-bearing and both are 2%-scale traps; see src/Ui/Layout/Em/CLAUDE.md.
 
+using System.Globalization;
 using CircuitRF.Engine.Mom;
 
 namespace CircuitRF.Design.Layout.Em;
@@ -1533,7 +1534,7 @@ public static class PlanarExtractor
         }
 
         var vias = BuildVias(viaShapes, regionViaPolys, levels, perDbu, notes, groundBand,
-                             stack, planeMetal, FarMetal, polysByLevel);
+                             stack, planeMetal, FarMetal, polysByLevel, settings.MergeViaArrays);
 
         // ── CONDUCTOR THICKNESS — the sheet-equivalent width (opt-in: .cem ConductorThicknessCorrection).
         // After the vias, because a via that spans a level appends that level's metal above, and that
@@ -2387,9 +2388,11 @@ public static class PlanarExtractor
         List<Band> levels, double perDbu, List<EmFinding> notes, Band? groundBand = null,
         List<Band>? stack = null, PlaneMetal? planeMetal = null,
         Func<int, IReadOnlyList<PlanarPolygon>>? farMetal = null,
-        List<PlanarPolygon>[]? levelPolys = null)
+        List<PlanarPolygon>[]? levelPolys = null,
+        bool mergeViaArrays = true)
     {
         var vias = new List<PlanarVia>();
+        var arrayNotes = new List<string>();
         if (viaShapes.Count == 0 && regionViaPolys.Count == 0) return vias;
 
         // `toGround` counts only the vias whose ENTRY names the plane. A via that got there by
@@ -2629,10 +2632,36 @@ public static class PlanarExtractor
             }
             else footprints = [.. group.Select(g => g.Poly)];
 
+            // ── ICF-5 R-icf5-3 — an array of identical cuts becomes one region, σ scaled by its fill ───────────
+            //
+            // Each merged array is a record of its own, because its conductivity is the entry's times ITS fill; the
+            // footprints left as drawn stay one record as before. PlanarViaArrayMerge refuses a hull another footprint
+            // of this entry reaches into, so no metal is counted twice.
+            if (mergeViaArrays && footprints.Count >= PlanarViaArrayMerge.MinCuts)
+            {
+                var (arrays, rest) = PlanarViaArrayMerge.Split(footprints);
+                foreach (var a in arrays)
+                {
+                    AddSpan(lower, upper, [a.Hull], entry.SigmaSm * a.Fill);
+                    arrayNotes.Add(string.Create(CultureInfo.InvariantCulture,
+                        $"{entry.Name}: {a.Cuts} cuts merged into one region, fill {a.Fill:0.00}, σ × {a.Fill:0.00}"));
+                }
+                if (arrays.Count > 0)
+                {
+                    footprints = rest;
+                    if (footprints.Count == 0) { regionVias++; regionPolys += shapeCount; continue; }
+                }
+            }
+
             AddSpan(lower, upper, footprints, entry.SigmaSm);
             regionVias++;
             regionPolys += shapeCount;
         }
+
+        if (arrayNotes.Count > 0)
+            notes.Add(string.Join("; ", arrayNotes) + ". Each array is meshed as its outline with the via's conductivity " +
+                      "scaled by the fraction the cuts fill, so its DC resistance is the cuts' own (Merge via arrays, off " +
+                      "in the EM setup to mesh every cut).");
 
         // SHORT, for the warning's own reason (owner, 2026-09-12): a run whose notes are paragraphs
         // is a run whose notes are skipped, and this one fires on every board of this shape. What

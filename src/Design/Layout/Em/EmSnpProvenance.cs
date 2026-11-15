@@ -552,6 +552,9 @@ public static class EmSnpProvenance
                (m.CurrentModel == PlanarCurrentModel.TransmissionLine ? "|tline=True" : "")
              + (m.CurrentModel == PlanarCurrentModel.Sheet ? "|sheet=True" : "")
              + $"|detail={m.DetailFloorDivisor}"
+             // ICF-5 R-icf5-2 — a STATED divisor is applied as stated now, where the 2 % cap used to clip it on small
+             // artwork; the term marks such a file stale once. The default is still capped, so it carries nothing.
+             + (m.DetailFloorDivisor != PlanarMeshSettings.DefaultDetailFloorDivisor ? "|stated" : "")
              // PM-2 — omitted while off, so every .snp stamped before the flag existed stays current.
              + (m.RooftopMerging ? "|merge=True" : "")
              // PMS-3 — omitted while off. PMS-7 made ON the product default, and that is what makes every .snp

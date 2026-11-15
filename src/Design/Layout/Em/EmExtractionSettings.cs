@@ -50,6 +50,11 @@ namespace CircuitRF.Design.Layout.Em;
 /// before meshing (<c>PlanarThicknessCorrection</c>). False — the default, and what every run before it
 /// existed did — leaves the artwork exactly as drawn. Read by the planar extractor only.
 /// </param>
+/// <param name="MergeViaArrays">
+/// ICF-5 R-icf5-3 — an array of identical via cuts on one via layer becomes one region (its bounding rectangle, σ scaled
+/// by the cut fill factor so the DC resistance is unchanged; <c>PlanarViaArrayMerge</c>). True by default; false meshes
+/// every cut as drawn. Read by the planar extractor only.
+/// </param>
 /// <param name="PortZ0s">
 /// R-cpl-6: explicit per-port reference impedances in D3 order (port 2k−1 is conductor k's near end,
 /// 2k its far end), overriding the near/far defaults. Null — the normal case — means every odd port
@@ -64,7 +69,8 @@ public sealed record EmExtractionSettings(
     Complex[]? PortZ0s = null,
     string[]?  AnalysisLevelNames = null,
     string?    GroundStackupLayerName = null,
-    bool       ConductorThicknessCorrection = false)
+    bool       ConductorThicknessCorrection = false,
+    bool       MergeViaArrays = true)
 {
     public static readonly EmExtractionSettings Default = new();
 

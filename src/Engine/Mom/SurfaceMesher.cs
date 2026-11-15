@@ -558,7 +558,17 @@ public static class SurfaceMesher
         double detailFloorAsked = s.DetailFloorDivisor > 0 && !double.IsInfinity(lambdaG) && lambdaG > 0
             ? lambdaG / s.DetailFloorDivisor
             : 0.0;
-        double detailFloorCap = CapMinFractionOfExtent * Math.Min(x1 - x0, y1 - y0);
+        // ── ICF-5 R-icf5-2 — A STATED DIVISOR IS APPLIED AS STATED ───────────────────────────────
+        //
+        // The 2 % cap is a guard for the DEFAULT, which nobody chose for this part. On a small IC cell it held the floor at
+        // 2 % of the extent whatever the divisor said (0.735 µm on a 37 µm cell), so no divisor could reach a useful
+        // value. A divisor the setup states (any value but the default) is taken as the user's statement of what is
+        // electrically real; only the empty-mesh guard stays — a floor at or past half the part's smallest extent would
+        // discard every width on it, which is the failure the cap was written for.
+        bool   detailStated   = s.DetailFloorDivisor != PlanarMeshSettings.DefaultDetailFloorDivisor;
+        double detailFloorCap = detailStated
+            ? StatedDetailFloorMaxFractionOfExtent * Math.Min(x1 - x0, y1 - y0)
+            : CapMinFractionOfExtent * Math.Min(x1 - x0, y1 - y0);
         double detailFloor    = Math.Min(detailFloorAsked, detailFloorCap);
 
         // Sampling every polygon on every layer — the one pre-grid pass whose cost scales with the
@@ -568,6 +578,27 @@ public static class SurfaceMesher
         var narrowness = MeasureNarrowness(problem, detailFloor);
         double narrowX = narrowness.NarrowX, narrowY = narrowness.NarrowY;
         double narrowest = Math.Min(narrowX, narrowY);
+
+        // ── ICF-5 R-icf5-1 — THE IC RULE: AUTO ON A SMALL CELL OF THICK, NARROW METAL ────────────────
+        //
+        // The two resolution defaults are board-scale: 4 cells across the narrowest conductor and a 3-cell graded edge
+        // fan. On a cell tens of micrometres across whose metal is thicker than it is wide, a 1.5 µm pin stub sets a
+        // 0.375 µm pitch and the fan multiplies it. 2 across with ONE graded cell was the measured choice: on a 40 × 100
+        // µm cell it meshes 3,152 unknowns against 5,559 and stays within 1-3× the reference's own refinement step,
+        // where turning the fan off (297) was 5-6× it (RESOLVED.md §ICF-5). Auto only, and only
+        // for what the setup does not state: a cells-across or edge-mesh value away from its default wins, as it does
+        // everywhere else under Auto (Resolved). The mesh note says the rule applied and what it chose.
+        var asked = settings ?? PlanarMeshSettings.Default;
+        if (asked.Auto && asked.MinCellsAcrossConductor == PlanarMeshSettings.DefaultMinCellsAcrossConductor &&
+            asked.EdgeMesh == PlanarMeshSettings.DefaultEdgeMesh &&
+            IcRuleApplies(problem, x1 - x0, y1 - y0, lambdaG, narrowest, out double extentOverLambda, out double wOverT))
+        {
+            s = s with { MinCellsAcrossConductor = IcCellsAcross, EdgeCells = IcEdgeCells };
+            notes.Add($"IC rule: this artwork is {extentOverLambda:0.###} λ_g across at the mesh frequency and its " +
+                      $"narrowest metal is {wOverT:0.##} times as wide as the thickest level is thick, so Auto meshes it " +
+                      $"{IcCellsAcross} cells across the narrowest conductor with {IcEdgeCells} graded edge cell. State " +
+                      "Cells across a conductor or Edge mesh in the setup to choose otherwise.");
+        }
 
         // What the pitch WOULD have been with no floor — the report's own quantity, because a floor
         // that silently coarsens a mesh is the same failure mode as a control that silently does
@@ -1429,7 +1460,8 @@ public static class SurfaceMesher
             string what = detailFloorCap < detailFloorAsked
                 ? $"Detail floor {fmt(detailFloor)} — λ_g/{s.DetailFloorDivisor} would be " +
                   $"{fmt(detailFloorAsked)}, but this artwork is only {fmt(Math.Min(x1 - x0, y1 - y0))} " +
-                  $"across, so the floor is held at {CapMinFractionOfExtent:P0} of that"
+                  $"across, so the floor is held at " +
+                  $"{(detailStated ? StatedDetailFloorMaxFractionOfExtent : CapMinFractionOfExtent):P0} of that"
                 : $"Detail floor λ_g/{s.DetailFloorDivisor} = {fmt(detailFloor)}";
 
             notes.Add(narrowness.ShapesBelowFloor > 0
@@ -3488,6 +3520,38 @@ public static class SurfaceMesher
 
     /// <summary>See <see cref="Crowds"/> — one cell at R17's own ceiling, as a fraction of the part.</summary>
     private const double CapMinFractionOfExtent = 0.02;
+
+    /// <summary>ICF-5 R-icf5-1 — the IC rule applies to artwork smaller than λ_g ÷ this at the mesh frequency.</summary>
+    public const double IcExtentDivisor = 10.0;
+
+    /// <summary>ICF-5 R-icf5-1 — …whose narrowest metal is narrower than this many times the thickest level's thickness.</summary>
+    public const double IcWidthOverThickness = 1.0;
+
+    /// <summary>ICF-5 R-icf5-1 — the cells across the narrowest conductor the IC rule chooses.</summary>
+    public const int IcCellsAcross = 2;
+
+    /// <summary>ICF-5 R-icf5-1 — the graded edge cells the IC rule keeps (the edge mesh stays on).</summary>
+    public const int IcEdgeCells = 1;
+
+    /// <summary>ICF-5 R-icf5-1 — whether the IC rule's two conditions hold, and the two numbers it judged them on.</summary>
+    internal static bool IcRuleApplies(PlanarProblem problem, double width, double height, double lambdaG,
+                                       double narrowest, out double extentOverLambda, out double wOverT)
+    {
+        extentOverLambda = double.NaN;
+        wOverT = double.NaN;
+        if (!(lambdaG > 0) || double.IsInfinity(lambdaG) || !(narrowest > 0) || double.IsInfinity(narrowest)) return false;
+        double tMax = 0;
+        foreach (var l in problem.Layers) tMax = Math.Max(tMax, l.ThicknessM);
+        if (!(tMax > 0)) return false;
+        extentOverLambda = Math.Max(width, height) / lambdaG;
+        wOverT = narrowest / tMax;
+        return extentOverLambda < 1.0 / IcExtentDivisor && wOverT < IcWidthOverThickness;
+    }
+
+    /// <summary>ICF-5 R-icf5-2 — the only hold on a STATED detail divisor: half the artwork's smallest extent, past which the
+    /// floor would discard every width on the part (the empty-mesh failure <see cref="CapMinFractionOfExtent"/>'s
+    /// note describes).</summary>
+    internal const double StatedDetailFloorMaxFractionOfExtent = 0.5;
 
     /// <summary>
     /// Which of the ring's corners turn the same way the ring itself winds. <b>Collinear counts as NOT

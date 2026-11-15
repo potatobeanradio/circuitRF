@@ -652,6 +652,13 @@ public sealed class EmSetup
     public bool ConductorThicknessCorrection { get; set; }
 
     /// <summary>
+    /// ICF-5 R-icf5-3 — <b>merge each array of identical via cuts into one region</b> in a planar run (its outline, σ
+    /// scaled by the fill factor; <see cref="EmExtractionSettings.MergeViaArrays"/>). On by default; the <c>.cem</c>
+    /// writes <c>"MergeViaArrays": false</c> only when it is turned off.
+    /// </summary>
+    public bool MergeViaArrays { get; set; } = true;
+
+    /// <summary>
     /// A setup as File ▸ New ▸ EM Setup and the layout editor's EM button create it: the model's own
     /// defaults, except that <see cref="ConductorThicknessCorrection"/> is ON. The property itself stays
     /// off when absent, because that is what an existing file means; a NEW setup has no prior result
@@ -1049,6 +1056,7 @@ public sealed class EmSetup
         if (DirectVerticalKernel)                                set.Add("DirectVerticalKernel");
         if (AcceleratedSolve)                                    set.Add("AcceleratedSolve");
         if (ConductorThicknessCorrection)                        set.Add("ConductorThicknessCorrection");
+        if (!MergeViaArrays)                                     set.Add("MergeViaArrays");
         if (EdgePortReturn != DefaultEdgePortReturn)             set.Add("EdgePortReturn");
         // brief-em3d-31 — RadiationPattern is read by a driven 3D run too, so it is not planar-only;
         // a static or eigenmode 3D setup says so through Em3dRunService.RadiationPatternIgnored.
@@ -1126,6 +1134,7 @@ public sealed class EmSetup
         DirectVerticalKernel   = DirectVerticalKernel,
         AcceleratedSolve       = AcceleratedSolve,
         ConductorThicknessCorrection = ConductorThicknessCorrection,
+        MergeViaArrays         = MergeViaArrays,
         EdgePortReturn         = EdgePortReturn,
         LegacyRawSolveRequested = LegacyRawSolveRequested,
         DeembedOutsideCalibrationValidity = DeembedOutsideCalibrationValidity,
@@ -1168,5 +1177,6 @@ public sealed class EmSetup
                PortZ0s.Count > 0 ? [.. PortZ0s] : null,
                AnalysisLevelNames.Count > 0 ? [.. AnalysisLevelNames] : null,
                GroundStackupLayerName is { Length: > 0 } g ? g : null,
-               ConductorThicknessCorrection);
+               ConductorThicknessCorrection,
+               MergeViaArrays);
 }

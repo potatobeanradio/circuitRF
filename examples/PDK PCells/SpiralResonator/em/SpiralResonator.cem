@@ -32,7 +32,6 @@
     "EdgeMesh": false,
     "EdgeCells": 1,
     "MinCellsAcrossConductor": 2,
-    "CurrentModel": "TransmissionLine",
-    "DetailFloorDivisor": 10
+    "CurrentModel": "TransmissionLine"
   }
 }

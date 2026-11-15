@@ -14531,3 +14531,81 @@ whoever takes it up, the reporter included.
 - **The `.sNp` caveat line** does not carry the carrying ports. Only the panel warning does; the thick-substrate
   sentence reaches both, through `NonPassivityCause`.
 - **The user page** (`docs/user/src/reference/mom-engine.md`) does not describe the two warnings yet.
+
+## ICF-5 — planar mesh defaults on small IC cells, and MIM via arrays (2026-11-15)
+
+`docs/briefs/brief-icf-5-ic-mesh-defaults.md`. Measured first, in a scratch harness (Release, RSS watchdog), on two
+synthetic fixtures on ICF-4's thick-silicon stack. **The small cell** is `tests/Engine.Tests/Mom/Support/SmallIcCellFixture.cs`:
+40 × 100 µm, two device blocks with three 1.5 µm pin stubs each on a 3 µm top metal, an underpass, and three
+Uncalibrated ports. **The MIM** is 20 × 20 µm (bottom plate on M1, 0.2 µm of εᵣ 7, top plate, M2 over it) with a 6 × 6
+array of 1.6 µm cuts at 3 µm pitch, fill 0.334, and two Uncalibrated ports. Product mesh defaults throughout. |ΔS| is the
+worst entry.
+
+### The small cell — R-icf5-1's values
+
+Reference: 4 across, edge mesh on (3 cells), detail divisor 1000 = 5,559 unknowns. Its own refinement step (6 across,
+4 edge cells, 9,271 unknowns) moves it by **2.0e-4 / 6.3e-4 / 8.5e-4** at 10 / 20 / 40 GHz.
+
+| Candidate | N | \|ΔS\| vs reference, 10 / 20 / 40 GHz |
+|---|---|---|
+| 2 across, edge mesh off | 297 | 1.2e-3 / 3.8e-3 / 4.0e-3 |
+| 3 across, edge mesh off | 626 | 1.1e-3 / 3.2e-3 / 2.9e-3 |
+| 4 across, edge mesh off | 994 | 9.6e-4 / 4.5e-3 / 1.8e-3 |
+| **2 across, 1 graded cell** | **3,152** | **5.5e-4 / 1.2e-3 / 5.3e-4** |
+| 3 across, 1 graded cell | 4,201 | 2.3e-4 / 2.5e-3 / 2.0e-3 |
+
+No candidate stays strictly inside the step. **2 across with one graded cell is the closest** and the brief's stated
+alternative: 2.8× / 1.8× / 0.6× the step, the same order PMS-7 accepted for the local grid (1.3×). It saves 1.76×. Edge mesh
+off saves 19× at 5–6× the step; it is recorded here as the choice for whoever wants the aggressive rule, which is one
+constant (`SurfaceMesher.IcEdgeCells` → an edge-off branch).
+
+Thresholds: extent < λ_g/10 at the mesh frequency, and narrowest metal / thickest level's thickness < 1. The brief started
+at λ_g/20 and 5. **w/t 5 would reach GaAs MMIC metal** (3 µm thick, 10 µm lines, 3.3), where nothing was measured, so it
+is 1, which a pin stub on a silicon process meets (0.5) and a board never does. **λ_g/20 would miss the field test's own
+110 µm cell at 40 GHz** (0.051 λ_g), so it is λ_g/10. The fixture was measured at 0.046 λ_g, so 0.046–0.1 is extrapolated.
+`check` over every shipped `.cem`: **no example falls under the rule** (gate 5 re-runs nothing).
+
+### The MIM — R-icf5-3 and R-icf5-4
+
+| 0.2 µm film | N | \|ΔS\| vs drawn, 2 / 10 / 20 GHz |
+|---|---|---|
+| drawn, its own refinement step (6 across, 4 edge cells) | 4,364 | 1.4e-4 / 2.6e-4 / 3.6e-5 |
+| **merged (R-icf5-3)** | **1,819** | **6.7e-4 / 2.2e-3 / 1.1e-4** |
+| merged + MIM stacked region (R-icf5-4) | 1,745 | 6.7e-4 / 4.3e-3 / 5.1e-4 |
+
+- **The merge halves the unknowns and moves S 2.5–8× the mesh's own step** (C −0.5 % at 2 GHz from S21). That is a
+  change of STRUCTURE — one uniform block for 36 posts — not mesh noise, and it is kept as the default with its own
+  off switch.
+- **R-icf5-4 was built, measured and taken back out.** Waiving both size floors for a chain whose kept level sits a
+  capacitor film above the level below formed the region, and it saved 74 unknowns (4 %) while doubling the merge's
+  error at 10 GHz. Not worth it here; the floors stand.
+- **A 50 nm film first measured non-passive at 10 GHz on every variant** (σ_max 2.06): its straddling cell was 10 µm,
+  cell/separation exactly 200, the edge of the range MIM-14 measured. The fixture moved to 0.2 µm. Thin-film MIMs on a
+  coarse mesh sit at that edge, and any MIM measurement needs the cell/separation note checked first.
+
+### Built
+
+- **R-icf5-1** (`SurfaceMesher.Mesh`, `IcRuleApplies`, `IcCellsAcross` = 2, `IcEdgeCells` = 1): under Auto, with cells
+  across and edge mesh at their defaults (the existing "stated = not the default" convention), a cell under both
+  thresholds takes the IC values, and the mesh note says so with the two numbers it judged.
+- **R-icf5-2**: a stated detail divisor bypasses the 2 % cap, held only below half the artwork's smallest extent (the
+  empty-mesh guard the cap was written for). `MeshHash` gains `|stated` for a non-default divisor, so such a file reads
+  stale once. **It moved one shipped example**: `SpiralResonator.cem` stated a divisor of 10, which the cap had made
+  equal to the default; applied as stated it meshed 336 unknowns instead of 2,455. The key was removed, which
+  reproduces the old mesh exactly (2,455), and `MimResonatorCompositionTests`' recipe likewise.
+- **R-icf5-3** (`PlanarViaArrayMerge`, in the planar extractor's region-via path): axis-aligned rectangles of one size,
+  each within twice its size of another, at least 4, filling ≥ 0.2 of their bounding rectangle, with no other footprint
+  of the entry inside it. Each array becomes its own `PlanarVia` with σ × fill, so σ·A is exact. Noted per array.
+  `.cem` `MergeViaArrays` (default on, written only when false) through `EmExtractionSettings`. Point vias (round
+  barrels) are untouched; no shipped example has an array that merges.
+- Gates: `IcMeshDefaultsTests` (board untouched, small cell under Auto = the IC values by hand with the note and a stated
+  value winning, stated divisor applied), `ViaArrayMergeTests` (one region, σ·A to 1e-9, the setting off).
+  `RegionViaExtractionTests`' as-drawn half now states the merge off.
+
+### Not done
+
+- **The IC rule does not reach the provenance hash.** `MeshHash` hashes settings, not the realised mesh, so a `.snp`
+  written before ICF-5 for a cell the rule now catches reads current. A problem-aware hash term is the fix.
+- **No EM panel control for `MergeViaArrays`**; it is a `.cem` key only.
+- **The array merge is planar only**; the 3D generator meshes every cut.
+- R-icf5-4 (above), and the edge-off rule (above), are left as measured.

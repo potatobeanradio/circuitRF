@@ -1330,6 +1330,28 @@ the local grid can be no faster per frequency, though it has fewer unknowns. Unt
 shared grid everywhere; with it off, when a mesh is past this machine's memory, the mesh notes name
 **Local grid** and say how many unknowns it would mesh the same artwork at.
 
+### Small IC cells and via arrays
+
+**With Auto on, a small cell of thick, narrow metal is meshed 2 cells across with one graded edge
+cell.** The rule applies when the artwork is under a tenth of a guided wavelength across at the mesh
+frequency and its narrowest metal is narrower than the thickest level is thick, which is a transistor
+cell's pin stubs on a silicon process rather than anything on a board. On a 40 × 100 µm test cell with
+1.5 µm stubs on 3 µm metal it meshes 3,152 unknowns instead of 5,559, and moves S by 5 × 10⁻⁴ to
+1.2 × 10⁻³ at 10, 20 and 40 GHz, against 2 × 10⁻⁴ to 8 × 10⁻⁴ for one step of mesh refinement. The mesh
+notes say when the rule applied. A **Cells across a conductor** or **Edge mesh** value stated in the
+setup is used as stated instead.
+
+A **Detail floor** you state is applied as stated. Left at its default, the floor is held at 2 % of
+the artwork on a part much smaller than a wavelength; a stated one is held only below half the part's
+smallest dimension.
+
+**An array of identical via cuts is meshed as one region**: the rectangle around the cuts, with the
+via's conductivity scaled by the fraction the cuts fill, so its DC resistance is the cuts' own. It
+applies to rectangles of one size, at least four of them, each within twice its own size of another,
+filling at least 20 % of the rectangle around them. On a 20 µm MIM capacitor with a 6 × 6 cut array it
+halved the unknowns (3,382 to 1,819) and moved S by up to 2.2 × 10⁻³. The mesh notes list each array
+merged; set `"MergeViaArrays": false` in the `.cem` to mesh every cut.
+
 ### What a medium MMIC costs
 
 A 1.4 mm GaAs MMIC with two metal levels, backside vias and a large via-joined region meshes at about

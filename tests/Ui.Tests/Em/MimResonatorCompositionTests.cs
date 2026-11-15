@@ -110,8 +110,10 @@ public sealed class MimResonatorCompositionTests(ITestOutputHelper output) : IDi
             PlanarMesh   = new PlanarMeshSettings(
                                Auto: false, CellsPerWavelength: 20, EdgeMesh: false, EdgeCells: 1,
                                MinCellsAcrossConductor: 2,
-                               CurrentModel: PlanarCurrentModel.TransmissionLine,
-                               DetailFloorDivisor: 10),
+                               // ICF-5 R-icf5-2: this recipe stated a divisor of 10, which the 2 % cap then held
+                               // at 2 % of the artwork. A stated divisor is applied as stated now, so the
+                               // default (which the cap still holds) is what reproduces the mesh it always had.
+                               CurrentModel: PlanarCurrentModel.TransmissionLine),
         };
 
     [Trait("Category", "Benchmark")]

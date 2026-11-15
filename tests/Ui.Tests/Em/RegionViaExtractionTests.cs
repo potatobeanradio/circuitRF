@@ -408,7 +408,10 @@ public class RegionViaExtractionTests(ITestOutputHelper output)
                 drawnArray.Shapes.Add(Rect(Post, x0 + ix * side,       y0 + iy * side,
                                                  x0 + (ix + 1) * side, y0 + (iy + 1) * side));
 
-        var ar = PlanarExtractor.Extract(drawnArray.Shapes, tech, Dbu, 30e9);
+        // ICF-5 — abutting squares are an array the extractor would merge into the very rectangle the next half draws;
+        // this half is about the footprints AS DRAWN, so it says so.
+        var ar = PlanarExtractor.Extract(drawnArray.Shapes, tech, Dbu, 30e9,
+                                         EmExtractionSettings.Default with { MergeViaArrays = false });
         Assert.True(ar.Ok, ar.Refusal);
         Assert.Single(ar.Problem!.ViaList);                       // one entry, n² footprints
         Assert.Equal(n * n, ar.Problem!.ViaList[0].Polygons.Count);
