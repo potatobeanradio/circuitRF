@@ -32020,3 +32020,28 @@ write back in that state, so opening a chain cannot record an edit. The default 
 
 **The Data Display table's label column did not widen with `FreqColumnWidth`** for the 1-D `Loss_dB` table over the
 `term` axis (280 was set, ~115 drawn). Rather than chase it in the Data Display, the one long label was shortened.
+
+## RF passives stage 1 — MWPD through the layout, LVS and EM (2026-11-15)
+
+- **`PassivePlanPCells.Draw` reuses the parts' own generators** (`MTeePCell`, `MCurvePCell`), turned by quarter turns
+  through `LayoutCoordinateWalk.Transform`, and takes the passive's pins from those parts' pins. A pin computed
+  from the plan instead would be a second rounding of where the copper ends. Consequence: **MWPD's artwork changes
+  whenever MTEE's or MCURVE's does**, so a version bump of either generator must bump MWPD's too
+  (`PCellGeneratorVersioningTests` records MWPD at 1).
+- **Update Layout closes the ring with the 0402 when `Gap` is its pin span.** R2 and R3 face each other across Gap,
+  the chain placer lays the resistor's two pins on them, and the F8 fixture joins 2 of 2 with LVS clean.
+- **The chain placer takes a curve's turn from its schematic symbol's facing**: an MCURVE drawn with its pin 2 down is
+  mirrored to turn down in the layout whatever its `Angle` sign says. In the example the upper output's MCURVE is
+  drawn R180 and mirrored so both outputs bend away from each other.
+- **Both component-port builders refuse a part whose pads lie on one connected conductor**
+  (`EmPlanarComponentPorts.Construct`: "a strip would close a loop"; the 3D builder: "land on one conductor"). A
+  Wilkinson's resistor is exactly that, since the ring joins R2 to R3 through about 38 mm of line, so the resistor is
+  left out of every EM run with a warning. A delta-gap port across a loop is a valid port; the check cannot tell a
+  part shorted by its own pads from one bridging two points of a distributed loop. Not changed here: recorded as a
+  maintainer question in `docs/design/rf-passives.md`.
+- **Planar MoM refuses calibrated edge ports on the divider's own output pins**: they sit Gap + W0 apart (2.4 mm
+  centre to centre on 20 mil), inside the 5 substrate heights a calibrated feed needs from a neighbour with a port.
+  The example bends each output away (MCURVE + 5 mm MLIN) before its port, which is also what a board does.
+- **A line typed to the readout's rounded width leaves a DRC sliver** where it meets the divider's pin (1.058 against
+  1.05768 mm: a 0.16 µm step, flagged as a 7 µm-long min-width error). The readout prints widths to the plan's own
+  2 nm grid so they can be typed exactly.

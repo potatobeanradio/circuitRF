@@ -4840,3 +4840,25 @@ read 37 ms: re-weigh 18 ms, fields run 22 ms).
 - **Noise.** The receive pin is a `NoiseSourceDecl` from the rx net to ground with 4k·T_ant·Re(1/Z_rx), so the S-parameter, HB and
   envelope noise read it through the device-source path. An S-parameter run with `RxTant=150` gives the receive port's wave noise
   k·150 = 2.07e-21 and Te = T_ant/|H|² at the input.
+
+## RF passives stage 1 — the Wilkinson plan and the planned-passive model (2026-11-15)
+
+- **A plan is existing parts, placed.** `PassivePlan` is sections (`PlanTee`, `PlanCurve`) with node lists and poses;
+  `MicrostripPlanModel` stamps each through the part's own model into the shared `LocalAdmittanceBlock` and reduces it,
+  so the composite equals the same parts wired by hand to rounding (`WilkinsonSParamTests`, 1e-9). The block moved out
+  of `JunctionArms` for this; its `ReduceOnto` is the one copy of the reduce-and-stamp step.
+- **Every plan dimension is on a 2 nm grid** (`PassivePlan.OnGrid`). The generators round each part's own pins to the
+  1 nm database unit and take halves of widths (`MTeePCell`'s `w3 / 2` is integer division). Off-grid numbers left
+  two pieces that meet in the plan a unit apart in the artwork, which LVS reads as open. On the grid, every
+  abutment is exact.
+- **Widths and λg/4 are MLIN's at F**, from `PlanarLineSynthesis.SynthesizeWidth` over `MicrostripLineModel.LineParameters(F)`
+  (the dispersive Z0), and the quarter wave from the same model's εeff. The arm's λg/4 is measured between the
+  junctions' reference planes, which is where `MicrostripTeeModel` refers its star network; an output tee's through
+  arms are exactly W3/2 long, so the curve's end and R2/R3 ARE the junction's ports with no line.
+- **MWPD at 2.4 GHz on 20 mil RO4350B**: W 1.05768 mm, arms 0.548 mm, λg/4 18.903 mm (εeff 2.729), ring radius
+  5.743 mm (10.5 W, outside MCURVE's stated 3-7 W, which it reports). |S11| −47.7 dB, |S23| −36.4 dB,
+  |S21| = |S31| = −3.149 dB at F with the example's 5 mm feed lines and bends; |S11| and |S23| stay below −20 dB from
+  2.0 to 2.75 GHz.
+- **By symmetry the resistor never carries current for a drive at pin 1**: S11, S21 and S31 are bit-identical with
+  R = 100 Ω and with R removed. This is what lets the EM results, which cannot include the resistor today
+  (`src/Design/RESOLVED.md`), be compared on those three terms.
