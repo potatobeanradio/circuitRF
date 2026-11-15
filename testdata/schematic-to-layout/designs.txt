@@ -29,3 +29,6 @@ F1b-port-on-pad SDL-5
 C3b-port-on-junction SDL-5
 C8-gap-coupled-filter SDL-9
 F8-wilkinson-divider RF-passives
+F9-coupled-line-coupler RF-passives
+F10-coupled-line-balun RF-passives
+F11-interdigitated-coupler RF-passives
