@@ -1,0 +1,10 @@
+# The two-section branch-line hybrid as one part (MBLC): each port lands on its own pin's feed.
+Info BLC1 added
+Info P1 port 1 placed at BLC1 pin 1
+Info P2 port 2 placed at BLC1 pin 2
+Info P3 port 3 placed at BLC1 pin 3
+Info P4 port 4 placed at BLC1 pin 4
+port P1 1
+port P2 2
+port P3 3
+port P4 4

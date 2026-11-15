@@ -408,6 +408,35 @@ public sealed class ComparisonTests
         }
     }
 
+    /// <summary>The hybrids (MBLC, MRRC) as Update Layout places them compare clean, and a spec changed on the
+    /// schematic afterwards is exactly one property mismatch naming it.</summary>
+    [Theory]
+    [InlineData("F9-branch-line-hybrid", "BLC1", "N", "1")]
+    [InlineData("F10-rat-race-hybrid", "RRC1", "F", "2.5")]
+    public void AHybridComparesCleanAndASpecMismatchIsAFinding(string design, string instance, string spec, string changed)
+    {
+        string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-hyb-" + Guid.NewGuid().ToString("N")[..12]);
+        try
+        {
+            var p = SchematicSync.SdlChecker.Prepare(design, scratch);
+            var layout = p.Applied(p.Plan());
+            Assert.Empty(SchematicSync.SdlChecker.Verify(p, layout));
+            Assert.DoesNotContain(LvsRun.Run(p.CellDir).Findings, f => f.Severity == DiagnosticSeverity.Error);
+
+            p.Model.Components.Single(c => c.InstanceName == instance).Parameters.Single(q => q.Name == spec).Expression = changed;
+            SchematicPersistence.SaveToFile(p.SchematicPath, p.Model, Path.GetFileNameWithoutExtension(p.SchematicPath));
+
+            var errors = LvsRun.Run(p.CellDir).Findings.Where(f => f.Severity == DiagnosticSeverity.Error).ToList();
+            var mismatch = Assert.Single(errors);
+            Assert.Equal("lvs.property.mismatch", mismatch.Id);
+            Assert.Equal(spec, mismatch.Diagnostic.Arguments["name"]);
+        }
+        finally
+        {
+            try { Directory.Delete(scratch, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
     // ── hand-built netlists ───────────────────────────────────────────────────────────────────
 
     /// <summary>
