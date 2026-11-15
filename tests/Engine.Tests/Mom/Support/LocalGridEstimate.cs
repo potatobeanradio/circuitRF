@@ -328,6 +328,8 @@ public sealed class LocalGridEstimate
     {
         var cuts = new List<int> { 0 };
         double step = double.IsFinite(_waveCap) && _waveCap > 0 ? _waveCap : g[^1] - g[0];
+        // ICF-4 R-icf4-1 — artwork within two base blocks starts from one block across it, as the mesher's partition does.
+        if (PlanarLocalGrid.StartsFromArtwork(g[^1] - g[0], step)) step = g[^1] - g[0];
         double next = g[0] + step;
         for (int i = 1; i < g.Length - 1; i++)
             if (g[i] >= next - 1e-15) { cuts.Add(i); next = g[i] + step; }

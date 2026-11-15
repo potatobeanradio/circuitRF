@@ -1395,6 +1395,10 @@ public sealed record PlanarPassivityExcess(double FrequencyHz, double SigmaMax)
     /// <summary>ICF-4 R-icf4-5 — the ports carrying the gain at this point (the right singular vector for σ_max), each
     /// with its share of that wave's power, largest first. Empty where it was not measured.</summary>
     public IReadOnlyList<(int Number, double Share)> CarriedBy { get; init; } = [];
+
+    /// <summary>ICF-4 R-icf4-5 — <see cref="CarriedBy"/> as the sentence the NOT PASSIVE note and the <c>.sNp</c> caveat both
+    /// carry (ASCII, with a leading space); empty where nothing was measured.</summary>
+    public string CarryingClause => PlanarThickSubstrate.CarryingClause(CarriedBy);
 }
 
 /// <summary>

@@ -14511,7 +14511,7 @@ whoever takes it up, the reporter included.
 
 ### Not done, and why
 
-- **R-icf4-1, local grid base cuts anchored to the artwork.** The mechanism is confirmed and the prototype (start the
+- **R-icf4-1, local grid base cuts anchored to the artwork.** *Since built: see "ICF-4 Part B, completed" below.* The mechanism is confirmed and the prototype (start the
   partition from one block spanning the artwork when it is smaller than a base block) makes the 22 and 40 GHz meshes
   identical. On the fixture, though, the effect was 3e-5 in L, and the change moves every local-grid mesh and needs a
   `MeshHash` algorithm term so older results read as stale. Left until a fixture reproduces the field test's size.
@@ -14528,9 +14528,9 @@ whoever takes it up, the reporter included.
 - **`PlanarLevels.CanRepresentVias` checks every level's ground-attachment length** once any ground via exists, not just
   the attached levels (Part A §A3). On a thick substrate this refuses every ground via above a few GHz however it is
   split. Not touched.
-- **The `.sNp` caveat line** does not carry the carrying ports. Only the panel warning does; the thick-substrate
+- **The `.sNp` caveat line** does not carry the carrying ports. *Since done: below.* Only the panel warning does; the thick-substrate
   sentence reaches both, through `NonPassivityCause`.
-- **The user page** (`docs/user/src/reference/mom-engine.md`) does not describe the two warnings yet.
+- **The user page** (`docs/user/src/reference/mom-engine.md`) does not describe the two warnings yet. *Since done: below.*
 
 ## ICF-5 — planar mesh defaults on small IC cells, and MIM via arrays (2026-11-15)
 
@@ -14609,3 +14609,35 @@ is 1, which a pin stub on a silicon process meets (0.5) and a board never does. 
 - **No EM panel control for `MergeViaArrays`**; it is a `.cem` key only.
 - **The array merge is planar only**; the 3D generator meshes every cut.
 - R-icf5-4 (above), and the edge-off rule (above), are left as measured.
+
+## ICF-4 Part B, completed — the local grid's base cuts, the caveat's ports, the user page (2026-11-15)
+
+What Part B had left that belongs to it. R-icf4-2 and R-icf4-4 stay unbuilt: Part A did not confirm their causes. The vertical
+port current, the two grids' cross-level fit and the ground-via refusal were never Part B's.
+
+- **R-icf4-1.** `PlanarLocalGrid.StartsFromArtwork`: an axis whose artwork (the grid's own extent) spans at most
+  `ArtworkBaseBlocks` = 2 base steps starts its partition from one block across the artwork. The size cap still bisects a
+  homogeneous block wider than the step, from the artwork's edges, so nothing coarsens past λ_g/N. Part A's prototype set
+  the base step to infinity everywhere; that would have moved every local-grid mesh, so the rule is bounded instead. Two is the
+  gap's own "one or two blocks", and it is the smallest bound that changes anything: at one, a single-block axis is already
+  one block. On the ICF-4 spiral the 22 and 40 GHz meshes are now the same 6,563 unknowns, cell for cell (`LocalGridBaseTests`),
+  so L at 16 GHz is the same bit for bit. Part A put that answer 5e-5 from the local-grid-off one.
+- **It reaches further than device cells.** Two blocks of λ_g/20 is ~1.1 mm on GaAs at a 10 GHz mesh frequency, so small
+  MMIC chips fall under it. The synthetic 0.6 mm chip (`Pms4LocalGridTests` "S0.6 square") went from 16,302 to 16,233
+  unknowns. `LocalGridEstimate` restates the partition's rules and took the same one, so its count still equals the mesh.
+  ICF-5's 40 × 100 µm cell is 3,152 at every mesh frequency, as recorded. Against a HEAD build, `em --dry-run` on the 16
+  shipped planar setups is identical on 15. The 2 Probe Pad moves from 786 to 796 unknowns; it ships no result and quotes no
+  count.
+- **The hash.** `MeshHash(PlanarMeshSettings)` hashes settings only and cannot see artwork, and the brief's plain
+  algorithm term would have marked every local-grid result stale, boards included. So the write and the staleness check
+  now call `MeshHash(settings, problem)`. It adds `|base=artwork` when
+  `SurfaceMesher.LocalGridStartsFromArtwork(problem, settings)` holds, asked of the drawn artwork and the wave cell. That is
+  conservative by construction: the mesher asks it of a grid never narrower (a grown feed lead only widens it) and of a base
+  step never coarser (a pitch field's coarsest is at most the wave cell), so every mesh the rule moves is flagged, and some it
+  does not. The wave-cell arithmetic moved into `SurfaceMesher.WaveCell` so both read one spelling.
+- **The caveat.** `PlanarPassivityExcess.CarryingClause` is the panel note's own sentence, and the `.sNp` caveat appends it
+  for the worst point (`NonPassiveCaveatTests.TheCaveatNamesTheCarryingPorts`). The thick-substrate sentence already
+  reached both through `NonPassivityCause`.
+- **The user page.** `mom-engine.md`: the tall Uncalibrated Port warning (Uncalibrated Port section), the carrying ports and
+  the thick-substrate sentence (after the non-passive callout), and the sweep-independent local grid (local grid section).
+  The page's local-grid table (a 0.6 mm test chip, 44,355) predates the rule and was not re-measured.

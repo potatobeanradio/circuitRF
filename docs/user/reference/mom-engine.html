@@ -528,6 +528,12 @@ refused for nearby metal, or where the launch is small next to what you are meas
 metal. A run past memory only because it calibrates its drawn ports is solved with them uncalibrated, and says so
 (<a href="#budget">the budget</a>). A run with uncalibrated ports is 3–8× faster than the calibrated one, which solves its standards beside the
 structure (4.0 s against 13.8 s, and 4.9 s against 39.3 s, on the lines above). What it costs is the launch, above.</p>
+<p><strong>On a thick substrate the port's height matters.</strong> The grounded source runs from the line down to the ground plane with
+no current along its height. On a spiral over 750 µm of silicon that stopped describing the launch between 0.26 and 0.28
+of a wavelength in the substrate, and the passive part read non-passive from about 31 GHz; returning each lead through a
+drawn via chain to the backside made it passive again. So once a grounded Uncalibrated Port's height passes a quarter
+wavelength in the dielectric under it, the run warns, naming the port, its height and the frequency the quarter wavelength
+falls at, and listing the swept points past it. A drawn return to the ground plane, or a lower top frequency, avoids it.</p>
 <p><strong>At a cut cell instance's pins.</strong> The faces a cut leaves are Uncalibrated Ports. Cutting a 200 µm section out of a 72 µm
 line and putting it back as an ideal line of its length reads 6.1e-2 against the whole line at 20 GHz, where calibrated
 faces read 1.7e-2. In 3D a cut instance's ports are lumped sheets from the face to the return, and the sheet's height is
@@ -1085,6 +1091,10 @@ read the plot. A famous example: a 2000 mil 50 → 12 Ω Klopfenstein taper once
 standard did not resemble the taper's own flanks. That is what the automatic feed extension exists to
 prevent, and what the passivity check exists to catch if anything like it ever happens again.</p>
 </div>
+<p>The warning, and the caveat line the <code>.sNp</code> carries, name the ports the excess is on: the incident wave that comes back
+largest at the worst point, read as each port's share of its power (<em>&quot;The excess is carried by port 2 (… of the wave that
+gains most)&quot;</em>). Where the run cannot say why, and the substrate under the top metal is more than a tenth of a wavelength
+thick at the worst point, it gives that thickness in wavelengths instead of saying the cause was not identified.</p>
 <h3 id="deembedding-conducting">On a conducting substrate</h3>
 <p>A dielectric that <a href="stackup.html#conducting-substrate">states a conductivity</a> has a different permittivity at every frequency, so the
 electrostatic solve behind C<sub>pul</sub> runs once per frequency rather than once per sweep, and Z<sub>c</sub> = γ/(jωC) keeps C's imaginary part.
@@ -1502,6 +1512,12 @@ carries only the feed's own lines across it, so its calibration standards are sm
 refinement on the shared grid moves the first block by 7.6 × 10⁻⁵ to 7.5 × 10⁻⁴, so the local grid
 costs about what the mesh's own resolution already does. The DC point, the current-density map and
 the far field read the local grid too.</p>
+<p><strong>On a small part the local grid does not follow the sweep.</strong> It starts from blocks a guided wavelength over Cells per
+wavelength wide at the mesh frequency, so on artwork one or two blocks across, where the first block edge fell used to be the
+whole of the partition: a 140 µm spiral was cut in two at a 40 GHz mesh frequency and left whole at 22 GHz, and a point read
+differently in a 1–40 GHz sweep than in a 16–22 GHz one. An axis whose artwork spans at most two blocks now starts from one
+block across the artwork, so those two sweeps mesh it identically. Larger artwork is meshed as before. A result solved
+before this on artwork that small reads as stale once.</p>
 <p>A port calibration that takes in <a href="#passive-neighbour">a neighbouring conductor</a> or
 <a href="#group">a coupled port</a> reads the metal beside the feed gridline by gridline, which the local grid
 does not have; such a run is meshed on the shared grid instead, and its notes say so. On a small part

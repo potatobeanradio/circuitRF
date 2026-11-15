@@ -100,6 +100,20 @@ public static class PlanarLocalGrid
         static PlanarStepSupport Whole(int i, PlanarCell c, double sign) => new(i, c.XMin, c.YMin, c.XMax, c.YMax, sign);
     }
 
+    /// <summary>
+    /// brief-icf-4 R-icf4-1 — an axis whose artwork spans at most this many base blocks starts its partition from ONE block across
+    /// the artwork rather than from a cut every base step. The base step is λ_g/N at the mesh frequency, so on a cell of one or two
+    /// blocks where the first cut landed was the whole of the partition's dependence on the sweep: a 140 µm spiral was cut in two
+    /// at 40 GHz and left whole at 22 GHz. The bisection that follows is anchored to the artwork, and the size cap still splits a
+    /// homogeneous block wider than the step, so nothing coarsens past it. Above it nothing changes.
+    /// </summary>
+    public const double ArtworkBaseBlocks = 2;
+
+    /// <summary>Whether an axis <paramref name="extentM"/> long, cut every <paramref name="baseStepM"/>, starts from one block
+    /// (<see cref="ArtworkBaseBlocks"/>).</summary>
+    public static bool StartsFromArtwork(double extentM, double baseStepM)
+        => baseStepM > 0 && double.IsFinite(baseStepM) && extentM > 0 && extentM <= ArtworkBaseBlocks * baseStepM;
+
     /// <summary>The settings, inputs and size field the partition is decided from.</summary>
     internal sealed record Inputs(
         PlanarProblem Problem,
@@ -715,7 +729,7 @@ public static class PlanarLocalGrid
         private static List<int> BaseCuts(double[] g, double step)
         {
             var cuts = new List<int> { 0 };
-            if (!(step > 0) || !double.IsFinite(step)) step = g[^1] - g[0];
+            if (!(step > 0) || !double.IsFinite(step) || StartsFromArtwork(g[^1] - g[0], step)) step = g[^1] - g[0];
             double next = g[0] + step;
             for (int i = 1; i < g.Length - 1; i++)
                 if (g[i] >= next - 1e-15) { cuts.Add(i); next = g[i] + step; }
