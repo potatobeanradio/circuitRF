@@ -107,10 +107,73 @@ namespace RfCore.Propagation
     /// of sight (s), its Doppler at the reference frequency (Hz), and its departure and arrival directions as global unit
     /// vectors (the arrival direction points from the receive end back along the ray, towards where it came from).
     /// </summary>
-    public sealed record ChannelRay(string Name, Complex Gain, double ExcessDelayS, double DopplerHz, Vec3 Departure, Vec3 ArrivalFrom)
+    public sealed record ChannelRay(string Name, Complex Gain, double ExcessDelayS, double DopplerHz, Vec3 Departure, Vec3 ArrivalFrom,
+                                    PolarizationMatrix? Pol = null)
     {
-        /// <summary>The ray with its ends exchanged: what the reverse link of the same realization carries.</summary>
-        public ChannelRay Transposed => this with { Departure = ArrivalFrom, ArrivalFrom = Departure };
+        /// <summary>The ray with its ends exchanged: what the reverse link of the same realization carries (its polarization
+        /// matrix transposed).</summary>
+        public ChannelRay Transposed => this with { Departure = ArrivalFrom, ArrivalFrom = Departure, Pol = Pol?.Transposed };
+
+        /// <summary>brief-pch-8 R-pch8-8 — the ray's 2×2 polarization matrix, the line of sight's when it states none.</summary>
+        public PolarizationMatrix Polarization => Pol ?? PolarizationMatrix.LineOfSight;
+    }
+
+    /// <summary>
+    /// brief-pch-8 R-pch8-8 — a ray's polarization: the field it delivers at the receive end, in the (θ̂, φ̂) of its arrival
+    /// direction, from the field it left with, in the (θ̂, φ̂) of its departure direction, both bases the global frame's
+    /// spherical ones (TR 38.901's convention). The line of sight is diag(1, −1): φ̂ of a direction and of its opposite are
+    /// opposite, θ̂ the same, so the field vector itself is carried unchanged.
+    /// </summary>
+    public readonly record struct PolarizationMatrix(Complex Tt, Complex Tp, Complex Pt, Complex Pp)
+    {
+        public static readonly PolarizationMatrix LineOfSight = new(1, 0, 0, -1);
+
+        public PolarizationMatrix Transposed => new(Tt, Pt, Tp, Pp);
+
+        /// <summary>M·(θ, φ).</summary>
+        public (Complex Theta, Complex Phi) Apply(Complex theta, Complex phi) => (Tt * theta + Tp * phi, Pt * theta + Pp * phi);
+
+        /// <summary>M rotated by a Faraday angle Ω (radians) about the propagation direction: R(Ω)·M.</summary>
+        public PolarizationMatrix Faraday(double omega)
+        {
+            double c = Math.Cos(omega), s = Math.Sin(omega);
+            return new(c * Tt - s * Pt, c * Tp - s * Pp, s * Tt + c * Pt, s * Tp + c * Pp);
+        }
+
+        public PolarizationMatrix Conjugate() => new(Complex.Conjugate(Tt), Complex.Conjugate(Tp), Complex.Conjugate(Pt), Complex.Conjugate(Pp));
+    }
+
+    /// <summary>The global frame's spherical unit vectors at a direction (θ from +z, φ from +x towards +y).</summary>
+    public static class GlobalBasis
+    {
+        public static (Vec3 Theta, Vec3 Phi) At(Vec3 u)
+        {
+            var d = u.Unit;
+            double th = Math.Acos(Math.Clamp(d.Z, -1, 1)), ph = Math.Atan2(d.Y, d.X);
+            double ct = Math.Cos(th), st = Math.Sin(th), cp = Math.Cos(ph), sp = Math.Sin(ph);
+            return (new Vec3(ct * cp, ct * sp, -st), new Vec3(-sp, cp, 0));
+        }
+
+        /// <summary>A global complex vector's (θ̂, φ̂) components at direction <paramref name="u"/>.</summary>
+        public static (Complex Theta, Complex Phi) Components((Complex X, Complex Y, Complex Z) e, Vec3 u)
+        {
+            var (t, p) = At(u);
+            return (e.X * t.X + e.Y * t.Y + e.Z * t.Z, e.X * p.X + e.Y * p.Y + e.Z * p.Z);
+        }
+
+        /// <summary>The global complex vector of (θ̂, φ̂) components at <paramref name="u"/>.</summary>
+        public static (Complex X, Complex Y, Complex Z) Vector(Complex theta, Complex phi, Vec3 u)
+        {
+            var (t, p) = At(u);
+            return (theta * t.X + phi * p.X, theta * t.Y + phi * p.Y, theta * t.Z + phi * p.Z);
+        }
+
+        /// <summary>The unit direction at zenith <paramref name="zenithDeg"/> and azimuth <paramref name="azimuthDeg"/>.</summary>
+        public static Vec3 Direction(double zenithDeg, double azimuthDeg)
+        {
+            double th = zenithDeg * Math.PI / 180, ph = azimuthDeg * Math.PI / 180;
+            return new Vec3(Math.Sin(th) * Math.Cos(ph), Math.Sin(th) * Math.Sin(ph), Math.Cos(th));
+        }
     }
 
     /// <summary>One row of a ray list or power-delay profile file: its delay, power and phase, its static Doppler, and (brief

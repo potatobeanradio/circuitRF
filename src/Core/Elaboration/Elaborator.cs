@@ -2482,6 +2482,38 @@ public sealed partial class Elaborator
         var channels = netlist.Components.Where(c => c.Model is PropagationChannelModel).ToList();
         // brief-pch-7 — the fading draws' streams are named by the instance (design note §8.1)
         foreach (var ec in channels) ((PropagationChannelModel)ec.Model).InstancePath = ec.InstancePath;
+        // brief-pch-8 R-pch8-1 — each instance end bound to its Phased Antenna Array, and those channels stamped after every array
+        var withInstance = new List<ElaboratedComponent>();
+        foreach (var ec in channels)
+        {
+            var m = (PropagationChannelModel)ec.Model;
+            if (!m.HasInstanceEnd) continue;
+            ElaboratedComponent? Find(string? name, string end)
+            {
+                if (name is null) return null;
+                int dot = ec.InstancePath.LastIndexOf('.');
+                string sibling = dot >= 0 ? ec.InstancePath[..(dot + 1)] + name : name;
+                var hit = netlist.Components.FirstOrDefault(c => c.InstancePath == sibling) ?? netlist.Components.FirstOrDefault(c => c.InstancePath == name);
+                if (hit?.Model is PhasedArrayModel) return hit;
+                if (hit?.Model is SnpModel && hit.ComponentType.Equals(EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase))
+                    throw new ParameterRefusalException(PropagationChannelDiagnostics.EndFieldData(ec.InstancePath, end, name));
+                var arrays = netlist.Components.Where(c => c.Model is PhasedArrayModel && !c.InstancePath.EndsWith(".feed", StringComparison.Ordinal))
+                                    .Select(c => c.InstancePath).ToList();
+                throw new ParameterRefusalException(PropagationChannelDiagnostics.EndUnknown(ec.InstancePath, end, name,
+                    arrays.Count == 0 ? "none" : string.Join(", ", arrays)));
+            }
+            var tx = Find(m.TxInstance, "Tx");
+            var rx = Find(m.RxInstance, "Rx");
+            m.BindEnds(tx, rx);
+            withInstance.Add(ec);
+            WarnIfNearField(netlist, ec, m, tx, rx);
+        }
+        netlist.MoveToEnd(withInstance);
+        // brief-pch-8 R-pch8-9 — several channels may end on one array: their waves add on its elements
+        foreach (var g in withInstance.Where(c => ((PropagationChannelModel)c.Model).RxArray is not null)
+                                      .GroupBy(c => ((PropagationChannelModel)c.Model).RxArray!.Value.Ec.InstancePath).Where(g => g.Count() > 1))
+            netlist.AddNoteOnce($"channel-shared-rx:{g.Key}", $"'{g.Key}' receives through {string.Join(", ", g.Select(c => $"'{c.InstancePath}'"))}: " +
+                                "their waves add on its elements, so each is the others' interference at its feed.");
         foreach (var ec in channels)
         {
             var m = (PropagationChannelModel)ec.Model;
@@ -2495,6 +2527,31 @@ public sealed partial class Elaborator
             if (ReferenceEquals(fwd, ec) || ((PropagationChannelModel)fwd.Model).ReverseOf is not null)
                 throw new ParameterRefusalException(PropagationChannelDiagnostics.ReverseOfReverse(ec.InstancePath, name));
             m.BindReverse((PropagationChannelModel)fwd.Model);
+        }
+    }
+
+    /// <summary>
+    /// brief-pch-8 R-pch8-10 — the channel assumes each end is in the other's far field: warned when the distance is under 2D²/λ for an
+    /// array end's largest dimension D (its aperture's diagonal), λ at the channel's f0 or else the array record's highest frequency.
+    /// </summary>
+    private static void WarnIfNearField(ElaboratedNetlist netlist, ElaboratedComponent ec, PropagationChannelModel m, ElaboratedComponent? tx,
+                                        ElaboratedComponent? rx)
+    {
+        foreach (var (end, arr) in new[] { ("Tx", tx), ("Rx", rx) })
+        {
+            if (arr?.Model is not PhasedArrayModel a) continue;
+            double hz = m.ReferenceHz(a.NetworkFrequencies.DefaultIfEmpty(0).Max());
+            if (!(hz > 0)) continue;
+            double d = m.ApproximateDistanceM;
+            if (!(d > 0)) continue;
+            var pos = Enumerable.Range(0, a.Lattice.Count).Select(a.Lattice.Position).ToList();
+            double w = pos.Max(q => q.X) - pos.Min(q => q.X) + a.Lattice.Dx, h = pos.Max(q => q.Y) - pos.Min(q => q.Y) + a.Lattice.Dy;
+            double diag = Math.Sqrt(w * w + h * h), lambda = RfCore.Propagation.PropagationMath.C / hz, far = 2 * diag * diag / lambda;
+            if (d < far)
+                netlist.AddWarningOnce($"channel-near-field:{ec.InstancePath}:{end}", string.Format(CultureInfo.InvariantCulture,
+                    "Propagation Channel '{0}': its {1} end '{2}' is {3:G4} m across, so its far field begins at 2D²/λ = {4:G4} m at {5:G4} GHz, and the ends are "
+                    + "{6:G4} m apart: the channel treats them as each other's far field, which overstates the array's gain here.",
+                    ec.InstancePath, end, arr.InstancePath, diag, far, hz / 1e9, d));
         }
     }
 

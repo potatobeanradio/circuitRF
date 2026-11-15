@@ -78,26 +78,65 @@ public static class EnvelopeChannel
         public int BTx = -1, BRx = -1;
     }
 
+    /// <summary>brief-pch-8 R-pch8-3 — a channel with an instance end: each transmit element's wave, each ray's two coupling
+    /// vectors per product, and the receive end's rows.</summary>
+    internal sealed class ICh
+    {
+        public required ElaboratedComponent Ec;
+        public required PropagationChannelModel Model;
+        public required int[] TxNode;                       // per transmit source (a pin is one)
+        public required int[] TxRef;
+        public required Complex Z0Tx;
+        public int[] TxBranch = [];
+        public required int[] RxSource;                     // an array receive end's source nodes; empty for a pin
+        public int BRx = -1;
+        public required PropagationChannelModel.RayCoupling[][] Rays;   // per product
+        public required double[][] Steps;                   // per product, per ray: 1 + τ/h
+        public required double[] Hz;
+        public required int Ring;
+        public Complex[][][] W = null!;                     // [product][source][ring]
+        public long MultiplyAdds;                           // per step, all products
+    }
+
+    /// <summary>brief-pch-8 — the multiply-adds per step, rays and elements of the last run's instance-end channels (R-pch8-3's counters).</summary>
+    public static (long MultiplyAddsPerStep, int Rays, int TxElements, int RxElements) LastInstanceCost { get; private set; }
+
     /// <summary>The channels of one run: puts them back on <see cref="Dispose"/>, and carries their history.</summary>
     public sealed class Run : IDisposable
     {
         private readonly List<Ch> _chs = [];
+        private readonly List<ICh> _ichs = [];
         private readonly double _h;
         private readonly long _i0;
         private int _n;
 
         internal Run(double h, long i0) { _h = h; _i0 = i0; }
 
-        public bool Any => _chs.Count > 0;
+        public bool Any => _chs.Count > 0 || _ichs.Count > 0;
 
         /// <summary>The longest simulated delay, h + τ_max (s): the receive side's start that has no history of its own.</summary>
         public double LatencyS { get; private set; }
 
         /// <summary>The product being stamped: each channel stamps its two ends alone. Null: the steady state, H frozen.</summary>
-        public int? Product { set { foreach (var c in _chs) c.Model.Stepping = value is not null; } }
+        public int? Product { set { foreach (var c in _chs) c.Model.Stepping = value is not null; foreach (var c in _ichs) c.Model.Stepping = value is not null; } }
 
         /// <summary>Takes each channel's branch rows from the stamp just made.</summary>
-        public void Bind() { foreach (var c in _chs) { c.BTx = c.Model.PortBranches[0]; c.BRx = c.Model.PortBranches[1]; } }
+        public void Bind()
+        {
+            foreach (var c in _chs) { c.BTx = c.Model.PortBranches[0]; c.BRx = c.Model.PortBranches[1]; }
+            foreach (var c in _ichs)
+            {
+                c.TxBranch = c.Model.TxArray is { } ta ? [.. ta.Array.PortBranchIndices] : [c.Model.PortBranches[0]];
+                c.BRx = c.Model.PortBranches[1];
+            }
+        }
+
+        private static Complex IWave(ICh c, int s, Complex[] x)
+        {
+            Complex v = c.TxNode[s] > 0 ? x[c.TxNode[s] - 1] : Complex.Zero;
+            if (c.TxRef[s] > 0) v -= x[c.TxRef[s] - 1];
+            return (v + c.Z0Tx * x[c.TxBranch[s]]) / Math.Sqrt(c.Z0Tx.Real);
+        }
 
         private static Complex Wave(Ch c, int k, Complex[] x)
         {
@@ -109,6 +148,15 @@ public static class EnvelopeChannel
         public void Start(Complex[][] x)
         {
             _n = 0;
+            foreach (var c in _ichs)
+            {
+                c.W = new Complex[c.Rays.Length][][];
+                for (int k = 0; k < c.Rays.Length; k++)
+                {
+                    c.W[k] = new Complex[c.TxNode.Length][];
+                    for (int s = 0; s < c.TxNode.Length; s++) { c.W[k][s] = new Complex[c.Ring]; Array.Fill(c.W[k][s], IWave(c, s, x[k])); }
+                }
+            }
             foreach (var c in _chs)
             {
                 c.W = new Complex[c.Rays.Length][];
@@ -125,6 +173,9 @@ public static class EnvelopeChannel
         public void Push(Complex[][] x)
         {
             _n++;
+            foreach (var c in _ichs)
+                for (int k = 0; k < c.Rays.Length; k++)
+                    for (int s = 0; s < c.TxNode.Length; s++) c.W[k][s][_n % c.Ring] = IWave(c, s, x[k]);
             foreach (var c in _chs)
                 for (int k = 0; k < c.Rays.Length; k++)
                 {
@@ -169,11 +220,49 @@ public static class EnvelopeChannel
             return sum;
         }
 
+        /// <summary>brief-pch-8 — an instance-end channel's sources for product <paramref name="k"/> at step position <paramref name="pos"/>:
+        /// per ray, the departure field from each transmit element's wave at t − h − τ (quadratic Lagrange on solved steps), turned by the
+        /// ray's fading and Doppler, then projected on each receive element (½·(j)·F_rxᵀ·y on its source row) or on the pin's wave row.</summary>
+        private void DriveInstance(ICh c, int k, double pos, int last, Complex[] b)
+        {
+            double tt = c.Model.FrozenTimeS + pos * _h;
+            var l = new double[3]; var ld = new double[3];
+            Complex g1 = new Complex(0, 1 / (2 * Math.PI * c.Hz[k]));
+            var rays = c.Rays[k];
+            for (int ri = 0; ri < rays.Length; ri++)
+            {
+                var rc = rays[ri];
+                double q = last - (pos - c.Steps[k][ri]);
+                int n0 = (int)Math.Floor(q);
+                EnvelopeLineDelay.Lagrange(q - n0, l, ld);
+                Complex c0 = l[0] - g1 * ld[0] / _h, c1 = l[1] - g1 * ld[1] / _h, c2 = l[2] - g1 * ld[2] / _h;
+                int s0 = last - n0, s1 = s0 - 1, s2 = s0 - 2;
+                int i0 = s0 <= 0 ? 0 : s0 % c.Ring, i1 = s1 <= 0 ? 0 : s1 % c.Ring, i2 = s2 <= 0 ? 0 : s2 % c.Ring;
+                Complex yt = 0, yp = 0;
+                var waves = c.W[k];
+                for (int m = 0; m < waves.Length; m++)
+                {
+                    Complex tT = rc.TxTheta[m], tP = rc.TxPhi[m];
+                    if (tT == Complex.Zero && tP == Complex.Zero) continue;
+                    var wm = waves[m];
+                    Complex w = c0 * wm[i0] + c1 * wm[i1] + c2 * wm[i2];
+                    yt += tT * w; yp += tP * w;
+                }
+                Complex turn = rc.Term.FadeAt(tt) * Complex.FromPolarCoordinates(1, 2 * Math.PI * rc.DopplerHz * tt + Math.PI * rc.DriftHzps * tt * tt);
+                yt *= turn; yp *= turn;
+                if (c.RxSource.Length == 0) b[c.BRx] += rc.RxTheta[0] * yt + rc.RxPhi[0] * yp;
+                else
+                    for (int n = 0; n < c.RxSource.Length; n++)
+                        if (c.RxSource[n] > 0) b[c.RxSource[n] - 1] += 0.5 * (rc.RxTheta[n] * yt + rc.RxPhi[n] * yp);
+            }
+        }
+
         /// <summary>The receive rows' sources for product <paramref name="k"/> of the full step being taken.</summary>
         public void AddMain(int k, Complex[] b)
         {
             foreach (var c in _chs)
                 if (c.Rays[k].Length > 0) b[c.BRx] += Drive(c, k, _n + 1, _n);
+            foreach (var c in _ichs) DriveInstance(c, k, _n + 1, _n, b);
         }
 
         /// <summary>The same for sub-step <paramref name="i"/> of <paramref name="split"/> (still on the solved full steps:
@@ -182,6 +271,7 @@ public static class EnvelopeChannel
         {
             foreach (var c in _chs)
                 if (c.Rays[k].Length > 0) b[c.BRx] += Drive(c, k, _n + (double)i / split, _n);
+            foreach (var c in _ichs) DriveInstance(c, k, _n + (double)i / split, _n, b);
         }
 
         /// <summary>Each channel's recorded transmit wave (instance path to recording), when the run asked for them.</summary>
@@ -211,7 +301,15 @@ public static class EnvelopeChannel
         public void Dispose()
         {
             foreach (var c in _chs) { c.Model.Stepping = false; c.Model.FrozenTimeS = c.Model.TimeOffsetS; }
+            foreach (var c in _ichs) { c.Model.Stepping = false; c.Model.FrozenTimeS = c.Model.TimeOffsetS; }
             _chs.Clear();
+            _ichs.Clear();
+        }
+
+        internal void Add(ICh c)
+        {
+            _ichs.Add(c);
+            LatencyS = Math.Max(LatencyS, c.Steps.SelectMany(r => r).Select(x => x * _h).DefaultIfEmpty(_h).Max());
         }
 
         internal void Add(Ch c)
@@ -219,6 +317,45 @@ public static class EnvelopeChannel
             _chs.Add(c);
             LatencyS = Math.Max(LatencyS, c.Rays.SelectMany(r => r).Select(r => r.Steps * _h).DefaultIfEmpty(_h).Max());
         }
+    }
+
+    /// <summary>brief-pch-8 R-pch8-3 — a channel with an instance end in its envelope form, with its cost counted and said.</summary>
+    private static ICh Instance(ElaboratedNetlist nl, ElaboratedComponent ec, PropagationChannelModel m, IReadOnlyList<double> productHz, double h)
+    {
+        int[] txNode, txRef;
+        Complex z0;
+        if (m.TxArray is { } ta)
+        {
+            int n = ta.Array.PortCount;
+            txNode = [.. Enumerable.Range(0, n).Select(i => ta.Array.Radiates(i) ? ta.Ec.Nodes[i] : 0)];
+            txRef = [.. Enumerable.Repeat(ta.Ec.ReferenceNode, n)];
+            z0 = ta.Array.Z0;
+        }
+        else { txNode = [ec.Nodes[m.TxPin]]; txRef = [0]; z0 = m.End(0, productHz.FirstOrDefault(f => f > 0, 1e9)).Z0; }
+        int[] rxSrc = m.RxArray is { } ra ? [.. Enumerable.Range(0, ra.Array.PortCount).Select(i => PhasedArrayModel.SourceNode(ra.Ec, i, ra.Array.PortCount))] : [];
+        var rays = new PropagationChannelModel.RayCoupling[productHz.Count][];
+        var steps = new double[productHz.Count][];
+        double worst = 1;
+        for (int k = 0; k < productHz.Count; k++)
+        {
+            rays[k] = productHz[k] > 0 ? m.InstanceCouplings(productHz[k]) : [];
+            steps[k] = [.. rays[k].Select(r => 1 + r.DelayS / h)];
+            foreach (double s in steps[k]) worst = Math.Max(worst, s);
+        }
+        int nr = rays.Select(r => r.Length).DefaultIfEmpty(0).Max();
+        long madds = rays.Sum(r => (long)r.Length * (3L * txNode.Length + 2L * txNode.Length + 2L * Math.Max(1, rxSrc.Length)));
+        LastInstanceCost = (madds, nr, txNode.Length, Math.Max(1, rxSrc.Length));
+        var real = m.At(m.ReferenceHz(productHz.FirstOrDefault(f => f > 0, 1e9)));
+        nl.AddNoteOnce("env-channel:" + ec.InstancePath, string.Format(CultureInfo.InvariantCulture,
+            "Propagation Channel '{0}': {1} ray(s) between {2} transmit and {3} receive element(s), stepped explicitly and one way: each ray's departure field "
+            + "from the transmit waves one step plus its excess delay (up to {4:G4} s) earlier, projected on each receive element; {5:N0} multiply-adds a step. "
+            + "The bulk delay τ0 = {6:G4} s is reported and not simulated.",
+            ec.InstancePath, nr, txNode.Length, Math.Max(1, rxSrc.Length), real.MaxExcessDelayS, madds, real.BulkDelayS));
+        return new ICh
+        {
+            Ec = ec, Model = m, TxNode = txNode, TxRef = txRef, Z0Tx = z0, RxSource = rxSrc, Rays = rays, Steps = steps, Hz = [.. productHz],
+            Ring = (int)Math.Ceiling(worst) + 4, MultiplyAdds = madds,
+        };
     }
 
     private sealed class ChannelResponseOf(PropagationChannelModel m, double carrierHz, double t0, double h) : IChannelResponse
@@ -248,6 +385,7 @@ public static class EnvelopeChannel
         {
             var m = (PropagationChannelModel)ec.Model;
             m.FrozenTimeS = m.TimeOffsetS + i0 * h;
+            if (m.HasInstanceEnd) { run.Add(Instance(nl, ec, m, productHz, h)); continue; }
             var rays = new Ray[productHz.Count][];
             var z0 = new Complex[productHz.Count];
             double worst = 0;

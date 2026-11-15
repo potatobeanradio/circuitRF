@@ -2615,6 +2615,25 @@ PropagationChannel:CH1 tx rx Distance=250 TxHeight=10 RxHeight=1.5 PathLoss=twor
   their delays are scaled until the RMS delay spread equals it exactly. The tables in ns are used as printed unless
   `DelaySpread` is stated. `TDL-D`, `TDL-E`, `NTN-TDL-C` and `NTN-TDL-D` have a line-of-sight tap, and `KFactor` (dB)
   rescales them as TR 38.901 §7.7.6 describes. A terrain profile for `P526` or `P1812` is written `Terrain=`.
+- **Array ends.** `Tx=PA1` or `Rx=PA1` names a Phased Antenna Array (either mode). That end is the array's own elements:
+  their patterns, their positions, and an orientation from `TxAz`/`TxEl`/`TxRoll` (or `Rx…`), facing the other end when
+  unstated. Such an end has no pin, so the symbol draws only the pins that remain, and the two kinds mix (a pin source
+  into an array, an array into a pin, or array to array). The coupling is stamped as two unknowns per ray, never as a matrix of
+  receive elements by transmit elements, and a receive element takes exactly the wave PAA-7's incident wave from that
+  direction gives it. Several channels may end on one array; their waves add on its elements. `check` and the run warn when
+  the ends are closer than 2D²/λ for an array's aperture D. An EM Field Data block as an end is refused for now.
+- **Clustered delay lines and ray lists.** `Multipath=cdl` with `Profile=` one of TR 38.901's `CDL-A` to `CDL-E` or TR 38.811's
+  `NTN-CDL-A` to `NTN-CDL-D` gives rays with directions and polarization. Their delays are scaled to `DelaySpread`, the
+  angle spreads to `ASD`, `ASA`, `ZSD` and `ZSA` (degrees) when stated, and the clusters are turned so the line-of-sight
+  cluster lies on the line between the ends. `Multipath=rays` reads a ray list from `File=` with
+  `delay (ns), power (dB), theta_d (deg), phi_d (deg), theta_a (deg), phi_a (deg)`, and optionally `xpr (dB)` or a 2×2 matrix
+  (`tt_re`, `tt_im`, … `pp_im`). The angles are in the global frame, or in each end's own frame with `RayFrame=ends`. Each
+  such ray's Doppler comes from `TxVel`, `RxVel` and its own directions.
+- **Polarization.** Each ray carries its 2×2 polarization matrix (the line of sight's is diag(1, −1)). A gain end's
+  polarization is `TxPol`/`RxPol` (`theta`, `phi`, `rhcp`, `lhcp` or an angle) in its own frame, or matched to the other end
+  along the line of sight when unstated. `Faraday=` (degrees) rotates every ray's field. On a satellite path with
+  `Ionosphere=on`, P.531's rotation is applied this way whenever an end has a polarization, and its polarization-loss
+  term is then dropped.
 - **Fading.** `Fading=rayleigh`, `rician` (with `KFactor`, a line-of-sight component at 0.7 f_D and its own phase) or
   `nakagami` (with `NakagamiM`) makes each tap's gain fade. Left blank, a profile's taps fade as the profile says, and
   `none` or a plain file stays static. `Doppler=classical`, `flat`, `gaussian` or `los` is the Doppler spectrum. The

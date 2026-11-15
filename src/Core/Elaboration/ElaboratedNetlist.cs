@@ -123,6 +123,26 @@ public sealed class ElaboratedNetlist : IDisposable
             _wspProbes.Add(new WspProbeEntry(idx, c.InstancePath, _wspProbes.Count + 1));
     }
 
+    /// <summary>
+    /// brief-pch-8 — moves <paramref name="last"/> to the end of the component list, in their order, and rebuilds the index lists that
+    /// name positions (the nonlinear partition, the WSProbes'). A Propagation Channel with an instance end reads the array's branches
+    /// from the array's own stamp, so it is stamped after every array. Called once, during elaboration, before anything reads indices.
+    /// </summary>
+    internal void MoveToEnd(IReadOnlyCollection<ElaboratedComponent> last)
+    {
+        if (last.Count == 0) return;
+        var set = new HashSet<ElaboratedComponent>(last, ReferenceEqualityComparer.Instance);
+        var kept = Components.Where(c => !set.Contains(c)).Concat(Components.Where(set.Contains)).ToList();
+        Components.Clear();
+        Components.AddRange(kept);
+        _nonlinearComponents.Clear();
+        for (int i = 0; i < Components.Count; i++) if (Components[i].IsNonlinear) _nonlinearComponents.Add(i);
+        var probes = _wspProbes.ToList();
+        _wspProbes.Clear();
+        foreach (var w in probes)
+            _wspProbes.Add(w with { ComponentIndex = Components.FindIndex(c => c.InstancePath == w.Label && c.Model is WSProbeModel) });
+    }
+
     internal void SetResolvedGlobal(string name, Value val) => _resolvedGlobals[name] = val;
 
     /// <summary>

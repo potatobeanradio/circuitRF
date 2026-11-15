@@ -4871,3 +4871,43 @@ the ends' relative speed from `TxVel`/`RxVel`.
 **Where fading reaches.** S-parameter and HB runs see H frozen at `TimeOffset`, fading included. HB's note now says the
 fading is frozen too. The envelope multiplies each ray by its tap's gain at the receive time, at the reference
 frequency's f_D in every product.
+
+## brief-pch-8 — instance ends, clustered delay lines, polarization on the Propagation Channel (2026-11-15)
+
+**An instance end is coupled through ray unknowns, and the coupling needs the array's branches.** Each ray is two
+auxiliary unknowns (θ and φ of the field it delivers). Each unknown's row reads the transmit elements' incident waves,
+(v + Z0·i)/√Re Z0 from the element node and the branch the array allocated, and each receive element's source row reads
+the ray pairs. The array allocates its branches in its own `Stamp`, so a channel with an instance end has to be stamped
+after every array. `ElaboratedNetlist.MoveToEnd` moves those channels last during elaboration. It rebuilds the two
+position-indexed lists (the nonlinear partition, the WSProbes') because both store component indices, and moving a
+component without rebuilding them would point both at the wrong components with no error.
+
+**PAA-7's j, and only on an array receive end.** A receive element takes ½·j·Σ_r F_nᵀ·y_r. That is eq. (4) through the
+channel: a pin of EIRP P·G at distance d delivers exactly what PAA-7's incident wave of density P·G/(4πd²) does,
+2.5e-11 relative including phase (gate 1, off boresight, at an oblique polarization). A pin receive end keeps PCH-6's H
+without the j. The bulk phase is not simulated, so a constant phase is invisible, and pin-to-pin numbers are unchanged.
+
+**The polarized form is used only where it is needed.** Pin to pin with no ray matrix, no stated polarization and no
+Faraday rotation keeps PCH-6's `Couplings` exactly. Everything else uses F_rxᵀ·M·F_tx in the global frame's (θ̂, φ̂) at
+each ray's directions. The line-of-sight matrix is diag(1, −1): φ̂ of a direction and of its opposite are opposite, so
+it carries the field vector unchanged. For a line-of-sight ray this equals PCH-6's global dot product. A gain end with
+no `TxPol`/`RxPol` is matched to the other end's reference element along the line of sight, as PCH-6's gain end was
+co-polar. Two such gain ends are both θ̂.
+
+**Nets.** `InstanceNetContract` takes the channel's net count from its `PortCount` (one per pin end). The schematic's
+pin table for the channel is a code in `SymbolPortDefs.For`: 2 both, 1 the receive pin alone, 3 the transmit pin alone,
+0 none, read from the `Tx`/`Rx` rows by `EditableComponent.ChannelPinCode`. The symbol has to build its pins from that
+code itself, because `Sym` treats 0 as "the default" and would have given every channel two pins. The netlist drawer's
+variadic-count insertion skips the channel, as it skips the array, so it does not invent a "Tx and Rx" row.
+
+**An EM Field Data block as an end is refused.** It is an `SnpModel` with no received-wave source nodes, so receiving into one
+needs those nodes added to it. The refusal names a Phased Antenna Array on the same record as the way to have that end.
+
+**Faraday rotation is applied where the coupling carries polarization.** With `Ionosphere=on` on a satellite path,
+P.531's rotation turns every ray's field (R(Ω)·M), and its polarization-loss term comes out of the excess, since the
+ends' polarizations now say what the rotation costs. A pin-to-pin link with no polarization keeps the loss term, as
+PCH-2 had it. `Faraday=` states the angle. The rotation is applied at any frequency, not only below 3 GHz: P.531 gives
+it everywhere, and it is a fraction of a degree above.
+
+**CDL and ray lists take their Doppler from geometry.** ν_r = (v_rx·û_A + v_tx·û_D)·f/c. `Velocity`, `fD` and `Fading` are
+refused with them, because those make a tap with no directions fade.

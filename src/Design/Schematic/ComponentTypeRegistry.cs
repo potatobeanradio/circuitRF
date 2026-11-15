@@ -981,6 +981,8 @@ public static class ComponentTypeRegistry
         SymbolKind.Combiner                                  => "N",
         // brief-paa-3 — one pin per element in Elements mode: the product of two parameters, named as such.
         SymbolKind.PhasedArray                               => "Rows × Cols",
+        // brief-pch-8 — a pin per end that does not name an instance: none, one or both
+        SymbolKind.PropagationChannel                        => "Tx and Rx",
         // A wBond's terminals are 2 per wire array it places, plus the reference pin when RefPin is
         // on — so the count follows the arrays selected out of the design it carries or links to,
         // and there is no fixed answer at all until one is chosen.
@@ -2278,11 +2280,14 @@ public static class ComponentTypeRegistry
     public static IReadOnlyList<string>? ChannelWordOptions(string name)
     {
         if (name == "PathLoss") return [.. RfCore.Propagation.PropagationModels.All.Select(m => m.Name)];
-        if (name == "Multipath") return ["none", "tdl", "file"];
+        if (name == "Multipath") return ["none", "tdl", "cdl", "file", "rays"];
+        // brief-pch-8 — polarizations and the ray list's frame
+        if (name is "TxPol" or "RxPol") return ["theta", "phi", "rhcp", "lhcp"];
+        if (name == "RayFrame") return ["global", "ends"];
         // brief-pch-7 — the fading words and the tapped delay lines (Profile is a TDL's name; a terrain profile is Terrain=)
         if (name == "Fading") return RfCore.Propagation.TapFading.FadingWords;
         if (name == "Doppler") return RfCore.Propagation.TapFading.DopplerWords;
-        if (name == "Profile") return [.. RfCore.Propagation.TdlProfiles.All.Select(p => p.Name)];
+        if (name == "Profile") return [.. RfCore.Propagation.TdlProfiles.All.Select(p => p.Name), .. RfCore.Propagation.CdlProfiles.All.Select(p => p.Name)];
         if (name == "DopplerComp") return ["none", "common"];
         var words = RfCore.Propagation.PropagationModels.All.SelectMany(m => m.Parameters).Concat(RfCore.Propagation.AddedLosses.Parameters)
                           .Where(p => p.Name == name && p.Kind == RfCore.Propagation.ParameterKind.Word && p.Words is not null)
@@ -2299,8 +2304,8 @@ public static class ComponentTypeRegistry
         "Distance" or "TxHeight" or "RxHeight" or "TxPos" or "RxPos" or "TxVel" or "RxVel"
             or "TxAz" or "TxEl" or "TxRoll" or "RxAz" or "RxEl" or "RxRoll" => "Geometry",
         "Multipath" or "File" or "Profile" or "DelaySpread" or "Fading" or "KFactor" or "NakagamiM" or "Doppler" or "Velocity" or "fD"
-            or "Sinusoids" => "Small scale",
-        "TxGain" or "RxGain" or "TxPattern" or "RxPattern" or "TxZ" or "RxZ" or "RxTant" => "Ends",
+            or "Sinusoids" or "ASD" or "ASA" or "ZSD" or "ZSA" or "Xpr" or "RayFrame" => "Small scale",
+        "TxGain" or "RxGain" or "TxPattern" or "RxPattern" or "TxZ" or "RxZ" or "RxTant" or "Tx" or "Rx" or "TxPol" or "RxPol" => "Ends",
         "TimeOffset" or "DopplerComp" or "Reverse" or "Seed" or "Drop" => "Realization",
         _ => "Large scale",
     };
@@ -2321,7 +2326,8 @@ public static class ComponentTypeRegistry
             "PathLoss" => "The large-scale model, by its recommendation or report (free, logdist, multislope, tworay, 38901, P1238, P1411, P526, "
                         + "satellite, P1812). Its parameters, and the added losses, are written beside it by the model's own names.",
             "Multipath" => "none: the rays the geometry gives (the line of sight, and tworay's ground ray). tdl: a tapped delay line by Profile=. "
-                         + "file: the taps of a ray list or power-delay profile (File=).",
+                         + "cdl: a clustered delay line by Profile= (rays with directions and polarization). file: the taps of a power-delay profile "
+                         + "(File=). rays: a ray list with departure and arrival directions (File=).",
             "File" => "Multipath=file: a CSV of delay (ns), power (dB) and optionally phase (deg), doppler (Hz), k (dB) and spectrum, one tap a row; "
                     + "or delay, re, im (a sampled impulse response). Delay is in excess of the line of sight; the powers are normalized to sum to 1.",
             "Profile" => "Multipath=tdl: the tapped delay line, TR 38.901 TDL-A to TDL-E, TS 36.104 EPA/EVA/ETU, ITU-R M.1225 PedA/PedB/VehA/VehB "
@@ -2337,6 +2343,16 @@ public static class ComponentTypeRegistry
             "fD" => "Maximum Doppler, Hz, in place of Velocity.",
             "Sinusoids" => "Sinusoids summed per fading tap. Blank is the default the statistics gates were met with.",
             "Terrain" => "A terrain profile CSV for a model that reads one (P526, P1812): distance and height columns with units.",
+            "Tx" or "Rx" => "A Phased Antenna Array's instance name: that end is the array's own elements (their patterns, positions and orientation "
+                          + "from Az/El/Roll) and has no pin. Blank: the end is a pin.",
+            "TxPol" or "RxPol" => "A gain end's polarization in its own frame: theta, phi, rhcp, lhcp or an angle in degrees. Blank: matched to the "
+                                + "other end along the line of sight.",
+            "ASD" or "ASA" or "ZSD" or "ZSA" => "Multipath=cdl: the RMS departure/arrival azimuth or zenith spread the clusters are scaled to, "
+                                              + "degrees. Blank keeps the profile's.",
+            "Xpr" => "Multipath=rays: the cross-polar ratio, dB, of a ray the file gives no matrix or xpr for.",
+            "RayFrame" => "Multipath=rays: global (angles in the global frame) or ends (departure in the transmit end's frame, arrival in the receive end's).",
+            "Faraday" => "A Faraday rotation of every ray's field, degrees. Blank: P.531's on a satellite path with Ionosphere=on, when an end has a "
+                       + "polarization.",
             "Seed" => "The seed of the fading draws.",
             "Drop" => "Which realization: sweep it (Drop=drop with a parametric sweep over drop) for a Monte Carlo. Drop N alone equals drop N in a sweep.",
             "TxGain" => "Transmit antenna gain, dBi, the same in every direction. TxPattern replaces it with a pattern.",
@@ -2733,6 +2749,9 @@ public static class ComponentTypeRegistry
                         new("RxHeight",   "1.5", "metre", false, UnitDimension.Length),
                         new("PathLoss",   "free", "",     true,  UnitDimension.None),
                         new("Multipath",  "none", "",     false, UnitDimension.None),
+                        // brief-pch-8 — an end on a Phased Antenna Array: blank is a pin; shown when set, since it changes the pins
+                        new("Tx",         "",    "",      true,  UnitDimension.None),
+                        new("Rx",         "",    "",      true,  UnitDimension.None),
                         new("TxGain",     "0",   "",      false, UnitDimension.None),
                         new("RxGain",     "0",   "",      false, UnitDimension.None),
                         new("TxZ",        "50",  "Ω",     false, UnitDimension.Resistance),

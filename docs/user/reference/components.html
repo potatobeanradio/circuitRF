@@ -5361,6 +5361,25 @@ document's edition. The TDL and NTN-TDL delays are normalized, so <code>DelaySpr
 their delays are scaled until the RMS delay spread equals it exactly. The tables in ns are used as printed unless
 <code>DelaySpread</code> is stated. <code>TDL-D</code>, <code>TDL-E</code>, <code>NTN-TDL-C</code> and <code>NTN-TDL-D</code> have a line-of-sight tap, and <code>KFactor</code> (dB)
 rescales them as TR 38.901 §7.7.6 describes. A terrain profile for <code>P526</code> or <code>P1812</code> is written <code>Terrain=</code>.</li>
+<li><strong>Array ends.</strong> <code>Tx=PA1</code> or <code>Rx=PA1</code> names a Phased Antenna Array (either mode). That end is the array's own elements:
+their patterns, their positions, and an orientation from <code>TxAz</code>/<code>TxEl</code>/<code>TxRoll</code> (or <code>Rx…</code>), facing the other end when
+unstated. Such an end has no pin, so the symbol draws only the pins that remain, and the two kinds mix (a pin source
+into an array, an array into a pin, or array to array). The coupling is stamped as two unknowns per ray, never as a matrix of
+receive elements by transmit elements, and a receive element takes exactly the wave PAA-7's incident wave from that
+direction gives it. Several channels may end on one array; their waves add on its elements. <code>check</code> and the run warn when
+the ends are closer than 2D²/λ for an array's aperture D. An EM Field Data block as an end is refused for now.</li>
+<li><strong>Clustered delay lines and ray lists.</strong> <code>Multipath=cdl</code> with <code>Profile=</code> one of TR 38.901's <code>CDL-A</code> to <code>CDL-E</code> or TR 38.811's
+<code>NTN-CDL-A</code> to <code>NTN-CDL-D</code> gives rays with directions and polarization. Their delays are scaled to <code>DelaySpread</code>, the
+angle spreads to <code>ASD</code>, <code>ASA</code>, <code>ZSD</code> and <code>ZSA</code> (degrees) when stated, and the clusters are turned so the line-of-sight
+cluster lies on the line between the ends. <code>Multipath=rays</code> reads a ray list from <code>File=</code> with
+<code>delay (ns), power (dB), theta_d (deg), phi_d (deg), theta_a (deg), phi_a (deg)</code>, and optionally <code>xpr (dB)</code> or a 2×2 matrix
+(<code>tt_re</code>, <code>tt_im</code>, … <code>pp_im</code>). The angles are in the global frame, or in each end's own frame with <code>RayFrame=ends</code>. Each
+such ray's Doppler comes from <code>TxVel</code>, <code>RxVel</code> and its own directions.</li>
+<li><strong>Polarization.</strong> Each ray carries its 2×2 polarization matrix (the line of sight's is diag(1, −1)). A gain end's
+polarization is <code>TxPol</code>/<code>RxPol</code> (<code>theta</code>, <code>phi</code>, <code>rhcp</code>, <code>lhcp</code> or an angle) in its own frame, or matched to the other end
+along the line of sight when unstated. <code>Faraday=</code> (degrees) rotates every ray's field. On a satellite path with
+<code>Ionosphere=on</code>, P.531's rotation is applied this way whenever an end has a polarization, and its polarization-loss
+term is then dropped.</li>
 <li><strong>Fading.</strong> <code>Fading=rayleigh</code>, <code>rician</code> (with <code>KFactor</code>, a line-of-sight component at 0.7 f_D and its own phase) or
 <code>nakagami</code> (with <code>NakagamiM</code>) makes each tap's gain fade. Left blank, a profile's taps fade as the profile says, and
 <code>none</code> or a plain file stays static. <code>Doppler=classical</code>, <code>flat</code>, <code>gaussian</code> or <code>los</code> is the Doppler spectrum. The
@@ -5412,7 +5431,7 @@ coherence time against the record and the subcarrier spacing, and the coherence 
 <tr><td>1</td><td>tx</td></tr>
 <tr><td>2</td><td>rx</td></tr>
 </tbody></table>
-<p class="small">The nets of an instance line, in this order. tx is the transmit antenna&#39;s terminals and rx the receive antenna&#39;s, each over ground. NOT interchangeable: the channel carries tx to rx and nothing back, so a reverse link is a second channel (Reverse= for the same realization).</p>
+<p class="small">The nets of an instance line, in this order. How many there are is set by <code>Tx and Rx</code>; the table shows <code>Tx and Rx&nbsp;=&nbsp;2</code>. tx is the transmit antenna&#39;s terminals and rx the receive antenna&#39;s, each over ground. NOT interchangeable: the channel carries tx to rx and nothing back, so a reverse link is a second channel (Reverse= for the same realization).</p>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
@@ -5420,7 +5439,9 @@ coherence time against the record and the subcarrier spacing, and the coherence 
 <tr><td>TxHeight</td><td><code>1.5</code></td><td>metre</td><td>&mdash;</td><td>Transmit antenna height above the ground, metres.</td></tr>
 <tr><td>RxHeight</td><td><code>1.5</code></td><td>metre</td><td>&mdash;</td><td>Receive antenna height above the ground, metres.</td></tr>
 <tr><td>PathLoss</td><td><code>free</code></td><td>&mdash;</td><td>shown</td><td>The large-scale model, by its recommendation or report (free, logdist, multislope, tworay, 38901, P1238, P1411, P526, satellite, P1812). Its parameters, and the added losses, are written beside it by the model&#39;s own names.</td></tr>
-<tr><td>Multipath</td><td><code>none</code></td><td>&mdash;</td><td>&mdash;</td><td>none: the rays the geometry gives (the line of sight, and tworay&#39;s ground ray). tdl: a tapped delay line by Profile=. file: the taps of a ray list or power-delay profile (File=).</td></tr>
+<tr><td>Multipath</td><td><code>none</code></td><td>&mdash;</td><td>&mdash;</td><td>none: the rays the geometry gives (the line of sight, and tworay&#39;s ground ray). tdl: a tapped delay line by Profile=. cdl: a clustered delay line by Profile= (rays with directions and polarization). file: the taps of a power-delay profile (File=). rays: a ray list with departure and arrival directions (File=).</td></tr>
+<tr><td>Tx</td><td>&mdash;</td><td>&mdash;</td><td>shown</td><td>A Phased Antenna Array&#39;s instance name: that end is the array&#39;s own elements (their patterns, positions and orientation from Az/El/Roll) and has no pin. Blank: the end is a pin.</td></tr>
+<tr><td>Rx</td><td>&mdash;</td><td>&mdash;</td><td>shown</td><td>A Phased Antenna Array&#39;s instance name: that end is the array&#39;s own elements (their patterns, positions and orientation from Az/El/Roll) and has no pin. Blank: the end is a pin.</td></tr>
 <tr><td>TxGain</td><td><code>0</code></td><td>&mdash;</td><td>&mdash;</td><td>Transmit antenna gain, dBi, the same in every direction. TxPattern replaces it with a pattern.</td></tr>
 <tr><td>RxGain</td><td><code>0</code></td><td>&mdash;</td><td>&mdash;</td><td>Receive antenna gain, dBi, the same in every direction. RxPattern replaces it with a pattern.</td></tr>
 <tr><td>TxZ</td><td><code>50</code></td><td>Ω</td><td>&mdash;</td><td>The impedance the transmit pin presents, ohms.</td></tr>

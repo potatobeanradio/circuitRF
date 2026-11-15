@@ -44,6 +44,36 @@ public static class PropagationChannelDiagnostics
     public static Diagnostic RicianNeedsLosProfile(string profile)
         => E("rician-profile", "Fading=rician: {profile} has no line-of-sight tap (TDL-D, TDL-E, NTN-TDL-C and NTN-TDL-D have one).",
              ("profile", profile));
+    // brief-pch-8 — instance ends, polarization, clustered delay lines and ray lists
+    public static Diagnostic InstanceEndOwns(string end, string instance, string name)
+        => E("instance-end-owns", "{end}={instance} makes that end the instance's own antennas, so {name} does not apply to it.",
+             ("end", end), ("instance", instance), ("name", name));
+    public static Diagnostic ReverseWithInstance()
+        => E("reverse-instance", "Reverse= transposes a pin-to-pin realization; a channel with an instance end is not one. A reverse link to an array is a second channel.");
+    public static Diagnostic Polarization(string name, string word)
+        => E("polarization", "{name}={word} is theta, phi, rhcp, lhcp or an angle in degrees.", ("name", name), ("word", word));
+    public static Diagnostic EndNotBound(string end, string instance)
+        => E("end-not-bound", "{end}={instance} was not bound to an instance before the run.", ("end", end), ("instance", instance));
+    public static Diagnostic EndUnknown(string channel, string end, string instance, string arrays)
+        => E("end-unknown", "'{channel}': {end}={instance} names no Phased Antenna Array; the arrays are {arrays}.",
+             ("channel", channel), ("end", end), ("instance", instance), ("arrays", arrays));
+    public static Diagnostic EndFieldData(string channel, string end, string instance)
+        => E("end-field-data", "'{channel}': {end}={instance} is an EM Field Data block. A channel end on one is not built yet; a Phased Antenna Array "
+                               + "on the same record (Rows=1 Cols=1, or its own lattice) is.", ("channel", channel), ("end", end), ("instance", instance));
+    public static Diagnostic RaysNeedFile() => E("rays-file", "Multipath=rays reads its rays from File=, a ray list with departure and arrival angles.");
+    public static Diagnostic CdlNeedsProfile(string profiles)
+        => E("cdl-profile", "Multipath=cdl takes Profile=, one of {profiles}.", ("profiles", profiles));
+    public static Diagnostic CdlNeedsSpread()
+        => E("cdl-spread", "Multipath=cdl scales its normalized delays to DelaySpread, which it needs (TR 38.901 Table 7.7.3-1 gives 10 to 1000 ns).");
+    public static Diagnostic RayFrame(string word) => E("ray-frame", "RayFrame={word} is global or ends.", ("word", word));
+    public static Diagnostic ClusterDopplerFromVelocity()
+        => E("cluster-doppler", "Velocity and fD set a fading tap's Doppler; the rays of a clustered delay line or a ray list take theirs from "
+                                + "TxVel and RxVel and their own directions.");
+
+    public static Diagnostic FadingWithDirections()
+        => E("fading-directions", "Fading= makes a tap without directions fade; the rays of a clustered delay line or a ray list fade by their own "
+                                  + "phases and Dopplers beating, and take none.");
+
     public static Diagnostic KFactorNeedsRician()
         => E("kfactor", "KFactor is a Rician tap's line-of-sight to diffuse power ratio, dB: it goes with Fading=rician, a line-of-sight "
                         + "profile or a file's k column, and Fading=rician needs it.");

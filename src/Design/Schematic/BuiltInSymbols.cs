@@ -2196,18 +2196,34 @@ public static class BuiltInSymbols
     // antenna's triangle towards the receive antenna. Each antenna spans y in [-21, 21], centred in the body, so the drawing
     // reads as a radio path and says which way it runs.
 
-    private static Symbol BuildPropagationChannel() => Sym([
-        RRect(0, 0, 200, 200, 12),                    // body, x in [-100,100]  y in [-100,100]
-        L(-300, 0, -100, 0),                          // the tx lead, to the body's edge
-        L(-55, 21, -55, -1),                          // the transmit antenna: its mast
-        Poly(false, -67, -21, -43, -21, -55, -1),     // and its triangle, on its point
-        A(-55, -11, 24, -35, 70),                     // the waves, leaving towards the receive antenna
-        A(-55, -11, 37, -35, 70),
-        A(-55, -11, 50, -35, 70),
-        L(55, 21, 55, -1),                            // the receive antenna
-        Poly(false, 43, -21, 67, -21, 55, -1),
-        L(100, 0, 300, 0),                            // the rx lead, from the body's edge
-    ], SymbolKind.PropagationChannel);
+    private static Symbol BuildPropagationChannel() => PrimitivesForPropagationChannel(2);
+
+    /// <summary>
+    /// brief-pch-8 R-pch8-1 — the channel drawn with only the pins it has: <paramref name="pins"/> is
+    /// <see cref="SymbolPortDefs"/>'s code for it (2 both, 1 the receive pin alone, 3 the transmit pin alone, 0 none: an end that
+    /// names an instance has no pin, and its lead is not drawn).
+    /// </summary>
+    public static Symbol PrimitivesForPropagationChannel(int pins)
+    {
+        bool tx = pins is 2 or 3, rx = pins is 1 or 2;
+        var prims = new List<SymbolPrimitive> { RRect(0, 0, 200, 200, 12) };      // body, x in [-100,100]  y in [-100,100]
+        if (tx) prims.Add(L(-300, 0, -100, 0));                                   // the tx lead, to the body's edge
+        prims.AddRange([
+            L(-55, 21, -55, -1),                          // the transmit antenna: its mast
+            Poly(false, -67, -21, -43, -21, -55, -1),     // and its triangle, on its point
+            A(-55, -11, 24, -35, 70),                     // the waves, leaving towards the receive antenna
+            A(-55, -11, 37, -35, 70),
+            A(-55, -11, 50, -35, 70),
+            L(55, 21, 55, -1),                            // the receive antenna
+            Poly(false, 43, -21, 67, -21, 55, -1),
+        ]);
+        if (rx) prims.Add(L(100, 0, 300, 0));                                     // the rx lead, from the body's edge
+        // the pins are the code's (Sym treats 0 as "the default"), so a channel with no pin is built here
+        var defs = SymbolPortDefs.For(SymbolKind.PropagationChannel, pins);
+        var pinList = defs.Select((d, i) => new SymbolPin(d.LocalX, d.LocalY, i, d.Name)).ToList();
+        SymbolPinSides.Assign(pinList);
+        return new Symbol(prims, pinList);
+    }
 
     // ── Phase Shifter — a square carrying φ (brief-paa-4) ─────────────────────
     // Pins: (-300,0) · (+300,0), interchangeable, as the delay's are. The delay's body with an italic φ, the letter a phase is

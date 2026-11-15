@@ -4803,3 +4803,36 @@ first lag where the power-weighted |Σ p_i R_i(τ)| falls to one half, infinite 
 over the widest carrier's band), `fDxTrecord`, `fDoverSCS` and a regime note. The Signal quality preset draws the
 first channel's power-delay profile and Doppler spectrum under its table, points only, with the Doppler axis in Hz
 (a plot defaults to GHz).
+
+## brief-pch-8 — instance ends in the envelope, and what was not built (2026-11-15)
+
+**The envelope steps each ray from the transmit elements' waves.** `EnvelopeChannel.ICh` keeps a ring of every transmit
+element's wave per product. Per ray it forms the departure field from the waves one step plus its excess delay earlier,
+using quadratic Lagrange on solved steps with PCH-6's first-order slope term, turns it by the ray's fading and Doppler,
+and adds ½·(j)·F_rxᵀ·y on each receive element's source row (or the pin's wave row). The cost is K·(5·N_t + 2·N_r)
+multiply-adds per step per product. It is counted (`EnvelopeChannel.LastInstanceCost`) and stated in the run's note.
+Through two directional rays into a 4 × 4 array, the envelope settles on the harmonic-balance feed/transmit voltage
+ratio to 9e-9 at Tol 1e-12. The residual follows the Newton tolerance (6e-8 at draft accuracy), so it is the solve's,
+not the coupling's.
+
+**Gate 2 is held by counting, not by solving.** A 64 × 64 array to a 64 × 64 one through CDL-A (460 rays) stamps 920
+unknowns and 4.35 M entries. The bound is 2K·(2N_t + N_r) = 11.3 M; rays from behind an aperture meet a pattern of zero,
+since the record covers θ ≤ 90°. N_r × N_t would be 16.8 M. The channel's longest coefficient array is 4096. Nothing
+solved the link; the arrays' own 4096-element solves are PAA-8's.
+
+**Gates 5 and 6 against an independent sum, to the sixth decimal.** A boresight beam on a 16 × 16 isolated-element array
+loses 27.752902 dB in one CDL-C drop (480 rays) against the line of sight. Two transmitters at 5.9 and 5.95 GHz into one
+array give an SIR of 37.391671 dB, and the signal is unchanged to 1e-9 dB with the interferer present.
+`testdata/propagation/array_link_reference.py` reproduces both from the rays the channel realized: each element's
+wave, the array factor and the beamformer's sum. The rays are committed and the test checks them, so the script reads
+exactly what the run used. The element's pattern along each ray is circuitRF's own reading of the record (PAA's,
+gated there), passed to the script as data.
+
+**Not built:**
+- **R-pch8-4, the receive collapse, and gate 3.** Forming the beamformed output from Σ_r AF_rx·… instead of element by element
+  needs an engine path that replaces a fast-path receive array's channel cells and elements by one source at its feed.
+  Today every receive element is stamped.
+- **R-pch8-9's reported per-channel received power and SINR at the feed.** Several channels into one array add, which gate 6
+  measures, and a run note names the channels sharing a receive end. The cubes naming each channel's feed power and the
+  SINR need each channel's share of the solution, which the report does not see.
+- **An EM Field Data block as an end** is refused (see src/Core/RESOLVED.md).

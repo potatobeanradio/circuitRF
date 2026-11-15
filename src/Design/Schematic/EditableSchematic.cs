@@ -317,9 +317,16 @@ public static class SymbolPortDefs
             case SymbolKind.Delay:
             case SymbolKind.PhaseShifter:
                 return [("1", -300f, 0f), ("2", 300f, 0f)];
-            // Propagation Channel (brief-pch-6): the transmit antenna's terminals, then the receive antenna's.
+            // Propagation Channel (brief-pch-6): the transmit antenna's terminals, then the receive antenna's. brief-pch-8: an end that names
+            // an instance (Tx=, Rx=) has no pin, so the count is a code: 2 both, 1 the receive pin alone, 3 the transmit pin alone, 0 none.
             case SymbolKind.PropagationChannel:
-                return [("tx", -300f, 0f), ("rx", 300f, 0f)];
+                return portCount switch
+                {
+                    0 => [],
+                    1 => [("rx", 300f, 0f)],
+                    3 => [("tx", -300f, 0f)],
+                    _ => [("tx", -300f, 0f), ("rx", 300f, 0f)],
+                };
             // Duplexer: the antenna against the two branches it splits into.
             case SymbolKind.Duplexer:
                 return [("ANT", -300f, 0f), ("TX", 300f, -100f), ("RX", 300f, 100f)];
@@ -1050,6 +1057,8 @@ public sealed class EditableComponent
         SymbolKind.Filter     => BuiltInSymbols.PrimitivesForFilter(FilterGlyphForm()),
         // brief-paa-5 — the aperture, the beam and the pins, from the resolved lattice, Off and steering.
         SymbolKind.PhasedArray => BuiltInSymbols.PrimitivesForPhasedArray(ArrayGlyph()),
+        // brief-pch-8 — only the pins the channel has
+        SymbolKind.PropagationChannel => BuiltInSymbols.PrimitivesForPropagationChannel(PortCount),
         // The model's own terminal names where the file has been read, numbers otherwise. The
         // lookup is a dictionary probe and NOTHING else — see
         // VerilogAModelIntrospection.CachedTerminalLabels for why this path may not describe a file
@@ -1139,6 +1148,15 @@ public sealed class EditableComponent
     /// mode, 4 × 4 when they are not whole numbers (brief-paa-5's default variant).</summary>
     public static int PhasedArrayPins(IEnumerable<EditableParameter> parameters) => PhasedArrayGlyph.Of(parameters, null).PinCount;
 
+    /// <summary>brief-pch-8 — SymbolPortDefs' pin code for a Propagation Channel: 2 both pins, 1 the receive pin alone (Tx= names an
+    /// instance), 3 the transmit pin alone (Rx= does), 0 none.</summary>
+    public static int ChannelPinCode(IEnumerable<EditableParameter> parameters)
+    {
+        bool Named(string n) => parameters.Any(q => q.Name == n && q.Expression.Trim().Trim('"').Length > 0);
+        bool tx = !Named("Tx"), rx = !Named("Rx");
+        return tx && rx ? 2 : rx ? 1 : tx ? 3 : 0;
+    }
+
     public int PortCount
     {
         get
@@ -1153,6 +1171,9 @@ public sealed class EditableComponent
 
             // A Phased Antenna Array in Elements mode draws one pin per element, Rows × Cols of them.
             if (Symbol is SymbolKind.PhasedArray) return ArrayGlyph().PinCount;
+
+            // brief-pch-8 — a Propagation Channel's pins as SymbolPortDefs' code: an end naming an instance has none.
+            if (Symbol is SymbolKind.PropagationChannel) return ChannelPinCode(Parameters);
 
             // The Combiner's N is its number of PATHS; it draws N + 1 pins, the common port with them.
             if (Symbol is SymbolKind.Combiner)

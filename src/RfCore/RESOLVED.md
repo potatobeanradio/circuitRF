@@ -1492,3 +1492,45 @@ f_D have the same level-crossing rate.
 **A profile file gained `k (dB)`, `spectrum`, and `re`/`im`.** `RayListFile` reads all three. A `k` column makes its tap
 Rician, and a `spectrum` column makes its tap fade with that spectrum. `re` and `im` are a sampled impulse response
 (power and phase from the complex gain) and cannot be mixed with power and phase.
+
+## brief-pch-8 — the clustered-delay-line tables (2026-11-15)
+
+**The tables, as transcribed** (`Propagation/CdlProfiles.cs`): TR 38.901 V18.0.0 Tables 7.7.1-1…5 (CDL-A…E, from ETSI TR 138 901's
+own text), Table 7.5-3's 20 ray offsets, and TR 38.811 V15.4.0 Tables 6.9.1-1…4 (NTN-CDL-A…D, the 3GPP archive's .doc read with
+`strings -n 1`, since cells shorter than three characters are lost at the default length). CDL-E's last cluster is printed at
+20.6419, where TDL-E's last tap is 20.6519: both are kept as printed.
+
+**What the tables do not say on their face.**
+- The printed powers do not sum to one, and the rays are normalized (the large-scale model carries the mean power).
+- The normalized delays' own RMS spread is not exactly 1. CDL-A's is 1.00006, CDL-D's 0.99372 (the same as TDL-D), CDL-E's 1.00002 and
+  the NTN tables' within 6e-5. Every profile is divided by its own spread (§7.7.6's renormalization step), so DelaySpread is exact
+  (gate 4: 4e-15).
+- The NLOS profiles state no line of sight to translate from. Their angles are taken as given in the tables' frame, the ends on
+  the reference axis: AOD 0°, AOA 180°, ZOD and ZOA 90° for TR 38.901; ZOD 140° and ZOA 40° for TR 38.811, whose tables are at a
+  50° elevation (ZOD = 90° + elevation, eq. 6.9-1, and the LOS profiles' ZOA). A line-of-sight profile translates from its
+  specular ray.
+- TR 38.811's departure spreads are zero (c_ASD = c_ZSD = 0, every AOD 0°). A stated ASD or ZSD on an NTN-CDL profile is refused,
+  since there is nothing to scale.
+
+**Angle scaling meets Annex A's spread, not eq. 7.7-5's ratio.** §7.7.5.1 scales every ray angle about the circular mean by
+AS_desired/AS_model, with both spreads by Annex A (eq. A-1, the circular √(−2 ln |Σ P e^(jφ)|/Σ P)). A linear scale does not
+move a circular spread linearly, so one ratio does not land on the stated spread. The ratio is the starting point, refined by
+bisection with secant steps until Annex A's spread equals the stated one (gate 4: to 1e-9 for ASD, ASA, ZSD and ZSA on all five
+TR 38.901 profiles). A zenith leaving [0°, 180°] is reflected back (§7.5's rule), which is why the refinement re-measures rather
+than solving in closed form.
+
+**A line-of-sight profile cannot reach an NLOS angle spread.** CDL-D's specular ray holds 93 % of the power, so
+|Σ P e^(jφ)| ≥ 0.86 and the circular spread is at most about 31°. An ASA of 45° (one of §7.7.5.1's example values) on CDL-D is
+refused with that reason. The examples are NLOS figures.
+
+**Translation, not rotation.** The ends' line is reached as TR 38.901 eq. 7.5-12 reaches it: every AOD, AOA, ZOD and ZOA moves
+by the difference between the requested line-of-sight angle and the profile's reference one. Zeniths are then reflected into
+[0°, 180°]. The specular ray lands on the requested angles exactly, and every other ray moves by the same differences. This
+also performs TR 38.811 eq. 6.9-1/-2's change of elevation. A true 3D rotation would keep every ray's angle to the line of
+sight; translation is what the reports specify.
+
+**Coupling and draws.** Within a Laplacian cluster, ray m takes the AOA offset α_m. Its AOD, ZOA and ZOD offsets each come from
+an independent random permutation (Fisher-Yates), so every pair step 2 names is coupled at random. The four initial phases are
+uniform on (−π, π). Streams are `<stream>:cdl:<n>:aod|zoa|zod|phase`, n the cluster, phase draw k = 4m + i. κ = 10^(XPR/10)
+per cluster, so the cross terms are κ^−½ (CDL-C: −7 dB). The specular ray's matrix is [[1, 0], [0, −1]], which is the line of
+sight in the (θ̂, φ̂) bases of a direction and its reverse.

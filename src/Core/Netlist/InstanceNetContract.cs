@@ -92,7 +92,8 @@ public static class InstanceNetContract
         ChainModel                                                                            => 4,
 
         // brief-pch-6 — the Propagation Channel: its transmit and receive pins, each over ground.
-        PropagationChannelModel                                                               => 2,
+        // brief-pch-8: one net per pin end; an end Tx=/Rx= names an instance has none
+        PropagationChannelModel ch                                                            => ch.PortCount,
 
         // ── Ideal system blocks: every RF port is a signal net and a reference net ──
         // Atten is 2 ports → 4 nets; Balun and Circulator 3 → 6; Coupler 4 → 8.
