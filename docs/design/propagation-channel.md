@@ -1,6 +1,6 @@
 # circuitRF — The propagation channel
 
-**Status:** design, nothing built · **Series:** [`brief-pch-0-overview.md`](../briefs/brief-pch-0-overview.md) ·
+**Status:** PCH-1 built (the terrestrial and indoor models of §3.1, `src/RfCore/Propagation`; P.1546 not built, §3.1); the rest is design · **Series:** [`brief-pch-0-overview.md`](../briefs/brief-pch-0-overview.md) ·
 **Builds on:** [`phased-array.md`](phased-array.md) (the transmit field from a circuit's waves, incident waves by
 reciprocity, the fast path and re-weigh, the Phased Array tool), [`chain-budget.md`](chain-budget.md) (the link in front
 of a receive chain), the envelope engine and its signal quality (`brief-nz-8`, `src/RfCore/Signals`), the yield engine's
@@ -127,9 +127,9 @@ report wherever one exists; otherwise by what they are.
 | `tworay` | Direct ray plus a ground reflection with the Fresnel coefficient of a stated ground | `TxHeight`, `RxHeight`, `GroundEr`, `GroundSigma` |
 | `38901` | 3GPP TR 38.901 scenarios: `UMa`, `UMi` (street canyon), `RMa`, `InH` (mixed, open office), `InF` (SL, DL, SH, DH, HH); line-of-sight and non-line-of-sight path loss, line-of-sight probability, σ, K, delay and angle spread statistics; 0.5–100 GHz | `Scenario`, `Los=auto|los|nlos`, heights |
 | `P1238` | ITU-R P.1238 indoor: distance power-loss coefficient and floor penetration loss by environment and band | `Environment`, `Floors` |
-| `P1411` | ITU-R P.1411 short-range outdoor, line of sight and around corners, below rooftop | `Environment`, street geometry |
-| `P1546` | ITU-R P.1546 point-to-area, 30 MHz–4 GHz, from its tabulated curves | `TxHeight`, `RxHeight`, `Time%`, `Location%`, path type |
-| `P526` | ITU-R P.526 diffraction over a **user-supplied terrain profile**: knife-edges, multiple edges, smooth earth | `Profile` (CSV: distance, height) |
+| `P1411` | ITU-R P.1411 short-range outdoor: `Mode=belowroof`, `aboveroof` (site-general), `lowheight` (terminals near street level, at a location percentage), `corner` (around one street corner) | `Environment`, `Urban`, `Locations`, `X1`, `X2`, `W1`, `W2` |
+| ~~`P1546`~~ | ITU-R P.1546 point-to-area, 30 MHz–4 GHz, from its tabulated curves — **not built**: the curves are an ITU digital product that may not be redistributed without the ITU's written permission (`src/RfCore/RESOLVED.md`); `P1812` covers the same ground over a profile | — |
+| `P526` | ITU-R P.526 diffraction: `Mode=knifeedge` (one edge), `sphere` (smooth spherical Earth at any distance) or `profile` (the general method over a **user-supplied terrain profile**, any number of obstructions) | `Profile` (CSV: distance, height), `EdgeHeight`, `EdgeDistance`, `EarthRadiusFactor` |
 | `P1812` | ITU-R P.1812 point-to-area over a **user-supplied profile** with clutter, 30 MHz–6 GHz | `Profile` (CSV: distance, height, clutter) |
 
 Added losses, each switchable and each a separate line of the breakdown: **partitions** (a list of partition losses on

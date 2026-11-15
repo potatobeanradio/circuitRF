@@ -61,3 +61,43 @@ PCH-3's editor, PCH-6's component and `reference`, so a model is described once.
 
 Atmosphere, rain and satellite paths (PCH-2). Drawing shadowing and line-of-sight states (PCH-10). Any user interface.
 Bundled terrain or clutter data (note D10).
+
+## Completion note (2026-11-15)
+
+**Built.** `src/RfCore/Propagation`: the model contract (`PathLossResult`: loss, breakdown, σ, line-of-sight
+probability, spread statistics, notes; `PropagationRefusal` carrying a coded diagnostic), `TerrainProfile` (the CSV
+reader), `free`, `logdist`, `multislope`, `tworay`, `38901` (every scenario of R-pch1-3 with the large-scale parameter
+statistics including ZSD), `P1238` (site-general, plus Table 5's floor penetration), `P1411` (`belowroof`,
+`aboveroof`, `lowheight`, `corner`), `P526` (`knifeedge`, `sphere`, `profile`), `P1812` (the whole method), the added
+losses (`Partitions`, P.2108's three models, P.2109, P.833 woodland, `PolLoss`, `PointingLoss`), and the registry
+(`PropagationModels`, `AddedLosses.Parameters`) every model and its parameters are described in once. The normal
+distribution moved to `RfCore.Statistics.Normal` (Core forwards).
+
+**Gates** (`tests/RfCore.Tests/Propagation/PropagationModelTests.cs`, 9 tests, ~80 ms):
+1. Published examples: P.1812-8's 63 validation cases, every printed value, to 1e-7 (printed to ten digits; largest
+   difference 5e-8). P.526's 20 delta-Bullington examples to 1e-9 (they reproduce to 4e-14), a `FixtureFact` since
+   the examples are not committed.
+2. Independent script (`testdata/propagation/reference/propagation_reference.py`): 62 cases through the registry to
+   1e-9 dB (the knife-edge to 1e-6: the recommendation's Fresnel expansion against the script's integration), σ and
+   line-of-sight probability to 1e-12; TR 38.901 spreads to 1e-12.
+3. Validity: 38 refusals across the models and added losses, plus P.1812's nine limits and its 0.25 km floor.
+4. Continuity: multi-slope and UMa/UMi to 1e-10; RMa's report-written step measured (see below).
+5. Registry: every parameter has help, a unit, a finite range or a word list containing its default; every model and
+   mode runs through it; an unknown parameter is refused.
+Plus the profile refusals (start, order, units, length) and P.1812's location variability (eqs (64)-(69)), which the
+published examples do not exercise.
+
+**What changed from the brief, and why.**
+- **P.1546 is not built** (R-pch1-5's own stop): its tabulated curves are an ITU digital product that may not be
+  redistributed without written permission. P.1812 covers the same ground over a profile.
+- **P.526's "multiple-edge method"** is the general method of §4.5 over a profile (any number of obstructions); the
+  §4.4 cylinder method is not built.
+- **Gate 4 holds UMa and UMi only**: TR 38.901's RMa line-of-sight formula, as written, steps by ~1e-4 dB at its
+  breakpoint; the formula is kept exactly and the step is measured.
+- **P.526 uses c = 3e8 and takes β = 1 where §3.1.1.2 allows**, which is how its published examples are computed;
+  P.1812 uses c = 2.998e8, as its constant and package do.
+- **No SG3 validation data exists for P.1238, P.1411, P.2108, P.2109, P.833 or TR 38.901** among the published
+  digital products; those are gated by the independent script.
+
+Findings in `src/RfCore/RESOLVED.md`. `tests/Firewall.Tests`' user-facing-text gate fails on three messages from the
+PAA-8/8b code already on main (not this brief's); this brief's one internal-invariant message is allow-listed.

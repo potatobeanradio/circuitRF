@@ -1,0 +1,64 @@
+# Independent reference values for the propagation models; written by propagation_reference.py beside it.
+case,model,f_Hz,d_m,htx_m,hrx_m,params,loss_dB,sigma_dB,plos
+free,free,2400000000.0,100.0,1.5,1.5,,80.0520080561155,0.0,
+logdist,logdist,2400000000.0,50.0,1.5,1.5,n=3.5;d0=1;Sigma=6,99.51595820787615,6.0,
+multislope 50 m,multislope,2400000000.0,50.0,1.5,1.5,"Breaks=10,100;Exponents=2,3,4;d0=1",81.02110818619606,0.0,
+multislope 500 m,multislope,2400000000.0,500.0,1.5,1.5,"Breaks=10,100;Exponents=2,3,4;d0=1",118.01080822955625,0.0,
+tworay vertical,tworay,900000000.0,1000.0,30.0,1.5,GroundEr=15;GroundSigma=0.005;Polarization=vertical,88.99375985487853,0.0,
+tworay horizontal,tworay,900000000.0,1000.0,30.0,1.5,GroundEr=15;GroundSigma=0.005;Polarization=horizontal,88.08417643549257,0.0,
+38901 UMa LOS before breakpoint,38901,3500000000.0,100.0,25.0,1.5,Scenario=UMa;Los=los,83.13815667685238,4.0,0.3476708368442312
+38901 UMa LOS beyond breakpoint,38901,3500000000.0,1500.0,25.0,1.5,Scenario=UMa;Los=los,116.45288132016137,4.0,0.012000000045124472
+38901 UMa NLOS,38901,28000000000.0,300.0,25.0,1.5,Scenario=UMa;Los=nlos,139.34097189232676,6.0,0.06803635091090489
+"38901 UMa auto, high UT",38901,3500000000.0,300.0,25.0,18.0,Scenario=UMa;Los=auto,111.33187848189857,6.0,0.17790678295666462
+38901 UMi LOS before breakpoint,38901,3500000000.0,50.0,10.0,1.5,Scenario=UMi;Los=los,79.08964923389806,4.0,0.5195854136174696
+38901 UMi LOS beyond breakpoint,38901,3500000000.0,900.0,10.0,1.5,Scenario=UMi;Los=los,117.32291553605513,4.0,0.020000000013610186
+38901 UMi NLOS,38901,28000000000.0,200.0,10.0,1.5,Scenario=UMi;Los=nlos,134.4646578691982,7.82,0.09351798732692025
+38901 RMa LOS before breakpoint,38901,3500000000.0,500.0,35.0,1.5,Scenario=RMa;Los=los,98.61192180759504,4.0,0.6126263941844161
+38901 RMa LOS beyond breakpoint,38901,3500000000.0,6000.0,35.0,1.5,Scenario=RMa;Los=los,129.13615586211813,6.0,0.0025036640502021
+38901 RMa NLOS,38901,3500000000.0,2000.0,35.0,1.5,Scenario=RMa;Los=nlos,142.04705893781707,8.0,0.13669542544552385
+38901 InH-Mixed LOS,38901,28000000000.0,10.0,3.0,1.0,Scenario=InH-Mixed;Los=los,78.79049901177883,3.0,0.2874241595601194
+38901 InH-Mixed NLOS,38901,60000000000.0,40.0,3.0,1.0,Scenario=InH-Mixed;Los=nlos,122.95562970415969,8.03,0.11451589494392465
+38901 InH-Open auto,38901,28000000000.0,30.0,3.0,1.0,Scenario=InH-Open;Los=auto,86.91401755045628,3.0,0.7025017795341351
+38901 InF-SL NLOS,38901,3500000000.0,50.0,1.5,1.5,Scenario=InF-SL;Los=nlos,87.20509599757399,5.7,0.3276800000000001
+38901 InF-DL NLOS,38901,28000000000.0,50.0,1.5,1.5,Scenario=InF-DL;Los=nlos,108.19638978164026,7.2,1.1258999068426259e-10
+38901 InF-SH NLOS,38901,3500000000.0,80.0,8.0,1.5,Scenario=InF-SH;Los=nlos,87.08529299007915,5.9,0.8716920174120311
+38901 InF-DH NLOS,38901,28000000000.0,80.0,8.0,1.5,Scenario=InF-DH;Los=nlos,104.28212206411885,4.0,9.552627363574249e-12
+38901 InF-HH auto,38901,28000000000.0,100.0,8.0,6.0,Scenario=InF-HH;Los=auto,102.33786968838066,4.3,1.0
+P1238 office LoS,P1238,2400000000.0,10.0,2.0,1.5,Environment=office;Los=los,56.78636403009923,3.68,
+P1238 corridor NLoS,P1238,28000000000.0,50.0,2.0,1.5,Environment=corridor;Los=nlos,112.60978375578208,7.58,
+P1238 industrial NLoS,P1238,5800000000.0,30.0,2.0,1.5,Environment=industrial;Los=nlos,81.40112848156596,5.7,
+P1238 conference LoS,P1238,60000000000.0,10.0,2.0,1.5,Environment=conference;Los=los,85.73123105763457,2.92,
+"P1238 office, 2 floors at 1.9 GHz",P1238,1900000000.0,20.0,2.0,1.5,Environment=office;Los=nlos;Floors=2;Building=office,86.91794594293438,5.01,
+"P1238 commercial, 3 floors at 1.8 GHz",P1238,1800000000.0,20.0,2.0,1.5,Environment=office;Los=nlos;Floors=3;Building=commercial,79.35439964254583,5.01,
+"P1238 residential, 1 floor at 3.5 GHz (office value)",P1238,3500000000.0,20.0,2.0,1.5,Environment=office;Los=nlos;Floors=1;Building=residential,92.2854925844731,5.01,
+P1411 below roof LoS,P1411,28000000000.0,200.0,1.5,1.5,Mode=belowroof;Environment=urbanlowrise;Los=los,108.67277635589413,4.91,
+P1411 below roof NLoS high-rise,P1411,3500000000.0,300.0,1.5,1.5,Mode=belowroof;Environment=urbanhighrise;Los=nlos,120.71256060335963,7.62,
+P1411 below roof NLoS residential,P1411,5000000000.0,100.0,1.5,1.5,Mode=belowroof;Environment=residential;Los=nlos,93.4686790897556,3.07,
+"P1411 below roof NLoS suburban, 200 GHz",P1411,200000000000.0,70.0,1.5,1.5,Mode=belowroof;Environment=suburban;Los=nlos,138.68047331585362,8.02,
+P1411 above roof LoS,P1411,28000000000.0,500.0,25.0,1.5,Mode=aboveroof;Environment=urbanlowrise;Los=los,118.78168303095936,3.48,
+P1411 above roof NLoS high-rise,P1411,3500000000.0,500.0,25.0,1.5,Mode=aboveroof;Environment=urbanhighrise;Los=nlos,124.74938286158545,6.89,
+P1411 street level LoS region,P1411,400000000.0,30.0,2.0,2.0,Mode=lowheight;Urban=urban;Locations=50,54.03373453519975,7.0,
+P1411 street level corner transition,P1411,400000000.0,50.0,2.0,2.0,Mode=lowheight;Urban=urban;Locations=50,65.60511514015832,7.0,
+P1411 street level NLoS region,P1411,400000000.0,200.0,2.0,2.0,Mode=lowheight;Urban=urban;Locations=50,105.43389943631756,7.0,
+"P1411 street level 10 %, suburban",P1411,400000000.0,200.0,2.0,2.0,Mode=lowheight;Urban=suburban;Locations=10,62.65527951929184,7.0,
+P1411 corner 1.5 GHz,P1411,1500000000.0,120.0,6.0,1.5,Mode=corner;Environment=urbanlowrise;X1=100.0;X2=50.0;W1=20.0;W2=20.0;Chamfered=no,89.35510311180826,0.0,
+P1411 corner 10 GHz in the corner region,P1411,10000000000.0,120.0,6.0,1.5,Mode=corner;Environment=urbanlowrise;X1=100.0;X2=40.0;W1=20.0;W2=10.0;Chamfered=no,112.23621100224126,0.0,
+P1411 corner 28 GHz beyond,P1411,28000000000.0,120.0,6.0,1.5,Mode=corner;Environment=urbanlowrise;X1=100.0;X2=60.0;W1=20.0;W2=10.0;Chamfered=no,124.4226774455056,0.0,
+P1411 corner 5 GHz chamfered,P1411,5000000000.0,120.0,6.0,1.5,Mode=corner;Environment=urbanlowrise;X1=100.0;X2=100.0;W1=20.0;W2=10.0;Chamfered=yes,110.4760666976336,0.0,
+P1411 corner 5 GHz residential,P1411,5000000000.0,120.0,6.0,1.5,Mode=corner;Environment=residential;X1=100.0;X2=100.0;W1=20.0;W2=10.0;Chamfered=no,125.70070099446872,0.0,
+"P2108 terminal, urban",free,1000000000.0,2000.0,30.0,5.0,Clutter=terminal;ClutterType=urban,119.03377368888478,0.0,
+"P2108 terminal, open",free,1000000000.0,2000.0,30.0,5.0,Clutter=terminal;ClutterType=open,105.03151557275683,0.0,
+"P2108 terrestrial, 2 km, median",free,3000000000.0,2000.0,30.0,5.0,Clutter=terrestrial,137.75262545964523,0.0,
+"P2108 terrestrial, 5 km, 10 %",free,3000000000.0,5000.0,30.0,5.0,Clutter=terrestrial;ClutterLocations=10,140.5710933398032,0.0,
+P2108 Earth-space,free,30000000000.0,1000.0,30.0,5.0,Clutter=earthspace;ClutterElevation=30,126.71884676631447,0.0,
+P2109 traditional,free,3500000000.0,500.0,30.0,5.0,BuildingEntry=traditional,113.03999068139088,0.0,
+P2109 efficient,free,28000000000.0,500.0,30.0,5.0,BuildingEntry=efficient;BuildingProbability=0.9;FacadeElevation=20,185.5781696032077,0.0,
+"P833 woodland, defaults",free,950000000.0,3000.0,30.0,2.0,Vegetation=on;VegDepth=50,108.5968762367416,0.0,
+"P833 woodland, stated",free,3600000000.0,3000.0,30.0,2.0,Vegetation=on;VegDepth=200;VegGamma=0.5;VegMax=46,153.88497806905852,0.0,
+"partitions, polarization, pointing",free,5000000000.0,20.0,2.0,2.0,"Partitions=3,5;PolLoss=3;PointingLoss=1",84.44778322188337,0.0,
+P526 knife-edge above the line,P526,1000000000.0,10000.0,30.0,30.0,Mode=knifeedge;EdgeHeight=20.0;EdgeDistance=4000,126.66069532460885,0.0,
+P526 knife-edge below the line,P526,1000000000.0,10000.0,30.0,30.0,Mode=knifeedge;EdgeHeight=-5.0;EdgeDistance=4000,116.2041649325768,0.0,
+P526 sphere beyond the horizon,P526,1000000000.0,60000.0,50.0,20.0,Mode=sphere;EarthRadiusFactor=1.3333333333333333;GroundEr=22.0;GroundSigma=0.003;Polarization=vertical,156.16932987608664,0.0,
+P526 sphere within line of sight,P526,1000000000.0,30000.0,50.0,20.0,Mode=sphere;EarthRadiusFactor=1.3333333333333333;GroundEr=22.0;GroundSigma=0.003;Polarization=vertical,126.28295089900202,0.0,
+"P526 sphere 15 MHz vertical, beta from K",P526,15000000.0,80000.0,30.0,10.0,Mode=sphere;EarthRadiusFactor=1.3333333333333333;GroundEr=22.0;GroundSigma=0.003;Polarization=vertical,148.80086380649502,0.0,
+P526 sphere horizontal over sea,P526,100000000.0,70000.0,30.0,10.0,Mode=sphere;EarthRadiusFactor=1.3333333333333333;GroundEr=80.0;GroundSigma=5.0;Polarization=horizontal,156.25962933714646,0.0,

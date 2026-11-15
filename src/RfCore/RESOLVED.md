@@ -1235,3 +1235,67 @@ empty. `DataSet.BindsAnalysisNamesToFlatCubes`, set by the display's loaders (`P
 library), resolves `Group.Cube` as the bare `Cube` when the DataSet has no analysis group of its own and no cube literally
 named `Group.Cube`. It is opt-in so nothing else that resolves specs (measurements, `read`, the engines) changes, and a
 grouped file never binds another analysis's name. Gate: `FlatCliResultBindingTests`.
+
+## Large-scale propagation models (brief PCH-1, 2026-11-15)
+
+`src/RfCore/Propagation`: free space, log-distance, multi-slope, two-ray, 3GPP TR 38.901 (path loss, line-of-sight
+probability, spread statistics), ITU-R P.1238, P.1411, P.526, P.1812, and the added losses P.2108, P.2109, P.833,
+partitions, polarization and pointing, behind one registry (`PropagationModels`). Gates in
+`tests/RfCore.Tests/Propagation/PropagationModelTests.cs` (9 tests, under 0.1 s).
+
+**P.1812 reproduces its published validation examples to the digits printed.** All 63 cases of the P.1812-8
+software package's validation set, every value its results print (path analysis, zones, β0, smooth-Earth heights,
+every loss of the method): largest difference 5e-8, against values printed to ten significant digits. Two
+differences in what is reported, not computed: at p = 50 % the published results still print the β0 % diffraction
+loss Ldβ (now computed at every p for that reason; it is used only below 50 %), and print Fi as Attachment 2's
+I(0.5)/I(β0/100) ≈ 9e-10 where eq (40) defines it as 0. The method's wavelength uses c = 2.998e8 m/s, the value
+its 92.4 dB free-space constant implies and the package uses.
+
+**P.526's published delta-Bullington examples use ae = 8500 km, c = 3e8 and β = 1.** With exactly those the 20
+cases reproduce to 4e-14 dB. With the exact speed of light the Bullington losses differ by 3e-3 dB; with β from
+eq (16) at 150 MHz the spherical-Earth loss differs by 5e-5 dB. §3.1.1.2 allows β = 1 for horizontal
+polarization at every frequency and for vertical above 20 MHz over land or 300 MHz over sea, so that rule is
+what `ItuP526.FirstTerm` does (σ ≥ 1 S/m read as sea), and the wavelength is 3e8/f throughout P.526. The examples
+(ITU-R SG3 Document 3J/77, a spreadsheet embedded in the document) are not committed — their terms of reuse
+are not stated — and the gate is a `FixtureFact`: extract sheets "Path 1"…"Path 4" to
+`testdata/propagation/p526-validation/pathN.csv` (header `distance (km), height (m)`) and sheet "outputs" from its
+third row to `cases.csv` (header `path,hts,hrs,f_MHz,htsp,hrsp,X,Y1,Y2,FX,GY1,GY2,Lba,Lbs,Lsph,L`).
+
+**P.1546 is not built.** Its method is an interpolation in tabulated field-strength curves, which ITU-R publishes as
+a separate digital product; the P.1812 package's own README says ITU digital products that are an integral part of
+a recommendation must not be reproduced or distributed without the ITU's written permission. Embedding the curves
+needs that permission, so the brief's instruction applied: stop and report. P.1812 covers the same ground (point
+to area, 30 MHz-6 GHz) when a terrain profile is available.
+
+**TR 38.901 V18.0.0's InF line-of-sight σSF is clipped.** The table cell reads "4." in that edition (the PDF's own
+rendering, not the text extraction); the report's earlier editions give 4.3, which is what is used.
+
+**TR 38.901's RMa line-of-sight breakpoint is not continuous as written.** PL1 is evaluated at d3D before the
+breakpoint and at dBP after it, while the switch is on d2D, so the loss steps by ~1e-4 dB at dBP (3.5 GHz,
+hBS 35 m, hUT 1.5 m). The report's formula is kept exactly; UMa's and UMi's breakpoints are continuous (their PL2
+subtracts log(d'BP² + Δh²), which is log d3D² at the breakpoint), and gate 4 holds those two to 1e-10.
+
+**P.1411 eq (14) is printed as a gain.** 10·log10(10^(−Lr/10) + 10^(−Ld/10)) is the power sum of the reflected and
+diffracted waves, a negative number of dB; the loss is its negative. Its §4.1.3.2 corner model adds to "the loss in
+the line-of-sight street as calculated in §4.1.2", which gives several forms by band: up to 15 GHz the median of
+eq (6) with eq (7)'s breakpoint (eq (12) when a station is at or below the road height), above it eq (13) with an
+exponent (2 by default). That choice is this implementation's and is said in the result's notes.
+
+**Choices said in a result's notes rather than hidden:** UMa's effective environment height hE = 1 m (the report
+draws it per link; a drop will); `Los=auto` gives the more probable state with its probability; P.1238's site-
+general model is for one floor, and floors between add Table 5's floor penetration factor where it gives one
+(residential outside 1.8-2 GHz takes the office value, as the recommendation says), refused otherwise unless stated;
+P.1812's map values (ΔN, N0) and the path-centre latitude are parameters with defaults (45, 325, 45°), and its
+building entry is P.2109's added loss rather than P.2040's.
+
+**P.526 §4.4 (multiple isolated cylinders) is not built.** Several obstructions on a path are the general method of
+§4.5 over a profile, which is what the recommendation says to use for any path in an automatic process.
+
+**The normal distribution moved down to RfCore** (`RfCore.Statistics.Normal`): the models need Φ⁻¹ and Q⁻¹, and RfCore
+references nothing above it. `CircuitRF.Core.Expressions.NormalDistribution` forwards, so there is still one
+implementation and the expression engine and yield are unchanged.
+
+**Refusals carry coded diagnostics.** `PropagationRefusal` holds a `Diagnostic`: the range and positivity checks are
+`propagation.out-of-range` / `propagation.not-positive` with the model, quantity, value, limits and unit as typed
+arguments, so a sweep refusing at every point collapses to one line; the other refusals are `propagation.refused`
+with the sentence as their argument, the forwarded pattern of `EmDiagnostics`.

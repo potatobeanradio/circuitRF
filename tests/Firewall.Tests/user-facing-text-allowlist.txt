@@ -1794,3 +1794,4 @@ src/Design/Em3d/FieldCosimulation.Array.cs|{name}({fa.Name}, NF): NF names a noi
 src/Design/Em3d/FieldCosimulation.Array.cs|{name}({fa.Name}, …) receives at the fields analysis's driven port, and fields analysis '{fa.Name}' forms its pattern 
 src/Engine/SParameterEngine.Beam.cs|The circuit has no port number {portNumber} at its top level.
 src/Engine/SParameterEngine.Beam.cs|The receive weights need every circuit port terminated in a resistive Z0 (Re Z0 > 0); one port's Z0 has none.
+src/RfCore/Propagation/PropagationModels.cs|{_model.Name} reads the parameter '{name}', which its registry entry does not name.

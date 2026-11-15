@@ -147,3 +147,6 @@ TK*.pdb
 # EM-TFR campaign: what a run writes. The references kept are testdata/em-tfr/zigzag/refs/.
 /testdata/em-tfr/**/results/
 palace.log
+
+# ITU-R SG3 delta-Bullington validation examples (P.526 §4.5), extracted locally for a FixtureFact gate; the publisher's terms of reuse are not stated, so not committed.
+/testdata/propagation/p526-validation/

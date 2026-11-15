@@ -1,0 +1,8 @@
+# ITU-R P.1812-8 validation profile b2iseac_rural_land_1km (Rec. ITU-R P.1812 software package 8.0, validation_profiles).
+distance (km), height (m), clutter (m), zone
+0, 754.4, 10, inland
+0.2, 754.4, 10, inland
+0.4, 729.9, 10, inland
+0.6, 685.3, 10, inland
+0.8, 634.3, 10, inland
+1, 610.3, 10, inland
