@@ -80,6 +80,7 @@ public sealed class SchematicCanvas : Control
             nameof(EditContext), o => o.EditContext, (o, v) => o.EditContext = v);
 
     private SchematicViewModel? _editContext;
+    private string? _pinHover;
     public SchematicViewModel? EditContext
     {
         get => _editContext;
@@ -768,6 +769,14 @@ public sealed class SchematicCanvas : Control
         {
             _editContext.OnPointerMoved(wx, wy, leftDown, pos.X, pos.Y, e.KeyModifiers);
             InvalidateVisual();
+            // brief-paa-5 R-paa5-5 — a Phased Antenna Array's element pins name their element, row, column and position.
+            string? hover = leftDown ? null : _editContext.PinHoverText(wx, wy, 8 / Math.Max(_zoom, 1e-6));
+            if (!string.Equals(hover, _pinHover, System.StringComparison.Ordinal))
+            {
+                _pinHover = hover;
+                ToolTip.SetTip(this, hover);
+                ToolTip.SetIsOpen(this, hover is not null);
+            }
         }
     }
 

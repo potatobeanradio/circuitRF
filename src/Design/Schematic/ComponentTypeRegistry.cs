@@ -2614,13 +2614,14 @@ public static class ComponentTypeRegistry
             // The combiner: N paths, every one at IL unless it states its own IL[k], and Phase[k] per path. The
             // indexed ones are not seeded — a freshly placed combiner is the ideal equal split — and are added as
             // rows when a path needs its own loss or phase, as a P1Tone's Z[k] is.
-            // brief-paa-3 — the Phased Antenna Array in Elements mode: the record, the lattice and its pitch are what a user sets; the
-            // level, patterns, coupling and Z0 follow the record unless stated, so they start blank and hidden on the schematic.
+            // brief-paa-3 — the Phased Antenna Array: the record, the lattice and its pitch are what a user sets; the level, patterns,
+            // coupling and Z0 follow the record unless stated, so they start blank and hidden on the schematic. brief-paa-5: placed in
+            // Feed mode at 4 × 4, the variant the palette tile draws, so what is dragged out is what the tile shows.
             case SymbolKind.PhasedArray:
                 return [new("Record",     "",         "",   true,  UnitDimension.None),
-                        new("Mode",       "elements", "",   false, UnitDimension.None),
-                        new("Rows",       "2",        "",   true,  UnitDimension.None),
-                        new("Cols",       "2",        "",   true,  UnitDimension.None),
+                        new("Mode",       "feed",     "",   false, UnitDimension.None),
+                        new("Rows",       "4",        "",   true,  UnitDimension.None),
+                        new("Cols",       "4",        "",   true,  UnitDimension.None),
                         new("Lattice",    "rect",     "",   false, UnitDimension.None),
                         new("dx",         "25",       "mm", true,  UnitDimension.Length),
                         new("dy",         "25",       "mm", true,  UnitDimension.Length),

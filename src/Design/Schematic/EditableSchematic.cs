@@ -322,11 +322,12 @@ public static class SymbolPortDefs
                 return [("ANT", -300f, 0f), ("TX", 300f, -100f), ("RX", 300f, 100f)];
             // Combiner: the common port S first, as its netlist line has it, then paths 1…N down the left, 200 apart
             // and centred on S, so every pin is on the grid for any N.
-            // Phased Antenna Array (Elements mode): elements 1…N down the left at the Combiner's spacing, centred, so every pin is on the grid.
+            // Phased Antenna Array: Feed mode's one pin F, or Elements mode's elements 1…N down the left at the Combiner's spacing,
+            // ANCHORED AT PIN 1 (brief-paa-5): adding rows adds elements at the end (D6), so their pins appear below and none moves.
             case SymbolKind.PhasedArray:
             {
                 int n = Math.Max(1, portCount);
-                return [.. Enumerable.Range(1, n).Select(k => ($"{k}", -300f, (2f * k - n - 1) * 100f))];
+                return [.. Enumerable.Range(1, n).Select(k => ($"{k}", -300f, (k - 1) * 100f))];
             }
             case SymbolKind.Combiner:
             {
@@ -1044,6 +1045,8 @@ public sealed class EditableComponent
         SymbolKind.Switch     => BuiltInSymbols.PrimitivesForSwitch(SwitchGlyphState()),
         SymbolKind.SwitchD    => BuiltInSymbols.PrimitivesForSwitchD(SwitchDGlyphThrow()),
         SymbolKind.Filter     => BuiltInSymbols.PrimitivesForFilter(FilterGlyphForm()),
+        // brief-paa-5 — the aperture, the beam and the pins, from the resolved lattice, Off and steering.
+        SymbolKind.PhasedArray => BuiltInSymbols.PrimitivesForPhasedArray(ArrayGlyph()),
         // The model's own terminal names where the file has been read, numbers otherwise. The
         // lookup is a dictionary probe and NOTHING else — see
         // VerilogAModelIntrospection.CachedTerminalLabels for why this path may not describe a file
@@ -1093,17 +1096,45 @@ public sealed class EditableComponent
     /// For variadic-port types (ZPort, Sdd) this reads the NumPorts parameter; for all
     /// other types it delegates to SymbolPortDefs.
     /// </summary>
-    /// <summary>brief-paa-3 — a Phased Antenna Array's pin count: Rows × Cols when both are whole numbers, else 4 (the 2 × 2 it is placed as).</summary>
-    public static int PhasedArrayPins(IEnumerable<EditableParameter> parameters)
+    /// <summary>brief-paa-5 — the VARs this component's expressions resolve against at the nominal point, for a symbol drawn from its
+    /// resolved parameters (a Phased Antenna Array's). Set by the render and the extraction, per frame; null resolves literals only.</summary>
+    public SchematicNominal? Nominal { get; set; }
+
+    /// <summary>brief-paa-5 — this Phased Antenna Array's symbol variant, from its parameters resolved in <see cref="Nominal"/>.</summary>
+    public PhasedArrayGlyph ArrayGlyph() => PhasedArrayGlyph.Of(Parameters, Nominal);
+
+    /// <summary>
+    /// brief-paa-5 R-paa5-5 — what a hover on pin <paramref name="portIndex"/> (0-based) of an Elements-mode Phased Antenna Array says:
+    /// <c>element n — row r, col c — x, y</c>, the position from the array's centre in the unit dx is written in. Null for any other
+    /// component, for Feed mode, and for a pin past the lattice.
+    /// </summary>
+    public string? PhasedArrayPinHover(int portIndex)
     {
-        // brief-paa-4 — Feed mode has one pin, F, whatever the lattice.
-        if (parameters.FirstOrDefault(q => q.Name == "Mode") is { } mode && mode.Expression.Trim().Trim('"').Equals("feed", StringComparison.OrdinalIgnoreCase))
-            return 1;
-        int Read(string name) => parameters.FirstOrDefault(q => q.Name == name) is { } p
-                                 && int.TryParse(p.Expression.Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int v)
-                                 && v >= 1 ? v : 2;
-        return Math.Max(1, Read("Rows") * Read("Cols"));
+        if (Symbol != SymbolKind.PhasedArray) return null;
+        var g = ArrayGlyph();
+        if (g.Feed || portIndex < 0 || portIndex >= g.Count) return null;
+        int n = portIndex + 1, row = (n - 1) / g.Cols + 1, col = (n - 1) % g.Cols + 1;
+        string text = $"element {n} — row {row}, col {col}";
+        var nominal = Nominal ?? SchematicNominal.Empty;
+        (double? Metres, string? Unit) Length(string name)
+        {
+            if (Parameters.FirstOrDefault(p => p.Name == name) is not { } p) return (null, null);
+            string? unit = CircuitRF.Core.Expressions.UnitNormalizer.ToEngineUnit(p.Unit) is { Length: > 0 } u ? u : null;
+            var (expr, inline) = unit is null ? CircuitRF.Core.Expressions.Units.LiftInlineUnit(p.Expression) : (p.Expression, null);
+            return (nominal.Real(expr, unit ?? inline), unit ?? inline);
+        }
+        var (dx, dxUnit) = Length("dx");
+        var (dy, _) = Length("dy");
+        if (dx is not > 0 && g.Cols > 1 || dy is not > 0 && g.Rows > 1) return text;
+        var lattice = new CircuitRF.Core.Devices.Arrays.ArrayLattice(g.Rows, g.Cols, dx ?? 0, dy ?? 0,
+            g.Tri ? CircuitRF.Core.Devices.Arrays.ArrayLatticeKind.Tri : CircuitRF.Core.Devices.Arrays.ArrayLatticeKind.Rect);
+        var (x, y) = lattice.Position(portIndex);
+        return $"{text} — {CircuitRF.Core.Devices.PhasedArrayModel.InUnit(x, dxUnit)}, {CircuitRF.Core.Devices.PhasedArrayModel.InUnit(y, dxUnit)}";
     }
+
+    /// <summary>brief-paa-3 — a Phased Antenna Array's pin count from its literal parameters: one in Feed mode, Rows × Cols in Elements
+    /// mode, 4 × 4 when they are not whole numbers (brief-paa-5's default variant).</summary>
+    public static int PhasedArrayPins(IEnumerable<EditableParameter> parameters) => PhasedArrayGlyph.Of(parameters, null).PinCount;
 
     public int PortCount
     {
@@ -1118,7 +1149,7 @@ public sealed class EditableComponent
             }
 
             // A Phased Antenna Array in Elements mode draws one pin per element, Rows × Cols of them.
-            if (Symbol is SymbolKind.PhasedArray) return PhasedArrayPins(Parameters);
+            if (Symbol is SymbolKind.PhasedArray) return ArrayGlyph().PinCount;
 
             // The Combiner's N is its number of PATHS; it draws N + 1 pins, the common port with them.
             if (Symbol is SymbolKind.Combiner)
@@ -1736,8 +1767,11 @@ public sealed class SchematicEditModel
         bool IsConnected(double wx, double wy) => portTest(wx, wy);
         bool IsEndpointConnected(EditableWire _, double wx, double wy) => endpointTest(wx, wy);
 
+        // brief-paa-5 — the VARs a Phased Antenna Array's symbol resolves its lattice and steering against, once per render.
+        SchematicNominal? nominal = Components.Any(c => c.Symbol == SymbolKind.PhasedArray) ? SchematicNominal.Of(Components) : null;
         var comps = Components.Select(c =>
         {
+            if (c.Symbol == SymbolKind.PhasedArray) c.Nominal = nominal;
             // An SnP's port names, from its file's header (a stat per render; the header is read when the file changes).
             if (c.Symbol is SymbolKind.Snp or SymbolKind.Deembed)
                 c.SnpPortLabels = RfCore.TouchstonePortNames.FromFile(

@@ -5921,3 +5921,24 @@ triangulations, the block's fan round its reservoir hole and the slab's two boar
   across a board-sized triangle seen obliquely. The fans did not change. The new tie takes a slope factor of 1
   (`TranslucentSlopeScale`), which cleared every camera tried, from straight down to 8° grazing, orthographic and perspective.
   Shadows and occlusion were ruled out first: switching each off in the Look left the fans exactly as they were.
+
+## brief-paa-5 — the Phased Antenna Array's dynamic symbol (2026-11-14)
+
+- **One symbol per VARIANT, not per port count.** `PhasedArrayGlyph` (src/Design/Schematic) is a record of everything the drawing
+  shows — mode, Rows, Cols, rect/tri, the elements switched off, θ0/φ0 rounded to 1° — and `BuiltInSymbols.PrimitivesForPhasedArray`
+  caches per record as the Combiner's cache is per N (ten identical instances build one; `PhasedArrayBuilds` counts). A record's
+  equality is over its fields, so the Off set is kept as a sorted string and the parsed set is COMPUTED, never cached on the record:
+  a cached field would make two equal keys unequal the first time one of them was asked for it.
+- **Values resolve against the frame's own VARs** (`SchematicNominal`, built from the VAR blocks as NetExtractor reads them, unit
+  column or inline unit). The render (`BuildRenderModel`) and the extraction (`NetExtractor.ExtractModel`) both set it on the
+  component before anything asks its pin count, so a `Rows=nr` instance binds in the netlist the pins it draws. A lattice that does
+  not resolve draws 4 × 4 in the instance's mode, a steering that does not, boresight with no text.
+- **θ0 comes from the parsed Phase (or Delay)**, the first `steer`/`steerDelay` call in its AST, its two angle arguments evaluated
+  in that scope. An expression with a SPACED unit inside it (`steer(theta0, 0, 5.9 GHz)`) does not parse — the expression parser reads
+  only a unit glued to its number — and draws boresight, which is what the netlist would make of it too (a refusal).
+- **Elements-mode pins are anchored at pin 1** (`(-300, (k−1)·100)`), not centred as the Combiner's: adding rows adds elements at the
+  end (D6), so their pins appear below and the wires on every existing pin stay attached (gate 3). Centred, every pin moved by half
+  the added height and every wire came off. N = 1 and Feed mode keep the pin at (-300, 0), where PAA-3 put it.
+- **The symbol font has no vertical ellipsis**: `⋮` and `…` rendered as boxes, so the cut corner's ellipses are three drawn dots.
+- **The palette places Feed mode at 4 × 4**, the variant its tile draws (a tile is drawn with no instance, from the default
+  parameters' pin count), so what is dragged out is what the tile shows.

@@ -109,6 +109,63 @@ public sealed class RenderCliVerbTests(ITestOutputHelper output) : IDisposable
         AssertSameSvg(File.ReadAllText(outPath), inProcess, "schematic");
     }
 
+    /// <summary>brief-paa-5 gate 2 — a schematic holding a Feed-mode Phased Antenna Array steered by a VAR and an Elements-mode one renders
+    /// as a process to the bytes the renderer writes in process: the symbol is BuiltInSymbols' in both, VARs resolved the same way.</summary>
+    [Fact]
+    public void RenderingPhasedArraysAsAProcess_WritesTheBytesTheRendererWrites()
+    {
+        string dir = Path.Combine(_root, "paa5");
+        Directory.CreateDirectory(dir);
+        string csch = Path.Combine(dir, "arrays.csch");
+        var m = new SchematicEditModel { GridSize = 100 };
+        m.Components.Add(new EditableComponent
+        {
+            Symbol = SymbolKind.Var, X = 200, Y = 1000, InstanceName = "VAR1",
+            Parameters = { new EditableParameter { Name = "theta0", Expression = "30 deg" }, new EditableParameter { Name = "nr", Expression = "12" } },
+        });
+        m.Components.Add(new EditableComponent
+        {
+            Symbol = SymbolKind.PhasedArray, X = 500, Y = 400, InstanceName = "PA1",
+            Parameters =
+            {
+                new EditableParameter { Name = "Mode", Expression = "feed" },
+                new EditableParameter { Name = "Rows", Expression = "nr" },
+                new EditableParameter { Name = "Cols", Expression = "10" },
+                new EditableParameter { Name = "Off", Expression = "5,14" },
+                new EditableParameter { Name = "Phase", Expression = "steer(theta0,0,5.9GHz)" },
+            },
+        });
+        m.Components.Add(new EditableComponent
+        {
+            Symbol = SymbolKind.PhasedArray, X = 1200, Y = 300, InstanceName = "PA2",
+            Parameters =
+            {
+                new EditableParameter { Name = "Mode", Expression = "elements" },
+                new EditableParameter { Name = "Rows", Expression = "2" },
+                new EditableParameter { Name = "Cols", Expression = "3" },
+                new EditableParameter { Name = "Lattice", Expression = "tri" },
+                new EditableParameter { Name = "Off", Expression = "4" },
+            },
+        });
+        SchematicPersistence.SaveToFile(csch, m, "arrays");
+        string outPath = Path.Combine(dir, "arrays.svg");
+
+        var (exit, stdout, stderr) = RunCli("render", csch, "-o", outPath, "--window", "0,0,1600,1200", "--size", "1600x1200");
+        output.WriteLine(stdout + stderr);
+        Assert.Equal(0, exit);
+
+        var (model, _, _) = SchematicPersistence.LoadFromFile(csch);
+        var (rm, idx) = model.BuildRenderModel();
+        var theme = SchematicRenderTheme.FromTheme(ThemeResolver.Resolve(ThemeResolver.DefaultThemeName, dir), ColorVariant.Light);
+        string inProcess = Svg(1600, 1200, canvas =>
+            SchematicRenderer.Draw(canvas, (1600, 1200), rm, idx, 0, 0, 1.0, theme,
+                overlay: null, useTransparentBackground: false, excludeGrid: true));
+
+        string fromCli = File.ReadAllText(outPath);
+        Assert.Contains("θ0 30°", fromCli);        // the steering resolved through the VAR, in the picture the process wrote
+        AssertSameSvg(fromCli, inProcess, "phased arrays");
+    }
+
     [Fact]
     public void RenderingASymbolAsAProcess_WritesTheBytesTheRendererWrites()
     {

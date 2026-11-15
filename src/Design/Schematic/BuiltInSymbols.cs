@@ -157,7 +157,7 @@ public static class BuiltInSymbols
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, bool, SnpPinConfig, SnpPitch), Symbol> _snpCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _verilogACache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _combinerCache = new();
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _phasedArrayCache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<PhasedArrayGlyph, Symbol> _phasedArrayCache = new();
     // Tuner-family cache key: (kind, showBias) — per-instance bias-branch variant.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(SymbolKind, bool), Symbol> _tunerCache = new();
     // Match cache key: (form, bandCount) — per-instance glyph variant (match.md §8.4).
@@ -281,7 +281,7 @@ public static class BuiltInSymbols
             case SymbolKind.PhaseShifter: return _phaseShifter;
             case SymbolKind.Duplexer:   return _duplexer;
             case SymbolKind.Combiner:   return _combinerCache.GetOrAdd(Math.Max(2, portCount), BuildCombiner);
-            case SymbolKind.PhasedArray: return _phasedArrayCache.GetOrAdd(Math.Max(1, portCount), BuildPhasedArray);
+            case SymbolKind.PhasedArray: return PrimitivesForPhasedArray(NoInstanceGlyph(portCount));
             // The four dynamic ones answer here with their DEFAULT variant — the same contract
             // Match keeps, so a caller that has no instance to ask (the palette tile, the ghost
             // preview, the documentation figure) still gets a real drawing.
@@ -2227,49 +2227,140 @@ public static class BuiltInSymbols
         return Sym(prims, SymbolKind.Combiner, n);
     }
 
-    // ── Phased Antenna Array (Elements mode) — an antenna in a box, one pin per element ──
-    // Pins: elements 1…N at (-300, (2k − N − 1)·100), the Combiner's layout without its common port. VARIADIC on N, cached per N.
-    //
-    // One element is a SQUARE body with its pin on the left at mid-height (-300, 0), where every two-port system block has its input,
-    // so it sits on a block or chain diagram's signal line; its lead stops at the body edge, as every block's does. More elements keep the pin column
-    // down the left and say how many beside the antenna. The aperture drawn element by element is a later brief's.
+    // ── Phased Antenna Array — the aperture drawn (brief-paa-5, docs/design/phased-array.md §4.6) ──
+    // Feed mode: one pin F at (-300,0), its lead to the body at x = -120 as the Combiner's; the body holds the aperture seen from
+    // boresight, one square per element up to 8 × 8 (a larger array draws its top-left 8 × 8 with an ellipsis and "Rows × Cols"
+    // beneath), and a beam lobe leaves its front face on the right, tilted by θ0 with "θ0 30°  φ0 0°" beside it when the weights are a
+    // steer(). Elements mode: pins 1…N down the left at (-300, (k−1)·100) — anchored at pin 1 so adding rows (D6 keeps every existing
+    // number) adds pins below and moves none — the body growing as the Combiner's, ±80 beyond the outer pins, the aperture on the right
+    // with its four corner elements numbered. An element switched off is drawn hollow. VARIANT on PhasedArrayGlyph, cached per variant.
 
-    private static Symbol BuildPhasedArray(int n)
+    private static int _phasedArrayBuilds;
+
+    /// <summary>How many Phased Antenna Array symbols have been built (gate 4: one per variant, however many instances draw it).</summary>
+    public static int PhasedArrayBuilds => Volatile.Read(ref _phasedArrayBuilds);
+
+    /// <summary>R-paa5-4 — the symbol of one variant, cached per variant.</summary>
+    public static Symbol PrimitivesForPhasedArray(PhasedArrayGlyph glyph)
+        => _phasedArrayCache.GetOrAdd(glyph, g => { Interlocked.Increment(ref _phasedArrayBuilds); return BuildPhasedArray(g); });
+
+    /// <summary>The variant a caller with no instance draws for <paramref name="portCount"/> pins: the default (Feed, 4 × 4, boresight) for
+    /// one, else Elements mode on the most nearly square lattice of that many elements.</summary>
+    private static PhasedArrayGlyph NoInstanceGlyph(int portCount)
+    {
+        if (portCount <= 1) return PhasedArrayGlyph.Default;
+        int rows = (int)Math.Floor(Math.Sqrt(portCount));
+        while (portCount % rows != 0) rows--;
+        return new PhasedArrayGlyph(false, rows, portCount / rows, false, "", null, null);
+    }
+
+    private const double ArrayCell = 40, ArraySquare = 26;
+
+    private static Symbol BuildPhasedArray(PhasedArrayGlyph g)
     {
         var prims = new List<SymbolPrimitive>();
+        int rd = Math.Min(g.Rows, PhasedArrayGlyph.ThumbnailSide), cd = Math.Min(g.Cols, PhasedArrayGlyph.ThumbnailSide);
+        bool moreCols = g.Cols > cd, moreRows = g.Rows > rd;
+        double shift = g.Tri && rd > 1 ? ArrayCell / 2 : 0;
+        double gridW = cd * ArrayCell + shift, gridH = rd * ArrayCell;
+        double thumbW = gridW + (moreCols ? ArrayCell : 0);
+        double thumbH = gridH + (moreRows ? ArrayCell : 0) + (moreCols || moreRows ? 60 : 0);
+        const double left = -120;
+
+        if (g.Feed)
+        {
+            double w = Math.Max(thumbW + 80, 200), h = Math.Max(thumbH + 80, 200);
+            prims.Add(RRect(left + w / 2, 0, w, h, 12));
+            prims.Add(L(-300, 0, left, 0));
+            Thumbnail(prims, g, left + (w - thumbW) / 2, -thumbH / 2, rd, cd, moreRows, moreCols, numbered: false);
+            Lobe(prims, g, left + w);
+            var feedPin = new List<SymbolPin> { new(-300, 0, 0, "F") };
+            SymbolPinSides.Assign(feedPin);
+            return new Symbol(prims, feedPin);
+        }
+
+        int n = g.Count;
         if (n == 1)
         {
             prims.Add(RRect(0, 0, 240, 240, 12));
-            prims.Add(L(-300, 0, -120, 0));                     // the lead, pin to body edge, as every block's
-            Antenna(prims, -10, 60, 1.0);                       // the antenna centred in the square, apart from the lead
+            prims.Add(L(-300, 0, left, 0));
+            Thumbnail(prims, g, -ArrayCell / 2, -ArrayCell / 2, 1, 1, false, false, numbered: false);
             return Sym(prims, SymbolKind.PhasedArray, 1);
         }
-        double half = Math.Max((n - 1) * 100 + 80, 150);
-        prims.Add(RRect(0, 0, 240, 2 * half, 12));
-        Antenna(prims, -30, 40, 1.0);
-        prims.Add(Txt($"×{n}", 0, 85, fontSize: SddPortLabelFontSize));
+        double top = -80, bottom = (n - 1) * 100 + 80;
+        double width = Math.Max(240, thumbW + 140);
+        prims.Add(RRect(left + width / 2, (top + bottom) / 2, width, bottom - top, 12));
         for (int k = 1; k <= n; k++)
         {
-            double y = (2 * k - n - 1) * 100;
-            prims.Add(L(-300, y, -120, y));
+            double y = (k - 1) * 100;
+            prims.Add(L(-300, y, left, y));
             prims.Add(Txt($"{k}", -230, y - 24, fontSize: SddPortLabelFontSize));
         }
+        Thumbnail(prims, g, left + width - 60 - thumbW, (top + bottom) / 2 - thumbH / 2, rd, cd, moreRows, moreCols, numbered: true);
         return Sym(prims, SymbolKind.PhasedArray, n);
     }
 
-    /// <summary>The antenna mark: a mast from (<paramref name="x"/>, <paramref name="foot"/>) up into an inverted triangle, and two arcs
-    /// of radiation leaving it to the right. At <paramref name="scale"/> 1 it is 150 tall and reaches 125 right of the mast.</summary>
-    private static void Antenna(List<SymbolPrimitive> prims, double x, double foot, double scale)
+    /// <summary>The aperture seen from boresight from its top-left corner (<paramref name="x0"/>, <paramref name="y0"/>): a square per drawn
+    /// element, hollow when switched off, a triangular lattice's odd rows offset by half a cell; an ellipsis and the size when it is cut
+    /// to its top-left corner; and in Elements mode the four corner elements' numbers (1, Cols, N − Cols + 1, N), so D6 is visible.</summary>
+    private static void Thumbnail(List<SymbolPrimitive> prims, PhasedArrayGlyph g, double x0, double y0, int rd, int cd,
+                                  bool moreRows, bool moreCols, bool numbered)
     {
-        double apex = foot - 90 * scale, top = foot - 150 * scale, w = 45 * scale;
-        prims.Add(L(x, foot, x, apex));                         // the mast
-        prims.Add(L(x, apex, x - w, top));                      // the triangle, apex down on the mast
-        prims.Add(L(x, apex, x + w, top));
-        prims.Add(L(x - w, top, x + w, top));
-        double mid = (apex + top) / 2;
-        double h1 = 24 * scale, h2 = 32 * scale;
-        prims.Add(QC(x + 70 * scale, mid - h1, x + 90 * scale, mid, x + 70 * scale, mid + h1));    // the radiation, two arcs
-        prims.Add(QC(x + 95 * scale, mid - h2, x + 125 * scale, mid, x + 95 * scale, mid + h2));
+        var off = g.OffSet;
+        double half = ArraySquare / 2;
+        (double X, double Y) Centre(int r, int c) => (x0 + c * ArrayCell + (g.Tri && r % 2 == 1 ? ArrayCell / 2 : 0) + ArrayCell / 2, y0 + r * ArrayCell + ArrayCell / 2);
+        for (int r = 0; r < rd; r++)
+            for (int c = 0; c < cd; c++)
+            {
+                var (x, y) = Centre(r, c);
+                prims.Add(Poly(!off.Contains(r * g.Cols + c + 1), x - half, y - half, x + half, y - half, x + half, y + half, x - half, y + half));
+            }
+        double gridW = cd * ArrayCell + (g.Tri && rd > 1 ? ArrayCell / 2 : 0), gridH = rd * ArrayCell;
+        // The ellipses are drawn, three dots each, rather than written: the symbol font has no vertical ellipsis.
+        void Dots(double cx, double cy, bool across)
+        {
+            for (int i = -1; i <= 1; i++) prims.Add(Circ(cx + (across ? i * 10 : 0), cy + (across ? 0 : i * 10), 3.5, filled: true));
+        }
+        if (moreCols) Dots(x0 + gridW + ArrayCell / 2, y0 + gridH / 2, across: true);
+        if (moreRows) Dots(x0 + gridW / 2, y0 + gridH + ArrayCell / 2, across: false);
+        if (moreRows || moreCols)
+            prims.Add(Txt($"{g.Rows} × {g.Cols}", x0 + (gridW + (moreCols ? ArrayCell : 0)) / 2,
+                          y0 + gridH + (moreRows ? ArrayCell : 0) + 28, fontSize: 38));
+        if (!numbered) return;
+
+        // The corners: each number beside its own element, outside the grid (beyond the ellipsis when the array was cut).
+        const double gap = 30, size = 28;
+        double right = x0 + gridW + (moreCols ? ArrayCell : 0) + 4, bottom = y0 + gridH + (moreRows ? ArrayCell : 0);
+        int n = g.Count;
+        prims.Add(Txt("1", x0 - 4, y0 - gap / 2 - 4, fontSize: size, align: SymbolTextAlign.Left));
+        if (g.Cols > 1) prims.Add(Txt($"{g.Cols}", right, y0 - gap / 2 - 4, fontSize: size, align: SymbolTextAlign.Right));
+        if (g.Rows > 1)
+        {
+            prims.Add(Txt($"{n - g.Cols + 1}", x0 - 4, bottom + gap / 2 + 4, fontSize: size, align: SymbolTextAlign.Left));
+            if (g.Cols > 1) prims.Add(Txt($"{n}", right, bottom + gap / 2 + 4, fontSize: size, align: SymbolTextAlign.Right));
+        }
+    }
+
+    /// <summary>The beam: a lobe leaving the aperture's front face at (<paramref name="x"/>, 0), tilted up by θ0 (clamped to ±80°) with the
+    /// steering written beside it; along boresight, with no text, when the weights are not a resolved steer().</summary>
+    private static void Lobe(List<SymbolPrimitive> prims, PhasedArrayGlyph g, double x)
+    {
+        const double length = 200;
+        double theta = g.Steered ? Math.Clamp(g.ThetaDeg!.Value, -80, 80) * Math.PI / 180 : 0;
+        double ca = Math.Cos(theta), sa = Math.Sin(theta);
+        var pts = new List<double>();
+        for (int i = 0; i <= 40; i++)
+        {
+            // A beam pattern in polar form, r = L·cos⁶α: narrow where it leaves the face, round at its tip.
+            double a = -Math.PI / 2 + Math.PI * i / 40, r = length * Math.Pow(Math.Cos(a), 6);
+            double u = r * Math.Cos(a), v = r * Math.Sin(a);
+            pts.Add(x + u * ca + v * sa);
+            pts.Add(-u * sa + v * ca);                       // screen y is down: a positive θ0 tilts up
+        }
+        prims.Add(Poly(false, [.. pts]));
+        if (!g.Steered) return;
+        double ty = theta >= 0 ? 70 : -70;
+        prims.Add(Txt($"θ0 {g.ThetaDeg}°  φ0 {g.PhiDeg}°", x + 20, ty, fontSize: 36, align: SymbolTextAlign.Left));
     }
 
     // ── Duplexer — a junction that splits into two filters ────────────────────

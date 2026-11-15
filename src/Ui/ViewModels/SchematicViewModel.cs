@@ -1041,6 +1041,24 @@ public sealed partial class SchematicViewModel : ObservableObject
         }
     }
 
+    /// <summary>brief-paa-5 R-paa5-5 — the hover text of the pin under (<paramref name="worldX"/>, <paramref name="worldY"/>) within
+    /// <paramref name="tolerance"/> world units: an Elements-mode Phased Antenna Array's element, row, column and position. Null elsewhere.</summary>
+    public string? PinHoverText(double worldX, double worldY, double tolerance)
+    {
+        foreach (var comp in EditModel.Components)
+        {
+            if (comp.Symbol != SymbolKind.PhasedArray) continue;
+            int pins = comp.PortCount;
+            for (int i = 0; i < pins; i++)
+            {
+                var (px, py) = comp.GetPortWorldCoord(i);
+                if (Math.Abs(px - worldX) <= tolerance && Math.Abs(py - worldY) <= tolerance)
+                    return comp.PhasedArrayPinHover(i);
+            }
+        }
+        return null;
+    }
+
     public void OnPointerReleased(double worldX, double worldY, KeyModifiers modifiers = default)
     {
         if      (ActiveTool == Tool.Select)  HandleSelectRelease(worldX, worldY, modifiers);

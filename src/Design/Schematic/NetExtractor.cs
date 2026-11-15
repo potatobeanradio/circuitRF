@@ -476,6 +476,14 @@ public static class NetExtractor
 
         var uf = new UnionFind();
 
+        // brief-paa-5 — a Phased Antenna Array's pin count follows Rows and Cols, which may name this frame's VARs: resolve them as the
+        // canvas does (BuildRenderModel), so the netlist binds the pins the symbol draws.
+        if (model.Components.Any(c => c.Symbol == SymbolKind.PhasedArray))
+        {
+            var nominal = SchematicNominal.Of(model.Components);
+            foreach (var c in model.Components.Where(c => c.Symbol == SymbolKind.PhasedArray)) c.Nominal = nominal;
+        }
+
         // Pre-resolve cell-ref symbol geometry for this model (mirrors BuildRenderModel.ResolveAllCellRefs).
         // Null when SchematicDirectory is not set; GetEffectivePortDefs falls back to SymbolPortDefs in that case.
         var cellRefResolutions = BuildCellRefResolutions(model);

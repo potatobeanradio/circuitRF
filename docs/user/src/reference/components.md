@@ -2548,6 +2548,12 @@ are evaluated once per element with `n`, `row`, `col`, `x` and `y` bound, so `Ph
 the steering VAR is an ordinary parametric sweep. `BeamNfDb(F1)` on the fields analysis is the noise figure from the
 driving port to the beam's peak.
 
+The symbol draws the aperture as seen from the front: a square per element up to 8 × 8 (a larger array shows its top-left
+8 × 8 and its size), a triangular lattice's rows offset, an element switched off hollow. In Feed mode a beam leaves its right
+side, tilted by θ0 with `θ0 30°  φ0 0°` written beside it when `Phase` (or `Delay`) is a `steer()`; in Elements mode its four
+corner elements are numbered and hovering on a pin names its element, row, column and position. Values written as VARs are
+read from the schematic's VAR blocks.
+
 {{table: components/PhasedArray}}
 
 ## Annotation components
