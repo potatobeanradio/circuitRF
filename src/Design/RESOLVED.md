@@ -32107,3 +32107,11 @@ are ICF-6's thick die (`ThickDieCutPortTests`) and ICF-4's spiral (`ThickSilicon
   `"Port 6's return passes through an opening"`) never matched. Both forms are forwarded now, the possessive as
   `X1.B (port 2): its …`. Gates: `AStatedReturnShortOfTheFace_IsRefused_NotMovedAlongTheLine`,
   `TheGeneratorsNotesAboutACutPort_ReachTheRun_UnderItsPin`.
+- **A 3D cut instance whose every sheet was refused dropped out of `_cosim` unnamed.** ICF-2's `Portless` is decided by the cut
+  (`EmPlanarComponentPorts.Of`), which sees an instance's routed pins as ported; in 3D the generator refuses a sheet only later,
+  in `C3dCellCuts.Ports`, so an instance whose every sheet it refused (on the field test, `X1/Q2` with `Return: Metal1`) was in
+  neither the ports nor `Portless`, and nothing said so. `C3dComponentPorts.Build` now adds such an instance to `Portless` (its
+  refused ports carry its `EmCoSimCut`) with the same warning, `EmPlanarComponentPorts.PortlessWarning`; `EmCoSimCuts.Close`
+  puts each of its routed pins on `nc_<name>_<pin>`, as for a ported instance's refused pin. Gate:
+  `ACutInstanceWhoseEverySheetIsRefused_IsPlacedInTheNetlist_AndNamed`. em-setup still said such an instance is missing from the
+  netlist (true before ICF-2); it now says it is placed.

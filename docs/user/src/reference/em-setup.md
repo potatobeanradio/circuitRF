@@ -481,8 +481,10 @@ of faces.
 A routed pin whose conductor, followed through the vias between the analysis levels, reaches no other port and no ground
 is reported as **not connected**, with a warning naming the pin and its port: the port drives an isolated piece of metal
 and reads an open, |S| = 0 dB. The usual cause is a via that lands on no metal, such as a via stack that misses the finger it
-was drawn to reach; the run's mesh note counts those vias as dropped. An instance that ends up with no port at all is
-missing from the co-simulation netlist, and the run says so by name.
+was drawn to reach; the run's mesh note counts those vias as dropped. An instance that ends up with no port at all, in 3D
+also one whose every sheet was refused, is still placed in the co-simulation netlist, each terminal on ground, the
+reference or an open node ([A cut cell instance's model](cosimulation.html#cut-models)), and the run says so by name: it
+then reaches the EM result only through ground.
 
 **Each cut face is an Uncalibrated Port** on Planar: driven against the ground plane at the face and not de-embedded, so
 the launch is in the result. [The Uncalibrated Port](mom-engine.html#uncalibrated-port) says what that costs and why

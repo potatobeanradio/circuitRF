@@ -548,8 +548,7 @@ public static class EmPlanarComponentPorts
             var coSimCuts = EmCoSimCut.Of(cut, instances, cuts);
             foreach (string path in cut.Excluded.Where(x => !results.Any(r => r.Cutout && r.Ok && r.Refdes.Equals(x, StringComparison.OrdinalIgnoreCase))))
             {
-                warnings.Add($"{path} is cut out of the problem and has no port left on it: the co-simulation netlist places its model with " +
-                             "each terminal on ground, the N-port's reference or an open node, so it reaches the EM result only through ground.");
+                warnings.Add(PortlessWarning(path));
                 if (coSimCuts.GetValueOrDefault(path) is { } c)
                     portless.Add(new EmCoSimPart(path, null, null, [], instances.At(path)?.SchematicId, source.AbsolutePath, (null, null), false) { Cut = c });
             }
@@ -825,6 +824,12 @@ public static class EmPlanarComponentPorts
 
     private static string Mm(double m) => C3dComponentPorts.Mm(m);
     private static string Um(double m) => C3dComponentPorts.Um(m);
+
+    /// <summary>brief-icf-2 R-icf2-2 — the warning for a cut instance left with no port, on both solvers: a 3D run says it too of one whose
+    /// every sheet the generator refused (<c>C3dComponentPorts.Build</c>).</summary>
+    internal static string PortlessWarning(string path)
+        => $"{path} is cut out of the problem and has no port left on it: the co-simulation netlist places its model with " +
+           "each terminal on ground, the N-port's reference or an open node, so it reaches the EM result only through ground.";
 
     /// <summary>One built port's line: what the run notes and the setup's list show.</summary>
     public static string Describe(EmPlanarComponentPort p, EmLayoutSource source)

@@ -174,6 +174,23 @@ public sealed class ThickDieCutPortTests(ThickDieCutPortTests.Fixture fx, ITestO
                                                    StringComparison.Ordinal));
     }
 
+    /// <summary>A cut instance whose every sheet the generator refuses has no port, as one the cut leaves portless has none: it rides
+    /// beside the ports, so the co-simulation netlist places it, and the run names it. Only the 3D build knows it, after the cut, and
+    /// it used to drop out of <c>_cosim</c> without a word.</summary>
+    [Fact]
+    public void ACutInstanceWhoseEverySheetIsRefused_IsPlacedInTheNetlist_AndNamed()
+    {
+        var g = Problem(fx.Ported(metal1UnderA: false), new EmComponentPort("X1") { Return = "Metal1" });
+        var parts = g.ComponentPorts!;
+        Assert.All(parts.Ports.Where(p => p.Cutout), p => Assert.False(p.Ok));
+        var x1 = Assert.Single(parts.Portless);
+        Assert.Equal("X1", x1.Refdes);
+        Assert.NotNull(x1.Cut);
+        Assert.Contains(parts.Warnings, w => w.StartsWith("X1 is cut out of the problem and has no port left on it: the co-simulation netlist " +
+                                                          "places its model", StringComparison.Ordinal));
+        Assert.Equal("X1", Assert.Single(Assert.IsType<EmCoSimPortList>(g.CoSimPorts).Portless).Refdes);
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
     private Em3dGenerationResult Problem(LayoutView view, EmComponentPort entry)
@@ -194,6 +211,12 @@ public sealed class ThickDieCutPortTests(ThickDieCutPortTests.Fixture fx, ITestO
 
     private static RectShape R(LayerKey l, double x0, double y0, double x1, double y1)
         => new() { Layer = l, X1 = Um(Math.Min(x0, x1)), Y1 = Um(Math.Min(y0, y1)), X2 = Um(Math.Max(x0, x1)), Y2 = Um(Math.Max(y0, y1)) };
+
+    private static LabelShape Edge(double x, LayoutRotation dir, string text) => new()
+    {
+        Layer = M3, PortLayer = M3, X = Um(x), Y = 0, Text = text, Height = Um(5), IsPort = true, PortKind = PlanarPortKind.Edge,
+        PortDirection = dir,
+    };
 
     private static string RepoRoot()
     {
@@ -247,6 +270,18 @@ public sealed class ThickDieCutPortTests(ThickDieCutPortTests.Fixture fx, ITestO
             var v = Line("Q3", M3);
             v.Shapes.Add(R(M1, -20, -20, 10, 20));
             if (metal1UnderBoth) v.Shapes.Add(R(M1, 30, -20, 60, 20));
+            return v;
+        }
+
+        /// <summary>The Metal3 line through Q3 with a drawn edge port at each end: port 1's end over nothing (its sheet falls to the
+        /// floor), port 2's over local Metal1; local Metal1 under A's face too, when asked.</summary>
+        public LayoutView Ported(bool metal1UnderA)
+        {
+            var v = Line("Q3", M3);
+            if (metal1UnderA) v.Shapes.Add(R(M1, -20, -20, 10, 20));
+            v.Shapes.Add(R(M1, 120, -20, 150, 20));
+            v.Shapes.Add(Edge(-100, LayoutRotation.R0, "1"));
+            v.Shapes.Add(Edge(140, LayoutRotation.R180, "2"));
             return v;
         }
 
