@@ -424,9 +424,29 @@ public static class ChainBudgetDisplay
             [("MDS_dBm", "Receiver: MDS, dBm"), ("NFarray_dB", "NF of the array, dB"), ("SNRtot_dB", "SNR, dB"),
              ("Margin_dB", "margin, dB"), ("Rate_Gbps", "rate, Gb/s"), ("Pdctot_W", "DC power, W"), ("Ebit_pJ", "energy, pJ/bit")], first: 190);
         var tx = Table("Link", src,
-            [("Pout_PA_dBm", "Link: PA out, dBm"), ("EIRP_dBm", "EIRP, dBm"), ("Lfs_dB", "free space, dB"), ("Atm_dB", "more on the path, dB"),
-             ("Prx_dBm", "received, dBm"), ("Ceiling_dBm", "ceiling, dBm"), ("Pin_dBm", "chain input, dBm")], first: 190);
-        return [tx, rx];
+            [("Pout_PA_dBm", "Link: PA out, dBm"), ("EIRP_dBm", "EIRP, dBm"), ("PathLoss_dB", "path loss, dB"), ("Prx_dBm", "received, dBm"),
+             ("Ceiling_dBm", "ceiling, dBm"), ("Pin_dBm", "chain input, dBm")], first: 190);
+        var margins = Table("Margins", src,
+            [("Availability_pct", "Margins: availability, %"), ("Mshadow_dB", "shadowing, dB"), ("Mfade_dB", "fading, dB"),
+             ("Mcomp_dB", "composite, dB"), ("Margins_dB", "taken, dB"), ("Sensitivity_dBm", "sensitivity, dBm"),
+             ("LinkMargin_dB", "link margin, dB"), ("ZeroMarginDistance_m", "0 dB at, m")], first: 190);
+        // The breakdown, one row per term over the labelled term axis, as the cascade table's rows are stages.
+        var breakdown = new PlotContainerConfig
+        {
+            PlotType = PlotType.Table, Width = 280 + 120, Height = 270,
+            CustomTitle = "Path loss, by term", CustomTitleOn = true, FreqColumnWidth = 280,
+            Traces =
+            [
+                new TraceConfig
+                {
+                    SourcePath = src, CubeName = "Loss_dB", Label = "loss, dB",
+                    CubeSlice = [new AxisSliceConfig { AxisName = "term", Role = AxisRole.KeepAsX }],
+                    FormatString = PrecisionFormat.F, MaximumFractionDigits = 3, ColumnWidth = 120,
+                    Properties = new TracePropertiesConfig { LineColorIndex = TraceProperties.LineColorOrder[0], MarkerColorIndex = TraceProperties.LineColorOrder[0] },
+                },
+            ],
+        };
+        return [tx, rx, margins, breakdown];
     }
 
     /// <summary>
@@ -440,8 +460,28 @@ public static class ChainBudgetDisplay
         {
             ChainSweep.Frequency => ("freq", "carrier frequency, GHz"),
             ChainSweep.TxElements => ("Mtx", "transmit elements, Mtx"),
+            ChainSweep.Distance => ("distance", "distance, m"),
+            ChainSweep.Elevation => ("elevation", "elevation, deg"),
+            ChainSweep.Availability => ("availability", "availability, %"),
             _ => ("Mrx", "receive elements, Mrx"),
         };
+        if (of is ChainSweep.Distance or ChainSweep.Elevation or ChainSweep.Availability)
+        {
+            // A sweep of the path: what reaches each element against the sensitivity, the loss, the margins, the SNR.
+            List<PlotContainerConfig> path =
+            [
+                Rect("Link levels", x, "dBm", 0, 0, 300, 240,
+                     [Over(src, "Prx_dBm", axis, "received", C(1), false), Over(src, "Sensitivity_dBm", axis, "sensitivity", C(2), false),
+                      Over(src, "MDS_dBm", axis, "noise (MDS)", C(3), false)]),
+                Rect("Path loss", x, "dB", 0, 0, 300, 240, [Over(src, "PathLoss_dB", axis, "path loss", C(1), false)]),
+                Rect("Margins", x, "dB", 0, 0, 300, 240,
+                     [Over(src, "Margins_dB", axis, "fade margin", C(1), false), Over(src, "LinkMargin_dB", axis, "link margin", C(2), false)]),
+                Rect("SNR", x, "dB", 0, 0, 300, 240, [Over(src, "SNR_dB", axis, "SNR", C(1), false)]),
+            ];
+            // A distance is spread in ratio: a log axis puts its points evenly.
+            if (of == ChainSweep.Distance) foreach (var p in path) p.Axes = new AxesConfig { XScale = AxisScale.Log };
+            return path;
+        }
         List<PlotContainerConfig> plots =
         [
             Rect("Link levels", x, "dBm", 0, 0, 300, 240,

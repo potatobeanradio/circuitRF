@@ -297,7 +297,7 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.Equal((0.1, 2, 0.5, 8.0), (back.FractionalBandwidth!.Value, back.Streams, back.NfAllowanceDb, back.RxBackoffDb));
         // An expression or a budget-only value is version 2 as well: version 1 would put it on a netlist line.
         Assert.Contains("\"FormatVersion\": 2", ChainDesignIo.Serialize(Scaled()));
-        Assert.Throws<InvalidDataException>(() => ChainDesignIo.Deserialize("{\"FormatVersion\": 3}"));
+        Assert.Throws<InvalidDataException>(() => ChainDesignIo.Deserialize($"{{\"FormatVersion\": {ChainDesignIo.CurrentFormatVersion + 1}}}"));
 
         // The window keeps them through an edit.
         var vm = new CircuitRF.Ui.Chain.ChainBudgetViewModel(d);

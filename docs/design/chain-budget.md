@@ -205,6 +205,62 @@ would be refused for sweeping a combiner it no longer has.
 or a budget-only parameter), so a 1.8.2 reader refuses such a chain rather than dropping the fields on save, and a
 plain chain stays readable there.
 
+### 2.4 The link's propagation
+
+The link's `Path` is the **Propagation section** (`ChainPropagation`; `propagation-channel.md` §9.1). It keeps the name
+`Path` in the file, so a link of a distance and a dB/km term is the file it always was. `Model=` is any model of the
+propagation registry (`RfCore.Propagation.PropagationModels`, the table the Propagation Channel component reads too), and
+its parameters and the added losses are the registry's, by the registry's names: nothing is described twice. A
+number-valued one may be a number in its own unit ("40 mm/h"), an expression in `freq` or a table, read at the carrier
+as the other link inputs are; a word is picked from its list; `Profile` is a terrain CSV resolved against the chain's
+workspace. The section adds the heights (`TxHeight`, `RxHeight`, 1.5 m blank) and the margins' inputs.
+
+**The breakdown.** The model's loss is split into free space over the model's own distance (the 3D distance, or a
+satellite's slant range), the model's excess over it, the `Attenuation` term, and each added loss by its kind: gas,
+rain, clutter (a TR 38.811 clutter loss included), partitions, building entry, vegetation, polarization, pointing,
+ionosphere. Each is a scalar cube (`Lfs_dB`, `Excess_dB`, `Atm_dB`, `Gas_dB`, `Rain_dB` …) and a row of `Loss_dB` over a
+labelled `term` axis; `PathLoss_dB` is the total. On a satellite path P.618 combines rain, clouds and scintillation into
+one figure, which is the `rain (P.618)` row. **`Model=free` with nothing else is the old link to the bit**: free space
+over √(d² + 0) is d exactly in IEEE arithmetic, so `20·log10(4π·d·f/c)` is the same number, and the rest of the
+breakdown is a 0 subtracted after free space and the attenuation, which changes nothing. `testdata/chain/
+unchanged_budgets.json` holds every cube of every shipped chain and the link reference as they were before the section,
+and the gate compares them as text, bit for bit.
+
+**Margins at an availability** p (`Availability`, the registry's own, which also sets the time percentage rain is
+taken at). σ is the model's shadowing, or `Sigma` stated (on log-distance `Sigma` is the model's own parameter, and the
+chain's σ is that). With F the fading power's CDF at mean 1 — Rayleigh 1 − e^(−x); Rician the Poisson mixture of gamma
+CDFs that 1 − Q₁(√(2K), √(2(K+1)x)) is, summed down from the top term so a small outage keeps its relative accuracy;
+Nakagami P(m, m·x):
+
+```
+M_shadow = σ·Q⁻¹(1 − p)             M_fade = −10·log10(x), F(x) = 1 − p      (Rayleigh: −10·log10(−ln p))
+M_comp   = −10·log10(x),  ∫ φ(z)·F(x·10^(−σz/10)) dz = 1 − p                (lognormal-shadowed fading, the default)
+M_sum    = M_shadow + M_fade                                                (Margin=sum, the conservative bound)
+```
+
+The integral is the trapezoid rule over z ∈ [−10, 10] at h = 0.02, accurate far below the 1e-6 dB its root is found to
+by bisection; each (fading, K, m, σ, p) is integrated once and remembered, since a budget reads its link several times
+and the zero-margin search many more. Rician K blank takes the model's mean K (38.901 states one for line of sight);
+with none it is a refusal. **Rain at the availability is in the received power**, not subtracted again: the registry
+adds it as a loss term (P.530 on a terrestrial path, P.618 on a satellite path), and the margins block reports it.
+
+**Required SNR and link margin.** `TargetBer` with `Modulation` (BPSK, QPSK, 8PSK, 16/64/256-QAM; blank is the chain's
+signal, the Demo bench's 64-QAM) gives the uncoded, Gray-coded Eb/N0 by inverting each closed form exactly (each is one Q
+function of √γ), and SNR = Eb/N0 + 10·log10(k), the symbol rate taken as the noise bandwidth. That SNR replaces the
+stated Required SNR, so the sensitivity is MDS + SNR_req. The **link margin** is Prx − M − sensitivity, per element on
+both sides, with Prx the power the link delivers before the receiver's ceiling holds it; the availability is met at a
+margin of 0 or more. **The distance at zero margin** is found by doubling or halving the distance until the margin
+changes sign, then bisection in log distance; a model that refuses on the way (its validity range) stops the search with
+a note, and a satellite path has none (its distance is the slant range).
+
+**A satellite path** (`Model=satellite`) takes its distance from `Altitude` and `Elevation` and reports the slant range,
+latency, Doppler and its drift as cubes. **Sweeps** of the `Distance` (in ratio), a satellite's `Elevation` and the
+`Availability` join the carrier and the two arrays, each the whole chain budgeted again at every point; their tabs plot
+the received power against the sensitivity, the path loss, the margins and the SNR.
+
+**Format version 3** is written only when the link uses a key version 2 did not have (`Model=free` excepted, which a
+version-2 reader ignores and means the same by) or a chain sweeps the path, so a 1.8.x reader refuses such a chain.
+
 ## 3. The benches, and what was found building them
 
 **The mixer's image termination.** A mixer's SSB noise figure is stated with its image at T0. In a chain a filter in
@@ -386,6 +442,15 @@ Levels bench, two tones each at that power 24 dB under the input P1dB, −0.013 
 mixer's output, their own compression. Its TX bench: 0.92 dB of compression and 6.3 % EVM at the 8 dB back-off, and
 the PA 0.44 dB under Psat at 10 dB of overdrive. Two points of a frequency sweep, each transferred, read G and NF within
 10⁻⁶ dB.
+
+**The propagation section** (`ChainPropagationTests`) is checked against the same script, extended from the textbook
+forms and the recommendations alone: six margin cases (Rayleigh, Nakagami m = 2.5, Rician by the Bessel series of the
+Marcum Q function, shadowed and not), whose fading and composite margins agree to 1e-6 dB though the script integrates
+on its own grid (h = 0.05) and finds its roots by regula falsi; the required Eb/N0 and SNR of QPSK, 16-QAM and 64-QAM to
+1e-9 dB; and a geostationary downlink at 20 GHz and 99.9 % (slant range, P.676 gas, P.618 rain, clouds and
+scintillation from `testdata/propagation/reference/propagation_reference.py`, Rayleigh fading, QPSK at 10⁻⁶) whose path
+loss, received power, margin, latency and link margin agree to 1e-6 dB. Rayleigh's margin at 99 % is 19.978 dB,
+the design note's "20.0 dB" to the one decimal it writes; at 99.9 % it is 29.998 dB.
 
 Two quantities are not exact and are said to be: the cascaded compression point is a formula of the intercept's form
 and reads 0.02 to 0.06 dB early, and the envelope SNR is one record of noise, ±0.12 dB from seed to seed.

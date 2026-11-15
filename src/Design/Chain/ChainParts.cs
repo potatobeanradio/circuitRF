@@ -33,9 +33,12 @@ namespace CircuitRF.Design.Chain;
 /// <param name="IsFile">The parameter names a file, which the window offers a picker for.</param>
 /// <param name="BudgetOnly">Read by the budget and never written onto the part's netlist line (a DC power, a gain per
 /// amplifier stage).</param>
+/// <param name="Placeholder">What a blank field shows (a propagation parameter's registry default); null: the
+/// default, or "blank".</param>
+/// <param name="ShowUnit">The unit is always shown beside the field (a propagation parameter's SI unit).</param>
 public sealed record ChainParam(string Name, string Default, string Unit, bool Numeric = true, bool BlankAllowed = false,
                                 IReadOnlyList<string>? Options = null, string Help = "", bool IsFile = false,
-                                bool BudgetOnly = false);
+                                bool BudgetOnly = false, string? Placeholder = null, bool ShowUnit = false);
 
 /// <summary>Where a stage sits in its chain: the frequency at its INPUT (the chain's, or a mixer's output after one),
 /// Hz, and the directory a relative file reference resolves against (null for a chain that has none).</summary>

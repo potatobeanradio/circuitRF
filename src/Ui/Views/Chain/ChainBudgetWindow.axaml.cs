@@ -94,8 +94,8 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
     private IEnumerable<CircuitRF.Ui.DataDisplay.Controls.PlotControl> Plots()
     {
         foreach (var name in (string[])["CascadePlotControl", "LevelsPlotControl", "LevelsDbPlotControl", "DepthPhasePlotControl", "DepthBandPlotControl",
-                                       "LinkPlotControl", "ReceiverPlotControl",
-                                       .. Enumerable.Range(0, 4).SelectMany(i => new[] { $"SweepF{i}", $"SweepT{i}", $"SweepR{i}" })])
+                                       "LinkPlotControl", "ReceiverPlotControl", "MarginsPlotControl", "LossPlotControl",
+                                       .. Enumerable.Range(0, 4).SelectMany(i => new[] { $"SweepF{i}", $"SweepT{i}", $"SweepR{i}", $"SweepD{i}", $"SweepE{i}", $"SweepA{i}" })])
             if (this.FindControl<CircuitRF.Ui.DataDisplay.Controls.PlotControl>(name) is { } p) yield return p;
     }
 
@@ -185,6 +185,8 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
         if ((sender as Control)?.DataContext is ChainParamViewModel p) _ = PickTouchstoneAsync(p);
     }
 
+    private static readonly FilePickerFileType ProfileFiles = new("Terrain profile") { Patterns = ["*.csv"] };
+
     /// <summary>Asks for a Touchstone file and writes it into <paramref name="param"/>, relative to the chain's workspace
     /// when it is under it. Cancelled, the field is left as it was.</summary>
     private async Task PickTouchstoneAsync(ChainParamViewModel param)
@@ -195,7 +197,9 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
             && Path.GetDirectoryName(current) is { } folder && Directory.Exists(folder)) start = folder;
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Touchstone File", AllowMultiple = false, FileTypeFilter = [TouchstoneFiles, FilePickerFileTypes.All],
+            // A link's terrain profile is a CSV; every other file a chain names is a Touchstone file.
+            Title = param.Name == "Profile" ? "Terrain Profile" : "Touchstone File", AllowMultiple = false,
+            FileTypeFilter = [param.Name == "Profile" ? ProfileFiles : TouchstoneFiles, FilePickerFileTypes.All],
             SuggestedStartLocation = start is not null ? await StorageProvider.TryGetReachableFolderAsync(start) : null,
         });
         if (files.FirstOrDefault()?.TryGetLocalPath() is { } path) param.Value = vm.FileReference(path);

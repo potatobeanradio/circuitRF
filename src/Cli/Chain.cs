@@ -63,6 +63,11 @@ internal static class Chain
             return JsonRun.Fail(CliDiagnostics.ChainRefused(path, budget.Refusals[^1]));
         }
         foreach (var n in budget.Notes) JsonRun.Note(CliDiagnostics.ChainNote(n));
+        if (budget.Design?.Link is { } bl && bl.Budget(budget.Design.FrequencyHz).Propagation is { } bp)
+        {
+            foreach (var n in bp.Notes) JsonRun.Note(CliDiagnostics.ChainNote(n));
+            if (ChainPropagation.LinkMargin(budget)?.DistanceNote is { } dn) JsonRun.Note(CliDiagnostics.ChainNote(dn));
+        }
         if (ChainLink.Power(budget)?.Note is { } dcNote) JsonRun.Note(CliDiagnostics.ChainNote(dcNote));
         Report(budget, design);
         JsonRun.Data = ChainBudget.ToDataSet(budget);
@@ -113,6 +118,28 @@ internal static class Chain
 
     private static string D(double v) => double.IsFinite(v) ? v.ToString("0.00", CultureInfo.InvariantCulture) : "-";
 
+    /// <summary>The link's loss breakdown (every row that is not 0), its margins at the availability, the required SNR
+    /// and the link margin; a satellite path's geometry.</summary>
+    private static void Propagation(ChainPropagationResult p, ChainLinkMargin? lm)
+    {
+        Console.WriteLine($"  propagation: {p.Model} ({p.Document}), path loss {D(p.TotalDb)} dB = "
+                        + string.Join(" + ", p.Rows.Where(x => x.Db != 0 || x.Cube == "Lfs_dB").Select(x => $"{x.Name} {D(x.Db)}")));
+        if (p.Geometry is { } g)
+            Console.WriteLine($"  satellite: slant range {g.SlantRangeKm:0.###} km, latency {D(g.LatencyS * 1e3)} ms, "
+                            + $"Doppler {g.DopplerHz:0.#} Hz drifting {g.DopplerRateHzps:0.###} Hz/s");
+        var m = p.Margins;
+        Console.WriteLine($"  margins at {m.AvailabilityPct:0.####} %: shadowing {D(m.ShadowDb)} dB (sigma {D(m.SigmaDb)} dB), "
+                        + $"fading {D(m.FadeDb)} dB ({m.Fading}), composite {D(m.CompositeDb)} dB, sum {D(m.SumDb)} dB; "
+                        + $"the {m.Method} taken" + (m.RainDb != 0 ? $"; rain {D(m.RainDb)} dB is in the path loss" : ""));
+        if (p.RequiredSnr is { } q)
+            Console.WriteLine($"  required: {q.Modulation} at BER {q.TargetBer:G3}, Eb/N0 {D(q.EbN0Db)} dB, SNR {D(q.SnrDb)} dB"
+                            + (q.Stated ? "" : " (the chain's signal)"));
+        if (lm is not null)
+            Console.WriteLine($"  link margin {D(lm.LinkMarginDb)} dB ({D(lm.PrxDbm)} dBm received - {D(lm.MarginsDb)} dB - "
+                            + $"{D(lm.SensitivityDbm)} dBm sensitivity): the availability is {(lm.Met ? "met" : "NOT met")}"
+                            + (double.IsFinite(lm.ZeroMarginDistanceM) ? $"; 0 dB at {ChainLink.Metres(lm.ZeroMarginDistanceM)}" : ""));
+    }
+
     private static void Report(ChainBudgetResult r, ChainDesign d)
     {
         d = r.Design ?? d;   // the chain as budgeted: a link's input power, a fractional bandwidth
@@ -133,8 +160,11 @@ internal static class Chain
                             + $"margin {D(o.MarginDb)} dB, rate {ChainCapacity.Rate(o.RateBps)}"
                             + (o.Streams > 1 ? $" over {o.Streams} streams" : "") + $", ceiling {D(o.CeilingDbm)} dBm");
         if (r.Design is { Link: { } link } rd && link.Budget(rd.FrequencyHz) is var l)
+        {
             Console.WriteLine($"  link: {D(l.PoutDbm)} dBm from each of {l.Mtx} PAs, EIRP {D(l.EirpDbm)} dBm, free space {D(l.LfsDb)} dB "
                             + $"and {D(l.AtmDb)} dB more over the path, {D(l.PrxDbm)} dBm at each element, {D(rd.InputPowerDbm)} dBm in");
+            if (l.Propagation is { } prop) Propagation(prop, ChainPropagation.LinkMargin(r));
+        }
         if (ChainLink.Power(r) is { TotalW: > 0 } p)
             Console.WriteLine($"  DC power: transmit {ChainLink.Watts(p.TxW)}, receive {ChainLink.Watts(p.RxW)} ({p.Mrx} element(s)), "
                             + $"total {ChainLink.Watts(p.TotalW)}, {D(p.EnergyPerBitJ * 1e12)} pJ/bit");

@@ -31969,3 +31969,54 @@ Cascode, coupled-coil and HBT-core layouts on the kit's own PCells, run on Plana
   `CellCoSimulationTests` (split for a composed FET, tie for any other model). Gate 4's S comparison against drawn joined
   metal was not built: the cut removes the metal it would be compared with, so the two are not the same structure; the netlist
   is asserted instead.
+
+## brief-pch-3 — the Chain Budget's propagation and margins (2026-11-15)
+
+**`Model=free` alone reproduces the old link to the bit, and a golden holds it.** The free-space row is computed over
+`√(d² + (h₁ − h₂)²)`, which with the default equal heights is `√(d·d)`, and that is `d` exactly in IEEE double
+arithmetic, so `20·log10(4π·d·f/c)` comes out identical. Everything else in the breakdown is subtracted *after* free
+space and the attenuation (`eirp − Lfs − A − rest + G`), and for free space `rest` is a sum of zeros, so `x − 0` leaves
+the old value untouched. Before any Chain code changed, `testdata/chain/unchanged_budgets.json` was written from
+every shipped `.cchain` and the link reference's design (350 cubes, sweeps included, all as round-trip text), and
+`EveryExistingChain_BudgetsBitForBitAsBefore` compares them as strings. Set `CRF_WRITE_CHAIN_GOLDEN=1` to rewrite the
+file, which should only happen when a budget is meant to change.
+
+**Rayleigh at 99 % is 19.978 dB, not 20.00.** The design note and the brief both write "20.0 dB at 99 % … to 0.01 dB".
+The note's own formula, −10·log10(−ln p), gives 19.978 at 99 %, which is 20.0 to the one decimal the note writes. At
+99.9 % it gives 29.998, so 30.0 holds to 0.01 dB. 20.000 exactly would need the approximation −10·log10(1 − p), which
+would be wrong. The gate test checks the formula to 1e-12, and the 99 % value only rounded to 0.1 dB.
+
+**A composite margin per budget call made the CLI hang.** The first Rician implementation summed
+`GammaFunction.P(n+1, y)` for each Poisson term, at each of 2,001 integration nodes, at each of ~45 bisection
+steps. The link is read several times per budget, and the zero-margin distance search reads it ~100 times more, so the
+CLI ran for minutes before it was killed. The fix has two parts. First, `(fading, K, m, σ, p)` is integrated once and
+cached (`MarginCache`), since the margins do not depend on distance unless the model's σ does. Second, the Rician CDF
+calls the incomplete gamma once, at the top term, and walks down by adding positive Poisson terms
+(P(n+1) = P(n+2) + e^(−y)y^(n+1)/(n+1)!), which keeps the relative accuracy of a small outage. The trapezoid step went
+from 0.01 to 0.02 with no visible change: the agreement with the script stayed below 1e-6 dB. A UMi chain with three
+sweeps now budgets in ~0.5 s through the CLI.
+
+**Rain is counted once, in the received power.** The registry adds rain at the availability as a loss term (P.530 on
+a terrestrial path, P.618 on a satellite path). The note lists A_rain among the margins, but subtracting it from Prx
+a second time would count it twice. So the link margin is Prx − (the composite or summed fade and shadowing margin) −
+sensitivity, and the margins block shows the rain separately as part of the path loss. P.618's figure is rain, clouds
+and scintillation together (§2.5), so on a satellite path its row is labelled `rain (P.618)`.
+
+**`Sigma` has one name and two owners.** The component's parameter list (note §5.5) calls it `Sigma`, and so does
+log-distance's registry entry. The chain sends `Sigma` to the model only when the model's registry entry declares it.
+Otherwise it is the chain's own override of the model's σ, and it is never passed on, because the registry refuses a
+parameter the model does not name.
+
+**Regenerating `link_reference.json` on this machine changed two existing NF-allowance values in their last digit**
+(`…304` → `…308`), because this Python's libm differs from the one that first wrote the file. The new keys
+(`margins`, `required_snr`, `satellite`) were added with the original `cases` block put back unchanged, so the file
+only grew. The existing test compares to 1e-9, so either version passes.
+
+**A blank list value in the window is a placeholder, not a pick.** The registry's word parameters and the section's
+own choices (`Model`, `Fading`, `Margin`, `Modulation`) are ComboBoxes. A blank value means the default, and since a
+blank is not in the item list nothing is selected. `ChainParamViewModel.Value` ignores the `null` that a ComboBox can
+write back in that state, so opening a chain cannot record an edit. The default is shown as `PlaceholderText`. Picking
+`free` explicitly still writes version 2, because a version-2 reader ignores the `Model` key and reads it the same way.
+
+**The Data Display table's label column did not widen with `FreqColumnWidth`** for the 1-D `Loss_dB` table over the
+`term` axis (280 was set, ~115 drawn). Rather than chase it in the Data Display, the one long label was shortened.

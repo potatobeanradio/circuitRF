@@ -108,7 +108,12 @@
         <DataTemplate DataType="vm:ChainParamViewModel">
             <StackPanel Orientation="Horizontal" Margin="0,0,5,2" ToolTip.Tip="{Binding Tip}">
                 <TextBlock Classes="lbl" Text="{Binding Name}"/>
-                <TextBox Classes="p param" Text="{Binding Value}" Classes.invalid="{Binding Invalid}" PlaceholderText="{Binding Watermark}"/>
+                <TextBox Classes="p param" Text="{Binding Value}" Classes.invalid="{Binding Invalid}" PlaceholderText="{Binding Watermark}" IsVisible="{Binding IsText}"/>
+                <!-- A choice is picked, never typed: a blank (the default) shows the default as the placeholder. -->
+                <ComboBox Classes="p param" ItemsSource="{Binding Options}" SelectedItem="{Binding Value}" PlaceholderText="{Binding Watermark}"
+                          Classes.invalid="{Binding Invalid}" IsVisible="{Binding HasOptions}"/>
+                <Button Content="…" IsVisible="{Binding IsFile}" Click="OnPickFileClick" Padding="6,0" Margin="3,0,0,0"
+                        ToolTip.Tip="Pick the file"/>
                 <TextBlock Classes="lbl" Text="{Binding Unit}" Margin="3,0,0,0"/>
             </StackPanel>
         </DataTemplate>
@@ -269,6 +274,29 @@
                                 <ContextMenu Name="BlocksMenu" Opening="OnBlocksMenuOpening"/>
                             </ScrollViewer.ContextMenu>
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <!-- The link in front of the chain: a transmit antenna, the path, a receive antenna, and beneath
+                                     them the model, the path loss, the margins and the link margin. -->
+                                <StackPanel Orientation="Horizontal" IsVisible="{Binding HasLink}">
+                                    <Border Classes="block" ToolTip.Tip="The link's propagation: the Link tab's Propagation section">
+                                        <StackPanel Spacing="1" MinWidth="104">
+                                            <TextBlock Classes="small" Text="Propagation" FontWeight="SemiBold" FontSize="12"/>
+                                            <Canvas Width="72" Height="30" HorizontalAlignment="Center" Margin="0,2">
+                                                <Line StartPoint="8,28" EndPoint="8,14" Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}" StrokeThickness="1.5"/>
+                                                <Line StartPoint="8,14" EndPoint="2,4" Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}" StrokeThickness="1.5"/>
+                                                <Line StartPoint="8,14" EndPoint="14,4" Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}" StrokeThickness="1.5"/>
+                                                <Line StartPoint="64,28" EndPoint="64,14" Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}" StrokeThickness="1.5"/>
+                                                <Line StartPoint="64,14" EndPoint="58,4" Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}" StrokeThickness="1.5"/>
+                                                <Line StartPoint="64,14" EndPoint="70,4" Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}" StrokeThickness="1.5"/>
+                                                <Line StartPoint="20,10" EndPoint="52,10" Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}" StrokeThickness="1" StrokeDashArray="2,2"/>
+                                                <Polyline Points="47,7 52,10 47,13" Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}" StrokeThickness="1"/>
+                                            </Canvas>
+                                            <TextBlock Classes="small" Text="{Binding PropagationModel}"/>
+                                            <TextBlock Classes="small" Text="{Binding PropagationLoss}" FontWeight="SemiBold"/>
+                                            <TextBlock Classes="small" Text="{Binding PropagationMargins}" TextAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text="⟶" FontSize="18" VerticalAlignment="Center" Margin="4,0" Opacity="0.7"/>
+                                </StackPanel>
                                 <TextBlock Text="IN" FontWeight="SemiBold" VerticalAlignment="Center" Margin="2,0,0,0"/>
                                 <!-- Drag a block left or right to move its stage: the line shows where it will land, and the move is made on
                                      release, through the same move Up and Down make. The schematic does not drag. -->
@@ -428,6 +456,9 @@
                                 <ddc:PlotControl Name="LinkPlotControl" ClipToBounds="True" Height="70" IsVisible="{Binding HasLink}"
                                                  Plot="{Binding LinkPlot}" Library="{Binding PlotHost.Library}"
                                                  CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                                <ddc:PlotControl Name="MarginsPlotControl" ClipToBounds="True" Height="70" IsVisible="{Binding HasLink}"
+                                                 Plot="{Binding MarginsPlot}" Library="{Binding PlotHost.Library}"
+                                                 CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
                                 <ddc:PlotControl Name="ReceiverPlotControl" ClipToBounds="True" Height="70"
                                                  Plot="{Binding ReceiverPlot}" Library="{Binding PlotHost.Library}"
                                                  CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
@@ -436,10 +467,29 @@
                                     <ItemsControl Grid.Column="1" ItemsSource="{Binding LinkTx}" IsVisible="{Binding HasLink}">
                                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                                     </ItemsControl>
-                                    <TextBlock Grid.Row="1" Classes="lbl" Text="Path" VerticalAlignment="Top" Margin="0,4,0,0" IsVisible="{Binding HasLink}"/>
-                                    <ItemsControl Grid.Row="1" Grid.Column="1" ItemsSource="{Binding LinkPath}" IsVisible="{Binding HasLink}">
-                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                                    </ItemsControl>
+                                    <!-- The Propagation section, grouped as the propagation registry groups its parameters. -->
+                                    <TextBlock Grid.Row="1" Classes="lbl" Text="Propagation" VerticalAlignment="Top" Margin="0,4,0,0" IsVisible="{Binding HasLink}"/>
+                                    <StackPanel Grid.Row="1" Grid.Column="1" Spacing="2" IsVisible="{Binding HasLink}">
+                                        <ItemsControl ItemsSource="{Binding LinkPath}">
+                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                        </ItemsControl>
+                                        <TextBlock Text="{Binding ModelTitle, StringFormat='Large scale: {0}'}" FontSize="11" Opacity="0.75" Margin="0,2,0,0"/>
+                                        <ItemsControl ItemsSource="{Binding LinkLargeScale}" IsVisible="{Binding HasLargeScale}">
+                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                        </ItemsControl>
+                                        <TextBlock Text="Margins" FontSize="11" Opacity="0.75" Margin="0,2,0,0"/>
+                                        <ItemsControl ItemsSource="{Binding LinkMargins}">
+                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                        </ItemsControl>
+                                        <Expander Header="Added losses" FontSize="11" Padding="4,2">
+                                            <ItemsControl ItemsSource="{Binding LinkAddedLosses}">
+                                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                            </ItemsControl>
+                                        </Expander>
+                                        <ddc:PlotControl Name="LossPlotControl" ClipToBounds="True" Height="280" HorizontalAlignment="Left" Width="420"
+                                                         Plot="{Binding LossPlot}" Library="{Binding PlotHost.Library}"
+                                                         CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                                    </StackPanel>
                                     <TextBlock Grid.Row="2" Classes="lbl" Text="Receiver" VerticalAlignment="Top" Margin="0,4,0,0"/>
                                     <ItemsControl Grid.Row="2" Grid.Column="1" ItemsSource="{Binding ReceiverInputs}">
                                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
@@ -498,6 +548,54 @@
                                              CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
                             <ddc:PlotControl Grid.Column="6" Name="SweepR3" ClipToBounds="True"
                                              Plot="{Binding RxSweepPlots[3]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                        </Grid>
+                    </TabItem>
+                    <TabItem Header="Distance sweep" FontSize="13" IsVisible="{Binding HasDistanceSweep}">
+                        <Grid ColumnDefinitions="*,4,*,4,*,4,*">
+                            <ddc:PlotControl Grid.Column="0" Name="SweepD0" ClipToBounds="True"
+                                             Plot="{Binding DistanceSweepPlots[0]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="2" Name="SweepD1" ClipToBounds="True"
+                                             Plot="{Binding DistanceSweepPlots[1]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="4" Name="SweepD2" ClipToBounds="True"
+                                             Plot="{Binding DistanceSweepPlots[2]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="6" Name="SweepD3" ClipToBounds="True"
+                                             Plot="{Binding DistanceSweepPlots[3]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                        </Grid>
+                    </TabItem>
+                    <TabItem Header="Elevation sweep" FontSize="13" IsVisible="{Binding HasElevationSweep}">
+                        <Grid ColumnDefinitions="*,4,*,4,*,4,*">
+                            <ddc:PlotControl Grid.Column="0" Name="SweepE0" ClipToBounds="True"
+                                             Plot="{Binding ElevationSweepPlots[0]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="2" Name="SweepE1" ClipToBounds="True"
+                                             Plot="{Binding ElevationSweepPlots[1]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="4" Name="SweepE2" ClipToBounds="True"
+                                             Plot="{Binding ElevationSweepPlots[2]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="6" Name="SweepE3" ClipToBounds="True"
+                                             Plot="{Binding ElevationSweepPlots[3]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                        </Grid>
+                    </TabItem>
+                    <TabItem Header="Availability sweep" FontSize="13" IsVisible="{Binding HasAvailabilitySweep}">
+                        <Grid ColumnDefinitions="*,4,*,4,*,4,*">
+                            <ddc:PlotControl Grid.Column="0" Name="SweepA0" ClipToBounds="True"
+                                             Plot="{Binding AvailabilitySweepPlots[0]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="2" Name="SweepA1" ClipToBounds="True"
+                                             Plot="{Binding AvailabilitySweepPlots[1]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="4" Name="SweepA2" ClipToBounds="True"
+                                             Plot="{Binding AvailabilitySweepPlots[2]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="6" Name="SweepA3" ClipToBounds="True"
+                                             Plot="{Binding AvailabilitySweepPlots[3]}" Library="{Binding PlotHost.Library}"
                                              CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
                         </Grid>
                     </TabItem>

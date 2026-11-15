@@ -7,7 +7,9 @@
 //   EIRP   = Pout − Loss + AntennaGain + 20·log10(Mtx)    Mtx PAs in phase: Mtx times the power, Mtx times the directivity
 //   Lfs    = 20·log10(4π·d·f / c)                          free space, dB
 //   A      = Attenuation · d / 1000                        extra or atmospheric loss over the path, its dB/km at f
-//   Prx    = EIRP − Lfs − A + RxAntennaGain                at EACH receive element
+//   L      = Lfs + A + (the model's excess and added losses)    the Propagation section (ChainPropagation): Model=free
+//                                                          with nothing else is Lfs + A, as the link always was
+//   Prx    = EIRP − L + RxAntennaGain                      at EACH receive element
 //   Pin    = min(Prx, IP1dB − RxBackoffDb)                 the chain's input: held at the ceiling, as power control would
 //
 // The DC power, with or without a link:
@@ -24,11 +26,16 @@
 using System.Globalization;
 using System.Text.Json.Serialization;
 using RfCore.Data;
+using RfCore.Propagation;
 
 namespace CircuitRF.Design.Chain;
 
-/// <summary>The link's numbers at the carrier, dBm and dB.</summary>
-public sealed record ChainLinkBudget(double PoutDbm, double EirpDbm, double LfsDb, double AtmDb, double PrxDbm, int Mtx);
+/// <summary>The link's numbers at the carrier, dBm and dB; <see cref="Propagation"/> the breakdown and the margins
+/// (null when the model refuses, and then every number of the path is NaN).</summary>
+public sealed record ChainLinkBudget(double PoutDbm, double EirpDbm, double LfsDb, double AtmDb, double PrxDbm, int Mtx)
+{
+    public ChainPropagationResult? Propagation { get; init; }
+}
 
 /// <summary>The DC power of a chain and its link, W, and the energy per bit, J; <paramref name="Note"/> says what it
 /// could not count.</summary>
@@ -40,6 +47,10 @@ public sealed class ChainLink
     public const double C = 299_792_458;
 
     public Dictionary<string, string> Tx { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>The Propagation section: <see cref="PathParameters"/>, <see cref="ChainPropagation.OwnParameters"/> and
+    /// the model's registry parameters by name. Written as <c>Path</c>, the name it had when it was a distance and a
+    /// dB/km term, so a chain that uses no more than that is the file it was.</summary>
     public Dictionary<string, string> Path { get; set; } = new(StringComparer.Ordinal);
 
     public static readonly IReadOnlyList<ChainParam> TxParameters =
@@ -63,6 +74,10 @@ public sealed class ChainLink
 
     private static string Get(Dictionary<string, string> set, IReadOnlyList<ChainParam> ps, string key)
         => set.TryGetValue(key, out var v) ? v : ps.FirstOrDefault(p => p.Name == key)?.Default ?? "";
+
+    /// <summary>True on a satellite path, whose distance is its slant range.</summary>
+    [JsonIgnore]
+    public bool IsSatellite => ChainPropagation.ModelOf(this)?.Name == "satellite";
 
     public string GetTx(string key) => Get(Tx, TxParameters, key);
     public string GetPath(string key) => Get(Path, PathParameters, key);
@@ -112,11 +127,15 @@ public sealed class ChainLink
         }
         Read(link.Tx, TxParameters, "Transmitter");
         Read(link.Path, PathParameters, "Path");
-        if (refusals.Count == before) r.InputPowerDbm = link.Budget(r.FrequencyHz).PrxDbm;
+        ChainPropagation.Resolve(link, r.FrequencyHz, r.BaseDirectory, refusals);
+        if (refusals.Count != before) return;
+        r.InputPowerDbm = link.Budget(r.FrequencyHz).PrxDbm;
+        // A target BER sets the SNR the demodulator needs, and so the sensitivity.
+        if (ChainPropagation.RequiredSnr(link) is { } q && double.IsFinite(q.SnrDb)) r.RequiredSnrDb = q.SnrDb;
     }
 
     /// <summary>Why the link (already read) cannot be budgeted, one sentence each.</summary>
-    internal void Refusals(List<string> r)
+    internal void Refusals(List<string> r, double fHz)
     {
         foreach (var (set, ps, what) in new[] { (Tx, TxParameters, "Transmitter"), (Path, PathParameters, "Path") })
             foreach (var p in ps.Where(p => p.Name is not ("Elements" or "Distance")))
@@ -126,11 +145,12 @@ public sealed class ChainLink
                     r.Add($"{what}: {p.Name} = '{text}' is not a number{ChainScaling.WhyNotANumber(text)}.");
             }
         if (Elements is null) r.Add($"Transmitter: Elements = '{GetTx("Elements")}' is not a whole number of elements, 1 or more.");
-        if (!TryMetres(GetPath("Distance"), out double d) || !(d > 0))
+        if (!IsSatellite && (!TryMetres(GetPath("Distance"), out double d) || !(d > 0)))
             r.Add($"Path: Distance = '{GetPath("Distance")}' is not a distance above 0 m (metres, or with m or km).");
         if (TxNum("PAE") is var pae && double.IsFinite(pae) && !(pae > 0 && pae <= 100))
             r.Add("Transmitter: PAE is a percentage above 0 and at most 100.");
         if (TxNum("Pdc") < 0) r.Add("Transmitter: Pdc cannot be below 0 W.");
+        if (r.Count == 0 && fHz > 0) ChainPropagation.Refusals(this, fHz, r);
     }
 
     /// <summary>The link's numbers at <paramref name="fHz"/>, its inputs already read as numbers.</summary>
@@ -139,10 +159,15 @@ public sealed class ChainLink
         int mtx = Elements ?? 1;
         double pout = TxNum("Psat") - TxNum("Backoff");
         double eirp = pout - TxNum("Loss") + TxNum("AntennaGain") + 20 * Math.Log10(mtx);
-        TryMetres(GetPath("Distance"), out double d);
-        double lfs = 20 * Math.Log10(4 * Math.PI * d * fHz / C);
-        double atm = ChainValue.Or(GetPath("Attenuation"), 0) * d / 1000;
-        return new ChainLinkBudget(pout, eirp, lfs, atm, eirp - lfs - atm + ChainValue.Or(GetPath("RxAntennaGain"), 0), mtx);
+        ChainPropagationResult p;
+        try { p = ChainPropagation.Evaluate(this, fHz); }
+        catch (PropagationRefusal) { return new ChainLinkBudget(pout, eirp, double.NaN, double.NaN, double.NaN, mtx); }
+        // Free space and the attenuation first, then the rest: a link of free space and nothing else subtracts a 0 that
+        // changes nothing, and its received power is the one it always had, to the bit.
+        double rest = p.Rows.Where(x => x.Cube is not ("Lfs_dB" or "Atm_dB")).Sum(x => x.Db);
+        return new ChainLinkBudget(pout, eirp, p.FreeSpaceDb, p.AttenuationDb,
+                                   eirp - p.FreeSpaceDb - p.AttenuationDb - rest + ChainValue.Or(GetPath("RxAntennaGain"), 0), mtx)
+               { Propagation = p };
     }
 
     /// <summary>
@@ -219,7 +244,12 @@ public sealed class ChainLink
         One("Atm_dB", "dB", l.AtmDb);
         One("Prx_dBm", "dBm", l.PrxDbm);
         One("Pin_dBm", "dBm", d.InputPowerDbm);
+        if (l.Propagation is { } prop) ChainPropagation.AddTo(ds, r, prop);
     }
+
+    /// <summary>A distance as a person reads it: "850 m", "12.4 km".</summary>
+    public static string Metres(double m)
+        => m >= 1000 ? $"{(m / 1000).ToString("0.###", CultureInfo.InvariantCulture)} km" : $"{m.ToString("0.###", CultureInfo.InvariantCulture)} m";
 
     /// <summary>A power as a person reads it: "1.23 W", "45.6 mW".</summary>
     public static string Watts(double w)

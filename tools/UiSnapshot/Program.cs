@@ -28,8 +28,9 @@ using CircuitRF.Design.Layout;
 // UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] [--results <dir>]
 //            [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...
 // UiSnapshot --signal "<carrier>" [--signal "<carrier>"] -o <out.png> [--tab n] [--fc <expr>] [--size WxH] [steps]
-// UiSnapshot --chain <file.cchain> -o <out.png> [--select <stage>] [--blocks-png <png>] [--size WxH] [steps]
-//   the RF Chain Budget window; --blocks-png also writes the Blocks view's Copy picture, the clipboard's 2x bitmap
+// UiSnapshot --chain <file.cchain> -o <out.png> [--select <stage>] [--blocks-png <png>] [--chain-tab <header>] [--size WxH] [steps]
+//   the RF Chain Budget window; --blocks-png also writes the Blocks view's Copy picture, the clipboard's 2x bitmap;
+//   --chain-tab selects the tab with that header ("Link", "Distance sweep"); --chain-scroll <px> scrolls its pane down
 // UiSnapshot --snp <file.sNp> -o <out.png> [--size WxH] [steps]
 // UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]
 // UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]
@@ -173,7 +174,8 @@ string? planarMeshCem = null;       // brief-pms-4: --clay with a .cem's planar 
 string? planarRunCem = null;        // brief-pms-6: --clay with a .cem RUN, its mesh and current-density map on the canvas
 string? place = null;
 string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null, cem = null;
-string? chainFile = null, chainBlocksPng = null;
+string? chainFile = null, chainBlocksPng = null, chainTab = null;
+double chainScroll = 0;
 // brief-dfr32-3 — a .c3d's setup cards beside its Properties panel: --delete-fields runs a card's Delete Saved Fields (into a
 // scratch folder, never the Trash) and --c3d-row selects an Object Tree row (a field plot) for the panel.
 string? c3dSetups = null, c3dDeleteFields = null, c3dRow = null;
@@ -261,6 +263,8 @@ for (int i = 0; i < args.Length; i++)
         case "--signal" when i + 1 < args.Length: signal.Add(args[++i]); break;
         case "--chain" when i + 1 < args.Length: chainFile = Path.GetFullPath(args[++i]); break;
         case "--blocks-png" when i + 1 < args.Length: chainBlocksPng = Path.GetFullPath(args[++i]); break;
+        case "--chain-tab" when i + 1 < args.Length: chainTab = args[++i]; break;
+        case "--chain-scroll" when i + 1 < args.Length: chainScroll = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture); break;
         case "--snp" when i + 1 < args.Length: snp = Path.GetFullPath(args[++i]); break;
         case "--tab" when i + 1 < args.Length: previewTab = int.Parse(args[++i]); break;
         case "--standalone": standalone = true; break;
@@ -1392,6 +1396,20 @@ else if (chainFile is not null)
     if (sizeGiven) { host.Width = width; host.Height = height; }
     host.Show();
     Pump();
+    if (chainTab is not null)
+    {
+        var tabs = host.GetVisualDescendants().OfType<TabItem>().ToList();
+        (tabs.FirstOrDefault(t => t.Header as string == chainTab)
+            ?? throw new InvalidOperationException($"--chain-tab '{chainTab}': the tabs are {string.Join(" | ", tabs.Select(t => t.Header))}")).IsSelected = true;
+        Pump();
+        if (chainScroll > 0 && host.GetVisualDescendants().OfType<TabControl>()
+                .Select(tc => tc.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault(sv => sv.IsEffectivelyVisible && sv.Extent.Height > sv.Viewport.Height))
+                .LastOrDefault(sv => sv is not null) is { } pane)
+        {
+            pane.Offset = new Vector(0, chainScroll);
+            Pump();
+        }
+    }
 }
 else if (signal.Count > 0)
 {

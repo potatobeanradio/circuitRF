@@ -208,7 +208,14 @@ public static class ChainBudget
         ("NFtot_dB", "dB", r => r.Totals!.NfDb),
         ("NFarray_dB", "dB", r => ChainCapacity.Read(r)!.NfArrayDb),
         ("IP1dBtot_dBm", "dBm", r => r.Totals!.Ip1dbDbm),
+        ("PathLoss_dB", "dB", r => Propagation(r)?.TotalDb ?? double.NaN),
+        ("Margins_dB", "dB", r => Propagation(r)?.Margins.AppliedDb ?? double.NaN),
+        ("Sensitivity_dBm", "dBm", r => r.Totals!.SensitivityDbm),
+        ("LinkMargin_dB", "dB", r => r.Design!.Link?.Budget(r.Design.FrequencyHz) is { Propagation: { } p } l
+                                     ? l.PrxDbm - p.Margins.AppliedDb - r.Totals!.SensitivityDbm : double.NaN),
     ];
+
+    private static ChainPropagationResult? Propagation(ChainBudgetResult r) => r.Design!.Link?.Budget(r.Design.FrequencyHz).Propagation;
 
     /// <summary>
     /// One sweep of the design (<see cref="ChainSweep"/>): at each point a copy with the carrier, the transmit elements or
@@ -229,6 +236,8 @@ public static class ChainBudget
             {
                 case ChainSweep.Frequency: c.FrequencyHz = v; break;
                 case ChainSweep.TxElements: if (c.Link is not null) c.Link.Tx["Elements"] = ChainValue.Format(v); break;
+                case ChainSweep.Distance or ChainSweep.Elevation or ChainSweep.Availability:
+                    c.Link!.Path[s.Of] = v.ToString("R", System.Globalization.CultureInfo.InvariantCulture); break;
                 default:
                     if (cmb < 0) break;
                     if (v < 2) c.Stages.RemoveAt(cmb);
@@ -248,6 +257,9 @@ public static class ChainBudget
         {
             ChainSweep.Frequency => new Axis("freq", values, "Hz"),
             ChainSweep.TxElements => new Axis("Mtx", values),
+            ChainSweep.Distance => new Axis("distance", values, "m"),
+            ChainSweep.Elevation => new Axis("elevation", values, "deg"),
+            ChainSweep.Availability => new Axis("availability", values, "%"),
             _ => new Axis("Mrx", values),
         };
         var ds = new DataSet();
@@ -285,28 +297,42 @@ public static class ChainBudget
 
 /// <summary>
 /// A sweep of a chain: <see cref="Of"/> the carrier frequency (<see cref="Points"/> carriers evenly from
-/// <see cref="From"/> to <see cref="To"/>, Hz), or the transmit or receive array's elements (as many sizes spread evenly
-/// in ratio, each rounded to a whole element, a size once).
+/// <see cref="From"/> to <see cref="To"/>, Hz), the transmit or receive array's elements (as many sizes spread evenly
+/// in ratio, each rounded to a whole element, a size once), the link's distance (spread evenly in ratio, m), a
+/// satellite's elevation (deg) or the availability (%), each evenly.
 /// </summary>
 public sealed record ChainSweep(string Of, double From, double To, int Points)
 {
     public const string Frequency = "Frequency", TxElements = "TxElements", RxElements = "RxElements";
+    public const string Distance = "Distance", Elevation = "Elevation", Availability = "Availability";
+
+    /// <summary>Every kind of sweep, in the order the window lists them.</summary>
+    public static readonly string[] Kinds = [Frequency, TxElements, RxElements, Distance, Elevation, Availability];
+
+    /// <summary>The kinds a version-2 reader knows.</summary>
+    internal static bool IsVersion2(string of) => of is Frequency or TxElements or RxElements;
 
     /// <summary>The points, in order.</summary>
     public double[] Values()
     {
         if (Points < 2) return [From];
-        if (Of == Frequency) return [.. Enumerable.Range(0, Points).Select(i => From + i * (To - From) / (Points - 1))];
+        if (Of is Frequency or Elevation or Availability) return [.. Enumerable.Range(0, Points).Select(i => From + i * (To - From) / (Points - 1))];
+        if (Of == Distance) return [.. Enumerable.Range(0, Points).Select(i => From * Math.Pow(To / From, i / (double)(Points - 1)))];
         return [.. Enumerable.Range(0, Points).Select(i => Math.Round(From * Math.Pow(To / From, i / (double)(Points - 1)))).Distinct()];
     }
 
     /// <summary>Why it cannot be run, or null.</summary>
     public string? Refusal(ChainDesign d) =>
-        Of is not (Frequency or TxElements or RxElements) ? $"A sweep is of {Frequency}, {TxElements} or {RxElements}, not '{Of}'."
+        !Kinds.Contains(Of) ? $"A sweep is of {string.Join(", ", Kinds[..^1])} or {Kinds[^1]}, not '{Of}'."
         : !(From > 0 && To > From) || !double.IsFinite(To) ? $"The {Of} sweep runs from a value above 0 to a larger one."
         : Points < 2 ? $"The {Of} sweep needs two points at least."
-        : Of != Frequency && (From != Math.Round(From) || To != Math.Round(To)) ? $"The {Of} sweep runs over whole numbers of elements."
+        : Of is TxElements or RxElements && (From != Math.Round(From) || To != Math.Round(To)) ? $"The {Of} sweep runs over whole numbers of elements."
         : Of == TxElements && d.Link is null ? "The TxElements sweep sizes the transmitter, and the chain has no link."
+        : Of is Distance or Elevation or Availability && d.Link is null ? $"The {Of} sweep is of the link, and the chain has no link."
+        : Of == Distance && d.Link!.IsSatellite ? "The Distance sweep moves the receiver, and a satellite path's distance is its slant range: sweep its Elevation."
+        : Of == Elevation && !d.Link!.IsSatellite ? "The Elevation sweep is of a satellite path (Model=satellite)."
+        : Of == Elevation && To > 90 ? "The Elevation sweep runs to 90 deg at most."
+        : Of == Availability && To >= 100 ? "The Availability sweep runs below 100 %."
         : Of == RxElements && d.Stages.All(s => s.Part != ChainParts.Combiner) ? "The RxElements sweep sizes the receive array, which is the chain's Combiner, and the chain has none."
         : null;
 }

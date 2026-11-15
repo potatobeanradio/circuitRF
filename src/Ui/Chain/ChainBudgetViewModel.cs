@@ -20,7 +20,7 @@ public sealed partial class ChainParamViewModel(ChainParam param, string value, 
     public string Name => param.Name;
     /// <summary>The unit a bare number is read in, shown beside the field. A frequency's text carries its own unit
     /// ("2.35 GHz"), so none is shown for one.</summary>
-    public string Unit => param.Unit is "dB" or "dBm" or "deg" or "dBi" or "%" or "dB/km" ? param.Unit : "";
+    public string Unit => param.ShowUnit || param.Unit is "dB" or "dBm" or "deg" or "dBi" or "%" or "dB/km" ? param.Unit : "";
 
     /// <summary>A budget-only value left blank is not written into the stage, so a chain that does not use one saves as
     /// it always did.</summary>
@@ -31,9 +31,22 @@ public sealed partial class ChainParamViewModel(ChainParam param, string value, 
     public bool IsText => !HasOptions;
     /// <summary>The value names a file: the row offers a picker beside the box.</summary>
     public bool IsFile => param.IsFile;
-    public string Watermark => param.Default.Length > 0 ? param.Default : param.BlankAllowed ? "blank" : "";
+    public string Watermark => param.Placeholder ?? (param.Default.Length > 0 ? param.Default : param.BlankAllowed ? "blank" : "");
 
-    [ObservableProperty] private string _value = value;
+    /// <summary>The field's text. A list whose value is not one of its choices (a blank, which means the default) shows
+    /// nothing picked, and the null it hands back is not taken as an edit.</summary>
+    public string Value
+    {
+        get => _value;
+        set
+        {
+            if (value is null || value == _value) return;
+            _value = value;
+            OnPropertyChanged();
+            OnValueChanged(value);
+        }
+    }
+    private string _value = value;
 
     /// <summary>The value typed here makes the budget refuse the chain: the box is drawn invalid, the views keep the
     /// last chain that evaluated, and leaving the box puts <see cref="LastGood"/> back.</summary>
@@ -43,7 +56,7 @@ public sealed partial class ChainParamViewModel(ChainParam param, string value, 
     public string LastGood { get; set; } = value;
 
     // A typed value is one undo step however many keystrokes it took; a pick from the list is a step of its own.
-    partial void OnValueChanged(string value) => changed(IsText ? this : null);
+    private void OnValueChanged(string value) => changed(IsText ? this : null);
 }
 
 /// <summary>One symbol of a stage's block in the block view: the System block whose artwork it is drawn with, and a
@@ -215,24 +228,38 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     public CircuitRF.Render.DataDisplay.Plot? DepthPhasePlot => _depthPhase?.PlotVM.Plot;
     public CircuitRF.Render.DataDisplay.Plot? DepthBandPlot => _depthBand?.PlotVM.Plot;
 
-    private CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel? _linkTable, _receiverTable;
+    private CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel? _linkTable, _receiverTable, _marginsTable, _lossTable;
 
-    // The sweeps' tabs: four plots each, the carrier's, the transmit array's and the receive array's.
-    private readonly CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel?[][] _sweep = [new CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel?[4], new CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel?[4], new CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel?[4]];
-    private static readonly string[] SweepOf = [ChainSweep.Frequency, ChainSweep.TxElements, ChainSweep.RxElements];
+    // The sweeps' tabs: four plots each, in ChainSweep.Kinds' order — the carrier's, the transmit array's, the receive
+    // array's, and the path's distance, elevation and availability.
+    private readonly CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel?[][] _sweep =
+        [.. ChainSweep.Kinds.Select(_ => new CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel?[4])];
+    private static readonly string[] SweepOf = ChainSweep.Kinds;
     public CircuitRF.Render.DataDisplay.Plot?[] FrequencySweepPlots => [.. _sweep[0].Select(h => h?.PlotVM.Plot)];
     public CircuitRF.Render.DataDisplay.Plot?[] TxSweepPlots => [.. _sweep[1].Select(h => h?.PlotVM.Plot)];
     public CircuitRF.Render.DataDisplay.Plot?[] RxSweepPlots => [.. _sweep[2].Select(h => h?.PlotVM.Plot)];
-    [ObservableProperty] private bool _hasFrequencySweep, _hasTxSweep, _hasRxSweep;
+    public CircuitRF.Render.DataDisplay.Plot?[] DistanceSweepPlots => [.. _sweep[3].Select(h => h?.PlotVM.Plot)];
+    public CircuitRF.Render.DataDisplay.Plot?[] ElevationSweepPlots => [.. _sweep[4].Select(h => h?.PlotVM.Plot)];
+    public CircuitRF.Render.DataDisplay.Plot?[] AvailabilitySweepPlots => [.. _sweep[5].Select(h => h?.PlotVM.Plot)];
+    [ObservableProperty] private bool _hasFrequencySweep, _hasTxSweep, _hasRxSweep, _hasDistanceSweep, _hasElevationSweep, _hasAvailabilitySweep;
 
     /// <summary>Each sweep the chain asks for, budgeted point by point, into its tab's plots; its notes join the chain's.</summary>
     private void RefillSweeps(ChainDesign d, List<string> notes)
     {
-        string[] props = [nameof(FrequencySweepPlots), nameof(TxSweepPlots), nameof(RxSweepPlots)];
-        for (int k = 0; k < 3; k++)
+        string[] props = [nameof(FrequencySweepPlots), nameof(TxSweepPlots), nameof(RxSweepPlots),
+                          nameof(DistanceSweepPlots), nameof(ElevationSweepPlots), nameof(AvailabilitySweepPlots)];
+        for (int k = 0; k < SweepOf.Length; k++)
         {
             var s = d.Sweeps.FirstOrDefault(x => x.Of == SweepOf[k]);
-            if (k == 0) HasFrequencySweep = s is not null; else if (k == 1) HasTxSweep = s is not null; else HasRxSweep = s is not null;
+            switch (k)
+            {
+                case 0: HasFrequencySweep = s is not null; break;
+                case 1: HasTxSweep = s is not null; break;
+                case 2: HasRxSweep = s is not null; break;
+                case 3: HasDistanceSweep = s is not null; break;
+                case 4: HasElevationSweep = s is not null; break;
+                default: HasAvailabilitySweep = s is not null; break;
+            }
             if (s is null) continue;
             var data = ChainBudget.Sweep(d, s, notes);
             var cfg = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.WindowSweep(s.Of);
@@ -251,6 +278,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     }
     public CircuitRF.Render.DataDisplay.Plot? LinkPlot => _linkTable?.PlotVM.Plot;
     public CircuitRF.Render.DataDisplay.Plot? ReceiverPlot => _receiverTable?.PlotVM.Plot;
+    public CircuitRF.Render.DataDisplay.Plot? MarginsPlot => _marginsTable?.PlotVM.Plot;
+    public CircuitRF.Render.DataDisplay.Plot? LossPlot => _lossTable?.PlotVM.Plot;
 
     /// <summary>True when the chain has a canceller: its tab shows the depth its errors leave.</summary>
     [ObservableProperty] private bool _hasCanceller;
@@ -353,9 +382,11 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     {
         var data = ChainBudget.ToDataSet(r);
         var cfg = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.WindowLink();
-        if (r.Design?.Link is not null) Refill(ref _linkTable, nameof(LinkPlot), cfg[0], BudgetSource, data);
-        else Refill(ref _linkTable, nameof(LinkPlot), cfg[0], BudgetSource, new RfCore.Data.DataSet());
+        var linkData = r.Design?.Link is not null ? data : new RfCore.Data.DataSet();
+        Refill(ref _linkTable, nameof(LinkPlot), cfg[0], BudgetSource, linkData);
         Refill(ref _receiverTable, nameof(ReceiverPlot), cfg[1], BudgetSource, data);
+        Refill(ref _marginsTable, nameof(MarginsPlot), cfg[2], BudgetSource, linkData);
+        Refill(ref _lossTable, nameof(LossPlot), cfg[3], BudgetSource, linkData);
     }
 
     private void RefillCascade(ChainBudgetResult r)
@@ -513,7 +544,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         Stages = [.. Stages.Select(s => s.ToStage())],
         Blockers = ParseBlockers() ?? [new ChainBlocker(double.NaN, double.NaN)],
         Demo = Demo,
-        Link = HasLink ? new ChainLink { Tx = Values(LinkTx), Path = Values(LinkPath) } : null,
+        Link = HasLink ? new ChainLink { Tx = Values(LinkTx), Path = Values(PropagationRows) } : null,
         FractionalBandwidth = Rx("FBW").Trim().Length == 0 ? null : Parse(Rx("FBW"), 1, double.NaN),
         Streams = Parse(Rx("Streams"), 1, double.NaN) is var st && st >= 1 && st == Math.Round(st) && st < int.MaxValue ? (int)st : 0,
         NfAllowanceDb = Parse(Rx("NfAllowance"), 1, double.NaN),
@@ -537,10 +568,24 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     partial void OnHasLinkChanged(bool value) => Edited(null);
 
     public ObservableCollection<ChainParamViewModel> LinkTx { get; } = [];
-    public ObservableCollection<ChainParamViewModel> LinkPath { get; } = [];
     public ObservableCollection<ChainParamViewModel> ReceiverInputs { get; } = [];
     public ObservableCollection<ChainParamViewModel> SweepInputs { get; } = [];
-    private IEnumerable<ChainParamViewModel> LinkParams => LinkTx.Concat(LinkPath).Concat(ReceiverInputs).Concat(SweepInputs);
+
+    // The Propagation section, grouped as the registry groups its parameters: the path and the model, the model's own
+    // (Large scale), the added losses, and the margins with the availability they are read at. All four are the link's
+    // Path in the file; a model picked rebuilds the model's rows, keeping every value a row of the same name had.
+    public ObservableCollection<ChainParamViewModel> LinkPath { get; } = [];
+    public ObservableCollection<ChainParamViewModel> LinkLargeScale { get; } = [];
+    public ObservableCollection<ChainParamViewModel> LinkAddedLosses { get; } = [];
+    public ObservableCollection<ChainParamViewModel> LinkMargins { get; } = [];
+    private IEnumerable<ChainParamViewModel> PropagationRows => LinkPath.Concat(LinkLargeScale).Concat(LinkAddedLosses).Concat(LinkMargins);
+    private IEnumerable<ChainParamViewModel> LinkParams => LinkTx.Concat(PropagationRows).Concat(ReceiverInputs).Concat(SweepInputs);
+
+    /// <summary>The Large scale group's heading: the model and its document.</summary>
+    [ObservableProperty] private string _modelTitle = "";
+
+    /// <summary>True when the model has parameters of its own (free space has none).</summary>
+    [ObservableProperty] private bool _hasLargeScale;
 
     /// <summary>The sweeps, one line each as the Blockers are: "from, to, points".</summary>
     public static readonly IReadOnlyList<ChainParam> SweepParameters =
@@ -548,6 +593,9 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         new(ChainSweep.Frequency, "", "", Numeric: false, BlankAllowed: true, Help: "the carrier: from, to, points (\"24.25 GHz, 27.5 GHz, 66\"); blank: none"),
         new(ChainSweep.TxElements, "", "", Numeric: false, BlankAllowed: true, Help: "the transmit array: from, to, sizes spread in ratio (\"4, 1024, 9\"); blank: none"),
         new(ChainSweep.RxElements, "", "", Numeric: false, BlankAllowed: true, Help: "the receive array, the Combiner's N: from, to, sizes (\"2, 64, 6\"); blank: none"),
+        new(ChainSweep.Distance, "", "", Numeric: false, BlankAllowed: true, Help: "the link's distance, m: from, to, points spread in ratio (\"50, 5000, 41\"); blank: none"),
+        new(ChainSweep.Elevation, "", "", Numeric: false, BlankAllowed: true, Help: "a satellite path's elevation, deg: from, to, points (\"10, 90, 17\"); blank: none"),
+        new(ChainSweep.Availability, "", "", Numeric: false, BlankAllowed: true, Help: "the availability, %: from, to, points (\"90, 99.99, 21\"); blank: none"),
     ];
 
     /// <summary>The sweeps typed; one that is not "from, to, points" is kept as no numbers, which the budget refuses.</summary>
@@ -581,21 +629,44 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             ["FBW"] = d.FractionalBandwidth is { } f ? N2(f) : "", ["Streams"] = d.Streams.ToString(CultureInfo.InvariantCulture),
             ["NfAllowance"] = N2(d.NfAllowanceDb), ["RxBackoff"] = N2(d.RxBackoffDb),
         };
-        void Fill(ObservableCollection<ChainParamViewModel> row, IReadOnlyList<ChainParam> ps, string prefix, IReadOnlyDictionary<string, string>? from)
-        {
-            row.Clear();
-            foreach (var p in ps)
-                row.Add(new ChainParamViewModel(p, kept?.GetValueOrDefault(prefix + p.Name) ?? from?.GetValueOrDefault(p.Name) ?? p.Default, Edited));
-        }
-        Fill(LinkTx, ChainLink.TxParameters, "Tx.", d.Link?.Tx);
-        Fill(LinkPath, ChainLink.PathParameters, "Path.", d.Link?.Path);
-        Fill(ReceiverInputs, ReceiverParameters, "Rx.", rx);
-        Fill(SweepInputs, SweepParameters, "Sw.", d.Sweeps.GroupBy(s => s.Of).ToDictionary(g => g.Key, g => FormatSweep(g.First())));
+        Fill(LinkTx, ChainLink.TxParameters, "Tx.", d.Link?.Tx, kept);
+        Fill(LinkPath, ChainPropagation.PathGroup, "Path.", d.Link?.Path, kept);
+        FillModelRows(d.Link?.Path, kept);
+        Fill(ReceiverInputs, ReceiverParameters, "Rx.", rx, kept);
+        Fill(SweepInputs, SweepParameters, "Sw.", d.Sweeps.GroupBy(s => s.Of).ToDictionary(g => g.Key, g => FormatSweep(g.First())), kept);
+    }
+
+    private void Fill(ObservableCollection<ChainParamViewModel> row, IReadOnlyList<ChainParam> ps, string prefix,
+                      IReadOnlyDictionary<string, string>? from, IReadOnlyDictionary<string, string>? kept)
+    {
+        row.Clear();
+        foreach (var p in ps)
+            row.Add(new ChainParamViewModel(p, kept?.GetValueOrDefault(prefix + p.Name) ?? from?.GetValueOrDefault(p.Name) ?? p.Default,
+                                            p.Name == "Model" && prefix == "Path." ? k => { ModelPicked(); Edited(k); } : Edited));
+    }
+
+    /// <summary>The rows the link's model decides: its own, the added losses and the margins.</summary>
+    private void FillModelRows(IReadOnlyDictionary<string, string>? from, IReadOnlyDictionary<string, string>? kept)
+    {
+        string name = LinkPath.FirstOrDefault(p => p.Name == "Model")?.Value.Trim() ?? "";
+        var model = RfCore.Propagation.PropagationModels.Find(name.Length > 0 ? name : ChainPropagation.Free) ?? RfCore.Propagation.PropagationModels.All[0];
+        Fill(LinkLargeScale, ChainPropagation.LargeScaleGroup(model), "Path.", from, kept);
+        Fill(LinkAddedLosses, ChainPropagation.AddedLossesGroup, "Path.", from, kept);
+        Fill(LinkMargins, ChainPropagation.MarginsGroup(model), "Path.", from, kept);
+        ModelTitle = $"{model.Title} — {model.Document}";
+        HasLargeScale = LinkLargeScale.Count > 0;
+    }
+
+    /// <summary>Another model picked: its rows in place of the last one's, a value kept wherever a row of that name was.</summary>
+    private void ModelPicked()
+    {
+        if (_loading || _restoring) return;
+        FillModelRows(null, LinkLargeScale.Concat(LinkAddedLosses).Concat(LinkMargins).ToDictionary(p => "Path." + p.Name, p => p.Value));
     }
 
     /// <summary>The rows' values, by row and name, as an undo step keeps them.</summary>
     private string LinkSnapshot() => System.Text.Json.JsonSerializer.Serialize(
-        LinkTx.Select(p => ("Tx." + p.Name, p.Value)).Concat(LinkPath.Select(p => ("Path." + p.Name, p.Value)))
+        LinkTx.Select(p => ("Tx." + p.Name, p.Value)).Concat(PropagationRows.Select(p => ("Path." + p.Name, p.Value)))
               .Concat(ReceiverInputs.Select(p => ("Rx." + p.Name, p.Value)))
               .Concat(SweepInputs.Select(p => ("Sw." + p.Name, p.Value))).ToDictionary(x => x.Item1, x => x.Item2));
 
@@ -786,6 +857,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             row.Summary = $"On its own: G {D(s.Stage.GainDb)} dB · NF {D(s.Stage.NfDb)} dB · IIP3 {Dbm(s.Stage.Iip3Dbm)} · IP1dB {Dbm(s.Stage.Ip1dbDbm)}";
         Diagram = ChainBenches.Diagram(d, r);
         Blocks(r.Design ?? d, r);
+        PropagationCard(r);
         RefillCascade(r);
         RefillLevels(d, r);
         RefillCanceller(r.Design ?? d);
@@ -807,8 +879,13 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
                   $"Rate {ChainCapacity.Rate(o.RateBps)}" + (o.Streams > 1 ? $" over {o.Streams} streams" : "") + $"    Ceiling {D(o.CeilingDbm)} dBm"
                 : "") +
             (r.Design is { Link: { } link } rd && link.Budget(rd.FrequencyHz) is var l
-                ? $"\nLink: EIRP {D(l.EirpDbm)} dBm from {l.Mtx} elements    Free space {D(l.LfsDb)} dB, {D(l.AtmDb)} dB more    " +
-                  $"Received {D(l.PrxDbm)} dBm per element    Input {D(rd.InputPowerDbm)} dBm"
+                ? $"\nLink: EIRP {D(l.EirpDbm)} dBm from {l.Mtx} elements    Path loss {D(l.Propagation?.TotalDb ?? double.NaN)} dB " +
+                  $"({l.Propagation?.Model ?? "?"}, free space {D(l.LfsDb)} dB)    Received {D(l.PrxDbm)} dBm per element    Input {D(rd.InputPowerDbm)} dBm" +
+                  (ChainPropagation.LinkMargin(r) is { } lm
+                      ? $"\nMargins {D(lm.MarginsDb)} dB at {l.Propagation!.Margins.AvailabilityPct:0.####} %    Sensitivity {D(lm.SensitivityDbm)} dBm    " +
+                        $"Link margin {D(lm.LinkMarginDb)} dB, availability {(lm.Met ? "met" : "not met")}" +
+                        (double.IsFinite(lm.ZeroMarginDistanceM) ? $"    0 dB at {ChainLink.Metres(lm.ZeroMarginDistanceM)}" : "")
+                      : "")
                 : "") +
             (ChainLink.Power(r) is { TotalW: > 0 } pw
                 ? $"\nDC power: transmit {ChainLink.Watts(pw.TxW)}, receive {ChainLink.Watts(pw.RxW)}, total {ChainLink.Watts(pw.TotalW)}    " +
@@ -929,6 +1006,23 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             }
             else row.KeyLine = row.CascadeLine = "";
         }
+    }
+
+    /// <summary>The Blocks view's propagation card, before IN: the model, the path loss, the margins and the link margin.</summary>
+    [ObservableProperty] private string _propagationModel = "", _propagationLoss = "", _propagationMargins = "";
+
+    private void PropagationCard(ChainBudgetResult r)
+    {
+        if (r.Design is not { Link: { } link } d || link.Budget(d.FrequencyHz).Propagation is not { } p)
+        {
+            PropagationModel = PropagationLoss = PropagationMargins = "";
+            return;
+        }
+        var lm = ChainPropagation.LinkMargin(r);
+        PropagationModel = p.Model;
+        PropagationLoss = $"loss {D(p.TotalDb)} dB";
+        PropagationMargins = $"margins {D(p.Margins.AppliedDb)} dB at {p.Margins.AvailabilityPct.ToString("0.####", CultureInfo.InvariantCulture)} %"
+                           + (lm is null ? "" : $"\nlink margin {D(lm.LinkMarginDb)} dB");
     }
 
     private static IReadOnlyList<ChainBlockGlyph> Glyphs(ChainStage st)

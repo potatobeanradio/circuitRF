@@ -268,5 +268,130 @@
     ]
    }
   }
- ]
+ ],
+ "margins": [
+  {
+   "Fading": "rayleigh",
+   "KFactor": null,
+   "m": null,
+   "Sigma": 8.0,
+   "Availability": 99.0,
+   "expected": {
+    "Mshadow_dB": 18.610782992326726,
+    "Mfade_dB": 19.97819425120577,
+    "Mcomp_dB": 26.953119920802916
+   }
+  },
+  {
+   "Fading": "rayleigh",
+   "KFactor": null,
+   "m": null,
+   "Sigma": 4.0,
+   "Availability": 99.9,
+   "expected": {
+    "Mshadow_dB": 12.360929224671384,
+    "Mfade_dB": 29.99782762226743,
+    "Mcomp_dB": 31.836996535583886
+   }
+  },
+  {
+   "Fading": "nakagami",
+   "KFactor": null,
+   "m": 2.5,
+   "Sigma": 6.0,
+   "Availability": 99.0,
+   "expected": {
+    "Mshadow_dB": 13.958087244245045,
+    "Mfade_dB": 9.55226632631065,
+    "Mcomp_dB": 16.930450679128835
+   }
+  },
+  {
+   "Fading": "rician",
+   "KFactor": 6.0,
+   "m": null,
+   "Sigma": 0.0,
+   "Availability": 99.0,
+   "expected": {
+    "Mshadow_dB": 0.0,
+    "Mfade_dB": 11.546395207284581,
+    "Mcomp_dB": 11.546395207284581
+   }
+  },
+  {
+   "Fading": "rician",
+   "KFactor": 9.0,
+   "m": null,
+   "Sigma": 4.0,
+   "Availability": 99.0,
+   "expected": {
+    "Mshadow_dB": 9.305391496163363,
+    "Mfade_dB": 7.209343852220661,
+    "Mcomp_dB": 11.620129852421208
+   }
+  },
+  {
+   "Fading": "none",
+   "KFactor": null,
+   "m": null,
+   "Sigma": 8.0,
+   "Availability": 90.0,
+   "expected": {
+    "Mshadow_dB": 10.252412524356805,
+    "Mfade_dB": 0.0,
+    "Mcomp_dB": 10.252412524356805
+   }
+  }
+ ],
+ "required_snr": [
+  {
+   "Modulation": "qpsk",
+   "TargetBer": 1e-06,
+   "expected": {
+    "EbN0req_dB": 10.529831699571446,
+    "SNRreq_dB": 13.540131656211258
+   }
+  },
+  {
+   "Modulation": "16qam",
+   "TargetBer": 1e-05,
+   "expected": {
+    "EbN0req_dB": 13.434521734969156,
+    "SNRreq_dB": 19.45512164824878
+   }
+  },
+  {
+   "Modulation": "64qam",
+   "TargetBer": 1e-06,
+   "expected": {
+    "EbN0req_dB": 18.777249982940717,
+    "SNRreq_dB": 26.558762486777155
+   }
+  }
+ ],
+ "satellite": {
+  "FrequencyHz": 20000000000.0,
+  "Path": {
+   "Model": "satellite",
+   "Altitude": "35786",
+   "Elevation": "40",
+   "Gas": "on",
+   "Rain": "fixed",
+   "Clouds": "on",
+   "Scintillation": "on",
+   "Availability": "99.9",
+   "RxAntennaGain": "40",
+   "Fading": "rayleigh",
+   "TargetBer": "1e-6",
+   "Modulation": "qpsk"
+  },
+  "expected": {
+   "PathLoss_dB": 217.1288329524834,
+   "Prx_dBm": -131.9926132733488,
+   "Margins_dB": 29.997827622267543,
+   "SlantRange_km": 37778.34393311766,
+   "Latency_ms": 126.0149911213499,
+   "LinkMargin_dB": -81.75792720189122
+  }
+ }
 }

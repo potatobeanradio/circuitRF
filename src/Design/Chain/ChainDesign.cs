@@ -158,10 +158,10 @@ public sealed class ChainDesign
                 ChainSnp.Read(s, new ChainStageContext(inputHz[si], BaseDirectory), r);
         }
         if (combiners > 1) r.Add("A chain has at most one Combiner: the stages before it are one element's branch.");
-        Link?.Refusals(r);
+        Link?.Refusals(r, FrequencyHz);
         foreach (var sw in Sweeps)
             if (sw.Refusal(this) is { } no) r.Add(no);
-        if (Sweeps.GroupBy(sw => sw.Of).Any(g => g.Count() > 1)) r.Add("A chain sweeps each of the frequency and the two arrays once at most.");
+        if (Sweeps.GroupBy(sw => sw.Of).Any(g => g.Count() > 1)) r.Add("A chain sweeps each quantity once at most.");
         foreach (var b in Blockers)
             if (!double.IsFinite(b.OffsetHz) || !double.IsFinite(b.LevelDbm))
                 r.Add("A blocker is an offset and a level, \"150 MHz, -40\"; one of them is not a number.");
@@ -225,12 +225,15 @@ public static class ChainValue
 public static class ChainDesignIo
 {
     public const string Extension = ".cchain";
-    public const int CurrentFormatVersion = 2;
+    public const int CurrentFormatVersion = 3;
 
-    /// <summary>A chain is written as version 2 only when it uses what version 1 did not have, so a reader of version 1
-    /// refuses it rather than dropping it on save, and every other chain stays readable there.</summary>
+    /// <summary>A chain is written as version 2 only when it uses what version 1 did not have, and as version 3 only when
+    /// it uses the Propagation section (a model, the heights, the margins, the required SNR's target) or a sweep of the
+    /// link, so a reader of the older version refuses it rather than dropping it on save, and every other chain stays
+    /// readable there.</summary>
     private static int VersionOf(ChainDesign d) =>
-        d.FractionalBandwidth is not null || d.Streams != 1 || d.Link is not null || d.Sweeps.Count > 0 || d.NfAllowanceDb != 1 || d.RxBackoffDb != 10
+        d.Link is { } l && ChainPropagation.UsesNewFields(l) || d.Sweeps.Any(s => !ChainSweep.IsVersion2(s.Of)) ? 3
+        : d.FractionalBandwidth is not null || d.Streams != 1 || d.Link is not null || d.Sweeps.Count > 0 || d.NfAllowanceDb != 1 || d.RxBackoffDb != 10
         || d.Stages.Any(s => s.Parameters.Any(kv => kv.Key is "Pdc" or "GainPerStage" || ChainScaling.IsScaled(kv.Value)))
         || d.Stages.Any(s => s.Part == ChainParts.Combiner && s.Get("Topology").Trim().Equals("Levels", StringComparison.OrdinalIgnoreCase)) ? 2 : 1;
 
