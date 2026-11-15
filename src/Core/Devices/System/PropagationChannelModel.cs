@@ -62,6 +62,7 @@ public sealed class PropagationChannelModel : ComponentModel, IReportsWarnings, 
     public static readonly IReadOnlySet<string> WordParameters = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "PathLoss", "Multipath", "File", "TxPattern", "RxPattern", "DopplerComp", "Reverse", "TxPos", "RxPos", "TxVel", "RxVel",
+        "Fading", "Doppler", "Profile", "Terrain",
     };
 
     /// <summary>The parameters stated in degrees (a bare number is degrees).</summary>
@@ -76,6 +77,8 @@ public sealed class PropagationChannelModel : ComponentModel, IReportsWarnings, 
         "PathLoss", "Multipath", "File", "TxPattern", "RxPattern", "DopplerComp", "Reverse", "TxPos", "RxPos", "TxVel", "RxVel",
         "Distance", "TxHeight", "RxHeight", "TxAz", "TxEl", "TxRoll", "RxAz", "RxEl", "RxRoll",
         "TxGain", "RxGain", "TxZ", "RxZ", "RxTant", "TimeOffset", "f0",
+        // brief-pch-7 — small-scale fading and the realization's draws
+        "Fading", "KFactor", "NakagamiM", "Doppler", "Velocity", "fD", "Sinusoids", "Profile", "DelaySpread", "Seed", "Drop", "Terrain",
     };
 
     /// <summary>Parameters every component may carry that belong to no model.</summary>
@@ -110,6 +113,26 @@ public sealed class PropagationChannelModel : ComponentModel, IReportsWarnings, 
     private readonly bool _dopplerComp;
     private readonly IReadOnlyList<RayListRow>? _rayList;
     private readonly string? _rayListPath;
+
+    // brief-pch-7 — small-scale fading
+    private readonly FadingKind? _fading;               // stated; null keeps a profile's own (static for none and a plain file)
+    private readonly double? _kFactorDb;
+    private readonly double _nakagamiM;
+    private readonly DopplerShape _spectrum;
+    private readonly double? _velocity, _fd;
+    private readonly int _sinusoids;
+    private readonly TdlProfile? _profile;
+    private readonly double? _delaySpread;
+    private readonly ulong _seed;
+    private readonly long _drop;
+
+    /// <summary>The instance path the fading draws' streams are named by (design note §8.1), bound after elaboration.</summary>
+    public string InstancePath
+    {
+        get => _instancePath;
+        set { _instancePath = value; lock (_realizations) _realizations.Clear(); }
+    }
+    private string _instancePath = "";
 
     /// <summary>The instance this one is the transposed realization of (<c>Reverse=</c>), bound after elaboration.</summary>
     public string? ReverseOf { get; }
@@ -208,9 +231,44 @@ public sealed class PropagationChannelModel : ComponentModel, IReportsWarnings, 
             "common" => true,
             var w => throw new ParameterRefusalException(PropagationChannelDiagnostics.DopplerComp(w)),
         };
-        switch (Word("Multipath", "none").ToLowerInvariant())
+        // brief-pch-7 — fading, its Doppler, a tapped delay line's profile, the draws
+        string fadingWord = Word("Fading", "");
+        if (fadingWord.Length > 0)
+            _fading = TapFading.TryParseKind(fadingWord, out var fk) ? fk
+                      : throw new ParameterRefusalException(PropagationChannelDiagnostics.Fading(fadingWord));
+        _kFactorDb = p.ContainsKey("KFactor") ? Num("KFactor", 0) : null;
+        _nakagamiM = Num("NakagamiM", 1);
+        if (!(_nakagamiM >= 0.5)) throw new ParameterRefusalException(PropagationChannelDiagnostics.NakagamiM(_nakagamiM));
+        string dopplerWord = Word("Doppler", "classical");
+        if (!TapFading.TryParseSpectrum(dopplerWord, out _spectrum))
+            throw new ParameterRefusalException(PropagationChannelDiagnostics.DopplerSpectrum(dopplerWord));
+        _velocity = p.ContainsKey("Velocity") ? Num("Velocity", 0) : null;
+        _fd = p.ContainsKey("fD") ? Num("fD", 0) : null;
+        if (_velocity < 0 || _fd < 0) throw new ParameterRefusalException(PropagationChannelDiagnostics.DopplerNegative());
+        double sins = Num("Sinusoids", FadingProcess.DefaultSinusoids);
+        if (!(sins >= 4) || sins != Math.Floor(sins)) throw new ParameterRefusalException(PropagationChannelDiagnostics.Sinusoids(sins));
+        _sinusoids = (int)sins;
+        _delaySpread = p.ContainsKey("DelaySpread") ? Num("DelaySpread", 0) : null;
+        _seed = unchecked((ulong)(long)Math.Round(Num("Seed", 1)));
+        _drop = (long)Math.Round(Num("Drop", 1));
+        string multipath = Word("Multipath", "none").ToLowerInvariant();
+        string profileWord = Word("Profile", "").Trim('"');
+        if (profileWord.Length > 0 && multipath != "tdl")
+            throw new ParameterRefusalException(PropagationChannelDiagnostics.ProfileNeedsTdl(profileWord));
+        if (_kFactorDb is not null && _fading is null && multipath != "tdl" && !(multipath == "file"))
+            throw new ParameterRefusalException(PropagationChannelDiagnostics.KFactorNeedsRician());
+        switch (multipath)
         {
             case "none": break;
+            case "tdl":
+                if (profileWord.Length == 0) throw new ParameterRefusalException(PropagationChannelDiagnostics.TdlNeedsProfile(TdlProfiles.Names));
+                _profile = TdlProfiles.Find(profileWord)
+                           ?? throw new ParameterRefusalException(PropagationChannelDiagnostics.UnknownProfile(profileWord, TdlProfiles.Names));
+                if (_fading == FadingKind.Rician && !_profile.HasLos)
+                    throw new ParameterRefusalException(PropagationChannelDiagnostics.RicianNeedsLosProfile(_profile.Name));
+                try { _ = TdlProfiles.Resolve(_profile, _delaySpread, _kFactorDb); }
+                catch (PropagationRefusal ex) { throw new ParameterRefusalException(ex.Message); }
+                break;
             case "file":
                 _rayListPath = Word("File", "").Trim('"');
                 if (_rayListPath.Length == 0) throw new ParameterRefusalException(PropagationChannelDiagnostics.RayListNeedsFile());
@@ -221,6 +279,8 @@ public sealed class PropagationChannelModel : ComponentModel, IReportsWarnings, 
             case var w:
                 throw new ParameterRefusalException(PropagationChannelDiagnostics.Multipath(w));
         }
+        if (_fading == FadingKind.Rician && _kFactorDb is null && _profile is null && !(_rayList?.Any(r => r.KDb is not null) ?? false))
+            throw new ParameterRefusalException(PropagationChannelDiagnostics.KFactorNeedsRician());
         // every parameter the channel does not own is the large-scale model's, as text in the registry's unit
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (k, v) in p)
@@ -236,8 +296,9 @@ public sealed class PropagationChannelModel : ComponentModel, IReportsWarnings, 
         }
         if (values.TryGetValue("Rain", out var rain) && rain.Equals("drawn", StringComparison.OrdinalIgnoreCase))
             throw new ParameterRefusalException(PropagationChannelDiagnostics.RainDrawn());
-        if (values.TryGetValue("Profile", out var prof) && baseDirectory is { Length: > 0 } pr && !Path.IsPathRooted(prof))
-            values["Profile"] = Path.GetFullPath(Path.Combine(pr, prof));
+        // a terrain profile is Terrain= on the channel (Profile= names a tapped delay line), the model's own Profile
+        if (Word("Terrain", "").Trim('"') is { Length: > 0 } terrain)
+            values["Profile"] = baseDirectory is { Length: > 0 } pr && !Path.IsPathRooted(terrain) ? Path.GetFullPath(Path.Combine(pr, terrain)) : terrain;
         _modelValues = values;
         if (ReverseOf is null && _txPos is null && _model != "satellite" && !(_distance > 0))
             throw new ParameterRefusalException(PropagationChannelDiagnostics.NoPlacement());
@@ -278,10 +339,19 @@ public sealed class PropagationChannelModel : ComponentModel, IReportsWarnings, 
     /// part is over, the loss in excess of free space over d (dB, added losses in it), the rays (Doppler at that frequency),
     /// the common Doppler and its drift, the ends' geometry and frames.
     /// </summary>
+    /// <para>brief-pch-7: <c>Fades</c> is each ray's fading (a static ray's gain is 1 at every instant), <c>FdHz</c> the maximum
+    /// Doppler they were drawn at, <c>Profile</c> the tapped delay line's resolution when there is one.</para>
     public sealed record Realization(double ReferenceHz, PathLossResult LargeScale, double DistanceM, double ExcessDb,
                                      IReadOnlyList<ChannelRay> Rays, double CommonDopplerHz, double DriftHzps, ChannelGeometry Geometry,
-                                     IReadOnlyList<string> Notes)
+                                     IReadOnlyList<string> Notes, IReadOnlyList<FadingProcess> Fades, double FdHz, TdlRealization? Profile)
     {
+        /// <summary>True when any ray fades.</summary>
+        public bool Fading => Fades.Any(f => f.Spec.Kind != FadingKind.Static);
+
+        /// <summary>The coherence time: the lag at which the power-weighted correlation of the rays' gains first falls to one
+        /// half (note §2.4; 0.24/f_D for the classical spectrum), infinite when it never does.</summary>
+        public double CoherenceTimeS => SmallScale.CoherenceTime(Rays, Fades, FdHz);
+
         /// <summary>The bulk delay τ0 = d/c, reported and not simulated.</summary>
         public double BulkDelayS => DistanceM / PropagationMath.C;
         /// <summary>The largest excess delay.</summary>
@@ -345,10 +415,57 @@ public sealed class PropagationChannelModel : ComponentModel, IReportsWarnings, 
             }
             else d = geo.Distance;
             double excess = ls.LossDb - PropagationMath.FreeSpaceDb(f, d);
-            if (_rayList is { } list)
+            // brief-pch-7 — the maximum Doppler: fD, else Velocity (or the ends' relative speed) at the reference frequency
+            double fd = _fd ?? (_velocity ?? (geo.RxVel - geo.TxVel).Length) * f / PropagationMath.C;
+            var fades = new List<FadingProcess>();
+            TdlRealization? tdl = null;
+            FadingProcess Fade(int i, FadingKind kind, double? kLin, DopplerShape shape)
+                => new(new TapFading(kind, shape, fd, kLin ?? 0, _nakagamiM), _seed, _drop, $"{InstancePath}:tap{i + 1}", _sinusoids);
+            static double? KLin(double? db) => db is double x ? Math.Pow(10, x / 10) : null;
+            if (_profile is { } prof)
             {
-                rays = [.. geo.FromList(list, f)];
-                notes.Add($"{list.Count} ray(s) from {Path.GetFileName(_rayListPath)}, held static, each along the line of sight at both ends.");
+                tdl = TdlProfiles.Resolve(prof, _delaySpread, prof.HasLos ? _kFactorDb : null);
+                var los = geo.LineOfSight(f);
+                rays = [];
+                for (int i = 0; i < tdl.Taps.Count; i++)
+                {
+                    var tap = tdl.Taps[i];
+                    rays.Add(new ChannelRay($"tap {i + 1}", Math.Sqrt(tap.Power), tap.DelayS, 0, los.Departure, los.ArrivalFrom));
+                    var kind = _fading switch
+                    {
+                        FadingKind.Nakagami => FadingKind.Nakagami,
+                        FadingKind.Rayleigh => FadingKind.Rayleigh,
+                        _ => tap.K is null ? FadingKind.Rayleigh : FadingKind.Rician,
+                    };
+                    fades.Add(Fade(i, kind, tap.K, _spectrum));
+                }
+                notes.AddRange(tdl.Notes);
+            }
+            else if (_rayList is { } list)
+            {
+                // a profile that does not sum to one is normalized (the large-scale loss carries the mean), and says so
+                double sum = list.Sum(r => Math.Pow(10, r.PowerDb / 10));
+                double norm = 1 / Math.Sqrt(sum);
+                var listed = geo.FromList(list, f);
+                rays = [];
+                for (int i = 0; i < list.Count; i++)
+                {
+                    var row = list[i];
+                    var kind = row.KDb is not null ? FadingKind.Rician
+                               : _fading is { } fk ? (fk == FadingKind.Rician && _kFactorDb is null ? FadingKind.Rayleigh : fk)
+                               : row.Spectrum is not null ? FadingKind.Rayleigh : FadingKind.Static;
+                    var shape = row.Spectrum is { } sp && TapFading.TryParseSpectrum(sp, out var rs) ? rs : _spectrum;
+                    var ray = listed[i] with { Gain = listed[i].Gain * norm };
+                    // a fading tap's motion is its fading: no static Doppler unless the file states one
+                    if (kind != FadingKind.Static && row.DopplerHz is null) ray = ray with { DopplerHz = 0 };
+                    rays.Add(ray);
+                    fades.Add(Fade(i, kind, KLin(row.KDb ?? _kFactorDb), shape));
+                }
+                notes.Add($"{list.Count} tap(s) from {Path.GetFileName(_rayListPath)}, each along the line of sight at both ends"
+                          + (fades.Any(x => x.Spec.Kind != FadingKind.Static) ? "." : ", held static."));
+                if (Math.Abs(10 * Math.Log10(sum)) > 0.005)
+                    notes.Add(string.Format(CultureInfo.InvariantCulture, "{0}: its powers sum to {1:0.###} dB and are normalized to 0 dB "
+                                                + "(the large-scale loss carries the mean).", Path.GetFileName(_rayListPath), 10 * Math.Log10(sum)));
             }
             else if (_model.Equals("tworay", StringComparison.OrdinalIgnoreCase))
             {
@@ -360,6 +477,24 @@ public sealed class PropagationChannelModel : ComponentModel, IReportsWarnings, 
                 rays = [geo.LineOfSight(f), geo.GroundRay(f, gamma)];
             }
             else rays = [geo.LineOfSight(f)];
+            if (fades.Count == 0)
+            {
+                // Multipath=none: each ray of the geometry fades as Fading= says (a moving end's Doppler is then its fading's)
+                var kind = _fading ?? FadingKind.Static;
+                for (int i = 0; i < rays.Count; i++) fades.Add(Fade(i, kind, KLin(_kFactorDb), _spectrum));
+                if (kind != FadingKind.Static) rays = [.. rays.Select(r => r with { DopplerHz = 0 })];
+            }
+            if (fades.Any(x => x.Spec.Kind != FadingKind.Static))
+            {
+                var inv = CultureInfo.InvariantCulture;
+                int n = fades.Count(x => x.Spec.Kind != FadingKind.Static);
+                notes.Add(string.Format(inv, "{0} of {1} tap(s) fade ({2}), {3} Doppler spectrum, f_D = {4:G4} Hz at {5}, {6} sinusoids each; "
+                                             + "Seed {7}, Drop {8}.", n, fades.Count,
+                    string.Join(", ", fades.Where(x => x.Spec.Kind != FadingKind.Static).Select(x => x.Spec.Kind.ToString().ToLowerInvariant()).Distinct()),
+                    _spectrum.ToString().ToLowerInvariant(), fd, Ghz(f), _sinusoids, unchecked((long)_seed), _drop));
+                if (fd == 0)
+                    notes.Add("The fading has no Doppler (Velocity and fD are 0 or unstated, the ends still): each drop is one frozen draw.");
+            }
             if (common != 0 || drift != 0)
                 rays = [.. rays.Select(r => r with { DopplerHz = r.DopplerHz + common })];
             if (_dopplerComp)
@@ -369,7 +504,7 @@ public sealed class PropagationChannelModel : ComponentModel, IReportsWarnings, 
                 drift = 0;
                 notes.Add($"DopplerComp=common: the common Doppler {PropagationMath.F(nu0)} Hz is compensated at the transmit end.");
             }
-            return new Realization(f, ls, d, excess, rays, Strongest(rays).DopplerHz, drift, geo, notes);
+            return new Realization(f, ls, d, excess, rays, Strongest(rays).DopplerHz, drift, geo, notes, fades, fd, tdl);
         }
         catch (PropagationRefusal ex) { throw new ParameterRefusalException(ex.Message); }
     }
@@ -468,8 +603,19 @@ public sealed class PropagationChannelModel : ComponentModel, IReportsWarnings, 
     // ── H(f, t) ──────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>One ray's share of H at one frequency: its amplitude (large scale, antennas, ray gain and the rotation
-    /// e^(−j2πf·τ)), its excess delay, and its Doppler and drift at that frequency.</summary>
-    public readonly record struct RayTerm(Complex Amplitude, double DelayS, double DopplerHz, double DriftHzps);
+    /// e^(−j2πf·τ)), its excess delay, its Doppler and drift at that frequency, and (brief PCH-7) its fading, whose gain at the
+    /// channel time multiplies the amplitude (conjugated on the conjugate side, <see cref="Conjugate"/>).</summary>
+    public readonly record struct RayTerm(Complex Amplitude, double DelayS, double DopplerHz, double DriftHzps, FadingProcess? Fade = null,
+                                          bool Conjugate = false)
+    {
+        /// <summary>The fading gain at channel time <paramref name="t"/> (s): 1 for a static ray.</summary>
+        public Complex FadeAt(double t)
+        {
+            if (Fade is null || Fade.Sinusoids == 0) return Complex.One;
+            var g = Fade.Gain(t);
+            return Conjugate ? Complex.Conjugate(g) : g;
+        }
+    }
 
     /// <summary>Every ray's term at the signed frequency <paramref name="hz"/> (a negative one is the conjugate side:
     /// amplitudes conjugated, Doppler negated); empty at DC.</summary>
@@ -487,7 +633,9 @@ public sealed class PropagationChannelModel : ComponentModel, IReportsWarnings, 
             var ray = r.Rays[i];
             var a = amp * c[i] * ray.Gain * Complex.FromPolarCoordinates(1, -2 * Math.PI * f * ray.ExcessDelayS);
             double nu = ray.DopplerHz * scale, dr = r.DriftHzps * scale;
-            terms[i] = hz > 0 ? new RayTerm(a, ray.ExcessDelayS, nu, dr) : new RayTerm(Complex.Conjugate(a), ray.ExcessDelayS, -nu, -dr);
+            var fade = i < r.Fades.Count ? r.Fades[i] : null;
+            terms[i] = hz > 0 ? new RayTerm(a, ray.ExcessDelayS, nu, dr, fade)
+                              : new RayTerm(Complex.Conjugate(a), ray.ExcessDelayS, -nu, -dr, fade, Conjugate: true);
         }
         return terms;
     }
@@ -498,7 +646,7 @@ public sealed class PropagationChannelModel : ComponentModel, IReportsWarnings, 
         double tt = FrozenTimeS + t;
         Complex sum = 0;
         foreach (var term in Terms(hz))
-            sum += term.Amplitude * Complex.FromPolarCoordinates(1, 2 * Math.PI * term.DopplerHz * tt + Math.PI * term.DriftHzps * tt * tt);
+            sum += term.Amplitude * term.FadeAt(tt) * Complex.FromPolarCoordinates(1, 2 * Math.PI * term.DopplerHz * tt + Math.PI * term.DriftHzps * tt * tt);
         return sum;
     }
 
@@ -590,6 +738,13 @@ public sealed class PropagationChannelModel : ComponentModel, IReportsWarnings, 
         lines.Add(string.Format(inv, "{0} ray(s); RMS delay spread {1:G4} s, coherence bandwidth {2}", r.Rays.Count,
             RayStatistics.RmsDelaySpread(r.Rays), double.IsInfinity(RayStatistics.CoherenceBandwidthHz(r.Rays)) ? "unbounded (one ray)"
                 : RayStatistics.CoherenceBandwidthHz(r.Rays).ToString("G4", inv) + " Hz"));
+        if (r.Fading)
+        {
+            // brief-pch-7 — the small scale's regime (note §2.4): f_D and the coherence time
+            double tc = r.CoherenceTimeS;
+            lines.Add(string.Format(inv, "fading: f_D = {0:G4} Hz, coherence time {1}", r.FdHz,
+                double.IsInfinity(tc) ? "unbounded (the correlation never falls to one half)" : tc.ToString("G4", inv) + " s"));
+        }
         lines.AddRange(r.Notes);
         return lines;
     }

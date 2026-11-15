@@ -484,11 +484,26 @@ public static class EnvelopeRunner
         var ds = EnvelopeDataSet.Build(merged, plan, skip, note, quiet);
         double[] productHz = merged.MixFreqHz ?? [.. Enumerable.Range(0, merged.MaxHarm + 1).Select(k => k * merged.F0Hz)];
         EnvelopeWireTemperature.Add(ds, nets[0], merged, productHz, skip);
-        PropagationChannelReport.Add(ds, nets[0], merged.Sources.Length > 0 ? merged.Sources[0].FcHz : merged.F0Hz);
+        PropagationChannelReport.Add(ds, nets[0], merged.Sources.Length > 0 ? merged.Sources[0].FcHz : merged.F0Hz, env: ChannelSpan(merged));
         ds.Add("__EnvSegments", DataCube.Scalar(segs));
         ds.Add("__EnvWarmup_s", DataCube.Scalar(warm));
         ds.Add("__EnvSeamError", DataCube.Scalar(seam));
         return ds;
+    }
+
+    /// <summary>brief-pch-7 — the span a Propagation Channel's report reads its tap gains and H(f, t) over: the run's time axis, the
+    /// first source's widest carrier and, when it is OFDM, its subcarrier spacing.</summary>
+    private static PropagationChannelReport.EnvelopeSpan? ChannelSpan(EnvelopeRunResult merged)
+    {
+        if (merged.Time.Length < 2) return null;
+        double bw = 0; double? scs = null;
+        foreach (var c in merged.Sources.Take(1).SelectMany(s => s.Signal.Carriers))
+        {
+            bw = Math.Max(bw, c.Spec.BandwidthHz);
+            if (scs is null && c.Spec.Standard is RfCore.Signals.CarrierStandard.Lte or RfCore.Signals.CarrierStandard.Nr)
+                scs = RfCore.Signals.OfdmGenerator.Numerology(c.Spec).ScsHz;
+        }
+        return new PropagationChannelReport.EnvelopeSpan(merged.Time[0], merged.Time[^1], bw > 0 ? bw : 1e6, scs);
     }
 
     /// <summary>How much of the record's start a measurement skips: a run that started cold (no warm-up on its first segment) is

@@ -4840,3 +4840,34 @@ read 37 ms: re-weigh 18 ms, fields run 22 ms).
 - **Noise.** The receive pin is a `NoiseSourceDecl` from the rx net to ground with 4k·T_ant·Re(1/Z_rx), so the S-parameter, HB and
   envelope noise read it through the device-source path. An S-parameter run with `RxTant=150` gives the receive port's wave noise
   k·150 = 2.07e-21 and Te = T_ant/|H|² at the input.
+
+## brief-pch-7 — fading and tapped delay lines on the Propagation Channel (2026-11-15)
+
+**Nakagami's m is `NakagamiM`, not `m`.** `m` is the device multiplier on every component, read by the elaborator before
+any model sees it. The channel has branch unknowns, so `m=2` is refused outright, and on any other device it would
+multiply silently. The brief's `m` cannot be spelled `m`.
+
+**`Profile` names the tapped delay line; a terrain profile is `Terrain=`.** PCH-6 passed `Profile` through to the
+large-scale model, which reads a terrain CSV under that name, and the elaborator resolved it as a file path (so `TDL-A`
+became `<dir>/TDL-A`). `Profile` is now a channel word, resolved verbatim and refused without `Multipath=tdl`. `Terrain`
+is a file, handed to the model as its `Profile`. The parameter editor's file picker moved from `Profile` to `Terrain`,
+and `Profile` became a picker of the profile names. PCH-6 was not pushed, so nothing written with the old spelling
+exists outside this repo.
+
+**A file's taps are normalized now, including PCH-6's static ray lists**, as R-pch7-5 asks, and the note says by how
+much. PCH-6 took a ray's power as relative to the large-scale loss. Any existing ray list that does not sum to 0 dB
+moves by that sum. A static ray keeps its Doppler; a fading tap with no `doppler` column has none of its own, since
+its motion is in its fading.
+
+**The draws' stream names need the instance path, which a model does not get at construction.** `BindReverseChannels`
+(the post-elaboration pass) now sets `PropagationChannelModel.InstancePath` on every channel first, and setting it clears
+the realization cache. That matters because a stated `f0` realizes once in the constructor to validate the model, under
+an empty name. A `Reverse=` channel uses its forward channel's fades, so it is the same realization transposed.
+
+**Velocity is m/s, a bare number.** The design note's example writes `Velocity=3 km/h`, but `km/h` is not a unit the
+expression engine knows. Adding one is a global change to `Units`, which this brief did not make. Blank `Velocity` is
+the ends' relative speed from `TxVel`/`RxVel`.
+
+**Where fading reaches.** S-parameter and HB runs see H frozen at `TimeOffset`, fading included. HB's note now says the
+fading is frozen too. The envelope multiplies each ray by its tap's gain at the receive time, at the reference
+frequency's f_D in every product.

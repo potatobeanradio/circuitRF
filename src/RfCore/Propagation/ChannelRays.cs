@@ -113,14 +113,17 @@ namespace RfCore.Propagation
         public ChannelRay Transposed => this with { Departure = ArrivalFrom, ArrivalFrom = Departure };
     }
 
-    /// <summary>One row of a ray list file.</summary>
-    public sealed record RayListRow(double DelayS, double PowerDb, double PhaseDeg, double? DopplerHz);
+    /// <summary>One row of a ray list or power-delay profile file: its delay, power and phase, its static Doppler, and (brief
+    /// PCH-7) its Rician K (dB) and its Doppler spectrum when the file states them.</summary>
+    public sealed record RayListRow(double DelayS, double PowerDb, double PhaseDeg, double? DopplerHz, double? KDb = null, string? Spectrum = null);
 
     /// <summary>
-    /// A ray list: a CSV whose header names each column with its unit in parentheses — <c>delay (ns)</c>,
-    /// <c>power (dB)</c>, and optionally <c>phase (deg)</c> and <c>doppler (Hz)</c>. Delay takes s, ms, us or ns, Doppler
-    /// Hz or kHz. Each row is one ray: its excess delay over the line of sight, its power relative to the large-scale loss,
-    /// its phase, and its Doppler. Blank lines and lines starting with <c>#</c> are skipped.
+    /// A ray list or power-delay profile: a CSV whose header names each column with its unit in parentheses — <c>delay (ns)</c>,
+    /// <c>power (dB)</c>, and optionally <c>phase (deg)</c>, <c>doppler (Hz)</c>, <c>k (dB)</c> (a Rician tap's K) and
+    /// <c>spectrum</c> (classical, flat, gaussian or los: that tap fades with this Doppler spectrum). Delay takes s, ms, us or
+    /// ns, Doppler Hz or kHz. A sampled impulse response writes <c>re</c> and <c>im</c> (the complex gain) in place of power
+    /// and phase. Each row is one tap: its excess delay over the line of sight, its power, its phase, its static Doppler.
+    /// Blank lines and lines starting with <c>#</c> are skipped.
     /// </summary>
     public static class RayListFile
     {
@@ -141,12 +144,19 @@ namespace RfCore.Propagation
                 foreach (var (unit, factor) in units) if (u == unit) return factor;
                 throw new PropagationRefusal($"{Path.GetFileName(path)}: the column '{h}' is in {u}; {what} is in {string.Join(", ", units.Select(x => x.Unit))}.");
             }
+            int Exact(string name) => Array.FindIndex(head, h => h.Split('(')[0].Trim().Equals(name, StringComparison.OrdinalIgnoreCase));
             int cDelay = Col("delay"), cPower = Col("power"), cPhase = Col("phase"), cDoppler = Col("doppler");
-            if (cDelay < 0 || cPower < 0)
-                throw new PropagationRefusal($"{Path.GetFileName(path)}: a ray list's header names a delay and a power column, such as 'delay (ns), power (dB)'.");
+            int cK = Exact("k"), cSpectrum = Col("spectrum"), cRe = Exact("re"), cIm = Exact("im");
+            bool impulse = cRe >= 0 && cIm >= 0;
+            if (cDelay < 0 || (cPower < 0 && !impulse))
+                throw new PropagationRefusal($"{Path.GetFileName(path)}: a ray list's header names a delay and a power column, such as 'delay (ns), power (dB)', "
+                                             + "or a delay and the complex gain as 're, im'.");
+            if (impulse && (cPower >= 0 || cPhase >= 0))
+                throw new PropagationRefusal($"{Path.GetFileName(path)}: a tap is a power and phase, or re and im, not both.");
             double sDelay = Scale(cDelay, [("s", 1), ("ms", 1e-3), ("us", 1e-6), ("µs", 1e-6), ("ns", 1e-9)], "delay");
-            Scale(cPower, [("dB", 1)], "power");
+            if (cPower >= 0) Scale(cPower, [("dB", 1)], "power");
             if (cPhase >= 0) Scale(cPhase, [("deg", 1)], "phase");
+            if (cK >= 0) Scale(cK, [("dB", 1)], "k");
             double sDoppler = cDoppler >= 0 ? Scale(cDoppler, [("Hz", 1), ("kHz", 1e3)], "doppler") : 1;
             var rows = new List<RayListRow>();
             for (int i = 1; i < lines.Count; i++)
@@ -160,8 +170,24 @@ namespace RfCore.Propagation
                 }
                 double delay = Num(cDelay, "delay") * sDelay;
                 if (delay < 0) throw new PropagationRefusal($"{Path.GetFileName(path)}, row {i + 1}: a ray's excess delay must not be negative.");
-                rows.Add(new RayListRow(delay, Num(cPower, "power"), cPhase >= 0 ? Num(cPhase, "phase") : 0,
-                                        cDoppler >= 0 ? Num(cDoppler, "doppler") * sDoppler : null));
+                double power, phase;
+                if (impulse)
+                {
+                    var g = new Complex(Num(cRe, "re"), Num(cIm, "im"));
+                    if (g == Complex.Zero) throw new PropagationRefusal($"{Path.GetFileName(path)}, row {i + 1}: a tap's gain must not be zero.");
+                    power = 20 * Math.Log10(g.Magnitude);
+                    phase = g.Phase * 180 / Math.PI;
+                }
+                else { power = Num(cPower, "power"); phase = cPhase >= 0 ? Num(cPhase, "phase") : 0; }
+                string? spectrum = null;
+                if (cSpectrum >= 0 && cSpectrum < cells.Length && cells[cSpectrum].Length > 0)
+                {
+                    spectrum = cells[cSpectrum].Trim().ToLowerInvariant();
+                    if (!TapFading.TryParseSpectrum(spectrum, out _))
+                        throw new PropagationRefusal($"{Path.GetFileName(path)}, row {i + 1}: the spectrum '{cells[cSpectrum]}' is not one of {string.Join(", ", TapFading.DopplerWords)}.");
+                }
+                rows.Add(new RayListRow(delay, power, phase, cDoppler >= 0 ? Num(cDoppler, "doppler") * sDoppler : null,
+                                        cK >= 0 ? Num(cK, "k") : null, spectrum));
             }
             return rows;
         }

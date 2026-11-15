@@ -1332,7 +1332,7 @@ public static class ComponentTypeRegistry
     public static bool IsFilePathParameter(SymbolKind kind, string parameterName)
         => (kind is SymbolKind.VerilogA or SymbolKind.WBond && parameterName.Equals("File", StringComparison.Ordinal))
         || (kind is SymbolKind.PhasedArray && parameterName.Equals("Record", StringComparison.Ordinal))
-        || (kind is SymbolKind.PropagationChannel && parameterName is "File" or "Profile");
+        || (kind is SymbolKind.PropagationChannel && parameterName is "File" or "Terrain");
 
     /// <summary>A newly placed wBond's operating temperature, °C: <see cref="CircuitRF.WBond.WireMaterials.DefaultOperatingTempC"/>,
     /// the one default wire temperature, so the Inspector and the wBond editor cannot disagree.</summary>
@@ -2278,7 +2278,11 @@ public static class ComponentTypeRegistry
     public static IReadOnlyList<string>? ChannelWordOptions(string name)
     {
         if (name == "PathLoss") return [.. RfCore.Propagation.PropagationModels.All.Select(m => m.Name)];
-        if (name == "Multipath") return ["none", "file"];
+        if (name == "Multipath") return ["none", "tdl", "file"];
+        // brief-pch-7 — the fading words and the tapped delay lines (Profile is a TDL's name; a terrain profile is Terrain=)
+        if (name == "Fading") return RfCore.Propagation.TapFading.FadingWords;
+        if (name == "Doppler") return RfCore.Propagation.TapFading.DopplerWords;
+        if (name == "Profile") return [.. RfCore.Propagation.TdlProfiles.All.Select(p => p.Name)];
         if (name == "DopplerComp") return ["none", "common"];
         var words = RfCore.Propagation.PropagationModels.All.SelectMany(m => m.Parameters).Concat(RfCore.Propagation.AddedLosses.Parameters)
                           .Where(p => p.Name == name && p.Kind == RfCore.Propagation.ParameterKind.Word && p.Words is not null)
@@ -2294,9 +2298,10 @@ public static class ComponentTypeRegistry
     {
         "Distance" or "TxHeight" or "RxHeight" or "TxPos" or "RxPos" or "TxVel" or "RxVel"
             or "TxAz" or "TxEl" or "TxRoll" or "RxAz" or "RxEl" or "RxRoll" => "Geometry",
-        "Multipath" or "File" => "Small scale",
+        "Multipath" or "File" or "Profile" or "DelaySpread" or "Fading" or "KFactor" or "NakagamiM" or "Doppler" or "Velocity" or "fD"
+            or "Sinusoids" => "Small scale",
         "TxGain" or "RxGain" or "TxPattern" or "RxPattern" or "TxZ" or "RxZ" or "RxTant" => "Ends",
-        "TimeOffset" or "DopplerComp" or "Reverse" => "Realization",
+        "TimeOffset" or "DopplerComp" or "Reverse" or "Seed" or "Drop" => "Realization",
         _ => "Large scale",
     };
 
@@ -2315,10 +2320,25 @@ public static class ComponentTypeRegistry
             "TxRoll" or "RxRoll" => "Roll of the end's pattern about its boresight, degrees.",
             "PathLoss" => "The large-scale model, by its recommendation or report (free, logdist, multislope, tworay, 38901, P1238, P1411, P526, "
                         + "satellite, P1812). Its parameters, and the added losses, are written beside it by the model's own names.",
-            "Multipath" => "none: the rays the geometry gives (the line of sight, and tworay's ground ray). file: the rays of a ray list (File=), "
-                         + "held static.",
-            "File" => "Multipath=file: the ray list, a CSV of delay (ns), power (dB) and optionally phase (deg) and doppler (Hz), one ray a row; "
-                    + "delay is in excess of the line of sight, power relative to the large-scale loss.",
+            "Multipath" => "none: the rays the geometry gives (the line of sight, and tworay's ground ray). tdl: a tapped delay line by Profile=. "
+                         + "file: the taps of a ray list or power-delay profile (File=).",
+            "File" => "Multipath=file: a CSV of delay (ns), power (dB) and optionally phase (deg), doppler (Hz), k (dB) and spectrum, one tap a row; "
+                    + "or delay, re, im (a sampled impulse response). Delay is in excess of the line of sight; the powers are normalized to sum to 1.",
+            "Profile" => "Multipath=tdl: the tapped delay line, TR 38.901 TDL-A to TDL-E, TS 36.104 EPA/EVA/ETU, ITU-R M.1225 PedA/PedB/VehA/VehB "
+                       + "or TR 38.811 NTN-TDL-A to D.",
+            "DelaySpread" => "The RMS delay spread a tapped delay line is scaled to, seconds. Required for the normalized profiles (TDL, NTN-TDL); "
+                           + "EPA..VehB are used as printed unless it is stated.",
+            "Fading" => "rayleigh, rician or nakagami: how each tap's gain fades. Blank: a profile's own (Rayleigh, a line-of-sight tap Rician), "
+                      + "and static for none or a plain file.",
+            "KFactor" => "Rician K, dB: the line-of-sight to diffuse power. On TDL-D/E and NTN-TDL-C/D it rescales the profile (TR 38.901 §7.7.6).",
+            "NakagamiM" => "Nakagami m (0.5 or more) of every tap when Fading=nakagami; 1 is Rayleigh.",
+            "Doppler" => "Each tap's Doppler spectrum: classical, flat, gaussian or los (one line at fD).",
+            "Velocity" => "Speed, m/s, setting the maximum Doppler fD = Velocity·f/c. Blank: the ends' relative speed (TxVel, RxVel).",
+            "fD" => "Maximum Doppler, Hz, in place of Velocity.",
+            "Sinusoids" => "Sinusoids summed per fading tap. Blank is the default the statistics gates were met with.",
+            "Terrain" => "A terrain profile CSV for a model that reads one (P526, P1812): distance and height columns with units.",
+            "Seed" => "The seed of the fading draws.",
+            "Drop" => "Which realization: sweep it (Drop=drop with a parametric sweep over drop) for a Monte Carlo. Drop N alone equals drop N in a sweep.",
             "TxGain" => "Transmit antenna gain, dBi, the same in every direction. TxPattern replaces it with a pattern.",
             "RxGain" => "Receive antenna gain, dBi, the same in every direction. RxPattern replaces it with a pattern.",
             "TxPattern" or "RxPattern" => "One port of an EM result's far field, written path#port (port from 1): the end's realized gain toward "

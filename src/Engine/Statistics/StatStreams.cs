@@ -1,4 +1,3 @@
-using System.Text;
 using CircuitRF.Engine.Optimization;
 
 namespace CircuitRF.Engine.Statistics;
@@ -17,35 +16,17 @@ public static class StatStreams
     /// <c>mag(ZL)</c>) or, for a kit draw, its instance path and parameter. FNV-1a over the UTF-8 bytes,
     /// then mixed, so similar keys land far apart.
     /// </summary>
-    public static ulong Id(string text)
-    {
-        ulong h = 0xCBF29CE484222325UL;
-        foreach (byte b in Encoding.UTF8.GetBytes(text))
-        {
-            h ^= b;
-            h *= 0x100000001B3UL;
-        }
-        return SplitMix64.Mix(h + SplitMix64.Golden);
-    }
+    public static ulong Id(string text) => RfCore.Statistics.StatDraws.Id(text);
 
     /// <summary>The 64 bits of draw <paramref name="k"/> of <paramref name="stream"/> in
-    /// <paramref name="trial"/> under <paramref name="seed"/>. Each input is folded in through its own
-    /// mix, so no two input tuples are related by a simple shift.</summary>
-    public static ulong Hash(ulong seed, long trial, ulong stream, int k)
-    {
-        unchecked
-        {
-            ulong h = SplitMix64.Mix(seed + SplitMix64.Golden);
-            h = SplitMix64.Mix(h ^ ((ulong)trial + 2 * SplitMix64.Golden));
-            h = SplitMix64.Mix(h ^ (stream + 3 * SplitMix64.Golden));
-            return SplitMix64.Mix(h ^ ((ulong)(uint)k + 4 * SplitMix64.Golden));
-        }
-    }
+    /// <paramref name="trial"/> under <paramref name="seed"/> (<see cref="RfCore.Statistics.StatDraws.Hash"/>, moved down to
+    /// RfCore by brief PCH-7 so the propagation channel's fading draws are the yield engine's).</summary>
+    public static ulong Hash(ulong seed, long trial, ulong stream, int k) => RfCore.Statistics.StatDraws.Hash(seed, trial, stream, k);
 
     /// <summary>Uniform on the OPEN interval (0, 1) — the top 53 bits, offset by half a step — so its
     /// normal quantile is always finite.</summary>
     public static double Uniform(ulong seed, long trial, ulong stream, int k = 0)
-        => ((Hash(seed, trial, stream, k) >> 11) + 0.5) * (1.0 / (1UL << 53));
+        => RfCore.Statistics.StatDraws.Uniform(seed, trial, stream, k);
 
     /// <summary>A standard normal, by inversion: Φ⁻¹ of <see cref="Uniform"/>.</summary>
     public static double Normal(ulong seed, long trial, ulong stream, int k = 0)

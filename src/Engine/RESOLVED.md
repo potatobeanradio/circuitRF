@@ -4773,3 +4773,33 @@ symbol's end, and an echo inside it reads something the source did not play (0.1
 - **What a run reports.** `PropagationChannelReport.Add` writes `link:<instance>:PathLoss_dB`, `Loss_dB[term]`, `Delay0_s`,
   `Doppler0_Hz`, `Reference_Hz`, `RayDelay_s`, `RayDoppler_Hz` and `RayGain[ray]` into the S-parameter, HB (all three paths) and
   envelope results. HB also notes once that it holds the channel with no Doppler shift.
+
+## brief-pch-7 — fading in the envelope, and the genie through a fading channel (2026-11-15)
+
+**The genie no longer takes the fitted offset out before dividing by the channel's H(f, t).** `EnvelopeDataSet.Read` ran
+`RemoveOffset` (a phase, frequency and drift fit over the symbols) and then divided by H, which already holds the
+channel's Doppler and fading phase. So the channel's phase was removed twice: a fading tap's random phase walk was
+partly "fitted" as an offset. Since PCH-6 this applied to a single Doppler ray as well, but no gate exercised the genie
+through a channel. With a channel response the genie now equalizes the symbols as they came. The offset is still
+measured and reported, and `none` and `pilot` are unchanged.
+
+**Gate 6 against an independent prediction, to 0.3 %.** NR 10 MHz at 30 kHz through flat Rayleigh at f_D = 300, 600 and
+1200 Hz (f_D/Δf_sc = 0.01, 0.02, 0.04) reads 0.950 %, 1.627 % and 4.097 % EVM. `testdata/propagation/ici_reference.py`
+predicts 0.951 %, 1.622 % and 4.099 %. The script writes the generator again from its definition and computes each
+symbol's error by Parseval, (var_W(h) + |mean_W(h) − h_c|²)/|h_c|² over the useful part. It reads none of circuitRF's
+demodulator, equalizer or engine. The prediction depends on the realization, not only on f_D/Δf_sc. A genie error is
+ICI/h, and E[1/|h|²] diverges for Rayleigh, so an ensemble formula cannot be met within 10 % by one drop. The test
+therefore reads each measured symbol's middle from the receiver and averages the script's E(t) there. The script picks
+the first seed whose |h| stays above 0.4 over the window (seed 1). The window is not a whole record, so no symbol wraps
+it. A wrapped symbol joins the end of the window to its start, which a time-varying channel makes a discontinuity.
+
+**Cost.** Each fading ray adds 64 sinusoids per step per product. A 24-tap TDL-C through 1 ms of NR 10 MHz (58,000
+steps at 16.3 ns) ran in 1.36 s wall. The three gate-6 runs take 2 s together.
+
+**What a run reports** (`PropagationChannelReport`): `RmsDelaySpread_s`, `CoherenceBandwidth_Hz`, `fD_Hz`, `Tc_s` (the
+first lag where the power-weighted |Σ p_i R_i(τ)| falls to one half, infinite when it never does),
+`PowerDelayProfile_dB[delay]`, `DopplerSpectrum_dB[doppler]` (the drop's lines in 32 bins over ±1.25 f_D), and
+`TapGain[ray, time]` (256 instants over the record, or TimeOffset alone). An envelope run adds `H[time, offset]` (64 × 33
+over the widest carrier's band), `fDxTrecord`, `fDoverSCS` and a regime note. The Signal quality preset draws the
+first channel's power-delay profile and Doppler spectrum under its table, points only, with the Doppler axis in Hz
+(a plot defaults to GHz).

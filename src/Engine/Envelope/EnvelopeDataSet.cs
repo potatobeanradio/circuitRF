@@ -437,8 +437,11 @@ public static class EnvelopeDataSet
             if (d is null) return null;
             var moved = SignalEqualizer.RemoveOffset(d, o => SignalEvm.Demodulate(rec, record, y, fs, start, off + o.FrequencyHz, out _, o.DriftHzps),
                                                      SignalEqualizer.EstimateOffset, out var cfo);
-            // brief-pch-6 R-pch6-9 — the genie reads a Propagation Channel's own H(f, t) where one channel receives at the probe
-            var e = SignalEqualizer.Ofdm(eq.Mode == EqualizerMode.None ? d : moved, eq, eq.Mode == EqualizerMode.Genie ? channel : null);
+            // brief-pch-6 R-pch6-9 — the genie reads a Propagation Channel's own H(f, t) where one channel receives at the probe.
+            // That H already holds the channel's Doppler and fading phase (brief PCH-7), so the genie divides the symbols as they
+            // came: taking the fitted offset out first as well would remove the channel's phase twice. The offset is still reported.
+            var genieChannel = eq.Mode == EqualizerMode.Genie ? channel : null;
+            var e = SignalEqualizer.Ofdm(eq.Mode == EqualizerMode.None || genieChannel is not null ? d : moved, eq, genieChannel);
             var m = rec.Spec.Modulation;
             return new Reading(e.RmsPercent, e.PeakPercent, double.NaN, double.NaN, e.Points, e.Ideal, null, null, d)
             {

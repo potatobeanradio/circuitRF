@@ -1,22 +1,31 @@
 // brief-pch-6 R-pch6-4 — what a run says of each Propagation Channel (design note §5.6), as cubes beside its results: the loss
 // breakdown at the channel's reference frequency, the total path loss, the bulk delay and the common Doppler, and the rays.
 // Named link:<instance>:<quantity>, the instance's own path, so a sweep stacks them as it stacks every other cube.
+// brief-pch-7 R-pch7-6 adds the small scale: the RMS delay spread, the coherence bandwidth and time, f_D, the power-delay
+// profile, the drop's Doppler spectrum, its tap gains over the record and (envelope) H(f, t) on the signal's band and the
+// regime of note §2.4.
 
+using System.Globalization;
 using System.Numerics;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
 using RfCore.Data;
+using RfCore.Propagation;
 
 namespace CircuitRF.Engine;
 
 public static class PropagationChannelReport
 {
+    /// <summary>What an envelope run tells the report: the record's span (s, the run's own time axis), the signal's bandwidth
+    /// and its subcarrier spacing (null when it is not OFDM).</summary>
+    public sealed record EnvelopeSpan(double StartS, double StopS, double BandwidthHz, double? SubcarrierHz);
+
     /// <summary>
     /// Adds each channel's report to <paramref name="ds"/>, at the reference frequency of <paramref name="hz"/> (its f0, else
     /// the run's carrier, else <paramref name="hz"/>), and says once that harmonic balance holds the channel at TimeOffset with
     /// no Doppler shift when <paramref name="hb"/>.
     /// </summary>
-    public static void Add(DataSet ds, ElaboratedNetlist nl, double hz, bool hb = false)
+    public static void Add(DataSet ds, ElaboratedNetlist nl, double hz, bool hb = false, EnvelopeSpan? env = null)
     {
         foreach (var ec in nl.Components)
         {
@@ -39,10 +48,80 @@ public static class PropagationChannelReport
             ds.Add(key + "RayDelay_s", new DataCube([rayAxis], [.. r.Rays.Select(x => x.ExcessDelayS)]) { Unit = "s" });
             ds.Add(key + "RayDoppler_Hz", new DataCube([rayAxis], [.. r.Rays.Select(x => x.DopplerHz)]) { Unit = "Hz" });
             ds.Add(key + "RayGain", new DataCube([rayAxis], terms0.Length == n ? [.. terms0.Select(t => t.Amplitude)] : new Complex[n]));
-            if (hb && r.Rays.Any(x => x.DopplerHz != 0))
+            AddSmallScale(ds, key, ch, r, hz, env, nl, ec.InstancePath);
+            if (hb && (r.Rays.Any(x => x.DopplerHz != 0) || r.Fading))
                 nl.AddNoteOnce("hb-channel-doppler:" + ec.InstancePath,
                     $"Propagation Channel '{ec.InstancePath}': harmonic balance holds it at TimeOffset with no Doppler shift (a shifted tone would " +
-                    "leave the harmonic grid); an envelope run carries the Doppler.");
+                    "leave the harmonic grid) and its fading frozen there; an envelope run carries both.");
         }
+    }
+
+    private static Axis Index(string name, IEnumerable<string> labels)
+    {
+        var l = labels.ToArray();
+        return new Axis(name, [.. Enumerable.Range(0, l.Length).Select(i => (double)i)], "", l);
+    }
+
+    /// <summary>brief-pch-7 R-pch7-6 — the small-scale part of the report.</summary>
+    private static void AddSmallScale(DataSet ds, string key, PropagationChannelModel ch, PropagationChannelModel.Realization r, double hz,
+                                      EnvelopeSpan? env, ElaboratedNetlist nl, string instance)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        double rms = RayStatistics.RmsDelaySpread(r.Rays), bc = RayStatistics.CoherenceBandwidthHz(r.Rays), tc = r.CoherenceTimeS;
+        ds.Add(key + "RmsDelaySpread_s", DataCube.Scalar(rms));
+        ds.Add(key + "CoherenceBandwidth_Hz", DataCube.Scalar(bc));
+        ds.Add(key + "fD_Hz", DataCube.Scalar(r.FdHz));
+        ds.Add(key + "Tc_s", DataCube.Scalar(tc));
+
+        // the power-delay profile: each delay's power (taps at one delay summed), in delay order
+        var pdp = r.Rays.GroupBy(x => x.ExcessDelayS).OrderBy(g => g.Key)
+                        .Select(g => (Delay: g.Key, P: g.Sum(x => x.Gain.Magnitude * x.Gain.Magnitude))).ToArray();
+        ds.Add(key + "PowerDelayProfile_dB", new DataCube([new Axis("delay", [.. pdp.Select(x => x.Delay)], "s")],
+                                                         [.. pdp.Select(x => x.P > 0 ? 10 * Math.Log10(x.P) : double.NaN)]) { Unit = "dB" });
+
+        // the drop's Doppler spectrum: its lines binned across the band they occupy
+        var (dhz, dp) = SmallScale.DopplerSpectrum(r.Rays, r.Fades, r.FdHz, 32);
+        ds.Add(key + "DopplerSpectrum_dB", new DataCube([new Axis("doppler", dhz, "Hz")],
+                                                       [.. dp.Select(p => p > 0 ? 10 * Math.Log10(p) : double.NaN)]) { Unit = "dB" });
+
+        // the taps' gains (before the large scale and the antennas) at the record's instants, or at TimeOffset
+        double[] times = env is { } e && e.StopS > e.StartS
+            ? [.. Enumerable.Range(0, 256).Select(i => e.StartS + (e.StopS - e.StartS) * i / 255.0)]
+            : [0];
+        var gains = new Complex[r.Rays.Count * times.Length];
+        for (int i = 0; i < r.Rays.Count; i++)
+            for (int t = 0; t < times.Length; t++)
+                gains[i * times.Length + t] = r.Rays[i].Gain * (i < r.Fades.Count ? r.Fades[i].Gain(ch.TimeOffsetS + times[t]) : Complex.One);
+        ds.Add(key + "TapGain", new DataCube([Index("ray", r.Rays.Select(x => x.Name)), new Axis("time", times, "s")], gains));
+
+        if (env is not { } en) return;
+        // H(f, t) across the signal's band over the record, as the receive pin sees it
+        int nf = 33, nt = 64;
+        var offs = Enumerable.Range(0, nf).Select(i => en.BandwidthHz * (i / (nf - 1.0) - 0.5)).ToArray();
+        var ht = Enumerable.Range(0, nt).Select(i => en.StartS + (en.StopS - en.StartS) * i / (nt - 1.0)).ToArray();
+        double save = ch.FrozenTimeS;
+        ch.FrozenTimeS = ch.TimeOffsetS;
+        var h = new Complex[nt * nf];
+        for (int t = 0; t < nt; t++)
+            for (int f = 0; f < nf; f++) h[t * nf + f] = ch.H(hz + offs[f], ht[t]);
+        ch.FrozenTimeS = save;
+        ds.Add(key + "H", new DataCube([new Axis("time", ht, "s"), new Axis("offset", offs, "Hz")], h));
+
+        // the regime (note §2.4): is the channel frozen over the record, does it turn within a symbol, is it flat over the band
+        double record = en.StopS - en.StartS;
+        ds.Add(key + "fDxTrecord", DataCube.Scalar(r.FdHz * record));
+        if (en.SubcarrierHz is double scs) ds.Add(key + "fDoverSCS", DataCube.Scalar(r.FdHz / scs));
+        if (!r.Fading) return;
+        string time = double.IsInfinity(tc) ? "the fading never decorrelates to one half"
+                      : tc > 4 * record ? string.Format(inv, "T_c = {0:G3} s is longer than the {1:G3} s record: the record sees a nearly frozen channel, and "
+                                                             + "its statistics come from many drops", tc, record)
+                      : string.Format(inv, "T_c = {0:G3} s, the record {1:G3} s: the channel turns within the record", tc, record);
+        string ici = en.SubcarrierHz is double sc ? string.Format(inv, "; f_D/Δf_sc = {0:G3}{1}", r.FdHz / sc,
+                         r.FdHz / sc > 0.01 ? " (inter-carrier interference grows with it)" : "") : "";
+        string band = double.IsInfinity(bc) ? "one delay, flat across the band"
+                      : bc < en.BandwidthHz ? string.Format(inv, "coherence bandwidth {0:G3} Hz under the signal's {1:G3} Hz: frequency selective", bc, en.BandwidthHz)
+                      : string.Format(inv, "coherence bandwidth {0:G3} Hz over the signal's {1:G3} Hz: nearly flat", bc, en.BandwidthHz);
+        nl.AddNoteOnce("env-channel-regime:" + instance, string.Format(inv,
+            "Propagation Channel '{0}': f_D = {1:G4} Hz, f_D·T_record = {2:G3}; {3}{4}; {5}.", instance, r.FdHz, r.FdHz * record, time, ici, band));
     }
 }

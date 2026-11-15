@@ -33,6 +33,12 @@
 //  A recorded transmit wave can drive the receive side alone (the
 //  partition drops reuse, PCH-10): the receive pin then reads the
 //  recording instead of its own transmit pin.
+//
+//  Fading (brief PCH-7): each ray's gain is multiplied by its tap's
+//  fading at the receive time — the sum of sinusoids evaluated at t,
+//  with no state — at the reference frequency's f_D in every product
+//  (the spread of f_D across a product's band is f_D·Δf/f, 1e-4 of it
+//  for a 200 MHz band at 2 GHz).
 // ================================================================
 
 using System.Globalization;
@@ -54,6 +60,7 @@ public static class EnvelopeChannel
         public Complex A;
         public double Steps;            // h + τ, in steps
         public double Nu, Drift;
+        public PropagationChannelModel.RayTerm Term;   // its fading (brief PCH-7), read at the receive time
     }
 
     internal sealed class Ch
@@ -157,7 +164,7 @@ public static class EnvelopeChannel
                 Complex w = 0;
                 for (int j = 0; j < 3; j++)
                     w += (l[j] - g1 * ld[j] / _h) * At(c, k, last - n0 - j);   // the nodes run back in time: d/dt is −ld/h
-                sum += r.A * Complex.FromPolarCoordinates(1, 2 * Math.PI * r.Nu * tt + Math.PI * r.Drift * tt * tt) * w;
+                sum += r.A * r.Term.FadeAt(tt) * Complex.FromPolarCoordinates(1, 2 * Math.PI * r.Nu * tt + Math.PI * r.Drift * tt * tt) * w;
             }
             return sum;
         }
@@ -248,7 +255,7 @@ public static class EnvelopeChannel
             {
                 double f = productHz[k];
                 z0[k] = m.End(0, f).Z0;
-                rays[k] = [.. m.Terms(f).Select(t => new Ray { A = t.Amplitude, Steps = 1 + t.DelayS / h, Nu = t.DopplerHz, Drift = t.DriftHzps })];
+                rays[k] = [.. m.Terms(f).Select(t => new Ray { A = t.Amplitude, Steps = 1 + t.DelayS / h, Nu = t.DopplerHz, Drift = t.DriftHzps, Term = t })];
                 foreach (var r in rays[k]) worst = Math.Max(worst, r.Steps);
             }
             ChannelRecording? d = null;

@@ -24,7 +24,29 @@ public static class PropagationChannelDiagnostics
     public static Diagnostic DopplerComp(string word) => E("doppler-comp", "DopplerComp={word} is none or common.", ("word", word));
     public static Diagnostic RayListNeedsFile() => E("ray-list-file", "Multipath=file reads its rays from File=, a ray list (delay, power, phase, doppler).");
     public static Diagnostic Multipath(string word)
-        => E("multipath", "Multipath={word} is none (the rays of the geometry) or file (a ray list).", ("word", word));
+        => E("multipath", "Multipath={word} is none (the rays of the geometry), tdl (a tapped delay line, Profile=) or file (a ray list or "
+                          + "power-delay profile).", ("word", word));
+
+    // brief-pch-7 — fading and tapped delay lines
+    public static Diagnostic Fading(string word) => E("fading", "Fading={word} is rayleigh, rician or nakagami.", ("word", word));
+    public static Diagnostic NakagamiM(double m) => E("nakagami-m", "NakagamiM={m} must be at least 0.5.", ("m", m));
+    public static Diagnostic DopplerSpectrum(string word)
+        => E("doppler-spectrum", "Doppler={word} is classical, flat, gaussian or los.", ("word", word));
+    public static Diagnostic DopplerNegative() => E("doppler-negative", "Velocity and fD must not be negative.");
+    public static Diagnostic Sinusoids(double n) => E("sinusoids", "Sinusoids={n} must be a whole number, 4 or more.", ("n", n));
+    public static Diagnostic ProfileNeedsTdl(string profile)
+        => E("profile-needs-tdl", "Profile={profile} names a tapped delay line, which Multipath=tdl uses; a terrain profile is Terrain=.",
+             ("profile", profile));
+    public static Diagnostic TdlNeedsProfile(string profiles)
+        => E("tdl-profile", "Multipath=tdl takes Profile=, one of {profiles}.", ("profiles", profiles));
+    public static Diagnostic UnknownProfile(string profile, string profiles)
+        => E("unknown-profile", "Profile={profile} is not a tapped delay line; the profiles are {profiles}.", ("profile", profile), ("profiles", profiles));
+    public static Diagnostic RicianNeedsLosProfile(string profile)
+        => E("rician-profile", "Fading=rician: {profile} has no line-of-sight tap (TDL-D, TDL-E, NTN-TDL-C and NTN-TDL-D have one).",
+             ("profile", profile));
+    public static Diagnostic KFactorNeedsRician()
+        => E("kfactor", "KFactor is a Rician tap's line-of-sight to diffuse power ratio, dB: it goes with Fading=rician, a line-of-sight "
+                        + "profile or a file's k column, and Fading=rician needs it.");
     public static Diagnostic ModelValue(string name) => E("model-value", "{name} must be a number or a word.", ("name", name));
     public static Diagnostic RainDrawn()
         => E("rain-drawn", "Rain=drawn draws a rain attenuation per drop, and this channel draws nothing; Rain=fixed is the attenuation at the availability.");

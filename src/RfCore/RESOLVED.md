@@ -1446,3 +1446,49 @@ band Rs(1 + α).
 
 **Its refusals are coded.** `ScDiagnostics` (`signal.sc.*`) carried by `ScCarrierRefusal`, a `FormatException`, so
 every caller that catches a carrier's `FormatException` (the netlist reader, the Signal Designer card) is unchanged.
+
+## brief-pch-7 — the fading generator and the tapped-delay-line tables (2026-11-15)
+
+**The generator is a sum of sinusoids at equally spaced quantiles turned by one draw** (`Propagation/Fading.cs`). For the
+classical spectrum, α_k = (2πk + θ)/N with one uniform θ per tap and drop, and a uniform phase per sinusoid. With
+equally spaced angles, one realization's time autocorrelation is the trapezoid rule for J0, which is exact to
+J_N(2πf_Dτ). Gate 2 measures 1.1e-3 over J0's first three zeros (the gate allows 0.02). That residue is the finite
+record, not the rule. Drawing the angles independently would have needed N ≈ 100 just for the autocorrelation: the
+jittered-stratified error goes as x·2π/(√12·N^1.5).
+
+**The envelope distribution sets N, and N = 64 is the default.** N equal phasors depart from Rayleigh by O(1/N). Over
+10⁵ samples (1,000 drops × 100 instants 10/f_D apart), the Kolmogorov-Smirnov distance D against the CDF was 0.0059 at
+N = 32 (fails the 1 % level, 0.00515) and 0.0025 at N = 64 (Rician K = 3 and 10: 0.0021 and 0.0020). N = 48 would pass
+by only 1.35×, so 64 is the smallest with margin. Nakagami's D equals Rayleigh's to every digit. That is expected: the
+envelope is mapped through the Nakagami quantile of the Rayleigh probability, a monotone map, and a monotone map leaves
+the KS distance unchanged. Level crossings at −10 dB: rate +0.7 %, fade duration −2.4 % at 250 samples a fade period,
+over 8,666 crossings.
+
+**The Nakagami quantile is solved by Newton, not by `GammaFunction.InverseP`.** `InverseP` bisects for up to 2,000
+steps, which is fine for a margin computed once but too slow per sample. `FadingMath.NakagamiQuantileX` runs Newton on
+P(m, x), started at m·r², and reads the upper tail from 1 − P.
+
+**The yield engine's stateless draw moved down to RfCore** as `Statistics/StatDraws` (Mix, Id, Hash, Uniform), since
+RfCore cannot reach `src/Engine`. `StatStreams` and `SplitMix64.Mix` forward to it, the code is identical, and every
+existing draw is unchanged (the yield statistics tests pass as they were). Streams are named `<instance>:tap<n>:angle`,
+`:phase` and `:los`.
+
+**The tables, as transcribed** (`Propagation/TdlProfiles.cs`): TR 38.901 V18.0.0 Tables 7.7.2-1..5 (from ETSI TR 138 901
+V18.0.0, its own text), TS 36.104 V18.6.0 Annex B.2, ITU-R M.1225 (02/97) Tables 4-5, TR 38.811 V15.4.0 Tables 6.9.2-1..4
+(the 3GPP archive's .doc; cells shorter than three characters needed `strings -n 1`). Two things the tables do not say on
+their face:
+- The printed powers don't sum to 1: TDL-A sums to +5.4 dB, EPA +4.9 dB, TDL-D +0.3 dB. They are normalized, because the
+  large-scale model carries the mean power.
+- The normalized tables' own RMS delay spread is not exactly 1. TDL-A is 1.00006 and NTN-TDL-A 0.99997, from rounding.
+  TDL-D (0.99372) and TDL-E differ by more. They are divided by their own spread, so DelaySpread is exact (gate 4 to
+  1e-9). That is TR 38.901 §7.7.6's renormalization step, applied to every profile rather than only after a K change.
+  The note gives each factor. TDL-D's line-of-sight entry (−0.2 dB) and its Rayleigh entry at delay 0 (−13.5 dB) become
+  one Rician tap with K = 13.3 dB, which is the table note's K1.
+
+**A Rician tap's line of sight is at 0.7 f_D**, TR 38.901 §7.7.2's figure for TDL-D/E, and that is used for every
+Rician tap. `gaussian` uses σ = f_D/√2, the classical spectrum's RMS spread, so a gaussian and a classical tap at the same
+f_D have the same level-crossing rate.
+
+**A profile file gained `k (dB)`, `spectrum`, and `re`/`im`.** `RayListFile` reads all three. A `k` column makes its tap
+Rician, and a `spectrum` column makes its tap fade with that spectrum. `re` and `im` are a sampled impulse response
+(power and phase from the complex gain) and cannot be mixed with power and phase.

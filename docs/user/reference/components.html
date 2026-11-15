@@ -5350,9 +5350,23 @@ as <code>x,y,z</code> in m/s, give each ray its Doppler.</li>
 are written beside it by the model's own names. Shadowing is held at 0, since a draw belongs to a drop of a Monte Carlo.
 <code>Rain=fixed</code> adds the attenuation at the stated availability, and <code>Rain=drawn</code> is refused.</li>
 <li><strong>Rays.</strong> <code>Multipath=none</code> uses the rays of the geometry: the line of sight, plus the ground ray for <code>tworay</code>.
-<code>Multipath=file</code> reads a ray list from <code>File=</code>: a CSV whose header names <code>delay (ns)</code>, <code>power (dB)</code>, and optionally
-<code>phase (deg)</code> and <code>doppler (Hz)</code>. Each row is one ray, with its delay in excess of the line of sight and its power
-relative to the large-scale loss.</li>
+<code>Multipath=tdl</code> uses a tapped delay line named by <code>Profile=</code>. <code>Multipath=file</code> reads taps from <code>File=</code>, a CSV whose
+header names <code>delay (ns)</code>, <code>power (dB)</code>, and optionally <code>phase (deg)</code>, <code>doppler (Hz)</code>, <code>k (dB)</code> and <code>spectrum</code>. A sampled
+impulse response writes <code>re</code> and <code>im</code> in place of power and phase. Each row is one tap, with its delay in excess of the
+line of sight. A file whose powers don't sum to 1 is normalized, and the run says by how much: the large-scale loss
+carries the mean power.</li>
+<li><strong>Tapped delay lines.</strong> <code>Profile=</code> is one of TR 38.901's <code>TDL-A</code> to <code>TDL-E</code>, TS 36.104's <code>EPA</code>, <code>EVA</code> and <code>ETU</code>,
+ITU-R M.1225's <code>PedA</code>, <code>PedB</code>, <code>VehA</code> and <code>VehB</code>, or TR 38.811's <code>NTN-TDL-A</code> to <code>NTN-TDL-D</code>. Each table is embedded with its
+document's edition. The TDL and NTN-TDL delays are normalized, so <code>DelaySpread</code> (in seconds) is required for them and
+their delays are scaled until the RMS delay spread equals it exactly. The tables in ns are used as printed unless
+<code>DelaySpread</code> is stated. <code>TDL-D</code>, <code>TDL-E</code>, <code>NTN-TDL-C</code> and <code>NTN-TDL-D</code> have a line-of-sight tap, and <code>KFactor</code> (dB)
+rescales them as TR 38.901 §7.7.6 describes. A terrain profile for <code>P526</code> or <code>P1812</code> is written <code>Terrain=</code>.</li>
+<li><strong>Fading.</strong> <code>Fading=rayleigh</code>, <code>rician</code> (with <code>KFactor</code>, a line-of-sight component at 0.7 f_D and its own phase) or
+<code>nakagami</code> (with <code>NakagamiM</code>) makes each tap's gain fade. Left blank, a profile's taps fade as the profile says, and
+<code>none</code> or a plain file stays static. <code>Doppler=classical</code>, <code>flat</code>, <code>gaussian</code> or <code>los</code> is the Doppler spectrum. The
+maximum Doppler is <code>fD</code>, or <code>Velocity</code> (m/s) times the carrier over c, or the ends' relative speed from <code>TxVel</code> and
+<code>RxVel</code>. Each tap is a sum of <code>Sinusoids</code> sinusoids (64 by default). Every draw comes from <code>Seed</code> and <code>Drop</code>, so drop 37
+run alone is the same as drop 37 inside a sweep over <code>Drop</code>, and adding a tap leaves the other taps unchanged.</li>
 </ul>
 <p>What each analysis sees:</p>
 <table>
@@ -5369,11 +5383,11 @@ relative to the large-scale loss.</li>
 </tr>
 <tr>
 <td>Harmonic balance</td>
-<td>The same frozen H at every tone, each at its own frequency, with no Doppler shift</td>
+<td>The same frozen H at every tone, each at its own frequency, with no Doppler shift and the fading frozen</td>
 </tr>
 <tr>
 <td>Envelope</td>
-<td>Every ray's delayed transmit wave, rotated, scaled and turned by its Doppler, drives the receive pin</td>
+<td>Every ray's delayed transmit wave, rotated, scaled, faded and turned by its Doppler, drives the receive pin</td>
 </tr>
 </tbody>
 </table>
@@ -5385,8 +5399,14 @@ step of latency plus each ray's excess delay, reads only steps already solved, a
 latency out of every measurement. A cycle of channels in an envelope bench is refused, and so is a receive pin driven by
 two channels.</p>
 <p>Each run adds the loss breakdown, the total path loss, the bulk delay, the common Doppler and the rays to its result,
-as <code>link:CH1:Loss_dB</code>, <code>link:CH1:PathLoss_dB</code> and the rest. <code>explain --analysis</code> states the same, with the envelope regime:
-the Doppler spread against the record and the subcarrier spacing, and the coherence bandwidth against the signal's.</p>
+as <code>link:CH1:Loss_dB</code>, <code>link:CH1:PathLoss_dB</code> and the rest. It also adds the small scale: <code>RmsDelaySpread_s</code>,
+<code>CoherenceBandwidth_Hz</code>, <code>fD_Hz</code>, the coherence time <code>Tc_s</code> (where the correlation first falls to one half, 0.24/f_D for
+the classical spectrum), <code>PowerDelayProfile_dB</code>, the drop's <code>DopplerSpectrum_dB</code>, and <code>TapGain</code> over the record. An
+envelope run adds <code>H</code> across the signal's band over the record, <code>fDxTrecord</code> and <code>fDoverSCS</code>, and the <strong>Signal quality</strong>
+preset then draws the power-delay profile and the Doppler spectrum under its table. With <code>Equalizer=genie</code> the equalizer
+divides by the channel's own H(f, t), fading included, so what remains is the inter-carrier interference the fading
+causes within each symbol. <code>explain --analysis</code> states the same, with the envelope regime: the Doppler spread and
+coherence time against the record and the subcarrier spacing, and the coherence bandwidth against the signal's.</p>
 <table class="param-table">
 <thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
 <tr><td>1</td><td>tx</td></tr>
@@ -5400,7 +5420,7 @@ the Doppler spread against the record and the subcarrier spacing, and the cohere
 <tr><td>TxHeight</td><td><code>1.5</code></td><td>metre</td><td>&mdash;</td><td>Transmit antenna height above the ground, metres.</td></tr>
 <tr><td>RxHeight</td><td><code>1.5</code></td><td>metre</td><td>&mdash;</td><td>Receive antenna height above the ground, metres.</td></tr>
 <tr><td>PathLoss</td><td><code>free</code></td><td>&mdash;</td><td>shown</td><td>The large-scale model, by its recommendation or report (free, logdist, multislope, tworay, 38901, P1238, P1411, P526, satellite, P1812). Its parameters, and the added losses, are written beside it by the model&#39;s own names.</td></tr>
-<tr><td>Multipath</td><td><code>none</code></td><td>&mdash;</td><td>&mdash;</td><td>none: the rays the geometry gives (the line of sight, and tworay&#39;s ground ray). file: the rays of a ray list (File=), held static.</td></tr>
+<tr><td>Multipath</td><td><code>none</code></td><td>&mdash;</td><td>&mdash;</td><td>none: the rays the geometry gives (the line of sight, and tworay&#39;s ground ray). tdl: a tapped delay line by Profile=. file: the taps of a ray list or power-delay profile (File=).</td></tr>
 <tr><td>TxGain</td><td><code>0</code></td><td>&mdash;</td><td>&mdash;</td><td>Transmit antenna gain, dBi, the same in every direction. TxPattern replaces it with a pattern.</td></tr>
 <tr><td>RxGain</td><td><code>0</code></td><td>&mdash;</td><td>&mdash;</td><td>Receive antenna gain, dBi, the same in every direction. RxPattern replaces it with a pattern.</td></tr>
 <tr><td>TxZ</td><td><code>50</code></td><td>Ω</td><td>&mdash;</td><td>The impedance the transmit pin presents, ohms.</td></tr>

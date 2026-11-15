@@ -1815,7 +1815,8 @@ internal static class Explain
     /// <summary>
     /// brief-pch-6 R-pch6-10 — explain's lines for each channel under analysis <paramref name="a"/>: what <see cref="PropagationChannelModel.Describe"/>
     /// says (model and edition, breakdown, τ0, ν0, rays), and for an envelope run the regime of note §2.4 — f_D·T_record, f_D/Δf_sc, and the coherence
-    /// bandwidth against the signal's — with f_D the rays' Doppler spread about ν0 (the common Doppler is an offset the receiver removes).
+    /// bandwidth against the signal's — with f_D the rays' Doppler spread about ν0 (the common Doppler is an offset the receiver removes), a
+    /// fading tap's ±f_D in it (brief PCH-7).
     /// </summary>
     private static IReadOnlyList<string> ChannelLines(
         List<(string Path, PropagationChannelModel Model, double? CarrierHz, double RecordS, double ScsHz, double BandwidthHz)> channels,
@@ -1839,12 +1840,16 @@ internal static class Explain
                 lines.AddRange(d.Skip(1).Select(x => "  " + x));
                 if (!envelope) { lines.Add("  frozen at TimeOffset, each tone at its own frequency, no Doppler shift"); continue; }
                 var r = ch.At(hz);
-                double fd = r.Rays.Max(x => Math.Abs(x.DopplerHz - r.CommonDopplerHz));
+                // a fading tap (brief PCH-7) spreads ±f_D about its own Doppler
+                double fd = r.Rays.Select((x, i) => Math.Abs(x.DopplerHz - r.CommonDopplerHz)
+                                                   + (i < r.Fades.Count && r.Fades[i].Spec.Kind != RfCore.Propagation.FadingKind.Static ? r.FdHz : 0)).Max();
                 double bc = RfCore.Propagation.RayStatistics.CoherenceBandwidthHz(r.Rays);
                 var parts = new List<string>();
                 if (record > 0) parts.Add(string.Format(inv, "f_D·T_record = {0:G3}", fd * record));
                 if (scs > 0) parts.Add(string.Format(inv, "f_D/Δf_sc = {0:G3}", fd / scs));
                 if (bw > 0) parts.Add(double.IsInfinity(bc) ? "flat across the signal (one ray)" : string.Format(inv, "coherence bandwidth {0:G3} Hz against a {1:G3} Hz signal", bc, bw));
+                if (r.Fading && record > 0 && !double.IsInfinity(r.CoherenceTimeS))
+                    parts.Add(string.Format(inv, "coherence time {0:G3} s against a {1:G3} s record", r.CoherenceTimeS, record));
                 lines.Add(string.Format(inv, "  regime: Doppler spread f_D = {0:G4} Hz; {1}", fd, string.Join(", ", parts)));
                 lines.Add(string.Format(inv, "  envelope: {0} ray(s) stepped one way, latency one step plus up to {1:G4} s excess delay", r.Rays.Count, r.MaxExcessDelayS));
             }

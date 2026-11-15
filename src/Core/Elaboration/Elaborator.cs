@@ -2444,8 +2444,9 @@ public sealed partial class Elaborator
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         foreach (var ov in inst.Overrides)
         {
-            bool file = ov.Name is "File" or "TxPattern" or "RxPattern"
-                        || words.TryGetValue(ov.Name, out var kind) && kind == RfCore.Propagation.ParameterKind.File;
+            // brief-pch-7 — Profile names a tapped delay line (a word); the terrain profile a model reads is Terrain= on the channel
+            bool file = ov.Name is "File" or "TxPattern" or "RxPattern" or "Terrain"
+                        || ov.Name != "Profile" && words.TryGetValue(ov.Name, out var kind) && kind == RfCore.Propagation.ParameterKind.File;
             if (PropagationChannelModel.WordParameters.Contains(ov.Name) || words.ContainsKey(ov.Name))
             {
                 string raw = Unquote(ov.Expression.Trim());
@@ -2479,6 +2480,8 @@ public sealed partial class Elaborator
     private static void BindReverseChannels(ElaboratedNetlist netlist)
     {
         var channels = netlist.Components.Where(c => c.Model is PropagationChannelModel).ToList();
+        // brief-pch-7 — the fading draws' streams are named by the instance (design note §8.1)
+        foreach (var ec in channels) ((PropagationChannelModel)ec.Model).InstancePath = ec.InstancePath;
         foreach (var ec in channels)
         {
             var m = (PropagationChannelModel)ec.Model;
