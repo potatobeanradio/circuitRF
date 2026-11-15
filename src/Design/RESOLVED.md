@@ -32126,3 +32126,8 @@ are ICF-6's thick die (`ThickDieCutPortTests`) and ICF-4's spiral (`ThickSilicon
   `CRF_WRITE_WIRE_DUMPS=1`), each by its warning lines only: `Package lid modes.cem` (254 µm of alumina, 0.053 λ at 20 GHz)
   and the planar `Taper-MoM.cem` made 3D by the dump (a 762 µm board laminate, 0.058 λ at 12 GHz). Gate:
   `ADrawnPortsSheetFallingToTheFloor_IsWarnedOf_AsACutPinsIs`.
+- **A refused cut pin was named by a number another pin was built with.** The generator's refusals name the port by the number
+  the cut gave it (`Port 5 is on 'Metal1' …`), but `C3dCellCuts.Ports` numbers only the sheets it builds, so on the field test
+  `Q1.C: Port 5 …` was refused and `Q1.E` became port 5. A refused pin's sentence already starts with its name, so the leading
+  `Port n` is put as "the port" (`Port n's` as "its") rather than renumbered: `X1.A: the port on 'Metal3' finds no metal of
+  'Metal1' …`. Gate: `ARefusedPin_IsNotNamedByTheNumberTheNextPinIsBuiltWith`.

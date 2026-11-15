@@ -204,8 +204,10 @@ public static class C3dCellCuts
                     ports.Add(GapSheet(cp, refPin, layout, drawn, element, at, name, ref next, D));
                     continue;
                 }
-                string? why = g.Problem is null ? g.Refusal ?? "the layout's 3D problem could not be built."
-                            : g.PortsLeftOut.FirstOrDefault(l => l.Port == cp.Number)?.Why;
+                // The generator names the port by the number the cut gave it, which a refused pin does not keep: the next pin is built
+                // with it ("Q1.C: Port 5 …" refused, Q1.E built as port 5). The sentence starts with the pin's name, so the number goes.
+                string? why = Unnumbered(g.Problem is null ? g.Refusal ?? "the layout's 3D problem could not be built."
+                                                           : g.PortsLeftOut.FirstOrDefault(l => l.Port == cp.Number)?.Why, cp.Number);
                 var sheet = g.Problem?.Ports.FirstOrDefault(p => p.Number == cp.Number);
                 if (why is null && sheet is null) why = "no sheet was built at its face.";
                 if (why is null && element is null) why = "its layout instance places no solid to carry the sheet's position by.";
@@ -278,6 +280,12 @@ public static class C3dCellCuts
         return (ports, notes, warnings);
 
         static string PinName(C3dComponentPort p) => p.Pin is { } pin ? $"{p.Refdes}.{pin}" : p.Refdes;
+
+        static string? Unnumbered(string? why, int n)
+            => why is null ? null
+             : why.StartsWith($"Port {n}'s ", StringComparison.Ordinal) ? "its " + why[$"Port {n}'s ".Length..]
+             : why.StartsWith($"Port {n} ", StringComparison.Ordinal) ? "the port " + why[$"Port {n} ".Length..]
+             : why;
     }
 
     /// <summary>brief-icf-6 R-icf6-2 — the fraction of a wavelength at <paramref name="fMaxHz"/> a vertical sheet from

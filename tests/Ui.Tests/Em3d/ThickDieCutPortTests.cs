@@ -121,7 +121,7 @@ public sealed class ThickDieCutPortTests(ThickDieCutPortTests.Fixture fx, ITestO
     [Fact]
     public void NoSheetToTheFloor_KeepsTodaysBox()
     {
-        var g = Problem(fx.Die(metal1UnderBoth: true), new EmComponentPort("X1") { Return = "Metal1" });
+        var g = Problem(fx.Die(metal1UnderB: true), new EmComponentPort("X1") { Return = "Metal1" });
         var p = g.Problem!;
         Assert.All(g.ComponentPorts!.Ports.Where(c => c.Cutout), c => Assert.StartsWith("down to 'Metal1'", c.Landing));
         Assert.Null(p.PaddingColumnM);
@@ -189,6 +189,20 @@ public sealed class ThickDieCutPortTests(ThickDieCutPortTests.Fixture fx, ITestO
         Assert.Contains(parts.Warnings, w => w.StartsWith("X1 is cut out of the problem and has no port left on it: the co-simulation netlist " +
                                                           "places its model", StringComparison.Ordinal));
         Assert.Equal("X1", Assert.Single(Assert.IsType<EmCoSimPortList>(g.CoSimPorts).Portless).Refdes);
+    }
+
+    /// <summary>A refused pin's sentence does not name the port number the cut gave it before the refusal, which the next pin is built
+    /// with: on the field test "Q1.C: Port 5 …" was refused and Q1.E built as port 5.</summary>
+    [Fact]
+    public void ARefusedPin_IsNotNamedByTheNumberTheNextPinIsBuiltWith()
+    {
+        var cut = Problem(fx.Die(metal1UnderB: true, metal1UnderA: false), new EmComponentPort("X1") { Return = "Metal1" })
+            .ComponentPorts!.Ports.Where(p => p.Cutout).ToList();
+        foreach (var p in cut) output.WriteLine(C3dComponentPorts.Describe(p));
+        Assert.Equal(1, cut.Single(p => p.Pin == "B").Port!.Number);
+        var a = cut.Single(p => p.Pin == "A");
+        Assert.StartsWith("X1.A: the port on 'Metal3' finds no metal of 'Metal1'", a.Refusal, StringComparison.Ordinal);
+        Assert.DoesNotContain("Port 1", a.Refusal, StringComparison.Ordinal);
     }
 
     /// <summary>A drawn port's sheet that falls to the floor past λ/20 is warned of as a cut pin's is, by the same check: on the
@@ -286,12 +300,13 @@ public sealed class ThickDieCutPortTests(ThickDieCutPortTests.Fixture fx, ITestO
             return v;
         }
 
-        /// <summary>The field test's shape: a Metal3 line through Q3, local Metal1 under A's face only (both, when asked).</summary>
-        public LayoutView Die(bool metal1UnderBoth = false)
+        /// <summary>The field test's shape: a Metal3 line through Q3, local Metal1 under A's face only (under B's too, or only, when
+        /// asked).</summary>
+        public LayoutView Die(bool metal1UnderB = false, bool metal1UnderA = true)
         {
             var v = Line("Q3", M3);
-            v.Shapes.Add(R(M1, -20, -20, 10, 20));
-            if (metal1UnderBoth) v.Shapes.Add(R(M1, 30, -20, 60, 20));
+            if (metal1UnderA) v.Shapes.Add(R(M1, -20, -20, 10, 20));
+            if (metal1UnderB) v.Shapes.Add(R(M1, 30, -20, 60, 20));
             return v;
         }
 
