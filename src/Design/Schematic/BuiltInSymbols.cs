@@ -159,6 +159,8 @@ public static class BuiltInSymbols
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, bool, SnpPinConfig, SnpPitch), Symbol> _snpCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _verilogACache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _combinerCache = new();
+    // MWPD per section count above one (one section is _mwpd), keyed by N; Primitives takes its PIN count.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mwpdCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<PhasedArrayGlyph, Symbol> _phasedArrayCache = new();
     // Tuner-family cache key: (kind, showBias) — per-instance bias-branch variant.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(SymbolKind, bool), Symbol> _tunerCache = new();
@@ -258,7 +260,11 @@ public static class BuiltInSymbols
             case SymbolKind.ViaGnd:     return _viaGnd;
             case SymbolKind.TestPad:    return _testPad;
             case SymbolKind.GsgPad:     return _gsgPad;
-            case SymbolKind.Mwpd:       return _mwpd;
+            case SymbolKind.Mwpd:
+            {
+                int n = CircuitRF.Core.Devices.Microstrip.WilkinsonPlan.SectionsForPinCount(portCount);
+                return n == 1 ? _mwpd : _mwpdCache.GetOrAdd(n, BuildMwpd);
+            }
             case SymbolKind.MimCap:     return _mimCap;
             case SymbolKind.Spiral:     return _spiral;
             case SymbolKind.OctSpiral:  return _octSpiral;
@@ -2666,6 +2672,43 @@ public static class BuiltInSymbols
         Txt("λ/4", 80, -240, fontSize: 11, vAlign: SymbolTextVAlign.Bottom),
         Txt("λ/4", 80,  240, fontSize: 11, vAlign: SymbolTextVAlign.Top),
     ], SymbolKind.Mwpd);
+
+    // MWPD with N sections: the ring as above, then the two arms running on to the right as a pair, a junction (dot) every
+    // 300 where resistor k's pins R2_k/R3_k sit on the arms 400 apart, and the outputs' junctions, R2/R3 and outputs at
+    // the right as the one-section divider has them. One λ/4 over each section.
+    private static Symbol BuildMwpd(int n)
+    {
+        float xd = 300 + 300 * (n - 1);
+        var prims = new List<SymbolPrimitive>
+        {
+            L(-400,    0, -260,    0),
+            Circ(-260, 0, 10, filled: true),
+            QC(-260,   0, -260, -200,  -40, -200),
+            L( -40, -200,   xd, -200),
+            QC(-260,   0, -260,  200,  -40,  200),
+            L( -40,  200,   xd,  200),
+            Txt("λ/4", 80, -240, fontSize: 11, vAlign: SymbolTextVAlign.Bottom),
+            Txt("λ/4", 80,  240, fontSize: 11, vAlign: SymbolTextVAlign.Top),
+        };
+        for (int k = n; k >= 1; k--)
+        {
+            float x = 300 + 300 * (n - k);
+            prims.Add(Circ(x, -200, 10, filled: true));
+            prims.Add(Circ(x,  200, 10, filled: true));
+            if (k == 1) break;
+            prims.Add(Txt("λ/4", x + 150, -240, fontSize: 11, vAlign: SymbolTextVAlign.Bottom));
+            prims.Add(Txt("λ/4", x + 150,  240, fontSize: 11, vAlign: SymbolTextVAlign.Top));
+        }
+        prims.AddRange([
+            L(xd, -200, xd + 100, -200),               // R2
+            L(xd,  200, xd + 100,  200),               // R3
+            L(xd, -200, xd, -400),                     // output 2
+            L(xd, -400, xd + 100, -400),
+            L(xd,  200, xd,  400),                     // output 3
+            L(xd,  400, xd + 100,  400),
+        ]);
+        return Sym(prims, SymbolKind.Mwpd, 3 + 2 * n);
+    }
 
     private static Symbol BuildTestPad()
     {

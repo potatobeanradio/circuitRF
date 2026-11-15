@@ -836,7 +836,9 @@ public static class ComponentTypeRegistry
         [SymbolKind.Mwpd]         = new("MWPD", "WPD",
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MWPD", "Wilkinson", "Wilkinson divider", "power divider", "power splitter", "splitter",
-                          "combiner", "divider", "3 dB", "in-phase", "isolation resistor", "quarter wave", "ring"]),
+                          "combiner", "divider", "3 dB", "in-phase", "isolation resistor", "quarter wave", "ring",
+                          "unequal split", "unequal divider", "split ratio", "multi-section", "broadband divider",
+                          "split-tee"]),
         // The two vias (brief-via-component.md). Microstrip, because that is where they are used: a
         // line changing layers, and the return of a shunt part on a board. Not transmission lines.
         [SymbolKind.Via]          = new("VIA", "VIA",
@@ -1091,9 +1093,11 @@ public static class ComponentTypeRegistry
             "One terminal, A, on FromLayer. The far end is ground: the via lands on GroundLayer.",
 
         SymbolKind.Mwpd =>
-            "Not interchangeable: terminal 1 is the input and 2 and 3 the two outputs, alike by symmetry. R2 and R3 "
-          + "are the arms' ends beside outputs 2 and 3, the gap the isolation resistor goes across: put a resistor of "
-          + "2·Z0 on R2-R3.",
+            "Not interchangeable: terminal 1 is the input and 2 and 3 the two outputs, alike by symmetry when K = 1. R2 "
+          + "and R3 are the arms' ends beside outputs 2 and 3, the gap the isolation resistor goes across: put a "
+          + "resistor of 2·Z0 (Z0·(K + 1/K) for an unequal split) on R2-R3. With N sections the terminals are 3 + 2·N: "
+          + "R2_k and R3_k, k = 2 … N, are the ends of resistor k, counted from the outputs, and the Properties readout "
+          + "gives every resistor's value.",
 
         SymbolKind.GsgPad =>
             "Not interchangeable: terminal 1 is where the probe's signal tip lands, the middle of the signal pad, "
@@ -1644,6 +1648,13 @@ public static class ComponentTypeRegistry
         (SymbolKind.Cpwg, "SignalLayer") => "The conductor the strip and its coplanar grounds are on. Empty: the technology's top conductor.",
         (SymbolKind.Cpwg, "GroundReference") => "The plane backing the line. Empty: the nearest ground-designated conductor below the "
                                               + "signal layer, or above it when there is none below.",
+        (SymbolKind.Mwpd, "K") => "Split ratio: P3/P2 = K², so port 3 takes K² times the power port 2 does. 1 is the equal split; "
+                                + "any other value gives the unequal split's arms, a quarter-wave transformer at each output and "
+                                + "Z0·(K + 1/K) across R2-R3. Equal split only with N above 1.",
+        (SymbolKind.Mwpd, "N") => "Number of quarter-wave sections, 1 to 3 (a broadband multi-section divider above 1), each with its own "
+                                + "isolation resistor. Sets the pin count, 3 + 2·N, so it must be a plain number.",
+        (SymbolKind.Mwpd, "Band") => "For N above 1: the design band's upper edge over its lower, f2/f1, centred on F. The sections "
+                                   + "are an equal-ripple transformer over it.",
         (SymbolKind.Mwpd, "Z0") => "The ports' impedance. Each arm is √2·Z0 and the isolation resistor 2·Z0; the widths are "
                                  + "derived from it on the technology's substrate.",
         (SymbolKind.Mwpd, "F") => "Centre frequency: each arm is a quarter wavelength long here, in the line's own effective "
@@ -1715,7 +1726,9 @@ public static class ComponentTypeRegistry
             "MTEE and MCURVE, the pieces the layout draws: an input tee, two 180° curves of √2·Z0 and two output tees, "
           + "stamped together and reduced to the five pins. Each arm is λg/4 at F between the junctions' reference planes. "
           + "MTEE's closed forms are calibrated at εr 9.9 and say so on any other board; MCURVE's effective radius is "
-          + "stated for 3W to 7W. The isolation resistor is not in the model: it is the resistor on R2-R3.",
+          + "stated for 3W to 7W. An unequal split adds a quarter-wave transformer on each output tee's branch; each "
+          + "further section is a pair of lines run on from the ring with a tee at every junction, their coupling to "
+          + "each other not modelled. The isolation resistors are not in the model: they are the resistors on the pins.",
         SymbolKind.GsgPad =>
             "MLIN, twice: half the signal pad (PadW wide, PadL/2 long, from the tip to its edge), then the line, "
           + "cascaded, with MLIN's validity. The ground pads are ideal ground at the probe's reference plane; their "
@@ -3899,11 +3912,15 @@ public static class ComponentTypeRegistry
             // GSGPAD: W and L are the line's, MLIN's own rows (W re-synthesised for 50 Ω on the placing technology);
             // the probe's own numbers are in µm, which no technology rewrites — a probe's pitch is the probe's.
             // MWPD (docs/design/rf-passives.md): the specs and the resistor's pin span. W, L and the ring radius are derived
-            // (WilkinsonPlan) and shown as a readout; K and N are reserved for the unequal-split and multi-section variants.
+            // (WilkinsonPlan) and shown as a readout. K is the split ratio, N the section count (the pins follow it), Band
+            // the multi-section design's f2/f1; at their defaults the part is the equal-split divider it always was.
             case SymbolKind.Mwpd:
-                return [new("Z0",  "50",   "Ω",   true, UnitDimension.Resistance),
-                        new("F",   "2.4",  "GHz", true, UnitDimension.Frequency),
-                        new("Gap", "1.35", "mm",  true, UnitDimension.Length),
+                return [new("Z0",   "50",   "Ω",   true,  UnitDimension.Resistance),
+                        new("F",    "2.4",  "GHz", true,  UnitDimension.Frequency),
+                        new("Gap",  "1.35", "mm",  true,  UnitDimension.Length),
+                        new("K",    "1",    "",    true,  UnitDimension.None),
+                        new("N",    "1",    "",    true,  UnitDimension.None),
+                        new("Band", "2",    "",    false, UnitDimension.None),
                         .. SignalGroundLayerParams];
             case SymbolKind.GsgPad:
                 return [new("W",     "2.9", "mm", true, UnitDimension.Length),

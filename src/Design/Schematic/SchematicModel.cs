@@ -698,10 +698,11 @@ public enum SymbolKind
     /// edges, holding two small antennas in the schematic antenna symbol (a mast under an open triangle on its point) and the waves
     /// leaving the transmit one.</summary>
     PropagationChannel,
-    /// <summary>Equal-split Wilkinson divider on microstrip (engine "MWPD", docs/design/rf-passives.md): specs Z0 and F
-    /// and the resistor's pin span Gap; the arms, ring and junctions are derived (WilkinsonPlan). Five pins: 1 the input,
-    /// 2 and 3 the outputs, R2 and R3 the ends the 2·Z0 isolation resistor goes across — an ordinary resistor, not part of
-    /// the part. Appended so no existing kind's ordinal moves.</summary>
+    /// <summary>Wilkinson divider on microstrip (engine "MWPD", docs/design/rf-passives.md): specs Z0 and F, the split
+    /// ratio K and the section count N (with its Band), and the resistor's pin span Gap; the arms, ring and junctions are
+    /// derived (WilkinsonPlan). 3 + 2·N pins: 1 the input, 2 and 3 the outputs, R2 and R3 the ends the isolation resistor
+    /// goes across (2·Z0 for the equal split) — an ordinary resistor, not part of the part — then R2_k/R3_k for each
+    /// further section's resistor. Appended so no existing kind's ordinal moves.</summary>
     Mwpd,
 }
 

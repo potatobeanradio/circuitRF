@@ -90,9 +90,20 @@ public static class SymbolPortDefs
             // and a grid step shorter than MLIN, pin to pin 300 rather than 400.
             case SymbolKind.GsgPad:  return [("1", -200f, 0f), ("2", 100f, 0f)];
             // MWPD: the input at the left, the outputs at the right's top and bottom corners, and R2/R3 between them
-            // 400 apart — a resistor's own pin span, so one dropped on R2-R3 lands on both with no wire.
-            case SymbolKind.Mwpd:    return [("1", -400f, 0f), ("2", 400f, -400f), ("3", 400f, 400f),
-                                             ("R2", 400f, -200f), ("R3", 400f, 200f)];
+            // 400 apart — a resistor's own pin span, so one dropped on R2-R3 lands on both with no wire. VARIADIC on the
+            // PIN count (3 + 2·N, as PortCount answers), so any other count, the one-argument overload's 2 included, is
+            // the one-section divider: each further section moves the outputs 300 right, and resistor k's pins R2_k/R3_k
+            // sit on the two arms, 400 apart, at the junction 300·(N − k) past where the ring meets the first.
+            case SymbolKind.Mwpd:
+            {
+                int n = CircuitRF.Core.Devices.Microstrip.WilkinsonPlan.SectionsForPinCount(portCount);
+                float x = 400f + 300f * (n - 1);
+                return [("1", -400f, 0f), ("2", x, -400f), ("3", x, 400f), ("R2", x, -200f), ("R3", x, 200f),
+                        .. Enumerable.Range(2, n - 1).SelectMany(k => new[]
+                        {
+                            ($"R2_{k}", 300f + 300f * (n - k), -200f), ($"R3_{k}", 300f + 300f * (n - k), 200f),
+                        })];
+            }
             // The MMIC passives (AA-1): horizontal, on MLIN's left/right convention, because they sit
             // in a die's lines. MIMCAP 1 = top plate, 2 = bottom plate; SPIRAL 1 = outer end, 2 = inner
             // end; AIRBRIDGE 1/2 = the landings, and 3 (below) / 4 (above) the two ends of the line it crosses.
@@ -1157,6 +1168,15 @@ public sealed class EditableComponent
 
             // A Phased Antenna Array in Elements mode draws one pin per element, Rows × Cols of them.
             if (Symbol is SymbolKind.PhasedArray) return ArrayGlyph().PinCount;
+
+            // A Wilkinson divider's N is its number of sections; it draws 3 + 2·N pins. A plain number only — an expression
+            // is the one-section divider's five, as the plan cannot be asked for more pins than the symbol draws.
+            if (Symbol is SymbolKind.Mwpd)
+            {
+                var sections = Parameters.FirstOrDefault(q => q.Name == "N");
+                return sections is not null && int.TryParse(sections.Expression, out int ns) && ns is >= 1 and <= CircuitRF.Core.Devices.Microstrip.WilkinsonPlan.MaxSections
+                    ? 3 + 2 * ns : 5;
+            }
 
             // The Combiner's N is its number of PATHS; it draws N + 1 pins, the common port with them.
             if (Symbol is SymbolKind.Combiner)

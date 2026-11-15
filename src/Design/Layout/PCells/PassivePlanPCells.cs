@@ -17,7 +17,7 @@ namespace CircuitRF.Design.Layout.PCells;
 /// </summary>
 public static class PassivePlanPCells
 {
-    /// <summary>The equal-split Wilkinson divider (MWPD): <see cref="WilkinsonPlan"/>'s ring.</summary>
+    /// <summary>The Wilkinson divider (MWPD): <see cref="WilkinsonPlan"/>'s ring, and its sections and transformers.</summary>
     public const string WilkinsonId = ComponentModelFactory.WilkinsonTypeName;
 
     public static PCellResult GenerateWilkinson(
@@ -27,7 +27,8 @@ public static class PassivePlanPCells
         try
         {
             design = WilkinsonPlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
-                parameters.Real("Gap", 1.35e-3), SubstrateOf(technology, layerSelection));
+                parameters.Real("Gap", 1.35e-3), SubstrateOf(technology, layerSelection),
+                parameters.Real("K", 1.0), parameters.Real("N", 1.0), parameters.Real("Band", WilkinsonPlan.DefaultBand));
         }
         catch (ParameterRefusalException ex)
         {
