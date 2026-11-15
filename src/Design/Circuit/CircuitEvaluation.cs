@@ -94,22 +94,32 @@ public static class CircuitEvaluation
     public static RunResult Evaluate(PreparedCircuit circuit, CircuitEvaluationRequest? request = null)
     {
         request ??= new CircuitEvaluationRequest();
-        var plan   = Plan(circuit, request);
-        if (request.EmMaxSolves is { } max && plan.HasEm)
+        // brief-paa-8b — the kept netlist is this evaluation's for its whole run, or nobody's: a second evaluation at once elaborates
+        var reuse = circuit.Reuse;
+        bool held = reuse.TryHold();
+        try
         {
-            var count = CountEmSolves(plan, request.Control);
-            if (EmLimitRefusal(count, max) is { } over)
+            var plan   = PlanCore(circuit, request, held ? reuse : null);
+            if (request.EmMaxSolves is { } max && plan.HasEm)
             {
-                plan.Nl?.Dispose();
-                return new RunResult(RunStatus.EngineError, over);
+                var count = CountEmSolves(plan, request.Control);
+                if (EmLimitRefusal(count, max) is { } over)
+                {
+                    plan.Nl?.Dispose();
+                    return new RunResult(RunStatus.EngineError, over);
+                }
             }
+            var result = Execute(plan, request.Control, request.Measurements, request.Expressions ?? [],
+                                 request.Breadcrumb, request.Fields, request.FieldsLabel);
+            // Simulate prints the plan's notes before the run and the result's after it; a caller of this
+            // one call has only the result, so the plan's notes (a promotion, a tuned key that resolved
+            // to nothing) lead it.
+            return plan.Notes.Count == 0 ? result : result.WithLeadingNotes(plan.Notes);
         }
-        var result = Execute(plan, request.Control, request.Measurements, request.Expressions ?? [],
-                             request.Breadcrumb, request.Fields, request.FieldsLabel);
-        // Simulate prints the plan's notes before the run and the result's after it; a caller of this
-        // one call has only the result, so the plan's notes (a promotion, a tuned key that resolved
-        // to nothing) lead it.
-        return plan.Notes.Count == 0 ? result : result.WithLeadingNotes(plan.Notes);
+        finally
+        {
+            if (held) reuse.Release();
+        }
     }
 
     /// <summary>
@@ -142,7 +152,11 @@ public static class CircuitEvaluation
     /// converged, plausible, complete-looking result, so the mistake is invisible. This is the CLI's own
     /// rule for <c>-a</c>, shared rather than restated.
     /// </summary>
-    public static RunPlan Plan(PreparedCircuit circuit, CircuitEvaluationRequest request)
+    public static RunPlan Plan(PreparedCircuit circuit, CircuitEvaluationRequest request) => PlanCore(circuit, request, null);
+
+    /// <summary><see cref="Plan"/>, re-weighing the kept netlist instead of elaborating when <paramref name="reuse"/> is given and the
+    /// tuned values that changed reach only a Feed-mode array's weights (brief-paa-8b).</summary>
+    private static RunPlan PlanCore(PreparedCircuit circuit, CircuitEvaluationRequest request, ElaborationReuse? reuse)
     {
         // brief-sdl-6 D9: the EM model provider is this layer's, so every caller of the one run function has it.
         ParametricEmProvider.Register();
@@ -188,6 +202,14 @@ public static class CircuitEvaluation
 
         // ── 3. Elaborate ───────────────────────────────────────────────────────
         ElaboratedNetlist nl;
+        var tunables = request.Tunables ?? new Dictionary<string, string>();
+        bool reweighed = false;
+        if (reuse is not null && reuse.TryReweigh(request, tunables, tb, lib, circuit.BaseDirectory, out var rewoven))
+        {
+            nl = rewoven;
+            reweighed = true;
+        }
+        else
         try
         {
             circuit.CountElaboration();
@@ -348,6 +370,9 @@ public static class CircuitEvaluation
             if (total > long.MaxValue - p.WorkUnits) { total = long.MaxValue; break; }
             total += p.WorkUnits;
         }
+
+        if (reuse is not null && !reweighed)
+            reuse.Keep(nl, request, tunables, planned.Any(a => a.Em is not null || a.EmRefusal is not null));
 
         return new RunPlan(RunStatus.Success, $"{planned.Count} analysis run(s) planned",
                            lines, total, notes)

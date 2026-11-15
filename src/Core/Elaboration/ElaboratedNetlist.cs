@@ -10,7 +10,37 @@ namespace CircuitRF.Core.Elaboration;
 public sealed class ElaboratedNetlist : IDisposable
 {
     public List<ElaboratedComponent> Components { get; } = [];
-    public NodeMap                   Nodes      { get; } = new();
+    public NodeMap                   Nodes      { get; private set; } = new();
+
+    /// <summary>
+    /// brief-paa-8b R-paa8b-2 — a new netlist holding the same components (the same objects, <paramref name="replace"/> swapping some),
+    /// the same nodes, resolved globals and everything the elaboration said, and none of what a run has said since. What a re-weigh
+    /// starts from: the components are shared, so the two netlists must not be run at once, and neither may hold a part that releases
+    /// something when disposed (the caller's rule).
+    /// </summary>
+    public ElaboratedNetlist Copy(Func<ElaboratedComponent, ElaboratedComponent?>? replace = null, Func<string, bool>? skipKey = null)
+    {
+        var copy = new ElaboratedNetlist { Nodes = Nodes.Copy(), AmbientC = AmbientC, StatisticalCalls = StatisticalCalls,
+                                           StatisticalProblems = StatisticalProblems };
+        foreach (var c in Components) copy.AddComponent(replace?.Invoke(c) ?? c);
+        foreach (var (k, v) in _resolvedGlobals) copy._resolvedGlobals[k] = v;
+        copy._globalsWithExplicitUnit.UnionWith(_globalsWithExplicitUnit);
+        var skipped = _keyedWarnings.Where(w => skipKey?.Invoke(w.Key) == true).ToList();
+        var dropped = skipped.Select(w => w.Message).ToHashSet(StringComparer.Ordinal);
+        copy._warnings.AddRange(_warnings.Where(w => !dropped.Contains(w)));
+        copy._notes.AddRange(_notes);
+        copy._seenWarningKeys.UnionWith(_seenWarningKeys.Where(k => skipKey?.Invoke(k) != true));
+        copy._keyedWarnings.AddRange(_keyedWarnings.Where(w => skipKey?.Invoke(w.Key) != true));
+        copy._keyedNotes.AddRange(_keyedNotes);
+        return copy;
+    }
+
+    /// <summary>brief-paa-8b — the resolved globals replaced: what a re-weigh resolved from the tuned values.</summary>
+    internal void ReplaceResolvedGlobals(IEnumerable<(string Name, Value Value)> values)
+    {
+        _resolvedGlobals.Clear();
+        foreach (var (name, value) in values) _resolvedGlobals[name] = value;
+    }
 
     /// <summary>
     /// The ambient temperature this netlist was elaborated at, in °C — the design's own

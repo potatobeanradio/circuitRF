@@ -364,7 +364,7 @@ public static class CnlWriter
 
     // ── Analysis emission ─────────────────────────────────────────────────────
 
-    private static string FormatAnalysis(Analysis analysis) => analysis switch
+    internal static string FormatAnalysis(Analysis analysis) => analysis switch
     {
         HarmonicBalanceAnalysis hb    => FormatHbAnalysis(hb),
         EnvelopeAnalysis env          => $"analysis {env.Name} type=env Stop={env.StopExpr} Step={env.StepExpr} Accuracy={env.Accuracy} " +

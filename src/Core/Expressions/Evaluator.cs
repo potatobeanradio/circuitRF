@@ -70,7 +70,7 @@ public sealed partial class Evaluator
             // declared in mil, with `a` in mil, is 20 mil — `a` is already scaled, and scaling it again made b
             // 2.54e-5 times too small. Only a binding that is not unit-bearing takes its unit on the result; one
             // that is gives it to its bare additive operands instead (`b = a + 5` in mil is a + 5 mil).
-            var val  = EvalAtSite(Parser.Parse(expression), owningScope, unit);
+            var val  = EvalAtSite(Parse(expression), owningScope, unit);
             _memo[key] = val;
             return val;
         }
@@ -104,7 +104,20 @@ public sealed partial class Evaluator
 
     /// <summary>Parse and evaluate an expression string in the given scope.</summary>
     public Value Eval(string expression, Scope scope, string? unit = null)
-        => EvalAtSite(Parser.Parse(expression), scope, unit);
+        => EvalAtSite(Parse(expression), scope, unit);
+
+    // brief-paa-8b — parse once, evaluate many: a Phased Antenna Array evaluates the same Amp/Phase text once per element, 4096 times,
+    // and parsing it each time was most of a re-weigh. The parser is a pure function of the text and its trees are immutable records,
+    // so one tree per text serves every evaluation this evaluator makes.
+    private readonly Dictionary<string, Expr> _parsed = new(StringComparer.Ordinal);
+
+    private Expr Parse(string expression)
+    {
+        if (_parsed.TryGetValue(expression, out var ast)) return ast;
+        ast = Parser.Parse(expression);
+        if (_parsed.Count < 65_536) _parsed[expression] = ast;
+        return ast;
+    }
 
     // var-unit-wins (expressions.md §8): a unit-bearing expression — a unit literal, or a name that carries a unit and
     // was scaled when it resolved — is already base SI, so the site unit is not applied to the result; its bare additive

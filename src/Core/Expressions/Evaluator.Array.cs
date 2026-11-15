@@ -132,7 +132,7 @@ public sealed partial class Evaluator
     public Value EvalPhase(string expression, Scope scope, string? unit, string site)
     {
         string siteUnit = unit is { Length: > 0 } u && Units.BaseUnit(u) == "rad" ? u : "deg";
-        var ast = Parser.Parse(expression);
+        var ast = Parse(expression);
         _statFrames.Add(new StatFrame(scope.InstancePath, site));
         try
         {

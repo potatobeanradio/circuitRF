@@ -1,6 +1,6 @@
 # Brief PAA-9 — the Phased Array tool window
 
-**Series:** PAA-0 … PAA-10 · **Tag:** `R-paa9-<n>` · **Depends on:** PAA-5, PAA-8 (PAA-6, PAA-7 for their views) ·
+**Series:** PAA-0 … PAA-10 · **Tag:** `R-paa9-<n>` · **Depends on:** PAA-5, PAA-8, PAA-8b (PAA-6, PAA-7 for their views) ·
 **Design note:** §8
 **Area:** new `src/Ui/PhasedArray/` and `src/Ui/Views/PhasedArray/` (the window, as the RF Chain Budget's and the Match
 Designer's are top-level tool windows); new renderers in `src/Render/PhasedArray/`; `tools/UiSnapshot`; `src/Ui/RESOLVED.md`.
@@ -47,8 +47,10 @@ a failures tab switching off a chosen fraction of elements at random over a chos
 written) and showing the spread of gain and sidelobe level; a frequency tab of pointing against frequency across the
 record's frequencies, phase shifters against delays.
 
-**R-paa9-7 — It keeps up.** Every interaction that changes only weights goes through PAA-8's fast path and redraws the
-aperture, map, cuts and readouts together; anything else follows PAA-8's "estimated" rule.
+**R-paa9-7 — It keeps up.** Every interaction that changes only weights goes through PAA-8's fast path (and PAA-8b's
+re-weigh, so it does not elaborate) and redraws the aperture, map, cuts and readouts together; anything else follows PAA-8's
+"estimated" rule. The window's frame — evaluation and drawing — is measured at 1024 and 4096 elements during a beam drag and
+recorded in `src/Ui/RESOLVED.md` (no timing assertion); the target is 20 frames a second.
 
 **R-paa9-8 — Drawn by `src/Render`.** The aperture and (u,v) renderers are in `src/Render/PhasedArray`, framework-free, so
 UiSnapshot and DocGen draw them with the window's code.
@@ -62,7 +64,13 @@ UiSnapshot and DocGen draw them with the window's code.
 2. A beam drag from boresight to (30°, 0°) writes `theta0 = 30` to the VAR the `steer()` names, as one undo step.
 3. An element clicked off appears in `Off`, the schematic's symbol draws it hollow, and undo restores both.
 4. *File ▸ New ▸ Phased Array* creates a cell that `check` passes and that simulates.
-5. The background scan map is cancelled by an edit (a counter of cancelled jobs) and never starts on a non-fast-path bench.
+5. The background scan map is cancelled by an edit (a counter of cancelled jobs) and never starts on a non-fast-path bench. A scan
+   of N directions at 4096 elements makes at most one elaboration and one closure factorisation per frequency
+   (`PreparedCircuit.Elaborations`, `PhasedArrayFastPath.ClosureFactorisations`).
+6. **A drag costs what PAA-8 and PAA-8b say — counters, not timing.** A 20-step beam drag on a 4096-element array with an identical
+   channel makes no elaboration and 20 re-weighs (`PreparedCircuit.Elaborations`, `Reweighs`), no closure factorisation after the
+   first and 20 back-substitutions (`PhasedArrayFastPath`), and builds no new phase tables for the cuts, the map or the overview
+   (`ArrayPattern.TablesBuilt`). R-paa9-7's frame measurement is recorded, never asserted.
 
 ## Not here
 

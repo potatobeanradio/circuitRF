@@ -17,6 +17,16 @@ public sealed class NodeMap
         _indexToName.Add("0");
     }
 
+    /// <summary>brief-paa-8b — a copy: every name at the same index, the aliases and the labelled names.</summary>
+    internal NodeMap Copy()
+    {
+        var copy = new NodeMap();
+        for (int i = 1; i < _indexToName.Count; i++) copy.GetOrAssign(_indexToName[i]);
+        foreach (var (name, node) in _aliases) copy.AddAlias(name, node);
+        copy.LabeledNames.UnionWith(LabeledNames);
+        return copy;
+    }
+
     /// <summary>Gets or assigns an index for the given net name.</summary>
     public int GetOrAssign(string netName)
     {

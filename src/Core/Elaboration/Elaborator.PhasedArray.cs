@@ -42,76 +42,15 @@ public sealed partial class Elaborator
         var lattice = array.Lattice;
         int n = lattice.Count;
 
-        // ── the weights, per element ──────────────────────────────────────────────────────────────
-        var common = new Dictionary<string, ParameterAssignment>(StringComparer.OrdinalIgnoreCase);
-        var indexed = new Dictionary<(string, int), ParameterAssignment>();
-        foreach (var ov in inst.Overrides)
-        {
-            if (!PhasedArrayModel.IsElementParameter(ov.Name, out string baseName, out int? index)) continue;
-            string key = baseName.ToLowerInvariant();
-            if (index is null) { common[key] = ov; continue; }
-            if (index < 1 || index > n)
-                throw new ParameterRefusalException($"'{childPath}': {ov.Name} names element {index}, and the {lattice.Rows} × {lattice.Cols} array's elements are " +
-                                                    $"numbered 1 to {n}, row-major from the top left seen from boresight.");
-            indexed[(key, index.Value)] = ov;
-        }
-        int bits = WholeParameter(p, "PhaseBits", childPath, 0, 24);
-        double step = p.TryGetValue("AttenStep", out var sv) ? RealParameter(sv, "AttenStep", childPath) : 0;
-        if (step < 0) throw new ParameterRefusalException($"'{childPath}': AttenStep={step} is not a step: it is 0 (continuous) or a positive number of dB.");
-
-        var amp = new double[n];
-        var phase = new double[n];
-        var delay = new double[n];
-        var scopes = new Scope[n];
-        for (int e = 0; e < n; e++)
-        {
-            var (x, y) = lattice.Position(e);
-            int row = e / lattice.Cols + 1, col = e % lattice.Cols + 1;
-            var es = ElementScope.Create(scope, $"{childPath}[{e + 1}]", _evaluator, e + 1, row, col, x, y, lattice.Rows, lattice.Cols);
-            scopes[e] = es;
-            ParameterAssignment? Pick(string b) => indexed.TryGetValue((b, e + 1), out var o) ? o : common.GetValueOrDefault(b);
-            double Of(ParameterAssignment? ov, double fallback, Func<ParameterAssignment, Value> eval)
-            {
-                if (ov is null) return fallback;
-                Value v;
-                try { v = eval(ov); }
-                catch (ExpressionException ex)
-                {
-                    throw new ParameterRefusalException($"'{childPath}': {ov.Name}={ov.Expression} at element {e + 1} (row {row}, col {col}): {ex.Message}");
-                }
-                if (v.Kind != ValueKind.Real || !double.IsFinite(v.AsReal()))
-                    throw new ParameterRefusalException($"'{childPath}': {ov.Name}={ov.Expression} is {v} at element {e + 1} (row {row}, col {col}): it is a real number.");
-                return v.AsReal();
-            }
-            string site(ParameterAssignment ov) => $"{inst.InstanceName}.{ov.Name}";
-            amp[e] = Of(Pick("amp"), 1, ov => _evaluator.EvalParameter(ov.Expression, es, ov.Unit, site(ov)));
-            phase[e] = Of(Pick("phase"), 0, ov => _evaluator.EvalPhase(ov.Expression, es, ov.Unit, site(ov)));
-            delay[e] = Of(Pick("delay"), 0, ov => _evaluator.EvalParameter(ov.Expression, es, ov.Unit, site(ov)));
-        }
-
-        // ── quantisation (R-paa4-4): the phase to 2π/2^b, the attenuation from the largest amplitude to the step ──
-        var requested = new Complex[n];
-        var quantised = new Complex[n];
-        double largest = 0;
-        for (int e = 0; e < n; e++) if (lattice.IsOn(e)) largest = Math.Max(largest, Math.Abs(amp[e]));
-        for (int e = 0; e < n; e++)
-        {
-            if (!lattice.IsOn(e)) continue;
-            requested[e] = amp[e] * Complex.FromPolarCoordinates(1, phase[e]);
-            double ph = phase[e] + (amp[e] < 0 ? Math.PI : 0);
-            quantised[e] = Complex.FromPolarCoordinates(ArrayWeights.QuantiseAmplitude(Math.Abs(amp[e]), largest, step), ArrayWeights.QuantisePhase(ph, bits));
-        }
-        var feed = new PhasedArrayFeedModel(requested, quantised, delay, array.Z0);
+        // ── the weights, per element, quantised (R-paa4-4) ────────────────────────────────────────
+        var (feed, scopes, bits, step) = FeedWeights(inst, childPath, scope, lattice, p, array.Z0);
         array.Feed = feed;
         int off = lattice.Off.Count;
         array.FeedNote = $"Feed mode: one pin, F, split {n} ways to the elements through their weights; phases " +
                          (bits > 0 ? $"rounded to {360 / Math.Pow(2, bits):G6}° ({bits} bits)" : "continuous") + ", amplitudes " +
                          (step > 0 ? $"rounded to {step:G6} dB of attenuation from the largest" : "continuous") +
                          (off > 0 ? $"; {off} element{(off == 1 ? "" : "s")} switched off, each terminated in Z0 by its zero weight" : "") + ".";
-        if (feed.Activity != Activity.Passive)
-            netlist.AddWarningOnce($"phased-array-gain:{childPath}",
-                $"{PhasedArrayModel.Describe(childPath)}: the weights' RMS amplitude is {feed.SigmaMax:G4}, above 1, so its beamformer has gain and is not " +
-                "passive; it has no thermal noise. A taper normalised to 1 at its peak keeps the beamformer passive.");
+        WarnIfFeedHasGain(feed, childPath, netlist);
 
         // ── the channel cell (R-paa4-5) ─────────────────────────────────────────────────────────
         string channelName = p.TryGetValue("Channel", out var cv) && cv.Kind == ValueKind.String ? cv.AsString().Trim() : "";
@@ -183,6 +122,143 @@ public sealed partial class Elaborator
             }
         }
         finally { if (noiseOff) _noiseOffDepth--; }
+    }
+
+    private const string FeedGainKey = "phased-array-gain:";
+
+    private static void WarnIfFeedHasGain(PhasedArrayFeedModel feed, string childPath, ElaboratedNetlist netlist)
+    {
+        if (feed.Activity != Activity.Passive)
+            netlist.AddWarningOnce(FeedGainKey + childPath,
+                $"{PhasedArrayModel.Describe(childPath)}: the weights' RMS amplitude is {feed.SigmaMax:G4}, above 1, so its beamformer has gain and is not " +
+                "passive; it has no thermal noise. A taper normalised to 1 at its peak keeps the beamformer passive.");
+    }
+
+    /// <summary>
+    /// brief-paa-8b R-paa8b-2 — <paramref name="template"/>, the last full elaboration of this bench, with every top-level Feed-mode array's
+    /// beamformer weighed again in <paramref name="tb"/>'s values (FeedWeights, as the elaboration does) and the global variables resolved
+    /// again; every other component is the template's own object. The caller has shown that nothing but those weights reads a value that
+    /// changed (PhasedArrayReweigh.Refusal) and that no part releases anything when disposed. The beamformer-gain warning is decided again.
+    /// </summary>
+    public ElaboratedNetlist Reweigh(ElaboratedNetlist template, TestBench tb)
+    {
+        _functions = tb.Functions.ToArray();
+        foreach (var fn in _functions) _evaluator.RegisterFunction(fn);
+        _evaluator.Statistics ??= tb.StatisticalDraws;
+        var said = new List<string>();
+        _evaluator.Warn = m => said.Add(m);
+        var globalScope = BuildGlobalScope(tb);
+        GlobalScope = globalScope;
+        _globalNames = [.. tb.GlobalVariables.Select(v => v.Name).Distinct(StringComparer.Ordinal)];
+        _ambientC = template.AmbientC;
+        if (globalScope.Lookup(Temperature.AmbientGlobalName) is null)
+            globalScope.Bind(Temperature.AmbientGlobalName, _ambientC.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        var feeds = new Dictionary<string, (string Array, PhasedArrayModel Model, PhasedArrayFeedModel Feed)>(StringComparer.Ordinal);
+        foreach (var c in template.Components)
+        {
+            if (c.Model is not PhasedArrayModel { Feed: not null } pa) continue;
+            var inst = c.InstancePath.Contains('.') ? null : tb.Instances.FirstOrDefault(i => i.InstanceName == c.InstancePath);
+            if (inst is null)
+                throw new InvalidOperationException($"'{c.InstancePath}' is not a Phased Antenna Array at the top of the bench, so its weights are not re-weighed.");
+            var (feed, _, _, _) = FeedWeights(inst, c.InstancePath, globalScope, pa.Lattice, c.Parameters, pa.Z0);
+            feeds[c.InstancePath + ".feed"] = (c.InstancePath, pa, feed);
+        }
+        var nl = template.Copy(c => feeds.TryGetValue(c.InstancePath, out var f)
+                                    ? new ElaboratedComponent(c.ComponentType, c.InstancePath, c.Nodes, c.Parameters, f.Feed)
+                                      { ReferenceNode = c.ReferenceNode, Multiplicity = c.Multiplicity, NoiseOff = c.NoiseOff, NoiseOn = c.NoiseOn }
+                                    : null,
+                               skipKey: key => key.StartsWith(FeedGainKey, StringComparison.Ordinal));
+        foreach (var (_, (array, pa, feed)) in feeds)
+        {
+            pa.Feed = feed;
+            WarnIfFeedHasGain(feed, array, nl);
+        }
+        foreach (string m in said) nl.AddWarningOnce("validrange:" + m, m);
+
+        var resolved = new List<(string, Value)>();
+        foreach (var v in tb.GlobalVariables)
+        {
+            try
+            {
+                var val = _evaluator.Resolve(v.Name, globalScope);
+                if (val.Kind is ValueKind.Real or ValueKind.Complex) resolved.Add((v.Name, val));
+            }
+            catch { /* as the elaboration: a variable that cannot resolve is left out */ }
+        }
+        nl.ReplaceResolvedGlobals(resolved);
+        return nl;
+    }
+
+    /// <summary>
+    /// R-paa4-2 / R-paa4-4 — each element's weight in element scope (Amp[n]/Phase[n]/Delay[n] winning over Amp/Phase/Delay), then quantised
+    /// (PhaseBits, AttenStep): the beamformer, and each element's scope (a channel cell's scope is its element's). brief-paa-8b — the one
+    /// function the elaboration and a re-weigh both call, so a re-weighed beamformer is the elaborated one.
+    /// </summary>
+    private (PhasedArrayFeedModel Feed, Scope[] Scopes, int Bits, double Step) FeedWeights(Instance inst, string childPath, Scope scope,
+                                                                                      ArrayLattice lattice, IReadOnlyDictionary<string, Value> p,
+                                                                                      System.Numerics.Complex z0)
+    {
+        int n = lattice.Count;
+        var common = new Dictionary<string, ParameterAssignment>(StringComparer.OrdinalIgnoreCase);
+        var indexed = new Dictionary<(string, int), ParameterAssignment>();
+        foreach (var ov in inst.Overrides)
+        {
+            if (!PhasedArrayModel.IsElementParameter(ov.Name, out string baseName, out int? index)) continue;
+            string key = baseName.ToLowerInvariant();
+            if (index is null) { common[key] = ov; continue; }
+            if (index < 1 || index > n)
+                throw new ParameterRefusalException($"'{childPath}': {ov.Name} names element {index}, and the {lattice.Rows} × {lattice.Cols} array's elements are " +
+                                                    $"numbered 1 to {n}, row-major from the top left seen from boresight.");
+            indexed[(key, index.Value)] = ov;
+        }
+        int bits = WholeParameter(p, "PhaseBits", childPath, 0, 24);
+        double step = p.TryGetValue("AttenStep", out var sv) ? RealParameter(sv, "AttenStep", childPath) : 0;
+        if (step < 0) throw new ParameterRefusalException($"'{childPath}': AttenStep={step} is not a step: it is 0 (continuous) or a positive number of dB.");
+
+        var amp = new double[n];
+        var phase = new double[n];
+        var delay = new double[n];
+        var scopes = new Scope[n];
+        for (int e = 0; e < n; e++)
+        {
+            var (x, y) = lattice.Position(e);
+            int row = e / lattice.Cols + 1, col = e % lattice.Cols + 1;
+            var es = ElementScope.Create(scope, $"{childPath}[{e + 1}]", _evaluator, e + 1, row, col, x, y, lattice.Rows, lattice.Cols);
+            scopes[e] = es;
+            ParameterAssignment? Pick(string b) => indexed.TryGetValue((b, e + 1), out var o) ? o : common.GetValueOrDefault(b);
+            double Of(ParameterAssignment? ov, double fallback, Func<ParameterAssignment, Value> eval)
+            {
+                if (ov is null) return fallback;
+                Value v;
+                try { v = eval(ov); }
+                catch (ExpressionException ex)
+                {
+                    throw new ParameterRefusalException($"'{childPath}': {ov.Name}={ov.Expression} at element {e + 1} (row {row}, col {col}): {ex.Message}");
+                }
+                if (v.Kind != ValueKind.Real || !double.IsFinite(v.AsReal()))
+                    throw new ParameterRefusalException($"'{childPath}': {ov.Name}={ov.Expression} is {v} at element {e + 1} (row {row}, col {col}): it is a real number.");
+                return v.AsReal();
+            }
+            string site(ParameterAssignment ov) => $"{inst.InstanceName}.{ov.Name}";
+            amp[e] = Of(Pick("amp"), 1, ov => _evaluator.EvalParameter(ov.Expression, es, ov.Unit, site(ov)));
+            phase[e] = Of(Pick("phase"), 0, ov => _evaluator.EvalPhase(ov.Expression, es, ov.Unit, site(ov)));
+            delay[e] = Of(Pick("delay"), 0, ov => _evaluator.EvalParameter(ov.Expression, es, ov.Unit, site(ov)));
+        }
+
+        // ── quantisation (R-paa4-4): the phase to 2π/2^b, the attenuation from the largest amplitude to the step ──
+        var requested = new Complex[n];
+        var quantised = new Complex[n];
+        double largest = 0;
+        for (int e = 0; e < n; e++) if (lattice.IsOn(e)) largest = Math.Max(largest, Math.Abs(amp[e]));
+        for (int e = 0; e < n; e++)
+        {
+            if (!lattice.IsOn(e)) continue;
+            requested[e] = amp[e] * Complex.FromPolarCoordinates(1, phase[e]);
+            double ph = phase[e] + (amp[e] < 0 ? Math.PI : 0);
+            quantised[e] = Complex.FromPolarCoordinates(ArrayWeights.QuantiseAmplitude(Math.Abs(amp[e]), largest, step), ArrayWeights.QuantisePhase(ph, bits));
+        }
+        return (new PhasedArrayFeedModel(requested, quantised, delay, z0), scopes, bits, step);
     }
 
     /// <summary>R-paa4-5 — which of element scope's five names <paramref name="cell"/>'s expressions read, its own and every cell below it,

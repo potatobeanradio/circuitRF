@@ -4770,3 +4770,42 @@ Gates: `tests/Core.Tests/Expressions/MathOnACubeTests.cs`.
   (`ArrayRadiationSource`) from the same `FieldCosimulation.Elements` the fields analysis reads, with the grid's radiated-power quadrature
   (`PlanarFarFieldPattern.SolidAngles`). Without it only a sky at the array's own temperature with no incident wave can run, and the refusal
   says why.
+
+## brief-paa-8b — a move that reaches only a phased array's weights does not elaborate (2026-11-14)
+
+**Per tuning move** (one `CircuitEvaluation.Evaluate` with drag output, theta0 moving, coupled E5 array, the PAA-8 channel with its shunt
+capacitor; Apple M4; median of 20 moves after two warm-ups; milliseconds):
+
+| N | channel | Release before → after | Debug before → after |
+|---|---|---|---|
+| 64 | no / yes | 3.4 → 3.0 / 4.0 → 3.3 | 2.3 → 4.4 / 3.1 → 4.1 |
+| 256 | no / yes | 6.1 → 4.8 / 8.4 → 4.4 | 5.6 → 7.8 / 7.8 → 5.7 |
+| 1024 | no / yes | 15.5 → 8.1 / 28.0 → 13.0 | 16.4 → 10.9 / 28.2 → 12.6 |
+| 2025 | no / yes | 24.0 → 11.4 / 32.7 → 16.1 | 16.9 → 12.1 / 35.2 → 18.1 |
+| 4096 | no / yes | 29.2 → 18.9 / 70.2 → 25.1 | 32.5 → 21.9 / 75.6 → 33.6 |
+
+Below 256 elements the numbers are noise (a few ms either way). The 90th percentile at 4096 with a channel is 35-44 ms, the median 25-34
+ms: 30-40 moves a second on the evaluation side, against 13-14 before. Run to run the median moves by ±10 ms at 4096 (one breakdown run
+read 37 ms: re-weigh 18 ms, fields run 22 ms).
+
+- **What the re-weigh does.** The circuit keeps a copy of its last full elaboration (`ElaboratedNetlist.Copy`: the same component
+  objects, a copied node map, the resolved globals and the elaboration's warnings and notes, none of a run's). A move whose changed
+  tunables reach only the weights (`PhasedArrayReweigh.Refusal` returns null) makes a new copy with each top-level Feed-mode array's
+  beamformer component replaced, its weights from `FeedWeights` — the function `ElaboratePhasedArrayFeed` now calls too — and the globals
+  resolved again (`Elaborator.Reweigh`). Gate 2: pattern, Γ_act, waves, quantised weights and a measurement reading theta0 differ from a
+  full elaboration by exactly 0, with the same notes and warnings.
+- **The read-set check reads directive lines value by value.** A whole `analysis …` line does not tokenize (a bare `=` is not an
+  operator), and the first version took every analysis to read everything, so nothing was ever re-weighed. Each `key=value`'s value is now
+  tokenized alone; one that does not tokenize (a file path) is read word by word, which can only refuse more.
+- **Parse once, evaluate many — in `Evaluator` itself.** `EvalPhase` and `Eval` parsed their text on every call; an array evaluates the
+  same `Phase=steer(…)` once per element, 4096 times. A per-evaluator parse cache (`Evaluator.Parse`, at most 65,536 texts; the parser is
+  pure and its trees are immutable) took a 4096-element re-weigh from 26 to 18 ms. It serves every elaboration, not only arrays; Core.Tests
+  (3,539) unchanged.
+- **One evaluation at a time.** The re-weighed and kept netlists share models, which write state while they stamp, so `Evaluate` holds the
+  reuse for its whole run (`ElaborationReuse.TryHold`, non-blocking) and a second evaluation at once elaborates as before. Nothing is kept
+  when a part is `IDisposable` (the run's netlist is disposed when it ends, and it shares that part), when the request sets values (`--set`)
+  or draws statistics, or when the plan solves EM; a different EM switch from the kept one elaborates.
+- **What is left at 4096:** about 18 ms of re-weigh (4096 element scopes, eight injected names each, and the steer evaluation) and the
+  fields run. Not pursued: the evaluation side is past the 20-a-second target, and the drawing is the other half of a frame.
+- **A model's once-per-instance warning** (the array's pitch warning, raised at its first stamp) is said by the first evaluation and not by
+  the re-weighed ones that reuse the model; the warnings the elaboration raised are carried over.

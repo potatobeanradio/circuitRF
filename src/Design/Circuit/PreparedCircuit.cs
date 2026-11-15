@@ -202,6 +202,13 @@ public sealed class PreparedCircuit
 
     internal void CountElaboration() => Interlocked.Increment(ref _elaborations);
 
+    /// <summary>brief-paa-8b — the netlist kept for a re-weigh, and the evaluations that re-weighed it rather than elaborating.</summary>
+    internal ElaborationReuse Reuse { get; } = new();
+
+    /// <summary>brief-paa-8b R-paa8b-4 — evaluations that re-weighed a Feed-mode array's beamformer on the kept netlist instead of
+    /// elaborating (they do not add to <see cref="Elaborations"/>).</summary>
+    public long Reweighs => Reuse.Reweighs;
+
     /// <summary>
     /// The audit's verdict for one design (src/Design/RESOLVED.md, TO-2). A device an external provider
     /// supplies is served by a WORKER process with a bounded instance pool and one request in flight

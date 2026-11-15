@@ -404,7 +404,9 @@ factor is **never evaluated only on the record's grid**:
 
 ### 6.4 Live
 
-A tuning slider on `theta0` re-evaluates through the fast path, so the pattern follows the hand. The tool window (§8)
+A tuning slider on `theta0` re-evaluates through the fast path, so the pattern follows the hand; a move that reaches only the
+weights does not elaborate the bench again either, but re-evaluates the beamformer's weights on the last elaborated netlist
+(PAA-8b). The tool window (§8)
 drags the beam directly. Where the fast path does not apply, the drag shows the pattern with the circuit held at its last
 solve, marked "estimated", and solves when released. The co-simulation's measured drag cost at 1° in a Debug build
 (23 ms for a polar cut, 71 ms for a 3D pattern) sets the expectation for the drawing itself.
