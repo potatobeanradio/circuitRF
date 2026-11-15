@@ -111,6 +111,18 @@ public static class EmDiagnostics
         ("kernelName", kernelName));
 
     /// <summary>
+    /// A component port built across a part whose two pads are on one connected piece of copper: the copper joins them
+    /// elsewhere (a Wilkinson's ring, a balun's), so the port closes a loop. At RF it is an ordinary internal port; at 0 Hz
+    /// it reads the loop's short. Said by both builders (Planar and 3D), so check, explain and the run all carry it.
+    /// </summary>
+    public static Diagnostic ComponentPortAcrossLoop(string port, string pin, string referencePin) => Diagnostic.Create(
+        "em.component-port.across-loop",
+        DiagnosticSeverity.Warning,
+        "{port}: pads {pin} and {referencePin} are joined by copper elsewhere, so the port across them closes a loop. At RF " +
+        "that is an ordinary port; its 0 Hz row reads the loop's copper, close to a short, whatever the part is.",
+        ("port", port), ("pin", pin), ("referencePin", referencePin));
+
+    /// <summary>
     /// brief-em3d-3 — a 3D setup handed to a path that only knows the planar solvers: the planar
     /// preflight, or a Solver3D value no backend answers to. Refused rather than run, because running
     /// the planar kernel instead would write a result for a solver the setup did not ask for. (Its id

@@ -125,7 +125,7 @@ public sealed class PlanarComponentPortTests(PlanarComponentPortTests.Board boar
             return p.Refusal!;
         }
 
-        // The pads already one conductor: copper joins them under the part.
+        // The pads one conductor with no gap between them: copper joins them under the part.
         Assert.Contains("one piece of copper", Refusal(board.Source(extra: [Rect(3600, -200, 4400, 200)]), Setup(["C1", "C2"]), "C1"));
         // The strip would touch a third conductor: an island in the gap.
         Assert.Contains("touch other copper", Refusal(board.Source(extra: [Rect(3900, -100, 4100, 100)]), Setup(["C1", "C2"]), "C1"));
@@ -143,6 +143,46 @@ public sealed class PlanarComponentPortTests(PlanarComponentPortTests.Board boar
         // The gap's row would reach past the strip: pad 1's copper runs on beside the strip, past the gap's middle.
         Assert.Contains("lies against its strip", Refusal(board.Source(extra: [Rect(3000, 550, 4200, 900)]), Setup(["C1", "C2"]), "C1"));
     }
+
+    /// <summary>A part whose pads the copper also joins the long way round (<see cref="Detour"/>, as a Wilkinson's ring joins its
+    /// resistor's): the port closes a loop, is built exactly as across two conductors — the same strip, cut and direction — and
+    /// says so. What still refuses: copper across the gap itself, and two pads on one net.</summary>
+    [Fact]
+    public void APartAcrossALoop_IsBuiltAsAcrossTwoConductors_AndSaysSo()
+    {
+        var plain = EmPlanarComponentPorts.Build(Setup(["C1", "C2"]), board.Source())!;
+        var looped = EmPlanarComponentPorts.Build(Setup(["C1", "C2"]), board.Source(extra: Detour()))!;
+        var a = Assert.Single(plain.Ports, p => p.Refdes == "C1");
+        var b = Assert.Single(looped.Ports, p => p.Refdes == "C1");
+        Assert.True(b.Ok, b.Refusal);
+        Assert.Equal((a.Strip!.X1, a.Strip.Y1, a.Strip.X2, a.Strip.Y2), (b.Strip!.X1, b.Strip.Y1, b.Strip.X2, b.Strip.Y2));
+        Assert.Equal((a.Gap!.X, a.Gap.Y, a.Gap.PortDirection, a.Number), (b.Gap!.X, b.Gap.Y, b.Gap.PortDirection, b.Number));
+        string said = EmDiagnostics.ComponentPortAcrossLoop("C1", "1", "2").Render();
+        output.WriteLine(said);
+        Assert.Contains(said, looped.Warnings);
+        Assert.DoesNotContain(plain.Warnings, w => w.Contains("closes a loop", StringComparison.Ordinal));
+        Assert.True(Assert.Single(looped.Ports, p => p.Refdes == "C2").Ok);
+
+        string Refusal(EmLayoutSource source)
+        {
+            var p = Assert.Single(EmPlanarComponentPorts.Build(Setup(["C1"]), source)!.Ports);
+            Assert.False(p.Ok);
+            output.WriteLine(p.Refusal);
+            return p.Refusal!;
+        }
+        // Copper across the gap as well: no gap to cut.
+        Assert.Contains("one piece of copper that runs across the middle of their gap",
+                        Refusal(board.Source(extra: [.. Detour(), Rect(3600, -200, 4400, 200)])));
+        // The loop's copper on one stated net, so both pads read it.
+        Assert.Contains("both on net SIG", Refusal(board.Source(extra: Detour("SIG"))));
+    }
+
+    /// <summary>A U of copper from the left line up and over C1 to the middle line, clear of C1's strip.</summary>
+    internal static RectShape[] Detour(string? net = null) =>
+    [
+        .. new[] { (2600.0, 500.0, 3000.0, 2400.0), (2600.0, 2000.0, 5400.0, 2400.0), (5000.0, 500.0, 5400.0, 2400.0) }
+            .Select(r => new RectShape { Layer = Top, Net = net, X1 = Um(r.Item1), Y1 = Um(r.Item2), X2 = Um(r.Item3), Y2 = Um(r.Item4) }),
+    ];
 
     /// <summary>Two parts sharing a refdes are refused by name, never a crash and never another part's reason.</summary>
     [Fact]

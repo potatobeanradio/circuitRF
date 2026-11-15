@@ -439,6 +439,8 @@ public static class EmPlanarComponentPorts
                     PartPins = [.. part.Pads.Select(pd => pd.Pin)], SchematicId = part.SchematicId,
                     ClayPath = source.AbsolutePath, Connector = connector,
                 });
+                if (ReferenceEquals(pos.Region, neg.Region))
+                    warnings.Add(EmDiagnostics.ComponentPortAcrossLoop(name, pos.Pad.Pin, neg.Pad.Pin).Render());
                 anyBuilt = true;
             }
             if (anyBuilt && part.HasModel == false && !connector) noModel.Add(rd);
@@ -628,13 +630,9 @@ public static class EmPlanarComponentPorts
         string label = name == rd ? rd : $"{rd} (pad {pos.Pad.Pin})";
         var (pp, np) = (pos.Pad, neg.Pad);
 
-        // The pads are already one conductor: a strip would close a loop, not make a port.
-        if (ReferenceEquals(pos.Region, neg.Region))
-        {
-            why = $"{label}: pads {pp.Pin} and {np.Pin} lie on one piece of copper already, so the part is shorted by the copper and " +
-                  "a strip between them would close a loop rather than make a port.";
-            return null;
-        }
+        // Both pads on one piece of copper: the copper joins them elsewhere (a ring), and the port closes that loop. It is built
+        // as any other, provided the pads face each other across a real gap — the scan below refuses copper across it.
+        bool loop = ReferenceEquals(pos.Region, neg.Region);
         if (pp.Net is { Length: > 0 } pn && string.Equals(pn, np.Net, StringComparison.OrdinalIgnoreCase))
         {
             why = $"{label}: pads {pp.Pin} and {np.Pin} are both on net {pn}, so a strip between them would close a loop rather than make a port.";
@@ -724,7 +722,10 @@ public static class EmPlanarComponentPorts
             var hi = C3dComponentPorts.Intervals(highPoly, v, ax);
             if (lo.Any(t => t.A < mid && t.B > mid) || hi.Any(t => t.A < mid && t.B > mid))
             {
-                why = $"{label}: copper of pad {(lo.Any(t => t.A < mid && t.B > mid) ? low.Pad.Pin : high.Pad.Pin)}'s conductor runs across " +
+                why = loop
+                    ? $"{label}: pads {pp.Pin} and {np.Pin} lie on one piece of copper that runs across the middle of their gap at " +
+                      $"{(ax ? "y" : "x")} = {Mm(v)} mm, so the part is shorted by the copper there and there is no gap for a port."
+                    : $"{label}: copper of pad {(lo.Any(t => t.A < mid && t.B > mid) ? low.Pad.Pin : high.Pad.Pin)}'s conductor runs across " +
                       $"the middle of the gap at {(ax ? "y" : "x")} = {Mm(v)} mm, so the two pads have no gap between them there.";
                 return null;
             }

@@ -32033,15 +32033,44 @@ write back in that state, so opening a chain cannot record an edit. The default 
 - **The chain placer takes a curve's turn from its schematic symbol's facing**: an MCURVE drawn with its pin 2 down is
   mirrored to turn down in the layout whatever its `Angle` sign says. In the example the upper output's MCURVE is
   drawn R180 and mirrored so both outputs bend away from each other.
-- **Both component-port builders refuse a part whose pads lie on one connected conductor**
-  (`EmPlanarComponentPorts.Construct`: "a strip would close a loop"; the 3D builder: "land on one conductor"). A
-  Wilkinson's resistor is exactly that, since the ring joins R2 to R3 through about 38 mm of line, so the resistor is
-  left out of every EM run with a warning. A delta-gap port across a loop is a valid port; the check cannot tell a
-  part shorted by its own pads from one bridging two points of a distributed loop. Not changed here: recorded as a
-  maintainer question in `docs/design/rf-passives.md`.
+- **A Wilkinson's resistor has its pads on one connected conductor**, since the ring joins R2 to R3 through about
+  38 mm of line. Both component-port builders used to refuse such a part, so Stage 1's EM runs left R1 out. They now
+  build it as a port that closes a loop (next section).
 - **Planar MoM refuses calibrated edge ports on the divider's own output pins**: they sit Gap + W0 apart (2.4 mm
   centre to centre on 20 mil), inside the 5 substrate heights a calibrated feed needs from a neighbour with a port.
   The example bends each output away (MCURVE + 5 mm MLIN) before its port, which is also what a board does.
 - **A line typed to the readout's rounded width leaves a DRC sliver** where it meets the divider's pin (1.058 against
   1.05768 mm: a 0.16 µm step, flagged as a 7 µm-long min-width error). The readout prints widths to the plan's own
   2 nm grid so they can be typed exactly.
+
+## Component ports across a loop (RF passives, 2026-11-16)
+
+- **The refusal was the only thing that told a loop from a short, and it told them apart badly.** Both builders refused
+  a part whose two pads land on one connected piece of copper. A short (copper across the part's gap) is already refused
+  by the scan that follows: on every scan line across the width, copper across the gap's middle is a refusal. A loop
+  (the copper joins the pads elsewhere, as a Wilkinson's ring joins its resistor's) is an ordinary internal port: a MoM
+  delta gap is a cut in continuous metal by definition, and `PlanarDcSolve` ties each lip of the cut to its own node, so
+  the 0 Hz row reads the loop's resistance. So both builders now build it, with the same construction.
+- **Planar's construction needed no other change.** Every check after the removed one reads the two pads' copper as
+  intervals on scan lines (pads facing, a shared width, nothing across the gap's middle, at least 2 DBU of air, no third
+  conductor on the strip, nothing against the strip at the cut), and on one region the two reads are the same. The test
+  holds the strip, the cut and its direction equal to the same part across two conductors.
+- **The refusals that stay are reworded for a loop.** Copper across the gap says the pads "lie on one piece of copper
+  that runs across the middle of their gap". Two pads on one net (the schematic's, else the copper's stamp) are refused
+  as before; a loop whose copper carries one stamped net is therefore still refused.
+- **3D: a lumped sheet cannot name one conductor as both of its ends.** `C3dPorts.Lumped` with both ends stated measures
+  each end's distance to each edge (`StatedPair`) and refuses when that cannot decide; one name for both ends is equally
+  close to both end edges, so it always refused. A loop port's ends are left to inference instead, which already accepts a
+  loop fed across its gap (`LoopPair`, brief-cxp-5: the low edge negative), and `Flip` puts + on the positive pad when that
+  pad is the low one. The test holds the resolved sheet and direction equal to the same port across two conductors.
+- **3D's net check reads the pads for a loop.** `Verify` compared the two conductors' nets, and one conductor always
+  shares its nets with itself; for a loop `Construct` compares the two pads' own nets instead, as Planar always did.
+- **One coded warning**, `em.component-port.across-loop` (`EmDiagnostics.ComponentPortAcrossLoop`), goes into each
+  build's warnings, so check (`check.cem.component-port-warning`, `check.c3d.component-port`), explain and the run's
+  warnings all carry it. The 3D port also records the conductor (`C3dComponentPort.Loop`), and its description reads
+  "both on '...' (a loop)" rather than naming one conductor twice.
+- **The cell-cut path is unchanged** (`EmCellCutout`: pins that "meet one piece of metal after the cut"). A cut pin is an
+  Uncalibrated Port against ground at its face, not one end of a gap, so there is no gap between two pins to check, and
+  the one-piece test cannot tell a loop elsewhere from a strap kept under the device. `PlanarCellCutoutTests`' gate 7
+  holds that strap as refused. Only a pin with a Reference (ICP-4) is a gap, and allowing it there would take the cut's
+  shared check, its ground fallback and `C3dCellCuts.GapSheet` (which states both ends) together.
