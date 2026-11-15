@@ -134,6 +134,12 @@ A 50 to 100 Ω Klopfenstein taper, 15 mm long, solved two ways for one S11 plot.
 
 *Folder:* `Klopfenstein Taper` · *Topics:* Klopfenstein taper, impedance transformer, MKLOPF, microstrip, planar EM, method of moments, full-wave, edge port, reference impedance, closed form vs EM
 
+### [Dividers and Couplers](dividers-and-couplers/index.html) {#ex-dividers-and-couplers}
+
+The RF dividers and couplers as built-in parts, each stated by its specs and drawn from the same plan its circuit model simulates. Today it holds the Wilkinson divider: an MWPD at 2.4 GHz on 20 mil RO4350B, with Z0, F and the resistor's pin span as its only parameters and the widths, the quarter-wave length and the ring's radius shown as a readout. Update Layout from Schematic places the ring, lays the 0402 isolation resistor across its gap and puts the ports at the ends of the input line and the two output bends; LVS matches. The board is solved on Planar MoM, EMerge and Palace with coarse meshes, and the README tables |S11|, |S21|, |S31| and |S23| against the circuit model at 2.4 GHz and across the band, with each solver's time and mesh size.
+
+*Folder:* `Dividers and Couplers` · *Topics:* Wilkinson divider, power divider, MWPD, isolation resistor, quarter-wave, microstrip, Update Layout from Schematic, LVS, Planar MoM, EMerge, Palace, RO4350B
+
 ### [Patch Antenna](patch-antenna/index.html) {#ex-patch-antenna}
 
 A 5.8 GHz rectangular microstrip patch with an inset feed, over a ground plane on a 30 mil laminate, set up for a full-wave planar solve. Its EM setup sweeps 5.3–6.3 GHz with resonance search and radiation pattern both on. Resonance search is the one sweep mode allowed to add frequencies between those requested, so points land where the resonance actually is rather than where the grid happened to fall. Open the `.cem` and press Simulate; no results ship with the example. Afterwards, look at the input match around resonance, the surface-current map and the pattern cuts. Fed at a single edge port, the patch is a one-port structure: its behaviour is entirely in S11 and in what the pattern shows is being radiated rather than reflected.

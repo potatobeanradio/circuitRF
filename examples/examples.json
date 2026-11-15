@@ -57,6 +57,11 @@
       "Summary": "A 50-to-100 ohm taper solved twice: once from the closed-form model, once by the planar EM engine. Run the EM setup and compare."
     },
     {
+      "Folder": "Dividers and Couplers",
+      "Title": "Dividers and Couplers",
+      "Summary": "A 2.4 GHz Wilkinson divider placed as one part from its specs on 20 mil RO4350B, laid out by Update Layout with its 0402 isolation resistor across the ring, and solved by Planar MoM, EMerge and Palace against its circuit model."
+    },
+    {
       "Folder": "Patch Antenna",
       "Title": "Patch Antenna",
       "Summary": "A 5.8 GHz microstrip patch with an inset feed, set up for a full-wave planar solve with a radiation pattern."
