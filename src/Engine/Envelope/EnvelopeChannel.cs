@@ -101,6 +101,9 @@ public static class EnvelopeChannel
     /// <summary>brief-pch-8 — the multiply-adds per step, rays and elements of the last run's instance-end channels (R-pch8-3's counters).</summary>
     public static (long MultiplyAddsPerStep, int Rays, int TxElements, int RxElements) LastInstanceCost { get; private set; }
 
+    /// <summary>brief-pch-8b R-pch8b-2 — receive elements the last instance-end channel did not project onto (the collapse took its feed).</summary>
+    public static int CollapsedElements { get; private set; }
+
     /// <summary>The channels of one run: puts them back on <see cref="Dispose"/>, and carries their history.</summary>
     public sealed class Run : IDisposable
     {
@@ -333,6 +336,9 @@ public static class EnvelopeChannel
         }
         else { txNode = [ec.Nodes[m.TxPin]]; txRef = [0]; z0 = m.End(0, productHz.FirstOrDefault(f => f > 0, 1e9)).Z0; }
         int[] rxSrc = m.RxArray is { } ra ? [.. Enumerable.Range(0, ra.Array.PortCount).Select(i => PhasedArrayModel.SourceNode(ra.Ec, i, ra.Array.PortCount))] : [];
+        CollapsedElements = 0;
+        if (m.TxEnd is not null && m.TxArray is null || m.RxEnd is not null && m.RxArray is null)
+            throw new InvalidOperationException(PropagationChannelDiagnostics.FieldDataInEnvelope(ec.InstancePath).Render());
         var rays = new PropagationChannelModel.RayCoupling[productHz.Count][];
         var steps = new double[productHz.Count][];
         double worst = 1;
@@ -342,6 +348,31 @@ public static class EnvelopeChannel
             steps[k] = [.. rays[k].Select(r => 1 + r.DelayS / h)];
             foreach (double s in steps[k]) worst = Math.Max(worst, s);
         }
+        // brief-pch-8b R-pch8b-1 — a receive array on the fast path takes each ray as one source at its feed, in every product
+        string collapseNote = "";
+        if (m.RxArray is { } rca && PropagationChannelModel.CollapseEnabled)
+        {
+            var cols = productHz.Select(f => f > 0 ? AntennaArray.PhasedArrayFastPath.Receive(nl, rca.Ec, f) : (null, "")).ToArray();
+            if (cols.All(c => c.Item1 is not null || c.Item2 == "") && cols.Any(c => c.Item1 is not null))
+            {
+                int feedNode = cols.First(c => c.Item1 is not null).Item1!.FeedNode;
+                for (int k = 0; k < productHz.Count; k++)
+                {
+                    if (cols[k].Item1 is not { } col) continue;
+                    Complex norton = 2 / (Math.Sqrt(col.Z0) * (1 + col.GammaF));
+                    rays[k] = [.. rays[k].Select(rc =>
+                    {
+                        Complex t = 0, p = 0;
+                        for (int n = 0; n < rc.RxTheta.Length; n++) { t += col.G[n] * rc.RxTheta[n]; p += col.G[n] * rc.RxPhi[n]; }
+                        return rc with { RxTheta = [norton * t], RxPhi = [norton * p] };
+                    })];
+                }
+                CollapsedElements = rxSrc.Length;
+                rxSrc = [feedNode];
+                collapseNote = $" The receive array '{rca.Ec.InstancePath}' takes them as one source at its feed: {cols.First(c => c.Item1 is not null).Item2}";
+            }
+            else collapseNote = " " + cols.FirstOrDefault(c => c.Item1 is null && c.Item2 != "").Item2;
+        }
         int nr = rays.Select(r => r.Length).DefaultIfEmpty(0).Max();
         long madds = rays.Sum(r => (long)r.Length * (3L * txNode.Length + 2L * txNode.Length + 2L * Math.Max(1, rxSrc.Length)));
         LastInstanceCost = (madds, nr, txNode.Length, Math.Max(1, rxSrc.Length));
@@ -349,8 +380,8 @@ public static class EnvelopeChannel
         nl.AddNoteOnce("env-channel:" + ec.InstancePath, string.Format(CultureInfo.InvariantCulture,
             "Propagation Channel '{0}': {1} ray(s) between {2} transmit and {3} receive element(s), stepped explicitly and one way: each ray's departure field "
             + "from the transmit waves one step plus its excess delay (up to {4:G4} s) earlier, projected on each receive element; {5:N0} multiply-adds a step. "
-            + "The bulk delay τ0 = {6:G4} s is reported and not simulated.",
-            ec.InstancePath, nr, txNode.Length, Math.Max(1, rxSrc.Length), real.MaxExcessDelayS, madds, real.BulkDelayS));
+            + "The bulk delay τ0 = {6:G4} s is reported and not simulated.{7}",
+            ec.InstancePath, nr, txNode.Length, Math.Max(1, rxSrc.Length), real.MaxExcessDelayS, madds, real.BulkDelayS, collapseNote));
         return new ICh
         {
             Ec = ec, Model = m, TxNode = txNode, TxRef = txRef, Z0Tx = z0, RxSource = rxSrc, Rays = rays, Steps = steps, Hz = [.. productHz],

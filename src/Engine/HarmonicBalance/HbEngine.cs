@@ -820,7 +820,7 @@ public sealed partial class HbEngine
             _netlist.Nodes.LabeledNames, probeCurrents, opVars, probeVoltages);
         AddWireTemperature(ds, solveResult.Converged,
             [.. Enumerable.Range(0, K + 1).Select(k => k * f0)], k => backSolver.GetSolution(k, 0));
-        PropagationChannelReport.Add(ds, _netlist, f0, hb: true);
+        PropagationChannelReport.Add(ds, _netlist, f0, hb: true, solution: k => backSolver.GetSolution(k, 0));
 
         // ── The WSProbe small-signal sweep (brief-wsprobe-5) ──────────────────
         // The conversion-matrix solve linearises THIS converged periodic steady state, which is why

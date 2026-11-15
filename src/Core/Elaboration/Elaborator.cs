@@ -2495,8 +2495,8 @@ public sealed partial class Elaborator
                 string sibling = dot >= 0 ? ec.InstancePath[..(dot + 1)] + name : name;
                 var hit = netlist.Components.FirstOrDefault(c => c.InstancePath == sibling) ?? netlist.Components.FirstOrDefault(c => c.InstancePath == name);
                 if (hit?.Model is PhasedArrayModel) return hit;
-                if (hit?.Model is SnpModel && hit.ComponentType.Equals(EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase))
-                    throw new ParameterRefusalException(PropagationChannelDiagnostics.EndFieldData(ec.InstancePath, end, name));
+                // brief-pch-8b R-pch8b-4 — an EM Field Data block's ports radiate and receive through its record's patterns
+                if (hit?.Model is SnpModel && hit.ComponentType.Equals(EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase)) return hit;
                 var arrays = netlist.Components.Where(c => c.Model is PhasedArrayModel && !c.InstancePath.EndsWith(".feed", StringComparison.Ordinal))
                                     .Select(c => c.InstancePath).ToList();
                 throw new ParameterRefusalException(PropagationChannelDiagnostics.EndUnknown(ec.InstancePath, end, name,
@@ -2504,7 +2504,7 @@ public sealed partial class Elaborator
             }
             var tx = Find(m.TxInstance, "Tx");
             var rx = Find(m.RxInstance, "Rx");
-            m.BindEnds(tx, rx);
+            m.BindEnds(tx, rx, netlist);
             withInstance.Add(ec);
             WarnIfNearField(netlist, ec, m, tx, rx);
         }

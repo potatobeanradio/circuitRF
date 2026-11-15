@@ -177,7 +177,9 @@ public sealed class ChannelArrayEndTests(ITestOutputHelper output) : IDisposable
                          $"{cost.MultiplyAddsPerStep} multiply-adds a step");
         Assert.True(Math.Abs(vEnv / vHb - 1) < 2e-8, $"{vEnv} against {vHb}");
         Assert.Equal(2, cost.Rays);
-        Assert.Equal(16, cost.RxElements);
+        // brief-pch-8b: the 4 × 4 array is on the fast path, so the receive collapse projects each ray on its feed, not its 16 elements
+        Assert.Equal(1, cost.RxElements);
+        Assert.Equal(16, CircuitRF.Engine.Envelope.EnvelopeChannel.CollapsedElements);
     }
 
     private static string Testdata(string name, [CallerFilePath] string here = "")
@@ -217,6 +219,8 @@ public sealed class ChannelArrayEndTests(ITestOutputHelper output) : IDisposable
 
     private const string Ch1 = "PropagationChannel:CH1 t1 Rx=PA1 TxPos=\"80,0,1.5\" RxPos=\"0,0,1.5\" RxAz=0 RxEl=0 TxGain=6 TxPol=phi f0=5.9 GHz";
     private const string Ch2 = "PropagationChannel:CH2 t2 Rx=PA1 TxPos=\"50,30,1.5\" RxPos=\"0,0,1.5\" RxAz=0 RxEl=0 TxGain=3 TxPol=phi f0=5.95 GHz";
+    /// <summary>brief-pch-8b — the interferer on the signal's frequency.</summary>
+    private const string Ch2s = "PropagationChannel:CH2 t2 Rx=PA1 TxPos=\"50,30,1.5\" RxPos=\"0,0,1.5\" RxAz=0 RxEl=0 TxGain=3 TxPol=phi f0=5.9 GHz";
     private const string Cdl = "Multipath=cdl Profile=CDL-C DelaySpread=100e-9 Seed=1 Drop=1";
 
     /// <summary>
@@ -227,7 +231,7 @@ public sealed class ChannelArrayEndTests(ITestOutputHelper output) : IDisposable
     private void CheckRays()
     {
         var cases = new System.Text.Json.Nodes.JsonObject();
-        foreach (var (name, ch, extra, hz, pavl) in new[] { ("los", Ch1, "", 5.9e9, 10.0), ("cdlc", Ch1, Cdl, 5.9e9, 10.0), ("sig", Ch1, "", 5.9e9, 10.0), ("int", Ch2, "", 5.95e9, 0.0) })
+        foreach (var (name, ch, extra, hz, pavl) in new[] { ("los", Ch1, "", 5.9e9, 10.0), ("cdlc", Ch1, Cdl, 5.9e9, 10.0), ("sig", Ch1, "", 5.9e9, 10.0), ("int", Ch2, "", 5.95e9, 0.0), ("int59", Ch2s, "", 5.9e9, 0.0) })
         {
             var circuit = PreparedCircuit.FromText($"{ch} {extra}\n{Array16}\nR:RL f 0 R=50 Ohm\nR:RT t1 0 R=50 Ohm\nR:RT2 t2 0 R=50 Ohm\n", _dir, _dir);
             using var nl = new CircuitRF.Core.Elaboration.Elaborator(circuit.Lib!).Elaborate(circuit.Tb!);
@@ -305,5 +309,181 @@ public sealed class ChannelArrayEndTests(ITestOutputHelper output) : IDisposable
                          $"SINR {sinr:F6} dB against {want:F6} dB");
         Assert.True(Math.Abs(p1 - alone) < 1e-9, $"the signal moved by {p1 - alone} dB with the interferer present");
         Assert.True(Math.Abs(sinr - want) < 0.01, $"SINR {sinr} dB against {want} dB");
+    }
+
+    // ── brief-pch-8b ─────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>A 16 × 16 Feed-mode receive array on the 5 × 5 record (embedded, coupling on), each element through an identical, mismatched
+    /// linear channel (an attenuator with 12 dB return loss), reached from a pin through CDL-C.</summary>
+    private static string CollapseBench(string channelCell = "Atten:ATT el 0 bf 0 Loss=3 RL=12", string multipath = Cdl, int size = 16) => $"""
+        define rxch ( bf el )
+        {channelCell}
+        end
+        PropagationChannel:CH1 tx Rx=PA1 TxPos="80,0,1.5" RxPos="0,0,1.5" RxAz=0 RxEl=0 TxGain=6 TxPol=phi f0=5.9 GHz {multipath}
+        PhasedArray:PA1 f {E5} Mode=feed Rows={size} Cols={size} Channel=rxch
+        """;
+
+    private (Complex Collapsed, Complex Elements) BothWaysS21(string body)
+    {
+        Complex Eval()
+        {
+            var d = Run(body).Results.Single(r => r.Name == "SP1").Data;
+            var cube = d.CubesIn(d.Groups.First(g => d.CubesIn(g).ContainsKey("S")))["S"];
+            return cube.ComplexValues[(0 * 2 + 1) * 2 + 0];
+        }
+        try
+        {
+            PropagationChannelModel.CollapseEnabled = true;
+            var c = Eval();
+            PropagationChannelModel.CollapseEnabled = false;
+            return (c, Eval());
+        }
+        finally { PropagationChannelModel.CollapseEnabled = true; }
+    }
+
+    private (Complex Collapsed, Complex Elements) BothWays(string body, string expr)
+    {
+        Complex Eval()
+        {
+            var run = Run(body, $"real({expr})", $"imag({expr})");
+            double V(int k) => run.Expressions[k].Value?.AsReal() ?? throw new Xunit.Sdk.XunitException(run.Expressions[k].Error);
+            return new Complex(V(0), V(1));
+        }
+        try
+        {
+            PropagationChannelModel.CollapseEnabled = true;
+            var c = Eval();
+            PropagationChannelModel.CollapseEnabled = false;
+            return (c, Eval());
+        }
+        finally { PropagationChannelModel.CollapseEnabled = true; }
+    }
+
+    /// <summary>8b gate 1 (S-parameters) — through CDL-C into the 16 × 16 array with identical mismatched channels and coupling on, S21 from
+    /// the transmit pin to the feed with the receive collapse is the element-by-element stamp's to 1e-12.</summary>
+    [Fact]
+    public void Gate8b1_SParameters_TheCollapseEqualsTheElementStamp()
+    {
+        PropagationChannelModel.ResetCounters();
+        var sp = BothWaysS21("Port:P1 tx 0 Num=1 Z=50 Ohm\nPort:P2 f 0 Num=2 Z=50 Ohm\n" + CollapseBench() +
+                             "\nanalysis SP1 type=sparam start=5.9 stop=5.9 npts=1 Unit=GHz\n");
+        double rs = (sp.Collapsed - sp.Elements).Magnitude / sp.Elements.Magnitude;
+        output.WriteLine($"S21 collapsed {sp.Collapsed} element {sp.Elements} ({rs:E2}); {PropagationChannelModel.CollapsedStamps} collapsed stamps, " +
+                         $"{PropagationChannelModel.ElementsNotStamped} elements not stamped");
+        Assert.True(rs <= 1e-12, $"S21 {rs:E2}");
+        Assert.True(PropagationChannelModel.CollapsedStamps > 0 && PropagationChannelModel.ElementsNotStamped >= 256);
+    }
+
+    /// <summary>8b gate 1 (harmonic balance) — the same bench's feed voltage, collapsed against element by element, to 1e-10: harmonic
+    /// balance's own floor on this bench (2.7e-11 measured; the S-parameter run, the same stamps through one sparse solve, agrees to 2.5e-15).</summary>
+    [Fact]
+    public void Gate8b1_HarmonicBalance_TheCollapseEqualsTheElementStamp()
+    {
+        var hb = BothWays("P1Tone:S1 tx 0 Num=1 Pavl=0 Z=50 Freq=5.9 GHz\nR:RL f 0 R=50 Ohm\n" + CollapseBench() +
+                          "\nanalysis HB1 type=hb Tone=\"5.9\" ToneUnit=GHz MaxHarm=1 Tol=1e-13\n", "HB1.V(\"f\",1)");
+        double rh = (hb.Collapsed - hb.Elements).Magnitude / hb.Elements.Magnitude;
+        output.WriteLine($"HB V(f) collapsed {hb.Collapsed}, element {hb.Elements} ({rh:E2})");
+        Assert.True(rh <= 1e-10, $"HB {rh:E2}");
+    }
+
+    /// <summary>8b gate 1 (envelope) — on a 4 × 4 array with the same identical mismatched channels (an envelope run of the 16 × 16 one
+    /// with its 256 channel cells takes minutes whatever the rays), a CW through two directional rays settles on a feed/transmit ratio equal
+    /// to the element-by-element run's to the envelope's own residual, projected on one node instead of 16.</summary>
+    [Fact]
+    public void Gate8b1_Envelope_TheCollapseEqualsTheElementStamp()
+    {
+        string rays = Path.Combine(_dir, "rays8b.csv");
+        File.WriteAllText(rays, "delay (ns), power (dB), theta_d (deg), phi_d (deg), theta_a (deg), phi_a (deg), xpr (dB)\n"
+                                + "0, 0, 90, 180, 90, 0, 20\n12, -3, 92, 170, 85, 12, 8\n");
+        string envRays = $"Multipath=rays File=\"{rays}\" Seed=2";
+        double Env(bool collapse)
+        {
+            PropagationChannelModel.CollapseEnabled = collapse;
+            try
+            {
+                var circuit = PreparedCircuit.FromText("MOD_Source:S1 s 0 Fc=5.9e9 Pavg=0 Z=50 Ohm Record=20e-6 Carrier[1]=\"CW;Off=0;P=0\"\nIProbe:Itx s tx\n" +
+                    CollapseBench(multipath: envRays, size: 4) + "\nIProbe:Iout f fo\nR:RL fo 0 R=50 Ohm\nanalysis ENV1 type=env MaxHarm=1 Segments=1 Warmup=1e-6 Stop=3e-6 Tol=1e-12\n", _dir, _dir);
+                var (lib, tb) = (circuit.Lib!, circuit.Tb!);
+                var nl = new CircuitRF.Core.Elaboration.Elaborator(lib).Elaborate(tb);
+                var plan = CircuitRF.Engine.Envelope.EnvelopeRunner.Resolve(tb.Analyses.OfType<CircuitRF.Core.Design.EnvelopeAnalysis>().Single(), nl.ResolvedGlobals);
+                bool used = false;
+                CircuitRF.Core.Elaboration.ElaboratedNetlist Elab() { if (used) return new CircuitRF.Core.Elaboration.Elaborator(lib).Elaborate(tb); used = true; return nl; }
+                var (r, _, _) = CircuitRF.Engine.Envelope.EnvelopeRunner.Record(plan, Elab);
+                return r.IProbeVoltage[^1][Array.IndexOf(r.IProbeNames, "Iout")][1].Magnitude / r.IProbeVoltage[^1][Array.IndexOf(r.IProbeNames, "Itx")][1].Magnitude;
+            }
+            finally { PropagationChannelModel.CollapseEnabled = true; }
+        }
+        double ec = Env(true);
+        int collapsedElements = CircuitRF.Engine.Envelope.EnvelopeChannel.CollapsedElements;
+        double ee = Env(false);
+        output.WriteLine($"envelope |V(f)/V(tx)| collapsed {ec:G12}, element {ee:G12} ({ec / ee - 1:E2}); projected on 1 node instead of {collapsedElements}");
+        Assert.True(Math.Abs(ec / ee - 1) < 2e-8, $"envelope {ec / ee - 1:E2}");
+        Assert.Equal(16, collapsedElements);
+    }
+
+    /// <summary>8b gate 2 — the collapse is refused, with the fast path's sentence, for a channel cell that reads n and for a nonlinear
+    /// channel; the element stamp is then used.</summary>
+    [Fact]
+    public void Gate8b2_TheCollapse_IsRefusedWhereTheFastPathIs()
+    {
+        foreach (var (cell, word) in new[] { ("Atten:ATT el 0 bf 0 Loss=3+0.01*n RL=12", "differs per element"), ("Amp:A1 el 0 bf 0 Gain=20", "nonlinear") })
+        {
+            PropagationChannelModel.ResetCounters();
+            var circuit = PreparedCircuit.FromText("Port:P1 tx 0 Num=1 Z=50 Ohm\nPort:P2 f 0 Num=2 Z=50 Ohm\n" + CollapseBench(cell), _dir, _dir);
+            using var nl = new CircuitRF.Core.Elaboration.Elaborator(circuit.Lib!).Elaborate(circuit.Tb!);
+            var ec = nl.Components.Single(c => c.Model is PropagationChannelModel);
+            ((PropagationChannelModel)ec.Model).Stamp(new CountingMna(), ec, 2 * Math.PI * F);
+            string sentence = ((PropagationChannelModel)ec.Model).CollapseSentence ?? "";
+            output.WriteLine($"{cell}: {sentence}");
+            Assert.Equal(0, PropagationChannelModel.CollapsedStamps);
+            Assert.Equal(1, PropagationChannelModel.CollapseRefusals);
+            Assert.Contains(word, sentence);
+        }
+    }
+
+    /// <summary>
+    /// 8b gate 3 — shares: a signal and an interferer on one frequency through two channels into the 16 × 16 array. Each channel's
+    /// FeedPower_dBm is the feed power of a run with only that channel to 1e-9 dB, and SIR_dB is array_link_reference.py's to 0.01 dB.
+    /// </summary>
+    [Fact]
+    public void Gate8b3_EachChannelsShare_IsItsRunAlone_AndTheSirIsTheScripts()
+    {
+        CheckRays();
+        string s1 = "P1Tone:S1 t1 0 Num=1 Pavl=10 Z=50 Freq=5.9 GHz", s2 = "P1Tone:S2 t2 0 Num=2 Pavl=0 Z=50 Freq=5.9 GHz";
+        string hb = "\nR:RL f 0 R=50 Ohm\nanalysis HB1 type=hb Tone=\"5.9\" ToneUnit=GHz MaxHarm=1 Tol=1e-13\n";
+        var both = Run($"{s1}\n{s2}\n{Ch1}\n{Ch2s}\n{Array16}{hb}");
+        var d = both.Results.Single(r => r.Name == "HB1").Data;
+        double Cube(string name) => d.CubesIn(d.Groups.First(g => d.CubesIn(g).ContainsKey(name)))[name].RealValues[0];
+        double p1 = Cube("link:CH1:FeedPower_dBm"), p2 = Cube("link:CH2:FeedPower_dBm");
+        double a1 = FeedDbm($"{s1}\nR:RT2 t2 0 R=50 Ohm\n{Ch1}\n{Array16}"), a2 = FeedDbm($"R:RT1 t1 0 R=50 Ohm\n{s2}\n{Ch2s}\n{Array16}");
+        var sirCube = d.CubesIn(d.Groups.First(g => d.CubesIn(g).ContainsKey("link:PA1:SIR_dB")))["link:PA1:SIR_dB"];
+        double sir = sirCube.RealValues[Array.IndexOf(sirCube.Axes[0].Labels!, "CH1")], want = Prediction("sig") - Prediction("int59");
+        output.WriteLine($"shares: CH1 {p1:F9} dBm (alone {a1:F9}), CH2 {p2:F9} dBm (alone {a2:F9}); SIR {sir:F6} dB against {want:F6} dB");
+        Assert.True(Math.Abs(p1 - a1) < 1e-9 && Math.Abs(p2 - a2) < 1e-9);
+        Assert.True(Math.Abs(sir - want) < 0.01, $"SIR {sir} against {want}");
+    }
+
+    /// <summary>
+    /// 8b gate 4 — an EM Field Data block as an end: the one-port block on the e1 record receives through a ray from boresight exactly the
+    /// wave a 1 × 1 Phased Antenna Array (Elements mode) on the same record does, to 1e-11 (the block stamps its Z, so its source passes
+    /// through 2√Z0·(I − S)⁻¹, 1.0e-12 measured), and transmits as it does, to 1e-12.
+    /// </summary>
+    [Fact]
+    public void Gate8b4_AFieldDataEnd_IsTheOneElementArray()
+    {
+        string efd = $"EmFieldData:EF1 p File=\"{Record("e1")}\"", pa = $"PhasedArray:EF1 p {E1} Mode=elements Rows=1 Cols=1";
+        string hb = "analysis HB1 type=hb Tone=\"5.9\" ToneUnit=GHz MaxHarm=1 Tol=1e-13\n";
+        string Rx(string end) => $"P1Tone:S1 tx 0 Num=1 Pavl=10 Z=50 Freq=5.9 GHz\nPropagationChannel:CH1 tx Rx=EF1 Distance=60 TxGain=6 TxPol=phi\n{end}\nR:RL p 0 R=50 Ohm\n{hb}";
+        string Tx(string end) => $"P1Tone:S1 p 0 Num=1 Pavl=10 Z=50 Freq=5.9 GHz\n{end}\nPropagationChannel:CH1 rx Tx=EF1 Distance=60 RxGain=6 RxPol=phi\nR:RL rx 0 R=50 Ohm\n{hb}";
+        Complex V(string body, string net)
+        {
+            var run = Run(body, $"real(HB1.V(\"{net}\",1))", $"imag(HB1.V(\"{net}\",1))");
+            return new Complex(run.Expressions[0].Value!.Value.AsReal(), run.Expressions[1].Value!.Value.AsReal());
+        }
+        var rxBlock = V(Rx(efd), "p"); var rxArray = V(Rx(pa), "p");
+        var txBlock = V(Tx(efd), "rx"); var txArray = V(Tx(pa), "rx");
+        double er = (rxBlock - rxArray).Magnitude / rxArray.Magnitude, et = (txBlock - txArray).Magnitude / txArray.Magnitude;
+        output.WriteLine($"receive: block {rxBlock}, array {rxArray} ({er:E2}); transmit: block {txBlock}, array {txArray} ({et:E2})");
+        Assert.True(er <= 1e-11 && et <= 1e-12);
     }
 }

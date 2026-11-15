@@ -82,7 +82,7 @@ public static class PhasedArrayFastPath
     public static bool Enabled { get; set; } = true;
 
     /// <summary>Drops every kept channel solve and factor.</summary>
-    public static void Clear() { lock (_gate) _states.Clear(); }
+    public static void Clear() { lock (_gate) { _states.Clear(); _receive.Clear(); } }
 
     /// <summary>How the array at <paramref name="block"/> in <paramref name="nl"/> is solved, and why. Null when it is not a Feed-mode array.</summary>
     public static PhasedArraySolvePath? Decide(ElaboratedNetlist nl, string block)
@@ -224,6 +224,105 @@ public static class PhasedArrayFastPath
     }
 
     private static readonly Complex[] Through = [Complex.Zero, Complex.One, Complex.One, Complex.Zero];
+
+    // ── brief-pch-8b R-pch8b-1 — the receive collapse ─────────────────────────────────────────────────────────
+
+    private static readonly Dictionary<string, PropagationChannelModel.ReceiveCollapse> _receive = new(StringComparer.Ordinal);
+
+    /// <summary>Receive collapses formed in this process (one per array, frequency and resolved values).</summary>
+    public static long ReceiveCollapses => Interlocked.Read(ref _receiveCollapses);
+    private static long _receiveCollapses;
+
+    [System.Runtime.CompilerServices.ModuleInitializer]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2255:The 'ModuleInitializer' attribute should not be used in libraries",
+        Justification = "src/Core cannot reference src/Engine; the receive collapse is installed into its seam when the engine loads, as src/Design installs the pattern readers.")]
+    internal static void InstallReceive() => PropagationChannelModel.ReceiveCollapseSource = Receive;
+
+    /// <summary>
+    /// What a Feed-mode receive array that meets the fast path's conditions does with the waves its elements emit (b = S·a + c), with its feed
+    /// matched: the beamformer is matched and isolating, so the wave from channel k's beamformer side leaves at F with t_k and nothing comes
+    /// back; the element side closes as M·b = c with M = I − Γ_ch·D·S (D the elements whose channel is placed, Γ_ch the channel's S22) — the
+    /// fast path's own closure matrix. So the feed sends b_F = S12_ch·tᵀ·M⁻¹·c into a matched load: G = S12_ch·M⁻ᵀ·t, solved with Mᵀ factorised
+    /// explicitly. Γ_F is what the closed array presents at F, as <see cref="TryWaves"/> forms it. Null, with the fast path's sentence, where
+    /// it does not apply.
+    /// </summary>
+    public static (PropagationChannelModel.ReceiveCollapse? Collapse, string Sentence) Receive(ElaboratedNetlist nl, ElaboratedComponent array, double hz)
+    {
+        if (!Enabled) return (null, "Element by element: the array fast path is switched off.");
+        if (Split(nl, array.InstancePath) is not { } parts) return (null, "Element by element: the receive end is not a Feed-mode array.");
+        if (!parts.Path.Fast) return (null, "Element by element: " + parts.Path.Sentence);
+        var pa = parts.Array;
+        int n = pa.PortCount;
+        double z0 = pa.Z0.Real;
+        string key = $"{array.InstancePath}|{parts.ArrayKey}|{parts.Channel?.Key}|{hz.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}";
+        // G and Γ_F are kept per resolved array, channel and frequency; the feed's node is this netlist's own, never kept
+        lock (_gate)
+            if (_receive.TryGetValue(key, out var kept)) return (kept with { FeedNode = parts.Feed.Nodes[0] }, Taken(parts));
+        var ch = parts.Channel is { } channel ? SolveChannel(nl, channel, [hz], z0)[0] : Through;
+        Complex s11 = ch[0], s12 = ch[1], s21 = ch[2], s22 = ch[3];
+        var feed = pa.Feed!;
+        var t = new Complex[n];
+        double norm = 1 / Math.Sqrt(n);
+        for (int k = 0; k < n; k++) t[k] = pa.Lattice.IsOn(k) ? feed.Quantised(k, hz) * norm : Complex.Zero;
+        var s = pa.SparseAt(hz);
+        var off = new HashSet<int>(Enumerable.Range(0, n).Where(k => !pa.Lattice.IsOn(k)));
+        // M = I − s22·D·S (off rows the identity's); z = M⁻ᵀ·t, a = M⁻¹·(s21·t)
+        var z = new Complex[n];
+        var a = new Complex[n];
+        if (s22 == Complex.Zero) { Array.Copy(t, z, n); for (int k = 0; k < n; k++) a[k] = s21 * t[k]; }
+        else
+        {
+            var (lu, _) = Factorise(s, s22, off);
+            var r = t.Select(x => s21 * x).ToArray();
+            lu.Solve(r, a);
+            var luT = FactoriseTranspose(s, s22, off);
+            luT.Solve(t, z);
+        }
+        var g = new Complex[n];
+        for (int k = 0; k < n; k++) g[k] = s12 * z[k];
+        var b = new Complex[n];
+        s.Multiply(a, b);
+        Complex gammaF = 0;
+        for (int k = 0; k < n; k++) if (pa.Lattice.IsOn(k) && t[k] != Complex.Zero) gammaF += t[k] * (s11 * t[k] + s12 * b[k]);
+        var result = new PropagationChannelModel.ReceiveCollapse(parts.Feed.Nodes[0], g, gammaF, z0);
+        lock (_gate) _receive[key] = result;
+        Interlocked.Increment(ref _receiveCollapses);
+        return (result, Taken(parts));
+    }
+
+    private static string Taken(Parts parts)
+        => $"Collapsed: {parts.Array.PortCount} receive elements reach the feed through one closure ({parts.Path.Sentence.Replace("Fast path: ", "")}), so each " +
+           "channel's rays are stamped as one source at the feed rather than on every element.";
+
+    /// <summary>LU of Mᵀ, M = I − s22·D·S with the rows of <paramref name="identityRows"/> the identity's (so Mᵀ has those columns the identity's).</summary>
+    private static SparseLU FactoriseTranspose(ArraySparseMatrix s, Complex s22, HashSet<int> identityRows)
+    {
+        int n = s.Size;
+        var cols = new List<(int Row, Complex Value)>[n];      // column i of Mᵀ is row i of M
+        for (int i = 0; i < n; i++)
+        {
+            cols[i] = [];
+            if (identityRows.Contains(i)) { cols[i].Add((i, Complex.One)); continue; }
+            bool diag = false;
+            foreach (var (c, v) in s.Row(i))
+            {
+                Complex m = -s22 * v;
+                if (c == i) { m += 1; diag = true; }
+                cols[i].Add((c, m));
+            }
+            if (!diag) cols[i].Add((i, Complex.One));
+        }
+        var colPtr = new int[n + 1];
+        for (int c = 0; c < n; c++) colPtr[c + 1] = colPtr[c] + cols[c].Count;
+        var rowIdx = new int[colPtr[n]];
+        var values = new Complex[colPtr[n]];
+        for (int c = 0; c < n; c++)
+        {
+            cols[c].Sort((x, y) => x.Row.CompareTo(y.Row));
+            for (int k = 0; k < cols[c].Count; k++) { rowIdx[colPtr[c] + k] = cols[c][k].Row; values[colPtr[c] + k] = cols[c][k].Value; }
+        }
+        return SparseLU.Create(new SparseMatrix(n, n, values, rowIdx, colPtr), ClosureOrdering, 1.0);
+    }
 
     // ── R-paa8-4 — the estimate a slider shows where the fast path does not apply ──────────────────────────────
 

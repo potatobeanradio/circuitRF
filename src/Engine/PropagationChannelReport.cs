@@ -25,8 +25,10 @@ public static class PropagationChannelReport
     /// the run's carrier, else <paramref name="hz"/>), and says once that harmonic balance holds the channel at TimeOffset with
     /// no Doppler shift when <paramref name="hb"/>.
     /// </summary>
-    public static void Add(DataSet ds, ElaboratedNetlist nl, double hz, bool hb = false, EnvelopeSpan? env = null)
+    public static void Add(DataSet ds, ElaboratedNetlist nl, double hz, bool hb = false, EnvelopeSpan? env = null,
+                           Func<int, Complex[]>? solution = null)
     {
+        if (solution is not null) AddShares(ds, nl, hz, solution);
         foreach (var ec in nl.Components)
         {
             if (ec.Model is not PropagationChannelModel ch) continue;
@@ -123,5 +125,53 @@ public static class PropagationChannelReport
                       : string.Format(inv, "coherence bandwidth {0:G3} Hz over the signal's {1:G3} Hz: nearly flat", bc, en.BandwidthHz);
         nl.AddNoteOnce("env-channel-regime:" + instance, string.Format(inv,
             "Propagation Channel '{0}': f_D = {1:G4} Hz, f_D·T_record = {2:G3}; {3}{4}; {5}.", instance, r.FdHz, r.FdHz * record, time, ici, band));
+    }
+
+    /// <summary>
+    /// brief-pch-8b R-pch8b-3 — each channel's own share at an array's feed, from a single-tone harmonic-balance solution
+    /// (<paramref name="solution"/>: harmonic → the linear solution vector): the wave its ray unknowns send from the feed into a matched load,
+    /// through the receive collapse's coefficients, as <c>link:&lt;channel&gt;:FeedPower_dBm</c>; and for an array several channels reach,
+    /// <c>link:&lt;array&gt;:SIR_dB[channel]</c>, each one's power over the sum of the others'. A channel whose receive array is not on the fast
+    /// path reads NaN, and the run says why.
+    /// </summary>
+    private static void AddShares(DataSet ds, ElaboratedNetlist nl, double f0, Func<int, Complex[]> solution)
+    {
+        var powers = new Dictionary<string, List<(string Channel, double Watts)>>(StringComparer.Ordinal);
+        Complex[]? x = null;
+        foreach (var ec in nl.Components)
+        {
+            if (ec.Model is not PropagationChannelModel ch || ch.RxArray is not { } rx) continue;
+            double watts = double.NaN;
+            if (ch.Shares.TryGetValue(2 * Math.PI * f0, out var share) && share.Coefficients.Length == ch.RayBranches.Count)
+            {
+                x ??= solution(1);
+                Complex b = 0;
+                for (int r = 0; r < share.Coefficients.Length; r++)
+                {
+                    var (yt, yp) = ch.RayBranches[r];
+                    if (yt < x.Length) b += share.Coefficients[r].Theta * x[yt];
+                    if (yp < x.Length) b += share.Coefficients[r].Phi * x[yp];
+                }
+                watts = 0.5 * (b.Real * b.Real + b.Imaginary * b.Imaginary);
+            }
+            else
+                nl.AddNoteOnce("channel-share:" + ec.InstancePath, $"Propagation Channel '{ec.InstancePath}': its power at '{rx.Ec.InstancePath}''s feed is not " +
+                    $"reported, since the array is solved element by element ({ch.CollapseSentence ?? "no collapse"}).");
+            ds.Add($"link:{ec.InstancePath}:FeedPower_dBm", DataCube.Scalar(watts > 0 ? 10 * Math.Log10(watts * 1000) : double.NaN));
+            if (!powers.TryGetValue(rx.Ec.InstancePath, out var list)) powers[rx.Ec.InstancePath] = list = [];
+            list.Add((ec.InstancePath, watts));
+        }
+        foreach (var (array, list) in powers)
+        {
+            if (list.Count < 2) continue;
+            var sir = list.Select(c =>
+            {
+                double others = list.Where(o => o.Channel != c.Channel).Sum(o => o.Watts);
+                return c.Watts > 0 && others > 0 ? 10 * Math.Log10(c.Watts / others) : double.NaN;
+            }).ToArray();
+            ds.Add($"link:{array}:SIR_dB", new DataCube([Index("channel", list.Select(c => c.Channel))], sir) { Unit = "dB" });
+            nl.AddNoteOnce("channel-sir:" + array, $"'{array}': SIR_dB is each channel's power at the feed over the sum of the other channels'; the array's own " +
+                           "noise at the feed is the S-parameter noise analysis's (SystemTempK), not in this ratio.");
+        }
     }
 }

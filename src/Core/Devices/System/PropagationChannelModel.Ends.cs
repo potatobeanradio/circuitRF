@@ -56,7 +56,73 @@ public sealed partial class PropagationChannelModel
     public static long LargestCoefficientArray => Interlocked.Read(ref _largest);
     private static long _rayEntries, _largest;
     internal static void NoteArray(long length) { long seen; while (length > (seen = Interlocked.Read(ref _largest)) && Interlocked.CompareExchange(ref _largest, length, seen) != seen) { } }
-    public static void ResetCounters() { Interlocked.Exchange(ref _rayEntries, 0); Interlocked.Exchange(ref _largest, 0); }
+    public static void ResetCounters()
+    {
+        Interlocked.Exchange(ref _rayEntries, 0); Interlocked.Exchange(ref _largest, 0);
+        Interlocked.Exchange(ref _collapsedStamps, 0); Interlocked.Exchange(ref _collapseRefusals, 0); Interlocked.Exchange(ref _elementsNotStamped, 0);
+    }
+
+    /// <summary>brief-pch-8b R-pch8b-2 — stamps that took the receive collapse, stamps it refused, and receive elements not stamped by it.</summary>
+    public static long CollapsedStamps => Interlocked.Read(ref _collapsedStamps);
+    public static long CollapseRefusals => Interlocked.Read(ref _collapseRefusals);
+    public static long ElementsNotStamped => Interlocked.Read(ref _elementsNotStamped);
+    private static long _collapsedStamps, _collapseRefusals, _elementsNotStamped;
+
+    /// <summary>
+    /// brief-pch-8b R-pch8b-1 — what the fast path says of a receive array at one frequency: its feed node, the transfer G from each
+    /// element's emitted wave to the wave the feed sends into a matched load, and the reflection Γ_F the closed array presents at the feed
+    /// (Z0 its reference). Supplied by src/Engine through <see cref="ReceiveCollapseSource"/>.
+    /// </summary>
+    public sealed record ReceiveCollapse(int FeedNode, Complex[] G, Complex GammaF, double Z0);
+
+    /// <summary>(netlist, the receive array's component, frequency ≥ 0) → the collapse, or null with the sentence saying why not. Null
+    /// when src/Engine has not installed it, and then every receive element is stamped.</summary>
+    public static Func<ElaboratedNetlist, ElaboratedComponent, double, (ReceiveCollapse? Collapse, string Sentence)>? ReceiveCollapseSource { get; set; }
+
+    /// <summary>Whether the receive collapse is taken where it applies (a test turns it off to compare against the element stamp).</summary>
+    public static bool CollapseEnabled { get; set; } = true;
+
+    /// <summary>The last stamp's sentence on the receive collapse: taken, or why not; null when the receive end is not an array.</summary>
+    public string? CollapseSentence { get; private set; }
+
+    /// <summary>The ray unknowns (θ, φ branch indices) of the last stamp, ray by ray.</summary>
+    public IReadOnlyList<(int Theta, int Phi)> RayBranches { get; private set; } = [];
+
+    /// <summary>brief-pch-8b R-pch8b-3 — at each stamped angular frequency where the collapse was taken: per ray, the coefficients that map
+    /// its two unknowns to the wave the channel alone sends from the feed into a matched load, and the collapse.</summary>
+    public IReadOnlyDictionary<double, ((Complex Theta, Complex Phi)[] Coefficients, ReceiveCollapse Collapse)> Shares
+    { get { lock (_shares) return new Dictionary<double, ((Complex, Complex)[], ReceiveCollapse)>(_shares); } }
+    private readonly Dictionary<double, ((Complex, Complex)[], ReceiveCollapse)> _shares = [];
+
+    /// <summary>W = 2√Re Z0·(I − S)⁻¹: a source wave vector c as the open-circuit voltages it adds to an impedance stamp.</summary>
+    private static Complex[,] SourceToVoltage(NumFlat.Mat<Complex> s, Complex z0)
+    {
+        int n = s.RowCount;
+        var a = new Complex[n, 2 * n];
+        for (int i = 0; i < n; i++)
+        {
+            for (int k = 0; k < n; k++) a[i, k] = (i == k ? 1 : 0) - s[i, k];
+            a[i, n + i] = 1;
+        }
+        for (int col = 0; col < n; col++)
+        {
+            int piv = col;
+            for (int row = col + 1; row < n; row++) if (a[row, col].Magnitude > a[piv, col].Magnitude) piv = row;
+            if (piv != col) for (int k = 0; k < 2 * n; k++) (a[col, k], a[piv, k]) = (a[piv, k], a[col, k]);
+            Complex d = a[col, col];
+            for (int k = 0; k < 2 * n; k++) a[col, k] /= d;
+            for (int row = 0; row < n; row++)
+            {
+                if (row == col || a[row, col] == Complex.Zero) continue;
+                Complex m = a[row, col];
+                for (int k = 0; k < 2 * n; k++) a[row, k] -= m * a[col, k];
+            }
+        }
+        double root = 2 * Math.Sqrt(z0.Real);
+        var w = new Complex[n, n];
+        for (int i = 0; i < n; i++) for (int k = 0; k < n; k++) w[i, k] = root * a[i, n + k];
+        return w;
+    }
 
     /// <summary>The array end's pattern field per unit incident wave, as a realized-gain field: E·√(4π/η₀).</summary>
     private static EndField ArrayField(PhasedArrayModel array, AntennaFrame frame, double hz)
@@ -98,6 +164,26 @@ public sealed partial class PropagationChannelModel
         };
     }
 
+    /// <summary>brief-pch-8b R-pch8b-4 — an EM Field Data block's ports: each port's terminated pattern from its record (the channel's
+    /// pattern reader, as a pin's TxPattern is read), in the end's frame; the ports share the record's origin.</summary>
+    private EndField FieldDataField(SnpModel block, AntennaFrame frame, double hz, string end)
+    {
+        int n = block.PortCount;
+        string record = block.RecordPath ?? throw new ParameterRefusalException(PropagationChannelDiagnostics.EndNotBound(end, block.RecordPath ?? ""));
+        var pats = new ChannelPattern[n];
+        for (int p = 0; p < n; p++) pats[p] = PatternAt((record, p), hz, end)!;
+        return new EndField
+        {
+            Elements = n, Active = _ => true, IsArray = true,
+            Toward = u =>
+            {
+                var cache = new (Complex, Complex)?[n];
+                return p => cache[p] ??= GlobalBasis.Components(Field(pats[p], frame, u), u);
+            },
+            Reference = u => (GlobalBasis.Components(Field(pats[0], frame, u), u), frame.Angles(u).Theta, frame.Angles(u).Phi),
+        };
+    }
+
     private static EndField PinField(Func<Vec3, (Complex, Complex)> f)
         => new() { Elements = 1, Active = _ => true, Toward = u => { var v = f(u); return _ => v; }, Reference = u => (f(u), double.NaN, double.NaN) };
 
@@ -131,8 +217,11 @@ public sealed partial class PropagationChannelModel
         {
             var array = tx ? _txArray : _rxArray;
             if ((tx ? _txInstance : _rxInstance) is { } inst)
+            {
+                if ((tx ? _txField : _rxField) is { } field) return FieldDataField(field, Frame(tx, r), hz, tx ? "Tx" : "Rx");
                 return array is null ? throw new ParameterRefusalException(PropagationChannelDiagnostics.EndNotBound(tx ? "Tx" : "Rx", inst))
                                      : ArrayField(array, Frame(tx, r), hz);
+            }
             var pat = PatternAt(tx ? _txPattern : _rxPattern, hz, tx ? "Tx" : "Rx");
             if (pat is not null)
             {
@@ -247,6 +336,32 @@ public sealed partial class PropagationChannelModel
         double amp = Math.Pow(10, -r.ExcessDb / 20) * PropagationMath.C / (4 * Math.PI * f * r.DistanceM);
         double scale = f / r.ReferenceHz, tt = FrozenTimeS;
         long entries = 0;
+        var rayBranches = new List<(int, int)>();
+        var share = new List<(Complex, Complex)>();
+        Complex fieldZ0Tx = 50;
+        if (_txField is { } tfb) { tfb.StampsAsWaves(_txEc!, Math.Abs(hz), out _, out var tz); fieldZ0Tx = tz; }   // conjugated with the rest by C()
+        // brief-pch-8b — a Field Data receive end stamped as its Z takes its source through W = 2√Z0·(I − S)⁻¹
+        Complex[,]? fieldW = null;
+        if (_rxField is { } rfb && !rfb.StampsAsWaves(_rxEc!, hz, out var sB, out var zB)) fieldW = SourceToVoltage(sB, zB);
+        // brief-pch-8b R-pch8b-1 — the receive collapse, where the array meets the fast path's conditions
+        ReceiveCollapse? collapse = null;
+        Complex[]? collapseG = null;
+        Complex norton = 0;
+        if (_rxArray is not null && CollapseEnabled && ReceiveCollapseSource is { } src0 && _netlist is not null)
+        {
+            var (col, sentence) = src0(_netlist, _rxEc!, f);
+            CollapseSentence = sentence;
+            if (col is not null)
+            {
+                collapse = col;
+                collapseG = conj ? [.. col.G.Select(Complex.Conjugate)] : col.G;
+                Complex gF = conj ? Complex.Conjugate(col.GammaF) : col.GammaF;
+                norton = 2 / (Math.Sqrt(col.Z0) * (1 + gF));
+                Interlocked.Increment(ref _collapsedStamps);
+                Interlocked.Add(ref _elementsNotStamped, rxF.Elements);
+            }
+            else Interlocked.Increment(ref _collapseRefusals);
+        }
         for (int i = 0; i < r.Rays.Count; i++)
         {
             var ray = r.Rays[i];
@@ -274,6 +389,10 @@ public sealed partial class PropagationChannelModel
                 {
                     node = _txEc!.Nodes[mIdx]; br = ta.PortBranchIndices[mIdx]; reference = _txEc.ReferenceNode; z0 = C(ta.Z0);
                 }
+                else if (_txField is { } tf)
+                {
+                    node = _txEc!.Nodes[mIdx]; br = tf.PortBranchIndices[mIdx]; reference = _txEc.ReferenceNode; z0 = C(fieldZ0Tx);
+                }
                 else { node = txNode; br = _branch[0]; z0 = pinZ0[0]; }
                 double root = Math.Sqrt(z0.Real);
                 Complex fwd = z0.Imaginary == 0 ? root : z0 / root;
@@ -290,11 +409,45 @@ public sealed partial class PropagationChannelModel
             // the receive end: a source ½·(j)·F_rxᵀ·y on each element, or on the pin's wave row
             var arr = rxF.Toward(ray.ArrivalFrom);
             Complex j = rxF.IsArray ? Complex.ImaginaryOne : Complex.One;
+            var rTs = new Complex[rxF.Elements]; var rPs = new Complex[rxF.Elements];
             for (int n = 0; n < rxF.Elements; n++)
             {
                 if (!rxF.Active(n)) continue;
                 var (rt, rp) = arr(n);
-                Complex rT = C(j * rt), rP = C(j * rp);
+                rTs[n] = C(j * rt); rPs[n] = C(j * rp);
+            }
+            rayBranches.Add((yt, yp));
+            if (collapse is not null)
+            {
+                // brief-pch-8b R-pch8b-1 — the array's feed takes the channel's share as one Norton source: J = 2·b_m/(√Z0·(1 + Γ_F)),
+                // b_m = Σ_n G_n·c_n what the elements' waves deliver into a matched load at the feed
+                Complex kT = 0, kP = 0;
+                for (int n = 0; n < rTs.Length; n++) { kT += collapseG![n] * 0.5 * rTs[n]; kP += collapseG[n] * 0.5 * rPs[n]; }
+                share.Add((kT, kP));
+                if (kT != Complex.Zero) mna.AddNodeBranchCoupling(collapse.FeedNode, yt, -norton * kT);
+                if (kP != Complex.Zero) mna.AddNodeBranchCoupling(collapse.FeedNode, yp, -norton * kP);
+                entries += 2;
+                continue;
+            }
+            if (_rxField is not null)
+            {
+                // brief-pch-8b R-pch8b-4 — on the block's own rows, in the form it stamped: 2b − 2S·a = 2c, or v − Z·i = 2√Z0·(I − S)⁻¹·c
+                for (int p = 0; p < rTs.Length; p++)
+                {
+                    Complex cT = 0, cP = 0;
+                    if (fieldW is null) { cT = rTs[p]; cP = rPs[p]; }
+                    else for (int q = 0; q < rTs.Length; q++) { cT += fieldW[p, q] * 0.5 * rTs[q]; cP += fieldW[p, q] * 0.5 * rPs[q]; }
+                    int br = _rxField.PortBranchIndices[p];
+                    if (cT != Complex.Zero) mna.AddBranchConstraint(br, yt, -cT);
+                    if (cP != Complex.Zero) mna.AddBranchConstraint(br, yp, -cP);
+                    entries += 2;
+                }
+                continue;
+            }
+            for (int n = 0; n < rTs.Length; n++)
+            {
+                Complex rT = rTs[n], rP = rPs[n];
+                if (rT == Complex.Zero && rP == Complex.Zero) continue;
                 if (_rxArray is { } ra)
                 {
                     int src = PhasedArrayModel.SourceNode(_rxEc!, n, ra.PortCount);
@@ -311,6 +464,8 @@ public sealed partial class PropagationChannelModel
             }
         }
         Interlocked.Add(ref _rayEntries, entries);
+        RayBranches = rayBranches;
+        if (collapse is not null) lock (_shares) _shares[omega] = (share.ToArray(), collapse);
     }
 
     /// <summary>

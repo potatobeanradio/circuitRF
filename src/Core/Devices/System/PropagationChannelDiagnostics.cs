@@ -55,11 +55,15 @@ public static class PropagationChannelDiagnostics
     public static Diagnostic EndNotBound(string end, string instance)
         => E("end-not-bound", "{end}={instance} was not bound to an instance before the run.", ("end", end), ("instance", instance));
     public static Diagnostic EndUnknown(string channel, string end, string instance, string arrays)
-        => E("end-unknown", "'{channel}': {end}={instance} names no Phased Antenna Array; the arrays are {arrays}.",
+        => E("end-unknown", "'{channel}': {end}={instance} names no Phased Antenna Array or EM Field Data block; the arrays are {arrays}.",
              ("channel", channel), ("end", end), ("instance", instance), ("arrays", arrays));
     public static Diagnostic EndFieldData(string channel, string end, string instance)
         => E("end-field-data", "'{channel}': {end}={instance} is an EM Field Data block. A channel end on one is not built yet; a Phased Antenna Array "
                                + "on the same record (Rows=1 Cols=1, or its own lattice) is.", ("channel", channel), ("end", end), ("instance", instance));
+    public static Diagnostic FieldDataInEnvelope(string channel)
+        => E("field-data-envelope", "'{channel}': an EM Field Data block as a channel end is coupled in S-parameter and harmonic-balance runs, not yet in an "
+                                    + "envelope run. A Phased Antenna Array on the same record is an end the envelope steps.", ("channel", channel));
+
     public static Diagnostic RaysNeedFile() => E("rays-file", "Multipath=rays reads its rays from File=, a ray list with departure and arrival angles.");
     public static Diagnostic CdlNeedsProfile(string profiles)
         => E("cdl-profile", "Multipath=cdl takes Profile=, one of {profiles}.", ("profiles", profiles));

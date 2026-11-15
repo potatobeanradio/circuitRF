@@ -4836,3 +4836,39 @@ gated there), passed to the script as data.
   measures, and a run note names the channels sharing a receive end. The cubes naming each channel's feed power and the
   SINR need each channel's share of the solution, which the report does not see.
 - **An EM Field Data block as an end** is refused (see src/Core/RESOLVED.md).
+
+## brief-pch-8b — the receive collapse, each channel's share at the feed, Field Data ends (2026-11-15)
+
+**The collapse keeps the array's own stamp and moves only the channel's injection.** A Feed-mode receive array that
+meets PAA-8's fast-path conditions is linear between its elements' emitted waves and its feed. So the channel does not
+inject on each element's source row. It adds one Norton current at the feed, J = 2·b_m/(√Z0·(1 + Γ_F)), where b_m =
+Σ_n G_n·c_n is what the elements' waves deliver into a matched load at the feed. The array's stamp, which does not
+depend on the field, still supplies Γ_F to the rest of the circuit, so the equivalence is exact.
+`PhasedArrayFastPath.Receive` forms G = S12_ch·M⁻ᵀ·t from the fast path's own closure matrix M = I − Γ_ch·D·S. Mᵀ is
+assembled and factorized explicitly, because CSparse's complex `SolveTranspose` is documented as A′x = b, which may
+conjugate. Γ_F is formed as `TryWaves` forms it. Through CDL-C (480 rays) into a 16 × 16 array with identical
+mismatched channels and coupling on, S21 matches the element-by-element stamp to 2.5e-15. Harmonic balance matches to
+2.7e-11, its floor on this bench. A 4 × 4 envelope run matches to 2.6e-11.
+
+**G and Γ_F are kept, the feed's node never is.** Caching the whole collapse per (array, resolved values, channel, frequency)
+injected at a node index from an earlier netlist, where the same array's feed has another number. The feed was 24 dB
+low, exactly 10·log10(256), until the node came from the current netlist.
+
+**The envelope still steps the receive array.** With the collapse, each ray is projected on one node (the counters say 1
+instead of N). But the array's channel cells and elements are still in the envelope's circuit. An envelope run of the
+16 × 16 array with its 256 channel cells takes over 8 minutes whatever the rays. Taking such an array out of the
+envelope entirely (note §8.2's "not stepped at all") needs the envelope to stand the closed array at its feed, as the
+fast path's outer circuit does for S-parameters. It is not built.
+
+**Each channel's share** comes from its own ray unknowns in the harmonic-balance solution
+(`HbLinearBackSolver.GetSolution`), mapped to the matched-load feed wave by the coefficients the collapse stamped.
+`link:<channel>:FeedPower_dBm` equals the run with only that channel to 1e-9 dB. `link:<array>:SIR_dB[channel]` equals
+array_link_reference.py's to six decimals. It is a signal-to-interference ratio: the noise term R-pch8b-3 asks for is
+not in it, because the noise is the S-parameter noise analysis's (SystemTempK), which the HB run does not hold. An array
+off the fast path reports NaN and says why. Multi-tone HB does not report shares.
+
+**EM Field Data ends** couple onto the block's own rows in the form the block stamped at that frequency
+(`SnpModel.StampsAsWaves`): 2b − 2S·a = 2c, or v − Z·i = 2√Z0·(I − S)⁻¹·c. The block's stamp is unchanged.
+A one-port block on e1 receives what a 1 × 1 array on the same record does to 1.0e-12 (the (I − S)⁻¹ path), and
+transmits identically. Envelope runs refuse a Field Data end.
+

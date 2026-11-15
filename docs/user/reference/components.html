@@ -5367,7 +5367,14 @@ unstated. Such an end has no pin, so the symbol draws only the pins that remain,
 into an array, an array into a pin, or array to array). The coupling is stamped as two unknowns per ray, never as a matrix of
 receive elements by transmit elements, and a receive element takes exactly the wave PAA-7's incident wave from that
 direction gives it. Several channels may end on one array; their waves add on its elements. <code>check</code> and the run warn when
-the ends are closer than 2D²/λ for an array's aperture D. An EM Field Data block as an end is refused for now.</li>
+the ends are closer than 2D²/λ for an array's aperture D. An EM Field Data block may be an end too, each port radiating and
+receiving through its record's pattern, in S-parameter and harmonic-balance runs (an envelope run refuses it for now).</li>
+<li><strong>Receive arrays on the fast path.</strong> A Feed-mode receive array whose channel cells are identical and linear (the conditions
+the Phased Array's fast path states) takes each channel's rays as one source at its feed instead of on every element. The
+result is the same, and the run says whether this happened and why. A harmonic-balance run then reports
+<code>link:CH1:FeedPower_dBm</code>, the power that channel alone delivers at the feed into a matched load. For an array several
+channels reach, it also reports <code>link:PA1:SIR_dB[channel]</code>, each one's power over the sum of the others'. The array's own
+noise at the feed comes from the S-parameter noise analysis (<code>SystemTempK</code>).</li>
 <li><strong>Clustered delay lines and ray lists.</strong> <code>Multipath=cdl</code> with <code>Profile=</code> one of TR 38.901's <code>CDL-A</code> to <code>CDL-E</code> or TR 38.811's
 <code>NTN-CDL-A</code> to <code>NTN-CDL-D</code> gives rays with directions and polarization. Their delays are scaled to <code>DelaySpread</code>, the
 angle spreads to <code>ASD</code>, <code>ASA</code>, <code>ZSD</code> and <code>ZSA</code> (degrees) when stated, and the clusters are turned so the line-of-sight

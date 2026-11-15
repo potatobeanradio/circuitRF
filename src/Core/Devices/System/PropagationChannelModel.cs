@@ -133,6 +133,8 @@ public sealed partial class PropagationChannelModel : ComponentModel, IReportsWa
     private readonly string? _txInstance, _rxInstance;
     private ElaboratedComponent? _txEc, _rxEc;
     private PhasedArrayModel? _txArray, _rxArray;
+    private SnpModel? _txField, _rxField;                 // brief-pch-8b R-pch8b-4 — an EM Field Data block as an end
+    private ElaboratedNetlist? _netlist;
     private readonly (Complex Theta, Complex Phi)? _txPol, _rxPol;
     private readonly double? _faradayDeg;
     // brief-pch-8 — a clustered delay line, or a directional ray list
@@ -158,13 +160,18 @@ public sealed partial class PropagationChannelModel : ComponentModel, IReportsWa
     /// <summary>The index in the component's nets of the receive pin, or -1 for an instance end.</summary>
     public int RxPin => _rxInstance is not null ? -1 : _txInstance is null ? 1 : 0;
 
-    /// <summary>brief-pch-8 — binds each instance end to its array, after elaboration.</summary>
-    public void BindEnds(ElaboratedComponent? tx, ElaboratedComponent? rx)
+    /// <summary>brief-pch-8 — binds each instance end to its array (brief-pch-8b: or EM Field Data block), after elaboration.</summary>
+    public void BindEnds(ElaboratedComponent? tx, ElaboratedComponent? rx, ElaboratedNetlist? netlist = null)
     {
-        _txEc = tx; _txArray = tx?.Model as PhasedArrayModel;
-        _rxEc = rx; _rxArray = rx?.Model as PhasedArrayModel;
+        _txEc = tx; _txArray = tx?.Model as PhasedArrayModel; _txField = tx?.Model as SnpModel;
+        _rxEc = rx; _rxArray = rx?.Model as PhasedArrayModel; _rxField = rx?.Model as SnpModel;
+        _netlist = netlist;
         lock (_realizations) _realizations.Clear();
     }
+
+    /// <summary>The component an instance end names (an array or an EM Field Data block), or null for a pin end.</summary>
+    public ElaboratedComponent? TxEnd => _txEc;
+    public ElaboratedComponent? RxEnd => _rxEc;
 
     /// <summary>The instance path the fading draws' streams are named by (design note §8.1), bound after elaboration.</summary>
     public string InstancePath

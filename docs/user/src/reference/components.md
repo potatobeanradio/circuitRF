@@ -2621,7 +2621,14 @@ PropagationChannel:CH1 tx rx Distance=250 TxHeight=10 RxHeight=1.5 PathLoss=twor
   into an array, an array into a pin, or array to array). The coupling is stamped as two unknowns per ray, never as a matrix of
   receive elements by transmit elements, and a receive element takes exactly the wave PAA-7's incident wave from that
   direction gives it. Several channels may end on one array; their waves add on its elements. `check` and the run warn when
-  the ends are closer than 2D²/λ for an array's aperture D. An EM Field Data block as an end is refused for now.
+  the ends are closer than 2D²/λ for an array's aperture D. An EM Field Data block may be an end too, each port radiating and
+  receiving through its record's pattern, in S-parameter and harmonic-balance runs (an envelope run refuses it for now).
+- **Receive arrays on the fast path.** A Feed-mode receive array whose channel cells are identical and linear (the conditions
+  the Phased Array's fast path states) takes each channel's rays as one source at its feed instead of on every element. The
+  result is the same, and the run says whether this happened and why. A harmonic-balance run then reports
+  `link:CH1:FeedPower_dBm`, the power that channel alone delivers at the feed into a matched load. For an array several
+  channels reach, it also reports `link:PA1:SIR_dB[channel]`, each one's power over the sum of the others'. The array's own
+  noise at the feed comes from the S-parameter noise analysis (`SystemTempK`).
 - **Clustered delay lines and ray lists.** `Multipath=cdl` with `Profile=` one of TR 38.901's `CDL-A` to `CDL-E` or TR 38.811's
   `NTN-CDL-A` to `NTN-CDL-D` gives rays with directions and polarization. Their delays are scaled to `DelaySpread`, the
   angle spreads to `ASD`, `ASA`, `ZSD` and `ZSA` (degrees) when stated, and the clusters are turned so the line-of-sight

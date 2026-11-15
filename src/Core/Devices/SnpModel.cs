@@ -442,6 +442,20 @@ public sealed class SnpModel : ComponentModel, IReportsWarnings
     /// close to singular (a series-measured part, an open) makes the Z stamp rounding noise.</summary>
     internal const double IllConditionedZOverZ0 = 1e6;
 
+    /// <summary>
+    /// brief-pch-8b R-pch8b-4 — how <see cref="Stamp"/> writes this block at <paramref name="hz"/> (signed, as Stamp is given it): as its
+    /// waves (rows 2b − 2S·a, <c>true</c>) or as its Z (rows v − Z·i), with the S it stamps and its reference. A Propagation Channel
+    /// receiving into the block adds its received wave to those rows in the same form, so the block's own stamp is not touched.
+    /// </summary>
+    public bool StampsAsWaves(ElaboratedComponent c, double hz, out NumFlat.Mat<Complex> s, out Complex z0)
+    {
+        var snp = LoadSnp(c);
+        s = SAt(c, hz);
+        z0 = snp.Z0;
+        var z = RFNetwork.SToZ(s, snp.Z0);
+        return !AllFinite(z) || MaxMagnitude(z) > IllConditionedZOverZ0 * snp.Z0.Magnitude;
+    }
+
     private static double MaxMagnitude(NumFlat.Mat<Complex> m)
     {
         double max = 0;

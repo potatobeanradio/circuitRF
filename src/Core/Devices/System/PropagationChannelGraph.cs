@@ -41,8 +41,8 @@ public static class PropagationChannelGraph
     {
         var m = (PropagationChannelModel)ec.Model;
         int Pin(int i) => i >= 0 && i < ec.Nodes.Length ? ec.Nodes[i] : 0;
-        int tx = m.TxArray is { } ta ? (ta.Ec.Nodes.Length > 0 ? ta.Ec.Nodes[0] : 0) : Pin(m.TxPin);
-        int rx = m.RxArray is { } ra ? (ra.Ec.Nodes.Length > 0 ? ra.Ec.Nodes[0] : 0) : Pin(m.RxPin);
+        int tx = m.TxEnd is { } te ? (te.Nodes.Length > 0 ? te.Nodes[0] : 0) : Pin(m.TxPin);
+        int rx = m.RxEnd is { } re ? (re.Nodes.Length > 0 ? re.Nodes[0] : 0) : Pin(m.RxPin);
         return (tx, rx);
     }
 
