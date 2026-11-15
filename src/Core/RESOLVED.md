@@ -4840,3 +4840,25 @@ read 37 ms: re-weigh 18 ms, fields run 22 ms).
 - **Noise.** The receive pin is a `NoiseSourceDecl` from the rx net to ground with 4k·T_ant·Re(1/Z_rx), so the S-parameter, HB and
   envelope noise read it through the device-source path. An S-parameter run with `RxTant=150` gives the receive port's wave noise
   k·150 = 2.07e-21 and Te = T_ant/|H|² at the input.
+
+## RF passives stage 3 — the branch-line and rat-race hybrids, MBLC and MRRC (2026-11-15)
+
+- **An MTEE whose branch ends at the through line's edge has no junction.** `L3 = max(W1, W2)/2` leaves the branch no line
+  past its reference plane, and `MicrostripTeeModel` then stamps the tee as two through lines meeting at pin 3 (its
+  straight-line case). `testdata/schematic-to-layout/C2-branch-line` draws all four tees that way, so its network carries no
+  junction at all. The hybrids' plans give each tee's branch one W0 of the arm's own line, so the junction is simulated; the
+  one-section plan laid out on C2's dimensions with no such stub is C2's network to 1e-9 (`HybridSParamTests`).
+- **Two-section shunt arms share one span.** The arms of (1 + √2)·Z0 and √2·Z0 have different εeff, but both through lines
+  are straight, so one span serves all three. Each arm takes the mean of their quarter waves: about ±1.5 % of λg/4 on 20 mil
+  RO4350B at 2.4 GHz, which alone limits the match to about −38 dB on ideal lines.
+- **The junctions move the centre a little.** With the arms λg/4 between reference planes, the tees' own reactance puts the
+  one-section coupler's best match at 2.36 GHz for F = 2.4 GHz; at F it is −30 dB with 90.1° between 2 and 3. No further
+  correction is applied.
+- **A rat-race ring of quarter-turn sections.** A plan section turns only in multiples of 90°, so the ports cannot sit 60°
+  apart on a circle. The ring is two straight runs and two 180° MCURVEs, tees 2, 1 and 3 on one run and tee 4 on the other.
+  Closing it with one tee against three fixes the half-turns: π·(R − 0.2·W) = λg/4 − W0, with W0 of line between the
+  right half-turn and tee 4 and λg/2 + W0 between tee 4 and the left half-turn.
+- **The planned passives state their net count.** `InstanceNetContract.Expected` had no case for `MicrostripPlanModel`, so
+  `NetlistContractTests` listed MWPD; it is the plan's pin count.
+- **Engine.Tests links nothing above the engine**, so the C2 comparison extracts the fixture's netlist with the CLI built beside
+  the tests, run as a process, as `MatchStampTests` runs `sparam`.
