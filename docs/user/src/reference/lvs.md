@@ -77,6 +77,12 @@ run that relies on it</b>, naming the stackup entry and how many vias reached gr
 the one inference in the whole extraction that you cannot check by looking at your own screen.</p>
 </div>
 
+**A kit's part and the cell its generator drew.** A kit part placed from the palette is not a folder, and the layout cell
+its generator draws lives in a folder of its own, named after the generator with a hash. LVS pairs the two by
+**generator**: the generator the kit draws the part with (the same one **Update Layout from Schematic** places), against
+the generator the layout cell came from. A different kit cell in its place is a type mismatch naming both. A parameter the
+kit's generator does not draw is reported once as not drawn, never as a mismatch.
+
 **A part left off the board.** A footprint whose schematic part has **Disable** set to *Open* is taken as not fitted: its pads stay copper, it is not compared, and a note names it. If a part was marked Open by mistake, that note is the only sign.
 
 ## Running it from the window {#window}

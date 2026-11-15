@@ -278,6 +278,10 @@ instance is a placeholder listing both sets, rather than a guess.
 | Floating, and on ground in the schematic | On `0` |
 | Floating otherwise | On its own unconnected node, `nc_<name>_<pin>`, with a warning in the run's messages |
 
+**An instance with no port at all** (every pin grounded, a return only, or nothing meeting it) is still placed, each terminal
+by the table above, so the netlist shows what was cut; it then reaches the EM result only through ground, and the run warns.
+With no model for it, nothing is placed and the comment says why.
+
 Instance names in the netlist are made from paths (`X1/Q3` is `X1_Q3`, `@2` is `at2`), and the comment names each path.
 
 **The same decision closes an EM cell.** A schematic run with `model=em` puts its devices back on their ports this way,

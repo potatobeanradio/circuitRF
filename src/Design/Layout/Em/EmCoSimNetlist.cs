@@ -51,6 +51,22 @@ public sealed record EmCoSimPort(int Number, string Name, string Z0, EmCoSimPart
     public int Num => DocumentNumber ?? Number;
 }
 
+/// <summary>
+/// brief-icf-2 R-icf2-1 — a result's ports, in its order, together with the cut instances left with no port. Those are not ports of
+/// the N-port, so they are not in the list; they ride beside it so the one decision that closes the ports
+/// (<see cref="EmCoSimNetlist.Closures"/>) places their models too, and every caller that hands a result's ports on hands them on.
+/// </summary>
+public sealed class EmCoSimPortList(IReadOnlyList<EmCoSimPort> ports, IReadOnlyList<EmCoSimPart> portless) : IReadOnlyList<EmCoSimPort>
+{
+    /// <summary>The cut instances with no port, each with its cut (<see cref="EmCoSimPart.Cut"/>) and no pin.</summary>
+    public IReadOnlyList<EmCoSimPart> Portless { get; } = portless;
+
+    public EmCoSimPort this[int index] => ports[index];
+    public int Count => ports.Count;
+    public IEnumerator<EmCoSimPort> GetEnumerator() => ports.GetEnumerator();
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+}
+
 /// <summary>brief-isc-1 — every port a run solved, and whether any of them is a built component port (what makes the run write
 /// its <c>_cosim</c> netlist).</summary>
 public sealed record EmResultPorts(IReadOnlyList<EmCoSimPort> Ports, bool ComponentPorts);
@@ -252,7 +268,8 @@ public static class EmCoSimNetlist
 
         var sb = new StringBuilder();
         // brief-icp-10 — a run whose component ports are all cut instances is a chip, not a board with pads: say what a cut is.
-        bool cutOnly = ports.Any(p => p.Component?.Cut is not null) && ports.All(p => p.Component is null || p.Component.Cut is not null);
+        bool cutOnly = (ports.Any(p => p.Component?.Cut is not null) || ports is EmCoSimPortList { Portless.Count: > 0 })
+                       && ports.All(p => p.Component is null || p.Component.Cut is not null);
         if (cutOnly)
         {
             sb.AppendLine($"{CutOwnerPrefix(setup)}{n}-port with each cut-out instance's model back on its ports (written");
@@ -400,6 +417,13 @@ public static class EmCoSimNetlist
                     $"{name}: {why}, so {variable} is a placeholder; set it to the part's value.", model?.InstanceName));
             }
         }
+        // brief-icf-2 R-icf2-1 — a cut instance with no port is placed too, by the same rule, each terminal on its pin class's node.
+        if (ports is EmCoSimPortList { Portless.Count: > 0 } withCuts)
+            foreach (var cp in withCuts.Portless.Where(c => parts.Add(c.Refdes)))
+            {
+                names ??= new EmCoSimCuts.Names(ports.Where(q => q.Component is { Cut: null }).Select(q => q.Component!.Refdes));
+                list.AddRange(EmCoSimCuts.Close(cp, [], layoutModels?.Invoke(cp.ClayPath) ?? models, names));
+            }
         return list;
     }
 
@@ -445,7 +469,7 @@ public static class EmCoSimNetlist
             // brief-icp-5 — a cut instance's pin port carries the instance, whose model goes back on it.
             list.Add(new EmCoSimPort(p.Number, name, z0, cp is null ? null : EmCoSimPart.Of(cp), source));
         }
-        return list;
+        return new EmCoSimPortList(list, build?.Portless ?? []);
     }
 
     /// <summary>brief-isc-1 — a 3D problem's ports where no 3D view assembled it (a layout's <c>.cem</c> with no component ports): each
@@ -473,7 +497,7 @@ public static class EmCoSimNetlist
             int? num = cp is null && i < labels.Count && int.TryParse(labels[i].Text?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) ? n : null;
             list.Add(new EmCoSimPort(p.Number, name, Z0Text(p.Z0), cp is null ? null : EmCoSimPart.Of(cp), num));
         }
-        return list;
+        return new EmCoSimPortList(list, build?.Portless ?? []);
     }
 
     /// <summary>A solved reference impedance as a Port line writes it: ohms, with an imaginary part when there is one.</summary>
@@ -571,14 +595,15 @@ public static class EmCoSimNetlist
         string path = Path.Combine(workspaceDir, FileNameFor(setup));
         try
         {
-            var models = ModelsFor(ports.Select(p => p.Component?.ClayPath).FirstOrDefault(c => c is not null));
+            var models = ModelsFor(ports.Select(p => p.Component?.ClayPath).FirstOrDefault(c => c is not null)
+                                   ?? (ports as EmCoSimPortList)?.Portless.FirstOrDefault()?.ClayPath);
             // brief-icp-5 — a cut instance's model is read from its own layout's schematic (a 3D view may place several layouts).
             var byLayout = new Dictionary<string, EmCoSimModels>(StringComparer.OrdinalIgnoreCase);
             EmCoSimModels LayoutModels(string? clay) => clay is null ? models
                 : byLayout.TryGetValue(clay, out var m) ? m : byLayout[clay] = ModelsFor(clay);
             string stored = Path.GetRelativePath(workspaceDir, Path.GetFullPath(snpPath)).Replace('\\', '/');
             string text = Text(setup, stored, ports, models, RecordFor(recordPath, workspaceDir), LayoutModels, workspaceDir);
-            IReadOnlyList<string> warnings = ports.Any(p => p.Component?.Cut is not null)
+            IReadOnlyList<string> warnings = ports.Any(p => p.Component?.Cut is not null) || ports is EmCoSimPortList { Portless.Count: > 0 }
                 ? [.. Closures(ports, models, LayoutModels).SelectMany(c => c.Warnings).Distinct()] : [];
             if (File.Exists(path))
             {

@@ -114,6 +114,11 @@ exists in the process and nowhere in your artwork. LVS reads that connection, an
 run that relies on it</b>, naming the stackup entry and how many vias reached ground through it. It is
 the one inference in the whole extraction that you cannot check by looking at your own screen.</p>
 </div>
+<p><strong>A kit's part and the cell its generator drew.</strong> A kit part placed from the palette is not a folder, and the layout cell
+its generator draws lives in a folder of its own, named after the generator with a hash. LVS pairs the two by
+<strong>generator</strong>: the generator the kit draws the part with (the same one <strong>Update Layout from Schematic</strong> places), against
+the generator the layout cell came from. A different kit cell in its place is a type mismatch naming both. A parameter the
+kit's generator does not draw is reported once as not drawn, never as a mismatch.</p>
 <p><strong>A part left off the board.</strong> A footprint whose schematic part has <strong>Disable</strong> set to <em>Open</em> is taken as not fitted: its pads stay copper, it is not compared, and a note names it. If a part was marked Open by mistake, that note is the only sign.</p>
 <h2 id="window">Running it from the window</h2>
 <p>Open the cell's <strong>layout</strong> view, then <strong>View › Panels › LVS</strong>. The panel is not in either

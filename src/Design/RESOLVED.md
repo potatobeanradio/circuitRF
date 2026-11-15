@@ -31924,3 +31924,25 @@ Cascode, coupled-coil and HBT-core layouts on the kit's own PCells, run on Plana
 - Not caused here, seen on the way: `Em3dGeneratorDumpTests.Gate2` has no pre-split dump for the eight phased-array `.cem`
   files (left as found). `UserFacingTextGateTests` flagged three phased-array sentences in `src/Core`/`src/Engine`; all three
   are internal invariants of the PAA-8/8b fast paths (each guarded by its caller), so they are on the allowlist with that reason.
+
+## brief-icf-2 — every cut instance in `_cosim`; LVS on a kit PCell's generated cell (2026-11-15)
+
+- **A cut instance with no port reached no netlist.** `EmCoSimNetlist.Closures` walked the result's ports, and a cut instance
+  arrives on its ports' records, so one whose pins were all grounded, return-only, left out or unmet was dropped (PR #70 only
+  warned). The Planar component-port build now carries such instances (`EmPlanarComponentPortBuild.Portless`, each an
+  `EmCoSimPart` with its cut and no pin; the 3D build collects its layouts' with their prefix), `PortsOf` hands them on beside
+  the ports in an `EmCoSimPortList` (an `IReadOnlyList<EmCoSimPort>`, so no caller between the build and the netlist changed),
+  and `Closures` closes each by the same `EmCoSimCuts.Close` as a ported one, with no port: its anchor is a port numbered 0. The
+  per-pin rule was already there (grounded and return pins on 0, an unmet pin on `nc_<name>_<pin>` with a warning); with no
+  model, nothing is placed and the netlist says why. A run whose only cut instance is portless still writes `_cosim`
+  (`WritesCoSim`).
+- **LVS compared a kit part's folder against a generated cell's.** A kit part's reference (`pdk://kit/part`) is not a path,
+  but `ExternalCellRef.ResolveCellDir` resolved it as one, so the schematic side carried a folder that does not exist; the
+  layout side carried the generated cell's folder (generator name plus hash); `DeviceType.CouldBe` compared the two and
+  vetoed every pairing as a type mismatch. `DeviceType.Generator` is now the identity where both sides state one: the
+  generator the kit draws the part with (the palette's `KitLayoutGenerators` answer, passed as `LvsRunOptions.KitLayoutGenerator`
+  by the panel; the part id headless, as Update Layout from Schematic does), against the PCell origin of the layout cell. A
+  built-in generator states none, so its pairing and reports are unchanged. Both sides' `LvsDevice.Generator` take the same
+  string, which is what already routes a parameter the generator does not draw to the not-drawn note (R-icf2-4).
+- Gates: `CellCoSimulationTests` (every pin grounded on Planar, a portless instance's pin classes and its no-model sentence),
+  `SchematicNetlistTests.AKitPart_PairsWithTheCellItsGeneratorDrew_NotByFolder`; the whole Lvs namespace (248) unchanged.

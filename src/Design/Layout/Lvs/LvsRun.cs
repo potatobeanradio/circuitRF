@@ -52,6 +52,10 @@ public sealed record LvsRunOptions
     /// <summary>Everything default: reduction on, the fixture excluded.</summary>
     public static readonly LvsRunOptions Default = new();
 
+    /// <summary>brief-icf-2 R-icf2-3 — which generator a kit draws each part with, as the Library Palette published it; null (headless)
+    /// takes the part id, as Update Layout from Schematic does.</summary>
+    public SchematicSync.KitLayoutGeneratorLookup? KitLayoutGenerator { get; init; }
+
     /// <summary><c>--testbench</c> (R-lvs4-4c). The unit of comparison is the CELL by default,
     /// because that is what a layout draws.</summary>
     public bool IncludeFixture { get; init; }
@@ -245,7 +249,7 @@ public static class LvsRun
 
         control?.BeginStage("Reading the schematic");
         var schematicNetlist = SchematicRead.Read(
-            schematic, cschPath, options.IncludeFixture, isTestBenchCell, options.Set, excluded, tech);
+            schematic, cschPath, options.IncludeFixture, isTestBenchCell, options.Set, excluded, tech, options.KitLayoutGenerator);
         control?.ThrowIfCancellationRequested();
 
         // R-lvs3-3d's dangling SchematicId needs the other side's names, and NOTHING else here

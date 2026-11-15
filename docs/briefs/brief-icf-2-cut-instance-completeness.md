@@ -49,3 +49,12 @@ parameters present on both sides, and report the rest as not compared (info), ne
 ## Not here
 
 Placing several finger ports on one terminal (ICF-3).
+
+## Completion note (2026-11-15)
+
+Built; detail in `src/Design/RESOLVED.md` §brief-icf-2. The per-pin node rule of R-icf2-1 already existed in `EmCoSimCuts.Close`;
+what was missing was the instance reaching it, so the cut list rides beside the ports (`EmCoSimPortList.Portless`). R-icf2-3's
+mismatch was a folder comparison (a kit reference resolved as a path); the pairing is by generator, the palette's answer in the
+GUI and the part id headless. R-icf2-4 needed no code of its own: with the generator on both devices, a parameter the kit's
+generator does not draw takes the existing not-drawn note. Gate 4 is a `DeviceType` test rather than a full LVS run on a
+registered kit generator.

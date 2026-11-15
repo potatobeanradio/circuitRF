@@ -125,6 +125,8 @@ internal static class EmCoSimCuts
     {
         var cut = cp.Cut!;
         string at = cp.Refdes;                      // the path as the run names it (a 3D view's layout prefix included)
+        // brief-icf-2 R-icf2-1 — a cut instance with no port has none to anchor its close to: number 0 stands for "no port".
+        var anchor = mine.Count > 0 ? mine[0] : new EmCoSimPort(0, at, "50", cp);
         string name = names.For(at);
         string label = name == at ? at : $"{name} is {at}";
         var warnings = new List<string>();
@@ -190,11 +192,21 @@ internal static class EmCoSimCuts
                 if (found.Note is not null) comment.Append(' ').Append(found.Note);
                 foreach (var n in notes) comment.Append(' ').Append(n);
                 foreach (var w in warnings) comment.Append(' ').Append(w);
-                yield return new EmCoSimClose(EmCoSimCloseKind.Model, mine[0], at, placed, Comment: comment.ToString(),
+                if (mine.Count == 0)
+                    comment.Append($" It has no port, so it reaches {EmCoSimNetlist.BoardInstance} only through ground.");
+                yield return new EmCoSimClose(EmCoSimCloseKind.Model, anchor, at, placed, Comment: comment.ToString(),
                                               SchematicName: cut.SchematicChain.Count == 1 ? cut.SchematicChain[0] : null)
                 { Warnings = warnings };
                 yield break;
             }
+        }
+
+        // brief-icf-2 R-icf2-2 — no port and no model: nothing to stand across, so nothing is placed, and the netlist says so.
+        if (mine.Count == 0)
+        {
+            string none = $"{label}: {cut.CellLabel} is cut out of the layout with no port, and {why}, so nothing is placed for it.";
+            yield return new EmCoSimClose(EmCoSimCloseKind.Open, anchor, at, Comment: none) { Warnings = [none] };
+            yield break;
         }
 
         // R-icp5-2 step 3 — a placeholder per port, named in a comment with why (LCP-7's).

@@ -183,7 +183,7 @@ public sealed partial class LayoutEditorViewModel
         LvsTurnProblem = "";
 
         if (CurrentCellDir is not { Length: > 0 } cell) return null;
-        var result = LvsRun.Run(cell, Model);
+        var result = LvsRun.Run(cell, Model, LvsRunOptions.Default with { KitLayoutGenerator = CircuitRF.Ui.Schematic.KitLayoutGenerators.For });
         LvsResult = result;                        // clears IsLvsStale: this IS the document in hand
         _lvsComparedUnsavedDocument = false;
         return result;

@@ -79,7 +79,8 @@ public static class SchematicRead
         SchematicEditModel model, string cschPath,
         bool includeFixture = false, bool isTestBenchCell = false,
         IReadOnlyList<LvsGlobalOverride>? overrides = null,
-        IReadOnlySet<string>? excludeInstances = null, Technology? technology = null)
+        IReadOnlySet<string>? excludeInstances = null, Technology? technology = null,
+        SchematicSync.KitLayoutGeneratorLookup? kitLayoutGenerator = null)
     {
         ArgumentNullException.ThrowIfNull(model);
 
@@ -169,7 +170,7 @@ public static class SchematicRead
             if (excludeInstances is not null && excludeInstances.Contains(inst.InstanceName)) continue;
 
             var comp = components.GetValueOrDefault(inst.InstanceName);
-            var type = comp is null ? DeviceType.Unknown : DeviceTypes.OfSchematic(comp, model.SchematicDirectory);
+            var type = comp is null ? DeviceType.Unknown : DeviceTypes.OfSchematic(comp, model.SchematicDirectory, kitLayoutGenerator);
 
             // R-lvs4-4c. Excluded, and REMEMBERED: their nets are what the boundary is made of.
             if (!includeFixture && type.Kind == DeviceKind.Fixture) { fixtures.Add(inst); continue; }
@@ -209,7 +210,7 @@ public static class SchematicRead
                                   (long)Math.Round(comp?.X ?? 0), (long)Math.Round(comp?.Y ?? 0)))
             {
                 ParameterFacts = FactsOf(comp, parameters),
-                Generator = comp is { CellRef: null or "" } ? comp.Symbol.ToString() : "",
+                Generator = comp is { CellRef: null or "" } ? comp.Symbol.ToString() : type.Generator ?? "",
             });
         }
 

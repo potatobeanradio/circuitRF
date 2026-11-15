@@ -201,6 +201,49 @@ public sealed class CellCoSimulationTests(CellPinReferenceTests.Fixture fx, ITes
                         "the pin being grounded in the chip.", text, StringComparison.Ordinal);
     }
 
+    /// <summary>brief-icf-2 R-icf2-1/2 — ICP-4's Tri cell with every pin grounded, built on Planar: it has no port, and the netlist still
+    /// places its model with every terminal on 0, the run warning that it is placed and reaches the result only through ground.</summary>
+    [Fact]
+    public void ACutInstanceWithEveryPinGrounded_IsPlacedInTheNetlist_ItsTerminalsOnGround()
+    {
+        var build = fx.Build(fx.TriLine(), [new EmComponentPort("X1") { Ground = "B, C, E" }]);
+        Assert.DoesNotContain(build.Ports, p => p.Ok);
+        var part = Assert.Single(build.Portless);
+        Assert.Equal("X1", part.Refdes);
+        Assert.True(build.WritesCoSim);
+        Assert.Contains(build.Warnings, w => w.StartsWith("X1 is cut out of the problem and has no port left on it: the co-simulation netlist places its model",
+                                                          StringComparison.Ordinal));
+
+        var ports = new EmCoSimPortList([new(1, "1", "50", null), new(2, "2", "50", null), new(3, "3", "50", null)], build.Portless);
+        var lib = new Library("lib");
+        var q = new Cell("Tri"); q.Ports.AddRange(["B", "C", "E"]); lib.Cells.Add(q);
+        string text = EmCoSimNetlist.Text(Setup, "chip.s3p", ports, Models(lib, new Instance("X1", "Tri", ["b", "c", "e"], [])));
+        output.WriteLine(text);
+        Assert.Equal(["0", "0", "0"], Read(text).TestBench.Instances.Single(i => i.InstanceName == "X1").NetBindings);
+        Assert.Contains("It has no port, so it reaches BOARD only through ground.", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>brief-icf-2 R-icf2-1 — a portless instance's pins by class: a grounded pin on 0, a pin nothing meets on its own open node
+    /// with the sentence saying so; with no model it is named and nothing is placed.</summary>
+    [Fact]
+    public void APortlessInstance_PutsEachTerminalOnItsPinClassesNode_AndWithNoModelSaysSo()
+    {
+        var lib = new Library("lib");
+        var two = new Cell("Two"); two.Ports.AddRange(["A", "B"]); lib.Cells.Add(two);
+        var x1 = Cut("X1", ["X1"], Pin("A", EmPinClass.Grounded), Pin("B", EmPinClass.Floating));
+        var part = new EmCoSimPart("X1", null, null, [], "X1", null, (null, null), false) { Cut = x1 };
+        var ports = new EmCoSimPortList([new(1, "1", "50", null)], [part]);
+        string text = EmCoSimNetlist.Text(Setup, "chip.s1p", ports, Models(lib, new Instance("X1", "Two", ["a", "b"], [])));
+        output.WriteLine(text);
+        Assert.Equal(["0", "nc_X1_B"], Read(text).TestBench.Instances.Single(i => i.InstanceName == "X1").NetBindings);
+        Assert.Contains("X1.B has no port, so its model's terminal is left open on nc_X1_B.", text, StringComparison.Ordinal);
+
+        string none = EmCoSimNetlist.Text(Setup, "chip.s1p", ports, Models(new Library("lib")));
+        Assert.DoesNotContain(Read(none).TestBench.Instances, i => i.InstanceName == "X1");
+        Assert.Contains("X1: Cell is cut out of the layout with no port, and the layout's schematic has no X1, so nothing is placed for it.",
+                        none, StringComparison.Ordinal);
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────────────────────
 
     private static EmCoSimCutPin Pin(string name, EmPinClass cls = EmPinClass.Routed, string? abuts = null) => new(name, null, cls, abuts, null);

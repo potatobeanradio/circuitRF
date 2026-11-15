@@ -399,7 +399,7 @@ public static class LayoutRead
                     Interchangeable = terminals.Count == 2
                                       && kindOf is not null && TurnedParts.IsSymmetric(kindOf(instIndex)),
                     Generator = DeviceTypes.TryGetSymbolKind(subView?.PCellOrigin?.GeneratorId, out var drawnAs)
-                        ? drawnAs.ToString() : "",
+                        ? drawnAs.ToString() : type.Generator ?? "",
                 });
             }
         }

@@ -379,6 +379,9 @@ instance is a placeholder listing both sets, rather than a guess.</p>
 </tr>
 </tbody>
 </table>
+<p><strong>An instance with no port at all</strong> (every pin grounded, a return only, or nothing meeting it) is still placed, each terminal
+by the table above, so the netlist shows what was cut; it then reaches the EM result only through ground, and the run warns.
+With no model for it, nothing is placed and the comment says why.</p>
 <p>Instance names in the netlist are made from paths (<code>X1/Q3</code> is <code>X1_Q3</code>, <code>@2</code> is <code>at2</code>), and the comment names each path.</p>
 <p><strong>The same decision closes an EM cell.</strong> A schematic run with <code>model=em</code> puts its devices back on their ports this way,
 from the schematic being run, so a device value that moves no copper re-evaluates with no new EM run:

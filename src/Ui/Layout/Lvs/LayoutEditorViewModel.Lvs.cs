@@ -236,6 +236,8 @@ public sealed partial class LayoutEditorViewModel
         // the mark would otherwise miss, because a fresh result clears it.
         bool unsaved = IsDirty;
 
+        // brief-icf-2 R-icf2-3 — a kit part is paired with its generated cell by the generator the palette says the kit draws it with.
+        options = (options ?? LvsRunOptions.Default) is { KitLayoutGenerator: null } o ? o with { KitLayoutGenerator = CircuitRF.Ui.Schematic.KitLayoutGenerators.For } : options;
         var result = LvsRun.Run(cell, options, control);
         LvsResult = result;                       // clears IsLvsStale and the sentence with it
         _lvsComparedUnsavedDocument = unsaved;

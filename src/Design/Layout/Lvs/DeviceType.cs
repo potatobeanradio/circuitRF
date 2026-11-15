@@ -112,8 +112,15 @@ public readonly record struct DeviceType(DeviceKind Kind, string? CellDir, strin
     /// <para>Where BOTH sides resolve a directory the directory still decides, which is the rule
     /// this method is built on and the reason the change is confined to the asymmetric case.</para>
     /// </remarks>
+    /// <summary>brief-icf-2 R-icf2-3 — a kit part's layout generator: on the schematic side the generator its kit draws the part with,
+    /// on the layout side the generator a generated cell came from. Where both sides state one, it is the identity: a generated cell
+    /// lives in its own folder (the generator's name and a hash), so its folder never matches the part's.</summary>
+    public string? Generator { get; init; }
+
     public bool CouldBe(DeviceType other)
     {
+        if (Generator is { Length: > 0 } g && other.Generator is { Length: > 0 } og)
+            return string.Equals(g, og, StringComparison.OrdinalIgnoreCase);
         if (CellDir is { Length: > 0 } mine && other.CellDir is { Length: > 0 } theirs)
             return string.Equals(mine, theirs, StringComparison.OrdinalIgnoreCase);
 
@@ -204,7 +211,9 @@ public static class DeviceTypes
         else if (resolvedCellDir is { Length: > 0 })
             kind = DeviceKind.Cell;
 
-        return new DeviceType(kind, resolvedCellDir, name);
+        // brief-icf-2 R-icf2-3 — a cell another generator drew (a kit's) is that generator's part; a built-in's kind already says it.
+        string? origin = resolvedView?.PCellOrigin?.GeneratorId is { Length: > 0 } g && !TryGetSymbolKind(g, out _) ? g : null;
+        return new DeviceType(kind, resolvedCellDir, origin ?? name) { Generator = origin };
     }
 
     /// <summary>
@@ -225,9 +234,20 @@ public static class DeviceTypes
     /// <see cref="SymbolKind"/> IS the declaration those two are trying to recover, so the
     /// precedence collapses to "directory, then kind".</para>
     /// </remarks>
-    public static DeviceType OfSchematic(EditableComponent comp, string? schematicDir)
+    public static DeviceType OfSchematic(EditableComponent comp, string? schematicDir, SchematicSync.KitLayoutGeneratorLookup? kitLayoutGenerator = null)
     {
         ArgumentNullException.ThrowIfNull(comp);
+
+        // brief-icf-2 R-icf2-3 — a kit part is a virtual reference, not a folder: resolved as a path it named a folder that is not
+        // there, which never matched the generated cell its layout is. Its identity is the generator its kit draws it with — the
+        // pairing Update Layout from Schematic places it by (the kit's own answer when one is published, else the part id).
+        if (CircuitRF.Design.Schematic.PdkKitRegistry.TryParse(comp.CellRef, out string kitName, out string partId))
+        {
+            var kitKind = Of(comp.Symbol);
+            string generator = kitLayoutGenerator?.Invoke(CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(schematicDir ?? "") is { } cws
+                                                              ? Path.GetDirectoryName(cws) : null, kitName, partId) ?? partId;
+            return new DeviceType(kitKind == DeviceKind.Unknown ? DeviceKind.Cell : kitKind, null, generator) { Generator = generator };
+        }
 
         string? cellDir = comp.CellRef is { Length: > 0 } cellRef
             ? CircuitRF.Design.Workspace.ExternalCellRef.ResolveCellDir(cellRef, schematicDir)

@@ -115,6 +115,15 @@ public sealed record EmPlanarComponentPortBuild(
     /// netlist, now that a cut instance's model goes back on its pins.</summary>
     public bool AnyPort => Ports.Any(p => p.Ok);
 
+    /// <summary>brief-icf-2 R-icf2-1 — every cut instance left with no port (each pin grounded, a return only, left out or not met), as
+    /// the co-simulation netlist reads a cut instance: it still places the instance's model, each terminal on the node its pin's class
+    /// gives it, so the netlist says what was cut.</summary>
+    public IReadOnlyList<EmCoSimPart> Portless { get; init; } = [];
+
+    /// <summary>brief-icf-2 — whether the run writes its co-simulation netlist: a component port built, or a cut instance with none,
+    /// whose model the netlist still places.</summary>
+    public bool WritesCoSim => AnyPort || Portless.Count > 0;
+
     /// <summary>The port labels to add to what port extraction reads.</summary>
     public IReadOnlyList<LabelShape> Labels => [.. Ports.Where(p => p.Ok).Select(p => p.Gap!)];
 
@@ -524,12 +533,21 @@ public static class EmPlanarComponentPorts
 
         foreach (var r in results.Where(p => p.Refusal is not null))
             warnings.Add($"{r.Refusal} {(r.Cutout && r.Pin is not null ? r.Name : r.Refdes)} is left out of this run; the other component ports are built.");
-        // An instance taken out of the problem with no port left on it is not in the co-simulation netlist either (its model is put
-        // back on its ports), so the circuit loses the device: said by name rather than found missing from _cosim.
+        // brief-icf-2 R-icf2-2 — an instance taken out of the problem with no port left on it: the co-simulation netlist still places its
+        // model, each terminal on ground, the N-port's reference or an open node, and says so; the run warns, because it then reaches
+        // the EM result only through ground.
+        var portless = new List<EmCoSimPart>();
         if (cut is not null)
+        {
+            var coSimCuts = EmCoSimCut.Of(cut, instances, cuts);
             foreach (string path in cut.Excluded.Where(x => !results.Any(r => r.Cutout && r.Ok && r.Refdes.Equals(x, StringComparison.OrdinalIgnoreCase))))
-                warnings.Add($"{path} is cut out of the problem and has no port left on it, so the co-simulation netlist has nowhere to put its " +
-                             "model back and the device is missing from it.");
+            {
+                warnings.Add($"{path} is cut out of the problem and has no port left on it: the co-simulation netlist places its model with " +
+                             "each terminal on ground, the N-port's reference or an open node, so it reaches the EM result only through ground.");
+                if (coSimCuts.GetValueOrDefault(path) is { } c)
+                    portless.Add(new EmCoSimPart(path, null, null, [], instances.At(path)?.SchematicId, source.AbsolutePath, (null, null), false) { Cut = c });
+            }
+        }
         // A 3D run's cut ports are sheets, described by the 3D view that builds them; the notes here are the cut's own.
         if (!threeD) foreach (var r in results.Where(p => p.Ok)) notes.Add(Describe(r, source));
         // R-lcp7-2 — the .c3d's sentence (C3dComponentPorts.Build), word for word: the co-simulation netlist stands a placeholder there.
@@ -541,14 +559,14 @@ public static class EmPlanarComponentPorts
         // A 3D view decides that over its footprint parts and drawn ports too (C3dProblemAssembly).
         if (threeD)
             return new EmPlanarComponentPortBuild(results, notes, warnings, null)
-                { Cut = cut, Instances = instances, InstanceEntries = selection.InstanceEntries };
+                { Cut = cut, Instances = instances, InstanceEntries = selection.InstanceEntries, Portless = portless };
         if (!results.Any(p => p.Ok) && !EmComponentPorts.Collect(source, cut?.Excluded).Shapes.Any(s => s is LabelShape { IsPort: true }))
             return new EmPlanarComponentPortBuild(results, notes, [],
                 "None of the component ports this setup names could be built, and the layout has no other port to drive: " +
                 (results.FirstOrDefault(p => p.Refusal is not null)?.Refusal
                  ?? warnings.FirstOrDefault() ?? "every pin of every cut instance is unconnected.")) { Cut = cut, Instances = instances, InstanceEntries = selection.InstanceEntries };
         // brief-icp-7 — the projection travels with a Planar build too: the layout's marks and the pin check read its pins and boxes.
-        return new EmPlanarComponentPortBuild(results, notes, warnings, null) { Cut = cut, Instances = instances, InstanceEntries = selection.InstanceEntries };
+        return new EmPlanarComponentPortBuild(results, notes, warnings, null) { Cut = cut, Instances = instances, InstanceEntries = selection.InstanceEntries, Portless = portless };
 
         static EmPlanarComponentPort Refused(string rd, string why) => new(rd, rd, null, null, null, null, 0, null, 0, 0, false, why);
     }

@@ -257,7 +257,7 @@ public static class EmRunService
                 portLabels.Shapes, problem, source.DbuPerMicron, portLabels.Z0For(setup), source.View.DisplayUnit,
                 EmPortExtraction.DefaultGroundPathWidthM(source.Technology), source.Technology);
             if (!extracted.Ok) return null;
-            bool built = portLabels.ComponentBuild is { AnyPort: true };
+            bool built = portLabels.ComponentBuild is { WritesCoSim: true };
             return new EmResultPorts(EmCoSimNetlist.PortsOf(extracted.Ports, extracted.SourceLabels, portLabels.ComponentBuild), built);
         }
         catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException or InvalidOperationException or FormatException)
@@ -1578,7 +1578,7 @@ public static class EmRunService
         // reads the Touchstone when a pattern was asked for and none could be stored.
         // brief-isc-1 — every solved port goes to the caller, so a cell made from the schematic can wire them by number; only a run
         // that built a component port writes the _cosim netlist.
-        bool componentPortsBuilt = portLabels.ComponentBuild is { AnyPort: true };
+        bool componentPortsBuilt = portLabels.ComponentBuild is { WritesCoSim: true };
         coSimPorts?.Invoke(new EmResultPorts(EmCoSimNetlist.PortsOf(ports.Ports, ports.SourceLabels, portLabels.ComponentBuild), componentPortsBuilt));
         if (componentPortsBuilt)
         {

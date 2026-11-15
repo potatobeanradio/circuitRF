@@ -272,6 +272,37 @@ public sealed class SchematicNetlistTests : IDisposable
         Assert.True(layout.CouldBe(schematic));
     }
 
+    /// <summary>brief-icf-2 R-icf2-3 — a kit part against the cell its generator drew: the generated cell lives in its own folder (the
+    /// generator's name and a hash), so the pairing is by generator — the part id headless, the kit's own answer when the palette
+    /// published one — and another generator's cell is still vetoed.</summary>
+    [Fact]
+    public void AKitPart_PairsWithTheCellItsGeneratorDrew_NotByFolder()
+    {
+        var part = new EditableComponent { InstanceName = "Q1", Symbol = SymbolKind.Snp, CellRef = PdkKitRegistry.RefFor("kit", "npn") };
+        var drawn = new LayoutView { PCellOrigin = new PCellOrigin("npn", new Dictionary<string, PCellValue>()) };
+        var other = new LayoutView { PCellOrigin = new PCellOrigin("pnp", new Dictionary<string, PCellValue>()) };
+        var inst = new LayoutInstance { CellRef = "generated/npn_3f9a" };
+        string generatedDir = Path.Combine(_root, "generated", "npn_3f9a");
+
+        var schematic = DeviceTypes.OfSchematic(part, _root);
+        var layout = DeviceTypes.OfLayout(inst, generatedDir, drawn);
+        Assert.Equal("npn", schematic.Generator);
+        Assert.Equal("npn", layout.Generator);
+        Assert.True(schematic.CouldBe(layout));
+        Assert.False(schematic.CouldBe(DeviceTypes.OfLayout(inst, Path.Combine(_root, "generated", "pnp_77aa"), other)));
+
+        // The kit names its layout cell apart from its part: the palette's answer is the pairing.
+        var mapped = DeviceTypes.OfSchematic(part, _root, (_, kit, id) => kit == "kit" && id == "npn" ? "npn_cell" : null);
+        Assert.Equal("npn_cell", mapped.Generator);
+        Assert.False(mapped.CouldBe(layout));
+        Assert.True(mapped.CouldBe(DeviceTypes.OfLayout(inst, generatedDir,
+            new LayoutView { PCellOrigin = new PCellOrigin("npn_cell", new Dictionary<string, PCellValue>()) })));
+
+        // A built-in generator keeps its kind and states no generator identity.
+        Assert.Null(DeviceTypes.OfLayout(inst, generatedDir,
+            new LayoutView { PCellOrigin = new PCellOrigin("MLIN", new Dictionary<string, PCellValue>()) }).Generator);
+    }
+
     /// <summary>
     /// <b>Gate 7, the cell half.</b> A hand-drawn cell, an imported component and a kit part are
     /// one case: all three resolve to a cell FOLDER, and an absolute path is an identity that needs

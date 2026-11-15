@@ -126,6 +126,10 @@ public sealed record C3dComponentPortBuild(
     /// <summary>The first refusal — the whole build's, or a port's.</summary>
     public string? FirstRefusal => Refusal ?? Ports.FirstOrDefault(p => p.Refusal is not null)?.Refusal;
 
+    /// <summary>brief-icf-2 R-icf2-1 — every cut instance of the view's layouts left with no port, named with its layout's prefix:
+    /// the co-simulation netlist still places its model (<see cref="CircuitRF.Design.Layout.Em.EmPlanarComponentPortBuild.Portless"/>).</summary>
+    public IReadOnlyList<CircuitRF.Design.Layout.Em.EmCoSimPart> Portless { get; init; } = [];
+
     /// <summary>Every part built: no port is left out. A run proceeds with the ones that were (<see cref="Warnings"/> names the
     /// rest) unless <see cref="Refusal"/> is set.</summary>
     public bool Ok => FirstRefusal is null;
@@ -371,7 +375,10 @@ public static class C3dComponentPorts
         if (landings > 0)
             notes.Add($"{landings} landing rectangle(s) extend the copper facing {final.Count(p => p.Landings.Count > 0)} component port(s) " +
                       "to a straight face; they are in the solved problem only and are not written to the layout.");
-        return new C3dComponentPortBuild(final, applied, bridges, notes, warnings, null);
+        return new C3dComponentPortBuild(final, applied, bridges, notes, warnings, null)
+        {
+            Portless = cuts is null ? [] : [.. cuts.Layouts.SelectMany(l => l.Build.Portless.Select(p => p with { Refdes = l.Prefix + p.Refdes, ClayPath = l.Frame.DocumentPath }))],
+        };
 
         static C3dComponentPort Refused(string rd, string why) => new(rd, null, null, null, 0, 0, false, [], why, false);
     }

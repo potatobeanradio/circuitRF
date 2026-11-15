@@ -230,6 +230,10 @@ public static class EmSchematicWithParts
                     added.Add((PlaceholderPart(cl, model), [cl.Instance!.NetBindings[0], "0"]));
                     parts++;
                     break;
+                // brief-icf-2 — a cut instance with no port and no model: the netlist's own sentence, no port to leave open.
+                case EmCoSimCloseKind.Open when cl.Port.Number == 0:
+                    warnings.AddRange(cl.Warnings);
+                    break;
                 default:
                     warnings.Add($"{cl.Refdes} is on a component port but the schematic has no component of that name, so its port is left open.");
                     break;
