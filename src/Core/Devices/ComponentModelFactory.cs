@@ -2979,7 +2979,7 @@ public static class ComponentModelFactory
         return new MicrostripTaperModel(w1, w2, l, h, t, er, sigma, tanD, name, nOverride);
     }
 
-    /// <summary>The equal-split Wilkinson divider's engine token (pins 1, 2, 3, R2, R3).</summary>
+    /// <summary>The Wilkinson divider's engine token (pins 1, 2, 3, R2, R3, then R2_k/R3_k for each further section).</summary>
     public const string WilkinsonTypeName = "MWPD";
 
     /// <summary>The substrate a microstrip part's parameters carry: the injected stackup values, the fallbacks
@@ -2989,10 +2989,13 @@ public static class ComponentModelFactory
         GetReal(parameters, "Er", DefaultSubstrateEpsR), GetReal(parameters, "Sigma", DefaultSubstrateSigmaSPerM),
         GetReal(parameters, "TanD", DefaultSubstrateTanD), GetReal(parameters, "Roughness", 0.0));
 
-    // MWPD: the specs (Z0, F) and the resistor's pin span (Gap) are the parameters; the plan derives the rest.
+    // MWPD: the specs (Z0, F, the split K, the sections N and their band) and the resistor's pin span (Gap) are the
+    // parameters; the plan derives the rest, and its pins follow N.
     private static MicrostripPlanModel CreateWilkinsonModel(IReadOnlyDictionary<string, Value> parameters)
         => new(WilkinsonPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
-                                   GetReal(parameters, "Gap", 1.35e-3), SubstrateOf(parameters)).Plan,
+                                   GetReal(parameters, "Gap", 1.35e-3), SubstrateOf(parameters),
+                                   GetReal(parameters, "K", 1.0), GetReal(parameters, "N", 1.0),
+                                   GetReal(parameters, "Band", WilkinsonPlan.DefaultBand)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, WilkinsonTypeName));
 
     private static MicrostripKlopfModel CreateMicrostripKlopfModel(IReadOnlyDictionary<string, Value> parameters)

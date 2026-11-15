@@ -60,6 +60,33 @@ public class WilkinsonPlanTests
         Assert.Equal(1.35e-3, d.GapMeters, 15);
     }
 
+    /// <summary>The equal split's plan, every number of it, fingerprinted as it was before the split ratio and section
+    /// count existed: K = 1 and N = 1 must give the same doubles, bit for bit, so no placed divider moves.</summary>
+    [Theory]
+    [InlineData(50.0, 2.4e9, 1.35e-3, "5E0B0760C8247930")]
+    [InlineData(50.0, 5.8e9, 1.35e-3, "EDA90C548615DF20")]
+    [InlineData(35.0, 1.0e9, 2.0e-3, "73DB42B48E0BAF65")]
+    public void TheEqualSplit_IsUnchangedBitForBit(double z0, double f, double gap, string fingerprint)
+        => Assert.Equal(fingerprint, Fingerprint(WilkinsonPlan.Build(z0, f, gap, Ro4350b)));
+
+    private static string Fingerprint(WilkinsonDesign d)
+    {
+        var bits = new List<double> { d.W0Meters, d.ArmZ0, d.ArmWMeters, d.ArmEeff, d.QuarterWaveMeters,
+                                      d.RingRadiusMeters, d.FeedMeters, d.IsolationOhms };
+        foreach (var section in d.Plan.Sections)
+        {
+            bits.AddRange([section.X, section.Y, section.RotationDeg, .. section.Nodes.Select(n => (double)n)]);
+            bits.AddRange(section switch
+            {
+                PlanTee t => [t.W1, t.W2, t.W3, t.L1, t.L2, t.L3],
+                PlanCurve c => [c.W, c.AngleDeg, c.Radius],
+                _ => throw new InvalidOperationException(),
+            });
+        }
+        var bytes = bits.SelectMany(BitConverter.GetBytes).ToArray();
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))[..16];
+    }
+
     [Theory]
     [InlineData(0.0, 2.4e9, 1.35e-3, "device.wilkinson.spec-not-positive")]
     [InlineData(50.0, -1.0, 1.35e-3, "device.wilkinson.spec-not-positive")]
@@ -69,5 +96,169 @@ public class WilkinsonPlanTests
     {
         var ex = Assert.Throws<ParameterRefusalException>(() => WilkinsonPlan.Build(z0, f, gap, Ro4350b));
         Assert.Equal(code, ex.Diagnostic?.Id);
+    }
+
+    [Theory]
+    [InlineData(0.0, 1.0, 2.0, "device.wilkinson.spec-not-positive")]
+    [InlineData(4.0, 1.0, 2.0, "device.wilkinson.split-unrealisable")]    // the arm to port 2 would be 412 Ω
+    [InlineData(1.0, 4.0, 2.0, "device.wilkinson.sections-unsupported")]
+    [InlineData(1.0, 1.5, 2.0, "device.wilkinson.sections-unsupported")]
+    [InlineData(2.0, 2.0, 2.0, "device.wilkinson.unequal-multisection")]
+    [InlineData(1.0, 2.0, 1.0, "device.wilkinson.band-not-above-one")]
+    public void AVariantThatCannotBeBuilt_IsACodedRefusal(double k, double n, double band, string code)
+    {
+        var ex = Assert.Throws<ParameterRefusalException>(() => WilkinsonPlan.Build(50.0, 2.4e9, 1.35e-3, Ro4350b, k, n, band));
+        Assert.Equal(code, ex.Diagnostic?.Id);
+    }
+
+    // ══ The unequal split (Parad and Moynihan, IEEE Trans. MTT, 1965) ═══════════════════════════════
+
+    /// <summary>The arms, transformers and resistor are the closed form for P3/P2 = K², each width is MLIN's for its
+    /// impedance, and both arms are λg/4 between the junctions' reference planes on the one curve radius.</summary>
+    [Theory]
+    [InlineData(1.5)]
+    [InlineData(2.0)]
+    [InlineData(0.6)]
+    public void AnUnequalSplit_IsTheClosedForm(double k)
+    {
+        const double z0 = 50.0, f = 2.4e9;
+        var d = WilkinsonPlan.Build(z0, f, 1.35e-3, Ro4350b, k);
+        WilkinsonLine L(string name) => d.Lines.Single(l => l.Name == name);
+
+        Assert.Equal(z0 * Math.Sqrt((1 + k * k) / (k * k * k)), L("arm to 3").Z, 12);
+        Assert.Equal(k * k * L("arm to 3").Z, L("arm to 2").Z, 9);
+        Assert.Equal(z0 * Math.Sqrt(k), L("transformer at 2").Z, 12);
+        Assert.Equal(z0 / Math.Sqrt(k), L("transformer at 3").Z, 12);
+        var r = Assert.Single(d.Resistors);
+        Assert.Equal(("R2", "R3"), (r.PinA, r.PinB));
+        Assert.Equal(z0 * (k + 1 / k), r.Ohms, 12);
+        foreach (var line in d.Lines)
+        {
+            Assert.Equal(line.Z, Line(line.WMeters, f).Z0, 2);
+            Assert.Equal(C0 / (4.0 * f * Math.Sqrt(line.Eeff)), line.QuarterWaveMeters, 12);
+        }
+
+        // Each arm, reference plane to reference plane: its input-tee line, then its curve.
+        var s = d.Plan.Sections;
+        var input = (PlanTee)s[0];
+        var top = (PlanCurve)s[1];
+        var bottom = (PlanCurve)s[2];
+        Assert.Equal(top.Radius, bottom.Radius);
+        double arm2 = input.L1 - input.W3 / 2.0 + MicrostripCurve.ElectricalLength(top.Radius, top.W, top.AngleDeg);
+        double arm3 = input.L2 - input.W3 / 2.0 + MicrostripCurve.ElectricalLength(bottom.Radius, bottom.W, bottom.AngleDeg);
+        Assert.True(Math.Abs(arm2 - L("arm to 2").QuarterWaveMeters) < 4e-9, $"arm to 2: {arm2}");
+        Assert.True(Math.Abs(arm3 - L("arm to 3").QuarterWaveMeters) < 6e-9, $"arm to 3: {arm3}");
+
+        // Each output tee's branch is its transformer, λg/4 past the through line, ending on pin 2 or 3.
+        var out2 = (PlanTee)s[3];
+        var out3 = (PlanTee)s[4];
+        Assert.Equal(L("transformer at 2").WMeters, out2.W3);
+        Assert.True(Math.Abs(out2.L3 - out2.W1 / 2.0 - L("transformer at 2").QuarterWaveMeters) < 2e-9);
+        Assert.True(Math.Abs(out3.L3 - out3.W1 / 2.0 - L("transformer at 3").QuarterWaveMeters) < 2e-9);
+        Assert.Equal([4, 8, 2], out2.Nodes);
+        Assert.Equal([9, 5, 3], out3.Nodes);
+        // R2 and R3 still face each other Gap apart, on the output tees' common line.
+        Assert.Equal(out2.X, out3.X);
+        Assert.Equal(1.35e-3, out2.Y - (out3.Y + out3.L1 + out3.L2), 12);
+    }
+
+    // ══ Multi-section (Cohn, IEEE Trans. MTT, 1968) ═════════════════════════════════════════════════
+
+    /// <summary>
+    /// Two sections over an octave, against closed forms derived independently of the solver: the two-section
+    /// equal-ripple transformer from 2 to 1, z1 = √(A + √(A² + 2)) with A = 1/(2·tan²θ1), and the two resistors that
+    /// match the odd mode at θ1, R2 = 2·z1·z2/√((z1 + z2)(z2 − z1·cot²θ1)) and R1 = 2·R2·(z1 + z2)/(R2·(z1 + z2) − 2·z2).
+    /// </summary>
+    [Theory]
+    [InlineData(1.5)]
+    [InlineData(2.0)]
+    [InlineData(3.0)]
+    public void TwoSections_AreTheClosedForm(double band)
+    {
+        var (z, r) = WilkinsonPlan.BroadbandSections(2, band);
+        double theta1 = Math.Acos(Math.Cos(Math.PI / (1 + band)) / Math.Sqrt(2.0));
+        double a = 1.0 / (2.0 * Math.Pow(Math.Tan(theta1), 2));
+        double z1 = Math.Sqrt(a + Math.Sqrt(a * a + 2.0)), z2 = 2.0 / z1;
+        double cot2 = Math.Pow(1.0 / Math.Tan(theta1), 2);
+        double r2 = 2 * z1 * z2 / Math.Sqrt((z1 + z2) * (z2 - z1 * cot2));
+        double r1 = 2 * r2 * (z1 + z2) / (r2 * (z1 + z2) - 2 * z2);
+
+        Assert.Equal(z1, z[0], 12);
+        Assert.Equal(z2, z[1], 12);
+        Assert.Equal(r1, r[0], 9);
+        Assert.Equal(r2, r[1], 9);
+    }
+
+    /// <summary>The octave's numbers, to four places: two sections 1.2196 and 1.6399 with 4.8428 and 1.9539; three
+    /// 1.1130, √2 and 1.7970 with 10.4683, 3.9009 and 1.9410 — sections and resistors counted from the outputs.</summary>
+    [Fact]
+    public void AnOctave_GivesTheTabulatedNumbers()
+    {
+        var (z2, r2) = WilkinsonPlan.BroadbandSections(2, 2.0);
+        Assert.Equal([1.2196, 1.6399], z2.Select(v => Math.Round(v, 4)));
+        Assert.Equal([4.8428, 1.9539], r2.Select(v => Math.Round(v, 4)));
+        var (z3, r3) = WilkinsonPlan.BroadbandSections(3, 2.0);
+        Assert.Equal([1.1130, 1.4142, 1.7970], z3.Select(v => Math.Round(v, 4)));
+        Assert.Equal([10.4683, 3.9009, 1.9410], r3.Select(v => Math.Round(v, 4)));
+    }
+
+    /// <summary>A multi-section divider's pins and pieces: a resistor pin pair per section, every pair Gap apart across
+    /// the pair's centre line, and every section λg/4 between the reference planes of the junctions at its ends.</summary>
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void AMultiSectionDivider_PlacesAResistorPairPerSection(int n)
+    {
+        const double f = 2.4e9, gap = 1.35e-3;
+        var d = WilkinsonPlan.Build(50.0, f, gap, Ro4350b, 1.0, n, 2.0);
+        var (zn, rn) = WilkinsonPlan.BroadbandSections(n, 2.0);
+
+        Assert.Equal(WilkinsonPlan.PinsFor(n), d.Plan.Pins);
+        Assert.Equal(3 + 2 * n, d.Plan.Pins.Count);
+        Assert.Equal(n, WilkinsonPlan.SectionsForPinCount(d.Plan.Pins.Count));
+        Assert.Equal(rn.Select(r => r * 50.0), d.Resistors.Select(r => r.Ohms));
+        Assert.Equal(d.Plan.Pins.Skip(3), d.Resistors.SelectMany(r => new[] { r.PinA, r.PinB }));
+        Assert.Equal(zn.Select(z => z * 50.0), d.Lines.Select(l => l.Z));
+        Assert.Equal(zn[^1] * 50.0, d.ArmZ0, 12);
+
+        // The resistor pins, where the plan's parts put them: each pair one above the other, Gap apart.
+        var at = new Dictionary<int, (double X, double Y)>();
+        foreach (var t in d.Plan.Sections.OfType<PlanTee>())
+        {
+            var (bx, by) = t.RotationDeg switch
+            {
+                0.0 => (t.X + t.L1, t.Y - t.L3),
+                180.0 => (t.X - t.L1, t.Y + t.L3),
+                _ => (double.NaN, double.NaN),
+            };
+            if (t.RotationDeg == 90.0)
+            {
+                at[t.Nodes[0]] = (t.X, t.Y);                    // through_in: R2 above the gap, the arrival below it
+                at[t.Nodes[1]] = (t.X, t.Y + t.L1 + t.L2);
+            }
+            else at[t.Nodes[2]] = (bx, by);
+        }
+        for (int m = 1; m <= n; m++)
+        {
+            var top = at[4 + 2 * (m - 1)];
+            var bottom = at[5 + 2 * (m - 1)];
+            Assert.Equal(top.X, bottom.X, 12);
+            Assert.Equal(gap, top.Y - bottom.Y, 12);
+        }
+
+        // Each further section: the junction it leaves (the ring's output tee's branch, or a straight tee's outgoing
+        // arm) and the one it arrives at (that tee's incoming arm carries no line) — λg/4 between them.
+        var ring = (PlanTee)d.Plan.Sections[3];
+        Assert.True(Math.Abs(ring.L3 - ring.W1 / 2.0 - d.Lines[n - 2].QuarterWaveMeters) < 2e-9);
+        var straights = d.Plan.Sections.OfType<PlanTee>().Where(t => t.RotationDeg == 0.0).ToList();
+        Assert.Equal(n - 1, straights.Count);
+        for (int i = 0; i < straights.Count; i++)
+        {
+            var t = straights[i];
+            Assert.True(t.L1 - t.W3 / 2.0 <= 1e-12);
+            double outgoing = t.L2 - t.W3 / 2.0;
+            double expected = i + 1 < straights.Count ? d.Lines[n - 3 - i].QuarterWaveMeters : d.FeedMeters;
+            Assert.True(Math.Abs(outgoing - expected) < 2e-9, $"junction {i}: {outgoing} vs {expected}");
+        }
     }
 }
