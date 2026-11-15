@@ -7,6 +7,7 @@ namespace CircuitRF.Ui.ViewModels;
 
 // The hybrids' readout (MBLC, MRRC): each arm's width and length as BranchLinePlan and RatRacePlan derive them on the
 // substrate a run injects, shown through the divider readout's own rows (ParameterEditorViewModel.DividerReadout.cs).
+// Widths to the plan's 2 nm grid, as the divider's are, so a line drawn to meet a pin can be typed exactly.
 public partial class ParameterEditorViewModel
 {
     private (string Text, string Note) HybridReadout(SymbolKind kind)
@@ -20,15 +21,15 @@ public partial class ParameterEditorViewModel
             if (kind == SymbolKind.Mrrc)
             {
                 var r = RatRacePlan.Build(z0, f, s);
-                return ($"W {Mm(r.W0Meters)} (Z0), ring {Mm(r.RingWMeters)} ({Ohm(r.RingZ0)})\n"
+                return ($"W {Mm(r.W0Meters, "0.#####")} (Z0), ring {Mm(r.RingWMeters, "0.#####")} ({Ohm(r.RingZ0)})\n"
                       + $"L {Mm(r.QuarterWaveMeters)} (λg/4 at F, εeff {Eeff(r.RingEeff)}); the ring is 6 of them\n"
                       + $"Half-turn radius {Mm(r.RadiusMeters)}", "");
             }
             if (Spec("N") is not { } n)
                 return ("", "N is an expression, so the coupler's dimensions are known only at run time.");
             var d = BranchLinePlan.Build(z0, f, n, s);
-            string Arm(string name, BranchLineArm a) => $"{name} {Mm(a.WMeters)} ({Ohm(a.Z)}), L {Mm(a.LMeters)}";
-            var lines = new List<string> { $"W {Mm(d.W0Meters)} (Z0 feeds)", Arm("Series arms", d.Series[0]) };
+            string Arm(string name, BranchLineArm a) => $"{name} {Mm(a.WMeters, "0.#####")} ({Ohm(a.Z)}), L {Mm(a.LMeters)}";
+            var lines = new List<string> { $"W {Mm(d.W0Meters, "0.#####")} (Z0 feeds)", Arm("Series arms", d.Series[0]) };
             lines.Add(Arm(d.Sections == 1 ? "Shunt arms" : "Outer shunt arms", d.Shunts[0]));
             if (d.Sections == 2) lines.Add(Arm("Middle shunt arm", d.Shunts[1]));
             lines.Add("L: between the junctions' reference planes, λg/4 at F");
