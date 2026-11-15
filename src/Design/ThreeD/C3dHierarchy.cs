@@ -1419,7 +1419,8 @@ public static class C3dHierarchy
             ports[p.Number] = new C3dPort
             {
                 Number = p.Number,
-                Name = $"P{p.Number}",
+                // A .cem's own view names a drawn port by its label, as the same .cem's Planar run does.
+                Name = strict && p.SourceLabel is { Length: > 0 } label ? label : $"P{p.Number}",
                 Kind = p.Kind,
                 Plane = plane,
                 Offset = offset,

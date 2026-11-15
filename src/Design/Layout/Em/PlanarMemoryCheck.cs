@@ -95,12 +95,16 @@ public static class PlanarMemoryCheck
             return priced;
         var findings = new List<EmFinding>(report.AllFindings)
         {
-            EmFinding.Warn($"Port(s) {string.Join(", ", switchable)} will be solved as Uncalibrated Ports: their calibration standards need " +
+            EmFinding.Warn($"Port(s) {string.Join(", ", switchable)} {WillBeUncalibrated}: their calibration standards need " +
                            $"{MachineMemory.Format(std)} at each frequency point, past {MachineMemory.Format(limit)}, and the structure alone fits. " +
                            "Each launch is then in the result."),
         };
         return report with { Findings = findings, Notes = EmFindings.Texts(findings) };
     }
+
+    /// <summary>What the pre-solve warning above says of the drawn ports it switches; the run's clearance fallback
+    /// (<c>EmRunService.ClearanceFallback</c>) finds the prediction by it.</summary>
+    internal const string WillBeUncalibrated = "will be solved as Uncalibrated Ports";
 
     /// <summary>Above this share of physical memory a run is warned about.</summary>
     public const double WarnFraction = 0.75;

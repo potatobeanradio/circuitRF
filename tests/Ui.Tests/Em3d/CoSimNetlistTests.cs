@@ -65,6 +65,41 @@ public sealed class CoSimNetlistTests : IDisposable
         Assert.NotNull(netlist);
     }
 
+    /// <summary>A compiled model inside the workspace, or inside a library the workspace references by a relative path, is named
+    /// relative to the netlist, so the workspace still runs where it is moved; one outside both keeps its absolute path.</summary>
+    [Fact]
+    public void AModelsFile_IsWrittenRelativeToTheWorkspace_WhereItTravelsWithIt()
+    {
+        string ws = Path.Combine(_root, "ws");
+        Directory.CreateDirectory(ws);
+        CircuitRF.Design.Workspace.WorkspacePersistence.SaveToFile(Path.Combine(ws, ".cws"),
+            new CircuitRF.Design.Workspace.CwsFile { LibraryRefs = ["../kit/lib"] });
+        string inKit = Path.Combine(_root, "kit", "lib", "models", "dev.osdi");
+        string elsewhere = Path.Combine(Path.GetPathRoot(_root)!, "nowhere-" + Guid.NewGuid().ToString("N")[..8], "dev.osdi");
+        var lib = new Library("lib");
+        foreach (var (name, file) in new[] { ("devk", inKit), ("deve", elsewhere) })
+        {
+            var cell = new Cell(name);
+            cell.Ports.AddRange(["a", "b"]);
+            cell.Instances.Add(new Instance("Q1", "VerilogA", ["a", "b"], [new ParameterAssignment("File", $"\"{file}\"")]));
+            lib.Cells.Add(cell);
+        }
+        var models = new EmCoSimModels(new Dictionary<string, Instance>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["X1"] = new("X1", "devk", ["n1", "n2"]),
+            ["X2"] = new("X2", "deve", ["n3", "n4"]),
+        }, lib, null);
+        var ports = new List<EmCoSimPort> { new(1, "X1", "50", Component("X1")), new(2, "X2", "50", Component("X2")) };
+        var setup = new EmSetup { Name = "chip", Frequency = new FrequencySpec("1", "3", 3, SweepKind.Linear, "GHz", "GHz") };
+
+        string text = EmCoSimNetlist.Text(setup, "results/chip.s2p", ports, models, netlistDir: ws);
+        Assert.Contains("File=\"../kit/lib/models/dev.osdi\"", text, StringComparison.Ordinal);
+        Assert.Contains(elsewhere, text, StringComparison.Ordinal);
+        Assert.DoesNotContain(inKit, text, StringComparison.Ordinal);
+        // Without a folder, the models' own spelling, as before.
+        Assert.Contains(inKit, EmCoSimNetlist.Text(setup, "results/chip.s2p", ports, models), StringComparison.Ordinal);
+    }
+
     /// <summary>A part the schematic marks Open or Short has no value to guess: it is a port left open, or a shorted one, never a placeholder.</summary>
     [Fact]
     public void APartMarkedOpenOrShort_IsNoPlaceholder()

@@ -74,6 +74,33 @@ public sealed class UncalibratedPortTests(UncalibratedPortTests.Fixture fx, ITes
         Assert.True(MaxColumnPower(s, n) <= 1 + 1e-9);
     }
 
+    /// <summary>The device site with calibrated ports and a memory limit its calibration standards are past: the pre-solve check
+    /// (what <c>check</c> says) predicts the ports Uncalibrated, and the run agrees. Its own pricing can come out below the check's
+    /// (a feed lead it cannot grow leaves that port's standard unpriced, as on a die's drawn ports beside a device), and then the
+    /// feeds' clearance is what stops it: there the check's prediction decides, and the run solves the ports Uncalibrated rather than
+    /// refusing them. With no such prediction the clearance refusal stands.</summary>
+    [Fact]
+    public void WhereTheCheckSaysUncalibrated_TheRunAgrees_RatherThanRefusingTheFeeds()
+    {
+        long structure = fx.Preflight("site-size", Site(uncalibrated: true), Points(1)).PlanarMesh!.RunResidentBytes;
+        long ceiling = structure * 3 / 2;
+        var check = fx.Preflight("site-check", Site(uncalibrated: false), Points(1), ceiling);
+        foreach (var w in check.Warnings) output.WriteLine("check: " + w);
+        Assert.Contains(check.Warnings, w => w.Contains("will be solved as Uncalibrated Ports", StringComparison.Ordinal));
+        var run = fx.Run("site-agree", Site(uncalibrated: false), Points(1), memoryCeiling: ceiling);
+        Assert.True(run.Status == EmRunStatus.Ok, run.Error);
+        Assert.Contains(run.Warnings ?? [], w => w.StartsWith("Port(s) 1, 2, 3, 4, 5, 6 are solved as Uncalibrated Ports", StringComparison.Ordinal));
+
+        var refused = new PlanarFeedClearanceRefusedException("refused",
+            [new PlanarFeedClearance(4, PlanarNeighbourClass.Driven, 0, 500e-6, 100e-6, 1e-3)]);
+        string? said = fx.ClearanceFallback("site-fall", Site(uncalibrated: false), Points(1), ceiling, refused);
+        output.WriteLine(said);
+        Assert.NotNull(said);
+        Assert.StartsWith("Port(s) 1, 2, 3, 4, 5, 6 are solved as Uncalibrated Ports, as the pre-solve check said", said, StringComparison.Ordinal);
+        Assert.Contains("Calibrated, their feeds are not isolated either (port 4 has other metal", said, StringComparison.Ordinal);
+        Assert.Null(fx.ClearanceFallback("site-stands", Site(uncalibrated: false), Points(1), null, refused));
+    }
+
     /// <summary>Gate 3 — a run whose edge ports are series gaps still grounds its Uncalibrated Ports: the same S as the
     /// grounded run, to 1e-12.</summary>
     [Fact]
@@ -221,10 +248,17 @@ public sealed class UncalibratedPortTests(UncalibratedPortTests.Fixture fx, ITes
             return EmRunService.Run(setup, source, Path.Combine(_root, "results-" + cell), memoryCeilingBytes: memoryCeiling);
         }
 
-        public EmPreflightResult Preflight(string cell, LayoutView view, FrequencySpec freq)
+        public string? ClearanceFallback(string cell, LayoutView view, FrequencySpec freq, long? memoryCeiling,
+                                         PlanarFeedClearanceRefusedException refused)
         {
             var (setup, source) = Prepare(cell, view, freq, null);
-            return EmRunService.Preflight(setup, source);
+            return EmRunService.ClearanceFallback(setup, source, null, memoryCeiling, refused);
+        }
+
+        public EmPreflightResult Preflight(string cell, LayoutView view, FrequencySpec freq, long? memoryCeiling = null)
+        {
+            var (setup, source) = Prepare(cell, view, freq, null);
+            return EmRunService.Preflight(setup, source, memoryCeilingBytes: memoryCeiling);
         }
 
         private (EmSetup Setup, EmLayoutSource Source) Prepare(string cell, LayoutView view, FrequencySpec freq, Action<EmSetup>? tweak)

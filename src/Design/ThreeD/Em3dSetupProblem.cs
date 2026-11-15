@@ -9,6 +9,8 @@ using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.Em3d;
 using CircuitRF.Design.Workspace;
+using CircuitRF.Design.Em3d;
+using CircuitRF.Engine.Em3d;
 
 namespace CircuitRF.Design.ThreeD;
 
@@ -54,6 +56,25 @@ public static class Em3dSetupProblem
         return picture with { PortRefusal = built.Refusal };
     }
 
+    /// <summary>Each port of the view with the net the layout's schematic gives it and, for a component port returning through a pin
+    /// of its part, that pin, for the result's header (<see cref="Em3dPortMap.HeaderLines"/>): a drawn port by its label, a component
+    /// port by its part and pin. A nested cut instance's part is in its parent's schematic, not this one's, so it says none.</summary>
+    private static IReadOnlyList<Em3dPort> WithNets(IReadOnlyList<Em3dPort> ports, EmLayoutSource source, C3dComponentPortBuild? build)
+    {
+        var nets = EmPortHeader.SchematicNets(source.AbsolutePath);
+        var labels = EmPortExtraction.NumberPorts([.. source.View.Shapes]).ToDictionary(x => x.Number, x => x.Label);
+        var parts = (build?.Ports ?? []).Where(c => c.Ok && c.Port is not null).GroupBy(c => c.Port!.Number).ToDictionary(x => x.Key, x => x.First());
+        return [.. ports.Select(p =>
+            parts.TryGetValue(p.Number, out var c)
+                ? p with
+                {
+                    Net = c.Cutout ? (c.Refdes.Contains('/') ? null : nets(c.SchematicId, c.Pin)) : c.Nets.Positive,
+                    Reference = c.ReferencePin is { } rp ? $"{c.Refdes}.{rp}" : null,
+                }
+            : labels.TryGetValue(p.SourceNumber ?? p.Number, out var l) ? p with { Net = l.Net is { Length: > 0 } n ? n : nets(l.SchematicId, null) }
+            : p)];
+    }
+
     private static Em3dGenerationResult ThroughThreeDView(EmSetup setup, EmLayoutSource source, Technology tech, string? workspaceCws,
                                                          TechnologyCache? cache)
     {
@@ -75,6 +96,7 @@ public static class Em3dSetupProblem
         // carried into the view, so the note would say the opposite.
         return g with
         {
+            Problem = g.Problem is { } problem ? problem with { Ports = WithNets(problem.Ports, source, g.ComponentPorts) } : null,
             Notes = [ThroughViewNote, .. view.Notes, .. g.Notes.Where(n => !n.StartsWith(PlacedCellNotePrefix, StringComparison.Ordinal))],
         };
     }

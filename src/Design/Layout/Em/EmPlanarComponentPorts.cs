@@ -412,6 +412,7 @@ public static class EmPlanarComponentPorts
                     results.Add(Refused(pin.Path, why) with { Name = pin.Name, Pin = pin.Pin.Length > 0 ? pin.Pin : null, Cutout = true, Cell = pin.Cell, CutPart = part });
                     continue;
                 }
+                if (pin.FellBack is { } fell) warnings.Add(fell);
                 if (pin.Class == EmPinClass.Floating)
                 {
                     warnings.Add(pin.Unreturned
@@ -480,6 +481,10 @@ public static class EmPlanarComponentPorts
                 }
                 int number = next++;
                 Numbers.AddOrUpdate(portLabel, new StrongBox<int>(number));
+                if (pin.Unconnected)
+                    warnings.Add($"{pin.Name} (port {number}) is not connected: its conductor, followed through the vias of this setup's " +
+                                 "analysis levels, reaches no other port and no ground — a via that lands on no metal is the usual cause — so " +
+                                 $"port {number} drives an isolated piece of metal and reads an open.");
                 results.Add(new EmPlanarComponentPort(pin.Path, pin.Name, pin.Pin, pin.Reference, strip, portLabel, number, z0, gapM, widthM,
                                                       alongX, null)
                 {
@@ -492,6 +497,12 @@ public static class EmPlanarComponentPorts
 
         foreach (var r in results.Where(p => p.Refusal is not null))
             warnings.Add($"{r.Refusal} {(r.Cutout && r.Pin is not null ? r.Name : r.Refdes)} is left out of this run; the other component ports are built.");
+        // An instance taken out of the problem with no port left on it is not in the co-simulation netlist either (its model is put
+        // back on its ports), so the circuit loses the device: said by name rather than found missing from _cosim.
+        if (cut is not null)
+            foreach (string path in cut.Excluded.Where(x => !results.Any(r => r.Cutout && r.Ok && r.Refdes.Equals(x, StringComparison.OrdinalIgnoreCase))))
+                warnings.Add($"{path} is cut out of the problem and has no port left on it, so the co-simulation netlist has nowhere to put its " +
+                             "model back and the device is missing from it.");
         // A 3D run's cut ports are sheets, described by the 3D view that builds them; the notes here are the cut's own.
         if (!threeD) foreach (var r in results.Where(p => p.Ok)) notes.Add(Describe(r, source));
         // R-lcp7-2 — the .c3d's sentence (C3dComponentPorts.Build), word for word: the co-simulation netlist stands a placeholder there.

@@ -30,6 +30,12 @@ public sealed record EmCoSimCutPin(string Name, int? Number, EmPinClass? Class, 
 {
     /// <summary>brief-icp-6 R-icp6-2 — the pin's face as ICP-1 projected it (layout metres); null when the projection had no pin.</summary>
     public EmPinFace? Face { get; init; }
+
+    /// <summary>A floating pin that is a return by its entry (<c>Port: false</c>) with no port returning through it, not one nothing meets.</summary>
+    public bool Unreturned { get; init; }
+
+    /// <summary>A routed pin whose conductor reaches no other port and no ground (<see cref="EmCutPin.Unconnected"/>).</summary>
+    public bool Unconnected { get; init; }
 }
 
 /// <summary>brief-icp-6 — a pin face: its middle (layout metres), width, outward direction (degrees) and drawing layer.</summary>
@@ -78,6 +84,7 @@ public sealed record EmCoSimCut(string Path, string Cell, string? GeneratorId, I
                             var ip = inst?.Pins.FirstOrDefault(q => q.Name.Equals(p.Pin, StringComparison.OrdinalIgnoreCase));
                             return new EmCoSimCutPin(p.Pin, ip?.Number, p.Why is null ? p.Class : null, p.Abuts, p.Why)
                             {
+                                Unreturned = p.Unreturned, Unconnected = p.Unconnected,
                                 // brief-icp-10 — the face the cut built at (an area pin's is where the interconnect meets it), else
                                 // the pin as projected.
                                 Face = p.FaceAtM is { } m ? new EmPinFace(m.X, m.Y, p.WidthM, p.OutwardDeg, ip?.Layer ?? p.Layer)

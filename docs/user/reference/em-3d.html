@@ -295,6 +295,10 @@ is in the result</strong>: a 200 µm line segment on 100 µm GaAs, cut out and p
 line to |ΔS| 2.0e-2 at 5 GHz, 8.0e-2 at 20 GHz and 1.1e-1 at 30 GHz (EMerge). All of it is a phase lag growing with frequency,
 about the delay of 30 µm of that line at each face (the sheet is 100 µm tall, 1/28 of a wavelength in GaAs at
 30 GHz). On a thick substrate or at mm-wave, compare that against what the model needs.</p>
+<p>The result names a drawn port by its label's text, as the Planar result of the same <code>.cem</code> does, and its header has
+the same line per port and DC line (<a href="em-setup.html#cell-instances">Cutting out a cell instance</a>): a lumped sheet reads
+<code>uncalibrated</code>, and its <code>ref=</code> is the run's ground where the sheet lands on the air box's floor, or the conductor it
+lands on otherwise. A run whose rows are not passive warns naming them.</p>
 <p><strong>A port's Uncalibrated port box changes nothing here.</strong> On Planar it takes the de-embedding away from an edge port
 (<a href="mom-engine.html#uncalibrated-port">The Uncalibrated Port</a>); a 3D run de-embeds no edge port, because each one is
 already a lumped sheet whose launch is in the result.</p>

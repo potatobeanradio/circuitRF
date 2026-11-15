@@ -662,7 +662,7 @@ public static class EmRunService
                                  ports => resultPorts = ports);
             // brief-lcp-7 R-lcp7-2 — a run that built component ports writes its _cosim netlist, Planar and 3D alike, and with Create
             // schematic on makes the _cosim cell in place of _sim: a TermG on a part's port has no part on it.
-            result = WithCoSim(result, setup, resultsRoot, target?.WriteCoSim == false ? null : resultPorts is { ComponentPorts: true } built ? built.Ports : null);
+            result = WithCoSim(WithPassivity(result), setup, resultsRoot, target?.WriteCoSim == false ? null : resultPorts is { ComponentPorts: true } built ? built.Ports : null);
             string? cellDir = source is null ? null : CellFolder.SiblingView(source.AbsolutePath, ViewType.Layout, ViewType.Schematic).CellDir;
             return WithCell(result, setup, resultsRoot, cellDir, resultPorts?.Ports,
                             () => source is null ? new Dictionary<int, EmPortFace>() : EmSnpSchematic.FacesOf(source, setup));
@@ -769,7 +769,7 @@ public static class EmRunService
                 CircuitRF.Design.ThreeD.C3dPersistence.Serialize(document));
             foreach (string why in notKept)
                 result = result with { Warnings = [.. result.Warnings, $"The run's inputs could not be kept, so its result cannot be called stale: {why}"] };
-            result = WithCoSim(result, setup, resultsRoot, target?.WriteCoSim == false ? null : assembled?.CoSimPorts);
+            result = WithCoSim(WithPassivity(result), setup, resultsRoot, target?.WriteCoSim == false ? null : assembled?.CoSimPorts);
             // R-cp6-2 — a run with component ports makes its _cosim cell: a TermG on a part's port has no part on it.
             return WithCell(result, setup, resultsRoot, CellFolder.SiblingView(documentPath, ViewType.ThreeD, ViewType.Schematic).CellDir,
                             assembled?.ResultPorts, () => EmSnpSchematic.FacesOf(document));
@@ -863,6 +863,38 @@ public static class EmRunService
     /// </summary>
     /// <param name="ports">The result's ports with their parts (<see cref="EmCoSimNetlist.PortsOf(IReadOnlyList{CircuitRF.Engine.Em3d.Em3dPort}, CircuitRF.Design.ThreeD.C3dDocument, CircuitRF.Design.ThreeD.C3dComponentPortBuild)"/>
     /// for a 3D run, brief-lcp-7's Planar overload for a planar one); null when the run built no component port.</param>
+    /// <summary>The share of σ_max(S) above 1 a row may carry before it is called not passive: an open structure's own
+    /// discretisation noise lands below it (the planar solve's own tolerance).</summary>
+    internal const double PassivityTolerance = 1e-3;
+
+    /// <summary>
+    /// The written Touchstone's rows that are not a passive network (σ_max(S) above 1 + <see cref="PassivityTolerance"/>, measured
+    /// against a uniform real reference), as a warning on the run naming each frequency and the worst value. The planar solve says
+    /// this of its de-embedded points itself, with its cause, and that run is left as it is; every other run (a 3D solver's, a
+    /// planar run that was not de-embedded) used to publish such rows in silence.
+    /// </summary>
+    internal static EmRunResult WithPassivity(EmRunResult result)
+    {
+        if (result.Status != EmRunStatus.Ok || result.SnpPath is not { } path || !File.Exists(path)
+            || result.Warnings.Any(w => w.StartsWith("NOT PASSIVE", StringComparison.Ordinal))) return result;
+        SNP snp;
+        try { snp = TouchstoneIO.ReadFile(path, readComments: false); }
+        catch (Exception e) when (e is IOException or InvalidDataException or FormatException or UnauthorizedAccessException) { return result; }
+        var mats = NetworkMetrics.FullUniformReal(snp.Matrices, [.. Enumerable.Repeat(snp.Z0, snp.Ports)]);
+        var over = new List<(double Hz, double Sigma)>();
+        for (int f = 0; f < mats.Length && f < snp.Frequencies.Length; f++)
+            if (RFNetwork.Passivity(mats[f]) is var sigma && sigma > 1 + PassivityTolerance) over.Add((snp.Frequencies[f], sigma));
+        if (over.Count == 0) return result;
+        var worst = over.MaxBy(o => o.Sigma);
+        return result with
+        {
+            Warnings = [.. result.Warnings,
+                $"NOT PASSIVE: {over.Count} of {snp.Frequencies.Length} row(s) of {Path.GetFileName(path)} have σ_max(S) > 1, at " +
+                $"{PlanarSolve.FrequencyList(over.Select(o => o.Hz).ToList())}; worst {worst.Sigma:F4} at {PlanarSolve.FrequencyList([worst.Hz])}. " +
+                "A passive structure cannot do that, so the excess is the solve, not the design: do not use those rows."],
+        };
+    }
+
     private static EmRunResult WithCoSim(EmRunResult result, EmSetup setup, string resultsRoot, IReadOnlyList<EmCoSimPort>? ports)
     {
         if (ports is null || result.Status != EmRunStatus.Ok || result.MeshOnly is not null ||
@@ -1123,6 +1155,27 @@ public static class EmRunService
         return r;
     }
 
+    /// <summary>Each Planar port as its header line says it (<see cref="EmPortHeader"/>): a component port by what it is built on, a
+    /// drawn port by its label, with the net the layout's schematic gives it.</summary>
+    private static List<EmPortHeaderRow> PlanarHeaderRows(IReadOnlyList<PlanarPort> ports, IReadOnlyList<LabelShape> labels,
+                                                          EmPlanarComponentPortBuild? build, string clayPath)
+    {
+        var nets = EmPortHeader.SchematicNets(clayPath);
+        return [.. ports.Select((p, i) =>
+        {
+            var label = i < labels.Count ? labels[i] : null;
+            var c = build?.Ports.FirstOrDefault(c => c.Ok && c.Number == p.Number);
+            string what = c?.Name ?? (label?.Text is { Length: > 0 } t ? t : $"P{p.Number}");
+            // A nested cut instance's SchematicId names a part of its parent's schematic, not this one's.
+            string? net = c is null ? label?.Net is { Length: > 0 } ln ? ln : nets(label?.SchematicId, null)
+                        : c.Cutout ? (c.Refdes.Contains('/') ? null : nets(c.SchematicId, c.Pin))
+                        : c.Nets.Positive;
+            string reference = c is { ReferencePin: { } rp } ? $"{c.Refdes}.{rp}"
+                             : p.IsConductorReferenced ? "second conductor" : "ground";
+            return new EmPortHeaderRow(p.Number, what, net, reference, p.Kind == PlanarPortKind.Edge && !p.Uncalibrated);
+        })];
+    }
+
     /// <summary>brief-icp-10 — the signal that a planar run is past memory only because of its calibration standards.</summary>
     private sealed class StandardsPastMemoryException(string message) : Exception(message);
 
@@ -1160,6 +1213,29 @@ public static class EmRunService
             }
             return admit(size);
         };
+
+    /// <summary>
+    /// The sentence a run gives when its calibrated drawn ports are refused for their feeds' clearance, but the pre-solve check
+    /// (<see cref="Preflight"/>, what <c>check</c> and the EM panel say) predicted those ports Uncalibrated for the memory their
+    /// calibration standards need: the run then solves them Uncalibrated, as said, rather than refusing what the check passed.
+    /// Null when the check predicted no such thing, and the refusal stands.
+    /// </summary>
+    internal static string? ClearanceFallback(EmSetup setup, EmLayoutSource source, RunControl? control, long? memoryCeilingBytes,
+                                             PlanarFeedClearanceRefusedException refused)
+    {
+        string? predicted;
+        try
+        {
+            predicted = Preflight(setup, source, control, memoryCeilingBytes).Warnings
+                .FirstOrDefault(w => w.Contains(PlanarMemoryCheck.WillBeUncalibrated, StringComparison.Ordinal));
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { return null; }
+        if (predicted is null) return null;
+        var fmt = EmLengthFormat.For(source.View.DisplayUnit, source.DbuPerMicron);
+        string breaches = string.Join("; ", refused.Breaches.Select(b => b.Breach(fmt)));
+        return predicted.Replace(PlanarMemoryCheck.WillBeUncalibrated, "are solved as Uncalibrated Ports, as the pre-solve check said", StringComparison.Ordinal) +
+               (breaches.Length > 0 ? $" Calibrated, their feeds are not isolated either ({breaches}), which would have refused the run." : "");
+    }
 
     /// <summary>brief-icp-10 — <paramref name="shapes"/> with each drawn edge port that returns through the ground plane replaced by a
     /// copy marked Uncalibrated; <paramref name="switched"/> names them by their label text.</summary>
@@ -1368,6 +1444,17 @@ public static class EmRunService
         catch (OperationCanceledException) { throw; }
         catch (PlanarFeedClearanceRefusedException ex)
         {
+            // The pre-solve check said these drawn ports are solved Uncalibrated, because their calibration standards are past memory;
+            // the run asks the clearance question first and would refuse what the check passed. It does what the check said.
+            if (!drawnPortsUncalibrated && ClearanceFallback(setup, source, control, memoryCeilingBytes, ex) is { } fallback)
+            {
+                warnings.RemoveRange(warningsAt, warnings.Count - warningsAt);
+                notes.RemoveRange(notesAt, notes.Count - notesAt);
+                errors.RemoveRange(errorsAt, errors.Count - errorsAt);
+                warnings.Add(fallback);
+                return RunPlanar(setup, source, resultsRoot, extraction, freqs, choice, warnings, notes, errors, ct, control, maxCores,
+                                 confirmMemory, memoryCeilingBytes, target, coSimPorts, drawnPortsUncalibrated: true);
+            }
             // PCAL2/R-pcal2-1 — a REFUSAL, reported the way the mesh ceiling directly below is
             // reported and for the same reason: it reads as "this geometry cannot be de-embedded,
             // and here is the quantity that says so", not as "circuitRF broke". No .sNp is written
@@ -1476,9 +1563,11 @@ public static class EmRunService
                                problem, setup, ports.Ports, solved.Solve,
                                // MIM-10 — the port map goes on the FILE, built from the extraction's own
                                // index-aligned labels rather than re-derived from the numbers.
-                               EmSnpProvenance.PortMap([.. problem.Layers.Select(l => l.Name)],
-                                                       ports.Ports, ports.SourceLabels,
-                                                       source.DbuPerMicron, source.View.DisplayUnit), stamp);
+                               [.. EmSnpProvenance.PortMap([.. problem.Layers.Select(l => l.Name)],
+                                                           ports.Ports, ports.SourceLabels,
+                                                           source.DbuPerMicron, source.View.DisplayUnit),
+                                .. EmPortHeader.Lines(PlanarHeaderRows(ports.Ports, ports.SourceLabels, portLabels.ComponentBuild, source.AbsolutePath),
+                                                      EmPortHeader.FrequenciesOf(solved.Data))], stamp);
                 return null;
             })
             {

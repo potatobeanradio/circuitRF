@@ -1001,6 +1001,7 @@ public static partial class Em3dRunService
                             "into the structure from the port face"
                           : $"lumped, {R(p.Z0.Real)} Ohm"));
         if (Em3dModePorts.SnpLine(problem.Ports) is { } modeLine) lines.Add(modeLine);     // brief-hzn-11 R-hzn11-4
+        lines.AddRange(Em3dPortMap.HeaderLines(problem.Ports, data));
         lines.AddRange(Em3dPortMap.Lines(problem.Ports));     // brief-em3d-93 — which document port each is, when one was off
         lines.Add($"circuitRF-EM 3D mesh: {Count(facts.InitialElements)} elements initially, {Count(facts.FinalElements)} " +
                   $"finally, {facts.AdaptiveIterations ?? 0} adaptive pass(es), element order {settings.ElementOrder}" +

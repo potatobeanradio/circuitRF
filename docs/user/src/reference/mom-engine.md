@@ -1406,7 +1406,15 @@ cascode measured 87,692 unknowns with its two drawn ports calibrated against 1,9
 it calibrates drawn edge ports, it is solved once more with every drawn edge port an [Uncalibrated Port](#uncalibrated-port),
 and a warning names the ports and the figure that moved them. That run is judged as any other, so a structure too large on its
 own is still asked about, by its own figure. Mark a port Uncalibrated yourself to keep the choice, or solve on a machine with the
-memory to calibrate it.
+memory to calibrate it. **Check**, `check` and the EM panel say the same before the run (*Port(s) … will be solved as
+Uncalibrated Ports*), and the run keeps to it: where those ports' feeds are also too close to other metal to calibrate, which
+on a die beside a device they usually are, the run solves them uncalibrated as the check said and names the feeds in its
+warning, rather than refusing them for a calibration it was not going to do.
+
+**A result that is not passive is said.** A row of the written Touchstone whose σ_max(S) is above 1 by more than 10⁻³ is not
+a network a passive structure can be, so the excess is the solve, not the design. The planar solve says so of its de-embedded
+points with its cause (*NOT PASSIVE: …*), and the Touchstone carries a caveat line; any other run, a 3D solver's included,
+warns naming each such row's frequency and the worst value. Do not read those rows.
 
 The memory limit belongs to the computer, not to an EM setup: it is set once, in
 [Settings ▸ Solvers](settings.html#em3d), and holds the planar solver and the 3D solvers alike. Time

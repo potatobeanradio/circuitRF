@@ -17,7 +17,7 @@ namespace CircuitRF.Core.Devices;
 /// The model receives the reference node index via ElaboratedComponent.ReferenceNode
 /// and stamps it the same way regardless — the engine does not special-case it.
 /// </summary>
-public sealed class SnpModel : ComponentModel
+public sealed class SnpModel : ComponentModel, IReportsWarnings
 {
     public override int       PortCount => _portCount;
     public override ModelKind Kind      => ModelKind.Linear;
@@ -233,8 +233,36 @@ public sealed class SnpModel : ComponentModel
         }
     }
 
+    private List<(string Key, string Message)>? _queued;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<(string Key, string Message)> DrainWarnings()
+    {
+        var q = _queued ?? [];
+        _queued = null;
+        return q;
+    }
+
+    /// <summary>
+    /// The sentence for a block stamped at 0 Hz whose file starts above it: the interpolation clamps to the lowest row, so a DC
+    /// operating point — a DC analysis, or the bias an s-parameter, harmonic-balance or envelope run solves first — takes that
+    /// row as the block's DC answer, with no word about it. A capacitor's 1 GHz row is not an open, and a bias current through
+    /// the block can be far off. Null when the file has a 0 Hz row.
+    /// </summary>
+    internal static string? NoDcRow(string who, SNP snp)
+    {
+        if (snp.Frequencies.Length == 0 || !(snp.Frequencies[0] > 0)) return null;
+        double f0 = snp.Frequencies[0];
+        string at = f0 >= 1e9 ? $"{f0 / 1e9:G4} GHz" : f0 >= 1e6 ? $"{f0 / 1e6:G4} MHz" : f0 >= 1e3 ? $"{f0 / 1e3:G4} kHz" : $"{f0:G4} Hz";
+        return $"{who} has no 0 Hz row: its lowest frequency is {at}, and the DC operating point takes that row as the block's DC " +
+               "answer, so a bias current through it can be far off. Give the file a 0 Hz row (an EM setup writes one when its sweep " +
+               "starts at 0 Hz), or bring the bias in around the block.";
+    }
+
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
+        if (omega == 0 && NoDcRow(Who(c.InstancePath), LoadSnp(c)) is { } noDc)
+            (_queued ??= []).Add(("snp-no-dc:" + c.InstancePath, noDc));
         if (Inverse) { StampInverse(mna, c, omega); return; }
 
         var snp    = LoadSnp(c);
