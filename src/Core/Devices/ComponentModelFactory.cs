@@ -88,8 +88,9 @@ public static class ComponentModelFactory
             // sign, and a sign the symbol has to show.
             "JFET_N", "JFET_P",
             "TLIN", "CLIN", "MLIN", "MCLIN", "BCLIN", "MBCLIN", "MBEND", "MCURVE", "MMITER", "MGAP", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
-            // The planned passives (docs/design/rf-passives.md): specs in, MTEE and MCURVE sections stamped as one block.
+            // The planned passives (docs/design/rf-passives.md): specs in, MTEE, MCURVE and MLIN sections stamped as one block.
             WilkinsonTypeName,
+            BranchLineTypeName,
             // Grounded coplanar waveguide and stripline (brief-artsch-1), bound to the stackup as MLIN is.
             "CPWG", "SLIN",
             // The two vias (brief-via-component.md): a signal via changing layers, and a via to ground.
@@ -257,6 +258,8 @@ public static class ComponentModelFactory
             return CreateMicrostripKlopfModel(parameters);
         if (typeName.Equals(WilkinsonTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateWilkinsonModel(parameters);
+        if (typeName.Equals(BranchLineTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateBranchLineModel(parameters);
         if (typeName.Equals("VIA", StringComparison.OrdinalIgnoreCase))
             return new ViaModel(ReadViaGeometry(parameters, grounded: false));
         if (typeName.Equals("VIAGND", StringComparison.OrdinalIgnoreCase))
@@ -2994,6 +2997,15 @@ public static class ComponentModelFactory
         => new(WilkinsonPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
                                    GetReal(parameters, "Gap", 1.35e-3), SubstrateOf(parameters)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, WilkinsonTypeName));
+
+    /// <summary>The 3 dB branch-line hybrid's engine token (pins 1, 2, 3, 4).</summary>
+    public const string BranchLineTypeName = "MBLC";
+
+    // MBLC: the specs Z0, F and N (sections); the plan derives the rest.
+    private static MicrostripPlanModel CreateBranchLineModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(BranchLinePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
+                                    GetReal(parameters, "N", 1.0), SubstrateOf(parameters)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, BranchLineTypeName));
 
     private static MicrostripKlopfModel CreateMicrostripKlopfModel(IReadOnlyDictionary<string, Value> parameters)
     {
