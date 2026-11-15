@@ -578,6 +578,20 @@ internal static class ToolCatalog
                   + "Thru (trusted inside 20-160 degrees, with a warning outside), Gamma the solved reflect. The reference plane is the "
                   + "middle of the Thru, and a part de-embedded with the fixtures is referenced to the Line's impedance. 'reference analyses' "
                   + "has the directive."),
+                // brief-trn-1: the `tran` verb — the native transient analysis.
+                new("tran", ["tran"],
+                    [new("path", true, "The .cnl or .csch whose transient (type=tran) analyses to run.")],
+                    [Analysis, Set, Output, All,
+                     new("stop",   "--stop",   OptKind.Str, "End time, s, replacing the directive's Stop."),
+                     new("step",   "--step",   OptKind.Str, "Output grid spacing, s, replacing the directive's Step."),
+                     new("method", "--method", OptKind.Str, "trap or gear2, replacing the directive's Method."),
+                     new("solver", "--solver", OptKind.Str, "native or ngspice, replacing the directive's Solver (ngspice is not built yet).")],
+                    "Transient: the circuit in the time domain from its DC operating point (InitialState=op) or from zero, with an "
+                  + "adaptive step and every source driven by its waveform (a tone source is its sinusoid). Every labelled net records "
+                  + "V[time, node] and every IProbe I[time, branch] and P[time, branch], on the uniform grid Step sets; Tran.* are the "
+                  + "run's counters. Lumped linear parts and every nonlinear device run; a transmission line, an S-parameter block and "
+                  + "other frequency-defined parts are refused by name for now. The waveforms are in the shape and in -o's file; ask for "
+                  + "them with all, only or group. Runs the parametric sweep when one wraps it. 'reference analyses' has the directive."),
                 // brief NZ-9: the `osc` verb — harmonic balance with the fundamental an unknown, at the circuit's OscProbe.
                 new("osc", ["osc"],
                     [new("path", true, "The .cnl or .csch whose oscillator (type=osc) analysis to run.")],

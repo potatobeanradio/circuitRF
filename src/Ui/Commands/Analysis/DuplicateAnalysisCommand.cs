@@ -83,6 +83,16 @@ internal sealed class DuplicateAnalysisCommand : IUiCommand
                 FixtureA = t.FixtureA, FixtureB = t.FixtureB,
             },
 
+        TransientAnalysis tr =>
+            new TransientAnalysis(newName)
+            {
+                Enabled = a.Enabled, StopExpr = tr.StopExpr, StepExpr = tr.StepExpr, StartExpr = tr.StartExpr, MaxStepExpr = tr.MaxStepExpr,
+                Method = tr.Method, RelTolExpr = tr.RelTolExpr, VTolExpr = tr.VTolExpr, ITolExpr = tr.ITolExpr,
+                InitialState = tr.InitialState, IcExpr = tr.IcExpr, Solver = tr.Solver, SaveSteps = tr.SaveSteps,
+                MaxStepsExpr = tr.MaxStepsExpr, SpiceOptions = tr.SpiceOptions, SpiceLines = tr.SpiceLines,
+                SpiceLineFreq = tr.SpiceLineFreq, SpiceFit = tr.SpiceFit,
+            },
+
         OscillatorAnalysis o =>
             new OscillatorAnalysis(newName)
             {

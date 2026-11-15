@@ -2482,7 +2482,11 @@ namespace RfCore.Export
         /// <summary>brief-pch-6 R-pch6-10 — each Propagation Channel the analysis runs: its model and edition, the breakdown, τ0, ν0,
         /// the rays and the regime, or the sentence refusing it. Null when the design has no channel.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<string>? Channels = null);
+        IReadOnlyList<string>? Channels = null,
+        /// <summary>brief-trn-1 R-trn1-11 — a transient analysis: its solver, its step bound and why, the steps that bound implies, and
+        /// the circuit's slowest time constant against Stop; or the sentence refusing it. Null for any other analysis.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<string>? Transient = null);
 
     /// <summary>brief-paa-3 — <c>explain --analysis</c>'s lines for a Phased Antenna Array: the level sentence, the coupling range, and each
     /// pattern the array takes with the elements (1-based, row-major) that take it — or the sentence the run refuses with.</summary>

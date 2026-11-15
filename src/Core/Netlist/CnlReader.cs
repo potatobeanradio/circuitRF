@@ -115,6 +115,8 @@ public sealed class CnlReader
                 tb.Analyses.Add(fieldsAnalysis!);
             else if (TryParseTrlDirective(rawLine, out var trlAnalysis))
                 tb.Analyses.Add(trlAnalysis!);
+            else if (TryParseTranDirective(rawLine, out var tranAnalysis))
+                tb.Analyses.Add(tranAnalysis!);
             else if (TryParseOscDirective(rawLine, out var oscAnalysis))
                 tb.Analyses.Add(oscAnalysis!);
             else if (TryParseSParamDirective(rawLine, out var spAnalysis))
@@ -1223,6 +1225,49 @@ public sealed class CnlReader
             HarmonicExpr = kv.GetValueOrDefault("harmonic", ""),
             DirsExpr    = kv.GetValueOrDefault("dirs", ""),
             Enabled     = ParseEnabledToken(tokens),
+        };
+        return true;
+    }
+
+    /// <summary>
+    /// brief-trn-1 — a "Name type=tran Stop=… [Step=…] …" directive as a <see cref="TransientAnalysis"/>. Every value is kept as
+    /// written and resolved at run time (PrepareAnalysisDirective has already canonicalised the keys and refused unknown ones).
+    /// </summary>
+    private static bool TryParseTranDirective(string rawLine, out TransientAnalysis? result)
+    {
+        result = null;
+        var tokens = TokeniseLine(rawLine);
+        if (tokens.Count < 2) return false;
+        var kv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 1; i < tokens.Count; i++)
+        {
+            int eq = tokens[i].IndexOf('=');
+            if (eq <= 0) continue;
+            string val = tokens[i][(eq + 1)..];
+            if (val.Length >= 2 && val[0] == '"' && val[^1] == '"') val = val[1..^1];
+            kv[tokens[i][..eq]] = val;
+        }
+        if (!kv.TryGetValue("type", out var type) || AnalysisDirectiveSchema.Find(type)?.Type != "tran") return false;
+        result = new TransientAnalysis(tokens[0])
+        {
+            StopExpr      = kv.GetValueOrDefault("Stop", ""),
+            StepExpr      = kv.GetValueOrDefault("Step", ""),
+            StartExpr     = kv.GetValueOrDefault("Start", "0"),
+            MaxStepExpr   = kv.GetValueOrDefault("MaxStep", "auto"),
+            Method        = kv.GetValueOrDefault("Method", TransientAnalysis.MethodTrap),
+            RelTolExpr    = kv.GetValueOrDefault("RelTol", "1e-3"),
+            VTolExpr      = kv.GetValueOrDefault("VTol", "1e-6"),
+            ITolExpr      = kv.GetValueOrDefault("ITol", "1e-12"),
+            InitialState  = kv.GetValueOrDefault("InitialState", TransientAnalysis.InitialOp),
+            IcExpr        = kv.GetValueOrDefault("IC", ""),
+            Solver        = kv.GetValueOrDefault("Solver", TransientAnalysis.SolverNative),
+            SaveSteps     = kv.GetValueOrDefault("SaveSteps", Analysis.NoiseDefault),
+            MaxStepsExpr  = kv.GetValueOrDefault("MaxSteps", TransientAnalysis.MaxStepsDefault),
+            SpiceOptions  = kv.GetValueOrDefault("SpiceOptions", ""),
+            SpiceLines    = kv.GetValueOrDefault("SpiceLines", TransientAnalysis.SpiceLinesDefault),
+            SpiceLineFreq = kv.GetValueOrDefault("SpiceLineFreq", TransientAnalysis.SpiceLineFreqDefault),
+            SpiceFit      = kv.GetValueOrDefault("SpiceFit", TransientAnalysis.SpiceFitDefault),
+            Enabled       = ParseEnabledToken(tokens),
         };
         return true;
     }

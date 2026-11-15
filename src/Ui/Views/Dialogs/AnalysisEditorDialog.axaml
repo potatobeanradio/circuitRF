@@ -44,7 +44,7 @@
                     <TextBlock Text="Type:"
                                FontSize="12"
                                Opacity="0.75"/>
-                    <!-- Two columns: the circuit solves (DC, S, HB, oscillator, envelope) and the rest (loadpull, pursuit, fields, TRL). -->
+                    <!-- Two columns: the circuit solves (DC, S, HB, oscillator, envelope) and the rest (loadpull, pursuit, fields, TRL, transient). -->
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
                         <StackPanel Grid.Column="0" Orientation="Vertical" Spacing="3">
                             <RadioButton x:Name="DcRadio"
@@ -95,6 +95,12 @@
                                          GroupName="AnalysisType"
                                          FontSize="12"
                                          ToolTip.Tip="Two fixture files from measured Thru, Reflect and Line standards, for Deembed blocks"
+                                         IsCheckedChanged="OnTypeRadioChanged"/>
+                            <RadioButton x:Name="TranRadio"
+                                         Content="Transient"
+                                         GroupName="AnalysisType"
+                                         FontSize="12"
+                                         ToolTip.Tip="The circuit in the time domain: pulse responses, start-up, settling, switching waveforms"
                                          IsCheckedChanged="OnTypeRadioChanged"/>
                         </StackPanel>
                     </Grid>
@@ -244,6 +250,15 @@
                     Padding="10,10"
                     IsVisible="False">
                 <analyses:TrlBodyView x:Name="TrlBodyViewControl"/>
+            </Border>
+
+            <!-- ── Transient body (brief-trn-1): Stop, Step, method, initial state, solver; the rest under More ── -->
+            <Border x:Name="TranBodyPanel"
+                    Background="{DynamicResource SystemRegionColor}"
+                    CornerRadius="6"
+                    Padding="10,10"
+                    IsVisible="False">
+                <analyses:TranBodyView x:Name="TranBodyViewControl"/>
             </Border>
 
             <!-- ── Oscillator body (brief NZ-9): the OscProbe, the start-up search, the HB keys ──────────── -->

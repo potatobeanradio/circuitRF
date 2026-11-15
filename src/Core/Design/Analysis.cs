@@ -449,6 +449,56 @@ public sealed class EnvelopeAnalysis(string name) : Analysis(name)
 }
 
 /// <summary>
+/// Transient analysis directive (<c>type=tran</c>, docs/design/transient.md §3). Every field is the directive's raw text,
+/// resolved at run time like <see cref="EnvelopeAnalysis"/>'s; the defaults are the note's.
+/// </summary>
+public sealed class TransientAnalysis(string name) : Analysis(name)
+{
+    public const string MethodTrap = "trap", MethodGear2 = "gear2";
+    public const string InitialOp = "op", InitialZero = "zero";
+    public const string SolverNative = "native", SolverNgspice = "ngspice";
+    public const string MaxStepsDefault = "10000000";
+    public const string SpiceLinesDefault = "refuse", SpiceLineFreqDefault = "auto", SpiceFitDefault = "no";
+
+    /// <summary>End time (s). Required.</summary>
+    public string StopExpr { get; init; } = "";
+    /// <summary>Output grid spacing (s); blank is <c>Stop/1000</c>. Also the largest step unless <see cref="MaxStepExpr"/> says otherwise.</summary>
+    public string StepExpr { get; init; } = "";
+    /// <summary>First reported time (s); the run still starts at 0.</summary>
+    public string StartExpr { get; init; } = "0";
+    /// <summary>Largest accepted step (s), or <c>auto</c>: the smaller of the step and 1/(20 f) for the highest source frequency.</summary>
+    public string MaxStepExpr { get; init; } = "auto";
+    /// <summary><c>trap</c> or <c>gear2</c>.</summary>
+    public string Method { get; init; } = MethodTrap;
+    public string RelTolExpr { get; init; } = "1e-3";
+    /// <summary>Absolute voltage tolerance (V).</summary>
+    public string VTolExpr { get; init; } = "1e-6";
+    /// <summary>Absolute current tolerance (A).</summary>
+    public string ITolExpr { get; init; } = "1e-12";
+    /// <summary><c>op</c> (the DC operating point, <see cref="IcExpr"/> held during it) or <c>zero</c>.</summary>
+    public string InitialState { get; init; } = InitialOp;
+    /// <summary>Net voltages held through the operating-point solve and released at t = 0⁺: <c>out=0, bias=1.2</c>.</summary>
+    public string IcExpr { get; init; } = "";
+    /// <summary><c>native</c> or <c>ngspice</c>.</summary>
+    public string Solver { get; init; } = SolverNative;
+    /// <summary><c>yes</c> adds the accepted-step cubes beside the output grid.</summary>
+    public string SaveSteps { get; init; } = NoiseDefault;
+    /// <summary>The most steps a run may take; refused before the run when Stop/MaxStep exceeds it.</summary>
+    public string MaxStepsExpr { get; init; } = MaxStepsDefault;
+    /// <summary>ngspice only: one <c>.options</c> line, verbatim.</summary>
+    public string SpiceOptions { get; init; } = "";
+    /// <summary>ngspice only: <c>refuse</c> or <c>rlgc</c> (transient.md §9.2.3).</summary>
+    public string SpiceLines { get; init; } = SpiceLinesDefault;
+    /// <summary>ngspice only: the frequency <c>rlgc</c> lines are fitted at, or <c>auto</c>.</summary>
+    public string SpiceLineFreq { get; init; } = SpiceLineFreqDefault;
+    /// <summary>ngspice only: <c>yes</c> writes frequency-defined elements as subcircuits of circuitRF's fit.</summary>
+    public string SpiceFit { get; init; } = SpiceFitDefault;
+
+    /// <summary>Whether <see cref="SaveSteps"/> asks for the accepted-step cubes.</summary>
+    public bool SaveStepsOn => ParseNdf(SaveSteps);
+}
+
+/// <summary>
 /// HB analysis directive (harmonic-balance.md §3.2).
 /// Key=value fields store raw expression strings (resolved later via ResolvedGlobals).
 ///

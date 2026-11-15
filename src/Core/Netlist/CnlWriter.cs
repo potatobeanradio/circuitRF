@@ -377,6 +377,7 @@ public static class CnlWriter
         ParametricSweepAnalysis ps    => FormatParametricSweepAnalysis(ps),
         SParameterAnalysis sp         => FormatSParameterAnalysis(sp),
         DcAnalysis dc                 => $"analysis {dc.Name} type=dc",
+        TransientAnalysis tr          => FormatTransientAnalysis(tr),
         FieldsAnalysis fa             => $"analysis {fa.Name} type=fields block={fa.Block} freq=\"{fa.FreqExpr}\" freqUnit={fa.FreqUnit} " +
                                          $"drive={fa.DriveExpr} {(fa.WeightsExpr.Length > 0 ? $"weights=\"{fa.WeightsExpr}\" " : "")}norm={fa.Norm} average={fa.AverageExpr}" +
                                          (fa.FromHarmonicBalance ? $" waves={fa.Waves.Trim()}" : "") +
@@ -400,7 +401,38 @@ public static class CnlWriter
         _                             => $"analysis {analysis.Name}",
     };
 
-    private static string FormatHbAnalysis(HarmonicBalanceAnalysis hb)
+    /// <summary>brief-trn-1 — a tran directive: Stop always, every other key only when it differs from its default, so a
+    /// line written by hand round-trips to what it said.</summary>
+    private static string FormatTransientAnalysis(TransientAnalysis t)
+    {
+        var sb = new StringBuilder($"analysis {t.Name} type=tran Stop={Q(t.StopExpr)}");
+        void Opt(string key, string value, string def)
+        {
+            if (!string.Equals(value.Trim(), def, StringComparison.OrdinalIgnoreCase)) sb.Append($" {key}={Q(value)}");
+        }
+        Opt("Step", t.StepExpr, "");
+        Opt("Start", t.StartExpr, "0");
+        Opt("MaxStep", t.MaxStepExpr, "auto");
+        Opt("Method", t.Method, TransientAnalysis.MethodTrap);
+        Opt("RelTol", t.RelTolExpr, "1e-3");
+        Opt("VTol", t.VTolExpr, "1e-6");
+        Opt("ITol", t.ITolExpr, "1e-12");
+        Opt("InitialState", t.InitialState, TransientAnalysis.InitialOp);
+        Opt("IC", t.IcExpr, "");
+        Opt("Solver", t.Solver, TransientAnalysis.SolverNative);
+        Opt("SaveSteps", t.SaveSteps, Analysis.NoiseDefault);
+        Opt("MaxSteps", t.MaxStepsExpr, TransientAnalysis.MaxStepsDefault);
+        Opt("SpiceOptions", t.SpiceOptions, "");
+        Opt("SpiceLines", t.SpiceLines, TransientAnalysis.SpiceLinesDefault);
+        Opt("SpiceLineFreq", t.SpiceLineFreq, TransientAnalysis.SpiceLineFreqDefault);
+        Opt("SpiceFit", t.SpiceFit, TransientAnalysis.SpiceFitDefault);
+        return sb.ToString();
+
+        // A value with whitespace, a comma or an equals sign is quoted, so the tokenizer reads it as one token.
+        static string Q(string v) => v.IndexOfAny([' ', '\t', ',', '=']) >= 0 ? $"\"{v}\"" : v;
+    }
+
+        private static string FormatHbAnalysis(HarmonicBalanceAnalysis hb)
     {
         var sb = new StringBuilder($"analysis {hb.Name} type=hb");
         sb.Append($" Tone=\"{hb.ToneExpr}\" ToneUnit={hb.ToneUnit}");

@@ -142,7 +142,7 @@ public static class EnvelopeTangentCheck
     /// measure reads a resonance of the representation as an error in the circuit. Terminated, a passive element's
     /// impedances are bounded by Rterm, and the measure is in effect |ΔS|/|S|.
     /// </summary>
-    private static double TerminatedDiff(Dictionary<long, Complex> a, Dictionary<long, Complex> b)
+    internal static double TerminatedDiff(Dictionary<long, Complex> a, Dictionary<long, Complex> b)
     {
         var ids = Ids(a.Keys.Concat(b.Keys));
         var za = Terminated(a, ids);

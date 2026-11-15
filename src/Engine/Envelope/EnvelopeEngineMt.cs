@@ -245,24 +245,16 @@ public sealed class EnvelopeEngineMt
             for (int m = 0; m < M; m++)
             {
                 double w = Math.Abs(wMix[m]);
-                double dlt = Math.Max(1e-6 * Math.Max(w, 2 * Math.PI * 1e6), 2 * Math.PI * 1.0);
+                double dlt = AffineStamp.Delta(w);
                 CompressedColumnStorage<Complex> A0, C;
                 baseband.Holding = m == 0;            // the whole baseband product, its right-hand side included
                 lines.Product = m;
                 channels.Product = m;
                 if (m == 0)
-                {
-                    var a1 = EnvelopeEngine.Stamp(extractor, mna, dlt);
-                    var a2 = EnvelopeEngine.Stamp(extractor, mna, 2 * dlt);
-                    C = EnvelopeEngine.Combine(a2, a1, 1.0 / new Complex(0, dlt), -1.0 / new Complex(0, dlt));
-                    A0 = EnvelopeEngine.Combine(a1, C, 1.0, -new Complex(0, dlt));
-                }
+                    (A0, C) = AffineStamp.Baseband(extractor, mna, dlt);
                 else
                 {
-                    var ap = EnvelopeEngine.Stamp(extractor, mna, w + dlt);
-                    var am = EnvelopeEngine.Stamp(extractor, mna, w - dlt);
-                    C = EnvelopeEngine.Combine(ap, am, 1.0 / new Complex(0, 2 * dlt), -1.0 / new Complex(0, 2 * dlt));
-                    A0 = EnvelopeEngine.Stamp(extractor, mna, w);
+                    (A0, C) = AffineStamp.AtHarmonic(extractor, mna, w, dlt);
                     // the band-edge tangent check the single-fundamental engine makes (affine models: ~round-off)
                     if (w - Math.PI * rate > 0)
                     {

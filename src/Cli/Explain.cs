@@ -66,6 +66,7 @@ internal static class Explain
         (a => a is EnvelopeAnalysis,         "envelope",         "analysis <name> type=env ...",               "env"),
         (a => a is FieldsAnalysis,           "fields",           "analysis <name> type=fields ...",            "fields"),
         (a => a is TrlAnalysis,              "TRL",              "analysis <name> type=trl ...",               "trl"),
+        (a => a is TransientAnalysis,        "transient",        "analysis <name> type=tran Stop=...",         "tran"),
         (a => a is OscillatorAnalysis,       "oscillator",       "analysis <name> type=osc ...",               "osc"),
     ];
 
@@ -1668,6 +1669,7 @@ internal static class Explain
         var fieldSweeps = FieldSweepsOf(lib, tb, sourcePath);
         var arrays = ArraysOf(lib, tb, sourcePath);
         var channels = ChannelsOf(lib, tb, sourcePath);
+        var transients = TransientsOf(lib, tb, sourcePath);
 
         var rows = new List<ExplainAnalysisJson>(tb.Analyses.Count);
         foreach (var a in tb.Analyses)
@@ -1721,10 +1723,48 @@ internal static class Explain
                 LoadpullNoise: lpNoise.GetValueOrDefault(a.Name),
                 Oscillator: osc.GetValueOrDefault(a.Name),
                 Array: arrays.GetValueOrDefault(a.Name),
-                Channels: channels.Count > 0 ? ChannelLines(channels, a, tb) : null));
+                Channels: channels.Count > 0 ? ChannelLines(channels, a, tb) : null,
+                Transient: transients.GetValueOrDefault(a.Name)));
         }
 
         return (rows, exit);
+    }
+
+    /// <summary>
+    /// brief-trn-1 R-trn1-11 — each transient analysis's lines, by its name: <c>TransientEngine.Plan</c>, the run's own setup with
+    /// nothing solved, so a refusal here is the run's word for word. Elaborated once, only when a transient analysis is declared;
+    /// a design that does not elaborate is <c>check</c>'s to report.
+    /// </summary>
+    private static Dictionary<string, IReadOnlyList<string>> TransientsOf(Library lib, TestBench tb, string? sourcePath)
+    {
+        var lines = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        var trans = tb.Analyses.OfType<TransientAnalysis>().ToList();
+        if (trans.Count == 0) return lines;
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        foreach (var tr in trans)
+        {
+            var list = new List<string> { $"Solver {tr.Solver}" };
+            try
+            {
+                using var nl = Check.ElaborateReadOnly(lib, tb, sourcePath);
+                var p = CircuitRF.Engine.Transient.TransientRunner.Resolve(tr, nl.ResolvedGlobals);
+                var plan = new CircuitRF.Engine.Transient.TransientEngine(nl).Plan(p);
+                if (plan.Problems.Count > 0)
+                    list.Add("WOULD BE REFUSED — " + string.Join(" ", plan.Problems));
+                else
+                {
+                    list.Add(string.Format(inv, "Step bound {0:G4} s ({1}): about {2:G3} steps over Stop = {3:G4} s at that bound",
+                                           plan.MaxStepS, plan.MaxStepReason, plan.EstimatedSteps, p.StopS));
+                    list.Add(plan.SlowestS is { } tau
+                        ? string.Format(inv, "Slowest time constant {0:G3} s ({1}): Stop is {2:G3} of them", tau, plan.SlowestWhat, p.StopS / tau)
+                        : "Slowest time constant: nothing in the circuit stores energy");
+                }
+            }
+            catch (CircuitRF.Engine.Transient.TransientRefusedException e) { list.Add("WOULD BE REFUSED — " + e.Message); }
+            catch (Exception) { /* reported by check; nothing to explain here */ }
+            lines[tr.Name] = list;
+        }
+        return lines;
     }
 
     /// <summary>
@@ -2241,6 +2281,7 @@ internal static class Explain
         LoadpullPursuitAnalysis  => "loadpull-pursuit",
         ParametricSweepAnalysis  => "parametric-sweep",
         OscillatorAnalysis       => "osc",
+        TransientAnalysis        => "tran",
         _                        => a.GetType().Name,
     };
 
@@ -2668,6 +2709,9 @@ internal static class Explain
 
                 // brief-pch-6: each Propagation Channel the analysis runs.
                 foreach (var line in a.Channels ?? []) Console.WriteLine($"      Channel {line}");
+
+                // brief-trn-1: a transient analysis's solver, step bound and memory.
+                foreach (var line in a.Transient ?? []) Console.WriteLine($"      {line}");
 
                 // NZ-9: an oscillator's start-up search, before any harmonic balance runs.
                 if (a.Oscillator is { } os)

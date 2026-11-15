@@ -1,0 +1,75 @@
+<!-- Transient analysis body (type=tran, brief-trn-1). Stop, Step, Method, Initial state and Solver on the card; the
+     step control's limits, tolerances and initial conditions under More. The solver note keeps its row whether shown or
+     not, so nothing below it moves when the choice changes. Layout and type sizes follow the Envelope card. -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             x:Class="CircuitRF.Ui.Views.Analyses.TranBodyView"
+             x:DataType="vm:TranBodyViewModel">
+    <UserControl.Styles>
+        <Style Selector="TextBlock.lbl">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+        </Style>
+        <Style Selector="TextBox">
+            <Setter Property="FontSize" Value="11"/>
+        </Style>
+    </UserControl.Styles>
+    <StackPanel Spacing="6">
+        <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6">
+            <TextBlock Classes="lbl" Text="Stop time (s)"/>
+            <TextBox Grid.Column="1" Text="{Binding Stop}" ToolTip.Tip="End time of the run, in seconds (5e-6, or an expression)"/>
+            <TextBlock Grid.Column="2" Classes="lbl" Text="Step (s)" Margin="12,0,8,0"/>
+            <TextBox Grid.Column="3" Text="{Binding Step}" Watermark="Stop/1000"
+                     ToolTip.Tip="Output grid: every result is reported at this spacing. Also the largest step unless Max step says otherwise."/>
+
+            <TextBlock Grid.Row="1" Classes="lbl" Text="Method"/>
+            <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{x:Static vm:TranBodyViewModel.MethodOptions}" SelectedItem="{Binding Method}"
+                      FontSize="11" HorizontalAlignment="Stretch"/>
+            <TextBlock Grid.Row="1" Grid.Column="2" Classes="lbl" Text="Initial state" Margin="12,0,8,0"/>
+            <ComboBox Grid.Row="1" Grid.Column="3" ItemsSource="{x:Static vm:TranBodyViewModel.InitialOptions}" SelectedItem="{Binding InitialState}"
+                      FontSize="11" HorizontalAlignment="Stretch"/>
+            <TextBlock Grid.Row="2" Grid.ColumnSpan="4" Text="{Binding MethodDescription}" FontSize="10" TextWrapping="Wrap"
+                       Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            <TextBlock Grid.Row="3" Grid.ColumnSpan="4" Text="{Binding InitialDescription}" FontSize="10" TextWrapping="Wrap"
+                       Foreground="{DynamicResource SystemBaseMediumColor}"/>
+
+            <TextBlock Grid.Row="4" Classes="lbl" Text="Solver"/>
+            <ComboBox Grid.Row="4" Grid.Column="1" SelectedIndex="{Binding SolverIndex}" FontSize="11" HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="native" ToolTip.Tip="circuitRF's own transient engine"/>
+                <ComboBoxItem Content="ngspice" IsEnabled="{Binding NgspiceAvailable}"
+                              ToolTip.Tip="{Binding NgspiceTooltip}" ToolTip.ShowOnDisabled="True"/>
+            </ComboBox>
+            <TextBlock Grid.Row="5" Grid.ColumnSpan="4" Text="{Binding SolverNote}" FontSize="10" TextWrapping="Wrap" MinHeight="14"
+                       Foreground="{DynamicResource SystemBaseMediumColor}"/>
+        </Grid>
+
+        <Expander Header="More" IsExpanded="{Binding MoreExpanded, Mode=TwoWay}" FontSize="11" HorizontalAlignment="Stretch">
+            <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="6" Margin="0,8,0,0">
+                <TextBlock Classes="lbl" Text="Start (s)"/>
+                <TextBox Grid.Column="1" Text="{Binding Start}" ToolTip.Tip="First reported time; the run still starts at 0"/>
+                <TextBlock Grid.Column="2" Classes="lbl" Text="Max step (s)" Margin="12,0,8,0"/>
+                <TextBox Grid.Column="3" Text="{Binding MaxStep}"
+                         ToolTip.Tip="Largest step, or auto: the smaller of Step and 1/20 of the period of the highest source frequency"/>
+
+                <TextBlock Grid.Row="1" Classes="lbl" Text="RelTol"/>
+                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding RelTol}" ToolTip.Tip="Relative tolerance on each step's local error and on Newton's updates"/>
+                <TextBlock Grid.Row="1" Grid.Column="2" Classes="lbl" Text="Max steps" Margin="12,0,8,0"/>
+                <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding MaxSteps}" ToolTip.Tip="The run is refused before it starts when Stop / Max step exceeds this"/>
+
+                <TextBlock Grid.Row="2" Classes="lbl" Text="VTol (V)"/>
+                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding VTol}" ToolTip.Tip="Absolute voltage tolerance"/>
+                <TextBlock Grid.Row="2" Grid.Column="2" Classes="lbl" Text="ITol (A)" Margin="12,0,8,0"/>
+                <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding ITol}" ToolTip.Tip="Absolute current tolerance"/>
+
+                <TextBlock Grid.Row="3" Classes="lbl" Text="IC"/>
+                <TextBox Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding Ic}" Watermark="out=0, bias=1.2"
+                         ToolTip.Tip="Net voltages held during the operating-point solve and released at t = 0 (with Initial state zero, their starting values)"/>
+
+                <CheckBox Grid.Row="4" Grid.ColumnSpan="4" FontSize="11" Content="Keep the engine's own steps" IsChecked="{Binding SaveSteps}"
+                          ToolTip.Tip="Adds Steps.time and Steps.V: the accepted steps as taken, beside the uniform output grid"/>
+            </Grid>
+        </Expander>
+    </StackPanel>
+</UserControl>

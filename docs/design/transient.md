@@ -1,6 +1,6 @@
 # circuitRF — Transient analysis, the ngspice solver, transient-assisted harmonic balance
 
-**Status:** design; nothing built · **Series:** [`brief-trn-0-overview.md`](../briefs/brief-trn-0-overview.md) ·
+**Status:** TRN-1 built (§3, §4, §5.1, §5.2: `src/Engine/Transient`, the `tran` verb and card; SRLC and `L` with `C=` wait for TRN-4 with the lines); the rest is design · **Series:** [`brief-trn-0-overview.md`](../briefs/brief-trn-0-overview.md) ·
 **Builds on:** the envelope engine (`src/Engine/Envelope`: its stepping, `EnvelopeSnpFit`, `EnvelopeLineDelay`), the
 nonlinear DC engine ([`nonlinear-dc.md`](nonlinear-dc.md)), harmonic balance ([`harmonic-balance.md`](harmonic-balance.md)),
 the SPICE-dialect reader ([`spice-models.md`](spice-models.md)), the solver discovery and install machinery

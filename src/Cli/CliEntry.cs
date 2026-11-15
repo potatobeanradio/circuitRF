@@ -247,6 +247,9 @@ return JsonRun.Finish(exit);
     // brief-de-4: a bench's TRL calibrations — two fixture files from three measured standards. It owns no calibration:
     // the run is CircuitEvaluation's, which dispatches TrlRun as Simulate does.
     "trl"    => CircuitRF.Cli.Trl.Run,
+    // brief-trn-1: a bench's transient analyses. It owns no simulation: the run is CircuitEvaluation's, which dispatches the
+    // transient engine as Simulate does.
+    "tran" or "transient" => CircuitRF.Cli.Tran.Run,
     // brief NZ-9: a design's oscillator analysis — harmonic balance with the fundamental an unknown. It owns no solve: the
     // run is CircuitEvaluation's, which dispatches the oscillator engine as Simulate does.
     "osc"    => CircuitRF.Cli.Osc.Run,
@@ -3062,6 +3065,7 @@ static int PrintHelp()
     Console.WriteLine("  lpp    <file.cnl|.csch>   (loadpull pursuit: searches for MXP / MXE)");
     Console.WriteLine("  em     <file.cem>   (electromagnetic extraction of the layout it names)");
     Console.WriteLine("  trl    <file.cnl|.csch> [--fixture-a p] [--fixture-b p]  (TRL: two fixture files from Thru, Reflect, Line)");
+    Console.WriteLine("  tran   <file.cnl|.csch> [--stop t] [--step t] [--method trap|gear2]  (transient; runs the sweep if one wraps it)");
     Console.WriteLine("  osc    <file.cnl|.csch> [--fguess f] [--aguess a]  (oscillator: Fosc, Aosc and the HB result at the oscillation)");
     Console.WriteLine("  opt    <file.cnl|.csch>   (optimize: the tune, goal and optimize lines; exit 3 = a goal unmet)");
     Console.WriteLine("  yield  mc|estimate|trial <file.cnl|.csch>   (Monte Carlo / yield; exit 3 = below --target)");

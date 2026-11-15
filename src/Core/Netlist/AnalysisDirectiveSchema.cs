@@ -155,6 +155,28 @@ public static partial class AnalysisDirectiveSchema
             new("Training",  Default: "64",      Summary: "Equalizer=pilot on a single carrier: the symbols the FIR is trained on; EVM and errors are read on the rest."),
         ]),
 
+        // brief-trn-1 — the transient analysis (docs/design/transient.md §3)
+        new("tran", ["transient"],
+        [
+            new("Stop",         Required: true,  Summary: "End time (s)."),
+            new("Step",         Default: "Stop/1000", Summary: "Output grid spacing (s): every result is reported on a uniform grid from Start to Stop at this step. Also the largest step unless MaxStep says otherwise."),
+            new("Start",        Default: "0",    Summary: "First reported time (s); the run still starts at 0."),
+            new("MaxStep",      Default: "auto", Summary: "Largest accepted step (s), or auto: the smaller of Step and 1/(20 f) for the highest frequency any source carries."),
+            new("Method",       Default: "trap", Summary: "trap (trapezoidal: second order, no numerical damping) or gear2 (second-order backward difference: damps ringing). Either takes two backward-Euler steps at the start and after every source corner."),
+            new("RelTol",       Default: "1e-3", Summary: "Relative tolerance on Newton updates and on each step's local error estimate."),
+            new("VTol",         Default: "1e-6", Summary: "Absolute voltage tolerance (V)."),
+            new("ITol",         Default: "1e-12",Summary: "Absolute current tolerance (A)."),
+            new("InitialState", Default: "op",   Summary: "op: start from the DC operating point, with every IC net held during the solve and released at t = 0. zero: every unknown starts at 0 except the IC nets, with no DC solve."),
+            new("IC",           Default: "",     Summary: "Net voltages held during the operating-point solve, comma-separated: IC=\"out=0, bias=1.2\"."),
+            new("Solver",       Default: "native", Summary: "native (circuitRF's transient engine) or ngspice."),
+            new("SaveSteps",    Default: "no",   Summary: "yes adds the engine's own accepted steps (Steps.time, Steps.V) beside the output grid."),
+            new("MaxSteps",     Default: CircuitRF.Core.Design.TransientAnalysis.MaxStepsDefault, Summary: "A refusal before the run when Stop/MaxStep exceeds it."),
+            new("SpiceOptions", Default: "",     Summary: "ngspice only: written verbatim as one .options line."),
+            new("SpiceLines",   Default: "refuse", Summary: "ngspice only: rlgc writes lines as ngspice's lossy lines fitted at SpiceLineFreq, each with its error reported."),
+            new("SpiceLineFreq",Default: "auto", Summary: "ngspice only: the frequency rlgc lines match circuitRF's model at; auto is the highest source frequency."),
+            new("SpiceFit",     Default: "no",   Summary: "ngspice only: yes writes frequency-defined elements as subcircuits of circuitRF's rational fit, labelled."),
+        ]),
+
         new("hb", ["harmonic_balance", "harmonicbalance"],
         [
             new("Tone",                       Summary: "Fundamental frequency expression. Single-tone spelling; a multi-tone run writes Tone[1], Tone[2], …"),

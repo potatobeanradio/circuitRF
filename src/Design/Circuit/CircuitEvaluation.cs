@@ -679,6 +679,10 @@ public static class CircuitEvaluation
                         + " us, x" + CircuitRF.Engine.Envelope.EnvelopeRunner.Oversampling(plan, nl) + " oversampling, segments " + segs, 1, false);
             }
 
+            case TransientAnalysis tra:
+                return (CircuitRF.Engine.Transient.TransientRunner.Describe(
+                            CircuitRF.Engine.Transient.TransientRunner.Resolve(tra, nl.ResolvedGlobals)), 1, false);
+
             case HarmonicBalanceAnalysis hba:
             {
                 var p     = HbEngine.Resolve(hba, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
@@ -857,6 +861,15 @@ public static class CircuitEvaluation
                 }
                 return CircuitRF.Engine.Envelope.EnvelopeRunner.Run(plan, Elab, AnalysisSettings.Default, control,
                                                                     n => nl.AddWarningOnce("env-note:" + n, n));
+            }
+
+            // brief-trn-1 — the native transient analysis (docs/design/transient.md)
+            case TransientAnalysis tra:
+            {
+                var p = CircuitRF.Engine.Transient.TransientRunner.Resolve(tra, nl.ResolvedGlobals);
+                var ds = CircuitRF.Engine.Transient.TransientRunner.Run(p, nl, AnalysisSettings.Default, control);
+                converged = true;
+                return ds;
             }
 
             case HarmonicBalanceAnalysis hba:

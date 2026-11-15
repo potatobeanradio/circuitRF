@@ -50,6 +50,14 @@ public sealed class AnalysisClonePropertyParityTests
             FixtureA = "fix/a.s2p", FixtureB = "fix/b.s2p",
         },
 
+        [typeof(TransientAnalysis)] = new TransientAnalysis("TR1")
+        {
+            Enabled = false, StopExpr = "tstop", StepExpr = "1n", StartExpr = "2n", MaxStepExpr = "5n", Method = TransientAnalysis.MethodGear2,
+            RelTolExpr = "1e-4", VTolExpr = "1e-7", ITolExpr = "1e-13", InitialState = TransientAnalysis.InitialZero, IcExpr = "out=0, b=1.2",
+            Solver = TransientAnalysis.SolverNgspice, SaveSteps = "yes", MaxStepsExpr = "1000", SpiceOptions = "gmin=1e-15",
+            SpiceLines = "rlgc", SpiceLineFreq = "2e9", SpiceFit = "yes",
+        },
+
         [typeof(OscillatorAnalysis)] = new OscillatorAnalysis("OSC1")
         {
             Enabled = false, Probe = "X1.OP", FguessExpr = "fv*1.1", FstartExpr = "0.8", FstopExpr = "1.4", Unit = "MHz",

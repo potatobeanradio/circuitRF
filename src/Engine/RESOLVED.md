@@ -4872,3 +4872,73 @@ off the fast path reports NaN and says why. Multi-tone HB does not report shares
 A one-port block on e1 receives what a 1 × 1 array on the same record does to 1.0e-12 (the (I − S)⁻¹ path), and
 transmits identically. Envelope runs refuse a Field Data end.
 
+
+## brief-trn-1 — the transient engine on lumped and nonlinear models (2026-11-15)
+
+`src/Engine/Transient/` (`TransientEngine`, `TransientElements`, `TransientRunner`, `TransientTypes`); design in
+`docs/design/transient.md` §4. Gates: `tests/Engine.Tests/Transient/TransientEngineTests.cs`, `TransientElementsTests.cs`,
+`tests/Ui.Tests/Transient/TransientCliTests.cs`.
+
+- **The two-stamp recovery is one class now, `AffineStamp`.** It was written out three times (the envelope's single-fundamental
+  products, its multi-fundamental lattice in `EnvelopeEngineMt`, and `EnvelopeMemory`'s pole estimate); all three call it, with the
+  same arithmetic in the same order, and the 126 envelope tests pass unchanged. The transient engine takes its baseband pair, real.
+- **Which elements run is measured, not listed.** `TransientElements.AffineError` stamps each linear element alone at 1 and 2 Hz,
+  recovers G and C, and compares G + jωC with the element's true stamp from 1 kHz to 100 GHz by the envelope's terminated measure
+  (`EnvelopeTangentCheck.TerminatedDiff`, made internal for it). Lumped models come out at round-off. **SRLC, and an `L` with `C=`,
+  are refused**: a capacitor in series on one inductor branch stamps 1/(jωC) on that branch's own row, which no real G and C
+  reproduce; it needs a state of its own, which TRN-4's realization gives. A Port or Term is measured through
+  `PortModel.TerminationAdmittance`, as the linear partition stamps it.
+- **TLIN prints its own 1 Hz degeneracy line to stderr** (`TLineModel` writes `Console.Error` directly rather than queueing through
+  `IReportsWarnings`), so the probe at 1 Hz makes it appear beside the transient's refusal of the line. The envelope's own probes
+  trigger the same line. Models that queue their warnings have the probe's drained and dropped.
+- **Sources need no per-model work either.** b(t) is Re Σ_f B_f e^(j2πft) over the frequency set of every tone source (0 included),
+  each B_f the linear partition's own right-hand side at that frequency (`BuildSourceRhs`). A tone is harmonic balance's phasor, so a
+  V_1Tone with Phase=0 starts at its peak and the operating point is solved there (the RC test checks 1.5·10/11 V, not 0.5·10/11).
+- **The DC engine has no limiter or damping to call** (it takes full Newton steps, λ = 1, backing off only on a model's refusal), so
+  R-trn1-6's "limiting and damping are NonlinearDcEngine's" has nothing to reuse. The transient's defences are the step itself: a
+  failed Newton halves h, and the opening backward-Euler steps after every corner. None of the gate circuits needed more.
+- **LTE tolerance is relative to each row's running peak, not its instantaneous charge.** On a 200-section lossless LC ladder the deep
+  sections' inductor rows have tiny currents and an absolute flux tolerance of L·ITol ≈ 1e-22 Wb at 0.1 nH, which round-off-level
+  ripple exceeds; the step was pinned at a few hundred femtoseconds. Against max |Φ_i| over the accepted steps, a zero start of that
+  amplifier went from 60,828 to 14,128 steps. The absolute term is kept.
+- **A step so small that t + h rounds back to t would be accepted forever**: the floor is max(MaxStep/2^40, 1e-13·Stop).
+- **Newton's last evaluation is reused** for the step's charges and error estimate (each device keeps its last result and port
+  voltages), so an accepted step costs (Newton iterations) evaluations rather than two more; `Tran.DeviceEvaluations` counts them.
+- **gear2's damping is ~1e-3 of a damped ring's own decay** at the steps the default tolerance picks, below what a peak fit resolves,
+  so R-trn1 gate 2's second half is an undamped LC: trap holds 0.9999 of the amplitude over 20 cycles, gear2 0.900 at the default
+  tolerance — about 0.5 % a cycle, which is what Method=gear2 costs an oscillation at RelTol 1e-3 (0.9855 before the tolerance was made
+  relative to each row's peak, when the steps were smaller).
+- **Both Newton paths give identical waveforms (1.2e-13 V on the rectifier)** because they converge to the same tolerance on the same
+  steps; the brief's "1e-9 relative" holds with margin. The full path factors once per Newton iteration (42,498 on the rectifier against
+  26 for the interface path).
+
+### The interface/full threshold (R-trn1-6)
+
+Measured with a scratch harness (each circuit run on both paths, same steps; Debug build, one core), after `J = I + Zp·D` was
+made to use D's sparsity (it holds entries only between a device's own ports — a plain triple loop made the ring of 101 take 16.6 s
+on the interface path):
+
+| Circuit | Interface ports | Steps | Interface path | Full path |
+|---|---|---|---|---|
+| One Curtice FET, 2 × 200-section LC ladders (≈1,200 unknowns) | 2 | 3,649 | 0.23 s | 1.35 s |
+| Bridge rectifier, 4 diodes | 4 | 4,006 | 0.03 s | 0.04 s |
+| Ring of 15 CMOS inverters (MOS level 1) | 16 | 2,041 | 0.22 s | 0.23 s |
+| Ring of 51 | 52 | 2,025 | 0.80 s | 0.56 s |
+| Ring of 101 | 102 | 2,023 | 2.14 s | 1.04 s |
+
+`TransientEngine.InterfaceThreshold` is 32: the interface path wins wherever a few devices sit in a large linear network (the RF
+case), the two are even near 16 ports, and above ~32 the dense solve (N³/3 per Newton iteration) loses to one sparse factorization of
+the whole Jacobian. The full path factors once per Newton iteration; its symbolic analysis is not yet reused between iterations, which
+is the first thing to try if the threshold matters.
+
+### A worker-hosted device (R-trn1-13)
+
+`tools/DeviceWorkerExample`'s square-law FET in a common-source stage (a 1 MHz tone on the gate, 20 µs, 2,006 accepted steps), against
+MOS level 1 with the same law in the same circuit: **2.99 evaluations per accepted step** for both (Newton's 2.46 per step plus the
+operating point and the opening steps; the charge and error estimate reuse Newton's last evaluation), **36 µs per evaluation through the
+worker against 1.5 µs built in** — 0.22 s against 0.01 s for the run. Each evaluation is one round trip: transient cannot batch over time
+as harmonic balance batches over samples. Batching one Newton iteration's devices into one round trip is the remedy if a design with
+many worker devices needs it, and it is the worker protocol's to add (note §13.6).
+
+The example worker models saturation only (no triode region): a drain resistor large enough to push it below 0 V has no solution at
+all, which the transient reports as its starting state not converging, naming the drain net. That is the model, not the engine.

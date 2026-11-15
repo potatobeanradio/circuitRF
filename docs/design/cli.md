@@ -5194,3 +5194,23 @@ parsing around `HznCli` and `HznEmergeRun` in `src/Design/Interchange/Hzn`; none
   `<project>.hznresults`). The run note lists every Hertzon setting circuitRF does not use. Another `--solver` is a refusal (`hertzon` is section 43), and
   `--dry-run`, `--bands`, `--component-ports` and `--reference` are refusals naming the option. The window's Simulate on an opened design is the same run.
 - Gates: `tests/Ui.Tests/Hzn/HznCliTests.cs`, `HznEmergeRunTests.cs`, `HznIntegrationTests.cs`.
+
+## 45. `tran` — the transient analysis (brief-trn-1)
+
+`circuitrf tran <file.cnl|.csch> [-a name]... [--set var=expr]... [--stop t] [--step t] [--method trap|gear2] [--solver native|ngspice]
+[--all] [-o out.{mat,npy,txt}]` runs a bench's `type=tran` analyses (`docs/design/transient.md`). It owns no simulation: the run is
+`CircuitEvaluation.Execute`, which dispatches `TransientRunner` exactly as Simulate does, and a named analysis inside a `parametric_sweep`
+is promoted to the sweep by the plan's own rule. `--stop`, `--step`, `--method` and `--solver` REPLACE the directive (§5); `--set` overrides
+a global before elaboration.
+
+- **stdout** is a summary per recorded net and IProbe (the value at Stop, the least and the most) and the run's counters (`Tran.*`); the
+  waveforms are in `-o`'s file and, under `--json`, inline up to `JsonRun.InlineCubeLimit` values unless `--all`.
+- **Refusals** are the engine's, by name: an element a transient cannot step yet (a line, an S-parameter block, a series RLC), one refused
+  by what it is (a MOD_Source names the envelope analysis), `Solver=ngspice` until TRN-7, a run whose Stop/MaxStep exceeds MaxSteps.
+- **Exit codes:** 0 ran · 1 refused or failed · 130 cancelled.
+- `explain --analysis` adds the solver, the step bound and its reason, the steps that bound implies over Stop, and the circuit's slowest time
+  constant against Stop (`TransientEngine.Plan`: the run's own setup with nothing solved, so a refusal there is the run's word for word).
+- MCP: `run analysis=tran` (`ToolCatalog`'s `tran` sub-verb, the same options).
+
+Gate: `tests/Ui.Tests/Transient/TransientCliTests.cs` (the verb as a process exports the same bytes as the in-process run; promotion inside
+a sweep; the directive through `.cnl` and `.csch`; the ngspice refusal).

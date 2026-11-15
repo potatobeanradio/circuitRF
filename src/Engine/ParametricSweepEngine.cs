@@ -674,6 +674,11 @@ public static class ParametricSweepEngine
                 return OscEngine.Run(netlist, tb, op, settings, lib, baseDirectory).Data;
             }
 
+            // brief-trn-1: the transient run at this point. The output grid is the directive's, so every point stacks; a swept
+            // Stop or Step changes the grid's length and is refused by the stacking as any shape change is.
+            case TransientAnalysis tra:
+                return Transient.TransientRunner.Run(Transient.TransientRunner.Resolve(tra, netlist.ResolvedGlobals), netlist, settings, control);
+
             case SParameterAnalysis spa:
                 return RunSParam(spa, lib, tb, netlist, settings, baseDirectory, control);
 
