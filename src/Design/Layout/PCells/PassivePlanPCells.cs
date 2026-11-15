@@ -6,7 +6,7 @@ namespace CircuitRF.Design.Layout.PCells;
 /// <summary>
 /// The planned passives' artwork (docs/design/rf-passives.md). A generator builds its part's plan in Core —
 /// the plan its model stamps — and <see cref="Draw"/> draws every section through the EXISTING part's own
-/// generator (<see cref="MTeePCell"/>, <see cref="MCurvePCell"/>), turned and moved to the section's pose. The
+/// generator (<see cref="MTeePCell"/>, <see cref="MCurvePCell"/>, <see cref="MlinPCell"/>), turned and moved to the section's pose. The
 /// copper is therefore the copper those parts draw on their own, piece for piece, and the pins are those
 /// parts' own pins wherever a section ends on one of the passive's pins — never a second rounding of where
 /// they should be.
@@ -34,6 +34,29 @@ public static class PassivePlanPCells
             return new PCellResult([], [], [ex.Message]);
         }
         return Draw(design.Plan, technology, layerSelection);
+    }
+
+    /// <summary>The 3 dB branch-line hybrid (MBLC): <see cref="BranchLinePlan"/>'s one or two sections.</summary>
+    public const string BranchLineId = ComponentModelFactory.BranchLineTypeName;
+
+    public static PCellResult GenerateBranchLine(
+        IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
+        => DrawOrRefuse(() => BranchLinePlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
+            parameters.Real("N", 1.0), SubstrateOf(technology, layerSelection)).Plan, technology, layerSelection);
+
+    /// <summary>The rat-race hybrid (MRRC): <see cref="RatRacePlan"/>'s ring.</summary>
+    public const string RatRaceId = ComponentModelFactory.RatRaceTypeName;
+
+    public static PCellResult GenerateRatRace(
+        IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
+        => DrawOrRefuse(() => RatRacePlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
+            SubstrateOf(technology, layerSelection)).Plan, technology, layerSelection);
+
+    /// <summary>The plan drawn, or its refusal as the cell's one diagnostic.</summary>
+    private static PCellResult DrawOrRefuse(Func<PassivePlan> plan, Technology? technology, PCellLayerSelection layerSelection)
+    {
+        try { return Draw(plan(), technology, layerSelection); }
+        catch (ParameterRefusalException ex) { return new PCellResult([], [], [ex.Message]); }
     }
 
     /// <summary>The substrate the model is given for the same part: the stackup's, or the factory's fallbacks.</summary>
@@ -67,6 +90,10 @@ public static class PassivePlanPCells
                 PlanCurve c => MCurvePCell.Generate(new Dictionary<string, PCellValue>
                 {
                     ["W"] = c.W, ["Angle"] = c.AngleDeg, ["Radius"] = c.Radius,
+                }, technology, layerSelection),
+                PlanLine l => MlinPCell.Generate(new Dictionary<string, PCellValue>
+                {
+                    ["W"] = l.W, ["L"] = l.L,
                 }, technology, layerSelection),
                 _ => throw new NotSupportedException(section.GetType().Name),
             };

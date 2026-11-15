@@ -703,6 +703,14 @@ public enum SymbolKind
     /// 2 and 3 the outputs, R2 and R3 the ends the 2·Z0 isolation resistor goes across — an ordinary resistor, not part of
     /// the part. Appended so no existing kind's ordinal moves.</summary>
     Mwpd,
+    /// <summary>3 dB branch-line (90°) hybrid on microstrip (engine "MBLC", docs/design/rf-passives.md): specs Z0, F and
+    /// N, one or two sections; the arms and junctions are derived (BranchLinePlan). Four pins: 1 and 2 one through line,
+    /// 4 and 3 the other; driven at 1, 2 is through, 3 coupled and 4 isolated.</summary>
+    Mblc,
+    /// <summary>Rat-race (180°) hybrid on microstrip (engine "MRRC", docs/design/rf-passives.md): specs Z0 and F; the ring
+    /// and junctions are derived (RatRacePlan). Four pins: 1 the sum port, 4 the difference port, 2 and 3 the
+    /// outputs.</summary>
+    Mrrc,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

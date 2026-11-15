@@ -167,6 +167,8 @@ public static class DeviceTypes
             ["TESTPAD"] = SymbolKind.TestPad,
             ["GSGPAD"] = SymbolKind.GsgPad,
             ["MWPD"]   = SymbolKind.Mwpd,
+            ["MBLC"]   = SymbolKind.Mblc,
+            ["MRRC"]   = SymbolKind.Mrrc,
             // The MMIC passives (AA-1): each generator is keyed by its component's own token.
             ["MIMCAP"]    = SymbolKind.MimCap,
             ["SPIRAL"]    = SymbolKind.Spiral,
@@ -296,7 +298,7 @@ public static class DeviceTypes
         // cross is its terminal COUNT, which the comparison already has, and a line drawn on a layer
         // is the same line whichever model the schematic chose for it (AS-11 swaps between them).
         SymbolKind.Mlin or SymbolKind.MBend or SymbolKind.MCurve or SymbolKind.MMiter or SymbolKind.MGap or SymbolKind.MTee
-            or SymbolKind.MCross or SymbolKind.Mtaper or SymbolKind.Mklopf or SymbolKind.GsgPad or SymbolKind.Mwpd
+            or SymbolKind.MCross or SymbolKind.Mtaper or SymbolKind.Mklopf or SymbolKind.GsgPad or SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
             or SymbolKind.Tline or SymbolKind.Cpwg or SymbolKind.Slin
             or SymbolKind.CLine or SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine
             => DeviceKind.TransmissionLine,

@@ -113,6 +113,8 @@ public static class BuiltInSymbols
     private static readonly Symbol _testPad       = BuildTestPad();
     private static readonly Symbol _gsgPad        = BuildGsgPad();
     private static readonly Symbol _mwpd          = BuildMwpd();
+    private static readonly Symbol _mblc          = BuildMblc();
+    private static readonly Symbol _mrrc          = BuildMrrc();
     private static readonly Symbol _mimCap        = BuildMimCap();
     private static readonly Symbol _spiral        = BuildSpiral();
     private static readonly Symbol _octSpiral     = BuildOctSpiral();
@@ -259,6 +261,8 @@ public static class BuiltInSymbols
             case SymbolKind.TestPad:    return _testPad;
             case SymbolKind.GsgPad:     return _gsgPad;
             case SymbolKind.Mwpd:       return _mwpd;
+            case SymbolKind.Mblc:       return _mblc;
+            case SymbolKind.Mrrc:       return _mrrc;
             case SymbolKind.MimCap:     return _mimCap;
             case SymbolKind.Spiral:     return _spiral;
             case SymbolKind.OctSpiral:  return _octSpiral;
@@ -2666,6 +2670,48 @@ public static class BuiltInSymbols
         Txt("λ/4", 80, -240, fontSize: 11, vAlign: SymbolTextVAlign.Bottom),
         Txt("λ/4", 80,  240, fontSize: 11, vAlign: SymbolTextVAlign.Top),
     ], SymbolKind.Mwpd);
+
+    // MBLC — the branch-line coupler as it is drawn on the board: two through lines joined by two shunt arms, a junction
+    // (dot) at each corner and the four feeds leaving in line with the through lines; numbered as the hybrids are.
+    private static Symbol BuildMblc() => Sym([
+        L(-400, -200,  400, -200),               // feed 1, the 1-2 through line, feed 2
+        L(-400,  200,  400,  200),               // feed 4, the 4-3 through line, feed 3
+        L(-200, -200, -200,  200),               // shunt arms
+        L( 200, -200,  200,  200),
+        Circ(-200, -200, 10, filled: true),
+        Circ( 200, -200, 10, filled: true),
+        Circ(-200,  200, 10, filled: true),
+        Circ( 200,  200, 10, filled: true),
+        Txt("λ/4", 0, -230, fontSize: MixerPortFontSize, vAlign: SymbolTextVAlign.Bottom),
+        Txt("90°", 0, 0, fontSize: 44),
+        Txt("1", -300, -230, fontSize: MixerPortFontSize, vAlign: SymbolTextVAlign.Bottom),
+        Txt("2",  300, -230, fontSize: MixerPortFontSize, vAlign: SymbolTextVAlign.Bottom),
+        Txt("3",  300,  230, fontSize: MixerPortFontSize, vAlign: SymbolTextVAlign.Top),
+        Txt("4", -300,  230, fontSize: MixerPortFontSize, vAlign: SymbolTextVAlign.Top),
+    ], SymbolKind.Mblc);
+
+    // MRRC — the rat-race ring: Σ (1) at the top and Δ (4) at the bottom, the outputs 2 and 3 either side, and each
+    // quarter of the ring marked with the spacing it has on the board (three λ/4 and the 3λ/4 that closes it).
+    private static Symbol BuildMrrc() => Sym([
+        Circ(0, 0, 200),
+        L(   0, -400,    0, -200),
+        L(-400,    0, -200,    0),
+        L( 200,    0,  400,    0),
+        L(   0,  200,    0,  400),
+        Circ(   0, -200, 10, filled: true),
+        Circ(-200,    0, 10, filled: true),
+        Circ( 200,    0, 10, filled: true),
+        Circ(   0,  200, 10, filled: true),
+        Txt("180°", 0, 0, fontSize: 52),
+        Txt("1 Σ", 30, -320, fontSize: 40, align: SymbolTextAlign.Left),
+        Txt("4 Δ", 30,  320, fontSize: 40, align: SymbolTextAlign.Left),
+        Txt("2", -330, -40, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
+        Txt("3",  330, -40, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
+        Txt("λ/4",  -200, -200, fontSize: 40, align: SymbolTextAlign.Right, vAlign: SymbolTextVAlign.Bottom),
+        Txt("λ/4",   200, -200, fontSize: 40, align: SymbolTextAlign.Left, vAlign: SymbolTextVAlign.Bottom),
+        Txt("λ/4",   200,  200, fontSize: 40, align: SymbolTextAlign.Left, vAlign: SymbolTextVAlign.Top),
+        Txt("3λ/4", -200,  200, fontSize: 40, align: SymbolTextAlign.Right, vAlign: SymbolTextVAlign.Top),
+    ], SymbolKind.Mrrc);
 
     private static Symbol BuildTestPad()
     {

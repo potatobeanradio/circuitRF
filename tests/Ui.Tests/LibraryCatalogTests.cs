@@ -238,7 +238,7 @@ public class LibraryCatalogTests
     }
 
     [Fact]
-    public void ByCategory_Microstrip_ContainsAllSixteenBuiltIns()
+    public void ByCategory_Microstrip_ContainsAllEighteenBuiltIns()
     {
         // brief-L5a-pcell-contract-and-microstrip.md: MLIN/MBend/MTee/MCross are SymbolKind-
         // registered under the Microstrip category (previously reserved, unpopulated).
@@ -248,7 +248,8 @@ public class LibraryCatalogTests
         // pairs (edge-coupled and broadside). BCLine, the broadside STRIPLINE pair, is a transmission
         // line and not here. brief-dfr26-7 adds TESTPAD, a via ending on a round test-point pad, and the
         // review series GSGPAD, a ground-signal-ground probe pad on an MLIN. brief-sdl-9 adds MGAP, the
-        // end-to-end gap between two lines. The RF passives add MWPD, the Wilkinson divider.
+        // end-to-end gap between two lines. The RF passives add MWPD, the Wilkinson divider, and the
+        // hybrids MBLC and MRRC.
         var kinds = LibraryCatalog.ByCategory(ComponentCategory.Microstrip).Select(i => i.Kind).ToList();
         Assert.Contains(SymbolKind.Mlin, kinds);
         Assert.Contains(SymbolKind.MBend, kinds);
@@ -266,8 +267,10 @@ public class LibraryCatalogTests
         Assert.Contains(SymbolKind.GsgPad, kinds);
         Assert.Contains(SymbolKind.MGap, kinds);
         Assert.Contains(SymbolKind.Mwpd, kinds);
+        Assert.Contains(SymbolKind.Mblc, kinds);
+        Assert.Contains(SymbolKind.Mrrc, kinds);
         Assert.DoesNotContain(SymbolKind.BCLine, kinds);
-        Assert.Equal(16, kinds.Count);
+        Assert.Equal(18, kinds.Count);
     }
 
     [Fact]

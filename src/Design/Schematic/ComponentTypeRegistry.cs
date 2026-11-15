@@ -837,6 +837,14 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MWPD", "Wilkinson", "Wilkinson divider", "power divider", "power splitter", "splitter",
                           "combiner", "divider", "3 dB", "in-phase", "isolation resistor", "quarter wave", "ring"]),
+        [SymbolKind.Mblc]         = new("MBLC", "BLC",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MBLC", "branch-line", "branch line", "branchline", "branch-line coupler", "quadrature hybrid",
+                          "90 degree hybrid", "hybrid", "coupler", "3 dB", "quadrature", "quarter wave"]),
+        [SymbolKind.Mrrc]         = new("MRRC", "RRC",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MRRC", "rat-race", "rat race", "ratrace", "ring hybrid", "hybrid ring", "180 degree hybrid",
+                          "hybrid", "coupler", "sum", "difference", "magic tee", "3 dB", "ring"]),
         // The two vias (brief-via-component.md). Microstrip, because that is where they are used: a
         // line changing layers, and the return of a shunt part on a board. Not transmission lines.
         [SymbolKind.Via]          = new("VIA", "VIA",
@@ -1095,6 +1103,15 @@ public static class ComponentTypeRegistry
           + "are the arms' ends beside outputs 2 and 3, the gap the isolation resistor goes across: put a resistor of "
           + "2·Z0 on R2-R3.",
 
+        SymbolKind.Mblc =>
+            "Not interchangeable: 1 and 2 are the ends of one through line, 4 and 3 of the other. Driven at 1, 2 is the "
+          + "through port, 3 the coupled port (90° behind 2) and 4 the isolated port; the coupler is symmetric, so any "
+          + "pin may be the input with its own three roles.",
+
+        SymbolKind.Mrrc =>
+            "Not interchangeable: 1 is the sum (Σ) port and 4 the difference (Δ) port; 2 and 3 are the outputs. Driven at "
+          + "1, 2 and 3 are in phase and 4 is isolated; driven at 4, 2 and 3 are 180° apart and 1 is isolated.",
+
         SymbolKind.GsgPad =>
             "Not interchangeable: terminal 1 is where the probe's signal tip lands, the middle of the signal pad, "
           + "and terminal 2 the far end of the line. Put the measurement port on terminal 1.",
@@ -1286,6 +1303,8 @@ public static class ComponentTypeRegistry
         SymbolKind.TestPad       => "TESTPAD",
         SymbolKind.GsgPad        => "GSGPAD",
         SymbolKind.Mwpd          => ComponentModelFactory.WilkinsonTypeName,
+        SymbolKind.Mblc          => ComponentModelFactory.BranchLineTypeName,
+        SymbolKind.Mrrc          => ComponentModelFactory.RatRaceTypeName,
         SymbolKind.MimCap        => "MIMCAP",
         SymbolKind.Spiral        => "SPIRAL",
         SymbolKind.OctSpiral     => "OSPIRAL",
@@ -1456,7 +1475,7 @@ public static class ComponentTypeRegistry
         or SymbolKind.CLine or SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine
         or SymbolKind.Via or SymbolKind.ViaGnd or SymbolKind.WBond or SymbolKind.Match
         or SymbolKind.MimCap or SymbolKind.Spiral or SymbolKind.OctSpiral or SymbolKind.Tfr or SymbolKind.Airbridge
-        or SymbolKind.TestPad or SymbolKind.GsgPad or SymbolKind.Mwpd
+        or SymbolKind.TestPad or SymbolKind.GsgPad or SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
         or SymbolKind.Balun or SymbolKind.Circulator or SymbolKind.Switch or SymbolKind.Coupler
         or SymbolKind.Hybrid90 or SymbolKind.Hybrid180 or SymbolKind.Filter or SymbolKind.Atten or SymbolKind.Duplexer
         or SymbolKind.Combiner
@@ -1651,6 +1670,22 @@ public static class ComponentTypeRegistry
         (SymbolKind.Mwpd, "Gap") => "Span of the isolation resistor's pins, R2 to R3: the gap the ring closes across. 1.35 mm "
                                   + "is an 0402's at nominal density.",
         (SymbolKind.Mwpd, "SignalLayer") => "The conductor the divider is on. Empty: the technology's top conductor.",
+        (SymbolKind.Mblc, "Z0") => "The ports' impedance. One section: series arms Z0/√2 and shunt arms Z0; two sections: "
+                                 + "series arms Z0 and shunt arms (1 + √2)·Z0, √2·Z0, (1 + √2)·Z0. Widths are derived on "
+                                 + "the technology's substrate.",
+        (SymbolKind.Mblc, "F") => "Centre frequency: each arm is a quarter wavelength long here, between the junctions' "
+                                + "reference planes, in the line's own effective permittivity at F.",
+        (SymbolKind.Mblc, "N") => "Sections, 1 or 2. Two sections widen the band and need a high-impedance outer arm.",
+        (SymbolKind.Mblc, "SignalLayer") => "The conductor the coupler is on. Empty: the technology's top conductor.",
+        (SymbolKind.Mblc, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below the "
+                                              + "signal layer.",
+        (SymbolKind.Mrrc, "Z0") => "The ports' impedance. The ring is √2·Z0; the widths are derived on the technology's "
+                                 + "substrate.",
+        (SymbolKind.Mrrc, "F") => "Centre frequency: the ring is 1.5 wavelengths round here, the pins λg/4, λg/4, λg/4 and "
+                                + "3λg/4 apart, in the line's own effective permittivity at F.",
+        (SymbolKind.Mrrc, "SignalLayer") => "The conductor the ring is on. Empty: the technology's top conductor.",
+        (SymbolKind.Mrrc, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below the "
+                                              + "signal layer.",
         (SymbolKind.Mwpd, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below the "
                                               + "signal layer.",
         (SymbolKind.GsgPad, "W") => "Width of the line leaving the signal pad. Placed: the 50 Ω width on the technology.",
@@ -1716,6 +1751,17 @@ public static class ComponentTypeRegistry
           + "stamped together and reduced to the five pins. Each arm is λg/4 at F between the junctions' reference planes. "
           + "MTEE's closed forms are calibrated at εr 9.9 and say so on any other board; MCURVE's effective radius is "
           + "stated for 3W to 7W. The isolation resistor is not in the model: it is the resistor on R2-R3.",
+        SymbolKind.Mblc =>
+            "MTEE and MLIN, the pieces the layout draws: a tee at each junction, a line for each arm and a Z0 feed to each "
+          + "pin, stamped together and reduced to the four pins. Each arm is λg/4 at F between the junctions' reference "
+          + "planes; two sections' shunt arms share one span, each the mean of their quarter waves. MTEE's closed forms "
+          + "are calibrated at εr 9.9 and say so on any other board; the junctions move the best match a few percent "
+          + "below F.",
+        SymbolKind.Mrrc =>
+            "MTEE, MLIN and MCURVE, the pieces the layout draws: four tees on a ring of two straight runs and two 180° "
+          + "curves, stamped together and reduced to the four pins. Every spacing is measured between the junctions' "
+          + "reference planes at F. MTEE's closed forms are calibrated at εr 9.9 and say so on any other board; "
+          + "MCURVE's effective radius is stated for 3W to 7W.",
         SymbolKind.GsgPad =>
             "MLIN, twice: half the signal pad (PadW wide, PadL/2 long, from the tip to its edge), then the line, "
           + "cascaded, with MLIN's validity. The ground pads are ideal ground at the probe's reference plane; their "
@@ -3905,6 +3951,16 @@ public static class ComponentTypeRegistry
                         new("F",   "2.4",  "GHz", true, UnitDimension.Frequency),
                         new("Gap", "1.35", "mm",  true, UnitDimension.Length),
                         .. SignalGroundLayerParams];
+            // MBLC and MRRC: the specs alone (BranchLinePlan, RatRacePlan); every width and length is a readout.
+            case SymbolKind.Mblc:
+                return [new("Z0", "50",  "Ω",   true, UnitDimension.Resistance),
+                        new("F",  "2.4", "GHz", true, UnitDimension.Frequency),
+                        new("N",  "1",   "",    true, UnitDimension.None),
+                        .. SignalGroundLayerParams];
+            case SymbolKind.Mrrc:
+                return [new("Z0", "50",  "Ω",   true, UnitDimension.Resistance),
+                        new("F",  "2.4", "GHz", true, UnitDimension.Frequency),
+                        .. SignalGroundLayerParams];
             case SymbolKind.GsgPad:
                 return [new("W",     "2.9", "mm", true, UnitDimension.Length),
                         new("L",     "100", "µm", true, UnitDimension.Length),
@@ -4080,6 +4136,10 @@ public static class ComponentTypeRegistry
             case "GSG":      kind = SymbolKind.GsgPad;       return true;
             case "MWPD":
             case "WPD":      kind = SymbolKind.Mwpd;         return true;
+            case "MBLC":
+            case "BLC":      kind = SymbolKind.Mblc;         return true;
+            case "MRRC":
+            case "RRC":      kind = SymbolKind.Mrrc;         return true;
             case "MIMCAP":   kind = SymbolKind.MimCap;       return true;
             case "SPIRAL":   kind = SymbolKind.Spiral;       return true;
             case "OSPIRAL":  kind = SymbolKind.OctSpiral;    return true;
