@@ -4,7 +4,7 @@ slug: reference/components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Components
 lede: Every component in the standard library — its symbol, what it does, and its parameters.
-keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox
+keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, Wilkinson, MWPD, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox
 ---
 
 Symbols are rendered from the live drawing engine, with their connection leads and their pins shown
@@ -1162,6 +1162,83 @@ most often left wrong — <code>IncludeCapacitance</code> and <code>er</code> �
 </div>
 
 {{table: components/WBond}}
+
+## Dividers and couplers {#dividers}
+
+Each part here is one RF topology, placed as one component and stated by what you specify rather than by its geometry:
+the port impedance and the centre frequency. circuitRF works out the lines on the workspace technology's substrate, the
+same way every time, and the layout draws exactly the pieces the circuit model simulates, so the schematic, the layout,
+LVS and EM all read the same few numbers. The parameters panel shows what the specs come out to — the widths, the lengths
+and the ring's radius — as values you read, not type. A lumped part the topology needs, such as a Wilkinson divider's
+isolation resistor, is not inside the component: it is an ordinary part on two of its pins, with its own land pattern,
+so it reaches the layout, LVS and the bill of materials as itself.
+
+### Wilkinson Divider (MWPD) {#mwpd}
+
+{{symbol: mwpd}}
+
+An equal-split, in-phase two-way power divider on microstrip. Power into terminal 1 divides equally between terminals 2
+and 3, which leave in phase, matched and isolated from each other at the centre frequency `F`. It works the other way
+round as a combiner. `R2` and `R3` are the ends of the two arms beside outputs 2 and 3: place a resistor of 2·`Z0` on
+them (dropped on the symbol's R2–R3 pins it needs no wire) and give it a land pattern. **Design ▸ Update Layout from
+Schematic** lays the resistor across the gap the ring closes on and puts each port on its own pin.
+
+**How it works.** The input meets two arms, each a line of √2·`Z0` a quarter of a wavelength long at `F`. A quarter-wave
+line turns the `Z0` load at its far end into (√2·`Z0`)²/`Z0` = 2·`Z0` at the input, and the two arms side by side are
+`Z0` again, so the input is matched. Driven from an output, the divider is easiest seen as two halves: with both outputs
+driven alike nothing flows through the resistor, and with them driven opposite the resistor's midpoint is a virtual
+ground, so each output sees half of it, `Z0`, through its arm — matched, and the power that would have crossed to the
+other output is spent in the resistor instead. At `F` the ideal divider has S11 = S22 = S33 = 0, S23 = 0 and
+|S21| = |S31| = 1/√2, −3.01 dB.
+
+**What circuitRF derives.** Every number below is recomputed from `Z0` and `F` on the technology's substrate, by the one
+function the model and the layout share:
+
+- the arm width, for √2·`Z0`, and the port line's width, for `Z0`, each from the microstrip line model's own impedance at
+  `F`;
+- the quarter wavelength, `c₀ / (4·F·√εeff)`, with εeff the arm's effective permittivity at `F`, including dispersion;
+- the ring. The arms leave an input tee, turn 180° and come back facing each other across `Gap`; each ends in an output tee
+  whose branch is terminal 2 or 3. A quarter wave is measured between the tees' reference planes: the straight run on the
+  input tee plus the bend's effective length, π·(R − 0.2·W), which fixes the bend's centre-line radius R;
+- the isolation resistance, 2·`Z0`, which the readout states. The resistor itself is yours.
+
+Each terminal is one port-line width of `Z0` line beyond its tee, so a port lands on a line rather than in a junction's
+fringing field.
+
+**The model** is the MTEE and MCURVE parts the layout draws, stamped together and reduced to the five terminals. It
+therefore has their limits, and says so in Messages: MTEE's junction formulas are calibrated on alumina (εr 9.9) and on
+W/h from 0.5 to 2, and MCURVE's length rule is stated for bend radii of 3 to 7 widths. A ring at low frequency is larger
+than that, where the bend's correction is a few per cent of a length that is right to first order. A specification the
+substrate cannot build is refused by name: an impedance no width reaches, or a quarter wave too short to make a ring
+(too high an `F`, or too wide a `Gap`).
+
+**The divider is narrowband.** Its match and isolation are exact at `F` only. On the example board (20 mil RO4350B,
+2.4 GHz) the circuit model keeps |S11| and |S23| below −20 dB from about 2.0 to 2.8 GHz.
+
+**In EM.** The ring joins `R2` to `R3`, so the resistor's two pads lie on one piece of copper, and a component port
+cannot cut it out today: the run leaves it out with a warning, and the result is the divider without its resistor. Driven
+from terminal 1, the two arms carry the same voltage and no current would cross the resistor, so S11, S21 and S31 are the
+divider's as built; compare S22 and S23 with the circuit model with the resistor removed. The
+[Dividers and Couplers](../examples/dividers-and-couplers/index.html) example runs it on Planar MoM, EMerge and Palace.
+
+`Gap` is the span of the resistor's pins, 1.35 mm for an 0402 at nominal density. Change it with the land pattern.
+
+{{table: components/Mwpd}}
+
+**References**
+
+> E. J. Wilkinson, "An N-Way Hybrid Power Divider," *IRE Transactions on Microwave Theory and Techniques*, vol. 8,
+> no. 1, pp. 116–118, January 1960. DOI [10.1109/TMTT.1960.1124668](https://doi.org/10.1109/TMTT.1960.1124668).
+
+> D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012, §7.3. A book, with no DOI:
+> [the publisher's page](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553).
+
+> E. Hammerstad and Ø. Jensen, "Accurate Models for Microstrip Computer-Aided Design," *1980 IEEE MTT-S International
+> Microwave Symposium Digest*, pp. 407–409. DOI [10.1109/MWSYM.1980.1124303](https://doi.org/10.1109/MWSYM.1980.1124303).
+
+> M. Kirschning and R. H. Jansen, "Accurate model for effective dielectric constant of microstrip with validity up to
+> millimetre-wave frequencies," *Electronics Letters*, vol. 18, no. 6, pp. 272–273, 1982.
+> DOI [10.1049/el:19820186](https://doi.org/10.1049/el:19820186).
 
 ## MMIC passives {#mmic}
 

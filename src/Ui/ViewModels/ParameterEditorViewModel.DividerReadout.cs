@@ -45,7 +45,9 @@ public partial class ParameterEditorViewModel
                 try
                 {
                     var d = WilkinsonPlan.Build(z0, f, gap, new MicrostripSubstrate(h, t, er, 0.0, 0.0));
-                    text = $"W {Mm(d.W0Meters)} (Z0), arms {Mm(d.ArmWMeters)} ({Ohm(d.ArmZ0)})\n"
+                    // Widths to the plan's own 2 nm grid, so a line drawn to meet a pin can be typed exactly: a
+                    // rounded width leaves a sliver step at the joint that DRC reports.
+                    text = $"W {Mm(d.W0Meters, "0.#####")} (Z0), arms {Mm(d.ArmWMeters, "0.#####")} ({Ohm(d.ArmZ0)})\n"
                          + $"L {Mm(d.QuarterWaveMeters)} (λg/4 at F, εeff {d.ArmEeff.ToString("0.###", CultureInfo.InvariantCulture)})\n"
                          + $"Ring radius {Mm(d.RingRadiusMeters)}\n"
                          + $"Isolation R = 2·Z0 = {Ohm(d.IsolationOhms)}, across R2-R3";
@@ -71,6 +73,6 @@ public partial class ParameterEditorViewModel
             ? raw * (Units.Scale(UnitNormalizer.ToEngineUnit(row.Unit)) ?? 1.0)
             : null;
 
-    private static string Mm(double m) => (m * 1e3).ToString("0.###", CultureInfo.InvariantCulture) + " mm";
+    private static string Mm(double m, string format = "0.###") => (m * 1e3).ToString(format, CultureInfo.InvariantCulture) + " mm";
     private static string Ohm(double r) => r.ToString("0.#", CultureInfo.InvariantCulture) + " Ω";
 }
