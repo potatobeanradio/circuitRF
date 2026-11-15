@@ -293,6 +293,18 @@ part that cannot be a 3D port is left out there with a warning.
 of component ports differ, more as the frequency rises. Treat them as two models of the board, not as one checking
 the other.
 
+<a id="component-port-loop"></a>**A part across a loop.** Sometimes the copper joins a part's two pads elsewhere: a
+Wilkinson divider's ring joins the two pads of its isolation resistor the long way round. The pads are then one piece
+of copper, and a port across them closes a loop. It is built the same way as any other component port, on Planar and in
+3D, as long as the two pads face each other across air. At RF it is an ordinary port. At 0 Hz it reads the loop's copper,
+close to a short, whatever the part is. Check, explain and the run each say this with a warning naming the part. Two
+things still leave such a part out:
+
+- copper running across the gap between its pads, which shorts the part right there;
+- both pads on one net.
+
+A cut [cell instance](#cell-instances) whose pins the copper joins is still refused.
+
 **Limits.**
 
 - A part whose pads do not face each other along x or y is left out, and so is a part placed at an angle that is not a

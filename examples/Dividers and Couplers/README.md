@@ -92,8 +92,9 @@ that port's own reactance moves the cancellation.
 **The 3D runs read further from the model away from 2.4 GHz**, Palace most. Both use coarse meshes (below), and in 3D
 each port is a lumped sheet from the line down to the ground plane, 20 mil tall, whose own inductance stays in the
 answer. Palace's |S21| and |S31| also differ from each other by up to 0.14 dB on a layout that is symmetric: its draft
-mesh is not. Its |S11| is 3 to 7 dB worse than the model's from 1.2 to 3.6 GHz, the null aside. EMerge's four-port is not quite passive:
-at 4 of the 11 points the largest singular value of S is above 1, at most 1.0037, and the run says so.
+mesh is not. Its |S11| is 3 to 7 dB worse than the model's from 1.2 to 3.6 GHz, the null aside. EMerge's four-port is
+not quite passive: at 4 of the 11 points the largest singular value of S is above 1, at most 1.0037, and the run says
+so.
 
 **The model warns, and it should.** The run's Messages say that MTEE's junction formulas are calibrated at εr 9.9 and
 this board is 3.66, that the tee's branch is a little wider than their W/h range, and that the ring's bend radius,

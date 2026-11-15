@@ -88,11 +88,12 @@ ring (high F or a wide Gap).
 
 ## 5. Known limits
 
-- **EM cannot cut the isolation resistor out as a component port.** Both component-port builders refuse a part whose two
-  pads lie on one connected piece of copper (`EmPlanarComponentPorts.Construct`, and the 3D builder's "land on one
-  conductor"), and the ring joins R2 to R3. The resistor is left out of the run with a warning, so an EM result is the
-  divider without it. By symmetry an input drive puts no current through R2–R3, so S11, S21 and S31 are unaffected; S22
-  and S23 are compared against the circuit model with the resistor removed.
+- **The isolation resistor's component port closes a loop.** The ring joins R2 to R3, so the resistor's two pads are one
+  piece of copper. Both component-port builders build a port across such a part as across two conductors, when air lies
+  between the pads (`EmPlanarComponentPorts.Construct`; `C3dComponentPorts.Construct`, whose sheet's ends are then
+  inferred as a loop's), and warn that the 0 Hz row reads the loop (`em.component-port.across-loop`). So an EM run has the
+  resistor's port, and the co-simulation netlist closes it with the 100 Ω. A cut cell instance whose pins the copper joins
+  is still refused: its pins are ground-referenced ports, with no gap between two pins to tell a loop from a short.
 - **MTEE's closed forms are calibrated at εr 9.9** and say so on any other substrate; MCURVE's effective-radius rule is
   stated for radii of 3W to 7W, and a low-frequency ring is larger. Both warnings reach Messages through the part.
 - **The MWPD generator's version follows MTEE's and MCURVE's.** It draws through them, so a change that bumps either
@@ -109,8 +110,6 @@ ring (high F or a wide Gap).
 4. **`Gap` equal to the resistor's pin span**, as a stored layout choice with the 0402's span as its default.
 5. **About eight new kinds in the closed registry**, all under Microstrip today; a "Dividers and couplers" palette
    category may read better once there are several.
-6. **Component ports across a loop.** Should the component-port builders accept a part whose pads are joined only through
-   distributed copper elsewhere (a Wilkinson's resistor, a balun's), with the pads themselves not touching?
 
 ## 7. References
 

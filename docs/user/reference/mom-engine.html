@@ -695,9 +695,12 @@ internal delta gap</strong>. The port's + side is one pad, its − side the othe
 strip. The strip and the cut exist in the solved problem only; the layout is not changed, and the run's notes
 say what was built for each part.</p>
 <p>A part is left out, with a warning naming it and why, when no such strip can be built: its pads do not face
-each other along x or y, they share no width across the gap, they are on one net or on one piece of copper
-already, they are on two copper layers, or the strip would touch other copper. Its S-parameters are
-reported at the cut, as any delta gap's are, and it is not de-embedded.</p>
+each other along x or y, they share no width across the gap, they are on one net, copper runs across the gap
+between them, they are on two copper layers, or the strip would touch other copper. Its S-parameters are
+reported at the cut, as any delta gap's are, and it is not de-embedded. Pads that the copper joins elsewhere, as a
+Wilkinson's ring joins its resistor's, are not a reason to leave the part out: the cut is then one more cut in a
+loop, which is what a delta gap is anyway, and the run warns that the 0 Hz row reads that loop
+(<a href="em-setup.html#component-port-loop">A part across a loop</a>).</p>
 <h3 id="feed">Auto-ports and the feed extension</h3>
 <p><strong>You do not have to add a feed line to your artwork.</strong> Place a port on the part you drew and press
 Simulate.</p>

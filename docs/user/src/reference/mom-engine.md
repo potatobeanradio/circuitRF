@@ -641,9 +641,12 @@ strip. The strip and the cut exist in the solved problem only; the layout is not
 say what was built for each part.
 
 A part is left out, with a warning naming it and why, when no such strip can be built: its pads do not face
-each other along x or y, they share no width across the gap, they are on one net or on one piece of copper
-already, they are on two copper layers, or the strip would touch other copper. Its S-parameters are
-reported at the cut, as any delta gap's are, and it is not de-embedded.
+each other along x or y, they share no width across the gap, they are on one net, copper runs across the gap
+between them, they are on two copper layers, or the strip would touch other copper. Its S-parameters are
+reported at the cut, as any delta gap's are, and it is not de-embedded. Pads that the copper joins elsewhere, as a
+Wilkinson's ring joins its resistor's, are not a reason to leave the part out: the cut is then one more cut in a
+loop, which is what a delta gap is anyway, and the run warns that the 0 Hz row reads that loop
+([A part across a loop](em-setup.html#component-port-loop)).
 
 ### Auto-ports and the feed extension {#feed}
 
