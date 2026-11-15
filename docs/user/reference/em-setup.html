@@ -1115,6 +1115,14 @@ port returns through any more takes a port of its own, so the instance keeps a p
 co-simulation netlist places it. Several pins may share one reference where their gaps do not overlap across it. <code>&quot;Common&quot;</code>, one node shared by all of an instance's ports,
 is refused: neither solver has a construction for it. A pin unticked under <strong>Port</strong> (<code>&quot;Port&quot;: false</code>) is only the return
 of other pins' ports.</p>
+<p><a id="cut-return"></a><strong>Return — where a 3D sheet lands.</strong> In 3D a cut pin's sheet runs from its face to the first
+plane the return walk finds under (or over) it, as a drawn port's does when its <strong>Return</strong> is Automatic. On a thick die
+that is often the backside, hundreds of µm down, and the sheet's own inductance is then in the result. An entry's
+<code>&quot;Return&quot;: &quot;Metal1&quot;</code> lands every sheet of the instance on that stackup conductor instead, and a pin's own
+(<code>&quot;Pins&quot;: { &quot;B&quot;: { &quot;Return&quot;: &quot;Metal1&quot; } }</code>) overrides it for that pin. It is the same walk with the plane stated: a layer
+with no metal across the face, or with other metal in the way, is refused, and that pin is left out of the run with the
+reason. Planar ignores it, since a Planar cut port has no sheet, and its notes say so once. A pin referenced to another pin
+has no Return either: its sheet runs between the two faces.</p>
 <p><strong>Grounded pins</strong> (<strong>Ground</strong>, <code>&quot;Ground&quot;: [&quot;E&quot;]</code>) are tied to the ground plane at their face by a ground via as wide as
 the face, and take no port. Use it for an emitter or a source that sits on a via in the real chip but has none drawn
 in the layout.</p>

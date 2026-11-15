@@ -1201,7 +1201,7 @@ public sealed class ComponentPortsConverter : JsonConverter<List<EmComponentPort
             if (reader.TokenType == JsonTokenType.String) { list.Add(new EmComponentPort(reader.GetString() ?? "")); continue; }
             if (reader.TokenType != JsonTokenType.StartObject)
                 throw new JsonException("A ComponentPorts entry is a reference designator or an object with Refdes or Cell, Z0, Reference, " +
-                                        "WidthUm, PortAt, KeepOutUm, Construction, Keep, Pins and Ground.");
+                                        "WidthUm, PortAt, KeepOutUm, Construction, Keep, Pins, Ground and Return.");
             using var doc = JsonDocument.ParseValue(ref reader);
             string? Get(string key)
             {
@@ -1291,9 +1291,12 @@ public sealed class ComponentPortsConverter : JsonConverter<List<EmComponentPort
                                 o = o with { Port = f.Value.GetBoolean() };
                             else if (f.Name.Equals("Ground", StringComparison.OrdinalIgnoreCase) && f.Value.ValueKind is JsonValueKind.True or JsonValueKind.False)
                                 o = o with { Ground = f.Value.GetBoolean() };
+                            // brief-icf-6 R-icf6-1 — the conductor this pin's 3D sheet returns through.
+                            else if (f.Name.Equals("Return", StringComparison.OrdinalIgnoreCase) && f.Value.ValueKind == JsonValueKind.String)
+                                o = o with { Return = ReturnName(f.Value.GetString(), $"Pins.{pin.Name}.Return") };
                             else
                                 throw new JsonException($"A ComponentPorts entry's Pins.{pin.Name} takes Reference (a pin name, Ground or Common), " +
-                                                        "Port (true or false) and Ground (true or false).");
+                                                        "Port (true or false), Ground (true or false) and Return (a stackup conductor's name).");
                         }
                         map[pin.Name.Trim()] = o;
                     }
@@ -1316,9 +1319,20 @@ public sealed class ComponentPortsConverter : JsonConverter<List<EmComponentPort
             list.Add(new EmComponentPort(refdes ?? "", Get("Z0"), Get("Reference"), width)
             {
                 Cell = cell, PortAt = portAt, KeepOutUm = keepOut, Construction = construction, Keep = keep, Pins = pins, Ground = ground,
+                Return = ReturnName(Get("Return"), "Return"),
             });
         }
         return list;
+    }
+
+    /// <summary>brief-icf-6 R-icf6-1 — a Return as written: trimmed, blank is none, and never a character the normalised Pins string
+    /// separates on.</summary>
+    private static string? ReturnName(string? text, string key)
+    {
+        string name = (text ?? "").Trim();
+        if (name.IndexOfAny([':', ';', ',', '=']) >= 0)
+            throw new JsonException($"A ComponentPorts entry's {key} '{name}' is not a stackup conductor's name.");
+        return name.Length > 0 ? name : null;
     }
 
     public override void Write(Utf8JsonWriter writer, List<EmComponentPort>? value, JsonSerializerOptions options)
@@ -1358,6 +1372,7 @@ public sealed class ComponentPortsConverter : JsonConverter<List<EmComponentPort
                     if (o.Reference is { } pinRef) writer.WriteString("Reference", pinRef);
                     if (o.Port is { } port) writer.WriteBoolean("Port", port);
                     if (o.Ground is { } g) writer.WriteBoolean("Ground", g);
+                    if (o.Return is { } pinReturn) writer.WriteString("Return", pinReturn);
                     writer.WriteEndObject();
                 }
                 writer.WriteEndObject();
@@ -1368,6 +1383,7 @@ public sealed class ComponentPortsConverter : JsonConverter<List<EmComponentPort
                 foreach (var n in grounded) writer.WriteStringValue(n);
                 writer.WriteEndArray();
             }
+            if (c.Return is { } ret) writer.WriteString("Return", ret);
             writer.WriteEndObject();
         }
         writer.WriteEndArray();

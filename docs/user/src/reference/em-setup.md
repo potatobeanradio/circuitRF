@@ -437,6 +437,15 @@ co-simulation netlist places it. Several pins may share one reference where thei
 is refused: neither solver has a construction for it. A pin unticked under **Port** (`"Port": false`) is only the return
 of other pins' ports.
 
+<a id="cut-return"></a>**Return — where a 3D sheet lands.** In 3D a cut pin's sheet runs from its face to the first
+plane the return walk finds under (or over) it, as a drawn port's does when its **Return** is Automatic. On a thick die
+that is often the backside, hundreds of µm down, and the sheet's own inductance is then in the result. An entry's
+`"Return": "Metal1"` lands every sheet of the instance on that stackup conductor instead, and a pin's own
+(`"Pins": { "B": { "Return": "Metal1" } }`) overrides it for that pin. It is the same walk with the plane stated: a layer
+with no metal across the face, or with other metal in the way, is refused, and that pin is left out of the run with the
+reason. Planar ignores it, since a Planar cut port has no sheet, and its notes say so once. A pin referenced to another pin
+has no Return either: its sheet runs between the two faces.
+
 **Grounded pins** (**Ground**, `"Ground": ["E"]`) are tied to the ground plane at their face by a ground via as wide as
 the face, and take no port. Use it for an emitter or a source that sits on a via in the real chip but has none drawn
 in the layout.

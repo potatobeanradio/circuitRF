@@ -324,6 +324,7 @@ src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's Pins names '
 src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's Pins.{pin.Name} is an object with Reference, Port or Ground.
 src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's Pins.{pin.Name} takes Reference (a pin name, Ground or Common), 
 src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's Pins.{pin.Name}.Reference '{rn}' is not a pin name, Ground or Common.
+src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's {key} '{name}' is not a stackup conductor's name.
 src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's {key} is {string.Join(
 src/Design/Layout/Em/EmSetupPersistence.cs|ComponentPorts is \"*\" or a list of reference designators.
 src/Design/Thermal/ThermalFosterNetlist.cs|an empty network

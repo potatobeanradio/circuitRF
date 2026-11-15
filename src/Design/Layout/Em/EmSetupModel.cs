@@ -128,7 +128,12 @@ public enum EmComponentConstruction
 /// <summary>brief-icp-4 R-icp4-1 — one pin's overrides in a cut instance's entry: its own reference (a pin name, <c>Ground</c> or
 /// <c>Common</c>), <c>Port: false</c> for a pin that is only a return, <c>Ground: true</c> for a pin tied to ground. Null states
 /// nothing.</summary>
-public sealed record EmPinOptions(string? Reference = null, bool? Port = null, bool? Ground = null);
+public sealed record EmPinOptions(string? Reference = null, bool? Port = null, bool? Ground = null)
+{
+    /// <summary>brief-icf-6 R-icf6-1 — the conductor this pin's 3D sheet returns through, overriding its entry's
+    /// <see cref="EmComponentPort.Return"/>; null takes the entry's.</summary>
+    public string? Return { get; init; }
+}
 
 /// <summary>brief-icp-1 R-icp1-3 — a keep-out box, micrometres, in the instance's own frame.</summary>
 public readonly record struct EmKeepOut(double X0, double Y0, double X1, double Y1);
@@ -187,6 +192,26 @@ public sealed record EmComponentPort(string Refdes, string? Z0 = null, string? R
     /// <see cref="Keep"/>). Null: none.</summary>
     public string? Ground { get; init; }
 
+    /// <summary>
+    /// brief-icf-6 R-icf6-1 — the stackup conductor a cut instance's 3D edge sheets return through, as a drawn 3D port's
+    /// <see cref="EmPort3D.Return"/> states one: the sheet runs from each face to that layer's metal instead of to what the return walk
+    /// finds first (on a thick die, often the backside ~750 µm down). A pin's own <see cref="EmPinOptions.Return"/> overrides it. Null:
+    /// the walk decides, as before. Planar ignores it — its cut ports are grounded or pin-referenced.
+    /// </summary>
+    public string? Return { get; init; }
+
+    /// <summary>brief-icf-6 — the return <paramref name="pin"/>'s 3D sheet states: its own (by its port name, a finger by its base
+    /// name), else the entry's; null for the walk.</summary>
+    public string? ReturnOf(string pin)
+    {
+        var options = PinOptions;
+        return (options.GetValueOrDefault(pin) ?? options.GetValueOrDefault(EmPinFingers.Base(pin)))?.Return is { Length: > 0 } own
+            ? own : Return is { Length: > 0 } r ? r : null;
+    }
+
+    /// <summary>Whether this entry or any of its pins states a <see cref="Return"/>.</summary>
+    public bool StatesReturn => Return is { Length: > 0 } || PinOptions.Values.Any(o => o.Return is { Length: > 0 });
+
     /// <summary>The names in <see cref="Ground"/>, trimmed, empty ones dropped.</summary>
     public IReadOnlyList<string> GroundNames => Ground is null ? [] : [.. Ground.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
 
@@ -217,6 +242,7 @@ public sealed record EmComponentPort(string Refdes, string? Z0 = null, string? R
                     if (k.Equals("Reference", StringComparison.OrdinalIgnoreCase)) o = o with { Reference = v };
                     else if (k.Equals("Port", StringComparison.OrdinalIgnoreCase)) o = o with { Port = bool.Parse(v) };
                     else if (k.Equals("Ground", StringComparison.OrdinalIgnoreCase)) o = o with { Ground = bool.Parse(v) };
+                    else if (k.Equals("Return", StringComparison.OrdinalIgnoreCase)) o = o with { Return = v };
                 }
                 map[pin] = o;
             }
@@ -239,6 +265,7 @@ public sealed record EmComponentPort(string Refdes, string? Z0 = null, string? R
             if (o.Reference is { Length: > 0 } r) kv.Add($"Reference={r}");
             if (o.Port is { } port) kv.Add($"Port={(port ? "true" : "false")}");
             if (o.Ground is { } g) kv.Add($"Ground={(g ? "true" : "false")}");
+            if (o.Return is { Length: > 0 } ret) kv.Add($"Return={ret}");
             if (kv.Count > 0) parts.Add($"{pin}:{string.Join(",", kv)}");
         }
         return parts.Count == 0 ? null : string.Join(";", parts);
@@ -246,7 +273,7 @@ public sealed record EmComponentPort(string Refdes, string? Z0 = null, string? R
 
     /// <summary>Overrides nothing: written as its refdes alone.</summary>
     public bool IsPlain => Z0 is null && Reference is null && WidthUm is null && Cell is null && PortAt == EmComponentPortAt.Pin
-                           && KeepOutUm is null && Construction is null && Keep is null && Pins is null && Ground is null;
+                           && KeepOutUm is null && Construction is null && Keep is null && Pins is null && Ground is null && Return is null;
 
     /// <summary>
     /// brief-lcp-3 R-lcp3-3 — <paramref name="list"/> with <paramref name="refdes"/>'s entry changed by <paramref name="change"/>:

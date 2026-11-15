@@ -32020,3 +32020,72 @@ write back in that state, so opening a chain cannot record an edit. The default 
 
 **The Data Display table's label column did not widen with `FreqColumnWidth`** for the 1-D `Loss_dB` table over the
 `term` axis (280 was set, ~115 drawn). Rather than chase it in the Data Display, the one long label was shortened.
+
+## brief-icf-6 — 3D on a thick die: where cut-port sheets land, and the air box (2026-11-15)
+
+Measured on a synthetic fixture (`tests/Ui.Tests/Em3d/ThickDieCutPortTests.cs`): the shipped silicon RFIC technology with its
+substrate made 750 µm thick, the backside its undrawn ground, a 40 × 20 µm cell cut out of a 10 µm Metal3 line with local Metal1
+under one face only. That reproduces the field test's shape: one sheet lands on Metal1 3.85 µm down, the other falls 754.85 µm
+to the floor.
+
+- **Return (R-icf6-1).** `EmComponentPort.Return` and `EmPinOptions.Return` (`"Return"` on the entry and in `Pins`), resolved
+  per pin by `EmComponentPort.ReturnOf` (pin, then the finger's base name, then the entry) and carried on
+  `EmPlanarComponentPort.Return`. `C3dCellCuts.Ports` hands each cut port's stated return to `GenerateCutPorts` as an
+  `EmPort3D(Number, Return:)`, so `ReturnStated` and `ReturnWalk` run unchanged. Only the wording knows it is a cut port
+  (`CutPorts`): "as its cut entry's Return states", and the remedy names the cut entry's Return rather than the port table or
+  the 3D editor's Move. A layer that does not cover the face goes through the walk's own refusal, prefixed `X1.B: `, and that
+  pin is left out as any refused cut port is. A pin referenced to another pin gets no Return (its gap sheet has no walk).
+  The entry's Return goes into `EmPlanarComponentPorts.KeyOf` only when stated, so every existing key is unchanged. Planar
+  notes once that it does not use it.
+- **The fixture needed a second shape for gate 1.** With Metal1 under every face, the walk lands on Metal1 anyway through
+  R-dfr34-1-5's unmarked-level rule, so "Return: Metal1" and no Return give the same sheet. Gate 1 therefore puts the pins on
+  Metal2 between a Metal3 plate (1 µm up) and a Metal1 plate (0.85 µm down): the walk takes Metal1, and `Return: Metal3` sends
+  both sheets up. A per-pin Return moves only its own pin.
+- **The landing warning (R-icf6-2).** ICF-1 had already put each sheet's landing and height on its port line (`check`,
+  `explain`, Check). New: `C3dCellCuts.TallLanding` adds a build warning when a sheet that reaches the floor spans more than
+  `TallLandingFraction` (λ/20) of the wavelength at the sweep's top, measured as Σ band height × √(εr μr) over the stack's
+  dielectric bands it crosses. On the fixture at 40 GHz the floor sheet is 0.346 λ and the Metal1 sheet ~0.0009 λ. It is a
+  build warning, so `check` shows it as `check.cem.component-port-warning` (or `check.c3d.component-port`), and the run and
+  the dry run say it too. Nothing in `src/Cli` changed for it.
+- **The air box (R-icf6-3).** `Em3dDefaultPadding.ColumnM`: when a port sheet reaches the undrawn floor, the four sides take
+  `DefaultPaddingColumn` × the column (floor to the top of the conductors) wherever that is more than the H rule. It is
+  wired in both places that pad: `C3dProblemAssembly.Assemble`, when the floor is the undrawn plane (`PortColumn`: a modelled
+  vertical port rectangle whose bottom is within 1.5 DBU of it), and the generator's `Go()`, when `pecFloor` and a port
+  return is the floor. The multiple was first set to 2 and came out at 1 anyway: a non-radiating setup's every default is
+  already capped at the structure's largest extent (`DefaultPadding`), and on a thick die the largest extent is the column. So
+  it is 1, and `Basis` names the cap where the cap is what stood. Carried as `Em3dProblem.PaddingColumnM` so `explain` and
+  Palace's half-padding remedy see the same default. `ColumnNote` says which sides it set. `ExplainEm3d.cs` passes it on.
+- **The substrate reaches the box.** Lowered as an instance, `Em3dLayoutSolids` now lists the slabs whose only bound was the
+  artwork's box (no board outline, one solid, no film, opening or conformal cover; `ArtworkBoundedSlabs`). The elaborator
+  carries them, prefixed. When the column sets a side, `RunSlabsToBox` widens each one that is an axis-aligned rectangle
+  filling the content's whole lateral extent to the box's sides, so with two layouts side by side neither widens. The
+  problem's `PaddedContent` then keeps the extent the box was padded around, as a `.cem`'s does (brief-dfr32-1). A drawn
+  board outline is never widened.
+- **Byte identity.** `git worktree` at HEAD (be00c4b17), CLI built there, against this tree's CLI: `em --dry-run` and
+  `explain --json` identical on the fixture with Metal1 under both faces (no sheet to the floor), and on the shipped
+  `Via 3D.cem` and `Bond wire 3D.cem`. Bond wire's two ports land on its undrawn floor, and the H rule (100 µm substrate)
+  stays wider than the column, so nothing moved. `check` identical on all 33 shipped `.c3d`. `em --dry-run` identical on all 39
+  of their non-thermal setups once the lines that name the machine (kernel path, free disk, time estimates) are masked.
+  Without the geometry kernel linked into the worktree, 12 views first differed only by "needs the geometry kernel".
+- **Two existing setups move, and should.** `examples/Passivated Pad/2 Probe Pad/em/Probe Pad Planar.cem` and
+  `testdata/em-tfr/zigzag-via/zigzag/em/zigzag.cem` have drawn ports down to the undrawn floor of a multi-level stack, so
+  their sides grow: zigzag from 40 µm (5 %, 20 × a ~2 µm H) beside 100 µm sheets to 120 µm, Probe Pad from 10 % to 20-25 %.
+  `Em3dGeneratorDumpTests` caught both. The dumps record the generator's split, not the padding policy, so the two cases
+  now state their old box in `GoldenAirBoxes`, as the file's own rule says. The 8 phased-array cases that fail the same test
+  have no dump file at all (PAA-10); they fail without this change too.
+- **EMerge by hand (gate 5)**, 20 GHz, one point, both CLIs on the same files, under an RSS/disk/time watchdog:
+
+  | | box sides | mesh | S11 (lands on Metal1) | S22 (falls to the floor) |
+  |---|---|---|---|---|
+  | before, Standard | 72-78 µm (20 × H, H = 3.85 µm) | 890 tets, 3 s | 0.9991∠−12.2° | 0.8885∠−11.0° |
+  | after, Standard | 756 µm (1 × column) | 2,820 tets, 2 s | 0.9990∠−21.5° | 0.8811∠−59.7° |
+  | before, Accurate + 3 passes | as above | 2,514 tets, 2 s | 0.9997∠−6.3° | 0.9050∠−10.5° |
+  | after, Accurate + 3 passes | as above | 9,123 tets, 7 s | 0.9999∠−7.3° | 0.9351∠−46.0° |
+
+  The Standard pair is mesh-limited (S11 moved 14° between presets on the same box), so the Accurate pair is the measurement.
+  The pin that lands nearby barely moves, and the pin whose sheet falls to the floor moves by 35°. The old box was a 240 × 40 µm
+  silicon pillar in air, with absorbing sides 72 µm from a 755 µm sheet. With the silicon running to the sides, the sheet
+  sees the substrate's capacitance to the floor.
+- **Not done.** The 3D view panel's padding tooltip (`C3dProblemAssembly.DefaultPaddingBasis`/`ShortBasis`) reads the elaboration
+  alone, which has no ports. It still names the H rule where the run uses the column; the run's note and `explain` are right.
+  No panel control for Return: it is a `.cem` key, and the cut entry's other per-pin options are edited the same way.

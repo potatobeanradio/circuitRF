@@ -810,6 +810,10 @@ public sealed record Em3dProblem(
     /// (10 H below), when its builder found one; null when the floor took <see cref="PaddingHeightM"/>. Nothing lowers it.</summary>
     public double? PaddingHeightBelowM { get; init; }
 
+    /// <summary>brief-icf-6 R-icf6-3 — the port column (the undrawn ground floor a port sheet reaches, up to the top metal) the default
+    /// sides were padded from, when one was; null otherwise. Nothing lowers it.</summary>
+    public double? PaddingColumnM { get; init; }
+
     /// <summary>A static problem's terminals, in index order (terminal k is index k + 1).</summary>
     public IReadOnlyList<Em3dTerminal> Terminals { get; init; } = [];
 
