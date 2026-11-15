@@ -1,0 +1,8 @@
+; brief-paa-9 gate 1 - a 16 x 16 array of PAA-1's single element (isolated) at 40 mm, 0.79 wavelength at 5.9 GHz, steered to 30 deg:
+; the pitch admits a grating lobe in real space.
+Port:P1 f 0 Num=1 Z=50 Ohm
+theta0 = 30 deg
+phi0 = 0 deg
+f0 = 5.9 GHz
+PhasedArray:PA1 f Record="../results/e1.cemr" Mode=feed Rows=16 Cols=16 dx=40 mm dy=40 mm Phase=steer(theta0,phi0,f0)
+analysis F1 type=fields block=PA1 freq=5.9 freqUnit=GHz drive=1

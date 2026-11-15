@@ -1,0 +1,8 @@
+; brief-paa-9 gate 1 - a 64 x 64 array on PAA-1's 5 x 5 record, uniform, steered to 20 deg: a 1.6 deg beam, resolved by the cuts and
+; the map. Off lists ten elements switched off in "Uniform 64 Off.cnl".
+Port:P1 f 0 Num=1 Z=50 Ohm
+theta0 = 20 deg
+phi0 = 0 deg
+f0 = 5.9 GHz
+PhasedArray:PA1 f Record="../results/e5.cemr" RecordRows=5 RecordCols=5 RecordDx=25.86 mm RecordDy=25.86 mm dx=25.86 mm dy=25.86 mm Mode=feed Rows=64 Cols=64 Phase=steer(theta0,phi0,f0)
+analysis F1 type=fields block=PA1 freq=5.9 freqUnit=GHz drive=1

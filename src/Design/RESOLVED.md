@@ -31785,3 +31785,15 @@ the 2×2. Fixtures and harness: `testdata/phased-array/`.
 - **A bench with both ENV1 and F1 runs the envelope twice** (F1 runs it with the block recorded), as PAA-6's HB benches run HB twice.
 - **The bench's result is 34 MB and not committed** (19,662 steps × 4 points of time cubes); EVM needs a 40 µs record at NR 20 MHz
   30 kHz (a whole symbol after the settle). The gate tests use NR 10 MHz 60 kHz at 40 µs, which forms EVM in about 3 s.
+
+## brief-paa-9 — an array run's state, and the New Phased Array cell (2026-11-14)
+
+- **`ArrayFieldState`** (`src/Design/Em3d`) is what a fields run on a Phased Antenna Array leaves for a view: the lattice as built,
+  the waves on the elements, the elements' referred patterns, the weights, the record's grid and frequencies, and the solve path.
+  `ArrayFieldsMetrics` carries it (`IArrayFieldStateSource`), and `CircuitEvaluation` copies each one to `RunResult.ArrayStates`
+  before the run's metrics are disposed. It holds values and closures over the model, never the run's netlist, which is disposed
+  when the run ends. `RunResult.WithLeadingNotes` now keeps it, and keeps `PlainSnpFieldsBlocks`, which it used to drop.
+- **`CellCreate.PhasedArray`** writes the File ▸ New ▸ Phased Array cell as the DRAWING of a five-line netlist (`NetlistSchematic`):
+  a Port, a Feed-mode array on the chosen record (8 × 8 at half a wavelength of the record's centre frequency, `steer(theta0, phi0,
+  f0)` from three VARs), and a fields analysis at the record's frequency nearest that centre. It draws before creating the folder,
+  so a refused drawing leaves nothing behind.

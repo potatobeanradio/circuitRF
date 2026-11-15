@@ -42284,3 +42284,57 @@ documents, to local app data).
 
 Not covered: an explicit Save to a share that has dropped since the open, and reading a document, a result or a referenced
 workspace from a cloud folder whose service fails mid-session. Those reads are still synchronous where they happen.
+
+## brief-paa-9 — the Phased Array tool window (2026-11-14)
+
+A view of one PhasedArray instance (`src/Ui/PhasedArray/`, `src/Ui/Views/PhasedArray/`, renderers in `src/Render/PhasedArray/`).
+Tools ▸ Phased Array opens it on the selected array of the active schematic; File ▸ New ▸ Phased Array writes a cell through
+`CellCreate.PhasedArray` and opens it. Every edit is a schematic command on the schematic's undo stack: a beam drag writes the
+steer()'s VARs (or rewrites its literals) once, on release; a click writes `Off`; Apply writes `Amp`, `PhaseBits`, `AttenStep`.
+
+**What a frame is.** One `CircuitEvaluation` of the fields analysis on the array, the evaluation a tuning slider makes, so a drag goes
+through PAA-8's fast path and PAA-8b's re-weigh. The run hands back its array state (`RunResult.ArrayStates`, `ArrayFieldState`:
+lattice, waves, element patterns, weights). The map, cuts and readouts are formed from that state and nothing else. A drag step is
+`FieldsOutput.Local` (PAA-8's estimate off the fast path); the settled frame after a release is `Written`, so it solves. Steps that
+arrive while one evaluates are coalesced to the newest.
+
+**Frame measured, 20-60-step beam drag, an identical coupled channel (`testdata/phased-array/tool/Channel 32.cnl`, `Channel 64.cnl`),
+Apple M4, `UiSnapshot --phased-array … --pa-drag 60`, steady state after the JIT has warmed:**
+
+| Elements | Build | Evaluation | Forming (map, beam, scan loss) | Drawing | Frame |
+|---|---|---|---|---|---|
+| 1024 | Release | 7-14 ms | 13 ms (3, 7, 2-3) | 3 ms | ~25 ms, ~40 a second |
+| 1024 | Debug | 8-9 ms | 35-38 ms (6, 22-25, 7) | 3 ms | ~48 ms, ~20 a second |
+| 4096 | Release | 28-40 ms | 31-36 ms (12, 14-16, 4-10) | 5 ms | ~65 ms, ~15 a second |
+| 4096 | Debug | 33 ms | 97-110 ms (25, 58-71, 12) | 8 ms | ~140 ms, ~7 a second |
+
+The target (20 a second) is met at 1024 and not at 4096. At 4096 the re-weighed evaluation (PAA-8b's ~30 ms) is half the frame. The
+beam search (`ArrayBeam.Evaluate`: its climb plus two ±180° cuts at a tenth of a beamwidth, 2,251 directions each over 4,096
+coupled weights) is most of the rest. The first 5-10 steps of a Release drag run two to three times slower while tiered JIT
+promotes the loops. Gate 6 prints the per-step breakdown (`PhasedArrayFrame.Breakdown`).
+
+Findings:
+
+- **The run scales its waves so Σ|a|² at the drive is `AvailableW`, while U and every accepted power use ½|a|².** Gains formed on
+  `AvailableW` itself came out 3.01 dB under the run's own `GainDbi`/`RealizedGainDbi`. `PhasedArrayFrames.AvailablePeakW` halves it.
+- **Radiated power is integrated on the (u,v) map, not the record's grid.** On the fixtures' 5° grid, a 64 × 64 array's directivity
+  came out 36.6 dBi, *below* its 39.3 dBi gain (power balance 1.91). ∫U/cosθ du dv over the map gives 40.96 dBi, the 4πA·cosθ/λ²
+  estimate exactly. The run's own `farfield.DirectivityDbi` and the `PowerBalance` measurement still integrate the record's grid,
+  so on a coarse record they disagree with the window. The window's numbers are the right ones.
+- **The FFT covers one period of the array factor**, λ/dx by λ/dy, and at 0.508 λ that is narrower than the visible circle, so the
+  map was flat above |v| ≈ 0.98. The array factor is periodic over the lattice's reciprocal vectors, so the rest of the circle reads
+  the FFT point one reciprocal vector away, with its own direction's element pattern (`MapLayouts`). A single row or column has no
+  pitch along it, so that axis is drawn at the other axis's step.
+- **A drag must build no phase table** (gate 6). `ArrayBeam`'s search patches and cuts are transient direction sets, so they now sum
+  through `ArrayPattern.SumOnce` and are never kept. `ArrayBeam.PeakPower` is the climb alone, for scan loss's broadside reference.
+  Under coupling that reference moves with every step, so a cache keyed on the amplitudes never hit.
+- **The map's element pattern is the centre element's.** At L1 with position classes, the edge elements' patterns differ. The cuts
+  and readouts sum each class; the map shows where the beam and the grating lobes are.
+- **Failures are in memory**: the run's waves with the drawn elements at zero, summed again. The circuit is not solved again, so a
+  failed element's termination does not move its neighbours' Γ_act.
+- **PA Pout, PAE and channel NF** come from the bench's measurements named for an element (`Pout3_dBm`, `PAE3`, `NF3`).
+  `testdata/phased-array/tool/PA Elements.cnl` is PAA-6's bench with an Elements-mode array in place of the EM Field Data block.
+- **A netlist that defines cells cannot be drawn** (`NetlistSchematic`), so for such a bench UiSnapshot builds the array instance and
+  a VAR block and evaluates the bench's own netlist. Gate 6 does the same for its channel.
+- **NetlistSchematic keeps a relative reference relative**, and the extraction then rebases it from a root the snapshot's base
+  directory is not. UiSnapshot makes the bench's `Record=`/`File=` absolute in memory and draws with no schematic directory.

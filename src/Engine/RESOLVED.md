@@ -4711,3 +4711,17 @@ The pattern pieces did not move, being the same code (Release; Debug in brackets
   reflections, the drive's reflection, the circuit's S). It is used only for a drag (local output), only when nothing but the weights
   changed since that solve (a hash of every component but the beamformer), and not when an element that carried nothing now carries a
   weight. On a 4×4 array with a per-element channel and coupling it is 3% off the solve at a 15° move; the release solves.
+
+## brief-paa-9 — transient direction sets, and the (u,v) transform (2026-11-14)
+
+- **`ArrayPattern.SumOnce` / `FactorOnce`** sum over a direction set whose phase tables are built for the call and dropped: never
+  kept against the set and never counted in `TablesBuilt`. `ArrayBeam.Evaluate` uses them for its search patches, cuts and sidelobe
+  refinements. Each of those sets was used once anyway, so its kept tables were dead weight until the set was collected, and every
+  readout counted dozens of "builds" that a drag gate (PAA-9 gate 6) could not tell from a real cache miss. Results are unchanged
+  (same `ArrayPhaseTables`, same sum).
+- **`ArrayBeam.PeakPower`** runs the same two climbs as `Evaluate` and stops before the cuts. It is the scan-loss reference, at a
+  fraction of the cost.
+- **`ArrayUv.Map` transforms only the rows that hold weights along u** (the padding rows transform to zero), and runs both passes
+  in parallel. It is the same transform: `TheUvFft_IsTheDirectSum_AtItsPoints` passes unchanged. At 64 × 64, padded to 512 × 512,
+  the first pass does 64 rows instead of 512.
+- **`ArrayCut.Field`** carries the field a cut was read from, so a view splits it into co- and cross-polar without summing again.

@@ -211,6 +211,9 @@ int? pluginTab = null; double? pluginDragMarker = null, pluginDragHandle = null;
 string? pluginAction = null;   // brief-plg-4
 string? settingsPlugins = null; bool pluginAddressDialog = false, pluginInstallProgress = false;   // brief-plg-6
 string? analysisBody = null;   // LP-1: lp | lpp
+string? phasedArray = null, paBlock = null, paColor = "amplitude", paTab = "beam";   // brief-paa-9
+int paDrag = 0;
+double paTo = 30;
 string? pluginImage = null; (double, double)? pluginClick = null;
 string? emRunSettings = null;   // brief-cosim-pattern-2
 string? cellOwnValues = null;                            // brief-sdl-10
@@ -331,6 +334,12 @@ for (int i = 0; i < args.Length; i++)
         case "--plugin-trust" when i + 1 < args.Length: pluginTrust = Path.GetFullPath(args[++i]); break;
         case "--settings-plugins" when i + 1 < args.Length: settingsPlugins = args[++i]; break;
         case "--analysis-body" when i + 1 < args.Length: analysisBody = args[++i]; break;
+        case "--phased-array" when i + 1 < args.Length: phasedArray = Path.GetFullPath(args[++i]); break;
+        case "--block" when i + 1 < args.Length: paBlock = args[++i]; break;
+        case "--pa-color" when i + 1 < args.Length: paColor = args[++i].ToLowerInvariant(); break;
+        case "--pa-tab" when i + 1 < args.Length: paTab = args[++i].ToLowerInvariant(); break;
+        case "--pa-drag" when i + 1 < args.Length: paDrag = int.Parse(args[++i]); break;
+        case "--pa-to" when i + 1 < args.Length: paTo = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture); break;
         case "--plugin-address-dialog": pluginAddressDialog = true; break;
         case "--plugin-install-progress": pluginInstallProgress = true; break;
         case "--plugin-dialog" when i + 1 < args.Length: pluginDialog = Path.GetFullPath(args[++i]); break;
@@ -598,6 +607,14 @@ if (pluginImage is not null && output is not null)
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     if (dark && Application.Current is { } imgApp) imgApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
     return PluginPanelSnapshot.RunImage(pluginImage, sizeGiven ? width : null, sizeGiven ? height : null, output, pluginClick);
+}
+// brief-paa-9 — the Phased Array tool window on one array of a .cnl bench (--phased-array bench.cnl).
+if (phasedArray is not null && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    if (dark && Application.Current is { } paApp) paApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+    return PhasedArraySnapshot.Run(phasedArray, paBlock, paColor, paTab, paDrag, paTo, output, sizeGiven ? width : 1320, sizeGiven ? height : 900);
 }
 // LP-1 — a loadpull or pursuit analysis body, Advanced section open (--analysis-body lp|lpp).
 if (analysisBody is not null && output is not null)

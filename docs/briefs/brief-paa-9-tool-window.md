@@ -75,3 +75,59 @@ UiSnapshot and DocGen draw them with the window's code.
 ## Not here
 
 A second document format; editing the channel cell from the window (it opens the cell's schematic instead).
+
+## Completion note (2026-11-14)
+
+Built:
+
+- **The window:** `PhasedArrayWindow` with tabs Beam (aperture, (u,v) map, cuts, readouts), Scan maps, Tapers and bits, Failures,
+  Frequency. Tools ▸ Phased Array and File ▸ New ▸ Phased Array are on both menu surfaces.
+- **The view model and session** (framework-free, `src/Ui/PhasedArray`): `PhasedArrayToolViewModel`, `PhasedArraySession`,
+  `PhasedArraySteering`, `PhasedArrayFrames`.
+- **The renderers** (`src/Render/PhasedArray/ArrayRenderers.cs`): aperture, (u,v) map, scan map, cuts, chart.
+- **The run's state:** `ArrayFieldState` on `RunResult.ArrayStates`.
+- **The cell:** `CellCreate.PhasedArray`.
+- **Snapshots:** UiSnapshot `--phased-array` (with `--pa-color`, `--pa-tab`, `--pa-drag`). The benches are in
+  `testdata/phased-array/tool/`.
+
+Findings and the frame table are in `src/Ui/RESOLVED.md` § brief-paa-9; the engine side is in `src/Engine/RESOLVED.md`.
+
+- **Gate 1:** UiSnapshot PNGs looked at:
+  - `Taylor 32` (−30 dB, 30°): sidelobes −29.96 dB, pointing error 0.007°;
+  - `Uniform 64`: 1.65° × 1.56° beam, resolved in the cuts and the map;
+  - `Uniform 64 Off` (ten off, drawn hollow);
+  - `Grating` (0.79 λ, the lobe at u ≈ −0.97 in red, margin −14.2°);
+  - `Taylor 32` coloured by |Γ_act| (edges highest);
+  - `PA Elements` coloured by PA PAE (53-58 %);
+  - the scan maps, failures, frequency and tapers tabs.
+- **Gate 2:** a drag from boresight to 30° writes `theta0 = 30 deg` as one undo step, and undo restores it. A steer() whose θ₀ is an
+  expression does not drag, and says why.
+- **Gate 3:** a click writes `Off=10`, the symbol's glyph has 10 in its off set, the window follows, and undo restores both.
+- **Gate 4:** the new cell passes `check` (exit 0) and simulates, giving an 8 × 8 at λ/2.
+- **Gate 5:**
+  - nine directions at 4096 with a channel: 1 elaboration, 9 re-weighs, 0 factorisations after the first frame;
+  - a cancelled map counts one cancellation, and an edit in the schematic cancels the running map;
+  - a channel reading `n` is refused before the map starts.
+- **Gate 6:** a 20-step drag at 4096 with a channel: 0 elaborations, 20 re-weighs, 0 factorisations, 20 back-substitutions,
+  0 phase tables.
+- **R-paa9-7:** the frame is ~25 ms at 1024 and ~65 ms at 4096 in Release, ~48 ms and ~140 ms in Debug. That meets 20 a second at
+  1024, not at 4096.
+
+Deviations and things to know:
+
+- **Directivity and the power balance integrate the (u,v) map**, not the record's grid. On the 5° fixtures the grid read a 64 × 64
+  array's directivity 4 dB low, below its gain. The run's own `farfield.DirectivityDbi` and `PowerBalance(F1)` still use the grid,
+  so on a coarse record they disagree with the window.
+- **The map's element pattern is the centre element's.** The cuts and readouts sum every class.
+- **Failures zero the run's waves in memory** and do not solve the circuit again.
+- **The frequency tab** sums the run's weights over the record's frequencies when it holds three or more. The fixtures hold one,
+  so there it shows the array factor alone over ±20 %.
+- **PA Pout, PAE and channel NF** are read from measurements named for an element (`Pout3_dBm`, `PAE3`, `NF3`).
+- **The scan map** steps 5° in θ₀ and 15° in φ₀ out to the scan limit. It starts when its tab is shown and starts again after an
+  edit cancels it.
+- **EIRP** is the realized gain plus the drive level the run's own published EIRP implies. G/T is shown instead when the bench has a
+  `GoverTDbK(…)` measurement.
+- **Buttons are square glyph buttons**, as on the `.csch` and `.c3d` toolbars, with their words in the tooltip. **Help (?)** opens the
+  Phased Antenna Array section of the component reference (`reference/components.html#phasedarray`) until PAA-10 gives the tool a
+  page of its own; repoint `PhasedArrayWindow.OnHelpClick` then.
+- **Not done:** DocGen figures (PAA-10).

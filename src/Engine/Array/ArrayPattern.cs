@@ -150,8 +150,30 @@ public static class ArrayPattern
     public static ArrayField Sum(ArrayLattice lattice, IReadOnlyList<Complex> weights, ArrayElements elements, ArrayDirections directions, double hz)
     {
         if (weights.Count != lattice.Count) throw new ArgumentException($"{lattice.Count} elements and {weights.Count} weights.");
+        return SumWith(Tables(lattice, directions, hz), lattice, weights, elements, directions);
+    }
+
+    /// <summary>brief-paa-9 — <see cref="Sum(ArrayLattice, IReadOnlyList{Complex}, ArrayElements, ArrayDirections, double)"/> over a
+    /// TRANSIENT direction set — a beam search's patch, a cut through a peak that moves with every drag step — whose tables are built for
+    /// this call and dropped: they are never kept against the set nor counted in <see cref="TablesBuilt"/>, since nothing could reuse them.</summary>
+    public static ArrayField SumOnce(ArrayLattice lattice, IReadOnlyList<Complex> weights, ArrayElements elements, ArrayDirections directions, double hz)
+    {
+        if (weights.Count != lattice.Count) throw new ArgumentException($"{lattice.Count} elements and {weights.Count} weights.");
+        return SumWith(new ArrayPhaseTables(lattice, directions, hz), lattice, weights, elements, directions);
+    }
+
+    /// <summary>brief-paa-9 — <see cref="Factor"/> over a transient direction set, as <see cref="SumOnce"/>.</summary>
+    public static Complex[] FactorOnce(ArrayLattice lattice, IReadOnlyList<Complex> weights, ArrayDirections directions, double hz)
+    {
+        if (weights.Count != lattice.Count) throw new ArgumentException($"{lattice.Count} elements and {weights.Count} weights.");
+        var w = new Complex[lattice.Count];
+        for (int i = 0; i < w.Length; i++) w[i] = lattice.IsOn(i) ? weights[i] : Complex.Zero;
+        return Sum(new ArrayPhaseTables(lattice, directions, hz), w, directions.Count);
+    }
+
+    private static ArrayField SumWith(ArrayPhaseTables t, ArrayLattice lattice, IReadOnlyList<Complex> weights, ArrayElements elements, ArrayDirections directions)
+    {
         if (elements.PatternOf.Count != lattice.Count) throw new ArgumentException($"{lattice.Count} elements and {elements.PatternOf.Count} pattern assignments.");
-        var t = Tables(lattice, directions, hz);
         int n = directions.Count;
         var eTheta = new Complex[n];
         var ePhi = new Complex[n];

@@ -124,7 +124,9 @@ public static partial class FieldCosimulation
             if (metrics is not null)
             {
                 var hbPattern = new CosimPatternMetrics(fa, far, at[0], waves[0], points[0]);
-                metrics(new ArrayFieldsMetrics(fa, pa, far, freqs[0], waves[0], elements[0], hbPattern, nl, []));
+                var hbState = new ArrayFieldState(fa.Name, fa.Block, pa, far, freqs[0], waves[0].A, waves[0].B, waves[0].AvailableW, waves[0].AcceptedW,
+                                                  elements[0], null, false, true);
+                metrics(new ArrayFieldsMetrics(fa, pa, far, freqs[0], waves[0], elements[0], hbPattern, nl, [], hbState));
             }
             return data;
         }
@@ -145,7 +147,8 @@ public static partial class FieldCosimulation
                   $"({Pct(first.Accepts)} of the available power accepted) and referred to 1 V at port {drives[0].Port}. Gain is per watt accepted and realized gain includes mismatch.");
         lines.Add(pa.LevelNote);
         if (pa.CouplingNote is { } coupling) lines.Add(coupling);
-        if (pa.Feed is not null && (quick?.Path ?? PhasedArrayFastPath.Decide(nl, fa.Block)) is { } path) lines.Add(path.Sentence);
+        var solvePath = pa.Feed is not null ? quick?.Path ?? PhasedArrayFastPath.Decide(nl, fa.Block) : null;
+        if (solvePath is { } path) lines.Add(path.Sentence);
         lines.AddRange(sentences.Skip(1));
         Interlocked.Increment(ref _runs);
         if (quick is { Path.Fast: false }) notes.Add($"Fields '{fa.Name}': {PhasedArrayFastPath.EstimatedSentence}");
@@ -160,7 +163,9 @@ public static partial class FieldCosimulation
         if (metrics is not null)
         {
             var pattern = fa.AtEveryFrequency ? null : new CosimPatternMetrics(fa, far, at[0], waves[0], points[0]);
-            metrics(new ArrayFieldsMetrics(fa, pa, far, freqs[0], waves[0], elements[0], pattern, nl, drives));
+            var state = new ArrayFieldState(fa.Name, fa.Block, pa, far, freqs[0], waves[0].A, waves[0].B, waves[0].AvailableW, waves[0].AcceptedW,
+                                            elements[0], solvePath, quick is { Path.Fast: false }, false);
+            metrics(new ArrayFieldsMetrics(fa, pa, far, freqs[0], waves[0], elements[0], pattern, nl, drives, state));
         }
         _ = output;
         return data;
@@ -264,8 +269,10 @@ public static partial class FieldCosimulation
     /// PAA-2's local evaluation (never from the record's grid), computed once when first asked.</summary>
     private sealed class ArrayFieldsMetrics(FieldsAnalysis fa, PhasedArrayModel pa, PortFarFieldSet far, double hz, CosimWaves w,
                                             ArrayElements elements, CosimPatternMetrics? pattern, ElaboratedNetlist nl,
-                                            List<(int Port, Complex Amplitude)> drives) : IFieldMetrics
+                                            List<(int Port, Complex Amplitude)> drives, ArrayFieldState state) : IFieldMetrics, IArrayFieldStateSource
     {
+        public ArrayFieldState State { get; } = state;
+
         private readonly object _gate = new();
         private ArrayBeamMetrics? _beam;
         private double? _balance, _nf;

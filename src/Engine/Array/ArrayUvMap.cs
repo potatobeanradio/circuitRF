@@ -59,20 +59,22 @@ public static class ArrayUv
                 int ry = rowsPerSub - 1 - sr;
                 for (int c = 0; c < lattice.Cols; c++) a[ry * mu + c] = w[r * lattice.Cols + c];
             }
-            var row = new Complex[mu];
-            for (int y = 0; y < mv; y++)
+            // brief-paa-9 — only the rows that hold weights are transformed along u (the padding rows transform to zero), and both passes
+            // run in parallel, row by row and column by column: the same transform, for a map a drag re-forms at every step
+            Parallel.For(0, rowsPerSub, () => new Complex[mu], (y, _, row) =>
             {
                 Array.Copy(a, y * mu, row, 0, mu);
                 Fft.Transform(row, inverse: false);
                 Array.Copy(row, 0, a, y * mu, mu);
-            }
-            var col = new Complex[mv];
-            for (int x = 0; x < mu; x++)
+                return row;
+            }, _ => { });
+            Parallel.For(0, mu, () => new Complex[mv], (x, _, col) =>
             {
                 for (int y = 0; y < mv; y++) col[y] = a[y * mu + x];
                 Fft.Transform(col, inverse: false);
                 for (int y = 0; y < mv; y++) a[y * mu + x] = col[y];
-            }
+                return col;
+            }, _ => { });
             return a;
         }
 

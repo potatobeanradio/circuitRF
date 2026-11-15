@@ -38,6 +38,8 @@
                                     <NativeMenuItem Header="New Symbol"       Command="{Binding NewScratchSymbolCommand}"/>
                                     <NativeMenuItem Header="New Layout"       Command="{Binding NewLayoutCommand}"/>
                                     <NativeMenuItem Header="New 3D Design…"   Command="{Binding NewThreeDDesignCommand}"/>
+                                    <!-- brief-paa-9 R-paa9-1 — mirrored in the in-window File ▸ New below. -->
+                                    <NativeMenuItem Header="New Phased Array…" Command="{Binding NewPhasedArrayCommand}"/>
                                     <NativeMenuItem Header="New Data Display" Command="{Binding NewDataDisplayCommand}"       Gesture="Meta+Shift+D"/>
                                     <!-- Filled by RebuildNativeDataDisplayTemplatesMenu, on NeedsUpdate, from the
                                          same WorkspaceViewModel.DataDisplayTemplates the in-window mirror lists. -->
@@ -571,6 +573,8 @@
                         <NativeMenuItem Header="S-Parameter Viewer" Command="{Binding NewSParameterViewerCommand}"/>
                         <!-- An RF receive chain as a budget, transferred to test benches. Mirrored below. -->
                         <NativeMenuItem Header="RF Chain Budget" Command="{Binding NewChainBudgetCommand}"/>
+                        <!-- brief-paa-9 — the tool on a Phased Antenna Array of the active schematic. Mirrored below. -->
+                        <NativeMenuItem Header="Phased Array" Command="{Binding OpenPhasedArrayToolCommand}"/>
                         <!-- brief-modelcomposer-14 R-mc14-1 — a window per .cmc; needs no workspace. Mirrored below. -->
                         <NativeMenuItem Header="Model Composer…" Command="{Binding NewModelComposerCommand}"/>
                         <!-- brief-img-14 R-im14-13: the picture dialog, empty, in plot mode. Mirrored below. -->
@@ -764,6 +768,12 @@
                               Command="{Binding NewThreeDDesignCommand}"
                               ToolTip.Tip="Create a new cell holding an empty 3D view (.c3d) and open it. Needs an open workspace.">
                         <MenuItem.Icon><mi:MaterialIcon Kind="CubeOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <!-- brief-paa-9 R-paa9-1 — hand-mirrored with the macOS NativeMenu above. -->
+                    <MenuItem Header="New Phased _Array…"
+                              Command="{Binding NewPhasedArrayCommand}"
+                              ToolTip.Tip="Create a cell holding a port, a Feed-mode phased antenna array on an EM result you choose (8 × 8 at half a wavelength) and a fields analysis, and open the Phased Array tool on it. Needs an open workspace.">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="DotsGrid" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="New _Data Display"
                               Command="{Binding NewDataDisplayCommand}"
@@ -1730,6 +1740,12 @@
                           Command="{Binding NewChainBudgetCommand}"
                           ToolTip.Tip="A receive chain stage by stage — gain, noise figure, intercepts, compression, sensitivity and dynamic range — and its transfer to test benches that verify every number. Opens with or without a workspace.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ArrowRightBoldBoxOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <!-- brief-paa-9 — hand-mirrored with the macOS NativeMenu above. -->
+                <MenuItem Header="P_hased Array"
+                          Command="{Binding OpenPhasedArrayToolCommand}"
+                          ToolTip.Tip="The aperture, the beam in (u, v), the cuts and the readouts of the Phased Antenna Array selected in the active schematic; every edit writes the instance's parameters with undo. Requires an open schematic holding one.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="DotsGrid" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <!-- brief-modelcomposer-14 R-mc14-1 — hand-mirrored with the macOS NativeMenu above. -->
                 <MenuItem Header="Model _Composer…"

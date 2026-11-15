@@ -347,6 +347,40 @@ public static class CellCreate
     }
 
     /// <summary>
+    /// brief-paa-9 R-paa9-1 — File ▸ New ▸ Phased Array: a cell whose schematic is a Port, a Feed-mode Phased Antenna Array on
+    /// <paramref name="recordPath"/> (8 × 8 at half a wavelength of the record's centre frequency, steered by <c>steer(theta0, phi0, f0)</c>
+    /// from three VARs) and a <c>type=fields</c> analysis at the record's frequency nearest that centre. The schematic is the drawing of
+    /// that netlist (<see cref="NetlistSchematic"/>, what <c>netlist --to-schematic</c> draws), so the cell is the netlist and nothing
+    /// else. A record that does not open is refused with its own sentence and nothing is created.
+    /// </summary>
+    public static CellCreateResult PhasedArray(string parentDir, string cellName, string recordPath)
+    {
+        string record = Path.GetFullPath(recordPath);
+        var (far, refused) = CircuitRF.Design.Em3d.PortFarFieldSet.Open(record);
+        if (far is null) throw new ArgumentException(refused ?? $"'{Path.GetFileName(record)}' holds no far field.");
+        var freqs = far.FrequenciesHz;
+        double centre = (freqs.Min() + freqs.Max()) / 2;
+        double at = freqs.OrderBy(f => Math.Abs(f - centre)).First();
+        string Ghz(double hz) => (hz / 1e9).ToString("G9", System.Globalization.CultureInfo.InvariantCulture);
+        string cnl =
+            $"f0 = {Ghz(centre)} GHz\n" +
+            "theta0 = 0 deg\n" +
+            "phi0 = 0 deg\n" +
+            "Port:P1 f 0 Num=1 Z=50 Ohm\n" +
+            $"PhasedArray:PA1 f Record=\"{record}\" Mode=feed Rows=8 Cols=8 dx=0.5*lambda(f0) dy=0.5*lambda(f0) Phase=steer(theta0,phi0,f0)\n" +
+            $"analysis F1 type=fields block=PA1 freq={Ghz(at)} freqUnit=GHz drive=1\n";
+
+        // drawn before the folder exists, so a drawing that is refused leaves nothing behind
+        string schematicDir = CellFolder.SubFolderPath(Path.Combine(Path.GetFullPath(parentDir), cellName), ViewType.Schematic);
+        var (lib, tb) = new CircuitRF.Core.Netlist.CnlReader().Read(cnl, cellName, schematicDir);
+        var drawn = NetlistSchematic.Build(lib, tb, schematicDir);
+        if (drawn.Schematic is null || drawn.Refusals.Count > 0) throw new InvalidOperationException(string.Join(" ", drawn.Refusals));
+        string cellDir = CellFolder.CreateCellFolder(parentDir, cellName);
+        string path = WriteSchematicView(cellDir, cellName, cellName, drawn.Schematic);
+        return new CellCreateResult(cellDir, path, null, null);
+    }
+
+    /// <summary>
     /// The path a view file of this type and name takes inside a cell folder, and the sub-folder
     /// created if a hand-made cell folder is missing it. A caller that has just run
     /// <see cref="CellFolder.CreateCellFolder"/> already has the first three; <c>3d/</c> is always

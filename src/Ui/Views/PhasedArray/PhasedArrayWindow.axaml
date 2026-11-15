@@ -1,0 +1,210 @@
+<!-- brief-paa-9 — the Phased Array tool: a view of one Phased Antenna Array instance in a schematic (R-paa9-1). The aperture, the (u,v) map,
+     the principal cuts and the readouts on the Beam tab; scan maps, tapers and bits, failures and frequency on their own. Every edit is a
+     command on the schematic's undo stack, so Undo in the schematic undoes it, and the window follows every edit made there. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CircuitRF.Ui.PhasedArray"
+        xmlns:pav="using:CircuitRF.Ui.Views.PhasedArray"
+        xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
+        x:Class="CircuitRF.Ui.Views.PhasedArray.PhasedArrayWindow"
+        x:DataType="vm:PhasedArrayToolViewModel"
+        Title="{Binding Title}"
+        Width="1320" Height="900" MinWidth="980" MinHeight="640"
+        CanResize="True">
+
+    <Window.Styles>
+        <Style Selector="Border.pane">
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeMediumLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="8"/>
+            <Setter Property="Margin"          Value="4"/>
+        </Style>
+        <Style Selector="TextBlock.panelhdr">
+            <Setter Property="FontSize"   Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin"     Value="0,0,12,0"/>
+        </Style>
+        <Style Selector="TextBlock.lbl">
+            <Setter Property="FontSize"          Value="12"/>
+            <Setter Property="Opacity"           Value="0.8"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin"            Value="0,0,4,0"/>
+        </Style>
+        <Style Selector="ComboBox.p">
+            <Setter Property="FontSize"  Value="12"/>
+            <Setter Property="MinWidth"  Value="110"/>
+            <Setter Property="MinHeight" Value="24"/>
+            <Setter Property="Padding"   Value="4,1"/>
+        </Style>
+        <Style Selector="NumericUpDown.p">
+            <Setter Property="FontSize"  Value="12"/>
+            <Setter Property="MinWidth"  Value="100"/>
+            <Setter Property="MinHeight" Value="24"/>
+        </Style>
+        <!-- the documents' toolbar buttons (.csch, .c3d): square, one 16 px glyph, the words in the tooltip -->
+        <Style Selector="Button.glyph, ToggleButton.glyph">
+            <Setter Property="Padding" Value="6,3"/>
+            <Setter Property="Margin"  Value="4,0,0,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button.glyph mi|MaterialIcon, ToggleButton.glyph mi|MaterialIcon">
+            <Setter Property="Width"  Value="16"/>
+            <Setter Property="Height" Value="16"/>
+        </Style>
+    </Window.Styles>
+
+    <DockPanel>
+        <Border DockPanel.Dock="Bottom" Padding="10,4" Background="{DynamicResource SystemChromeMediumLowColor}">
+            <TextBlock Text="{Binding Status}" FontSize="12" TextTrimming="CharacterEllipsis"/>
+        </Border>
+
+        <Grid>
+        <TabControl x:Name="Tabs" Margin="4,0,4,0">
+            <TabItem Header="Beam">
+                <Grid ColumnDefinitions="*,*,250" RowDefinitions="*,280">
+                    <!-- Aperture -->
+                    <Border Classes="pane" Grid.Row="0" Grid.Column="0">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                                <TextBlock Classes="panelhdr" Text="Aperture"/>
+                                <TextBlock Classes="lbl" Text="Colour by"/>
+                                <ComboBox Classes="p" ItemsSource="{Binding Quantities}" SelectedValueBinding="{Binding Value}"
+                                          SelectedValue="{Binding Quantity}"/>
+                                <Button Classes="glyph" Command="{Binding SwitchSelectedOffCommand}" Margin="8,0,0,0"
+                                        ToolTip.Tip="Switch the selected elements off (drag on the aperture to select). A click on one element switches it off or on.">
+                                    <mi:MaterialIcon Kind="GridOff"/>
+                                </Button>
+                                <Button Classes="glyph" Command="{Binding SwitchSelectedOnCommand}"
+                                        ToolTip.Tip="Switch the selected elements on">
+                                    <mi:MaterialIcon Kind="Grid"/>
+                                </Button>
+                            </StackPanel>
+                            <!-- the hover line keeps its height whether or not anything is hovered, so the canvas never shifts -->
+                            <TextBlock DockPanel.Dock="Bottom" Text="{Binding Hover}" FontSize="12" Height="18" Margin="0,4,0,0"/>
+                            <pav:ApertureCanvas x:Name="Aperture"/>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- (u,v) map -->
+                    <Border Classes="pane" Grid.Row="0" Grid.Column="1">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                                <TextBlock Classes="panelhdr" Text="Realized gain in (u, v)"/>
+                                <TextBlock Classes="lbl" Text="Scan limit"/>
+                                <NumericUpDown Classes="p" Value="{Binding ScanLimitDeg}" Minimum="0" Maximum="90" Increment="5" FormatString="0'°'"/>
+                            </StackPanel>
+                            <pav:UvMapCanvas x:Name="UvMap"/>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Readouts -->
+                    <Border Classes="pane" Grid.Row="0" Grid.RowSpan="2" Grid.Column="2">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Classes="panelhdr" Text="Readouts" Margin="0,0,0,8"/>
+                            <ItemsControl ItemsSource="{Binding Readouts}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ReadoutRow">
+                                        <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                                            <TextBlock Classes="lbl" Text="{Binding Label}"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Value}" FontSize="12" HorizontalAlignment="Right"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Cuts -->
+                    <Border Classes="pane" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,4">
+                                <TextBlock Classes="panelhdr" Text="Principal cuts"/>
+                                <ToggleButton Classes="glyph" IsChecked="{Binding CutsPolar}" ToolTip.Tip="Polar cuts (off: rectangular)">
+                                    <ddc:PlotTypeGlyphControl Kind="Polar" Width="16" Height="16"
+                                                              Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
+                                </ToggleButton>
+                            </StackPanel>
+                            <pav:CutsCanvas x:Name="Cuts"/>
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Scan maps" x:Name="ScanTab">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8,6">
+                        <TextBlock Classes="lbl" Text="To θ0"/>
+                        <NumericUpDown Classes="p" Value="{Binding ScanLimitDeg}" Minimum="5" Maximum="85" Increment="5" FormatString="0'°'"/>
+                        <Button Classes="glyph" Command="{Binding StartScanCommand}"
+                                ToolTip.Tip="Compute the scan maps again (they compute when this tab is shown, and again after an edit)">
+                            <mi:MaterialIcon Kind="Play"/>
+                        </Button>
+                        <TextBlock Text="{Binding ScanStatus}" FontSize="12" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <Grid ColumnDefinitions="*,*">
+                        <Border Classes="pane"><pav:ScanMapCanvas Gamma="False"/></Border>
+                        <Border Classes="pane" Grid.Column="1"><pav:ScanMapCanvas Gamma="True"/></Border>
+                    </Grid>
+                </DockPanel>
+            </TabItem>
+
+            <TabItem Header="Tapers and bits">
+                <DockPanel>
+                    <Border Classes="pane" DockPanel.Dock="Top">
+                        <WrapPanel Orientation="Horizontal">
+                            <TextBlock Classes="lbl" Text="Taper"/>
+                            <ComboBox Classes="p" ItemsSource="{x:Static vm:PhasedArrayToolViewModel.TaperFamilies}" SelectedItem="{Binding TaperFamily}"/>
+                            <TextBlock Classes="lbl" Text="Level" Margin="12,0,4,0"/>
+                            <NumericUpDown Classes="p" Value="{Binding TaperLevel}" Increment="1" FormatString="0.##"/>
+                            <TextBlock Classes="lbl" Text="n̄" Margin="12,0,4,0"/>
+                            <NumericUpDown Classes="p" Value="{Binding TaperNbar}" Minimum="1" Maximum="64" Increment="1" FormatString="0"/>
+                            <TextBlock Classes="lbl" Text="Phase bits" Margin="24,0,4,0"/>
+                            <ComboBox Classes="p" ItemsSource="{x:Static vm:PhasedArrayToolViewModel.PhaseBitChoices}" SelectedItem="{Binding PhaseBitsChoice}"/>
+                            <TextBlock Classes="lbl" Text="Attenuator step (dB)" Margin="12,0,4,0"/>
+                            <ComboBox Classes="p" ItemsSource="{x:Static vm:PhasedArrayToolViewModel.AttenStepChoices}" SelectedItem="{Binding AttenStepChoice}"/>
+                            <Button Classes="glyph" Command="{Binding ApplyTaperAndBitsCommand}" Margin="16,0,0,0"
+                                    ToolTip.Tip="Write the taper to Amp, and the phase bits and attenuator step, on the instance (one undo step)">
+                                <mi:MaterialIcon Kind="Check"/>
+                            </Button>
+                        </WrapPanel>
+                    </Border>
+                    <Grid ColumnDefinitions="*,*">
+                        <Border Classes="pane"><pav:ApertureCanvas/></Border>
+                        <Border Classes="pane" Grid.Column="1"><pav:CutsCanvas/></Border>
+                    </Grid>
+                </DockPanel>
+            </TabItem>
+
+            <TabItem Header="Failures">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8,6">
+                        <TextBlock Classes="lbl" Text="Fraction off"/>
+                        <NumericUpDown Classes="p" Value="{Binding FailureFraction}" Minimum="0" Maximum="0.9" Increment="0.01" FormatString="0.##"/>
+                        <TextBlock Classes="lbl" Text="Trials" Margin="12,0,4,0"/>
+                        <NumericUpDown Classes="p" Value="{Binding FailureTrialCount}" Minimum="1" Maximum="500" Increment="5" FormatString="0"/>
+                        <Button Classes="glyph" Command="{Binding RunFailuresCommand}"
+                                ToolTip.Tip="Switch the fraction off at random in each trial, in memory (nothing is written)">
+                            <mi:MaterialIcon Kind="Play"/>
+                        </Button>
+                        <TextBlock Text="{Binding FailureSummary}" FontSize="12" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                    </StackPanel>
+                    <Border Classes="pane"><pav:ArrayChartCanvas Kind="failures"/></Border>
+                </DockPanel>
+            </TabItem>
+
+            <TabItem Header="Frequency" x:Name="FrequencyTab">
+                <Border Classes="pane"><pav:ArrayChartCanvas Kind="frequency"/></Border>
+            </TabItem>
+        </TabControl>
+        <!-- Help, on the tab strip's row at the right, as the other tool windows carry it -->
+        <Button Classes="glyph" x:Name="HelpButton" Click="OnHelpClick" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,6,10,0"
+                ToolTip.Tip="Help: the Phased Antenna Array in the circuitRF reference">
+            <mi:MaterialIcon Kind="HelpCircleOutline"/>
+        </Button>
+        </Grid>
+    </DockPanel>
+</Window>

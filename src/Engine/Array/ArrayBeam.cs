@@ -18,7 +18,12 @@ using CircuitRF.Core.Devices.Arrays;
 namespace CircuitRF.Engine.AntennaArray;
 
 /// <summary>One principal cut through the peak: the angle from the peak along it, degrees, and the power there over the peak's, dB.</summary>
-public sealed record ArrayCut(string Plane, double[] OffsetDeg, double[] RelativeDb);
+public sealed record ArrayCut(string Plane, double[] OffsetDeg, double[] RelativeDb)
+{
+    /// <summary>brief-paa-9 — the field the cut was read from, at its own directions, so a view can split it into co- and cross-polar
+    /// without summing again.</summary>
+    public ArrayField? Field { get; init; }
+}
 
 /// <summary>R-paa2-7 — what the local evaluation reads off a beam.</summary>
 /// <param name="ElevationBeamwidthDeg">Half-power beamwidth in the plane holding the peak and boresight.</param>
@@ -59,6 +64,33 @@ public static class ArrayBeam
     }
 
     /// <summary>
+    /// brief-paa-9 — the beam's peak power alone: the same two climbs <see cref="Evaluate"/> makes from the same start, without its cuts
+    /// and sidelobes, so a caller that needs only the peak (a scan loss's broadside reference) pays only for the search.
+    /// </summary>
+    public static double PeakPower(ArrayLattice lattice, IReadOnlyList<Complex> weights, ArrayElements elements, double hz,
+                                   double startThetaDeg, double startPhiDeg, double? stepDeg = null)
+    {
+        double estimate = EstimateBeamwidthDeg(lattice, hz);
+        double step = Math.Min(stepDeg ?? estimate / 10, 1.0);
+        double rad = Math.PI / 180;
+        Power power = dirs => ArrayPattern.SumOnce(lattice, weights, elements, ArrayDirections.OfVectors(dirs), hz);
+        var p = Search(power, lattice, hz, estimate, step, startThetaDeg, startPhiDeg, startPhiDeg * rad);
+        return power([p]).Power(0);
+    }
+
+    /// <summary>The peak's direction: a climb at the step from the start, then one ten times finer.</summary>
+    private static (double X, double Y, double Z) Search(Power power, ArrayLattice lattice, double hz, double estimate, double step,
+                                                         double startThetaDeg, double startPhiDeg, double phiRef)
+    {
+        double rad = Math.PI / 180;
+        var p = ArrayDirections.Vector(startThetaDeg * rad, startPhiDeg * rad);
+        double startCos = Math.Max(Math.Cos(startThetaDeg * rad), 0.2);
+        int half = (int)Math.Ceiling(1.5 * estimate / startCos / step);
+        p = Climb(power, p, phiRef, step * rad, half, 8);
+        return Climb(power, p, phiRef, step * rad / 10, 3, 2);
+    }
+
+    /// <summary>
     /// The beam's metrics, from a patch around the peak and the two principal cuts through it. The search starts at
     /// (<paramref name="startThetaDeg"/>, <paramref name="startPhiDeg"/>) — the requested scan, or the overview's maximum — and the
     /// pointing error is against (<paramref name="theta0Deg"/>, <paramref name="phi0Deg"/>) when given.
@@ -70,13 +102,10 @@ public static class ArrayBeam
         double step = Math.Min(stepDeg ?? estimate / 10, 1.0);
         double rad = Math.PI / 180;
         double phiRef = (phi0Deg ?? startPhiDeg) * rad;
-        Power power = dirs => ArrayPattern.Sum(lattice, weights, elements, ArrayDirections.OfVectors(dirs), hz);
+        // brief-paa-9 — every set below is transient (a patch, a cut through a peak that moves), so its tables are not kept
+        Power power = dirs => ArrayPattern.SumOnce(lattice, weights, elements, ArrayDirections.OfVectors(dirs), hz);
 
-        var p = ArrayDirections.Vector(startThetaDeg * rad, startPhiDeg * rad);
-        double startCos = Math.Max(Math.Cos(startThetaDeg * rad), 0.2);
-        int half = (int)Math.Ceiling(1.5 * estimate / startCos / step);
-        p = Climb(power, p, phiRef, step * rad, half, 8);
-        p = Climb(power, p, phiRef, step * rad / 10, 3, 2);
+        var p = Search(power, lattice, hz, estimate, step, startThetaDeg, startPhiDeg, phiRef);
         double peak = power([p]).Power(0);
 
         double snapPhi = (phi0Deg ?? 0) * rad;
@@ -100,10 +129,10 @@ public static class ArrayBeam
 
     private delegate ArrayField Power(IReadOnlyList<(double X, double Y, double Z)> directions);
 
-    private sealed record RawCut(string Plane, double[] OffsetDeg, double[] Power, (double, double, double) Tangent);
+    private sealed record RawCut(string Plane, double[] OffsetDeg, double[] Power, (double, double, double) Tangent, ArrayField? Field = null);
 
     private static ArrayCut Relative(RawCut cut, double peak)
-        => new(cut.Plane, cut.OffsetDeg, [.. cut.Power.Select(v => v > 0 ? 10 * Math.Log10(v / peak) : double.NegativeInfinity)]);
+        => new(cut.Plane, cut.OffsetDeg, [.. cut.Power.Select(v => v > 0 ? 10 * Math.Log10(v / peak) : double.NegativeInfinity)]) { Field = cut.Field };
 
     /// <summary>The angle between two unit vectors, radians, by atan2 so a small one keeps its digits.</summary>
     public static double Separation((double X, double Y, double Z) a, (double X, double Y, double Z) b)
@@ -200,7 +229,7 @@ public static class ArrayBeam
             dirs[i] = (c * p.X + s * tangent.X, c * p.Y + s * tangent.Y, c * p.Z + s * tangent.Z);
         }
         var f = power(dirs);
-        return new RawCut(plane, offsets, [.. Enumerable.Range(0, offsets.Length).Select(f.Power)], tangent);
+        return new RawCut(plane, offsets, [.. Enumerable.Range(0, offsets.Length).Select(f.Power)], tangent, f);
     }
 
     /// <summary>The half-power width of a cut about its middle sample, crossings interpolated linearly in dB; 360° when none is found.</summary>

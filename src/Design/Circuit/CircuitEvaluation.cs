@@ -564,6 +564,8 @@ public static class CircuitEvaluation
                              convergence, outcomes, fields)
         {
             PlainSnpFieldsBlocks = plainSnps,
+            ArrayStates = fieldsRun.Metrics.Where(kv => kv.Value is CircuitRF.Design.Em3d.IArrayFieldStateSource)
+                                   .ToDictionary(kv => kv.Key, kv => ((CircuitRF.Design.Em3d.IArrayFieldStateSource)kv.Value).State, StringComparer.OrdinalIgnoreCase),
             Errors = errors,
             Summary = errors.Count > 0 ? $"{finished}; {errors.Count} failed" : finished,
         };

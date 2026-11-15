@@ -425,6 +425,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         NewCellInWorkspaceCommand.NotifyCanExecuteChanged();
         NewThreeDDesignCommand.NotifyCanExecuteChanged();
+        NewPhasedArrayCommand.NotifyCanExecuteChanged();
         RaiseImageCommandsChanged();   // brief-img-6 R-im6-1/2: enabled whenever a workspace is open
         NewFolderInWorkspaceCommand.NotifyCanExecuteChanged();
         ExportDataCommand.NotifyCanExecuteChanged();

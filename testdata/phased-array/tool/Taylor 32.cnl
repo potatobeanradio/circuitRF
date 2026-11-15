@@ -1,0 +1,8 @@
+; brief-paa-9 gate 1 - a 32 x 32 array on PAA-1's 5 x 5 record (embedded, position classes, coupled), steered to 30 deg with a
+; Taylor -30 dB taper. Opened by the Phased Array tool (UiSnapshot --phased-array).
+Port:P1 f 0 Num=1 Z=50 Ohm
+theta0 = 30 deg
+phi0 = 0 deg
+f0 = 5.9 GHz
+PhasedArray:PA1 f Record="../results/e5.cemr" RecordRows=5 RecordCols=5 RecordDx=25.86 mm RecordDy=25.86 mm dx=25.86 mm dy=25.86 mm Mode=feed Rows=32 Cols=32 Phase=steer(theta0,phi0,f0) Amp=taylor(-30,4)
+analysis F1 type=fields block=PA1 freq=5.9 freqUnit=GHz drive=1

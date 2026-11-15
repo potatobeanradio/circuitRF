@@ -80,6 +80,11 @@ public sealed class RunResult(
     public string Summary { get => _summary ?? StatusMessage; init => _summary = value; }
     private readonly string? _summary;
 
+    /// <summary>brief-paa-9 — the state of every fields analysis on a Phased Antenna Array, by result name: what the Phased Array tool
+    /// draws from.</summary>
+    public IReadOnlyDictionary<string, CircuitRF.Design.Em3d.ArrayFieldState> ArrayStates { get; init; }
+        = new Dictionary<string, CircuitRF.Design.Em3d.ArrayFieldState>();
+
     /// <summary>brief-sar-9 — every fields analysis's recombined result, in run order.</summary>
     public IReadOnlyList<FieldsArtifact> Fields { get; } = fields ?? [];
 
@@ -119,7 +124,7 @@ public sealed class RunResult(
     /// <summary>This result with <paramref name="leading"/> ahead of its own notes.</summary>
     public RunResult WithLeadingNotes(IReadOnlyList<string> leading)
         => new(Status, StatusMessage, Results, Warnings, GroupedResults, [.. leading, .. Notes],
-               Convergence, Expressions, Fields) { Errors = Errors, Summary = Summary };
+               Convergence, Expressions, Fields) { Errors = Errors, Summary = Summary, PlainSnpFieldsBlocks = PlainSnpFieldsBlocks, ArrayStates = ArrayStates };
 
     // Convenience: callers that only need the DataSets (unchanged from Phase 6e).
     public IReadOnlyList<DataSet> DataSets => Results.Select(r => r.Data).ToList();

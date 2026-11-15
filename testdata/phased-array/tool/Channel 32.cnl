@@ -1,0 +1,13 @@
+; brief-paa-9 R-paa9-7 - "Taylor 32.cnl"'s size with an identical reflecting channel in every path, coupled: PAA-8's fast path with one
+; closure factorisation and a back-substitution per move, the bench the window's drag frame is measured on at 1024 elements.
+define chan ( in out )
+Amp:A1 in 0 mid 0 Gain=20 IP3=200
+Atten:T1 mid 0 out 0 Loss=3
+C:C1 out 0 C=0.3pF
+end
+Port:P1 f 0 Num=1 Z=50 Ohm
+theta0 = 0 deg
+phi0 = 0 deg
+f0 = 5.9 GHz
+PhasedArray:PA1 f Record="../results/e5.cemr" RecordRows=5 RecordCols=5 RecordDx=25.86 mm RecordDy=25.86 mm dx=25.86 mm dy=25.86 mm Mode=feed Rows=32 Cols=32 Phase=steer(theta0,phi0,f0) Amp=cosq(1) Channel=chan
+analysis F1 type=fields block=PA1 freq=5.9 freqUnit=GHz drive=1
