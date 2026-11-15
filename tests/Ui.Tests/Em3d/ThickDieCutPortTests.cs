@@ -136,6 +136,44 @@ public sealed class ThickDieCutPortTests(ThickDieCutPortTests.Fixture fx, ITestO
         Assert.Equal(old, p.Boundary with { Material = null });
     }
 
+    // ── The field test's re-run on main ──────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>A stated Return whose metal stops short of the face by more than a tenth of its width is refused, as a solve refuses
+    /// it. It used to be moved in up to three widths (the .c3d's rule), silently: on the field test a capacitor pin's sheet slid
+    /// 4 µm along its line onto a via stack of its own net. Automatic is unchanged.</summary>
+    [Fact]
+    public void AStatedReturnShortOfTheFace_IsRefused_NotMovedAlongTheLine()
+    {
+        var v = fx.Die();
+        v.Shapes.Add(R(M1, 55, -20, 80, 20));                  // under B's line, 15 µm (1.5 widths) in from its face
+        var cut = Problem(v, new EmComponentPort("X1") { Return = "Metal1" }).ComponentPorts!.Ports.Where(p => p.Cutout).ToList();
+        foreach (var p in cut) output.WriteLine(C3dComponentPorts.Describe(p));
+        Assert.StartsWith("down to 'Metal1'", cut.Single(p => p.Pin == "A").Landing);
+        var b = cut.Single(p => p.Pin == "B");
+        Assert.False(b.Ok);
+        Assert.Matches(@"its metal stops 15(\.0+)? µm short of the port's end of the line", b.Refusal);
+        Assert.StartsWith("down to the floor", Landings(v, new EmComponentPort("X1")).Single(l => l.Pin == "B").Landing);
+    }
+
+    /// <summary>Every sentence the generator makes about a cut port reaches the run under the pin's name: the possessive ones
+    /// ("Port 2's return passes through an opening …", "Port 2's sheet is … inside its line's end") were dropped by a match on
+    /// "Port 2 ".</summary>
+    [Fact]
+    public void TheGeneratorsNotesAboutACutPort_ReachTheRun_UnderItsPin()
+    {
+        var v = fx.Die();
+        // An opening in Metal1 round B's face, metal all round it and none under it: the walk passes through it to the floor.
+        v.Shapes.Add(new PolygonShape
+        {
+            Layer = M1, Xy = [Um(20), Um(-25), Um(60), Um(-25), Um(60), Um(25), Um(20), Um(25)],
+            Holes = [[Um(30), Um(-15), Um(50), Um(-15), Um(50), Um(15), Um(30), Um(15)]],
+        });
+        var g = Problem(v, new EmComponentPort("X1"));
+        foreach (var n in g.Notes.Where(n => n.StartsWith("X1.", StringComparison.Ordinal))) output.WriteLine(n);
+        Assert.Contains(g.Notes, n => n.StartsWith("X1.B (port 2): its return passes through an opening in 'Metal1' round its line's end",
+                                                   StringComparison.Ordinal));
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
     private Em3dGenerationResult Problem(LayoutView view, EmComponentPort entry)

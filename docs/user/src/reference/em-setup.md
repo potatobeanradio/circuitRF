@@ -443,8 +443,11 @@ that is often the backside, hundreds of µm down, and the sheet's own inductance
 `"Return": "Metal1"` lands every sheet of the instance on that stackup conductor instead, and a pin's own
 (`"Pins": { "B": { "Return": "Metal1" } }`) overrides it for that pin. It is the same walk with the plane stated: a layer
 with no metal across the face, or with other metal in the way, is refused, and that pin is left out of the run with the
-reason. Planar ignores it, since a Planar cut port has no sheet, and its notes say so once. A pin referenced to another pin
-has no Return either: its sheet runs between the two faces.
+reason. So is a layer whose metal starts further along the line than a tenth of the face's width: the sheet is not moved
+along the line to where it starts, because that metal can be the line's own, such as the pad of a via stack on the pin's
+net. Where the walk does move a sheet in, or passes through an opening on its way, the run's notes and `check` say so
+under the pin's name. Planar ignores it, since a Planar cut port has no sheet, and its notes say so once. A pin
+referenced to another pin has no Return either: its sheet runs between the two faces.
 
 **Grounded pins** (**Ground**, `"Ground": ["E"]`) are tied to the ground plane at their face by a ground via as wide as
 the face, and take no port. Use it for an emitter or a source that sits on a via in the real chip but has none drawn

@@ -32089,3 +32089,21 @@ to the floor.
 - **Not done.** The 3D view panel's padding tooltip (`C3dProblemAssembly.DefaultPaddingBasis`/`ShortBasis`) reads the elaboration
   alone, which has no ports. It still names the H rule where the run uses the column; the run's note and `explain` are right.
   No panel control for Return: it is a `.cem` key, and the cut entry's other per-pin options are edited the same way.
+
+## ICF follow-ups — what re-running the field test on main found (2026-11-16)
+
+The field test of issue 69 was run again on main (ICF-1 to ICF-6 in). Each item below is one commit with its gate; the fixtures
+are ICF-6's thick die (`ThickDieCutPortTests`) and ICF-4's spiral (`ThickSiliconCoilFixture`).
+
+- **A stated Return was moved along the line, silently.** `GenerateCutPorts` runs with `portsEach`, which is the `.c3d`'s rule: a
+  return plane up to `TranslatedReturnGapOfWidth` (3 widths) short of a line's end moves the sheet in to where it begins. A cut
+  port's stated Return took that rule, so on the field test a capacitor pin's sheet with `Return: Metal1` moved 4.05 µm along
+  its line onto the pad of a via stack of its own net (a shorted port), and an emitter's 4.075 µm, leaving a stub beyond the port.
+  The page says a layer with no metal across the face is refused, and R-icf6-1 asks for the refusal a drawn port's stated
+  return gets, so the intended rule is a solve's: a stated Return keeps `ReturnGapToleranceOfWidth` (a tenth) and is refused beyond it. Automatic is
+  unchanged (a walked plane short of the face still moves the sheet in); whether it should keep a solve's tenth too is left
+  open. The move's sentence was written but never reached `check` or the run: `C3dCellCuts.Ports` forwarded only `PortsMoved`
+  entries starting `"Port 6 "`, and the generator's possessive sentences (`"Port 6's sheet is … inside its line's end"`,
+  `"Port 6's return passes through an opening"`) never matched. Both forms are forwarded now, the possessive as
+  `X1.B (port 2): its …`. Gates: `AStatedReturnShortOfTheFace_IsRefused_NotMovedAlongTheLine`,
+  `TheGeneratorsNotesAboutACutPort_ReachTheRun_UnderItsPin`.

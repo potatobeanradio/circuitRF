@@ -346,7 +346,9 @@ public static class Em3dGenerator
     /// brief-icp-3 R-icp3-2 — the layout's problem with <paramref name="setup"/>'s cell instances cut out
     /// (<see cref="EmPlanarComponentPorts.Of"/>) and a sheet at each cut face, built exactly as a drawn edge port's is: the same
     /// return walk, the same width rule (the face's whole edge), the same refusals. Built port by port (<c>portsEach</c>), so a face
-    /// that cannot have a sheet is left out alone. What a 3D view reads its cut ports off; never a solve of its own.
+    /// that cannot have a sheet is left out alone; a stated Return short of the face by more than
+    /// <see cref="ReturnGapToleranceOfWidth"/> is refused, as a solve refuses it, not moved in. What a 3D view reads its cut ports
+    /// off; never a solve of its own.
     /// </summary>
     public static Em3dGenerationResult GenerateCutPorts(EmSetup setup, EmLayoutSource source, Technology tech)
     {
@@ -766,7 +768,10 @@ public static class Em3dGenerator
                         bool lineSpansSheet = gap is not { } g0 || g0 <= tolerance
                             || (MetalAt(piece.Poly, p.Side, inside, lo + 0.01 * (hi - lo))
                                 && MetalAt(piece.Poly, p.Side, inside, hi - 0.01 * (hi - lo)));
-                        if (gap is { } g && g <= (portsEach ? Math.Max(tolerance, TranslatedReturnGapOfWidth * (hi - lo)) : tolerance) && !wave &&
+                        // A cut port's stated Return is a solve's port, which its user cannot move, so it keeps a solve's tenth:
+                        // moved the .c3d's three widths, a sheet slid along its line onto a via stack of its own net (R-icf6-1).
+                        bool translated = portsEach && !(CutPorts && stated is not null);
+                        if (gap is { } g && g <= (translated ? Math.Max(tolerance, TranslatedReturnGapOfWidth * (hi - lo)) : tolerance) && !wave &&
                             lineSpansSheet &&
                             PieceContaining(on, p.Side, moved, mid) is { } near &&
                             MetalAt(piece.Poly, p.Side, inside, mid))

@@ -250,8 +250,12 @@ public static class C3dCellCuts
                     Cutout = true, Cell = cp.Cell, CutPart = cp.CutPart, ClayPath = layout.Frame.DocumentPath, SchematicId = cp.SchematicId,
                     Verdict = landing is null ? "verified" : $"verified, landing {landing}", Landing = landing,
                 });
-                foreach (string moved in g.PortsMoved.Where(m => m.StartsWith($"Port {cp.Number} ", StringComparison.Ordinal)))
-                    notes.Add($"{name} (port {port.Number}){moved[$"Port {cp.Number}".Length..]}");
+                // Every one of the generator's sentences about this port, "Port 6 returns …" and "Port 6's sheet is …" alike: the
+                // possessive ones (a sheet moved in, a return through an opening) were dropped by a match on "Port 6 ".
+                string own = $"Port {cp.Number}";
+                foreach (string moved in g.PortsMoved)
+                    if (moved.StartsWith(own + " ", StringComparison.Ordinal)) notes.Add($"{name} (port {port.Number}){moved[own.Length..]}");
+                    else if (moved.StartsWith(own + "'s ", StringComparison.Ordinal)) notes.Add($"{name} (port {port.Number}): its {moved[(own.Length + 3)..]}");
                 // brief-icf-6 R-icf6-2 — a sheet that falls to the floor through a thick substrate is a different port from one that stops
                 // on metal a few µm down; past λ/20 of the shortest wavelength in what it crosses, said as a warning with the remedy.
                 if (ret is { Floor: true } && TallLanding(sheet.Min.Z, sheet.Max.Z, bands, fMax) is { } fraction)
