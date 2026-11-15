@@ -10,9 +10,10 @@ using Xunit;
 namespace CircuitRF.Engine.Tests.Devices;
 
 /// <summary>
-/// MBLC, the 3 dB branch-line hybrid, through the engine. It is its plan's MTEE and MLIN sections and nothing
-/// else, so it matches the same parts wired by hand, and the one-section coupler on the C2 fixture's dimensions
-/// is the C2 fixture. At F it splits 3 dB in quadrature.
+/// MBLC, the 3 dB branch-line hybrid, and MRRC, the rat-race hybrid, through the engine. Each is its plan's MTEE,
+/// MLIN and MCURVE sections and nothing else, so it matches the same parts wired by hand, and the one-section
+/// branch-line on the C2 fixture's dimensions is the C2 fixture. At F they split 3 dB in quadrature or in and
+/// out of phase.
 /// </summary>
 public class HybridSParamTests
 {
@@ -30,13 +31,15 @@ public class HybridSParamTests
     private static string Part(string kind) => kind switch
     {
         "MBLC1" => $"MBLC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz N=1 {Sub}",
-        _ => $"MBLC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz N=2 {Sub}",
+        "MBLC2" => $"MBLC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz N=2 {Sub}",
+        _ => $"MRRC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz {Sub}",
     };
 
     private static PassivePlan Plan(string kind) => kind switch
     {
         "MBLC1" => BranchLinePlan.Build(50.0, 2.4e9, 1, Ro4350b).Plan,
-        _ => BranchLinePlan.Build(50.0, 2.4e9, 2, Ro4350b).Plan,
+        "MBLC2" => BranchLinePlan.Build(50.0, 2.4e9, 2, Ro4350b).Plan,
+        _ => RatRacePlan.Build(50.0, 2.4e9, Ro4350b).Plan,
     };
 
     private static ElaboratedNetlist Elaborate(string cnl)
@@ -100,6 +103,9 @@ public class HybridSParamTests
     [InlineData("MBLC2", 1.2e9)]
     [InlineData("MBLC2", 2.4e9)]
     [InlineData("MBLC2", 4.8e9)]
+    [InlineData("MRRC", 1.2e9)]
+    [InlineData("MRRC", 2.4e9)]
+    [InlineData("MRRC", 4.8e9)]
     public void TheHybrid_IsItsSectionsWiredByHand(string kind, double f)
         => AssertSame(SAt(Elaborate($"{Ports}\n{Part(kind)}"), f), SAt(Elaborate(ByHand(Plan(kind))), f), f);
 
@@ -115,6 +121,19 @@ public class HybridSParamTests
         Assert.InRange(Db(s[1, 0]), -3.4, -3.0);
         Assert.InRange(Db(s[2, 0]), -3.4, -3.0);
         Assert.InRange(PhaseDeg(s[1, 0], s[2, 0]), 87.0, 93.0);      // 3 lags 2 by a quarter period
+    }
+
+    [Fact]
+    public void TheRatRace_SumsAndDifferencesAtF()
+    {
+        var s = SAt(Elaborate($"{Ports}\n{Part("MRRC")}"), 2.4e9);
+
+        foreach (var (i, j) in new[] { (0, 0), (3, 3), (3, 0), (2, 1) })
+            Assert.True(Db(s[i, j]) < -20.0, $"|S{i + 1}{j + 1}| {Db(s[i, j]):F2} dB");
+        foreach (var (i, j) in new[] { (1, 0), (2, 0), (1, 3), (2, 3) })
+            Assert.InRange(Db(s[i, j]), -3.4, -3.0);
+        Assert.InRange(PhaseDeg(s[1, 0], s[2, 0]), -3.0, 3.0);       // Σ: in phase
+        Assert.InRange(Math.Abs(PhaseDeg(s[1, 3], s[2, 3])), 177.0, 180.0);   // Δ: out of phase
     }
 
     /// <summary>testdata/schematic-to-layout/C2-branch-line, the hand-drawn one-section coupler: four MTEEs, four
@@ -144,10 +163,11 @@ public class HybridSParamTests
             AssertSame(SAt(part, f), SAt(fixture, f), f);
     }
 
-    /// <summary>At DC the coupler is copper: 1 V through 50 Ω reaches every pin alike, into three 50 Ω loads.</summary>
+    /// <summary>At DC each hybrid is copper: 1 V through 50 Ω reaches every pin alike, into three 50 Ω loads.</summary>
     [Theory]
     [InlineData("MBLC1")]
     [InlineData("MBLC2")]
+    [InlineData("MRRC")]
     public void AtDc_EveryPinIsOneNode(string kind)
     {
         var nl = Elaborate($"""

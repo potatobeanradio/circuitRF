@@ -5,7 +5,7 @@ using Xunit;
 namespace CircuitRF.Core.Tests.Devices.Microstrip;
 
 /// <summary>
-/// <see cref="BranchLinePlan"/> against its closed form (Pozar; Reed and Wheeler
+/// <see cref="BranchLinePlan"/> and <see cref="RatRacePlan"/> against their closed forms (Pozar; Reed and Wheeler
 /// 1956): the arms' impedances, λg/4 in MLIN's own dispersive εeff at F between the junctions' reference planes,
 /// and pieces that meet where the plan says they do.
 /// </summary>
@@ -89,6 +89,45 @@ public class HybridPlanTests
     public void TheBranchLine_Closes(int n) => AssertJoined(BranchLinePlan.Build(50.0, 2.4e9, n, Ro4350b).Plan);
 
     [Theory]
+    [InlineData(50.0, 2.4e9)]
+    [InlineData(50.0, 5.8e9)]
+    [InlineData(35.0, 1.0e9)]
+    public void TheRatRace_IsTheClosedForm(double z0, double f)
+    {
+        var d = RatRacePlan.Build(z0, f, Ro4350b);
+
+        Assert.Equal(Math.Sqrt(2.0) * z0, d.RingZ0, 12);
+        Assert.Equal(z0, Line(d.W0Meters, f).Z0, 2);
+        Assert.Equal(d.RingZ0, Line(d.RingWMeters, f).Z0, 2);
+        Assert.Equal(Line(d.RingWMeters, f).Eeff, d.RingEeff, 12);
+        double q = Quarter(d.RingEeff, f);
+        Assert.True(Math.Abs(d.QuarterWaveMeters - q) < 2e-9);
+
+        // Ring order 2, 1, 3, 4: each spacing reference plane to reference plane (every tee's through arms end
+        // on them), the half-turns at their effective length.
+        var s = d.Plan.Sections;
+        double Arc(int i) => MicrostripCurve.ElectricalLength(((PlanCurve)s[i]).Radius, d.RingWMeters, 180.0);
+        double[] spacing =
+        [
+            ((PlanLine)s[1]).L,                                   // 2 → 1
+            ((PlanLine)s[3]).L,                                   // 1 → 3
+            Arc(5) + ((PlanLine)s[6]).L,                          // 3 → 4
+            ((PlanLine)s[8]).L + Arc(9),                          // 4 → 2
+        ];
+        double[] want = [q, q, q, 3.0 * q];
+        for (int k = 0; k < 4; k++)
+            Assert.True(Math.Abs(spacing[k] - want[k]) < 10e-9, $"spacing {k}: {spacing[k]} vs {want[k]}");
+        Assert.True(Math.Abs(spacing.Sum() - 1.5 * 4.0 * q) < 20e-9, "1.5 guide wavelengths round");
+        foreach (var t in s.OfType<PlanTee>())
+        {
+            Assert.Equal(t.W3 / 2.0, t.L1, 15);
+            Assert.Equal(d.RingWMeters / 2.0 + d.FeedMeters, t.L3, 15);
+        }
+        Assert.Equal(["1", "2", "3", "4"], d.Plan.Pins);
+        AssertJoined(d.Plan);
+    }
+
+    [Theory]
     [InlineData(0.0, 2.4e9, 1.0, "device.branchline.spec-not-positive")]
     [InlineData(50.0, -1.0, 1.0, "device.branchline.spec-not-positive")]
     [InlineData(50.0, 2.4e9, 3.0, "device.branchline.sections")]
@@ -98,6 +137,16 @@ public class HybridPlanTests
     public void ABranchLineThatCannotBeBuilt_IsACodedRefusal(double z0, double f, double n, string code)
     {
         var ex = Assert.Throws<ParameterRefusalException>(() => BranchLinePlan.Build(z0, f, n, Ro4350b));
+        Assert.Equal(code, ex.Diagnostic?.Id);
+    }
+
+    [Theory]
+    [InlineData(0.0, 2.4e9, "device.ratrace.spec-not-positive")]
+    [InlineData(50.0, 40e9, "device.ratrace.ring-too-small")]
+    [InlineData(500.0, 2.4e9, "device.ratrace.width-unreachable")]
+    public void ARatRaceThatCannotBeBuilt_IsACodedRefusal(double z0, double f, string code)
+    {
+        var ex = Assert.Throws<ParameterRefusalException>(() => RatRacePlan.Build(z0, f, Ro4350b));
         Assert.Equal(code, ex.Diagnostic?.Id);
     }
 

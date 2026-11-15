@@ -7,7 +7,8 @@ namespace CircuitRF.Core.Devices;
 
 /// <summary>
 /// A planned microstrip passive (docs/design/rf-passives.md) — MWPD, the equal-split Wilkinson divider
-/// (<see cref="WilkinsonPlan"/>), and MBLC, the branch-line hybrid (<see cref="BranchLinePlan"/>). It has no line physics of its own: each section of the plan is the EXISTING
+/// (<see cref="WilkinsonPlan"/>), and the hybrids MBLC (<see cref="BranchLinePlan"/>) and MRRC
+/// (<see cref="RatRacePlan"/>). It has no line physics of its own: each section of the plan is the EXISTING
 /// part's model (<see cref="MicrostripTeeModel"/>, <see cref="MicrostripCurveModel"/>,
 /// <see cref="MicrostripLineModel"/>), stamped into a
 /// <see cref="LocalAdmittanceBlock"/> on the plan's nodes, and the internal nodes are Kron-reduced away so the
