@@ -23,6 +23,10 @@ namespace CircuitRF.Core.Devices;
 /// record is normalised to unit power on the flat top, so <c>Pavg</c> is then the PULSE-TOP available power and
 /// harmonic balance and loadpull see the top: the right steady state for a pulse.
 ///
+/// A single carrier of PSK / QAM / APSK symbols (<c>Carrier[1]="SC;Rs=10Msps;Mod=16APSK;RollOff=0.2;..."</c>, brief
+/// PCH-5) is the source's only carrier too, with a record of its own symbols; unlike FSK, DBPSK and CSS it may be
+/// clipped (<c>Clip=</c>), since a filtered QAM or APSK carrier has peaks.
+///
 /// Node layout (as P1Tone): [0] external, [1] reference, [2] minted <c>__modsrc_&lt;inst&gt;_drv</c>.
 ///
 /// What each analysis sees:

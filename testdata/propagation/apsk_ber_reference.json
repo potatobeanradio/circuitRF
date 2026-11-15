@@ -1,0 +1,19 @@
+{
+  "constellation": "16APSK, 4+12, radii 1:2.85, phases 45/15 deg, natural ring-wise labels, unit mean power",
+  "symbols": 2000000,
+  "seed": 20261115,
+  "points": [
+    {
+      "EbN0_dB": 8.0,
+      "bits": 8000000,
+      "bit_errors": 151528,
+      "ber": 0.018941
+    },
+    {
+      "EbN0_dB": 10.0,
+      "bits": 8000000,
+      "bit_errors": 34504,
+      "ber": 0.004313
+    }
+  ]
+}

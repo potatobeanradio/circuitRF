@@ -98,8 +98,10 @@ namespace RfCore.Signals
         }
 
         /// <summary>The one complex gain against the ideal points, then rms and peak EVM — <see cref="Measure"/>'s, and a
-        /// received record's after its delay is taken out. <paramref name="rx"/> is divided by the gain in place.</summary>
-        internal static EvmResult Score(CarrierSpec c, Complex[] rx, Complex[] id, int symbols, int nsc)
+        /// received record's after its delay is taken out. <paramref name="rx"/> is divided by the gain in place.
+        /// <paramref name="meanPower"/>, when given, is the reference power the error is read against (an SC
+        /// constellation's mean power) in place of the mean power of the ideal points present.</summary>
+        internal static EvmResult Score(CarrierSpec c, Complex[] rx, Complex[] id, int symbols, int nsc, double? meanPower = null)
         {
             Complex num = Complex.Zero; double den = 0;
             for (int k = 0; k < rx.Length; k++) { num += rx[k] * Complex.Conjugate(id[k]); den += id[k].Real * id[k].Real + id[k].Imaginary * id[k].Imaginary; }
@@ -112,8 +114,9 @@ namespace RfCore.Signals
                 err += e * e;
                 peak = Math.Max(peak, e);
             }
-            double rmsRef = Math.Sqrt(den / rx.Length);
-            return new EvmResult(100 * Math.Sqrt(err / den), 100 * peak / rmsRef, LimitPercent(c.Modulation),
+            double refPower = meanPower is double mp ? mp * rx.Length : den;
+            double rmsRef = Math.Sqrt(refPower / rx.Length);
+            return new EvmResult(100 * Math.Sqrt(err / refPower), 100 * peak / rmsRef, LimitPercent(c.Modulation),
                                  rx, id, symbols, nsc) { Gain = g };
         }
         // ── a received record (brief NZ-8) ──────────────────────────────────────────────────────────────

@@ -17,6 +17,9 @@
 //                    symbols is.
 //    FSK             the sign of the frequency at each bit centre (its
 //                    offset taken out) against the sign sent.
+//    SC              (brief PCH-5) the nearest point of the constellation
+//                    (ScQam.Constellation), its label the bits it carries;
+//                    the sent label is the ideal point's.
 //    CSS             each chirp de-chirped against the base up-chirp and
 //                    decimated to the chip rate, its value the FFT bin of
 //                    the peak, received against sent; SF bits a chirp.
@@ -99,6 +102,21 @@ namespace RfCore.Signals
                 bits++;
             }
             return new ErrorCount(se, points.Count, be, bits);
+        }
+
+        /// <summary>SC: each point decided to the nearest point of <paramref name="constellation"/>, its label against the
+        /// ideal point's.</summary>
+        public static ErrorCount Sc(Complex[] constellation, IReadOnlyList<Complex> points, IReadOnlyList<Complex> ideal)
+        {
+            int k = System.Numerics.BitOperations.Log2((uint)constellation.Length);
+            long se = 0, be = 0;
+            for (int i = 0; i < points.Count; i++)
+            {
+                int d = ScQam.Decide(constellation, points[i]), s = ScQam.Decide(constellation, ideal[i]);
+                if (d != s) se++;
+                be += System.Numerics.BitOperations.PopCount((uint)(d ^ s));
+            }
+            return new ErrorCount(se, points.Count, be, (long)points.Count * k);
         }
 
         /// <summary>FSK: the sign of the received frequency at each bit centre against the sign sent; one bit a symbol.</summary>

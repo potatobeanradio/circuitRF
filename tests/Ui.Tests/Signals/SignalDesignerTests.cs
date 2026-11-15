@@ -688,6 +688,40 @@ public class SignalDesignerTests : FirstLaunchUserState
         Assert.True(d.CcdfPlot.Axes.Window.Width >= 12, "a constant envelope's step is framed 0-12 dB, not on its own hair");
     }
 
+    /// <summary>Brief PCH-5: an SC card is offered, written back as it was set, clippable but alone on its source, and its
+    /// EVM row reads the native record through the matched filter.</summary>
+    [Fact]
+    public async Task ScCard_ApplyClipAndEvm()
+    {
+        var (vm, s) = Bench(fc: "2", fcUnit: "GHz");
+        using var d = Open(vm, s);
+        d.PresetLte20Command.Execute(null);                                   // one carrier, then made SC
+        var c = Assert.Single(d.Carriers);
+        c.Standard = "SC";
+        c.ScSymbolRateMsps = 5;
+        c.ScModulation = "16APSK";
+        c.RollOff = 0.2;
+        c.Preamble = 32;
+        c.PilotBlockText = "16/200";
+        Assert.True(c.IsApsk);
+        Assert.Null(c.ScRefusal);
+        Assert.Equal("symbol 200 ns  ·  511 data symbols + 64 known  ·  record 115 µs  ·  bandwidth 6 MHz", c.ScInfoText);
+        Assert.True(d.IsSingleCarrier && d.CanClip && !d.CanAddCarrier && !d.CanEditRecord && d.HasEvmTab);
+        Assert.Equal("Native rate (40 MS/s)", Assert.Single(d.SampleRates, o => o.IsOwn).Label);
+        d.ApplyCommand.Execute(null);
+        Assert.Equal("\"SC;Rs=5Msps;Mod=16APSK;RollOff=0.2;Data=PN9;Preamble=32;PilotBlock=16/200;Off=0;P=0\"",
+                     s.Parameters.Single(p => p.Name == "Carrier[1]").Expression);
+
+        await d.PreviewAsync();
+        var sig = SignalComposer.Generate(new SignalSpec { Carriers = [c.ToSpec()] });
+        var row = Assert.Single(SignalDesignerViewModel.AnalyseEvm(sig));
+        Assert.True(row.Result.RmsPercent < 1e-9);
+        Assert.Equal("—", row.LimitText);
+
+        c.PilotBlockText = "16";                                             // not L/P: refused on the card
+        Assert.Contains("PilotBlock", c.ScRefusal);
+    }
+
     // ── Tools ▸ Signal Designer ─────────────────────────────────────────────
 
     /// <summary>Opened from Tools it belongs to no MOD_Source: nothing to Apply to, and a signal it designs or reads

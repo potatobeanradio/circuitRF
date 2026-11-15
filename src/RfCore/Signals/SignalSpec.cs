@@ -2,7 +2,7 @@
 //  SignalSpec.cs  —  the description of a modulated test signal
 //
 //  A signal is a list of carriers (LTE, NR, CW, pulsed CW, FSK, DBPSK,
-//  CSS or an imported I/Q file), each with its own bandwidth, modulation, frequency offset
+//  CSS, single carrier PSK/QAM/APSK or an imported I/Q file), each with its own bandwidth, modulation, frequency offset
 //  from the source's centre frequency and relative power, plus record
 //  length, clipping and spectral-shaping settings.  The spec is plain
 //  data: it serialises to the .cmod JSON file the Signal Designer
@@ -21,7 +21,7 @@ using System.Text.Json.Serialization;
 
 namespace RfCore.Signals
 {
-    public enum CarrierStandard { Lte, Nr, Cw, File, Pcw, Fsk, Dbpsk, Css }
+    public enum CarrierStandard { Lte, Nr, Cw, File, Pcw, Fsk, Dbpsk, Css, Sc }
 
     public enum QamOrder { Qpsk = 2, Qam16 = 4, Qam64 = 6, Qam256 = 8, Qam1024 = 10 }
 
@@ -73,6 +73,26 @@ namespace RfCore.Signals
         /// <see cref="BandwidthHz"/>.</summary>
         public int? SpreadingFactor { get; init; }
 
+        // A single-carrier (SC) carrier's settings (brief PCH-5); null = ScQam.Resolve's default, so no other carrier's
+        // JSON or cache key changes.
+        /// <summary>Symbol rate Rs, symbols/s.</summary>
+        public double? SymbolRateHz { get; init; }
+        public ScModulation? ScModulation { get; init; }
+        /// <summary>The root-raised-cosine roll-off α, 0 to 1.</summary>
+        public double? RollOff { get; init; }
+        /// <summary>The shaping filter's span in symbols; null = the whole record.</summary>
+        public int? Span { get; init; }
+        /// <summary>APSK: each outer ring's radius over the inner ring's, comma-separated.</summary>
+        public string? Rings { get; init; }
+        /// <summary>APSK: each ring's phase offset in degrees, inner first, comma-separated.</summary>
+        public string? RingPhases { get; init; }
+        /// <summary>Known symbols at the start of the record.</summary>
+        public int? Preamble { get; init; }
+        /// <summary>"L/P": L known symbols after every P data symbols.</summary>
+        public string? PilotBlock { get; init; }
+        /// <summary>Data symbols in the record; null = one data period, at most <see cref="ScQam.DefaultMaxSymbols"/>.</summary>
+        public int? Symbols { get; init; }
+
         public string Label => Standard switch
         {
             CarrierStandard.Lte => $"LTE {BandwidthHz / 1e6:0.#} MHz {ModName(Modulation)}",
@@ -82,6 +102,7 @@ namespace RfCore.Signals
             CarrierStandard.Fsk => FskLabel(Fsk.Resolve(this)),
             CarrierStandard.Dbpsk => $"DBPSK {Fsk.FormatBitRate(Dbpsk.Resolve(this).BitRate)} {DataLabel(Dbpsk.Resolve(this).Data)}",
             CarrierStandard.Css => $"CSS SF{Css.Resolve(this).Sf} {Fsk.FormatHz(BandwidthHz)}",
+            CarrierStandard.Sc => ScLabel(ScQam.Resolve(this)),
             _ => $"File {System.IO.Path.GetFileName(FilePath ?? "")}",
         };
 
@@ -89,7 +110,10 @@ namespace RfCore.Signals
             => $"{s.Kind} {Fsk.FormatBitRate(s.BitRate)} ±{Fsk.FormatHz(s.Deviation)}{(s.Bt > 0 ? $" BT {s.Bt.ToString("0.###", CultureInfo.InvariantCulture)}" : "")} "
              + DataLabel(s.Data);
 
-        private static string DataLabel(string data) => data is "PN9" or "PN15" ? data : $"{data.Length}-bit pattern";
+        private static string DataLabel(string data) => data is "PN9" or "PN15" or "PN23" ? data : $"{data.Length}-bit pattern";
+
+        private static string ScLabel(ScShape s)
+            => $"SC {SignalSpec.FormatSymbolRate(s.SymbolRate)} {ScQam.ModName(s.Mod)} α {s.RollOff.ToString("0.###", CultureInfo.InvariantCulture)}";
 
         public static string ModName(QamOrder m) => m switch
         {
@@ -201,7 +225,9 @@ namespace RfCore.Signals
         /// <c>"FILE;File=iq/capture.txt;Fs=122.88MHz;Off=0;P=0"</c>, or for a pulse train
         /// <c>"PCW;PRI=100us;PW=50us;Rise=0.5us;Fall=0.5us;Delay=10us;Off=0;P=0"</c>, or for FSK
         /// <c>"FSK;Rb=100kbps;Dev=45kHz;BT=0.5;Data=PN9;Off=0;P=0"</c>, or for DBPSK <c>"DBPSK;Rb=100bps;Data=PN9;Off=0;P=0"</c>,
-        /// or for chirp spread spectrum <c>"CSS;SF=7;BW=125kHz;Off=0;P=0"</c>. BW, SCS, Fs, Dev and Off take Hz, kHz,
+        /// or for chirp spread spectrum <c>"CSS;SF=7;BW=125kHz;Off=0;P=0"</c>, or for a single carrier
+        /// <c>"SC;Rs=10Msps;Mod=16APSK;RollOff=0.2;Rings=2.85;Phases=45,15;Data=PN15;Preamble=64;PilotBlock=36/1440;Off=0;P=0"</c>
+        /// (Rs takes sps, ksps or Msps; <see cref="ScQam"/> states every default). BW, SCS, Fs, Dev and Off take Hz, kHz,
         /// MHz or GHz after the number; a bare number is Hz (<c>BW=20e6</c>). PRI, PW, Rise, Fall and Delay take s, ms,
         /// us (or µs) or ns; a bare number is seconds. Rb takes bps, kbps or Mbps; a bare number is b/s.
         /// </summary>
@@ -221,7 +247,8 @@ namespace RfCore.Signals
                     "FSK" => CarrierStandard.Fsk,
                     "DBPSK" => CarrierStandard.Dbpsk,
                     "CSS" => CarrierStandard.Css,
-                    _ => throw new FormatException($"unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS or FILE)"),
+                    "SC" => CarrierStandard.Sc,
+                    _ => throw new FormatException($"unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS, SC or FILE)"),
                 },
             };
             bool bwStated = parts.Skip(1).Any(p => p.Split('=')[0].Trim().Equals("BW", StringComparison.OrdinalIgnoreCase));
@@ -240,6 +267,7 @@ namespace RfCore.Signals
                     "SEED" => c with { Seed = (int)Num() },
                     "FILE" => c with { FilePath = v.Trim('"') },
                     "FS" => c with { SampleRateHz = ParseHz(k, v) },
+                    "MOD" when c.Standard == CarrierStandard.Sc => c with { ScModulation = ScQam.ParseMod(v) },
                     "MOD" => c with { Modulation = ParseMod(v) },
                     "PRI" => c with { PriSeconds = PulseField(c, k, v) },
                     "PW" => c with { PulseWidthSeconds = PulseField(c, k, v) },
@@ -252,6 +280,14 @@ namespace RfCore.Signals
                     "DEV" => c with { DeviationHz = FskField(c, k, () => ParseHz(k, v)) },
                     "BT" => c with { GaussianBt = FskField(c, k, Num) },
                     "DATA" => c with { Data = FskField(c, k, () => v, alsoDbpsk: true) },
+                    "RS" => c with { SymbolRateHz = ScField(c, k, () => ParseSymbolRate(k, v)) },
+                    "ROLLOFF" => c with { RollOff = ScField(c, k, Num) },
+                    "SPAN" => c with { Span = ScField(c, k, () => WholeField(k, v)) },
+                    "RINGS" => c with { Rings = ScField(c, k, () => v) },
+                    "PHASES" => c with { RingPhases = ScField(c, k, () => v) },
+                    "PREAMBLE" => c with { Preamble = ScField(c, k, () => WholeField(k, v)) },
+                    "PILOTBLOCK" => c with { PilotBlock = ScField(c, k, () => v) },
+                    "SYMBOLS" => c with { Symbols = ScField(c, k, () => WholeField(k, v)) },
                     "SF" => c with { SpreadingFactor = CssField(c, k, v) },
                     _ => throw new FormatException($"unknown carrier field '{k}'"),
                 };
@@ -268,14 +304,59 @@ namespace RfCore.Signals
                 if (!bwStated) c = c with { BandwidthHz = Css.DefaultBandwidthHz };
                 Css.Validate(c);
             }
+            // a single carrier's is Rs(1 + α), where its root-raised-cosine spectrum ends
+            if (c.Standard == CarrierStandard.Sc) c = c with { BandwidthHz = ScQam.BandwidthHz(ScQam.Validate(c)) };
             return c;
         }
 
         private static T FskField<T>(CarrierSpec c, string key, Func<T> read, bool alsoDbpsk = false)
         {
-            if (c.Standard != CarrierStandard.Fsk && !(alsoDbpsk && c.Standard == CarrierStandard.Dbpsk))
-                throw new FormatException($"carrier field {key} belongs to an FSK{(alsoDbpsk ? " or DBPSK" : "")} carrier");
+            if (c.Standard != CarrierStandard.Fsk && !(alsoDbpsk && c.Standard is CarrierStandard.Dbpsk or CarrierStandard.Sc))
+                throw new FormatException($"carrier field {key} belongs to an FSK{(alsoDbpsk ? ", DBPSK or SC" : "")} carrier");
             return read();
+        }
+
+        private static T ScField<T>(CarrierSpec c, string key, Func<T> read)
+        {
+            if (c.Standard != CarrierStandard.Sc) throw new FormatException($"carrier field {key} belongs to an SC carrier");
+            return read();
+        }
+
+        private static int WholeField(string key, string v)
+        {
+            if (!int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n))
+                throw new FormatException($"carrier field {key}={v} is not a whole number");
+            return n;
+        }
+
+        private static readonly (string Unit, string Exponent)[] SymbolRateUnits =
+            [("Msps", "e6"), ("ksps", "e3"), ("sps", ""), ("MBd", "e6"), ("kBd", "e3"), ("Bd", ""),
+             ("GHz", "e9"), ("MHz", "e6"), ("kHz", "e3"), ("Hz", "")];
+
+        /// <summary>A symbol rate: a number, optionally followed by sps, ksps or Msps (Bd, kBd, MBd and the frequency units
+        /// read the same), applied as <see cref="ParseHz"/> applies its prefix.</summary>
+        private static double ParseSymbolRate(string key, string v)
+        {
+            string num = v, exp = "";
+            foreach (var (unit, e) in SymbolRateUnits)
+                if (v.EndsWith(unit, StringComparison.Ordinal)) { num = v[..^unit.Length].TrimEnd(); exp = e; break; }
+            bool hasExponent = num.Contains('e', StringComparison.OrdinalIgnoreCase);
+            if (!double.TryParse(hasExponent ? num : num + exp, NumberStyles.Float, CultureInfo.InvariantCulture, out double r))
+                throw new FormatException($"carrier field {key}={v} is not a symbol rate: a number with sps, ksps or Msps");
+            return hasExponent && exp.Length > 0 ? r * Math.Pow(10, int.Parse(exp[1..], CultureInfo.InvariantCulture)) : r;
+        }
+
+        /// <summary>Writes a symbol rate in Msps or ksps when that reads back as the same double, as plain sps otherwise.</summary>
+        public static string FormatSymbolRate(double sps)
+        {
+            var inv = CultureInfo.InvariantCulture;
+            foreach (var (unit, div) in new[] { ("Msps", 1e6), ("ksps", 1e3) })
+            {
+                if (sps < div) continue;
+                string scaled = (sps / div).ToString("R", inv);
+                if (!scaled.Contains('E') && ParseSymbolRate("", scaled + unit) == sps) return scaled + unit;
+            }
+            return sps.ToString("R", inv) + "sps";
         }
 
         private static int CssField(CarrierSpec c, string key, string v)
@@ -436,6 +517,20 @@ namespace RfCore.Signals
                 if (c.BitRateBps is double rb) sb.Append(";Rb=").Append(FormatBitRate(rb));
                 if (c.Data is { } data) sb.Append(";Data=").Append(data);
             }
+            if (c.Standard == CarrierStandard.Sc)
+            {
+                // only what is stated: an unstated field keeps following its default (Rings with Mod, among them)
+                if (c.SymbolRateHz is double rs) sb.Append(";Rs=").Append(FormatSymbolRate(rs));
+                if (c.ScModulation is { } m) sb.Append(";Mod=").Append(ScQam.ModName(m));
+                if (c.RollOff is double a) sb.Append(";RollOff=").Append(a.ToString("R", inv));
+                if (c.Span is int sp) sb.Append(";Span=").Append(sp.ToString(inv));
+                if (c.Rings is { } rg) sb.Append(";Rings=").Append(rg);
+                if (c.RingPhases is { } ph) sb.Append(";Phases=").Append(ph);
+                if (c.Data is { } data) sb.Append(";Data=").Append(data);
+                if (c.Symbols is int ns) sb.Append(";Symbols=").Append(ns.ToString(inv));
+                if (c.Preamble is int pre) sb.Append(";Preamble=").Append(pre.ToString(inv));
+                if (c.PilotBlock is { } pb) sb.Append(";PilotBlock=").Append(pb);
+            }
             if (c.Standard == CarrierStandard.Fsk)
             {
                 if (c.BitRateBps is double rb) sb.Append(";Rb=").Append(FormatBitRate(rb));
@@ -446,7 +541,7 @@ namespace RfCore.Signals
             sb.Append(";Off=").Append(FormatHz(c.OffsetHz, "MHz"));
             sb.Append(";P=").Append(c.PowerDb.ToString("R", inv));
             // a pulse, and the PN data of an FSK, DBPSK or CSS carrier, draw no random symbols
-            if (c.Standard is not (CarrierStandard.Pcw or CarrierStandard.Fsk or CarrierStandard.Dbpsk or CarrierStandard.Css))
+            if (c.Standard is not (CarrierStandard.Pcw or CarrierStandard.Fsk or CarrierStandard.Dbpsk or CarrierStandard.Css or CarrierStandard.Sc))
                 sb.Append(";Seed=").Append(c.Seed.ToString(inv));
             return sb.ToString();
         }

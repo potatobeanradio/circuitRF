@@ -106,6 +106,7 @@ namespace RfCore.Signals
         {
             "PN9" => Prbs(9, 5),
             "PN15" => Prbs(15, 14),
+            "PN23" => Prbs(23, 18),
             _ => data.Select(ch => (byte)(ch - '0')).ToArray(),
         };
 

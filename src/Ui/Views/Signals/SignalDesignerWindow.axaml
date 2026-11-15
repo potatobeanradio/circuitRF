@@ -444,6 +444,45 @@
                                                 <TextBlock Grid.Row="1" Grid.ColumnSpan="4" Classes="note" Margin="0,6,0,0" Text="{Binding CssRefusal}"
                                                            Foreground="{DynamicResource CrfWarningBrush}" IsVisible="{Binding CssRefusal, Converter={x:Static ObjectConverters.IsNotNull}}"/>
                                             </Grid>
+                                            <!-- SC: one carrier of PSK, QAM or APSK symbols with root-raised-cosine shaping; the record is its
+                                                 data's. Rings and Phases are APSK's, typed as lists (empty: the defaults). -->
+                                            <Grid Grid.Row="4" Grid.ColumnSpan="4" ColumnDefinitions="Auto,140,Auto,110" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
+                                                  Margin="0,6,0,0" IsVisible="{Binding IsSc}" Tag="sc-fields">
+                                                <TextBlock Classes="lbl" Text="Rs (Msym/s)" Margin="0,0,6,0"/>
+                                                <NumericUpDown Grid.Column="1" Value="{Binding ScSymbolRateMsps}" Increment="1" Minimum="0.000001" FormatString="0.######"
+                                                               ToolTip.Tip="Symbol rate. The spectrum occupies Rs (1 + roll-off)."/>
+                                                <TextBlock Grid.Column="2" Classes="lbl" Text="Modulation" Margin="12,0,6,0"/>
+                                                <ComboBox Grid.Column="3" HorizontalAlignment="Stretch"
+                                                          ItemsSource="{x:Static vm:CarrierRowViewModel.ScModulations}" SelectedItem="{Binding ScModulation}"
+                                                          ToolTip.Tip="PSK and square QAM are Gray-mapped; APSK labels its rings in turn, inner first, counter-clockwise from each ring's phase"/>
+                                                <TextBlock Grid.Row="1" Classes="lbl" Text="Roll-off" Margin="0,6,6,0"/>
+                                                <NumericUpDown Grid.Row="1" Grid.Column="1" Margin="0,6,0,0" Value="{Binding RollOff}" Increment="0.05" Minimum="0" Maximum="1" FormatString="0.###"
+                                                               ToolTip.Tip="The root-raised-cosine roll-off: 0.35, 0.25 and 0.2 are common on satellite links"/>
+                                                <TextBlock Grid.Row="2" Classes="lbl" Text="Rings" Margin="0,6,6,0" IsEnabled="{Binding IsApsk}"/>
+                                                <TextBox Grid.Row="2" Grid.Column="1" Margin="0,6,0,0" Text="{Binding RingsText}" IsEnabled="{Binding IsApsk}"
+                                                         PlaceholderText="default"
+                                                         ToolTip.Tip="Each outer ring's radius over the inner ring's, separated by commas: 16APSK takes one (default 2.85), 32APSK two (default 2.84, 5.27)"/>
+                                                <TextBlock Grid.Row="2" Grid.Column="2" Classes="lbl" Text="Phases (°)" Margin="12,6,6,0" IsEnabled="{Binding IsApsk}"/>
+                                                <TextBox Grid.Row="2" Grid.Column="3" Margin="0,6,0,0" Text="{Binding PhasesText}" IsEnabled="{Binding IsApsk}"
+                                                         PlaceholderText="default"
+                                                         ToolTip.Tip="Each ring's phase offset in degrees, inner first, separated by commas: 16APSK default 45, 15; 32APSK default 45, 15, 0"/>
+                                                <TextBlock Grid.Row="3" Classes="lbl" Text="Preamble" Margin="0,6,6,0"/>
+                                                <NumericUpDown Grid.Row="3" Grid.Column="1" Margin="0,6,0,0" Value="{Binding Preamble}" Increment="16" Minimum="0" FormatString="0"
+                                                               ToolTip.Tip="Known QPSK symbols at the start of the record. With pilot blocks, they train the pilot equalizer of an envelope run."/>
+                                                <TextBlock Grid.Row="3" Grid.Column="2" Classes="lbl" Text="Pilot block" Margin="12,6,6,0"/>
+                                                <TextBox Grid.Row="3" Grid.Column="3" Margin="0,6,0,0" Text="{Binding PilotBlockText}" PlaceholderText="none"
+                                                         ToolTip.Tip="L/P: L known QPSK symbols after every P data symbols, e.g. 36/1440. Empty: no pilot blocks."/>
+                                                <TextBlock Grid.Row="4" Classes="lbl" Text="Data" Margin="0,6,6,0"/>
+                                                <ComboBox Grid.Row="4" Grid.Column="1" Margin="0,6,0,0" HorizontalAlignment="Stretch"
+                                                          ItemsSource="{x:Static vm:CarrierRowViewModel.ScDataOptions}" SelectedItem="{Binding DataChoice}"
+                                                          ToolTip.Tip="PN9, PN15 or PN23, or a fixed pattern, read a symbol's bits at a time. The record holds one whole period of it, at most 65,536 data symbols."/>
+                                                <TextBox Grid.Row="4" Grid.Column="2" Grid.ColumnSpan="2" Margin="12,6,0,0" Text="{Binding BitsText}"
+                                                         IsVisible="{Binding IsFixedBits}" Classes.error="{Binding HasBitsError}"
+                                                         ToolTip.Tip="{Binding BitsError, TargetNullValue='The bits, first to last, as 0s and 1s; the pattern repeats'}"/>
+                                                <TextBlock Grid.Row="5" Grid.ColumnSpan="4" Classes="note" Margin="0,6,0,0" Text="{Binding ScInfoText}"/>
+                                                <TextBlock Grid.Row="5" Grid.ColumnSpan="4" Classes="note" Margin="0,6,0,0" Text="{Binding ScRefusal}" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource CrfWarningBrush}" IsVisible="{Binding ScRefusal, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                                            </Grid>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>

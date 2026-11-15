@@ -24,7 +24,8 @@
 //    PAPR_dB [branch]   CCDF [branch, prob]   of p(t) = 1/2 Re(V1 I1*) (dB above mean)
 //    Gt_dB, DE_pct, NMSE_dB, Delay_s [branch]
 //    Signal quality (brief NZ-8), each carrier read from the probe voltage's envelope, its delay taken out:
-//    EVM_pct, EVM_dB, EVMpeak_pct, MER_dB [branch, carrier]   LTE / NR, and DBPSK at its bit centres; one gain fitted
+//    EVM_pct, EVM_dB, EVMpeak_pct, MER_dB [branch, carrier]   LTE / NR, DBPSK at its bit centres, SC at its data symbols
+//               after the matched filter (over the constellation's mean power); one gain fitted
 //    Const [branch, carrier, symbol] complex  ConstRef [carrier, symbol] complex   the received points and the ideal
 //               points there, at most ConstMaxSamples per carrier
 //    FSKerr_pct, FreqDev_Hz, FreqOffset_Hz [branch, carrier]  FreqPts [branch, carrier, bit]  FreqRef [carrier, bit]
@@ -36,8 +37,9 @@
 //    CFO_Hz, CFOdrift_Hzps [branch, carrier]  the data-aided offset and drift (FSK: its offset), removed before an
 //               equalizer and only reported with none
 //    SER, BER, BitErrors, Bits, BERlo, BERhi [branch, carrier]  decisions after equalization against the sent symbols,
-//               BERlo/BERhi the exact 95 % interval; QAM Gray per axis, DBPSK differential, FSK by sign, CSS by bin
-//    BERest [branch, carrier]  semi-analytic BER, estimated (Gaussian), from each element's SINR (LTE / NR, DBPSK)
+//               BERlo/BERhi the exact 95 % interval; QAM Gray per axis, DBPSK differential, FSK by sign, CSS by bin,
+//               SC nearest constellation point
+//    BERest [branch, carrier]  semi-analytic BER, estimated (Gaussian), from each element's SINR (LTE / NR, DBPSK, SC)
 //    SINR_dB [branch, carrier, element, subcarrier]  each element's post-equalizer SINR (a single carrier: one column)
 //    __Equalizer  0 none, 1 genie, 2 pilot: which equalizer the Const points are after
 //    AMAM / AMAM_min / AMAM_max / AMPM / AMPM_min / AMPM_max  [branch, Pin_inst]  binned on the
@@ -397,7 +399,7 @@ public static class EnvelopeDataSet
     public const int ConstMaxSamples = 6000;
 
     /// <summary>How one carrier is measured: OFDM by <see cref="SignalEvm"/>, the others by <see cref="SignalQuality"/>.</summary>
-    private enum Meter { None, Ofdm, Dbpsk, Fsk, Css }
+    private enum Meter { None, Ofdm, Dbpsk, Fsk, Css, Sc }
 
     private static Meter MeterOf(CarrierStandard s) => s switch
     {
@@ -405,6 +407,7 @@ public static class EnvelopeDataSet
         CarrierStandard.Dbpsk => Meter.Dbpsk,
         CarrierStandard.Fsk => Meter.Fsk,
         CarrierStandard.Css => Meter.Css,
+        CarrierStandard.Sc => Meter.Sc,
         _ => Meter.None,
     };
 
@@ -458,6 +461,19 @@ public static class EnvelopeDataSet
                 BerEst = SignalDecisions.SemiAnalytic(e.Sinr, SignalDecisions.DbpskBer),
             };
         }
+        if (meter == Meter.Sc)
+        {
+            // the single carrier (brief PCH-5): matched filter, the offset, the equalizer, nearest-point decisions
+            var moved = SignalEqualizer.RemoveOffset(w, o => SignalQuality.Receive(rec, record, y, fs, start, off + o.FrequencyHz, out _, o.DriftHzps),
+                                                     SignalEqualizer.EstimateOffset, out var cfo);
+            var e = SignalEqualizer.Sc(eq.Mode == EqualizerMode.None ? w : moved, eq);
+            var shape = ScQam.Resolve(rec.Spec);
+            return new Reading(e.RmsPercent, e.PeakPercent, double.NaN, double.NaN, e.Points, e.Ideal, null, null, w)
+            {
+                Offset = cfo, Errors = SignalDecisions.Sc(ScQam.Constellation(shape), e.Points, e.Ideal), Eq = e,
+                BerEst = SignalDecisions.SemiAnalytic(e.Sinr, g => ScQam.Ber(shape, g)),
+            };
+        }
         var q = SignalQuality.Evaluate(w);
         return new Reading(q.ErrorPercent, q.PeakPercent, q.DeviationHz, q.OffsetHz, q.Points, q.Reference, q.FreqHz, q.FreqRefHz, w)
         {
@@ -476,7 +492,7 @@ public static class EnvelopeDataSet
     /// <summary>
     /// The received signal's quality at every IProbe for every carrier that carries symbols (brief NZ-8), each read from
     /// the probe VOLTAGE's envelope in the product that carries it, its delay fitted against the record the source played:
-    /// LTE / NR and DBPSK as EVM, MER and a constellation; FSK as the FSK error, the deviation and the offset, with the
+    /// LTE / NR, DBPSK and SC as EVM, MER and a constellation; FSK as the FSK error, the deviation and the offset, with the
     /// frequency at each bit centre; CSS as the de-chirped error. With EvmSplit, each error's distortion / noise split and
     /// the in-channel SNR. A family is written only when a carrier of it is there, and nothing when no carrier carries
     /// symbols; a carrier the run cannot measure is NaN, said once. A probe carrying no RF is NaN, as in ACLR.
@@ -562,7 +578,7 @@ public static class EnvelopeDataSet
                 var q = Read(meters[c], recs[c].rec, recs[c].record, Received(quiet, QuietV), fs, start, at0.Off, eqs, out _);
                 if (q is null) continue;
                 // the semi-analytic BER takes the distortion as Gaussian: say where it plainly is not
-                if (q.Points is { } qp && q.Ref is { } qr && meters[c] is Meter.Ofdm or Meter.Dbpsk)
+                if (q.Points is { } qp && q.Ref is { } qr && meters[c] is Meter.Ofdm or Meter.Dbpsk or Meter.Sc)
                 {
                     var qe = qp.Select((v, i) => v - qr[i]).ToArray();
                     double kx = SignalDecisions.ExcessKurtosis(qe);
@@ -601,7 +617,7 @@ public static class EnvelopeDataSet
             ds.Add(noiseName, new DataCube([branchAxis, carrierAxis], Only(noise!, kinds)) { Unit = "%" });
         }
 
-        Meter[] qam = [Meter.Ofdm, Meter.Dbpsk];
+        Meter[] qam = [Meter.Ofdm, Meter.Dbpsk, Meter.Sc];
         if (meters.Any(qam.Contains))
         {
             Family("EVM_pct", "%", qam, "EVMdist_pct", "EVMnoise_pct");

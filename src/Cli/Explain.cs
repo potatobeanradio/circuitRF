@@ -1594,7 +1594,7 @@ internal static class Explain
                                  .Select(x => (x.InstancePath, x.k, what: x.k.Standard switch
                                  {
                                      RfCore.Signals.CarrierStandard.Lte or RfCore.Signals.CarrierStandard.Nr
-                                         or RfCore.Signals.CarrierStandard.Dbpsk => "EVM",
+                                         or RfCore.Signals.CarrierStandard.Dbpsk or RfCore.Signals.CarrierStandard.Sc => "EVM",
                                      RfCore.Signals.CarrierStandard.Fsk => "FSK error",
                                      RfCore.Signals.CarrierStandard.Css => "de-chirped error",
                                      _ => null,

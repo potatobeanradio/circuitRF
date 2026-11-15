@@ -1985,11 +1985,12 @@ internal static class Check
                                                     && v.Kind == CircuitRF.Core.Expressions.ValueKind.String && !string.IsNullOrWhiteSpace(v.AsString()));
                 bool qam = nl.Components.Select(c => c.Model).OfType<ModSourceModel>()
                              .Any(m => m.Spec.Carriers.Any(c => c.Standard is RfCore.Signals.CarrierStandard.Lte or RfCore.Signals.CarrierStandard.Nr
-                                 or RfCore.Signals.CarrierStandard.Dbpsk or RfCore.Signals.CarrierStandard.Fsk or RfCore.Signals.CarrierStandard.Css));
+                                 or RfCore.Signals.CarrierStandard.Dbpsk or RfCore.Signals.CarrierStandard.Fsk or RfCore.Signals.CarrierStandard.Css
+                                 or RfCore.Signals.CarrierStandard.Sc));
                 if (!env.Noise && !masks)
                     f.Add(CliDiagnostics.CheckEvmSplitNothing(path, env.Name, "the run has no Noise and no PhaseNoise mask, so it runs once"));
                 else if (!qam)
-                    f.Add(CliDiagnostics.CheckEvmSplitNothing(path, env.Name, "no source plays a carrier with symbols (LTE, NR, DBPSK, FSK or CSS), so there is no error to split"));
+                    f.Add(CliDiagnostics.CheckEvmSplitNothing(path, env.Name, "no source plays a carrier with symbols (LTE, NR, DBPSK, FSK, CSS or SC), so there is no error to split"));
             }
 
             foreach (var bridge in CircuitRF.Design.Em3d.EmFieldBlocks.GapPortBridges(nl))

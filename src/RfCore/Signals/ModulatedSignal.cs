@@ -203,7 +203,7 @@ namespace RfCore.Signals
         {
             var fileRates = signals.SelectMany(s => s.Carriers)
                                    .Where(c => c.Spec.Standard is CarrierStandard.File or CarrierStandard.Fsk
-                                                                 or CarrierStandard.Dbpsk or CarrierStandard.Css)
+                                                                 or CarrierStandard.Dbpsk or CarrierStandard.Css or CarrierStandard.Sc)
                                    .Select(c => c.NativeRateHz).Distinct().OrderBy(r => r).ToList();
             if (needHz < LadderBaseHz)
                 foreach (double fs in fileRates)
@@ -244,9 +244,10 @@ namespace RfCore.Signals
             var fsk = FskOf(spec);
             var dbpsk = DbpskOf(spec);
             var css = CssOf(spec);
+            var sc = ScOf(spec);
             var file = spec.Carriers.FirstOrDefault(c => c.Standard == CarrierStandard.File);
             IqFile? iq = file is null ? null : IqFile.Read(file.FilePath!, file.SampleRateHz);
-            double record = pulse?.Pri ?? fsk?.RecordSeconds ?? dbpsk?.RecordSeconds ?? css?.RecordSeconds ?? iq?.DurationSeconds
+            double record = pulse?.Pri ?? fsk?.RecordSeconds ?? dbpsk?.RecordSeconds ?? css?.RecordSeconds ?? sc?.RecordSeconds ?? iq?.DurationSeconds
                             ?? Math.Max(0.5e-3, Math.Round(spec.RecordSeconds / 0.5e-3) * 0.5e-3);
             int halfMs = (int)Math.Round(record / 0.5e-3);
 
@@ -305,6 +306,16 @@ namespace RfCore.Signals
                         // constant envelope, as FSK
                         var shape = css!;
                         raw.Add((c, Css.Generate(shape).Samples, Css.NativeRateHz(shape), 0.9 * shape.BandwidthHz));
+                        break;
+                    }
+                    case CarrierStandard.Sc:
+                    {
+                        // unit mean power; clipped as an OFDM record is, over its occupied band Rs(1 + α)
+                        var shape = sc!;
+                        double rate = ScQam.NativeRateHz(shape), bw = ScQam.BandwidthHz(shape);
+                        var x = ScQam.Generate(shape);
+                        if (spec.ClipPaprDb is double t) OfdmGenerator.Clip(x, rate, bw, t);
+                        raw.Add((c with { BandwidthHz = bw }, x, rate, bw));
                         break;
                     }
                     default:
@@ -384,6 +395,17 @@ namespace RfCore.Signals
             return c is null ? null : Css.Validate(c);
         }
 
+        /// <summary>The single carrier's settings (null when there is none): its record is its symbols', so it is the only
+        /// carrier; unlike the other carriers with a record of their own it has peaks, and Clip applies to it.</summary>
+        public static ScShape? ScOf(SignalSpec spec)
+        {
+            var c = spec.Carriers.FirstOrDefault(c => c.Standard == CarrierStandard.Sc);
+            if (c is null) return null;
+            if (spec.Carriers.Count > 1)
+                throw new ArgumentException("an SC carrier must be the source's only carrier");
+            return ScQam.Validate(c);
+        }
+
         private static CarrierSpec? OwnRecordCarrier(SignalSpec spec, CarrierStandard standard, string what, string whyNoClip)
         {
             var c = spec.Carriers.FirstOrDefault(c => c.Standard == standard);
@@ -395,10 +417,11 @@ namespace RfCore.Signals
             return c;
         }
 
-        /// <summary>True when the signal is one carrier whose record is its own — a pulse train, FSK, DBPSK or CSS — and
+        /// <summary>True when the signal is one carrier whose record is its own — a pulse train, FSK, DBPSK, CSS or SC — and
         /// not the record length the source states.</summary>
         public static bool HasOwnRecord(SignalSpec spec)
-            => PulseOf(spec) is not null || FskOf(spec) is not null || DbpskOf(spec) is not null || CssOf(spec) is not null;
+            => PulseOf(spec) is not null || FskOf(spec) is not null || DbpskOf(spec) is not null || CssOf(spec) is not null
+               || ScOf(spec) is not null;
     }
 
     /// <summary>

@@ -1389,3 +1389,60 @@ in it without making the noise estimate any shorter.
 **The generator maps no bits.** OFDM draws each axis's level index from its seed. The bits are taken as each index's
 Gray code (per axis, as square QAM is specified), so a nearest-neighbour error costs one bit. A standard's own mapping
 would differ only in which bits a level carries, not in how many a neighbour error flips.
+
+## The OFDM offset estimate failed past a cycle over the record (follow-up to PCH-4, 2026-11-15)
+
+**Dividing out each subcarrier's response broke every large offset, and the 5 kHz gate was failing since PCH-4 was
+committed.** The response H_k = Σ_s rx·conj(sent) was averaged over the record as it came. An offset that turns a cycle
+or more over the record cancels that average to noise. On a 1 ms record, 50 and 500 Hz still read close (48.6 and
+482.6 Hz on the first pass), but 2 kHz read −178 Hz and 5 kHz read 56 Hz after all three passes. The 4997.7 Hz
+first-pass reading in the PCH-4 entry above was measured before the response was divided out.
+`EstimateOffset(ReceivedSymbols)` now fits a coarse offset from each symbol's Σ_k rx·conj(sent) alone and takes that
+rotation out of every symbol before averaging H_k. The coarse fit is biased by a frequency-selective channel. A rotation
+taken out wrongly leaves each H_k with a phase error weighted by that subcarrier's data, which turns with the data again:
+through the envelope two-path gate, genie read 0.042 % against 0.00075 % with no channel. So H_k is rebuilt from each
+refined estimate, `ResponsePasses` = 3 times. 50 Hz to 5 kHz now read to 0.001 Hz after the passes, and the two-path
+gate holds.
+
+## The single-carrier PSK / QAM / APSK carrier (brief PCH-5, 2026-11-15)
+
+**The shaping covers the whole record, and that is what makes gate 1 possible.** A root-raised-cosine FIR truncated to
+any practical span leaves interference between symbols after the matched filter, far above the brief's 1e-9 % native
+EVM. The record is periodic, so `ScQam.Generate` puts each symbol as an impulse at k·sps and multiplies the record's
+spectrum by √RC(f). |H|² on the DFT grid is the raised cosine sampled there, and its aliases at multiples of Rs still sum
+to a constant, so the matched-filtered record at the symbol instants is the ideal points to round-off: the native EVM
+reads ~1e-13 % for all eight modulations, and the worst eye error is below 1e-6 with a preamble and pilot blocks in
+the record. The spectrum is exactly zero beyond Rs(1 + α)/2. `Span=n` keeps the truncated FIR as an option. Its taps are
+laid circularly at the native rate and transformed, so receiver and transmitter use the same truncated filter. The
+default is stated as "the span is the record".
+
+**PN23 has no whole period to hold.** One period is 8,388,607 bits, so it is 8.4 million symbols at any k coprime to
+it, which is the 2^23-sample record limit at one sample per symbol. The record holds one whole data period
+(lcm(period, k)/k symbols) up to 65,536 data symbols. Past that, the first 65,536 symbols of the sequence form the
+record (still periodic, just not a period of the PN). `Symbols=` sets the count. PN9 and PN15 are coprime to every k
+from 1 to 8, so their records are 511 and 32,767 symbols holding k data periods.
+
+**APSK's EVM is over the constellation's mean power, not the record's.** `SignalEvm.Score` took the mean power of the
+ideal points present. For APSK that differs from the constellation's own (unit) power by whatever the data's ring
+occupancy happens to be. `Score` takes an optional `meanPower`, and the SC path passes 1. The gain is still fitted
+against the points present.
+
+**Noise on the native record at Es/N0 = γ is σ² = sps/γ per complex sample.** The record has unit power, so
+Es = Ts, and N0·fs = Ts·fs/γ. After the matched filter, EVM² = 1/γ holds to 3 % at 9 dB Eb/N0 over 32,767
+symbols, which is gate 4's evidence that the chain delivers Es/N0 to the decisions. The 16APSK reference is
+`testdata/propagation/apsk_ber_reference.py`, standard library only, 8 million bits a point (6 s): 0.018941 at
+8 dB and 0.004313 at 10 dB. 8PSK's closed form is exact. Its phase density is written with
+e^(−γ sin²θ)·erfc(−√γ cos θ) rather than e^(γ cos²θ), which overflows past γ ≈ 700.
+
+**A 3.3-symbol delay is read to 1e-12 s, and its residual EVM is the fit's own.** `SignalEvm.Delay`'s golden section
+lands within ~3e-15 s, which leaves 1.4e-6 % EVM on a record whose native EVM is 1e-12 %. The gate holds 1e-5 %.
+Through a matched pad an envelope run reads 1.1e-12 % (QPSK, no equalizer) and 4.3e-11 % (16APSK, pilot equalizer
+trained on a preamble and pilot blocks), with every bit right.
+
+**An SC carrier is alone on its source but can be clipped.** Its record is its own symbols', so it takes the
+own-record rule (`SignalComposer.ScOf`) without the no-clip rule FSK, DBPSK and CSS carry: a filtered QAM or APSK
+carrier has peaks (5.6 dB at 0.01 % for 16APSK at α 0.2). `OfdmGenerator.Clip` works on it unchanged over its occupied
+band Rs(1 + α).
+
+**Its refusals are coded.** `ScDiagnostics` (`signal.sc.*`) carried by `ScCarrierRefusal`, a `FormatException`, so
+every caller that catches a carrier's `FormatException` (the netlist reader, the Signal Designer card) is unchanged.

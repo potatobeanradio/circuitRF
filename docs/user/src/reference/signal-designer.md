@@ -3,8 +3,8 @@ title: The Signal Designer
 slug: reference/signal-designer.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Signal Designer
-lede: The signal a MOD_Source plays - LTE, NR, CW, a pulsed-CW train, FSK, Bluetooth LE, LoRa, Sigfox or your own I/Q file - with its spectrum, CCDF and EVM before you simulate.
-keywords: Signal Designer, MOD_Source, pulsed CW, pCW, pulse, radar, PRI, PRF, duty, pulse-top power, FSK, CPFSK, GFSK, GMSK, MSK, PN9, PN15, wireless M-Bus, metering, LoRa, LoRaWAN, Sigfox, Bluetooth LE, BLE, LE 1M, LE 2M, LE Coded, LPWAN, DBPSK, BPSK, UNB, ultra-narrowband, CSS, chirp, chirp spread spectrum, spreading factor, SF, IoT, gated CCDF, Gaussian reference, modulated source, LTE, NR, OFDM, I/Q, IQ file, custom waveform, Load Custom, sample rate, PAPR, CCDF, clipping, ACLR, ACPR, EVM, constellation, envelope, export
+lede: The signal a MOD_Source plays - LTE, NR, CW, a pulsed-CW train, FSK, Bluetooth LE, LoRa, Sigfox, a single PSK, QAM or APSK carrier or your own I/Q file - with its spectrum, CCDF and EVM before you simulate.
+keywords: Signal Designer, MOD_Source, pulsed CW, pCW, pulse, radar, PRI, PRF, duty, pulse-top power, FSK, CPFSK, GFSK, GMSK, MSK, PN9, PN15, wireless M-Bus, metering, LoRa, LoRaWAN, Sigfox, Bluetooth LE, BLE, LE 1M, LE 2M, LE Coded, LPWAN, DBPSK, BPSK, UNB, ultra-narrowband, CSS, chirp, chirp spread spectrum, spreading factor, SF, IoT, single carrier, SC, root raised cosine, RRC, roll-off, matched filter, 8PSK, APSK, 16APSK, 32APSK, satellite, PN23, preamble, pilot block, gated CCDF, Gaussian reference, modulated source, LTE, NR, OFDM, I/Q, IQ file, custom waveform, Load Custom, sample rate, PAPR, CCDF, clipping, ACLR, ACPR, EVM, constellation, envelope, export
 ---
 
 <nav class="toc">
@@ -20,6 +20,7 @@ keywords: Signal Designer, MOD_Source, pulsed CW, pCW, pulse, radar, PRI, PRF, d
 <li><a href="#fsk">FSK</a></li>
 <li><a href="#dbpsk">DBPSK (Sigfox)</a></li>
 <li><a href="#css">Chirp spread spectrum (LoRa)</a></li>
+<li><a href="#sc">A single carrier (PSK, QAM, APSK)</a></li>
 <li><a href="#preview">The spectrum and the CCDF</a></li>
 <li><a href="#evm">The EVM tab</a></li>
 <li><a href="#export">Export signal</a></li>
@@ -156,7 +157,7 @@ which always gives a whole number of samples per record.
 
 ## Carriers {#carriers}
 
-Each card is one carrier: its standard (**LTE**, **NR**, **CW**, **PCW**, **FSK**, **DBPSK**, **CSS** or **FILE**), channel bandwidth, NR
+Each card is one carrier: its standard (**LTE**, **NR**, **CW**, **PCW**, **FSK**, **DBPSK**, **CSS**, **SC** or **FILE**), channel bandwidth, NR
 subcarrier spacing, modulation, offset from `Fc`, relative power and random-data seed. **+** adds a
 carrier beside the last; **×** removes one. With a single carrier, **Power** is disabled — it is relative
 to the others, and `Pavg` is the total. Carriers more than three channel bandwidths apart get their own
@@ -355,6 +356,56 @@ Carrier[1]="CSS;SF=7;BW=125kHz;Off=0;P=0"
 
 `BW` takes Hz, kHz or MHz, and is 125 kHz when absent; `SF` may be 5 to 12 in the netlist.
 
+## A single carrier (PSK, QAM, APSK) {#sc}
+
+An **SC** card is one carrier of PSK, QAM or APSK symbols at a symbol rate Rs, shaped by a root-raised-cosine
+filter: the waveform of most satellite and point-to-point links. Choose **SC** in a card's standard list.
+
+| Field | Meaning | Default |
+|---|---|---|
+| **Rs (Msym/s)** | the symbol rate | 1 |
+| **Modulation** | BPSK, QPSK, 8PSK, 16QAM, 64QAM, 256QAM, 16APSK or 32APSK | QPSK |
+| **Roll-off** | the root-raised-cosine roll-off α, 0 to 1 | 0.35 |
+| **Rings** | APSK only: each outer ring's radius over the inner ring's, separated by commas | 2.85 (16APSK); 2.84, 5.27 (32APSK) |
+| **Phases (°)** | APSK only: each ring's phase offset, inner ring first | 45, 15 (16APSK); 45, 15, 0 (32APSK) |
+| **Preamble** | known symbols at the start of the record | 0 |
+| **Pilot block** | `L/P`: L known symbols after every P data symbols, such as `36/1440`; empty for none | none |
+| **Data** | **PN9**, **PN15**, **PN23** or **Fixed bits** | PN9 |
+
+**The constellations** have unit mean power. BPSK sends +1 for a 0 and −1 for a 1. QPSK, 8PSK and the square
+QAMs are Gray-coded: QPSK puts the first bit on I and the second on Q, 8PSK puts k ^ (k >> 1) at the point at
+kπ/4, and the QAMs use Gray code on each axis, the first half of the bits on I. 16APSK has 4 + 12 points on two
+rings, and 32APSK 4 + 12 + 16 on three. APSK labels its points ring by ring, inner ring first, each ring
+counter-clockwise from its phase offset. Its rings let an amplifier run closer to compression than square QAM's
+corners allow. APSK's EVM is read against the constellation's mean power.
+
+**The shaping covers the whole record.** The record is periodic, so the root raised cosine is applied to the
+whole of it in the frequency domain. The spectrum ends exactly at Rs(1 + α)/2 either side, which is the channel
+bandwidth, Rs(1 + α). The receiver's matched filter turns the shaping into a raised cosine, which leaves no
+interference between symbols at the symbol instants. In the netlist, `Span=n` cuts the filter's impulse
+response to n symbols instead, as a transmitter's FIR does. The receiver then uses the same truncated filter,
+and some interference between symbols remains.
+
+**The record holds the data's period in whole symbols.** The data is read one symbol's bits at a time, so the
+record holds one whole period of it: lcm(period, k)/k symbols for k bits a symbol. For PN9 that is 511 symbols,
+because 511 shares no factor with any k. The record holds at most 65,536 data symbols: PN23's period is 8.4
+million bits, so its record is its first 65,536 symbols. `Symbols=` in the netlist sets the count. Known symbols
+are QPSK points read from PN9: the preamble starts the record, and a pilot block follows every P data symbols
+except the last group. The record is sampled at 8 Rs, offered as **Native rate**. The line under the fields
+gives the symbol period, the data and known symbols, the record and the bandwidth.
+
+An SC carrier is the source's only carrier, and **Record** and **Spectral shaping floor** do not apply to it.
+**Clip to PAPR** applies as it does to OFDM, and the PAPR is under the plots. Its EVM tab shows the EVM and the
+constellation, measured through the matched filter: 0 % unclipped, and the clipping's error otherwise. The card
+has no **Seed**. The carrier is a modulation, with no standard's framing, coding or signalling.
+
+```
+Carrier[1]="SC;Rs=10Msps;Mod=16APSK;RollOff=0.2;Data=PN15;Preamble=64;PilotBlock=36/1440;Off=0;P=0"
+```
+
+`Rs` takes sps, ksps or Msps (MBd, kBd and Bd read the same). Every field but `Off` and `P` may be left out, and
+then its default applies.
+
 ## The spectrum and the CCDF {#preview}
 
 The **Spectrum** is the composite power spectral density against the offset from `Fc`, framed on the
@@ -392,6 +443,9 @@ record, with no per-subcarrier equaliser. The tab shows:
 - the envelope power around the record's peak, with the average and the peak as flat lines. A black arrow
   between them is labelled with the peak-to-average ratio. The **Window** field sets how long a stretch is
   shown (2 µs by default). It only redraws the plot, and Apply never writes it to the source.
+
+For an [SC](#sc) carrier it passes the record through the matched filter and compares each data symbol with
+its ideal point. An SC carrier has no standard's EVM limit, so the tab shows no limit and no pass or fail.
 
 An unclipped signal reads close to 0 %. Clipping is what moves it. CW and I/Q-file carriers carry no
 reference symbols, so they have no EVM. A pulsed-CW signal has none either: for one, this tab reads

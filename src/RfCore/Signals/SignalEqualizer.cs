@@ -106,6 +106,9 @@ namespace RfCore.Signals
         /// <summary>How many times the offset is estimated and taken out again.</summary>
         public const int OffsetPasses = 3;
 
+        /// <summary>OFDM offset: how many times each subcarrier's response is rebuilt from the latest estimate.</summary>
+        public const int ResponsePasses = 3;
+
         /// <summary>Pilot OFDM: the pilot symbols either side of one that its response is averaged with.</summary>
         public const int PilotAverage = 4;
 
@@ -117,28 +120,56 @@ namespace RfCore.Signals
         {
             if (d.SymbolTimeS is not { } times) return CarrierOffset.Zero;
             int nsc = d.SubcarrierHz.Length;
-            // each subcarrier's response over the record first, so a frequency-selective channel weighs every symbol's
-            // phase alike whatever its data (Σ_k H_k·|s_k|² would turn with the data otherwise)
-            var hk = new Complex[nsc];
-            for (int i = 0; i < d.Received.Length; i++) hk[i % nsc] += d.Received[i] * Complex.Conjugate(d.Sent[i]);
-            var t = new List<double>(); var ph = new List<double>();
+            // a coarse offset first, from each symbol's Σ_k rx·conj(sent) alone: biased by a frequency-selective channel,
+            // but it turns with the offset, which the response average below must not
+            var tc = new List<double>(); var pc = new List<double>();
             for (int s = 0; s < d.Symbols; s++)
             {
                 if (d.WrapsWindow?[s] == true) continue;
                 Complex acc = 0;
-                for (int k = 0; k < nsc; k++) acc += d.Received[s * nsc + k] * Complex.Conjugate(hk[k] * d.Sent[s * nsc + k]);
+                for (int k = 0; k < nsc; k++) acc += d.Received[s * nsc + k] * Complex.Conjugate(d.Sent[s * nsc + k]);
                 if (acc == Complex.Zero) continue;
-                t.Add(times[s]); ph.Add(acc.Phase);
+                tc.Add(times[s]); pc.Add(acc.Phase);
             }
-            return Fit(t, ph);
+            var est = Fit(tc, pc);
+            double tMid = tc.Count > 0 ? tc.Average() : 0;
+            // each subcarrier's response over the record, with the offset's rotation taken out of every symbol first, so a
+            // frequency-selective channel weighs every symbol's phase alike whatever its data (Σ_k H_k·|s_k|² would turn
+            // with the data otherwise). Averaged as it came, an offset of a cycle or more over the record cancels the
+            // average to noise: 5 kHz over 1 ms read 56 Hz. The coarse offset is itself biased by the channel, and a
+            // rotation taken out wrongly gives each response a phase error that turns with the data again, so the
+            // responses are rebuilt from each refined estimate (ResponsePasses).
+            var hk = new Complex[nsc];
+            for (int pass = 0; pass < ResponsePasses; pass++)
+            {
+                Array.Clear(hk);
+                for (int s = 0; s < d.Symbols; s++)
+                {
+                    double tau = times[s] - tMid;
+                    var undo = Complex.FromPolarCoordinates(1.0, -(2 * Math.PI * est.FrequencyHz * tau + Math.PI * est.DriftHzps * tau * tau));
+                    for (int k = 0; k < nsc; k++) hk[k] += d.Received[s * nsc + k] * Complex.Conjugate(d.Sent[s * nsc + k]) * undo;
+                }
+                var t = new List<double>(); var ph = new List<double>();
+                for (int s = 0; s < d.Symbols; s++)
+                {
+                    if (d.WrapsWindow?[s] == true) continue;
+                    Complex acc = 0;
+                    for (int k = 0; k < nsc; k++) acc += d.Received[s * nsc + k] * Complex.Conjugate(hk[k] * d.Sent[s * nsc + k]);
+                    if (acc == Complex.Zero) continue;
+                    t.Add(times[s]); ph.Add(acc.Phase);
+                }
+                est = Fit(t, ph);
+            }
+            return est;
         }
 
-        /// <summary>DBPSK: each bit centre's phase, received·conj(sent) (the sent sign takes the data out), over time.</summary>
+        /// <summary>DBPSK: each bit centre's phase, received·conj(sent) (the sent sign takes the data out), over time; SC
+        /// the same at every symbol instant, data and known.</summary>
         public static CarrierOffset EstimateOffset(ReceivedWaveform w)
         {
-            if (w.Kind != QualityKind.Dbpsk) return CarrierOffset.Zero;
+            if (w.Kind is not (QualityKind.Dbpsk or QualityKind.Sc)) return CarrierOffset.Zero;
             var t = new List<double>(); var ph = new List<double>();
-            foreach (int i in w.At.Order())
+            foreach (int i in w.At.Concat(w.KnownAt ?? []).Order())
             {
                 var v = w.X[i] * Complex.Conjugate(w.S[i]);
                 if (v == Complex.Zero) continue;
@@ -417,63 +448,129 @@ namespace RfCore.Signals
                 }
                 case EqualizerMode.Genie:
                 {
-                    // MMSE from the response of the received against the played record, each bin's response and noise
-                    // averaged over its neighbours (the noise floor from what the response does not explain)
-                    var xs = Fft.Forward(w.X); var ss = Fft.Forward(w.S);
-                    const int half = 4;
-                    var hb = new Complex[m]; var nb = new double[m]; var pb = new double[m];
-                    for (int b = 0; b < m; b++)
-                    {
-                        Complex xsSum = 0; double sp = 0;
-                        for (int j = -half; j <= half; j++) { int q = ((b + j) % m + m) % m; xsSum += xs[q] * Complex.Conjugate(ss[q]); sp += ss[q].Magnitude * ss[q].Magnitude; }
-                        hb[b] = sp > 0 ? xsSum / sp : Complex.Zero;
-                        pb[b] = sp / (2 * half + 1);
-                    }
-                    for (int b = 0; b < m; b++)
-                    {
-                        double nsum = 0;
-                        for (int j = -half; j <= half; j++) { int q = ((b + j) % m + m) % m; nsum += (xs[q] - hb[q] * ss[q]).Magnitude * (xs[q] - hb[q] * ss[q]).Magnitude; }
-                        nb[b] = nsum / (2 * half + 1);
-                    }
-                    var zs = new Complex[m];
-                    for (int b = 0; b < m; b++)
-                    {
-                        double den = hb[b].Magnitude * hb[b].Magnitude * pb[b] + nb[b];
-                        zs[b] = den > 0 ? Complex.Conjugate(hb[b]) * pb[b] / den * xs[b] : Complex.Zero;
-                    }
-                    var z = Fft.Inverse(zs);
+                    var z = GenieMmse(w.X, w.S);
                     var e = SignalEvm.Score(w.Carrier.Spec, at.Select(i => z[i]).ToArray(), Ref(at), at.Length, 1);
                     return SingleCarrier(EqualizerMode.Genie, e, null) with { Instants = at };
                 }
                 default:
                 {
-                    int taps = Math.Max(1, s.Taps | 1), l = taps / 2, sps = RfCore.Signals.Dbpsk.SamplesPerBit;
+                    int taps = Math.Max(1, s.Taps | 1), sps = RfCore.Signals.Dbpsk.SamplesPerBit;
                     int train = Math.Min(s.Training, at.Length - 1);
                     if (train < taps)
                         return Dbpsk(w, s with { Mode = EqualizerMode.None }) with
                         { Note = $"{at.Length} bit centres leave {train} to train a {taps}-tap FIR on; measured with one gain instead" };
-                    Complex X(int i) => w.X[(i % m + m) % m];
                     var ideal = Ref(at);
-                    // least squares on the training symbols: (AᴴA + δI) c = Aᴴd, δ a whisper of the diagonal
-                    var a = new Complex[taps, taps]; var rhs = new Complex[taps];
-                    for (int k = 0; k < train; k++)
-                    {
-                        var row = new Complex[taps];
-                        for (int j = 0; j < taps; j++) row[j] = X(at[k] + (j - l) * sps);
-                        for (int j = 0; j < taps; j++)
-                        {
-                            rhs[j] += Complex.Conjugate(row[j]) * ideal[k];
-                            for (int q = 0; q < taps; q++) a[j, q] += Complex.Conjugate(row[j]) * row[q];
-                        }
-                    }
-                    double tr = 0;
-                    for (int j = 0; j < taps; j++) tr += a[j, j].Real;
-                    for (int j = 0; j < taps; j++) a[j, j] += 1e-12 * tr / taps;
-                    var c = SolveComplex(a, rhs);
                     var rest = at.Skip(train).ToArray();
-                    var z = rest.Select(i => Enumerable.Range(0, taps).Aggregate(Complex.Zero, (acc, j) => acc + c[j] * X(i + (j - l) * sps))).ToArray();
+                    var z = Fir(w.X, at[..train], ideal[..train], taps, sps, rest);
                     var e = SignalEvm.Score(w.Carrier.Spec, z, ideal.Skip(train).ToArray(), rest.Length, 1);
                     return SingleCarrier(EqualizerMode.Pilot, e, null) with { Instants = rest };
+                }
+            }
+        }
+
+        /// <summary>
+        /// MMSE from the response of the received <paramref name="x"/> against the played record <paramref name="sent"/>, each
+        /// bin's response and noise averaged over its neighbours (the noise floor from what the response does not explain).
+        /// </summary>
+        private static Complex[] GenieMmse(Complex[] x, Complex[] sent)
+        {
+            int m = x.Length;
+            var xs = Fft.Forward(x); var ss = Fft.Forward(sent);
+            const int half = 4;
+            var hb = new Complex[m]; var nb = new double[m]; var pb = new double[m];
+            for (int b = 0; b < m; b++)
+            {
+                Complex xsSum = 0; double sp = 0;
+                for (int j = -half; j <= half; j++) { int q = ((b + j) % m + m) % m; xsSum += xs[q] * Complex.Conjugate(ss[q]); sp += ss[q].Magnitude * ss[q].Magnitude; }
+                hb[b] = sp > 0 ? xsSum / sp : Complex.Zero;
+                pb[b] = sp / (2 * half + 1);
+            }
+            for (int b = 0; b < m; b++)
+            {
+                double nsum = 0;
+                for (int j = -half; j <= half; j++) { int q = ((b + j) % m + m) % m; nsum += (xs[q] - hb[q] * ss[q]).Magnitude * (xs[q] - hb[q] * ss[q]).Magnitude; }
+                nb[b] = nsum / (2 * half + 1);
+            }
+            var zs = new Complex[m];
+            for (int b = 0; b < m; b++)
+            {
+                double den = hb[b].Magnitude * hb[b].Magnitude * pb[b] + nb[b];
+                zs[b] = den > 0 ? Complex.Conjugate(hb[b]) * pb[b] / den * xs[b] : Complex.Zero;
+            }
+            return Fft.Inverse(zs);
+        }
+
+        /// <summary>
+        /// A symbol-spaced FIR of <paramref name="taps"/> taps (odd), trained by least squares on the instants
+        /// <paramref name="trainAt"/> of <paramref name="x"/> against <paramref name="trainIdeal"/> —
+        /// (AᴴA + δI) c = Aᴴd, δ a whisper of the diagonal — and applied at <paramref name="applyAt"/>.
+        /// </summary>
+        private static Complex[] Fir(Complex[] x, int[] trainAt, Complex[] trainIdeal, int taps, int sps, int[] applyAt)
+        {
+            int m = x.Length, l = taps / 2;
+            Complex X(int i) => x[(i % m + m) % m];
+            var a = new Complex[taps, taps]; var rhs = new Complex[taps];
+            for (int k = 0; k < trainAt.Length; k++)
+            {
+                var row = new Complex[taps];
+                for (int j = 0; j < taps; j++) row[j] = X(trainAt[k] + (j - l) * sps);
+                for (int j = 0; j < taps; j++)
+                {
+                    rhs[j] += Complex.Conjugate(row[j]) * trainIdeal[k];
+                    for (int q = 0; q < taps; q++) a[j, q] += Complex.Conjugate(row[j]) * row[q];
+                }
+            }
+            double tr = 0;
+            for (int j = 0; j < taps; j++) tr += a[j, j].Real;
+            for (int j = 0; j < taps; j++) a[j, j] += 1e-12 * tr / taps;
+            var c = SolveComplex(a, rhs);
+            return [.. applyAt.Select(i => Enumerable.Range(0, taps).Aggregate(Complex.Zero, (acc, j) => acc + c[j] * X(i + (j - l) * sps)))];
+        }
+
+        // ── a single carrier (brief PCH-5) ─────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// The SC carrier <paramref name="w"/> equalized as <paramref name="s"/> says, read at its data symbols against their
+        /// ideal points (EVM over the constellation's mean power). Pilot: the symbol-spaced FIR trained on the preamble and
+        /// pilot blocks when the carrier has them, otherwise on the first Training data symbols, which are then not measured.
+        /// </summary>
+        public static Equalized Sc(ReceivedWaveform w, EqualizerSettings s)
+        {
+            if (w.Kind != QualityKind.Sc) throw new ArgumentException("only an SC carrier is equalized here", nameof(w));
+            var order = Enumerable.Range(0, w.At.Length).OrderBy(i => w.At[i]).ToArray();
+            var at = order.Select(i => w.At[i]).ToArray();
+            var ideal = order.Select(i => w.Ideal![i]).ToArray();
+            int m = w.X.Length;
+            Complex X(int i) => w.X[(i % m + m) % m];
+            EvmResult Score(Complex[] rx, Complex[] id) => SignalEvm.Score(w.Carrier.Spec, rx, id, rx.Length, 1, meanPower: 1);
+            switch (s.Mode)
+            {
+                case EqualizerMode.None:
+                    return SingleCarrier(EqualizerMode.None, Score([.. at.Select(X)], ideal), null) with { Instants = at };
+                case EqualizerMode.Genie:
+                {
+                    var z = GenieMmse(w.X, w.S);
+                    return SingleCarrier(EqualizerMode.Genie, Score([.. at.Select(i => z[i])], ideal), null) with { Instants = at };
+                }
+                default:
+                {
+                    int taps = Math.Max(1, s.Taps | 1), sps = ScQam.SamplesPerSymbol;
+                    int[] trainAt; Complex[] trainId; int[] rest; Complex[] restId;
+                    if (w.KnownAt is { Length: > 0 } known)
+                    {
+                        trainAt = known; trainId = w.KnownIdeal!; rest = at; restId = ideal;
+                    }
+                    else
+                    {
+                        int train = Math.Min(s.Training, at.Length - 1);
+                        trainAt = at[..Math.Max(0, train)]; trainId = ideal[..Math.Max(0, train)];
+                        rest = at[Math.Max(0, train)..]; restId = ideal[Math.Max(0, train)..];
+                    }
+                    if (trainAt.Length < taps)
+                        return Sc(w, s with { Mode = EqualizerMode.None }) with
+                        { Note = $"{trainAt.Length} training symbols are too few for a {taps}-tap FIR; measured with one gain instead" };
+                    var z = Fir(w.X, trainAt, trainId, taps, sps, rest);
+                    return SingleCarrier(EqualizerMode.Pilot, Score(z, restId), null) with { Instants = rest };
                 }
             }
         }

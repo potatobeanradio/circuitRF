@@ -1,5 +1,5 @@
 // ================================================================
-//  SignalQuality.cs  —  the received quality of a DBPSK, FSK or CSS carrier (brief NZ-8)
+//  SignalQuality.cs  —  the received quality of a DBPSK, FSK, CSS or SC carrier (brief NZ-8, PCH-5)
 //
 //  SignalEvm demodulates OFDM against its QAM points. The other carriers
 //  circuitRF generates carry known data too, but a QAM EVM fits only one
@@ -17,6 +17,13 @@
 //           conjugate of the chirp sent, one complex gain per chirp (a
 //           receiver reads each symbol's FFT bin on its own). The error
 //           is the energy left over the energy at the symbol's bin.
+//    SC     (brief PCH-5) The matched filter, applied to the received
+//           and the sent record alike after the measurement filter
+//           (which is flat over the carrier's band, so a pad still reads
+//           zero), then EVM at each data symbol's instant against the
+//           ideal point, normalised to the constellation's mean power
+//           (unit). The preamble and pilot symbols are not measured: they
+//           train the pilot equalizer.
 //
 //  Common to the three. The received and the sent record pass through
 //  ONE measurement filter, a cos² roll-off from the channel edge, so
@@ -37,14 +44,21 @@ using System.Numerics;
 namespace RfCore.Signals
 {
     /// <summary>How a carrier's received quality is measured (<see cref="SignalQuality"/>).</summary>
-    public enum QualityKind { Dbpsk, Fsk, Css }
+    public enum QualityKind { Dbpsk, Fsk, Css, Sc }
 
     /// <summary>A received DBPSK, FSK or CSS record on its carrier's grid: <see cref="X"/> the received window, filtered and
     /// aligned, <see cref="S"/> the sent record through the same filter at the same samples, <see cref="At"/> the window
     /// indices of the instants measured (bit centres, or chirp starts), <see cref="Span"/> the samples one instant reads,
     /// and the interior [<see cref="From"/>, <see cref="To"/>) clear of the window's ends.</summary>
     public sealed record ReceivedWaveform(CarrierRecord Carrier, QualityKind Kind, Complex[] X, Complex[] S, int[] At, int Span,
-                                          int From, int To, double NativeHz, double DelayS, bool WholeRecords);
+                                          int From, int To, double NativeHz, double DelayS, bool WholeRecords)
+    {
+        /// <summary>SC: the ideal point at each of <see cref="At"/> (the data symbols' instants).</summary>
+        public Complex[]? Ideal { get; init; }
+        /// <summary>SC: the instants of the known (preamble and pilot) symbols the window holds, and their points.</summary>
+        public int[]? KnownAt { get; init; }
+        public Complex[]? KnownIdeal { get; init; }
+    }
 
     /// <summary>A carrier's received quality. <see cref="ErrorPercent"/> is the EVM (DBPSK), the FSK error or the de-chirped
     /// error (CSS); <see cref="Points"/> / <see cref="Reference"/> the DBPSK constellation, <see cref="FreqHz"/> /
@@ -61,6 +75,7 @@ namespace RfCore.Signals
             CarrierStandard.Dbpsk => QualityKind.Dbpsk,
             CarrierStandard.Fsk => QualityKind.Fsk,
             CarrierStandard.Css => QualityKind.Css,
+            CarrierStandard.Sc => QualityKind.Sc,
             _ => null,
         };
 
@@ -90,8 +105,18 @@ namespace RfCore.Signals
             int nTot = carrier.Native.Length;
             // the instants of one record (window-independent) and the samples each reads; the channel's edge
             int[] instants; int span; double pass;
+            ScShape? sc = null; ScSymbols? scSyms = null;
             switch (kind)
             {
+                case QualityKind.Sc:
+                {
+                    sc = ScQam.Resolve(c);
+                    scSyms = ScQam.Symbols(sc);
+                    instants = [.. Enumerable.Range(0, scSyms.Points.Length).Select(k => k * ScQam.SamplesPerSymbol)];
+                    span = 1;
+                    pass = ScQam.BandwidthHz(sc) / 2;
+                    break;
+                }
                 case QualityKind.Dbpsk:
                 {
                     var d = Dbpsk.Resolve(c);
@@ -137,6 +162,12 @@ namespace RfCore.Signals
             var sent = Fft.Forward(carrier.Native);
             for (int k = 0; k < nTot; k++) sent[k] *= SignalEvm.RollOff((k <= nTot / 2 ? k : k - nTot) * native / nTot, pass, stop);
             var sentF = Fft.Inverse(sent);
+            if (sc is not null)
+            {
+                // an SC carrier is read through its matched filter, received and sent alike
+                x = ScQam.Filter(sc, x, native, matched: true);
+                sentF = ScQam.Filter(sc, sentF, native, matched: true);
+            }
             int w0 = (int)(((n0 % nTot) + nTot) % nTot);
             var sw = new Complex[m];
             for (int i = 0; i < m; i++) sw[i] = sentF[(w0 + i) % nTot];
@@ -166,19 +197,39 @@ namespace RfCore.Signals
 
             // the instants held whole, clear of the ends of a window that is not whole records
             int guard = whole ? 0 : 4 * (int)Math.Ceiling(native / (2 * (stop - pass)));
-            var at = new List<int>();
+            // and of the matched filter's own ringing: its span, or ~4/α symbols of a whole-record filter's tail
+            if (!whole && sc is not null)
+                guard += ScQam.SamplesPerSymbol * (sc.Span is int sp ? sp / 2 + 1 : (int)Math.Ceiling(4 / Math.Max(sc.RollOff, 0.1)));
+            var at = new List<int>(); var which = new List<int>();
             if (whole)
             {
                 for (long r = 0; r < m / nTot; r++)
-                    foreach (int i in instants) at.Add((int)(((i - w0 + r * nTot) % m + m) % m));
+                    for (int j = 0; j < instants.Length; j++) { at.Add((int)(((instants[j] - w0 + r * nTot) % m + m) % m)); which.Add(j); }
             }
             else
                 for (long r = (long)Math.Floor((double)n0 / nTot); r * nTot < n0 + m; r++)
-                    foreach (int i in instants)
+                    for (int j = 0; j < instants.Length; j++)
                     {
-                        long i0 = r * nTot + i - n0;
-                        if (i0 >= guard && i0 + span <= m - guard) at.Add((int)i0);
+                        long i0 = r * nTot + instants[j] - n0;
+                        if (i0 >= guard && i0 + span <= m - guard) { at.Add((int)i0); which.Add(j); }
                     }
+            if (scSyms is not null)
+            {
+                // the data symbols are measured; the known ones are kept apart, for the pilot equalizer
+                var data = Enumerable.Range(0, at.Count).Where(i => !scSyms.Known[which[i]]).ToArray();
+                var known = Enumerable.Range(0, at.Count).Where(i => scSyms.Known[which[i]]).ToArray();
+                if (data.Length == 0)
+                {
+                    why = "the run holds no data symbol clear of its ends; lengthen Stop";
+                    return null;
+                }
+                return new ReceivedWaveform(carrier, kind, x, sw, [.. data.Select(i => at[i])], span, guard, m - guard, native, tau, whole)
+                {
+                    Ideal = [.. data.Select(i => scSyms.Points[which[i]])],
+                    KnownAt = [.. known.Select(i => at[i])],
+                    KnownIdeal = [.. known.Select(i => scSyms.Points[which[i]])],
+                };
+            }
             if (at.Count == 0)
             {
                 why = $"the run holds no whole {(kind == QualityKind.Css ? "chirp" : "bit")} clear of its ends; lengthen Stop";
@@ -195,6 +246,13 @@ namespace RfCore.Signals
             Complex S(int i) => r.S[(i % m + m) % m];
             switch (r.Kind)
             {
+                case QualityKind.Sc:
+                {
+                    // against the ideal points, normalised to the constellation's mean power (unit)
+                    var e = SignalEvm.Score(r.Carrier.Spec, [.. r.At.Select(X)], (Complex[])r.Ideal!.Clone(), r.At.Length, 1, meanPower: 1);
+                    return new WaveformQuality(r.Kind, e.RmsPercent, e.PeakPercent, double.NaN, double.NaN, e.Received, e.Ideal,
+                                               null, null, r.DelayS);
+                }
                 case QualityKind.Dbpsk:
                 {
                     var rx = r.At.Select(X).ToArray();
@@ -252,12 +310,12 @@ namespace RfCore.Signals
         }
 
         /// <summary>In-channel signal over in-channel noise: <paramref name="quiet"/>'s power over the power of what
-        /// <paramref name="noisy"/> adds to it — at the bit centres for DBPSK (what its EVM reads), over the filtered interior
+        /// <paramref name="noisy"/> adds to it — at the bit centres for DBPSK and the data symbols for SC (what their EVM reads), over the filtered interior
         /// otherwise. NaN when the two do not match.</summary>
         public static double SignalToNoise(ReceivedWaveform noisy, ReceivedWaveform quiet)
         {
             if (noisy.X.Length != quiet.X.Length || noisy.Kind != quiet.Kind) return double.NaN;
-            IEnumerable<int> idx = noisy.Kind == QualityKind.Dbpsk ? quiet.At : Enumerable.Range(quiet.From, quiet.To - quiet.From);
+            IEnumerable<int> idx = noisy.Kind is QualityKind.Dbpsk or QualityKind.Sc ? quiet.At : Enumerable.Range(quiet.From, quiet.To - quiet.From);
             double sig = 0, noise = 0;
             foreach (int i in idx)
             {

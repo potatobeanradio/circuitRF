@@ -389,7 +389,7 @@ is an expression trace drawn at the frequency its **Freq** picker names. See
 [The Noise and gain circles chart](derived-metrics.html#lna-circles).
 
 **Signal quality.** The scatter-plot toolbar button adds the plots of the selected envelope result's signal quality:
-the constellation (received symbols over the ideal ones, on one scale) for LTE, NR and DBPSK, or the frequency at each
+the constellation (received symbols over the ideal ones, on one scale) for LTE, NR, DBPSK and SC, or the frequency at each
 bit for FSK; a table of every measure the result holds per carrier (EVM, MER, the FSK error, deviation and offset, the
 de-chirped CSS error, with the distortion and noise split and the SNR when the run had `EvmSplit=yes`, and the
 frequency offset, SER, BER and estimated BER); and the output spectrum, all at the probe carrying the signal. When the

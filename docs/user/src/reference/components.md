@@ -356,7 +356,7 @@ owns the mixing grid, and the source just supplies power at those frequencies.
 
 {{symbol: modsource}}
 
-A **modulated** RF source — LTE, NR, CW, a pulsed-CW train, FSK (wireless M-Bus, Bluetooth LE), DBPSK (Sigfox), chirp spread spectrum (LoRa) or an imported I/Q waveform — for the
+A **modulated** RF source — LTE, NR, CW, a pulsed-CW train, FSK (wireless M-Bus, Bluetooth LE), DBPSK (Sigfox), chirp spread spectrum (LoRa), a single PSK, QAM or APSK carrier or an imported I/Q waveform — for the
 [Envelope analysis](simulations.html#envelope): ACLR/ACPR, EVM-style error, CCDF, AM-AM/AM-PM and
 two-carrier intermodulation with real signals rather than tones. One MOD_Source holds any number of
 **carriers** around its centre frequency `Fc`; `Pavg` is the total average available power behind the
@@ -379,7 +379,13 @@ source impedance `Z`.
   source's only carrier: see [FSK](signal-designer.html#fsk). A `DBPSK` carrier, `"DBPSK;Rb=100bps;Data=PN9;Off=0;P=0"`,
   takes the same `Rb` and `Data` (the Sigfox uplink: [DBPSK](signal-designer.html#dbpsk)), and a `CSS` carrier,
   `"CSS;SF=7;BW=125kHz;Off=0;P=0"`, a spreading factor and a chirp bandwidth (LoRa: [CSS](signal-designer.html#css));
-  each must be the source's only carrier.
+  each must be the source's only carrier. An `SC` carrier is one root-raised-cosine-shaped carrier of PSK, QAM or
+  APSK symbols, `"SC;Rs=10Msps;Mod=16APSK;RollOff=0.2;Rings=2.85;Phases=45,15;Data=PN15;Preamble=64;PilotBlock=36/1440;Off=0;P=0"`:
+  the symbol rate, the modulation (`BPSK`, `QPSK`, `8PSK`, `16QAM`, `64QAM`, `256QAM`, `16APSK`, `32APSK`), the
+  roll-off, APSK's ring radii and phases, the data (`PN9`, `PN15`, `PN23` or a pattern), known symbols, and
+  optionally `Span=` (the filter in symbols) and `Symbols=` (the data symbols in the record). It must be the
+  source's only carrier, and unlike the others with a record of their own it can be clipped: see
+  [A single carrier](signal-designer.html#sc).
 - `Record` — periodic record length (s), whole 0.5 ms slots. `Clip` — target PAPR (dB) for
   clip-and-filter; absent means **unclipped** (the natural OFDM PAPR, about 11–12 dB).
   `Shaping` — out-of-channel spectral floor (dBc), or `off`.

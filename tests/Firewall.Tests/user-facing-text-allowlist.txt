@@ -1552,7 +1552,7 @@ src/RfCore/Signals/ModulatedSignal.cs|{what} must be the source's only carrier
 src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to a CSS carrier
 src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to an FSK{(alsoDbpsk ? 
 src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a spreading factor: a whole number, 7 to 12
-src/RfCore/Signals/SignalSpec.cs|unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS or FILE)
+src/RfCore/Signals/SignalSpec.cs|unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS, SC or FILE)
 src/Engine/Em3d/Em3dStaticResult.cs|The floating bodies' block of the matrix is singular.
 src/Engine/Em3d/Em3dStaticResult.cs|The matrix and the floating flags disagree in size.
 src/Core/Expressions/Evaluator.cs|{cl.Name}: no IProbe named '{probe}' in '{analysisName}'. IProbes: [{string.Join(
@@ -1804,3 +1804,12 @@ src/Core/Elaboration/Elaborator.PhasedArray.cs|'{c.InstancePath}' is not a Phase
 src/Engine/Array/ArrayFeedLoadModel.cs|The array's closed reflection was not formed at {hz:G9} Hz.
 src/Engine/Array/PhasedArrayFastPath.cs|The array's closure with its elements switched off is singular.
 src/RfCore/Signals/SignalEqualizer.cs|only a DBPSK carrier is equalized here
+# ── PCH-5, the SC carrier (2026-11-15) ──────────────────────────────────────────────
+# The carrier's own refusals are coded (ScDiagnostics). These five keep the plain shape of the sibling lines they sit
+# beside — a netlist field that belongs to another carrier or does not parse, the one-carrier rule every carrier with
+# its own record states, and one internal invariant no user reaches.
+src/RfCore/Signals/ModulatedSignal.cs|an SC carrier must be the source's only carrier
+src/RfCore/Signals/SignalEqualizer.cs|only an SC carrier is equalized here
+src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to an SC carrier
+src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a symbol rate: a number with sps, ksps or Msps
+src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a whole number

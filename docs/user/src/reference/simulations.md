@@ -613,8 +613,8 @@ blocks are handled as follows.
 | EvmSplit | no | `yes` runs the record a second time without noise, to split each carrier's error into distortion and noise and measure the SNR ([below](#envelope-evm)). Twice the run time. |
 | Equalizer | none | How each carrier is read at the far end: `none` (one gain over the record), `genie` or `pilot` ([below](#envelope-equalizer)). |
 | Pilots | 6,4 | `Equalizer=pilot` on LTE or NR: the pilot comb, every *n*th subcarrier of every *m*th symbol, written `n,m`. |
-| Taps | 11 | `Equalizer=pilot` on DBPSK: the taps of the trained equalizer. |
-| Training | 64 | `Equalizer=pilot` on DBPSK: the bits it is trained on. EVM and errors are read on the rest. |
+| Taps | 11 | `Equalizer=pilot` on DBPSK or SC: the taps of the trained equalizer. |
+| Training | 64 | `Equalizer=pilot` on DBPSK, or on SC without a preamble or pilot blocks: the bits or symbols it is trained on. EVM and errors are read on the rest. |
 
 ### What a run records {#envelope-records}
 
@@ -879,10 +879,11 @@ Each modulation is measured the way its receiver reads it:
 |---|---|---|
 | LTE, NR | EVM over every subcarrier of every OFDM symbol, as the [Signal Designer](signal-designer.html) measures the source's own signal | constellation |
 | DBPSK | EVM at each bit centre, where a bit peaks at ±1 and its neighbours are zero | constellation |
+| SC | EVM at each data symbol after the matched filter, against the ideal point, over the constellation's mean power | constellation |
 | FSK, GFSK, GMSK | the frequency at each bit centre against the frequency sent: FSK error, deviation and offset | frequency at each bit |
 | CSS | de-chirped: each chirp times the conjugate of the chirp sent, with one gain per chirp, as a receiver reads each symbol on its own | — |
 
-**LTE, NR and DBPSK** (axes branch, carrier):
+**LTE, NR, DBPSK and SC** (axes branch, carrier):
 
 | Cube | Meaning |
 |---|---|
@@ -909,11 +910,13 @@ would be a circle; these say more.
 - **How it is measured.** The probe's envelope is brought back to the carrier's own sample rate and
   its delay is fitted against the signal the source played. OFDM is then cut into symbols, each
   transformed after its cyclic prefix, with one complex gain fitted against the ideal points. DBPSK,
-  FSK and CSS are first filtered to their channel, and so is the reference they are compared with,
-  so the measurement bandwidth is the channel's. With `Equalizer=none`, the default, there is no
+  FSK, CSS and SC are first filtered to their channel, and so is the reference they are compared with,
+  so the measurement bandwidth is the channel's. SC then passes both through its matched filter, and its
+  preamble and pilot symbols are not measured. With `Equalizer=none`, the default, there is no
   per-subcarrier equaliser, so the in-band ripple of a filter counts as error, as it does in NMSE.
 - **Through a matched pad** the error is the source signal's own: the Signal Designer's EVM for LTE
-  and NR (from clipping and shaping), and zero for DBPSK, FSK and CSS.
+  and NR (from clipping and shaping) and for a clipped SC carrier, and zero for DBPSK, FSK, CSS and an
+  unclipped SC carrier.
 - **The step.** EVM reads the circuit as the run steps it, and through a filter *draft* reads more
   than *standard*: a 5 MHz NR carrier through a 60 MHz bandpass reads 0.38 % at *draft* and 0.34 % at
   *standard* when it is at the envelope's centre. Off the centre the difference grows with the offset
@@ -945,7 +948,7 @@ A source's `PhaseNoise` mask is off in the second run too, so phase noise is in 
 lowers `SNR_dB` as thermal noise does. An LO whose mask integrates to −38.5 dBc over the channel holds
 the noise part near 1 % however strong the signal; the distortion part is the error without it.
 
-For LTE, NR, DBPSK and CSS the noise's part is 1/√SNR. FSK reads its frequency, and noise moves the
+For LTE, NR, DBPSK, SC and CSS the noise's part is 1/√SNR. FSK reads its frequency, and noise moves the
 frequency more than the amplitude, so its error is larger than that. The split is what decides
 whether to fix linearity or noise. Over a short record the noisy run can read slightly less than
 the noiseless one; the noise part is then 0 and the run says so. Without EvmSplit, `SNR_dB` is not
@@ -965,17 +968,17 @@ One gain over the record is right for a circuit, whose ripple is error. Through 
 a fade on some subcarriers reads as distortion, and a carrier offset turns the constellation across the record.
 `Equalizer=` reads each carrier as a receiver would:
 
-| Equalizer | LTE, NR | DBPSK |
+| Equalizer | LTE, NR | DBPSK, SC |
 |---|---|---|
 | `none` | One gain over the record, as above | The same |
 | `genie` | Each subcarrier divided by its own response, the received against the signal the source played, over the whole record | An MMSE equalizer from that response |
-| `pilot` | Each subcarrier's response read only from the pilot comb (`Pilots=`), averaged over the four pilot symbols either side, interpolated in frequency and then in time. EVM is read on the other elements | An equalizer of `Taps=` taps trained on the first `Training=` bits, applied to the rest |
+| `pilot` | Each subcarrier's response read only from the pilot comb (`Pilots=`), averaged over the four pilot symbols either side, interpolated in frequency and then in time. EVM is read on the other elements | An equalizer of `Taps=` taps, one symbol apart. DBPSK trains it on the first `Training=` bits and reads the rest. SC trains it on the preamble and pilot blocks when the carrier has them and reads every data symbol; without them it trains on the first `Training=` data symbols and reads the rest |
 
 `genie` takes out everything linear and is the best a receiver can do. `pilot` is what a receiver achieves, with the
 noise of its own estimates. At 40 dB SNR the two are within half a decibel of each other. FSK and CSS are decided by
 their own detectors and take no equalizer.
 
-**The frequency offset** is measured in every mode from the phase of each symbol (LTE, NR) or bit (DBPSK) against the
+**The frequency offset** is measured in every mode from the phase of each symbol (LTE, NR, SC) or bit (DBPSK) against the
 signal sent: `CFO_Hz` and its drift, `CFOdrift_Hzps`. With `genie` or `pilot` it is taken out of the envelope before
 the equalizer, so it leaves no interference between subcarriers. With `none` it is reported and left in, so `none`
 reads exactly as it always did. An offset beyond half the subcarrier spacing cannot be told from one a subcarrier away.
@@ -987,10 +990,13 @@ reads exactly as it always did. An offset beyond half the subcarrier spacing can
 | `SER`, `BER` | symbol and bit error rates, counted |
 | `BitErrors`, `Bits` | the count |
 | `BERlo`, `BERhi` | the exact (Clopper–Pearson) 95 % interval of `BER` |
-| `BERest` | the BER estimated from each element's SINR, *estimated (Gaussian)*: LTE, NR and DBPSK |
-| `SINR_dB` | each element's SINR after the equalizer, over symbol and subcarrier (one column for DBPSK) |
+| `BERest` | the BER estimated from each element's SINR, *estimated (Gaussian)*: LTE, NR, DBPSK and SC |
+| `SINR_dB` | each element's SINR after the equalizer, over symbol and subcarrier (one column for DBPSK and SC) |
 
 QAM bits are Gray-coded on each axis. DBPSK bits are differential, so a bit is wrong when one of its two symbols is.
+An SC symbol is decided to the nearest point of its constellation, and its bits are that point's label
+([A single carrier](signal-designer.html#sc)). Its `BERest` uses BPSK's and the square QAMs' closed forms, 8PSK's
+exact error rate, and for APSK the union bound over every pair of points.
 FSK is decided by the sign of its frequency, and CSS by the bin of each de-chirped symbol. A low BER needs many bits
 to count: 10⁻⁶ needs some 10⁸ bits for 100 errors. `BERest` reaches lower, because it treats noise and distortion as
 Gaussian. With `EvmSplit=yes`, a run whose distortion is far from Gaussian says so, and there `BERest` is a rough
