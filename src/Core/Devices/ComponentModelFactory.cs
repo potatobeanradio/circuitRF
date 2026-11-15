@@ -90,6 +90,8 @@ public static class ComponentModelFactory
             "TLIN", "CLIN", "MLIN", "MCLIN", "BCLIN", "MBCLIN", "MBEND", "MCURVE", "MMITER", "MGAP", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
             // The planned passives (docs/design/rf-passives.md): specs in, MTEE and MCURVE sections stamped as one block.
             WilkinsonTypeName,
+            // The coupled-line planned passives: MCLIN, MLIN and interdigitated sections, stamped the same way.
+            CoupledLineCouplerTypeName, LangeTypeName,
             // Grounded coplanar waveguide and stripline (brief-artsch-1), bound to the stackup as MLIN is.
             "CPWG", "SLIN",
             // The two vias (brief-via-component.md): a signal via changing layers, and a via to ground.
@@ -257,6 +259,10 @@ public static class ComponentModelFactory
             return CreateMicrostripKlopfModel(parameters);
         if (typeName.Equals(WilkinsonTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateWilkinsonModel(parameters);
+        if (typeName.Equals(CoupledLineCouplerTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateCoupledLineCouplerModel(parameters);
+        if (typeName.Equals(LangeTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateLangeModel(parameters);
         if (typeName.Equals("VIA", StringComparison.OrdinalIgnoreCase))
             return new ViaModel(ReadViaGeometry(parameters, grounded: false));
         if (typeName.Equals("VIAGND", StringComparison.OrdinalIgnoreCase))
@@ -2994,6 +3000,24 @@ public static class ComponentModelFactory
         => new(WilkinsonPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
                                    GetReal(parameters, "Gap", 1.35e-3), SubstrateOf(parameters)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, WilkinsonTypeName));
+
+    /// <summary>The coupled-line coupler's engine token (pins 1 input, 2 through, 3 coupled, 4 isolated).</summary>
+    public const string CoupledLineCouplerTypeName = "MCLC";
+
+    /// <summary>The four-finger interdigitated coupler's engine token (pins 1-4 as the coupled-line coupler's, then the
+    /// jumper landings J1-J4).</summary>
+    public const string LangeTypeName = "MIDC";
+
+    // MCLC / MIDC: the specs (Coupling in dB, Z0, F) are the parameters; the plan derives W, S and L.
+    private static MicrostripPlanModel CreateCoupledLineCouplerModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(CoupledLineCouplerPlan.Build(GetReal(parameters, "Coupling", 10.0), GetReal(parameters, "Z0", 50.0),
+                                            GetReal(parameters, "F", 1e9), SubstrateOf(parameters)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, CoupledLineCouplerTypeName));
+
+    private static MicrostripPlanModel CreateLangeModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(LangePlan.Build(GetReal(parameters, "Coupling", 4.0), GetReal(parameters, "Z0", 50.0),
+                               GetReal(parameters, "F", 1e9), SubstrateOf(parameters)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, LangeTypeName));
 
     private static MicrostripKlopfModel CreateMicrostripKlopfModel(IReadOnlyDictionary<string, Value> parameters)
     {

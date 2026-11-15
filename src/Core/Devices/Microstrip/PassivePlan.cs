@@ -43,3 +43,17 @@ public sealed record PassivePlan(IReadOnlyList<string> Pins, IReadOnlyList<PlanS
     /// </summary>
     public static double OnGrid(double meters) => Math.Round(meters / 2e-9, MidpointRounding.AwayFromZero) * 2e-9;
 }
+
+/// <summary>An MLIN of width W and length L, its pin 1 at the origin and running to +X. Nodes: its two ends.</summary>
+public sealed record PlanLine(int[] Nodes, double X, double Y, double RotationDeg, double W, double L) : PlanSection(Nodes, X, Y, RotationDeg);
+
+/// <summary>
+/// <see cref="Fingers"/> edge-coupled strips of width W, gap S and length L, running from x = 0 to +X, strip k centred
+/// k·(W + S) below the first, as <c>MCLIN</c>'s artwork places its two. Nodes: each strip's near (x = 0) end, then its
+/// far end, top strip first — for two strips exactly MCLIN's order (A near, A far, B near, B far), and the section is
+/// an MCLIN (<see cref="MicrostripCoupledLineModel"/>). With more, alternate strips are the two conductors of an
+/// interdigitated coupler, modelled from the same pair's modes by Ou's equations (<see cref="InterdigitatedLineModel"/>);
+/// the strips of one conductor are joined only by parts on the passive's pins, never inside it.
+/// </summary>
+public sealed record PlanCoupledLine(int[] Nodes, double X, double Y, double RotationDeg, double W, double S, double L,
+    int Fingers = 2) : PlanSection(Nodes, X, Y, RotationDeg);
