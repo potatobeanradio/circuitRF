@@ -352,6 +352,11 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.System,
             SearchTerms: ["Delay", "time delay", "group delay", "tau", "lag", "latency", "dl"],
             IsCommon: false),
+        // brief-paa-4 — "PS" is the designer's own abbreviation; the display name is the word itself.
+        [SymbolKind.PhaseShifter]  = new("Phase Shifter", "PS",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Phase Shifter", "PhaseShifter", "phase shifter", "ps", "phase", "bits", "steering", "beam steering"],
+            IsCommon: false),
         [SymbolKind.Duplexer]      = new("Duplexer", "DPX",
             Category: ComponentCategory.System,
             SearchTerms: ["Duplexer", "dpx", "diplexer", "TX", "RX", "antenna", "front end"],
@@ -1016,7 +1021,7 @@ public static class ComponentTypeRegistry
           + "beside 1 and 4 beside 2. Driving 1 of a matched pair, 2 is the through port, 3 the "
           + "coupled port and 4 the isolated port.",
 
-        SymbolKind.Atten or SymbolKind.Filter or SymbolKind.Delay =>
+        SymbolKind.Atten or SymbolKind.Filter or SymbolKind.Delay or SymbolKind.PhaseShifter =>
             "The two terminals are interchangeable — this block is symmetric, and its parameters "
           + "describe both ports at once.",
 
@@ -1201,6 +1206,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Filter        => "Filter",
         SymbolKind.Atten         => "Atten",
         SymbolKind.Delay         => "Delay",
+        SymbolKind.PhaseShifter  => PhaseShifterModel.TypeName,
         SymbolKind.Duplexer      => "Duplexer",
         SymbolKind.Combiner      => "Combiner",
         SymbolKind.PhasedArray   => PhasedArrayModel.TypeName,
@@ -2105,6 +2111,17 @@ public static class ComponentTypeRegistry
             "The delay, as a time: the through path is e^(-jwT), a phase that grows in proportion to "
           + "frequency. Matched and lossless at every frequency, and an ideal through at DC. A negative "
           + "delay is allowed and cancels a delay elsewhere.",
+        (SymbolKind.PhaseShifter, "Phase") =>
+            "The phase it delays the signal by, in degrees: Phase=90 is S21 = -j. Flat in frequency, unlike a line's. An array's weight "
+          + "has the opposite sign (w = A·e^(jφ)), so a channel cell steering through this block writes Phase=-steer(...).",
+        (SymbolKind.PhaseShifter, "IL") =>
+            "Insertion loss, in dB. At 0 the block is lossless; its noise is its loss, as every passive block's.",
+        (SymbolKind.PhaseShifter, "Bits") =>
+            "Phase bits: the phase is rounded to 360°/2^Bits. 0 is continuous.",
+        (SymbolKind.PhaseShifter, "Delay") =>
+            "A true time delay as well, as a time: e^(-jωT) on top of the phase, and not rounded by Bits.",
+        (SymbolKind.PhaseShifter, "Z0") =>
+            "Reference impedance of both ports. Each port is this resistance to its own reference.",
         (SymbolKind.Delay, "Z0") =>
             "Reference impedance of both ports. Each port is this resistance to its own reference.",
         (SymbolKind.Atten, "RL") =>
@@ -2114,7 +2131,8 @@ public static class ComponentTypeRegistry
             "The EM result the array is built from: a result record (.cemr) whose run kept its radiation pattern — one element, a sub-array, "
           + "or the whole array.",
         (SymbolKind.PhasedArray, "Mode") =>
-            "elements: one pin per element, each driven by the circuit. feed (one feed pin with the beamformer inside) is not available yet.",
+            "elements: one pin per element, each driven by the circuit. feed: one pin, F, driving every element through the beamformer inside, "
+          + "each element weighted by Amp, Phase and Delay and, when Channel names one, through its own copy of the channel cell.",
         (SymbolKind.PhasedArray, "Level") =>
             "How the array is formed from the record. auto takes it from the record: isolated for a one-element record, exact for a record "
           + "that is this array, embedded for a sub-array of another lattice.",
@@ -2122,7 +2140,8 @@ public static class ComponentTypeRegistry
             "embedded only: classes gives each element its position class's pattern from the sub-array (corner, edge, interior); centre gives "
           + "every element the centre element's.",
         (SymbolKind.PhasedArray, "Rows") =>
-            "Number of rows, running down the aperture from the top seen from boresight. Elements mode takes at most 64 elements in all.",
+            "Number of rows, running down the aperture from the top seen from boresight. Elements mode takes at most 64 elements in all, "
+          + "Feed mode 4096.",
         (SymbolKind.PhasedArray, "Cols") =>
             "Number of columns, running across the aperture from the left seen from boresight.",
         (SymbolKind.PhasedArray, "Lattice") =>
@@ -2132,7 +2151,24 @@ public static class ComponentTypeRegistry
         (SymbolKind.PhasedArray, "dy") =>
             "Row pitch, a length, as dx.",
         (SymbolKind.PhasedArray, "Off") =>
-            "Elements switched off, as a list of element numbers (3,17): each is terminated in Z0 inside and its pin left open.",
+            "Elements switched off, as a list of element numbers (3,17): each is terminated in Z0 — in Elements mode inside, its pin left "
+          + "open; in Feed mode by its zero weight.",
+        (SymbolKind.PhasedArray, "Amp") =>
+            "Feed mode: each element's amplitude, linear, evaluated once per element with n, row, col, x and y bound (taylor(-30,4), "
+          + "chebyshev(-30), cosq(1)). Amp[n] sets one element's. Blank is 1.",
+        (SymbolKind.PhasedArray, "Phase") =>
+            "Feed mode: each element's phase, degrees, evaluated per element as Amp is: steer(theta0, phi0, f0) points the beam. Phase[n] sets "
+          + "one element's. Blank is 0.",
+        (SymbolKind.PhasedArray, "Delay") =>
+            "Feed mode: each element's true time delay, evaluated per element as Amp is: steerDelay(theta0, phi0) points the beam at every "
+          + "frequency. Delay[n] sets one element's. Blank is 0.",
+        (SymbolKind.PhasedArray, "PhaseBits") =>
+            "Feed mode: each phase is rounded to 360°/2^PhaseBits. 0 or blank is continuous.",
+        (SymbolKind.PhasedArray, "AttenStep") =>
+            "Feed mode: each amplitude's attenuation from the largest is rounded to this step, in dB. 0 or blank is continuous.",
+        (SymbolKind.PhasedArray, "Channel") =>
+            "Feed mode: a two-port cell placed once per element between its weight and the element (its first port in, its second out), as "
+          + "PA1.ch[n]. Its expressions may read n, row, col, x and y. Blank connects each weight to its element directly.",
         (SymbolKind.PhasedArray, "Coupling") =>
             "on, or off: off keeps each element's own reflection and drops every coupling between elements.",
         (SymbolKind.PhasedArray, "Z0") =>
@@ -2568,6 +2604,13 @@ public static class ComponentTypeRegistry
             case SymbolKind.Delay:
                 return [new("T",     "1",    "ns",  true,  UnitDimension.Time),
                         new("Z0",    "50",   "Ω",   false, UnitDimension.Resistance)];
+            // brief-paa-4 — the phase shifter: a phase in degrees, its bits, its loss, and a delay placed at zero.
+            case SymbolKind.PhaseShifter:
+                return [new("Phase", "0",    "deg", true,  UnitDimension.None),
+                        new("Bits",  "0",    "",    true,  UnitDimension.None),
+                        new("IL",    "0",    "dB",  false, UnitDimension.None),
+                        new("Delay", "0",    "ns",  false, UnitDimension.Time),
+                        new("Z0",    "50",   "Ω",   false, UnitDimension.Resistance)];
             // The combiner: N paths, every one at IL unless it states its own IL[k], and Phase[k] per path. The
             // indexed ones are not seeded — a freshly placed combiner is the ideal equal split — and are added as
             // rows when a path needs its own loss or phase, as a P1Tone's Z[k] is.
@@ -2585,6 +2628,12 @@ public static class ComponentTypeRegistry
                         new("Patterns",   "classes",  "",   false, UnitDimension.None),
                         new("Coupling",   "on",       "",   false, UnitDimension.None),
                         new("Off",        "",         "",   false, UnitDimension.None),
+                        new("Amp",        "",         "",   false, UnitDimension.None),
+                        new("Phase",      "",         "deg", false, UnitDimension.None),
+                        new("Delay",      "",         "ns", false, UnitDimension.Time),
+                        new("PhaseBits",  "",         "",   false, UnitDimension.None),
+                        new("AttenStep",  "",         "dB", false, UnitDimension.None),
+                        new("Channel",    "",         "",   false, UnitDimension.None),
                         new("Z0",         "",         "Ω",  false, UnitDimension.Resistance),
                         new("RecordRows", "",         "",   false, UnitDimension.None),
                         new("RecordCols", "",         "",   false, UnitDimension.None),
@@ -3830,6 +3879,9 @@ public static class ComponentTypeRegistry
             case "ATT":    kind = SymbolKind.Atten;        return true;
             case "DELAY":
             case "DL":     kind = SymbolKind.Delay;        return true;
+            case "PHASESHIFTER":
+            case "PHASE SHIFTER":
+            case "PS":     kind = SymbolKind.PhaseShifter; return true;
             case "DUPLEXER":
             case "DPX":    kind = SymbolKind.Duplexer;     return true;
             case "COMBINER":

@@ -43,6 +43,9 @@ public enum FieldMetric
     PowerBalance,
     /// <summary>The worst element's active VSWR.</summary>
     ActiveVswrMax,
+    /// <summary>brief-paa-4 — the noise figure from the driven circuit port to the beam's peak, dB: the noise the array radiates there over the
+    /// share the port's own T0 termination makes.</summary>
+    BeamNfDb,
 }
 
 /// <summary>brief-sar-10 — the field measurements' function names (Evaluator.Fields.cs); each takes a fields analysis's
@@ -52,14 +55,14 @@ public static class FieldMetricFunctions
     public static IReadOnlyList<string> Names { get; } =
         ["B1pMean", "B1pMin", "B1pCoV", "psSAR", "SARwb", "SarEff", "Pabs",
          "RealizedGainDbi", "GainDbi", "DirectivityDbi", "RadiationEfficiency", "TrpDbm", "PeakEirpDbm",
-         "HpbwDeg", "SllDb", "PointingErrorDeg", "ScanLossDb", "GratingMarginDeg", "PowerBalance", "ActiveVswrMax"];
+         "HpbwDeg", "SllDb", "PointingErrorDeg", "ScanLossDb", "GratingMarginDeg", "PowerBalance", "ActiveVswrMax", "BeamNfDb"];
 
     public static bool IsFieldMetric(string name) => name is
         "B1pMean" or "B1pMin" or "B1pCoV" or "psSAR" or "SARwb" or "SarEff" or "Pabs" || IsPatternMetric(name) || IsArrayMetric(name);
 
     /// <summary>brief-paa-3 R-paa3-6 — the functions that read a Phased Antenna Array's beam.</summary>
     public static bool IsArrayMetric(string name) => name is
-        "HpbwDeg" or "SllDb" or "PointingErrorDeg" or "ScanLossDb" or "GratingMarginDeg" or "PowerBalance" or "ActiveVswrMax";
+        "HpbwDeg" or "SllDb" or "PointingErrorDeg" or "ScanLossDb" or "GratingMarginDeg" or "PowerBalance" or "ActiveVswrMax" or "BeamNfDb";
 
     /// <summary>The function a measurement is written as, which for two of them is not the enum's spelling.</summary>
     public static string NameOf(FieldMetric metric) => metric switch

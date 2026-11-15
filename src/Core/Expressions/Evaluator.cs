@@ -43,8 +43,9 @@ public sealed partial class Evaluator
     /// </summary>
     public Value Resolve(string name, Scope scope)
     {
+        // brief-paa-4 R-paa4-2 — one of element scope's five names, outside element scope: say where it is valid.
         var found = scope.Lookup(name)
-            ?? throw new UnresolvedNameException(name, scope.DebugName);
+            ?? throw new UnresolvedNameException(name, scope.DebugName, ElementScope.IsName(name) ? ElementScope.WhereValid(name) : null);
 
         var (expression, unit, owningScope) = found;
         var key = $"{owningScope.DebugName}::{name}";
@@ -306,6 +307,8 @@ public sealed partial class Evaluator
             // brief-paa-3 R-paa3-2 — the free-space wavelength c/f, a length in metres. A user function named lambda is found
             // first (above) and shadows it, as one named after any built-in does.
             "lambda"    => EvalLambda(cl, scope),
+            // brief-paa-4 R-paa4-3 — the weight functions of a Phased Antenna Array (Evaluator.Array.cs).
+            "steer" or "steerDelay" or "taylor" or "chebyshev" or "cosq" => EvalWeightFunction(cl, scope),
             _           => EvalCallOnPortMatrix(cl, scope)
         };
     }

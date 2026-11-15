@@ -315,6 +315,7 @@ public static class SymbolPortDefs
                 return [("1", -300f, 0f), ("2", 300f, 0f)];
             // Delay: two interchangeable pins, at the attenuator's spacing.
             case SymbolKind.Delay:
+            case SymbolKind.PhaseShifter:
                 return [("1", -300f, 0f), ("2", 300f, 0f)];
             // Duplexer: the antenna against the two branches it splits into.
             case SymbolKind.Duplexer:
@@ -1095,6 +1096,9 @@ public sealed class EditableComponent
     /// <summary>brief-paa-3 — a Phased Antenna Array's pin count: Rows × Cols when both are whole numbers, else 4 (the 2 × 2 it is placed as).</summary>
     public static int PhasedArrayPins(IEnumerable<EditableParameter> parameters)
     {
+        // brief-paa-4 — Feed mode has one pin, F, whatever the lattice.
+        if (parameters.FirstOrDefault(q => q.Name == "Mode") is { } mode && mode.Expression.Trim().Trim('"').Equals("feed", StringComparison.OrdinalIgnoreCase))
+            return 1;
         int Read(string name) => parameters.FirstOrDefault(q => q.Name == name) is { } p
                                  && int.TryParse(p.Expression.Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int v)
                                  && v >= 1 ? v : 2;

@@ -1665,7 +1665,6 @@ src/Core/Devices/PhasedArrayModel.cs|Lattice={latticeWord} is not a lattice: it 
 src/Core/Devices/PhasedArrayModel.cs|Level=exact takes each element's own port from the record, so the array must be the record's lattice: 
 src/Core/Devices/PhasedArrayModel.cs|Level=isolated takes a record of one element, and '{Path.GetFileName(record.RecordPath)}' has {record.PortCount} ports. 
 src/Core/Devices/PhasedArrayModel.cs|Level={levelWord} is not a level: it is auto (from the record), isolated, embedded or exact.
-src/Core/Devices/PhasedArrayModel.cs|Mode=feed — one feed pin with the beamformer inside — is not available yet. Use Mode=elements, with one pin per element, 
 src/Core/Devices/PhasedArrayModel.cs|Mode={mode} is not a mode: it is elements (one pin per element) or feed.
 src/Core/Devices/PhasedArrayModel.cs|Off={text} lists '{t}', which is not an element: elements are numbered 1 to {count}, row-major from the top left.
 src/Core/Devices/PhasedArrayModel.cs|Patterns={patternsWord} is not a choice: it is classes (each element its position class's pattern) or centre.
@@ -1689,3 +1688,25 @@ src/Design/Em3d/FieldCosimulation.Array.cs|{who}: '{name}' holds a pattern at {H
 src/Design/Em3d/FieldCosimulation.Array.cs|{who}: '{name}' lists {pa.Record.PortCount} ports and its far field holds {far.PortCount}. Run its EM setup again.
 src/Design/Em3d/FieldCosimulation.cs|{who}: '{fa.Block}' is a {block.ComponentType}, not an {EmFieldDataRecord.DisplayName} block 
 src/Engine/ParametricSweepEngine.cs|Parametric sweep '{sweep.Name}': {structural}
+src/Core/Devices/ComponentModelFactory.cs|Bits={bits} is not a number of bits: it is a whole number from 0 (continuous) to 24.
+src/Core/Devices/PhasedArrayModel.cs|a {rows} × {cols} array has {rows * cols} elements, and Feed mode takes at most {FeedLimit} (64 × 64).
+src/Core/Elaboration/Elaborator.PhasedArray.cs|'{childPath}': AttenStep={step} is not a step: it is 0 (continuous) or a positive number of dB.
+src/Core/Elaboration/Elaborator.PhasedArray.cs|'{childPath}': Channel={channelName} names a cell with {channel.Ports.Count} port
+src/Core/Elaboration/Elaborator.PhasedArray.cs|'{childPath}': Channel={channelName} names no cell. It names a two-port cell placed once per element, 
+src/Core/Elaboration/Elaborator.PhasedArray.cs|'{childPath}': a {PhasedArrayModel.DisplayName} in Feed mode has one pin, F, and its line binds 
+src/Core/Elaboration/Elaborator.PhasedArray.cs|'{childPath}': {ov.Name} names element {index}, and the {lattice.Rows} × {lattice.Cols} array's elements are 
+src/Core/Elaboration/Elaborator.PhasedArray.cs|'{childPath}': {ov.Name}={ov.Expression} at element {e + 1} (row {row}, col {col}): {ex.Message}
+src/Core/Elaboration/Elaborator.PhasedArray.cs|'{childPath}': {ov.Name}={ov.Expression} is {v} at element {e + 1} (row {row}, col {col}): it is a real number.
+src/Core/Elaboration/Elaborator.PhasedArray.cs|'{path}': {name}={v} is not a number of bits: it is a whole number from 0 (continuous) to {max}.
+src/Core/Elaboration/Elaborator.PhasedArray.cs|'{path}': {name}={v} is not a number.
+src/Core/Expressions/Evaluator.Array.cs|chebyshev(sll): sll is the sidelobe level in dB, such as -30.
+src/Core/Expressions/Evaluator.Array.cs|cosq(q): q is a power of zero or more, not {a}.
+src/Core/Expressions/Evaluator.Array.cs|taylor(sll, nbar): nbar is a whole number from 1 to 64, not {nb}.
+src/Core/Expressions/Evaluator.Array.cs|taylor(sll, nbar): sll is the sidelobe level in dB, such as -30.
+src/Core/Expressions/Evaluator.Array.cs|{cl.Name}() is a taper over an array's rows and columns, so it is valid only in a Phased Antenna Array's Amp 
+src/Core/Expressions/Evaluator.Array.cs|{cl.Name}(): {what} is a real number, not {v}.
+src/Core/Expressions/Evaluator.Array.cs|{cl.Name}({args}) takes the element's position x, y only in a Phased Antenna Array's Amp, Phase or Delay 
+src/Design/Em3d/FieldCosimulation.Array.cs|BeamNfDb({fa.Name}): nothing from circuit port {drives[0].Port} reaches the beam's peak, so it has no noise figure.
+src/Engine/SParameterEngine.Beam.cs|'{instancePath}' is a {block.ComponentType}, not an S-parameter block.
+src/Engine/SParameterEngine.Beam.cs|The circuit has no instance '{instancePath}'.
+src/Engine/SParameterEngine.Beam.cs|The noise radiated by an array needs every circuit port terminated in a resistive Z0 (Re Z0 > 0); one port's Z0 has none.

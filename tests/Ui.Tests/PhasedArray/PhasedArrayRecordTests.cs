@@ -339,6 +339,17 @@ public sealed class PhasedArrayRecordTests(ITestOutputHelper output)
         var (pt, pp) = ArrayDirections.Angles(peakDir);
         var e1 = (Math.Cos(pt) * Math.Cos(pp), Math.Cos(pt) * Math.Sin(pp), -Math.Sin(pt));
         var e2 = (-Math.Sin(pp), Math.Cos(pp), 0.0);
+        if (pt < local.StepDeg * Math.PI / 180)
+        {
+            // A peak within a cut step of boresight has no elevation plane of its own: cut it in the requested scan's plane (φ = 0) and the
+            // plane across it, as ArrayBeam does (brief-paa-4) — x made tangent at the peak, then the peak × x.
+            double d = peakDir.Item1;
+            var t = (1 - d * peakDir.Item1, -d * peakDir.Item2, -d * peakDir.Item3);
+            double n = Math.Sqrt(t.Item1 * t.Item1 + t.Item2 * t.Item2 + t.Item3 * t.Item3);
+            e1 = (t.Item1 / n, t.Item2 / n, t.Item3 / n);
+            e2 = (peakDir.Item2 * e1.Item3 - peakDir.Item3 * e1.Item2, peakDir.Item3 * e1.Item1 - peakDir.Item1 * e1.Item3,
+                  peakDir.Item1 * e1.Item2 - peakDir.Item2 * e1.Item1);
+        }
         double peak = DirectPower(lattice, w, element, peakDir);
         var elev = Read(offsets, [.. offsets.Select(o => DirectPower(lattice, w, element, Along(peakDir, e1, o)))], peak);
         var azim = Read(offsets, [.. offsets.Select(o => DirectPower(lattice, w, element, Along(peakDir, e2, o)))], peak);

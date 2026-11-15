@@ -23,7 +23,7 @@ namespace CircuitRF.Core.Elaboration;
 ///      - Default expressions evaluate in the CELL's own scope.
 ///   4. Net names are uniquified by instance path; ground = "0" → node 0.
 /// </summary>
-public sealed class Elaborator
+public sealed partial class Elaborator
 {
     private readonly Library[]  _libraries;
     private readonly Evaluator  _evaluator = new();
@@ -992,6 +992,14 @@ public sealed class Elaborator
             if (inst.Reference.Equals(EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase))
                 inst = BindEmFieldData(inst, childPath);
 
+            // brief-paa-4 R-paa4-1 — a Phased Antenna Array in Feed mode is placed as its parts: the beamformer, the array network on internal
+            // element nodes and, when it names one, the channel cell once per element (Elaborator.PhasedArray.cs).
+            if (inst.Reference.Equals(PhasedArrayModel.TypeName, StringComparison.OrdinalIgnoreCase) && PhasedArrayModel.IsFeed(inst.Overrides))
+            {
+                ElaboratePhasedArrayFeed(inst, childPath, ResolveNet, currentScope, globalScope, netlist);
+                continue;
+            }
+
             if (ComponentModelFactory.IsPrimitive(inst.Reference))
             {
                 // Primitive — resolve nodes and parameters first; model creation may need params (e.g. SnP).
@@ -1547,6 +1555,11 @@ public sealed class Elaborator
             return ResolveSnpParameters(inst, parentScope);
         if (inst.Reference.Equals(PhasedArrayModel.TypeName, StringComparison.OrdinalIgnoreCase))
             return ResolvePhasedArrayParameters(inst, parentScope);
+        // brief-paa-4 R-paa4-7 — a phase shifter's Phase takes degrees as its site unit.
+        if (inst.Reference.Equals(PhaseShifterModel.TypeName, StringComparison.OrdinalIgnoreCase))
+            return inst.Overrides.ToDictionary(ov => ov.Name, ov => ov.Name.Equals("Phase", StringComparison.OrdinalIgnoreCase)
+                ? _evaluator.EvalPhase(ov.Expression, parentScope, ov.Unit, $"{inst.InstanceName}.{ov.Name}")
+                : EvalOverride(inst, ov, parentScope), StringComparer.Ordinal);
         // A .cmodel path is not an expression, for SnP's reason.
         if (inst.Reference.Equals(ComponentModelFactory.ComposedCoreTypeName, StringComparison.OrdinalIgnoreCase))
             return ResolveComposedParameters(inst, parentScope);
@@ -1664,7 +1677,8 @@ public sealed class Elaborator
             return (6, "rf+, rf−, lo+, lo−, if+, if−");
 
         if (inst.Reference.Equals("Atten", StringComparison.OrdinalIgnoreCase)
-            || inst.Reference.Equals("Delay", StringComparison.OrdinalIgnoreCase))
+            || inst.Reference.Equals("Delay", StringComparison.OrdinalIgnoreCase)
+            || inst.Reference.Equals(PhaseShifterModel.TypeName, StringComparison.OrdinalIgnoreCase))
             return (4, "1+, 1−, 2+, 2−");
 
         if (inst.Reference.Equals("Circulator", StringComparison.OrdinalIgnoreCase))
@@ -2383,6 +2397,8 @@ public sealed class Elaborator
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         foreach (var ov in inst.Overrides)
         {
+            // brief-paa-4 — the weights are evaluated per element, in element scope (Elaborator.PhasedArray.cs), never here.
+            if (PhasedArrayModel.IsElementParameter(ov.Name, out _, out _)) continue;
             if (PhasedArrayModel.WordParameters.Contains(ov.Name))
             {
                 string raw = Unquote(ov.Expression.Trim());

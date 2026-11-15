@@ -37,7 +37,7 @@ namespace CircuitRF.Engine;
 ///   Always:      apply regularization before first factorization.
 ///   Never:       no regularization; throw <see cref="SingularMatrixException"/> on singular.
 /// </summary>
-public static class SParameterEngine
+public static partial class SParameterEngine
 {
     /// <summary>gmin conductance added from every node to ground (§5).</summary>
     public const double DefaultGmin = 1e-12;

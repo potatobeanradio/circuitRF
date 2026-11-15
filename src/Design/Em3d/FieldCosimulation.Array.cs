@@ -34,6 +34,9 @@ public static partial class FieldCosimulation
     /// <summary>The cubes of <see cref="ArrayGroup"/>.</summary>
     public const string ActiveReflectionCube = "GammaActive", ElementAcceptedCube = "Pacc";
 
+    /// <summary>brief-paa-4 — a Feed-mode array's weights per element, requested and quantised.</summary>
+    public const string WeightCube = "w", QuantisedWeightCube = "wQuantised";
+
     /// <summary>The block a fields analysis names, when it is a Phased Antenna Array; null otherwise.</summary>
     private static PhasedArrayModel? ArrayBlock(FieldsAnalysis fa, ElaboratedNetlist nl)
         => nl.Components.FirstOrDefault(c => string.Equals(c.InstancePath, fa.Block, StringComparison.Ordinal))?.Model as PhasedArrayModel;
@@ -110,7 +113,7 @@ public static partial class FieldCosimulation
         if (metrics is not null)
         {
             var pattern = fa.AtEveryFrequency ? null : new CosimPatternMetrics(fa, far, at[0], waves[0], points[0]);
-            metrics(new ArrayFieldsMetrics(fa, pa, far, freqs[0], waves[0], elements[0], pattern));
+            metrics(new ArrayFieldsMetrics(fa, pa, far, freqs[0], waves[0], elements[0], pattern, nl, drives));
         }
         _ = output;
         return data;
@@ -193,16 +196,32 @@ public static partial class FieldCosimulation
         data.Add($"{ArrayGroup}.{ReflectedCube}", new DataCube([f, element], b) { Unit = "sqrt(W)" });
         data.Add($"{ArrayGroup}.{ActiveReflectionCube}", new DataCube([f, element], gamma));
         data.Add($"{ArrayGroup}.{ElementAcceptedCube}", new DataCube([f, element], pacc) { Unit = "W" });
+
+        // brief-paa-4 R-paa4-4 — a Feed-mode array's weights, requested and as quantised, beside each other so a plot shows both.
+        if (pa.Feed is { } feed)
+        {
+            var w = new Complex[nf * n];
+            var wq = new Complex[nf * n];
+            for (int i = 0; i < nf; i++)
+                for (int e = 0; e < n; e++)
+                {
+                    w[i * n + e] = feed.Requested(e, freqs[i]);
+                    wq[i * n + e] = feed.Quantised(e, freqs[i]);
+                }
+            data.Add($"{ArrayGroup}.{WeightCube}", new DataCube([f, element], w));
+            data.Add($"{ArrayGroup}.{QuantisedWeightCube}", new DataCube([f, element], wq));
+        }
     }
 
     /// <summary>R-paa3-6 — what a measurement reads of one array run: the far-field metrics as for any block, and the beam's own, each from
     /// PAA-2's local evaluation (never from the record's grid), computed once when first asked.</summary>
     private sealed class ArrayFieldsMetrics(FieldsAnalysis fa, PhasedArrayModel pa, PortFarFieldSet far, double hz, CosimWaves w,
-                                            ArrayElements elements, CosimPatternMetrics? pattern) : IFieldMetrics
+                                            ArrayElements elements, CosimPatternMetrics? pattern, ElaboratedNetlist nl,
+                                            List<(int Port, Complex Amplitude)> drives) : IFieldMetrics
     {
         private readonly object _gate = new();
         private ArrayBeamMetrics? _beam;
-        private double? _balance;
+        private double? _balance, _nf;
 
         public double Evaluate(FieldMetric metric, string? region, double? massGrams)
             => throw new ExpressionException($"'{FieldMetricFunctions.NameOf(metric)}' reads a field set, and fields analysis '{fa.Name}' is the pattern of a {PhasedArrayModel.DisplayName}.");
@@ -224,6 +243,8 @@ public static partial class FieldCosimulation
                         return worst >= 1 ? double.PositiveInfinity : (1 + worst) / (1 - worst);
                     case FieldMetric.PowerBalance:
                         return _balance ??= Balance();
+                    case FieldMetric.BeamNfDb:
+                        return _nf ??= BeamNoiseFigureDb();
                     case FieldMetric.GratingMarginDeg:
                     {
                         var beam = Beam();
@@ -274,6 +295,45 @@ public static partial class FieldCosimulation
             int best = 0;
             for (int d = 1; d < dirs.Count; d++) if (overview.Power(d) > overview.Power(best)) best = d;
             return _beam = ArrayBeam.Evaluate(pa.Lattice, w.A, elements, hz, dirs.ThetaRad[best] * 180 / Math.PI, dirs.PhiRad[best] * 180 / Math.PI);
+        }
+
+        /// <summary>
+        /// brief-paa-4 — the noise figure from the first driven circuit port to the beam's peak: F = 1 + N/(kT0·|E_s|²), with E_s the field the
+        /// port's unit incident wave radiates at the peak and N the noise every noisy part radiates there (SParameterEngine.BlockFunctionalNoise,
+        /// the field at one direction being a linear functional of the waves incident on the elements). The port's own termination at T0 is the
+        /// source; the ports are otherwise the run's noiseless terminations, as for an S-parameter noise figure. Both polarizations count.
+        /// </summary>
+        private double BeamNoiseFigureDb()
+        {
+            var beam = Beam();
+            double th = beam.PeakThetaDeg * Math.PI / 180, ph = beam.PeakPhiDeg * Math.PI / 180;
+            var dir = ArrayDirections.Of([th], [ph]);
+            double k = 2 * Math.PI * hz / EmConstants.C0;
+            int n = pa.PortCount;
+            var vt = new Complex[n];
+            var vp = new Complex[n];
+            for (int e = 0; e < n; e++)
+            {
+                var (et, ep) = elements.Patterns[elements.PatternOf[e]].At(th, ph);
+                var (x, y) = pa.Lattice.Position(e);
+                var phase = Complex.FromPolarCoordinates(1, k * (dir.U[0] * x + dir.V[0] * y));
+                vt[e] = et * phase;
+                vp[e] = ep * phase;
+            }
+            var noise = SParameterEngine.BlockFunctionalNoise(nl, hz, fa.Block, pa.Z0, [vt, vp]);
+            var signal = SParameterEngine.BlockWaves(nl, hz, fa.Block, [(drives[0].Port, Complex.One)]);
+            Complex st = 0, sp = 0;
+            double root = 2 * Math.Sqrt(pa.Z0.Real);
+            for (int e = 0; e < n; e++)
+            {
+                Complex a = (signal.Voltage[e] + pa.Z0 * signal.Current[e]) / root;
+                st += vt[e] * a;
+                sp += vp[e] * a;
+            }
+            double s2 = st.Magnitude * st.Magnitude + sp.Magnitude * sp.Magnitude;
+            if (!(s2 > 0))
+                throw new ExpressionException($"BeamNfDb({fa.Name}): nothing from circuit port {drives[0].Port} reaches the beam's peak, so it has no noise figure.");
+            return 10 * Math.Log10(1 + (noise[0] + noise[1]) / (RfCore.Data.NoiseMetrics.KT0 * s2));
         }
 
         /// <summary>Radiated over accepted power (note §2.4).</summary>

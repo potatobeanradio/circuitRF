@@ -1890,7 +1890,8 @@ internal static class Check
                 f.Add(CliDiagnostics.CheckElaborationNote(path, $"{who}: {pa.LevelNote}"));
                 if (pa.CouplingNote is { } coupling) f.Add(CliDiagnostics.CheckElaborationNote(path, $"{who}: {coupling}"));
                 if (pa.PitchWarning is { } pitch) f.Add(CliDiagnostics.CheckElaborationWarning(path, $"{who}: {pitch}"));
-                if (pa.Lattice.Off.Count > 0)
+                if (pa.FeedNote is { } feedNote) f.Add(CliDiagnostics.CheckElaborationNote(path, $"{who}: {feedNote}"));
+                if (pa.Lattice.Off.Count > 0 && !pa.FeedMode)
                     f.Add(CliDiagnostics.CheckElaborationNote(path, $"{who}: element{(pa.Lattice.Off.Count == 1 ? "" : "s")} " +
                         $"{string.Join(", ", pa.Lattice.Off.Order())} {(pa.Lattice.Off.Count == 1 ? "is" : "are")} switched off: terminated in Z0 inside, " +
                         $"{(pa.Lattice.Off.Count == 1 ? "its pin" : "their pins")} left open, whatever is wired there."));

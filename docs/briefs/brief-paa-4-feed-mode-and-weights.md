@@ -84,3 +84,64 @@ frequency the block sees.
 ## Not here
 
 Receive waves and the array's own noise temperature (PAA-7); the fast path (PAA-8); the symbol (PAA-5).
+
+## Completion note (2026-11-14)
+
+**Built.** `Mode=feed` (`Elaborator.PhasedArray.cs`): one pin, `F`, and behind it three ordinary elaborated parts — `PA1.feed`, the
+beamformer (`PhasedArrayFeedModel`: the Combiner's ideal N-way split, S[0,n] = w_n/√N, stamped sparse, passive while ‖w‖ ≤ √N), the
+channel cell placed once per element as `PA1.ch[n]` when `Channel=` names one, and `PA1`, the array network on internal element
+nodes, which a `type=fields block=PA1` analysis still names. Up to 4096 elements. `Amp`, `Phase` (degrees), `Delay` (seconds) and
+their `[n]` overrides are evaluated once per element in **element scope** (`ElementScope`: `n`, `row`, `col`, `x`, `y`), then quantised
+(`PhaseBits`, `AttenStep`); the fields analysis adds `array.w` and `array.wQuantised`. The weight functions `steer`, `steerDelay`,
+`taylor`, `chebyshev`, `cosq` (`Evaluator.Array.cs`, line tapers in `ArrayWeights`), opaque to the site-unit rule so a unit-bearing θ0
+does not decide the result's unit. A name of the five outside element scope is refused with where it is valid. An element switched off
+has weight zero (its port a matched Z0 termination); an identical channel of an Off element is omitted, a differing one kept.
+Identical is decided from the cell's expressions and written on the model, in the run's notes, `check` and `explain --analysis`.
+`BeamNfDb(F)`: the noise figure from the driving port to the beam's peak (`SParameterEngine.BlockFunctionalNoise`). The
+**PhaseShifter** System block (`PhaseShifterModel`, palette **Phase Shifter**, `PS`, its own symbol): `Phase`, `IL`, `Bits`, `Delay`,
+`Z0`. The parameter editor lists the new rows; the components and expressions pages say both.
+
+**Gates** (`tests/Ui.Tests/PhasedArray/PhasedArrayFeedTests.cs`, 8 tests):
+1. 16×16 on the 5×5 record, `Phase=steer(theta0,0,f0)`: pointing error 0.056°, 0.110°, 0.350° at 0°, 30°, 45° (beamwidths 6.1°, 7.2°,
+   8.7°; gated at a tenth of the beam — the embedded pattern pulls the peak towards boresight); a sweep of theta0 gives three patterns.
+2. The same phases as 256 `Phase[n]` overrides: 1.1e-14 of the peak; `bad = 10*row` used in Phase is refused naming Amp, Phase, Delay
+   and the channel cell.
+3. `Amp=taylor(-30,4)`, 32×32 isotropic elements: −30.243 dB in both principal planes; the circuit's own `SllDb` on the patch −30.257 dB.
+4. `PhaseBits=3`, 1×16 at 10°: the p = −1 lobe at u = 0.812 (closed form 0.749, inside its main lobe ±0.123), −16.96 dB (closed form
+   −16.90); the continuous line −21.8 dB there; `PhaseBits=0` identical to none.
+5. Amplifier 20 dB + Attenuator 3 dB channel: realized gain +17.000000000000 dB; identical; `3+0.1*n` is not, and says it reads n.
+6. Port → Mixer → Filter → Feed array with an Amplifier channel runs HB (two tones, IF and LO) and S-parameters with noise, and the
+   same array runs in an envelope run; `BeamNfDb` on Amp 15 dB/2 dB → 2 dB loss → array with a 12 dB/3 dB channel at T0,
+   `Coupling=off`: 2.183439017 dB against the cascade's 2.183438944 dB (7e-8).
+7. PhaseShifter `Phase=90`: S21 = −j to 1e-12, matched and reciprocal; `Bits=2` rounds 100° to 90°; `Phase=90 deg` the same.
+Plus `explain`/`check` as a process: identical, the omitted channel of element 6, the quantisation.
+
+**What changed from the brief, and why.**
+- **Gate 1 steers at 5.9 GHz, not 5.8**: the fixtures hold 5.9 GHz only, and a beam steered at 5.8 and read at 5.9 squints by design
+  (0.75° at 45°). PAA-1 set no pointing tolerance as a number; the gate holds a tenth of the beamwidth.
+- **Gate 4's lobes are held to the closed form's main lobe, not a point**: on 16 elements the quantisation lobes' sidelobes overlap
+  and move the peak 0.06 in u (no θ0, periodic-error ones included, does better than 0.04); the level agrees to 0.06 dB.
+- **Gate 6's 1e-6 dB comparison is on the chain after the mixer.** The small-signal noise figure is S-parameter noise, and a mixer
+  has no conversion path without an LO (`MixerModel`), so nothing crosses it there; the Chain Budget's own mixer benches use HB noise
+  and agree to ~3e-4 dB, not 1e-6. The chain with the mixer runs all three analyses; the NF is gated on Amp → matched loss → array,
+  with a matched attenuator for the filter so every stage is matched as Friis assumes, and a 4×1 column, because the patch's peak sits
+  0.16° off boresight across its H-plane and a row there reads 6e-6 dB higher — the split's isolation noise radiated at a peak the
+  weights are not phased to, which is the beam's, not an error.
+- **The PhaseShifter's Phase is a delay** (gate 7: `Phase=90` is −j), opposite in sign to an array weight's (R-paa4-1, `e^{jφ}`). A
+  channel steering through it writes `Phase=-steer(…)`; its parameter row says so.
+
+**Found and fixed on the way.**
+- **`ArrayBeam` cut a boresight beam along whatever azimuth its peak landed on**, so `SllDb` of a 32×32 Taylor array read −45 dB (a
+  diagonal) or −32.4 dB depending on where the overview's grid started the search. A peak within a cut step of boresight is now cut
+  in the requested scan's plane, or φ = 0. PAA-2's 64×64 reference cuts itself the same way (it agreed before by the same accident).
+- **The beamformer's common-port row was a dense row**, which the MNA's minimum-degree ordering on AᵀA turns into a dense LU: a
+  48 × 48 feed sat minutes in the factorization. The sum is now a chain of auxiliary unknowns (`src/Core/RESOLVED.md`); the 32 × 32
+  gate went from 6 s to 0.8 s.
+- **A block's own noise read as radiated**: the beam functional must use the element's whole terminal current, its Bosma Norton
+  current included; without it a noiseless chain read 0.098 dB. `src/Engine/RESOLVED.md`.
+
+**Not here.** The parameter editor does not yet grey the weight rows in Elements mode (D2); the dynamic symbol is PAA-5 (Feed mode
+draws the one-pin square); the noise of a receiving array, PAA-7; the fast path for identical channels, PAA-8. At 4096 elements the
+array network is still a dense N×N per record frequency (268 MB each); PAA-8 owns its cost. Measured once by hand (a scratch run under
+an 8 GB watchdog, not a test): on the one-element record, steered to 30° with `taylor(-30,4)`, a 48 × 48 fields run took 2.2 s and a
+64 × 64 one 12.1 s (Debug), pointing error 0.045° and 0.025°, `SllDb` −29.8 and −29.9 dB.

@@ -20,6 +20,7 @@
 
 using System.Globalization;
 using System.Numerics;
+using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices.Arrays;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
@@ -40,12 +41,29 @@ public sealed class PhasedArrayModel : ComponentModel, IReportsWarnings
     /// <summary>D1 — the most elements Elements mode takes: brute force is a small-array tool.</summary>
     public const int ElementsLimit = 64;
 
+    /// <summary>R-paa4-1 — the most elements Feed mode takes (D9).</summary>
+    public const int FeedLimit = 4096;
+
+    /// <summary>R-paa4-1 — Mode=feed: the elements are internal nodes behind the beamformer, and an element switched off is terminated by
+    /// the beamformer's matched, zero-weight port rather than opened at a pin, so the network is stamped whole.</summary>
+    public bool FeedMode { get; private init; }
+
+    /// <summary>R-paa4-1 — the beamformer of a Feed-mode array, with each element's requested and quantised weight; null in Elements mode.</summary>
+    public PhasedArrayFeedModel? Feed { get; internal set; }
+
+    /// <summary>R-paa4-1 / R-paa4-4 — Feed mode's sentence for check and explain: the pin, the element count and the quantisation; null in
+    /// Elements mode.</summary>
+    public string? FeedNote { get; internal set; }
+
+    /// <summary>R-paa4-5 — what was placed per element, for the run's notes and explain; null in Elements mode.</summary>
+    public PhasedArrayChannels? Channels { get; internal set; }
+
     /// <summary>PAA-1's decision 4: a pitch further than this many free-space wavelengths from the record's is warned about (D5).</summary>
     public const double PitchWarningWavelengths = 0.02;
 
     /// <summary>The parameters whose values are words or paths, never expressions.</summary>
     public static readonly IReadOnlySet<string> WordParameters =
-        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Record", "Level", "Patterns", "Mode", "Lattice", "Coupling", "Off" };
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Record", "Level", "Patterns", "Mode", "Lattice", "Coupling", "Off", "Channel" };
 
     /// <summary>The length parameters: a value with a unit means it, a bare number is metres.</summary>
     public static readonly IReadOnlySet<string> LengthParameters =
@@ -151,6 +169,7 @@ public sealed class PhasedArrayModel : ComponentModel, IReportsWarnings
     public Mat<Complex> SAt(double hz)
     {
         var s = _interp.Evaluate(hz);
+        if (FeedMode) return s;
         foreach (int n in Lattice.Off)
         {
             int k = n - 1;
@@ -214,16 +233,16 @@ public sealed class PhasedArrayModel : ComponentModel, IReportsWarnings
     public static PhasedArrayModel Create(IReadOnlyDictionary<string, Value> p)
     {
         string mode = Word(p, "Mode", "elements");
-        if (mode.Equals("feed", StringComparison.OrdinalIgnoreCase))
-            throw new ParameterRefusalException("Mode=feed — one feed pin with the beamformer inside — is not available yet. Use Mode=elements, with one pin per element, " +
-                                                "and drive each element from the circuit.");
-        if (!mode.Equals("elements", StringComparison.OrdinalIgnoreCase))
+        bool feed = mode.Equals("feed", StringComparison.OrdinalIgnoreCase);
+        if (!feed && !mode.Equals("elements", StringComparison.OrdinalIgnoreCase))
             throw new ParameterRefusalException($"Mode={mode} is not a mode: it is elements (one pin per element) or feed.");
 
         int rows = Count(p, "Rows"), cols = Count(p, "Cols");
-        if (rows * cols > ElementsLimit)
+        if (!feed && rows * cols > ElementsLimit)
             throw new ParameterRefusalException($"a {rows} × {cols} array has {rows * cols} elements, and Elements mode — one pin per element — takes at most {ElementsLimit}. " +
                                                 "A larger array is Feed mode's: one feed pin driving every element through the array's own beamformer.");
+        if (feed && rows * cols > FeedLimit)
+            throw new ParameterRefusalException($"a {rows} × {cols} array has {rows * cols} elements, and Feed mode takes at most {FeedLimit} (64 × 64).");
 
         string latticeWord = Word(p, "Lattice", "rect");
         var kind = latticeWord.ToLowerInvariant() switch
@@ -341,7 +360,26 @@ public sealed class PhasedArrayModel : ComponentModel, IReportsWarnings
         string? pitch = level == PhasedArrayLevel.Isolated ? null
             : PitchSentence(lattice, sub, source.Frequencies.Max(), TypedUnit(p, "dx"), TypedUnit(p, "dy"));
         bool levelStated = levelWord.Length > 0 && !levelWord.Equals("auto", StringComparison.OrdinalIgnoreCase);
-        return new PhasedArrayModel(record, lattice, fit, level, levelStated, classes, coupled, network, z0, note, pitch, patternPort);
+        return new PhasedArrayModel(record, lattice, fit, level, levelStated, classes, coupled, network, z0, note, pitch, patternPort) { FeedMode = feed };
+    }
+
+    /// <summary>R-paa4-1 — whether an instance's Mode override says feed (the elaborator places a Feed-mode array itself).</summary>
+    public static bool IsFeed(IEnumerable<ParameterAssignment> overrides)
+        => overrides.FirstOrDefault(o => o.Name.Equals("Mode", StringComparison.OrdinalIgnoreCase)) is { } m
+           && m.Expression.Trim().Trim('"').Trim().Equals("feed", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>R-paa4-2 — the per-element weight parameters, evaluated in element scope: Amp, Phase, Delay and their [n] overrides.</summary>
+    public static bool IsElementParameter(string name, out string baseName, out int? index)
+    {
+        index = null;
+        int open = name.IndexOf('[');
+        baseName = open < 0 ? name : name[..open];
+        if (!(baseName.Equals("Amp", StringComparison.OrdinalIgnoreCase) || baseName.Equals("Phase", StringComparison.OrdinalIgnoreCase)
+              || baseName.Equals("Delay", StringComparison.OrdinalIgnoreCase))) return false;
+        if (open < 0) return true;
+        if (!name.EndsWith(']') || !int.TryParse(name[(open + 1)..^1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int k)) return false;
+        index = k;
+        return true;
     }
 
     /// <summary>D5 — the sentence when dx or dy is further than <see cref="PitchWarningWavelengths"/> of a wavelength at
@@ -410,5 +448,28 @@ public sealed class PhasedArrayModel : ComponentModel, IReportsWarnings
             list.Add(k);
         }
         return [.. list.Distinct()];
+    }
+}
+
+/// <summary>
+/// R-paa4-5 / R-paa4-6 — the channel cell a Feed-mode array places per element: its name, whether it is IDENTICAL across elements (its
+/// parameters read none of n, row, col, x, y — the fact PAA-8's fast path reads), which of the five it reads when it is not, and the
+/// elements switched off whose channel was omitted (only an identical channel is omitted: a different one still carries its own noise).
+/// </summary>
+public sealed record PhasedArrayChannels(string Cell, string In, string Out, bool Identical, IReadOnlyList<string> Reads, IReadOnlyList<int> Omitted)
+{
+    /// <summary>The instance path of element <paramref name="n"/>'s (1-based) channel under array <paramref name="array"/>.</summary>
+    public static string PathOf(string array, int n) => $"{array}.ch[{n}]";
+
+    /// <summary>One sentence for a run's notes and explain.</summary>
+    public string Sentence(string array)
+    {
+        string what = Identical
+            ? $"identical across elements (its parameters read none of n, row, col, x, y)"
+            : $"different per element (it reads {string.Join(", ", Reads)})";
+        string off = Omitted.Count == 0 ? ""
+            : $" The channel of {(Omitted.Count == 1 ? "element" : "elements")} {string.Join(", ", Omitted)}, switched off, is omitted and the element terminated in Z0 " +
+              "at the beamformer; a channel that differs per element would be kept, its own noise still reaching the feed.";
+        return $"{PhasedArrayModel.Describe(array)} places channel cell '{Cell}' once per element as {PathOf(array, 1)} … ({In} from the beamformer, {Out} to the element); it is {what}.{off}";
     }
 }

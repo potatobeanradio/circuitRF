@@ -4611,3 +4611,21 @@ Gates: `CommensurateTonesTests`, `LoadpullSettingsReachTests`, `HbLineSearchTest
 - **Moved (brief-paa-3):** `ArrayLattice`, `ArrayCoupling` and `ArraySparseMatrix` now live in `src/Core/Devices/Arrays`, because the
   PhasedArray component builds its S at elaboration; the pattern sum, directions, element interpolation, beam metrics, (u,v) map and
   waves stay here. `src/Core/RESOLVED.md` § brief-paa-3.
+
+## brief-paa-4 — the beam's noise, and a boresight beam's cut planes (2026-11-14)
+
+- **`SParameterEngine.BlockFunctionalNoise`** is the noise of y = Σ v_k·a_k over a block's incident waves — what an array radiates in
+  one direction — one transposed solve per functional on the terminated network's factorisation. **The block's own noise must be
+  taken out of its waves**: its Bosma noise is a Norton current across its pins and part of the block as a terminal sees it, so the
+  incident wave is (V + Z0·(I − i_n))/(2√Re Z0). Without the i_n term a lossy antenna's own noise (received from its surroundings,
+  emitted at its port) read as noise it radiates: 0.098 dB on a noiseless chain, 0.006 dB behind a 12 dB channel, constant at the
+  element node. With it the beam noise figure is the Friis cascade to 1e-15 dB on one element and 7e-8 dB on a column of four.
+- **The noise figure at the peak is not always the cascade's**: a uniform split radiates its isolation noise wherever the weights
+  are not phased to the peak. The patch element's peak sits 0.16° off boresight in its H-plane, so a 1×4 row reads 6e-6 dB above
+  Friis and a 4×1 column 7e-8 dB. That is the beam's, not an error; gate 6 uses the column.
+- **`ArrayBeam` cut a boresight beam along whatever azimuth its peak landed on** (`Cuts`): the climb leaves a peak at θ ≈ 0.002°
+  with an arbitrary φ, and the "elevation" plane through it can be a diagonal, where a separable taper's sidelobes are far below the
+  principal planes' — a 32×32 `taylor(-30,4)` read `SllDb` = −45 dB, then −32.4 dB depending on where the overview's 5° grid
+  started the search. A peak within one cut step of boresight is now cut along the requested scan's azimuth, or φ = 0 when none was
+  requested, made tangent at the peak. PAA-2's 64×64 reference test cuts its own reference the same way at boresight (it used the
+  peak's own azimuth too, and agreed only by the same accident).

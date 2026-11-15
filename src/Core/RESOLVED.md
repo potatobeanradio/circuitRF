@@ -4701,3 +4701,47 @@ Gates: `tests/Core.Tests/Expressions/MathOnACubeTests.cs`.
   `1018.11 mil` is 25.8599939 mm and differs by its own rounding, 1.1e-7 of the peak.
 - **Embedded through the schematic adds nothing (gate 5):** the 6×6 from the 5×5's active reflections equal PAA-2's harness
   reference to 1.1e-15; a 7×7's pattern equals the engine's sum to 1e-12 and its Γ_act the engine's sparse product to 1e-9.
+
+## brief-paa-4 — Feed mode: element scope, weights, quantisation and the channel cell (2026-11-14)
+
+- **A Feed-mode array is placed as its parts, not stamped as one model** (`Elaborator.PhasedArray.cs`): `PA1.feed`
+  (`PhasedArrayFeedModel`, the Combiner's ideal N-way split with each path's weight), `PA1.ch[n]` (the channel cell, an ordinary
+  hierarchical instance) and `PA1` (the array network, `PhasedArrayModel` with `FeedMode`, on internal element nodes). So every
+  analysis that runs an ordinary circuit runs it with nothing added: S-parameters, S-parameter noise, two-tone HB with a mixer's LO
+  and envelope are gated in `PhasedArrayFeedTests` gate 6. The fields path needed no change to find it: the component named
+  `PA1` is still the array network, read by `BlockWaves` through its branches.
+- **The beamformer is sparse, not an `IdealSBlockModel`**: that family keeps a dense (N+1)² buffer and settles passivity by an SVD,
+  268 MB and an O(N³) decomposition at 4096 for a matrix whose one singular value is ‖w‖/√N. It stamps 3N entries. An element
+  switched off has weight zero, so its feed port is a matched Z0 termination and the array network is stamped whole (in Feed mode
+  `SAt` no longer opens an Off element at its pin: the beamformer terminates it).
+- **No dense row in the beamformer's stamp.** The MNA is ordered by minimum degree on AᵀA (`MnaSystem.Factorize`), and the common
+  port's row b₀ = Σ tₖ·aₖ is dense: every column in it becomes adjacent to every other, AᵀA is a clique, and the LU goes dense — a
+  48 × 48 feed sat minutes in `SparseLU.Factorize` at 3 GB. The sum is written as a running chain of auxiliary unknowns
+  (σₖ = σₖ₋₁ + tₖ·aₖ, four entries a row), the same equations; v₀ and i₀ stay dense COLUMNS, a star in AᵀA, eliminated last.
+  The 32 × 32 gate went from 6 s to 0.8 s. The Combiner has the same dense row; at the N a schematic draws it does not matter.
+- **Element scope** (`ElementScope`) binds `n`, `row`, `col`, `x`, `y` (x, y in metres, bound with the unit `metre` so they are
+  unit-bearing) plus three hidden `__paa_*` bindings for the tapers; values are injected as resolved, so cycle detection sees no new
+  edges. Its debug name is `PA1[n]`, unique per element, because it keys the evaluator's memo. A name of the five that does not
+  resolve gets `ElementScope.WhereValid` appended to the ordinary "Unresolved name" sentence; a user VAR of that name is legal and is
+  shadowed only inside element scope. The channel cell's scope is a child of the element's, which is what lets `3+0.1*n` inside the
+  cell read the element.
+- **Phase's degree site unit is narrower than var-unit-wins** (`Evaluator.EvalPhase`). The ordinary rule skips the site unit for any
+  unit-bearing expression, which is wrong here: `360*x/(10 mm)` is unit-bearing by its literal but its value is degrees. An
+  expression carrying an ANGLE (a literal or a VAR whose carried unit's base is `rad`) takes the ordinary rule; any other is a
+  number of degrees. The PhaseShifter's `Phase` is resolved the same way, so `Phase=90` and `Phase=90 deg` are one angle.
+- **Weight calls are opaque to the site-unit rule** (`Evaluator.WeightView`, used by `IsUnitBearing` and the bare-operand scaler):
+  `steer(theta0, …)` with θ0 in degrees is a bare number of degrees, `steerDelay` is seconds (power 1, as `lambda`), the tapers bare.
+  Without it, `Phase=steer(theta0,0,f0)` read the degrees as radians.
+- **Identical** is decided statically: the channel cell's identifiers (its own and every cell below it, `NamesReadIn`) minus the
+  names it declares itself, intersected with the five. A cell that cannot be tokenised is taken to differ. Written on the array
+  model (`PhasedArrayChannels`), said in the run's notes, `check` and `explain --analysis`.
+- **The tapers' line weights** (`ArrayWeights`): Taylor is the continuous n̄ line source sampled at element centres; Chebyshev is the
+  M-point inverse DFT of `T_{M−1}(x0·cos(ψ/2))·e^{j(M−1)ψ/2}` — an expansion of T in powers of x cancels catastrophically at M = 64.
+  Measured on 32×32 isotropic elements, `taylor(-30,4)`: −30.243 dB in both principal planes (gate 3).
+- **Quantisation lobes on 16 elements do not sit exactly on the closed form's position**: the p = −1 lobe of a 45° step at 10° scan
+  is at u = 0.812 against 0.749 predicted (its level −16.96 dB against −16.90), because on 16 elements the lobes' own sidelobes and
+  the main beam's overlap; a periodic-error θ0 (P = 4 elements) moves it no closer (0.04). Gate 4 holds the peak to the predicted
+  lobe's main lobe and its level to 1 dB, and requires the continuous line to have nothing within 4 dB there (−21.8 dB).
+- **The PhaseShifter's Phase is a delay** (`S21 = e^{−jφ}`, the brief's gate 7: `Phase=90` is `S21 = −j`), the opposite sign to an
+  array weight (`w = A·e^{jφ}`, R-paa4-1). A channel cell steering through it writes `Phase=-steer(…)`; said on its parameter row.
+- Not done here: the parameter editor greying the weight rows in Elements mode (D2's "greyed") and the dynamic symbol (PAA-5).

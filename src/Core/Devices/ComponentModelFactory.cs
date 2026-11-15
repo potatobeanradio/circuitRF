@@ -105,6 +105,8 @@ public static class ComponentModelFactory
             // "Coupler" serves the directional coupler and both hybrid tiles, with the coupling and
             // the phase parameters.
             "Atten", "Switch", "Circulator", "Coupler", "Balun",
+            // The ideal phase shifter (brief-paa-4 R-paa4-7).
+            PhaseShifterModel.TypeName,
             // The N-way combiner, which is also the N-way splitter: N is a parameter, as Throws is.
             "Combiner",
             // The ideal amplifier (brief-sys-5) — the one block in the family with a nonlinearity
@@ -280,6 +282,8 @@ public static class ComponentModelFactory
             return CreateMixerModel(parameters);
         if (typeName.Equals("Atten", StringComparison.OrdinalIgnoreCase))
             return CreateAttenuatorModel(parameters);
+        if (typeName.Equals(PhaseShifterModel.TypeName, StringComparison.OrdinalIgnoreCase))
+            return CreatePhaseShifterModel(parameters);
         if (typeName.Equals("Delay", StringComparison.OrdinalIgnoreCase))
             return CreateDelayModel(parameters);
         if (typeName.Equals("Switch", StringComparison.OrdinalIgnoreCase))
@@ -1913,6 +1917,7 @@ public static class ComponentModelFactory
     private static readonly (string Type, Func<string, bool> Takes, string List)[] _complexParamRules =
     [
         ("Atten",      n => Is(n, "Z0"),                       "Z0"),
+        (PhaseShifterModel.TypeName, n => Is(n, "Z0"),         "Z0"),
         ("Switch",     n => Is(n, "Z0"),                       "Z0"),
         ("Circulator", n => Is(n, "Z0"),                       "Z0"),
         ("Coupler",    n => Is(n, "Z0"),                       "Z0"),
@@ -2009,6 +2014,18 @@ public static class ComponentModelFactory
             returnLossDb: P("RL",  200.0),
             pimDbm:       P("PIM",  -200.0),
             pimPcDbm:     P("PIMPc",  43.0));
+    }
+
+    /// <summary>brief-paa-4 R-paa4-7 — the ideal phase shifter. <c>Phase</c> arrives in radians: the elaborator resolves it with degrees as
+    /// its site unit (<c>Evaluator.EvalPhase</c>), so a bare 90 is a quarter turn.</summary>
+    private static PhaseShifterModel CreatePhaseShifterModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+        double bits = P("Bits", 0);
+        if (bits < 0 || bits != Math.Round(bits) || bits > 24)
+            throw new ParameterRefusalException($"Bits={bits} is not a number of bits: it is a whole number from 0 (continuous) to 24.");
+        return new PhaseShifterModel(P("Phase", 0), P("IL", 0), (int)bits, P("Delay", 0), ImpedanceParam(parameters, "Z0", 50.0));
     }
 
     /// <summary>The ideal delay: <c>T</c> seconds of matched, reciprocal through path.</summary>

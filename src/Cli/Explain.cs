@@ -1792,7 +1792,8 @@ internal static class Explain
                 var patterns = Enumerable.Range(0, pa.PortCount).GroupBy(pa.PatternPort)
                                          .Select(g => new ExplainArrayPatternJson(g.Key + 1, [.. g.Where(pa.Lattice.IsOn).Select(e => e + 1)]))
                                          .Where(p => p.Elements.Count > 0).ToList();
-                arrays[fa.Name] = new ExplainArrayJson(fa.Block, pa.LevelNote, pa.CouplingNote, patterns);
+                arrays[fa.Name] = new ExplainArrayJson(fa.Block, pa.LevelNote, pa.CouplingNote, patterns,
+                                                       Feed: pa.FeedNote, Channel: pa.Channels?.Sentence(fa.Block), ChannelIdentical: pa.Channels?.Identical);
             }
         }
         catch (Exception e) when (e is InvalidOperationException)
@@ -2572,6 +2573,8 @@ internal static class Explain
                     {
                         Console.WriteLine($"      Array '{arr.Block}': {arr.Level}");
                         if (arr.Coupling is { } c) Console.WriteLine($"      {c}");
+                        if (arr.Feed is { } fd) Console.WriteLine($"      {fd}");
+                        if (arr.Channel is { } ch) Console.WriteLine($"      {ch}");
                         foreach (var p in arr.Patterns ?? [])
                             Console.WriteLine($"      pattern of record port {p.RecordPort}: element{(p.Elements.Count == 1 ? "" : "s")} {Ranges(p.Elements)}");
                     }

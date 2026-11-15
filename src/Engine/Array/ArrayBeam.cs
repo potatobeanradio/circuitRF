@@ -79,13 +79,14 @@ public static class ArrayBeam
         p = Climb(power, p, phiRef, step * rad / 10, 3, 2);
         double peak = power([p]).Power(0);
 
-        var (cutE, cutA) = Cuts(power, p, phiRef, step);
+        double snapPhi = (phi0Deg ?? 0) * rad;
+        var (cutE, cutA) = Cuts(power, p, phiRef, step, snapPhi);
         double bwE = Beamwidth(cutE), bwA = Beamwidth(cutA);
         double measured = Math.Min(bwE, bwA);
         if (measured > 0 && step > measured / 10 * (1 + 1e-9))
         {
             step = measured / 10;
-            (cutE, cutA) = Cuts(power, p, phiRef, step);
+            (cutE, cutA) = Cuts(power, p, phiRef, step, snapPhi);
             bwE = Beamwidth(cutE);
             bwA = Beamwidth(cutA);
         }
@@ -167,9 +168,22 @@ public static class ArrayBeam
         return den < 0 ? Math.Clamp(0.5 * (left - right) / den, -0.5, 0.5) : 0;
     }
 
-    private static (RawCut Elevation, RawCut Azimuth) Cuts(Power power, (double X, double Y, double Z) p, double phiRef, double stepDeg)
+    private static (RawCut Elevation, RawCut Azimuth) Cuts(Power power, (double X, double Y, double Z) p, double phiRef, double stepDeg, double snapPhi)
     {
         var (e1, e2) = Tangents(p, phiRef);
+        // brief-paa-4 — a peak within one cut step of boresight has no plane of its own through boresight: its azimuth is whatever the climb
+        // left in the last digits, and a cut along it can be a diagonal, where a separable taper's sidelobes are far below its principal
+        // planes' (a 32×32 Taylor −30 dB read −45 dB). Such a beam is cut along the requested scan's azimuth, or the lattice's x axis
+        // (φ = 0) when none was requested — a start on the zenith carries no azimuth either — made tangent at the peak.
+        if (Math.Sqrt(p.X * p.X + p.Y * p.Y) < Math.Sin(stepDeg * Math.PI / 180))
+        {
+            var (z1, _) = Tangents((0, 0, 1), snapPhi);
+            double d = z1.Item1 * p.X + z1.Item2 * p.Y + z1.Item3 * p.Z;
+            var t = (z1.Item1 - d * p.X, z1.Item2 - d * p.Y, z1.Item3 - d * p.Z);
+            double norm = Math.Sqrt(Dot(t, t));
+            e1 = (t.Item1 / norm, t.Item2 / norm, t.Item3 / norm);
+            e2 = Cross(p, e1);
+        }
         return (Cut(power, p, e1, stepDeg, "elevation"), Cut(power, p, e2, stepDeg, "azimuth"));
     }
 

@@ -201,6 +201,7 @@ public static class SymbolArtworkGenerator
         // Variadic on N: the figure is the four-way combiner.
         (SymbolKind.Combiner,        "combiner",          4),
         (SymbolKind.PhasedArray,     "phased-array",      4),
+        (SymbolKind.PhaseShifter,    "phase-shifter",     2),
         // NEW COMPONENT: add (SymbolKind.Xxx, "file-stem", representativePortCount) here, then re-run.
     };
 

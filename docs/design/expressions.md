@@ -142,6 +142,21 @@ For the enumerated string parameters (`Type`, `InterpMode`, `ExtrapMode`), the *
 - Exp/log/power: `exp`, `log` (natural), `log10`, `sqrt`, `pow(x,y)` (same as `x^y`), `abs`.
 - Misc: `min(a,b)`, `max(a,b)`, `sign(x)`.
 - Conditional: `if(cond, then, else)`.
+- **Wavelength** (brief-paa-3): `lambda(f)` = c/f, a length in metres; unit-bearing, so a length field does not scale it again.
+- **Phased-array weights** (brief-paa-4; `phased-array.md` §4.3), each real and valid anywhere unless noted:
+  | Function | Value | Units |
+  |---|---|---|
+  | `steer(theta0, phi0, f0[, x, y])` | `−360·f0/c·(x·sinθ0·cosφ0 + y·sinθ0·sinφ0)`: the phase that points a phase-shifter beam | Result **degrees**, a bare number, so a Phase field's degree site unit applies to it. θ0, φ0 are angles as any trig argument's (a unit-bearing `30 deg` is already radians, a bare number is radians); f0 in hertz; x, y in metres |
+  | `steerDelay(theta0, phi0[, x, y])` | `−(x·sinθ0·cosφ0 + y·sinθ0·sinφ0)/c`: the delay that points a true-time-delay beam | Result **seconds**, base SI (unit-bearing, as `lambda` is); angles and x, y as for `steer` |
+  | `taylor(sll, nbar)` | The n̄ Taylor taper, sampled at each element, per row times per column, 1 at the peak | Bare. `sll` in dB, `-30` or `30` alike; `nbar` a whole number 1…64 |
+  | `chebyshev(sll)` | The Dolph–Chebyshev taper, per row times per column, 1 at the peak | Bare; `sll` as for `taylor` |
+  | `cosq(q)` | `cos^q(π·p)` at each element centre p = (i − (M−1)/2)/M, per row times per column | Bare; `q ≥ 0` |
+
+  `x`, `y` default to the element's in a Phased Antenna Array's element scope (`n`, `row`, `col`, `x`, `y`; §4.3 of the
+  design note) and are required anywhere else; the three tapers read the element's row and column and are refused outside
+  element scope. **For the site-unit rule (§8) a weight call is opaque:** its arguments' units decide nothing about the
+  result (`steer(theta0, …)` with θ0 in degrees is still a bare number of degrees). The parsed call is what the symbol
+  (PAA-5) and the tool (PAA-9) read to find the steering VARs, never the text.
 - **Complex extraction** (Complex-or-Real → **Real**): `real(z)`, `imag(z)`, `abs(z)` (modulus; `|x|` for a real argument), `mag(z)` (**alias of `abs`** — RF spelling of the same modulus), `phase(z)` (angle in **degrees**), `phase_rad(z)` (angle in **radians**).
 - **Complex construction** (Real, Real → **Complex**): `polar(mag, phase_deg)` = `mag·(cosθ + j·sinθ)` with θ in **degrees**. The inverse of `mag`/`phase`; e.g. `polar(0.1, 10)` is the phasor 0.1∠10°. (No `polar_rad` — degrees is the designer-facing entry convention; `phase_rad` exists only as the radian extractor.)
 

@@ -33,6 +33,8 @@ public sealed partial class Evaluator
     {
         // A distribution call is its nominal argument as far as units go — its spread must not decide it.
         ast = NominalView(ast);
+        // A weight function's result is in its own unit, whatever its arguments carry (brief-paa-4, Evaluator.Array.cs).
+        ast = WeightView(ast);
         return ContainsUnitLiteral(ast) || IsLength(ast) || AstWalker.CollectRefs(ast).Any(n => NameIsUnitBearing(n, scope, null));
     }
 
@@ -242,6 +244,10 @@ public sealed partial class Evaluator
             // lambda(f) is a length in metres whatever its argument is: power 1 of the site's dimension, and its argument, a
             // frequency, is never scaled by a length site unit.
             if (cl.Name == "lambda") return Result.Of(cl, 1);
+            // brief-paa-4 — steer() and the tapers are bare numbers (degrees, an amplitude) and steerDelay() is seconds, base SI, whatever
+            // their arguments carry; their arguments are angles and frequencies and are never scaled by the site's unit.
+            if (cl.Name == "steerDelay") return Result.Of(cl, 1);
+            if (IsWeightFunction(cl.Name)) return Result.OfBare(cl);
             var args = cl.Args.Select(Scale).ToArray();
             string name = cl.Name;
             if (name is "min" or "max" && args.Length > 0 && args.FirstOrDefault(a => !a.Bare) is { Bare: false } bearing)

@@ -1,6 +1,6 @@
 # circuitRF — Phased antenna arrays
 
-**Status:** PAA-1 measured; the array engine (PAA-2) and the component in Elements mode (PAA-3) built · **Series:** [`brief-paa-0-overview.md`](../briefs/brief-paa-0-overview.md) ·
+**Status:** PAA-1 measured; the array engine (PAA-2), the component in Elements mode (PAA-3) and Feed mode with its weights, channel cell and PhaseShifter block (PAA-4) built · **Series:** [`brief-paa-0-overview.md`](../briefs/brief-paa-0-overview.md) ·
 **Builds on:** [`sar.md`](sar.md) §11 and the co-simulation series (`brief-cosim-pattern-*`: the per-port far field and
 its recombination), [`chain-budget.md`](chain-budget.md) (the array at system level), [`sparameter-noise.md`](sparameter-noise.md)
 (correlated noise through a terminated N-port), [`harmonic-balance.md`](harmonic-balance.md).
@@ -221,7 +221,8 @@ gives the array's pattern, and its far field is formed from (1) at L2 and (2) at
 
 An ideal matched two-port with `Phase` (degrees), `IL`, `Bits`, and optionally `Delay`, for a channel cell or an
 Elements-mode bench. The Chain Budget makes a flat phase from one path of a 2-way Combiner today; this is the block that
-stands for itself.
+stands for itself. Its `Phase` is the phase it delays the signal by (`S21 = 10^(−IL/20)·e^(−jφ)`, so `Phase=90` is −j), the opposite
+sign to an array weight's `w = A·e^(jφ)`; a channel cell steering through it writes `Phase=-steer(…)`.
 
 ### 4.6 The dynamic symbol
 

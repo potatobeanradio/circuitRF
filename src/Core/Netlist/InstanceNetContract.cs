@@ -260,7 +260,7 @@ public static class InstanceNetContract
             "is a floating reference, as on an SnP. The record states the count, so there is none until one is chosen.",
         [PhasedArrayModel.TypeName] =
             "Elements mode binds one net per element, Rows × Cols of them, row-major from the top left seen from boresight, each over " +
-            "ground. The count follows Rows and Cols, so it is the instance's to state.",
+            "ground. The count follows Rows and Cols, so it is the instance's to state. Feed mode (Mode=feed) binds one net, the feed F.",
         ["wBond"] =
             "2 nets per wire array — Arrays=M binds 2M — plus one trailing reference net when " +
             "RefPin is on. The arrays come from the design the instance carries or names, so there " +

@@ -144,6 +144,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _hybrid180     = BuildCoupler(SymbolKind.Hybrid180);
     private static readonly Symbol _atten         = BuildAtten();
     private static readonly Symbol _delay        = BuildDelay();
+    private static readonly Symbol _phaseShifter = BuildPhaseShifter();
     private static readonly Symbol _duplexer      = BuildDuplexer();
 
     // Per-N cache for variadic box symbols (SDD and ZPort share body geometry).
@@ -277,6 +278,7 @@ public static class BuiltInSymbols
             case SymbolKind.Hybrid180:  return _hybrid180;
             case SymbolKind.Atten:      return _atten;
             case SymbolKind.Delay:      return _delay;
+            case SymbolKind.PhaseShifter: return _phaseShifter;
             case SymbolKind.Duplexer:   return _duplexer;
             case SymbolKind.Combiner:   return _combinerCache.GetOrAdd(Math.Max(2, portCount), BuildCombiner);
             case SymbolKind.PhasedArray: return _phasedArrayCache.GetOrAdd(Math.Max(1, portCount), BuildPhasedArray);
@@ -436,10 +438,11 @@ public static class BuiltInSymbols
                                       SymbolTextAlign align = SymbolTextAlign.Center,
                                       SymbolTextVAlign vAlign = SymbolTextVAlign.Middle,
                                       SymbolColorRole colorRole = SymbolColorRole.SymbolLine,
-                                      bool forceReadable = true)
+                                      bool forceReadable = true,
+                                      SymbolFontStyle fontStyle = SymbolFontStyle.Regular)
         => new() { Content = content, AnchorX = ax, AnchorY = ay,
                    FontSize = fontSize, Align = align, VAlign = vAlign, ColorRole = colorRole,
-                   ForceReadable = forceReadable };
+                   ForceReadable = forceReadable, FontStyle = fontStyle };
 
     // ── Sym helper ────────────────────────────────────────────────────────────
 
@@ -2183,6 +2186,19 @@ public static class BuiltInSymbols
         L(-300, 0, -100, 0),
         L( 100, 0,  300, 0),
     ], SymbolKind.Delay);
+
+    // ── Phase Shifter — a square carrying φ (brief-paa-4) ─────────────────────
+    // Pins: (-300,0) · (+300,0), interchangeable, as the delay's are. The delay's body with an italic φ, the letter a phase is
+    // written with, where the delay has τ: the two blocks that move a phase read as a pair. Middle centres the font's LINE box
+    // (ascent + descent), and φ hangs below the baseline: in IBM Plex Sans Italic at 120 its ink centre is 25 units below that
+    // box's, so the anchor sits 25 above the body's centre to put the ink there.
+
+    private static Symbol BuildPhaseShifter() => Sym([
+        RRect(0, 0, 200, 200, 12),                    // body, x in [-100,100]  y in [-100,100]
+        Txt("φ", 0, -25, fontSize: 120, fontStyle: SymbolFontStyle.Italic),
+        L(-300, 0, -100, 0),
+        L( 100, 0,  300, 0),
+    ], SymbolKind.PhaseShifter);
 
     // ── Combiner — N paths fanning into one ───────────────────────────────────
     // Pins: S (+300,0) · paths 1…N at (-300, (2k − N − 1)·100). VARIADIC on N, cached per N.

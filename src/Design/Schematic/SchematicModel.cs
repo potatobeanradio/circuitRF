@@ -687,6 +687,11 @@ public enum SymbolKind
     /// at the Combiner's spacing; one element is a square with its pin on the left at mid-height, where a system block takes its
     /// input (the drawn aperture is a later brief's). The count follows Rows and Cols.</summary>
     PhasedArray,
+
+    /// <summary>brief-paa-4 R-paa4-7 — the ideal phase shifter (engine "PhaseShifter"), a system block. Two pins, (−300,0) and (300,0),
+    /// interchangeable like the attenuator's: matched and reciprocal, S21 = S12 = 10^(−IL/20)·e^(−jφ), φ rounded to its Bits. A square body
+    /// carrying φ.</summary>
+    PhaseShifter,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

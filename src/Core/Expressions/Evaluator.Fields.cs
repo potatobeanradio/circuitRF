@@ -95,6 +95,7 @@ public sealed partial class Evaluator
             "GratingMarginDeg" => (FieldMetric.GratingMarginDeg, 1),
             "PowerBalance"     => (FieldMetric.PowerBalance, 1),
             "ActiveVswrMax"    => (FieldMetric.ActiveVswrMax, 1),
+            "BeamNfDb"         => (FieldMetric.BeamNfDb, 1),
             _                  => throw new UnknownFunctionException(cl.Name),
         };
         if (cl.Args.Length != arity) throw new ArityException(cl.Name, arity, cl.Args.Length);

@@ -2480,6 +2480,8 @@ In depth: [System Components › Attenuator](system-components.html#atten).
 
 A pure time delay in a matched signal path: `S21 = S12 = e^(−jωT)`, no reflection and no loss. Its
 two pins are interchangeable. The delay `T` shows as the label beside the symbol.
+Its phase grows with frequency; for a phase that stays the same at every frequency, use a
+[Phase Shifter](#phaseshifter).
 
 In depth: [System Components › Delay](system-components.html#delay).
 
@@ -2498,6 +2500,23 @@ meeting at one node rather than a parameter.
 In depth: [System Components › Duplexer](system-components.html#duplexer).
 
 {{table: components/Duplexer}}
+
+### Phase Shifter {#phaseshifter}
+
+{{symbol: phase-shifter}}
+
+An ideal phase shifter: matched and reciprocal, flat in frequency, `S21 = S12 = 10^(−IL/20)·e^(−jφ)`. `Phase` is the phase it
+delays the signal by, in degrees (`Phase=90` is `S21 = −j`), rounded to `360°/2^Bits` (`Bits=0` is continuous), and `Delay`
+adds a true time delay on top. Lossless at `IL=0`; its noise is its loss. For a phased array's channel cell, or a bench that
+steers its elements itself.
+
+**Phase Shifter or [Delay](#delay)?** Both turn the phase of the signal through them; they differ in how that phase moves with
+frequency. A Phase Shifter's phase is the same at every frequency, as a real phase shifter's is set to one value. A Delay's
+phase grows in proportion to frequency, `−360°·f·T`. So an array steered with phase shifters points exactly where it was set
+only at the frequency it was set for, and its beam swings away (squints) across a band; one steered with delays points the
+same way at every frequency.
+
+{{table: components/PhaseShifter}}
 
 ### Combiner {#combiner}
 
@@ -2520,6 +2539,14 @@ An antenna array built from an EM result: one element, a small sub-array, or the
 mode it has one pin per element, `Rows × Cols` of them, numbered row-major from the top left as seen from boresight, and
 each pin is that element's port: wire a source, an amplifier or a feed network to it. Its pitch `dx`, `dy` is a length in
 any unit, or an expression such as `0.5*lambda(f0)`. A `type=fields` analysis naming it gives the whole array's pattern.
+
+With `Mode=feed` it has one pin, `F`, and the beamformer inside: the feed is split N ways and element `n` is driven
+through its weight `Amp·e^(jφ)` (and a delay `Delay`), rounded to `PhaseBits` and `AttenStep`, then through its own copy
+of the cell `Channel` names, if any (its first port in, its second out, placed as `PA1.ch[n]`). `Amp`, `Phase` and `Delay`
+are evaluated once per element with `n`, `row`, `col`, `x` and `y` bound, so `Phase=steer(theta0,0,f0)` steers the beam and
+`Amp=taylor(-30,4)` tapers it; `Phase[n]` sets one element's phase. Feed mode takes up to 4096 elements, and a sweep of
+the steering VAR is an ordinary parametric sweep. `BeamNfDb(F1)` on the fields analysis is the noise figure from the
+driving port to the beam's peak.
 
 {{table: components/PhasedArray}}
 

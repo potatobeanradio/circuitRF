@@ -26,7 +26,7 @@ public class SystemBlockComponentTests
         SymbolKind.Balun, SymbolKind.Circulator, SymbolKind.Switch, SymbolKind.SwitchD,
         SymbolKind.Amp, SymbolKind.Coupler, SymbolKind.Hybrid90, SymbolKind.Hybrid180,
         SymbolKind.Filter, SymbolKind.Atten, SymbolKind.Duplexer, SymbolKind.Delay,
-        SymbolKind.Combiner,
+        SymbolKind.Combiner, SymbolKind.PhaseShifter,
     ];
 
     public static TheoryData<SymbolKind> EachBlock()
@@ -403,6 +403,7 @@ public class SystemBlockComponentTests
     [InlineData(SymbolKind.Duplexer,   "Duplexer")]
     [InlineData(SymbolKind.Delay,      "Delay")]
     [InlineData(SymbolKind.Combiner,   "Combiner")]
+    [InlineData(SymbolKind.PhaseShifter, "PhaseShifter")]
     public void EachTileNamesItsEngineComponent(SymbolKind kind, string expected)
         => Assert.Equal(expected, ComponentTypeRegistry.EngineReference(kind));
 
@@ -435,6 +436,7 @@ public class SystemBlockComponentTests
     [InlineData(SymbolKind.Duplexer,   "Duplexer")]
     [InlineData(SymbolKind.Delay,      "Delay")]
     [InlineData(SymbolKind.Combiner,   "Combiner")]
+    [InlineData(SymbolKind.PhaseShifter, "Phase Shifter")]
     public void EachTileIsNamedForWhatItIs_NotForItsAbbreviation(SymbolKind kind, string expected)
         => Assert.Equal(expected, ComponentTypeRegistry.DisplayName(kind));
 
@@ -465,6 +467,8 @@ public class SystemBlockComponentTests
     [InlineData("Duplexer",   SymbolKind.Duplexer)]
     [InlineData("dl",         SymbolKind.Delay)]
     [InlineData("Delay",      SymbolKind.Delay)]
+    [InlineData("ps",         SymbolKind.PhaseShifter)]
+    [InlineData("Phase Shifter", SymbolKind.PhaseShifter)]
     public void TryParseCode_ResolvesEveryShortCode(string code, SymbolKind expected)
     {
         Assert.True(ComponentTypeRegistry.TryParseCode(code, out var kind, out _));
