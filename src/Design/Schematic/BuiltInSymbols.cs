@@ -113,6 +113,9 @@ public static class BuiltInSymbols
     private static readonly Symbol _testPad       = BuildTestPad();
     private static readonly Symbol _gsgPad        = BuildGsgPad();
     private static readonly Symbol _mwpd          = BuildMwpd();
+    private static readonly Symbol _mclc          = BuildMclc();
+    private static readonly Symbol _midc          = BuildMidc();
+    private static readonly Symbol _mcbl          = BuildMcbl();
     private static readonly Symbol _mimCap        = BuildMimCap();
     private static readonly Symbol _spiral        = BuildSpiral();
     private static readonly Symbol _octSpiral     = BuildOctSpiral();
@@ -259,6 +262,9 @@ public static class BuiltInSymbols
             case SymbolKind.TestPad:    return _testPad;
             case SymbolKind.GsgPad:     return _gsgPad;
             case SymbolKind.Mwpd:       return _mwpd;
+            case SymbolKind.Mclc:       return _mclc;
+            case SymbolKind.Midc:       return _midc;
+            case SymbolKind.Mcbl:       return _mcbl;
             case SymbolKind.MimCap:     return _mimCap;
             case SymbolKind.Spiral:     return _spiral;
             case SymbolKind.OctSpiral:  return _octSpiral;
@@ -2666,6 +2672,69 @@ public static class BuiltInSymbols
         Txt("λ/4", 80, -240, fontSize: 11, vAlign: SymbolTextVAlign.Bottom),
         Txt("λ/4", 80,  240, fontSize: 11, vAlign: SymbolTextVAlign.Top),
     ], SymbolKind.Mwpd);
+
+    // MCLC — MCLIN's plan view of the pair, with the quarter wave it is cut to and the coupling arrow from the input's
+    // strip to the coupled port's, which runs back towards the input end (a backward-wave coupler).
+    private static Symbol BuildMclc() => Sym([
+        PLine(-200, -100,  -95, -100,  -95, -40),
+        PLine( 200, -100,   95, -100,   95, -40),
+        PLine(-200,  100,  -95,  100,  -95,  40),
+        PLine( 200,  100,   95,  100,   95,  40),
+        RRect(0, -25, 230, 30, 8),
+        RRect(0,  25, 230, 30, 8),
+        Txt("λ/4", 0, -50, fontSize: 11, vAlign: SymbolTextVAlign.Bottom),
+        Txt("1", -150, -125, fontSize: MixerPortFontSize),
+        Txt("2",  150, -125, fontSize: MixerPortFontSize),
+        Txt("3", -150,  130, fontSize: MixerPortFontSize),
+        Txt("4",  150,  130, fontSize: MixerPortFontSize),
+    ], SymbolKind.Mclc);
+
+    // MIDC — four fingers as they lie on the board, each pin on its own finger's row: the ports on the outer two, the
+    // jumper landings J1-J4 on the inner two. The outer leads turn in nearer the body than the inner ones, so no lead
+    // crosses another. The jumpers are not drawn: they are parts of their own on k-Jk.
+    private static Symbol BuildMidc()
+    {
+        var p = new List<SymbolPrimitive>();
+        double[] rows = [-300, -100, 100, 300];
+        double[] fy = [-90, -30, 30, 90];
+        for (int k = 0; k < 4; k++)
+        {
+            double jog = k is 0 or 3 ? 230 : 300;
+            p.Add(PLine(-400, rows[k], -jog, rows[k], -jog, fy[k], -200, fy[k]));
+            p.Add(PLine( 400, rows[k],  jog, rows[k],  jog, fy[k],  200, fy[k]));
+            p.Add(RRect(0, fy[k], 400, 24, 6));
+        }
+        p.Add(Txt("1",  -330, -320, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        p.Add(Txt("J3", -330, -120, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        p.Add(Txt("J1", -330,   80, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        p.Add(Txt("3",  -330,  280, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        p.Add(Txt("2",   330, -320, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        p.Add(Txt("J4",  330, -120, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        p.Add(Txt("J2",  330,   80, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        p.Add(Txt("4",   330,  280, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        return Sym([.. p], SymbolKind.Midc);
+    }
+
+    // MCBL — the two quarter-wave sections in a row: the input strip runs through both to an open end, and each coupled
+    // strip is grounded at its outer end (G2, G3) and leaves as a balanced output at the middle.
+    private static Symbol BuildMcbl() => Sym([
+        PLine(-600, -100, -455, -100, -455, -40),       // 1 into the input strip
+        PLine(-600,  100, -455,  100, -455,  40),       // G2
+        PLine( 600,  100,  455,  100,  455,  40),       // G3
+        PLine(-100,  200, -100,   40),                  // 2
+        PLine( 100,  200,  100,   40),                  // 3
+        RRect(-250, -25, 400, 30, 8),
+        RRect( 250, -25, 400, 30, 8),
+        RRect(-250,  25, 400, 30, 8),
+        RRect( 250,  25, 400, 30, 8),
+        Txt("λ/4", -250, -50, fontSize: 11, vAlign: SymbolTextVAlign.Bottom),
+        Txt("λ/4",  250, -50, fontSize: 11, vAlign: SymbolTextVAlign.Bottom),
+        Txt("1",  -560, -125, fontSize: MixerPortFontSize),
+        Txt("G2", -560,  135, fontSize: 22),
+        Txt("G3",  560,  135, fontSize: 22),
+        Txt("2",  -140,  190, fontSize: MixerPortFontSize),
+        Txt("3",   140,  190, fontSize: MixerPortFontSize),
+    ], SymbolKind.Mcbl);
 
     private static Symbol BuildTestPad()
     {

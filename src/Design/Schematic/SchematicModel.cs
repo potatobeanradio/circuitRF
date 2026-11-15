@@ -703,6 +703,18 @@ public enum SymbolKind
     /// 2 and 3 the outputs, R2 and R3 the ends the 2·Z0 isolation resistor goes across — an ordinary resistor, not part of
     /// the part. Appended so no existing kind's ordinal moves.</summary>
     Mwpd,
+    /// <summary>Single-section coupled-line directional coupler on microstrip (engine "MCLC"): specs Coupling (dB), Z0
+    /// and F; W, S and L are derived (CoupledLineCouplerPlan). Pins 1 input, 2 through, 3 coupled, 4 isolated, in
+    /// MCLIN's order.</summary>
+    Mclc,
+    /// <summary>Four-finger interdigitated coupler on microstrip (engine "MIDC"): specs Coupling (dB), Z0 and F
+    /// (LangePlan, Ou's equations). Pins 1-4 as MCLC's, then J1-J4, the inner fingers' ends: the jumpers joining
+    /// alternate fingers are ordinary parts from pin k to Jk, not part of the part.</summary>
+    Midc,
+    /// <summary>Coupled-line balun on microstrip (engine "MCBL"): specs Z0, ZL (each output's load) and F, and the layout
+    /// Gap between its two quarter-wave sections (MarchandBalunPlan). Pins 1 unbalanced, 2 and 3 balanced, G2 and G3 the
+    /// strips' grounded ends — for ordinary vias to ground, not part of the part.</summary>
+    Mcbl,
 }
 
 public enum PortConnectionState { Unconnected, Connected }
