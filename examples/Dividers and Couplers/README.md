@@ -34,9 +34,9 @@ Palace against its circuit model.
 | Step | What | Time here |
 |---|---|---|
 | 1 | Simulate the schematic | under a second |
-| 2 | Simulate the EM setup **Wilkinson Planar** | about 6½ min |
+| 2 | Simulate the EM setup **Wilkinson Planar** | about 4½ min |
 | 3 | Open the 3D view, run setup **EMerge** | about 1 min |
-| 4 | Run setup **Palace** in the same view | about 1½ min |
+| 4 | Run setup **Palace** in the same view | about 2 min |
 
 Times are from a shared Linux server, 8 threads for Planar and EMerge, and 8 Palace processes on one compute node. The
 first 3D run offers to install its solver. The three Touchstone files the runs write are in `results/`, so the comparison
@@ -44,38 +44,38 @@ below can be read without running anything.
 
 ## The resistor and the EM runs
 
-**Each EM run leaves the resistor out, and says so.** The ring joins R2 to R3, so the 0402's two pads lie on one piece
-of copper. A component port is built only across pads that are not already joined, so `R1` is left out of every run
-with a warning, and each result is a three-port: the divider without its resistor. That does not spoil the comparison:
+**Each EM run has the resistor as a component port.** The ring joins R2 to R3 the long way round, so the 0402's two
+pads lie on one piece of copper, and the port across them closes a loop. At RF that is an ordinary port. Each run warns
+that the port's 0 Hz row would read the ring's copper, close to a short; this sweep has no 0 Hz point. Each result is a
+four-port: ports 1 to 3, and `R1` as port 4. The co-simulation netlist each run writes (`<setup>_cosim.cnl`) closes
+port 4 with the 100 Ω. The EM numbers below are that closed three-port, against the circuit model with its 100 Ω.
 
-- **Driven from port 1, the resistor carries no current.** The two arms are mirror images, so R2 and R3 sit at the same
-  voltage. |S11|, |S21| and |S31| are the same with and without the resistor; the circuit model gives identical
-  numbers both ways.
-- **The isolation, |S23|, does depend on it.** The EM results are compared with the circuit model with the resistor
-  removed, which is the same structure. The designed isolation is the circuit model's with 100 Ω.
+Driven from port 1, the resistor carries no current: the two arms are mirror images, so R2 and R3 sit at the same
+voltage, and |S11|, |S21| and |S31| hardly depend on it. The isolation, |S23|, is what the resistor sets.
 
 ## What you will see
 
-![|S21|, |S11| and |S23| against frequency: the circuit model as a line, the three EM solvers as markers.](pictures/wilkinson-results.png)
+![|S21|, |S11| and |S23| against frequency: the circuit model as a line, the three EM solvers as markers, each with R1's port closed by 100 Ω.](pictures/wilkinson-results.png)
 
-At 2.4 GHz:
+At 2.4 GHz, each EM result with port 4 closed by 100 Ω:
 
-| | Circuit, 100 Ω | Circuit, no resistor | Planar MoM | EMerge | Palace |
-|---|---|---|---|---|---|
-| \|S11\| | −47.5 dB | −47.5 dB | −27.9 dB | −24.5 dB | −25.0 dB |
-| \|S21\| | −3.149 dB | −3.149 dB | −3.114 dB | −3.134 dB | −3.128 dB |
-| \|S31\| | −3.149 dB | −3.149 dB | −3.114 dB | −3.133 dB | −3.210 dB |
-| \|S23\| | −36.4 dB | −6.2 dB | −6.5 dB | −6.3 dB | −5.9 dB |
+| | Circuit model, 100 Ω | Planar MoM | EMerge | Palace |
+|---|---|---|---|---|
+| \|S11\| | −47.5 dB | −28.2 dB | −24.6 dB | −23.5 dB |
+| \|S21\| | −3.149 dB | −3.113 dB | −3.130 dB | −3.163 dB |
+| \|S31\| | −3.149 dB | −3.113 dB | −3.137 dB | −3.183 dB |
+| \|S23\| | −36.4 dB | −29.2 dB | −25.1 dB | −18.6 dB |
 
 Across 1.2 to 4.8 GHz, eleven points from F/2 to 2F:
 
 | | Planar MoM | EMerge | Palace |
 |---|---|---|---|
-| Largest difference in \|S21\| from the circuit model | 0.06 dB | 0.20 dB | 0.43 dB |
-| Largest difference in \|S31\| from the circuit model | 0.06 dB | 0.31 dB | 0.54 dB |
-| Largest difference in \|S23\| from the circuit model without the resistor | 0.7 dB | 0.7 dB | 1.2 dB |
-| Worst \|S11\| in the band (circuit model −9.1 dB) | −9.0 dB | −9.9 dB | −7.8 dB |
+| Largest difference in \|S21\| from the circuit model | 0.06 dB | 0.21 dB | 0.44 dB |
+| Largest difference in \|S31\| from the circuit model | 0.06 dB | 0.30 dB | 0.54 dB |
+| Worst \|S11\| in the band (circuit model −9.1 dB) | −8.9 dB | −9.9 dB | −7.8 dB |
 | Deepest \|S11\| of the eleven points | 2.40 GHz | 2.09 GHz | 2.40 GHz |
+| Deepest \|S23\| of the eleven points (circuit model −36.4 dB at 2.40 GHz) | −29.2 dB at 2.40 GHz | −27.5 dB at 2.09 GHz | −20.4 dB at 2.09 GHz |
+| Largest difference in \|S23\| outside 2.0 to 2.8 GHz | 2.3 dB | 2.0 dB | 3.4 dB |
 
 **All three solvers put |S21| within 0.04 dB of the model at 2.4 GHz.** The model's |S21| of −3.149 dB is the ideal
 −3.01 dB plus about 0.14 dB of conductor and dielectric loss in the arms and the 10 mm of line. Planar follows the model
@@ -83,10 +83,18 @@ within 0.06 dB across the whole band. Its |S11| null is where the model's is, bu
 null is a small difference of two large numbers, and a few hundredths of a dB of arm loss or junction reactance moves
 it.
 
+**The isolation is a null too, and the solvers find it less deep than the model.** Planar puts it at 2.4 GHz, 29 dB
+down rather than 36. EMerge and Palace put it lower, at the 2.09 GHz point, and shallower. Away from the null all three
+follow the model's |S23| within 2 to 3.4 dB. The null needs the resistor's path and the ring's to cancel exactly. In
+EM the resistor sits on a port across its 250 µm gap, a strip and delta gap on Planar and a lumped sheet in 3D, and
+that port's own reactance moves the cancellation.
+
 **The 3D runs read further from the model away from 2.4 GHz**, Palace most. Both use coarse meshes (below), and in 3D
 each port is a lumped sheet from the line down to the ground plane, 20 mil tall, whose own inductance stays in the
-answer. Palace's |S21| and |S31| also differ from each other by up to 0.1 dB on a layout that is symmetric: its draft
-mesh is not. Its |S11| is up to 3 dB worse than the model's at the band edges.
+answer. Palace's |S21| and |S31| also differ from each other by up to 0.14 dB on a layout that is symmetric: its draft
+mesh is not. Its |S11| is 3 to 7 dB worse than the model's from 1.2 to 3.6 GHz, the null aside. EMerge's four-port is
+not quite passive: at 4 of the 11 points the largest singular value of S is above 1, at most 1.0037, and the run says
+so.
 
 **The model warns, and it should.** The run's Messages say that MTEE's junction formulas are calibrated at εr 9.9 and
 this board is 3.66, that the tee's branch is a little wider than their W/h range, and that the ring's bend radius,
@@ -98,9 +106,12 @@ than the solvers disagree with one another.
 | | Mesh | Unknowns | Wall time | Peak memory |
 |---|---|---|---|---|
 | Circuit model | — | — | under a second | — |
-| Planar MoM | 3,036 cells | 5,466 | 6 min 24 s | 1.6 GB |
-| EMerge | 11,033 tetrahedra | 79,972 | 58 s | 1.7 GB |
-| Palace | 54,807 tetrahedra | 72,034 | 1 min 24 s | 2.0 GB |
+| Planar MoM | 2,944 cells | 5,290 | 4 min 24 s | 1.4 GB |
+| EMerge | 11,053 tetrahedra | 80,114 | 49 s | 1.7 GB |
+| Palace | 78,748 tetrahedra | 101,692 | 1 min 37 s | 2.7 GB |
+
+The meshes are the same settings as before the resistor was a port; the port's strip (Planar) and sheet (3D) are new
+geometry, so each solver meshed slightly differently.
 
 ## What was traded for speed
 

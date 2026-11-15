@@ -137,6 +137,29 @@ public sealed class LayoutComponentPort3DTests : IClassFixture<PlanarComponentPo
         Assert.Equal(4, moved.Problem!.Ports.Count);
     }
 
+    /// <summary>A part whose pads the copper also joins the long way round (the Planar test's <see cref="PlanarComponentPortTests.Detour"/>):
+    /// both pads land on one conductor, and the port is built and resolved as across two — the same sheet and direction, + on pad 1
+    /// — with its ends inferred as a loop's, and the build says it closes a loop.</summary>
+    [Fact]
+    public void APartAcrossALoop_IsBuilt_WithTheSameSheetAndDirection()
+    {
+        var setup = Driven(["C1", "C2"]);
+        var plain = Em3dSetupProblem.Of(setup, board.Source(), board.Tech);
+        var looped = Em3dSetupProblem.Of(setup, board.Source(PlanarComponentPortTests.Detour()), board.Tech);
+        Assert.True(looped.Ok, looped.Refusal);
+        var c1 = Assert.Single(looped.ComponentPorts!.Ports, p => p.Refdes == "C1");
+        Assert.True(c1.Ok, c1.Refusal);
+        Assert.NotNull(c1.Loop);
+        output.WriteLine(C3dComponentPorts.Describe(c1));
+        Assert.Contains(EmDiagnostics.ComponentPortAcrossLoop("C1", "1", "2").Render(), looped.ComponentPorts.Warnings);
+        Assert.Null(Assert.Single(plain.ComponentPorts!.Ports, p => p.Refdes == "C1").Loop);
+
+        Em3dPort Port(Em3dGenerationResult g) => g.Problem!.Ports.Single(p => p.Number == 3);
+        var (a, b) = (Port(plain), Port(looped));
+        Assert.Equal((a.Min, a.Max, a.Direction), (b.Min, b.Max, b.Direction));
+        Assert.Equal(b.PositiveObject, b.NegativeObject);
+    }
+
     /// <summary>A board whose only ports are its component ports builds them, as a Planar setup and a .c3d do: there is no drawn
     /// port to translate, and that is not a refusal.</summary>
     [Fact]

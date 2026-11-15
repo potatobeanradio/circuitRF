@@ -2268,11 +2268,11 @@ substrate cannot build is refused by name: an impedance no width reaches, or a q
 (too high an <code>F</code>, or too wide a <code>Gap</code>).</p>
 <p><strong>The divider is narrowband.</strong> Its match and isolation are exact at <code>F</code> only. On the example board (20 mil RO4350B,
 2.4 GHz) the circuit model keeps |S11| and |S23| below −20 dB from about 2.0 to 2.8 GHz.</p>
-<p><strong>In EM.</strong> The ring joins <code>R2</code> to <code>R3</code>, so the resistor's two pads lie on one piece of copper, and a component port
-cannot cut it out today: the run leaves it out with a warning, and the result is the divider without its resistor. Driven
-from terminal 1, the two arms carry the same voltage and no current would cross the resistor, so S11, S21 and S31 are the
-divider's as built; compare S22 and S23 with the circuit model with the resistor removed. The
-<a href="../examples/dividers-and-couplers/index.html">Dividers and Couplers</a> example runs it on Planar MoM, EMerge and Palace.</p>
+<p><strong>In EM.</strong> Name the resistor as a component port. The ring joins <code>R2</code> to <code>R3</code> the long way round, so the resistor's two
+pads lie on one piece of copper and its port closes a loop (<a href="em-setup.html#component-port-loop">A part across a loop</a>).
+At RF that is an ordinary port, and closing it with the 100 Ω gives the isolation. The run warns that the port's 0 Hz row
+reads the ring's copper. The <a href="../examples/dividers-and-couplers/index.html">Dividers and Couplers</a> example runs it on
+Planar MoM, EMerge and Palace.</p>
 <p><code>Gap</code> is the span of the resistor's pins, 1.35 mm for an 0402 at nominal density. Change it with the land pattern.</p>
 <table class="param-table">
 <thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
