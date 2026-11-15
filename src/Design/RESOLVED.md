@@ -32074,3 +32074,11 @@ write back in that state, so opening a chain cannot record an edit. The default 
   the one-piece test cannot tell a loop elsewhere from a strap kept under the device. `PlanarCellCutoutTests`' gate 7
   holds that strap as refused. Only a pin with a Reference (ICP-4) is a gap, and allowing it there would take the cut's
   shared check, its ground fallback and `C3dCellCuts.GapSheet` (which states both ends) together.
+- **The Wilkinson example with R1 as a port**, each run's four-port with port 4 closed by 100 Ω, at 2.4 GHz: |S23|
+  −29.2 dB on Planar, −25.1 on EMerge, −18.6 on Palace, against the circuit model's −36.4. Away from the null (outside
+  2.0 to 2.8 GHz) all three follow the model within 2.0 to 3.4 dB; EMerge and Palace put the null at the 2.09 GHz point.
+  At 2.4 GHz |S21| moved from the runs without the resistor by 0.001 dB on Planar and at most 0.035 dB (Palace, whose
+  mesh changed), as symmetry says it should. The co-simulation netlist each run writes gives the same closed three-port
+  as closing port 4 by hand (Planar |S23| −29.21 dB both ways). EMerge's Draft four-port is not quite passive
+  (σ_max(S) up to 1.0037 at 4 of 11 points); its three-port run printed no such warning. The port's strip and sheet are new geometry, so each mesh changed under the same settings: Planar 2,944 cells
+  against 3,036, Palace 78,748 tetrahedra against 54,807.
