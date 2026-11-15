@@ -29,6 +29,8 @@ public static class PCellRegistry
             { "MCROSS", MCrossPCell.Generate },
             { "MTAPER", MTaperPCell.Generate },
             { "MKLOPF", MKlopfPCell.Generate },
+            // The planned passives (docs/design/rf-passives.md): the plan the model stamps, drawn by its parts' generators.
+            { PassivePlanPCells.WilkinsonId, PassivePlanPCells.GenerateWilkinson },
             // The recognised board's other two lines (designer report, round 16): a stripline is MLIN's strip on its
             // own layer, and a grounded coplanar line adds its side grounds.
             { CpwgPCell.GeneratorId, CpwgPCell.Generate },

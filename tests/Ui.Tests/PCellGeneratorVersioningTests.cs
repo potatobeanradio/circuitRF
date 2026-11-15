@@ -128,6 +128,7 @@ public sealed class PCellGeneratorVersioningTests : IDisposable
             { "MMITER",    (2, "00e9fa36114ed484") },
             { "MTAPER",    (1, "c94d21d51b1b12c6") },
             { "MTEE",      (2, "97c5e024b02f10fe") },
+            { "MWPD",      (1, "b8edac0347b56dcb") },
             { "OSPIRAL",   (1, "c8c3edac9f941c3f") },
             { "SLIN",      (1, "82cdd4aabdc648b1") },
             { "SPIRAL",    (1, "895490af0315aa14") },

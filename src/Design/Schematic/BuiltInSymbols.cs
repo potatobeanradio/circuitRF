@@ -112,6 +112,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _viaGnd        = BuildViaGnd();
     private static readonly Symbol _testPad       = BuildTestPad();
     private static readonly Symbol _gsgPad        = BuildGsgPad();
+    private static readonly Symbol _mwpd          = BuildMwpd();
     private static readonly Symbol _mimCap        = BuildMimCap();
     private static readonly Symbol _spiral        = BuildSpiral();
     private static readonly Symbol _octSpiral     = BuildOctSpiral();
@@ -257,6 +258,7 @@ public static class BuiltInSymbols
             case SymbolKind.ViaGnd:     return _viaGnd;
             case SymbolKind.TestPad:    return _testPad;
             case SymbolKind.GsgPad:     return _gsgPad;
+            case SymbolKind.Mwpd:       return _mwpd;
             case SymbolKind.MimCap:     return _mimCap;
             case SymbolKind.Spiral:     return _spiral;
             case SymbolKind.OctSpiral:  return _octSpiral;
@@ -2642,6 +2644,28 @@ public static class BuiltInSymbols
         Circ(-110,  100, 12),
         L(  40,    0,  100,    0),
     ], SymbolKind.GsgPad);
+
+    // MWPD — the divider as it is drawn on the board: the input meets the ring, which splits into two quarter-wave arms
+    // that come back to the right; each arm's end is a junction (dot) with its output going on to the corner and its
+    // resistor end (R2/R3) straight out, so the 2·Z0 resistor sits on the right edge, between the outputs.
+    private static Symbol BuildMwpd() => Sym([
+        L(-400,    0, -260,    0),
+        Circ(-260, 0, 10, filled: true),
+        QC(-260,   0, -260, -200,  -40, -200),   // upper arm
+        L( -40, -200,  300, -200),
+        QC(-260,   0, -260,  200,  -40,  200),   // lower arm
+        L( -40,  200,  300,  200),
+        Circ(300, -200, 10, filled: true),
+        Circ(300,  200, 10, filled: true),
+        L( 300, -200,  400, -200),               // R2
+        L( 300,  200,  400,  200),               // R3
+        L( 300, -200,  300, -400),               // output 2
+        L( 300, -400,  400, -400),
+        L( 300,  200,  300,  400),               // output 3
+        L( 300,  400,  400,  400),
+        Txt("λ/4", 80, -240, fontSize: 11, vAlign: SymbolTextVAlign.Bottom),
+        Txt("λ/4", 80,  240, fontSize: 11, vAlign: SymbolTextVAlign.Top),
+    ], SymbolKind.Mwpd);
 
     private static Symbol BuildTestPad()
     {

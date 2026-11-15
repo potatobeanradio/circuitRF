@@ -377,6 +377,37 @@ public sealed class ComparisonTests
         }
     }
 
+    // ══ RF passives — a planned part compares on its specs ═══════════════════════════════════════
+    //
+    // MWPD's artwork is drawn from Z0, F and Gap, so those are what LVS reads off the generated cell and
+    // compares with the schematic's. The divider Update Layout places compares clean; the same layout
+    // against a schematic asking for another F is one property finding naming F.
+
+    [Fact]
+    public void AWilkinsonDividerComparesCleanAndAnFMismatchIsAFinding()
+    {
+        string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-wpd-" + Guid.NewGuid().ToString("N")[..12]);
+        try
+        {
+            var p = SchematicSync.SdlChecker.Prepare("F8-wilkinson-divider", scratch);
+            var layout = p.Applied(p.Plan());
+            Assert.Empty(SchematicSync.SdlChecker.Verify(p, layout));
+            Assert.DoesNotContain(LvsRun.Run(p.CellDir).Findings, f => f.Severity == DiagnosticSeverity.Error);
+
+            p.Model.Components.Single(c => c.InstanceName == "WPD1").Parameters.Single(q => q.Name == "F").Expression = "2.5";
+            SchematicPersistence.SaveToFile(p.SchematicPath, p.Model, Path.GetFileNameWithoutExtension(p.SchematicPath));
+
+            var errors = LvsRun.Run(p.CellDir).Findings.Where(f => f.Severity == DiagnosticSeverity.Error).ToList();
+            var mismatch = Assert.Single(errors);
+            Assert.Equal("lvs.property.mismatch", mismatch.Id);
+            Assert.Equal("F", mismatch.Diagnostic.Arguments["name"]);
+        }
+        finally
+        {
+            try { Directory.Delete(scratch, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
     // ── hand-built netlists ───────────────────────────────────────────────────────────────────
 
     /// <summary>
