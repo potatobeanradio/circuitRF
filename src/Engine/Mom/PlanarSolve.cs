@@ -1390,7 +1390,12 @@ public sealed class PlanarPortCalibrator
 /// the ANALYSIS. Carried on the result rather than only written into a note, because the note does
 /// not survive onto the <c>.sNp</c> and the file is what a reader opens six months later (PCAL2).
 /// </summary>
-public sealed record PlanarPassivityExcess(double FrequencyHz, double SigmaMax);
+public sealed record PlanarPassivityExcess(double FrequencyHz, double SigmaMax)
+{
+    /// <summary>ICF-4 R-icf4-5 — the ports carrying the gain at this point (the right singular vector for σ_max), each
+    /// with its share of that wave's power, largest first. Empty where it was not measured.</summary>
+    public IReadOnlyList<(int Number, double Share)> CarriedBy { get; init; } = [];
+}
 
 /// <summary>
 /// <b>MIM-3 / MIM-8 / MIM-9 — one adjacent pair of conductor levels, and the largest mesh cell that
@@ -3044,7 +3049,18 @@ public static class PlanarSolve
                           "a uniform line at all."));
 
             if (faceUncal.Count > 0)
+            {
                 notes.Add(UncalibratedPortNote(faceUncal, deembedded));
+
+                // ICF-4 R-icf4-3 — a grounded Uncalibrated port taller than a quarter wavelength in the substrate.
+                var stack0 = problem.EffectiveStack;
+                var tall = ports.Where(p => p.Uncalibrated)
+                    .Select(p => (p.Number, problem.LevelZ(p.LayerIndex) - stack0.InterfaceZ[0],
+                                  PlanarThickSubstrate.OpticalHeightM(stack0, problem.LevelZ(p.LayerIndex))))
+                    .ToList();
+                if (PlanarThickSubstrate.TallPortWarning(tall, freqsHz, fmt) is { } tallWarning)
+                    notes.Add(EmFinding.Warn(tallWarning));
+            }
 
             if (calibrators.Count > 0)
             notes.Add($"De-embedding costs {calibrators.Count} calibration(s) over {deembedded} de-embedded port(s), " +
@@ -4491,7 +4507,7 @@ public static class PlanarSolve
         string nonPassiveCause = "";
         if (st.Deembed)
         {
-            nonPassive = PassivityExcesses(points, z0);
+            nonPassive = PassivityExcesses(points, z0, [.. ports.Select(p => p.Number)]);
 
             // ── MIM-9 items 1 and 4 — the attribution, decided ONCE, from the run's own counters.
             //
@@ -4505,7 +4521,7 @@ public static class PlanarSolve
             foreach (var pt in points) worstFloor = Math.Max(worstFloor, PointFloor(pt));
             nonPassiveCause = nonPassive.Count == 0
                 ? ""
-                : NonPassivityCause(worstExcess, worstFloor, WorstLevelPair(problem, mesh));
+                : NonPassivityCause(worstExcess, worstFloor, WorstLevelPair(problem, mesh), ThickSubstrateAtWorst(problem, nonPassive));
 
             // EM-SEV R-emsev-1 — a WARNING, not a note. This sentence says outright that the
             // s-parameters at those points should not be used, which is the definition of "an
@@ -4835,7 +4851,7 @@ public static class PlanarSolve
     /// instead, and it needs the frequencies rather than a sentence.</para>
     /// </summary>
     private static IReadOnlyList<PlanarPassivityExcess> PassivityExcesses(
-        IReadOnlyList<PlanarFrequencyPoint> points, IReadOnlyList<Complex> z0)
+        IReadOnlyList<PlanarFrequencyPoint> points, IReadOnlyList<Complex> z0, IReadOnlyList<int> portNumbers)
     {
         const double Tolerance = 1e-3;
 
@@ -4850,9 +4866,10 @@ public static class PlanarSolve
         foreach (var pt in points)
         {
             double sigma;
+            Mat<Complex> s;
             try
             {
-                var s = uniformReal ? pt.S : RFNetwork.SToS(pt.S, [.. z0], common);
+                s = uniformReal ? pt.S : RFNetwork.SToS(pt.S, [.. z0], common);
                 sigma = RFNetwork.Passivity(s);
             }
             catch (Exception)
@@ -4863,7 +4880,10 @@ public static class PlanarSolve
             }
 
             if (sigma <= 1.0 + Tolerance) continue;
-            over.Add(new PlanarPassivityExcess(pt.FrequencyHz, sigma));
+            over.Add(new PlanarPassivityExcess(pt.FrequencyHz, sigma)
+            {
+                CarriedBy = s.RowCount == portNumbers.Count ? PlanarThickSubstrate.CarryingPorts(s, portNumbers) : [],
+            });
         }
         return over;
     }
@@ -4888,13 +4908,15 @@ public static class PlanarSolve
     /// <c>.sNp</c> through <see cref="PlanarSolveResult.NonPassivityCause"/>, and the two readers
     /// must not be able to disagree about what the run blamed (MIM-9 item 4).
     /// </param>
-    private static string? PassivityNote(
+    internal static string? PassivityNote(
         IReadOnlyList<PlanarPassivityExcess> over, int pointCount, string attribution)
     {
         if (over.Count == 0) return null;
 
         double worst = 0, atHz = 0;
-        foreach (var e in over) if (e.SigmaMax > worst) { worst = e.SigmaMax; atHz = e.FrequencyHz; }
+        PlanarPassivityExcess? worstPoint = null;
+        foreach (var e in over)
+            if (e.SigmaMax > worst) { worst = e.SigmaMax; atHz = e.FrequencyHz; worstPoint = e; }
 
         // ── R-pcal7-4 — THE FREQUENCIES, NOT JUST THE COUNT ──────────────────────────────────────
         //
@@ -4908,7 +4930,8 @@ public static class PlanarSolve
         return $"NOT PASSIVE: {over.Count} of {pointCount} de-embedded point(s) have σ_max(S) > 1, " +
                $"{which}, worst {worst:F4} at {SurfaceMesher.Eng(atHz)}Hz. A passive structure cannot " +
                "do that, so the excess is this analysis, not your design, and the s-parameters at " +
-               $"those points should not be used. {attribution}";
+               $"those points should not be used." +
+               PlanarThickSubstrate.CarryingClause(worstPoint?.CarriedBy ?? []) + $" {attribution}";
     }
 
     /// <summary>
@@ -4954,8 +4977,10 @@ public static class PlanarSolve
     /// sweep — the peel's own estimate of its own error, in |S|, and therefore the one number that
     /// can say whether the de-embedding is even capable of accounting for the excess.</param>
     /// <param name="pair">The worst adjacent level pair, when the mesh has one.</param>
+    /// <param name="thickSubstrate">ICF-4 R-icf4-5 — <see cref="PlanarThickSubstrate.ThickSubstrateSentence"/> at the
+    /// worst point, or null on a substrate under a tenth of a wavelength. Said in place of "not identified".</param>
     internal static string NonPassivityCause(
-        double excess, double peelErrorFloor, PlanarLevelPair? pair)
+        double excess, double peelErrorFloor, PlanarLevelPair? pair, string? thickSubstrate = null)
     {
         // Microns spelled out rather than through PlanarLengthFormat, and that is the ASCII rule
         // above rather than an oversight: every length format in this area reaches for "µ", which is
@@ -5023,10 +5048,26 @@ public static class PlanarSolve
               $"{(excess / peelErrorFloor):G3}x."
             : "The de-embedding reports no error floor on this sweep, so it is not the cause.";
 
+        if (thickSubstrate is not null)
+            return peel + " A conductor pair too close together for the cells that straddle it is ruled out as " +
+                   $"well. {thickSubstrate} Do not read the flagged points; the rest of the sweep is unaffected.";
+
         return peel + " The other thing this run can attribute an excess to - a conductor pair too " +
                "close together for the cells that straddle it - is ruled out as well, so what " +
                "produced the gain is not identified here. Do not read the flagged points; the rest " +
                "of the sweep is unaffected.";
+    }
+
+    /// <summary>ICF-4 R-icf4-5 — the substrate under the highest metal level, in wavelengths at the worst non-passive
+    /// point, as the sentence <see cref="NonPassivityCause"/> says, or null under a tenth of a wavelength.</summary>
+    private static string? ThickSubstrateAtWorst(PlanarProblem problem, IReadOnlyList<PlanarPassivityExcess> over)
+    {
+        if (over.Count == 0 || problem.Layers.Count == 0) return null;
+        var worst = over.MaxBy(e => e.SigmaMax)!;
+        var stack = problem.EffectiveStack;
+        double zTop = Enumerable.Range(0, problem.Layers.Count).Max(problem.LevelZ);
+        return PlanarThickSubstrate.ThickSubstrateSentence(
+            zTop - stack.InterfaceZ[0], PlanarThickSubstrate.OpticalHeightM(stack, zTop), worst.FrequencyHz);
     }
 
     /// <summary>

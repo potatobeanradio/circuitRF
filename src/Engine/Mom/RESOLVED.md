@@ -14377,3 +14377,157 @@ peaked at 6.4 GB and was stopped at 30 minutes in its far-field stage.
   took a further 0.2 GB off and was not adopted.
 - **Not changed:** the dense estimate runs about twice the measured peak at 13,300 unknowns (6.4 GB stated, 3.2 GB
   measured); the dry run still states no far-field time (now about 4 s a frequency at 4,788 unknowns on a 1° hemisphere, 9 ports).
+
+
+## ICF-4 Part A — planar on a thick, conducting substrate: the measurement (2026-11-15)
+
+`docs/briefs/brief-icf-4-thick-substrate-accuracy.md`, Part A only. No product code changed. The fixture is
+`tests/Engine.Tests/Mom/Support/ThickSiliconCoilFixture.cs`: a two-turn square spiral, 8 µm turns at 4 µm spacing, 100 µm
+outer, with an underpass and both leads ending at x = −90 µm on Uncalibrated (grounded) edge ports, 140 × 100 µm in all.
+The stack is 750 µm of silicon (εᵣ 11.9, σ 0.02 S/m) on a backside plane, 2 µm of oxide to the underpass and 4 µm more to
+the top metal, open above. Product mesh defaults (local grid, stacked regions, merging), `EdgePortReturn = Ground`. Every
+number below comes from a scratch console harness (Release, RSS watchdog), not a test. L is the series branch,
+Im(−1/Y21)/ω.
+
+### A1 — the sweep dependence: the mechanism is there, the size is not
+
+| 16 GHz, σ = 0.02 S/m | N | L, pH |
+|---|---|---|
+| local grid, mesh frequency 40 GHz | 6,551 | 578.53 |
+| local grid, mesh frequency 22 GHz | 6,563 | 578.51 |
+| local grid, base cuts anchored to the artwork's extent, 40 GHz | 6,563 | 578.51 |
+| the same, 22 GHz | 6,563 | 578.51 |
+| local grid off | 10,522 | 578.54 |
+
+- **The reading in the brief holds.** `PlanarLocalGrid.BaseCuts` starts a block every λ_g/N at the mesh frequency:
+  108.6 µm at 40 GHz, which cuts the 140 µm artwork into two base blocks, and 197 µm at 22 GHz, which leaves it whole. The
+  bisections that follow start from different blocks, so the partition differs (6,551 against 6,563 unknowns). The cap in
+  `NeedSplit` binds only on large homogeneous blocks, and none survives on a spiral, so where the first cut lands is the
+  whole of the dependence.
+- **Prototype (in a private copy of the engine, not in `src`):** with the base step set to infinity, so the partition
+  starts from one block spanning the artwork, the 40 GHz mesh is the 22 GHz mesh (same N and the same L to five
+  figures). That candidate is 0.03 pH (5e-5) from the local-grid-off answer.
+- **On this fixture the effect is 3e-5 in L, against the field test's 11 % (690 → 617 pH).** The fixture does not
+  reproduce its size. What it does show is that the partition alone moves the answer very little on a plain spiral. Its
+  size in the field test therefore needs something this fixture lacks (a coil pair, wide metal that leaves large
+  homogeneous blocks, or a kit's cut instances). Not pursued.
+
+### A2 — the bad rows: not reproduced, and the kernel is right in space on the local grid
+
+- **No bad row on the fixture**: 17.8–19.2 GHz at 100 MHz (15 points, the brief's window trimmed for run time), local
+  grid, σ = 0.02 S/m. L, |S21| and σ_max are smooth from point to point (L 577.62 → 576.86 pH, σ_max 0.9963 → 0.9943).
+- **The kernel check ran anyway, on the models the fill actually uses**, against `SommerfeldIntegral.EvaluateInterior`
+  for ρ from 0.25 to 150 µm at all six horizontal pairings (A and q, top–top, under–under, top–under). The oracle agrees
+  with itself at 100× its tolerance to ~1e-9. Every 250 MHz from 1 to 40 GHz, plus every 50 MHz over 17.5–19.5 and
+  1.5–3 GHz:
+
+  | Pairing, local grid on | Worst relative error | Where |
+  |---|---|---|
+  | A top–top, A under–under | ≤ 1.2e-3 | — |
+  | q top–top | 2.0e-2 | 2.45 GHz, ρ 5 µm |
+  | A top–under | 2.7e-2 | 31.25 GHz, ρ 0.25 µm |
+  | q top–under (the peeled fit) | 2.4e-2 | 27.75 GHz, ρ 0.25 µm |
+  | q under–under | 5–6e-2 below 5 GHz, **0.16 at 7.5 GHz** | ρ 1–5 µm |
+
+  Nothing is localised to a narrow window, and under the brief's stop rule A2 stops here. R-icf4-2 has no cause on this
+  fixture.
+- **The finding A2 did produce runs the other way from the hypothesis.** The fill takes the scalar kernel through
+  `GetMinusShallowImages` at a threshold of `ShallowImageCells` × the largest cell on the two levels. On the local grid
+  the top metal's largest cell is 21.9 µm, so the 4 µm top–under pairing takes MIM-12a's **peeled** fit. On the tensor
+  grid it is 2 µm and takes the **plain** one. **The local grid and the shared grid therefore fill the cross-level scalar
+  block from two different fits.** The plain fit is the poor one: 0.2–0.4 relative error at ρ = 0.25 µm across 1–8 GHz
+  and 18.5–20 GHz, and above 1 at ρ 1–5 µm at 7.0, 19.5 and 20.0 GHz (candidates holding images with Σ|A| up to ~5e6).
+  The peeled fit stays within 2.4e-2. So on this stack, turning the local grid OFF is what selects the misfitting
+  kernel. That is worth knowing before anyone reads "gone with the local grid off" as clearing the fit. The under–under
+  q pairing at 7.5 GHz (0.16) is the same on both grids.
+
+### A3 — passivity above ~31 GHz: the port, not the pole
+
+Lossless stack (σ = 0), local grid, 40 GHz mesh frequency:
+
+| f, GHz | 26 | 30 | 32 | 34 | 36 | 40 |
+|---|---|---|---|---|---|---|
+| σ_max | 0.9767 | 0.9993 | **1.0138** | 1.0237 | 1.0292 | 1.0329 |
+
+| 32 GHz | σ_max | L, pH |
+|---|---|---|
+| as above | 1.01375 | 586.38 |
+| (i) `DcimSettings.ExtractSurfaceWaves = false` | 1.01379 | 586.37 |
+| (ii) each lead returned through a drawn via chain to the backside, internal ports | **0.92418** | 512.75 |
+
+- **(i) does not move it**, so the fit's handling of the pole is not the cause (R-icf4-4 has nothing to fix). The first
+  TE mode cuts on at 30.4 GHz on this stack (k_ρ/k₀ = 1.0013 at 30.5 GHz, 1.04 at 32), where σ_max crosses 1. That
+  coincidence is geometry, not cause: TE cut-on on a grounded slab falls at h√(εᵣ−1) = λ₀/4, i.e. h ≈ 0.26 λ in the
+  silicon. That is also where a lumped source spanning h starts to fail, so the onset frequency alone cannot separate the
+  two candidates.
+- **(ii) makes the fixture passive at 32 GHz.** The structure is not identical (the chain adds its own inductance:
+  L_diff 824 against 659 pH), so this separates causes rather than correcting the answer. **Cause (a) confirmed: the
+  grounded Uncalibrated edge port, a lumped source with no vertical current over 756 µm.** On this fixture the error
+  starts between 30 GHz (h = 0.261 λ_Si, passive) and 32 GHz (0.278 λ_Si). That is R-icf4-3's stated fraction.
+- **(ii) could only be measured past a refusal that is broader than it needs to be.** `PlanarLevels.CanRepresentVias`
+  asks the attachment length of EVERY level once any ground attachment exists, not only of the levels that carry one. A
+  via chain split into eight 93.75 µm segments (k·ℓ = 0.22 each at 32 GHz) is therefore refused because the top level is
+  756 µm above ground. On this stack any ground via is refused above 5.5 GHz however it is split. The harness patched
+  its private copy to check the attached level only. Not changed in `src`; for the owner.
+- **The excess is not on one port here.** The top right singular vector is (0.704, 0.710) in magnitude on this two-port.
+  The field test's single-port excess was on a coil pair, which this fixture does not have.
+- Cost: one point is ~80 s at N = 6,551 once the cores are built (fill-dominated, ten threads). The via-chain point
+  (N = 10,497, ten levels, most of the time in `PlanarFill.MixedHalf`) took 39 min.
+
+### Decision record
+
+| Cause | Status on this fixture | Part B |
+|---|---|---|
+| Local grid follows the mesh frequency | Mechanism confirmed; size 3e-5, field test's 11 % not reproduced | R-icf4-1 candidate prototyped (anchor to extent): removes the dependence, 5e-5 from local-grid-off |
+| Device kernel fit wrong in space | Not reproduced; the fill's local-grid kernels agree in space at every frequency checked | R-icf4-2 not supported — R-icf4-5's warning only |
+| Tall uncalibrated port | **Confirmed** (A3 ii); error starts between 0.26 and 0.28 λ in the substrate | R-icf4-3 |
+| TE pole at cut-on | Not confirmed (A3 i changes 4e-5) | R-icf4-4 not supported |
+
+Also for the owner: the local and shared grids select different cross-level scalar fits on this stack, the plain one
+misfitting (A2), and the ground-via refusal checks levels that carry no attachment (A3).
+
+## ICF-4 Part B — two warnings, and what was left (2026-11-15)
+
+Kept small on purpose: only the cause Part A confirmed got anything, and only as a warning. The rest is listed below for
+whoever takes it up, the reporter included.
+
+### Built
+
+- **R-icf4-3, the tall Uncalibrated port** (`PlanarThickSubstrate.TallPortWarning`, warned from `PlanarSolve.Run` beside
+  the Uncalibrated-port note). A grounded Uncalibrated edge port is warned once its level's height above the ground plane
+  passes a quarter wavelength in the substrate (`TallPortFraction` = 0.25, just under Part A's measured onset of
+  0.261-0.278). The warning names the port, its height, the frequency the quarter wavelength falls at, and the swept
+  points past it. Electrical height is the optical path Σ tᵢ√εᵣᵢ below the level (`OpticalHeightM`). σ does not
+  lengthen it. On the fixture it starts at 28.8 GHz.
+- **R-icf4-5, the non-passive warning says where.** Each `PlanarPassivityExcess` carries `CarriedBy`: the right singular
+  vector for σ_max, read as each port's share of its power, largest first until three quarters is named
+  (`CarryingPorts`). The NOT PASSIVE warning names those ports at the worst point. Where the run had no attribution
+  ("not identified") and the substrate under the highest metal level is past a tenth of a wavelength at the worst
+  point, `NonPassivityCause` says so with the height and the electrical thickness instead (`ThickSubstrateSentence`,
+  ASCII because it reaches the Touchstone caveat). Every other arm is unchanged, and a run with no non-passive point is
+  byte-identical.
+- Gate: `ThickSubstrateWarningTests` (2 tests, on the functions, no solve). `MimThinLayerTests.M9_3` and
+  `NonPassiveCaveatTests` still pass.
+
+### Not done, and why
+
+- **R-icf4-1, local grid base cuts anchored to the artwork.** The mechanism is confirmed and the prototype (start the
+  partition from one block spanning the artwork when it is smaller than a base block) makes the 22 and 40 GHz meshes
+  identical. On the fixture, though, the effect was 3e-5 in L, and the change moves every local-grid mesh and needs a
+  `MeshHash` algorithm term so older results read as stale. Left until a fixture reproduces the field test's size.
+  Gate 1 of the brief (1e-9 between 22 and 40 GHz, board mesh byte-identical) is what it would need.
+- **R-icf4-2, a space check on the device kernel fit.** Not supported: the fit the local grid's fill uses agreed with
+  direct integration at every frequency checked (Part A §A2).
+- **R-icf4-4, the pole at cut-on.** Not supported: removing pole extraction moved σ_max by 4e-5 (Part A §A3).
+- **A vertical current term for a grounded edge port**, the actual fix for R-icf4-3's cause. The brief puts it in a
+  later brief with its own measurement.
+- **The two grids fit the cross-level scalar kernel differently** (Part A §A2): the shared grid's 2 µm cells take the
+  plain fit, which misfits by up to 1.7 at some frequencies, while the local grid takes the peeled one. Not touched.
+  The likely lever is `PlanarFillSettings.ShallowImageCells`, or deciding the peel from the separation rather than
+  from the largest cell.
+- **`PlanarLevels.CanRepresentVias` checks every level's ground-attachment length** once any ground via exists, not just
+  the attached levels (Part A §A3). On a thick substrate this refuses every ground via above a few GHz however it is
+  split. Not touched.
+- **The `.sNp` caveat line** does not carry the carrying ports. Only the panel warning does; the thick-substrate
+  sentence reaches both, through `NonPassivityCause`.
+- **The user page** (`docs/user/src/reference/mom-engine.md`) does not describe the two warnings yet.
