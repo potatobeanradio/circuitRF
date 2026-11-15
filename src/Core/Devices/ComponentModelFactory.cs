@@ -88,6 +88,8 @@ public static class ComponentModelFactory
             // sign, and a sign the symbol has to show.
             "JFET_N", "JFET_P",
             "TLIN", "CLIN", "MLIN", "MCLIN", "BCLIN", "MBCLIN", "MBEND", "MCURVE", "MMITER", "MGAP", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
+            // The planned passives (docs/design/rf-passives.md): specs in, MTEE and MCURVE sections stamped as one block.
+            WilkinsonTypeName,
             // Grounded coplanar waveguide and stripline (brief-artsch-1), bound to the stackup as MLIN is.
             "CPWG", "SLIN",
             // The two vias (brief-via-component.md): a signal via changing layers, and a via to ground.
@@ -253,6 +255,8 @@ public static class ComponentModelFactory
             return CreateMicrostripTaperModel(parameters);
         if (typeName.Equals("MKLOPF", StringComparison.OrdinalIgnoreCase))
             return CreateMicrostripKlopfModel(parameters);
+        if (typeName.Equals(WilkinsonTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateWilkinsonModel(parameters);
         if (typeName.Equals("VIA", StringComparison.OrdinalIgnoreCase))
             return new ViaModel(ReadViaGeometry(parameters, grounded: false));
         if (typeName.Equals("VIAGND", StringComparison.OrdinalIgnoreCase))
@@ -2974,6 +2978,22 @@ public static class ComponentModelFactory
 
         return new MicrostripTaperModel(w1, w2, l, h, t, er, sigma, tanD, name, nOverride);
     }
+
+    /// <summary>The equal-split Wilkinson divider's engine token (pins 1, 2, 3, R2, R3).</summary>
+    public const string WilkinsonTypeName = "MWPD";
+
+    /// <summary>The substrate a microstrip part's parameters carry: the injected stackup values, the fallbacks
+    /// otherwise.</summary>
+    private static MicrostripSubstrate SubstrateOf(IReadOnlyDictionary<string, Value> parameters) => new(
+        GetReal(parameters, "H", DefaultSubstrateHMeters), GetReal(parameters, "T", DefaultSubstrateTMeters),
+        GetReal(parameters, "Er", DefaultSubstrateEpsR), GetReal(parameters, "Sigma", DefaultSubstrateSigmaSPerM),
+        GetReal(parameters, "TanD", DefaultSubstrateTanD), GetReal(parameters, "Roughness", 0.0));
+
+    // MWPD: the specs (Z0, F) and the resistor's pin span (Gap) are the parameters; the plan derives the rest.
+    private static MicrostripPlanModel CreateWilkinsonModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(WilkinsonPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
+                                   GetReal(parameters, "Gap", 1.35e-3), SubstrateOf(parameters)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, WilkinsonTypeName));
 
     private static MicrostripKlopfModel CreateMicrostripKlopfModel(IReadOnlyDictionary<string, Value> parameters)
     {
