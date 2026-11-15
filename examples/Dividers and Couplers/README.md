@@ -1,17 +1,20 @@
 # Dividers and Couplers
 
 RF dividers and couplers placed as single parts, each stated by its specifications and drawn from the same plan its
-circuit model simulates. One cell per component. Today the workspace holds the **Wilkinson divider**: an MWPD at 2.4 GHz
-on a 20 mil RO4350B board, laid out by Update Layout from Schematic and solved on the Planar MoM solver, EMerge and
-Palace against its circuit model.
+circuit model simulates. One cell per component. Today the workspace holds the **Wilkinson divider** (an MWPD), the
+**branch-line hybrid** (an MBLC) and the **rat-race hybrid** (an MRRC), each at 2.4 GHz on a 20 mil RO4350B board, laid
+out by Update Layout from Schematic and solved on the Planar MoM solver, EMerge and Palace against its circuit model.
+The sections up to [Things to try](#things-to-try) are the Wilkinson's; the two hybrids follow, one section each.
 
 ![The board: port 1's line on the left, the divider's ring, the 0402 isolation resistor across the ring's gap, and the two output lines bending away to ports 2 and 3.](pictures/wilkinson-layout.png)
 
-## The cell
+## The cells
 
 | Cell | Views | What it is |
 |---|---|---|
 | **Wilkinson** | schematic, layout, EM setup, 3D view | The test bench and the board: a 5 mm input line, the MWPD, a 100 Ω resistor with an 0402 land pattern on R2-R3, and each output bending away through a 90° MCURVE and a 5 mm line to its port |
+| **Branch-Line** | schematic, layout, EM setup, 3D view | A one-section MBLC with a 5 mm line from each of its four pins to a port |
+| **Rat-Race** | schematic, layout, EM setup, 3D view | An MRRC with a 5 mm line from each of its four pins to a port |
 
 ## How it was built
 
@@ -108,7 +111,7 @@ than the solvers disagree with one another.
   with it on the mesh, and the answer, would change if the band changed.
 - **EMerge: the Draft preset, no adaptive mesh passes, and its adaptive frequency sweep.**
 - **Palace: the Draft preset and `AdaptiveMaxIterations` 0** — one solve on the initial mesh, no refinement — with its
-  adaptive frequency sweep, built from 4 full solves.
+  adaptive frequency sweep, built from 4 full solves. The two hybrids refine twice; their sections say why.
 - **The 3D air box is 5 mm on the sides and the top**, about ten substrate heights.
 - **Eleven log-spaced points from 1.2 to 4.8 GHz**, F·2^(k/5) for k = −5 … 5, so 2.4 GHz is one of them.
 
@@ -117,3 +120,114 @@ than the solvers disagree with one another.
 - **Change `F` or `Z0`** and simulate: the ring is redrawn and re-solved from the new specs. Update Layout redraws the
   layout; re-run the EM setups to compare again.
 - **Remove `R1`, or change it**, and watch |S23| and |S22| while |S21| and |S11| stay put.
+
+## The branch-line hybrid
+
+![The branch-line board: the two through lines, the wider 35 Ω series arms between the junctions, the two 50 Ω shunt arms, and a 5 mm line from each corner to its port.](pictures/branch-line-layout.png)
+
+**The cell.** `BLC1` is an MBLC with `Z0` 50 Ω, `F` 2.4 GHz and `N` 1. Select it, and its parameters show what the board
+makes of those specs: 1.05768 mm feeds, series arms 1.81424 mm wide (35.4 Ω) and 18.05 mm long, and shunt arms of the
+feed width (50 Ω), 18.46 mm long, each length measured between the reference planes of the junctions it joins. A 5 mm
+line of `W50` runs from each pin to a port. The ports are an arm's length apart, so no line needs to bend away. Update
+Layout from Schematic places the part and the lines and pours the ground plane; `Branch-Line/em/Branch-Line Planar.cem`
+is the Planar setup, and the 3D view holds **EMerge** and **Palace**.
+
+**At 2.4 GHz**, driven at port 1:
+
+| | Circuit model | Planar MoM | EMerge | Palace |
+|---|---|---|---|---|
+| \|S11\| | −30.4 dB | −27.2 dB | −18.2 dB | −18.0 dB |
+| \|S21\| (through) | −3.20 dB | −2.98 dB | −3.53 dB | −3.60 dB |
+| \|S31\| (coupled) | −3.19 dB | −3.35 dB | −2.99 dB | −3.14 dB |
+| \|S41\| (isolated) | −30.5 dB | −27.1 dB | −18.5 dB | −18.2 dB |
+| ∠S21 − ∠S31 | 90.1° | 90.0° | 90.2° | 90.4° |
+
+Across 1.2 to 4.8 GHz, the eleven points from F/2 to 2F, and in brackets the three of them from 2.09 to 2.76 GHz:
+
+| Largest difference from the circuit model | Planar MoM | EMerge | Palace |
+|---|---|---|---|
+| \|S21\| | 0.31 dB (0.26) | 0.70 dB (0.70) | 0.92 dB (0.92) |
+| \|S31\| | 0.19 dB (0.19) | 0.39 dB (0.35) | 0.48 dB (0.34) |
+| ∠S21 − ∠S31 | 3.4° (1.7°) | 4.8° (4.6°) | 6.4° (4.8°) |
+| Deepest \|S11\| of the eleven points | 2.40 GHz | 2.40 GHz | 2.40 GHz |
+
+![|S21| and |S31|, |S11| and |S41|, and the phase between 2 and 3 against frequency: the circuit model as a line, the three EM solvers as markers.](pictures/branch-line-results.png)
+
+**Planar follows the model within 0.22 dB at 2.4 GHz** and keeps the quadrature to 0.1°. The two 3D solvers agree with
+each other within 0.15 dB; against the model they put 0.33 to 0.40 dB less into the through port and up to 0.2 dB more
+into the coupled port, with |S11| and |S41| near −18 dB. A series reactance at each port in the circuit model, standing in for a
+3D lumped port, moves the split the other way, so the 3D ports alone do not explain it; where the difference comes from
+is not settled here. The 90° between ports 2 and 3 holds within 0.5° on every solver.
+
+**The model's best match is a little below 2.4 GHz** (2.36 GHz), because the junctions' own reactance adds to the arms;
+at 2.4 GHz it is still −30 dB. The model warns that MTEE's junction formulas are calibrated at εr 9.9.
+
+| | Mesh | Unknowns | Wall time | Peak memory |
+|---|---|---|---|---|
+| Circuit model | — | — | under a second | — |
+| Planar MoM | 2,248 cells | 4,110 | 1 min 26 s | 0.7 GB |
+| EMerge | 7,377 tetrahedra | 52,786 | 1 min 20 s | 1.3 GB |
+| Palace | 69,610 → 215,686 tetrahedra | 211,529 | 6 min 51 s | 5.9 GB |
+
+**Palace refines its mesh twice here** (`AdaptiveMaxIterations` 2), where the Wilkinson's solves once. On the initial
+Draft mesh alone it read |S21| 1.2 dB below the model and put the deepest |S11| at 2.09 GHz; two passes bring it within
+0.15 dB of EMerge.
+
+## The rat-race hybrid
+
+![The rat-race board: the ring as two straight runs and two half-turns, ports 2, 1 and 3 leaving the upper run upward and port 4 the lower run downward, each through a 5 mm line.](pictures/rat-race-layout.png)
+
+**The cell.** `RRC1` is an MRRC with `Z0` 50 Ω and `F` 2.4 GHz. Its parameters show a 0.54815 mm ring (70.7 Ω) and
+1.05768 mm feeds, a quarter wave of 18.903 mm (εeff 2.729) and half-turns of 5.79 mm centre-line radius. A plan's pieces
+turn only in quarter turns, so the ring is two straight runs and two half-turns rather than a circle: ports 2, 1 and 3 sit
+a quarter wave apart on the upper run and port 4 on the lower one, a quarter wave round the right half-turn from port 3.
+A 5 mm line of `W50` runs from each pin to a port; the three upper ports are a quarter wave apart, so none needs to bend
+away. Update Layout from Schematic, the Planar setup and the 3D view are as for the branch-line.
+
+**At 2.4 GHz**, driven at the sum port 1 and at the difference port 4:
+
+| | Circuit model | Planar MoM | EMerge | Palace |
+|---|---|---|---|---|
+| \|S11\| (Σ) | −51.0 dB | −27.4 dB | −21.1 dB | −25.7 dB |
+| \|S21\| | −3.21 dB | −3.14 dB | −3.18 dB | −3.24 dB |
+| \|S31\| | −3.16 dB | −3.11 dB | −3.16 dB | −3.12 dB |
+| \|S41\| (Σ to Δ) | −50.3 dB | −53.3 dB | −41.8 dB | −33.6 dB |
+| \|S23\| (output to output) | −50.3 dB | −32.1 dB | −25.2 dB | −30.3 dB |
+| \|S24\| | −3.27 dB | −3.17 dB | −3.19 dB | −3.21 dB |
+| \|S34\| | −3.21 dB | −3.15 dB | −3.15 dB | −3.24 dB |
+| ∠S21 − ∠S31 (Σ, in phase) | 0.0° | 0.1° | −0.7° | −2.2° |
+| ∠S24 − ∠S34 (Δ, out of phase) | 180.0° | 180.0° | 179.3° | 177.6° |
+
+Across the eleven points from 1.2 to 4.8 GHz, and in brackets the three from 2.09 to 2.76 GHz:
+
+| Largest difference from the circuit model | Planar MoM | EMerge | Palace |
+|---|---|---|---|
+| \|S21\| | 2.93 dB (0.22) | 2.66 dB (0.23) | 4.87 dB (0.75) |
+| \|S31\| | 1.95 dB (0.13) | 2.48 dB (0.24) | 3.13 dB (0.22) |
+| \|S24\| | 0.74 dB (0.27) | 0.62 dB (0.21) | 1.07 dB (0.36) |
+| \|S34\| | 2.09 dB (0.24) | 5.54 dB (0.45) | 4.09 dB (0.74) |
+| ∠S21 − ∠S31 | 36.5° (0.8°) | 38.0° (1.4°) | 44.9° (2.2°) |
+| ∠S24 − ∠S34 | 16.3° (0.4°) | 27.7° (2.4°) | 39.2° (2.4°) |
+| Deepest \|S11\| of the eleven points | 2.40 GHz | 2.40 GHz | 2.40 GHz |
+
+![|S21|, |S31|, |S11| and |S41|, and the phase between 2 and 3 for a drive at port 1, against frequency: the circuit model as a line, the three EM solvers as markers.](pictures/rat-race-results.png)
+
+**All three solvers put every split within 0.1 dB of the model at 2.4 GHz**, the sum within 2.2° of in phase and the
+difference within 2.4° of opposite. Inside the hybrid's band Planar and EMerge stay within 0.25 dB of the model and
+Palace within 0.75 dB.
+Outside it the ring's nulls move fast with frequency: at 3.17 GHz, where the model's |S21| is falling through −8 dB
+towards a null, a small shift of that null reads as several dB, which is what the eleven-point figures above measure.
+The model's |S11| null at 2.4 GHz is 51 dB deep and the solvers' 21 to 27 dB: a null that deep is a small difference of
+two large numbers, and any small difference in loss or junction reactance moves it. Palace refines its mesh twice here as well; on the initial Draft mesh alone it was 0.22 dB off at
+2.4 GHz, with |S11| at −17 dB.
+
+| | Mesh | Unknowns | Wall time | Peak memory |
+|---|---|---|---|---|
+| Circuit model | — | — | under a second | — |
+| Planar MoM | 4,696 cells | 8,340 | 24 min 26 s | 3.0 GB |
+| EMerge | 14,325 tetrahedra | 102,774 | 1 min 36 s | 2.1 GB |
+| Palace | 103,776 → 314,861 tetrahedra | 313,090 | 12 min 31 s | 8.3 GB |
+
+**Planar takes longest on the ring**: its grid follows the half-turns' arcs (367 × 169 lines against the branch-line's
+123 × 85), which doubles the unknowns, and a dense solve grows with the cube of their count; the run took seventeen
+times the branch-line's.
