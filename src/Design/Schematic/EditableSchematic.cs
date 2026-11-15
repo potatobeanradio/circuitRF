@@ -89,6 +89,10 @@ public static class SymbolPortDefs
             // GSGPAD: on MLIN's left/right convention — 1 the probe tip at the left, 2 the line's end at the right —
             // and a grid step shorter than MLIN, pin to pin 300 rather than 400.
             case SymbolKind.GsgPad:  return [("1", -200f, 0f), ("2", 100f, 0f)];
+            // MWPD: the input at the left, the outputs at the right's top and bottom corners, and R2/R3 between them
+            // 400 apart — a resistor's own pin span, so one dropped on R2-R3 lands on both with no wire.
+            case SymbolKind.Mwpd:    return [("1", -400f, 0f), ("2", 400f, -400f), ("3", 400f, 400f),
+                                             ("R2", 400f, -200f), ("R3", 400f, 200f)];
             // The MMIC passives (AA-1): horizontal, on MLIN's left/right convention, because they sit
             // in a die's lines. MIMCAP 1 = top plate, 2 = bottom plate; SPIRAL 1 = outer end, 2 = inner
             // end; AIRBRIDGE 1/2 = the landings, and 3 (below) / 4 (above) the two ends of the line it crosses.
