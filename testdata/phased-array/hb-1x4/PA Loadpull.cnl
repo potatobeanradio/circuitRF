@@ -1,0 +1,45 @@
+; brief-paa-6 - the circuit loadpull of the amplifier in Array Bench.cnl at 5.9 GHz: the Loadpull example's bench retargeted to the
+; same PA, its grid (load_grid.gam, 50-ohm-centred) swept by the load tuner at the PA's output, which is the plane the array's
+; active reflections are read at. A loadpull counts DC power at its tuners' bias tees, so here the 48 V drain supply is the load
+; tuner's (PAcore is PA without its drain supply and output DC block: at RF the same network) and the gate keeps its own bias.
+; Every harmonic sees 50 ohm, as the source does in the array bench. Its .spl (PA Loadpull.spl) holds the Pout and PAE contours
+; the Data Display draws the array's loci over.
+
+define FET (gate drain)
+  parameters Periphery_mm=1
+  Sv = -0.837
+  Sc = 0.71
+  TV0 = 4.268
+  TC = 1.507
+  th = 0.001
+  a = 0.176
+  g = 0.089
+  lam = 0.0012
+  B = 1130
+  SDD:X1  gate  0  drain  0  I[1,0]=_v1/5000  I[2,0]=Periphery_mm*(B*TC*tanh(_v2*a*(tanh(g*(TV0 - _v1 + _v2*th + Sc*ln(exp(-(Sv - _v1)/Sc) + 1)))+1))*ln(exp(-(2*TV0 - 2*_v1 +2*_v2*th + 2*Sc*ln(exp(-(Sv - _v1)/Sc) + 1))/TC) + 1) * (_v2*lam + 1))/2
+end FET
+
+define PAcore (in out)
+  IProbe:Iin in  i1
+  C:Cin  i1  0  C=1.08 pF
+  L:Lm   i1  m  L=1.27 nH
+  C:Cb1  m   g  C=100 pF
+  L:Lg   g   vg L=100 nH
+  Vdc:Vg vg  0  Vdc=-3.05 V
+  C:Cgs  n7  0  C=1 pF
+  R:Rg   n7  g  R=10 Ohm
+  C:Cgd  d   g  C=0.01 pF
+  C:Cds  d   0  C=0.3 pF
+  FET:X1 g  d  Periphery_mm=1
+  L:Ld   d   vd L=2.43 nH
+  C:Cdec vd  0  C=100 pF
+  IProbe:Iout d out
+end PAcore
+
+f0 = 5.9 GHz
+
+Tuner:SourceTuner1  s  0  Zdefault=50  Z0=50  BiasTee=off  Z[1]=50
+PAcore:PA1  s  out
+Tuner:LoadTuner1  out  0  Zdefault=50  Z0=50  BiasTee=on  Vbias=48  Z[1]=50
+
+analysis LP1 type=loadpull Tone="f0" ToneUnit=GHz MaxHarm=5 LoadTuner=LoadTuner1 SourceTuner=SourceTuner1 Grid="load_grid.gam" Sweep=Load TuneHarm=1 Compression=3 GainType=Gt PinStart=-10 PinStep=1 PinMax=36 Tickle=-50 MaxIter=100 FFTOverSample=1 Tol=1e-6 DriveStepping=IfNecessary

@@ -83,6 +83,18 @@ or a parallel expr field — pick the cleaner; the engine already resolves expre
 *(No model changes for DC — `DcAnalysis` is essentially fieldless in v1 (operating point); HB is fully
 covered by existing fields.)*
 
+### 2.4 A fields analysis from harmonic balance (brief-paa-6)
+`FieldsAnalysis` carries two more strings, written to the `.cnl` and the `.csch` only when set:
+
+| Key | Field | Meaning |
+|---|---|---|
+| `waves=` | `Waves` | The name of a harmonic-balance analysis of the same bench. The pattern is formed from the block's terminal voltages in that analysis's solution, with the currents from the block's own linear stamp at that frequency (I = Y·V); `drive=` and `weights=` are not read. A `parametric_sweep` around the HB analysis gives a pattern at each of its points, on the sweep's axes. Any other kind of analysis, or a multi-tone one, is refused. |
+| `harmonic=` | `HarmonicExpr` | With `waves=`: the harmonic of the solution, 1 when blank. Its frequency must be one the block's record holds, else refused naming the nearest held frequency. |
+
+With `waves=` the analysis needs no `freq=` (the directive requires one of the two). The array group (`F1.array.*`) gains
+`Pdel`, the watts the circuit delivers into each element; `ActiveGamma(F1, n)` and `ActiveVswrMax(F1)` read the active
+reflections, and refuse under a sweep, naming the cube that holds them per point.
+
 ---
 
 ## 3. Persistence (in `.csch`)

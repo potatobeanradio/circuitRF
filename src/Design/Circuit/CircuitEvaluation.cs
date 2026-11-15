@@ -703,6 +703,15 @@ public static class CircuitEvaluation
                 return ($"TRL '{trl.Name}': fixtures from {trl.Thru}, {trl.Reflect} and {trl.Line} -> " +
                         $"{trl.FixtureAPath}, {trl.FixtureBPath}", 1, false);
 
+            // brief-paa-6 — its points are its HB analysis's, a sweep around that included
+            case FieldsAnalysis fa when fa.FromHarmonicBalance:
+            {
+                var sel = ChainSelector.Select(tb, fa.Waves.Trim(), a => a is HarmonicBalanceAnalysis, "HB", "");
+                long points = sel.Selected is ParametricSweepAnalysis around ? ParametricSweepRunSummary.TotalPoints(around, tb) : 1;
+                return ($"Fields '{fa.Name}': the pattern of '{fa.Block}' from {fa.FrequencyText}" +
+                        (sel.Selected is ParametricSweepAnalysis wrap ? $", at each of sweep '{wrap.Name}''s {points} points" : ""), points, points > 1);
+            }
+
             case FieldsAnalysis fa:
                 return ($"Fields '{fa.Name}': recombine '{fa.Block}' at {fa.FrequencyText}, driven from " +
                         $"{(fa.DriveExpr.Contains(',') ? "ports" : "port")} {fa.DriveExpr}", 1, false);
@@ -861,7 +870,8 @@ public static class CircuitEvaluation
                 if (ChainSelector.BaseOfChain(psa, tb) is FieldsAnalysis swept)
                 {
                     CircuitRF.Design.Em3d.FieldCosimulation.PlanSweep(swept, nl, 1);
-                    fieldsPoint = CircuitRF.Design.Em3d.FieldCosimulation.SweepPoints(fields?.Output ?? FieldsOutput.Written);
+                    fieldsPoint = CircuitRF.Design.Em3d.FieldCosimulation.SweepPoints(fields?.Output ?? FieldsOutput.Written,
+                        new CircuitRF.Design.Em3d.FieldsHbContext(lib, tb, baseDirectory));
                     if (fields is not null)
                         fields.Metrics[resultName ?? swept.Name] = CircuitRF.Design.Em3d.FieldCosimulation.SweptMetrics(swept, psa);
                 }
@@ -870,6 +880,12 @@ public static class CircuitEvaluation
             }
 
             // brief-sar-9 — an EM block's per-port fields recombined by this circuit's waves; no EM run
+            // brief-paa-6 — waves=HB1: the pattern from that analysis's solution, at every point of a sweep that wraps it
+            case FieldsAnalysis fa when fa.FromHarmonicBalance:
+                return CircuitRF.Design.Em3d.FieldCosimulation.RunFromHarmonicBalance(fa, nl,
+                    new CircuitRF.Design.Em3d.FieldsHbContext(lib, tb, baseDirectory), notes, control,
+                    fields is null ? null : m => fields.Metrics[resultName ?? fa.Name] = m);
+
             case FieldsAnalysis fa:
                 return CircuitRF.Design.Em3d.FieldCosimulation.Run(fa, nl, notes, control, fields?.Artifacts,
                     fields?.Output ?? FieldsOutput.Written, fields?.Label,

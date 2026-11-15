@@ -44,7 +44,7 @@ public static partial class FieldCosimulation
     /// <summary>R-paa3-6 — <see cref="Run"/> on a Phased Antenna Array.</summary>
     private static DataSet RunArray(FieldsAnalysis fa, ElaboratedNetlist nl, PhasedArrayModel pa, double hz, List<(int Port, Complex Amplitude)> drives,
                                     List<string> notes, RunControl? control, CircuitRF.Design.Circuit.FieldsOutput output,
-                                    Action<IFieldMetrics>? metrics, string? sweepPoint)
+                                    Action<IFieldMetrics>? metrics, string? sweepPoint, HbWaveSource? hb = null)
     {
         string who = $"Fields '{fa.Name}'";
         string name = Path.GetFileName(pa.RecordPath);
@@ -53,7 +53,7 @@ public static partial class FieldCosimulation
         if (far.PortCount != pa.Record.PortCount)
             throw new InvalidOperationException($"{who}: '{name}' lists {pa.Record.PortCount} ports and its far field holds {far.PortCount}. Run its EM setup again.");
         int[] at;
-        if (fa.AtEveryFrequency) at = [.. Enumerable.Range(0, far.FrequenciesHz.Count)];
+        if (fa.AtEveryFrequency && hb is null) at = [.. Enumerable.Range(0, far.FrequenciesHz.Count)];
         else
         {
             int i = far.IndexOf(hz);
@@ -73,13 +73,15 @@ public static partial class FieldCosimulation
         {
             control?.ThrowIfCancellationRequested();
             freqs[f] = far.FrequenciesHz[at[f]];
-            waves[f] = SwitchedOff(pa, Weigh(fa, z0, SParameterEngine.BlockWaves(nl, freqs[f], fa.Block, drives)));
+            // brief-paa-6 — a harmonic-balance solution's waves at its one frequency, in place of the linear solve's
+            waves[f] = SwitchedOff(pa, hb?.Waves ?? Weigh(fa, z0, SParameterEngine.BlockWaves(nl, freqs[f], fa.Block, drives)));
             elements[f] = Elements(pa, far, freqs[f]);
             points[f] = ArrayPointOf(fa, pa, far, at[f], waves[f], elements[f]);
         }
         string where = at.Length == 1 ? MaterialDispersion.Hz(freqs[0]) : $"{at.Length} frequencies, {MaterialDispersion.Hz(freqs[0])} to {MaterialDispersion.Hz(freqs[^1])}";
         double firstHz = freqs[0];
-        WarnIfNothingReachesTheBlock(fa, nl, waves, where, d => Weigh(fa, z0, SParameterEngine.BlockWaves(nl, firstHz, fa.Block, d)));
+        if (hb is null)
+            WarnIfNothingReachesTheBlock(fa, nl, waves, where, d => Weigh(fa, z0, SParameterEngine.BlockWaves(nl, firstHz, fa.Block, d)));
 
         var data = new DataSet();
         var lines = new List<string>();
@@ -92,6 +94,28 @@ public static partial class FieldCosimulation
                 data.Add($"{group}.{cube}", value);
         AddWaves(data, freqs, waves, [.. Enumerable.Range(1, n)]);
         AddArrayCubes(data, pa, freqs, waves);
+        if (hb is not null)
+        {
+            // brief-paa-6 R-paa6-3 — the watts HB delivers into each element, beside the per-watt cubes
+            var pdel = new double[freqs.Length * n];
+            for (int i = 0; i < freqs.Length; i++)
+                for (int e = 0; e < n; e++)
+                    pdel[i * n + e] = waves[i].A[e].Magnitude * waves[i].A[e].Magnitude - waves[i].B[e].Magnitude * waves[i].B[e].Magnitude;
+            data.Add($"{ArrayGroup}.{ElementDeliveredCube}",
+                     new DataCube([new Axis("f", (double[])freqs.Clone(), "Hz"), new Axis("element", [.. Enumerable.Range(1, n).Select(k => (double)k)], "")], pdel) { Unit = "W" });
+            lines.Add(HbHeadline(fa, hb, n));
+            lines.Add(pa.LevelNote);
+            if (pa.CouplingNote is { } hbCoupling) lines.Add(hbCoupling);
+            lines.AddRange(sentences.Skip(1));
+            Interlocked.Increment(ref _runs);
+            Report(fa, nl, notes, lines, [], sweepPoint, hb);
+            if (metrics is not null)
+            {
+                var hbPattern = new CosimPatternMetrics(fa, far, at[0], waves[0], points[0]);
+                metrics(new ArrayFieldsMetrics(fa, pa, far, freqs[0], waves[0], elements[0], hbPattern, nl, []));
+            }
+            return data;
+        }
         AddCircuitS(data, nl, freqs);
 
         var first = waves[0];
@@ -237,13 +261,13 @@ public static partial class FieldCosimulation
                 switch (metric)
                 {
                     case FieldMetric.ActiveVswrMax:
-                        double worst = 0;
-                        for (int e = 0; e < pa.PortCount; e++)
-                            if (pa.Lattice.IsOn(e) && w.A[e] != Complex.Zero) worst = Math.Max(worst, (w.B[e] / w.A[e]).Magnitude);
-                        return worst >= 1 ? double.PositiveInfinity : (1 + worst) / (1 - worst);
+                        return ActiveVswrMaxOf(w, pa.Lattice.IsOn);
                     case FieldMetric.PowerBalance:
                         return _balance ??= Balance();
                     case FieldMetric.BeamNfDb:
+                        if (drives.Count == 0)
+                            throw new ExpressionException($"BeamNfDb({fa.Name}) is the noise figure from a driven circuit port, and fields analysis '{fa.Name}' forms its pattern from " +
+                                                          "harmonic balance, which has no noise. Read it from a fields analysis without waves=.");
                         return _nf ??= BeamNoiseFigureDb();
                     case FieldMetric.GratingMarginDeg:
                     {
@@ -285,6 +309,9 @@ public static partial class FieldCosimulation
                 }
             }
         }
+
+        /// <summary>brief-paa-6 R-paa6-3 — element <paramref name="element"/>'s active reflection.</summary>
+        public Complex ActiveGamma(int element) => ActiveGammaOf(fa, w, element, pa.Lattice.IsOn);
 
         /// <summary>The beam from its local evaluation, started at the overview's maximum.</summary>
         private ArrayBeamMetrics Beam()

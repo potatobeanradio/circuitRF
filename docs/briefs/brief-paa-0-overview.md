@@ -49,6 +49,7 @@ series). Four things stop that from being a phased array:
 | `brief-paa-4-feed-mode-and-weights.md` | Feed mode: element scope, `steer`/`taylor`/…, quantisation, `Off`, the channel cell, the PhaseShifter block | 3 |
 | `brief-paa-5-dynamic-symbol.md` | The symbol drawn from the instance's parameters, both modes | 3, 4 |
 | `brief-paa-6-brute-force-hb.md` | The pattern from HB's waves, each PA's loading, the loadpull overlay; a 1×4 bench of real PAs | 3 |
+| `brief-paa-6b-envelope.md` | The same with a modulated signal: the radiated envelope, ACLR and EVM in named directions, each PA's active load over the record, a time-averaged pattern | 6 |
 | `brief-paa-7-receive-and-noise.md` | Incident waves by reciprocity, the array's noise from its pattern, G/T, interferers | 4 |
 | `brief-paa-8-speed-and-live.md` | Measured cost, the identical-channel fast path, sliders that keep up | 4 |
 | `brief-paa-9-tool-window.md` | Tools ▸ Phased Array: aperture, (u,v) map with drag-to-steer, cuts, readouts, scan maps | 5, 8 |

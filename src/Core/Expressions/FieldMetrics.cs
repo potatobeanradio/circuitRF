@@ -55,10 +55,10 @@ public static class FieldMetricFunctions
     public static IReadOnlyList<string> Names { get; } =
         ["B1pMean", "B1pMin", "B1pCoV", "psSAR", "SARwb", "SarEff", "Pabs",
          "RealizedGainDbi", "GainDbi", "DirectivityDbi", "RadiationEfficiency", "TrpDbm", "PeakEirpDbm",
-         "HpbwDeg", "SllDb", "PointingErrorDeg", "ScanLossDb", "GratingMarginDeg", "PowerBalance", "ActiveVswrMax", "BeamNfDb"];
+         "HpbwDeg", "SllDb", "PointingErrorDeg", "ScanLossDb", "GratingMarginDeg", "PowerBalance", "ActiveVswrMax", "BeamNfDb", "ActiveGamma"];
 
     public static bool IsFieldMetric(string name) => name is
-        "B1pMean" or "B1pMin" or "B1pCoV" or "psSAR" or "SARwb" or "SarEff" or "Pabs" || IsPatternMetric(name) || IsArrayMetric(name);
+        "B1pMean" or "B1pMin" or "B1pCoV" or "psSAR" or "SARwb" or "SarEff" or "Pabs" or "ActiveGamma" || IsPatternMetric(name) || IsArrayMetric(name);
 
     /// <summary>brief-paa-3 R-paa3-6 — the functions that read a Phased Antenna Array's beam.</summary>
     public static bool IsArrayMetric(string name) => name is
@@ -97,4 +97,9 @@ public interface IFieldMetrics
     /// direction in degrees for a pointing error. Only an array's analysis answers; every other refuses.</summary>
     double EvaluateArray(FieldMetric metric, string? plane, double? theta0Deg, double? phi0Deg)
         => throw new ExpressionException($"'{FieldMetricFunctions.NameOf(metric)}' reads the beam of a Phased Antenna Array, and this fields analysis's block is not one.");
+
+    /// <summary>brief-paa-6 R-paa6-3 — <c>ActiveGamma(F, n)</c>: the reflection the block presents at element (port) <paramref name="element"/>, b/a with a the wave from the
+    /// circuit into the block. Answered by an array's analysis and by one whose waves come from harmonic balance.</summary>
+    System.Numerics.Complex ActiveGamma(int element)
+        => throw new ExpressionException("ActiveGamma reads each element's waves, which a Phased Antenna Array's fields analysis or one with waves= keeps, and this one does not.");
 }

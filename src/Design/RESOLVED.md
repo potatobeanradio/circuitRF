@@ -31718,3 +31718,40 @@ the 2×2. Fixtures and harness: `testdata/phased-array/`.
 - **`RecordLattice`** fits rows by y (top first) and columns by x within a thousandth of the closest two ports, rect or tri (odd rows
   half a pitch RIGHT, ArrayLattice's convention; LEFT is refused with the mirror remedy), and explains a short row, two pitches, an
   odd offset or a rotation. A new planar run of a 2×2 of stubs (0.6 s) fits 2×2 at the drawn 10 × 8 mm, row-major.
+
+## brief-paa-6 — a fields analysis from harmonic balance, each PA's active load, the loci on the contours (2026-11-14)
+
+- **The waves are read from HB's back-solver, the currents from the block's own stamp.** `FieldCosimulation.Hb.cs`:
+  `HbLinearBackSolver.GetNodeVoltage` gives every node (the same numbers HB's own V cube carries), and the block is stamped
+  alone in a fresh `MnaSystem` at k·f0 with an ideal source on each node it touches, so the current each source delivers is
+  I = Y·V with exactly the Y HB stamped. Every other node is tied to ground by 1 S, which is safe only because neither block
+  (SnpModel, an Elements-mode `PhasedArrayModel`) mints an internal node. **The stamp overwrites the model's
+  `PortBranchIndices`** with the small system's; harmless after HB has finished, and every later reader (BlockWaves) stamps
+  again before reading them.
+- **Scale.** HB phasors are peak, so a peak wave carries |a|²/2 W; CosimWaves keeps |A|² as watts, so A = a/√2, and the
+  pattern is referred to a "drive voltage" of 1/√2 on that scale (`CosimWaves.ReferenceVoltage`): the published E is the
+  field at HB's own drive and the accepted power is HB's watts. Realized gain is per watt incident on the block.
+- **Inside a sweep the sweep wraps HB1, not F1**, so F1 runs that sweep itself: for the length of the run HB1's entry in
+  the bench is stood in for by a fields analysis of the same name, and `ParametricSweepEngine`'s runOtherInner runs HB and
+  forms the pattern at each point (warm-started from the previous point, cold again if that fails). The bench is restored in
+  a finally, as the sweep engine restores its swept variable.
+- **Gate 1's drive is −60 dBm, not "40 dB below compression".** The amplifier is biased near pinch-off and its gain moves
+  with drive, so HB against the linear analysis differs by its own nonlinearity, falling as the drive squared: 1.1e-5 of the
+  pattern's peak (2.8e-6 in Γ_act) at −18 dBm, 7.4e-10 (2.4e-10) at −60 — 42 dB lower predicts 1.1e-5 × 10^−4.2 = 7e-10.
+  Gate 2 (each PA loaded by its active impedance, harmonics by HB's own V/I) agrees to 4.4e-12 in Pout and 1.6e-10 pp in PAE.
+- **The headless Data Display could not read a `.spl` or `.lpcwave`.** `PlotSourceFile.LoadWithNotes`' fallback said it
+  handled them, but its importer is the `.npy` reader; only the window's library read them (`SplReader`/`LpcwaveReader`). So
+  `render` and UiSnapshot refused any display with a loadpull contour on an interchange file. It now reads them as the
+  library does.
+- **Labelled families.** `Trace.LabelsFamilyCurves` now also labels a family over the array's `element` axis (each Γ_act
+  locus coloured and named "element = n"), and a family over a swept angle that is not one of the pattern's own (θ0): the old
+  rule excluded any angle-unit family as "the pattern itself", which drew every scan's cut in one colour. A swept angle's
+  label reads in degrees.
+- **The retuned amplifier is potentially unstable** (μ 0.89–0.99 over 0.25–24 GHz, |S22| 1.012 near 5 GHz): near pinch-off its
+  output is nearly lossless and Cgd feeds back. A gate series or shunt resistor does not lift μ above 1. The 2 GHz original
+  behaves the same. Every point of the array bench converges.
+- **The circuit loadpull of it fails at a few loads, and at Γ = 0 exactly.** On the Loadpull example's own grid six of 49
+  loads did not converge (the HB Newton's Jacobian goes singular at its first solve there), and Γ = 0.2∠150° "converged" to a
+  root at 201 dBm through the continuity guard. Γ = 0.001 converges where Γ = 0 does not, with the source and load harmonics
+  at 50 Ω or not, at any tickle; plain HB through the same tuners converges at 50 Ω. Not chased here: the fixture's grid is
+  offset 15° from the real axis (45 of 48 converge, none run away), which covers every active reflection the bench produces.

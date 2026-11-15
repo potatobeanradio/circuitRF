@@ -1219,6 +1219,8 @@ public sealed class CnlReader
             WeightsExpr = kv.GetValueOrDefault("weights", ""),
             Norm        = kv.GetValueOrDefault("norm", FieldsAnalysis.NormAccepted),
             AverageExpr = kv.GetValueOrDefault("average", "yes"),
+            Waves       = kv.GetValueOrDefault("waves", ""),
+            HarmonicExpr = kv.GetValueOrDefault("harmonic", ""),
             Enabled     = ParseEnabledToken(tokens),
         };
         return true;

@@ -141,6 +141,9 @@ public static partial class FieldCosimulation
         ArgumentNullException.ThrowIfNull(fa);
         ArgumentNullException.ThrowIfNull(nl);
         string who = $"Fields '{fa.Name}'";
+        if (fa.FromHarmonicBalance)
+            throw new InvalidOperationException($"{who}: waves='{fa.Waves.Trim()}' forms the pattern from a harmonic-balance analysis, which this run has no bench to run. " +
+                                                "Run it from the schematic or the fields verb.");
         var (snp, recordPath, hz, drives) = Prepare(fa, nl, who);
         // brief-paa-3 — a Phased Antenna Array's pattern is formed by its own path; an EM Field Data block's below is unchanged.
         if (ArrayBlock(fa, nl) is { } array) return RunArray(fa, nl, array, hz, drives, notes, control, output, metrics, sweepPoint);
@@ -224,7 +227,7 @@ public static partial class FieldCosimulation
     {
         if (string.IsNullOrWhiteSpace(fa.Block)) throw new InvalidOperationException($"{who}: block= names no {EmFieldDataRecord.DisplayName} block.");
         double hz = double.NaN;
-        if (!fa.AtEveryFrequency)
+        if (!fa.AtEveryFrequency && !fa.FromHarmonicBalance)
         {
             try { hz = FreqUnit.ResolveHz(fa.FreqExpr, fa.FreqUnit, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit); }
             catch (Exception e) { throw new InvalidOperationException($"{who}: freq='{fa.FreqExpr}' could not be resolved ({e.Message})."); }
@@ -335,6 +338,10 @@ public static partial class FieldCosimulation
     {
         public double Accepts => AvailableW > 0 ? AcceptedW / AvailableW : 0;
         public bool Multi => Drive.Drives.Count > 1;
+
+        /// <summary>brief-paa-6 — the voltage the pattern is referred to, on these waves' scale, when it is not a drive port's: a harmonic-balance
+        /// solution's waves are referred to 1/√2, which leaves the pattern the field at that solution's own drive.</summary>
+        public Complex? ReferenceVoltage { get; init; }
     }
 
     internal static CosimWaves Weigh(FieldsAnalysis fa, PortFieldSet set, SParameterEngine.BlockPortDrive drive)

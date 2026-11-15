@@ -24,6 +24,7 @@ public sealed partial class Evaluator
     {
         if (FieldMetricFunctions.IsPatternMetric(cl.Name)) return EvalPatternMetric(cl, scope);
         if (FieldMetricFunctions.IsArrayMetric(cl.Name)) return EvalArrayMetric(cl, scope);
+        if (cl.Name == "ActiveGamma") return EvalActiveGamma(cl, scope);
 
         // (metric, smallest arity, largest arity, which argument is the region, which the mass)
         var (metric, lo, hi, regionAt, massAt) = cl.Name switch
@@ -112,6 +113,21 @@ public sealed partial class Evaluator
         double? theta = metric == FieldMetric.PointingErrorDeg ? Angle(cl, cl.Args[1], scope) : null;
         double? phi = metric == FieldMetric.PointingErrorDeg ? Angle(cl, cl.Args[2], scope) : null;
         return new Value(_ctx.GetFieldMetrics(analysis).EvaluateArray(metric, plane, theta, phi));
+    }
+
+    /// <summary>brief-paa-6 R-paa6-3 — <c>ActiveGamma(F, n)</c>: element n's active reflection, complex.</summary>
+    private Value EvalActiveGamma(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length != 2) throw new ArityException(cl.Name, 2, cl.Args.Length);
+        if (_ctx is null)
+            throw new ExpressionException("ActiveGamma() reads a fields analysis's result, so it belongs in a measure or goal line.");
+        string analysis = FieldsAnalysisNamed(cl);
+        var v = EvalExpr(cl.Args[1], scope);
+        double n = v.Kind == ValueKind.Real ? v.AsReal()
+            : throw new TypeErrorException("ActiveGamma(): the element is a number, 1 for the first, as ActiveGamma(F1, 3).");
+        if (Math.Abs(n - Math.Round(n)) > 1e-9)
+            throw new TypeErrorException($"ActiveGamma(): the element is a whole number, and {n} is not.");
+        return new Value(_ctx.GetFieldMetrics(analysis).ActiveGamma((int)Math.Round(n)));
     }
 
     private double Angle(CallExpr cl, Expr arg, Scope scope)

@@ -136,6 +136,17 @@ public sealed class FieldsAnalysis(string name) : Analysis(name)
     /// <summary><c>yes</c> (the default): the averaged SAR too. <c>no</c>: local SAR and B1 only, the fast path.</summary>
     public string AverageExpr { get; init; } = "yes";
 
+    /// <summary>brief-paa-6 R-paa6-1 — <c>waves=</c>: the harmonic-balance analysis of the same bench whose solution gives the block's waves, in place
+    /// of the linear solve; empty for the linear solve. When it is stated the frequency is <see cref="HarmonicExpr"/> times that analysis's fundamental and
+    /// <see cref="FreqExpr"/> is not needed.</summary>
+    public string Waves { get; init; } = "";
+
+    /// <summary>brief-paa-6 R-paa6-1 — <c>harmonic=</c>: which harmonic of <see cref="Waves"/>'s solution the waves are read at; 1 when blank.</summary>
+    public string HarmonicExpr { get; init; } = "";
+
+    /// <summary>Whether the waves come from a harmonic-balance solution rather than the linear solve.</summary>
+    public bool FromHarmonicBalance => Waves.Trim().Length > 0;
+
     public const string NormAccepted = "accepted", NormAvailable = "available";
 
     /// <summary>brief-cosim-pattern-3 R-cp3-4 — <c>freq=all</c>: every frequency the run's far field holds. Not an expression, so every
@@ -146,7 +157,8 @@ public sealed class FieldsAnalysis(string name) : Analysis(name)
     public bool AtEveryFrequency => FreqExpr.Trim().Equals(EveryFrequency, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The frequency in words, for a summary line.</summary>
-    public string FrequencyText => AtEveryFrequency ? "every frequency of its far field" : $"{FreqExpr} {FreqUnit}";
+    public string FrequencyText => FromHarmonicBalance ? $"harmonic {(HarmonicExpr.Trim().Length == 0 ? "1" : HarmonicExpr.Trim())} of {Waves.Trim()}"
+                                 : AtEveryFrequency ? "every frequency of its far field" : $"{FreqExpr} {FreqUnit}";
 
     /// <summary>Whether <see cref="Norm"/> asks for the available power; anything but <c>available</c> is accepted.</summary>
     public bool PerAvailable => Norm.Trim().Equals(NormAvailable, StringComparison.OrdinalIgnoreCase);

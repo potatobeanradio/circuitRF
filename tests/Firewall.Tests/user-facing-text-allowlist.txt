@@ -1710,3 +1710,30 @@ src/Design/Em3d/FieldCosimulation.Array.cs|BeamNfDb({fa.Name}): nothing from cir
 src/Engine/SParameterEngine.Beam.cs|'{instancePath}' is a {block.ComponentType}, not an S-parameter block.
 src/Engine/SParameterEngine.Beam.cs|The circuit has no instance '{instancePath}'.
 src/Engine/SParameterEngine.Beam.cs|The noise radiated by an array needs every circuit port terminated in a resistive Z0 (Re Z0 > 0); one port's Z0 has none.
+# brief-paa-6 — a fields analysis whose waves come from harmonic balance (waves=, harmonic=) and ActiveGamma: refusals of the fields co-simulation family above.
+src/Core/Expressions/Evaluator.Fields.cs|ActiveGamma() reads a fields analysis's result, so it belongs in a measure or goal line.
+src/Core/Expressions/Evaluator.Fields.cs|ActiveGamma(): the element is a number, 1 for the first, as ActiveGamma(F1, 3).
+src/Core/Expressions/Evaluator.Fields.cs|ActiveGamma(): the element is a whole number, and {n} is not.
+src/Core/Expressions/FieldMetrics.cs|ActiveGamma reads each element's waves, which a Phased Antenna Array's fields analysis or one with waves= keeps, and this one does not.
+src/Design/Em3d/FieldCosimulation.Hb.cs|'{FieldMetricFunctions.NameOf(metric)}' reads a field set, and fields analysis '{fa.Name}' forms a far field from harmonic balance.
+src/Design/Em3d/FieldCosimulation.Hb.cs|'{FieldMetricFunctions.NameOf(metric)}' reads the beam of a {PhasedArrayModel.DisplayName}, and '{fa.Block}' is an {EmFieldDataRecord.DisplayName} block.
+src/Design/Em3d/FieldCosimulation.Hb.cs|ActiveGamma({fa.Name}, {n}): '{fa.Block}' has elements 1 to {w.A.Length}.
+src/Design/Em3d/FieldCosimulation.Hb.cs|ActiveGamma({fa.Name}, {n}): element {n} is switched off, so it has no active reflection.
+src/Design/Em3d/FieldCosimulation.Hb.cs|ActiveGamma({fa.Name}, {n}): no wave reaches element {n} from the circuit, so it has no active reflection.
+src/Design/Em3d/FieldCosimulation.Hb.cs|{metric}({fa.Name}) has no pattern to read.
+src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: '{fa.Block}' has {z0s.Count} ports and its far field {far.PortCount}.
+src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: '{fa.Block}' is a {block.ComponentType}, not an {EmFieldDataRecord.DisplayName} block or a {PhasedArrayModel.DisplayName}.
+src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: harmonic='{text}' is not a number ({e.Message}).
+src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: harmonic='{text}' is {value.ToString(
+src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: harmonic={k}, and '{hbName}' solves harmonics up to {maxHarm} (its MaxHarm). Raise MaxHarm, or name a lower harmonic.
+src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: the circuit has no instance '{fa.Block}'.
+src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: waves='{name}' names no analysis of this bench. It names a harmonic-balance analysis. {these}
+src/Design/Em3d/FieldCosimulation.Sweep.cs|{who}: waves= needs the bench, which this run was not given.
+src/Design/Em3d/FieldCosimulation.Array.cs|BeamNfDb({fa.Name}) is the noise figure from a driven circuit port, and fields analysis '{fa.Name}' forms its pattern from 
+src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: '{fa.Block}' is a {PhasedArrayModel.DisplayName} in Feed mode, whose elements are inside it; waves= reads an 
+src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: '{hbName}' is a multi-tone analysis, whose solution has a mixing product for each frequency, and waves= forms a 
+src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: harmonic {k} of '{hbName}' is {MaterialDispersion.Hz(hz)}, and '{name}' holds no pattern there: the nearest frequency it 
+src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: waves='{name}' names a {KindOf(named)} analysis, and waves= takes a harmonic-balance analysis, whose solution gives the block's 
+src/Design/Em3d/FieldCosimulation.Sweep.cs|ActiveGamma({fa.Name}, {element}) is one number, and fields analysis '{fa.Name}' has one per point of the sweep over {sweep.SweepVarName}. 
+src/Design/Em3d/FieldCosimulation.Sweep.cs|{FieldMetricFunctions.NameOf(metric)}({fa.Name}) is one number, and fields analysis '{fa.Name}' has one per point of the sweep over 
+src/Design/Em3d/FieldCosimulation.cs|{who}: waves='{fa.Waves.Trim()}' forms the pattern from a harmonic-balance analysis, which this run has no bench to run. 

@@ -378,7 +378,9 @@ public static class CnlWriter
         SParameterAnalysis sp         => FormatSParameterAnalysis(sp),
         DcAnalysis dc                 => $"analysis {dc.Name} type=dc",
         FieldsAnalysis fa             => $"analysis {fa.Name} type=fields block={fa.Block} freq=\"{fa.FreqExpr}\" freqUnit={fa.FreqUnit} " +
-                                         $"drive={fa.DriveExpr} {(fa.WeightsExpr.Length > 0 ? $"weights=\"{fa.WeightsExpr}\" " : "")}norm={fa.Norm} average={fa.AverageExpr}",
+                                         $"drive={fa.DriveExpr} {(fa.WeightsExpr.Length > 0 ? $"weights=\"{fa.WeightsExpr}\" " : "")}norm={fa.Norm} average={fa.AverageExpr}" +
+                                         (fa.FromHarmonicBalance ? $" waves={fa.Waves.Trim()}" : "") +
+                                         (fa.HarmonicExpr.Trim().Length > 0 ? $" harmonic=\"{fa.HarmonicExpr.Trim()}\"" : ""),
         OscillatorAnalysis osc        => $"analysis {osc.Name} type=osc" +
                                          (osc.Probe.Length > 0 ? $" Probe={osc.Probe}" : "") +
                                          $" Fguess=\"{osc.FguessExpr}\"" +

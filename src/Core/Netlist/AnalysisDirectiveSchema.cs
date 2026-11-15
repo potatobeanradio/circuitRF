@@ -261,15 +261,17 @@ public static partial class AnalysisDirectiveSchema
         // brief-sar-9 R-sar9-3 — an EM block's per-port fields recombined by this circuit's port waves
         new("fields", ["field_cosim", "cosim"],
         [
-            new("block",    Required: true,  Summary: "Instance path of the EM Field Data block whose result record holds a far field (a 3D run with Radiation pattern), a field set (Sar.PerPortFields), or both. A plain SnP is refused."),
-            new("freq",     Required: true,  Summary: "The frequency the fields are recombined at: one the 3D run kept (its Sar.FrequenciesGHz, or a frequency of its far field), or all for every frequency of the far field. A frequency between them is refused. Bare number in Hz unless freqUnit= or Unit= says otherwise."),
+            new("block",    Required: true,  Summary: "Instance path of the EM Field Data block whose result record holds a far field (a 3D run with Radiation pattern), a field set (Sar.PerPortFields), or both, or of a Phased Antenna Array. A plain SnP is refused."),
+            new("freq",                      Summary: "The frequency the fields are recombined at: one the 3D run kept (its Sar.FrequenciesGHz, or a frequency of its far field), or all for every frequency of the far field. A frequency between them is refused. Bare number in Hz unless freqUnit= or Unit= says otherwise. Not used with waves=, whose frequency is harmonic= times the HB analysis's fundamental."),
             new("freqUnit", Default: "Hz",   Summary: "Unit for freq."),
             new("Unit",                      Summary: "Same as freqUnit."),
             new("drive",    Default: "1",    Summary: "The circuit port that drives the circuit, by number or by the name of its Term, TermG or P1Tone; every other circuit port is terminated in its Z0. Several, comma-separated (1,2), drive at once. A source that is not a port (VTone, ITone, PnTone, MOD_Source) is refused."),
             new("weights",                   Summary: "Each driven port's relative incident-wave amplitude, with no units, comma-separated in drive='s order: complex expressions over the globals (W1,W2 or 1,polar(1,-90)), so tune mag(W2)/phase(W2) steer a channel. Only the ratios matter. Empty, or an empty item: 1, or a P1Tone's Pavl and Phase; a P1Tone doing that cannot be compared with a drive that does not, and is refused."),
             new("norm",     Default: "accepted", Summary: "accepted | available: the drive power every SAR and B1 result is per watt of."),
             new("average",  Default: "yes",  Summary: "yes: averaged SAR too (the setup's masses). no: local SAR and B1 only — the fast path."),
-        ]),
+            new("waves",                     Summary: "The name of a harmonic-balance analysis of this bench: the pattern is formed from the block's terminal voltages in its solution, with the currents from the block's own S at that frequency, instead of from a linear solve, so a compressed amplifier on each port shows in the beam. drive= and weights= are not used. A parametric_sweep around that analysis gives a pattern at each of its points. Far field only; a multi-tone analysis is refused."),
+            new("harmonic", Default: "1",    Summary: "With waves=: the harmonic of the HB solution the pattern is formed at. Its frequency, harmonic times the fundamental, must be one the record holds."),
+        ], RequiredOneOf: [["freq", "waves"]]),
 
         // brief-de-4 — Thru-Reflect-Line calibration from three measured standards on the bench; solves no circuit
         new("trl", ["calibration", "trl_calibration"],

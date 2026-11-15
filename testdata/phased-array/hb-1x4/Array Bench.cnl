@@ -1,0 +1,82 @@
+; brief-paa-6 - four amplifiers on the four ports of PAA-1's E3 record (a 1x4 patch array along x, 25.86 mm pitch, 5.9 GHz),
+; each driven from its own P1Tone through a PhaseShifter that steers the beam to theta0 in the x-z plane, all in one
+; harmonic-balance run, and the pattern formed from that run's waves (F1 waves=HB1). No EM run: the record is ../results/e3x.cemr.
+;
+; The amplifier is the Harmonic Balance example's 48 V FET with its matching retuned for 5.9 GHz, the one frequency the record
+; holds. Input: a shunt C and a series L take the 50-ohm source to the gate's 10 ohm in series with 1 pF. Output: the drain feed
+; is a 2.43 nH shunt that resonates the 0.3 pF drain capacitance, so the drain sees the element's active impedance through the
+; DC block. Gate at -3.05 V, drain at 48 V.
+
+define FET (gate drain)
+  parameters Periphery_mm=1
+  Sv = -0.837
+  Sc = 0.71
+  TV0 = 4.268
+  TC = 1.507
+  th = 0.001
+  a = 0.176
+  g = 0.089
+  lam = 0.0012
+  B = 1130
+  SDD:X1  gate  0  drain  0  I[1,0]=_v1/5000  I[2,0]=Periphery_mm*(B*TC*tanh(_v2*a*(tanh(g*(TV0 - _v1 + _v2*th + Sc*ln(exp(-(Sv - _v1)/Sc) + 1)))+1))*ln(exp(-(2*TV0 - 2*_v1 +2*_v2*th + 2*Sc*ln(exp(-(Sv - _v1)/Sc) + 1))/TC) + 1) * (_v2*lam + 1))/2
+end FET
+
+define PA (in out)
+  IProbe:Iin in  i1
+  C:Cin  i1  0  C=1.08 pF
+  L:Lm   i1  m  L=1.27 nH
+  C:Cb1  m   g  C=100 pF
+  L:Lg   g   vg L=100 nH
+  Vdc:Vg vg  0  Vdc=-3.05 V
+  C:Cgs  n7  0  C=1 pF
+  R:Rg   n7  g  R=10 Ohm
+  C:Cgd  d   g  C=0.01 pF
+  C:Cds  d   0  C=0.3 pF
+  FET:X1 g  d  Periphery_mm=1
+  L:Ld   d   vd L=2.43 nH
+  C:Cdec vd  0  C=100 pF
+  Vdc:Vd vdd 0  Vdc=48 V
+  IProbe:Idc vdd vd
+  C:Cb2  d   o  C=100 pF
+  IProbe:Iout o out
+end PA
+
+Pin = -20
+theta0 = 0 deg
+f0 = 5.9 GHz
+
+; element n of the record sits at x_n along the row (patch centres, metres); y = 0
+x1 = -0.03879
+x2 = -0.01293
+x3 = 0.01293
+x4 = 0.03879
+
+P1Tone:P1  s1  0  Num=1  Pavl=Pin dBm  Z=50 Ohm  Freq=f0  Phase=0 deg
+P1Tone:P2  s2  0  Num=2  Pavl=Pin dBm  Z=50 Ohm  Freq=f0  Phase=0 deg
+P1Tone:P3  s3  0  Num=3  Pavl=Pin dBm  Z=50 Ohm  Freq=f0  Phase=0 deg
+P1Tone:P4  s4  0  Num=4  Pavl=Pin dBm  Z=50 Ohm  Freq=f0  Phase=0 deg
+; a PhaseShifter delays by Phase, and steer() is the weight's phase, so each writes its negative
+PhaseShifter:PS1  s1 0 g1 0  Phase=-steer(theta0,0,f0,x1,0)
+PhaseShifter:PS2  s2 0 g2 0  Phase=-steer(theta0,0,f0,x2,0)
+PhaseShifter:PS3  s3 0 g3 0  Phase=-steer(theta0,0,f0,x3,0)
+PhaseShifter:PS4  s4 0 g4 0  Phase=-steer(theta0,0,f0,x4,0)
+PA:PA1  g1  e1
+PA:PA2  g2  e2
+PA:PA3  g3  e3
+PA:PA4  g4  e4
+EmFieldData:EM1  e1 e2 e3 e4  File="../results/e3x.cemr"
+
+analysis HB1 type=hb Tone="f0" ToneUnit=GHz MaxHarm=5 FFTOverSample=1 Tol=1e-6 DriveStepping=IfNecessary
+analysis SW_Pin type=parametric_sweep Var=Pin Values=-20,16,22 Inner=HB1
+analysis SW_theta type=parametric_sweep Var=theta0 Values=0,15,30,45 Unit=deg Inner=SW_Pin
+analysis F1 type=fields block=EM1 waves=HB1
+
+; each amplifier's output power and PAE, read on its own instance
+measure Pout1_dBm = 10*log10(real(0.5*HB1.V("e1",1)*conj(HB1.I("PA1.Iout",1)))*1000)
+measure Pout2_dBm = 10*log10(real(0.5*HB1.V("e2",1)*conj(HB1.I("PA2.Iout",1)))*1000)
+measure Pout3_dBm = 10*log10(real(0.5*HB1.V("e3",1)*conj(HB1.I("PA3.Iout",1)))*1000)
+measure Pout4_dBm = 10*log10(real(0.5*HB1.V("e4",1)*conj(HB1.I("PA4.Iout",1)))*1000)
+measure PAE1 = (real(0.5*HB1.V("e1",1)*conj(HB1.I("PA1.Iout",1))) - real(0.5*HB1.V("g1",1)*conj(HB1.I("PA1.Iin",1))))/real(HB1.V("PA1.vdd",0)*HB1.I("PA1.Idc",0))*100
+measure PAE2 = (real(0.5*HB1.V("e2",1)*conj(HB1.I("PA2.Iout",1))) - real(0.5*HB1.V("g2",1)*conj(HB1.I("PA2.Iin",1))))/real(HB1.V("PA2.vdd",0)*HB1.I("PA2.Idc",0))*100
+measure PAE3 = (real(0.5*HB1.V("e3",1)*conj(HB1.I("PA3.Iout",1))) - real(0.5*HB1.V("g3",1)*conj(HB1.I("PA3.Iin",1))))/real(HB1.V("PA3.vdd",0)*HB1.I("PA3.Idc",0))*100
+measure PAE4 = (real(0.5*HB1.V("e4",1)*conj(HB1.I("PA4.Iout",1))) - real(0.5*HB1.V("g4",1)*conj(HB1.I("PA4.Iin",1))))/real(HB1.V("PA4.vdd",0)*HB1.I("PA4.Idc",0))*100

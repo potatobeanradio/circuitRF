@@ -43,3 +43,26 @@ embedded pattern from circuitRF's own `fields` analysis (one drive per port), an
 
 `paa2_reference.json` is that comparison run on the fixtures themselves (6×6 from the 5×5 and the element, ten scans), made by
 `harness/paa2_reference.py`; the array engine's tests (`PhasedArrayRecordTests`) reproduce it to 1e-9.
+
+## `hb-1x4/` — brute-force harmonic balance (PAA-6)
+
+Four amplifiers on the four ports of `results/e3x.cemr`, in one harmonic-balance run, with the pattern formed from that run's
+waves (`analysis F1 type=fields block=EM1 waves=HB1`). No EM run: the record is the one above.
+
+| File | What |
+|---|---|
+| `Array Bench.cnl` | Four P1Tones, each through a `PhaseShifter` (`Phase=-steer(theta0,0,f0,x_n,0)`: the block delays by `Phase`, and `steer()` is the weight's phase) into a copy of the *Harmonic Balance* example's 48 V FET amplifier, retuned for 5.9 GHz, on the record's four ports. HB1 swept over `theta0` ∈ {0, 15, 30, 45}° and `Pin` ∈ {−20, 16, 22} dBm; each PA's Pout and PAE as measures on its own instance. |
+| `PA Loadpull.cnl`, `load_grid.gam` | The *Loadpull* example's bench retargeted to the same amplifier at 5.9 GHz (a circuit loadpull), its grid polar around 50 Ω out to \|Γ\| = 0.55, where the active reflections fall. The drain supply is the load tuner's, so the loadpull counts its DC power. |
+| `PA Loadpull.spl` | That loadpull's result: the Pout and PAE contours. |
+| `Array Bench F1.npy`, `Array Bench HB1.npy` | `circuitrf fields` and `circuitrf hb` of the bench. |
+| `Array Bench.cdd` | Each element's active reflection against `theta0` on a Smith chart, the same loci over the PA's Pout and PAE contours, the φ = 0 cut at each `theta0`, the peak realized gain, and each PA's Pout and PAE against `theta0`. |
+
+**5.9 GHz, not the 5.8 GHz the brief names**: the record holds 5.9 GHz only, and `waves=` refuses a harmonic the record does
+not hold. The amplifier's matching: a shunt 1.08 pF and series 1.27 nH take 50 Ω to the gate's 10 Ω + 1 pF; a 2.43 nH drain
+feed resonates its 0.3 pF drain capacitance. It gives 12 dB small-signal gain, 40 dBm at 3 dB compression and about 69 % PAE
+at boresight (its active load there, Γ ≈ 0.34∠2°, sits near the loadpull's 70 % point). Biased near pinch-off it is
+potentially unstable (μ just below 1 across the band, as the 2 GHz original is); every point of the bench converges.
+
+Regenerate the results from the repository root with
+`circuitrf fields "testdata/phased-array/hb-1x4/Array Bench.cnl" -o ".../Array Bench F1.npy"`, the same with `hb` for
+`Array Bench HB1.npy`, and `circuitrf lp ".../PA Loadpull.cnl" -o ".../PA Loadpull.spl"`.

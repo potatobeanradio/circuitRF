@@ -58,6 +58,12 @@ public static partial class FieldCosimulation
     {
         string who = $"Fields '{fa.Name}'";
         var (_, recordPath, hz, _) = Prepare(fa, nl, who);
+        // brief-paa-6 — waves= forms one far field at its HB analysis's harmonic, so its size is the record's grid at one frequency
+        if (fa.FromHarmonicBalance)
+        {
+            var (open, refused) = PortFarFieldSet.Open(recordPath);
+            return open is null ? throw new InvalidOperationException($"{who}: {refused}") : new FieldsSweepSize(open.Grid.DirectionCount, 1, points);
+        }
         var plan = SweepPlanOf(fa, recordPath, hz, who, out var far);
         return new FieldsSweepSize(far!.Grid.DirectionCount, plan.FarField.Count, points);
     }
@@ -76,13 +82,16 @@ public static partial class FieldCosimulation
     /// R-cp5-1 — the engine's inner runner for a sweep around a fields analysis. A value that moves <c>freq=</c> fails its point: a stacked cube has one
     /// frequency axis, and a second frequency under it would be labelled as the first.
     /// </summary>
-    public static Func<Analysis, ElaboratedNetlist, CircuitRF.Engine.RunControl?, DataSet> SweepPoints(FieldsOutput output)
+    public static Func<Analysis, ElaboratedNetlist, CircuitRF.Engine.RunControl?, DataSet> SweepPoints(FieldsOutput output, FieldsHbContext? hb = null)
     {
         double? first = null;
         return (inner, nl, control) =>
         {
             var fa = (FieldsAnalysis)inner;
             string who = $"Fields '{fa.Name}'";
+            // brief-paa-6 — a sweep around a fields analysis with waves= runs its HB analysis at each point
+            if (fa.FromHarmonicBalance)
+                return HbSweepPoint(fa, nl, hb ?? throw new InvalidOperationException($"{who}: waves= needs the bench, which this run was not given."), control);
             if (!fa.AtEveryFrequency)
             {
                 double hz = Prepare(fa, nl, who).Hz;
@@ -107,6 +116,15 @@ public static partial class FieldCosimulation
         public double EvaluatePattern(FieldMetric metric, double? thetaDeg, double? phiDeg)
             => throw new ExpressionException($"{metric}({fa.Name}) is one number, and a parametric sweep over {sweep.SweepVarName} wraps fields analysis '{fa.Name}', so it has one per point. " +
                                              $"Plot {fa.Name}.farfield.{metric} over {sweep.SweepVarName}, or read it from a fields analysis no sweep wraps.");
+
+        // brief-paa-6 — the array's own measurements under a sweep refuse the same way, naming the cube that holds them per point
+        public double EvaluateArray(FieldMetric metric, string? plane, double? theta0Deg, double? phi0Deg)
+            => throw new ExpressionException($"{FieldMetricFunctions.NameOf(metric)}({fa.Name}) is one number, and fields analysis '{fa.Name}' has one per point of the sweep over " +
+                                             $"{sweep.SweepVarName}. Plot {fa.Name}.{ArrayGroup}.{ActiveReflectionCube} over {sweep.SweepVarName}, or read it from a fields analysis no sweep wraps.");
+
+        public System.Numerics.Complex ActiveGamma(int element)
+            => throw new ExpressionException($"ActiveGamma({fa.Name}, {element}) is one number, and fields analysis '{fa.Name}' has one per point of the sweep over {sweep.SweepVarName}. " +
+                                             $"Plot {fa.Name}.{ArrayGroup}.{ActiveReflectionCube} over {sweep.SweepVarName}, one locus per element.");
     }
 
     private static void SweepDiagnostics(FieldsAnalysis fa, ElaboratedNetlist nl, PortFarFieldSet far, int port,

@@ -34,7 +34,8 @@ public static partial class FieldCosimulation
     /// Returns what the measurements read, or null at <c>freq=all</c>, where a scalar function has no one frequency to answer at (R-cp4-4).</summary>
     private static CosimPatternMetrics? PublishFarField(FieldsAnalysis fa, ElaboratedNetlist nl, PortFarFieldSet far, IReadOnlyList<int> at,
                                                         IReadOnlyList<(int Port, Complex Amplitude)> drives, DataSet data,
-                                                        List<string> lines, List<string> warnings, RunControl? control, FieldsOutput output, out string? headline)
+                                                        List<string> lines, List<string> warnings, RunControl? control, FieldsOutput output, out string? headline,
+                                                        HbWaveSource? hb = null)
     {
         headline = null;
         int n = far.PortCount;
@@ -45,11 +46,13 @@ public static partial class FieldCosimulation
         {
             control?.ThrowIfCancellationRequested();
             freqs[f] = far.FrequenciesHz[at[f]];
-            waves[f] = Weigh(fa, z0, SParameterEngine.BlockWaves(nl, freqs[f], fa.Block, drives));
+            // brief-paa-6 — a harmonic-balance solution's waves at its one frequency, in place of the linear solve's
+            waves[f] = hb?.Waves ?? Weigh(fa, z0, SParameterEngine.BlockWaves(nl, freqs[f], fa.Block, drives));
         }
         string where = at.Count == 1 ? MaterialDispersion.Hz(freqs[0]) : $"{at.Count} frequencies, {MaterialDispersion.Hz(freqs[0])} to {MaterialDispersion.Hz(freqs[^1])}";
         double firstHz = freqs[0];
-        WarnIfNothingReachesTheBlock(fa, nl, waves, where, d => Weigh(fa, z0, SParameterEngine.BlockWaves(nl, firstHz, fa.Block, d)));
+        if (hb is null)
+            WarnIfNothingReachesTheBlock(fa, nl, waves, where, d => Weigh(fa, z0, SParameterEngine.BlockWaves(nl, firstHz, fa.Block, d)));
         CosimPatternMetrics? Metrics(Em3dPatternPoint? point) => fa.AtEveryFrequency ? null : new CosimPatternMetrics(fa, far, at[0], waves[0], point);
 
         if (output == FieldsOutput.OnDemand)
@@ -75,6 +78,13 @@ public static partial class FieldCosimulation
                 data.Add($"{group}.{name}", cube);
         AddWaves(data, freqs, waves, far.PortNumbers);
 
+        if (hb is not null)
+        {
+            lines.Add(HbHeadline(fa, hb, n));
+            lines.AddRange(sentences.Skip(1));
+            lines.AddRange(checks);
+            return Metrics(points[0]);
+        }
         var first = waves[0];
         string drivenBy = first.Multi
             ? $"driven from circuit ports {string.Join(", ", first.Drive.Drives.Select(d => d.Port))} together ({Pct(first.Accepts)} of their available power accepted) and referred to 1 V at port {drives[0].Port}"
@@ -165,6 +175,7 @@ public static partial class FieldCosimulation
     /// <summary>The circuit's first drive's total voltage on the scale of <see cref="CosimWaves.A"/>: the same scale cancels in the ratio.</summary>
     private static Complex DriveVoltage(CosimWaves w)
     {
+        if (w.ReferenceVoltage is { } reference) return reference;
         var first = w.Drive.Drives[0];
         double incident = w.Drive.Drives.Sum(d => d.Incident.Magnitude * d.Incident.Magnitude);
         double root = Math.Sqrt(w.AvailableW / incident);
