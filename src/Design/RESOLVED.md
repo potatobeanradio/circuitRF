@@ -31797,3 +31797,39 @@ the 2×2. Fixtures and harness: `testdata/phased-array/`.
   a Port, a Feed-mode array on the chosen record (8 × 8 at half a wavelength of the record's centre frequency, `steer(theta0, phi0,
   f0)` from three VARs), and a fields analysis at the record's frequency nearest that centre. It draws before creating the folder,
   so a refused drawing leaves nothing behind.
+
+## brief-paa-10 — the Phased Array example, the user page, and what drawing the benches found (2026-11-15)
+
+- **A drawn Feed-mode bench with a channel could not simulate.** `Channel=` names a cell in a parameter, not as an instance, so
+  `NetExtractor` never carried its definition and the elaborator refused "Channel=TxChannel names no cell" — every PAA bench until
+  now was a `.cnl` with an inline `define`. `NetExtractor.WithPhasedArrayChannel` resolves the name as a cell folder of the
+  schematic's workspace (`../../<name>`, as a placed instance's `CellRef` is), builds its definition exactly as an instance's, and
+  rewrites `Channel=` to the library name when `CellScope` renamed it. A name that is no cell folder is left for the elaborator's own
+  refusal. Gate `PhasedArrayExampleTests.TheTransmitBench_CarriesItsChannelCell_AndSimulates`.
+- **`--set` dropped the variable's unit** (`HbCircuitRun.ApplySet`, shared by every run verb and `CircuitEvaluationRequest.Sets`):
+  `--set theta0=30` on `theta0 = 0 deg` became a bare 30, which `steer()` reads as 30 radians, and `--set theta0=30 deg` did not
+  parse. It now splits the value as a tuning move does (`TunableValue.Split` with the variable's own unit), so a bare value keeps
+  the unit column and a stated one replaces it. Where the site unit and the variable's agreed (a `GHz` tone, a `dBm` drive) nothing
+  moves. Gate `PhasedArrayExampleTests.ASet_KeepsTheVariablesUnit_UnlessItStatesItsOwn`.
+- **Angles, three rules that a bench author meets at once.** `steer()`/`steerDelay()` take a bare number as radians and a `deg`
+  VAR correctly; `RxTheta[k]` and the other incident-wave angles take a bare number as degrees and a `deg` VAR correctly; a
+  measurement's direction (`PointingErrorDeg(F1, θ, φ)`) takes numbers of degrees, and a `deg` VAR arrives there as radians,
+  because `MeasurementEvaluator` binds globals as values without their units (`CarriesAngle` cannot see one in that scope — tried,
+  and reverted as a no-op). Documented on the user page and in the design note; making the measure scope carry units is the fix if
+  it is wanted.
+- **Measures that read a pattern are refused under a sweep, by design** (`SweptFieldsMetrics`, naming the cube to plot). The example
+  keeps an unswept `F1` for its measures and sweeps a second fields analysis, `F2`. G/T against scan cannot be one swept plot: it
+  needs the noise analysis and the fields analysis at the same steering, and a parametric sweep wraps one. It is read per steering
+  (Tuning, or `--set`), tabulated in the example's README.
+- **The example ships its two reduced records** under `results/` — the one exception to `examples/*/results/` being ignored. The root
+  `.gitignore` now excludes `examples/*/results/*` (a directory pattern cannot have files re-included) with `!` lines for the two
+  records, the workspace's own `.gitignore` re-includes the two `_em.npy`, and `src/Ui/CircuitRF.Ui.csproj` copies them as the Model
+  Composer fits are copied. `WorkspaceCopy` (File ▸ New ▸ Examples) already keeps `results/`. Shipped at 5° and one frequency (1.9 MB
+  for the 5×5), not 2°: the full runs were not kept, the 5° record is under the ~2 MB the brief allows, and the array never reads its
+  beam off the record's grid.
+- **The benches were drawn from netlists**, through `NetlistSchematic.Build` with `existingCells` (sub-cells already drawn as folders
+  with an auto symbol, pins added as `Pin` components labelled at their terminals) and, for the four-lane benches, an
+  `ExactPlacement` with `AutoRoute`. An `examples/` schematic is a drawing a user opens, so the lanes matter; the CLI's
+  `netlist --to-schematic` does not pass `existingCells`, so a hierarchical bench cannot be drawn from the command line today.
+- **A loadpull grid path in a `.csch` is workspace-relative** (`4 PA Loadpull/schematic/load_grid.gam`), as the Loadpull example's is;
+  written bare it resolves against the workspace root and the run fails "Grid file not found".

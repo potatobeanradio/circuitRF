@@ -230,6 +230,41 @@ the component's pins connect to (order = the component's pin order); the `key=va
   appear. Its name must not collide with a net name or with another VProbe: either refuses the run. A
   VProbe naming a net nothing else reaches reports nothing and says so.
 
+#### A Phased Antenna Array line, and a Phase Shifter's {#w-phased-array}
+
+The [Phased Antenna Array](phased-array.html) is one line. In Feed mode it names one net (`F`); in Elements mode one net per
+element, `Rows × Cols` of them, row-major from the top left seen from boresight:
+
+```
+PhasedArray:PA1 f Record="results/Patch 5x5.cemr" RecordRows=5 RecordCols=5 RecordDx=25.86 mm RecordDy=25.86 mm Mode=feed Rows=16 Cols=16 dx=25.86 mm dy=25.86 mm Phase=steer(theta0,phi0,f0) Amp=taylor(-25,4) PhaseBits=6 Channel=TxChannel
+PhasedArray:ARR e1 e2 e3 e4 Record="results/Patch 1x4.cemr" Mode=elements Rows=1 Cols=4 dx=25.86 mm dy=25.86 mm
+PhaseShifter:PS1 s1 0 g1 0 Phase=-steer(theta0,0,f0,x1,0) Bits=6
+```
+
+| Key | Value |
+|---|---|
+| `Record` | The `.cemr` the array is built from, quoted; relative to the netlist |
+| `Mode` | `feed` or `elements` |
+| `Rows`, `Cols` | Integers; Elements mode takes at most 64 elements, Feed mode 4096 |
+| `Lattice` | `rect` or `tri` (every other row offset by half a column) |
+| `dx`, `dy` | Column and row pitch, lengths with a unit (`25.86 mm`) or an expression (`0.5*lambda(f0)`) |
+| `Level` | `auto`, `isolated`, `embedded` or `exact` |
+| `Patterns` | `classes` or `centre` (`embedded` only) |
+| `Coupling` | `on` or `off` |
+| `Off` | Elements switched off, a quoted list of element numbers: `Off="3,17,200"` |
+| `Amp`, `Phase`, `Delay` | Feed mode: each element's amplitude (linear), phase (degrees) and delay (seconds), evaluated once per element with `n`, `row`, `col`, `x`, `y` bound |
+| `Amp[n]`, `Phase[n]`, `Delay[n]` | One element's own, in place of the expression above |
+| `PhaseBits`, `AttenStep` | Feed mode: phase rounding to 360°/2^bits, amplitude rounding in dB steps; 0 is continuous |
+| `Channel` | Feed mode: a two-port cell placed once per element, first port to the beamformer |
+| `Z0` | The reference impedance at the elements; blank takes the record's |
+| `RecordRows`, `RecordCols`, `RecordDx`, `RecordDy` | The lattice of a record that does not store its ports' positions |
+| `Tsky`, `Tground` | Brightness temperatures above and below the horizon, K; `Tsky` may be an expression of the elevation `el` |
+| `RxTheta[k]`, `RxPhi[k]`, `RxPd[k]`, `RxFreq[k]`, `RxPol[k]` | Incident wave k: direction (degrees), power density (dBm/m²), frequency, polarization (`theta`, `phi`, `rhcp`, `lhcp` or an angle) |
+
+A Phase Shifter is a four-net two-port (`in, ref, out, ref`) with `Phase` (degrees, the phase it **delays** by: `Phase=90` is
+`S21 = −j`), `Bits`, `IL` (dB), `Delay` (a time) and `Z0`. The functions the weights use — `steer`, `steerDelay`, `taylor`,
+`chebyshev`, `cosq`, `lambda` — are in [Expressions](expressions.html).
+
 ### 5 · Analyses (HB + parametric sweeps) {#w-analyses}
 
 ```netlist

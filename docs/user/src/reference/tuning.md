@@ -155,6 +155,11 @@ back as `polar(42.4,21.3) Ohm`, not as a rectangular number.
   taking more than about two seconds, a badge on ⚙ suggests it.
 - **Every open Data Display bound to the schematic's results follows**, with a small *Tuning* chip
   while it shows tuned results. No trace needs to be changed for this.
+- **A phased array's steering is shown *estimated* while you drag, when the bench is off its fast path.** A
+  [Phased Antenna Array](phased-array.html#speed) whose circuit can be closed quickly — no channel, or an identical one —
+  is solved at every move. One that cannot (a channel that differs per element, a nonlinear part) would solve the whole
+  circuit at every step, so during the drag the pattern is formed from the new weights with the circuit held at its last
+  solve, the time readout says *· estimated*, and the move is solved properly when you let go.
 - **Evaluate at**, in the toolbar when the schematic has [corners](yield.html#corners), chooses where
   each move is simulated: *Nominal*, or one corner — its temperature, kit sections and values laid over
   the sliders' values. A statistical corner replays its trial's draws around them. The chip then reads

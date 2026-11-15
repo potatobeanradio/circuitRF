@@ -195,6 +195,12 @@ The worked example is **Antenna Co-Simulation** (*File ▸ New ▸ Examples*): a
 To wire a circuit by hand, place an EM Field Data block as in [The schematic side](#schematic) and add a Fields analysis. `RealizedGainDbi(F1)`,
 `GainDbi`, `DirectivityDbi`, `RadiationEfficiency`, `TrpDbm` and `PeakEirpDbm` read the pattern in a `measure` or `goal` line.
 
+**An array from one element.** The same recombination builds a whole antenna array from the result of one element or a small
+sub-array: the [Phased Antenna Array](phased-array.html) component places the element's pattern at every position of a lattice of
+up to 64 × 64, extends the sub-array's coupling to the whole array, and steers and tapers it with per-element weights — a beam
+steered by a slider, swept, and simulated with an amplifier per element in harmonic balance, from one EM run. A record solved with
+a port per element is the same block's `exact` level.
+
 ### A planar result {#planar}
 
 A planar run with **Radiation pattern** on works the same way: place an EM Field Data block on its record and add a Fields analysis. The hemisphere stays a hemisphere.

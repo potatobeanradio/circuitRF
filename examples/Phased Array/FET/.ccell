@@ -1,0 +1,14 @@
+{
+  "FormatVersion": 1,
+  "Parameters": [
+    {
+      "Name": "Periphery_mm",
+      "DefaultExpression": "1",
+      "Unit": "",
+      "Dimension": "None",
+      "ShowOnSchematic": true
+    }
+  ],
+  "IsTestBench": false,
+  "NumPorts": 2
+}

@@ -1,0 +1,784 @@
+{
+  "FormatVersion": 2,
+  "CellName": "6 Envelope",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "SRC1",
+      "Symbol": "ModSource",
+      "X": -2600,
+      "Y": 1200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Fc",
+          "Expression": "f0",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Pavg",
+          "Expression": "Pavg",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Carrier[1]",
+          "Expression": "\u0022NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=0;P=0;Seed=1\u0022",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Record",
+          "Expression": "0.001",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Shaping",
+          "Expression": "-80",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -397
+        ]
+      ]
+    },
+    {
+      "InstanceName": "Isrc",
+      "Symbol": "IProbe",
+      "X": -1700,
+      "Y": 800,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "LabelOffsets": [
+        [
+          330,
+          -265
+        ]
+      ]
+    },
+    {
+      "InstanceName": "SPL",
+      "Symbol": "Combiner",
+      "X": -700,
+      "Y": 1200,
+      "Rotation": "R0",
+      "MirrorX": true,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "N",
+          "Expression": "4",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          530,
+          -505
+        ]
+      ]
+    },
+    {
+      "InstanceName": "PS1",
+      "Symbol": "PhaseShifter",
+      "X": 1200,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Phase",
+          "Expression": "-steer(theta0,0,f0,x1,0)",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "PS2",
+      "Symbol": "PhaseShifter",
+      "X": 1200,
+      "Y": 800,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Phase",
+          "Expression": "-steer(theta0,0,f0,x2,0)",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "PS3",
+      "Symbol": "PhaseShifter",
+      "X": 1200,
+      "Y": 1600,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Phase",
+          "Expression": "-steer(theta0,0,f0,x3,0)",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "PS4",
+      "Symbol": "PhaseShifter",
+      "X": 1200,
+      "Y": 2400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Phase",
+          "Expression": "-steer(theta0,0,f0,x4,0)",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "PA1",
+      "Symbol": "Generic",
+      "X": 2600,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "CellRef": "../../PA"
+    },
+    {
+      "InstanceName": "PA2",
+      "Symbol": "Generic",
+      "X": 2600,
+      "Y": 800,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "CellRef": "../../PA"
+    },
+    {
+      "InstanceName": "PA3",
+      "Symbol": "Generic",
+      "X": 2600,
+      "Y": 1600,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "CellRef": "../../PA"
+    },
+    {
+      "InstanceName": "PA4",
+      "Symbol": "Generic",
+      "X": 2600,
+      "Y": 2400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "CellRef": "../../PA"
+    },
+    {
+      "InstanceName": "ARR",
+      "Symbol": "PhasedArray",
+      "X": 4400,
+      "Y": 1000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Record",
+          "Expression": "\u0022results/Patch 1x4.cemr\u0022",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "RecordRows",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "RecordCols",
+          "Expression": "4",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "RecordDx",
+          "Expression": "25.86",
+          "Unit": "mm",
+          "ShowOnSchematic": false,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "RecordDy",
+          "Expression": "25.86",
+          "Unit": "mm",
+          "ShowOnSchematic": false,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "Mode",
+          "Expression": "elements",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Rows",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Cols",
+          "Expression": "4",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "dx",
+          "Expression": "25.86",
+          "Unit": "mm",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "dy",
+          "Expression": "25.86",
+          "Unit": "mm",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        }
+      ]
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": -2600,
+      "Y": 1400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "VAR1",
+      "Symbol": "Var",
+      "X": -2600,
+      "Y": -1400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Pavg",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "theta0",
+          "Expression": "30",
+          "Unit": "deg",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "f0",
+          "Expression": "5.9",
+          "Unit": "GHz",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "x1",
+          "Expression": "-0.03879",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "x2",
+          "Expression": "-0.01293",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "x3",
+          "Expression": "0.01293",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "x4",
+          "Expression": "0.03879",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          2800,
+          0
+        ],
+        [
+          3900,
+          0
+        ],
+        [
+          3900,
+          1000
+        ],
+        [
+          4100,
+          1000
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2800,
+          800
+        ],
+        [
+          3800,
+          800
+        ],
+        [
+          3800,
+          1100
+        ],
+        [
+          4100,
+          1100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2800,
+          1600
+        ],
+        [
+          3900,
+          1600
+        ],
+        [
+          3900,
+          1200
+        ],
+        [
+          4100,
+          1200
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2800,
+          2400
+        ],
+        [
+          3800,
+          2400
+        ],
+        [
+          3800,
+          1300
+        ],
+        [
+          4100,
+          1300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1500,
+          0
+        ],
+        [
+          2400,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1500,
+          800
+        ],
+        [
+          2400,
+          800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1500,
+          1600
+        ],
+        [
+          2400,
+          1600
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1500,
+          2400
+        ],
+        [
+          2400,
+          2400
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -2600,
+          1000
+        ],
+        [
+          -2600,
+          800
+        ],
+        [
+          -1900,
+          800
+        ],
+        [
+          -1900,
+          1100
+        ],
+        [
+          -1700,
+          1100
+        ],
+        [
+          -1700,
+          900
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -1600,
+          900
+        ],
+        [
+          -1600,
+          1200
+        ],
+        [
+          -1000,
+          1200
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [
+    {
+      "X": 900,
+      "Y": 0,
+      "Name": "s1",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": -400,
+      "Y": 900,
+      "Name": "s1",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 900,
+      "Y": 800,
+      "Name": "s2",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": -400,
+      "Y": 1100,
+      "Name": "s2",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 900,
+      "Y": 1600,
+      "Name": "s3",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": -400,
+      "Y": 1300,
+      "Name": "s3",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 900,
+      "Y": 2400,
+      "Name": "s4",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": -400,
+      "Y": 1500,
+      "Name": "s4",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": -2300,
+      "Y": 800,
+      "Name": "s",
+      "OwnerWireIndex": 8,
+      "SegmentIndex": 1,
+      "AlongT": 0.42857142857142855,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": -1300,
+      "Y": 1200,
+      "Name": "sc",
+      "OwnerWireIndex": 9,
+      "SegmentIndex": 1,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1900,
+      "Y": 0,
+      "Name": "g1",
+      "OwnerWireIndex": 4,
+      "SegmentIndex": 0,
+      "AlongT": 0.4444444444444444,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1900,
+      "Y": 800,
+      "Name": "g2",
+      "OwnerWireIndex": 5,
+      "SegmentIndex": 0,
+      "AlongT": 0.4444444444444444,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1900,
+      "Y": 1600,
+      "Name": "g3",
+      "OwnerWireIndex": 6,
+      "SegmentIndex": 0,
+      "AlongT": 0.4444444444444444,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1900,
+      "Y": 2400,
+      "Name": "g4",
+      "OwnerWireIndex": 7,
+      "SegmentIndex": 0,
+      "AlongT": 0.4444444444444444,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3300,
+      "Y": 0,
+      "Name": "e1",
+      "OwnerWireIndex": 0,
+      "SegmentIndex": 0,
+      "AlongT": 0.45454545454545453,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3300,
+      "Y": 800,
+      "Name": "e2",
+      "OwnerWireIndex": 1,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3300,
+      "Y": 1600,
+      "Name": "e3",
+      "OwnerWireIndex": 2,
+      "SegmentIndex": 0,
+      "AlongT": 0.45454545454545453,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3300,
+      "Y": 2400,
+      "Name": "e4",
+      "OwnerWireIndex": 3,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    }
+  ],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "env",
+      "Name": "ENV1",
+      "Enabled": true,
+      "MaxMixOrderExpr": "7",
+      "MaxHarmonicExpr": "5",
+      "TolExpr": "1e-6",
+      "EnvStop": "40e-6",
+      "EnvStep": "auto",
+      "EnvAccuracy": "standard",
+      "EnvSegments": "auto",
+      "EnvWarmup": "auto",
+      "EnvStart": "0",
+      "EnvSaveWaveforms": "no"
+    },
+    {
+      "Type": "sweep",
+      "Name": "SW_Pavg",
+      "Enabled": true,
+      "PsaVarName": "Pavg",
+      "PsaValues": [
+        -8,
+        22
+      ],
+      "PsaInnerName": "ENV1"
+    },
+    {
+      "Type": "sweep",
+      "Name": "SW_theta",
+      "Enabled": true,
+      "PsaVarName": "theta0",
+      "PsaValues": [
+        0,
+        0.5235987755982988
+      ],
+      "PsaInnerName": "SW_Pavg"
+    },
+    {
+      "Type": "fields",
+      "Name": "F1",
+      "Enabled": true,
+      "FieldsBlock": "ARR",
+      "FieldsFreqExpr": "",
+      "FieldsFreqUnit": "Hz",
+      "FieldsDriveExpr": "1",
+      "FieldsNorm": "accepted",
+      "FieldsAverageExpr": "yes",
+      "FieldsWaves": "ENV1",
+      "FieldsDirsExpr": "peak;0,0;-30,0;60,0"
+    }
+  ]
+}

@@ -97,5 +97,5 @@ public partial class PhasedArrayWindow : Window, ICrfMenuWindow
     private object? _frequencyOf;
 
     /// <summary>The Phased Antenna Array's section of the component reference.</summary>
-    private void OnHelpClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => DocLauncher.Open("reference/components.html", "phasedarray");
+    private void OnHelpClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => DocLauncher.Open("reference/phased-array.html", "tool");
 }

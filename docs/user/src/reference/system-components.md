@@ -447,6 +447,27 @@ reciprocal, matched two-port in a `Z0` system, for building a signal chain.
 
 Parameters: {{anchor: components#delay|Components › Delay}}.
 
+### Phase Shifter {#phaseshifter}
+
+{{symbol: phase-shifter}}
+
+An ideal phase shifter, matched and reciprocal and flat in frequency:
+
+`S11 = S22 = 0`, `S21 = S12 = 10^(−IL/20)·e^(−jφ)`
+
+`Phase` is the phase it delays the signal by, in degrees, rounded to `360°/2^Bits` (`Bits=0` is continuous); `IL` is its loss
+and `Delay` adds a true time delay on top. Its noise is its loss. It is the block for a phased array's channel cell, or for a
+bench that steers each element itself, as the brute-force benches of the *Phased Array* example do.
+
+**Its sign is a delay's, not a weight's.** `Phase=90` is `S21 = −j`. A Phased Antenna Array's weight is `A·e^(jφ)`, the
+opposite sign, so a channel steering through a Phase Shifter writes `Phase=-steer(theta0,phi0,f0,x,y)`.
+
+**Phase Shifter or Delay?** A phase shifter's phase is the same at every frequency; a delay's grows with frequency. An array
+steered with phase shifters points where it was set only at the frequency it was set for and squints across a band; one
+steered with delays does not.
+
+Parameters: {{anchor: components#phaseshifter|Components › Phase Shifter}}.
+
 ### Combiner {#combiner}
 
 {{symbol: combiner}}
@@ -487,6 +508,23 @@ follows from its S at its temperature, as every block's here does:
   gives.
 
 Parameters: {{anchor: components#combiner|Components › Combiner}}.
+
+### Phased Antenna Array {#phasedarray}
+
+{{symbol: phased-array}}
+
+An antenna array built from one EM result — of one element, a small sub-array, or the whole array — at up to 64 × 64
+elements. In Feed mode it is a one-port at the block-diagram level: one pin, `F`, an ideal beamformer inside, every element
+weighted by `Amp`, `Phase` and `Delay` (written per element with `steer()`, `taylor()` and the rest) and driven through its own
+copy of a channel cell — the per-element chain of a phased-array transmitter or receiver, drawn once. A fields analysis
+naming it gives the array's pattern, realized gain, beamwidth, sidelobes, scan loss and every element's active reflection; with
+a noise analysis it gives G/T. In Elements mode it has one pin per element, for an amplifier per element in harmonic balance.
+
+It is the array the RF Chain Budget's N-element branch and steering bench stand for, with the element's real pattern and the
+coupling between elements in place of isotropic elements on a line. Everything about it is on its own page:
+[Phased Antenna Array](phased-array.html).
+
+Parameters: {{anchor: components#phasedarray|Components › Phased Antenna Array}}.
 
 ### Directional Coupler {#coupler}
 

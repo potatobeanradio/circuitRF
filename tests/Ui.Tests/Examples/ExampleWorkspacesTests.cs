@@ -488,7 +488,8 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
 
             var extracted = NetExtractor.Extract(model, Path.GetFileNameWithoutExtension(csch),
                                                  DiskCellResolver.Instance);
-            using var nl = new Elaborator(extracted.Library).Elaborate(extracted.TestBench);
+            // Relative references (a Phased Antenna Array's Record, an SnP's File) resolve against the workspace root, as Simulate's do.
+            using var nl = new Elaborator(extracted.Library) { BaseDirectory = example.Directory }.Elaborate(extracted.TestBench);
             checkedDocs++;
 
             reported.AddRange(nl.Warnings

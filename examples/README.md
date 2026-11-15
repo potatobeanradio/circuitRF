@@ -42,7 +42,10 @@ its device in it, nothing names anybody's home directory, and the tree reaches t
 
 **Results.** An example ships its design and its EM setup; the user runs them. The antenna's own
 sweep is 52 MB, and a committed result is a claim about an engine version that will stop being
-true. `examples/*/results/` is git-ignored at the repo root and excluded from the packaged build.
+true. `examples/*/results/` is git-ignored at the repo root and excluded from the packaged build. **The one exception is
+*Phased Array***: its benches read two sub-array EM records, reduced to one frequency and a 5° grid (about 2 MB), shipped in its
+`results/` as an input to every bench there rather than a result of running one; the root `.gitignore` and the build's copy
+name those files.
 
 **Anything a user could not have drawn.** These are teaching documents, so every one of them is
 authored out of the ordinary component library and the ordinary analyses.

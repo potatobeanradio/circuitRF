@@ -237,8 +237,9 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
         }
         Frame = result.Frame;
         var st = result.Frame.State;
-        Status = $"{st.Lattice.Rows} × {st.Lattice.Cols} at {st.Hz / 1e9:0.###} GHz · {result.Frame.EvaluationMs + result.Frame.FormingMs:0} ms" +
-                 (st.Estimated ? " · estimated" : "");
+        // The frame time measures the machine, so a documentation capture leaves it out (src/Ui/Diagnostics/CLAUDE.md).
+        string time = CircuitRF.Ui.Diagnostics.UiArtworkGenerator.HeadlessCapture ? "" : $" · {result.Frame.EvaluationMs + result.Frame.FormingMs:0} ms";
+        Status = $"{st.Lattice.Rows} × {st.Lattice.Cols} at {st.Hz / 1e9:0.###} GHz{time}" + (st.Estimated ? " · estimated" : "");
         RefreshQuantities();
         RefreshReadouts();
         Redraw?.Invoke(this, EventArgs.Empty);

@@ -14,11 +14,13 @@ keywords: analysis, sweep, DC, S-parameters, noise, noise figure, NF, NFmin, noi
       <li><a href="#dc">DC (operating point)</a></li>
       <li><a href="#s-parameters">S-Parameters</a></li>
       <li><a href="#harmonic-balance">Harmonic Balance</a></li>
+      <li><a href="#oscillator">Oscillator</a></li>
       <li><a href="#parametric-sweep">Parametric Sweep</a></li>
       <li><a href="#loadpull">Loadpull / Sourcepull</a></li>
       <li><a href="#loadpull-pursuit">Loadpull Pursuit</a></li>
       <li><a href="#two-tone">Multi-Tone Harmonic Balance</a></li>
       <li><a href="#envelope">Circuit Envelope (modulated signals)</a></li>
+      <li><a href="#fields">Fields (pattern, B1 and SAR from a circuit)</a></li>
       <li><a href="#cli">Running an analysis from the command line</a></li>
     </ol>
   </nav>
@@ -952,6 +954,35 @@ the probe carrying the signal. The constellation plots `imag(Const[…])` agains
 points only, with **Equal X and Y scale** set in Axes Limits, so a circle of error looks like a
 circle. FSK's picture is the frequency at each bit, received over sent. CSS has the table and the
 spectrum.
+
+## Fields (pattern, B1 and SAR from a circuit) {#fields}
+
+A Fields analysis recombines the per-port results an EM run kept — a far field, a field set, or both — with the waves the
+circuit around the block delivers, so the radiation pattern, B1 and SAR follow every part value with no new EM run. `block`
+names an EM Field Data block or a [Phased Antenna Array](phased-array.html). The full story is
+[Co-simulation](cosimulation.html); the keys:
+
+| Key | Meaning |
+|---|---|
+| `block` | The EM Field Data block or Phased Antenna Array to recombine |
+| `freq`, `freqUnit` | The frequency, one the run kept, or `all` for every frequency of the far field |
+| `drive`, `weights` | The circuit port (or ports) that drives the circuit, and each one's relative wave |
+| `norm` | `accepted` (default) or `available`: the power every SAR and B1 result is per watt of |
+| `average` | `yes` (default): averaged SAR too; `no`: local SAR and B1 only |
+| `waves` | The name of a harmonic-balance or envelope analysis of the bench: the pattern is formed from **its** solution instead of from a linear solve |
+| `harmonic` | With `waves=`: the harmonic the pattern is formed at (default 1); its frequency must be one the record holds |
+| `dirs` | With `waves=` naming an envelope: up to 16 directions, `;`-separated — `peak` (default) or `theta,phi` in degrees — each given its radiated envelope, spectrum, ACLR and EVM |
+
+**`waves=HB1` puts a compressed amplifier in the beam.** With a power amplifier on each port of an EM Field Data block or an
+Elements-mode array, the block's terminal voltages are read from the harmonic-balance solution at harmonic `harmonic=` and the
+currents formed from the block's own S, so each amplifier's compression, and the load its neighbours put on it, shows in the
+pattern. A parametric sweep around HB1 gives a pattern at every point, and the result adds each element's active reflection and
+delivered power. `freq=` is not used: the frequency is the harmonic times HB1's fundamental. Refused: a multi-tone HB, a harmonic
+above HB1's `MaxHarm` or one the record does not hold (naming the nearest it does), and a Feed-mode array.
+
+**`waves=ENV1` puts a modulated signal in the beam.** Each named direction gets its radiated envelope over time and every metric
+the envelope analysis gives a probe ([What a run records](#envelope-records)); `farfield.U` is the time-averaged pattern, and each
+element's active reflection is a cloud over the record. See [Phased Antenna Array › Brute force](phased-array.html#brute-force).
 
 ## Parametric Sweep {#parametric-sweep}
 

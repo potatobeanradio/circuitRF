@@ -699,6 +699,8 @@ public static class NetExtractor
 
             var inst = EmitInstance(comp, model, cellRefResolutions, uf, QK, netNames, detachedKeys,
                 microstripTech, conflicts);
+            if (inst is not null && comp.Symbol == SymbolKind.PhasedArray)
+                inst = WithPhasedArrayChannel(inst, comp, model, cells, lib, imports, scope, conflicts);
             if (inst is not null) instances.Add(inst);
         }
 
@@ -2481,6 +2483,44 @@ public static class NetExtractor
         => imports.DroppedInstances.Add(conflicts.Count > conflictsBefore
             ? conflicts[^1]
             : $"Instance '{comp.InstanceName}' (cell '{comp.CellRef}') could not be extracted; skipped.");
+
+    /// <summary>
+    /// brief-paa-10 — a Feed-mode Phased Antenna Array's <c>Channel</c> names a cell the elaborator places once per element. That
+    /// cell is never an instance on the sheet, so nothing else carries its definition into the netlist, and a drawn bench with a
+    /// channel failed with "names no cell". The name is resolved as a cell folder of the schematic's workspace (a sibling of its own
+    /// cell, as an instance's <c>CellRef</c> of <c>../../Name</c> is), its definition built as an instance's would be, and
+    /// <c>Channel</c> rewritten to the library name it was given. A name that is no cell folder is left alone, for the elaborator's
+    /// own refusal to name.
+    /// </summary>
+    private static Instance WithPhasedArrayChannel(Instance inst, EditableComponent comp, SchematicEditModel model, ICellResolver? cells,
+                                                   Library lib, NetlistImports imports, CellScope scope, List<string> conflicts)
+    {
+        var channel = inst.Overrides.FirstOrDefault(o => o.Name.Equals("Channel", StringComparison.OrdinalIgnoreCase));
+        string name = channel?.Expression.Trim().Trim('"').Trim() ?? "";
+        if (cells is null || name.Length == 0 || model.SchematicDirectory is not { Length: > 0 } schDir) return inst;
+        if (NameValidator.Validate(name) is not null) return inst;
+        string cellDir = Path.GetFullPath(Path.Combine(schDir, "..", "..", name));
+        if (!File.Exists(Path.Combine(cellDir, CellFolder.CcellFileName))) return inst;
+
+        var stand = new EditableComponent { InstanceName = $"{comp.InstanceName}.ch", Symbol = SymbolKind.Generic,
+                                            CellRef = CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(schDir, cellDir)) };
+        var res = cells.Resolve(stand, model);
+        if (res is null)
+        {
+            conflicts.Add($"Phased Antenna Array '{comp.InstanceName}': Channel={name} is a cell with no primary schematic, so it has no circuit to place per element.");
+            return inst;
+        }
+        string cellName = scope.NameFor(res.Key, res.CellName, lib);
+        if (scope.InProgress.Contains(res.Key))
+        {
+            conflicts.Add($"Phased Antenna Array '{comp.InstanceName}': Channel={name} is the cell this array is in (a cycle).");
+            return inst;
+        }
+        if (lib.Find(cellName) is null) BuildCellDefinition(res, res.Key, cellName, cells, lib, imports, scope, conflicts);
+        if (cellName == name) return inst;
+        var overrides = inst.Overrides.Select(o => ReferenceEquals(o, channel) ? new ParameterAssignment(o.Name, cellName, o.Unit) : o);
+        return new Instance(inst.InstanceName, inst.Reference, inst.NetBindings, overrides) { RefNetBinding = inst.RefNetBinding };
+    }
 
     private static Instance? EmitCellInstance(
         EditableComponent comp,

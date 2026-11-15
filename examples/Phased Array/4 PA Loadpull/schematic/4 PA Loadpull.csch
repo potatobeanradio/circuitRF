@@ -1,0 +1,238 @@
+{
+  "FormatVersion": 2,
+  "CellName": "4 PA Loadpull",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "SourceTuner1",
+      "Symbol": "Tuner",
+      "X": 0,
+      "Y": 600,
+      "Rotation": "R90",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "TunerName",
+          "Expression": "\u0022SourceTuner1\u0022",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Zdefault",
+          "Expression": "50",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Z0",
+          "Expression": "50",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "BiasTee",
+          "Expression": "\u0022off\u0022",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z[1]",
+          "Expression": "50",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          330,
+          -413
+        ]
+      ]
+    },
+    {
+      "InstanceName": "PA1",
+      "Symbol": "Generic",
+      "X": 600,
+      "Y": -0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "CellRef": "../../PACore"
+    },
+    {
+      "InstanceName": "LoadTuner1",
+      "Symbol": "Tuner",
+      "X": 1200,
+      "Y": 600,
+      "Rotation": "R90",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "TunerName",
+          "Expression": "\u0022LoadTuner1\u0022",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Zdefault",
+          "Expression": "50",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Z0",
+          "Expression": "50",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "BiasTee",
+          "Expression": "\u0022on\u0022",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Vbias",
+          "Expression": "48",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Voltage"
+        },
+        {
+          "Name": "Z[1]",
+          "Expression": "50",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          330,
+          -413
+        ]
+      ]
+    },
+    {
+      "InstanceName": "VAR1",
+      "Symbol": "Var",
+      "X": 0,
+      "Y": -900,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "f0",
+          "Expression": "5.9",
+          "Unit": "GHz",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          800,
+          0
+        ],
+        [
+          1200,
+          0
+        ],
+        [
+          1200,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          400,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          300
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [
+    {
+      "X": 200,
+      "Y": 0,
+      "Name": "s",
+      "OwnerWireIndex": 1,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1000,
+      "Y": 0,
+      "Name": "out",
+      "OwnerWireIndex": 0,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    }
+  ],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "lp",
+      "Name": "LP1",
+      "Enabled": true,
+      "LpLoadTunerName": "LoadTuner1",
+      "LpSourceTunerName": "SourceTuner1",
+      "LpGridPath": "4 PA Loadpull/schematic/load_grid.gam",
+      "LpToneExpr": "f0",
+      "LpToneUnit": "GHz",
+      "LpPinStartExpr": "-10",
+      "LpPinMaxExpr": "36",
+      "LpPinStepExpr": "1",
+      "LpMaxHarmonicExpr": "5",
+      "LpSweepExpr": "Load",
+      "LpTuneHarmExpr": "1",
+      "LpCompressionExpr": "3",
+      "LpGainTypeExpr": "Gt",
+      "LpTickleExpr": "-50",
+      "LpMaxIterExpr": "100",
+      "LpFftOverSampleExpr": "1",
+      "LpTolExpr": "1e-6",
+      "LpDriveSteppingExpr": "IfNecessary",
+      "LpGuardHarmonicExpr": "0"
+    }
+  ]
+}

@@ -415,6 +415,12 @@
       <Link>examples/Model Composer/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- brief-paa-10: the Phased Array example's benches read two sub-array records, shipped under results/ (an EM INPUT to
+         every bench there, not a result of running them), so they are copied as the Model Composer fits above are. -->
+    <None Include="../../examples/Phased Array/results/Patch 5x5*;../../examples/Phased Array/results/Patch 1x4*">
+      <Link>examples/Phased Array/results/%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

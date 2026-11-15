@@ -81,6 +81,14 @@ internal static class Fields
                      && ChainSelector.BaseOfChain(named, tb) is FieldsAnalysis { Enabled: true }))
                 return JsonRun.Fail(CliDiagnostics.NoAnalysis(Verb, $"'{n}' is not an enabled fields analysis of this design" +
                                                                    (fields.Count > 0 ? $" (it has {string.Join(", ", fields)})." : ".")));
+        // brief-paa-10 — a receive measure reads an S-parameter noise analysis beside the fields one (GoverTDbK(F1, NF1)), so an
+        // enabled S-parameter analysis a measure line names runs too; without it every receive measure failed headlessly.
+        foreach (var sp in tb.Analyses.OfType<SParameterAnalysis>().Where(a => a.Enabled && !names.Contains(a.Name, StringComparer.OrdinalIgnoreCase)))
+            if (tb.Measurements.Any(m => System.Text.RegularExpressions.Regex.IsMatch(m.Expression, $@"(?<![\w.]){System.Text.RegularExpressions.Regex.Escape(sp.Name)}(?![\w(])")))
+            {
+                names.Add(sp.Name);
+                Console.Error.WriteLine($"[circuitRF] also running '{sp.Name}': a measure line reads it.");
+            }
         foreach (var (name, expr) in sets) Console.Error.WriteLine($"[circuitRF] set {name} = {expr}");
 
         // Under --json a pattern stays in -o's file, as an envelope's waveforms do: one frequency at 1° is 65,160 directions a cube.
@@ -109,6 +117,22 @@ internal static class Fields
                 grouped.AddToGroup(r.Name, name, cube);
             }
         }
+        // The bench's measure lines, evaluated by the run into its measurements group (brief-paa-10: this verb printed and
+        // exported only the analyses' own groups, so a fields bench's measures were computed and then dropped).
+        if (result.GroupedResults is { } runGroups && runGroups.ContainsGroup(DataSet.MeasurementsGroup)
+            && runGroups.CubesIn(DataSet.MeasurementsGroup) is { Count: > 0 } measures)
+        {
+            Console.WriteLine();
+            Console.WriteLine("Measurements:");
+            foreach (var (name, cube) in measures.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            {
+                CliEntry.PrintCube($"  {name}", cube, 24, false);
+                grouped.AddToGroup(DataSet.MeasurementsGroup, name, cube);
+            }
+        }
+        // A measure line the run could not evaluate (e.g. a pattern metric under a sweep, which says to plot the cube instead).
+        foreach (string e in result.Errors.Where(e => e.StartsWith("measurements:", StringComparison.Ordinal)))
+            Console.Error.WriteLine($"[circuitRF] warning: {e}");
         JsonRun.Data = grouped;
         JsonRun.Analysis = string.Join(", ", names);
         // An analysis that threw is a convergence entry with its message (CircuitEvaluation never throws).

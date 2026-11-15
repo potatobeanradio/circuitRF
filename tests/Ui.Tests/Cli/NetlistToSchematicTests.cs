@@ -36,6 +36,16 @@ public sealed class NetlistToSchematicTests(ITestOutputHelper output) : IDisposa
         ["Hero1B/hero1b.cnl"]                      = "defines 2 cell(s)",
         ["A3/semi_capacitor.cnl"]                  = "'SemiC' has no schematic symbol",
         ["em3d/f0/A-bondwire/kernelw/case.cnl"]    = "a wirebond's pins come from the design file",
+        // The phased-array series' benches define their amplifier, LNA and channel cells inline; the shipped Phased Array example draws
+        // the same circuits as cells of their own (brief-paa-10).
+        ["phased-array/hb-1x4/Array Bench.cnl"]          = "defines 2 cell(s)",
+        ["phased-array/hb-1x4/Array Envelope.cnl"]       = "defines 2 cell(s)",
+        ["phased-array/hb-1x4/PA Loadpull.cnl"]          = "defines 2 cell(s)",
+        ["phased-array/receive-8x8/Interferer Bench.cnl"] = "defines 1 cell(s)",
+        ["phased-array/receive-8x8/Receive Bench.cnl"]   = "defines 1 cell(s)",
+        ["phased-array/tool/Channel 32.cnl"]             = "defines 1 cell(s)",
+        ["phased-array/tool/Channel 64.cnl"]             = "defines 1 cell(s)",
+        ["phased-array/tool/PA Elements.cnl"]            = "defines 2 cell(s)",
     };
 
     /// <summary>

@@ -93,7 +93,11 @@ release-key*
 # carries circuitRF's own .gitignore, which covers *.npy and friends; a Touchstone file written by
 # an EM run is not covered by that one and is not a thing to commit either — an example ships its
 # design and its EM SETUP, and the user generates the rest.
-examples/*/results/
+examples/*/results/*
+# The one exception: the Phased Array example ships the two sub-array records its benches read, sampled to one frequency
+# and a 5-degree grid (about 2 MB together; its README says how they were reduced and how to make them again).
+!examples/Phased Array/results/Patch 5x5*
+!examples/Phased Array/results/Patch 1x4*
 # The TRL example's calibration writes its two fixture files here; they are a result of running it, not an input.
 examples/TRL and De-embedding/fixtures/
 

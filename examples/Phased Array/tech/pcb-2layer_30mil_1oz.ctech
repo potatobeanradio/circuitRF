@@ -1,0 +1,430 @@
+{
+  "FormatVersion": 1,
+  "Name": "PCB 2-Layer (30 mil, 1 oz)",
+  "DefaultDisplayUnit": "Mil",
+  "DefaultSnapDbu": 25400,
+  "DefaultFlattenTolDbu": 1000,
+  "DefaultLabelHeightDbu": 1016000,
+  "DefaultViaPadDbu": 609600,
+  "DefaultViaDrillDbu": 304800,
+  "Layers": [
+    {
+      "Key": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Name": "Top Copper",
+      "Color": {
+        "r": 200,
+        "g": 122,
+        "b": 62,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 8,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.Cu"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "Name": "Bottom Copper",
+      "Color": {
+        "r": 138,
+        "g": 80,
+        "b": 40,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 7,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "B.Cu"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 3,
+        "Datatype": 0
+      },
+      "Name": "Soldermask Top",
+      "Color": {
+        "r": 30,
+        "g": 107,
+        "b": 60,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 6,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.Mask"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "Name": "Soldermask Bottom",
+      "Color": {
+        "r": 21,
+        "g": 80,
+        "b": 44,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 5,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "B.Mask"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 5,
+        "Datatype": 0
+      },
+      "Name": "Silk Top",
+      "Color": {
+        "r": 242,
+        "g": 242,
+        "b": 242,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 4,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.SilkS"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 6,
+        "Datatype": 0
+      },
+      "Name": "Silk Bottom",
+      "Color": {
+        "r": 200,
+        "g": 200,
+        "b": 200,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 3,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "B.SilkS"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 7,
+        "Datatype": 0
+      },
+      "Name": "Drill",
+      "Color": {
+        "r": 32,
+        "g": 32,
+        "b": 32,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 2,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 8,
+        "Datatype": 0
+      },
+      "Name": "Outline",
+      "Color": {
+        "r": 255,
+        "g": 213,
+        "b": 0,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 1,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "Edge.Cuts"
+      }
+    }
+  ],
+  "Stackup": {
+    "Top": "Open",
+    "Bottom": "Ground",
+    "Layers": [
+      {
+        "Kind": "Conductor",
+        "Name": "Top Copper (1 oz)",
+        "ThicknessDbu": 35000,
+        "Material": "Copper",
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 1,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "Laminate",
+        "ThicknessDbu": 762000,
+        "Epsr": 3.66,
+        "TanD": 0.0037,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "Bottom Copper (1 oz)",
+        "ThicknessDbu": 35000,
+        "Material": "Copper",
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 2,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": true
+      },
+      {
+        "Kind": "Via",
+        "Name": "Plated Through-Hole",
+        "ThicknessDbu": 0,
+        "Material": "Copper",
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 7,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false,
+        "Fill": "Plated",
+        "WallThicknessDbu": 25000,
+        "SpanFromLayer": "Top Copper (1 oz)",
+        "SpanToLayer": "Bottom Copper (1 oz)"
+      }
+    ]
+  },
+  "DrcRules": [
+    {
+      "Name": "Top Copper Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "ValueDbu": 152400,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Top Copper Min Spacing",
+      "Kind": "MinSpacing",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "ValueDbu": 152400,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Bottom Copper Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "ValueDbu": 152400,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Bottom Copper Min Spacing",
+      "Kind": "MinSpacing",
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "ValueDbu": 152400,
+      "Severity": "Error"
+    }
+  ],
+  "Materials": [
+    {
+      "Name": "Copper",
+      "Sigma20": 58000000,
+      "Alpha20": 0.0039,
+      "SigmaVsTemp": [
+        {
+          "TempC": 20,
+          "Value": 58000000
+        },
+        {
+          "TempC": 25.05,
+          "Value": 56881363
+        },
+        {
+          "TempC": 26.85,
+          "Value": 56493001
+        },
+        {
+          "TempC": 76.85,
+          "Value": 47435387
+        },
+        {
+          "TempC": 85,
+          "Value": 46223798
+        },
+        {
+          "TempC": 125,
+          "Value": 41074715
+        },
+        {
+          "TempC": 126.85,
+          "Value": 40864183
+        },
+        {
+          "TempC": 226.85,
+          "Value": 31896596
+        },
+        {
+          "TempC": 326.85,
+          "Value": 26061139
+        },
+        {
+          "TempC": 426.85,
+          "Value": 21934006
+        },
+        {
+          "TempC": 526.85,
+          "Value": 18842573
+        },
+        {
+          "TempC": 626.85,
+          "Value": 16430800
+        },
+        {
+          "TempC": 726.85,
+          "Value": 14486181
+        },
+        {
+          "TempC": 826.85,
+          "Value": 12883060
+        },
+        {
+          "TempC": 926.85,
+          "Value": 11532521
+        },
+        {
+          "TempC": 1026.85,
+          "Value": 10376532
+        },
+        {
+          "TempC": 1084.45,
+          "Value": 9788442
+        }
+      ],
+      "ThermalK": 401.404,
+      "ThermalKVsTemp": [
+        {
+          "TempC": 20,
+          "Value": 401.404
+        },
+        {
+          "TempC": 25.05,
+          "Value": 401
+        },
+        {
+          "TempC": 26.85,
+          "Value": 401
+        },
+        {
+          "TempC": 76.85,
+          "Value": 396
+        },
+        {
+          "TempC": 85,
+          "Value": 395.511
+        },
+        {
+          "TempC": 125,
+          "Value": 393.111
+        },
+        {
+          "TempC": 126.85,
+          "Value": 393
+        },
+        {
+          "TempC": 226.85,
+          "Value": 386
+        },
+        {
+          "TempC": 326.85,
+          "Value": 379
+        },
+        {
+          "TempC": 426.85,
+          "Value": 373
+        },
+        {
+          "TempC": 526.85,
+          "Value": 366
+        },
+        {
+          "TempC": 626.85,
+          "Value": 359
+        },
+        {
+          "TempC": 726.85,
+          "Value": 352
+        },
+        {
+          "TempC": 826.85,
+          "Value": 346
+        },
+        {
+          "TempC": 926.85,
+          "Value": 339
+        },
+        {
+          "TempC": 1026.85,
+          "Value": 332
+        },
+        {
+          "TempC": 1084.45,
+          "Value": 328
+        }
+      ],
+      "DensityKgM3": 8960,
+      "SpecificHeat": 385,
+      "Appearance": {
+        "BaseColor": "#FAD1C2",
+        "Metallic": 1,
+        "Roughness": 0.35
+      }
+    }
+  ]
+}

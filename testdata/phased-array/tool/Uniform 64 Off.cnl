@@ -3,5 +3,5 @@ Port:P1 f 0 Num=1 Z=50 Ohm
 theta0 = 20 deg
 phi0 = 0 deg
 f0 = 5.9 GHz
-PhasedArray:PA1 f Record="../results/e5.cemr" RecordRows=5 RecordCols=5 RecordDx=25.86 mm RecordDy=25.86 mm dx=25.86 mm dy=25.86 mm Mode=feed Rows=64 Cols=64 Phase=steer(theta0,phi0,f0) Off=37,410,777,1203,1690,2048,2500,3111,3600,4000
+PhasedArray:PA1 f Record="../results/e5.cemr" RecordRows=5 RecordCols=5 RecordDx=25.86 mm RecordDy=25.86 mm dx=25.86 mm dy=25.86 mm Mode=feed Rows=64 Cols=64 Phase=steer(theta0,phi0,f0) Off="37,410,777,1203,1690,2048,2500,3111,3600,4000"
 analysis F1 type=fields block=PA1 freq=5.9 freqUnit=GHz drive=1

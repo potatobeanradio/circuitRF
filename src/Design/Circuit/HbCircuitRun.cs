@@ -29,8 +29,13 @@ public static class HbCircuitRun
     /// </summary>
     public static void ApplySet(TestBench tb, string name, string expr)
     {
+        // brief-paa-10 — the value keeps the variable's unit column unless it states its own, as a tuning move does
+        // (TunableValue.Split): `--set theta0=30` on `theta0 = 0 deg` is 30 degrees. Replacing it with a bare 30 made it
+        // 30 radians to every angle-taking function, and `--set theta0=30 deg` did not parse at all.
+        string? unit = tb.GlobalVariables.FirstOrDefault(v => v.Name == name)?.Unit;
+        var (expression, split) = CircuitRF.Design.Optimization.TunableValue.Split(expr, unit);
         tb.GlobalVariables.RemoveAll(v => v.Name == name);
-        tb.GlobalVariables.Add(new Variable(name, expr));
+        tb.GlobalVariables.Add(new Variable(name, expression, split));
     }
 
     /// <summary>

@@ -751,3 +751,20 @@ capture, so the run recaptured 124 unrelated figures, then threw in `DocImageRec
 the board's picture produced no parts"), so no stamps were written. The figures were restored with `git checkout` and the
 two symbol SVGs kept. `--page` does not combine with `--figures`. For one new symbol, `--figure <id>` is the narrow form
 when the symbol has a catalog id; otherwise expect `--figures` to touch every page edited since the last full capture.
+
+## brief-paa-10 — the Phased Array figures (2026-11-15)
+
+- **`DocPhasedArrayFixtures`**: the tool window on the shipped example's Transmit bench (five tabs, `ImmediatePhasedArrayHost`, the
+  window detached with its `Styles` carried across as `DocRailFixtures` does), and two Data Display figures that SIMULATE the
+  example's benches the way Simulate does (`CircuitEvaluation`, `ResultsWriter.WriteRun` into a scratch `results/`) and open a copy of
+  the example's own `.cdd` with `LoadAllAsync`, the library's results root pointed at that folder.
+- **The tool's status line carried the frame time** ("16 × 16 at 5.9 GHz · 25 ms"); it is left out while `HeadlessCapture` is set.
+- **A loadpull contour label's box defaults to `0x8C000000`** (`ContourTraceConfig.LabelBackground`), black at 140 alpha, which Skia's
+  SVG device writes as an opaque black slab; `SvgLint` caught it. The example's displays state `0x8C010101`. Any other figure of a
+  labelled contour plot read from a `.cdd` with the default will meet the same refusal.
+- **DocGen reads `examples/` from its OWN build output** (`ExampleWorkspaces.ResolveRoot` finds the copy `src/Ui`'s csproj puts beside
+  the binary), so an edit to an example is not seen until `tools/DocGen` is built again. A figure that "ignores" an example edit is
+  this, not the fixture.
+- **Pre-existing, not chased: `workspace-overview` fails to capture** ("the docs workspace has no cell 'Mitred Bend'. The Project Tree
+  scanned:" with nothing listed). `--figures` reaches it from any changed page that cites it, which stops the whole run; the seven
+  Phased Array figures were captured by name (`--figure`) instead, and the figure stamps were left for the series' full run.

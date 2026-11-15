@@ -1,0 +1,131 @@
+{
+  "FormatVersion": 2,
+  "SelectedDataSource": "4 PA Loadpull.npy",
+  "SourceAliases": {},
+  "Tabs": [
+    {
+      "Name": "Loadpull",
+      "ZoomLevel": 1,
+      "ViewOffsetX": 0,
+      "ViewOffsetY": 0,
+      "Plots": [
+        {
+          "Left": 0,
+          "Top": 40,
+          "Width": 560,
+          "Height": 560,
+          "PlotType": "Smith",
+          "FreqUnit": "GHz",
+          "CustomTitle": "The PA's Pout (dBm) and PAE (%) contours at 3 dB compression",
+          "CustomTitleOn": true,
+          "CustomXLabel": "",
+          "CustomXLabelOn": false,
+          "CustomYLabel": "",
+          "CustomYLabelOn": false,
+          "CustomY2Label": "",
+          "CustomY2LabelOn": false,
+          "TableViewAscendingSortOrder": true,
+          "TableViewScrollIndex": 0,
+          "FontSize": 12,
+          "FreqColumnWidth": 115,
+          "TableOptimum": "Mxp",
+          "TableReadMode": "Interp",
+          "TableCompression": 3,
+          "SummaryLoadpullGroup": null,
+          "PolarRadial": "Linear",
+          "PolarDbFloor": -40,
+          "PolarDbRingStep": 10,
+          "PolarDbReference": "Peak",
+          "PolarDbReferenceValue": 0,
+          "PolarDbUnit": "",
+          "PolarAngleLabels": false,
+          "SmithAdmittanceGrid": false,
+          "SurfaceAzimuthDeg": 35,
+          "SurfaceElevationDeg": 25,
+          "SurfaceZoom": 1,
+          "SurfaceColorMap": "Cool",
+          "SurfaceShowGroundDisc": true,
+          "SurfaceShowAxes": true,
+          "SurfaceShowLegend": true,
+          "Traces": [
+            {
+              "SourcePath": "4 PA Loadpull.npy",
+              "Label": "Pout_dBm",
+              "ContourTrace": {
+                "MetricName": "Pout_dBm",
+                "ConstraintKind": "Compression",
+                "ConstraintValue": 3.0,
+                "LevelMode": "Range",
+                "LevelStart": 37,
+                "LevelStep": 1,
+                "LevelStop": 40,
+                "ShowIsoLines": true,
+                "ShowFill": false,
+                "DrawLabels": true,
+                "LineColor": 4284111450,
+                "LineColorOverridden": true,
+                "StrokeWidth": 1.5,
+                "DisplayMxp": true,
+                "DisplayMxe": false,
+                "LabelBackground": 2348876033
+              },
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 1,
+                "LineColorIndex": 0,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 0,
+                "MarkerType": "Circle"
+              }
+            },
+            {
+              "SourcePath": "4 PA Loadpull.npy",
+              "Label": "PAE",
+              "ContourTrace": {
+                "MetricName": "PAE",
+                "ConstraintKind": "Compression",
+                "ConstraintValue": 3.0,
+                "LevelMode": "Range",
+                "LevelStart": 40,
+                "LevelStep": 10,
+                "LevelStop": 70,
+                "ShowIsoLines": true,
+                "ShowFill": false,
+                "DrawLabels": true,
+                "LineColor": 4288309802,
+                "LineColorOverridden": true,
+                "StrokeWidth": 1.5,
+                "DisplayMxp": false,
+                "DisplayMxe": true,
+                "LabelBackground": 2348876033
+              },
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 1,
+                "LineColorIndex": 0,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 0,
+                "MarkerType": "Circle"
+              }
+            }
+          ],
+          "Axes": null,
+          "Legend": "Inside"
+        }
+      ]
+    }
+  ],
+  "ActiveTabIndex": 0,
+  "WindowWidth": 0,
+  "WindowHeight": 0,
+  "WindowLeft": 0,
+  "WindowTop": 0,
+  "Plots": [],
+  "ZoomLevel": 1,
+  "ViewOffsetX": 0,
+  "ViewOffsetY": 0
+}

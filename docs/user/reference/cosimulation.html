@@ -263,6 +263,11 @@ nor a field set gets an SnP in place of the block. A run with no component ports
 <p>The worked example is <strong>Antenna Co-Simulation</strong> (<em>File ▸ New ▸ Examples</em>): a meander antenna solved once at five frequencies, then matched by the optimizer, with its pattern compared across the band and against an inductor's error.</p>
 <p>To wire a circuit by hand, place an EM Field Data block as in <a href="#schematic">The schematic side</a> and add a Fields analysis. <code>RealizedGainDbi(F1)</code>,
 <code>GainDbi</code>, <code>DirectivityDbi</code>, <code>RadiationEfficiency</code>, <code>TrpDbm</code> and <code>PeakEirpDbm</code> read the pattern in a <code>measure</code> or <code>goal</code> line.</p>
+<p><strong>An array from one element.</strong> The same recombination builds a whole antenna array from the result of one element or a small
+sub-array: the <a href="phased-array.html">Phased Antenna Array</a> component places the element's pattern at every position of a lattice of
+up to 64 × 64, extends the sub-array's coupling to the whole array, and steers and tapers it with per-element weights — a beam
+steered by a slider, swept, and simulated with an amplifier per element in harmonic balance, from one EM run. A record solved with
+a port per element is the same block's <code>exact</code> level.</p>
 <h3 id="planar">A planar result</h3>
 <p>A planar run with <strong>Radiation pattern</strong> on works the same way: place an EM Field Data block on its record and add a Fields analysis. The hemisphere stays a hemisphere.
 A planar setup with <strong>component ports</strong> makes the <code>_cosim</code> cell and netlist as a 3D one does, each part across its own port, and the block's pins are its component ports

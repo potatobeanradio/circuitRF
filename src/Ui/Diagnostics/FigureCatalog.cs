@@ -1003,6 +1003,40 @@ public static class FigureCatalog
           + "coordinates, with the generator end terminated as port 1 carrying the generator "
           + "impedance at the design frequency and the load end as port 2 carrying the chart's Z0."),
 
+        // ── The Phased Array tool and example (brief-paa-10) ────────────────────
+        // All of the shipped Phased Array example. The tool at its own default size; it is a window of its own, but drawn without a
+        // frame, as the railRF figures are: the content is the subject.
+
+        new("phased-array-tool-beam", DocPhasedArrayFixtures.ToolBeam, 1320, 900, null,
+            "The Phased Array tool on the example's 16 × 16 Transmit array, steered to 30°: the aperture coloured by amplitude (the "
+          + "−25 dB Taylor taper), the beam in direction cosines with the visible circle, the scan-limit circle and the grating-lobe "
+          + "positions, the two principal cuts with the isolated array factor dimmed beneath, and the readouts."),
+
+        new("phased-array-tool-gamma", DocPhasedArrayFixtures.ToolGamma, 1320, 900, null,
+            "The same array coloured by each element's active reflection |Γ_act|: the edges and corners differ from the interior, "
+          + "because their neighbours do."),
+
+        new("phased-array-tool-scan", DocPhasedArrayFixtures.ToolScan, 1320, 900, null,
+            "The Scan maps tab: realized gain and the worst element's |Γ_act| over every scan direction to the scan limit, computed "
+          + "in the background one steering at a time."),
+
+        new("phased-array-tool-tapers", DocPhasedArrayFixtures.ToolTapers, 1320, 900, null,
+            "The Tapers and bits tab: the taper family and level, the phase-shifter bits and attenuator step, applied to the "
+          + "schematic with Apply."),
+
+        new("phased-array-tool-frequency", DocPhasedArrayFixtures.ToolFrequency, 1320, 900, null,
+            "The Frequency tab: where the beam points across ±20 % of the frequency, steered by phase shifters (it squints) and "
+          + "by true time delays (it does not)."),
+
+        new("phased-array-transmit-display", DocPhasedArrayFixtures.TransmitDisplay, 1180, 700, null,
+            "The Transmit bench's display after Simulate: the cut in the steering plane at each theta0, the realized gain at the "
+          + "beam's peak against theta0, every element's |Γ_act| at 0, 30 and 60°, and the measures at theta0 = 30°."),
+
+        new("phased-array-bruteforce-display", DocPhasedArrayFixtures.BruteForceDisplay, 1500, 880, null,
+            "The brute-force bench: four amplifiers on a 1 × 4 array in one harmonic-balance run. Each element's Γ_act against "
+          + "theta0, the same loci over the amplifier's Pout and PAE contours, the cut at each theta0, the peak realized gain, and "
+          + "each amplifier's output power and PAE against theta0."),
+
         // ── Tuning and Optimization ─────────────────────────────────────────────
         // Both panels on the Optimization example's amplifier, at the width of the dock column the
         // Analyses panel they are tabbed behind gets (analyses-all-types).

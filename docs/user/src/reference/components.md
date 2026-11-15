@@ -671,6 +671,8 @@ and the analysis finds the amplitude and frequency at which it draws no current.
 the analysis finds where it holds no voltage. Either way the generator does no work at the answer, so the circuit is
 oscillating on its own. Its two terminals are interchangeable.
 
+In depth: [Simulations › Oscillator](simulations.html#oscillator), and its [phase noise](simulations.html#oscillator-phase-noise).
+
 {{table: components/OscProbe}}
 
 ### Tuner / SourceTuner / LoadTuner {#tuner}

@@ -3656,3 +3656,14 @@ The same Linux run found one diagnostic id declared twice (`check.path.foreign`,
   entries and a refusal naming the grammar, `explain --json` on ICP-4's Tri cut equal to `EmCutReport` over the in-process build,
   check exit codes 0 / 0-with-warning / 1, a dry run naming the cut ports with the preflight's unknowns, the Filter Board walk
   unchanged, and the SpiralResonator (`[PythonFact]`: the kit's generators run).
+
+## brief-paa-10 — the `fields` verb and a bench's measures (2026-11-15)
+
+- **`fields` evaluated the bench's measure lines and dropped them**: it printed and exported only each analysis's own group, so the
+  `measurements` group a `CircuitEvaluation` run fills never reached stdout or `-o`. It now prints `Measurements:` and exports the
+  group, and a measure line the run could not evaluate (a pattern metric under a sweep, an analysis the verb did not run) is a
+  `warning:` on stderr with the run's own sentence, where it used to vanish.
+- **A receive measure reads an S-parameter noise analysis beside the fields one** (`GoverTDbK(F1, NF1)`), and `fields` ran fields
+  analyses only, so every receive measure failed headlessly. An enabled S-parameter analysis that a measure line names (as a whole
+  word, not a call or a dotted path) now runs too, said on stderr ("also running 'NF1': a measure line reads it"). HB and envelope
+  analyses are not pulled in: their verbs (`hb`, `env`) are the way to run them.

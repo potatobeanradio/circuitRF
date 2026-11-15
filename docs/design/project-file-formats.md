@@ -393,6 +393,25 @@ a single `netlist.cnl` to the workspace root directory** (the design model emitt
   artifact the **extraction oracle** test compares against an authored `.cnl` (`ui-design.md` §5.1). It is a
   generated scratch artifact, not part of the saved project — the project's source of truth is the `.csch`.
 
+### The Phased Antenna Array and Phase Shifter lines (brief-paa-10)
+Both are ordinary instance lines; the design note is `docs/design/phased-array.md`, the user's reference
+`docs/user/src/reference/netlist.md` § "A Phased Antenna Array line".
+
+- **`PhasedArray:<name> <nets…> key=value…`** — one net (`F`) in `Mode=feed`, `Rows × Cols` nets in `Mode=elements`,
+  row-major from the top left seen from boresight. Keys: `Record` (quoted path to a `.cemr`, relative to the netlist), `Mode`,
+  `Rows`, `Cols`, `Lattice` (`rect`|`tri`), `dx`, `dy` (lengths with a unit, or an expression), `Level`
+  (`auto`|`isolated`|`embedded`|`exact`), `Patterns` (`classes`|`centre`), `Coupling` (`on`|`off`), `Off` (a quoted list of
+  element numbers), `Amp`, `Phase`, `Delay` and their indexed `Amp[n]`/`Phase[n]`/`Delay[n]`, `PhaseBits`, `AttenStep`, `Channel`
+  (a cell name), `Z0`, `RecordRows`, `RecordCols`, `RecordDx`, `RecordDy`, `Tsky`, `Tground`, and the indexed incident waves
+  `RxTheta[k]`, `RxPhi[k]`, `RxPd[k]`, `RxFreq[k]`, `RxPol[k]`. `Record`, `Mode`, `Level`, `Patterns`, `Lattice`, `Coupling`,
+  `Channel` and `Off` are words kept verbatim; every other key is an expression, and `Amp`/`Phase`/`Delay` (and `Channel`'s own
+  parameters) are evaluated per element with `n`, `row`, `col`, `x`, `y` bound.
+- **In a `.csch`** the instance is a `PhasedArray` component with one parameter row per key; a blank row (`Level`, `Off`, `Z0`
+  placed empty) is dropped by extraction rather than written as `Key=`, and `Record`/`Off` are quoted on the way out. **A `Channel`
+  that names a cell folder of the workspace carries that cell's definition into the extracted `.cnl`** (it is not an instance on
+  the sheet, so nothing else would), renamed in `Channel=` if the library name differs.
+- **`PhaseShifter:<name> in ref out ref`** — keys `Phase` (degrees it delays by), `Bits`, `IL` (dB), `Delay` (a time), `Z0`.
+
 ## Port-index conventions — 1-based user-facing, 0-based allowed in the engine
 
 Port/terminal indices appear in two worlds with **different base conventions**, and the **net-extraction

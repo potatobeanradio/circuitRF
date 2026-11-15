@@ -1,0 +1,85 @@
+{
+  "FormatVersion": 6,
+  "GridSize": 100,
+  "PortCount": 2,
+  "Primitives": [
+    {
+      "$type": "Rect",
+      "ColorRole": "SymbolLine",
+      "StrokeTier": "Normal",
+      "Filled": false,
+      "Cx": 0,
+      "Cy": 0,
+      "W": 160,
+      "H": 160
+    },
+    {
+      "$type": "Rect",
+      "ColorRole": "SymbolLine",
+      "StrokeTier": "Thin",
+      "Filled": false,
+      "Cx": 0,
+      "Cy": 0,
+      "W": 140,
+      "H": 140
+    },
+    {
+      "$type": "Line",
+      "ColorRole": "SymbolLine",
+      "StrokeTier": "Normal",
+      "X1": -80,
+      "Y1": 0,
+      "X2": -200,
+      "Y2": 0
+    },
+    {
+      "$type": "Text",
+      "Content": "1",
+      "AnchorX": -65,
+      "AnchorY": 0,
+      "FontSize": 12,
+      "FontStyle": "Regular",
+      "Align": "Left",
+      "VAlign": "Baseline",
+      "Rotation": "R0",
+      "ForceReadable": false,
+      "ColorRole": "SymbolLine"
+    },
+    {
+      "$type": "Line",
+      "ColorRole": "SymbolLine",
+      "StrokeTier": "Normal",
+      "X1": 80,
+      "Y1": 0,
+      "X2": 200,
+      "Y2": 0
+    },
+    {
+      "$type": "Text",
+      "Content": "2",
+      "AnchorX": 65,
+      "AnchorY": 0,
+      "FontSize": 12,
+      "FontStyle": "Regular",
+      "Align": "Right",
+      "VAlign": "Baseline",
+      "Rotation": "R0",
+      "ForceReadable": false,
+      "ColorRole": "SymbolLine"
+    }
+  ],
+  "Pins": [
+    {
+      "LocalX": -200,
+      "LocalY": 0,
+      "PortIndex": 0,
+      "Name": "1"
+    },
+    {
+      "LocalX": 200,
+      "LocalY": 0,
+      "PortIndex": 1,
+      "Name": "2"
+    }
+  ]
+}

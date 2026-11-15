@@ -2915,6 +2915,29 @@ instance) or a **mismatch** draw (in a cell, one per instance), with the stream 
   mismatch agauss X1.R
   mismatch agauss X2.R</span></code></pre>
 
+<h3 id="explain-array">A Phased Antenna Array: its level, its coupling, and which path it solves by</h3>
+
+On a bench with a [Phased Antenna Array](phased-array.html), each fields analysis that names it lists what the array was
+built as and how a change of its weights will be solved — which is what decides whether a slider on its steering is fast:
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain "1 Transmit/schematic/1 Transmit.csch" --analysis
+<span class="output">    F1               FieldsAnalysis     F1                           DISPATCHED by fields
+      Array 'PA1': Level embedded (because the record is a sub-array of another lattice): each element's position-class pattern and S_cc from the sub-array, its coupling extended by element offset. …
+      Coupling extended from the 5 × 5 sub-array: offsets to ±4 rows and ±4 columns, each from the pair nearest its centre; every coupling beyond that is taken as zero.
+      Feed mode: one pin, F, split 256 ways to the elements through their weights; phases rounded to 5.625° (6 bits), amplitudes continuous.
+      Phased Antenna Array 'PA1' places channel cell 'TxChannel' once per element as PA1.ch[1] … ; it is identical across elements (its parameters read none of n, row, col, x, y).
+      Fast path: channel cell 'TxChannel' is identical across elements, so it is solved once per frequency as a two-port and the array closes as a = (I − Γ_ch·S)⁻¹·t·w, one sparse factorisation …
+      pattern of record port 1: element 1
+      pattern of record port 3: elements 2-15
+      …</span></code></pre>
+
+The level and why it was chosen; the coupling's reach; the quantisation; the channel and whether it is identical; the path
+(**Fast path:** or **Full solve:**, with the reason — a channel that reads `n` is named down to the parameter that reads it,
+`T1.Loss=3+0.1*n`); and which record port's pattern each element takes. `check` says the same level, coupling, channel and
+quantisation as notes; it **warns** when the pitch differs from the record's by more than 0.02 λ ("dx is 28 mm and the record's
+is 25.86 mm, 0.042 λ apart at 5.9 GHz…"), and reports as **errors** an element number in `Off` outside the array and a sweep that
+moves `Rows` or `Cols` in Elements mode, where they set the pin count and cannot change during a run.
+
 <h3 id="explain-touchstone"><code>explain</code> on a Touchstone file — what IS this part?</h3>
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain part.s2p

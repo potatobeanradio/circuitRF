@@ -298,6 +298,11 @@ turns on <strong>Run on release</strong>, which simulates only when you let go o
 taking more than about two seconds, a badge on ⚙ suggests it.</li>
 <li><strong>Every open Data Display bound to the schematic's results follows</strong>, with a small <em>Tuning</em> chip
 while it shows tuned results. No trace needs to be changed for this.</li>
+<li><strong>A phased array's steering is shown <em>estimated</em> while you drag, when the bench is off its fast path.</strong> A
+<a href="phased-array.html#speed">Phased Antenna Array</a> whose circuit can be closed quickly — no channel, or an identical one —
+is solved at every move. One that cannot (a channel that differs per element, a nonlinear part) would solve the whole
+circuit at every step, so during the drag the pattern is formed from the new weights with the circuit held at its last
+solve, the time readout says <em>· estimated</em>, and the move is solved properly when you let go.</li>
 <li><strong>Evaluate at</strong>, in the toolbar when the schematic has <a href="yield.html#corners">corners</a>, chooses where
 each move is simulated: <em>Nominal</em>, or one corner — its temperature, kit sections and values laid over
 the sliders' values. A statistical corner replays its trial's draws around them. The chip then reads

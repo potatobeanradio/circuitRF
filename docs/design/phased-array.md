@@ -1,6 +1,6 @@
 # circuitRF — Phased antenna arrays
 
-**Status:** PAA-1 measured; the array engine (PAA-2), the component in Elements mode (PAA-3), Feed mode with its weights, channel cell and PhaseShifter block (PAA-4), the dynamic symbol (PAA-5), brute-force harmonic balance and envelope (PAA-6, 6b), the receive side (PAA-7), the fast path and re-weigh (PAA-8, 8b) and the Phased Array tool (PAA-9) built · **Series:** [`brief-paa-0-overview.md`](../briefs/brief-paa-0-overview.md) ·
+**Status:** PAA-1 measured; the array engine (PAA-2), the component in Elements mode (PAA-3), Feed mode with its weights, channel cell and PhaseShifter block (PAA-4), the dynamic symbol (PAA-5), brute-force harmonic balance and envelope (PAA-6, 6b), the receive side (PAA-7), the fast path and re-weigh (PAA-8, 8b), the Phased Array tool (PAA-9), and the user page `reference/phased-array.md` with the shipped *Phased Array* example (PAA-10) built — the series is complete · **Series:** [`brief-paa-0-overview.md`](../briefs/brief-paa-0-overview.md) ·
 **Builds on:** [`sar.md`](sar.md) §11 and the co-simulation series (`brief-cosim-pattern-*`: the per-port far field and
 its recombination), [`chain-budget.md`](chain-budget.md) (the array at system level), [`sparameter-noise.md`](sparameter-noise.md)
 (correlated noise through a terminated N-port), [`harmonic-balance.md`](harmonic-balance.md).
@@ -87,7 +87,9 @@ Accepted power is `P_acc = ½·Σₙ (|aₙ|² − |bₙ|²)` in the peak-wave c
 power is the integral of |E|² over the sphere (the hemisphere above an infinite ground). Gain is per watt accepted and
 realized gain per watt available, as for a single EM run (`Em3dRadiation.Publish`). On a lossless structure the two
 powers are equal; on the approximate levels of §3 they are not quite, and the ratio is reported as the **power balance**,
-a readout of how far the approximation has drifted rather than a number to hide.
+a readout of how far the approximation has drifted rather than a number to hide. On a planar record even L2's own ratio is the
+radiation efficiency (0.41–0.88 on PAA-1's records, the surface wave included), so no absolute band can judge an approximation:
+the run says nothing within 0.1 of the centre element's own embedded efficiency, warns beyond it, and always warns above 1.
 
 ## 3. Three levels of fidelity
 
@@ -97,15 +99,18 @@ a readout of how far the approximation has drifted rather than a number to hide.
 | **L1** — embedded | The embedded pattern of the centre element of a small solved sub-array (or one per position class, §3.1), in (2) | The sub-array's S by element offset, extended to the whole array (§3.2) | Interior of a large regular array; scan loss and active reflection | A sub-array, e.g. 5×5 |
 | **L2** — exact | Every port's own pattern, (1) | The run's own S | Arrays solved whole: tens of ports | The whole array |
 
-L2 exists today. L0 and L1 are this series; brief PAA-1 measures how far each is from L2 before anything is built on
-them, and fixes the tolerances the later gates use.
+PAA-1 measured how far each is from L2 on planar patch arrays solved whole (5.9 GHz, scans to 60° in both principal planes
+and the diagonal). **L1 beats L0 in every case, and a 5 × 5 sub-array is the useful minimum**: predicting a 6 × 6, the 5 × 5 with
+position classes is within 0.75 dB in peak realized gain, 2.65 dB RMS in the pattern above −20 dB and 0.11 in any element's
+active reflection (RMS ≤ 0.04), where a 3 × 3 gives 1.99 dB and 0.19 and L0 3.61 dB and 0.50. `embedded` is therefore the
+default for a sub-array record. The full table is in `brief-paa-1-em-measurement.md` and on the user page.
 
 ### 3.1 Position classes
 
 An element at the corner of an array sees fewer neighbours than one in the middle, and its embedded pattern is
 measurably different. A 5×5 sub-array holds nine classes — four corners, four edges, the interior — and an element of a
-large array can take the pattern of its class rather than the centre's. Whether this is worth its cost (nine patterns
-read and re-referenced instead of one) is decided by PAA-1's numbers, not assumed.
+large array takes the pattern of its class rather than the centre's. PAA-1 found it worth its cost in every case (worst RMS
+pattern error 0.80 against 2.48 dB on a 1×9 line, 2.65 against 3.51 dB on the 6×6), so `Patterns=classes` is the default.
 
 ### 3.2 Coupling from a sub-array
 
@@ -123,7 +128,8 @@ error of L1 and shows up in the power balance (§2.4).
 A sweep of the element spacing re-evaluates the array factor exactly. Under L0 that is the whole answer. Under L1 and L2
 the patterns and the coupling were solved **at one spacing**; at another spacing they are wrong, by an amount that grows
 with the distance from it. The array model compares the spacing it is asked for with the spacing of the record's lattice
-and warns when they differ by more than a fraction of a wavelength; it does not refuse, because exploring the array factor
+and warns when they differ by more than 0.02 λ₀ (PAA-1: a 0.042 λ₀ move changed nearest-neighbour |S21| by 0.035–0.046); it
+does not refuse, because exploring the array factor
 alone is a legitimate first step. Re-solving the sub-array at each spacing is what EM cells (`model=em`) already do for a
 layout, and is the route for a later series (overview, "Not here").
 
@@ -150,8 +156,8 @@ tuning slider, varied by yield and set by the optimizer.
 | Parameter | Meaning |
 |---|---|
 | `Record` | The EM result, as EM Field Data's: a saved `.cemr`, read whole and cached (`PortFarFieldSet`) |
-| `Level` | `isolated` (L0), `embedded` (L1), `exact` (L2); defaulted from the record: one port → `isolated`, a sub-array → `embedded`, a record whose port count and lattice equal the array's → `exact` |
-| `Patterns` | `centre` or `classes` (§3.1); `embedded` only |
+| `Level` | `auto` (the default), `isolated` (L0), `embedded` (L1), `exact` (L2); `auto` takes it from the record: one port → `isolated`, a sub-array → `embedded`, a record whose port count and lattice equal the array's → `exact` |
+| `Patterns` | `classes` (the default) or `centre` (§3.1); `embedded` only |
 | `Mode` | `feed` or `elements` |
 | `Rows`, `Cols` | Integers |
 | `Lattice` | `rect` or `tri` (every other row offset by dx/2) |
@@ -180,6 +186,11 @@ instance's scope:
 | `row`, `col` | 1-based |
 | `x`, `y` | Position of the element from the array's centre, metres (a length, unit-bearing) |
 
+The angles `steer` and `steerDelay` take are angles as every trigonometric argument's are: `30 deg`, or a VAR whose unit is an
+angle, is radians already; **a bare number is radians**. A VAR written `theta0 = 30` with no unit therefore steers to 30 rad,
+which is why every bench writes `theta0 = 30 deg`. A measurement's direction arguments (`PointingErrorDeg(F1, θ, φ)`) are bare
+numbers of degrees, and a `deg` VAR reads as radians in a measure (its unit is not carried into the measurement scope).
+
 The convention is fixed: looking at the aperture from the front (+z, boresight), rows run down the y axis from the top,
 columns run along x from the left, `n = (row−1)·Cols + col`, and the symbol and the tool both draw it that way.
 
@@ -198,7 +209,7 @@ So a steered, tapered 32×32 array is
 theta0 = 30 deg
 phi0   = 0 deg
 f0     = 5.8 GHz
-PhasedArray:PA1 feed Record=results/patch5x5.cemr Rows=32 Cols=32 dx=0.5*lambda(f0) dy=0.5*lambda(f0) Phase=steer(theta0,phi0,f0) Amp=taylor(-30,4) PhaseBits=6
+PhasedArray:PA1 feed Record="results/patch5x5.cemr" Mode=feed Rows=32 Cols=32 dx=0.5*lambda(f0) dy=0.5*lambda(f0) Phase=steer(theta0,phi0,f0) Amp=taylor(-30,4) PhaseBits=6
 ```
 
 (the record's spelling follows EmFieldData's), and a sweep of `theta0` is an ordinary `parametric_sweep`. A reference to `n`, `row`, `col`, `x` or `y` outside a
@@ -215,7 +226,19 @@ the instance's scope.
 - **Elements mode.** The N-port array network, one pin per port.
 
 In every mode the component is also the block a `type=fields` analysis names, so `analysis F1 type=fields block=PA1`
-gives the array's pattern, and its far field is formed from (1) at L2 and (2) at L0/L1.
+gives the array's pattern, and its far field is formed from (1) at L2 and (2) at L0/L1. Its scalar measurements
+(`HpbwDeg`, `SllDb`, `PointingErrorDeg`, `ScanLossDb`, `GratingMarginDeg`, `PowerBalance`, `ActiveVswrMax`, `BeamNfDb` and the
+pattern's own) are one number per run, so under a parametric sweep they are refused with the name of the cube to plot instead
+(`F1.farfield.RealizedGainDbi`, `F1.array.GammaActive` over the swept VAR); a bench that wants both keeps an unswept fields
+analysis for its measures.
+
+A Feed-mode amplitude taper is an attenuation after an equal split, so the power it takes from the edge elements is dissipated in
+the beamformer, not passed to the centre: a 16 × 16 −25 dB Taylor taper costs 6.2 dB of realized gain from the feed against
+uniform weights (the *Phased Array* example). A lossless unequal divider is not modelled.
+
+**A drawn bench's channel cell.** The channel is named by a parameter, not placed as an instance, so the schematic extraction
+carries its definition explicitly: a `Channel` naming a cell folder of the workspace brings that cell into the extracted `.cnl`
+(PAA-10; before it, a drawn Feed-mode bench with a channel failed with "names no cell").
 
 ### 4.5 A PhaseShifter System block
 
@@ -392,13 +415,18 @@ factor is **never evaluated only on the record's grid**:
 
 ### 6.3 The circuit
 
+- **No channel, or a channel that does not reflect.** The beamformer is matched and isolating, so nothing returns to another
+  element: each element's wave is its path's and nothing is solved, coupled or not.
 - **Identical channels.** When every channel instance is identical apart from the component's own weights (§4.4), the
   channel is a two-port solved **once** per frequency; the array then closes with
-  `a = (I − Γ_ch·S)⁻¹ · t · w`, whose factorisation does not depend on the weights. With S sparse (§3.2) that is a
+  `a = (I − S22·S)⁻¹ · S21 · t · w`, whose factorisation does not depend on the weights. Elements switched off are a rank-|Off|
+  Woodbury update against the kept factor (past 256 the set is factorised itself). With S sparse (§3.2) that is a
   sparse factorisation, done once, and a change of steering or taper is a sparse back-substitution — proportional to the
   factor's non-zeros, not to N² — plus the pattern sum. With `exact` (L2) S is dense, but N is tens of ports.
 - **Coupling off.** The closure is diagonal and a change of weights costs only the pattern sum.
-- **Otherwise** (a channel that differs per element, a nonlinear channel, HB) the circuit is solved as elaborated, with
+- **Otherwise** (a channel that differs per element, a nonlinear part anywhere in the circuit — the S-parameter run linearises
+  it about an operating point the whole circuit sets — a complex Z0, a channel wired to a net outside itself, a circuit wired
+  inside the array, HB) the circuit is solved as elaborated, with
   its size reported by `explain` and `run dryRun=true`. Harmonic balance of thousands of nonlinear channels is not interactive
   and is not presented as such.
 
@@ -408,8 +436,9 @@ A tuning slider on `theta0` re-evaluates through the fast path, so the pattern f
 weights does not elaborate the bench again either, but re-evaluates the beamformer's weights on the last elaborated netlist
 (PAA-8b). The tool window (§8)
 drags the beam directly. Where the fast path does not apply, the drag shows the pattern with the circuit held at its last
-solve, marked "estimated", and solves when released. The co-simulation's measured drag cost at 1° in a Debug build
-(23 ms for a polar cut, 71 ms for a 3D pattern) sets the expectation for the drawing itself.
+solve, marked "estimated", and solves when released. Measured (PAA-8b, PAA-9, Apple M4): a tuning move at 4096 elements with an
+identical channel takes 25 ms in Release (34 ms Debug); the tool's whole frame — evaluation, forming and drawing — about 25 ms at
+1024 elements and 65 ms at 4096 in Release (48 and 140 ms in Debug), so 20 frames a second is met at 1024 and not at 4096.
 
 ## 7. Brute-force harmonic balance
 
@@ -422,8 +451,14 @@ run. It already solves; this series adds:
   from the block's own linear stamp, I = Y·V, so no new unknown is introduced. The pattern is then (1) of those waves.
 - **Each amplifier's loading.** Per element: Γ_act from the HB waves, delivered power, and the PA's output power and PAE
   from the bench's measurements, as cubes over an element axis, and a Smith-chart trace of Γ_act against a swept steer.
-- **The loadpull overlay.** The loci of every element's Γ_act drawn over the PA's loadpull contours (`.spl`), which is
-  the picture that says which elements leave the PA's high-efficiency region at which scan angle.
+- **The loadpull overlay.** The loci of every element's Γ_act drawn over the PA's loadpull contours, which is
+  the picture that says which elements leave the PA's high-efficiency region at which scan angle. It needed no new plot type: a
+  Smith-chart trace of `F1.array.GammaActive` with `element` as the family draws one locus per element, and the same trace sits on a
+  loadpull contour plot (from the loadpull bench's `.npy` or a `.spl`).
+- **A modulated signal (PAA-6b).** `waves=` also takes an envelope analysis, and `dirs=` names up to 16 directions: each gets its
+  radiated envelope with every metric the envelope gives a probe (PSD, ACLR, EVM, PAPR, CCDF) on its Ludwig-3 co-polar component,
+  each element's Γ_act is a cloud over the record, and `farfield.U` is the time-averaged pattern. The distortion leaves each element
+  with the phase its own compression gives it, not the steering, so off the beam ACLR and EVM are worse than in it.
 
 ## 8. The Phased Array tool
 
@@ -436,15 +471,14 @@ What it shows:
 
 | Area | Content |
 |---|---|
-| Aperture | The element grid as built, each element coloured by a chosen quantity: amplitude, phase, Γ_act, delivered power, PA Pout or PAE (after HB), channel NF. Click to switch an element off (writes `Off`), lasso to select, hover for the element's numbers |
+| Aperture | The element grid as built, each element coloured by a chosen quantity: amplitude, phase, Γ_act, delivered power, PA Pout or PAE (after HB) and channel NF — the last three from measurements named for an element (`Pout3_dBm`, `PAE3`, `NF3`). Click to switch an element off (writes `Off`), hover for the element's numbers |
 | (u,v) map | The pattern in direction-cosine space with the visible-region circle and the grating-lobe positions marked; **drag the beam** to steer when the weights are a `steer()`, writing its VARs |
 | Cuts | Two principal cuts, polar or rectangular, co- and cross-polar, with the L0 array factor dimmed beneath for comparison |
-| Readouts | Directivity, gain, realized gain, EIRP or G/T, beamwidth in two planes, sidelobe level, pointing error, scan loss, grating-lobe margin, worst |Γ_act|, power balance |
+| Readouts | Directivity, gain, realized gain, EIRP or G/T, beamwidth in two planes, sidelobe level, pointing error, scan loss, grating-lobe margin, worst |Γ_act|, power balance. Directivity and the power balance integrate the (u,v) map, not the record's grid (on PAA-1's 5° records the grid read a 64 × 64 array's directivity 4 dB low), so on a coarse record they differ from the run's own `farfield.DirectivityDbi` and `PowerBalance(F1)` |
 | Scan maps | Realized gain and worst |Γ_act| over (θ₀,φ₀), computed in the background through the fast path; scan blindness appears as a dark ring |
 | Frequency | Beam pointing against frequency (squint), phase shifters against delays |
 | Tapers and bits | Taper family and level, phase bits and attenuator step, with the quantisation lobes they make |
-| Failures | Elements switched off at random, N trials, with the spread of gain and sidelobe level |
-| 3D | The existing 3D pattern view |
+| Failures | Elements switched off at random, N trials, with the spread of gain and sidelobe level; the run's waves are zeroed in memory, the circuit is not solved again |
 
 The renderers for the aperture and the (u,v) map belong in `src/Render`, so the tool, UiSnapshot and the docs draw them
 with the same code.
@@ -454,6 +488,13 @@ with the same code.
 Superposition (1) is not in question; it is linear algebra the co-simulation series already verified. What needs
 evidence is how much L0 and L1 lose against L2, and that is an EM question. PAA-1 answers it before anything else is
 built, on a planar patch fixture:
+
+What was run, and what changed from this plan (PAA-1's completion note): the 7×7 did not fit (25,704 unknowns, about 28 GB), so
+the reference became a **6×6** solved dense at 5.9 GHz only, with 1×9 and 1×16 lines and the 5×5-from-3×3 as further checks;
+the coarser mesh moved the patch's resonance to about 5.88 GHz, so every comparison is at 5.9 GHz; **neither optional run was
+made** — the thick-substrate line was not run, and EMerge gives no pattern over a PEC floor and the finite-ground 2×2 was estimated
+at about 38 GB, so the edge effect of a finite ground is not measured (openEMS, which images a conducting floor, is the route if it
+is wanted). The plan as written:
 
 | Run | Ports | Purpose |
 |---|---|---|
@@ -477,7 +518,8 @@ sides, so a tolerance is legitimate; PAA-1 sets it from the numbers and the late
 
 | Piece | Project | Why |
 |---|---|---|
-| Lattice, pattern sum, coupling extension, active reflection, metrics | `src/Engine/Array` | Numeric, no domain types: arrays of positions, weights and pattern samples |
+| Pattern sum, (u,v) map, local cuts and metrics, the fast path | `src/Engine/Array` (namespace `CircuitRF.Engine.AntennaArray`) | Numeric, no domain types: arrays of positions, weights and pattern samples |
+| Lattice, coupling extension and the record's lattice fit | `src/Core/Devices/Arrays` | Moved from the engine in PAA-3, so the component builds its S at elaboration |
 | The `PhasedArray` model, its parameters, element scope, `steer` and the other functions | `src/Core` | A component model and the expression engine |
 | Reading a record into embedded patterns (terminated or shorted), the lattice of a record's ports, the `fields` analysis on a PhasedArray and on HB waves | `src/Design/Em3d` | Beside `PortFarFieldSet` and `FieldCosimulation` |
 | The dynamic symbol | `src/Design/Schematic/BuiltInSymbols.cs` | Beside the Combiner's |

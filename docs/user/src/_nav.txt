@@ -87,6 +87,7 @@ reference/palace-windows.html  | Installing Palace on Windows, step by step: wha
 reference/drawing-in-3d.html   | The 3D editor: drawing a cell in 3D — solids, placed cells, bond wires and ports — with no solver needed to draw.
 reference/thermal.html         | Temperature on the 3D model: heat sources, probes, contacts, Rth and Z_th, taught through two worked examples.
 reference/antennas.html        | Patch antennas: the pattern, the numbers that go with it, and the limits that bound both.
+reference/phased-array.html    | An array of up to 64 × 64 from one EM run: steered, tapered, received with, driven by an amplifier per element, and steered by hand.
 
 == SAR and MRI
 reference/sar.html             | SAR and B1 from a 3D run: setting it up, units and normalisation, the B1 convention, reading the results.

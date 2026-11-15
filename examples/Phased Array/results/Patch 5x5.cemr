@@ -1,0 +1,304 @@
+{
+  "FormatVersion": 1,
+  "Stamp": "20261114T211358Z-1cc05a9b",
+  "Written": "2026-11-14T14:13:59.02364-07:00",
+  "Product": "1.8.4",
+  "Solver": {
+    "Name": "Full-wave planar",
+    "Version": "grounded-edge-port-2026-10-14",
+    "Device": "cpu"
+  },
+  "Files": {
+    "Snp": "Patch 5x5.s25p",
+    "Npy": "Patch 5x5_em.npy",
+    "Fields": null
+  },
+  "Ports": [
+    {
+      "Number": 1,
+      "Name": "1",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 2,
+      "Name": "2",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 3,
+      "Name": "3",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 4,
+      "Name": "4",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 5,
+      "Name": "5",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 6,
+      "Name": "6",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 7,
+      "Name": "7",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 8,
+      "Name": "8",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 9,
+      "Name": "9",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 10,
+      "Name": "10",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 11,
+      "Name": "11",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 12,
+      "Name": "12",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 13,
+      "Name": "13",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 14,
+      "Name": "14",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 15,
+      "Name": "15",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 16,
+      "Name": "16",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 17,
+      "Name": "17",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 18,
+      "Name": "18",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 19,
+      "Name": "19",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 20,
+      "Name": "20",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 21,
+      "Name": "21",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 22,
+      "Name": "22",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 23,
+      "Name": "23",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 24,
+      "Name": "24",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    },
+    {
+      "Number": 25,
+      "Name": "25",
+      "Z0Re": 50,
+      "Z0Im": 0,
+      "Kind": "Plane",
+      "Part": null,
+      "Pins": null
+    }
+  ],
+  "Frequencies": {
+    "SweepHz": [
+      5900000000
+    ],
+    "FarFieldHz": [
+      5900000000
+    ],
+    "FieldSetHz": []
+  },
+  "FarFieldExcitation": "ShortedOthers",
+  "Setup": {
+    "FormatVersion": 1,
+    "Name": "e5",
+    "SignalStackupLayerName": "Top Copper (1 oz)",
+    "Frequency": {
+      "StartExpr": "5.8",
+      "StopExpr": "6.0",
+      "StepExpr": "",
+      "NumPoints": 3,
+      "Mode": "PointCount",
+      "Kind": "Linear",
+      "StartUnit": "GHz",
+      "StopUnit": "GHz",
+      "StepUnit": "Hz"
+    },
+    "Port1Z0Real": 50,
+    "Port1Z0Imag": 0,
+    "Port2Z0Real": 50,
+    "Port2Z0Imag": 0,
+    "Mesh": {
+      "MinCellsAcrossWidth": 8,
+      "EdgeCells": 4,
+      "EdgeFractionOfWidth": 0.1,
+      "EdgeGrowthRatio": 1.5,
+      "TruncationHeights": 6,
+      "TruncationTailCells": 4
+    },
+    "DispersionCorrection": true,
+    "RadiationPattern": true,
+    "AnalysisKind": "Planar",
+    "PlanarMesh": {
+      "Auto": false,
+      "CellsPerWavelength": 12,
+      "EdgeMesh": false,
+      "EdgeCells": 3,
+      "CurrentModel": "Sheet"
+    }
+  },
+  "SetupSource": {
+    "File": "../e5/em/e5.cem",
+    "Embedded": null
+  },
+  "Geometry": {
+    "GeometryHash": "58261b452cbd659d",
+    "MeshHash": "0bbae7c1192826ed",
+    "PortHash": "b4d3374a7f62e37e",
+    "ModelRevision": "grounded-edge-port-2026-10-14",
+    "MeshSize": 7350,
+    "MeshUnit": "cells",
+    "Unknowns": 13300
+  }
+}
