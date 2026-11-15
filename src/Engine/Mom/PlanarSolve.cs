@@ -3647,6 +3647,7 @@ public static class PlanarSolve
         // pressed after refinement finished takes nothing away from the model and must not be
         // reported as though it did.
         bool refinementStopped = false;
+        bool comparedAny = false;          // brief-icf-1 R-icf1-3 — whether any interval was ever checked against the interpolant
 
         if (st.Adaptive is null)
         {
@@ -3813,6 +3814,7 @@ public static class PlanarSolve
             }
 
             double worstStopped = 0;
+            double worstAtHz = double.NaN;     // brief-icf-1 R-icf1-4 — the midpoint the worst stopped disagreement was measured at
             while (work.Count > 0 && solved.Count < budget && control?.StopRequested != true)
             {
                 var nodes  = solved.Select(i => freqs[i]).ToList();
@@ -3853,6 +3855,7 @@ public static class PlanarSolve
 
                     Solve(p.Mid);
                     taken.Add(p);
+                    comparedAny = true;
                 }
                 byIndex = Replay();
 
@@ -3870,6 +3873,7 @@ public static class PlanarSolve
                     else
                     {
                         // This interval stopped here — either converged, or out of grid or budget.
+                        if (err > worstStopped) worstAtHz = freqs[p.Mid];
                         worstStopped = Math.Max(worstStopped, err);
                     }
                 }
@@ -3894,7 +3898,9 @@ public static class PlanarSolve
             // ANT-9 §4's whole complaint is that a reader was left to infer it.
             // A run that was stopped mid-refinement has NO verdict — not a false one and not a
             // true one. Null is what the result type already has for "not answered".
-            converged = refinementStopped ? null : !(worstStopped > ad.Tolerance);
+            // brief-icf-1 R-icf1-3 — nor does a run that compared nothing: a sweep too short to refine solves every point, and
+            // "converged" would be a verdict on a test that never ran.
+            converged = refinementStopped || !comparedAny ? null : !(worstStopped > ad.Tolerance);
 
             // ANT-4 on the adaptive path. A requested point that the sampler never solved has no
             // basis currents, so the pattern is taken at the nearest point that WAS solved and the
@@ -4314,7 +4320,12 @@ public static class PlanarSolve
                 ? "barycentric rational" : "complex cubic spline";
 
             var adaptiveNote = new System.Text.StringBuilder();
-            if (refinementStopped)
+            bool comparedNothing = !comparedAny && !refinementStopped;
+            if (comparedNothing)
+                adaptiveNote.Append("Adaptive frequency sampling compared nothing: the sweep has ").Append(freqs.Length)
+                            .Append(freqs.Length == 1 ? " point" : " points")
+                            .Append(", too few to refine, so every point was solved and there is no verdict to give. ");
+            else if (refinementStopped)
                 // Neither verdict is available here, so neither is printed. The number still is —
                 // it just has to be said what it is a maximum OVER, because an unprobed interval
                 // contributes nothing to it and there is no way to tell from the value alone.
@@ -4331,43 +4342,48 @@ public static class PlanarSolve
                             .Append(didConverge ? "CONVERGED" : "DID NOT CONVERGE")
                             .Append(": the worst disagreement refinement stopped at is |ΔS| = ")
                             .Append(worstStopped.ToString("G3"))
+                            // brief-icf-1 R-icf1-4 — where, so the frequency to look at is in the sentence and not left to a plot.
+                            .Append(!didConverge && !double.IsNaN(worstAtHz) ? $" at {SurfaceMesher.Eng(worstAtHz)}Hz" : "")
                             .Append(didConverge ? ", inside " : ", against ")
                             .Append("a tolerance of ").Append(ad.Tolerance.ToString("G3")).Append(". ");
 
-            adaptiveNote.Append(solved.Count).Append(" of ").Append(freqs.Length)
-                        .Append(" requested point(s) were solved (")
-                        .Append((solvedFraction * 100).ToString("F0")).Append(" %)");
-
-            if (solved.Count >= freqs.Length)
-                adaptiveNote.Append(" — every one of them, because no interval agreed with the " +
-                                    "interpolant closely enough to be skipped, so nothing is modelled " +
-                                    "and adaptive sampling saved nothing here. ");
-            else if (solvedFraction > 0.8)
-                adaptiveNote.Append(", so the adaptive path saved little here — the response is not " +
-                                    "smooth on the grid you asked for. The rest are modelled by a ")
-                            .Append(modelName).Append(" interpolant through them. ");
-            else
-                adaptiveNote.Append("; the rest are modelled by a ").Append(modelName)
-                            .Append(" interpolant through them. ");
-
-            // Not on a stopped run: the remedy there is not a finer grid, it is not stopping, and
-            // sending a user to change their sweep over a result they cut short themselves is
-            // advice that costs them a re-run to discover was never needed.
-            if (!didConverge && !refinementStopped)
+            if (!comparedNothing)
             {
-                adaptiveNote.Append("What would help: a FINER requested grid, because the feature " +
-                                    "refinement could not resolve is narrower than the spacing of " +
-                                    "this one and every point it is allowed to reach is already " +
-                                    "solved");
-                adaptiveNote.Append(ad.Search is null
-                    ? "; or, if that feature is a resonance, the resonance search, which is the one " +
-                      "mode allowed to add frequencies between the ones you asked for. "
-                    : ". The resonance search is already on, and it reports separately what it found. ");
-            }
+                adaptiveNote.Append(solved.Count).Append(" of ").Append(freqs.Length)
+                            .Append(" requested point(s) were solved (")
+                            .Append((solvedFraction * 100).ToString("F0")).Append(" %)");
 
-            if (budgetBound)
-                adaptiveNote.Append("The solve budget was reached before every interval converged — " +
-                                    "treat the modelled points with that in mind. ");
+                if (solved.Count >= freqs.Length)
+                    adaptiveNote.Append(" — every one of them, because no interval agreed with the " +
+                                        "interpolant closely enough to be skipped, so nothing is modelled " +
+                                        "and adaptive sampling saved nothing here. ");
+                else if (solvedFraction > 0.8)
+                    adaptiveNote.Append(", so the adaptive path saved little here — the response is not " +
+                                        "smooth on the grid you asked for. The rest are modelled by a ")
+                                .Append(modelName).Append(" interpolant through them. ");
+                else
+                    adaptiveNote.Append("; the rest are modelled by a ").Append(modelName)
+                                .Append(" interpolant through them. ");
+
+                // Not on a stopped run: the remedy there is not a finer grid, it is not stopping, and
+                // sending a user to change their sweep over a result they cut short themselves is
+                // advice that costs them a re-run to discover was never needed.
+                if (!didConverge && !refinementStopped)
+                {
+                    adaptiveNote.Append("What would help: a FINER requested grid, because the feature " +
+                                        "refinement could not resolve is narrower than the spacing of " +
+                                        "this one and every point it is allowed to reach is already " +
+                                        "solved");
+                    adaptiveNote.Append(ad.Search is null
+                        ? "; or, if that feature is a resonance, the resonance search, which is the one " +
+                          "mode allowed to add frequencies between the ones you asked for. "
+                        : ". The resonance search is already on, and it reports separately what it found. ");
+                }
+
+                if (budgetBound)
+                    adaptiveNote.Append("The solve budget was reached before every interval converged — " +
+                                        "treat the modelled points with that in mind. ");
+            }
 
             // LF1/LF2 — the count above is over the FULL-WAVE grid, and that is not the whole sweep
             // when 0 Hz or a point below the field solver's range was asked for: both were taken off
@@ -4404,7 +4420,8 @@ public static class PlanarSolve
                                 "per-port calibration diagnostics are carried from the nearest solved " +
                                 "frequency rather than interpolated.");
 
-            notes.Add(adaptiveNote.ToString());
+            // brief-icf-1 R-icf1-4 — a sweep that did not converge publishes modelled points the tolerance does not cover: a warning.
+            notes.Add(converged == false ? EmFinding.Warn(adaptiveNote.ToString()) : adaptiveNote.ToString());
         }
 
         // ── STOP — the sentence, and it is never left out ──────────────────────────────────────
@@ -4685,8 +4702,10 @@ public static class PlanarSolve
             }
         }
 
-        // LFE — say which edge port the sweep used, once, in a designer's terms, when it used both.
+        // LFE — say which edge port the sweep used, once, in a designer's terms, when it used both. brief-icf-1 R-icf1-2: only when
+        // some port switches — an Uncalibrated Port is grounded at every frequency, so a run of those alone used one throughout.
         if (st.Deembed && fillSt.EdgePortReturn == PlanarEdgePortReturn.Ground &&
+            ports.Any(p => PlanarGroundedEdgePort.Applies(p) && !p.Uncalibrated) &&
             freqs.Length > 0 && freqs[^1] >= fillSt.GroundedEdgePortBelowHz && freqs[0] < fillSt.GroundedEdgePortBelowHz)
             notes.Add($"Edge ports are ground-referenced below {SurfaceMesher.Eng(fillSt.GroundedEdgePortBelowHz)}Hz, " +
                       "where the substrate is electrically thin and the series gap's de-embedding error " +

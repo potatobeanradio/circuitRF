@@ -1795,3 +1795,11 @@ src/Design/Em3d/FieldCosimulation.Array.cs|{name}({fa.Name}, …) receives at th
 src/Engine/SParameterEngine.Beam.cs|The circuit has no port number {portNumber} at its top level.
 src/Engine/SParameterEngine.Beam.cs|The receive weights need every circuit port terminated in a resistive Z0 (Re Z0 > 0); one port's Z0 has none.
 src/RfCore/Propagation/PropagationModels.cs|{_model.Name} reads the parameter '{name}', which its registry entry does not name.
+
+# brief-paa-8/8b — internal invariants of the phased-array fast paths, not sentences a user reads: the re-weigh runs only after
+# PhasedArrayReweigh.Refusal has shown every Feed-mode array is at the top of the bench; the closed reflection is formed for every
+# frequency of the sweep that asks for it; and an exactly-zero pivot of the Woodbury capacitance matrix means the closure itself is
+# singular, which the full factorisation on the other branch reports in its own words.
+src/Core/Elaboration/Elaborator.PhasedArray.cs|'{c.InstancePath}' is not a Phased Antenna Array at the top of the bench, so its weights are not re-weighed.
+src/Engine/Array/ArrayFeedLoadModel.cs|The array's closed reflection was not formed at {hz:G9} Hz.
+src/Engine/Array/PhasedArrayFastPath.cs|The array's closure with its elements switched off is singular.

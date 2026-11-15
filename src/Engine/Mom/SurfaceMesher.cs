@@ -1374,6 +1374,13 @@ public static class SurfaceMesher
                   // The refusal fires only past the ceiling, so without this a user whose mesh is
                   // merely expensive is still sent round the two knobs this note has just called
                   // dead and never told which one is alive.
+                  // brief-icf-1 R-icf1-5 — on the local grid the sentence below is false: its base block IS λ_g/N at the mesh
+                  // frequency, so both knobs move it, and on artwork smaller than a block they move the whole partition.
+                  : local is not null
+                  ? $"The local grid's base block is λ_g/{s.CellsPerWavelength} = {fmt(hWave)} at {Eng(meshFreqHz)}Hz" +
+                    (sizedAtSweepTop ? ", the top of the sweep" : "") + ", so Cells per wavelength and Mesh frequency set it" +
+                    (sizedAtSweepTop ? " — and so does the sweep's top frequency" : "") + $"; the narrowest metal ({fmt(narrowest)}, " +
+                    $"{s.MinCellsAcrossConductor} across) sets the finest cells, {fmt(Math.Min(hx, hy))}, near the features."
                   : $"Cells per wavelength and Mesh frequency do NOT set this mesh. The λ_g/" +
                     $"{s.CellsPerWavelength} cap is {fmt(hWave)}; the narrowest metal ({fmt(narrowest)}, " +
                     $"{s.MinCellsAcrossConductor} across) forces {fmt(Math.Min(hx, hy))} — " +

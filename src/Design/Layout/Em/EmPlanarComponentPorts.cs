@@ -254,6 +254,7 @@ public static class EmPlanarComponentPorts
     private static string KeyOf(EmSetup setup, EmLayoutSource? source)
         => string.Join("|", setup.ComponentPorts.Select(c => $"{c.Refdes}\u001f{c.Z0}\u001f{c.Reference}\u001f{c.WidthUm?.ToString("R", CultureInfo.InvariantCulture)}" +
                                                              $"\u001f{c.Cell}\u001f{c.PortAt}\u001f{c.KeepOutUm}\u001f{c.Construction}\u001f{c.Keep}\u001f{c.Pins}\u001f{c.Ground}"))
+           + (setup.CutGroundFallbacks.Count == 0 ? "" : "|fallback\u001f" + string.Join("\u001f", setup.CutGroundFallbacks.Keys.Order(StringComparer.Ordinal)))
            + "#" + string.Join(",", setup.AnalysisLevelNames) + "#" + setup.SolveRegion?.Describe() + (setup.Is3D ? "#3d" : "")
            + "#" + (source is null ? "" : source.View.Shapes.Count + "/" + source.View.Instances.Count + "/" + source.View.EditCount + "/" + source.DbuPerMicron);
 
@@ -316,6 +317,42 @@ public static class EmPlanarComponentPorts
             var onConductor = same is { Count: > 0 } ? same.ToHashSet() : [layer];
             regions.AddRange(Regions(flat.Where(s => onConductor.Contains(s.Layer) && s is not LabelShape and not BitmapShape), layer, dbu,
                                      regions.Count));
+        }
+
+        // brief-icp-4 R-icp4-2 — a pin referenced to another, on Planar: LCP's strip across the vacated space from the pin's face to its
+        // reference's, cut by a delta gap (Construct, the one a footprint part's port is), verified as that one is.
+        (RectShape Strip, LabelShape Gap, double GapM, double WidthM, bool AlongX)? Gap(EmCutPin pin, EmCellCutoutResult on, EmComponentPort? entry,
+                                                                                        out string? why)
+        {
+            var rPin = on.Pins.FirstOrDefault(o => o.Path == pin.Path && o.Pin.Equals(pin.Reference, StringComparison.OrdinalIgnoreCase));
+            var pos = FacePad(pin, dbu);
+            var neg = rPin?.Face is not null ? FacePad(rPin, dbu) : null;
+            var posRegion = regions.FirstOrDefault(rg => rg.Layer == pin.Layer && C3dThermal.Inside(rg.Poly, new Point3(pos.Cx, pos.Cy, 0.5), 0));
+            var negRegion = neg is null ? null
+                : regions.FirstOrDefault(rg => rg.Layer == rPin!.Layer && C3dThermal.Inside(rg.Poly, new Point3(neg.Cx, neg.Cy, 0.5), 0));
+            why = posRegion is null || negRegion is null ? "the copper at its face or at its Reference's face was not found." : null;
+            return why is null
+                ? Construct(pin.Name, pin.Name, (pos, posRegion!), (neg!, negRegion!), regions, setup, source, dbu,
+                            entry?.WidthUm is > 0 and var ew ? ew * 1e-6 : null, out why)
+                : null;
+        }
+        EmComponentPort? EntryOf(string path) => cuts.FirstOrDefault(c => c.Instance.Path.Equals(path, StringComparison.OrdinalIgnoreCase))?.Entry;
+
+        // brief-icf-1 R-icf1-1 — a pin whose Reference passed the cut's shared check but whose strip cannot be built here falls back to
+        // ground by the cut's own rule (EmCellCutout, CutGroundFallbacks), so its reference takes a port of its own when nothing else
+        // returns through it, and the numbers, the pin classes and the sentences all come from one cut.
+        if (cut is not null && !threeD)
+        {
+            var fell = new Dictionary<string, string>(setup.CutGroundFallbacks, StringComparer.Ordinal);
+            foreach (var pin in cut.Pins.Where(p => p.HasPort && p.Reference is not null))
+                if (Gap(pin, cut, EntryOf(pin.Path), out string? why) is null)
+                    fell[pin.Name] = why!.StartsWith(pin.Name, StringComparison.Ordinal) ? why : $"{pin.Name}: {why}";
+            if (fell.Count > setup.CutGroundFallbacks.Count)
+            {
+                var again = setup.Clone();
+                again.CutGroundFallbacks = fell;
+                cut = EmCellCutout.Apply(again, source, cuts, instances);
+            }
         }
 
         var groundNets = new HashSet<string>(EmPartPads.GroundNames, StringComparer.OrdinalIgnoreCase);
@@ -460,17 +497,7 @@ public static class EmPlanarComponentPorts
                 bool alongX = pin.OutwardDeg is 0 or 180;
                 if (pin.Reference is { } refPin && !threeD)
                 {
-                    var rPin = cut.Pins.FirstOrDefault(o => o.Path == pin.Path && o.Pin.Equals(refPin, StringComparison.OrdinalIgnoreCase));
-                    var pos = FacePad(pin, dbu);
-                    var neg = rPin?.Face is not null ? FacePad(rPin, dbu) : null;
-                    var posRegion = regions.FirstOrDefault(rg => rg.Layer == pin.Layer && C3dThermal.Inside(rg.Poly, new Point3(pos.Cx, pos.Cy, 0.5), 0));
-                    var negRegion = neg is null ? null
-                        : regions.FirstOrDefault(rg => rg.Layer == rPin!.Layer && C3dThermal.Inside(rg.Poly, new Point3(neg.Cx, neg.Cy, 0.5), 0));
-                    string? gapWhy = posRegion is null || negRegion is null ? "the copper at its face or at its Reference's face was not found." : null;
-                    var made = gapWhy is null
-                        ? Construct(pin.Name, pin.Path, (pos, posRegion!), (neg!, negRegion!), regions, setup, source, dbu,
-                                    entry?.WidthUm is > 0 and var ew ? ew * 1e-6 : null, out gapWhy)
-                        : null;
+                    var made = Gap(pin, cut, entry, out string? gapWhy);
                     if (made is null)
                     {
                         results.Add(Refused(pin.Path, gapWhy!.StartsWith(pin.Name, StringComparison.Ordinal) ? gapWhy : $"{pin.Name}: {gapWhy}")

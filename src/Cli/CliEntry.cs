@@ -2150,7 +2150,9 @@ static int ReportEmRun(EmRunResult result, EmSetup setup, string cemPath)
             JsonRun.Note(CliDiagnostics.EmMeshWarning(w));
         }
         Console.WriteLine($"Folder:    {mesh.RunDirectory}");
-        JsonRun.AddOutput("mesh", Path.Combine(mesh.RunDirectory, CircuitRF.Design.Em3d.GmshGeoWriter.MeshFile));
+        // brief-icf-1 R-icf1-8 — Gmsh's mesh file is Palace's; EMerge's driver meshes in memory and writes none.
+        string meshFile = Path.Combine(mesh.RunDirectory, CircuitRF.Design.Em3d.GmshGeoWriter.MeshFile);
+        if (File.Exists(meshFile)) JsonRun.AddOutput("mesh", meshFile);
         JsonRun.Note(CliDiagnostics.EmMeshed(mesh.Elements ?? 0, mesh.Estimated ?? 0, mesh.Warnings.Count));
         return 0;
     }

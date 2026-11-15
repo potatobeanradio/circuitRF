@@ -85,3 +85,12 @@ One test per requirement, all routine and solve-free except where a fixture alre
 ## Not here
 
 Where a cut-port sheet lands (ICF-6). Any change to what the local grid builds (ICF-4).
+
+## Completion note (2026-11-15)
+
+All ten built; detail in `src/Design/RESOLVED.md` §brief-icf-1. Where it differs from the requirements:
+- R-icf1-1: the fallback is carried into the cut through an in-memory `EmSetup.CutGroundFallbacks`, so `EmCellCutout` stays the
+  one place it is decided; in 3D it is asked after the cut elaboration (`C3dCellCuts.FallBackToGround`).
+- R-icf1-6: the realised unknown count is written on planar results; a 3D result's header already carries its solver's mesh lines.
+- R-icf1-9: the key is `file=`, because `src=` already names a WSProbe trace's source probe.
+- R-icf1-8: the 3D view's Mesh button is unchanged (Palace only); `--mesh-only` meshes an EMerge setup.

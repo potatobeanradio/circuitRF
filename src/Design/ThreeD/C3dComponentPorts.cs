@@ -82,6 +82,10 @@ public sealed record C3dComponentPort(
     /// <summary>The verification's sentence, once it ran: <c>verified</c> or why not.</summary>
     public string Verdict { get; init; } = "";
 
+    /// <summary>brief-icf-1 R-icf1-7 — a cut pin's edge sheet: where it lands and how far it runs (<c>down to 'Metal1', 4 µm</c>,
+    /// <c>down to the floor, 'GND', 755 µm</c>). Null for every other port.</summary>
+    public string? Landing { get; init; }
+
     /// <summary>R-emb1-7 — every pin of the part, in its footprint's pin order: a multi-pad part's model terminals map onto them.</summary>
     public IReadOnlyList<string> PartPins { get; init; } = [];
 

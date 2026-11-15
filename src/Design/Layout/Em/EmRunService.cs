@@ -1627,7 +1627,7 @@ public static class EmRunService
                 // calibration's validity, so an ordinary .sNp is byte-identical to one written
                 // before this existed.
                 EmSnpProvenance.ValidityCaveats(solve),
-                portMap, stamp));
+                portMap, stamp, solve?.UnknownCount));
 
         Directory.CreateDirectory(Path.GetDirectoryName(snpBasePath)!);
 

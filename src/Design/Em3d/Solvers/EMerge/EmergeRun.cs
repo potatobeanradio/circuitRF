@@ -14,6 +14,9 @@ public static class EmergeRun
     /// <summary>The driver's mode that solves and writes the results.</summary>
     public const string SolveMode = "solve";
 
+    /// <summary>brief-icf-1 R-icf1-8 — the driver's mode that builds the geometry and the mesh, reports their counts and stops.</summary>
+    public const string MeshMode = "mesh";
+
     /// <summary>brief-emi-9 — the driver's argument that names the unknowns from which a driven solve uses the GPU.</summary>
     public const string GpuFromArgument = "gpu-from=";
 
@@ -26,7 +29,7 @@ public static class EmergeRun
     /// <param name="gpuFromUnknowns">brief-emi-9 — the unknowns from which the driver hands a driven problem to EMerge's GPU sparse
     /// solver (<see cref="EmergeDevicePolicy.GpuFromUnknowns"/>); null, never.</param>
     public static ProcessStartInfo StartInfo(string python, string runDirectory, IReadOnlyDictionary<string, string> threads,
-                                             long? gpuFromUnknowns = null)
+                                             long? gpuFromUnknowns = null, bool meshOnly = false)
     {
         var psi = new ProcessStartInfo(python)
         {
@@ -41,8 +44,9 @@ public static class EmergeRun
         // -X utf8: on Windows Python writes its streams in the ANSI code page, where EMerge's own log lines (a mesh count
         // carries ◮ and ▲) cannot be encoded and each costs a logging-error traceback in emerge.log. -I ignores PYTHONUTF8,
         // so the mode is an argument.
-        foreach (string a in new[] { "-I", "-X", "utf8", EmergeScriptWriter.DriverFile, EmergeScriptWriter.ProblemFile, SolveMode }) psi.ArgumentList.Add(a);
-        if (gpuFromUnknowns is { } from) psi.ArgumentList.Add(GpuFromArgument + from.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        foreach (string a in new[] { "-I", "-X", "utf8", EmergeScriptWriter.DriverFile, EmergeScriptWriter.ProblemFile, meshOnly ? MeshMode : SolveMode })
+            psi.ArgumentList.Add(a);
+        if (gpuFromUnknowns is { } from && !meshOnly) psi.ArgumentList.Add(GpuFromArgument + from.ToString(System.Globalization.CultureInfo.InvariantCulture));
         foreach (string key in psi.Environment.Keys.ToList())
             if (key.StartsWith("PYTHON", StringComparison.OrdinalIgnoreCase) || key.Equals("VIRTUAL_ENV", StringComparison.OrdinalIgnoreCase))
                 psi.Environment.Remove(key);

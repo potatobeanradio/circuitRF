@@ -137,6 +137,29 @@ public static class EmergeLog
     }
 
     /// <summary>The driver's refusal, from the <c>{"error": …}</c> line it prints before exiting 2; null when there is none.</summary>
+    /// <summary>brief-icf-1 R-icf1-8 — the driver's <c>mesh</c> mode's last line: the mesh's counts and EMerge's warnings; null when
+    /// it printed none.</summary>
+    public static (long Tetrahedra, IReadOnlyList<string> Warnings)? MeshReport(IEnumerable<string> lines)
+    {
+        foreach (string line in lines.Reverse())
+        {
+            if (!line.TrimStart().StartsWith('{')) continue;
+            try
+            {
+                using var doc = JsonDocument.Parse(line);
+                var r = doc.RootElement;
+                if (r.ValueKind != JsonValueKind.Object || r.TryGetProperty("stage", out _) ||
+                    !r.TryGetProperty("tets", out var tets) || tets.ValueKind != JsonValueKind.Number) continue;
+                var warnings = r.TryGetProperty("warnings", out var w) && w.ValueKind == JsonValueKind.Array
+                    ? [.. w.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!)]
+                    : new List<string>();
+                return (tets.GetInt64(), warnings);
+            }
+            catch (JsonException) { }
+        }
+        return null;
+    }
+
     public static string? DriverError(IEnumerable<string> lines)
     {
         foreach (string line in lines.Reverse())

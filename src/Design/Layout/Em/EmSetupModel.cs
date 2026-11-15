@@ -968,6 +968,12 @@ public sealed class EmSetup
     /// them in an in-memory 3D view of it, as a <c>.c3d</c> does (brief-lcp-5, <c>Em3dSetupProblem</c>).</summary>
     public List<EmComponentPort> ComponentPorts { get; set; } = [];
 
+    /// <summary>brief-icf-1 R-icf1-1 — cut pins (<c>path.pin</c>) whose Reference passed the cut's shared facing check but whose gap
+    /// port the solver could not then build (Planar's strip, the 3D gap sheet), each with the sentence saying why. The cut builds
+    /// them against ground instead (<see cref="EmCellCutout"/>'s one fallback rule). In memory only: never read from or written to a
+    /// <c>.cem</c>; a builder sets it on a clone of the setup it was handed.</summary>
+    public IReadOnlyDictionary<string, string> CutGroundFallbacks { get; set; } = new Dictionary<string, string>();
+
     /// <summary>The <see cref="EmComponentPort.Refdes"/> that names every placed two-terminal part.</summary>
     public const string AllComponents = "*";
 
@@ -1146,6 +1152,7 @@ public sealed class EmSetup
         UnassignedConductors3D = UnassignedConductors3D,
         Ports3D                = [.. Ports3D],       // records, immutable
         ComponentPorts         = [.. ComponentPorts], // records, immutable
+        CutGroundFallbacks     = CutGroundFallbacks,  // replaced, never mutated
         Eigenmode              = Eigenmode,
         PlaneWave              = PlaneWave,      // record, immutable
         Thermal                = Thermal?.Clone(),

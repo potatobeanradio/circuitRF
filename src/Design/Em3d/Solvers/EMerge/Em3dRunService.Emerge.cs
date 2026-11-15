@@ -161,8 +161,9 @@ public static partial class Em3dRunService
                     throw new OperationCanceledException();
                 },
             };
+            bool meshOnly = control?.MeshOnly == true;
             var psi = EmergeRun.StartInfo(emerge.Path, dir,
-                                          EmergeThreads.Environment(run.MaxCores, PhysicalCores.Count, Environment.ProcessorCount), from);
+                                          EmergeThreads.Environment(run.MaxCores, PhysicalCores.Count, Environment.ProcessorCount), from, meshOnly);
             PalaceRun.ProcessRun ran;
             // brief-emi-10 — meshing is EMerge's own until it reports its mesh, and it is the stage a runaway happens in.
             var limits = run.Limits(physical);
@@ -189,8 +190,20 @@ public static partial class Em3dRunService
                     ? $"EMerge stopped: {said} Its log is {logPath}."
                     : $"EMerge exited with code {ran.ExitCode}: {PalaceRun.Quote(ran.Tail, "Error")}. Its log is {logPath}.")), null);
             peak = ran.PeakResident;
+            // brief-icf-1 R-icf1-8 — a mesh-only run stops with the driver's mesh: the count and EMerge's warnings, no solve.
+            if (meshOnly)
+            {
+                var made = EmergeLog.MeshReport(ran.Tail);
+                return (new Leg(Me, EmRunStatus.Ok, null, null, null, null, $"EMerge {emerge.Release ?? ""}".TrimEnd())
+                {
+                    MeshOnly = new Em3dMeshOnlyReport(made?.Tetrahedra ?? tracker.Counts?.Tetrahedra ?? tracker.Tetrahedra, null, false, dir,
+                                                      made?.Warnings ?? []),
+                }, null);
+            }
             return (null, EmergeResults.ReadFacts(dir));
         }
+
+        if (control?.MeshOnly == true) return Attempt(null).Failed!;
 
         var (attempt, rerun) = WithCpuFallback(run.EmergeDevice, gpuFrom, from => { var r = Attempt(from); return (r, r.Facts); });
         var (failed, read) = attempt;

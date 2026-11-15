@@ -483,7 +483,12 @@ public static class C3dProblemAssembly
         {
             cuts = C3dCellCuts.Plan(setup, drawn, elab.Technologies, workspaceCws, elab.LayoutsInMemory, elab.LayoutRegions);
             if (cuts is { Refusal: { } cutWhy }) return No(cutWhy);
-            if (cuts is { Cuts: true }) drawn = elab.Elaborate(document, path, workspaceCws, options with { LayoutCuts = cuts.LayoutCuts });
+            if (cuts is { Cuts: true })
+            {
+                drawn = elab.Elaborate(document, path, workspaceCws, options with { LayoutCuts = cuts.LayoutCuts });
+                // brief-icf-1 R-icf1-1 — a gap sheet that cannot be built in the cut model falls back to ground, as Planar's strip does.
+                if (drawn.Ok) cuts = C3dCellCuts.FallBackToGround(cuts, drawn, document);
+            }
         }
         var e = C3dModelled.Filter(document, drawn);
         notes.AddRange(e.Notes);

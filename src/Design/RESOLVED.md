@@ -31888,3 +31888,39 @@ Cascode, coupled-coil and HBT-core layouts on the kit's own PCells, run on Plana
   `UncalibratedPortTests.WhereTheCheckSaysUncalibrated_TheRunAgrees_RatherThanRefusingTheFeeds`,
   `CoSimNetlistTests.AModelsFile_IsWrittenRelativeToTheWorkspace_WhereItTravelsWithIt`, `SnpNoDcRowTests`,
   `RunPassivityWarningTests`, `EmPortHeaderTests`.
+
+## brief-icf-1 — loose ends: references, run notes, landings, mesh-only, two-result plots (2026-11-15)
+
+- **A Reference that fails its solver's own construction falls back through the same rule.** PR #70's fallback lives in
+  `EmCellCutout.Apply`; a pin that passes its facing check but whose Planar strip (`Construct`) or 3D gap sheet (`GapSheet`)
+  cannot be built was still left out. Rather than a second copy of the fallback in each builder, the failure is carried back
+  into the cut: `EmSetup.CutGroundFallbacks` (in memory only, never in a `.cem`, part of the build's cache key) maps
+  `path.pin` to the solver's sentence, and `Apply` falls those pins back exactly as it does a shared-check failure, so the
+  reference's own port, the numbering and the sentences come from one cut. Planar re-cuts once after its pre-pass over the
+  strips. 3D cannot ask before planning (the gap sheet checks for copper inside it, and before the cut is applied the
+  instance's own copper is there), so `C3dCellCuts.FallBackToGround` runs after the cut elaboration and rebuilds only the
+  layouts that need it; the cut geometry does not change, so that elaboration stands. `GapSheet` never returned null, so the
+  old `?? Refused("unreachable")` was dead code.
+- **Three planar notes.** The edge-port crossover note now asks whether any port is a calibrated, ground-referenced edge
+  port (an Uncalibrated Port never switches). The adaptive verdict is null when no interval was ever compared (a sweep the
+  seeds already cover), with its own sentence, rather than CONVERGED. A non-converged sweep is a warning and names the
+  midpoint its worst stopped disagreement was measured at. The mesher's "do NOT set this mesh" sentence was false on the
+  local grid, whose base block is λ_g/N at the mesh frequency; it says so there.
+- **The header's mesh line is labelled as the settings hash** (`circuitRF-EM mesh settings:`), which is what staleness
+  compares; the old `circuitRF-EM mesh:` label is still read. A planar result adds `circuitRF-EM mesh unknowns:`. The EMerge
+  golden (`testdata/em3d/emerge-run/driven/cavity.s2p`) changed by that one label.
+- **3D cut-pin landings.** `C3dComponentPort.Landing` carries where each cut pin's edge sheet landed and how tall it is, from
+  the generator's `PortReturns`; the verdict, `explain`'s port line and the pin check say it, and the generator's
+  `PortsMoved` sentences for cut ports are forwarded under the pin's name.
+- **EMerge `--mesh-only`** runs the driver's `mesh` mode (never with a GPU threshold) and reports its tetrahedra and
+  warnings from the driver's last line (`EmergeLog.MeshReport`); no mesh file is written, so the CLI lists one only when it
+  exists. The 3D view's Mesh button still meshes for Palace only.
+- **`plot`'s per-trace result is `file=`, not `src=`**: `src=` is already a WSProbe trace's source probe. A `file=` result is
+  bound by its full path (two results may share a name), handed to the render as another `--data`, and written relative to
+  the `.cdd` by `--write-cdd`.
+- Gates: `CellPinReferenceTests` (the solver fallback on both solvers, the 3D landing), `RunNoteTests` (Engine: the crossover
+  note, compared nothing, the non-converged warning, the local-grid note), `PlanarRunTests` (the header), `EmergeRunTests`
+  (mesh mode and its report), `MissingVerbsCliTests` (`file=`).
+- Not caused here, seen on the way: `Em3dGeneratorDumpTests.Gate2` has no pre-split dump for the eight phased-array `.cem`
+  files (left as found). `UserFacingTextGateTests` flagged three phased-array sentences in `src/Core`/`src/Engine`; all three
+  are internal invariants of the PAA-8/8b fast paths (each guarded by its caller), so they are on the allowlist with that reason.

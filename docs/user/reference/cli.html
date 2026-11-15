@@ -879,7 +879,9 @@ lifts the disk floor. <code>explain</code> on a 3D setup reports both, and takes
 Touchstone, and refuses when no <code>.npy</code> matches it. <code>explain &lt;file.cemr&gt;</code> reads a record back, and <code>-o</code> moves the Touchstone alone.</p>
 <p><code>--mesh-only</code> runs a 3D or thermal setup as far as its mesh and stops before any solver starts: it reports the elements and Gmsh's
 warnings, or Gmsh's errors with the objects named and where they are, and writes no result. It needs Gmsh only: Palace need not
-be installed to mesh a Palace setup. It exits <strong>0</strong> on a mesh, <strong>1</strong>
+be installed to mesh a Palace setup. On an EMerge setup, EMerge's own driver builds the geometry and the mesh and reports its
+tetrahedra and warnings; it keeps the mesh in memory, so no mesh file is written. An openEMS setup has no mesh to report. It
+exits <strong>0</strong> on a mesh, <strong>1</strong>
 on a refusal or a mesher failure, and <strong>130</strong> when cancelled. <code>--dry-run</code> also warns about geometry known to stop the
 mesher, naming the object, its layer and the layout coordinates.</p>
 <p>A 3D or thermal run makes its mesh in the <strong>Scratch folder</strong> that <strong>Settings ▸ Solvers</strong> names, the system temp folder
@@ -4083,6 +4085,10 @@ own folder, which is right for <code>circuitrf netlist filter.cnl --to-schematic
 <tr>
 <td><code>label</code></td>
 <td>The trace's own name, quoted when it holds a comma: <code>label=&quot;As built, rev B&quot;</code>. It replaces the generated name in the legend, the axis title and the marker box, exactly as the trace card's Label box does, and <code>--write-cdd</code> writes it.</td>
+</tr>
+<tr>
+<td><code>file</code></td>
+<td>Another result for this trace to read instead of the one the command names, so two runs share one plot: <code>--trace cube=S,i=2,j=1,y=db20 --trace cube=S,i=2,j=1,y=db20,file=../rev-b/pad.s2p</code>. A relative path is read from the folder you run in, as the result is; <code>--write-cdd</code> writes it relative to the document.</td>
 </tr>
 <tr>
 <td><code>cut</code></td>

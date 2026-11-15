@@ -459,6 +459,9 @@ public static class EmCellCutout
                         $"{why} {pn} is built against {EmComponentPort.GroundReference} instead of its Reference {refName}: an Uncalibrated Port " +
                         "at its face, returning through the run's ground." } };
                 }
+                // brief-icf-1 R-icf1-1 — the solver could not build this pin's gap port after all (Planar's strip, the 3D gap sheet):
+                // it falls back here, by the same rule as a reference the shared check cannot build.
+                if (setup.CutGroundFallbacks.TryGetValue(pn, out var solverWhy)) { FallBack(solverWhy); continue; }
                 var r = built.Select(b => b.Pin).FirstOrDefault(b => b.Pin.Equals(refName, StringComparison.OrdinalIgnoreCase));
                 if (r is null || refused.ContainsKey(r))
                 {

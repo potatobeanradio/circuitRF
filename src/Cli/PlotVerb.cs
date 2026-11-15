@@ -49,6 +49,7 @@ internal static class PlotVerb
         public bool    Secondary;
         public string  Raw = "";       // the whole --trace argument, for refusals
         public string? Label;          // label="As built": the trace's own name (DFR27-3)
+        public string? Source;         // brief-icf-1 R-icf1-9 — file=<path>: the result this trace reads, a full path once resolved
 
         // WSProbe (WSP-4 R-wsp4-12). `probe=` is what turns a `cube=wsp` trace into a probe metric;
         // everything else here is the option some metrics read.
@@ -273,7 +274,21 @@ internal static class PlotVerb
         if (data is null || data.Groups.Count == 0)
             return JsonRun.Fail(CliDiagnostics.PlotResultUnreadable(o.Result, "it holds no cubes"));
 
-        var (composed, composeRefusal) = Compose(o, data, Path.GetFileName(o.Result));
+        // brief-icf-1 R-icf1-9 — every file= a trace names, resolved against the working directory as the result is, and read once.
+        var sources = new Dictionary<string, DataSet>(StringComparer.Ordinal);
+        foreach (var t in o.Traces.Where(t => t.Source is not null))
+        {
+            string full = Path.GetFullPath(t.Source!);
+            t.Source = full;
+            if (sources.ContainsKey(full)) continue;
+            if (!File.Exists(full)) return JsonRun.Fail(CliDiagnostics.PlotResultNotFound(full));
+            var (own, _, ownError) = CddSources.LoadResult(full);
+            if (ownError is not null || own is null || own.Groups.Count == 0)
+                return JsonRun.Fail(CliDiagnostics.PlotResultUnreadable(full, ownError ?? "it holds no cubes"));
+            sources[full] = own;
+        }
+
+        var (composed, composeRefusal) = Compose(o, data, Path.GetFileName(o.Result), sources);
         if (composeRefusal is { } cr0) return cr0;
         var config = composed!;
 
@@ -291,7 +306,7 @@ internal static class PlotVerb
                 string? dir = Path.GetDirectoryName(Path.GetFullPath(cddPath));
                 if (dir is { Length: > 0 }) Directory.CreateDirectory(dir);
                 File.WriteAllText(cddPath,
-                    JsonSerializer.Serialize(Relocated(config, o.Result, dir ?? "."), DataDisplayJson.Options),
+                    JsonSerializer.Serialize(Relocated(config, o.Result, dir ?? ".", sources.Keys), DataDisplayJson.Options),
                     new System.Text.UTF8Encoding(false));
             }
             catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.PlotWriteFailed(cddPath, ex.Message)); }
@@ -303,7 +318,7 @@ internal static class PlotVerb
         // The result file is BOTH the document's directory (so its own bare-name reference resolves
         // beside it) and the bound --data, which is how `render --data` binds the same file.
         var request = new RenderDataDisplay.Request(
-            o.Output, format, [o.Result], Tab: null, PlotIndex: null, AllTabs: false,
+            o.Output, format, [o.Result, .. sources.Keys], Tab: null, PlotIndex: null, AllTabs: false,
             o.Width, o.Height, o.Scale, o.Transparent, o.Dark, o.OutlineText, Verb: "plot");
 
         return RenderDataDisplay.Draw(o.Result, config, request, reportKind: "result");
@@ -322,6 +337,7 @@ internal static class PlotVerb
             "                     [--radial linear|db] [--db-floor -40] [--db-ring 10]\n" +
             "                     [--db-ref peak|<dB>] [--db-unit dBi]\n" +
             "  a trace spec is comma-separated key=value: cube=S i=2 j=1 y=db20 axis=left|right\n" +
+            "  file=<result> on a trace reads that result instead of the command's, so two runs share one plot\n" +
             "                      label=\"As built\" names the trace in the legend, axis and marker box\n" +
             "  an antenna pattern: cube=farfield.U (F1.farfield.U from a fields analysis) cut=<phi deg>|all [port=<n>] [freq=2.45G]; decibels unless y= says\n" +
             "                      cut=<deg> is the PLANE at that phi — theta swept, and the phi+180\n" +
@@ -613,6 +629,11 @@ internal static class PlotVerb
             switch (key)
             {
                 case "cube": spec.Text  = value; break;
+                case "file":
+                    // brief-icf-1 R-icf1-9 — `file=`, not `src=`: a WSProbe trace's `src=` names its source probe.
+                    if (value.Length >= 2 && value[0] == '"' && value[^1] == '"') value = value[1..^1];
+                    spec.Source = value.Length == 0 ? null : value;
+                    break;
                 case "label":
                     // Quoted so a label may hold a comma; the quotes are the spelling, not the name.
                     if (value.Length >= 2 && value[0] == '"' && value[^1] == '"') value = value[1..^1];
@@ -1509,11 +1530,20 @@ internal static class PlotVerb
     /// pinned, given its statistics and its back branch, then <see cref="BuildConfig"/>. Its own method so a plugin's
     /// <c>plot</c> view is composed by this same code (<see cref="PluginPlots"/>, brief-plg-3 §1) rather than a copy.
     /// </summary>
-    private static (DataDisplayConfig? Config, int? Refusal) Compose(Options o, DataSet data, string sourceName)
+    private static (DataDisplayConfig? Config, int? Refusal) Compose(Options o, DataSet result, string resultName,
+                                                                     IReadOnlyDictionary<string, DataSet>? sources = null)
     {
         var traces = new List<TraceConfig>(o.Traces.Count);
         for (int i = 0; i < o.Traces.Count; i++)
         {
+            // brief-icf-1 R-icf1-9 — a trace naming file= reads that result, bound by its full path; the rest read the command's.
+            DataSet data = result;
+            string sourceName = resultName;
+            if (o.Traces[i].Source is { } src)
+            {
+                if (sources?.GetValueOrDefault(src) is not { } own) return (null, JsonRun.Fail(CliDiagnostics.PlotResultNotFound(src)));
+                (data, sourceName) = (own, src);
+            }
             var (tc, refusal) = BuildTrace(o.Traces[i], data, sourceName, i, o.Type);
             if (refusal is { } r) return (null, r);
             tc!.Label = o.Traces[i].Label;
@@ -1600,13 +1630,16 @@ internal static class PlotVerb
     /// beside the result; written as that, a <c>.cdd</c> put anywhere but beside its result named a file that is not
     /// there. Both readers — <c>render</c> and the application — look beside the document first.
     /// </summary>
-    internal static DataDisplayConfig Relocated(DataDisplayConfig config, string result, string cddDir)
+    internal static DataDisplayConfig Relocated(DataDisplayConfig config, string result, string cddDir,
+                                                IEnumerable<string>? sources = null)
     {
         string bare = Path.GetFileName(result);
         string rel  = Path.GetRelativePath(cddDir, Path.GetFullPath(result)).Replace('\\', '/');
         var copy = JsonSerializer.Deserialize<DataDisplayConfig>(JsonSerializer.Serialize(config, DataDisplayJson.Options),
                                                                  DataDisplayJson.Options)!;
-        string? Map(string? s) => s == bare ? rel : s;
+        // brief-icf-1 R-icf1-9 — a trace's own file= is a full path in the drawn config, written relative to the .cdd as the result is.
+        var own = (sources ?? []).ToDictionary(p => p, p => Path.GetRelativePath(cddDir, p).Replace('\\', '/'), StringComparer.Ordinal);
+        string? Map(string? s) => s == bare ? rel : s is not null && own.TryGetValue(s, out var r) ? r : s;
         copy.SelectedDataSource = Map(copy.SelectedDataSource);
         foreach (var tab in copy.Tabs)
         foreach (var plot in tab.Plots)

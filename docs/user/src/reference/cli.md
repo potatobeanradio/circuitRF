@@ -585,7 +585,9 @@ Touchstone, and refuses when no `.npy` matches it. `explain <file.cemr>` reads a
 
 `--mesh-only` runs a 3D or thermal setup as far as its mesh and stops before any solver starts: it reports the elements and Gmsh's
 warnings, or Gmsh's errors with the objects named and where they are, and writes no result. It needs Gmsh only: Palace need not
-be installed to mesh a Palace setup. It exits **0** on a mesh, **1**
+be installed to mesh a Palace setup. On an EMerge setup, EMerge's own driver builds the geometry and the mesh and reports its
+tetrahedra and warnings; it keeps the mesh in memory, so no mesh file is written. An openEMS setup has no mesh to report. It
+exits **0** on a mesh, **1**
 on a refusal or a mesher failure, and **130** when cancelled. `--dry-run` also warns about geometry known to stop the
 mesher, naming the object, its layer and the layout coordinates.
 
@@ -3330,6 +3332,7 @@ One plot, one axis pair, without writing a data display first.
 | `y` | `db20` (20·log₁₀ — S-parameters, voltages, currents, a probe margin), `db10` (10·log₁₀ — powers), `mag`, `phase`, `real`, `imag` or `conj`. A bare `db` is refused as ambiguous (`plot.trace.db-ambiguous`): in a data display it means 10·log₁₀, while a measurement's `dB()` is 20·log₁₀, and the wrong one draws an S-parameter at half its depth. |
 | `axis` | `left` (the default) or `right`. |
 | `label` | The trace's own name, quoted when it holds a comma: `label="As built, rev B"`. It replaces the generated name in the legend, the axis title and the marker box, exactly as the trace card's Label box does, and `--write-cdd` writes it. |
+| `file` | Another result for this trace to read instead of the one the command names, so two runs share one plot: `--trace cube=S,i=2,j=1,y=db20 --trace cube=S,i=2,j=1,y=db20,file=../rev-b/pad.s2p`. A relative path is read from the folder you run in, as the result is; `--write-cdd` writes it relative to the document. |
 | `cut` | An antenna pattern cut: a bearing in degrees pins the cube's `phi` axis and sweeps `theta`; `all` keeps every `phi` as a curve family. The verb prints the φ it landed on. |
 | `port` | The **port number** on a cube's `port` axis — not an index. A port the run does not hold is refused, listing the ones it does. |
 | `freq` | Pins a `freq` axis to its nearest sample. Takes an SI suffix: `2.45G`. |

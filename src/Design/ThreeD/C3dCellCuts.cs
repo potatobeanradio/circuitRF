@@ -114,6 +114,39 @@ public static class C3dCellCuts
     }
 
     /// <summary>
+    /// brief-icf-1 R-icf1-1 — <paramref name="plan"/> with every pin whose gap sheet cannot be built in <paramref name="drawn"/> (the
+    /// elaboration with the cut applied) built against ground instead, by the cut's own rule (<see cref="EmSetup.CutGroundFallbacks"/>):
+    /// its reference takes a port of its own when nothing else returns through it, and the generator puts an edge sheet at its face.
+    /// The cut geometry does not change, so <paramref name="drawn"/> stays the elaboration of the plan returned. The same plan when
+    /// every gap sheet builds.
+    /// </summary>
+    public static C3dCellCutPlan FallBackToGround(C3dCellCutPlan plan, C3dElaboration drawn, C3dDocument document)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(drawn);
+        double per = C3dLowering.Metres(1, document.DbuPerMicron);
+        long D(double m) => (long)Math.Round(m / per, MidpointRounding.AwayFromZero);
+        var layouts = new List<C3dCellCutLayout>(plan.Layouts.Count);
+        bool changed = false;
+        foreach (var layout in plan.Layouts)
+        {
+            var element = drawn.Provenance.Values.FirstOrDefault(p => p.InstancePath == layout.Frame.Path && p.Element is not null)?.Element;
+            var fell = new Dictionary<string, string>(layout.Setup.CutGroundFallbacks, StringComparer.Ordinal);
+            int scratch = 0;
+            foreach (var cp in layout.Build.Ports.Where(p => p.Cutout && p.Ok && p.ReferencePin is not null))
+                if (GapSheet(cp, cp.ReferencePin!, layout, drawn, element, "", cp.Name, ref scratch, D) is { Verdict: var why, Refusal: not null })
+                    fell[cp.Name] = $"{cp.Name}: {why.TrimEnd('.')}.";
+            if (fell.Count == layout.Setup.CutGroundFallbacks.Count) { layouts.Add(layout); continue; }
+            var setup = layout.Setup.Clone();
+            setup.CutGroundFallbacks = fell;
+            if (EmPlanarComponentPorts.Of(setup, layout.Source) is not { Refusal: null } build) { layouts.Add(layout); continue; }
+            layouts.Add(layout with { Setup = setup, Build = build });
+            changed = true;
+        }
+        return changed ? plan with { Layouts = layouts } : plan;
+    }
+
+    /// <summary>
     /// R-icp3-2 — the sheet at each routed pin face of the plan's cut layouts, as component ports numbered from
     /// <paramref name="firstNumber"/> in the cut's own order (ICP-2's: entry, then hierarchy, then pin), each carried into the view
     /// through its layout instance's placement. A pin the cut left out is not here (its sentence is among the warnings, word for word
@@ -157,7 +190,7 @@ public static class C3dCellCuts
                 // brief-icp-4 R-icp4-2/3 — a pin referenced to another: a gap sheet between the two faces, not an edge sheet.
                 if (cp.ReferencePin is { } refPin)
                 {
-                    ports.Add(GapSheet(cp, refPin, layout, drawn, element, at, name, ref next, D) ?? Refused("unreachable"));
+                    ports.Add(GapSheet(cp, refPin, layout, drawn, element, at, name, ref next, D));
                     continue;
                 }
                 string? why = g.Problem is null ? g.Refusal ?? "the layout's 3D problem could not be built."
@@ -194,11 +227,20 @@ public static class C3dCellCuts
                     Rect = new C3dRect { Min = new C3dPoint2(u0, v0), Size = new C3dPoint2(u1 - u0, v1 - v0) },
                     Z0 = cp.Z0 is { } z ? C3dPorts.FormatZ0(z) : "50",
                 };
-                ports.Add(new C3dComponentPort(at + cp.Refdes, cp.Pin, null, port, Math.Abs(sheet.Max.Z - sheet.Min.Z), cp.WidthM, cp.AlongX, [],
+                // brief-icf-1 R-icf1-7 — where the sheet landed, said with it: the generator's return walk decided it, and a sheet that
+                // fell to the floor through a thick substrate is a different port from one that stops on metal a few µm down.
+                double tall = Math.Abs(sheet.Max.Z - sheet.Min.Z);
+                string? landing = g.PortReturns.TryGetValue(cp.Number, out var ret)
+                    ? $"{(ret.Above ? "up" : "down")} to {(ret.Floor ? "the floor, " : "")}'{ret.Layer}', {C3dComponentPorts.Um(tall)} µm"
+                    : null;
+                ports.Add(new C3dComponentPort(at + cp.Refdes, cp.Pin, null, port, tall, cp.WidthM, cp.AlongX, [],
                                                null, false)
                 {
-                    Cutout = true, Cell = cp.Cell, CutPart = cp.CutPart, ClayPath = layout.Frame.DocumentPath, SchematicId = cp.SchematicId, Verdict = "verified",
+                    Cutout = true, Cell = cp.Cell, CutPart = cp.CutPart, ClayPath = layout.Frame.DocumentPath, SchematicId = cp.SchematicId,
+                    Verdict = landing is null ? "verified" : $"verified, landing {landing}", Landing = landing,
                 });
+                foreach (string moved in g.PortsMoved.Where(m => m.StartsWith($"Port {cp.Number} ", StringComparison.Ordinal)))
+                    notes.Add($"{name} (port {port.Number}){moved[$"Port {cp.Number}".Length..]}");
             }
         }
         foreach (var r in ports.Where(p => p.Refusal is not null))
@@ -224,7 +266,7 @@ public static class C3dCellCuts
     /// positive end the signal pin's conductor and its negative end the reference pin's. Verified as the 3D gap sheet is: no copper
     /// inside it (R-icp3-3's addition — a sheet crossing other metal is refused naming it).
     /// </summary>
-    private static C3dComponentPort? GapSheet(EmPlanarComponentPort cp, string refPin, C3dCellCutLayout layout, C3dElaboration drawn,
+    private static C3dComponentPort GapSheet(EmPlanarComponentPort cp, string refPin, C3dCellCutLayout layout, C3dElaboration drawn,
                                               C3dTransform? element, string at, string name, ref int next, Func<double, long> d)
     {
         C3dComponentPort Refused(string why)

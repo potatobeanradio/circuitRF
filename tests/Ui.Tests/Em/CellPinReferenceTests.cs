@@ -117,6 +117,52 @@ public sealed class CellPinReferenceTests(CellPinReferenceTests.Fixture fx, ITes
         Assert.Contains(ell.ComponentPorts.Warnings, w => w.Contains("do not face each other across one axis on one layer", StringComparison.Ordinal));
     }
 
+    // ── brief-icf-1 R-icf1-1: faces that face, but whose gap port the solver cannot build, fall back to ground too ──────────
+
+    [Fact]
+    public void AGapTheSolverCannotBuild_FallsBackToGround_OnPlanarAndIn3D()
+    {
+        // Planar: the parent's metal between the two faces stops LCP's strip after the shared check has passed.
+        var planar = fx.Build(fx.SegLine(uncalibratedEnds: true, island: true), [new EmComponentPort("X1", Reference: "B")]);
+        Assert.Equal(["X1.A", "X1.B"], planar.Ports.Where(p => p.Ok).Select(p => p.Name));
+        Assert.All(planar.Ports, p => Assert.Null(p.ReferencePin));
+        foreach (var w in planar.Warnings) output.WriteLine(w);
+        Assert.Contains(planar.Warnings, w => w.StartsWith("X1.A: its strip would touch other copper", StringComparison.Ordinal) &&
+                                              w.Contains("X1.A is built against Ground instead of its Reference B", StringComparison.Ordinal));
+        Assert.Contains(planar.Warnings, w => w.StartsWith("X1.B was the Reference of X1.A", StringComparison.Ordinal));
+
+        // 3D: the same metal inside the gap sheet. A takes an edge sheet against the return, and B, no port's return now, its own.
+        var g = Em3dSetupProblem.Of(fx.Setup3D([new EmComponentPort("X1", Reference: "B")]), fx.Source3D("island", fx.PcbLine("Seg3", island: true)), fx.Pcb);
+        Assert.True(g.Ok, g.Refusal);
+        var cut = g.ComponentPorts!.Ports.Where(p => p.Cutout).ToList();
+        Assert.Equal(["A", "B"], cut.Select(p => p.Pin));
+        Assert.All(cut, p => { Assert.True(p.Ok, p.Refusal); Assert.Null(p.ReferencePin); });
+        Assert.Equal(4, g.Problem!.Ports.Count);                                 // the two drawn ports and an edge sheet at each face
+        foreach (var w in g.ComponentPorts.Warnings) output.WriteLine(w);
+        Assert.Contains(g.ComponentPorts.Warnings, w => w.Contains("lies inside its gap sheet", StringComparison.Ordinal) &&
+                                                        w.Contains("X1.A is built against Ground instead of its Reference B", StringComparison.Ordinal));
+    }
+
+    // ── brief-icf-1 R-icf1-7: a 3D cut pin's sheet says where it lands, in the pin check and the port's own line ───────────
+
+    [Fact]
+    public void In3D_ACutPinsSheet_SaysWhereItLands()
+    {
+        var g = Em3dSetupProblem.Of(fx.Setup3D([new EmComponentPort("X1")]), fx.Source3D("landing", fx.PcbLine("Seg3")), fx.Pcb);
+        Assert.True(g.Ok, g.Refusal);
+        var cut = g.ComponentPorts!.Ports.Where(p => p.Cutout).ToList();
+        Assert.Equal(2, cut.Count);
+        foreach (var p in cut)
+        {
+            output.WriteLine(C3dComponentPorts.Describe(p));
+            Assert.Matches(@"^down to '[^']+', [0-9.]+ µm$", p.Landing);
+            Assert.Contains("verified, landing down to '", C3dComponentPorts.Describe(p), StringComparison.Ordinal);
+        }
+        var (c, prefix) = Assert.Single(EmCutReport.Cuts(g.ComponentPorts.Ports.Select(p => (p.Refdes, p.CutPart))));
+        var lines = EmCutReport.Lines(c, prefix, EmCutReport.PortsOf(g.ComponentPorts), k => k.ToString());
+        Assert.Contains(lines, l => l.Text.StartsWith("X1.A: routed", StringComparison.Ordinal) && l.Text.Contains("a sheet down to '", StringComparison.Ordinal));
+    }
+
     // ── Gate 5: a Pins map; every pin on ground; a pin both referenced and ported ──────────────────────────────────────────
 
     [Fact]
@@ -323,11 +369,12 @@ public sealed class CellPinReferenceTests(CellPinReferenceTests.Fixture fx, ITes
             => new() { CellRef = "../../" + cell, X = Um(x), Y = Um(y), Mag = 1.0, SchematicId = id };
 
         /// <summary>ICP-2's line: 1200 µm of 72 µm, Seg bridging 500-700 µm as X1, edge ports at the far ends.</summary>
-        public LayoutView SegLine(bool uncalibratedEnds = false)
+        public LayoutView SegLine(bool uncalibratedEnds = false, bool island = false)
         {
             var v = new LayoutView { DbuPerMicron = Dbu };
             v.Shapes.Add(R(M1, 0, -36, 500, 36));
             v.Shapes.Add(R(M1, 700, -36, 1200, 36));
+            if (island) v.Shapes.Add(R(M1, 590, -10, 610, 10));          // the parent's metal in the vacated cell, between the faces
             v.Shapes.Add(Edge(0, 0, LayoutRotation.R0, "1", uncalibratedEnds));
             v.Shapes.Add(Edge(1200, 0, LayoutRotation.R180, "2", uncalibratedEnds));
             v.Instances.Add(Place("Seg", 500, 0, "X1"));
@@ -361,12 +408,13 @@ public sealed class CellPinReferenceTests(CellPinReferenceTests.Fixture fx, ITes
         }
 
         /// <summary>ICP-3's 3D line: 1 mm wide, the cell bridging 5-7 mm as X1, a ground plane under it.</summary>
-        public LayoutView PcbLine(string cell)
+        public LayoutView PcbLine(string cell, bool island = false)
         {
             var top = new LayerKey(1, 0); var bottom = new LayerKey(2, 0);
             var v = new LayoutView { DbuPerMicron = Dbu };
             v.Shapes.Add(R(top, 0, -500, 5000, 500));
             v.Shapes.Add(R(top, 7000, -500, 12000, 500));
+            if (island) v.Shapes.Add(R(top, 5900, -100, 6100, 100));
             v.Shapes.Add(R(bottom, 0, -3000, 12000, 3000));
             v.Shapes.Add(Edge(0, 0, LayoutRotation.R0, "1", false, top));
             v.Shapes.Add(Edge(12000, 0, LayoutRotation.R180, "2", false, top));

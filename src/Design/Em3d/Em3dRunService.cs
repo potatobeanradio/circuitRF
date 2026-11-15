@@ -291,7 +291,8 @@ public static partial class Em3dRunService
         bool meshOnly = control?.MeshOnly == true;
         if (meshOnly)
         {
-            if (legs.FirstOrDefault(l => l.Solver.Id == PalaceSolver.Id) is not { } meshing)
+            // brief-icf-1 R-icf1-8 — Gmsh's mesh for Palace when the setup runs on Palace; otherwise EMerge's own, made by its driver.
+            if ((legs.FirstOrDefault(l => l.Solver.Id == PalaceSolver.Id) ?? legs.FirstOrDefault(l => l.Solver.Id == EmergeSolver.Id)) is not { } meshing)
                 return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded(MeshOnlySource, MeshOnlyRefusal(Em3dSolvers.Names(Em3dSolvers.Of(choice)))));
             legs = [meshing];
             compare = false;

@@ -8,7 +8,11 @@ using CircuitRF.Design.ThreeD;
 namespace CircuitRF.Design.Layout.Em;
 
 /// <summary>A cut port as the report reads it: its name (<c>path.pin</c>), number, reference pin, and refusal.</summary>
-public sealed record EmCutReportPort(string Name, int Number, string? ReferencePin, string? Refusal);
+public sealed record EmCutReportPort(string Name, int Number, string? ReferencePin, string? Refusal)
+{
+    /// <summary>brief-icf-1 R-icf1-7 — a 3D edge sheet's landing (<see cref="C3dComponentPort.Landing"/>); null on Planar.</summary>
+    public string? Landing { get; init; }
+}
 
 public static class EmCutReport
 {
@@ -25,7 +29,7 @@ public static class EmCutReport
     /// <summary>A 3D build's cut ports, for <see cref="Lines"/>; their names carry the view's layout prefix.</summary>
     public static IReadOnlyList<EmCutReportPort> PortsOf(C3dComponentPortBuild build)
         => [.. build.Ports.Where(p => p.Cutout && p.Pin is not null)
-                          .Select(p => new EmCutReportPort($"{p.Refdes}.{p.Pin}", p.Port?.Number ?? 0, p.ReferencePin, p.Refusal))];
+                          .Select(p => new EmCutReportPort($"{p.Refdes}.{p.Pin}", p.Port?.Number ?? 0, p.ReferencePin, p.Refusal) { Landing = p.Landing })];
 
     /// <summary>The cut instances a build holds, each once, in the order their ports are numbered, with the prefix its ports' names
     /// carry (a 3D view placing several layouts names them <c>U1/X1</c>).</summary>
@@ -70,7 +74,8 @@ public static class EmCutReport
                         "ground, so it reads an open",
                     EmPinClass.Routed when port is { Refusal: null } built =>
                         $"{name}: routed, {face}; port {built.Number} '{built.Name}', " +
-                        (built.ReferencePin is { } rp ? $"referenced to pin {rp}" : "returning through the run's ground"),
+                        (built.ReferencePin is { } rp ? $"referenced to pin {rp}"
+                         : built.Landing is { } land ? $"a sheet {land} to its return" : "returning through the run's ground"),
                     EmPinClass.Routed when port is { Refusal: { } refused } => $"{name}: routed, {face}; its port was not built — {refused}",
                     EmPinClass.Routed => $"{name}: routed, {face}",
                     EmPinClass.Abutting => $"{name}: abutting {pin.Abuts}, {face}; no port: the two models' terminals join directly",

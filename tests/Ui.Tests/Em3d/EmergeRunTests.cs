@@ -147,6 +147,25 @@ public sealed class EmergeRunTests(ITestOutputHelper output) : IDisposable
 
     /// <summary>brief-dfr28-3 R-dfr28-3-1 — the driver's refusal of a solve that is not finite names its cause, so the run is
     /// forwarded as a solve's refusal; a terminal face's names none.</summary>
+    // brief-icf-1 R-icf1-8 — a mesh-only run starts the driver in its mesh mode (never with a GPU threshold) and reads its last line.
+    [Fact]
+    public void AMeshOnlyRun_StartsTheDriversMeshMode_AndReadsItsCount()
+    {
+        var mesh = EmergeRun.StartInfo("python3", _root, new Dictionary<string, string>(), gpuFromUnknowns: 1000, meshOnly: true);
+        Assert.Equal(EmergeRun.MeshMode, mesh.ArgumentList[^1]);
+        Assert.DoesNotContain(mesh.ArgumentList, a => a.StartsWith(EmergeRun.GpuFromArgument, StringComparison.Ordinal));
+        var solve = EmergeRun.StartInfo("python3", _root, new Dictionary<string, string>());
+        Assert.Equal(EmergeRun.SolveMode, solve.ArgumentList[^1]);
+
+        var report = EmergeLog.MeshReport([
+            "{\"driver\": 7, \"stage\": \"geometry\"}",
+            "0:00:01.2  INFO  : GMSH Meshing complete! (◮1234, ▲567)",
+            "{\"driver\": 7, \"edges\": 1500, \"emerge\": \"3.0.0b2\", \"tets\": 1234, \"triangles\": 567, \"warnings\": [\"a warning\"]}",
+        ]);
+        Assert.Equal(1234, report!.Value.Tetrahedra);
+        Assert.Equal(["a warning"], report.Value.Warnings);
+    }
+
     [Fact]
     public void ADriverRefusal_ReadsItsCause()
     {

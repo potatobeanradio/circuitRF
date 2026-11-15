@@ -23,7 +23,13 @@ public sealed record EmProvenanceStamp(string GeometryHash, string MeshHash, str
 {
     public const string Marker         = "circuitRF-EM";
     public const string GeometryPrefix = "circuitRF-EM geometry: ";
-    public const string MeshPrefix     = "circuitRF-EM mesh: ";
+    /// <summary>brief-icf-1 R-icf1-6 — the hash of the mesh SETTINGS (<see cref="EmSnpProvenance.MeshHash(PlanarMeshSettings)"/>), which
+    /// staleness compares, so two layouts meshed with the same settings carry the same value: the label says so.</summary>
+    public const string MeshPrefix     = "circuitRF-EM mesh settings: ";
+    /// <summary>The same hash under the label a file written before brief-icf-1 carries; read, never written.</summary>
+    public const string LegacyMeshPrefix = "circuitRF-EM mesh: ";
+    /// <summary>brief-icf-1 R-icf1-6 — the unknowns the run actually solved, so two results can be compared on the mesh itself.</summary>
+    public const string UnknownsPrefix = "circuitRF-EM mesh unknowns: ";
     public const string PortPrefix     = "circuitRF-EM ports: ";
 
     /// <summary>
@@ -85,10 +91,10 @@ public static class EmSnpProvenance
         PlanarProblem problem, PlanarMeshSettings mesh, IReadOnlyList<PlanarPort> ports,
         string setupName, string layoutRef, DateTimeOffset when,
         IReadOnlyList<string>? caveats = null,
-        IReadOnlyList<string>? portMap = null, string? stamp = null)
+        IReadOnlyList<string>? portMap = null, string? stamp = null, int? unknowns = null)
         => BuildHeader(PlanarKernel.KernelName,
                        GeometryHash(problem), MeshHash(mesh), PortHash(ports),
-                       setupName, layoutRef, when, caveats, PlanarKernel.ModelRevision, portMap, stamp);
+                       setupName, layoutRef, when, caveats, PlanarKernel.ModelRevision, portMap, stamp, unknowns);
 
     /// <summary>
     /// brief-em3d-7 R-em3d7-5d — a 3D run's stamp: the planar one EXTENDED, not a second header format.
@@ -110,7 +116,7 @@ public static class EmSnpProvenance
         string kernelName, string geometry, string mesh, string ports,
         string setupName, string layoutRef, DateTimeOffset when,
         IReadOnlyList<string>? caveats = null, string? modelRevision = null,
-        IReadOnlyList<string>? portMap = null, string? stamp = null)
+        IReadOnlyList<string>? portMap = null, string? stamp = null, int? unknowns = null)
     {
         var lines = new List<string>
         {
@@ -129,6 +135,7 @@ public static class EmSnpProvenance
             EmProvenanceStamp.MeshPrefix     + mesh,
             EmProvenanceStamp.PortPrefix     + ports,
         ]);
+        if (unknowns is { } n) lines.Add(EmProvenanceStamp.UnknownsPrefix + n.ToString(CultureInfo.InvariantCulture));
 
         // Emitted only where there is one — the planar overload. A kernel-A file gains no byte, so
         // no cross-section .snp in any workspace is marked stale to record a token kernel A has not
@@ -610,6 +617,8 @@ public static class EmSnpProvenance
                     geo = line[EmProvenanceStamp.GeometryPrefix.Length..].Trim();
                 else if (line.StartsWith(EmProvenanceStamp.MeshPrefix, StringComparison.Ordinal))
                     mesh = line[EmProvenanceStamp.MeshPrefix.Length..].Trim();
+                else if (line.StartsWith(EmProvenanceStamp.LegacyMeshPrefix, StringComparison.Ordinal))
+                    mesh = line[EmProvenanceStamp.LegacyMeshPrefix.Length..].Trim();
                 else if (line.StartsWith(EmProvenanceStamp.PortPrefix, StringComparison.Ordinal))
                     ports = line[EmProvenanceStamp.PortPrefix.Length..].Trim();
                 else if (line.StartsWith(EmProvenanceStamp.ModelPrefix, StringComparison.Ordinal))

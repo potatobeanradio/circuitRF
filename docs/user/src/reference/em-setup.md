@@ -467,6 +467,11 @@ the launch is in the result. [The Uncalibrated Port](mom-engine.html#uncalibrate
 there is no other choice at a device's pins. In 3D each is a lumped sheet from the face to the return, and the sheet's
 height is in the result ([A cell instance cut out](em-3d.html#cell-instance-ports)).
 
+**Cutting two parts out cuts the coupling between them.** A cut instance couples to the rest of the layout only through
+what the EM still solves. Two cut instances are each put back by their own model, and neither model knows the other is
+there, so the field coupling between the two parts themselves is gone: two spirals side by side can read their mutual
+coupling tens of dB lower cut than solved. When that coupling matters, solve both parts, or cut only one.
+
 **Ports are named by path and pin**, `X1.G` or `X1/Q3.G`, in the port list, the run's notes and the Touchstone header
 (`! Port[3] = X1.G`), numbered after the drawn ports and the gap ports. A drawn port is named by its label's text, on
 Planar and in 3D alike. The header also carries one line per port saying what it is, and one saying whether the file has a

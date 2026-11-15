@@ -306,6 +306,30 @@ public sealed class MissingVerbsCliTests(ITestOutputHelper output) : IDisposable
         AssertSameBytes(viaPlot, viaRender);
     }
 
+    /// <summary>brief-icf-1 R-icf1-9 — <c>file=</c> on a trace reads a second result, so two runs share one plot with no hand-written
+    /// <c>.cdd</c>; the two files share a name in two folders, so the binding is by path, and <c>--write-cdd</c> names each relative to
+    /// the document.</summary>
+    [Fact]
+    public void ATraceNamingFile_ReadsThatResult_AndTheCddNamesBoth()
+    {
+        string a = Sparam(Dir("two-a"));
+        string b = Sparam(Dir("two-b"));
+        string dir = Dir("two");
+        string cdd = Path.Combine(dir, "two.cdd");
+        var plot = RunCli("plot", a, "-o", Path.Combine(dir, "two.svg"), "--write-cdd", cdd,
+                          "--trace", "cube=S,i=2,j=1,y=db20", "--trace", $"cube=S,i=2,j=1,y=db20,file={b}");
+        Assert.True(plot.ExitCode == 0, plot.StdErr + plot.StdOut);
+        Assert.True(File.Exists(Path.Combine(dir, "two.svg")));
+
+        var config = JsonSerializer.Deserialize<DataDisplayConfig>(File.ReadAllText(cdd), DataDisplayJson.Options)!;
+        var sources = config.Tabs[0].Plots[0].Traces.Select(t => t.SourcePath).ToList();
+        Assert.Equal([Path.GetRelativePath(dir, a).Replace('\\', '/'), Path.GetRelativePath(dir, b).Replace('\\', '/')], sources);
+
+        var missing = RunCli("plot", a, "-o", Path.Combine(dir, "x.svg"), "--trace", $"cube=S,i=2,j=1,file={Path.Combine(dir, "none.s2p")}");
+        Assert.NotEqual(0, missing.ExitCode);
+        Assert.Contains("none.s2p", missing.StdErr + missing.StdOut, StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// The 1-based/0-based trap, pinned. On an <c>i</c>/<c>j</c> axis the shorthand's integer token
     /// is a PORT NUMBER, so <c>i=2,j=1</c> must land on slice indices 1 and 0. Off by one here is the

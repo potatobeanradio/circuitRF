@@ -158,6 +158,31 @@ public class PlanarRunTests(PlanarRunFixture fixture) : IClassFixture<PlanarRunF
         Assert.True(File.Exists(r.NpyPath!));
     }
 
+    /// <summary>brief-icf-1 R-icf1-6 — the mesh line says it is the SETTINGS' hash and the solved unknown count rides beside it;
+    /// a file carrying the line under its old label still compares as current.</summary>
+    [Fact]
+    public void TheHeaderNamesTheMeshSettingsHash_AndTheUnknowns_AndAnOldLabelStillReads()
+    {
+        var r = fixture.Result;
+        Assert.Equal(EmRunStatus.Ok, r.Status);
+        var header = File.ReadLines(r.SnpPath!).TakeWhile(l => !l.StartsWith('#')).ToList();
+        Assert.Contains(header, l => l.StartsWith("! circuitRF-EM mesh settings: ", StringComparison.Ordinal));
+        Assert.Contains(header, l => l == $"! circuitRF-EM mesh unknowns: {r.PlanarMesh!.UnknownCount}");
+        Assert.DoesNotContain(header, l => l.StartsWith("! circuitRF-EM mesh: ", StringComparison.Ordinal));
+
+        var setup = NewSetup();
+        var view = NewLayout();
+        var problem = PlanarProblemOf(view);
+        var ports = PortsOf(view, setup);
+        Directory.CreateDirectory(_dir);
+        string old = Path.Combine(_dir, "old-label.s2p");
+        File.WriteAllLines(old,
+            EmSnpProvenance.BuildHeader(problem, setup.PlanarMesh, ports, "planar", "layout.clay", DateTimeOffset.Now)
+                           .Select(l => "! " + l.Replace(EmProvenanceStamp.MeshPrefix, EmProvenanceStamp.LegacyMeshPrefix, StringComparison.Ordinal))
+                           .Append("# HZ S RI R 50"));
+        Assert.Null(EmSnpProvenance.DescribeStaleness(old, problem, setup.PlanarMesh, ports));
+    }
+
     /// <summary>R-cpl-12 — <c>EmBackAnnotation</c> needed NO change for kernel B. Tier G5's own rule:
     /// prove that rather than assuming it.</summary>
     [Fact]
