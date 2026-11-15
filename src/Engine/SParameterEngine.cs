@@ -730,7 +730,7 @@ public static partial class SParameterEngine
 
         if (ndf is not null) PrepareNdf(prep, netlist, freqsHz, settings, ndf, nonGroundNodes);
         // A port-less (probe) run has no waves to correlate.
-        if (settings.Noise && N > 0) prep.Noise = SParameterNoise.Sources(netlist, freqsHz, dcNodeVoltages);
+        if (settings.Noise && N > 0) prep.Noise = SParameterNoise.Sources(netlist, freqsHz, dcNodeVoltages, structured: true);
         return prep;
     }
 

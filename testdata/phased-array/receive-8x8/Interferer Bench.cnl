@@ -1,0 +1,28 @@
+; receive-8x8 (brief-paa-7): the front end of Receive Bench.cnl - the same 8 × 8 array, channels and sky - with the feed loaded by
+; 50 ohm (the mixer's RF port, as it is there in harmonic balance) and two equal interferers, at 5.92 and 5.94 GHz, arriving together
+; from thetaI in the phi = 0 plane. Their third-order product 2·5.92 − 5.94 = 5.90 GHz lands on the wanted signal's frequency.
+;
+; HB1 has the two interferers as its tones. Each reaches every LNA through the ELEMENT's pattern - it is not yet beamformed there - so
+; the channels compress and intermodulate by what reaches them; the product leaves every channel with the phase progression of a wave
+; from thetaI, so the beamformer suppresses it by the ARRAY's pattern there. SFDR against thetaI is formed in the README from these
+; measures and Receive Bench.cnl's (the boresight gain to the feed and the noise floor).
+
+f1     = 5.92 GHz
+f2     = 5.94 GHz
+thetaI = 30
+PdInt  = -40
+
+define rxch ( bf el )
+Amp:LNA   el 0 mid 0 Gain=20 NF=1.5 IP3=10
+Atten:ATT mid 0 bf 0 Loss=3
+end
+
+PhasedArray:PA1 feed Record="../results/e5.cemr" RecordRows=5 RecordCols=5 RecordDx=25.86 mm RecordDy=25.86 mm Mode=feed Rows=8 Cols=8 dx=25.86 mm dy=25.86 mm Amp=taylor(-25,4) Channel=rxch Tsky=5+280*exp(-el/0.0873) Tground=290 RxTheta[1]=thetaI RxPhi[1]=0 RxPd[1]=PdInt RxFreq[1]=f1 RxPol[1]=phi RxTheta[2]=thetaI RxPhi[2]=0 RxPd[2]=PdInt RxFreq[2]=f2 RxPol[2]=phi
+R:RMIX feed 0 R=50 Ohm
+
+analysis HB1 type=hb NumFreqs=2 Tone[1]=5.92e9 Tone[2]=5.94e9 MaxMixOrder=3 MaxHarm=3 Tol=1e-9
+analysis SW1 type=parametric_sweep Var=thetaI Values=0,10,20,30 Inner=HB1
+
+measure Pint_lna  = 10*log10(0.5*mag(HB1.V("PA1.ch[28].el","(1,0)"))^2/50*1000)
+measure Pint_feed = 10*log10(0.5*mag(HB1.V("feed","(1,0)"))^2/50*1000)
+measure Pim3_feed = 10*log10(0.5*mag(HB1.V("feed","(2,-1)"))^2/50*1000)

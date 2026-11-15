@@ -4745,3 +4745,28 @@ Gates: `tests/Core.Tests/Expressions/MathOnACubeTests.cs`.
 - **The PhaseShifter's Phase is a delay** (`S21 = e^{−jφ}`, the brief's gate 7: `Phase=90` is `S21 = −j`), the opposite sign to an
   array weight (`w = A·e^{jφ}`, R-paa4-1). A channel cell steering through it writes `Phase=-steer(…)`; said on its parameter row.
 - Not done here: the parameter editor greying the weight rows in Elements mode (D2's "greyed") and the dynamic symbol (PAA-5).
+
+## brief-paa-7 — the Phased Antenna Array as a receiver (2026-11-14)
+
+- **The default sky is the array's own temperature, not T0.** The brief said `Tsky = Tground = T0` by default and that nothing existing would
+  change; the default ambient is 26.85 °C (300 K), so a T0 default would have moved every array's noise by 10 K. Blank `Tsky`/`Tground` are the
+  physical temperature (`Temperature.ResolveDeviceC` of the instance), which is exactly the Bosma noise a passive block stamps.
+- **The sky's part of the correlation is split from the network's** (`ArrayNoise.Correlation`, note eq. (5)): k·Λ^½·(I − S·Sᴴ)·Λ^½ plus the
+  integral of (T_b − T̄) only. Integrating T_b whole would put the EM record's losses, its discretisation and the isolated/embedded levels'
+  approximations (the pattern overlap of an L0 array is not in its diagonal S) into the noise as negative or spurious correlation; split
+  this way a uniform sky at the physical temperature is Bosma exactly and a cold sky on a lossless record is zero exactly.
+- **Integrated over the record's 5° (or 1°) grid, the sky's part never decays with offset** — the phase turns more than a radian between
+  samples once the offset is a few wavelengths, and 15,566 of a 64×64 array's 16,129 offsets read above 1e-4 of the diagonal. Taken as a
+  Fourier integral over direction cosines on the lattice's period (`ArraySkyTransform`, note eq. (6)) it is resolved — and still 14,404 stay
+  above 1e-4: a sky bright at the horizon is a thin ring whose transform decays as 1/√(kΔ), so the long reach is physics. Hence the next point.
+- **The sky's part is held as its offset table and never filled** (`ArrayOffsetTerm`): the brief asked for a sparse fill truncated at a stated
+  fraction, and with that reach a fill is dense and a harder truncation drops a coherent sum the beam's noise is made of. The run's note states
+  how far the term reaches above 1e-4 of the diagonal instead.
+- **Isolated and embedded arrays hold their S sparse** (`SparseNetwork`, one pattern of entries, values per record frequency, interpolated entry
+  by entry exactly as SnpFit interpolates — cubic in magnitude and unwrapped phase, linear below three frequencies, clamped and warned): the
+  dense N×N per frequency PAA-4 left at 4096 elements was 268 MB, plus the same again for each stamp. Passivity at size is a power iteration
+  (`ArraySparseMatrix.SigmaMax`). An exact array, and one renormalised to another Z0 (at most 1024 elements), stay dense.
+- **Patterns reach src/Core through one seam**, `PhasedArrayModel.RadiationSource`, filled by `src/Design`'s module initializer
+  (`ArrayRadiationSource`) from the same `FieldCosimulation.Elements` the fields analysis reads, with the grid's radiated-power quadrature
+  (`PlanarFarFieldPattern.SolidAngles`). Without it only a sky at the array's own temperature with no incident wave can run, and the refusal
+  says why.

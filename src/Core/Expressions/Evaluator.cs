@@ -45,7 +45,8 @@ public sealed partial class Evaluator
     {
         // brief-paa-4 R-paa4-2 — one of element scope's five names, outside element scope: say where it is valid.
         var found = scope.Lookup(name)
-            ?? throw new UnresolvedNameException(name, scope.DebugName, ElementScope.IsName(name) ? ElementScope.WhereValid(name) : null);
+            ?? throw new UnresolvedNameException(name, scope.DebugName, ElementScope.IsName(name) ? ElementScope.WhereValid(name)
+                : name == "el" ? "el is the elevation above the horizon, bound only while a Phased Antenna Array's Tsky is evaluated" : null);
 
         var (expression, unit, owningScope) = found;
         var key = $"{owningScope.DebugName}::{name}";

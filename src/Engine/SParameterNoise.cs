@@ -17,7 +17,12 @@ namespace CircuitRF.Engine;
 /// <paramref name="Nodes"/> (circuit node indices, ground excluded), single-sided and absolute, A²/Hz, with
 /// <c>C[a, b] = ⟨j_a·conj(j_b)⟩</c> for <c>Nodes[a]</c>, <c>Nodes[b]</c>. A default value contributes nothing.
 /// </summary>
-public readonly record struct NoiseCurrents(int[] Nodes, Mat<Complex> C);
+public readonly record struct NoiseCurrents(int[] Nodes, Mat<Complex> C)
+{
+    /// <summary>brief-paa-7 — the same correlation held sparse, in place of <see cref="C"/>: a Phased Antenna Array's, whose N can be thousands.
+    /// Only the S-parameter noise asks for it (<see cref="SParameterNoise.Sources"/>' <c>structured</c>); every other consumer gets it dense.</summary>
+    public CircuitRF.Core.Devices.Arrays.ArrayCorrelation? Structured { get; init; }
+}
 
 /// <summary>One noisy entry of the S-parameter noise analysis: its label on the part axis and its noise currents at ω.</summary>
 internal sealed record NoiseSource(string Label, Func<double, NoiseCurrents> At);
@@ -37,6 +42,9 @@ public enum NoiseModelKind
     SwitchedOff,
     /// <summary>No noise, for <see cref="NoiseModelRow.Reason"/>.</summary>
     Noiseless,
+    /// <summary>brief-paa-7 — a Phased Antenna Array: what its elements see through their patterns (its sky) and the rest at
+    /// <see cref="NoiseModelRow.Kelvin"/>, its physical temperature.</summary>
+    Antenna,
 }
 
 /// <summary>
@@ -94,8 +102,10 @@ public static class SParameterNoise
     /// </summary>
     /// <param name="claim">A row the caller models itself (harmonic-balance noise claims every device with its own sources,
     /// to evaluate them over the large-signal waveform, and a Mixer with an NF): neither added here nor warned about.</param>
+    /// <param name="structured">brief-paa-7 — hand a Phased Antenna Array's correlation over sparse (<see cref="NoiseCurrents.Structured"/>),
+    /// which the S-parameter noise reads; false makes it dense for the analyses that read every part's noise as a dense block.</param>
     internal static List<NoiseSource> Sources(ElaboratedNetlist nl, double[] freqsHz, double[]? dcNodeVoltages,
-                                              Func<NoiseModelRow, List<ElaboratedComponent>, bool>? claim = null)
+                                              Func<NoiseModelRow, List<ElaboratedComponent>, bool>? claim = null, bool structured = false)
     {
         var entries = Classify(nl, freqsHz);
         var sources = new List<NoiseSource>();
@@ -116,6 +126,12 @@ public static class SParameterNoise
                     break;
                 case NoiseModelKind.Specified:
                     sources.Add(new(row.Label, Amplifier(parts[0], (AmplifierModel)parts[0].Model)));
+                    break;
+                case NoiseModelKind.Antenna:
+                    sources.Add(new(row.Label, Antenna(parts[0], (PhasedArrayModel)parts[0].Model, row.Kelvin, nl, structured)));
+                    break;
+                case NoiseModelKind.Thermal when parts is [{ Model: PhasedArrayFeedModel feed } split] && feed.SourceNode(split, 0) > 0:
+                    sources.Add(new(row.Label, Split(split, feed, row.Kelvin, structured)));
                     break;
                 case NoiseModelKind.Thermal:
                     // Non-mutual first, so a Mutual reads its inductors' branches of THIS recording.
@@ -243,6 +259,17 @@ public static class SParameterNoise
                 }, parts));
                 continue;
             }
+            // brief-paa-7 — a Phased Antenna Array: its elements' noise is what their patterns see, and its own temperature for the rest.
+            if (parts is [{ Model: PhasedArrayModel array } antenna] && PhasedArrayModel.SourceNode(antenna, 0, array.PortCount) > 0)
+            {
+                double physical = Temperature.ResolveDeviceC(antenna.Parameters, nl.AmbientC) + Temperature.KelvinOffset;
+                result.Add((Row(NoiseModelKind.Antenna) with
+                {
+                    Kelvin = physical,
+                    Reason = array.Sky is { } sky ? sky.Description : $"its own temperature, {physical:G5} K, in every direction (no Tsky or Tground)",
+                }, parts));
+                continue;
+            }
             // A model that declares noise sources — a built-in device whose noise parameters turn some on, or an external
             // device whose model declares them — on the one seam (brief NZ-4); one that declares none is named below.
             if (parts is [{ Model: { NoiseSources.Count: > 0 } noisy } one])
@@ -351,6 +378,41 @@ public static class SParameterNoise
     {
         if (ec.Model is IdealSBlockModel { Kind: ModelKind.Nonlinear } block) block.StampLinearS(r, ec, w);
         else ec.Stamp(r, w);
+    }
+
+    /// <summary>
+    /// brief-paa-7 — a Phased Antenna Array's noise: the wave each element emits, b = S·a + c, read off its source node's 1 S conductance, so
+    /// the correlation of c is the correlation of the currents injected there (PhasedArrayModel.NoiseCorrelation). Its run note is said once.
+    /// </summary>
+    private static Func<double, NoiseCurrents> Antenna(ElaboratedComponent ec, PhasedArrayModel array, double kelvin, ElaboratedNetlist nl, bool structured)
+    {
+        int n = array.PortCount;
+        int[] nodes = [.. Enumerable.Range(0, n).Select(e => PhasedArrayModel.SourceNode(ec, e, n))];
+        return w =>
+        {
+            var r = array.NoiseCorrelation(w / (2 * Math.PI), kelvin);
+            if (r.Note is { } note) nl.AddNoteOnce($"phased-array-noise:{ec.InstancePath}", $"{PhasedArrayModel.Describe(ec.InstancePath)}: {note}");
+            return Currents(nodes, r.Correlation, structured);
+        };
+    }
+
+    /// <summary>brief-paa-7 — a Feed-mode beamformer's thermal noise in closed form (PhasedArrayFeedModel.NoiseCorrelation): the Bosma noise of its S,
+    /// on its ports' source nodes, with no dense matrix at any size.</summary>
+    private static Func<double, NoiseCurrents> Split(ElaboratedComponent ec, PhasedArrayFeedModel feed, double kelvin, bool structured)
+    {
+        int[] nodes = [.. Enumerable.Range(0, feed.Elements + 1).Select(p => feed.SourceNode(ec, p))];
+        return w => feed.NoiseCorrelation(w / (2 * Math.PI), kelvin) is { } c ? Currents(nodes, c, structured) : default;
+    }
+
+    private static NoiseCurrents Currents(int[] nodes, CircuitRF.Core.Devices.Arrays.ArrayCorrelation c, bool structured)
+    {
+        if (structured) return new NoiseCurrents(nodes, default) { Structured = c };
+        var d = c.Dense();
+        int n = nodes.Length;
+        var m = new Mat<Complex>(n, n);
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++) m[i, j] = d[i, j];
+        return new NoiseCurrents(nodes, m);
     }
 
     /// <summary>
@@ -580,6 +642,23 @@ public static class SParameterNoise
             var c = currents[e];
             if (parts is not null) parts[e] = new Mat<Complex>(nPorts, nPorts);
             if (c.Nodes is not { Length: > 0 } nodes) continue;
+            if (c.Structured is { } st)
+            {
+                // brief-paa-7 — a sparse correlation: each port pair's share is one quadratic form, with no N×N formed.
+                var hv = new Complex[nPorts][];
+                for (int k = 0; k < nPorts; k++)
+                {
+                    Complex d = Math.Sqrt(ports[k].Z0.Real) / ports[k].Z0;
+                    hv[k] = new Complex[nodes.Length];
+                    for (int a = 0; a < nodes.Length; a++) hv[k][a] = d * Complex.Conjugate(rows[k][nodes[a] - 1]);
+                }
+                var sparseShare = new Mat<Complex>(nPorts, nPorts);
+                for (int k = 0; k < nPorts; k++)
+                    for (int l = 0; l < nPorts; l++) sparseShare[k, l] = st.Form(hv[k], hv[l]);
+                cs += sparseShare;
+                if (parts is not null) parts[e] = sparseShare;
+                continue;
+            }
             var h = new Mat<Complex>(nPorts, nodes.Length);
             for (int k = 0; k < nPorts; k++)
             {

@@ -1313,6 +1313,14 @@ public sealed partial class Elaborator
 
                 // Layer-2 + Layer-3 linter: a Term/Port inside an instantiated sub-cell is a
                 // design error — it will be treated as inert and never become an S-param port.
+                // brief-paa-7 — a Phased Antenna Array's element sources: one node per element after its pins (PhasedArrayModel.SourceNode).
+                int[]? arraySources = null;
+                if (model is PhasedArrayModel elementsArray)
+                {
+                    arraySources = PhasedArraySourceNodes(childPath, elementsArray.PortCount, netlist);
+                    resolvedNodes = [.. resolvedNodes, .. arraySources];
+                }
+
                 if ((model is PortModel or TermModel) && instancePathPrefix.Length > 0)
                     netlist.AddWarning(
                         $"Term '{childPath}' is inside an instantiated cell and was ignored; " +
@@ -1322,6 +1330,8 @@ public sealed partial class Elaborator
                          { ReferenceNode = refNode, Multiplicity = ResolveMultiplicity(resolvedParams, childPath), NoiseOff = noiseOff || _noiseOffDepth > 0,
                            NoiseOn = noiseOn };
                 netlist.AddComponent(ec);
+                if (model is PhasedArrayModel received)
+                    ConfigureReceive(received, inst, childPath, currentScope, resolvedParams, arraySources!, netlist);
             }
             else
             {
@@ -2397,8 +2407,9 @@ public sealed partial class Elaborator
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         foreach (var ov in inst.Overrides)
         {
-            // brief-paa-4 — the weights are evaluated per element, in element scope (Elaborator.PhasedArray.cs), never here.
-            if (PhasedArrayModel.IsElementParameter(ov.Name, out _, out _)) continue;
+            // brief-paa-4 — the weights are evaluated per element, in element scope (Elaborator.PhasedArray.cs), never here; brief-paa-7 — the
+            // sky and the incident waves after the model is built (ConfigureReceive).
+            if (PhasedArrayModel.IsElementParameter(ov.Name, out _, out _) || PhasedArrayModel.IsReceiveParameter(ov.Name, out _, out _)) continue;
             if (PhasedArrayModel.WordParameters.Contains(ov.Name))
             {
                 string raw = Unquote(ov.Expression.Trim());

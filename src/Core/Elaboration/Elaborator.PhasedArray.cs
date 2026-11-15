@@ -158,11 +158,17 @@ public sealed partial class Elaborator
             }
         }
 
+        // brief-paa-7 — each port's noise (and, for the elements, received-wave) source: one node per port after its pins.
+        var feedSources = new int[n + 1];
+        for (int k = 0; k <= n; k++) feedSources[k] = netlist.Nodes.GetOrAssign($"__paa_{childPath}_fs{k}");
+        var elementSources = PhasedArraySourceNodes(childPath, n, netlist);
+
         bool quiet = noiseOff || _noiseOffDepth > 0;
-        netlist.AddComponent(new ElaboratedComponent(PhasedArrayModel.TypeName, $"{childPath}.feed", feedNodes, p, feed)
+        netlist.AddComponent(new ElaboratedComponent(PhasedArrayModel.TypeName, $"{childPath}.feed", [.. feedNodes, .. feedSources], p, feed)
                              { NoiseOff = quiet, NoiseOn = noiseOn });
-        netlist.AddComponent(new ElaboratedComponent(PhasedArrayModel.TypeName, childPath, elementNodes, p, array)
+        netlist.AddComponent(new ElaboratedComponent(PhasedArrayModel.TypeName, childPath, [.. elementNodes, .. elementSources], p, array)
                              { ReferenceNode = 0, NoiseOff = quiet, NoiseOn = noiseOn });
+        ConfigureReceive(array, inst, childPath, scope, p, elementSources, netlist);
         if (noiseOff) _noiseOffDepth++;
         try
         {
@@ -184,6 +190,137 @@ public sealed partial class Elaborator
         if (NamesReadIn(cell, []) is not { } names) return ["an expression that could not be read"];
         var own = cell.Parameters.Select(q => q.Name).Concat(cell.Variables.Select(v => v.Name)).ToHashSet(StringComparer.Ordinal);
         return [.. ElementScope.Names.Where(x => names.Contains(x) && !own.Contains(x))];
+    }
+
+    /// <summary>brief-paa-7 — the node of each element's source, after its pins (PhasedArrayModel.SourceNode).</summary>
+    private static int[] PhasedArraySourceNodes(string childPath, int n, ElaboratedNetlist netlist)
+    {
+        var nodes = new int[n];
+        for (int k = 0; k < n; k++) nodes[k] = netlist.Nodes.GetOrAssign($"__paa_{childPath}_s{k + 1}");
+        return nodes;
+    }
+
+    /// <summary>
+    /// brief-paa-7 R-paa7-1 / R-paa7-2 — the array's sky and its incident waves. Tsky is a temperature or an expression of the elevation
+    /// <c>el</c> (radians, so <c>el &lt; 10 deg</c> reads as written), tabulated every 0.01° from the horizon to the zenith; Tground is the
+    /// temperature below the horizon. Either omitted is the array's own physical temperature, so an array given neither has the noise a passive
+    /// block has always had. Each incident wave k (RxTheta[k], RxPhi[k] in degrees by default, RxPd[k] in dBm/m², RxFreq[k], RxPol[k] a word or an
+    /// angle) becomes a tone source on the elements' source nodes, <c>PA1.rx[k]</c>, carrying the wave the record's patterns say it puts on each.
+    /// </summary>
+    private void ConfigureReceive(PhasedArrayModel array, Instance inst, string childPath, Scope scope, IReadOnlyDictionary<string, Value> p,
+                                  int[] sources, ElaboratedNetlist netlist)
+    {
+        ParameterAssignment? tsky = null, tground = null;
+        var waves = new SortedDictionary<int, Dictionary<string, ParameterAssignment>>();
+        foreach (var ov in inst.Overrides)
+        {
+            if (!PhasedArrayModel.IsReceiveParameter(ov.Name, out string baseName, out int? index)) continue;
+            if (index is null)
+            {
+                if (baseName.Equals("Tsky", StringComparison.OrdinalIgnoreCase)) tsky = ov; else tground = ov;
+                continue;
+            }
+            if (index < 1)
+                throw new ParameterRefusalException($"'{childPath}': {ov.Name} names incident wave {index}, and the waves are numbered from 1.");
+            if (!waves.TryGetValue(index.Value, out var set)) waves[index.Value] = set = new Dictionary<string, ParameterAssignment>(StringComparer.OrdinalIgnoreCase);
+            set[baseName] = ov;
+        }
+
+        double physical = Temperature.ResolveDeviceC(p, _ambientC) + Temperature.KelvinOffset;
+        if (tsky is not null || tground is not null)
+        {
+            double ground = tground is null ? physical : Kelvin(tground, scope, childPath);
+            string said = $"Tsky = {(tsky?.Expression ?? $"{physical:G5} K (the array's own temperature)")}, Tground = " +
+                          $"{(tground?.Expression ?? $"{physical:G5} K (the array's own temperature)")}";
+            if (tsky is null) array.Sky = new ArraySky(physical, ground, said);
+            else if (!AstWalker.CollectRefs(Parser.Parse(tsky.Expression)).Contains("el")) array.Sky = new ArraySky(Kelvin(tsky, scope, childPath), ground, said);
+            else
+            {
+                int count = (int)Math.Round(90 / ArraySky.StepDeg) + 1;
+                var table = new double[count];
+                for (int i = 0; i < count; i++)
+                {
+                    string name = $"{childPath}.Tsky@{i}";
+                    var at = new Scope(name, scope);
+                    at.Bind("el", "__resolved__", "rad");
+                    _evaluator.InjectResolved(name, "el", new Value(i * ArraySky.StepDeg * Math.PI / 180));
+                    table[i] = Kelvin(tsky, at, childPath);
+                }
+                array.Sky = new ArraySky(table, ground, said);
+            }
+        }
+
+        var notes = new List<string>();
+        var given = new Dictionary<int, ArrayIncidentWave>();
+        foreach (var (k, set) in waves)
+        {
+            string W(string b) => $"Rx{b}[{k}]";
+            ParameterAssignment Need(string b) => set.TryGetValue("Rx" + b, out var ov) ? ov
+                : throw new ParameterRefusalException($"'{childPath}': incident wave {k} has no {W(b)}: a wave needs {W("Pd")} (its power density, dBm/m²) and {W("Freq")}.");
+            double Real(ParameterAssignment ov, Value v) => v.Kind == ValueKind.Real && double.IsFinite(v.AsReal()) ? v.AsReal()
+                : throw new ParameterRefusalException($"'{childPath}': {ov.Name}={ov.Expression} is {v}: it is a real number.");
+            string Site(ParameterAssignment ov) => $"{inst.InstanceName}.{ov.Name}";
+            double theta = set.TryGetValue("RxTheta", out var th) ? Real(th, _evaluator.EvalPhase(th.Expression, scope, th.Unit, Site(th))) : 0;
+            double phi = set.TryGetValue("RxPhi", out var ph) ? Real(ph, _evaluator.EvalPhase(ph.Expression, scope, ph.Unit, Site(ph))) : 0;
+            var pd = Need("Pd");
+            double dbm = Real(pd, _evaluator.EvalParameter(pd.Expression, scope, null, Site(pd)));
+            var fq = Need("Freq");
+            double hz = Real(fq, _evaluator.EvalParameter(fq.Expression, scope, fq.Unit, Site(fq)));
+            if (!(hz > 0)) throw new ParameterRefusalException($"'{childPath}': {fq.Name}={fq.Expression} is {hz} Hz: a wave's frequency is positive.");
+            (System.Numerics.Complex, System.Numerics.Complex) pol = (1, 0);
+            string polSaid = "theta";
+            if (set.TryGetValue("RxPol", out var po))
+            {
+                string word = Unquote(po.Expression.Trim()).Trim();
+                if (word.ToLowerInvariant() is "theta" or "phi" or "rhcp" or "lhcp") { pol = ArrayReceive.Polarization(word, null); polSaid = word.ToLowerInvariant(); }
+                else
+                {
+                    double psi;
+                    try { psi = Real(po, _evaluator.EvalPhase(po.Expression, scope, po.Unit, Site(po))); }
+                    catch (ExpressionException)
+                    {
+                        throw new ParameterRefusalException($"'{childPath}': {po.Name}={po.Expression} is not a polarization: it is theta, phi, rhcp, lhcp or an angle " +
+                                                            "from θ̂ towards φ̂ (degrees unless a unit says otherwise).");
+                    }
+                    pol = ArrayReceive.Polarization("", psi);
+                    polSaid = $"{psi * 180 / Math.PI:G6}° from θ̂";
+                }
+            }
+            ArrayRadiation rad;
+            try { rad = array.Radiation(hz); }
+            catch (InvalidOperationException ex) { throw new ParameterRefusalException($"'{childPath}': incident wave {k}: {ex.Message}"); }
+            double density = Math.Pow(10, (dbm - 30) / 10);
+            var c = ArrayReceive.Waves(rad, array.Lattice, theta, phi, density, hz, pol, array.Radiates);
+            given[k] = new ArrayIncidentWave(theta, phi, dbm, hz, pol.Item1, pol.Item2);
+            var model = new ArrayIncidentWaveModel(hz, c);
+            var parameters = new Dictionary<string, Value>(StringComparer.Ordinal) { ["Freq"] = new Value(hz) };
+            netlist.AddComponent(new ElaboratedComponent(ArrayIncidentWaveTypeName, $"{childPath}.rx[{k}]", sources, parameters, model));
+            string at = Math.Abs(rad.FrequencyHz - hz) <= 1e-9 * hz ? ""
+                : $"; its record holds no pattern at {hz / 1e9:G6} GHz, so the patterns at {rad.FrequencyHz / 1e9:G6} GHz, the nearest, are used";
+            notes.Add($"incident wave {k}: {dbm:G6} dBm/m² at {hz / 1e9:G6} GHz from θ {theta * 180 / Math.PI:G6}°, φ {phi * 180 / Math.PI:G6}°, polarization {polSaid}{at}");
+        }
+        if (notes.Count > 0)
+        {
+            array.IncidentNotes = notes;
+            array.IncidentWaves = given;
+            netlist.AddNoteOnce($"phased-array-rx:{childPath}",
+                $"{PhasedArrayModel.Describe(childPath)} receives {string.Join("; ", notes)}. Each is a tone source on the elements ({childPath}.rx[k]), " +
+                "each element's wave by reciprocity from its embedded pattern.");
+        }
+    }
+
+    /// <summary>brief-paa-7 — the component type of an incident wave's tone source.</summary>
+    public const string ArrayIncidentWaveTypeName = "PhasedArrayRx";
+
+    private double Kelvin(ParameterAssignment ov, Scope scope, string childPath)
+    {
+        Value v;
+        try { v = _evaluator.EvalParameter(ov.Expression, scope, null, ov.Name); }
+        catch (ExpressionException ex) { throw new ParameterRefusalException($"'{childPath}': {ov.Name}={ov.Expression}: {ex.Message}"); }
+        double t = v.Kind == ValueKind.Real ? v.AsReal() : double.NaN;
+        if (!(t >= 0) || !double.IsFinite(t))
+            throw new ParameterRefusalException($"'{childPath}': {ov.Name}={ov.Expression} is {v}: a brightness temperature is a number of kelvin, zero or more.");
+        return t;
     }
 
     private static int WholeParameter(IReadOnlyDictionary<string, Value> p, string name, string path, int fallback, int max)

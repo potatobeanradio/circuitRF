@@ -4629,3 +4629,23 @@ Gates: `CommensurateTonesTests`, `LoadpullSettingsReachTests`, `HbLineSearchTest
   started the search. A peak within one cut step of boresight is now cut along the requested scan's azimuth, or φ = 0 when none was
   requested, made tangent at the peak. PAA-2's 64×64 reference test cuts its own reference the same way at boresight (it used the
   peak's own azimuth too, and agreed only by the same accident).
+
+## brief-paa-7 — an array's own noise, and receiving through one-way channels (2026-11-14)
+
+- **An antenna's noise is a WAVE source, and it reaches every engine as node currents.** b = S·a + c with c's correlation from the sky
+  (`ArrayNoise`, note §5.2) cannot be a Norton current at the pins at size: j = (2/√Z0)·(I + S)⁻¹·c is dense, and I + S is singular for a
+  uniform N-way split (tᵀt = 1). Instead each element (and each port of a Feed-mode beamformer) gets a source node holding a 1 S conductance,
+  whose voltage enters its wave row with −2 (the row is 2b − 2S·a), so the row reads b − S·a = V_src and a noise current j on that node IS
+  the noise wave. S-parameter, HB, envelope and phase noise all read node currents already; nothing in them changed. The incident waves of
+  R-paa7-1 use the same node (`ArrayIncidentWaveModel`, a `ToneSourceModelBase`, so every engine treats it as an I_nTone).
+- **`NoiseCurrents.Structured`**: the S-parameter noise asks for an array's correlation sparse (`SParameterNoise.Sources(…, structured: true)`)
+  and forms each port pair's share as one quadratic form (`ArrayCorrelation.Form`); every other consumer gets it dense, as before. A
+  4096-element array's whole noise analysis forms no N×N (`ArrayCorrelation.DenseCopies`).
+- **The beam functional's own-noise correction is for a NORTON current at the pins only** (`BlockFunctionalNoise`): its pin map now covers the
+  block's pins and not its source nodes, so an array's wave-source noise is read through its terminal currents whole, with nothing taken out.
+- **Receive weights, not the transmit pattern.** A receive channel of one-way amplifiers passes nothing from the port to the elements, so a
+  fields analysis's transmit waves say nothing about reception. `SParameterEngine.PortReceiveWeights` is one transposed solve at the receive
+  port giving Tₙ = ∂b_port/∂c_n on the source nodes; the receive pattern is the array sum with weights T, and the receive metrics
+  (`FieldCosimulation.ArrayFieldsMetrics.EvaluateReceive`) are all formed from T, C and the noise analysis's Cs. `SnrDb` equals the power HB
+  delivers through such a channel over Cs to 1e-9 dB.
+- **A sky integral on the record's grid is aliased past a few wavelengths of offset** — see `src/Core/RESOLVED.md`, § brief-paa-7.

@@ -1,0 +1,36 @@
+; receive-8x8 (brief-paa-7): an 8 × 8 receive array built on the 5 × 5 patch record (../results/e5.cemr), Feed mode, each element
+; through its own channel - an LNA (20 dB, NF 1.5 dB, OIP3 +10 dBm) and a 3 dB attenuator - into the beamformer, then a mixer
+; (LO 5.5 GHz) and an IF filter at 400 MHz. The array looks at a sky of 5 K overhead rising to 285 K at the horizon.
+; Incident wave 1 is the wanted signal, from boresight. No EM run: the record is the PAA-1 fixture.
+;
+;   NF1   S-parameter noise at the feed (Port P1); F1 the array's pattern from the same port. The receive metrics read both.
+;   HB1   two tones, the signal and the LO: the signal received through the pattern, amplified in every channel, beamformed,
+;         converted to 400 MHz and filtered.
+; Interferer Bench.cnl beside it is the same front end with an interferer swept in angle.
+
+f0    = 5.9 GHz
+flo   = 5.5 GHz
+PdSig = -90
+
+define rxch ( bf el )
+Amp:LNA   el 0 mid 0 Gain=20 NF=1.5 IP3=10
+Atten:ATT mid 0 bf 0 Loss=3
+end
+
+Port:P1 feed 0 Num=1 Z=50 Ohm
+PhasedArray:PA1 feed Record="../results/e5.cemr" RecordRows=5 RecordCols=5 RecordDx=25.86 mm RecordDy=25.86 mm Mode=feed Rows=8 Cols=8 dx=25.86 mm dy=25.86 mm Amp=taylor(-25,4) Channel=rxch Tsky=5+280*exp(-el/0.0873) Tground=290 RxTheta[1]=0 RxPhi[1]=0 RxPd[1]=PdSig RxFreq[1]=f0 RxPol[1]=phi
+P1Tone:PLO lo 0 Num=2 Pavl=7 Z=50 Freq=flo
+Mixer:X1 feed 0 lo 0 if 0 ConvGain=-7 Plo=7
+Filter:IF if 0 ifo 0 Response=Butterworth Form=Bandpass Order=3 F1=0.39 GHz F2=0.41 GHz IL=0.5
+R:RIF ifo 0 R=50 Ohm
+
+analysis NF1 type=sparam start=5.9 stop=5.9 npts=1 Unit=GHz Noise=yes
+analysis F1 type=fields block=PA1 freq=5.9 freqUnit=GHz drive=1
+analysis HB1 type=hb NumFreqs=2 Tone[1]=5.9e9 Tone[2]=5.5e9 MaxMixOrder=3 MaxHarm=3 Tol=1e-9
+
+measure TA_K     = AntennaTempK(F1)
+measure Tsys_K   = SystemTempK(F1, NF1)
+measure GT_dBK   = GoverTDbK(F1, NF1)
+measure SNR1MHz  = SnrDb(F1, NF1, 1, 1e6)
+measure Psig_feed = 10*log10(0.5*mag(HB1.V("feed","(1,0)"))^2/50*1000)
+measure Psig_IF  = 10*log10(0.5*mag(HB1.V("ifo","(1,-1)"))^2/50*1000)

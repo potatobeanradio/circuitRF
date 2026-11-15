@@ -73,3 +73,57 @@ interferer swept in angle, S-parameter noise and two-tone HB. No EM run.
 
 A plane-wave EM check of the received voltage: an EM plane-wave run carries no ports today, so it cannot measure what a
 port receives; recorded as open. Sky models beyond a temperature and an elevation expression. Digital beamforming.
+
+## Completion note (2026-11-14)
+
+**Built.** Incident waves: `RxTheta[k]`, `RxPhi[k]`, `RxPd[k]`, `RxFreq[k]`, `RxPol[k]` (`theta`, `phi`, `rhcp`, `lhcp`, or an angle) put
+cₙ = j·λ·√(2S/η₀)·(p̂·Eₙ)·e^{jk·û·rₙ} on each element (note eq. (4), the constant fixed from G_r = 4π|E|²/η₀ and written into the note),
+as a tone source `PA1.rx[k]` (`ArrayIncidentWaveModel`, a `ToneSourceModelBase`) on a source node the array stamps per element — so HB,
+multi-tone HB and envelope take it as they take an I_nTone, in both modes. The array's noise is a wave source on the same node (note eq. (5)):
+the network's own k·Λ^½·(I − S·Sᴴ)·Λ^½ plus the sky's excess over T̄ through the patterns; `Tsky` (a temperature or an expression of the
+elevation `el`, tabulated every 0.01°), `Tground` below the horizon. The Feed-mode beamformer's thermal noise is closed-form. The noise
+analysis is unchanged in method; it reads the correlation sparse. Receive metrics `AntennaTempK`, `SystemTempK`, `GoverTDbK`, `SnrDb`,
+`NullDepthDb`, formulas in note §5.3. Isolated and embedded arrays now hold their S sparse. The parameter editor lists `Tsky` and `Tground`;
+the components page says the receive side. Bench `testdata/phased-array/receive-8x8/` (its README has the numbers).
+
+**Gates** (`tests/Ui.Tests/PhasedArray/PhasedArrayReceiveTests.cs`, 9 tests, 15 s):
+1. Reciprocity at boresight: received power over two orthogonal polarizations equals S·λ²·G_r/4π to 1.1e-10 (4×4 Taylor on E1).
+2. Uniform sky at the array's own 300 K: the 3×3 array's Cs equals the EM Field Data block's Bosma Cs to 3.5e-15.
+3. Cold sky on a lossless record: T_A = 0 K exactly, T_sys equals the array-switched-off value to 1e-9; at 300 K T_A = 300 K and T_sys = T_A + T_rx.
+4. Interferer at a −26.16 dB sidelobe sample of an 8×8 Taylor −25 dB array reaches the feed by the pattern's ratio to 2e-11 dB through linear 20 dB channels.
+5. 1×4 with LNAs of 3 dB return loss: coupling moves the port's noise 1.07 dB; the component equals the EM Field Data block with explicit LNAs to 4e-15 dB.
+6. 64×64 Feed mode, non-uniform sky: the offset table equals the pair-by-pair integral over the 16×16 corner's 65,280 pairs to 1.1e-14; the
+   whole noise analysis takes no pair integral, exactly 127² offset integrals and no dense copy (`ArrayCorrelation.DenseCopies`), in ~4 s.
+Plus: `SnrDb` equals HB's delivered power over Cs through one-way LNA channels to 1e-9 dB; the bench's linear metrics; the keys survive the `.cnl`.
+
+**What changed from the brief, and why.**
+- **Default `Tsky = Tground` = the array's own temperature, not T0**: the default ambient is 300 K, and a T0 default would have moved every
+  existing array's noise. With it nothing that ran before moves (gate 2).
+- **Gate 3 needs a record that is lossless**, and no EM record is (PAA-1's laminate has tanδ 0.0037, and a planar run loses power to the
+  surface wave): the test writes one, a terminated whole-sphere dipole pattern whose radiated power is exactly 1 − |S₁₁|² by the code's own
+  quadrature.
+- **The sky's part is not filled into a sparse matrix and truncated**; it is held as its offset table (`ArrayOffsetTerm`). Two findings
+  forced it. Integrated over the record's 5° grid it never decays (aliasing: the phase turns over a radian per sample past a few wavelengths of
+  offset), so it is now a Fourier integral over direction cosines on the lattice's own period (`ArraySkyTransform`). Correctly integrated it
+  still reaches across the whole 64×64 aperture — 14,404 of 16,129 offsets above 1e-4 of the diagonal — because a horizon-bright sky is a ring
+  whose transform decays as 1/√(kΔ). A fill would be dense; the table is 16,129 numbers and a quadratic form sums pairs from it. The note
+  states the reach instead of a truncation. Gate 6's "pair by pair" is the same direction-cosine integral taken per displacement.
+- **The receive metrics use receive weights from the circuit, not the fields analysis's transmit waves**: the bench's LNA channels pass
+  nothing from the port back to the elements. The fields analysis still names the port, frequency and record.
+- **R-paa7-5's "attenuated before the channel by exactly the pattern's ratio" holds at the feed, not before the channel**: in Feed mode the
+  channels sit between the elements and the beamformer, so an interferer reaches each LNA through the element's pattern and is suppressed by
+  the array factor only after the channels. Gate 4 is at the feed; the bench shows both (an interferer at 30° is −73.7 dBm at every LNA and
+  −81.7 dBm at the feed against −44.1 dBm in the beam).
+- **The bench is two files.** One HB point with 64 nonlinear channels is about a minute single-threaded (two tones); three tones (signal,
+  interferer, LO) did not finish a point in ten minutes. `Receive Bench.cnl` runs the whole chain with the signal and the LO;
+  `Interferer Bench.cnl` the front end with two equal interferers whose product falls on the signal, swept in angle. SFDR against angle is
+  formed in the README from both (80.3, 82.7, 89.9, 82.4 dB at 0, 10, 20, 30°).
+
+**Found and fixed on the way.** PAA-4 left a 4096-element array's S dense per record frequency (268 MB) and each stamp copied it again; the
+isolated and embedded levels are sparse now, and the beamformer's Bosma recording (which would have inverted a dense ~12,000-unknown system)
+is closed-form.
+
+**Not here.** A plane-wave EM check of the received voltage (recorded open, as the brief says). The HB cost of many nonlinear channels (PAA-8's
+territory, or an HB engine brief). Incident waves at a frequency the record does not hold use its nearest pattern frequency and say so. A
+non-uniform sky at exact level integrates pair by pair on the record's own grid, which is fine for the record's few-wavelength offsets.
+User docs beyond the components page paragraph are PAA-10's.

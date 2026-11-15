@@ -80,3 +80,42 @@ contours, the PSD per direction, ACPR1 and EVM against drive per direction, and 
 `circuitrf fields "testdata/phased-array/hb-1x4/Array Envelope.cnl" -o "testdata/phased-array/hb-1x4/Array Envelope F1.npy"`.
 40 µs is where in-beam ACLR is within 0.2 dB of a 200 µs record; EVM is still 0.4 pp low there and creeps up with more symbols.
 
+
+## `receive-8x8/` — the array as a receiver (PAA-7)
+
+An 8 × 8 Feed-mode array on `results/e5.cemr` (embedded level, position classes), Taylor −25 dB, each element through a channel of an
+LNA (20 dB, NF 1.5 dB, OIP3 +10 dBm) and a 3 dB attenuator, under a sky of 5 K overhead rising to 285 K at the horizon
+(`Tsky=5+280*exp(-el/0.0873)`; the planar record's ground plane hides `Tground`). No EM run.
+
+| File | What |
+|---|---|
+| `Receive Bench.cnl` | The whole chain: the array, a mixer (LO 5.5 GHz, +7 dBm) and a 400 MHz IF filter after the feed, a signal of −90 dBm/m² from boresight. NF1 (S-parameter noise at the feed), F1 (the pattern from the same port) and the receive measures; HB1 two tones, the signal and the LO. |
+| `Interferer Bench.cnl` | The same front end, the feed loaded by 50 Ω as the mixer's RF port loads it in harmonic balance, and two equal interferers (5.92 and 5.94 GHz, −40 dBm/m²) from `thetaI` in φ = 0, swept 0…30°. Their third-order product falls at 5.90 GHz, on the signal. |
+
+Measured (the linear measures are `PhasedArrayReceiveTests.TheReceiveBench_ReadsItsReceiveMetrics`; the HB numbers are `circuitrf hb` of each
+bench, about one and two minutes in a Debug build):
+
+| | |
+|---|---|
+| Antenna temperature `AntennaTempK(F1)` | 98.6 K (the sky's 9.5 K pattern average over the element's radiated share, the rest — dielectric loss and the surface wave — at 300 K) |
+| System temperature `SystemTempK(F1, NF1)` | 242.2 K |
+| G/T `GoverTDbK(F1, NF1)` | −2.70 dB/K |
+| SNR of the signal in 1 MHz `SnrDb(F1, NF1, 1, 1e6)` | 9.02 dB |
+| Signal at the feed / at the IF output (HB1) | −97.58 dBm / −105.08 dBm |
+
+| `thetaI` | interferer at one LNA input | at the feed | IM3 at the feed (5.90 GHz) | SFDR |
+|---|---|---|---|---|
+| 0° | −73.33 dBm | −44.09 dBm | −170.5 dBm | 80.3 dB |
+| 10° | −73.54 dBm | −50.28 dBm | −177.6 dBm | 82.7 dB |
+| 20° | −73.80 dBm | −77.40 dBm | −199.2 dBm | 89.9 dB |
+| 30° | −73.69 dBm | −81.71 dBm | −176.8 dBm | 82.4 dB |
+
+**What reaches the channels is the element's pattern, not the array's**: at every angle the interferers arrive at each LNA within 0.5 dB of
+each other, and the channels compress and intermodulate by that. The beamformer then suppresses both the interferers and their in-band product
+by the array pattern at `thetaI` (20° sits near a null of the pattern at 5.90 GHz, 30° on a sidelobe). The SFDR is referred to the incident
+density at the array: the IM3 at the feed is turned into the boresight density that would deliver the same power there (the signal's gain from
+density to feed, −90 → −97.58 dBm, so −7.58 dB), giving the interferers' input third-order intercept density IIP3 = Pd + (Pd − Pd_IM3)/2; the
+noise floor density in 1 MHz is the signal's density less its SNR, −99.02 dBm/m²; and SFDR = ⅔·(IIP3 − floor). The interferers are 63 dB below the
+LNA's input intercept, so the products follow their 3:1 slope.
+
+Regenerate with `circuitrf hb "testdata/phased-array/receive-8x8/Receive Bench.cnl"` and the same for `Interferer Bench.cnl`.

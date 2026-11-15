@@ -1,6 +1,6 @@
 # circuitRF — Phased antenna arrays
 
-**Status:** PAA-1 measured; the array engine (PAA-2), the component in Elements mode (PAA-3), Feed mode with its weights, channel cell and PhaseShifter block (PAA-4) and the dynamic symbol (PAA-5) built · **Series:** [`brief-paa-0-overview.md`](../briefs/brief-paa-0-overview.md) ·
+**Status:** PAA-1 measured; the array engine (PAA-2), the component in Elements mode (PAA-3), Feed mode with its weights, channel cell and PhaseShifter block (PAA-4), the dynamic symbol (PAA-5), brute-force harmonic balance and envelope (PAA-6, 6b) and the receive side (PAA-7) built · **Series:** [`brief-paa-0-overview.md`](../briefs/brief-paa-0-overview.md) ·
 **Builds on:** [`sar.md`](sar.md) §11 and the co-simulation series (`brief-cosim-pattern-*`: the per-port far field and
 its recombination), [`chain-budget.md`](chain-budget.md) (the array at system level), [`sparameter-noise.md`](sparameter-noise.md)
 (correlated noise through a terminated N-port), [`harmonic-balance.md`](harmonic-balance.md).
@@ -166,7 +166,7 @@ tuning slider, varied by yield and set by the optimizer.
 | `Coupling` | `on` or `off`; `off` keeps each element's own reflection and drops every Sₙₘ, m ≠ n |
 | `Z0` | Reference impedance at the elements; defaults to the record's |
 | `RecordDx`, `RecordDy`, `RecordRows`, `RecordCols` | The lattice of a sub-array record that does not store its ports' positions (§10); ignored when it does |
-| `Tsky`, `Tground` | The brightness model of §5.2; default `T0` |
+| `Tsky`, `Tground` | The brightness model of §5.2; default the array's own physical temperature (300 K at the default ambient), so an array given neither has the noise a passive block has |
 | `RxTheta[k]`, `RxPhi[k]`, `RxPd[k]`, `RxFreq[k]`, `RxPol[k]` | Incident waves (§5.1) |
 
 ### 4.3 Element scope
@@ -243,56 +243,104 @@ count during a run and is refused by `check` and by the run; in Feed mode it is 
 
 ### 5.1 Incident waves by reciprocity
 
-A plane wave arriving from (θ,φ) with power density S (W/m²) and polarization **p̂** puts on element n an incident wave
-proportional to its embedded transmit pattern in that direction, by reciprocity:
+A plane wave arriving from (θ,φ) with power density S (W/m²) and polarization **p̂** puts on element n the wave it emits into the
+circuit (the source term c of b = S·a + c), by reciprocity from its embedded transmit pattern in that direction:
 
 ```
-aₙ^rx ∝ λ · √(S / η₀) · p̂ · Eₙ(θ,φ)          (constant fixed by the pattern's normalisation)   (4)
+cₙ = j · λ · √(2S/η₀) · (p̂ · Eₙ(θ,φ)) · e^{jk·û·rₙ}                                                       (4)
 ```
 
-so a received signal and every interferer become sources on the element ports with no new EM run. The component takes
-them as indexed parameters, `Rx[k]` with its own `RxTheta[k]`, `RxPhi[k]`, `RxPd[k]` (dBm/m²), `RxFreq[k]` and
-`RxPol[k]`, and in harmonic balance and envelope they are tones like a P1Tone's: an interferer arriving in a sidelobe is
-attenuated by the pattern before it reaches the channel's amplifiers, which is what an array's spatial filtering and its
-dynamic range rest on. The gate is internal: at boresight the received power equals S·λ²G/4π from the same pattern.
+in the co-simulation's peak-wave convention (power ½|c|²), with **E**ₙ the terminated embedded pattern per unit incident wave (r-normalised
+volts) referred to its own element and rₙ its position. The constant follows from the realized gain of a pattern so normalised,
+G_r = 4π|**E**|²/η₀: a matched element in a matched polarization delivers ½|c|² = S·λ²·G_r/4π. The j is the reciprocity theorem's: an
+open-circuit voltage is **E**_inc·**l**_e and **l**_e = j·2λ·√Z0·**E**/η₀ per unit wave. **p̂** has no conjugate in the product; `rhcp` is
+(θ̂ + jφ̂)/√2, the incoming wave an antenna radiating RHCP in the far-field cubes' IEEE sense (**E** ∝ θ̂ − jφ̂) receives whole, and an angle ψ
+is cos ψ·θ̂ + sin ψ·φ̂. The element's pattern is the record's at its nearest frequency to `RxFreq[k]`, interpolated in direction as the fields
+analysis interpolates it.
+
+The component takes the waves as indexed parameters, `Rx[k]` with its own `RxTheta[k]`, `RxPhi[k]`, `RxPd[k]` (dBm/m²), `RxFreq[k]` and
+`RxPol[k]`. Each is a tone source (`PA1.rx[k]`) injecting cₙ on a source node the array stamps per element (a 1 S conductance whose voltage
+enters element n's wave row with −2, so the row reads b − S·a = V), so in harmonic balance, multi-tone HB and envelope it is a tone like a
+P1Tone's, zeroed in a small-signal run. **Before the channels a wave is shaped by the element's pattern alone**: in Feed mode the channel cells
+sit between the elements and the beamformer, so an interferer in a sidelobe reaches every LNA almost at full strength and is suppressed by the
+array factor only after them — which is why a channel's linearity matters to a phased receiver. Gated at boresight (the received power equals
+S·λ²·G_r/4π from the same pattern, 1.1e-10) and in a sidelobe at the feed (the pattern's ratio, 2e-11 dB, through linear channels).
 
 ### 5.2 The array's own noise
 
-An antenna's ports are not at the temperature of its metal: their noise is what the pattern sees. For a lossless array
-looking at a brightness temperature T_b(θ,φ), the noise-wave correlation of its ports is
+An antenna's ports are not at the temperature of its metal: their noise is what the pattern sees. For a lossless array looking at a
+brightness temperature T_b(θ,φ) the correlation of the waves its ports emit is C_nm = k·∫ T_b·eₙ·eₘ* dΩ with eₙ = **E**ₙ·e^{jk·û·rₙ}/√η₀,
+which is kT·(I − S·Sᴴ) for a uniform T exactly when the patterns and S agree. They never agree exactly — an EM record has its losses and its
+discretisation, and the isolated and embedded levels are approximations — so the correlation is split so that the part a passive block has
+always had stays the network's own and only what the sky adds is integrated:
 
 ```
-C_nm = k·∫ T_b(Ω) · eₙ(Ω)·eₘ*(Ω) dΩ  (patterns normalised so that a uniform T gives kT·(I − S·Sᴴ))   (5)
+C = k·Λ^½·(I − S·Sᴴ)·Λ^½  +  (k/η₀)·∫ (T_b − T̄)·eₙ·eₘ* dΩ                                                  (5)
+Λₙ = ηₙ·T̄ + (1 − ηₙ)·T_phys,     ηₙ = min(1, Rₙₙ/(I − S·Sᴴ)ₙₙ),     Rₙₙ = (1/η₀)·∫ |Eₙ|² dΩ
 ```
 
-plus `kT_phys·(…)` for the ohmic part (1 − radiation efficiency). The component stamps (5) as its noise correlation, from
-a brightness model on the component — `Tsky` (a constant or an expression of elevation) and `Tground`, with the horizon
-at θ = 90° — so the existing S-parameter noise analysis, unchanged, gives what follows.
+T̄ is the brightness averaged over the reference (centre) element's pattern power and ηₙ the element's radiation efficiency as its pattern and
+S state it. With a uniform sky at the physical temperature the second term is identically zero and the first is the Bosma correlation
+kT·(I − S·Sᴴ): nothing that ran before moves (gated against an EM Field Data block's Bosma noise, 3.5e-15). With a cold sky on a lossless
+record (η = 1, T_b = 0) both terms are zero. The diagonal is the classical η·T_b,avg + (1 − η)·T_phys. On a planar (hemisphere) record the lower
+half-space is the ground plane and contributes nothing radiated.
 
-**Computing (5) by offset.** Evaluated pair by pair it is N²·D operations — about 10¹² at 4096 elements on a 1° sphere —
-and it is not needed. Under L1 every element has the same embedded pattern displaced, so C_nm depends only on the offset
-between n and m: the integral is taken once per offset that occurs (at most (2R−1)·(2C−1), 16,129 for 64×64, each over
-the D directions), and the matrix is filled from the table. With a uniform brightness it reduces to `kT·(I − S·Sᴴ)`,
-which has the sparsity of S·Sᴴ (offsets to ±8 for a 5×5 sub-array), and the brightness integral is needed only for
-offsets where the non-uniform part is significant; offsets beyond the extended coupling's reach carry only that part.
-Under L2 (tens of ports) the pair-by-pair integral is cheap and is used as it stands. The correlation is handed to the
-noise analysis in the same sparse form as S.
+The noise is a wave source on the same per-element source node the incident waves use, so it is node currents to every engine; the S-parameter
+noise reads it sparse (`NoiseCurrents.Structured`) and the analyses that take a part's noise dense get it dense. A Feed-mode beamformer's
+thermal noise is in closed form for the same reason: S = [[0, tᵀ], [t, 0]] makes I − S·Sᴴ = diag(1 − ‖t‖², I − t·tᴴ), a diagonal and one
+rank-one term, where its Bosma recording would have inverted a dense system of three times N unknowns.
 
-With the correlation in place, the noise analysis gives:
+**Computing (5) by offset.** Evaluated pair by pair it is N²·D operations and it is not needed. Under L1 every element has the same embedded
+pattern displaced, so the sky's part depends only on the offset Δ = rₙ − rₘ, and it is one Fourier integral over direction cosines:
 
-- the noise figure and noise temperature at the feed, channel by channel included,
-- the **active noise figure**: each LNA's source is Γ_act, and its own noise wave leaving its input couples into its
-  neighbours through S, both captured because the array is a block in the circuit,
-- **G/T**: `G − 10·log10(T_sys)`, with T_sys at the array's terminals from the same correlation.
+```
+T(Δ) = (k/η₀)·∫∫_{u²+v²<1} (T_b − T̄)·P(u,v)/cos θ · e^{jk(u·Δx + v·Δy)} du dv                              (6)
+```
 
-With `Tsky = Tground = T0` (the default) (5) is exactly the Bosma noise a passive block stamps today, so nothing that
-already runs changes.
+with P the reference pattern's power (both hemispheres where the record has both). Δ runs over the lattice's offsets, so only the integrand
+periodized by one lattice period in (u,v) — λ/dx by λ/dy, λ/(dx/2) across a triangular lattice — is ever seen: it is sampled on a grid of that
+period at least four points per offset and 1/256 in u, the element pattern interpolated bilinearly from the record's grid, and every offset is
+that grid's Fourier coefficient, a separable DFT. **The record's own grid will not do**: at 5° (or 1°) the phase turns more than a radian
+between samples once Δ is a few wavelengths, and the integral then reads as a correlation that never decays. Each element's own diagonal is
+still integrated over its own pattern on the record's grid; at exact level (N is the record's port count) the sky's part is integrated pair by
+pair over each element's own pattern.
+
+**The table is the correlation; it is never filled.** A sky bright at the horizon correlates elements across the whole aperture — a thin ring
+of brightness transforms as 1/√(kΔ) — and on PAA-1's 5×5 record extended to 64×64 under a sky of 5 K overhead rising to 285 K at the horizon,
+14,404 of the 16,129 offsets stay above 1e-4 of the diagonal. A matrix filled from the table and truncated there is dense in all but name, and
+truncating harder drops a coherent sum the beam's noise is made of. So the sky's part is held as its table (`ArrayOffsetTerm`, at most
+(2R−1)·(4C−1) numbers) and a quadratic form sums over element pairs from it: no N×N is formed, nothing is dropped, and the run's note says how
+far the term reaches above 1e-4 of the diagonal instead of what it threw away. At 64×64 the whole noise analysis runs in about four seconds
+with no dense copy; the table equals the pair-by-pair integral on a 16×16 corner to 1.1e-14.
+
+With the correlation in place, the existing noise analysis gives the noise figure and temperature at the feed, channel by channel, and the
+**active noise figure**: each LNA's source is the coupled array and its own noise wave leaving its input reaches its neighbours through S (with
+LNAs of 3 dB return loss on the 1×4 record, coupling moves the port's noise 1.07 dB; the component equals an EM Field Data block with explicit
+LNAs to 4e-15 dB).
 
 ### 5.3 What a receiver designer reads
 
-G/T against scan angle; antenna temperature; noise figure at the feed and per channel; array gain against per-channel
-NF; SNR for an `Rx` signal; IIP3, compression and SFDR with an interferer at a chosen angle; null depth on an interferer;
-the cost of phase and attenuator bits; and EVM against scan through the existing envelope analysis.
+The array receives at a fields analysis's driven port through its **receive weights** Tₙ: the wave leaving that port per unit wave element n
+emits, one transposed solve on the terminated network (`SParameterEngine.PortReceiveWeights`). A received wave reaches the port as
+b = Σ Tₙ·cₙ whether or not the circuit between is reciprocal — a channel of amplifiers is not, and its transmit pattern says nothing — so the
+receive pattern is the array sum **E**_rx = Σ Tₙ·**E**ₙ, and with C the elements' correlation (5), D = I − S·Sᴴ and N the noise the noise
+analysis delivers into the port's termination:
+
+| Measurement | Formula |
+|---|---|
+| `AntennaTempK(F)` | T_A = T·C·Tᴴ / (k·A),  A = T·D·Tᴴ: the elements' noise at the port over a passive array's at 1 K |
+| `SystemTempK(F, NF)` | T_sys = N / (k·A): every noise referred to the elements' terminals, so T_sys = T_A + T_rx |
+| `GoverTDbK(F, NF)` | 10·log10(G/T_sys) = 10·log10(k·G_rx/N), G_rx = 4π·\|E_rx\|²/η₀ at the receive beam's peak and G = G_rx/A |
+| `SnrDb(F, NF, k, B)` | 10·log10(S·λ²·\|p̂·E_rx(θ_k,φ_k)\|²/η₀ / (N·B)) for incident wave k at F's frequency |
+| `NullDepthDb(F, θ, φ)` | 10·log10(\|E_rx(θ,φ)\|² / \|E_rx,peak\|²) |
+
+At a uniform sky at the physical temperature T_A is that temperature exactly; under a cold sky on a lossless record it is 0 K and T_sys is the
+receiver's alone. `SnrDb` equals the power a harmonic-balance run delivers through one-way amplifier channels over the noise analysis's own Cs
+within 1e-9 dB.
+
+A receiver designer reads G/T against scan angle, antenna and system temperature, noise figure at the feed and per channel, SNR for an `Rx`
+signal, compression and spurious-free dynamic range with interferers at a chosen angle, null depth, the cost of phase and attenuator bits, and
+EVM against scan through the envelope analysis. `testdata/phased-array/receive-8x8/` is the bench (its README has the numbers).
 
 ## 6. Speed
 

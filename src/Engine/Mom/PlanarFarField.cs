@@ -268,6 +268,22 @@ public sealed record PlanarFarFieldPattern(
         return sum;
     }
 
+    /// <summary>brief-paa-7 — each grid direction's solid angle, row-major [theta, phi]: <see cref="RadiatedPowerW"/>'s own quadrature, sinθ
+    /// included, so a sum of a pattern's U against these is that number.</summary>
+    public static double[] SolidAngles(PlanarFarFieldGrid grid)
+    {
+        var probe = new PlanarFarFieldPattern(grid, [], [], [], 0, 0);
+        var wt = probe.ThetaWeights();
+        var wp = probe.PhiWeights();
+        var w = new double[grid.DirectionCount];
+        for (int it = 0; it < grid.ThetaDeg.Count; it++)
+        {
+            double s = Math.Sin(grid.ThetaDeg[it] * Math.PI / 180.0) * wt[it];
+            for (int ip = 0; ip < grid.PhiDeg.Count; ip++) w[grid.IndexOf(it, ip)] = s * wp[ip];
+        }
+        return w;
+    }
+
     private double[] ThetaWeights()
     {
         int n = Grid.ThetaDeg.Count;

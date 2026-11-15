@@ -1873,7 +1873,7 @@ internal static class Explain
         var mixers = nl.Components.Where(c => c.Model is MixerModel { NoiseFigureDb: not null })
                                   .Select(c => c.InstancePath).ToHashSet(StringComparer.Ordinal);
         int noisy = rows.Count(r => r.Kind is NoiseModelKind.Thermal or NoiseModelKind.FileData or NoiseModelKind.DeviceSources
-                                              or NoiseModelKind.Specified
+                                              or NoiseModelKind.Specified or NoiseModelKind.Antenna
                                     || (r.Kind == NoiseModelKind.Noiseless && mixers.Contains(r.Label)));
         return new ExplainNoiseJson(contrib, noisy, freqs.Length, 0, 0, [.. rows.Select(PartJson)]);
     }
@@ -1886,7 +1886,7 @@ internal static class Explain
 
         var rows  = SParameterNoise.Table(nl, freqs);
         int noisy = rows.Count(r => r.Kind is NoiseModelKind.Thermal or NoiseModelKind.FileData or NoiseModelKind.DeviceSources
-                                              or NoiseModelKind.Specified);
+                                              or NoiseModelKind.Specified or NoiseModelKind.Antenna);
         return new ExplainNoiseJson(
             spa.NoiseContrib, noisy, freqs.Length, ports, SParameterNoise.ContributionBytes(freqs.Length, noisy, ports),
             [.. rows.Select(PartJson)]);
@@ -1978,6 +1978,7 @@ internal static class Explain
         NoiseModelKind.DeviceSources => "deviceSources",
         NoiseModelKind.Specified     => "specified",
         NoiseModelKind.SwitchedOff   => "switchedOff",
+        NoiseModelKind.Antenna       => "antenna",
         _                            => "noiseless",
     };
 
@@ -1993,6 +1994,7 @@ internal static class Explain
             "deviceSources" => $"device sources, {p.Sources!.Count}: {string.Join(", ", p.Sources)}" + (p.Reason is { } gap ? $"; {gap}" : ""),
             "specified"     => SpecifiedText(p, inv),
             "switchedOff"   => $"switched off ({p.Reason})",
+            "antenna"       => $"antenna: the sky through its patterns ({p.Reason}), the rest at {p.Kelvin!.Value.ToString("0.##", inv)} K",
             _               => $"noiseless ({p.Reason})",
         };
     }

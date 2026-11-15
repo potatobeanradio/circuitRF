@@ -13,6 +13,7 @@
 // [[0, tᵀ], [t, 0]], so σ_max = ‖t‖; the stamp writes a few entries per element and no dense row (Stamp).
 
 using System.Numerics;
+using CircuitRF.Core.Devices.Arrays;
 using CircuitRF.Core.Elaboration;
 
 namespace CircuitRF.Core.Devices;
@@ -69,6 +70,33 @@ public sealed class PhasedArrayFeedModel : ComponentModel
     public override string? PassivationNote => _sigma <= 1 + 1e-9 ? null
         : $"σ_max = {_sigma:G4} > 1: the weights' RMS amplitude is above 1, so the beamformer has gain";
 
+    /// <summary>brief-paa-7 — port <paramref name="p"/>'s (0 = F) noise-source node in <paramref name="c"/>, after the port pairs; 0 when none was
+    /// placed.</summary>
+    public int SourceNode(ElaboratedComponent c, int p) => c.Nodes.Length >= 3 * (Elements + 1) ? c.Nodes[2 * (Elements + 1) + p] : 0;
+
+    /// <summary>
+    /// brief-paa-7 — the noise-wave correlation of the split's ports at <paramref name="hz"/> and <paramref name="kelvin"/>, its Bosma noise in
+    /// closed form: S = [[0, tᵀ], [t, 0]] makes I − S·Sᴴ = diag(1 − ‖t‖², I − t·tᴴ), a diagonal and one rank-one term, so a 4096-way split forms no
+    /// dense matrix. Null while the weights have gain (not passive: no thermal noise).
+    /// </summary>
+    public ArrayCorrelation? NoiseCorrelation(double hz, double kelvin)
+    {
+        if (Activity != Activity.Passive) return null;
+        int n = _quantised.Length;
+        double kt = ArrayNoise.Boltzmann * kelvin, norm = 1 / Math.Sqrt(n);
+        var t = new Complex[n + 1];
+        double sum = 0;
+        for (int k = 0; k < n; k++)
+        {
+            t[k + 1] = _quantised[k] * Delayed(k, hz) * norm;
+            sum += t[k + 1].Real * t[k + 1].Real + t[k + 1].Imaginary * t[k + 1].Imaginary;
+        }
+        var rows = new List<(int, Complex)>[n + 1];
+        rows[0] = [(0, kt * Math.Max(0, 1 - sum))];
+        for (int k = 1; k <= n; k++) rows[k] = [(k, kt)];
+        return new ArrayCorrelation(ArraySparseMatrix.FromRows(n + 1, rows), [(t, -kt)]);
+    }
+
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
         int n = _quantised.Length;
@@ -84,13 +112,20 @@ public sealed class PhasedArrayFeedModel : ComponentModel
         for (int p = 0; p <= n; p++) br[p] = mna.AddBranch();
         for (int p = 0; p <= n; p++) mna.AddBranchCurrent(br[p], c.Nodes[2 * p], c.Nodes[2 * p + 1]);
 
-        // Each port's own half of its row: (v_p − conj(Z0)·i_p)/√Re Z0.
+        // Each port's own half of its row: (v_p − conj(Z0)·i_p)/√Re Z0. brief-paa-7 — and its noise source: the row is 2b − 2S·a, so −2·V_src
+        // makes it b − S·a = V_src, V_src the voltage a noise current puts on a 1 S conductance (SourceNode).
         for (int p = 0; p <= n; p++)
         {
             int np = c.Nodes[2 * p], nm = c.Nodes[2 * p + 1];
             mna.AddConstraint(br[p], np, new Complex(1 / root, 0));
             if (nm > 0) mna.AddConstraint(br[p], nm, new Complex(-1 / root, 0));
             mna.AddBranchConstraint(br[p], br[p], -back);
+            int src = SourceNode(c, p);
+            if (src > 0)
+            {
+                mna.AddConstraint(br[p], src, new Complex(-2, 0));
+                mna.AddAdmittance(src, 0, Complex.One);
+            }
         }
         // − S_pq·(v_q + Z0·i_q)/√Re Z0. Element k's row reads the common port's wave: two entries each, so v_0 and i_0 are dense
         // COLUMNS, which a minimum-degree ordering on AᵀA takes as a star and eliminates last. The common port's own row would be the

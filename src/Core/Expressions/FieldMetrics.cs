@@ -46,6 +46,18 @@ public enum FieldMetric
     /// <summary>brief-paa-4 — the noise figure from the driven circuit port to the beam's peak, dB: the noise the array radiates there over the
     /// share the port's own T0 termination makes.</summary>
     BeamNfDb,
+    /// <summary>brief-paa-7 R-paa7-4 — the antenna temperature of the beam, K: its sky weighed by its pattern, plus the metal's temperature for
+    /// what it accepts and does not radiate.</summary>
+    AntennaTempK,
+    /// <summary>The system temperature at the array's terminals, K: the noise a noise analysis delivers to the receive port, referred back to the
+    /// elements through the gain the beam's own waves have from them to it.</summary>
+    SystemTempK,
+    /// <summary>G/T in the beam direction, dB/K: the gain per watt the elements accept over the system temperature at their terminals.</summary>
+    GoverTDbK,
+    /// <summary>The signal-to-noise ratio of incident wave k in a stated bandwidth, dB.</summary>
+    SnrDb,
+    /// <summary>The pattern's level in a direction below its peak, dB (negative).</summary>
+    NullDepthDb,
 }
 
 /// <summary>brief-sar-10 — the field measurements' function names (Evaluator.Fields.cs); each takes a fields analysis's
@@ -55,10 +67,15 @@ public static class FieldMetricFunctions
     public static IReadOnlyList<string> Names { get; } =
         ["B1pMean", "B1pMin", "B1pCoV", "psSAR", "SARwb", "SarEff", "Pabs",
          "RealizedGainDbi", "GainDbi", "DirectivityDbi", "RadiationEfficiency", "TrpDbm", "PeakEirpDbm",
-         "HpbwDeg", "SllDb", "PointingErrorDeg", "ScanLossDb", "GratingMarginDeg", "PowerBalance", "ActiveVswrMax", "BeamNfDb", "ActiveGamma"];
+         "HpbwDeg", "SllDb", "PointingErrorDeg", "ScanLossDb", "GratingMarginDeg", "PowerBalance", "ActiveVswrMax", "BeamNfDb", "ActiveGamma",
+         "AntennaTempK", "SystemTempK", "GoverTDbK", "SnrDb", "NullDepthDb"];
 
     public static bool IsFieldMetric(string name) => name is
-        "B1pMean" or "B1pMin" or "B1pCoV" or "psSAR" or "SARwb" or "SarEff" or "Pabs" or "ActiveGamma" || IsPatternMetric(name) || IsArrayMetric(name);
+        "B1pMean" or "B1pMin" or "B1pCoV" or "psSAR" or "SARwb" or "SarEff" or "Pabs" or "ActiveGamma" || IsPatternMetric(name) || IsArrayMetric(name)
+        || IsReceiveMetric(name);
+
+    /// <summary>brief-paa-7 R-paa7-4 — the functions that read a Phased Antenna Array as a receiver.</summary>
+    public static bool IsReceiveMetric(string name) => name is "AntennaTempK" or "SystemTempK" or "GoverTDbK" or "SnrDb" or "NullDepthDb";
 
     /// <summary>brief-paa-3 R-paa3-6 — the functions that read a Phased Antenna Array's beam.</summary>
     public static bool IsArrayMetric(string name) => name is
@@ -100,6 +117,12 @@ public interface IFieldMetrics
 
     /// <summary>brief-paa-6 R-paa6-3 — <c>ActiveGamma(F, n)</c>: the reflection the block presents at element (port) <paramref name="element"/>, b/a with a the wave from the
     /// circuit into the block. Answered by an array's analysis and by one whose waves come from harmonic balance.</summary>
+    /// <summary>brief-paa-7 R-paa7-4 — a receive measurement of a Phased Antenna Array's beam. <paramref name="noise"/> gives a noise analysis's
+    /// noise power delivered into a circuit port's termination (port number, Hz → W/Hz); <paramref name="wave"/> is an incident wave's number and
+    /// <paramref name="bandwidthHz"/> the bandwidth for an SNR; the direction in degrees for a null depth.</summary>
+    double EvaluateReceive(FieldMetric metric, Func<int, double, double>? noise, int? wave, double? bandwidthHz, double? thetaDeg, double? phiDeg)
+        => throw new ExpressionException($"'{FieldMetricFunctions.NameOf(metric)}' reads a Phased Antenna Array as a receiver, and this fields analysis's block is not one.");
+
     System.Numerics.Complex ActiveGamma(int element)
         => throw new ExpressionException("ActiveGamma reads each element's waves, which a Phased Antenna Array's fields analysis or one with waves= keeps, and this one does not.");
 }

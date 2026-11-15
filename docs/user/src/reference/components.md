@@ -2548,6 +2548,18 @@ are evaluated once per element with `n`, `row`, `col`, `x` and `y` bound, so `Ph
 the steering VAR is an ordinary parametric sweep. `BeamNfDb(F1)` on the fields analysis is the noise figure from the
 driving port to the beam's peak.
 
+As a receiver, the elements' noise is what their patterns see: `Tsky` is the brightness above the horizon, in kelvin, a
+temperature or an expression of the elevation `el` (`5+280*exp(-el/(5*pi/180))`), and `Tground` the brightness below it
+where the record's pattern reaches there (a planar record's ground plane hides it). Left blank, both are the array's own
+temperature, which is the noise any passive block has. A plane wave arriving at the array is `RxTheta[k]`, `RxPhi[k]`
+(degrees), `RxPd[k]` (its power density, dBm/m²), `RxFreq[k]` and `RxPol[k]` (`theta`, `phi`, `rhcp`, `lhcp` or an angle
+from θ̂ towards φ̂): each element receives it through its own pattern, and in harmonic balance and envelope runs it is a
+tone like a 1-Tone source's, so a signal and an interferer pass through the channels together. An interferer reaches each
+channel through the element's pattern and is only beamformed after it. With a fields analysis `F1` driven from the receive
+port and an S-parameter analysis `NF1` with `Noise=yes`, `AntennaTempK(F1)`, `SystemTempK(F1, NF1)`, `GoverTDbK(F1, NF1)`
+(dB/K), `SnrDb(F1, NF1, k, bandwidth)` for wave `k` and `NullDepthDb(F1, theta, phi)` read the receive side; all of them
+work through amplifiers that only pass signal one way.
+
 The symbol draws the aperture as seen from the front: a square per element up to 8 × 8 (a larger array shows its top-left
 8 × 8 and its size), a triangular lattice's rows offset, an element switched off hollow. In Feed mode a beam leaves its right
 side, tilted by θ0 with `θ0 30°  φ0 0°` written beside it when `Phase` (or `Delay`) is a `steer()`; in Elements mode its four

@@ -1760,3 +1760,37 @@ src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: waves='{name}' names a {KindOf(na
 src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: waves='{name}' names no analysis of this bench. It names a harmonic-balance or an envelope analysis. {these}
 src/Engine/Envelope/EnvelopeEngine.cs|envelope: '{path}' is a {ec.ComponentType}, whose port currents are not branches the run can record.
 src/Engine/Envelope/EnvelopeEngine.cs|envelope: the circuit has no instance '{path}' to record.
+
+# ── brief-paa-7: the Phased Antenna Array as a receiver ─────────────────────────────────────
+# Refusals of its sky (Tsky/Tground), its incident waves (Rx...[k]) and the receive measurements, in the style of the
+# component's own refusals above; plus two internal invariants of the sparse network and the correlation.
+src/Core/Devices/Arrays/ArrayCoupling.cs|{Values.Length} stored entries and {values.Length} values.
+src/Core/Devices/Arrays/ArrayNoise.cs|'{word}' is not a polarization: it is theta, phi, rhcp, lhcp or an angle.
+src/Core/Devices/Arrays/ArrayNoise.cs|the sky's brightness is read through the record's patterns, and none was supplied.
+src/Core/Devices/PhasedArrayModel.cs|Z0={stated} renormalises the array's S from the record's {source.Z0}, which couples every element to every other, 
+src/Core/Devices/PhasedArrayModel.cs|{DisplayName}: its record's patterns are read by the design layer, which this process has not loaded.
+src/Core/Elaboration/Elaborator.PhasedArray.cs|'{childPath}': incident wave {k} has no {W(b)}: a wave needs {W(
+src/Core/Elaboration/Elaborator.PhasedArray.cs|'{childPath}': incident wave {k}: {ex.Message}
+src/Core/Elaboration/Elaborator.PhasedArray.cs|'{childPath}': {fq.Name}={fq.Expression} is {hz} Hz: a wave's frequency is positive.
+src/Core/Elaboration/Elaborator.PhasedArray.cs|'{childPath}': {ov.Name} names incident wave {index}, and the waves are numbered from 1.
+src/Core/Elaboration/Elaborator.PhasedArray.cs|'{childPath}': {ov.Name}={ov.Expression} is {v}: a brightness temperature is a number of kelvin, zero or more.
+src/Core/Elaboration/Elaborator.PhasedArray.cs|'{childPath}': {ov.Name}={ov.Expression} is {v}: it is a real number.
+src/Core/Elaboration/Elaborator.PhasedArray.cs|'{childPath}': {ov.Name}={ov.Expression}: {ex.Message}
+src/Core/Elaboration/Elaborator.PhasedArray.cs|'{childPath}': {po.Name}={po.Expression} is not a polarization: it is theta, phi, rhcp, lhcp or an angle 
+src/Core/Expressions/Evaluator.Fields.cs|SnrDb(): the fourth argument is the bandwidth, a positive frequency such as 1 MHz, and {b} is not.
+src/Core/Expressions/Evaluator.Fields.cs|SnrDb(): the third argument is an incident wave's number, 1 for RxPd[1]'s, and {k} is not.
+src/Core/Expressions/Evaluator.Fields.cs|{cl.Name}(): the second argument names an S-parameter analysis with Noise=yes, as NF1 in {cl.Name}(F1, NF1…).
+src/Core/Expressions/Evaluator.Fields.cs|{function}(): '{nf}' has no circuit port {port}, the port the fields analysis drives.
+src/Core/Expressions/Evaluator.Fields.cs|{function}(): '{nf}' has no point at {hz / 1e9:G6} GHz, the fields analysis's frequency; it runs 
+src/Core/Expressions/Evaluator.Fields.cs|{function}(): '{nf}' holds no noise. It is an S-parameter analysis with Noise=yes.
+src/Core/Expressions/Evaluator.Fields.cs|{function}(): '{nf}''s noise is swept ({string.Join(
+src/Core/Expressions/FieldMetrics.cs|'{FieldMetricFunctions.NameOf(metric)}' reads a Phased Antenna Array as a receiver, and this fields analysis's block is not one.
+src/Design/Em3d/ArrayRadiationSource.cs|'{far.Name}' lists {pa.Record.PortCount} ports and its far field holds {far.PortCount}. Run its EM setup again.
+src/Design/Em3d/FieldCosimulation.Array.cs|'{metric}' is not a receive measurement.
+src/Design/Em3d/FieldCosimulation.Array.cs|Fields '{fa.Name}': nothing the elements of '{fa.Block}' receive reaches circuit port {drives[0].Port}, so the array has no 
+src/Design/Em3d/FieldCosimulation.Array.cs|SnrDb({fa.Name}, …, {wave}, …): '{fa.Block}' has no incident wave {wave}
+src/Design/Em3d/FieldCosimulation.Array.cs|SnrDb({fa.Name}, …, {wave}, …): incident wave {wave} is at {MaterialDispersion.Hz(inc.Hz)} and fields analysis '{fa.Name}' at 
+src/Design/Em3d/FieldCosimulation.Array.cs|{name}({fa.Name}, NF): NF names a noise analysis.
+src/Design/Em3d/FieldCosimulation.Array.cs|{name}({fa.Name}, …) receives at the fields analysis's driven port, and fields analysis '{fa.Name}' forms its pattern 
+src/Engine/SParameterEngine.Beam.cs|The circuit has no port number {portNumber} at its top level.
+src/Engine/SParameterEngine.Beam.cs|The receive weights need every circuit port terminated in a resistive Z0 (Re Z0 > 0); one port's Z0 has none.

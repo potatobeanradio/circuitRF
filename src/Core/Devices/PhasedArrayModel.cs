@@ -69,16 +69,20 @@ public sealed class PhasedArrayModel : ComponentModel, IReportsWarnings
     public static readonly IReadOnlySet<string> LengthParameters =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "dx", "dy", "RecordDx", "RecordDy" };
 
+    /// <summary>brief-paa-7 — the most elements whose S may be renormalised to another Z0 (which makes it dense).</summary>
+    public const int RenormaliseLimit = 1024;
+
     /// <summary>The prefix of the hidden value carrying the unit a length was typed in, for a sentence that quotes it back.</summary>
     public const string TypedUnitPrefix = "__unit_";
 
-    private readonly SnpInterpolator _interp;
+    private readonly SnpInterpolator? _interp;
+    private readonly SparseNetwork? _sparse;
     private readonly Complex[] _z0;
     private readonly List<(string Key, string Message)> _pending = [];
     private bool _warned;
 
     private PhasedArrayModel(EmFieldDataRecord record, ArrayLattice lattice, RecordLatticeFit fit, PhasedArrayLevel level, bool levelStated,
-                             bool classes, bool coupled, SNP network, Complex z0, string? note, string? pitchWarning, int[] patternPort)
+                             bool classes, bool coupled, SNP? network, SparseNetwork? sparse, Complex z0, string? note, string? pitchWarning, int[] patternPort)
     {
         Record = record;
         Lattice = lattice;
@@ -88,10 +92,12 @@ public sealed class PhasedArrayModel : ComponentModel, IReportsWarnings
         Classes = classes;
         Coupled = coupled;
         Network = network;
+        _sparse = sparse;
         CouplingNote = note;
         PitchWarning = pitchWarning;
         _patternPort = patternPort;
-        _interp = new SnpInterpolator(network, InterpolationMethod.CubicSpline, InterpolationFormat.MagPhase, MatrixType.S, OutOfRangePolicy.WarnClamp);
+        if (network is not null)
+            _interp = new SnpInterpolator(network, InterpolationMethod.CubicSpline, InterpolationFormat.MagPhase, MatrixType.S, OutOfRangePolicy.WarnClamp);
         _z0 = [.. Enumerable.Repeat(z0, lattice.Count)];
         PortBranchIndices = [.. Enumerable.Repeat(-1, lattice.Count)];
     }
@@ -125,8 +131,12 @@ public sealed class PhasedArrayModel : ComponentModel, IReportsWarnings
     /// <summary>Coupling=on.</summary>
     public bool Coupled { get; }
 
-    /// <summary>The array's S on the record's frequencies, before any element is switched off.</summary>
-    public SNP Network { get; }
+    /// <summary>The array's S on the record's frequencies, before any element is switched off, when it is held dense (exact level, or an S
+    /// renormalised to another Z0); null when it is held sparse (isolated and embedded: brief-paa-7, so a 4096-element array forms no N×N).</summary>
+    public SNP? Network { get; }
+
+    /// <summary>The record's frequencies the network is held at.</summary>
+    public double[] NetworkFrequencies => Network?.Frequencies ?? _sparse!.Frequencies;
 
     /// <summary>What the coupling extension measured (embedded); null at the other levels.</summary>
     public string? CouplingNote { get; }
@@ -165,10 +175,19 @@ public sealed class PhasedArrayModel : ComponentModel, IReportsWarnings
         }
     }
 
-    /// <summary>The S stamped at <paramref name="hz"/>: the network interpolated, each element switched off left open at its pin.</summary>
+    /// <summary>The S stamped at <paramref name="hz"/>, dense: the network interpolated, each element switched off left open at its pin. For a
+    /// small array; a large one is read through <see cref="SparseAt"/>.</summary>
     public Mat<Complex> SAt(double hz)
     {
-        var s = _interp.Evaluate(hz);
+        if (_sparse is not null)
+        {
+            var sp = SparseAt(hz);
+            var m = new Mat<Complex>(PortCount, PortCount);
+            for (int i = 0; i < PortCount; i++)
+                foreach (var (c, v) in sp.Row(i)) m[i, c] = v;
+            return m;
+        }
+        var s = _interp!.Evaluate(hz);
         if (FeedMode) return s;
         foreach (int n in Lattice.Off)
         {
@@ -179,8 +198,32 @@ public sealed class PhasedArrayModel : ComponentModel, IReportsWarnings
         return s;
     }
 
+    /// <summary>brief-paa-7 — the S stamped at <paramref name="hz"/>, sparse, each element switched off left open at its pin (Elements mode).</summary>
+    public ArraySparseMatrix SparseAt(double hz)
+    {
+        ArraySparseMatrix s;
+        if (_sparse is not null) s = _sparse.At(hz);
+        else
+        {
+            var d = _interp!.Evaluate(hz);
+            var a = new Complex[PortCount, PortCount];
+            for (int i = 0; i < PortCount; i++)
+                for (int j = 0; j < PortCount; j++) a[i, j] = d[i, j];
+            s = ArraySparseMatrix.FromDense(a);
+        }
+        if (FeedMode || Lattice.Off.Count == 0) return s;
+        var rows = new List<(int, Complex)>[PortCount];
+        for (int i = 0; i < PortCount; i++)
+            rows[i] = Lattice.IsOn(i) ? [.. s.Row(i).Where(e => Lattice.IsOn(e.Column))] : [(i, Complex.One)];
+        return ArraySparseMatrix.FromRows(PortCount, rows);
+    }
+
     /// <summary>The reference impedance of every pin.</summary>
     public Complex Z0 => _z0[0];
+
+    /// <summary>brief-paa-7 — the node of element <paramref name="e"/>'s (0-based) noise and received-wave source in <paramref name="c"/>: one
+    /// per element after the pins, held at the wave the element itself emits (b = S·a + c, c read off a 1 S conductance).</summary>
+    public static int SourceNode(ElaboratedComponent c, int e, int elements) => c.Nodes.Length >= 2 * elements ? c.Nodes[elements + e] : 0;
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
@@ -189,17 +232,90 @@ public sealed class PhasedArrayModel : ComponentModel, IReportsWarnings
             _warned = true;
             if (PitchWarning is { } w) _pending.Add(($"phased-array-pitch:{c.InstancePath}", $"{Describe(c.InstancePath)}: {w}"));
         }
-        var s = SAt(Math.Abs(omega) / (2 * Math.PI));
+        var s = SparseAt(Math.Abs(omega) / (2 * Math.PI));
+        StampSparse(mna, c, s);
+    }
+
+    /// <summary>The wave constraints of IdealSBlockModel.StampWaveConstraints, row by row over the stored entries, every pin referred to the
+    /// component's reference node; then each row's source: (v − Z0*·i)/√Re Z0 − Σ S·(v + Z0·i)/√Re Z0 is 2b − 2S·a, so −2·V_src makes it b − S·a = V_src.</summary>
+    private void StampSparse(IMnaContext mna, ElaboratedComponent c, ArraySparseMatrix s)
+    {
         int n = PortCount;
-        var nodes = new int[2 * n];
-        var arr = new Complex[n, n];
-        for (int k = 0; k < n; k++)
+        var br = PortBranchIndices;
+        int reference = c.ReferenceNode;
+        for (int p = 0; p < n; p++) br[p] = mna.AddBranch();
+        for (int p = 0; p < n; p++) mna.AddBranchCurrent(br[p], c.Nodes[p], reference);
+        double root = Math.Sqrt(_z0[0].Real);
+        bool real = _z0[0].Imaginary == 0.0;
+        Complex back = real ? new Complex(root, 0) : Complex.Conjugate(_z0[0]) / root;
+        Complex fwd = real ? new Complex(root, 0) : _z0[0] / root;
+        for (int p = 0; p < n; p++)
         {
-            nodes[2 * k] = c.Nodes[k];
-            nodes[2 * k + 1] = c.ReferenceNode;
-            for (int j = 0; j < n; j++) arr[k, j] = s[k, j];
+            int np = c.Nodes[p];
+            mna.AddConstraint(br[p], np, new Complex(1.0 / root, 0));
+            if (reference > 0) mna.AddConstraint(br[p], reference, new Complex(-1.0 / root, 0));
+            mna.AddBranchConstraint(br[p], br[p], -back);
+            foreach (var (q, spq) in s.Row(p))
+            {
+                if (spq == Complex.Zero) continue;
+                int qp = c.Nodes[q];
+                mna.AddConstraint(br[p], qp, -spq / root);
+                if (reference > 0) mna.AddConstraint(br[p], reference, spq / root);
+                mna.AddBranchConstraint(br[p], br[q], -spq * fwd);
+            }
+            int src = SourceNode(c, p, n);
+            if (src > 0)
+            {
+                mna.AddConstraint(br[p], src, new Complex(-2, 0));
+                mna.AddAdmittance(src, 0, Complex.One);
+            }
         }
-        IdealSBlockModel.StampWaveConstraints(mna, nodes, arr, _z0, PortBranchIndices);
+    }
+
+    // ── receive and noise (brief-paa-7) ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// brief-paa-7 — the record's far field as the receive and noise halves read it, supplied by src/Design (which reads results; src/Core reads
+    /// none): the patterns at the record frequency nearest <c>hz</c>. Throws <see cref="InvalidOperationException"/> with the sentence refusing it.
+    /// Null when nothing has installed it — a process that never loaded the design layer — and then only a sky at the array's own temperature
+    /// with no incident wave can run.
+    /// </summary>
+    public static Func<PhasedArrayModel, double, ArrayRadiation>? RadiationSource { get; set; }
+
+    /// <summary>brief-paa-7 R-paa7-2 — the brightness the elements look at; null is the array's own physical temperature in every direction, the
+    /// noise a passive block has always had.</summary>
+    public ArraySky? Sky { get; internal set; }
+
+    /// <summary>brief-paa-7 R-paa7-1 — the incident waves the component was given, as its run's notes and explain say them.</summary>
+    public IReadOnlyList<string> IncidentNotes { get; internal set; } = [];
+
+    /// <summary>brief-paa-7 R-paa7-1 — the incident waves by their number k (RxPd[k] …).</summary>
+    public IReadOnlyDictionary<int, ArrayIncidentWave> IncidentWaves { get; internal set; } = new Dictionary<int, ArrayIncidentWave>();
+
+    /// <summary>The pattern (an index into <see cref="ArrayRadiation.ETheta"/>) of the array's centre element: the one the sky's part is
+    /// integrated over by offset, and the one its average brightness is weighed with.</summary>
+    public int ReferencePattern(ArrayRadiation rad) => rad.PatternOf[(Lattice.Rows / 2) * Lattice.Cols + Lattice.Cols / 2];
+
+    /// <summary>The record's patterns at the frequency nearest <paramref name="hz"/>, or the sentence that says why they cannot be read.</summary>
+    public ArrayRadiation Radiation(double hz)
+        => RadiationSource is { } source ? source(this, hz)
+           : throw new InvalidOperationException($"{DisplayName}: its record's patterns are read by the design layer, which this process has not loaded.");
+
+    /// <summary>Whether element <paramref name="e"/> (0-based) radiates into the circuit: every element in Feed mode (one switched off is still
+    /// there, terminated by its zero weight), the elements that are on in Elements mode (one switched off is open at its pin).</summary>
+    public bool Radiates(int e) => FeedMode || Lattice.IsOn(e);
+
+    /// <summary>
+    /// brief-paa-7 R-paa7-2 — the noise-wave correlation of the elements at <paramref name="hz"/> (ArrayNoise, note eq. (5)): the Bosma noise of
+    /// its S at <paramref name="kelvin"/> when <see cref="Sky"/> is the default or uniform at that temperature, and otherwise the sky through the
+    /// record's patterns — pair by pair at exact level, by offset at the others.
+    /// </summary>
+    public ArrayNoiseResult NoiseCorrelation(double hz, double kelvin)
+    {
+        var s = SparseAt(hz);
+        bool own = Sky is null || (Sky.Uniform && Sky.UniformKelvin == kelvin);
+        ArrayRadiation? rad = own ? null : Radiation(hz);
+        return ArrayNoise.Correlation(s, kelvin, Sky, rad, Lattice, hz, Level == PhasedArrayLevel.Exact, rad is null ? 0 : ReferencePattern(rad), Radiates);
     }
 
     public IReadOnlyList<(string Key, string Message)> DrainWarnings()
@@ -217,8 +333,10 @@ public sealed class PhasedArrayModel : ComponentModel, IReportsWarnings
 
     public override Activity ActivityFor(ElaboratedComponent c, IReadOnlyList<double> freqsHz)
     {
-        double worst = RFNetwork.Passivity(Network).DefaultIfEmpty(0).Max();
-        _passivationNote = $"σ_max = {worst:G4} over the array's S at its record's {Network.Frequencies.Length} frequencies";
+        double worst = Network is not null
+            ? RFNetwork.Passivity(Network).DefaultIfEmpty(0).Max()
+            : _sparse!.Frequencies.Select((_, f) => _sparse.AtIndex(f).SigmaMax()).DefaultIfEmpty(0).Max();
+        _passivationNote = $"σ_max = {worst:G4} over the array's S at its record's {NetworkFrequencies.Length} frequencies";
         return worst <= 1 + 1e-6 ? Activity.Passive : Activity.BlackBox;
     }
 
@@ -309,34 +427,40 @@ public sealed class PhasedArrayModel : ComponentModel, IReportsWarnings
         var portOf = fit.PortOfElement;
         var matrices = new Mat<Complex>[source.Frequencies.Length];
         string? note = null;
+        // brief-paa-7 — isolated and embedded are held SPARSE, one pattern of entries and its values per record frequency, so an array of
+        // thousands of elements forms no N×N; exact (N is the record's port count) is held dense as before.
+        bool sparseLevel = level != PhasedArrayLevel.Exact;
+        ArraySparseMatrix? pattern = null;
+        var values = new Complex[matrices.Length][];
         for (int f = 0; f < matrices.Length; f++)
         {
             var m = source.Matrices[f];
             var sub2 = new Complex[ns, ns];
             for (int i = 0; i < ns; i++)
                 for (int j = 0; j < ns; j++) sub2[i, j] = m[portOf[i], portOf[j]];
-            var out_ = new Mat<Complex>(n, n);
             switch (level)
             {
                 case PhasedArrayLevel.Exact:
+                    var out_ = new Mat<Complex>(n, n);
                     for (int i = 0; i < n; i++)
                         for (int j = 0; j < n; j++) out_[i, j] = coupled || i == j ? sub2[i, j] : 0;
+                    matrices[f] = out_;
                     break;
                 case PhasedArrayLevel.Isolated:
-                    for (int i = 0; i < n; i++) out_[i, i] = sub2[0, 0];
+                    pattern ??= ArraySparseMatrix.Diagonal(n);
+                    values[f] = [.. Enumerable.Repeat(sub2[0, 0], n)];
                     break;
                 default:
                     var ext = ArrayCoupling.Extend(sub2, sub, lattice, coupled, classes);
                     note = ext.Note;
-                    for (int i = 0; i < n; i++)
-                        for (int j = 0; j < n; j++) out_[i, j] = ext.S[i, j];
+                    pattern ??= ext.S;
+                    values[f] = ext.S.Values;
                     break;
             }
-            matrices[f] = out_;
         }
-        var network = new SNP(source.Frequencies, matrices, MatrixType.S, MatrixFormat.RI, source.Z0);
 
-        // Z0 defaults to the record's; another one renormalises the array's S to it.
+        // Z0 defaults to the record's; another one renormalises the array's S to it — which couples every element to every other, so a
+        // sparse array is made dense for it, and only while it is small enough to be.
         Complex z0 = source.Z0;
         if (p.TryGetValue("Z0", out var z0v) && z0v.Kind is ValueKind.Real or ValueKind.Complex)
         {
@@ -344,11 +468,27 @@ public sealed class PhasedArrayModel : ComponentModel, IReportsWarnings
             if (!(stated.Real > 0)) throw new ParameterRefusalException($"Z0={stated} is not a reference impedance: its real part must be positive.");
             if (stated != z0)
             {
+                if (sparseLevel)
+                {
+                    if (n > RenormaliseLimit)
+                        throw new ParameterRefusalException($"Z0={stated} renormalises the array's S from the record's {source.Z0}, which couples every element to every other, " +
+                                                            $"and a {n}-element array is too large for that (at most {RenormaliseLimit}). Leave Z0 at the record's.");
+                    for (int f = 0; f < matrices.Length; f++)
+                    {
+                        var d = new Mat<Complex>(n, n);
+                        var sp = pattern!.WithValues(values[f]);
+                        for (int i = 0; i < n; i++)
+                            foreach (var (c, v) in sp.Row(i)) d[i, c] = v;
+                        matrices[f] = d;
+                    }
+                    sparseLevel = false;
+                }
                 for (int f = 0; f < matrices.Length; f++) matrices[f] = RFNetwork.ZToS(RFNetwork.SToZ(matrices[f], z0), stated);
-                network = new SNP(source.Frequencies, matrices, MatrixType.S, MatrixFormat.RI, stated);
                 z0 = stated;
             }
         }
+        SNP? network = sparseLevel ? null : new SNP(source.Frequencies, matrices, MatrixType.S, MatrixFormat.RI, z0);
+        SparseNetwork? sparse = sparseLevel ? new SparseNetwork(source.Frequencies, pattern!, values) : null;
 
         int[] patternPort = [.. Enumerable.Range(0, n).Select(e => level switch
         {
@@ -360,13 +500,31 @@ public sealed class PhasedArrayModel : ComponentModel, IReportsWarnings
         string? pitch = level == PhasedArrayLevel.Isolated ? null
             : PitchSentence(lattice, sub, source.Frequencies.Max(), TypedUnit(p, "dx"), TypedUnit(p, "dy"));
         bool levelStated = levelWord.Length > 0 && !levelWord.Equals("auto", StringComparison.OrdinalIgnoreCase);
-        return new PhasedArrayModel(record, lattice, fit, level, levelStated, classes, coupled, network, z0, note, pitch, patternPort) { FeedMode = feed };
+        return new PhasedArrayModel(record, lattice, fit, level, levelStated, classes, coupled, network, sparse, z0, note, pitch, patternPort) { FeedMode = feed };
     }
 
     /// <summary>R-paa4-1 — whether an instance's Mode override says feed (the elaborator places a Feed-mode array itself).</summary>
     public static bool IsFeed(IEnumerable<ParameterAssignment> overrides)
         => overrides.FirstOrDefault(o => o.Name.Equals("Mode", StringComparison.OrdinalIgnoreCase)) is { } m
            && m.Expression.Trim().Trim('"').Trim().Equals("feed", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>brief-paa-7 — the receive parameters, evaluated by the elaborator itself (Elaborator.PhasedArray.cs, ConfigureReceive): Tsky
+    /// (an expression of the elevation <c>el</c>), Tground, and each incident wave's RxTheta[k], RxPhi[k], RxPd[k], RxFreq[k], RxPol[k].</summary>
+    public static bool IsReceiveParameter(string name, out string baseName, out int? index)
+    {
+        index = null;
+        int open = name.IndexOf('[');
+        baseName = open < 0 ? name : name[..open];
+        if (open < 0) return baseName.Equals("Tsky", StringComparison.OrdinalIgnoreCase) || baseName.Equals("Tground", StringComparison.OrdinalIgnoreCase);
+        if (!ReceiveWaveParameters.Contains(baseName)) return false;
+        if (!name.EndsWith(']') || !int.TryParse(name[(open + 1)..^1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int k)) return false;
+        index = k;
+        return true;
+    }
+
+    /// <summary>brief-paa-7 — an incident wave's indexed parameters.</summary>
+    public static readonly IReadOnlySet<string> ReceiveWaveParameters =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "RxTheta", "RxPhi", "RxPd", "RxFreq", "RxPol" };
 
     /// <summary>R-paa4-2 — the per-element weight parameters, evaluated in element scope: Amp, Phase, Delay and their [n] overrides.</summary>
     public static bool IsElementParameter(string name, out string baseName, out int? index)

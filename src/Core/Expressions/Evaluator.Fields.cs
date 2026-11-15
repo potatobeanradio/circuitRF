@@ -24,6 +24,7 @@ public sealed partial class Evaluator
     {
         if (FieldMetricFunctions.IsPatternMetric(cl.Name)) return EvalPatternMetric(cl, scope);
         if (FieldMetricFunctions.IsArrayMetric(cl.Name)) return EvalArrayMetric(cl, scope);
+        if (FieldMetricFunctions.IsReceiveMetric(cl.Name)) return EvalReceiveMetric(cl, scope);
         if (cl.Name == "ActiveGamma") return EvalActiveGamma(cl, scope);
 
         // (metric, smallest arity, largest arity, which argument is the region, which the mass)
@@ -113,6 +114,79 @@ public sealed partial class Evaluator
         double? theta = metric == FieldMetric.PointingErrorDeg ? Angle(cl, cl.Args[1], scope) : null;
         double? phi = metric == FieldMetric.PointingErrorDeg ? Angle(cl, cl.Args[2], scope) : null;
         return new Value(_ctx.GetFieldMetrics(analysis).EvaluateArray(metric, plane, theta, phi));
+    }
+
+    /// <summary>
+    /// brief-paa-7 R-paa7-4 — <c>AntennaTempK(F)</c>, <c>SystemTempK(F, NF)</c>, <c>GoverTDbK(F, NF)</c>, <c>SnrDb(F, NF, k, B)</c> and
+    /// <c>NullDepthDb(F, theta, phi)</c>. NF names an S-parameter analysis with <c>Noise=yes</c>, read as a name as F is; its noise-wave
+    /// correlation <c>Cs</c> at F's frequency and F's driven port is the noise delivered to the receive port.
+    /// </summary>
+    private Value EvalReceiveMetric(CallExpr cl, Scope scope)
+    {
+        var (metric, arity) = cl.Name switch
+        {
+            "AntennaTempK" => (FieldMetric.AntennaTempK, 1),
+            "SystemTempK"  => (FieldMetric.SystemTempK, 2),
+            "GoverTDbK"    => (FieldMetric.GoverTDbK, 2),
+            "SnrDb"        => (FieldMetric.SnrDb, 4),
+            "NullDepthDb"  => (FieldMetric.NullDepthDb, 3),
+            _              => throw new UnknownFunctionException(cl.Name),
+        };
+        if (cl.Args.Length != arity) throw new ArityException(cl.Name, arity, cl.Args.Length);
+        if (_ctx is null)
+            throw new ExpressionException($"{cl.Name}() reads a fields analysis's result, so it belongs in a measure or goal line.");
+        string analysis = FieldsAnalysisNamed(cl);
+        Func<int, double, double>? noise = null;
+        if (metric is FieldMetric.SystemTempK or FieldMetric.GoverTDbK or FieldMetric.SnrDb)
+        {
+            string nf = cl.Args[1] switch
+            {
+                RefExpr r => r.Name,
+                StringLiteralExpr s => s.Value,
+                _ => throw new TypeErrorException($"{cl.Name}(): the second argument names an S-parameter analysis with Noise=yes, as NF1 in {cl.Name}(F1, NF1…)."),
+            };
+            var data = _ctx.GetAnalysis(nf);
+            noise = (port, hz) => DeliveredNoise(cl.Name, nf, data, port, hz);
+        }
+        int? wave = null;
+        double? bandwidth = null, theta = null, phi = null;
+        if (metric == FieldMetric.SnrDb)
+        {
+            var k = EvalExpr(cl.Args[2], scope);
+            double kv = k.Kind == ValueKind.Real ? k.AsReal() : double.NaN;
+            if (!(kv >= 1) || kv != Math.Round(kv))
+                throw new TypeErrorException($"SnrDb(): the third argument is an incident wave's number, 1 for RxPd[1]'s, and {k} is not.");
+            wave = (int)kv;
+            var b = EvalExpr(cl.Args[3], scope);
+            bandwidth = b.Kind == ValueKind.Real && b.AsReal() > 0 ? b.AsReal()
+                : throw new TypeErrorException($"SnrDb(): the fourth argument is the bandwidth, a positive frequency such as 1 MHz, and {b} is not.");
+        }
+        if (metric == FieldMetric.NullDepthDb)
+        {
+            theta = Angle(cl, cl.Args[1], scope);
+            phi = Angle(cl, cl.Args[2], scope);
+        }
+        return new Value(_ctx.GetFieldMetrics(analysis).EvaluateReceive(metric, noise, wave, bandwidth, theta, phi));
+    }
+
+    /// <summary>The noise power (W/Hz) a noise analysis delivers into circuit port <paramref name="port"/>'s termination at <paramref name="hz"/>:
+    /// its Cs[f, port, port].</summary>
+    private static double DeliveredNoise(string function, string nf, RfCore.Data.DataSet data, int port, double hz)
+    {
+        if (!data.Cubes.TryGetValue("Cs", out var cs) && !data.Cubes.TryGetValue($"{nf}.Cs", out cs))
+            throw new ExpressionException($"{function}(): '{nf}' holds no noise. It is an S-parameter analysis with Noise=yes.");
+        if (cs.Rank != 3 || cs.Axes[0].Name != "freq")
+            throw new ExpressionException($"{function}(): '{nf}''s noise is swept ({string.Join(", ", cs.Axes.Select(a => a.Name))}); read it from an analysis at one point.");
+        var f = cs.Axes[0].Values;
+        int fi = Array.FindIndex(f, x => Math.Abs(x - hz) <= 1e-9 * Math.Max(x, hz));
+        if (fi < 0)
+            throw new ExpressionException($"{function}(): '{nf}' has no point at {hz / 1e9:G6} GHz, the fields analysis's frequency; it runs " +
+                                          $"{f.Min() / 1e9:G6} to {f.Max() / 1e9:G6} GHz in {f.Length} points. Give it a point there.");
+        var ports = cs.Axes[1].Values;
+        int pi = Array.FindIndex(ports, x => Math.Abs(x - port) < 1e-9);
+        if (pi < 0) throw new ExpressionException($"{function}(): '{nf}' has no circuit port {port}, the port the fields analysis drives.");
+        int n = ports.Length;
+        return cs.ComplexValues[(fi * n + pi) * n + pi].Real;
     }
 
     /// <summary>brief-paa-6 R-paa6-3 — <c>ActiveGamma(F, n)</c>: element n's active reflection, complex.</summary>

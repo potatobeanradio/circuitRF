@@ -63,6 +63,109 @@ public sealed class ArraySparseMatrix
         }
     }
 
+    /// <summary>brief-paa-7 — the n×n diagonal pattern, every entry one.</summary>
+    public static ArraySparseMatrix Diagonal(int n)
+        => new(n, [.. Enumerable.Range(0, n + 1)], [.. Enumerable.Range(0, n)], [.. Enumerable.Repeat(Complex.One, n)]);
+
+    /// <summary>brief-paa-7 — the same pattern holding <paramref name="values"/> (one per stored entry, in storage order).</summary>
+    public ArraySparseMatrix WithValues(Complex[] values)
+    {
+        if (values.Length != Values.Length) throw new ArgumentException($"{Values.Length} stored entries and {values.Length} values.");
+        return new ArraySparseMatrix(Size, RowStart, Columns, values);
+    }
+
+    /// <summary>brief-paa-7 — the stored entries of row <paramref name="row"/>, columns ascending.</summary>
+    public IEnumerable<(int Column, Complex Value)> Row(int row)
+    {
+        for (int k = RowStart[row]; k < RowStart[row + 1]; k++) yield return (Columns[k], Values[k]);
+    }
+
+    /// <summary>brief-paa-7 — rows given as (column, value) lists in any order, duplicates summed, exact zeros kept out.</summary>
+    public static ArraySparseMatrix FromRows(int n, IReadOnlyList<List<(int Column, Complex Value)>> rows)
+    {
+        var start = new int[n + 1];
+        var cols = new List<int>();
+        var vals = new List<Complex>();
+        for (int i = 0; i < n; i++)
+        {
+            var row = rows[i];
+            row.Sort((a, b) => a.Column.CompareTo(b.Column));
+            int k = 0;
+            while (k < row.Count)
+            {
+                int c = row[k].Column;
+                Complex s = 0;
+                while (k < row.Count && row[k].Column == c) s += row[k++].Value;
+                if (s != Complex.Zero) { cols.Add(c); vals.Add(s); }
+            }
+            start[i + 1] = cols.Count;
+        }
+        return new ArraySparseMatrix(n, start, [.. cols], [.. vals]);
+    }
+
+    /// <summary>brief-paa-7 — <c>S·Sᴴ</c>, sparse: row i's entries reach every row sharing a column with it.</summary>
+    public ArraySparseMatrix TimesAdjoint()
+    {
+        int n = Size;
+        // Column k of this matrix, as (row, value): Sᴴ's row k.
+        var colStart = new int[n + 1];
+        foreach (int c in Columns) colStart[c + 1]++;
+        for (int c = 0; c < n; c++) colStart[c + 1] += colStart[c];
+        var colRow = new int[Values.Length];
+        var colVal = new Complex[Values.Length];
+        var fill = (int[])colStart.Clone();
+        for (int i = 0; i < n; i++)
+            for (int k = RowStart[i]; k < RowStart[i + 1]; k++)
+            {
+                int at = fill[Columns[k]]++;
+                colRow[at] = i;
+                colVal[at] = Values[k];
+            }
+        var rows = new List<(int, Complex)>[n];
+        var acc = new Dictionary<int, Complex>();
+        for (int i = 0; i < n; i++)
+        {
+            acc.Clear();
+            for (int k = RowStart[i]; k < RowStart[i + 1]; k++)
+            {
+                int c = Columns[k];
+                Complex s = Values[k];
+                for (int q = colStart[c]; q < colStart[c + 1]; q++)
+                    acc[colRow[q]] = acc.GetValueOrDefault(colRow[q]) + s * Complex.Conjugate(colVal[q]);
+            }
+            rows[i] = [.. acc.Select(kv => (kv.Key, kv.Value))];
+        }
+        return FromRows(n, rows);
+    }
+
+    /// <summary>brief-paa-7 — the largest singular value, by power iteration on SᴴS: what a passivity verdict on an array too large for an
+    /// SVD reads. Converged to <paramref name="tolerance"/> relative or <paramref name="iterations"/> steps.</summary>
+    public double SigmaMax(int iterations = 200, double tolerance = 1e-10)
+    {
+        int n = Size;
+        if (n == 0) return 0;
+        var x = new Complex[n];
+        var y = new Complex[n];
+        var rnd = new Random(1);
+        for (int i = 0; i < n; i++) x[i] = new Complex(1 + 0.1 * rnd.NextDouble(), 0.1 * rnd.NextDouble());
+        double sigma = 0;
+        for (int it = 0; it < iterations; it++)
+        {
+            double norm = Math.Sqrt(x.Sum(z => z.Real * z.Real + z.Imaginary * z.Imaginary));
+            if (norm == 0) return 0;
+            for (int i = 0; i < n; i++) x[i] /= norm;
+            Multiply(x, y);
+            // x ← Sᴴ·y
+            Array.Clear(x);
+            for (int i = 0; i < n; i++)
+                for (int k = RowStart[i]; k < RowStart[i + 1]; k++) x[Columns[k]] += Complex.Conjugate(Values[k]) * y[i];
+            double next = Math.Sqrt(Math.Sqrt(x.Sum(z => z.Real * z.Real + z.Imaginary * z.Imaginary)));
+            if (Math.Abs(next - sigma) <= tolerance * next) return next;
+            sigma = next;
+        }
+        return sigma;
+    }
+
     /// <summary>A dense matrix held sparse: an array solved whole, whose N is its record's port count.</summary>
     public static ArraySparseMatrix FromDense(Complex[,] m)
     {

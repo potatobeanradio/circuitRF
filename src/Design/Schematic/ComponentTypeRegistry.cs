@@ -2173,6 +2173,12 @@ public static class ComponentTypeRegistry
             "on, or off: off keeps each element's own reflection and drops every coupling between elements.",
         (SymbolKind.PhasedArray, "Z0") =>
             "Reference impedance at the elements. Blank takes the record's.",
+        (SymbolKind.PhasedArray, "Tsky") =>
+            "The brightness above the horizon, kelvin: a temperature, or an expression of the elevation el (5+280*exp(-el/(5*pi/180))). "
+          + "The elements' noise is what their patterns see of it. Blank is the array's own temperature, the noise a passive block has.",
+        (SymbolKind.PhasedArray, "Tground") =>
+            "The brightness below the horizon, kelvin, where the record's pattern reaches there (a planar record has a ground plane and does not). "
+          + "Blank is the array's own temperature.",
         (SymbolKind.PhasedArray, "RecordRows") or (SymbolKind.PhasedArray, "RecordCols")
             or (SymbolKind.PhasedArray, "RecordDx") or (SymbolKind.PhasedArray, "RecordDy") =>
             "The lattice of a record that does not store its ports' positions, its ports numbered row-major. Ignored when it does.",
@@ -2636,6 +2642,8 @@ public static class ComponentTypeRegistry
                         new("AttenStep",  "",         "dB", false, UnitDimension.None),
                         new("Channel",    "",         "",   false, UnitDimension.None),
                         new("Z0",         "",         "Ω",  false, UnitDimension.Resistance),
+                        new("Tsky",       "",         "",   false, UnitDimension.None),
+                        new("Tground",    "",         "",   false, UnitDimension.None),
                         new("RecordRows", "",         "",   false, UnitDimension.None),
                         new("RecordCols", "",         "",   false, UnitDimension.None),
                         new("RecordDx",   "",         "mm", false, UnitDimension.Length),

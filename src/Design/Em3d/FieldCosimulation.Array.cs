@@ -310,6 +310,106 @@ public static partial class FieldCosimulation
             }
         }
 
+        /// <summary>
+        /// brief-paa-7 R-paa7-4 — the receive measurements (docs/design/phased-array.md §5.3). The array receives through its RECEIVE weights
+        /// T_n, the wave leaving the analysis's driven port per unit wave emitted by element n (SParameterEngine.PortReceiveWeights, one transposed
+        /// solve), so a received wave reaches the port as b = Σ T_n·c_n whether or not the circuit between is reciprocal — a channel of amplifiers
+        /// is not. With E_rx = Σ T_n·E_n the receive pattern (an array sum with weights T), C the elements' noise correlation and D = I − S·Sᴴ:
+        ///   AntennaTempK  T_A = T·C·Tᴴ / (k·A),  A = T·D·Tᴴ — the noise the elements deliver to the port over what a passive array at 1 K would;
+        ///   SystemTempK   T_sys = N/(k·A), N the noise the noise analysis delivers into the port's termination: every noise referred to the elements;
+        ///   GoverTDbK     10·log10(G/T_sys) = 10·log10(k·G_rx/N), G_rx = 4π·|E_rx|²/η₀ at the receive beam's peak and G = G_rx/A its gain at the
+        ///                 elements' terminals;
+        ///   SnrDb         10·log10(S·λ²·|p̂·E_rx(θ_k,φ_k)|²/η₀ / (N·B)) for incident wave k — the wave b it delivers carries ½|b|² of that;
+        ///   NullDepthDb   10·log10(|E_rx(θ,φ)|²/|E_rx,peak|²).
+        /// </summary>
+        public double EvaluateReceive(FieldMetric metric, Func<int, double, double>? noise, int? wave, double? bandwidthHz, double? thetaDeg, double? phiDeg)
+        {
+            lock (_gate)
+            {
+                string name = FieldMetricFunctions.NameOf(metric);
+                if (drives.Count == 0)
+                    throw new ExpressionException($"{name}({fa.Name}, …) receives at the fields analysis's driven port, and fields analysis '{fa.Name}' forms its pattern " +
+                                                  "from harmonic balance, which drives no port. Read it from a fields analysis without waves=.");
+                var rx = Receive();
+                switch (metric)
+                {
+                    case FieldMetric.NullDepthDb:
+                    {
+                        double th = thetaDeg!.Value * Math.PI / 180, ph = phiDeg!.Value * Math.PI / 180;
+                        double p = ArrayPattern.Sum(pa.Lattice, rx.T, elements, ArrayDirections.Of([th], [ph]), hz).Power(0);
+                        return 10 * Math.Log10(p / rx.Beam.PeakPower);
+                    }
+                    case FieldMetric.AntennaTempK:
+                        return rx.AntennaW / (RfCore.Data.NoiseMetrics.Boltzmann * rx.A);
+                }
+                if (noise is null) throw new ExpressionException($"{name}({fa.Name}, NF): NF names a noise analysis.");
+                double delivered = noise(drives[0].Port, hz);
+                double k = RfCore.Data.NoiseMetrics.Boltzmann;
+                switch (metric)
+                {
+                    case FieldMetric.SystemTempK: return delivered / (k * rx.A);
+                    case FieldMetric.GoverTDbK: return 10 * Math.Log10(k * (4 * Math.PI * rx.Beam.PeakPower / ArrayWaves.Eta0) / delivered);
+                    case FieldMetric.SnrDb:
+                    {
+                        if (!pa.IncidentWaves.TryGetValue(wave!.Value, out var inc))
+                            throw new ExpressionException($"SnrDb({fa.Name}, …, {wave}, …): '{fa.Block}' has no incident wave {wave}" +
+                                                          (pa.IncidentWaves.Count == 0 ? "; it is given none (RxPd[k], RxFreq[k] …)." : $"; it has {string.Join(", ", pa.IncidentWaves.Keys)}."));
+                        if (Math.Abs(inc.Hz - hz) > 1e-9 * hz)
+                            throw new ExpressionException($"SnrDb({fa.Name}, …, {wave}, …): incident wave {wave} is at {MaterialDispersion.Hz(inc.Hz)} and fields analysis '{fa.Name}' at " +
+                                                          $"{MaterialDispersion.Hz(hz)}: the pattern that receives it is the one at its own frequency.");
+                        var f = ArrayPattern.Sum(pa.Lattice, rx.T, elements, ArrayDirections.Of([inc.ThetaRad], [inc.PhiRad]), hz);
+                        Complex along = inc.PolTheta * f.ETheta[0] + inc.PolPhi * f.EPhi[0];
+                        double lambda = EmConstants.C0 / hz;
+                        double signal = inc.DensityW * lambda * lambda * (along.Magnitude * along.Magnitude) / ArrayWaves.Eta0;
+                        return 10 * Math.Log10(signal / (delivered * bandwidthHz!.Value));
+                    }
+                    default:
+                        throw new ExpressionException($"'{metric}' is not a receive measurement.");
+                }
+            }
+        }
+
+        private sealed record Reception(Complex[] T, Func<ArrayBeamMetrics> BeamOf, double AntennaW, double A)
+        {
+            private ArrayBeamMetrics? _beam;
+            public ArrayBeamMetrics Beam => _beam ??= BeamOf();
+        }
+        private Reception? _rx;
+
+        /// <summary>The receive weights, the receive beam, the noise the elements deliver to the port and the referral A = T·D·Tᴴ.</summary>
+        private Reception Receive()
+        {
+            if (_rx is not null) return _rx;
+            var block = nl.Components.First(c => string.Equals(c.InstancePath, fa.Block, StringComparison.Ordinal));
+            int n = pa.PortCount;
+            int[] sources = [.. Enumerable.Range(0, n).Select(e => PhasedArrayModel.SourceNode(block, e, n))];
+            var t = SParameterEngine.PortReceiveWeights(nl, hz, drives[0].Port, sources);
+            double physical = CircuitRF.Core.Devices.Temperature.ResolveDeviceC(block.Parameters, nl.AmbientC) + CircuitRF.Core.Devices.Temperature.KelvinOffset;
+            var noise = pa.NoiseCorrelation(hz, physical);
+            double antenna = block.NoiseOff ? 0 : noise.Correlation.Form(t, t).Real;
+            var s = pa.SparseAt(hz);
+            double a = 0;
+            var ts = new Complex[n];
+            for (int i = 0; i < n; i++)
+            {
+                a += t[i].Real * t[i].Real + t[i].Imaginary * t[i].Imaginary;
+                foreach (var (c, v) in s.Row(i)) ts[c] += t[i] * v;
+            }
+            for (int c = 0; c < n; c++) a -= ts[c].Real * ts[c].Real + ts[c].Imaginary * ts[c].Imaginary;
+            if (!(a > 0))
+                throw new ExpressionException($"Fields '{fa.Name}': nothing the elements of '{fa.Block}' receive reaches circuit port {drives[0].Port}, so the array has no " +
+                                              "antenna temperature, system temperature or G/T there.");
+            ArrayBeamMetrics Beam()
+            {
+                var dirs = ArrayDirections.OnGrid(far.Grid);
+                var overview = ArrayPattern.Sum(pa.Lattice, t, elements, dirs, hz);
+                int best = 0;
+                for (int d = 1; d < dirs.Count; d++) if (overview.Power(d) > overview.Power(best)) best = d;
+                return ArrayBeam.Evaluate(pa.Lattice, t, elements, hz, dirs.ThetaRad[best] * 180 / Math.PI, dirs.PhiRad[best] * 180 / Math.PI);
+            }
+            return _rx = new Reception(t, Beam, antenna, a);
+        }
+
         /// <summary>brief-paa-6 R-paa6-3 — element <paramref name="element"/>'s active reflection.</summary>
         public Complex ActiveGamma(int element) => ActiveGammaOf(fa, w, element, pa.Lattice.IsOn);
 

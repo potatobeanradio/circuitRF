@@ -5263,6 +5263,17 @@ are evaluated once per element with <code>n</code>, <code>row</code>, <code>col<
 <code>Amp=taylor(-30,4)</code> tapers it; <code>Phase[n]</code> sets one element's phase. Feed mode takes up to 4096 elements, and a sweep of
 the steering VAR is an ordinary parametric sweep. <code>BeamNfDb(F1)</code> on the fields analysis is the noise figure from the
 driving port to the beam's peak.</p>
+<p>As a receiver, the elements' noise is what their patterns see: <code>Tsky</code> is the brightness above the horizon, in kelvin, a
+temperature or an expression of the elevation <code>el</code> (<code>5+280*exp(-el/(5*pi/180))</code>), and <code>Tground</code> the brightness below it
+where the record's pattern reaches there (a planar record's ground plane hides it). Left blank, both are the array's own
+temperature, which is the noise any passive block has. A plane wave arriving at the array is <code>RxTheta[k]</code>, <code>RxPhi[k]</code>
+(degrees), <code>RxPd[k]</code> (its power density, dBm/m²), <code>RxFreq[k]</code> and <code>RxPol[k]</code> (<code>theta</code>, <code>phi</code>, <code>rhcp</code>, <code>lhcp</code> or an angle
+from θ̂ towards φ̂): each element receives it through its own pattern, and in harmonic balance and envelope runs it is a
+tone like a 1-Tone source's, so a signal and an interferer pass through the channels together. An interferer reaches each
+channel through the element's pattern and is only beamformed after it. With a fields analysis <code>F1</code> driven from the receive
+port and an S-parameter analysis <code>NF1</code> with <code>Noise=yes</code>, <code>AntennaTempK(F1)</code>, <code>SystemTempK(F1, NF1)</code>, <code>GoverTDbK(F1, NF1)</code>
+(dB/K), <code>SnrDb(F1, NF1, k, bandwidth)</code> for wave <code>k</code> and <code>NullDepthDb(F1, theta, phi)</code> read the receive side; all of them
+work through amplifiers that only pass signal one way.</p>
 <p>The symbol draws the aperture as seen from the front: a square per element up to 8 × 8 (a larger array shows its top-left
 8 × 8 and its size), a triangular lattice's rows offset, an element switched off hollow. In Feed mode a beam leaves its right
 side, tilted by θ0 with <code>θ0 30°  φ0 0°</code> written beside it when <code>Phase</code> (or <code>Delay</code>) is a <code>steer()</code>; in Elements mode its four
@@ -5295,6 +5306,8 @@ read from the schematic's VAR blocks.</p>
 <tr><td>AttenStep</td><td>&mdash;</td><td>dB</td><td>&mdash;</td><td>Feed mode: each amplitude&#39;s attenuation from the largest is rounded to this step, in dB. 0 or blank is continuous.</td></tr>
 <tr><td>Channel</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Feed mode: a two-port cell placed once per element between its weight and the element (its first port in, its second out), as PA1.ch[n]. Its expressions may read n, row, col, x and y. Blank connects each weight to its element directly.</td></tr>
 <tr><td>Z0</td><td>&mdash;</td><td>Ω</td><td>&mdash;</td><td>Reference impedance at the elements. Blank takes the record&#39;s.</td></tr>
+<tr><td>Tsky</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The brightness above the horizon, kelvin: a temperature, or an expression of the elevation el (5+280*exp(-el/(5*pi/180))). The elements&#39; noise is what their patterns see of it. Blank is the array&#39;s own temperature, the noise a passive block has.</td></tr>
+<tr><td>Tground</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The brightness below the horizon, kelvin, where the record&#39;s pattern reaches there (a planar record has a ground plane and does not). Blank is the array&#39;s own temperature.</td></tr>
 <tr><td>RecordRows</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The lattice of a record that does not store its ports&#39; positions, its ports numbered row-major. Ignored when it does.</td></tr>
 <tr><td>RecordCols</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The lattice of a record that does not store its ports&#39; positions, its ports numbered row-major. Ignored when it does.</td></tr>
 <tr><td>RecordDx</td><td>&mdash;</td><td>mm</td><td>&mdash;</td><td>The lattice of a record that does not store its ports&#39; positions, its ports numbered row-major. Ignored when it does.</td></tr>

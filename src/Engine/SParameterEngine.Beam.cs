@@ -47,7 +47,7 @@ public static partial class SParameterEngine
         // (an antenna's, received from its surroundings) would be counted as incident on it — the noise it emits, read as noise it radiates.
         int own = sources.FindIndex(src => string.Equals(src.Label, instancePath, StringComparison.Ordinal));
         var pinOf = new Dictionary<int, int>();
-        for (int k = 0; k < block.Nodes.Length; k++) if (block.Nodes[k] > 0) pinOf.TryAdd(block.Nodes[k], k);
+        for (int k = 0; k < branches.Length; k++) if (block.Nodes[k] > 0) pinOf.TryAdd(block.Nodes[k], k);
         var mna = p.Mna;
         int nonGround = mna.NodeCount;
         StampAll(mna, netlist, omega, skipPorts: true, dcNodeVoltages: p.DcNodeVoltages);
@@ -92,6 +92,13 @@ public static partial class SParameterEngine
                     h[a] = Complex.Conjugate(g[nodes[a] - 1]);
                     if (src == own && block.ReferenceNode == 0 && pinOf.TryGetValue(nodes[a], out int k)) h[a] -= v[k] * z0 / root;
                 }
+                // brief-paa-7 — a Phased Antenna Array's own noise is a wave source on its own nodes, not a Norton current at its pins, so the
+                // terminal current it reads is the whole of it and nothing is taken out.
+                if (nc.Structured is { } st)
+                {
+                    total += st.Form(h, h).Real;
+                    continue;
+                }
                 Complex sum = 0;
                 for (int a = 0; a < nodes.Length; a++)
                     for (int b = 0; b < nodes.Length; b++) sum += h[a] * nc.C[a, b] * Complex.Conjugate(h[b]);
@@ -100,5 +107,49 @@ public static partial class SParameterEngine
             result[w] = total;
         }
         return result;
+    }
+
+    /// <summary>
+    /// brief-paa-7 R-paa7-4 — the receive weights of circuit port <paramref name="portNumber"/>: for each node in <paramref name="nodes"/>, the wave
+    /// leaving that port into its noiseless Z0 per unit current injected at the node, every circuit port terminated, at <paramref name="freqHz"/>.
+    /// One transposed solve on the terminated network's factorisation, as <see cref="SParameterNoise"/>'s port rows: b_P = (√Re Z0/Z0)·V_P, and
+    /// the row of M⁻¹ for V_P is conj(y) with Mᴴ·y = e_P. On a Phased Antenna Array's source nodes (1 S each) these are the weights its received
+    /// waves combine with at the port, b_P = Σ T_n·c_n, so they hold whether or not the network between is reciprocal.
+    /// </summary>
+    public static Complex[] PortReceiveWeights(ElaboratedNetlist netlist, double freqHz, int portNumber, IReadOnlyList<int> nodes, AnalysisSettings? settings = null)
+    {
+        ArgumentNullException.ThrowIfNull(netlist);
+        settings ??= AnalysisSettings.Default;
+        double[] freqs = [freqHz];
+        var p = Prepare(netlist, freqs, settings);
+        if (!p.AllPortsResistive)
+            throw new InvalidOperationException("The receive weights need every circuit port terminated in a resistive Z0 (Re Z0 > 0); one port's Z0 has none.");
+        int j = p.Ports.FindIndex(x => x.PortNum == portNumber);
+        if (j < 0) throw new InvalidOperationException($"The circuit has no port number {portNumber} at its top level.");
+        double omega = 2.0 * Math.PI * freqHz;
+        var mna = p.Mna;
+        int nonGround = mna.NodeCount;
+        StampAll(mna, netlist, omega, skipPorts: true, dcNodeVoltages: p.DcNodeVoltages);
+        StampPortConductances(mna, p.Ports, p.Ports.Count);
+        ApplyRegularization(mna, netlist, nonGround, settings, applyIfNecessary: false);
+        SparseLU lu;
+        try { lu = mna.Factorize(nodeNamer: p.NodeNamer, branchNamer: p.BranchNamer); }
+        catch (SingularMatrixException) when (p.CanRetry)
+        {
+            StampAll(mna, netlist, omega, skipPorts: true, dcNodeVoltages: p.DcNodeVoltages);
+            StampPortConductances(mna, p.Ports, p.Ports.Count);
+            ApplyRegularization(mna, netlist, nonGround, settings, applyIfNecessary: true);
+            lu = mna.Factorize(nodeNamer: p.NodeNamer, branchNamer: p.BranchNamer);
+        }
+        var port = p.Ports[j];
+        var u = new Complex[mna.Size];
+        var y = new Complex[mna.Size];
+        if (port.Node0 > 0) u[port.Node0 - 1] += 1;
+        if (port.Node1 > 0) u[port.Node1 - 1] -= 1;
+        lu.SolveTranspose(u, y);
+        Complex d = Math.Sqrt(port.Z0.Real) / port.Z0;
+        var t = new Complex[nodes.Count];
+        for (int k = 0; k < nodes.Count; k++) t[k] = nodes[k] > 0 ? d * Complex.Conjugate(y[nodes[k] - 1]) : Complex.Zero;
+        return t;
     }
 }
