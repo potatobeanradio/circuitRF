@@ -31,6 +31,9 @@ public sealed record PlanTee(double W1, double W2, double W3, double L1, double 
 public sealed record PlanCurve(double W, double AngleDeg, double Radius,
     int[] Nodes, double X, double Y, double RotationDeg) : PlanSection(Nodes, X, Y, RotationDeg);
 
+/// <summary>An MLIN: width and length, running along the part's +x from pin 1 to pin 2.</summary>
+public sealed record PlanLine(int[] Nodes, double X, double Y, double RotationDeg, double W, double L) : PlanSection(Nodes, X, Y, RotationDeg);
+
 /// <summary>A planned passive: its pin names in terminal order, its sections, and how many plan nodes the
 /// sections join (pins included).</summary>
 public sealed record PassivePlan(IReadOnlyList<string> Pins, IReadOnlyList<PlanSection> Sections, int NodeCount)

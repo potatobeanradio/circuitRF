@@ -8,7 +8,8 @@ namespace CircuitRF.Core.Devices;
 /// <summary>
 /// A planned microstrip passive (docs/design/rf-passives.md) — today MWPD, the equal-split Wilkinson divider
 /// (<see cref="WilkinsonPlan"/>). It has no line physics of its own: each section of the plan is the EXISTING
-/// part's model (<see cref="MicrostripTeeModel"/>, <see cref="MicrostripCurveModel"/>), stamped into a
+/// part's model (<see cref="MicrostripTeeModel"/>, <see cref="MicrostripCurveModel"/>,
+/// <see cref="MicrostripLineModel"/>), stamped into a
 /// <see cref="LocalAdmittanceBlock"/> on the plan's nodes, and the internal nodes are Kron-reduced away so the
 /// instance stamps one block on its pins — the way MTEE stamps the arms it draws (<see cref="JunctionArms"/>).
 /// The same network built from explicit MTEE and MCURVE instances is therefore the same matrix.
@@ -42,6 +43,8 @@ public sealed class MicrostripPlanModel : ComponentModel, IReportsWarnings, IDcS
                 path, t.L1, t.L2, t.L3, s.RoughnessMeters),
             PlanCurve c => new MicrostripCurveModel(c.W, c.AngleDeg, c.Radius, s.HMeters, s.TMeters, s.EpsR,
                 s.SigmaSPerM, s.TanD, path, s.RoughnessMeters),
+            PlanLine l => new MicrostripLineModel(l.W, l.L, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM, s.TanD, path,
+                s.RoughnessMeters),
             _ => throw new NotSupportedException(section.GetType().Name),
         };
         return (model, new ElaboratedComponent(model.GetType().Name, path, section.Nodes,
