@@ -7,7 +7,8 @@ namespace CircuitRF.Core.Tests.Devices.Microstrip;
 
 /// <summary>
 /// The coupled-line plans' numbers: <see cref="CoupledLineSynthesis"/> inverts MCLIN's own modes, Ou's equations
-/// (<see cref="LangePlan"/>) invert and agree with Pozar's four-finger closed form, and a coupling the board cannot build is a coded refusal.
+/// (<see cref="LangePlan"/>) invert and agree with Pozar's four-finger closed form, the balun's coupling is the match
+/// condition, and a coupling the board cannot build is a coded refusal.
 /// </summary>
 public class CoupledLinePlanTests(ITestOutputHelper output)
 {
@@ -75,18 +76,38 @@ public class CoupledLinePlanTests(ITestOutputHelper output)
         Assert.Equal(d.Zo, d.Modes.Zo, 2);
     }
 
+    [Fact]
+    public void TheBalun_CouplingMatchesZlToZ0_AndItsSectionsMeetAcrossGap()
+    {
+        var d = MarchandBalunPlan.Build(50.0, 150.0, 2.4e9, 1e-3, Ro4350b);
+        Assert.Equal(1.0 / Math.Sqrt(7.0), d.Coupling, 12);
+        // The open-circuit input impedance at the quarter wave, 2(Ze Zo)^2 / (ZL (Ze - Zo)^2), is Z0.
+        Assert.Equal(50.0, 2 * Math.Pow(d.Ze * d.Zo, 2) / (150.0 * Math.Pow(d.Ze - d.Zo, 2)), 9);
+        var s = d.Plan.Sections;
+        var first = (PlanCoupledLine)s[0];
+        var join = (PlanLine)s[1];
+        var second = (PlanCoupledLine)s[2];
+        Assert.Equal(first.X + first.L, join.X, 15);
+        Assert.Equal(join.X + join.L, second.X, 15);
+        Assert.Equal(first.Nodes[1], join.Nodes[0]);
+        Assert.Equal(join.Nodes[1], second.Nodes[0]);
+    }
+
     [Theory]
     [InlineData("coupler", 3.0, "device.coupled-line.gap-unreachable")]
     [InlineData("coupler", 0.0, "device.coupled-line-coupler.spec-not-positive")]
     [InlineData("coupler", 45.0, "device.coupled-line.gap-too-wide")]
     [InlineData("lange", -1.0, "device.lange.spec-not-positive")]
     [InlineData("lange", 2.0, "device.coupled-line.gap-unreachable")]
+    [InlineData("balun", 50.0, "device.coupled-line.gap-unreachable")]
+    [InlineData("balun", 0.0, "device.marchand.spec-not-positive")]
     public void ASpecTheBoardCannotBuild_IsACodedRefusal(string part, double spec, string code)
     {
         var ex = Assert.Throws<ParameterRefusalException>(() => _ = part switch
         {
             "coupler" => (object)CoupledLineCouplerPlan.Build(spec, 50.0, 2.4e9, Ro4350b),
-            _ => LangePlan.Build(spec, 50.0, 2.4e9, Ro4350b),
+            "lange" => LangePlan.Build(spec, 50.0, 2.4e9, Ro4350b),
+            _ => MarchandBalunPlan.Build(50.0, spec, 2.4e9, 1e-3, Ro4350b),
         });
         Assert.Equal(code, ex.Diagnostic?.Id);
     }
@@ -122,6 +143,19 @@ public class CoupledLinePlanTests(ITestOutputHelper output)
             }
             catch (ParameterRefusalException ex) { row = ex.Diagnostic!.Id; }
             output.WriteLine($"Coupler {cDb} dB: {row}");
+        }
+        foreach (double zl in new[] { 50.0, 75.0, 100.0, 125.0, 150.0, 200.0 })
+        {
+            double c = MarchandBalunPlan.CouplingFor(50.0, zl);
+            var (ze, zo) = (50.0 * Math.Sqrt((1 + c) / (1 - c)), 50.0 * Math.Sqrt((1 - c) / (1 + c)));
+            string row;
+            try
+            {
+                var g = CoupledLineSynthesis.Synthesize(ze, zo, 2.4e9, Ro4350b, "balun");
+                row = $"W {g.WMeters * 1e6:F0} um  S {g.SMeters * 1e6:F1} um";
+            }
+            catch (ParameterRefusalException ex) { row = ex.Diagnostic!.Id; }
+            output.WriteLine($"Balun ZL {zl}: c {-20 * Math.Log10(c):F2} dB  {row}");
         }
     }
 }

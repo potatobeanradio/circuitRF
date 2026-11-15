@@ -10,9 +10,9 @@ using Xunit.Abstractions;
 namespace CircuitRF.Engine.Tests.Devices;
 
 /// <summary>
-/// The coupled-line planned passives through the engine: MCLC (coupled-line coupler) and MIDC (four-finger
-/// interdigitated coupler) are their plans' sections and nothing else, so each matches the same network wired by hand,
-/// and at F each does what it was asked: the coupling, the quadrature split.
+/// The coupled-line planned passives through the engine: MCLC (coupled-line coupler), MIDC (four-finger interdigitated
+/// coupler) and MCBL (coupled-line balun) are their plans' sections and nothing else, so each matches the same network
+/// wired by hand, and at F each does what it was asked: the coupling, the quadrature split, the balanced outputs.
 /// </summary>
 public class CoupledLinePartsSParamTests(ITestOutputHelper output)
 {
@@ -177,6 +177,63 @@ public class CoupledLinePartsSParamTests(ITestOutputHelper output)
         Assert.True(Db(s[2, 0]) < -6.0, $"|S31| {Db(s[2, 0]):F2} dB");
     }
 
+    // ── MCBL ────────────────────────────────────────────────────────────────────────────────────────────
+
+    private static string Ports3(double zl) => $"""
+        Port:P1 p1 0 Num=1 Z=50 Ohm
+        Port:P2 p2 0 Num=2 Z={F(zl)} Ohm
+        Port:P3 p3 0 Num=3 Z={F(zl)} Ohm
+        """;
+
+    private static string Balun(double zl) => $"""
+        {Ports3(zl)}
+        MCBL:B1 p1 p2 p3 0 0 Z0=50 Ohm ZL={F(zl)} Ohm F=2.4 GHz Gap=1 mm {Sub}
+        """;
+
+    [Theory]
+    [InlineData(1.2e9)]
+    [InlineData(2.4e9)]
+    [InlineData(4.8e9)]
+    public void TheBalun_IsItsSectionsWiredByHand(double f)
+    {
+        var plan = MarchandBalunPlan.Build(50.0, 200.0, F0, 1e-3, Ro4350b).Plan;
+        string Node(int n) => n switch { <= 3 => $"p{n}", 4 or 5 => "0", _ => $"i{n}" };
+        AssertSame(SAt(Balun(200.0), f, 3), SAt(Ports3(200.0) + "\n" + ByHand(plan, Node, Sub), f, 3), f);
+    }
+
+    /// <summary>The design equations, with the medium taken out: the plan's Ze and Zo as TEM pairs a quarter wave long
+    /// at F match the input exactly and give equal and opposite outputs.</summary>
+    [Fact]
+    public void AsTemPairs_ThePlansModesMatchAndBalanceExactly()
+    {
+        var d = MarchandBalunPlan.Build(50.0, 200.0, F0, 1e-3, Ro4350b);
+        string pair = $"Ze={F(d.Ze)} Zo={F(d.Zo)} E=90 deg F=2.4 GHz";
+        var s = SAt($"""
+            {Ports3(200.0)}
+            CLIN:K1 p1 m 0 p2 {pair}
+            CLIN:K2 m o p3 0 {pair}
+            """, F0, 3);
+        Assert.True(Db(s[0, 0]) < -60.0, $"|S11| {Db(s[0, 0]):F2} dB");
+        Assert.True((s[1, 0] + s[2, 0]).Magnitude < 1e-6, $"S21 {s[1, 0]} vs S31 {s[2, 0]}");
+        Assert.Equal(-10 * Math.Log10(2), Db(s[1, 0]), 6);
+    }
+
+    /// <summary>200 Ω on each output, the lightest load whose coupling a 100 µm gap builds on this board. At F the two
+    /// outputs are equal in amplitude and the input matched; the phase is 180° less microstrip's limit, about 16° here:
+    /// the even mode (εeff 2.97) is slower than the odd (2.30), so neither section is a quarter wave for both.</summary>
+    [Fact]
+    public void AtF_TheBalunOutputsAreBalanced_AndTheInputMatched()
+    {
+        var s = SAt(Balun(200.0), F0, 3);
+        double amp = Db(s[1, 0]) - Db(s[2, 0]), phase = Wrap(Deg(s[1, 0]) - Deg(s[2, 0]));
+        output.WriteLine($"S11 {Db(s[0, 0]):F2}  S21 {Db(s[1, 0]):F2}  S31 {Db(s[2, 0]):F2} dB, "
+                       + $"balance {amp:F3} dB, {phase:F2} deg");
+        Assert.True(Math.Abs(amp) < 0.3, $"amplitude balance {amp:F3} dB");
+        Assert.InRange(Math.Abs(phase), 160.0, 180.0);
+        Assert.True(Db(s[0, 0]) < -15.0, $"|S11| {Db(s[0, 0]):F2} dB");
+        Assert.InRange(Db(s[1, 0]), -3.6, -3.0);
+    }
+
     // ── DC ──────────────────────────────────────────────────────────────────────────────────────────────
 
     private static Func<string, double> Dc(string cnl)
@@ -228,5 +285,25 @@ public class CoupledLinePartsSParamTests(ITestOutputHelper output)
             """);
         foreach (string n in new[] { "p1", "p2", "j1", "j2" }) Assert.Equal(0.5, v(n), 4);
         foreach (string n in new[] { "p3", "p4", "j3", "j4" }) Assert.Equal(0.0, v(n), 9);
+    }
+
+    /// <summary>The balun's input strip ends open, so its input carries the source's full volt, while each output sits
+    /// on its strip's ground.</summary>
+    [Fact]
+    public void AtDc_TheBalunsInputIsOpen_AndItsOutputsGrounded()
+    {
+        var v = Dc($"""
+            Vdc:V1 a 0 Vdc=1 V
+            R:Rs a p1 R=50 Ohm
+            MCBL:B1 p1 p2 p3 g2 g3 Z0=50 Ohm ZL=200 Ohm F=2.4 GHz Gap=1 mm {Sub}
+            R:G2 g2 0 R=1 mOhm
+            R:G3 g3 0 R=1 mOhm
+            R:L2 p2 a R=200 Ohm
+            R:L3 p3 a R=200 Ohm
+            """);
+        Assert.Equal(1.0, v("p1"), 9);
+        Assert.Equal(v("g2"), v("p2"), 12);
+        Assert.Equal(v("g3"), v("p3"), 12);
+        Assert.InRange(v("p2"), 1e-6, 1e-5);       // 1 V across 200 Ω into 1 mΩ
     }
 }

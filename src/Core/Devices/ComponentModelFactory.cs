@@ -91,7 +91,7 @@ public static class ComponentModelFactory
             // The planned passives (docs/design/rf-passives.md): specs in, MTEE and MCURVE sections stamped as one block.
             WilkinsonTypeName,
             // The coupled-line planned passives: MCLIN, MLIN and interdigitated sections, stamped the same way.
-            CoupledLineCouplerTypeName, LangeTypeName,
+            CoupledLineCouplerTypeName, LangeTypeName, MarchandTypeName,
             // Grounded coplanar waveguide and stripline (brief-artsch-1), bound to the stackup as MLIN is.
             "CPWG", "SLIN",
             // The two vias (brief-via-component.md): a signal via changing layers, and a via to ground.
@@ -263,6 +263,8 @@ public static class ComponentModelFactory
             return CreateCoupledLineCouplerModel(parameters);
         if (typeName.Equals(LangeTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateLangeModel(parameters);
+        if (typeName.Equals(MarchandTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateMarchandModel(parameters);
         if (typeName.Equals("VIA", StringComparison.OrdinalIgnoreCase))
             return new ViaModel(ReadViaGeometry(parameters, grounded: false));
         if (typeName.Equals("VIAGND", StringComparison.OrdinalIgnoreCase))
@@ -3008,6 +3010,9 @@ public static class ComponentModelFactory
     /// jumper landings J1-J4).</summary>
     public const string LangeTypeName = "MIDC";
 
+    /// <summary>The coupled-line balun's engine token (pins 1 unbalanced, 2 and 3 balanced, G2 and G3 to ground).</summary>
+    public const string MarchandTypeName = "MCBL";
+
     // MCLC / MIDC: the specs (Coupling in dB, Z0, F) are the parameters; the plan derives W, S and L.
     private static MicrostripPlanModel CreateCoupledLineCouplerModel(IReadOnlyDictionary<string, Value> parameters)
         => new(CoupledLineCouplerPlan.Build(GetReal(parameters, "Coupling", 10.0), GetReal(parameters, "Z0", 50.0),
@@ -3018,6 +3023,13 @@ public static class ComponentModelFactory
         => new(LangePlan.Build(GetReal(parameters, "Coupling", 4.0), GetReal(parameters, "Z0", 50.0),
                                GetReal(parameters, "F", 1e9), SubstrateOf(parameters)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, LangeTypeName));
+
+    // MCBL: the source and per-output load impedances (Z0, ZL) and F, plus the layout Gap between the two sections.
+    private static MicrostripPlanModel CreateMarchandModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(MarchandBalunPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "ZL", 200.0),
+                                       GetReal(parameters, "F", 1e9), GetReal(parameters, "Gap", 1e-3),
+                                       SubstrateOf(parameters)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, MarchandTypeName));
 
     private static MicrostripKlopfModel CreateMicrostripKlopfModel(IReadOnlyDictionary<string, Value> parameters)
     {

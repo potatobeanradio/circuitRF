@@ -8,7 +8,7 @@ namespace CircuitRF.Core.Devices;
 /// <summary>
 /// A planned microstrip passive (docs/design/rf-passives.md): MWPD, the equal-split Wilkinson divider
 /// (<see cref="WilkinsonPlan"/>), and the coupled-line parts (<see cref="CoupledLineCouplerPlan"/>,
-/// <see cref="LangePlan"/>). It has no line physics of its own: each section of the
+/// <see cref="LangePlan"/>, <see cref="MarchandBalunPlan"/>). It has no line physics of its own: each section of the
 /// plan is the EXISTING part's model (<see cref="MicrostripTeeModel"/>, <see cref="MicrostripCurveModel"/>,
 /// <see cref="MicrostripLineModel"/>, <see cref="MicrostripCoupledLineModel"/>), stamped into a
 /// <see cref="LocalAdmittanceBlock"/> on the plan's nodes, and the internal nodes are Kron-reduced away so the

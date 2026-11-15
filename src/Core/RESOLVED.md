@@ -4840,3 +4840,41 @@ read 37 ms: re-weigh 18 ms, fields run 22 ms).
 - **Noise.** The receive pin is a `NoiseSourceDecl` from the rx net to ground with 4k·T_ant·Re(1/Z_rx), so the S-parameter, HB and
   envelope noise read it through the device-source path. An S-parameter run with `RxTant=150` gives the receive port's wave noise
   k·150 = 2.07e-21 and Te = T_ant/|H|² at the input.
+
+## RF passives, stages 4-5 — the coupled-line coupler, the interdigitated coupler and the coupled-line balun (2026-11-15)
+
+MCLC, MIDC and MCBL are planned passives (`CoupledLineCouplerPlan`, `LangePlan`, `MarchandBalunPlan`) stamped by
+`MicrostripPlanModel` through MCLIN and MLIN; `CoupledLineSynthesis` inverts MCLIN's own Kirschning-Jansen modes at F.
+What would cost time to rediscover:
+
+- **What 20 mil RO4350B builds at 2.4 GHz** (`CoupledLinePlanTests.Realisability_OnTwentyMilRo4350b` prints it). A 3 dB
+  four-finger interdigitated coupler needs 138 µm fingers 69 µm apart, under a 75-100 µm board rule; 3.5 dB needs 86 µm and
+  4 dB 105 µm, so 4 dB is the example's design. An edge-coupled coupler reaches 10 dB at 115 µm and needs 65 µm for 8 dB.
+  A coupled-line balun matching 50 Ω to 50 Ω on each output needs −4.8 dB sections, below the coupled-line model's
+  S/h = 0.1 (51 µm), and is refused; 200 Ω on each output (−9.5 dB) needs 102 µm. The balun's match fixes the mutual
+  admittance 1/Zo − 1/Ze = √(2/(ZL·Z0)) whatever the impedance level, which is why a lower √(Ze·Zo) does not help.
+- **The balun is exact only as TEM lines.** The plan's Ze and Zo as CLIN pairs at 90° give |S11| below −100 dB and
+  S31 = −S21 exactly, which checks the match condition c = 1/√(1 + 2·ZL/Z0). In microstrip (εeff 2.97 even, 2.30 odd) the
+  outputs come out 164° apart with 0.2 dB amplitude balance and −20.5 dB match. Scaling both sections' length moves the
+  phase by under 5°; a section-1 about 5 % longer than section 2 crosses 180° (with ~0.4 dB amplitude imbalance), which
+  was not adopted: the plan stays the textbook symmetric pair and the limit is stated.
+- **Microstrip directivity of the single-section coupler** at 2.4 GHz on that board: 11 dB at 10 dB coupling, 7.6 dB at
+  15 dB, 4.6 dB at 20 dB. The leak to the isolated port stays about −21 to −25 dB while the coupling falls.
+- **The interdigitated section is Ou's model, split by finger.** Ou gives a two-conductor pair (Ze,N, Zo,N) assuming each
+  conductor's strips are at one potential. Stamped as such, the inner fingers' pins would have nothing on them. Instead
+  each conductor-A strip and its mirror strip in conductor B stamp that pair of strips' own share of the modal
+  admittances (an outer strip: the adjacent pair's Ye and Yo; an inner one: Ye²/(Ye + Ym) and that plus 2(Yo − Ye)).
+  With ideal jumpers the shares add back to Ou's pair to 1e-9 (`WithIdealJumpers_TheLangeIsOusEquivalentPair`); without
+  them the circuit is still solvable and couples less, and a real jumper carries its strip's current.
+- **A planned passive's DC islands.** MWPD's ω = 0 handling declared every pin one node; a coupler's two strips are not.
+  `MicrostripPlanModel` now unions each section's joined ends (a coupled section joins only each strip's two ends) and
+  declares a tree of shorts per island.
+- **A loop of DC shorts does not solve.** Ideal `Short` jumpers on the interdigitated coupler close a loop with the fingers'
+  DC shorts (pin 1 - finger - pin 2 - jumper - J2 - finger - J1 - jumper), and the DC solve fails to converge. Two ideal
+  lines in parallel are the same case. A jumper with any resistance (1 mΩ, or a bond wire) solves; S-parameter runs are
+  unaffected.
+- **Kron order in the balun.** `LocalAdmittanceBlock` eliminates without pivoting, last node first. The balun's open end
+  has a near-zero self admittance at F (a quarter-wave null), so it is numbered first among the internal nodes and is
+  eliminated after the joining line's ends, when its pivot is no longer that null.
+- **Jumper part.** circuitRF's jumpers are wBond (a bond-wire design, the board's real part), AIRBRIDGE (an MMIC crossing,
+  four terminals) and Short (ideal). The tests use Short.
