@@ -32082,3 +32082,26 @@ write back in that state, so opening a chain cannot record an edit. The default 
   as closing port 4 by hand (Planar |S23| −29.21 dB both ways). EMerge's Draft four-port is not quite passive
   (σ_max(S) up to 1.0037 at 4 of 11 points); its three-port run printed no such warning. The port's strip and sheet are new geometry, so each mesh changed under the same settings: Planar 2,944 cells
   against 3,036, Palace 78,748 tetrahedra against 54,807.
+
+## RF passives stage 2 — MWPD's pins follow N (2026-11-16)
+
+- **A generated cell's pins were checked against its symbol's DEFAULT pin list.** `GeneratedCellStore.SymbolPinNamesOf`
+  called `SymbolPortDefs.For(kind)`, the one-argument form, so a two-section MWPD's cell (seven pins) was refused with
+  "Generated pins the symbol does not declare: R2_2, R3_2", and Update Layout skipped the part. It now asks the symbol at
+  the generated cell's pin count; every fixed symbol ignores the count, so nothing else changes.
+- **MWPD is variadic on its PIN count (3 + 2·N), not on N.** The one-argument `SymbolPortDefs.For(kind)` passes 2, and the
+  Combiner reads that as its N; for MWPD any count that is not 7 or 9 is the five-pin divider, so every caller that does
+  not know about N keeps the stage-1 symbol. `PortCount` reads N only as a plain number.
+- **The catalogue lists MWPD at five terminals.** `ComponentCatalog.PortsOf` decides "variadic" by asking the symbol at
+  2 and 3 ports, both of which are the five-pin divider here; the terminals note says how N adds `R2_k`/`R3_k`.
+- **The ground pour did not count the planned passives**: the line set in `GroundPourPlanner` named the line generators
+  only, so in a tree of dividers the second stage's rings were off the plane. MWPD is in the set now (the hybrids branch
+  adds its own parts to the same line).
+- **`circuitrf new view3d --from-layout` in a workspace whose `.generated-cells` was never built sees only the pour**
+  ("This layout draws metal only on ground-reference conductors") and brings in no ports, where `check`, `lvs` and
+  `render` regenerate the cells. The example's 3D views were made in the Update Layout harness's workspace, which has the
+  cells, and copied. Not fixed here.
+- **Update Layout lands each resistor of a multi-section divider across the gap at its own junction**, a resistor dropped
+  on `R2_k`–`R3_k` with no wire included (pins at one point are one net), and LVS compares `K`, `N` and `Band` as it
+  compares `F`: a schematic that never stated `Band` gives the layout none to compare, so the fixture states it as a fresh
+  placement does.

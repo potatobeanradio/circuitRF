@@ -1177,8 +1177,9 @@ so it reaches the layout, LVS and the bill of materials as itself.
 
 {{symbol: mwpd}}
 
-An equal-split, in-phase two-way power divider on microstrip. Power into terminal 1 divides equally between terminals 2
-and 3, which leave in phase, matched and isolated from each other at the centre frequency `F`. It works the other way
+An in-phase two-way power divider on microstrip. Power into terminal 1 divides equally between terminals 2 and 3, which
+leave in phase, matched and isolated from each other at the centre frequency `F`; `K` makes the split unequal and `N` adds
+sections for a wider band ([below](#mwpd-unequal)). It works the other way
 round as a combiner. `R2` and `R3` are the ends of the two arms beside outputs 2 and 3: place a resistor of 2·`Z0` on
 them (dropped on the symbol's R2–R3 pins it needs no wire) and give it a land pattern. **Design ▸ Update Layout from
 Schematic** lays the resistor across the gap the ring closes on and puts each port on its own pin.
@@ -1223,6 +1224,83 @@ Planar MoM, EMerge and Palace.
 
 `Gap` is the span of the resistor's pins, 1.35 mm for an 0402 at nominal density. Change it with the land pattern.
 
+#### Unequal split: `K` {#mwpd-unequal}
+
+`K` sets how the power divides: port 3 takes K² times what port 2 takes. `K` = 1 is the equal split; `K` = 1.4142 sends
+twice the power to port 3, 3.01 dB more; a `K` below 1 favours port 2 the same way.
+
+**How it works.** The resistor must carry nothing when the divider is driven from terminal 1, so the two arms' far ends
+have to sit at the same voltage while delivering different powers. A power P into a resistance R is V²/R, so the two ends
+are made to look like different resistances: K·`Z0` at port 2's end and `Z0`/K at port 3's. With P3 = K²·P2 the two
+voltages are then equal. Each arm is a quarter wave that turns its end's resistance into what the input needs to divide
+in that ratio, which gives arms of `Z0`·√(K(1 + K²)) to port 2 and `Z0`·√((1 + K²)/K³) to port 3, and each output then
+needs a quarter-wave transformer of `Z0`·√K or `Z0`/√K to bring its end back to `Z0`. Driven from the outputs, the
+isolation resistor that matches them and spends the cross-coupled power is `Z0`·(K + 1/K), 2·`Z0` at K = 1.
+
+**What circuitRF derives** on top of the equal split: the two arms' impedances and widths, the two transformers', each
+line's quarter wave, and the resistor. The two arms have different effective permittivities, so their quarter waves are
+different lengths; both curve on one radius, so the input tee's two straight runs differ instead and the resistor's gap
+sits a little off the input's line. Each transformer is the branch of its output tee, and the terminal is at its end.
+
+**Limits.** Port 2's arm grows as K^1.5: on 20 mil RO4350B, `K` = 2 asks for 158 Ω and `K` = 4 for 412 Ω, which no width
+reaches, and a split the board cannot draw is refused (`device.wilkinson.split-unrealisable`), naming the line. The
+unequal split is one section only. At `K` = 1 the transformers would be `Z0` lines that change nothing, so the equal split
+leaves them out; a `K` just off 1 puts them in, so its outputs are a quarter wave further from the junction, 90° later.
+
+#### Broadband: `N` sections {#mwpd-sections}
+
+`N` = 2 or 3 cascades that many quarter-wave sections, each with its own isolation resistor, to divide over a band rather
+than at one frequency. `Band` is the band's upper edge over its lower, f2/f1, centred on `F` (2, an octave, by default).
+The part grows two terminals per section: resistor 1 goes on `R2`–`R3` at the outputs as before, and resistor k on
+`R2_k`–`R3_k`, counted from the outputs inward; the readout lists every section and every resistor's value. Dropped on
+the symbol's pins, each resistor needs no wire.
+
+**How it works.** Driven from terminal 1, both halves carry the same signal and no resistor carries current, so each half
+is simply a chain of quarter waves from 2·`Z0` (half of the input) down to `Z0` (an output). One quarter wave can match
+that at one frequency; N of them can keep the reflection small across a band. circuitRF makes it equal-ripple (Chebyshev)
+from f1 = 2F/(1 + Band) to f2 = 2F·Band/(1 + Band), with the section impedances symmetric about √2·`Z0`
+(z_k·z_(N+1−k) = 2·`Z0`²), so its reflection is exactly zero at N frequencies inside the band. Driven from the outputs
+in antiphase, the input junction is a virtual ground and each resistor's midpoint is ground too, so each half is a
+shorted chain of the same sections with half of each resistor across it at every junction. The resistors are solved so
+that this half is exactly matched at those same N frequencies (N equations, N resistors); there every port is matched
+and the outputs are isolated. The one-section divider is the N = 1 case of the same rule.
+
+For an octave, the sections and resistors, from the outputs inward, in units of `Z0`:
+
+| N | Sections | Resistors |
+|---|---|---|
+| 1 | 1.4142 | 2 |
+| 2 | 1.2196, 1.6399 | 4.8428, 1.9539 |
+| 3 | 1.1130, 1.4142, 1.7970 | 10.468, 3.9009, 1.9410 |
+
+**Layout.** The ring is the section next to the input. Each further section is a pair of straight lines run on from the
+ring's output tees, one each side of the gap's centre line, with a tee at every junction whose short branch reaches the
+gap's edge, so every resistor lands across the gap at its own junction as the first one does on the ring.
+
+**Limits.** The pair of lines run side by side about `Gap` apart, and the model treats them as separate lines: their
+coupling to each other is not in it, and shows in EM as a shallower isolation. The tees at the junctions are MTEE's
+model, with its limits. `N` sets the number of terminals, so it must be a plain number, not an expression or a swept
+variable; above 3, a `Band` not above 1, or a `K` other than 1 with more than one section is refused by name.
+
+On the example board, the two-section divider keeps |S11| below −20 dB from 1.31 to 3.22 GHz and |S23| from 1.31 to
+3.36 GHz, a 2.5:1 band, where one section does from 1.98 to 2.85 GHz and from 1.92 to 2.77 GHz, 1.4:1. It pays for it with
+a quarter wave more line, 0.09 dB more loss at `F`, and a shallower null at `F` itself (|S11| −26 dB rather than −48).
+
+#### More than two ways {#mwpd-nway}
+
+Wilkinson's paper divides N ways at once: N quarter-wave arms of √N·`Z0` from the input, and a resistor of `Z0` from each
+arm's end to one common point. MWPD does not draw it, because for three ways or more it cannot be drawn on one layer.
+Every output's line has to leave the divider for its port, so count the board's edge as one more node: the input, the
+resistors' common point and the edge are each joined to every one of the outputs. With three outputs that is the
+three-by-three "utility" graph, which no drawing in a plane makes without a crossing; a real N-way divider needs an air
+bridge, a second layer or a resistor laid over a line. The two-way divider's version of that graph is planar, which is
+why its ring closes across one gap.
+
+The planar answer is a tree of two-way dividers: 4 ways is three MWPDs, and the
+[Dividers and Couplers](../examples/dividers-and-couplers/index.html) example draws one. Three equal ways is an
+unequal MWPD with `K` = 1.4142, which sends a third to port 2 and two thirds to port 3, followed by an equal MWPD on
+port 3, and on port 2 a line as long as that divider if the three outputs must be in phase.
+
 {{table: components/Mwpd}}
 
 **References**
@@ -1232,6 +1310,14 @@ Planar MoM, EMerge and Palace.
 
 > D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012, §7.3. A book, with no DOI:
 > [the publisher's page](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553).
+
+> L. I. Parad and R. L. Moynihan, "Split-Tee Power Divider," *IEEE Transactions on Microwave Theory and Techniques*,
+> vol. 13, no. 1, pp. 91–95, January 1965. DOI [10.1109/TMTT.1965.1125934](https://doi.org/10.1109/TMTT.1965.1125934).
+> The unequal split.
+
+> S. B. Cohn, "A Class of Broadband Three-Port TEM-Mode Hybrids," *IEEE Transactions on Microwave Theory and
+> Techniques*, vol. 16, no. 2, pp. 110–116, February 1968.
+> DOI [10.1109/TMTT.1968.1126617](https://doi.org/10.1109/TMTT.1968.1126617). The multi-section divider.
 
 > E. Hammerstad and Ø. Jensen, "Accurate Models for Microstrip Computer-Aided Design," *1980 IEEE MTT-S International
 > Microwave Symposium Digest*, pp. 407–409. DOI [10.1109/MWSYM.1980.1124303](https://doi.org/10.1109/MWSYM.1980.1124303).

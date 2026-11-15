@@ -4862,3 +4862,27 @@ read 37 ms: re-weigh 18 ms, fields run 22 ms).
 - **By symmetry the resistor never carries current for a drive at pin 1**: S11, S21 and S31 are bit-identical with
   R = 100 Ω and with R removed. This is what lets the EM results, which cannot include the resistor today
   (`src/Design/RESOLVED.md`), be compared on those three terms.
+
+## RF passives stage 2 — the Wilkinson's split ratio and broadband sections (2026-11-16)
+
+- **K = 1, N = 1 is the equal split bit for bit.** The variant arithmetic was written so the symmetric case reduces to the
+  stage-1 expressions exactly: z0·√(K(1 + K²)) at K = 1 is z0·√2; the arms' length difference d is 0 − π·c·0 = +0.0;
+  the gap's offset is OnGrid(0/2) = 0, so the arms stay gap/2 + (w0/2 + w0/2) = gap/2 + w0 (halving and doubling are
+  exact). `WilkinsonPlanTests.TheEqualSplit_IsUnchangedBitForBit` fingerprints every double of the plan, taken on the
+  stage-1 code before the change.
+- **The transformers are left out at K = 1, not drawn as Z0 lines**: they would change nothing electrically but would move
+  the outputs a quarter wave and break the bit-exact plan. A K just off 1 therefore steps the outputs' phase by 90°.
+- **The multi-section design**: even mode an equal-ripple transformer 2 → 1 over f1..f2 centred on F, symmetric
+  (z_k·z_(N+1−k) = 2) so z_1 is the one unknown; Re Γ(θ1) changes sign once on (1, √2) for every band tried (1.2 to 10,
+  N = 2 and 3), so a bisection finds it. Odd mode: the resistors make the shorted half's admittance 1 at θ1 (two real
+  equations, the conjugate at π − θ1 following from the lines' symmetry) and, for N = 3, at π/2 (one more, real there).
+  Newton from all-ones conductances converges in 4 to 7 steps over the same range. For N = 2 the solve equals the closed
+  form R2 = 2·z1·z2/√((z1 + z2)(z2 − z1·cot²θ1)), R1 = 2·R2(z1 + z2)/(R2(z1 + z2) − 2·z2) to 1e-9; an octave gives
+  z 1.2196/1.6399 and R 4.8428/1.9539 (resistor 1 at the outputs). On ideal TLIN lines each N = 2, 3 design is matched
+  and isolated to |S| < 1e-9 at every zero.
+- **On the example board** (20 mil RO4350B, 2.4 GHz, the 5 mm feeds and bends): the two-section divider keeps |S11| below
+  −20 dB over 1.31–3.22 GHz and |S23| over 1.31–3.36 GHz, against 1.98–2.85 and 1.92–2.77 GHz for one section; at F its
+  |S21| is 0.09 dB lower and its |S11| null 26 dB rather than 48 dB deep (the junction tees and the ripple). K = 1.4142
+  gives P3/P2 = 3.04 dB at F against 3.01, every port below −31 dB and |S23| −37 dB.
+- **NetlistContractTests failed after stage 1** ("MWPD states no net count"); `InstanceNetContract` now states a planned
+  passive's plan pin count — the same line the hybrids branch adds — so a short MWPD line is refused at elaboration.

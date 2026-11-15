@@ -2235,8 +2235,9 @@ so it reaches the layout, LVS and the bill of materials as itself.</p>
 			MWPD
 	</text></svg></span>
 </span><figcaption>MWPD</figcaption></figure>
-<p>An equal-split, in-phase two-way power divider on microstrip. Power into terminal 1 divides equally between terminals 2
-and 3, which leave in phase, matched and isolated from each other at the centre frequency <code>F</code>. It works the other way
+<p>An in-phase two-way power divider on microstrip. Power into terminal 1 divides equally between terminals 2 and 3, which
+leave in phase, matched and isolated from each other at the centre frequency <code>F</code>; <code>K</code> makes the split unequal and <code>N</code> adds
+sections for a wider band (<a href="#mwpd-unequal">below</a>). It works the other way
 round as a combiner. <code>R2</code> and <code>R3</code> are the ends of the two arms beside outputs 2 and 3: place a resistor of 2·<code>Z0</code> on
 them (dropped on the symbol's R2–R3 pins it needs no wire) and give it a land pattern. <strong>Design ▸ Update Layout from
 Schematic</strong> lays the resistor across the gap the ring closes on and puts each port on its own pin.</p>
@@ -2274,6 +2275,88 @@ At RF that is an ordinary port, and closing it with the 100 Ω gives the isolati
 reads the ring's copper. The <a href="../examples/dividers-and-couplers/index.html">Dividers and Couplers</a> example runs it on
 Planar MoM, EMerge and Palace.</p>
 <p><code>Gap</code> is the span of the resistor's pins, 1.35 mm for an 0402 at nominal density. Change it with the land pattern.</p>
+<h4 id="mwpd-unequal">Unequal split: <code>K</code></h4>
+<p><code>K</code> sets how the power divides: port 3 takes K² times what port 2 takes. <code>K</code> = 1 is the equal split; <code>K</code> = 1.4142 sends
+twice the power to port 3, 3.01 dB more; a <code>K</code> below 1 favours port 2 the same way.</p>
+<p><strong>How it works.</strong> The resistor must carry nothing when the divider is driven from terminal 1, so the two arms' far ends
+have to sit at the same voltage while delivering different powers. A power P into a resistance R is V²/R, so the two ends
+are made to look like different resistances: K·<code>Z0</code> at port 2's end and <code>Z0</code>/K at port 3's. With P3 = K²·P2 the two
+voltages are then equal. Each arm is a quarter wave that turns its end's resistance into what the input needs to divide
+in that ratio, which gives arms of <code>Z0</code>·√(K(1 + K²)) to port 2 and <code>Z0</code>·√((1 + K²)/K³) to port 3, and each output then
+needs a quarter-wave transformer of <code>Z0</code>·√K or <code>Z0</code>/√K to bring its end back to <code>Z0</code>. Driven from the outputs, the
+isolation resistor that matches them and spends the cross-coupled power is <code>Z0</code>·(K + 1/K), 2·<code>Z0</code> at K = 1.</p>
+<p><strong>What circuitRF derives</strong> on top of the equal split: the two arms' impedances and widths, the two transformers', each
+line's quarter wave, and the resistor. The two arms have different effective permittivities, so their quarter waves are
+different lengths; both curve on one radius, so the input tee's two straight runs differ instead and the resistor's gap
+sits a little off the input's line. Each transformer is the branch of its output tee, and the terminal is at its end.</p>
+<p><strong>Limits.</strong> Port 2's arm grows as K^1.5: on 20 mil RO4350B, <code>K</code> = 2 asks for 158 Ω and <code>K</code> = 4 for 412 Ω, which no width
+reaches, and a split the board cannot draw is refused (<code>device.wilkinson.split-unrealisable</code>), naming the line. The
+unequal split is one section only. At <code>K</code> = 1 the transformers would be <code>Z0</code> lines that change nothing, so the equal split
+leaves them out; a <code>K</code> just off 1 puts them in, so its outputs are a quarter wave further from the junction, 90° later.</p>
+<h4 id="mwpd-sections">Broadband: <code>N</code> sections</h4>
+<p><code>N</code> = 2 or 3 cascades that many quarter-wave sections, each with its own isolation resistor, to divide over a band rather
+than at one frequency. <code>Band</code> is the band's upper edge over its lower, f2/f1, centred on <code>F</code> (2, an octave, by default).
+The part grows two terminals per section: resistor 1 goes on <code>R2</code>–<code>R3</code> at the outputs as before, and resistor k on
+<code>R2_k</code>–<code>R3_k</code>, counted from the outputs inward; the readout lists every section and every resistor's value. Dropped on
+the symbol's pins, each resistor needs no wire.</p>
+<p><strong>How it works.</strong> Driven from terminal 1, both halves carry the same signal and no resistor carries current, so each half
+is simply a chain of quarter waves from 2·<code>Z0</code> (half of the input) down to <code>Z0</code> (an output). One quarter wave can match
+that at one frequency; N of them can keep the reflection small across a band. circuitRF makes it equal-ripple (Chebyshev)
+from f1 = 2F/(1 + Band) to f2 = 2F·Band/(1 + Band), with the section impedances symmetric about √2·<code>Z0</code>
+(z_k·z_(N+1−k) = 2·<code>Z0</code>²), so its reflection is exactly zero at N frequencies inside the band. Driven from the outputs
+in antiphase, the input junction is a virtual ground and each resistor's midpoint is ground too, so each half is a
+shorted chain of the same sections with half of each resistor across it at every junction. The resistors are solved so
+that this half is exactly matched at those same N frequencies (N equations, N resistors); there every port is matched
+and the outputs are isolated. The one-section divider is the N = 1 case of the same rule.</p>
+<p>For an octave, the sections and resistors, from the outputs inward, in units of <code>Z0</code>:</p>
+<table>
+<thead>
+<tr>
+<th>N</th>
+<th>Sections</th>
+<th>Resistors</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>1.4142</td>
+<td>2</td>
+</tr>
+<tr>
+<td>2</td>
+<td>1.2196, 1.6399</td>
+<td>4.8428, 1.9539</td>
+</tr>
+<tr>
+<td>3</td>
+<td>1.1130, 1.4142, 1.7970</td>
+<td>10.468, 3.9009, 1.9410</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Layout.</strong> The ring is the section next to the input. Each further section is a pair of straight lines run on from the
+ring's output tees, one each side of the gap's centre line, with a tee at every junction whose short branch reaches the
+gap's edge, so every resistor lands across the gap at its own junction as the first one does on the ring.</p>
+<p><strong>Limits.</strong> The pair of lines run side by side about <code>Gap</code> apart, and the model treats them as separate lines: their
+coupling to each other is not in it, and shows in EM as a shallower isolation. The tees at the junctions are MTEE's
+model, with its limits. <code>N</code> sets the number of terminals, so it must be a plain number, not an expression or a swept
+variable; above 3, a <code>Band</code> not above 1, or a <code>K</code> other than 1 with more than one section is refused by name.</p>
+<p>On the example board, the two-section divider keeps |S11| below −20 dB from 1.31 to 3.22 GHz and |S23| from 1.31 to
+3.36 GHz, a 2.5:1 band, where one section does from 1.98 to 2.85 GHz and from 1.92 to 2.77 GHz, 1.4:1. It pays for it with
+a quarter wave more line, 0.09 dB more loss at <code>F</code>, and a shallower null at <code>F</code> itself (|S11| −26 dB rather than −48).</p>
+<h4 id="mwpd-nway">More than two ways</h4>
+<p>Wilkinson's paper divides N ways at once: N quarter-wave arms of √N·<code>Z0</code> from the input, and a resistor of <code>Z0</code> from each
+arm's end to one common point. MWPD does not draw it, because for three ways or more it cannot be drawn on one layer.
+Every output's line has to leave the divider for its port, so count the board's edge as one more node: the input, the
+resistors' common point and the edge are each joined to every one of the outputs. With three outputs that is the
+three-by-three &quot;utility&quot; graph, which no drawing in a plane makes without a crossing; a real N-way divider needs an air
+bridge, a second layer or a resistor laid over a line. The two-way divider's version of that graph is planar, which is
+why its ring closes across one gap.</p>
+<p>The planar answer is a tree of two-way dividers: 4 ways is three MWPDs, and the
+<a href="../examples/dividers-and-couplers/index.html">Dividers and Couplers</a> example draws one. Three equal ways is an
+unequal MWPD with <code>K</code> = 1.4142, which sends a third to port 2 and two thirds to port 3, followed by an equal MWPD on
+port 3, and on port 2 a line as long as that divider if the three outputs must be in phase.</p>
 <table class="param-table">
 <thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
 <tr><td>1</td><td>1</td></tr>
@@ -2282,13 +2365,16 @@ Planar MoM, EMerge and Palace.</p>
 <tr><td>4</td><td>R2</td></tr>
 <tr><td>5</td><td>R3</td></tr>
 </tbody></table>
-<p class="small">The nets of an instance line, in this order. Not interchangeable: terminal 1 is the input and 2 and 3 the two outputs, alike by symmetry. R2 and R3 are the arms&#39; ends beside outputs 2 and 3, the gap the isolation resistor goes across: put a resistor of 2&#183;Z0 on R2-R3.</p>
+<p class="small">The nets of an instance line, in this order. Not interchangeable: terminal 1 is the input and 2 and 3 the two outputs, alike by symmetry when K = 1. R2 and R3 are the arms&#39; ends beside outputs 2 and 3, the gap the isolation resistor goes across: put a resistor of 2&#183;Z0 (Z0&#183;(K + 1/K) for an unequal split) on R2-R3. With N sections the terminals are 3 + 2&#183;N: R2_k and R3_k, k = 2 … N, are the ends of resistor k, counted from the outputs, and the Properties readout gives every resistor&#39;s value.</p>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
 <tr><td>Z0</td><td><code>50</code></td><td>Ω</td><td>shown</td><td>The ports&#39; impedance. Each arm is √2&#183;Z0 and the isolation resistor 2&#183;Z0; the widths are derived from it on the technology&#39;s substrate.</td></tr>
 <tr><td>F</td><td><code>2.4</code></td><td>GHz</td><td>shown</td><td>Centre frequency: each arm is a quarter wavelength long here, in the line&#39;s own effective permittivity at F.</td></tr>
 <tr><td>Gap</td><td><code>1.35</code></td><td>mm</td><td>shown</td><td>Span of the isolation resistor&#39;s pins, R2 to R3: the gap the ring closes across. 1.35 mm is an 0402&#39;s at nominal density.</td></tr>
+<tr><td>K</td><td><code>1</code></td><td>&mdash;</td><td>shown</td><td>Split ratio: P3/P2 = K&#178;, so port 3 takes K&#178; times the power port 2 does. 1 is the equal split; any other value gives the unequal split&#39;s arms, a quarter-wave transformer at each output and Z0&#183;(K + 1/K) across R2-R3. Equal split only with N above 1.</td></tr>
+<tr><td>N</td><td><code>1</code></td><td>&mdash;</td><td>shown</td><td>Number of quarter-wave sections, 1 to 3 (a broadband multi-section divider above 1), each with its own isolation resistor. Sets the pin count, 3 + 2&#183;N, so it must be a plain number.</td></tr>
+<tr><td>Band</td><td><code>2</code></td><td>&mdash;</td><td>&mdash;</td><td>For N above 1: the design band&#39;s upper edge over its lower, f2/f1, centred on F. The sections are an equal-ripple transformer over it.</td></tr>
 <tr><td>SignalLayer</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The conductor the divider is on. Empty: the technology&#39;s top conductor.</td></tr>
 <tr><td>GroundReference</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The plane under it. Empty: the nearest ground-designated conductor below the signal layer.</td></tr>
 </tbody></table>
@@ -2309,6 +2395,28 @@ no. 1, pp. 116–118, January 1960. DOI <a href="https://doi.org/10.1109/TMTT.19
 <ol type="A" start="13">
 <li>Pozar, <em>Microwave Engineering</em>, 4th ed., Wiley, 2012, §7.3. A book, with no DOI:
 <a href="https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553">the publisher's page</a>.</li>
+</ol>
+</li>
+</ol>
+</blockquote>
+<blockquote>
+<ol type="A" start="12">
+<li>
+<ol type="I">
+<li>Parad and R. L. Moynihan, &quot;Split-Tee Power Divider,&quot; <em>IEEE Transactions on Microwave Theory and Techniques</em>,
+vol. 13, no. 1, pp. 91–95, January 1965. DOI <a href="https://doi.org/10.1109/TMTT.1965.1125934">10.1109/TMTT.1965.1125934</a>.
+The unequal split.</li>
+</ol>
+</li>
+</ol>
+</blockquote>
+<blockquote>
+<ol type="A" start="19">
+<li>
+<ol type="A" start="2">
+<li>Cohn, &quot;A Class of Broadband Three-Port TEM-Mode Hybrids,&quot; <em>IEEE Transactions on Microwave Theory and
+Techniques</em>, vol. 16, no. 2, pp. 110–116, February 1968.
+DOI <a href="https://doi.org/10.1109/TMTT.1968.1126617">10.1109/TMTT.1968.1126617</a>. The multi-section divider.</li>
 </ol>
 </li>
 </ol>
