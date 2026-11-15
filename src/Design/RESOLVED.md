@@ -32045,3 +32045,25 @@ write back in that state, so opening a chain cannot record an edit. The default 
 - **A line typed to the readout's rounded width leaves a DRC sliver** where it meets the divider's pin (1.058 against
   1.05768 mm: a 0.16 µm step, flagged as a 7 µm-long min-width error). The readout prints widths to the plan's own
   2 nm grid so they can be typed exactly.
+
+## RF passives stage 3 — MBLC and MRRC through the layout, LVS and EM (2026-11-16)
+
+- **The ground pour did not count the planned passives.** `GroundPourPlanner.MicrostripGenerators` lists the generators
+  whose artwork returns through a plane, and MWPD, MBLC and MRRC were not in it, so the plane was sized from the lines
+  placed beside a passive plus the margin. The Wilkinson's ring sat inside its lines' extent; the rat-race's half-turns
+  reach past its port lines and were left over bare substrate. The three ids are in the set now. The Wilkinson example's
+  committed layout predates this; a re-run of Update Layout gives it a slightly larger plane.
+- **`PassivePlanPCells.Draw` takes `PlanLine` through `MlinPCell`**, so MBLC's and MRRC's artwork follows MLIN's
+  generator as well as MTEE's and MCURVE's: a version bump of any of the three must bump theirs.
+- **No line needs to bend away on the hybrids' benches.** The branch-line's ports are an arm's span apart and the
+  rat-race's three upper ports a quarter wave apart, well past the five substrate heights a calibrated Planar port needs
+  from its neighbours, so each pin has a straight 5 mm line to its port.
+- **Palace on the Draft mesh with no refinement is not converged on the branch-line.** It read |S21| 1.2 dB below the
+  model at F and put the deepest |S11| at 2.09 GHz for F = 2.4 GHz; with `AdaptiveMaxIterations` 2 (69,610 to 215,686
+  tetrahedra, 7 min, 5.9 GB on one itee node) it lands within 0.15 dB of EMerge's Draft run. The hybrids' example
+  setups refine twice.
+- **On the branch-line the 3D solvers and Planar disagree on the split by a few tenths of a dB.** At F, EMerge and the
+  refined Palace put 0.33-0.40 dB less into the through port than the model and up to 0.2 dB more into the coupled
+  port; Planar is within 0.22 dB of the model the other way. A series reactance at each port in the circuit model,
+  standing in for the 3D lumped sheets, moves the split the opposite way, so the lumped ports alone do not explain it.
+  Not pursued further.

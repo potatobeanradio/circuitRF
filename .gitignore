@@ -98,9 +98,10 @@ examples/*/results/*
 # and a 5-degree grid (about 2 MB together; its README says how they were reduced and how to make them again).
 !examples/Phased Array/results/Patch 5x5*
 !examples/Phased Array/results/Patch 1x4*
-# And Dividers and Couplers ships each solver's Touchstone result (about 6 kB each), so its README's circuit-against-EM
+# And Dividers and Couplers ships each solver's Touchstone result (about 6 to 10 kB each), so its README's circuit-against-EM
 # tables can be checked and re-plotted without three EM runs. Touchstone only: no .npy, no run folder.
 !examples/Dividers and Couplers/results/*.s3p
+!examples/Dividers and Couplers/results/*.s4p
 # The TRL example's calibration writes its two fixture files here; they are a result of running it, not an input.
 examples/TRL and De-embedding/fixtures/
 
