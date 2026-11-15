@@ -115,7 +115,12 @@ public sealed record C3dStalePort(int Number, long OldWidthDbu, long NewWidthDbu
 
 /// <summary>brief-lcp-5 R-lcp5-1 — a layout's 3D view for one setup, in memory: the document, the path it would have had, or why
 /// none can be made; and what translating its ports noted.</summary>
-public sealed record C3dSetupView(C3dDocument? Document, string Path, string? Refusal, IReadOnlyList<string> Notes);
+public sealed record C3dSetupView(C3dDocument? Document, string Path, string? Refusal, IReadOnlyList<string> Notes)
+{
+    /// <summary>brief-icf-6 R-icf6-2 — the generator's warnings about the drawn ports it translated (a sheet falling to the floor past
+    /// λ/20): the assembly sees only their rectangles, so the run's warnings take them from here.</summary>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+}
 
 /// <summary>R-pw1-5 — what Update Ports from Layout did: the records it moved, and the labels it added as new records,
 /// each with the number it got (different from the label's own when that number was taken).</summary>
@@ -1090,17 +1095,18 @@ public static class C3dHierarchy
         var ports = new Dictionary<int, C3dPort>();
         var leftOut = new List<string>();
         var notes = new List<string>();
+        var warnings = new List<string>();
         var drawn = setup.Clone();
         drawn.ComponentPorts = [];
         // A board whose only ports are its component ports has no drawn port to translate, and the generator would refuse it for
         // that; the assembly refuses only when nothing at all is left to drive, as a .c3d's does.
         var collected = EmComponentPorts.Collect(source);
         bool anyDrawn = collected.Refusal is not null || collected.Shapes.Any(s => s is LabelShape { IsPort: true });
-        if (anyDrawn && TranslateWith(drawn, source, tech, source.View, null, ports, leftOut, notes, strict: true) is { } refused)
+        if (anyDrawn && TranslateWith(drawn, source, tech, source.View, null, ports, leftOut, notes, strict: true, warnings: warnings) is { } refused)
             return new(null, c3dPath, refused, notes);
         foreach (var (n, p) in ports) p.FromLayout = C3dPortSource.Of(doc.Instances[0].Name, n, p);
         doc.Ports = [.. ports.OrderBy(p => p.Key).Select(p => p.Value)];
-        return new(doc, c3dPath, null, notes);
+        return new(doc, c3dPath, null, notes) { Warnings = warnings };
     }
 
     /// <summary>
@@ -1358,7 +1364,7 @@ public static class C3dHierarchy
     /// strict.</param>
     private static string? TranslateWith(EmSetup setup, EmLayoutSource source, Technology tech, LayoutView view,
                                          C3dTransform? placement, Dictionary<int, C3dPort> ports, List<string> leftOut,
-                                         List<string> moved, bool strict = false)
+                                         List<string> moved, bool strict = false, List<string>? warnings = null)
     {
         // One port that cannot be built leaves out that port alone, and a plane pulled back from a line's end puts the
         // port where the plane begins (Em3dGenerator's portsEach): the .c3d's ports are rectangles the user can move.
@@ -1383,6 +1389,7 @@ public static class C3dHierarchy
         foreach (var lo in g.PortsLeftOut)
             leftOut.Add($"{setup.Name}: port {lo.Port} ({lo.Why})");
         moved.AddRange(g.PortsMoved);
+        warnings?.AddRange(g.TallPorts);
         var solids = Em3dLayoutSolids.From(source, tech, null, new Em3dLayoutSolidsOptions(null, setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC, Instance: true));
         double dz = -solids.StackBottomM;
         double per = C3dLowering.Metres(1, view.DbuPerMicron);

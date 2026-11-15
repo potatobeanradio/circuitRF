@@ -123,6 +123,10 @@ public sealed record Em3dGenerationResult(Em3dProblem? Problem, string? Refusal,
     /// through a level the technology does not mark: where a port went that its user would not assume.</summary>
     public IReadOnlyList<string> PortsMoved { get; init; } = [];
 
+    /// <summary>brief-icf-6 R-icf6-2 — the warnings (also among <see cref="Warnings"/>) for drawn ports whose sheet falls to the floor
+    /// through more than λ/20: a 3D view made for a <c>.cem</c> carries them over (<c>C3dHierarchy.ViewForSetup</c>).</summary>
+    public IReadOnlyList<string> TallPorts { get; init; } = [];
+
     /// <summary>Why a solve would have refused the geometry, when it was generated with <c>padsOptional</c> and drawn
     /// anyway: no conductor artwork, or a wire end over no pad. Null otherwise.</summary>
     public string? PadRefusal { get; init; }
@@ -378,6 +382,7 @@ public static class Em3dGenerator
         private readonly Dictionary<int, Em3dPortReturn> _portReturns = [];
         private readonly List<Em3dPortLeftOut> _portsLeftOut = [];
         private readonly List<string> _portsMoved = [];
+        private readonly List<string> _tallPorts = [];
         /// <summary>Each drawn port's label by its number: what the result names the port by, as a Planar result does.</summary>
         private readonly Dictionary<int, LabelShape> _labelOf = [];
         private readonly Dictionary<string, Em3dViaNetFix> _viaNetFixes = new(StringComparer.Ordinal);
@@ -441,6 +446,16 @@ public static class Em3dGenerator
             foreach (int n in setup.Ports3D.Where(q => q.Kind == Em3dPortKind.Wave).Select(q => q.Port).Distinct())
                 if (_portRefusal is null && ports.All(q => q.Number != n) && _portsLeftOut.All(q => q.Port != n))
                     return No($"The setup makes port {n} a wave port, and this layout has no port {n}.");
+            // brief-icf-6 R-icf6-2, for a drawn port too — a lumped sheet that falls to the floor through more than λ/20 is warned of
+            // by the cut ports' own check. Not for a .c3d's ports (portsEach: rectangles its user moves; a cut port's warning names its
+            // pin, C3dCellCuts), a picture, or a static solve, which has no wavelength.
+            if (!portsEach && !displaySlabs && !setup.IsStatic3D)
+                foreach (var q in ports)
+                    if (_portReturns.GetValueOrDefault(q.Number) is { Floor: true } r && waves.All(w => w.Port.Number != q.Number) &&
+                        CircuitRF.Design.ThreeD.C3dCellCuts.TallLanding(q.Min.Z, q.Max.Z, bands, fMax) is { } fraction)
+                        _tallPorts.Add(CircuitRF.Design.ThreeD.C3dCellCuts.TallLandingWarning($"Port {q.Number}", q.Max.Z - q.Min.Z, r.Layer,
+                            fraction, fMax, "State its Return in the setup's 3D port table to land the sheet on nearer metal."));
+            _g.WarningList.AddRange(_tallPorts);
 
             // ── Content bounds (the builder's), then the air box (R-em3d3-6) ─────────────────
             var (cx0, cy0, cx1, cy1, zLow, zHigh) = (_g.Cx0, _g.Cy0, _g.Cx1, _g.Cy1, _g.ZLow, _g.ZHigh);
@@ -583,6 +598,7 @@ public static class Em3dGenerator
                 PortReturns = _portReturns,
                 PortsLeftOut = _portsLeftOut,
                 PortsMoved = _portsMoved,
+                TallPorts = _tallPorts,
                 PadRefusal = _g.PadRefusal,
                 WantsDc = _wantsDc,
             };

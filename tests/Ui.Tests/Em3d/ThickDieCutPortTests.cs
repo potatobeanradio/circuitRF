@@ -191,6 +191,28 @@ public sealed class ThickDieCutPortTests(ThickDieCutPortTests.Fixture fx, ITestO
         Assert.Equal("X1", Assert.Single(Assert.IsType<EmCoSimPortList>(g.CoSimPorts).Portless).Refdes);
     }
 
+    /// <summary>A drawn port's sheet that falls to the floor past λ/20 is warned of as a cut pin's is, by the same check: on the
+    /// generator's own problem, and through the 3D view a .cem naming cell instances is built in. Port 2, landing on local Metal1, is
+    /// not. Before, only cut pins were checked, and the field test's four drawn ports fell 755 µm without a word.</summary>
+    [Fact]
+    public void ADrawnPortsSheetFallingToTheFloor_IsWarnedOf_AsACutPinsIs()
+    {
+        var plain = fx.Setup(new EmComponentPort("X1"));
+        plain.ComponentPorts = [];
+        var generated = Em3dGenerator.Generate(plain, fx.Source(fx.Ported(metal1UnderA: true)), fx.Tech);
+        var throughView = Problem(fx.Ported(metal1UnderA: true), new EmComponentPort("X1"));
+        foreach (var g in new[] { generated, throughView })
+        {
+            Assert.True(g.Ok, g.Refusal);
+            foreach (var w in g.Warnings) output.WriteLine(w);
+            var falls = Assert.Single(g.Warnings, w => w.StartsWith("Port 1: its sheet falls", StringComparison.Ordinal));
+            Assert.Matches(@"falls 75\d(\.\d+)? µm to the floor \('Backside Metal'\), 0\.\d+ of a wavelength", falls);
+            Assert.Contains("State its Return in the setup's 3D port table", falls, StringComparison.Ordinal);
+            Assert.DoesNotContain(g.Warnings, w => w.StartsWith("Port 2:", StringComparison.Ordinal));
+        }
+        Assert.Contains(throughView.Warnings, w => w.StartsWith("X1.B (port ", StringComparison.Ordinal) && w.Contains("its sheet falls", StringComparison.Ordinal));
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
     private Em3dGenerationResult Problem(LayoutView view, EmComponentPort entry)

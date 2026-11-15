@@ -259,11 +259,8 @@ public static class C3dCellCuts
                 // brief-icf-6 R-icf6-2 — a sheet that falls to the floor through a thick substrate is a different port from one that stops
                 // on metal a few µm down; past λ/20 of the shortest wavelength in what it crosses, said as a warning with the remedy.
                 if (ret is { Floor: true } && TallLanding(sheet.Min.Z, sheet.Max.Z, bands, fMax) is { } fraction)
-                    warnings.Add($"{name} (port {port.Number}): its sheet falls {C3dComponentPorts.Um(tall)} µm to the floor ('{ret.Layer}'), " +
-                                 $"{fraction.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)} of a wavelength in the dielectric it " +
-                                 $"crosses at {(fMax / 1e9).ToString("G4", System.Globalization.CultureInfo.InvariantCulture)} GHz, past λ/20, so the port " +
-                                 "carries that column's inductance and delay into the result. State the cut entry's Return (or the pin's own, in its " +
-                                 "Pins) to land the sheet on nearer metal.");
+                    warnings.Add(TallLandingWarning($"{name} (port {port.Number})", tall, ret.Layer, fraction, fMax,
+                                                    "State the cut entry's Return (or the pin's own, in its Pins) to land the sheet on nearer metal."));
             }
         }
         foreach (var r in ports.Where(p => p.Refusal is not null))
@@ -295,6 +292,14 @@ public static class C3dCellCuts
         double fraction = optical * fMaxHz / 299_792_458.0;
         return fraction > TallLandingFraction ? fraction : null;
     }
+
+    /// <summary>brief-icf-6 R-icf6-2 — the warning for a sheet <see cref="TallLanding"/> found past λ/20, a cut pin's or a drawn port's:
+    /// <paramref name="who"/> names it, <paramref name="remedy"/> is the sentence that says where its return is stated.</summary>
+    internal static string TallLandingWarning(string who, double heightM, string floor, double fraction, double fMaxHz, string remedy)
+        => $"{who}: its sheet falls {C3dComponentPorts.Um(heightM)} µm to the floor ('{floor}'), " +
+           $"{fraction.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)} of a wavelength in the dielectric it " +
+           $"crosses at {(fMaxHz / 1e9).ToString("G4", System.Globalization.CultureInfo.InvariantCulture)} GHz, past λ/20, so the port " +
+           $"carries that column's inductance and delay into the result. {remedy}";
 
     /// <summary>
     /// brief-icp-4 R-icp4-2 — the gap sheet between a cut pin's face and its reference pin's face (the cut has checked that they face

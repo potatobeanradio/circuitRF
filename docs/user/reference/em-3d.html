@@ -218,6 +218,10 @@ preferred, and a port can state another in the port table's <strong>Return</stro
 in the line's own field at the air box's face instead, and has no sheet parasitic. Both solvers build
 one, except that openEMS cannot feed a hollow waveguide and Palace cannot give a port with several
 terminals. <a href="em-setup.html#wave-ports">Wave ports</a>.</p>
+<p>A lumped sheet that falls to the air box's floor through more than λ/20 of the sweep's shortest wavelength in the
+dielectric it crosses is a warning naming the port, as a <a href="#cell-instance-ports">cut pin's sheet</a> is: on a thick
+substrate the column's inductance and delay are in the result. Its <strong>Return</strong> lands it on nearer metal. On a board the
+threshold is a substrate λ/20 thick at the top of the sweep: 1.6 mm of FR-4 (εr 4.4) passes it near 4.5 GHz.</p>
 <p><a id="port-width"></a><strong>How wide a lumped port's sheet is.</strong> As wide as the port's bar in the layout, which the
 port's <strong>Use edge width</strong> and <strong>Width</strong> set (<a href="layout-editor.html#ports">Ports</a>): the whole conductor edge with the
 box ticked; otherwise the Width you state, or 2 × H (H, the dielectric height from the port's conductor to its

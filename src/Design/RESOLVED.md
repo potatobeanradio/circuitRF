@@ -32115,3 +32115,14 @@ are ICF-6's thick die (`ThickDieCutPortTests`) and ICF-4's spiral (`ThickSilicon
   puts each of its routed pins on `nc_<name>_<pin>`, as for a ported instance's refused pin. Gate:
   `ACutInstanceWhoseEverySheetIsRefused_IsPlacedInTheNetlist_AndNamed`. em-setup still said such an instance is missing from the
   netlist (true before ICF-2); it now says it is placed.
+- **A drawn port's tall sheet had no λ/20 warning.** R-icf6-2's check was in `C3dCellCuts` only, so on the field test the four
+  drawn ports on Metal1 fell 755 µm to the floor (0.35 λ at 40 GHz) beside cut pins that warned. The generator now asks the same
+  `C3dCellCuts.TallLanding` of every drawn lumped sheet whose return is the floor (edge and pad-to-plane; not a wave port, a
+  `.c3d`'s translated ports, a picture or a static solve), and words it with the same `TallLandingWarning`, the remedy naming
+  the port table's Return. It is among the generator's `Warnings`, and `TallPorts` carries it through the in-memory 3D view a
+  `.cem` with component ports is built in (`TranslateWith` → `C3dSetupView.Warnings` → `Em3dSetupProblem`), since the
+  assembly sees only the ports' rectangles. The same λ/20 reaches boards: 1.6 mm of FR-4 passes it near 4.5 GHz. Of the
+  shipped setups the generator dumps cover, two gain it and their dumps were rewritten (`CRF_WRITE_GENERATOR_DUMPS=1`,
+  `CRF_WRITE_WIRE_DUMPS=1`), each by its warning lines only: `Package lid modes.cem` (254 µm of alumina, 0.053 λ at 20 GHz)
+  and the planar `Taper-MoM.cem` made 3D by the dump (a 762 µm board laminate, 0.058 λ at 12 GHz). Gate:
+  `ADrawnPortsSheetFallingToTheFloor_IsWarnedOf_AsACutPinsIs`.

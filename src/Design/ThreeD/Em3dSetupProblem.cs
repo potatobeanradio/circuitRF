@@ -98,6 +98,8 @@ public static class Em3dSetupProblem
         {
             Problem = g.Problem is { } problem ? problem with { Ports = WithNets(problem.Ports, source, g.ComponentPorts) } : null,
             Notes = [ThroughViewNote, .. view.Notes, .. g.Notes.Where(n => !n.StartsWith(PlacedCellNotePrefix, StringComparison.Ordinal))],
+            // brief-icf-6 R-icf6-2 — a drawn port's tall sheet is the generator's to see; the view carried its warning over.
+            Warnings = [.. view.Warnings, .. g.Warnings],
         };
     }
 }
