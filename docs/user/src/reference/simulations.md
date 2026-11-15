@@ -611,6 +611,10 @@ blocks are handled as follows.
 | Seed | 1 | The seed of every random draw: thermal noise and every source's PhaseNoise mask. |
 | SeedPerPoint | no | `yes` gives each point of a parametric sweep its own seed. |
 | EvmSplit | no | `yes` runs the record a second time without noise, to split each carrier's error into distortion and noise and measure the SNR ([below](#envelope-evm)). Twice the run time. |
+| Equalizer | none | How each carrier is read at the far end: `none` (one gain over the record), `genie` or `pilot` ([below](#envelope-equalizer)). |
+| Pilots | 6,4 | `Equalizer=pilot` on LTE or NR: the pilot comb, every *n*th subcarrier of every *m*th symbol, written `n,m`. |
+| Taps | 11 | `Equalizer=pilot` on DBPSK: the taps of the trained equalizer. |
+| Training | 64 | `Equalizer=pilot` on DBPSK: the bits it is trained on. EVM and errors are read on the rest. |
 
 ### What a run records {#envelope-records}
 
@@ -906,8 +910,8 @@ would be a circle; these say more.
   its delay is fitted against the signal the source played. OFDM is then cut into symbols, each
   transformed after its cyclic prefix, with one complex gain fitted against the ideal points. DBPSK,
   FSK and CSS are first filtered to their channel, and so is the reference they are compared with,
-  so the measurement bandwidth is the channel's. There is no per-subcarrier equaliser, so the in-band
-  ripple of a filter counts as error, as it does in NMSE.
+  so the measurement bandwidth is the channel's. With `Equalizer=none`, the default, there is no
+  per-subcarrier equaliser, so the in-band ripple of a filter counts as error, as it does in NMSE.
 - **Through a matched pad** the error is the source signal's own: the Signal Designer's EVM for LTE
   and NR (from clipping and shaping), and zero for DBPSK, FSK and CSS.
 - **The step.** EVM reads the circuit as the run steps it, and through a filter *draft* reads more
@@ -954,6 +958,43 @@ the probe carrying the signal. The constellation plots `imag(Const[…])` agains
 points only, with **Equal X and Y scale** set in Axes Limits, so a circle of error looks like a
 circle. FSK's picture is the frequency at each bit, received over sent. CSS has the table and the
 spectrum.
+
+### Equalizer, frequency offset and bit errors {#envelope-equalizer}
+
+One gain over the record is right for a circuit, whose ripple is error. Through a channel with delay spread it is not:
+a fade on some subcarriers reads as distortion, and a carrier offset turns the constellation across the record.
+`Equalizer=` reads each carrier as a receiver would:
+
+| Equalizer | LTE, NR | DBPSK |
+|---|---|---|
+| `none` | One gain over the record, as above | The same |
+| `genie` | Each subcarrier divided by its own response, the received against the signal the source played, over the whole record | An MMSE equalizer from that response |
+| `pilot` | Each subcarrier's response read only from the pilot comb (`Pilots=`), averaged over the four pilot symbols either side, interpolated in frequency and then in time. EVM is read on the other elements | An equalizer of `Taps=` taps trained on the first `Training=` bits, applied to the rest |
+
+`genie` takes out everything linear and is the best a receiver can do. `pilot` is what a receiver achieves, with the
+noise of its own estimates. At 40 dB SNR the two are within half a decibel of each other. FSK and CSS are decided by
+their own detectors and take no equalizer.
+
+**The frequency offset** is measured in every mode from the phase of each symbol (LTE, NR) or bit (DBPSK) against the
+signal sent: `CFO_Hz` and its drift, `CFOdrift_Hzps`. With `genie` or `pilot` it is taken out of the envelope before
+the equalizer, so it leaves no interference between subcarriers. With `none` it is reported and left in, so `none`
+reads exactly as it always did. An offset beyond half the subcarrier spacing cannot be told from one a subcarrier away.
+
+**Errors.** After the equalizer each symbol is decided to the nearest point and compared with what was sent:
+
+| Cube | Meaning |
+|---|---|
+| `SER`, `BER` | symbol and bit error rates, counted |
+| `BitErrors`, `Bits` | the count |
+| `BERlo`, `BERhi` | the exact (Clopper–Pearson) 95 % interval of `BER` |
+| `BERest` | the BER estimated from each element's SINR, *estimated (Gaussian)*: LTE, NR and DBPSK |
+| `SINR_dB` | each element's SINR after the equalizer, over symbol and subcarrier (one column for DBPSK) |
+
+QAM bits are Gray-coded on each axis. DBPSK bits are differential, so a bit is wrong when one of its two symbols is.
+FSK is decided by the sign of its frequency, and CSS by the bin of each de-chirped symbol. A low BER needs many bits
+to count: 10⁻⁶ needs some 10⁸ bits for 100 errors. `BERest` reaches lower, because it treats noise and distortion as
+Gaussian. With `EvmSplit=yes`, a run whose distortion is far from Gaussian says so, and there `BERest` is a rough
+estimate. `SINR_dB` is per element, so you can map it to a coded error rate of your own.
 
 ## Fields (pattern, B1 and SAR from a circuit) {#fields}
 

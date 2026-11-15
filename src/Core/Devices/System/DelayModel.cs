@@ -25,16 +25,29 @@ namespace CircuitRF.Core.Devices;
 /// <para>A negative <c>T</c> is accepted: non-causal, but in the frequency domain still only a phase
 /// slope, and the ordinary way to cancel a known delay elsewhere in a chain.</para>
 /// </summary>
-public sealed class DelayModel : IdealSBlockModel
+public sealed class DelayModel : IdealSBlockModel, IUniformLine
 {
     private readonly double _delay;
+    private readonly Complex _z0;
 
     /// <param name="delaySeconds">The delay, seconds.</param>
     /// <param name="z0">Reference impedance of both ports, ohms; may be complex.</param>
     public DelayModel(double delaySeconds, Complex z0) : base([z0, z0])
     {
         _delay = delaySeconds;
+        _z0 = z0;
     }
+
+    /// <summary>A matched lossless delay is a lossless line of Zc = Z0 and γl = j·2πf·T: so an envelope run steps it as
+    /// its delay (EnvelopeLineDelay) rather than fitting e^(−jωT) rationally, which costs a long run and follows the
+    /// phase only approximately (brief PCH-4).</summary>
+    public (double Z0, Complex GammaLength) LineAt(double freqHz) => (_z0.Real, new Complex(0, 2 * Math.PI * freqHz * _delay));
+
+    /// <summary>Port 1's + net and port 2's + net, when both − nets are ground, Z0 is real and the delay is positive;
+    /// otherwise null, and the block is stamped as its S-parameters.</summary>
+    public (int A, int B)? Ends(IReadOnlyList<int> nodes)
+        => nodes.Count == 4 && nodes[1] == 0 && nodes[3] == 0 && _z0.Imaginary == 0 && _z0.Real > 0 && _delay > 0
+            ? (nodes[0], nodes[2]) : null;
 
     /// <summary>The delay this block applies, seconds.</summary>
     public double DelaySeconds => _delay;

@@ -22,7 +22,7 @@
         <TextBlock Text="{Binding StimulusSummary}" FontSize="11" TextWrapping="Wrap"
                    Foreground="{DynamicResource SystemBaseMediumColor}"/>
 
-        <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6">
+        <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6">
             <TextBlock Classes="lbl" Text="Stop time (s)"/>
             <TextBox Grid.Column="1" Text="{Binding Stop}" ToolTip.Tip="Simulated signal time. ACPR settles within ~0.1 dB from 0.5 ms of LTE/NR."/>
             <TextBlock Grid.Column="2" Classes="lbl" Text="Accuracy" Margin="12,0,8,0"/>
@@ -67,6 +67,18 @@
                       ToolTip.Tip="Off: every point of a parametric sweep draws the same noise, so the differences between points are the circuit's"/>
             <CheckBox Grid.Row="11" Grid.ColumnSpan="4" FontSize="11" Content="Split EVM into distortion and noise" IsChecked="{Binding EvmSplit}"
                       ToolTip.Tip="Runs the record a second time with the noise and every phase-noise mask off: EVM splits into distortion and noise, and the in-channel SNR is measured. Twice the run time."/>
+
+            <TextBlock Grid.Row="12" Grid.ColumnSpan="4" Text="Demodulation" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,0"/>
+            <TextBlock Grid.Row="13" Classes="lbl" Text="Equalizer"/>
+            <ComboBox Grid.Row="13" Grid.Column="1" ItemsSource="{x:Static vm:EnvBodyViewModel.EqualizerOptions}" SelectedItem="{Binding Equalizer}" FontSize="11" HorizontalAlignment="Stretch"
+                      ToolTip.Tip="none: one gain over the record, a circuit's ripple counted as EVM. genie: the frequency offset removed and each subcarrier equalized from the true response, an upper bound. pilot: from a pilot comb only, as a receiver estimates."/>
+            <TextBlock Grid.Row="13" Grid.Column="2" Classes="lbl" Text="Pilots" Margin="12,0,8,0"/>
+            <TextBox Grid.Row="13" Grid.Column="3" Text="{Binding Pilots}"
+                     ToolTip.Tip="Equalizer pilot, OFDM: the pilot comb, subcarriers,symbols (6,4: every 6th subcarrier of every 4th symbol)"/>
+            <TextBlock Grid.Row="14" Classes="lbl" Text="Taps"/>
+            <TextBox Grid.Row="14" Grid.Column="1" Text="{Binding Taps}" ToolTip.Tip="Equalizer pilot, single carrier: the trained FIR's taps"/>
+            <TextBlock Grid.Row="14" Grid.Column="2" Classes="lbl" Text="Training" Margin="12,0,8,0"/>
+            <TextBox Grid.Row="14" Grid.Column="3" Text="{Binding Training}" ToolTip.Tip="Equalizer pilot, single carrier: the symbols the FIR is trained on; the rest are measured"/>
         </Grid>
     </StackPanel>
 </UserControl>

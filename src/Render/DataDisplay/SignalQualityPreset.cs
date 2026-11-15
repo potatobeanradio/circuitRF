@@ -30,6 +30,7 @@ public static class SignalQualityPreset
         ("FSKerrDist_pct", "FSK dist. %"), ("FSKerrNoise_pct", "FSK noise %"),
         ("CSSerr_pct", "CSS error %"), ("CSSerrDist_pct", "CSS dist. %"), ("CSSerrNoise_pct", "CSS noise %"),
         ("SNR_dB", "SNR dB"),
+        ("CFO_Hz", "CFO Hz"), ("SER", "SER"), ("BER", "BER"), ("BERest", "BER est. (Gaussian)"),
     ];
 
     /// <summary>The error cubes, one per family: a result holding any of them gets the preset.</summary>
@@ -47,6 +48,12 @@ public static class SignalQualityPreset
             if (Errors.Any(ds.CubesIn(g).ContainsKey)) return g;
         return null;
     }
+
+    /// <summary>The received points' label: which equalizer they are after, when one ran (brief PCH-4).</summary>
+    public static string ReceivedLabel(IReadOnlyDictionary<string, DataCube> cubes)
+        => cubes.TryGetValue("__Equalizer", out var e) && e.RealValues.Length > 0
+            ? e.RealValues[0] switch { 1 => "Received, genie-equalized", 2 => "Received, pilot-equalized", _ => "Received" }
+            : "Received";
 
     /// <summary>True when <paramref name="ds"/> holds an envelope run's signal quality.</summary>
     public static bool Available(DataSet? ds) => GroupOf(ds) is not null;
@@ -101,7 +108,7 @@ public static class SignalQualityPreset
                 Legend = LegendPlacement.Below,
                 Traces =
                 [
-                    Points("Const", at, "Received", received, MarkerType.Circle, 0.8),
+                    Points("Const", at, ReceivedLabel(cubes), received, MarkerType.Circle, 0.8),
                     Points("ConstRef", refAt, "Ideal", ideal, MarkerType.Cross, 1.6),
                 ],
                 // a zero window is "missing": the loader autoscales it, then draws it on one scale
@@ -131,7 +138,10 @@ public static class SignalQualityPreset
 
         // ── EVM per carrier: a table, one column per metric the result holds ──
         var table = new List<TraceConfig>();
-        foreach (var (m, header) in Metrics.Where(x => cubes.ContainsKey(x.Cube)))
+        // FSK's carrier offset is its FreqOffset_Hz, and CSS reports none: the CFO column is left out then
+        foreach (var (m, header) in Metrics.Where(x => cubes.ContainsKey(x.Cube)
+                                                     && !(x.Cube == "CFO_Hz" && (cubes.ContainsKey("FreqOffset_Hz") && !cubes.ContainsKey("EVM_pct")
+                                                                                 || !cubes["CFO_Hz"].RealValues.Any(double.IsFinite)))))
         {
             var cube = cubes[m];
             var slice = new List<AxisSliceConfig>();

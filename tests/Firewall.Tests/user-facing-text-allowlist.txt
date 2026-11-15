@@ -1803,3 +1803,4 @@ src/RfCore/Propagation/PropagationModels.cs|{_model.Name} reads the parameter '{
 src/Core/Elaboration/Elaborator.PhasedArray.cs|'{c.InstancePath}' is not a Phased Antenna Array at the top of the bench, so its weights are not re-weighed.
 src/Engine/Array/ArrayFeedLoadModel.cs|The array's closed reflection was not formed at {hz:G9} Hz.
 src/Engine/Array/PhasedArrayFastPath.cs|The array's closure with its elements switched off is singular.
+src/RfCore/Signals/SignalEqualizer.cs|only a DBPSK carrier is equalized here

@@ -93,6 +93,7 @@ internal static class EnvelopeVerb
                 // the noise keys (NZ-7, NZ-8) carry through as written: rebuilt without them, Noise=yes ran noiseless
                 NoiseExpr = env.NoiseExpr, SeedExpr = env.SeedExpr, SeedPerPointExpr = env.SeedPerPointExpr,
                 EvmSplitExpr = env.EvmSplitExpr,
+                EqualizerExpr = env.EqualizerExpr, PilotsExpr = env.PilotsExpr, TapsExpr = env.TapsExpr, TrainingExpr = env.TrainingExpr,
             };
             // A parametric_sweep wrapping this envelope (e.g. Pavg -> ACPR vs Pout) is dispatched at the SWEEP, the
             // same promotion `hb` applies, through the same rule: the OUTERMOST runnable chain holding the envelope,

@@ -125,8 +125,10 @@ namespace RfCore.Signals
         /// of the record the source played and the ideal points. Null, with <paramref name="why"/>, when the carrier is not
         /// LTE or NR, the rate is not a ratio of whole numbers to the carrier's own, or the window holds no whole symbol.
         /// </summary>
+        /// <param name="driftHzps">A frequency drift taken out with the offset (brief PCH-4): the window is derotated by
+        /// π·drift·(t − t_mid)² as well, t_mid its middle.</param>
         public static ReceivedSymbols? Demodulate(CarrierRecord carrier, double recordSeconds, ReadOnlySpan<Complex> y, double fsHz,
-                                                  long startSample, double offsetHz, out string? why)
+                                                  long startSample, double offsetHz, out string? why, double driftHzps = 0)
         {
             var c = carrier.Spec;
             why = null;
@@ -155,7 +157,7 @@ namespace RfCore.Signals
             // 1. back to the carrier's own rate, on a window that starts on a native sample. Whole records are periodic and
             // resampled exactly; any other window rolls off from the channel edge (PassEdge).
             if (ToNative(y, fsHz, startSample, offsetHz, native, recordSeconds, n, PassEdge(c, nm), native / 2, filterWhole: false,
-                         out var x, out long n0, out bool whole, out why) is false)
+                         out var x, out long n0, out bool whole, out why, driftHzps) is false)
             {
                 why ??= $"less than one {1e6 / nm.ScsHz:0.#} us symbol; lengthen Stop";
                 return null;
@@ -218,7 +220,14 @@ namespace RfCore.Signals
                 Fft.Transform(buf, inverse: false);
                 for (int i = 0; i < nsc; i++) { sent[k * nsc + i] = buf[bins[i]]; id[k * nsc + i] = ideal[s][i]; }
             }
-            return new ReceivedSymbols(c, rx, sent, id, hz, picks.Count, whole);
+            return new ReceivedSymbols(c, rx, sent, id, hz, picks.Count, whole)
+            {
+                // each symbol's useful part: its middle in window time, its row of the record, and whether it wraps the
+                // window's end (read circularly, which an offset not yet taken out does not survive)
+                SymbolTimeS = [.. picks.Select(p => (p.start + n / 2.0) / native)],
+                SymbolIndex = [.. picks.Select(p => p.s)],
+                WrapsWindow = [.. picks.Select(p => p.start + n > mNative)],
+            };
         }
 
         /// <summary>
@@ -317,7 +326,7 @@ namespace RfCore.Signals
         /// </summary>
         internal static bool ToNative(ReadOnlySpan<Complex> y, double fsHz, long startSample, double offsetHz, double nativeHz,
                                       double recordSeconds, int minSamples, double passHz, double stopHz, bool filterWhole,
-                                      out Complex[] x, out long n0, out bool whole, out string? why)
+                                      out Complex[] x, out long n0, out bool whole, out string? why, double driftHzps = 0)
         {
             x = []; n0 = 0; whole = false; why = null;
             if (!Ratio(fsHz / nativeHz, out long p, out long q))
@@ -338,7 +347,14 @@ namespace RfCore.Signals
             }
             var z = new Complex[m];
             double w = -2 * Math.PI * offsetHz / fsHz;
-            for (long i = 0; i < m; i++) z[i] = y[(int)(a0 + i)] * Complex.FromPolarCoordinates(1.0, w * i);
+            if (driftHzps == 0)
+                for (long i = 0; i < m; i++) z[i] = y[(int)(a0 + i)] * Complex.FromPolarCoordinates(1.0, w * i);
+            else
+                for (long i = 0; i < m; i++)
+                {
+                    double t = (i - m / 2.0) / fsHz;
+                    z[i] = y[(int)(a0 + i)] * Complex.FromPolarCoordinates(1.0, w * i - Math.PI * driftHzps * t * t);
+                }
             if (whole && !filterWhole) x = Fft.ResamplePeriodic(z, (int)mNative);
             else
             {
@@ -391,5 +407,13 @@ namespace RfCore.Signals
     /// whole symbol the window held, row-major [symbol, subcarrier], the received point, the point the source's own record
     /// carries there, and the ideal QAM point.</summary>
     public sealed record ReceivedSymbols(CarrierSpec Carrier, Complex[] Received, Complex[] Sent, Complex[] Ideal,
-                                         double[] SubcarrierHz, int Symbols, bool WholeRecords);
+                                         double[] SubcarrierHz, int Symbols, bool WholeRecords)
+    {
+        /// <summary>Each symbol's middle in window time (s), for the offset fit; null when not demodulated from a window.</summary>
+        public double[]? SymbolTimeS { get; init; }
+        /// <summary>Each symbol's row in the record (the pilot comb's symbol index).</summary>
+        public int[]? SymbolIndex { get; init; }
+        /// <summary>Each symbol's useful part wraps the window's end.</summary>
+        public bool[]? WrapsWindow { get; init; }
+    }
 }

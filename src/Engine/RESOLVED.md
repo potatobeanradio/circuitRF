@@ -4725,3 +4725,22 @@ The pattern pieces did not move, being the same code (Release; Debug in brackets
   in parallel. It is the same transform: `TheUvFft_IsTheDirectSum_AtItsPoints` passes unchanged. At 64 × 64, padded to 512 × 512,
   the first pass does 64 rows instead of 512.
 - **`ArrayCut.Field`** carries the field a cut was read from, so a view splits it into co- and cross-polar without summing again.
+
+## brief-pch-4 — the ideal Delay block is stepped as its delay in an envelope run (2026-11-15)
+
+**The Delay block was fitted, not delayed.** `DelayModel` is an ideal S-block, so an envelope run sent it through
+`EnvelopeSnpFit`: a rational fit of e^(−jωT), which turns 360° every 1/T Hz. One splitter–Delay–Atten–combiner circuit
+took **35 s** for a 0.5 ms LTE record against 0.4 s without the Delay, and its response was only approximate. A
+matched lossless delay is exactly a lossless line with Zc = Z0 and γl = j·2πf·T, which `EnvelopeLineDelay` already
+steps exactly (the method of characteristics). `DelayModel` now implements `IUniformLine`. `IUniformLine.Ends` names
+a line's two ends among its nets: by default its first two, and for the four-net Delay block port 1's and port 2's +
+nets. The substitution happens only when both − nets are ground, Z0 is real and T > 0; otherwise the block keeps its
+S-parameter stamp. The same run now takes **0.3 s**, and the genie equalizer takes a 1 µs echo out to the run's own
+floor.
+
+**The run's floor is 8e-4 %, not 1e-6 %.** Through a pad, an unshaped LTE record read 7.5e-4 % with genie and
+8.2e-4 % with one gain. With the echo it read 1.55e-3 %, unchanged at `Tol=1e-12`, so this is the envelope's playback
+of the record and not the solver's tolerance. `EnvelopeEqualizerTests` therefore holds the genie through the echo to
+1e-3 % of the no-channel run (from 48 % with one gain), not the brief's 1e-6 %. **Shaping must be off for that
+comparison.** The shaping filter runs after the cyclic prefix is inserted, so a prefix is then not quite a copy of its
+symbol's end, and an echo inside it reads something the source did not play (0.195 % against 0.253 %).

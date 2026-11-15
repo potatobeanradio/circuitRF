@@ -58,6 +58,23 @@ public static class NoiseDiagnostics
         "envelope.noise.seed", DiagnosticSeverity.Error,
         "Envelope '{analysis}': Seed must be a whole number (got {value}).", ("analysis", analysis), ("value", value));
 
+    /// <summary>Envelope <c>Equalizer=</c> that is not none, genie or pilot (brief PCH-4).</summary>
+    public static Diagnostic EnvelopeEqualizer(string analysis, string value) => Diagnostic.Create(
+        "envelope.equalizer.word", DiagnosticSeverity.Error,
+        "Envelope '{analysis}': Equalizer must be none, genie or pilot (got '{value}').", ("analysis", analysis), ("value", value));
+
+    /// <summary>Envelope <c>Pilots=</c> that is not a comb spacing (brief PCH-4).</summary>
+    public static Diagnostic EnvelopePilots(string analysis, string value) => Diagnostic.Create(
+        "envelope.equalizer.pilots", DiagnosticSeverity.Error,
+        "Envelope '{analysis}': Pilots is the comb spacing, subcarriers,symbols (6,4), each a whole number 1 or more (got '{value}').",
+        ("analysis", analysis), ("value", value));
+
+    /// <summary>Envelope <c>Taps=</c> or <c>Training=</c> that is not a whole number from 1 to 4096 (brief PCH-4).</summary>
+    public static Diagnostic EnvelopeEqualizerCount(string analysis, string key, string value) => Diagnostic.Create(
+        "envelope.equalizer.count", DiagnosticSeverity.Error,
+        "Envelope '{analysis}': {key} must be a whole number from 1 to 4096 (got '{value}').",
+        ("analysis", analysis), ("key", key), ("value", value));
+
     /// <summary>A source's phase-noise mask with points beyond the envelope's bandwidth (brief NZ-7), said once per source.</summary>
     public static Diagnostic PhaseNoiseBeyondBand(string who, string band, string first) => Diagnostic.Create(
         "envelope.noise.phase-band", DiagnosticSeverity.Warning,

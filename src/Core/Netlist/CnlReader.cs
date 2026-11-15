@@ -1848,6 +1848,10 @@ public sealed class CnlReader
             SeedExpr = kv.GetValueOrDefault("Seed", CircuitRF.Core.Design.EnvelopeAnalysis.SeedDefault),
             SeedPerPointExpr = kv.GetValueOrDefault("SeedPerPoint", CircuitRF.Core.Design.Analysis.NoiseDefault),
             EvmSplitExpr = kv.GetValueOrDefault("EvmSplit", CircuitRF.Core.Design.Analysis.NoiseDefault),
+            EqualizerExpr = kv.GetValueOrDefault("Equalizer", CircuitRF.Core.Design.EnvelopeAnalysis.EqualizerDefault),
+            PilotsExpr = kv.GetValueOrDefault("Pilots", CircuitRF.Core.Design.EnvelopeAnalysis.PilotsDefault),
+            TapsExpr = kv.GetValueOrDefault("Taps", CircuitRF.Core.Design.EnvelopeAnalysis.TapsDefault),
+            TrainingExpr = kv.GetValueOrDefault("Training", CircuitRF.Core.Design.EnvelopeAnalysis.TrainingDefault),
         };
         return true;
     }

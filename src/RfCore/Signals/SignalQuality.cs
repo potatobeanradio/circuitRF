@@ -71,7 +71,7 @@ namespace RfCore.Signals
         /// to the carrier's, or a window holding no whole instant.
         /// </summary>
         public static ReceivedWaveform? Receive(CarrierRecord carrier, double recordSeconds, ReadOnlySpan<Complex> y, double fsHz,
-                                                long startSample, double offsetHz, out string? why)
+                                                long startSample, double offsetHz, out string? why, double driftHzps = 0)
         {
             why = null;
             var c = carrier.Spec;
@@ -129,7 +129,7 @@ namespace RfCore.Signals
             pass = Math.Min(pass, 0.9 * stop);
 
             if (!SignalEvm.ToNative(y, fsHz, startSample, offsetHz, native, recordSeconds, span + 2, pass, stop, filterWhole: true,
-                                    out var x, out long n0, out bool whole, out why))
+                                    out var x, out long n0, out bool whole, out why, driftHzps))
                 return null;
             int m = x.Length;
 

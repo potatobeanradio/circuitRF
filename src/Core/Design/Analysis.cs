@@ -433,6 +433,19 @@ public sealed class EnvelopeAnalysis(string name) : Analysis(name)
     public string EvmSplitExpr { get; init; } = NoiseDefault;
     /// <summary>Whether <see cref="EvmSplitExpr"/> asks for the split.</summary>
     public bool EvmSplit => ParseNdf(EvmSplitExpr);
+
+    // ── The far end (brief PCH-4) — every default leaves a run's EVM exactly as it was ───────────────
+
+    public const string EqualizerDefault = "none", PilotsDefault = "6,4", TapsDefault = "11", TrainingDefault = "64";
+
+    /// <summary><c>Equalizer=none|genie|pilot</c>: how every probe's carriers are equalized before EVM and decisions.</summary>
+    public string EqualizerExpr { get; init; } = EqualizerDefault;
+    /// <summary><c>Pilots=</c>: the pilot comb, "subcarriers,symbols", for <c>Equalizer=pilot</c> on OFDM.</summary>
+    public string PilotsExpr { get; init; } = PilotsDefault;
+    /// <summary><c>Taps=</c>: a single carrier's trained FIR, for <c>Equalizer=pilot</c>.</summary>
+    public string TapsExpr { get; init; } = TapsDefault;
+    /// <summary><c>Training=</c>: the symbols a single carrier's FIR is trained on.</summary>
+    public string TrainingExpr { get; init; } = TrainingDefault;
 }
 
 /// <summary>

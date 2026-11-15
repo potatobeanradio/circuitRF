@@ -164,6 +164,11 @@ public sealed class CschAnalysis
     public string?   EnvSeedPerPoint   { get; set; }
     /// <summary>Brief NZ-8 — EvmSplit; null is the default.</summary>
     public string?   EnvEvmSplit       { get; set; }
+    /// <summary>Brief PCH-4 — the far end; null is the default.</summary>
+    public string?   EnvEqualizer      { get; set; }
+    public string?   EnvPilots         { get; set; }
+    public string?   EnvTaps           { get; set; }
+    public string?   EnvTraining       { get; set; }
     public string?   SweepVarName      { get; set; }
     public string?   SweepStartExpr    { get; set; }
     public string?   SweepStopExpr     { get; set; }
@@ -436,6 +441,10 @@ public static class AnalysisSerialization
             EnvSeed = env.SeedExpr != EnvelopeAnalysis.SeedDefault ? env.SeedExpr : null,
             EnvSeedPerPoint = env.SeedPerPointExpr != Analysis.NoiseDefault ? env.SeedPerPointExpr : null,
             EnvEvmSplit = env.EvmSplitExpr != Analysis.NoiseDefault ? env.EvmSplitExpr : null,
+            EnvEqualizer = env.EqualizerExpr != EnvelopeAnalysis.EqualizerDefault ? env.EqualizerExpr : null,
+            EnvPilots = env.PilotsExpr != EnvelopeAnalysis.PilotsDefault ? env.PilotsExpr : null,
+            EnvTaps = env.TapsExpr != EnvelopeAnalysis.TapsDefault ? env.TapsExpr : null,
+            EnvTraining = env.TrainingExpr != EnvelopeAnalysis.TrainingDefault ? env.TrainingExpr : null,
         },
 
         HarmonicBalanceAnalysis hb => new CschAnalysis
@@ -657,6 +666,10 @@ public static class AnalysisSerialization
             SeedExpr = dto.EnvSeed ?? EnvelopeAnalysis.SeedDefault,
             SeedPerPointExpr = dto.EnvSeedPerPoint ?? Analysis.NoiseDefault,
             EvmSplitExpr = dto.EnvEvmSplit ?? Analysis.NoiseDefault,
+            EqualizerExpr = dto.EnvEqualizer ?? EnvelopeAnalysis.EqualizerDefault,
+            PilotsExpr = dto.EnvPilots ?? EnvelopeAnalysis.PilotsDefault,
+            TapsExpr = dto.EnvTaps ?? EnvelopeAnalysis.TapsDefault,
+            TrainingExpr = dto.EnvTraining ?? EnvelopeAnalysis.TrainingDefault,
         },
 
         "hb" => new HarmonicBalanceAnalysis(dto.Name)

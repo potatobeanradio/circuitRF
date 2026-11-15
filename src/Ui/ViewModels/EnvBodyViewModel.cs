@@ -47,6 +47,15 @@ public sealed partial class EnvBodyViewModel : ObservableObject
     [ObservableProperty] private bool _seedPerPoint;
     /// <summary><c>EvmSplit=</c> (brief NZ-8): run the record again noiseless, to split EVM and measure the SNR.</summary>
     [ObservableProperty] private bool _evmSplit;
+    /// <summary><c>Equalizer=</c> (brief PCH-4): how the far end reads each carrier.</summary>
+    [ObservableProperty] private string _equalizer = EnvelopeAnalysis.EqualizerDefault;
+    /// <summary><c>Pilots=</c>, <c>Taps=</c>, <c>Training=</c>: the pilot equalizer's comb and trained FIR.</summary>
+    [ObservableProperty] private string _pilots = EnvelopeAnalysis.PilotsDefault;
+    [ObservableProperty] private string _taps = EnvelopeAnalysis.TapsDefault;
+    [ObservableProperty] private string _training = EnvelopeAnalysis.TrainingDefault;
+
+    /// <summary>The equalizers, as the Equalizer list offers them.</summary>
+    public static readonly string[] EqualizerOptions = ["none", "genie", "pilot"];
 
     /// <summary>What the schematic's MOD_Sources will play — read-only context for the card.</summary>
     public string StimulusSummary { get; }
@@ -98,6 +107,8 @@ public sealed partial class EnvBodyViewModel : ObservableObject
         Segments = a.SegmentsExpr, Warmup = a.WarmupExpr,
         SaveWaveforms = !a.SaveWaveforms.Equals("no", StringComparison.OrdinalIgnoreCase),
         Noise = a.Noise, Seed = a.SeedExpr, SeedPerPoint = a.SeedPerPoint, EvmSplit = a.EvmSplit,
+        Equalizer = Array.IndexOf(EqualizerOptions, a.EqualizerExpr.Trim().ToLowerInvariant()) >= 0 ? a.EqualizerExpr.Trim().ToLowerInvariant() : a.EqualizerExpr,
+        Pilots = a.PilotsExpr, Taps = a.TapsExpr, Training = a.TrainingExpr,
     };
 
     public EnvelopeAnalysis BuildAnalysis(string name, bool enabled) => new(name)
@@ -111,5 +122,9 @@ public sealed partial class EnvBodyViewModel : ObservableObject
         SeedExpr = string.IsNullOrWhiteSpace(Seed) ? EnvelopeAnalysis.SeedDefault : Seed.Trim(),
         SeedPerPointExpr = SeedPerPoint ? "yes" : Analysis.NoiseDefault,
         EvmSplitExpr = EvmSplit ? "yes" : Analysis.NoiseDefault,
+        EqualizerExpr = string.IsNullOrWhiteSpace(Equalizer) ? EnvelopeAnalysis.EqualizerDefault : Equalizer.Trim(),
+        PilotsExpr = string.IsNullOrWhiteSpace(Pilots) ? EnvelopeAnalysis.PilotsDefault : Pilots.Trim(),
+        TapsExpr = string.IsNullOrWhiteSpace(Taps) ? EnvelopeAnalysis.TapsDefault : Taps.Trim(),
+        TrainingExpr = string.IsNullOrWhiteSpace(Training) ? EnvelopeAnalysis.TrainingDefault : Training.Trim(),
     };
 }

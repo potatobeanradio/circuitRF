@@ -528,7 +528,12 @@ public static class CnlWriter
         (env.NoiseExpr != Analysis.NoiseDefault ? $" Noise={env.NoiseExpr}" : "") +
         (env.SeedExpr != EnvelopeAnalysis.SeedDefault ? $" Seed={env.SeedExpr}" : "") +
         (env.SeedPerPointExpr != Analysis.NoiseDefault ? $" SeedPerPoint={env.SeedPerPointExpr}" : "") +
-        (env.EvmSplitExpr != Analysis.NoiseDefault ? $" EvmSplit={env.EvmSplitExpr}" : "");
+        (env.EvmSplitExpr != Analysis.NoiseDefault ? $" EvmSplit={env.EvmSplitExpr}" : "") +
+        // the far end (PCH-4), each only when it differs from its default
+        (env.EqualizerExpr != EnvelopeAnalysis.EqualizerDefault ? $" Equalizer={env.EqualizerExpr}" : "") +
+        (env.PilotsExpr != EnvelopeAnalysis.PilotsDefault ? $" Pilots={env.PilotsExpr}" : "") +
+        (env.TapsExpr != EnvelopeAnalysis.TapsDefault ? $" Taps={env.TapsExpr}" : "") +
+        (env.TrainingExpr != EnvelopeAnalysis.TrainingDefault ? $" Training={env.TrainingExpr}" : "");
 
     /// <summary>The loadpull noise keys (brief NZ-6), each only when it differs from its default, so a line without them
     /// round-trips to the bytes it always did.</summary>

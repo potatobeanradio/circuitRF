@@ -58,3 +58,55 @@ which.
 ## Not here
 
 Forward error correction and coded block error rate. A pilot pattern of any particular standard (the comb is generic).
+
+## Completion note (2026-11-15)
+
+**Built.**
+- `src/RfCore/Signals/SignalEqualizer.cs`: the offset is estimated from each symbol's or bit's phase against the
+  played record, with each subcarrier's response divided out first. It is removed by three passes of
+  re-demodulation in the time domain (`ToNative` and `Demodulate` gained a drift term; `ReceivedSymbols` carries
+  each symbol's time, row and whether it wraps the window). OFDM genie uses the per-subcarrier response over the
+  record, or an `IChannelResponse` times one gain (the interface PCH-6 fills). OFDM pilot uses the comb, each
+  pilot fitted by least squares over ±4 pilot symbols, interpolated in frequency (extrapolated at the edges), then in
+  time. DBPSK genie is a frequency-domain MMSE; DBPSK pilot is a symbol-spaced FIR trained by least squares.
+- `SignalDecisions.cs`: QAM decided per axis with Gray coding, DBPSK differentially, FSK by sign, CSS by the
+  de-chirped bin; the exact binomial interval (`RfCore.Statistics.BetaFunction`); the conditional BERs, the
+  semi-analytic average and the kurtosis test.
+- Keys `Equalizer`, `Pilots`, `Taps`, `Training`, plumbed through the reader, writer, schema, `.csch` DTO, duplicate,
+  CLI rebuild, runner plan and the GUI analysis card (a Demodulation section).
+- `EnvelopeDataSet` adds `CFO_Hz`, `CFOdrift_Hzps`, `SER`, `BER`, `BitErrors`, `Bits`, `BERlo`, `BERhi`, `BERest`,
+  `SINR_dB` [branch, carrier, element, subcarrier] and `__Equalizer`. The far-from-Gaussian note runs with
+  EvmSplit.
+- The Signal quality preset names the equalizer on the received trace and adds CFO, SER, BER and BERest to its table.
+- The ideal Delay block is stepped as its delay in an envelope run (see below).
+
+**Gates.**
+1. **Unchanged.** `Equalizer=none` is the old measurement by construction: the same `SignalEvm.Evaluate` and
+   `SignalQuality.Evaluate`, on the window as it came. The envelope EVM, noise and line-delay classes (69 tests)
+   and the Ui examples and preset tests that read committed EVMs pass with their tolerances unchanged.
+2. **Static multipath, genie** (`EnvelopeEqualizerTests`, ~1 s). A splitter, `Delay`, `Atten` and combiner,
+   unshaped LTE. With the echo inside the prefix, EVM is the no-channel EVM to 1e-3 % (one gain reads 48 %). Beyond
+   it, 23.6 % with a BER of 0.089.
+3. **Pilot approaches genie.** At 40 dB per element through a two-path channel, pilot is within 0.5 dB of genie.
+4. **Offset.** 5 kHz is reported to 1 Hz, and the genie EVM with it removed equals the EVM with no offset to 1e-3 %.
+5. **Counted BER.** QPSK at 0, 4 and 7 dB and 16QAM at 4, 8 and 10 dB: the closed form lies in the exact 95 %
+   interval in all six.
+6. **Semi-analytic.** At Eb/N0 = 12 dB, QPSK's `BERest` matches the closed form to 1 %.
+
+Gates 3–6 are in `SignalEqualizerTests` (9 tests, ~1 s). A key round-trip test and the preset label test complete the
+set.
+
+**What changed from the brief, and why.**
+- **Gate 2 is held to 1e-3 %, not 1e-6 %.** The no-channel run itself reads 8e-4 % (the envelope's playback of the
+  record; the same at `Tol=1e-12`), so 1e-6 % is below what the run resolves. The source has to be unshaped for
+  the comparison: shaping filters the record after the prefix is inserted.
+- **The Delay block needed a fix of its own.** In an envelope run it was a rational fit: 35 s per run and only
+  approximately a delay. It is now stepped as a lossless line.
+- **The offset is reported after three passes in every mode,** because the first estimate is biased by the offset's
+  own inter-carrier interference (2.3 Hz at 5 kHz). `none` still measures the window as it came.
+- **The pilot estimate averages over ±4 pilot symbols in time.** A single pilot element is as noisy as the data, so
+  this is needed to come within 0.5 dB of genie at 40 dB. It assumes the channel changes slowly over about 2 ms at
+  15 kHz.
+- **`Equalizer` is set for the analysis, as `EvmSplit` is,** and applies to every probe.
+
+Findings in `src/RfCore/RESOLVED.md` and `src/Engine/RESOLVED.md`.

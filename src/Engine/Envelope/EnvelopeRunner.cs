@@ -39,9 +39,10 @@ public static class EnvelopeRunner
     /// <param name="SeedPerPoint">A parametric sweep gives each point its own seed (<see cref="ForPoint"/>).</param>
     /// <param name="EvmSplit">Run the record again with every noise source and mask off, to split EVM into distortion and
     /// noise and measure the SNR (brief NZ-8).</param>
+    /// <param name="Equalizer">How the far end reads each carrier (brief PCH-4); null is none.</param>
     public sealed record Plan(EnvelopeParams Params, int Segments, double WarmupS, bool SaveWaveforms, int MaxMixOrder = 5,
                               string Mode = "auto", string? ZmeasWarning = null, string? ProbesNote = null, string Name = "",
-                              bool SeedPerPoint = false, bool EvmSplit = false)
+                              bool SeedPerPoint = false, bool EvmSplit = false, RfCore.Signals.EqualizerSettings? Equalizer = null)
     {
         /// <summary>This plan at the sweep point <paramref name="point"/> (its drive text, outer points included): the same
         /// seed at every point unless <see cref="SeedPerPoint"/>, then one mixed from the point.</summary>
@@ -98,8 +99,22 @@ public static class EnvelopeRunner
         string? probesNote = p.Probes.Length == 0 ? null
             : $"Envelope '{a.Name}': Probes is no longer a setting. Every labeled net's voltage is recorded and the nodes it " +
               $"lists ({string.Join(", ", p.Probes)}) join them; power is measured at IProbes.";
+        // the far end (PCH-4): a word, a comb, and two counts that may be expressions
+        var eqMode = RfCore.Signals.EqualizerSettings.ParseMode(a.EqualizerExpr)
+                     ?? throw new InvalidOperationException(NoiseDiagnostics.EnvelopeEqualizer(a.Name, a.EqualizerExpr).Render());
+        var pilots = RfCore.Signals.EqualizerSettings.ParsePilots(a.PilotsExpr)
+                     ?? throw new InvalidOperationException(NoiseDiagnostics.EnvelopePilots(a.Name, a.PilotsExpr).Render());
+        int Count(string expr, string key, int def)
+        {
+            double v = Num(expr, def);
+            if (!(v >= 1) || v != Math.Round(v) || v > 4096)
+                throw new InvalidOperationException(NoiseDiagnostics.EnvelopeEqualizerCount(a.Name, key, expr).Render());
+            return (int)v;
+        }
+        var eq = new RfCore.Signals.EqualizerSettings(eqMode, pilots.Subcarriers, pilots.Symbols,
+                                                      Count(a.TapsExpr, "Taps", 11), Count(a.TrainingExpr, "Training", 64));
         return new Plan(p, seg, warm, save, Math.Max(1, (int)Num(a.MaxMixOrderExpr, 7)), mode, ZmeasWarning(a, globals),
-                        probesNote, a.Name, a.SeedPerPoint, a.EvmSplit);
+                        probesNote, a.Name, a.SeedPerPoint, a.EvmSplit, eq);
     }
 
     /// <summary><c>Seed=</c> as the draws' seed: a whole number, negative ones included.</summary>

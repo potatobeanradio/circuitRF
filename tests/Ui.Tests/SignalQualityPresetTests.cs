@@ -15,7 +15,7 @@ namespace CircuitRF.Ui.Tests;
 public sealed class SignalQualityPresetTests
 {
     /// <summary>A matched pad driven by a clipped LTE carrier, its cubes filed under ENV1 as a run's are.</summary>
-    private static DataSet Result(string carrier, string stop = "0.5e-3", string clip = "Clip=8")
+    private static DataSet Result(string carrier, string stop = "0.5e-3", string clip = "Clip=8", string env = "")
     {
         var (lib, tb) = new CnlReader().Read($"""
             MOD_Source:S1 s 0 Fc=1e9 Pavg=-30 Z=50 Record=0.5e-3 {clip} Carrier[1]="{carrier}"
@@ -24,7 +24,7 @@ public sealed class SignalQualityPresetTests
             R:R3 b 0 R=96.248 Ohm
             IProbe:Iout b c
             R:RL c 0 R=50 Ohm
-            analysis ENV1 type=env Accuracy=draft MaxHarm=1 Segments=1 Warmup=1e-6 Stop={stop}
+            analysis ENV1 type=env Accuracy=draft MaxHarm=1 Segments=1 Warmup=1e-6 Stop={stop} {env}
             """);
         using var nl = new Elaborator(lib).Elaborate(tb);
         var plan = EnvelopeRunner.Resolve(tb.Analyses.OfType<EnvelopeAnalysis>().Single(), nl.ResolvedGlobals);
@@ -62,7 +62,11 @@ public sealed class SignalQualityPresetTests
         }
 
         Assert.Equal(PlotType.Table, plots[1].PlotType);
-        Assert.Equal(["EVM %", "MER dB", "EVM peak %"], plots[1].Traces.Select(t => t.Label));
+        Assert.Equal(["EVM %", "MER dB", "EVM peak %", "CFO Hz", "SER", "BER", "BER est. (Gaussian)"], plots[1].Traces.Select(t => t.Label));
+        Assert.Equal("Received", cons.Traces[0].Label);
+        // with an equalizer the trace card says which (brief PCH-4)
+        var eq = Result("LTE;BW=5MHz;Mod=64QAM;Off=0;P=0;Seed=3", env: "Equalizer=pilot");
+        Assert.Equal("Received, pilot-equalized", SignalQualityPreset.Build(eq, "amp.npy")[0].Traces[0].Label);
         Assert.Equal(PlotType.Rect, plots[2].PlotType);
         Assert.Contains("PSD", plots[2].Traces[0].Expression);
 
@@ -81,12 +85,12 @@ public sealed class SignalQualityPresetTests
         Assert.Equal(3, plots.Count);
         Assert.All(plots[0].Traces, t => Assert.True(CubeTraceSpecParser.TryParse(t.Expression!, fsk, out _, out _, out _, out var e), e));
         Assert.Contains("FreqPts", plots[0].Traces[0].Expression);
-        Assert.Equal(["FSK error %", "Deviation Hz", "Offset Hz"], plots.Single(p => p.PlotType == PlotType.Table).Traces.Select(t => t.Label));
+        Assert.Equal(["FSK error %", "Deviation Hz", "Offset Hz", "SER", "BER"], plots.Single(p => p.PlotType == PlotType.Table).Traces.Select(t => t.Label));
 
         var css = Result("CSS;SF=7;BW=125kHz;Off=0;P=0", stop: "5e-3", clip: "");
         var two = SignalQualityPreset.Build(css, "css.npy");
         Assert.Equal([PlotType.Table, PlotType.Rect], two.Select(p => p.PlotType));
-        Assert.Equal(["CSS error %"], two[0].Traces.Select(t => t.Label));
+        Assert.Equal(["CSS error %", "SER", "BER"], two[0].Traces.Select(t => t.Label));
         Assert.True(double.IsFinite(css["ENV1.CSSerr_pct"].RealValues[0]));
     }
 

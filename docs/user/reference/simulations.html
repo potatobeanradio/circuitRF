@@ -858,6 +858,26 @@ is large enough to move ACPR by about 0.1 dB.</li>
 <td>no</td>
 <td><code>yes</code> runs the record a second time without noise, to split each carrier's error into distortion and noise and measure the SNR (<a href="#envelope-evm">below</a>). Twice the run time.</td>
 </tr>
+<tr>
+<td>Equalizer</td>
+<td>none</td>
+<td>How each carrier is read at the far end: <code>none</code> (one gain over the record), <code>genie</code> or <code>pilot</code> (<a href="#envelope-equalizer">below</a>).</td>
+</tr>
+<tr>
+<td>Pilots</td>
+<td>6,4</td>
+<td><code>Equalizer=pilot</code> on LTE or NR: the pilot comb, every <em>n</em>th subcarrier of every <em>m</em>th symbol, written <code>n,m</code>.</td>
+</tr>
+<tr>
+<td>Taps</td>
+<td>11</td>
+<td><code>Equalizer=pilot</code> on DBPSK: the taps of the trained equalizer.</td>
+</tr>
+<tr>
+<td>Training</td>
+<td>64</td>
+<td><code>Equalizer=pilot</code> on DBPSK: the bits it is trained on. EVM and errors are read on the rest.</td>
+</tr>
 </tbody>
 </table>
 <h3 id="envelope-records">What a run records</h3>
@@ -1362,8 +1382,8 @@ would be a circle; these say more.</p>
 its delay is fitted against the signal the source played. OFDM is then cut into symbols, each
 transformed after its cyclic prefix, with one complex gain fitted against the ideal points. DBPSK,
 FSK and CSS are first filtered to their channel, and so is the reference they are compared with,
-so the measurement bandwidth is the channel's. There is no per-subcarrier equaliser, so the in-band
-ripple of a filter counts as error, as it does in NMSE.</li>
+so the measurement bandwidth is the channel's. With <code>Equalizer=none</code>, the default, there is no
+per-subcarrier equaliser, so the in-band ripple of a filter counts as error, as it does in NMSE.</li>
 <li><strong>Through a matched pad</strong> the error is the source signal's own: the Signal Designer's EVM for LTE
 and NR (from clipping and shaping), and zero for DBPSK, FSK and CSS.</li>
 <li><strong>The step.</strong> EVM reads the circuit as the run steps it, and through a filter <em>draft</em> reads more
@@ -1423,6 +1443,79 @@ the probe carrying the signal. The constellation plots <code>imag(Const[…])</c
 points only, with <strong>Equal X and Y scale</strong> set in Axes Limits, so a circle of error looks like a
 circle. FSK's picture is the frequency at each bit, received over sent. CSS has the table and the
 spectrum.</p>
+<h3 id="envelope-equalizer">Equalizer, frequency offset and bit errors</h3>
+<p>One gain over the record is right for a circuit, whose ripple is error. Through a channel with delay spread it is not:
+a fade on some subcarriers reads as distortion, and a carrier offset turns the constellation across the record.
+<code>Equalizer=</code> reads each carrier as a receiver would:</p>
+<table>
+<thead>
+<tr>
+<th>Equalizer</th>
+<th>LTE, NR</th>
+<th>DBPSK</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>none</code></td>
+<td>One gain over the record, as above</td>
+<td>The same</td>
+</tr>
+<tr>
+<td><code>genie</code></td>
+<td>Each subcarrier divided by its own response, the received against the signal the source played, over the whole record</td>
+<td>An MMSE equalizer from that response</td>
+</tr>
+<tr>
+<td><code>pilot</code></td>
+<td>Each subcarrier's response read only from the pilot comb (<code>Pilots=</code>), averaged over the four pilot symbols either side, interpolated in frequency and then in time. EVM is read on the other elements</td>
+<td>An equalizer of <code>Taps=</code> taps trained on the first <code>Training=</code> bits, applied to the rest</td>
+</tr>
+</tbody>
+</table>
+<p><code>genie</code> takes out everything linear and is the best a receiver can do. <code>pilot</code> is what a receiver achieves, with the
+noise of its own estimates. At 40 dB SNR the two are within half a decibel of each other. FSK and CSS are decided by
+their own detectors and take no equalizer.</p>
+<p><strong>The frequency offset</strong> is measured in every mode from the phase of each symbol (LTE, NR) or bit (DBPSK) against the
+signal sent: <code>CFO_Hz</code> and its drift, <code>CFOdrift_Hzps</code>. With <code>genie</code> or <code>pilot</code> it is taken out of the envelope before
+the equalizer, so it leaves no interference between subcarriers. With <code>none</code> it is reported and left in, so <code>none</code>
+reads exactly as it always did. An offset beyond half the subcarrier spacing cannot be told from one a subcarrier away.</p>
+<p><strong>Errors.</strong> After the equalizer each symbol is decided to the nearest point and compared with what was sent:</p>
+<table>
+<thead>
+<tr>
+<th>Cube</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SER</code>, <code>BER</code></td>
+<td>symbol and bit error rates, counted</td>
+</tr>
+<tr>
+<td><code>BitErrors</code>, <code>Bits</code></td>
+<td>the count</td>
+</tr>
+<tr>
+<td><code>BERlo</code>, <code>BERhi</code></td>
+<td>the exact (Clopper–Pearson) 95 % interval of <code>BER</code></td>
+</tr>
+<tr>
+<td><code>BERest</code></td>
+<td>the BER estimated from each element's SINR, <em>estimated (Gaussian)</em>: LTE, NR and DBPSK</td>
+</tr>
+<tr>
+<td><code>SINR_dB</code></td>
+<td>each element's SINR after the equalizer, over symbol and subcarrier (one column for DBPSK)</td>
+</tr>
+</tbody>
+</table>
+<p>QAM bits are Gray-coded on each axis. DBPSK bits are differential, so a bit is wrong when one of its two symbols is.
+FSK is decided by the sign of its frequency, and CSS by the bin of each de-chirped symbol. A low BER needs many bits
+to count: 10⁻⁶ needs some 10⁸ bits for 100 errors. <code>BERest</code> reaches lower, because it treats noise and distortion as
+Gaussian. With <code>EvmSplit=yes</code>, a run whose distortion is far from Gaussian says so, and there <code>BERest</code> is a rough
+estimate. <code>SINR_dB</code> is per element, so you can map it to a coded error rate of your own.</p>
 <h2 id="fields">Fields (pattern, B1 and SAR from a circuit)</h2>
 <p>A Fields analysis recombines the per-port results an EM run kept — a far field, a field set, or both — with the waves the
 circuit around the block delivers, so the radiation pattern, B1 and SAR follow every part value with no new EM run. <code>block</code>

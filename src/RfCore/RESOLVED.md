@@ -1351,3 +1351,41 @@ keeps runs of three or more characters; they were read with no minimum.
 **The satellite geometry is a pass through the station's zenith on a sphere of 6371 km, Earth's rotation not
 included** (the brief allowed it as optional). Its range rate and drift are checked against central differences of the
 satellite's simulated position, an independent method, to 1e-6 relative and 1e-4 m/s².
+
+## Equalizer, frequency offset and bit errors (brief PCH-4, 2026-11-15)
+
+**A test's noise must never be drawn from the generator's own seed.** `OfdmGenerator` draws every QAM level from
+`new Random(c.Seed)`. A test that drew its AWGN from `new Random(seed)` with the same number got a noise stream that
+was the data stream: QPSK at Eb/N0 = 0 dB counted 0.120 instead of 0.0786, and 16QAM read too few errors. Nothing in
+the code was wrong. `SignalEqualizerTests` seeds its noise at 1000 + seed, and says why.
+
+**Through a frequency-selective channel, a symbol's phase has to be taken against the channel.** The first offset
+estimate took each OFDM symbol's phase from Σ_k rx·conj(sent). Through a two-path channel inside the prefix that sum
+is Σ_k H_k·|s_k|², whose phase turns with each symbol's 64QAM data. On a 0.5 ms record it read a 112 Hz offset that
+was not there, and removing it took the genie EVM to 10 %. Each subcarrier's response over the whole record is now
+divided out first, Σ_k rx·conj(H_k·sent), so every symbol is weighted alike. That reads −0.009 Hz, and 6e-7 Hz once
+the source is unshaped.
+
+**A large offset biases its own first estimate; three passes remove it.** A 5 kHz offset on 15 kHz subcarriers is a
+third of a subcarrier of inter-carrier interference, and the first fit read 4997.7 Hz. Each later pass demodulates the
+window again at the corrected offset (in the time domain, so no interference is left) and fits what remains
+(`SignalEqualizer.RemoveOffset`, `OffsetPasses = 3`). `CFO_Hz` is that total in every mode. With `none` the EVM is
+still read on the window as it came, so `none` is bit for bit the old measurement. The cost is three extra
+demodulations per carrier per probe.
+
+**A pilot estimate is a least-squares fit, not a ratio.** The first pilot equalizer took the response at each pilot as
+rx/s. On 16QAM an inner point (|s|² = 0.2) multiplies its noise by 5, and E[1/|s|²] = 1.89, so pilot read 0.62 dB
+worse than genie at 40 dB. Each pilot's response is now Σ rx·conj(s) / Σ|s|² over the four pilot symbols either side
+(`PilotAverage`). Between the outermost pilots and the band edge it is extrapolated along the end segment, because a
+held value leaves the edge's phase slope as error. The gate's margin is the brief's: within 0.5 dB.
+
+**The semi-analytic BER cannot beat the estimate of its own SINR.** At Eb/N0 = 12 dB, QPSK's BER changes about 16
+times as fast as γ does (d ln BER / d ln γ ≈ −γ). An N0 estimated from 42,000 resource elements carries a 0.5 %
+statistical error, so `BERest` scatters by about 8 %. The 1 % gate therefore tests the chain (each element's SINR, the
+conditional BER, the average) on noise scaled to its exact power. A user's `BERest` is as good as the record's length
+allows, and the per-element SINR is |H_eff|²·Es/N0, with N0 the pre-equalizer error over the whole record, so a fade is
+in it without making the noise estimate any shorter.
+
+**The generator maps no bits.** OFDM draws each axis's level index from its seed. The bits are taken as each index's
+Gray code (per axis, as square QAM is specified), so a nearest-neighbour error costs one bit. A standard's own mapping
+would differ only in which bits a level carries, not in how many a neighbour error flips.

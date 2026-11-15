@@ -84,7 +84,7 @@ public sealed class DelayLineModel : ComponentModel, IReportsWarnings
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
-        int na = c.Nodes[0], nb = c.Nodes[1];
+        var (na, nb) = _line.Ends(c.Nodes) ?? (c.Nodes[0], c.Nodes[1]);
         int ia = mna.AddBranch(), ib = mna.AddBranch();
         BranchA = ia; BranchB = ib;
         mna.AddBranchCurrent(ia, na, 0);
@@ -326,7 +326,8 @@ public static class EnvelopeLineDelay
         for (int i = 0; i < nl.Components.Count; i++)
         {
             var ec = nl.Components[i];
-            if (ec.IsNonlinear || ec.Model is not IUniformLine || ec.Nodes.Length < 2) continue;
+            if (ec.IsNonlinear || ec.Model is not IUniformLine line || line.Ends(ec.Nodes) is not { } ends) continue;
+            var (endA, endB) = ends;
             var model = new DelayLineModel(ec.Model, ec.Multiplicity);
             var P = new Coeffs[productHz.Count];
             double worst = 0;
@@ -337,7 +338,7 @@ public static class EnvelopeLineDelay
                 worst = Math.Max(worst, Error(model, p, productHz[k], bandHz));
                 if (p.SlopeDropped) dropped.Add(productHz[k]);
             }
-            run.Add(new Line { Index = i, Original = ec, Model = model, Na = ec.Nodes[0], Nb = ec.Nodes[1], P = P });
+            run.Add(new Line { Index = i, Original = ec, Model = model, Na = endA, Nb = endB, P = P });
             string who = $"{ec.ComponentType} '{ec.InstancePath}'";
             nl.AddNoteOnce("env-line-delay:" + ec.InstancePath, string.Format(inv,
                 "{0}: stepped as its delay ({1:0.####} ns) with its loss to first order around each harmonic; {2:0.##} % (RMS) " +

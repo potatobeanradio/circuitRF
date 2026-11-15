@@ -32,6 +32,14 @@
 //    CSSerr_pct [branch, carrier]   CSS: the de-chirped error, one gain per chirp
 //    With EvmSplit, each family's split (EVMdist_pct / EVMnoise_pct, FSKerrDist_pct / FSKerrNoise_pct,
 //    CSSerrDist_pct / CSSerrNoise_pct) and SNR_dB [branch, carrier], the in-channel signal over what the noise added
+//    The far end (brief PCH-4), as Equalizer= reads each carrier (none: the one gain above, unchanged):
+//    CFO_Hz, CFOdrift_Hzps [branch, carrier]  the data-aided offset and drift (FSK: its offset), removed before an
+//               equalizer and only reported with none
+//    SER, BER, BitErrors, Bits, BERlo, BERhi [branch, carrier]  decisions after equalization against the sent symbols,
+//               BERlo/BERhi the exact 95 % interval; QAM Gray per axis, DBPSK differential, FSK by sign, CSS by bin
+//    BERest [branch, carrier]  semi-analytic BER, estimated (Gaussian), from each element's SINR (LTE / NR, DBPSK)
+//    SINR_dB [branch, carrier, element, subcarrier]  each element's post-equalizer SINR (a single carrier: one column)
+//    __Equalizer  0 none, 1 genie, 2 pilot: which equalizer the Const points are after
 //    AMAM / AMAM_min / AMAM_max / AMPM / AMPM_min / AMPM_max  [branch, Pin_inst]  binned on the
 //               instantaneous available drive power; the min/max spread at one Pin is the memory
 //    Pin_inst_t_dBm [time]  Gt_t_dB / PM_t_deg [time, branch]   the memory cloud: every AM-AM /
@@ -401,24 +409,61 @@ public static class EnvelopeDataSet
     };
 
     /// <summary>One carrier at one probe: its error (EVM, FSK error or the de-chirped error), the FSK deviation and offset,
-    /// the points to draw, and what was demodulated, for the SNR.</summary>
+    /// the points to draw, and what was demodulated, for the SNR; and the far end (brief PCH-4): the offset found, the
+    /// counted errors, the semi-analytic BER and each element's SINR.</summary>
     private sealed record Reading(double Err, double Peak, double Dev, double Off, Complex[]? Points, Complex[]? Ref,
-                                  double[]? Freq, double[]? FreqRef, object Raw);
+                                  double[]? Freq, double[]? FreqRef, object Raw)
+    {
+        public CarrierOffset? Offset { get; init; }
+        public ErrorCount? Errors { get; init; }
+        public double BerEst { get; init; } = double.NaN;
+        public Equalized? Eq { get; init; }
+    }
 
+    /// <summary>
+    /// One carrier read at one probe. The offset is found by removing it (<see cref="SignalEqualizer.RemoveOffset"/>) in
+    /// every mode; with an equalizer the carrier is read after the removal, with none as it came, so none is exactly the
+    /// measurement it always was. FSK and CSS are decided by their own detectors and take no equalizer.
+    /// </summary>
     private static Reading? Read(Meter meter, CarrierRecord rec, double record, Complex[] y, double fs, long start, double off,
-                                 out string? why)
+                                 EqualizerSettings eq, out string? why)
     {
         if (meter == Meter.Ofdm)
         {
             var d = SignalEvm.Demodulate(rec, record, y, fs, start, off, out why);
             if (d is null) return null;
-            var e = SignalEvm.Evaluate(d);
-            return new Reading(e.RmsPercent, e.PeakPercent, double.NaN, double.NaN, e.Received, e.Ideal, null, null, d);
+            var moved = SignalEqualizer.RemoveOffset(d, o => SignalEvm.Demodulate(rec, record, y, fs, start, off + o.FrequencyHz, out _, o.DriftHzps),
+                                                     SignalEqualizer.EstimateOffset, out var cfo);
+            var e = SignalEqualizer.Ofdm(eq.Mode == EqualizerMode.None ? d : moved, eq);
+            var m = rec.Spec.Modulation;
+            return new Reading(e.RmsPercent, e.PeakPercent, double.NaN, double.NaN, e.Points, e.Ideal, null, null, d)
+            {
+                Offset = cfo, Errors = SignalDecisions.Qam(m, e.Points, e.Ideal), Eq = e,
+                BerEst = SignalDecisions.SemiAnalytic(e.Sinr, g => SignalDecisions.QamBer(m, g)),
+            };
         }
         var w = SignalQuality.Receive(rec, record, y, fs, start, off, out why);
         if (w is null) return null;
+        if (meter == Meter.Dbpsk)
+        {
+            var moved = SignalEqualizer.RemoveOffset(w, o => SignalQuality.Receive(rec, record, y, fs, start, off + o.FrequencyHz, out _, o.DriftHzps),
+                                                     SignalEqualizer.EstimateOffset, out var cfo);
+            var e = SignalEqualizer.Dbpsk(eq.Mode == EqualizerMode.None ? w : moved, eq);
+            int m = (eq.Mode == EqualizerMode.None ? w : moved).X.Length, sps = Dbpsk.SamplesPerBit;
+            var at = e.Instants ?? [];
+            var follows = at.Select((i, k) => k > 0 && ((i - at[k - 1]) % m + m) % m == sps).ToArray();
+            return new Reading(e.RmsPercent, e.PeakPercent, double.NaN, double.NaN, e.Points, e.Ideal, null, null, w)
+            {
+                Offset = cfo, Errors = SignalDecisions.Dbpsk(e.Points, e.Ideal, follows), Eq = e,
+                BerEst = SignalDecisions.SemiAnalytic(e.Sinr, SignalDecisions.DbpskBer),
+            };
+        }
         var q = SignalQuality.Evaluate(w);
-        return new Reading(q.ErrorPercent, q.PeakPercent, q.DeviationHz, q.OffsetHz, q.Points, q.Reference, q.FreqHz, q.FreqRefHz, w);
+        return new Reading(q.ErrorPercent, q.PeakPercent, q.DeviationHz, q.OffsetHz, q.Points, q.Reference, q.FreqHz, q.FreqRefHz, w)
+        {
+            Offset = meter == Meter.Fsk ? new CarrierOffset(q.OffsetHz, double.NaN) : null,
+            Errors = meter == Meter.Fsk ? SignalDecisions.Fsk(q.FreqHz!, q.FreqRefHz!) : SignalDecisions.Css(w),
+        };
     }
 
     private static double Snr(object noisy, object quiet) => noisy switch
@@ -466,7 +511,14 @@ public static class EnvelopeDataSet
             return y;
         }
 
+        var eqs = plan.Equalizer ?? EqualizerSettings.Off;
         var err = Nan(nb * nc); var peak = Nan(nb * nc); var dev = Nan(nb * nc); var offs = Nan(nb * nc);
+        // the far end (brief PCH-4)
+        var cfo = Nan(nb * nc); var cfoDrift = Nan(nb * nc); var ser = Nan(nb * nc); var ber = Nan(nb * nc);
+        var bitErr = Nan(nb * nc); var bits = Nan(nb * nc); var berLo = Nan(nb * nc); var berHi = Nan(nb * nc); var berEst = Nan(nb * nc);
+        var sinr = new Equalized?[nb, nc];
+        var farFromGauss = new List<string>();
+        var eqNotes = new HashSet<string>();
         double[]? dist = quiet is null ? null : Nan(nb * nc), noise = quiet is null ? null : Nan(nb * nc), snr = quiet is null ? null : Nan(nb * nc);
         var points = new Complex[nb, nc][]; var refs = new Complex[nc][];
         var freq = new double[nb, nc][]; var freqRef = new double[nc][];
@@ -484,7 +536,7 @@ public static class EnvelopeDataSet
                 bool silent = noRf[b];
                 Complex[] Received(EnvelopeRunResult run, Func<int, int, Complex[]> own) =>
                     at0.Sign == 0 ? own(b, k) : Stored(run, t0, b, at0.M, at0.Sign);
-                var e = Read(meters[c], recs[c].rec, recs[c].record, Received(r, probeV), fs, start, at0.Off, out string? fail);
+                var e = Read(meters[c], recs[c].rec, recs[c].record, Received(r, probeV), fs, start, at0.Off, eqs, out string? fail);
                 // A carrier no probe reads is named; one an earlier probe read keeps its values and is not.
                 if (e is null) { if (b == 0) why[c] = fail; break; }
                 int n = e.Points?.Length ?? e.Freq?.Length ?? 0;
@@ -495,11 +547,28 @@ public static class EnvelopeDataSet
                 if (silent) continue;
                 int at = b * nc + c;
                 err[at] = e.Err; peak[at] = e.Peak; dev[at] = e.Dev; offs[at] = e.Off;
+                if (e.Offset is { } o) { cfo[at] = o.FrequencyHz; cfoDrift[at] = o.DriftHzps; }
+                if (e.Errors is { } ec)
+                {
+                    ser[at] = ec.Ser; ber[at] = ec.Ber; bitErr[at] = ec.BitErrors; bits[at] = ec.Bits;
+                    (berLo[at], berHi[at]) = ec.BerInterval;
+                }
+                berEst[at] = e.BerEst;
+                sinr[b, c] = e.Eq;
+                if (e.Eq?.Note is { } en) eqNotes.Add($"{labels[c]}: {en}");
                 if (e.Points is { } ep) points[b, c] = [.. Enumerable.Range(0, kept).Select(i => ep[i * stride])];
                 if (e.Freq is { } ef) freq[b, c] = [.. Enumerable.Range(0, kept).Select(i => ef[i * stride])];
                 if (quiet is null) continue;
-                var q = Read(meters[c], recs[c].rec, recs[c].record, Received(quiet, QuietV), fs, start, at0.Off, out _);
+                var q = Read(meters[c], recs[c].rec, recs[c].record, Received(quiet, QuietV), fs, start, at0.Off, eqs, out _);
                 if (q is null) continue;
+                // the semi-analytic BER takes the distortion as Gaussian: say where it plainly is not
+                if (q.Points is { } qp && q.Ref is { } qr && meters[c] is Meter.Ofdm or Meter.Dbpsk)
+                {
+                    var qe = qp.Select((v, i) => v - qr[i]).ToArray();
+                    double kx = SignalDecisions.ExcessKurtosis(qe);
+                    if (SignalDecisions.FarFromGaussian(kx, 2 * qe.Length))
+                        farFromGauss.Add($"{r.IProbeNames[b]} {labels[c]} (excess kurtosis {kx:0.##})");
+                }
                 double diff = e.Err * e.Err - q.Err * q.Err;
                 dist![at] = q.Err;
                 if (diff < 0) clamped.Add(meters[c]);
@@ -514,6 +583,13 @@ public static class EnvelopeDataSet
         if (clamped.Count > 0)
             note?.Invoke($"Envelope '{plan.Name}': on at least one carrier the noiseless run read a larger error than the noisy one " +
                          "(the record's statistics), so the noise part is 0 there.");
+        if (farFromGauss.Count > 0)
+            note?.Invoke($"Envelope '{plan.Name}': the distortion is far from Gaussian at {string.Join("; ", farFromGauss)}: BERest, " +
+                         "which takes noise and distortion as Gaussian, is a rough estimate there; the counted BER is not.");
+        foreach (var en in eqNotes) note?.Invoke($"Envelope '{plan.Name}': {en}.");
+        if (eqs.Mode != EqualizerMode.None && meters.Any(m => m is Meter.Fsk or Meter.Css))
+            note?.Invoke($"Envelope '{plan.Name}': FSK and CSS carriers are decided by their own detectors (the frequency's sign; the " +
+                         "de-chirped bin); Equalizer does not apply to them.");
 
         var carrierAxis = new Axis("carrier", Index(nc), "", labels);
         double[] Only(double[] v, params Meter[] kinds) => [.. v.Select((x, i) => kinds.Contains(meters[i % nc]) ? x : double.NaN)];
@@ -572,6 +648,37 @@ public static class EnvelopeDataSet
             Family("CSSerr_pct", "%", [Meter.Css], "CSSerrDist_pct", "CSSerrNoise_pct");
         if (snr is not null)
             ds.Add("SNR_dB", new DataCube([branchAxis, carrierAxis], snr) { Unit = "dB" });
+
+        // ── the far end (brief PCH-4): the offset, the decisions, the semi-analytic BER and each element's SINR ──
+        ds.Add("CFO_Hz", new DataCube([branchAxis, carrierAxis], cfo) { Unit = "Hz" });
+        ds.Add("CFOdrift_Hzps", new DataCube([branchAxis, carrierAxis], cfoDrift) { Unit = "Hz/s" });
+        ds.Add("SER", new DataCube([branchAxis, carrierAxis], ser));
+        ds.Add("BER", new DataCube([branchAxis, carrierAxis], ber));
+        ds.Add("BitErrors", new DataCube([branchAxis, carrierAxis], bitErr));
+        ds.Add("Bits", new DataCube([branchAxis, carrierAxis], bits));
+        ds.Add("BERlo", new DataCube([branchAxis, carrierAxis], berLo));
+        ds.Add("BERhi", new DataCube([branchAxis, carrierAxis], berHi));
+        if (meters.Any(qam.Contains))
+        {
+            ds.Add("BERest", new DataCube([branchAxis, carrierAxis], Only(berEst, qam)));
+            int rows = 1, cols = 1;
+            foreach (var x in sinr) if (x is not null) { rows = Math.Max(rows, x.Rows); cols = Math.Max(cols, x.Columns); }
+            var grid = Nan(nb * nc * rows * cols);
+            for (int b = 0; b < nb; b++)
+                for (int c = 0; c < nc; c++)
+                {
+                    if (sinr[b, c] is not { } x) continue;
+                    for (int i = 0; i < x.Rows; i++)
+                        for (int j = 0; j < x.Columns; j++)
+                        {
+                            double v = x.SinrGrid[i * x.Columns + j];
+                            grid[((b * nc + c) * rows + i) * cols + j] = double.IsFinite(v) && v > 0 ? 10 * Math.Log10(v) : double.NaN;
+                        }
+                }
+            ds.Add("SINR_dB", new DataCube([branchAxis, carrierAxis, new Axis("element", Index(rows)), new Axis("subcarrier", Index(cols))], grid) { Unit = "dB" });
+        }
+        // which equalizer read the constellation (0 none, 1 genie, 2 pilot): the trace card says it
+        ds.Add("__Equalizer", DataCube.Scalar((int)eqs.Mode));
     }
 
     private static double[] Nan(int n)
