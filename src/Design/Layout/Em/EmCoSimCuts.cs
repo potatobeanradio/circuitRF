@@ -78,10 +78,11 @@ public sealed record EmCoSimCut(string Path, string Cell, string? GeneratorId, I
         foreach (var g in cut.Pins.GroupBy(p => p.Path, StringComparer.OrdinalIgnoreCase))
         {
             var inst = instances.At(g.Key);
+            var named = inst is null ? null : EmPinFingers.Named(inst.Pins);      // brief-icf-3 — a finger's pin is C[k] in the cut
             var pins = g.Where(p => p.Pin.Length > 0)
                         .Select(p =>
                         {
-                            var ip = inst?.Pins.FirstOrDefault(q => q.Name.Equals(p.Pin, StringComparison.OrdinalIgnoreCase));
+                            var ip = named?.FirstOrDefault(q => q.Name.Equals(p.Pin, StringComparison.OrdinalIgnoreCase));
                             return new EmCoSimCutPin(p.Pin, ip?.Number, p.Why is null ? p.Class : null, p.Abuts, p.Why)
                             {
                                 Unreturned = p.Unreturned, Unconnected = p.Unconnected,
@@ -137,66 +138,122 @@ internal static class EmCoSimCuts
             var terminals = found.Terminals;
             var pins = cut.Pins;
             bool Eq(string a, string b) => a.Equals(b, StringComparison.OrdinalIgnoreCase);
-            var byTerminal = terminals.Select(t => pins.FirstOrDefault(p => Eq(p.Name, t))).ToList();
+            // brief-icf-3 — a terminal takes the pin of its name, or that pin's fingers (C[1], C[2], …), the first standing for them.
+            string Base(string n) => EmPinFingers.Base(n);
+            var byTerminal = terminals.Select(t => pins.FirstOrDefault(p => Eq(p.Name, t)) ?? pins.FirstOrDefault(p => Eq(Base(p.Name), t))).ToList();
             // R-icp5-3 — a cell whose pins are Port numbers maps by number.
             if (byTerminal.All(p => p is null) && pins.Count > 0 && pins.All(p => Number(p) is not null))
                 byTerminal = [.. terminals.Select((_, k) => pins.FirstOrDefault(p => Number(p) == k + 1))];
+            List<EmCoSimCutPin> FingersOf(EmCoSimCutPin p)
+                => Base(p.Name) == p.Name ? [p] : [.. pins.Where(q => Eq(Base(q.Name), Base(p.Name)))];
+            var covered = byTerminal.OfType<EmCoSimCutPin>().SelectMany(FingersOf).ToHashSet();
             var unmatched = pins.Where(p => (mine.Any(q => Eq(q.Component!.Pin ?? "", p.Name)) || p.Class is EmPinClass.Abutting or EmPinClass.Grounded or EmPinClass.Return)
-                                            && !byTerminal.Contains(p)).ToList();
+                                            && !covered.Contains(p)).ToList();
             if (byTerminal.All(p => p is null) || unmatched.Count > 0)
                 why = $"its pins ({string.Join(", ", pins.Select(p => p.Name))}) do not match its model's terminals ({string.Join(", ", terminals)})";
             else
             {
-                var nets = new List<string>();
                 var notes = new List<string>();
-                for (int k = 0; k < terminals.Count; k++)
+                var joins = new List<EmCoSimClose>();
+                EmCoSimPort? PortOf(EmCoSimCutPin p) => mine.FirstOrDefault(q => Eq(q.Component!.Pin ?? "", p.Name));
+
+                // One pin's net for terminal k: its port's node, 0 for a reference or grounded pin, a shared node for an abutting one,
+                // else an open node with a warning.
+                string NetOf(EmCoSimCutPin? pin, int k, string bound)
                 {
-                    var pin = byTerminal[k];
-                    string bound = k < found.Model.NetBindings.Count ? found.Model.NetBindings[k] : "";
                     if (pin is null)
                     {
-                        if (bound == "0") { nets.Add("0"); continue; }
-                        string nc = $"nc_{name}_{Legal(terminals[k])}";
-                        nets.Add(nc);
-                        warnings.Add($"{at}'s terminal {terminals[k]} has no pin of that name, so it is left open on {nc}.");
-                        continue;
+                        if (bound == "0") return "0";
+                        string open = $"nc_{name}_{Legal(terminals[k])}";
+                        warnings.Add($"{at}'s terminal {terminals[k]} has no pin of that name, so it is left open on {open}.");
+                        return open;
                     }
-                    var port = mine.FirstOrDefault(q => Eq(q.Component!.Pin ?? "", pin.Name));
+                    var port = PortOf(pin);
                     var through = mine.Where(q => q.Component!.ReferencePin is { } rp && Eq(rp, pin.Name)).ToList();
-                    if (port is not null) nets.Add(EmCoSimNetlist.Node(port.Number));
-                    else if (through.Count > 0 || pin.Class == EmPinClass.Return)
+                    if (port is not null) return EmCoSimNetlist.Node(port.Number);
+                    if (through.Count > 0 || pin.Class == EmPinClass.Return)
                     {
-                        nets.Add("0");
                         // ICP-4 gate 4, here — the reference terminal on 0 is the N-port's reference, not ground in the chip.
                         notes.Add($"{at}.{pin.Name} is the reference of {(through.Count > 0 ? string.Join(" and ", through.Select(q => q.Name)) : "its ports")}: " +
                                   $"its terminal is on 0, tied to {EmCoSimNetlist.BoardInstance}'s reference, which is not the same as the pin being grounded in the chip.");
+                        return "0";
                     }
-                    else if (pin.Class == EmPinClass.Grounded) nets.Add("0");
-                    else if (pin.Class == EmPinClass.Abutting && pin.Abuts is { } other && other.Contains('.'))
+                    if (pin.Class == EmPinClass.Grounded) return "0";
+                    if (pin.Class == EmPinClass.Abutting && pin.Abuts is { } other && other.Contains('.'))
                     {
                         string self = $"{cut.Path}.{pin.Name}";
                         string first = string.CompareOrdinal(self, other) <= 0 ? self : other;
-                        nets.Add("j_" + Legal(first.Replace('.', '_')));
+                        return "j_" + Legal(first.Replace('.', '_'));
                     }
-                    else if (bound == "0") nets.Add("0");
-                    else
-                    {
-                        string nc = $"nc_{name}_{Legal(pin.Name)}";
-                        nets.Add(nc);
-                        warnings.Add($"{at}.{pin.Name} has no port{(pin.Why is not null ? " (it was left out of the run)" : "")}, so its model's terminal is " +
-                                     $"left open on {nc}{(pin.Class == EmPinClass.Abutting ? ": the pin it touches was not found" : "")}.");
-                    }
+                    if (bound == "0") return "0";
+                    string nc = $"nc_{name}_{Legal(pin.Name)}";
+                    warnings.Add($"{at}.{pin.Name} has no port{(pin.Why is not null ? " (it was left out of the run)" : "")}, so its model's terminal is " +
+                                 $"left open on {nc}{(pin.Class == EmPinClass.Abutting ? ": the pin it touches was not found" : "")}.");
+                    return nc;
                 }
-                var placed = new Instance(name, found.Model.Reference, nets, found.Model.Overrides);
-                var comment = new StringBuilder($"{label}: {cut.CellLabel} cut out of the layout, its model's terminals on its pins by name.");
-                if (found.Note is not null) comment.Append(' ').Append(found.Note);
-                foreach (var n in notes) comment.Append(' ').Append(n);
-                foreach (var w in warnings) comment.Append(' ').Append(w);
+                string Bound(int k) => k < found.Model.NetBindings.Count ? found.Model.NetBindings[k] : "";
+
+                // brief-icf-3 R-icf3-4 — Split: a model that declares its finger count, with every multi-face pin at the same k faces,
+                // is written as k one-finger instances, each across its own finger's ports.
+                var fingered = byTerminal.OfType<EmCoSimCutPin>().Select(FingersOf).Where(f => f.Count > 1).ToList();
+                string? fingerParameter = FingerParameter(found.Model.Reference);
+                int k0 = fingered.Count > 0 ? fingered[0].Count : 0;
+                if (fingered.Count > 0 && fingerParameter is not null && fingered.All(f => f.Count == k0))
+                {
+                    var comment = new StringBuilder($"{label}: {cut.CellLabel} cut out of the layout, its {k0} fingers written as {k0} one-finger " +
+                                                    $"instances ({fingerParameter}=1 each), each model's terminals on its own finger's pins by name.");
+                    if (found.Note is not null) comment.Append(' ').Append(found.Note);
+                    var placedAll = new List<Instance>();
+                    for (int f = 0; f < k0; f++)
+                    {
+                        var nets = terminals.Select((_, k) => byTerminal[k] is { } p && FingersOf(p) is { Count: > 1 } fs ? NetOf(fs[f], k, Bound(k)) : NetOf(byTerminal[k], k, Bound(k))).ToList();
+                        var overrides = found.Model.Overrides.Where(o => !Eq(o.Name, fingerParameter)).Append(new ParameterAssignment(fingerParameter, "1")).ToList();
+                        placedAll.Add(new Instance($"{name}_f{f + 1}", found.Model.Reference, nets, overrides));
+                    }
+                    foreach (var n in notes.Distinct()) comment.Append(' ').Append(n);
+                    foreach (var w in warnings.Distinct()) comment.Append(' ').Append(w);
+                    yield return new EmCoSimClose(EmCoSimCloseKind.Model, anchor, at, placedAll[0], Comment: comment.ToString(),
+                                                  SchematicName: cut.SchematicChain.Count == 1 ? cut.SchematicChain[0] : null) { Warnings = [.. warnings.Distinct()] };
+                    foreach (var extra in placedAll.Skip(1))
+                        yield return new EmCoSimClose(EmCoSimCloseKind.Model, anchor, at, extra);
+                    yield break;
+                }
+
+                // brief-icf-3 R-icf3-3 — Tie: a pin's fingers join on the one terminal: the first finger with a port gives the node, every
+                // other finger port is shorted to it.
+                var tied = new List<string>();
+                var netsTie = new List<string>();
+                for (int k = 0; k < terminals.Count; k++)
+                {
+                    var pin = byTerminal[k];
+                    var fingers = pin is null ? [] : FingersOf(pin);
+                    var ported = fingers.Where(f => PortOf(f) is not null).ToList();
+                    string net = NetOf(ported.Count > 0 ? ported[0] : pin, k, Bound(k));
+                    netsTie.Add(net);
+                    foreach (var f in ported.Skip(1))
+                    {
+                        var q = PortOf(f)!;
+                        joins.Add(new EmCoSimClose(EmCoSimCloseKind.Short, q, at, new Instance($"{name}_{Legal(f.Name)}_tie", "Short", [EmCoSimNetlist.Node(q.Number), net], []),
+                            Comment: $"{at}.{f.Name} is a finger of {Base(f.Name)}: its port {EmCoSimNetlist.Node(q.Number)} is joined to {net}, the model's terminal {terminals[k]}."));
+                    }
+                    if (fingers.Count > 1) tied.Add($"{Base(fingers[0].Name)} ({fingers.Count} faces)");
+                }
+                var placed = new Instance(name, found.Model.Reference, netsTie, found.Model.Overrides);
+                var commentTie = new StringBuilder($"{label}: {cut.CellLabel} cut out of the layout, its model's terminals on its pins by name.");
+                if (tied.Count > 0)
+                    commentTie.Append($" Its fingers are joined on one terminal each ({string.Join(", ", tied)}), so phase differences between fingers " +
+                                      "inside the device are not modelled" + (fingered.Count > 0 && fingerParameter is not null
+                                          ? "; they cannot be written one instance per finger, since its pins are at different numbers of faces."
+                                          : "."));
+                if (found.Note is not null) commentTie.Append(' ').Append(found.Note);
+                foreach (var n in notes) commentTie.Append(' ').Append(n);
+                foreach (var w in warnings) commentTie.Append(' ').Append(w);
                 if (mine.Count == 0)
-                    comment.Append($" It has no port, so it reaches {EmCoSimNetlist.BoardInstance} only through ground.");
-                yield return new EmCoSimClose(EmCoSimCloseKind.Model, anchor, at, placed, Comment: comment.ToString(),
+                    commentTie.Append($" It has no port, so it reaches {EmCoSimNetlist.BoardInstance} only through ground.");
+                yield return new EmCoSimClose(EmCoSimCloseKind.Model, anchor, at, placed, Comment: commentTie.ToString(),
                                               SchematicName: cut.SchematicChain.Count == 1 ? cut.SchematicChain[0] : null)
                 { Warnings = warnings };
+                foreach (var j in joins) yield return j;
                 yield break;
             }
         }
@@ -221,6 +278,12 @@ internal static class EmCoSimCuts
                 new Variable(variable, value, unit), sentence) { Warnings = [sentence] };
         }
     }
+
+    /// <summary>brief-icf-3 R-icf3-4 — the parameter a model counts its fingers by, where it declares one: the composed FET's N, "the
+    /// number of gate fingers". Null for every other model (a kit part declares none), which is then written with its fingers tied.</summary>
+    internal static string? FingerParameter(string reference)
+        => reference.Equals(CircuitRF.Core.Devices.ComponentModelFactory.ComposedFetTypeName, StringComparison.OrdinalIgnoreCase)
+        || reference.Equals(CircuitRF.Core.Devices.ComponentModelFactory.ComposedCoreTypeName, StringComparison.OrdinalIgnoreCase) ? "N" : null;
 
     private static int? Number(EmCoSimCutPin p)
         => p.Number ?? (int.TryParse(p.Name, NumberStyles.None, CultureInfo.InvariantCulture, out int n) ? n : null);

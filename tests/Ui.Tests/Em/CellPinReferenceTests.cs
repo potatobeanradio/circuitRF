@@ -163,6 +163,67 @@ public sealed class CellPinReferenceTests(CellPinReferenceTests.Fixture fx, ITes
         Assert.Contains(lines, l => l.Text.StartsWith("X1.A: routed", StringComparison.Ordinal) && l.Text.Contains("a sheet down to '", StringComparison.Ordinal));
     }
 
+    // ── brief-icf-3: multi-finger devices ───────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>R-icf3-1 — a pin at two faces is two ports, named by finger in the cell's own pin order; R-icf3-5 — the pin check
+    /// reports each finger.</summary>
+    [Fact]
+    public void APinAtTwoFaces_IsTwoPorts_NamedByFinger()
+    {
+        var build = fx.Build(fx.FingLine(), [new EmComponentPort("X1")]);
+        Assert.Equal(["X1.G[1]", "X1.G[2]", "X1.D[1]", "X1.D[2]"], build.Ports.Where(p => p.Ok).Select(p => p.Name));
+        var g1 = build.Ports.Single(p => p.Name == "X1.G[1]");
+        Assert.Equal(40e-6, g1.Gap!.Y * 1e-9, 9);                               // G[1] is the cell's first G pin, at y = +40 µm
+        var (cut, prefix) = Assert.Single(EmCutReport.Cuts(build.Ports.Select(p => (p.Refdes, p.CutPart))));
+        var lines = EmCutReport.Lines(cut, prefix, EmCutReport.PortsOf(build), k => k.ToString());
+        Assert.Contains(lines, l => l.Text.StartsWith("X1.G[2]: routed", StringComparison.Ordinal));
+        // The order is the cell's, whatever the coordinates: a placement turned 90° moves every face and names none differently.
+        var pins = new[] { new EmInstancePin("G", "G", null, 0, 1, 1, 0, M1), new EmInstancePin("G", "G", null, 0, -1, 1, 0, M1) };
+        var turned = pins.Select(p => p with { X = -p.Y, Y = p.X }).ToArray();
+        Assert.Equal(EmPinFingers.Named(pins).Select(p => p.Name), EmPinFingers.Named(turned).Select(p => p.Name));
+        Assert.Equal("G", EmPinFingers.Base("G[2]"));
+        Assert.Equal(2, EmPinFingers.Index("G[2]"));
+    }
+
+    /// <summary>R-icf3-2 — a Reference with as many fingers pairs them face to face; one with another number falls each finger back to
+    /// ground with the reason.</summary>
+    [Fact]
+    public void FingeredReferences_PairFaceToFace_OrFallBackWithTheReason()
+    {
+        var paired = fx.Build(fx.FingLine(), [new EmComponentPort("X1", Reference: "D")]);
+        var gaps = paired.Ports.Where(p => p.Ok).ToList();
+        Assert.Equal(["X1.G[1]", "X1.G[2]"], gaps.Select(p => p.Name));
+        Assert.Equal(["D[1]", "D[2]"], gaps.Select(p => p.ReferencePin));
+
+        var unpaired = fx.Build(fx.FingLine("Fing3"), [new EmComponentPort("X1", Reference: "D")]);
+        foreach (var w in unpaired.Warnings) output.WriteLine(w);
+        Assert.All(unpaired.Ports.Where(p => p.Ok), p => Assert.Null(p.ReferencePin));
+        Assert.Contains(unpaired.Warnings, w => w.StartsWith("X1.G[1]: its Reference D is at 3 face(s) and G at 2, so their fingers cannot be paired face to face.",
+                                                             StringComparison.Ordinal) && w.Contains("built against Ground instead of its Reference D", StringComparison.Ordinal));
+    }
+
+    /// <summary>R-icf3-3 — Tie: the co-simulation netlist puts one device on the first finger's ports and shorts every other finger's port
+    /// to it, saying the fingers are joined.</summary>
+    [Fact]
+    public void TheNetlist_TiesEachPinsFingers_OnItsOneTerminal()
+    {
+        var build = fx.Build(fx.FingLine(), [new EmComponentPort("X1")]);
+        var cutPorts = build.Ports.Where(p => p.Ok).Select(p => new EmCoSimPort(p.Number, p.Name, "50", EmCoSimPart.Of(p))).ToList();
+        var ports = new EmCoSimPortList([new(1, "1", "50", null), new(2, "2", "50", null), new(3, "3", "50", null), new(4, "4", "50", null), .. cutPorts], []);
+        var lib = new Library("lib");
+        var cell = new Cell("Fing"); cell.Ports.AddRange(["G", "D"]); lib.Cells.Add(cell);
+        var models = new EmCoSimModels(new Dictionary<string, Instance>(StringComparer.OrdinalIgnoreCase) { ["X1"] = new("X1", "Fing", ["g", "d"], []) }, lib, null);
+        string text = EmCoSimNetlist.Text(fx.Setup("fing", []), "chip.s8p", ports, models);
+        output.WriteLine(text);
+        var tb = new CircuitRF.Core.Netlist.CnlReader().Read(text, "fing_cosim", Path.GetTempPath()).TestBench;
+        int G(int k) => cutPorts.Single(p => p.Name == $"X1.G[{k}]").Number;
+        int D(int k) => cutPorts.Single(p => p.Name == $"X1.D[{k}]").Number;
+        Assert.Equal([$"p{G(1)}", $"p{D(1)}"], tb.Instances.Single(i => i.InstanceName == "X1").NetBindings);
+        Assert.Equal([$"p{G(2)}", $"p{G(1)}"], tb.Instances.Single(i => i.InstanceName == "X1_G_2__tie").NetBindings);
+        Assert.Equal([$"p{D(2)}", $"p{D(1)}"], tb.Instances.Single(i => i.InstanceName == "X1_D_2__tie").NetBindings);
+        Assert.Contains("Its fingers are joined on one terminal each (G (2 faces), D (2 faces))", text, StringComparison.Ordinal);
+    }
+
     // ── Gate 5: a Pins map; every pin on ground; a pin both referenced and ported ──────────────────────────────────────────
 
     [Fact]
@@ -348,6 +409,20 @@ public sealed class CellPinReferenceTests(CellPinReferenceTests.Fixture fx, ITes
                 Pin(c, "B", 0, 50, 180, 40, M1); Pin(c, "C", 0, -50, 180, 40, M1); Pin(c, "E", 200, 0, 0, 160, M1);
                 c.Shapes.Add(R(M1, 0, -80, 200, 80));
             });
+            // brief-icf-3 — Fing: G at two faces on its left (y = ±40), D at two faces on its right facing them, 200 µm across.
+            Cell(Planar, "Fing", c =>
+            {
+                Pin(c, "G", 0, 40, 180, 30, M1); Pin(c, "G", 0, -40, 180, 30, M1); Pin(c, "D", 200, 40, 0, 30, M1); Pin(c, "D", 200, -40, 0, 30, M1);
+                c.Shapes.Add(R(M1, 0, 25, 80, 55)); c.Shapes.Add(R(M1, 0, -55, 80, -25));
+                c.Shapes.Add(R(M1, 120, 25, 200, 55)); c.Shapes.Add(R(M1, 120, -55, 200, -25));
+            });
+            // Fing3: G at two faces, D at three, so the fingers do not pair.
+            Cell(Planar, "Fing3", c =>
+            {
+                Pin(c, "G", 0, 40, 180, 30, M1); Pin(c, "G", 0, -40, 180, 30, M1);
+                Pin(c, "D", 200, 60, 0, 20, M1); Pin(c, "D", 200, 0, 0, 20, M1); Pin(c, "D", 200, -60, 0, 20, M1);
+                c.Shapes.Add(R(M1, 0, 25, 80, 55)); c.Shapes.Add(R(M1, 0, -55, 80, -25)); c.Shapes.Add(R(M1, 120, -70, 200, 70));
+            });
             // 3D: Seg3 (2 mm × 1 mm, A and B facing across it) and Ell (A on the left face, B on the bottom one).
             var top = new LayerKey(1, 0);
             Cell(ThreeD, "Seg3", c => { Pin(c, "A", 0, 0, 180, 1000, top); Pin(c, "B", 2000, 0, 0, 1000, top); c.Shapes.Add(R(top, 0, -500, 2000, 500)); });
@@ -378,6 +453,23 @@ public sealed class CellPinReferenceTests(CellPinReferenceTests.Fixture fx, ITes
             v.Shapes.Add(Edge(0, 0, LayoutRotation.R0, "1", uncalibratedEnds));
             v.Shapes.Add(Edge(1200, 0, LayoutRotation.R180, "2", uncalibratedEnds));
             v.Instances.Add(Place("Seg", 500, 0, "X1"));
+            return v;
+        }
+
+        /// <summary>brief-icf-3 — a 30 µm line meeting each of Fing's four faces (or Fing3's two G faces), Uncalibrated ports at the far ends.</summary>
+        public LayoutView FingLine(string cell = "Fing")
+        {
+            var v = new LayoutView { DbuPerMicron = Dbu };
+            int n = 0;
+            foreach (double y in new[] { 40.0, -40.0 })
+            {
+                v.Shapes.Add(R(M1, -400, y - 15, 0, y + 15));
+                v.Shapes.Add(Edge(-400, y, LayoutRotation.R0, (++n).ToString(System.Globalization.CultureInfo.InvariantCulture), true));
+                if (cell != "Fing") continue;
+                v.Shapes.Add(R(M1, 200, y - 15, 600, y + 15));
+                v.Shapes.Add(Edge(600, y, LayoutRotation.R180, (++n).ToString(System.Globalization.CultureInfo.InvariantCulture), true));
+            }
+            v.Instances.Add(Place(cell, 0, 0, "X1"));
             return v;
         }
 

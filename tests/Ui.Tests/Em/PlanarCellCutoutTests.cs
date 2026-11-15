@@ -112,9 +112,9 @@ public sealed class PlanarCellCutoutTests(PlanarCellCutoutTests.Fixture fx, ITes
         two.Shapes.Add(R(M1, 0, 6, 500, 36));
         Assert.Contains("separate conductors meet its face", Why(two, Entry("X1", false), "A"), StringComparison.Ordinal);
 
-        // A pin name at two faces (several fingers).
+        // A pin name at two faces (several fingers) is no longer refused: brief-icf-3 builds a port per face, A[1] and A[2].
         var fingers = fx.LineWith("Seg2", draw: c => { Pin(c, "A", 0, 0, 180, 72); Pin(c, "A", 200, 0, 0, 72); c.Shapes.Add(R(M1, 0, -36, 200, 36)); });
-        Assert.Contains("more than one face", Why(fingers, Entry("X1", false), "A"), StringComparison.Ordinal);
+        Assert.Equal(["X1.A[1]", "X1.A[2]"], fx.Build(fingers, [Entry("X1", false)]).Ports.Where(p => p.Ok && p.Cutout).Select(p => p.Name));
 
         // The parent's metal overlapping the cell beyond its pin (pin mode): a parent patch on the segment, starting at pin A's face
         // and so one piece with the left line.

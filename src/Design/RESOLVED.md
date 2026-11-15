@@ -31946,3 +31946,26 @@ Cascode, coupled-coil and HBT-core layouts on the kit's own PCells, run on Plana
   string, which is what already routes a parameter the generator does not draw to the not-drawn note (R-icf2-4).
 - Gates: `CellCoSimulationTests` (every pin grounded on Planar, a portless instance's pin classes and its no-model sentence),
   `SchematicNetlistTests.AKitPart_PairsWithTheCellItsGeneratorDrew_NotByFolder`; the whole Lvs namespace (248) unchanged.
+
+## brief-icf-3 — multi-finger devices: one port per finger face (2026-11-15)
+
+- **Names.** `EmPinFingers.Named` gives a pin name at k faces the port names `Name[1]` … `Name[k]` in the cell's own pin order.
+  The brief asked for the lowest x, then y, in the cell's coordinates; the cell's pin order needs no coordinates at all, and no
+  placement changes it, so it is invariant by construction rather than by a transform. `EmCellCutout.Apply` renames the
+  instance's pins once, before anything reads them, so the faces, the classes, the port labels, the report and the numbering
+  are unchanged code. `EmCoSimCut.Of` reads the same names.
+- **Entries.** `PinPlan` takes an entry's plain pin name for every finger of it (`Ground`, `Pins`), a finger's own name for
+  that finger. A Reference with as many faces pairs finger i with finger i; with another number, each finger is put in
+  `PinPlan.Fallen` and built against ground with the sentence shared with ICF-1's fallback (`GroundSentence`).
+- **`_cosim`.** `EmCoSimCuts.Close` matches a terminal to its pin or that pin's fingers. **Tie** (the default): the first finger
+  with a port gives the terminal's node and each other finger's port is shorted to it (`<name>_<finger>_tie`, a `Short`
+  close), the comment saying the per-finger phase inside the device is not modelled. **Split**: a model that declares its
+  finger count — only the composed FET and core today (`N`, `FingerParameter`); a kit has no field to declare one — with every
+  multi-face pin at the same k faces is written as k instances `<name>_f<i>`, `N=1`, each on its own finger's ports, a
+  single-face pin shared. The per-pin node rule became one local function both share. The cell drawn from the schematic keeps
+  one part and says the netlist joins or splits the fingers.
+- The ICP-2 gate that asserted the refusal (`PlanarCellCutoutTests` gate 4's finger case) now asserts the two finger ports.
+- Gates: `CellPinReferenceTests` (names, the pin check, paired and unpaired references, the tie in `_cosim`),
+  `CellCoSimulationTests` (split for a composed FET, tie for any other model). Gate 4's S comparison against drawn joined
+  metal was not built: the cut removes the metal it would be compared with, so the two are not the same structure; the netlist
+  is asserted instead.

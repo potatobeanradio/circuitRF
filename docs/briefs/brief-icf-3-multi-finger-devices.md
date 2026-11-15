@@ -57,3 +57,10 @@ connected (PR #70's dead-end check) is warned on its own.
 ## Not here
 
 Fingers of one pin at different layers; a finger count that changes with a parameter during a sweep.
+
+## Completion note (2026-11-15)
+
+Built with D1 as recommended (Tie, and Split where the model declares its finger count); detail in `src/Design/RESOLVED.md`
+§brief-icf-3. Differences: fingers are numbered in the cell's own pin order, which no placement changes, rather than by
+coordinates; the only models that declare a finger count are the composed FET and core (`N`), so a kit part is always tied;
+gate 4 asserts the netlist rather than an S comparison against drawn joined metal, which is a different structure.

@@ -244,6 +244,33 @@ public sealed class CellCoSimulationTests(CellPinReferenceTests.Fixture fx, ITes
                         none, StringComparison.Ordinal);
     }
 
+    /// <summary>brief-icf-3 R-icf3-4 — Split: a composed FET (it counts its fingers by N) whose G and D are at two faces each is written
+    /// as two one-finger instances, N=1, each on its own finger's ports, S on ground for both; the same cut under a model that declares
+    /// no finger count is tied instead.</summary>
+    [Fact]
+    public void AModelThatCountsItsFingers_IsWrittenOneInstancePerFinger_AndAnyOtherIsTied()
+    {
+        var x1 = Cut("X1", ["X1"], Pin("G[1]"), Pin("G[2]"), Pin("D[1]"), Pin("D[2]"), Pin("S", EmPinClass.Grounded));
+        EmCoSimPort P(int n, string pin) => CutPort(n, x1, pin);
+        var ports = new List<EmCoSimPort> { P(1, "G[1]"), P(2, "G[2]"), P(3, "D[1]"), P(4, "D[2]") };
+        var fet = new Instance("X1", "ComposedFET", ["g", "d", "s"], [new ParameterAssignment("N", "2"), new ParameterAssignment("File", "\"fet.cmodel\"")]);
+        var models = new EmCoSimModels(new Dictionary<string, Instance>(StringComparer.OrdinalIgnoreCase) { ["X1"] = fet }, new Library("lib"), null)
+            { PinNames = new Dictionary<string, IReadOnlyList<string>> { ["X1"] = ["G", "D", "S"] } };
+        string text = EmCoSimNetlist.Text(Setup, "chip.s4p", ports, models);
+        output.WriteLine(text);
+        var tb = Read(text).TestBench;
+        Assert.Equal(["p1", "p3", "0"], tb.Instances.Single(i => i.InstanceName == "X1_f1").NetBindings);
+        Assert.Equal(["p2", "p4", "0"], tb.Instances.Single(i => i.InstanceName == "X1_f2").NetBindings);
+        Assert.All(tb.Instances.Where(i => i.InstanceName.StartsWith("X1_f", StringComparison.Ordinal)),
+                   i => Assert.Equal("1", i.Overrides.Single(o => o.Name == "N").Expression));
+
+        var sdd = new Instance("X1", "Sdd3", ["g", "d", "s"], []);
+        var tiedModels = models with { Instances = new Dictionary<string, Instance>(StringComparer.OrdinalIgnoreCase) { ["X1"] = sdd } };
+        var tied = Read(EmCoSimNetlist.Text(Setup, "chip.s4p", ports, tiedModels)).TestBench;
+        Assert.Equal(["p1", "p3", "0"], tied.Instances.Single(i => i.InstanceName == "X1").NetBindings);
+        Assert.Contains(tied.Instances, i => i.InstanceName == "X1_G_2__tie");
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────────────────────
 
     private static EmCoSimCutPin Pin(string name, EmPinClass cls = EmPinClass.Routed, string? abuts = null) => new(name, null, cls, abuts, null);

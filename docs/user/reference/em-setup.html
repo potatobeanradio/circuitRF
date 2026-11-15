@@ -1157,9 +1157,18 @@ in the layout.</p>
 </tbody>
 </table>
 <p>A pin that is only a return is reported as one; a pin left out of the run is reported with why: its layer is not an
-analysis level, its face is outside the <strong>Solve region</strong>, two separate conductors meet it, or the pin's name is at more
-than one face (a multi-finger device, refused). A floating pin is a warning because the model then sees an open there,
-which is easy to miss. So is a pin unticked under <strong>Port</strong> that no port returns through.</p>
+analysis level, its face is outside the <strong>Solve region</strong>, or two separate conductors meet it. A floating pin is a warning
+because the model then sees an open there, which is easy to miss. So is a pin unticked under <strong>Port</strong> that no port returns
+through.</p>
+<p><strong>Multi-finger devices.</strong> A pin name at several faces of an instance (a transistor's gate fingers) gets a port at each face,
+named by finger in the cell's own pin order: <code>Q1.G[1]</code>, <code>Q1.G[2]</code>. Each finger is in the pin check on its own line. The
+entry names a pin by its plain name for all its fingers (<code>Ground: [&quot;S&quot;]</code>, a <code>Pins</code> entry for <code>G</code>), or one finger by its
+indexed name. A Reference pin with as many faces pairs them finger to finger (<code>G[1]</code> against <code>S[1]</code>); one with another number
+of faces cannot be paired, so each finger is built against ground, and the run says so. In the co-simulation netlist the
+fingers of a pin are joined on the model's one terminal, which keeps the interconnect to every finger but not the phase
+differences between fingers inside the device. A model that counts its fingers (a composed FET's <code>N</code>) is written as one
+one-finger instance per finger instead, each on its own finger's ports, when its multi-face pins all have the same number
+of faces.</p>
 <p>A routed pin whose conductor, followed through the vias between the analysis levels, reaches no other port and no ground
 is reported as <strong>not connected</strong>, with a warning naming the pin and its port: the port drives an isolated piece of metal
 and reads an open, |S| = 0 dB. The usual cause is a via that lands on no metal, such as a via stack that misses the finger it

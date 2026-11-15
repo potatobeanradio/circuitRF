@@ -230,6 +230,13 @@ public static class EmSchematicWithParts
                     added.Add((PlaceholderPart(cl, model), [cl.Instance!.NetBindings[0], "0"]));
                     parts++;
                     break;
+                // brief-icf-3 — a finger tie or a further one-finger instance: the netlist carries it; the drawn cell keeps one part.
+                case EmCoSimCloseKind.Model or EmCoSimCloseKind.Short when cl.SchematicName is null && cl.Port.Component?.Cut is not null
+                                                                      && (cl.Kind == EmCoSimCloseKind.Short || cl.Comment is null):
+                    string fingers = $"{cl.Refdes}'s fingers are {(cl.Kind == EmCoSimCloseKind.Short ? "joined" : "written one instance per finger")} in the " +
+                                     "co-simulation netlist; the cell made from the schematic keeps its one part, on its first finger's ports.";
+                    if (!warnings.Contains(fingers)) warnings.Add(fingers);
+                    break;
                 // brief-icf-2 — a cut instance with no port and no model: the netlist's own sentence, no port to leave open.
                 case EmCoSimCloseKind.Open when cl.Port.Number == 0:
                     warnings.AddRange(cl.Warnings);

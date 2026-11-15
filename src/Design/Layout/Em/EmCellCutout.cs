@@ -95,6 +95,32 @@ public sealed record EmCellCutoutResult(IReadOnlyList<LayoutShape> Shapes, IRead
 /// <summary>brief-icp-7 — one cut instance's left-out region: <paramref name="Box"/> in Cell mode, and its outline polygons.</summary>
 public sealed record EmCutRegion(bool Box, IReadOnlyList<PolygonShape> Outline);
 
+/// <summary>
+/// brief-icf-3 R-icf3-1 — the port names of a multi-finger device's pins: a pin name at one face keeps it, a pin name at k faces is
+/// <c>Name[1]</c> … <c>Name[k]</c> in the cell's own pin order (which no placement changes).
+/// </summary>
+public static class EmPinFingers
+{
+    /// <summary><paramref name="pins"/> with each finger named by its index.</summary>
+    public static IReadOnlyList<EmInstancePin> Named(IReadOnlyList<EmInstancePin> pins)
+    {
+        var count = pins.GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+        if (count.Values.All(c => c == 1)) return pins;
+        var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        return [.. pins.Select(p => count[p.Name] == 1 ? p
+                                    : p with { Name = $"{p.Name}[{(seen[p.Name] = seen.GetValueOrDefault(p.Name) + 1).ToString(CultureInfo.InvariantCulture)}]" })];
+    }
+
+    /// <summary>A pin's own name with any finger index taken off: <c>C[2]</c> is <c>C</c>.</summary>
+    public static string Base(string name)
+        => name.Length > 3 && name[^1] == ']' && name.LastIndexOf('[') is var k and > 0
+           && int.TryParse(name.AsSpan(k + 1, name.Length - k - 2), NumberStyles.None, CultureInfo.InvariantCulture, out _) ? name[..k] : name;
+
+    /// <summary>The finger index of a finger's name, or null for a pin at one face.</summary>
+    public static int? Index(string name)
+        => Base(name) is var b && b.Length < name.Length ? int.Parse(name.AsSpan(b.Length + 1, name.Length - b.Length - 2), CultureInfo.InvariantCulture) : null;
+}
+
 public static class EmCellCutout
 {
     /// <summary>
@@ -188,10 +214,10 @@ public static class EmCellCutout
             if (cellMode && !boxes.ContainsKey(inst.Path)) continue;
             var keep = c.Entry.KeepNames;
             var label = inst.CellLabel;
-            var instPins = new List<(EmInstancePin Pin, int Index)>();
+            // brief-icf-3 R-icf3-1 — a pin name at several faces (a multi-finger device) is a port per face, C[1], C[2], … in the cell's
+            // own pin order, so the numbering does not depend on how the instance is placed.
+            inst = inst with { Pins = EmPinFingers.Named(inst.Pins) };
             var ordered = inst.Pins.Select((p, i) => (p, i)).OrderBy(t => t.p.Number ?? int.MaxValue).ThenBy(t => t.i).ToList();
-            var multi = inst.Pins.GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).Select(g => g.Key)
-                            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             // The instance's own metal, in the root frame: what pin-mode trimming must not leave touching, and what a parent via
             // must not land on.
@@ -245,8 +271,6 @@ public static class EmCellCutout
             {
                 EmCutPin Out(string why) => new(inst.Path, label, pin.Name, EmPinClass.Routed, null, pin.WidthM, pin.OutwardDeg, pin.Layer, null, why);
                 string pn = $"{inst.Path}.{pin.Name}";
-                if (multi.Contains(pin.Name))
-                { pins.Add(Out($"{pn}: the pin name {pin.Name} is at more than one face of {label} (several fingers), and one port per pin name is built in this series.")); continue; }
                 double turns = pin.OutwardDeg / 90.0;
                 if (Math.Abs(turns - Math.Round(turns)) > 1e-6)
                 { pins.Add(Out($"{pn}: its face looks out at {pin.OutwardDeg.ToString("G6", CultureInfo.InvariantCulture)}°, and a Planar port's face lies along x or y.")); continue; }
@@ -407,7 +431,10 @@ public static class EmCellCutout
                     continue;
                 }
                 var cut = new EmCutPin(inst.Path, label, pin.Name, EmPinClass.Routed, portLabel, widthM, q * 90.0, pin.Layer, null, null)
-                    { Face = faceSeg, Reference = plan.ReferenceOf(pin.Name) };
+                {
+                    Face = faceSeg, Reference = plan.ReferenceOf(pin.Name),
+                    FellBack = plan.Fallen.TryGetValue(pin.Name, out var fell) ? GroundSentence(fell.Why, pn, fell.Reference) : null,
+                };
                 built.Add((cut, inside.Px, inside.Py, conductor));
             }
 
@@ -455,9 +482,7 @@ public static class EmCellCutout
                 void FallBack(string why)
                 {
                     fellTo.Add((refName, pn));
-                    built[i] = built[i] with { Pin = pin with { Reference = null, FellBack =
-                        $"{why} {pn} is built against {EmComponentPort.GroundReference} instead of its Reference {refName}: an Uncalibrated Port " +
-                        "at its face, returning through the run's ground." } };
+                    built[i] = built[i] with { Pin = pin with { Reference = null, FellBack = GroundSentence(why, pn, refName) } };
                 }
                 // brief-icf-1 R-icf1-1 — the solver could not build this pin's gap port after all (Planar's strip, the 3D gap sheet):
                 // it falls back here, by the same rule as a reference the shared check cannot build.
@@ -678,20 +703,30 @@ public static class EmCellCutout
         /// <summary>The pin <paramref name="pin"/>'s port returns through, or null for the run's return.</summary>
         public string? ReferenceOf(string pin) => _reference.GetValueOrDefault(pin);
 
+        /// <summary>brief-icf-3 R-icf3-2 — a finger whose Reference is a pin at another number of faces: no face to pair it with, so it
+        /// is built against ground; the sentence says why. By finger name.</summary>
+        public Dictionary<string, (string Reference, string Why)> Fallen { get; } = new(StringComparer.OrdinalIgnoreCase);
+
         public static PinPlan Of(EmComponentPort entry, EmCellInstance inst, string cell)
         {
             var plan = new PinPlan();
-            var names = inst.Pins.Select(p => p.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            string listed = string.Join(", ", names);
+            var ci = StringComparer.OrdinalIgnoreCase;
+            // brief-icf-3 — the pins by their port names (a finger is C[1], C[2]); the entry names a pin by its base name, which takes
+            // every finger of it, or a finger by its own.
+            var names = inst.Pins.Select(p => p.Name).Distinct(ci).ToList();
+            var bases = names.Select(EmPinFingers.Base).Distinct(ci).ToList();
+            string listed = string.Join(", ", bases);
             var options = entry.PinOptions;
+            EmPinOptions? Opt(string n) => options.GetValueOrDefault(n) ?? options.GetValueOrDefault(EmPinFingers.Base(n));
+            bool InGround(string n) => entry.GroundNames.Contains(n, ci) || entry.GroundNames.Contains(EmPinFingers.Base(n), ci);
             foreach (var named in options.Keys.Concat(entry.GroundNames))
-                if (!names.Contains(named, StringComparer.OrdinalIgnoreCase))
+                if (!names.Contains(named, ci) && !bases.Contains(named, ci))
                     return plan.Refuse($"{inst.Path}: its entry names pin {named}, which {cell} does not have (its pins are {listed}).");
             foreach (var n in names)
-                if (entry.GroundNames.Contains(n, StringComparer.OrdinalIgnoreCase) || options.GetValueOrDefault(n)?.Ground == true) plan.Grounded.Add(n);
-            string? RefOf(string n) => options.GetValueOrDefault(n)?.Reference ?? entry.Reference;
+                if (InGround(n) || Opt(n)?.Ground == true) plan.Grounded.Add(n);
+            string? RefOf(string n) => Opt(n)?.Reference ?? entry.Reference;
             foreach (var n in names)
-                if (options.GetValueOrDefault(n)?.Port == false && !plan.Grounded.Contains(n)) { plan.Returns.Add(n); plan.ExplicitReturns.Add(n); }
+                if (Opt(n)?.Port == false && !plan.Grounded.Contains(n)) { plan.Returns.Add(n); plan.ExplicitReturns.Add(n); }
             foreach (var n in names)
             {
                 if (plan.Grounded.Contains(n) || plan.Returns.Contains(n)) continue;
@@ -702,6 +737,19 @@ public static class EmCellCutout
                                        "pin-referenced port is a gap between two pins' faces on either solver, and a node of their own is not a face. " +
                                        $"With Reference {EmComponentPort.GroundReference}, or a pin of {inst.Path}, it builds.");
                 var target = names.FirstOrDefault(x => x.Equals(r, StringComparison.OrdinalIgnoreCase));
+                if (target is null && bases.Contains(r, ci))
+                {
+                    // brief-icf-3 R-icf3-2 — a Reference with fingers: finger i against its finger i, when the two have as many faces.
+                    var theirs = names.Where(x => ci.Equals(EmPinFingers.Base(x), r)).ToList();
+                    var mine = names.Where(x => ci.Equals(EmPinFingers.Base(x), EmPinFingers.Base(n))).ToList();
+                    if (theirs.Count == mine.Count) target = theirs[mine.IndexOf(n)];
+                    else
+                    {
+                        plan.Fallen[n] = (r, $"{inst.Path}.{n}: its Reference {r} is at {theirs.Count} face(s) and {EmPinFingers.Base(n)} at " +
+                                             $"{mine.Count}, so their fingers cannot be paired face to face.");
+                        continue;
+                    }
+                }
                 if (target is null)
                     return plan.Refuse($"{inst.Path}.{n}: its Reference {r} is not one of {cell}'s pins ({listed}), {EmComponentPort.GroundReference} or " +
                                        $"{EmComponentPort.CommonReference}.");
@@ -714,8 +762,9 @@ public static class EmCellCutout
             // A pin other pins return through is only a return — unless its entry gives it a port of its own, which it cannot be as well.
             foreach (var (n, target) in plan._reference)
             {
-                var own = options.GetValueOrDefault(target);
-                if (own?.Port == true || own?.Reference is { } stated && !stated.Equals(target, StringComparison.OrdinalIgnoreCase))
+                var own = Opt(target);
+                if (own?.Port == true || own?.Reference is { } stated && !stated.Equals(target, StringComparison.OrdinalIgnoreCase)
+                                                                      && !stated.Equals(EmPinFingers.Base(target), StringComparison.OrdinalIgnoreCase))
                     return plan.Refuse($"{inst.Path}.{target} is the Reference of {string.Join(" and ", plan._reference.Where(kv => kv.Value == target).Select(kv => $"{inst.Path}.{kv.Key}"))} " +
                                        "and is also given a port of its own; at one face a pin is the return of other ports or a driven port, not both.");
                 plan.Returns.Add(target);
@@ -725,6 +774,11 @@ public static class EmCellCutout
 
         private PinPlan Refuse(string why) { Refusal = why; return this; }
     }
+
+    /// <summary>The one sentence a pin built against ground instead of its Reference carries.</summary>
+    private static string GroundSentence(string why, string pin, string reference)
+        => $"{why} {pin} is built against {EmComponentPort.GroundReference} instead of its Reference {reference}: an Uncalibrated Port " +
+           "at its face, returning through the run's ground.";
 
     /// <summary>A face in a sentence: where it lies and which way it looks out of the instance.</summary>
     private static string FaceWords(EmCutPin p, Func<long, string> mm)

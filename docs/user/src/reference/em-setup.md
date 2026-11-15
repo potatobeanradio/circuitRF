@@ -452,9 +452,19 @@ in the layout.
 | **Floating** | Nothing meets its face | None, and a **warning** | On ground where the schematic grounds it, else on an unconnected node named for it |
 
 A pin that is only a return is reported as one; a pin left out of the run is reported with why: its layer is not an
-analysis level, its face is outside the **Solve region**, two separate conductors meet it, or the pin's name is at more
-than one face (a multi-finger device, refused). A floating pin is a warning because the model then sees an open there,
-which is easy to miss. So is a pin unticked under **Port** that no port returns through.
+analysis level, its face is outside the **Solve region**, or two separate conductors meet it. A floating pin is a warning
+because the model then sees an open there, which is easy to miss. So is a pin unticked under **Port** that no port returns
+through.
+
+**Multi-finger devices.** A pin name at several faces of an instance (a transistor's gate fingers) gets a port at each face,
+named by finger in the cell's own pin order: `Q1.G[1]`, `Q1.G[2]`. Each finger is in the pin check on its own line. The
+entry names a pin by its plain name for all its fingers (`Ground: ["S"]`, a `Pins` entry for `G`), or one finger by its
+indexed name. A Reference pin with as many faces pairs them finger to finger (`G[1]` against `S[1]`); one with another number
+of faces cannot be paired, so each finger is built against ground, and the run says so. In the co-simulation netlist the
+fingers of a pin are joined on the model's one terminal, which keeps the interconnect to every finger but not the phase
+differences between fingers inside the device. A model that counts its fingers (a composed FET's `N`) is written as one
+one-finger instance per finger instead, each on its own finger's ports, when its multi-face pins all have the same number
+of faces.
 
 A routed pin whose conductor, followed through the vias between the analysis levels, reaches no other port and no ground
 is reported as **not connected**, with a warning naming the pin and its port: the port drives an isolated piece of metal
