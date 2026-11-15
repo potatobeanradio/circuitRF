@@ -81,6 +81,11 @@ public sealed record EnvelopeParams
     /// <summary>Newton updates every step takes before its tolerance may accept (<see cref="EnvelopeNewton.Solve"/>): 0,
     /// except EvmSplit's noiseless run.</summary>
     public int MinNewton { get; init; }
+    /// <summary>brief-pch-6 — keep each Propagation Channel's transmit wave (<see cref="EnvelopeRunResult.ChannelRecordings"/>).</summary>
+    public bool RecordChannelWaves { get; init; }
+    /// <summary>brief-pch-6 — a channel (instance path) whose receive pin is driven by a recorded transmit wave instead of its own
+    /// transmit pin: the receive side alone, the partition PCH-10's drops reuse.</summary>
+    public IReadOnlyDictionary<string, ChannelRecording>? ChannelDrive { get; init; }
 }
 
 public sealed class EnvelopeRunResult
@@ -131,6 +136,13 @@ public sealed class EnvelopeRunResult
     public double[]? MixFreqHz { get; init; }
     public int[][]? MixTones { get; init; }
     public List<string> Notes { get; } = new();
+    /// <summary>brief-pch-6 — the longest simulated channel delay, h + τ_max (s); 0 with no channel.</summary>
+    public double ChannelLatencyS { get; init; }
+    /// <summary>brief-pch-6 — each channel's transmit wave, when <see cref="EnvelopeParams.RecordChannelWaves"/> asked.</summary>
+    public IReadOnlyDictionary<string, ChannelRecording>? ChannelRecordings { get; init; }
+    /// <summary>brief-pch-6 R-pch6-9 — the true channel at an IProbe for the genie equalizer: (IProbe path, carrier Hz, window
+    /// start sample) to the response of the one channel receiving there, or null.</summary>
+    public Func<string, double, long, IChannelResponse?>? ChannelResponse { get; init; }
 
     /// <summary>
     /// brief-paa-6b — this record with its recorded signals replaced by <paramref name="names"/>' "branches": a current and a voltage
@@ -329,6 +341,11 @@ public sealed class EnvelopeEngine
         // Every line is its delay for the whole run — the DC solve, the HB start and the stepping (EnvelopeLineDelay) — and
         // every other non-affine element (an SnP, a System Filter, a Z(freq) block) its rational fit (EnvelopeSnpFit).
         using var lines = EnvelopeLineDelay.Apply(_nl, [.. Enumerable.Range(0, K + 1).Select(k => k * f0)], h, 0.5 * need);
+        // brief-pch-6 — every Propagation Channel is its explicit, one-way coupling for the run (EnvelopeChannel).
+        foreach (var ec in _nl.Components) if (ec.Model is ICarrierContext carrierCtx) carrierCtx.SetCarrier(f0);
+        using var channels = EnvelopeChannel.Apply(_nl, [.. Enumerable.Range(0, K + 1).Select(k => k * f0)], h,
+                                                   (long)Math.Round(p.StartS / h) - (int)Math.Round(p.WarmupS / h), p.ChannelDrive, p.RecordChannelWaves);
+        Action<int, Complex[]>? delayedMain = lines.Any || channels.Any ? (k, b) => { if (lines.Any) lines.AddMain(k, b); channels.AddMain(k, b); } : null;
         using var snpFit = EnvelopeSnpFit.Apply(_nl, K * f0 + 0.5 * rate, [.. Enumerable.Range(1, K).Select(k => k * f0)], 0.5 * rate);
         // An element whose fit was refused (any stamp whose 1 Hz / 2 Hz tangent is not exact) is held at its DC stamp for
         // the baseband product.
@@ -386,6 +403,7 @@ public sealed class EnvelopeEngine
                 CompressedColumnStorage<Complex> A0, C;
                 baseband.Holding = k == 0;            // the whole baseband product, its right-hand side included
                 lines.Product = k;
+                channels.Product = k;
                 if (k == 0)
                 {
                     var a1 = Stamp(extractor, mna, dlt);
@@ -422,7 +440,9 @@ public sealed class EnvelopeEngine
                 var pr = new Product { Omega = w, A0 = A0, C = C, BStatic = bStatic, BUnit = bUnit };
                 baseband.Holding = false;
                 lines.Product = null;
+                channels.Product = null;
                 lines.Bind();
+                channels.Bind();
                 var delayNow = lines.Coupling(k, 1, A0.RowCount);
                 pr.Be = Stage.Of(Prepare(A0, C, w, aBe, ifNodes, bStatic, bUnit, delayNow));
                 pr.G2 = Stage.Of(Prepare(A0, C, w, aG2, ifNodes, bStatic, bUnit, delayNow));
@@ -433,6 +453,7 @@ public sealed class EnvelopeEngine
         {
             baseband.Holding = false;
             lines.Product = null;
+            channels.Product = null;
             foreach (var s in sources) s.EnvelopeDrive = null;
         }
 
@@ -443,6 +464,7 @@ public sealed class EnvelopeEngine
                                           out double tolRun);
         for (int k = 0; k <= K; k++) { products[k].Xm1 = hbX[k]; products[k].Xm2 = hbX[k]; }
         lines.Start(hbX);
+        channels.Start(hbX);
         var qm1 = qPrev; var qm2 = qPrev;
         Mark("HB start");
 
@@ -630,7 +652,8 @@ public sealed class EnvelopeEngine
                     double f = (double)i / m;
                     var xn = Advance(nw, aSub, -aSub, 0.0, k => SplitStage(k, m, aSub),
                                      s => Drv(s, step - 1) + f * (Drv(s, step) - Drv(s, step - 1)), x, x, q, q, vs,
-                                     lines.Any ? (k, b) => lines.AddSplit(k, b, m, i) : null, i0 + step, out var qn);
+                                     lines.Any || channels.Any ? (k, b) => { if (lines.Any) lines.AddSplit(k, b, m, i); channels.AddSplit(k, b, m, i); } : null,
+                                     i0 + step, out var qn);
                     if (xn is null) ok = false;
                     else { x = xn; q = qn; lines.PushSub(xn); }
                 }
@@ -670,10 +693,11 @@ public sealed class EnvelopeEngine
 
             var xNew = Advance(newton, alpha, b1, b2, k => be ? products[k].Be : products[k].G2, s => Drv(s, step),
                                products.Select(pr => pr.Xm1).ToArray(), products.Select(pr => pr.Xm2).ToArray(), qm1, qm2, V,
-                               lines.Any ? lines.AddMain : null, i0 + step, out var qNow)
+                               delayedMain, i0 + step, out var qNow)
                        ?? Split(step, V, out qNow);
             for (int k = 0; k <= K; k++) { products[k].Xm2 = products[k].Xm1; products[k].Xm1 = xNew[k]; }
             lines.Push(xNew);
+            channels.Push(xNew);
             qm2 = qm1; qm1 = qNow;
             vHist.Add((Complex[,])V.Clone()); if (vHist.Count > 3) vHist.RemoveAt(0);
             Record(step);
@@ -693,6 +717,9 @@ public sealed class EnvelopeEngine
             CarrierMix = sources.SelectMany((s, si) => signals[si].Carriers.Select(_ => 1)).ToArray(),
             CarrierOffsetHz = sources.SelectMany((s, si) => signals[si].Carriers.Select(c => s.FcHz + c.OffsetHz - f0)).ToArray(),
             CarrierLabels = sources.SelectMany((s, si) => signals[si].Carriers.Select(c => $"{s.InstanceName}:{c.Spec.Label} @ {(s.FcHz + c.OffsetHz) / 1e9:0.####} GHz")).ToArray(),
+            ChannelLatencyS = channels.Any ? channels.LatencyS : 0,
+            ChannelRecordings = channels.Any && p.RecordChannelWaves ? channels.Recordings : null,
+            ChannelResponse = channels.Responder(_nl),
         };
         if (splitSteps > 0)
             res.Notes.Add($"envelope: {splitSteps} step(s) did not converge at the full step and were retaken as up to {finestSplit} sub-steps");

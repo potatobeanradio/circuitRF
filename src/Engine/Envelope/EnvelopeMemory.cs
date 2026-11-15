@@ -51,8 +51,11 @@ internal static class EnvelopeMemory
         if (sources.Length == 0) return null;
         double f0 = sources[0].FcHz;
         foreach (var ec in nl.Components)
+        {
+            if (ec.Model is ICarrierContext carrierCtx) carrierCtx.SetCarrier(f0);   // brief-pch-6: a channel's f0
             if (ec.Model is P1ToneModel p1) p1.SetToneContext(fc: f0, driveFreqHz: f0);
             else if (ec.Model is PnToneModel pn) pn.SetToneContext(fc: f0);
+        }
         foreach (var s in sources) { s.SetToneContext(f0); s.EnvelopeDrive = Complex.Zero; }
 
         using var baseband = EnvelopeBaseband.Apply(nl, bandRad);

@@ -46,7 +46,7 @@ public static class EnvelopeTangentCheck
         if (ws.Length == 0) return list;
         foreach (var ec in nl.Components)
         {
-            if (ec.IsNonlinear || ec.Model is ModSourceModel or DelayLineModel) continue;
+            if (ec.IsNonlinear || ec.Model is ModSourceModel or DelayLineModel or PropagationChannelModel) continue;
             double worst;
             try { worst = ElementError(ec, ws, bandRad); }
             catch (Exception) { continue; }    // an element that cannot be stamped or terminated alone is the run's to refuse, not this check's

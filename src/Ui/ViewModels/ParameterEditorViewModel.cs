@@ -970,6 +970,27 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
     public ObservableCollection<ParameterRowViewModel> Rows { get; } = [];
 
+    /// <summary>
+    /// brief-pch-6 R-pch6-11 — a component whose parameters fall into groups (a Propagation Channel's, design note §5.5): its rows in
+    /// group order, each group's order kept, the first row of each carrying the group's heading. Nothing for any other component.
+    /// </summary>
+    private void GroupRows(SymbolKind kind)
+    {
+        string[] order = ["Geometry", "Large scale", "Small scale", "Ends", "Realization"];
+        if (Rows.Count == 0 || ComponentTypeRegistry.ParameterGroup(kind, Rows[0].Name) is null) return;
+        int Index(ParameterRowViewModel r) => Array.IndexOf(order, ComponentTypeRegistry.ParameterGroup(kind, r.Name)) is var i and >= 0 ? i : order.Length;
+        var sorted = Rows.OrderBy(Index).ToList();
+        Rows.Clear();
+        string? last = null;
+        foreach (var r in sorted)
+        {
+            string group = ComponentTypeRegistry.ParameterGroup(kind, r.Name) ?? "";
+            r.GroupHeading = group != last ? group : "";
+            last = group;
+            Rows.Add(r);
+        }
+    }
+
     /// <summary>A composed FET's instance switches (brief-modelcomposer-21), in their own collapsible group under the
     /// ordinary rows — the same row view models, so each commits exactly as any other row does.</summary>
     public ObservableCollection<ParameterRowViewModel> SwitchRows { get; } = [];
@@ -1298,6 +1319,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             foreach (var row in built.Where(r => !r.IsFilePathParam && !IsFloatedChoice(r))) Rows.Add(row);
             foreach (var row in built.Where(IsOwnOverride)) Rows.Add(row);
             ConfigureTestPadRows();
+            GroupRows(comp.Symbol);
         }
 
         if (comp.Symbol is SymbolKind.Snp or SymbolKind.Deembed) AdoptDefaultSnpParameters(comp);

@@ -1814,6 +1814,22 @@ internal static class CliDiagnostics
         "{path}: parametric sweep '{sweep}': {why}", ("path", path), ("sweep", sweep), ("why", why));
 
     /// <summary><c>EvmSplit=yes</c> with nothing to split (brief NZ-8).</summary>
+    /// <summary>brief-pch-6 — a Propagation Channel's model refused at the bench's carrier: its own sentence.</summary>
+    public static Diagnostic CheckChannelModel(string path, string part, string why) => Diagnostic.Create(
+        "check.channel.model", DiagnosticSeverity.Error,
+        "{path}: Propagation Channel '{part}': {why}", ("path", path), ("part", part), ("why", why));
+
+    /// <summary>brief-pch-6 — a cycle of Propagation Channels in an envelope bench, refused naming every instance in it.</summary>
+    public static Diagnostic CheckChannelCycle(string path, IReadOnlyList<string> instances) => Diagnostic.Create(
+        "check.channel.cycle", DiagnosticSeverity.Error,
+        "{path}: {sentence}", ("path", path), ("instances", instances), ("sentence", CircuitRF.Core.Devices.PropagationChannelDiagnostics.Cycle(instances).Render()));
+
+    /// <summary>brief-pch-6 — a receive pin two Propagation Channels drive.</summary>
+    public static Diagnostic CheckChannelSharedReceivePin(string path, string net, IReadOnlyList<string> channels) => Diagnostic.Create(
+        "check.channel.shared-receive-pin", DiagnosticSeverity.Error,
+        "{path}: {sentence}", ("path", path), ("net", net), ("channels", channels),
+        ("sentence", CircuitRF.Core.Devices.PropagationChannelDiagnostics.SharedReceivePin(net, channels).Render()));
+
     public static Diagnostic CheckEvmSplitNothing(string path, string analysis, string why) => Diagnostic.Create(
         "check.noise.evm-split-nothing", DiagnosticSeverity.Info,
         "{path}: envelope '{analysis}' has EvmSplit=yes, but {why}.", ("path", path), ("analysis", analysis), ("why", why));

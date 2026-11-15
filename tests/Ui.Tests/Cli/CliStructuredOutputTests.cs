@@ -453,6 +453,10 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.cem.component-port-refused",
         "check.cem.component-port-warning",
         "check.chain.summary",
+        // brief-pch-6: a Propagation Channel's model at the carrier, a cycle of channels, a receive pin two channels drive.
+        "check.channel.cycle",
+        "check.channel.model",
+        "check.channel.shared-receive-pin",
         "check.cmc.refused",
         "check.cmc.summary",
         "check.cmc.warning",
@@ -507,6 +511,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.path.interchange",
         "check.path.not-found",
         "check.path.unknown-kind",
+        "check.phased-array.swept-structure",   // PAA-3's, never recorded here
         // brief-img-2 R-im2-6 — a picture named by the kind of drawing it reads as.
         "check.picture.kind",
         "check.picture.no-drawing",

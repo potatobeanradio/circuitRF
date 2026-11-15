@@ -565,6 +565,10 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     [ObservableProperty] private bool   _showOnSchematic;
     [ObservableProperty] private string _nameError = "";
     [ObservableProperty] private int    _selectedEnumIndex;
+    /// <summary>brief-pch-6 R-pch6-11 — the heading shown above this row when it starts a group (ComponentTypeRegistry.ParameterGroup);
+    /// empty for every other row.</summary>
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasGroupHeading))] private string _groupHeading = "";
+    public bool HasGroupHeading => GroupHeading.Length > 0;
 
     partial void OnSelectedEnumIndexChanged(int oldValue, int newValue)
     {

@@ -4744,3 +4744,32 @@ of the record and not the solver's tolerance. `EnvelopeEqualizerTests` therefore
 1e-3 % of the no-channel run (from 48 % with one gain), not the brief's 1e-6 %. **Shaping must be off for that
 comparison.** The shaping filter runs after the cyclic prefix is inserted, so a prefix is then not quite a copy of its
 symbol's end, and an echo inside it reads something the source did not play (0.195 % against 0.253 %).
+
+## brief-pch-6 — the Propagation Channel in the envelope (EnvelopeChannel, 2026-11-15)
+
+- **Explicit, one way, and on the right-hand side only.** For the run the channel stamps its two ends alone (S21 left out), and
+  each ray's delayed transmit wave w = (v + Z0·i)/√Re Z0 enters the receive row's right-hand side. The simulated delay is one step
+  plus the ray's excess delay, so the quadratic Lagrange nodes are always solved steps, sub-steps included. Unlike a line, there
+  is no current-step share in the matrix. The transmit and receive sides stay block-diagonal: gate 2 (receive side alone,
+  driven by the recorded transmit wave) agrees with the joint run to exactly 0, and gate 5 (changed receive side) leaves the
+  transmit side bit for bit.
+- **The step's latency is a pure envelope delay.** The rotation is e^(−jω_k·τ) with τ the excess delay only, so a constant
+  envelope reads H(f_k, t), which the harmonic-balance start stamps frozen, and the history before t = 0 is that steady state.
+  Measurement skips whatever of h + τ_max the warm-up does not hold (`SettleSkip`). Parallel segments warm up for at least
+  twice that.
+- **The free-space slope across a product's band had to be carried.** The amplitude λ/(4π·d) goes as 1/f. Held at the product's
+  frequency, it read 5e-4 off H(f) across ±0.7 MHz at 2 GHz. It is now carried to first order, (1 − Δf/f_k), with the Δf as
+  the Lagrange derivative of the delayed wave, as `EnvelopeLineDelay` carries a loss slope. The second order is 1e-7 there.
+- **Quadratic Lagrange needs a fine step for 1e-6.** Its error at the band edge is about d(1−d)(2−d)/6·(ωh)³. At the automatic
+  step that is ~1e-4 of the delayed ray. Gate 4 steps at 32 per signal sample and reads 8.7e-7 against H(f), the delay 3.37
+  steps.
+- **Two existing passes would have eaten the channel.** `EnvelopeSnpFit`'s generic non-affine test and `EnvelopeTangentCheck` both
+  stamp every element at the steady state, where the channel's frozen H is not affine in ω. The fit would have replaced it with a
+  rational approximation, and the check would have warned about it. Both skip `PropagationChannelModel` now.
+- **Envelope noise skipped device sources** (with a warning that their noise is not modelled in an envelope run). The channel's
+  receive-pin noise is stationary thermal, so it is let through.
+- **HB needs a tight tolerance for a 1e-9 dB power gate.** At the default `Tol` a P1Tone's matched voltage is 5e-7 off (4e-6 dB).
+  Gate 1 solves to 1e-14 A, and the channel's own ratio V(rx)/V(tx) is Friis to 1e-11 either way.
+- **What a run reports.** `PropagationChannelReport.Add` writes `link:<instance>:PathLoss_dB`, `Loss_dB[term]`, `Delay0_s`,
+  `Doppler0_Hz`, `Reference_Hz`, `RayDelay_s`, `RayDoppler_Hz` and `RayGain[ray]` into the S-parameter, HB (all three paths) and
+  envelope results. HB also notes once that it holds the channel with no Doppler shift.

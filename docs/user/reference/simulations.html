@@ -871,12 +871,12 @@ is large enough to move ACPR by about 0.1 dB.</li>
 <tr>
 <td>Taps</td>
 <td>11</td>
-<td><code>Equalizer=pilot</code> on DBPSK: the taps of the trained equalizer.</td>
+<td><code>Equalizer=pilot</code> on DBPSK or SC: the taps of the trained equalizer.</td>
 </tr>
 <tr>
 <td>Training</td>
 <td>64</td>
-<td><code>Equalizer=pilot</code> on DBPSK: the bits it is trained on. EVM and errors are read on the rest.</td>
+<td><code>Equalizer=pilot</code> on DBPSK, or on SC without a preamble or pilot blocks: the bits or symbols it is trained on. EVM and errors are read on the rest.</td>
 </tr>
 </tbody>
 </table>
@@ -1301,6 +1301,11 @@ Each modulation is measured the way its receiver reads it:</p>
 <td>constellation</td>
 </tr>
 <tr>
+<td>SC</td>
+<td>EVM at each data symbol after the matched filter, against the ideal point, over the constellation's mean power</td>
+<td>constellation</td>
+</tr>
+<tr>
 <td>FSK, GFSK, GMSK</td>
 <td>the frequency at each bit centre against the frequency sent: FSK error, deviation and offset</td>
 <td>frequency at each bit</td>
@@ -1312,7 +1317,7 @@ Each modulation is measured the way its receiver reads it:</p>
 </tr>
 </tbody>
 </table>
-<p><strong>LTE, NR and DBPSK</strong> (axes branch, carrier):</p>
+<p><strong>LTE, NR, DBPSK and SC</strong> (axes branch, carrier):</p>
 <table>
 <thead>
 <tr>
@@ -1381,11 +1386,13 @@ would be a circle; these say more.</p>
 <li><strong>How it is measured.</strong> The probe's envelope is brought back to the carrier's own sample rate and
 its delay is fitted against the signal the source played. OFDM is then cut into symbols, each
 transformed after its cyclic prefix, with one complex gain fitted against the ideal points. DBPSK,
-FSK and CSS are first filtered to their channel, and so is the reference they are compared with,
-so the measurement bandwidth is the channel's. With <code>Equalizer=none</code>, the default, there is no
+FSK, CSS and SC are first filtered to their channel, and so is the reference they are compared with,
+so the measurement bandwidth is the channel's. SC then passes both through its matched filter, and its
+preamble and pilot symbols are not measured. With <code>Equalizer=none</code>, the default, there is no
 per-subcarrier equaliser, so the in-band ripple of a filter counts as error, as it does in NMSE.</li>
 <li><strong>Through a matched pad</strong> the error is the source signal's own: the Signal Designer's EVM for LTE
-and NR (from clipping and shaping), and zero for DBPSK, FSK and CSS.</li>
+and NR (from clipping and shaping) and for a clipped SC carrier, and zero for DBPSK, FSK, CSS and an
+unclipped SC carrier.</li>
 <li><strong>The step.</strong> EVM reads the circuit as the run steps it, and through a filter <em>draft</em> reads more
 than <em>standard</em>: a 5 MHz NR carrier through a 60 MHz bandpass reads 0.38 % at <em>draft</em> and 0.34 % at
 <em>standard</em> when it is at the envelope's centre. Off the centre the difference grows with the offset
@@ -1431,7 +1438,7 @@ distortion and its noise, and the in-channel SNR is measured:</p>
 <p>A source's <code>PhaseNoise</code> mask is off in the second run too, so phase noise is in the noise part and
 lowers <code>SNR_dB</code> as thermal noise does. An LO whose mask integrates to −38.5 dBc over the channel holds
 the noise part near 1 % however strong the signal; the distortion part is the error without it.</p>
-<p>For LTE, NR, DBPSK and CSS the noise's part is 1/√SNR. FSK reads its frequency, and noise moves the
+<p>For LTE, NR, DBPSK, SC and CSS the noise's part is 1/√SNR. FSK reads its frequency, and noise moves the
 frequency more than the amplitude, so its error is larger than that. The split is what decides
 whether to fix linearity or noise. Over a short record the noisy run can read slightly less than
 the noiseless one; the noise part is then 0 and the run says so. Without EvmSplit, <code>SNR_dB</code> is not
@@ -1452,7 +1459,7 @@ a fade on some subcarriers reads as distortion, and a carrier offset turns the c
 <tr>
 <th>Equalizer</th>
 <th>LTE, NR</th>
-<th>DBPSK</th>
+<th>DBPSK, SC</th>
 </tr>
 </thead>
 <tbody>
@@ -1469,14 +1476,14 @@ a fade on some subcarriers reads as distortion, and a carrier offset turns the c
 <tr>
 <td><code>pilot</code></td>
 <td>Each subcarrier's response read only from the pilot comb (<code>Pilots=</code>), averaged over the four pilot symbols either side, interpolated in frequency and then in time. EVM is read on the other elements</td>
-<td>An equalizer of <code>Taps=</code> taps trained on the first <code>Training=</code> bits, applied to the rest</td>
+<td>An equalizer of <code>Taps=</code> taps, one symbol apart. DBPSK trains it on the first <code>Training=</code> bits and reads the rest. SC trains it on the preamble and pilot blocks when the carrier has them and reads every data symbol; without them it trains on the first <code>Training=</code> data symbols and reads the rest</td>
 </tr>
 </tbody>
 </table>
 <p><code>genie</code> takes out everything linear and is the best a receiver can do. <code>pilot</code> is what a receiver achieves, with the
 noise of its own estimates. At 40 dB SNR the two are within half a decibel of each other. FSK and CSS are decided by
 their own detectors and take no equalizer.</p>
-<p><strong>The frequency offset</strong> is measured in every mode from the phase of each symbol (LTE, NR) or bit (DBPSK) against the
+<p><strong>The frequency offset</strong> is measured in every mode from the phase of each symbol (LTE, NR, SC) or bit (DBPSK) against the
 signal sent: <code>CFO_Hz</code> and its drift, <code>CFOdrift_Hzps</code>. With <code>genie</code> or <code>pilot</code> it is taken out of the envelope before
 the equalizer, so it leaves no interference between subcarriers. With <code>none</code> it is reported and left in, so <code>none</code>
 reads exactly as it always did. An offset beyond half the subcarrier spacing cannot be told from one a subcarrier away.</p>
@@ -1503,15 +1510,18 @@ reads exactly as it always did. An offset beyond half the subcarrier spacing can
 </tr>
 <tr>
 <td><code>BERest</code></td>
-<td>the BER estimated from each element's SINR, <em>estimated (Gaussian)</em>: LTE, NR and DBPSK</td>
+<td>the BER estimated from each element's SINR, <em>estimated (Gaussian)</em>: LTE, NR, DBPSK and SC</td>
 </tr>
 <tr>
 <td><code>SINR_dB</code></td>
-<td>each element's SINR after the equalizer, over symbol and subcarrier (one column for DBPSK)</td>
+<td>each element's SINR after the equalizer, over symbol and subcarrier (one column for DBPSK and SC)</td>
 </tr>
 </tbody>
 </table>
 <p>QAM bits are Gray-coded on each axis. DBPSK bits are differential, so a bit is wrong when one of its two symbols is.
+An SC symbol is decided to the nearest point of its constellation, and its bits are that point's label
+(<a href="signal-designer.html#sc">A single carrier</a>). Its <code>BERest</code> uses BPSK's and the square QAMs' closed forms, 8PSK's
+exact error rate, and for APSK the union bound over every pair of points.
 FSK is decided by the sign of its frequency, and CSS by the bin of each de-chirped symbol. A low BER needs many bits
 to count: 10⁻⁶ needs some 10⁸ bits for 100 errors. <code>BERest</code> reaches lower, because it treats noise and distortion as
 Gaussian. With <code>EvmSplit=yes</code>, a run whose distortion is far from Gaussian says so, and there <code>BERest</code> is a rough

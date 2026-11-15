@@ -367,6 +367,12 @@ public static class ComponentTypeRegistry
             SearchTerms: ["Phased Antenna Array", "PhasedArray", "phased array", "antenna array", "array", "pa", "beam", "beam steering",
                           "embedded element pattern", "active reflection", "array factor", "cemr"],
             IsCommon: false),
+        // brief-pch-6 — "CH" is the series' own prefix; never "channel" alone in the name (a Phased Array has channel cells).
+        [SymbolKind.PropagationChannel] = new("Propagation Channel", "CH",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Propagation Channel", "PropagationChannel", "propagation", "path loss", "link", "radio link", "free space",
+                          "Friis", "multipath", "Doppler", "two-ray", "satellite", "ch"],
+            IsCommon: false),
         [SymbolKind.Combiner]      = new("Combiner", "CMB",
             Category: ComponentCategory.System,
             SearchTerms: ["Combiner", "N-way combiner", "cmb", "splitter", "divider", "power divider",
@@ -1025,6 +1031,10 @@ public static class ComponentTypeRegistry
             "The two terminals are interchangeable — this block is symmetric, and its parameters "
           + "describe both ports at once.",
 
+        SymbolKind.PropagationChannel =>
+            "tx is the transmit antenna's terminals and rx the receive antenna's, each over ground. NOT interchangeable: the channel "
+          + "carries tx to rx and nothing back, so a reverse link is a second channel (Reverse= for the same realization).",
+
         SymbolKind.PhasedArray =>
             "In Elements mode the terminals are the elements, one each, numbered row-major from the top left as seen from boresight: "
           + "element n is row (n − 1) div Cols + 1, column (n − 1) mod Cols + 1. Each is over ground.",
@@ -1210,6 +1220,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Duplexer      => "Duplexer",
         SymbolKind.Combiner      => "Combiner",
         SymbolKind.PhasedArray   => PhasedArrayModel.TypeName,
+        SymbolKind.PropagationChannel => PropagationChannelModel.TypeName,
         SymbolKind.Term          => "Port",  // engine Reference stays "Port" for .cnl compat
         SymbolKind.TermG         => "Port",  // SAME engine component as Term — R-hk-6, no parallel model
         SymbolKind.Pin           => "Pin",   // sentinel — IsPrimitive("Pin")==false; elaborator skips it
@@ -1320,7 +1331,8 @@ public static class ComponentTypeRegistry
     /// path, and a path is exactly the kind of value nobody should be asked to type.</para>
     public static bool IsFilePathParameter(SymbolKind kind, string parameterName)
         => (kind is SymbolKind.VerilogA or SymbolKind.WBond && parameterName.Equals("File", StringComparison.Ordinal))
-        || (kind is SymbolKind.PhasedArray && parameterName.Equals("Record", StringComparison.Ordinal));
+        || (kind is SymbolKind.PhasedArray && parameterName.Equals("Record", StringComparison.Ordinal))
+        || (kind is SymbolKind.PropagationChannel && parameterName is "File" or "Profile");
 
     /// <summary>A newly placed wBond's operating temperature, °C: <see cref="CircuitRF.WBond.WireMaterials.DefaultOperatingTempC"/>,
     /// the one default wire temperature, so the Inspector and the wBond editor cannot disagree.</summary>
@@ -1516,6 +1528,7 @@ public static class ComponentTypeRegistry
          : PhaseNoiseParameterDescription(kind, parameterName) is { Length: > 0 } pnDesc ? pnDesc
          : kind is SymbolKind.ComposedFET ? ComposedFetParameterDescription(parameterName)
          : kind is SymbolKind.Deembed ? DeembedParameterDescription(parameterName)
+         : kind is SymbolKind.PropagationChannel ? ChannelParameterDescription(parameterName)
          : kind is not SymbolKind.VerilogA ? "" : parameterName switch
         {
             "File"  => "The model to load: a compiled model (.osdi), or Verilog-A source (.va, .vams) "
@@ -2258,6 +2271,75 @@ public static class ComponentTypeRegistry
         };
     }
 
+    // ── the Propagation Channel (brief-pch-6) ────────────────────────────────
+
+    /// <summary>The words a channel parameter takes, as a picker: the models, the multipath and Doppler-compensation choices, and
+    /// every word-valued large-scale parameter by the registry's own list (a name several models share takes their union).</summary>
+    public static IReadOnlyList<string>? ChannelWordOptions(string name)
+    {
+        if (name == "PathLoss") return [.. RfCore.Propagation.PropagationModels.All.Select(m => m.Name)];
+        if (name == "Multipath") return ["none", "file"];
+        if (name == "DopplerComp") return ["none", "common"];
+        var words = RfCore.Propagation.PropagationModels.All.SelectMany(m => m.Parameters).Concat(RfCore.Propagation.AddedLosses.Parameters)
+                          .Where(p => p.Name == name && p.Kind == RfCore.Propagation.ParameterKind.Word && p.Words is not null)
+                          .SelectMany(p => p.Words!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return words.Count > 0 ? words : null;
+    }
+
+    /// <summary>
+    /// brief-pch-6 R-pch6-11 — the group a channel parameter is shown under (design note §5.5): Geometry, Large scale, Small scale,
+    /// Ends or Realization. A parameter the channel does not own is the large-scale model's. Null for any other component.
+    /// </summary>
+    public static string? ParameterGroup(SymbolKind kind, string name) => kind is not SymbolKind.PropagationChannel ? null : name switch
+    {
+        "Distance" or "TxHeight" or "RxHeight" or "TxPos" or "RxPos" or "TxVel" or "RxVel"
+            or "TxAz" or "TxEl" or "TxRoll" or "RxAz" or "RxEl" or "RxRoll" => "Geometry",
+        "Multipath" or "File" => "Small scale",
+        "TxGain" or "RxGain" or "TxPattern" or "RxPattern" or "TxZ" or "RxZ" or "RxTant" => "Ends",
+        "TimeOffset" or "DopplerComp" or "Reverse" => "Realization",
+        _ => "Large scale",
+    };
+
+    private static string ChannelParameterDescription(string name)
+    {
+        string own = name switch
+        {
+            "Distance" => "Horizontal distance between the two antennas, metres (a bare number; m alone is milli). The ends are at heights "
+                        + "TxHeight and RxHeight above a flat ground.",
+            "TxHeight" => "Transmit antenna height above the ground, metres.",
+            "RxHeight" => "Receive antenna height above the ground, metres.",
+            "TxPos" or "RxPos" => "An end's position as x,y,z in metres, z up, in place of Distance and the heights. Both or neither.",
+            "TxVel" or "RxVel" => "An end's velocity as x,y,z in m/s: each ray's Doppler, from the rate its path length changes.",
+            "TxAz" or "RxAz" => "Azimuth of the end's pattern boresight (+z), degrees from +x towards +y. Unstated, it points at the other end.",
+            "TxEl" or "RxEl" => "Elevation of the end's pattern boresight above the horizontal, degrees.",
+            "TxRoll" or "RxRoll" => "Roll of the end's pattern about its boresight, degrees.",
+            "PathLoss" => "The large-scale model, by its recommendation or report (free, logdist, multislope, tworay, 38901, P1238, P1411, P526, "
+                        + "satellite, P1812). Its parameters, and the added losses, are written beside it by the model's own names.",
+            "Multipath" => "none: the rays the geometry gives (the line of sight, and tworay's ground ray). file: the rays of a ray list (File=), "
+                         + "held static.",
+            "File" => "Multipath=file: the ray list, a CSV of delay (ns), power (dB) and optionally phase (deg) and doppler (Hz), one ray a row; "
+                    + "delay is in excess of the line of sight, power relative to the large-scale loss.",
+            "TxGain" => "Transmit antenna gain, dBi, the same in every direction. TxPattern replaces it with a pattern.",
+            "RxGain" => "Receive antenna gain, dBi, the same in every direction. RxPattern replaces it with a pattern.",
+            "TxPattern" or "RxPattern" => "One port of an EM result's far field, written path#port (port from 1): the end's realized gain toward "
+                                        + "each ray, and the port's S11 as its impedance. A frequency the record lacks takes its nearest, said.",
+            "TxZ" => "The impedance the transmit pin presents, ohms.",
+            "RxZ" => "The impedance of the source the receive pin is, ohms.",
+            "RxTant" => "Antenna temperature of the receive pin's noise, kelvin. Blank is the ambient temperature.",
+            "TimeOffset" => "The instant, seconds, an S-parameter or harmonic-balance run freezes the channel at (Doppler phases turn with time); "
+                          + "where an envelope run's time 0 is.",
+            "DopplerComp" => "none, or common: the transmitter removes the strongest ray's Doppler (a terminal that knows the ephemeris), "
+                           + "leaving only the spread.",
+            "Reverse" => "Another channel's instance name: this one becomes its realization transposed, the reverse link of the same path.",
+            "f0" => "The frequency the large-scale model and the patterns are evaluated at, Hz. Blank is the run's carrier.",
+            _ => "",
+        };
+        if (own.Length > 0) return own;
+        var p = RfCore.Propagation.PropagationModels.All.SelectMany(m => m.Parameters).Concat(RfCore.Propagation.AddedLosses.Parameters)
+                      .FirstOrDefault(x => x.Name == name);
+        return p is null ? "" : p.Help + (p.Unit.Length > 0 ? $" ({p.Unit})" : "");
+    }
+
     private static string MixerParameterDescription(string parameterName) => parameterName switch
     {
         "ConvGain" => "Single-sideband power conversion gain, RF port to IF port, at the LO drive "
@@ -2623,6 +2705,19 @@ public static class ComponentTypeRegistry
             // brief-paa-3 — the Phased Antenna Array: the record, the lattice and its pitch are what a user sets; the level, patterns,
             // coupling and Z0 follow the record unless stated, so they start blank and hidden on the schematic. brief-paa-5: placed in
             // Feed mode at 4 × 4, the variant the palette tile draws, so what is dragged out is what the tile shows.
+            // brief-pch-6 — free space between two isotropic antennas 100 m apart, matched; the groups the editor shows them under
+            // are ChannelParameterGroup's.
+            case SymbolKind.PropagationChannel:
+                return [new("Distance",   "100", "metre", true,  UnitDimension.Length),
+                        new("TxHeight",   "1.5", "metre", false, UnitDimension.Length),
+                        new("RxHeight",   "1.5", "metre", false, UnitDimension.Length),
+                        new("PathLoss",   "free", "",     true,  UnitDimension.None),
+                        new("Multipath",  "none", "",     false, UnitDimension.None),
+                        new("TxGain",     "0",   "",      false, UnitDimension.None),
+                        new("RxGain",     "0",   "",      false, UnitDimension.None),
+                        new("TxZ",        "50",  "Ω",     false, UnitDimension.Resistance),
+                        new("RxZ",        "50",  "Ω",     false, UnitDimension.Resistance),
+                        new("TimeOffset", "0",   "s",     false, UnitDimension.Time)];
             case SymbolKind.PhasedArray:
                 return [new("Record",     "",         "",   true,  UnitDimension.None),
                         new("Mode",       "feed",     "",   false, UnitDimension.None),
@@ -3897,6 +3992,9 @@ public static class ComponentTypeRegistry
             case "CMB":    kind = SymbolKind.Combiner;     return true;
             case "PHASEDARRAY":
             case "PA":     kind = SymbolKind.PhasedArray;  return true;
+            case "PROPAGATIONCHANNEL":
+            case "PROPAGATION CHANNEL":
+            case "CH":     kind = SymbolKind.PropagationChannel; return true;
             case "GND":    kind = SymbolKind.Ground;        return true;
             case "TERM":
             case "T":      kind = SymbolKind.Term;          return true;
@@ -4297,6 +4395,7 @@ public static class ComponentTypeRegistry
     {
         (SymbolKind.Circulator, "Direction")                      => CirculatorDirectionOptions,
         (SymbolKind.PhasedArray, "Mode")                          => PhasedArrayModeOptions,
+        (SymbolKind.PropagationChannel, _) when ChannelWordOptions(paramName) is { } channelWords => channelWords,
         (SymbolKind.PhasedArray, "Level")                         => PhasedArrayLevelOptions,
         (SymbolKind.PhasedArray, "Lattice")                       => PhasedArrayLatticeOptions,
         (SymbolKind.PhasedArray, "Patterns")                      => PhasedArrayPatternsOptions,

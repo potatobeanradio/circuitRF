@@ -196,6 +196,9 @@ public sealed partial class Elaborator
         // Post-flatten: a Deembed path grounded at both ends is not removed, and nothing else says so.
         WarnDeembedPathsGroundedAtBothEnds(netlist);
 
+        // Post-flatten (brief-pch-6): a channel stating Reverse= becomes the other channel's realization, transposed.
+        BindReverseChannels(netlist);
+
         // Post-flatten: resolve mutual inductance references now that all inductors exist.
         foreach (var ec in netlist.Components)
             if (ec.Model is MutualInductanceModel m)
@@ -1565,6 +1568,8 @@ public sealed partial class Elaborator
             return ResolveSnpParameters(inst, parentScope);
         if (inst.Reference.Equals(PhasedArrayModel.TypeName, StringComparison.OrdinalIgnoreCase))
             return ResolvePhasedArrayParameters(inst, parentScope);
+        if (inst.Reference.Equals(PropagationChannelModel.TypeName, StringComparison.OrdinalIgnoreCase))
+            return ResolvePropagationChannelParameters(inst, parentScope);
         // brief-paa-4 R-paa4-7 — a phase shifter's Phase takes degrees as its site unit.
         if (inst.Reference.Equals(PhaseShifterModel.TypeName, StringComparison.OrdinalIgnoreCase))
             return inst.Overrides.ToDictionary(ov => ov.Name, ov => ov.Name.Equals("Phase", StringComparison.OrdinalIgnoreCase)
@@ -2422,6 +2427,72 @@ public sealed partial class Elaborator
                 result[PhasedArrayModel.TypedUnitPrefix + ov.Name] = new Value(unit);
         }
         return result;
+    }
+
+    /// <summary>
+    /// brief-pch-6 — a Propagation Channel's parameters (D12): its structural words, paths and x,y,z lists kept verbatim, as
+    /// are the large-scale model's words, lists and files by the registry's own kinds; a path resolved as an SnP's File is (a
+    /// pattern's #port kept); an orientation in degrees (a bare number is degrees); every other value an expression.
+    /// </summary>
+    private IReadOnlyDictionary<string, Value> ResolvePropagationChannelParameters(Instance inst, Scope parentScope)
+    {
+        var words = RfCore.Propagation.PropagationModels.All.SelectMany(m => m.Parameters)
+                          .Concat(RfCore.Propagation.AddedLosses.Parameters)
+                          .Where(p => p.Kind != RfCore.Propagation.ParameterKind.Number)
+                          .GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)       // several models share a name (Los, Scenario)
+                          .ToDictionary(g => g.Key, g => g.First().Kind, StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, Value>(StringComparer.Ordinal);
+        foreach (var ov in inst.Overrides)
+        {
+            bool file = ov.Name is "File" or "TxPattern" or "RxPattern"
+                        || words.TryGetValue(ov.Name, out var kind) && kind == RfCore.Propagation.ParameterKind.File;
+            if (PropagationChannelModel.WordParameters.Contains(ov.Name) || words.ContainsKey(ov.Name))
+            {
+                string raw = Unquote(ov.Expression.Trim());
+                if (file && raw.Length > 0)
+                {
+                    int hash = ov.Name is "TxPattern" or "RxPattern" ? raw.LastIndexOf('#') : -1;
+                    raw = hash > 0 ? ResolveSnpFilePath(raw[..hash]) + raw[hash..] : ResolveSnpFilePath(raw);
+                }
+                result[ov.Name] = new Value(raw);
+                continue;
+            }
+            if (PropagationChannelModel.AngleParameters.Contains(ov.Name))
+            {
+                var v = _evaluator.EvalPhase(ov.Expression, parentScope, ov.Unit, $"{inst.InstanceName}.{ov.Name}");
+                result[ov.Name] = v.Kind == ValueKind.Real ? new Value(v.AsReal() * 180.0 / Math.PI) : v;
+                continue;
+            }
+            // a length typed in "m" is a thousand times too small (m is milli in every expression), and a channel's lengths are
+            // exactly where a user writes metres
+            if (ov.Name is "Distance" or "TxHeight" or "RxHeight" && ov.Unit == "m")
+                throw new ParameterRefusalException(PropagationChannelDiagnostics.MetreIsMilli(inst.InstanceName, ov.Name, ov.Expression));
+            result[ov.Name] = EvalOverride(inst, ov, parentScope);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// brief-pch-6 R-pch6-8 — each channel stating <c>Reverse=</c> takes the realization of the channel it names, transposed.
+    /// The name is looked up beside the reverse channel first (its own hierarchy prefix), then as a full instance path.
+    /// </summary>
+    private static void BindReverseChannels(ElaboratedNetlist netlist)
+    {
+        var channels = netlist.Components.Where(c => c.Model is PropagationChannelModel).ToList();
+        foreach (var ec in channels)
+        {
+            var m = (PropagationChannelModel)ec.Model;
+            if (m.ReverseOf is not { } name) continue;
+            int dot = ec.InstancePath.LastIndexOf('.');
+            string sibling = dot >= 0 ? ec.InstancePath[..(dot + 1)] + name : name;
+            var fwd = channels.FirstOrDefault(c => c.InstancePath.Equals(sibling, StringComparison.Ordinal))
+                      ?? channels.FirstOrDefault(c => c.InstancePath.Equals(name, StringComparison.Ordinal))
+                      ?? throw new ParameterRefusalException(PropagationChannelDiagnostics.ReverseUnknown(ec.InstancePath, name,
+                             string.Join(", ", channels.Where(c => !ReferenceEquals(c, ec)).Select(c => c.InstancePath))));
+            if (ReferenceEquals(fwd, ec) || ((PropagationChannelModel)fwd.Model).ReverseOf is not null)
+                throw new ParameterRefusalException(PropagationChannelDiagnostics.ReverseOfReverse(ec.InstancePath, name));
+            m.BindReverse((PropagationChannelModel)fwd.Model);
+        }
     }
 
     private IReadOnlyDictionary<string, Value> ResolveSnpParameters(

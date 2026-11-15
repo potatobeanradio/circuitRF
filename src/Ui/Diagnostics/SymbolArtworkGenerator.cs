@@ -203,6 +203,7 @@ public static class SymbolArtworkGenerator
         // One pin: the default variant, Feed mode 4 × 4 at boresight (brief-paa-5).
         (SymbolKind.PhasedArray,     "phased-array",      1),
         (SymbolKind.PhaseShifter,    "phase-shifter",     2),
+        (SymbolKind.PropagationChannel, "propagation-channel", 2),
         // NEW COMPONENT: add (SymbolKind.Xxx, "file-stem", representativePortCount) here, then re-run.
     };
 

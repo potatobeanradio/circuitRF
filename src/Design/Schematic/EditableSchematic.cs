@@ -317,6 +317,9 @@ public static class SymbolPortDefs
             case SymbolKind.Delay:
             case SymbolKind.PhaseShifter:
                 return [("1", -300f, 0f), ("2", 300f, 0f)];
+            // Propagation Channel (brief-pch-6): the transmit antenna's terminals, then the receive antenna's.
+            case SymbolKind.PropagationChannel:
+                return [("tx", -300f, 0f), ("rx", 300f, 0f)];
             // Duplexer: the antenna against the two branches it splits into.
             case SymbolKind.Duplexer:
                 return [("ANT", -300f, 0f), ("TX", 300f, -100f), ("RX", 300f, 100f)];

@@ -429,7 +429,7 @@ public static class EnvelopeDataSet
     /// measurement it always was. FSK and CSS are decided by their own detectors and take no equalizer.
     /// </summary>
     private static Reading? Read(Meter meter, CarrierRecord rec, double record, Complex[] y, double fs, long start, double off,
-                                 EqualizerSettings eq, out string? why)
+                                 EqualizerSettings eq, out string? why, IChannelResponse? channel = null)
     {
         if (meter == Meter.Ofdm)
         {
@@ -437,7 +437,8 @@ public static class EnvelopeDataSet
             if (d is null) return null;
             var moved = SignalEqualizer.RemoveOffset(d, o => SignalEvm.Demodulate(rec, record, y, fs, start, off + o.FrequencyHz, out _, o.DriftHzps),
                                                      SignalEqualizer.EstimateOffset, out var cfo);
-            var e = SignalEqualizer.Ofdm(eq.Mode == EqualizerMode.None ? d : moved, eq);
+            // brief-pch-6 R-pch6-9 — the genie reads a Propagation Channel's own H(f, t) where one channel receives at the probe
+            var e = SignalEqualizer.Ofdm(eq.Mode == EqualizerMode.None ? d : moved, eq, eq.Mode == EqualizerMode.Genie ? channel : null);
             var m = rec.Spec.Modulation;
             return new Reading(e.RmsPercent, e.PeakPercent, double.NaN, double.NaN, e.Points, e.Ideal, null, null, d)
             {
@@ -503,7 +504,7 @@ public static class EnvelopeDataSet
     {
         var meters = carSpecs.Select(c => MeterOf(c.Standard)).ToArray();
         if (meters.All(m => m == Meter.None)) return;
-        var recs = r.Sources.SelectMany(s => s.Signal.Carriers.Select(c => (rec: c, record: s.Signal.RecordSeconds))).ToList();
+        var recs = r.Sources.SelectMany(s => s.Signal.Carriers.Select(c => (rec: c, record: s.Signal.RecordSeconds, hz: s.FcHz + c.OffsetHz))).ToList();
         int nb = branchAxis.Length, nc = recs.Count;
         double fs = 1.0 / r.StepS;
         long start = (long)Math.Round(plan.Params.StartS / r.StepS) + t0;
@@ -552,7 +553,8 @@ public static class EnvelopeDataSet
                 bool silent = noRf[b];
                 Complex[] Received(EnvelopeRunResult run, Func<int, int, Complex[]> own) =>
                     at0.Sign == 0 ? own(b, k) : Stored(run, t0, b, at0.M, at0.Sign);
-                var e = Read(meters[c], recs[c].rec, recs[c].record, Received(r, probeV), fs, start, at0.Off, eqs, out string? fail);
+                var e = Read(meters[c], recs[c].rec, recs[c].record, Received(r, probeV), fs, start, at0.Off, eqs, out string? fail,
+                             r.ChannelResponse?.Invoke(r.IProbeNames[b], recs[c].hz, start));
                 // A carrier no probe reads is named; one an earlier probe read keeps its values and is not.
                 if (e is null) { if (b == 0) why[c] = fail; break; }
                 int n = e.Points?.Length ?? e.Freq?.Length ?? 0;

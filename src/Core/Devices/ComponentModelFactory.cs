@@ -65,7 +65,7 @@ public static class ComponentModelFactory
     private static readonly HashSet<string> _parameterizedTypes =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "SnP", DeembedTypeName, EmFieldDataRecord.TypeName, PhasedArrayModel.TypeName, "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "I_1Tone", "I_nTone",
+            "SnP", DeembedTypeName, EmFieldDataRecord.TypeName, PhasedArrayModel.TypeName, PropagationChannelModel.TypeName, "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "I_1Tone", "I_nTone",
             "Tuner", "P1Tone", "PnTone", "MOD_Source",
             "NonlinearC", "Diode", "SemiC", "VerilogA",
             "FET_Curtice", "FET_CurticeCubic", "FET_Statz", "FET_Materka", "FET_Angelov",
@@ -170,6 +170,9 @@ public static class ComponentModelFactory
         // brief-paa-3 — the Phased Antenna Array, built from its record at elaboration.
         if (typeName.Equals(PhasedArrayModel.TypeName, StringComparison.OrdinalIgnoreCase))
             return PhasedArrayModel.Create(parameters);
+        // brief-pch-6 — the Propagation Channel with pin ends; its realization is built at elaboration.
+        if (typeName.Equals(PropagationChannelModel.TypeName, StringComparison.OrdinalIgnoreCase))
+            return new PropagationChannelModel(parameters, ambientC);
         if (typeName.Equals(ComposedCoreTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateComposedCoreModel(parameters, ambientC);
         if (typeName.Equals(ComposedFetTypeName, StringComparison.OrdinalIgnoreCase))

@@ -530,6 +530,10 @@
                               Margin="4,0">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:ParameterRowViewModel">
+                            <StackPanel>
+                            <!-- brief-pch-6: a group heading above the first row of a group (a Propagation Channel's Geometry, Large scale, ...) -->
+                            <TextBlock Text="{Binding GroupHeading}" IsVisible="{Binding HasGroupHeading}" FontWeight="SemiBold" FontSize="11"
+                                       Margin="0,8,0,2" Opacity="0.8"/>
                             <Grid Margin="0,2">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition SharedSizeGroup="ParamName"    Width="Auto" MinWidth="40"/>
@@ -768,6 +772,7 @@
                                         ToolTip.Tip="{Binding RemoveTooltip}"
                                         Click="OnParamRemoveClick"/>
                             </Grid>
+                            </StackPanel>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>

@@ -2578,6 +2578,58 @@ read from the schematic's VAR blocks.
 
 ## Annotation components
 
+### Propagation Channel {#propagationchannel}
+
+{{symbol: propagation-channel}}
+
+Everything between a transmit antenna's terminals and a receive antenna's terminals that is not an antenna: path loss,
+multipath and Doppler. Pin `tx` is the transmit antenna and pin `rx` the receive antenna, each over ground, and they are
+not interchangeable. The channel is **one way**: it carries what arrives at `tx` to `rx` and sends nothing back, so its
+S12 is 0. A reverse link is a second channel, and `Reverse=CH1` makes it the same path with its ends exchanged.
+
+```
+PropagationChannel:CH1 tx rx Distance=250 TxHeight=10 RxHeight=1.5 PathLoss=tworay TxGain=8 RxGain=0
+```
+
+- **Ends.** `TxGain` and `RxGain` are antenna gains in dBi, the same in every direction. `TxPattern` or `RxPattern` names one
+  port of an EM result's far field instead, written `path#port`: that end then has the port's realized gain toward each
+  ray and the port's S11 as its impedance, and its boresight points at the other end unless `TxAz`/`TxEl`/`TxRoll` say
+  otherwise. `TxZ` and `RxZ` are the impedances the pins present (default 50 Ω). The receive pin's noise is its impedance
+  at the antenna temperature `RxTant`, which defaults to the ambient temperature. The channel adds no noise of its own.
+- **Geometry.** `Distance` is the horizontal distance between the ends in metres, at heights `TxHeight` and `RxHeight`.
+  Write a bare number or `metre`: `m` means milli in every value, so `Distance=150 m` is refused rather than read as 15 cm. `TxPos` and `RxPos` place both ends as `x,y,z` instead. `TxVel` and `RxVel`,
+  as `x,y,z` in m/s, give each ray its Doppler.
+- **Large scale.** `PathLoss` is any model of the propagation library (`free`, `logdist`, `multislope`, `tworay`, `38901`,
+  `P1238`, `P1411`, `P526`, `satellite`, `P1812`). Its parameters, and the added losses (gas, rain, clutter and the rest),
+  are written beside it by the model's own names. Shadowing is held at 0, since a draw belongs to a drop of a Monte Carlo.
+  `Rain=fixed` adds the attenuation at the stated availability, and `Rain=drawn` is refused.
+- **Rays.** `Multipath=none` uses the rays of the geometry: the line of sight, plus the ground ray for `tworay`.
+  `Multipath=file` reads a ray list from `File=`: a CSV whose header names `delay (ns)`, `power (dB)`, and optionally
+  `phase (deg)` and `doppler (Hz)`. Each row is one ray, with its delay in excess of the line of sight and its power
+  relative to the large-scale loss.
+
+What each analysis sees:
+
+| Analysis | The channel |
+|---|---|
+| S-parameter, noise | A two-port frozen at `TimeOffset`: S21 = H(f), S12 = 0, S11 and S22 the ends' impedances |
+| Harmonic balance | The same frozen H at every tone, each at its own frequency, with no Doppler shift |
+| Envelope | Every ray's delayed transmit wave, rotated, scaled and turned by its Doppler, drives the receive pin |
+
+H(f) is λ/(4πd) times the model's loss in excess of free space, times each ray's gain, delay and antenna gains, summed over
+the rays. d is the distance the model uses (the slant range on a satellite path). The excess loss is the model's at `f0`:
+the stated `f0`, otherwise the run's carrier, otherwise each frequency asked. The free-space part follows λ at every
+frequency. The bulk delay d/c (3.3 µs at 1 km) is reported and never simulated. In an envelope run the channel adds one
+step of latency plus each ray's excess delay, reads only steps already solved, and leaves the receive side's first
+latency out of every measurement. A cycle of channels in an envelope bench is refused, and so is a receive pin driven by
+two channels.
+
+Each run adds the loss breakdown, the total path loss, the bulk delay, the common Doppler and the rays to its result,
+as `link:CH1:Loss_dB`, `link:CH1:PathLoss_dB` and the rest. `explain --analysis` states the same, with the envelope regime:
+the Doppler spread against the record and the subcarrier spacing, and the coherence bandwidth against the signal's.
+
+{{table: components/PropagationChannel}}
+
 ### Variables (VAR) {#var}
 
 {{symbol: var}}

@@ -1667,6 +1667,7 @@ internal static class Explain
 
         var fieldSweeps = FieldSweepsOf(lib, tb, sourcePath);
         var arrays = ArraysOf(lib, tb, sourcePath);
+        var channels = ChannelsOf(lib, tb, sourcePath);
 
         var rows = new List<ExplainAnalysisJson>(tb.Analyses.Count);
         foreach (var a in tb.Analyses)
@@ -1719,7 +1720,8 @@ internal static class Explain
                 HbNoise: hbNoise.GetValueOrDefault(a.Name),
                 LoadpullNoise: lpNoise.GetValueOrDefault(a.Name),
                 Oscillator: osc.GetValueOrDefault(a.Name),
-                Array: arrays.GetValueOrDefault(a.Name)));
+                Array: arrays.GetValueOrDefault(a.Name),
+                Channels: channels.Count > 0 ? ChannelLines(channels, a, tb) : null));
         }
 
         return (rows, exit);
@@ -1774,6 +1776,81 @@ internal static class Explain
             i = j + 1;
         }
         return string.Join(", ", parts);
+    }
+
+    /// <summary>brief-pch-6 — the elaborated channels with the bench's carrier and each source's record and subcarrier spacing; empty
+    /// when the design places none. A design that does not elaborate is check's to report.</summary>
+    private static List<(string Path, PropagationChannelModel Model, double? CarrierHz, double RecordS, double ScsHz, double BandwidthHz)>
+        ChannelsOf(Library lib, TestBench tb, string? sourcePath)
+    {
+        var list = new List<(string, PropagationChannelModel, double?, double, double, double)>();
+        static bool IsChannel(Instance i) => i.Reference.Equals(PropagationChannelModel.TypeName, StringComparison.OrdinalIgnoreCase);
+        if (!tb.Instances.Any(IsChannel) && !lib.Cells.Any(c => c.Instances.Any(IsChannel))) return list;
+        try
+        {
+            var nl = Check.ElaborateReadOnly(lib, tb, sourcePath);
+            var src = nl.Components.Select(c => c.Model).OfType<ModSourceModel>().FirstOrDefault();
+            double? carrier = src?.FcHz ?? nl.Components.Where(c => c.Model is P1ToneModel)
+                .Select(c => c.Parameters.TryGetValue("Freq", out var v) && v.Kind == CircuitRF.Core.Expressions.ValueKind.Real ? v.AsReal() : (double?)null)
+                .FirstOrDefault(v => v is > 0);
+            double record = src?.Signal.RecordSeconds ?? 0, scs = 0, bw = 0;
+            if (src is not null)
+                foreach (var c in src.Signal.Carriers)
+                {
+                    bw = Math.Max(bw, c.Spec.BandwidthHz);
+                    if (c.Spec.Standard is RfCore.Signals.CarrierStandard.Lte) scs = 15e3;
+                    else if (c.Spec.Standard is RfCore.Signals.CarrierStandard.Nr) scs = c.Spec.ScsHz;
+                }
+            foreach (var ec in nl.Components)
+                if (ec.Model is PropagationChannelModel ch)
+                {
+                    if (carrier is double fc) ch.SetCarrier(fc);
+                    list.Add((ec.InstancePath, ch, carrier, record, scs, bw));
+                }
+        }
+        catch (Exception) { /* reported by check; nothing to explain here */ }
+        return list;
+    }
+
+    /// <summary>
+    /// brief-pch-6 R-pch6-10 — explain's lines for each channel under analysis <paramref name="a"/>: what <see cref="PropagationChannelModel.Describe"/>
+    /// says (model and edition, breakdown, τ0, ν0, rays), and for an envelope run the regime of note §2.4 — f_D·T_record, f_D/Δf_sc, and the coherence
+    /// bandwidth against the signal's — with f_D the rays' Doppler spread about ν0 (the common Doppler is an offset the receiver removes).
+    /// </summary>
+    private static IReadOnlyList<string> ChannelLines(
+        List<(string Path, PropagationChannelModel Model, double? CarrierHz, double RecordS, double ScsHz, double BandwidthHz)> channels,
+        Analysis a, TestBench tb)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        bool envelope = ChainSelector.BaseOfChain(a, tb) is EnvelopeAnalysis || a is EnvelopeAnalysis;
+        var lines = new List<string>();
+        foreach (var (path, ch, carrier, record, scs, bw) in channels)
+        {
+            if (ch.ReferenceHz(0) == 0)
+            {
+                lines.Add($"'{path}': no f0 and no carrier on the bench; the model is evaluated at each frequency the analysis asks");
+                continue;
+            }
+            double hz = ch.ReferenceHz(carrier ?? 0);
+            try
+            {
+                var d = ch.Describe(hz);
+                lines.Add($"'{path}': {d[0]}");
+                lines.AddRange(d.Skip(1).Select(x => "  " + x));
+                if (!envelope) { lines.Add("  frozen at TimeOffset, each tone at its own frequency, no Doppler shift"); continue; }
+                var r = ch.At(hz);
+                double fd = r.Rays.Max(x => Math.Abs(x.DopplerHz - r.CommonDopplerHz));
+                double bc = RfCore.Propagation.RayStatistics.CoherenceBandwidthHz(r.Rays);
+                var parts = new List<string>();
+                if (record > 0) parts.Add(string.Format(inv, "f_D·T_record = {0:G3}", fd * record));
+                if (scs > 0) parts.Add(string.Format(inv, "f_D/Δf_sc = {0:G3}", fd / scs));
+                if (bw > 0) parts.Add(double.IsInfinity(bc) ? "flat across the signal (one ray)" : string.Format(inv, "coherence bandwidth {0:G3} Hz against a {1:G3} Hz signal", bc, bw));
+                lines.Add(string.Format(inv, "  regime: Doppler spread f_D = {0:G4} Hz; {1}", fd, string.Join(", ", parts)));
+                lines.Add(string.Format(inv, "  envelope: {0} ray(s) stepped one way, latency one step plus up to {1:G4} s excess delay", r.Rays.Count, r.MaxExcessDelayS));
+            }
+            catch (ParameterRefusalException ex) { lines.Add($"'{path}': WOULD BE REFUSED — {ex.Message}"); }
+        }
+        return lines;
     }
 
     private static Dictionary<string, ExplainArrayJson> ArraysOf(Library lib, TestBench tb, string? sourcePath)
@@ -2583,6 +2660,9 @@ internal static class Explain
                             Console.WriteLine($"      pattern of record port {p.RecordPort}: element{(p.Elements.Count == 1 ? "" : "s")} {Ranges(p.Elements)}");
                     }
                 }
+
+                // brief-pch-6: each Propagation Channel the analysis runs.
+                foreach (var line in a.Channels ?? []) Console.WriteLine($"      Channel {line}");
 
                 // NZ-9: an oscillator's start-up search, before any harmonic balance runs.
                 if (a.Oscillator is { } os)

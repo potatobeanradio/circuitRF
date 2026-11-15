@@ -517,6 +517,7 @@ public sealed partial class HbEngine
         double defaultDrive = _commensurateRuler?.DefaultDriveHz ?? f0;
         foreach (var ec in _netlist.Components)
         {
+            if (ec.Model is ICarrierContext carrierCtx) carrierCtx.SetCarrier(bandFc);   // brief-pch-6: a channel's f0
             if (ec.Model is P1ToneModel p1)
             {
                 double driveHz = ec.Parameters.TryGetValue("Freq", out var fv) && fv.Kind == ValueKind.Real
@@ -819,6 +820,7 @@ public sealed partial class HbEngine
             _netlist.Nodes.LabeledNames, probeCurrents, opVars, probeVoltages);
         AddWireTemperature(ds, solveResult.Converged,
             [.. Enumerable.Range(0, K + 1).Select(k => k * f0)], k => backSolver.GetSolution(k, 0));
+        PropagationChannelReport.Add(ds, _netlist, f0, hb: true);
 
         // ── The WSProbe small-signal sweep (brief-wsprobe-5) ──────────────────
         // The conversion-matrix solve linearises THIS converged periodic steady state, which is why
@@ -990,6 +992,7 @@ public sealed partial class HbEngine
         double fcTwoTone = (f1 + f2) / 2.0;
         foreach (var ec in _netlist.Components)
         {
+            if (ec.Model is ICarrierContext carrierCtx) carrierCtx.SetCarrier(fcTwoTone);   // brief-pch-6: a channel's f0
             if (ec.Model is P1ToneModel p1)
             {
                 double driveHz = ec.Parameters.TryGetValue("Freq", out var fv) && fv.Kind == ValueKind.Real
@@ -1205,6 +1208,7 @@ public sealed partial class HbEngine
             _netlist.Nodes.LabeledNames, probeCurrents, opVars2, probeVoltages);
         AddWireTemperature(ds2, solveResult.Converged,
             [.. Enumerable.Range(0, M).Select(m => grid.OmegaOf(m, w1, w2) / (2 * Math.PI))], m => xMix[m]);
+        PropagationChannelReport.Add(ds2, _netlist, 0.5 * (f1 + f2), hb: true);
 
         // The WSProbe small-signal sweep lives on the LATTICE two-tone path (R-wsp5-7), which is the
         // default; this is the rectangular-FFT path AnalysisSettings.HbTwoToneOnLattice = false
@@ -1305,6 +1309,7 @@ public sealed partial class HbEngine
 
         foreach (var ec in _netlist.Components)
         {
+            if (ec.Model is ICarrierContext carrierCtx) carrierCtx.SetCarrier(fc);   // brief-pch-6: a channel's f0
             if (ec.Model is P1ToneModel p1)
             {
                 double driveHz = ec.Parameters.TryGetValue("Freq", out var fv) && fv.Kind == ValueKind.Real
@@ -1508,6 +1513,7 @@ public sealed partial class HbEngine
             _netlist.Nodes.LabeledNames, probeCurrents, opVarsNd, probeVoltages);
         AddWireTemperature(dsNd, solveResult.Converged,
             [.. Enumerable.Range(0, M).Select(m => lattice.OmegaOf(m, omegas) / (2 * Math.PI))], m => xMix[m]);
+        PropagationChannelReport.Add(dsNd, _netlist, f.Average(), hb: true);
 
         // ── The WSProbe small-signal sweep over the mixing lattice (R-wsp5-7) ──
         var wspProbesNd = WspProbeSites();

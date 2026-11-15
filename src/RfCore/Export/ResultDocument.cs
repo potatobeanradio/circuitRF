@@ -2478,7 +2478,11 @@ namespace RfCore.Export
         /// <summary>brief-paa-3 R-paa3-7 — a fields analysis on a Phased Antenna Array: its level and what it uses, the coupling range
         /// measured, and which record port's pattern each element takes. Null for any other analysis.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainArrayJson? Array = null);
+        ExplainArrayJson? Array = null,
+        /// <summary>brief-pch-6 R-pch6-10 — each Propagation Channel the analysis runs: its model and edition, the breakdown, τ0, ν0,
+        /// the rays and the regime, or the sentence refusing it. Null when the design has no channel.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<string>? Channels = null);
 
     /// <summary>brief-paa-3 — <c>explain --analysis</c>'s lines for a Phased Antenna Array: the level sentence, the coupling range, and each
     /// pattern the array takes with the elements (1-based, row-major) that take it — or the sentence the run refuses with.</summary>

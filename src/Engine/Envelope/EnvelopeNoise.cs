@@ -98,6 +98,8 @@ internal sealed class EnvelopeNoise
                 return true;
             }
             if (row.Kind != NoiseModelKind.DeviceSources) return false;
+            // brief-pch-6: a Propagation Channel's receive pin is thermal at RxTant, stationary, and injected as any source is
+            if (parts is [{ Model: PropagationChannelModel }]) return false;
             devices.AddRange(parts.Select(ec => $"{ec.ComponentType}:{ec.InstancePath}"));
             return true;
         });

@@ -477,6 +477,7 @@ public static partial class SParameterEngine
                      new Axis("row", rc), new Axis("col", (double[])rc.Clone())], data));
             }
         }
+        if (freqsHz.Length > 0) PropagationChannelReport.Add(ds, netlist, freqsHz[freqsHz.Length / 2]);
         return ds;
     }
 

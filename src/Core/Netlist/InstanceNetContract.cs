@@ -91,6 +91,9 @@ public static class InstanceNetContract
         // The cascade block is a two-port with an explicit reference at each end.
         ChainModel                                                                            => 4,
 
+        // brief-pch-6 — the Propagation Channel: its transmit and receive pins, each over ground.
+        PropagationChannelModel                                                               => 2,
+
         // ── Ideal system blocks: every RF port is a signal net and a reference net ──
         // Atten is 2 ports → 4 nets; Balun and Circulator 3 → 6; Coupler 4 → 8.
         IdealSBlockModel sb                                                                   => 2 * sb.PortCount,
@@ -323,6 +326,9 @@ public static class InstanceNetContract
             // A tuner with no termination at all is a refusal, and the fundamental's is the one it
             // asks for by name. 50 is the reference impedance, not a chosen value.
             case "TUNER":  p["Z[1]"] = new Expressions.Value(50.0); break;
+
+            // A Propagation Channel with no placement is a refusal; any distance stands in (brief-pch-6).
+            case "PROPAGATIONCHANNEL": p["Distance"] = new Expressions.Value(100.0); break;
 
             // A coplanar line's gap is the one dimension nothing defaults; any positive length stands in.
             case "CPWG":   p["G"] = new Expressions.Value(1e-4); break;

@@ -320,6 +320,14 @@ public static class EnvelopeRunner
                 $"band reaches {edge / 1e6:0.###} MHz from the envelope's centre, and the step takes at least " +
                 $"{EnvelopeEngine.StepsPerEdgeCycle:0} steps a cycle there. EVM through a filter reads closer at standard or fine, " +
                 "or with the source's Fc on the carrier.");
+        // brief-pch-6 — each parallel segment's warm-up must outlast a channel's delay, or its receive side starts on a
+        // history that is not the transmit side's
+        if (segs > 1 && ChannelDelayS(first) is var chDelay && chDelay > 0 && warm < 2 * (chDelay + h))
+        {
+            warm = 2 * (chDelay + h);
+            first.AddNoteOnce("envelope-channel-warmup:" + plan.Name,
+                $"Envelope '{plan.Name}': each segment warms up for {PulsedCw.FormatTime(warm)}, twice the longest Propagation Channel delay.");
+        }
         int totalSteps = (int)Math.Round(p.StopS / h);
         if (totalSteps + 1 < EnvelopeDataSet.MinimumSamples)
             throw new InvalidOperationException(EnvelopeToneDiagnostics.StopTooShort(
@@ -344,6 +352,17 @@ public static class EnvelopeRunner
             throw;
         }
         return prepared;
+    }
+
+    /// <summary>The longest excess delay of any Propagation Channel at its carrier (s); 0 with none.</summary>
+    private static double ChannelDelayS(ElaboratedNetlist nl)
+    {
+        double worst = 0;
+        double fc = nl.Components.Select(c => c.Model).OfType<Core.Devices.ModSourceModel>().FirstOrDefault()?.FcHz ?? 1e9;
+        foreach (var ec in nl.Components)
+            if (ec.Model is Core.Devices.PropagationChannelModel ch)
+                worst = Math.Max(worst, ch.At(ch.ReferenceHz(fc)).MaxExcessDelayS);
+        return worst;
     }
 
     /// <summary>The seam error (a probe's worst overlap mismatch over its RMS) above which a run warns; measured in
@@ -465,6 +484,7 @@ public static class EnvelopeRunner
         var ds = EnvelopeDataSet.Build(merged, plan, skip, note, quiet);
         double[] productHz = merged.MixFreqHz ?? [.. Enumerable.Range(0, merged.MaxHarm + 1).Select(k => k * merged.F0Hz)];
         EnvelopeWireTemperature.Add(ds, nets[0], merged, productHz, skip);
+        PropagationChannelReport.Add(ds, nets[0], merged.Sources.Length > 0 ? merged.Sources[0].FcHz : merged.F0Hz);
         ds.Add("__EnvSegments", DataCube.Scalar(segs));
         ds.Add("__EnvWarmup_s", DataCube.Scalar(warm));
         ds.Add("__EnvSeamError", DataCube.Scalar(seam));
@@ -478,7 +498,10 @@ public static class EnvelopeRunner
     {
         var plan = prepared.Plan;
         double firstWarm = prepared.Segments > 1 ? prepared.WarmS : (double.IsNaN(plan.WarmupS) ? 0 : plan.WarmupS);
-        return firstWarm > 0 || EnvelopePulse.Of(merged) is not null ? 0 : Math.Min(5e-6, 0.1 * plan.Params.StopS);
+        double skip = firstWarm > 0 || EnvelopePulse.Of(merged) is not null ? 0 : Math.Min(5e-6, 0.1 * plan.Params.StopS);
+        // brief-pch-6 — a Propagation Channel's receive side reads the start's steady state for one step plus its longest
+        // excess delay; whatever of that the warm-up does not hold is left out too
+        return Math.Max(skip, merged.ChannelLatencyS - firstWarm);
     }
 
     /// <summary>
@@ -585,6 +608,10 @@ public static class EnvelopeRunner
             SnpFits = R.SnpFits,
             CarrierMix = R.CarrierMix, CarrierOffsetHz = R.CarrierOffsetHz, CarrierLabels = R.CarrierLabels,
             ToneFreqsHz = R.ToneFreqsHz, MixLabels = R.MixLabels, MixFreqHz = R.MixFreqHz, MixTones = R.MixTones,
+            // brief-pch-6 — a recording is one segment's (a partition runs one); the true channel is every segment's
+            ChannelLatencyS = results.Max(x => x.ChannelLatencyS),
+            ChannelRecordings = segs == 1 ? R.ChannelRecordings : null,
+            ChannelResponse = R.ChannelResponse,
         };
         if (!quiet) foreach (var n in results.SelectMany(x => x.Notes).Distinct()) { merged.Notes.Add(n); note?.Invoke(n); }
         if (!quiet && seamExternal > SeamWarnAbove)

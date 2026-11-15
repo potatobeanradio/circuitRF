@@ -1977,6 +1977,31 @@ internal static class Check
                 if (steady.Count > 0) f.Add(CliDiagnostics.CheckPhaseNoiseSteadyState(path, ec.InstancePath, steady));
             }
 
+            // brief-pch-6 R-pch6-10: each Propagation Channel's model at the bench's carrier (its validity range, refused by the
+            // model's own sentence); in an envelope bench a cycle of channels, and in any bench a receive pin two channels drive.
+            var chans = nl.Components.Where(c => c.Model is PropagationChannelModel).ToList();
+            if (chans.Count > 0)
+            {
+                double? carrier = nl.Components.Select(c => c.Model).OfType<ModSourceModel>().FirstOrDefault()?.FcHz
+                                  ?? nl.Components.Where(c => c.Model is P1ToneModel)
+                                       .Select(c => c.Parameters.TryGetValue("Freq", out var v) && v.Kind == CircuitRF.Core.Expressions.ValueKind.Real ? v.AsReal() : (double?)null)
+                                       .FirstOrDefault(v => v is > 0);
+                foreach (var ec in chans)
+                {
+                    var ch = (PropagationChannelModel)ec.Model;
+                    if (carrier is double fc) ch.SetCarrier(fc);
+                    double at = ch.ReferenceHz(carrier ?? 0);
+                    if (at <= 0) continue;
+                    try { ch.At(at); }
+                    catch (ParameterRefusalException ex) { f.Add(CliDiagnostics.CheckChannelModel(path, ec.InstancePath, ex.Message)); }
+                }
+                if (tb.Analyses.Any(a => a is EnvelopeAnalysis))
+                    foreach (var cycle in PropagationChannelGraph.Cycles(nl))
+                        f.Add(CliDiagnostics.CheckChannelCycle(path, cycle));
+                foreach (var (net, shared) in PropagationChannelGraph.SharedReceivePins(nl))
+                    f.Add(CliDiagnostics.CheckChannelSharedReceivePin(path, net, shared));
+            }
+
             // NZ-8: EvmSplit runs the record twice to split EVM; with nothing noisy, or no carrier that has an EVM, there is
             // nothing to split and the run says so — check says it first, as INFO.
             foreach (var env in tb.Analyses.OfType<EnvelopeAnalysis>().Where(e => e.EvmSplit))

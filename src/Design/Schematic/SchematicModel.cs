@@ -692,6 +692,12 @@ public enum SymbolKind
     /// interchangeable like the attenuator's: matched and reciprocal, S21 = S12 = 10^(−IL/20)·e^(−jφ), φ rounded to its Bits. A square body
     /// carrying φ.</summary>
     PhaseShifter,
+
+    /// <summary>brief-pch-6 — the Propagation Channel with pin ends (engine "PropagationChannel"), a system block. Two pins, tx at
+    /// (−300,0) and rx at (300,0), NOT interchangeable: the channel is one way, tx to rx. A square body, the leads stopping at its
+    /// edges, holding two small antennas in the schematic antenna symbol (a mast under an open triangle on its point) and the waves
+    /// leaving the transmit one.</summary>
+    PropagationChannel,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

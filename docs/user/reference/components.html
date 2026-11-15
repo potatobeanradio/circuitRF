@@ -724,7 +724,7 @@ owns the mixing grid, and the source just supplies power at those frequencies.</
 			MOD_Source
 	</text></svg></span>
 </span><figcaption>MOD_Source</figcaption></figure>
-<p>A <strong>modulated</strong> RF source — LTE, NR, CW, a pulsed-CW train, FSK (wireless M-Bus, Bluetooth LE), DBPSK (Sigfox), chirp spread spectrum (LoRa) or an imported I/Q waveform — for the
+<p>A <strong>modulated</strong> RF source — LTE, NR, CW, a pulsed-CW train, FSK (wireless M-Bus, Bluetooth LE), DBPSK (Sigfox), chirp spread spectrum (LoRa), a single PSK, QAM or APSK carrier or an imported I/Q waveform — for the
 <a href="simulations.html#envelope">Envelope analysis</a>: ACLR/ACPR, EVM-style error, CCDF, AM-AM/AM-PM and
 two-carrier intermodulation with real signals rather than tones. One MOD_Source holds any number of
 <strong>carriers</strong> around its centre frequency <code>Fc</code>; <code>Pavg</code> is the total average available power behind the
@@ -747,7 +747,13 @@ continuous-phase FSK, <code>&quot;FSK;Rb=100kbps;Dev=45kHz;BT=0.5;Data=PN9;Off=0
 source's only carrier: see <a href="signal-designer.html#fsk">FSK</a>. A <code>DBPSK</code> carrier, <code>&quot;DBPSK;Rb=100bps;Data=PN9;Off=0;P=0&quot;</code>,
 takes the same <code>Rb</code> and <code>Data</code> (the Sigfox uplink: <a href="signal-designer.html#dbpsk">DBPSK</a>), and a <code>CSS</code> carrier,
 <code>&quot;CSS;SF=7;BW=125kHz;Off=0;P=0&quot;</code>, a spreading factor and a chirp bandwidth (LoRa: <a href="signal-designer.html#css">CSS</a>);
-each must be the source's only carrier.</li>
+each must be the source's only carrier. An <code>SC</code> carrier is one root-raised-cosine-shaped carrier of PSK, QAM or
+APSK symbols, <code>&quot;SC;Rs=10Msps;Mod=16APSK;RollOff=0.2;Rings=2.85;Phases=45,15;Data=PN15;Preamble=64;PilotBlock=36/1440;Off=0;P=0&quot;</code>:
+the symbol rate, the modulation (<code>BPSK</code>, <code>QPSK</code>, <code>8PSK</code>, <code>16QAM</code>, <code>64QAM</code>, <code>256QAM</code>, <code>16APSK</code>, <code>32APSK</code>), the
+roll-off, APSK's ring radii and phases, the data (<code>PN9</code>, <code>PN15</code>, <code>PN23</code> or a pattern), known symbols, and
+optionally <code>Span=</code> (the filter in symbols) and <code>Symbols=</code> (the data symbols in the record). It must be the
+source's only carrier, and unlike the others with a record of their own it can be clipped: see
+<a href="signal-designer.html#sc">A single carrier</a>.</li>
 <li><code>Record</code> — periodic record length (s), whole 0.5 ms slots. <code>Clip</code> — target PAPR (dB) for
 clip-and-filter; absent means <strong>unclipped</strong> (the natural OFDM PAPR, about 11–12 dB).
 <code>Shaping</code> — out-of-channel spectral floor (dBc), or <code>off</code>.</li>
@@ -5315,6 +5321,92 @@ read from the schematic's VAR blocks.</p>
 <tr><td>RecordDy</td><td>&mdash;</td><td>mm</td><td>&mdash;</td><td>The lattice of a record that does not store its ports&#39; positions, its ports numbered row-major. Ignored when it does.</td></tr>
 </tbody></table>
 <h2 id="annotation-components">Annotation components</h2>
+<h3 id="propagationchannel">Propagation Channel</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.83 102.43L88.83 47.57Q88.83 47.39 88.85 47.2Q88.87 47.02 88.9 46.84Q88.94 46.66 88.99 46.49Q89.05 46.31 89.12 46.14Q89.19 45.97 89.27 45.81Q89.36 45.65 89.46 45.49Q89.56 45.34 89.68 45.2Q89.8 45.06 89.93 44.93Q90.06 44.8 90.2 44.68Q90.34 44.56 90.49 44.46Q90.65 44.36 90.81 44.27Q90.97 44.19 91.14 44.12Q91.31 44.05 91.49 43.99Q91.66 43.94 91.84 43.9Q92.02 43.87 92.2 43.85Q92.39 43.83 92.57 43.83L147.43 43.83Q147.61 43.83 147.79 43.85Q147.98 43.87 148.16 43.9Q148.34 43.94 148.51 43.99Q148.69 44.05 148.86 44.12Q149.03 44.19 149.19 44.27Q149.35 44.36 149.51 44.46Q149.66 44.56 149.8 44.68Q149.94 44.8 150.07 44.93Q150.2 45.06 150.32 45.2Q150.44 45.34 150.54 45.49Q150.64 45.65 150.73 45.81Q150.81 45.97 150.88 46.14Q150.95 46.31 151.01 46.49Q151.06 46.66 151.1 46.84Q151.13 47.02 151.15 47.2Q151.17 47.39 151.17 47.57L151.17 102.43Q151.17 102.61 151.15 102.8Q151.13 102.98 151.1 103.16Q151.06 103.34 151.01 103.51Q150.95 103.69 150.88 103.86Q150.81 104.03 150.73 104.19Q150.64 104.35 150.54 104.51Q150.44 104.66 150.32 104.8Q150.2 104.94 150.07 105.07Q149.94 105.2 149.8 105.32Q149.66 105.44 149.51 105.54Q149.35 105.64 149.19 105.73Q149.03 105.81 148.86 105.88Q148.69 105.95 148.51 106.01Q148.34 106.06 148.16 106.1Q147.98 106.13 147.79 106.15Q147.61 106.17 147.43 106.17L92.57 106.17Q92.39 106.17 92.2 106.15Q92.02 106.13 91.84 106.1Q91.66 106.06 91.49 106.01Q91.31 105.95 91.14 105.88Q90.97 105.81 90.81 105.73Q90.65 105.64 90.49 105.54Q90.34 105.44 90.2 105.32Q90.06 105.2 89.93 105.07Q89.8 104.94 89.68 104.8Q89.56 104.66 89.46 104.51Q89.36 104.35 89.27 104.19Q89.19 104.03 89.12 103.86Q89.05 103.69 88.99 103.51Q88.94 103.34 88.9 103.16Q88.87 102.98 88.85 102.8Q88.83 102.61 88.83 102.43Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 75L88.83 75" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M102.86 81.55L102.86 74.69" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M99.12 68.45L106.6 68.45L102.86 74.69L99.12 68.45Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M108.99 67.28Q109.15 67.51 109.29 67.76Q109.44 68.01 109.57 68.26Q109.69 68.52 109.8 68.78Q109.91 69.05 109.99 69.32Q110.08 69.59 110.14 69.87Q110.21 70.15 110.25 70.43Q110.29 70.72 110.32 71Q110.34 71.29 110.34 71.57Q110.34 71.86 110.32 72.14Q110.29 72.43 110.25 72.71Q110.21 72.99 110.14 73.27Q110.08 73.55 109.99 73.82Q109.91 74.09 109.8 74.36Q109.69 74.62 109.57 74.88Q109.44 75.14 109.29 75.38Q109.15 75.63 108.99 75.86" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M112.3 64.96Q112.56 65.32 112.78 65.7Q113.01 66.08 113.2 66.47Q113.4 66.87 113.56 67.27Q113.72 67.68 113.86 68.1Q113.99 68.52 114.09 68.95Q114.19 69.38 114.26 69.82Q114.32 70.25 114.36 70.69Q114.39 71.13 114.39 71.57Q114.39 72.01 114.36 72.45Q114.32 72.89 114.26 73.33Q114.19 73.76 114.09 74.19Q113.99 74.62 113.86 75.04Q113.72 75.46 113.56 75.87Q113.4 76.28 113.2 76.67Q113.01 77.07 112.78 77.45Q112.56 77.83 112.3 78.19" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M115.62 62.63Q115.79 62.88 115.96 63.13Q116.12 63.38 116.27 63.63Q116.42 63.89 116.56 64.15Q116.7 64.41 116.83 64.68Q116.97 64.95 117.09 65.22Q117.21 65.49 117.32 65.76Q117.43 66.04 117.53 66.32Q117.63 66.6 117.72 66.89Q117.81 67.17 117.89 67.46Q117.97 67.74 118.03 68.03Q118.1 68.32 118.16 68.61Q118.22 68.91 118.26 69.2Q118.31 69.49 118.34 69.79Q118.37 70.09 118.4 70.38Q118.42 70.68 118.43 70.98Q118.44 71.27 118.44 71.57Q118.44 71.87 118.43 72.17Q118.42 72.46 118.4 72.76Q118.37 73.06 118.34 73.35Q118.31 73.65 118.26 73.94Q118.22 74.24 118.16 74.53Q118.1 74.82 118.03 75.11Q117.97 75.4 117.89 75.69Q117.81 75.97 117.72 76.26Q117.63 76.54 117.53 76.82Q117.43 77.1 117.32 77.38Q117.21 77.65 117.09 77.93Q116.97 78.2 116.83 78.46Q116.7 78.73 116.56 78.99Q116.42 79.25 116.27 79.51Q116.12 79.77 115.96 80.02Q115.79 80.27 115.62 80.51" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M137.14 81.55L137.14 74.69" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M133.4 68.45L140.88 68.45L137.14 74.69L133.4 68.45Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 75L213.51 75" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="23.49" y="72" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="210.51" y="72" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="47.15, 56.77, 62.66, 71.11, 80.11, 88.49, 96.67, 105.05, 110.66, 114.79, 123.23, 132.05, 135.59, 145.22, 154.04, 162.43, 171.25, 180.07, 188.44" y="172.32">
+			Propagation Channel
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.83 102.43L88.83 47.57Q88.83 47.39 88.85 47.2Q88.87 47.02 88.9 46.84Q88.94 46.66 88.99 46.49Q89.05 46.31 89.12 46.14Q89.19 45.97 89.27 45.81Q89.36 45.65 89.46 45.49Q89.56 45.34 89.68 45.2Q89.8 45.06 89.93 44.93Q90.06 44.8 90.2 44.68Q90.34 44.56 90.49 44.46Q90.65 44.36 90.81 44.27Q90.97 44.19 91.14 44.12Q91.31 44.05 91.49 43.99Q91.66 43.94 91.84 43.9Q92.02 43.87 92.2 43.85Q92.39 43.83 92.57 43.83L147.43 43.83Q147.61 43.83 147.79 43.85Q147.98 43.87 148.16 43.9Q148.34 43.94 148.51 43.99Q148.69 44.05 148.86 44.12Q149.03 44.19 149.19 44.27Q149.35 44.36 149.51 44.46Q149.66 44.56 149.8 44.68Q149.94 44.8 150.07 44.93Q150.2 45.06 150.32 45.2Q150.44 45.34 150.54 45.49Q150.64 45.65 150.73 45.81Q150.81 45.97 150.88 46.14Q150.95 46.31 151.01 46.49Q151.06 46.66 151.1 46.84Q151.13 47.02 151.15 47.2Q151.17 47.39 151.17 47.57L151.17 102.43Q151.17 102.61 151.15 102.8Q151.13 102.98 151.1 103.16Q151.06 103.34 151.01 103.51Q150.95 103.69 150.88 103.86Q150.81 104.03 150.73 104.19Q150.64 104.35 150.54 104.51Q150.44 104.66 150.32 104.8Q150.2 104.94 150.07 105.07Q149.94 105.2 149.8 105.32Q149.66 105.44 149.51 105.54Q149.35 105.64 149.19 105.73Q149.03 105.81 148.86 105.88Q148.69 105.95 148.51 106.01Q148.34 106.06 148.16 106.1Q147.98 106.13 147.79 106.15Q147.61 106.17 147.43 106.17L92.57 106.17Q92.39 106.17 92.2 106.15Q92.02 106.13 91.84 106.1Q91.66 106.06 91.49 106.01Q91.31 105.95 91.14 105.88Q90.97 105.81 90.81 105.73Q90.65 105.64 90.49 105.54Q90.34 105.44 90.2 105.32Q90.06 105.2 89.93 105.07Q89.8 104.94 89.68 104.8Q89.56 104.66 89.46 104.51Q89.36 104.35 89.27 104.19Q89.19 104.03 89.12 103.86Q89.05 103.69 88.99 103.51Q88.94 103.34 88.9 103.16Q88.87 102.98 88.85 102.8Q88.83 102.61 88.83 102.43Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 75L88.83 75" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M102.86 81.55L102.86 74.69" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M99.12 68.45L106.6 68.45L102.86 74.69L99.12 68.45Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M108.99 67.28Q109.15 67.51 109.29 67.76Q109.44 68.01 109.57 68.26Q109.69 68.52 109.8 68.78Q109.91 69.05 109.99 69.32Q110.08 69.59 110.14 69.87Q110.21 70.15 110.25 70.43Q110.29 70.72 110.32 71Q110.34 71.29 110.34 71.57Q110.34 71.86 110.32 72.14Q110.29 72.43 110.25 72.71Q110.21 72.99 110.14 73.27Q110.08 73.55 109.99 73.82Q109.91 74.09 109.8 74.36Q109.69 74.62 109.57 74.88Q109.44 75.14 109.29 75.38Q109.15 75.63 108.99 75.86" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M112.3 64.96Q112.56 65.32 112.78 65.7Q113.01 66.08 113.2 66.47Q113.4 66.87 113.56 67.27Q113.72 67.68 113.86 68.1Q113.99 68.52 114.09 68.95Q114.19 69.38 114.26 69.82Q114.32 70.25 114.36 70.69Q114.39 71.13 114.39 71.57Q114.39 72.01 114.36 72.45Q114.32 72.89 114.26 73.33Q114.19 73.76 114.09 74.19Q113.99 74.62 113.86 75.04Q113.72 75.46 113.56 75.87Q113.4 76.28 113.2 76.67Q113.01 77.07 112.78 77.45Q112.56 77.83 112.3 78.19" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M115.62 62.63Q115.79 62.88 115.96 63.13Q116.12 63.38 116.27 63.63Q116.42 63.89 116.56 64.15Q116.7 64.41 116.83 64.68Q116.97 64.95 117.09 65.22Q117.21 65.49 117.32 65.76Q117.43 66.04 117.53 66.32Q117.63 66.6 117.72 66.89Q117.81 67.17 117.89 67.46Q117.97 67.74 118.03 68.03Q118.1 68.32 118.16 68.61Q118.22 68.91 118.26 69.2Q118.31 69.49 118.34 69.79Q118.37 70.09 118.4 70.38Q118.42 70.68 118.43 70.98Q118.44 71.27 118.44 71.57Q118.44 71.87 118.43 72.17Q118.42 72.46 118.4 72.76Q118.37 73.06 118.34 73.35Q118.31 73.65 118.26 73.94Q118.22 74.24 118.16 74.53Q118.1 74.82 118.03 75.11Q117.97 75.4 117.89 75.69Q117.81 75.97 117.72 76.26Q117.63 76.54 117.53 76.82Q117.43 77.1 117.32 77.38Q117.21 77.65 117.09 77.93Q116.97 78.2 116.83 78.46Q116.7 78.73 116.56 78.99Q116.42 79.25 116.27 79.51Q116.12 79.77 115.96 80.02Q115.79 80.27 115.62 80.51" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M137.14 81.55L137.14 74.69" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M133.4 68.45L140.88 68.45L137.14 74.69L133.4 68.45Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 75L213.51 75" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="23.49" y="72" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="210.51" y="72" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="47.15, 56.77, 62.66, 71.11, 80.11, 88.49, 96.67, 105.05, 110.66, 114.79, 123.23, 132.05, 135.59, 145.22, 154.04, 162.43, 171.25, 180.07, 188.44" y="172.32">
+			Propagation Channel
+	</text></svg></span>
+</span><figcaption>Propagation Channel</figcaption></figure>
+<p>Everything between a transmit antenna's terminals and a receive antenna's terminals that is not an antenna: path loss,
+multipath and Doppler. Pin <code>tx</code> is the transmit antenna and pin <code>rx</code> the receive antenna, each over ground, and they are
+not interchangeable. The channel is <strong>one way</strong>: it carries what arrives at <code>tx</code> to <code>rx</code> and sends nothing back, so its
+S12 is 0. A reverse link is a second channel, and <code>Reverse=CH1</code> makes it the same path with its ends exchanged.</p>
+<pre><code>PropagationChannel:CH1 tx rx Distance=250 TxHeight=10 RxHeight=1.5 PathLoss=tworay TxGain=8 RxGain=0
+</code></pre>
+<ul>
+<li><strong>Ends.</strong> <code>TxGain</code> and <code>RxGain</code> are antenna gains in dBi, the same in every direction. <code>TxPattern</code> or <code>RxPattern</code> names one
+port of an EM result's far field instead, written <code>path#port</code>: that end then has the port's realized gain toward each
+ray and the port's S11 as its impedance, and its boresight points at the other end unless <code>TxAz</code>/<code>TxEl</code>/<code>TxRoll</code> say
+otherwise. <code>TxZ</code> and <code>RxZ</code> are the impedances the pins present (default 50 Ω). The receive pin's noise is its impedance
+at the antenna temperature <code>RxTant</code>, which defaults to the ambient temperature. The channel adds no noise of its own.</li>
+<li><strong>Geometry.</strong> <code>Distance</code> is the horizontal distance between the ends in metres, at heights <code>TxHeight</code> and <code>RxHeight</code>.
+Write a bare number or <code>metre</code>: <code>m</code> means milli in every value, so <code>Distance=150 m</code> is refused rather than read as 15 cm. <code>TxPos</code> and <code>RxPos</code> place both ends as <code>x,y,z</code> instead. <code>TxVel</code> and <code>RxVel</code>,
+as <code>x,y,z</code> in m/s, give each ray its Doppler.</li>
+<li><strong>Large scale.</strong> <code>PathLoss</code> is any model of the propagation library (<code>free</code>, <code>logdist</code>, <code>multislope</code>, <code>tworay</code>, <code>38901</code>,
+<code>P1238</code>, <code>P1411</code>, <code>P526</code>, <code>satellite</code>, <code>P1812</code>). Its parameters, and the added losses (gas, rain, clutter and the rest),
+are written beside it by the model's own names. Shadowing is held at 0, since a draw belongs to a drop of a Monte Carlo.
+<code>Rain=fixed</code> adds the attenuation at the stated availability, and <code>Rain=drawn</code> is refused.</li>
+<li><strong>Rays.</strong> <code>Multipath=none</code> uses the rays of the geometry: the line of sight, plus the ground ray for <code>tworay</code>.
+<code>Multipath=file</code> reads a ray list from <code>File=</code>: a CSV whose header names <code>delay (ns)</code>, <code>power (dB)</code>, and optionally
+<code>phase (deg)</code> and <code>doppler (Hz)</code>. Each row is one ray, with its delay in excess of the line of sight and its power
+relative to the large-scale loss.</li>
+</ul>
+<p>What each analysis sees:</p>
+<table>
+<thead>
+<tr>
+<th>Analysis</th>
+<th>The channel</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>S-parameter, noise</td>
+<td>A two-port frozen at <code>TimeOffset</code>: S21 = H(f), S12 = 0, S11 and S22 the ends' impedances</td>
+</tr>
+<tr>
+<td>Harmonic balance</td>
+<td>The same frozen H at every tone, each at its own frequency, with no Doppler shift</td>
+</tr>
+<tr>
+<td>Envelope</td>
+<td>Every ray's delayed transmit wave, rotated, scaled and turned by its Doppler, drives the receive pin</td>
+</tr>
+</tbody>
+</table>
+<p>H(f) is λ/(4πd) times the model's loss in excess of free space, times each ray's gain, delay and antenna gains, summed over
+the rays. d is the distance the model uses (the slant range on a satellite path). The excess loss is the model's at <code>f0</code>:
+the stated <code>f0</code>, otherwise the run's carrier, otherwise each frequency asked. The free-space part follows λ at every
+frequency. The bulk delay d/c (3.3 µs at 1 km) is reported and never simulated. In an envelope run the channel adds one
+step of latency plus each ray's excess delay, reads only steps already solved, and leaves the receive side's first
+latency out of every measurement. A cycle of channels in an envelope bench is refused, and so is a receive pin driven by
+two channels.</p>
+<p>Each run adds the loss breakdown, the total path loss, the bulk delay, the common Doppler and the rays to its result,
+as <code>link:CH1:Loss_dB</code>, <code>link:CH1:PathLoss_dB</code> and the rest. <code>explain --analysis</code> states the same, with the envelope regime:
+the Doppler spread against the record and the subcarrier spacing, and the coherence bandwidth against the signal's.</p>
+<table class="param-table">
+<thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
+<tr><td>1</td><td>tx</td></tr>
+<tr><td>2</td><td>rx</td></tr>
+</tbody></table>
+<p class="small">The nets of an instance line, in this order. tx is the transmit antenna&#39;s terminals and rx the receive antenna&#39;s, each over ground. NOT interchangeable: the channel carries tx to rx and nothing back, so a reverse link is a second channel (Reverse= for the same realization).</p>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>Distance</td><td><code>100</code></td><td>metre</td><td>shown</td><td>Horizontal distance between the two antennas, metres (a bare number; m alone is milli). The ends are at heights TxHeight and RxHeight above a flat ground.</td></tr>
+<tr><td>TxHeight</td><td><code>1.5</code></td><td>metre</td><td>&mdash;</td><td>Transmit antenna height above the ground, metres.</td></tr>
+<tr><td>RxHeight</td><td><code>1.5</code></td><td>metre</td><td>&mdash;</td><td>Receive antenna height above the ground, metres.</td></tr>
+<tr><td>PathLoss</td><td><code>free</code></td><td>&mdash;</td><td>shown</td><td>The large-scale model, by its recommendation or report (free, logdist, multislope, tworay, 38901, P1238, P1411, P526, satellite, P1812). Its parameters, and the added losses, are written beside it by the model&#39;s own names.</td></tr>
+<tr><td>Multipath</td><td><code>none</code></td><td>&mdash;</td><td>&mdash;</td><td>none: the rays the geometry gives (the line of sight, and tworay&#39;s ground ray). file: the rays of a ray list (File=), held static.</td></tr>
+<tr><td>TxGain</td><td><code>0</code></td><td>&mdash;</td><td>&mdash;</td><td>Transmit antenna gain, dBi, the same in every direction. TxPattern replaces it with a pattern.</td></tr>
+<tr><td>RxGain</td><td><code>0</code></td><td>&mdash;</td><td>&mdash;</td><td>Receive antenna gain, dBi, the same in every direction. RxPattern replaces it with a pattern.</td></tr>
+<tr><td>TxZ</td><td><code>50</code></td><td>Ω</td><td>&mdash;</td><td>The impedance the transmit pin presents, ohms.</td></tr>
+<tr><td>RxZ</td><td><code>50</code></td><td>Ω</td><td>&mdash;</td><td>The impedance of the source the receive pin is, ohms.</td></tr>
+<tr><td>TimeOffset</td><td><code>0</code></td><td>s</td><td>&mdash;</td><td>The instant, seconds, an S-parameter or harmonic-balance run freezes the channel at (Doppler phases turn with time); where an envelope run&#39;s time 0 is.</td></tr>
+</tbody></table>
 <h3 id="var">Variables (VAR)</h3>
 <figure class="symbol"><span class="frame">
 <span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M52 24L188 24" /><path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M188 24L188 126" /><path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M188 126L52 126" /><path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M52 126L52 24" /><text fill="#2D14C3" transform="translate(120 75)" font-size="40.8" font-family="IBM Plex Sans" x="-38.56, -13.71, 12.44" y="15.3">
@@ -5462,6 +5554,7 @@ itself: <a href="expressions.html#operators">operators</a>, <a href="expressions
 <tr><td><a href="#combiner">Combiner</a></td><td>Combiner</td><td>System</td></tr>
 <tr><td><a href="#phasedarray">Phased Antenna Array</a></td><td>PhasedArray</td><td>System</td></tr>
 <tr><td><a href="#phaseshifter">Phase Shifter</a></td><td>PhaseShifter</td><td>System</td></tr>
+<tr><td><a href="#propagationchannel">Propagation Channel</a></td><td>PropagationChannel</td><td>System</td></tr>
 </tbody></table>
 <hr />
 <p>See also: <a href="dynamic-symbols.html">Dynamic symbols (SDD / ZPort / SnP)</a> ·

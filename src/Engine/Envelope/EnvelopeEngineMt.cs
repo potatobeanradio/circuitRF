@@ -213,6 +213,10 @@ public sealed class EnvelopeEngineMt
         // EnvelopeEngine).
         var stampHz = wMix.Select(w => Math.Abs(w) / (2 * Math.PI)).Where(f => f > 0).Distinct().ToArray();
         using var lines = EnvelopeLineDelay.Apply(_nl, [.. wMix.Select(w => Math.Abs(w) / (2 * Math.PI))], h, 0.5 * need);
+        // brief-pch-6 — every Propagation Channel is its explicit, one-way coupling, each product in its |w| frame (EnvelopeChannel).
+        foreach (var ec in _nl.Components) if (ec.Model is ICarrierContext carrierCtx) carrierCtx.SetCarrier(tones.Average());
+        using var channels = EnvelopeChannel.Apply(_nl, [.. wMix.Select(w => Math.Abs(w) / (2 * Math.PI))], h, i0, p.ChannelDrive, p.RecordChannelWaves);
+        Action<int, Complex[]>? delayedMain = lines.Any || channels.Any ? (m, b) => { if (lines.Any) lines.AddMain(m, b); channels.AddMain(m, b); } : null;
         using var snpFit = EnvelopeSnpFit.Apply(_nl, stampHz.DefaultIfEmpty(0).Max() + 0.5 * rate, stampHz, 0.5 * rate);
         using var baseband = EnvelopeBaseband.Apply(_nl, Math.PI * need);    // as in EnvelopeEngine
 
@@ -223,8 +227,10 @@ public sealed class EnvelopeEngineMt
         // Each P1Tone is driven at its own Freq (brief NZ-11): it is on a product, or a fundamental of its own. Driving
         // every one at the first fundamental put an LO at the carrier's frequency.
         foreach (var ec in _nl.Components)
+        {
             if (ec.Model is P1ToneModel p1) p1.SetToneContext(fc: fc, driveFreqHz: ToneHz(ec) is > 0 and var hz ? hz : tones[0]);
             else if (ec.Model is PnToneModel pn) pn.SetToneContext(fc: fc);
+        }
         foreach (var s in sources) { s.SetToneContext(fc); s.EnvelopeDrive = Complex.Zero; }
         // Before the products are stamped: stamping an element alone re-numbers a source's branch.
         // Measured out to the signal's own extent (+-need/2), as in EnvelopeEngine.
@@ -243,6 +249,7 @@ public sealed class EnvelopeEngineMt
                 CompressedColumnStorage<Complex> A0, C;
                 baseband.Holding = m == 0;            // the whole baseband product, its right-hand side included
                 lines.Product = m;
+                channels.Product = m;
                 if (m == 0)
                 {
                     var a1 = EnvelopeEngine.Stamp(extractor, mna, dlt);
@@ -278,20 +285,23 @@ public sealed class EnvelopeEngineMt
                 var pr = new Prod { W = wMix[m], Neg = wMix[m] < 0, A0 = A0, C = C, BStatic = bStatic, BUnit = bUnit };
                 baseband.Holding = false;
                 lines.Product = null;
+                channels.Product = null;
                 lines.Bind();
+                channels.Bind();
                 var delayNow = lines.Coupling(m, 1, A0.RowCount);
                 pr.Be = EnvelopeEngine.Stage.Of(EnvelopeEngine.Prepare(A0, C, w, aBe, ifNodes, bStatic, bUnit, delayNow));
                 pr.G2 = EnvelopeEngine.Stage.Of(EnvelopeEngine.Prepare(A0, C, w, aG2, ifNodes, bStatic, bUnit, delayNow));
                 prods[m] = pr;
             }
         }
-        finally { baseband.Holding = false; lines.Product = null; foreach (var s in sources) s.EnvelopeDrive = null; }
+        finally { baseband.Holding = false; lines.Product = null; channels.Product = null; foreach (var s in sources) s.EnvelopeDrive = null; }
 
         // ── start: multi-tone HB with the t0 drives ─────────────────────────
         var (V, X0, q0) = Start(extractor, baseband, sources, apft, tones, wMix, toneMix, N, ifNodes, p, (s, t) => drv[s, t][0],
                                 (s, t) => EnvelopeEngine.Rms(drv[s, t]), out double tolRun);
         for (int m = 0; m < M; m++) { prods[m].Xm1 = X0[m]; prods[m].Xm2 = X0[m]; }
         lines.Start(X0);
+        channels.Start(X0);
         var qm1 = q0; var qm2 = q0;
 
         var probes = EnvelopeEngine.RecordedNodes(_nl, p.Probes, srcEcs);
@@ -463,7 +473,9 @@ public sealed class EnvelopeEngineMt
                     double f = (double)i / sub;
                     var xn = Advance(nw, aSub, -aSub, 0.0, m => SplitStage(m, sub, aSub),
                                      (s, t) => drv[s, t][step - 1] + f * (drv[s, t][step] - drv[s, t][step - 1]),
-                                     x, x, q, q, vs, lines.Any ? (m, b) => lines.AddSplit(m, b, sub, i) : null, i0 + step, out var qn);
+                                     x, x, q, q, vs,
+                                     lines.Any || channels.Any ? (m, b) => { if (lines.Any) lines.AddSplit(m, b, sub, i); channels.AddSplit(m, b, sub, i); } : null,
+                                     i0 + step, out var qn);
                     if (xn is null) ok = false;
                     else { x = xn; q = qn; lines.PushSub(xn); }
                 }
@@ -501,10 +513,11 @@ public sealed class EnvelopeEngineMt
 
             var xNew = Advance(newton, alpha, b1, b2, m => be ? prods[m].Be : prods[m].G2, (s, t) => drv[s, t][step],
                                prods.Select(pr => pr.Xm1).ToArray(), prods.Select(pr => pr.Xm2).ToArray(), qm1, qm2, V,
-                               lines.Any ? lines.AddMain : null, i0 + step, out var qNow)
+                               delayedMain, i0 + step, out var qNow)
                        ?? Split(step, V, out qNow);
             for (int m = 0; m < M; m++) { prods[m].Xm2 = prods[m].Xm1; prods[m].Xm1 = xNew[m]; }
             lines.Push(xNew);
+            channels.Push(xNew);
             qm2 = qm1; qm1 = qNow;
             vHist.Add((Complex[,])V.Clone()); if (vHist.Count > 3) vHist.RemoveAt(0);
             Record(step);
@@ -534,6 +547,9 @@ public sealed class EnvelopeEngineMt
             ToneFreqsHz = tones, MixLabels = Enumerable.Range(0, M).Select(m => lat.Label(m)).ToArray(),
             MixFreqHz = wMix.Select(w => w / (2 * Math.PI)).ToArray(),
             MixTones = Enumerable.Range(0, M).Select(m => lat.ToneOf(m)).ToArray(),
+            ChannelLatencyS = channels.Any ? channels.LatencyS : 0,
+            ChannelRecordings = channels.Any && p.RecordChannelWaves ? channels.Recordings : null,
+            ChannelResponse = channels.Responder(_nl),
         };
         if (splitSteps > 0)
             res.Notes.Add($"envelope: {splitSteps} step(s) did not converge at the full step and were retaken as up to {finestSplit} sub-steps");

@@ -144,6 +144,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _hybrid180     = BuildCoupler(SymbolKind.Hybrid180);
     private static readonly Symbol _atten         = BuildAtten();
     private static readonly Symbol _delay        = BuildDelay();
+    private static readonly Symbol _propagationChannel = BuildPropagationChannel();
     private static readonly Symbol _phaseShifter = BuildPhaseShifter();
     private static readonly Symbol _duplexer      = BuildDuplexer();
 
@@ -278,6 +279,7 @@ public static class BuiltInSymbols
             case SymbolKind.Hybrid180:  return _hybrid180;
             case SymbolKind.Atten:      return _atten;
             case SymbolKind.Delay:      return _delay;
+            case SymbolKind.PropagationChannel: return _propagationChannel;
             case SymbolKind.PhaseShifter: return _phaseShifter;
             case SymbolKind.Duplexer:   return _duplexer;
             case SymbolKind.Combiner:   return _combinerCache.GetOrAdd(Math.Max(2, portCount), BuildCombiner);
@@ -2186,6 +2188,26 @@ public static class BuiltInSymbols
         L(-300, 0, -100, 0),
         L( 100, 0,  300, 0),
     ], SymbolKind.Delay);
+
+    // ── Propagation Channel — an antenna, its waves, an antenna (brief-pch-6) ──
+    // Pins: tx (-300,0) · rx (+300,0), NOT interchangeable: the channel carries tx to rx and nothing back. A square body, as the
+    // delay's, with the leads stopping at its edges; inside, two antennas in the schematic antenna symbol — a short mast under an
+    // open triangle standing on its point, never a V, which reads as the letter Y — and three arcs leaving the transmit
+    // antenna's triangle towards the receive antenna. Each antenna spans y in [-21, 21], centred in the body, so the drawing
+    // reads as a radio path and says which way it runs.
+
+    private static Symbol BuildPropagationChannel() => Sym([
+        RRect(0, 0, 200, 200, 12),                    // body, x in [-100,100]  y in [-100,100]
+        L(-300, 0, -100, 0),                          // the tx lead, to the body's edge
+        L(-55, 21, -55, -1),                          // the transmit antenna: its mast
+        Poly(false, -67, -21, -43, -21, -55, -1),     // and its triangle, on its point
+        A(-55, -11, 24, -35, 70),                     // the waves, leaving towards the receive antenna
+        A(-55, -11, 37, -35, 70),
+        A(-55, -11, 50, -35, 70),
+        L(55, 21, 55, -1),                            // the receive antenna
+        Poly(false, 43, -21, 67, -21, 55, -1),
+        L(100, 0, 300, 0),                            // the rx lead, from the body's edge
+    ], SymbolKind.PropagationChannel);
 
     // ── Phase Shifter — a square carrying φ (brief-paa-4) ─────────────────────
     // Pins: (-300,0) · (+300,0), interchangeable, as the delay's are. The delay's body with an italic φ, the letter a phase is

@@ -4809,3 +4809,34 @@ read 37 ms: re-weigh 18 ms, fields run 22 ms).
   fields run. Not pursued: the evaluation side is past the 20-a-second target, and the drawing is the other half of a frame.
 - **A model's once-per-instance warning** (the array's pitch warning, raised at its first stamp) is said by the first evaluation and not by
   the re-weighed ones that reuse the model; the warnings the elaboration raised are carried over.
+
+## brief-pch-6 — the Propagation Channel with pin ends (2026-11-15)
+
+- **Two nets, not four.** The `.cnl` line is `PropagationChannel:CH1 tx rx`, so the model derives from `ComponentModel` and stamps
+  through `IdealSBlockModel.StampWaveConstraints` with the node list `[tx, 0, rx, 0]`. Subclassing `IdealSBlockModel` would have
+  put it under the system blocks' 2N-net contract, and `InstanceNetContract` states it as 2 instead.
+- **Which frequency a model is evaluated at.** The model's loss in excess of free space is evaluated once at `f0`: the stated
+  `f0`, else the run's carrier (`ICarrierContext`, set beside every `SetToneContext` call in HB and both envelope engines), else
+  the frequency asked. The free-space part λ/(4π·d) follows λ at every frequency, which is what makes S21 Friis to the last digit
+  across a sweep. A model evaluated at each HB harmonic instead would be refused at 3f0 by any model with a frequency range.
+  H is 0 at DC: an antenna radiates nothing there, and λ/d grows without bound.
+- **A word several models share broke the elaborator's word table.** `Los`, `Scenario` and `Polarization` are each parameters of
+  more than one registry model, so `ToDictionary` over every model's word parameters threw "same key" on every channel. The
+  table is grouped by name now.
+- **A `.cnl` `Amp` with no `IP3=` is nonlinear.** The factory's default intercept is 40 dBm, the tile's, not the 200 dBm "ideal"
+  sentinel. A test's "linear LNA" was in the HB interface beside the PA, which coupled the receive side to the Newton tolerance:
+  1 % instead of 0. A linear amplifier states `IP3=200`.
+- **A pattern has no polarization at its own pole unless it is a physical one.** At θ = 0, θ̂ and φ̂ depend on φ, and a boresight
+  ray's φ is round-off. A fake pattern with constant Eθ therefore gave a random polarization along the line of sight, and
+  rolling the receive end did not cross it. A field polarized along a Cartesian axis (Eθ = cos θ·sin φ, Eφ = cos φ for +y) is
+  defined there, as every solved pattern is.
+- **Realized gain from a stored pattern.** `PortFarFieldSet` patterns are per unit incident wave in the peak convention, U = |rE|²/2η₀ and
+  P_inc = |a|²/2, so e = rE·√(4π/η₀) has |e|² = G with the port's mismatch in it. Two pattern ends couple as e_tx·e_rx in the global
+  frame, so polarization mismatch is in H. A gain end is co-polar with the other end's pattern along the line of sight.
+- **`Distance=150 m` is refused.** The design note's own example wrote it, and `m` is milli in every value, so it read as
+  0.15 metres. A channel's three lengths typed in `m` are refused, naming `metre` and the bare number.
+- **`Reverse=`** binds after flattening (the forward channel may be placed later), looked up beside the reverse first and then as a
+  full path. The reverse takes the forward's geometry, model and rays transposed; its ends are its own.
+- **Noise.** The receive pin is a `NoiseSourceDecl` from the rx net to ground with 4k·T_ant·Re(1/Z_rx), so the S-parameter, HB and
+  envelope noise read it through the device-source path. An S-parameter run with `RxTant=150` gives the receive port's wave noise
+  k·150 = 2.07e-21 and Te = T_ant/|H|² at the input.
