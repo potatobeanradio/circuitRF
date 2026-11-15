@@ -2289,8 +2289,9 @@ isolation resistor that matches them and spends the cross-coupled power is <code
 line's quarter wave, and the resistor. The two arms have different effective permittivities, so their quarter waves are
 different lengths; both curve on one radius, so the input tee's two straight runs differ instead and the resistor's gap
 sits a little off the input's line. Each transformer is the branch of its output tee, and the terminal is at its end.</p>
-<p><strong>Limits.</strong> Port 2's arm grows as K^1.5: on 20 mil RO4350B, <code>K</code> = 2 asks for 158 Ω and <code>K</code> = 4 for 412 Ω, which no width
-reaches, and a split the board cannot draw is refused (<code>device.wilkinson.split-unrealisable</code>), naming the line. The
+<p><strong>Limits.</strong> Port 2's arm grows as K^1.5: on 20 mil RO4350B, <code>K</code> = 2 already asks for a 158 Ω line, and <code>K</code> = 4 for
+412 Ω, which no width reaches; a split the board cannot draw is refused (<code>device.wilkinson.split-unrealisable</code>), naming
+the line. The
 unequal split is one section only. At <code>K</code> = 1 the transformers would be <code>Z0</code> lines that change nothing, so the equal split
 leaves them out; a <code>K</code> just off 1 puts them in, so its outputs are a quarter wave further from the junction, 90° later.</p>
 <h4 id="mwpd-sections">Broadband: <code>N</code> sections</h4>

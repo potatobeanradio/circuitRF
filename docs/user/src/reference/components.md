@@ -1242,8 +1242,9 @@ line's quarter wave, and the resistor. The two arms have different effective per
 different lengths; both curve on one radius, so the input tee's two straight runs differ instead and the resistor's gap
 sits a little off the input's line. Each transformer is the branch of its output tee, and the terminal is at its end.
 
-**Limits.** Port 2's arm grows as K^1.5: on 20 mil RO4350B, `K` = 2 asks for 158 Ω and `K` = 4 for 412 Ω, which no width
-reaches, and a split the board cannot draw is refused (`device.wilkinson.split-unrealisable`), naming the line. The
+**Limits.** Port 2's arm grows as K^1.5: on 20 mil RO4350B, `K` = 2 already asks for a 158 Ω line, and `K` = 4 for
+412 Ω, which no width reaches; a split the board cannot draw is refused (`device.wilkinson.split-unrealisable`), naming
+the line. The
 unequal split is one section only. At `K` = 1 the transformers would be `Z0` lines that change nothing, so the equal split
 leaves them out; a `K` just off 1 puts them in, so its outputs are a quarter wave further from the junction, 90° later.
 
