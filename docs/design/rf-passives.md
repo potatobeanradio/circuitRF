@@ -10,7 +10,8 @@ variants, branch-line and rat-race, coupled-line and Lange, the Marchand balun) 
 
 **A plan made of sections.** Each topology has one pure function in Core, `src/Core/Devices/Microstrip/<X>Plan.cs`, that
 takes the part's specs and the substrate and returns a `PassivePlan`: the part's pin names, and a list of sections. A
-section is an EXISTING microstrip part placed in the passive's frame — an MTEE (`PlanTee`), an MCURVE (`PlanCurve`) —
+section is an EXISTING microstrip part placed in the passive's frame — an MTEE (`PlanTee`), an MCURVE (`PlanCurve`),
+an MLIN (`PlanLine`) —
 with the plan node each of its pins joins and a pose (where its pin 1 sits, a turn in quarters). Nothing in a plan is a
 new kind of line: it is the vocabulary circuitRF already has, arranged. Every dimension is held on a 2 nm grid
 (`PassivePlan.OnGrid`), so halves are whole database units and two pieces that meet in the plan meet to the last unit
@@ -22,7 +23,7 @@ plan's nodes and Kron-reduces the internal nodes away — the way MTEE already s
 The block is shared with MTEE for that reason. A topology therefore writes no stamping code at all.
 
 **One drawing path from the same plan.** `PassivePlanPCells.Draw` draws each section through that part's own generator
-(`MTeePCell`, `MCurvePCell`), turned and moved to its pose, and takes the passive's pins from those parts' own pins. So
+(`MTeePCell`, `MCurvePCell`, `MlinPCell`), turned and moved to its pose, and takes the passive's pins from those parts' own pins. So
 the model and the layout are the same pieces by construction, not by two implementations agreeing.
 
 **Specs are the stored parameters; geometry is a readout.** A part stores what a designer specifies — Z0 and F, later K
@@ -72,6 +73,65 @@ which fixes the curve radius. Each port pin sits one 50 Ω width of line beyond 
 
 Refusals: a non-positive spec, an impedance no width reaches on the substrate, and a quarter wave too short to make a
 ring (high F or a wide Gap).
+
+## 3b. MBLC and MRRC, the branch-line and rat-race hybrids
+
+Both are plans of the shared sections and nothing else, so they stamp through `MicrostripPlanModel` and draw through
+`PassivePlanPCells.Draw` with no model or drawing code of their own: `BranchLinePlan` and `RatRacePlan` are the whole of
+each topology, and the PCell generators are three-line wrappers.
+
+**MBLC, the 3 dB branch-line (90°) hybrid**, one or two sections. Pins `1`–`2` and `4`–`3` are the two through lines;
+driven at 1, 2 is through, 3 coupled and 4 isolated. Sections: an MTEE at each junction (four, or six for two sections),
+a `PlanLine` for each series and shunt arm, and a `Z0` `PlanLine` feed to each pin, in line with the through line. One
+section: series arms Z0/√2, shunt arms Z0. Two sections: series arms Z0 and shunt arms (1 + √2)·Z0, √2·Z0, (1 + √2)·Z0,
+the published equal-split design, which the even/odd conditions confirm (match and isolation b = 2at²/(1 + a²), 3 dB
+b/t² = 1/√2, normalised admittances). Every arm is λg/4 at F between the reference planes of the tees it joins.
+
+**MRRC, the rat-race (180°) hybrid.** Pin `1` is Σ, `4` is Δ, `2` and `3` the outputs. Sections: four MTEEs on a ring
+of √2·Z0, `PlanLine` runs between them and two 180° `PlanCurve`s; each pin is the tee's branch, one W0 long. The pins
+sit in ring order 2, 1, 3, 4, spaced λg/4, λg/4, λg/4 and 3λg/4 between reference planes.
+
+| Parameter | Part | Stored | Meaning |
+|---|---|---|---|
+| `Z0` | both | yes, Ω | Port impedance; the arms' impedances follow from it. |
+| `F` | both | yes, Hz | Centre frequency: every arm or spacing is λg/4 (or 3λg/4) here. |
+| `N` | MBLC | yes | Sections, 1 or 2. |
+| `SignalLayer`, `GroundReference` | both | yes | As for MWPD. |
+| W and L of each arm; the ring's width, λg/4 and bend radius | — | readout | `BranchLinePlan.Build`, `RatRacePlan.Build`. |
+
+**What the hybrids needed beyond the shared pieces, and why.**
+
+- **`PlanLine`, a straight MLIN section.** A branch-line's arms and feeds are straight lines between junctions, and so
+  are the rat-race's runs. It is one record in `PassivePlan.cs`, one case in `MicrostripPlanModel.Build` (the MLIN model)
+  and one in `PassivePlanPCells.Draw` (`MlinPCell`), the cost §4 states for a new section kind.
+- **A stub in each tee's branch.** MTEE simulates a tee whose branch ends at the through line's edge as a straight line
+  with a pin on it, with no junction. Each branch-line tee therefore carries one W0 of its shunt arm, and the arm's
+  `PlanLine` starts there. `BranchLinePlan.Layout` takes the dimensions directly, stub included, so the one-section plan
+  on the `C2-branch-line` fixture's numbers with no stub is that hand-drawn network to 1e-9.
+- **One span for the shunt arms.** Both through lines are straight, so a two-section coupler's three shunt arms share one
+  span although their εeff differ; each takes the mean of their quarter waves (about ±1.5 % on 20 mil RO4350B).
+- **A ring of quarter turns.** A section's pose turns only in quarters, so the rat-race's ports cannot sit 60° apart on a
+  circle. The ring is two straight runs and two half-turns, three tees on one run and one on the other; closing it fixes
+  the half-turns, π·(R − 0.2·W) = λg/4 − W0.
+- **Two shared fixes.** `InstanceNetContract` now states a planned passive's net count (its plan's pins), which MWPD also
+  lacked. The ground pour counts the planned passives' generators: without them it covered only the lines placed beside
+  the part, which left the rat-race's half-turns off the plane.
+
+Refusals: `device.branchline.*` (a non-positive spec, `N` other than 1 or 2, an unreachable width, an arm too short for
+its tees' stubs) and `device.ratrace.*` (a non-positive spec, an unreachable width, a ring too small for F). Tests:
+`HybridPlanTests` (closed forms, reference planes, every plan node one point, refusals), `HybridSParamTests` (each part
+equals its sections wired by hand to 1e-9; the C2 fixture; the split, match, isolation and phase at F; DC), the
+`F9-branch-line-hybrid` and `F10-rat-race-hybrid` schematic-to-layout fixtures, and an LVS clean run plus one spec
+mismatch for each. The generators' versions follow MTEE's, MLIN's and MCURVE's, as MWPD's do.
+
+For the maintainer: the names MBLC and MRRC (microstrip branch-line and rat-race coupler) are circuitRF's own.
+
+References: Pozar, *Microwave Engineering*, 4th ed., §7.5 and §7.8 (a book, with no DOI:
+[the publisher's page](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553)); J. Reed and
+G. J. Wheeler, "A Method of Analysis of Symmetrical Four-Port Networks," *IRE Trans. MTT*, vol. 4, no. 4, pp. 246–252,
+1956, DOI [10.1109/TMTT.1956.1125071](https://doi.org/10.1109/TMTT.1956.1125071); Microwaves101, "Two-section
+branchline coupler" (a web page, with no DOI:
+[microwaves101.com](https://www.microwaves101.com/encyclopedias/two-section-branchline-coupler)).
 
 ## 4. What a new topology costs
 

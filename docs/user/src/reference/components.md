@@ -1240,6 +1240,140 @@ divider's as built; compare S22 and S23 with the circuit model with the resistor
 > millimetre-wave frequencies," *Electronics Letters*, vol. 18, no. 6, pp. 272–273, 1982.
 > DOI [10.1049/el:19820186](https://doi.org/10.1049/el:19820186).
 
+### Branch-Line Hybrid (MBLC) {#mblc}
+
+{{symbol: mblc}}
+
+A 3 dB quadrature (90°) hybrid on microstrip, in one or two sections. Two through lines, 1–2 and 4–3, are joined by
+quarter-wave shunt arms. Power into terminal 1 divides equally between terminal 2 (through) and terminal 3 (coupled),
+which leave a quarter period apart, 3 behind 2; terminal 4 is isolated and every terminal is matched at the centre
+frequency `F`. The coupler is symmetric, so any terminal can be the input, with the other three taking the same roles
+around the ring.
+
+**How it works.** The coupler is a mirror image of itself across the line midway between the two through lines, so a
+drive at terminal 1 can be split into an even half (1 and 4 driven alike) and an odd half (driven opposite). In the even
+half the midline is an open circuit, in the odd half a short, and each shunt arm becomes an eighth-wave stub, open or
+shorted, on a single through line. Each half is then a two-port that can be solved on its own, and the four
+S-parameters are the halves' sums and differences: S11 and S41 come from the two reflections, S21 and S31 from the two
+transmissions. With one section — series arms of `Z0`/√2 and shunt arms of `Z0`, all a quarter wave long — both halves
+are matched at `F`, and they transmit with equal magnitude and a quarter period apart: S11 = S41 = 0, S21 = −j/√2 and
+S31 = −1/√2, so |S21| = |S31| = −3.01 dB with 3 lagging 2 by 90°.
+
+Two sections, three shunt arms, give a wider band. Normalise each arm's admittance to the ports' (t for the series arms,
+a for the two outer shunt arms, b for the middle one): the halves are matched and the fourth terminal isolated when
+b = 2·a·t² / (1 + a²), and the split is 3 dB when b / t² = 1/√2. circuitRF keeps the series arms at `Z0` (t = 1), which
+gives a = √2 − 1 and b = 1/√2: outer shunt arms of (1 + √2)·`Z0` and a middle one of √2·`Z0`, 120.7 Ω and 70.7 Ω in a
+50 Ω system. At `F` it is matched, isolated and split 3 dB, the through port now half a period behind the input and
+3 again a quarter period behind 2.
+
+**What circuitRF derives** from `Z0`, `F` and `N` on the technology's substrate, by the one function the model and the
+layout share:
+
+- each arm's width, from the microstrip line model's own impedance at `F`, and the ports' `Z0` width;
+- each arm's length, a quarter of a guide wavelength at `F`, `c₀ / (4·F·√εeff)` with εeff the arm's own effective
+  permittivity at `F`, including dispersion, measured between the reference planes of the two MTEEs it joins: a through
+  arm from half the branch's width, a shunt arm from half the wider through arm's;
+- with two sections, one span for all three shunt arms, since both through lines are straight: each shunt arm takes the
+  mean of the arms' quarter waves, about 1.5 % from its own on the example board.
+
+Each terminal is one port-line width of `Z0` line beyond its tee, in line with the through line, and each tee carries one
+port-line width of its shunt arm before the arm's own line begins, so the circuit model includes the junction. The
+parameters panel shows each arm's width, impedance and length.
+
+**The model** is the MTEE and MLIN parts the layout draws, stamped together and reduced to the four terminals, with their
+limits, which it reports in Messages: MTEE's junction formulas are calibrated on alumina (εr 9.9), on W/h from 0.5 to 2
+and on a branch of 25 to 100 Ω, and the two-section coupler's 120.7 Ω outer arms are outside the last. The junctions'
+own reactance moves the best match a little below `F`: 2.36 GHz for `F` = 2.4 GHz on the example board, where |S11| is
+still −30 dB at `F`. A specification the substrate cannot build is refused by name: an impedance no width reaches, an arm
+too short to leave each tee its stub (a high `F`), or `N` other than 1 or 2.
+
+**The coupler is narrowband.** On the example board (20 mil RO4350B, 2.4 GHz) the circuit model keeps |S11| and |S41|
+below −20 dB from 2.24 to 2.49 GHz with one section, and from 2.08 to 2.64 GHz with two. The
+[Dividers and Couplers](../examples/dividers-and-couplers/index.html) example runs the one-section coupler on Planar MoM,
+EMerge and Palace.
+
+{{table: components/Mblc}}
+
+**References**
+
+> D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012, §7.5, the quadrature (90°) hybrid. A book, with no DOI:
+> [the publisher's page](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553).
+
+> J. Reed and G. J. Wheeler, "A Method of Analysis of Symmetrical Four-Port Networks," *IRE Transactions on Microwave
+> Theory and Techniques*, vol. 4, no. 4, pp. 246–252, October 1956.
+> DOI [10.1109/TMTT.1956.1125071](https://doi.org/10.1109/TMTT.1956.1125071). The even- and odd-mode method.
+
+> Microwaves101, "Two-section branchline coupler." A web page, with no DOI:
+> [microwaves101.com](https://www.microwaves101.com/encyclopedias/two-section-branchline-coupler). The equal-split
+> two-section design with series arms of `Z0`: outer shunt arms of (1 + √2)·`Z0` and a middle one of √2·`Z0`.
+
+> E. Hammerstad and Ø. Jensen, "Accurate Models for Microstrip Computer-Aided Design," *1980 IEEE MTT-S International
+> Microwave Symposium Digest*, pp. 407–409. DOI [10.1109/MWSYM.1980.1124303](https://doi.org/10.1109/MWSYM.1980.1124303).
+
+> M. Kirschning and R. H. Jansen, "Accurate model for effective dielectric constant of microstrip with validity up to
+> millimetre-wave frequencies," *Electronics Letters*, vol. 18, no. 6, pp. 272–273, 1982.
+> DOI [10.1049/el:19820186](https://doi.org/10.1049/el:19820186).
+
+### Rat-Race Hybrid (MRRC) {#mrrc}
+
+{{symbol: mrrc}}
+
+A 3 dB 180° hybrid on microstrip: a ring with four terminals on it. Terminal 1 is the sum (Σ) port and terminal 4 the
+difference (Δ) port; 2 and 3 are the outputs. Power into 1 divides equally between 2 and 3, in phase, and 4 is isolated;
+power into 4 divides equally between 2 and 3, half a period apart, and 1 is isolated. Driven at 2 and 3 together it
+works the other way round, delivering their sum at 1 and their difference at 4. 2 and 3 are isolated from each other.
+
+**How it works.** The ring is a line of √2·`Z0`, one and a half guide wavelengths round, with the terminals in the order
+2, 1, 3, 4 spaced a quarter, a quarter, a quarter and three quarters of a wavelength apart. Seen from terminal 1, each
+output is a quarter wave away one way round the ring and five quarters the other, so the two paths arrive in phase and
+add; terminal 4 is half a wave away one way and a whole wave the other, so they cancel. From terminal 4 the two outputs
+are a quarter wave and three quarters away by their shorter paths, so they leave half a period apart. Each quarter-wave
+path of √2·`Z0` turns a `Z0` load into 2·`Z0`, and two of them side by side are `Z0` again, so every terminal is matched.
+The same result follows from splitting the ring into even and odd halves about its line of symmetry, as for the
+branch-line hybrid. At `F` the ideal hybrid has S21 = S31 = −j/√2, S24 = −S34 = j/√2, and S11, S44, S41 and S23 zero.
+
+**What circuitRF derives** from `Z0` and `F` on the technology's substrate, by the one function the model and the layout
+share:
+
+- the ring's width, for √2·`Z0`, and the ports' `Z0` width, from the microstrip line model's own impedance at `F`;
+- the quarter wavelength, `c₀ / (4·F·√εeff)` with the ring's effective permittivity at `F`, and every spacing measured
+  between the reference planes of the MTEEs on the ring;
+- the ring's shape. Its pieces turn only in quarter turns, so the terminals cannot sit 60° apart on a circle: the ring is
+  two straight runs joined by two 180° bends, terminals 2, 1 and 3 on one run with their lines leaving the same way and
+  terminal 4 on the other. Closing it with one tee on one run against three on the other fixes the bends:
+  π·(R − 0.2·W) = λg/4 − W0, with W the ring's width, W0 the ports' and R the bends' centre-line radius.
+
+Each terminal is one port-line width of `Z0` line beyond its tee. The parameters panel shows the widths, the quarter
+wavelength and the bends' radius.
+
+**The model** is the MTEE, MLIN and MCURVE parts the layout draws, stamped together and reduced to the four terminals,
+with their limits, which it reports in Messages: MTEE's junction formulas are calibrated on alumina (εr 9.9) and on W/h
+from 0.5 to 2, and MCURVE's length rule is stated for bend radii of 3 to 7 widths, a smaller ring than most. A
+specification the substrate cannot build is refused by name: an impedance no width reaches, or a quarter wave too short
+to leave the bends a radius of one ring width (too high an `F`).
+
+**The hybrid is narrowband.** On the example board (20 mil RO4350B, 2.4 GHz) the circuit model keeps |S11|, |S44|, |S41|
+and |S23| below −20 dB from 2.04 to 2.71 GHz. The [Dividers and Couplers](../examples/dividers-and-couplers/index.html)
+example runs it on Planar MoM, EMerge and Palace.
+
+{{table: components/Mrrc}}
+
+**References**
+
+> D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012, §7.8, the 180° hybrid and its ring form. A book, with no
+> DOI: [the publisher's page](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553).
+
+> J. Reed and G. J. Wheeler, "A Method of Analysis of Symmetrical Four-Port Networks," *IRE Transactions on Microwave
+> Theory and Techniques*, vol. 4, no. 4, pp. 246–252, October 1956.
+> DOI [10.1109/TMTT.1956.1125071](https://doi.org/10.1109/TMTT.1956.1125071).
+
+> E. Hammerstad and Ø. Jensen, "Accurate Models for Microstrip Computer-Aided Design," *1980 IEEE MTT-S International
+> Microwave Symposium Digest*, pp. 407–409. DOI [10.1109/MWSYM.1980.1124303](https://doi.org/10.1109/MWSYM.1980.1124303).
+
+> M. Kirschning and R. H. Jansen, "Accurate model for effective dielectric constant of microstrip with validity up to
+> millimetre-wave frequencies," *Electronics Letters*, vol. 18, no. 6, pp. 272–273, 1982.
+> DOI [10.1049/el:19820186](https://doi.org/10.1049/el:19820186).
+
 ## MMIC passives {#mmic}
 
 The parts a die is drawn from. Like a microstrip line, each one takes its process from the workspace
