@@ -681,6 +681,12 @@ public enum SymbolKind
     /// S21 = S12 = e^(−jωT). A square body carrying τ. Appended last because it is newest — the
     /// enum persists by NAME, so position carries no meaning in a file.</summary>
     Delay,
+
+    /// <summary>brief-paa-3 — the Phased Antenna Array (engine "PhasedArray"), a system block. In Elements mode one pin per element,
+    /// Rows × Cols of them, numbered row-major from the top left seen from boresight, down the left of a box holding an antenna mark,
+    /// at the Combiner's spacing; one element is a square with its pin on the left at mid-height, where a system block takes its
+    /// input (the drawn aperture is a later brief's). The count follows Rows and Cols.</summary>
+    PhasedArray,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

@@ -148,6 +148,10 @@ public static class ParametricSweepEngine
                 $"Parametric sweep '{sweep.Name}': inner analysis " +
                 $"'{sweep.InnerAnalysisName}' not found (or its chain is disabled).");
 
+        // brief-paa-3 R-paa3-3 — a sweep that would change an Elements-mode Phased Antenna Array's pin count is refused before any point runs.
+        if (CircuitRF.Core.Devices.PhasedArrayChecks.SweptStructure(tb, lib, sweep.SweepVarName) is { } structural)
+            throw new InvalidOperationException($"Parametric sweep '{sweep.Name}': {structural}");
+
         // Find the variable in GlobalVariables so we can restore it.
         int varIdx   = tb.GlobalVariables.FindIndex(v => v.Name == sweep.SweepVarName);
         var origVar  = varIdx >= 0 ? tb.GlobalVariables[varIdx] : null;

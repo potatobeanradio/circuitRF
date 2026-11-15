@@ -640,9 +640,11 @@ public class SystemBlockComponentTests
     {
         var system = LibraryCatalog.ByCategory(ComponentCategory.System);
 
-        Assert.Equal(SystemBlocks.Length + 2, system.Count);
+        // + the two mixer tiles below, + the Phased Antenna Array (brief-paa-3), whose gates are its own (PhasedArrayComponentTests).
+        Assert.Equal(SystemBlocks.Length + 3, system.Count);
         foreach (var kind in SystemBlocks)
             Assert.Single(system, i => i.Kind == kind);
+        Assert.Single(system, i => i.Kind == SymbolKind.PhasedArray);
 
         // The two mixer tiles join as an EXTRA membership and keep Devices as their primary: a mixer
         // is a device you put in the signal path, and it is also a block you draw a system out of.

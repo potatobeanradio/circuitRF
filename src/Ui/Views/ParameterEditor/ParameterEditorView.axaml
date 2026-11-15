@@ -655,7 +655,8 @@
                                      is exactly the kind of value nobody should be asked to type, and
                                      a mistyped one fails much later with a worse message. -->
                                 <Button Grid.Column="2"
-                                        Content="Browse…"
+                                        Content="…"
+                                        ToolTip.Tip="Choose a file"
                                         IsVisible="{Binding ShowBrowseButton}"
                                         FontSize="11"
                                         Padding="6,2"

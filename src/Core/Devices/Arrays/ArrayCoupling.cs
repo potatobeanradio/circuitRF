@@ -11,12 +11,14 @@
 // On a TRIANGULAR lattice an odd row offset displaces an element by a different vector from an even and an odd row, so the offset
 // is keyed with the starting row's parity whenever Δrow is odd.
 //
+// In src/Core with ArrayLattice, for the same reason: the PhasedArray component stamps this S.
+//
 // The selection is PAA-1's (testdata/phased-array/harness/compare.py, extend_S and sub_index), so the engine reproduces the numbers
 // that brief measured; ArrayEngineTests holds it to them.
 
 using System.Numerics;
 
-namespace CircuitRF.Engine.AntennaArray;
+namespace CircuitRF.Core.Devices.Arrays;
 
 /// <summary>A square sparse complex matrix, compressed by rows, each row's columns ascending.</summary>
 public sealed class ArraySparseMatrix

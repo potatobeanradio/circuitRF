@@ -13,6 +13,8 @@
 
 using System.Numerics;
 
+using CircuitRF.Core.Devices.Arrays;
+
 namespace CircuitRF.Engine.AntennaArray;
 
 /// <summary>One principal cut through the peak: the angle from the peak along it, degrees, and the power there over the peak's, dB.</summary>

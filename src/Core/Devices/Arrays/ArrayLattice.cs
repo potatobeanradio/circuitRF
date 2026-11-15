@@ -1,13 +1,15 @@
 // brief-paa-2 R-paa2-1 — the lattice of a phased array: rows, columns, pitch, rectangular or triangular, the element numbering of the
 // series' D6, and the elements switched off. docs/design/phased-array.md §4.3.
 //
-// THE NAMESPACE IS NOT "Array". Every file under CircuitRF.Engine that writes Array.Empty or Array.Sort would resolve the name to a
-// namespace CircuitRF.Engine.Array before System.Array, so the folder keeps the brief's name and the namespace says what it holds.
+// IN src/Core, NOT src/Engine (brief-paa-3): the PhasedArray component builds its S from this lattice at elaboration, and src/Core
+// references no layer above it. The array factor that also reads it is in src/Engine/Array.
+//
+// THE NAMESPACE IS NOT "Array": a namespace of that name would capture every Array.Empty or Array.Sort written beside it.
 //
 // THE ORIENTATION IS FIXED (D6). Seen from boresight (+z), rows run DOWN the y axis from the top and columns along x from the left;
 // element n = (row − 1)·Cols + col, 1-based. Positions are from the array's centre, so a lattice and its array factor need no origin.
 
-namespace CircuitRF.Engine.AntennaArray;
+namespace CircuitRF.Core.Devices.Arrays;
 
 /// <summary>Rectangular, or triangular: every other row offset by half a column pitch.</summary>
 public enum ArrayLatticeKind { Rect, Tri }
@@ -88,7 +90,7 @@ public sealed class ArrayLattice
     }
 
     /// <summary>What a phase table depends on: the geometry and not the weights or the elements switched off.</summary>
-    internal (int, int, double, double, ArrayLatticeKind) GeometryKey => (Rows, Cols, Dx, Dy, Kind);
+    public (int, int, double, double, ArrayLatticeKind) GeometryKey => (Rows, Cols, Dx, Dy, Kind);
 
     /// <summary>The same lattice at another pitch, or with other elements off.</summary>
     public ArrayLattice With(double? dx = null, double? dy = null, IEnumerable<int>? off = null)

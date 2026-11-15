@@ -664,7 +664,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             if (ReferenceEquals(field, value)) return;
             field = value;
             foreach (var row in Rows)
-                if (row.IsFilePathParam)
+                if (row.IsFilePathParam && !IsArrayRecordRow(row))
                     row.PickFileAsync = value;
         }
     }
@@ -1248,7 +1248,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
                 if (IsVendorModelComponent(comp) && param.Name == CellCorner.SelectorParameter) continue;
 
                 var row = new ParameterRowViewModel(param, _schematicVm, comp.Symbol, comp);
-                if (row.IsFilePathParam) row.PickFileAsync = PickModelFileAsync;
+                if (row.IsFilePathParam) row.PickFileAsync = IsArrayRecordRow(row) ? PickArrayRecordAsync : PickModelFileAsync;
                 if (comp.Symbol == SymbolKind.WBond)
                 {
                     row.ExpressionPlaceholder = WBondPlaceholderFor(param.Name);

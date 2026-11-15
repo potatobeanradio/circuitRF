@@ -4672,3 +4672,32 @@ Gates: `tests/Core.Tests/Expressions/MathOnACubeTests.cs`.
 - Gate: `VerilogAThermalTests.DrawnButUnwiredPin_IsNotHeld_AndReadsItsOwnRise` (no source added, no warning; Id and
   the pin's rise equal an open-ended 1e12 Ω to 1e-6 and agree with the `ComposedFET`). The convention-A path stays
   gated by `ThermalNodeRobustnessTests`.
+
+## brief-paa-3 — the Phased Antenna Array component, Elements mode (2026-11-14)
+
+- **The lattice, the coupling extension and the lattice fit moved from src/Engine/Array and src/Design/Em3d into
+  `src/Core/Devices/Arrays`** (`ArrayLattice`, `ArrayCoupling`/`ArraySparseMatrix`, `ArrayLatticeFit` + `RecordLatticeFit`). The
+  component builds its S at elaboration, and src/Core references no layer above it; a hook installed from above was the other
+  option and was not taken, because it would make an Engine-only caller elaborate a PhasedArray differently from one that had
+  loaded src/Design. One implementation each: src/Engine's pattern sum and src/Design's `RecordLattice` call these.
+- **`PhasedArrayModel` stamps through `IdealSBlockModel.StampWaveConstraints`** (the wave form an SnP falls back to), one branch per
+  pin, so `SParameterEngine.BlockWaves` reads it exactly as an EM Field Data block. Its S is built on the record's own frequencies
+  from the record's Touchstone (TouchstoneCache) and interpolated with SnpModel's defaults (cubic spline, magnitude/angle, warned
+  clamp). Measured: Level=exact on the 1×4 fixture against an EM Field Data block on the same record and circuit, S 1.9e-15 and the
+  pattern 8.4e-16 of the peak (gate 1). The fields analysis takes an exact array through `PointOf` itself, its waves put back in
+  record port order; embedded/isolated through PAA-2's engine, normalised as `PointOf` normalises.
+- **Level=auto** is what the parameter editor's picker writes for "from the record" (a blank combo entry renders as nothing); a blank
+  `Level` in a hand-written line means the same.
+- **lambda(f)** is a built-in (c/f, metres). No shipped example or test defines a function of that name; `lambda` appears only as a
+  device or Verilog-A PARAMETER name, which is a different namespace (a reference, never a call). The shadowing rule that applies is
+  the evaluator's existing one: a user-defined function is looked up before every built-in, so one named `lambda` replaces it. It
+  is UNIT-BEARING for var-unit-wins (power 1), so `0.5*lambda(f0)` in a field whose unit selector says mm is half a wavelength,
+  not half a wavelength of millimetres; its argument is never scaled by a length site unit.
+- **A swept Rows/Cols in Elements mode** is refused before any point runs by `PhasedArrayChecks.SweptStructure`, called by
+  `ParametricSweepEngine` and by `check` alike; dependence is followed through top-level and the cell's own variables.
+- **The D5 pitch warning is reported by the model when it is first stamped**, keyed on the instance and carrying both pitches, so a
+  sweep reports each point past 0.02 λ and none within it (gate 3: 29 mm warned, 25.86 and 26.5 mm not).
+- **Units (gate 2):** `25.86 mm`, `0.02586` and `0.02586/2.54e-5 mil` give identical patterns (0 difference); the brief's
+  `1018.11 mil` is 25.8599939 mm and differs by its own rounding, 1.1e-7 of the peak.
+- **Embedded through the schematic adds nothing (gate 5):** the 6×6 from the 5×5's active reflections equal PAA-2's harness
+  reference to 1.1e-15; a 7×7's pattern equals the engine's sum to 1e-12 and its Γ_act the engine's sparse product to 1e-9.

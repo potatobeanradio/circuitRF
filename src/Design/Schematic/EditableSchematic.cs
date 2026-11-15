@@ -321,6 +321,12 @@ public static class SymbolPortDefs
                 return [("ANT", -300f, 0f), ("TX", 300f, -100f), ("RX", 300f, 100f)];
             // Combiner: the common port S first, as its netlist line has it, then paths 1…N down the left, 200 apart
             // and centred on S, so every pin is on the grid for any N.
+            // Phased Antenna Array (Elements mode): elements 1…N down the left at the Combiner's spacing, centred, so every pin is on the grid.
+            case SymbolKind.PhasedArray:
+            {
+                int n = Math.Max(1, portCount);
+                return [.. Enumerable.Range(1, n).Select(k => ($"{k}", -300f, (2f * k - n - 1) * 100f))];
+            }
             case SymbolKind.Combiner:
             {
                 int n = Math.Max(2, portCount);
@@ -1086,6 +1092,15 @@ public sealed class EditableComponent
     /// For variadic-port types (ZPort, Sdd) this reads the NumPorts parameter; for all
     /// other types it delegates to SymbolPortDefs.
     /// </summary>
+    /// <summary>brief-paa-3 — a Phased Antenna Array's pin count: Rows × Cols when both are whole numbers, else 4 (the 2 × 2 it is placed as).</summary>
+    public static int PhasedArrayPins(IEnumerable<EditableParameter> parameters)
+    {
+        int Read(string name) => parameters.FirstOrDefault(q => q.Name == name) is { } p
+                                 && int.TryParse(p.Expression.Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int v)
+                                 && v >= 1 ? v : 2;
+        return Math.Max(1, Read("Rows") * Read("Cols"));
+    }
+
     public int PortCount
     {
         get
@@ -1097,6 +1112,9 @@ public sealed class EditableComponent
                 var pins = Parameters.FirstOrDefault(q => q.Name == "Pins");
                 return pins is not null && int.TryParse(pins.Expression, out int np) && np >= 1 ? np : 2;
             }
+
+            // A Phased Antenna Array in Elements mode draws one pin per element, Rows × Cols of them.
+            if (Symbol is SymbolKind.PhasedArray) return PhasedArrayPins(Parameters);
 
             // The Combiner's N is its number of PATHS; it draws N + 1 pins, the common port with them.
             if (Symbol is SymbolKind.Combiner)

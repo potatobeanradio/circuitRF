@@ -2512,6 +2512,17 @@ In depth: [System Components › Combiner](system-components.html#combiner).
 
 {{table: components/Combiner}}
 
+### Phased Antenna Array {#phasedarray}
+
+{{symbol: phased-array}}
+
+An antenna array built from an EM result: one element, a small sub-array, or the whole array solved once. In Elements
+mode it has one pin per element, `Rows × Cols` of them, numbered row-major from the top left as seen from boresight, and
+each pin is that element's port: wire a source, an amplifier or a feed network to it. Its pitch `dx`, `dy` is a length in
+any unit, or an expression such as `0.5*lambda(f0)`. A `type=fields` analysis naming it gives the whole array's pattern.
+
+{{table: components/PhasedArray}}
+
 ## Annotation components
 
 ### Variables (VAR) {#var}

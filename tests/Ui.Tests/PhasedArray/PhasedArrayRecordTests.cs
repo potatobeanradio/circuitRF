@@ -9,6 +9,7 @@ using CircuitRF.Core.Design;
 using CircuitRF.Design.Circuit;
 using CircuitRF.Design.Em3d;
 using CircuitRF.Design.Layout.Em;
+using CircuitRF.Core.Devices.Arrays;
 using CircuitRF.Engine.AntennaArray;
 using CircuitRF.Ui.Layout;
 using Xunit;

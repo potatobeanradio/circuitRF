@@ -1666,6 +1666,7 @@ internal static class Explain
                 inner.Add(ps.InnerAnalysisName);
 
         var fieldSweeps = FieldSweepsOf(lib, tb, sourcePath);
+        var arrays = ArraysOf(lib, tb, sourcePath);
 
         var rows = new List<ExplainAnalysisJson>(tb.Analyses.Count);
         foreach (var a in tb.Analyses)
@@ -1717,7 +1718,8 @@ internal static class Explain
                 NoiseModel: noiseByAnalysis.GetValueOrDefault(a.Name),
                 HbNoise: hbNoise.GetValueOrDefault(a.Name),
                 LoadpullNoise: lpNoise.GetValueOrDefault(a.Name),
-                Oscillator: osc.GetValueOrDefault(a.Name)));
+                Oscillator: osc.GetValueOrDefault(a.Name),
+                Array: arrays.GetValueOrDefault(a.Name)));
         }
 
         return (rows, exit);
@@ -1754,6 +1756,50 @@ internal static class Explain
         }
         catch (Exception) { /* reported by check; nothing to explain here */ }
         return sweeps;
+    }
+
+    /// <summary>
+    /// brief-paa-3 R-paa3-7 — each fields analysis whose block is a Phased Antenna Array: what the elaborated array is (the model the run
+    /// builds), by the analysis's name. A design that does not elaborate is <c>check</c>'s to report; an array that refuses says so here.
+    /// </summary>
+    /// <summary>"1-3, 5, 7-9": ascending numbers with runs collapsed.</summary>
+    private static string Ranges(IReadOnlyList<int> xs)
+    {
+        var parts = new List<string>();
+        for (int i = 0; i < xs.Count;)
+        {
+            int j = i;
+            while (j + 1 < xs.Count && xs[j + 1] == xs[j] + 1) j++;
+            parts.Add(j > i ? $"{xs[i]}-{xs[j]}" : $"{xs[i]}");
+            i = j + 1;
+        }
+        return string.Join(", ", parts);
+    }
+
+    private static Dictionary<string, ExplainArrayJson> ArraysOf(Library lib, TestBench tb, string? sourcePath)
+    {
+        var arrays = new Dictionary<string, ExplainArrayJson>(StringComparer.Ordinal);
+        var fields = tb.Analyses.OfType<FieldsAnalysis>().Where(f => !string.IsNullOrWhiteSpace(f.Block)).ToList();
+        if (fields.Count == 0) return arrays;
+        static bool IsArray(Instance i) => i.Reference.Equals(PhasedArrayModel.TypeName, StringComparison.OrdinalIgnoreCase);
+        if (!tb.Instances.Any(IsArray) && !lib.Cells.Any(c => c.Instances.Any(IsArray))) return arrays;
+        try
+        {
+            using var nl = Check.ElaborateReadOnly(lib, tb, sourcePath);
+            foreach (var fa in fields)
+            {
+                if (nl.Components.FirstOrDefault(c => c.InstancePath == fa.Block)?.Model is not PhasedArrayModel pa) continue;
+                var patterns = Enumerable.Range(0, pa.PortCount).GroupBy(pa.PatternPort)
+                                         .Select(g => new ExplainArrayPatternJson(g.Key + 1, [.. g.Where(pa.Lattice.IsOn).Select(e => e + 1)]))
+                                         .Where(p => p.Elements.Count > 0).ToList();
+                arrays[fa.Name] = new ExplainArrayJson(fa.Block, pa.LevelNote, pa.CouplingNote, patterns);
+            }
+        }
+        catch (Exception e) when (e is InvalidOperationException)
+        {
+            foreach (var fa in fields) arrays[fa.Name] = new ExplainArrayJson(fa.Block, Refusal: e.Message);
+        }
+        return arrays;
     }
 
     /// <summary>
@@ -2515,6 +2561,19 @@ internal static class Explain
                             Console.WriteLine(
                                 $"      noise at output {Ghz(hn.OutputHz[i])}: signal in at {Ghz(hn.InputHz[i])}" +
                                 (hn.InputHz[i] == hn.OutputHz[i] && hn.ImageHz[i] == hn.OutputHz[i] ? "" : $", image at {Ghz(hn.ImageHz[i])}"));
+                    }
+                }
+
+                // brief-paa-3: a Phased Antenna Array's level, coupling and which pattern each element takes.
+                if (a.Array is { } arr)
+                {
+                    if (arr.Refusal is { } why) Console.WriteLine($"      Array '{arr.Block}': WOULD BE REFUSED — {why}");
+                    else
+                    {
+                        Console.WriteLine($"      Array '{arr.Block}': {arr.Level}");
+                        if (arr.Coupling is { } c) Console.WriteLine($"      {c}");
+                        foreach (var p in arr.Patterns ?? [])
+                            Console.WriteLine($"      pattern of record port {p.RecordPort}: element{(p.Elements.Count == 1 ? "" : "s")} {Ranges(p.Elements)}");
                     }
                 }
 

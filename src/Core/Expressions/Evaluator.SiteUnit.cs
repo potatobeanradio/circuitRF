@@ -33,8 +33,11 @@ public sealed partial class Evaluator
     {
         // A distribution call is its nominal argument as far as units go — its spread must not decide it.
         ast = NominalView(ast);
-        return ContainsUnitLiteral(ast) || AstWalker.CollectRefs(ast).Any(n => NameIsUnitBearing(n, scope, null));
+        return ContainsUnitLiteral(ast) || IsLength(ast) || AstWalker.CollectRefs(ast).Any(n => NameIsUnitBearing(n, scope, null));
     }
+
+    /// <summary>brief-paa-3 — a call of <c>lambda(f)</c> anywhere: its value is metres, base SI, as a unit literal's is.</summary>
+    private static bool IsLength(Expr ast) => AnyNode(ast, e => e is CallExpr { Name: "lambda" });
 
     /// <summary><see cref="IsUnitBearing(Expr, Scope)"/> for expression text; false when the text does not parse.</summary>
     public static bool IsUnitBearing(string expression, Scope scope)
@@ -236,6 +239,9 @@ public sealed partial class Evaluator
         private Result Call(CallExpr cl)
         {
             if (IsStatisticalCall(cl)) return Distribution(cl);
+            // lambda(f) is a length in metres whatever its argument is: power 1 of the site's dimension, and its argument, a
+            // frequency, is never scaled by a length site unit.
+            if (cl.Name == "lambda") return Result.Of(cl, 1);
             var args = cl.Args.Select(Scale).ToArray();
             string name = cl.Name;
             if (name is "min" or "max" && args.Length > 0 && args.FirstOrDefault(a => !a.Bare) is { Bare: false } bearing)

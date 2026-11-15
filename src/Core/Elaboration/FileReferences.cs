@@ -44,6 +44,8 @@ public static class FileReferences
 
         if (Is("SnP") || Is(ComponentModelFactory.DeembedTypeName) || Is(EmFieldDataRecord.TypeName) || Is(ComponentModelFactory.ComposedFetTypeName) || Is(ComponentModelFactory.ComposedCoreTypeName))
             return Named("File") ? FileValueKind.Path : FileValueKind.None;
+        if (Is(PhasedArrayModel.TypeName))
+            return Named("Record") ? FileValueKind.Path : FileValueKind.None;
         if (Is("VerilogA"))
             return Named(ComponentModelFactory.VerilogAFileParam) ? FileValueKind.Path : FileValueKind.None;
         if (Is("wBond"))

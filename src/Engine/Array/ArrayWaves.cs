@@ -12,6 +12,8 @@
 using System.Numerics;
 using CircuitRF.Engine.Mom;
 
+using CircuitRF.Core.Devices.Arrays;
+
 namespace CircuitRF.Engine.AntennaArray;
 
 /// <summary>R-paa2-6 — the waves leaving the elements, each element's active reflection (null where switched off), and the powers, in

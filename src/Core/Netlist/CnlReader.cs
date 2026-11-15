@@ -2060,6 +2060,8 @@ public sealed class CnlReader
         // working directory: one .cnl ran from its own folder and failed from anywhere else.
         bool resolvesFile = isSnP || isDeembed || typeName.Equals("wBond", StringComparison.OrdinalIgnoreCase)
                             || typeName.Equals(CircuitRF.Core.Devices.EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase);
+        // brief-paa-3 — a Phased Antenna Array's Record is a path resolved the same way.
+        bool isPhasedArray = typeName.Equals(CircuitRF.Core.Devices.PhasedArrayModel.TypeName, StringComparison.OrdinalIgnoreCase);
         // A VerilogA's File is the same (brief vendorlib-15): a model library's .cnl names its compiled device
         // model-relative, and Export's self-check reads that .cnl with the model folder as its source directory. It is
         // rebased by FileReferences' own rule, which leaves a bare word alone — that may be a variable in scope.
@@ -2095,7 +2097,8 @@ public sealed class CnlReader
                     { i++; continue; }
 
                 // SnP/wBond File: resolve relative path to absolute using source directory
-                if (resolvesFile && pname.Equals("File", StringComparison.OrdinalIgnoreCase) &&
+                if (((resolvesFile && pname.Equals("File", StringComparison.OrdinalIgnoreCase))
+                     || (isPhasedArray && pname.Equals("Record", StringComparison.OrdinalIgnoreCase))) &&
                     pexpr.Length >= 2 && pexpr[0] == '"' && pexpr[^1] == '"')
                 {
                     var rawPath      = pexpr[1..^1];

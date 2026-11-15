@@ -156,6 +156,7 @@ public static class BuiltInSymbols
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, bool, SnpPinConfig, SnpPitch), Symbol> _snpCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _verilogACache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _combinerCache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _phasedArrayCache = new();
     // Tuner-family cache key: (kind, showBias) — per-instance bias-branch variant.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(SymbolKind, bool), Symbol> _tunerCache = new();
     // Match cache key: (form, bandCount) — per-instance glyph variant (match.md §8.4).
@@ -278,6 +279,7 @@ public static class BuiltInSymbols
             case SymbolKind.Delay:      return _delay;
             case SymbolKind.Duplexer:   return _duplexer;
             case SymbolKind.Combiner:   return _combinerCache.GetOrAdd(Math.Max(2, portCount), BuildCombiner);
+            case SymbolKind.PhasedArray: return _phasedArrayCache.GetOrAdd(Math.Max(1, portCount), BuildPhasedArray);
             // The four dynamic ones answer here with their DEFAULT variant — the same contract
             // Match keeps, so a caller that has no instance to ask (the palette tile, the ghost
             // preview, the documentation figure) still gets a real drawing.
@@ -2207,6 +2209,51 @@ public static class BuiltInSymbols
             prims.Add(Txt($"{k}", -230, y - 24, fontSize: SddPortLabelFontSize));
         }
         return Sym(prims, SymbolKind.Combiner, n);
+    }
+
+    // ── Phased Antenna Array (Elements mode) — an antenna in a box, one pin per element ──
+    // Pins: elements 1…N at (-300, (2k − N − 1)·100), the Combiner's layout without its common port. VARIADIC on N, cached per N.
+    //
+    // One element is a SQUARE body with its pin on the left at mid-height (-300, 0), where every two-port system block has its input,
+    // so it sits on a block or chain diagram's signal line; its lead stops at the body edge, as every block's does. More elements keep the pin column
+    // down the left and say how many beside the antenna. The aperture drawn element by element is a later brief's.
+
+    private static Symbol BuildPhasedArray(int n)
+    {
+        var prims = new List<SymbolPrimitive>();
+        if (n == 1)
+        {
+            prims.Add(RRect(0, 0, 240, 240, 12));
+            prims.Add(L(-300, 0, -120, 0));                     // the lead, pin to body edge, as every block's
+            Antenna(prims, -10, 60, 1.0);                       // the antenna centred in the square, apart from the lead
+            return Sym(prims, SymbolKind.PhasedArray, 1);
+        }
+        double half = Math.Max((n - 1) * 100 + 80, 150);
+        prims.Add(RRect(0, 0, 240, 2 * half, 12));
+        Antenna(prims, -30, 40, 1.0);
+        prims.Add(Txt($"×{n}", 0, 85, fontSize: SddPortLabelFontSize));
+        for (int k = 1; k <= n; k++)
+        {
+            double y = (2 * k - n - 1) * 100;
+            prims.Add(L(-300, y, -120, y));
+            prims.Add(Txt($"{k}", -230, y - 24, fontSize: SddPortLabelFontSize));
+        }
+        return Sym(prims, SymbolKind.PhasedArray, n);
+    }
+
+    /// <summary>The antenna mark: a mast from (<paramref name="x"/>, <paramref name="foot"/>) up into an inverted triangle, and two arcs
+    /// of radiation leaving it to the right. At <paramref name="scale"/> 1 it is 150 tall and reaches 125 right of the mast.</summary>
+    private static void Antenna(List<SymbolPrimitive> prims, double x, double foot, double scale)
+    {
+        double apex = foot - 90 * scale, top = foot - 150 * scale, w = 45 * scale;
+        prims.Add(L(x, foot, x, apex));                         // the mast
+        prims.Add(L(x, apex, x - w, top));                      // the triangle, apex down on the mast
+        prims.Add(L(x, apex, x + w, top));
+        prims.Add(L(x - w, top, x + w, top));
+        double mid = (apex + top) / 2;
+        double h1 = 24 * scale, h2 = 32 * scale;
+        prims.Add(QC(x + 70 * scale, mid - h1, x + 90 * scale, mid, x + 70 * scale, mid + h1));    // the radiation, two arcs
+        prims.Add(QC(x + 95 * scale, mid - h2, x + 125 * scale, mid, x + 95 * scale, mid + h2));
     }
 
     // ── Duplexer — a junction that splits into two filters ────────────────────

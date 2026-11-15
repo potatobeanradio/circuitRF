@@ -3569,9 +3569,14 @@ public static class NetExtractor
                           && string.IsNullOrWhiteSpace(comp.Parameters.FirstOrDefault(q => q.Name == "NF")?.Expression)))
             // A source's phase-noise mask (brief NZ-7) is placed blank and dropped the same way.
             .Where(p => !(p.Name is "PhaseNoise" or "PhaseNoiseFloor" && string.IsNullOrWhiteSpace(p.Expression)))
+            // A Phased Antenna Array's Level, Off and Z0 are placed blank (blank = follow the record, none off) and dropped likewise.
+            .Where(p => !(comp.Symbol == SymbolKind.PhasedArray && string.IsNullOrWhiteSpace(p.Expression)))
             .Select(p =>
             {
                 var unit = UnitNormalizer.ToEngineUnit(p.Unit);
+                // A Phased Antenna Array's Record is a path, and its Off a list that may hold spaces: both quoted, as an SnP's File is.
+                if (comp.Symbol == SymbolKind.PhasedArray && p.Name is "Record" or "Off" && !p.Expression.TrimStart().StartsWith('"'))
+                    return new ParameterAssignment(p.Name, "\"" + p.Expression.Trim() + "\"", null);
                 // The mask is a list with spaces and commas in it; unquoted, its words would read as nets.
                 string expr = p.Name == "PhaseNoise" && !p.Expression.TrimStart().StartsWith('"')
                     ? "\"" + p.Expression.Trim() + "\"" : p.Expression;

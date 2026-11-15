@@ -14,6 +14,8 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
+using CircuitRF.Core.Devices.Arrays;
+
 namespace CircuitRF.Engine.AntennaArray;
 
 /// <summary>The phase tables of one lattice geometry over one direction set at one frequency.</summary>

@@ -715,6 +715,10 @@ public static class NetlistSchematic
             // the extraction resolves each one against the same base.
             if (o.Name.Equals("File", StringComparison.OrdinalIgnoreCase))
                 expr = RelativeFile(expr, FileBase(schematicDirectory));
+            // brief-paa-3 — a Phased Antenna Array's Record is a path, made relative as every File is; its Off a list, stored bare and
+            // quoted again at extraction.
+            if (kind == SymbolKind.PhasedArray && o.Name == "Record") expr = RelativeFile(expr, FileBase(schematicDirectory));
+            if (kind == SymbolKind.PhasedArray && o.Name == "Off") expr = expr.Trim('"');
             // A layer NAME is stored bare in a schematic — the extraction reads it raw and quotes it as it writes the
             // .cnl — so the .cnl's quotes are its line syntax, not part of the name ("Top Copper (1 oz)").
             if (IsLayerName(o.Name) && expr.Length >= 2 && expr[0] == '"' && expr[^1] == '"')
@@ -823,7 +827,7 @@ public static class NetlistSchematic
         // A variadic box whose line left its width to be inferred from the nets: state it, because
         // the symbol has no other way to know how many pins to draw.
         if (ComponentTypeRegistry.PortCountParameter(kind) is { } countParam
-            && kind is not (SymbolKind.Switch or SymbolKind.SwitchD or SymbolKind.WBond)
+            && kind is not (SymbolKind.Switch or SymbolKind.SwitchD or SymbolKind.WBond or SymbolKind.PhasedArray)
             && !comp.Parameters.Any(p => p.Name == countParam))
         {
             int n = kind is SymbolKind.Sdd or SymbolKind.ZPort ? nets.Count / 2

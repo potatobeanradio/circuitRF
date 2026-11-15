@@ -1881,6 +1881,24 @@ internal static class Check
             foreach (var w in nl.Warnings) f.Add(CliDiagnostics.CheckElaborationWarning(path, w));
             foreach (var n in nl.Notes)    f.Add(CliDiagnostics.CheckElaborationNote(path, n));
 
+            // brief-paa-3 R-paa3-7 — each Phased Antenna Array: its record and lattice opened when it elaborated (a refusal is the
+            // elaboration's own); here are its level, the D5 pitch warning a run gives, and the elements switched off.
+            foreach (var ec in nl.Components)
+            {
+                if (ec.Model is not CircuitRF.Core.Devices.PhasedArrayModel pa) continue;
+                string who = CircuitRF.Core.Devices.PhasedArrayModel.Describe(ec.InstancePath);
+                f.Add(CliDiagnostics.CheckElaborationNote(path, $"{who}: {pa.LevelNote}"));
+                if (pa.CouplingNote is { } coupling) f.Add(CliDiagnostics.CheckElaborationNote(path, $"{who}: {coupling}"));
+                if (pa.PitchWarning is { } pitch) f.Add(CliDiagnostics.CheckElaborationWarning(path, $"{who}: {pitch}"));
+                if (pa.Lattice.Off.Count > 0)
+                    f.Add(CliDiagnostics.CheckElaborationNote(path, $"{who}: element{(pa.Lattice.Off.Count == 1 ? "" : "s")} " +
+                        $"{string.Join(", ", pa.Lattice.Off.Order())} {(pa.Lattice.Off.Count == 1 ? "is" : "are")} switched off: terminated in Z0 inside, " +
+                        $"{(pa.Lattice.Off.Count == 1 ? "its pin" : "their pins")} left open, whatever is wired there."));
+            }
+            foreach (var sweep in tb.Analyses.OfType<ParametricSweepAnalysis>())
+                if (CircuitRF.Core.Devices.PhasedArrayChecks.SweptStructure(tb, lib, sweep.SweepVarName) is { } swept)
+                    f.Add(CliDiagnostics.CheckPhasedArraySwept(path, sweep.Name, swept));
+
             // R-wsp1-12(b): a WSProbe with one net on both terminals. The GUI's own series-probe
             // insertion cut prevents this for a drawn probe; this is its headless twin.
             foreach (var ec in nl.Components)

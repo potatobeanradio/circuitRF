@@ -4608,3 +4608,6 @@ Gates: `CommensurateTonesTests`, `LoadpullSettingsReachTests`, `HbLineSearchTest
 - **Coupling extension** reproduces PAA-1's `extend_S` selection exactly, ties included (first pair in row-major order), because
   gate 3 holds the engine to that harness's numbers. On a triangular lattice an odd row offset is keyed with the start row's parity.
   E5 extended to 64 × 64: at most 81 non-zeros a row; `ArrayWaves.Active` on it allocates O(N), against 268 MB for a dense N×N.
+- **Moved (brief-paa-3):** `ArrayLattice`, `ArrayCoupling` and `ArraySparseMatrix` now live in `src/Core/Devices/Arrays`, because the
+  PhasedArray component builds its S at elaboration; the pattern sum, directions, element interpolation, beam metrics, (u,v) map and
+  waves stay here. `src/Core/RESOLVED.md` § brief-paa-3.

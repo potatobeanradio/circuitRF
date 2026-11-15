@@ -142,6 +142,8 @@ public static partial class FieldCosimulation
         ArgumentNullException.ThrowIfNull(nl);
         string who = $"Fields '{fa.Name}'";
         var (snp, recordPath, hz, drives) = Prepare(fa, nl, who);
+        // brief-paa-3 — a Phased Antenna Array's pattern is formed by its own path; an EM Field Data block's below is unchanged.
+        if (ArrayBlock(fa, nl) is { } array) return RunArray(fa, nl, array, hz, drives, notes, control, output, metrics, sweepPoint);
         var plan = sweepPoint is null ? PlanOf(fa, recordPath, hz, who, out var far) : SweepPlanOf(fa, recordPath, hz, who, out far);
         var lines = new List<string>();
         var warnings = new List<string>();
@@ -231,8 +233,11 @@ public static partial class FieldCosimulation
 
         var block = nl.Components.FirstOrDefault(c => string.Equals(c.InstancePath, fa.Block, StringComparison.Ordinal))
                     ?? throw new InvalidOperationException($"{who}: the circuit has no instance '{fa.Block}'.");
+        // brief-paa-3 — a Phased Antenna Array is the other block a fields analysis takes; its record is its own Record.
+        if (block.Model is PhasedArrayModel array) return (null!, array.RecordPath, hz, drives);
         if (block.Model is not SnpModel snp)
-            throw new InvalidOperationException($"{who}: '{fa.Block}' is a {block.ComponentType}, not an {EmFieldDataRecord.DisplayName} block.");
+            throw new InvalidOperationException($"{who}: '{fa.Block}' is a {block.ComponentType}, not an {EmFieldDataRecord.DisplayName} block " +
+                                                $"or a {PhasedArrayModel.DisplayName}.");
         // brief-cosim-pattern-2 R-cp2-7 — a Touchstone file says nothing of fields, so a plain SnP is refused. It is not converted:
         // no record exists to point at until the setup runs again or the file is adopted.
         if (snp.RecordPath is not { } recordPath)

@@ -1807,6 +1807,12 @@ internal static class CliDiagnostics
         "check.elaboration.note", DiagnosticSeverity.Info,
         "{path}: {text}", ("path", path), ("text", text));
 
+    /// <summary>brief-paa-3 R-paa3-7 — a parametric sweep that would change an Elements-mode Phased Antenna Array's pin count: the run's
+    /// own refusal (PhasedArrayChecks.SweptStructure).</summary>
+    public static Diagnostic CheckPhasedArraySwept(string path, string sweep, string why) => Diagnostic.Create(
+        "check.phased-array.swept-structure", DiagnosticSeverity.Error,
+        "{path}: parametric sweep '{sweep}': {why}", ("path", path), ("sweep", sweep), ("why", why));
+
     /// <summary><c>EvmSplit=yes</c> with nothing to split (brief NZ-8).</summary>
     public static Diagnostic CheckEvmSplitNothing(string path, string analysis, string why) => Diagnostic.Create(
         "check.noise.evm-split-nothing", DiagnosticSeverity.Info,

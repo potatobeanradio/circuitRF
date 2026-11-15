@@ -51,6 +51,18 @@ public sealed partial class ParameterEditorViewModel
         return record;
     }
 
+    /// <summary>brief-paa-3 R-paa3-8 — a Phased Antenna Array's Record row: the same picker an EM Field Data block's file uses, a
+    /// Touchstone resolved to (or adopted into) its record, and stored as that block stores its file.</summary>
+    private bool IsArrayRecordRow(ParameterRowViewModel row) => _target?.Symbol == SymbolKind.PhasedArray && row.Name == "Record";
+
+    private async Task<string?> PickArrayRecordAsync()
+    {
+        if (PickEmFieldFileAsync is null || _schematicVm is null) return null;
+        string? picked = await PickEmFieldFileAsync();
+        if (picked is null || await RecordFor(picked) is not { } record) return null;
+        return CircuitRF.Design.Schematic.SnpPathPolicy.ToStored(record, _schematicVm.WorkspaceRoot, _schematicVm.EditModel.SchematicDirectory);
+    }
+
     private string? ResolvedEmFieldRecord()
         => _target is null || _schematicVm is null ? null
          : CircuitRF.Design.Schematic.SnpPathPolicy.Resolve(_target.Parameters.FirstOrDefault(p => p.Name == "File")?.Expression,

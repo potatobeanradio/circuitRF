@@ -124,6 +124,8 @@ public static class InstanceNetContract
         // ValidateSnpNets names the instance and both legal counts; a number here would be a second,
         // wrong statement of a rule that is not a number.
         SnpModel                                                                              => null,
+        // brief-paa-3 — one net per element, row-major (Elements mode), each over the implicit ground reference.
+        PhasedArrayModel pa                                                                   => pa.PortCount,
         // ExtDevice's count is the provider's EXTERNAL pin count, which is not PortCount — that
         // includes the internal nodes the model asked for. It is also not fixed per type: a component
         // may state a smaller ConnectedPinCount to place a five-terminal model as a four-pin part.
@@ -256,6 +258,9 @@ public static class InstanceNetContract
         [EmFieldDataRecord.TypeName] =
             "One net per port of the result record its File names, in the record's order, or one more where the extra trailing net " +
             "is a floating reference, as on an SnP. The record states the count, so there is none until one is chosen.",
+        [PhasedArrayModel.TypeName] =
+            "Elements mode binds one net per element, Rows × Cols of them, row-major from the top left seen from boresight, each over " +
+            "ground. The count follows Rows and Cols, so it is the instance's to state.",
         ["wBond"] =
             "2 nets per wire array — Arrays=M binds 2M — plus one trailing reference net when " +
             "RefPin is on. The arrays come from the design the instance carries or names, so there " +

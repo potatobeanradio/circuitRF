@@ -23,6 +23,7 @@ public sealed partial class Evaluator
     private Value EvalFieldMetric(CallExpr cl, Scope scope)
     {
         if (FieldMetricFunctions.IsPatternMetric(cl.Name)) return EvalPatternMetric(cl, scope);
+        if (FieldMetricFunctions.IsArrayMetric(cl.Name)) return EvalArrayMetric(cl, scope);
 
         // (metric, smallest arity, largest arity, which argument is the region, which the mass)
         var (metric, lo, hi, regionAt, massAt) = cl.Name switch
@@ -79,6 +80,37 @@ public sealed partial class Evaluator
         double? theta = n == 3 ? Angle(cl, cl.Args[1], scope) : null;
         double? phi = n == 3 ? Angle(cl, cl.Args[2], scope) : null;
         return new Value(_ctx.GetFieldMetrics(analysis).EvaluatePattern(metric, theta, phi));
+    }
+
+    /// <summary>brief-paa-3 R-paa3-6 — <c>HpbwDeg(F, plane)</c>, <c>SllDb(F)</c>, <c>PointingErrorDeg(F, theta0, phi0)</c>, <c>ScanLossDb(F)</c>,
+    /// <c>GratingMarginDeg(F)</c>, <c>PowerBalance(F)</c>, <c>ActiveVswrMax(F)</c>.</summary>
+    private Value EvalArrayMetric(CallExpr cl, Scope scope)
+    {
+        var (metric, arity) = cl.Name switch
+        {
+            "HpbwDeg"          => (FieldMetric.HpbwDeg, 2),
+            "SllDb"            => (FieldMetric.SllDb, 1),
+            "PointingErrorDeg" => (FieldMetric.PointingErrorDeg, 3),
+            "ScanLossDb"       => (FieldMetric.ScanLossDb, 1),
+            "GratingMarginDeg" => (FieldMetric.GratingMarginDeg, 1),
+            "PowerBalance"     => (FieldMetric.PowerBalance, 1),
+            "ActiveVswrMax"    => (FieldMetric.ActiveVswrMax, 1),
+            _                  => throw new UnknownFunctionException(cl.Name),
+        };
+        if (cl.Args.Length != arity) throw new ArityException(cl.Name, arity, cl.Args.Length);
+        if (_ctx is null)
+            throw new ExpressionException($"{cl.Name}() reads a fields analysis's result, so it belongs in a measure or goal line.");
+        string analysis = FieldsAnalysisNamed(cl);
+        string? plane = null;
+        if (metric == FieldMetric.HpbwDeg)
+        {
+            var v = EvalExpr(cl.Args[1], scope);
+            plane = v.Kind == ValueKind.String ? v.AsString()
+                : throw new TypeErrorException($"HpbwDeg(): the plane is a string, \"elevation\" or \"azimuth\".");
+        }
+        double? theta = metric == FieldMetric.PointingErrorDeg ? Angle(cl, cl.Args[1], scope) : null;
+        double? phi = metric == FieldMetric.PointingErrorDeg ? Angle(cl, cl.Args[2], scope) : null;
+        return new Value(_ctx.GetFieldMetrics(analysis).EvaluateArray(metric, plane, theta, phi));
     }
 
     private double Angle(CallExpr cl, Expr arg, Scope scope)

@@ -312,6 +312,9 @@ public static class CnlWriter
             && ov.Name.Equals("File", StringComparison.OrdinalIgnoreCase)
             && !IsQuoted(ov.Expression))
             return $"{ov.Name}=\"{ov.Expression}\"";
+        if (reference is not null && reference.Equals(Devices.PhasedArrayModel.TypeName, StringComparison.OrdinalIgnoreCase)
+            && ov.Name.Equals("Record", StringComparison.OrdinalIgnoreCase) && !IsQuoted(ov.Expression))
+            return $"{ov.Name}=\"{ov.Expression}\"";
 
         // An embedded JSON DESIGN payload is base64'd on its way into a .cnl, and only into a .cnl.
         //

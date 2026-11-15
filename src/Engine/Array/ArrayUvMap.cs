@@ -11,6 +11,8 @@
 using System.Numerics;
 using RfCore.Signals;
 
+using CircuitRF.Core.Devices.Arrays;
+
 namespace CircuitRF.Engine.AntennaArray;
 
 /// <summary>The array factor at points of the visible region, from the weights' FFT.</summary>

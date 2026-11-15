@@ -1545,6 +1545,8 @@ public sealed class Elaborator
             || inst.Reference.Equals(EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase)
             || inst.Reference.Equals(ComponentModelFactory.DeembedTypeName, StringComparison.OrdinalIgnoreCase))
             return ResolveSnpParameters(inst, parentScope);
+        if (inst.Reference.Equals(PhasedArrayModel.TypeName, StringComparison.OrdinalIgnoreCase))
+            return ResolvePhasedArrayParameters(inst, parentScope);
         // A .cmodel path is not an expression, for SnP's reason.
         if (inst.Reference.Equals(ComponentModelFactory.ComposedCoreTypeName, StringComparison.OrdinalIgnoreCase))
             return ResolveComposedParameters(inst, parentScope);
@@ -2369,6 +2371,31 @@ public sealed class Elaborator
     private static readonly HashSet<string> _snpStringParams =
         new(StringComparer.OrdinalIgnoreCase)
             { "File", "InterpMode", "InterpDomain", "ExtrapMode", "PinConfig", "RefNode", RfCore.SnpPerturbation.ReciprocalParameter };
+
+    /// <summary>
+    /// brief-paa-3 R-paa3-2 — a Phased Antenna Array's parameters: its words (Record, Level, Patterns, Mode, Lattice, Coupling, Off) are
+    /// kept verbatim, the record's path resolved as an SnP's File is; every other value is an expression in the instance's scope, a length
+    /// by the ordinary unit rule (a unit means it, a bare number is metres, a unit-bearing VAR wins), and the unit each length was typed in
+    /// rides along in a hidden value for a sentence that quotes it back.
+    /// </summary>
+    private IReadOnlyDictionary<string, Value> ResolvePhasedArrayParameters(Instance inst, Scope parentScope)
+    {
+        var result = new Dictionary<string, Value>(StringComparer.Ordinal);
+        foreach (var ov in inst.Overrides)
+        {
+            if (PhasedArrayModel.WordParameters.Contains(ov.Name))
+            {
+                string raw = Unquote(ov.Expression.Trim());
+                if (ov.Name.Equals("Record", StringComparison.OrdinalIgnoreCase)) raw = ResolveSnpFilePath(raw);
+                result[ov.Name] = new Value(raw);
+                continue;
+            }
+            result[ov.Name] = EvalOverride(inst, ov, parentScope);
+            if (PhasedArrayModel.LengthParameters.Contains(ov.Name) && ov.Unit is { Length: > 0 } unit)
+                result[PhasedArrayModel.TypedUnitPrefix + ov.Name] = new Value(unit);
+        }
+        return result;
+    }
 
     private IReadOnlyDictionary<string, Value> ResolveSnpParameters(
         Instance inst, Scope parentScope)

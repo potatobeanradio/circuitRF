@@ -356,6 +356,12 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.System,
             SearchTerms: ["Duplexer", "dpx", "diplexer", "TX", "RX", "antenna", "front end"],
             IsCommon: false),
+        // brief-paa-3 — "PA" is the designer's own word for it on a schematic.
+        [SymbolKind.PhasedArray]   = new("Phased Antenna Array", "PA",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Phased Antenna Array", "PhasedArray", "phased array", "antenna array", "array", "pa", "beam", "beam steering",
+                          "embedded element pattern", "active reflection", "array factor", "cemr"],
+            IsCommon: false),
         [SymbolKind.Combiner]      = new("Combiner", "CMB",
             Category: ComponentCategory.System,
             SearchTerms: ["Combiner", "N-way combiner", "cmb", "splitter", "divider", "power divider",
@@ -962,6 +968,8 @@ public static class ComponentTypeRegistry
         SymbolKind.Switch or SymbolKind.SwitchD              => "Throws",
         // N paths and the common port: N + 1 pins, generated from N as the boxes' are from NumPorts.
         SymbolKind.Combiner                                  => "N",
+        // brief-paa-3 — one pin per element in Elements mode: the product of two parameters, named as such.
+        SymbolKind.PhasedArray                               => "Rows × Cols",
         // A wBond's terminals are 2 per wire array it places, plus the reference pin when RefPin is
         // on — so the count follows the arrays selected out of the design it carries or links to,
         // and there is no fixed answer at all until one is chosen.
@@ -1011,6 +1019,10 @@ public static class ComponentTypeRegistry
         SymbolKind.Atten or SymbolKind.Filter or SymbolKind.Delay =>
             "The two terminals are interchangeable — this block is symmetric, and its parameters "
           + "describe both ports at once.",
+
+        SymbolKind.PhasedArray =>
+            "In Elements mode the terminals are the elements, one each, numbered row-major from the top left as seen from boresight: "
+          + "element n is row (n − 1) div Cols + 1, column (n − 1) mod Cols + 1. Each is over ground.",
 
         SymbolKind.Combiner =>
             "The common port S comes first, then the paths 1 to N in order. The paths differ only by "
@@ -1191,6 +1203,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Delay         => "Delay",
         SymbolKind.Duplexer      => "Duplexer",
         SymbolKind.Combiner      => "Combiner",
+        SymbolKind.PhasedArray   => PhasedArrayModel.TypeName,
         SymbolKind.Term          => "Port",  // engine Reference stays "Port" for .cnl compat
         SymbolKind.TermG         => "Port",  // SAME engine component as Term — R-hk-6, no parallel model
         SymbolKind.Pin           => "Pin",   // sentinel — IsPrimitive("Pin")==false; elaborator skips it
@@ -1300,8 +1313,8 @@ public static class ComponentTypeRegistry
     /// Bringing wires IN is File ▸ Import ▸ Wirebond Wires…, which has its own picker; this one is a
     /// path, and a path is exactly the kind of value nobody should be asked to type.</para>
     public static bool IsFilePathParameter(SymbolKind kind, string parameterName)
-        => kind is SymbolKind.VerilogA or SymbolKind.WBond
-        && parameterName.Equals("File", StringComparison.Ordinal);
+        => (kind is SymbolKind.VerilogA or SymbolKind.WBond && parameterName.Equals("File", StringComparison.Ordinal))
+        || (kind is SymbolKind.PhasedArray && parameterName.Equals("Record", StringComparison.Ordinal));
 
     /// <summary>A newly placed wBond's operating temperature, °C: <see cref="CircuitRF.WBond.WireMaterials.DefaultOperatingTempC"/>,
     /// the one default wire temperature, so the Inspector and the wBond editor cannot disagree.</summary>
@@ -2097,6 +2110,36 @@ public static class ComponentTypeRegistry
         (SymbolKind.Atten, "RL") =>
             "Return loss of both ports. The 200 dB default means exactly matched — no reflection "
           + "entry is stamped at all.",
+        (SymbolKind.PhasedArray, "Record") =>
+            "The EM result the array is built from: a result record (.cemr) whose run kept its radiation pattern — one element, a sub-array, "
+          + "or the whole array.",
+        (SymbolKind.PhasedArray, "Mode") =>
+            "elements: one pin per element, each driven by the circuit. feed (one feed pin with the beamformer inside) is not available yet.",
+        (SymbolKind.PhasedArray, "Level") =>
+            "How the array is formed from the record. auto takes it from the record: isolated for a one-element record, exact for a record "
+          + "that is this array, embedded for a sub-array of another lattice.",
+        (SymbolKind.PhasedArray, "Patterns") =>
+            "embedded only: classes gives each element its position class's pattern from the sub-array (corner, edge, interior); centre gives "
+          + "every element the centre element's.",
+        (SymbolKind.PhasedArray, "Rows") =>
+            "Number of rows, running down the aperture from the top seen from boresight. Elements mode takes at most 64 elements in all.",
+        (SymbolKind.PhasedArray, "Cols") =>
+            "Number of columns, running across the aperture from the left seen from boresight.",
+        (SymbolKind.PhasedArray, "Lattice") =>
+            "rect, or tri: every other row offset by half the column pitch.",
+        (SymbolKind.PhasedArray, "dx") =>
+            "Column pitch, a length: a number with a unit, an expression such as 0.5*lambda(f0), or a bare number in the unit beside it.",
+        (SymbolKind.PhasedArray, "dy") =>
+            "Row pitch, a length, as dx.",
+        (SymbolKind.PhasedArray, "Off") =>
+            "Elements switched off, as a list of element numbers (3,17): each is terminated in Z0 inside and its pin left open.",
+        (SymbolKind.PhasedArray, "Coupling") =>
+            "on, or off: off keeps each element's own reflection and drops every coupling between elements.",
+        (SymbolKind.PhasedArray, "Z0") =>
+            "Reference impedance at the elements. Blank takes the record's.",
+        (SymbolKind.PhasedArray, "RecordRows") or (SymbolKind.PhasedArray, "RecordCols")
+            or (SymbolKind.PhasedArray, "RecordDx") or (SymbolKind.PhasedArray, "RecordDy") =>
+            "The lattice of a record that does not store its ports' positions, its ports numbered row-major. Ignored when it does.",
         (SymbolKind.Combiner, "N") =>
             "Number of paths into the common port S. The symbol draws one pin per path, plus S.",
         (SymbolKind.Combiner, "IL") =>
@@ -2528,6 +2571,25 @@ public static class ComponentTypeRegistry
             // The combiner: N paths, every one at IL unless it states its own IL[k], and Phase[k] per path. The
             // indexed ones are not seeded — a freshly placed combiner is the ideal equal split — and are added as
             // rows when a path needs its own loss or phase, as a P1Tone's Z[k] is.
+            // brief-paa-3 — the Phased Antenna Array in Elements mode: the record, the lattice and its pitch are what a user sets; the
+            // level, patterns, coupling and Z0 follow the record unless stated, so they start blank and hidden on the schematic.
+            case SymbolKind.PhasedArray:
+                return [new("Record",     "",         "",   true,  UnitDimension.None),
+                        new("Mode",       "elements", "",   false, UnitDimension.None),
+                        new("Rows",       "2",        "",   true,  UnitDimension.None),
+                        new("Cols",       "2",        "",   true,  UnitDimension.None),
+                        new("Lattice",    "rect",     "",   false, UnitDimension.None),
+                        new("dx",         "25",       "mm", true,  UnitDimension.Length),
+                        new("dy",         "25",       "mm", true,  UnitDimension.Length),
+                        new("Level",      "auto",     "",   false, UnitDimension.None),
+                        new("Patterns",   "classes",  "",   false, UnitDimension.None),
+                        new("Coupling",   "on",       "",   false, UnitDimension.None),
+                        new("Off",        "",         "",   false, UnitDimension.None),
+                        new("Z0",         "",         "Ω",  false, UnitDimension.Resistance),
+                        new("RecordRows", "",         "",   false, UnitDimension.None),
+                        new("RecordCols", "",         "",   false, UnitDimension.None),
+                        new("RecordDx",   "",         "mm", false, UnitDimension.Length),
+                        new("RecordDy",   "",         "mm", false, UnitDimension.Length)];
             case SymbolKind.Combiner:
                 return [new("N",  "2",  "",   true,  UnitDimension.None),
                         new("IL", "0",  "dB", true,  UnitDimension.None),
@@ -3772,6 +3834,8 @@ public static class ComponentTypeRegistry
             case "DPX":    kind = SymbolKind.Duplexer;     return true;
             case "COMBINER":
             case "CMB":    kind = SymbolKind.Combiner;     return true;
+            case "PHASEDARRAY":
+            case "PA":     kind = SymbolKind.PhasedArray;  return true;
             case "GND":    kind = SymbolKind.Ground;        return true;
             case "TERM":
             case "T":      kind = SymbolKind.Term;          return true;
@@ -4093,6 +4157,13 @@ public static class ComponentTypeRegistry
     private static readonly string[] NetworkFormOptions =
         [nameof(NetworkForm.Lowpass), nameof(NetworkForm.Highpass), nameof(NetworkForm.Bandpass)];
 
+    // brief-paa-3 R-paa3-8 — the Phased Antenna Array's words. Level's auto is "follow the record" (a blank means the same).
+    private static readonly string[] PhasedArrayModeOptions     = ["elements", "feed"];
+    private static readonly string[] PhasedArrayLevelOptions    = ["auto", "isolated", "embedded", "exact"];
+    private static readonly string[] PhasedArrayLatticeOptions  = ["rect", "tri"];
+    private static readonly string[] PhasedArrayPatternsOptions = ["classes", "centre"];
+    private static readonly string[] PhasedArrayCouplingOptions = ["on", "off"];
+
     private static readonly string[] CirculatorDirectionOptions =
         [nameof(CirculatorDirection.CW), nameof(CirculatorDirection.CCW)];
 
@@ -4164,6 +4235,11 @@ public static class ComponentTypeRegistry
     public static IReadOnlyList<string>? NamedParamOptions(SymbolKind kind, string paramName) => (kind, paramName) switch
     {
         (SymbolKind.Circulator, "Direction")                      => CirculatorDirectionOptions,
+        (SymbolKind.PhasedArray, "Mode")                          => PhasedArrayModeOptions,
+        (SymbolKind.PhasedArray, "Level")                         => PhasedArrayLevelOptions,
+        (SymbolKind.PhasedArray, "Lattice")                       => PhasedArrayLatticeOptions,
+        (SymbolKind.PhasedArray, "Patterns")                      => PhasedArrayPatternsOptions,
+        (SymbolKind.PhasedArray, "Coupling")                      => PhasedArrayCouplingOptions,
         (SymbolKind.Switch or SymbolKind.SwitchD, "OffState")     => SwitchOffStateOptions,
         (SymbolKind.OscProbe, "Mode")                             => OscProbeModeOptions,
         // The switch position (owner, 2026-09-13). A closed set of numerals rather than a free-text

@@ -1277,7 +1277,6 @@ src/Design/Em3d/FieldCosimulation.cs|{who}: freq='{fa.FreqExpr}' could not be re
 src/Design/Em3d/FieldCosimulation.cs|{who}: the circuit has no instance '{fa.Block}'.
 src/Design/Em3d/FieldCosimulation.cs|{who}: weight '{weights[i]}' of port {port} is not a number ({e.Message}).
 src/Design/Em3d/FieldCosimulation.cs|{who}: weight '{weights[i]}' of port {port} is not finite.
-src/Design/Em3d/FieldCosimulation.cs|{who}: '{fa.Block}' is a {block.ComponentType}, not an {EmFieldDataRecord.DisplayName} block.
 src/Design/Em3d/FieldCosimulation.cs|{who}: block= names no {EmFieldDataRecord.DisplayName} block.
 src/Design/Em3d/FieldCosimulation.FarField.cs|'{FieldMetricFunctions.NameOf(metric)}' reads a field set, and fields analysis '{fa.Name}' has none at its frequency: '{record}' is a far field there. 
 src/Design/Em3d/FieldCosimulation.cs|{who}: '{fa.Block}' has {snp.PortCount} ports and its far field {far.PortCount}.
@@ -1646,9 +1645,9 @@ src/Design/Em3d/Solvers/Palace/Em3dRunService.Palace.cs|A Palace run reached its
 # brief-paa-2 — the array engine's argument checks (shapes a caller must get right) and EmbeddedPatterns' frequency refusal. The
 # PhasedArray component's own refusals (PAA-3) are the user-facing ones and are diagnostics there.
 src/Design/Em3d/EmbeddedPatterns.cs|'{far.Name}' holds no far field at {Layout.MaterialDispersion.Hz(hz)}: its patterns are at 
-src/Engine/Array/ArrayCoupling.cs|A sub-array extends to an array of its own lattice kind.
-src/Engine/Array/ArrayCoupling.cs|A {subLattice.Rows} × {subLattice.Cols} sub-array has a {ns}-port S; this one is {sSub.GetLength(0)} × {sSub.GetLength(1)}.
-src/Engine/Array/ArrayCoupling.cs|The matrix must be square.
+src/Core/Devices/Arrays/ArrayCoupling.cs|A sub-array extends to an array of its own lattice kind.
+src/Core/Devices/Arrays/ArrayCoupling.cs|A {subLattice.Rows} × {subLattice.Cols} sub-array has a {ns}-port S; this one is {sSub.GetLength(0)} × {sSub.GetLength(1)}.
+src/Core/Devices/Arrays/ArrayCoupling.cs|The matrix must be square.
 src/Engine/Array/ArrayDirections.cs|θ and φ must be as many as each other.
 src/Engine/Array/ArrayPattern.cs|{lattice.Count} elements and {elements.PatternOf.Count} pattern assignments.
 src/Engine/Array/ArrayPattern.cs|{lattice.Count} elements and {weights.Count} weights.
@@ -1656,3 +1655,37 @@ src/Engine/Array/ArrayUvMap.cs|{lattice.Count} elements and {weights.Count} weig
 src/Engine/Array/ArrayWaves.cs|A radiated power is integrated over a grid: evaluate the pattern on the record's grid (the overview).
 src/Engine/Array/ArrayWaves.cs|{n} elements and {a.Count} incident waves.
 src/Engine/Array/ElementPattern.cs|An element pattern on a {grid.ThetaDeg.Count} × {grid.PhiDeg.Count} grid has {grid.DirectionCount} samples per component.
+
+# brief-paa-3 — the Phased Antenna Array's parameter refusals (raised at elaboration, prefixed with the instance by the elaborator, as
+# an EM Field Data block's are), the array path of the fields analysis and its beam functions, lambda(f)'s argument, and the sweep
+# refusal. Kept as sentences beside the EM Field Data family they extend; converting that family to Diagnostics is its own change.
+src/Core/Devices/PhasedArrayModel.cs|'{Path.GetFileName(record.SnpPath)}' holds {source.Ports} ports and its record lists {record.PortCount}. Run its EM setup again.
+src/Core/Devices/PhasedArrayModel.cs|Coupling={couplingWord} is not a choice: it is on or off.
+src/Core/Devices/PhasedArrayModel.cs|Lattice={latticeWord} is not a lattice: it is rect or tri (every other row offset by half a column pitch).
+src/Core/Devices/PhasedArrayModel.cs|Level=exact takes each element's own port from the record, so the array must be the record's lattice: 
+src/Core/Devices/PhasedArrayModel.cs|Level=isolated takes a record of one element, and '{Path.GetFileName(record.RecordPath)}' has {record.PortCount} ports. 
+src/Core/Devices/PhasedArrayModel.cs|Level={levelWord} is not a level: it is auto (from the record), isolated, embedded or exact.
+src/Core/Devices/PhasedArrayModel.cs|Mode=feed — one feed pin with the beamformer inside — is not available yet. Use Mode=elements, with one pin per element, 
+src/Core/Devices/PhasedArrayModel.cs|Mode={mode} is not a mode: it is elements (one pin per element) or feed.
+src/Core/Devices/PhasedArrayModel.cs|Off={text} lists '{t}', which is not an element: elements are numbered 1 to {count}, row-major from the top left.
+src/Core/Devices/PhasedArrayModel.cs|Patterns={patternsWord} is not a choice: it is classes (each element its position class's pattern) or centre.
+src/Core/Devices/PhasedArrayModel.cs|Z0={stated} is not a reference impedance: its real part must be positive.
+src/Core/Devices/PhasedArrayModel.cs|a {rows} × {cols} array has {rows * cols} elements, and Elements mode — one pin per element — takes at most {ElementsLimit}. 
+src/Core/Devices/PhasedArrayModel.cs|its record '{Path.GetFileName(record.RecordPath)}' is not a lattice it can place: {fit.Refusal}
+src/Core/Devices/PhasedArrayModel.cs|{name} is not set: it is the element pitch, a length such as 25.86 mm or 0.5*lambda(f0).
+src/Core/Devices/PhasedArrayModel.cs|{name} is not set: the array has {name} as a whole number of elements.
+src/Core/Devices/PhasedArrayModel.cs|{name}={v} is not a number of elements: it is a whole number from 1 to {ArrayLattice.MaxSide}.
+src/Core/Devices/PhasedArrayModel.cs|{name}={v} is not a pitch: it is a positive length.
+src/Core/Expressions/Evaluator.Fields.cs|HpbwDeg(): the plane is a string, \"elevation\" or \"azimuth\".
+src/Core/Expressions/Evaluator.cs|lambda(f) is the free-space wavelength at frequency f: f is a positive frequency, as lambda(5.8 GHz) or lambda(f0).
+src/Core/Expressions/FieldMetrics.cs|'{FieldMetricFunctions.NameOf(metric)}' reads the beam of a Phased Antenna Array, and this fields analysis's block is not one.
+src/Design/Em3d/FieldCosimulation.Array.cs|'{FieldMetricFunctions.NameOf(metric)}' reads a field set, and fields analysis '{fa.Name}' is the pattern of a {PhasedArrayModel.DisplayName}.
+src/Design/Em3d/FieldCosimulation.Array.cs|'{metric}' is not a measurement of an array's beam.
+src/Design/Em3d/FieldCosimulation.Array.cs|Fields '{fa.Name}': circuit port {w.Drive.DrivenPort}'s voltage is zero at {MaterialDispersion.Hz(hz)}, so the pattern 
+src/Design/Em3d/FieldCosimulation.Array.cs|HpbwDeg({fa.Name}, plane): the plane is \"elevation\" (the plane of the peak and boresight) or \"azimuth\" (across it).
+src/Design/Em3d/FieldCosimulation.Array.cs|SllDb({fa.Name}): neither principal cut through the peak has a sidelobe.
+src/Design/Em3d/FieldCosimulation.Array.cs|{metric}({fa.Name}) is one number, and fields analysis '{fa.Name}' has freq=all. Read it from a fields analysis at one frequency.
+src/Design/Em3d/FieldCosimulation.Array.cs|{who}: '{name}' holds a pattern at {HzList(far.FrequenciesHz)} only, not at {MaterialDispersion.Hz(hz)}: a pattern exists 
+src/Design/Em3d/FieldCosimulation.Array.cs|{who}: '{name}' lists {pa.Record.PortCount} ports and its far field holds {far.PortCount}. Run its EM setup again.
+src/Design/Em3d/FieldCosimulation.cs|{who}: '{fa.Block}' is a {block.ComponentType}, not an {EmFieldDataRecord.DisplayName} block 
+src/Engine/ParametricSweepEngine.cs|Parametric sweep '{sweep.Name}': {structural}

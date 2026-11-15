@@ -4,6 +4,7 @@
 
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using CircuitRF.Core.Devices.Arrays;
 using CircuitRF.Engine.AntennaArray;
 using RfCore;
 using Xunit;

@@ -29,6 +29,20 @@ public enum FieldMetric
     TrpDbm,
     /// <summary>Peak EIRP against the result's reference input power, dBm.</summary>
     PeakEirpDbm,
+    /// <summary>brief-paa-3 R-paa3-6 — a Phased Antenna Array's half-power beamwidth in a principal plane through its peak, degrees.</summary>
+    HpbwDeg,
+    /// <summary>Its first sidelobe, the higher of the two principal cuts', dB below the peak (negative).</summary>
+    SllDb,
+    /// <summary>The angle from a requested direction to its peak, degrees.</summary>
+    PointingErrorDeg,
+    /// <summary>How much less peak power per watt incident its beam has than the same amplitudes in phase, dB.</summary>
+    ScanLossDb,
+    /// <summary>How much further its beam can scan before a grating lobe enters real space, degrees (negative: one is visible).</summary>
+    GratingMarginDeg,
+    /// <summary>Radiated over accepted power.</summary>
+    PowerBalance,
+    /// <summary>The worst element's active VSWR.</summary>
+    ActiveVswrMax,
 }
 
 /// <summary>brief-sar-10 — the field measurements' function names (Evaluator.Fields.cs); each takes a fields analysis's
@@ -37,10 +51,15 @@ public static class FieldMetricFunctions
 {
     public static IReadOnlyList<string> Names { get; } =
         ["B1pMean", "B1pMin", "B1pCoV", "psSAR", "SARwb", "SarEff", "Pabs",
-         "RealizedGainDbi", "GainDbi", "DirectivityDbi", "RadiationEfficiency", "TrpDbm", "PeakEirpDbm"];
+         "RealizedGainDbi", "GainDbi", "DirectivityDbi", "RadiationEfficiency", "TrpDbm", "PeakEirpDbm",
+         "HpbwDeg", "SllDb", "PointingErrorDeg", "ScanLossDb", "GratingMarginDeg", "PowerBalance", "ActiveVswrMax"];
 
     public static bool IsFieldMetric(string name) => name is
-        "B1pMean" or "B1pMin" or "B1pCoV" or "psSAR" or "SARwb" or "SarEff" or "Pabs" || IsPatternMetric(name);
+        "B1pMean" or "B1pMin" or "B1pCoV" or "psSAR" or "SARwb" or "SarEff" or "Pabs" || IsPatternMetric(name) || IsArrayMetric(name);
+
+    /// <summary>brief-paa-3 R-paa3-6 — the functions that read a Phased Antenna Array's beam.</summary>
+    public static bool IsArrayMetric(string name) => name is
+        "HpbwDeg" or "SllDb" or "PointingErrorDeg" or "ScanLossDb" or "GratingMarginDeg" or "PowerBalance" or "ActiveVswrMax";
 
     /// <summary>The function a measurement is written as, which for two of them is not the enum's spelling.</summary>
     public static string NameOf(FieldMetric metric) => metric switch
@@ -70,4 +89,9 @@ public interface IFieldMetrics
     /// <summary>brief-cosim-pattern-4 R-cp4-4 — a far-field measurement: the peak, or that direction of the grid when <paramref name="thetaDeg"/>
     /// and <paramref name="phiDeg"/> are given. Throws <see cref="ExpressionException"/> with the sentence that refuses it.</summary>
     double EvaluatePattern(FieldMetric metric, double? thetaDeg, double? phiDeg);
+
+    /// <summary>brief-paa-3 R-paa3-6 — a measurement of a Phased Antenna Array's beam: <paramref name="plane"/> for a beamwidth, the requested
+    /// direction in degrees for a pointing error. Only an array's analysis answers; every other refuses.</summary>
+    double EvaluateArray(FieldMetric metric, string? plane, double? theta0Deg, double? phi0Deg)
+        => throw new ExpressionException($"'{FieldMetricFunctions.NameOf(metric)}' reads the beam of a Phased Antenna Array, and this fields analysis's block is not one.");
 }

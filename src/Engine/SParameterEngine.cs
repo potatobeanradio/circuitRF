@@ -154,10 +154,15 @@ public static class SParameterEngine
             driven.Add(j);
         }
         var block = netlist.Components.FirstOrDefault(c => string.Equals(c.InstancePath, instancePath, StringComparison.Ordinal));
-        if (block?.Model is not SnpModel { Inverse: false } snp)
-            throw new InvalidOperationException(block is null
+        // brief-paa-3 — a Phased Antenna Array's pins are read as an EM Field Data block's are: one branch per pin, into the block.
+        int[] branches = block?.Model switch
+        {
+            SnpModel { Inverse: false } s => s.PortBranchIndices,
+            PhasedArrayModel pa           => pa.PortBranchIndices,
+            _ => throw new InvalidOperationException(block is null
                 ? $"The circuit has no instance '{instancePath}'."
-                : $"'{instancePath}' is a {block.ComponentType}, not an S-parameter block.");
+                : $"'{instancePath}' is a {block.ComponentType}, not an S-parameter block."),
+        };
 
         var mna = p.Mna;
         int nonGround = mna.NodeCount;
@@ -201,13 +206,13 @@ public static class SParameterEngine
         Complex reflection = first.Incident == Complex.Zero ? Complex.Zero : first.Reflected / first.Incident;
 
         Complex V(int node) => node > 0 ? x[node - 1] : Complex.Zero;
-        int n = snp.PortCount;
+        int n = branches.Length;
         var voltage = new Complex[n];
         var current = new Complex[n];
         for (int k = 0; k < n; k++)
         {
-            voltage[k] = V(block.Nodes[k]) - V(block.ReferenceNode);
-            current[k] = x[snp.PortBranchIndices[k]];     // the branch flows from port node k into the block (SnpModel.Stamp)
+            voltage[k] = V(block!.Nodes[k]) - V(block.ReferenceNode);
+            current[k] = x[branches[k]];     // the branch flows from port node k into the block (SnpModel.Stamp)
         }
         return new BlockPortDrive(first.Port, first.Z0, reflection, voltage, current) { Drives = waves };
     }

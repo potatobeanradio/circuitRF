@@ -303,9 +303,25 @@ public sealed partial class Evaluator
             "dB20"      => EvalDB20(cl, scope),     // alias: 20·log10|z|
             "dB10"      => EvalDB10(cl, scope),     // 10·log10|z|
             "dBm"       => EvalDBm(cl, scope),      // 10·log10(|z|/1e-3)
+            // brief-paa-3 R-paa3-2 — the free-space wavelength c/f, a length in metres. A user function named lambda is found
+            // first (above) and shadows it, as one named after any built-in does.
+            "lambda"    => EvalLambda(cl, scope),
             _           => EvalCallOnPortMatrix(cl, scope)
         };
     }
+
+    /// <summary>brief-paa-3 — <c>lambda(f)</c>: c/f in metres, for a frequency in hertz (a unit-bearing argument is already in hertz).</summary>
+    private Value EvalLambda(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length != 1) throw new ArityException(cl.Name, 1, cl.Args.Length);
+        var f = EvalExpr(cl.Args[0], scope);
+        if (f.Kind != ValueKind.Real || !(f.AsReal() > 0))
+            throw new TypeErrorException("lambda(f) is the free-space wavelength at frequency f: f is a positive frequency, as lambda(5.8 GHz) or lambda(f0).");
+        return new Value(SpeedOfLight / f.AsReal());
+    }
+
+    /// <summary>The speed of light in vacuum, m/s, exact by the SI definition.</summary>
+    public const double SpeedOfLight = 299_792_458.0;
 
     // ── Qualified cube accessor: Analysis.CubeName(args) ────────────────────
 

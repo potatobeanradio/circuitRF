@@ -1,6 +1,6 @@
 # circuitRF — Phased antenna arrays
 
-**Status:** PAA-1 measured; the array engine (PAA-2) built in `src/Engine/Array` · **Series:** [`brief-paa-0-overview.md`](../briefs/brief-paa-0-overview.md) ·
+**Status:** PAA-1 measured; the array engine (PAA-2) and the component in Elements mode (PAA-3) built · **Series:** [`brief-paa-0-overview.md`](../briefs/brief-paa-0-overview.md) ·
 **Builds on:** [`sar.md`](sar.md) §11 and the co-simulation series (`brief-cosim-pattern-*`: the per-port far field and
 its recombination), [`chain-budget.md`](chain-budget.md) (the array at system level), [`sparameter-noise.md`](sparameter-noise.md)
 (correlated noise through a terminated N-port), [`harmonic-balance.md`](harmonic-balance.md).

@@ -2474,7 +2474,23 @@ namespace RfCore.Export
         /// <summary>Brief NZ-9 — an oscillator analysis's start-up search, run before any harmonic balance: the probe, the span,
         /// and where the circuit starts, or the sentence the run refuses with. Null for any other kind.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainOscJson? Oscillator = null);
+        ExplainOscJson? Oscillator = null,
+        /// <summary>brief-paa-3 R-paa3-7 — a fields analysis on a Phased Antenna Array: its level and what it uses, the coupling range
+        /// measured, and which record port's pattern each element takes. Null for any other analysis.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExplainArrayJson? Array = null);
+
+    /// <summary>brief-paa-3 — <c>explain --analysis</c>'s lines for a Phased Antenna Array: the level sentence, the coupling range, and each
+    /// pattern the array takes with the elements (1-based, row-major) that take it — or the sentence the run refuses with.</summary>
+    public sealed record ExplainArrayJson(
+        string Block,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Level = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Coupling = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<ExplainArrayPatternJson>? Patterns = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Refusal = null);
+
+    /// <summary>One pattern of an array: the record port (1-based) it is taken from and the elements that take it.</summary>
+    public sealed record ExplainArrayPatternJson(int RecordPort, IReadOnlyList<int> Elements);
 
     /// <summary>
     /// <c>explain --analysis</c>'s line for a loadpull or pursuit with <c>Noise=yes</c> (brief NZ-6): the termination NF is
