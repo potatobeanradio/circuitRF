@@ -1029,6 +1029,18 @@
                                Foreground="{DynamicResource CrfWarningBrush}"/>
                 </Grid>
 
+                <!-- MWPD only: what the specs come out to on the workspace's technology — the plan the model and
+                     the layout use (ParameterEditorViewModel.DividerReadout.cs). A readout, not an input. -->
+                <StackPanel IsVisible="{Binding IsDividerReadoutTarget}" Margin="4,2">
+                    <SelectableTextBlock Text="{Binding DividerReadoutText}" FontSize="11" Padding="4,3"
+                                         TextWrapping="Wrap"
+                                         Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                         ToolTip.Tip="Derived from Z0, F and Gap on the technology's substrate — a readout, not an input."/>
+                    <TextBlock Text="{Binding DividerReadoutNote}" IsVisible="{Binding HasDividerReadoutNote}"
+                               FontSize="11" TextWrapping="Wrap" Margin="4,2,0,0"
+                               Foreground="{DynamicResource CrfWarningBrush}"/>
+                </StackPanel>
+
                 <!-- SpiceModel custom panel: which FILE, which DEFINITION in it, and — for a
                      .subckt only — how its box is laid out. The generic rows above are the chosen
                      subcircuit's own declared parameters. -->

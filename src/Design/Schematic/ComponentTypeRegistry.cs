@@ -832,6 +832,11 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MKLOPF", "klopfenstein", "klopfenstein taper", "taper", "impedance transformer"],
             ExtraCategories: [ComponentCategory.TransmissionLine]),
+        // The planned passives (docs/design/rf-passives.md): one part per topology, specs as parameters.
+        [SymbolKind.Mwpd]         = new("MWPD", "WPD",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MWPD", "Wilkinson", "Wilkinson divider", "power divider", "power splitter", "splitter",
+                          "combiner", "divider", "3 dB", "in-phase", "isolation resistor", "quarter wave", "ring"]),
         // The two vias (brief-via-component.md). Microstrip, because that is where they are used: a
         // line changing layers, and the return of a shunt part on a board. Not transmission lines.
         [SymbolKind.Via]          = new("VIA", "VIA",
@@ -1085,6 +1090,11 @@ public static class ComponentTypeRegistry
         SymbolKind.ViaGnd =>
             "One terminal, A, on FromLayer. The far end is ground: the via lands on GroundLayer.",
 
+        SymbolKind.Mwpd =>
+            "Not interchangeable: terminal 1 is the input and 2 and 3 the two outputs, alike by symmetry. R2 and R3 "
+          + "are the arms' ends beside outputs 2 and 3, the gap the isolation resistor goes across: put a resistor of "
+          + "2·Z0 on R2-R3.",
+
         SymbolKind.GsgPad =>
             "Not interchangeable: terminal 1 is where the probe's signal tip lands, the middle of the signal pad, "
           + "and terminal 2 the far end of the line. Put the measurement port on terminal 1.",
@@ -1275,6 +1285,7 @@ public static class ComponentTypeRegistry
         SymbolKind.ViaGnd        => "VIAGND",
         SymbolKind.TestPad       => "TESTPAD",
         SymbolKind.GsgPad        => "GSGPAD",
+        SymbolKind.Mwpd          => ComponentModelFactory.WilkinsonTypeName,
         SymbolKind.MimCap        => "MIMCAP",
         SymbolKind.Spiral        => "SPIRAL",
         SymbolKind.OctSpiral     => "OSPIRAL",
@@ -1445,7 +1456,7 @@ public static class ComponentTypeRegistry
         or SymbolKind.CLine or SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine
         or SymbolKind.Via or SymbolKind.ViaGnd or SymbolKind.WBond or SymbolKind.Match
         or SymbolKind.MimCap or SymbolKind.Spiral or SymbolKind.OctSpiral or SymbolKind.Tfr or SymbolKind.Airbridge
-        or SymbolKind.TestPad or SymbolKind.GsgPad
+        or SymbolKind.TestPad or SymbolKind.GsgPad or SymbolKind.Mwpd
         or SymbolKind.Balun or SymbolKind.Circulator or SymbolKind.Switch or SymbolKind.Coupler
         or SymbolKind.Hybrid90 or SymbolKind.Hybrid180 or SymbolKind.Filter or SymbolKind.Atten or SymbolKind.Duplexer
         or SymbolKind.Combiner
@@ -1633,6 +1644,15 @@ public static class ComponentTypeRegistry
         (SymbolKind.Cpwg, "SignalLayer") => "The conductor the strip and its coplanar grounds are on. Empty: the technology's top conductor.",
         (SymbolKind.Cpwg, "GroundReference") => "The plane backing the line. Empty: the nearest ground-designated conductor below the "
                                               + "signal layer, or above it when there is none below.",
+        (SymbolKind.Mwpd, "Z0") => "The ports' impedance. Each arm is √2·Z0 and the isolation resistor 2·Z0; the widths are "
+                                 + "derived from it on the technology's substrate.",
+        (SymbolKind.Mwpd, "F") => "Centre frequency: each arm is a quarter wavelength long here, in the line's own effective "
+                                + "permittivity at F.",
+        (SymbolKind.Mwpd, "Gap") => "Span of the isolation resistor's pins, R2 to R3: the gap the ring closes across. 1.35 mm "
+                                  + "is an 0402's at nominal density.",
+        (SymbolKind.Mwpd, "SignalLayer") => "The conductor the divider is on. Empty: the technology's top conductor.",
+        (SymbolKind.Mwpd, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below the "
+                                              + "signal layer.",
         (SymbolKind.GsgPad, "W") => "Width of the line leaving the signal pad. Placed: the 50 Ω width on the technology.",
         (SymbolKind.GsgPad, "L") => "Length of the line, from the signal pad's edge to terminal 2.",
         (SymbolKind.GsgPad, "Pitch") => "Probe pitch: centre of the signal pad to the centre of each ground pad. The probe's, "
@@ -1691,6 +1711,11 @@ public static class ComponentTypeRegistry
           + "fits of the even- and odd-mode end capacitances, stated over 0.5 <= W/h <= 2, 0.1 <= S/W <= 1 and "
           + "2.5 <= er <= 15. Lossless and frequency-independent. The layout draws no copper: the lines either side "
           + "are the metal, and the gap between their ends is exactly S.",
+        SymbolKind.Mwpd =>
+            "MTEE and MCURVE, the pieces the layout draws: an input tee, two 180° curves of √2·Z0 and two output tees, "
+          + "stamped together and reduced to the five pins. Each arm is λg/4 at F between the junctions' reference planes. "
+          + "MTEE's closed forms are calibrated at εr 9.9 and say so on any other board; MCURVE's effective radius is "
+          + "stated for 3W to 7W. The isolation resistor is not in the model: it is the resistor on R2-R3.",
         SymbolKind.GsgPad =>
             "MLIN, twice: half the signal pad (PadW wide, PadL/2 long, from the tip to its edge), then the line, "
           + "cascaded, with MLIN's validity. The ground pads are ideal ground at the probe's reference plane; their "
@@ -3873,6 +3898,13 @@ public static class ComponentTypeRegistry
             // (MmicPassiveInjection), as a microstrip's substrate is.
             // GSGPAD: W and L are the line's, MLIN's own rows (W re-synthesised for 50 Ω on the placing technology);
             // the probe's own numbers are in µm, which no technology rewrites — a probe's pitch is the probe's.
+            // MWPD (docs/design/rf-passives.md): the specs and the resistor's pin span. W, L and the ring radius are derived
+            // (WilkinsonPlan) and shown as a readout; K and N are reserved for the unequal-split and multi-section variants.
+            case SymbolKind.Mwpd:
+                return [new("Z0",  "50",   "Ω",   true, UnitDimension.Resistance),
+                        new("F",   "2.4",  "GHz", true, UnitDimension.Frequency),
+                        new("Gap", "1.35", "mm",  true, UnitDimension.Length),
+                        .. SignalGroundLayerParams];
             case SymbolKind.GsgPad:
                 return [new("W",     "2.9", "mm", true, UnitDimension.Length),
                         new("L",     "100", "µm", true, UnitDimension.Length),
@@ -4046,6 +4078,8 @@ public static class ComponentTypeRegistry
             case "TESTPAD":  kind = SymbolKind.TestPad;      return true;
             case "GSGPAD":
             case "GSG":      kind = SymbolKind.GsgPad;       return true;
+            case "MWPD":
+            case "WPD":      kind = SymbolKind.Mwpd;         return true;
             case "MIMCAP":   kind = SymbolKind.MimCap;       return true;
             case "SPIRAL":   kind = SymbolKind.Spiral;       return true;
             case "OSPIRAL":  kind = SymbolKind.OctSpiral;    return true;
