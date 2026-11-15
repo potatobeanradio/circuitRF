@@ -249,6 +249,16 @@ namespace RfCore.Propagation
                 ProfileParam,
             }, true, true, RunP526),
 
+            new("satellite", "Satellite path", "circular-orbit geometry; " + Tr38811.Document, new[]
+            {
+                N("Altitude", "km", "600", "the satellite's altitude (a circular orbit; 35786 is geostationary)", 1, 1e6),
+                N("Elevation", "deg", "30", "the satellite's elevation seen from the earth station", 0, 90),
+                W("Pass", "setting", "for the Doppler: the satellite rising (approaching) or setting (receding)", "rising", "setting"),
+                W("Scenario", "none", "TR 38.811's terminal environment for line of sight, shadowing and clutter (none: open, line of sight)",
+                  "none", "denseurban", "urban", "suburban", "rural"),
+                W("Los", "auto", "with a scenario: the propagation state; auto gives the more probable one", LosWords),
+            }, false, false, RunSatellite),
+
             new("P1812", "ITU-R P.1812 point-to-area over a profile", ItuP1812.Document, new[]
             {
                 ProfileParam,
@@ -344,6 +354,35 @@ namespace RfCore.Propagation
                 }
                 default: return ItuP1411.SiteGeneral(false, env, a.Word("Los") == "los", a.F, a.D3);
             }
+        }
+
+        private static PathLossResult RunSatellite(ModelArgs a)
+        {
+            var geo = SatelliteGeometry.At(a.Number("Altitude"), a.Number("Elevation"), a.F, a.Word("Pass") == "rising");
+            double fs = PropagationMath.FreeSpaceDb(a.F, geo.SlantRangeKm * 1000);
+            var terms = new List<LossTerm> { new("free space (slant range)", fs) };
+            var notes = new List<string>
+            {
+                $"Slant range {PropagationMath.F(geo.SlantRangeKm)} km, latency {PropagationMath.F(geo.LatencyS * 1e3)} ms; " +
+                $"Doppler {PropagationMath.F(geo.DopplerHz)} Hz drifting {PropagationMath.F(geo.DopplerRateHzps)} Hz/s (a pass through the zenith; Earth's rotation not included).",
+            };
+            if (!double.IsNaN(a.D)) notes.Add("The satellite model's distance is the slant range from altitude and elevation; the stated distance is not used.");
+            double sigma = 0;
+            double? pLos = null;
+            string sc = a.Word("Scenario");
+            if (sc != "none")
+            {
+                var s = sc switch { "denseurban" => NtnScenario.DenseUrban, "urban" => NtnScenario.Urban, "suburban" => NtnScenario.Suburban, _ => NtnScenario.Rural };
+                pLos = Tr38811.LosProbability(s, geo.ElevationDeg);
+                bool los = a.Word("Los") switch { "los" => true, "nlos" => false, _ => pLos >= 0.5 };
+                if (a.Word("Los") == "auto")
+                    notes.Add($"Los=auto: the line-of-sight probability is {PropagationMath.F(pLos.Value)}, so the {(los ? "line-of-sight" : "non-line-of-sight")} loss is given.");
+                var (sig, cl) = Tr38811.LargeScale(s, los, a.F / 1e9, geo.ElevationDeg);
+                sigma = sig;
+                if (cl > 0) terms.Add(new("38.811 clutter loss", cl));
+            }
+            double total = terms.Sum(t => t.Db);
+            return new PathLossResult("satellite", Tr38811.Document, total, terms, sigma, pLos, Notes: notes) { Geometry = geo };
         }
 
         private static PathLossResult RunP526(ModelArgs a)

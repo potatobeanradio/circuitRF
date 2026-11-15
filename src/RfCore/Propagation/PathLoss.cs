@@ -98,6 +98,10 @@ namespace RfCore.Propagation
     {
         public IReadOnlyList<string> NoteList => Notes ?? Array.Empty<string>();
 
+        /// <summary>A satellite path's geometry (slant range, latency, range rate, Doppler); null for a terrestrial path.
+        /// The added losses take the Earth-space methods when it is set.</summary>
+        public SlantGeometry? Geometry { get; init; }
+
         /// <summary>A single-term result.</summary>
         public static PathLossResult Single(string model, string document, string term, double db, double sigma = 0,
                                             double? pLos = null, SpreadStatistics? spreads = null,

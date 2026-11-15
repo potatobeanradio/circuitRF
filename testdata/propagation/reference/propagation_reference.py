@@ -2,10 +2,12 @@
 """Independent reference values for the large-scale propagation models (brief PCH-1).
 
 Written from the source documents alone, standard library only, and deliberately not from circuitRF's code:
-  ITU-R P.525-5, P.1238-13, P.1411-13, P.2108-1, P.2109-2, P.833-10, P.526-16; 3GPP TR 38.901 V18.0.0.
+  ITU-R P.525-5, P.1238-13, P.1411-13, P.2108-1, P.2109-2, P.833-10, P.526-16; 3GPP TR 38.901 V18.0.0 (brief PCH-1);
+  ITU-R P.676-13, P.835-7, P.453-14, P.838-3, P.530-19, P.618-14, P.840-9, P.531-16; 3GPP TR 38.811 V15.4.0 (brief PCH-2).
+The satellite geometry is checked by finite differences of the satellite's simulated position, not by the closed form.
 The two-ray, log-distance and multi-slope forms are the textbook ones the design note states.
 
-Run:  python3 propagation_reference.py      (writes reference.csv and spreads_38901.csv beside this file)
+Run:  python3 propagation_reference.py      (writes reference.csv, spreads_38901.csv and satellite_geometry.csv)
 
 reference.csv: one case per row - model, frequency (Hz), horizontal distance (m), transmit and receive heights (m),
 the model's parameters as name=value pairs separated by ';', and the loss (dB), the shadowing sigma (dB) and the
@@ -387,6 +389,234 @@ def sphere(f, d, h1, h2, a, er, sigma, vertical):
     return 0.0 if ah < 0 else (1 - hc / hreq) * ah
 
 
+# ---------------------------------------------------------------- PCH-2: atmosphere, rain, clouds, ionosphere
+
+def p835(z, rho0=7.5):
+    if z < 86:
+        h = 6356.766 * z / (6356.766 + z)
+        segs = [(0, 11, 288.15, -6.5), (11, 20, 216.65, 0.0), (20, 32, 216.65, 1.0), (32, 47, 228.65, 2.8),
+                (47, 51, 270.65, 0.0), (51, 71, 270.65, -2.8), (71, 84.852, 214.65, -2.0)]
+        p0 = {0: 1013.25, 11: 226.3226, 20: 54.74980, 32: 8.680422, 47: 1.109106, 51: 0.6694167, 71: 0.03956649}
+        for lo, hi, t0, lapse in segs:
+            if h <= hi or lo == 71:
+                t = t0 + lapse * (h - lo)
+                if lapse == 0:
+                    p = p0[lo] * math.exp(-34.1632 * (h - lo) / t0)
+                else:
+                    p = p0[lo] * (t0 / t) ** (34.1632 / lapse)
+                break
+    else:
+        t = 186.8673 if z <= 91 else 263.1905 - 76.3232 * math.sqrt(1 - ((z - 91) / 19.9429) ** 2)
+        p = math.exp(95.571899 - 4.011801 * z + 6.424731e-2 * z ** 2 - 4.789660e-4 * z ** 3 + 1.340543e-6 * z ** 4)
+    rho = rho0 * math.exp(-z / 2)
+    if rho * t / 216.7 / p < 2e-6:
+        rho = 2e-6 * p * 216.7 / t
+    return t, p, rho
+
+
+OX = """50.474214 0.975 9.651 6.690 0.0 2.566 6.850|50.987745 2.529 8.653 7.170 0.0 2.246 6.800|51.503360 6.193 7.709 7.640 0.0 1.947 6.729|52.021429 14.320 6.819 8.110 0.0 1.667 6.640|52.542418 31.240 5.983 8.580 0.0 1.388 6.526|53.066934 64.290 5.201 9.060 0.0 1.349 6.206|53.595775 124.600 4.474 9.550 0.0 2.227 5.085|54.130025 227.300 3.800 9.960 0.0 3.170 3.750|54.671180 389.700 3.182 10.370 0.0 3.558 2.654|55.221384 627.100 2.618 10.890 0.0 2.560 2.952|55.783815 945.300 2.109 11.340 0.0 -1.172 6.135|56.264774 543.400 0.014 17.030 0.0 3.525 -0.978|56.363399 1331.800 1.654 11.890 0.0 -2.378 6.547|56.968211 1746.600 1.255 12.230 0.0 -3.545 6.451|57.612486 2120.100 0.910 12.620 0.0 -5.416 6.056|58.323877 2363.700 0.621 12.950 0.0 -1.932 0.436|58.446588 1442.100 0.083 14.910 0.0 6.768 -1.273|59.164204 2379.900 0.387 13.530 0.0 -6.561 2.309|59.590983 2090.700 0.207 14.080 0.0 6.957 -0.776|60.306056 2103.400 0.207 14.150 0.0 -6.395 0.699|60.434778 2438.000 0.386 13.390 0.0 6.342 -2.825|61.150562 2479.500 0.621 12.920 0.0 1.014 -0.584|61.800158 2275.900 0.910 12.630 0.0 5.014 -6.619|62.411220 1915.400 1.255 12.170 0.0 3.029 -6.759|62.486253 1503.000 0.083 15.130 0.0 -4.499 0.844|62.997984 1490.200 1.654 11.740 0.0 1.856 -6.675|63.568526 1078.000 2.108 11.340 0.0 0.658 -6.139|64.127775 728.700 2.617 10.880 0.0 -3.036 -2.895|64.678910 461.300 3.181 10.380 0.0 -3.968 -2.590|65.224078 274.000 3.800 9.960 0.0 -3.528 -3.680|65.764779 153.000 4.473 9.550 0.0 -2.548 -5.002|66.302096 80.400 5.200 9.060 0.0 -1.660 -6.091|66.836834 39.800 5.982 8.580 0.0 -1.680 -6.393|67.369601 18.560 6.818 8.110 0.0 -1.956 -6.475|67.900868 8.172 7.708 7.640 0.0 -2.216 -6.545|68.431006 3.397 8.652 7.170 0.0 -2.492 -6.600|68.960312 1.334 9.650 6.690 0.0 -2.773 -6.650|118.750334 940.300 0.010 16.640 0.0 -0.439 0.079|368.498246 67.400 0.048 16.400 0.0 0.000 0.000|424.763020 637.700 0.044 16.400 0.0 0.000 0.000|487.249273 237.400 0.049 16.000 0.0 0.000 0.000|715.392902 98.100 0.145 16.000 0.0 0.000 0.000|773.839490 572.300 0.141 16.200 0.0 0.000 0.000|834.145546 183.100 0.145 14.700 0.0 0.000 0.000"""
+WV = """22.235080 .1079 2.144 26.38 .76 5.087 1.00|67.803960 .0011 8.732 28.58 .69 4.930 .82|119.995940 .0007 8.353 29.48 .70 4.780 .79|183.310087 2.273 .668 29.06 .77 5.022 .85|321.225630 .0470 6.179 24.04 .67 4.398 .54|325.152888 1.514 1.541 28.23 .64 4.893 .74|336.227764 .0010 9.825 26.93 .69 4.740 .61|380.197353 11.67 1.048 28.11 .54 5.063 .89|390.134508 .0045 7.347 21.52 .63 4.810 .55|437.346667 .0632 5.048 18.45 .60 4.230 .48|439.150807 .9098 3.595 20.07 .63 4.483 .52|443.018343 .1920 5.048 15.55 .60 5.083 .50|448.001085 10.41 1.405 25.64 .66 5.028 .67|470.888999 .3254 3.597 21.34 .66 4.506 .65|474.689092 1.260 2.379 23.20 .65 4.804 .64|488.490108 .2529 2.852 25.86 .69 5.201 .72|503.568532 .0372 6.731 16.12 .61 3.980 .43|504.482692 .0124 6.731 16.12 .61 4.010 .45|547.676440 .9785 .158 26.00 .70 4.500 1.00|552.020960 .1840 .158 26.00 .70 4.500 1.00|556.935985 497.0 .159 30.86 .69 4.552 1.00|620.700807 5.015 2.391 24.38 .71 4.856 .68|645.766085 .0067 8.633 18.00 .60 4.000 .50|658.005280 .2732 7.816 32.10 .69 4.140 1.00|752.033113 243.4 .396 30.86 .68 4.352 .84|841.051732 .0134 8.177 15.90 .33 5.760 .45|859.965698 .1325 8.055 30.60 .68 4.090 .84|899.303175 .0547 7.914 29.85 .68 4.530 .90|902.611085 .0386 8.429 28.65 .70 5.100 .95|906.205957 .1836 5.110 24.08 .70 4.700 .53|916.171582 8.400 1.441 26.73 .70 5.150 .78|923.112692 .0079 10.293 29.00 .70 5.000 .80|970.315022 9.009 1.919 25.50 .64 4.940 .67|987.926764 134.6 .257 29.85 .68 4.550 .90|1780.000000 17506. .952 196.3 2.00 24.15 5.00"""
+OXT = [[float(v) for v in r.split()] for r in OX.split('|')]
+WVT = [[float(v) for v in r.split()] for r in WV.split('|')]
+
+
+def gamma_gas(f, p, e, T):
+    th = 300.0 / T
+
+    def F(fi, df, dl):
+        return f / fi * ((df - dl * (fi - f)) / ((fi - f) ** 2 + df ** 2) + (df - dl * (fi + f)) / ((fi + f) ** 2 + df ** 2))
+    no = 0.0
+    for fi, a1, a2, a3, a4, a5, a6 in OXT:
+        S = a1 * 1e-7 * p * th ** 3 * math.exp(a2 * (1 - th))
+        df = math.sqrt((a3 * 1e-4 * (p * th ** (0.8 - a4) + 1.1 * e * th)) ** 2 + 2.25e-6)
+        no += S * F(fi, df, (a5 + a6 * th) * 1e-4 * (p + e) * th ** 0.8)
+    d = 5.6e-4 * (p + e) * th ** 0.8
+    no += f * p * th ** 2 * (6.14e-5 / (d * (1 + (f / d) ** 2)) + 1.4e-12 * p * th ** 1.5 / (1 + 1.9e-5 * f ** 1.5))
+    nw = 0.0
+    for fi, b1, b2, b3, b4, b5, b6 in WVT:
+        S = b1 * 1e-1 * e * th ** 3.5 * math.exp(b2 * (1 - th))
+        df0 = b3 * 1e-4 * (p * th ** b4 + b5 * e * th ** b6)
+        nw += S * F(fi, 0.535 * df0 + math.sqrt(0.217 * df0 ** 2 + 2.1316e-12 * fi ** 2 / th), 0.0)
+    return 0.1820 * f * (no + nw)
+
+
+def gas_slant(f, hs, el, rho0=7.5):
+    e1 = math.exp(0.01)
+    if hs == 0:
+        il, iu, m = 1, 923, 1e-4
+    else:
+        il = math.floor(100 * math.log(1e4 * hs * (e1 - 1) + 1) + 1)
+        iu = math.ceil(100 * math.log(1e4 * 100 * (e1 - 1) + 1) + 1)
+        m = (math.exp(0.02) - e1) / (math.exp(iu / 100) - math.exp(il / 100)) * (100 - hs)
+    r1, b1 = 6371 + hs, math.radians(90 - el)
+    A, n1 = 0.0, None
+    for i in range(il, iu):
+        dl = m * math.exp((i - 1) / 100)
+        h = 1e-4 * (math.exp((i - 1) / 100) - 1) / (e1 - 1) if hs == 0 else hs + m * (math.exp((i - 1) / 100) - math.exp((il - 1) / 100)) / (e1 - 1)
+        T, P, rho = p835(h + dl / 2, rho0)
+        e = rho * T / 216.7
+        n = 1 + 1e-6 * (77.6 * (P - e) / T + 72 * e / T + 3.75e5 * e / T ** 2)
+        n1 = n if n1 is None else n1
+        r = 6371 + h
+        b = math.asin(min(1.0, n1 * r1 * math.sin(b1) / (n * r)))
+        a = -r * math.cos(b) + math.sqrt(r * r * math.cos(b) ** 2 + 2 * r * dl + dl * dl)
+        A += a * gamma_gas(f, P - e, e, T)
+    return A
+
+
+def p838(f, el, tau):
+    lf = log10(f)
+    tabs = {
+        'kh': ([(-5.33980, -0.10008, 1.13098), (-0.35351, 1.26970, 0.45400), (-0.23789, 0.86036, 0.15354), (-0.94158, 0.64552, 0.16817)], -0.18961, 0.71147),
+        'kv': ([(-3.80595, 0.56934, 0.81061), (-3.44965, -0.22911, 0.51059), (-0.39902, 0.73042, 0.11899), (0.50167, 1.07319, 0.27195)], -0.16398, 0.63297),
+        'ah': ([(-0.14318, 1.82442, -0.55187), (0.29591, 0.77564, 0.19822), (0.32177, 0.63773, 0.13164), (-5.37610, -0.96230, 1.47828), (16.1721, -3.29980, 3.43990)], 0.67849, -1.95537),
+        'av': ([(-0.07771, 2.33840, -0.76284), (0.56727, 0.95545, 0.54039), (-0.20238, 1.14520, 0.26809), (-48.2991, 0.791669, 0.116226), (48.5833, 0.791459, 0.116479)], -0.053739, 0.83433)}
+    v = {}
+    for key, (rows, mm, cc) in tabs.items():
+        x = sum(a * math.exp(-((lf - b) / c) ** 2) for a, b, c in rows) + mm * lf + cc
+        v[key] = 10 ** x if key.startswith('k') else x
+    c2 = math.cos(math.radians(el)) ** 2 * math.cos(math.radians(2 * tau))
+    k = (v['kh'] + v['kv'] + (v['kh'] - v['kv']) * c2) / 2
+    a = (v['kh'] * v['ah'] + v['kv'] * v['av'] + (v['kh'] * v['ah'] - v['kv'] * v['av']) * c2) / (2 * k)
+    return k, a
+
+
+def p530(f, d, R, p, tau):
+    k, a = p838(f, 0, tau)
+    g = k * R ** a
+    fr, dr, rr = max(f, 6), min(d, 30), max(R, 3)
+    r = 1 / (0.477 * dr ** 0.633 * rr ** (0.073 * a) * fr ** 0.123 - 10.579 * (1 - math.exp(-0.024 * dr)))
+    c0 = 0.12 + 0.4 * log10(f / 10) ** 0.8 if f >= 10 else 0.12
+    c1 = 0.07 ** c0 * 0.12 ** (1 - c0)
+    return g * d * r * c1 * p ** (-((0.855 * c0 + 0.546 * (1 - c0)) + (0.139 * c0 + 0.043 * (1 - c0)) * log10(p)))
+
+
+def p618_rain(f, el, tau, p, hs, hr, R, lat):
+    dh = hr - hs
+    s = math.sin(math.radians(el))
+    Ls = dh / s if el >= 5 else 2 * dh / (math.sqrt(s * s + 2 * dh / 8500) + s)
+    LG = Ls * math.cos(math.radians(el))
+    k, a = p838(f, el, tau)
+    g = k * R ** a
+    r = 1 / (1 + 0.78 * math.sqrt(LG * g / f) - 0.38 * (1 - math.exp(-2 * LG)))
+    zeta = math.degrees(math.atan(dh / (LG * r)))
+    LR = LG * r / math.cos(math.radians(el)) if zeta > el else dh / s
+    chi = 36 - abs(lat) if abs(lat) < 36 else 0
+    v = 1 / (1 + math.sqrt(s) * (31 * (1 - math.exp(-(el / (1 + chi)))) * math.sqrt(LR * g) / f ** 2 - 0.45))
+    A1 = g * LR * v
+    if p >= 1 or abs(lat) >= 36:
+        beta = 0
+    elif el >= 25:
+        beta = -0.005 * (abs(lat) - 36)
+    else:
+        beta = -0.005 * (abs(lat) - 36) + 1.8 - 4.25 * s
+    return A1 * (p / 0.01) ** -(0.655 + 0.033 * math.log(p) - 0.045 * math.log(A1) - beta * (1 - p) * s)
+
+
+def p618_scint(f, el, p, nwet, D, eta):
+    s = math.sin(math.radians(el))
+    L = 2000 / (math.sqrt(s * s + 2.35e-4) + s)
+    x = 1.22 * eta * D * D * f / L
+    arg = 3.86 * (x * x + 1) ** (11 / 12) * math.sin(11 / 6 * math.atan(1 / x)) - 7.08 * x ** (5 / 6)
+    if arg < 0:
+        return 0.0
+    sig = (3.6e-3 + 1e-4 * nwet) * f ** (7 / 12) * math.sqrt(arg) / s ** 1.2
+    lp = log10(p)
+    return (-0.061 * lp ** 3 + 0.072 * lp ** 2 - 1.71 * lp + 3.0) * sig
+
+
+def p840_KL(f):
+    T = 273.75
+    th = 300 / T
+    e0 = 77.66 + 103.3 * (th - 1)
+    e1, e2 = 0.0671 * e0, 3.52
+    fp = 20.20 - 146 * (th - 1) + 316 * (th - 1) ** 2
+    fs = 39.8 * fp
+    ei = f * (e0 - e1) / (fp * (1 + (f / fp) ** 2)) + f * (e1 - e2) / (fs * (1 + (f / fs) ** 2))
+    er = (e0 - e1) / (1 + (f / fp) ** 2) + (e1 - e2) / (1 + (f / fs) ** 2) + e2
+    Kl = 0.819 * f / (ei * (1 + ((2 + er) / ei) ** 2))
+    return Kl * (0.1522 * math.exp(-(f + 23.9589) ** 2 / 3.2991e3) + 11.51 * math.exp(-(f - 219.2096) ** 2 / 2.7595e6) - 10.4912)
+
+
+def nakagami_fade(s4, p):
+    """Fade depth exceeded p % of the time: the Nakagami intensity CDF integrated numerically, solved by bisection."""
+    if s4 < 0.1:
+        return 0.0
+    m = math.exp(5.69 * math.exp(-3.055 * s4) + 0.292 * math.exp(0.344 * s4))
+    lg = math.lgamma(m)
+
+    def cdf(I):   # P(intensity < I) for a gamma(m, 1/m) intensity, by Simpson's rule in log-space of x = mI
+        X = m * I
+        n = 20000
+        hi = math.log(X)
+        lo = hi - 40.0          # the integrand falls as exp(m*(u - hi)) below the upper limit: 40 is far past negligible
+        h = (hi - lo) / n
+        tot = 0.0
+        for k in range(n + 1):
+            u = lo + k * h
+            wgt = 1 if k in (0, n) else (4 if k % 2 else 2)
+            tot += wgt * math.exp(m * u - math.exp(u) - lg)
+        return tot * h / 3
+    lo, hi = 1e-12, 1.0
+    for _ in range(200):
+        mid = math.sqrt(lo * hi)
+        if cdf(mid) < p / 100:
+            lo = mid
+        else:
+            hi = mid
+    return -10 * log10(math.sqrt(lo * hi))
+
+
+NTN_LOS = {'denseurban': [28.2, 33.1, 39.8, 46.8, 53.7, 61.2, 73.8, 82.0, 98.1],
+           'urban': [24.6, 38.6, 49.3, 61.3, 72.6, 80.5, 91.9, 96.8, 99.2],
+           'suburban': [78.2, 86.9, 91.9, 92.9, 93.5, 94.0, 94.9, 95.2, 99.8]}
+NTN_LOS['rural'] = NTN_LOS['suburban']
+NTN_SF = {  # elevation index -> S: sLOS, sNLOS, CL ; Ka: sLOS, sNLOS, CL
+    'denseurban': [(3.5, 15.5, 34.3, 2.9, 17.1, 44.3), (3.4, 13.9, 30.9, 2.4, 17.1, 39.9), (2.9, 12.4, 29.0, 2.7, 15.6, 37.5),
+                   (3.0, 11.7, 27.7, 2.4, 14.6, 35.8), (3.1, 10.6, 26.8, 2.4, 14.2, 34.6), (2.7, 10.5, 26.2, 2.7, 12.6, 33.8),
+                   (2.5, 10.1, 25.8, 2.6, 12.1, 33.3), (2.3, 9.2, 25.5, 2.8, 12.3, 33.0), (1.2, 9.2, 25.5, 0.6, 12.3, 32.9)],
+    'urban': [(4, 6, cl, 4, 6, ck) for cl, ck in [(34.3, 44.3), (30.9, 39.9), (29.0, 37.5), (27.7, 35.8), (26.8, 34.6),
+                                                  (26.2, 33.8), (25.8, 33.3), (25.5, 33.0), (25.5, 32.9)]],
+    'suburban': [(1.79, 8.93, 19.52, 1.9, 10.7, 29.5), (1.14, 9.08, 18.17, 1.6, 10.0, 24.6), (1.14, 8.78, 18.42, 1.9, 11.2, 21.9),
+                 (0.92, 10.25, 18.28, 2.3, 11.6, 20.0), (1.42, 10.56, 18.63, 2.7, 11.8, 18.7), (1.56, 10.74, 17.68, 3.1, 10.8, 17.8),
+                 (0.85, 10.17, 16.50, 3.0, 10.8, 17.2), (0.72, 11.52, 16.30, 3.6, 10.8, 16.9), (0.72, 11.52, 16.30, 0.4, 10.8, 16.8)]}
+NTN_SF['rural'] = NTN_SF['suburban']
+
+
+def slant_range_km(h, el):
+    R = 6371.0
+    # the law of cosines in the triangle Earth centre - station - satellite, solved for the side d
+    a, e = R + h, math.radians(el)
+    return -R * math.sin(e) + math.sqrt(a * a - (R * math.cos(e)) ** 2)
+
+
+def orbit_by_differences(h_km, el, f, rising, dt=0.05):
+    """Range, its first and second derivatives, by central differences of the simulated satellite position in a pass
+    through the station's zenith."""
+    R, a = 6371e3, 6371e3 + h_km * 1e3
+    w = math.sqrt(3.986004418e14 / a ** 3)
+    # central angle at the given elevation, found by bisection on the elevation seen from the station
+    def elev(lam):
+        x, y = a * math.sin(lam), a * math.cos(lam) - R
+        return math.degrees(math.atan2(y, x))
+    lo, hi = 0.0, math.pi / 2
+    for _ in range(200):
+        mid = (lo + hi) / 2
+        if elev(mid) > el:
+            lo = mid
+        else:
+            hi = mid
+    lam0 = (lo + hi) / 2
+    sgn = -1 if rising else 1           # rising: the central angle shrinks
+    def rng(t):
+        lam = lam0 + sgn * w * t
+        return math.hypot(a * math.sin(lam), a * math.cos(lam) - R)
+    d = rng(0.0)
+    rate = (rng(-2 * dt) - 8 * rng(-dt) + 8 * rng(dt) - rng(2 * dt)) / (12 * dt)
+    acc = (-rng(2 * dt) + 16 * rng(dt) - 30 * d + 16 * rng(-dt) - rng(-2 * dt)) / (12 * dt * dt)
+    return d, rate, acc
+
+
 # ---------------------------------------------------------------- the cases
 
 def main():
@@ -503,6 +733,43 @@ def main():
             {'Mode': 'sphere', 'EarthRadiusFactor': repr(k), 'GroundEr': er, 'GroundSigma': sg, 'Polarization': 'vertical' if vert else 'horizontal'},
             fspl(f, d) + sphere(f, d, h1, h2, 6371e3 * k, er, sg, vert))
 
+    # ---- PCH-2 through the registry
+    T15 = 288.15
+    surf_e = 7.5 * T15 / 216.7
+    f, d = 60e9, 1000.0
+    add('P676 gas, terrestrial 60 GHz', 'free', f, d, 10.0, 10.0, {'Gas': 'on'},
+        fspl(f, d) + gamma_gas(60.0, 1013.25 - surf_e, surf_e, T15) * d / 1000)
+    f, d = 28e9, 200.0
+    pl, s = pl_38901('UMi', True, f, d, 10.0, 1.5)
+    add('P530 rain on 38901 UMi, 99.9 %', '38901', f, d, 10.0, 1.5, {'Scenario': 'UMi', 'Los': 'los', 'Rain': 'fixed', 'Availability': 99.9, 'RainTilt': 90},
+        pl + p530(28.0, d3(d, 10.0, 1.5) / 1000, 40.0, 0.1, 90.0), s, plos_38901('UMi', d, 10.0, 1.5))
+    # GEO Ka, every tropospheric term
+    f, el, h = 20e9, 40.0, 35786.0
+    p = 100 - 99.9
+    ag = gas_slant(20.0, 0.0, el)
+    ar = p618_rain(20.0, el, 45.0, p, 0.0, 3.4, 40.0, 45.0)
+    ac = p840_KL(20.0) * 0.5 / math.sin(math.radians(el))
+    nwet = 72 * surf_e / T15 + 3.75e5 * surf_e / T15 ** 2
+    asc = p618_scint(20.0, el, p, nwet, 1.0, 0.5)
+    add('satellite GEO Ka, gas, rain, clouds, scintillation at 99.9 %', 'satellite', f, float('nan'), 1.5, 1.5,
+        {'Altitude': h, 'Elevation': el, 'Gas': 'on', 'Rain': 'fixed', 'Clouds': 'on', 'Scintillation': 'on', 'Availability': 99.9},
+        fspl(f, slant_range_km(h, el) * 1000) + ag + math.sqrt((ar + ac) ** 2 + asc ** 2))
+    # LEO S band, urban out of line of sight, ionosphere
+    f, el, h = 2.2e9, 32.0, 600.0
+    sl, sn, cl = NTN_SF['urban'][2][:3]
+    rot = 2.36e-14 * 50e-6 * 50 * 1e16 / 2.2 ** 2
+    s4 = 0.5 * (2.2 / 1.5) ** -1.5
+    add('satellite LEO S band, urban NLOS, gas and ionosphere at 99 %', 'satellite', f, float('nan'), 1.5, 1.5,
+        {'Altitude': h, 'Elevation': el, 'Scenario': 'urban', 'Los': 'nlos', 'Gas': 'on', 'Ionosphere': 'on', 'S4': 0.5, 'Availability': 99},
+        fspl(f, slant_range_km(h, el) * 1000) + cl + gas_slant(2.2, 0.0, el) - 20 * log10(abs(math.cos(rot))) + nakagami_fade(s4, 1.0),
+        sn, NTN_LOS['urban'][2] / 100)
+    # Ka rural, auto state, from a station at 1.2 km
+    f, el, h = 20e9, 55.0, 1200.0
+    pr = NTN_LOS['rural'][5] / 100
+    add('satellite Ka rural auto, gas from a raised station', 'satellite', f, float('nan'), 1.5, 1.5,
+        {'Altitude': h, 'Elevation': el, 'Scenario': 'rural', 'Gas': 'on', 'StationHeight': 1.2},
+        fspl(f, slant_range_km(h, el) * 1000) + gas_slant(20.0, 1.2, el), NTN_SF['rural'][5][3], pr)
+
     with open(os.path.join(here, 'reference.csv'), 'w', newline='') as o:
         o.write('# Independent reference values for the propagation models; written by propagation_reference.py beside it.\n')
         w = csv.writer(o, lineterminator='\n')
@@ -523,7 +790,17 @@ def main():
         w.writerow(['scenario', 'los', 'f_Hz', 'd2D_m', 'hBS_m', 'hUT_m', 'DS_mu', 'DS_sigma', 'ASD_mu', 'ASD_sigma', 'ASA_mu', 'ASA_sigma',
                     'ZSA_mu', 'ZSA_sigma', 'ZSD_mu', 'ZSD_sigma', 'K_mu', 'K_sigma'])
         w.writerows(srows)
-    print(len(rows), 'cases,', len(srows), 'spread rows')
+    grows = []
+    for h, el, fz, rising in ((600.0, 0.0, 2e9, False), (600.0, 30.0, 2e9, True), (600.0, 90.0, 2e9, False), (1200.0, 10.0, 20e9, True)):
+        d, rate, acc = orbit_by_differences(h, el, fz, rising)
+        grows.append([repr(h), repr(el), repr(fz), 'rising' if rising else 'setting', repr(d / 1000), repr(rate), repr(acc),
+                      repr(-fz * rate / C), repr(-fz * acc / C)])
+    with open(os.path.join(here, 'satellite_geometry.csv'), 'w', newline='') as o:
+        o.write('# Satellite pass geometry by finite differences of the simulated position; written by propagation_reference.py beside it.\n')
+        w = csv.writer(o, lineterminator='\n')
+        w.writerow(['altitude_km', 'elevation_deg', 'f_Hz', 'pass', 'range_km', 'rate_mps', 'accel_mps2', 'doppler_Hz', 'drift_Hzps'])
+        w.writerows(grows)
+    print(len(rows), 'cases,', len(srows), 'spread rows,', len(grows), 'geometry rows')
 
 
 if __name__ == '__main__':

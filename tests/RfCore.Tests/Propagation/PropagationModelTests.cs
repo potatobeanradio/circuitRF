@@ -130,7 +130,7 @@ public class PropagationModelTests
         {
             var values = c[6].Length == 0 ? new Dictionary<string, string>()
                 : c[6].Split(';').Select(kv => kv.Split('=', 2)).ToDictionary(kv => kv[0], kv => kv[1]);
-            var inputs = new ModelInputs { Model = c[1], FrequencyHz = Num(c[2]), DistanceM = Num(c[3]), TxHeightM = Num(c[4]), RxHeightM = Num(c[5]), Values = values };
+            var inputs = new ModelInputs { Model = c[1], FrequencyHz = Num(c[2]), DistanceM = c[3] == "nan" ? double.NaN : Num(c[3]), TxHeightM = Num(c[4]), RxHeightM = Num(c[5]), Values = values };
             models.Add(c[1]);
             PathLossResult r;
             try { r = PropagationModels.Evaluate(inputs); }
@@ -143,7 +143,7 @@ public class PropagationModelTests
             if (Math.Abs(r.Terms.Sum(t => t.Db) - r.LossDb) > 1e-9) failures.Add($"{c[0]}: the terms do not sum to the loss");
         }
         Assert.True(failures.Count == 0, string.Join("\n", failures));
-        Assert.Superset(new HashSet<string> { "free", "logdist", "multislope", "tworay", "38901", "P1238", "P1411", "P526" }, models);
+        Assert.Superset(new HashSet<string> { "free", "logdist", "multislope", "tworay", "38901", "P1238", "P1411", "P526", "satellite" }, models);
     }
 
     /// <summary>TR 38.901's large-scale parameter statistics (delay, azimuth and zenith spreads, K) against the script,
@@ -317,7 +317,7 @@ public class PropagationModelTests
         {
             var values = c[6].Length == 0 ? new Dictionary<string, string>()
                 : c[6].Split(';').Select(kv => kv.Split('=', 2)).ToDictionary(kv => kv[0], kv => kv[1]);
-            PropagationModels.Evaluate(new ModelInputs { Model = c[1], FrequencyHz = Num(c[2]), DistanceM = Num(c[3]), TxHeightM = Num(c[4]), RxHeightM = Num(c[5]), Values = values },
+            PropagationModels.Evaluate(new ModelInputs { Model = c[1], FrequencyHz = Num(c[2]), DistanceM = c[3] == "nan" ? double.NaN : Num(c[3]), TxHeightM = Num(c[4]), RxHeightM = Num(c[5]), Values = values },
                                        out var names);
             read.UnionWith(names);
         }

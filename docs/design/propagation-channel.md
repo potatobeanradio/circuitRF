@@ -1,6 +1,6 @@
 # circuitRF — The propagation channel
 
-**Status:** PCH-1 built (the terrestrial and indoor models of §3.1, `src/RfCore/Propagation`; P.1546 not built, §3.1); the rest is design · **Series:** [`brief-pch-0-overview.md`](../briefs/brief-pch-0-overview.md) ·
+**Status:** PCH-1 and PCH-2 built (§3.1 and §3.2, `src/RfCore/Propagation`; P.1546 and P.676's approximate method not built); the rest is design · **Series:** [`brief-pch-0-overview.md`](../briefs/brief-pch-0-overview.md) ·
 **Builds on:** [`phased-array.md`](phased-array.md) (the transmit field from a circuit's waves, incident waves by
 reciprocity, the fast path and re-weigh, the Phased Array tool), [`chain-budget.md`](chain-budget.md) (the link in front
 of a receive chain), the envelope engine and its signal quality (`brief-nz-8`, `src/RfCore/Signals`), the yield engine's
@@ -140,13 +140,18 @@ the path, dB each, for a same-floor indoor link), **clutter** (ITU-R P.2108), **
 
 | Item | Model |
 |---|---|
-| Gaseous absorption | ITU-R P.676 (the line-by-line method; the approximate one where its validity allows, the choice stated) |
+| Gaseous absorption | ITU-R P.676 Annex 1, line by line: along a terrestrial path, or through P.835's reference atmosphere on a slant path (the approximate Annex 2 is not built: its coefficients are data files that may not be redistributed) |
 | Rain, specific attenuation | ITU-R P.838 |
 | Rain, terrestrial path at p % of the time | ITU-R P.530 |
 | Earth–space at p % of the time: rain, gas, clouds, scintillation, combined | ITU-R P.618 with P.840 (clouds) |
 | Ionospheric scintillation and Faraday rotation, below ~3 GHz | ITU-R P.531 |
 | Satellite scenarios: line-of-sight probability by elevation, shadow fading, clutter loss | 3GPP TR 38.811 (dense urban, urban, suburban, rural) |
 | Slant range, range rate and its rate for a circular orbit | Geometry: d = √((R_E+h)² − (R_E·cos ε)²) − R_E·sin ε; ν from the orbital velocity's projection |
+
+In the registry these are added losses — `Gas`, `Rain`, `Clouds`, `Scintillation`, `Ionosphere`, with `Availability` the
+one time percentage — that take the terrestrial methods on a terrestrial path and the Earth-space ones on the
+`satellite` model (`Altitude`, `Elevation`, `Pass`, a TR 38.811 `Scenario`), whose result carries the slant range,
+latency, range rate and Doppler.
 
 **Rain in the component** is `Rain=off|fixed|drawn`. `fixed` is the attenuation exceeded for 100 − `Availability` % of
 the time — the budget's number, deterministic. `drawn` takes it per drop from the model's exceedance distribution: the

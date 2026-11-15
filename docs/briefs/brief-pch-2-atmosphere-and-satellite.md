@@ -49,3 +49,35 @@ user never sets p and its complement inconsistently.
 
 Rain and scintillation time series (a drop holds them constant, note §2.4). The land-mobile state model (PCH-10).
 Any user interface.
+
+## Completion note (2026-11-15)
+
+**Built.** `src/RfCore/Propagation`: `ItuP676` (Annex 1 line by line, 44 oxygen and 35 water vapour lines; terrestrial
+§2.1; slant §2.2.1 with its 922 layers, station heights by eqs (16a)-(16d), bending), `ItuP835` and `ItuP453`
+(`Atmosphere.cs`), `ItuP838`, `ItuP530`, `ItuP840` (`Rain.cs`), `ItuP618` (rain, scintillation, total), `ItuP531`,
+`Tr38811`, `SatelliteGeometry` (`Satellite.cs`); `RfCore.Statistics.GammaFunction`. In the registry: the added losses
+`Availability`, `Gas`, `Rain` (`fixed`; `drawn` refused until PCH-10), `Clouds`, `Scintillation`, `Ionosphere` and
+their inputs, terrestrial or Earth-space by the model; and the `satellite` model (altitude, elevation, pass, TR 38.811
+scenario and state), whose result carries the slant geometry (`PathLossResult.Geometry`: range, latency, range rate,
+Doppler and its drift).
+
+**Gates** (`tests/RfCore.Tests/Propagation/AtmosphereAndSatelliteTests.cs`, 5 tests; with PCH-1's, 14 tests in ~90 ms):
+1. Published examples (a `FixtureFact` over SG3's workbook): P.676, P.838, P.840, P.618 rain, scintillation and total,
+   every case, to 1e-12 relative (largest difference ~5e-15); the slant path to 1e-9 dB (9e-13).
+2. Independent script: P.530, P.531, TR 38.811 and the satellite model with every atmospheric term, through the
+   registry, to 1e-9 dB (`testdata/propagation/reference`).
+3. Geometry: zenith range = altitude; the horizon range rate at 600 km = v·R/(R + h); geostationary range rate 0; and
+   range rate, drift and Doppler against finite differences of the simulated orbit.
+4. Validity: 23 refusals, one past each limit, plus Earth-space effects on a terrestrial path and `Rain=drawn`.
+Plus: the availability is the one time percentage (gate on P.530 and P.618), and the Nakagami fade inverts P(m, x).
+
+**What changed from the brief, and why.**
+- **P.676's approximate method is not built**: its coefficients are data files integral to the recommendation, not
+  redistributable. Annex 1 does the slant path through P.835's reference atmosphere.
+- **Published examples exist for P.676, P.838, P.840 and P.618 and are used, but not committed** (their terms of reuse
+  are not stated): the gate is a `FixtureFact`. P.530, P.531, TR 38.811 and the geometry are gated by the script.
+- **P.531's fade depth** is the Nakagami intensity at 100 − availability % — the recommendation gives the distribution,
+  not a percentage.
+- **P.618's scintillation includes p = 0.01 %**, where the published examples evaluate it.
+
+Findings in `src/RfCore/RESOLVED.md`.

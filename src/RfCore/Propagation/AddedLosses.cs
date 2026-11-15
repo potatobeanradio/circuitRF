@@ -197,6 +197,29 @@ namespace RfCore.Propagation
             N("VegMax", "dB", "", "the maximum woodland attenuation (blank: the recommendation's fit A1·f^α)", 1e-6, 500),
             N("PolLoss", "dB", "0", "a polarization mismatch loss", 0, 100),
             N("PointingLoss", "dB", "0", "a pointing loss", 0, 100),
+
+            N("Availability", "%", "99", "the percentage of time the link must be available: rain, clouds and scintillation are taken at 100 minus it", 50, 99.9999),
+            W("Gas", "off", "ITU-R P.676 gaseous absorption: along the path, or through the atmosphere on a satellite path", "off", "on"),
+            N("SurfaceTemperature", "degC", "15", "the surface air temperature", -80, 60),
+            N("SurfacePressure", "hPa", "1013.25", "the surface total air pressure", 300, 1100),
+            N("WaterVapour", "g/m3", "7.5", "the surface water vapour density", 0, 50),
+            W("Rain", "off", "rain attenuation at the availability: ITU-R P.530 on a terrestrial path, P.618 on a satellite path; drawn is per drop", "off", "fixed", "drawn"),
+            N("RainRate", "mm/h", "40", "the rain rate exceeded for 0.01 % of an average year", 0, 300),
+            N("RainHeight", "km", "3.4", "satellite path: the rain height above sea level", 0, 8),
+            N("RainTilt", "deg", "45", "the polarization tilt from horizontal for rain: 0 horizontal, 90 vertical, 45 circular", 0, 90),
+            N("StationHeight", "km", "0", "satellite path: the earth station's height above sea level", 0, 8),
+            N("StationLatitude", "deg", "45", "satellite path: the earth station's latitude", -90, 90),
+            W("Clouds", "off", "satellite path: ITU-R P.840 cloud attenuation", "off", "on"),
+            N("CloudWater", "kg/m2", "0.5", "satellite path: the integrated cloud liquid water content", 0, 10),
+            W("Scintillation", "off", "satellite path: ITU-R P.618 tropospheric scintillation fade at the availability", "off", "on"),
+            N("AntennaDiameter", "m", "1", "satellite path, scintillation: the earth station antenna's diameter", 0.01, 100),
+            N("AntennaEfficiency", "", "0.5", "satellite path, scintillation: the antenna efficiency", 0.01, 1),
+            W("Ionosphere", "off", "satellite path: ITU-R P.531 Faraday rotation and ionospheric scintillation", "off", "on"),
+            N("Tec", "TECU", "50", "the total electron content along the path, 1 TECU = 1e16 el/m2", 0, 1000),
+            N("MagneticField", "uT", "50", "the average geomagnetic field along the path", 0, 70),
+            W("LinearPolarization", "yes", "a linear polarization fixed for no rotation (Faraday rotation is then a loss)", "yes", "no"),
+            N("S4", "", "0", "the amplitude scintillation index at S4Frequency (0: none)", 0, 1.5),
+            N("S4Frequency", "GHz", "1.5", "the frequency the S4 index is stated at", 0.1, 10),
         };
 
         internal static (List<LossTerm> Terms, List<string> Notes) Evaluate(ModelArgs a, PathLossResult baseResult)
@@ -267,7 +290,78 @@ namespace RfCore.Propagation
             double pol = a.Number("PolLoss"), point = a.Number("PointingLoss");
             if (pol > 0) terms.Add(new("polarization mismatch", pol));
             if (point > 0) terms.Add(new("pointing", point));
+
+            Atmosphere(a, baseResult, terms, notes);
             return (terms, notes);
+        }
+
+        /// <summary>Gas, rain, clouds, scintillation and the ionosphere, by the terrestrial or the Earth-space methods.</summary>
+        private static void Atmosphere(ModelArgs a, PathLossResult baseResult, List<LossTerm> terms, List<string> notes)
+        {
+            string model = a.Inputs.Model;
+            bool gas = a.Word("Gas") == "on", clouds = a.Word("Clouds") == "on", scint = a.Word("Scintillation") == "on", iono = a.Word("Ionosphere") == "on";
+            string rain = a.Word("Rain");
+            if (rain == "drawn")
+                throw new PropagationRefusal($"{model}: Rain=drawn takes a rain attenuation per drop of a Monte Carlo; a single evaluation takes Rain=fixed (the attenuation at the availability).");
+            bool rainOn = rain == "fixed";
+            if (!(gas || rainOn || clouds || scint || iono)) return;
+
+            double p = 100 - a.Number("Availability");          // the one conversion from availability to time percentage
+            double fGhz = a.F / 1e9;
+            double tK = a.Number("SurfaceTemperature") + 273.15, rho = a.Number("WaterVapour");
+            var surface = new AtmosphereState(tK, a.Number("SurfacePressure"), rho);
+            var geo = baseResult.Geometry;
+
+            if (geo is null)
+            {
+                if (clouds || scint || iono)
+                    throw new PropagationRefusal($"{model}: Clouds, Scintillation and Ionosphere are Earth-space effects (ITU-R P.840, P.618, P.531); this is a terrestrial path. Use the satellite model.");
+                double dKm = a.D3 / 1000;
+                if (gas) terms.Add(new("P.676 gas", ItuP676.Terrestrial(fGhz, dKm, surface)));
+                if (rainOn) terms.Add(new($"P.530 rain at {PropagationMath.F(p)} % of the time",
+                                           ItuP530.Rain(fGhz, dKm, a.Number("RainRate"), p, a.Number("RainTilt"))));
+                return;
+            }
+
+            double el = geo.ElevationDeg, hs = a.Number("StationHeight");
+            double ag = 0, ar = 0, ac = 0, aS = 0;
+            if (gas)
+            {
+                ag = ItuP676.Slant(fGhz, hs, el, rho).AttenuationDb;
+                terms.Add(new("P.676 gas (slant path)", ag));
+                notes.Add("Slant-path gas through the P.835 reference atmosphere with the stated surface water vapour density; the free-space elevation is taken as the apparent one.");
+            }
+            if (rainOn)
+            {
+                if (p <= 5) ar = ItuP618.Rain(fGhz, el, a.Number("RainTilt"), p, hs, a.Number("RainHeight"), a.Number("RainRate"), a.Number("StationLatitude"));
+                else notes.Add($"Rain is not part of P.618's total above 5 % of the time; at {PropagationMath.F(p)} % it adds nothing.");
+            }
+            if (clouds) ac = ItuP840.Cloud(fGhz, el, a.Number("CloudWater"));
+            if (scint)
+            {
+                double nwet = ItuP453.WetRefractivity(surface.VapourHpa, tK);
+                aS = ItuP618.Scintillation(fGhz, el, p, nwet, a.Number("AntennaDiameter"), a.Number("AntennaEfficiency"));
+            }
+            if (rainOn || clouds || scint)
+            {
+                double combined = ItuP618.Total(p, 0, ac, ar, aS);
+                terms.Add(new($"P.618 rain, clouds and scintillation at {PropagationMath.F(p)} % of the time", combined));
+                notes.Add($"P.618 §2.5 combines rain {PropagationMath.F(ar)} dB, clouds {PropagationMath.F(ac)} dB and scintillation {PropagationMath.F(aS)} dB as √((rain + clouds)² + scintillation²).");
+            }
+            if (iono)
+            {
+                double rot = ItuP531.FaradayRotation(fGhz, a.Number("Tec") * 1e16, a.Number("MagneticField") * 1e-6);
+                if (a.Word("LinearPolarization") == "yes")
+                    terms.Add(new("P.531 Faraday rotation", ItuP531.FaradayLoss(rot)));
+                notes.Add($"Faraday rotation {PropagationMath.F(rot * 180 / Math.PI)}°.");
+                double s4 = a.Number("S4");
+                if (s4 > 0)
+                {
+                    double s4f = ItuP531.S4At(fGhz, s4, a.Number("S4Frequency"));
+                    terms.Add(new($"P.531 ionospheric scintillation at {PropagationMath.F(p)} % of the time", ItuP531.FadeDepth(s4f, p)));
+                    notes.Add($"S4 {PropagationMath.F(s4f)} at {PropagationMath.F(fGhz)} GHz: peak-to-peak {PropagationMath.F(ItuP531.PeakToPeak(Math.Min(s4f, 1)))} dB.");
+                }
+            }
         }
     }
 }

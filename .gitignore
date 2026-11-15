@@ -150,3 +150,5 @@ palace.log
 
 # ITU-R SG3 delta-Bullington validation examples (P.526 §4.5), extracted locally for a FixtureFact gate; the publisher's terms of reuse are not stated, so not committed.
 /testdata/propagation/p526-validation/
+# ITU-R SG3 Earth-space validation examples (P.618, P.676, P.838, P.840), extracted locally for a FixtureFact gate; not committed for the same reason.
+/testdata/propagation/sg3-validation/

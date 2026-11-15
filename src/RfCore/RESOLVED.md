@@ -1299,3 +1299,55 @@ implementation and the expression engine and yield are unchanged.
 `propagation.out-of-range` / `propagation.not-positive` with the model, quantity, value, limits and unit as typed
 arguments, so a sweep refusing at every point collapses to one line; the other refusals are `propagation.refused`
 with the sentence as their argument, the forwarded pattern of `EmDiagnostics`.
+
+## Atmosphere, rain and satellite paths (brief PCH-2, 2026-11-15)
+
+`src/RfCore/Propagation`: ITU-R P.676 Annex 1 (line by line, terrestrial and slant), P.835 (the reference atmosphere),
+P.453 (refractivity), P.838, P.530, P.618 (rain, scintillation, total), P.840, P.531 (Faraday rotation, ionospheric
+scintillation), TR 38.811's large-scale tables, the geometry of a circular orbit, and a `satellite` model. The
+atmospheric terms are added losses (`Gas`, `Rain`, `Clouds`, `Scintillation`, `Ionosphere`) that take the terrestrial
+methods (P.676 §2.1, P.530) on a terrestrial path and the Earth-space ones (P.676 §2.2.1, P.618, P.840, P.531) when the
+model is `satellite`. `Availability` is converted to a time percentage in one place. Gates in
+`tests/RfCore.Tests/Propagation/AtmosphereAndSatelliteTests.cs` and the independent-script cases in
+`PropagationModelTests`.
+
+**Every published Earth-space example reproduces to ~1e-15 relative.** ITU-R SG3's validation workbook
+(CG-3M3J-13-ValEx, Rev 8.3.0, which is for exactly the in-force P.618-14, P.676-13, P.838-3 and P.840-9): P.676's
+specific attenuation at 1-350 GHz (1e-14), its Annex 1 slant path (0.47081173473 dB at 28 GHz and 30°, to 9e-13 dB,
+bending to 5e-15), P.838 (64 cases), P.840 (32), P.618 rain (64), scintillation (48) and the total from its parts (48).
+The workbook is not committed (its terms of reuse are not stated); the gate is a `FixtureFact` over CSVs extracted
+from sheets "P.676-13 SpAtt", "P.676-13 A_Gas_A1_2.2.1a", "P.838-3 Sp.Att", "P.840-9 A_Clouds", "P.618-14 A_Rain",
+"P.618-14 A_Scint" and "P.618-14 Att_Tot" into `testdata/propagation/sg3-validation/` (columns as the test reads them).
+The sheets list the values the method reads from maps (rain height, R0.01, Nwet, L) beside each case, which is what
+makes them usable where the maps are not bundled.
+
+**P.676's SpAtt example is at a DRY pressure of 1013.25 hPa** (total 1023.2): read as total pressure the curve misses
+by 2 % near 60 GHz. The slant-path example's layers are P.835-6's reference atmosphere; P.835-7's Annex 1 reproduces
+them exactly.
+
+**P.676 Annex 2 (the approximate slant-path method) is not built.** Its oxygen equivalent height and its water vapour
+mass absorption coefficients are data files the recommendation calls integral parts of itself — the class of ITU
+digital product that may not be redistributed (as P.1546's curves, PCH-1). The slant path is Annex 1 through P.835's
+reference atmosphere instead, with the surface water vapour density a parameter; it costs about a millisecond.
+
+**P.618 scintillation at exactly 0.01 %.** The text gives 0.01 % < p ≤ 50 %; the published examples evaluate p = 0.01 %,
+so the boundary is included.
+
+**The ionospheric fade depth is the Nakagami intensity distribution inverted** (P.531 eq (11), m from eq (10)):
+`RfCore.Statistics.GammaFunction` (log-gamma, the regularized incomplete gamma P(a, x), its inverse). P.531 gives the
+distribution, not a fade at a percentage; taking the intensity exceeded for 100 − availability % of the time is this
+implementation's choice and is said in the notes. At S4 = 0.5 scaled to 2.2 GHz, m = 15.3: the independent script's
+first numerical integration of that peaked density had converged to only 4e-7 dB.
+
+**Map values are parameters**, with defaults: R0.01 40 mm/h, rain height 3.4 km, station latitude 45°, station height
+0 km, surface 15 °C, 1013.25 hPa, 7.5 g/m³, cloud liquid water 0.5 kg/m², TEC 50 TECU, field 50 µT. Nwet for
+scintillation is P.453's wet term from the surface temperature and water vapour density.
+
+**TR 38.811's tables apply at S band (2-4 GHz) and Ka band (17.7-40 GHz)** and elevations 10°-90° (the nearest
+reference angle); elsewhere a scenario is refused, and `Scenario=none` (open, line of sight, no clutter) works at any
+frequency. The urban table's single-digit σ values (4 and 6 dB at every angle) are dropped by a text extraction that
+keeps runs of three or more characters; they were read with no minimum.
+
+**The satellite geometry is a pass through the station's zenith on a sphere of 6371 km, Earth's rotation not
+included** (the brief allowed it as optional). Its range rate and drift are checked against central differences of the
+satellite's simulated position, an independent method, to 1e-6 relative and 1e-4 m/s².
