@@ -1727,13 +1727,36 @@ src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: harmonic='{text}' is not a number
 src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: harmonic='{text}' is {value.ToString(
 src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: harmonic={k}, and '{hbName}' solves harmonics up to {maxHarm} (its MaxHarm). Raise MaxHarm, or name a lower harmonic.
 src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: the circuit has no instance '{fa.Block}'.
-src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: waves='{name}' names no analysis of this bench. It names a harmonic-balance analysis. {these}
 src/Design/Em3d/FieldCosimulation.Sweep.cs|{who}: waves= needs the bench, which this run was not given.
 src/Design/Em3d/FieldCosimulation.Array.cs|BeamNfDb({fa.Name}) is the noise figure from a driven circuit port, and fields analysis '{fa.Name}' forms its pattern from 
 src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: '{fa.Block}' is a {PhasedArrayModel.DisplayName} in Feed mode, whose elements are inside it; waves= reads an 
 src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: '{hbName}' is a multi-tone analysis, whose solution has a mixing product for each frequency, and waves= forms a 
 src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: harmonic {k} of '{hbName}' is {MaterialDispersion.Hz(hz)}, and '{name}' holds no pattern there: the nearest frequency it 
-src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: waves='{name}' names a {KindOf(named)} analysis, and waves= takes a harmonic-balance analysis, whose solution gives the block's 
 src/Design/Em3d/FieldCosimulation.Sweep.cs|ActiveGamma({fa.Name}, {element}) is one number, and fields analysis '{fa.Name}' has one per point of the sweep over {sweep.SweepVarName}. 
 src/Design/Em3d/FieldCosimulation.Sweep.cs|{FieldMetricFunctions.NameOf(metric)}({fa.Name}) is one number, and fields analysis '{fa.Name}' has one per point of the sweep over 
 src/Design/Em3d/FieldCosimulation.cs|{who}: waves='{fa.Waves.Trim()}' forms the pattern from a harmonic-balance analysis, which this run has no bench to run. 
+# brief-paa-6b — a fields analysis whose waves come from an envelope analysis (dirs=, the radiated envelope): refusals of the same family.
+src/Design/Em3d/FieldCosimulation.Envelope.cs|'{FieldMetricFunctions.NameOf(metric)}' reads a field set, and fields analysis '{fa.Name}' forms radiated envelopes from an envelope analysis.
+src/Design/Em3d/FieldCosimulation.Envelope.cs|'{FieldMetricFunctions.NameOf(metric)}' reads one beam, and fields analysis '{fa.Name}' has one per envelope step. Read its radiated group.
+src/Design/Em3d/FieldCosimulation.Envelope.cs|ActiveGamma({fa.Name}, {element}): '{fa.Block}' has elements 1 to {n}.
+src/Design/Em3d/FieldCosimulation.Envelope.cs|ActiveGamma({fa.Name}, {element}): element {element} is switched off, so it has no active reflection.
+src/Design/Em3d/FieldCosimulation.Envelope.cs|ActiveGamma({fa.Name}, {element}): no wave reaches element {element} from the circuit, so it has no active reflection.
+src/Design/Em3d/FieldCosimulation.Envelope.cs|{metric}({fa.Name}) reads one pattern, and fields analysis '{fa.Name}' forms one per envelope step. Read {fa.Name}.farfield.U, the 
+src/Design/Em3d/FieldCosimulation.Envelope.cs|{who}: '{env.Name}' did not record '{fa.Block}''s ports.
+src/Design/Em3d/FieldCosimulation.Envelope.cs|{who}: '{env.Name}' needs a MOD_Source, the modulated signal, and the circuit has none.
+src/Design/Em3d/FieldCosimulation.Envelope.cs|{who}: '{env.Name}' runs on {fundamentals} fundamentals (its carriers are far apart, or a P1Tone is off them), and waves= 
+src/Design/Em3d/FieldCosimulation.Envelope.cs|{who}: '{fa.Block}' has {((SnpModel)block.Model).PortCount} ports and its far field {far.PortCount}.
+src/Design/Em3d/FieldCosimulation.Envelope.cs|{who}: '{fa.Block}' is a {PhasedArrayModel.DisplayName} in Feed mode, whose elements are inside it; waves= reads an amplifier on every element's pin, which is Elements mode.
+src/Design/Em3d/FieldCosimulation.Envelope.cs|{who}: '{fa.Block}' is a {block.ComponentType}, not an {EmFieldDataRecord.DisplayName} block or a {PhasedArrayModel.DisplayName}.
+src/Design/Em3d/FieldCosimulation.Envelope.cs|{who}: direction {d.Label} is at θ {G(d.ThetaDeg)}°, and the pattern of '{fa.Block}' reaches θ {G(far.Grid.ThetaDeg[^1])}°
+src/Design/Em3d/FieldCosimulation.Envelope.cs|{who}: direction {d.Label} is at θ {G(d.ThetaDeg)}°, and the pattern of '{fa.Block}' reaches θ {G(maxTheta)}°
+src/Design/Em3d/FieldCosimulation.Envelope.cs|{who}: direction {d.Label} is between the record's grid directions, and its stored patterns are safe only on their own grid. 
+src/Design/Em3d/FieldCosimulation.Envelope.cs|{who}: dirs= item '{item}' is not a direction: write peak, or theta,phi in degrees (30,0), separated by semicolons.
+src/Design/Em3d/FieldCosimulation.Envelope.cs|{who}: dirs= names one direction twice.
+src/Design/Em3d/FieldCosimulation.Envelope.cs|{who}: dirs= names {items.Length} directions, and a run names at most {MaxDirections}: each is a whole envelope of the far field and 
+src/Design/Em3d/FieldCosimulation.Envelope.cs|{who}: harmonic {k} of '{env.Name}''s carrier is {MaterialDispersion.Hz(hz)}, and '{name}' holds no pattern within 2 % of it: the 
+src/Design/Em3d/FieldCosimulation.Envelope.cs|{who}: the circuit has no instance '{fa.Block}'.
+src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: waves='{name}' names a {KindOf(named)} analysis, and waves= takes a harmonic-balance or an envelope analysis, whose solution 
+src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: waves='{name}' names no analysis of this bench. It names a harmonic-balance or an envelope analysis. {these}
+src/Engine/Envelope/EnvelopeEngine.cs|envelope: '{path}' is a {ec.ComponentType}, whose port currents are not branches the run can record.
+src/Engine/Envelope/EnvelopeEngine.cs|envelope: the circuit has no instance '{path}' to record.

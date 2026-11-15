@@ -66,3 +66,17 @@ potentially unstable (μ just below 1 across the band, as the 2 GHz original is)
 Regenerate the results from the repository root with
 `circuitrf fields "testdata/phased-array/hb-1x4/Array Bench.cnl" -o ".../Array Bench F1.npy"`, the same with `hb` for
 `Array Bench HB1.npy`, and `circuitrf lp ".../PA Loadpull.cnl" -o ".../PA Loadpull.spl"`.
+
+### `Array Envelope.cnl` — brute-force envelope (PAA-6b)
+
+The same four amplifiers on the same record, driven by **one** NR 20 MHz 64QAM carrier at 5.9 GHz (`MOD_Source`) through an ideal
+4-way `Combiner` into the PhaseShifters. ENV1 runs 40 µs, swept over `Pavg` ∈ {−8, 22} dBm and `theta0` ∈ {0, 30}°; F1
+(`waves=ENV1 dirs="peak;0,0;-30,0;60,0"`) gives the radiated envelope in those directions with its PSD, ACLR, EVM, PAPR and CCDF,
+each element's active reflection over the record, and the time-averaged pattern. `Array Envelope.cdd` draws the clouds over the
+contours, the PSD per direction, ACPR1 and EVM against drive per direction, and the averaged cut.
+
+**Its result is not committed**: 19,662 steps at four sweep points make `Array Envelope F1.npy` 34 MB (it is in this folder's
+`.gitignore`). Regenerate it in about 30 s with
+`circuitrf fields "testdata/phased-array/hb-1x4/Array Envelope.cnl" -o "testdata/phased-array/hb-1x4/Array Envelope F1.npy"`.
+40 µs is where in-beam ACLR is within 0.2 dB of a 200 µs record; EVM is still 0.4 pp low there and creeps up with more symbols.
+

@@ -706,7 +706,8 @@ public static class CircuitEvaluation
             // brief-paa-6 — its points are its HB analysis's, a sweep around that included
             case FieldsAnalysis fa when fa.FromHarmonicBalance:
             {
-                var sel = ChainSelector.Select(tb, fa.Waves.Trim(), a => a is HarmonicBalanceAnalysis, "HB", "");
+                var named = tb.Analyses.FirstOrDefault(a => string.Equals(a.Name, fa.Waves.Trim(), StringComparison.OrdinalIgnoreCase));
+                var sel = ChainSelector.Select(tb, fa.Waves.Trim(), a => named is not null && a.GetType() == named.GetType(), "waves", "");
                 long points = sel.Selected is ParametricSweepAnalysis around ? ParametricSweepRunSummary.TotalPoints(around, tb) : 1;
                 return ($"Fields '{fa.Name}': the pattern of '{fa.Block}' from {fa.FrequencyText}" +
                         (sel.Selected is ParametricSweepAnalysis wrap ? $", at each of sweep '{wrap.Name}''s {points} points" : ""), points, points > 1);

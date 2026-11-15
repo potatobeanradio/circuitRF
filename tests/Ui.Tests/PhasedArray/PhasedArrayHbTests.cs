@@ -205,23 +205,23 @@ public sealed class PhasedArrayHbTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(last.Imaginary, t.FamilyCurves[3].Points[3].Y, 6);
     }
 
-    /// <summary>waves= and harmonic= are written and read back by the .cnl and by the schematic's own analysis record, so a bench edited in either keeps them.</summary>
+    /// <summary>waves=, harmonic= and (brief-paa-6b) dirs= are written and read back by the .cnl and by the schematic's own analysis record, so a bench edited in either keeps them.</summary>
     [Fact]
     public void WavesAndHarmonic_SurviveTheCnlAndTheSchematicRecord()
     {
         string path = Path.Combine(_dir, "b.cnl");
-        File.WriteAllText(path, "R:R1 a 0 R=50 Ohm\nanalysis F1 type=fields block=EM1 waves=HB1 harmonic=2\n");
+        File.WriteAllText(path, "R:R1 a 0 R=50 Ohm\nanalysis F1 type=fields block=EM1 waves=HB1 harmonic=2 dirs=\"peak;30,0\"\n");
         var fa = (Core.Design.FieldsAnalysis)Core.Netlist.CnlReader.ReadFile(path).TestBench.Analyses.Single();
-        Assert.Equal(("HB1", "2"), (fa.Waves, fa.HarmonicExpr));
+        Assert.Equal(("HB1", "2", "peak;30,0"), (fa.Waves, fa.HarmonicExpr, fa.DirsExpr));
 
         var tb = new Core.Design.TestBench("tb");
         tb.Analyses.Add(fa);
         File.WriteAllText(path, Core.Netlist.CnlWriter.Write(tb));
         var again = (Core.Design.FieldsAnalysis)Core.Netlist.CnlReader.ReadFile(path).TestBench.Analyses.Single();
-        Assert.Equal(("HB1", "2"), (again.Waves, again.HarmonicExpr));
+        Assert.Equal(("HB1", "2", "peak;30,0"), (again.Waves, again.HarmonicExpr, again.DirsExpr));
 
         var json = CircuitRF.Design.Schematic.AnalysisSerialization.Serialize([fa], []);
         var back = (Core.Design.FieldsAnalysis)CircuitRF.Design.Schematic.AnalysisSerialization.Deserialize(json).Analyses.Single();
-        Assert.Equal(("HB1", "2"), (back.Waves, back.HarmonicExpr));
+        Assert.Equal(("HB1", "2", "peak;30,0"), (back.Waves, back.HarmonicExpr, back.DirsExpr));
     }
 }

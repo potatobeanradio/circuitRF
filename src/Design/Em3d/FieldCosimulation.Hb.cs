@@ -50,58 +50,67 @@ public static partial class FieldCosimulation
         ArgumentNullException.ThrowIfNull(fa);
         ArgumentNullException.ThrowIfNull(ctx);
         string who = $"Fields '{fa.Name}'";
-        var hba = HbAnalysisOf(fa, ctx.Bench, who);
-        var sel = ChainSelector.Select(ctx.Bench, hba.Name, a => a is HarmonicBalanceAnalysis, "HB", "");
+        var source = WavesAnalysisOf(fa, ctx.Bench, who);
+        var sel = ChainSelector.Select(ctx.Bench, source.Name, a => a.GetType() == source.GetType(), source is EnvelopeAnalysis ? "envelope" : "HB", "");
         if (sel.Selected is not ParametricSweepAnalysis sweep)
         {
+            if (source is EnvelopeAnalysis env) return FromEnvelope(fa, nl, env, ctx, notes, control, metrics, null);
+            var hba = (HarmonicBalanceAnalysis)source;
             var run = RunHb(hba, nl, ctx, null);
             return FromHarmonicBalance(fa, nl, hba.Name, run, notes, control, metrics, null);
         }
 
-        // The sweep wraps HB1; this analysis stands in for HB1 while it runs, so the engine hands each point's netlist to us.
+        // The sweep wraps the source; this analysis stands in for it while it runs, so the engine hands each point's netlist to us.
         var bench = ctx.Bench;
-        int at = bench.Analyses.IndexOf(hba);
-        var standIn = new FieldsAnalysis(hba.Name) { Block = fa.Block, Waves = hba.Name, HarmonicExpr = fa.HarmonicExpr, Enabled = true };
+        int at = bench.Analyses.IndexOf(source);
+        var standIn = new FieldsAnalysis(source.Name) { Block = fa.Block, Waves = source.Name, HarmonicExpr = fa.HarmonicExpr, Enabled = true };
         Complex[,]? seed = null;
         DataSet Point(Analysis _, ElaboratedNetlist pointNl, RunControl? pointControl)
         {
+            string point = pointNl.WireThermal?.Drive ?? "a sweep point";
+            if (source is EnvelopeAnalysis env) return FromEnvelope(fa, pointNl, env, ctx, [], pointControl, null, point);
+            var hba = (HarmonicBalanceAnalysis)source;
             var run = RunHb(hba, pointNl, ctx, seed);
             seed = run.Converged ? run.InterfaceV : null;
-            return FromHarmonicBalance(fa, pointNl, hba.Name, run, [], pointControl, null, pointNl.WireThermal?.Drive ?? "a sweep point");
+            return FromHarmonicBalance(fa, pointNl, hba.Name, run, [], pointControl, null, point);
         }
         bench.Analyses[at] = standIn;
         try
         {
             var data = ParametricSweepEngine.Run(sweep, ctx.Library, bench, null, ctx.BaseDirectory, control, diagnosticsInto: nl, runOtherInner: Point);
-            notes.Add($"Fields '{fa.Name}': a pattern at each point of sweep '{sweep.Name}', from {hba.Name}'s waves at '{fa.Block}'");
+            notes.Add($"Fields '{fa.Name}': a result at each point of sweep '{sweep.Name}', from {source.Name}'s waves at '{fa.Block}'");
             metrics?.Invoke(SweptMetrics(fa, sweep));
             return data;
         }
         finally
         {
-            bench.Analyses[at] = hba;
+            bench.Analyses[at] = source;
         }
     }
 
     /// <summary>R-cp5-1's runner, for a sweep that wraps a fields analysis with <c>waves=</c> directly: HB at each point, then the pattern.</summary>
     private static DataSet HbSweepPoint(FieldsAnalysis fa, ElaboratedNetlist nl, FieldsHbContext ctx, RunControl? control)
     {
-        var hba = HbAnalysisOf(fa, ctx.Bench, $"Fields '{fa.Name}'");
-        return FromHarmonicBalance(fa, nl, hba.Name, RunHb(hba, nl, ctx, null), [], control, null, nl.WireThermal?.Drive ?? "a sweep point");
+        string point = nl.WireThermal?.Drive ?? "a sweep point";
+        var source = WavesAnalysisOf(fa, ctx.Bench, $"Fields '{fa.Name}'");
+        if (source is EnvelopeAnalysis env) return FromEnvelope(fa, nl, env, ctx, [], control, null, point);
+        var hba = (HarmonicBalanceAnalysis)source;
+        return FromHarmonicBalance(fa, nl, hba.Name, RunHb(hba, nl, ctx, null), [], control, null, point);
     }
 
-    /// <summary>The analysis <c>waves=</c> names, or the refusal: none of that name, or one of another kind.</summary>
-    private static HarmonicBalanceAnalysis HbAnalysisOf(FieldsAnalysis fa, TestBench tb, string who)
+    /// <summary>The analysis <c>waves=</c> names — harmonic balance (brief-paa-6) or envelope (brief-paa-6b) — or the refusal: none of that name, or
+    /// one of another kind.</summary>
+    internal static Analysis WavesAnalysisOf(FieldsAnalysis fa, TestBench tb, string who)
     {
         string name = fa.Waves.Trim();
         var named = tb.Analyses.FirstOrDefault(a => string.Equals(a.Name, name, StringComparison.Ordinal))
                     ?? tb.Analyses.FirstOrDefault(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase));
-        if (named is HarmonicBalanceAnalysis hb) return hb;
-        var hbs = tb.Analyses.OfType<HarmonicBalanceAnalysis>().Select(a => a.Name).ToList();
-        string these = hbs.Count == 0 ? "This bench has none." : $"This bench's: {string.Join(", ", hbs)}.";
-        if (named is null) throw new InvalidOperationException($"{who}: waves='{name}' names no analysis of this bench. It names a harmonic-balance analysis. {these}");
-        throw new InvalidOperationException($"{who}: waves='{name}' names a {KindOf(named)} analysis, and waves= takes a harmonic-balance analysis, whose solution gives the block's " +
-                                            $"waves. {these}");
+        if (named is HarmonicBalanceAnalysis or EnvelopeAnalysis) return named;
+        var ok = tb.Analyses.Where(a => a is HarmonicBalanceAnalysis or EnvelopeAnalysis).Select(a => a.Name).ToList();
+        string these = ok.Count == 0 ? "This bench has none." : $"This bench's: {string.Join(", ", ok)}.";
+        if (named is null) throw new InvalidOperationException($"{who}: waves='{name}' names no analysis of this bench. It names a harmonic-balance or an envelope analysis. {these}");
+        throw new InvalidOperationException($"{who}: waves='{name}' names a {KindOf(named)} analysis, and waves= takes a harmonic-balance or an envelope analysis, whose solution " +
+                                            $"gives the block's waves. {these}");
     }
 
     private static string KindOf(Analysis a) => a switch

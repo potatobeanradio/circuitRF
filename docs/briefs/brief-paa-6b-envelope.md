@@ -132,3 +132,52 @@ The element pattern's variation across the modulation bandwidth (D-6b-3: a multi
 envelope frequency bin); a pattern per mixing product of a multi-fundamental envelope; receive (an incident modulated wave through
 the array, PAA-7's reciprocity applied to an envelope); digital predistortion per element; thermal coupling between PAs; Feed-mode
 envelopes at large N (they run, as any circuit; their cost is PAA-8's).
+
+## Completion note (2026-11-14)
+
+**Built.** `waves=` takes an envelope analysis, with a new `dirs=` key (`FieldsAnalysis.DirsExpr`, in the `.cnl`, the `.csch` and
+the directive schema). `FieldCosimulation.Envelope.cs` runs the envelope with the block recorded — its nodes join the recorded
+voltages, and its port branch currents are recorded beside the IProbes (`EnvelopeParams.Blocks`, `EnvelopeEngine.IProbesOf`; the
+envelope's `RationalSnpModel` now exposes `PortBranchIndices`) — through `EnvelopeRunner.Record`, which returns the stitched record
+and its settle skip. Each step's waves come from what the envelope solved (D-6b-4). The field is linear in them, so each port's
+(or element's) pattern is read once, on the grid and in the named directions, and a step costs a weight vector and a dot product.
+Published: `radiated.Etheta/Ephi/EIRP_t_dBm [time, direction]`, `radiated.theta/phi`, `radiated.MeasureFrom_s`, and every
+per-branch metric `EnvelopeDataSet.Build` forms (PSD, ACLR, PAPR, CCDF, EVM, MER, NMSE, AM-AM/AM-PM, constellation) on each
+direction's Ludwig-3 co-polar envelope handed over as a branch (`EnvelopeRunResult.WithBranches`), minus the gain/efficiency cubes
+that mean nothing of a direction; `farfield.U` as the power-averaged pattern with TRP, directivity, peak EIRP and its direction;
+`array.a/b/GammaActive/Pdel [time, element]` with `GammaActive_avg` (power-weighted) and `Pdel_avg`. `ActiveGamma(F1, n)` reads the
+average and `ActiveVswrMax(F1)` the worst over elements and steps. A sweep around the envelope gives everything per point (PAA-6's
+stand-in mechanism, generalised); a sweep around F1 runs the envelope at each point. φ₀ is derived from the strongest step's pattern
+through `PlanarPolarization.ReferenceAngle`, the same derivation a published pattern makes. A family over `direction` is labelled
+per curve, as one over `element` is. Refused: more than 16 directions, a direction past the pattern's θ, a direction off the grid
+of an EM Field Data block or an exact array (naming the nearest), a multi-fundamental envelope, a carrier harmonic with no record
+frequency within 2 % — all but the last two before the envelope runs.
+
+**The bench** (`testdata/phased-array/hb-1x4/Array Envelope.cnl`, `.cdd`): one NR 20 MHz 64QAM source through an ideal 4-way
+Combiner into the PAA-6 phase shifters and amplifiers; 40 µs, swept over Pavg ∈ {−8, 22} dBm and theta0 ∈ {0, 30}°; F1
+`dirs="peak;0,0;-30,0;60,0"`. Its result is **not committed** (34 MB of time cubes; README and `.gitignore`).
+
+**Gates** (`tests/Ui.Tests/PhasedArray/PhasedArrayEnvelopeTests.cs`, 5 tests, NR 10 MHz 60 kHz at 40 µs):
+1. `ACwEnvelope_IsHarmonicBalance` — a CW envelope at 22 dBm against PAA-6's waves=HB1 on the same bench (a P1Tone of the same
+   power): the field's shape agrees to 9.9e-9 of its peak and Γ_act to 3.8e-9; the level is 4.4e-6 apart in every direction at once
+   (the two sources); `dirs=peak` lands on HB's beam (25°).
+2. `OneElementAlone_…` — three channels at 200 dB: every direction's ACLR equals PA1's output IProbe's to 0.007 dB, EVM to 0.005 pp.
+3. `BackedOff_…` — at −38 dBm the beam's EVM is the source's to 0.002 pp and its ACLR the amplifiers' to 0.01 dB.
+4. `TheAveragedPattern_…` — `farfield.U` equals the mean of each step's |E|²/2η₀ at three grid directions to 4e-13.
+5. `Directions_…` — 17 directions and an off-grid one are refused before the run, naming the count and the nearest grid direction.
+6. Recorded (`src/Design/RESOLVED.md`): at 22 dBm steered to 30°, in-beam ACPR1 −26.3 dBc and EVM 7.6 %; at 0° and at −30°
+   ACPR1 −20 dBc and EVM 19 %; at 60° −26.1 dBc and 7.8 %.
+7. UiSnapshot of `Array Envelope.cdd`, looked at (session scratchpad `paa6/ecdd/snap.png`, not committed).
+
+**What changed from the brief, and why.**
+- **Gate 3 compares the beam's ACLR with the amplifiers', not with the source's ideal.** 30 dB below compression this amplifier
+  still adds distortion (beam −67.5 dBc against the source's −90.8 at −8 dBm), so the gate runs 60 dB below; and even there the
+  chain's own frequency response across the band moves ACPR1 0.6 dB from the source's ideal, linearly, in the amplifiers' outputs and
+  the beam alike. EVM is still compared with the source's.
+- **Gate 1's level** is checked to 1e-5, not the Newton tolerance: a uniform 4.4e-6 difference between a MOD_Source's CW and a P1Tone
+  of the same power, with the shape at 1e-8.
+- **Gate 4's second half** (total radiated power equals the mean per-step radiated power) is not a separate test: the radiated power is
+  a linear quadrature of U, so it follows from the first half; the per-step patterns it would need are what the design avoids forming.
+- **The record length is 40 µs** (ACLR stable to 0.2 dB against 200 µs; EVM 0.4 pp low), and the routine tests take 1–10 s rather
+  than under 5: EVM needs a whole symbol after the settle, and a bench with ENV1 and F1 runs the envelope twice.
+- **A run with ENV1 and F1 runs the envelope twice** (F1 runs it with the block recorded), as PAA-6's HB benches do.

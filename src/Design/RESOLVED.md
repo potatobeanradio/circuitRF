@@ -31755,3 +31755,33 @@ the 2×2. Fixtures and harness: `testdata/phased-array/`.
   root at 201 dBm through the continuity guard. Γ = 0.001 converges where Γ = 0 does not, with the source and load harmonics
   at 50 Ω or not, at any tickle; plain HB through the same tuners converges at 50 Ω. Not chased here: the fixture's grid is
   offset 15° from the real axis (45 of 48 converge, none run away), which covers every active reflection the bench produces.
+
+## brief-paa-6b — a fields analysis from an envelope: the radiated envelope in named directions (2026-11-14)
+
+- **The waves are recorded by the envelope, not derived.** `EnvelopeParams.Blocks` names the block; `EnvelopeEngine.IProbesOf`
+  appends its port branches beside the IProbes (`path#k`, rows from the block's last stamp — `SnpModel`, the envelope's own
+  `RationalSnpModel`, which now exposes `PortBranchIndices`, or `PhasedArrayModel`), so they are stitched across segments and
+  seam-checked with everything else; the block's nodes join the recorded voltages through the retired `Probes` list, which the
+  engine still honours internally. `EnvelopeRunner.Record` returns the stitched record and the settle skip (`SettleSkip`, shared
+  with `Execute`). A one-frequency record is not fitted (`EnvelopeSnpFit` warns) and is stamped to first order, i.e. held flat.
+- **The field is a basis and a weight.** Each port's (or element's) pattern is read once on the grid and in the named directions;
+  a step costs one weight vector (`PortFarFieldSet.Weights` — gap voltages on a planar record — or the incident waves of an
+  embedded-pattern array) and a dot product per direction. The averaged pattern is the basis's quadratic form against the
+  weights' covariance over the measured window, which equals the mean of each step's |E|² to 4e-13 (gate 4) without a pattern per step.
+- **The metrics are the envelope's own code**: `EnvelopeRunResult.WithBranches` hands EnvelopeDataSet.Build each direction's
+  co-polar envelope as a branch with V = I = E_co·√(4π/η₀), so ½·Re(V·I*) is the co-polar EIRP. Gate 2 holds it: with one channel
+  driven, every direction's ACLR equals that PA's output IProbe's to 0.007 dB and EVM to 0.005 pp.
+- **What it shows, measured** (NR 20 MHz, 40 µs, steered to 30°, Pavg 22 dBm: 16 dBm average into each PA, whose CW 1 dB point is about 22 dBm, with a 10 dB PAPR):
+  in the beam ACPR1 −26.3/−26.2 dBc and EVM 7.6 %; at 0° and 30° on the other side, where the carrier is weak (28 dB below the beam at the backed-off drive),
+  ACPR1 −20.0/−20.2 dBc and EVM 19 %; at 60° (inside the element's broad lobe) −26.1 dBc and 7.8 %. The distortion leaves each
+  element with the phase its own compression gives it, not the steering, so it does not form the beam. ACLR is stable to 0.2 dB
+  from 40 to 200 µs; EVM rises 0.4 pp over that range.
+- **30 dB below compression is not linear for this amplifier**: in-beam ACPR1 −67.5 dBc against the source's −90.8 at −8 dBm
+  (EVM 0.55 % against 0.53). At −38 dBm the beam equals PA1's output ACLR to 0.01 dB, and both sit 0.6 dB (lower side) and 0.3 dB
+  (upper) from the source's ideal: the chain's own frequency response across the band, which is linear and which the beam inherits.
+  Gate 3 compares the beam with what the amplifiers deliver for that reason.
+- **A CW envelope is HB to the shape**: 9.9e-9 of the peak in the field and 3.8e-9 in Γ_act; the level differs by 4.4e-6 uniformly
+  in every direction — the MOD_Source's CW against the P1Tone, not the waves.
+- **A bench with both ENV1 and F1 runs the envelope twice** (F1 runs it with the block recorded), as PAA-6's HB benches run HB twice.
+- **The bench's result is 34 MB and not committed** (19,662 steps × 4 points of time cubes); EVM needs a 40 µs record at NR 20 MHz
+  30 kHz (a whole symbol after the settle). The gate tests use NR 10 MHz 60 kHz at 40 µs, which forms EVM in about 3 s.

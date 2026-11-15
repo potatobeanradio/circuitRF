@@ -1221,6 +1221,7 @@ public sealed class CnlReader
             AverageExpr = kv.GetValueOrDefault("average", "yes"),
             Waves       = kv.GetValueOrDefault("waves", ""),
             HarmonicExpr = kv.GetValueOrDefault("harmonic", ""),
+            DirsExpr    = kv.GetValueOrDefault("dirs", ""),
             Enabled     = ParseEnabledToken(tokens),
         };
         return true;

@@ -183,6 +183,7 @@ public sealed partial class FieldsBodyViewModel : ObservableObject
     // brief-paa-6 — the HB analysis whose solution gives the waves (blank: the linear solve), and its harmonic.
     [ObservableProperty] private string _waves = "";
     [ObservableProperty] private string _harmonic = "";
+    [ObservableProperty] private string _dirs = "";
 
     public static FieldsBodyViewModel From(FieldsAnalysis fa)
     {
@@ -190,7 +191,7 @@ public sealed partial class FieldsBodyViewModel : ObservableObject
         {
             Block = fa.Block, Freq = fa.AtEveryFrequency ? AllFrequencies : fa.FreqExpr, FreqUnit = fa.FreqUnit,
             Norm = fa.PerAvailable ? FieldsAnalysis.NormAvailable : FieldsAnalysis.NormAccepted, Average = fa.Average,
-            Waves = fa.Waves, Harmonic = fa.HarmonicExpr,
+            Waves = fa.Waves, Harmonic = fa.HarmonicExpr, Dirs = fa.DirsExpr,
         };
         body.SetDrives(fa.DriveExpr, fa.WeightsExpr);
         return body;
@@ -206,6 +207,6 @@ public sealed partial class FieldsBodyViewModel : ObservableObject
         DriveExpr = string.Join(",", Drives.Select(ValueOf)),
         WeightsExpr = Drives.Any(r => r.Weight.Trim().Length > 0) ? string.Join(",", Drives.Select(r => r.Weight.Trim())) : "",
         Norm = Norm, AverageExpr = Average ? "yes" : "no",
-        Waves = Waves.Trim(), HarmonicExpr = Harmonic.Trim(),
+        Waves = Waves.Trim(), HarmonicExpr = Harmonic.Trim(), DirsExpr = Dirs.Trim(),
     };
 }

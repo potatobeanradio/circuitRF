@@ -82,11 +82,16 @@ public sealed class RationalSnpModel : ComponentModel
     public override int PortCount => _n;
     public override ModelKind Kind => ModelKind.Linear;
 
+    /// <summary>brief-paa-6b — each port's branch row as the last stamp numbered it, as <see cref="SnpModel.PortBranchIndices"/>.</summary>
+    public int[] PortBranchIndices => _branches;
+    private int[] _branches = [];
+
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
         int n = _n, rf = c.ReferenceNode;
         var s = new Complex(0, omega);
         var I = new int[n];
+        _branches = I;
         for (int k = 0; k < n; k++)
         {
             I[k] = mna.AddBranch();

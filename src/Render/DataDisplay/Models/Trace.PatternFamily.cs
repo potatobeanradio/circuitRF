@@ -13,10 +13,11 @@ namespace CircuitRF.Render.DataDisplay
     {
         /// <summary>A family along an angle whose curves are values of something else. A family over φ is the whole pattern, one quantity, and trials are drawn as a cloud.
         /// brief-paa-6 R-paa6-4 — and a family over an array's elements, whatever runs along it: each curve is one amplifier's locus (its active reflection against
-        /// a swept steer, on a Smith chart or over a loadpull contour), and the loci cross, so each is told apart by colour and named by its element.</summary>
+        /// a swept steer, on a Smith chart or over a loadpull contour), and the loci cross, so each is told apart by colour and named by its element. And
+        /// (brief-paa-6b) a family over the named directions of a radiated envelope, whose spectra and metrics are compared direction against direction.</summary>
         public bool LabelsFamilyCurves =>
             IsFamily && FamilyCurves.Count > 0 && FamilyAxisName is { } family && family != Evaluator.TrialAxis
-            && (family == ElementAxis
+            && (family is ElementAxis or DirectionAxis
                 || _cubeXAxisName is { } x && PolarPatternAngle.TryDegreesPerUnit(x, _cubeXUnit, out _)
                    && !IsPatternAngle(family));
 
@@ -26,6 +27,9 @@ namespace CircuitRF.Render.DataDisplay
 
         /// <summary>The axis an array's per-element cubes run over (a fields analysis's <c>array</c> group): element 1 to N.</summary>
         public const string ElementAxis = "element";
+
+        /// <summary>brief-paa-6b — the axis a fields analysis's radiated envelopes run over: one named direction each, whose spectra and metrics cross.</summary>
+        public const string DirectionAxis = "direction";
 
         /// <summary>The curve's colour: the trace's own first, then the colour wheel on from it, so a back branch authored from the same colour matches curve for curve.</summary>
         public SKColor FamilyCurveColor(int curve)

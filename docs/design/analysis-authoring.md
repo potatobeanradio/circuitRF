@@ -91,6 +91,13 @@ covered by existing fields.)*
 | `waves=` | `Waves` | The name of a harmonic-balance analysis of the same bench. The pattern is formed from the block's terminal voltages in that analysis's solution, with the currents from the block's own linear stamp at that frequency (I = Y·V); `drive=` and `weights=` are not read. A `parametric_sweep` around the HB analysis gives a pattern at each of its points, on the sweep's axes. Any other kind of analysis, or a multi-tone one, is refused. |
 | `harmonic=` | `HarmonicExpr` | With `waves=`: the harmonic of the solution, 1 when blank. Its frequency must be one the block's record holds, else refused naming the nearest held frequency. |
 
+| `dirs=` | `DirsExpr` | With an ENVELOPE analysis in `waves=` (brief-paa-6b): the directions the radiated envelope is formed in, at most 16, `peak` (the time-averaged pattern's maximum; the default) or `theta,phi` pairs in degrees separated by semicolons. Off the record's grid only for a Phased Antenna Array at level isolated or embedded. |
+
+`waves=` also takes an envelope analysis: the radiated envelope in each direction (`F1.radiated.Etheta/Ephi/EIRP_t_dBm` over time,
+and the PSD, ACLR, PAPR, CCDF and EVM of its Ludwig-3 co-polar component, computed by the envelope's own per-IProbe code), each
+element's active reflection and delivered power at every step (`F1.array.*` over `[time, element]`, with `_avg` cubes), and the
+power-averaged pattern `F1.farfield.U`. A multi-fundamental envelope is refused.
+
 With `waves=` the analysis needs no `freq=` (the directive requires one of the two). The array group (`F1.array.*`) gains
 `Pdel`, the watts the circuit delivers into each element; `ActiveGamma(F1, n)` and `ActiveVswrMax(F1)` read the active
 reflections, and refuse under a sweep, naming the cube that holds them per point.

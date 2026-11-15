@@ -144,6 +144,10 @@ public sealed class FieldsAnalysis(string name) : Analysis(name)
     /// <summary>brief-paa-6 R-paa6-1 — <c>harmonic=</c>: which harmonic of <see cref="Waves"/>'s solution the waves are read at; 1 when blank.</summary>
     public string HarmonicExpr { get; init; } = "";
 
+    /// <summary>brief-paa-6b — <c>dirs=</c>, with an envelope analysis in <see cref="Waves"/>: the directions the radiated envelope is formed in,
+    /// <c>peak</c> (the time-averaged pattern's maximum; the default) or <c>theta,phi</c> pairs in degrees separated by semicolons.</summary>
+    public string DirsExpr { get; init; } = "";
+
     /// <summary>Whether the waves come from a harmonic-balance solution rather than the linear solve.</summary>
     public bool FromHarmonicBalance => Waves.Trim().Length > 0;
 

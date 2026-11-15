@@ -1,0 +1,65 @@
+; brief-paa-6b - the 1x4 array bench of Array Bench.cnl driven by one modulated signal: an NR 20 MHz 64QAM carrier at 5.9 GHz from one
+; MOD_Source through an ideal 4-way Combiner into the four PhaseShifters, so every element carries one signal as a beamformer would.
+; ENV1 is an envelope run; F1 (waves=ENV1) forms the radiated envelope in the named directions, each element's active reflection over
+; the record and the time-averaged pattern. No EM run: the record is ../results/e3x.cemr, held at its 5.9 GHz across the 20 MHz band.
+
+define FET (gate drain)
+  parameters Periphery_mm=1
+  Sv = -0.837
+  Sc = 0.71
+  TV0 = 4.268
+  TC = 1.507
+  th = 0.001
+  a = 0.176
+  g = 0.089
+  lam = 0.0012
+  B = 1130
+  SDD:X1  gate  0  drain  0  I[1,0]=_v1/5000  I[2,0]=Periphery_mm*(B*TC*tanh(_v2*a*(tanh(g*(TV0 - _v1 + _v2*th + Sc*ln(exp(-(Sv - _v1)/Sc) + 1)))+1))*ln(exp(-(2*TV0 - 2*_v1 +2*_v2*th + 2*Sc*ln(exp(-(Sv - _v1)/Sc) + 1))/TC) + 1) * (_v2*lam + 1))/2
+end FET
+
+define PA (in out)
+  IProbe:Iin in  i1
+  C:Cin  i1  0  C=1.08 pF
+  L:Lm   i1  m  L=1.27 nH
+  C:Cb1  m   g  C=100 pF
+  L:Lg   g   vg L=100 nH
+  Vdc:Vg vg  0  Vdc=-3.05 V
+  C:Cgs  n7  0  C=1 pF
+  R:Rg   n7  g  R=10 Ohm
+  C:Cgd  d   g  C=0.01 pF
+  C:Cds  d   0  C=0.3 pF
+  FET:X1 g  d  Periphery_mm=1
+  L:Ld   d   vd L=2.43 nH
+  C:Cdec vd  0  C=100 pF
+  Vdc:Vd vdd 0  Vdc=48 V
+  IProbe:Idc vdd vd
+  C:Cb2  d   o  C=100 pF
+  IProbe:Iout o out
+end PA
+
+Pavg = 0
+theta0 = 30 deg
+f0 = 5.9 GHz
+
+x1 = -0.03879
+x2 = -0.01293
+x3 = 0.01293
+x4 = 0.03879
+
+MOD_Source:SRC1  s  0  Fc=f0  Pavg=Pavg dBm  Z=50 Ohm  Carrier[1]="NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=0;P=0;Seed=1"  Record=0.001  Shaping=-80
+IProbe:Isrc  s  sc
+Combiner:SPL  sc 0 s1 0 s2 0 s3 0 s4 0  N=4
+PhaseShifter:PS1  s1 0 g1 0  Phase=-steer(theta0,0,f0,x1,0)
+PhaseShifter:PS2  s2 0 g2 0  Phase=-steer(theta0,0,f0,x2,0)
+PhaseShifter:PS3  s3 0 g3 0  Phase=-steer(theta0,0,f0,x3,0)
+PhaseShifter:PS4  s4 0 g4 0  Phase=-steer(theta0,0,f0,x4,0)
+PA:PA1  g1  e1
+PA:PA2  g2  e2
+PA:PA3  g3  e3
+PA:PA4  g4  e4
+EmFieldData:EM1  e1 e2 e3 e4  File="../results/e3x.cemr"
+
+analysis ENV1 type=env Stop=40e-6 Step=auto Accuracy=standard MaxHarm=5 Segments=auto Warmup=auto Start=0 Tol=1e-6 SaveWaveforms=no
+analysis SW_Pavg type=parametric_sweep Var=Pavg Values=-8,22 Inner=ENV1
+analysis SW_theta type=parametric_sweep Var=theta0 Values=0,30 Unit=deg Inner=SW_Pavg
+analysis F1 type=fields block=EM1 waves=ENV1 dirs="peak;0,0;-30,0;60,0"

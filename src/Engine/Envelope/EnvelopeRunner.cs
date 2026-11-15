@@ -446,12 +446,7 @@ public static class EnvelopeRunner
                 nets[0].AddNoteOnce("envelope-evmsplit-nothing:" + plan.Name,
                     $"Envelope '{plan.Name}': EvmSplit=yes has nothing to split - the run has no Noise and no PhaseNoise mask - so it ran once.");
         }
-        // a run that started cold (no warm-up on its first segment) is measured after a short settle
-        double firstWarm = segs > 1 ? warm : (double.IsNaN(plan.WarmupS) ? 0 : plan.WarmupS);
-        // — except a pulse train, which starts in its off-time at the quiescent point and has nothing to settle: its
-        // Pin_avg and every probe's Pavg are then averages over the whole record, off-time included
-        double skip = firstWarm > 0 || EnvelopePulse.Of(merged) is not null
-            ? 0 : Math.Min(5e-6, 0.1 * p.StopS);
+        double skip = SettleSkip(prepared, merged);
         var ds = EnvelopeDataSet.Build(merged, plan, skip, note, quiet);
         double[] productHz = merged.MixFreqHz ?? [.. Enumerable.Range(0, merged.MaxHarm + 1).Select(k => k * merged.F0Hz)];
         EnvelopeWireTemperature.Add(ds, nets[0], merged, productHz, skip);
@@ -459,6 +454,31 @@ public static class EnvelopeRunner
         ds.Add("__EnvWarmup_s", DataCube.Scalar(warm));
         ds.Add("__EnvSeamError", DataCube.Scalar(seam));
         return ds;
+    }
+
+    /// <summary>How much of the record's start a measurement skips: a run that started cold (no warm-up on its first segment) is
+    /// measured after a short settle — except a pulse train, which starts in its off-time at the quiescent point and has nothing
+    /// to settle: its Pin_avg and every probe's Pavg are then averages over the whole record, off-time included.</summary>
+    private static double SettleSkip(Prepared prepared, EnvelopeRunResult merged)
+    {
+        var plan = prepared.Plan;
+        double firstWarm = prepared.Segments > 1 ? prepared.WarmS : (double.IsNaN(plan.WarmupS) ? 0 : plan.WarmupS);
+        return firstWarm > 0 || EnvelopePulse.Of(merged) is not null ? 0 : Math.Min(5e-6, 0.1 * plan.Params.StopS);
+    }
+
+    /// <summary>
+    /// brief-paa-6b — the stitched record itself, for a caller that measures something the run's own DataSet does not hold (a fields
+    /// analysis's radiated envelope): the record, the settle skip its measurements take, and how many fundamentals it ran on. Runs
+    /// exactly as <see cref="Run"/> does; no EvmSplit second run, whose split belongs to the run's own measurements.
+    /// </summary>
+    public static (EnvelopeRunResult Record, double SkipS, int Fundamentals) Record(Plan plan, Func<ElaboratedNetlist> elaborate,
+                                                                                   AnalysisSettings? settings = null, RunControl? control = null,
+                                                                                   Action<string>? note = null, Action<int>? beforeSimulating = null)
+    {
+        using var prepared = Prepare(plan, elaborate, note: note, settings: settings);
+        beforeSimulating?.Invoke(prepared.Fundamentals);
+        var (merged, _) = Simulate(prepared, plan.Params, settings, control, note, quiet: false);
+        return (merged, SettleSkip(prepared, merged), prepared.Fundamentals);
     }
 
     /// <summary>Runs every segment of <paramref name="prepared"/> with <paramref name="p"/> and stitches them: the record and

@@ -63,6 +63,10 @@ public sealed record EnvelopeParams
     /// <summary>Nodes an old file's retired <c>Probes</c> list names: they join the recorded voltages, which are every
     /// labeled net (brief ENV-MEAS-3).</summary>
     public string[] Probes { get; init; } = Array.Empty<string>();
+    /// <summary>brief-paa-6b — N-port blocks (instance paths) whose port branch currents are recorded beside the IProbes, as
+    /// <c>path#k</c> for port k from 1, current flowing from the port node into the block. A fields analysis with <c>waves=</c>
+    /// names its block here; nothing else does, so an ordinary run records what it always did.</summary>
+    public string[] Blocks { get; init; } = Array.Empty<string>();
     /// <summary>Signal-record offset of t = 0 (s) — lets a segment start mid-record.</summary>
     public double StartS { get; init; }
     /// <summary>Warm-up simulated before <see cref="StartS"/> and discarded (s).</summary>
@@ -127,6 +131,27 @@ public sealed class EnvelopeRunResult
     public double[]? MixFreqHz { get; init; }
     public int[][]? MixTones { get; init; }
     public List<string> Notes { get; } = new();
+
+    /// <summary>
+    /// brief-paa-6b — this record with its recorded signals replaced by <paramref name="names"/>' "branches": a current and a voltage
+    /// envelope each (<c>[step][branch][harmonic]</c>), whose ½·Re(V·I*) is the power the measurements read. No node voltage, supply
+    /// or wire is kept, so <see cref="EnvelopeDataSet.Build"/> on it measures those branches alone, with the drive, carriers and
+    /// sources of this run: how a radiated envelope gets the PSD, ACLR and EVM an IProbe gets, from the same code.
+    /// </summary>
+    public EnvelopeRunResult WithBranches(string[] names, Complex[][][] current, Complex[][][] voltage)
+    {
+        var copy = new EnvelopeRunResult
+        {
+            Time = Time, ProbeNames = [], Probe = [.. Time.Select(_ => Array.Empty<Complex[]>())], SupplyNames = [],
+            SupplyCurrent = [.. Time.Select(_ => Array.Empty<double>())], SupplyVoltage = [],
+            IProbeNames = names, IProbeCurrent = current, IProbeVoltage = voltage,
+            Drive = Drive, DriveRe = DriveRe, F0Hz = F0Hz, StepS = StepS, MaxHarm = MaxHarm, SignalRateHz = SignalRateHz, Sources = Sources,
+            WallSeconds = WallSeconds, MeanNewton = MeanNewton, JacobianBuilds = JacobianBuilds, WorstTangentError = WorstTangentError,
+            CarrierMix = CarrierMix, CarrierOffsetHz = CarrierOffsetHz, CarrierLabels = CarrierLabels,
+            ToneFreqsHz = ToneFreqsHz, MixLabels = MixLabels, MixFreqHz = MixFreqHz, MixTones = MixTones,
+        };
+        return copy;
+    }
 }
 
 public sealed class EnvelopeEngine
@@ -428,7 +453,7 @@ public sealed class EnvelopeEngine
                                                  c.Parameters.TryGetValue("Vdc", out var vv) && vv.Kind == Core.Expressions.ValueKind.Real && vv.AsReal() != 0).ToArray();
         var supplyRows = supplies.Select(c => BranchOf(c.Model)).ToArray();   // AddBranch returns the absolute MNA row
         var supplyV = supplies.Select(c => c.Parameters.TryGetValue("Vdc", out var v) && v.Kind == Core.Expressions.ValueKind.Real ? v.AsReal() : 0.0).ToArray();
-        var (iprobes, iprobeRows, iprobeNodes) = IProbesOf(_nl);
+        var (iprobes, iprobeRows, iprobeNodes) = IProbesOf(_nl, p.Blocks);
         var (wbonds, wbondRows) = EnvelopeWireTemperature.Rows(_nl);
         var probeIf = DeviceOnlyInterfaceIndexOf(_nl, probeNodes, ifNodes);
 
@@ -719,12 +744,38 @@ public sealed class EnvelopeEngine
     /// node's row in the state vector (−1 at ground). Read after the products are stamped: the branch row is the one
     /// the last full stamp gave it.
     /// </summary>
-    internal static (string[] names, int[] rows, int[] nodes) IProbesOf(ElaboratedNetlist nl)
+    internal static (string[] names, int[] rows, int[] nodes) IProbesOf(ElaboratedNetlist nl, IReadOnlyList<string>? blocks = null)
     {
         var ps = nl.Components.Where(c => c.Model is IProbeModel { LastBranchIndex: >= 0 } && c.Nodes.Length >= 2).ToArray();
-        return ([.. ps.Select(c => c.InstancePath)], [.. ps.Select(c => ((IProbeModel)c.Model).LastBranchIndex)],
-                [.. ps.Select(c => c.Nodes[0] - 1)]);
+        var names = ps.Select(c => c.InstancePath).ToList();
+        var rows = ps.Select(c => ((IProbeModel)c.Model).LastBranchIndex).ToList();
+        var nodes = ps.Select(c => c.Nodes[0] - 1).ToList();
+        // brief-paa-6b — a named block's ports, by the rows its last stamp gave its port branches
+        foreach (string path in blocks ?? [])
+        {
+            var ec = nl.Components.FirstOrDefault(c => string.Equals(c.InstancePath, path, StringComparison.Ordinal))
+                     ?? throw new InvalidOperationException($"envelope: the circuit has no instance '{path}' to record.");
+            int[] branch = BlockPortBranches(ec)
+                           ?? throw new InvalidOperationException($"envelope: '{path}' is a {ec.ComponentType}, whose port currents are not branches the run can record.");
+            for (int k = 0; k < branch.Length; k++)
+            {
+                names.Add($"{path}#{k + 1}");
+                rows.Add(branch[k]);
+                nodes.Add(ec.Nodes[k] - 1);
+            }
+        }
+        return ([.. names], [.. rows], [.. nodes]);
     }
+
+    /// <summary>The port branch rows of an N-port block as its last stamp numbered them: an SnP (or its envelope fit), or a Phased
+    /// Antenna Array's pins. Null for anything else.</summary>
+    internal static int[]? BlockPortBranches(ElaboratedComponent ec) => ec.Model switch
+    {
+        SnpModel { Inverse: false } s => s.PortBranchIndices,
+        RationalSnpModel r => r.PortBranchIndices,
+        PhasedArrayModel pa => pa.PortBranchIndices,
+        _ => null,
+    };
 
     /// <summary>
     /// Each phase-noisy CW source's own share of a product's static right-hand side, appended to <paramref name="bUnit"/>
