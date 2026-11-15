@@ -408,6 +408,37 @@ public sealed class ComparisonTests
         }
     }
 
+    /// <summary>The two variants compare on their own specs too: an unequal split's K and a multi-section divider's Band
+    /// are what its artwork was drawn from, so another value in the schematic is one property finding naming it.</summary>
+    [Theory]
+    [InlineData("F8b-wilkinson-unequal", "K", "2")]
+    [InlineData("F8c-wilkinson-sections", "Band", "3")]
+    public void AWilkinsonVariantComparesCleanAndASpecMismatchIsAFinding(string design, string spec, string other)
+    {
+        string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-wpdv-" + Guid.NewGuid().ToString("N")[..12]);
+        try
+        {
+            var p = SchematicSync.SdlChecker.Prepare(design, scratch);
+            var layout = p.Applied(p.Plan());
+            Assert.Empty(SchematicSync.SdlChecker.Verify(p, layout));
+            Assert.DoesNotContain(LvsRun.Run(p.CellDir).Findings, f => f.Severity == DiagnosticSeverity.Error);
+
+            var divider = p.Model.Components.Single(c => c.InstanceName == "WPD1");
+            if (divider.Parameters.SingleOrDefault(q => q.Name == spec) is { } row) row.Expression = other;
+            else divider.Parameters.Add(new EditableParameter { Name = spec, Expression = other });
+            SchematicPersistence.SaveToFile(p.SchematicPath, p.Model, Path.GetFileNameWithoutExtension(p.SchematicPath));
+
+            var errors = LvsRun.Run(p.CellDir).Findings.Where(f => f.Severity == DiagnosticSeverity.Error).ToList();
+            var mismatch = Assert.Single(errors);
+            Assert.Equal("lvs.property.mismatch", mismatch.Id);
+            Assert.Equal(spec, mismatch.Diagnostic.Arguments["name"]);
+        }
+        finally
+        {
+            try { Directory.Delete(scratch, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
     // ── hand-built netlists ───────────────────────────────────────────────────────────────────
 
     /// <summary>
