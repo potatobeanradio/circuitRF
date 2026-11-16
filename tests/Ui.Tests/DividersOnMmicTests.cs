@@ -10,19 +10,22 @@ using Xunit;
 namespace CircuitRF.Ui.Tests;
 
 /// <summary>
-/// The Gysel, Bagley and tee dividers on the shipped GaAs MMIC technology (mmic-GaAs_2LM_100um): 100 µm of εr 12.9 under
-/// gold. The stackup's substrate, as the generator and the model read it, plans each part at 10 GHz; the cell draws with
-/// no refusal, and the circuit model divides from a matched input.
+/// The Gysel, Bagley and tee dividers on the shipped MMIC and RFIC technologies (mmic-GaAs_2LM_100um, 100 µm of εr 12.9
+/// under gold; rfic-Si_3LM_TFR_100um). The stackup's substrate, as the generator and the model read it, plans each part
+/// at 10 GHz; the cell draws with no refusal, and the circuit model divides from a matched input.
 /// </summary>
 public class DividersOnMmicTests
 {
     [Theory]
-    [InlineData("MGPD", 3)]
-    [InlineData("MBPD", 4)]
-    [InlineData("MTPD", 3)]
-    public void TheDivider_PlansDrawsAndDividesOnGaAs(string kind, int ports)
+    [InlineData("mmic-GaAs_2LM_100um", "MGPD", 3)]
+    [InlineData("mmic-GaAs_2LM_100um", "MBPD", 4)]
+    [InlineData("mmic-GaAs_2LM_100um", "MTPD", 3)]
+    [InlineData("rfic-Si_3LM_TFR_100um", "MGPD", 3)]
+    [InlineData("rfic-Si_3LM_TFR_100um", "MBPD", 4)]
+    [InlineData("rfic-Si_3LM_TFR_100um", "MTPD", 3)]
+    public void TheDivider_PlansDrawsAndDividesOnAChip(string technology, string kind, int ports)
     {
-        var tech = ShippedTechnologies.Load("mmic-GaAs_2LM_100um");
+        var tech = ShippedTechnologies.Load(technology);
         var (s, _, _) = SubstrateResolver.ResolveElectrical(tech, PCellLayerSelection.Default);
         Assert.NotNull(s);
 
