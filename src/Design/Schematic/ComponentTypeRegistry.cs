@@ -799,6 +799,13 @@ public static class ComponentTypeRegistry
             SearchTerms: ["MCLIN", "coupled microstrip", "edge coupled", "coupled lines", "coupled line",
                           "coupler", "directional coupler", "even mode", "odd mode", "Kirschning", "Jansen"],
             ExtraCategories: [ComponentCategory.TransmissionLine]),
+        // MCLINN — N coupled microstrip lines, every strip coupled to every other (the field-solved cross-section).
+        [SymbolKind.MCLineN]       = new("MCLINN", "MCLN",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MCLINN", "coupled microstrip", "coupled lines", "multiconductor", "multi-conductor",
+                          "N coupled lines", "three coupled lines", "interdigital", "combline", "coupled array",
+                          "field solver"],
+            ExtraCategories: [ComponentCategory.TransmissionLine]),
         // MBCLIN — broadside-coupled microstrip: one strip buried, one above it, a single ground.
         [SymbolKind.MBCLine]       = new("MBCLIN", "MBCL",
             Category: ComponentCategory.Microstrip,
@@ -1007,6 +1014,8 @@ public static class ComponentTypeRegistry
         SymbolKind.Switch or SymbolKind.SwitchD              => "Throws",
         // N paths and the common port: N + 1 pins, generated from N as the boxes' are from NumPorts.
         SymbolKind.Combiner                                  => "N",
+        // N coupled strips: each strip's two ends, 2·N pins generated from N.
+        SymbolKind.MCLineN                                   => "N",
         // brief-paa-3 — one pin per element in Elements mode: the product of two parameters, named as such.
         SymbolKind.PhasedArray                               => "Rows × Cols",
         // A wBond's terminals are 2 per wire array it places, plus the reference pin when RefPin is
@@ -1054,6 +1063,10 @@ public static class ComponentTypeRegistry
             "Terminals 1 and 2 are the two ends of one line, 3 and 4 the two ends of the other; 3 sits "
           + "beside 1 and 4 beside 2. Driving 1 of a matched pair, 2 is the through port, 3 the "
           + "coupled port and 4 the isolated port.",
+
+        SymbolKind.MCLineN =>
+            "Terminals 1 to N are the strips' near ends, top strip first, and N + 1 to 2N their far ends, so strip k "
+          + "runs from terminal k to terminal N + k and N sets how many there are.",
 
         SymbolKind.Atten or SymbolKind.Filter or SymbolKind.Delay or SymbolKind.PhaseShifter =>
             "The two terminals are interchangeable — this block is symmetric, and its parameters "
@@ -1311,6 +1324,7 @@ public static class ComponentTypeRegistry
         SymbolKind.MCLine        => "MCLIN",
         SymbolKind.BCLine        => "BCLIN",
         SymbolKind.MBCLine       => "MBCLIN",
+        SymbolKind.MCLineN       => MicrostripMultiLineModel.TypeName,
         SymbolKind.Match         => "Match",
         // All three tuner tiles place the identical engine component.
         SymbolKind.Tuner         => "Tuner",
@@ -1504,7 +1518,7 @@ public static class ComponentTypeRegistry
         or SymbolKind.ZPort or SymbolKind.Snp or SymbolKind.EmFieldData or SymbolKind.VerilogA
         or SymbolKind.Tline or SymbolKind.Mlin or SymbolKind.MBend or SymbolKind.MCurve or SymbolKind.MTee or SymbolKind.MCross
         or SymbolKind.Mtaper or SymbolKind.Mklopf or SymbolKind.MMiter or SymbolKind.MGap or SymbolKind.Cpwg or SymbolKind.Slin
-        or SymbolKind.CLine or SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine
+        or SymbolKind.CLine or SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine or SymbolKind.MCLineN
         or SymbolKind.Via or SymbolKind.ViaGnd or SymbolKind.WBond or SymbolKind.Match
         or SymbolKind.MimCap or SymbolKind.Spiral or SymbolKind.OctSpiral or SymbolKind.Tfr or SymbolKind.Airbridge
         or SymbolKind.TestPad or SymbolKind.GsgPad or SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
@@ -1825,6 +1839,11 @@ public static class ComponentTypeRegistry
           + "reference planes at F. MTEE's closed forms are calibrated at εr 9.9 and say so on any other board; "
           + "MCURVE's effective radius is stated for 3W to 7W. With Corner = Miter or Square each curve is two MMITER or "
           + "MBEND corners and an MLIN side, with those parts' validity.",
+        SymbolKind.MCLineN =>
+            "Quasi-static: the cross-section's C and C0 from circuitRF's 2D field solver (within about 0.5 % for strips "
+          + "with thickness), L from C0, and the line's modes from L·C, each at its own velocity; every strip couples to "
+          + "every other. Solved once per geometry, with no dispersion, so past a cross-section of a tenth of the "
+          + "wavelength it says so. Conductor loss is MLIN's per strip, dielectric loss its filling-factor form.",
         SymbolKind.Mclc =>
             "MCLIN, the pair the layout draws: Kirschning-Jansen even and odd modes (0.1 <= W/H, S/H <= 10, er <= 18), "
           + "each mode at its own velocity. W and S are synthesised for Coupling and Z0 at F, L is a quarter wave in the "
@@ -1998,6 +2017,15 @@ public static class ComponentTypeRegistry
                                       + "published model covers S/H from 0.1 to 10.",
             (SymbolKind.MCLine, "L") => "Length of the coupled section. Coupling peaks where it is a quarter "
                                       + "wavelength, between the even and odd modes' own.",
+            (SymbolKind.MCLineN, "N") => "Strips, two or more. The pins follow it: the near ends 1 to N, then the far "
+                                      + "ends N + 1 to 2N.",
+            (SymbolKind.MCLineN, "W") => "Width of every strip that does not state its own W[k].",
+            (SymbolKind.MCLineN, "S") => "Edge-to-edge gap between every two strips that do not state their own S[k].",
+            (SymbolKind.MCLineN, "L") => "Length of the coupled section, every strip's.",
+            (SymbolKind.MCLineN, var p) when p.StartsWith("W[", StringComparison.Ordinal) =>
+                                         "Strip k's own width; strip 1 is the top one, at pins 1 and N + 1.",
+            (SymbolKind.MCLineN, var p) when p.StartsWith("S[", StringComparison.Ordinal) =>
+                                         "The gap below strip k, between strips k and k + 1.",
             (SymbolKind.BCLine or SymbolKind.MBCLine, "W") => "Width of each strip (both the same).",
             (SymbolKind.BCLine or SymbolKind.MBCLine, "O") => "Lateral offset between the strips' centres. 0 puts "
                                       + "one directly over the other (tightest coupling); the coupling falls as it grows.",
@@ -3876,6 +3904,14 @@ public static class ComponentTypeRegistry
             // from the technology at extraction, never a declared parameter. 2.9 mm / 0.5 mm is the
             // FR-4 baseline; MicrostripSubstrateInjection rewrites W to the technology's 50-ohm width and
             // S to the same at placement.
+            // MCLINN: N strips, every one W wide and every gap S unless it states its own W[k] or S[k] (added as rows,
+            // as the Combiner's IL[k] are), and L; the substrate and the placement widths as MCLIN's.
+            case SymbolKind.MCLineN:
+                return [new("N", "3",   "",   true, UnitDimension.None),
+                        new("W", "2.9", "mm", true, UnitDimension.Length),
+                        new("S", "0.5", "mm", true, UnitDimension.Length),
+                        new("L", "10",  "mm", true, UnitDimension.Length),
+                        .. SignalGroundLayerParams];
             case SymbolKind.MCLine:
                 return [new("W", "2.9", "mm", true, UnitDimension.Length),
                         new("S", "0.5", "mm", true, UnitDimension.Length),
@@ -4216,6 +4252,8 @@ public static class ComponentTypeRegistry
             case "BCL":    kind = SymbolKind.BCLine;       return true;
             case "MBCLIN":
             case "MBCL":   kind = SymbolKind.MBCLine;      return true;
+            case "MCLINN":
+            case "MCLN":   kind = SymbolKind.MCLineN;      return true;
             case "MATCH":
             case "MN":     kind = SymbolKind.Match;        return true;
             case "TUNER":  kind = SymbolKind.Tuner;         return true;

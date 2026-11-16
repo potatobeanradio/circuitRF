@@ -249,7 +249,8 @@ public class LibraryCatalogTests
         // line and not here. brief-dfr26-7 adds TESTPAD, a via ending on a round test-point pad, and the
         // review series GSGPAD, a ground-signal-ground probe pad on an MLIN. brief-sdl-9 adds MGAP, the
         // end-to-end gap between two lines. The RF passives add MWPD, the Wilkinson divider, the hybrids MBLC and
-        // MRRC, and MCLC, MIDC and MCBL, the coupled-line coupler, the interdigitated coupler and the coupled-line balun.
+        // MRRC, and MCLC, MIDC and MCBL, the coupled-line coupler, the interdigitated coupler and the coupled-line balun;
+        // and MCLINN, N coupled microstrip lines.
         var kinds = LibraryCatalog.ByCategory(ComponentCategory.Microstrip).Select(i => i.Kind).ToList();
         Assert.Contains(SymbolKind.Mlin, kinds);
         Assert.Contains(SymbolKind.MBend, kinds);
@@ -272,8 +273,9 @@ public class LibraryCatalogTests
         Assert.Contains(SymbolKind.Mclc, kinds);
         Assert.Contains(SymbolKind.Midc, kinds);
         Assert.Contains(SymbolKind.Mcbl, kinds);
+        Assert.Contains(SymbolKind.MCLineN, kinds);
         Assert.DoesNotContain(SymbolKind.BCLine, kinds);
-        Assert.Equal(21, kinds.Count);
+        Assert.Equal(22, kinds.Count);
     }
 
     [Fact]

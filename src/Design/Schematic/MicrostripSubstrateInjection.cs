@@ -31,7 +31,7 @@ namespace CircuitRF.Design.Schematic;
 public static class MicrostripSubstrateInjection
 {
     private static readonly HashSet<SymbolKind> MicrostripKinds =
-        [SymbolKind.Mlin, SymbolKind.MCLine, SymbolKind.MBend, SymbolKind.MCurve, SymbolKind.MMiter, SymbolKind.MGap, SymbolKind.MTee, SymbolKind.MCross,
+        [SymbolKind.Mlin, SymbolKind.MCLine, SymbolKind.MCLineN, SymbolKind.MBend, SymbolKind.MCurve, SymbolKind.MMiter, SymbolKind.MGap, SymbolKind.MTee, SymbolKind.MCross,
          SymbolKind.Mtaper, SymbolKind.Mklopf, SymbolKind.GsgPad, SymbolKind.Mwpd, SymbolKind.Mblc, SymbolKind.Mrrc,
          SymbolKind.Mclc, SymbolKind.Midc, SymbolKind.Mcbl];
 
@@ -387,7 +387,7 @@ public static class MicrostripSubstrateInjection
                 bool narrowEnd = kind == SymbolKind.Mtaper && p.Name == "W2";
                 value = ConvertMmTo(targetUnit, narrowEnd ? w100Mm!.Value : w50Mm.Value);
             }
-            else if (kind == SymbolKind.MCLine && p.Name == "S" && w50Mm is not null)
+            else if (kind is SymbolKind.MCLine or SymbolKind.MCLineN && p.Name == "S" && w50Mm is not null)
             {
                 // The gap starts at the strip's own width (S = W) on THIS technology: a loose, ordinary
                 // starting coupling rather than a millimetre baseline that is absurd on a thin substrate.

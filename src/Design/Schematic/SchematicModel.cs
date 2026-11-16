@@ -724,6 +724,11 @@ public enum SymbolKind
     /// Gap between its two quarter-wave sections (MarchandBalunPlan). Pins 1 unbalanced, 2 and 3 balanced, G2 and G3 the
     /// strips' grounded ends — for ordinary vias to ground, not part of the part.</summary>
     Mcbl,
+    /// <summary>N coupled microstrip lines (engine "MCLINN"): N strips with a width W (or W[k]) each and a gap S (or S[k])
+    /// between each two, all of length L, every strip coupled to every other through the cross-section's own C and L
+    /// matrices. 2·N pins: the near ends 1..N, top strip first, then the far ends N + 1..2N. The substrate as MCLIN's.
+    /// Appended so no existing kind's ordinal moves.</summary>
+    MCLineN,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

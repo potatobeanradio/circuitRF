@@ -166,6 +166,7 @@ public static class BuiltInSymbols
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _combinerCache = new();
     // MWPD per section count above one (one section is _mwpd), keyed by N; Primitives takes its PIN count.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mwpdCache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mclineNCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<PhasedArrayGlyph, Symbol> _phasedArrayCache = new();
     // Tuner-family cache key: (kind, showBias) — per-instance bias-branch variant.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(SymbolKind, bool), Symbol> _tunerCache = new();
@@ -249,6 +250,9 @@ public static class BuiltInSymbols
             case SymbolKind.MCLine:     return _mcline;
             case SymbolKind.BCLine:     return _bcline;
             case SymbolKind.MBCLine:    return _mbcline;
+            case SymbolKind.MCLineN:
+                return _mclineNCache.GetOrAdd(CircuitRF.Core.Devices.MicrostripMultiLineModel.StripsForPinCount(portCount),
+                                              BuildMCLineN);
             case SymbolKind.Match:      return _match;
             case SymbolKind.Mlin:       return _mlin;
             case SymbolKind.Cpwg:       return _cpwg;
@@ -1745,6 +1749,23 @@ public static class BuiltInSymbols
         Txt("3", -150,  130, fontSize: MixerPortFontSize),
         Txt("4",  150,  130, fontSize: MixerPortFontSize),
     ], SymbolKind.MCLine);
+
+    // MCLINN — N strips side by side at MCLIN's pitch, each lead fanning in from its pin to its strip's end: near ends
+    // 1..N at the left, far ends N + 1..2N at the right. VARIADIC on N, cached per N.
+    private static Symbol BuildMCLineN(int n)
+    {
+        var prims = new List<SymbolPrimitive>();
+        for (int k = 1; k <= n; k++)
+        {
+            float yp = (2 * k - n - 1) * 100, ys = (2 * k - n - 1) * 25;
+            prims.Add(PLine(-200, yp, -160, yp, -115, ys));
+            prims.Add(PLine( 200, yp,  160, yp,  115, ys));
+            prims.Add(RRect(0, ys, 230, 30, 8));
+            prims.Add(Txt($"{k}", -180, yp - 25, fontSize: MixerPortFontSize));
+            prims.Add(Txt($"{n + k}", 180, yp - 25, fontSize: MixerPortFontSize));
+        }
+        return Sym(prims, SymbolKind.MCLineN, 2 * n);
+    }
 
     // BCLIN — two strips on different layers, offset from each other, with a ground plane drawn above
     // and below them: the broadside stripline pair.

@@ -122,6 +122,7 @@ public sealed class PCellGeneratorVersioningTests : IDisposable
             { "MCBL",      (1, "cefcafc181b85284") },
             { "MCLC",      (1, "25dafe68ff776235") },
             { "MCLIN",     (1, "488d1a069953cc52") },
+            { "MCLINN",    (1, "8d148399ac3ceffa") },
             { "MCROSS",    (1, "f1a45766bd0cf635") },
             { "MCURVE",    (3, "6804e6ddbbae6c36") },
             { "MGAP",      (1, "172ae1178f52e588") },

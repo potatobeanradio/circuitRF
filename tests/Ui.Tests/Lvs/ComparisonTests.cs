@@ -441,11 +441,13 @@ public sealed class ComparisonTests
         }
     }
 
-    /// <summary>The hybrids (MBLC, MRRC) as Update Layout places them compare clean, and a spec changed on the
-    /// schematic afterwards is exactly one property mismatch naming it.</summary>
+    /// <summary>The hybrids (MBLC, MRRC), and N coupled lines (MCLINN) with one strip of its own width, as Update Layout
+    /// places them compare clean, and a spec changed on the schematic afterwards is exactly one property mismatch naming
+    /// it.</summary>
     [Theory]
     [InlineData("F9-branch-line-hybrid", "BLC1", "N", "1")]
     [InlineData("F10-rat-race-hybrid", "RRC1", "F", "2.5")]
+    [InlineData("F14-coupled-lines", "CLN1", "W[2]", "1.5")]
     public void AHybridComparesCleanAndASpecMismatchIsAFinding(string design, string instance, string spec, string changed)
     {
         string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-hyb-" + Guid.NewGuid().ToString("N")[..12]);

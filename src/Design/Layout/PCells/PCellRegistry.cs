@@ -20,6 +20,8 @@ public static class PCellRegistry
             { CoupledLinePCells.McLinId,  CoupledLinePCells.GenerateMclin  },
             { CoupledLinePCells.BcLinId,  CoupledLinePCells.GenerateBclin  },
             { CoupledLinePCells.MbcLinId, CoupledLinePCells.GenerateMbclin },
+            // N coupled strips (MCLINN): one N-line section, each strip MLIN's.
+            { PassivePlanPCells.CoupledStripsId, PassivePlanPCells.GenerateCoupledStrips },
             { "MBEND",  MBendPCell.Generate  },
             { MCurvePCell.GeneratorId, MCurvePCell.Generate },
             { MMiterPCell.GeneratorId, MMiterPCell.Generate },
