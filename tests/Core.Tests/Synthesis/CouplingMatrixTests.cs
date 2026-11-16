@@ -65,6 +65,7 @@ public sealed class CouplingMatrixTests
     {
         { 4, 22, [1.3217, 1.8082], 1e-9 },                 // 4–2 asymmetric, the published example
         { 6, 20, [-1.5, 1.5], 1e-9 },                      // 6–2 symmetric
+        { 4, 9.636, [-2.0, 2.0], 1e-9 },                   // 4–2 mirror zeros, the cross-coupled square's
         { 4, 22, [-3.7431, -1.8051, 1.5699, 6.1910], 1e-9 }, // 4–4 fully canonical (Cameron 2003)
         { 5, 25, [], 1e-9 },                               // all-pole
         // Two poles 1e-3 apart near the band edge: the residues lose digits (CouplingMatrix.Transversal).

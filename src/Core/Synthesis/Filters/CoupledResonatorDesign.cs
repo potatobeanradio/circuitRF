@@ -122,25 +122,30 @@ public static class CoupledResonatorDesign
     /// shift of the pair's mean, √(f1·f2), from the lone resonator's, and a feed by half the shift of a resonator fed at
     /// both ends, so the middle resonators of loops come out smaller than the end ones.</item>
     /// </list>
-    /// Only adjacent couplings are realised (an inline row); a non-zero k_ij further apart is refused. Returns the
-    /// stored values: <paramref name="form"/>'s, plus N, L_k, the gaps and Tap.
+    /// An inline row realises adjacent couplings only. Open loops with <c>Arrangement</c> = <c>Cross</c> (N = 4) add
+    /// k(1,4) across <c>Sx</c>, and measure the square's own pairs, 2-3 back to back (S3) and 1-4 across their openings
+    /// (Sx), in the square itself, its other two loops shortened to 0.6·l (near 1.7·f0, out of the window) and its other
+    /// gaps 5·h, so the split and the mean are the pair's own. Only |k| is realised: the square's geometry sets each
+    /// sign. Any other non-zero k_ij further apart is refused. Returns the stored values: <paramref name="form"/>'s, plus
+    /// N, L_k, the gaps (and Sx) and Tap.
     /// </summary>
     public static Dictionary<string, object> FromCouplings(IReadOnlyDictionary<string, object> form, double[,] k, double qe,
         double fHz, MicrostripSubstrate s)
     {
         int n = k.GetLength(0);
+        bool cross = form.GetValueOrDefault("Arrangement") is "Cross";
         for (int i = 0; i < n; i++)
             for (int j = i + 2; j < n; j++)
-                if (k[i, j] != 0.0 || k[j, i] != 0.0)
+                if ((k[i, j] != 0.0 || k[j, i] != 0.0) && !(cross && i == 0 && j == n - 1))
                     throw Refusal("cross-coupling", "k({i},{j}) = {k} couples resonators that do not sit side by side; an "
-                      + "inline row realises adjacent couplings only, and a cross-coupled arrangement is not built here.",
+                      + "inline row realises adjacent couplings only, and the cross-coupled square adds k(1,4) alone.",
                         ("i", i + 1), ("j", j + 1), ("k", k[i, j] != 0.0 ? k[i, j] : k[j, i]));
         s = Lossless(s);
         double w = (double)form["W"], h = s.HMeters, light = 3.0 * h;
         bool tapped = form.TryGetValue("Feed", out var feed) && feed is "Tapped";
         PassivePlan Build(int count, double l, params (string Key, object Value)[] more)
         {
-            var d = new Dictionary<string, object>(form) { ["N"] = (double)count, ["L"] = l };
+            var d = new Dictionary<string, object>(form) { ["N"] = (double)count, ["L"] = l, ["Arrangement"] = "Inline" };
             foreach (var (key, value) in more) d[key] = value;
             return CoupledResonatorPlan.Build(Spec(d), s);
         }
@@ -155,15 +160,25 @@ public static class CoupledResonatorDesign
         }
         lone = Peaks(Build(1, l, Light(1)), s, 1, 0.5 * fHz, 1.5 * fHz)[0];
 
-        // 2. The gaps from the pair's split.
-        var pairs = new Dictionary<double, double[]>();
-        double[] Pair(double gap) => pairs.TryGetValue(gap, out var f) ? f
-            : pairs[gap] = Peaks(Build(2, l, [.. Light(2), ("S2", gap)]), s, 2, 0.5 * lone, 1.5 * lone);
-        double Split(double gap) { var f = Pair(gap); return (f[1] * f[1] - f[0] * f[0]) / (f[1] * f[1] + f[0] * f[0]); }
+        // 2. The gaps from the pair's split: two in a row, or one of the cross square's own pairs in the square.
+        var pairs = new Dictionary<(string, double), double[]>();
+        double[] Pair(string key, double gap)
+        {
+            bool square = cross && key is "S3" or "Sx";
+            if (pairs.TryGetValue((square ? key : "", gap), out var f)) return f;
+            var plan = !square ? Build(2, l, [.. Light(2), ("S2", gap)])
+                : Build(4, l, [.. Light(4), ("Arrangement", "Cross"), ("S2", 5.0 * h), ("S3", 5.0 * h), ("S4", 5.0 * h),
+                    ("Sx", 5.0 * h), (key, gap), .. Enumerable.Range(1, 4)
+                        .Select(i => ($"L{i}", (object)((i is 1 or 4) == (key == "Sx") ? l : 0.6 * l)))]);
+            return pairs[(square ? key : "", gap)] = Peaks(plan, s, 2, 0.5 * lone, 1.5 * lone);
+        }
+        static double Split(double[] f) => (f[1] * f[1] - f[0] * f[0]) / (f[1] * f[1] + f[0] * f[0]);
+        var sides = Enumerable.Range(1, n - 1).Select(i => (I: i, J: i + 1, Key: $"S{i + 1}")).ToList();
+        if (cross) sides.Add((1, n, "Sx"));
         var v = new Dictionary<string, object>(form) { ["N"] = (double)n };
-        for (int i = 1; i < n; i++)
-            v[$"S{i + 1}"] = PassivePlan.OnGrid(Solve(Split, k[i - 1, i], 0.1 * h, 5.0 * h, log: true,
-                $"k({i},{i + 1}) = {k[i - 1, i]:G3}"));
+        foreach (var (i, j, key) in sides)
+            v[key] = PassivePlan.OnGrid(Solve(gap => Split(Pair(key, gap)), Math.Abs(k[i - 1, j - 1]), 0.1 * h, 5.0 * h,
+                log: true, $"k({i},{j}) = {k[i - 1, j - 1]:G3}"));
 
         // 3. The feed from one resonator's group delay.
         // A feed so heavy that the resonance drowns in the direct path between the taps counts as Qe = 0.
@@ -172,13 +187,14 @@ public static class CoupledResonatorDesign
         if (tapped)
         {
             // The tap runs from the midpoint along a free stretch: a hairpin's end section, or a loop's side opposite
-            // its opening and, in an odd row, on round the corner up the outer side, the corner skipped (an even row's
-            // last loop has its coupled side there).
+            // its opening and, in an odd row or the square, on round the corner along the outer side, the corner
+            // skipped (an even row's last loop has its coupled side there).
             double tap, arm = new PlanBend([1, 2], 0, 0, 0, w, 90.0, PlanBend.MiterFor(PlanCorner.Miter, w, s)).Arm;
             if (form["Shape"] is "OpenLoop")
             {
                 double side = (l + (double)form["Gap"]) / 4.0;
-                double a = side / 2.0 - arm - w, b = side / 2.0 + arm + w, c = n % 2 == 1 ? 1.5 * side - arm - w : b;
+                double a = side / 2.0 - arm - w, b = side / 2.0 + arm + w;
+                double c = n % 2 == 1 || cross ? 1.5 * side - arm - w : b;
                 double Tap(double u) => u <= a ? u : u - a + b;
                 tap = Tap(Solve(u => Qe(Build(1, l, ("Tap", PassivePlan.OnGrid(Tap(u))))), qe, w, a + c - b, log: false,
                     $"Qe = {qe:G3}"));
@@ -206,8 +222,8 @@ public static class CoupledResonatorDesign
         for (int i = 1; i <= n; i++)
         {
             double f = lone + (i == 1 ? byFeed : 0.0) + (i == n ? byFeed : 0.0);
-            foreach (int j in new[] { i, i + 1 })   // gaps S_i and S_(i+1), where there is a resonator beyond
-                if (j >= 2 && j <= n) { var pair = Pair((double)v[$"S{j}"]); f += Math.Sqrt(pair[0] * pair[1]) - lone; }
+            foreach (var (a, b, key) in sides)
+                if (a == i || b == i) { var pair = Pair(key, (double)v[key]); f += Math.Sqrt(pair[0] * pair[1]) - lone; }
             v[$"L{i}"] = PassivePlan.OnGrid(l * f / fHz);
         }
         return v;
