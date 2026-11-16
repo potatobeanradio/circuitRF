@@ -41,7 +41,7 @@ public static class PassivePlanPCells
         return Draw(design.Plan, technology, layerSelection);
     }
 
-    /// <summary>The 3 dB branch-line hybrid (MBLC): <see cref="BranchLinePlan"/>'s one or two sections.</summary>
+    /// <summary>The 3 dB branch-line hybrid (MBLC): <see cref="BranchLinePlan"/>'s one to four sections.</summary>
     public const string BranchLineId = ComponentModelFactory.BranchLineTypeName;
 
     public static PCellResult GenerateBranchLine(

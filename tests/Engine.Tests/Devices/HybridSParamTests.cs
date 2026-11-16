@@ -32,6 +32,9 @@ public class HybridSParamTests
     {
         "MBLC1" => $"MBLC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz N=1 {Sub}",
         "MBLC2" => $"MBLC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz N=2 {Sub}",
+        "MBLC3" => $"MBLC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz N=3 {Sub}",
+        "MBLC3-PTFE" => $"MBLC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz N=3 {Ptfe}",
+        "MBLC4-PTFE" => $"MBLC:H1 p1 p2 p3 p4 Z0=35 Ohm F=2.4 GHz N=4 {Ptfe}",
         "MRRC-Miter" => $"MRRC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz Corner=Miter {Sub}",
         "MRRC-Square" => $"MRRC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz Corner=Square {Sub}",
         _ => $"MRRC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz {Sub}",
@@ -41,10 +44,15 @@ public class HybridSParamTests
     {
         "MBLC1" => BranchLinePlan.Build(50.0, 2.4e9, 1, Ro4350b).Plan,
         "MBLC2" => BranchLinePlan.Build(50.0, 2.4e9, 2, Ro4350b).Plan,
+        "MBLC3" => BranchLinePlan.Build(50.0, 2.4e9, 3, Ro4350b).Plan,
         "MRRC-Miter" => RatRacePlan.Build(50.0, 2.4e9, Ro4350b, PlanCorner.Miter).Plan,
         "MRRC-Square" => RatRacePlan.Build(50.0, 2.4e9, Ro4350b, PlanCorner.Square).Plan,
         _ => RatRacePlan.Build(50.0, 2.4e9, Ro4350b).Plan,
     };
+
+    /// <summary>60 mil PTFE: thick and low εr, where the branch-line's high-impedance outer arms are wide enough not to
+    /// spend the split in conductor loss (on 20 mil RO4350B the three-section coupler's 213 Ω arms are 17 µm wide).</summary>
+    private const string Ptfe = "H=1.524e-3 T=35e-6 Er=2.2 Sigma=5.8e7 TanD=0.0009";
 
     private static ElaboratedNetlist Elaborate(string cnl)
     {
@@ -109,6 +117,8 @@ public class HybridSParamTests
     [InlineData("MBLC2", 1.2e9)]
     [InlineData("MBLC2", 2.4e9)]
     [InlineData("MBLC2", 4.8e9)]
+    [InlineData("MBLC3", 1.2e9)]
+    [InlineData("MBLC3", 2.4e9)]
     [InlineData("MRRC", 1.2e9)]
     [InlineData("MRRC", 2.4e9)]
     [InlineData("MRRC", 4.8e9)]
@@ -132,6 +142,25 @@ public class HybridSParamTests
         Assert.InRange(Db(s[2, 0]), -3.4, -3.0);
         Assert.InRange(PhaseDeg(s[1, 0], s[2, 0]), 87.0, 93.0);      // 3 lags 2 by a quarter period
     }
+
+    /// <summary>Three and four sections split 3 dB in quadrature at F, 3 behind 2, matched and isolated — on 60 mil PTFE,
+    /// where the outer arms (213 Ω for three in 50 Ω, 259 Ω for four in 35 Ω) are wide enough to carry it. On this board
+    /// three sections are matched and isolated to −43 dB; four to −21 dB, their 259 Ω arms far outside MTEE's
+    /// calibration.</summary>
+    [Theory]
+    [InlineData("MBLC3-PTFE", -40.0)]
+    [InlineData("MBLC4-PTFE", -20.0)]
+    public void MoreBranchLineSections_SplitInQuadratureAtF(string kind, double limitDb)
+    {
+        string ports = kind == "MBLC4-PTFE" ? Ports.Replace("Z=50 Ohm", "Z=35 Ohm") : Ports;
+        var s = SAt(Elaborate($"{ports}\n{Part(kind)}"), 2.4e9);
+        Assert.True(Db(s[0, 0]) < limitDb, $"|S11| {Db(s[0, 0]):F2} dB");
+        Assert.True(Db(s[3, 0]) < limitDb, $"|S41| {Db(s[3, 0]):F2} dB");
+        Assert.InRange(Db(s[1, 0]), -3.4, -3.0);
+        Assert.InRange(Db(s[2, 0]), -3.4, -3.0);
+        Assert.InRange(PhaseDeg(s[1, 0], s[2, 0]), 88.0, 92.0);
+    }
+
 
     /// <summary>With corners too: the corners' own electrical length comes out of the sides, so every spacing is still
     /// λg/4 or 3λg/4 at F. The cornered limit is set to catch it if it were not: on this board the mitred ring's |S11|,

@@ -167,7 +167,7 @@ public class HybridPlanTests
     [Theory]
     [InlineData(0.0, 2.4e9, 1.0, "device.branchline.spec-not-positive")]
     [InlineData(50.0, -1.0, 1.0, "device.branchline.spec-not-positive")]
-    [InlineData(50.0, 2.4e9, 3.0, "device.branchline.sections")]
+    [InlineData(50.0, 2.4e9, 5.0, "device.branchline.sections")]
     [InlineData(50.0, 2.4e9, 1.5, "device.branchline.sections")]
     [InlineData(50.0, 30e9, 1.0, "device.branchline.arm-too-short")]
     [InlineData(200.0, 2.4e9, 2.0, "device.branchline.width-unreachable")]
@@ -222,5 +222,43 @@ public class HybridPlanTests
         // An internal node joins two pieces; a pin ends one.
         foreach (int node in at.Keys)
             Assert.Equal(node <= plan.Pins.Count ? 1 : 2, plan.Sections.Count(s => s.Nodes.Contains(node)));
+    }
+
+    // ══ MBLC up to four sections (Levy and Lind 1968) ═══════════════════════════════════════════
+
+    /// <summary>Three sections: series arms Z0 and the closed form y2 = √(1 − 1/√2), y1 = √2·y2·(√(1 + 1/√2) − 1). Four:
+    /// the even half matched (ρ = 0) and flat (ρ' = 0) at F; both 3 dB (|B| = 1/√2) — the conditions the plan solves.</summary>
+    [Theory]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void MoreBranchLineSections_AreTheEvenOddConditions(int n)
+    {
+        var y = BranchLinePlan.ShuntAdmittances(n);
+        Assert.Equal(n + 1, y.Length);
+        Assert.Equal(y.Reverse(), y);
+        if (n == 3)
+        {
+            Assert.Equal(Math.Sqrt(1 - Math.Sqrt(0.5)), y[1], 14);
+            Assert.Equal(Math.Sqrt(2) * y[1] * (Math.Sqrt(1 + Math.Sqrt(0.5)) - 1), y[0], 14);
+        }
+        else
+        {
+            Assert.Equal(Math.Sqrt(0.5), y[1] * (2 - y[1] * y[2]), 12);
+            double h = 1e-4;
+            Assert.True(Math.Abs((BranchLinePlan.Rho(y, Math.PI / 2 + h) - BranchLinePlan.Rho(y, Math.PI / 2 - h)) / (2 * h)) < 1e-7);
+        }
+        Assert.True(Math.Abs(BranchLinePlan.Rho(y, Math.PI / 2)) < 1e-14);
+
+        // The outer arms are 4.26·Z0 (three) and 7.40·Z0 (four): on 20 mil RO4350B a 50 Ω coupler of three builds and one
+        // of four is refused (370 Ω), and on a 60 mil PTFE board a 35 Ω one of four builds (259 Ω). The plan lays them out.
+        var ptfe = new MicrostripSubstrate(1.524e-3, 35e-6, 2.2, 5.8e7, 0.0009);
+        double z0 = n == 3 ? 50.0 : 35.0;
+        var d = BranchLinePlan.Build(z0, 2.4e9, n, n == 3 ? Ro4350b : ptfe);
+        Assert.Equal(y.Select(v => z0 / v), d.Shunts.Select(a => a.Z));
+        Assert.All(d.Series, a => Assert.Equal(z0, a.Z));
+        HybridPlanTests.AssertJoined(d.Plan);
+        if (n == 4)
+            Assert.Equal("device.branchline.width-unreachable",
+                Assert.Throws<ParameterRefusalException>(() => BranchLinePlan.Build(50.0, 2.4e9, 4, Ro4350b)).Diagnostic?.Id);
     }
 }

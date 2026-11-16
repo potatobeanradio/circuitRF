@@ -705,7 +705,7 @@ public enum SymbolKind
     /// further section's resistor. Appended so no existing kind's ordinal moves.</summary>
     Mwpd,
     /// <summary>3 dB branch-line (90°) hybrid on microstrip (engine "MBLC", docs/design/rf-passives.md): specs Z0, F and
-    /// N, one or two sections; the arms and junctions are derived (BranchLinePlan). Four pins: 1 and 2 one through line,
+    /// N, one to four sections; the arms and junctions are derived (BranchLinePlan). Four pins: 1 and 2 one through line,
     /// 4 and 3 the other; driven at 1, 2 is through, 3 coupled and 4 isolated.</summary>
     Mblc,
     /// <summary>Rat-race (180°) hybrid on microstrip (engine "MRRC", docs/design/rf-passives.md): specs Z0 and F; the ring

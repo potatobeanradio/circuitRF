@@ -235,10 +235,16 @@ public class WilkinsonSParamTests
     [InlineData(2, 3.0)]
     [InlineData(3, 2.0)]
     [InlineData(3, 4.0)]
+    [InlineData(4, 2.0)]
+    [InlineData(5, 3.0)]
+    [InlineData(6, 1.5)]
+    [InlineData(7, 2.0)]
     public void OnIdealLines_TheSectionsAreMatchedAndIsolatedAtTheTransformersZeros(int n, double band)
     {
         var (z, r) = WilkinsonPlan.BroadbandSections(n, band);
-        double theta1 = Math.Acos(Math.Cos(Math.PI / (1 + band)) * (n == 2 ? Math.Sqrt(0.5) : Math.Sqrt(3.0) / 2.0));
+        // The zeros of the N-th Chebyshev polynomial mapped into the band: θ_j below π/2, their mirrors, and π/2 for odd N.
+        double[] below = [.. Enumerable.Range(1, n / 2)
+            .Select(j => Math.Acos(Math.Cos(Math.PI / (1 + band)) * Math.Cos((2 * j - 1) * Math.PI / (2.0 * n))))];
         // Junction k (from the outputs) is a/b k; junction 0 is the input.
         var b = new StringBuilder(Ports).AppendLine();
         string A(int k) => k == 1 ? "p2" : k > n ? "p1" : $"a{k}";
@@ -249,7 +255,7 @@ public class WilkinsonSParamTests
             b.AppendLine($"TLIN:TB{k} {B(k + 1)} {B(k)} Z={F(50 * z[k - 1])} Ohm E=90 deg F=1 GHz");
             b.AppendLine($"R:R{k} {A(k)} {B(k)} R={F(50 * r[k - 1])} Ohm");
         }
-        foreach (double theta in n == 2 ? new[] { theta1, Math.PI - theta1 } : [theta1, Math.PI / 2, Math.PI - theta1])
+        foreach (double theta in below.Concat(below.Select(t => Math.PI - t)).Concat(n % 2 == 1 ? [Math.PI / 2] : []))
         {
             var s = SAt(b.ToString(), 1e9 * theta / (Math.PI / 2));
             foreach (var (i, j) in new[] { (0, 0), (1, 1), (2, 2), (1, 2) })

@@ -1699,7 +1699,7 @@ public static class ComponentTypeRegistry
         (SymbolKind.Mwpd, "K") => "Split ratio: P3/P2 = K², so port 3 takes K² times the power port 2 does. 1 is the equal split; "
                                 + "any other value gives the unequal split's arms, a quarter-wave transformer at each output and "
                                 + "Z0·(K + 1/K) across R2-R3. Equal split only with N above 1.",
-        (SymbolKind.Mwpd, "N") => "Number of quarter-wave sections, 1 to 3 (a broadband multi-section divider above 1), each with its own "
+        (SymbolKind.Mwpd, "N") => "Number of quarter-wave sections, 1 to 7 (a broadband multi-section divider above 1), each with its own "
                                 + "isolation resistor. Sets the pin count, 3 + 2·N, so it must be a plain number.",
         (SymbolKind.Mwpd, "Band") => "For N above 1: the design band's upper edge over its lower, f2/f1, centred on F. The sections "
                                    + "are an equal-ripple transformer over it.",
@@ -1715,11 +1715,13 @@ public static class ComponentTypeRegistry
                                   + "is an 0402's at nominal density.",
         (SymbolKind.Mwpd, "SignalLayer") => "The conductor the divider is on. Empty: the technology's top conductor.",
         (SymbolKind.Mblc, "Z0") => "The ports' impedance. One section: series arms Z0/√2 and shunt arms Z0; two sections: "
-                                 + "series arms Z0 and shunt arms (1 + √2)·Z0, √2·Z0, (1 + √2)·Z0. Widths are derived on "
-                                 + "the technology's substrate.",
+                                 + "series arms Z0 and shunt arms (1 + √2)·Z0, √2·Z0, (1 + √2)·Z0; three and four keep the "
+                                 + "series arms at Z0, with shunt arms of 4.26·Z0 and 1.85·Z0 (three) or 7.40·Z0, 2.55·Z0 and "
+                                 + "1.99·Z0 (four) from the outside in. Widths are derived on the technology's substrate.",
         (SymbolKind.Mblc, "F") => "Centre frequency: each arm is a quarter wavelength long here, between the junctions' "
                                 + "reference planes, in the line's own effective permittivity at F.",
-        (SymbolKind.Mblc, "N") => "Sections, 1 or 2. Two sections widen the band and need a high-impedance outer arm.",
+        (SymbolKind.Mblc, "N") => "Sections, 1 to 4. More sections widen the band and need higher-impedance outer arms: "
+                                + "three need 4.26·Z0, which few boards reach, and four 7.40·Z0, which microstrip does not.",
         (SymbolKind.Mblc, "SignalLayer") => "The conductor the coupler is on. Empty: the technology's top conductor.",
         (SymbolKind.Mblc, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below the "
                                               + "signal layer.",
@@ -1816,9 +1818,9 @@ public static class ComponentTypeRegistry
         SymbolKind.Mblc =>
             "MTEE and MLIN, the pieces the layout draws: a tee at each junction, a line for each arm and a Z0 feed to each "
           + "pin, stamped together and reduced to the four pins. Each arm is λg/4 at F between the junctions' reference "
-          + "planes; two sections' shunt arms share one span, each the mean of their quarter waves. MTEE's closed forms "
-          + "are calibrated at εr 9.9 and say so on any other board; the junctions move the best match a few percent "
-          + "below F.",
+          + "planes; with more than one section the shunt arms share one span, each the mean of their quarter waves. "
+          + "MTEE's closed forms are calibrated at εr 9.9 and say so on any other board; the junctions move the best "
+          + "match a few percent below F.",
         SymbolKind.Mrrc =>
             "MTEE, MLIN and MCURVE, the pieces the layout draws: four tees on a ring of two straight runs and two 180° "
           + "curves, stamped together and reduced to the four pins. Every spacing is measured between the junctions' "
