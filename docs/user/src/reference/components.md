@@ -4,7 +4,7 @@ slug: reference/components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Components
 lede: Every component in the standard library — its symbol, what it does, and its parameters.
-keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, MCLINN, coupled lines, multiconductor, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, Wilkinson, MWPD, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox
+keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, MCLINN, coupled lines, multiconductor, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, Wilkinson, MWPD, lumped, Realization, MRPAD, attenuator, resistive pad, resistive splitter, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox
 ---
 
 Symbols are rendered from the live drawing engine, with their connection leads and their pins shown
@@ -1257,8 +1257,9 @@ most often left wrong — <code>IncludeCapacitance</code> and <code>er</code> �
 ## Dividers and couplers {#dividers}
 
 Each part here is one RF topology, placed as one component and stated by what you specify rather than by its geometry:
-the port impedance and the centre frequency, and a coupler's coupling. There are six: the Wilkinson divider, the
-branch-line and rat-race hybrids, the coupled-line coupler, the interdigitated coupler and the coupled-line balun.
+the port impedance and the centre frequency, and a coupler's coupling. There are seven: the Wilkinson divider, the
+branch-line and rat-race hybrids, the coupled-line coupler, the interdigitated coupler, the coupled-line balun and the
+resistive attenuator and splitter.
 circuitRF works out the lines on the workspace technology's substrate, the same way every time, and the layout draws
 exactly the pieces the circuit model simulates, so the schematic, the layout, LVS and EM all read the same few numbers.
 The parameters panel shows what the specs come out to — the widths, gaps and lengths, and a ring's radius — as values
@@ -1272,10 +1273,24 @@ MIMCAP or SPIRAL, and for a ground or a crossover a VIAGND, a bond wire or an AI
 every site with the value the design wants there and, where the part sets it, the span between its pins. **Place Site
 Parts**, on the component's context menu and under that list, puts a part of that value on each empty site, wired to its
 pins, as one step you can undo; it leaves a jumper (a bond wire or air bridge) and a balun's load for you. Where the
-span is a parameter (`Gap` on MWPD and MCBL), it is a length by default; give the component a `Footprint`, in the same
+span is a parameter (`Gap` on MWPD, MCBL and MRPAD, and on MBLC and MRRC when lumped), it is a length by default; give the component a `Footprint`, in the same
 spelling a resistor's takes, and the span becomes that land's instead, for the run, the layout and LVS alike. The part on
 the site must then have the same footprint: **Update Layout from Schematic** reports one that does not fit, and LVS
 names the site and both footprints.
+
+<a id="lumped"></a>**Lumped realisations.** The Wilkinson divider, the two hybrids and the balun also come lumped:
+`Realization` = `Lumped` replaces each quarter-wave line by the inductors and capacitors that equal it at `F`, and every
+one of them, with the divider's resistor, is a site. The component's own copper is then only the short lines that join
+the sites, one `Z0` line width wide, laid out so that every series site's two pins face each other across `Gap` (or the
+`Footprint`'s span) and every part to ground stands on a pin of its own, named `G…`. Its terminals are the ports and the
+sites' pins, and the parameters panel lists every value. Choose it below about a tenth of the frequency where a quarter
+wave fits comfortably, or on a die, where a quarter wave is too long to draw: it is a few millimetres across where the
+lines would be centimetres. The values are exact at `F` with the joining lines left out; the lines are in the model,
+and on 20 mil RO4350B at 500 MHz, with 0402 spans, they leave every port's match and the isolation below −15 dB and the
+split within 0.5 dB of 3 dB. The branch-line, with four parts at each corner, is the most affected: −19.7 dB, and
+2.86 and 3.38 dB. Its band is
+narrower than the lines': like them it is exact at `F` only, and its lumped elements depart from the lines' behaviour
+away from it. On a die, put a TFR, SPIRAL or MIMCAP on each site; the parts are not sized for the values for you yet.
 
 ### Wilkinson Divider (MWPD) {#mwpd}
 
@@ -1420,6 +1435,26 @@ matched and isolated at `F` as well as the curved one (|S11| −52 dB against �
 corners reflect, from the excess capacitance an unchamfered corner carries, and hold |S11| at −29 dB. Use `Square`
 where the board's rules or its fabrication call for edges on the grid alone.
 
+#### Lumped: `Realization` {#mwpd-lumped}
+
+`Realization` = `Lumped` makes the [lumped divider](#lumped): each √2·`Z0` arm becomes a network that equals the quarter
+wave at `F`, and `Arm` chooses which:
+
+- `Pi`, the default: a series inductor L = √2·`Z0`/ω between two capacitors to ground of C = 1/(ω·√2·`Z0`), with ω = 2π·`F`.
+  The two arms' capacitors at the input add, so the input has one of 2·C on `G1` and each output one of C, on `G2` and
+  `G3`. The arms' inductors go across `L1a`–`L1b` and `L2a`–`L2b`;
+- `Tee`: two series inductors of the same L about one capacitor to ground of the same C: `L1a`–`L1b` and `L2a`–`L2b` on the
+  arm to 2 with its capacitor on `G1`, `L3a`–`L3b` and `L4a`–`L4b` on the arm to 3 with its capacitor on `G2`.
+
+The isolation resistor, 2·`Z0`, stays on `R2`–`R3`, across the gap between the outputs' junctions. A π uses two inductors
+where a T uses four, so it is the usual choice where inductors are the lossy parts. The lumped divider is the equal split
+in one section: `K` other than 1 or `N` other than 1 with `Lumped` is refused.
+
+| Parameter | What it is |
+|---|---|
+| `Realization` | `Distributed` (the default): the quarter-wave ring above. `Lumped`: the lumped divider; the terminals become 1, 2, 3, `R2`, `R3`, the inductors' pins and the `G` pins. |
+| `Arm` | With `Lumped`: `Pi` or `Tee`, what stands in for each arm. |
+
 #### More than two ways {#mwpd-nway}
 
 Wilkinson's paper divides N ways at once: N quarter-wave arms of √N·`Z0` from the input, and a resistor of `Z0` from each
@@ -1467,6 +1502,9 @@ port 3, and on port 2 a line as long as that divider if the three outputs must b
 > M. Kirschning and R. H. Jansen, "Accurate model for effective dielectric constant of microstrip with validity up to
 > millimetre-wave frequencies," *Electronics Letters*, vol. 18, no. 6, pp. 272–273, 1982.
 > DOI [10.1049/el:19820186](https://doi.org/10.1049/el:19820186).
+
+The lumped divider's arms are each line's π or T equivalent at one frequency, a textbook result (Pozar, above), with
+Wilkinson's resistor.
 
 ### Branch-Line Hybrid (MBLC) {#mblc}
 
@@ -1520,6 +1558,16 @@ below −20 dB from 2.24 to 2.49 GHz with one section, and from 2.08 to 2.64 GHz
 [Dividers and Couplers](../examples/dividers-and-couplers/index.html) example runs the one-section coupler on Planar MoM,
 EMerge and Palace.
 
+**Lumped.** `Realization` = `Lumped` makes the [lumped coupler](#lumped) (Vogel): each arm a π at `F`, a series inductor
+of the arm's impedance over ω between two capacitors to ground. The series arms' inductors, `Z0`/(√2·ω), go across
+`L1a`–`L1b` (1 to 2) and `L3a`–`L3b` (4 to 3), the shunt arms', `Z0`/ω, across `L2a`–`L2b` (2 to 3) and `L4a`–`L4b`
+(1 to 4), and each corner's two capacitors add to one of (1 + √2)/(ω·`Z0`) on `G1` to `G4`. One section only.
+
+| Parameter | What it is |
+|---|---|
+| `Realization` | `Distributed` (the default): the quarter-wave arms above. `Lumped`: the lumped coupler. |
+| `Gap` | With `Lumped`: each series site's span, 1.35 mm by default, an 0402's. A `Footprint` sets it to that land's span ([Sites](#sites)). |
+
 {{table: components/Mblc}}
 
 **References**
@@ -1542,6 +1590,10 @@ EMerge and Palace.
 > impedances used here, outer shunt arms of (1 + √2)·`Z0` and a middle one of √2·`Z0` with series arms of `Z0`, come from
 > the even/odd conditions under **How it works**, and the circuit model checks them: matched, isolated and split 3 dB at
 > `F`.
+
+> R. W. Vogel, "Analysis and Design of Lumped- and Lumped-Distributed-Element Directional Couplers for MIC and MMIC
+> Applications," *IEEE Transactions on Microwave Theory and Techniques*, vol. 40, no. 2, pp. 253–262, February 1992.
+> DOI [10.1109/22.120097](https://doi.org/10.1109/22.120097). The lumped coupler.
 
 > E. Hammerstad and Ø. Jensen, "Accurate Models for Microstrip Computer-Aided Design," *1980 IEEE MTT-S International
 > Microwave Symposium Digest*, pp. 407–409. DOI [10.1109/MWSYM.1980.1124303](https://doi.org/10.1109/MWSYM.1980.1124303).
@@ -1599,6 +1651,18 @@ to leave the bends a radius of one ring width (too high an `F`).
 **The hybrid is narrowband.** On the example board (20 mil RO4350B, 2.4 GHz) the circuit model keeps |S11|, |S44|, |S41|
 and |S23| below −20 dB from 2.04 to 2.71 GHz. The [Dividers and Couplers](../examples/dividers-and-couplers/index.html)
 example runs it on Planar MoM, EMerge and Palace.
+
+**Lumped.** `Realization` = `Lumped` makes the [lumped hybrid](#lumped). The three quarter-wave spacings, 2 to 1, 1 to 3
+and 3 to 4, are each a π at `F`: an inductor of √2·`Z0`/ω across `L1a`–`L1b`, `L2a`–`L2b` and `L3a`–`L3b`. The
+three-quarter-wave spacing, 4 to 2, is its high-pass dual, which turns the phase the other way, +90° where the line turns
+−270°: a capacitor of 1/(ω·√2·`Z0`) across `C1a`–`C1b`. At 1 and at 3 two π ends meet, and their capacitors add to one of
+√2/(ω·`Z0`) on `G1` and `G3`. At 2 and at 4 a π's capacitor meets the high-pass section's inductor to ground; the two
+resonate at `F`, an open circuit there, and are left out. `Corner` does not apply.
+
+| Parameter | What it is |
+|---|---|
+| `Realization` | `Distributed` (the default): the ring above. `Lumped`: the lumped hybrid. |
+| `Gap` | With `Lumped`: each series site's span, 1.35 mm by default, an 0402's. A `Footprint` sets it to that land's span ([Sites](#sites)). |
 
 {{table: components/Mrrc}}
 
@@ -1719,6 +1783,17 @@ balanced load:
 `G2` and `G3` on EMerge and Palace. The Planar solver refuses it: its via-current kernel is validated to a tenth of a
 wavelength between vias, and the two grounds sit a balun's length apart.
 
+**Lumped.** `Realization` = `Lumped` makes the balun a lattice of two inductors and two capacitors (Bakalski et al.): an
+inductor from 1 to 2 (`L1a`–`L1b`) with a capacitor to ground at 2 (`G2`), and a capacitor from 1 to 3 (`C1a`–`C1b`)
+with an inductor to ground at 3 (`G3`). Each inductor is X/ω and each capacitor 1/(ω·X), with X = √(2·`Z0`·`ZL`): at `F`
+the outputs are equal and exactly opposite for any equal loads, 90° either side of the input, and with `ZL` on each the
+input is `Z0`. Unlike the coupled lines, a lattice reaches any `ZL`, 50 Ω on each output included, and its outputs are
+180° apart on any board. `Gap` is then each series site's span.
+
+| Parameter | What it is |
+|---|---|
+| `Realization` | `Distributed` (the default): the coupled-line balun above. `Lumped`: the lattice. |
+
 {{table: components/Mcbl}}
 
 **References** (for the three coupled-line parts)
@@ -1746,6 +1821,49 @@ wavelength between vias, and the two grounds sit a balun's length apart.
 > K. S. Ang and I. D. Robertson, "Analysis and Design of Impedance-Transforming Planar Marchand Baluns," *IEEE
 > Transactions on Microwave Theory and Techniques*, vol. 49, no. 2, pp. 402–406, February 2001.
 > DOI [10.1109/22.903108](https://doi.org/10.1109/22.903108).
+
+> W. Bakalski, W. Simbürger, H. Knapp, H.-D. Wohlmuth and A. L. Scholtz, "Lumped and Distributed Lattice-Type LC-Baluns,"
+> *2002 IEEE MTT-S International Microwave Symposium Digest*, pp. 209–212.
+> DOI [10.1109/MWSYM.2002.1011595](https://doi.org/10.1109/MWSYM.2002.1011595). The lumped balun.
+
+### Resistive Attenuator and Splitter (MRPAD) {#mrpad}
+
+{{symbol: mrpad}}
+
+A matched resistive pad: an attenuator of `Attenuation` dB between terminals 1 and 2, or a three-port splitter, `Z0` at
+every port. It has no lines of its own: every resistor is a [site](#sites), and the part is the short `Z0`-wide lines that
+join them, so each resistor is an ordinary part with its own land, as the lumped dividers' are. `Form` chooses the
+network; with K = 10^(`Attenuation`/20):
+
+| `Form` | Resistors |
+|---|---|
+| `Pi` | Z0·(K² − 1)/(2·K) across `R1a`–`R1b`, and Z0·(K + 1)/(K − 1) from each of 1 and 2 to ground. |
+| `T` | Z0·(K − 1)/(K + 1) across each of `R1a`–`R1b` and `R2a`–`R2b`, and 2·Z0·K/(K² − 1) from 3 to ground. |
+| `BridgedT` | `Z0` across each of `R1a`–`R1b` and `R2a`–`R2b`, Z0·(K − 1) across `R3a`–`R3b`, which bridges them from 1 to 2, and Z0/(K − 1) from 3 to ground. |
+| `Wye` | Z0/3 from each of 1, 2 and 3 to the middle, across `R1a`–`R1b`, `R2a`–`R2b` and `R3a`–`R3b`. |
+| `Delta` | `Z0` between each two of 1, 2 and 3, across `R1a`–`R1b` (1–2), `R2a`–`R2b` (2–3) and `R3a`–`R3b` (3–1). |
+
+**Terminal 3** is a splitter's third port. On a `T` or `BridgedT` it is the middle node, where the shunt resistor goes
+to ground; brought out, it is where a T pad's shunt arm can be returned elsewhere, and the bridged-T and the two
+splitters share one set of terminals. The π's shunt resistors sit on 1 and 2 themselves.
+
+**The values** are the textbook matched pads: with each resistor ideal and the joining lines left out, each form is
+matched at every port and loses exactly `Attenuation` dB (an attenuator) or 20·log10 2 = 6.02 dB between any two ports
+(a splitter, whose loss is fixed by matching all three; `Attenuation` does not apply). A bridged-T keeps its two series
+resistors at `Z0` for every loss and changes only the other two, which is why it is the form to tune. The joining lines
+are in the model, and add their own small phase and reactance as the frequency rises.
+
+| Parameter | What it is |
+|---|---|
+| `Footprint` | Optional. The resistors' land, `smt:<case>[@density]` or a cell. When set, each series site's span is that land's and `Gap` is not used ([Sites](#sites)). |
+
+{{table: components/Mrpad}}
+
+**References**
+
+> D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012. The matched π and T attenuators and the resistive
+> divider are textbook results. A book, with no DOI:
+> [the publisher's page](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553).
 
 ## MMIC passives {#mmic}
 

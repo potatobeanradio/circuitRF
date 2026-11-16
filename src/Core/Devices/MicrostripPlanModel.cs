@@ -9,11 +9,12 @@ namespace CircuitRF.Core.Devices;
 /// A planned microstrip passive (docs/design/rf-passives.md): MWPD, the equal-split Wilkinson divider
 /// (<see cref="WilkinsonPlan"/>), the hybrids MBLC (<see cref="BranchLinePlan"/>) and MRRC (<see cref="RatRacePlan"/>),
 /// and the coupled-line parts (<see cref="CoupledLineCouplerPlan"/>, <see cref="LangePlan"/>,
-/// <see cref="MarchandBalunPlan"/>). It has no line physics of its own: each section of the plan is the EXISTING
+/// <see cref="MarchandBalunPlan"/>), their lumped realisations and the resistive pad (<see cref="LumpedPlan"/>, the
+/// interconnect between the sites). It has no line physics of its own: each section of the plan is the EXISTING
 /// part's model (<see cref="MicrostripTeeModel"/>, <see cref="MicrostripCurveModel"/>,
 /// <see cref="MicrostripLineModel"/>, <see cref="MicrostripCoupledLineModel"/>, <see cref="MicrostripMiterBendModel"/>,
 /// <see cref="MicrostripBendModel"/>, <see cref="MicrostripGapModel"/>, <see cref="MicrostripTaperModel"/>,
-/// <see cref="MicrostripRadialStubModel"/>, the N-line <see cref="MicrostripMultiLineModel"/>; an open end
+/// <see cref="MicrostripRadialStubModel"/>, <see cref="MicrostripCrossModel"/>, the N-line <see cref="MicrostripMultiLineModel"/>; an open end
 /// <see cref="MicrostripOpenEnd"/>'s capacitance on MLIN's or MCLIN's own line), stamped into a
 /// <see cref="LocalAdmittanceBlock"/> on the plan's nodes, and the internal nodes are Kron-reduced away so the
 /// instance stamps one block on its pins — the way MTEE stamps the arms it draws (<see cref="JunctionArms"/>).
