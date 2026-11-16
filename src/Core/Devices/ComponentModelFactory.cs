@@ -3144,11 +3144,12 @@ public static class ComponentModelFactory
     public const string LadderTypeName = "MLAD";
 
     // MLAD: the section list (Sections, text, LadderPlan's grammar) is the geometry; Z0 sets the ports' lines, F where
-    // their width is found. The pins follow the list's shorted stubs.
+    // their width is found, Gap the series sites' span. The pins follow the list's shorted stubs and sites.
     private static MicrostripPlanModel CreateLadderModel(IReadOnlyDictionary<string, Value> parameters)
         => new(LadderPlan.Build(
                    parameters.TryGetValue("Sections", out var v) && v.Kind == ValueKind.String ? v.AsString() : LadderPlan.DefaultSections,
-                   GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters)).Plan,
+                   GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
+                   GetReal(parameters, "Gap", LadderPlan.DefaultGap)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, LadderTypeName));
 
     private static MicrostripKlopfModel CreateMicrostripKlopfModel(IReadOnlyDictionary<string, Value> parameters)
