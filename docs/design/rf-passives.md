@@ -284,9 +284,12 @@ between them: an MMITER at its own default chamfer (the Douville-James optimum f
 an MBEND with no chamfer. Every spacing still counts every piece. A corner's electrical length is its insertion phase
 at F between two lines of the arm's impedance, from the corner's own model stamped as a one-section plan
 (`PlanBend.LineLength`), as a length of that line; the straight runs are shortened by it, so the plan stays a pure
-function of the specs and the substrate. MWPD: the input tee's line, 2·rise + across and two corners make λg/4; both
-arms span one width, and the arm needing more line rises and falls by half the difference, so the gap stays on the
-input's axis for any K. MRRC: each end's two corners and side make λg/4 − W0. Every K and N has this geometry, so no
+function of the specs and the substrate. MWPD: the input tee's line, 2·rise + across and two corners make λg/4. The
+rectangle keeps the curved ring's height, the upper run across at the half-turn's top (from the curved plan of the
+same specs), because the plan models no coupling between the arms: a rectangle as low as the tees allow would run
+the two λg/4 arms side by side, about Gap + 2·W0 apart, where the curved ring keeps them a diameter apart. The run across
+takes what is left, about (π − 2)·R less the corners; the arm needing more line rises and falls by half the
+difference on top, so the gap stays on the input's axis for any K. MRRC: each end's two corners and side make λg/4 − W0. Every K and N has this geometry, so no
 combination is refused; a ring with no straight run left is `ring-too-small`. A corner's pins are where its generator
 puts them (`PlanBend.Arm`, rounded to 1 nm as both generators round), so pieces meet to the unit.
 
@@ -294,8 +297,9 @@ At `Curve` both plans are unchanged bit for bit (`WilkinsonPlanTests.TheVariants
 `HybridPlanTests.TheRatRace_AtCurvedCorners_IsUnchangedBitForBit`, taken before the corners existed). `Corner` is a name,
 as a filter's `Response` is: the elaborator keeps it as text, Update Layout hands it to the generator as text, and LVS
 compares it as a string (a mismatch is one `lvs.property.mismatch`). On the example board at 2.4 GHz a mitred corner
-stands for 0.567 mm of the 70.7 Ω arm; with it taken out, the mitred divider's |S11| and |S23| at F are −48 and −36 dB
-(curved: −48, −36; square corners: −42, −37), and left in they would be −30 and −26 dB. Tests: the cornered plans
+stands for 0.567 mm of the 70.7 Ω arm; with it taken out, the mitred divider's |S11| and |S23| at F are −52 and −36 dB
+(curved: −48, −36; square corners, whose own reflection limits the match: −29, −34), and left in they would be −30
+and −26 dB. Tests: the cornered plans
 against their quarter waves and joined (`WilkinsonPlanTests`, `HybridPlanTests`), each equal to its MMITER, MBEND, MLIN
 and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`WilkinsonSParamTests`,
 `HybridSParamTests`), and `testdata/schematic-to-layout/F8d-wilkinson-mitred` through Update Layout and LVS.
@@ -305,7 +309,8 @@ and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`
 1. `src/Core/Devices/Microstrip/<X>Plan.cs` — the pure plan (and a section kind, with one case in
    `MicrostripPlanModel.Build` and one in `PassivePlanPCells.Draw`, if it needs a part the plans do not use yet).
    `PlanBend` (MMITER and MBEND, for `Corner`) cost exactly one model case and one drawer case; because MBEND stamps in
-   branch (Z) form, the shared local block also learned to take branch rows, once, for any such part (da0f3702e).
+   branch (Z) form, the shared local block also learned to take branch rows, once, for any such part
+   (`LocalAdmittanceBlock`).
 2. `ComponentModelFactory` — the type name, `_parameterizedTypes` and one dispatch line to `MicrostripPlanModel`.
 3. `SchematicModel.SymbolKind`; `ComponentTypeRegistry` (entry, terminals text, `EngineReference`, parameter
    descriptions, `ModelValidity`, `HasNoiseSwitch`, `DefaultParameters`, token); `EditableSchematic.SymbolPortDefs`;

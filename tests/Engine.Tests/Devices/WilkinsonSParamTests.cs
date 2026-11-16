@@ -158,17 +158,18 @@ public class WilkinsonSParamTests
     /// <summary>
     /// With corners the equal split still divides at F, matched and isolated, because the corners' own electrical length
     /// is taken out of the runs. The limits are set to catch it if it were not: on this board the mitred divider reaches
-    /// |S11| −48 dB and |S23| −36 dB at F, as the curved one does (−48, −36), the square one −42 and −37, and with the
-    /// mitred corners' 2 × 0.57 mm left in each arm (6 % of λg/4) they rise to −30 and −26 dB. The outputs' own match,
-    /// −34 dB either way, is the junctions'.
+    /// |S11| −52 dB and |S23| −36 dB at F (the curved one −48 and −36), and with the mitred corners' 2 × 0.57 mm left in
+    /// each arm (6 % of λg/4) they rise to −30 and −26 dB. A square corner stands for only 0.18 mm, and its own reflection
+    /// holds |S11| at −29 dB; its |S23| is −34 dB, and −31 dB with its length left in. The outputs' own match, −31 to
+    /// −35 dB, is the junctions' and the corners'.
     /// </summary>
     [Theory]
-    [InlineData(PlanCorner.Miter)]
-    [InlineData(PlanCorner.Square)]
-    public void ACorneredDivider_DividesAtF(PlanCorner corner)
+    [InlineData(PlanCorner.Miter, -40.0, -32.0)]
+    [InlineData(PlanCorner.Square, -25.0, -32.0)]
+    public void ACorneredDivider_DividesAtF(PlanCorner corner, double s11Limit, double s23Limit)
     {
         var s = SAt(Variant(1.0, 1, 2.0, corner), 2.4e9);
-        foreach (var (i, j, name, limit) in new[] { (0, 0, "S11", -40.0), (1, 1, "S22", -30.0), (2, 2, "S33", -30.0), (1, 2, "S23", -32.0) })
+        foreach (var (i, j, name, limit) in new[] { (0, 0, "S11", s11Limit), (1, 1, "S22", -30.0), (2, 2, "S33", -30.0), (1, 2, "S23", s23Limit) })
             Assert.True(Db(s[i, j]) < limit, $"|{name}| {Db(s[i, j]):F2} dB");
         Assert.InRange(Db(s[1, 0]), -3.3, -3.0);
         Assert.InRange(Db(s[2, 0]), -3.3, -3.0);

@@ -133,8 +133,9 @@ mismatch through the line between them.
 ## Mitred and square corners
 
 The Wilkinson's circuit three times on one bench, its MWPD drawn with curved arms (`Corner` = `Curve`, ports 1-3), mitred
-corners (`Miter`, ports 4-6) and square corners (`Square`, ports 7-9). With corners the ring is a rectangle, and each
-straight run is shortened by its corners' own electrical length at F, so every arm is still a quarter wave there.
+corners (`Miter`, ports 4-6) and square corners (`Square`, ports 7-9). With corners the ring is a rectangle as tall as
+the curved ring, so its arms stay as far apart, and each straight run is shortened by its corners' own electrical
+length at F, so every arm is still a quarter wave there.
 Circuit only, swept every 10 MHz.
 
 ![The three dividers side by side: the curved ring, the mitred rectangle and the square one, each with its 0402 across the gap and its outputs bending away to their ports.](pictures/mitred-layout.png)
@@ -143,14 +144,14 @@ Circuit only, swept every 10 MHz.
 
 | At 2.4 GHz | Curve | Miter | Square |
 |---|---|---|---|
-| \|S11\| | −47.5 dB | −48.1 dB | −41.8 dB |
-| \|S21\| | −3.149 dB | −3.152 dB | −3.148 dB |
-| \|S23\| | −36.4 dB | −36.4 dB | −36.8 dB |
-| ∠S21 | −173.0° | −173.0° | −173.0° |
+| \|S11\| | −47.5 dB | −51.7 dB | −28.7 dB |
+| \|S21\| | −3.149 dB | −3.152 dB | −3.152 dB |
+| \|S23\| | −36.4 dB | −36.2 dB | −34.5 dB |
+| ∠S21 | −173.0° | −173.0° | −172.8° |
 
 The mitred divider's |S21| is the curved one's to 0.01 dB across the band, and all three keep |S11| below −20 dB from
-about 2.0 to 2.8 GHz. The square corners' excess capacitance shows above 3 GHz: at 4.8 GHz their |S21| is 0.15 dB
-lower. The rectangle is as low as the input tee allows, so it is longer and flatter than the curved ring.
+about 2.0 to 2.8 GHz. Square corners reflect, from the excess capacitance an unchamfered corner carries: their match
+bottoms out at −29 dB, and their |S21| strays from the curved one's by up to 0.06 dB.
 
 ## Branch-line hybrid
 

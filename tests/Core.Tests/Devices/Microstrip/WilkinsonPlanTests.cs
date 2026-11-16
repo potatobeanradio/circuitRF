@@ -146,6 +146,13 @@ public class WilkinsonPlanTests
                          .Order(), s.OfType<PlanLine>().Select(l => l.L).Order());
         HybridPlanTests.AssertJoined(d.Plan);
         Assert.Equal(d.GapMeters, outTop.Y - (outBottom.Y + outBottom.L1 + outBottom.L2), 12);
+
+        // The rectangle is as tall as the curved ring: the upper run across is at the half-turn's top (above it by half
+        // the arms' difference when K ≠ 1), so the arms stay a ring's diameter apart.
+        var curved = WilkinsonPlan.Build(50.0, 2.4e9, 1.35e-3, Ro4350b, k, n, 2.0);
+        double crest = ((PlanTee)curved.Plan.Sections[0]).L1 + curved.RingRadiusMeters;
+        double upper = s.OfType<PlanLine>().Where(l => l.RotationDeg == 0.0).Max(l => l.Y);
+        Assert.True(k == 1.0 ? Math.Abs(upper - crest) < 1.5e-9 : upper > crest - 1.5e-9, $"run at {upper}, crest {crest}");
     }
 
     [Theory]

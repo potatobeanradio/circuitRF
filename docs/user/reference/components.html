@@ -2358,14 +2358,16 @@ arm's W/h; a <code>Square</code> corner is an <a href="#mbend">MBEND</a> with no
 model at <code>F</code> on the substrate (its phase between two lines of the arm's impedance) and shortens the straight runs by it,
 so each arm is still a quarter wave at <code>F</code> between the tees' reference planes, corners included. On the example board
 at 2.4 GHz a mitred corner stands for 0.57 mm of the arm; left in, the two corners would make each arm 6 % long and lift
-|S11| at <code>F</code> from −48 dB to −30 dB. Both arms span one width between the tees; with <code>K</code> ≠ 1 the arm that needs more line
-takes up the difference in its rise and fall, so the gap stays on the input's line. Every <code>K</code> and <code>N</code> works with either corner,
+|S11| at <code>F</code> from −52 dB to −30 dB. The rectangle is as tall as the curved ring, so its two arms stay a ring's width
+apart: the model does not include coupling between them, and a flatter rectangle would run them side by side. Both arms
+span one width between the tees; with <code>K</code> ≠ 1 the arm that needs more line takes up the difference in its rise and
+fall, so the gap stays on the input's line. Every <code>K</code> and <code>N</code> works with either corner,
 and the parameters panel shows each arm's runs and what one corner stands for.</p>
 <p><strong>When to choose it.</strong> Choose a corner when the layout wants a rectilinear outline: to sit on a placement grid, to run
 lines alongside it, or to pack several parts close together. Prefer <code>Miter</code>: on the example board the mitred divider is
-matched and isolated at <code>F</code> as the curved one is (|S11| −48 dB, |S23| −36 dB), and the square one a little less well
-(−42 and −37 dB), since an unchamfered corner carries more excess capacitance. Use <code>Square</code> where the board's rules or
-its fabrication call for edges on the grid alone.</p>
+matched and isolated at <code>F</code> as well as the curved one (|S11| −52 dB against −48, |S23| −36 dB for both), while square
+corners reflect, from the excess capacitance an unchamfered corner carries, and hold |S11| at −29 dB. Use <code>Square</code>
+where the board's rules or its fabrication call for edges on the grid alone.</p>
 <h4 id="mwpd-nway">More than two ways</h4>
 <p>Wilkinson's paper divides N ways at once: N quarter-wave arms of √N·<code>Z0</code> from the input, and a resistor of <code>Z0</code> from each
 arm's end to one common point. MWPD does not draw it, because for three ways or more it cannot be drawn on one layer.

@@ -4963,7 +4963,7 @@ What would cost time to rediscover:
 
 - **MBEND could not sit in a plan.** `MicrostripBendModel` stamps its corner as a two-branch Z block at every frequency,
   and `LocalAdmittanceBlock` held admittances only, so a square corner threw at its first stamp. The block now takes a
-  section that stamps in branch form (da0f3702e); nothing before allocated a branch, so MTEE's arms and every existing
+  section that stamps in branch form (`LocalAdmittanceBlock`); nothing before allocated a branch, so MTEE's arms and every existing
   plan reduce as they did. MMITER stamps in admittance form unless its series term nearly cancels, so the mitred corner
   needed nothing.
 - **A corner's length is its insertion phase, not its image phase.** MBEND's unmitered series L per side,
@@ -4972,8 +4972,17 @@ What would cost time to rediscover:
   −arg S21 between two lines of the arm's impedance, which is defined for either part, as a length of that line
   (`PlanBend.LineLength`). A mitred corner there stands for 0.567 mm of arm at 2.4 GHz.
 - **Leaving the corners' length in the runs costs 10 to 20 dB at F.** Each arm is then 2 × 0.567 mm (6 % of λg/4) long:
-  the mitred divider's |S11| and |S23| at F go from −48 and −36 dB to −30 and −26 dB, and the rat-race's |S11|, |S44|
-  and |S23| from about −50 to about −30 dB. The S-parameter tests' limits sit between the two.
+  the mitred divider's |S11| and |S23| at F go from −52 and −36 dB to −30 and −26 dB, and the rat-race's |S11|, |S44|
+  and |S23| from about −50 to about −30 dB. The S-parameter tests' limits sit between the two. A square corner stands
+  for only 0.18 mm (MBEND's negative series L), so its test cannot tell the two apart by much; the mitred one can.
+- **The divider's rectangle keeps the curved ring's height.** With equal arms the lowest rectangle needs no rise: the
+  arms run straight across from the input tee's ends, a little over Gap + 2·W0 apart, along most of their λg/4. The plan models
+  no coupling between its arms, so that result would overstate a real board's isolation. The arms now rise to the
+  half-turn's top from the curved plan of the same specs (5.3 mm here) and run across what is left, 6.0 mm, about
+  (π − 2)·R less the corners. MRRC's sides are already λg/4 apart, so it is unchanged.
+- **Square corners' reflections added up once the rectangle was tall.** In the flat rectangle an arm's two corners sat
+  about 0.9·λg/4 apart and their reflections nearly cancelled (|S11| −42 dB); at the ring's height they are 6 mm apart
+  and add, and the square divider's |S11| at F is −29 dB. The mitred corners reflect far less (−52 dB).
 - **A corner's pins are not on the 2 nm grid.** MMITER's pin offset at its default chamfer (M = 0.67 here) is 2·M·W − W/2,
   not a multiple of 2 nm, and both corner generators round their pin to the 1 nm database unit. `PlanBend.Arm` rounds the
   same way from the same function, so the next piece starts on the corner's own pin; positions are on 1 nm, lengths stay

@@ -88,8 +88,10 @@ public sealed record WilkinsonDesign(
 /// corner), runs across, turns again and falls to its output tee. Its λg/4 still counts every piece: the input tee's
 /// line, the straight runs, and each corner's own electrical length at F, which <see cref="PlanBend.LineLength"/> takes
 /// from the corner's model on the substrate, so the plan stays a pure function of the specs and the substrate. The runs
-/// are that much shorter. Both arms span the one width between the tees; the arm needing more line rises and falls by
-/// half the difference, so the gap stays on the input's axis even for K ≠ 1. The output tees, transformers and further
+/// are that much shorter. The rectangle is as tall as the curved ring (the upper arm runs across at the half-turn's
+/// top), so the arms stay a ring's diameter apart: the plan models no coupling between them. Both arms span the one
+/// width between the tees; the arm needing more line rises and falls by half the difference on top, so the gap stays
+/// on the input's axis even for K ≠ 1. The output tees, transformers and further
 /// sections are the half-turns' own. At <see cref="PlanCorner.Curve"/> the plan is the half-turns' to the last bit.</para>
 ///
 /// <para><b>Multi-section, N = 2 or 3.</b> The ring is the section next to the input; each further section is a
@@ -220,8 +222,10 @@ public static class WilkinsonPlan
         else
         {
             // Each arm closes at the width X = λg/4 − (the tee's line) − 2·(a corner's length) + 2·Arm between the tees
-            // when it rises by nothing. Both span the narrower of the two, and the other arm rises and falls by half the
-            // difference.
+            // when it rises by nothing. The rectangle keeps the curved ring's height: the upper arm runs across where the
+            // half-turn's top is, so the two arms are a ring's diameter apart rather than a gap's, since the plan models no
+            // coupling between them. Both arms rise by that, span the narrower width it leaves, and the other arm rises
+            // and falls by half the difference on top.
             (double X, double Corner, double Arm, double? M) Closing(WilkinsonLine arm, double pos)
             {
                 var bend = new PlanBend([], 0.0, 0.0, 0.0, arm.WMeters, -90.0, PlanBend.MiterFor(corner, arm.WMeters, s));
@@ -229,9 +233,14 @@ public static class WilkinsonPlan
                 return (arm.QuarterWaveMeters - (pos - w0 / 2.0) - 2.0 * length + 2.0 * bend.Arm, length, bend.Arm, bend.M);
             }
             var (t, u) = (Closing(arm2, a), Closing(arm3, b));
-            across = PassivePlan.OnGrid(Math.Min(t.X, u.X));
-            upper = (PassivePlan.OnGrid((t.X - across) / 2.0), across - 2.0 * t.Arm, t.Corner, t.Arm, t.M);
-            lower = (PassivePlan.OnGrid((u.X - across) / 2.0), across - 2.0 * u.Arm, u.Corner, u.Arm, u.M);
+            // The curved plan of the same specs, whose refusals therefore hold here too.
+            var ring = Build(z0, fHz, gapMeters, s, k, n, band);
+            double crest = ((PlanTee)ring.Plan.Sections[0]).L1 + ring.RingRadiusMeters;   // the half-turn's top, centre line
+            double rise = Math.Max(0.0, PassivePlan.OnGrid(crest - a - t.Arm));
+            double flat = PassivePlan.OnGrid(Math.Min(t.X, u.X));
+            across = flat - 2.0 * rise;
+            upper = (rise + PassivePlan.OnGrid((t.X - flat) / 2.0), across - 2.0 * t.Arm, t.Corner, t.Arm, t.M);
+            lower = (rise + PassivePlan.OnGrid((u.X - flat) / 2.0), across - 2.0 * u.Arm, u.Corner, u.Arm, u.M);
             if (Math.Min(upper.Across, lower.Across) <= 0.0)
                 throw new ParameterRefusalException(Diagnostic.Create("device.wilkinson.ring-too-small",
                     DiagnosticSeverity.Error,

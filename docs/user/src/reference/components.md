@@ -1301,15 +1301,17 @@ arm's W/h; a `Square` corner is an [MBEND](#mbend) with no chamfer.
 model at `F` on the substrate (its phase between two lines of the arm's impedance) and shortens the straight runs by it,
 so each arm is still a quarter wave at `F` between the tees' reference planes, corners included. On the example board
 at 2.4 GHz a mitred corner stands for 0.57 mm of the arm; left in, the two corners would make each arm 6 % long and lift
-|S11| at `F` from −48 dB to −30 dB. Both arms span one width between the tees; with `K` ≠ 1 the arm that needs more line
-takes up the difference in its rise and fall, so the gap stays on the input's line. Every `K` and `N` works with either corner,
+|S11| at `F` from −52 dB to −30 dB. The rectangle is as tall as the curved ring, so its two arms stay a ring's width
+apart: the model does not include coupling between them, and a flatter rectangle would run them side by side. Both arms
+span one width between the tees; with `K` ≠ 1 the arm that needs more line takes up the difference in its rise and
+fall, so the gap stays on the input's line. Every `K` and `N` works with either corner,
 and the parameters panel shows each arm's runs and what one corner stands for.
 
 **When to choose it.** Choose a corner when the layout wants a rectilinear outline: to sit on a placement grid, to run
 lines alongside it, or to pack several parts close together. Prefer `Miter`: on the example board the mitred divider is
-matched and isolated at `F` as the curved one is (|S11| −48 dB, |S23| −36 dB), and the square one a little less well
-(−42 and −37 dB), since an unchamfered corner carries more excess capacitance. Use `Square` where the board's rules or
-its fabrication call for edges on the grid alone.
+matched and isolated at `F` as well as the curved one (|S11| −52 dB against −48, |S23| −36 dB for both), while square
+corners reflect, from the excess capacitance an unchamfered corner carries, and hold |S11| at −29 dB. Use `Square`
+where the board's rules or its fabrication call for edges on the grid alone.
 
 #### More than two ways {#mwpd-nway}
 
