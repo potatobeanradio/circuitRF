@@ -99,7 +99,7 @@
     {
       "Folder": "Dividers and Couplers",
       "Title": "Dividers and Couplers",
-      "Summary": "Built-in dividers, hybrids, couplers, a balun, a phase shifter, a delay line and a resistive pad on 20 mil RO4350B at 2.4 GHz, each placed as one part from its specs and laid out by Update Layout, the lumped ones with their parts placed by Place Site Parts. Run a cell's EM setups, simulate its bench, and open its data display to see the circuit model against each solver and, for the newer cells, an equations model of ideal lines."
+      "Summary": "Built-in dividers, hybrids, couplers, a balun, a phase shifter, a delay line and a resistive pad on 20 mil RO4350B at 2.4 GHz, each placed as one part from its specs and laid out by Update Layout, the lumped ones with their parts placed by Place Site Parts. Run a cell's EM setups, simulate its bench, and open its data display to see the circuit model against each solver and an equations model of ideal lines."
     },
     {
       "Folder": "MMIC Wilkinson",
