@@ -450,8 +450,8 @@ public sealed class ComparisonTests
     [InlineData("F10-rat-race-hybrid", "RRC1", "F", "2.5")]
     [InlineData("F14-radial-stub", "RS1", "Angle", "90")]
     [InlineData("F15-coupled-lines", "CLN1", "W[2]", "1.5")]
-    [InlineData("F16-delay-line", "DLY1", "Theta", "180")]
-    [InlineData("F16-delay-line", "RRC1", "Meander", "3")]
+    [InlineData("F29-delay-line", "DLY1", "Theta", "180")]
+    [InlineData("F29-delay-line", "RRC1", "Meander", "3")]
     public void AHybridComparesCleanAndASpecMismatchIsAFinding(string design, string instance, string spec, string changed)
     {
         string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-hyb-" + Guid.NewGuid().ToString("N")[..12]);

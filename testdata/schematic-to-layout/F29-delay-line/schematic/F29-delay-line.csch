@@ -3,7 +3,7 @@
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
-  "CellName": "F16-delay-line",
+  "CellName": "F29-delay-line",
   "Components": [
     {
       "InstanceName": "DLY1",

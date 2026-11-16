@@ -588,7 +588,7 @@ part against MLIN, MCURVE, MMITER, MBEND and MCLINN wired by hand to 1e-9; the c
 `PlanRouteTests` (a coupled meander is its legs as one section over the same copper), `HybridPlanTests` (the meandered
 ring joined, its runs λg/4, its folded arm 3λg/4 at F to 0.5°; the refusals), `HybridSParamTests` (the meandered ring by
 hand to 1e-9, and against the curved one at F), `DelayLinePartTests` (registration; a 360° meander on the GaAs die drawn
-and −360° at 20 GHz; the meandered ring drawn smaller), and `F16-delay-line` through Update Layout and LVS, where a
+and −360° at 20 GHz; the meandered ring drawn smaller), and `F29-delay-line` through Update Layout and LVS, where a
 changed `Theta` on MDLY or `Meander` on MRRC is one `lvs.property.mismatch`.
 
 **Possible enhancements.**
