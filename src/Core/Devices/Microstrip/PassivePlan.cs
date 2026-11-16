@@ -31,6 +31,9 @@ public sealed record PlanTee(double W1, double W2, double W3, double L1, double 
 public sealed record PlanCurve(double W, double AngleDeg, double Radius,
     int[] Nodes, double X, double Y, double RotationDeg) : PlanSection(Nodes, X, Y, RotationDeg);
 
+/// <summary>An MLIN: width and length, running along the part's +x from pin 1 to pin 2.</summary>
+public sealed record PlanLine(int[] Nodes, double X, double Y, double RotationDeg, double W, double L) : PlanSection(Nodes, X, Y, RotationDeg);
+
 /// <summary>A planned passive: its pin names in terminal order, its sections, and how many plan nodes the
 /// sections join (pins included).</summary>
 public sealed record PassivePlan(IReadOnlyList<string> Pins, IReadOnlyList<PlanSection> Sections, int NodeCount)
@@ -43,3 +46,14 @@ public sealed record PassivePlan(IReadOnlyList<string> Pins, IReadOnlyList<PlanS
     /// </summary>
     public static double OnGrid(double meters) => Math.Round(meters / 2e-9, MidpointRounding.AwayFromZero) * 2e-9;
 }
+
+/// <summary>
+/// <see cref="Fingers"/> edge-coupled strips of width W, gap S and length L, running from x = 0 to +X, strip k centred
+/// k·(W + S) below the first, as <c>MCLIN</c>'s artwork places its two. Nodes: each strip's near (x = 0) end, then its
+/// far end, top strip first — for two strips exactly MCLIN's order (A near, A far, B near, B far), and the section is
+/// an MCLIN (<see cref="MicrostripCoupledLineModel"/>). With more, alternate strips are the two conductors of an
+/// interdigitated coupler, modelled from the same pair's modes by Ou's equations (<see cref="InterdigitatedLineModel"/>);
+/// the strips of one conductor are joined only by parts on the passive's pins, never inside it.
+/// </summary>
+public sealed record PlanCoupledLine(int[] Nodes, double X, double Y, double RotationDeg, double W, double S, double L,
+    int Fingers = 2) : PlanSection(Nodes, X, Y, RotationDeg);

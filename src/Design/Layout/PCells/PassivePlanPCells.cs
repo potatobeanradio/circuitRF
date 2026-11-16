@@ -6,7 +6,9 @@ namespace CircuitRF.Design.Layout.PCells;
 /// <summary>
 /// The planned passives' artwork (docs/design/rf-passives.md). A generator builds its part's plan in Core —
 /// the plan its model stamps — and <see cref="Draw"/> draws every section through the EXISTING part's own
-/// generator (<see cref="MTeePCell"/>, <see cref="MCurvePCell"/>), turned and moved to the section's pose. The
+/// generator (<see cref="MTeePCell"/>, <see cref="MCurvePCell"/>, <see cref="MlinPCell"/>,
+/// <see cref="CoupledLinePCells"/>; an interdigitated section's strips each by <see cref="MlinPCell"/>), turned and
+/// moved to the section's pose. The
 /// copper is therefore the copper those parts draw on their own, piece for piece, and the pins are those
 /// parts' own pins wherever a section ends on one of the passive's pins — never a second rounding of where
 /// they should be.
@@ -35,6 +37,54 @@ public static class PassivePlanPCells
             return new PCellResult([], [], [ex.Message]);
         }
         return Draw(design.Plan, technology, layerSelection);
+    }
+
+    /// <summary>The 3 dB branch-line hybrid (MBLC): <see cref="BranchLinePlan"/>'s one or two sections.</summary>
+    public const string BranchLineId = ComponentModelFactory.BranchLineTypeName;
+
+    public static PCellResult GenerateBranchLine(
+        IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
+        => DrawOrRefuse(() => BranchLinePlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
+            parameters.Real("N", 1.0), SubstrateOf(technology, layerSelection)).Plan, technology, layerSelection);
+
+    /// <summary>The rat-race hybrid (MRRC): <see cref="RatRacePlan"/>'s ring.</summary>
+    public const string RatRaceId = ComponentModelFactory.RatRaceTypeName;
+
+    public static PCellResult GenerateRatRace(
+        IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
+        => DrawOrRefuse(() => RatRacePlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
+            SubstrateOf(technology, layerSelection)).Plan, technology, layerSelection);
+
+    /// <summary>The coupled-line coupler (MCLC): <see cref="CoupledLineCouplerPlan"/>'s one MCLIN.</summary>
+    public const string CoupledLineCouplerId = ComponentModelFactory.CoupledLineCouplerTypeName;
+
+    /// <summary>The four-finger interdigitated coupler (MIDC): <see cref="LangePlan"/>'s fingers.</summary>
+    public const string LangeId = ComponentModelFactory.LangeTypeName;
+
+    /// <summary>The coupled-line balun (MCBL): <see cref="MarchandBalunPlan"/>'s two sections and their joining line.</summary>
+    public const string MarchandId = ComponentModelFactory.MarchandTypeName;
+
+    public static PCellResult GenerateCoupledLineCoupler(
+        IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
+        => DrawOrRefuse(() => CoupledLineCouplerPlan.Build(parameters.Real("Coupling", 10.0), parameters.Real("Z0", 50.0),
+            parameters.Real("F", 2.4e9), SubstrateOf(technology, layerSelection)).Plan, technology, layerSelection);
+
+    public static PCellResult GenerateLange(
+        IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
+        => DrawOrRefuse(() => LangePlan.Build(parameters.Real("Coupling", 4.0), parameters.Real("Z0", 50.0),
+            parameters.Real("F", 2.4e9), SubstrateOf(technology, layerSelection)).Plan, technology, layerSelection);
+
+    public static PCellResult GenerateMarchand(
+        IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
+        => DrawOrRefuse(() => MarchandBalunPlan.Build(parameters.Real("Z0", 50.0), parameters.Real("ZL", 200.0),
+            parameters.Real("F", 2.4e9), parameters.Real("Gap", 1e-3), SubstrateOf(technology, layerSelection)).Plan,
+            technology, layerSelection);
+
+    /// <summary>The plan drawn, or its refusal as the cell's one diagnostic.</summary>
+    private static PCellResult DrawOrRefuse(Func<PassivePlan> plan, Technology? technology, PCellLayerSelection layerSelection)
+    {
+        try { return Draw(plan(), technology, layerSelection); }
+        catch (ParameterRefusalException ex) { return new PCellResult([], [], [ex.Message]); }
     }
 
     /// <summary>The substrate the model is given for the same part: the stackup's, or the factory's fallbacks.</summary>
@@ -69,6 +119,13 @@ public static class PassivePlanPCells
                 {
                     ["W"] = c.W, ["Angle"] = c.AngleDeg, ["Radius"] = c.Radius,
                 }, technology, layerSelection),
+                PlanLine l => MlinPCell.Generate(new Dictionary<string, PCellValue> { ["W"] = l.W, ["L"] = l.L },
+                    technology, layerSelection),
+                PlanCoupledLine { Fingers: 2 } c => CoupledLinePCells.GenerateMclin(new Dictionary<string, PCellValue>
+                {
+                    ["W"] = c.W, ["S"] = c.S, ["L"] = c.L,
+                }, technology, layerSelection),
+                PlanCoupledLine c => Fingers(c, technology, layerSelection),
                 _ => throw new NotSupportedException(section.GetType().Name),
             };
 
@@ -101,5 +158,31 @@ public static class PassivePlanPCells
         // The pins in the plan's own order, which is the part's terminal order.
         var order = plan.Pins.ToList();
         return new PCellResult(shapes, [.. pins.OrderBy(p => order.IndexOf(p.Name))], diagnostics);
+    }
+
+    /// <summary>An interdigitated section: each strip an MLIN, strip k centred k·(W + S) below the first as MCLIN places
+    /// its second, with the strips' pins in the section's node order (each strip's near end, then its far end).</summary>
+    private static PCellResult Fingers(PlanCoupledLine c, Technology? technology, PCellLayerSelection layerSelection)
+    {
+        int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
+        long pitch = PCellUnits.MetresToDbu(c.W, dbuPerMicron) + PCellUnits.MetresToDbu(c.S, dbuPerMicron);
+        var shapes = new List<LayoutShape>();
+        var pins = new List<PCellPin>();
+        List<string>? diagnostics = null;
+        for (int k = 0; k < c.Fingers; k++)
+        {
+            var strip = MlinPCell.Generate(new Dictionary<string, PCellValue> { ["W"] = c.W, ["L"] = c.L },
+                technology, layerSelection);
+            long dy = -k * pitch;
+            var down = new LayoutCoordinateTransform((x, y) => (x, y + dy), m => m);
+            foreach (var shape in strip.Shapes)
+            {
+                LayoutCoordinateWalk.Transform(shape, down);
+                shapes.Add(shape);
+            }
+            pins.AddRange(strip.Pins.Select(p => p with { Y = p.Y + dy }));
+            if (k == 0 && strip.Diagnostics is { Count: > 0 } d) diagnostics = [.. d];
+        }
+        return new PCellResult(shapes, pins, diagnostics);
     }
 }

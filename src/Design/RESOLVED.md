@@ -32021,7 +32021,7 @@ write back in that state, so opening a chain cannot record an edit. The default 
 **The Data Display table's label column did not widen with `FreqColumnWidth`** for the 1-D `Loss_dB` table over the
 `term` axis (280 was set, ~115 drawn). Rather than chase it in the Data Display, the one long label was shortened.
 
-## RF passives stage 1 — MWPD through the layout, LVS and EM (2026-11-15)
+## RF passives — MWPD through the layout, LVS and EM (2026-11-15)
 
 - **`PassivePlanPCells.Draw` reuses the parts' own generators** (`MTeePCell`, `MCurvePCell`), turned by quarter turns
   through `LayoutCoordinateWalk.Transform`, and takes the passive's pins from those parts' pins. A pin computed
@@ -32034,7 +32034,7 @@ write back in that state, so opening a chain cannot record an edit. The default 
   mirrored to turn down in the layout whatever its `Angle` sign says. In the example the upper output's MCURVE is
   drawn R180 and mirrored so both outputs bend away from each other.
 - **A Wilkinson's resistor has its pads on one connected conductor**, since the ring joins R2 to R3 through about
-  38 mm of line. Both component-port builders used to refuse such a part, so Stage 1's EM runs left R1 out. They now
+  38 mm of line. Both component-port builders used to refuse such a part, so the first EM runs left R1 out. They now
   build it as a port that closes a loop (next section).
 - **Planar MoM refuses calibrated edge ports on the divider's own output pins**: they sit Gap + W0 apart (2.4 mm
   centre to centre on 20 mil), inside the 5 substrate heights a calibrated feed needs from a neighbour with a port.
@@ -32090,7 +32090,7 @@ write back in that state, so opening a chain cannot record an edit. The default 
   MaxElementWavelengths gave 12,933 tetrahedra: the element size along conductor edges sets the count here. The
   example keeps the committed Draft results, since the refined runs cover a different sweep.
 
-## RF passives stage 2 — MWPD's pins follow N (2026-11-16)
+## RF passives — MWPD's pins follow N (2026-11-16)
 
 - **A generated cell's pins were checked against its symbol's DEFAULT pin list.** `GeneratedCellStore.SymbolPinNamesOf`
   called `SymbolPortDefs.For(kind)`, the one-argument form, so a two-section MWPD's cell (seven pins) was refused with
@@ -32119,3 +32119,24 @@ write back in that state, so opening a chain cannot record an edit. The default 
   nulls at 2.4 GHz. EMerge and Palace at the Wilkinson's Draft preset put 0.5 and 0.9 dB more into port 2 across the
   band; the arm is 0.2 mm, little more than a third of the Wilkinson's 0.55 mm. EMerge at the Standard preset (22,608 tetrahedra against
   13,349) moved only 0.09 dB (2.58 → 2.67 dB), so mesh density is not the whole cause; not pursued further.
+## RF passives — MBLC and MRRC through the layout, LVS and EM (2026-11-16)
+
+- **The ground pour did not count the planned passives.** `GroundPourPlanner.MicrostripGenerators` lists the generators
+  whose artwork returns through a plane, and MWPD, MBLC and MRRC were not in it, so the plane was sized from the lines
+  placed beside a passive plus the margin. The Wilkinson's ring sat inside its lines' extent; the rat-race's half-turns
+  reach past its port lines and were left over bare substrate. The three ids are in the set now. The Wilkinson example's
+  committed layout predates this; a re-run of Update Layout gives it a slightly larger plane.
+- **`PassivePlanPCells.Draw` takes `PlanLine` through `MlinPCell`**, so MBLC's and MRRC's artwork follows MLIN's
+  generator as well as MTEE's and MCURVE's: a version bump of any of the three must bump theirs.
+- **No line needs to bend away on the hybrids' benches.** The branch-line's ports are an arm's span apart and the
+  rat-race's three upper ports a quarter wave apart, well past the five substrate heights a calibrated Planar port needs
+  from its neighbours, so each pin has a straight 5 mm line to its port.
+- **Palace on the Draft mesh with no refinement is not converged on the branch-line.** It read |S21| 1.2 dB below the
+  model at F and put the deepest |S11| at 2.09 GHz for F = 2.4 GHz; with `AdaptiveMaxIterations` 2 (69,610 to 215,686
+  tetrahedra, 7 min, 5.9 GB on one compute node) it lands within 0.15 dB of EMerge's Draft run. The hybrids' example
+  setups refine twice.
+- **On the branch-line the 3D solvers and Planar disagree on the split by a few tenths of a dB.** At F, EMerge and the
+  refined Palace put 0.33-0.40 dB less into the through port than the model and up to 0.2 dB more into the coupled
+  port; Planar is within 0.22 dB of the model the other way. A series reactance at each port in the circuit model,
+  standing in for the 3D lumped sheets, moves the split the opposite way, so the lumped ports alone do not explain it.
+  Not pursued further.

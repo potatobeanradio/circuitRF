@@ -88,8 +88,11 @@ public static class ComponentModelFactory
             // sign, and a sign the symbol has to show.
             "JFET_N", "JFET_P",
             "TLIN", "CLIN", "MLIN", "MCLIN", "BCLIN", "MBCLIN", "MBEND", "MCURVE", "MMITER", "MGAP", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
-            // The planned passives (docs/design/rf-passives.md): specs in, MTEE and MCURVE sections stamped as one block.
+            // The planned passives (docs/design/rf-passives.md): specs in, MTEE, MCURVE and MLIN sections stamped as one block.
             WilkinsonTypeName,
+            BranchLineTypeName, RatRaceTypeName,
+            // The coupled-line planned passives: MCLIN, MLIN and interdigitated sections, stamped the same way.
+            CoupledLineCouplerTypeName, LangeTypeName, MarchandTypeName,
             // Grounded coplanar waveguide and stripline (brief-artsch-1), bound to the stackup as MLIN is.
             "CPWG", "SLIN",
             // The two vias (brief-via-component.md): a signal via changing layers, and a via to ground.
@@ -257,6 +260,16 @@ public static class ComponentModelFactory
             return CreateMicrostripKlopfModel(parameters);
         if (typeName.Equals(WilkinsonTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateWilkinsonModel(parameters);
+        if (typeName.Equals(BranchLineTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateBranchLineModel(parameters);
+        if (typeName.Equals(RatRaceTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateRatRaceModel(parameters);
+        if (typeName.Equals(CoupledLineCouplerTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateCoupledLineCouplerModel(parameters);
+        if (typeName.Equals(LangeTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateLangeModel(parameters);
+        if (typeName.Equals(MarchandTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateMarchandModel(parameters);
         if (typeName.Equals("VIA", StringComparison.OrdinalIgnoreCase))
             return new ViaModel(ReadViaGeometry(parameters, grounded: false));
         if (typeName.Equals("VIAGND", StringComparison.OrdinalIgnoreCase))
@@ -2997,6 +3010,51 @@ public static class ComponentModelFactory
                                    GetReal(parameters, "K", 1.0), GetReal(parameters, "N", 1.0),
                                    GetReal(parameters, "Band", WilkinsonPlan.DefaultBand)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, WilkinsonTypeName));
+
+    /// <summary>The 3 dB branch-line hybrid's engine token (pins 1, 2, 3, 4).</summary>
+    public const string BranchLineTypeName = "MBLC";
+
+    /// <summary>The rat-race hybrid's engine token (pins 1 = sum, 2, 3, 4 = difference).</summary>
+    public const string RatRaceTypeName = "MRRC";
+
+    // MBLC: the specs Z0, F and N (sections); the plan derives the rest.
+    private static MicrostripPlanModel CreateBranchLineModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(BranchLinePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
+                                    GetReal(parameters, "N", 1.0), SubstrateOf(parameters)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, BranchLineTypeName));
+
+    // MRRC: the specs Z0 and F; the plan derives the rest.
+    private static MicrostripPlanModel CreateRatRaceModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(RatRacePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, RatRaceTypeName));
+
+    /// <summary>The coupled-line coupler's engine token (pins 1 input, 2 through, 3 coupled, 4 isolated).</summary>
+    public const string CoupledLineCouplerTypeName = "MCLC";
+
+    /// <summary>The four-finger interdigitated coupler's engine token (pins 1-4 as the coupled-line coupler's, then the
+    /// jumper landings J1-J4).</summary>
+    public const string LangeTypeName = "MIDC";
+
+    /// <summary>The coupled-line balun's engine token (pins 1 unbalanced, 2 and 3 balanced, G2 and G3 to ground).</summary>
+    public const string MarchandTypeName = "MCBL";
+
+    // MCLC / MIDC: the specs (Coupling in dB, Z0, F) are the parameters; the plan derives W, S and L.
+    private static MicrostripPlanModel CreateCoupledLineCouplerModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(CoupledLineCouplerPlan.Build(GetReal(parameters, "Coupling", 10.0), GetReal(parameters, "Z0", 50.0),
+                                            GetReal(parameters, "F", 1e9), SubstrateOf(parameters)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, CoupledLineCouplerTypeName));
+
+    private static MicrostripPlanModel CreateLangeModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(LangePlan.Build(GetReal(parameters, "Coupling", 4.0), GetReal(parameters, "Z0", 50.0),
+                               GetReal(parameters, "F", 1e9), SubstrateOf(parameters)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, LangeTypeName));
+
+    // MCBL: the source and per-output load impedances (Z0, ZL) and F, plus the layout Gap between the two sections.
+    private static MicrostripPlanModel CreateMarchandModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(MarchandBalunPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "ZL", 200.0),
+                                       GetReal(parameters, "F", 1e9), GetReal(parameters, "Gap", 1e-3),
+                                       SubstrateOf(parameters)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, MarchandTypeName));
 
     private static MicrostripKlopfModel CreateMicrostripKlopfModel(IReadOnlyDictionary<string, Value> parameters)
     {

@@ -2212,10 +2212,12 @@ most often left wrong — <code>IncludeCapacitance</code> and <code>er</code> �
 </tbody></table>
 <h2 id="dividers">Dividers and couplers</h2>
 <p>Each part here is one RF topology, placed as one component and stated by what you specify rather than by its geometry:
-the port impedance and the centre frequency. circuitRF works out the lines on the workspace technology's substrate, the
-same way every time, and the layout draws exactly the pieces the circuit model simulates, so the schematic, the layout,
-LVS and EM all read the same few numbers. The parameters panel shows what the specs come out to — the widths, the lengths
-and the ring's radius — as values you read, not type. A lumped part the topology needs, such as a Wilkinson divider's
+the port impedance and the centre frequency, and a coupler's coupling. There are six: the Wilkinson divider, the
+branch-line and rat-race hybrids, the coupled-line coupler, the interdigitated coupler and the coupled-line balun.
+circuitRF works out the lines on the workspace technology's substrate, the same way every time, and the layout draws
+exactly the pieces the circuit model simulates, so the schematic, the layout, LVS and EM all read the same few numbers.
+The parameters panel shows what the specs come out to — the widths, gaps and lengths, and a ring's radius — as values
+you read, not type. A lumped part the topology needs, such as a Wilkinson divider's
 isolation resistor, is not inside the component: it is an ordinary part on two of its pins, with its own land pattern,
 so it reaches the layout, LVS and the bill of materials as itself.</p>
 <h3 id="mwpd">Wilkinson Divider (MWPD)</h3>
@@ -2434,6 +2436,554 @@ Microwave Symposium Digest</em>, pp. 407–409. DOI <a href="https://doi.org/10.
 <li>Kirschning and R. H. Jansen, &quot;Accurate model for effective dielectric constant of microstrip with validity up to
 millimetre-wave frequencies,&quot; <em>Electronics Letters</em>, vol. 18, no. 6, pp. 272–273, 1982.
 DOI <a href="https://doi.org/10.1049/el:19820186">10.1049/el:19820186</a>.</li>
+</ol>
+</blockquote>
+<h3 id="mblc">Branch-Line Hybrid (MBLC)</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M25.88 27.94L214.12 27.94" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M25.88 122.06L214.12 122.06" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M72.94 27.94L72.94 122.06" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M167.06 27.94L167.06 122.06" /><ellipse fill="#2D14C3" cx="72.94" cy="27.94" rx="2.35" ry="2.35" /><ellipse fill="#2D14C3" cx="167.06" cy="27.94" rx="2.35" ry="2.35" /><ellipse fill="#2D14C3" cx="72.94" cy="122.06" rx="2.35" ry="2.35" /><ellipse fill="#2D14C3" cx="167.06" cy="122.06" rx="2.35" ry="2.35" /><text fill="#2D14C3" transform="translate(120 16.29)" font-size="7.06" font-family="IBM Plex Sans" x="-5.5, -1.5, 1.5" y="2.65">
+			λ/4
+	</text><text fill="#2D14C3" transform="translate(120 75)" font-size="10.35" font-family="IBM Plex Sans" x="-8.5, -2.5, 3.5" y="3.88">
+			90°
+	</text><text fill="#2D14C3" transform="translate(49.41 16.29)" font-size="7.06" font-family="IBM Plex Sans" x="-2" y="2.65">
+			1
+	</text><text fill="#2D14C3" transform="translate(190.59 16.29)" font-size="7.06" font-family="IBM Plex Sans" x="-2" y="2.65">
+			2
+	</text><text fill="#2D14C3" transform="translate(190.59 133.71)" font-size="7.06" font-family="IBM Plex Sans" x="-2" y="2.65">
+			3
+	</text><text fill="#2D14C3" transform="translate(49.41 133.71)" font-size="7.06" font-family="IBM Plex Sans" x="-2" y="2.65">
+			4
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="22.88" y="24.94" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="211.12" y="24.94" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="211.12" y="119.06" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="22.88" y="119.06" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="100, 112, 122, 130" y="172.32">
+			MBLC
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M25.88 27.94L214.12 27.94" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M25.88 122.06L214.12 122.06" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M72.94 27.94L72.94 122.06" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M167.06 27.94L167.06 122.06" /><ellipse fill="#9684FA" cx="72.94" cy="27.94" rx="2.35" ry="2.35" /><ellipse fill="#9684FA" cx="167.06" cy="27.94" rx="2.35" ry="2.35" /><ellipse fill="#9684FA" cx="72.94" cy="122.06" rx="2.35" ry="2.35" /><ellipse fill="#9684FA" cx="167.06" cy="122.06" rx="2.35" ry="2.35" /><text fill="#9684FA" transform="translate(120 16.29)" font-size="7.06" font-family="IBM Plex Sans" x="-5.5, -1.5, 1.5" y="2.65">
+			λ/4
+	</text><text fill="#9684FA" transform="translate(120 75)" font-size="10.35" font-family="IBM Plex Sans" x="-8.5, -2.5, 3.5" y="3.88">
+			90°
+	</text><text fill="#9684FA" transform="translate(49.41 16.29)" font-size="7.06" font-family="IBM Plex Sans" x="-2" y="2.65">
+			1
+	</text><text fill="#9684FA" transform="translate(190.59 16.29)" font-size="7.06" font-family="IBM Plex Sans" x="-2" y="2.65">
+			2
+	</text><text fill="#9684FA" transform="translate(190.59 133.71)" font-size="7.06" font-family="IBM Plex Sans" x="-2" y="2.65">
+			3
+	</text><text fill="#9684FA" transform="translate(49.41 133.71)" font-size="7.06" font-family="IBM Plex Sans" x="-2" y="2.65">
+			4
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="22.88" y="24.94" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="211.12" y="24.94" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="211.12" y="119.06" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="22.88" y="119.06" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="100, 112, 122, 130" y="172.32">
+			MBLC
+	</text></svg></span>
+</span><figcaption>MBLC</figcaption></figure>
+<p>A 3 dB quadrature (90°) hybrid on microstrip, in one or two sections. Two through lines, 1–2 and 4–3, are joined by
+quarter-wave shunt arms. Power into terminal 1 divides equally between terminal 2 (through) and terminal 3 (coupled),
+which leave a quarter period apart, 3 behind 2; terminal 4 is isolated and every terminal is matched at the centre
+frequency <code>F</code>. The coupler is symmetric, so any terminal can be the input, with the other three taking the same roles
+around the ring.</p>
+<p><strong>How it works.</strong> The coupler is a mirror image of itself across the line midway between the two through lines, so a
+drive at terminal 1 can be split into an even half (1 and 4 driven alike) and an odd half (driven opposite). In the even
+half the midline is an open circuit, in the odd half a short, and each shunt arm becomes an eighth-wave stub, open or
+shorted, on a single through line. Each half is then a two-port that can be solved on its own, and the four
+S-parameters are the halves' sums and differences: S11 and S41 come from the two reflections, S21 and S31 from the two
+transmissions. With one section — series arms of <code>Z0</code>/√2 and shunt arms of <code>Z0</code>, all a quarter wave long — both halves
+are matched at <code>F</code>, and they transmit with equal magnitude and a quarter period apart: S11 = S41 = 0, S21 = −j/√2 and
+S31 = −1/√2, so |S21| = |S31| = −3.01 dB with 3 lagging 2 by 90°.</p>
+<p>Two sections, three shunt arms, give a wider band. Normalise each arm's admittance to the ports' (t for the series arms,
+a for the two outer shunt arms, b for the middle one): the halves are matched and the fourth terminal isolated when
+b = 2·a·t² / (1 + a²), and the split is 3 dB when b / t² = 1/√2. circuitRF keeps the series arms at <code>Z0</code> (t = 1), which
+gives a = √2 − 1 and b = 1/√2: outer shunt arms of (1 + √2)·<code>Z0</code> and a middle one of √2·<code>Z0</code>, 120.7 Ω and 70.7 Ω in a
+50 Ω system. At <code>F</code> it is matched, isolated and split 3 dB, the through port now half a period behind the input and
+3 again a quarter period behind 2.</p>
+<p><strong>What circuitRF derives</strong> from <code>Z0</code>, <code>F</code> and <code>N</code> on the technology's substrate, by the one function the model and the
+layout share:</p>
+<ul>
+<li>each arm's width, from the microstrip line model's own impedance at <code>F</code>, and the ports' <code>Z0</code> width;</li>
+<li>each arm's length, a quarter of a guide wavelength at <code>F</code>, <code>c₀ / (4·F·√εeff)</code> with εeff the arm's own effective
+permittivity at <code>F</code>, including dispersion, measured between the reference planes of the two MTEEs it joins: a through
+arm from half the branch's width, a shunt arm from half the wider through arm's;</li>
+<li>with two sections, one span for all three shunt arms, since both through lines are straight: each shunt arm takes the
+mean of the arms' quarter waves, about 1.5 % from its own on the example board.</li>
+</ul>
+<p>Each terminal is one port-line width of <code>Z0</code> line beyond its tee, in line with the through line, and each tee carries one
+port-line width of its shunt arm before the arm's own line begins, so the circuit model includes the junction. The
+parameters panel shows each arm's width, impedance and length.</p>
+<p><strong>The model</strong> is the MTEE and MLIN parts the layout draws, stamped together and reduced to the four terminals, with their
+limits, which it reports in Messages: MTEE's junction formulas are calibrated on alumina (εr 9.9), on W/h from 0.5 to 2
+and on a branch of 25 to 100 Ω, and the two-section coupler's 120.7 Ω outer arms are outside the last. The junctions'
+own reactance moves the best match a little below <code>F</code>: 2.36 GHz for <code>F</code> = 2.4 GHz on the example board, where |S11| is
+still −30 dB at <code>F</code>. A specification the substrate cannot build is refused by name: an impedance no width reaches, an arm
+too short to leave each tee its stub (a high <code>F</code>), or <code>N</code> other than 1 or 2.</p>
+<p><strong>The coupler is narrowband.</strong> On the example board (20 mil RO4350B, 2.4 GHz) the circuit model keeps |S11| and |S41|
+below −20 dB from 2.24 to 2.49 GHz with one section, and from 2.08 to 2.64 GHz with two. The
+<a href="../examples/dividers-and-couplers/index.html">Dividers and Couplers</a> example runs the one-section coupler on Planar MoM,
+EMerge and Palace.</p>
+<table class="param-table">
+<thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
+<tr><td>1</td><td>1</td></tr>
+<tr><td>2</td><td>2</td></tr>
+<tr><td>3</td><td>3</td></tr>
+<tr><td>4</td><td>4</td></tr>
+</tbody></table>
+<p class="small">The nets of an instance line, in this order. Not interchangeable: 1 and 2 are the ends of one through line, 4 and 3 of the other. Driven at 1, 2 is the through port, 3 the coupled port (90&#176; behind 2) and 4 the isolated port; the coupler is symmetric, so any pin may be the input with its own three roles.</p>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>Z0</td><td><code>50</code></td><td>Ω</td><td>shown</td><td>The ports&#39; impedance. One section: series arms Z0/√2 and shunt arms Z0; two sections: series arms Z0 and shunt arms (1 + √2)&#183;Z0, √2&#183;Z0, (1 + √2)&#183;Z0. Widths are derived on the technology&#39;s substrate.</td></tr>
+<tr><td>F</td><td><code>2.4</code></td><td>GHz</td><td>shown</td><td>Centre frequency: each arm is a quarter wavelength long here, between the junctions&#39; reference planes, in the line&#39;s own effective permittivity at F.</td></tr>
+<tr><td>N</td><td><code>1</code></td><td>&mdash;</td><td>shown</td><td>Sections, 1 or 2. Two sections widen the band and need a high-impedance outer arm.</td></tr>
+<tr><td>SignalLayer</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The conductor the coupler is on. Empty: the technology&#39;s top conductor.</td></tr>
+<tr><td>GroundReference</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The plane under it. Empty: the nearest ground-designated conductor below the signal layer.</td></tr>
+</tbody></table>
+<p><strong>References</strong></p>
+<blockquote>
+<ol type="A" start="4">
+<li>
+<ol type="A" start="13">
+<li>Pozar, <em>Microwave Engineering</em>, 4th ed., Wiley, 2012, §7.5, the quadrature (90°) hybrid. A book, with no DOI:
+<a href="https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553">the publisher's page</a>.</li>
+</ol>
+</li>
+</ol>
+</blockquote>
+<blockquote>
+<ol type="A" start="10">
+<li>Reed and G. J. Wheeler, &quot;A Method of Analysis of Symmetrical Four-Port Networks,&quot; <em>IRE Transactions on Microwave
+Theory and Techniques</em>, vol. 4, no. 4, pp. 246–252, October 1956.
+DOI <a href="https://doi.org/10.1109/TMTT.1956.1125071">10.1109/TMTT.1956.1125071</a>. The even- and odd-mode method.</li>
+</ol>
+</blockquote>
+<blockquote>
+<ol type="A" start="18">
+<li>Levy and L. F. Lind, &quot;Synthesis of Symmetrical Branch-Guide Directional Couplers,&quot; <em>IEEE Transactions on Microwave
+Theory and Techniques</em>, vol. 16, no. 2, pp. 80–89, February 1968.
+DOI <a href="https://doi.org/10.1109/TMTT.1968.1126612">10.1109/TMTT.1968.1126612</a>.</li>
+</ol>
+</blockquote>
+<blockquote>
+<ol type="A" start="13">
+<li>Muraguchi, T. Yukitake and Y. Naito, &quot;Optimum Design of 3-dB Branch-Line Couplers Using Microstrip Lines,&quot; <em>IEEE
+Transactions on Microwave Theory and Techniques</em>, vol. 31, no. 8, pp. 674–678, August 1983.
+DOI <a href="https://doi.org/10.1109/TMTT.1983.1131568">10.1109/TMTT.1983.1131568</a>.
+These two are the synthesis of multi-section branch-line couplers that the two-section design follows. The arm
+impedances used here, outer shunt arms of (1 + √2)·<code>Z0</code> and a middle one of √2·<code>Z0</code> with series arms of <code>Z0</code>, come from
+the even/odd conditions under <strong>How it works</strong>, and the circuit model checks them: matched, isolated and split 3 dB at
+<code>F</code>.</li>
+</ol>
+</blockquote>
+<blockquote>
+<ol type="A" start="5">
+<li>Hammerstad and Ø. Jensen, &quot;Accurate Models for Microstrip Computer-Aided Design,&quot; <em>1980 IEEE MTT-S International
+Microwave Symposium Digest</em>, pp. 407–409. DOI <a href="https://doi.org/10.1109/MWSYM.1980.1124303">10.1109/MWSYM.1980.1124303</a>.</li>
+</ol>
+</blockquote>
+<blockquote>
+<ol type="A" start="13">
+<li>Kirschning and R. H. Jansen, &quot;Accurate model for effective dielectric constant of microstrip with validity up to
+millimetre-wave frequencies,&quot; <em>Electronics Letters</em>, vol. 18, no. 6, pp. 272–273, 1982.
+DOI <a href="https://doi.org/10.1049/el:19820186">10.1049/el:19820186</a>.</li>
+</ol>
+</blockquote>
+<h3 id="mrrc">Rat-Race Hybrid (MRRC)</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><ellipse fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" cx="120" cy="75" rx="25" ry="25" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 25L120 50" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M70 75L95 75" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M145 75L170 75" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 100L120 125" /><ellipse fill="#2D14C3" cx="120" cy="50" rx="1.25" ry="1.25" /><ellipse fill="#2D14C3" cx="95" cy="75" rx="1.25" ry="1.25" /><ellipse fill="#2D14C3" cx="145" cy="75" rx="1.25" ry="1.25" /><ellipse fill="#2D14C3" cx="120" cy="100" rx="1.25" ry="1.25" /><text fill="#2D14C3" transform="translate(120 75)" font-size="6.5" font-family="IBM Plex Sans" x="-7.5, -3.5, 0.5, 4.5" y="2.44">
+			180°
+	</text><text fill="#2D14C3" transform="translate(127.25 35)" font-size="5" font-family="IBM Plex Sans" x="-3.5, -0.5, 0.5" y="1.88">
+			1 Σ
+	</text><text fill="#2D14C3" transform="translate(127.25 115)" font-size="5" font-family="IBM Plex Sans" x="-3.5, -0.5, 0.5" y="1.88">
+			4 Δ
+	</text><text fill="#2D14C3" transform="translate(78.75 66.75)" font-size="5" font-family="IBM Plex Sans" x="-1.5" y="1.88">
+			2
+	</text><text fill="#2D14C3" transform="translate(161.25 66.75)" font-size="5" font-family="IBM Plex Sans" x="-1.5" y="1.88">
+			3
+	</text><text fill="#2D14C3" transform="translate(91 46.75)" font-size="5" font-family="IBM Plex Sans" x="-4, -1, 1" y="1.88">
+			λ/4
+	</text><text fill="#2D14C3" transform="translate(149 46.75)" font-size="5" font-family="IBM Plex Sans" x="-4, -1, 1" y="1.88">
+			λ/4
+	</text><text fill="#2D14C3" transform="translate(149 103.25)" font-size="5" font-family="IBM Plex Sans" x="-4, -1, 1" y="1.88">
+			λ/4
+	</text><text fill="#2D14C3" transform="translate(89.5 103.25)" font-size="5" font-family="IBM Plex Sans" x="-5.5, -2.5, 0.5, 2.5" y="1.88">
+			3λ/4
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="117" y="22" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="67" y="72" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="167" y="72" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="117" y="122" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="99, 111, 121, 131" y="172.32">
+			MRRC
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><ellipse fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" cx="120" cy="75" rx="25" ry="25" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 25L120 50" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M70 75L95 75" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M145 75L170 75" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 100L120 125" /><ellipse fill="#9684FA" cx="120" cy="50" rx="1.25" ry="1.25" /><ellipse fill="#9684FA" cx="95" cy="75" rx="1.25" ry="1.25" /><ellipse fill="#9684FA" cx="145" cy="75" rx="1.25" ry="1.25" /><ellipse fill="#9684FA" cx="120" cy="100" rx="1.25" ry="1.25" /><text fill="#9684FA" transform="translate(120 75)" font-size="6.5" font-family="IBM Plex Sans" x="-7.5, -3.5, 0.5, 4.5" y="2.44">
+			180°
+	</text><text fill="#9684FA" transform="translate(127.25 35)" font-size="5" font-family="IBM Plex Sans" x="-3.5, -0.5, 0.5" y="1.88">
+			1 Σ
+	</text><text fill="#9684FA" transform="translate(127.25 115)" font-size="5" font-family="IBM Plex Sans" x="-3.5, -0.5, 0.5" y="1.88">
+			4 Δ
+	</text><text fill="#9684FA" transform="translate(78.75 66.75)" font-size="5" font-family="IBM Plex Sans" x="-1.5" y="1.88">
+			2
+	</text><text fill="#9684FA" transform="translate(161.25 66.75)" font-size="5" font-family="IBM Plex Sans" x="-1.5" y="1.88">
+			3
+	</text><text fill="#9684FA" transform="translate(91 46.75)" font-size="5" font-family="IBM Plex Sans" x="-4, -1, 1" y="1.88">
+			λ/4
+	</text><text fill="#9684FA" transform="translate(149 46.75)" font-size="5" font-family="IBM Plex Sans" x="-4, -1, 1" y="1.88">
+			λ/4
+	</text><text fill="#9684FA" transform="translate(149 103.25)" font-size="5" font-family="IBM Plex Sans" x="-4, -1, 1" y="1.88">
+			λ/4
+	</text><text fill="#9684FA" transform="translate(89.5 103.25)" font-size="5" font-family="IBM Plex Sans" x="-5.5, -2.5, 0.5, 2.5" y="1.88">
+			3λ/4
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="117" y="22" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="67" y="72" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="167" y="72" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="117" y="122" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="99, 111, 121, 131" y="172.32">
+			MRRC
+	</text></svg></span>
+</span><figcaption>MRRC</figcaption></figure>
+<p>A 3 dB 180° hybrid on microstrip: a ring with four terminals on it. Terminal 1 is the sum (Σ) port and terminal 4 the
+difference (Δ) port; 2 and 3 are the outputs. Power into 1 divides equally between 2 and 3, in phase, and 4 is isolated;
+power into 4 divides equally between 2 and 3, half a period apart, and 1 is isolated. Driven at 2 and 3 together it
+works the other way round, delivering their sum at 1 and their difference at 4. 2 and 3 are isolated from each other.</p>
+<p><strong>How it works.</strong> The ring is a line of √2·<code>Z0</code>, one and a half guide wavelengths round, with the terminals in the order
+2, 1, 3, 4 spaced a quarter, a quarter, a quarter and three quarters of a wavelength apart. Seen from terminal 1, each
+output is a quarter wave away one way round the ring and five quarters the other, so the two paths arrive in phase and
+add; terminal 4 is half a wave away one way and a whole wave the other, so they cancel. From terminal 4 the two outputs
+are a quarter wave and three quarters away by their shorter paths, so they leave half a period apart. Each quarter-wave
+path of √2·<code>Z0</code> turns a <code>Z0</code> load into 2·<code>Z0</code>, and two of them side by side are <code>Z0</code> again, so every terminal is matched.
+The same result follows from splitting the ring into even and odd halves about its line of symmetry, as for the
+branch-line hybrid. At <code>F</code> the ideal hybrid has S21 = S31 = −j/√2, S24 = −S34 = j/√2, and S11, S44, S41 and S23 zero.</p>
+<p><strong>What circuitRF derives</strong> from <code>Z0</code> and <code>F</code> on the technology's substrate, by the one function the model and the layout
+share:</p>
+<ul>
+<li>the ring's width, for √2·<code>Z0</code>, and the ports' <code>Z0</code> width, from the microstrip line model's own impedance at <code>F</code>;</li>
+<li>the quarter wavelength, <code>c₀ / (4·F·√εeff)</code> with the ring's effective permittivity at <code>F</code>, and every spacing measured
+between the reference planes of the MTEEs on the ring;</li>
+<li>the ring's shape. Its pieces turn only in quarter turns, so the terminals cannot sit 60° apart on a circle: the ring is
+two straight runs joined by two 180° bends, terminals 2, 1 and 3 on one run with their lines leaving the same way and
+terminal 4 on the other. Closing it with one tee on one run against three on the other fixes the bends:
+π·(R − 0.2·W) = λg/4 − W0, with W the ring's width, W0 the ports' and R the bends' centre-line radius.</li>
+</ul>
+<p>Each terminal is one port-line width of <code>Z0</code> line beyond its tee. The parameters panel shows the widths, the quarter
+wavelength and the bends' radius.</p>
+<p><strong>The model</strong> is the MTEE, MLIN and MCURVE parts the layout draws, stamped together and reduced to the four terminals,
+with their limits, which it reports in Messages: MTEE's junction formulas are calibrated on alumina (εr 9.9) and on W/h
+from 0.5 to 2, and MCURVE's length rule is stated for bend radii of 3 to 7 widths, a smaller ring than most. A
+specification the substrate cannot build is refused by name: an impedance no width reaches, or a quarter wave too short
+to leave the bends a radius of one ring width (too high an <code>F</code>).</p>
+<p><strong>The hybrid is narrowband.</strong> On the example board (20 mil RO4350B, 2.4 GHz) the circuit model keeps |S11|, |S44|, |S41|
+and |S23| below −20 dB from 2.04 to 2.71 GHz. The <a href="../examples/dividers-and-couplers/index.html">Dividers and Couplers</a>
+example runs it on Planar MoM, EMerge and Palace.</p>
+<table class="param-table">
+<thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
+<tr><td>1</td><td>1</td></tr>
+<tr><td>2</td><td>2</td></tr>
+<tr><td>3</td><td>3</td></tr>
+<tr><td>4</td><td>4</td></tr>
+</tbody></table>
+<p class="small">The nets of an instance line, in this order. Not interchangeable: 1 is the sum (Σ) port and 4 the difference (Δ) port; 2 and 3 are the outputs. Driven at 1, 2 and 3 are in phase and 4 is isolated; driven at 4, 2 and 3 are 180&#176; apart and 1 is isolated.</p>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>Z0</td><td><code>50</code></td><td>Ω</td><td>shown</td><td>The ports&#39; impedance. The ring is √2&#183;Z0; the widths are derived on the technology&#39;s substrate.</td></tr>
+<tr><td>F</td><td><code>2.4</code></td><td>GHz</td><td>shown</td><td>Centre frequency: the ring is 1.5 wavelengths round here, the pins λg/4, λg/4, λg/4 and 3λg/4 apart, in the line&#39;s own effective permittivity at F.</td></tr>
+<tr><td>SignalLayer</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The conductor the ring is on. Empty: the technology&#39;s top conductor.</td></tr>
+<tr><td>GroundReference</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The plane under it. Empty: the nearest ground-designated conductor below the signal layer.</td></tr>
+</tbody></table>
+<p><strong>References</strong></p>
+<blockquote>
+<ol type="A" start="4">
+<li>
+<ol type="A" start="13">
+<li>Pozar, <em>Microwave Engineering</em>, 4th ed., Wiley, 2012, §7.8, the 180° hybrid and its ring form. A book, with no
+DOI: <a href="https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553">the publisher's page</a>.</li>
+</ol>
+</li>
+</ol>
+</blockquote>
+<blockquote>
+<ol type="A" start="10">
+<li>Reed and G. J. Wheeler, &quot;A Method of Analysis of Symmetrical Four-Port Networks,&quot; <em>IRE Transactions on Microwave
+Theory and Techniques</em>, vol. 4, no. 4, pp. 246–252, October 1956.
+DOI <a href="https://doi.org/10.1109/TMTT.1956.1125071">10.1109/TMTT.1956.1125071</a>.</li>
+</ol>
+</blockquote>
+<blockquote>
+<ol type="A" start="5">
+<li>Hammerstad and Ø. Jensen, &quot;Accurate Models for Microstrip Computer-Aided Design,&quot; <em>1980 IEEE MTT-S International
+Microwave Symposium Digest</em>, pp. 407–409. DOI <a href="https://doi.org/10.1109/MWSYM.1980.1124303">10.1109/MWSYM.1980.1124303</a>.</li>
+</ol>
+</blockquote>
+<blockquote>
+<ol type="A" start="13">
+<li>Kirschning and R. H. Jansen, &quot;Accurate model for effective dielectric constant of microstrip with validity up to
+millimetre-wave frequencies,&quot; <em>Electronics Letters</em>, vol. 18, no. 6, pp. 272–273, 1982.
+DOI <a href="https://doi.org/10.1049/el:19820186">10.1049/el:19820186</a>.</li>
+</ol>
+</blockquote>
+<h3 id="mclc">Coupled-Line Coupler (MCLC)</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M27.69 28.85L76.15 28.85L76.15 56.54" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M212.31 28.85L163.85 28.85L163.85 56.54" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M27.69 121.15L76.15 121.15L76.15 93.46" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M212.31 121.15L163.85 121.15L163.85 93.46" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M66.92 66.69L66.92 60.23Q66.92 60.05 66.94 59.87Q66.96 59.69 66.99 59.51Q67.03 59.33 67.08 59.16Q67.13 58.99 67.2 58.82Q67.27 58.65 67.36 58.49Q67.44 58.33 67.55 58.18Q67.65 58.03 67.76 57.89Q67.88 57.75 68 57.62Q68.13 57.49 68.27 57.38Q68.41 57.26 68.56 57.16Q68.71 57.06 68.87 56.97Q69.03 56.89 69.2 56.82Q69.37 56.75 69.54 56.7Q69.72 56.64 69.9 56.61Q70.07 56.57 70.25 56.56Q70.43 56.54 70.62 56.54L169.39 56.54Q169.57 56.54 169.75 56.56Q169.93 56.57 170.11 56.61Q170.28 56.64 170.46 56.7Q170.63 56.75 170.8 56.82Q170.97 56.89 171.13 56.97Q171.29 57.06 171.44 57.16Q171.59 57.26 171.73 57.38Q171.87 57.49 172 57.62Q172.12 57.75 172.24 57.89Q172.35 58.03 172.46 58.18Q172.56 58.33 172.64 58.49Q172.73 58.65 172.8 58.82Q172.87 58.99 172.92 59.16Q172.97 59.33 173.01 59.51Q173.04 59.69 173.06 59.87Q173.08 60.05 173.08 60.23L173.08 66.69Q173.08 66.87 173.06 67.05Q173.04 67.23 173.01 67.41Q172.97 67.59 172.92 67.76Q172.87 67.94 172.8 68.11Q172.73 68.27 172.64 68.43Q172.56 68.59 172.46 68.74Q172.35 68.89 172.24 69.03Q172.12 69.17 172 69.3Q171.87 69.43 171.73 69.55Q171.59 69.66 171.44 69.76Q171.29 69.86 171.13 69.95Q170.97 70.03 170.8 70.1Q170.63 70.17 170.46 70.23Q170.28 70.28 170.11 70.31Q169.93 70.35 169.75 70.37Q169.57 70.38 169.39 70.38L70.62 70.38Q70.43 70.38 70.25 70.37Q70.07 70.35 69.9 70.31Q69.72 70.28 69.54 70.23Q69.37 70.17 69.2 70.1Q69.03 70.03 68.87 69.95Q68.71 69.86 68.56 69.76Q68.41 69.66 68.27 69.55Q68.13 69.43 68 69.3Q67.88 69.17 67.76 69.03Q67.65 68.89 67.55 68.74Q67.44 68.59 67.36 68.43Q67.27 68.27 67.2 68.11Q67.13 67.94 67.08 67.76Q67.03 67.59 66.99 67.41Q66.96 67.23 66.94 67.05Q66.92 66.87 66.92 66.69Z" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M66.92 89.77L66.92 83.31Q66.92 83.13 66.94 82.95Q66.96 82.77 66.99 82.59Q67.03 82.41 67.08 82.24Q67.13 82.06 67.2 81.89Q67.27 81.73 67.36 81.57Q67.44 81.41 67.55 81.26Q67.65 81.11 67.76 80.97Q67.88 80.83 68 80.7Q68.13 80.57 68.27 80.45Q68.41 80.34 68.56 80.24Q68.71 80.14 68.87 80.05Q69.03 79.97 69.2 79.9Q69.37 79.83 69.54 79.77Q69.72 79.72 69.9 79.69Q70.07 79.65 70.25 79.63Q70.43 79.62 70.62 79.62L169.39 79.62Q169.57 79.62 169.75 79.63Q169.93 79.65 170.11 79.69Q170.28 79.72 170.46 79.77Q170.63 79.83 170.8 79.9Q170.97 79.97 171.13 80.05Q171.29 80.14 171.44 80.24Q171.59 80.34 171.73 80.45Q171.87 80.57 172 80.7Q172.12 80.83 172.24 80.97Q172.35 81.11 172.46 81.26Q172.56 81.41 172.64 81.57Q172.73 81.73 172.8 81.89Q172.87 82.06 172.92 82.24Q172.97 82.41 173.01 82.59Q173.04 82.77 173.06 82.95Q173.08 83.13 173.08 83.31L173.08 89.77Q173.08 89.95 173.06 90.13Q173.04 90.31 173.01 90.49Q172.97 90.67 172.92 90.84Q172.87 91.01 172.8 91.18Q172.73 91.35 172.64 91.51Q172.56 91.67 172.46 91.82Q172.35 91.97 172.24 92.11Q172.12 92.25 172 92.38Q171.87 92.51 171.73 92.62Q171.59 92.74 171.44 92.84Q171.29 92.94 171.13 93.03Q170.97 93.11 170.8 93.18Q170.63 93.25 170.46 93.3Q170.28 93.36 170.11 93.39Q169.93 93.43 169.75 93.44Q169.57 93.46 169.39 93.46L70.62 93.46Q70.43 93.46 70.25 93.44Q70.07 93.43 69.9 93.39Q69.72 93.36 69.54 93.3Q69.37 93.25 69.2 93.18Q69.03 93.11 68.87 93.03Q68.71 92.94 68.56 92.84Q68.41 92.74 68.27 92.62Q68.13 92.51 68 92.38Q67.88 92.25 67.76 92.11Q67.65 91.97 67.55 91.82Q67.44 91.67 67.36 91.51Q67.27 91.35 67.2 91.18Q67.13 91.01 67.08 90.84Q67.03 90.67 66.99 90.49Q66.96 90.31 66.94 90.13Q66.92 89.95 66.92 89.77Z" /><text fill="#2D14C3" transform="translate(120 48.62)" font-size="5.08" font-family="IBM Plex Sans" x="-4, -1, 1" y="1.9">
+			λ/4
+	</text><text fill="#2D14C3" transform="translate(50.77 17.31)" font-size="13.85" font-family="IBM Plex Sans" x="-4" y="5.19">
+			1
+	</text><text fill="#2D14C3" transform="translate(189.23 17.31)" font-size="13.85" font-family="IBM Plex Sans" x="-4" y="5.19">
+			2
+	</text><text fill="#2D14C3" transform="translate(50.77 135)" font-size="13.85" font-family="IBM Plex Sans" x="-4" y="5.19">
+			3
+	</text><text fill="#2D14C3" transform="translate(189.23 135)" font-size="13.85" font-family="IBM Plex Sans" x="-4" y="5.19">
+			4
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="24" y="25.15" width="7.38" height="7.38" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="208.62" y="25.15" width="7.38" height="7.38" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="24" y="117.46" width="7.38" height="7.38" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="208.62" y="117.46" width="7.38" height="7.38" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="100, 112, 122, 130" y="172.32">
+			MCLC
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M27.69 28.85L76.15 28.85L76.15 56.54" /><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M212.31 28.85L163.85 28.85L163.85 56.54" /><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M27.69 121.15L76.15 121.15L76.15 93.46" /><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M212.31 121.15L163.85 121.15L163.85 93.46" /><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M66.92 66.69L66.92 60.23Q66.92 60.05 66.94 59.87Q66.96 59.69 66.99 59.51Q67.03 59.33 67.08 59.16Q67.13 58.99 67.2 58.82Q67.27 58.65 67.36 58.49Q67.44 58.33 67.55 58.18Q67.65 58.03 67.76 57.89Q67.88 57.75 68 57.62Q68.13 57.49 68.27 57.38Q68.41 57.26 68.56 57.16Q68.71 57.06 68.87 56.97Q69.03 56.89 69.2 56.82Q69.37 56.75 69.54 56.7Q69.72 56.64 69.9 56.61Q70.07 56.57 70.25 56.56Q70.43 56.54 70.62 56.54L169.39 56.54Q169.57 56.54 169.75 56.56Q169.93 56.57 170.11 56.61Q170.28 56.64 170.46 56.7Q170.63 56.75 170.8 56.82Q170.97 56.89 171.13 56.97Q171.29 57.06 171.44 57.16Q171.59 57.26 171.73 57.38Q171.87 57.49 172 57.62Q172.12 57.75 172.24 57.89Q172.35 58.03 172.46 58.18Q172.56 58.33 172.64 58.49Q172.73 58.65 172.8 58.82Q172.87 58.99 172.92 59.16Q172.97 59.33 173.01 59.51Q173.04 59.69 173.06 59.87Q173.08 60.05 173.08 60.23L173.08 66.69Q173.08 66.87 173.06 67.05Q173.04 67.23 173.01 67.41Q172.97 67.59 172.92 67.76Q172.87 67.94 172.8 68.11Q172.73 68.27 172.64 68.43Q172.56 68.59 172.46 68.74Q172.35 68.89 172.24 69.03Q172.12 69.17 172 69.3Q171.87 69.43 171.73 69.55Q171.59 69.66 171.44 69.76Q171.29 69.86 171.13 69.95Q170.97 70.03 170.8 70.1Q170.63 70.17 170.46 70.23Q170.28 70.28 170.11 70.31Q169.93 70.35 169.75 70.37Q169.57 70.38 169.39 70.38L70.62 70.38Q70.43 70.38 70.25 70.37Q70.07 70.35 69.9 70.31Q69.72 70.28 69.54 70.23Q69.37 70.17 69.2 70.1Q69.03 70.03 68.87 69.95Q68.71 69.86 68.56 69.76Q68.41 69.66 68.27 69.55Q68.13 69.43 68 69.3Q67.88 69.17 67.76 69.03Q67.65 68.89 67.55 68.74Q67.44 68.59 67.36 68.43Q67.27 68.27 67.2 68.11Q67.13 67.94 67.08 67.76Q67.03 67.59 66.99 67.41Q66.96 67.23 66.94 67.05Q66.92 66.87 66.92 66.69Z" /><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M66.92 89.77L66.92 83.31Q66.92 83.13 66.94 82.95Q66.96 82.77 66.99 82.59Q67.03 82.41 67.08 82.24Q67.13 82.06 67.2 81.89Q67.27 81.73 67.36 81.57Q67.44 81.41 67.55 81.26Q67.65 81.11 67.76 80.97Q67.88 80.83 68 80.7Q68.13 80.57 68.27 80.45Q68.41 80.34 68.56 80.24Q68.71 80.14 68.87 80.05Q69.03 79.97 69.2 79.9Q69.37 79.83 69.54 79.77Q69.72 79.72 69.9 79.69Q70.07 79.65 70.25 79.63Q70.43 79.62 70.62 79.62L169.39 79.62Q169.57 79.62 169.75 79.63Q169.93 79.65 170.11 79.69Q170.28 79.72 170.46 79.77Q170.63 79.83 170.8 79.9Q170.97 79.97 171.13 80.05Q171.29 80.14 171.44 80.24Q171.59 80.34 171.73 80.45Q171.87 80.57 172 80.7Q172.12 80.83 172.24 80.97Q172.35 81.11 172.46 81.26Q172.56 81.41 172.64 81.57Q172.73 81.73 172.8 81.89Q172.87 82.06 172.92 82.24Q172.97 82.41 173.01 82.59Q173.04 82.77 173.06 82.95Q173.08 83.13 173.08 83.31L173.08 89.77Q173.08 89.95 173.06 90.13Q173.04 90.31 173.01 90.49Q172.97 90.67 172.92 90.84Q172.87 91.01 172.8 91.18Q172.73 91.35 172.64 91.51Q172.56 91.67 172.46 91.82Q172.35 91.97 172.24 92.11Q172.12 92.25 172 92.38Q171.87 92.51 171.73 92.62Q171.59 92.74 171.44 92.84Q171.29 92.94 171.13 93.03Q170.97 93.11 170.8 93.18Q170.63 93.25 170.46 93.3Q170.28 93.36 170.11 93.39Q169.93 93.43 169.75 93.44Q169.57 93.46 169.39 93.46L70.62 93.46Q70.43 93.46 70.25 93.44Q70.07 93.43 69.9 93.39Q69.72 93.36 69.54 93.3Q69.37 93.25 69.2 93.18Q69.03 93.11 68.87 93.03Q68.71 92.94 68.56 92.84Q68.41 92.74 68.27 92.62Q68.13 92.51 68 92.38Q67.88 92.25 67.76 92.11Q67.65 91.97 67.55 91.82Q67.44 91.67 67.36 91.51Q67.27 91.35 67.2 91.18Q67.13 91.01 67.08 90.84Q67.03 90.67 66.99 90.49Q66.96 90.31 66.94 90.13Q66.92 89.95 66.92 89.77Z" /><text fill="#9684FA" transform="translate(120 48.62)" font-size="5.08" font-family="IBM Plex Sans" x="-4, -1, 1" y="1.9">
+			λ/4
+	</text><text fill="#9684FA" transform="translate(50.77 17.31)" font-size="13.85" font-family="IBM Plex Sans" x="-4" y="5.19">
+			1
+	</text><text fill="#9684FA" transform="translate(189.23 17.31)" font-size="13.85" font-family="IBM Plex Sans" x="-4" y="5.19">
+			2
+	</text><text fill="#9684FA" transform="translate(50.77 135)" font-size="13.85" font-family="IBM Plex Sans" x="-4" y="5.19">
+			3
+	</text><text fill="#9684FA" transform="translate(189.23 135)" font-size="13.85" font-family="IBM Plex Sans" x="-4" y="5.19">
+			4
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="24" y="25.15" width="7.38" height="7.38" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="208.62" y="25.15" width="7.38" height="7.38" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="24" y="117.46" width="7.38" height="7.38" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="208.62" y="117.46" width="7.38" height="7.38" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="100, 112, 122, 130" y="172.32">
+			MCLC
+	</text></svg></span>
+</span><figcaption>MCLC</figcaption></figure>
+<p>A single-section backward-wave directional coupler on microstrip: two edge-coupled strips a quarter wavelength long at
+<code>F</code>. Power into terminal 1 goes on to the through port, terminal 2, and a fraction of it, <code>Coupling</code> dB down, appears at
+the coupled port, terminal 3, beside the input; the isolated port, terminal 4, ideally gets none. The coupled wave leaves
+90° ahead of the through wave. Its pins are MCLIN's, so the part is an MCLIN whose <code>W</code>, <code>S</code> and <code>L</code> are chosen for you.</p>
+<p><strong>How it works.</strong> A symmetric pair carries two modes: the even mode, both strips at one voltage, and the odd mode, the
+strips at opposite voltages, each a line of its own impedance, Ze and Zo. With Ze·Zo = Z0² every port is matched at
+every frequency, and at the quarter wave the coupled voltage is c = (Ze − Zo)/(Ze + Zo). So a coupling of C dB, with
+c = 10^(−C/20), asks for Ze = Z0·√((1 + c)/(1 − c)) and Zo = Z0·√((1 − c)/(1 + c)).</p>
+<p><strong>What circuitRF derives.</strong> The strip width and gap whose even and odd impedances at <code>F</code> are those two, found from the
+coupled-line model itself (the Kirschning–Jansen equations MCLIN uses), and the length, <code>c₀ / (4·F·√εeff)</code> with εeff
+the mean of the two modes' effective permittivities at <code>F</code>. The search covers the model's published range, W/h and S/h
+from 0.1 to 10: a coupling that would need a narrower gap, or a wider one, is refused by name.</p>
+<p><strong>Microstrip's limit is directivity.</strong> The odd mode has more of its field in the air and travels faster than the even
+mode, so the strips cannot be a quarter wave for both. Coupling and match hold at <code>F</code>; the isolated port picks up the
+difference. On the example board (20 mil RO4350B, 2.4 GHz) the circuit model gives about 11 dB of directivity at 10 dB
+coupling and under 5 dB at 20 dB. Tight coupling needs narrow gaps there: 10 dB needs 115 µm, 8 dB 65 µm.</p>
+<p><strong>In EM</strong> the coupling lives in that narrow gap, and the mesh has to resolve it: the
+<a href="../examples/dividers-and-couplers/index.html">Dividers and Couplers</a> example runs the 10 dB coupler on Planar MoM with
+its edge mesh on (within 0.25 dB of the model at <code>F</code>) and on EMerge and Palace with refined meshes; their coarsest presets
+read the coupling several dB too strong.</p>
+<table class="param-table">
+<thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
+<tr><td>1</td><td>1</td></tr>
+<tr><td>2</td><td>2</td></tr>
+<tr><td>3</td><td>3</td></tr>
+<tr><td>4</td><td>4</td></tr>
+</tbody></table>
+<p class="small">The nets of an instance line, in this order. Not interchangeable: terminal 1 is the input, 2 the through port, 3 the coupled port (beside 1) and 4 the isolated port (beside 2). The coupler is symmetric, so any terminal can be the input with the others in turn.</p>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>Coupling</td><td><code>10</code></td><td>dB</td><td>shown</td><td>Coupling at F, in dB below the input: the coupled port&#39;s level. W and S are synthesised for it on the technology&#39;s substrate; too tight for the board&#39;s coupled-line model (a gap under 0.1&#183;H) is refused.</td></tr>
+<tr><td>Z0</td><td><code>50</code></td><td>Ω</td><td>shown</td><td>The ports&#39; impedance: the even and odd modes are chosen with Ze&#183;Zo = Z0&#178;.</td></tr>
+<tr><td>F</td><td><code>2.4</code></td><td>GHz</td><td>shown</td><td>Centre frequency: the coupled strips are a quarter wavelength long here, in the mean of their even- and odd-mode effective permittivities.</td></tr>
+<tr><td>SignalLayer</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The conductor the strips are on. Empty: the technology&#39;s top conductor.</td></tr>
+<tr><td>GroundReference</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The plane under it. Empty: the nearest ground-designated conductor below the signal layer.</td></tr>
+</tbody></table>
+<h3 id="midc">Interdigitated Coupler (MIDC)</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M53.77 25.32L81.92 25.32L81.92 60.1L86.88 60.1" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M186.23 25.32L158.08 25.32L158.08 60.1L153.12 60.1" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M86.88 61.09L86.88 59.1Q86.88 59.01 86.9 58.91Q86.92 58.81 86.96 58.72Q87 58.63 87.05 58.55Q87.1 58.47 87.17 58.4Q87.24 58.33 87.32 58.28Q87.41 58.22 87.5 58.19Q87.59 58.15 87.68 58.13Q87.78 58.11 87.88 58.11L152.12 58.11Q152.22 58.11 152.32 58.13Q152.41 58.15 152.5 58.19Q152.59 58.22 152.68 58.28Q152.76 58.33 152.83 58.4Q152.9 58.47 152.95 58.55Q153 58.63 153.04 58.72Q153.08 58.81 153.1 58.91Q153.12 59.01 153.12 59.1L153.12 61.09Q153.12 61.19 153.1 61.28Q153.08 61.38 153.04 61.47Q153 61.56 152.95 61.64Q152.9 61.72 152.83 61.79Q152.76 61.86 152.68 61.92Q152.59 61.97 152.5 62.01Q152.41 62.05 152.32 62.07Q152.22 62.08 152.12 62.08L87.88 62.08Q87.78 62.08 87.68 62.07Q87.59 62.05 87.5 62.01Q87.41 61.97 87.32 61.92Q87.24 61.86 87.17 61.79Q87.1 61.72 87.05 61.64Q87 61.56 86.96 61.47Q86.92 61.38 86.9 61.28Q86.88 61.19 86.88 61.09Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M53.77 58.44L70.32 58.44L70.32 70.03L86.88 70.03" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M186.23 58.44L169.68 58.44L169.68 70.03L153.12 70.03" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M86.88 71.03L86.88 69.04Q86.88 68.94 86.9 68.85Q86.92 68.75 86.96 68.66Q87 68.57 87.05 68.49Q87.1 68.41 87.17 68.34Q87.24 68.27 87.32 68.21Q87.41 68.16 87.5 68.12Q87.59 68.08 87.68 68.06Q87.78 68.05 87.88 68.05L152.12 68.05Q152.22 68.05 152.32 68.06Q152.41 68.08 152.5 68.12Q152.59 68.16 152.68 68.21Q152.76 68.27 152.83 68.34Q152.9 68.41 152.95 68.49Q153 68.57 153.04 68.66Q153.08 68.75 153.1 68.85Q153.12 68.94 153.12 69.04L153.12 71.03Q153.12 71.12 153.1 71.22Q153.08 71.32 153.04 71.41Q153 71.5 152.95 71.58Q152.9 71.66 152.83 71.73Q152.76 71.8 152.68 71.85Q152.59 71.91 152.5 71.94Q152.41 71.98 152.32 72Q152.22 72.02 152.12 72.02L87.88 72.02Q87.78 72.02 87.68 72Q87.59 71.98 87.5 71.94Q87.41 71.91 87.32 71.85Q87.24 71.8 87.17 71.73Q87.1 71.66 87.05 71.58Q87 71.5 86.96 71.41Q86.92 71.32 86.9 71.22Q86.88 71.12 86.88 71.03Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M53.77 91.56L70.32 91.56L70.32 79.97L86.88 79.97" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M186.23 91.56L169.68 91.56L169.68 79.97L153.12 79.97" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M86.88 80.96L86.88 78.97Q86.88 78.88 86.9 78.78Q86.92 78.68 86.96 78.59Q87 78.5 87.05 78.42Q87.1 78.34 87.17 78.27Q87.24 78.2 87.32 78.15Q87.41 78.09 87.5 78.06Q87.59 78.02 87.68 78Q87.78 77.98 87.88 77.98L152.12 77.98Q152.22 77.98 152.32 78Q152.41 78.02 152.5 78.06Q152.59 78.09 152.68 78.15Q152.76 78.2 152.83 78.27Q152.9 78.34 152.95 78.42Q153 78.5 153.04 78.59Q153.08 78.68 153.1 78.78Q153.12 78.88 153.12 78.97L153.12 80.96Q153.12 81.06 153.1 81.15Q153.08 81.25 153.04 81.34Q153 81.43 152.95 81.51Q152.9 81.59 152.83 81.66Q152.76 81.73 152.68 81.79Q152.59 81.84 152.5 81.88Q152.41 81.92 152.32 81.94Q152.22 81.95 152.12 81.95L87.88 81.95Q87.78 81.95 87.68 81.94Q87.59 81.92 87.5 81.88Q87.41 81.84 87.32 81.79Q87.24 81.73 87.17 81.66Q87.1 81.59 87.05 81.51Q87 81.43 86.96 81.34Q86.92 81.25 86.9 81.15Q86.88 81.06 86.88 80.96Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M53.77 124.68L81.92 124.68L81.92 89.9L86.88 89.9" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M186.23 124.68L158.08 124.68L158.08 89.9L153.12 89.9" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M86.88 90.9L86.88 88.91Q86.88 88.81 86.9 88.72Q86.92 88.62 86.96 88.53Q87 88.44 87.05 88.36Q87.1 88.28 87.17 88.21Q87.24 88.14 87.32 88.08Q87.41 88.03 87.5 87.99Q87.59 87.95 87.68 87.93Q87.78 87.92 87.88 87.92L152.12 87.92Q152.22 87.92 152.32 87.93Q152.41 87.95 152.5 87.99Q152.59 88.03 152.68 88.08Q152.76 88.14 152.83 88.21Q152.9 88.28 152.95 88.36Q153 88.44 153.04 88.53Q153.08 88.62 153.1 88.72Q153.12 88.81 153.12 88.91L153.12 90.9Q153.12 90.99 153.1 91.09Q153.08 91.19 153.04 91.28Q153 91.37 152.95 91.45Q152.9 91.53 152.83 91.6Q152.76 91.67 152.68 91.72Q152.59 91.78 152.5 91.81Q152.41 91.85 152.32 91.87Q152.22 91.89 152.12 91.89L87.88 91.89Q87.78 91.89 87.68 91.87Q87.59 91.85 87.5 91.81Q87.41 91.78 87.32 91.72Q87.24 91.67 87.17 91.6Q87.1 91.53 87.05 91.45Q87 91.37 86.96 91.28Q86.92 91.19 86.9 91.09Q86.88 90.99 86.88 90.9Z" /><text fill="#2D14C3" transform="translate(65.36 19.65)" font-size="3.64" font-family="IBM Plex Sans" x="-1" y="1.37">
+			1
+	</text><text fill="#2D14C3" transform="translate(65.36 52.76)" font-size="3.64" font-family="IBM Plex Sans" x="-2, 0" y="1.37">
+			J3
+	</text><text fill="#2D14C3" transform="translate(65.36 85.88)" font-size="3.64" font-family="IBM Plex Sans" x="-2, 0" y="1.37">
+			J1
+	</text><text fill="#2D14C3" transform="translate(65.36 119)" font-size="3.64" font-family="IBM Plex Sans" x="-1" y="1.37">
+			3
+	</text><text fill="#2D14C3" transform="translate(174.64 19.65)" font-size="3.64" font-family="IBM Plex Sans" x="-1" y="1.37">
+			2
+	</text><text fill="#2D14C3" transform="translate(174.64 52.76)" font-size="3.64" font-family="IBM Plex Sans" x="-2, 0" y="1.37">
+			J4
+	</text><text fill="#2D14C3" transform="translate(174.64 85.88)" font-size="3.64" font-family="IBM Plex Sans" x="-2, 0" y="1.37">
+			J2
+	</text><text fill="#2D14C3" transform="translate(174.64 119)" font-size="3.64" font-family="IBM Plex Sans" x="-1" y="1.37">
+			4
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="50.77" y="22.32" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="183.23" y="22.32" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="50.77" y="121.68" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="183.23" y="121.68" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="50.77" y="88.56" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="183.23" y="88.56" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="50.77" y="55.44" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="183.23" y="55.44" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="101, 113, 119, 129" y="172.32">
+			MIDC
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M53.77 25.32L81.92 25.32L81.92 60.1L86.88 60.1" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M186.23 25.32L158.08 25.32L158.08 60.1L153.12 60.1" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M86.88 61.09L86.88 59.1Q86.88 59.01 86.9 58.91Q86.92 58.81 86.96 58.72Q87 58.63 87.05 58.55Q87.1 58.47 87.17 58.4Q87.24 58.33 87.32 58.28Q87.41 58.22 87.5 58.19Q87.59 58.15 87.68 58.13Q87.78 58.11 87.88 58.11L152.12 58.11Q152.22 58.11 152.32 58.13Q152.41 58.15 152.5 58.19Q152.59 58.22 152.68 58.28Q152.76 58.33 152.83 58.4Q152.9 58.47 152.95 58.55Q153 58.63 153.04 58.72Q153.08 58.81 153.1 58.91Q153.12 59.01 153.12 59.1L153.12 61.09Q153.12 61.19 153.1 61.28Q153.08 61.38 153.04 61.47Q153 61.56 152.95 61.64Q152.9 61.72 152.83 61.79Q152.76 61.86 152.68 61.92Q152.59 61.97 152.5 62.01Q152.41 62.05 152.32 62.07Q152.22 62.08 152.12 62.08L87.88 62.08Q87.78 62.08 87.68 62.07Q87.59 62.05 87.5 62.01Q87.41 61.97 87.32 61.92Q87.24 61.86 87.17 61.79Q87.1 61.72 87.05 61.64Q87 61.56 86.96 61.47Q86.92 61.38 86.9 61.28Q86.88 61.19 86.88 61.09Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M53.77 58.44L70.32 58.44L70.32 70.03L86.88 70.03" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M186.23 58.44L169.68 58.44L169.68 70.03L153.12 70.03" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M86.88 71.03L86.88 69.04Q86.88 68.94 86.9 68.85Q86.92 68.75 86.96 68.66Q87 68.57 87.05 68.49Q87.1 68.41 87.17 68.34Q87.24 68.27 87.32 68.21Q87.41 68.16 87.5 68.12Q87.59 68.08 87.68 68.06Q87.78 68.05 87.88 68.05L152.12 68.05Q152.22 68.05 152.32 68.06Q152.41 68.08 152.5 68.12Q152.59 68.16 152.68 68.21Q152.76 68.27 152.83 68.34Q152.9 68.41 152.95 68.49Q153 68.57 153.04 68.66Q153.08 68.75 153.1 68.85Q153.12 68.94 153.12 69.04L153.12 71.03Q153.12 71.12 153.1 71.22Q153.08 71.32 153.04 71.41Q153 71.5 152.95 71.58Q152.9 71.66 152.83 71.73Q152.76 71.8 152.68 71.85Q152.59 71.91 152.5 71.94Q152.41 71.98 152.32 72Q152.22 72.02 152.12 72.02L87.88 72.02Q87.78 72.02 87.68 72Q87.59 71.98 87.5 71.94Q87.41 71.91 87.32 71.85Q87.24 71.8 87.17 71.73Q87.1 71.66 87.05 71.58Q87 71.5 86.96 71.41Q86.92 71.32 86.9 71.22Q86.88 71.12 86.88 71.03Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M53.77 91.56L70.32 91.56L70.32 79.97L86.88 79.97" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M186.23 91.56L169.68 91.56L169.68 79.97L153.12 79.97" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M86.88 80.96L86.88 78.97Q86.88 78.88 86.9 78.78Q86.92 78.68 86.96 78.59Q87 78.5 87.05 78.42Q87.1 78.34 87.17 78.27Q87.24 78.2 87.32 78.15Q87.41 78.09 87.5 78.06Q87.59 78.02 87.68 78Q87.78 77.98 87.88 77.98L152.12 77.98Q152.22 77.98 152.32 78Q152.41 78.02 152.5 78.06Q152.59 78.09 152.68 78.15Q152.76 78.2 152.83 78.27Q152.9 78.34 152.95 78.42Q153 78.5 153.04 78.59Q153.08 78.68 153.1 78.78Q153.12 78.88 153.12 78.97L153.12 80.96Q153.12 81.06 153.1 81.15Q153.08 81.25 153.04 81.34Q153 81.43 152.95 81.51Q152.9 81.59 152.83 81.66Q152.76 81.73 152.68 81.79Q152.59 81.84 152.5 81.88Q152.41 81.92 152.32 81.94Q152.22 81.95 152.12 81.95L87.88 81.95Q87.78 81.95 87.68 81.94Q87.59 81.92 87.5 81.88Q87.41 81.84 87.32 81.79Q87.24 81.73 87.17 81.66Q87.1 81.59 87.05 81.51Q87 81.43 86.96 81.34Q86.92 81.25 86.9 81.15Q86.88 81.06 86.88 80.96Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M53.77 124.68L81.92 124.68L81.92 89.9L86.88 89.9" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M186.23 124.68L158.08 124.68L158.08 89.9L153.12 89.9" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M86.88 90.9L86.88 88.91Q86.88 88.81 86.9 88.72Q86.92 88.62 86.96 88.53Q87 88.44 87.05 88.36Q87.1 88.28 87.17 88.21Q87.24 88.14 87.32 88.08Q87.41 88.03 87.5 87.99Q87.59 87.95 87.68 87.93Q87.78 87.92 87.88 87.92L152.12 87.92Q152.22 87.92 152.32 87.93Q152.41 87.95 152.5 87.99Q152.59 88.03 152.68 88.08Q152.76 88.14 152.83 88.21Q152.9 88.28 152.95 88.36Q153 88.44 153.04 88.53Q153.08 88.62 153.1 88.72Q153.12 88.81 153.12 88.91L153.12 90.9Q153.12 90.99 153.1 91.09Q153.08 91.19 153.04 91.28Q153 91.37 152.95 91.45Q152.9 91.53 152.83 91.6Q152.76 91.67 152.68 91.72Q152.59 91.78 152.5 91.81Q152.41 91.85 152.32 91.87Q152.22 91.89 152.12 91.89L87.88 91.89Q87.78 91.89 87.68 91.87Q87.59 91.85 87.5 91.81Q87.41 91.78 87.32 91.72Q87.24 91.67 87.17 91.6Q87.1 91.53 87.05 91.45Q87 91.37 86.96 91.28Q86.92 91.19 86.9 91.09Q86.88 90.99 86.88 90.9Z" /><text fill="#9684FA" transform="translate(65.36 19.65)" font-size="3.64" font-family="IBM Plex Sans" x="-1" y="1.37">
+			1
+	</text><text fill="#9684FA" transform="translate(65.36 52.76)" font-size="3.64" font-family="IBM Plex Sans" x="-2, 0" y="1.37">
+			J3
+	</text><text fill="#9684FA" transform="translate(65.36 85.88)" font-size="3.64" font-family="IBM Plex Sans" x="-2, 0" y="1.37">
+			J1
+	</text><text fill="#9684FA" transform="translate(65.36 119)" font-size="3.64" font-family="IBM Plex Sans" x="-1" y="1.37">
+			3
+	</text><text fill="#9684FA" transform="translate(174.64 19.65)" font-size="3.64" font-family="IBM Plex Sans" x="-1" y="1.37">
+			2
+	</text><text fill="#9684FA" transform="translate(174.64 52.76)" font-size="3.64" font-family="IBM Plex Sans" x="-2, 0" y="1.37">
+			J4
+	</text><text fill="#9684FA" transform="translate(174.64 85.88)" font-size="3.64" font-family="IBM Plex Sans" x="-2, 0" y="1.37">
+			J2
+	</text><text fill="#9684FA" transform="translate(174.64 119)" font-size="3.64" font-family="IBM Plex Sans" x="-1" y="1.37">
+			4
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="50.77" y="22.32" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="183.23" y="22.32" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="50.77" y="121.68" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="183.23" y="121.68" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="50.77" y="88.56" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="183.23" y="88.56" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="50.77" y="55.44" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="183.23" y="55.44" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="101, 113, 119, 129" y="172.32">
+			MIDC
+	</text></svg></span>
+</span><figcaption>MIDC</figcaption></figure>
+<p>A four-finger interdigitated quadrature coupler on microstrip — the Lange coupler, unfolded. Four quarter-wave strips lie
+side by side; alternate strips are joined at both ends into two conductors, so each conductor couples to the other across
+three gaps instead of one and reaches couplings a single pair cannot. Terminals 1 to 4 are as MCLC's: 1 the input and
+2 the through port on the top finger, 3 the coupled port and 4 the isolated port on the bottom finger. <code>J1</code> to <code>J4</code> are
+the inner fingers' ends: <strong>the joins are not part of the part</strong>. Place a jumper from each terminal k to Jk — on a board,
+a bond wire across the finger between — so the layout, LVS and EM see it as the part it is.</p>
+<p><strong>How it works (Ou's equations).</strong> With only neighbouring fingers coupled, every finger has a capacitance to ground and a
+mutual capacitance to each neighbour, and both can be read off one pair of adjacent fingers: an outer finger's ground
+share is the pair's even-mode admittance 1/Ze, the mutual is half the difference of the odd and even admittances, and a
+finger between two others keeps less of the ground share because its neighbours screen it. Adding the fingers of each
+conductor, with each conductor at one potential, gives the coupler's own modes:
+Ze,N = Ze(Ze + Zo)/(Ze + (N − 1)·Zo) and Zo,N = Zo(Ze + Zo)/(Zo + (N − 1)·Ze), with N = 4 here, and a coupling
+(N − 1)(R² − 1)/((N − 1)(R² + 1) + 2R) with R = Ze/Zo. circuitRF inverts that for <code>Coupling</code> and Ze,N·Zo,N = <code>Z0</code>²,
+then finds the adjacent pair's <code>W</code> and <code>S</code> exactly as MCLC does. The length is a quarter wave in the pair's mean εeff.</p>
+<p><strong>The model</strong> is the pair's own modes, MCLIN's, put through Ou's equations, with each finger carrying its own share of
+each mode: an ideal jumper on each Jk gives Ou's two-conductor coupler exactly, a real jumper carries its finger's
+current, and a missing one is a different circuit, which still solves and couples less. Ou's equations are a TEM
+picture; the even and odd permittivities are the adjacent pair's, and fingers further apart than neighbours are not
+coupled.</p>
+<p><strong>What a board can build.</strong> A 3 dB coupler needs tight gaps. On 20 mil RO4350B at 2.4 GHz it needs fingers 138 µm wide
+and 69 µm apart, under common board rules of 75 to 100 µm; 3.5 dB needs 86 µm and 4 dB 105 µm. The part opens at 4 dB
+for that reason, splitting about −2.4 dB and −4.2 dB in quadrature. A thinner laminate, or a process with finer gaps,
+reaches 3 dB.</p>
+<table class="param-table">
+<thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
+<tr><td>1</td><td>1</td></tr>
+<tr><td>2</td><td>2</td></tr>
+<tr><td>3</td><td>3</td></tr>
+<tr><td>4</td><td>4</td></tr>
+<tr><td>5</td><td>J1</td></tr>
+<tr><td>6</td><td>J2</td></tr>
+<tr><td>7</td><td>J3</td></tr>
+<tr><td>8</td><td>J4</td></tr>
+</tbody></table>
+<p class="small">The nets of an instance line, in this order. Terminals 1-4 as MCLC&#39;s: 1 the input, 2 through, 3 coupled, 4 isolated. J1-J4 are the inner fingers&#39; ends: put a jumper (on a board, a bond wire) from each terminal k to Jk. Without them the fingers are not joined and the part does not couple as specified.</p>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>Coupling</td><td><code>4</code></td><td>dB</td><td>shown</td><td>Coupling at F, in dB below the input: the coupled port&#39;s level. W and S are synthesised for it on the technology&#39;s substrate; too tight for the board&#39;s coupled-line model (a gap under 0.1&#183;H) is refused.</td></tr>
+<tr><td>Z0</td><td><code>50</code></td><td>Ω</td><td>shown</td><td>The ports&#39; impedance: the even and odd modes are chosen with Ze&#183;Zo = Z0&#178;.</td></tr>
+<tr><td>F</td><td><code>2.4</code></td><td>GHz</td><td>shown</td><td>Centre frequency: the coupled strips are a quarter wavelength long here, in the mean of their even- and odd-mode effective permittivities.</td></tr>
+<tr><td>SignalLayer</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The conductor the strips are on. Empty: the technology&#39;s top conductor.</td></tr>
+<tr><td>GroundReference</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The plane under it. Empty: the nearest ground-designated conductor below the signal layer.</td></tr>
+</tbody></table>
+<h3 id="mcbl">Coupled-Line Balun (MCBL)</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M25.26 51.32L48.16 51.32L48.16 60.79" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M25.26 82.89L48.16 82.89L48.16 73.42" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M214.74 82.89L191.84 82.89L191.84 73.42" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M104.21 98.68L104.21 73.42" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M135.79 98.68L135.79 73.42" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M48.95 64.26L48.95 62.05Q48.95 61.99 48.95 61.93Q48.96 61.87 48.97 61.81Q48.98 61.75 49 61.69Q49.02 61.63 49.04 61.57Q49.07 61.51 49.1 61.46Q49.13 61.4 49.16 61.35Q49.19 61.3 49.23 61.25Q49.27 61.2 49.32 61.16Q49.36 61.12 49.41 61.08Q49.46 61.04 49.51 61Q49.56 60.97 49.62 60.94Q49.67 60.91 49.73 60.89Q49.78 60.86 49.84 60.84Q49.9 60.83 49.96 60.81Q50.03 60.8 50.09 60.8Q50.15 60.79 50.21 60.79L110.84 60.79Q110.9 60.79 110.97 60.8Q111.03 60.8 111.09 60.81Q111.15 60.83 111.21 60.84Q111.27 60.86 111.33 60.89Q111.38 60.91 111.44 60.94Q111.49 60.97 111.54 61Q111.6 61.04 111.64 61.08Q111.69 61.12 111.74 61.16Q111.78 61.2 111.82 61.25Q111.86 61.3 111.89 61.35Q111.93 61.4 111.96 61.46Q111.99 61.51 112.01 61.57Q112.03 61.63 112.05 61.69Q112.07 61.75 112.08 61.81Q112.09 61.87 112.1 61.93Q112.11 61.99 112.11 62.05L112.11 64.26Q112.11 64.33 112.1 64.39Q112.09 64.45 112.08 64.51Q112.07 64.57 112.05 64.63Q112.03 64.69 112.01 64.75Q111.99 64.8 111.96 64.86Q111.93 64.91 111.89 64.96Q111.86 65.02 111.82 65.06Q111.78 65.11 111.74 65.16Q111.69 65.2 111.64 65.24Q111.6 65.28 111.54 65.31Q111.49 65.35 111.44 65.38Q111.38 65.41 111.33 65.43Q111.27 65.45 111.21 65.47Q111.15 65.49 111.09 65.5Q111.03 65.51 110.97 65.52Q110.9 65.53 110.84 65.53L50.21 65.53Q50.15 65.53 50.09 65.52Q50.03 65.51 49.96 65.5Q49.9 65.49 49.84 65.47Q49.78 65.45 49.73 65.43Q49.67 65.41 49.62 65.38Q49.56 65.35 49.51 65.31Q49.46 65.28 49.41 65.24Q49.36 65.2 49.32 65.16Q49.27 65.11 49.23 65.06Q49.19 65.02 49.16 64.96Q49.13 64.91 49.1 64.86Q49.07 64.8 49.04 64.75Q49.02 64.69 49 64.63Q48.98 64.57 48.97 64.51Q48.96 64.45 48.95 64.39Q48.95 64.33 48.95 64.26Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M127.9 64.26L127.9 62.05Q127.9 61.99 127.9 61.93Q127.91 61.87 127.92 61.81Q127.93 61.75 127.95 61.69Q127.97 61.63 127.99 61.57Q128.01 61.51 128.04 61.46Q128.07 61.4 128.11 61.35Q128.14 61.3 128.18 61.25Q128.22 61.2 128.26 61.16Q128.31 61.12 128.36 61.08Q128.41 61.04 128.46 61Q128.51 60.97 128.56 60.94Q128.62 60.91 128.67 60.89Q128.73 60.86 128.79 60.84Q128.85 60.83 128.91 60.81Q128.97 60.8 129.03 60.8Q129.1 60.79 129.16 60.79L189.79 60.79Q189.85 60.79 189.91 60.8Q189.98 60.8 190.04 60.81Q190.1 60.83 190.16 60.84Q190.22 60.86 190.27 60.89Q190.33 60.91 190.39 60.94Q190.44 60.97 190.49 61Q190.54 61.04 190.59 61.08Q190.64 61.12 190.68 61.16Q190.73 61.2 190.77 61.25Q190.81 61.3 190.84 61.35Q190.87 61.4 190.9 61.46Q190.93 61.51 190.96 61.57Q190.98 61.63 191 61.69Q191.02 61.75 191.03 61.81Q191.04 61.87 191.05 61.93Q191.05 61.99 191.05 62.05L191.05 64.26Q191.05 64.33 191.05 64.39Q191.04 64.45 191.03 64.51Q191.02 64.57 191 64.63Q190.98 64.69 190.96 64.75Q190.93 64.8 190.9 64.86Q190.87 64.91 190.84 64.96Q190.81 65.02 190.77 65.06Q190.73 65.11 190.68 65.16Q190.64 65.2 190.59 65.24Q190.54 65.28 190.49 65.31Q190.44 65.35 190.39 65.38Q190.33 65.41 190.27 65.43Q190.22 65.45 190.16 65.47Q190.1 65.49 190.04 65.5Q189.98 65.51 189.91 65.52Q189.85 65.53 189.79 65.53L129.16 65.53Q129.1 65.53 129.03 65.52Q128.97 65.51 128.91 65.5Q128.85 65.49 128.79 65.47Q128.73 65.45 128.67 65.43Q128.62 65.41 128.56 65.38Q128.51 65.35 128.46 65.31Q128.41 65.28 128.36 65.24Q128.31 65.2 128.26 65.16Q128.22 65.11 128.18 65.06Q128.14 65.02 128.11 64.96Q128.07 64.91 128.04 64.86Q128.01 64.8 127.99 64.75Q127.97 64.69 127.95 64.63Q127.93 64.57 127.92 64.51Q127.91 64.45 127.9 64.39Q127.9 64.33 127.9 64.26Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M48.95 72.16L48.95 69.95Q48.95 69.89 48.95 69.82Q48.96 69.76 48.97 69.7Q48.98 69.64 49 69.58Q49.02 69.52 49.04 69.46Q49.07 69.41 49.1 69.35Q49.13 69.3 49.16 69.25Q49.19 69.19 49.23 69.15Q49.27 69.1 49.32 69.05Q49.36 69.01 49.41 68.97Q49.46 68.93 49.51 68.9Q49.56 68.86 49.62 68.83Q49.67 68.8 49.73 68.78Q49.78 68.76 49.84 68.74Q49.9 68.72 49.96 68.71Q50.03 68.7 50.09 68.69Q50.15 68.68 50.21 68.68L110.84 68.68Q110.9 68.68 110.97 68.69Q111.03 68.7 111.09 68.71Q111.15 68.72 111.21 68.74Q111.27 68.76 111.33 68.78Q111.38 68.8 111.44 68.83Q111.49 68.86 111.54 68.9Q111.6 68.93 111.64 68.97Q111.69 69.01 111.74 69.05Q111.78 69.1 111.82 69.15Q111.86 69.19 111.89 69.25Q111.93 69.3 111.96 69.35Q111.99 69.41 112.01 69.46Q112.03 69.52 112.05 69.58Q112.07 69.64 112.08 69.7Q112.09 69.76 112.1 69.82Q112.11 69.89 112.11 69.95L112.11 72.16Q112.11 72.22 112.1 72.28Q112.09 72.34 112.08 72.4Q112.07 72.47 112.05 72.52Q112.03 72.58 112.01 72.64Q111.99 72.7 111.96 72.75Q111.93 72.81 111.89 72.86Q111.86 72.91 111.82 72.96Q111.78 73.01 111.74 73.05Q111.69 73.1 111.64 73.13Q111.6 73.17 111.54 73.21Q111.49 73.24 111.44 73.27Q111.38 73.3 111.33 73.32Q111.27 73.35 111.21 73.37Q111.15 73.38 111.09 73.4Q111.03 73.41 110.97 73.42Q110.9 73.42 110.84 73.42L50.21 73.42Q50.15 73.42 50.09 73.42Q50.03 73.41 49.96 73.4Q49.9 73.38 49.84 73.37Q49.78 73.35 49.73 73.32Q49.67 73.3 49.62 73.27Q49.56 73.24 49.51 73.21Q49.46 73.17 49.41 73.13Q49.36 73.1 49.32 73.05Q49.27 73.01 49.23 72.96Q49.19 72.91 49.16 72.86Q49.13 72.81 49.1 72.75Q49.07 72.7 49.04 72.64Q49.02 72.58 49 72.52Q48.98 72.47 48.97 72.4Q48.96 72.34 48.95 72.28Q48.95 72.22 48.95 72.16Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M127.9 72.16L127.9 69.95Q127.9 69.89 127.9 69.82Q127.91 69.76 127.92 69.7Q127.93 69.64 127.95 69.58Q127.97 69.52 127.99 69.46Q128.01 69.41 128.04 69.35Q128.07 69.3 128.11 69.25Q128.14 69.19 128.18 69.15Q128.22 69.1 128.26 69.05Q128.31 69.01 128.36 68.97Q128.41 68.93 128.46 68.9Q128.51 68.86 128.56 68.83Q128.62 68.8 128.67 68.78Q128.73 68.76 128.79 68.74Q128.85 68.72 128.91 68.71Q128.97 68.7 129.03 68.69Q129.1 68.68 129.16 68.68L189.79 68.68Q189.85 68.68 189.91 68.69Q189.98 68.7 190.04 68.71Q190.1 68.72 190.16 68.74Q190.22 68.76 190.27 68.78Q190.33 68.8 190.39 68.83Q190.44 68.86 190.49 68.9Q190.54 68.93 190.59 68.97Q190.64 69.01 190.68 69.05Q190.73 69.1 190.77 69.15Q190.81 69.19 190.84 69.25Q190.87 69.3 190.9 69.35Q190.93 69.41 190.96 69.46Q190.98 69.52 191 69.58Q191.02 69.64 191.03 69.7Q191.04 69.76 191.05 69.82Q191.05 69.89 191.05 69.95L191.05 72.16Q191.05 72.22 191.05 72.28Q191.04 72.34 191.03 72.4Q191.02 72.47 191 72.52Q190.98 72.58 190.96 72.64Q190.93 72.7 190.9 72.75Q190.87 72.81 190.84 72.86Q190.81 72.91 190.77 72.96Q190.73 73.01 190.68 73.05Q190.64 73.1 190.59 73.13Q190.54 73.17 190.49 73.21Q190.44 73.24 190.39 73.27Q190.33 73.3 190.27 73.32Q190.22 73.35 190.16 73.37Q190.1 73.38 190.04 73.4Q189.98 73.41 189.91 73.42Q189.85 73.42 189.79 73.42L129.16 73.42Q129.1 73.42 129.03 73.42Q128.97 73.41 128.91 73.4Q128.85 73.38 128.79 73.37Q128.73 73.35 128.67 73.32Q128.62 73.3 128.56 73.27Q128.51 73.24 128.46 73.21Q128.41 73.17 128.36 73.13Q128.31 73.1 128.26 73.05Q128.22 73.01 128.18 72.96Q128.14 72.91 128.11 72.86Q128.07 72.81 128.04 72.75Q128.01 72.7 127.99 72.64Q127.97 72.58 127.95 72.52Q127.93 72.47 127.92 72.4Q127.91 72.34 127.9 72.28Q127.9 72.22 127.9 72.16Z" /><text fill="#2D14C3" transform="translate(80.53 58.08)" font-size="1.74" font-family="IBM Plex Sans" x="-1.5, -0.5, 0.5" y="0.6513">
+			λ/4
+	</text><text fill="#2D14C3" transform="translate(159.47 58.08)" font-size="1.74" font-family="IBM Plex Sans" x="-1.5, -0.5, 0.5" y="0.6513">
+			λ/4
+	</text><text fill="#2D14C3" transform="translate(31.58 47.37)" font-size="4.74" font-family="IBM Plex Sans" x="-1.5" y="1.78">
+			1
+	</text><text fill="#2D14C3" transform="translate(31.58 88.42)" font-size="3.47" font-family="IBM Plex Sans" x="-2, 0" y="1.3">
+			G2
+	</text><text fill="#2D14C3" transform="translate(208.42 88.42)" font-size="3.47" font-family="IBM Plex Sans" x="-2, 0" y="1.3">
+			G3
+	</text><text fill="#2D14C3" transform="translate(97.89 97.11)" font-size="4.74" font-family="IBM Plex Sans" x="-1.5" y="1.78">
+			2
+	</text><text fill="#2D14C3" transform="translate(142.1 97.11)" font-size="4.74" font-family="IBM Plex Sans" x="-1.5" y="1.78">
+			3
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="22.26" y="48.32" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="101.21" y="95.68" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="132.79" y="95.68" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="22.26" y="79.89" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="211.74" y="79.89" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="100, 112, 122, 132" y="172.32">
+			MCBL
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M25.26 51.32L48.16 51.32L48.16 60.79" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M25.26 82.89L48.16 82.89L48.16 73.42" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M214.74 82.89L191.84 82.89L191.84 73.42" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M104.21 98.68L104.21 73.42" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M135.79 98.68L135.79 73.42" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M48.95 64.26L48.95 62.05Q48.95 61.99 48.95 61.93Q48.96 61.87 48.97 61.81Q48.98 61.75 49 61.69Q49.02 61.63 49.04 61.57Q49.07 61.51 49.1 61.46Q49.13 61.4 49.16 61.35Q49.19 61.3 49.23 61.25Q49.27 61.2 49.32 61.16Q49.36 61.12 49.41 61.08Q49.46 61.04 49.51 61Q49.56 60.97 49.62 60.94Q49.67 60.91 49.73 60.89Q49.78 60.86 49.84 60.84Q49.9 60.83 49.96 60.81Q50.03 60.8 50.09 60.8Q50.15 60.79 50.21 60.79L110.84 60.79Q110.9 60.79 110.97 60.8Q111.03 60.8 111.09 60.81Q111.15 60.83 111.21 60.84Q111.27 60.86 111.33 60.89Q111.38 60.91 111.44 60.94Q111.49 60.97 111.54 61Q111.6 61.04 111.64 61.08Q111.69 61.12 111.74 61.16Q111.78 61.2 111.82 61.25Q111.86 61.3 111.89 61.35Q111.93 61.4 111.96 61.46Q111.99 61.51 112.01 61.57Q112.03 61.63 112.05 61.69Q112.07 61.75 112.08 61.81Q112.09 61.87 112.1 61.93Q112.11 61.99 112.11 62.05L112.11 64.26Q112.11 64.33 112.1 64.39Q112.09 64.45 112.08 64.51Q112.07 64.57 112.05 64.63Q112.03 64.69 112.01 64.75Q111.99 64.8 111.96 64.86Q111.93 64.91 111.89 64.96Q111.86 65.02 111.82 65.06Q111.78 65.11 111.74 65.16Q111.69 65.2 111.64 65.24Q111.6 65.28 111.54 65.31Q111.49 65.35 111.44 65.38Q111.38 65.41 111.33 65.43Q111.27 65.45 111.21 65.47Q111.15 65.49 111.09 65.5Q111.03 65.51 110.97 65.52Q110.9 65.53 110.84 65.53L50.21 65.53Q50.15 65.53 50.09 65.52Q50.03 65.51 49.96 65.5Q49.9 65.49 49.84 65.47Q49.78 65.45 49.73 65.43Q49.67 65.41 49.62 65.38Q49.56 65.35 49.51 65.31Q49.46 65.28 49.41 65.24Q49.36 65.2 49.32 65.16Q49.27 65.11 49.23 65.06Q49.19 65.02 49.16 64.96Q49.13 64.91 49.1 64.86Q49.07 64.8 49.04 64.75Q49.02 64.69 49 64.63Q48.98 64.57 48.97 64.51Q48.96 64.45 48.95 64.39Q48.95 64.33 48.95 64.26Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M127.9 64.26L127.9 62.05Q127.9 61.99 127.9 61.93Q127.91 61.87 127.92 61.81Q127.93 61.75 127.95 61.69Q127.97 61.63 127.99 61.57Q128.01 61.51 128.04 61.46Q128.07 61.4 128.11 61.35Q128.14 61.3 128.18 61.25Q128.22 61.2 128.26 61.16Q128.31 61.12 128.36 61.08Q128.41 61.04 128.46 61Q128.51 60.97 128.56 60.94Q128.62 60.91 128.67 60.89Q128.73 60.86 128.79 60.84Q128.85 60.83 128.91 60.81Q128.97 60.8 129.03 60.8Q129.1 60.79 129.16 60.79L189.79 60.79Q189.85 60.79 189.91 60.8Q189.98 60.8 190.04 60.81Q190.1 60.83 190.16 60.84Q190.22 60.86 190.27 60.89Q190.33 60.91 190.39 60.94Q190.44 60.97 190.49 61Q190.54 61.04 190.59 61.08Q190.64 61.12 190.68 61.16Q190.73 61.2 190.77 61.25Q190.81 61.3 190.84 61.35Q190.87 61.4 190.9 61.46Q190.93 61.51 190.96 61.57Q190.98 61.63 191 61.69Q191.02 61.75 191.03 61.81Q191.04 61.87 191.05 61.93Q191.05 61.99 191.05 62.05L191.05 64.26Q191.05 64.33 191.05 64.39Q191.04 64.45 191.03 64.51Q191.02 64.57 191 64.63Q190.98 64.69 190.96 64.75Q190.93 64.8 190.9 64.86Q190.87 64.91 190.84 64.96Q190.81 65.02 190.77 65.06Q190.73 65.11 190.68 65.16Q190.64 65.2 190.59 65.24Q190.54 65.28 190.49 65.31Q190.44 65.35 190.39 65.38Q190.33 65.41 190.27 65.43Q190.22 65.45 190.16 65.47Q190.1 65.49 190.04 65.5Q189.98 65.51 189.91 65.52Q189.85 65.53 189.79 65.53L129.16 65.53Q129.1 65.53 129.03 65.52Q128.97 65.51 128.91 65.5Q128.85 65.49 128.79 65.47Q128.73 65.45 128.67 65.43Q128.62 65.41 128.56 65.38Q128.51 65.35 128.46 65.31Q128.41 65.28 128.36 65.24Q128.31 65.2 128.26 65.16Q128.22 65.11 128.18 65.06Q128.14 65.02 128.11 64.96Q128.07 64.91 128.04 64.86Q128.01 64.8 127.99 64.75Q127.97 64.69 127.95 64.63Q127.93 64.57 127.92 64.51Q127.91 64.45 127.9 64.39Q127.9 64.33 127.9 64.26Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M48.95 72.16L48.95 69.95Q48.95 69.89 48.95 69.82Q48.96 69.76 48.97 69.7Q48.98 69.64 49 69.58Q49.02 69.52 49.04 69.46Q49.07 69.41 49.1 69.35Q49.13 69.3 49.16 69.25Q49.19 69.19 49.23 69.15Q49.27 69.1 49.32 69.05Q49.36 69.01 49.41 68.97Q49.46 68.93 49.51 68.9Q49.56 68.86 49.62 68.83Q49.67 68.8 49.73 68.78Q49.78 68.76 49.84 68.74Q49.9 68.72 49.96 68.71Q50.03 68.7 50.09 68.69Q50.15 68.68 50.21 68.68L110.84 68.68Q110.9 68.68 110.97 68.69Q111.03 68.7 111.09 68.71Q111.15 68.72 111.21 68.74Q111.27 68.76 111.33 68.78Q111.38 68.8 111.44 68.83Q111.49 68.86 111.54 68.9Q111.6 68.93 111.64 68.97Q111.69 69.01 111.74 69.05Q111.78 69.1 111.82 69.15Q111.86 69.19 111.89 69.25Q111.93 69.3 111.96 69.35Q111.99 69.41 112.01 69.46Q112.03 69.52 112.05 69.58Q112.07 69.64 112.08 69.7Q112.09 69.76 112.1 69.82Q112.11 69.89 112.11 69.95L112.11 72.16Q112.11 72.22 112.1 72.28Q112.09 72.34 112.08 72.4Q112.07 72.47 112.05 72.52Q112.03 72.58 112.01 72.64Q111.99 72.7 111.96 72.75Q111.93 72.81 111.89 72.86Q111.86 72.91 111.82 72.96Q111.78 73.01 111.74 73.05Q111.69 73.1 111.64 73.13Q111.6 73.17 111.54 73.21Q111.49 73.24 111.44 73.27Q111.38 73.3 111.33 73.32Q111.27 73.35 111.21 73.37Q111.15 73.38 111.09 73.4Q111.03 73.41 110.97 73.42Q110.9 73.42 110.84 73.42L50.21 73.42Q50.15 73.42 50.09 73.42Q50.03 73.41 49.96 73.4Q49.9 73.38 49.84 73.37Q49.78 73.35 49.73 73.32Q49.67 73.3 49.62 73.27Q49.56 73.24 49.51 73.21Q49.46 73.17 49.41 73.13Q49.36 73.1 49.32 73.05Q49.27 73.01 49.23 72.96Q49.19 72.91 49.16 72.86Q49.13 72.81 49.1 72.75Q49.07 72.7 49.04 72.64Q49.02 72.58 49 72.52Q48.98 72.47 48.97 72.4Q48.96 72.34 48.95 72.28Q48.95 72.22 48.95 72.16Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M127.9 72.16L127.9 69.95Q127.9 69.89 127.9 69.82Q127.91 69.76 127.92 69.7Q127.93 69.64 127.95 69.58Q127.97 69.52 127.99 69.46Q128.01 69.41 128.04 69.35Q128.07 69.3 128.11 69.25Q128.14 69.19 128.18 69.15Q128.22 69.1 128.26 69.05Q128.31 69.01 128.36 68.97Q128.41 68.93 128.46 68.9Q128.51 68.86 128.56 68.83Q128.62 68.8 128.67 68.78Q128.73 68.76 128.79 68.74Q128.85 68.72 128.91 68.71Q128.97 68.7 129.03 68.69Q129.1 68.68 129.16 68.68L189.79 68.68Q189.85 68.68 189.91 68.69Q189.98 68.7 190.04 68.71Q190.1 68.72 190.16 68.74Q190.22 68.76 190.27 68.78Q190.33 68.8 190.39 68.83Q190.44 68.86 190.49 68.9Q190.54 68.93 190.59 68.97Q190.64 69.01 190.68 69.05Q190.73 69.1 190.77 69.15Q190.81 69.19 190.84 69.25Q190.87 69.3 190.9 69.35Q190.93 69.41 190.96 69.46Q190.98 69.52 191 69.58Q191.02 69.64 191.03 69.7Q191.04 69.76 191.05 69.82Q191.05 69.89 191.05 69.95L191.05 72.16Q191.05 72.22 191.05 72.28Q191.04 72.34 191.03 72.4Q191.02 72.47 191 72.52Q190.98 72.58 190.96 72.64Q190.93 72.7 190.9 72.75Q190.87 72.81 190.84 72.86Q190.81 72.91 190.77 72.96Q190.73 73.01 190.68 73.05Q190.64 73.1 190.59 73.13Q190.54 73.17 190.49 73.21Q190.44 73.24 190.39 73.27Q190.33 73.3 190.27 73.32Q190.22 73.35 190.16 73.37Q190.1 73.38 190.04 73.4Q189.98 73.41 189.91 73.42Q189.85 73.42 189.79 73.42L129.16 73.42Q129.1 73.42 129.03 73.42Q128.97 73.41 128.91 73.4Q128.85 73.38 128.79 73.37Q128.73 73.35 128.67 73.32Q128.62 73.3 128.56 73.27Q128.51 73.24 128.46 73.21Q128.41 73.17 128.36 73.13Q128.31 73.1 128.26 73.05Q128.22 73.01 128.18 72.96Q128.14 72.91 128.11 72.86Q128.07 72.81 128.04 72.75Q128.01 72.7 127.99 72.64Q127.97 72.58 127.95 72.52Q127.93 72.47 127.92 72.4Q127.91 72.34 127.9 72.28Q127.9 72.22 127.9 72.16Z" /><text fill="#9684FA" transform="translate(80.53 58.08)" font-size="1.74" font-family="IBM Plex Sans" x="-1.5, -0.5, 0.5" y="0.6513">
+			λ/4
+	</text><text fill="#9684FA" transform="translate(159.47 58.08)" font-size="1.74" font-family="IBM Plex Sans" x="-1.5, -0.5, 0.5" y="0.6513">
+			λ/4
+	</text><text fill="#9684FA" transform="translate(31.58 47.37)" font-size="4.74" font-family="IBM Plex Sans" x="-1.5" y="1.78">
+			1
+	</text><text fill="#9684FA" transform="translate(31.58 88.42)" font-size="3.47" font-family="IBM Plex Sans" x="-2, 0" y="1.3">
+			G2
+	</text><text fill="#9684FA" transform="translate(208.42 88.42)" font-size="3.47" font-family="IBM Plex Sans" x="-2, 0" y="1.3">
+			G3
+	</text><text fill="#9684FA" transform="translate(97.89 97.11)" font-size="4.74" font-family="IBM Plex Sans" x="-1.5" y="1.78">
+			2
+	</text><text fill="#9684FA" transform="translate(142.1 97.11)" font-size="4.74" font-family="IBM Plex Sans" x="-1.5" y="1.78">
+			3
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="22.26" y="48.32" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="101.21" y="95.68" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="132.79" y="95.68" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="22.26" y="79.89" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="211.74" y="79.89" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="100, 112, 122, 132" y="172.32">
+			MCBL
+	</text></svg></span>
+</span><figcaption>MCBL</figcaption></figure>
+<p>A compensated coupled-line balun on microstrip — the Marchand balun in planar form. It turns the unbalanced signal on
+terminal 1 into two outputs of equal amplitude and opposite phase on terminals 2 and 3. Two quarter-wave coupled sections
+lie in a row: the input strip runs along both, across a line of length <code>Gap</code> between them, to an open end, and each
+section's other strip is a balanced output at the middle and grounded at its outer end. <code>G2</code> and <code>G3</code> are those outer
+ends: <strong>the grounds are not part of the part</strong>. Place a via to ground (VIAGND) on each.</p>
+<p><strong>How it works.</strong> At the quarter wave a coupled section's open-circuit impedances reduce to two terms: between the ends
+of one strip, (Ze + Zo)/2, and between the far ends of the two strips, (Ze − Zo)/2. Solving the two sections with the
+open end and the grounds gives output voltages exactly equal and opposite whatever the loads, so long as they are alike,
+and an input impedance 2·(Ze·Zo)² / (ZL·(Ze − Zo)²) with <code>ZL</code> on each output. With lines of √(Ze·Zo) = <code>Z0</code>, matching
+that to <code>Z0</code> needs each section to couple c = 1/√(1 + 2·ZL/Z0); circuitRF finds the pair for it as MCLC does.</p>
+<p><strong><code>ZL</code> is the load on each output</strong>, half the balanced load. The match fixes the difference of the two mode admittances,
+1/Zo − 1/Ze = √(2/(ZL·Z0)), at whatever impedance level, and edge coupling at a buildable gap only reaches it for high
+loads. On 20 mil RO4350B at 2.4 GHz, 50 Ω on each output needs −4.8 dB sections, a gap under the model's 0.1·h, and is
+refused; 200 Ω on each output needs −9.5 dB and a 102 µm gap, which is what the part opens at.</p>
+<p><strong>Microstrip's limit is the phase.</strong> The output voltages are exactly opposite only for TEM lines. In microstrip the odd
+mode runs faster than the even, neither section is a quarter wave for both, and on the example board the outputs come out
+about 16° short of 180°, with their amplitudes within 0.2 dB. A longer <code>Gap</code> moves the match off <code>F</code>.</p>
+<p><strong>In EM</strong> the <a href="../examples/dividers-and-couplers/index.html">Dividers and Couplers</a> example runs a balun with vias on
+<code>G2</code> and <code>G3</code> on EMerge and Palace. The Planar solver refuses it: its via-current kernel is validated to a tenth of a
+wavelength between vias, and the two grounds sit a balun's length apart.</p>
+<table class="param-table">
+<thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
+<tr><td>1</td><td>1</td></tr>
+<tr><td>2</td><td>2</td></tr>
+<tr><td>3</td><td>3</td></tr>
+<tr><td>4</td><td>G2</td></tr>
+<tr><td>5</td><td>G3</td></tr>
+</tbody></table>
+<p class="small">The nets of an instance line, in this order. Not interchangeable: terminal 1 is the unbalanced input, 2 and 3 the balanced outputs, in antiphase. G2 and G3 are the grounded ends of the strips that carry 2 and 3: put a via to ground (VIAGND) on each.</p>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>Z0</td><td><code>50</code></td><td>Ω</td><td>shown</td><td>The unbalanced input&#39;s impedance, and the coupled lines&#39; √(Ze&#183;Zo).</td></tr>
+<tr><td>ZL</td><td><code>200</code></td><td>Ω</td><td>shown</td><td>The load on EACH balanced output (half the balanced load). The sections&#39; coupling 1/√(1 + 2&#183;ZL/Z0) matches it to Z0; low ZL needs tight coupling, which edge-coupled microstrip may not reach.</td></tr>
+<tr><td>F</td><td><code>2.4</code></td><td>GHz</td><td>shown</td><td>Centre frequency: the coupled strips are a quarter wavelength long here, in the mean of their even- and odd-mode effective permittivities.</td></tr>
+<tr><td>Gap</td><td><code>1</code></td><td>mm</td><td>shown</td><td>Length of the line joining the two sections, which the outputs 2 and 3 face across.</td></tr>
+<tr><td>SignalLayer</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The conductor the strips are on. Empty: the technology&#39;s top conductor.</td></tr>
+<tr><td>GroundReference</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The plane under it. Empty: the nearest ground-designated conductor below the signal layer.</td></tr>
+</tbody></table>
+<p><strong>References</strong> (for the three coupled-line parts)</p>
+<blockquote>
+<ol type="A" start="13">
+<li>Kirschning and R. H. Jansen, &quot;Accurate Wide-Range Design Equations for the Frequency-Dependent Characteristic of
+Parallel Coupled Microstrip Lines,&quot; <em>IEEE Transactions on Microwave Theory and Techniques</em>, vol. 32, no. 1, pp. 83–90,
+January 1984. DOI <a href="https://doi.org/10.1109/TMTT.1984.1132616">10.1109/TMTT.1984.1132616</a>; corrections in vol. 33,
+no. 3, p. 288, March 1985, DOI <a href="https://doi.org/10.1109/TMTT.1985.1133005">10.1109/TMTT.1985.1133005</a>. The coupled-line
+model MCLIN and all three parts use.</li>
+</ol>
+</blockquote>
+<blockquote>
+<ol type="A" start="4">
+<li>
+<ol type="A" start="13">
+<li>Pozar, <em>Microwave Engineering</em>, 4th ed., Wiley, 2012, §7.6 and §7.7, coupled-line directional couplers and the Lange
+coupler. A book, with no DOI:
+<a href="https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553">the publisher's page</a>.</li>
+</ol>
+</li>
+</ol>
+</blockquote>
+<blockquote>
+<ol type="A" start="10">
+<li>Lange, &quot;Interdigitated Stripline Quadrature Hybrid,&quot; <em>IEEE Transactions on Microwave Theory and Techniques</em>,
+vol. 17, no. 12, pp. 1150–1151, December 1969. DOI <a href="https://doi.org/10.1109/TMTT.1969.1127115">10.1109/TMTT.1969.1127115</a>.</li>
+</ol>
+</blockquote>
+<blockquote>
+<ol type="A" start="23">
+<li>
+<ol type="A" start="16">
+<li>Ou, &quot;Design Equations for an Interdigitated Directional Coupler,&quot; <em>IEEE Transactions on Microwave Theory and
+Techniques</em>, vol. 23, no. 2, pp. 253–255, February 1975.
+DOI <a href="https://doi.org/10.1109/TMTT.1975.1128534">10.1109/TMTT.1975.1128534</a>.</li>
+</ol>
+</li>
+</ol>
+</blockquote>
+<blockquote>
+<ol type="A" start="14">
+<li>Marchand, &quot;Transmission-Line Conversion Transformers,&quot; <em>Electronics</em>, vol. 17, no. 12, pp. 142–145, December 1944.
+A trade magazine, with no DOI: <a href="https://www.worldradiohistory.com/Archive-Electronics/40s/Electronics-1944-12.pdf">a scan of the issue</a>.</li>
+</ol>
+</blockquote>
+<blockquote>
+<ol type="A" start="11">
+<li>
+<ol type="A" start="19">
+<li>Ang and I. D. Robertson, &quot;Analysis and Design of Impedance-Transforming Planar Marchand Baluns,&quot; <em>IEEE
+Transactions on Microwave Theory and Techniques</em>, vol. 49, no. 2, pp. 402–406, February 2001.
+DOI <a href="https://doi.org/10.1109/22.903108">10.1109/22.903108</a>.</li>
+</ol>
+</li>
 </ol>
 </blockquote>
 <h2 id="mmic">MMIC passives</h2>
@@ -5735,6 +6285,11 @@ itself: <a href="expressions.html#operators">operators</a>, <a href="expressions
 <tr><td><a href="#testpad">TESTPAD</a></td><td>TestPad</td><td>Microstrip</td></tr>
 <tr><td><a href="#gsgpad">GSGPAD</a></td><td>GsgPad</td><td>Microstrip</td></tr>
 <tr><td><a href="#mwpd">MWPD</a></td><td>Mwpd</td><td>Microstrip</td></tr>
+<tr><td><a href="#mblc">MBLC</a></td><td>Mblc</td><td>Microstrip</td></tr>
+<tr><td><a href="#mrrc">MRRC</a></td><td>Mrrc</td><td>Microstrip</td></tr>
+<tr><td><a href="#mclc">MCLC</a></td><td>Mclc</td><td>Microstrip</td></tr>
+<tr><td><a href="#midc">MIDC</a></td><td>Midc</td><td>Microstrip</td></tr>
+<tr><td><a href="#mcbl">MCBL</a></td><td>Mcbl</td><td>Microstrip</td></tr>
 <tr><td><a href="#mimcap">MIMCAP</a></td><td>MimCap</td><td>Mmic</td></tr>
 <tr><td><a href="#spiral">SPIRAL</a></td><td>Spiral</td><td>Mmic</td></tr>
 <tr><td><a href="#octspiral">OSPIRAL</a></td><td>OctSpiral</td><td>Mmic</td></tr>

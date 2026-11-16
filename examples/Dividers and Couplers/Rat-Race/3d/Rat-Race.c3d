@@ -1,0 +1,249 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Um",
+  "SnapDbu": 0,
+  "TechRef": "../../tech/pcb-2layer_RO4350B_20mil_1oz.ctech",
+  "Objects": [],
+  "Instances": [
+    {
+      "Name": "U1",
+      "CellRef": "..",
+      "View": "Layout"
+    }
+  ],
+  "Variables": [
+    {
+      "Name": "W50",
+      "Expression": "1.05768",
+      "Unit": "mm"
+    }
+  ],
+  "Ports": [
+    {
+      "Number": 1,
+      "Name": "P1",
+      "Kind": "Lumped",
+      "Plane": "XZ",
+      "Offset": 12121653,
+      "Rect": {
+        "Min": [
+          26024411,
+          35000
+        ],
+        "Size": [
+          1057680,
+          508000
+        ]
+      },
+      "Z0": "50",
+      "FromLayout": {
+        "Instance": "U1",
+        "Port": 1,
+        "Taken": {
+          "Plane": "XZ",
+          "Offset": 12121653,
+          "Min": [
+            26024411,
+            35000
+          ],
+          "Size": [
+            1057680,
+            508000
+          ]
+        }
+      }
+    },
+    {
+      "Number": 2,
+      "Name": "P2",
+      "Kind": "Lumped",
+      "Plane": "XZ",
+      "Offset": 12121653,
+      "Rect": {
+        "Min": [
+          6063973,
+          35000
+        ],
+        "Size": [
+          1057680,
+          508000
+        ]
+      },
+      "Z0": "50",
+      "FromLayout": {
+        "Instance": "U1",
+        "Port": 2,
+        "Taken": {
+          "Plane": "XZ",
+          "Offset": 12121653,
+          "Min": [
+            6063973,
+            35000
+          ],
+          "Size": [
+            1057680,
+            508000
+          ]
+        }
+      }
+    },
+    {
+      "Number": 3,
+      "Name": "P3",
+      "Kind": "Lumped",
+      "Plane": "XZ",
+      "Offset": 12121653,
+      "Rect": {
+        "Min": [
+          45984849,
+          35000
+        ],
+        "Size": [
+          1057680,
+          508000
+        ]
+      },
+      "Z0": "50",
+      "FromLayout": {
+        "Instance": "U1",
+        "Port": 3,
+        "Taken": {
+          "Plane": "XZ",
+          "Offset": 12121653,
+          "Min": [
+            45984849,
+            35000
+          ],
+          "Size": [
+            1057680,
+            508000
+          ]
+        }
+      }
+    },
+    {
+      "Number": 4,
+      "Name": "P4",
+      "Kind": "Lumped",
+      "Plane": "XZ",
+      "Offset": -12121653,
+      "Rect": {
+        "Min": [
+          44927169,
+          35000
+        ],
+        "Size": [
+          1057680,
+          508000
+        ]
+      },
+      "Z0": "50",
+      "FromLayout": {
+        "Instance": "U1",
+        "Port": 4,
+        "Taken": {
+          "Plane": "XZ",
+          "Offset": -12121653,
+          "Min": [
+            44927169,
+            35000
+          ],
+          "Size": [
+            1057680,
+            508000
+          ]
+        }
+      }
+    }
+  ],
+  "Look": {
+    "ShowEdges": true,
+    "ShowGrid": true,
+    "ShowOverlays": true,
+    "ShowPorts": true,
+    "ShowBoundaries": true,
+    "ShowImages": true
+  },
+  "Setups": [
+    {
+      "FormatVersion": 1,
+      "Name": "Palace",
+      "Frequency": {
+        "StartExpr": "1.2",
+        "StopExpr": "4.8",
+        "StepExpr": "",
+        "NumPoints": 11,
+        "Mode": "PointCount",
+        "Kind": "Log",
+        "StartUnit": "GHz",
+        "StopUnit": "GHz",
+        "StepUnit": "GHz"
+      },
+      "Solver3D": "Palace",
+      "CreateSnpSchematic": false,
+      "Palace": {
+        "Quality": "Draft",
+        "AdaptiveMaxIterations": 2,
+        "SaveFieldsGHz": []
+      },
+      "AirBox": {
+        "XMin": {
+          "PaddingUm": 5000
+        },
+        "XMax": {
+          "PaddingUm": 5000
+        },
+        "YMin": {
+          "PaddingUm": 5000
+        },
+        "YMax": {
+          "PaddingUm": 5000
+        },
+        "ZMax": {
+          "PaddingUm": 5000
+        }
+      }
+    },
+    {
+      "FormatVersion": 1,
+      "Name": "EMerge",
+      "Frequency": {
+        "StartExpr": "1.2",
+        "StopExpr": "4.8",
+        "StepExpr": "",
+        "NumPoints": 11,
+        "Mode": "PointCount",
+        "Kind": "Log",
+        "StartUnit": "GHz",
+        "StopUnit": "GHz",
+        "StepUnit": "GHz"
+      },
+      "Solver3D": "Emerge",
+      "CreateSnpSchematic": false,
+      "EMerge": {
+        "Quality": "Draft",
+        "AdaptiveSweep": true,
+        "AdaptiveMesh": 0,
+        "SaveFieldsGHz": []
+      },
+      "AirBox": {
+        "XMin": {
+          "PaddingUm": 5000
+        },
+        "XMax": {
+          "PaddingUm": 5000
+        },
+        "YMin": {
+          "PaddingUm": 5000
+        },
+        "YMax": {
+          "PaddingUm": 5000
+        },
+        "ZMax": {
+          "PaddingUm": 5000
+        }
+      }
+    }
+  ]
+}

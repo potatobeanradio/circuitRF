@@ -4841,7 +4841,7 @@ read 37 ms: re-weigh 18 ms, fields run 22 ms).
   envelope noise read it through the device-source path. An S-parameter run with `RxTant=150` gives the receive port's wave noise
   k·150 = 2.07e-21 and Te = T_ant/|H|² at the input.
 
-## RF passives stage 1 — the Wilkinson plan and the planned-passive model (2026-11-15)
+## RF passives — the Wilkinson plan and the planned-passive model (2026-11-15)
 
 - **A plan is existing parts, placed.** `PassivePlan` is sections (`PlanTee`, `PlanCurve`) with node lists and poses;
   `MicrostripPlanModel` stamps each through the part's own model into the shared `LocalAdmittanceBlock` and reduces it,
@@ -4863,7 +4863,7 @@ read 37 ms: re-weigh 18 ms, fields run 22 ms).
   R = 100 Ω and with R removed. This is what lets the EM results, which cannot include the resistor today
   (`src/Design/RESOLVED.md`), be compared on those three terms.
 
-## RF passives stage 2 — the Wilkinson's split ratio and broadband sections (2026-11-16)
+## RF passives — the Wilkinson's split ratio and broadband sections (2026-11-16)
 
 - **K = 1, N = 1 is the equal split bit for bit.** The variant arithmetic was written so the symmetric case reduces to the
   stage-1 expressions exactly: z0·√(K(1 + K²)) at K = 1 is z0·√2; the arms' length difference d is 0 − π·c·0 = +0.0;
@@ -4884,5 +4884,77 @@ read 37 ms: re-weigh 18 ms, fields run 22 ms).
   −20 dB over 1.31–3.22 GHz and |S23| over 1.31–3.36 GHz, against 1.98–2.85 and 1.92–2.77 GHz for one section; at F its
   |S21| is 0.09 dB lower and its |S11| null 26 dB rather than 48 dB deep (the junction tees and the ripple). K = 1.4142
   gives P3/P2 = 3.04 dB at F against 3.01, every port below −31 dB and |S23| −37 dB.
-- **NetlistContractTests failed after stage 1** ("MWPD states no net count"); `InstanceNetContract` now states a planned
-  passive's plan pin count — the same line the hybrids branch adds — so a short MWPD line is refused at elaboration.
+- **NetlistContractTests failed on the first MWPD** ("MWPD states no net count"); `InstanceNetContract` now states a
+  planned passive's plan pin count, so a short MWPD line is refused at elaboration.
+## RF passives — the branch-line and rat-race hybrids, MBLC and MRRC (2026-11-15)
+
+- **An MTEE whose branch ends at the through line's edge has no junction.** `L3 = max(W1, W2)/2` leaves the branch no line
+  past its reference plane, and `MicrostripTeeModel` then stamps the tee as two through lines meeting at pin 3 (its
+  straight-line case). `testdata/schematic-to-layout/C2-branch-line` draws all four tees that way, so its network carries no
+  junction at all. The hybrids' plans give each tee's branch one W0 of the arm's own line, so the junction is simulated; the
+  one-section plan laid out on C2's dimensions with no such stub is C2's network to 1e-9 (`HybridSParamTests`).
+- **Two-section shunt arms share one span.** The arms of (1 + √2)·Z0 and √2·Z0 have different εeff, but both through lines
+  are straight, so one span serves all three. Each arm takes the mean of their quarter waves: about ±1.5 % of λg/4 on 20 mil
+  RO4350B at 2.4 GHz, which alone limits the match to about −38 dB on ideal lines.
+- **The junctions move the centre a little.** With the arms λg/4 between reference planes, the tees' own reactance puts the
+  one-section coupler's best match at 2.36 GHz for F = 2.4 GHz; at F it is −30 dB with 90.1° between 2 and 3. No further
+  correction is applied.
+- **A rat-race ring of quarter-turn sections.** A plan section turns only in multiples of 90°, so the ports cannot sit 60°
+  apart on a circle. The ring is two straight runs and two 180° MCURVEs, tees 2, 1 and 3 on one run and tee 4 on the other.
+  Closing it with one tee against three fixes the half-turns: π·(R − 0.2·W) = λg/4 − W0, with W0 of line between the
+  right half-turn and tee 4 and λg/2 + W0 between tee 4 and the left half-turn.
+- **The planned passives state their net count.** `InstanceNetContract.Expected` had no case for `MicrostripPlanModel`, so
+  `NetlistContractTests` listed MWPD; it is the plan's pin count.
+- **Engine.Tests links nothing above the engine**, so the C2 comparison extracts the fixture's netlist with the CLI built beside
+  the tests, run as a process, as `MatchStampTests` runs `sparam`.
+
+## RF passives — the coupled-line coupler, the interdigitated coupler and the coupled-line balun (2026-11-15)
+
+MCLC, MIDC and MCBL are planned passives (`CoupledLineCouplerPlan`, `LangePlan`, `MarchandBalunPlan`) stamped by
+`MicrostripPlanModel` through MCLIN and MLIN; `CoupledLineSynthesis` inverts MCLIN's own Kirschning-Jansen modes at F.
+What would cost time to rediscover:
+
+- **What 20 mil RO4350B builds at 2.4 GHz** (`CoupledLinePlanTests.Realisability_OnTwentyMilRo4350b` prints it). A 3 dB
+  four-finger interdigitated coupler needs 138 µm fingers 69 µm apart, under a 75-100 µm board rule; 3.5 dB needs 86 µm and
+  4 dB 105 µm, so 4 dB is the example's design. An edge-coupled coupler reaches 10 dB at 115 µm and needs 65 µm for 8 dB.
+  A coupled-line balun matching 50 Ω to 50 Ω on each output needs −4.8 dB sections, below the coupled-line model's
+  S/h = 0.1 (51 µm), and is refused; 200 Ω on each output (−9.5 dB) needs 102 µm. The balun's match fixes the mutual
+  admittance 1/Zo − 1/Ze = √(2/(ZL·Z0)) whatever the impedance level, which is why a lower √(Ze·Zo) does not help.
+- **The balun is exact only as TEM lines.** The plan's Ze and Zo as CLIN pairs at 90° give |S11| below −100 dB and
+  S31 = −S21 exactly, which checks the match condition c = 1/√(1 + 2·ZL/Z0). In microstrip (εeff 2.97 even, 2.30 odd) the
+  outputs come out 164° apart with 0.2 dB amplitude balance and −20.5 dB match. Scaling both sections' length moves the
+  phase by under 5°; a section-1 about 5 % longer than section 2 crosses 180° (with ~0.4 dB amplitude imbalance), which
+  was not adopted: the plan stays the textbook symmetric pair and the limit is stated.
+- **Microstrip directivity of the single-section coupler** at 2.4 GHz on that board: 11 dB at 10 dB coupling, 7.6 dB at
+  15 dB, 4.6 dB at 20 dB. The leak to the isolated port stays about −21 to −25 dB while the coupling falls.
+- **The interdigitated section is Ou's model, split by finger.** Ou gives a two-conductor pair (Ze,N, Zo,N) assuming each
+  conductor's strips are at one potential. Stamped as such, the inner fingers' pins would have nothing on them. Instead
+  each conductor-A strip and its mirror strip in conductor B stamp that pair of strips' own share of the modal
+  admittances (an outer strip: the adjacent pair's Ye and Yo; an inner one: Ye²/(Ye + Ym) and that plus 2(Yo − Ye)).
+  With ideal jumpers the shares add back to Ou's pair to 1e-9 (`WithIdealJumpers_TheLangeIsOusEquivalentPair`); without
+  them the circuit is still solvable and couples less, and a real jumper carries its strip's current.
+- **A planned passive's DC islands.** MWPD's ω = 0 handling declared every pin one node; a coupler's two strips are not.
+  `MicrostripPlanModel` now unions each section's joined ends (a coupled section joins only each strip's two ends) and
+  declares a tree of shorts per island.
+- **A loop of DC shorts does not solve.** Ideal `Short` jumpers on the interdigitated coupler close a loop with the fingers'
+  DC shorts (pin 1 - finger - pin 2 - jumper - J2 - finger - J1 - jumper), and the DC solve fails to converge. Two ideal
+  lines in parallel are the same case. A jumper with any resistance (1 mΩ, or a bond wire) solves; S-parameter runs are
+  unaffected.
+- **Kron order in the balun.** `LocalAdmittanceBlock` eliminates without pivoting, last node first. The balun's open end
+  has a near-zero self admittance at F (a quarter-wave null), so it is numbered first among the internal nodes and is
+  eliminated after the joining line's ends, when its pivot is no longer that null.
+- **Jumper part.** circuitRF's jumpers are wBond (a bond-wire design, the board's real part), AIRBRIDGE (an MMIC crossing,
+  four terminals) and Short (ideal). The tests use Short.
+- **EM on coupled lines needs more mesh than the Wilkinson's recipe** (`examples/Dividers and Couplers`, cell Coupler,
+  10 dB, S = 0.115 mm on 20 mil). Planar with the edge mesh off read |S31| −11.96 dB against the model's −10.49; on,
+  −10.72. EMerge Draft read −7.2 dB and Palace Draft −5.8: a 3D Draft mesh does not resolve a gap a fifth of the substrate
+  height. Refining converges both towards the model: EMerge −8.0 (Standard) and −9.7 (Standard, 3 adaptive passes,
+  where its refinement stops); Palace −8.5 (second order on the Draft mesh, 20 min) and about −9.3 (Draft, 3
+  refinement passes, 14 min). The example's setups are the refined ones; the last 1 dB between 3D and the model and
+  Planar was not chased.
+- **Planar refuses the balun as built.** Its via-current kernel fit is validated to ρ/λ ≤ 0.1 between vias; the two
+  ground vias at the ends of the sections are 44.5 mm apart (0.71 λ at 4.8 GHz). `PlanarFillSettings.DirectVerticalKernel`
+  would lift it but no setup reaches it. The balun is compared on the 3D solvers only.
+- **The interdigitated coupler has no example cell.** Planar cannot model a jumper across a finger (a component port's
+  strip would short the finger between) and the 3D view would need its bond wires drawn by hand; its 163 µm fingers also
+  need tapered feeds before a calibrated port can sit on them.

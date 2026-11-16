@@ -1,0 +1,19 @@
+<!-- GENERATED FILE - do not edit. Regenerate every component symbol with:
+     dotnet run ––project src/Ui –– ––generate-symbols docs/user/assets/symbols
+     (the flags above are ordinary double hyphens; XML comments cannot contain them.)
+     Source: src/Ui/Diagnostics/SymbolArtworkGenerator.cs -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M25.88 27.94L214.12 27.94" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M25.88 122.06L214.12 122.06" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M72.94 27.94L72.94 122.06" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M167.06 27.94L167.06 122.06" /><ellipse fill="#2D14C3" cx="72.94" cy="27.94" rx="2.35" ry="2.35" /><ellipse fill="#2D14C3" cx="167.06" cy="27.94" rx="2.35" ry="2.35" /><ellipse fill="#2D14C3" cx="72.94" cy="122.06" rx="2.35" ry="2.35" /><ellipse fill="#2D14C3" cx="167.06" cy="122.06" rx="2.35" ry="2.35" /><text fill="#2D14C3" transform="translate(120 16.29)" font-size="7.06" font-family="IBM Plex Sans" x="-5.5, -1.5, 1.5" y="2.65">
+			λ/4
+	</text><text fill="#2D14C3" transform="translate(120 75)" font-size="10.35" font-family="IBM Plex Sans" x="-8.5, -2.5, 3.5" y="3.88">
+			90°
+	</text><text fill="#2D14C3" transform="translate(49.41 16.29)" font-size="7.06" font-family="IBM Plex Sans" x="-2" y="2.65">
+			1
+	</text><text fill="#2D14C3" transform="translate(190.59 16.29)" font-size="7.06" font-family="IBM Plex Sans" x="-2" y="2.65">
+			2
+	</text><text fill="#2D14C3" transform="translate(190.59 133.71)" font-size="7.06" font-family="IBM Plex Sans" x="-2" y="2.65">
+			3
+	</text><text fill="#2D14C3" transform="translate(49.41 133.71)" font-size="7.06" font-family="IBM Plex Sans" x="-2" y="2.65">
+			4
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="22.88" y="24.94" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="211.12" y="24.94" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="211.12" y="119.06" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="22.88" y="119.06" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="100, 112, 122, 130" y="172.32">
+			MBLC
+	</text></svg>
