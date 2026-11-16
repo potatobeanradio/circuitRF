@@ -126,6 +126,10 @@ internal static class Tran
             Summarise(cubes, "I", "A");
             foreach (var (name, cube) in cubes.Where(kv => kv.Key.StartsWith("Tran.", StringComparison.Ordinal)).OrderBy(kv => kv.Key, StringComparer.Ordinal))
                 CliEntry.PrintCube($"  {name}", cube, 24, false);
+            // The bench's measures, in the order the TestBench declares them (brief TRN-9: the header was printed with nothing under it).
+            if (group == DataSet.MeasurementsGroup)
+                foreach (var (name, cube) in cubes)
+                    CliEntry.PrintCube($"  {name}", cube, 24, false);
         }
         JsonRun.Data = grouped;
         JsonRun.Analysis = string.Join(", ", names);

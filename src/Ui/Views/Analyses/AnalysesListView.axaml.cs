@@ -23,6 +23,8 @@ public partial class AnalysesListView : UserControl
             LoadpullPursuitAnalysis => "loadpull-pursuit",
             EnvelopeAnalysis        => "envelope",
             LoadpullAnalysis        => "loadpull",
+            OscillatorAnalysis      => "oscillator",
+            TransientAnalysis       => "transient",
             _                       => null,
         };
         DocLauncher.OpenAnalysis(anchor);

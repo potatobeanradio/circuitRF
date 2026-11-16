@@ -212,6 +212,12 @@ convention behind both.</p>
 <td>Each IProbe's power, gain, efficiency and ACLR to stdout; <code>-o .mat/.npy/.txt</code> for the waveforms and spectra</td>
 </tr>
 <tr>
+<td><code>tran</code></td>
+<td><code>.cnl</code> or <code>.csch</code></td>
+<td>A <a href="transient.html">transient</a> analysis, native or on ngspice</td>
+<td>Each recorded voltage and current at Stop with its least and most, the counters and the measurements, to stdout; <code>-o .mat/.npy/.txt</code> for the waveforms</td>
+</tr>
+<tr>
 <td><code>fields</code></td>
 <td><code>.cnl</code> or <code>.csch</code></td>
 <td>A <code>fields</code> analysis: an EM Field Data block's saved results recombined by the circuit, with no EM run</td>
@@ -813,7 +819,8 @@ actually happened is &quot;nothing it tried reached compression&quot;.</p>
              [--segments auto|&lt;n&gt;] [--warmup auto|&lt;s&gt;] [-o out.{mat,npy,txt}]</code></pre>
 <p>Runs the design's <code>type=env</code> analysis, and the whole sweep when a <code>parametric_sweep</code> wraps it. A <code>MOD_Source</code> supplies the
 signal. Every labeled net records its voltage, and every <a href="components.html#iprobe">IProbe</a> the power delivered through it.
-<a href="simulations.html#envelope-records">What a run records</a> lists every cube. Minutes, not seconds: 200 µs of an NR 20 MHz signal is
+<a href="simulations.html#envelope-records">What a run records</a> lists every cube. The TestBench's <code>measure</code> lines are evaluated as the
+application evaluates them and written as the result's <code>measurements</code> group, in <code>-o</code> and in <code>--json</code>. Minutes, not seconds: 200 µs of an NR 20 MHz signal is
 about a minute on 10 cores.</p>
 <p>To plot the power spectrum at an IProbe, write the cubes and plot <code>PSD</code>. Its <code>branch</code> axis is named after the IProbes, and it is
 already in dBm/Hz, so it takes <code>y=real</code>:</p>
@@ -852,6 +859,26 @@ directive's keys, and <code>--phase-noise</code> turns on its <a href="simulatio
 and <code>PN</code>, <code>AN</code>, <code>PNc</code>, <code>PNpct</code> and <code>PNcorner</code> with phase noise.</p>
 <p>Exit <strong>0</strong> when the oscillation was found, <strong>1</strong> refused (the circuit does not start, or has no OscProbe) or failed,
 <strong>130</strong> cancelled.</p>
+<h2 id="tran"><code>tran</code> — a transient analysis</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf tran &lt;design.cnl|.csch&gt; [-a name]... [--set var=expr]... [--stop t] [--step t] [--method trap|gear2] [--solver native|ngspice] [--all] [-o out.{mat,npy,txt}]</code></pre>
+<p>Runs every enabled <a href="transient.html">transient analysis</a> of the design, or the ones <code>-a</code> names, and the whole sweep when a
+<code>parametric_sweep</code> wraps one. <code>--stop</code>, <code>--step</code>, <code>--method</code> and <code>--solver</code> replace the directive's <code>Stop</code>, <code>Step</code>, <code>Method</code> and
+<code>Solver</code>. For each recorded net and IProbe, stdout has its value at <code>Stop</code>, its least and its most, then the run's counters
+and the bench's measurements:</p>
+<pre><code>$ circuitrf tran &quot;Pulse Response/Filter_Native/schematic/Filter_Native.csch&quot;
+...
+measurements:
+  Trise = 4.08946E-10
+  Overshoot_pct = 12.7268
+  Tsettle = 3.23196E-09
+  Vfinal = 0.5
+</code></pre>
+<p><code>-o</code> writes every waveform. Under <code>--json</code> a cube of more than 10,000 values is left out of the document, its shape still
+listed, unless <code>--all</code> asks for every cube. With <code>--solver ngspice</code> the run says which ngspice solved it and where the deck it ran is; with
+no ngspice discovered it is refused with the way to install one (<code>circuitrf solver install ngspice</code>), never run natively.
+<code>circuitrf netlist &lt;design&gt; -o deck.cir</code> writes the deck an ngspice run would use without running it, and exits 1 writing
+nothing when an element has no exact translation, listing every one (<a href="transient.html#ngspice">ngspice</a>).</p>
+<p>Exit <strong>0</strong> when it ran, <strong>1</strong> refused or failed, <strong>130</strong> cancelled.</p>
 <h2 id="em"><code>em</code> — electromagnetic extraction</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf em &lt;setup.cem&gt; [-o out.sNp] [--workspace file.cws]</code></pre>
 <p><code>em</code> is the only verb that does not take a <code>.cnl</code>. It takes a <strong><code>.cem</code> EM setup</strong> — the document the
@@ -1944,7 +1971,7 @@ options — and <code>explain --ref</code> resolves the layout's path.</p>
 <span class="prompt">  </span>--x-range LOW..HIGH[:log] --y-range LOW..HIGH[:log] [--y2-range LOW..HIGH[:log]]
 <span class="prompt">  </span>[--curve "NAME=px,py;px,py;…[,axis=right][,is=S21:db]"] [--follow NAME=px,py]
 <span class="prompt">  </span>[--sample N | --sample-step STEP] [--method linear|smooth] --csv out.csv [-o out.s2p]</code></pre>
-<p>The dialog's <a href="create-from-image.md#by-hand">Digitise by hand</a> from the command line. Nothing is read off the picture:
+<p>The dialog's <a href="create-from-image.html#by-hand">Digitise by hand</a> from the command line. Nothing is read off the picture:
 the box is the plot area and the ranges are the values at its edges.</p>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf recognize s21.png --manual-box 228px,147px,671px,443px \
 <span class="prompt">  </span>    --x-range 1GHz..5GHz --y-range -36..0 --follow S21=560,193 --csv s21.csv</code></pre>

@@ -53,6 +53,7 @@ reference/propagation-channel.html | The radio link between two antennas: which 
 
 == Simulate
 reference/simulations.html  | DC, S-parameters, harmonic balance, parametric sweeps, loadpull and pursuit.
+reference/transient.html    | The circuit in time: pulses, start-up and settling, ngspice as a second solver, and harmonic balance started from a transient run.
 reference/measurements.html | Post-processing a run into named quantities.
 reference/netlist.html      | The .cnl elaborated-netlist format.
 reference/data-display.html | Plots, tables, trace cards and markers.

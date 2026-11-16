@@ -40,7 +40,7 @@ public static class DocAnchors
 
     /// <summary>Analysis anchors, from <c>AnalysesListView.OnHelp</c>'s switch.</summary>
     public static readonly IReadOnlyList<string> AnalysisAnchors =
-        ["dc", "s-parameters", "harmonic-balance", "parametric-sweep", "loadpull-pursuit", "loadpull", "envelope"];
+        ["dc", "s-parameters", "harmonic-balance", "parametric-sweep", "loadpull-pursuit", "loadpull", "envelope", "oscillator", "transient"];
 
     /// <summary>Plot-type anchors, from <c>PlotInspectorView.OnPlotTypeHelp</c>'s expression.</summary>
     public static readonly IReadOnlyList<string> PlotTypeAnchors =

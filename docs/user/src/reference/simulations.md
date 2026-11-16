@@ -4,7 +4,7 @@ slug: reference/simulations.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Simulations
 lede: Every analysis circuitRF runs, what it computes, a short overview of the method, and the full set of settings. Algorithm details are deferred to the design notes / white papers; this chapter is the operational reference.
-keywords: analysis, sweep, DC, S-parameters, noise, noise figure, NF, NFmin, noise temperature, phase noise, EVM, SNR, mixer noise, SSB, DSB, harmonic balance, HB, loadpull, load pull, parametric sweep, run, simulate, envelope, modulated, ACLR, ACPR, pulsed CW, pulse droop, pulse-to-pulse, radar
+keywords: analysis, sweep, DC, S-parameters, transient, time domain, noise, noise figure, NF, NFmin, noise temperature, phase noise, EVM, SNR, mixer noise, SSB, DSB, harmonic balance, HB, loadpull, load pull, parametric sweep, run, simulate, envelope, modulated, ACLR, ACPR, pulsed CW, pulse droop, pulse-to-pulse, radar
 ---
 
 <nav class="toc">
@@ -20,6 +20,7 @@ keywords: analysis, sweep, DC, S-parameters, noise, noise figure, NF, NFmin, noi
       <li><a href="#loadpull-pursuit">Loadpull Pursuit</a></li>
       <li><a href="#two-tone">Multi-Tone Harmonic Balance</a></li>
       <li><a href="#envelope">Circuit Envelope (modulated signals)</a></li>
+      <li><a href="#transient">Transient (time domain)</a></li>
       <li><a href="#fields">Fields (pattern, B1 and SAR from a circuit)</a></li>
       <li><a href="#cli">Running an analysis from the command line</a></li>
     </ol>
@@ -351,9 +352,9 @@ analysis HB1 type=hb Tone=1 ToneUnit=GHz MaxHarm=15 InitialGuess=transient
   never runs longer than 200 periods (`SeedPeriods=auto`); a number runs exactly that many.
 - **Bias networks.** A choke or a DC block settles over thousands of carrier periods. With `SeedFastBias=yes` (the
   default) the transient run alone uses smaller values for each inductor whose reactance at the fundamental is more than
-  10 times the impedance it sees, and each capacitor whose reactance is less than a tenth of it (measured with the circuit
-  at its DC point). Each is scaled to 50 times, or a fiftieth of, that impedance, which it still chokes or blocks, and which
-  settles in about eight periods. Harmonic balance then solves the circuit with its real values.
+  50 times the impedance it sees, and each capacitor whose reactance is less than a fiftieth of it (measured with the circuit
+  at its DC point). Each is scaled to exactly 50 times, or a fiftieth of, that impedance, which it still chokes or blocks,
+  and which settles in about eight periods. Harmonic balance then solves the circuit with its real values.
 - **`fallback`** runs harmonic balance as usual and starts it again from a transient run only when it does not converge.
 - **Tones.** One tone, or several whose products fall on a common fundamental, which the transient run then uses as its
   period. Tones with no common period are refused with `transient`; `fallback` starts them from DC and says so.
@@ -1049,6 +1050,24 @@ FSK is decided by the sign of its frequency, and CSS by the bin of each de-chirp
 to count: 10⁻⁶ needs some 10⁸ bits for 100 errors. `BERest` reaches lower, because it treats noise and distortion as
 Gaussian. With `EvmSplit=yes`, a run whose distortion is far from Gaussian says so, and there `BERest` is a rough
 estimate. `SINR_dB` is per element, so you can map it to a coded error rate of your own.
+
+## Transient (time domain) {#transient}
+
+**Computes:** the circuit's voltages and currents against time, from the DC operating point or from rest, with every
+source playing its waveform: a pulse's edges, a reflection, a converter's start-up and ripple.
+
+**Method:** the elaborated netlist is integrated in time (trapezoidal or second-order backward difference) with an
+adaptive step and a Newton solve per step, on the same component models every other analysis uses. Lossless lines are
+exact delays; lossy lines and frequency-defined blocks are rational fits checked against their models. `Solver=ngspice`
+runs the bench on ngspice instead.
+
+```
+analysis TR1 type=tran Stop=10n Step=5p
+```
+
+A steady-state RF answer belongs to harmonic balance and a modulated one to the envelope; transient is for the questions
+in between. Everything about it, the keys, initial conditions, the measurements, ngspice and starting harmonic balance
+from a transient run, is on its own page: [Transient](transient.html).
 
 ## Fields (pattern, B1 and SAR from a circuit) {#fields}
 

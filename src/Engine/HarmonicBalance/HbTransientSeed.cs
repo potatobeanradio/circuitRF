@@ -10,11 +10,12 @@
 //
 //  Fast bias. An RF choke or block settles over its time constant with the rest of
 //  the bias network, which can be thousands of carrier periods. Each inductor whose
-//  reactance at the fundamental is above 10x the impedance it sees there, and each
-//  capacitor whose reactance is below 0.1x it (the circuit linearised at its DC point),
-//  is scaled in the seed run only, to where the ratio is 20: twice the threshold, so it
-//  is still a choke or a block, with a time constant against that impedance of
-//  20/(2 pi) = 3.2 periods. Harmonic balance solves the unscaled circuit.
+//  reactance at the fundamental is above 50x the impedance it sees there, and each
+//  capacitor whose reactance is below 1/50 of it (the circuit linearised at its DC point),
+//  is scaled in the seed run only, to where the ratio is 50: still a choke or a block,
+//  with a time constant against that impedance of 50/(2 pi) = 8 periods. A part already
+//  between 10x and 50x is left alone, since scaling it to 50 would slow it. Harmonic
+//  balance solves the unscaled circuit.
 // ================================================================
 
 using System.Globalization;
@@ -147,7 +148,8 @@ public static class HbTransientSeed
     /// <summary>|X| over the impedance seen above which an inductor is a choke (below the inverse, a capacitor a block).</summary>
     public const double ChokeRatio = 10;
 
-    /// <summary>The ratio a scaled choke or block is brought to: twice <see cref="ChokeRatio"/>.</summary>
+    /// <summary>The ratio a scaled choke or block is brought to; only a part beyond it is scaled (one between <see cref="ChokeRatio"/>
+    /// and this already settles faster than a scaled one would).</summary>
     public const double ScaledRatio = 50;
 
     /// <summary>The note every seeded harmonic balance carries (R-trn8-6).</summary>
@@ -159,7 +161,7 @@ public static class HbTransientSeed
     /// <summary>
     /// The chokes and blocks of <paramref name="nl"/> at <paramref name="f0Hz"/> (R-trn8-2): every plain inductor whose reactance is
     /// above <see cref="ChokeRatio"/> times the impedance it sees, and every capacitor whose reactance is below its inverse, the
-    /// circuit linearised about its DC point; each with the factor that brings the ratio to <see cref="ScaledRatio"/>. Inductors
+    /// circuit linearised about its DC point; each beyond <see cref="ScaledRatio"/> with the factor that brings the ratio to it. Inductors
     /// a Mutual couples are left alone (their coupling is stated against their value).
     /// </summary>
     public static List<(int Index, HbSeedScaled Scale)> FastBiasPlan(ElaboratedNetlist nl, AnalysisSettings settings, double f0Hz)

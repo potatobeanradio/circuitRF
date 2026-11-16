@@ -45,3 +45,18 @@ run time):
 ## Not here
 
 Tutorials beyond the three examples; video.
+
+## Completion note (2026-11-16)
+
+User page `docs/user/src/reference/transient.md` (R-trn9-1/2/3: when to use it, the directive, sources and the switch, initial
+conditions, the output grid, what runs in time, results and the Transient preset, the steering line, ngspice, transient-assisted
+HB, the CLI), linked from the nav's Simulate section and a short `#transient` section on the Simulations page, where the
+analysis card's Help now lands for a transient and an oscillator analysis (`AnalysesListView`, `DocAnchors`). R-trn9-4: the
+generated analyses reference already carried `tran` and the new keys from `AnalysisDirectiveSchema`, and the components page
+the waveform sources, `Idc`, `VSwitch` and the tone keys (TRN-2/3); what was missing was the time-domain functions, now a
+section of the Measurements page, and the `tran` verb, now a section of the CLI page. Five figures (`FigureCatalog`
+`transient-*`, `DocDataDisplayFixtures.Transient.cs`), each a run of an example bench drawn by the Transient preset, and the
+analysis card with discovery pinned to ngspice 47 so the figure does not depend on the machine. Three examples (R-trn9-5),
+each passing `check` and running headlessly (gate 1: `tests/Ui.Tests/Examples/TransientExamplesTests.cs`). The design note's
+status line (R-trn9-6). README: one feature line, and the limitation that said there is no time-domain solver replaced.
+Findings in `examples/RESOLVED.md`, `src/Cli/RESOLVED.md` and `src/Engine/RESOLVED.md`.

@@ -24,8 +24,8 @@ lede: For engineers who already know circuit simulators. In a couple of pages: w
 
 circuitRF is a lightweight, cross-platform RF circuit simulator. If you've used a SPICE tool or a
 commercial RF/microwave EDA suite, you'll be at home — but the analyses and the workflow are built
-around the **RF problem**, not the time-domain transient problem. It is deliberately **not a SPICE
-simulator**.
+around the **RF problem**: harmonic balance first, with a [transient analysis](../reference/transient.html)
+beside it for pulses, start-up and settling.
 
 **Simulations available:**
 
@@ -41,6 +41,10 @@ simulator**.
 - **Loadpull / sourcepull** — a first-class experiment: sweep the source/load reflection
   coefficient over a Smith-chart grid and contour the figures of merit. **Loadpull Pursuit**
   automatically searches for the terminations that optimize a metric.
+
+- **Transient** — the circuit in time from its operating point or from rest: rise time, overshoot,
+  reflections, a converter's start-up and ripple. Runs natively or on ngspice, and can start a harmonic
+  balance run that struggles from DC.
 
 - **Parametric sweeps** — wrap *any* analysis in one or more swept variables (available power, a
   bias voltage, a frequency, any user variable).

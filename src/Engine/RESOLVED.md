@@ -5426,3 +5426,11 @@ the closed form and 1.3e-6 V from the native run.
   (stated in their READMEs and the user page).
 - `link:<ch>:Drift0_Hzps` is written beside `Doppler0_Hz`: the common Doppler's rate the channel already applied and named only
   in its note (−991 Hz/s for the LEO pass).
+
+## brief TRN-9 — fast bias scales only beyond a ratio of 50, which three descriptions did not say
+
+`HbTransientSeed.FastBiasPlan` scales a choke or block only when its reactance ratio exceeds `ScaledRatio` (50); one between
+`ChokeRatio` (10) and 50 is left alone, since scaling it to 50 would slow it. The file header still said "the ratio is 20",
+`ScaledRatio`'s summary "twice ChokeRatio", the `SeedFastBias` key's reference summary "to 20x", and the Simulations page "more
+than 10 times … scaled to 50 times". All four now say 50 and why. No behaviour changed. Checked on the class-E example: its
+100 nH drain choke is left alone, a 10 µH one is scaled ×0.0149 and named.

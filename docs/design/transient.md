@@ -1,6 +1,14 @@
 # circuitRF — Transient analysis, the ngspice solver, transient-assisted harmonic balance
 
-**Status:** TRN-1 built (§3, §4, §5.1, §5.2: `src/Engine/Transient`, the `tran` verb and card); TRN-4 built (§5.3 lossless lines and CLIN, §5.4 wideband fits with passivity enforcement, EM cells, tone-source terminations); TRN-4b built (the line models' losses carry their phase, and lossy lines run in transient, §5.3); the rest is design · **Series:** [`brief-trn-0-overview.md`](../briefs/brief-trn-0-overview.md) ·
+**Status:** built (briefs TRN-1 to TRN-9): the native engine (§3–§4), every element class of §5 (TRN-4b gave the line
+models' losses their phase, so lossy single lines run), the sources, `IC` and the switch, built as `VSwitch` (§6–§7), the
+time-domain measures and the Transient preset (§8), the SPICE deck writer and ngspice as a second solver (§9),
+transient-assisted harmonic balance for `hb` and `osc` (§10), the CLI, MCP, `check` and `explain` (§11), the user page
+(`docs/user/src/reference/transient.md`) and three examples (Pulse Response, Buck Converter, Class-E with a Transient
+Seed). **Not built:** lossy or dispersive coupled lines in transient (refused by name, §5.3); FET-law, composed-FET, JFET,
+IGBT, VDMOS and nonlinear-capacitor translations to the dialect (refused, §9.2.1); everything in §14. **Not tested:** ngspice
+on Windows itself (x64 or arm64), its Windows download, and an Intel Mac; Linux x64, Linux arm64 and the Windows build under
+Wine were run (TRN-7) · **Series:** [`brief-trn-0-overview.md`](../briefs/brief-trn-0-overview.md) ·
 **Builds on:** the envelope engine (`src/Engine/Envelope`: its stepping, `EnvelopeSnpFit`, `EnvelopeLineDelay`), the
 nonlinear DC engine ([`nonlinear-dc.md`](nonlinear-dc.md)), harmonic balance ([`harmonic-balance.md`](harmonic-balance.md)),
 the SPICE-dialect reader ([`spice-models.md`](spice-models.md)), the solver discovery and install machinery
@@ -335,9 +343,9 @@ and imported behavioural sources.
 
 ## 7. The switch and initial conditions
 
-### 7.1 `Switch`
+### 7.1 `VSwitch`
 
-`Switch:S1 p n cp cn Ron=1 Roff=1e9 Von=1 Voff=0`: a two-terminal conductance controlled by the voltage between
+Built as `VSwitch` (TRN-3): `Switch` was already the ideal SPST/SPDT system block. `VSwitch:S1 p n cp cn Ron=1 Roff=1e9 Von=1 Voff=0`: a two-terminal conductance controlled by the voltage between
 `cp` and `cn`. Its conductance moves between 1/Roff and 1/Ron along a smooth monotone transition between `Voff` and
 `Von` (`Von < Voff` gives hysteresis-free inverse logic; a separate `Hyst=` adds hysteresis in transient only). It is an
 ordinary nonlinear `ComponentModel`, so it also works in DC, S-parameter (at its bias) and HB, where the smooth
@@ -400,7 +408,7 @@ reserved whether shown or not, so the card's controls do not move when ngspice a
 
 - **Discovery** — Settings path, `CIRCUITRF_NGSPICE`, PATH, the default directories (Homebrew's prefixes on macOS,
   `/usr/bin` on Linux, the archive's install folder on Windows), conda environments, and circuitRF's own install.
-  Version from `ngspice -v`. The Settings ▸ Solvers tab gets a **Circuit** group above the EM group, with the ngspice row.
+  Version from `ngspice -v`. The Settings ▸ Solvers tab gets a **Circuit** group, with the ngspice row; as built it sits below the EM solvers.
 - **Install** — an upstream binary per platform through a recipe; no source build (D10):
   - **Windows**: the official release archive, downloaded and extracted (the Gmsh pattern). If upstream publishes no
     arm64 build, Windows on arm64 runs the x64 build under the operating system's emulation and the row says so.
@@ -441,7 +449,7 @@ lose differently is refused.
 | `V_Expr`, `I_Expr` | a behavioural source in `time` | yes |
 | Tone sources, `P1Tone` | `SIN` with `Delay` and `Damping` (behavioural with `Ramp`), series `R` for a P1Tone's impedance, amplitude from available power | yes; non-default `Z[k]` refused |
 | Ideal lossless TLine | `T` | yes |
-| `Switch` | a behavioural conductance with the same transition | yes |
+| `VSwitch` | a behavioural conductance with the same transition | yes |
 | SDD | behavioural current sources; each charge as a behavioural voltage source driving a unit capacitor — the inverse of the charge idiom `spice-models.md` §8.8 reads | yes |
 | `SpiceModel` (placed file) | the file included as it is, its instance line as read | yes, by construction |
 | Verilog-A, `.osdi` | ngspice's OSDI loader on the same compiled file | yes |

@@ -13,12 +13,9 @@ Both benches place it and override that parameter. Push into it (`Ctrl+]`) to se
 Single tone at 2 GHz, drive swept 0 → 30 dBm. Gate biased at −3.05 V through a choke, drain fed
 from 48 V through another, 50 Ω load through a DC block.
 
-**`RL` is a resistor, not a Term, and that is deliberate.** A Term is an S-parameter element: a
-driven port in an S-parameter analysis, and **inert (open) in every other analysis**, DC and
-harmonic balance alike. Its `Z` is the renormalization reference the S-matrix is defined against,
-not a resistor in the network — so an output terminated with one has no load at all, and the bench
-reports a gain of about −72 dB while converging happily on every point. In HB, drive with a
-`P1Tone`/`PnTone` source and terminate with an ordinary `R`.
+**`RL` is a resistor.** A Term would load the output the same way: outside S-parameters a Term is a
+load of its `Z`, its resistance at DC and `Z` at every harmonic. In HB, drive with a `P1Tone`/`PnTone`
+source and terminate with an `R` or a Term.
 
 Four measurement blocks, which between them cover most of what a measurement can do:
 

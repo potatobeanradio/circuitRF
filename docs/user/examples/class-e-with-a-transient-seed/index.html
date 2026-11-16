@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Class-E with a Transient Seed</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Class-E with a Transient Seed/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Class-E with a Transient Seed</p>
+  </div>
+
+  <h1>Class-E with a Transient Seed</h1>
+  <p class="lede">A 1 GHz class-E stage solved by harmonic balance started from a transient run (InitialGuess=transient), beside a transient bench showing the drain waveforms the start came from. 31.4 dBm at 88 % drain efficiency.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Class-E with a Transient Seed</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A 1 GHz class-E power amplifier, solved by harmonic balance started from a transient run (<code>InitialGuess=transient</code>),
+beside a transient bench that shows the waveforms that start came from. Both benches carry the same stage.</p>
+<h2 id="the-stage">The stage</h2>
+<p>A FET (the built-in Angelov law, <code>Ipk</code> = 0.5 A) driven hard as a switch: a 30 dBm, 1 GHz <code>P1Tone</code> into its gate
+through <code>CIN</code>, the gate biased at −2.5 V through the choke <code>LG</code>, with the gate diode <code>DG</code> clamping the drive. The drain
+is fed from 5 V through the choke <code>LD</code>, past the IProbe <code>IDD</code>. <code>C1</code> (2.92 pF) is the class-E shunt capacitance;
+<code>L0</code>–<code>C0</code> (7.96 nH, 4.13 pF) are the series tank with the class-E excess reactance, into the 10 Ω load <code>RL</code> through
+the IProbe <code>IOUT</code>. <code>DB</code> is the drain's body diode. These are the class-E values for 10 Ω at 1 GHz. The ideal stage
+delivers 0.577 · 5² / 10 = 1.44 W (31.6 dBm) at 100 % efficiency.</p>
+<p><code>RL</code> is a Term of 10 Ω. Outside S-parameters a Term is a load of its <code>Z</code>.</p>
+<h2 id="classe_hb">ClassE_HB</h2>
+<p>Harmonic balance at 1 GHz with <code>MaxHarm=31</code> and <code>InitialGuess=transient</code>. Before Newton starts, circuitRF simulates
+the stage in time from its DC point at full drive until one period looks like the next, and hands the last period's
+spectrum to Newton. The run's message says how that went:</p>
+<pre><code>harmonic balance started from a transient seed: 43 periods, settled; no choke or block scaled;
+harmonic balance converged in 5 Newton iterations from it.
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Pout_dBm</code></td>
+<td>31.42 dBm</td>
+</tr>
+<tr>
+<td><code>Pdc_W</code></td>
+<td>1.579 W</td>
+</tr>
+<tr>
+<td><code>DE_pct</code></td>
+<td>87.9 % drain efficiency</td>
+</tr>
+</tbody>
+</table>
+<p>The run also writes <code>Seed.Periods</code> (43), <code>Seed.Settled</code> (1) and <code>Seed.HbIterations</code> (5). The answer is harmonic
+balance's own, to its own tolerance: the transient run only supplies where Newton starts.</p>
+<p><strong>Against the default start.</strong> Set <code>InitialGuess</code> back to <code>dc</code> and the same answer is reached from the DC point. With
+<code>DriveStepping=Never</code> it takes 55 Newton iterations, and a <code>MaxIter</code> of 54 or less does not converge at all. The
+default <code>DriveStepping=IfNecessary</code> gets there too, by stepping the drive up. A switching stage is one of the circuits
+harmonic balance finds hardest to start, because its devices only conduct as a switch at full drive. The seed is
+worth reaching for when a DC start fails or stalls, and <code>InitialGuess=fallback</code> tries the DC start first and seeds
+only if it fails.</p>
+<p><strong>Fast bias.</strong> <code>SeedFastBias=yes</code> (the default) scales, in the transient run only, any RF choke whose reactance is more
+than 50 times the impedance it sees, and any DC block whose reactance is less than a fiftieth of it, because those would
+keep the transient run going for thousands of periods. Here none qualifies, as the message says, and the run settles in
+43 periods unaided. Put a 10 µH choke in place of <code>LD</code> and it would be scaled, and named in the message.</p>
+<h2 id="classe_transient">ClassE_Transient</h2>
+<p>The same stage simulated for 60 ns, 60 periods, from its DC point. Plot <code>V(d)</code> (the drain) and <code>I(IOUT)</code> together:
+the drain voltage swings up to about 19 V while the switch is open and falls back to zero before it closes, which is
+the class-E condition. The peak is near the ideal 3.56 × 5 V = 17.8 V. The first 40 ns or so are the start-up the seed
+watched settle.</p>
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Result</th>
+<th>Read from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Pout_dBm</code></td>
+<td>31.42 dBm</td>
+<td><code>fft_power</code> of <code>IOUT</code> at the fundamental over the last period</td>
+</tr>
+<tr>
+<td><code>Pdc_W</code></td>
+<td>1.577 W</td>
+<td><code>V</code> and <code>I</code> of <code>IDD</code> averaged over the last period</td>
+</tr>
+<tr>
+<td><code>DE_pct</code></td>
+<td>87.9 %</td>
+<td></td>
+</tr>
+<tr>
+<td><code>Vd_peak</code></td>
+<td>18.9 V</td>
+<td>The drain's peak in the last period</td>
+</tr>
+</tbody>
+</table>
+<p>The two benches agree on the output power to 0.002 dB.</p>
+<h2 id="settings-traded-for-run-time">Settings traded for run time</h2>
+<p><strong><code>MaxHarm</code>.</strong> The drain current switches in a fraction of a period, and harmonic balance needs harmonics to follow
+it. At <code>MaxHarm=31</code>, efficiency agrees with a transient run at a 1 ps step to 0.06 pp. At 15, the run is no faster
+here and the efficiency reads 0.8 pp low:</p>
+<table>
+<thead>
+<tr>
+<th><code>MaxHarm</code></th>
+<th><code>DE_pct</code></th>
+<th><code>Pdc_W</code></th>
+<th><code>Pout_dBm</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>15</td>
+<td>87.13 %</td>
+<td>1.592 W</td>
+<td>31.422 dBm</td>
+</tr>
+<tr>
+<td>31 (shipped)</td>
+<td>87.90 %</td>
+<td>1.579 W</td>
+<td>31.422 dBm</td>
+</tr>
+<tr>
+<td>63</td>
+<td>87.97 %</td>
+<td>1.578 W</td>
+<td>31.423 dBm</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The transient bench's step.</strong> <code>Step=5p</code>, 200 points a period. At 1 ps the efficiency reads 87.96 % instead of 87.94 %,
+for five times the steps.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

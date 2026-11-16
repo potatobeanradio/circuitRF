@@ -92,7 +92,7 @@ A 9 dB attenuator on a 50 Ω board, built as cells inside cells to follow hierar
 
 ### [Harmonic Balance](harmonic-balance/index.html) {#ex-harmonic-balance}
 
-A 48 V GaN power amplifier in two benches over one reusable device cell: an SDD FET whose drain current is an equation in the expression language, wrapped with one parameter, `Periphery_mm`. The single-tone bench at 2 GHz sweeps drive from 0 to 30 dBm, with four measurement blocks that show how to read a swept variable, V and I at the fundamental, DC at harmonic index 0 for drain efficiency and PAE, and harmonics as `dB()`, `mag()` and complex values on a Smith chart. It reaches about 39.5 dBm output and 43 % drain efficiency as the gain compresses. Its README explains why the load is a resistor and not a Term, which is open outside S-parameter runs. The two-tone bench drives a PnTone at 1990 and 2010 MHz for IM2, IM3 and IM5, addressed by mixing-product tags such as `"(2,-1)"`, and measures each carrier separately for efficiency. Outer sweeps of frequency and supply are declared and disabled, ready to produce a surface.
+A 48 V GaN power amplifier in two benches over one reusable device cell: an SDD FET whose drain current is an equation in the expression language, wrapped with one parameter, `Periphery_mm`. The single-tone bench at 2 GHz sweeps drive from 0 to 30 dBm, with four measurement blocks that show how to read a swept variable, V and I at the fundamental, DC at harmonic index 0 for drain efficiency and PAE, and harmonics as `dB()`, `mag()` and complex values on a Smith chart. It reaches about 39.5 dBm output and 43 % drain efficiency as the gain compresses. The two-tone bench drives a PnTone at 1990 and 2010 MHz for IM2, IM3 and IM5, addressed by mixing-product tags such as `"(2,-1)"`, and measures each carrier separately for efficiency. Outer sweeps of frequency and supply are declared and disabled, ready to produce a surface.
 
 *Folder:* `Harmonic Balance` · *Topics:* harmonic balance, power amplifier, GaN, SDD, compression, PAE, drain efficiency, two-tone, intermodulation, IM3, mixing products, measurement blocks
 
@@ -107,6 +107,24 @@ The Harmonic Balance example's 48 V GaN amplifier driven by an NR 20 MHz, 64QAM 
 A 48 V S-band GaN stage at 3 GHz driven by 100 µs pulses at 10 % duty from a pulsed-CW MOD_Source, solved with the Envelope analysis. The device is a synthetic 12 mm GaN HEMT built with Tools ▸ Model Composer…, with a three-pole thermal ladder and drain-lag trapping, in a matched, stabilised class-AB stage fed from a 470 µF storage capacitor that sags during each pulse. A harmonic-balance drive sweep gives the CW steady state: output power, gain, PAE and junction temperature rise. The 3 ms envelope run, three pulse periods, steps the thermal and trap states and the supply as memory, and gives what harmonic balance cannot: droop across each pulse top, phase droop, rise and fall times, and pulse-to-pulse spread from current collapse. Its Data Display plots output power and junction temperature over the run and a per-pulse table; at the design drive the first pulse droops 0.26 dB. Its README lists the settings traded away for speed and what is not modelled.
 
 *Folder:* `Pulsed Radar` · *Topics:* pulsed CW, radar, envelope simulation, pulse droop, pulse-to-pulse stability, self-heating, thermal network, drain lag, current collapse, supply sag, GaN
+
+### [Pulse Response (transient)](pulse-response/index.html) {#ex-pulse-response}
+
+Two circuits driven by a 50 ps step and simulated in time, each drawn twice: once solved by circuitRF's own [transient](../reference/transient.html) engine and once by ngspice, the only difference being the analysis card's Solver. The first is a 5th-order Butterworth low-pass filter with a 1 GHz cut-off between 50 Ω terminations, whose measures read the output edge with the time-domain functions: a 409 ps rise time, the family's 12.7 % overshoot and a settling time to 1 %. The second is a lossless 50 Ω line, 1 ns long, into 100 Ω: the input steps to 0.5 V, and after the 2 ns round trip the reflection lifts it to 0.667 V, a reflection coefficient of exactly 1/3. Native and ngspice agree to the fourth digit on every measure. The README says how to install ngspice from Settings or the command line, where each run leaves the deck it ran, and how to run that deck by hand.
+
+*Folder:* `Pulse Response` · *Topics:* transient, time domain, step response, rise time, overshoot, settling time, low-pass filter, Butterworth, transmission line, reflection, TDR, ngspice, SPICE
+
+### [Buck Converter (transient)](buck-converter/index.html) {#ex-buck-converter}
+
+A 12 V to 5.5 V buck converter switching at 1 MHz, in two benches. A voltage-controlled switch driven by a pulse source at a duty cycle set by a variable, a free-wheeling diode and a 10 µH, 1 µF filter feed a 5 Ω load, with an IProbe on the inductor current. The start-up bench begins from rest and runs 200 µs: the output overshoots by 34 %, settles to within 2 % in 35 µs and ends at 5.52 V with 40 mV of ripple. The steady-state bench takes two initial conditions from that run, the output voltage on the analysis card's `IC=` and the inductor's valley current on the inductor's own `IC`, and is steady from its first cycle, so 10 µs replaces 200 µs with the same ripple. Its README shows what happens when only one of the two stored energies is set.
+
+*Folder:* `Buck Converter` · *Topics:* transient, switching converter, buck, DC-DC, voltage-controlled switch, VSwitch, ripple, start-up, settling, initial conditions, IC
+
+### [Class-E with a Transient Seed](class-e-with-a-transient-seed/index.html) {#ex-class-e-with-a-transient-seed}
+
+A 1 GHz class-E power amplifier whose FET is driven hard as a switch into the class-E shunt capacitor and series tank for 10 Ω, from 5 V. The harmonic-balance bench starts Newton from a transient run (`InitialGuess=transient`): the stage is simulated in time from its DC point at full drive until it settles, 43 periods, and harmonic balance converges from that start in 5 iterations, against 55 from the DC point with no drive stepping. It delivers 31.4 dBm at 87.9 % drain efficiency. The transient bench runs the same stage for 60 periods: the drain swings to 19 V while the switch is open and returns to zero before it closes, and its output power agrees with harmonic balance to 0.002 dB. The README covers fast bias, `InitialGuess=fallback`, and how `MaxHarm` moves the efficiency of a switching stage.
+
+*Folder:* `Class-E with a Transient Seed` · *Topics:* class-E, switching power amplifier, harmonic balance, transient, transient seed, InitialGuess, convergence, drain efficiency, drain waveform, fast bias
 
 ### [Loadpull and Pursuit](loadpull/index.html) {#ex-loadpull}
 

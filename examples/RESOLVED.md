@@ -1078,3 +1078,25 @@ Three things that took deciding:
 - **The documentation is otherwise vector-only** (`DocsFactoryTests.NoDocumentationImageIsABitmap`). A README's pictures are
   the example's own, shown as the application shows them, so `examples/<folder>/pictures/` is exempted beside
   `assets/fixed/` — not copied into `assets/fixed/`, whose contract is that DocGen never writes there.
+
+## The three transient examples (brief TRN-9, 2026-11-16)
+
+Pulse Response, Buck Converter and Class-E with a Transient Seed were written as netlists, drawn with `circuitrf netlist
+--to-schematic` into cells `circuitrf new cell` made, and marked `IsTestBench` as saving a schematic with analyses does. Gate:
+`tests/Ui.Tests/Examples/TransientExamplesTests.cs` (each bench from its `.csch`, the README numbers; the ngspice pair skipped
+with a reason where none is discovered). What building them found:
+
+- **The drawing's main line runs between ports, so a bench with none comes out tangled.** The buck (no ports) and the class-E
+  stage (one) were drawn with the supply looping round the switch. Their loads are a `Term` (buck, 5 Ω) and a `Port` (class-E,
+  10 Ω), which every analysis but S-parameters treats as a load of `Z`, so the numbers are identical to a resistor's to every
+  printed digit, and the power path then reads left to right.
+- **An IProbe on the drawing's main line is drawn as a small loop.** Its glyph's pins are not where the router's "entry pin
+  faces left" turn expects; reversing its nets draws it straight but reverses the current's sign, and mirroring it does not
+  land the pins on the wires. Left as drawn (cosmetic; the current is right). A router finding, not fixed here.
+- **The TRN-8 gate's class-E stage does not switch** (`Ipk` = 0.08 A: 13 % drain efficiency). The example uses `Ipk` = 0.5 A
+  on the same 10 Ω network: 31.42 dBm at 87.9 %, against the ideal stage's 31.6 dBm. Its DC start needs 55 Newton iterations
+  with `DriveStepping=Never` (54 fails); the seed, 5.
+- **`MaxHarm=15` under-resolves a switching stage's drain current**: 87.13 % against 87.90 % at 31 and 87.97 % at 63, which a
+  1 ps transient confirms (87.96 %). 31 is no slower here, so it ships, and the README tables all three.
+- **The Harmonic Balance example's README said a Term is open outside S-parameters.** That stopped being true when a Term
+  became a load of its `Z` in DC and harmonic balance; the paragraph and its abstract were corrected.

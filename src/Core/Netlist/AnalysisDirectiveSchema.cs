@@ -209,7 +209,7 @@ public static partial class AnalysisDirectiveSchema
             new("InitialGuess", Default: "dc", Summary: "Where the Newton starts: dc (the DC point, the drive stepped up as DriveStepping says), transient (the last period of a native transient run from rest at full drive, no drive stepping; one tone, or tones on a common fundamental) or fallback (dc, then the transient seed if that does not converge). In a parametric sweep only the first point and a point that fails are seeded. Adds Seed.Periods, Seed.Settled, Seed.HbIterations and Seed.ScaledElements."),
             new("SeedTol",    Default: "1e-3", Summary: "The seed runs until consecutive periods of every interface waveform agree within this, relative to its peak, with the change still to come (extrapolated from how fast it shrinks) included."),
             new("SeedPeriods",Default: "auto", Summary: "auto runs the seed until it settles, at most 200 periods; a number runs that many."),
-            new("SeedFastBias",Default: "yes", Summary: "yes scales each RF choke (|X| > 10x the impedance it sees at the fundamental, at the DC point) and block (|X| < 0.1x) in the seed run only, to 20x, so it settles in a few periods. Harmonic balance solves the unscaled circuit."),
+            new("SeedFastBias",Default: "yes", Summary: "yes scales each RF choke whose |X| is more than 50x the impedance it sees at the fundamental (at the DC point), and each block whose |X| is less than 1/50 of it, in the seed run only, to exactly 50x (1/50), so it settles in about eight periods. Harmonic balance solves the unscaled circuit."),
         ], RequiredOneOf: [["Tone", "Tone[1]"]]),
 
         new("loadpull", ["lp"],

@@ -886,6 +886,32 @@ public static class FigureCatalog
           + "against its target, the anti-resonances the run named, and what removing each "
           + "capacitor would cost."),
 
+        // ── Transient (brief TRN-9) ──────────────────────────────────────────────
+        // Each is a run of a shipped transient example's bench, drawn by the Transient preset.
+        new("transient-filter-step", DocDataDisplayFixtures.TransientFilterStep, 850, 640,
+            WindowFrame.Titled("circuitRF - Data Display"),
+            "The Transient preset on the Pulse Response example's Filter_Native: the 1 GHz Butterworth filter's input and output "
+          + "against time, and the bench's measures: a 409 ps rise and 12.7 % overshoot. A step has no period, so there is no spectrum."),
+
+        new("transient-line-reflection", DocDataDisplayFixtures.TransientLineReflection, 850, 540,
+            WindowFrame.Titled("circuitRF - Data Display"),
+            "Line_Native: the source steps at 0.5 ns, the 0.5 V wave reaches the 100 ohm load 1 ns later, and its reflection "
+          + "lifts the input to 0.667 V at 2.5 ns."),
+
+        new("transient-buck-startup", DocDataDisplayFixtures.TransientBuckStartup, 1240, 540,
+            WindowFrame.Titled("circuitRF - Data Display"),
+            "The Buck Converter example's Startup from rest: the output overshoots by 34 % and settles to 5.52 V, and the "
+          + "inductor current through IL settles to its switching ripple about 1.1 A."),
+
+        new("transient-preset-classe", DocDataDisplayFixtures.TransientPresetClassE, 1100, 640,
+            WindowFrame.Titled("circuitRF - Data Display"),
+            "The Transient preset on the Class-E example's transient bench: the drain swings to 19 V while the switch is open and "
+          + "returns to zero before it closes; the power through IOUT at each harmonic over the last period; and the measures, "
+          + "31.42 dBm at 87.9 % drain efficiency."),
+
+        new("transient-analysis-card", DocTransientFixtures.AnalysisCard, 520, 560, null,
+            "The transient analysis card with ngspice chosen and More open: the run's settings, then the keys only ngspice reads."),
+
         // ── The yield display (brief-yield-16 follow-up) ─────────────────────────
         // Each is one plot of the one-click yield display over the shipped Yield example's bandpass,
         // 500 trials at its own seed — the run the Yield page's example table quotes.

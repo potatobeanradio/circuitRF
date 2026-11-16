@@ -127,6 +127,7 @@ convention behind both.</p>
 | `lp` | `.cnl` or `.csch` | Loadpull over the directive's Γ grid | A per-Γ-point table; `-o .mat/.npy/.txt/.spl/.lpcwave` |
 | `lpp` | `.cnl` or `.csch` | Loadpull **pursuit** — searches for the optima | Optima + the follow-on grid; `-o` as `hb`; `--out-grid` writes a `.gam` |
 | `env` | `.cnl` or `.csch` | The circuit envelope: a modulated signal through the circuit | Each IProbe's power, gain, efficiency and ACLR to stdout; `-o .mat/.npy/.txt` for the waveforms and spectra |
+| `tran` | `.cnl` or `.csch` | A [transient](transient.html) analysis, native or on ngspice | Each recorded voltage and current at Stop with its least and most, the counters and the measurements, to stdout; `-o .mat/.npy/.txt` for the waveforms |
 | `fields` | `.cnl` or `.csch` | A `fields` analysis: an EM Field Data block's saved results recombined by the circuit, with no EM run | The far field's metrics, or SAR and B1, to stdout; `-o .mat/.npy/.txt` for the pattern |
 | `em` | `.cem`, or a `.c3d` with `--setup` | The EM kernel or 3D solver the setup resolves to | A Touchstone `.sNp`, a grouped `.npy` **and** a `.cemr` result record, where **Simulate** writes them |
 | `solver list`, `install`, `remove` | **nothing** — a tool name | The install assistant **Settings ▸ Solvers** runs | What each 3D solver's row shows, to stdout; an install or a removal, only with `--yes` |
@@ -550,6 +551,33 @@ and `PN`, `AN`, `PNc`, `PNpct` and `PNcorner` with phase noise.
 
 Exit **0** when the oscillation was found, **1** refused (the circuit does not start, or has no OscProbe) or failed,
 **130** cancelled.
+
+## `tran` — a transient analysis {#tran}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf tran &lt;design.cnl|.csch&gt; [-a name]... [--set var=expr]... [--stop t] [--step t] [--method trap|gear2] [--solver native|ngspice] [--all] [-o out.{mat,npy,txt}]</code></pre>
+
+Runs every enabled [transient analysis](transient.html) of the design, or the ones `-a` names, and the whole sweep when a
+`parametric_sweep` wraps one. `--stop`, `--step`, `--method` and `--solver` replace the directive's `Stop`, `Step`, `Method` and
+`Solver`. For each recorded net and IProbe, stdout has its value at `Stop`, its least and its most, then the run's counters
+and the bench's measurements:
+
+```
+$ circuitrf tran "Pulse Response/Filter_Native/schematic/Filter_Native.csch"
+...
+measurements:
+  Trise = 4.08946E-10
+  Overshoot_pct = 12.7268
+  Tsettle = 3.23196E-09
+  Vfinal = 0.5
+```
+
+`-o` writes every waveform. Under `--json` a cube of more than 10,000 values is left out of the document, its shape still
+listed, unless `--all` asks for every cube. With `--solver ngspice` the run says which ngspice solved it and where the deck it ran is; with
+no ngspice discovered it is refused with the way to install one (`circuitrf solver install ngspice`), never run natively.
+`circuitrf netlist <design> -o deck.cir` writes the deck an ngspice run would use without running it, and exits 1 writing
+nothing when an element has no exact translation, listing every one ([ngspice](transient.html#ngspice)).
+
+Exit **0** when it ran, **1** refused or failed, **130** cancelled.
 
 ## `em` — electromagnetic extraction {#em}
 
@@ -1347,7 +1375,7 @@ options &mdash; and `explain --ref` resolves the layout's path.
 <span class="prompt">  </span>[--curve "NAME=px,py;px,py;…[,axis=right][,is=S21:db]"] [--follow NAME=px,py]
 <span class="prompt">  </span>[--sample N | --sample-step STEP] [--method linear|smooth] --csv out.csv [-o out.s2p]</code></pre>
 
-The dialog's [Digitise by hand](create-from-image.md#by-hand) from the command line. Nothing is read off the picture:
+The dialog's [Digitise by hand](create-from-image.html#by-hand) from the command line. Nothing is read off the picture:
 the box is the plot area and the ranges are the values at its edges.
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf recognize s21.png --manual-box 228px,147px,671px,443px \

@@ -62,6 +62,21 @@
       "Summary": "A 48 V S-band GaN stage driven by 100 µs pulses at 10 % duty from a pulsed-CW source: pulse droop from channel heating and supply sag, pulse-to-pulse spread from drain lag, rise and fall, from one envelope run. The device is a synthetic radar-class GaN model with a three-pole thermal ladder."
     },
     {
+      "Folder": "Pulse Response",
+      "Title": "Pulse Response (transient)",
+      "Summary": "A 5th-order Butterworth low-pass filter and a lossless line driven by a fast step, each simulated by the native transient engine and by ngspice side by side: rise time, overshoot, settling and the line's reflection."
+    },
+    {
+      "Folder": "Buck Converter",
+      "Title": "Buck Converter (transient)",
+      "Summary": "A 12 V to 5.5 V buck at 1 MHz with a voltage-controlled switch, a diode and an LC filter: start-up from rest, ripple and settling, and initial conditions (IC=) that start the run in steady state."
+    },
+    {
+      "Folder": "Class-E with a Transient Seed",
+      "Title": "Class-E with a Transient Seed",
+      "Summary": "A 1 GHz class-E stage solved by harmonic balance started from a transient run (InitialGuess=transient), beside a transient bench showing the drain waveforms the start came from. 31.4 dBm at 88 % drain efficiency."
+    },
+    {
       "Folder": "Loadpull",
       "Title": "Loadpull and Pursuit",
       "Summary": "The same device swept over a polar load grid (LP), and again with the pursuit search walking to the optimum (LPP)."

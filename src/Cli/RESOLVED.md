@@ -3675,3 +3675,11 @@ Chain Budget's Link bench's EVM and BER rows, an example's outage) was reachable
 them through `HbCircuitRun.Measure`, as `sparam`, `hb`, `lp` and `lpp` do, and merges them as the `measurements` group into
 `-o` and `--json`; a failing one is reported as theirs are. A bench with no measure lines exports exactly as before (bare
 names). Gate: `tests/Ui.Tests/Cli/EnvelopeExportCliTests.TheMeasureLines_AreEvaluated`.
+
+## brief TRN-9 — `tran` printed the measurements header with nothing under it
+
+`tran` evaluated the bench's `measure` lines (they were in `-o` and `--json`) but its stdout loop printed only `V`, `I` and the
+`Tran.*` counters for each group, so the `measurements` group came out as a bare `measurements:` line. Every number the
+transient examples' READMEs quote was invisible headlessly. The loop now prints each cube of the measurements group in the
+TestBench's order. Gate: the examples' own headless runs (`tests/Ui.Tests/Examples/TransientExamplesTests.cs` runs the same
+benches in process; the printed form was checked by hand).
