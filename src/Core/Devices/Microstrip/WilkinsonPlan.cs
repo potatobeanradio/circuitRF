@@ -7,6 +7,11 @@ namespace CircuitRF.Core.Devices.Microstrip;
 /// λg/4 at F.</summary>
 public sealed record WilkinsonLine(string Name, double Z, double WMeters, double Eeff, double QuarterWaveMeters);
 
+/// <summary>One arm of a ring with corners, as the readout lists it: the line it rises from the input tee and falls to its
+/// output tee (each), the line across between its two corners, and the length of arm each corner stands for at F
+/// (<see cref="PlanBend.LineLength"/>).</summary>
+public sealed record RingArm(string Name, double RiseMeters, double AcrossMeters, double CornerMeters);
+
 /// <summary>One isolation resistor: the two pins it goes across, and its value.</summary>
 public sealed record WilkinsonResistor(string PinA, string PinB, double Ohms);
 
@@ -19,7 +24,7 @@ public sealed record WilkinsonResistor(string PinA, string PinB, double Ohms);
 /// <param name="ArmEeff">MLIN's dispersive εeff of that arm at F.</param>
 /// <param name="QuarterWaveMeters">λg/4 of that arm at F: the electrical length between the input junction's and
 /// an output junction's reference planes.</param>
-/// <param name="RingRadiusMeters">Centre-line radius of each arm's half-turn.</param>
+/// <param name="RingRadiusMeters">Centre-line radius of each arm's half-turn; 0 when the ring has corners.</param>
 /// <param name="FeedMeters">Length of the Z0 line from the input junction to pin 1 (and, with no output
 /// transformer, from each output junction to pin 2 or 3).</param>
 /// <param name="IsolationOhms">The resistor that belongs across R2-R3: 2·Z0 for the equal split.</param>
@@ -42,6 +47,12 @@ public sealed record WilkinsonDesign(
 
     /// <summary>The isolation resistors, the one across R2-R3 first.</summary>
     public IReadOnlyList<WilkinsonResistor> Resistors { get; init; } = [];
+
+    /// <summary>How the ring turns: half-turns, or corners.</summary>
+    public PlanCorner Corner { get; init; }
+
+    /// <summary>With corners, each arm's straight runs (one entry when the arms are alike); empty for half-turns.</summary>
+    public IReadOnlyList<RingArm> Arms { get; init; } = [];
 }
 
 /// <summary>
@@ -72,6 +83,15 @@ public sealed record WilkinsonDesign(
 /// At K = 1 the transformers are Z0 lines that change nothing, so the plan leaves them out and is the equal split's
 /// to the last bit.</para>
 ///
+/// <para><b>Corners.</b> With <see cref="PlanCorner.Miter"/> or <see cref="PlanCorner.Square"/> each arm is a rectangle's
+/// half instead of a half-turn: it rises from the input tee, turns 90° (an MMITER at its usual chamfer, or MBEND's square
+/// corner), runs across, turns again and falls to its output tee. Its λg/4 still counts every piece: the input tee's
+/// line, the straight runs, and each corner's own electrical length at F, which <see cref="PlanBend.LineLength"/> takes
+/// from the corner's model on the substrate, so the plan stays a pure function of the specs and the substrate. The runs
+/// are that much shorter. Both arms span the one width between the tees; the arm needing more line rises and falls by
+/// half the difference, so the gap stays on the input's axis even for K ≠ 1. The output tees, transformers and further
+/// sections are the half-turns' own. At <see cref="PlanCorner.Curve"/> the plan is the half-turns' to the last bit.</para>
+///
 /// <para><b>Multi-section, N = 2 or 3.</b> The ring is the section next to the input; each further section is a
 /// straight pair running on from the ring's output tees, the two lines parallel either side of the gap's centre
 /// line, with a tee and a resistor's pin pair at every junction. Sections and resistors are numbered from the
@@ -101,7 +121,7 @@ public static class WilkinsonPlan
         => pins > 5 && (pins - 3) % 2 == 0 && (pins - 3) / 2 <= MaxSections ? (pins - 3) / 2 : 1;
 
     public static WilkinsonDesign Build(double z0, double fHz, double gapMeters, MicrostripSubstrate s,
-        double k = 1.0, double n = 1.0, double band = DefaultBand)
+        double k = 1.0, double n = 1.0, double band = DefaultBand, PlanCorner corner = PlanCorner.Curve)
     {
         foreach (var (name, value) in new[] { ("Z0", z0), ("F", fHz), ("Gap", gapMeters), ("K", k) })
             if (!(value > 0))
@@ -174,7 +194,8 @@ public static class WilkinsonPlan
         double posT = gap / 2.0 + (j2.Lr + j2.Lv), posB = gap / 2.0 + (j3.Lr + j3.Lv);
         const double c = MicrostripCurve.EffectiveRadiusOffsetPerWidth;
         double d = (arm2.QuarterWaveMeters - arm3.QuarterWaveMeters) - Math.PI * c * (wa2 - wa3);
-        double yc = PassivePlan.OnGrid((posT - posB - d) / 2.0);
+        bool curved = corner == PlanCorner.Curve;
+        double yc = curved ? PassivePlan.OnGrid((posT - posB - d) / 2.0) : 0.0;
         double a = posT - yc, b = posB + yc, gy = -yc;
         if (Math.Min(a, b) < w0 / 2.0)
             throw new ParameterRefusalException(Diagnostic.Create("device.wilkinson.split-unrealisable",
@@ -182,35 +203,81 @@ public static class WilkinsonPlan
                 "Wilkinson divider: at K = {k} the two arms' quarter waves differ by more than the ring can take up "
               + "on this board. Choose K nearer 1, or widen Gap.", ("k", k)));
 
-        double straight = a - w0 / 2.0;                 // the line the port-2 arm carries before its curve
-        double radius = PassivePlan.OnGrid(
-            (arm2.QuarterWaveMeters - straight) / Math.PI - c * wa2);
-        if (radius < Math.Max(wa2, wa3))
-            throw new ParameterRefusalException(Diagnostic.Create("device.wilkinson.ring-too-small",
-                DiagnosticSeverity.Error,
-                "Wilkinson divider: a quarter wave at F = {f} Hz is {quarter} m, which leaves a ring radius of {radius} m, "
-              + "under the arm's own width {w} m. Lower F, or narrow Gap.",
-                ("f", fHz), ("quarter", arm2.QuarterWaveMeters), ("radius", radius), ("w", Math.Max(wa2, wa3))));
+        double radius = 0.0, across = 0.0;
+        (double Rise, double Across, double Corner, double Arm, double? M) upper = default, lower = default;
+        if (curved)
+        {
+            double straight = a - w0 / 2.0;             // the line the port-2 arm carries before its curve
+            radius = PassivePlan.OnGrid(
+                (arm2.QuarterWaveMeters - straight) / Math.PI - c * wa2);
+            if (radius < Math.Max(wa2, wa3))
+                throw new ParameterRefusalException(Diagnostic.Create("device.wilkinson.ring-too-small",
+                    DiagnosticSeverity.Error,
+                    "Wilkinson divider: a quarter wave at F = {f} Hz is {quarter} m, which leaves a ring radius of {radius} m, "
+                  + "under the arm's own width {w} m. Lower F, or narrow Gap.",
+                    ("f", fHz), ("quarter", arm2.QuarterWaveMeters), ("radius", radius), ("w", Math.Max(wa2, wa3))));
+        }
+        else
+        {
+            // Each arm closes at the width X = λg/4 − (the tee's line) − 2·(a corner's length) + 2·Arm between the tees
+            // when it rises by nothing. Both span the narrower of the two, and the other arm rises and falls by half the
+            // difference.
+            (double X, double Corner, double Arm, double? M) Closing(WilkinsonLine arm, double pos)
+            {
+                var bend = new PlanBend([], 0.0, 0.0, 0.0, arm.WMeters, -90.0, PlanBend.MiterFor(corner, arm.WMeters, s));
+                double length = bend.LineLength(s, fHz, arm.Z, arm.QuarterWaveMeters);
+                return (arm.QuarterWaveMeters - (pos - w0 / 2.0) - 2.0 * length + 2.0 * bend.Arm, length, bend.Arm, bend.M);
+            }
+            var (t, u) = (Closing(arm2, a), Closing(arm3, b));
+            across = PassivePlan.OnGrid(Math.Min(t.X, u.X));
+            upper = (PassivePlan.OnGrid((t.X - across) / 2.0), across - 2.0 * t.Arm, t.Corner, t.Arm, t.M);
+            lower = (PassivePlan.OnGrid((u.X - across) / 2.0), across - 2.0 * u.Arm, u.Corner, u.Arm, u.M);
+            if (Math.Min(upper.Across, lower.Across) <= 0.0)
+                throw new ParameterRefusalException(Diagnostic.Create("device.wilkinson.ring-too-small",
+                    DiagnosticSeverity.Error,
+                    "Wilkinson divider: a quarter wave at F = {f} Hz is {quarter} m, which leaves no straight run between "
+                  + "the ring's corners ({run} m). Lower F, or narrow Gap.",
+                    ("f", fHz), ("quarter", arm2.QuarterWaveMeters), ("run", Math.Min(upper.Across, lower.Across))));
+        }
 
         double l3 = feed + Math.Max(wa2, wa3) / 2.0;    // the input tee's branch: half the wider arm, then the feed
-        double x1 = l3, x2 = x1 + 2.0 * radius;
+        double x1 = l3, x2 = curved ? x1 + 2.0 * radius : x1 + across;
         // Nodes: 1..P the pins (1, 2, 3, R2, R3, then R2_k/R3_k); P+1/P+2 the input tee's top/bottom arm ends; P+3/P+4
-        // the curves' far ends; then each further section's start, top and bottom.
+        // the arms' far ends; then the ring's output tees' outgoing ends (N > 1), the corners' joints, and each further
+        // section's start, top and bottom.
         var pins = PinsFor(sections);
         int p = pins.Count, next = p + 5;
         int RTop(int m) => 4 + 2 * (m - 1);
         int RBottom(int m) => 5 + 2 * (m - 1);
         int out2 = sections > 1 ? next++ : 2, out3 = sections > 1 ? next++ : 3;
-        var plan = new List<PlanSection>
+        var plan = new List<PlanSection> { new PlanTee(wa2, wa3, w0, a, b, l3, [p + 1, p + 2, 1], x1, a, 270.0) };
+        if (curved)
         {
-            new PlanTee(wa2, wa3, w0, a, b, l3, [p + 1, p + 2, 1], x1, a, 270.0),
-            new PlanCurve(wa2, -180.0, radius, [p + 1, p + 3], x1, a, 90.0),
-            new PlanCurve(wa3, 180.0, radius, [p + 2, p + 4], x1, -b, 270.0),
-            // The ring's output tees, their through lines spanning the branch: the curve's end and the resistor's pin
-            // are the junction's own reference planes when lr = lv = half the branch's width.
-            new PlanTee(wa2, wa2, j2.Wb, j2.Lr, j2.Lv, j2.L3, [RTop(sections), p + 3, out2], x2, gy + gap / 2.0, 90.0),
-            new PlanTee(wa3, wa3, j3.Wb, j3.Lv, j3.Lr, j3.L3, [p + 4, RBottom(sections), out3], x2, -b, 90.0),
-        };
+            plan.Add(new PlanCurve(wa2, -180.0, radius, [p + 1, p + 3], x1, a, 90.0));
+            plan.Add(new PlanCurve(wa3, 180.0, radius, [p + 2, p + 4], x1, -b, 270.0));
+        }
+        else
+        {
+            // Up (or down) from the input tee, a corner, across, a corner, and down (or up) to the output tee; a rise of
+            // nothing is no line at all.
+            void Arm(int from, int to, double y0, double sign, double w, (double Rise, double Across, double Corner,
+                double Arm, double? M) arm)
+            {
+                double up = sign > 0 ? 90.0 : 270.0, turn = -90.0 * sign, v = arm.Rise, r = arm.Arm;
+                int rise = v > 0.0 ? next++ : from, c1 = next++, c2 = next++, fall = v > 0.0 ? next++ : to;
+                if (v > 0.0) plan.Add(new PlanLine([from, rise], x1, y0, up, w, v));
+                plan.Add(new PlanBend([rise, c1], x1, y0 + sign * v, up, w, turn, arm.M));
+                plan.Add(new PlanLine([c1, c2], x1 + r, y0 + sign * (v + r), 0.0, w, arm.Across));
+                plan.Add(new PlanBend([c2, fall], x1 + r + arm.Across, y0 + sign * (v + r), 0.0, w, turn, arm.M));
+                if (v > 0.0) plan.Add(new PlanLine([fall, to], x2, y0 + sign * v, (up + 180.0) % 360.0, w, v));
+            }
+            Arm(p + 1, p + 3, a, 1.0, wa2, upper);
+            Arm(p + 2, p + 4, -b, -1.0, wa3, lower);
+        }
+        // The ring's output tees, their through lines spanning the branch: the arm's end and the resistor's pin are the
+        // junction's own reference planes when lr = lv = half the branch's width.
+        plan.Add(new PlanTee(wa2, wa2, j2.Wb, j2.Lr, j2.Lv, j2.L3, [RTop(sections), p + 3, out2], x2, gy + gap / 2.0, 90.0));
+        plan.Add(new PlanTee(wa3, wa3, j3.Wb, j3.Lv, j3.Lr, j3.L3, [p + 4, RBottom(sections), out3], x2, -b, 90.0));
 
         // The further sections, from the ring outwards: section m runs on the previous junction's outgoing arm, and
         // ends in a tee whose branch reaches the gap's edge, R2_m (R2 for m = 1) above and R3_m below. The tee below
@@ -232,7 +299,10 @@ public static class WilkinsonPlan
         return new WilkinsonDesign(z0, fHz, gap, w0, z2, wa2, arm2.Eeff, arm2.QuarterWaveMeters, radius, feed, rs[0],
             new PassivePlan(pins, plan, NodeCount: next - 1))
         {
-            K = k, Sections = sections, Band = band, Lines = lines, Resistors = resistors,
+            K = k, Sections = sections, Band = band, Lines = lines, Resistors = resistors, Corner = corner,
+            Arms = curved ? [] : unequal
+                ? [new(arm2.Name, upper.Rise, upper.Across, upper.Corner), new(arm3.Name, lower.Rise, lower.Across, lower.Corner)]
+                : [new(arm2.Name, upper.Rise, upper.Across, upper.Corner)],
         };
     }
 

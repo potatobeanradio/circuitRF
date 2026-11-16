@@ -4958,3 +4958,25 @@ What would cost time to rediscover:
 - **The interdigitated coupler has no example cell.** Planar cannot model a jumper across a finger (a component port's
   strip would short the finger between) and the 3D view would need its bond wires drawn by hand; its 163 µm fingers also
   need tapered feeds before a calibrated port can sit on them.
+
+## RF passives — corners on the rings: `PlanBend` and the `Corner` of MWPD and MRRC (2026-11-16)
+
+- **MBEND could not sit in a plan.** `MicrostripBendModel` stamps its corner as a two-branch Z block at every frequency,
+  and `LocalAdmittanceBlock` held admittances only, so a square corner threw at its first stamp. The block now takes a
+  section that stamps in branch form (da0f3702e); nothing before allocated a branch, so MTEE's arms and every existing
+  plan reduce as they did. MMITER stamps in admittance form unless its series term nearly cancels, so the mitred corner
+  needed nothing.
+- **A corner's length is its insertion phase, not its image phase.** MBEND's unmitered series L per side,
+  220·h·(1 − 1.35·e^(−0.18·u^1.39)) nH, is negative below W/h ≈ 1.44, and a 70.7 Ω arm on the example board (20 mil, εr 3.66) is at
+  W/h ≈ 1.1, so its A = 1 − ω²LC exceeds 1 and acos(A) is imaginary although the corner does delay the wave. The plans use
+  −arg S21 between two lines of the arm's impedance, which is defined for either part, as a length of that line
+  (`PlanBend.LineLength`). A mitred corner there stands for 0.567 mm of arm at 2.4 GHz.
+- **Leaving the corners' length in the runs costs 10 to 20 dB at F.** Each arm is then 2 × 0.567 mm (6 % of λg/4) long:
+  the mitred divider's |S11| and |S23| at F go from −48 and −36 dB to −30 and −26 dB, and the rat-race's |S11|, |S44|
+  and |S23| from about −50 to about −30 dB. The S-parameter tests' limits sit between the two.
+- **A corner's pins are not on the 2 nm grid.** MMITER's pin offset at its default chamfer (M = 0.67 here) is 2·M·W − W/2,
+  not a multiple of 2 nm, and both corner generators round their pin to the 1 nm database unit. `PlanBend.Arm` rounds the
+  same way from the same function, so the next piece starts on the corner's own pin; positions are on 1 nm, lengths stay
+  on 2 nm (each run is a width less two arms).
+- **The curved plans are bit for bit.** The corners are a branch beside the curve code, which keeps its arithmetic and
+  section order; the variants' and the rat-race's fingerprints were taken before the change.

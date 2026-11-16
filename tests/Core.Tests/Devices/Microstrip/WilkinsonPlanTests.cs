@@ -70,21 +70,92 @@ public class WilkinsonPlanTests
         => Assert.Equal(fingerprint, Fingerprint(WilkinsonPlan.Build(z0, f, gap, Ro4350b)));
 
     private static string Fingerprint(WilkinsonDesign d)
+        => Fingerprint(d.Plan, [d.W0Meters, d.ArmZ0, d.ArmWMeters, d.ArmEeff, d.QuarterWaveMeters,
+                                d.RingRadiusMeters, d.FeedMeters, d.IsolationOhms]);
+
+    /// <summary>Every double of a plan, after <paramref name="head"/>, hashed: a change to any of them changes it.</summary>
+    internal static string Fingerprint(PassivePlan plan, IEnumerable<double> head)
     {
-        var bits = new List<double> { d.W0Meters, d.ArmZ0, d.ArmWMeters, d.ArmEeff, d.QuarterWaveMeters,
-                                      d.RingRadiusMeters, d.FeedMeters, d.IsolationOhms };
-        foreach (var section in d.Plan.Sections)
+        var bits = new List<double>(head);
+        foreach (var section in plan.Sections)
         {
             bits.AddRange([section.X, section.Y, section.RotationDeg, .. section.Nodes.Select(n => (double)n)]);
             bits.AddRange(section switch
             {
                 PlanTee t => [t.W1, t.W2, t.W3, t.L1, t.L2, t.L3],
                 PlanCurve c => [c.W, c.AngleDeg, c.Radius],
+                PlanLine l => [l.W, l.L],
                 _ => throw new InvalidOperationException(),
             });
         }
         var bytes = bits.SelectMany(BitConverter.GetBytes).ToArray();
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))[..16];
+    }
+
+    /// <summary>The variants at <c>Corner = Curve</c>, fingerprinted before the corners existed: every number of their
+    /// plans and every line and resistor, bit for bit.</summary>
+    [Theory]
+    [InlineData(1.5, 1, 2.0, "9F27EA18D959577A")]
+    [InlineData(0.6, 1, 2.0, "4312E3E826DFAE05")]
+    [InlineData(1.0, 2, 2.0, "24F13F8689C487BA")]
+    [InlineData(1.0, 3, 3.0, "387DC2EB25DDA04C")]
+    public void TheVariants_AtCurvedCorners_AreUnchangedBitForBit(double k, int n, double band, string fingerprint)
+    {
+        var d = WilkinsonPlan.Build(50.0, 2.4e9, 1.35e-3, Ro4350b, k, n, band);
+        Assert.Equal(fingerprint, Fingerprint(d.Plan,
+        [
+            d.W0Meters, d.ArmZ0, d.ArmWMeters, d.ArmEeff, d.QuarterWaveMeters, d.RingRadiusMeters, d.FeedMeters,
+            .. d.Lines.SelectMany(l => new[] { l.Z, l.WMeters, l.Eeff, l.QuarterWaveMeters }),
+            .. d.Resistors.Select(r => r.Ohms),
+        ]));
+    }
+
+    // ══ Corners: a rectangle of MMITER or MBEND corners ═════════════════════════════════════════════
+
+    /// <summary>With corners each arm is still λg/4 at F between the junctions' reference planes — the input tee's line,
+    /// its straight runs, and two corners at their own electrical length from the corner's model — for every K and N; the
+    /// runs in the plan are those, every piece meets the next, and R2 and R3 are still Gap apart.</summary>
+    [Theory]
+    [InlineData(PlanCorner.Miter, 1.0, 1)]
+    [InlineData(PlanCorner.Square, 1.0, 1)]
+    [InlineData(PlanCorner.Miter, 1.5, 1)]
+    [InlineData(PlanCorner.Square, 0.6, 1)]
+    [InlineData(PlanCorner.Miter, 1.0, 2)]
+    [InlineData(PlanCorner.Square, 1.0, 3)]
+    public void WithCorners_EachArmIsStillAQuarterWave(PlanCorner corner, double k, int n)
+    {
+        var d = WilkinsonPlan.Build(50.0, 2.4e9, 1.35e-3, Ro4350b, k, n, 2.0, corner);
+        var s = d.Plan.Sections;
+        var tees = s.OfType<PlanTee>().ToList();
+        var (input, outTop, outBottom) = (tees[0], tees[1], tees[2]);
+        var bends = s.OfType<PlanBend>().ToList();
+        Assert.Equal(4, bends.Count);
+        Assert.All(bends, b => Assert.Equal(corner == PlanCorner.Miter, b.M is not null));
+
+        var arms = d.Arms.Count == 1 ? [d.Arms[0], d.Arms[0]] : d.Arms.ToList();
+        var lines = arms.Select(a => d.Lines.Single(l => l.Name == a.Name)).ToList();
+        double[] teeLine = [input.L1 - input.W3 / 2.0, input.L2 - input.W3 / 2.0];
+        for (int i = 0; i < 2; i++)
+        {
+            var bend = bends.First(b => b.W == lines[i].WMeters);
+            Assert.Equal(bend.LineLength(Ro4350b, 2.4e9, lines[i].Z, lines[i].QuarterWaveMeters), arms[i].CornerMeters, 15);
+            double arm = teeLine[i] + 2.0 * arms[i].RiseMeters + arms[i].AcrossMeters + 2.0 * arms[i].CornerMeters;
+            Assert.True(Math.Abs(arm - lines[i].QuarterWaveMeters) < 10e-9, $"arm {i}: {arm} vs {lines[i].QuarterWaveMeters}");
+        }
+        Assert.Equal(arms.SelectMany(a => a.RiseMeters > 0 ? new[] { a.AcrossMeters, a.RiseMeters, a.RiseMeters } : [a.AcrossMeters])
+                         .Order(), s.OfType<PlanLine>().Select(l => l.L).Order());
+        HybridPlanTests.AssertJoined(d.Plan);
+        Assert.Equal(d.GapMeters, outTop.Y - (outBottom.Y + outBottom.L1 + outBottom.L2), 12);
+    }
+
+    [Theory]
+    [InlineData(PlanCorner.Miter)]
+    [InlineData(PlanCorner.Square)]
+    public void WithCorners_ARingTooSmallIsACodedRefusal(PlanCorner corner)
+    {
+        var ex = Assert.Throws<ParameterRefusalException>(() =>
+            WilkinsonPlan.Build(50.0, 40e9, 1.35e-3, Ro4350b, corner: corner));
+        Assert.Equal("device.wilkinson.ring-too-small", ex.Diagnostic?.Id);
     }
 
     [Theory]

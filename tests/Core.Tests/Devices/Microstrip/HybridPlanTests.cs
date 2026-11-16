@@ -127,6 +127,43 @@ public class HybridPlanTests
         AssertJoined(d.Plan);
     }
 
+    /// <summary>The rat-race at <c>Corner = Curve</c>, every number of its plan fingerprinted before the corners existed.</summary>
+    [Theory]
+    [InlineData(50.0, 2.4e9, "625C3B157BBCED9C")]
+    [InlineData(50.0, 5.8e9, "332F374E5FC98B1A")]
+    [InlineData(35.0, 1.0e9, "91A2C4A18898AC18")]
+    public void TheRatRace_AtCurvedCorners_IsUnchangedBitForBit(double z0, double f, string fingerprint)
+    {
+        var d = RatRacePlan.Build(z0, f, Ro4350b);
+        Assert.Equal(fingerprint, WilkinsonPlanTests.Fingerprint(d.Plan,
+            [d.W0Meters, d.RingZ0, d.RingWMeters, d.RingEeff, d.QuarterWaveMeters, d.RadiusMeters, d.FeedMeters]));
+    }
+
+    /// <summary>With corners the ring is a rectangle and its spacings are unchanged: each end's two corners, at their own
+    /// electrical length at F from the corner's model, and the side between them make λg/4 − W0, so 3 → 4 is λg/4 and
+    /// 4 → 2 is 3λg/4; every piece meets the next.</summary>
+    [Theory]
+    [InlineData(PlanCorner.Miter)]
+    [InlineData(PlanCorner.Square)]
+    public void TheRatRace_WithCorners_KeepsItsSpacings(PlanCorner corner)
+    {
+        var d = RatRacePlan.Build(50.0, 2.4e9, Ro4350b, corner);
+        var s = d.Plan.Sections;
+        double q = d.QuarterWaveMeters;
+        var bends = s.OfType<PlanBend>().ToList();
+        Assert.Equal(4, bends.Count);
+        Assert.All(bends, b => Assert.Equal(corner == PlanCorner.Miter, b.M is not null));
+        double c = bends[0].LineLength(Ro4350b, 2.4e9, d.RingZ0, q);
+        Assert.Equal(c, d.CornerMeters, 15);
+        double L(int i) => ((PlanLine)s[i]).L;
+        double[] spacing = [L(1), L(3), 2.0 * c + L(6) + L(8), L(10) + 2.0 * c + L(12)];
+        double[] want = [q, q, q, 3.0 * q];
+        for (int k = 0; k < 4; k++)
+            Assert.True(Math.Abs(spacing[k] - want[k]) < 10e-9, $"spacing {k}: {spacing[k]} vs {want[k]}");
+        Assert.Equal(d.SideMeters, L(6), 15);
+        AssertJoined(d.Plan);
+    }
+
     [Theory]
     [InlineData(0.0, 2.4e9, 1.0, "device.branchline.spec-not-positive")]
     [InlineData(50.0, -1.0, 1.0, "device.branchline.spec-not-positive")]
@@ -144,15 +181,18 @@ public class HybridPlanTests
     [InlineData(0.0, 2.4e9, "device.ratrace.spec-not-positive")]
     [InlineData(50.0, 40e9, "device.ratrace.ring-too-small")]
     [InlineData(500.0, 2.4e9, "device.ratrace.width-unreachable")]
-    public void ARatRaceThatCannotBeBuilt_IsACodedRefusal(double z0, double f, string code)
+    [InlineData(50.0, 40e9, "device.ratrace.ring-too-small", PlanCorner.Miter)]
+    [InlineData(50.0, 40e9, "device.ratrace.ring-too-small", PlanCorner.Square)]
+    public void ARatRaceThatCannotBeBuilt_IsACodedRefusal(double z0, double f, string code,
+        PlanCorner corner = PlanCorner.Curve)
     {
-        var ex = Assert.Throws<ParameterRefusalException>(() => RatRacePlan.Build(z0, f, Ro4350b));
+        var ex = Assert.Throws<ParameterRefusalException>(() => RatRacePlan.Build(z0, f, Ro4350b, corner));
         Assert.Equal(code, ex.Diagnostic?.Id);
     }
 
     /// <summary>Every plan node is one point: each section's pins, posed, land where every other section on that
     /// node puts it.</summary>
-    private static void AssertJoined(PassivePlan plan)
+    internal static void AssertJoined(PassivePlan plan)
     {
         var at = new Dictionary<int, (double X, double Y)>();
         foreach (var section in plan.Sections)
@@ -163,6 +203,8 @@ public class HybridPlanTests
                 PlanLine l => [(0, 0), (l.L, 0)],
                 PlanCurve c => [(0, 0), (c.Radius * Math.Sin(Math.Abs(c.AngleDeg) * Math.PI / 180.0),
                                          Math.Sign(c.AngleDeg) * c.Radius * (1.0 - Math.Cos(c.AngleDeg * Math.PI / 180.0)))],
+                PlanBend b => [(0, 0), (b.Arm * (1.0 + Math.Cos(b.AngleDeg * Math.PI / 180.0)),
+                                        b.Arm * Math.Sin(b.AngleDeg * Math.PI / 180.0))],
                 _ => throw new InvalidOperationException(),
             };
             double th = section.RotationDeg * Math.PI / 180.0;

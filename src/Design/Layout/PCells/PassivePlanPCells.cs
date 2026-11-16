@@ -7,7 +7,8 @@ namespace CircuitRF.Design.Layout.PCells;
 /// The planned passives' artwork (docs/design/rf-passives.md). A generator builds its part's plan in Core —
 /// the plan its model stamps — and <see cref="Draw"/> draws every section through the EXISTING part's own
 /// generator (<see cref="MTeePCell"/>, <see cref="MCurvePCell"/>, <see cref="MlinPCell"/>,
-/// <see cref="CoupledLinePCells"/>; an interdigitated section's strips each by <see cref="MlinPCell"/>), turned and
+/// <see cref="CoupledLinePCells"/>, <see cref="MMiterPCell"/>, <see cref="MBendPCell"/>; an interdigitated section's
+/// strips each by <see cref="MlinPCell"/>), turned and
 /// moved to the section's pose. The
 /// copper is therefore the copper those parts draw on their own, piece for piece, and the pins are those
 /// parts' own pins wherever a section ends on one of the passive's pins — never a second rounding of where
@@ -30,7 +31,8 @@ public static class PassivePlanPCells
         {
             design = WilkinsonPlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
                 parameters.Real("Gap", 1.35e-3), SubstrateOf(technology, layerSelection),
-                parameters.Real("K", 1.0), parameters.Real("N", 1.0), parameters.Real("Band", WilkinsonPlan.DefaultBand));
+                parameters.Real("K", 1.0), parameters.Real("N", 1.0), parameters.Real("Band", WilkinsonPlan.DefaultBand),
+                CornerOf(parameters));
         }
         catch (ParameterRefusalException ex)
         {
@@ -53,7 +55,11 @@ public static class PassivePlanPCells
     public static PCellResult GenerateRatRace(
         IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
         => DrawOrRefuse(() => RatRacePlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
-            SubstrateOf(technology, layerSelection)).Plan, technology, layerSelection);
+            SubstrateOf(technology, layerSelection), CornerOf(parameters)).Plan, technology, layerSelection);
+
+    /// <summary>A ring's <c>Corner</c>, a name; Curve when it is absent or not one of the names.</summary>
+    private static PlanCorner CornerOf(IReadOnlyDictionary<string, PCellValue> parameters)
+        => Enum.TryParse(parameters.Text("Corner"), ignoreCase: true, out PlanCorner c) && Enum.IsDefined(c) ? c : PlanCorner.Curve;
 
     /// <summary>The coupled-line coupler (MCLC): <see cref="CoupledLineCouplerPlan"/>'s one MCLIN.</summary>
     public const string CoupledLineCouplerId = ComponentModelFactory.CoupledLineCouplerTypeName;
@@ -126,6 +132,15 @@ public static class PassivePlanPCells
                     ["W"] = c.W, ["S"] = c.S, ["L"] = c.L,
                 }, technology, layerSelection),
                 PlanCoupledLine c => Fingers(c, technology, layerSelection),
+                PlanBend b => b.M is { } m
+                    ? MMiterPCell.Generate(new Dictionary<string, PCellValue>
+                    {
+                        ["W"] = b.W, ["Angle"] = b.AngleDeg, ["M"] = m,
+                    }, technology, layerSelection)
+                    : MBendPCell.Generate(new Dictionary<string, PCellValue>
+                    {
+                        ["W"] = b.W, ["Angle"] = b.AngleDeg, ["Miter"] = (double)MicrostripBendMiter.None,
+                    }, technology, layerSelection),
                 _ => throw new NotSupportedException(section.GetType().Name),
             };
 

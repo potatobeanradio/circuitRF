@@ -3002,13 +3002,14 @@ public static class ComponentModelFactory
         GetReal(parameters, "Er", DefaultSubstrateEpsR), GetReal(parameters, "Sigma", DefaultSubstrateSigmaSPerM),
         GetReal(parameters, "TanD", DefaultSubstrateTanD), GetReal(parameters, "Roughness", 0.0));
 
-    // MWPD: the specs (Z0, F, the split K, the sections N and their band) and the resistor's pin span (Gap) are the
-    // parameters; the plan derives the rest, and its pins follow N.
+    // MWPD: the specs (Z0, F, the split K, the sections N and their band), the resistor's pin span (Gap) and how the ring
+    // turns (Corner, a name) are the parameters; the plan derives the rest, and its pins follow N.
     private static MicrostripPlanModel CreateWilkinsonModel(IReadOnlyDictionary<string, Value> parameters)
         => new(WilkinsonPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
                                    GetReal(parameters, "Gap", 1.35e-3), SubstrateOf(parameters),
                                    GetReal(parameters, "K", 1.0), GetReal(parameters, "N", 1.0),
-                                   GetReal(parameters, "Band", WilkinsonPlan.DefaultBand)).Plan,
+                                   GetReal(parameters, "Band", WilkinsonPlan.DefaultBand),
+                                   EnumNamed(parameters, "Corner", PlanCorner.Curve)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, WilkinsonTypeName));
 
     /// <summary>The 3 dB branch-line hybrid's engine token (pins 1, 2, 3, 4).</summary>
@@ -3023,9 +3024,10 @@ public static class ComponentModelFactory
                                     GetReal(parameters, "N", 1.0), SubstrateOf(parameters)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, BranchLineTypeName));
 
-    // MRRC: the specs Z0 and F; the plan derives the rest.
+    // MRRC: the specs Z0 and F, and how the ring turns (Corner); the plan derives the rest.
     private static MicrostripPlanModel CreateRatRaceModel(IReadOnlyDictionary<string, Value> parameters)
-        => new(RatRacePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters)).Plan,
+        => new(RatRacePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
+                                 EnumNamed(parameters, "Corner", PlanCorner.Curve)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, RatRaceTypeName));
 
     /// <summary>The coupled-line coupler's engine token (pins 1 input, 2 through, 3 coupled, 4 isolated).</summary>

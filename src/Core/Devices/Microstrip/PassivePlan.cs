@@ -1,3 +1,7 @@
+using System.Numerics;
+using CircuitRF.Core.Elaboration;
+using CircuitRF.Core.Expressions;
+
 namespace CircuitRF.Core.Devices.Microstrip;
 
 /// <summary>
@@ -33,6 +37,58 @@ public sealed record PlanCurve(double W, double AngleDeg, double Radius,
 
 /// <summary>An MLIN: width and length, running along the part's +x from pin 1 to pin 2.</summary>
 public sealed record PlanLine(int[] Nodes, double X, double Y, double RotationDeg, double W, double L) : PlanSection(Nodes, X, Y, RotationDeg);
+
+/// <summary>
+/// A corner: an MMITER of miter fraction <paramref name="M"/> (<see cref="MicrostripMiterBendModel"/>) or, with no M, an
+/// MBEND's square corner (<see cref="MicrostripBendModel"/>), turning <paramref name="AngleDeg"/> (counter-clockwise
+/// positive) from the part's +x. Pin 1 is at the pose, the centre-line corner <see cref="Arm"/> along +x, and pin 2
+/// <see cref="Arm"/> on from the corner along the new heading.
+/// </summary>
+public sealed record PlanBend(int[] Nodes, double X, double Y, double RotationDeg, double W, double AngleDeg, double? M)
+    : PlanSection(Nodes, X, Y, RotationDeg)
+{
+    /// <summary>Pin to centre-line corner, where the part's own generator puts its pins: MMITER's pin offset, or the
+    /// reference plane of MBEND's square corner, rounded to the 1 nm database unit as both generators round them.</summary>
+    public double Arm
+    {
+        get
+        {
+            double w = Math.Round(W / 1e-9);
+            double nm = M is { } m ? MicrostripMiterBend.PinOffset(w, AngleDeg, m) : MicrostripMiterBend.PlaneOffset(w, AngleDeg);
+            return Math.Round(nm, MidpointRounding.AwayFromZero) * 1e-9;
+        }
+    }
+
+    /// <summary>The miter a <paramref name="corner"/> corner of width <paramref name="w"/> takes: for
+    /// <see cref="PlanCorner.Miter"/> MMITER's own default, the Douville-James optimum for W/h capped where its table
+    /// ends; for <see cref="PlanCorner.Square"/> none, MBEND's square corner.</summary>
+    public static double? MiterFor(PlanCorner corner, double w, MicrostripSubstrate s)
+        => corner == PlanCorner.Miter
+            ? Math.Min(MicrostripMiterBend.DouvilleJamesOptimum(w, s.HMeters), MicrostripMiterBend.MaxMiter(90.0))
+            : null;
+
+    /// <summary>
+    /// The corner's electrical length at <paramref name="fHz"/>, as a length of the line it joins: its insertion phase
+    /// between two lines of <paramref name="z"/>, from the part's own model stamped as a plan of this one section,
+    /// over the line's phase per metre (π/2 over its λg/4 at F, <paramref name="quarterWave"/>). A plan shortens its
+    /// straight runs by it, so it stays a pure function of the specs and the substrate.
+    /// </summary>
+    public double LineLength(MicrostripSubstrate s, double fHz, double z, double quarterWave)
+    {
+        var model = new MicrostripPlanModel(
+            new PassivePlan(["1", "2"], [this with { Nodes = [1, 2], X = 0.0, Y = 0.0, RotationDeg = 0.0 }], 2), s, "(corner)");
+        var y = new LocalAdmittanceBlock(2);
+        model.Stamp(y, new ElaboratedComponent(nameof(MicrostripPlanModel), "(corner)", [1, 2],
+            new Dictionary<string, Value>(), model), 2.0 * Math.PI * fHz);
+        Complex s21 = -2.0 * z * y[1, 0] / ((1.0 + z * y[0, 0]) * (1.0 + z * y[1, 1]) - z * z * y[0, 1] * y[1, 0]);
+        return -s21.Phase / (Math.PI / 2.0) * quarterWave;
+    }
+}
+
+/// <summary>How a ring's corners are made (MWPD, MRRC). <see cref="Curve"/>: 180° MCURVE half-turns, as the parts always
+/// were. <see cref="Miter"/> and <see cref="Square"/>: a rectangle of straight runs and four 90° corners
+/// (<see cref="PlanBend"/>), an MMITER at the Douville-James chamfer or MBEND's square corner.</summary>
+public enum PlanCorner { Curve, Miter, Square }
 
 /// <summary>A planned passive: its pin names in terminal order, its sections, and how many plan nodes the
 /// sections join (pins included).</summary>

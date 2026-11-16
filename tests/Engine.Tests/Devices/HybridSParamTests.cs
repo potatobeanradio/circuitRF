@@ -32,6 +32,8 @@ public class HybridSParamTests
     {
         "MBLC1" => $"MBLC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz N=1 {Sub}",
         "MBLC2" => $"MBLC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz N=2 {Sub}",
+        "MRRC-Miter" => $"MRRC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz Corner=Miter {Sub}",
+        "MRRC-Square" => $"MRRC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz Corner=Square {Sub}",
         _ => $"MRRC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz {Sub}",
     };
 
@@ -39,6 +41,8 @@ public class HybridSParamTests
     {
         "MBLC1" => BranchLinePlan.Build(50.0, 2.4e9, 1, Ro4350b).Plan,
         "MBLC2" => BranchLinePlan.Build(50.0, 2.4e9, 2, Ro4350b).Plan,
+        "MRRC-Miter" => RatRacePlan.Build(50.0, 2.4e9, Ro4350b, PlanCorner.Miter).Plan,
+        "MRRC-Square" => RatRacePlan.Build(50.0, 2.4e9, Ro4350b, PlanCorner.Square).Plan,
         _ => RatRacePlan.Build(50.0, 2.4e9, Ro4350b).Plan,
     };
 
@@ -90,6 +94,8 @@ public class HybridSParamTests
                 PlanTee t => $"MTEE:T{++k} {nodes} W1={F(t.W1)} W2={F(t.W2)} W3={F(t.W3)} L1={F(t.L1)} L2={F(t.L2)} L3={F(t.L3)} {Sub}",
                 PlanCurve c => $"MCURVE:C{++k} {nodes} W={F(c.W)} Angle={F(c.AngleDeg)} deg Radius={F(c.Radius)} {Sub}",
                 PlanLine l => $"MLIN:L{++k} {nodes} W={F(l.W)} L={F(l.L)} {Sub}",
+                PlanBend { M: { } m } bend => $"MMITER:B{++k} {nodes} W={F(bend.W)} Angle={F(bend.AngleDeg)} deg M={F(m)} {Sub}",
+                PlanBend bend => $"MBEND:B{++k} {nodes} W={F(bend.W)} Angle={F(bend.AngleDeg)} deg Miter=0 {Sub}",
                 _ => throw new InvalidOperationException(),
             });
         }
@@ -106,6 +112,10 @@ public class HybridSParamTests
     [InlineData("MRRC", 1.2e9)]
     [InlineData("MRRC", 2.4e9)]
     [InlineData("MRRC", 4.8e9)]
+    [InlineData("MRRC-Miter", 1.2e9)]
+    [InlineData("MRRC-Miter", 2.4e9)]
+    [InlineData("MRRC-Square", 2.4e9)]
+    [InlineData("MRRC-Square", 4.8e9)]
     public void TheHybrid_IsItsSectionsWiredByHand(string kind, double f)
         => AssertSame(SAt(Elaborate($"{Ports}\n{Part(kind)}"), f), SAt(Elaborate(ByHand(Plan(kind))), f), f);
 
@@ -123,13 +133,20 @@ public class HybridSParamTests
         Assert.InRange(PhaseDeg(s[1, 0], s[2, 0]), 87.0, 93.0);      // 3 lags 2 by a quarter period
     }
 
-    [Fact]
-    public void TheRatRace_SumsAndDifferencesAtF()
+    /// <summary>With corners too: the corners' own electrical length comes out of the sides, so every spacing is still
+    /// λg/4 or 3λg/4 at F. The cornered limit is set to catch it if it were not: on this board the mitred ring's |S11|,
+    /// |S44|, |S41| and |S23| are −49 to −51 dB at F, as the curved ring's are, the square ring's −43 to −59 dB, and with
+    /// the mitred corners' 2 × 0.57 mm left in each side (6 % of λg/4) |S11|, |S44| and |S23| rise to about −30 dB.</summary>
+    [Theory]
+    [InlineData("MRRC", -20.0)]
+    [InlineData("MRRC-Miter", -40.0)]
+    [InlineData("MRRC-Square", -40.0)]
+    public void TheRatRace_SumsAndDifferencesAtF(string kind, double limitDb)
     {
-        var s = SAt(Elaborate($"{Ports}\n{Part("MRRC")}"), 2.4e9);
+        var s = SAt(Elaborate($"{Ports}\n{Part(kind)}"), 2.4e9);
 
         foreach (var (i, j) in new[] { (0, 0), (3, 3), (3, 0), (2, 1) })
-            Assert.True(Db(s[i, j]) < -20.0, $"|S{i + 1}{j + 1}| {Db(s[i, j]):F2} dB");
+            Assert.True(Db(s[i, j]) < limitDb, $"|S{i + 1}{j + 1}| {Db(s[i, j]):F2} dB");
         foreach (var (i, j) in new[] { (1, 0), (2, 0), (1, 3), (2, 3) })
             Assert.InRange(Db(s[i, j]), -3.4, -3.0);
         Assert.InRange(PhaseDeg(s[1, 0], s[2, 0]), -3.0, 3.0);       // Σ: in phase

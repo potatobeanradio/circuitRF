@@ -60,6 +60,9 @@ public class WilkinsonSParamTests
             {
                 PlanTee t => $"MTEE:T{++k} {nodes} W1={F(t.W1)} W2={F(t.W2)} W3={F(t.W3)} L1={F(t.L1)} L2={F(t.L2)} L3={F(t.L3)} {Sub}",
                 PlanCurve c => $"MCURVE:C{++k} {nodes} W={F(c.W)} Angle={F(c.AngleDeg)} deg Radius={F(c.Radius)} {Sub}",
+                PlanLine l => $"MLIN:L{++k} {nodes} W={F(l.W)} L={F(l.L)} {Sub}",
+                PlanBend { M: { } m } bend => $"MMITER:B{++k} {nodes} W={F(bend.W)} Angle={F(bend.AngleDeg)} deg M={F(m)} {Sub}",
+                PlanBend bend => $"MBEND:B{++k} {nodes} W={F(bend.W)} Angle={F(bend.AngleDeg)} deg Miter=0 {Sub}",
                 _ => throw new InvalidOperationException(),
             });
         }
@@ -95,13 +98,14 @@ public class WilkinsonSParamTests
 
     // ══ The variants: an unequal split (K) and the multi-section divider (N) ══════════════════════════
 
-    private static string Variant(double k, int n, double band = 2.0)
+    private static string Variant(double k, int n, double band = 2.0, PlanCorner corner = PlanCorner.Curve)
     {
-        var d = WilkinsonPlan.Build(50.0, 2.4e9, 1.35e-3, Ro4350b, k, n, band);
+        var d = WilkinsonPlan.Build(50.0, 2.4e9, 1.35e-3, Ro4350b, k, n, band, corner);
         string pins = string.Join(" ", Enumerable.Range(1, d.Plan.Pins.Count).Select(i => Net(d.Plan, i)));
+        string turns = corner == PlanCorner.Curve ? "" : $" Corner={corner}";
         return $"""
             {Ports}
-            MWPD:W1 {pins} Z0=50 Ohm F=2.4 GHz Gap=1.35 mm K={F(k)} N={n} Band={F(band)} {Sub}
+            MWPD:W1 {pins} Z0=50 Ohm F=2.4 GHz Gap=1.35 mm K={F(k)} N={n} Band={F(band)}{turns} {Sub}
             {Resistors(d)}
             """;
     }
@@ -129,6 +133,47 @@ public class WilkinsonSParamTests
     }
 
     private static double Db(Complex x) => 20.0 * Math.Log10(x.Magnitude);
+
+    // ══ Corners: the ring as a rectangle of MMITER or MBEND corners and MLIN runs ═══════════════════════
+
+    [Theory]
+    [InlineData(PlanCorner.Miter, 1.0, 1, 1.2e9)]
+    [InlineData(PlanCorner.Miter, 1.0, 1, 2.4e9)]
+    [InlineData(PlanCorner.Miter, 1.5, 1, 4.8e9)]
+    [InlineData(PlanCorner.Miter, 1.0, 2, 2.4e9)]
+    [InlineData(PlanCorner.Square, 1.0, 1, 1.2e9)]
+    [InlineData(PlanCorner.Square, 1.0, 1, 2.4e9)]
+    [InlineData(PlanCorner.Square, 0.6, 1, 2.4e9)]
+    [InlineData(PlanCorner.Square, 1.0, 3, 4.8e9)]
+    public void ACorneredDivider_IsItsSectionsWiredByHand(PlanCorner corner, double k, int n, double f)
+    {
+        var d = WilkinsonPlan.Build(50.0, 2.4e9, 1.35e-3, Ro4350b, k, n, 2.0, corner);
+        var a = SAt(Variant(k, n, 2.0, corner), f);
+        var b = SAt(ByHand(d.Plan, Resistors(d)), f);
+        for (int i = 0; i < 3; i++)
+            for (int j = 0; j < 3; j++)
+                Assert.True((a[i, j] - b[i, j]).Magnitude < 1e-9, $"S{i + 1}{j + 1} at {f / 1e9} GHz: {a[i, j]} vs {b[i, j]}");
+    }
+
+    /// <summary>
+    /// With corners the equal split still divides at F, matched and isolated, because the corners' own electrical length
+    /// is taken out of the runs. The limits are set to catch it if it were not: on this board the mitred divider reaches
+    /// |S11| −48 dB and |S23| −36 dB at F, as the curved one does (−48, −36), the square one −42 and −37, and with the
+    /// mitred corners' 2 × 0.57 mm left in each arm (6 % of λg/4) they rise to −30 and −26 dB. The outputs' own match,
+    /// −34 dB either way, is the junctions'.
+    /// </summary>
+    [Theory]
+    [InlineData(PlanCorner.Miter)]
+    [InlineData(PlanCorner.Square)]
+    public void ACorneredDivider_DividesAtF(PlanCorner corner)
+    {
+        var s = SAt(Variant(1.0, 1, 2.0, corner), 2.4e9);
+        foreach (var (i, j, name, limit) in new[] { (0, 0, "S11", -40.0), (1, 1, "S22", -30.0), (2, 2, "S33", -30.0), (1, 2, "S23", -32.0) })
+            Assert.True(Db(s[i, j]) < limit, $"|{name}| {Db(s[i, j]):F2} dB");
+        Assert.InRange(Db(s[1, 0]), -3.3, -3.0);
+        Assert.InRange(Db(s[2, 0]), -3.3, -3.0);
+        Assert.True(Math.Abs(Db(s[1, 0]) - Db(s[2, 0])) < 1e-9, "the split is equal");
+    }
 
     /// <summary>At F the unequal split puts K² more power into port 3 than port 2, with every port matched and the
     /// outputs isolated.</summary>

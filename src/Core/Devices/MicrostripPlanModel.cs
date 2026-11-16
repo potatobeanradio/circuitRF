@@ -11,7 +11,8 @@ namespace CircuitRF.Core.Devices;
 /// and the coupled-line parts (<see cref="CoupledLineCouplerPlan"/>, <see cref="LangePlan"/>,
 /// <see cref="MarchandBalunPlan"/>). It has no line physics of its own: each section of the plan is the EXISTING
 /// part's model (<see cref="MicrostripTeeModel"/>, <see cref="MicrostripCurveModel"/>,
-/// <see cref="MicrostripLineModel"/>, <see cref="MicrostripCoupledLineModel"/>), stamped into a
+/// <see cref="MicrostripLineModel"/>, <see cref="MicrostripCoupledLineModel"/>, <see cref="MicrostripMiterBendModel"/>,
+/// <see cref="MicrostripBendModel"/>), stamped into a
 /// <see cref="LocalAdmittanceBlock"/> on the plan's nodes, and the internal nodes are Kron-reduced away so the
 /// instance stamps one block on its pins — the way MTEE stamps the arms it draws (<see cref="JunctionArms"/>).
 /// The same network built from explicit instances of those parts is therefore the same matrix.
@@ -69,6 +70,11 @@ public sealed class MicrostripPlanModel : ComponentModel, IReportsWarnings, IDcS
             PlanCoupledLine { Fingers: 2 } p => new MicrostripCoupledLineModel(p.W, p.S, p.L, s.HMeters, s.TMeters,
                 s.EpsR, s.SigmaSPerM, s.TanD, path, s.RoughnessMeters),
             PlanCoupledLine p => new InterdigitatedLineModel(p.W, p.S, p.L, p.Fingers, s, path),
+            PlanBend b => b.M is { } m
+                ? new MicrostripMiterBendModel(b.W, b.AngleDeg, m, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM, s.TanD,
+                    path, s.RoughnessMeters)
+                : new MicrostripBendModel(b.W, b.AngleDeg, MicrostripBendMiter.None, s.HMeters, s.TMeters, s.EpsR,
+                    s.SigmaSPerM, s.TanD, path),
             _ => throw new NotSupportedException(section.GetType().Name),
         };
         return (model, new ElaboratedComponent(model.GetType().Name, path, section.Nodes,

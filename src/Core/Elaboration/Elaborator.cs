@@ -1630,6 +1630,13 @@ public sealed partial class Elaborator
                 result[ov.Name] = new Value(Unquote(ov.Expression));
                 continue;
             }
+            // A ring's Corner (MWPD, MRRC) is Curve, Miter or Square: an enum name, kept as one.
+            if (ov.Name == "Corner" && (inst.Reference.Equals("MWPD", StringComparison.OrdinalIgnoreCase)
+                                        || inst.Reference.Equals("MRRC", StringComparison.OrdinalIgnoreCase)))
+            {
+                result[ov.Name] = new Value(Unquote(ov.Expression));
+                continue;
+            }
 
             // Frequency dependence has to TERMINATE at a model that binds `freq`. Anything else is
             // asking for a single number that does not exist, and saying so here — naming the
