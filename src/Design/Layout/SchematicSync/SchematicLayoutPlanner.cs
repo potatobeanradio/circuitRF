@@ -1671,6 +1671,13 @@ public static partial class SchematicLayoutPlanner
                 continue;
             }
 
+            // A coupled-resonator filter's Shape, Profile, Feed, Form and Arrangement are words for its generator.
+            if (comp.Symbol == SymbolKind.Mcrc && p.Name is "Shape" or "Profile" or "Feed" or "Form" or "Arrangement")
+            {
+                if (p.Expression.Trim() is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
+                continue;
+            }
+
             // A TFR's film is a drawing layer's NAME for its generator, and empty states nothing, so a part stating no film
             // hashes to the cell it always did.
             if (comp.Symbol == SymbolKind.Tfr && p.Name == MmicPassiveInjection.FilmParam)

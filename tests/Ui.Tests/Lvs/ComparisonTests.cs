@@ -506,6 +506,39 @@ public sealed class ComparisonTests
         }
     }
 
+    /// <summary>The coupled-resonator filter (MCRC), one fixture per shape, compares clean as Update Layout places it, and
+    /// one stored dimension or name changed on the schematic afterwards is exactly one property mismatch naming it: the
+    /// artwork is drawn from the geometry the part stores.</summary>
+    [Theory]
+    [InlineData("F19-coupled-resonator-straight", "S2", "0.6")]
+    [InlineData("F20-coupled-resonator-zigzag", "Tap", "7")]
+    [InlineData("F21-coupled-resonator-hairpin", "Uc", "0.35")]
+    [InlineData("F22-coupled-resonator-open-loop", "Arrangement", "Inline")]
+    [InlineData("F23-coupled-resonator-ring", "L", "70")]
+    public void ACoupledResonatorFilterComparesCleanAndAGeometryMismatchIsAFinding(string design, string spec, string changed)
+    {
+        string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-crc-" + Guid.NewGuid().ToString("N")[..12]);
+        try
+        {
+            var p = SchematicSync.SdlChecker.Prepare(design, scratch);
+            var layout = p.Applied(p.Plan());
+            Assert.Empty(SchematicSync.SdlChecker.Verify(p, layout));
+            Assert.DoesNotContain(LvsRun.Run(p.CellDir).Findings, f => f.Severity == DiagnosticSeverity.Error);
+
+            p.Model.Components.Single(c => c.InstanceName == "CRC1").Parameters.Single(q => q.Name == spec).Expression = changed;
+            SchematicPersistence.SaveToFile(p.SchematicPath, p.Model, Path.GetFileNameWithoutExtension(p.SchematicPath));
+
+            var errors = LvsRun.Run(p.CellDir).Findings.Where(f => f.Severity == DiagnosticSeverity.Error).ToList();
+            var mismatch = Assert.Single(errors);
+            Assert.Equal("lvs.property.mismatch", mismatch.Id);
+            Assert.Equal(spec, mismatch.Diagnostic.Arguments["name"]);
+        }
+        finally
+        {
+            try { Directory.Delete(scratch, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
     // ── hand-built netlists ───────────────────────────────────────────────────────────────────
 
     /// <summary>

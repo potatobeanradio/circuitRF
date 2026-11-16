@@ -42,3 +42,8 @@ F15-coupled-lines RF-passives
 F16-gysel-divider RF-passives
 F17-bagley-divider RF-passives
 F18-tee-divider RF-passives
+F19-coupled-resonator-straight RF-passives
+F20-coupled-resonator-zigzag RF-passives
+F21-coupled-resonator-hairpin RF-passives
+F22-coupled-resonator-open-loop RF-passives
+F23-coupled-resonator-ring RF-passives

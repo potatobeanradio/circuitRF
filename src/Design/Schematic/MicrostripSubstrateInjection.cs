@@ -35,7 +35,8 @@ public static class MicrostripSubstrateInjection
         [SymbolKind.Mlin, SymbolKind.MCLine, SymbolKind.MCLineN, SymbolKind.MBend, SymbolKind.MCurve, SymbolKind.MMiter, SymbolKind.MGap, SymbolKind.MTee, SymbolKind.MCross,
          SymbolKind.Mtaper, SymbolKind.Mklopf, SymbolKind.GsgPad, SymbolKind.Mwpd, SymbolKind.Mblc, SymbolKind.Mrrc,
          SymbolKind.Mclc, SymbolKind.Midc, SymbolKind.Mcbl, SymbolKind.MRadial,
-         SymbolKind.Mgpd, SymbolKind.Mbpd, SymbolKind.Mtpd];
+         SymbolKind.Mgpd, SymbolKind.Mbpd, SymbolKind.Mtpd,
+         SymbolKind.Mcrc];
 
     public static bool IsMicrostripKind(SymbolKind kind) => MicrostripKinds.Contains(kind);
 
@@ -416,6 +417,9 @@ public static class MicrostripSubstrateInjection
         // is a layout choice no substrate changes.
         if (kind is SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mclc or SymbolKind.Midc
                  or SymbolKind.Mcbl or SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd) return;
+        // MCRC's geometry is one design, every number of it chosen with the others; widths and lengths carried to another
+        // substrate are synthesis's to redo, not this rule's.
+        if (kind == SymbolKind.Mcrc) return;
         if (kind == SymbolKind.GsgPad) ApplyProbePadDefaults(parameters, technology);
         string targetUnit = SchematicLengthUnit(technology.DefaultDisplayUnit);
         double step = RoundStepFor(targetUnit);

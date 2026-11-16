@@ -743,6 +743,9 @@ public enum SymbolKind
     /// <summary>Tee divider on microstrip (engine "MTPD", docs/design/rf-passives.md): specs Z0, F and the split K; an MTEE
     /// whose through arms are quarter-wave transformers (TeeDividerPlan). Pins 1 the input, 2 and 3 the outputs.</summary>
     Mtpd,
+    /// <summary>Coupled-resonator filter on microstrip (engine "MCRC", CoupledResonatorPlan): physical geometry, N
+    /// resonators of W and L and the gaps S1, S2, ..., in one of five shapes and three forms. Pins 1 in, 2 out.</summary>
+    Mcrc,
 }
 
 public enum PortConnectionState { Unconnected, Connected }
