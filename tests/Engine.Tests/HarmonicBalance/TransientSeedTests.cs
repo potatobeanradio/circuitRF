@@ -220,4 +220,18 @@ analysis HB1 type=hb NumFreqs=2 Tone[1]=1e9 Tone[2]=1.0001234567e9 MaxHarm=3 Max
         foreach (int i in new[] { 0, 1, 2 })
             Assert.True(((Complex)v[i, Array.IndexOf(v.Axes[1].Labels!, "n"), 1]).Magnitude > 1, "every point on the divided branch");
     }
+
+    /// <summary>The run's control reaches the transient seed: a Stop already asked for ends an HB seed (and an oscillator's) with
+    /// the cancellation, rather than after a seed run nobody waits for.</summary>
+    [Fact]
+    public void AStoppedRun_EndsTheSeed()
+    {
+        using var cts = new System.Threading.CancellationTokenSource();
+        cts.Cancel();
+        var control = new RunControl { Token = cts.Token };
+        var (lib, tb) = new CnlReader().Read(ClassE("DriveStepping=Never InitialGuess=transient"));
+        using var nl = new Elaborator(lib).Elaborate(tb);
+        var p = HbEngine.Resolve(tb.Analyses.OfType<HarmonicBalanceAnalysis>().First(), nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
+        Assert.ThrowsAny<OperationCanceledException>(() => new HbEngine(nl, tb, control: control).Run(p));
+    }
 }

@@ -896,7 +896,7 @@ public static class CircuitEvaluation
                 // lib/baseDirectory only so a long WSProbe tickle grid can be split across workers
                 // (brief-wsprobe-8 R-wsp8-9), each on its own netlist copy — the same reason the
                 // S-parameter case above takes them.
-                var run = new HbEngine(nl, tb, null, null, lib, baseDirectory).Run(p);
+                var run = new HbEngine(nl, tb, null, null, lib, baseDirectory, control).Run(p);
                 converged = run.Converged;
                 return run.DataSet;
             }
@@ -956,7 +956,7 @@ public static class CircuitEvaluation
             case OscillatorAnalysis osa:
             {
                 var p   = OscEngine.Resolve(osa, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
-                var osc = OscEngine.Run(nl, tb, p, null, lib, baseDirectory);
+                var osc = OscEngine.Run(nl, tb, p, null, lib, baseDirectory, control);
                 converged = osc.Run.Converged;
                 notes.Add(OscSummary.Result(osa.Name, osc));
                 return osc.Data;

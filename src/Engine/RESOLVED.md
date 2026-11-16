@@ -5570,3 +5570,16 @@ Found building *Symbolically Defined Device (SDD)*'s bias-loop bench (an SDD tha
   [time, node, harmonic], and the envelope's displays read it.
 - **The HB and oscillator seeds** set PlayModulation = false: a MOD_Source there is its CW tone at Fc, the steady state
   harmonic balance solves for.
+
+## The transient seed answers Stop (2026-11-16)
+
+`HbEngine` takes an optional `RunControl` (constructor), and `OscEngine.Run` takes one too. Both are used for
+cancellation only and both hand it to the transient seed (`HbTransientSeed.Run`, `OscTransientSeed.Run`). The seed's
+transient engine checks it every 256 accepted steps.
+- CircuitEvaluation's HB and oscillator cases, HbCircuitRun and the parametric sweep's HB and oscillator points pass the
+  run's control.
+- The UI already had the control: the toolbar Stop and the Messages live row's Cancel are one `RunCancellation`.
+- Until now that control was honoured only at a sweep-point boundary, so a single HB point waited out a 200-period seed.
+- The Newton solve and the drive ramp are still not interrupted. `src/Engine/CLAUDE.md`'s "HbEngine … take no control"
+  now means "checks it only inside its transient seed".
+- Gate: `TransientSeedTests.AStoppedRun_EndsTheSeed`.
