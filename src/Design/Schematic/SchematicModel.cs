@@ -766,6 +766,11 @@ public enum SymbolKind
     /// pseudo-interdigital or a custom pattern, tapped or coupled-fed. Pins 1 and 2, then E1, E2, … on the shorted and
     /// loaded ends, for ordinary vias and capacitors to ground. Appended so no existing kind's ordinal moves.</summary>
     Mcla,
+    /// <summary>Resistive attenuator and splitter (engine "MRPAD"): Form (Pi, T, BridgedT, Wye, Delta), Z0, Attenuation in
+    /// dB and Gap, the series sites' span. Its resistors are sites on its interconnect (LumpedPlan.ResistivePad): pins 1 and
+    /// 2, 3 for a T, bridged-T or splitter, then each series resistor's two ends. Appended so no existing kind's ordinal
+    /// moves.</summary>
+    Mrpad,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

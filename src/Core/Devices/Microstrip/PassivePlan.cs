@@ -116,6 +116,11 @@ public sealed record PlanBend(int[] Nodes, double X, double Y, double RotationDe
 /// (<see cref="PlanBend"/>), an MMITER at the Douville-James chamfer or MBEND's square corner.</summary>
 public enum PlanCorner { Curve, Miter, Square }
 
+/// <summary>How a spec-driven passive is made (MWPD, MBLC, MRRC, MCBL). <see cref="Distributed"/>: its quarter-wave lines, as
+/// the parts always were. <see cref="Lumped"/>: an L, C or R on a site for each element of the lines' lumped equivalent at
+/// F, joined by short interconnect (<see cref="LumpedPlan"/>).</summary>
+public enum PlanRealization { Distributed, Lumped }
+
 /// <summary>What a site holds: a resistor, an inductor, a capacitor, a via to ground, a jumper (a bond wire or an air
 /// bridge joining two pieces of the part's copper), or the load the part drives (MCBL's balanced load, which is the
 /// circuit's rather than the part's).</summary>

@@ -1,0 +1,18 @@
+# The lumped Wilkinson divider as one part (MWPD, Realization = Lumped, π arms): its interconnect's series sites face
+# each other across Gap, the 0402's own span, so the resistor and the two inductors Place Site Parts put there land
+# on both pins with no line; each capacitor stands end-on on its G pin, its grounded pad away from the part.
+Info WPD1 added
+Info R1 added
+Info L1 added
+Info L2 added
+Info C1 added
+Info C2 added
+Info C3 added
+Info - Net 0 left as ratsnest: the ground net returns through vias and the pour
+Info - Joined 9 of 10 connections; 1 left as ratsnest
+Info P1 port 1 placed at WPD1 pin 1
+Info P2 port 2 placed at WPD1 pin 2
+Info P3 port 3 placed at WPD1 pin 3
+port P1 1
+port P2 2
+port P3 3

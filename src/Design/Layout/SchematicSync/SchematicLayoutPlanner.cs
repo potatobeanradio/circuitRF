@@ -1669,9 +1669,11 @@ public static partial class SchematicLayoutPlanner
             if ((comp.Symbol is SymbolKind.Mwpd or SymbolKind.Mrrc or SymbolKind.Mgpd or SymbolKind.Mbpd && p.Name == "Corner")
                 || (comp.Symbol == SymbolKind.Mclc && p.Name == "Compensation")
                 || (comp.Symbol == SymbolKind.Msps && p.Name == "Reference")
-                || (comp.Symbol == SymbolKind.Mdly && p.Name is "Corner" or "Style"))
+                || (comp.Symbol == SymbolKind.Mdly && p.Name is "Corner" or "Style")
+                || (comp.Symbol, p.Name) is (SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mcbl, "Realization")
+                    or (SymbolKind.Mwpd, "Arm") or (SymbolKind.Mrpad, "Form"))
             {
-                if (p.Expression.Trim() is { Length: > 0 } corner) resolved[p.Name] = PCellValue.Text(corner);
+                if (p.Expression.Trim() is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
                 continue;
             }
 

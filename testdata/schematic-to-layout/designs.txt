@@ -61,3 +61,5 @@ F31-coupled-array-interdigital RF-passives
 F32-coupled-array-combline RF-passives
 F33-coupled-array-pseudo RF-passives
 F34-coupled-array-custom RF-passives
+F26-wilkinson-lumped RF-passives
+F27-resistive-pad RF-passives

@@ -9,7 +9,8 @@ stub; MCLINN and the N-line coupled section; sites with an optional `Footprint`,
 coupled-resonator filter as one part of stored geometry (§3.10); MLAD, the microstrip ladder, an ordered list of
 sections (§3.11); MDLY, the delay line, and MRRC's meandered ring
 (§3.16); MCLA, the coupled array, every
-coupled-array filter as one part (§3.17) · **Date:** 2026-11-16
+coupled-array filter as one part (§3.17); lumped realisations of MWPD, MBLC, MRRC and MCBL, and the
+resistive pad MRPAD (§3.15) · **Date:** 2026-11-16
 
 Dividers, couplers and baluns on microstrip, each one built-in part that is defined once and read the same way by the
 schematic, the layout, LVS and EM. Each part has its own subsection in §3.
@@ -1115,6 +1116,107 @@ on one side is wider than the coupled section opposite it. Corner tees close it 
 pitch, and either way each grounded end lies one gap from a tee, with no room for its via. So the part waits for the
 meander route helper, which shortens the arms' footprint; `Form` is not added until it can be drawn.
 
+### 3.15 Lumped realisations, and the resistive pad (MRPAD)
+
+**The rule.** MWPD, MBLC, MRRC and MCBL take `Realization` = `Distributed | Lumped`. Distributed is the default and the plans
+are unchanged bit for bit (the fingerprints in `WilkinsonPlanTests` and `HybridPlanTests` still pass). Lumped builds the
+lines' lumped equivalent at F, and every L, C and R of it is a site (§3.7): a pin pair, or a pin to ground, filled by an
+ordinary part, an SMT part on a board and an ideal or a TFR, MIMCAP or SPIRAL part on a die. The passive's own copper is
+only the pads' interconnect, so its model is that interconnect, and the parts on its sites make it a divider, a hybrid or
+a balun. MRPAD, the resistive attenuator and splitter, is a new part with this realisation only. All of it is
+`LumpedPlan`.
+
+**The values**, the closed forms at F (ω = 2πF). A λ/4 line of Zc is, at F only, a low-pass π (a series L = Zc/ω between
+two shunt C = 1/(ω·Zc)) or T (two L = Zc/ω about one C = 1/(ω·Zc)), and a 3λ/4 line (−270° ≡ +90°) is the high-pass π (a
+series C = 1/(ω·Zc) between two shunt L = Zc/ω), a textbook result with no DOI (Pozar, §7). Shunt elements at one node add.
+
+| Part | Sites |
+|---|---|
+| MWPD, `Arm` = `Pi` | L = √2·Z0/ω on each arm (`L1a`-`L1b`, `L2a`-`L2b`); C = √2/(ω·Z0) on `G1` at the input, 1/(√2·ω·Z0) on `G2` and `G3`; 2·Z0 on `R2`-`R3` |
+| MWPD, `Arm` = `Tee` | two L = √2·Z0/ω per arm (`L1`, `L2` to 2, `L3`, `L4` to 3); C = 1/(√2·ω·Z0) on `G1` and `G2`, the arms' midpoints; 2·Z0 on `R2`-`R3` |
+| MBLC | L = Z0/(√2·ω) on the series arms (`L1`, `L3`), Z0/ω on the shunt arms (`L2`, `L4`); C = (1 + √2)/(ω·Z0) on `G1`-`G4` (Vogel) |
+| MRRC | L = √2·Z0/ω on 2-1, 1-3, 3-4 (`L1`-`L3`); C = 1/(√2·ω·Z0) on 4-2 (`C1`); C = √2/(ω·Z0) on `G1` and `G3` |
+| MCBL | the lattice (Bakalski et al.): L = X/ω on 1-2 (`L1`) and on `G3`, C = 1/(ω·X) on 1-3 (`C1`) and on `G2`, X = √(2·Z0·ZL) |
+
+The rat-race's ports 2 and 4 each meet a π's shunt C and the high-pass section's shunt L; they resonate at F, an open
+circuit there, and are left out. The lattice gives V2 = −j·V1·ZL/X and V3 = +j·V1·ZL/X for any equal loads, so the
+outputs are exactly opposite on any board, and the input is X²/(2·ZL) = Z0. The lumped MWPD is the equal split in one
+section (`device.wilkinson.lumped-equal-split`) and the lumped MBLC one section (`device.branchline.lumped-one-section`).
+
+**One layout for every network.** `LumpedPlan.Layout` places a `LumpedTopology`: junctions on a square grid, edges between
+neighbours, each edge a series site (its two pins named) or a line, each junction's outward arms ending on a port or a
+pin to ground (`G…`, as MCBL's G2 and G3). Every junction is the Z0 line's width W, every arm W from the junction's
+centre to its pin, and neighbours 2·W + span apart, so the two pins of every series site face each other across the span
+(`Gap`, or the `Footprint`'s, §3.7) as MWPD's R2-R3 do, and Update Layout lays a part across each with no line. A
+junction with four arms is an MCROSS, three an MTEE, two in line an MLIN, two at a right angle an MBEND square corner with
+MLIN out to the arms' ends. A topology is then a table of junctions and edges: the Wilkinson's π is a 2 × 2 grid (input at
+both left corners, joined by a line, the outputs at the right), its T and the bridged-T and splitters 3 × 1 to 3 × 2,
+the hybrids 2 × 2 with a port at each corner.
+
+What it needed beyond the shared pieces, and why:
+
+- **`PlanCross`, a section kind.** A π-arm Wilkinson's or the branch-line's junction joins a port, two series sites and a
+  part to ground: four arms. Two tees would double the interconnect there, so the MCROSS the library already has is one
+  record, one case in `MicrostripPlanModel.Build` (`MicrostripCrossModel` with its arms) and one in
+  `PassivePlanPCells.Draw` (`MCrossPCell`). Its pose is MCROSS's own origin, the junction's centre.
+- **Pins that follow a word.** The pin count follows the layout, which follows `Realization`, `Arm` and `Form`, words,
+  where MWPD's N is a number. `EditableComponent.LumpedLayout` reads them and `PortCount` answers the layout's count;
+  `SymbolPortDefs.For` and `BuiltInSymbols.Primitives` answer a count that is a lumped layout's (`LumpedPlan.ForPins`) with
+  that layout's pins, and every other count as before. The symbol is a box: each series site's pin pair on top, 400 apart,
+  a resistor's own span, so Place Site Parts lays the part straight on both; the `G` pins below; the ports at the sides.
+  Because the count must name one list, the counts differ from the distributed parts' (MWPD's lumped 12 and 15 against
+  3 + 2·N; MBLC 16, MRRC 14, MCBL 9), and the pad's bridged-T and its two splitters, nine pins each, share one list.
+- **Words kept as words.** `Realization`, `Arm` and `Form` go through the elaborator, Update Layout and LVS as `Corner`
+  does: text, compared as a string.
+- **A span on the hybrids.** MBLC and MRRC had no `Gap`; they take one for their lumped sites, and they and MRPAD join
+  `MicrostripSubstrateInjection.HasSiteFootprint`.
+
+**The resistive pad (MRPAD).** `Form` = `Pi`, `T` or `BridgedT` is a matched attenuator of `Attenuation` dB, K = 10^(A/20):
+π, a series Z0·(K² − 1)/(2K) and Z0·(K + 1)/(K − 1) to ground at each port; T, two series Z0·(K − 1)/(K + 1) and
+2·Z0·K/(K² − 1) to ground; bridged-T, two series Z0, Z0·(K − 1) across them and Z0/(K − 1) to ground. `Wye` and `Delta`
+are matched three-port splitters, arms of Z0/3 and sides of Z0 (the star's Δ-Y equal), 6.02 dB between any two ports,
+which matching all three fixes; `Attenuation` does not apply. These are textbook closed forms with no DOI. The pad's
+shunt resistors sit on its terminals, not on `G` pins: the π's on 1 and 2, the T's and bridged-T's on 3, the middle node.
+That is what lets the bridged-T and the splitters share one pin list (a splitter's 3 is its third port), and it keeps
+the T's middle node a terminal a user can return elsewhere. Its interconnect is the Z0 width from MLIN at 1 MHz,
+quasi-static, since a pad has no frequency of its own.
+
+**Limits.** The values do not absorb the interconnect. On 20 mil RO4350B at 500 MHz with 1.35 mm spans, the parts ideal,
+every lumped part is matched and isolated below −15 dB and splits within 0.5 dB of 3 dB; the branch-line, four arms at
+each corner, is the most affected (−19.7 dB, 2.86 and 3.38 dB). Like the lines it stands for, each network is exact at F
+only. On a die the sites take TFR, MIMCAP and SPIRAL parts, but Place Site Parts puts an ideal part there and nothing sizes
+a die part for its value.
+
+**Tests.** `LumpedSParamTests`: each part alone is its MCROSS, MTEE, MLIN and MBEND sections wired by hand to 1e-9; its
+sites filled with ideal parts and each copper island one node give the ideal device at F to 1e-9 (S21, S31, S41, and the
+outputs' match and isolation); on the copper at 500 MHz the split, match, isolation and phase hold within the
+interconnect's detuning; each pad form gives its loss and its match at Z0 to 1e-6. `LumpedPassiveTests`: every layout's
+symbol has its plan's pins, the shared nine-pin list, Place Site Parts filling every site of F26 and F27 with the plan's
+values and no wire, the readout, and the lumped Wilkinson on the GaAs die with a TFR, SPIRALs and MIMCAPs on its sites,
+bound to the process and simulated. `F26-wilkinson-lumped` (π arms, with the parts Place Site Parts put there) and
+`F27-resistive-pad` (a 6 dB T) go through Update Layout and LVS, and a changed F or `Attenuation` is one
+`lvs.property.mismatch`.
+
+**Possible enhancements.**
+
+1. **Absorb the interconnect into the values.** Each copper island's own line capacitance comes off its shunt C and each
+   series site's arms' inductance off its L, from the same MLIN model at F. Why: at 500 MHz on a board the branch-line's
+   match is −19.7 dB from the interconnect alone, and the share grows with F, so above a few hundred megahertz the readout
+   values detune the part they are for.
+2. **Size TFR, MIMCAP and SPIRAL sites for the value on a die.** Place Site Parts would put a MIMCAP of the plate area the
+   process's capacitance per area gives, a SPIRAL of the turns its inductance model gives, a TFR of the squares its sheet
+   resistance gives (§6, 8). Why: on a die the lumped realisation is the reason to choose lumped at all, and today each
+   part's geometry is sized by hand against the readout.
+3. **Unequal and multi-section lumped dividers, and a two-section lumped branch-line.** The same π per line covers them;
+   they need more junctions than the 2 × 2 grid has corners. Why: the unequal split and the wider band are what the
+   distributed parts offer, and a die design wants them small too.
+4. **High-pass arms for the Wilkinson.** A series C between two shunt L is the arm's +90° equivalent. Why: it blocks DC
+   between the ports and returns each output to ground through an inductor, which is a bias path for an amplifier.
+5. **The rat-race's resonant pairs as an option.** Ports 2 and 4 drop a shunt L and C that are open at F. Why: kept, every
+   section is its line's own equivalent off F as well, which changes the band's shape; which is wider is worth measuring.
+6. **A matching pad.** The π and T with two port impedances are the minimum-loss matching pads. Why: a resistive match
+   between two impedances over a decade is a common bench need, and it is the same network with one more spec.
+
 ### 3.16 The delay line (MDLY), and MRRC's meandered ring
 
 **MDLY** is the route helper as a part: a line θ long at F, for a delay, a phase shifter's reference arm or a length
@@ -1309,7 +1411,8 @@ Layout and LVS with its vias and capacitors placed by Place Site Parts, and one 
    records in `LibraryCatalogTests` and `PCellGeneratorVersioningTests`.
 6. Its sites (§3.7): the plan's `Sites`; a kind with sites in `SchematicViewModel.HasSites`, one whose site parts take
    its `Footprint` in `MicrostripSubstrateInjection.HasSiteFootprint`, and one whose site span is a stored length also in
-   `SetsSiteSpan`. A folded line is `PlanRoute` (§3.8).
+   `SetsSiteSpan`. A folded line is `PlanRoute` (§3.8). A lumped
+   network is a `LumpedTopology` table and its values (§3.15); its pins follow `EditableComponent.LumpedLayout`.
 7. Docs: a subsection under Dividers and couplers in `components.md`, and the example's README table; the part's symbol
    artwork (`--generate-symbols`, its two files only).
 
@@ -1405,6 +1508,14 @@ Layout and LVS with its vias and capacitors placed by Place Site Parts, and one 
 > *2007 IEEE/MTT-S International Microwave Symposium*, pp. 419–422, June 2007.
 > DOI [10.1109/MWSYM.2007.380477](https://doi.org/10.1109/MWSYM.2007.380477). The polygon divider's analysis; G. Bagley's
 > original design is unpublished.
+
+> R. W. Vogel, "Analysis and Design of Lumped- and Lumped-Distributed-Element Directional Couplers for MIC and MMIC
+> Applications," *IEEE Transactions on Microwave Theory and Techniques*, vol. 40, no. 2, pp. 253–262, February 1992.
+> DOI [10.1109/22.120097](https://doi.org/10.1109/22.120097). The lumped branch-line coupler (§3.15).
+
+> W. Bakalski, W. Simbürger, H. Knapp, H.-D. Wohlmuth and A. L. Scholtz, "Lumped and Distributed Lattice-Type LC-Baluns,"
+> *2002 IEEE MTT-S International Microwave Symposium Digest*, pp. 209–212.
+> DOI [10.1109/MWSYM.2002.1011595](https://doi.org/10.1109/MWSYM.2002.1011595). The lattice balun (§3.15).
 
 > D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012: §7.2, the lossless T-junction divider; §7.3, the
 > Wilkinson power divider; §7.5 and §7.8, the quadrature and 180° hybrids; §7.6 and §7.7, coupled-line directional couplers and the Lange coupler. A book, with no

@@ -48,6 +48,8 @@ public static class PCellRegistry
             { PassivePlanPCells.SchiffmanId, PassivePlanPCells.GenerateSchiffman },
             { PassivePlanPCells.DelayLineId, PassivePlanPCells.GenerateDelayLine },
             { PassivePlanPCells.CoupledArrayId, PassivePlanPCells.GenerateCoupledArray },
+            // The resistive attenuator and splitter: its sites' interconnect (LumpedPlan).
+            { PassivePlanPCells.ResistivePadId, PassivePlanPCells.GenerateResistivePad },
             // The recognised board's other two lines (designer report, round 16): a stripline is MLIN's strip on its
             // own layer, and a grounded coplanar line adds its side grounds.
             { CpwgPCell.GeneratorId, CpwgPCell.Generate },

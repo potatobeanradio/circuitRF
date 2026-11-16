@@ -1661,6 +1661,13 @@ public sealed partial class Elaborator
                 result[ov.Name] = new Value(Unquote(ov.Expression));
                 continue;
             }
+            // A ring's Corner (MWPD, MRRC) is Curve, Miter or Square, a spec-driven passive's Realization Distributed or
+            // Lumped, a lumped divider's Arm Pi or Tee, a resistive pad's Form its name: enum names, kept as such.
+            if (IsPlanWord(inst.Reference, ov.Name))
+            {
+                result[ov.Name] = new Value(Unquote(ov.Expression));
+                continue;
+            }
 
             // Frequency dependence has to TERMINATE at a model that binds `freq`. Anything else is
             // asking for a single number that does not exist, and saying so here — naming the
@@ -2937,6 +2944,15 @@ public sealed partial class Elaborator
         || name.StartsWith("Material_", StringComparison.OrdinalIgnoreCase)
         || name.Equals("Arrays", StringComparison.OrdinalIgnoreCase)
         || name.Equals("Source", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A planned passive's word-valued parameter: <c>Corner</c> (MWPD, MRRC), <c>Realization</c> (MWPD, MBLC, MRRC,
+    /// MCBL), <c>Arm</c> (MWPD) and <c>Form</c> (MRPAD).</summary>
+    private static bool IsPlanWord(string reference, string name) => (reference.ToUpperInvariant(), name) switch
+    {
+        ("MWPD" or "MRRC", "Corner") or ("MWPD" or "MBLC" or "MRRC" or "MCBL", "Realization") or ("MWPD", "Arm")
+            or ("MRPAD", "Form") => true,
+        _ => false,
+    };
 
     private static string Unquote(string raw) =>
         raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"' ? raw[1..^1] : raw;

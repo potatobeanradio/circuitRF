@@ -5121,10 +5121,11 @@ public sealed partial class SchematicViewModel : ObservableObject
         return plan.Region;
     }
 
-    /// <summary>A planned passive with sites (MWPD, MIDC, MCBL, MCLA, and a ladder whose list has G pins): what Place Site Parts
+    /// <summary>A planned passive with sites (MWPD, MIDC, MCBL, MCLA, MRPAD, a lumped realisation, and a ladder whose list has G pins): what Place Site Parts
     /// acts on.</summary>
     public static bool HasSites(EditableComponent? comp)
-        => comp?.Symbol is SymbolKind.Mwpd or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Mcla
+        => comp?.Symbol is SymbolKind.Mwpd or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Mcla or SymbolKind.Mrpad
+        || comp?.LumpedLayout() is not null
         || comp?.Symbol is SymbolKind.Mlad && CircuitRF.Core.Devices.Microstrip.LadderPlan.Grounds(
                comp.Parameters.FirstOrDefault(p => p.Name == "Sections")?.Expression) > 0;
 

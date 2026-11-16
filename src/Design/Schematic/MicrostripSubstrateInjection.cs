@@ -36,7 +36,7 @@ public static class MicrostripSubstrateInjection
          SymbolKind.Mtaper, SymbolKind.Mklopf, SymbolKind.GsgPad, SymbolKind.Mwpd, SymbolKind.Mblc, SymbolKind.Mrrc,
          SymbolKind.Mclc, SymbolKind.Midc, SymbolKind.Mcbl, SymbolKind.MRadial,
          SymbolKind.Mgpd, SymbolKind.Mbpd, SymbolKind.Mtpd,
-         SymbolKind.Mcrc, SymbolKind.Mlad, SymbolKind.Msps, SymbolKind.Mdly, SymbolKind.Mcla];
+         SymbolKind.Mcrc, SymbolKind.Mlad, SymbolKind.Msps, SymbolKind.Mdly, SymbolKind.Mcla, SymbolKind.Mrpad];
 
     public static bool IsMicrostripKind(SymbolKind kind) => MicrostripKinds.Contains(kind);
 
@@ -50,11 +50,13 @@ public static class MicrostripSubstrateInjection
     /// <summary>The planned passives that take a <c>Footprint</c> for the parts on their sites: MWPD and MCBL, whose site
     /// span it also sets (<see cref="SetsSiteSpan"/>), and MCLA, whose capacitor sites are shunt and have no span.</summary>
     public static bool HasSiteFootprint(SymbolKind kind) => kind is SymbolKind.Mwpd or SymbolKind.Mcbl or SymbolKind.Mcla
-                                                            or SymbolKind.Mlad;
+                                                            or SymbolKind.Mlad or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mrpad;
 
     /// <summary>The planned passives whose site span is a stored length, <see cref="SiteSpanParameter"/>, that a
-    /// <c>Footprint</c> sets instead: MWPD's resistor pins, MCBL's balanced outputs, MLAD's series sites.</summary>
-    public static bool SetsSiteSpan(SymbolKind kind) => kind is SymbolKind.Mwpd or SymbolKind.Mcbl or SymbolKind.Mlad;
+    /// <c>Footprint</c> sets instead: MWPD's resistor pins, MCBL's balanced outputs, MLAD's series sites, the lumped realisations' series sites</summary>
+    /// (MBLC's and MRRC's only when lumped) and the resistive pad's.</summary>
+    public static bool SetsSiteSpan(SymbolKind kind) => kind is SymbolKind.Mwpd or SymbolKind.Mcbl or SymbolKind.Mlad
+                                                            or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mrpad;
 
     /// <summary>The length a site <c>Footprint</c> sets.</summary>
     public const string SiteSpanParameter = "Gap";
@@ -423,7 +425,7 @@ public static class MicrostripSubstrateInjection
         // is a layout choice no substrate changes. A ladder's list is its geometry as written, which no technology rewrites.
         if (kind is SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mclc or SymbolKind.Midc
                  or SymbolKind.Mcbl or SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd
-                 or SymbolKind.Mlad or SymbolKind.Msps or SymbolKind.Mdly) return;
+                 or SymbolKind.Mlad or SymbolKind.Msps or SymbolKind.Mdly or SymbolKind.Mrpad) return;
         // MCRC's geometry is one design, every number of it chosen with the others; widths and lengths carried to another
         // substrate are synthesis's to redo, not this rule's.
         if (kind == SymbolKind.Mcrc) return;
