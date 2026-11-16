@@ -49,6 +49,9 @@ public static class PropagationChannelReport
                                      [.. terms.Select(t => t.Db)]) { Unit = "dB" });
             ds.Add(key + "Delay0_s", DataCube.Scalar(r.BulkDelayS));
             ds.Add(key + "Doppler0_Hz", DataCube.Scalar(r.CommonDopplerHz));
+            var drift = DataCube.Scalar(r.DriftHzps);   // brief PCH-12: the common Doppler's rate (a satellite pass's)
+            drift.Unit = "Hz/s";
+            ds.Add(key + "Drift0_Hzps", drift);
             ds.Add(key + "Reference_Hz", DataCube.Scalar(r.ReferenceHz));
             int n = r.Rays.Count;
             var rayAxis = new Axis("ray", [.. Enumerable.Range(0, n).Select(i => (double)i)], "", [.. r.Rays.Select(x => x.Name)]);

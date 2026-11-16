@@ -5892,7 +5892,9 @@ step of latency plus each ray's excess delay, reads only steps already solved, a
 latency out of every measurement. A cycle of channels in an envelope bench is refused, and so is a receive pin driven by
 two channels.</p>
 <p>Each run adds the loss breakdown, the total path loss, the bulk delay, the common Doppler and the rays to its result,
-as <code>link:CH1:Loss_dB</code>, <code>link:CH1:PathLoss_dB</code> and the rest. It also adds the small scale: <code>RmsDelaySpread_s</code>,
+as <code>link:CH1:Loss_dB</code>, <code>link:CH1:PathLoss_dB</code>, <code>Delay0_s</code>, <code>Doppler0_Hz</code> and its rate <code>Drift0_Hzps</code> (a satellite pass's), and the rest; <code>link:CH1:Gain_dB</code>, the drop's 20·log10|H| at the
+reference frequency with the antenna gains, shadowing and fading in it; and, with <code>Rain</code>, <code>link:CH1:Rain_dB</code>, the rain
+term alone. A measurement reads any of them as <code>SP1.link(&quot;CH1&quot;, &quot;Gain_dB&quot;)</code>, over every sweep axis of the run. It also adds the small scale: <code>RmsDelaySpread_s</code>,
 <code>CoherenceBandwidth_Hz</code>, <code>fD_Hz</code>, the coherence time <code>Tc_s</code> (where the correlation first falls to one half, 0.24/f_D for
 the classical spectrum), <code>PowerDelayProfile_dB</code>, the drop's <code>DopplerSpectrum_dB</code>, and <code>TapGain</code> over the record. An
 envelope run adds <code>H</code> across the signal's band over the record, <code>fDxTrecord</code> and <code>fDoverSCS</code>, and the <strong>Signal quality</strong>

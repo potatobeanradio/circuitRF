@@ -1593,3 +1593,25 @@ round trip, so the two forms agree to the last printed digit rather than bit for
 `Variables:` lines may carry extra words (`grid=3`). ngspice leaves the imaginary part of an AC plot's frequency scale
 uninitialised (a denormal), so nothing may read it. `SPICE_ASCIIRAWFILE=1` makes ngspice write ASCII. Gate:
 `tests/RfCore.Tests/Spice/RawFileReaderTests.cs` on `testdata/transient/rawfile/`.
+
+## brief PCH-12 — a single carrier's frequency offset: the delay taken nearest zero, and acquisition before the fit
+
+Found building the *LEO Satellite Downlink* example: a 16APSK carrier through a 600 km pass at 20 GHz (Doppler −399 kHz)
+read BER 0.49 and a CFO scattered between −82 kHz and +261 kHz from drop to drop. Measured on a line-of-sight channel with
+only a Doppler (`TxVel`), 10 Msym/s over 0.2 ms: 200 Hz read −0.5 Hz, 500 Hz read −1.2 Hz, 2 kHz read right, 10 kHz read
+11.4 kHz and failed, 100 kHz and 400 kHz failed entirely.
+
+- **The delay was taken a whole record away.** `SignalQuality.Receive` fits the delay from the received-against-sent
+  response over the passband, and the sent record repeats every `nTot` samples, so the fit is defined only modulo the record
+  (51.1 µs for PN9 16APSK). It returned ~55 µs instead of ~4 µs. With no offset that is invisible; with one, the circular
+  shift moves the window's wrap — and with it the offset's phase-ramp jump — into the middle of the window, so the ramp became
+  a sawtooth and the slope fit read ~0. The delay is now reduced to the representative nearest zero. Alone this reads offsets
+  to about 10 kHz (two bins of the window).
+- **Beyond about a bin, nothing aligns**: the delay fit compares the two spectra bin by bin and an offset of a few bins turns
+  that response across the band. `SignalQuality.CoarseOffset` acquires first: the received and sent power spectra carry the
+  same data's line-by-line pattern, which a delay does not move and an offset shifts, so their cross-correlation (each with its
+  smooth shape taken out over ~16 lines) peaks at the offset; parabolic between bins; taken only when it stands above twice
+  the correlation at no shift, searched to a quarter of the bandwidth. The envelope's `Read` (DBPSK and SC) starts the fine
+  removal from there; `Equalizer=none` still reads the waveform as it came. Every offset from 200 Hz to 400 kHz now reads to
+  a few mHz with EVM 4e-4 %. Gate: `tests/Engine.Tests/Envelope/EnvelopeScTests.Doppler_IsAcquired_AndTheSymbolsDecidedRight`
+  (500 Hz and 100 kHz).

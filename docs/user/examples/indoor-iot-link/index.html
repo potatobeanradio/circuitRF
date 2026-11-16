@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Indoor IoT Link</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Indoor IoT Link/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Indoor IoT Link</p>
+  </div>
+
+  <h1>Indoor IoT Link</h1>
+  <p class="lede">An 868 MHz FSK sensor two floors from its gateway through a Propagation Channel: ITU-R P.1238 office loss with floors and walls, a tapped delay line read from the office&#39;s power-delay profile file, received power and outage over 2,000 drops, and bit errors counted over 50.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Indoor IoT Link</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A battery sensor sends 100 kb/s FSK at 868.95 MHz to a gateway two floors up. Will it get through? A
+<strong>Propagation Channel</strong> answers as a percentage: each run is one <strong>drop</strong>, one realization of the shadowing and the
+fading, and a sweep over <code>drop</code> is the Monte Carlo. Both benches share the same link:</p>
+<table>
+<thead>
+<tr>
+<th>Part</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SENSOR</code></td>
+<td>A MOD_Source playing 2-FSK, ±45 kHz deviation, PN9 (511 bits, one 5.11 ms record), at 10 dBm</td>
+</tr>
+<tr>
+<td><code>CH1</code></td>
+<td>ITU-R P.1238 office without line of sight (<code>PathLoss=P1238 Environment=office Los=nlos</code>), 28 m, <code>Floors=2</code>, and a concrete wall and two partitions on the path (<code>Partitions=&quot;10,6,6&quot;</code>, dB each)</td>
+</tr>
+<tr>
+<td></td>
+<td>Multipath from the office's own power-delay profile, <code>profiles/office_pdp.csv</code>: six taps over 110 ns (<code>Multipath=file</code>), each Rayleigh-fading at walking pace (<code>Fading=rayleigh Velocity=1</code>, 1 m/s)</td>
+</tr>
+<tr>
+<td><code>LNA</code>, <code>GW</code></td>
+<td>The gateway: a 2 dBi antenna (<code>RxGain=2</code>), a 20 dB, 6 dB NF front end and its 50 Ω input</td>
+</tr>
+</tbody>
+</table>
+<p>The sensitivity is −98 dBm, <code>Sens</code>: on the second bench the FSK detector's bit errors pass 1 % below about −100 dBm, and
+−98 keeps 2 dB in hand.</p>
+<h2 id="coverage">1 Coverage</h2>
+<p>An S-parameter run swept over 2,000 drops. Each drop's received power is the sensor's 10 dBm plus the channel's gain
+through that drop, <code>SP1.link(&quot;CH1&quot;, &quot;Gain_dB&quot;)</code>, with the path loss, both antennas, the shadowing and the fading in it.</p>
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Path loss, P.1238 + two floors + partitions</td>
+<td>104.3 dB (60.2 free space, 3.1 the office's excess, 19 two floors, 22 the walls)</td>
+</tr>
+<tr>
+<td>Median received power <code>PrxMedian_dBm</code></td>
+<td>−94.2 dBm</td>
+</tr>
+<tr>
+<td><code>Outage</code>, the drops below −98 dBm</td>
+<td>29.1 %, its exact 95 % interval 27.1 to 31.1 %</td>
+</tr>
+</tbody>
+</table>
+<p>The median is only 3.8 dB above the sensitivity, and the office's shadowing (σ = 5 dB) and the Rayleigh fading together
+need about 20 dB for 99 %: two floors and three walls are too much for this sensor. <code>Prx_cdf</code> draws the distribution.
+Move the gateway one floor down (<code>Floors=1</code>, 9 dB less) or raise the sensor's power, and run it again. The whole sweep takes
+two seconds.</p>
+<h2 id="bit-errors">2 Bit Errors</h2>
+<p>The same link in an envelope run with <code>Noise=yes</code>, over drops 1 to 50: the FSK record is demodulated at <code>Irx</code> and every bit
+decided. <code>BER</code> is each drop's counted bit error rate, <code>Prx_dBm</code> its received power (the same drops as the first bench's),
+and <code>BERmean</code> their average.</p>
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Drops with any bit error</td>
+<td>14 of 50</td>
+</tr>
+<tr>
+<td>Drops above 1 %</td>
+<td>12 of 50, every one below −100 dBm</td>
+</tr>
+<tr>
+<td><code>BERmean</code></td>
+<td>0.026</td>
+</tr>
+<tr>
+<td><code>Outage</code> of the received power below −98 dBm</td>
+<td>30 % (17.9 to 44.6 %)</td>
+</tr>
+</tbody>
+</table>
+<p>Plot <code>BER</code> against <code>Prx_dBm</code> and the sensitivity is where the errors start. The run's notes say what regime the link is in:
+f_D = 2.9 Hz, so the 5.11 ms record sees a frozen channel (f_D·T = 0.015) and every drop's statistics come from other drops;
+the 18 ns delay spread gives an 11 MHz coherence bandwidth, against a signal 290 kHz wide, so the office fades it flat.</p>
+<h2 id="what-was-traded-for-run-time">What was traded for run time</h2>
+<p>The envelope bench reads 50 drops (3 s); 2,000 would take two minutes and would only resolve the bit error rate the
+coverage bench already gives as an outage. <code>Noise=yes</code> keeps the run from replaying the sensor's waves between drops, so each
+drop solves both ends.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

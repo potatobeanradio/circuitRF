@@ -98,6 +98,8 @@ examples/*/results/*
 # and a 5-degree grid (about 2 MB together; its README says how they were reduced and how to make them again).
 !examples/Phased Array/results/Patch 5x5*
 !examples/Phased Array/results/Patch 1x4*
+# And the mmWave Array Link example its 28 GHz element's record, reduced the same way (110 KB).
+!examples/mmWave Array Link/results/Patch Element*
 # The TRL example's calibration writes its two fixture files here; they are a result of running it, not an input.
 examples/TRL and De-embedding/fixtures/
 

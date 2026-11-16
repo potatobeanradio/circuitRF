@@ -1019,14 +1019,17 @@ a fade on some subcarriers reads as distortion, and a carrier offset turns the c
 | `genie` | Each subcarrier divided by its own response, the received against the signal the source played, over the whole record | An MMSE equalizer from that response |
 | `pilot` | Each subcarrier's response read only from the pilot comb (`Pilots=`), averaged over the four pilot symbols either side, interpolated in frequency and then in time. EVM is read on the other elements | An equalizer of `Taps=` taps, one symbol apart. DBPSK trains it on the first `Training=` bits and reads the rest. SC trains it on the preamble and pilot blocks when the carrier has them and reads every data symbol; without them it trains on the first `Training=` data symbols and reads the rest |
 
-`genie` takes out everything linear and is the best a receiver can do. `pilot` is what a receiver achieves, with the
+Through a [Propagation Channel](propagation-channel.html#far-end), `genie` divides by the channel's own H(f, t). `genie` takes out everything linear and is the best a receiver can do. `pilot` is what a receiver achieves, with the
 noise of its own estimates. At 40 dB SNR the two are within half a decibel of each other. FSK and CSS are decided by
 their own detectors and take no equalizer.
 
 **The frequency offset** is measured in every mode from the phase of each symbol (LTE, NR, SC) or bit (DBPSK) against the
 signal sent: `CFO_Hz` and its drift, `CFOdrift_Hzps`. With `genie` or `pilot` it is taken out of the envelope before
 the equalizer, so it leaves no interference between subcarriers. With `none` it is reported and left in, so `none`
-reads exactly as it always did. An offset beyond half the subcarrier spacing cannot be told from one a subcarrier away.
+reads exactly as it always did. An offset beyond half the subcarrier spacing cannot be told from one a subcarrier away. A
+DBPSK or single carrier is acquired first, to the nearest bin of the window, from its power spectrum against the one sent,
+then fitted from its symbols, so an offset of any size within a quarter of its bandwidth is read: a low-orbit satellite's
+400 kHz at 20 GHz to a fraction of a hertz. A drift shows only if it moves the frequency within the record.
 
 **Errors.** After the equalizer each symbol is decided to the nearest point and compared with what was sent:
 

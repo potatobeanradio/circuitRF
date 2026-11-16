@@ -1,6 +1,9 @@
 # circuitRF — The propagation channel
 
-**Status:** PCH-1 and PCH-2 built (§3.1 and §3.2, `src/RfCore/Propagation`; P.1546 and P.676's approximate method not built); the rest is design · **Series:** [`brief-pch-0-overview.md`](../briefs/brief-pch-0-overview.md) ·
+**Status:** built, PCH-1 to PCH-12 (2026-11-15/16); the status table below says what each section's brief built and where it
+differs from the design. Not built: P.1546 and P.676's approximate method (their data may not be redistributed), multiple streams and
+the rest of §13. User page: `docs/user/src/reference/propagation-channel.md`; examples *Indoor IoT Link*, *LEO Satellite
+Downlink*, *mmWave Array Link* · **Series:** [`brief-pch-0-overview.md`](../briefs/brief-pch-0-overview.md) ·
 **Builds on:** [`phased-array.md`](phased-array.md) (the transmit field from a circuit's waves, incident waves by
 reciprocity, the fast path and re-weigh, the Phased Array tool), [`chain-budget.md`](chain-budget.md) (the link in front
 of a receive chain), the envelope engine and its signal quality (`brief-nz-8`, `src/RfCore/Signals`), the yield engine's
@@ -11,6 +14,34 @@ whose result is what a system designer reads at the far end — received power, 
 and availability — with the transmitter's PA, its antenna or array pattern, and the receiver's noise and linearity all
 simulated as circuits, at the same time, through a channel with the impairments terrestrial and satellite systems are
 designed against. The same propagation models serve the RF Chain Budget's closed-form link.
+
+
+## Status by section
+
+| Section | Built in | What differs from the design below |
+|---|---|---|
+| §3.1 terrestrial models | PCH-1 | P.1546 not built; partitions, clutter, building entry, vegetation, polarization and pointing are added losses of every model (`AddedLosses`), not parameters of one; a terrain profile is `Terrain=` on the component (`Profile=` names a delay profile there) |
+| §3.2 atmosphere, satellite | PCH-2 | P.676 Annex 2 not built (Annex 1 line by line instead); the satellite model is `PathLoss=satellite` with `Altitude`, `Elevation`, `Pass`, `Scenario` |
+| §3.3 terrain | PCH-1 | As designed: a user CSV, nothing bundled |
+| §4.1 tapped delay lines | PCH-7 | `Multipath=file` reads `delay (ns), power (dB)` and optional columns, or a sampled response (`re`, `im`); Nakagami's shape is `NakagamiM` (`m` is the device multiplier) |
+| §4.2 clustered delay lines | PCH-8 | As designed, with TR 38.811's NTN-CDL; the angle spreads are `ASD`, `ASA`, `ZSD`, `ZSA` |
+| §4.3 fading generator | PCH-7 | `Sinusoids` (64) at equally spaced quantiles of the Doppler spectrum plus one drawn offset, rather than drawn frequencies; Rician's line of sight at 0.7 f_D |
+| §4.4 satellite states | PCH-10 | P.681-11's two states (GOOD, BAD), as designed; `States=p681` with `StateEnvironment=`, valid 1.5–20 GHz above 20° |
+| §5.1–5.3 ends, frames | PCH-6, PCH-8 | Polarization by `TxPol`/`RxPol` and `Faraday=`; an EM Field Data end is refused in an envelope run |
+| §5.4 analyses | PCH-6, PCH-8, PCH-8b, PCH-10b | As designed. A receive array on the fast path is replaced by its feed in a noiseless envelope run (PCH-10b). A channel into an array is noiseless by definition in every noise analysis (PCH-12: it was classed thermal on its stamp and ran past the envelope's right-hand side) |
+| §5.6 report | PCH-6 to PCH-11 | `link:<ch>:*` cubes; `Gain_dB` and `Rain_dB` (PCH-11), `Drift0_Hzps` (PCH-12); `A.link("CH1", "Gain_dB")` reads one in a measure |
+| §6 beams | PCH-9 | As designed; the Phased Array tool's **Channel** tab; `ScanLimit` (60°) bounds the codebook |
+| §7.2–7.4 equalizer, offset, errors | PCH-4 | As designed. PCH-12 added acquisition for DBPSK and single carrier: the offset to the nearest bin from the power spectra's cross-correlation, then the fine fit; and the delay is taken nearest zero modulo the record, without which any offset under a bin read as 0 Hz |
+| §7.5 single carrier | PCH-5 | As designed |
+| §8 drops | PCH-10, PCH-10b | As designed; reuse across drops does not apply with `Noise=yes` (each drop solves both sides) |
+| §9 Chain Budget | PCH-3, PCH-11 | As designed; a receive array has no Link bench |
+| §10 satellite example | PCH-12 | *LEO Satellite Downlink*: 20 GHz, 600 km at 30°, P.618 at 99.5 %, P.681 suburban, 16APSK through a transponder of system blocks; the amplifier has AM/AM (its soft limiter) and no AM/PM, which the system amplifier does not model |
+| §11 verification | each brief | Each brief's gates; the 38.901 drop against an independent script (`testdata/propagation/scenario_drop_reference.py`) |
+
+The examples are within their budget only with traded settings, each stated in its README: an envelope run evaluates every
+nonlinear device at every step through dense interface-node arrays (`HbNewton.RunDevicePass`), so 256 nonlinear element
+amplifiers took over ten minutes for one drop of two NR symbols, and *mmWave Array Link* keeps its element amplifiers linear
+with one compressing pre-driver (`src/Engine/RESOLVED.md`, PCH-12).
 
 ---
 

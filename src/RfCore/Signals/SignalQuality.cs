@@ -185,6 +185,11 @@ namespace RfCore.Signals
                 hz.Add(f);
             }
             double tau = h.Count > 1 ? SignalEvm.Delay([.. h], [.. hz]) : 0;
+            // The sent record repeats every nTot samples, so the delay is known only to a whole record: the one nearest zero is
+            // taken. Any other is invisible with no offset, but the circular shift moves the window's wrap, and with it an
+            // offset's phase ramp's jump, into the middle of the window: a 500 Hz offset fitted as 0 Hz (brief PCH-12).
+            double period = nTot / native;
+            tau -= Math.Round(tau / period) * period;
             if (tau != 0)
             {
                 for (int b = 0; b < m; b++)
@@ -307,6 +312,78 @@ namespace RfCore.Signals
                                                null, null, r.DelayS);
                 }
             }
+        }
+
+        /// <summary>
+        /// A DBPSK or SC carrier's frequency offset to the nearest FFT bin of the window, found before anything is aligned.
+        /// <see cref="Receive"/> fits the delay from the received-against-sent response bin by bin, and an offset of more
+        /// than about one bin (1/window: 5 kHz over 0.2 ms) turns that response across the band, so the delay, every symbol's
+        /// phase and the offset fitted from them come out as noise: a low-orbit downlink's 400 kHz read as BER 0.5. The
+        /// received and sent power spectra carry the same data's line-by-line pattern, which a delay does not move and an
+        /// offset shifts: their cross-correlation, each spectrum with its smooth shape taken out, peaks at the offset. The
+        /// peak is taken only where it stands well above the correlation at no shift (twice it), refined between bins by a
+        /// parabola; 0 otherwise, so a carrier within a bin of its frequency is read exactly as before. Searched to half the
+        /// carrier's half-bandwidth either side.
+        /// </summary>
+        public static double CoarseOffset(CarrierRecord carrier, double recordSeconds, ReadOnlySpan<Complex> y, double fsHz,
+                                          long startSample, double offsetHz)
+        {
+            var c = carrier.Spec;
+            double pass;
+            switch (KindOf(c.Standard))
+            {
+                case QualityKind.Sc: pass = ScQam.BandwidthHz(ScQam.Resolve(c)) / 2; break;
+                case QualityKind.Dbpsk: pass = Dbpsk.Resolve(c).BitRate; break;
+                default: return 0;
+            }
+            double native = carrier.NativeRateHz;
+            int nTot = carrier.Native.Length;
+            double range = pass / 2;
+            double stop = native / 2, wide = Math.Min(pass + range, 0.9 * stop);
+            if (!SignalEvm.ToNative(y, fsHz, startSample, offsetHz, native, recordSeconds, 8, wide, stop, filterWhole: true,
+                                    out var x, out long n0, out _, out _))
+                return 0;
+            int m = x.Length;
+            var sent = Fft.Forward(carrier.Native);
+            for (int k = 0; k < nTot; k++) sent[k] *= SignalEvm.RollOff((k <= nTot / 2 ? k : k - nTot) * native / nTot, wide, stop);
+            var sentF = Fft.Inverse(sent);
+            int w0 = (int)(((n0 % nTot) + nTot) % nTot);
+            var sw = new Complex[m];
+            for (int i = 0; i < m; i++) sw[i] = sentF[(w0 + i) % nTot];
+
+            double bin = native / m;
+            int span = Math.Max(4, (int)Math.Round(16 * Math.Max(1.0, (double)m / nTot)));   // the smooth shape: ~16 lines either side
+            double[] Detail(Complex[] t)
+            {
+                var spec = Fft.Forward(t);
+                var p = new double[m];
+                for (int k = 0; k < m; k++) p[k] = spec[k].Real * spec[k].Real + spec[k].Imaginary * spec[k].Imaginary;
+                var d = new double[m];
+                double run = 0;
+                for (int k = -span; k <= span; k++) run += p[(k % m + m) % m];
+                for (int k = 0; k < m; k++)
+                {
+                    d[k] = p[k] - run / (2 * span + 1);
+                    run += p[(k + span + 1) % m] - p[((k - span) % m + m) % m];
+                }
+                return d;
+            }
+            var dx = Detail(x); var ds = Detail(sw);
+            // C(k) = Σ_f dx(f + k)·ds(f), every shift at once
+            var a = new Complex[m]; var b = new Complex[m];
+            for (int k = 0; k < m; k++) { a[k] = dx[k]; b[k] = ds[k]; }
+            Fft.Transform(a, inverse: false);
+            Fft.Transform(b, inverse: false);
+            for (int k = 0; k < m; k++) a[k] = Complex.Conjugate(a[k]) * b[k];
+            Fft.Transform(a, inverse: true);
+            double C(int k) => a[((-k) % m + m) % m].Real;   // the transform above is Σ_f dx(f)·ds(f + j) at j: C(k) is j = −k
+            int kmax = Math.Min((int)Math.Floor(range / bin), m / 2 - 1);
+            int best = 0;
+            for (int k = -kmax; k <= kmax; k++) if (C(k) > C(best)) best = k;
+            if (best == 0 || !(C(best) > 2 * Math.Max(C(0), 0))) return 0;
+            double cm = C(best - 1), c0 = C(best), cp = C(best + 1), den = cm - 2 * c0 + cp;
+            double frac = den < 0 ? Math.Clamp(0.5 * (cm - cp) / den, -0.5, 0.5) : 0;
+            return (best + frac) * bin;
         }
 
         /// <summary>In-channel signal over in-channel noise: <paramref name="quiet"/>'s power over the power of what

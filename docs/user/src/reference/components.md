@@ -2891,7 +2891,7 @@ latency out of every measurement. A cycle of channels in an envelope bench is re
 two channels.
 
 Each run adds the loss breakdown, the total path loss, the bulk delay, the common Doppler and the rays to its result,
-as `link:CH1:Loss_dB`, `link:CH1:PathLoss_dB` and the rest; `link:CH1:Gain_dB`, the drop's 20·log10|H| at the
+as `link:CH1:Loss_dB`, `link:CH1:PathLoss_dB`, `Delay0_s`, `Doppler0_Hz` and its rate `Drift0_Hzps` (a satellite pass's), and the rest; `link:CH1:Gain_dB`, the drop's 20·log10|H| at the
 reference frequency with the antenna gains, shadowing and fading in it; and, with `Rain`, `link:CH1:Rain_dB`, the rain
 term alone. A measurement reads any of them as `SP1.link("CH1", "Gain_dB")`, over every sweep axis of the run. It also adds the small scale: `RmsDelaySpread_s`,
 `CoherenceBandwidth_Hz`, `fD_Hz`, the coherence time `Tc_s` (where the correlation first falls to one half, 0.24/f_D for

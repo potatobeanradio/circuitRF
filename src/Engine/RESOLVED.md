@@ -5405,3 +5405,24 @@ the closed form and 1.3e-6 V from the native run.
   oscillation to 7e-12 in frequency and 3e-10 in amplitude.
 - **An idle OscProbe is no longer refused in transient**: it is a short or an open, as in every analysis but the oscillator's,
   and the oscillator's seed runs with it in place.
+
+## brief PCH-12 — findings from building the three Propagation Channel examples
+
+- **A channel into an array crashed every envelope run with `Noise=yes`** (IndexOutOfRange in `EnvelopeNoise.Add`). Such a
+  channel declares no noise source (it has no receive pin to be thermal at `RxTant`) and reports itself `Passive`, so
+  `SParameterNoise` classed it thermal on its stamp: noise injected on both arrays' element nodes, the ray unknowns and the
+  absent pin's placeholder node (1073741822), which ran past the right-hand side. It is now noiseless by definition
+  (`IsNoiselessByDefinition`, `PropagationChannelModel { RxPin: < 0 }`): the channel adds no noise and the array's is its
+  elements' own (PAA-7), as the design note says.
+- **An envelope run's cost with many nonlinear devices is quadratic in the interface nodes.** `HbNewton.RunDevicePass`
+  allocates and FFTs dense `[N, N, grid]` Jacobian arrays over every interface node for every device pass, though each device
+  touches only its own ports. 256 nonlinear element amplifiers (N ≈ 512) cost ~120 ms a step: one drop of two 60 kHz NR
+  symbols (1,250 steps) ran over ten minutes; with the elements linear and one nonlinear pre-driver, ~4.5 s a drop of four
+  symbols. Not changed here (it is HB's assembly too); the *mmWave Array Link* example keeps its element amplifiers linear and
+  says so. A sparse per-device assembly is the fix.
+- **A `.cnl` Amp with no `IP3` is nonlinear** (the 40 dBm default); `IP3=200` is exactly linear. A "linear" receive cell
+  written without it kept a receive array off the fast path.
+- **Reuse across drops does not apply with `Noise=yes`**: each drop solved the transmit side again in all three examples
+  (stated in their READMEs and the user page).
+- `link:<ch>:Drift0_Hzps` is written beside `Doppler0_Hz`: the common Doppler's rate the channel already applied and named only
+  in its note (−991 Hz/s for the LEO pass).

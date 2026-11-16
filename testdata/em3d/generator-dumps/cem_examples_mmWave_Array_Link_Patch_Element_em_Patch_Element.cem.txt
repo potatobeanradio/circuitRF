@@ -1,0 +1,25 @@
+refusal (none)
+note 2 overlapping conductor shape(s) were merged into 1 — copper that overlaps on one level is one conductor, in 3D as in the planar model.
+note Port 1 ('1') at (0, -2.455 mm) was taken to be on the conductor's low-y (bottom) end (the port's own direction), driving current in the +y direction, at 50 Ω.
+note Port 1 at its line's end is a vertical lumped sheet 354 µm (0.354 mm) wide and 161 µm (0.161 mm) tall from 'Top Copper (0.5 oz)' down to 'Bottom Copper (0.5 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
+note The air box's default padding is 2.67672 mm on every face — λ/4 at 28 GHz, the sweep's lowest frequency, since a radiation pattern is asked for — because a radiation pattern was asked for: its equivalence surface sits inside the absorber with room to spare around the structure. The setup names no pattern frequency, so the sweep's lowest stands in for it; state one to size the box for it. A padding the setup's AirBox states is used as stated.
+note The air box's floor is 'Bottom Copper (0.5 oz)' as a PEC plane at 17 µm: it is the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it.
+solid Laminate Laminate Dielectric 1 box (-0.004461718375,-0.005131718375,1.7E-05) (0.004461718375,0.004077718375,0.00017800000000000002)
+solid air Air Air 2 box (-0.004461718375,-0.005131718375,0.00017800000000000002) (0.004461718375,0.004077718375,0.002871718375)
+solid Top Copper (0.5 oz)/1 Copper Conductor 3 extrude 0.00017800000000000002 0.00019500000000000002 [0.00017700000000000002,-0.000558 0.000388,-0.000558 0.000388,-0.0014010000000000001 0.0017850000000000001,-0.0014010000000000001 0.0017850000000000001,0.0014010000000000001 -0.0017850000000000001,0.0014010000000000001 -0.0017850000000000001,-0.0014010000000000001 -0.000388,-0.0014010000000000001 -0.000388,-0.000558 -0.00017700000000000002,-0.000558 -0.00017700000000000002,-0.002455 0.00017700000000000002,-0.002455]
+material Copper 1 - 0 1 58000000
+material Laminate 3.66 - 0.0037 1 0
+material Air 1 - 0 1 0
+port 1 port/1 Lumped Top Copper (0.5 oz)/1 airbox/zmin (-0.00017700000000000002,-0.002455,1.7E-05) (0.00017700000000000002,-0.002455,0.00017800000000000002) (0,0,1) 50 0 (0,-0.002455,9.750000000000001E-05) (0,1,0) 0 - -
+box (-0.004461718375,-0.005131718375,1.7E-05) (0.004461718375,0.004077718375,0.002871718375) Em3dFaces { XMin = Absorbing, XMax = Absorbing, YMin = Absorbing, YMax = Absorbing, ZMin = Pec, ZMax = Absorbing }
+freq 28000000000 28000000000 1 Linear 20
+type Driven eigen 3 28000000000
+ground 
+origin Laminate Dielectric Laminate - -
+origin Top Copper (0.5 oz)/1 Conductor Top Copper (0.5 oz) LayerKey { Layer = 1, Datatype = 0 } -
+origin air Air - - -
+material-source Air built in (free space)
+material-source Copper technology 'PCB 2-Layer (0.161 mm, 0.5 oz)' Materials
+material-source Laminate stackup entry 'Laminate' (its own numbers)
+no-alpha 
+unknown-temperature 

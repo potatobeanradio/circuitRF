@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — LEO Satellite Downlink</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/LEO Satellite Downlink/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › LEO Satellite Downlink</p>
+  </div>
+
+  <h1>LEO Satellite Downlink</h1>
+  <p class="lede">A 20 GHz 16APSK single carrier through a transponder and a 600 km low-orbit pass at 30&#176; elevation: P.618 rain, clouds and scintillation at 99.5 %, P.676 gas, ITU-R P.681 land mobile-satellite states, the pass&#39;s 400 kHz Doppler acquired and removed, and EVM, bit errors and outage over 40 drops.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ LEO Satellite Downlink</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A low-orbit satellite at 600 km sends a 16APSK single carrier at 20 GHz to a vehicle in a suburb, seen at 30° elevation
+as it sets. One schematic, <code>Downlink</code>, holds the transponder, the path and the terminal, and one envelope run over 40
+<strong>drops</strong> reads the signal at the far end, drop by drop.</p>
+<table>
+<thead>
+<tr>
+<th>Part</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>UPLINK</code></td>
+<td>The signal as it reaches the transponder: 16APSK at 10 Msym/s, root-raised-cosine roll-off 0.2, a 64-symbol preamble and 36 pilot symbols every 1,440 (<code>Carrier[1]=&quot;SC;…&quot;</code>), at −3 dBm</td>
+</tr>
+<tr>
+<td><code>IMUX</code>, <code>TWTA</code>, <code>OMUX</code></td>
+<td>The transponder: a 20 MHz input filter, a travelling-wave tube amplifier as a 40 dB gain block whose output intercept is 48 dBm, and a 30 MHz output filter. It sends 36 dBm, and its compression is the 2.6 % EVM at <code>Itx</code></td>
+</tr>
+<tr>
+<td><code>CH1</code></td>
+<td><code>PathLoss=satellite Altitude=600 Elevation=30 Pass=setting</code>: the slant range, its latency and the pass's Doppler. ITU-R P.618 rain, clouds and scintillation, and P.676 gas, at <code>Availability=99.5</code>. ITU-R P.681's land mobile-satellite states for a suburb (<code>States=p681 StateEnvironment=suburban</code>) at <code>Velocity=10</code> m/s. The satellite antenna is 36 dBi, the terminal's flat panel 30 dBi</td>
+</tr>
+<tr>
+<td><code>LNA</code>, <code>TERM</code></td>
+<td>The terminal: 30 dB, 1.5 dB NF</td>
+</tr>
+</tbody>
+</table>
+<p><code>ENV1</code> is 0.2 ms of the carrier with <code>Noise=yes</code> and <code>Equalizer=pilot</code>: the preamble and pilot blocks train the receiver's
+equalizer, the frequency offset is measured and removed, and every symbol is decided. <code>PASS</code> sweeps it over drops 1 to 40.</p>
+<h2 id="the-path">The path</h2>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Slant range, latency (<code>link:CH1:Delay0_s</code>)</td>
+<td>1,075 km, 3.59 ms</td>
+</tr>
+<tr>
+<td>Free space</td>
+<td>179.10 dB</td>
+</tr>
+<tr>
+<td>P.676 gas on the slant path</td>
+<td>0.50 dB</td>
+</tr>
+<tr>
+<td>P.618 rain, clouds and scintillation exceeded 0.5 % of the time</td>
+<td>3.27 dB</td>
+</tr>
+<tr>
+<td>Doppler <code>Doppler_Hz</code>, and its drift <code>Drift_Hzps</code></td>
+<td>−399.28 kHz, −991 Hz/s</td>
+</tr>
+</tbody>
+</table>
+<p>The carrier arrives 399 kHz low. The receiver acquires it from the power spectrum, fits it from the symbols' phases, and
+<code>CFO_Hz</code> reads it within 160 Hz in every drop with 10 dB of MER or more. The drift moves the frequency by a fifth of a
+hertz over the record, so it is read from the channel (<code>Drift_Hzps</code>), not from the signal.</p>
+<h2 id="drops-the-p.681-states">Drops: the P.681 states</h2>
+<p>Each drop is in one state, because 0.2 ms at 10 m/s is 2 mm of road: GOOD (line of sight, light shadowing) or BAD (heavy
+shadowing and blockage). <code>State</code> is 1 for GOOD.</p>
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GoodFraction</code>, the drops in the GOOD state</td>
+<td>55 %</td>
+</tr>
+<tr>
+<td>GOOD drops: MER, EVM</td>
+<td>19.5 to 22.3 dB, 7.7 to 10.6 %, no bit errors</td>
+</tr>
+<tr>
+<td>BAD drops</td>
+<td>from 21.7 dB, as clear as a GOOD drop, down to fully blocked (MER below 0 dB, BER 0.34 to 0.5)</td>
+</tr>
+<tr>
+<td><code>Outage</code>, the drops whose MER is below 15 dB (<code>MerReq</code>)</td>
+<td>25 %, its exact 95 % interval 12.7 to 41.2 %</td>
+</tr>
+</tbody>
+</table>
+<p><code>BER</code> counts each drop's 6,132 bits; <code>BERest</code> estimates the same from the symbols' SINR and reaches below what one record can
+count: 10⁻⁷ to 10⁻⁴ in the GOOD drops. Here 16APSK reaches a bit error rate near 10⁻³ at about 16 dB of MER and passes 10⁻² below
+15 dB, so the outage is the fraction of the time the vehicle is shadowed too deeply to decode before coding. In the GOOD state the margin is set by the
+noise, about 21 dB, and not by the transponder, whose 2.6 % EVM alone would read 32 dB.</p>
+<h2 id="what-was-traded-for-run-time">What was traded for run time</h2>
+<p>The TWTA is the System amplifier: its soft limiter compresses (AM/AM) but does not turn the phase with drive (no AM/PM),
+which a tube does; its 2.6 % EVM is the limiter's alone.</p>
+<p>40 drops take about 20 s in a Release build. The outage's interval is wide at 40: 400 drops take three minutes and narrow
+it to a few points. <code>Noise=yes</code> keeps the run from replaying the transponder's waves between drops, so each drop solves it
+again.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

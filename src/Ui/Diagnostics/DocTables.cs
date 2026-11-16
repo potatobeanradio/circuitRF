@@ -274,6 +274,63 @@ public static class DocTables
         return sb.ToString();
     }
 
+    /// <summary>
+    /// brief PCH-12 — every large-scale model of the propagation registry (<see cref="RfCore.Propagation.PropagationModels.All"/>),
+    /// one row each: the <c>PathLoss=</c> word, what it is, the edition it implements, its own parameters and where it holds.
+    /// The Chain Budget's Propagation section, the Propagation Channel and <c>reference</c> read the same table.
+    /// </summary>
+    public static string PropagationModels()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("<table class=\"param-table\">");
+        sb.AppendLine("<thead><tr><th><code>PathLoss=</code></th><th>Model</th><th>Document</th><th>Its own parameters</th>"
+                    + "<th>Valid</th></tr></thead><tbody>");
+        foreach (var m in RfCore.Propagation.PropagationModels.All)
+        {
+            string own = m.Parameters.Count == 0 ? "—" : string.Join(", ", m.Parameters.Select(p => $"<code>{E(p.Name)}</code>"));
+            if (m.UsesProfile) own += " (a terrain profile)";
+            sb.AppendLine($"<tr><td class=\"nowrap\"><code>{E(m.Name)}</code></td><td>{E(m.Title)}</td><td>{E(m.Document)}</td>"
+                        + $"<td>{own}</td><td>{E(m.Validity)}</td></tr>");
+        }
+        sb.AppendLine("</tbody></table>");
+        return sb.ToString();
+    }
+
+    /// <summary>brief PCH-12 — one model's own parameters from the registry, or the added losses every model takes
+    /// (<paramref name="name"/> <c>losses</c>): name, unit, default, range or words, and what it is.</summary>
+    public static string PropagationParameters(string name)
+    {
+        IReadOnlyList<RfCore.Propagation.ModelParameter> rows = name.Equals("losses", StringComparison.OrdinalIgnoreCase)
+            ? RfCore.Propagation.AddedLosses.Parameters
+            : (RfCore.Propagation.PropagationModels.Find(name)
+               ?? throw new InvalidOperationException($"'{name}' is not a propagation model; the models are "
+                                                      + string.Join(", ", RfCore.Propagation.PropagationModels.All.Select(m => m.Name)) + "."))
+              .Parameters;
+        if (rows.Count == 0) return "<p>No parameters of its own.</p>\n";
+        var sb = new StringBuilder();
+        sb.AppendLine("<table class=\"param-table\">");
+        sb.AppendLine("<thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>");
+        foreach (var p in rows)
+        {
+            string range = p.Kind switch
+            {
+                RfCore.Propagation.ParameterKind.Word => string.Join(", ", (p.Words ?? []).Select(w => $"<code>{E(w)}</code>")),
+                RfCore.Propagation.ParameterKind.Number when double.IsFinite(p.Min) && double.IsFinite(p.Max) =>
+                    E($"{Num(p.Min)} to {Num(p.Max)}"),
+                RfCore.Propagation.ParameterKind.List => "a comma-separated list",
+                RfCore.Propagation.ParameterKind.File => "a CSV file",
+                _ => "—",
+            };
+            string def = p.Default.Length == 0 ? "—" : $"<code>{E(p.Default)}</code>";
+            sb.AppendLine($"<tr><td class=\"nowrap\"><code>{E(p.Name)}</code></td><td>{(p.Unit.Length == 0 ? "—" : E(p.Unit))}</td>"
+                        + $"<td>{def}</td><td>{range}</td><td>{E(p.Help)}</td></tr>");
+        }
+        sb.AppendLine("</tbody></table>");
+        return sb.ToString();
+    }
+
+    private static string Num(double v) => v.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture);
+
     /// <summary>The case table's OWN millimetre spelling — two decimals, three only where a third
     /// one is real, so a row here reads exactly as the same number reads in the picker.</summary>
     private static string Mm(decimal v)

@@ -22,6 +22,21 @@
       "Summary": "A receive chain as a budget, stage by stage: a 2.45 GHz superhet, a four-element steered array into a combiner, a front end with a canceller and a dual-conversion receiver, each with its gain, NF, intercepts, compression, sensitivity and SFDR in closed form, and transferred to test benches whose S-parameter, harmonic-balance and envelope runs put a simulated number beside every one of them, the dual-conversion one conversion by conversion. And a 26 GHz link whose stages scale with the frequency: EIRP, the path, SNR, rate and DC power, swept over the carrier and both arrays."
     },
     {
+      "Folder": "Indoor IoT Link",
+      "Title": "Indoor IoT Link",
+      "Summary": "An 868 MHz FSK sensor two floors from its gateway through a Propagation Channel: ITU-R P.1238 office loss with floors and walls, a tapped delay line read from the office's power-delay profile file, received power and outage over 2,000 drops, and bit errors counted over 50."
+    },
+    {
+      "Folder": "LEO Satellite Downlink",
+      "Title": "LEO Satellite Downlink",
+      "Summary": "A 20 GHz 16APSK single carrier through a transponder and a 600 km low-orbit pass at 30\u00b0 elevation: P.618 rain, clouds and scintillation at 99.5 %, P.676 gas, ITU-R P.681 land mobile-satellite states, the pass's 400 kHz Doppler acquired and removed, and EVM, bit errors and outage over 40 drops."
+    },
+    {
+      "Folder": "mmWave Array Link",
+      "Title": "mmWave Array Link",
+      "Summary": "A 28 GHz 16 \u00d7 16 transmit array to an 8 \u00d7 8 receive array through 3GPP TR 38.901 UMi without line of sight and CDL-C: the beam pair found automatically in every drop, NR 64-QAM equalized from pilots, and EVM, bit errors and outage over 20 drops. The patch element's EM record ships with it."
+    },
+    {
       "Folder": "TRL and De-embedding",
       "Title": "TRL and De-embedding",
       "Summary": "TRL calibration from a Thru, a Reflect and a Line measured through two fixtures, the two fixture files it writes, a filter de-embedded with them and laid over the truth, and a GaN FET de-embedded to its intrinsic plane, where Cgs, Cgd, gm and Rds come out flat with frequency. The measurements are synthetic, made by circuitRF from cells you can open."

@@ -493,7 +493,8 @@ actually happened is "nothing it tried reached compression".
 
 Runs the design's `type=env` analysis, and the whole sweep when a `parametric_sweep` wraps it. A `MOD_Source` supplies the
 signal. Every labeled net records its voltage, and every [IProbe](components.html#iprobe) the power delivered through it.
-[What a run records](simulations.html#envelope-records) lists every cube. Minutes, not seconds: 200 µs of an NR 20 MHz signal is
+[What a run records](simulations.html#envelope-records) lists every cube. The TestBench's `measure` lines are evaluated as the
+application evaluates them and written as the result's `measurements` group, in `-o` and in `--json`. Minutes, not seconds: 200 µs of an NR 20 MHz signal is
 about a minute on 10 cores.
 
 To plot the power spectrum at an IProbe, write the cubes and plot `PSD`. Its `branch` axis is named after the IProbes, and it is

@@ -454,10 +454,21 @@ public static class EnvelopeDataSet
         }
         var w = SignalQuality.Receive(rec, record, y, fs, start, off, out why);
         if (w is null) return null;
+        // DBPSK and SC: an offset beyond a bin of the window is acquired first (SignalQuality.CoarseOffset), then fitted from
+        // there. Within a bin the coarse offset is 0 and nothing below changes; none still reads w, as it came.
+        double coarse = meter is Meter.Dbpsk or Meter.Sc ? SignalQuality.CoarseOffset(rec, record, y, fs, start, off) : 0;
+        var start0 = coarse == 0 ? w : SignalQuality.Receive(rec, record, y, fs, start, off + coarse, out _) ?? w;
+        if (ReferenceEquals(start0, w)) coarse = 0;
+        ReceivedWaveform RemoveOffset(out CarrierOffset cfo)
+        {
+            var r = SignalEqualizer.RemoveOffset(start0, o => SignalQuality.Receive(rec, record, y, fs, start, off + coarse + o.FrequencyHz, out _, o.DriftHzps),
+                                                 SignalEqualizer.EstimateOffset, out var fine);
+            cfo = new CarrierOffset(fine.FrequencyHz + coarse, fine.DriftHzps);
+            return r;
+        }
         if (meter == Meter.Dbpsk)
         {
-            var moved = SignalEqualizer.RemoveOffset(w, o => SignalQuality.Receive(rec, record, y, fs, start, off + o.FrequencyHz, out _, o.DriftHzps),
-                                                     SignalEqualizer.EstimateOffset, out var cfo);
+            var moved = RemoveOffset(out var cfo);
             var e = SignalEqualizer.Dbpsk(eq.Mode == EqualizerMode.None ? w : moved, eq);
             int m = (eq.Mode == EqualizerMode.None ? w : moved).X.Length, sps = Dbpsk.SamplesPerBit;
             var at = e.Instants ?? [];
@@ -471,8 +482,7 @@ public static class EnvelopeDataSet
         if (meter == Meter.Sc)
         {
             // the single carrier (brief PCH-5): matched filter, the offset, the equalizer, nearest-point decisions
-            var moved = SignalEqualizer.RemoveOffset(w, o => SignalQuality.Receive(rec, record, y, fs, start, off + o.FrequencyHz, out _, o.DriftHzps),
-                                                     SignalEqualizer.EstimateOffset, out var cfo);
+            var moved = RemoveOffset(out var cfo);
             var e = SignalEqualizer.Sc(eq.Mode == EqualizerMode.None ? w : moved, eq);
             var shape = ScQam.Resolve(rec.Spec);
             return new Reading(e.RmsPercent, e.PeakPercent, double.NaN, double.NaN, e.Points, e.Ideal, null, null, w)

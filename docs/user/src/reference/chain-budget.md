@@ -311,7 +311,7 @@ IIP3 10 dBm), at the combiner's output and per element:
 
 ## A link in front of the chain {#link}
 
-On the **Link** tab, **a transmitter and a path in front of the chain** adds a transmit array and a line-of-sight path:
+On the **Link** tab, **a transmitter and a path in front of the chain** adds a transmit array and the path to the receiver, with its margins:
 the power they deliver to each receive element becomes the chain's input power, and the receive array is the chain's
 own [Combiner](#array) (one element with none). The transmitter and the path are not stages, because a stage before the
 combiner is one receive element's branch and every number is referred to that element's input. Each input but
@@ -326,20 +326,54 @@ combiner is one receive element's branch and every number is referred to that el
 | `Elements` | Mtx, the transmit elements, all in phase toward the receiver. |
 | `PaGain`, `PAE`, `Pdc` | For the DC power: the PA's gain and its power-added efficiency at the back-off, %, or each element's DC power stated. |
 
+The path is the **Propagation** section, in four groups. **Path:**
+
 | Path | Meaning |
 |---|---|
-| `Distance` | The path: metres, or with `m` or `km` (`200 m`, `0.2 km`). |
-| `Attenuation` | Extra or atmospheric attenuation along it, dB/km: a number, an expression or a table of the carrier. |
+| `Distance` | The path: metres, or with `m` or `km` (`200 m`, `0.2 km`). On a satellite path the slant range comes from the orbit instead. |
+| `Attenuation` | Extra attenuation along it, dB/km: a number, an expression or a table of the carrier. |
 | `RxAntennaGain` | Each receive element's gain, dBi. |
+| `Model` | The large-scale model, by its ITU-R recommendation or 3GPP report: any model of the [Propagation Channel](propagation-channel.html#models) (`free`, `logdist`, `multislope`, `tworay`, `38901`, `P1238`, `P1411`, `P526`, `satellite`, `P1812`). Blank is free space. |
+| `TxHeight`, `RxHeight` | The antennas' heights, 1.5 m when blank. |
+
+**Large scale** holds the chosen model's own parameters and **Added losses** the losses every model takes (partitions,
+clutter, building entry, vegetation, polarization and pointing, gas, rain, clouds, scintillation, the ionosphere), both read
+from the same registry as the component's, with the same names; each field shows its default. **Margins:**
+
+| Margins | Meaning |
+|---|---|
+| `Availability` | The percentage of time (or of locations) the link must work, 99 % when blank. Rain, clouds and scintillation are taken at 100 minus it. |
+| `Fading` | The small-scale fading the margin covers: `none` (blank), `rayleigh`, `rician`, `nakagami`. |
+| `KFactor`, `m` | Rician K in dB (blank: the model's, where it gives one); Nakagami m (blank: 1). |
+| `Sigma` | The shadowing standard deviation in dB; blank: the model's. A model that states its own (`logdist`) shows it under Large scale instead. |
+| `Margin` | `composite` (blank): the margin of shadowing and fading together; `sum`: the two margins added, the conservative bound. |
+| `TargetBer`, `Modulation` | The uncoded bit error rate the link must reach, and the modulation (blank: the Demo bench's 64-QAM). Without a target, the stated Required SNR is used. |
 
 ```
 Pout = Psat − Backoff
 EIRP = Pout − Loss + AntennaGain + 20·log10(Mtx)           Mtx PAs in phase: Mtx of power, Mtx of directivity
-Lfs  = 20·log10(4π·d·f / c)                                 free space
-A    = Attenuation · d / 1000
-Prx  = EIRP − Lfs − A + RxAntennaGain                       at each receive element
+L    = Lfs + (L_model − Lfs) + Σ added losses + Attenuation·d/1000     rain at the availability is in L
+Prx  = EIRP − L + RxAntennaGain                             at each receive element
 Pin  = min(Prx, IP1dB − RxBackoff)                          the chain's input
+
+M_shadow = σ · Q⁻¹(1 − p)                                   lognormal shadowing at availability p
+M_fade   = −10·log10(x),  F(x) = 1 − p                      F the fading power's distribution at mean 1:
+           Rayleigh −10·log10(−ln p): 19.98 dB at 99 %, 30.00 dB at 99.9 %; Rician and Nakagami numerically
+M_comp   = the same for lognormal-shadowed fading           the default margin
+SNR_req  = Eb/N0 at the target BER + 10·log10(bits per symbol)
+margin   = Prx − M − (MDS + SNR_req)                        the availability is met when it is 0 or more
 ```
+
+With `Model=free` and only `Distance` and `Attenuation`, the link is exactly the free-space one: every other term is 0.
+
+The readouts beneath the Blocks view's propagation card and in the summary are the loss, the margins at the availability,
+the sensitivity, the **link margin**, whether the availability is met and the distance at which the margin is zero. The
+breakdown is one row and one cube per term: `Lfs_dB`, `Excess_dB` (the model over free space), `Atm_dB`, `Gas_dB`,
+`Rain_dB`, `Clutter_dB`, `Partitions_dB`, `BuildingEntry_dB`, `Vegetation_dB`, `Polarization_dB`, `Pointing_dB`,
+`Ionosphere_dB`, their total `PathLoss_dB`, and `Loss_dB` over all of them; then `Sigma_dB`, `Mshadow_dB`, `Mfade_dB`,
+`Mcomp_dB`, `Msum_dB`, `Margins_dB` (the one taken), `SNRreq_dB`, `LinkMargin_dB` and `ZeroMarginDistance_m`. A satellite
+path adds `Latency_ms`, `Doppler_Hz` and `DopplerRate_Hzps`. `Rain=drawn` is taken as `fixed` here, at the availability,
+and drawn drop by drop on the [Link bench](#link-bench), which checks every one of these margins by Monte Carlo.
 
 **The receiver's ceiling.** A link that delivers more than the receiver takes is held at its input P1dB less
 `RxBackoff` (10 dB), as power control or a variable gain would hold it, and the Notes say so. Without a link the input

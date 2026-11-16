@@ -65,6 +65,28 @@ public sealed class EnvelopeExportCliTests : IDisposable
         Assert.Contains("SNR dB", run.StdOut);
     }
 
+    /// <summary>
+    /// brief PCH-12 — the bench's measure lines are evaluated and written as the `measurements` group, as `sparam -o` and
+    /// `hb -o` write theirs. The verb evaluated none, so an envelope bench's measures were reachable only by opening it.
+    /// </summary>
+    [Fact]
+    public void TheMeasureLines_AreEvaluated()
+    {
+        string cnl = Path.Combine(_dir, "meas.cnl"), npy = Path.Combine(_dir, "meas.npy");
+        File.WriteAllText(cnl,
+            "MOD_Source:S1 n1 0 Fc=1e9 Pavg=0 Z=50 Carrier[1]=\"CW;Off=0;P=0\"\n" +
+            "IProbe:Iout n1 o\n" +
+            "R:RL o 0 R=50\n" +
+            "analysis ENV1 type=env Stop=2e-6 Accuracy=draft Segments=1 Warmup=0\n" +
+            "measure Pout_dBm = ENV1.Pavg_dBm[\"Iout\"] + 1\n");
+
+        var run = RunCli("env", cnl, "-o", npy);
+
+        Assert.True(run.ExitCode == 0, run.StdErr);
+        var ds = DataSetImporter.Import(npy).DataSet;
+        Assert.Equal(1.0, ds.CubesIn(DataSet.MeasurementsGroup)["Pout_dBm"].RealValues[0], 2);
+    }
+
     private (int ExitCode, string StdOut, string StdErr) RunCli(params string[] args)
     {
         var psi = new ProcessStartInfo("dotnet")

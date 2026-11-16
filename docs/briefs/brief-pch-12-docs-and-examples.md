@@ -40,3 +40,28 @@ time:
 ## Not here
 
 Anything new in the engine.
+
+## Completion note (2026-11-16)
+
+- R-pch12-1: `docs/user/src/reference/propagation-channel.md`, in the reading order after the Chain Budget: what the channel
+  is and is not, a choosing table by environment and band, every model's table and parameter tables read from the registry
+  (`{{table: propagation-models}}`, `{{table: propagation/<model>}}`, `{{table: propagation/losses}}`, `DocTables`), ends,
+  regime readouts, fading, drops, the far end, beams and the Channel tab, satellite links, the far-field warning. Each registry
+  model gained a one-line `Validity` (`ModelDescriptor.Validity`), written from the ranges its code refuses outside.
+- R-pch12-2: Chain Budget (the Propagation section's four groups, the margins' formulas, every readout cube), Phased Array
+  (the tool's Channel tab; §11 as a channel end), Simulations' envelope (the single carrier's acquisition; the genie through a
+  channel), Signal Designer (a single carrier through a link), Components (`Drift0_Hzps`), CLI (`env` evaluates measures).
+- R-pch12-3: *Indoor IoT Link* (P.1238 with floors and partitions, a TDL from `profiles/office_pdp.csv`, FSK; 2,000 drops of
+  coverage in 2 s, 50 of bit errors in 3 s), *LEO Satellite Downlink* (20 GHz, 600 km at 30°, P.618 at 99.5 %, P.681 suburban,
+  the pass's −399 kHz Doppler and −991 Hz/s drift, 16APSK through IMUX/TWTA/OMUX; 40 drops in 20 s), *mmWave Array Link* (a
+  28 GHz patch element solved once, 532 unknowns in seconds, reduced to a 5° grid and shipped in `results/`; 16 × 16 to 8 × 8
+  through UMi NLOS and CDL-C, auto beam pair, NR 64-QAM; 20 drops in about a minute). Built from netlists by
+  `tests/Ui.Tests/Examples/PropagationExamplesAuthoring` (CRF_AUTHOR_PCH_EXAMPLES=1). Each README states its trades: the
+  mmWave element amplifiers are linear with one compressing pre-driver; the TWTA has no AM/PM.
+- R-pch12-4: the design note's status, and a status-by-section table of what each brief built and where it differs.
+- Gates: 1 `PropagationExamplesTests` (every bench passes `check` and is its netlist; the shipped runs' times are in the
+  READMEs); 2 `PropagationChannelPageTests`; 3 no new figure (tables only); the three benches' schematics rendered and looked at.
+- Fixed on the way: a single carrier's offset beyond a fraction of a bin read as noise (the delay taken a record away, and no
+  acquisition: `src/RfCore/RESOLVED.md`); a channel into an array crashed any noisy envelope run (`src/Engine/RESOLVED.md`);
+  `env` evaluated no measure line (`src/Cli/RESOLVED.md`); `FskTests.F1`'s refusal text, stale since PCH-5. Recorded, not
+  fixed: an envelope run's device pass is quadratic in interface nodes, so 256 nonlinear element amplifiers are impractical.

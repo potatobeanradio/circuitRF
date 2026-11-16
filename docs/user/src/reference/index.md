@@ -55,7 +55,9 @@ diagram is drawn out of — circulator, coupler, hybrid, balun, switch, amplifie
 duplexer and mixer — including where passive intermodulation comes from and what "ideal" costs
 you. <b><a href="chain-budget.html">The RF Chain Budget</a></b> is a receive chain out of those blocks, as a
 table: the cascade in closed form, an array included, and one action that writes the test benches that
-check every number.</p>
+check every number. <b><a href="propagation-channel.html">The Propagation Channel</a></b> is the path between
+a transmitter and that receiver — path loss, fading, Doppler, rain — as a component, read as received power,
+EVM, bit errors and outage over many realizations.</p>
 </div>
 
 <!-- =====================================================================

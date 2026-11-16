@@ -40,7 +40,7 @@ public class FskTests
             ("FSK;Dev=-5kHz", "Dev must be a positive frequency deviation"),
             ("FSK;Data=10120", "Data must be PN9, PN15 or a pattern"),
             ("FSK;Rb=1kbps;Dev=500kHz;Data=PN15", "a record may hold"),
-            ("LTE;Rb=100kbps", "RB belongs to an FSK or DBPSK carrier"),
+            ("LTE;Rb=100kbps", "RB belongs to an FSK, DBPSK or SC carrier"),
         })
             Assert.Contains(fragment, Assert.Throws<FormatException>(() => SignalSpec.ParseCarrier(text)).Message, StringComparison.Ordinal);
     }

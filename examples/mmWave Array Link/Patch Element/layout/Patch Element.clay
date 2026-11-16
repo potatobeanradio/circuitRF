@@ -1,0 +1,64 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Mm",
+  "SnapDbu": 1000,
+  "AngleMode": "AnyAngle",
+  "Shapes": [
+    {
+      "$type": "Poly",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Xy": [
+        -1785000,
+        -1401000,
+        -388000,
+        -1401000,
+        -388000,
+        -558000,
+        388000,
+        -558000,
+        388000,
+        -1401000,
+        1785000,
+        -1401000,
+        1785000,
+        1401000,
+        -1785000,
+        1401000
+      ]
+    },
+    {
+      "$type": "Rect",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "X1": -177000,
+      "Y1": -2455000,
+      "X2": 177000,
+      "Y2": -558000
+    },
+    {
+      "$type": "Label",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "X": 0,
+      "Y": -2455000,
+      "Text": "1",
+      "Height": 126000,
+      "Rotation": "R0",
+      "IsPort": true,
+      "PortDirection": "R90",
+      "PortLayer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    }
+  ],
+  "Instances": []
+}
