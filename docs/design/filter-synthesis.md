@@ -330,6 +330,48 @@ now takes its Cohn and open-loop designs from Core and passes as before.
 
 (to be written)
 
+## 6a. Tuning a synthesised filter
+
+**What is built.** `FilterTuning.Lines(spec, realisation, instance, siteParts, siteTolerance)`
+(`src/Core/Synthesis/Filters/FilterTuning.cs`) returns the `.cnl` lines that hand a realised filter to circuitRF's own
+optimizer: one S-parameter analysis per goal, the `tune` lines, the `goal` lines and one `optimize` line, written by
+`TuningDirectiveText`. The `filter` verb appends them to the bench it writes; `siteParts` names the placed site parts in
+the order of `FilterRealisation.Sites`.
+
+**What tunes.** The part's stored lengths and gaps, ±20 % around the synthesised values: MCRC's S1 … S(N+1), L1 … LN and
+Tap; MCLA's S, S[k], L and Tap. Each named site part's R, L or C, ± its tolerance (5 % unless stated). MCLA's own `C` is
+the value its sites want and is not in the model, so its placed capacitors are what tune. MLAD's lengths and widths are
+inside its `Sections` text, which no `tune` key reaches, so a ladder tunes through its sites only, and a ladder without
+sites is refused.
+
+**The goals**, from the spec's own lowpass prototype (`FilterPrototype`; for a bandpass with transmission zeros, the
+generalised Chebyshev of `CouplingMatrix.Characteristic`):
+
+- `Pass`: |S11| at most the prototype's at its passband edge (the ripple level; 3 dB for Butterworth; for an inverse
+  Chebyshev, whose Ω = 1 is its stop edge, where its flat passband is `RippleDb` down), over the passband in 20·N + 1
+  points: from 0.05 of a lowpass's cutoff, to twice a highpass's, and a bandstop's outer bands out to Ω = 0.5.
+- `StopLo`, `StopHi`: |S21| at most −`StopAttenuationDb` at one frequency each side, where the prototype is 6 dB past it.
+  The prototype is the one response that meets a ripple goal and a stop goal at its own edges exactly, and a
+  distributed filter's skirts are not the prototype's, so goals at those edges would leave nothing to trade.
+- `Zero1` …: |S21| at most −`StopAttenuationDb` at each transmission zero.
+
+The optimizer is `auto` with seed 1: CMA-ES finds the region, then Levenberg–Marquardt finishes.
+
+**How far it gets.** The 0.5 dB Chebyshev of order 3 at 2.4 GHz, 10 % wide, edge-coupled on 20 mil RO4350B (§4), its
+gaps opened 15 % and its lengths cut 3 %: in 627 evaluations (3 s) both stop goals are met and the ripple band's centre
+lands 0.08 % from the spec's. The pass goal is not: |S11| peaks at −5.1 dB against −9.6 dB, which is where the undetuned
+design already sits. With one W the chain's image impedances are off (§4), its ripple is about 1.6 dB in the model, and
+no gap or length removes that.
+
+**Limits.** The stop goals are points, so an elliptic's stopband past its edges is not held. MLAD's lines and stubs do
+not tune (§7).
+
+**Refusals.** `synthesis.opt.*`: `nothing-to-tune` (no stored length or gap and no site part named), `site-parts` (a
+count of site parts unlike the sites'), `unreachable` (a prototype that never reaches the stop attenuation).
+
+**Tests.** `tests/Ui.Tests/Synthesis/FilterTuningTests.cs`: the detuned edge-coupled filter, its lines appended to the
+bench and run through `OptimizationRun`, meets both stop goals and centres within 1 %; each refusal by its code.
+
 ## 7. Possible enhancements
 
 1. **Even-order elliptic and inverse Chebyshev ladders.** The modified response, which moves the highest zero to
@@ -424,6 +466,13 @@ now takes its Cohn and open-loop designs from Core and passes as before.
   specification is typed.
 - **Unequal external Q at the two ends** (§4). `FromCouplings` takes one Qe and MCRC one Tap. Why: a filter between
   unequal terminations, or a multiplexer's channel, needs a different Qe at each end.
+
+- **Named numbers in MLAD's list** (§6a). A field may name a variable, `line(W=w1, L=l1)`, which the bench declares and
+  `tune` reaches. Why: a ladder's lines and stubs are text today, so the optimizer tunes its sites only.
+- **W as a tune variable on Cohn's chains** (§6a). Why: with one W the edge-coupled filter's ripple is about 1.6 dB in the
+  model, and gaps and lengths alone leave its pass goal 4.5 dB short.
+- **Stop goals over a range** (§6a). Why: the stop goals are points at the edges, which holds an all-pole skirt but not
+  an elliptic's stopband ripple past them.
 
 ## 8. References
 
