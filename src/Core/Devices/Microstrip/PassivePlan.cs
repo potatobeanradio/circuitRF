@@ -23,7 +23,18 @@ public sealed record MicrostripSubstrate(
 /// at the origin (R-pc-3).</param>
 /// <param name="Y">As <paramref name="X"/>.</param>
 /// <param name="RotationDeg">The part's frame turned counter-clockwise about its pin 1, a multiple of 90.</param>
-public abstract record PlanSection(int[] Nodes, double X, double Y, double RotationDeg);
+public abstract record PlanSection(int[] Nodes, double X, double Y, double RotationDeg)
+{
+    /// <summary>
+    /// A two-pin section's electrical length at <paramref name="fHz"/>, as a length of the line it joins: its insertion
+    /// phase between two lines of <paramref name="z"/>, from the part's own model stamped as a plan of this one section,
+    /// over the line's phase per metre (π/2 over its λg/4 at F, <paramref name="quarterWave"/>). A plan shortens its
+    /// straight runs by a corner's, so it stays a pure function of the specs and the substrate.
+    /// </summary>
+    public double LineLength(MicrostripSubstrate s, double fHz, double z, double quarterWave)
+        => -new PassivePlan(["1", "2"], [this with { Nodes = [1, 2], X = 0.0, Y = 0.0, RotationDeg = 0.0 }], 2)
+               .S21(s, fHz, z).Phase / (Math.PI / 2.0) * quarterWave;
+}
 
 /// <summary>An MTEE: W1/W2 the through arms, W3 the branch, and L1-L3 each arm from the junction centre to its
 /// pin, as <c>MTeePCell</c> draws them and <see cref="MicrostripTeeModel"/> simulates them. Nodes: through_in,
@@ -66,23 +77,6 @@ public sealed record PlanBend(int[] Nodes, double X, double Y, double RotationDe
         => corner == PlanCorner.Miter
             ? Math.Min(MicrostripMiterBend.DouvilleJamesOptimum(w, s.HMeters), MicrostripMiterBend.MaxMiter(90.0))
             : null;
-
-    /// <summary>
-    /// The corner's electrical length at <paramref name="fHz"/>, as a length of the line it joins: its insertion phase
-    /// between two lines of <paramref name="z"/>, from the part's own model stamped as a plan of this one section,
-    /// over the line's phase per metre (π/2 over its λg/4 at F, <paramref name="quarterWave"/>). A plan shortens its
-    /// straight runs by it, so it stays a pure function of the specs and the substrate.
-    /// </summary>
-    public double LineLength(MicrostripSubstrate s, double fHz, double z, double quarterWave)
-    {
-        var model = new MicrostripPlanModel(
-            new PassivePlan(["1", "2"], [this with { Nodes = [1, 2], X = 0.0, Y = 0.0, RotationDeg = 0.0 }], 2), s, "(corner)");
-        var y = new LocalAdmittanceBlock(2);
-        model.Stamp(y, new ElaboratedComponent(nameof(MicrostripPlanModel), "(corner)", [1, 2],
-            new Dictionary<string, Value>(), model), 2.0 * Math.PI * fHz);
-        Complex s21 = -2.0 * z * y[1, 0] / ((1.0 + z * y[0, 0]) * (1.0 + z * y[1, 1]) - z * z * y[0, 1] * y[1, 0]);
-        return -s21.Phase / (Math.PI / 2.0) * quarterWave;
-    }
 }
 
 /// <summary>How a ring's corners are made (MWPD, MRRC). <see cref="Curve"/>: 180° MCURVE half-turns, as the parts always
@@ -90,10 +84,49 @@ public sealed record PlanBend(int[] Nodes, double X, double Y, double RotationDe
 /// (<see cref="PlanBend"/>), an MMITER at the Douville-James chamfer or MBEND's square corner.</summary>
 public enum PlanCorner { Curve, Miter, Square }
 
+/// <summary>What a site holds: a resistor, an inductor, a capacitor, a via to ground, a jumper (a bond wire or an air
+/// bridge joining two pieces of the part's copper), or the load the part drives (MCBL's balanced load, which is the
+/// circuit's rather than the part's).</summary>
+public enum PlanSiteRole { R, L, C, Via, Jumper, Load }
+
+/// <summary>Series: the part goes across two of the passive's pins. Shunt: from one pin to ground.</summary>
+public enum PlanSiteKind { Series, Shunt }
+
+/// <summary>
+/// A place for one lumped part (docs/design/rf-passives.md, "Sites"): an ordinary part on the passive's pins, never copper
+/// of the passive's own. Metadata only: no section reads it, so a plan's model and artwork are the same with or without
+/// its sites.
+/// </summary>
+/// <param name="PinA">The pin the part's first terminal lands on.</param>
+/// <param name="PinB">The pin its second terminal lands on; null for a shunt site, whose second terminal is ground.</param>
+/// <param name="SpanMeters">Pin to pin, where the plan sets it (MWPD's and MCBL's <c>Gap</c>, MIDC's finger pitch); null
+/// for a shunt site, whose part brings its own land.</param>
+/// <param name="Value">What the design wants there, in SI (Ω, H, F); null where the part is a short (a via, a jumper).</param>
+public sealed record PlanSite(PlanSiteRole Role, PlanSiteKind Kind, string PinA, string? PinB, double? SpanMeters,
+    double? Value)
+{
+    /// <summary>How a report names the site: its pins, <c>R2-R3</c>, or the one pin of a shunt site.</summary>
+    public string Name => PinB is null ? PinA : $"{PinA}-{PinB}";
+}
+
 /// <summary>A planned passive: its pin names in terminal order, its sections, and how many plan nodes the
 /// sections join (pins included).</summary>
 public sealed record PassivePlan(IReadOnlyList<string> Pins, IReadOnlyList<PlanSection> Sections, int NodeCount)
 {
+    /// <summary>The lumped parts the plan expects on its pins (<see cref="PlanSite"/>). Empty for a part with none.</summary>
+    public IReadOnlyList<PlanSite> Sites { get; init; } = [];
+
+    /// <summary>S21 of a two-pin plan at <paramref name="fHz"/> between terminations of <paramref name="z"/>, from
+    /// <see cref="MicrostripPlanModel"/>: what a run's or a corner's insertion phase is read from.</summary>
+    public Complex S21(MicrostripSubstrate s, double fHz, double z)
+    {
+        var model = new MicrostripPlanModel(this, s, "(corner)");
+        var y = new LocalAdmittanceBlock(2);
+        model.Stamp(y, new ElaboratedComponent(nameof(MicrostripPlanModel), "(corner)", [1, 2],
+            new Dictionary<string, Value>(), model), 2.0 * Math.PI * fHz);
+        return -2.0 * z * y[1, 0] / ((1.0 + z * y[0, 0]) * (1.0 + z * y[1, 1]) - z * z * y[0, 1] * y[1, 0]);
+    }
+
     /// <summary>
     /// A length on the 2 nm grid. Every dimension a plan places is held on it, so that a half of any of them
     /// is a whole nanometre: the layout database's unit (1 nm), where the generator rounds each part's own

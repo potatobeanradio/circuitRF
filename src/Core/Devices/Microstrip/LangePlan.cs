@@ -81,7 +81,13 @@ public static class LangePlan
         var (ze, zo) = Equivalent(modes.Ze, modes.Zo, Fingers);
         // Fingers top to bottom: 1-2 (conductor A, the ports), J3-J4 (B), J1-J2 (A), 3-4 (B, the ports).
         var sections = new PlanSection[] { new PlanCoupledLine([1, 2, 7, 8, 5, 6, 3, 4], 0.0, 0.0, 0.0, w, gap, l, Fingers) };
+        // A jumper from pin k to Jk crosses the finger between: two pitches.
+        double span = 2.0 * (w + gap);
         return new LangeDesign(couplingDb, z0, fHz, Fingers, pe, po, ze, zo, w, gap, l, modes,
-            new PassivePlan(Pins, sections, NodeCount: 8));
+            new PassivePlan(Pins, sections, NodeCount: 8)
+            {
+                Sites = [.. Enumerable.Range(1, 4).Select(k =>
+                    new PlanSite(PlanSiteRole.Jumper, PlanSiteKind.Series, $"{k}", $"J{k}", span, null))],
+            });
     }
 }
