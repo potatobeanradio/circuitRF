@@ -1279,7 +1279,8 @@ ring's output tees, one each side of the gap's centre line, with a tee at every 
 gap's edge, so every resistor lands across the gap at its own junction as the first one does on the ring.
 
 **Limits.** The pair of lines run side by side about `Gap` apart, and the model treats them as separate lines: their
-coupling to each other is not in it, and shows in EM as a shallower isolation. The tees at the junctions are MTEE's
+coupling to each other is not in it. EM includes it; on the example board the EM isolation follows the model's to a few
+dB, so there it is small, but a narrow `Gap` on a thick substrate couples more. The tees at the junctions are MTEE's
 model, with its limits. `N` sets the number of terminals, so it must be a plain number, not an expression or a swept
 variable; above 3, a `Band` not above 1, or a `K` other than 1 with more than one section is refused by name.
 

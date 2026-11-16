@@ -32105,3 +32105,10 @@ write back in that state, so opening a chain cannot record an edit. The default 
   on `R2_k`–`R3_k` with no wire included (pins at one point are one net), and LVS compares `K`, `N` and `Band` as it
   compares `F`: a schematic that never stated `Band` gives the layout none to compare, so the fixture states it as a fresh
   placement does.
+- **The unequal split's 0.2 mm arm sets the Planar grid for the whole board.** At the default 4 cells across, the shared
+  grid (`"LocalGrid": false`, the Wilkinson's setting) put a 2.4 mil cell everywhere: 51,952 unknowns and about 100 GB at
+  each frequency, refused. At 2 cells across (`MinCellsAcrossConductor`) it is 13,552 unknowns and 7.5 GB, and Planar
+  then agrees with the circuit model: P3/P2 3.15 dB against 3.04 (3.01 asked), |S21| within 0.01 dB at 2.4 GHz, both
+  nulls at 2.4 GHz. EMerge and Palace at the Wilkinson's Draft preset put 0.5 and 0.9 dB more into port 2 across the
+  band; the arm is 0.2 mm, little more than a third of the Wilkinson's 0.55 mm. EMerge at the Standard preset (22,608 tetrahedra against
+  13,349) moved only 0.09 dB (2.58 → 2.67 dB), so mesh density is not the whole cause; not pursued further.

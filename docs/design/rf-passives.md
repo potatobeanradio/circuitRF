@@ -165,7 +165,7 @@ followed by an equal one.
 - **MTEE's closed forms are calibrated at εr 9.9** and say so on any other substrate; MCURVE's effective-radius rule is
   stated for radii of 3W to 7W, and a low-frequency ring is larger. Both warnings reach Messages through the part.
 - **The multi-section pair is two uncoupled lines in the model.** The lines run about `Gap` apart; their coupling is
-  in EM and not in the circuit, which shows as a shallower isolation in EM.
+  in EM and not in the circuit. On the example board Planar and EMerge follow the model's isolation to a few dB.
 - **`N` must be a plain number**, since it sets the pins. The catalogue (`circuitrf reference`) lists MWPD at its
   five terminals and says in the terminals note how `N` adds pairs.
 - **The MWPD generator's version follows MTEE's and MCURVE's.** It draws through them, so a change that bumps either

@@ -1,0 +1,221 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Mil",
+  "SnapDbu": 25400,
+  "TechRef": "../../tech/pcb-2layer_RO4350B_20mil_1oz.ctech",
+  "Objects": [],
+  "Instances": [
+    {
+      "Name": "U1",
+      "CellRef": "..",
+      "View": "Layout"
+    }
+  ],
+  "Variables": [
+    {
+      "Name": "W50",
+      "Expression": "1.05768",
+      "Unit": "mm"
+    }
+  ],
+  "Ports": [
+    {
+      "Number": 1,
+      "Name": "P1",
+      "Kind": "Lumped",
+      "Plane": "YZ",
+      "Offset": 0,
+      "Rect": {
+        "Min": [
+          -860437,
+          35000
+        ],
+        "Size": [
+          1057680,
+          508000
+        ]
+      },
+      "Z0": "50",
+      "FromLayout": {
+        "Instance": "U1",
+        "Port": 1,
+        "Taken": {
+          "Plane": "YZ",
+          "Offset": 0,
+          "Min": [
+            -860437,
+            35000
+          ],
+          "Size": [
+            1057680,
+            508000
+          ]
+        }
+      }
+    },
+    {
+      "Number": 2,
+      "Name": "P2",
+      "Kind": "Lumped",
+      "Plane": "XZ",
+      "Offset": 9719151,
+      "Rect": {
+        "Min": [
+          39815716,
+          35000
+        ],
+        "Size": [
+          1057680,
+          508000
+        ]
+      },
+      "Z0": "50",
+      "FromLayout": {
+        "Instance": "U1",
+        "Port": 2,
+        "Taken": {
+          "Plane": "XZ",
+          "Offset": 9719151,
+          "Min": [
+            39815716,
+            35000
+          ],
+          "Size": [
+            1057680,
+            508000
+          ]
+        }
+      }
+    },
+    {
+      "Number": 3,
+      "Name": "P3",
+      "Kind": "Lumped",
+      "Plane": "XZ",
+      "Offset": -9719151,
+      "Rect": {
+        "Min": [
+          39788540,
+          35000
+        ],
+        "Size": [
+          1057680,
+          508000
+        ]
+      },
+      "Z0": "50",
+      "FromLayout": {
+        "Instance": "U1",
+        "Port": 3,
+        "Taken": {
+          "Plane": "XZ",
+          "Offset": -9719151,
+          "Min": [
+            39788540,
+            35000
+          ],
+          "Size": [
+            1057680,
+            508000
+          ]
+        }
+      }
+    }
+  ],
+  "Look": {
+    "ShowEdges": true,
+    "ShowGrid": true,
+    "ShowOverlays": true,
+    "ShowPorts": true,
+    "ShowBoundaries": true,
+    "ShowImages": true
+  },
+  "Setups": [
+    {
+      "FormatVersion": 1,
+      "Name": "Palace",
+      "Frequency": {
+        "StartExpr": "1.2",
+        "StopExpr": "4.8",
+        "StepExpr": "",
+        "NumPoints": 11,
+        "Mode": "PointCount",
+        "Kind": "Log",
+        "StartUnit": "GHz",
+        "StopUnit": "GHz",
+        "StepUnit": "GHz"
+      },
+      "Solver3D": "Palace",
+      "ComponentPorts": [
+        "R1"
+      ],
+      "CreateSnpSchematic": false,
+      "Palace": {
+        "Quality": "Draft",
+        "AdaptiveMaxIterations": 0,
+        "SaveFieldsGHz": []
+      },
+      "AirBox": {
+        "XMin": {
+          "PaddingUm": 5000
+        },
+        "XMax": {
+          "PaddingUm": 5000
+        },
+        "YMin": {
+          "PaddingUm": 5000
+        },
+        "YMax": {
+          "PaddingUm": 5000
+        },
+        "ZMax": {
+          "PaddingUm": 5000
+        }
+      }
+    },
+    {
+      "FormatVersion": 1,
+      "Name": "EMerge",
+      "Frequency": {
+        "StartExpr": "1.2",
+        "StopExpr": "4.8",
+        "StepExpr": "",
+        "NumPoints": 11,
+        "Mode": "PointCount",
+        "Kind": "Log",
+        "StartUnit": "GHz",
+        "StopUnit": "GHz",
+        "StepUnit": "GHz"
+      },
+      "Solver3D": "Emerge",
+      "ComponentPorts": [
+        "R1"
+      ],
+      "CreateSnpSchematic": false,
+      "EMerge": {
+        "Quality": "Draft",
+        "AdaptiveSweep": true,
+        "AdaptiveMesh": 0,
+        "SaveFieldsGHz": []
+      },
+      "AirBox": {
+        "XMin": {
+          "PaddingUm": 5000
+        },
+        "XMax": {
+          "PaddingUm": 5000
+        },
+        "YMin": {
+          "PaddingUm": 5000
+        },
+        "YMax": {
+          "PaddingUm": 5000
+        },
+        "ZMax": {
+          "PaddingUm": 5000
+        }
+      }
+    }
+  ]
+}

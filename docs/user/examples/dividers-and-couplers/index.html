@@ -33,7 +33,7 @@
   </div>
 
   <h1>Dividers and Couplers</h1>
-  <p class="lede">A 2.4 GHz Wilkinson divider placed as one part from its specs on 20 mil RO4350B, laid out by Update Layout with its 0402 isolation resistor across the ring, and solved by Planar MoM, EMerge and Palace against its circuit model.</p>
+  <p class="lede">A 2.4 GHz Wilkinson divider placed as one part from its specs on 20 mil RO4350B, laid out by Update Layout with its 0402 isolation resistor across the ring, and solved by Planar MoM, EMerge and Palace against its circuit model; with its unequal-split and two-section broadband variants and a four-way tree.</p>
 
 <div class="callout note">
 <span class="label">Open this example</span>
@@ -42,9 +42,11 @@
 <p>RF dividers and couplers placed as single parts, each stated by its specifications and drawn from the same plan its
 circuit model simulates. One cell per component. Today the workspace holds the <strong>Wilkinson divider</strong>: an MWPD at 2.4 GHz
 on a 20 mil RO4350B board, laid out by Update Layout from Schematic and solved on the Planar MoM solver, EMerge and
-Palace against its circuit model.</p>
+Palace against its circuit model. Beside it are the same part's two variants on the same board and bench, an <strong>unequal
+split</strong> and a <strong>two-section broadband divider</strong>, each solved the same three ways, and a <strong>four-way tree</strong> of two-way
+dividers, each in a section of its own below.</p>
 <p><img class="readme-picture" src="pictures/wilkinson-layout.png" alt="The board: port 1's line on the left, the divider's ring, the 0402 isolation resistor across the ring's gap, and the two output lines bending away to ports 2 and 3." width="700"></p>
-<h2 id="the-cell">The cell</h2>
+<h2 id="the-cells">The cells</h2>
 <table>
 <thead>
 <tr>
@@ -58,6 +60,21 @@ Palace against its circuit model.</p>
 <td><strong>Wilkinson</strong></td>
 <td>schematic, layout, EM setup, 3D view</td>
 <td>The test bench and the board: a 5 mm input line, the MWPD, a 100 Ω resistor with an 0402 land pattern on R2-R3, and each output bending away through a 90° MCURVE and a 5 mm line to its port</td>
+</tr>
+<tr>
+<td><strong>Unequal</strong></td>
+<td>schematic, layout, EM setup, 3D view</td>
+<td>The same bench with <code>K</code> = 1.4142, so port 3 takes twice port 2's power, and a 106.07 Ω resistor</td>
+</tr>
+<tr>
+<td><strong>Broadband</strong></td>
+<td>schematic, layout, EM setup, 3D view</td>
+<td>The same bench with <code>N</code> = 2 over an octave: two sections and two resistors, 242.14 Ω and 97.69 Ω</td>
+</tr>
+<tr>
+<td><strong>FourWay</strong></td>
+<td>schematic, layout</td>
+<td>Three equal-split MWPDs in a tree, ports 2 to 5 on the second stage's outputs</td>
 </tr>
 </tbody>
 </table>
@@ -287,11 +304,359 @@ adaptive frequency sweep, built from 4 full solves.</li>
 <li><strong>The 3D air box is 5 mm on the sides and the top</strong>, about ten substrate heights.</li>
 <li><strong>Eleven log-spaced points from 1.2 to 4.8 GHz</strong>, F·2^(k/5) for k = −5 … 5, so 2.4 GHz is one of them.</li>
 </ul>
+<h2 id="the-unequal-split">The unequal split</h2>
+<p><strong>Unequal</strong> is the Wilkinson bench with <code>K</code> = 1.4142 on <code>WPD1</code>: port 3 takes twice the power port 2 does, 3.01 dB more.
+The readout gives the arms as 102.99 Ω to port 2 (0.202 mm wide) and 51.49 Ω to port 3 (1.006 mm), the transformers on
+the outputs as 59.46 Ω and 42.05 Ω, and the resistor as Z0·(K + 1/K) = 106.07 Ω, which <code>R1</code> is. The two arms' quarter
+waves differ, 19.353 mm against 18.497 mm, so the input tee's straight runs differ (1.939 and 1.588 mm) and the
+resistor's gap sits 0.49 mm above the input's line; the outputs leave through their transformers, and the same bends
+and lines take them to ports 2 and 3. Update Layout joined 7 of 7 connections; LVS matches.</p>
+<p><img class="readme-picture" src="pictures/unequal-layout.png" alt="The unequal split: a thin arm to port 2 over the top of the ring, a wide one to port 3 underneath, the 0402 across the gap, and each output's quarter-wave transformer before its bend." width="700"></p>
+<h3 id="em">EM</h3>
+<p>The setups are the Wilkinson's, with one change on Planar: <strong>2 cells across a conductor rather than the default 4</strong>. The
+arm to port 2 is 0.24 mm wide once the solver grows it for the copper's thickness, and on a shared grid 4 cells across
+it would set a 2.4 mil cell over the whole board: 51,952 unknowns and about 100 GB at each frequency. At 2 cells across
+it is 13,552 unknowns and 7.5 GB. <code>R1</code> is a component port in all three, closed with its 106.07 Ω.</p>
+<p><img class="readme-picture" src="pictures/unequal-results.png" alt="|S21| and |S31|, |S11| and |S23| against frequency: the circuit model as lines, the three EM solvers as markers, each with R1's port closed by 106.07 Ω." width="715"></p>
+<p>At 2.4 GHz, each EM result with <code>R1</code>'s port closed by 106.07 Ω:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Circuit model</th>
+<th>Planar MoM</th>
+<th>EMerge</th>
+<th>Palace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S11|</td>
+<td>−40.3 dB</td>
+<td>−48.4 dB</td>
+<td>−19.3 dB</td>
+<td>−12.2 dB</td>
+</tr>
+<tr>
+<td>|S21|</td>
+<td>−4.993 dB</td>
+<td>−5.000 dB</td>
+<td>−4.666 dB</td>
+<td>−4.683 dB</td>
+</tr>
+<tr>
+<td>|S31|</td>
+<td>−1.958 dB</td>
+<td>−1.853 dB</td>
+<td>−2.084 dB</td>
+<td>−2.587 dB</td>
+</tr>
+<tr>
+<td>P3/P2 (3.01 dB asked for)</td>
+<td>3.04 dB</td>
+<td>3.15 dB</td>
+<td>2.58 dB</td>
+<td>2.10 dB</td>
+</tr>
+<tr>
+<td>|S22|</td>
+<td>−36.6 dB</td>
+<td>−30.0 dB</td>
+<td>−28.6 dB</td>
+<td>−18.4 dB</td>
+</tr>
+<tr>
+<td>|S33|</td>
+<td>−31.2 dB</td>
+<td>−33.6 dB</td>
+<td>−24.9 dB</td>
+<td>−15.7 dB</td>
+</tr>
+<tr>
+<td>|S23|</td>
+<td>−37.2 dB</td>
+<td>−32.0 dB</td>
+<td>−21.7 dB</td>
+<td>−16.3 dB</td>
+</tr>
+</tbody>
+</table>
+<p>Across 1.2 to 4.8 GHz, the same eleven points as the Wilkinson's:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Planar MoM</th>
+<th>EMerge</th>
+<th>Palace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Largest difference in |S21| from the circuit model</td>
+<td>0.45 dB</td>
+<td>0.49 dB</td>
+<td>0.66 dB</td>
+</tr>
+<tr>
+<td>Largest difference in |S31| from the circuit model</td>
+<td>0.32 dB</td>
+<td>0.38 dB</td>
+<td>1.00 dB</td>
+</tr>
+<tr>
+<td>Deepest |S11| of the eleven points (circuit model −40.3 dB at 2.40 GHz)</td>
+<td>−48.4 dB at 2.40 GHz</td>
+<td>−24.1 dB at 2.09 GHz</td>
+<td>−19.4 dB at 1.82 GHz</td>
+</tr>
+<tr>
+<td>Deepest |S23| of the eleven points (circuit model −37.2 dB at 2.40 GHz)</td>
+<td>−32.0 dB at 2.40 GHz</td>
+<td>−21.7 dB at 2.40 GHz</td>
+<td>−16.3 dB at 2.40 GHz</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Planar agrees with the model.</strong> It divides 3.15 dB where the model divides 3.04 and 3.01 was asked for, its |S21| is
+the model's within 0.01 dB at 2.4 GHz, and its input and isolation nulls fall at 2.4 GHz with the model's. Away from F
+the two read the same curves within half a dB.</p>
+<p><strong>The two 3D runs send port 2 more than the design asks</strong>, EMerge 0.5 dB and Palace 0.9 dB, across the whole band,
+and their nulls are shallow. Both use the Draft preset the Wilkinson's do, and here that mesh has to resolve a 0.2 mm
+line, little more than a third of the Wilkinson's 0.55 mm arm; but EMerge at its Standard preset (22,608 tetrahedra) divides 2.67 dB rather
+than 2.58, so the mesh is not the whole of it. Where the rest comes from is not known yet: each 3D port is a 20 mil
+lumped sheet, and the thin arm is the one line here whose copper is a sizable fraction of its width.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Mesh</th>
+<th>Unknowns</th>
+<th>Wall time</th>
+<th>Peak memory</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Planar MoM</td>
+<td>7,280 cells</td>
+<td>13,552</td>
+<td>34 min 29 s</td>
+<td>7.1 GB</td>
+</tr>
+<tr>
+<td>EMerge</td>
+<td>13,349 tetrahedra</td>
+<td>96,146</td>
+<td>48 s</td>
+<td>2.0 GB</td>
+</tr>
+<tr>
+<td>Palace</td>
+<td>100,186 tetrahedra</td>
+<td>129,666</td>
+<td>2 min 41 s</td>
+<td>3.3 GB</td>
+</tr>
+</tbody>
+</table>
+<p>Planar ran on the shared server while it was heavily loaded, so its time is long for its size; EMerge
+and Palace ran on a compute node, 8 threads and 8 processes.</p>
+<h2 id="the-broadband-divider">The broadband divider</h2>
+<p><strong>Broadband</strong> is the bench with <code>N</code> = 2 and <code>Band</code> = 2 on <code>WPD1</code>: two sections over an octave about 2.4 GHz, 1.6 to
+3.2 GHz. The readout gives section 1, at the outputs, as 60.98 Ω (0.740 mm) and section 2, the ring, as 81.99 Ω
+(0.389 mm), each 18.7 to 19.1 mm long, and two resistors: 242.14 Ω on R2-R3 at the outputs (<code>R1</code>) and 97.69 Ω on
+R2_2-R3_2 where the ring meets section 1 (<code>R2</code>, dropped on the symbol's pins with no wire). Everything after the divider
+is the Wilkinson bench's, 300 schematic units to the right. Update Layout joined 9 of 9 connections, each 0402 across the
+gap at its own junction; LVS matches.</p>
+<p><img class="readme-picture" src="pictures/broadband-layout.png" alt="The two-section divider: the ring, the pair of section-1 lines running on to the outputs either side of the gap's centre line, an 0402 at each junction, and the output bends." width="700"></p>
+<h3 id="em-1">EM</h3>
+<p>The setups are the Wilkinson's, unchanged; <code>R1</code> and <code>R2</code> are component ports in all three, each closing a loop, and the
+co-simulation netlist closes them with 242.14 Ω and 97.69 Ω.</p>
+<p><img class="readme-picture" src="pictures/broadband-results.png" alt="|S21|, |S11| and |S23| against frequency: the circuit model as a line, the three EM solvers as markers, and the one-section divider's circuit model dashed for comparison." width="715"></p>
+<p>At 2.4 GHz:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Circuit model</th>
+<th>Planar MoM</th>
+<th>EMerge</th>
+<th>Palace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S11|</td>
+<td>−26.0 dB</td>
+<td>−24.6 dB</td>
+<td>−20.3 dB</td>
+<td>−13.1 dB</td>
+</tr>
+<tr>
+<td>|S21|</td>
+<td>−3.240 dB</td>
+<td>−3.166 dB</td>
+<td>−3.179 dB</td>
+<td>−3.470 dB</td>
+</tr>
+<tr>
+<td>|S31|</td>
+<td>−3.240 dB</td>
+<td>−3.163 dB</td>
+<td>−3.195 dB</td>
+<td>−3.438 dB</td>
+</tr>
+<tr>
+<td>|S22|</td>
+<td>−41.5 dB</td>
+<td>−48.7 dB</td>
+<td>−25.3 dB</td>
+<td>−18.7 dB</td>
+</tr>
+<tr>
+<td>|S23|</td>
+<td>−27.8 dB</td>
+<td>−25.1 dB</td>
+<td>−23.2 dB</td>
+<td>−17.8 dB</td>
+</tr>
+</tbody>
+</table>
+<p><strong>What the second section buys.</strong> Of the eleven points from 1.2 to 4.8 GHz, the one-section Wilkinson's circuit model
+keeps |S11| below −20 dB at 3 (2.09 to 2.76 GHz) and |S23| at 3. The two-section divider:</p>
+<table>
+<thead>
+<tr>
+<th>Points of the eleven below −20 dB</th>
+<th>One section, circuit</th>
+<th>Circuit model</th>
+<th>Planar MoM</th>
+<th>EMerge</th>
+<th>Palace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S11|</td>
+<td>3, 2.09–2.76 GHz</td>
+<td>7, 1.38–3.17 GHz</td>
+<td>6, 1.38–2.76 GHz</td>
+<td>5, 1.38–2.76 GHz</td>
+<td>1, at 1.58 GHz</td>
+</tr>
+<tr>
+<td>|S23|</td>
+<td>3, 2.09–2.76 GHz</td>
+<td>7, 1.38–3.17 GHz</td>
+<td>7, 1.38–3.17 GHz</td>
+<td>8, 1.20–3.17 GHz</td>
+<td>3, 1.38–3.17 GHz</td>
+</tr>
+</tbody>
+</table>
+<p>Swept finely, the circuit model's |S11| stays below −20 dB from 1.31 to 3.22 GHz and |S23| from 1.31 to 3.36 GHz, a
+2.5:1 band, where one section's are 1.98–2.85 and 1.92–2.77 GHz, 1.4:1. At F itself the two-section divider is less
+deep (|S11| −26 dB against −48): its match is spread across the band rather than piled at one frequency.</p>
+<p><strong>Planar follows the model across the band</strong>: |S21| within 0.12 dB everywhere, the same points below −20 dB but one,
+and its deepest |S11| and |S23| at 1.82 GHz, by the model's lower nulls (1.74 and 1.78 GHz); the upper ones (2.80 and
+2.85 GHz) come out shallower, −26 and −27 dB at the 2.76 GHz point. <strong>EMerge agrees on the band</strong> and puts its deepest
+points at 1.58 and 2.76 GHz; its five-port is not quite passive at 7 of the 11 points
+(σ_max(S) at most 1.0051), as the Wilkinson's was, and the run says so. <strong>Palace's Draft mesh is the coarsest of the
+three</strong> here as on the Wilkinson: its match is 7 to 13 dB shallower than the model's below 2.8 GHz, and its |S21|
+0.2 to 0.4 dB lower.</p>
+<p>The section-1 lines run side by side 1.7 mm apart edge to edge, and the model treats them as two separate lines. Planar and
+EMerge, which include their coupling, track the model's isolation to a few dB, so on this board the coupling is small.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Mesh</th>
+<th>Unknowns</th>
+<th>Wall time</th>
+<th>Peak memory</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Planar MoM</td>
+<td>7,917 cells</td>
+<td>14,626</td>
+<td>48 min 59 s</td>
+<td>8.3 GB</td>
+</tr>
+<tr>
+<td>EMerge</td>
+<td>14,261 tetrahedra</td>
+<td>103,218</td>
+<td>42 s</td>
+<td>2.1 GB</td>
+</tr>
+<tr>
+<td>Palace</td>
+<td>109,239 tetrahedra</td>
+<td>141,046</td>
+<td>3 min 9 s</td>
+<td>3.6 GB</td>
+</tr>
+</tbody>
+</table>
+<p>All three ran on a compute node: Planar with 8 threads, EMerge with 8, Palace as 8 processes.</p>
+<h2 id="four-ways-from-two-way-dividers">Four ways from two-way dividers</h2>
+<p><strong>FourWay</strong> splits one input four ways with three MWPDs in a tree, the planar way to more than two outputs (a single
+N-way Wilkinson's resistors meet at one point, which no one-layer drawing reaches without a crossing; the Wilkinson
+Divider's page in the reference says why). <code>WPD1</code> divides at the input; each of
+its outputs bends away through a 90° MCURVE, 2.5 mm of line and a second 90° MCURVE back, so the second-stage dividers
+<code>WPD2</code> and <code>WPD3</code> sit 21 mm apart, clear of each other's rings. Every divider has its own 100 Ω 0402. Update Layout from
+Schematic joined all 15 connections and poured the plane under all three rings; LVS matches. It has no EM setup: each
+divider is the Wilkinson cell's, and the lines between them are ordinary MLIN and MCURVE.</p>
+<p><img class="readme-picture" src="pictures/fourway-layout.png" alt="The four-way tree: the input divider on the left, its outputs bending up and down to two more dividers, each with its own 0402 across its ring's gap, and ports 2 to 5 on their outputs." width="700"></p>
+<p>The circuit model at 2.4 GHz:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Circuit model</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S21| = |S31| = |S41| = |S51|</td>
+<td>−6.256 dB, all four in phase</td>
+</tr>
+<tr>
+<td>|S11|</td>
+<td>−42.0 dB</td>
+</tr>
+<tr>
+<td>|S22| … |S55|</td>
+<td>−31.4 dB</td>
+</tr>
+<tr>
+<td>Isolation between outputs of one divider (|S23|, |S45|)</td>
+<td>−38.9 dB</td>
+</tr>
+<tr>
+<td>Isolation between outputs of different dividers (|S24| …)</td>
+<td>−42.7 dB</td>
+</tr>
+<tr>
+<td>Band with |S11| below −20 dB</td>
+<td>2.15 to 2.63 GHz</td>
+</tr>
+</tbody>
+</table>
+<p>The ideal −6.02 dB split loses 0.24 dB here, two dividers' worth. The band is narrower than one divider's 1.98 to
+2.85 GHz: away from F each stage's mismatch is seen through the line to the next, and the two add.</p>
 <h2 id="things-to-try">Things to try</h2>
 <ul>
 <li><strong>Change <code>F</code> or <code>Z0</code></strong> and simulate: the ring is redrawn and re-solved from the new specs. Update Layout redraws the
 layout; re-run the EM setups to compare again.</li>
 <li><strong>Remove <code>R1</code>, or change it</strong>, and watch |S23| and |S22| while |S21| and |S11| stay put.</li>
+<li><strong>Change <code>K</code> on Unequal</strong> and set <code>R1</code> to the readout's Z0·(K + 1/K): the arms, transformers and ring are redrawn. A
+<code>K</code> the board cannot draw is refused with the line it needs: 4 asks for a 412 Ω arm.</li>
+<li><strong>Set <code>N</code> to 3 on Broadband</strong>: the part grows <code>R2_3</code>/<code>R3_3</code>, and the readout gives the three resistors (523, 195 and
+97 Ω for the octave); widen <code>Band</code> and watch the ripple in |S11| rise while the band grows.</li>
 </ul>
 
 </main>
