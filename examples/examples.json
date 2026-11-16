@@ -59,7 +59,17 @@
     {
       "Folder": "Dividers and Couplers",
       "Title": "Dividers and Couplers",
-      "Summary": "Built-in dividers, hybrids, a coupler and a balun on 20 mil RO4350B at 2.4 GHz, each placed as one part from its specs and laid out by Update Layout. Run a cell's Planar MoM, EMerge and Palace setups, simulate its bench, and open its data display to see the circuit model against each solver."
+      "Summary": "Built-in dividers, hybrids, couplers, a balun, a phase shifter, a delay line and a resistive pad on 20 mil RO4350B at 2.4 GHz, each placed as one part from its specs and laid out by Update Layout, the lumped ones with their parts placed by Place Site Parts. Run a cell's EM setups, simulate its bench, and open its data display to see the circuit model against each solver and, for the newer cells, an equations model of ideal lines."
+    },
+    {
+      "Folder": "MMIC Wilkinson",
+      "Title": "MMIC Wilkinson",
+      "Summary": "A Wilkinson divider at 20 GHz on a 100 µm GaAs die, its isolation resistor a thin-film resistor across the ring's gap, laid out by Update Layout, its circuit model set beside an equations model of ideal lines."
+    },
+    {
+      "Folder": "RFIC Branch-Line",
+      "Title": "RFIC Branch-Line",
+      "Summary": "A branch-line hybrid at 60 GHz on the top metal of a silicon back-end, referenced to Metal1 so its field stays out of the silicon, laid out by Update Layout, its circuit model set beside an equations model of ideal lines."
     },
     {
       "Folder": "Patch Antenna",
