@@ -1747,6 +1747,68 @@ wavelength between vias, and the two grounds sit a balun's length apart.
 > Transactions on Microwave Theory and Techniques*, vol. 49, no. 2, pp. 402–406, February 2001.
 > DOI [10.1109/22.903108](https://doi.org/10.1109/22.903108).
 
+### Coupled Array (MCLA) {#mcla}
+
+{{symbol: mcla}}
+
+Every coupled-array filter as one part: `N` parallel microstrip strips over one coupled section, every strip coupled to
+every other as in [MCLINN](#mclinen), and each strip end open, shorted, loaded by a capacitor, joined to its neighbour or
+a port. The filter's form is only that pattern of ends. Unlike the parts above, the coupled array stores its geometry —
+widths, gaps, length, taps and loading capacitances — rather than specs, so a design from a filter synthesis or from your
+own calculation goes straight in, and the layout, LVS and EM read the same numbers.
+
+**Forms.** `Form` fills the pattern (strip 1 is the top one; the near end is the left one):
+
+- **Interdigital**: strips shorted at alternate ends, the other ends open (Matthaei 1962; Wenzel 1965).
+- **Combline**: every strip shorted at its near end and loaded at its far end by a capacitor to ground (Matthaei 1963).
+- **PseudoInterdigital**: the strips in fours, each four two interleaved hairpins — the first and third joined at
+  their far ends, the second and fourth at their near ends, each wall `G` clear of the end it passes; no vias, so it
+  suits a die (Hong and Lancaster 1995).
+- **Custom**: `Ends`, two letters per strip, near end then far: `O` open, `S` short, `C` capacitor, `J` joined to the
+  next joined end on the same side, `P` port. `SO OS SO` is a three-strip interdigital array, `OJ OJ` one hairpin.
+
+**Feeds.** `Tapped`: every strip resonates, and the ports tap onto the outer strips at `Tap` from each one's shorted (or
+joined) end, through a line `Wf` wide. `Coupled`: strips 1 and `N` are terminating lines, and the ports are their free
+ends.
+
+**Terminals.** 1 and 2 are the ports. After them comes one terminal, `E1`, `E2`, …, for each shorted or loaded end,
+strip by strip from the top, near end before far: the vias and capacitors are [sites](#sites), not part of the part. The
+parameters panel lists what each one wants — a via, or a capacitor of the strip's `C` — and **Place Site Parts** puts
+them there; a `Footprint` on the array sets the capacitors' land. `N`, `Form`, `Feed` and `Ends` set how many terminals
+there are, so they must be plain values.
+
+**In the model** the coupled length is MCLINN's field-solved section, cut at the taps; each tap line and each join is an
+MLIN, and each open or loaded end has MLIN's open-end capacitance, one strip's form. It is quasi-static: microstrip's
+modes keep their own static velocities, so an interdigital design worked out for TEM lines comes out with more ripple
+than it asked for — a 0.1 dB, 20 % design on 20 mil RO4350B ripples to about 0.7 dB, within 1 % of its centre and 8 %
+of its band. Hong and Lancaster's own pseudo-interdigital board, with their dimensions, passes 0.98–1.14 GHz against
+their 15 % at 1.1 GHz, with the attenuation pole they report just above the band. A join's corners, its wall's coupling
+to the ends it passes and a tap's junction are not modelled.
+
+{{table: components/Mcla}}
+
+**References**
+
+> G. L. Matthaei, "Interdigital Band-Pass Filters," *IRE Transactions on Microwave Theory and Techniques*, vol. 10, no. 6,
+> pp. 479–491, November 1962. DOI [10.1109/TMTT.1962.1125556](https://doi.org/10.1109/TMTT.1962.1125556).
+
+> R. J. Wenzel, "Exact Theory of Interdigital Band-Pass Filters and Related Coupled Band-Pass Structures," *IEEE
+> Transactions on Microwave Theory and Techniques*, vol. 13, no. 5, pp. 559–575, September 1965.
+> DOI [10.1109/TMTT.1965.1126051](https://doi.org/10.1109/TMTT.1965.1126051).
+
+> G. L. Matthaei, "Comb-Line Band-Pass Filters of Narrow or Moderate Bandwidth," *Microwave Journal*, vol. 6,
+> pp. 82–91, August 1963. A trade journal, with no DOI; the same design is in Matthaei, Young and Jones, *Microwave
+> Filters, Impedance-Matching Networks, and Coupling Structures*, chapter 10, also with no DOI:
+> [the book at the Internet Archive](https://archive.org/details/microwavefilters0000matt).
+
+> J.-S. Hong and M. J. Lancaster, "Development of New Microstrip Pseudo-Interdigital Bandpass Filters," *IEEE Microwave
+> and Guided Wave Letters*, vol. 5, no. 8, pp. 261–263, August 1995.
+> DOI [10.1109/75.401073](https://doi.org/10.1109/75.401073).
+
+> M. Kirschning, R. H. Jansen and N. H. L. Koster, "Accurate model for open end effect of microstrip lines,"
+> *Electronics Letters*, vol. 17, no. 3, pp. 123–125, February 1981.
+> DOI [10.1049/el:19810088](https://doi.org/10.1049/el:19810088). The open ends.
+
 ## MMIC passives {#mmic}
 
 The parts a die is drawn from. Like a microstrip line, each one takes its process from the workspace

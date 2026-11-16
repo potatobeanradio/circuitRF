@@ -4,7 +4,7 @@
 and MRRC, the branch-line and rat-race hybrids; MCLC, MIDC and MCBL, the coupled-line coupler, interdigitated coupler
 and balun; MWPD's and MRRC's rings curved or cornered (`Corner`); the gap, taper and open-end sections (§1); the radial stub (MRADIAL);
 the N-line coupled section and its part, MCLINN; sites with an optional `Footprint` (§3.7) and a route helper
-(§3.8) · **Date:** 2026-11-16
+(§3.8); the coupled array, MCLA, every coupled-array filter as one part (§3.9) · **Date:** 2026-11-16
 
 Dividers, couplers and baluns on microstrip, each one built-in part that is defined once and read the same way by the
 schematic, the layout, LVS and EM. Each part has its own subsection in §3.
@@ -442,8 +442,8 @@ parameters, the indexed ones included (`F15-coupled-lines`: a changed `W[2]` is 
 the odd, even and middle modes; a section with an internal node equal to MCLINN and MLIN wired by hand to 1e-9),
 `CoupledStripsPartTests` (registration, pins, artwork, the cross-section on the RFIC stack).
 
-**Which parts use it.** MCLINN, and through `PlanCoupledStrips` the parts still to come: the coupled-line array
-(interdigital, combline, pseudo-interdigital and multi-line couplers). It is also what MIDC's non-adjacent fingers and
+**Which parts use it.** MCLINN, and through `PlanCoupledStrips` the coupled array, MCLA (§3.9): interdigital,
+combline and pseudo-interdigital filters. It is also what MIDC's non-adjacent fingers and
 MWPD's side-by-side section pairs need (§5, §6); neither uses it yet, which keeps them as they were.
 
 **Possible enhancements.**
@@ -542,6 +542,116 @@ Tests (`PlanRouteTests`, `PassiveSiteTests`): θ = 90° meanders and corners of 
 0.5° in the plan model, on a board and on a GaAs die; every node is one point; a straight run is one `PlanLine`, field
 for field; the drawn copper's ends and extent are the route's.
 
+### 3.9 The coupled array (MCLA)
+
+Every coupled-array filter is one part: N parallel strips over one `PlanCoupledStrips` section (§3.6), every strip
+coupled to every other, and each strip end one of five things. The form is only the pattern of ends, so interdigital,
+combline and pseudo-interdigital filters, and any pattern a designer writes, share one plan (`CoupledArrayPlan`), one
+model and one drawer. The part stores **physical geometry**, not specs: a filter synthesis, written later, fills exactly
+the parameters below, and the plan builds what they say on any substrate.
+
+**Ends.** Each strip end is one of:
+
+| End | Letter | What the plan puts there |
+|---|---|---|
+| Open | O | `PlanOpen`, one strip's form, on an internal node |
+| Short | S | a pin, `E`k, for an ordinary VIAGND: a via site, the MCBL G-pin rule |
+| Site | C | a pin, `E`k, for an ordinary capacitor to ground: a C site of the strip's `C[k]` (combline loading); the strip still fringes there, so the pin also carries a `PlanOpen` |
+| Join | J | joined to the next joined end on the same side, top down, folding the two strips into one hairpin, a half-wave resonator: neighbours by a `PlanLine` of the narrower width straight across the gap, flush with the ends; strips with others between by each strip run on `G` plus half a wall and a wall `PlanLine` down between them, `G` clear of the ends it passes |
+| Port | P | port 1 (on strip 1) or 2 (on strip N): the coupled feed's terminating strips |
+
+**Forms** (strip 1 the top one; near is x = 0; N strips in all, the coupled feed's two included):
+
+| `Form` | Ends | Source |
+|---|---|---|
+| `Interdigital` | strip k shorted at its near end when k is odd, at its far end when even, the other end open; coupled feed: strips 1 and N terminating lines, the port at the end opposite their short | Matthaei, [10.1109/TMTT.1962.1125556](https://doi.org/10.1109/TMTT.1962.1125556); Wenzel, [10.1109/TMTT.1965.1126051](https://doi.org/10.1109/TMTT.1965.1126051) |
+| `Combline` | every strip shorted at its near end and a C site at its far end; coupled feed: strips 1 and N have the port in place of the site | Matthaei, *Microwave J.*, vol. 6, Aug. 1963, no DOI |
+| `PseudoInterdigital` | the resonating strips in fours, each four two interleaved hairpins: the first and third joined at their far ends, the second and fourth at their near ends, as the paper's board has them; coupled feed: each port on its terminating strip's end beside its neighbour's open end, as an edge-coupled filter's end section is fed, the other end open. No vias | Hong and Lancaster, [10.1109/75.401073](https://doi.org/10.1109/75.401073) |
+| `Custom` | `Ends`: two letters per strip, near then far, e.g. `SO OS SO` | — |
+
+**Feeds.** `Coupled`: the ports are strip ends (P). `Tapped`: every strip resonates, and a `PlanLine` `Wf` wide and `Wf`
+long leaves strip 1 upward and strip N downward at `Tap` from that strip's grounded end (its short, else its join; the
+near one when both ends are), its far end the port. The coupled length is cut at the taps into `PlanCoupledStrips`
+sections of the same strips, which cascade exactly (one cross-section, solved once); the tap junction is a node.
+
+**What synthesis must produce.** Exactly these parameters, in SI, on the substrate the technology gives the part:
+
+| Parameter | Meaning |
+|---|---|
+| `N` | Strips, the coupled feed's two terminating strips included (n + 2 for n resonators); at least 2, 3 with the coupled feed. |
+| `W`, `W[k]` | Each strip's width, strip 1 the top one, as MCLINN's: `W[k]` where it differs from `W`. |
+| `S`, `S[k]` | The gap below strip k, between strips k and k + 1, as MCLINN's. |
+| `L` | Every strip's physical length. The open ends' fringing (Kirschning, Jansen and Koster's Δl) is the model's, so a synthesis that sizes resonators electrically subtracts it; a site end fringes too. |
+| `Form`, `Ends` | The end pattern: a preset, or `Custom` and `Ends`. `Ends` is refused with a preset. |
+| `Feed` | `Tapped` or `Coupled`. |
+| `Tap`, `Wf` | Tapped only: the tap's distance from each outer strip's grounded end, the same for both, and the feed line's width (50 Ω at placement). |
+| `C`, `C[k]` | The loading capacitance of strip k's site ends: the value Place Site Parts puts there. |
+| `G` | A join past other strips: its wall's clearance from the ends it passes (the paper's g). |
+
+**Pins.** `1`, `2`, then `E1`, `E2`, … on every shorted or loaded end, strip by strip from the top, near end before far.
+The names follow the pin count alone, as every variadic part's do: `SymbolPortDefs.For` takes a kind and a count, and
+some forty callers (net extraction, the generated-cell pin check, Place Site Parts, the renderer) read the names from
+there. A count does not say which ends are shorts and which are sites, so the role is the plan's site on the pin, which
+the readout lists (`E3: C 1.5 pF`) and Place Site Parts acts on. `EditableSchematic.PortCount` reads N, Form, Feed and
+Ends as written (`CoupledArrayPlan.PinCountOf`); an expression in any of them is the default part's five pins, as MWPD's
+N is. The catalogue says the count follows those four (`PortCountParameter`), and a netlist drawn back as a schematic
+keeps the line's own parameters rather than inferring a count from its nets. The symbol puts 1 and 2 at the sides and the end pins alternately along the top and the bottom, each row as far
+from the middle as it is wide, so a shunt part placed on each stands straight out.
+
+**Ends in the model, and why.** Open ends are each one strip's `PlanOpen`. The coupled form exists only for a symmetric
+pair (`PlanOpen` with S, MCLIN's modes); an array's neighbouring open ends come in runs of any length and width (a
+combline's every far end, a pseudo-interdigital pair's open ends), so pairing them would model some ends one way and the
+rest another. Open-end nodes are numbered first of the internal nodes, to be eliminated last. A join's corners, its
+wall's coupling to the ends it passes, and a tap's junction are not modelled.
+
+**Shared changes.** `HasSiteFootprint` now means "takes a `Footprint` for its site parts" (MWPD, MCBL, MCLA) and
+`SetsSiteSpan` "and its `Gap` is that land's span" (MWPD, MCBL): a coupled array's sites are shunt and have no span, so
+its `Footprint` only chooses the capacitors' land. Form, Feed and Ends are words through the elaborator and Update
+Layout, as `Corner` is; Ends drops its spaces on the way, as the netlist does, so LVS reads one word on both sides.
+
+Refusals: `device.coupledarray.*` — `strips-too-few`, `ends-with-form`, `ends-unreadable`, `ports-misplaced` (a P with
+the tapped feed, or not exactly one on each outer strip with the coupled one), `join-unpaired`, `groups-of-four`
+(pseudo-interdigital with resonating strips not in fours), `tap-ungrounded`, `tap-outside`, `spec-not-positive`,
+`name-unknown`; a cross-section MCLINN cannot solve is MCLINN's own refusal.
+
+**Tests.** `CoupledArrayPlanTests` (each form's pattern, and the same pattern as Custom the same plan; pins and sites;
+the taps' cuts, the open ends first, the fold's place; every refusal). `CoupledArrayTests`: every form, and a custom
+pattern of every end kind, is MCLINN, MLIN and its ends' capacitances wired by hand to 1e-9 (about 1e-15), read from
+the part's netlist line; a 0.1 dB, three-resonator interdigital filter designed from Matthaei's closed forms — g-values,
+each line's admittance to ground and each pair's mutual, and the widths and gaps whose field-solved characteristic
+admittance has them — is the design itself in air (centre within 0.2 %, ripple 0.1 dB), and on 20 mil RO4350B lands
+within 1 % of its centre with its ripple band within 8 %, at the 0.7 dB it actually ripples to (microstrip's modes are
+not TEM, and the quasi-static model keeps each at its own velocity); a tapped combline's loading C from the textbook's
+C = Y·cot θ0/ω0, with Y and θ0 the strip's own with its neighbours grounded, sets its centre within 0.1 %, and 20 % more C
+moves it down 7 %; Hong and Lancaster's own pseudo-interdigital board (three groups, 1.27 mm of εr 10.8, their Fig. 2's
+dimensions) passes 0.98–1.14 GHz against their 15 % at 1.1 GHz, its centre 4 % low and its width on the paper's, with
+the attenuation pole they report just above the band. `CoupledArrayPartTests`: registration, pins following the ends, artwork, Place Site Parts filling a
+combline's vias and capacitors, and a via-less pseudo-interdigital group (two interleaved hairpins) built and passing
+on the GaAs die.
+`F16-coupled-array-interdigital`, `F16b-…-combline`, `F16c-…-pseudo` and `F16d-…-custom` run each form through Update
+Layout and LVS with its vias and capacitors placed by Place Site Parts, and one changed parameter on each (`Tap`, `C`,
+`L`, `Ends`) is exactly one `lvs.property.mismatch`.
+
+**Possible enhancements.**
+
+1. **Coupled open ends for N strips.** The open-end Δl generalised to N strips from the solved cross-section (§3.6,
+   enhancement 3). Why: a combline's loaded ends and an interdigital array's open ends sit beside their neighbours', and
+   the single-strip Δl misses the mutual fringing that sets the resonators' frequency to about a percent.
+2. **The tap's junction.** An MTEE-like junction at each tap, with the strip uncoupled over the feed's width. Why: the
+   junction's reactance pulls the end resonators' frequency and the external Q a little, most at a wide feed.
+3. **A tap per port.** `Tap[1]` and `Tap[2]`. Why: unequal source and load impedances need unequal external Qs, and one
+   `Tap` serves only a symmetric filter.
+4. **More ports for multi-line couplers.** P on any end, numbered as pins. Why: an array whose four corner ends are
+   ports is a multi-line coupler; the part allows two ports only, the filters' case.
+5. **Die parts on the sites.** A MIMCAP sized for `C[k]`, and a die via, from Place Site Parts on an MMIC stack (§6,
+   enhancement 8). Why: on a die the combline's capacitors are MIM capacitors, and today they come out ideal.
+6. **Pin names that say the role.** An instance-aware pin list (G for a via, C for a capacitor) through the symbol's
+   callers. Why: `E` pins are read from the readout; a name on the pin would say it on the schematic, at the cost of
+   letting `SymbolPortDefs` see an instance.
+7. **The synthesis seam.** A synthesis that fills N, W/S, L, Ends, Tap and C from a prototype. Why: the tests' helper
+   already goes from Matthaei's closed forms to widths and gaps through the field solver; that belongs in a tool, not
+   a test.
+
 ## 4. What a new topology costs
 
 1. `src/Core/Devices/Microstrip/<X>Plan.cs` — the pure plan (and a section kind, with one case in
@@ -559,8 +669,9 @@ for field; the drawn copper's ends and extent are the route's.
    `EditableSchematic.PortCount`, `SymbolPortDefs.For` and `BuiltInSymbols.Primitives` (§3.1).
 5. Tests: the plan against its closed form, the composite against its parts by hand, a schematic-to-layout fixture; the
    records in `LibraryCatalogTests` and `PCellGeneratorVersioningTests`.
-6. Its sites (§3.7): the plan's `Sites`; a kind with sites in `SchematicViewModel.HasSites`, and one whose site span is a
-   stored length in `MicrostripSubstrateInjection.HasSiteFootprint`. A folded line is `PlanRoute` (§3.8).
+6. Its sites (§3.7): the plan's `Sites`; a kind with sites in `SchematicViewModel.HasSites`, one whose site parts take
+   its `Footprint` in `MicrostripSubstrateInjection.HasSiteFootprint`, and one whose site span is a stored length also in
+   `SetsSiteSpan`. A folded line is `PlanRoute` (§3.8).
 7. Docs: a subsection under Dividers and couplers in `components.md`, and the example's README table.
 
 ## 5. Known limits
@@ -705,3 +816,20 @@ for field; the drawn copper's ends and extent are the route's.
 > K. S. Ang and I. D. Robertson, "Analysis and Design of Impedance-Transforming Planar Marchand Baluns," *IEEE
 > Transactions on Microwave Theory and Techniques*, vol. 49, no. 2, pp. 402–406, February 2001.
 > DOI [10.1109/22.903108](https://doi.org/10.1109/22.903108).
+
+> G. L. Matthaei, "Interdigital Band-Pass Filters," *IRE Transactions on Microwave Theory and Techniques*, vol. 10, no. 6,
+> pp. 479–491, November 1962. DOI [10.1109/TMTT.1962.1125556](https://doi.org/10.1109/TMTT.1962.1125556). The interdigital
+> form and the closed forms the coupled array's interdigital test is designed from.
+
+> R. J. Wenzel, "Exact Theory of Interdigital Band-Pass Filters and Related Coupled Band-Pass Structures," *IEEE
+> Transactions on Microwave Theory and Techniques*, vol. 13, no. 5, pp. 559–575, September 1965.
+> DOI [10.1109/TMTT.1965.1126051](https://doi.org/10.1109/TMTT.1965.1126051).
+
+> G. L. Matthaei, "Comb-Line Band-Pass Filters of Narrow or Moderate Bandwidth," *Microwave Journal*, vol. 6,
+> pp. 82–91, August 1963. A trade journal, with no DOI; the same design is in G. L. Matthaei, L. Young and E. M. T.
+> Jones, *Microwave Filters, Impedance-Matching Networks, and Coupling Structures*, ch. 10, also with no DOI:
+> [the book at the Internet Archive](https://archive.org/details/microwavefilters0000matt). The combline form.
+
+> J.-S. Hong and M. J. Lancaster, "Development of New Microstrip Pseudo-Interdigital Bandpass Filters," *IEEE Microwave
+> and Guided Wave Letters*, vol. 5, no. 8, pp. 261–263, August 1995.
+> DOI [10.1109/75.401073](https://doi.org/10.1109/75.401073). The pseudo-interdigital form.
