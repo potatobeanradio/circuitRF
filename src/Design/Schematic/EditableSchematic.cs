@@ -97,6 +97,17 @@ public static class SymbolPortDefs
             case SymbolKind.Mblc:    return [("1", -400f, -200f), ("2", 400f, -200f), ("3", 400f, 200f), ("4", -400f, 200f)];
             // MRRC: the sum port at the top, the difference port at the bottom, the outputs either side.
             case SymbolKind.Mrrc:    return [("1", 0f, -400f), ("2", -400f, 0f), ("3", 400f, 0f), ("4", 0f, 400f)];
+            // MCLC: MCLIN's pins exactly, so a placed MCLIN is swapped for the coupler without rewiring.
+            case SymbolKind.Mclc:    return [("1", -200f, -100f), ("2", 200f, -100f),
+                                             ("3", -200f,  100f), ("4", 200f,  100f)];
+            // MIDC: each pin on its own finger's row, top to bottom 1/J3/J1/3 at the left and 2/J4/J2/4 at the right,
+            // as the fingers lie on the board (1-2 and J1-J2 one conductor, J3-J4 and 3-4 the other).
+            case SymbolKind.Midc:    return [("1", -400f, -300f), ("2", 400f, -300f), ("3", -400f, 300f), ("4", 400f, 300f),
+                                             ("J1", -400f, 100f), ("J2", 400f, 100f), ("J3", -400f, -100f), ("J4", 400f, -100f)];
+            // MCBL: the input and G2 at the left, G3 at the right, and the balanced outputs 2 and 3 side by side below
+            // the middle, where the two sections' coupled strips end.
+            case SymbolKind.Mcbl:    return [("1", -600f, -100f), ("2", -100f, 200f), ("3", 100f, 200f),
+                                             ("G2", -600f, 100f), ("G3", 600f, 100f)];
             // The MMIC passives (AA-1): horizontal, on MLIN's left/right convention, because they sit
             // in a die's lines. MIMCAP 1 = top plate, 2 = bottom plate; SPIRAL 1 = outer end, 2 = inner
             // end; AIRBRIDGE 1/2 = the landings, and 3 (below) / 4 (above) the two ends of the line it crosses.

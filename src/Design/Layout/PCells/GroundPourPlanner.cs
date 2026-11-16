@@ -60,6 +60,7 @@ public static class GroundPourPlanner
         // The planned passives (docs/design/rf-passives.md) are microstrip too: without them a ring reaching past its
         // lines, as the rat-race's half-turns do, was left off the plane.
         PassivePlanPCells.WilkinsonId, PassivePlanPCells.BranchLineId, PassivePlanPCells.RatRaceId,
+        PassivePlanPCells.CoupledLineCouplerId, PassivePlanPCells.LangeId, PassivePlanPCells.MarchandId,
     };
 
     /// <summary>The clearance ring around a via's pad where it passes through the plane, µm. A default: no

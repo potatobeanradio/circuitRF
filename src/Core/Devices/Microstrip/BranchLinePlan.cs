@@ -31,8 +31,9 @@ public sealed record BranchLineDesign(
 /// <para><b>The arms.</b> Even/odd analysis about the line between the two through lines (J. Reed and
 /// G. J. Wheeler, IRE Trans. MTT, 1956) turns each shunt arm into a λ/8 open or shorted stub on one quarter-wave
 /// line. One section: series arms of Z0/√2 and shunt arms of Z0. Two sections: series arms of Z0 and shunt arms of
-/// (1 + √2)·Z0, √2·Z0, (1 + √2)·Z0, the equal-split two-section design (Microwaves101, "Two-section branchline
-/// coupler"); matched, isolated and split 3 dB at F, as the even/odd conditions confirm. Widths are MLIN's at F;
+/// (1 + √2)·Z0, √2·Z0, (1 + √2)·Z0, the equal-split two-section design (the synthesis method is R. Levy and
+/// L. F. Lind, IEEE Trans. MTT, 1968, and M. Muraguchi, T. Yukitake and Y. Naito, IEEE Trans. MTT, 1983; these values
+/// solve its even/odd conditions); matched, isolated and split 3 dB at F, as the model checks. Widths are MLIN's at F;
 /// each arm is λg/4 in MLIN's own dispersive εeff, measured between the reference planes of the two MTEEs it
 /// joins (the through arms' at the branch's half width, the branch's at the wider through arm's half width).
 /// The shunt arms share one span between the two lines, so arms of different εeff (two sections) each take the

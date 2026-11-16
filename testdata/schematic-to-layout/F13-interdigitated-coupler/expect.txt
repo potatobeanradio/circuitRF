@@ -1,0 +1,17 @@
+# The four-finger interdigitated coupler as one part (MIDC): four strips, the ports on the outer two. Its jumpers are
+# bond wires, stood in for here by inductors with no artwork, so the layout has none and LVS names each as unmatched;
+# on a board they are a wire part, not copper in the .clay.
+lvs lvs.device.unmatched-schematic
+Info IDC1 added
+Info P1 port 1 placed at IDC1 pin 1
+Info P2 port 2 placed at IDC1 pin 2
+Info P3 port 3 placed at IDC1 pin 3
+Info P4 port 4 placed at IDC1 pin 4
+Warning W1 no layout view
+Warning W2 no layout view
+Warning W3 no layout view
+Warning W4 no layout view
+port P1 1
+port P2 2
+port P3 3
+port P4 4
