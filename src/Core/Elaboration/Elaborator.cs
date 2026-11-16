@@ -1637,6 +1637,13 @@ public sealed partial class Elaborator
                 result[ov.Name] = new Value(Unquote(ov.Expression));
                 continue;
             }
+            // A coupled-resonator filter's Shape, Profile, Feed, Form and Arrangement are names, kept as names.
+            if (ov.Name is "Shape" or "Profile" or "Feed" or "Form" or "Arrangement"
+                && inst.Reference.Equals("MCRC", StringComparison.OrdinalIgnoreCase))
+            {
+                result[ov.Name] = new Value(Unquote(ov.Expression));
+                continue;
+            }
 
             // Frequency dependence has to TERMINATE at a model that binds `freq`. Anything else is
             // asking for a single number that does not exist, and saying so here — naming the

@@ -93,6 +93,8 @@ public static class ComponentModelFactory
             BranchLineTypeName, RatRaceTypeName,
             // The coupled-line planned passives: MCLIN, MLIN and interdigitated sections, stamped the same way.
             CoupledLineCouplerTypeName, LangeTypeName, MarchandTypeName,
+            // The coupled-resonator filters: physical geometry in, every shape and form one plan of the same sections.
+            CoupledResonatorTypeName,
             // Grounded coplanar waveguide and stripline (brief-artsch-1), bound to the stackup as MLIN is.
             "CPWG", "SLIN",
             // The two vias (brief-via-component.md): a signal via changing layers, and a via to ground.
@@ -270,6 +272,8 @@ public static class ComponentModelFactory
             return CreateLangeModel(parameters);
         if (typeName.Equals(MarchandTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateMarchandModel(parameters);
+        if (typeName.Equals(CoupledResonatorTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateCoupledResonatorModel(parameters);
         if (typeName.Equals("VIA", StringComparison.OrdinalIgnoreCase))
             return new ViaModel(ReadViaGeometry(parameters, grounded: false));
         if (typeName.Equals("VIAGND", StringComparison.OrdinalIgnoreCase))
@@ -3057,6 +3061,18 @@ public static class ComponentModelFactory
                                        GetReal(parameters, "F", 1e9), GetReal(parameters, "Gap", 1e-3),
                                        SubstrateOf(parameters)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, MarchandTypeName));
+
+    /// <summary>The coupled-resonator filter's engine token (pins 1 in, 2 out).</summary>
+    public const string CoupledResonatorTypeName = "MCRC";
+
+    // MCRC: physical geometry (N, W, L and the gaps S1, S2, ..., with W_k and L_k per resonator) and the names Shape,
+    // Profile, Feed, Form and Arrangement; CoupledResonatorSpec reads them, the plan builds the filter.
+    private static MicrostripPlanModel CreateCoupledResonatorModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(CoupledResonatorPlan.Build(CoupledResonatorSpec.Read(
+                   key => parameters.TryGetValue(key, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : null,
+                   key => parameters.TryGetValue(key, out var v) && v.Kind == ValueKind.String ? v.AsString() : null),
+                   SubstrateOf(parameters)),
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, CoupledResonatorTypeName));
 
     private static MicrostripKlopfModel CreateMicrostripKlopfModel(IReadOnlyDictionary<string, Value> parameters)
     {
