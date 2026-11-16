@@ -833,6 +833,12 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MKLOPF", "klopfenstein", "klopfenstein taper", "taper", "impedance transformer"],
             ExtraCategories: [ComponentCategory.TransmissionLine]),
+        // The radial stub: one sector, or two back to back (a butterfly), on the shunt node it hangs from.
+        [SymbolKind.MRadial]      = new("MRADIAL", "MRD",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MRADIAL", "radial stub", "butterfly stub", "butterfly", "sector stub", "fan stub",
+                          "open stub", "shunt stub", "bias tee", "RF ground", "stub filter", "quarter wave"],
+            ExtraCategories: [ComponentCategory.TransmissionLine]),
         // The planned passives (docs/design/rf-passives.md): one part per topology, specs as parameters.
         [SymbolKind.Mwpd]         = new("MWPD", "WPD",
             Category: ComponentCategory.Microstrip,
@@ -1113,6 +1119,10 @@ public static class ComponentTypeRegistry
         SymbolKind.ViaGnd =>
             "One terminal, A, on FromLayer. The far end is ground: the via lands on GroundLayer.",
 
+        SymbolKind.MRadial =>
+            "One terminal, the shunt node: the middle of the sector's narrow end, where the feed line of width W meets it. "
+          + "The stub is open at its arc and returns through the ground plane.",
+
         SymbolKind.Mwpd =>
             "Not interchangeable: terminal 1 is the input and 2 and 3 the two outputs, alike by symmetry when K = 1. R2 "
           + "and R3 are the arms' ends beside outputs 2 and 3, the gap the isolation resistor goes across: put a "
@@ -1327,6 +1337,7 @@ public static class ComponentTypeRegistry
         SymbolKind.MCross        => "MCROSS",
         SymbolKind.Mtaper        => "MTAPER",
         SymbolKind.Mklopf        => "MKLOPF",
+        SymbolKind.MRadial       => ComponentModelFactory.RadialStubTypeName,
         SymbolKind.Via           => "VIA",
         SymbolKind.ViaGnd        => "VIAGND",
         SymbolKind.TestPad       => "TESTPAD",
@@ -1504,6 +1515,7 @@ public static class ComponentTypeRegistry
         or SymbolKind.ZPort or SymbolKind.Snp or SymbolKind.EmFieldData or SymbolKind.VerilogA
         or SymbolKind.Tline or SymbolKind.Mlin or SymbolKind.MBend or SymbolKind.MCurve or SymbolKind.MTee or SymbolKind.MCross
         or SymbolKind.Mtaper or SymbolKind.Mklopf or SymbolKind.MMiter or SymbolKind.MGap or SymbolKind.Cpwg or SymbolKind.Slin
+        or SymbolKind.MRadial
         or SymbolKind.CLine or SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine
         or SymbolKind.Via or SymbolKind.ViaGnd or SymbolKind.WBond or SymbolKind.Match
         or SymbolKind.MimCap or SymbolKind.Spiral or SymbolKind.OctSpiral or SymbolKind.Tfr or SymbolKind.Airbridge
@@ -1764,6 +1776,16 @@ public static class ComponentTypeRegistry
         (SymbolKind.MGap, "SignalLayer") => "The conductor the two lines are on. Empty: the technology's top conductor.",
         (SymbolKind.MGap, "GroundReference") => "The plane under the lines. Empty: the nearest ground-designated conductor "
                                               + "below the signal layer.",
+        (SymbolKind.MRadial, "W") => "Width of the feed line the stub hangs from: the sector's narrow end is this wide.",
+        (SymbolKind.MRadial, "Ro") => "Radius of the open arc, measured from the sector's apex (behind the narrow end). "
+                                    + "About a quarter wavelength past the narrow end puts the stub's short circuit at the "
+                                    + "frequency of interest.",
+        (SymbolKind.MRadial, "Angle") => "The sector's angle, up to 180°. Wider is a lower impedance and a broader null.",
+        (SymbolKind.MRadial, "Sides") => "1: one sector. 2: a butterfly, a second sector back to back with the first on the "
+                                       + "same node, two stubs in parallel.",
+        (SymbolKind.MRadial, "SignalLayer") => "The conductor the stub is on. Empty: the technology's top conductor.",
+        (SymbolKind.MRadial, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below "
+                                                 + "the signal layer.",
         (SymbolKind.Slin, "W") => "Strip width.",
         (SymbolKind.Slin, "L") => "Line length.",
         (SymbolKind.Slin, "SignalLayer") => "The conductor the strip is on. Its planes are the nearest ground-designated conductors "
@@ -1805,6 +1827,12 @@ public static class ComponentTypeRegistry
           + "fits of the even- and odd-mode end capacitances, stated over 0.5 <= W/h <= 2, 0.1 <= S/W <= 1 and "
           + "2.5 <= er <= 15. Lossless and frequency-independent. The layout draws no copper: the lines either side "
           + "are the metal, and the gap between their ends is exactly S.",
+        SymbolKind.MRadial =>
+            "The radial-line closed form (Bessel functions of the sector's cylindrical wave), open at the arc, with the "
+          + "permittivity of MLIN at the sector's mean chord and the arc moved out by that line's open-end length; "
+          + "conductor and dielectric loss in the wavenumber. MLIN's range applies to that chord. One mode: past an arc of "
+          + "a guided wavelength the run says so. The feed junction and the side edges' fringing are not modelled. A "
+          + "butterfly is two sectors in parallel.",
         SymbolKind.Mwpd =>
             "MTEE and MCURVE, the pieces the layout draws: an input tee, two 180° curves of √2·Z0 and two output tees, "
           + "stamped together and reduced to the five pins. Each arm is λg/4 at F between the junctions' reference planes. "
@@ -3914,6 +3942,15 @@ public static class ComponentTypeRegistry
                         new("M",     "0.5", "",    true, UnitDimension.None),
                         .. SignalGroundLayerParams];
 
+            // MRadial: W is the feed's 50 ohm width (2.9 mm on the FR-4 baseline) and Ro ten of them from the apex;
+            // MicrostripSubstrateInjection rewrites both on the technology at placement. 60 deg, one sector.
+            case SymbolKind.MRadial:
+                return [new("W",     "2.9", "mm",  true, UnitDimension.Length),
+                        new("Ro",    "29",  "mm",  true, UnitDimension.Length),
+                        new("Angle", "60",  "deg", true, UnitDimension.Angle),
+                        new("Sides", "1",   "",    true, UnitDimension.None),
+                        .. SignalGroundLayerParams];
+
             // MGap: end-to-end gap — W (both lines), S (the gap). 2.9 mm is the FR-4 baseline's 50-ohm line and
             // 1.5 mm about half of it, the middle of the closed form's S/W range; MicrostripSubstrateInjection
             // rewrites W to the technology's 50-ohm width and S to half of it at placement.
@@ -4266,6 +4303,8 @@ public static class ComponentTypeRegistry
             case "MTP":      kind = SymbolKind.Mtaper;       return true;
             case "MKLOPF":
             case "MKF":      kind = SymbolKind.Mklopf;       return true;
+            case "MRADIAL":
+            case "MRD":      kind = SymbolKind.MRadial;      return true;
             // "FET"/"FETSDD" are deliberately NOT mapped here (R-hk-19: the library FET was hard-
             // removed with no compatibility alias) — they fall through to Enum.TryParse below,
             // which fails since "FetSdd" no longer exists, so a typed "FET" correctly does not parse.

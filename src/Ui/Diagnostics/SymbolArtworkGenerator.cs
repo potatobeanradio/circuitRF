@@ -119,6 +119,7 @@ public static class SymbolArtworkGenerator
         (SymbolKind.MTee,            "mtee",              3),
         (SymbolKind.MCross,          "mcross",            4),
         (SymbolKind.Mtaper,          "mtaper",            2),
+        (SymbolKind.MRadial,         "mradial",           1),
         (SymbolKind.Mklopf,          "mklopf",            2),
         // The two vias (brief-via-component.md).
         (SymbolKind.Via,             "via",               2),

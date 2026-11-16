@@ -104,6 +104,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _mcurve        = BuildMCurve();
     private static readonly Symbol _mmiter        = BuildMMiter();
     private static readonly Symbol _mgap          = BuildMGap();
+    private static readonly Symbol _mradial       = BuildMRadial();
     private static readonly Symbol _mtee          = BuildMTee();
     private static readonly Symbol _mcross        = BuildMCross();
     private static readonly Symbol _mtaper        = BuildMtaper();
@@ -257,6 +258,7 @@ public static class BuiltInSymbols
             case SymbolKind.MCurve:     return _mcurve;
             case SymbolKind.MMiter:     return _mmiter;
             case SymbolKind.MGap:       return _mgap;
+            case SymbolKind.MRadial:    return _mradial;
             case SymbolKind.MTee:       return _mtee;
             case SymbolKind.MCross:     return _mcross;
             case SymbolKind.Mtaper:     return _mtaper;
@@ -2509,6 +2511,13 @@ public static class BuiltInSymbols
         RRect( 90, 0, 120, 60, 12),   // stub starting at the gap's right edge (x = +30)
         L( 150,   0,  200,   0),
     ], SymbolKind.MGap);
+
+    // MRadial — a 60° sector fanning out to the right from a lead on MLIN's left pin, its narrow end the lead's width and
+    // its arc drawn as five points: the glyph says "radial stub" whatever the instance's Angle and Sides.
+    private static Symbol BuildMRadial() => Sym([
+        L(-200,   0, -150,   0),
+        Poly(false, -150,-25,  118,-180,  154,-93,  167,0,  154,93,  118,180,  -150,25),
+    ], SymbolKind.MRadial);
 
     // Through line (pins 1/2, left/right) + branch (pin 3, DOWN — +Y is down in this codebase) —
     // R-pc-3's own "pin 1 origin, through +X to pin 2, branch +Y to pin 3" convention. The body is

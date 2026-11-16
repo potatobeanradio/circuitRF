@@ -178,6 +178,8 @@ public static class SymbolPortDefs
             case SymbolKind.MMiter:  return [("1", -200f, 0f), ("2", 0f, 200f)];
             // MGap: MLIN's left/right pins — a gap sits in a line, so it wires the way a line does.
             case SymbolKind.MGap:    return [("1", -200f, 0f), ("2", 200f, 0f)];
+            // MRadial: MLIN's left pin, the sector fanning out to the right; turned, it hangs off a tee's branch.
+            case SymbolKind.MRadial: return [("1", -200f, 0f)];
             // MTee: through line left/right (pins 1/2), branch on the bottom (pin 3) — R-pc-3's own
             // "pin 1 origin, through +X to pin 2, branch +Y to pin 3" convention, mapped onto the
             // schematic canvas with the branch drawn downward (+Y is down in this codebase).

@@ -724,6 +724,9 @@ public enum SymbolKind
     /// Gap between its two quarter-wave sections (MarchandBalunPlan). Pins 1 unbalanced, 2 and 3 balanced, G2 and G3 the
     /// strips' grounded ends — for ordinary vias to ground, not part of the part.</summary>
     Mcbl,
+    /// <summary>Microstrip radial stub (engine "MRADIAL"): W (the feed's width), Ro (the arc's radius from the sector's
+    /// apex), Angle and Sides (1, or 2 for a butterfly). One pin, the shunt node at the sector's narrow end.</summary>
+    MRadial,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

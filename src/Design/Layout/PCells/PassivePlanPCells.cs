@@ -7,8 +7,8 @@ namespace CircuitRF.Design.Layout.PCells;
 /// The planned passives' artwork (docs/design/rf-passives.md). A generator builds its part's plan in Core —
 /// the plan its model stamps — and <see cref="Draw"/> draws every section through the EXISTING part's own
 /// generator (<see cref="MTeePCell"/>, <see cref="MCurvePCell"/>, <see cref="MlinPCell"/>,
-/// <see cref="CoupledLinePCells"/>, <see cref="MMiterPCell"/>, <see cref="MBendPCell"/>; an interdigitated section's
-/// strips each by <see cref="MlinPCell"/>), turned and
+/// <see cref="CoupledLinePCells"/>, <see cref="MMiterPCell"/>, <see cref="MBendPCell"/>, <see cref="MRadialPCell"/>; an
+/// interdigitated section's strips each by <see cref="MlinPCell"/>), turned and
 /// moved to the section's pose. The
 /// copper is therefore the copper those parts draw on their own, piece for piece, and the pins are those
 /// parts' own pins wherever a section ends on one of the passive's pins — never a second rounding of where
@@ -141,6 +141,10 @@ public static class PassivePlanPCells
                     {
                         ["W"] = b.W, ["Angle"] = b.AngleDeg, ["Miter"] = (double)MicrostripBendMiter.None,
                     }, technology, layerSelection),
+                PlanRadialStub r => MRadialPCell.Generate(new Dictionary<string, PCellValue>
+                {
+                    ["W"] = r.W, ["Ro"] = r.Ro, ["Angle"] = r.AngleDeg, ["Sides"] = (double)r.Sides,
+                }, technology, layerSelection),
                 _ => throw new NotSupportedException(section.GetType().Name),
             };
 
