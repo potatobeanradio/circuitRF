@@ -973,6 +973,43 @@ public sealed partial class C3dEditorViewModel
     }
 
     /// <summary>
+    /// brief-hzn-20 R-hzn20-4 — how many modes a hollow-guide wave port carries, 1 or 2: one undo entry. Two modes are normalised to
+    /// themselves, so the port's Z0 becomes "mode" in the same entry; the numbers the second mode takes must be free. Returns why it
+    /// was refused, or null.
+    /// </summary>
+    public string? SetPortModes(C3dPort port, int modes)
+    {
+        if (modes == port.Modes) return null;
+        if (modes is < 1 or > 2) return "A hollow guide's port carries 1 or 2 modes in this version.";
+        if (port.Kind != Em3dPortKind.Wave || C3dPorts.HasTerminals(port) || port.Floquet is not null)
+            return $"{C3dPorts.Label(port)} is not a hollow guide's wave port; only one carries several modes.";
+        var taken = Document.Ports.Where(q => !ReferenceEquals(q, port)).SelectMany(C3dPorts.Numbers).ToHashSet();
+        if (Enumerable.Range(port.Number, modes).FirstOrDefault(taken.Contains) is int clash and > 0)
+            return $"Port {clash} is already taken; {C3dPorts.Label(port)}'s modes are ports {port.Number} to {port.Number + modes - 1}. Renumber the other port first.";
+        int index = Document.Ports.IndexOf(port);
+        ChangeRecords($"Modes of {C3dPorts.Label(port)}", d =>
+        {
+            var p = d.Ports[index];
+            p.Modes = modes;
+            if (modes > 1) p.Z0 = C3dPorts.ModeZ0;
+        });
+        return null;
+    }
+
+    /// <summary>brief-hzn-20 R-hzn20-4 — a wave port's reference plane moved <paramref name="um"/> µm into the structure (0: on its
+    /// face). One undo entry; null on success.</summary>
+    public string? SetPortDeembed(C3dPort port, double um)
+    {
+        if (um == port.DeembedUm) return null;
+        if (!double.IsFinite(um)) return "A de-embedding distance is a length.";
+        if (port.Kind != Em3dPortKind.Wave || port.Floquet is not null)
+            return $"{C3dPorts.Label(port)} is not a wave port; only a wave port's reference plane moves along its guide.";
+        int index = Document.Ports.IndexOf(port);
+        ChangeRecords($"De-embed {C3dPorts.Label(port)}", d => d.Ports[index].DeembedUm = um);
+        return null;
+    }
+
+    /// <summary>
     /// Renumbers one port (not a wave port with terminals, whose terminals carry the numbers): a whole number from 1 that
     /// no other port or terminal uses. A name that was the default for the old number (<c>P3</c>) follows it; a name the
     /// user gave is kept. One undo entry. Returns why it was refused, or null.
@@ -985,8 +1022,9 @@ public sealed partial class C3dEditorViewModel
             return $"'{text.Trim()}' is not a port number: a whole number from 1.";
         int old = port.Number;
         if (n == old) return null;
-        if (Document.Ports.Where(q => !ReferenceEquals(q, port)).SelectMany(C3dPorts.Numbers).Contains(n))
-            return $"Port {n} is already taken; each port has its own number.";
+        // brief-hzn-20 — a port of several modes takes a number for each
+        if (Document.Ports.Where(q => !ReferenceEquals(q, port)).SelectMany(C3dPorts.Numbers).FirstOrDefault(m => m >= n && m < n + Math.Max(1, port.Modes)) is int used and > 0)
+            return $"Port {used} is already taken; each port has its own number.";
         ChangeRecords($"Renumber port {old} to {n}", d =>
         {
             if (port.Name == $"P{old}") port.Name = $"P{n}";
@@ -1736,6 +1774,13 @@ public sealed partial class C3dEditorViewModel
             if (!C3dPorts.Numbers(r.Port).Any(n => IsPortShown(C3dPorts.ProblemName(n)))) continue;
             // brief-em3d-114 R-em3d114-3c — each terminal's number at the head of its arrow (the scene draws the arrow, reference
             // to conductor, in the port colour)
+            // brief-hzn-20 R-hzn20-4 — a hollow guide of several modes: one label at its centre, naming the port and its modes (each
+            // mode's polarity line is drawn by the scene)
+            if (r.Terminals is { } ms && ms[0].HollowMode is { } hm)
+            {
+                overlay.Labels.Add((Centre(ms[0].Min, ms[0].Max), $"{C3dPorts.Label(r.Port)} ({hm.Modes} modes)"));
+                continue;
+            }
             if (r.Terminals is { } ts)
             {
                 foreach (var t in ts.Where(t => IsPortShown(t.Name) && t.VoltagePath is not null))

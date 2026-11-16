@@ -295,7 +295,8 @@ public static class C3dPorts
 
     /// <summary>The result-port numbers <paramref name="p"/> takes: its terminals', or its own.</summary>
     public static IReadOnlyList<int> Numbers(C3dPort p) => p.Terminals is { Count: > 0 } t ? [.. t.Select(x => x.Number)]
-        : p.Floquet is { Modes: > 1 } f ? [.. Enumerable.Range(p.Number, f.Modes)] : [p.Number];   // brief-hzn-16 — a mode is a port
+        : p.Floquet is { Modes: > 1 } f ? [.. Enumerable.Range(p.Number, f.Modes)]   // brief-hzn-16 — a mode is a port
+        : p.Floquet is null && p.Modes > 1 ? [.. Enumerable.Range(p.Number, p.Modes)] : [p.Number];   // brief-hzn-20 — a hollow guide's too
 
     /// <summary>Every result-port number the document's ports and terminals take, in document order.</summary>
     public static IEnumerable<int> UsedNumbers(C3dDocument doc) => doc.Ports.SelectMany(Numbers);
@@ -325,7 +326,7 @@ public static class C3dPorts
             string? clash = null;
             var entries = p.Terminals is { Count: > 0 } ts
                 ? ts.Select(t => (t.Number, Who: TerminalLabel(p, t), Upper: "T" + TerminalLabel(p, t)[1..])).ToList()
-                : p.Floquet is { Modes: > 1 }
+                : p.Floquet is { Modes: > 1 } || p.Modes > 1
                     ? Numbers(p).Select((n, k) => (n, Who: $"mode {k + 1} of {Label(p)}", Upper: $"Mode {k + 1} of {Label(p)}")).ToList()
                     : [(p.Number, Label(p), Label(p))];
             foreach (var (n, who, upper) in entries)
@@ -349,13 +350,76 @@ public static class C3dPorts
     /// is), and no run takes it.</summary>
     public static C3dPortResult Resolve(C3dPort port, int dbuPerMicron, C3dPortContext context)
     {
-        var r = ResolveDrawn(port, dbuPerMicron, context);
+        if ((ModesRefusal(port) ?? DeembedRefusal(port)) is { } shape) return Refuse(port, shape);
+        var r = Deembedded(ResolveDrawn(port, dbuPerMicron, context), port);
         if (!port.Model || r.Resolved is null || context.NotModelled.Count == 0) return r;
         foreach (var p in r.All)
             foreach (var (conductor, positive) in new[] { (p.PositiveObject, true), (p.NegativeObject, false) })
                 if (context.NotModelled.Contains(conductor))
                     return r with { Resolved = null, Terminals = null, Refusal = C3dModelled.PortConductorRefusal(port, conductor, positive) };
         return r;
+    }
+
+    /// <summary>
+    /// brief-hzn-20 R-hzn20-1 — what a port's <see cref="C3dPort.Modes"/> may not be: fewer than 1, or above 1 on anything but a wave
+    /// port the reader can find a hollow guide in (stated ends, a stated path, terminals and a Floquet port are each refused by
+    /// name, and so is a reference impedance: each mode is normalised to itself), or above 2. Null when it is fine.
+    /// </summary>
+    private static string? ModesRefusal(C3dPort port)
+    {
+        string label = Label(port);
+        if (port.Modes < 1) return $"{label} has {port.Modes} modes; a port carries 1 or more.";
+        if (port.Modes == 1) return null;
+        if (port.Kind != Em3dPortKind.Wave)
+            return $"{label} is a lumped port with {port.Modes} modes. A gap carries no modes; a port of several modes is a hollow guide's " +
+                   "wave port. Remove Modes, or make it a wave port.";
+        if (port.Floquet is not null)
+            return $"{label} states both Modes and Floquet. A Floquet port's modes are its Floquet Modes: remove Modes.";
+        if (port.Terminals is not null)
+            return $"{label} states both Modes and Terminals. A port of several modes is a hollow guide's, which has no terminals: remove one.";
+        if (port.Modes > 2)
+            return $"{label} has {port.Modes} modes, and circuitRF reads at most two modes of a hollow guide in this version (TE10, and the " +
+                   "lower of TE01 and TE20). Set Modes to 1 or 2.";
+        if (port.Positive is not null || port.Negative is not null)
+            return $"{label} has {port.Modes} modes and states its ends; a hollow guide's port states neither. Remove Positive and Negative.";
+        if (port.VoltagePath is not null)
+            return $"{label} has {port.Modes} modes and states a VoltagePath; each mode's polarity line is the reader's, through a maximum " +
+                   "of its field. Remove VoltagePath (Flip reverses every mode's).";
+        if (!IsModeZ0(port.Z0))
+            return $"{label} has {port.Modes} modes and its Z0 is {port.Z0} Ω; each mode of a port of several modes is normalised to " +
+                   "itself. Set Z0 to \"mode\".";
+        return null;
+    }
+
+    /// <summary>brief-hzn-20 R-hzn20-2 — what a port's <see cref="C3dPort.DeembedUm"/> may not be on: a lumped port (its reference
+    /// is its sheet) or a Floquet port; and it is a finite number. Null when it is fine.</summary>
+    private static string? DeembedRefusal(C3dPort port)
+    {
+        if (port.DeembedUm == 0) return null;
+        string label = Label(port);
+        if (!double.IsFinite(port.DeembedUm)) return $"{label}'s DeembedUm is {port.DeembedUm}; it is a number of micrometres.";
+        if (port.Kind != Em3dPortKind.Wave)
+            return $"{label} is a lumped port with DeembedUm {Fmt(port.DeembedUm * 1e-6)}. A lumped port's S-parameters are referred to its sheet, " +
+                   "and only a wave port's reference plane moves along its guide. Remove DeembedUm, or make it a wave port.";
+        if (port.Floquet is not null)
+            return $"{label} is a Floquet port with DeembedUm {Fmt(port.DeembedUm * 1e-6)}; circuitRF moves a Floquet port's reference plane in no " +
+                   "version yet. Remove DeembedUm.";
+        return null;
+    }
+
+    /// <summary>brief-hzn-20 R-hzn20-2 — every neutral port <paramref name="r"/> lowers to, its reference plane moved
+    /// <see cref="C3dPort.DeembedUm"/> into the structure.</summary>
+    private static C3dPortResult Deembedded(C3dPortResult r, C3dPort port)
+    {
+        if (port.DeembedUm == 0 || r.Resolved is null) return r;
+        double m = port.DeembedUm * 1e-6;
+        Em3dPort Shift(Em3dPort p) => p with { ReferencePlane = p.ReferencePlane with { ShiftM = m } };
+        return r with
+        {
+            Resolved = Shift(r.Resolved),
+            Terminals = r.Terminals is { } ts ? [.. ts.Select(Shift)] : null,
+            Reason = r.Reason + $"; its reference plane moved {Fmt(port.DeembedUm * 1e-6)} µm {(port.DeembedUm > 0 ? "into the structure" : "out of it")}",
+        };
     }
 
     private static C3dPortResult ResolveDrawn(C3dPort port, int dbuPerMicron, C3dPortContext context)
@@ -1080,6 +1144,11 @@ public static class C3dPorts
             // brief-hzn-11 R-hzn11-2 — one closed metal boundary round the region: a hollow guide, read before any two-conductor reading
             if (HollowGuide(port, label, z0, face, found, feet, contacts, ctx, normalAxis, h, uDir, vDir, u0, v0, u1, v1, min, max, P) is { } hollow)
                 return hollow;
+            // brief-hzn-20 — several modes are a hollow guide's
+            if (port.Modes > 1)
+                return Refuse(port, $"{label} has {port.Modes} modes, and no hollow guide closes round its region of the {face} face " +
+                                    $"(it meets {(found.Count == 0 ? "nothing" : string.Join(", ", found.Select(n => $"'{n}'")))}). A port of " +
+                                    "several modes is a hollow guide's: one metal boundary round a rectangular opening. Set Modes to 1.", contacts);
             if (found.Count > 2 && found.Count(n => !n.StartsWith("airbox/", StringComparison.Ordinal)) == 2)
             {
                 // brief-em3d-121 D1 — the stored reading stands (the reader never invents terminals); the gesture's is named
@@ -1219,6 +1288,10 @@ public static class C3dPorts
         else return null;
 
         double wu = opening.U1 - opening.U0, wv = opening.V1 - opening.V0;
+        if (port.Modes > 1 && Math.Abs(wu - wv) <= tol)
+            return Refuse(port, $"{label} is a hollow guide of {port.Modes} modes whose opening is square ({Fmt(wu)} µm a side): TE10 and " +
+                                "TE01 have one cutoff, the modes are degenerate, and which field each port carries is undefined. Make one " +
+                                "side longer than the other.", contacts);
         if (Math.Abs(wu - wv) <= tol)
             return Refuse(port, $"{label} is a hollow guide whose opening is square ({Fmt(wu)} µm a side): its two lowest modes have one " +
                                 "cutoff, so a port of one mode cannot say which it carries. Make one side longer than the other.", contacts);
@@ -1249,6 +1322,8 @@ public static class C3dPorts
         var centre = new Point3((min.X + max.X) / 2, (min.Y + max.Y) / 2, (min.Z + max.Z) / 2);
         double sign = face.EndsWith("min", StringComparison.Ordinal) ? 1 : -1;
         var inward = new Point3(axis == 0 ? sign : 0, axis == 1 ? sign : 0, axis == 2 ? sign : 0);
+        if (port.Modes > 1)
+            return HollowModes(port, label, face, contacts, walls, opening, broadU, P, uDir, min, max, centre, inward, axis);
         var d = Geometry3.Sub(to, from);
         double len = Math.Sqrt(Geometry3.Dot(d, d));
         var resolved = new Em3dPort(port.Number, ProblemName(port.Number), "", "", min, max,
@@ -1265,6 +1340,63 @@ public static class C3dPorts
         static string Names(IReadOnlyList<string> n)
             => string.Join(", ", n.Take(n.Count - 1).Select(x => x["airbox/".Length..])) + " and " + n[^1]["airbox/".Length..];
         static int AxisOf(Point3 dir) => Math.Abs(dir.X) > 0.5 ? 0 : Math.Abs(dir.Y) > 0.5 ? 1 : 2;
+    }
+
+    /// <summary>
+    /// brief-hzn-20 R-hzn20-1 — a hollow guide of two modes, one neutral wave port per mode numbered from the port's own, sharing its
+    /// face group and rectangle, each normalised to its mode. Mode 1 is TE10 across the broad side; mode 2 the lower of TE01 (cutoff
+    /// set by the narrow side b) and TE20 (by half the broad side a / 2), refused by name when the two agree to a part in 10⁴ — they
+    /// are then degenerate. Each mode's polarity line runs through a maximum of its transverse field from the lower wall to the higher:
+    /// TE10 across the narrow side at the broad side's centre, TE01 across the broad side at the narrow side's centre, TE20 across the
+    /// narrow side at a quarter of the broad side. Flip reverses every line.
+    /// </summary>
+    private static C3dPortResult HollowModes(C3dPort port, string label, string face, IReadOnlyList<(string, IReadOnlyList<string>)> contacts,
+                                             string walls, (double U0, double V0, double U1, double V1) o, bool broadU,
+                                             Func<double, double, Point3> P, Point3 uDir, Point3 min, Point3 max, Point3 centre, Point3 inward,
+                                             int axis)
+    {
+        double a = broadU ? o.U1 - o.U0 : o.V1 - o.V0, b = broadU ? o.V1 - o.V0 : o.U1 - o.U0;
+        if (Math.Abs(b - a / 2) <= 1e-4 * Math.Max(b, a / 2))
+            return Refuse(port, $"{label} is a hollow guide of 2 modes {Fmt(a)} × {Fmt(b)} µm, whose narrow side is half its broad side: TE01 " +
+                                "and TE20 have one cutoff, the second mode is degenerate, and which field its port carries is undefined. Make " +
+                                "the narrow side longer or shorter than half the broad side.", contacts);
+        bool te01 = b > a / 2;
+        // a line in the opening's own (broad, narrow) coordinates, 0..1 along each: mapped to (u, v)
+        Point3 At(double fb, double fn) => broadU ? P(o.U0 + fb * (o.U1 - o.U0), o.V0 + fn * (o.V1 - o.V0))
+                                                   : P(o.U0 + fn * (o.U1 - o.U0), o.V0 + fb * (o.V1 - o.V0));
+        var modes = new (string Name, double CutoffM, Point3 From, Point3 To, string Where)[]
+        {
+            ("TE10", a, At(0.5, 0), At(0.5, 1), "across the narrow side at the broad side's centre"),
+            te01 ? ("TE01", b, At(0, 0.5), At(1, 0.5), "across the broad side at the narrow side's centre")
+                 : ("TE20", a / 2, At(0.25, 0), At(0.25, 1), "across the narrow side at a quarter of the broad side"),
+        };
+        // P1_M1 as Hertzon names a port's modes: the port's name, or P and its number when it has none (or only a number)
+        string stem = port.Name is { Length: > 0 } n && !n.All(char.IsAsciiDigit) ? n : $"P{(port.Name.Length > 0 ? port.Name : port.Number)}";
+        var list = new List<Em3dPort>(modes.Length);
+        for (int k = 0; k < modes.Length; k++)
+        {
+            var (name, cutoff, from, to, _) = modes[k];
+            if (port.Flip) (from, to) = (to, from);
+            var d = Geometry3.Sub(to, from);
+            double len = Math.Sqrt(Geometry3.Dot(d, d));
+            int number = port.Number + k;
+            list.Add(new Em3dPort(number, ProblemName(number), "", "", min, max, len > 0 ? new Point3(d.X / len, d.Y / len, d.Z / len) : uDir,
+                                  Complex.One, new Em3dReferencePlane(centre, inward, 0))
+            {
+                Kind = Em3dPortKind.Wave,
+                VoltagePath = new Em3dSegment(from, to),
+                HollowBroadM = a,
+                HollowMode = new Em3dHollowMode(k + 1, modes.Length, name, cutoff),
+                FaceGroup = port.Number,
+                FaceGroupLabel = label,
+                SourceLabel = $"{stem}_M{k + 1}",
+                ModeNormalised = true,
+            });
+        }
+        string reason = $"{walls}: a hollow guide {Fmt(a)} × {Fmt(b)} µm of 2 modes, ports {port.Number} and {port.Number + 1}: " +
+                        string.Join("; ", modes.Select((m, k) => $"mode {k + 1} {m.Name}, its polarity line {m.Where}")) +
+                        (port.Flip ? "; Flip reverses each" : "");
+        return new C3dPortResult(port, list[0], null, contacts, reason) { Terminals = list };
     }
 
     /// <summary>

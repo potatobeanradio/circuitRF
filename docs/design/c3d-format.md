@@ -329,6 +329,22 @@ Rules a reader must apply:
     - A sweep point below the lowest mode's cutoff, c/(2a·√(εr·μr)) in the face's material, is refused before
       meshing.
     - EMerge and Palace run it. openEMS refuses it, naming the port.
+    - **`Modes`** (brief-hzn-20; an integer, 1 when omitted, written only above 1) gives a hollow guide's port two modes. Its
+      modes are ports of the result numbered from its `Number`, in cutoff order: mode 1 TE10, mode 2 whichever of TE01 (cutoff set
+      by the narrow side b) and TE20 (by half the broad side, a/2) is cut off lower. A run names them `P1_M1`, `P1_M2` (the
+      port's name, or P and its number) in the Touchstone header and the result's port axis.
+      - Each mode is normalised to itself, so `Z0` is `"mode"`. Its polarity line runs through a maximum of its field, from the
+        lower wall to the higher: TE10 across the narrow side at the broad side's centre, TE01 across the broad side at the narrow
+        side's centre, TE20 across the narrow side at a quarter of the broad side. `Flip` reverses every line; a stated
+        `VoltagePath`, `Positive`/`Negative`, `Terminals` or `Floquet` beside `Modes` is refused.
+      - Refused by name: more than two modes, a square opening, b = a/2 to a part in 10⁴ (TE01 and TE20 degenerate), a port
+        that is not a hollow guide, and a sweep point below either mode's cutoff.
+      - EMerge runs it: one wave port of that many modes, each absorbed with its own propagation constant, each checked to be
+        the mode named and signed by its own line. Palace and openEMS refuse it.
+- **`DeembedUm`** (brief-hzn-20; micrometres, written only when not 0) moves a wave port's reference plane into the structure:
+  each mode's S is multiplied by e^{γd} with its own solved γ, so a positive distance removes that much guide. EMerge and Palace
+  apply it. A lumped port's reference is its sheet, so a lumped port with it is refused, and so is a Floquet port; a terminal
+  port's is refused by the solvers that run terminals, as before.
 - **Numbering.** Port numbers are unique across ports and terminals. A run's result numbers the modelled ports 1…N in
   `Number` order.
 
@@ -440,7 +456,8 @@ instead of being folded into Euler angles.
 
 | Construct | Where |
 |---|---|
-| Multi-mode wave port | `Ports[]` gains `Modes` (int, default 1) |
+| Multi-mode wave port | **Built** for a hollow guide's two modes (brief-hzn-20): `Ports[]` `Modes` (§7) |
+| Wave port de-embedding | **Built** (brief-hzn-20): `Ports[]` `DeembedUm` (§7) |
 | Floquet port | **Built** (brief-hzn-16): a wave port with `Floquet` {`Modes`, `Er`} (§7), not a new `Kind`, so it shares the wave port's region, numbering and mode normalisation |
 | Incident plane wave | **Built** (brief-hzn-12): the view's `PlaneWaves` records (§7), stated as two vectors rather than the angles proposed here, since angle conventions differ between tools and one read in another's convention is a silent error |
 | Impedance surface | `FaceBoundaries[]` `Kind: "Impedance"` with `R` and `X` (Ω/sq) as expressions |

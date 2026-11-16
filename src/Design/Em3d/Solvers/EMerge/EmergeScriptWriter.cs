@@ -273,7 +273,21 @@ public static partial class EmergeScriptWriter
             // to its mode keeps EMerge's S as it is
             if (p.Hollow) e.Key("hollow").Bool(true);
             if (p.ModeNormalised) e.Key("modeNormalised").Bool(true);
-            if (group is not null)
+            if (group is not null && p.HollowMode is not null)
+            {
+                // brief-hzn-20 R-hzn20-1 — a hollow guide of several modes: one wave port of that many modes, each mode's number,
+                // name and polarity line in mode order (the driver signs each by its own line and checks it is the mode named)
+                e.Key("hollowModes").BeginArray();
+                foreach (var m in group)
+                {
+                    var mp = m.VoltagePath!.Value;
+                    e.BeginObject().Key("number").Int(m.Number).Key("name").Str(m.HollowMode!.Name)
+                     .Key("path").BeginObject().Key("from").Point(mp.From).Key("to").Point(mp.To).EndObject()
+                     .EndObject();
+                }
+                e.EndArray();
+            }
+            else if (group is not null)
             {
                 // A face of one material: its modes are solved once, before the sweep, around this effective index
                 // (R-emw3-4: 0.9 of the material's own, off the TEM eigenvalue EMerge's own shift sits on).

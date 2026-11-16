@@ -1132,6 +1132,38 @@ Census **88 → 89 of 99** (`Coax50`).
 - **Against the analytic line**: |S21| 0.997–0.999 (tan δ predicts 0.997 at 10 GHz), |S11| ≤ 0.046, ∠S21 within 0.9 % of −βL
   over 1–10 GHz (εeff 2.138 against 2.1, a faceted circle in a first-order mesh). EMerge only; not run on Palace.
 
+### HZN-20 — wave ports of two modes, and a wave port's reference plane moved by a stated distance (2026-11-16)
+
+Census **89 → 90 of 99** (`H_TwoModeWaveguide`).
+
+- **EMerge 3.0.0's mode order and sign on a two-mode face were right** (the brief's risk). Its `WavePort(number_of_modes=2)` fixes
+  the modes with the largest β² at the sweep's top and tracks them down, and on the 22.86 × 15 mm guide TE10 came first and TE01
+  second. The driver does not trust that blindly: each mode is integrated along every mode's polarity line, and must be largest on
+  its own line (TE10 on TE20's line is 0.71 of its own, so "largest" separates them where "zero elsewhere" would not). A mode set
+  out of order, or a degenerate pair mixed, is a refusal naming the β it found. Each mode is then signed by its own line, as
+  HZN-11 signs one.
+- **A port of several modes is one `Em3dPort` per mode sharing a `FaceGroup`**, as a Floquet port's (HZN-16), marked by
+  `HollowMode`. Every place that meant "terminal group" by `FaceGroup is not null` now asks `IsTerminal`: the terminal conversion,
+  the run service's terminal facts, explain's mapping and the face-group validation. Without it a hollow pair would have been
+  sent through the modal-to-terminal conversion, which needs a reference conductor it does not have.
+- **γ per mode was already per result port.** `gamma.npy` is [f, ports] in circuitRF order, so `WavePortReferences.Shift` moves
+  each mode by its own γ once the driver writes one column per mode (`hollow_mode_data`). De-embedding needed no new arithmetic.
+- **Which modes a port carries is the port reader's to say**, because only it knows the walls (the air box and the design's
+  conductors). The translator therefore elaborates the translated design (with its own technology attached; without it the
+  elaboration stops on the first material and the check passes silently) and refuses a `NumberOfModes` port the reader refuses,
+  with the reader's sentence. A design with no such port is not elaborated.
+- **Port numbers follow Hertzon's port order.** With a port of several modes every port is renumbered by PortNumber, each taking
+  as many result numbers as it has modes; the export writes PortNumber back as the port's rank. A result port is named
+  `<port>_M<m>`, or `P<n>_M<m>` when the port's name is only a number.
+- **The editor's scene drew only a port's first neutral port.** For a two-mode port it now draws each mode, so both polarity lines
+  show; terminal groups are unchanged.
+- **Against the analytic guide** (22.86 × 15 × 40 mm, 11.2 GHz, Draft, 785 tetrahedra, 4 s): ∠S31 −76.01° against −76.14° for
+  e^{−jβ₁₀L}, ∠S42 117.60° against 117.07° for e^{−jβ₀₁L}, |S| 1.0000, every cross term and reflection ≤ 0.0026. With port 2's
+  plane moved 5 mm, S31 advanced 54.5168° (β₁₀d 54.5169°) and S42 30.3641° (β₀₁d 30.366°, the solved β against the analytic).
+- **`H_TwoModeWaveguide`** (Setup_PortsOnly, 6 points 10.3–11.8 GHz, 9,554 tetrahedra, 8 s): reciprocal (S − Sᵀ is 0 to the
+  file's digits), passive (largest column power 0.9999, lossless ceramic), and the 35° post converts: |S(WP2_M2, WP1_M1)| 0.26–0.28
+  against 1e-4 in the empty guide. **Not compared with Hertzon's own run**: this download has no `hertzon-cli`.
+
 ## A run estimated between 100 % and 150 % of memory could not choose to swap (2026-11-05)
 
 Only a Severe verdict (past 150 %) was asked about, and only answering it lifted the ceiling, so a run at 141 % started with its ceiling and was

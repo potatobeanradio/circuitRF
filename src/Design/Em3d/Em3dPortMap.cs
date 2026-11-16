@@ -32,6 +32,10 @@ public static class Em3dPortMap
         var lines = ports.OrderBy(p => p.Number)
             .Select(p => p.FaceGroup is null
                 ? $"{Prefix}result port {p.Number} is the 3D view's port {p.SourceNumber ?? p.Number} '{Ascii(p.SourceLabel ?? p.Name)}'"
+                // brief-hzn-20 — a mode of a hollow guide of several modes
+                : p.HollowMode is { } hm
+                ? $"{Prefix}result port {p.Number} is the 3D view's port '{Ascii(p.FaceGroupLabel ?? "")}', mode {hm.Mode} " +
+                  $"'{Ascii(p.SourceLabel ?? p.Name)}' ({hm.Name})"
                 : $"{Prefix}result port {p.Number} is the 3D view's port '{Ascii(p.FaceGroupLabel ?? "")}', terminal " +
                   $"'{Ascii(p.SourceLabel ?? (p.SourceNumber ?? p.Number).ToString(System.Globalization.CultureInfo.InvariantCulture))}' ({Ascii(p.PositiveObject)})")
             .ToList();
@@ -54,7 +58,7 @@ public static class Em3dPortMap
 
     /// <summary>The name a result port has in the 3D view: its label (a component port's refdes), or for a terminal of a
     /// multi-terminal port the port's name and the terminal's.</summary>
-    public static string Label(Em3dPort p) => p.FaceGroup is null
+    public static string Label(Em3dPort p) => p.FaceGroup is null || p.HollowMode is not null   // brief-hzn-20: P1_M1
         ? p.SourceLabel ?? p.Name
         : $"{p.FaceGroupLabel ?? p.Name} {p.SourceLabel ?? (p.SourceNumber ?? p.Number).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
 

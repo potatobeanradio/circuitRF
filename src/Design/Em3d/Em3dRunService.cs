@@ -112,9 +112,9 @@ public static partial class Em3dRunService
     {
         var groups = TerminalPorts(problem.Ports);
         bool lumped = groups.Count > 0 && problem.Ports.Any(p => p.Kind == Em3dPortKind.Lumped);
-        var moved = problem.Ports.FirstOrDefault(p => p.FaceGroup is not null && p.ReferencePlane.ShiftM != 0);
+        var moved = problem.Ports.FirstOrDefault(p => p.IsTerminal && p.ReferencePlane.ShiftM != 0);
         string fill = problem.Boundary.Material ?? GmshGeoWriter.BackgroundMaterial(problem.Solids, problem.Materials);
-        var oneSpeed = problem.Ports.Where(p => p.FaceGroup is not null).GroupBy(p => p.FaceGroup!.Value)
+        var oneSpeed = problem.Ports.Where(p => p.IsTerminal).GroupBy(p => p.FaceGroup!.Value)
                               .Where(g => FdtdWavePorts.RegionMaterials(problem, g.First(), fill).Count == 1)
                               .Select(g => g.First().FaceGroupLabel ?? $"port {g.Key}").ToList();
         return new(groups, lumped, moved is null ? null : (moved.FaceGroupLabel ?? moved.Name, moved.ReferencePlane.ShiftM)) { OneSpeed = oneSpeed };
@@ -122,7 +122,7 @@ public static partial class Em3dRunService
 
     /// <summary>The problem's multi-terminal ports, as <see cref="TerminalPortRefusal"/> takes them: one entry per face group.</summary>
     public static IReadOnlyList<(string Label, int Terminals)> TerminalPorts(IReadOnlyList<Em3dPort> ports)
-        => [.. ports.Where(p => p.FaceGroup is not null).GroupBy(p => p.FaceGroup!.Value).OrderBy(g => g.Key)
+        => [.. ports.Where(p => p.IsTerminal).GroupBy(p => p.FaceGroup!.Value).OrderBy(g => g.Key)
                     .Select(g => (g.First().FaceGroupLabel ?? $"port {g.Key}", g.Count()))];
 
     /// <summary>

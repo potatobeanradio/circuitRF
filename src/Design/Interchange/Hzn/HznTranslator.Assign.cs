@@ -312,6 +312,7 @@ internal sealed partial class HznTranslator
         if (_doc.PlaneWaves.Any(w => w.Enabled) && _doc.Ports.Any(p => p.Model))
             _r.Add(HznRefusalKind.Excitation, "Incident Plane Wave beside a port", "a plane wave is translated only with no port beside it", DesignName);
         NumberFloquetPorts();
+        NumberModePorts();
         var dup = _doc.Ports.GroupBy(p => p.Number).FirstOrDefault(g => g.Count() > 1);
         if (dup is not null) _r.Add(HznRefusalKind.Excitation, $"port number {dup.Key}", "two excitations have it", DesignName);
     }
@@ -323,11 +324,22 @@ internal sealed partial class HznTranslator
         int? number = Plain(props["PortNumber"], name) is { } n && n == Math.Floor(n) ? (int)n : null;
         if (number is null) { _r.Add(HznRefusalKind.Excitation, "port number", "it is not a whole number", name); return; }
         string z0 = "50";
+        int modes = 1;
+        double deembedUm = 0;
         if (wave)
         {
-            if (Plain(props["NumberOfModes"] ?? "1", name) is not 1)
+            // brief-hzn-20 R-hzn20-3 — NumberOfModes N is a hollow guide's Modes (the port reader refuses it on any other port, and
+            // Check below turns that refusal into this design's), each mode normalised to itself as Hertzon's Renormalize False is
+            if (Plain(props["NumberOfModes"] ?? "1", name) is not { } nm || nm != Math.Floor(nm) || nm < 1)
             {
-                _r.Add(HznRefusalKind.Excitation, "Wave Port with several modes", "one mode is translated", name);
+                _r.Add(HznRefusalKind.Excitation, "Wave Port modes", "NumberOfModes is not a whole number of 1 or more", name);
+                return;
+            }
+            modes = (int)nm;
+            if (modes > 1 && IsTrue(props["Renormalize"]))
+            {
+                _r.Add(HznRefusalKind.Excitation, "Wave Port with several modes, renormalised",
+                       "each mode of a port of several modes is translated normalised to itself (Renormalize False)", name);
                 return;
             }
             if (props["ModeType"] is { } modeType && !modeType.Trim().Equals("Auto", StringComparison.OrdinalIgnoreCase))
@@ -336,10 +348,16 @@ internal sealed partial class HznTranslator
                        "circuitRF's wave port takes the face's own lowest mode, which is Hertzon's Auto", name);
                 return;
             }
-            if ((props["Deembed"] is { } de && IsTrue(de)) && Plain(props["DeembedDistance"], name) is not 0)
+            // brief-hzn-20 R-hzn20-3 — Deembed True moves the reference plane DeembedDistance into the structure (Hertzon's S·e^{γd},
+            // positive removing guide); Deembed False reads no distance, which is listed as unused below
+            if (props["Deembed"] is { } de && IsTrue(de) && props["DeembedDistance"] is { } dd)
             {
-                _r.Add(HznRefusalKind.Excitation, "Wave Port with de-embedding", "a reference-plane shift is not translated", name);
-                return;
+                if (Len(dd, name) is not { } d) return;
+                double m = Metres(d);
+                if (!double.IsFinite(m)) return;
+                deembedUm = Math.Round(m * 1e6, 6);
+                if (!d.IsLiteral)
+                    _notes.Add($"Port '{name}': its de-embedding distance '{dd}' is {Num(deembedUm)} µm in the port, which holds a number.");
             }
             // brief-hzn-11 R-hzn11-5 — without renormalisation Hertzon's S is normalised to the mode: circuitRF's Z0 "mode"
             z0 = !IsTrue(props["Renormalize"]) ? C3dPorts.ModeZ0
@@ -362,7 +380,8 @@ internal sealed partial class HznTranslator
         }
         if (z0.Length == 0) return;
 
-        var port = new C3dPort { Number = number.Value, Name = name, Kind = wave ? Em3dPortKind.Wave : Em3dPortKind.Lumped, Z0 = z0 };
+        var port = new C3dPort { Number = number.Value, Name = name, Kind = wave ? Em3dPortKind.Wave : Em3dPortKind.Lumped, Z0 = z0,
+                                 Modes = modes, DeembedUm = deembedUm };
         string? sheetObject = null;
         if (x.Objects.Count == 1 && x.Faces.Count == 0)
         {
@@ -448,9 +467,40 @@ internal sealed partial class HznTranslator
         if (terminalPort) _terminalPorts.Add((port, props["ReferenceConductor"] ?? ""));
         foreach (var (k, v) in props.Names.Select(k => (k, props[k]!)))
             // a port normalised to its mode reads no RenormImpedance (the save keeps it as written)
-            if (k is not ("PortNumber" or "Impedance" or "Renormalize" or "NumberOfModes" or "Deembed" or "DeembedDistance" or "ModeType")
+            if (k is not ("PortNumber" or "Impedance" or "Renormalize" or "NumberOfModes" or "Deembed" or "ModeType")
+                && !(k == "DeembedDistance" && (deembedUm != 0 || ZeroLength(v) || !wave))
                 && !(k == "RenormImpedance" && z0 != C3dPorts.ModeZ0) && !(terminalPort && k == "ReferenceConductor"))
                 _prov.Unused.Add(new HznUnusedSetting($"port {name}", k, v));
+    }
+
+    /// <summary>
+    /// brief-hzn-20 R-hzn20-3 — a port of several modes takes that many result numbers, one after another, and Hertzon numbers the
+    /// modes "in port order" (its tutorial): port 1's modes first, then the next port's. With any such port every port is renumbered
+    /// by PortNumber so; without one nothing changes.
+    /// </summary>
+    /// <summary>A distance written as zero in any unit (<c>0</c>, <c>0mm</c>, <c>0.0 um</c>): read by nothing, so not listed as unused.</summary>
+    private static bool ZeroLength(string v)
+        => System.Text.RegularExpressions.Regex.Match(v.Trim(), @"^[+-]?[0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?\s*[A-Za-z]*$") is { Success: true }
+           && double.TryParse(System.Text.RegularExpressions.Regex.Match(v.Trim(), @"^[+-]?[0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?").Value,
+                              System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d) && d == 0;
+
+    private void NumberModePorts()
+    {
+        if (!_doc.Ports.Any(p => p.Modes > 1)) return;
+        int next = 1;
+        foreach (var p in _doc.Ports.OrderBy(p => p.Number).ToList())
+        {
+            int own = p.Number;
+            p.Number = next;
+            var origin = _prov.Ports.FindIndex(o => o.Number == own && o.Excitation == p.Name);
+            if (origin >= 0) _prov.Ports[origin] = _prov.Ports[origin] with { Number = next };
+            if (p.Modes > 1)
+                _notes.Add($"Port '{p.Name}' (PortNumber {own}) has {p.Modes} modes: ports {next}–{next + p.Modes - 1} of the result, " +
+                           $"named {string.Join(", ", Enumerable.Range(1, p.Modes).Select(m => $"{p.Name}_M{m}"))}, as Hertzon numbers them.");
+            else if (own != next)
+                _notes.Add($"Port '{p.Name}' (PortNumber {own}) is port {next} of the result, after the modes of the ports before it.");
+            next += p.Modes;
+        }
     }
 
     /// <summary>

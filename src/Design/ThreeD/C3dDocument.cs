@@ -1133,6 +1133,22 @@ public sealed class C3dPort
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public C3dFloquet? Floquet { get; set; }
 
+    /// <summary>
+    /// brief-hzn-20 R-hzn20-1 — how many modes a hollow-guide wave port carries, 1 or 2: its modes are result ports <see cref="Number"/>,
+    /// <see cref="Number"/> + 1, … in cutoff order (TE10 across the broad side, then whichever of TE01 and TE20 is cut off lower), each
+    /// normalised to its mode, so its <see cref="Z0"/> is <c>"mode"</c>. 1 when omitted, and written only above 1.
+    /// </summary>
+    [DefaultValue(1)]
+    public int Modes { get; set; } = 1;
+
+    /// <summary>
+    /// brief-hzn-20 R-hzn20-2 — a wave port's reference plane moved this many micrometres from its face, positive into the structure:
+    /// each mode's S is multiplied by e^{γd} with its own solved γ, so a positive distance removes that much guide. Written only when
+    /// not 0. A lumped port's reference is its sheet, so a lumped port with it is refused.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double DeembedUm { get; set; }
+
     /// <summary>brief-hzn-15 — true when the port does not lie along its plane's axes: turned by <see cref="Angle"/>, or drawn as
     /// <see cref="Corners"/>.</summary>
     [JsonIgnore]

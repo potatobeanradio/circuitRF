@@ -45,6 +45,12 @@ public sealed record Em3dScan(double ThetaDeg, double PhiDeg);
 /// harmonic, 2 its TM wave, more the grating harmonics by cutoff), in a medium of relative permittivity <paramref name="Er"/>.</summary>
 public sealed record Em3dFloquet(int Mode, int Modes, double Er);
 
+/// <summary>brief-hzn-20 — one mode of a hollow-guide wave port of several modes: <paramref name="Mode"/> of <paramref name="Modes"/>
+/// in cutoff order, named <paramref name="Name"/> (<c>TE10</c>, <c>TE01</c>, <c>TE20</c>), cut off where the guide's
+/// <paramref name="CutoffLengthM"/> is half a wavelength in its fill (the broad side for TE10, the narrow side for TE01, half the broad
+/// side for TE20).</summary>
+public sealed record Em3dHollowMode(int Mode, int Modes, string Name, double CutoffLengthM);
+
 /// <summary>How the frequency points are spaced between start and stop.</summary>
 public enum Em3dSweepKind { Linear, Log }
 
@@ -553,8 +559,17 @@ public sealed record Em3dPort(
     /// (<see cref="ModeNormalised"/>). Null on every other port.</summary>
     public Em3dFloquet? Floquet { get; init; }
 
+    /// <summary>brief-hzn-20 — a mode of a hollow-guide wave port of several modes: one entry per mode, the modes of one port sharing
+    /// a <see cref="FaceGroup"/> and its rectangle, each <see cref="Hollow"/> and normalised to its mode, with its own polarity line
+    /// (<see cref="VoltagePath"/>). Null on every other port, a hollow port of one mode included.</summary>
+    public Em3dHollowMode? HollowMode { get; init; }
+
     /// <summary>brief-hzn-11 — true for a hollow-guide wave port (<see cref="HollowBroadM"/> set).</summary>
     public bool Hollow => HollowBroadM is not null;
+
+    /// <summary>brief-hzn-20 — true for a terminal of a multi-terminal wave port (brief-em3d-114): in a face group that is neither a
+    /// Floquet port's modes nor a hollow guide's.</summary>
+    public bool IsTerminal => FaceGroup is not null && Floquet is null && HollowMode is null;
 
     /// <summary>
     /// brief-hzn-11 R-hzn11-1 — a wave port whose S-parameters are normalised to its mode's own power wave (a <c>.c3d</c>'s
@@ -1160,6 +1175,7 @@ public sealed record Em3dProblem(
         }
 
         ValidateFaceGroups(problems);
+        ValidateHollowModes(problems);
         ValidateFaceBoundaries(problems);
         ValidatePeriodic(problems);
 
@@ -1236,9 +1252,35 @@ public sealed record Em3dProblem(
         }
     }
 
+    /// <summary>
+    /// brief-hzn-20 — a hollow guide's modes: wave ports of one rectangle, each hollow and normalised to its mode, one entry for each
+    /// mode, numbered one after another.
+    /// </summary>
+    private void ValidateHollowModes(List<string> problems)
+    {
+        foreach (var g in Ports.Where(p => p.HollowMode is not null).GroupBy(p => p.FaceGroup ?? p.Number))
+        {
+            var ps = g.OrderBy(p => p.Number).ToList();
+            string label = ps[0].FaceGroupLabel ?? ps[0].Name;
+            if (ps.Any(p => p.Kind != Em3dPortKind.Wave || !p.Hollow))
+                problems.Add($"Port '{label}' has modes that are not hollow-guide wave ports; a port of several modes is a hollow guide's.");
+            if (ps.Any(p => !p.ModeNormalised))
+                problems.Add($"Port '{label}' is referred to an impedance; each mode of a hollow guide of several modes is normalised to the mode.");
+            if (ps.Any(p => p.Min != ps[0].Min || p.Max != ps[0].Max))
+                problems.Add($"Port '{label}''s modes do not share one rectangle.");
+            var modes = ps.Select(p => p.HollowMode!).ToList();
+            if (modes.Any(m => m.Modes != modes[0].Modes) || modes.Count != modes[0].Modes ||
+                !modes.Select(m => m.Mode).SequenceEqual(Enumerable.Range(1, modes[0].Modes)) ||
+                ps.Select(p => p.Number).Zip(ps.Skip(1).Select(p => p.Number)).Any(x => x.Second != x.First + 1))
+                problems.Add($"Port '{label}' does not have one entry for each of its {modes[0].Modes} modes, numbered one after another in mode order.");
+            if (modes.Any(m => !(m.CutoffLengthM > 0)))
+                problems.Add($"Port '{label}' has a mode with no cutoff length.");
+        }
+    }
+
     private void ValidateFaceGroups(List<string> problems)
     {
-        foreach (var g in Ports.Where(p => p.FaceGroup is not null && p.Floquet is null).GroupBy(p => p.FaceGroup!.Value))
+        foreach (var g in Ports.Where(p => p.IsTerminal).GroupBy(p => p.FaceGroup!.Value))
         {
             var ps = g.OrderBy(p => p.Number).ToList();
             string name = ps[0].FaceGroupLabel is { } l ? $"Port '{l}'" : $"Face group {g.Key}";

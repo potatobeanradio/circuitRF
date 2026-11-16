@@ -8,6 +8,10 @@
 // so a point refused is below the cutoff whatever the fill. A 0 Hz row is a conduction solve, and a hollow guide conducts
 // nothing between its ports, so it is refused the same way.
 //
+// SEVERAL MODES (brief-hzn-20). A hollow port of several modes is one Em3dPort per mode, each cut off where its own cutoff length
+// is half a wavelength in the fill (Em3dHollowMode.CutoffLengthM); a point below any mode's cutoff is refused the same way. Only
+// EMerge runs such a port: its wave port takes several modes on one face, each absorbed with its own propagation constant.
+//
 // WHICH SOLVER (R-hzn11-3). EMerge solves both: its wave port takes a mode of any type, and its S is the mode-normalised one.
 // Palace solves both through its own wave port. openEMS builds neither: its wave port is a terminal feed on a lattice, which a
 // hollow guide has no terminal for, and its S is always referred to the feed's stated impedance.
@@ -22,11 +26,11 @@ public static class Em3dModePorts
 {
     private const double C0 = 299792458.0;
 
-    /// <summary>The cutoff of hollow port <paramref name="p"/>'s lowest mode, Hz, and the material it was taken in; null for a
-    /// port that is not a hollow guide.</summary>
+    /// <summary>The cutoff of hollow port <paramref name="p"/>'s mode (its lowest, or brief-hzn-20 its own of several), Hz, and the
+    /// material it was taken in; null for a port that is not a hollow guide.</summary>
     public static (double Hz, string Material)? Cutoff(Em3dProblem problem, Em3dPort p)
     {
-        if (p.HollowBroadM is not { } a || !(a > 0)) return null;
+        if ((p.HollowMode?.CutoffLengthM ?? p.HollowBroadM) is not { } a || !(a > 0)) return null;
         string fill = problem.Boundary.Material ?? GmshGeoWriter.BackgroundMaterial(problem.Solids, problem.Materials);
         var names = FdtdWavePorts.RegionMaterials(problem, p, fill);
         var byName = problem.Materials.ToDictionary(m => m.Name, StringComparer.Ordinal);
@@ -49,7 +53,8 @@ public static class Em3dModePorts
             int below = points.Count(f => f < fc) + (zeroHzRow ? 1 : 0);
             if (below == 0) continue;
             double lowest = zeroHzRow ? 0 : points.Min();
-            return $"Port {Label(p)} is a hollow guide {G(p.HollowBroadM!.Value * 1e3)} mm across, whose lowest mode is cut off below " +
+            string which = p.HollowMode is { } hm ? $"whose mode {hm.Mode} ({hm.Name}) is" : "whose lowest mode is";
+            return $"Port {Label(p)} is a hollow guide {G(p.HollowBroadM!.Value * 1e3)} mm across, {which} cut off below " +
                    $"{G(fc / 1e9)} GHz in {material}; the sweep starts at {G(lowest / 1e9)} GHz, and {below} of its points " +
                    $"{(below == 1 ? "lies" : "lie")} below the cutoff, where the port carries no mode. Start the sweep above {G(fc / 1e9)} GHz.";
         }
@@ -66,6 +71,10 @@ public static class Em3dModePorts
             var f = problem.Boundary.Faces;
             if (problem.Ports.FirstOrDefault(p => p.Floquet is not null) is { } fp)
                 return $"Port {fp.FaceGroupLabel ?? Label(fp)} is a Floquet port, which circuitRF runs on EMerge only. Set the setup's solver to EMerge.";
+            // brief-hzn-20 R-hzn20-1 — several modes on one hollow face, each absorbed with its own propagation constant
+            if (problem.Ports.FirstOrDefault(p => p.HollowMode is not null) is { } mp)
+                return $"Port '{mp.FaceGroupLabel ?? mp.Name}' is a hollow guide of {mp.HollowMode!.Modes} modes, which circuitRF runs on EMerge only. " +
+                       "Set the setup's solver to EMerge, or give the port one mode.";
             if (f.XMin == Em3dBoundaryKind.Periodic || f.YMin == Em3dBoundaryKind.Periodic)
                 return "The air box's x or y faces are periodic, which circuitRF runs on EMerge only. Set the setup's solver to EMerge.";
             // brief-hzn-18 R-hzn18-1 — a one-sided lossy sheet is EMerge's single surface impedance on the sheet's faces
@@ -99,7 +108,7 @@ public static class Em3dModePorts
     /// <summary>A hollow or mode-normalised port in a provenance line, after its name.</summary>
     public static string PortWords(Em3dPort p, Func<string, string> ascii)
         => (p.Hollow ? $"a hollow guide {G(p.HollowBroadM!.Value * 1e3)} mm across" : $"from '{ascii(p.NegativeObject)}' to '{ascii(p.PositiveObject)}'") +
-           ", wave (mode 1), " +
+           (p.HollowMode is { } hm ? $", wave (mode {hm.Mode}, {hm.Name}), " : ", wave (mode 1), ") +
            (p.ModeNormalised ? "normalised to its mode (R 1 is not an impedance)" : $"{p.Z0.Real.ToString("R", CultureInfo.InvariantCulture)} Ohm");
 
     private static string Label(Em3dPort p)

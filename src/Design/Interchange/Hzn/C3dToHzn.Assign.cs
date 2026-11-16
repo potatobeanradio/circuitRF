@@ -111,6 +111,7 @@ internal sealed partial class C3dToHznWriter
         // (one per conductor reaching it), so every port is written as one Wave Port, numbered in the order of its terminals
         _terminalDesign = _doc.Ports.Any(C3dPorts.HasTerminals);
         var terminalOrder = _doc.Ports.OrderBy(p => C3dPorts.HasTerminals(p) ? p.Terminals!.Min(t => t.Number) : p.Number).ToList();
+        var modeOrder = _doc.Ports.Any(p => p.Modes > 1) ? _doc.Ports.OrderBy(p => p.Number).ToList() : null;
         foreach (var port in _doc.Ports)
         {
             string name = port.Name.Length > 0 ? port.Name : $"P{port.Number}";
@@ -132,6 +133,11 @@ internal sealed partial class C3dToHznWriter
                     continue;
                 }
                 renorm = Num(tz.Real) + "ohm";
+                if (port.DeembedUm != 0)
+                {
+                    _r.Add(HznRefusalKind.Excitation, "terminal port with de-embedding", "a terminal port's reference plane is written on its face", name);
+                    continue;
+                }
             }
             if (port.Cylinder is not null)
             {
@@ -184,7 +190,9 @@ internal sealed partial class C3dToHznWriter
             {
                 Name = name, Kind = wave ? "Wave Port" : "Lumped Port", Objects = [sheet.Name], Enabled = port.Model,
             };
-            int number = _terminalDesign ? terminalOrder.IndexOf(port) + 1 : port.Number;
+            // brief-hzn-20 R-hzn20-3 — with a port of several modes the document numbers each mode; Hertzon numbers ports in port order
+            int number = _terminalDesign ? terminalOrder.IndexOf(port) + 1
+                       : modeOrder is not null ? modeOrder.IndexOf(port) + 1 : port.Number;
             x.Props.Add(("PortNumber", number.ToString(CultureInfo.InvariantCulture)));
             if (wave && _terminalDesign)
             {
@@ -195,14 +203,15 @@ internal sealed partial class C3dToHznWriter
             }
             else if (wave)
             {
-                x.Props.Add(("NumberOfModes", "1"));
+                x.Props.Add(("NumberOfModes", port.Modes.ToString(CultureInfo.InvariantCulture)));
                 x.Props.Add(("ModeType", "Auto"));
                 x.Props.Add(("ImpedanceDefinition", "Zpv"));
                 // Hertzon keeps RenormImpedance with Renormalize False, at its own 50 ohm
                 x.Props.Add(("Renormalize", mode ? "False" : "True"));
                 x.Props.Add(("RenormImpedance", mode ? "50ohm" : Num(z.Real) + "ohm"));
-                x.Props.Add(("Deembed", "False"));
-                x.Props.Add(("DeembedDistance", "0"));
+                // brief-hzn-20 R-hzn20-3 — the reference plane moved into the structure, in mm
+                x.Props.Add(("Deembed", port.DeembedUm != 0 ? "True" : "False"));
+                x.Props.Add(("DeembedDistance", port.DeembedUm != 0 ? Num(port.DeembedUm / 1000) + "mm" : "0"));
             }
             else
             {

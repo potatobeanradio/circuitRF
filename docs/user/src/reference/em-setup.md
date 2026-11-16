@@ -1609,8 +1609,8 @@ several terminals ([below](#wave-port-terminals-emerge)):
   renormalisation, and the run's notes say how far it moved.
 - **The run asks each face for a second mode** at the top of the sweep and warns when one propagates,
   as Palace's run does.
-- **A hollow waveguide** runs on Palace. EMerge refuses it by name, as it does a wave port in an
-  eigenmode problem.
+- **A hollow waveguide** runs on EMerge and on Palace: its mode is the guide's lowest, of any type, and its
+  sign is set by a polarity line across the narrow side. One of [two modes](#hollow-two-modes) runs on EMerge only.
 
 #### Several conductors on one face {#wave-port-terminals}
 
@@ -1887,6 +1887,34 @@ does not keep the two faces of a pair meshed alike, so a cell is solved on its f
 with **Largest element** and **At metal**. On a crossed-dipole cell 15 mm square, against Hertzon's own run on its refined
 mesh, the cell's resonance fell at the same 10 GHz, and away from it each S-parameter came within 0.06 to 0.15; on a cell
 over a ground, the reflection phase came within 2° to 8°.
+
+### A hollow guide of two modes, and moving a wave port's reference plane {#hollow-two-modes}
+
+A hollow guide whose broad side a is more than its narrow side b carries TE10 above c/2a, and a second mode once the
+frequency passes the next cutoff: TE01 at c/2b, or TE20 at c/a when b is less than half of a. Something in the guide that
+is not symmetric — a tilted post, a step in one wall — turns one mode into the other, and a port of one mode then misses
+the power the other carries. Set the port's **Modes** to 2 in Properties (offered on a hollow guide's wave port; the row
+beside it names the two modes, `TE10, TE01`). Both modes are ports of the result, numbered from the port's own number and
+named `P1_M1`, `P1_M2` in the Touchstone file, so a two-mode port at each end of a guide makes a four-port: S31 is TE10's
+thru, S42 TE01's, and S41 how much TE10 at port 1 leaves port 2 as TE01. The canvas labels such a port `P1 (2 modes)` and
+draws both polarity lines: TE10's across the narrow side at the broad side's centre, TE01's across the broad side at the
+narrow side's centre, TE20's across the narrow side at a quarter of the broad side.
+
+- **Each mode is normalised to itself**, so the port's Reference is Mode and the Touchstone file states `R 1`.
+- **Refused by name:** more than two modes, a square opening, a narrow side equal to half the broad side (the second mode
+  would be degenerate), and a sweep point below either mode's cutoff.
+- **EMerge** runs it as one wave port of two modes, each absorbed with its own propagation constant. The run checks each
+  mode is the one named before it reads S, and refuses rather than reports a matrix whose rows belong to other modes.
+  Palace and openEMS refuse a port of two modes by name.
+
+A wave port's **De-embed** length (Properties, in the document's unit) moves its reference plane that far into the
+structure: each mode's S-parameters are multiplied by e^(γd) with its own solved propagation constant, so a positive length
+removes that much guide. EMerge and Palace apply it, and the run's notes say how far each port moved. A lumped port's
+reference is its sheet, so a lumped port refuses one.
+
+On an empty guide 22.86 × 15 mm and 40 mm long at 11.2 GHz, EMerge's S31 and S42 came within 0.13° and 0.53° of e^(−jβL) for
+TE10 and TE01, with every cross term and reflection below 0.003; moving port 2's plane 5 mm advanced each mode's phase by its
+own β·d to 0.002°.
 
 ### Ports drawn as their corners {#corner-ports}
 

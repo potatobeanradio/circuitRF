@@ -988,6 +988,10 @@ public static class C3dPortReports
     {
         if (r.Resolved is not { } p) return r.Refusal ?? "";
         // brief-em3d-114 R-em3d114-4 — a multi-terminal port: its reference and why, then each terminal as a port of the result
+        // brief-hzn-20 — a hollow guide of several modes: its walls, each mode and its polarity line
+        if (r.Terminals is { } ms && ms[0].HollowMode is not null)
+            return $"{r.Label} (wave, hollow guide of {ms.Count} modes) on the {Em3dProblemFace(p)} face: {r.Reason}; each mode's " +
+                   "S-parameters are normalised to the mode.";
         if (r.Terminals is { } ts)
             return $"{r.Label} (wave, {ts.Count} terminals) on the {Em3dProblemFace(p)} face: the reference is '{p.NegativeObject}' — " +
                    $"{r.Reason}; " + string.Join("; ", ts.Select(t => $"terminal {t.Number}{(t.SourceLabel is { } n ? $" '{n}'" : "")} runs to " +

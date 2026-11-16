@@ -49,6 +49,12 @@ its polarity line. EMerge sets a mode's sign by that line only for a TEM mode, s
 column when its mode integrates negative along the line; its Z0 is Z_PV = |V|^2 / 2 on the line. "modeNormalised" changes
 nothing here: circuitRF keeps such a port's S as it is.
 
+(brief-hzn-20) A hollow entry with "hollowModes" is a hollow guide of several modes: ONE WavePort with number_of_modes the
+list's length (EMerge fixes the modes with the largest beta^2 at the sweep's top and follows them, each absorbed with its own
+propagation constant), the modes numbered <number>.1 ... <number>.N in EMerge's S and circuitRF's numbers in mode order. Each
+mode is checked to be the one named (its field along its own polarity line is the largest of its integrals along every mode's
+line) and signed by its own line, as a single hollow mode is; gamma.npy and Z0.npy carry each mode's own (Z_PV on its line).
+
 (brief-emi-7) When problem.json has a "fields" block, the solve also writes FIELDS, in the .vtu layout circuitRF reads for
 Palace (an UnstructuredGrid of Lagrange tetrahedra, every cell with its own nodes, inline-base64 geometry, appended-raw
 arrays, no compression, complex quantities as <name>_real/<name>_imag):
@@ -1173,7 +1179,8 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface, join=0.0):
             if wave is None:
                 raise Refused("Port '%s' is a hollow guide, and this EMerge has no WavePort to solve one; circuitRF's EMerge "
                               "3.0.0 has it." % w["name"])
-            bc = wave(region, numbers[w["number"]], modetype=None)
+            # brief-hzn-20 — a guide of several modes: one wave port carrying them all
+            bc = wave(region, numbers[w["number"]], modetype=None, number_of_modes=len(w.get("hollowModes", [None])))
         else:
             bc = wave(region, numbers[w["number"]], modetype="TEM") if wave is not None else conditions.WavePortIH(region, numbers[w["number"]])
         # R-emw2-2a — the one line that decides a wave port's polarity: EMerge turns the mode so its integral along this line
@@ -1287,15 +1294,29 @@ def sweep(problem, folder, sim, model, heard, freqs, adaptive, groups, stalled):
     if waves:
         # brief-hzn-11 R-hzn11-2 — a hollow guide's mode sign, set by its polarity line (EMerge sets it so only for a TEM mode)
         for w, bc in waves:
-            if w.get("hollow"):
+            if "hollowModes" in w:
+                # brief-hzn-20 — each mode checked to be the one named, and signed by its own polarity line
+                for m, sign in zip(w["hollowModes"], hollow_mode_signs(w, bc, float(np.max(freqs)))):
+                    if sign < 0:
+                        k = every.index(m["number"])
+                        S[:, k, :] *= -1
+                        S[:, :, k] *= -1
+            elif w.get("hollow"):
                 k = every.index(w["number"])
                 if hollow_sign(bc, float(np.max(freqs))) < 0:
                     S[:, k, :] *= -1
                     S[:, :, k] *= -1
-        wz, wg = wave_modes(sim, [(w, bc) for w, bc in waves if "terminals" not in w], freqs, adaptive)
-        for j, (w, _) in enumerate([(w, bc) for w, bc in waves if "terminals" not in w]):
+        singles = [(w, bc) for w, bc in waves if "terminals" not in w and "hollowModes" not in w]
+        wz, wg = wave_modes(sim, singles, freqs, adaptive)
+        for j, (w, _) in enumerate(singles):
             z0[:, every.index(w["number"])] = wz[:, j]
             gamma[:, every.index(w["number"])] = wg[:, j]
+        for w, bc in waves:
+            if "hollowModes" in w:
+                mz, mg = hollow_mode_data(sim, w, bc, freqs)
+                for k, m in enumerate(w["hollowModes"]):
+                    z0[:, every.index(m["number"])] = mz[:, k]
+                    gamma[:, every.index(m["number"])] = mg[:, k]
     if groups:
         # brief-emw-3 R-emw3-4 — every wave-port entry's mode data, the conversion's input; and V where the run solved directly
         arrays = terminal_arrays(sim, waves, every, freqs, adaptive)
@@ -1484,6 +1505,58 @@ def hollow_sign(bc, top):
     return -1.0 if v.real < 0 else 1.0
 
 
+def mode_lines(w):
+    """brief-hzn-20 — each of a hollow guide's modes' polarity lines, in mode order."""
+    from emerge._emerge.coord import Line
+    return [Line.from_points(tuple(m["path"]["from"]), tuple(m["path"]["to"]), 101) for m in w["hollowModes"]]
+
+
+def hollow_mode_signs(w, bc, top):
+    """brief-hzn-20 — +1 or -1 for each of a hollow guide's modes: the sign of the mode integrated along its own polarity line, at
+    the mode set fixed at the sweep's top. Each mode is first checked to be the one circuitRF named for its place: its integral
+    along its own line is the largest of its integrals along every mode's line (TE10 along TE01's line is 0, TE01 along TE10's 0,
+    TE20 along TE10's 0, and TE10 along TE20's 0.71 of its own), so a mode set EMerge fixed out of order, or a degenerate pair it
+    mixed, is a refusal naming what it found rather than an S-matrix whose rows belong to other modes."""
+    import numpy as np
+    k_ref = getattr(bc, "_k0_ref", None)
+    modes = bc.available_modes.get(k_ref) if k_ref is not None else None
+    if not modes:
+        modes = bc.get_modes(2 * np.pi * top / C0)
+    lines = mode_lines(w)
+    names = [m["name"] for m in w["hollowModes"]]
+    if len(modes) < len(lines):
+        raise Refused("Port '%s' is a hollow guide of %d modes (%s), and EMerge fixed %d mode(s) on its face at %.6g GHz."
+                      % (w["name"], len(lines), ", ".join(names), len(modes), top / 1e9))
+    signs = []
+    for k, line in enumerate(lines):
+        v = [complex(l.line_integral(modes[k].E_function)) for l in lines]
+        if abs(v[k]) < max(abs(x) for x in v) * (1 - 1e-6) or abs(v[k]) == 0:
+            raise Refused("Port '%s''s mode %d should be %s, and the mode EMerge put there (beta = %.4g rad/m at %.6g GHz) is not: "
+                          "its field along %s's polarity line is %.3g of its largest along another mode's. EMerge fixed the face's "
+                          "modes in another order, or mixed two of one cutoff; this guide's modes cannot be told apart."
+                          % (w["name"], k + 1, names[k], complex(modes[k].beta).real, top / 1e9, names[k],
+                             abs(v[k]) / max(abs(x) for x in v)))
+        signs.append(-1.0 if v[k].real < 0 else 1.0)
+    return signs
+
+
+def hollow_mode_data(sim, w, bc, freqs):
+    """brief-hzn-20 — each of a hollow guide's modes' Z_PV (|V|^2 / 2 on its own polarity line; the mode carries 1 W) and its
+    propagation constant alpha + j beta at every requested frequency, [f, mode]."""
+    import numpy as np
+    lines = mode_lines(w)
+    z = np.zeros((len(freqs), len(lines)), dtype=np.complex128)
+    g = np.zeros((len(freqs), len(lines)), dtype=np.complex128)
+    for i, f in enumerate(freqs):
+        k0 = 2 * np.pi * f / C0
+        sim.mw._wave_port_modes(bc, float(f))
+        modes = bc.get_modes(k0)
+        for k, line in enumerate(lines):
+            z[i, k] = abs(complex(line.line_integral(modes[k].E_function))) ** 2 / 2
+            g[i, k] = 1j * complex(bc.get_beta(k0, k + 1))
+    return z, g
+
+
 def second_modes(sim, waves, top):
     """R-emw2-3a — whether each wave port's face carries a second mode at the sweep's top: a mode solve asking for two, with
     the port's TEM-only filter lifted for it (a box mode is TE or TM). EMerge keeps only modes that carry power, so a second
@@ -1492,7 +1565,7 @@ def second_modes(sim, waves, top):
     k0 = 2 * np.pi * top / C0
     out = []
     for w, bc in waves:
-        own = len(w.get("terminals", [None]))
+        own = len(w.get("terminals", w.get("hollowModes", [None])))
         saved = bc.available_modes.pop(k0, None)
         state = (bc.forced_modetype, bc._last_k0, bc._first_k0, bc.initialized)
         try:
@@ -1540,6 +1613,8 @@ SAME_SPEED = 1e-3        # two TEM modes whose Re beta agree to this are of one 
 
 def entry_numbers(w):
     """The circuitRF port numbers a wave-port entry carries: its terminals' in terminal order, or its own."""
+    if "hollowModes" in w:      # brief-hzn-20 — a hollow guide's modes, in mode order
+        return [m["number"] for m in w["hollowModes"]]
     return [t["number"] for t in w["terminals"]] if "terminals" in w else [w["number"]]
 
 
@@ -1561,6 +1636,9 @@ def entry_keys(problem):
         if "terminals" in w:
             for k, t in enumerate(w["terminals"]):
                 keys[t["number"]] = float("%d.%d" % (numbers[w["number"]], k + 1))
+        elif "hollowModes" in w:    # brief-hzn-20 — EMerge names a port's modes p.m
+            for k, m in enumerate(w["hollowModes"]):
+                keys[m["number"]] = float("%d.%d" % (numbers[w["number"]], k + 1))
         else:
             keys[w["number"]] = numbers[w["number"]]
     for f in problem.get("floquetPorts", []):
@@ -2005,7 +2083,7 @@ def driven_fields(problem, folder, sim, model, solved):
     for i, f in enumerate(freqs):
         field = have[f]
         for j, (p, bc) in enumerate(ports):
-            if "terminals" in p:
+            if "terminals" in p or "hollowModes" in p:
                 continue        # brief-emw-3: a terminal group's excitations are modal; a terminal's own is not formed here
             field.excite_port(keys[p["number"]])
             v, vinc = port_voltage(field, bc), getattr(bc, "voltage", None)

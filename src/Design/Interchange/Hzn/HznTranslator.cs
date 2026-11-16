@@ -1774,5 +1774,24 @@ internal sealed partial class HznTranslator
         foreach (var d in C3dValidation.Validate(_doc, isKnownMaterial: m => _technology?.FindMaterial(m) is not null))
             if (d.Severity == CircuitRF.Diagnostics.DiagnosticSeverity.Error)
                 _r.Add(HznRefusalKind.Setting, d.Id, d.Render(), DesignName);
+        if (!_r.Any) ModesCheck();
+    }
+
+    /// <summary>
+    /// brief-hzn-20 R-hzn20-3 — a port of several modes is a hollow guide's, which only the port reader can tell (the walls closing
+    /// round its region are the setup's air box and the design's conductors): the translated document is elaborated and its ports
+    /// resolved under each setup, and a port of several modes the reader refuses is refused here with the reader's sentence. A design
+    /// with no such port is not elaborated.
+    /// </summary>
+    private void ModesCheck()
+    {
+        if (!_doc.Ports.Any(p => p.Modes > 1)) return;
+        // a nominal path: a translated design references no file, so nothing resolves against it
+        var e = new C3dElaborator(kernel: _kernel) { AttachedTechnology = _technology }
+                    .Elaborate(_doc, Path.Combine(Path.GetTempPath(), "hzn-modes-check.c3d"), null);
+        if (!e.Ok) return;
+        foreach (var report in C3dPortReports.For(_doc, e))
+            if (report.Result.Port.Modes > 1 && report.Result.Refusal is { } why)
+                _r.Add(HznRefusalKind.Excitation, "Wave Port with several modes", why, report.Result.Port.Name);
     }
 }

@@ -1090,6 +1090,11 @@ internal static class DocumentSchema
             with "Floquet": {"Modes": 2} ("Er" for a medium other than vacuum) and "Z0": "mode"; its
             modes are the result's ports Number, Number+1, ... (1 TE00, 2 TM00, then grating modes).
             EMerge only; the cell is solved on its first mesh (EMerge's refinement breaks the pairs).
+          * A HOLLOW GUIDE's wave port (one closed metal boundary round a rectangular opening) takes
+            "Modes": 2 and "Z0": "mode": its modes are the result's ports Number, Number+1 (TE10, then
+            the lower of TE01 and TE20), named P1_M1, P1_M2. EMerge only. "DeembedUm": 5000 on any wave
+            port moves its reference plane 5 mm into the structure (each mode by its own γ); a lumped
+            port's reference is its sheet, so a lumped port refuses it.
           * OPERATIONS are built by OpenCASCADE, which ships with circuitRF (Settings ▸ Solvers says
             whether this installation has it). A Boolean is Op (Subtract,
             Unite, Intersect) of one Blank and one or more Tools, owned inline; a Fillet rounds named
