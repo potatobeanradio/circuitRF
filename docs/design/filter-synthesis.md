@@ -283,8 +283,7 @@ last loop's outer side is its coupled one.
 **The seam for cross couplings.** `CoupledResonatorDesign.FromCouplings` takes the coupling matrix k_ij and Qe directly,
 with the shape's own values, so the cross-coupled forms can hand it what the coupling-matrix synthesis finds. It builds
 an inline row, so it refuses a non-zero k_ij between resonators that do not sit side by side
-(`synthesis.mcrc.cross-coupling`). The cross-coupled square, and anything with transmission zeros, is left to that
-synthesis (§2).
+(`synthesis.mcrc.cross-coupling`), except k(1,4) on the cross-coupled square (§4.1).
 
 **How close it lands.** On 20 mil RO4350B, lossless, a 0.5 dB Chebyshev of order 3 at 2.4 GHz, each realised part
 written as a netlist line and run through the engine (the ripple band against the specification):
@@ -321,6 +320,81 @@ Butterworth or Chebyshev), `order` (not 1 to 20), `bandwidth` (outside (0, 20 %]
 `FilterRealisers.All`, realised, written as an `MCRC` netlist line from its stored text and run through the engine,
 passes its band (centre within 2 %, ripple bandwidth within 15 %); each refusal by its code. `CoupledResonatorSParamTests`
 now takes its Cohn and open-loop designs from Core and passes as before.
+
+### 4.1 Cross-coupled filters
+
+**What is built.** A four-pole quasi-elliptic bandpass filter, equiripple in the passband with one transmission zero
+either side, as one MCRC: open loops (Gap = W) in Hong and Lancaster's square, `Arrangement` = `Cross`, tapped
+([10.1109/22.543968](https://doi.org/10.1109/22.543968)). The realiser is "Open-loop bandpass, cross-coupled (MCRC)",
+`CrossCoupledLoopRealiser` in `src/Core/Synthesis/Filters/CrossCoupledRealisers.cs`. It takes a Chebyshev spec of order
+4, at most 20 % wide, with two zeros at mirror frequencies, f1·f2 = f0²: their normalised frequencies
+ω = (f/f0 − f0/f)/FBW must lie either side of the band and agree in size to 5 %, and their mean is used.
+
+**The matrix.** The return loss comes from the ripple, RL = −10·log10(1 − 10^(−Ap/10)), and §2 gives the folded 4–2
+matrix at RL with zeros at ±ω_z, then its physical terms. With mirror zeros the folded matrix holds M12 = M34, M23 and
+M14 and nothing else: no self-coupling, M13 = M24 = 0. Its loop product M12·M23·M34·M14 is negative, the cross coupling
+against the main path, which is what puts both zeros at real frequencies. The square draws exactly that:
+
+- loops 1 and 4 face across their openings, an electric coupling, across `Sx`;
+- loops 2 and 3 face back to back, a magnetic coupling of the opposite sign, across S3;
+- 1-2 and 3-4 face through sides next to their openings, a mixed coupling, across S2 and S4.
+
+So the sign of k14 against k23 is the square's geometry: only |k| is realised.
+
+**The geometry.** `CoupledResonatorDesign.FromCouplings` with `Arrangement` = `Cross` runs §4's four steps, with three
+differences:
+
+1. **k12 and k34** are solved on the inline pair. The square's 1-2 pair is that pair turned a quarter turn: two loops
+   opened on opposite sides, facing through the sides next to their openings.
+2. **k23 and k14** are solved in the square itself. Its other two loops are shortened to 0.6·l, which puts them near
+   1.7·f0, outside the window the peaks are searched in, and its other gaps are 5·h. So the two peaks left are the
+   pair's own split, and their mean is the pair's own pull on each loop. For k23 the signal reaches loops 2 and 3
+   through the detuned end loops. The square is lossless and symmetric, so each of the pair's modes still peaks at
+   0 dB, narrow, and golden section finds it.
+3. **The tap** runs from the middle of the outer side, round the corner and along the top side. In the square both of
+   those sides are free, so the range is the odd row's.
+
+Each loop is then sized for f0 where it sits, each coupled side by its own pair's mean: two sides for every loop, and the
+tap's pull as well for loops 1 and 4.
+
+**How close it lands.** On 20 mil RO4350B, lossless, at 2.4 GHz, with 0.5 dB ripple, FBW = 5 % and zeros at ω = ±2
+(2.2830 and 2.5230 GHz), the realised part written as a netlist line and run through the engine gives:
+
+| | Asked | Realised | Off |
+|---|---|---|---|
+| Lower zero | 2.2830 GHz | 2.2710 GHz | −0.52 % |
+| Upper zero | 2.5230 GHz | 2.5025 GHz | −0.81 % |
+| Centre | 2.4000 GHz | 2.4062 GHz | +0.26 % |
+| Ripple bandwidth | 120.0 MHz | 113.6 MHz | −5.4 % |
+
+The matrix asks for k12 = k34 = 0.0347, k23 = 0.0322, k14 = 0.0043 and Qe = 33.7, which give S2 = S4 = 0.83 mm,
+S3 = 1.32 mm, Sx = 1.80 mm and Tap = 2.88 mm, with the end loops 40.30 mm and the middle ones 39.04 mm. The design
+takes about 15 s, most of it the square's own pairs, each solve a four-loop model.
+
+**Limits.**
+
+- **The circuit model leaves things out.** The square's diagonals (1-3 and 2-4) and the corners' coupling are not in
+  the model (rf-passives.md §3.15). An EM run of the artwork shows them, and they move the zeros.
+- **The 1-2 pair is measured aligned.** In the square, loops 1 and 2 sit (Sx − S3)/2 apart sideways and differ in size
+  by a few per cent. Their facing sides overlap a little less than the aligned pair's do.
+- **Only mirror zeros.** Unmirrored zeros need self-couplings and M24, which the square cannot draw.
+- **No trisection.** A three-pole trisection needs three loops coupled in a triangle, 1-3 included, and no MCRC
+  arrangement draws one. It is listed in §7.
+
+**Refusals.** `synthesis.xc.*`: `band` (not a bandpass), `response` (not Chebyshev), `order` (not 4), `bandwidth`
+(outside (0, 20 %]), `zeros` (not two, not one either side, or not mirrored to 5 %), and `substrate` (none given).
+`Supports` gives the same sentence. A coupling or Qe the model cannot reach is refused by the solve
+(`synthesis.mcrc.out-of-reach`).
+
+**Tests.** `tests/Engine.Tests/Synthesis/CrossCoupledRealiserTests.cs` covers three things:
+
+- **The realised part.** It is found through `FilterRealisers.All`, written as an `MCRC` netlist line and run through
+  the engine. Its zeros fall within 3 % of those asked for, its centre within 2 % and its ripple bandwidth within 20 %.
+- **The matrix.** The folded matrix of mirror zeros holds only the square's couplings, with a negative loop product.
+- **The refusals.** Each refusal gives its code.
+
+`CouplingMatrixTests` gains the 4–2 mirror case: the matrix's response equals its polynomials to 1e-9.
+`CoupledResonatorRealiserTests` shares its board and band helpers, and its inline forms land where they did.
 
 ## 5. Coupled arrays on MCLA
 
@@ -424,6 +498,13 @@ now takes its Cohn and open-loop designs from Core and passes as before.
   specification is typed.
 - **Unequal external Q at the two ends** (§4). `FromCouplings` takes one Qe and MCRC one Tap. Why: a filter between
   unequal terminations, or a multiplexer's channel, needs a different Qe at each end.
+- **A trisection on MCRC** (§4.1). An arrangement of three open loops in a triangle, 1-3 coupled, after Hong and Lancaster's
+  trisection ([10.1049/ip-map:19990146](https://doi.org/10.1049/ip-map:19990146)), with the matrix's CT form (item 8)
+  giving its couplings. Why: one zero on the side that needs it, at three poles rather than four. Two in a row place two
+  zeros anywhere, which the square, holding mirror zeros only, cannot.
+- **A square with k14 of the same sign as k23** (§4.1). Loops 1 and 4 opened away from each other, so that they couple
+  magnetically, as 2 and 3 do. Why: complex zeros (item 10), which flatten the group delay, need the cross coupling in
+  phase with the main path, and today's square only draws it against.
 
 ## 8. References
 
@@ -440,3 +521,6 @@ now takes its Cohn and open-loop designs from Core and passes as before.
 - M. Kirschning and R. H. Jansen, "Accurate wide-range design equations for the frequency-dependent characteristic of
   parallel coupled microstrip lines," IEEE Trans. MTT 32(1), 1984:
   [10.1109/TMTT.1984.1132616](https://doi.org/10.1109/TMTT.1984.1132616) (§4).
+- J.-S. Hong and M. J. Lancaster, "Microstrip cross-coupled trisection bandpass filters with asymmetric frequency
+  characteristics," IEE Proc. Microwaves, Antennas and Propagation 146(1), 1999:
+  [10.1049/ip-map:19990146](https://doi.org/10.1049/ip-map:19990146) (§7).

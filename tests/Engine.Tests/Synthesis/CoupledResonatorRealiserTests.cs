@@ -18,9 +18,9 @@ namespace CircuitRF.Engine.Tests.Synthesis;
 public class CoupledResonatorRealiserTests(ITestOutputHelper output)
 {
     // RO4350B, 20 mil, lossless, so the passband ripple is the design's.
-    private const string Sub = "H=0.508e-3 T=35e-6 Er=3.66 Sigma=1e20 TanD=0";
-    private static readonly MicrostripSubstrate Board = new(0.508e-3, 35e-6, 3.66, 1e20, 0.0);
-    private const double F0 = 2.4e9, Ripple = 0.5;
+    internal const string Sub = "H=0.508e-3 T=35e-6 Er=3.66 Sigma=1e20 TanD=0";
+    internal static readonly MicrostripSubstrate Board = new(0.508e-3, 35e-6, 3.66, 1e20, 0.0);
+    internal const double F0 = 2.4e9, Ripple = 0.5;
 
     private static FilterSpec Band(double fbw, int order = 3, double z0 = 50.0)
     {
@@ -58,12 +58,12 @@ public class CoupledResonatorRealiserTests(ITestOutputHelper output)
         Assert.InRange(bw / (spec.F2Hz - spec.F1Hz), 0.85, 1.15);
     }
 
-    private static double S21Db(ElaboratedNetlist nl, double f)
+    internal static double S21Db(ElaboratedNetlist nl, double f)
         => 20.0 * Math.Log10(((Complex)SParameterEngine.Run(nl, [f])["S"][0, 1, 0]).Magnitude);
 
     /// <summary>The lowest and highest frequencies in [lo, hi] where |S21| is within the ripple of 0 dB, each refined by
     /// bisection.</summary>
-    private static (double F1, double F2) RippleEdges(ElaboratedNetlist nl, double lo, double hi)
+    internal static (double F1, double F2) RippleEdges(ElaboratedNetlist nl, double lo, double hi)
     {
         var f = Enumerable.Range(0, 601).Select(i => lo + (hi - lo) * i / 600.0).ToArray();
         var s = SParameterEngine.Run(nl, f)["S"];
