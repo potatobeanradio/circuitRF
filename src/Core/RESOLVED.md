@@ -4948,3 +4948,26 @@ source now takes its nets swapped (`SpiceSourceTranslation.Independent`), held b
 cosine's in radians, so `Phase = (φ − 90)·π/180`. And a tone source with `Delay` is zero before it, where the dialect
 holds VO + VA·sin φ: identical for φ = 0 (the common case), different by VA·sin φ before TD otherwise. Noted for TRN-6,
 which writes the dialect back.
+
+## brief-trn-3 — the voltage-controlled switch (2026-11-15)
+
+**It is `VSwitch`, not `Switch`.** `Switch` was already the ideal SPST/SPDT system block's engine type (`Throws`, `State`), so the
+owner chose `VSwitch` — the dialect's VSWITCH family, with room for a current-controlled one beside it.
+
+**The transition is a cubic smoothstep in the LOGARITHM of the conductance.** ln g = ln gOff + (ln gOn − ln gOff)(3u² − 2u³),
+u = (vc − Voff)/(Von − Voff) clamped to [0, 1]. Linear in g would cross nine decades almost entirely at the on end (g passes
+1/Roff·1e3 only at u ≈ 1e-6 of the way), so a step limit sized to the window would be spent where nothing happens; in ln g the
+decades are crossed evenly. The cubic's zero slope at both ends makes g and dg/dvc continuous (gate 2: the largest step in
+dg/dv over 200,000 samples is 1.4e-4 of its peak). Von = Voff is refused: a transition of no width is a step no analysis resolves.
+
+**Hyst is state, kept only in transient, and flips only where it moves nothing.** Off, the window sits Hyst/2 further towards
+Von; on, Hyst/2 further towards Voff; the state flips once the device is fully across its window, where g is at its end value
+in both windows, so the flip changes g by exactly nothing and needs no breakpoint. Outside transient the model has no state and
+queues a note; `NonlinearDcEngine` drains `ITransientDevice` models after its stamp loop (nonlinear models are skipped there),
+which reaches DC, HB's seed, the S-parameter pre-pass and the envelope's start. A transient run calls `EnterTransient` before
+its own operating-point solve, which clears the note, so a transient run never shows it.
+
+**The reader maps VSWITCH and refuses SW.** Every VSWITCH value is written at the dialect's default when the card is silent,
+because VSwitch's own Roff default (1e9) is not the dialect's (1e6). SW switches abruptly at VT with hysteresis VH, which a
+smooth transition cannot express: refused naming VT. The dialect's VSWITCH transition shape is its own; what maps is the four
+values, not the curve between them.

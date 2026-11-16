@@ -174,8 +174,7 @@ public sealed class SpiceReaderHygieneTests
     // ── element letters circuitRF will not implement ──────────────────────────
 
     [Theory]
-    [InlineData("S1 a b c d SWMOD", "switch")]
-    [InlineData("W1 a b VSENSE SWMOD", "switch")]
+    [InlineData("W1 a b VSENSE SWMOD", "current-controlled switch")]
     [InlineData("T1 a 0 b 0 Z0=50 TD=1n", "transmission line")]
     [InlineData("O1 a 0 b 0 LMOD", "transmission line")]
     [InlineData("U1 a b UMOD", "circuitRF does not have")]

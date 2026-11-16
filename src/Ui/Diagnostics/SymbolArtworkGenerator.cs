@@ -69,6 +69,7 @@ public static class SymbolArtworkGenerator
         (SymbolKind.ToneSource,      "tone-source",       2),
         (SymbolKind.CurrentToneSource, "current-tone-source", 2),
         (SymbolKind.Idc,             "idc",               2),
+        (SymbolKind.VSwitch,         "vswitch",           4),
         (SymbolKind.VPulse,          "v-pulse",           2),
         (SymbolKind.VPwl,            "v-pwl",             2),
         (SymbolKind.VExp,            "v-exp",             2),

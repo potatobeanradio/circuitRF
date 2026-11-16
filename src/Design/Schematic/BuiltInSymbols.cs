@@ -69,6 +69,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _iToneSrc     = BuildCurrentToneSource();
     private static readonly Dictionary<SymbolKind, Symbol> _waveSrc = BuildWaveformSources();
     private static readonly Symbol _idcSrc       = BuildIdc();
+    private static readonly Symbol _vswitch      = BuildVSwitch();
     private static readonly Symbol _vccs         = BuildVccs();
     private static readonly Symbol _vcvs         = BuildVcvs();
     private static readonly Symbol _opAmp        = BuildOpAmp(supplies: false);
@@ -268,6 +269,7 @@ public static class BuiltInSymbols
             case SymbolKind.ToneSource: return _toneSrc;
             case SymbolKind.CurrentToneSource: return _iToneSrc;
             case SymbolKind.Idc:        return _idcSrc;
+            case SymbolKind.VSwitch:    return _vswitch;
             case SymbolKind.VPulse or SymbolKind.VPwl or SymbolKind.VExp or SymbolKind.VSffm or SymbolKind.VExpr
               or SymbolKind.IPulse or SymbolKind.IPwl or SymbolKind.IExp or SymbolKind.ISffm or SymbolKind.IExpr:
                 return _waveSrc[kind];
@@ -1032,6 +1034,30 @@ public static class BuiltInSymbols
         L(   0,   38,   0,  -14),           // arrow shaft
         Poly(true, 0, -40, -16, -10, 16, -10),   // arrowhead, tip toward pin 1
     ], SymbolKind.Idc);
+
+    // ── VSwitch (brief-trn-3 R-trn3-4) — the voltage-controlled switch. Pins: [0] p (0,-200), [1] n (0,+200), [2] ctrl+ (-300,-100),
+    // [3] ctrl- (-300,+100), VCCS's layout. The switched pair is a blade hinged at the lower contact, drawn open, swinging towards
+    // the upper one; the control leads stop at an actuator box with + and −, and a dashed line from the box to the blade's middle
+    // says what moves it. As on the VCCS, the control leads do not touch the switched path: they sense a voltage and carry nothing.
+
+    private static Symbol BuildVSwitch() => Sym([
+        L(   0, -200,    0,  -70),          // lead to the upper contact (p)
+        Circ(  0,  -60,   10, filled: true), // upper contact
+        L(   0,  200,    0,   70),          // lead to the lower contact (n)
+        Circ(  0,   60,   10, filled: true), // lower contact, the hinge
+        L(   0,   60,   48,  -52),          // the blade, open
+        L(-300, -100, -200, -100),          // control lead, upper (ctrl+)
+        L(-300,  100, -200,  100),          // control lead, lower (ctrl-)
+        Poly(false, -200, -40, -140, -40, -140, 40, -200, 40),   // actuator
+        L(-200,  -40, -200, -100),          // actuator to ctrl+
+        L(-200,   40, -200,  100),          // actuator to ctrl-
+        L(-140,    0, -110,    0),          // the link, dashed
+        L( -90,    0,  -60,    0),
+        L( -40,    0,  -10,    0),
+        L(  10,    0,   22,    0),
+        Txt("+", -235, -130, fontSize: PolarityFontSize, colorRole: SymbolColorRole.SymbolPlus),
+        Txt("−", -235, +130, fontSize: PolarityFontSize),
+    ], SymbolKind.VSwitch);
 
     // ── VCCS — ideal voltage-controlled current source ────────────────────────
     // Pins: [0] out+ (0,-200), [1] out- (0,+200), [2] ctrl+ (-300,-100), [3] ctrl- (-300,+100).

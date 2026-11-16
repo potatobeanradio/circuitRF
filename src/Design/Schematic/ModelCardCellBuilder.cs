@@ -133,6 +133,7 @@ public static class ModelCardCellBuilder
         "R"            => SymbolKind.Resistor,
         "C"            => SymbolKind.Capacitor,
         "L"            => SymbolKind.Inductor,
+        "VSwitch"      => SymbolKind.VSwitch,
         _              => null,
     };
 

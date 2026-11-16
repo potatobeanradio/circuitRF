@@ -5055,3 +5055,23 @@ equals the definition to 1.0e-14; PWL File= equals Points= bit for bit and a rep
 Ramp=10/f follows the raised cosine to 1.6e-14; a damped delayed sine equals A·e^(−θ(t−td))·sin(2πf(t−td)+φ) to 1.5e-14;
 HB and S-parameter benches with a pulse equal Vdc at its first level bit for bit, and HB is bit-identical with
 Delay/Ramp/Damping set; V_Expr equals V_Exp exactly; `time` outside a condition in HB is refused naming it.
+
+## brief-trn-3 — soft breakpoints and the first hard-switching measurement (2026-11-15)
+
+**A soft window limits the step without landing.** `ITransientDevice.SoftWindow` gives a control port and a voltage window; before
+each step `SoftRung` extrapolates that port's voltage along its slope over the segment's last two accepted steps, and when the
+step from the current rung would reach into the window, moves down the ladder until h ≤ window / (TransitionPoints·|slope|). Only
+the ladder rung changes, so the step still factors from the kept rung set and nothing is landed on. A segment's first step has no
+slope and no limit, which costs nothing because a segment opens six rungs down. Measured: a 1 V window crossed in 50 ns with
+MaxStep = 50 ns takes 8 accepted steps (7 inside), where the unlimited ladder would take one or two.
+
+**A state change between steps clears the device's cached evaluation** (`AcceptStep` returns true): its i(v) is a different
+function afterwards, and the cache is keyed on port voltages only.
+
+**R-trn3-6 — a buck converter, the first hard-switching circuit measured.** 12 V in, VSwitch (Ron 0.1 Ω, Roff 1 MΩ, Von 3 V,
+Voff 2 V) driven by a 0-5 V 1 MHz pulse (10 ns edges, 490 ns width), a diode (Is 1e-14) from ground, 10 µH, 1 µF, 5 Ω, 200 µs
+(200 cycles) from InitialState=zero, Step 10 ns, Debug. It runs without failure: 33,226 accepted steps, 4 rejected, 84,695 Newton
+iterations (2.5 per step), 812 factorizations, 231,794 device evaluations, 801 breakpoints landed, 14 method-rung pairs, the
+interface path; 0.21 s. The settled output (mean of the last 20 cycles) is 5.5175 V with 40 mV ripple, against the duty-cycle
+estimate D(Vin − I·Ron) − (1 − D)·Vd = 5.5269 V: −0.17 %.
+Gate 3 (HB against transient): a tone-driven switch's current agrees on its first five harmonics to 1e-4 dB.

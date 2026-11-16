@@ -256,6 +256,9 @@ public static class ComponentTypeRegistry
             SearchTerms: ["Expression", "I_Expr", "behavioural", "time", "transient", "current"]),
         [SymbolKind.Idc] = new("Idc", "I", Category: ComponentCategory.Sources,
             SearchTerms: ["Idc", "DC current", "current source", "bias", "I"]),
+        // brief-trn-3 — the voltage-controlled switch, under Sources beside the controlled sources ("S", the dialect's letter).
+        [SymbolKind.VSwitch] = new("VSwitch", "S", Category: ComponentCategory.Sources,
+            SearchTerms: ["VSwitch", "switch", "voltage-controlled switch", "VSWITCH", "Ron", "Roff", "transient", "converter"]),
         // VCCS: "G" is its instance prefix by long convention (the SPICE G element), even though
         // circuitRF's own current DIRECTION is the opposite of that element's — see VccsModel.
         [SymbolKind.Vccs]          = new("VCCS", "G",
@@ -1173,6 +1176,10 @@ public static class ComponentTypeRegistry
         SymbolKind.VPulse or SymbolKind.VPwl or SymbolKind.VExp or SymbolKind.VSffm or SymbolKind.VExpr =>
             "The waveform is the voltage at + relative to −.",
 
+        SymbolKind.VSwitch =>
+            "p and n are the switched pair and interchangeable; the control voltage is ctrl+ relative to ctrl−, and swapping "
+          + "that pair inverts the switch.",
+
         SymbolKind.IPulse or SymbolKind.IPwl or SymbolKind.IExp or SymbolKind.ISffm or SymbolKind.IExpr or SymbolKind.Idc =>
             "A positive value is delivered INTO the + terminal and drawn out of the −, as the arrow on the + lead shows.",
 
@@ -1238,6 +1245,7 @@ public static class ComponentTypeRegistry
         SymbolKind.ISffm         => "I_SFFM",
         SymbolKind.IExpr         => "I_Expr",
         SymbolKind.Idc           => "Idc",
+        SymbolKind.VSwitch       => VSwitchModel.TypeName,
         SymbolKind.Vccs          => "VCCS",
         SymbolKind.Vcvs          => "VCVS",
         SymbolKind.OpAmp         => "OpAmp",
@@ -1605,6 +1613,15 @@ public static class ComponentTypeRegistry
         (SymbolKind.Vccs or SymbolKind.Vcvs, "T") =>
             "Delay applied to the gain, as a time: the transfer becomes gain x e^(-jwT), a phase that "
           + "grows in proportion to frequency. 0 is no delay, and DC is unaffected.",
+        (SymbolKind.VSwitch, "Ron") => "The resistance between p and n when the switch is on.",
+        (SymbolKind.VSwitch, "Roff") => "The resistance between p and n when the switch is off.",
+        (SymbolKind.VSwitch, "Von") => "The control voltage at and beyond which the switch is fully on.",
+        (SymbolKind.VSwitch, "Voff") => "The control voltage at and beyond which the switch is fully off. Between the two the "
+                                        + "conductance moves smoothly; Von below Voff is inverse logic.",
+        (SymbolKind.VSwitch, "Hyst") => "Hysteresis, volts, in a transient analysis only: off, the switch turns on Hyst/2 past Von; "
+                                        + "on, it turns off Hyst/2 past Voff. Every other analysis ignores it, with a note.",
+        (SymbolKind.VSwitch, "TransitionPoints") => "How many accepted transient steps a full crossing of the transition takes at "
+                                                    + "least (default 8). The step is limited across it; nothing is landed on.",
         _ => "",
     };
 
@@ -2649,6 +2666,11 @@ public static class ComponentTypeRegistry
             case SymbolKind.VExpr:      return [new("Expr", "\"sin(2*pi*1e6*time)\"", "", true, UnitDimension.None)];
             case SymbolKind.IExpr:      return [new("Expr", "\"1e-3*sin(2*pi*1e6*time)\"", "", true, UnitDimension.None)];
             case SymbolKind.Idc:        return [new("Idc", "1", "mA", true, UnitDimension.Current)];
+            // brief-trn-3 — the switch's four; Hyst and TransitionPoints are added by hand when wanted.
+            case SymbolKind.VSwitch:    return [new("Ron", "1", "Ω", true, UnitDimension.Resistance),
+                                                new("Roff", "1", "GΩ", true, UnitDimension.Resistance),
+                                                new("Von", "1", "V", true, UnitDimension.Voltage),
+                                                new("Voff", "0", "V", true, UnitDimension.Voltage)];
             // VCCS: one parameter, the transconductance. I = G·(V(ctrl+) − V(ctrl−)).
             // T (issue 55) is the delay, e^(−jωT) on the gain; 0 is no delay, and the row is hidden
             // until it is set.

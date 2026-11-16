@@ -252,6 +252,11 @@ public static class SymbolPortDefs
             case SymbolKind.Vcvs:
                 return [("out+", 0f, -200f), ("out-", 0f, 200f),
                         ("ctrl+", -300f, -100f), ("ctrl-", -300f, 100f)];
+            // VSwitch (brief TRN-3): VCCS's layout and order — the switched pair vertical, the control pair on the left —
+            // [0] p, [1] n, [2] ctrl+, [3] ctrl−, the order VSwitchModel reads its two ports in.
+            case SymbolKind.VSwitch:
+                return [("p", 0f, -200f), ("n", 0f, 200f),
+                        ("ctrl+", -300f, -100f), ("ctrl-", -300f, 100f)];
             // Op-amp: pins in the NET order OpAmpModel reads — in+, in−, out — though the glyph
             // draws the inverting input on top. The five-pin tile appends the supplies, V+ above.
             case SymbolKind.OpAmp:

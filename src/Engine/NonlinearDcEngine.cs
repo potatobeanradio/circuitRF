@@ -360,6 +360,11 @@ public sealed class NonlinearDcEngine
             nl.DrainModelWarnings(ec.Model);
         }
 
+        // A device that tells steady-state analyses something about itself (a VSwitch's transient-only Hyst, brief TRN-3) is
+        // nonlinear and so skipped by the loop above; its note is collected here.
+        foreach (var ec in nl.Components)
+            if (ec.Model is ITransientDevice) nl.DrainModelWarnings(ec.Model);
+
         // Resolve control-current branch indices for any SDD with C[n] references.
         // Branch indices are now assigned (the stamp loop above ran all linear devices).
         ResolveControlCurrentBranches();

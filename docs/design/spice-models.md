@@ -580,10 +580,15 @@ dropped.
 
 ### 8.7 Switches — `S`, `W` (2 lines)
 
-Voltage- and current-controlled switches with a `VSWITCH`-family `.model`. Genuinely not something
-circuitRF has, and genuinely a discontinuity that harmonic balance does not want. These should stay
-refused — **by name**, with a sentence that says circuitRF has no switch device, rather than by the
-generic *"a kind this reader does not read"*.
+Voltage- and current-controlled switches with a `.model`. A **voltage-controlled** `S` line becomes
+circuitRF's `VSwitch` (`docs/design/transient.md` §7.1), its two switched nets, two control nets and
+card: a `VSWITCH` card's `RON`, `ROFF`, `VON` and `VOFF` map onto `Ron`, `Roff`, `Von`, `Voff`, every one
+written at the dialect's default where the card is silent (RON 1, ROFF 1e6, VON 1, VOFF 0 — `VSwitch`'s
+own `Roff` default differs). Any other parameter on the card refuses it by that parameter's name. An
+`SW` card switches abruptly at `VT` with hysteresis `VH`, which a switch with a smooth transition
+cannot express, so it is refused naming `VT`. A trailing `ON`/`OFF` (the dialect's starting-state
+hint) is noted and dropped. **Current-controlled** `W` lines and `CSW`/`ISWITCH` cards stay refused by
+name.
 
 ### 8.8 Nonlinear charge is written as a behavioural source driving a capacitor
 
@@ -828,7 +833,8 @@ primitive is needed.
 | `Fx` | current-controlled current | SDD with a control-current reference |
 | `Hx` | current-controlled voltage | `VCVS`/branch row with a control-current reference |
 | `Ex`/`Gx` referencing `time` | transient stimulus | the behavioural source, `time` kept: a transient analysis evaluates it (§8.10) |
-| `Sx`, `Wx` | switch | refused **by name** (§8.7) |
+| `Sx` + `VSWITCH` card | voltage-controlled switch | `VSwitch` with `Ron`/`Roff`/`Von`/`Voff`; an unexpressible card parameter, or an `SW` card, refused by name (§8.7) |
+| `Wx` | current-controlled switch | refused **by name** (§8.7) |
 | `Tx`, `Ox`, `Ux` | line, opamp macro, digital | refused by name |
 
 ### 9.4 Reader hygiene

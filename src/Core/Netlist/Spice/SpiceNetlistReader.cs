@@ -757,6 +757,9 @@ public static class SpiceNetlistReader
             // name-is-the-last-bare-word rule covers the rest — which is why that rule was written
             // that way. Observed on a kit as a four-terminal resistor with a thermal node.
             ['N'] = (2, true),
+            // The voltage-controlled switch (brief TRN-3): its two switched nets, its two control nets and its .model,
+            // which becomes circuitRF's VSwitch (SpiceModelCardTranslation).
+            ['S'] = (4, true),
             ['X'] = (0, true),      // a subcircuit call: as many nets as the definition has ports
         };
 
@@ -772,8 +775,7 @@ public static class SpiceNetlistReader
         /// </summary>
         private static readonly Dictionary<char, string> Unimplemented = new()
         {
-            ['S'] = "a voltage-controlled switch, and circuitRF has no switch device",
-            ['W'] = "a current-controlled switch, and circuitRF has no switch device",
+            ['W'] = "a current-controlled switch, which circuitRF does not have (its VSwitch is voltage-controlled)",
             ['T'] = "a lossless transmission line stated in the time domain. circuitRF's own line "
                   + "models are frequency-domain and are placed from the palette, not read from here",
             ['O'] = "a lossy transmission line, which circuitRF does not read from this dialect",
@@ -1203,6 +1205,16 @@ public static class SpiceNetlistReader
             // 'PARAMS:'. That refusal names the wrong thing entirely, and it is the one the file's
             // own reader would never make.
             bare.RemoveAll(w => w.Equals("params:", StringComparison.OrdinalIgnoreCase));
+
+            // A switch line may end with ON or OFF, the dialect's hint for the state its operating-point search starts from.
+            // circuitRF's switch has no such state — its conductance is a function of the control voltage — so the word is
+            // noted and dropped rather than read as the model's name.
+            if (letter == 'S' && bare.Count > shape.Nets + 1 && bare[^1].ToUpperInvariant() is "ON" or "OFF")
+            {
+                Note(file, number, $"'{name}' states an initial {bare[^1].ToUpperInvariant()} state; circuitRF's switch "
+                                   + "follows its control voltage from the start, so it was dropped.");
+                bare.RemoveAt(bare.Count - 1);
+            }
 
             string? area = null;
             if (shape.NamesModel && letter != 'X' && bare.Count > shape.Nets + 1 &&

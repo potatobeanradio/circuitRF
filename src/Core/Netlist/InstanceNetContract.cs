@@ -82,7 +82,7 @@ public static class InstanceNetContract
             or P1ToneModel or PnToneModel or ModSourceModel or NonlinearCModel                => 2,
 
         // ── Controlled sources: an output pair and a control pair, two ports of two nets each ──
-        VccsModel or VcvsModel                                                                => 4,
+        VccsModel or VcvsModel or VSwitchModel                                                => 4,
         // The ideal transformer: the primary pair, then the secondary pair.
         IdealTransformerModel                                                                 => 4,
         // The op-amp: in+, in−, out, and V+, V− with Pins=5 — the model's own resolved count.

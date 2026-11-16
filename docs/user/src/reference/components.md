@@ -525,6 +525,32 @@ as one side of a comparison, which every steady-state analysis reads with all ti
 
 {{table: components/IExpr}}
 
+### Voltage-Controlled Switch (VSwitch) {#vswitch}
+
+{{symbol: vswitch}}
+
+A resistance between **p** and **n** set by the voltage between **ctrl+** and **ctrl−**, which draw no
+current: `Roff` at and beyond `Voff`, `Ron` at and beyond `Von`, and in between a smooth, monotone
+transition — the conductance's logarithm follows a cubic, so the conductance and its slope are
+continuous everywhere. A `Von` below `Voff` is inverse logic.
+
+It works in every analysis. DC, harmonic balance and envelope runs evaluate it as the nonlinear
+device it is (the smooth transition is what keeps a harmonic-balance spectrum finite); an S-parameter
+run linearises it at its bias, so a switch biased on is `Ron` in series.
+
+In a transient analysis two more keys apply:
+
+- `Hyst` — hysteresis in volts. Off, the switch does not turn fully on until `Hyst/2` past `Von`; on,
+  it does not turn fully off until `Hyst/2` past `Voff`. Every other analysis ignores it, with a note.
+- `TransitionPoints` — at least this many accepted steps across a full crossing of the transition
+  (default 8). The step is limited while the control voltage crosses; no step is forced to land on
+  the crossing.
+
+`Switch` is a different component: the ideal SPST/SPDT [system block](system-components.html), set by
+its `State`.
+
+{{table: components/VSwitch}}
+
 ### Voltage-Controlled Current Source (VCCS) {#vccs}
 
 {{symbol: vccs}}

@@ -1837,3 +1837,10 @@ src/Core/Devices/WaveformSourceModel.cs|{who}: Points= pair {i + 1} ('{tok[2 * i
 src/Core/Devices/WaveformSourceModel.cs|{who}: Points= takes time-value pairs; it has {tok.Length} number(s).
 src/Core/Devices/WaveformSourceModel.cs|{who}: line {lineNo} of '{Path.GetFileName(path)}' is not two numbers (time, value): '{line}'.
 src/Engine/Array/ArrayPattern.cs|The tables were built for another lattice.
+src/Core/Devices/VSwitchModel.cs|VSwitch takes {string.Join(
+src/Core/Devices/VSwitchModel.cs|VSwitch: Hyst must not be negative.
+src/Core/Devices/VSwitchModel.cs|VSwitch: Ron and Roff must be positive resistances.
+src/Core/Devices/VSwitchModel.cs|VSwitch: TransitionPoints must be at least 1.
+src/Core/Devices/VSwitchModel.cs|VSwitch: Von and Voff must differ — the switch moves between them, and a transition of no width is a step no analysis can resolve.
+src/Core/Devices/VSwitchModel.cs|VSwitch: {key} is not a finite number.
+src/Core/Devices/VSwitchModel.cs|VSwitch: {key} must be a number.

@@ -1657,6 +1657,10 @@ public sealed partial class Elaborator
                 : EvalOverride(inst, ov, parentScope);
         }
 
+        // brief-trn-3 — a switch names itself in the note a steady-state analysis gives about its Hyst.
+        if (inst.Reference.Equals(VSwitchModel.TypeName, StringComparison.OrdinalIgnoreCase))
+            result["__instanceLabel"] = new Value(inst.InstanceName);
+
         ValidatePortPairNetCount(inst, result);
         return result;
     }

@@ -1128,6 +1128,56 @@ as one side of a comparison, which every steady-state analysis reads with all ti
 <tbody>
 <tr><td>Expr</td><td><code>&quot;1e-3*sin(2*pi*1e6*time)&quot;</code></td><td>&mdash;</td><td>shown</td><td>An expression in time (the simulated time, s) and the globals: &quot;1 - exp(-time/1u)&quot;.</td></tr>
 </tbody></table>
+<h3 id="vswitch">Voltage-Controlled Switch (VSwitch)</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.88 25.96L151.88 57.84" /><ellipse fill="#2D14C3" cx="151.88" cy="60.29" rx="2.45" ry="2.45" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.88 124.04L151.88 92.16" /><ellipse fill="#2D14C3" cx="151.88" cy="89.71" rx="2.45" ry="2.45" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.88 89.71L163.64 62.25" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M78.32 50.48L102.84 50.48" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M78.32 99.52L102.84 99.52" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M102.84 65.19L117.55 65.19L117.55 84.81L102.84 84.81L102.84 65.19Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M102.84 65.19L102.84 50.48" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M102.84 84.81L102.84 99.52" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M117.55 75L124.9 75" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M129.81 75L137.16 75" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M142.07 75L149.42 75" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M154.33 75L157.27 75" /><text fill="#D26328" transform="translate(94.25 43.13)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65" y="3.31">
+			+
+	</text><text fill="#2D14C3" transform="translate(94.25 106.88)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65" y="3.31">
+			−
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="148.88" y="22.96" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="148.88" y="121.04" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="75.32" y="47.48" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="75.32" y="96.52" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="91.36, 100.94, 110.1, 122.38, 126.51, 132.12, 139.82" y="172.32">
+			VSwitch
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.88 25.96L151.88 57.84" /><ellipse fill="#9684FA" cx="151.88" cy="60.29" rx="2.45" ry="2.45" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.88 124.04L151.88 92.16" /><ellipse fill="#9684FA" cx="151.88" cy="89.71" rx="2.45" ry="2.45" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.88 89.71L163.64 62.25" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M78.32 50.48L102.84 50.48" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M78.32 99.52L102.84 99.52" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M102.84 65.19L117.55 65.19L117.55 84.81L102.84 84.81L102.84 65.19Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M102.84 65.19L102.84 50.48" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M102.84 84.81L102.84 99.52" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M117.55 75L124.9 75" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M129.81 75L137.16 75" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M142.07 75L149.42 75" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M154.33 75L157.27 75" /><text fill="#F58C4B" transform="translate(94.25 43.13)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65" y="3.31">
+			+
+	</text><text fill="#9684FA" transform="translate(94.25 106.88)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65" y="3.31">
+			−
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="148.88" y="22.96" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="148.88" y="121.04" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="75.32" y="47.48" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="75.32" y="96.52" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="91.36, 100.94, 110.1, 122.38, 126.51, 132.12, 139.82" y="172.32">
+			VSwitch
+	</text></svg></span>
+</span><figcaption>VSwitch</figcaption></figure>
+<p>A resistance between <strong>p</strong> and <strong>n</strong> set by the voltage between <strong>ctrl+</strong> and <strong>ctrl−</strong>, which draw no
+current: <code>Roff</code> at and beyond <code>Voff</code>, <code>Ron</code> at and beyond <code>Von</code>, and in between a smooth, monotone
+transition — the conductance's logarithm follows a cubic, so the conductance and its slope are
+continuous everywhere. A <code>Von</code> below <code>Voff</code> is inverse logic.</p>
+<p>It works in every analysis. DC, harmonic balance and envelope runs evaluate it as the nonlinear
+device it is (the smooth transition is what keeps a harmonic-balance spectrum finite); an S-parameter
+run linearises it at its bias, so a switch biased on is <code>Ron</code> in series.</p>
+<p>In a transient analysis two more keys apply:</p>
+<ul>
+<li><code>Hyst</code> — hysteresis in volts. Off, the switch does not turn fully on until <code>Hyst/2</code> past <code>Von</code>; on,
+it does not turn fully off until <code>Hyst/2</code> past <code>Voff</code>. Every other analysis ignores it, with a note.</li>
+<li><code>TransitionPoints</code> — at least this many accepted steps across a full crossing of the transition
+(default 8). The step is limited while the control voltage crosses; no step is forced to land on
+the crossing.</li>
+</ul>
+<p><code>Switch</code> is a different component: the ideal SPST/SPDT <a href="system-components.html">system block</a>, set by
+its <code>State</code>.</p>
+<table class="param-table">
+<thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
+<tr><td>1</td><td>p</td></tr>
+<tr><td>2</td><td>n</td></tr>
+<tr><td>3</td><td>ctrl+</td></tr>
+<tr><td>4</td><td>ctrl-</td></tr>
+</tbody></table>
+<p class="small">The nets of an instance line, in this order. p and n are the switched pair and interchangeable; the control voltage is ctrl+ relative to ctrl−, and swapping that pair inverts the switch.</p>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>Ron</td><td><code>1</code></td><td>Ω</td><td>shown</td><td>The resistance between p and n when the switch is on.</td></tr>
+<tr><td>Roff</td><td><code>1</code></td><td>GΩ</td><td>shown</td><td>The resistance between p and n when the switch is off.</td></tr>
+<tr><td>Von</td><td><code>1</code></td><td>V</td><td>shown</td><td>The control voltage at and beyond which the switch is fully on.</td></tr>
+<tr><td>Voff</td><td><code>0</code></td><td>V</td><td>shown</td><td>The control voltage at and beyond which the switch is fully off. Between the two the conductance moves smoothly; Von below Voff is inverse logic.</td></tr>
+</tbody></table>
 <h3 id="vccs">Voltage-Controlled Current Source (VCCS)</h3>
 <figure class="symbol"><span class="frame">
 <span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M146.73 25.96L146.73 52.93" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M146.73 97.07L146.73 124.04" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M146.73 52.93L168.79 75L146.73 97.07L124.66 75L146.73 52.93Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M146.73 60.78L146.73 80.39" /><path fill="#2D14C3" d="M146.73 90.2L142.31 79.9L151.14 79.9L146.73 90.2Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M73.17 50.48L105.04 50.48" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M73.17 99.52L105.04 99.52" /><text fill="#D26328" transform="translate(109.95 50.48)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65" y="3.31">
@@ -5871,6 +5921,7 @@ itself: <a href="expressions.html#operators">operators</a>, <a href="expressions
 <tr><td><a href="#tonesource">VTone</a></td><td>ToneSource</td><td>Sources</td></tr>
 <tr><td><a href="#currenttonesource">ITone</a></td><td>CurrentToneSource</td><td>Sources</td></tr>
 <tr><td><a href="#idc">Idc</a></td><td>Idc</td><td>Sources</td></tr>
+<tr><td><a href="#vswitch">VSwitch</a></td><td>VSwitch</td><td>Sources</td></tr>
 <tr><td><a href="#vpulse">V_Pulse</a></td><td>VPulse</td><td>Sources</td></tr>
 <tr><td><a href="#vpwl">V_PWL</a></td><td>VPwl</td><td>Sources</td></tr>
 <tr><td><a href="#vexp">V_Exp</a></td><td>VExp</td><td>Sources</td></tr>

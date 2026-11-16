@@ -136,6 +136,8 @@ public sealed class TransientEngine
     private (int A, int B, double V)[] _capIc = [];
     private (int Row, double I)[] _indIc = [];
     private SddModel[] _clocked = [];
+    // brief-trn-3 — devices with a soft window or state between steps (a VSwitch)
+    private (Dev Dev, ITransientDevice Td)[] _tdevs = [];
     private double[] _phiPeak = [];         // per row: the largest |Phi| any accepted step has had
     private TransientParams _p = null!;
     private readonly Dictionary<double, Stage> _stages = new();
@@ -147,7 +149,11 @@ public sealed class TransientEngine
     public TransientRunResult Run(TransientParams p, RunControl? control = null)
     {
         try { return RunCore(p, control); }
-        finally { SetClock(null); }    // an SDD that reads `time` is back in steady state for whatever runs next
+        finally
+        {
+            SetClock(null);    // an SDD that reads `time` is back in steady state for whatever runs next
+            foreach (var (_, td) in _tdevs) td.EndTransient();
+        }
     }
 
     private TransientRunResult RunCore(TransientParams p, RunControl? control)
@@ -179,6 +185,8 @@ public sealed class TransientEngine
             }
             return new Dev { Ec = ec, P = P, Rp = rp, Rm = rm, Ip = ip, Im = im };
         })];
+        _tdevs = [.. _devs.Where(d => d.Ec.Model is ITransientDevice).Select(d => (d, (ITransientDevice)d.Ec.Model))];
+        foreach (var (_, td) in _tdevs) td.EnterTransient();
         _useInterface = p.NewtonPath switch
         {
             TransientNewtonPath.Interface => true,
@@ -202,6 +210,7 @@ public sealed class TransientEngine
         var holds = HeldRows(p.IcNets, who);
         SetClock(0);
         double[] x0 = p.Start == TransientStart.Op ? OperatingPoint(holds, who) : ZeroState(holds);
+        foreach (var (d, td) in _tdevs) td.BeginTransient(PortV(d, x0));
 
         // ── the recorded quantities ──────────────────────────────────────
         var rec = RecordedNodes();
@@ -269,6 +278,7 @@ public sealed class TransientEngine
                     "{0}: the run took more than MaxSteps = {1} steps by t = {2:G6} s.", who, p.MaxSteps, t));
 
             double nextBp = bps.GetViewBetween(t * (1 + 1e-15) + 1e-300, double.MaxValue).Min;
+            k0 = Math.Max(k0, SoftRung(hT, hX, maxStep, k0));
             double h = maxStep / Math.Pow(2, k0);
             bool landing = false;
             if (t + h >= nextBp - 1e-3 * h) { h = nextBp - t; landing = true; }
@@ -330,6 +340,7 @@ public sealed class TransientEngine
             // ── accepted ─────────────────────────────────────────────────
             accepted++;
             Peak(phi!);
+            foreach (var (d, td) in _tdevs) if (td.AcceptStep(PortV(d, x!))) d.LastV = null;
             if (!landing) methodRungs.Add((be ? 0 : 1, k0));
             for (int i = 0; i < _n; i++) dPhi[i] = alpha * phi![i] + hist[i];
             double tNew = landing ? nextBp : t + h;
@@ -533,6 +544,42 @@ public sealed class TransientEngine
     }
 
     private double _waveHz;
+
+    /// <summary>A device's port voltages in state <paramref name="x"/>.</summary>
+    private static double[] PortV(Dev d, double[] x)
+    {
+        var v = new double[d.P];
+        for (int q = 0; q < d.P; q++) v[q] = (d.Rp[q] >= 0 ? x[d.Rp[q]] : 0) - (d.Rm[q] >= 0 ? x[d.Rm[q]] : 0);
+        return v;
+    }
+
+    /// <summary>
+    /// The soft breakpoints (note §7.1, brief TRN-3 R-trn3-3): the smallest ladder rung that keeps every soft window's crossing
+    /// to at least its Points accepted steps. A device's control voltage is extrapolated along its slope over the segment's last
+    /// two steps; when the step from <paramref name="k0"/>'s rung would reach into the window, the step is limited to
+    /// window / (Points · |slope|). Nothing is landed on. With fewer than two points in the segment there is no slope and no
+    /// limit — a segment's first steps are low on the ladder anyway.
+    /// </summary>
+    private int SoftRung(List<double> hT, List<double[]> hX, double maxStep, int k0)
+    {
+        int m = hT.Count, k = k0;
+        if (m < 2 || _tdevs.Length == 0) return k;
+        double dt = hT[m - 1] - hT[m - 2];
+        if (!(dt > 0)) return k;
+        foreach (var (d, td) in _tdevs)
+        {
+            if (td.SoftWindow is not { } w || w.Port >= d.P) continue;
+            double v1 = PortV(d, hX[m - 1])[w.Port], v0 = PortV(d, hX[m - 2])[w.Port];
+            double rate = (v1 - v0) / dt;
+            if (rate == 0 || !double.IsFinite(rate)) continue;
+            double hNow = maxStep / Math.Pow(2, k);
+            double vEnd = v1 + rate * hNow;
+            if (Math.Max(v1, vEnd) < w.Lo || Math.Min(v1, vEnd) > w.Hi) continue;   // the step stays clear of the window
+            double hLim = (w.Hi - w.Lo) / (w.Points * Math.Abs(rate));
+            if (hLim < hNow) k = Math.Max(k, Math.Min(MinStepRungs, RungOf(hLim, maxStep)));
+        }
+        return k;
+    }
 
     private static double Key(ElaboratedComponent ec, string key) =>
         ec.Parameters.TryGetValue(key, out var v) && v.Kind is ValueKind.Real or ValueKind.Complex

@@ -705,6 +705,11 @@ public enum SymbolKind
     VPulse, VPwl, VExp, VSffm, VExpr,
     IPulse, IPwl, IExp, ISffm, IExpr,
     Idc,
+
+    /// <summary>brief-trn-3 — the voltage-controlled switch (engine "VSwitch"). Four pins in VCCS's layout and order: [0] p (0,−200),
+    /// [1] n (0,200), the switched pair; [2] ctrl+ (−300,−100), [3] ctrl− (−300,100), the control pair, which draws no current.
+    /// A switch blade between two contacts, its control leads ending at an actuator linked to the blade by a dashed line.</summary>
+    VSwitch,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

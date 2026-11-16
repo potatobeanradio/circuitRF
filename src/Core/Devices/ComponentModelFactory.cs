@@ -71,6 +71,8 @@ public static class ComponentModelFactory
             "Tuner", "P1Tone", "PnTone", "MOD_Source",
             // The waveform sources (brief TRN-2): one WaveformSourceModel under all ten.
             "V_Pulse", "V_PWL", "V_Exp", "V_SFFM", "V_Expr", "I_Pulse", "I_PWL", "I_Exp", "I_SFFM", "I_Expr",
+            // The voltage-controlled switch (brief TRN-3); "Switch" is the system block's.
+            VSwitchModel.TypeName,
             "NonlinearC", "Diode", "SemiC", "VerilogA",
             "FET_Curtice", "FET_CurticeCubic", "FET_Statz", "FET_Materka", "FET_Angelov",
             // p-channel exists only for the three laws that mirror unambiguously — see
@@ -198,6 +200,9 @@ public static class ComponentModelFactory
             return CreateToneSourceModel(typeName, parameters, functions);
         if (WaveformSourceModel.IsTypeName(typeName))
             return new WaveformSourceModel(typeName, parameters, functions);
+        if (typeName.Equals(VSwitchModel.TypeName, StringComparison.OrdinalIgnoreCase))
+            return new VSwitchModel(parameters,
+                parameters.TryGetValue("__instanceLabel", out var swl) && swl.Kind == ValueKind.String ? swl.AsString() : "");
         if (typeName.Equals("Tuner", StringComparison.OrdinalIgnoreCase))
             return CreateTunerModel(parameters);
         if (typeName.Equals("P1Tone", StringComparison.OrdinalIgnoreCase))
