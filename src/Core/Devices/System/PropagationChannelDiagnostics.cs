@@ -117,4 +117,43 @@ public static class PropagationChannelDiagnostics
     public static Diagnostic SharedReceivePin(string net, IReadOnlyList<string> channels)
         => E("shared-receive-pin", "The receive net '{net}' is driven by {list}: a pin receive end takes one Propagation Channel.",
              ("net", net), ("channels", channels), ("list", string.Join(" and ", channels.Select(i => $"'{i}'"))));
+
+    // brief-pch-9 — picking the beam
+    public static Diagnostic BeamSelect(string word)
+        => E("beam-select", "BeamSelect={word} is auto (the strongest pair), rank (BeamRank=), index (TxBeam=, RxBeam=) or manual (the arrays' own weights).",
+             ("word", word));
+    public static Diagnostic BeamRank(double n) => E("beam-rank", "BeamRank={n} is a whole number from 1, the strongest distinct pair.", ("n", n));
+    public static Diagnostic BeamKeyNeedsMode(string key, string mode)
+        => E("beam-key-mode", "{key} is read only with BeamSelect={mode}.", ("key", key), ("mode", mode));
+    public static Diagnostic BeamWithoutArray(string word)
+        => E("beam-no-array", "BeamSelect={word} picks a beam on a Phased Antenna Array end, and both ends of this channel are pins.", ("word", word));
+    public static Diagnostic BeamSearch(string word) => E("beam-search", "BeamSearch={word} is exhaustive or alternating.", ("word", word));
+    public static Diagnostic ScanLimit(double deg)
+        => E("scan-limit", "ScanLimit={deg} is an angle from boresight above 0 and at most 90 degrees.", ("deg", deg));
+    public static Diagnostic BeamChoice(string key, string text)
+        => E("beam-choice", "{key}={text} is a codebook entry (a whole number from 1) or a direction (θ, φ) in degrees.", ("key", key), ("text", text));
+    public static Diagnostic Codebook(string path, string why) => E("codebook", "Codebook '{path}': {why}", ("path", path), ("why", why));
+    // brief-pch-9 — the selection's refusals at run start (src/Engine BeamSelection)
+    public static Diagnostic BeamEndNotFeed(string channel, string mode, string instance, string kind)
+        => E("beam-end-not-feed", "Propagation Channel '{channel}': BeamSelect={mode} steers a Feed-mode Phased Antenna Array end; '{instance}' is {kind}, " +
+                                  "with no beamformer to weigh. BeamSelect=manual uses the end as it is.",
+             ("channel", channel), ("mode", mode), ("instance", instance), ("kind", kind));
+    public static Diagnostic BeamCannotSteer(string channel, string mode, string instance, string why)
+        => E("beam-cannot-steer", "Propagation Channel '{channel}': BeamSelect={mode} cannot steer '{instance}'. {why}",
+             ("channel", channel), ("mode", mode), ("instance", instance), ("why", why));
+    public static Diagnostic CodebookNoEnd(string channel, string path, string end, string instance)
+        => E("codebook-no-end", "Propagation Channel '{channel}': Codebook '{path}' lists no direction for the {end} end ('{instance}').",
+             ("channel", channel), ("path", path), ("end", end), ("instance", instance));
+    public static Diagnostic BeamIndexOnFixedEnd(string channel, string key, string choice, string end, string what)
+        => E("beam-index-fixed-end", "Propagation Channel '{channel}': {key}={choice} names a beam of the {end} end, which {what}.",
+             ("channel", channel), ("key", key), ("choice", choice), ("end", end), ("what", what));
+    public static Diagnostic BeamIndexNeeded(string channel, string key, int count, string instance)
+        => E("beam-index-needed", "Propagation Channel '{channel}': BeamSelect=index needs {key}, a codebook entry (1 to {count}) or a direction (θ, φ) " +
+                                  "for '{instance}'.", ("channel", channel), ("key", key), ("count", count), ("instance", instance));
+    public static Diagnostic BeamIndexBeyond(string channel, string key, int index, string end, int count)
+        => E("beam-index-beyond", "Propagation Channel '{channel}': {key}={index}, and the {end} end's codebook has {count} entries.",
+             ("channel", channel), ("key", key), ("index", index), ("end", end), ("count", count));
+    public static Diagnostic BeamRankBeyond(string channel, int rank, string search, int count)
+        => E("beam-rank-beyond", "Propagation Channel '{channel}': BeamRank={rank}, and the {search} gives {count} distinct pair(s).",
+             ("channel", channel), ("rank", rank), ("search", search), ("count", count));
 }

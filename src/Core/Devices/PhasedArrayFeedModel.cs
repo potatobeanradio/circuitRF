@@ -24,7 +24,7 @@ public sealed class PhasedArrayFeedModel : ComponentModel
     private readonly Complex[] _requested, _quantised;
     private readonly double[] _delay;
     private readonly Complex _z0;
-    private readonly double _sigma;
+    private double _sigma;
 
     /// <param name="requested">Each element's requested weight A·e^{jφ} before quantisation (zero for an element switched off).</param>
     /// <param name="quantised">The same after PhaseBits and AttenStep: what the split carries.</param>
@@ -39,6 +39,39 @@ public sealed class PhasedArrayFeedModel : ComponentModel
         _sigma = Math.Sqrt(quantised.Sum(w => w.Magnitude * w.Magnitude) / quantised.Length);
         PortBranchIndices = [.. Enumerable.Repeat(-1, quantised.Length + 1)];
     }
+
+    /// <summary>
+    /// brief-pch-9 R-pch9-5 — takes <paramref name="from"/>'s weights (a beam a channel selected, weighed by the array's own
+    /// <see cref="Arrays.ArraySteering.Weigh"/>) into this beamformer for the run: the selection is in memory, the netlist is not elaborated
+    /// again, and the schematic is not written. Same element count and reference impedance.
+    /// </summary>
+    public void TakeWeights(PhasedArrayFeedModel from)
+    {
+        if (from.Elements != Elements) throw new ArgumentException($"{from.Elements} weights for {Elements} elements.");
+        Array.Copy(from._requested, _requested, _requested.Length);
+        Array.Copy(from._quantised, _quantised, _quantised.Length);
+        Array.Copy(from._delay, _delay, _delay.Length);
+        _sigma = from._sigma;
+        _taken++;
+    }
+
+    /// <summary>brief-pch-9 — weights taken in place by <see cref="TakeWeights"/> on this thread: the selection's re-weighs.</summary>
+    public static long WeightsTaken => _taken;
+    [ThreadStatic] private static long _taken;
+
+    /// <summary>A key for the weights as carried (quantised and delayed), for a cache that depends on them.</summary>
+    public string WeightsKey()
+    {
+        ulong h = 14695981039346656037UL;
+        void Mix(double x) { h ^= (ulong)BitConverter.DoubleToInt64Bits(x); h *= 1099511628211UL; h ^= h >> 29; }
+        for (int i = 0; i < _quantised.Length; i++) { Mix(_quantised[i].Real); Mix(_quantised[i].Imaginary); Mix(_delay[i]); }
+        return h.ToString("x16", System.Globalization.CultureInfo.InvariantCulture) + ":" + _quantised.Length;
+    }
+
+    /// <summary>brief-pch-9 — element <paramref name="e"/>'s requested weight and true delay as stored (no delay applied), for the closed-form
+    /// weighing that starts from one exact one.</summary>
+    internal Complex RequestedStored(int e) => _requested[e];
+    internal double DelayStored(int e) => _delay[e];
 
     /// <summary>N, the number of elements.</summary>
     public int Elements => _quantised.Length;

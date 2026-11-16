@@ -171,6 +171,22 @@ public static class ArrayPattern
         return Sum(new ArrayPhaseTables(lattice, directions, hz), w, directions.Count);
     }
 
+    /// <summary>brief-pch-9 — <see cref="FactorOnce(ArrayLattice, IReadOnlyList{Complex}, ArrayDirections, double)"/> over tables the caller
+    /// built once for its transient direction set (<see cref="TransientTables"/>): a codebook's thousands of weightings over one ray set
+    /// rebuilt the same K·(R + C) exponentials for every entry.</summary>
+    public static Complex[] FactorOnce(ArrayPhaseTables tables, ArrayLattice lattice, IReadOnlyList<Complex> weights, int directions)
+    {
+        if (weights.Count != lattice.Count) throw new ArgumentException($"{lattice.Count} elements and {weights.Count} weights.");
+        if (tables.Key != lattice.GeometryKey) throw new ArgumentException("The tables were built for another lattice.");
+        var w = new Complex[lattice.Count];
+        for (int i = 0; i < w.Length; i++) w[i] = lattice.IsOn(i) ? weights[i] : Complex.Zero;
+        return Sum(tables, w, directions);
+    }
+
+    /// <summary>brief-pch-9 — the phase tables of a transient direction set, for the caller to keep for one computation; never kept here nor
+    /// counted in <see cref="TablesBuilt"/>.</summary>
+    public static ArrayPhaseTables TransientTables(ArrayLattice lattice, ArrayDirections directions, double hz) => new(lattice, directions, hz);
+
     private static ArrayField SumWith(ArrayPhaseTables t, ArrayLattice lattice, IReadOnlyList<Complex> weights, ArrayElements elements, ArrayDirections directions)
     {
         if (elements.PatternOf.Count != lattice.Count) throw new ArgumentException($"{lattice.Count} elements and {elements.PatternOf.Count} pattern assignments.");

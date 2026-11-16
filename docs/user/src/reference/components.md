@@ -2636,6 +2636,23 @@ PropagationChannel:CH1 tx rx Distance=250 TxHeight=10 RxHeight=1.5 PathLoss=twor
   `delay (ns), power (dB), theta_d (deg), phi_d (deg), theta_a (deg), phi_a (deg)`, and optionally `xpr (dB)` or a 2×2 matrix
   (`tt_re`, `tt_im`, … `pp_im`). The angles are in the global frame, or in each end's own frame with `RayFrame=ends`. Each
   such ray's Doppler comes from `TxVel`, `RxVel` and its own directions.
+- **Beam.** When an end is a Feed-mode array whose `Phase` is a `steer()`, the run picks its beam through this channel.
+  Each end's candidates are a grid in (u, v), one beamwidth apart, reaching out to `ScanLimit` (60° by default). Each candidate goes through
+  the array's own `steer()` and `PhaseBits`, or `Codebook=` names a CSV of `theta, phi` in degrees (a third column `tx`, `rx` or `both`
+  picks the end). Every pair of candidates is scored by the power the array factors and the centre element's pattern carry through the
+  drop's rays at `TimeOffset`, averaged across the signal's band in an envelope run. `BeamSearch=exhaustive` scores every pair;
+  `alternating`, the default past a million pairs, fixes one end and picks the other's best, then the reverse. `BeamSelect=auto` (the
+  default) takes the strongest pair. `rank` with `BeamRank=n` takes the n-th strongest distinct pair: a pair within one beamwidth of a
+  stronger one at both ends is the same path and isn't counted. `index` with `TxBeam=`/`RxBeam=` takes a codebook entry (a number from 1)
+  or a direction `(θ, φ)`. `manual` keeps the arrays' own weights. The beam is set for the run only, without elaborating
+  again: the schematic keeps its `steer()`. `auto`, `rank` or `index` written on an array whose weights aren't a `steer()` is
+  refused. Left blank on such an array, the weights are used as written. The run reports `link:CH1:Beam_dB[pair]`, `BeamRank[pair]`, `BeamTx[pair]` and
+  `BeamRx[pair]` (the two codebook entries) for every pair scored, strongest first, the codebooks as `TxCodebook_deg` and `RxCodebook_deg`,
+  and `BeamChosen`, `TxBeam_deg` and `RxBeam_deg`. It also reports `BeamBound_dB`, the best any phase-only weights could do
+  through these rays, and `BeamCodebookLoss_dB`, the chosen pair's shortfall against it. `explain --analysis` lists the same. In the
+  Phased Array tool, the **Channel** tab of an array that is a channel end draws the drop's rays and the candidates on the (u, v) map and
+  lists the ranked pairs. A click on a pair or a ray selects it (`BeamSelect=index`). **Apply** writes the directions into the arrays'
+  `steer()` and sets `BeamSelect=manual`. Each is one undo step, and the drop slider only shows another realization.
 - **Polarization.** Each ray carries its 2×2 polarization matrix (the line of sight's is diag(1, −1)). A gain end's
   polarization is `TxPol`/`RxPol` (`theta`, `phi`, `rhcp`, `lhcp` or an angle) in its own frame, or matched to the other end
   along the line of sight when unstated. `Faraday=` (degrees) rotates every ray's field. On a satellite path with

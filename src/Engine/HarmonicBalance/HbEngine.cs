@@ -515,6 +515,7 @@ public sealed partial class HbEngine
         // A commensurate multi-tone run made here keeps the multi-tone band ruler and default drive (issue 65).
         double bandFc       = _commensurateRuler?.Fc ?? f0;
         double defaultDrive = _commensurateRuler?.DefaultDriveHz ?? f0;
+        AntennaArray.BeamSelection.Apply(_netlist, bandFc, setCarrier: true);   // brief-pch-9: a channel's beam, before anything is stamped
         foreach (var ec in _netlist.Components)
         {
             if (ec.Model is ICarrierContext carrierCtx) carrierCtx.SetCarrier(bandFc);   // brief-pch-6: a channel's f0
@@ -990,6 +991,7 @@ public sealed partial class HbEngine
 
         // ── Configure P1Tone / PnTone sources with tone context (must precede extraction) ──
         double fcTwoTone = (f1 + f2) / 2.0;
+        AntennaArray.BeamSelection.Apply(_netlist, fcTwoTone, setCarrier: true);   // brief-pch-9: a channel's beam, before anything is stamped
         foreach (var ec in _netlist.Components)
         {
             if (ec.Model is ICarrierContext carrierCtx) carrierCtx.SetCarrier(fcTwoTone);   // brief-pch-6: a channel's f0
@@ -1307,6 +1309,7 @@ public sealed partial class HbEngine
         for (int t = 0; t < T; t++) fc += f[t];
         fc /= T;
 
+        AntennaArray.BeamSelection.Apply(_netlist, fc, setCarrier: true);   // brief-pch-9: a channel's beam, before anything is stamped
         foreach (var ec in _netlist.Components)
         {
             if (ec.Model is ICarrierContext carrierCtx) carrierCtx.SetCarrier(fc);   // brief-pch-6: a channel's f0

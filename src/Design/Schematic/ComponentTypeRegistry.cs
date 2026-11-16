@@ -1334,7 +1334,7 @@ public static class ComponentTypeRegistry
     public static bool IsFilePathParameter(SymbolKind kind, string parameterName)
         => (kind is SymbolKind.VerilogA or SymbolKind.WBond && parameterName.Equals("File", StringComparison.Ordinal))
         || (kind is SymbolKind.PhasedArray && parameterName.Equals("Record", StringComparison.Ordinal))
-        || (kind is SymbolKind.PropagationChannel && parameterName is "File" or "Terrain");
+        || (kind is SymbolKind.PropagationChannel && parameterName is "File" or "Terrain" or "Codebook");
 
     /// <summary>A newly placed wBond's operating temperature, °C: <see cref="CircuitRF.WBond.WireMaterials.DefaultOperatingTempC"/>,
     /// the one default wire temperature, so the Inspector and the wBond editor cannot disagree.</summary>
@@ -2284,6 +2284,9 @@ public static class ComponentTypeRegistry
         // brief-pch-8 — polarizations and the ray list's frame
         if (name is "TxPol" or "RxPol") return ["theta", "phi", "rhcp", "lhcp"];
         if (name == "RayFrame") return ["global", "ends"];
+        // brief-pch-9 — the beam
+        if (name == "BeamSelect") return ["auto", "rank", "index", "manual"];
+        if (name == "BeamSearch") return ["exhaustive", "alternating"];
         // brief-pch-7 — the fading words and the tapped delay lines (Profile is a TDL's name; a terrain profile is Terrain=)
         if (name == "Fading") return RfCore.Propagation.TapFading.FadingWords;
         if (name == "Doppler") return RfCore.Propagation.TapFading.DopplerWords;
@@ -2307,6 +2310,7 @@ public static class ComponentTypeRegistry
             or "Sinusoids" or "ASD" or "ASA" or "ZSD" or "ZSA" or "Xpr" or "RayFrame" => "Small scale",
         "TxGain" or "RxGain" or "TxPattern" or "RxPattern" or "TxZ" or "RxZ" or "RxTant" or "Tx" or "Rx" or "TxPol" or "RxPol" => "Ends",
         "TimeOffset" or "DopplerComp" or "Reverse" or "Seed" or "Drop" => "Realization",
+        "BeamSelect" or "BeamRank" or "TxBeam" or "RxBeam" or "Codebook" or "BeamSearch" or "ScanLimit" => "Beam",
         _ => "Large scale",
     };
 
@@ -2368,6 +2372,17 @@ public static class ComponentTypeRegistry
                            + "leaving only the spread.",
             "Reverse" => "Another channel's instance name: this one becomes its realization transposed, the reverse link of the same path.",
             "f0" => "The frequency the large-scale model and the patterns are evaluated at, Hz. Blank is the run's carrier.",
+            "BeamSelect" => "The beam a Phased Antenna Array end steers to: auto (the strongest pair of beams through this channel), rank (the "
+                          + "BeamRank-th strongest distinct pair), index (TxBeam, RxBeam) or manual (the arrays' own weights). Blank is auto when an "
+                          + "end's Phase is a steer(), otherwise manual. Applied for the run only; the schematic keeps its own steer().",
+            "BeamRank" => "BeamSelect=rank: which distinct pair, 1 the strongest. A pair within one beamwidth of a stronger one at both ends is the "
+                        + "same path and is not counted.",
+            "TxBeam" or "RxBeam" => "BeamSelect=index: the end's beam, a codebook entry (a number from 1) or a direction (θ, φ) in degrees.",
+            "Codebook" => "A CSV of steering directions, theta and phi in degrees (a third column tx, rx or both picks the end). Blank: a grid "
+                        + "one beamwidth apart within ScanLimit, each through the array's own steer() and PhaseBits.",
+            "BeamSearch" => "exhaustive scores every pair of beams; alternating fixes one end and picks the other's best, then the reverse. Blank: "
+                          + "exhaustive up to a million pairs, alternating past it.",
+            "ScanLimit" => "How far from boresight the default codebook reaches, degrees.",
             _ => "",
         };
         if (own.Length > 0) return own;

@@ -36,6 +36,23 @@ public sealed record FailureTrials(double Fraction, int Off, double[] GainChange
 /// <summary>R-paa9-6 — the beam's pointing against frequency, with phase shifters and with true delays.</summary>
 public sealed record FrequencyPointing(double[] Hz, double[] PhaseShifterThetaDeg, double[] DelayThetaDeg, bool ArrayFactorOnly);
 
+/// <summary>
+/// brief-pch-9 R-pch9-7 — the channel the array is an end of, scored at one drop: which end it is, the table (null with
+/// <see cref="Refusal"/> when nothing can be scored), the channel's own Drop and the instance it is.
+/// </summary>
+public sealed record ChannelBeams(string Channel, bool IsTx, BeamTable? Table, string? Refusal, long Drop, long WrittenDrop)
+{
+    /// <summary>This end's codebook (the transmit beams on a transmit array).</summary>
+    public IReadOnlyList<BeamEntry> Beams => Table is null ? [] : IsTx ? Table.TxBeams : Table.RxBeams;
+
+    /// <summary>This end's direction of each ray (departure on a transmit array, arrival on a receive one), with its power.</summary>
+    public IEnumerable<(double ThetaDeg, double PhiDeg, double PowerDb)> Rays
+        => Table is null ? [] : Table.Rays.Select(r => IsTx ? (r.TxThetaDeg, r.TxPhiDeg, r.PowerDb) : (r.RxThetaDeg, r.RxPhiDeg, r.PowerDb));
+
+    /// <summary>This end's chosen beam.</summary>
+    public BeamEntry? Chosen => Table is null ? null : Beams[IsTx ? Table.Chosen.Tx : Table.Chosen.Rx];
+}
+
 /// <summary>brief-paa-9 — evaluations of one prepared circuit for the Phased Array tool.</summary>
 public sealed class PhasedArraySession
 {
@@ -75,8 +92,9 @@ public sealed class PhasedArraySession
     /// and off the fast path the circuit is held at its last solve (PAA-8's estimate). Otherwise the bench's measurements are read too, with
     /// the analyses they name.
     /// </summary>
+    /// <para><paramref name="progress"/> hears the run's stages (a channel's beam selection is the long one on a large array).</para>
     public PhasedArrayEvaluation Evaluate(IReadOnlyDictionary<string, string> tunables, bool interactive, (double ThetaDeg, double PhiDeg)? steer,
-                                          CancellationToken cancel = default)
+                                          CancellationToken cancel = default, IProgress<RunProgress>? progress = null)
     {
         if (Refusal is { } refusal) return new(null, refusal);
         var sw = Stopwatch.StartNew();
@@ -88,7 +106,7 @@ public sealed class PhasedArraySession
             // a drag's step holds the circuit at its last solve off the fast path (PAA-8's estimate); a settled frame solves. A far field's
             // Written evaluation writes nothing (FieldsOutput.Written)
             Fields = interactive ? FieldsOutput.Local : FieldsOutput.Written,
-            Control = new RunControl { Token = cancel },
+            Control = new RunControl { Token = cancel, Progress = progress, MinReportIntervalMs = 100 },
         };
         RunResult run;
         try { run = CircuitEvaluation.Evaluate(Circuit, request); }
@@ -176,6 +194,56 @@ public sealed class PhasedArraySession
             }
         }
         return (points, null);
+    }
+
+    /// <summary>The first Propagation Channel whose Tx= or Rx= names this array, and which end it is; null when none does.</summary>
+    public (Instance Channel, bool IsTx)? ChannelEnd()
+    {
+        if (Circuit.Tb is not { } tb) return null;
+        static string Word(Instance i, string key) => i.Overrides.FirstOrDefault(o => o.Name.Equals(key, StringComparison.OrdinalIgnoreCase))?.Expression.Trim().Trim('"') ?? "";
+        foreach (var inst in tb.Instances.Where(i => i.Reference.Equals(Core.Devices.PropagationChannelModel.TypeName, StringComparison.OrdinalIgnoreCase)))
+        {
+            if (Word(inst, "Tx") == Block) return (inst, true);
+            if (Word(inst, "Rx") == Block) return (inst, false);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// R-pch9-7 — the channel this array ends, at <paramref name="drop"/> (null: the channel's own), scored at <paramref name="hz"/> as a run
+    /// scores it (BeamSelection.Score: nothing is applied). One elaboration of the bench with only the channel's Drop changed, in memory.
+    /// </summary>
+    /// <para><paramref name="control"/>: the scoring's progress (its stage counter) and cancellation, which throws
+    /// <see cref="OperationCanceledException"/> to the caller.</para>
+    public ChannelBeams? ChannelAt(long? drop, double hz, RunControl? control = null)
+    {
+        if (ChannelEnd() is not var (inst, isTx) || Circuit.Tb is not { } tb || Circuit.Lib is not { } lib) return null;
+        var dropOv = inst.Overrides.FirstOrDefault(o => o.Name.Equals("Drop", StringComparison.OrdinalIgnoreCase));
+        long written = 1;
+        if (dropOv is not null && long.TryParse(dropOv.Expression.Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out long w)) written = w;
+        long at = drop ?? written;
+        var copy = new TestBench(tb.Name) { Technology = tb.Technology };
+        copy.GlobalVariables.AddRange(tb.GlobalVariables);
+        copy.Functions.AddRange(tb.Functions);
+        foreach (var i in tb.Instances)
+        {
+            if (!ReferenceEquals(i, inst) || drop is null) { copy.Instances.Add(i); continue; }
+            var ovs = i.Overrides.Where(o => !o.Name.Equals("Drop", StringComparison.OrdinalIgnoreCase))
+                       .Append(new ParameterAssignment("Drop", at.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            copy.Instances.Add(new Instance(i.InstanceName, i.Reference, i.NetBindings, ovs) { RefNetBinding = i.RefNetBinding });
+        }
+        try
+        {
+            using var nl = new Core.Elaboration.Elaborator(lib) { BaseDirectory = Circuit.BaseDirectory }.Elaborate(copy);
+            var ec = nl.Components.FirstOrDefault(c => c.InstancePath == inst.InstanceName);
+            if (ec?.Model is not Core.Devices.PropagationChannelModel ch) return new(inst.InstanceName, isTx, null, $"'{inst.InstanceName}' did not elaborate as a channel.", at, written);
+            var table = BeamSelection.Score(ch, inst.InstanceName, hz, control);
+            return new(inst.InstanceName, isTx, table, table is null ? $"Nothing to choose: neither end of '{inst.InstanceName}' is an array steered by steer()." : null, at, written);
+        }
+        catch (Exception e) when (e is Core.Devices.ParameterRefusalException or InvalidOperationException or ExpressionException)
+        {
+            return new(inst.InstanceName, isTx, null, e.Message, at, written);
+        }
     }
 
     /// <summary>Realized gain in direction (θ, φ) in degrees, dBi.</summary>

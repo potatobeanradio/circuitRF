@@ -185,7 +185,24 @@ public sealed class UvMapCanvas : PhasedArrayCanvas
             BeamDraggable = vm.Steering.Draggable,
             GratingLobes = PhasedArrayFrames.GratingLobes(f.State.Lattice, f.State.Hz, beam.Value.Item1, beam.Value.Item2),
             ScanLimitSin = Math.Sin(Math.Clamp(vm.ScanLimitDeg, 0, 90) * Math.PI / 180),
+            // brief-pch-9 R-pch9-7 — the channel's rays at this end and the codebook's beams
+            Rays = [.. vm.MapRays().Select(r => (r.U, r.V, r.Size))],
+            CodebookBeams = vm.Channel is { Table: not null } ch && (ch.IsTx ? ch.Table.TxSteered : ch.Table.RxSteered) ? [.. ch.Beams.Select(b => (b.U, b.V))] : [],
+            SelectedBeam = vm.Channel is { Table: not null } c2 && (c2.IsTx ? c2.Table.TxSteered : c2.Table.RxSteered) && c2.Chosen is { } sel ? (sel.U, sel.V) : null,
         };
+    }
+
+    /// <summary>The ray under <paramref name="p"/>, or -1.</summary>
+    private int RayAt(Point p)
+    {
+        if (Vm is not { } vm || _layout is null) return -1;
+        foreach (var (k, u, v, size) in vm.MapRays().OrderByDescending(r => r.Size))
+        {
+            var (x, y) = _layout.ToPixel(u, v);
+            double r = ArrayRenderers.RayMinRadius + (ArrayRenderers.RayMaxRadius - ArrayRenderers.RayMinRadius) * size + 2;
+            if ((p.X - x) * (p.X - x) + (p.Y - y) * (p.Y - y) <= r * r) return k;
+        }
+        return -1;
     }
 
     protected override void Paint(SKCanvas canvas, SKRect bounds, RenderTheme theme)
@@ -210,7 +227,13 @@ public sealed class UvMapCanvas : PhasedArrayCanvas
     {
         base.OnPointerPressed(e);
         var p = e.GetPosition(this);
-        if (Vm is not { } vm || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || !NearBeam(p)) return;
+        if (Vm is not { } vm || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        if (!NearBeam(p))
+        {
+            // brief-pch-9 — a click on a ray selects its beams on the channel
+            if (RayAt(p) is int ray and >= 0) { vm.SelectRay(ray); e.Handled = true; }
+            return;
+        }
         if (!vm.BeginDrag()) return;
         _dragging = true;
         e.Pointer.Capture(this);
@@ -229,8 +252,12 @@ public sealed class UvMapCanvas : PhasedArrayCanvas
             return;
         }
         bool near = NearBeam(p);
-        Cursor = new Cursor(near && Vm?.Steering.Draggable == true ? StandardCursorType.SizeAll : StandardCursorType.Arrow);
-        ToolTip.SetTip(this, near ? Vm?.Steering.Refusal ?? "Drag to steer the beam." : null);
+        int ray = near ? -1 : RayAt(p);
+        Cursor = new Cursor(near && Vm?.Steering.Draggable == true ? StandardCursorType.SizeAll : ray >= 0 ? StandardCursorType.Hand : StandardCursorType.Arrow);
+        ToolTip.SetTip(this, near ? Vm?.Steering.Refusal ?? "Drag to steer the beam."
+                           : ray >= 0 && Vm?.Channel?.Table is { } t
+                               ? $"Ray {ray + 1}: {t.Rays[ray].PowerDb:0.0} dB. Click to select its beams on {Vm.Channel.Channel} (BeamSelect=index)."
+                               : null);
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -318,4 +345,21 @@ public sealed class ArrayChartCanvas : PhasedArrayCanvas
     {
         if (Vm is { } vm) PaintChart(canvas, bounds, vm, Kind, theme);
     }
+}
+
+/// <summary>brief-pch-9 — the Beams list's chosen row in bold.</summary>
+public sealed class ChosenWeight : Avalonia.Data.Converters.IValueConverter
+{
+    public static readonly ChosenWeight Instance = new();
+    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        => value is true ? FontWeight.Bold : FontWeight.Normal;
+    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>brief-pch-9 — a progress bar that keeps its place: shown while busy, transparent otherwise.</summary>
+public sealed class BusyOpacity : Avalonia.Data.Converters.IValueConverter
+{
+    public static readonly BusyOpacity Instance = new();
+    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) => value is true ? 1.0 : 0.0;
+    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) => throw new NotSupportedException();
 }

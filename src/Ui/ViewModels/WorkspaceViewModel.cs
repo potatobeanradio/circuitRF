@@ -4285,7 +4285,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // p.Stage (the current analysis name) is deliberately NOT shown: on a multi-analysis run it
         // changes mid-row, which is exactly the kind of width change this split exists to keep off
         // the bar's left. It still drives an immediate progress report at each analysis boundary.
-        if (p.Total > 0)
+        //
+        // brief-pch-9 — a COUNTED stage inside the run (a Propagation Channel's beam selection: minutes on a 64 × 64 array, before the
+        // analysis's first unit) is shown while it runs, its name beside the bench and its own counter on the bar, or the row would sit at
+        // 0 / 1 with the bar unmoved. The stage ends by restoring the analysis's own, uncounted, and the row returns to the run's counter.
+        if (p.StageTotal > 0)
+            live.Update($"Running '{benchName}' · {p.Stage}",
+                        $"{FormatCounter(p.StageCompleted, p.StageTotal)}{(p.StageUnit.Length > 0 ? " " + p.StageUnit : "")}",
+                        100.0 * p.StageCompleted / p.StageTotal);
+        else if (p.Total > 0)
             live.Update($"Running '{benchName}'",
                         FormatCounter(p.Completed, p.Total),
                         100.0 * p.Completed / p.Total);

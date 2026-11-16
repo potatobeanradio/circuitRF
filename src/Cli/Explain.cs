@@ -1878,6 +1878,9 @@ internal static class Explain
                 var d = ch.Describe(hz);
                 lines.Add($"'{path}': {d[0]}");
                 lines.AddRange(d.Skip(1).Select(x => "  " + x));
+                // brief-pch-9 R-pch9-6 — the beam table, by the selection the run makes (the same function, the same codebooks)
+                if (ch.HasInstanceEnd && CircuitRF.Engine.AntennaArray.BeamSelection.Select(ch, path, hz, envelope ? bw : 0) is { } beam)
+                    lines.AddRange(CircuitRF.Engine.AntennaArray.BeamSelection.Lines(beam).Select(x => "  " + x));
                 if (!envelope) { lines.Add("  frozen at TimeOffset, each tone at its own frequency, no Doppler shift"); continue; }
                 var r = ch.At(hz);
                 // a fading tap (brief PCH-7) spreads ±f_D about its own Doppler

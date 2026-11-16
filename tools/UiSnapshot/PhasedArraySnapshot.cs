@@ -18,7 +18,7 @@ using SkiaSharp;
 /// view model's work run at once. A bench with no cell definitions is drawn as the schematic <c>netlist --to-schematic</c> draws and the tool
 /// netlists that drawing, as the application would; a bench that defines cells (a channel, an amplifier) cannot be drawn, so the tool sees
 /// the array instance and the VARs and evaluates the bench's own netlist.
-/// <para><c>--pa-color</c> amplitude|phase|gamma|power|pout|pae|nf colours the aperture; <c>--pa-tab</c> beam|scan|tapers|failures|frequency
+/// <para><c>--pa-color</c> amplitude|phase|gamma|power|pout|pae|nf colours the aperture; <c>--pa-tab</c> beam|channel|channel-busy|scan|tapers|failures|frequency
 /// picks the tab (its work done first); <c>--pa-drag N</c> drags the beam from boresight to <c>--pa-to</c> θ (default 30°) in N steps and
 /// prints each frame's evaluation, forming and drawing — R-paa9-7's measurement.</para>
 /// </summary>
@@ -68,7 +68,15 @@ static class PhasedArraySnapshot
         }
         Settle();
         var tabs = window.FindControl<TabControl>("Tabs")!;
-        tabs.SelectedIndex = tab switch { "scan" => 1, "tapers" => 2, "failures" => 3, "frequency" => 4, _ => 0 };
+        tabs.SelectedIndex = tab switch { "channel" or "channel-busy" => 1, "scan" => 2, "tapers" => 3, "failures" => 4, "frequency" => 5, _ => 0 };
+        if (tab == "channel") Console.WriteLine(vm.ChannelStatus);
+        // brief-pch-9 — the tab as it looks while a scoring runs (the immediate host finishes it before any frame): the bar and the stage line
+        if (tab == "channel-busy")
+        {
+            vm.ScoringChannel = true;
+            vm.ChannelProgress = 0.42;
+            vm.ChannelStatus = "Beam of CH1: weighing the codebooks 2101 / 5002 beam(s)";
+        }
         if (tab == "scan") vm.StartScan();
         if (tab == "failures") vm.RunFailures();
         if (tab == "frequency") vm.RunFrequency();

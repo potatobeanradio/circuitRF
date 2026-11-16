@@ -64,12 +64,13 @@ public sealed partial class PropagationChannelModel : ComponentModel, IReportsWa
         "PathLoss", "Multipath", "File", "TxPattern", "RxPattern", "DopplerComp", "Reverse", "TxPos", "RxPos", "TxVel", "RxVel",
         "Fading", "Doppler", "Profile", "Terrain",
         "Tx", "Rx", "TxPol", "RxPol", "RayFrame",
+        "BeamSelect", "TxBeam", "RxBeam", "Codebook", "BeamSearch",
     };
 
     /// <summary>The parameters stated in degrees (a bare number is degrees).</summary>
     public static readonly IReadOnlySet<string> AngleParameters = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        "TxAz", "TxEl", "TxRoll", "RxAz", "RxEl", "RxRoll", "ASD", "ASA", "ZSD", "ZSA", "Faraday",
+        "TxAz", "TxEl", "TxRoll", "RxAz", "RxEl", "RxRoll", "ASD", "ASA", "ZSD", "ZSA", "Faraday", "ScanLimit",
     };
 
     /// <summary>The channel's own parameters; every other one is the large-scale model's, by the registry's name.</summary>
@@ -82,6 +83,8 @@ public sealed partial class PropagationChannelModel : ComponentModel, IReportsWa
         "Fading", "KFactor", "NakagamiM", "Doppler", "Velocity", "fD", "Sinusoids", "Profile", "DelaySpread", "Seed", "Drop", "Terrain",
         // brief-pch-8 — instance ends, polarization, clustered delay lines and ray lists
         "Tx", "Rx", "TxPol", "RxPol", "RayFrame", "ASD", "ASA", "ZSD", "ZSA", "Xpr", "Faraday",
+        // brief-pch-9 — picking the beam
+        "BeamSelect", "BeamRank", "TxBeam", "RxBeam", "Codebook", "BeamSearch", "ScanLimit",
     };
 
     /// <summary>Parameters every component may carry that belong to no model.</summary>
@@ -144,6 +147,36 @@ public sealed partial class PropagationChannelModel : ComponentModel, IReportsWa
     private readonly string? _dirRaysPath;
     private readonly bool _rayFrameEnds;
     private readonly double? _xprDb;
+
+    // brief-pch-9 — picking the beam (note §6)
+    private readonly BeamSelectMode _beamSelect;
+    private readonly bool _beamSelectStated;
+    private readonly int _beamRank;
+    private readonly BeamChoice? _txBeam, _rxBeam;
+    private readonly string? _codebookPath;
+    private readonly IReadOnlyList<CodebookRow>? _codebook;
+    private readonly BeamSearchMode _beamSearch;
+    private readonly double _scanLimitDeg;
+
+    /// <summary>brief-pch-9 R-pch9-3/4 — BeamSelect: auto (also when unstated), rank, index or manual.</summary>
+    public BeamSelectMode BeamSelect => _beamSelect;
+    /// <summary>True when BeamSelect was written: an end that cannot be steered then refuses rather than keeping its weights.</summary>
+    public bool BeamSelectStated => _beamSelectStated;
+    /// <summary>BeamRank (1 the strongest), for <see cref="BeamSelectMode.Rank"/>.</summary>
+    public int BeamRank => _beamRank;
+    /// <summary>TxBeam / RxBeam, for <see cref="BeamSelectMode.Index"/>: a 1-based codebook entry or a direction.</summary>
+    public BeamChoice? TxBeam => _txBeam;
+    public BeamChoice? RxBeam => _rxBeam;
+    /// <summary>The Codebook file's directions (null: the default grid), and its resolved path.</summary>
+    public IReadOnlyList<CodebookRow>? Codebook => _codebook;
+    public string? CodebookPath => _codebookPath;
+    /// <summary>BeamSearch: exhaustive, alternating, or (unstated) alternating past 10⁶ pairs.</summary>
+    public BeamSearchMode BeamSearch => _beamSearch;
+    /// <summary>ScanLimit, degrees from boresight: the default codebook's extent.</summary>
+    public double ScanLimitDeg => _scanLimitDeg;
+
+    /// <summary>brief-pch-9 R-pch9-6 — the last selection's table (src/Engine's BeamSelection fills it), null before one ran.</summary>
+    public object? BeamTable { get; set; }
 
     /// <summary>brief-pch-8 R-pch8-1 — the instance <c>Tx=</c> names (that end has no pin), or null for a pin end.</summary>
     public string? TxInstance => _txInstance;
@@ -377,6 +410,43 @@ public sealed partial class PropagationChannelModel : ComponentModel, IReportsWa
             case var w:
                 throw new ParameterRefusalException(PropagationChannelDiagnostics.Multipath(w));
         }
+        // brief-pch-9 — the beam
+        string beamWord = Word("BeamSelect", "");
+        _beamSelectStated = beamWord.Length > 0;
+        _beamSelect = beamWord.Length == 0 ? BeamSelectMode.Auto : beamWord.ToLowerInvariant() switch
+        {
+            "auto" => BeamSelectMode.Auto,
+            "rank" => BeamSelectMode.Rank,
+            "index" => BeamSelectMode.Index,
+            "manual" => BeamSelectMode.Manual,
+            var bw => throw new ParameterRefusalException(PropagationChannelDiagnostics.BeamSelect(bw)),
+        };
+        double rank = Num("BeamRank", 1);
+        if (!(rank >= 1) || rank != Math.Floor(rank)) throw new ParameterRefusalException(PropagationChannelDiagnostics.BeamRank(rank));
+        _beamRank = (int)rank;
+        if (p.ContainsKey("BeamRank") && _beamSelect != BeamSelectMode.Rank)
+            throw new ParameterRefusalException(PropagationChannelDiagnostics.BeamKeyNeedsMode("BeamRank", "rank"));
+        _txBeam = BeamChoice.Parse(Word("TxBeam", ""), "TxBeam");
+        _rxBeam = BeamChoice.Parse(Word("RxBeam", ""), "RxBeam");
+        if ((_txBeam is not null || _rxBeam is not null) && _beamSelect != BeamSelectMode.Index)
+            throw new ParameterRefusalException(PropagationChannelDiagnostics.BeamKeyNeedsMode(_txBeam is not null ? "TxBeam" : "RxBeam", "index"));
+        if (_beamSelect != BeamSelectMode.Manual && !HasInstanceEnd)
+            if (_beamSelectStated) throw new ParameterRefusalException(PropagationChannelDiagnostics.BeamWithoutArray(beamWord));
+        _beamSearch = Word("BeamSearch", "").ToLowerInvariant() switch
+        {
+            "" => BeamSearchMode.Default,
+            "exhaustive" => BeamSearchMode.Exhaustive,
+            "alternating" => BeamSearchMode.Alternating,
+            var bs => throw new ParameterRefusalException(PropagationChannelDiagnostics.BeamSearch(bs)),
+        };
+        _scanLimitDeg = Num("ScanLimit", 60);
+        if (!(_scanLimitDeg > 0 && _scanLimitDeg <= 90)) throw new ParameterRefusalException(PropagationChannelDiagnostics.ScanLimit(_scanLimitDeg));
+        if (Word("Codebook", "").Trim('"') is { Length: > 0 } cb)
+        {
+            _codebookPath = baseDirectory is { Length: > 0 } cdir && !Path.IsPathRooted(cb) ? Path.GetFullPath(Path.Combine(cdir, cb)) : cb;
+            _codebook = CodebookRow.Read(_codebookPath);
+        }
+
         if (_fading == FadingKind.Rician && _kFactorDb is null && _profile is null && !(_rayList?.Any(r => r.KDb is not null) ?? false))
             throw new ParameterRefusalException(PropagationChannelDiagnostics.KFactorNeedsRician());
         // every parameter the channel does not own is the large-scale model's, as text in the registry's unit

@@ -4942,3 +4942,86 @@ many worker devices needs it, and it is the worker protocol's to add (note §13.
 
 The example worker models saturation only (no triode region): a drain resistor large enough to push it below 0 V has no solution at
 all, which the transient reports as its starting state not converging, naming the drain net. That is the model, not the engine.
+
+## brief-pch-9 — picking the beam (BeamSelection, 2026-11-15)
+
+**Where the selection runs.** At the start of a run, in the engine, because the carrier is known there and not at elaboration:
+`SParameterEngine.Prepare` (the band's middle frequency, as the channel report is read), the three HB carrier blocks, `EnvelopeEngine` /
+`EnvelopeEngineMt` (over the signal's band, before the noise is formed from the stamps), and `PhasedArrayFastPath.TryWaves` (before it reads
+the weights). The elaborator leaves an `ArraySteering` on every Feed-mode array: its `steer()` call (`SteerCall`, the reading the tool's drag
+uses) and a `Weigh(θ, φ)` that is `FeedWeights` on the instance with the call's two arguments replaced by literal degrees. The chosen entry's
+weights are copied into the array's own beamformer (`PhasedArrayFeedModel.TakeWeights`), so a beam costs no elaboration (gate 4: 1
+elaboration for a scored 64 × 64 codebook and its HB run).
+
+- **A VAR argument is replaced in the array's own field, not set.** Two ends steered by one VAR would move together, and anything else
+  reading it would move with them. The tool's Apply is what writes the VAR.
+- **Selected once per run, keyed on the beamformers too.** A re-weighed netlist (PAA-8b) shares the channel model with the kept one but has
+  new beamformers; a cache on frequency and time alone returned the old table and left the new feeds with the authored weights.
+- **The receive collapse's cache key had no weights in it.** `G = S12·M⁻ᵀ·t` and `Γ_F` carry the beamformer's `t`, and `ArrayKey` leaves out
+  what only moves the weights, so a re-weighed receive array (a selected beam, or a tuned steer VAR — the latter a PCH-8b defect) was handed
+  the previous beam's collapse. `PhasedArrayFeedModel.WeightsKey()` is in the key now.
+- **A fields analysis on a channel's transmit array crashed** (`MnaSystem.StableOrderByColThenRow`, index out of range): the fast path
+  solves the circuit outside the array with the array closed at F, and the channel was in that circuit, stamping rows against element
+  branches the system never allocated. The channel only reads the transmit array's waves, so it is left out of that solve; a channel that
+  receives on the array puts rays on its elements, so that array is solved whole. Both predate PCH-9; the tool on a channel end needed them.
+- **A literal angle inside an expression is glued: `30deg`.** `30 deg` is a number followed by a name and the parser refuses it (and a space
+  splits a netlist line). PAA-9's literal rewrite wrote the spaced form; `PhasedArraySteering.Rewritten` and `SteerCall.Rewritten` glue it.
+- **Unstated BeamSelect with nothing steerable is plain manual, said nowhere.** Every PCH-8 bench's arrays have no `steer()`; a note on
+  each would be noise. Stated, an end that cannot be steered refuses with the reason and names `manual`.
+
+**The codebook.** One beamwidth is the DFT spacing Δu = λ/(Cols·dx), Δv = λ/(Rows·dy) — a beam's peak to its first null — so a grid
+neighbour, diagonals included, is "within one beamwidth" (Chebyshev distance ≤ 1 in units of the spacing) and rank 2 skips it. On the gate's
+two-cluster channel the second-strongest pair overall is such a neighbour (rank 1's receive beam with the diagonal transmit neighbour),
+stronger than the other cluster's pair (rank 2, −54.55 dB against rank 1's −42.20 dB).
+
+**Alternating.** Started from the beams nearest the strongest rays, up to 8 distinct starting pairs. With 4 starts from the 4 strongest rays
+(often one cluster's) it missed the exhaustive best on one of the three CDL-C drops of gate 6 by 0.10 dB; with 8 distinct starts it finds it
+on all three, scoring 1,469 / 886 / 1,327 of 22,201 pairs (16 × 16 both ends).
+
+**The bound** is phase-only and unconstrained, alternating dominant eigenvectors from the best pair; it is never below the best codebook pair
+(it is taken as the larger). Through CDL-C at 16 × 16 the codebook costs 7-8 dB against it — the bound combines several clusters coherently,
+which one steered beam cannot; through a single ray the cost is the grid's straddle loss (≈3 dB on 8 × 8 with the ray between entries).
+
+**Cost** (Debug build, `explain --analysis` on a CDL-C bench, both ends 64 × 64, default codebooks of 2,501 entries each, alternating, 44,938 of
+6.26 M pairs scored; the same bench with a 64-entry codebook per end takes 4 s, which is the elaboration and the realization):
+
+| | Total | Peak RSS |
+|---|---|---|
+| Every entry weighed through `FeedWeights` and held | 51 s | 1.76 GB |
+| Entries let go once their factors are taken | 53 s | 317 MB |
+| Closed-form weighing for scoring (`ArraySteering.Fast`) | 14 s | 303 MB |
+| … and the rays' phase tables built once per end, not per entry | **9 s** | 279 MB |
+| The same with `PhaseBits=4` (the quantised weights are not separable: K·N per entry) | 17 s | 283 MB |
+
+The choice is the same in every row. **The closed form** applies only when the field is exactly the bare call (Phase `steer(θ0, φ0, f0)`, Delay
+`steerDelay(θ0, φ0)`) and f0 reads no element name; it starts from one exact weighing (each element's amplitude, sign kept, and the other
+field's values) and forms the phase in closed form, quantised as `FeedWeights` quantises. Against the exact weighing at four directions on 16 × 16
+it is within 4e-15 (continuous; Taylor taper with PhaseBits=5 and AttenStep=0.5; steerDelay with a Phase offset), no quantisation boundary
+crossed. It is used for SCORING only: what a run applies, and what a kept selection is validated by, is always weighed through `FeedWeights`,
+so a phase sitting exactly on a quantisation boundary could move a candidate's score by that rounding and never the run. Any other field (an
+offset beside the call, a 5-argument form) is scored through the exact weighing, as before. **The phase tables**: `FactorOnce` rebuilt the
+rays' K·(R + C) exponentials for every entry, ~300 M sin/cos over 5,002 entries; `ArrayPattern.TransientTables` builds them once per end.
+
+**Selections kept across netlists.** An envelope run's segments and a sweep's points elaborate the same channel and arrays again, each with
+models of its own, so each searched again. A selection is kept (the last 8; a table can hold 10⁶ pairs) under a key of the channel's instance,
+resolved parameters and the files they name (with write times), each end's instance, resolved parameters, record and elaborated weights, the
+reference frequency, TimeOffset and the band. A hit is taken only after the chosen entries are weighed again exactly and match, so a key that
+misses something costs a search, never a wrong beam. Concurrent selections of one key (parallel segments start together) wait for the first
+and take its choice (gate: four netlists in parallel, one search, three hits).
+
+**Progress and Stop.** The selection starts deep inside every engine, none of which is handed the run's `RunControl` the same way, so
+`CircuitEvaluation.ExecuteCore` makes it ambient for the run (`BeamSelection.Use`, an `AsyncLocal`, so it flows into tasks the run starts).
+The selection reports on the control's STAGE counter — "Beam of CH1: weighing the codebooks n / N beam(s)", then "scoring every pair n / A"
+or "alternating search n / 8 start(s)", then "the phase-only bound" — and restores the analysis's own stage after. Stop is answered between
+codebook entries (~9 ms each at 64 × 64, Debug) and between search steps, as `OperationCanceledException`, which every run already treats as
+cancelled. Before this a 64 × 64 selection sat for ~50 s with the run's bar unmoved and Stop ignored.
+
+**A beam drag on an auto-selected array re-ran the whole search at every step.** Each drag step re-weighs the netlist, so the arrays have
+new beamformers and the once-per-run cache (keyed on them) missed. Every candidate replaces θ0 and φ0, so a tuned steer VAR changes no
+candidate: when each steered end's chosen entry weighs exactly as before, the choice is taken again (one weighing per end, `Reused`
+counts it, no pairs scored). Anything that does move a candidate — a taper VAR, PhaseBits — changes that weighing and the search runs.
+
+**Counters are per thread** (`Elaborator.Elaborations`, `ArraySteering.Weighings`, `PhasedArrayFeedModel.WeightsTaken`,
+`ArraySteering.FastWeighings`, `BeamSelection.PairsScored`, `BeamSelection.Reused`): a run is synchronous on its caller's thread, and a
+process-wide count moved under other tests elaborating in parallel. `BeamSelection.Selections` and `CacheHits` are process-wide, since parallel
+segments select on several threads; only a channel with a steered array end moves them, and those tests share one collection.

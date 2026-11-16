@@ -335,6 +335,8 @@ public sealed class EnvelopeEngine
         foreach (var sg in signals)
             if (Math.Abs(sg.RecordSeconds - record) > 1e-12)
                 throw new InvalidOperationException("all MOD_Sources in one envelope run must use the same record length");
+        // brief-pch-9 — a channel's beam, selected over the signal's band and taken into its arrays before anything is stamped
+        AntennaArray.BeamSelection.Apply(_nl, f0, signals.SelectMany(sg => sg.Carriers).Select(c => c.Spec.BandwidthHz).DefaultIfEmpty(0).Max(), setCarrier: true);
         // Noise (brief NZ-7), from every part's own stamp, before a line or an S-parameter block is replaced for the run.
         var thermal = p.Noise ? EnvelopeNoise.Thermal(_nl, _settings, [.. Enumerable.Range(0, K + 1).Select(k => k * f0)], h, p.Seed, f0) : null;
         var phase = p.PhaseNoise ? EnvelopePhaseNoise.Of(_nl, (int)Math.Round(nRec), recordRate, p.Seed) : null;

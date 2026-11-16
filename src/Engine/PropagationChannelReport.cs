@@ -51,10 +51,50 @@ public static class PropagationChannelReport
             ds.Add(key + "RayDoppler_Hz", new DataCube([rayAxis], [.. r.Rays.Select(x => x.DopplerHz)]) { Unit = "Hz" });
             ds.Add(key + "RayGain", new DataCube([rayAxis], terms0.Length == n ? [.. terms0.Select(t => t.Amplitude)] : new Complex[n]));
             AddSmallScale(ds, key, ch, r, hz, env, nl, ec.InstancePath);
+            if (ch.BeamTable is AntennaArray.BeamTable beam) AddBeam(ds, key, beam);
             if (hb && (r.Rays.Any(x => x.DopplerHz != 0) || r.Fading))
                 nl.AddNoteOnce("hb-channel-doppler:" + ec.InstancePath,
                     $"Propagation Channel '{ec.InstancePath}': harmonic balance holds it at TimeOffset with no Doppler shift (a shifted tone would " +
                     "leave the harmonic grid) and its fading frozen there; an envelope run carries both.");
+        }
+    }
+
+    /// <summary>
+    /// brief-pch-9 R-pch9-6 — the beam table: every scored (or visited) pair's metric (dB, the linear pattern model), its rank among distinct
+    /// pairs (NaN: not distinct) and its two codebook entries (1-based), on a numeric pair axis strongest first — no label per pair, since an
+    /// exhaustive search keeps up to 10⁶ of them; the codebooks as their own cubes, [beam, angle] in degrees with each beam's label. Then the
+    /// chosen pair's position on the pair axis, its metric, the phase-only bound, the codebook's loss against it and the pairs scored.
+    /// </summary>
+    private static void AddBeam(DataSet ds, string key, AntennaArray.BeamTable t)
+    {
+        var axis = new Axis("pair", [.. Enumerable.Range(0, t.Pairs.Count).Select(i => (double)i)]);
+        ds.Add(key + "Beam_dB", new DataCube([axis], [.. t.Pairs.Select(p => p.MetricDb)]) { Unit = "dB" });
+        ds.Add(key + "BeamRank", new DataCube([axis], [.. t.Pairs.Select(p => p.Rank is int r ? (double)r : double.NaN)]));
+        ds.Add(key + "BeamTx", new DataCube([axis], [.. t.Pairs.Select(p => (double)(p.Tx + 1))]));
+        ds.Add(key + "BeamRx", new DataCube([axis], [.. t.Pairs.Select(p => (double)(p.Rx + 1))]));
+        void Book(string name, IReadOnlyList<AntennaArray.BeamEntry> beams)
+        {
+            var beamAxis = Index(name == "TxCodebook_deg" ? "txBeam" : "rxBeam", beams.Select(b => b.Label));
+            var values = new double[beams.Count * 2];
+            for (int i = 0; i < beams.Count; i++) { values[2 * i] = beams[i].ThetaDeg; values[2 * i + 1] = beams[i].PhiDeg; }
+            ds.Add(key + name, new DataCube([beamAxis, Index("angle", ["theta", "phi"])], values) { Unit = "deg" });
+        }
+        Book("TxCodebook_deg", t.TxBeams);
+        Book("RxCodebook_deg", t.RxBeams);
+        ds.Add(key + "BeamChosen", DataCube.Scalar(t.Pairs.ToList().IndexOf(t.Chosen)));
+        ds.Add(key + "BeamChosen_dB", DataCube.Scalar(t.Chosen.MetricDb));
+        ds.Add(key + "BeamBound_dB", DataCube.Scalar(t.BoundDb));
+        ds.Add(key + "BeamCodebookLoss_dB", DataCube.Scalar(t.CodebookLossDb));
+        ds.Add(key + "BeamPairsScored", DataCube.Scalar(t.PairsScored));
+        if (t.TxSteered)
+        {
+            var e = t.TxBeams[t.Chosen.Tx];
+            ds.Add(key + "TxBeam_deg", new DataCube([Index("angle", ["theta", "phi"])], [e.ThetaDeg, e.PhiDeg]) { Unit = "deg" });
+        }
+        if (t.RxSteered)
+        {
+            var e = t.RxBeams[t.Chosen.Rx];
+            ds.Add(key + "RxBeam_deg", new DataCube([Index("angle", ["theta", "phi"])], [e.ThetaDeg, e.PhiDeg]) { Unit = "deg" });
         }
     }
 

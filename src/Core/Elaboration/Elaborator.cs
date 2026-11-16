@@ -105,8 +105,14 @@ public sealed partial class Elaborator
         return _evaluator.Eval(expression, scope);
     }
 
+    /// <summary>brief-pch-9 — full elaborations on this thread (a re-weigh is not one): what a beam selection's gate counts, per thread so
+    /// another test elaborating at the same time does not move it.</summary>
+    public static long Elaborations => _elaborations;
+    [ThreadStatic] private static long _elaborations;
+
     public ElaboratedNetlist Elaborate(TestBench tb)
     {
+        _elaborations++;
         try { return ElaborateCore(tb); }
         catch (UnresolvedNameException ex) when (SkippedLineNaming(tb, ex.Name) is { } why)
         {
@@ -2445,7 +2451,7 @@ public sealed partial class Elaborator
         foreach (var ov in inst.Overrides)
         {
             // brief-pch-7 — Profile names a tapped delay line (a word); the terrain profile a model reads is Terrain= on the channel
-            bool file = ov.Name is "File" or "TxPattern" or "RxPattern" or "Terrain"
+            bool file = ov.Name is "File" or "TxPattern" or "RxPattern" or "Terrain" or "Codebook"
                         || ov.Name != "Profile" && words.TryGetValue(ov.Name, out var kind) && kind == RfCore.Propagation.ParameterKind.File;
             if (PropagationChannelModel.WordParameters.Contains(ov.Name) || words.ContainsKey(ov.Name))
             {

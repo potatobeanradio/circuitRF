@@ -444,6 +444,9 @@ public static class CircuitEvaluation
                                          IReadOnlyList<string> expressions, Action<string>? breadcrumb, FieldsRun fieldsRun)
     {
         using var disposeFields = fieldsRun;
+        // brief-pch-9 — a channel's beam is selected at the start of an analysis, deep inside its engine: it reports to this run's progress
+        // and stops on its Stop (BeamSelection.Use)
+        using var beamControl = CircuitRF.Engine.AntennaArray.BeamSelection.Use(control);
         var results     = new List<AnalysisResult>();
         var fields      = fieldsRun.Artifacts;
         var notes       = new List<string>();

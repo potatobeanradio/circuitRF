@@ -78,6 +78,20 @@ public sealed class PhasedArrayToolTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(0, VarDegrees(vm, "theta0"), 9);
     }
 
+    /// <summary>brief-pch-9 — a drag on literal angles rewrites them glued (30deg), so the field still parses and the beam moves.</summary>
+    [Fact]
+    public void ABeamDrag_OnLiterals_RewritesThemSoTheFieldStillParses()
+    {
+        var vm = Drawn(Bench(8).Replace("Phase=steer(theta0,phi0,f0)", "Phase=steer(10deg,0deg,f0)"));
+        using var tool = Open(vm, FromSchematic);
+        Assert.True(tool.BeginDrag(), tool.Steering.Refusal);
+        tool.DragToAngles(30, 0);
+        tool.EndDrag();
+        Assert.Equal("steer(30deg,0deg,f0)", tool.Instance.Parameters.Single(p => p.Name == "Phase").Expression);
+        Assert.True(tool.Frame is not null, tool.Status);
+        Assert.Equal(30, tool.Frame!.Readouts.PeakThetaDeg, 0);
+    }
+
     /// <summary>Gate 2's other half — weights that are not a steer() show the marker and do not drag, saying why.</summary>
     [Fact]
     public void WeightsThatAreNotASteer_DoNotDrag()

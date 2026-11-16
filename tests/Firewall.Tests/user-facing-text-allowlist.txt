@@ -1814,3 +1814,5 @@ src/RfCore/Signals/SignalEqualizer.cs|only an SC carrier is equalized here
 src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to an SC carrier
 src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a symbol rate: a number with sps, ksps or Msps
 src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a whole number
+src/Core/Devices/PhasedArrayFeedModel.cs|{from.Elements} weights for {Elements} elements.
+src/Engine/Array/ArrayPattern.cs|The tables were built for another lattice.

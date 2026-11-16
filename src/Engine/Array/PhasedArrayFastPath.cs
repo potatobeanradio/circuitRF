@@ -99,6 +99,11 @@ public static class PhasedArrayFastPath
     public static Solved? TryWaves(ElaboratedNetlist nl, string block, double[] freqs, IReadOnlyList<(int Port, Complex Amplitude)> drives)
     {
         if (!Enabled || Split(nl, block) is not { Path.Fast: true } parts) return null;
+        // brief-pch-9 — a channel's beam is selected before the weights below are read
+        if (freqs.Length > 0) BeamSelection.Apply(nl, freqs[freqs.Length / 2]);
+        // brief-pch-9 — a Propagation Channel that RECEIVES on this array puts its rays on the elements, which the closed array at F does
+        // not carry: solved whole instead
+        if (nl.Components.Any(c => c.Model is PropagationChannelModel ch && ReferenceEquals(ch.RxEnd, parts.Block))) return null;
         var pa = parts.Array;
         var feed = pa.Feed!;
         int n = pa.PortCount;
@@ -254,8 +259,10 @@ public static class PhasedArrayFastPath
         var pa = parts.Array;
         int n = pa.PortCount;
         double z0 = pa.Z0.Real;
-        string key = $"{array.InstancePath}|{parts.ArrayKey}|{parts.Channel?.Key}|{hz.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}";
-        // G and Γ_F are kept per resolved array, channel and frequency; the feed's node is this netlist's own, never kept
+        // brief-pch-9 — and per WEIGHTS: G = S12·M⁻ᵀ·t and Γ_F carry the beamformer's t, and ArrayKey leaves out what only moves the weights,
+        // so a key without them handed a re-weighed array (a selected beam, a tuned steer VAR) the previous beam's collapse
+        string key = $"{array.InstancePath}|{parts.ArrayKey}|{parts.Channel?.Key}|{pa.Feed!.WeightsKey()}|{hz.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}";
+        // G and Γ_F are kept per resolved array, channel, weights and frequency; the feed's node is this netlist's own, never kept
         lock (_gate)
             if (_receive.TryGetValue(key, out var kept)) return (kept with { FeedNode = parts.Feed.Nodes[0] }, Taken(parts));
         var ch = parts.Channel is { } channel ? SolveChannel(nl, channel, [hz], z0)[0] : Through;
@@ -735,7 +742,10 @@ public static class PhasedArrayFastPath
     /// <summary>The circuit outside the array with the closed array standing at F.</summary>
     private static (ElaboratedNetlist Nl, string LoadPath) Outer(ElaboratedNetlist nl, Parts parts, Dictionary<double, Complex> gammaF, double z0)
     {
-        var (sub, map) = Sub(nl, parts.Outer, name => name);
+        // brief-pch-9 — a Propagation Channel that TRANSMITS from this array reads its element waves (one way: it loads nothing back on
+        // them), and those waves are not unknowns of the circuit outside the array: it is left out of that solve, which it cannot change.
+        // Before, it stamped its rows against the array's element branches there, which that system never allocated.
+        var (sub, map) = Sub(nl, [.. parts.Outer.Where(c => !(c.Model is PropagationChannelModel ch && ReferenceEquals(ch.TxEnd, parts.Block)))], name => name);
         const string path = "__paa_feed_load";
         sub.AddComponent(new ElaboratedComponent("PhasedArrayFeedLoad", path, [map(parts.Feed.Nodes[0]), 0],
                                                  new Dictionary<string, Value>(StringComparer.Ordinal), new ArrayFeedLoadModel(gammaF, z0)));

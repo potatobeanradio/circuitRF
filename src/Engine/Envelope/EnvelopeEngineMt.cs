@@ -186,6 +186,8 @@ public sealed class EnvelopeEngineMt
         int[] toneMix = new int[T];
         for (int t = 0; t < T; t++) { var k = new int[T]; k[t] = 1; toneMix[t] = lat.IndexOf(k); }
 
+        // brief-pch-9 — a channel's beam, selected over the signal's band and taken into its arrays before anything is stamped
+        AntennaArray.BeamSelection.Apply(_nl, tones.Average(), sources.SelectMany(x => x.Signal.Carriers).Select(c => c.Spec.BandwidthHz).DefaultIfEmpty(0).Max(), setCarrier: true);
         // Noise (brief NZ-7), from every part's own stamp, before a line or an S-parameter block is replaced for the run.
         // A product at a negative frequency is stepped in the frame of |w|, so its noise is read there.
         var thermal = p.Noise ? EnvelopeNoise.Thermal(_nl, _settings, [.. wMix.Select(w => Math.Abs(w) / (2 * Math.PI))], h, p.Seed, tones.Average()) : null;
