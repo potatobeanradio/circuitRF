@@ -1,0 +1,107 @@
+<!-- The Filter Designer (docs/design/filter-synthesis.md §6), laid out as the Match Designer is: the specification and the
+     realisers on the left, the response on the right — the ideal (the prototype's ladder through the engine) with the
+     selected realisation's bench overlaid, a Data Display PlotControl as the Match Designer hosts its own. Place puts the
+     part and its site parts into the schematic as one undo step. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CircuitRF.Ui.Filters"
+        xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
+        xmlns:ctl="using:CircuitRF.Ui.Controls"
+        x:Class="CircuitRF.Ui.Views.Filters.FilterDesignerWindow"
+        x:DataType="vm:FilterDesignerViewModel"
+        Title="{Binding Title}"
+        Width="1100" Height="720" MinWidth="900" MinHeight="560"
+        CanResize="True">
+
+    <Window.Styles>
+        <Style Selector="Border.pane">
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeMediumLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="10"/>
+            <Setter Property="Margin"          Value="4"/>
+        </Style>
+        <Style Selector="TextBlock.panelhdr">
+            <Setter Property="FontSize"   Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,6,0,6"/>
+        </Style>
+        <Style Selector="TextBlock.lbl">
+            <Setter Property="FontSize"          Value="12"/>
+            <Setter Property="Opacity"           Value="0.8"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector=":is(TextBlock).note">
+            <Setter Property="FontSize"     Value="11"/>
+            <Setter Property="Opacity"      Value="0.75"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid ColumnDefinitions="380,*" RowDefinitions="*,Auto">
+        <Border Classes="pane" Grid.Column="0">
+            <ScrollViewer>
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="panelhdr" Text="Specification"/>
+                    <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="4">
+                        <TextBlock Classes="lbl" Grid.Row="0" Text="Response"/>
+                        <ComboBox Grid.Row="0" Grid.Column="1" HorizontalAlignment="Stretch"
+                                  ItemsSource="{x:Static vm:FilterDesignerViewModel.Responses}" SelectedItem="{Binding Response}"/>
+                        <TextBlock Classes="lbl" Grid.Row="1" Text="Band"/>
+                        <ComboBox Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch"
+                                  ItemsSource="{x:Static vm:FilterDesignerViewModel.Bands}" SelectedItem="{Binding Band}"/>
+                        <TextBlock Classes="lbl" Grid.Row="2" Text="Order"/>
+                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Order}"/>
+                        <TextBlock Classes="lbl" Grid.Row="3" Text="F1 (cutoff, or lower edge)" TextWrapping="Wrap"/>
+                        <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding F1}"/>
+                        <TextBlock Classes="lbl" Grid.Row="4" Text="F2 (upper edge)" IsVisible="{Binding IsBand}"/>
+                        <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding F2}" IsVisible="{Binding IsBand}"/>
+                        <TextBlock Classes="lbl" Grid.Row="5" Text="Ripple, dB"/>
+                        <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding Ripple}"/>
+                        <TextBlock Classes="lbl" Grid.Row="6" Text="Stopband, dB"/>
+                        <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding Stop}"/>
+                        <TextBlock Classes="lbl" Grid.Row="7" Text="Z0, Ω"/>
+                        <TextBox Grid.Row="7" Grid.Column="1" Text="{Binding Z0}"/>
+                        <TextBlock Classes="lbl" Grid.Row="8" Text="Family"/>
+                        <ComboBox Grid.Row="8" Grid.Column="1" HorizontalAlignment="Stretch"
+                                  ItemsSource="{x:Static vm:FilterDesignerViewModel.Families}" SelectedItem="{Binding Family}"/>
+                    </Grid>
+                    <TextBlock Classes="note" Text="{Binding SubstrateText}"/>
+
+                    <TextBlock Classes="panelhdr" Text="Realisers"/>
+                    <ListBox ItemsSource="{Binding Realisers}" SelectedItem="{Binding Selected}" MaxHeight="220">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:FilterRealiserRow">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                    <TextBlock Classes="note" Text="{Binding Status}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <TextBlock Classes="panelhdr" Text="What Place writes"/>
+                    <SelectableTextBlock Classes="note" Text="{Binding ParametersText}" FontFamily="monospace"/>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <Border Classes="pane" Grid.Column="1">
+            <ctl:AspectRatioPanel>
+                <ddc:PlotControl Name="ResponsePlotControl"
+                                 Plot="{Binding Plot}"
+                                 Library="{Binding PlotHost.Library}"
+                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
+            </ctl:AspectRatioPanel>
+        </Border>
+
+        <Grid Grid.Row="1" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto,Auto,Auto" Margin="8,4,8,8">
+            <TextBlock Classes="note" Text="{Binding Status}" VerticalAlignment="Center"/>
+            <Button Grid.Column="1" Content="Help" Margin="4,0" Click="OnHelp"/>
+            <Button Grid.Column="2" Content="Place" Margin="4,0" Command="{Binding PlaceCommand}"
+                    ToolTip.Tip="Put the part and a part on each of its sites into the schematic, as one undo step"/>
+            <Button Grid.Column="3" Content="Close" Margin="4,0" Click="OnClose"/>
+        </Grid>
+    </Grid>
+</Window>

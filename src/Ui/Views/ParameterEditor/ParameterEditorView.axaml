@@ -1046,6 +1046,13 @@
                             Command="{Binding PlaceSitePartsCommand}"
                             ToolTip.Tip="Put an ordinary part on each empty site, of the value listed above and with this part's Footprint"/>
                 </StackPanel>
+                <!-- MLAD, MCRC and MCLA: the Filter Designer with this family preselected (filter-synthesis.md §6). -->
+                <Button Content="Synthesise…"
+                        HorizontalAlignment="Right"
+                        FontSize="11" Padding="8,3" Margin="4,2"
+                        IsVisible="{Binding IsFilterSynthesisTarget}"
+                        Command="{Binding OpenFilterDesignerCommand}"
+                        ToolTip.Tip="Open the Filter Designer: a filter from its specification, realised on this part's family and placed"/>
 
                 <!-- SpiceModel custom panel: which FILE, which DEFINITION in it, and — for a
                      .subckt only — how its box is laid out. The generic rows above are the chosen
