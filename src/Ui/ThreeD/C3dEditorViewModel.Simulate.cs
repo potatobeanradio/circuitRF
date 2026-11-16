@@ -1351,8 +1351,9 @@ public sealed partial class C3dEditorViewModel
         => o.Kind == Scene3DKind.Boundary && o.Name.StartsWith("airbox/", StringComparison.Ordinal) ? o.Name["airbox/".Length..] : null;
 
     /// <summary>R-em3d49-3b — a box face's boundary, written to the ACTIVE setup's AirBox; null on success, else why not.</summary>
-    public string? SetAirBoxBoundary(string face, Em3dBoundaryKind kind)
-        => EditActiveAirBox(face, f => f is null ? new EmAirBoxFace(null, kind) : f with { Boundary = kind }, $"Air box {face}: {kind}");
+    public string? SetAirBoxBoundary(string face, Em3dBoundaryKind kind, bool symmetry = false)
+        => EditActiveAirBox(face, f => f is null ? new EmAirBoxFace(null, kind, null, symmetry) : f with { Boundary = kind, Symmetry = symmetry },
+                            $"Air box {face}: {C3dAirBoxChoice.Of(kind, symmetry).Label}");
 
     /// <summary>3D editor round 3 — the air box's material choices: the technology's materials, and Air and Vacuum (built in
     /// when the technology lacks them).</summary>
@@ -1385,7 +1386,7 @@ public sealed partial class C3dEditorViewModel
         if (d.Kind != C3dDimensionKind.Value) return d.Why;
         if (d.Dbu < 0) return "A padding is a distance from the geometry: zero or more.";
         double um = (double)LayoutUnits.FromDbu(d.Dbu, LayoutUnit.Um, Document.DbuPerMicron);
-        return EditActiveAirBox(face, f => new EmAirBoxFace(um, f?.Boundary), $"Air box {face} padding");
+        return EditActiveAirBox(face, f => new EmAirBoxFace(um, f?.Boundary, null, f?.Symmetry ?? false), $"Air box {face} padding");
     }
 
     /// <summary>The padding a box face has now, in the display unit — the Padding… field's prefill.</summary>
@@ -1448,7 +1449,7 @@ public sealed partial class C3dEditorViewModel
         if (!NumericText.TryParseDouble(t, out double pct) || !double.IsFinite(pct))
             return $"'{text}' is not a percentage: a number such as 10.";
         if (pct < 0) return "A padding is a distance from the geometry: zero or more.";
-        return EditActiveAirBox(face, f => new EmAirBoxFace(null, f?.Boundary, pct),
+        return EditActiveAirBox(face, f => new EmAirBoxFace(null, f?.Boundary, pct, f?.Symmetry ?? false),
                                 $"Air box {face} padding {pct.ToString("G6", CultureInfo.InvariantCulture)} %");
     }
 
@@ -1594,16 +1595,14 @@ public sealed partial class C3dEditorViewModel
 
         if (BoxFaceOf(o) is { } boxFace)
         {
-            var current = ShownAirBox is { } bx ? FaceKindOf(bx, boxFace) : Em3dBoundaryKind.Absorbing;
+            var current = ShownAirBox is { } bx ? C3dAirBoxChoice.Of(FaceKindOf(bx, boxFace), bx.SymmetryPlanes.Any(p => p.Face == boxFace))
+                                                : C3dAirBoxChoice.Of(Em3dBoundaryKind.Absorbing, false);
             string tip = ActiveSetup is not null && ActiveSetupName is { } n ? $"Writes setup '{n}': the air box is the setup's."
                        : "No setup is active: writes the 3D view's own air box, which a setup added later starts with.";
             yield return new Viewer3DMenuItem("Boundary", Tip: tip, Children:
             [
-                .. new[] { Em3dBoundaryKind.Absorbing, Em3dBoundaryKind.Pec, Em3dBoundaryKind.Pmc, Em3dBoundaryKind.Symmetry }
-                    .Select(k => new Viewer3DMenuItem((k == current ? "● " : "") + k switch
-                    {
-                        Em3dBoundaryKind.Absorbing => "Absorbing", Em3dBoundaryKind.Pec => "PEC", Em3dBoundaryKind.Pmc => "PMC", _ => "Symmetry",
-                    }, () => Report(SetAirBoxBoundary(boxFace, k)), Tip: tip)),
+                .. C3dAirBoxChoice.Menu.Select(c => new Viewer3DMenuItem((c == current ? "● " : "") + c.Label,
+                    () => Report(SetAirBoxBoundary(boxFace, c.Kind, c.Symmetry)), Tip: c.Tip ?? tip)),
             ]);
             yield return new Viewer3DMenuItem("Padding…", () => TextRequested?.Invoke($"Air box {boxFace} padding",
                 $"Distance from the geometry to the {boxFace} face ({LayoutUnits.Suffix(Document.DisplayUnit)}):", AirBoxPaddingText(boxFace),

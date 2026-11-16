@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "Dual Conversion IF2 Levels",
+  "CellName": "Dual Conversion IF2 Levels.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -357,8 +357,8 @@
       "Parameters": [
         {
           "Name": "Freq",
-          "Expression": "328600000",
-          "Unit": "",
+          "Expression": "328.6",
+          "Unit": "MHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         },
@@ -587,22 +587,22 @@
         },
         {
           "Name": "Frf",
-          "Expression": "350000000",
-          "Unit": "",
+          "Expression": "350",
+          "Unit": "MHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "F1",
-          "Expression": "349500000",
-          "Unit": "",
+          "Expression": "349.5",
+          "Unit": "MHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "F2",
-          "Expression": "350500000",
-          "Unit": "",
+          "Expression": "350.5",
+          "Unit": "MHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -615,8 +615,8 @@
         },
         {
           "Name": "Flo1",
-          "Expression": "328600000",
-          "Unit": "",
+          "Expression": "328.6",
+          "Unit": "MHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -957,18 +957,6 @@
           0
         ],
         [
-          7400,
-          0
-        ],
-        [
-          7400,
-          -200
-        ],
-        [
-          7600,
-          -200
-        ],
-        [
           7600,
           0
         ]
@@ -1088,7 +1076,7 @@
       "Name": "out",
       "OwnerWireIndex": 7,
       "SegmentIndex": 0,
-      "AlongT": 0.3333333333333333,
+      "AlongT": 0.2,
       "OffsetX": 0,
       "OffsetY": 0
     }

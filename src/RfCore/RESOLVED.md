@@ -1632,11 +1632,24 @@ only a Doppler (`TxVel`), 10 Msym/s over 0.2 ms: 200 Hz read −0.5 Hz, 500 Hz r
   real, so its tap's line-of-sight line sits at 0 Hz (`TapFading.LosDopplerFactor`), not 0.7·f_m.
 - **Refused now, silent before:** an InF-SH/DH base station at or below the clutter height (P_LOS read 3.05, or 3e89, or NaN),
   a UMa/UMi base station at or below hE = 1 m, P.833's woodland fit outside 900-2200 MHz (94 dB at 28 GHz), and "NaN" typed for
-  a number or in a list. P.530's r is capped at 2.5 (step 4; a 100 m path at 28 GHz read r = 5.3), and the reference script
-  with it. A satellite path's P.2109 façade elevation is the path's elevation unless stated (it was 0°: 12.7 dB at 60°).
+  a number or in a list. A satellite path's P.2109 façade elevation is the path's elevation unless stated (it was 0°: 12.7 dB at 60°).
 - **R-pch2-3's rain depolarization was not built:** P.618 §4.1's XPD (Cf − CA + Cτ + Cθ + Cσ less the ice term) is now a note
-  beside the P.618 rain, 6-55 GHz, θ ≤ 60°, 0.001-1 %, τ the RainTilt. Not checked against the SG3 workbook.
-- **Unconfirmed, for a look:** P.1238 residential floor-loss cells at 2.4/5.2 GHz (the office values are used); P.531's
-  Nakagami m (an exponential fit, where earlier editions give 1/S4²); P.530's worst-month conversion (R-pch2-2) is not built;
-  `SignalQuality.CoarseOffset` may lock to a wrong bin with a window one record long and no preamble (a Python model of it
-  did; the gate uses 16APSK with a preamble).
+  beside the P.618 rain, 6-55 GHz, θ ≤ 60°, 0.001-1 %, τ the RainTilt; checked against P.618-14's text, whose eq (72) V(f) has
+  four bands of its own (30.8·f^−0.21 to 9 GHz, 12.8·f^0.19 to 20, 22.6 to 40, 13.0·f^0.15 to 55), not eq (71)'s three.
+- **P.530's r is NOT capped at 2.5.** An earlier edition's step capped it; P.530-19 replaces the cap with its limits on f
+  (≥ 6 GHz), d (≤ 30 km) and R0.01 (≥ 3 mm/h), which the code already had. A cap added in the review was taken back out
+  against the document: a sub-km path's r of 5-8 is what eq (32) gives. Read the in-force edition before "fixing" a formula
+  from an older one.
+- **P.1238 Table 5's residential rows at 2.4 and 5.2 GHz** were read as the office values (14, 16 dB). They are an apartment's
+  (10, 13 dB, concrete walls) and a house's (5, 7 dB, wooden mortar): `Building=apartment|house` takes them, and
+  `Building=residential` at those two frequencies is refused naming both. P.531-16's Nakagami m is eq (10)'s exponential fit,
+  as built.
+- **The SC/DBPSK coarse offset locked to a wrong bin without a preamble.** It correlated the received and sent power spectra's
+  line-by-line detail, which a periodic PN record leaves nearly flat: QPSK at 73 kHz read 1.9 MHz, BPSK at 73 kHz 6.1 MHz
+  (EVM over 100 %). It now finds the delay from the power envelopes |x|² and |s|² (an offset does not touch them) and the
+  offset from x·conj(s) at that delay, a tone. Gate `EnvelopeScTests.Doppler_IsAcquired_WithoutAPreamble`.
+- **SC/DBPSK BERest read high** (×1.25 at Eb/N0 8 dB, ×4 at 12 dB, QPSK in plain noise): it averaged BER over a 65-symbol SINR
+  estimate, and the BER curve is convex. When the record's 65-symbol blocks spread in log-power no more than estimation explains
+  (4/65), every symbol takes the record's SINR; a fade within the record keeps the local window. Gate
+  `SignalEqualizerTests.ScBerEst_InPlainNoise_IsTheClosedForm_AndAFadeKeepsTheLocalWindow`.
+- **Not built:** P.530's worst-month to average-year conversion (R-pch2-2).

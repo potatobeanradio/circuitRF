@@ -5542,11 +5542,16 @@ Found building *Symbolically Defined Device (SDD)*'s bias-loop bench (an SDD tha
   0-based; the channel stepped from Start). `EnvelopeSpan.OffsetS` carries it.
 - **Beam bound:** a non-steered end kept unit-modulus phases, losing its taper; it keeps its weights now. **The kept beam's key**
   timestamps a `path#port` pattern by its path.
-- **Left as found, for a decision:** SC/DBPSK BERest averages BER over a 65-symbol SINR estimate and is biased high near
-  BER 1e-3…1e-5 (×1.25 at 8 dB, ×4 at 12 dB Eb/N0 QPSK); pooling the SINR removes it but stops BERest following fading in the
-  window. The genie equalizer with a channel skips the offset removal, so a transmitter's own CFO is not taken out. Drop reuse
-  is exact only with a linear receive side (the joint step's iteration history differs). Recordings are kept for every key for
-  the whole sweep. `outage_over` drops NaN drops from both counts. `CollapsedElements`, `ReplacedParts`, `LastInstanceCost`
+- **Drop reuse is exact only with a linear receive side, and now refuses a nonlinear one.** The joint step's Newton and
+  predictor acceptance are judged over every unknown, so the recorded transmit waves carry the recording drop's own receive
+  iterations. Measured over 50 drops with an LNA (IP3 −30 dBm) after the channel: V to 2e-5 and I to 2e-4 of their peaks, AM-PM
+  and Delay of a CW not at all. Each drop is then solved jointly and the run note names the part. Gate
+  `DropReuseTests.ANonlinearReceiveSide_IsSolvedJointly`.
+- **The genie through a channel now takes out what the channel does not hold.** It divided by the channel's H(f, t) and took out
+  no offset at all (taking the whole fit out would remove the channel's Doppler twice), so a transmitter's or an LO's own offset
+  stayed in. The residual is fitted on the symbols with H divided out (`SignalEqualizer.WithoutChannel`) and removed first; CFO_Hz
+  is still the whole offset as received.
+- **Left as found:** recordings are kept for every key for the whole sweep. `CollapsedElements`, `ReplacedParts`, `LastInstanceCost`
   are process-wide counters, so the 8b envelope test can read another class's run under load (`PatternEvaluations`, counted on
   the caller's thread, is per thread now, which settled `ReceiveArrayFeedTests.Gate3_…`).
 
@@ -5570,3 +5575,31 @@ Found building *Symbolically Defined Device (SDD)*'s bias-loop bench (an SDD tha
   [time, node, harmonic], and the envelope's displays read it.
 - **The HB and oscillator seeds** set PlayModulation = false: a MOD_Source there is its CW tone at Fc, the steady state
   harmonic balance solves for.
+
+## The transient seed answers Stop (2026-11-16)
+
+`HbEngine` takes an optional `RunControl` (constructor), and `OscEngine.Run` takes one too. Both are used for
+cancellation only and both hand it to the transient seed (`HbTransientSeed.Run`, `OscTransientSeed.Run`). The seed's
+transient engine checks it every 256 accepted steps.
+- CircuitEvaluation's HB and oscillator cases, HbCircuitRun and the parametric sweep's HB and oscillator points pass the
+  run's control.
+- The UI already had the control: the toolbar Stop and the Messages live row's Cancel are one `RunCancellation`.
+- Until now that control was honoured only at a sweep-point boundary, so a single HB point waited out a 200-period seed.
+- The Newton solve and the drive ramp are still not interrupted. `src/Engine/CLAUDE.md`'s "HbEngine … take no control"
+  now means "checks it only inside its transient seed".
+- Gate: `TransientSeedTests.AStoppedRun_EndsTheSeed`.
+
+## The step floor keeps what the run did (2026-11-16)
+
+A step that fell below `MaxStep / 2^40` threw, and every accepted step went with it. Design note §4.3 always said the run
+stops at that time with what it has.
+- **What the run keeps now:** the output up to that time, plus `Tran.StoppedAt_s`.
+- **The warning** names the last failure. That is the Newton failure if there was one, kept over a later rejection that
+  had no failure of its own (the old code overwrote it with ""). Otherwise it is the net and devices with the largest
+  local error, now tracked by both error estimates, or "the solution was not finite" (the linear path used to report a NaN
+  as a tolerance problem).
+- **Convergence:** CircuitEvaluation reports such a run as not converged.
+- **Still refused:** a run with no output point yet, and the HB and oscillator seeds (`KeepWhatWasDone = false`), since a
+  seed cut short is no steady state.
+- **Gate:** `TransientEngineTests.AtTheStepFloor_TheRunStops_KeepingWhatItHad`. A drive that turns non-finite after 0.5 µs
+  stops the run at 5e-7 s with its output up to there.

@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "Dual Conversion IF2 Demo",
+  "CellName": "Dual Conversion IF2 Demo.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -448,8 +448,8 @@
       "Parameters": [
         {
           "Name": "Freq",
-          "Expression": "328600000",
-          "Unit": "",
+          "Expression": "328.6",
+          "Unit": "MHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         },
@@ -713,8 +713,8 @@
         },
         {
           "Name": "Frf",
-          "Expression": "350000000",
-          "Unit": "",
+          "Expression": "350",
+          "Unit": "MHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -727,8 +727,8 @@
         },
         {
           "Name": "Flo1",
-          "Expression": "328600000",
-          "Unit": "",
+          "Expression": "328.6",
+          "Unit": "MHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         }
@@ -921,22 +921,6 @@
           0
         ],
         [
-          8200,
-          200
-        ],
-        [
-          7900,
-          200
-        ],
-        [
-          7900,
-          -400
-        ],
-        [
-          8700,
-          -400
-        ],
-        [
           8700,
           0
         ]
@@ -1019,18 +1003,6 @@
         [
           7600,
           0
-        ],
-        [
-          7800,
-          0
-        ],
-        [
-          7800,
-          300
-        ],
-        [
-          8100,
-          300
         ],
         [
           8100,
@@ -1160,21 +1132,21 @@
     },
     {
       "X": 7900,
-      "Y": 300,
+      "Y": 0,
       "Name": "out",
       "OwnerWireIndex": 11,
-      "SegmentIndex": 2,
-      "AlongT": 0.3333333333333333,
+      "SegmentIndex": 0,
+      "AlongT": 0.6,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 8300,
-      "Y": -400,
+      "X": 8516.373134517064,
+      "Y": 0,
       "Name": "load",
       "OwnerWireIndex": 4,
-      "SegmentIndex": 3,
-      "AlongT": 0.5,
+      "SegmentIndex": 0,
+      "AlongT": 0.6327462690341272,
       "OffsetX": 0,
       "OffsetY": 0
     }

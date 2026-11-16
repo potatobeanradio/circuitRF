@@ -357,6 +357,9 @@ follows the fastest source, so a 1 GHz tone gets at least 20 steps a period. <co
 steps as well, to see where it worked hardest.</p>
 <p>The result carries the run's counters, <code>Tran.AcceptedSteps</code>, <code>Tran.RejectedSteps</code>, <code>Tran.NewtonIterations</code> and
 <code>Tran.Factorizations</code>: a run with many rejected steps is a circuit that is hard to step, not a slow computer.</p>
+<p>A circuit the engine cannot step past (its step shrinks below <code>MaxStep / 2^40</code>) stops there and keeps everything up to
+that time. A warning gives the time and what failed: the net whose Newton update or local error was largest, or a solution
+that was not finite. <code>Tran.StoppedAt_s</code> holds the time, and the run is reported as not converged.</p>
 <h2 id="elements">What runs in time</h2>
 <table>
 <thead>

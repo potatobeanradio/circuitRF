@@ -134,7 +134,8 @@ public static class SpiceDeviceTable
     private static SpiceDeviceParameter[] MosRows(int level) =>
     [
         M("Vto", "VTO", double.NaN, 0, "circuitRF's default is +1 V n-channel, −1 V p-channel, so it is always written."),
-        M("Kp", "KP", 2e-5, 2e-5),
+        M("Kp", "KP", 2e-5, null, "Always written: unstated, the dialect's level 3 derives KP from UO and its default TOX "
+                                 + "(2.07e-5, measured on ngspice 47, not 2e-5)."),
         M("Gamma", "GAMMA", 0, 0),
         M("Phi", "PHI", 0.6, 0.6),
         .. level == 1
@@ -148,7 +149,8 @@ public static class SpiceDeviceTable
         I("L", "L", 100e-6, null, "Always written: the dialect's default length is an option (DEFL)."),
         M("Ld", "LD", 0, 0),
         None("Tox", 0, "with Tox the gate charge is circuitRF's charge-based long-channel form, and the dialect's is Meyer's "
-                     + "capacitance set; with Tox unstated neither has a thin-oxide charge"),
+                     + "capacitance set; with Tox unstated circuitRF has no thin-oxide charge, and the level-3 card is written with "
+                     + "TOX=1e6 so the dialect has none either (its own default is 100 nm)"),
         NoEffect("Uo", 600, "Derives Kp only with Tox, which is refused when set."),
         NoEffect("Nsub", 0, "Derives Gamma and Phi only with Tox, which is refused when set."),
         M("Cgso", "CGSO", 0, 0),

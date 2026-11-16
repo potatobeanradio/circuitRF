@@ -211,9 +211,10 @@ public static partial class CsxcadWriter
             if (faceKinds[k] == Em3dBoundaryKind.Symmetry)
                 return No($"The air box's {FaceKeys[k]} face is a Symmetry face, which does not say whether the " +
                           "field's electric or magnetic wall lies there. Set it to Pec (an electric wall) or Pmc " +
-                          "(a magnetic one) in the setup's AirBox.");
+                          "(a magnetic one) in the setup's AirBox, with Symmetry true to mirror the radiation pattern across it.");
         if (problem.Ports.Count == 0 && problem.PlaneWave is null)
             return No("The 3D problem has no ports, so there is nothing for openEMS to excite.");
+        if (SymmetryPortRefusal(problem) is { } onThePlane) return No(onThePlane);
         if (problem.PlaneWave is not null && problem.Ports.Count > 0)
             return No("The 3D problem has a plane wave and ports; a scattering run is driven by its plane wave alone.");
         foreach (var p in problem.Ports)
@@ -1306,6 +1307,32 @@ public static partial class CsxcadWriter
     /// The port's two ends as openEMS's lumped port states them: <c>start</c> on the NEGATIVE object,
     /// <c>stop</c> on the positive, the excitation axis, and the sign of stop − start along it.
     /// </summary>
+    /// <summary>
+    /// brief-hzn-21 — a lumped port that reaches a symmetry plane across its current: openEMS measures a lumped port's current on a
+    /// loop of H half a cell round the port, and at the wall that loop would lie outside the grid, so openEMS collapses it and reads
+    /// no current — S11 of exactly 1, in silence (measured on a half dipole fed at its plane). Null when no port does.
+    /// </summary>
+    public static string? SymmetryPortRefusal(Em3dProblem problem)
+    {
+        var box = problem.Boundary;
+        double[] lo = [box.Min.X, box.Min.Y, box.Min.Z], hi = [box.Max.X, box.Max.Y, box.Max.Z];
+        foreach (var plane in box.SymmetryPlanes)
+        {
+            double at = plane.Face.EndsWith("max", StringComparison.Ordinal) ? hi[plane.Axis] : lo[plane.Axis];
+            double tol = 1e-9 * Math.Max(1e-3, hi[plane.Axis] - lo[plane.Axis]);
+            foreach (var p in problem.Ports.Where(p => p.Kind == Em3dPortKind.Lumped && p.Annulus is null))
+            {
+                if (Terminals(p).Axis == plane.Axis) continue;      // a port along the plane's normal: its loop lies parallel to the wall
+                double[] pmin = [p.Min.X, p.Min.Y, p.Min.Z], pmax = [p.Max.X, p.Max.Y, p.Max.Z];
+                if (Math.Abs(pmin[plane.Axis] - at) <= tol || Math.Abs(pmax[plane.Axis] - at) <= tol)
+                    return $"Port {p.Number} reaches the {plane.Face} face, a symmetry plane, across its current. openEMS measures a lumped " +
+                           "port's current on a loop half a cell round it, and at the wall that loop would lie outside the grid, so it reads no " +
+                           "current. Run the setup on Palace or EMerge, which solve a port on a symmetry plane, or solve the whole structure.";
+            }
+        }
+        return null;
+    }
+
     private static (Point3 Start, Point3 Stop, int Axis, int Sign) Terminals(Em3dPort p)
     {
         int axis = ExcitationAxis(p)!.Value;

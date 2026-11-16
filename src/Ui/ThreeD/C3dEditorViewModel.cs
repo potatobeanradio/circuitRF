@@ -1281,7 +1281,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         (typeof(C3dPolyhedron), "Polyhedra"), (typeof(C3dSheet), "Sheets"), (typeof(C3dPolyline), "Polylines"),
         (typeof(C3dWire), "Wires"),
         // brief-em3d-64 — drawn and listed; brief 66 gives an operation its own node with its operands beneath it.
-        (typeof(C3dBoolean), "Booleans"), (typeof(C3dFillet), "Fillets"), (typeof(C3dChamfer), "Chamfers"), (typeof(C3dStep), "Step parts"),
+        (typeof(C3dBoolean), "Booleans"), (typeof(C3dFillet), "Fillets"), (typeof(C3dChamfer), "Chamfers"), (typeof(C3dSplit), "Splits"), (typeof(C3dStep), "Step parts"),
     ];
 
     /// <summary>Objects in construction order, grouped by material or by kind (3D editor round 2) and filtered; then

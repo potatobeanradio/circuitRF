@@ -785,8 +785,21 @@ public sealed record Em3dFaces(
 
 /// <summary>The air box: its extent and what each face is. Every solid lies inside it — the
 /// generator clips nothing (R-em3d3-6b).</summary>
+/// <summary>brief-hzn-21 — one mirror plane of the whole structure: the air box face normal to <paramref name="Axis"/> (0 x, 1 y, 2 z)
+/// at <paramref name="AtM"/> metres, an electric (<see cref="Em3dBoundaryKind.Pec"/>) or magnetic (<see cref="Em3dBoundaryKind.Pmc"/>)
+/// <paramref name="Wall"/>. Every solver lowers the face as that wall; the radiation pattern is mirrored across it.</summary>
+public sealed record Em3dSymmetryPlane(int Axis, double AtM, Em3dBoundaryKind Wall)
+{
+    /// <summary>The face's key: <c>xmin</c>…<c>zmax</c>.</summary>
+    public string Face { get; init; } = "";
+}
+
 public sealed record Em3dAirBox(Point3 Min, Point3 Max, Em3dFaces Faces)
 {
+    /// <summary>brief-hzn-21 — the faces that are mirror planes of the whole structure (at most one per axis); empty for a model
+    /// that is the whole structure.</summary>
+    public IReadOnlyList<Em3dSymmetryPlane> SymmetryPlanes { get; init; } = [];
+
     /// <summary>brief-hzn-16 — the scan of a periodic cell (its faces' <see cref="Em3dBoundaryKind.Periodic"/> pairs); null is
     /// broadside (θ = 0), and is read only when a pair is periodic.</summary>
     public Em3dScan? Scan { get; init; }

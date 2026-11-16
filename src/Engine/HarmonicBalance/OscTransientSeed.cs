@@ -109,7 +109,7 @@ public static class OscTransientSeed
                     if (!shunt && ((OscProbeModel)probe.Model).LastBranchIndex is int br and >= 0) { iBr = rows.Count; rows.Add(br); }
                     return [.. rows];
                 },
-                PlayModulation = false,   // brief MTR-1 R-mtr1-5: the steady state, a MOD_Source's CW tone
+                PlayModulation = false, KeepWhatWasDone = false,   // brief MTR-1 R-mtr1-5: the steady state, a MOD_Source's CW tone
                 StopWhen = (t, v) => cycles.Push(t, shunt ? (iA >= 0 ? v[iA] : 0) - (iB >= 0 ? v[iB] : 0) : iBr >= 0 ? v[iBr] : 0),
             };
             cycles.Level = shunt ? Dc(a) - Dc(b) : double.NaN;

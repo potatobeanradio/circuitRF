@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "Dual Conversion 2-Tone",
+  "CellName": "Dual Conversion 2-Tone.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -283,8 +283,8 @@
       "Parameters": [
         {
           "Name": "Freq",
-          "Expression": "2100000000",
-          "Unit": "",
+          "Expression": "2.1",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         },
@@ -596,8 +596,8 @@
       "Parameters": [
         {
           "Name": "Freq",
-          "Expression": "328600000",
-          "Unit": "",
+          "Expression": "328.6",
+          "Unit": "MHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         },
@@ -850,22 +850,22 @@
         },
         {
           "Name": "Frf",
-          "Expression": "2450000000",
-          "Unit": "",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "F1",
-          "Expression": "2449500000",
-          "Unit": "",
+          "Expression": "2.4495",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "F2",
-          "Expression": "2450500000",
-          "Unit": "",
+          "Expression": "2.4505",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -878,15 +878,15 @@
         },
         {
           "Name": "Flo1",
-          "Expression": "2100000000",
-          "Unit": "",
+          "Expression": "2.1",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "Flo2",
-          "Expression": "328600000",
-          "Unit": "",
+          "Expression": "328.6",
+          "Unit": "MHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         }
@@ -1511,18 +1511,6 @@
           0
         ],
         [
-          11600,
-          0
-        ],
-        [
-          11600,
-          -200
-        ],
-        [
-          11800,
-          -200
-        ],
-        [
           11800,
           0
         ]
@@ -1710,7 +1698,7 @@
       "Name": "out",
       "OwnerWireIndex": 12,
       "SegmentIndex": 0,
-      "AlongT": 0.3333333333333333,
+      "AlongT": 0.2,
       "OffsetX": 0,
       "OffsetY": 0
     }

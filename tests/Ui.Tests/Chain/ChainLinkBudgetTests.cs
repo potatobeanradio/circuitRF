@@ -142,7 +142,7 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
             if (b.Kind == ChainBench.OneTone)
             {
                 Assert.Contains("Amp:LNA  in  0  n_LNA  0  Gain=20 dB  NF=7.5 dB", b.Netlist, StringComparison.Ordinal);
-                Assert.Contains("Freq=128000000000", b.Netlist, StringComparison.Ordinal);
+                Assert.Contains("Freq=128 GHz", b.Netlist, StringComparison.Ordinal);   // the resolved LO, shown in GHz
             }
         }
         // And the 1-Tone bench, run, sits on the budget at the resolved values.

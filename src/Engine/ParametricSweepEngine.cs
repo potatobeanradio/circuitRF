@@ -775,7 +775,7 @@ public static class ParametricSweepEngine
             case HarmonicBalanceAnalysis hba:
             {
                 var p  = HbEngine.Resolve(hba, netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
-                var rr = new HbEngine(netlist, tb, settings, wspCache, lib, baseDirectory)
+                var rr = new HbEngine(netlist, tb, settings, wspCache, lib, baseDirectory, control)
                          .Run(p, hbWarmStart);
                 // Chain this point's converged spectrum into the next point's seed. A non-converged
                 // point resets the chain — design §11.1's rule, kept for every tone count: with the
@@ -795,7 +795,7 @@ public static class ParametricSweepEngine
             case OscillatorAnalysis osa:
             {
                 var op = OscEngine.Resolve(osa, netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
-                return OscEngine.Run(netlist, tb, op, settings, lib, baseDirectory).Data;
+                return OscEngine.Run(netlist, tb, op, settings, lib, baseDirectory, control).Data;
             }
 
             // brief-trn-1: the transient run at this point. The output grid is the directive's, so every point stacks; a swept

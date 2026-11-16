@@ -125,6 +125,7 @@ public sealed partial class C3dPlacement : IC3dBindable
 [JsonDerivedType(typeof(C3dBoolean),    "Boolean")]
 [JsonDerivedType(typeof(C3dFillet),     "Fillet")]
 [JsonDerivedType(typeof(C3dChamfer),    "Chamfer")]
+[JsonDerivedType(typeof(C3dSplit),      "Split")]
 [JsonDerivedType(typeof(C3dStep),       "Step")]
 [JsonDerivedType(typeof(C3dPhantom),    "Phantom")]
 [JsonDerivedType(typeof(C3dVoxelBody),  "VoxelBody")]
@@ -805,6 +806,71 @@ public sealed class C3dChamfer : C3dOperation
 
     public override IReadOnlyList<string> FaceNames() =>
         [.. Target?.FaceNames() ?? [], .. Edges.Select(e => $"chamfer({e})")];
+}
+
+/// <summary>brief-hzn-21 — the plane a <see cref="C3dSplit"/> cuts at, in the operation's frame: named by the two axes it contains, or
+/// <see cref="Custom"/> — through <see cref="C3dSplit.Base"/> with normal <see cref="C3dSplit.Normal"/>.</summary>
+public enum C3dSplitPlane { YZ, XZ, XY, Custom }
+
+/// <summary>brief-hzn-21 — which side of its plane a <see cref="C3dSplit"/> keeps: where the normal axis's coordinate is above
+/// <see cref="C3dSplit.At"/> (Positive) or below it (Negative).</summary>
+public enum C3dSplitKeep { Positive, Negative }
+
+/// <summary>
+/// brief-hzn-21 — a <see cref="Target"/> cut at a plane, one side kept: half of a symmetric structure. The plane is
+/// <see cref="Plane"/> at <see cref="At"/> along its normal axis (x for YZ), in the operation's own frame. It takes the target's
+/// name; its faces are the target's, cut, and <see cref="CutFace"/> — the face the plane made.
+/// </summary>
+public sealed class C3dSplit : C3dOperation
+{
+    [JsonPropertyOrder(0)]
+    public C3dSplitPlane Plane { get; set; }
+
+    /// <summary>DBU along the plane's normal axis, or an expression.</summary>
+    [JsonPropertyOrder(0)]
+    public long At { get; set; }
+
+    [JsonPropertyOrder(0)]
+    public C3dSplitKeep Keep { get; set; }
+
+    /// <summary>A <see cref="C3dSplitPlane.Custom"/> plane's point, DBU (each component may be an expression); written only for one.</summary>
+    [JsonPropertyOrder(0)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public C3dPoint3 Base { get; set; }
+
+    /// <summary>A <see cref="C3dSplitPlane.Custom"/> plane's normal: three numbers, any length but not zero. <see cref="C3dSplitKeep.Positive"/>
+    /// keeps the side it points to. Null for a named plane.</summary>
+    [JsonPropertyOrder(0)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double[]? Normal { get; set; }
+
+    [JsonPropertyOrder(3)]
+    public C3dObject? Target { get; set; }
+
+    /// <summary>The plane's normal axis: 0 x (YZ), 1 y (XZ), 2 z (XY); for a Custom plane, the cutting box's own z.</summary>
+    [JsonIgnore]
+    public int Axis => Plane switch { C3dSplitPlane.YZ => 0, C3dSplitPlane.XZ => 1, _ => 2 };
+
+    /// <summary>A Custom plane's unit normal, or null when it is not one or its normal is not three finite numbers, not all zero.</summary>
+    [JsonIgnore]
+    public (double X, double Y, double Z)? UnitNormal
+    {
+        get
+        {
+            if (Plane != C3dSplitPlane.Custom || Normal is not [var x, var y, var z] || !double.IsFinite(x) || !double.IsFinite(y) || !double.IsFinite(z)) return null;
+            double n = Math.Sqrt(x * x + y * y + z * z);
+            return n > 0 ? (x / n, y / n, z / n) : null;
+        }
+    }
+
+    /// <summary>The kernel tool that cuts the target: a box on the kept side, whose faces name the cut.</summary>
+    public const string ToolName = "split";
+
+    /// <summary>The face the plane made: the cutting box's face on the plane (<c>split:xmin</c> keeping x above a YZ plane).</summary>
+    [JsonIgnore]
+    public string CutFace => $"{ToolName}:{"xyz"[Axis]}{(Keep == C3dSplitKeep.Positive ? "min" : "max")}";
+
+    public override IReadOnlyList<string> FaceNames() => [.. Target?.FaceNames() ?? [], CutFace];
 }
 
 /// <summary>

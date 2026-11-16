@@ -65,6 +65,31 @@ public sealed class TransientEngineTests(ITestOutputHelper output)
         }
     }
 
+    /// <summary>A drive that turns non-finite at 0.5 µs: the step falls to its floor there, and the run stops at that time with
+    /// its output up to it and the reason, instead of throwing every step away (note §4.3).</summary>
+    private sealed class BreaksAt(double t0) : ITransientDrive
+    {
+        public IEnumerable<double> Breakpoints(double t0_, double t1) => [];
+        public void AddTo(double t, double[] rhs) { if (t > t0) rhs[0] = double.NaN; }
+    }
+
+    [Fact]
+    public void AtTheStepFloor_TheRunStops_KeepingWhatItHad()
+    {
+        var (r, _) = Run("""
+            Vdc:V1 in 0 Vdc=1
+            R:R1 in out R=1 kOhm
+            C:C1 out 0 C=1 nF
+            analysis TR1 type=tran Stop=2e-6 Step=1e-8
+            """, p => p with { Drives = [new BreaksAt(0.5e-6)] });
+        output.WriteLine(r.StopReason);
+        Assert.NotNull(r.StoppedAtS);
+        Assert.InRange(r.StoppedAtS!.Value, 0.49e-6, 0.5e-6 + 1e-12);
+        Assert.InRange(r.Time[^1], 0.4e-6, r.StoppedAtS.Value * (1 + 1e-12));   // the output ends where the run did
+        Assert.Contains("not finite", r.StopReason);
+        Assert.All(r.V, v => Assert.All(v, x => Assert.True(double.IsFinite(x))));
+    }
+
     private const double L = 1e-6, Cap = 1e-9, R = 5;
     private static string Rlc(string method, string step = "1e-9", string maxStep = "auto") => $"""
         Vdc:V1 in 0 Vdc=1

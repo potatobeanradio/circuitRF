@@ -203,6 +203,51 @@ public sealed class SpiceDeckWriterTests : IDisposable
         Assert.DoesNotContain("vp1", save, StringComparison.OrdinalIgnoreCase);   // the alias names no node of the deck
     }
 
+    /// <summary>A placed subcircuit's override is evaluated where the instance sits: inside a cell whose parameter W is 5, with a
+    /// global W of 1, w=W is 5 (evaluated against the globals alone, it was 1, silently).</summary>
+    [Fact]
+    public void APlacedSubcircuitsOverride_ReadsTheCellsParameter_NotTheGlobal()
+    {
+        string sp = System.IO.Path.Combine(_dir, "rsp.sp");
+        File.WriteAllText(sp, ".subckt rsp a b w=1\nR1 a b {w}\n.ends rsp\n");
+        var w = Deck($$"""
+            W = 1
+            define rsp (a b)
+              spice "{{sp.Replace('\\', '/')}}"
+              parameters w=1
+              R:R1 a b R=w
+            end rsp
+            define outer (p q)
+              parameters W=5
+              rsp:X1 p q w=W
+            end outer
+            Vdc:V1 in 0 Vdc=1
+            outer:XO in 0
+            analysis TR1 type=tran Stop=1n Solver=ngspice
+            """);
+        string line = w.Deck.Text!.Split('\n').Single(l => l.Contains(" rsp params:", StringComparison.Ordinal));
+        Assert.Contains("params: w=5 ", line);
+    }
+
+    /// <summary>A level-3 MOS card states KP always and TOX=1e6: unstated, the dialect's level 3 takes a 100 nm oxide, and with
+    /// it a Meyer gate charge and a KP of 2.07e-5 (measured on ngspice 47) that circuitRF's card, stating no Tox, does not have.
+    /// ETA, which acts through Cox, is left off as circuitRF leaves it.</summary>
+    [Fact]
+    public void AMos3Card_StatesKpAndAThickOxide()
+    {
+        var w = Deck("""
+            Vdc:VD d 0 Vdc=3
+            Vdc:VG g 0 Vdc=2
+            MOS3_N:M1 d g 0 0 Vto=1 Eta=0.1
+            analysis TR1 type=tran Stop=1n
+            """);
+        Assert.True(w.Deck.Ok, string.Join("\n", w.Deck.Refusals));
+        string card = w.Deck.Text!.Split('\n').Single(l => l.StartsWith(".model ", StringComparison.Ordinal));
+        Assert.Contains("KP=2E-05", card);
+        Assert.Contains("TOX=1e6", card);
+        Assert.DoesNotContain("ETA=", card);
+    }
+
     // ── gate 2 ───────────────────────────────────────────────────────────
 
     [Fact]

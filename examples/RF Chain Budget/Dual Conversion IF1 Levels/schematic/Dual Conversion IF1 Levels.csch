@@ -283,8 +283,8 @@
       "Parameters": [
         {
           "Name": "Freq",
-          "Expression": "2100000000",
-          "Unit": "",
+          "Expression": "2.1",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         },
@@ -400,22 +400,22 @@
         },
         {
           "Name": "Frf",
-          "Expression": "2450000000",
-          "Unit": "",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "F1",
-          "Expression": "2449500000",
-          "Unit": "",
+          "Expression": "2.4495",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "F2",
-          "Expression": "2450500000",
-          "Unit": "",
+          "Expression": "2.4505",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -428,8 +428,8 @@
         },
         {
           "Name": "Flo1",
-          "Expression": "2100000000",
-          "Unit": "",
+          "Expression": "2.1",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },

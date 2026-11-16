@@ -315,15 +315,17 @@ namespace RfCore.Signals
         }
 
         /// <summary>
-        /// A DBPSK or SC carrier's frequency offset to the nearest FFT bin of the window, found before anything is aligned.
+        /// A DBPSK or SC carrier's frequency offset to a fraction of an FFT bin of the window, found before anything is aligned.
         /// <see cref="Receive"/> fits the delay from the received-against-sent response bin by bin, and an offset of more
         /// than about one bin (1/window: 5 kHz over 0.2 ms) turns that response across the band, so the delay, every symbol's
-        /// phase and the offset fitted from them come out as noise: a low-orbit downlink's 400 kHz read as BER 0.5. The
-        /// received and sent power spectra carry the same data's line-by-line pattern, which a delay does not move and an
-        /// offset shifts: their cross-correlation, each spectrum with its smooth shape taken out, peaks at the offset. The
-        /// peak is taken only where it stands well above the correlation at no shift (twice it), refined between bins by a
-        /// parabola; 0 otherwise, so a carrier within a bin of its frequency is read exactly as before. Searched to half the
-        /// carrier's half-bandwidth either side.
+        /// phase and the offset fitted from them come out as noise: a low-orbit downlink's 400 kHz read as BER 0.5.
+        /// <para>Two steps, each one transform. The delay first, from the power envelopes |x|² and |s|², which an offset does
+        /// not touch: their circular cross-correlation peaks at the delay. Then, at that delay, x·conj(s) is the offset alone,
+        /// a tone, and its zero-padded spectrum peaks at it, refined between bins by a parabola. The peak is taken only where it
+        /// stands well clear of the rest of the spectrum (four times its mean), and only beyond a bin (0 otherwise), so a
+        /// carrier within a bin of its frequency is read exactly as before. Searched to half the carrier's half-bandwidth either
+        /// side. (It once correlated the two power spectra's line-by-line detail, which a periodic PN record without a preamble
+        /// leaves nearly flat: QPSK at 73 kHz read 1.9 MHz.)</para>
         /// </summary>
         public static double CoarseOffset(CarrierRecord carrier, double recordSeconds, ReadOnlySpan<Complex> y, double fsHz,
                                           long startSample, double offsetHz)
@@ -351,39 +353,50 @@ namespace RfCore.Signals
             var sw = new Complex[m];
             for (int i = 0; i < m; i++) sw[i] = sentF[(w0 + i) % nTot];
 
-            double bin = native / m;
-            int span = Math.Max(4, (int)Math.Round(16 * Math.Max(1.0, (double)m / nTot)));   // the smooth shape: ~16 lines either side
-            double[] Detail(Complex[] t)
+            // the delay: the power envelopes' circular cross-correlation (means out), at its peak
+            int padT = 1;
+            while (padT < 2 * m) padT <<= 1;
+            var px = new Complex[padT]; var ps = new Complex[padT];
+            double mx = 0, ms = 0;
+            for (int i = 0; i < m; i++) { mx += x[i].Real * x[i].Real + x[i].Imaginary * x[i].Imaginary; ms += sw[i].Real * sw[i].Real + sw[i].Imaginary * sw[i].Imaginary; }
+            mx /= m; ms /= m;
+            for (int i = 0; i < m; i++)
             {
-                var spec = Fft.Forward(t);
-                var p = new double[m];
-                for (int k = 0; k < m; k++) p[k] = spec[k].Real * spec[k].Real + spec[k].Imaginary * spec[k].Imaginary;
-                var d = new double[m];
-                double run = 0;
-                for (int k = -span; k <= span; k++) run += p[(k % m + m) % m];
-                for (int k = 0; k < m; k++)
-                {
-                    d[k] = p[k] - run / (2 * span + 1);
-                    run += p[(k + span + 1) % m] - p[((k - span) % m + m) % m];
-                }
-                return d;
+                px[i] = x[i].Real * x[i].Real + x[i].Imaginary * x[i].Imaginary - mx;
+                ps[i] = sw[i].Real * sw[i].Real + sw[i].Imaginary * sw[i].Imaginary - ms;
             }
-            var dx = Detail(x); var ds = Detail(sw);
-            // C(k) = Σ_f dx(f + k)·ds(f), every shift at once
-            var a = new Complex[m]; var b = new Complex[m];
-            for (int k = 0; k < m; k++) { a[k] = dx[k]; b[k] = ds[k]; }
-            Fft.Transform(a, inverse: false);
-            Fft.Transform(b, inverse: false);
-            for (int k = 0; k < m; k++) a[k] = Complex.Conjugate(a[k]) * b[k];
-            Fft.Transform(a, inverse: true);
-            double C(int k) => a[((-k) % m + m) % m].Real;   // the transform above is Σ_f dx(f)·ds(f + j) at j: C(k) is j = −k
-            int kmax = Math.Min((int)Math.Floor(range / bin), m / 2 - 1);
+            Fft.Transform(px, inverse: false);
+            Fft.Transform(ps, inverse: false);
+            for (int k = 0; k < padT; k++) px[k] *= Complex.Conjugate(ps[k]);
+            Fft.Transform(px, inverse: true);                  // Σ_i px(i + τ)·ps(i) at τ
+            int lag = 0;
+            int maxLag = Math.Min(m / 2, nTot / 2);
+            for (int t = -maxLag; t <= maxLag; t++)
+                if (px[(t + padT) % padT].Real > px[(lag + padT) % padT].Real) lag = t;
+
+            // the offset: x·conj(s) at that delay, a tone, its spectrum's peak within the range
+            int padF = 1;
+            while (padF < 4 * m) padF <<= 1;
+            var z = new Complex[padF];
+            for (int i = 0; i < m; i++)
+            {
+                int j = i - lag;
+                if (j < 0 || j >= m) continue;
+                z[i] = x[i] * Complex.Conjugate(sw[j]);
+            }
+            Fft.Transform(z, inverse: false);                  // e^(−j): a tone at +f peaks at +k
+            double fineBin = native / padF;
+            int kmax = Math.Min((int)Math.Floor(range / fineBin), padF / 2 - 2);
+            double P(int k) => z[(k % padF + padF) % padF].Magnitude;
             int best = 0;
-            for (int k = -kmax; k <= kmax; k++) if (C(k) > C(best)) best = k;
-            if (best == 0 || !(C(best) > 2 * Math.Max(C(0), 0))) return 0;
-            double cm = C(best - 1), c0 = C(best), cp = C(best + 1), den = cm - 2 * c0 + cp;
+            double mean = 0;
+            for (int k = -kmax; k <= kmax; k++) { double v = P(k); mean += v; if (v > P(best)) best = k; }
+            mean /= 2 * kmax + 1;
+            if (!(P(best) > 4 * mean)) return 0;
+            double cm = P(best - 1), c0 = P(best), cp = P(best + 1), den = cm - 2 * c0 + cp;
             double frac = den < 0 ? Math.Clamp(0.5 * (cm - cp) / den, -0.5, 0.5) : 0;
-            return (best + frac) * bin;
+            double f = (best + frac) * fineBin;
+            return Math.Abs(f) <= native / m ? 0 : f;
         }
 
         /// <summary>In-channel signal over in-channel noise: <paramref name="quiet"/>'s power over the power of what

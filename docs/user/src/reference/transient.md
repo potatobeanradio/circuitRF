@@ -127,6 +127,10 @@ steps as well, to see where it worked hardest.
 The result carries the run's counters, `Tran.AcceptedSteps`, `Tran.RejectedSteps`, `Tran.NewtonIterations` and
 `Tran.Factorizations`: a run with many rejected steps is a circuit that is hard to step, not a slow computer.
 
+A circuit the engine cannot step past (its step shrinks below `MaxStep / 2^40`) stops there and keeps everything up to
+that time. A warning gives the time and what failed: the net whose Newton update or local error was largest, or a solution
+that was not finite. `Tran.StoppedAt_s` holds the time, and the run is reported as not converged.
+
 ## What runs in time {#elements}
 
 | Elements | In a transient run |

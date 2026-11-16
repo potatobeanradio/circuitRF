@@ -6,7 +6,8 @@
 //  own netlist), in a temporary copy of the workspace:
 //
 //    - the shipped benches and displays are what Transfer to Schematic writes from the shipped .cchain today, to the
-//      last bit of a computed number (which the platform's maths library decides);
+//      last bit of a computed number (which the platform's maths library decides) — a bench as the netlist it runs as,
+//      so a shipped bench's drawing may be tidied by hand, as the examples' are;
 //    - the workspace checks clean, and every display column is a measurement its bench computes;
 //    - each bench's simulated gain, NF, intercepts, compression and SNR sit on the budget within the tolerances the
 //      README quotes, stage by stage;
@@ -79,7 +80,8 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     }
 
     /// <summary>Transfers a shipped chain in the copy and compares each bench and display with the shipped one; returns
-    /// the cells written.</summary>
+    /// the cells written. A bench is compared as the netlist Simulate runs, so where its parts and wires are drawn is the
+    /// shipped bench's own: what it simulates is still exactly what Transfer writes.</summary>
     private IEnumerable<string> TransferAndCompare(string chain)
     {
         var d = ChainDesignIo.LoadFromFile(Path.Combine(_ws, chain + ".cchain"));
@@ -89,7 +91,7 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
         var cells = Benches(_ws, chain).Select(b => b.CellName).ToList();
         foreach (string cell in cells)
         {
-            SameUpToTheLastBit(File.ReadAllText(Csch(cell, Workspace)), File.ReadAllText(Csch(cell, _ws)), cell + ".csch");
+            SameUpToTheLastBit(SchematicCircuit.CnlTextOf(Csch(cell, Workspace)), SchematicCircuit.CnlTextOf(Csch(cell, _ws)), cell + ".csch");
             SameUpToTheLastBit(File.ReadAllText(Path.Combine(Workspace, cell + ".cdd")), File.ReadAllText(Path.Combine(_ws, cell + ".cdd")), cell + ".cdd");
         }
         return cells;

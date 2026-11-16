@@ -197,7 +197,10 @@ Each method's stepped companion is `G + α C` with α fixed by the method and h,
   the ladder like any other step (TRN-4b; before that it was taken unchecked at MaxStep/64, and its damping was outside the
   tolerance whatever RelTol said).
 - **Rejection.** A failed Newton or an over-tolerance estimate halves h (one rung down) and retries. Below
-  `MaxStep / 2^40` the run stops with the time, the last converged state, and the device whose Newton update was largest.
+  `MaxStep / 2^40` the run stops at that time and keeps its output up to there (`Tran.StoppedAt_s`). Its warning names the
+  last failure: the net and devices of the largest Newton update, the net with the largest local error, or a solution
+  that was not finite. A run with no output point yet, and a harmonic-balance or oscillator seed (for which a run cut
+  short is no steady state), are refused instead.
 
 ### 4.4 Newton per step
 

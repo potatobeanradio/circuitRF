@@ -193,6 +193,11 @@ public sealed class PortFarFieldSet
 
         if (OlderRefusal(record.Solver, eTheta.Axes[3].Values.Length, group.ContainsKey(Em3dRadiation.PortsTerminatedCube)) is { } older)
             return (null, $"'{name}' {older}");
+        // brief-hzn-21 — a half model's pattern is the whole structure's, its ports the solved part's: no circuit drives that pair
+        if (group.ContainsKey(Em3dRadiation.SymmetryCopiesCube))
+            return (null, $"'{name}' was solved as a part of a symmetric structure: its pattern is the whole structure's, mirrored, while its " +
+                          "ports are the solved part's, so a circuit at those ports does not drive that pattern. Run the whole structure for a " +
+                          "co-simulated pattern.");
 
         double[] hz = eTheta.Axes[0].Values;
         var grid = new PlanarFarFieldGrid(eTheta.Axes[1].Values, eTheta.Axes[2].Values);

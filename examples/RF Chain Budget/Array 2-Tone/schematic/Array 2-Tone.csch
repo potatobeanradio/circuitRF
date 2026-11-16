@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "Array 2-Tone",
+  "CellName": "Array 2-Tone.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -174,8 +174,8 @@
         },
         {
           "Name": "F",
-          "Expression": "2450000000",
-          "Unit": "Hz",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         }
@@ -272,8 +272,8 @@
         },
         {
           "Name": "F",
-          "Expression": "2450000000",
-          "Unit": "Hz",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         }
@@ -382,8 +382,8 @@
         },
         {
           "Name": "F",
-          "Expression": "2450000000",
-          "Unit": "Hz",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         }
@@ -480,8 +480,8 @@
         },
         {
           "Name": "F",
-          "Expression": "2450000000",
-          "Unit": "Hz",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         }
@@ -590,8 +590,8 @@
         },
         {
           "Name": "F",
-          "Expression": "2450000000",
-          "Unit": "Hz",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         }
@@ -688,8 +688,8 @@
         },
         {
           "Name": "F",
-          "Expression": "2450000000",
-          "Unit": "Hz",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         }
@@ -984,8 +984,8 @@
       "Parameters": [
         {
           "Name": "Freq",
-          "Expression": "2100000000",
-          "Unit": "",
+          "Expression": "2.1",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         },
@@ -1275,22 +1275,22 @@
         },
         {
           "Name": "Frf",
-          "Expression": "2450000000",
-          "Unit": "",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "F1",
-          "Expression": "2449500000",
-          "Unit": "",
+          "Expression": "2.4495",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "F2",
-          "Expression": "2450500000",
-          "Unit": "",
+          "Expression": "2.4505",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -1303,8 +1303,8 @@
         },
         {
           "Name": "Flo1",
-          "Expression": "2100000000",
-          "Unit": "",
+          "Expression": "2.1",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         }
@@ -1827,19 +1827,11 @@
           1400
         ],
         [
-          4200,
+          4300,
           1400
         ],
         [
-          4200,
-          1100
-        ],
-        [
-          3400,
-          1100
-        ],
-        [
-          3400,
+          4300,
           2000
         ],
         [
@@ -1923,18 +1915,6 @@
           0
         ],
         [
-          0,
-          -200
-        ],
-        [
-          1200,
-          -200
-        ],
-        [
-          1200,
-          0
-        ],
-        [
           1400,
           0
         ]
@@ -2005,18 +1985,6 @@
         [
           11300,
           2100
-        ],
-        [
-          11600,
-          2100
-        ],
-        [
-          11600,
-          1900
-        ],
-        [
-          11800,
-          1900
         ],
         [
           11800,
@@ -2154,11 +2122,11 @@
     },
     {
       "X": 600,
-      "Y": -200,
+      "Y": 0,
       "Name": "in1",
       "OwnerWireIndex": 13,
-      "SegmentIndex": 1,
-      "AlongT": 0.5,
+      "SegmentIndex": 0,
+      "AlongT": 0.42857142857142855,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -2213,12 +2181,12 @@
       "OffsetY": 0
     },
     {
-      "X": 3900,
+      "X": 4300,
       "Y": 2000,
       "Name": "b2_PS",
       "OwnerWireIndex": 7,
-      "SegmentIndex": 4,
-      "AlongT": 0.45454545454545453,
+      "SegmentIndex": 1,
+      "AlongT": 1,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -2348,7 +2316,7 @@
       "Name": "out",
       "OwnerWireIndex": 19,
       "SegmentIndex": 0,
-      "AlongT": 0.3333333333333333,
+      "AlongT": 0.2,
       "OffsetX": 0,
       "OffsetY": 0
     }

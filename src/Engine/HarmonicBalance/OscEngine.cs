@@ -329,8 +329,9 @@ public static class OscEngine
     /// one an HB analysis writes, with <c>Fosc</c> (Hz), <c>Aosc</c> (V in shunt, A in series) and <c>Startup [freq]</c>
     /// (the probe's small-signal admittance) added.
     /// </summary>
+    /// <param name="control">For cancellation only: the transient seed (brief TRN-8) checks it as it steps.</param>
     public static OscResult Run(ElaboratedNetlist nl, TestBench tb, OscParams p, AnalysisSettings? settings = null,
-                                Library? lib = null, string? baseDirectory = null)
+                                Library? lib = null, string? baseDirectory = null, RunControl? control = null)
     {
         settings ??= AnalysisSettings.Default;
         var startup = Startup(nl, p, settings);
@@ -341,7 +342,7 @@ public static class OscEngine
             double fScale = startup.StartHz ?? (p.FguessHz > 0 ? p.FguessHz
                 : throw new InvalidOperationException(
                     OscDiagnostics.NoStartup(p.Analysis, probe.InstancePath, startup.Shunt, p.FstartHz, p.FstopHz).Render()));
-            return OscTransientSeed.Run(nl, settings, probe, startup.Shunt, fScale, p.MaxHarmonic, p.Seed, p.Analysis, startup);
+            return OscTransientSeed.Run(nl, settings, probe, startup.Shunt, fScale, p.MaxHarmonic, p.Seed, p.Analysis, startup, control);
         }
         switch (p.Seed.Mode)
         {

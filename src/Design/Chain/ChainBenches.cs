@@ -578,6 +578,31 @@ public static class ChainBenches
         private static string F(double v) => ChainValue.Format(v);
         private static string G(double v) => v.ToString("R", CultureInfo.InvariantCulture);
 
+        /// <summary>A frequency (Hz) as a schematic shows it: in GHz from 1 GHz, in MHz from 1 MHz, each the shortest number that
+        /// times the unit's scale is the same double (the elaborator multiplies the two, so the run reads exactly the Hz it did);
+        /// in Hz, bare, where no such number exists.</summary>
+        private static string Hz(double v) => HzParts(v) is (var t, var u) && u.Length > 0 ? $"{t} {u}" : t;
+
+        /// <summary><see cref="Hz"/> as its number and its unit ("" for bare Hz), for a field that takes them apart.</summary>
+        private static (string Number, string Unit) HzParts(double v)
+        {
+            foreach (var (scale, unit) in new[] { (1e9, "GHz"), (1e6, "MHz") })
+            {
+                if (!(Math.Abs(v) >= scale)) continue;
+                for (int digits = 1; digits <= 17; digits++)
+                {
+                    // G2 writes 350 as 3.5E+02: the candidate's own shortest round-trip text is the number shown
+                    double c = double.Parse((v / scale).ToString("G" + digits, CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+                    if (c * scale == v) return (G(c), unit);
+                }
+            }
+            return (G(v), "");
+        }
+
+        /// <summary>A sparam directive's start and stop at one frequency, in <see cref="Hz"/>'s unit.</summary>
+        private static string SpAt(double v)
+            => HzParts(v) is (var t, var u) && u.Length > 0 ? $"start=\"{t}\" startUnit={u} stop=\"{t}\" stopUnit={u}" : $"start=\"{t}\" stop=\"{t}\"";
+
         private int N => d.Stages.FirstOrDefault(s => s.Part == ChainParts.Combiner) is { } c
                          ? Math.Max(2, (int)Math.Round(ChainValue.Or(c.Get("N"), 2))) : 1;
         private int Branch => d.Stages.FindIndex(s => s.Part == ChainParts.Combiner) is >= 0 and var i ? i : 0;
@@ -598,7 +623,9 @@ public static class ChainBenches
         private static string Param(ChainParam p, string text)
         {
             text = text.Trim();
-            bool bare = double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
+            bool bare = double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v);
+            // a bare frequency is Hz (a resolved expression's value, or a number typed bare): shown in GHz or MHz
+            if (bare && p.Unit is "Hz" or "kHz" or "MHz" or "GHz") return Hz(v);
             return bare && p.Unit is "dB" or "dBm" or "deg" ? $"{text} {p.Unit}" : text;
         }
 
@@ -627,19 +654,19 @@ public static class ChainBenches
             int n = N, nb = Branch;
             bool array = n > 1;
             double frf = d.FrequencyHz;
-            _vars.Add($"Frf = {G(frf)}");
+            _vars.Add($"Frf = {Hz(frf)}");
             if (bench is ChainBench.TwoTone or ChainBench.Levels)
             {
                 double df = Math.Min(1e6, d.BandwidthHz);
-                _vars.Add($"F1 = {G(frf - df / 2)}");
-                _vars.Add($"F2 = {G(frf + df / 2)}");
+                _vars.Add($"F1 = {Hz(frf - df / 2)}");
+                _vars.Add($"F2 = {Hz(frf + df / 2)}");
                 if (bench == ChainBench.TwoTone) _vars.Add($"P2t = {F(Finite(_t.Iip3Dbm, 0) - TwoToneBackoffDb)}");
                 else _vars.Add($"Pin = {F(d.InputPowerDbm)}");   // two tones, each at the chain's input power
             }
             else if (bench == ChainBench.Blockers)
                 for (int k = 0; k < d.Blockers.Count; k++)
                 {
-                    _vars.Add($"FB{k + 1} = {G(frf + d.Blockers[k].OffsetHz)}");
+                    _vars.Add($"FB{k + 1} = {Hz(frf + d.Blockers[k].OffsetHz)}");
                     _vars.Add($"PB{k + 1} = {F(d.Blockers[k].LevelDbm)}");
                 }
             else if (bench == ChainBench.OneTone)
@@ -680,7 +707,7 @@ public static class ChainBenches
                 if (path > 0)
                 {
                     string a = $"a{k}";
-                    Line($"TLIN:PATH{k}  {src}  {a}  Z=50 Ohm  E={F(path)} deg  F={G(frf)} Hz");
+                    Line($"TLIN:PATH{k}  {src}  {a}  Z=50 Ohm  E={F(path)} deg  F={Hz(frf)}");
                     Inline($"PATH{k}", 200);
                     prev = a;
                 }
@@ -807,7 +834,7 @@ public static class ChainBenches
             int n = N, nb = Branch;
             var row = r.Stages[nb];
             var c = ChainParts.ReadCombiner(d.Stages[nb]);
-            _vars.AddRange([$"Frf = {G(d.FrequencyHz)}", "theta_in = 0", "theta_steer = 0", "d_over_lambda = 0.5", "taper = 0",
+            _vars.AddRange([$"Frf = {Hz(d.FrequencyHz)}", "theta_in = 0", "theta_steer = 0", "d_over_lambda = 0.5", "taper = 0",
                             "psi_in = 360*d_over_lambda*sin(theta_in*pi/180)",
                             "dphi = 360*d_over_lambda*sin(theta_steer*pi/180)"]);
             var outs = WaveAndBranches("P1", 1, "", k => k > 1 ? $"-{k - 1}*psi_in" : null);
@@ -868,7 +895,7 @@ public static class ChainBenches
         private ChainBenchText EmitCombiners()
         {
             int n = N, nb = Branch;
-            _vars.Add($"Frf = {G(d.FrequencyHz)}");
+            _vars.Add($"Frf = {Hz(d.FrequencyHz)}");
             bool pow2 = (n & (n - 1)) == 0;
             var variants = CombinerVariants.Where(v => pow2 || v.Topology == "Direct").ToList();
             double nDb = 10 * Math.Log10(n), kt0 = ChainBudget.K * ChainBudget.T0;
@@ -925,9 +952,12 @@ public static class ChainBenches
             // (the splitter's and the flat phase's) cancelling the main combiner's and the leak's.
             double g0 = 20 * Math.Log10(Math.Sqrt(1 - cAmp * cAmp) / cAmp);
             var (_, bsig) = Carrier(5e6);
-            _vars.AddRange([$"Frf = {G(d.FrequencyHz)}", $"Psig = {F(psig)}", $"Pint = {F(c.PintDbm)}",
+            _vars.AddRange([$"Frf = {Hz(d.FrequencyHz)}", $"Psig = {F(psig)}", $"Pint = {F(c.PintDbm)}",
                             $"amp_err = {F(c.AmpErrDb)}", $"phase_err = {F(c.PhaseErrDeg)}", $"delay_err = {c.DelayErrS.ToString("G12", CultureInfo.InvariantCulture)}",
-                            "canc_on = 1", "sig_on = 1", $"tau_leak = {G(tauLeak)}"]);
+                            "canc_on = 1", "sig_on = 1", $"tau_leak = {G(tauLeak)}",
+                            // the fields below are typed in degrees: Frf carries GHz, and a unit-bearing name would keep them
+                            // from being read as degrees (var-unit-wins), so they take Frf as a bare number of Hz
+                            "Frf_hz = Frf"]);
             string name = d.Stages[ci].Name;
             int ni = CancInterference.Length;
             // Two wanted carriers at Psig each, 3 dB more for the main combiner's share; the interference's carriers at
@@ -944,7 +974,7 @@ public static class ChainBenches
             Place("INT", 0, 2600);
             Line("Combiner:ISPL  i  0  il  0  ir  0  N=2  Z0=50 Ohm");
             Place("ISPL", 900, 2400, mirror: true);
-            Line("TLIN:LEAK  il  lk  Z=50 Ohm  E=360*Frf*tau_leak deg  F=Frf Hz");
+            Line("TLIN:LEAK  il  lk  Z=50 Ohm  E=360*Frf_hz*tau_leak deg  F=Frf Hz");
             Place("LEAK", 1800, 1300);
             Line("Combiner:MAIN  m  0  s  0  lk  0  N=2  Z0=50 Ohm");
             Place("MAIN", 2700, 300);
@@ -958,10 +988,10 @@ public static class ChainBenches
             // A flat phase: one path of a 2-way Combiner, the other terminated. A line would be a delay as well. The
             // phase is set where it nulls the carrier's centre, which takes back the delay mismatch's own phase there,
             // 360°·Frf·delay_err, so the mismatch shows only across the band, as the closed form has it.
-            Line($"Combiner:{name}_VMP  r2  0  r1  0  {name}_VMP_t  0  N=2  Phase[1]=-90+phase_err+360*Frf*delay_err deg  Z0=50 Ohm");
+            Line($"Combiner:{name}_VMP  r2  0  r1  0  {name}_VMP_t  0  N=2  Phase[1]=-90+phase_err+360*Frf_hz*delay_err deg  Z0=50 Ohm");
             Line($"R:{name}_VMP_T  {name}_VMP_t  0  R=50 Ohm");
             Place($"{name}_VMP", 2800, 2600, mirror: true); Place($"{name}_VMP_T", 3500, 3100);
-            Line($"TLIN:{name}_DL  r2  {name}_iso  Z=50 Ohm  E=360*Frf*(tau_leak+delay_err) deg  F=Frf Hz");
+            Line($"TLIN:{name}_DL  r2  {name}_iso  Z=50 Ohm  E=360*Frf_hz*(tau_leak+delay_err) deg  F=Frf Hz");
             Place($"{name}_DL", 3400, 2000);
             _stage = -1;
             Line("IProbe:Iout  t  load");
@@ -1038,7 +1068,7 @@ public static class ChainBenches
             var bos = TxBackoffsDb.Append(bo).Distinct().Order().ToArray();
             var (mhz, _) = Carrier(d.BandwidthHz);
             EnvelopeFits([], [(d.FrequencyHz, mhz * 1e6)]);   // one fundamental, the carrier: no LO on this bench
-            _vars.AddRange([$"Frf = {G(d.FrequencyHz)}", $"Psat = {G(psat)}", $"PaGain = {G(g)}", $"Loss = {G(loss)}",
+            _vars.AddRange([$"Frf = {Hz(d.FrequencyHz)}", $"Psat = {G(psat)}", $"PaGain = {G(g)}", $"Loss = {G(loss)}",
                             $"BO = {G(bo)}", "Pin = Psat - BO - PaGain"]);
             Line($"MOD_Source:SRC  in  0  Fc=Frf  Pavg=Pin dBm  Z=50 Ohm  " +
                  $"Carrier[1]=\"NR;BW={mhz}MHz;SCS=15kHz;Mod=64QAM;Off=0;P=0;Seed=1\"  Record=0.0005  Noise=no");
@@ -1107,7 +1137,7 @@ public static class ChainBenches
                 return Text();
             }
 
-            _vars.AddRange([$"Frf = {G(d.FrequencyHz)}", $"Psat = {G(psat)}", $"PaGain = {G(g)}", $"Loss = {G(loss)}", $"BO = {G(bo)}",
+            _vars.AddRange([$"Frf = {Hz(d.FrequencyHz)}", $"Psat = {G(psat)}", $"PaGain = {G(g)}", $"Loss = {G(loss)}", $"BO = {G(bo)}",
                             "Pin = Psat - BO - PaGain", "drop = 1"]);
             Line($"MOD_Source:SRC  in  0  Fc=Frf  Pavg=Pin dBm  Z=50 Ohm  Carrier[1]=\"{sig.Carrier}\"  Record=0.0005");
             Place("SRC", 0, 200);
@@ -1151,7 +1181,7 @@ public static class ChainBenches
             // The margins: the received power over the drops, against the budget's.
             double ptx = psat - bo - loss - atm, thr = lb.PrxDbm - margin;
             double outage = Math.Round(1 - avail / 100, 12);
-            _analyses.Add($"analysis SPL type=sparam start=\"{G(d.FrequencyHz)}\" stop=\"{G(d.FrequencyHz)}\" npts=1");
+            _analyses.Add($"analysis SPL type=sparam {SpAt(d.FrequencyHz)} npts=1");
             _analyses.Add($"analysis MC type=parametric_sweep Var=drop Start=1 Stop={drops} Step=1 Inner=SPL");
             _meas.Add($"Prx_sim = {G(ptx)} + SPL.link(\"{ChainLinkBench.Channel}\", \"Gain_dB\")");
             _meas.Add($"Prx_calc = {G(lb.PrxDbm)}");
@@ -1313,7 +1343,7 @@ public static class ChainBenches
                     Line($"Mixer:{name}  {rf}  0  {lon}  0  {b}  0{Params(s, "Flo")}");
                     // The demo's LO carries a phase-noise mask, which an envelope run plays as a random phase.
                     string pn = bench == ChainBench.Demo ? $"  PhaseNoise=\"{DemoPhaseNoise}\"" : "";
-                    Line($"P1Tone:LO_{name}  {lon}  0  Freq={G(flo)}  Pavl={Param(new ChainParam("Plo", "", "dBm"), s.Get("Plo"))}  Z=50 Ohm{pn}");
+                    Line($"P1Tone:LO_{name}  {lon}  0  Freq={Hz(flo)}  Pavl={Param(new ChainParam("Plo", "", "dBm"), s.Get("Plo"))}  Z=50 Ohm{pn}");
                     Inline(name, 300); Place($"LO_{name}", _x - Lead - 300, _y + 900);
                     placed.Add($"{iso}_R");
                     if (ChainValue.TryParse(s.Get("NF"), out _) && r.Stages.First(x => x.Name == s.Name).Stage.NfDb > ChainParts.NoiselessMixerSsbDb + 1e-9)
@@ -1381,7 +1411,7 @@ public static class ChainBenches
                     Line($"Amp:{name}  {a}  0  {mid}  0  Gain={F(-il)} dB  NF={nf}  IP3={ip} dBm  IP3Ref=Input");
                     Inline(name, 300);
                     if (ChainValue.Or(nf, 0) > 0) placed.Add(name);
-                    if (e is not null) { Line($"TLIN:{name}_PH  {mid}  {b}  Z=50 Ohm  E={e} deg  F={G(f)} Hz"); Inline($"{name}_PH", 200); }
+                    if (e is not null) { Line($"TLIN:{name}_PH  {mid}  {b}  Z=50 Ohm  E={e} deg  F={Hz(f)}"); Inline($"{name}_PH", 200); }
                     else if (n > 1 && (Steer != 0 || bench == ChainBench.Steering)) _x += 400 + Lead;   // keep the columns aligned
                     break;
                 }
@@ -1584,7 +1614,7 @@ public static class ChainBenches
             }
             // One LO variable per mixer STAGE (an array's per-branch mixers share it), in chain order.
             var mixerStages = d.Stages.Where(s => s.Part == ChainParts.Mixer).ToList();
-            for (int i = 0; i < mixerStages.Count; i++) _vars.Add($"Flo{i + 1} = {G(ChainValue.Or(mixerStages[i].Get("Flo"), 0))}");
+            for (int i = 0; i < mixerStages.Count; i++) _vars.Add($"Flo{i + 1} = {Hz(ChainValue.Or(mixerStages[i].Get("Flo"), 0))}");
             int mix = mixerStages.Count;
             // The tones' frequencies, in the directive's order.
             double[] toneHz(bool two)
@@ -1615,7 +1645,7 @@ public static class ChainBenches
                     {
                         // A two-port's run writes each part's share of F − 1 (NFc); an array's, with more ports than two, only
                         // each part's share of the noise-wave matrix (NCs), whose output entry over kT0·|S(out,1)|² is the same.
-                        _analyses.Add($"analysis SP1 type=sparam start=\"{G(d.FrequencyHz)}\" stop=\"{G(d.FrequencyHz)}\" npts=1 Noise=yes" +
+                        _analyses.Add($"analysis SP1 type=sparam {SpAt(d.FrequencyHz)} npts=1 Noise=yes" +
                                       (n > 1 ? " NoiseContrib=yes" : ""));
                         // The elements' waves add at the output in phase: the array's gain is |Σ S(out,k)|².
                         string sum = string.Join(" + ", Enumerable.Range(1, n).Select(k => $"SP1.S[0, {n + 1}, {k}]"));
@@ -1634,7 +1664,7 @@ public static class ChainBenches
                         var sb = Enumerable.Range(0, v1.Length).Select(i => i == 0 ? 0 : -v1[i]);
                         // Order 1 + 2·mixers keeps each mixer's image sideband, where its isolator's termination is noisy.
                         _analyses.Add($"analysis HBN type=hb {tonesDirective(false)} MaxHarm=3 MaxMixOrder={Order("HBN", toneHz(false), 1 + 2 * mix, 1 + 2 * mix, "each mixer's image sideband", [v1], noise: true)} Tol=1e-12 " +
-                                      $"SSStart=\"{G(ss)}\" SSStop=\"{G(ss)}\" SSNpts=1 Noise=yes NoiseIn=1 NoiseOut={n + 1} " +
+                                      $"SSStart=\"{HzParts(ss).Number}\" SSStop=\"{HzParts(ss).Number}\" SSUnit={(HzParts(ss).Unit is { Length: > 0 } su ? su : "Hz")} SSNpts=1 Noise=yes NoiseIn=1 NoiseOut={n + 1} " +
                                       $"NoiseSideband=\"{string.Join(",", sb)}\" NoiseContrib=yes");
                         _meas.Add($"G_sim = dB(HBN.V(\"out\",{p1})) + 10 - Pss");
                         _meas.Add($"NF_sim = at({nfArray("HBN.Fn")}, \"ssfreq\", 0)");
@@ -1823,7 +1853,7 @@ public static class ChainBenches
                     double nout = 10 * Math.Log10(ChainBudget.K * (d.TemperatureK + te) * bocc) + 30 + _t.GainDb - a;
                     _analyses.Add($"analysis ENV1 type=env Stop=0.5e-3 Step=auto Accuracy=draft MaxHarm=1 MaxMixOrder={Math.Max(2, 1 + 2 * mix)} " +
                                   "Segments=auto Warmup=auto Start=0 Tol=1e-6 SaveWaveforms=yes Noise=yes EvmSplit=yes");
-                    _vars.Add($"Bocc = {G(bocc)}");
+                    _vars.Add($"Bocc = {Hz(bocc)}");
                     _meas.Add($"Pout_calc = {G(_t.PoutDbm)}");
                     _meas.Add($"SNR_calc = {G(snr)}");
                     _meas.Add($"EVM_calc = {G(100 * Math.Pow(10, -snr / 20))}");

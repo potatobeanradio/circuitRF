@@ -76,7 +76,7 @@ public sealed class PropagationExamplesAuthoring
         """;
 
     public const string IotCoverage = IotLink + "\n" + """
-        analysis SP1 type=sparam start=868.95e6 stop=868.95e6 npts=1
+        analysis SP1 type=sparam start=868.95 startUnit=MHz stop=868.95 stopUnit=MHz npts=1
         analysis DROPS type=parametric_sweep Var=drop Start=1 Stop=2000 Step=1 Inner=SP1
         measure Prx_dBm = Ptx + SP1.link("CH1", "Gain_dB")
         measure PrxMedian_dBm = median_over(Prx_dBm, "drop")

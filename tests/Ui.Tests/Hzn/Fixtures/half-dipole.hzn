@@ -1,0 +1,318 @@
+{
+ "name": "HalfDipole",
+ "variables": {},
+ "materials": [],
+ "designs": [
+  {
+   "name": "Half",
+   "units": "mm",
+   "kind": "3d",
+   "settings": {
+    "SolutionType": "Modal",
+    "AutoOpen": "Off"
+   },
+   "variables": {
+    "Larm": "60mm",
+    "r": "1.5mm",
+    "g": "2mm",
+    "pad": "90mm"
+   },
+   "objects": [
+    {
+     "name": "ArmTop",
+     "history": [
+      {
+       "kind": "CreateCylinder",
+       "props": {
+        "CenterPosition": "0,0,g/2",
+        "Axis": "Z",
+        "Radius": "r",
+        "Height": "Larm",
+        "NumberOfSegments": "0"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Split",
+       "props": {
+        "Plane": "YZ",
+        "Base": "0,0,0",
+        "Normal": "1,0,0",
+        "Keep": "Positive",
+        "CoordinateSystem": "Global"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "pec",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "ArmBottom",
+     "history": [
+      {
+       "kind": "CreateCylinder",
+       "props": {
+        "CenterPosition": "0,0,-g/2",
+        "Axis": "Z",
+        "Radius": "r",
+        "Height": "-Larm",
+        "NumberOfSegments": "0"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Split",
+       "props": {
+        "Plane": "YZ",
+        "Base": "0,0,0",
+        "Normal": "1,0,0",
+        "Keep": "Positive",
+        "CoordinateSystem": "Global"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "pec",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Gap",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "0,0,-g/2",
+        "Axis": "Y",
+        "XSize": "r",
+        "ZSize": "g"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "AirBox",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "0,-r-pad,-g/2-Larm-pad",
+        "XSize": "r+pad",
+        "YSize": "2*(r+pad)",
+        "ZSize": "g+2*(Larm+pad)"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "air",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    }
+   ],
+   "boundaries": [
+    {
+     "name": "Sym",
+     "kind": "Symmetry",
+     "props": {
+      "Type": "Perfect H",
+      "ImpedanceMultiplier": "1"
+     },
+     "faces": [
+      {
+       "obj": "AirBox",
+       "face": 0,
+       "sig": [
+        0,
+        0,
+        0,
+        -1,
+        0,
+        0,
+        0.055265999999999996,
+        1.0
+       ]
+      }
+     ],
+     "objects": [],
+     "edges": [],
+     "enabled": true
+    },
+    {
+     "name": "Rad",
+     "kind": "Radiation",
+     "props": {
+      "Order": "First order",
+      "FarFieldReference": "True"
+     },
+     "faces": [
+      {
+       "obj": "AirBox",
+       "face": 1,
+       "sig": [
+        0.0915,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0.055265999999999996,
+        1.0
+       ]
+      },
+      {
+       "obj": "AirBox",
+       "face": 2,
+       "sig": [
+        0.04575,
+        -0.0915,
+        0,
+        0,
+        -1,
+        0,
+        0.027632999999999998,
+        1.0
+       ]
+      },
+      {
+       "obj": "AirBox",
+       "face": 3,
+       "sig": [
+        0.04575,
+        0.0915,
+        0,
+        0,
+        1,
+        0,
+        0.027632999999999998,
+        1.0
+       ]
+      },
+      {
+       "obj": "AirBox",
+       "face": 4,
+       "sig": [
+        0.04575,
+        0,
+        -0.151,
+        0,
+        0,
+        -1,
+        0.0167445,
+        1.0
+       ]
+      },
+      {
+       "obj": "AirBox",
+       "face": 5,
+       "sig": [
+        0.04575,
+        0,
+        0.151,
+        0,
+        0,
+        1,
+        0.0167445,
+        1.0
+       ]
+      }
+     ],
+     "objects": [],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "excitations": [
+    {
+     "name": "1",
+     "kind": "Lumped Port",
+     "props": {
+      "PortNumber": "1",
+      "Impedance": "146ohm",
+      "IntegrationLine": "0,0,-g/2;0,0,g/2"
+     },
+     "faces": [],
+     "objects": [
+      "Gap"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "mesh_ops": [],
+   "setups": [
+    {
+     "name": "Setup1",
+     "props": {
+      "Enabled": "True",
+      "SolutionFrequencyMode": "Single",
+      "Frequency": "1.15GHz",
+      "MaximumPasses": "3",
+      "MaximumDeltaS": "0.02",
+      "BasisOrder": "First Order",
+      "ErrorInclusion": "50"
+     },
+     "sweeps": [
+      {
+       "name": "Sweep",
+       "props": {
+        "Enabled": "True",
+        "SweepType": "Discrete",
+        "Distribution": "Linear Count",
+        "Start": "1.1GHz",
+        "Stop": "1.2GHz",
+        "Count": "3",
+        "SaveFields": "False"
+       }
+      }
+     ],
+     "eigen": false
+    }
+   ],
+   "spheres": [],
+   "reports": [],
+   "field_plots": [],
+   "coord_systems": [],
+   "field_exprs": [],
+   "field_funcs": [],
+   "optimetrics": [],
+   "parametrics": [],
+   "notes": ""
+  }
+ ],
+ "format": "hertzon-project",
+ "version": 2
+}

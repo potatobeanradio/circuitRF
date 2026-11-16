@@ -1297,23 +1297,30 @@ instance `temp` so both sit at Tnom. **One stated difference remains**: below �
 
 `Lambda` is level 1's; `Eta`, `Theta`, `Kappa`, `Vmax`, `Delta`, `Xj` level 3's.
 
+A level-3 card is written with `TOX=1e6`, since a stated `Tox` is refused, so circuitRF's card states no oxide. Unstated,
+the dialect's level 3 takes 100 nm. Measured on ngspice 47, that gives a Meyer gate capacitance (2.3 pF on a
+100 µm × 100 µm device in saturation) that circuitRF's card, with no oxide, does not have, and a KP of 2.07e-5 derived from
+`UO`. At 1e6 m the charge is 1e-13 of that, and every term that acts through Cox is off, as circuitRF's are. For the same
+reason, `Eta`, `Vmax` and `Delta` (which act through Cox and do nothing without an oxide) are not written on a level-3 card,
+and `KP` is always written.
+
 | circuitRF | dialect | where | circuitRF default | dialect default | how |
 |---|---|---|---|---|---|
 | `Vto` | `VTO` | card | ±1 (by channel) | 0 | maps. circuitRF's default is +1 V n-channel, −1 V p-channel, so it is always written. |
-| `Kp` | `KP` | card | 2e-5 | 2e-5 | maps |
+| `Kp` | `KP` | card | 2e-5 | — | maps. Always written: unstated, the dialect's level 3 derives KP from UO and its default TOX (2.07e-5). |
 | `Gamma` | `GAMMA` | card | 0 | 0 | maps |
 | `Phi` | `PHI` | card | 0.6 | 0.6 | maps |
 | `Lambda` | `LAMBDA` | card | 0 | 0 | maps |
-| `Eta` | `ETA` | card | 0 | 0 | maps |
+| `Eta` | `ETA` | card | 0 | 0 | not written: it acts through Cox, and the card states no oxide (above) |
 | `Theta` | `THETA` | card | 0 | 0 | maps |
 | `Kappa` | `KAPPA` | card | 0.2 | 0.2 | maps |
-| `Vmax` | `VMAX` | card | 0 | 0 | maps |
-| `Delta` | `DELTA` | card | 0 | 0 | maps |
+| `Vmax` | `VMAX` | card | 0 | 0 | not written, as `Eta` |
+| `Delta` | `DELTA` | card | 0 | 0 | not written, as `Eta` |
 | `Xj` | `XJ` | card | 0 | 0 | maps |
 | `W` | `W` | instance | 100e-6 | — | maps. Always written: the dialect's default width is an option (DEFW). |
 | `L` | `L` | instance | 100e-6 | — | maps. Always written: the dialect's default length is an option (DEFL). |
 | `Ld` | `LD` | card | 0 | 0 | maps |
-| `Tox` | — | — | 0 | — | no counterpart: refused when set off its default. with Tox the gate charge is circuitRF's charge-based long-channel form and the dialect's is Meyer's capacitance set; with Tox unstated neither has a thin-oxide charge. |
+| `Tox` | — | — | 0 | — | no counterpart: refused when set off its default. with Tox the gate charge is circuitRF's charge-based long-channel form and the dialect's is Meyer's capacitance set; unstated, circuitRF has no thin-oxide charge and the level-3 card states `TOX=1e6` so the dialect has none either. |
 | `Uo` | — | — | 600 | — | no effect in a transient deck: omitted. Derives Kp only with Tox, which is refused when set. |
 | `Nsub` | — | — | 0 | — | no effect in a transient deck: omitted. Derives Gamma and Phi only with Tox, which is refused when set. |
 | `Cgso` | `CGSO` | card | 0 | 0 | maps |

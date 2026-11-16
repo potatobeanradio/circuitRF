@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "3 Receive Interferer",
+  "CellName": "3 Receive Interferer.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -8,9 +8,9 @@
     {
       "InstanceName": "PA1",
       "Symbol": "PhasedArray",
-      "X": 0,
-      "Y": 600,
-      "Rotation": "R90",
+      "X": 700,
+      "Y": 200,
+      "Rotation": "R180",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
@@ -182,19 +182,13 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
-      ],
-      "LabelOffsets": [
-        [
-          430,
-          -623
-        ]
       ]
     },
     {
       "InstanceName": "RMIX",
       "Symbol": "Resistor",
-      "X": 1300,
-      "Y": 500,
+      "X": 1500,
+      "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -217,8 +211,8 @@
     {
       "InstanceName": "GND1",
       "Symbol": "Ground",
-      "X": 1300,
-      "Y": 700,
+      "X": 1500,
+      "Y": 600,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -302,34 +296,26 @@
     {
       "Points": [
         [
-          0,
-          300
+          1000,
+          200
         ],
         [
-          0,
-          100
-        ],
-        [
-          1300,
-          100
-        ],
-        [
-          1300,
-          300
+          1500,
+          200
         ]
       ]
     }
   ],
   "NetLabels": [
     {
-      "X": 600,
-      "Y": 100,
+      "X": 1390.442561179019,
+      "Y": 146.15384615384616,
       "Name": "feed",
       "OwnerWireIndex": 0,
-      "SegmentIndex": 1,
-      "AlongT": 0.46153846153846156,
+      "SegmentIndex": 0,
+      "AlongT": 0.7808851223580382,
       "OffsetX": 0,
-      "OffsetY": 0
+      "OffsetY": -53.84615384615384
     }
   ],
   "Dots": [],
@@ -347,12 +333,12 @@
       "ToneExpr": "0",
       "NumFreqsExpr": "2",
       "ToneExprs": [
-        "5.92e9",
-        "5.94e9"
+        "5.92",
+        "5.94"
       ],
       "ToneUnits": [
-        "Hz",
-        "Hz"
+        "GHz",
+        "GHz"
       ],
       "MaxMixOrderExpr": "3",
       "MaxHarmonicExpr": "3",

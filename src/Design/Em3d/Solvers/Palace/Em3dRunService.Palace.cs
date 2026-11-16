@@ -524,7 +524,7 @@ public static partial class Em3dRunService
         // ── The DataSet: S and Z0 in the house convention, plus Palace's own record ─────────────
         var data = BuildDataSet(s, ports, facts);
         if (terminal is { } t) PalaceTerminalS.AddDiagnostics(data, PalaceGroup, t.Samples, t.Outcome, ports);
-        if (plan.FarField && PalacePattern(post, s, ports, setup, data, log.Notes) is { } patternError) return Failed(patternError);
+        if (plan.FarField && PalacePattern(post, s, ports, setup, data, log.Notes, problem.Boundary) is { } patternError) return Failed(patternError);
         if (modeZ is not null)
         {
             var wave = ports.Where(p => p.Kind == Em3dPortKind.Wave).ToList();
@@ -653,7 +653,7 @@ public static partial class Em3dRunService
     /// rows are read, so a save-only Point sample (brief 29) adds no pattern. Null on success.
     /// </summary>
     internal static string? PalacePattern(string post, PalacePortS s, IReadOnlyList<Em3dPort> ports, EmSetup setup, DataSet data,
-                                         ICollection<string> notes)
+                                         ICollection<string> notes, Em3dAirBox? box = null)
     {
         var numbers = ports.Select(p => p.Number).ToList();
         var ff = PalaceRun.ReadFarField(Path.Combine(post, PalaceRun.FarFieldFile), out string? error);
@@ -696,7 +696,17 @@ public static partial class Em3dRunService
                 points[i * n + k] = new Em3dPatternPoint(FarFieldStage.Pattern(grid, eth, eph, numbers[k], fHz), accepted, s.S[i][k, k]);
             }
         }
-        notes.AddRange(Em3dRadiation.Publish(data, "Palace (FEM)", grid, numbers, s.FrequenciesHz, points,
+        // brief-hzn-21 — a half model's pattern is made the whole structure's before anything is derived from it
+        IReadOnlyList<Em3dPatternPoint> whole = points;
+        if (box is not null)
+        {
+            if (Em3dSymmetry.Mirror(points, box, Em3dSymmetry.PhaseSign("Palace"), out string? symmetryNote, out string? symmetryRefusal) is not { } mirrored)
+                return symmetryRefusal;
+            whole = mirrored;
+            Em3dSymmetry.Mark(data, box);
+            if (symmetryNote is not null) notes.Add(symmetryNote);
+        }
+        notes.AddRange(Em3dRadiation.Publish(data, "Palace (FEM)", grid, numbers, s.FrequenciesHz, whole,
                                              setup.ReferenceInputPowerDbm, hemisphere: false));
         notes.Add("Palace's far field is its own Stratton–Chu integral over the air box's absorbing faces, which are first order: " +
                   "the pattern is only as good as the field those faces leave unreflected, so a box close to the radiator reads " +

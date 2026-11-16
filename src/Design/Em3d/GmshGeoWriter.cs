@@ -183,7 +183,7 @@ public static partial class GmshGeoWriter
             if (faceKinds[k] == Em3dBoundaryKind.Symmetry)
                 return No($"The air box's {FaceKeys[k]} face is a Symmetry face, which does not say whether the " +
                           "field's electric or magnetic wall lies there. Set it to Pec (an electric wall) or Pmc " +
-                          "(a magnetic one) in the setup's AirBox.");
+                          "(a magnetic one) in the setup's AirBox, with Symmetry true to mirror the radiation pattern across it.");
         if (problem.Ports.Count == 0 && problem.Type == Em3dProblemType.Driven)
             return No("The 3D problem has no ports, so there is nothing for Palace to excite.");
 

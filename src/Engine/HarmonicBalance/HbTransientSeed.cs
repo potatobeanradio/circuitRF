@@ -271,7 +271,7 @@ public static class HbTransientSeed
                 IcNets = ic ?? new Dictionary<string, double>(),
                 MaxSteps = (long)Math.Max(10_000_000, 64.0 * cap * m),
                 RecordRows = rows ?? (ifn => [.. ifn.Select(n => n - 1)]),
-                PlayModulation = false,   // brief MTR-1 R-mtr1-5: the steady state, a MOD_Source's CW tone
+                PlayModulation = false, KeepWhatWasDone = false,   // brief MTR-1 R-mtr1-5: the steady state, a MOD_Source's CW tone
                 StopWhen = monitor.Push,
             };
             r = new TransientEngine(nl, settings).Run(tp, control);

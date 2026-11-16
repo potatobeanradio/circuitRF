@@ -444,7 +444,7 @@ and give <code>lo, hi</code> before it to take part of the axis):</p>
 </tr>
 <tr>
 <td><code>outage_over(x, threshold)</code></td>
-<td>the fraction of present values below the threshold, with its exact 95 % binomial interval stored beside it as <code>lo</code> and <code>hi</code>: <code>outage_over(Prx, -95, &quot;drop&quot;)</code> over a Propagation Channel's drops</td>
+<td>the fraction of present values below the threshold, with its exact 95 % binomial interval stored beside it as <code>lo</code> and <code>hi</code>: <code>outage_over(Prx, -95, &quot;drop&quot;)</code> over a Propagation Channel's drops. A NaN value (a drop whose metric could not be read) is left out of the fraction, counted as no outage for <code>lo</code> and as an outage for <code>hi</code>, and warned about</td>
 </tr>
 <tr>
 <td><code>cpk(x, lo, hi)</code></td>

@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "5 Brute Force",
+  "CellName": "5 Brute Force.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -614,11 +614,11 @@
           800
         ],
         [
-          3800,
+          3500,
           800
         ],
         [
-          3800,
+          3500,
           1100
         ],
         [
@@ -634,11 +634,11 @@
           1600
         ],
         [
-          3900,
+          3500,
           1600
         ],
         [
-          3900,
+          3500,
           1200
         ],
         [
@@ -722,12 +722,8 @@
           -200
         ],
         [
-          0,
-          -400
-        ],
-        [
           700,
-          -400
+          -200
         ],
         [
           700,
@@ -815,10 +811,10 @@
   "NetLabels": [
     {
       "X": 300,
-      "Y": -400,
+      "Y": -200,
       "Name": "s1",
       "OwnerWireIndex": 8,
-      "SegmentIndex": 1,
+      "SegmentIndex": 0,
       "AlongT": 0.42857142857142855,
       "OffsetX": 0,
       "OffsetY": 0
@@ -909,17 +905,17 @@
       "Name": "e2",
       "OwnerWireIndex": 1,
       "SegmentIndex": 0,
-      "AlongT": 0.5,
+      "AlongT": 0.7142857142857143,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 3300,
+      "X": 3330.8302726101433,
       "Y": 1600,
       "Name": "e3",
       "OwnerWireIndex": 2,
       "SegmentIndex": 0,
-      "AlongT": 0.45454545454545453,
+      "AlongT": 0.7583289608716333,
       "OffsetX": 0,
       "OffsetY": 0
     },

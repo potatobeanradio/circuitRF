@@ -59,6 +59,10 @@ public sealed record Nf2ffFace(string Key, int Axis, int Side)
 public sealed record Nf2ffSurface(Point3 Min, Point3 Max, IReadOnlyList<Nf2ffFace> Faces, NfFloor Floor, double FloorZ,
                                   IReadOnlyList<double> FrequenciesHz, IReadOnlyList<string> Notes)
 {
+    /// <summary>brief-hzn-21 — the air box whose symmetry planes the pattern is mirrored in (the surface is open on those faces);
+    /// null when it has none.</summary>
+    public Em3dAirBox? Symmetry { get; init; }
+
     /// <summary>Upper hemisphere with a floor; the whole sphere without.</summary>
     public bool Hemisphere => Floor != NfFloor.None;
 }
@@ -86,17 +90,21 @@ public static class OpenEmsFarField
         var f = problem.Boundary.Faces;
         var kinds = new[] { f.XMin, f.XMax, f.YMin, f.YMax, f.ZMin, f.ZMax };
 
+        // brief-hzn-21 — a symmetry face: the surface reaches it and stops, and the image is the pattern's (Em3dSymmetry.Mirror),
+        // not the transform's. An unflagged conducting floor stays an infinite ground plane.
+        var mirror = new bool[6];
+        foreach (var sp in problem.Boundary.SymmetryPlanes) mirror[Array.IndexOf(Keys, sp.Face)] = true;
         var floor = NfFloor.None;
         for (int k = 0; k < 6; k++)
         {
-            if (kinds[k] == Em3dBoundaryKind.Absorbing) continue;
+            if (kinds[k] == Em3dBoundaryKind.Absorbing || mirror[k]) continue;
             if (k == 4 && kinds[k] is Em3dBoundaryKind.Pec or Em3dBoundaryKind.Pmc)
             {
                 floor = kinds[k] == Em3dBoundaryKind.Pec ? NfFloor.Pec : NfFloor.Pmc;
                 continue;
             }
             return (null, $"The radiation pattern needs an absorbing boundary on every face of the air box, except that the " +
-                          $"floor (ZMin) may be a conducting plane: the {Keys[k]} face is {kinds[k]}, which returns the radiated " +
+                          $"floor (ZMin) may be a conducting plane and any face a symmetry plane (Symmetry true): the {Keys[k]} face is {kinds[k]}, which returns the radiated " +
                           "field into the box, so no closed surface inside it sees only outgoing waves. Set the AirBox's " +
                           $"{Keys[k]} face to Absorbing, or turn the radiation pattern off.");
         }
@@ -144,21 +152,22 @@ public static class OpenEmsFarField
             for (int i = lines.Count - 1; i >= 0; i--) if (lines[i] >= hi[a] - tol) iHiMetal = i;
             if (double.IsInfinity(lo[a])) { iLoMetal = (iLoFace + iHiFace) / 2; iHiMetal = iLoMetal; }
 
-            bool floorHere = a == 2 && floor != NfFloor.None;
+            bool floorHere = (a == 2 && floor != NfFloor.None) || mirror[2 * a];
             int want = floorHere ? iLoFace : iLoFace + PmlMarginCells;
             if (!floorHere && want > iLoMetal - ConductorClearanceCells)
                 return (null, TooTight(Keys[2 * a], want - (iLoMetal - ConductorClearanceCells), lines, iLoFace, loWho[a], +1));
             planeLo[a] = lines[want];
 
-            int wantHi = iHiFace - PmlMarginCells;
-            if (wantHi < iHiMetal + ConductorClearanceCells)
+            bool wallHi = mirror[2 * a + 1];
+            int wantHi = wallHi ? iHiFace : iHiFace - PmlMarginCells;
+            if (!wallHi && wantHi < iHiMetal + ConductorClearanceCells)
                 return (null, TooTight(Keys[2 * a + 1], (iHiMetal + ConductorClearanceCells) - wantHi, lines, iHiFace, hiWho[a], -1));
             planeHi[a] = lines[wantHi];
         }
 
         var faces = new List<Nf2ffFace>();
         for (int k = 0; k < 6; k++)
-            if (!(k == 4 && floor != NfFloor.None)) faces.Add(new Nf2ffFace(Keys[k], k / 2, k % 2));
+            if (!(k == 4 && floor != NfFloor.None) && !mirror[k]) faces.Add(new Nf2ffFace(Keys[k], k / 2, k % 2));
 
         var notes = new List<string>
         {
@@ -180,9 +189,9 @@ public static class OpenEmsFarField
                 double[] a0 = [b.X0, b.Y0, b.Z0], a1 = [b.X1, b.Y1, b.Z1];
                 for (int i = 0; i < 3; i++)
                 {
-                    bool floorAxis = i == 2 && floor != NfFloor.None;
+                    bool floorAxis = (i == 2 && floor != NfFloor.None) || mirror[2 * i];
                     if (a0[i] < planeLo[i] - 1e-12 && !floorAxis) return true;
-                    if (a1[i] > planeHi[i] + 1e-12) return true;
+                    if (a1[i] > planeHi[i] + 1e-12 && !mirror[2 * i + 1]) return true;
                 }
                 return false;
             }).Select(s => $"'{s.Name}'").Distinct().ToList();
@@ -192,8 +201,13 @@ public static class OpenEmsFarField
                       "the substrate guides across the surface is counted as radiation, so the pattern near the horizon and the " +
                       "radiated power read HIGH by roughly the surface-wave share the planar kernel reports separately. Draw a " +
                       "board outline inside the air box to keep the substrate within the surface.");
+        if (mirror.Any(m => m))
+            notes.Add($"The equivalence surface is open on the symmetry face{(mirror.Count(m => m) > 1 ? "s" : "")} " +
+                      $"({string.Join(", ", Keys.Where((_, k) => mirror[k]))}): it reaches the wall there, and the pattern adds the " +
+                      "surface's image in it.");
         return (new Nf2ffSurface(new Point3(planeLo[0], planeLo[1], planeLo[2]), new Point3(planeHi[0], planeHi[1], planeHi[2]),
-                                 faces, floor, floor == NfFloor.None ? 0 : boxLo[2], frequenciesHz, notes), null);
+                                 faces, floor, floor == NfFloor.None ? 0 : boxLo[2], frequenciesHz, notes)
+                { Symmetry = problem.Boundary.SymmetryPlanes.Count > 0 ? problem.Boundary : null }, null);
     }
 
     private static string TooTight(string face, int shortCells, IReadOnlyList<double> lines, int iFace, string who, int inward)

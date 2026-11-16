@@ -1037,6 +1037,7 @@ public sealed partial class C3dEditorViewModel
         ]);
         yield return duplicate ?? new Viewer3DMenuItem("Duplicate", StartDuplicate, Gesture: Viewer3DMenuItem.Command(Key.D));
         yield return new Viewer3DMenuItem("Array…", OpenArray);
+        if (SplitMenuItem() is { } split) yield return split;     // brief-hzn-21
         yield return new Viewer3DMenuItem("Align", Enabled: targets.Count >= 2,
             Tip: targets.Count >= 2 ? "To the last one selected." : "Select two or more: the others line up with the last one selected.",
             Children: [.. AlignItems()]);

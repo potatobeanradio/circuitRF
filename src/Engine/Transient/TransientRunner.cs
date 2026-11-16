@@ -194,12 +194,21 @@ public static class TransientRunner
         if (labeled.Length > 0)
             ds.Add("__LabeledNodes", new DataCube([new Axis("label", Index(labeled.Length), "", labeled)], new double[labeled.Length]));
         foreach (var note in r.Notes) nl.AddNoteOnce("tran:" + note, note);
+        // a run the step floor stopped keeps its output up to there, and says so as a warning, not a note
+        if (r.StoppedAtS is double stoppedAt)
+        {
+            ds.Add(StoppedCube, DataCube.Scalar(stoppedAt));
+            nl.AddWarning(r.StopReason ?? "transient: the run stopped before Stop.");
+        }
         return ds;
     }
 
     /// <summary>The metadata cube holding the bench's fundamental (Hz): the lowest carrier a source plays, else a repeating pulse's
     /// rate (<see cref="TransientSources.Fundamental"/>). Absent when there is neither.</summary>
     public const string FundamentalCube = "__TranFundamental_Hz";
+
+    /// <summary>The time a run the step floor stopped ended at (s); absent when it reached Stop.</summary>
+    public const string StoppedCube = "Tran.StoppedAt_s";
 
     /// <summary>One line describing a resolved run, for the CLI and the run panel.</summary>
     public static string Describe(TransientParams p) => string.Format(CultureInfo.InvariantCulture,

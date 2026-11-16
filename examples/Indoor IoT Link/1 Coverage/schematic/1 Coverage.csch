@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "1 Coverage",
+  "CellName": "1 Coverage.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -377,20 +377,8 @@
           0
         ],
         [
-          3300,
-          200
-        ],
-        [
-          3000,
-          200
-        ],
-        [
-          3000,
-          -400
-        ],
-        [
           3700,
-          -400
+          0
         ],
         [
           3700,
@@ -403,18 +391,6 @@
         [
           2400,
           0
-        ],
-        [
-          2900,
-          0
-        ],
-        [
-          2900,
-          300
-        ],
-        [
-          3200,
-          300
         ],
         [
           3200,
@@ -478,17 +454,17 @@
       "Name": "lna",
       "OwnerWireIndex": 1,
       "SegmentIndex": 0,
-      "AlongT": 0.4,
+      "AlongT": 0.25,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 3300,
-      "Y": -400,
+      "X": 3619.8246669232744,
+      "Y": 0,
       "Name": "gw",
       "OwnerWireIndex": 0,
-      "SegmentIndex": 3,
-      "AlongT": 0.42857142857142855,
+      "SegmentIndex": 0,
+      "AlongT": 0.799561667308186,
       "OffsetX": 0,
       "OffsetY": 0
     }
@@ -507,11 +483,13 @@
       "Enabled": true,
       "Sweeps": [
         {
-          "StartExpr": "868.95e6",
-          "StopExpr": "868.95e6",
+          "StartExpr": "868.95",
+          "StopExpr": "868.95",
           "NumPoints": 1,
           "Mode": "PointCount",
-          "Kind": "Linear"
+          "Kind": "Linear",
+          "StartUnit": "MHz",
+          "StopUnit": "MHz"
         }
       ]
     },

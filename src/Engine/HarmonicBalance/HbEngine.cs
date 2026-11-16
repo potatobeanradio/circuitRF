@@ -168,10 +168,14 @@ public sealed partial class HbEngine
     /// <param name="lib">The library the netlist was elaborated from, and the base directory that
     /// elaboration used — needed ONLY to elaborate the per-worker copies of a parallel small-signal
     /// sweep (R-wsp8-9). Null pins the sweep to the serial path.</param>
+    /// <param name="control">The run's control, for cancellation only: the transient seed of <c>InitialGuess=transient</c> or
+    /// <c>fallback</c> (brief TRN-8) checks it as it steps, so Stop ends a long seed instead of waiting it out. The Newton solve
+    /// itself is not interrupted (a single solve has no boundary). Null: nothing is checked.</param>
     public HbEngine(ElaboratedNetlist netlist, TestBench tb, AnalysisSettings? settings = null,
                     HbSmallSignalCache? wspCache = null,
-                    Library? lib = null, string? baseDirectory = null)
+                    Library? lib = null, string? baseDirectory = null, RunControl? control = null)
     {
+        _control  = control;
         _netlist  = netlist;
         _tb       = tb;
         _settings = settings ?? AnalysisSettings.Default;
@@ -182,6 +186,7 @@ public sealed partial class HbEngine
     }
 
     private readonly HbSmallSignalCache? _wspCache;
+    private readonly RunControl?         _control;
     private readonly Library?            _lib;
     private readonly string?             _baseDir;
 
@@ -606,7 +611,7 @@ public sealed partial class HbEngine
         HbNewton.SolveResult? seededSolve = null;
         Complex[,] SeedFromTransient(Complex[,]? fallback)
         {
-            seed = HbTransientSeed.Run(_netlist, _settings, f0, K, p.Seed, "HB");
+            seed = HbTransientSeed.Run(_netlist, _settings, f0, K, p.Seed, "HB", control: _control);
             ApplyToneContext();
             return HbTransientSeed.OnInterface(seed, ifNodes, K, fallback);
         }

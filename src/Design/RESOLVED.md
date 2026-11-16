@@ -32517,3 +32517,71 @@ them (Disk, the example's own kit trusted) and keeps each run alive for the test
   with fading fades its rays independently, so the bench's mean power is not the budget's coherent two-ray loss; `chain
   --to-schematic` without `--json` prints nothing about a bench left out; the Link bench's drop picks are keyed by a terrain
   file's path, not its contents.
+
+## HZN-21 — half models: Split, symmetry planes, the mirrored far field (2026-11-16)
+
+Brief `docs/briefs/brief-hzn-21-half-models.md`. Census **90 → 91 of 99** (`HalfWave1GHz_Half`); `B_WaveguideIrisFilter_Half` is
+now refused only for its Impedance boundary and its TE mode type.
+
+- **The mirror is circuitRF's own, on the pattern grid, for every solver** (`Em3dSymmetry.Mirror`), not EMerge's `syms`: that
+  flips about the ORIGIN only and is EMerge's alone. On the 1° sphere M r̂ is a grid point, so nothing is interpolated.
+  F_image(r̂) = s·e^{+jk r̂·d}·M F(M r̂), s = +1 magnetic wall, −1 electric; the accepted power is the part's times 2ⁿ. Held
+  exactly (1e-9) against current elements and their images in `HalfModelTests`, both walls, a plane 0.3 λ off the origin,
+  and two planes.
+- **The phase sign is +1 on all three solvers**, measured with a monopole on an electric symmetry plane 40 mm (0.15 λ) above the
+  origin against the full dipole: worst pattern difference within 10 dB of peak 0.016 dB (Palace), 0.05 dB (openEMS), 0.6 dB
+  (EMerge — the same spread as its unshifted half, so its absorbing faces, not the sign; a wrong sign is several dB at θ = 45°).
+- **Half dipole vs full (L = 2×60 mm, 1.15 GHz):** Palace gain 2.396 vs 2.397 dBi, directivity 2.161 vs 2.163 (thin dipole
+  2.15), pattern 0.025 dB; EMerge gain +0.21 dB (Hertzon reports +0.2 dB for its own half model), pattern 0.61 dB. S11 of the
+  half at 146 Ω equals the full's at 73 Ω to |ΔS| ≈ 0.008 (EMerge), 0.002 (Palace). Palace reads radiation efficiency 105.5 %
+  on the FULL model too: not the mirror.
+- **openEMS cannot measure a lumped port that reaches the plane across its current**: its current probe is an H loop half a cell
+  round the port, which at the wall would lie outside the grid; openEMS collapsed the box to one index and wrote zero current,
+  so S11 = 1 exactly, in silence. Refused by name (`CsxcadWriter.SymmetryPortRefusal`); a port along the plane's normal (the
+  monopole) is measured correctly.
+- **A drawn air box listed after the shapes inside it swallowed them** (S11 0.995, Palace: "'ArmTop' selected nothing"). Hertzon
+  (tutorial, "Overlapping objects"): an object inside another applies there, and with Material override (default on) a metal
+  beats a dielectric; a `.c3d` lets the later object win. `HznTranslator.Overlaps` moves only what is out of order, between
+  solids whose extents are known, with a note. Across the examples it moves the half dipole's air box and, in the glasses runB
+  and runC designs, the polyimide FPC before the metal chassis it overlaps — which until now overrode that metal.
+- **A Split is an intersect with a box** reaching past its target's conservative bounds (`GeometryKernelTree.BoundsUm`), so the
+  geometry worker is unchanged; the cut face is the box's, `split:<axis><min|max>`. On a closed design's region, a boundary on
+  that face is the air box face of that side.
+- **Hertzon's symmetry `ImpedanceMultiplier` is not applied by its own solver** (its EMERGE_INTEGRATION.md), so a value other than 1
+  is listed as unused with a note, not refused.
+- Left as found: the translator does not turn a setup's radiation pattern on from Hertzon's far-field reports; a Split off the origin
+  is not exported (it would need a Hertzon coordinate system); a Custom plane and `Keep: Both` are refused.
+
+### HZN-21 follow-up — Custom planes, a plane off the origin on export, the pattern from an Infinite Sphere (2026-11-16)
+
+- **Hertzon's `Keep` is `Positive` or `Negative` only**: its MCP server's own schema (`get_schema section=operations kind=Split`) lists
+  no `Both`. Nothing to translate; the refusal stays for a value Hertzon does not write.
+- **A Custom plane is `Base` + `Normal`, used only when `Plane` is `Custom`** (same schema). Positive keeps the side the normal points to:
+  derived, not measured — for a named plane Positive keeps the side its axis points to (tutorial §3.6), and a Custom plane's Normal is
+  that axis. Measuring it on Hertzon itself needs its application: the MCP server builds geometry by starting Hertzon's GUI process
+  (it failed here with no PySide6), which is the route that opened windows on the owner's desktop before.
+- `.c3d` `Split` `Plane: Custom` with `Base` (C3dPoint3, expressions) and `Normal` (double[3]); the kernel box is built in a frame whose z is
+  the normal (`GeometryKernelTree`), its cut face `split:zmin`/`split:zmax`. Through the kernel, normal (1,1,0) through a cylinder's axis
+  keeps x ≥ −r/√2 for Positive and the mirror for Negative. An axis-aligned Custom normal clips the extent exactly, as a named plane does;
+  a slanted one leaves the target's own box (conservative), so a slanted cut that reaches past a symmetry face is still refused there.
+- **A named plane off the origin exports through a Relative coordinate system of its own** (`CS_<object>_Split`, global axes, origin on the
+  plane as the `At` expression), and the save-back patcher copies any coordinate system a patched object's history names that the design
+  lacks (`HznPatch.CoordSystemsFor`) — a patched object is written from a one-object export, so its coordinate system would otherwise be lost.
+- **An Infinite Sphere turns the translated setups' radiation pattern on** (no enabled plane wave), with one note: circuitRF publishes the
+  whole 1° sphere in the global axes. Export writes a whole-sphere Infinite Sphere every 2° for a setup that asks for the pattern.
+- Test trap: a `.c3d` copied through `Serialize`/`Deserialize` has 0 in every expression-held field until resolved, so the patcher's
+  read-back comparison (resolved numbers) fails on it; edit a second translation instead.
+
+## Chain benches write frequencies in GHz and MHz (2026-11-16)
+
+- **Transfer writes a frequency in GHz from 1 GHz and MHz from 1 MHz** (`ChainBenches.Hz`/`HzParts`): the variables (Frf,
+  Flo, F1/F2, FB, Bocc), a line's F, an LO's Freq, a bare filter edge, the sparam point and the HB small-signal sweep. Each is
+  the shortest number that times the unit's scale is the same double, because the elaborator multiplies the two; where none
+  exists it stays bare Hz. Every shipped bench was elaborated before and after: every global, component value, tone and sweep
+  point is the same bit for bit.
+- **A frequency variable with a unit changes a degree field that names it** (var-unit-wins: a unit-bearing name puts the
+  expression in base SI, so the field's `deg` is not applied). The Canceller's `E=360*Frf*tau_leak deg` read 882 instead of
+  15.39 with `Frf = 2.45 GHz`. Its three degree fields name `Frf_hz = Frf` instead: a unit-less binding that names a
+  unit-bearing one is bare, and its value is Frf's Hz.
+- **`ChainBudgetExampleTests` compares a shipped bench with Transfer's by the netlist it runs as** (`SchematicCircuit.CnlTextOf`),
+  not by its file, so the examples' drawings can be tidied by hand; the displays are still compared as files.

@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "26 GHz Link TX",
+  "CellName": "26 GHz Link TX.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -203,8 +203,8 @@
         },
         {
           "Name": "Frf",
-          "Expression": "26000000000",
-          "Unit": "",
+          "Expression": "26",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -356,18 +356,6 @@
           0
         ],
         [
-          2100,
-          0
-        ],
-        [
-          2100,
-          200
-        ],
-        [
-          2300,
-          200
-        ],
-        [
           2300,
           0
         ]
@@ -377,18 +365,6 @@
       "Points": [
         [
           0,
-          0
-        ],
-        [
-          0,
-          -200
-        ],
-        [
-          300,
-          -200
-        ],
-        [
-          300,
           0
         ],
         [
@@ -402,22 +378,6 @@
         [
           2400,
           0
-        ],
-        [
-          2400,
-          600
-        ],
-        [
-          3500,
-          600
-        ],
-        [
-          3500,
-          -200
-        ],
-        [
-          2900,
-          -200
         ],
         [
           2900,
@@ -441,11 +401,11 @@
   "NetLabels": [
     {
       "X": 100,
-      "Y": -200,
+      "Y": 0,
       "Name": "in",
       "OwnerWireIndex": 1,
-      "SegmentIndex": 1,
-      "AlongT": 0.3333333333333333,
+      "SegmentIndex": 0,
+      "AlongT": 0.2,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -465,19 +425,19 @@
       "Name": "ant",
       "OwnerWireIndex": 0,
       "SegmentIndex": 0,
-      "AlongT": 0.5,
+      "AlongT": 0.25,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 2900,
-      "Y": 600,
+      "X": 2802.2363108010973,
+      "Y": -21.030004142185277,
       "Name": "load",
       "OwnerWireIndex": 2,
-      "SegmentIndex": 1,
-      "AlongT": 0.45454545454545453,
-      "OffsetX": 0,
-      "OffsetY": 0
+      "SegmentIndex": 0,
+      "AlongT": 1,
+      "OffsetX": -97.76368919890282,
+      "OffsetY": -21.030004142185277
     }
   ],
   "Dots": [],

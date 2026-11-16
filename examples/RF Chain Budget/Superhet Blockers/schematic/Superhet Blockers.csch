@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "Superhet Blockers",
+  "CellName": "Superhet Blockers.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -367,8 +367,8 @@
       "Parameters": [
         {
           "Name": "Freq",
-          "Expression": "2100000000",
-          "Unit": "",
+          "Expression": "2.1",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         },
@@ -808,15 +808,15 @@
         },
         {
           "Name": "Frf",
-          "Expression": "2450000000",
-          "Unit": "",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "FB1",
-          "Expression": "2600000000",
-          "Unit": "",
+          "Expression": "2.6",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -829,8 +829,8 @@
         },
         {
           "Name": "FB2",
-          "Expression": "2470000000",
-          "Unit": "",
+          "Expression": "2.47",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -843,8 +843,8 @@
         },
         {
           "Name": "Flo1",
-          "Expression": "2100000000",
-          "Unit": "",
+          "Expression": "2.1",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -1305,18 +1305,6 @@
           0
         ],
         [
-          13100,
-          0
-        ],
-        [
-          13100,
-          -200
-        ],
-        [
-          13300,
-          -200
-        ],
-        [
           13300,
           0
         ]
@@ -1536,7 +1524,7 @@
       "Name": "out",
       "OwnerWireIndex": 17,
       "SegmentIndex": 0,
-      "AlongT": 0.3333333333333333,
+      "AlongT": 0.2,
       "OffsetX": 0,
       "OffsetY": 0
     }

@@ -91,7 +91,7 @@ public static class HbCircuitRun
             // The library and base directory are handed over so a long WSProbe tickle grid can be split across workers
             // (brief-wsprobe-8 R-wsp8-9) — each worker needs a netlist copy of its own, and a copy needs the library it
             // was elaborated from. Nothing else uses them, and a run with no small-signal sweep is unaffected.
-            run = new HbEngine(nl, tb, settings, wspCache: null, lib: lib, baseDirectory: baseDirectory).Run(p);
+            run = new HbEngine(nl, tb, settings, wspCache: null, lib: lib, baseDirectory: baseDirectory, control: control).Run(p);
             ds = run.DataSet;
         }
         return new HbCircuitSolve(ds, run, ChainSelector.BaseOfChain(top, tb)?.Name ?? top.Name);

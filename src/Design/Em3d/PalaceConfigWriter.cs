@@ -424,11 +424,13 @@ public static class PalaceConfigWriter
     {
         var f = problem.Boundary.Faces;
         var kinds = new[] { ("xmin", f.XMin), ("xmax", f.XMax), ("ymin", f.YMin), ("ymax", f.YMax), ("zmin", f.ZMin), ("zmax", f.ZMax) };
-        if (kinds.FirstOrDefault(k => k.Item2 != Em3dBoundaryKind.Absorbing) is { Item1: not null } wall)
+        var mirrors = problem.Boundary.SymmetryPlanes.Select(p => p.Face).ToHashSet(StringComparer.Ordinal);
+        if (kinds.FirstOrDefault(k => k.Item2 != Em3dBoundaryKind.Absorbing && !mirrors.Contains(k.Item1)) is { Item1: not null } wall)
             return $"No radiation pattern from Palace: the air box's {wall.Item1} face is {wall.Item2}, and Palace's far-field " +
-                   "integral runs over absorbing faces that must enclose the whole problem — it applies no image, so a " +
-                   "conducting face leaves its surface open. FDTD 3D (openEMS) closes a conducting floor by its image and " +
-                   "produces the pattern; or set every AirBox face to Absorbing (drawing the ground plane, if there is one).";
+                   "integral runs over absorbing faces that must enclose the whole problem — a conducting face closes it only as " +
+                   "a symmetry plane, whose image the pattern adds (Symmetry true on the face). FDTD 3D (openEMS) closes a " +
+                   "conducting floor by its image as an infinite ground plane; or set every other AirBox face to Absorbing " +
+                   "(drawing the ground plane, if there is one).";
         if (problem.HasWavePorts)
             return "No radiation pattern from Palace: a wave port lies on the air box, so the box is not absorbing all round " +
                    "and Palace's far-field integral has no closed surface to run over. Make every port a lumped port for a pattern.";

@@ -211,7 +211,7 @@ namespace RfCore.Propagation
                 W("Environment", "office", "the indoor environment", "office", "corridor", "industrial", "conference"),
                 W("Los", "los", "line of sight or not", LosOnlyWords),
                 N("Floors", "", "0", "floors between the stations", 0, 50),
-                W("Building", "office", "the building type for the floor penetration loss", "office", "commercial", "residential"),
+                W("Building", "office", "the building type for the floor penetration loss (apartment and house: Table 5's residential rows at 2.4 and 5.2 GHz)", "office", "commercial", "residential", "apartment", "house"),
                 N("FloorLoss", "dB", "", "a stated floor penetration loss (blank: the recommendation's table)", 0, 200),
             }, true, false, a =>
             {
@@ -224,7 +224,11 @@ namespace RfCore.Propagation
                         "conference" => IndoorEnvironment.Conference,
                         _ => IndoorEnvironment.Office,
                     }, a.Word("Los") == "los", a.F, a.D3, (int)floors,
-                    a.Word("Building") switch { "commercial" => FloorBuilding.Commercial, "residential" => FloorBuilding.Residential, _ => FloorBuilding.Office },
+                    a.Word("Building") switch
+                    {
+                        "commercial" => FloorBuilding.Commercial, "residential" => FloorBuilding.Residential,
+                        "apartment" => FloorBuilding.Apartment, "house" => FloorBuilding.House, _ => FloorBuilding.Office,
+                    },
                     a.Number("FloorLoss"));
             }, "0.3 to 300 GHz and 2 to 160 m, each environment and state over its own row of the recommendation's Table 2; floor losses at 0.9, 1.8 to 2, 2.4, 3.5, 5.2 and 5.8 GHz, or stated"),
 

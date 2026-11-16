@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "Array Link",
+  "CellName": "Array Link.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -92,9 +92,9 @@
     {
       "InstanceName": "PT",
       "Symbol": "PhasedArray",
-      "X": 1400,
-      "Y": 600,
-      "Rotation": "R90",
+      "X": 1500,
+      "Y": 0,
+      "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
@@ -154,19 +154,13 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
-      ],
-      "LabelOffsets": [
-        [
-          480,
-          -643
-        ]
       ]
     },
     {
       "InstanceName": "CH1",
       "Symbol": "PropagationChannel",
-      "X": 100,
-      "Y": -2300,
+      "X": 2600,
+      "Y": -0,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -274,9 +268,9 @@
     {
       "InstanceName": "PR",
       "Symbol": "PhasedArray",
-      "X": 3300,
-      "Y": 1700,
-      "Rotation": "R0",
+      "X": 3800,
+      "Y": -0,
+      "Rotation": "R180",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
@@ -341,9 +335,9 @@
     {
       "InstanceName": "Irx",
       "Symbol": "IProbe",
-      "X": 3100,
-      "Y": 2700,
-      "Rotation": "R90",
+      "X": 4500,
+      "Y": -100,
+      "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": []
@@ -351,8 +345,8 @@
     {
       "InstanceName": "UE",
       "Symbol": "Term",
-      "X": 3000,
-      "Y": 3500,
+      "X": 5100,
+      "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -394,8 +388,8 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": 3000,
-      "Y": 3700,
+      "X": 5100,
+      "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -406,8 +400,8 @@
     {
       "InstanceName": "VAR1",
       "Symbol": "Var",
-      "X": 0,
-      "Y": -3400,
+      "X": -500,
+      "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -445,8 +439,8 @@
     {
       "InstanceName": "MEAS1",
       "Symbol": "Meas",
-      "X": 1300,
-      "Y": -3700,
+      "X": -400,
+      "Y": -1100,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -511,32 +505,20 @@
           0
         ],
         [
-          1400,
+          1200,
           0
-        ],
-        [
-          1400,
-          300
         ]
       ]
     },
     {
       "Points": [
         [
-          3000,
-          1700
+          4100,
+          -0
         ],
         [
-          2800,
-          1700
-        ],
-        [
-          2800,
-          2700
-        ],
-        [
-          3000,
-          2700
+          4500,
+          -0
         ]
       ]
     },
@@ -559,24 +541,12 @@
     {
       "Points": [
         [
-          3000,
-          2800
+          4600,
+          -0
         ],
         [
-          2800,
-          2800
-        ],
-        [
-          2800,
-          3100
-        ],
-        [
-          3000,
-          3100
-        ],
-        [
-          3000,
-          3300
+          5100,
+          -0
         ]
       ]
     }
@@ -593,7 +563,7 @@
       "OffsetY": 0
     },
     {
-      "X": 1200,
+      "X": 1100,
       "Y": 0,
       "Name": "d",
       "OwnerWireIndex": 0,
@@ -603,8 +573,8 @@
       "OffsetY": 0
     },
     {
-      "X": 2900,
-      "Y": 1700,
+      "X": 4300,
+      "Y": 0,
       "Name": "r",
       "OwnerWireIndex": 1,
       "SegmentIndex": 0,
@@ -613,14 +583,14 @@
       "OffsetY": 0
     },
     {
-      "X": 2900,
-      "Y": 2800,
+      "X": 4786.909613264681,
+      "Y": -28.507064625535037,
       "Name": "ue",
       "OwnerWireIndex": 3,
       "SegmentIndex": 0,
-      "AlongT": 0.5,
-      "OffsetX": 0,
-      "OffsetY": 0
+      "AlongT": 0.1821179248495282,
+      "OffsetX": 95.85065083991641,
+      "OffsetY": -28.507064625535037
     }
   ],
   "Dots": [],

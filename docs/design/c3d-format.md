@@ -182,6 +182,7 @@ operation — or, for a `Boolean`, coplanar sheets (the second row below). Solid
 | `Boolean` of sheets | The same fields, with a `Blank` and every `Tool` a `Sheet` (or another `Boolean` of sheets), all **coplanar**: the same `Plane`, and the same `Offset` once resolved. An operand's `Placement` may only move it within that plane (no rotation, no mirror, nothing along the normal); the boolean's own placement is unrestricted. Each operand keeps its own `Rect` or `Outline`/`Holes` and its expressions; nothing is computed into the file. The result is a **sheet**: it conducts, takes the Blank's `Material`, `Role` and `ThicknessUm`, and is built by circuitRF from the operands' polygons (exact, integer DBU), so it needs no OpenCASCADE. A result in several disjoint pieces is one object. `KeepTools` with `Subtract` keeps each tool as its own sheet. |
 | `Fillet` | `Target`, `Edges` [edge name], `Radius`, `Enabled` |
 | `Chamfer` | `Target`, `Edges`, `Distance`, optional `Distance2` (along the edge's second face), `Enabled` |
+| `Split` | `Target` cut at a plane, one side kept (brief-hzn-21): `Plane` (`YZ`, `XZ`, `XY` or `Custom`, in the operation's own frame), `At` (a named plane's coordinate along its normal axis, a length or an expression), `Base` (a `Custom` plane's point, lengths or expressions) and `Normal` (its normal: three numbers, any length, not all zero), `Keep` (`Positive`: the side the normal points to — above `At` for a named plane; `Negative`: the other), `Enabled`. Its faces are the target's, cut, and the face the plane made, `split:<axis><min|max>` (`split:xmin` keeping x above a `YZ` plane; `split:zmin`/`split:zmax` for a `Custom` one). A `Step` target is refused |
 | `Step` | One solid part of a STEP file copied beside the `.c3d`: `File`, `Part` (occurrence path in the assembly, `1/2`), optional `Solid` (1-based, when a part holds several), `Hash` (`sha256:<hex>` of the file), `Unit` (informational), `SourcePath` (where it came from) |
 
 - **`Enabled: false`** makes an operation as if absent: the Blank elaborates under the operation's name and each
@@ -376,6 +377,12 @@ is already bounded by its metal).
 - `Kind`: `Pec`, or `Conductive` with a `Material`.
 - `Absorbing`, `Pmc` and `Symmetry` belong on the air box, set per face in a setup's `AirBox` together with each face's
   `PaddingUm` or `PaddingPercent`.
+- **A symmetry plane** (brief-hzn-21) is a `Pec` or `Pmc` face with `Symmetry: true` (written only when true): the model is
+  the half on its side of a structure mirrored in that face. Every solver lowers the face as the wall it is; the radiation
+  pattern is the whole structure's (the solved surface and its image), and the accepted power the solved part's times 2ⁿ,
+  so gain, directivity and efficiency are the whole structure's. S stays the solved part's own ports. At most one face per
+  axis. The face kind `Symmetry` names no wall and every solver refuses it. openEMS refuses a lumped port reaching the
+  plane across its current (its current probe would leave the grid); EMerge and Palace run one.
 
 ### Lumped elements
 
@@ -441,7 +448,7 @@ document's contract and versions with it.
 | Sweep a profile along a path | `SweepPath` | `Target` (profile), `Path` (a `Polyline`'s name), `Twist` (`Fixed`/`Frenet`) | Faces `start`, `end`, `side<k>` |
 | Loft between profiles | `Loft` | `Profiles` [names], `Ruled` | |
 | Thicken a sheet into a solid | `Thicken` | `Target` (a sheet), `Thickness`, `BothSides`, `Reverse` | Faces `top`, `bottom`, `side<k>` |
-| Split by a plane | `Split` | `Target`, `Plane` {`Point`, `Normal`}, `Keep` (`Positive`/`Negative`/`Both`) | With `Both`, the pieces are named `<name>#pos`/`<name>#neg` |
+| Split by a plane | `Split` | **Built** (brief-hzn-21, §4.4): `Plane` (`YZ`/`XZ`/`XY`/`Custom`), `At` or `Base` + `Normal`, `Keep` (`Positive`/`Negative`) | Hertzon's own `Keep` has no third value |
 | Section: the sheet a plane cuts from a solid | `Section` | `Target`, `Plane` {`Point`, `Normal`} | The result is a sheet |
 | Imprint (split faces where tools touch) | `Imprint` | `Blank`, `Tools` | Faces named as a `Boolean`'s |
 | Scale | `Scale` | `Target`, `Centre`, `Factor` | Baked in at elaboration, so `Placement` stays rigid |

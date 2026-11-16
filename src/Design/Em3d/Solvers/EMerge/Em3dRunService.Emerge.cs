@@ -331,7 +331,7 @@ public static partial class Em3dRunService
         var fields = EmergeFields.ReadSteps(dir);
         WriteFieldCollections(dir, fields, null, log);
         if (setup.RadiationPattern && File.Exists(Path.Combine(dir, EmergeFields.FarFieldFile)) &&
-            EmergeFields.PublishPattern(dir, fields, ports, setup, data, log.Notes) is { } patternError)
+            EmergeFields.PublishPattern(dir, fields, ports, setup, data, log.Notes, problem.Boundary) is { } patternError)
             log.Warnings.Add($"No radiation pattern from EMerge: {patternError}");
         // brief-emdc-2 R-emdc2-3 — the run's 0 Hz row, before either file is written
         var dcLines = SpliceDc(data, problem, dc);

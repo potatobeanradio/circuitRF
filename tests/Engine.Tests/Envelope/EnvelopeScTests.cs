@@ -82,4 +82,32 @@ public sealed class EnvelopeScTests(ITestOutputHelper output)
         Assert.Equal(0, ds["BitErrors"].RealValues[0]);
         Assert.True(ds["EVM_pct"].RealValues[0] < 0.01);
     }
+
+    /// <summary>The coarse offset with no preamble, a window one or two records long: a periodic PN record leaves the power spectrum
+    /// nearly flat line by line, and correlating its detail read QPSK at 73 kHz as 1.9 MHz (EVM 256 %). The delay is found from the
+    /// power envelopes, which an offset does not touch, and the offset from x·conj(s) at that delay.</summary>
+    [Theory]
+    [InlineData("QPSK", 2900.0, 77e-6)]
+    [InlineData("BPSK", 1100.0, 110e-6)]
+    public void Doppler_IsAcquired_WithoutAPreamble(string mod, double velocity, double stop)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        string cnl = $"""
+            MOD_Source:S1 tx 0 Fc=20 GHz Pavg=0 dBm Z=50 Ohm Carrier[1]="SC;Rs=10Msps;Mod={mod};RollOff=0.35;Data=PN9;Off=0;P=0"
+            PropagationChannel:CH1 tx rx Distance=1000 TxVel="{velocity.ToString(inv)},0,0" TxGain=40 RxGain=40
+            IProbe:Irx rx o
+            Port:PO o 0 Num=1 Z=50 Ohm
+            analysis ENV1 type=env Stop={stop.ToString("R", inv)} Accuracy=draft MaxHarm=1 SaveWaveforms=no Equalizer=genie
+            """;
+        var (lib, tb) = new CnlReader().Read(cnl);
+        using var nl = new Elaborator(lib).Elaborate(tb);
+        var plan = EnvelopeRunner.Resolve(tb.Analyses.OfType<EnvelopeAnalysis>().Single(), nl.ResolvedGlobals);
+        bool used = false;
+        ElaboratedNetlist Elab() { if (used) return new Elaborator(lib).Elaborate(tb); used = true; return nl; }
+        var ds = EnvelopeRunner.Run(plan, Elab);
+        double doppler = ds["link:CH1:Doppler0_Hz"].RealValues[0], cfo = ds["CFO_Hz"].RealValues[0];
+        output.WriteLine($"{mod}: Doppler {doppler:G9} Hz, read {cfo:G9} Hz, bit errors {ds["BitErrors"].RealValues[0]}");
+        Assert.Equal(doppler, cfo, 0.1);
+        Assert.Equal(0, ds["BitErrors"].RealValues[0]);
+    }
 }
