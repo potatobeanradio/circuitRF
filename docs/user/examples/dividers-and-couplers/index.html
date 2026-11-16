@@ -33,7 +33,7 @@
   </div>
 
   <h1>Dividers and Couplers</h1>
-  <p class="lede">A 2.4 GHz Wilkinson divider placed as one part from its specs on 20 mil RO4350B, laid out by Update Layout with its 0402 isolation resistor across the ring, and solved by Planar MoM, EMerge and Palace against its circuit model.</p>
+  <p class="lede">A 2.4 GHz Wilkinson divider, a 10 dB coupled-line coupler and a coupled-line balun, each placed as one part from its specs on 20 mil RO4350B, laid out by Update Layout, and solved on EM against its circuit model.</p>
 
 <div class="callout note">
 <span class="label">Open this example</span>
@@ -44,7 +44,7 @@ circuit model simulates. One cell per component. Today the workspace holds the <
 on a 20 mil RO4350B board, laid out by Update Layout from Schematic and solved on the Planar MoM solver, EMerge and
 Palace against its circuit model.</p>
 <p><img class="readme-picture" src="pictures/wilkinson-layout.png" alt="The board: port 1's line on the left, the divider's ring, the 0402 isolation resistor across the ring's gap, and the two output lines bending away to ports 2 and 3." width="700"></p>
-<h2 id="the-cell">The cell</h2>
+<h2 id="the-cells">The cells</h2>
 <table>
 <thead>
 <tr>
@@ -58,6 +58,16 @@ Palace against its circuit model.</p>
 <td><strong>Wilkinson</strong></td>
 <td>schematic, layout, EM setup, 3D view</td>
 <td>The test bench and the board: a 5 mm input line, the MWPD, a 100 Ω resistor with an 0402 land pattern on R2-R3, and each output bending away through a 90° MCURVE and a 5 mm line to its port</td>
+</tr>
+<tr>
+<td><strong>Coupler</strong></td>
+<td>schematic, layout, EM setup, 3D view</td>
+<td>A 10 dB coupled-line coupler (MCLC) at 2.4 GHz, each of its four ports reached through a 90° MCURVE and a 5 mm line that bend away from the other strip</td>
+</tr>
+<tr>
+<td><strong>Balun</strong></td>
+<td>schematic, layout, EM setup, 3D view</td>
+<td>A coupled-line balun (MCBL) from 50 Ω to 200 Ω on each output at 2.4 GHz, a via to ground on each coupled strip, a 5 mm input line and each output turned down through a mitred bend and 2.5 mm of line</td>
 </tr>
 </tbody>
 </table>
@@ -286,6 +296,268 @@ adaptive frequency sweep, built from 4 full solves.</li>
 layout; re-run the EM setups to compare again.</li>
 <li><strong>Remove <code>R1</code>, or change it</strong>, and watch |S23| and |S22| while |S21| and |S11| stay put.</li>
 </ul>
+<h2 id="the-coupled-line-coupler-cell-coupler">The coupled-line coupler (cell Coupler)</h2>
+<p><img class="readme-picture" src="pictures/coupler-layout.png" alt="The coupler: the coupled pair upright in the middle, each of its four strip ends curving away to its own port." width="450"></p>
+<p><strong>How it was built.</strong> <code>CLC1</code> is an MCLC with <code>Coupling</code> 10 dB, <code>Z0</code> 50 Ω and <code>F</code> 2.4 GHz; its readout gives W 0.88809 mm,
+S 0.11537 mm and L 19.193 mm. The four feeds are drawn at the coupler's own strip width (the VAR <code>WC</code>), so no step in the
+copper sits outside the circuit model, and each turns away from the other strip through a 90° MCURVE of 3.5 mm radius and
+runs 5 mm to its port: the coupler's ports 1 and 3 are only W + S = 1.0 mm apart, inside the Planar calibration's
+isolation rule. Update Layout from Schematic joins 8 of 8 connections and LVS matches. Each run is the four-port
+the schematic is.</p>
+<p>At 2.4 GHz:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Circuit</th>
+<th>Planar MoM</th>
+<th>EMerge</th>
+<th>Palace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S31|, coupled</td>
+<td>−10.49 dB</td>
+<td>−10.72 dB</td>
+<td>−9.67 dB</td>
+<td>−9.33 dB</td>
+</tr>
+<tr>
+<td>|S21|, through</td>
+<td>−0.64 dB</td>
+<td>−0.60 dB</td>
+<td>−0.72 dB</td>
+<td>−0.82 dB</td>
+</tr>
+<tr>
+<td>|S41|, isolated</td>
+<td>−23.4 dB</td>
+<td>−25.1 dB</td>
+<td>−21.9 dB</td>
+<td>−21.9 dB</td>
+</tr>
+<tr>
+<td>|S11|</td>
+<td>−19.7 dB</td>
+<td>−17.6 dB</td>
+<td>−18.1 dB</td>
+<td>−18.1 dB</td>
+</tr>
+<tr>
+<td>Directivity</td>
+<td>12.9 dB</td>
+<td>14.3 dB</td>
+<td>12.3 dB</td>
+<td>12.6 dB</td>
+</tr>
+<tr>
+<td>∠S31 − ∠S21</td>
+<td>91.3°</td>
+<td>91.3°</td>
+<td>92.3°</td>
+<td>92.0°</td>
+</tr>
+</tbody>
+</table>
+<p>Across the eleven points from 1.2 to 4.8 GHz:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Planar MoM</th>
+<th>EMerge</th>
+<th>Palace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Largest difference in |S21| from the circuit model</td>
+<td>0.21 dB</td>
+<td>0.15 dB</td>
+<td>0.22 dB</td>
+</tr>
+<tr>
+<td>Largest difference in |S31| up to 3.2 GHz</td>
+<td>1.5 dB</td>
+<td>1.5 dB</td>
+<td>2.0 dB</td>
+</tr>
+<tr>
+<td>Worst |S11| (circuit model −14.7 dB)</td>
+<td>−13.3 dB</td>
+<td>−14.3 dB</td>
+<td>−17.1 dB</td>
+</tr>
+</tbody>
+</table>
+<p><img class="readme-picture" src="pictures/coupler-results.png" alt="|S31|, |S41| and |S11| against frequency: the circuit model as a line, the three EM solvers as markers." width="715"></p>
+<p><strong>Planar MoM lands within 0.23 dB of the model's coupling at F; the two 3D solvers read about 1 dB more.</strong> The coupling
+lives in a 0.115 mm gap, a fifth of the substrate's height, and the field there is what each mesh has to resolve:</p>
+<ul>
+<li><strong>Planar needs its edge mesh here.</strong> With the edge mesh off, the Wilkinson's setting, it read −11.96 dB (2,394
+unknowns, 51 s); with it on, −10.72 dB. The coupler's setup has it on.</li>
+<li><strong>The 3D Draft meshes are far too coarse for the gap.</strong> EMerge's Draft preset read −7.2 dB and Palace's −5.8 dB, 3 to
+5 dB too strong. Refining moved both towards the model and towards each other: EMerge −8.0 dB on its Standard preset,
+−9.7 dB with three adaptive mesh passes (where its own refinement stops); Palace −8.5 dB with second-order elements on
+the Draft mesh, −9.33 dB with three refinement passes (its adaptive refinement from 58 k to 348 k tetrahedra). The setups here are those refined ones. What remains, about
+1 dB, was not chased further.</li>
+<li><strong>Away from F</strong> all three follow the model to the 2F null, where the coupling falls through −20 dB and a small shift of
+the null is a large difference in dB.</li>
+</ul>
+<p><strong>Directivity is microstrip's limit, not the solvers'.</strong> The odd mode is faster than the even, so the isolated port sees
+−22 to −25 dB while the coupled one sees −10: 12 to 14 dB of directivity at F, falling to about 6 dB by 3.2 GHz.</p>
+<h2 id="the-coupled-line-balun-cell-balun">The coupled-line balun (cell Balun)</h2>
+<p><img class="readme-picture" src="pictures/balun-layout.png" alt="The balun: the input strip running along both sections and across the gap between them to its open end, the coupled strips below grounded by a via at each outer end, and the two outputs turning down at the middle." width="700"></p>
+<p><strong>How it was built.</strong> <code>CBL1</code> is an MCBL with <code>Z0</code> 50 Ω, <code>ZL</code> 200 Ω on each output, <code>F</code> 2.4 GHz and <code>Gap</code> 4 mm; its
+readout gives W 0.86952 mm, S 0.10194 mm, L 19.244 mm, and sections of −9.5 dB coupling. <strong>50 Ω on each output cannot be
+built on this board</strong>: it needs −4.8 dB sections, a gap under 0.1·h, and the part refuses it; 200 Ω each, a 400 Ω
+balanced load, is the lightest a 100 µm gap matches. A VIAGND sits on each of <code>G2</code> and <code>G3</code>, which Update Layout places
+beside the pin and ties to its pad. The outputs turn down through a mitred bend and 2.5 mm of line at the strip width
+(the VAR <code>WB</code>); <code>Gap</code> is 4 mm so the two output lines are more than five substrate heights apart for the ports. Ports 2
+and 3 are 200 Ω. Update Layout joins 5 of 5 connections and LVS matches.</p>
+<p>At 2.4 GHz:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Circuit</th>
+<th>EMerge</th>
+<th>Palace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S21|</td>
+<td>−3.63 dB</td>
+<td>−4.15 dB</td>
+<td>−4.10 dB</td>
+</tr>
+<tr>
+<td>|S31|</td>
+<td>−3.96 dB</td>
+<td>−4.39 dB</td>
+<td>−4.24 dB</td>
+</tr>
+<tr>
+<td>Amplitude balance, |S21| − |S31|</td>
+<td>0.33 dB</td>
+<td>0.24 dB</td>
+<td>0.14 dB</td>
+</tr>
+<tr>
+<td>Phase balance, ∠S21 − ∠S31</td>
+<td>169.8°</td>
+<td>175.1°</td>
+<td>175.1°</td>
+</tr>
+<tr>
+<td>|S11|</td>
+<td>−10.6 dB</td>
+<td>−7.4 dB</td>
+<td>−9.0 dB</td>
+</tr>
+</tbody>
+</table>
+<p>From 2.09 to 2.76 GHz (the points around F):</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Circuit</th>
+<th>EMerge</th>
+<th>Palace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Amplitude balance</td>
+<td>−2.3 to 0.8 dB</td>
+<td>−1.8 to 1.2 dB</td>
+<td>−1.7 to 1.1 dB</td>
+</tr>
+<tr>
+<td>Phase balance</td>
+<td>164° to 174°</td>
+<td>170° to 178°</td>
+<td>170° to 177°</td>
+</tr>
+<tr>
+<td>Worst |S11|</td>
+<td>−3.5 dB</td>
+<td>−2.3 dB</td>
+<td>−2.5 dB</td>
+</tr>
+</tbody>
+</table>
+<p><img class="readme-picture" src="pictures/balun-results.png" alt="|S21| and |S31|, their phase difference and |S11| against frequency: the circuit model as a line, the 3D solvers as markers." width="715"></p>
+<p><strong>The Planar solver refuses this layout.</strong> Its vertical (via) current kernel is validated to a tenth of a wavelength
+between vias, and the two ground vias sit at the ends of the two sections, 44.5 mm apart: 0.71 λ at 4.8 GHz. The run stops
+with that sentence, so the balun is compared on the two 3D solvers only.</p>
+<p><strong>The balance holds; the match is narrow.</strong> All three put the outputs within 0.35 dB of each other at F and within 5° to
+10° of opposite phase. The model's 10° is microstrip's: the odd mode runs faster than the even, so the sections are not a
+quarter wave for both, and as TEM pairs the same sections give exactly 180°. The 3D solvers read the sections' coupling a
+little stronger, as on the coupler, which here lands their phase nearer 180° and their outputs about 0.5 dB lower. The
+match is the weak part: the 4 mm joining line and the 2.5 mm output lines, which the board needs, move it off F, to
+−10.6 dB at F in the model and −7 to −9 dB in 3D, with the best match below F, at 2.1 GHz in the model and 1.6 to 1.8 GHz in 3D. Shortening the sections for the extra line would recentre it; the plan keeps them a quarter wave.</p>
+<h3 id="run-times-and-meshes-coupler-and-balun">Run times and meshes, coupler and balun</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Mesh</th>
+<th>Unknowns</th>
+<th>Wall time</th>
+<th>Peak memory</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Coupler, Planar MoM (edge mesh on)</td>
+<td>3,156 cells</td>
+<td>5,874</td>
+<td>9 min 28 s</td>
+<td>1.3 GB</td>
+</tr>
+<tr>
+<td>Coupler, EMerge (Standard, 3 adaptive passes)</td>
+<td>26,782 tetrahedra</td>
+<td>184,572</td>
+<td>2 min 49 s</td>
+<td>3.5 GB</td>
+</tr>
+<tr>
+<td>Coupler, Palace (Draft, 3 refinement passes)</td>
+<td>58,156 → 348,222 tetrahedra</td>
+<td>332,229</td>
+<td>12 min 16 s</td>
+<td>8.7 GB</td>
+</tr>
+<tr>
+<td>Balun, EMerge (Standard, 3 adaptive passes)</td>
+<td>30,992 tetrahedra</td>
+<td>212,444</td>
+<td>1 min 52 s</td>
+<td>4.0 GB</td>
+</tr>
+<tr>
+<td>Balun, Palace (Draft, 3 refinement passes)</td>
+<td>44,888 → 224,970 tetrahedra</td>
+<td>212,772</td>
+<td>6 min 27 s</td>
+<td>6.0 GB</td>
+</tr>
+</tbody>
+</table>
+<p>The same eleven log-spaced points from 1.2 to 4.8 GHz, the same 5 mm air box, and <code>&quot;LocalGrid&quot;: false</code> on Planar, as the
+Wilkinson's. What is not the Wilkinson's is the refinement: the coupled lines' narrow gaps need the edge mesh and the
+refined 3D meshes above, and the Draft settings read them several dB wrong.</p>
+<h2 id="the-interdigitated-coupler-no-cell-yet">The interdigitated coupler: no cell yet</h2>
+<p>MIDC has no cell here. Its four jumpers are bond wires across a finger, which the Planar solver cannot model (a planar
+component port across the fingers would short the finger between), and which the 3D view needs drawn as wires by hand;
+its 163 µm fingers also need tapered feeds before a calibrated port can sit on them. Its model is checked against Ou's
+equations and against two coupled pairs wired by hand in <code>CoupledLinePartsSParamTests</code>, and its layout through Update
+Layout in <code>testdata/schematic-to-layout/F11-interdigitated-coupler</code>.</p>
 
 </main>
 

@@ -59,7 +59,7 @@
     {
       "Folder": "Dividers and Couplers",
       "Title": "Dividers and Couplers",
-      "Summary": "A 2.4 GHz Wilkinson divider placed as one part from its specs on 20 mil RO4350B, laid out by Update Layout with its 0402 isolation resistor across the ring, and solved by Planar MoM, EMerge and Palace against its circuit model."
+      "Summary": "A 2.4 GHz Wilkinson divider, a 10 dB coupled-line coupler and a coupled-line balun, each placed as one part from its specs on 20 mil RO4350B, laid out by Update Layout, and solved on EM against its circuit model."
     },
     {
       "Folder": "Patch Antenna",

@@ -4900,3 +4900,16 @@ What would cost time to rediscover:
   eliminated after the joining line's ends, when its pivot is no longer that null.
 - **Jumper part.** circuitRF's jumpers are wBond (a bond-wire design, the board's real part), AIRBRIDGE (an MMIC crossing,
   four terminals) and Short (ideal). The tests use Short.
+- **EM on coupled lines needs more mesh than the Wilkinson's recipe** (`examples/Dividers and Couplers`, cell Coupler,
+  10 dB, S = 0.115 mm on 20 mil). Planar with the edge mesh off read |S31| −11.96 dB against the model's −10.49; on,
+  −10.72. EMerge Draft read −7.2 dB and Palace Draft −5.8: a 3D Draft mesh does not resolve a gap a fifth of the substrate
+  height. Refining converges both towards the model: EMerge −8.0 (Standard) and −9.7 (Standard, 3 adaptive passes,
+  where its refinement stops); Palace −8.5 (second order on the Draft mesh, 20 min) and about −9.3 (Draft, 3
+  refinement passes, 14 min). The example's setups are the refined ones; the last 1 dB between 3D and the model and
+  Planar was not chased.
+- **Planar refuses the balun as built.** Its via-current kernel fit is validated to ρ/λ ≤ 0.1 between vias; the two
+  ground vias at the ends of the sections are 44.5 mm apart (0.71 λ at 4.8 GHz). `PlanarFillSettings.DirectVerticalKernel`
+  would lift it but no setup reaches it. The balun is compared on the 3D solvers only.
+- **The interdigitated coupler has no example cell.** Planar cannot model a jumper across a finger (a component port's
+  strip would short the finger between) and the 3D view would need its bond wires drawn by hand; its 163 µm fingers also
+  need tapered feeds before a calibrated port can sit on them.
