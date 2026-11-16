@@ -32322,3 +32322,44 @@ instructions) and `Program Files\Spice64\bin`, passed as a new `windowsDirectori
 **`CircuitSolvers.Tools`** lists the circuit programs (ngspice) apart from `Em3dSolvers.Tools`, which describes 3D solvers; `solver
 list`/`install`/`remove` take `CircuitSolvers.AllTools`, circuit first. "Remove all 3D solvers…" became "Remove all solvers…",
 since it removes a circuitRF-installed ngspice too.
+## ICF follow-ups — what re-running the field test on main found (2026-11-16)
+
+The field test of issue 69 was run again on main (ICF-1 to ICF-6 in). Each item below is one commit with its gate; the fixtures
+are ICF-6's thick die (`ThickDieCutPortTests`) and ICF-4's spiral (`ThickSiliconCoilFixture`).
+
+- **A stated Return was moved along the line, silently.** `GenerateCutPorts` runs with `portsEach`, which is the `.c3d`'s rule: a
+  return plane up to `TranslatedReturnGapOfWidth` (3 widths) short of a line's end moves the sheet in to where it begins. A cut
+  port's stated Return took that rule, so on the field test a capacitor pin's sheet with `Return: Metal1` moved 4.05 µm along
+  its line onto the pad of a via stack of its own net (a shorted port), and an emitter's 4.075 µm, leaving a stub beyond the port.
+  The page says a layer with no metal across the face is refused, and R-icf6-1 asks for the refusal a drawn port's stated
+  return gets, so the intended rule is a solve's: a stated Return keeps `ReturnGapToleranceOfWidth` (a tenth) and is refused beyond it. Automatic is
+  unchanged (a walked plane short of the face still moves the sheet in); whether it should keep a solve's tenth too is left
+  open. The move's sentence was written but never reached `check` or the run: `C3dCellCuts.Ports` forwarded only `PortsMoved`
+  entries starting `"Port 6 "`, and the generator's possessive sentences (`"Port 6's sheet is … inside its line's end"`,
+  `"Port 6's return passes through an opening"`) never matched. Both forms are forwarded now, the possessive as
+  `X1.B (port 2): its …`. Gates: `AStatedReturnShortOfTheFace_IsRefused_NotMovedAlongTheLine`,
+  `TheGeneratorsNotesAboutACutPort_ReachTheRun_UnderItsPin`.
+- **A 3D cut instance whose every sheet was refused dropped out of `_cosim` unnamed.** ICF-2's `Portless` is decided by the cut
+  (`EmPlanarComponentPorts.Of`), which sees an instance's routed pins as ported; in 3D the generator refuses a sheet only later,
+  in `C3dCellCuts.Ports`, so an instance whose every sheet it refused (on the field test, `X1/Q2` with `Return: Metal1`) was in
+  neither the ports nor `Portless`, and nothing said so. `C3dComponentPorts.Build` now adds such an instance to `Portless` (its
+  refused ports carry its `EmCoSimCut`) with the same warning, `EmPlanarComponentPorts.PortlessWarning`; `EmCoSimCuts.Close`
+  puts each of its routed pins on `nc_<name>_<pin>`, as for a ported instance's refused pin. Gate:
+  `ACutInstanceWhoseEverySheetIsRefused_IsPlacedInTheNetlist_AndNamed`. em-setup still said such an instance is missing from the
+  netlist (true before ICF-2); it now says it is placed.
+- **A drawn port's tall sheet had no λ/20 warning.** R-icf6-2's check was in `C3dCellCuts` only, so on the field test the four
+  drawn ports on Metal1 fell 755 µm to the floor (0.35 λ at 40 GHz) beside cut pins that warned. The generator now asks the same
+  `C3dCellCuts.TallLanding` of every drawn lumped sheet whose return is the floor (edge and pad-to-plane; not a wave port, a
+  `.c3d`'s translated ports, a picture or a static solve), and words it with the same `TallLandingWarning`, the remedy naming
+  the port table's Return. It is among the generator's `Warnings`, and `TallPorts` carries it through the in-memory 3D view a
+  `.cem` with component ports is built in (`TranslateWith` → `C3dSetupView.Warnings` → `Em3dSetupProblem`), since the
+  assembly sees only the ports' rectangles. The same λ/20 reaches boards: 1.6 mm of FR-4 passes it near 4.5 GHz. Of the
+  shipped setups the generator dumps cover, two gain it and their dumps were rewritten (`CRF_WRITE_GENERATOR_DUMPS=1`,
+  `CRF_WRITE_WIRE_DUMPS=1`), each by its warning lines only: `Package lid modes.cem` (254 µm of alumina, 0.053 λ at 20 GHz)
+  and the planar `Taper-MoM.cem` made 3D by the dump (a 762 µm board laminate, 0.058 λ at 12 GHz). Gate:
+  `ADrawnPortsSheetFallingToTheFloor_IsWarnedOf_AsACutPinsIs`.
+- **A refused cut pin was named by a number another pin was built with.** The generator's refusals name the port by the number
+  the cut gave it (`Port 5 is on 'Metal1' …`), but `C3dCellCuts.Ports` numbers only the sheets it builds, so on the field test
+  `Q1.C: Port 5 …` was refused and `Q1.E` became port 5. A refused pin's sentence already starts with its name, so the leading
+  `Port n` is put as "the port" (`Port n's` as "its") rather than renumbered: `X1.A: the port on 'Metal3' finds no metal of
+  'Metal1' …`. Gate: `ARefusedPin_IsNotNamedByTheNumberTheNextPinIsBuiltWith`.

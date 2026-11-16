@@ -142,6 +142,11 @@ full description.
   one, except that openEMS cannot feed a hollow waveguide and Palace cannot give a port with several
   terminals. [Wave ports](em-setup.html#wave-ports).
 
+  A lumped sheet that falls to the air box's floor through more than λ/20 of the sweep's shortest wavelength in the
+  dielectric it crosses is a warning naming the port, as a [cut pin's sheet](#cell-instance-ports) is: on a thick
+  substrate the column's inductance and delay are in the result. Its **Return** lands it on nearer metal. On a board the
+  threshold is a substrate λ/20 thick at the top of the sweep: 1.6 mm of FR-4 (εr 4.4) passes it near 4.5 GHz.
+
   <a id="port-width"></a>**How wide a lumped port's sheet is.** As wide as the port's bar in the layout, which the
   port's **Use edge width** and **Width** set ([Ports](layout-editor.html#ports)): the whole conductor edge with the
   box ticked; otherwise the Width you state, or 2 × H (H, the dielectric height from the port's conductor to its

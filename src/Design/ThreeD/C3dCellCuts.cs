@@ -204,8 +204,10 @@ public static class C3dCellCuts
                     ports.Add(GapSheet(cp, refPin, layout, drawn, element, at, name, ref next, D));
                     continue;
                 }
-                string? why = g.Problem is null ? g.Refusal ?? "the layout's 3D problem could not be built."
-                            : g.PortsLeftOut.FirstOrDefault(l => l.Port == cp.Number)?.Why;
+                // The generator names the port by the number the cut gave it, which a refused pin does not keep: the next pin is built
+                // with it ("Q1.C: Port 5 …" refused, Q1.E built as port 5). The sentence starts with the pin's name, so the number goes.
+                string? why = Unnumbered(g.Problem is null ? g.Refusal ?? "the layout's 3D problem could not be built."
+                                                           : g.PortsLeftOut.FirstOrDefault(l => l.Port == cp.Number)?.Why, cp.Number);
                 var sheet = g.Problem?.Ports.FirstOrDefault(p => p.Number == cp.Number);
                 if (why is null && sheet is null) why = "no sheet was built at its face.";
                 if (why is null && element is null) why = "its layout instance places no solid to carry the sheet's position by.";
@@ -250,16 +252,17 @@ public static class C3dCellCuts
                     Cutout = true, Cell = cp.Cell, CutPart = cp.CutPart, ClayPath = layout.Frame.DocumentPath, SchematicId = cp.SchematicId,
                     Verdict = landing is null ? "verified" : $"verified, landing {landing}", Landing = landing,
                 });
-                foreach (string moved in g.PortsMoved.Where(m => m.StartsWith($"Port {cp.Number} ", StringComparison.Ordinal)))
-                    notes.Add($"{name} (port {port.Number}){moved[$"Port {cp.Number}".Length..]}");
+                // Every one of the generator's sentences about this port, "Port 6 returns …" and "Port 6's sheet is …" alike: the
+                // possessive ones (a sheet moved in, a return through an opening) were dropped by a match on "Port 6 ".
+                string own = $"Port {cp.Number}";
+                foreach (string moved in g.PortsMoved)
+                    if (moved.StartsWith(own + " ", StringComparison.Ordinal)) notes.Add($"{name} (port {port.Number}){moved[own.Length..]}");
+                    else if (moved.StartsWith(own + "'s ", StringComparison.Ordinal)) notes.Add($"{name} (port {port.Number}): its {moved[(own.Length + 3)..]}");
                 // brief-icf-6 R-icf6-2 — a sheet that falls to the floor through a thick substrate is a different port from one that stops
                 // on metal a few µm down; past λ/20 of the shortest wavelength in what it crosses, said as a warning with the remedy.
                 if (ret is { Floor: true } && TallLanding(sheet.Min.Z, sheet.Max.Z, bands, fMax) is { } fraction)
-                    warnings.Add($"{name} (port {port.Number}): its sheet falls {C3dComponentPorts.Um(tall)} µm to the floor ('{ret.Layer}'), " +
-                                 $"{fraction.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)} of a wavelength in the dielectric it " +
-                                 $"crosses at {(fMax / 1e9).ToString("G4", System.Globalization.CultureInfo.InvariantCulture)} GHz, past λ/20, so the port " +
-                                 "carries that column's inductance and delay into the result. State the cut entry's Return (or the pin's own, in its " +
-                                 "Pins) to land the sheet on nearer metal.");
+                    warnings.Add(TallLandingWarning($"{name} (port {port.Number})", tall, ret.Layer, fraction, fMax,
+                                                    "State the cut entry's Return (or the pin's own, in its Pins) to land the sheet on nearer metal."));
             }
         }
         foreach (var r in ports.Where(p => p.Refusal is not null))
@@ -277,6 +280,12 @@ public static class C3dCellCuts
         return (ports, notes, warnings);
 
         static string PinName(C3dComponentPort p) => p.Pin is { } pin ? $"{p.Refdes}.{pin}" : p.Refdes;
+
+        static string? Unnumbered(string? why, int n)
+            => why is null ? null
+             : why.StartsWith($"Port {n}'s ", StringComparison.Ordinal) ? "its " + why[$"Port {n}'s ".Length..]
+             : why.StartsWith($"Port {n} ", StringComparison.Ordinal) ? "the port " + why[$"Port {n} ".Length..]
+             : why;
     }
 
     /// <summary>brief-icf-6 R-icf6-2 — the fraction of a wavelength at <paramref name="fMaxHz"/> a vertical sheet from
@@ -291,6 +300,14 @@ public static class C3dCellCuts
         double fraction = optical * fMaxHz / 299_792_458.0;
         return fraction > TallLandingFraction ? fraction : null;
     }
+
+    /// <summary>brief-icf-6 R-icf6-2 — the warning for a sheet <see cref="TallLanding"/> found past λ/20, a cut pin's or a drawn port's:
+    /// <paramref name="who"/> names it, <paramref name="remedy"/> is the sentence that says where its return is stated.</summary>
+    internal static string TallLandingWarning(string who, double heightM, string floor, double fraction, double fMaxHz, string remedy)
+        => $"{who}: its sheet falls {C3dComponentPorts.Um(heightM)} µm to the floor ('{floor}'), " +
+           $"{fraction.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)} of a wavelength in the dielectric it " +
+           $"crosses at {(fMaxHz / 1e9).ToString("G4", System.Globalization.CultureInfo.InvariantCulture)} GHz, past λ/20, so the port " +
+           $"carries that column's inductance and delay into the result. {remedy}";
 
     /// <summary>
     /// brief-icp-4 R-icp4-2 — the gap sheet between a cut pin's face and its reference pin's face (the cut has checked that they face

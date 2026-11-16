@@ -5,6 +5,8 @@ note Port 2 ('2') at (3900, 0 µm) was taken to be on the conductor's high-x (ri
 note Port 1 at its line's end is a vertical lumped sheet 200 µm wide and 254 µm tall from 'Metallisation' down to 'Floor' (the air box's floor): the nearest ground-reference plane with metal under the port.
 note Port 2 at its line's end is a vertical lumped sheet 200 µm wide and 254 µm tall from 'Metallisation' down to 'Floor' (the air box's floor): the nearest ground-reference plane with metal under the port.
 note The air box's floor is 'Floor' as a PEC plane at 3 µm: it is the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it.
+warning Port 1: its sheet falls 254 µm to the floor ('Floor'), 0.053 of a wavelength in the dielectric it crosses at 20 GHz, past λ/20, so the port carries that column's inductance and delay into the result. State its Return in the setup's 3D port table to land the sheet on nearer metal.
+warning Port 2: its sheet falls 254 µm to the floor ('Floor'), 0.053 of a wavelength in the dielectric it crosses at 20 GHz, past λ/20, so the port carries that column's inductance and delay into the result. State its Return in the setup's 3D port table to land the sheet on nearer metal.
 solid Base Alumina Dielectric 1 box (-0.004,-0.004,3E-06) (0.004,0.004,0.000257)
 solid air Air Air 2 box (-0.004,-0.004,0.000257) (0.004,0.004,0.0011345176259628872)
 solid Metallisation/RF_IN/1 Gold Conductor 3 extrude 0.000257 0.000262 [-0.0039000000000000003,-0.0001 -0.0008,-0.0001 -0.0008,0.0001 -0.0039000000000000003,0.0001]

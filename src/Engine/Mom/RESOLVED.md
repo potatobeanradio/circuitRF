@@ -14641,3 +14641,22 @@ port current, the two grids' cross-level fit and the ground-via refusal were nev
 - **The user page.** `mom-engine.md`: the tall Uncalibrated Port warning (Uncalibrated Port section), the carrying ports and
   the thick-substrate sentence (after the non-passive callout), and the sweep-independent local grid (local grid section).
   The page's local-grid table (a 0.6 mm test chip, 44,355) predates the rule and was not re-measured.
+
+## ICF follow-up — the mesh note's frequency and the artwork base (2026-11-16)
+
+Re-running the field test on main, a coil swept at 16 GHz alone with Mesh frequency stated at 22 GHz meshed identically at 22
+and 40 GHz (R-icf4-1 holds), but its note said the base block was λ_g/20 "at 22 GHz, the top of the sweep … and so does the
+sweep's top frequency". Two causes in `SurfaceMesher`'s note:
+
+- `sizedAtSweepTop` was true whenever a stated mesh frequency was at or above the sweep's top, though `WaveCell` uses a stated
+  frequency whichever side of the top it is on. It is now `stated` (a positive `MeshFrequencyHz`): only an unstated one is called
+  the top of the sweep, in the local-grid sentence and in the cap sentence ("the highest frequency of the sweep. Widening the
+  sweep upward will change this" was wrong there for the same reason). The "Sized at …, not the sweep's top" note keeps its
+  own condition, a stated frequency below the top.
+- The local-grid sentence never asked whether the partition starts from the artwork. When both axes do
+  (`PlanarLocalGrid.StartsFromArtwork` of the grid's extent and the wave cell, as `BaseCuts` asks it), it now says the grid
+  starts from one block across the artwork and that Cells per wavelength and Mesh frequency set only how wide a block may grow.
+  With one axis or none, it is the base-block sentence as before. On the ICF-4 spiral at 16 GHz with 22 GHz stated: "The local
+  grid starts from one block across the artwork: it spans at most 2 base blocks of λ_g/20 = 197.5 µm at 22 GHz, as Mesh
+  frequency states, …". Gate: `LocalGridBaseTests.TheMeshNote_NamesTheFrequencyUsed_AndThatThePartitionStartsFromTheArtwork`;
+  `RunNoteTests`' GaAs line (2 mm, one axis from the artwork) reads as before.

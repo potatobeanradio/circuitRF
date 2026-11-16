@@ -121,7 +121,7 @@ public sealed class ThickDieCutPortTests(ThickDieCutPortTests.Fixture fx, ITestO
     [Fact]
     public void NoSheetToTheFloor_KeepsTodaysBox()
     {
-        var g = Problem(fx.Die(metal1UnderBoth: true), new EmComponentPort("X1") { Return = "Metal1" });
+        var g = Problem(fx.Die(metal1UnderB: true), new EmComponentPort("X1") { Return = "Metal1" });
         var p = g.Problem!;
         Assert.All(g.ComponentPorts!.Ports.Where(c => c.Cutout), c => Assert.StartsWith("down to 'Metal1'", c.Landing));
         Assert.Null(p.PaddingColumnM);
@@ -134,6 +134,97 @@ public sealed class ThickDieCutPortTests(ThickDieCutPortTests.Fixture fx, ITestO
         var old = Em3dGenerator.PaddedAirBox(fx.Setup(new EmComponentPort("X1")), (lo.X, lo.Y, hi.X, hi.Y, lo.Z, hi.Z), 10e9, p.Boundary.Min.Z,
                                              [], [], out _, p.PaddingHeightM, p.PaddingHeightBelowM);
         Assert.Equal(old, p.Boundary with { Material = null });
+    }
+
+    // ── The field test's re-run on main ──────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>A stated Return whose metal stops short of the face by more than a tenth of its width is refused, as a solve refuses
+    /// it. It used to be moved in up to three widths (the .c3d's rule), silently: on the field test a capacitor pin's sheet slid
+    /// 4 µm along its line onto a via stack of its own net. Automatic is unchanged.</summary>
+    [Fact]
+    public void AStatedReturnShortOfTheFace_IsRefused_NotMovedAlongTheLine()
+    {
+        var v = fx.Die();
+        v.Shapes.Add(R(M1, 55, -20, 80, 20));                  // under B's line, 15 µm (1.5 widths) in from its face
+        var cut = Problem(v, new EmComponentPort("X1") { Return = "Metal1" }).ComponentPorts!.Ports.Where(p => p.Cutout).ToList();
+        foreach (var p in cut) output.WriteLine(C3dComponentPorts.Describe(p));
+        Assert.StartsWith("down to 'Metal1'", cut.Single(p => p.Pin == "A").Landing);
+        var b = cut.Single(p => p.Pin == "B");
+        Assert.False(b.Ok);
+        Assert.Matches(@"its metal stops 15(\.0+)? µm short of the port's end of the line", b.Refusal);
+        Assert.StartsWith("down to the floor", Landings(v, new EmComponentPort("X1")).Single(l => l.Pin == "B").Landing);
+    }
+
+    /// <summary>Every sentence the generator makes about a cut port reaches the run under the pin's name: the possessive ones
+    /// ("Port 2's return passes through an opening …", "Port 2's sheet is … inside its line's end") were dropped by a match on
+    /// "Port 2 ".</summary>
+    [Fact]
+    public void TheGeneratorsNotesAboutACutPort_ReachTheRun_UnderItsPin()
+    {
+        var v = fx.Die();
+        // An opening in Metal1 round B's face, metal all round it and none under it: the walk passes through it to the floor.
+        v.Shapes.Add(new PolygonShape
+        {
+            Layer = M1, Xy = [Um(20), Um(-25), Um(60), Um(-25), Um(60), Um(25), Um(20), Um(25)],
+            Holes = [[Um(30), Um(-15), Um(50), Um(-15), Um(50), Um(15), Um(30), Um(15)]],
+        });
+        var g = Problem(v, new EmComponentPort("X1"));
+        foreach (var n in g.Notes.Where(n => n.StartsWith("X1.", StringComparison.Ordinal))) output.WriteLine(n);
+        Assert.Contains(g.Notes, n => n.StartsWith("X1.B (port 2): its return passes through an opening in 'Metal1' round its line's end",
+                                                   StringComparison.Ordinal));
+    }
+
+    /// <summary>A cut instance whose every sheet the generator refuses has no port, as one the cut leaves portless has none: it rides
+    /// beside the ports, so the co-simulation netlist places it, and the run names it. Only the 3D build knows it, after the cut, and
+    /// it used to drop out of <c>_cosim</c> without a word.</summary>
+    [Fact]
+    public void ACutInstanceWhoseEverySheetIsRefused_IsPlacedInTheNetlist_AndNamed()
+    {
+        var g = Problem(fx.Ported(metal1UnderA: false), new EmComponentPort("X1") { Return = "Metal1" });
+        var parts = g.ComponentPorts!;
+        Assert.All(parts.Ports.Where(p => p.Cutout), p => Assert.False(p.Ok));
+        var x1 = Assert.Single(parts.Portless);
+        Assert.Equal("X1", x1.Refdes);
+        Assert.NotNull(x1.Cut);
+        Assert.Contains(parts.Warnings, w => w.StartsWith("X1 is cut out of the problem and has no port left on it: the co-simulation netlist " +
+                                                          "places its model", StringComparison.Ordinal));
+        Assert.Equal("X1", Assert.Single(Assert.IsType<EmCoSimPortList>(g.CoSimPorts).Portless).Refdes);
+    }
+
+    /// <summary>A refused pin's sentence does not name the port number the cut gave it before the refusal, which the next pin is built
+    /// with: on the field test "Q1.C: Port 5 …" was refused and Q1.E built as port 5.</summary>
+    [Fact]
+    public void ARefusedPin_IsNotNamedByTheNumberTheNextPinIsBuiltWith()
+    {
+        var cut = Problem(fx.Die(metal1UnderB: true, metal1UnderA: false), new EmComponentPort("X1") { Return = "Metal1" })
+            .ComponentPorts!.Ports.Where(p => p.Cutout).ToList();
+        foreach (var p in cut) output.WriteLine(C3dComponentPorts.Describe(p));
+        Assert.Equal(1, cut.Single(p => p.Pin == "B").Port!.Number);
+        var a = cut.Single(p => p.Pin == "A");
+        Assert.StartsWith("X1.A: the port on 'Metal3' finds no metal of 'Metal1'", a.Refusal, StringComparison.Ordinal);
+        Assert.DoesNotContain("Port 1", a.Refusal, StringComparison.Ordinal);
+    }
+
+    /// <summary>A drawn port's sheet that falls to the floor past λ/20 is warned of as a cut pin's is, by the same check: on the
+    /// generator's own problem, and through the 3D view a .cem naming cell instances is built in. Port 2, landing on local Metal1, is
+    /// not. Before, only cut pins were checked, and the field test's four drawn ports fell 755 µm without a word.</summary>
+    [Fact]
+    public void ADrawnPortsSheetFallingToTheFloor_IsWarnedOf_AsACutPinsIs()
+    {
+        var plain = fx.Setup(new EmComponentPort("X1"));
+        plain.ComponentPorts = [];
+        var generated = Em3dGenerator.Generate(plain, fx.Source(fx.Ported(metal1UnderA: true)), fx.Tech);
+        var throughView = Problem(fx.Ported(metal1UnderA: true), new EmComponentPort("X1"));
+        foreach (var g in new[] { generated, throughView })
+        {
+            Assert.True(g.Ok, g.Refusal);
+            foreach (var w in g.Warnings) output.WriteLine(w);
+            var falls = Assert.Single(g.Warnings, w => w.StartsWith("Port 1: its sheet falls", StringComparison.Ordinal));
+            Assert.Matches(@"falls 75\d(\.\d+)? µm to the floor \('Backside Metal'\), 0\.\d+ of a wavelength", falls);
+            Assert.Contains("State its Return in the setup's 3D port table", falls, StringComparison.Ordinal);
+            Assert.DoesNotContain(g.Warnings, w => w.StartsWith("Port 2:", StringComparison.Ordinal));
+        }
+        Assert.Contains(throughView.Warnings, w => w.StartsWith("X1.B (port ", StringComparison.Ordinal) && w.Contains("its sheet falls", StringComparison.Ordinal));
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -156,6 +247,12 @@ public sealed class ThickDieCutPortTests(ThickDieCutPortTests.Fixture fx, ITestO
 
     private static RectShape R(LayerKey l, double x0, double y0, double x1, double y1)
         => new() { Layer = l, X1 = Um(Math.Min(x0, x1)), Y1 = Um(Math.Min(y0, y1)), X2 = Um(Math.Max(x0, x1)), Y2 = Um(Math.Max(y0, y1)) };
+
+    private static LabelShape Edge(double x, LayoutRotation dir, string text) => new()
+    {
+        Layer = M3, PortLayer = M3, X = Um(x), Y = 0, Text = text, Height = Um(5), IsPort = true, PortKind = PlanarPortKind.Edge,
+        PortDirection = dir,
+    };
 
     private static string RepoRoot()
     {
@@ -203,12 +300,25 @@ public sealed class ThickDieCutPortTests(ThickDieCutPortTests.Fixture fx, ITestO
             return v;
         }
 
-        /// <summary>The field test's shape: a Metal3 line through Q3, local Metal1 under A's face only (both, when asked).</summary>
-        public LayoutView Die(bool metal1UnderBoth = false)
+        /// <summary>The field test's shape: a Metal3 line through Q3, local Metal1 under A's face only (under B's too, or only, when
+        /// asked).</summary>
+        public LayoutView Die(bool metal1UnderB = false, bool metal1UnderA = true)
         {
             var v = Line("Q3", M3);
-            v.Shapes.Add(R(M1, -20, -20, 10, 20));
-            if (metal1UnderBoth) v.Shapes.Add(R(M1, 30, -20, 60, 20));
+            if (metal1UnderA) v.Shapes.Add(R(M1, -20, -20, 10, 20));
+            if (metal1UnderB) v.Shapes.Add(R(M1, 30, -20, 60, 20));
+            return v;
+        }
+
+        /// <summary>The Metal3 line through Q3 with a drawn edge port at each end: port 1's end over nothing (its sheet falls to the
+        /// floor), port 2's over local Metal1; local Metal1 under A's face too, when asked.</summary>
+        public LayoutView Ported(bool metal1UnderA)
+        {
+            var v = Line("Q3", M3);
+            if (metal1UnderA) v.Shapes.Add(R(M1, -20, -20, 10, 20));
+            v.Shapes.Add(R(M1, 120, -20, 150, 20));
+            v.Shapes.Add(Edge(-100, LayoutRotation.R0, "1"));
+            v.Shapes.Add(Edge(140, LayoutRotation.R180, "2"));
             return v;
         }
 

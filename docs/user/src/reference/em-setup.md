@@ -443,8 +443,11 @@ that is often the backside, hundreds of µm down, and the sheet's own inductance
 `"Return": "Metal1"` lands every sheet of the instance on that stackup conductor instead, and a pin's own
 (`"Pins": { "B": { "Return": "Metal1" } }`) overrides it for that pin. It is the same walk with the plane stated: a layer
 with no metal across the face, or with other metal in the way, is refused, and that pin is left out of the run with the
-reason. Planar ignores it, since a Planar cut port has no sheet, and its notes say so once. A pin referenced to another pin
-has no Return either: its sheet runs between the two faces.
+reason. So is a layer whose metal starts further along the line than a tenth of the face's width: the sheet is not moved
+along the line to where it starts, because that metal can be the line's own, such as the pad of a via stack on the pin's
+net. Where the walk does move a sheet in, or passes through an opening on its way, the run's notes and `check` say so
+under the pin's name. Planar ignores it, since a Planar cut port has no sheet, and its notes say so once. A pin
+referenced to another pin has no Return either: its sheet runs between the two faces.
 
 **Grounded pins** (**Ground**, `"Ground": ["E"]`) are tied to the ground plane at their face by a ground via as wide as
 the face, and take no port. Use it for an emitter or a source that sits on a via in the real chip but has none drawn
@@ -478,8 +481,10 @@ of faces.
 A routed pin whose conductor, followed through the vias between the analysis levels, reaches no other port and no ground
 is reported as **not connected**, with a warning naming the pin and its port: the port drives an isolated piece of metal
 and reads an open, |S| = 0 dB. The usual cause is a via that lands on no metal, such as a via stack that misses the finger it
-was drawn to reach; the run's mesh note counts those vias as dropped. An instance that ends up with no port at all is
-missing from the co-simulation netlist, and the run says so by name.
+was drawn to reach; the run's mesh note counts those vias as dropped. An instance that ends up with no port at all, in 3D
+also one whose every sheet was refused, is still placed in the co-simulation netlist, each terminal on ground, the
+reference or an open node ([A cut cell instance's model](cosimulation.html#cut-models)), and the run says so by name: it
+then reaches the EM result only through ground.
 
 **Each cut face is an Uncalibrated Port** on Planar: driven against the ground plane at the face and not de-embedded, so
 the launch is in the result. [The Uncalibrated Port](mom-engine.html#uncalibrated-port) says what that costs and why
