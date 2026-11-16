@@ -87,7 +87,7 @@ public static class ComponentModelFactory
             // The JFET pair. Two types over one law, like the BJT's polarities: a channel type is a
             // sign, and a sign the symbol has to show.
             "JFET_N", "JFET_P",
-            "TLIN", "CLIN", "MLIN", "MCLIN", "BCLIN", "MBCLIN", "MBEND", "MCURVE", "MMITER", "MGAP", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
+            "TLIN", "CLIN", "MLIN", "MCLIN", MicrostripMultiLineModel.TypeName, "BCLIN", "MBCLIN", "MBEND", "MCURVE", "MMITER", "MGAP", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
             // The planned passives (docs/design/rf-passives.md): specs in, MTEE, MCURVE and MLIN sections stamped as one block.
             WilkinsonTypeName,
             BranchLineTypeName, RatRaceTypeName,
@@ -238,6 +238,8 @@ public static class ComponentModelFactory
             return CreateStriplineModel(parameters);
         if (typeName.Equals("MCLIN", StringComparison.OrdinalIgnoreCase))
             return CreateMicrostripCoupledLineModel(parameters);
+        if (typeName.Equals(MicrostripMultiLineModel.TypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateMicrostripMultiLineModel(parameters);
         if (typeName.Equals("BCLIN", StringComparison.OrdinalIgnoreCase))
             return CreateStriplineBroadsideCoupledModel(parameters);
         if (typeName.Equals("MBCLIN", StringComparison.OrdinalIgnoreCase))
@@ -2581,6 +2583,7 @@ public static class ComponentModelFactory
     // MBCLIN (broadside microstrip). Lengths SI metres. Port order is CLIN's. A bare .cnl instance falls
     // back to these defaults: MCLIN a 2.9 mm pair 0.5 mm apart on the FR-4 every microstrip falls back to;
     // the broadside pair the 0.4 mm strips of a thin laminate stack, on the same FR-4 permittivity.
+    public const double DefaultCoupledWidthMeters = 2.9e-3;
     public const double DefaultCoupledGapMeters = 0.5e-3;
     public const double DefaultBroadsideWidthMeters = 0.4e-3;
     public const double DefaultBroadsideHsMeters = 76e-6;
@@ -2592,7 +2595,7 @@ public static class ComponentModelFactory
 
     private static MicrostripCoupledLineModel CreateMicrostripCoupledLineModel(IReadOnlyDictionary<string, Value> parameters)
     {
-        double w = GetReal(parameters, "W", 2.9e-3);
+        double w = GetReal(parameters, "W", DefaultCoupledWidthMeters);
         double gap = GetReal(parameters, "S", DefaultCoupledGapMeters);
         double l = GetReal(parameters, "L", 10e-3);
         double h = GetReal(parameters, "H", DefaultSubstrateHMeters);
@@ -2603,6 +2606,15 @@ public static class ComponentModelFactory
         double roughness = GetReal(parameters, "Roughness", 0.0);
         return new MicrostripCoupledLineModel(w, gap, l, h, t, er, sigma, tanD,
             MicrostripInstanceName(parameters, "MCLIN"), roughness);
+    }
+
+    // MCLINN: N strips, every one W wide and every gap S unless it states its own W[k] or S[k]; the substrate as MCLIN's.
+    private static MicrostripMultiLineModel CreateMicrostripMultiLineModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        var (w, s) = MicrostripMultiLineModel.StripsOf((int)Math.Round(GetReal(parameters, "N", 3.0)),
+            (name, fallback) => GetReal(parameters, name, fallback), DefaultCoupledWidthMeters, DefaultCoupledGapMeters);
+        return new MicrostripMultiLineModel(w, s, GetReal(parameters, "L", 10e-3), SubstrateOf(parameters),
+            MicrostripInstanceName(parameters, MicrostripMultiLineModel.TypeName));
     }
 
     // BCLIN: one T for both strips, or Ta/Tb each (absent = T).
