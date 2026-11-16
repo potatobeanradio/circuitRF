@@ -95,6 +95,8 @@ public static class ComponentModelFactory
             BranchLineTypeName, RatRaceTypeName,
             // The coupled-line planned passives: MCLIN, MLIN and interdigitated sections, stamped the same way.
             CoupledLineCouplerTypeName, LangeTypeName, MarchandTypeName,
+            // The resistive attenuator and splitter: sites for its resistors on short interconnect (LumpedPlan).
+            ResistivePadTypeName,
             // Grounded coplanar waveguide and stripline (brief-artsch-1), bound to the stackup as MLIN is.
             "CPWG", "SLIN",
             // The two vias (brief-via-component.md): a signal via changing layers, and a via to ground.
@@ -276,6 +278,8 @@ public static class ComponentModelFactory
             return CreateLangeModel(parameters);
         if (typeName.Equals(MarchandTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateMarchandModel(parameters);
+        if (typeName.Equals(ResistivePadTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateResistivePadModel(parameters);
         if (typeName.Equals("VIA", StringComparison.OrdinalIgnoreCase))
             return new ViaModel(ReadViaGeometry(parameters, grounded: false));
         if (typeName.Equals("VIAGND", StringComparison.OrdinalIgnoreCase))
@@ -3031,13 +3035,23 @@ public static class ComponentModelFactory
 
     // MWPD: the specs (Z0, F, the split K, the sections N and their band), the resistor's pin span (Gap) and how the ring
     // turns (Corner, a name) are the parameters; the plan derives the rest, and its pins follow N.
+    // Realization = Lumped: the lumped divider's sites and interconnect (LumpedPlan), its arms π or T (Arm).
     private static MicrostripPlanModel CreateWilkinsonModel(IReadOnlyDictionary<string, Value> parameters)
-        => new(WilkinsonPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
+        => new(Lumped(parameters)
+                ? LumpedPlan.Wilkinson(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
+                                       GetReal(parameters, "Gap", 1.35e-3), SubstrateOf(parameters),
+                                       EnumNamed(parameters, "Arm", LumpedArm.Pi), GetReal(parameters, "K", 1.0),
+                                       GetReal(parameters, "N", 1.0)).Plan
+                : WilkinsonPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
                                    GetReal(parameters, "Gap", 1.35e-3), SubstrateOf(parameters),
                                    GetReal(parameters, "K", 1.0), GetReal(parameters, "N", 1.0),
                                    GetReal(parameters, "Band", WilkinsonPlan.DefaultBand),
                                    EnumNamed(parameters, "Corner", PlanCorner.Curve)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, WilkinsonTypeName));
+
+    /// <summary>A spec-driven passive's <c>Realization</c>: Lumped, or (absent or any other word) Distributed.</summary>
+    private static bool Lumped(IReadOnlyDictionary<string, Value> parameters)
+        => EnumNamed(parameters, "Realization", PlanRealization.Distributed) == PlanRealization.Lumped;
 
     /// <summary>The 3 dB branch-line hybrid's engine token (pins 1, 2, 3, 4).</summary>
     public const string BranchLineTypeName = "MBLC";
@@ -3045,15 +3059,22 @@ public static class ComponentModelFactory
     /// <summary>The rat-race hybrid's engine token (pins 1 = sum, 2, 3, 4 = difference).</summary>
     public const string RatRaceTypeName = "MRRC";
 
-    // MBLC: the specs Z0, F and N (sections); the plan derives the rest.
+    // MBLC: the specs Z0, F and N (sections); the plan derives the rest. Lumped: its sites, Gap across, on interconnect.
     private static MicrostripPlanModel CreateBranchLineModel(IReadOnlyDictionary<string, Value> parameters)
-        => new(BranchLinePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
+        => new(Lumped(parameters)
+                ? LumpedPlan.BranchLine(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
+                                        GetReal(parameters, "Gap", 1.35e-3), SubstrateOf(parameters),
+                                        GetReal(parameters, "N", 1.0)).Plan
+                : BranchLinePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
                                     GetReal(parameters, "N", 1.0), SubstrateOf(parameters)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, BranchLineTypeName));
 
-    // MRRC: the specs Z0 and F, and how the ring turns (Corner); the plan derives the rest.
+    // MRRC: the specs Z0 and F, and how the ring turns (Corner); the plan derives the rest. Lumped: as MBLC's.
     private static MicrostripPlanModel CreateRatRaceModel(IReadOnlyDictionary<string, Value> parameters)
-        => new(RatRacePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
+        => new(Lumped(parameters)
+                ? LumpedPlan.RatRace(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
+                                     GetReal(parameters, "Gap", 1.35e-3), SubstrateOf(parameters)).Plan
+                : RatRacePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
                                  EnumNamed(parameters, "Corner", PlanCorner.Curve)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, RatRaceTypeName));
 
@@ -3080,10 +3101,25 @@ public static class ComponentModelFactory
 
     // MCBL: the source and per-output load impedances (Z0, ZL) and F, plus the layout Gap between the two sections.
     private static MicrostripPlanModel CreateMarchandModel(IReadOnlyDictionary<string, Value> parameters)
-        => new(MarchandBalunPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "ZL", 200.0),
+        => new(Lumped(parameters)
+                ? LumpedPlan.LatticeBalun(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "ZL", 200.0),
+                                          GetReal(parameters, "F", 1e9), GetReal(parameters, "Gap", 1e-3),
+                                          SubstrateOf(parameters)).Plan
+                : MarchandBalunPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "ZL", 200.0),
                                        GetReal(parameters, "F", 1e9), GetReal(parameters, "Gap", 1e-3),
                                        SubstrateOf(parameters)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, MarchandTypeName));
+
+    /// <summary>The resistive attenuator and splitter's engine token (pins 1, 2, then 3 for a T, bridged-T or splitter, then
+    /// each series resistor's two ends; LumpedPlan.ResistivePad).</summary>
+    public const string ResistivePadTypeName = "MRPAD";
+
+    // MRPAD: the form, Z0, the attenuation in dB (an attenuator's) and the series sites' span, Gap.
+    private static MicrostripPlanModel CreateResistivePadModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(LumpedPlan.ResistivePad(EnumNamed(parameters, "Form", ResistivePadForm.Pi), GetReal(parameters, "Z0", 50.0),
+                                       GetReal(parameters, "Attenuation", 6.0), GetReal(parameters, "Gap", 1.35e-3),
+                                       SubstrateOf(parameters)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, ResistivePadTypeName));
 
     private static MicrostripKlopfModel CreateMicrostripKlopfModel(IReadOnlyDictionary<string, Value> parameters)
     {

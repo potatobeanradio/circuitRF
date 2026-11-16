@@ -72,6 +72,8 @@ public sealed class MicrostripPlanModel : ComponentModel, IReportsWarnings, IDcS
         {
             PlanTee t => new MicrostripTeeModel(t.W1, t.W2, t.W3, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM, s.TanD,
                 path, t.L1, t.L2, t.L3, s.RoughnessMeters),
+            PlanCross x => new MicrostripCrossModel(x.W, x.W, x.W, x.W, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM, s.TanD,
+                path, [x.L, x.L, x.L, x.L], s.RoughnessMeters),
             PlanCurve c => new MicrostripCurveModel(c.W, c.AngleDeg, c.Radius, s.HMeters, s.TMeters, s.EpsR,
                 s.SigmaSPerM, s.TanD, path, s.RoughnessMeters),
             PlanLine l => new MicrostripLineModel(l.W, l.L, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM, s.TanD, path,

@@ -42,6 +42,12 @@ public abstract record PlanSection(int[] Nodes, double X, double Y, double Rotat
 public sealed record PlanTee(double W1, double W2, double W3, double L1, double L2, double L3,
     int[] Nodes, double X, double Y, double RotationDeg) : PlanSection(Nodes, X, Y, RotationDeg);
 
+/// <summary>An MCROSS: four arms of width W, each <paramref name="L"/> from the junction centre to its pin, as
+/// <c>MCrossPCell</c> draws them and <see cref="MicrostripCrossModel"/> simulates them. Unlike the other sections its pose
+/// is the junction's centre, MCROSS's own origin. Nodes: the arms along the part's +x, +y, −x and −y, MCROSS's pins 1-4.</summary>
+public sealed record PlanCross(int[] Nodes, double X, double Y, double RotationDeg, double W, double L)
+    : PlanSection(Nodes, X, Y, RotationDeg);
+
 /// <summary>An MCURVE: width, signed turn (degrees, counter-clockwise positive) and centre-line radius.</summary>
 public sealed record PlanCurve(double W, double AngleDeg, double Radius,
     int[] Nodes, double X, double Y, double RotationDeg) : PlanSection(Nodes, X, Y, RotationDeg);
@@ -105,6 +111,11 @@ public sealed record PlanBend(int[] Nodes, double X, double Y, double RotationDe
 /// were. <see cref="Miter"/> and <see cref="Square"/>: a rectangle of straight runs and four 90° corners
 /// (<see cref="PlanBend"/>), an MMITER at the Douville-James chamfer or MBEND's square corner.</summary>
 public enum PlanCorner { Curve, Miter, Square }
+
+/// <summary>How a spec-driven passive is made (MWPD, MBLC, MRRC, MCBL). <see cref="Distributed"/>: its quarter-wave lines, as
+/// the parts always were. <see cref="Lumped"/>: an L, C or R on a site for each element of the lines' lumped equivalent at
+/// F, joined by short interconnect (<see cref="LumpedPlan"/>).</summary>
+public enum PlanRealization { Distributed, Lumped }
 
 /// <summary>What a site holds: a resistor, an inductor, a capacitor, a via to ground, a jumper (a bond wire or an air
 /// bridge joining two pieces of the part's copper), or the load the part drives (MCBL's balanced load, which is the
