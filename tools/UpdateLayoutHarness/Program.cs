@@ -138,6 +138,13 @@ foreach (string step in steps)
                 p.Expression = rhs;
                 break;
             }
+            case "sites":   // Place Site Parts on that passive, as its context menu does; the schematic is saved
+            {
+                doc.ViewModel.PlaceSiteParts(Comp(rest).Id);
+                SchematicPersistence.SaveToFile(csch, model, Path.GetFileNameWithoutExtension(csch));
+                Console.WriteLine($"   {csch}");
+                break;
+            }
             case "rot":
                 Comp(Split(rest, '=').Item1).Rotation = (SymbolRotation)int.Parse(Split(rest, '=').Item2);
                 break;
