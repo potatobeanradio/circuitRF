@@ -203,6 +203,13 @@
                     <mi:MaterialIcon Kind="ScatterPlot" Width="16" Height="16"/>
                 </Button>
 
+                <Button Command="{Binding ViewModel.Window.AddTransientCommand}"
+                        ToolTip.Tip="Add Transient: the recorded voltages against time, the output's spectrum over its last period and the measures as a table. Needs a transient result as the source"
+                        ToolTip.ShowOnDisabled="True"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="SineWave" Width="16" Height="16"/>
+                </Button>
+
                 <Button Command="{Binding ViewModel.Window.AddStatisticsTableCommand}"
                         ToolTip.Tip="{Binding ViewModel.Window.AddStatisticsTableTip}"
                         ToolTip.ShowOnDisabled="True"

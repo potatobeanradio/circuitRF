@@ -2018,6 +2018,14 @@ internal static class Check
                     f.Add(CliDiagnostics.CheckEvmSplitNothing(path, env.Name, "no source plays a carrier with symbols (LTE, NR, DBPSK, FSK, CSS or SC), so there is no error to split"));
             }
 
+            // brief-trn-5 R-trn5-6 — in a transient bench, a waveform source whose DC value is not its t = 0 value (info); in any
+            // bench, a measurement calling a time-domain function over a result with no time axis (the run's own refusal, said first).
+            if (tb.Analyses.Any(a => a is TransientAnalysis))
+                foreach (var (part, dc, at0) in CircuitRF.Engine.Transient.TransientSources.DcDiffersFromStart(nl))
+                    f.Add(CliDiagnostics.CheckWaveformDcDiffers(path, part, dc, at0));
+            foreach (var m in CircuitRF.Core.Expressions.TimeDomainUse.Find(tb))
+                f.Add(CliDiagnostics.CheckTimeFunctionNoTime(path, m.Measurement, m.Function, m.Analysis, m.AnalysisKind));
+
             foreach (var bridge in CircuitRF.Design.Em3d.EmFieldBlocks.GapPortBridges(nl))
                 f.Add(CliDiagnostics.CheckPartBetweenGapPorts(path, bridge.Part, bridge.Block, bridge.PortA, bridge.PortB));
 

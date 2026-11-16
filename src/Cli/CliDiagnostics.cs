@@ -1834,6 +1834,22 @@ internal static class CliDiagnostics
         "check.noise.evm-split-nothing", DiagnosticSeverity.Info,
         "{path}: envelope '{analysis}' has EvmSplit=yes, but {why}.", ("path", path), ("analysis", analysis), ("why", why));
 
+    /// <summary>brief TRN-5 R-trn5-6 — a waveform source whose DC value differs from its value at t = 0: the operating point and
+    /// the first step disagree, on purpose.</summary>
+    public static Diagnostic CheckWaveformDcDiffers(string path, string part, double dc, double atZero) => Diagnostic.Create(
+        "check.tran.dc-differs", DiagnosticSeverity.Info,
+        "{path}: '{part}' is {dc} in the DC point and every steady-state analysis, and {at0} at t = 0 in a transient: " +
+        "the operating point and the first step disagree.",
+        ("path", path), ("part", part), ("dc", dc.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)),
+        ("at0", atZero.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)));
+
+    /// <summary>brief TRN-5 R-trn5-6 — a measurement calling a time-domain function over a result with no time axis.</summary>
+    public static Diagnostic CheckTimeFunctionNoTime(string path, string measure, string function, string analysis, string kind) => Diagnostic.Create(
+        "check.measure.time-function", DiagnosticSeverity.Error,
+        "{path}: measure '{measure}' calls {function}(), which reads a waveform over time, on {analysis}, a {kind} result with no " +
+        "time axis. Time-domain functions read a transient (or envelope) result.",
+        ("path", path), ("measure", measure), ("function", function), ("analysis", analysis), ("kind", kind));
+
     /// <summary><c>Noise=yes</c> on an ideal source (brief NZ-7 follow-up): it has no impedance to be noisy.</summary>
     public static Diagnostic CheckNoisySourceIdeal(string path, string part) => Diagnostic.Create(
         "check.noise.source-ideal", DiagnosticSeverity.Info,

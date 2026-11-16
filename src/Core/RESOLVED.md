@@ -4988,3 +4988,38 @@ values, not the curve between them.
 - `SteadyDrive` (set by `EnvelopeChannel` for a drop that replays a recorded transmit side): the harmonic-balance start stamps the
   recording's first sample on the receive rows in place of the frozen coupling. `ElaboratedNetlist.Prune` removes components and appends
   others, rebuilding the index lists; removed parts that hold something are disposed.
+
+## brief-trn-5 — time-domain measurements (2026-11-15)
+
+**Two of the note's names collided and were renamed, not shadowed.** `at(x, t)` became `value_at(x, t)`: `at(x, "axis", i)`
+already pinned an axis by position, and `value_at` already read a point by its value, so the new function was the old one
+with a default — `value_at` now takes `time` after `freq`. `freq(x)` became `frequency(x)`: `freq` is the frequency variable
+(`FreqDeferral.FreqName`). Every other name was checked against the built-ins and the variables first.
+
+**`fft` is a direct DFT at the harmonics, on the record's own times.** Xₖ = 2Σx e^{−jk2πf₀t}/N with t absolute, so a phase
+reads as harmonic balance's (whose phasors are full-amplitude, v = V₀ + Σ Re{Vₖ e^{jkωt}}) without aligning anything. The
+window is the last whole periods ending at the record's end. On a uniform grid whose step divides the window the record's
+own samples are used, the window's end point left out (it is the next period's first); otherwise the record is interpolated
+(cubic, four nearest samples) onto as many points as the window held, at least 256. It reports at most 16 harmonics: at 64,
+a −6 dBm amplifier's spectrum showed a smooth −65 to −82 dBm floor above H8 that only cluttered the preset.
+
+**Harmonic power needs the probe's voltage, which the transient did not keep.** `P[time, branch]` is v·i, and the Fourier
+transform of a product is not the product of transforms, so a harmonic's power could not be read from it. The run now keeps
+`Vprobe[time, branch]` (the v it multiplied by), and `fft_power(v, i, f0)` gives V₀I₀ at DC and ½Re(VₖIₖ*) above, HB's
+`Pprobe_W` exactly — the DC term is why it is a function and not `0.5*real(fft(v)*conj(fft(i)))`, which halves it.
+`A.Vprobe("probe")` reads one probe as `A.I("probe")` does.
+
+**The step functions read the step from the first value to the last.** A record that ends where it began has no step, so
+`rise`/`fall` then take the minimum-to-maximum swing (when the end-to-start step is under a tenth of the range); `rise`
+measures from the last crossing of lo before the first crossing of hi, so a noisy foot does not lengthen it. `undershoot` is
+the first trough after the overshoot's peak (e^{−2ζπ/√(1−ζ²)} on a second-order step), not a dip below the starting value. A
+waveform with no such edge gives NaN, so one sweep point does not fail the rest.
+
+**check refuses a time-domain function only where the run would.** An envelope result has real `time`-axis cubes
+(`Pout_t_dBm`, `Idc`, `Pprobe_t_W`), on which every function works, so `TimeDomainUse` counts transient and envelope
+analyses (and sweeps around them) as having time, and anything else as not.
+
+Gate measurements (`TransientMeasurementTests`): the −6 dBm Angelov stage over 30 ns at T/512, RelTol 1e-6 (15,846
+accepted steps, 3 rejected), against HB with MaxHarm 16: worst 8e-4 dB and 0.032° on harmonics 1–5 (H5 at −77 dBc). At
+4 dBm drive the worst was 1.8e-3 dB and 0.021°. HB itself floored at ‖F‖ 2.8e-10 (ideal chokes on ideal supplies), so the
+gate runs HB at Tol 1e-9.

@@ -37,7 +37,8 @@ public sealed partial class Evaluator
 
     /// <summary>Whether <paramref name="expression"/> calls one of <see cref="AxisFunctions"/> — a name followed by
     /// <c>(</c>, not part of a longer identifier.</summary>
-    public static bool CallsAxisFunction(string expression) => CallsAny(expression, AxisFunctions.Contains);
+    public static bool CallsAxisFunction(string expression)
+        => CallsAny(expression, n => AxisFunctions.Contains(n) || TimeDomainFunctions.Contains(n));
 
     /// <summary>Whether <paramref name="expression"/> calls a network metric, a noise function or a circle function
     /// (Evaluator.Network.cs, Evaluator.Circles.cs): each reads a whole S cube and the analysis it came from, so a trace
@@ -93,7 +94,7 @@ public sealed partial class Evaluator
     /// <summary>
     /// <c>value_at(x, v [, "axis"])</c>: x at the point whose axis value is <c>v</c>, read straight off the grid when
     /// <c>v</c> is a grid point and interpolated linearly between the two either side of it when it is not. The axis
-    /// defaults to <c>freq</c>, then a rank-1 cube's only axis. Every other axis is kept, so a swept run gives one
+    /// defaults to <c>freq</c>, then <c>time</c> (a transient's waveform), then a rank-1 cube's only axis. Every other axis is kept, so a swept run gives one
     /// value per sweep point; real and complex values alike (a complex one is interpolated as a complex number).
     /// </summary>
     /// <remarks>
@@ -123,6 +124,7 @@ public sealed partial class Evaluator
             axisName = a.Kind == ValueKind.String ? a.AsString() : a.ToString()!;
         }
         else if (cube.Axes.Any(a => a.Name == "freq")) axisName = "freq";
+        else if (cube.Axes.Any(a => a.Name == TimeAxisName)) axisName = TimeAxisName;   // a transient's waveform (brief TRN-5)
         else if (cube.Rank == 1)                       axisName = cube.Axes[0].Name;
         else throw new ExpressionException(ValueAtDiagnostics.NoFreqAxis(axes));
         if (!cube.Axes.Any(a => a.Name == axisName))

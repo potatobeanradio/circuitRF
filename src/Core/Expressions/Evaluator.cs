@@ -269,6 +269,9 @@ public sealed partial class Evaluator
         if (cl.Name == "limit")    return EvalClamp(cl, scope);
         if (cl.Name == "validrange") return EvalValidRange(cl, scope);
 
+        // The time-domain measurements over a transient result (Evaluator.TimeDomain.cs, brief TRN-5).
+        if (TimeDomainFunctions.Contains(cl.Name)) return EvalTimeDomain(cl, scope);
+
         // built-ins — cube-aware variants handle DataCube args; scalars fall through to normal math
         return cl.Name switch
         {
@@ -418,12 +421,13 @@ public sealed partial class Evaluator
         //
         // QUALIFIED ONLY, deliberately: DC1.OP("X1.gm"). There is no unqualified spelling, so a
         // testbench that runs two analyses never has to be guessed about.
-        if (accessorName is "V" or "INl" or "I" or "OP")
+        // Vprobe — a transient's voltage at each IProbe (brief TRN-5), on the probe's branch axis as I is.
+        if (accessorName is "V" or "INl" or "I" or "OP" or "Vprobe")
         {
             var cube = ds[accessorName];
             string axisName = accessorName switch
             {
-                "I"  => "branch",
+                "I" or "Vprobe" => "branch",
                 "OP" => "opvar",
                 _    => "node",
             };

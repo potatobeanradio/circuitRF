@@ -130,8 +130,10 @@ analysis TR2 type=tran Stop=50n Step=10p MaxStep=20p Method=gear2 InitialState=o
 
 Recorded, as in the envelope analysis: every labelled net's voltage and every `IProbe`'s current, with no key needed.
 
-Result cubes: `V[net, time]` (V), `I[probe, time]` (A), `P[probe, time]` (instantaneous v·i, W), `OP.V[net]` (the
-starting state), and counters `Tran.AcceptedSteps`, `Tran.RejectedSteps`, `Tran.NewtonIterations`,
+Result cubes: `V[net, time]` (V), `I[probe, time]` (A), `P[probe, time]` (instantaneous v·i, W), `Vprobe[probe, time]`
+(the voltage at the probe's first net, V, which with `I` gives a harmonic's power through `fft_power`, §8), `OP.V[net]` (the
+starting state), `__TranFundamental_Hz` (the lowest carrier a source plays, else a repeating pulse's rate: where the
+Transient preset reads the spectrum), and counters `Tran.AcceptedSteps`, `Tran.RejectedSteps`, `Tran.NewtonIterations`,
 `Tran.Factorizations` (the gates' evidence, never timings). With `Solver=ngspice` the same cubes, plus
 `Ngspice.Version` and the deck's path in the provenance.
 
@@ -352,25 +354,43 @@ become the matching type instead of `Vdc` at their DC value (§9.3 of that note)
 
 ## 8. Measurements and display
 
-Time-domain functions in the one expression engine, over a cube's time axis, usable in `measure` lines and traces:
+Time-domain functions in the one expression engine (`Evaluator.TimeDomain.cs`), over a cube's `time` axis — a transient's,
+or an envelope's real waveforms — usable in `measure` lines, goals and traces. The waveform argument is a real cube; the
+time axis is read and every other axis kept, so a transient inside a parametric sweep gives one value per sweep point.
 
 | Function | Returns |
 |---|---|
-| `rise(x, lo=10, hi=90)`, `fall(…)` | First rise/fall time between the percentages of the settled swing (s) |
-| `overshoot(x)`, `undershoot(x)` | Percent of the final step |
-| `settle(x, tol=1)` | Time after which x stays within tol % of its final value (s) |
-| `period(x)`, `freq(x)` | From interpolated level crossings at the mean, averaged over the last half of the record |
-| `at(x, t)`, `tmin(x)`, `tmax(x)`, `avg(x, t1, t2)`, `rms(x, t1, t2)` | Value and statistics over a window |
-| `fft(x, f0, periods=1, window=none)` | Complex spectrum of the last whole `periods` of x at f0 and its harmonics, an axis cube shaped like an HB result |
-| `thd(x, f0, n=10)` | Total harmonic distortion of the last period (%) |
+| `rise(x, lo=10, hi=90)`, `fall(…)` | The first edge between lo % and hi % of the swing (s): the time x first reaches hi, less the last time before it that x crossed lo, both interpolated. The swing is the step from the first value to the last; a record that ends near where it began (a pulse) takes its minimum and maximum. |
+| `overshoot(x)` | How far x goes past its final value, in % of the step from the first value to the last; 0 when it never does |
+| `undershoot(x)` | How far x comes back below its final value after the overshoot's peak, in % of the step: a ringing step's first trough; 0 when it does not |
+| `settle(x, tol=1)` | The time after which x stays within tol % of the step of its final value (of the final value itself when there is no step), interpolated (s) |
+| `period(x)`, `frequency(x)` | From the interpolated rising crossings of the mean, averaged over the last half of the record (s, Hz) |
+| `value_at(x, t)` | x at time t, interpolated: `value_at`'s default axis is `freq`, then `time` |
+| `tmin(x, t1, t2)`, `tmax(…)` | The time of the minimum (maximum) over the window, the whole record without one (s) |
+| `avg(x, t1, t2)`, `rms(x, t1, t2)` | Time-weighted mean and rms by the trapezoidal rule, the window's ends interpolated |
+| `fft(x, f0, periods=1, window="none")` | Complex spectrum of the last whole `periods` of x at f0 and its harmonics, an axis cube shaped like an HB result: a `harmonic` axis 0…K placed last, full-amplitude phasors (x = X₀ + Σ Re{Xₖ e^{jk2πf₀t}}) with the record's own t, so phases read as HB's. K is what the window's samples resolve, at most 16. `"hann"` windows it. |
+| `fft_power(v, i, f0, periods=1, window="none")` | The power per harmonic, V₀I₀ at DC and ½Re(VₖIₖ*) above it (W): HB's `Pprobe_W` |
+| `thd(x, f0, n=10)` | Total harmonic distortion of the last period, harmonics 2…n against the fundamental (%) |
 
-`fft` of a settled transient is shaped like the HB spectrum on purpose: the transient-versus-HB consistency gate (§12)
-and the seed (§10) both read it, and a user can plot a transient's harmonics on the same axes as an HB run's.
+A waveform with no edge of the kind asked for gives NaN, a missing value, so one sweep point without one does not fail the
+others. A value with no `time` axis is refused naming the function.
 
-The Data Display gains a **Transient** preset: the recorded voltages against time, a second plot of `fft` of the output
-probe, and the measures as a table. The analysis card shows `Stop`, `Step`, `Method`, `InitialState` and `Solver`,
-with the rest under More; `Solver`'s ngspice choice is enabled only when ngspice is discovered (D2). The note beneath it
-has its space reserved whether shown or not, so the card's controls do not move when ngspice appears or disappears.
+**Two names differ from this note's first draft, which collided** (R-trn5-1): `at(x, t)` is `value_at(x, t)`, since
+`at(x, "axis", index)` already pins an axis by position and `value_at` already read a point by its value — it now defaults
+to the `time` axis after `freq` — and `freq(x)` is `frequency(x)`, since `freq` is the frequency variable.
+
+`fft` of a settled transient is shaped like the HB spectrum on purpose: the transient-versus-HB consistency gate (§12) and
+the seed (§10) both read it, and one trace (`dB(Vout)`, a measure that is `HB1.V("out")` on one bench and
+`fft(TR1.V("out"), 1GHz)` on the other) plots either result unedited.
+
+The Data Display gains a **Transient** preset (`TransientPreset`): the recorded voltages against time (up to twelve), the
+output's spectrum over its last period — the power through the IProbe whose name says "out" (else the last one) in dBm
+through `fft_power`, or the output net's voltage in dBV through `fft` when there is no probe — drawn as stems on the
+harmonic axis, and the bench's single-number measures as a table. It is a toolbar action, a result's context-menu item,
+and offered in the Messages panel when a transient run ends. The analysis card shows `Stop`, `Step`, `Method`,
+`InitialState` and `Solver`, with every other key under More — the ngspice-only ones as word pickers, enabled only with
+that solver; `Solver`'s ngspice choice is enabled only when ngspice is discovered (D2). The note beneath it has its space
+reserved whether shown or not, so the card's controls do not move when ngspice appears or disappears.
 
 ## 9. ngspice
 
@@ -543,11 +563,15 @@ tolerance.
 - **`circuitrf solver install ngspice`** — the existing verb, with the new tool.
 - **MCP** — `run analysis=tran`, `netlist` with a `.cir` output, `solver` reporting ngspice.
 - **`check`** — under `Solver=ngspice`, every element the translation would refuse, coded `check.tran.untranslatable`;
-  in any tran bench, refused elements (§5.5); a waveform source whose `Dc` differs from its t = 0 value (info, since it
-  means the DC point and the first step disagree on purpose).
+  in any tran bench, refused elements (§5.5); a waveform source whose `Dc` differs from its t = 0 value
+  (`check.tran.dc-differs`, info, since it means the DC point and the first step disagree on purpose); in any bench, a
+  `measure` calling a time-domain function over an analysis whose result has no time axis
+  (`check.measure.time-function`, an error naming the function; a transient's and an envelope's results have one).
 - **`explain --analysis`** — the solver, the step bound and its reason, the estimated step count, the slowest time
-  constant against `Stop`, and a steering line when a tran is the wrong analysis: "this bench is 2.4·10⁶ periods of a
-  2.4 GHz carrier; harmonic balance or envelope answers a steady-state or modulated question in a fraction of the time".
+  constant against `Stop`, and a steering line when `Stop` spans more than 10⁵ periods of the highest carrier a source
+  plays (a tone, a MOD_Source's or an SFFM's carrier; a pulse's edges are not one): "this bench is 2.4·10⁶ periods of a
+  2.4 GHz carrier: harmonic balance answers a steady-state question in a fraction of the time", naming envelope instead
+  when a source is modulated (a MOD_Source, an SFFM with a modulation index).
 
 ## 12. Validation
 

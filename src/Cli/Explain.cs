@@ -1759,6 +1759,8 @@ internal static class Explain
                         ? string.Format(inv, "Slowest time constant {0:G3} s ({1}): Stop is {2:G3} of them", tau, plan.SlowestWhat, p.StopS / tau)
                         : "Slowest time constant: nothing in the circuit stores energy");
                 }
+                // brief-trn-5 R-trn5-5 — a transient that is the wrong analysis for the question says so, and names the one that is
+                if (CircuitRF.Engine.Transient.TransientSources.Steering(nl, p.StopS) is { } steer) list.Add("Consider another analysis: " + steer);
             }
             catch (CircuitRF.Engine.Transient.TransientRefusedException e) { list.Add("WOULD BE REFUSED — " + e.Message); }
             catch (Exception) { /* reported by check; nothing to explain here */ }

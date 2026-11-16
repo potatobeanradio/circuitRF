@@ -271,6 +271,17 @@ by element, broadcast as arithmetic is, and give a real cube of 1 and 0 (a NaN e
 These are ordinary functions, so they work in `measure` lines and in goals. A goal written over the spread of a
 run's trials is legal, and each evaluation of it costs a Monte Carlo run (`reference statistics` says so).
 
+### 5. Time-domain functions over a transient's waveforms (brief TRN-5)
+
+`Evaluator.TimeDomain.cs`. `rise`, `fall`, `overshoot`, `undershoot`, `settle`, `period`, `frequency`, `tmin`, `tmax`,
+`avg`, `rms`, `fft`, `fft_power` and `thd` read a real waveform along a cube's `time` axis and keep every other axis;
+`value_at(x, t)` reads one instant (its default axis is `freq`, then `time`). Each is listed with `AxisFunctions` for a
+trace's whole-cube evaluation. `fft` returns a `harmonic` axis shaped and scaled as a harmonic-balance spectrum, so one
+trace plots either; `fft_power` is HB's `Pprobe_W`. A value with no `time` axis is refused naming the function, and `check`
+says so first for a measure written over an S-parameter, DC or HB result (`TimeDomainUse`). Definitions:
+`docs/design/transient.md` §8. Gates: `tests/Core.Tests/Expressions/TimeDomainFunctionsTests.cs` (closed forms),
+`tests/Engine.Tests/Transient/TransientMeasurementTests.cs` (against HB).
+
 ## Current state (honest inventory)
 
 What works (end-to-end on a UI run):

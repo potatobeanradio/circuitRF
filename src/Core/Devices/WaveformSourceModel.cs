@@ -334,6 +334,16 @@ public sealed class WaveformSourceModel : ComponentModel, ITransientWaveform
 
     public double HighestFrequencyHz => Waveform == WaveformKind.Sffm ? _fc + (Math.Abs(_mdi) + 1) * _fs : 0;
 
+    /// <summary>brief TRN-5 — an SFFM's carrier (Hz), 0 for every other waveform: what the transient steering line counts periods of.</summary>
+    public double CarrierHz => Waveform == WaveformKind.Sffm ? _fc : 0;
+
+    /// <summary>brief TRN-5 — whether the waveform is a modulated carrier (an SFFM with a modulation index and a signal), the case
+    /// the steering line sends to the envelope analysis.</summary>
+    public bool IsModulatedCarrier => Waveform == WaveformKind.Sffm && _fc > 0 && _mdi != 0 && _fs > 0;
+
+    /// <summary>brief TRN-5 — a repeating pulse's period (s), 0 for every other waveform.</summary>
+    public double RepeatPeriodS => Waveform == WaveformKind.Pulse ? _period : 0;
+
     // ── PWL points and files ──────────────────────────────────────────────
 
     /// <summary>Points="t v, t v, ..." — numbers separated by commas or whitespace, in pairs. The elaborator has already

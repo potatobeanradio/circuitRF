@@ -601,6 +601,14 @@
                                             <MenuItem.Icon><mi:MaterialIcon Kind="ScatterPlot" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
 
+                                        <!-- brief TRN-5 — a transient result's waveforms, output spectrum and measures, in one action. -->
+                                        <MenuItem Header="Open Transient Plots"
+                                                  Command="{Binding OpenTransientCommand}"
+                                                  IsVisible="{Binding IsResultFile}"
+                                                  ToolTip.Tip="A new Data Display with this transient result's waveforms, the output's spectrum over its last period and the measures. Needs a transient run.">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="SineWave" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+
                                         <!-- brief-dfr32-3 R-dfr32-3-2 — a solved 3D view's or EM setup's saved fields, to the Trash. -->
                                         <MenuItem Header="Delete Saved Fields"
                                                   Command="{Binding DeleteSavedFieldsCommand}"

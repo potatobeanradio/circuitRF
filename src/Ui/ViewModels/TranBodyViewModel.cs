@@ -6,8 +6,9 @@ namespace CircuitRF.Ui.ViewModels;
 
 /// <summary>
 /// The Transient analysis card body (type=tran, brief-trn-1 R-trn1-12). Every field is the directive's raw text, resolved at run
-/// time. Stop, Step, Method, Initial state and Solver are on the card; the rest under More. The solver list holds ngspice, disabled
-/// until brief TRN-7 builds it; a bench that already says ngspice keeps saying it, with the note beneath.
+/// time. Stop, Step, Method, Initial state and Solver are on the card; every other key under More (brief TRN-5 R-trn5-4), the
+/// ngspice-only ones enabled only with that solver. The solver list holds ngspice, disabled until brief TRN-7 builds it; a bench
+/// that already says ngspice keeps saying it, with the note beneath.
 /// </summary>
 public sealed partial class TranBodyViewModel : ObservableObject
 {
@@ -44,9 +45,33 @@ public sealed partial class TranBodyViewModel : ObservableObject
     [ObservableProperty] private string _maxSteps = TransientAnalysis.MaxStepsDefault;
     [ObservableProperty] private bool _moreExpanded;
 
-    // The ngspice-only keys are not on the card until TRN-6/7; a loaded bench's values ride through unchanged.
-    private string _spiceOptions = "", _spiceLines = TransientAnalysis.SpiceLinesDefault,
-                   _spiceLineFreq = TransientAnalysis.SpiceLineFreqDefault, _spiceFit = TransientAnalysis.SpiceFitDefault;
+    // The ngspice-only keys (brief TRN-5 R-trn5-4): under More, enabled only with the ngspice solver, which reads them.
+    public static readonly string[] SpiceLinesOptions = [TransientAnalysis.SpiceLinesDefault, "rlgc"];
+    public static readonly string[] SpiceLinesHelp =
+    [
+        "refuse — a transmission line is not written for ngspice; the run names it",
+        "rlgc — each line written as ngspice's own lossy line, fitted at Line fit frequency, its error reported",
+    ];
+    public static readonly string[] SpiceFitOptions = [TransientAnalysis.SpiceFitDefault, "yes"];
+    public static readonly string[] SpiceFitHelp =
+    [
+        "no — a frequency-defined element (an S-parameter file, a filter) is not written for ngspice; the run names it",
+        "yes — each written as a subcircuit of circuitRF's own rational fit, labelled in the result",
+    ];
+
+    [ObservableProperty] private string _spiceOptions = "";
+    [ObservableProperty] private string _spiceLines = TransientAnalysis.SpiceLinesDefault;
+    [ObservableProperty] private string _spiceLineFreq = TransientAnalysis.SpiceLineFreqDefault;
+    [ObservableProperty] private string _spiceFit = TransientAnalysis.SpiceFitDefault;
+
+    /// <summary>Whether the ngspice-only keys apply: the solver is ngspice.</summary>
+    public bool IsNgspice => SolverIndex == 1;
+
+    public string SpiceLinesDescription => SpiceLinesHelp[Math.Max(0, Array.IndexOf(SpiceLinesOptions, SpiceLines))];
+    partial void OnSpiceLinesChanged(string value) => OnPropertyChanged(nameof(SpiceLinesDescription));
+
+    public string SpiceFitDescription => SpiceFitHelp[Math.Max(0, Array.IndexOf(SpiceFitOptions, SpiceFit))];
+    partial void OnSpiceFitChanged(string value) => OnPropertyChanged(nameof(SpiceFitDescription));
 
     /// <summary>Whether the ngspice choice can be picked: never, until brief TRN-7.</summary>
     public bool NgspiceAvailable => false;
@@ -56,7 +81,11 @@ public sealed partial class TranBodyViewModel : ObservableObject
     /// <summary>The line under the solver: empty with the native solver (its space kept, so nothing below moves).</summary>
     public string SolverNote => SolverIndex == 1 ? NgspiceNotBuilt : "";
 
-    partial void OnSolverIndexChanged(int value) => OnPropertyChanged(nameof(SolverNote));
+    partial void OnSolverIndexChanged(int value)
+    {
+        OnPropertyChanged(nameof(SolverNote));
+        OnPropertyChanged(nameof(IsNgspice));
+    }
 
     public string MethodDescription => MethodHelp[Math.Max(0, Array.IndexOf(MethodOptions, Method))];
     partial void OnMethodChanged(string value) => OnPropertyChanged(nameof(MethodDescription));
@@ -76,7 +105,10 @@ public sealed partial class TranBodyViewModel : ObservableObject
         SolverIndex = a.Solver.Trim().Equals(TransientAnalysis.SolverNgspice, StringComparison.OrdinalIgnoreCase) ? 1 : 0,
         Start = a.StartExpr, MaxStep = a.MaxStepExpr, RelTol = a.RelTolExpr, VTol = a.VTolExpr, ITol = a.ITolExpr, Ic = a.IcExpr,
         SaveSteps = a.SaveStepsOn, MaxSteps = a.MaxStepsExpr,
-        _spiceOptions = a.SpiceOptions, _spiceLines = a.SpiceLines, _spiceLineFreq = a.SpiceLineFreq, _spiceFit = a.SpiceFit,
+        SpiceOptions = a.SpiceOptions,
+        SpiceLines = Array.IndexOf(SpiceLinesOptions, a.SpiceLines.Trim().ToLowerInvariant()) >= 0 ? a.SpiceLines.Trim().ToLowerInvariant() : a.SpiceLines,
+        SpiceLineFreq = a.SpiceLineFreq,
+        SpiceFit = Array.IndexOf(SpiceFitOptions, a.SpiceFit.Trim().ToLowerInvariant()) >= 0 ? a.SpiceFit.Trim().ToLowerInvariant() : a.SpiceFit,
     };
 
     public TransientAnalysis BuildAnalysis(string name, bool enabled) => new(name)
@@ -87,7 +119,8 @@ public sealed partial class TranBodyViewModel : ObservableObject
         StartExpr = Blank(Start, "0"), MaxStepExpr = Blank(MaxStep, "auto"), RelTolExpr = Blank(RelTol, "1e-3"),
         VTolExpr = Blank(VTol, "1e-6"), ITolExpr = Blank(ITol, "1e-12"), IcExpr = Ic.Trim(),
         SaveSteps = SaveSteps ? "yes" : Analysis.NoiseDefault, MaxStepsExpr = Blank(MaxSteps, TransientAnalysis.MaxStepsDefault),
-        SpiceOptions = _spiceOptions, SpiceLines = _spiceLines, SpiceLineFreq = _spiceLineFreq, SpiceFit = _spiceFit,
+        SpiceOptions = SpiceOptions.Trim(), SpiceLines = Blank(SpiceLines, TransientAnalysis.SpiceLinesDefault),
+        SpiceLineFreq = Blank(SpiceLineFreq, TransientAnalysis.SpiceLineFreqDefault), SpiceFit = Blank(SpiceFit, TransientAnalysis.SpiceFitDefault),
     };
 
     private static string Blank(string v, string def) => v.Trim().Length == 0 ? def : v.Trim();

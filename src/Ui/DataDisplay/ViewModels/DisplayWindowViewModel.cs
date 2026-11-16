@@ -457,6 +457,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
             OnPropertyChanged(nameof(AddStatisticsTableTip));
             AddNoiseCirclesCommand.NotifyCanExecuteChanged();
             AddSignalQualityCommand.NotifyCanExecuteChanged();
+            AddTransientCommand.NotifyCanExecuteChanged();
             RaiseDirtyChanged();
         };
         // A run finishing reloads the selected file in place — it may only now carry its statistics.
@@ -466,6 +467,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
             OnPropertyChanged(nameof(AddStatisticsTableTip));
             AddNoiseCirclesCommand.NotifyCanExecuteChanged();
             AddSignalQualityCommand.NotifyCanExecuteChanged();
+            AddTransientCommand.NotifyCanExecuteChanged();
         };
 
         UpdateThemeFromSystem();
@@ -619,6 +621,17 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     {
         if (DataDisplay is { } d) await d.AddSignalQualityAsync();
     }
+
+    /// <summary>brief TRN-5 — the waveforms, output spectrum and measures of the selected transient result. Disabled, with its
+    /// tooltip saying what it needs, while the selected source has no transient result.</summary>
+    [RelayCommand(CanExecute = nameof(CanAddTransient))]
+    private async Task AddTransient()
+    {
+        if (DataDisplay is { } d) await d.AddTransientAsync();
+    }
+
+    /// <summary>Whether the selected source holds a transient result.</summary>
+    public bool CanAddTransient => TransientPreset.Available(DataSourceLibrary.SelectedEntry?.Data);
 
     /// <summary>Whether the selected source is an envelope result that measured EVM.</summary>
     public bool CanAddSignalQuality => SignalQualityPreset.Available(DataSourceLibrary.SelectedEntry?.Data);

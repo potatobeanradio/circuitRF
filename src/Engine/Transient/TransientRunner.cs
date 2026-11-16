@@ -5,12 +5,14 @@
 //  Cubes:  V [time, node]  (V)     every labelled net (every net when none is)
 //          I [time, branch] (A)    every IProbe, first node to second
 //          P [time, branch] (W)    v·i at the probe
+//          Vprobe [time, branch] (V) the voltage at the probe's first node
 //          OP.V [node]             the starting state
 //          Steps.time, Steps.V     the accepted steps, with SaveSteps=yes
 //          Tran.AcceptedSteps, Tran.RejectedSteps, Tran.NewtonIterations,
 //          Tran.Factorizations,
 //          Tran.DeviceEvaluations  counters (the gates' evidence, never timings)
 //          __LabeledNodes          as every other analysis has it
+//          __TranFundamental_Hz    the lowest source carrier (or pulse rate), for the preset's spectrum
 // ================================================================
 
 using System.Globalization;
@@ -122,9 +124,15 @@ public static class TransientRunner
             var branch = new Axis("branch", Index(np), "A", r.ProbeNames);
             var i = new double[nt * np];
             var pw = new double[nt * np];
-            for (int t = 0; t < nt; t++) { Array.Copy(r.I[t], 0, i, t * np, np); Array.Copy(r.P[t], 0, pw, t * np, np); }
+            var vp = new double[nt * np];
+            for (int t = 0; t < nt; t++)
+            {
+                Array.Copy(r.I[t], 0, i, t * np, np); Array.Copy(r.P[t], 0, pw, t * np, np);
+                if (r.VProbe.Length > t) Array.Copy(r.VProbe[t], 0, vp, t * np, np);
+            }
             ds.Add("I", new DataCube([time, branch], i));
             ds.Add("P", new DataCube([time, new Axis("branch", Index(np), "W", r.ProbeNames)], pw) { Unit = "W" });
+            ds.Add("Vprobe", new DataCube([time, new Axis("branch", Index(np), "V", r.ProbeNames)], vp) { Unit = "V" });
             ds.Add("__ProbeBranches", new DataCube([new Axis("probe", Index(np), "", r.ProbeNames)], new double[np]));
         }
         if (r.StepTime is { } st && r.StepV is { } sv && nn > 0)
@@ -140,12 +148,18 @@ public static class TransientRunner
         ds.Add("Tran.Factorizations", DataCube.Scalar(r.Factorizations));
         ds.Add("Tran.DeviceEvaluations", DataCube.Scalar(r.DeviceEvaluations));
         ds.Add("__TranMaxStep_s", DataCube.Scalar(r.MaxStepS));
+        // brief TRN-5 — the frequency the Transient preset reads the output's spectrum at, when a source has one
+        if (TransientSources.Fundamental(nl) is double f0) ds.Add(FundamentalCube, DataCube.Scalar(f0));
         var labeled = r.NodeNames.Where(nm => nl.Nodes.LabeledNames.Contains(nm)).Distinct().ToArray();
         if (labeled.Length > 0)
             ds.Add("__LabeledNodes", new DataCube([new Axis("label", Index(labeled.Length), "", labeled)], new double[labeled.Length]));
         foreach (var note in r.Notes) nl.AddNoteOnce("tran:" + note, note);
         return ds;
     }
+
+    /// <summary>The metadata cube holding the bench's fundamental (Hz): the lowest carrier a source plays, else a repeating pulse's
+    /// rate (<see cref="TransientSources.Fundamental"/>). Absent when there is neither.</summary>
+    public const string FundamentalCube = "__TranFundamental_Hz";
 
     /// <summary>One line describing a resolved run, for the CLI and the run panel.</summary>
     public static string Describe(TransientParams p) => string.Format(CultureInfo.InvariantCulture,

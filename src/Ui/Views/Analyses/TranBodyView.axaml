@@ -1,5 +1,5 @@
 <!-- Transient analysis body (type=tran, brief-trn-1). Stop, Step, Method, Initial state and Solver on the card; the
-     step control's limits, tolerances and initial conditions under More. The solver note keeps its row whether shown or
+     step control's limits, tolerances and initial conditions under More, with the ngspice-only keys (brief TRN-5). The solver note keeps its row whether shown or
      not, so nothing below it moves when the choice changes. Layout and type sizes follow the Envelope card. -->
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -46,7 +46,7 @@
         </Grid>
 
         <Expander Header="More" IsExpanded="{Binding MoreExpanded, Mode=TwoWay}" FontSize="11" HorizontalAlignment="Stretch">
-            <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="6" Margin="0,8,0,0">
+            <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6" Margin="0,8,0,0">
                 <TextBlock Classes="lbl" Text="Start (s)"/>
                 <TextBox Grid.Column="1" Text="{Binding Start}" ToolTip.Tip="First reported time; the run still starts at 0"/>
                 <TextBlock Grid.Column="2" Classes="lbl" Text="Max step (s)" Margin="12,0,8,0"/>
@@ -69,6 +69,27 @@
 
                 <CheckBox Grid.Row="4" Grid.ColumnSpan="4" FontSize="11" Content="Keep the engine's own steps" IsChecked="{Binding SaveSteps}"
                           ToolTip.Tip="Adds Steps.time and Steps.V: the accepted steps as taken, beside the uniform output grid"/>
+
+                <!-- brief TRN-5 R-trn5-4 — the ngspice-only keys, enabled only with that solver (which reads them). -->
+                <TextBlock Grid.Row="5" Grid.ColumnSpan="4" Text="ngspice only" FontSize="11" FontWeight="SemiBold" Margin="0,6,0,0"
+                           Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                <TextBlock Grid.Row="6" Classes="lbl" Text="Lines"/>
+                <ComboBox Grid.Row="6" Grid.Column="1" ItemsSource="{x:Static vm:TranBodyViewModel.SpiceLinesOptions}" SelectedItem="{Binding SpiceLines}"
+                          IsEnabled="{Binding IsNgspice}" FontSize="11" HorizontalAlignment="Stretch"/>
+                <TextBlock Grid.Row="6" Grid.Column="2" Classes="lbl" Text="Line fit (Hz)" Margin="12,0,8,0"/>
+                <TextBox Grid.Row="6" Grid.Column="3" Text="{Binding SpiceLineFreq}" IsEnabled="{Binding IsNgspice}"
+                         ToolTip.Tip="The frequency rlgc lines match circuitRF's model at, or auto: the highest source frequency"/>
+                <TextBlock Grid.Row="7" Grid.ColumnSpan="4" Text="{Binding SpiceLinesDescription}" FontSize="10" TextWrapping="Wrap"
+                           Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                <TextBlock Grid.Row="8" Classes="lbl" Text="Fit"/>
+                <ComboBox Grid.Row="8" Grid.Column="1" ItemsSource="{x:Static vm:TranBodyViewModel.SpiceFitOptions}" SelectedItem="{Binding SpiceFit}"
+                          IsEnabled="{Binding IsNgspice}" FontSize="11" HorizontalAlignment="Stretch"/>
+                <TextBlock Grid.Row="9" Grid.ColumnSpan="4" Text="{Binding SpiceFitDescription}" FontSize="10" TextWrapping="Wrap"
+                           Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                <TextBlock Grid.Row="10" Classes="lbl" Text="Options"/>
+                <TextBox Grid.Row="10" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding SpiceOptions}" IsEnabled="{Binding IsNgspice}"
+                         Watermark="reltol=1e-4 abstol=1e-12"
+                         ToolTip.Tip="Written verbatim as one .options line of the deck ngspice runs"/>
             </Grid>
         </Expander>
     </StackPanel>

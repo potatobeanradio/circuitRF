@@ -407,22 +407,25 @@ public sealed class TransientEngine
         var V = new double[nOut][];
         var I = new double[nOut][];
         var Pw = new double[nOut][];
+        var Vp = new double[nOut][];
         for (int k = 0; k < nOut; k++)
         {
             var s = outVals[k] ?? prevSnap;
             V[k] = s[..nRec];
             I[k] = s[nRec..];
             Pw[k] = new double[nPr];
+            Vp[k] = new double[nPr];
             for (int i = 0; i < nPr; i++)
             {
                 int nr = probeNodeRows[i];
                 double v = nr >= 0 ? VoltageOfRow(s, rec, nr, x0) : 0;
+                Vp[k][i] = v;
                 Pw[k][i] = v * I[k][i];
             }
         }
         var r = new TransientRunResult
         {
-            Time = tOut, NodeNames = [.. rec.Select(z => z.name)], V = V, ProbeNames = probeNames, I = I, P = Pw,
+            Time = tOut, NodeNames = [.. rec.Select(z => z.name)], V = V, ProbeNames = probeNames, I = I, P = Pw, VProbe = Vp,
             OpV = [.. rec.Select(z => Rec(x0, z.row))],
             StepTime = stepTimes?.ToArray(), StepV = stepVals?.ToArray(), StepMethod = stepKinds?.ToArray(),
             AcceptedSteps = accepted, RejectedSteps = rejected, NewtonIterations = _newton, Factorizations = _factorizations,

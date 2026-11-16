@@ -66,6 +66,9 @@ public sealed class TransientRunResult
     public required double[][] I { get; init; }
     /// <summary>[time][probe] the voltage at the probe's first node times its current (W).</summary>
     public required double[][] P { get; init; }
+    /// <summary>[time][probe] the voltage at the probe's first node (V), what <see cref="P"/> multiplies the current by; with the
+    /// current, a harmonic's power through <c>fft_power</c> (brief TRN-5).</summary>
+    public double[][] VProbe { get; init; } = [];
     /// <summary>The starting state at every recorded node (V).</summary>
     public required double[] OpV { get; init; }
     /// <summary>The accepted steps' times, when asked for (SaveSteps).</summary>
