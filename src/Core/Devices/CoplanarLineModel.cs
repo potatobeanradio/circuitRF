@@ -85,24 +85,26 @@ public sealed class CoplanarLineModel : ComponentModel, IPlanarLineModel, IDcSho
             }
         }
 
-        double alphaC = 0, alphaD = 0, beta = 0;
+        double alphaC = 0, alphaD = 0, beta = 0, lossPhase = 0;
         if (freqHz > 0)
         {
             var quiet = new MicrostripValidityReporter("(CPWG recession, not reported)");
             double dn = PlanarLineLoss.RecessionFraction * (_t > 0 ? Math.Min(Math.Min(_w, _g), Math.Min(_h, _t)) : Math.Min(Math.Min(_w, _g), _h));
             double dt = _t > 0 ? 2 : 0;
-            alphaC = PlanarLineLoss.ConductorLossNpPerM(freqHz, _sigma, _t, _roughness, z0,
+            double Conductor(double f, double zz) => PlanarLineLoss.ConductorLossNpPerM(f, _sigma, _t, _roughness, zz,
                 d => GroundedCoplanar.Static(_w - 2 * d, _g + 2 * d, _h + 2 * d, _t - dt * d, _er, quiet).Z0Air, dn);
+            alphaC = Conductor(freqHz, z0);
             alphaD = _er > 1 ? MicrostripLoss.DielectricLossNpPerM(freqHz, _er, eeff, _tanD) : 0.0;
             beta = 2 * Math.PI * freqHz / MicrostripLoss.SpeedOfLight * Math.Sqrt(eeff);
+            lossPhase = CausalLoss.Phase(freqHz, alphaC, Conductor(CausalLoss.ConductorFloorHz, z0s), alphaD);
         }
-        return new MicrostripLineParameters(z0s, e0, z0, eeff, alphaC, alphaD, beta);
+        return new MicrostripLineParameters(z0s, e0, z0, eeff, alphaC, alphaD, beta, lossPhase);
     }
 
     public (double Z0, Complex GammaLength) LineAt(double freqHz)
     {
         var p = LineParameters(freqHz);
-        return (p.Z0, new Complex(p.AlphaNpPerM * _l, p.BetaRadPerM * _l));
+        return (p.Z0, new Complex(p.AlphaNpPerM * _l, p.PhaseRadPerM * _l));
     }
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)

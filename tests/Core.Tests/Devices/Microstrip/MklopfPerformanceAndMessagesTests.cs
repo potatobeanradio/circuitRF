@@ -88,9 +88,12 @@ public class MklopfPerformanceAndMessagesTests
             var (z0Static, eeff0) = HammerstadJensen.Compute(wMid, h, t, er, quiet);
             var (z0, eeff) = KirschningJansen.Compute(freqHz, wMid / h, er, h, z0Static, eeff0, quiet);
 
-            double alphaNpPerM = MicrostripLoss.ConductorLossNpPerM(freqHz, sigma, wMid, z0)
-                + MicrostripLoss.DielectricLossNpPerM(freqHz, er, eeff, tanD);
-            double betaRadPerM = 2.0 * Math.PI * freqHz / MicrostripLoss.SpeedOfLight * Math.Sqrt(eeff);
+            double alphaC = MicrostripLoss.ConductorLossNpPerM(freqHz, sigma, wMid, z0);
+            double alphaD = MicrostripLoss.DielectricLossNpPerM(freqHz, er, eeff, tanD);
+            double alphaNpPerM = alphaC + alphaD;
+            // brief-trn-4b: the losses' own phase — the conductor's equal to its √f loss, the dielectric's pinned at 1 GHz
+            double betaRadPerM = 2.0 * Math.PI * freqHz / MicrostripLoss.SpeedOfLight * Math.Sqrt(eeff)
+                + alphaC - 2 / Math.PI * alphaD * Math.Log(freqHz / 1e9);
             var gammaLength = new Complex(alphaNpPerM * sectionArcLen, betaRadPerM * sectionArcLen);
 
             var section = MicrostripAbcd.UniformSection(new Complex(z0, 0.0), gammaLength);

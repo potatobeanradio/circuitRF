@@ -9,7 +9,8 @@
 //  with its true stamp from 1 kHz to 100 GHz, terminated in 50 ohm (the envelope's
 //  tangent measure, EnvelopeTangentCheck.TerminatedDiff). A lumped model comes out
 //  at round-off; a line's delay, a Touchstone file's data or a frequency-dependent
-//  resistance does not, and is refused by name until TRN-4 realizes it.
+//  resistance does not, and TransientRealization (brief TRN-4) steps it as a delay
+//  or a wideband rational fit, or refuses it by name.
 //
 //  A few elements are refused by what they are, each naming the analysis that
 //  does support it (note §5.5).
@@ -47,38 +48,19 @@ public static class TransientElements
         _ => null,
     };
 
-    /// <summary>The sentence for an element whose stamp is not affine in jw (TRN-4 realizes these).</summary>
+    /// <summary>The sentence for an element a transient run cannot step.</summary>
     public static string NotYetSupported(ElaboratedComponent ec, string why) =>
-        $"{ec.InstancePath} ({ec.ComponentType}) is not yet supported in transient: {why}.";
+        $"{ec.InstancePath} ({ec.ComponentType}) is not supported in transient: {why}.";
 
     /// <summary>
-    /// Every element of <paramref name="nl"/> a transient run cannot step, each with its sentence, in netlist order. Empty when
-    /// the run can go ahead.
+    /// Every element of <paramref name="nl"/> a transient run stepping up to <paramref name="fMaxHz"/> cannot step, each with
+    /// its sentence, in netlist order: what <see cref="TransientRealization"/> could neither step as it is nor realize (brief
+    /// TRN-4). Empty when the run can go ahead. The netlist is left as it was.
     /// </summary>
-    public static List<string> Problems(ElaboratedNetlist nl)
+    public static List<string> Problems(ElaboratedNetlist nl, double fMaxHz = 1e10)
     {
-        var list = new List<string>();
-        foreach (var ec in nl.Components)
-        {
-            if (RefusalByKind(ec) is { } byKind) { list.Add(byKind); continue; }
-            if (ec.IsNonlinear)
-            {
-                if (ec.Model is SddModel sdd && sdd.ControlRefs.Length > 0)
-                    list.Add(NotYetSupported(ec, "its equations read a control current"));
-                continue;
-            }
-            if (ec.Model is MutualInductanceModel) continue;   // jwM between two inductor branches: affine by its stamp
-            // brief-trn-2 R-trn2-5: a P1Tone/PnTone keeps its available power and source impedance in transient; a harmonic
-            // termination of its own is frequency-defined, and brief TRN-4 realizes it.
-            if (ec.Model is P1ToneModel { HasHarmonicTerminations: true } or PnToneModel { HasHarmonicTerminations: true })
-            {
-                list.Add(NotYetSupported(ec, "a harmonic termination Z[k] other than the fundamental's impedance is frequency-defined "
-                                             + "(brief TRN-4 realizes it); give every band the impedance Z[1] has"));
-                continue;
-            }
-            if (AffineError(ec) is { } why) list.Add(NotYetSupported(ec, why));
-        }
-        return list;
+        using var r = TransientRealization.Apply(nl, fMaxHz);
+        return [.. r.Problems];
     }
 
     /// <summary>Why <paramref name="ec"/>'s stamp is not affine in jw, or null when it is.</summary>

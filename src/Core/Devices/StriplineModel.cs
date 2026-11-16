@@ -49,23 +49,25 @@ public sealed class StriplineModel : ComponentModel, IPlanarLineModel, IDcShorte
             Math.Max(_h1, _h2) / Math.Min(_h1, _h2), Stripline.OffsetRatioRange.Min, Stripline.OffsetRatioRange.Max);
 
         double z0 = Stripline.Z0Air(_w, _h1, _h2, _t) / Math.Sqrt(_er);
-        double alphaC = 0, alphaD = 0, beta = 0;
+        double alphaC = 0, alphaD = 0, beta = 0, lossPhase = 0;
         if (freqHz > 0)
         {
             double dn = PlanarLineLoss.RecessionFraction * (_t > 0 ? Math.Min(Math.Min(_w, _t), Math.Min(_h1, _h2)) : Math.Min(_w, Math.Min(_h1, _h2)));
             double dt = _t > 0 ? 2 : 0;
-            alphaC = PlanarLineLoss.ConductorLossNpPerM(freqHz, _sigma, _t, _roughness, z0,
+            double Conductor(double f) => PlanarLineLoss.ConductorLossNpPerM(f, _sigma, _t, _roughness, z0,
                 d => Stripline.Z0Air(_w - 2 * d, _h1 + 2 * d, _h2 + 2 * d, _t - dt * d), dn);
+            alphaC = Conductor(freqHz);
             alphaD = Math.PI * freqHz * Math.Sqrt(_er) * _tanD / MicrostripLoss.SpeedOfLight;
             beta = 2 * Math.PI * freqHz / MicrostripLoss.SpeedOfLight * Math.Sqrt(_er);
+            lossPhase = CausalLoss.Phase(freqHz, alphaC, Conductor(CausalLoss.ConductorFloorHz), alphaD);
         }
-        return new MicrostripLineParameters(z0, _er, z0, _er, alphaC, alphaD, beta);
+        return new MicrostripLineParameters(z0, _er, z0, _er, alphaC, alphaD, beta, lossPhase);
     }
 
     public (double Z0, Complex GammaLength) LineAt(double freqHz)
     {
         var p = LineParameters(freqHz);
-        return (p.Z0, new Complex(p.AlphaNpPerM * _l, p.BetaRadPerM * _l));
+        return (p.Z0, new Complex(p.AlphaNpPerM * _l, p.PhaseRadPerM * _l));
     }
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)

@@ -275,17 +275,8 @@ public sealed class TransientSourcesTests(ITestOutputHelper output)
         Assert.All(Node(r, "n"), v => Assert.Equal(2.0, v, 8));   // 2 mA into 1 kOhm, beside the 1e-12 S gmin
     }
 
-    /// <summary>R-trn2-5 — a P1Tone with a harmonic termination of its own is refused until TRN-4, naming Z[k].</summary>
-    [Fact]
-    public void P1ToneWithAHarmonicTermination_IsRefused()
-    {
-        var ex = Assert.Throws<TransientRefusedException>(() => Run("""
-            P1Tone:P1 in 0 Num=1 Pavl=0 Z=50 Z[2]=10 Freq=1 GHz
-            R:R1 in 0 R=50
-            analysis TR1 type=tran Stop=5n
-            """));
-        Assert.Contains("Z[k]", ex.Message);
-    }
+    // R-trn2-5's refusal of a P1Tone with a harmonic termination of its own was lifted by brief TRN-4 R-trn4-6, which realizes
+    // it (TransientLinesAndFitsTests.ToneSourceHarmonicTerminations_AreRealized).
 
     private static DataSet Hb(string cnl)
     {

@@ -118,9 +118,12 @@ public sealed class MicrostripTaperModel : ComponentModel, IReportsWarnings
             var (z0Static, eeff0) = HammerstadJensen.Compute(wMid, _h, _t, _epsR, _reporter);
             var (z0, eeff) = KirschningJansen.Compute(freqHz, wMid / _h, _epsR, _h, z0Static, eeff0, _reporter);
 
-            double alphaNpPerM = MicrostripLoss.ConductorLossNpPerM(freqHz, _sigma, wMid, z0)
-                + MicrostripLoss.DielectricLossNpPerM(freqHz, _epsR, eeff, _tanD);
-            double betaRadPerM = 2.0 * Math.PI * freqHz / MicrostripLoss.SpeedOfLight * Math.Sqrt(eeff);
+            double alphaC = MicrostripLoss.ConductorLossNpPerM(freqHz, _sigma, wMid, z0);
+            double alphaD = MicrostripLoss.DielectricLossNpPerM(freqHz, _epsR, eeff, _tanD);
+            double alphaNpPerM = alphaC + alphaD;
+            // brief-trn-4b: the phase the losses come with (a √f conductor law has no DC floor)
+            double betaRadPerM = 2.0 * Math.PI * freqHz / MicrostripLoss.SpeedOfLight * Math.Sqrt(eeff)
+                + Planar.CausalLoss.Phase(freqHz, alphaC, 0, alphaD);
             var gammaLength = new Complex(alphaNpPerM * sectionLen, betaRadPerM * sectionLen);
 
             var section = MicrostripAbcd.UniformSection(new Complex(z0, 0.0), gammaLength);

@@ -310,8 +310,8 @@ In a transient analysis three more keys shape the tone, and every other analysis
 
 The DC offset is not delayed. The same three keys work on [ITone](#currenttonesource),
 [P1Tone](#p1tone) and [PnTone](#pntone). A P1Tone or PnTone keeps its available power and source
-impedance in a transient run; one with a harmonic termination `Z[k]` different from `Z[1]` is not
-yet supported there.
+impedance in a transient run, and its harmonic terminations `Z[k]` too: the run presents each band's
+impedance at that band's harmonic, and its note gives the realization's error.
 
 {{table: components/ToneSource}}
 
@@ -925,6 +925,17 @@ electrical length it resolves to at `F`.
 TLIN:TL1 a b Z=50 Ohm L=25 mm Eeff=3.2 Ac=4 Ad=2 F=2 GHz
 ```
 
+**Loss and phase.** A line's loss comes with the phase a physical loss has, in every analysis. The
+conductor term (`Ac`) adds an internal reactance equal to its loss. The dielectric term (`A` or `Ad`)
+makes the line slightly slower below `F` and slightly faster above it, as a material with a flat loss
+tangent is. At `F` the line is exactly as stated.
+
+In a transient analysis a lossless line is exact: each end sees `Z` in series with the wave that left
+the other end one delay earlier, and an edge crossing the line lands on a step. A lossy line runs as
+that delay plus a rational fit of the rest of its response. The run's note gives the fit's departure
+from the line up to the run's highest frequency (half the inverse of the largest step). A line that
+cannot be fitted within 10⁻³ there is refused by name, with its error.
+
 {{table: components/Tline}}
 
 ### Coupled Line (CLIN) {#cline}
@@ -943,6 +954,10 @@ coupled-line filter section before committing to a geometry.
 - **Inhomogeneous media.** `Eo` is the odd mode's electrical length. Left blank, both modes share
   `E`, which is the homogeneous (stripline) case with ideal isolation. Set it shorter than `E` to model
   a medium such as microstrip, where the odd mode travels faster and the directivity is finite.
+
+In a transient analysis the pair runs exactly, as its even and odd modes, each a delay of its own.
+The physical coupled lines (MCLIN, BCLIN, MBCLIN) have loss and dispersion and are refused there by
+name.
 
 {{table: components/CLine}}
 
@@ -985,6 +1000,14 @@ The length can be stated electrically instead, as `E` at `F` in place of `L`, ex
 **Use electrical length** in the parameters dialog converts the current `L` at the line's own εeff, and
 **Use physical length** converts it back, so switching never changes the line a run simulates. CPWG and
 SLIN have the same button. Layout always draws the physical length.
+
+**Loss and phase.** The substrate's `Er` and `TanD` are the values at 1 GHz. A loss tangent that stays
+the same over many decades comes with a permittivity that falls slowly as frequency rises, so MLIN, CPWG
+and SLIN lines are slightly slower below 1 GHz and slightly faster above it. A long line on a lossy
+board, such as 25 mm on FR4 with `TanD` 0.02, gains about 7° less phase at 10 GHz than a constant `Er`
+would give. The conductor loss also brings the metal's internal inductance, which adds a little phase.
+Neither changes the Z0 or εeff the dialog reports. In a transient analysis these lines run as a delay
+plus a rational fit, as a lossy [TLIN](#tline) does.
 
 {{table: components/Mlin}}
 
@@ -1450,6 +1473,14 @@ circuit and interpolated onto the analysis sweep.
   and only the lower entries (`SdB_3_1`, never `SdB_1_3`) are offered; untied, every entry has its own.
   `auto` ties a file whose S(i,j) and S(j,i) agree (every passive file does) and unties one that does
   not (an amplifier).
+
+**Transient.** In a transient analysis the file is replaced by a rational fit of its S-parameters from DC
+to the run's highest frequency, half the inverse of the largest step. Data that starts above DC is
+extrapolated to DC from its two lowest points, and data that stops short of that frequency is held at its
+last value; the run's note says when either happens. The fit is checked for passivity between and beyond
+the file's points. Where it would make energy, the smallest change that stops it is made, and the run
+reports that change and the fit's error. A file the fit cannot follow within 10⁻³ is refused by name. A
+System Filter, a Duplexer and EM cells run with `model=em` are fitted the same way.
 
 **Noise.** In an S-parameter run with [`Noise=yes`](simulations.html#sp-noise), a two-port file's Touchstone noise
 block makes the block noisy by that data. The data is linear between rows, and the end rows are held outside them, with

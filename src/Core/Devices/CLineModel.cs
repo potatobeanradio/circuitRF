@@ -86,6 +86,11 @@ public sealed class CLineModel : ComponentModel, IDcShortedTerminals
     /// <summary>Coupling coefficient (Ze − Zo)/(Ze + Zo): the coupled-port voltage at a quarter wave.</summary>
     public double CouplingCoefficient => (_ze - _zo) / (_ze + _zo);
 
+    /// <summary>brief-trn-4 R-trn4-2 — the even- and odd-mode impedances (Ω) and delays (s) a transient run steps the pair
+    /// as: each mode an ideal line, its delay its electrical length over 2πF.</summary>
+    public (double Ze, double Zo, double EvenDelayS, double OddDelayS) Modes =>
+        (_ze, _zo, _eRad / (2 * Math.PI * _fRefHz), _eoRad / (2 * Math.PI * _fRefHz));
+
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
         double ratio = omega / (2.0 * Math.PI) / _fRefHz;

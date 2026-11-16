@@ -1,6 +1,6 @@
 # circuitRF — Transient analysis, the ngspice solver, transient-assisted harmonic balance
 
-**Status:** TRN-1 built (§3, §4, §5.1, §5.2: `src/Engine/Transient`, the `tran` verb and card; SRLC and `L` with `C=` wait for TRN-4 with the lines); the rest is design · **Series:** [`brief-trn-0-overview.md`](../briefs/brief-trn-0-overview.md) ·
+**Status:** TRN-1 built (§3, §4, §5.1, §5.2: `src/Engine/Transient`, the `tran` verb and card); TRN-4 built (§5.3 lossless lines and CLIN, §5.4 wideband fits with passivity enforcement, EM cells, tone-source terminations); TRN-4b built (the line models' losses carry their phase, and lossy lines run in transient, §5.3); the rest is design · **Series:** [`brief-trn-0-overview.md`](../briefs/brief-trn-0-overview.md) ·
 **Builds on:** the envelope engine (`src/Engine/Envelope`: its stepping, `EnvelopeSnpFit`, `EnvelopeLineDelay`), the
 nonlinear DC engine ([`nonlinear-dc.md`](nonlinear-dc.md)), harmonic balance ([`harmonic-balance.md`](harmonic-balance.md)),
 the SPICE-dialect reader ([`spice-models.md`](spice-models.md)), the solver discovery and install machinery
@@ -182,6 +182,10 @@ Each method's stepped companion is `G + α C` with α fixed by the method and h,
   envelope engine's "factor once per run" property generalized to an adaptive step.
 - **Breakpoints.** Every source reports the corners of its waveform in the run interval. A step that would pass a
   breakpoint is shortened to land on it exactly; that one step's factorization is computed and discarded.
+- **The first step after a breakpoint** has no history to predict from, so its error is estimated by step doubling: the
+  same interval in two backward-Euler half steps, the full step's error twice the charge difference. It is rejected down
+  the ladder like any other step (TRN-4b; before that it was taken unchecked at MaxStep/64, and its damping was outside the
+  tolerance whatever RelTol said).
 - **Rejection.** A failed Newton or an over-tolerance estimate halves h (one rung down) and retries. Below
   `MaxStep / 2^40` the run stops with the time, the last converged state, and the device whose Newton update was largest.
 
@@ -249,8 +253,21 @@ the starting state, which is what that setting means.
   the line's high-frequency delay, so nothing is double-counted. This changes the line's phase by the causality
   correction only; TRN-4 reports its size against the frequency-domain model at the band edge and warns, naming the
   line, when that exceeds a stated tolerance.
+
+  **As built (TRN-4, TRN-4b).** TRN-4 measured this method on the shipped microstrip, stripline and coplanar models and
+  found the causality correction alone moving S21 by up to 0.22 at 20 GHz: the models attenuated with no matching phase.
+  TRN-4b gave the models that phase (`CausalLoss`: the conductor's internal reactance, equal to its loss above its DC
+  floor; the dielectric's permittivity falling with frequency as a flat loss tangent implies, pinned where Er and TanD are
+  stated — 1 GHz for MLIN/SLIN/CPWG, `F` for TLIN), which moves every lossy line's S-parameters in every analysis
+  (`src/Engine/RESOLVED.md`, brief-trn-4b, has the table). The transient then fits the residual directly rather than
+  through its minimum phase, since dispersion is a phase with no magnitude, with τ the smallest phase delay in band less
+  1.5 periods of `f_max` (a residual at the smallest delay is barely causal and fits badly). Every shipped line at three
+  geometries is realized within |ΔS21| 1e-3 up to 20 GHz; a line that is not, at its run's `f_max`, is refused by name
+  with its error. |ΔS11| is limited by the characteristic impedance, which the dispersive models vary with frequency and
+  the realization holds at mid-range; above 1e-2 the run warns, naming the line.
 - **Coupled lines**: lossless coupled lines by modal decomposition into independent delays with the frequency-independent
-  modal transformation; lossy or dispersive coupled lines are refused by name in v1.
+  modal transformation; lossy or dispersive coupled lines are refused by name in v1 (their models' losses do not yet carry
+  their phase either).
 
 ### 5.4 Frequency-defined elements — wideband rational fits
 
@@ -262,6 +279,13 @@ it by the smallest residue perturbation that restores it, and reports the fit er
 misses its tolerance is refused naming the element; there is no first-order fallback in transient, since there is no
 harmonic to be first order around. Data that stops short of DC is extrapolated to DC from its lowest points and the run
 says so; data that stops below `f_max` is held at its last measured value and the run says so.
+
+As built (TRN-4, `TransientRealization`, `RationalPassivity`): the check grid is ten times denser than the samples to
+`f_max`, with a logarithmic tail to 100·`f_max`, every pole's frequency and s → ∞; enforcement moves residues and D by the
+least change of the response over the samples, constraining each violating band's peak and points spread across it. A
+fit order with a pole closer to the jω axis than a damping of 1e-6 is not taken. A tone source's harmonic terminations are
+not fitted but placed: one damped resonator pair on each harmonic, the residues solved so every harmonic takes its band's
+impedance exactly (a fit asked for the harmonics alone puts undamped poles on them).
 
 ### 5.5 Refused elements
 

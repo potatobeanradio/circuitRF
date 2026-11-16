@@ -140,7 +140,7 @@ public sealed class TransientEngine
     private (Dev Dev, ITransientDevice Td)[] _tdevs = [];
     private double[] _phiPeak = [];         // per row: the largest |Phi| any accepted step has had
     private TransientParams _p = null!;
-    private readonly Dictionary<double, Stage> _stages = new();
+    private readonly Dictionary<(double Alpha, double LineKey), Stage> _stages = new();
     private long _factorizations, _newton, _evaluations;
     private bool _useInterface;
 
@@ -153,6 +153,8 @@ public sealed class TransientEngine
         {
             SetClock(null);    // an SDD that reads `time` is back in steady state for whatever runs next
             foreach (var (_, td) in _tdevs) td.EndTransient();
+            _real?.Dispose();  // every realized element back as the elaborator made it (brief TRN-4)
+            _real = null;
         }
     }
 
@@ -162,7 +164,7 @@ public sealed class TransientEngine
         string who = p.Name.Length > 0 ? $"transient '{p.Name}'" : "transient";
         if (!(p.StopS > 0)) throw new TransientRefusedException($"{who}: Stop must be a positive time.");
 
-        var problems = Setup();
+        var problems = Setup(p);
         if (problems.Count > 0)
             throw new TransientRefusedException($"{who} cannot run: " + string.Join(" ", problems));
         var ex = _ex!;
@@ -211,6 +213,7 @@ public sealed class TransientEngine
         SetClock(0);
         double[] x0 = p.Start == TransientStart.Op ? OperatingPoint(holds, who) : ZeroState(holds);
         foreach (var (d, td) in _tdevs) td.BeginTransient(PortV(d, x0));
+        _lines?.Start(x0);
 
         // ── the recorded quantities ──────────────────────────────────────
         var rec = RecordedNodes();
@@ -244,6 +247,19 @@ public sealed class TransientEngine
         foreach (var (src, _, _) in _waves) foreach (var tb in src.Breakpoints(0, p.StopS)) if (tb > 0 && tb < p.StopS) bps.Add(tb);
         foreach (var sh in _shaped)
             foreach (var tb in new[] { sh.Delay, sh.Delay + sh.Ramp }) if (tb > 0 && tb < p.StopS) bps.Add(tb);
+        // brief-trn-4 R-trn4-1: τ and 2τ after every source corner (the start included), so an edge that crosses a line and its
+        // reflection land on a step
+        if (_lines is { } lines)
+        {
+            var sourceBps = bps.Where(tb => tb < p.StopS).Prepend(0.0).ToList();
+            foreach (double tau in lines.Delays)
+                foreach (double tb in sourceBps)
+                    for (int k = 1; k <= 2; k++)
+                    {
+                        double td = tb + k * tau;
+                        if (td > 0 && td < p.StopS && bps.Count < MaxLineBreakpoints) bps.Add(td);
+                    }
+        }
 
         // ── stepping ─────────────────────────────────────────────────────
         // History within the current segment (since the last breakpoint): time, state, total charge.
@@ -311,8 +327,9 @@ public sealed class TransientEngine
             }
 
             var rhs = Rhs(t + h);
+            _lines?.AddDelayed(t, h, rhs);
             for (int i = 0; i < _n; i++) rhs[i] -= hist[i];
-            var stage = StageFor(alpha, keep: !landing);
+            var stage = StageFor(alpha, h, keep: !landing);
             var guess = Predict(hT, hX, t + h);
             SetClock(t + h);
             var x = Solve(stage, alpha, rhs, guess, out string failure);
@@ -322,7 +339,10 @@ public sealed class TransientEngine
             if (x is not null)
             {
                 phi = Charge(x);
-                ratio = ErrorRatio(hT, hPhi, t + h, phi, x, order, be ? 0.5 : p.Method == TransientMethod.Trap ? 1.0 / 12 : 2.0 / 9);
+                ratio = segSteps == 0
+                    ? FirstStepRatio(t, h, hX[nh - 1], phiN, phi, x, landing, methodRungs, k0)
+                    : ErrorRatio(hT, hPhi, t + h, phi, x, order, be ? 0.5 : p.Method == TransientMethod.Trap ? 1.0 / 12 : 2.0 / 9);
+                SetClock(t + h);
             }
             if (x is null || ratio > 1)
             {
@@ -339,6 +359,7 @@ public sealed class TransientEngine
 
             // ── accepted ─────────────────────────────────────────────────
             accepted++;
+            _lines?.Push(landing ? nextBp : t + h, x!, landing);
             Peak(phi!);
             foreach (var (d, td) in _tdevs) if (td.AcceptStep(PortV(d, x!))) d.LastV = null;
             if (!landing) methodRungs.Add((be ? 0 : 1, k0));
@@ -409,6 +430,7 @@ public sealed class TransientEngine
             BreakpointsLanded = landed, MethodRungsVisited = methodRungs.Count,
             MaxStepS = maxStep, MaxStepReason = reason,
             NewtonPathUsed = _useInterface ? TransientNewtonPath.Interface : TransientNewtonPath.Full, InterfaceCount = _nIf,
+            Fits = [.. _real?.Fits ?? []], Lines = [.. _real?.Lines ?? []], FitBandHz = _real?.FMaxHz ?? 0,
         };
         return r;
 
@@ -422,9 +444,16 @@ public sealed class TransientEngine
     }
 
     private HbLinearExtractor? _ex;
+    // brief-trn-4 — the elements realized for this run (lines, fits, terminations) and the lines' delayed waves
+    private TransientRealization? _real;
+    private TransientLines? _lines;
 
-    /// <summary>Tone context, the elements' check, the real linear partition and the sources' phasors. The refusals, or none.</summary>
-    private List<string> Setup()
+    /// <summary>The most breakpoints the lines' delayed corners may bring a run to.</summary>
+    internal const int MaxLineBreakpoints = 200_000;
+
+    /// <summary>Tone context, the elements' realization and check, the real linear partition and the sources' phasors. The
+    /// refusals, or none.</summary>
+    private List<string> Setup(TransientParams p)
     {
         // Tone context before anything is stamped: a P1Tone drives at its own frequency, its impedance band ruler with it.
         foreach (var ec in _nl.Components)
@@ -432,13 +461,22 @@ public sealed class TransientEngine
             if (ec.Model is P1ToneModel p1) p1.SetToneContext(fc: p1.FreqHz, driveFreqHz: p1.FreqHz);
             else if (ec.Model is PnToneModel pn && pn.ToneFreqsHz.Count > 0) pn.SetToneContext(fc: pn.ToneFreqsHz.Where(f => f > 0).DefaultIfEmpty(1).Min());
         }
-        var problems = TransientElements.Problems(_nl);
-        if (problems.Count > 0) return problems;
+        // brief-trn-4: lines, frequency-defined elements and terminations realized over the band the step resolves, DC to
+        // f_max = 1/(2 MaxStep) (note §5.4)
+        ScanSources();
+        _real?.Dispose();
+        _real = TransientRealization.Apply(_nl, 1 / (2 * StepBound(p).MaxStep));
+        if (_real.Problems.Count > 0) return [.. _real.Problems];
+        var problems = new List<string>();
 
         // ── linear partition, real ───────────────────────────────────────
         var ex = _ex = new HbLinearExtractor(_nl, _settings);
         var mna = ex.NewSmallSignalMna();
-        var (gC, cC) = AffineStamp.Baseband(ex, mna, AffineStamp.Delta(0));
+        _real.Stepping = true;
+        CompressedColumnStorage<Complex> gC, cC;
+        try { (gC, cC) = AffineStamp.Baseband(ex, mna, AffineStamp.Delta(0)); }
+        finally { _real.Stepping = false; }
+        _lines = _real.LineModels.Count > 0 ? new TransientLines(_real.LineModels) : null;   // their rows as this stamp numbered them
         _n = gC.RowCount;
         _nNode = ex.NonGroundCount;
         _g = Real(gC);
@@ -524,7 +562,6 @@ public sealed class TransientEngine
             foreach (var w in waves) ((ITransientWaveform)w.Model).StampOverride = null;
             for (int i = 0; i < shaped.Count; i++) shaped[i].Src.DriveScale = scales[i];
         }
-        _waveHz = waves.Select(w => ((ITransientWaveform)w.Model).HighestFrequencyHz).DefaultIfEmpty(0).Max();
 
         // ── IC= on capacitors (volts) and inductors (amperes), note §7.2 ─
         var capIc = new List<(int, int, double)>();
@@ -543,7 +580,27 @@ public sealed class TransientEngine
         return problems;
     }
 
-    private double _waveHz;
+    private double _waveHz, _toneHzMax;
+
+    /// <summary>The highest tone frequency and the highest waveform frequency any source carries: what the step bound reads,
+    /// known before anything is stamped.</summary>
+    private void ScanSources()
+    {
+        double hi = 0;
+        foreach (var ec in _nl.Components)
+        {
+            IEnumerable<double> hz = ec.Model switch
+            {
+                ToneSourceModelBase ts => ts.ToneFreqsHz,
+                P1ToneModel p1 => [p1.FreqHz],
+                PnToneModel pn => pn.ToneFreqsHz,
+                _ => [],
+            };
+            foreach (var f in hz) if (f > hi) hi = f;
+        }
+        _toneHzMax = hi;
+        _waveHz = _nl.Components.Select(c => c.Model).OfType<ITransientWaveform>().Select(w => w.HighestFrequencyHz).DefaultIfEmpty(0).Max();
+    }
 
     /// <summary>A device's port voltages in state <paramref name="x"/>.</summary>
     private static double[] PortV(Dev d, double[] x)
@@ -598,7 +655,7 @@ public sealed class TransientEngine
     private (double MaxStep, string Reason) StepBound(TransientParams p)
     {
         double step = p.StepS > 0 ? p.StepS : p.StopS / 1000;
-        double fHi = Math.Max(_srcHz.Length > 0 ? _srcHz[^1] : 0, _waveHz);
+        double fHi = Math.Max(_toneHzMax, _waveHz);
         if (p.MaxStepS > 0) return (p.MaxStepS, "MaxStep as stated");
         if (fHi > 0 && 1 / (20 * fHi) < step)
             return (1 / (20 * fHi), string.Format(CultureInfo.InvariantCulture, "1/20 of the period of the highest source frequency, {0:G4} Hz", fHi));
@@ -609,13 +666,21 @@ public sealed class TransientEngine
     /// implies, the circuit's slowest time constant and what holds it, and the refusals (explain, R-trn1-11).</summary>
     public TransientPlan Plan(TransientParams p)
     {
-        var problems = Setup();
-        if (problems.Count > 0) return new TransientPlan(0, "", 0, null, null, problems);
-        var (maxStep, reason) = StepBound(p);
-        var slow = Envelope.EnvelopeMemory.Declared(_nl);
-        var pole = SlowestPole(p.StopS);
-        if (pole is { } pl && (slow is null || pl.Seconds > slow.Seconds)) slow = pl;
-        return new TransientPlan(maxStep, reason, p.StopS / maxStep, slow?.Seconds, slow?.What, problems);
+        try
+        {
+            var problems = Setup(p);
+            if (problems.Count > 0) return new TransientPlan(0, "", 0, null, null, problems);
+            var (maxStep, reason) = StepBound(p);
+            var slow = Envelope.EnvelopeMemory.Declared(_nl);
+            var pole = SlowestPole(p.StopS);
+            if (pole is { } pl && (slow is null || pl.Seconds > slow.Seconds)) slow = pl;
+            return new TransientPlan(maxStep, reason, p.StopS / maxStep, slow?.Seconds, slow?.What, problems);
+        }
+        finally
+        {
+            _real?.Dispose();
+            _real = null;
+        }
     }
 
     /// <summary>The linear network's slowest pole: power iteration on (G + σC)⁻¹C, σ = 1e-3/Stop, as the envelope's memory
@@ -737,6 +802,7 @@ public sealed class TransientEngine
             if (ra >= 0 && rb >= 0) { extra.Add((ra, rb, -HoldConductance)); extra.Add((rb, ra, -HoldConductance)); }
         }
         foreach (var (row, i) in _indIc) { extra.Add((row, row, HoldResistance)); rhs[row] += HoldResistance * i; }
+        if (_lines is not null) extra.AddRange(_lines.Coupling(double.PositiveInfinity));   // a line's steady state: the wave now
         if (extra.Count > 0) a = Add(_g, extra);
         var stage = new Stage { Lu = Factor(a), A = a };
         var sol = SolveFull(stage, 0, rhs, x, out string failure);
@@ -820,7 +886,24 @@ public sealed class TransientEngine
             for (int l = 0; l < need; l++) if (l != j) wj *= (tNew - ts[l]) / (ts[j] - ts[l]);
             wts[j] = wj;
         }
-        // abs tolerance of each row: the element's own scale (sum |C_ij| tol_j), devices' dq/dv included
+        var absTol = AbsTol(x);
+        double worst = 0;
+        for (int i = 0; i < _n; i++)
+        {
+            if (absTol[i] == 0) continue;            // stores nothing
+            double pred = 0;
+            for (int j = 0; j < need; j++) pred += wts[j] * ps[j][i];
+            double err = scale * Math.Abs(phi[i] - pred);
+            double tol = _p.RelTol * Math.Max(Math.Max(Math.Abs(phi[i]), Math.Abs(ps[0][i])), _phiPeak[i]) + absTol[i];
+            worst = Math.Max(worst, err / tol);
+        }
+        return worst;
+    }
+
+    /// <summary>The absolute tolerance of each row's charge at <paramref name="x"/>: the element's own scale (Σ |C_ij| tol_j),
+    /// the devices' dq/dv included. 0 for a row that stores nothing.</summary>
+    private double[] AbsTol(double[] x)
+    {
         var absTol = new double[_n];
         for (int j = 0; j < _c.ColumnCount; j++)
             for (int pp = _c.ColumnPointers[j]; pp < _c.ColumnPointers[j + 1]; pp++)
@@ -836,14 +919,48 @@ public sealed class TransientEngine
                 if (d.Rm[q] >= 0) absTol[d.Rm[q]] += s * _p.VTol;
             }
         }
+        return absTol;
+    }
+
+    /// <summary>
+    /// The local error over its tolerance of a segment's FIRST step — a backward-Euler step from a breakpoint, where there is
+    /// no history to predict from — by step doubling: the same interval in two backward-Euler half steps, whose charge differs
+    /// from the full step's by half the full step's own error (both errors are C·h², the halves' summing to C·h²/2). Before
+    /// this the first step was never checked, and its damping, ∝ (ω·MaxStep/64)², was outside the tolerance whatever RelTol
+    /// said (src/Engine/RESOLVED.md, brief-trn-4b). The half-step stage is the trapezoidal stage of the same rung, so it costs
+    /// no factorization a run that reaches that rung does not already make. A half step that fails to converge counts as an
+    /// error above the tolerance. A line's delayed wave in the second half step reads the history as it stood at t — an
+    /// approximation within the estimate only.
+    /// </summary>
+    private double FirstStepRatio(double t, double h, double[] x0, double[] phi0, double[] phiFull, double[] xFull, bool landing,
+                                  HashSet<(int, int)> methodRungs, int k0)
+    {
+        double hh = 0.5 * h, a = 1 / hh;
+        var st = StageFor(a, hh, keep: !landing);
+        if (!landing) methodRungs.Add((0, k0 + 1));
+        var rhs = Rhs(t + hh);
+        _lines?.AddDelayed(t, hh, rhs);
+        for (int i = 0; i < _n; i++) rhs[i] += phi0[i] / hh;
+        SetClock(t + hh);
+        var guess = new double[_n];
+        for (int i = 0; i < _n; i++) guess[i] = 0.5 * (x0[i] + xFull[i]);
+        var xm = Solve(st, a, rhs, guess, out _);
+        if (xm is null) return 1e6;
+        var phim = Charge(xm);
+        rhs = Rhs(t + h);
+        _lines?.AddDelayed(t + hh, hh, rhs);
+        for (int i = 0; i < _n; i++) rhs[i] += phim[i] / hh;
+        SetClock(t + h);
+        var x2 = Solve(st, a, rhs, xFull, out _);
+        if (x2 is null) return 1e6;
+        var phi2 = Charge(x2);
+        var absTol = AbsTol(xFull);
         double worst = 0;
         for (int i = 0; i < _n; i++)
         {
-            if (absTol[i] == 0) continue;            // stores nothing
-            double pred = 0;
-            for (int j = 0; j < need; j++) pred += wts[j] * ps[j][i];
-            double err = scale * Math.Abs(phi[i] - pred);
-            double tol = _p.RelTol * Math.Max(Math.Max(Math.Abs(phi[i]), Math.Abs(ps[0][i])), _phiPeak[i]) + absTol[i];
+            if (absTol[i] == 0) continue;
+            double err = 2 * Math.Abs(phiFull[i] - phi2[i]);
+            double tol = _p.RelTol * Math.Max(Math.Max(Math.Abs(phiFull[i]), Math.Abs(phi0[i])), _phiPeak[i]) + absTol[i];
             worst = Math.Max(worst, err / tol);
         }
         return worst;
@@ -1125,12 +1242,14 @@ public sealed class TransientEngine
 
     // ── linear algebra ────────────────────────────────────────────────────
 
-    private Stage StageFor(double alpha, bool keep)
+    private Stage StageFor(double alpha, double h, bool keep)
     {
-        if (keep && _stages.TryGetValue(alpha, out var s)) return s;
+        var key = (alpha, _lines?.CouplingKey(h) ?? -1);
+        if (keep && _stages.TryGetValue(key, out var s)) return s;
         var a = Combine(_g, _c, alpha);
+        if (_lines is not null && _lines.Coupling(h) is { Count: > 0 } k) a = Add(a, k);
         s = new Stage { Lu = Factor(a), A = a };
-        if (keep) _stages[alpha] = s;
+        if (keep) _stages[key] = s;
         return s;
     }
 

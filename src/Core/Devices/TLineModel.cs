@@ -143,8 +143,23 @@ public sealed class TLineModel : ComponentModel, IDcShortedTerminals, IUniformLi
         return (_acDbPerM * Math.Sqrt(freqRatio) + _adDbPerM * freqRatio) * _lengthM / DbPerNp;
     }
 
+    /// <summary>
+    /// brief-trn-4b — the phase (rad) the line's loss comes with (<see cref="Planar.CausalLoss"/>): the physical form's
+    /// conductor term (∝ √f) adds its own attenuation; the electrical form's <c>A</c> and the physical form's dielectric
+    /// term (both ∝ f) add the dielectric phase pinned at <c>F</c>, where they are stated. 0 for a lossless line.
+    /// </summary>
+    private double LossPhaseRad(double freqHz)
+    {
+        if (!(freqHz > 0) || !(_fRefHz > 0)) return 0;
+        double ratio = freqHz / _fRefHz;
+        if (!IsPhysical) return _aDb == 0 ? 0 : Planar.CausalLoss.Phase(freqHz, 0, 0, _aDb / DbPerNp * ratio, _fRefHz);
+        if (_acDbPerM == 0.0 && _adDbPerM == 0.0) return 0;
+        return Planar.CausalLoss.Phase(freqHz, _acDbPerM * Math.Sqrt(ratio) * _lengthM / DbPerNp, 0,
+                                       _adDbPerM * ratio * _lengthM / DbPerNp, _fRefHz);
+    }
+
     public (double Z0, Complex GammaLength) LineAt(double freqHz) =>
-        (_z0, new Complex(AttenuationNp(freqHz), ElectricalLengthRad(freqHz)));
+        (_z0, new Complex(AttenuationNp(freqHz), ElectricalLengthRad(freqHz) + LossPhaseRad(freqHz)));
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
@@ -169,7 +184,7 @@ public sealed class TLineModel : ComponentModel, IDcShortedTerminals, IUniformLi
             _warnedDegenerate = true;
         }
 
-        var gammaLength = new Complex(alphaLNp, theta);
+        var gammaLength = new Complex(alphaLNp, theta + LossPhaseRad(freqHz));
         StampUniformLine(mna, c.Nodes[0], c.Nodes[1], new Complex(_z0, 0.0), gammaLength);
     }
 

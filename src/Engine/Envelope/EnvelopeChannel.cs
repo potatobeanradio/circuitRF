@@ -214,7 +214,7 @@ public static class EnvelopeChannel
             {
                 double q = last - (pos - r.Steps);              // steps back from the last solved step
                 int n0 = (int)Math.Floor(q);
-                EnvelopeLineDelay.Lagrange(q - n0, l, ld);
+                DelayInterpolation.Lagrange(q - n0, l, ld);
                 Complex w = 0;
                 for (int j = 0; j < 3; j++)
                     w += (l[j] - g1 * ld[j] / _h) * At(c, k, last - n0 - j);   // the nodes run back in time: d/dt is −ld/h
@@ -237,7 +237,7 @@ public static class EnvelopeChannel
                 var rc = rays[ri];
                 double q = last - (pos - c.Steps[k][ri]);
                 int n0 = (int)Math.Floor(q);
-                EnvelopeLineDelay.Lagrange(q - n0, l, ld);
+                DelayInterpolation.Lagrange(q - n0, l, ld);
                 Complex c0 = l[0] - g1 * ld[0] / _h, c1 = l[1] - g1 * ld[1] / _h, c2 = l[2] - g1 * ld[2] / _h;
                 int s0 = last - n0, s1 = s0 - 1, s2 = s0 - 2;
                 int i0 = s0 <= 0 ? 0 : s0 % c.Ring, i1 = s1 <= 0 ? 0 : s1 % c.Ring, i2 = s2 <= 0 ? 0 : s2 % c.Ring;

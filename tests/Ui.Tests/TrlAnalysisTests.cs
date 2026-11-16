@@ -118,11 +118,13 @@ public sealed class TrlAnalysisTests(ITestOutputHelper output) : IDisposable
     [Fact]
     public void PointsOutsideTheUsableBand_AreWarnedAboutAsRuns_AndTheRunStillSucceeds()
     {
-        MeasureStandards(lineDeg: 10);   // 10° at 1 GHz: under 20° up to 2 GHz, 80° at 8
+        // 10° at 1 GHz: under 20° up to 2 GHz, 80° at 8. The standard's loss (A at F = 1 GHz) carries its phase (brief TRN-4b),
+        // 0.12° less at 2 GHz, so 2 GHz itself now falls just under 20° with the points below it.
+        MeasureStandards(lineDeg: 10);
         var ran = Run(WriteBench("cal.cnl", Standards + Cal), "CAL");
         string w = Assert.Single(ran.Warnings, x => x.Contains("TRL 'CAL'", StringComparison.Ordinal));
         output.WriteLine(w);
-        Assert.Contains("(1-1.75 GHz)", w);
+        Assert.Contains("(1-2 GHz)", w);
         Assert.Contains("20-160 degrees", w);
     }
 

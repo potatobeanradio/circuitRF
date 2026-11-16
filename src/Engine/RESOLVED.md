@@ -5075,3 +5075,174 @@ iterations (2.5 per step), 812 factorizations, 231,794 device evaluations, 801 b
 interface path; 0.21 s. The settled output (mean of the last 20 cycles) is 5.5175 V with 40 mV ripple, against the duty-cycle
 estimate D(Vin − I·Ron) − (1 − D)·Vd = 5.5269 V: −0.17 %.
 Gate 3 (HB against transient): a tone-driven switch's current agrees on its first five harmonics to 1e-4 dB.
+
+## brief-trn-4 — lines and frequency-defined elements in transient (2026-11-15)
+
+**Where it lives.** `src/Engine/Transient/TransientRealization.cs` replaces, for one run, every element the transient
+engine cannot stamp as fixed G and C (and refuses the rest by name); `TransientLines.cs` steps lossless lines;
+`src/Engine/RationalPassivity.cs` checks and enforces passivity of a rational S matrix; `src/Engine/DelayInterpolation.cs`
+is the envelope's quadratic Lagrange moved down unchanged (`EnvelopeLineDelay` and `EnvelopeChannel` call it; the envelope
+classes and their fixed files pass unchanged). The fit band is DC to f_max = 1/(2 MaxStep), MaxStep found from the sources
+before anything is stamped.
+
+### R-trn4-3 stopped and reported: no shipped lossy line is causal within 1e-3
+
+The design note's method (the residual e^(−γl)·e^(jωτ) given the minimum phase of its magnitude by the cepstrum, τ the
+high-frequency delay, the residual fitted rationally, Zc held) was measured on the shipped microstrip, stripline and
+coplanar models at three geometries each, with a scratch harness evaluating `IUniformLine.LineAt` directly: |ΔS21| in
+50 Ω between that realization and the model, DC to f_max.
+
+| model, geometry | loss at 20 GHz | Δφ at band edge (20 GHz) | residual fit | max \|ΔS21\| 20 GHz (best τ) | max \|ΔS21\| 5 GHz |
+|---|---|---|---|---|---|
+| MLIN 0.254 mm Er 3.66, L 10 mm | 0.23 dB | −0.045 rad | order 4, 8.5e-5 | 2.3e-2 | 2.6e-3 |
+| MLIN FR4 0.8 mm, tanD 0.02, L 25 mm | 1.73 dB | −0.55 rad | order 5, 6.5e-5 | 0.22 | 2.1e-2 |
+| MLIN GaAs 100 µm, L 2 mm | 0.23 dB | −0.021 rad | order 5, 3.7e-5 | 9.7e-3 | 2.7e-3 |
+| SLIN b 0.5 mm Er 3.5, L 10 mm | 0.20 dB | −0.040 rad | order 4, 6.7e-5 | 4.4e-3 | 1.7e-3 |
+| SLIN FR4 b 1.0 mm, L 25 mm | 2.07 dB | −0.58 rad | order 5, 8.3e-5 | 4.0e-2 | 1.3e-2 |
+| SLIN LTCC Er 7.8, L 3 mm | 0.13 dB | −0.018 rad | order 4, 4.8e-5 | 2.8e-3 | 1.3e-3 |
+| CPW 0.254 mm Er 3.66, L 10 mm | 0.17 dB | −0.040 rad | order 4, 6.2e-5 | 1.2e-2 | 1.5e-3 |
+| CPW FR4, L 25 mm | 1.44 dB | −0.52 rad | order 5, 7.5e-5 | 0.14 | 1.1e-2 |
+| CPW GaAs, L 2 mm | 0.22 dB | −0.024 rad | order 3, 2.6e-5 | 5.2e-3 | 3.9e-3 |
+| MLIN, no loss (dispersion only) | 0 | 0 | order 1 | 1.9e-2 | 7.7e-4 |
+
+"Best τ" lowers τ below the high-frequency delay by the least-squares best amount (still causal); with τ the
+high-frequency delay itself the 20 GHz errors are 1.5-2.4× larger. The fit is never the problem (≤ 1e-4); the causality
+correction is. The loss models attenuate with no matching phase, and the minimum phase of that attenuation is a real
+phase lag that the frequency-domain model does not have — so the realization is "wrong" by exactly the model's
+non-causality, and that is 1e-3 to 0.2. Dispersion (ε_eff(f)) is a phase with no magnitude, so a minimum-phase residual
+drops it entirely: the lossless microstrip alone misses by 1.9e-2 at 20 GHz. Zc held constant costs ≤ 9e-4 (S21 depends
+on the mismatch squared).
+
+**So, as the brief directs, lossy and dispersive lines are refused in transient by name**, the sentence naming the
+measured |ΔS| of the line as a lossless delay and the analyses that support it. What runs:
+- a line whose delay alone reproduces its own model within 1e-3 (|ΔS11|, |ΔS21| in 50 Ω, DC to f_max) is stepped as that
+  delay — every ideal TLIN, a lossless physical TLIN, a lossless stripline, the Delay block, and a low-loss line at a
+  low enough f_max;
+- a lossy line with f_max·τ ≤ 2 is offered to the ordinary wideband fit of its own stamp (R-trn4-4, causal by
+  construction, its error measured against the model) and runs if that meets 1e-3.
+
+### Lines (R-trn4-1/2)
+
+Rows `v − Zc i − W_other(t − τ) = 0` are real and constant (G). τ ≥ h: the delayed wave is read from accepted steps by
+the quadratic through three steps that do not straddle a corner (a breakpoint landing), else linearly. τ < h: linear
+between the last step and the unknown one, the unknown's share (h − τ)/h a term of the stepped matrix — stages are then
+keyed (alpha, h), and only then, so a run with no short line keeps TRN-1's factorization counts. The operating point
+couples each line fully (a lossless line is a short at DC). Breakpoints τ and 2τ after every source corner (the start
+included), capped at 200,000. CLIN runs by its even/odd modes (Zc = Ze/2, Zo/2, delays E/(2πF), Eo/(2πF)). Gate 1's
+reflection matches the closed form to 4.4e-11 V and gate 2's NEXT/FEXT to 5.3e-12 V.
+
+### Wideband fits (R-trn4-4)
+
+- **The fit loop** walks orders (to 60) until the relative RMS error over the data's own points meets 1e-3 (1e-9 for a
+  System Filter/Duplexer, exactly rational), and **stops when eight orders have not halved the error** — a delay or a
+  non-causal response would otherwise walk every order (the envelope's 132 s MCLIN). An order with a pole of damping
+  −Re(a)/|a| < 1e-6 is not taken: see the terminations below.
+- **Passivity** is checked on a uniform grid ten times denser than the samples (≥ 2,001 points) to f_max, a log tail to
+  100·f_max, every pole's frequency and s → ∞. Enforcement moves residues and D (poles kept) by the least-norm change of
+  the RESPONSE over the samples (the basis Gram matrix as the weight) that brings σmax to 1 − 1e-6 at the constraints, and
+  repeats. **Constraining only local peaks failed on a plateau**: a file with |S21| 2 % too large across the passband
+  ended at σmax 1.031 after 40 iterations (worse than 1.020) and took 20 s; constraining the peak plus 24 points spread
+  across each violating band converges in a few iterations (σmax 0.99999983, change 3.1e-3) in well under a second. The
+  2×2 singular value is in closed form (power iteration was most of those 20 s).
+- **The committed band-pass** (`testdata/transient/bandpass_1ghz.s2p`, from `bandpass_1ghz.py`, independent of
+  circuitRF) fits at order 6, error 2.8e-7, σmax 1.0000009 made passive by a 2e-6 change. Driven by a 0.4 ns pulse, the
+  output's transform against the file's S21 across 0.8-1.2 GHz is set by the INTEGRATION, not the fit: 4.1e-3 at
+  RelTol 1e-5 (2,816 steps), 2.3e-4 at 1e-7 (10,302), 1.1e-4 at 1e-9 (45,656). Gate 4 therefore bounds it by the fit's
+  error plus 5e-4 at RelTol 1e-7, not by the fit's error alone. Gate 5 (the enforced active copy, 10⁴ × its slowest pole's
+  3.5 ns, 697,000 steps, ~1 s) decays to 2.5e-314 V from a 2.8 mV peak.
+
+### Tone source terminations (R-trn4-6): placed poles, not a fit
+
+A P1Tone/PnTone keeps its drive (`DriveOnly`) and its band-mapped impedance is realized beside it, between the external
+and drive nodes. **Vector fitting cannot do this**: sampled at the harmonics alone it put lossless poles exactly on the
+samples (Re a ~ −1e-32 at 1.8, 2.0 and 2.2 GHz — a "fit" that reads −0.667 at 2 GHz to round-off and rings forever, so
+the run saw 50 Ω there); sampled flat across each band it is a staircase (error 0.26); a smooth real-valued blend between
+harmonics is zero-phase, which no causal function is (error 0.55). Only the harmonics are read in a periodic steady
+state, so the poles are placed — one pair of damping 0.2 on each harmonic — and the residues and constant solved so Γ
+takes every harmonic's value exactly (2N + 1 real equations and unknowns), then made passive like any fit. A 2 GHz current
+then sees 50 Ω ∥ 10 Ω to 7e-5.
+
+### EM cells (R-trn4-5)
+
+Nothing new: `model=em` already builds the EM bench for any analysis kind and dispatches a tran through
+`RunTypedAnalysis`; the EM instance arrives as an SnP on the cached Touchstone and is fitted like any file
+(`tests/Ui.Tests/Transient/TransientEmCellTests`).
+
+### Refusals (R-trn4-7)
+
+Unchanged by-kind list (Mixer, PhasedArray, PropagationChannel, Tuner, WSProbe, OscProbe, EmFieldData, MOD_Source), each
+naming its analysis; added: lossy/dispersive single lines (above), MCLIN/BCLIN/MBCLIN by name, a Deembed (it would have to
+advance what a network delays), and any element whose fit misses its tolerance, the fit's error and order in the sentence.
+The sentence is now "is not supported in transient" (it was "not yet supported").
+
+## brief-trn-4b — causal loss in the line models, and lossy lines in transient (2026-11-15)
+
+**The fix was in the models.** TRN-4 refused every lossy line because the shipped losses carry no phase. `CausalLoss`
+(`src/Core/Devices/Planar/CausalLoss.cs`) gives them theirs, carried as `MicrostripLineParameters.LossPhaseRadPerM`
+beside the lossless β, so Z0 and ε_eff (what the line calculator reports) do not move:
+- conductor: Δβ_c = α_c(f) − α_c(1 Hz) — the skin effect's internal reactance equals its resistance. **The DC floor
+  matters**: with Δβ_c = α_c, a thin-metal line (GaAs CPW, 3 µm gold; LTCC stripline, 10 µm), whose loss levels off at
+  the sheet resistance below the skin-depth transition, was itself non-causal (a constant loss with a constant reactance)
+  and missed by 2e-2 at 5 GHz; without the floor's reactance it fits within 6e-5.
+- dielectric: Δβ_d = −(2/π)·α_d·ln(f/f_ref), the mid-band wideband Debye relation (permittivity falling by
+  (2/π)·tanD·εr per e-fold), pinned at f_ref = 1 GHz for MLIN/SLIN/CPWG (`CausalLoss.DielectricReferenceHz`) and at `F`
+  for TLIN. MTAPER and MKLOPF sections take the same phase.
+
+**How far S21 moved** (50 Ω, |ΔS21| and the added phase), measured on the shipped code:
+
+| line | 0.1 GHz | 1 GHz | 10 GHz | 20 GHz |
+|---|---|---|---|---|
+| MLIN 0.254 mm Er 3.66, 10 mm | 1.1e-3 (0.06°) | 3.1e-3 (0.18°) | 1.2e-3 (0.07°) | 8.6e-3 (−0.5°) |
+| MLIN FR4 0.8 mm tanD 0.02, 25 mm | 2.1e-3 (0.12°) | 2.7e-3 (0.16°) | 0.11 (−7°) | 0.28 (−20°) |
+| MLIN GaAs, 2 mm | 1.8e-3 (0.1°) | 5.6e-3 (0.33°) | 1.7e-2 (1°) | 2.3e-2 (1.4°) |
+| SLIN FR4 b 1 mm, 25 mm | 2.4e-3 (0.14°) | 3.6e-3 (0.21°) | 0.13 (−8.5°) | 0.31 (−23°) |
+| CPWG FR4, 25 mm | 1.8e-3 (0.1°) | 3.2e-3 (0.19°) | 8.7e-2 (−5.4°) | 0.23 (−15°) |
+| any lossless line | 0 | 0 | 0 | 0 |
+
+Near f_ref a design moves by tenths of a degree (the conductor's internal inductance); a long lossy FR4 line far above it
+moves by degrees, which is the permittivity a flat loss tangent of 0.02 implies (4 % lower by 20 GHz). |S21| in dB does not
+move (≤ 0.002 dB: the loss is unchanged, only its phase is new). Expressed as electrical length, which is what moves a
+resonator built from the line: FR4 (tanD 0.02) −0.8 % at 5 GHz, −1.3 % at 10 GHz, −1.7 % at 20 GHz (a 10 GHz stub resonance
+about 126 MHz higher); the low-loss board lines within ±0.2 % above 1 GHz; narrow thin-metal MMIC microstrip (70 µm wide,
+3 µm gold) +4.7 % at 1 GHz and +1.4 % at 10 GHz, from the internal inductance of a conductor that thin and narrow (the √f
+conductor law MLIN uses does not level off at the thickness, so this follows the loss it already reported). Tests re-baselined:
+`TLineModelLossTests.PhysicalForm_WithAcAndAd_MatchesTheClosedForm` and
+`MklopfPerformanceAndMessagesTests.Gate2_…` (their closed forms gain the phase, written out, not called);
+`TrlAnalysisTests.PointsOutsideTheUsableBand_…` (its TLIN standard, exactly 20° at 2 GHz, is 0.12° shorter there, so the
+2 GHz point joins the unusable run: "(1-2 GHz)").
+
+**The transient realization** (`TransientRealization.FitLossyLine`): τ = max(0, τ_min − 1.5/f_max), the residual
+H̃ = e^(−γl)·e^(j2πfτ) vector-fitted DIRECTLY (a minimum-phase residual drops dispersion, a phase with no magnitude),
+the order the lowest whose realization meets 3e-4 |ΔS21| on a 2,060-point check grid, among fits with |H̃| ≤ 1 on
+RationalPassivity's grid (one barely above 1 is scaled down). Its states are extra unknowns at each end (`TransientLineModel`),
+the delayed wave entering the main row with weight −D and each state row with −1 (−2 for a pair's first).
+Findings, each measured:
+- **τ at the smallest phase delay fits badly**: the residual is then barely causal, and 40 poles miss by 1.4e-2 on 0.8 mm
+  FR4 at 20 GHz; leaving rotation in the fit (τ × 0.9, 0.6, 0.4 → 5.6e-3, 1.1e-3, 4.5e-4 at order 40) is what works;
+  1.5 periods of f_max is the rule taken.
+- **Choose the order by the realization's own |ΔS21| on a dense grid**, not the fit's error on its samples: the latter
+  over-fits between samples near DC (order 58 reading 1e-4 on its samples was 5.3e-3 off between them).
+- **General passivity enforcement wrecks a line residual**: a spurious narrow peak (|H̃| 1.29 at 3.1 GHz on LTCC, 1.09 at
+  4.5 MHz on the board MLIN) drove the least-change enforcement to |ΔS21| = 2 and to divergence (σmax 764). Rejecting an
+  order that rises above 1 + 3e-4 and scaling a marginal one is safe and cheap.
+- **The order loop needs a stall stop** (eight orders without halving the error): a line whose best was order 11 at 3.4e-4,
+  just above the 3e-4 target, walked all 40 orders in 8.8 s; with the stop every line fits in 0.04-0.7 s.
+- At f_max 5 and 20 GHz every line of the nine geometries, and both TLIN forms, is realized within |ΔS21| 1e-3 (largest
+  9.9e-4, CPW GaAs at 20 GHz). At 50 GHz the 0.8 mm FR4 microstrip (7.9e-3) and coplanar (2.0e-3) lines still miss and
+  are refused by name. |ΔS11| is set by the held Zc of the dispersive models (2.5e-2 on 0.8 mm FR4 at 20 GHz, ≤ 1.3e-3
+  on the others); a warning names a line above 1e-2.
+
+**Gate 3's two traps.** (1) A pulse's spectral images fold back into the band on a coarse output grid: at 5 ps the
+transform of a line realized within 2.6e-4 read 1.4e-3 off at 4 GHz (a magnitude droop ∝ f², the triangle pulse near its
+5 GHz null); a lossless line hides this because e^(−jωτ) repeats exactly across the images. 1 ps and 0.1 ns edges fix it.
+(2) What remained, 9.1e-4 at 4 GHz on a line realized within 7e-5 there, was a magnitude deficit that did not move with
+RelTol (1e-7 or 1e-9) or Stop (10 or 40 ns) but fell 6× with MaxStep 50 → 20 ps: **the backward-Euler step that opens
+every segment, at MaxStep/64, was never error-checked** (`ErrorRatio` returns 0 with one point of history), so its damping,
+∝ (ω·MaxStep/64)², was outside the tolerance — and every line adds delayed-corner breakpoints, so more such steps.
+**Fixed**: `TransientEngine.FirstStepRatio` checks that step by step doubling — the same interval in two backward-Euler
+half steps, the full step's error twice the charge difference (C·h² against 2·C(h/2)²) — and rejects it down the ladder
+like any other step. The half-step stage is the trapezoidal stage of the same rung, so it rarely costs a factorization.
+Gate 3 went from 9.1e-4 to 1.1e-4 (the same at RelTol 1e-7 and 1e-9: what is left is the fit's own error) and is held at
+3e-4. Cost on TRN-1/TRN-3's benches: the RC ring 7 → 8 factorizations for its 4,007 steps; the buck 33,226 → 33,252
+accepted steps, 4 → 6 rejected, 812 → 820 factorizations, Vout unchanged at 5.5175 V. The second backward-Euler step was
+always checked (two points of history).

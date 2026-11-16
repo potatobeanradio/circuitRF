@@ -47,23 +47,23 @@ public sealed class TransientElementsTests
         Assert.True(problems.Count == 0, string.Join("\n", problems));
     }
 
-    /// <summary>A line, a delayed controlled source and a series RLC (its C in series on one branch: 1/jωC) are not fixed R, L
-    /// and C: each refused by name until TRN-4 realizes it.</summary>
+    /// <summary>brief-trn-4 — a lossless line is stepped as its delay and a series RLC (its C in series on one branch: 1/jωC) by a
+    /// rational fit of its stamp; a controlled source delayed by 100 periods of the band's top is no rational function and is
+    /// refused by name, its fit's error said.</summary>
     [Fact]
-    public void ALineAndADelay_AreRefusedByName()
+    public void ALineAndASeriesRlc_AreRealized_ALongDelayIsRefusedByName()
     {
         var problems = ProblemsOf("""
             Vdc:V1 a 0 Vdc=1
             TLIN:TL1 a b Z=50 E=20 deg F=1e9
-            R:R1 b 0 R=50 Ohm
-            VCVS:E1 c 0 b 0 E=2 T=1e-9
-            R:R2 c 0 R=50 Ohm
+            R:R1 b 0 R=50
+            VCVS:E1 c 0 b 0 E=2 T=1e-8
+            R:R2 c 0 R=50
             SRLC:X1 c 0 R=2 Ohm L=3 nH C=4 pF
             """);
-        Assert.Equal(3, problems.Count);
-        Assert.StartsWith("TL1 (TLIN) is not yet supported in transient", problems[0]);
-        Assert.StartsWith("E1 (VCVS) is not yet supported in transient", problems[1]);
-        Assert.StartsWith("X1 (SRLC) is not yet supported in transient", problems[2]);
+        var only = Assert.Single(problems);
+        Assert.StartsWith("E1 (VCVS) is not supported in transient", only);
+        Assert.Contains("rational fit", only);
     }
 
     /// <summary>A modulated source is refused naming the envelope analysis.</summary>

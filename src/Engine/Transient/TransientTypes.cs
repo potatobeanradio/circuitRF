@@ -90,6 +90,11 @@ public sealed class TransientRunResult
     public TransientNewtonPath NewtonPathUsed { get; init; }
     public int InterfaceCount { get; init; }
     public List<string> Notes { get; } = [];
+    /// <summary>brief-trn-4 — each frequency-defined element's wideband fit (R-trn4-4), and each line stepped as its delay
+    /// (R-trn4-1/2), with the band they were realized over (DC to f_max = 1/(2 MaxStep)).</summary>
+    public IReadOnlyList<TransientFitReport> Fits { get; init; } = [];
+    public IReadOnlyList<TransientLineReport> Lines { get; init; } = [];
+    public double FitBandHz { get; init; }
 }
 
 /// <summary>What a run would be, solved for nothing (<see cref="TransientEngine.Plan"/>).</summary>

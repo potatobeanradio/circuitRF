@@ -1,5 +1,6 @@
 using System.Numerics;
 using CircuitRF.Core.Devices.Microstrip;
+using CircuitRF.Core.Devices.Planar;
 using CircuitRF.Core.Elaboration;
 
 namespace CircuitRF.Core.Devices;
@@ -77,7 +78,7 @@ public sealed class MicrostripLineModel : ComponentModel, IPlanarLineModel, IDcS
         MicrostripValidityReporter reporter)
     {
         var p = LineParametersOf(freqHz, wMeters, hMeters, tMeters, epsR, sigmaSPerM, tanD, roughnessMeters, reporter);
-        return (p.Z0, new Complex(p.AlphaNpPerM, p.BetaRadPerM));
+        return (p.Z0, new Complex(p.AlphaNpPerM, p.PhaseRadPerM));
     }
 
     /// <summary>The five-layer model this class documents, in one place: <see cref="LineParameters"/>
@@ -94,24 +95,26 @@ public sealed class MicrostripLineModel : ComponentModel, IPlanarLineModel, IDcS
         if (freqHz > 0.0)
             (z0, eeff) = KirschningJansen.Compute(freqHz, u, epsR, hMeters, z0Static, eeff0, reporter);
 
-        double alphaC = 0.0, alphaD = 0.0;
+        double alphaC = 0.0, alphaD = 0.0, lossPhase = 0.0;
         if (freqHz > 0.0)
         {
             alphaC = MicrostripLoss.ConductorLossNpPerM(freqHz, sigmaSPerM, wMeters, z0, roughnessMeters);
             alphaD = MicrostripLoss.DielectricLossNpPerM(freqHz, epsR, eeff, tanD);
+            double alphaC0 = MicrostripLoss.ConductorLossNpPerM(CausalLoss.ConductorFloorHz, sigmaSPerM, wMeters, z0Static, roughnessMeters);
+            lossPhase = CausalLoss.Phase(freqHz, alphaC, alphaC0, alphaD);
         }
 
         double betaRadPerM = freqHz > 0.0
             ? 2.0 * Math.PI * freqHz / MicrostripLoss.SpeedOfLight * Math.Sqrt(eeff)
             : 0.0;
 
-        return new MicrostripLineParameters(z0Static, eeff0, z0, eeff, alphaC, alphaD, betaRadPerM);
+        return new MicrostripLineParameters(z0Static, eeff0, z0, eeff, alphaC, alphaD, betaRadPerM, lossPhase);
     }
 
     public (double Z0, Complex GammaLength) LineAt(double freqHz)
     {
         var p = LineParameters(freqHz);
-        return (p.Z0, new Complex(p.AlphaNpPerM * _lMeters, p.BetaRadPerM * _lMeters));
+        return (p.Z0, new Complex(p.AlphaNpPerM * _lMeters, p.PhaseRadPerM * _lMeters));
     }
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
@@ -129,11 +132,16 @@ public sealed class MicrostripLineModel : ComponentModel, IPlanarLineModel, IDcS
 /// <param name="Eeff">Kirschning-Jansen ε_eff at the frequency.</param>
 /// <param name="ConductorLossNpPerM">Wheeler conductor loss with roughness (Np/m).</param>
 /// <param name="DielectricLossNpPerM">Dielectric loss (Np/m).</param>
-/// <param name="BetaRadPerM">Phase constant (rad/m).</param>
+/// <param name="BetaRadPerM">Phase constant of the lossless line (rad/m): ω√ε_eff/c.</param>
+/// <param name="LossPhaseRadPerM">brief-trn-4b — the phase the losses come with (rad/m, <see cref="Planar.CausalLoss"/>):
+/// what makes the line causal. Stamped on top of <see cref="BetaRadPerM"/>.</param>
 public readonly record struct MicrostripLineParameters(
     double Z0Static, double EeffStatic, double Z0, double Eeff,
-    double ConductorLossNpPerM, double DielectricLossNpPerM, double BetaRadPerM)
+    double ConductorLossNpPerM, double DielectricLossNpPerM, double BetaRadPerM, double LossPhaseRadPerM = 0.0)
 {
+    /// <summary>The phase constant stamped (rad/m): the lossless line's and its losses'.</summary>
+    public double PhaseRadPerM => BetaRadPerM + LossPhaseRadPerM;
+
     /// <summary>Total attenuation, in the order <see cref="MicrostripLineModel.Stamp"/> has always
     /// summed it (conductor, then dielectric), so the stamped value is bit-identical to before.</summary>
     public double AlphaNpPerM => ConductorLossNpPerM + DielectricLossNpPerM;
