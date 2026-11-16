@@ -511,6 +511,7 @@ fingerprints in `WilkinsonPlanTests` and `HybridPlanTests` still pass). What the
 | MWPD | an R site per resistor, R2-R3 and R2_k-R3_k, `Gap` apart, of that resistor's value (2·Z0, Z0·(K + 1/K), or Cohn's) |
 | MIDC | a jumper from each pin k to Jk, two finger pitches, 2·(W + S), across |
 | MCBL | a via on G2 and on G3; the balanced load across 2-3, `Gap` apart, of 2·ZL |
+| MLAD | a via on each shorted stub's G pin, and each `site` of its list, a series one `Gap` apart (§3.11) |
 
 The Properties readout lists them under the part's numbers.
 
@@ -783,17 +784,20 @@ an aligned hairpin's arms one eight-strip section.
 
 MLAD stores **geometry** rather than specs, as MCRC does: one through line from pin 1 to pin 2 built from an
 ordered list of sections. A filter synthesis, written later, will produce exactly that list. The list alone covers the
-stepped-impedance and stub lowpass filters (the elliptic kind included), shorted-stub bandpass and highpass filters,
-quarter-wave stub bandstop filters, end-coupled bandpass filters, DC blocks, single- and double-stub matchers and
-multi-section quarter-wave transformers. `LadderPlan` is the whole of it in Core: the list, its text and the plan.
+stepped-impedance and stub lowpass filters (the elliptic kind included), radial-stub and butterfly lowpass filters,
+shorted-stub bandpass and highpass filters, quarter-wave stub bandstop filters, end-coupled bandpass filters, DC blocks,
+single- and double-stub matchers, multi-section quarter-wave transformers, and semi-lumped and lumped LC ladders.
+`LadderPlan` is the whole of it in Core: the list, its text and the plan.
 
 | Parameter | Stored | Meaning |
 |---|---|---|
 | `Sections` | yes, text | The list (below). |
 | `Z0` | yes, Ω | The ports' lines: their width, Z0's at F, is the width a gap or a stub at either end sits on. |
 | `F` | yes, Hz | Where the readout states each section, and where the ports' lines' width is found. |
+| `Gap` | yes, m | Every series site's span (1.35 mm, an 0402's land); a `Footprint` sets it from its land (§3.7). |
 | `SignalLayer`, `GroundReference` | yes | As for MWPD. |
-| each section's Z and θ at F; a gap's Cg and Cp | readout | `LadderPlan.Build(...).AtF`. |
+| each section's Z and θ at F; a gap's Cg and Cp; a radial end's reactance | readout | `LadderPlan.Build(...).AtF`. |
+| each site's part, value and span | readout | `PassivePlan.Sites`, as every planned passive lists them. |
 
 **The list, and why it is one text parameter.** circuitRF's list-valued parameters are indexed numbers: the Combiner's
 `IL[k]` and `Phase[k]`, a tone source's `Freq[k]`. They suit a list of numbers of one kind. A ladder's sections are of
@@ -806,6 +810,7 @@ Sections := item { ";" item }            empty items (a trailing ;) are skipped
 item     := kind "(" field { "," field } ")"
 field    := name "=" value                any order; names and words in any case; whitespace ignored
 line(W, L)   gap(S)   taper(W1, W2, L)   stub(W, L, end=open|short, side=up|down|both)
+stub(W, L, end=radial|butterfly, Ro, angle, side)   site(role=R|L|C, value, type=series|shunt, side=up|down)
 ```
 
 A length is a number in metres or a number with a length unit glued on (`mm`, `um`, `nm`, `cm`, `mil`, `in`); `m` alone
@@ -817,8 +822,12 @@ it, and LVS compares it as a string, so a changed list is one `lvs.property.mism
 
 **New kinds without breaking stored values.** A kind is a word and a field a name, so a kind added later reads no
 stored list differently: an unknown word is refused today and is a section tomorrow, and a field added with a default
-leaves every list that does not state it as it was. Radial and butterfly stubs and lumped sites are meant to arrive
-this way, as new kinds beside `stub`, each one model case and one drawer case.
+leaves every list that does not state it as it was. Radial and butterfly ends and lumped sites arrived this way: two
+new `end` words with two new fields that only they take (`Ro`, `angle`, 60° unless stated), and a new kind, `site`. A
+site's value is a number with its role's unit or a bare SI prefix (`3.3pF`, `12nH`, `4.7kOhm`, `2.2p`). A stub that is
+not radial refuses `Ro` and `angle`, and a series site refuses `side`, so no list reads one way and is drawn another.
+Every list written before them parses, builds and draws as it did: `LadderPlanTests`, `LadderSParamTests` and the F24
+fixture are unchanged.
 
 **The plan.** Every section is an existing part, with no new model or drawer code beyond one section kind:
 
@@ -834,15 +843,32 @@ this way, as new kinds beside `stub`, each one model case and one drawer case.
   for a cross drawn alone, which would drop the junction. So the cross's through arms reach 1 µm past the stubs
   (`LadderPlan.CrossThroughPast`): enough for the junction, and 0.01° at 10 GHz.
 - An open end is a `PlanOpen`. A shorted end is a pin, `G1`, `G2`, … in list order, up before down, for an ordinary
-  VIAGND, as MCBL's grounds are.
-- Nodes: the pins (1, 2, G…), then the open ends, numbered first of the internal nodes because a quarter-wave stub's end
-  has a near-zero self admittance at resonance and the local block does not pivot, then the rest in list order. The pins
+  VIAGND, as MCBL's grounds are, declared as a via site.
+- A radial or butterfly end is a `PlanRadialStub` (MRADIAL's section, §3.5) on the stub's end node, `W` wide at its
+  narrow end, so the stub is a feed of `W` and `L` and then the sector. A sector fans along its own +x, so it is turned
+  to fan away from the line; a butterfly's two fan along its own ±x with the feed from −y, so it is turned to take the
+  feed from the line, its sectors either side of the feed's end and parallel to the line. A feed must reach far enough
+  for them to clear the line; nothing checks it (below).
+- A series `site` is no section at all: the copper stops `Gap` short, and its two ends are pins for the part across them.
+  A shunt `site` is a one-sided junction like a stub's whose branch is a square pad of the width there, its end a pin for
+  the part to ground. Where a series site has no copper beside it (at either end, after a gap, or beside another series
+  site), the plan adds a pad there, a `PlanLine` square of the width there, so the part always lands on copper and an LC
+  ladder of sites alone is a row of pads. Each site is declared in `PassivePlan.Sites` with its role, kind, pins, span
+  and value, which the readout lists and Place Site Parts fills (§3.7); a `Footprint` sets the span, MLAD having joined
+  `MicrostripSubstrateInjection.HasSiteFootprint`.
+- Nodes: the pins (1, 2, G…), then the stub ends that are not pins (open and radial), numbered first of the internal
+  nodes because a quarter-wave stub's end has a near-zero self admittance at resonance and the local block does not
+  pivot, then the rest in list order. The pins
   sit exactly at the first section's start and the last one's end. No line is added, so a transformer or a matcher ends
   on its own load. Every dimension is held on the 2 nm grid.
 
-**What it needed beyond the pattern.** Its pins follow the list: `EditableSchematic.PortCount` counts the shorted arms
+**What it needed beyond the pattern.** Its pins follow the list: `EditableSchematic.PortCount` counts the G pins
 (`LadderPlan.Grounds`, 0 for a list that does not parse), and `SymbolPortDefs.For` and `BuiltInSymbols.Primitives` draw
-G1… along the bottom, 200 apart. Unlike MWPD's, the ladder's symbol differs at two and three pins, so the catalogue
+G1… along the bottom, 200 apart. The symbol is drawn from the pin count alone, as every variadic symbol here is, so a
+site's pins cannot have names of their own: every pin after 1 and 2 is a G pin, in list order, a via's or a part's, and a
+list with no site keeps exactly the pins it had. G pins 200 apart are closer than a lumped part's 400, which Place Site
+Parts used to leave to the user; it now stands such a part beside its pins with a wire to each, as it does for pins
+farther apart than a part. Unlike MWPD's, the ladder's symbol differs at two and three pins, so the catalogue
 measures it as variadic: `ComponentTypeRegistry.PortCountParameter` names `Sections`, and the netlist reader does not
 infer `Sections` from a line's net count. A text parameter needed its path through the elaborator, Update Layout and
 the netlist extractor, as above.
@@ -868,6 +894,10 @@ open stub is written short by its end extension (`MicrostripOpenEnd.Extension`).
   π − ½(atan 2bk + atan 2bk+1) long, less atan(ω0·Cp·Z0) for each end gap's Cp.
 - **Matchers and transformers.** Single and double stubs as `stub` and `line`, the load on pin 2 at the last section's
   end, and λ/4 transformers as `line`s.
+- **Radial and butterfly stubs.** A radial stub in place of a λ/4 open stub, its `Ro` and `angle` from MRADIAL's own
+  closed form (§3.5): `stub(end=radial)` with a short feed.
+- **Lumped and semi-lumped.** A prototype element that stays lumped is a `site` of its value: a series L or C a series
+  site, a shunt one a shunt site. Mixed with lines and stubs it is a semi-lumped ladder; alone, a lumped one.
 
 The closed forms place each stub at a point, while the model includes each junction's reactance (MTEE, MCROSS). A
 synthesis that must land within a percent compensates for it, or optimises on the model.
@@ -893,14 +923,33 @@ length. `LadderSParamTests`:
 artwork), and `testdata/schematic-to-layout/F24-microstrip-ladder` with its via on G1, LVS clean and a changed list
 one mismatch.
 
+For the radial ends and the sites: `LadderSitesTests` covers the new kinds reading back what they write, their defaults
+and spellings, each refusal naming its section, the G pins and sites in list order, the radial sections turned away from
+the line, and an LC ladder of sites alone as a row of pads that meet. `LadderSitesSParamTests` holds:
+
+- a radial-stub lowpass and a butterfly lowpass, each equal to its MLIN, MTEE, MCROSS and MRADIAL by hand to 1e-9, and
+  each passing low and stopping high;
+- the third-order lumped Butterworth lowpass of sites alone, filled with ideal parts of the values its sites state, with
+  its −3 dB point at 200 MHz −1.2 %.
+
+`LadderSiteTests` covers drawing the radial ends and the pads, the readout with and without a `Footprint`, Place Site
+Parts filling the site, and `testdata/schematic-to-layout/F30-ladder-site`: a series capacitor's site that an 0402
+spans, LVS clean, and a changed list one mismatch.
+
 **Limits.**
 
 - **The step between widths is not modelled.** There is no MSTEP: upstream left it out on purpose. A stepped-impedance
   design is its lines cascaded, and the step capacitance is a known limit.
 - **The junctions are MTEE's and MCROSS's fits,** calibrated at εr 9.9. A stub wider than the line it stands on moves a
   zero: +2.9 % for the elliptic example, by MTEE's negative branch inductance.
-- **Nothing checks the layout.** Coupling between neighbouring stubs is not in the model, and two stubs on one side
-  closer than their widths overlap without a refusal.
+- **Nothing checks the layout.** Coupling between neighbouring stubs is not in the model, two stubs on one side closer
+  than their widths overlap without a refusal, and nor does a radial sector that reaches back over the line or a
+  neighbour.
+- **A site's pads are copper the lumped design does not count.** They are in the model: the shunt pad's own inductance,
+  in series with the part, lowers a 1 GHz lumped lowpass's cutoff about 5 % on 20 mil RO4350B, and a 200 MHz one's about
+  1 %.
+- **One span for every series site.** `Gap`, or the `Footprint`, sets them all, so an L and a C of different cases
+  cannot sit in one ladder at their own lands.
 - **The geometry is stored,** so a ladder moved to another stack keeps its widths. That is the point of a ladder, and
   the readout shows what they come to there.
 
@@ -919,6 +968,14 @@ one mismatch.
    refuses a ring too small for its F.
 6. **Meandered stubs.** A low-frequency stub is long and straight; the route helper (S4) could fold it, at the cost of
    the corner corrections it already carries.
+7. **A span per site.** A `gap=` field on a series site, or a footprint per site, would let parts of different cases sit
+   at their own lands, which a lumped ladder of mixed L and C sizes needs. Today every series site spans the part's
+   `Gap`.
+8. **Pads the design can count.** The readout could state each site pad's own L and C at F. A lumped synthesis could
+   then take them out of its values, rather than leaving the cutoff a few per cent low at higher frequencies.
+9. **Names for a site's pins.** A symbol drawn from the list rather than from its pin count could name a site's pins by
+   site and draw a series site's two 400 apart, so a part dropped on them lands with no wire. That needs every caller of
+   `SymbolPortDefs.For` to ask the instance, which is wider than this part.
 
 ### 3.12 MCLC's options and MIDC's fingers
 

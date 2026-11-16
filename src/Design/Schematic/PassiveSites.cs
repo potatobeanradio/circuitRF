@@ -131,9 +131,9 @@ public static class PassiveSites
     /// site. Pure: the caller adds them, as one undoable step.
     ///
     /// <para><b>Where they go.</b> A series part whose two pins are a lumped part's span apart in line, with no other
-    /// pin of the passive between them, is laid straight on them, as a resistor dropped on MWPD's R2-R3 is. Otherwise it
-    /// stands beside the pins, outward from the passive and one grid step further for each part already there, with a
-    /// wire to each pin. A shunt part stands on its pin pointing away from the passive, a ground under its far end. A
+    /// pin of the passive between them, is laid straight on them, as a resistor dropped on MWPD's R2-R3 is. Otherwise, pins
+    /// farther apart or closer together (a ladder's G pins, 200 apart), it stands beside the pins, outward from the passive
+    /// and one grid step further for each part already there, with a wire to each pin. A shunt part stands on its pin pointing away from the passive, a ground under its far end. A
     /// jumper (a bond wire or an air bridge) and a load are left, each with a note: neither is an R, L or C, and a load is
     /// the circuit's, not the part's.</para>
     /// </summary>
@@ -200,11 +200,6 @@ public static class PassiveSites
             // Along the pins' line (u) and across it (v).
             double ua = vertical ? a.Y : a.X, ub = vertical ? b.Y : b.X, v = vertical ? a.X : a.Y;
             double lo = Math.Min(ua, ub), hi = Math.Max(ua, ub), mid = (lo + hi) / 2.0;
-            if (hi - lo < PartSpan)
-            {
-                notes.Add($"{comp.InstanceName} {p.Name}: its pins are closer than a part's, so its part is placed by hand.");
-                continue;
-            }
             bool between = pinPoints.Any(q => (vertical ? q.X : q.Y) == v && (vertical ? q.Y : q.X) is var u && u > lo && u < hi);
             double offset = 0.0;
             if (hi - lo != PartSpan || between)
