@@ -2,7 +2,7 @@
 
 **Status:** six parts — MWPD, the Wilkinson divider, with its unequal-split (`K`) and multi-section (`N`) variants; MBLC
 and MRRC, the branch-line and rat-race hybrids; MCLC, MIDC and MCBL, the coupled-line coupler, interdigitated coupler
-and balun; MWPD's and MRRC's rings curved or cornered (`Corner`) · **Date:** 2026-11-16
+and balun; MWPD's and MRRC's rings curved or cornered (`Corner`); the gap, taper and open-end sections (§1) · **Date:** 2026-11-16
 
 Dividers, couplers and baluns on microstrip, each one built-in part that is defined once and read the same way by the
 schematic, the layout, LVS and EM. Each part has its own subsection in §3.
@@ -20,21 +20,51 @@ one standard, generic design rather than six one-off parts. The rest of this sec
 takes the part's specs and the substrate and returns a `PassivePlan`: the part's pin names, and a list of sections. A
 section is an EXISTING microstrip part placed in the passive's frame — an MTEE (`PlanTee`), an MCURVE (`PlanCurve`),
 an MLIN (`PlanLine`), an MMITER or MBEND corner (`PlanBend`), an MCLIN or a set of interdigitated strips
-(`PlanCoupledLine`) — with the plan node each of its pins joins and a pose (where its pin 1 sits, a turn in quarters). Nothing in a plan is a new kind of line: it is the
-vocabulary circuitRF already has, arranged. Every dimension is held on a 2 nm grid
+(`PlanCoupledLine`), an MGAP (`PlanGap`), an MTAPER (`PlanTaper`) — with the plan node each of its pins joins and a pose (where its pin 1 sits, a turn in quarters). Nothing in a plan is a new kind of line: it is the
+vocabulary circuitRF already has, arranged. The one term that is not a part of its own is a line's open end
+(`PlanOpen`), below. Every dimension is held on a 2 nm grid
 (`PassivePlan.OnGrid`), so halves are whole database units and two pieces that meet in the plan meet to the last unit
 in the artwork.
 
 **One model for every plan.** `MicrostripPlanModel` stamps each section through that part's own model
 (`MicrostripTeeModel`, `MicrostripCurveModel`, `MicrostripLineModel`, `MicrostripCoupledLineModel`,
-`MicrostripMiterBendModel`, `MicrostripBendModel`, with their own validity warnings) into a `LocalAdmittanceBlock` on the plan's nodes and Kron-reduces the internal nodes away — the way
+`MicrostripMiterBendModel`, `MicrostripBendModel`, `MicrostripGapModel`, `MicrostripTaperModel`, with their own validity
+warnings; an open end is `MicrostripOpenEnd`'s capacitance on MLIN's or MCLIN's own line) into a `LocalAdmittanceBlock` on the plan's nodes and Kron-reduces the internal nodes away — the way
 MTEE already stamps the arms it draws (`JunctionArms`).
 The block is shared with MTEE for that reason. A topology therefore writes no stamping code at all.
 
 **One drawing path from the same plan.** `PassivePlanPCells.Draw` draws each section through that part's own generator
-(`MTeePCell`, `MCurvePCell`, `MlinPCell`, `CoupledLinePCells`, `MMiterPCell`, `MBendPCell`), turned and moved to its pose, and takes the passive's
+(`MTeePCell`, `MCurvePCell`, `MlinPCell`, `CoupledLinePCells`, `MMiterPCell`, `MBendPCell`, `MGapPCell`, `MTaperPCell`; an
+open end draws nothing), turned and moved to its pose, and takes the passive's
 pins from those parts' own pins. So the model and the layout are the same pieces by construction, not by two
 implementations agreeing.
+
+**Gaps, tapers and open ends.** Three sections the filters are built from: a ladder of series lines, gaps, tapers and
+shunt stubs, coupled-resonator chains and coupled arrays. Each takes any widths and any pose, and numbers its nodes as
+the others do. Tests: `PlanSectionsSParamTests` (each in a small plan is its parts wired by hand to 1e-9, the open end
+as a capacitor; the stub below), `PlanSectionsPCellTests` (each draws its own generator's artwork) and
+`MicrostripOpenEndTests` (the closed form against an independent solve; a gap's refusal and warning).
+
+- **`PlanGap`, a series gap.** Two line ends of width W, S apart: `MicrostripGapModel` (Cg across the gap, Cp to ground
+  at each end) and `MGapPCell`, which draws no copper, only the two ends, so the lines either side end exactly S apart.
+  S ≤ 0 is MGAP's own refusal, a ratio outside its fit MGAP's own warning. Its two nodes are separate copper, so a plan's
+  DC islands stop at it. End-coupled resonators and DC blocks are lines and gaps.
+- **`PlanTaper`, a linear taper.** W1 to W2 over L: `MicrostripTaperModel`'s cascade of MLIN sections and
+  `MTaperPCell`'s trapezoid.
+- **`PlanOpen`, an open end.** A line end with nothing attached holds charge in the field fringing past it, and without
+  it every stub and resonator in a plan would resonate high. No term for it existed. MGAP's shunt capacitance levels off
+  past S/W = 1, but as a clamp of its even-mode fit rather than an open end: 8.9 fF at W = h = 508 µm on εr 3.66, where
+  the gap's own electrostatic reference (`testdata/microstrip-gap`) puts 13.4 fF in one open end, and only for W/h 0.5
+  to 2. So `MicrostripOpenEnd` is Kirschning, Jansen and Koster's end extension Δl
+  ([10.1049/el:19810088](https://doi.org/10.1049/el:19810088), §7), a closed form in W/h, εr and the static εeff, stated
+  for 0.01 ≤ W/h ≤ 100 and εr ≤ 128 (12.85 fF in that case). Δl is geometry and is evaluated once; the end stamps as the
+  capacitance that length of line holds, C = Δl·√εeff/(c·Z0), at MLIN's dispersive Z0 and εeff at each frequency. On one
+  strip's end node that C goes to ground. On the two end nodes of a `PlanCoupledLine` pair, given S, each mode takes the
+  same Δl form at its own static εeff, and its own C from MCLIN's Kirschning–Jansen modes: Ce to ground at each end and
+  (Co − Ce)/2 between them, so the pair driven alike sees Ce and driven opposite Co. On 20 mil RO4350B a 50 Ω end is
+  0.217 mm, and it moves a quarter-wave stub's null from 2.4253 to 2.3969 GHz, where the bare stub 0.217 mm longer has
+  it, to within 0.1 % of the shift. A stub's open end has a near-zero self admittance at resonance and the local block
+  does not pivot, so a plan numbers it first of its internal nodes, as MCBL does.
 
 **Specs are the stored parameters; geometry is a readout.** A part stores what a designer specifies — Z0 and F, and where
 the part has them N (sections), `Coupling` or `ZL` — plus the few layout choices no spec decides (`Gap`). Widths, lengths and radii
@@ -310,7 +340,8 @@ and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`
    `MicrostripPlanModel.Build` and one in `PassivePlanPCells.Draw`, if it needs a part the plans do not use yet).
    `PlanBend` (MMITER and MBEND, for `Corner`) cost exactly one model case and one drawer case; because MBEND stamps in
    branch (Z) form, the shared local block also learned to take branch rows, once, for any such part
-   (`LocalAdmittanceBlock`).
+   (`LocalAdmittanceBlock`). `PlanGap` and `PlanTaper` cost the same, and `PlanOpen` that plus its closed form
+   (`MicrostripOpenEnd`); a gap and an open end also join no copper, one line in the model's DC islands.
 2. `ComponentModelFactory` — the type name, `_parameterizedTypes` and one dispatch line to `MicrostripPlanModel`.
 3. `SchematicModel.SymbolKind`; `ComponentTypeRegistry` (entry, terminals text, `EngineReference`, parameter
    descriptions, `ModelValidity`, `HasNoiseSwitch`, `DefaultParameters`, token); `EditableSchematic.SymbolPortDefs`;
@@ -355,7 +386,10 @@ and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`
    of them.
 5. **A "Dividers and couplers" palette category.** Six new kinds under Microstrip make that list long; a category of
    their own would make them easier to find.
-6. **Smooth circuit curves in the example's plots.** Each bench sweeps only the EM runs' frequencies, so every marker is
+6. **Coupled ends' own model.** A coupled pair's open ends take the single line's Δl form once per mode (§1), which
+   is not a fit to coupled ends. Kirschning, Jansen and Koster's coupled parallel-gap model (§7) was made for them, and
+   the edge-coupled filters' resonator lengths, which these ends set, would follow it more closely.
+7. **Smooth circuit curves in the example's plots.** Each bench sweeps only the EM runs' frequencies, so every marker is
    a solved point and the circuit line is coarse; a `.cdd` that also reads the cell's own fine sweep would draw it
    smoothly.
 
@@ -401,6 +435,14 @@ and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`
 > M. Kirschning, R. H. Jansen and N. H. L. Koster, "Measurement and Computer-Aided Modeling of Microstrip
 > Discontinuities by an Improved Resonator Method," *1983 IEEE MTT-S International Microwave Symposium Digest*,
 > pp. 495–497. DOI [10.1109/MWSYM.1983.1130959](https://doi.org/10.1109/MWSYM.1983.1130959). The square corner's model.
+
+> M. Kirschning, R. H. Jansen and N. H. L. Koster, "Accurate model for open end effect of microstrip lines,"
+> *Electronics Letters*, vol. 17, no. 3, pp. 123–125, February 1981.
+> DOI [10.1049/el:19810088](https://doi.org/10.1049/el:19810088). The open end's extension (`PlanOpen`).
+
+> M. Kirschning, R. H. Jansen and N. H. L. Koster, "Coupled microstrip parallel-gap model for improved filter and
+> coupler design," *Electronics Letters*, vol. 19, no. 10, pp. 377–379, May 1983.
+> DOI [10.1049/el:19830261](https://doi.org/10.1049/el:19830261). Coupled open ends and gaps (§6).
 
 > M. Kirschning and R. H. Jansen, "Accurate model for effective dielectric constant of microstrip with validity up to
 > millimetre-wave frequencies," *Electronics Letters*, vol. 18, no. 6, pp. 272–273, 1982.
