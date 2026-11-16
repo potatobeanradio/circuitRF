@@ -290,6 +290,12 @@ convention behind both.</p>
 <td>The cascade to stdout; <code>-o .npy/.mat/.txt</code> for the budget as a DataSet; <code>--to-schematic</code> writes the test benches (and an array's Steering and Combiners benches) and their displays</td>
 </tr>
 <tr>
+<td><code>filter</code></td>
+<td><strong>nothing</strong> — a specification in flags</td>
+<td>The <a href="filter-designer.html">Filter Designer</a>'s realisers, and one of them</td>
+<td>Each realiser and whether it can build the filter, to stdout; with <code>--realiser</code>, the test bench as a <code>.cnl</code> (<code>-o</code>), and a <code>.csch</code> with <code>--to-schematic</code></td>
+</tr>
+<tr>
 <td><code>smith</code></td>
 <td><code>.csmith</code></td>
 <td>The same cascade evaluator the Smith Chart window walks on every edit</td>
@@ -2416,6 +2422,29 @@ to end; a chain with a link also its <code>TX</code> bench, the PA against its b
 the <code>.cchain</code> or in <code>dir</code>. A bench that already exists is a refusal naming it; <code>--replace</code> writes it again. Nothing is written when any
 bench is refused. Exit <strong>0</strong> when it budgeted (and
 transferred), <strong>1</strong> on a refusal.</p>
+<h2 id="filter"><code>filter</code> — a filter from its specification</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter --band &lt;b&gt; --order &lt;n&gt; --f1 &lt;f&gt; [--f2 &lt;f&gt;] [--response butterworth|chebyshev] [--ripple dB] [--stop dB] [--z0 Ω] [--zeros f,f]
+                 [--tech &lt;id|.ctech|folder&gt;] [--signal &lt;layer&gt;] [--ground &lt;layer&gt;] [--realiser &lt;name&gt; -o &lt;file.cnl&gt; [--to-schematic]] [--points n]</code></pre>
+<p><code>filter</code> is the <a href="filter-designer.html">Filter Designer</a> with no window. It takes the specification as flags: the band
+(<code>lowpass</code>, <code>highpass</code>, <code>bandpass</code> or <code>bandstop</code>), the order, the cutoff or the lower edge <code>--f1</code> and, for a band, the upper
+edge <code>--f2</code>, each with its unit. The response is Chebyshev unless <code>--response</code> says otherwise, with 0.1 dB of ripple, a
+40 dB stopband and 50 Ω terminations.</p>
+<p>The substrate comes from <code>--tech</code>: a <code>.ctech</code>, a folder in a workspace, or a shipped technology id. Without it, the
+workspace given with <code>--workspace</code> is used, else the workspace the output is written in. <code>--signal</code> and <code>--ground</code> choose
+the layers; the technology's own defaults apply otherwise.</p>
+<p><strong>Without <code>--realiser</code></strong> it lists every realiser, with <code>yes</code> or <code>no</code> and the reason. With <code>--json</code>, each line is also a
+<code>filter.realiser.listed</code> diagnostic carrying <code>name</code>, <code>supports</code> and <code>why</code>.</p>
+<p><strong>With <code>--realiser</code></strong> (its name, or a part of it that names only one) it writes the test bench to <code>-o</code>:</p>
+<ul>
+<li>the part, with the parameters the realiser chose and the substrate stated on its line;</li>
+<li>an R, L or C of each site's value on the site's pins, with the part's <code>Footprint</code> or, on a board, the default land;</li>
+<li>a VIAGND on each grounded end;</li>
+<li>two ports of Z0 and an S-parameter sweep across the band.</li>
+</ul>
+<p>The bench runs anywhere: <code>circuitrf sparam</code> on it gives the realised response. <code>--to-schematic</code> also draws it as a <code>.csch</code>
+beside it, through the same path as <code>netlist --to-schematic</code>. A realiser that cannot build the filter is a
+<code>filter.realiser.refused</code> error with its own reason.</p>
+<p>Over MCP, this is the <code>create</code> tool's <code>filter</code> mode. Its arguments have the flags' names, except <code>technology</code> for <code>--tech</code>.</p>
 <h2 id="smith"><code>smith</code> — a matching network, headless</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf smith &lt;match.csmith&gt; [--at &lt;freq&gt;] [-o out.{s1p,svg,pdf,png}]</code></pre>
 <p><code>smith</code> evaluates a <strong><code>.csmith</code></strong> — the document the Smith Chart window edits. It
