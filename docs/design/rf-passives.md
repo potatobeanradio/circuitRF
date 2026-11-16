@@ -7,7 +7,8 @@ rat-race hybrids; MCLC, MIDC and MCBL, the coupled-line coupler, interdigitated 
 (§3.13); the rings curved or cornered (`Corner`); the gap, taper, cross and open-end sections (§1); MRADIAL, the radial
 stub; MCLINN and the N-line coupled section; sites with an optional `Footprint`, and a route helper; MCRC, every
 coupled-resonator filter as one part of stored geometry (§3.10); MLAD, the microstrip ladder, an ordered list of
-sections (§3.11) · **Date:** 2026-11-16
+sections (§3.11); MDLY, the delay line, and MRRC's meandered ring
+(§3.16) · **Date:** 2026-11-16
 
 Dividers, couplers and baluns on microstrip, each one built-in part that is defined once and read the same way by the
 schematic, the layout, LVS and EM. Each part has its own subsection in §3.
@@ -472,9 +473,10 @@ parameters, the indexed ones included (`F15-coupled-lines`: a changed `W[2]` is 
 the odd, even and middle modes; a section with an internal node equal to MCLINN and MLIN wired by hand to 1e-9),
 `CoupledStripsPartTests` (registration, pins, artwork, the cross-section on the RFIC stack).
 
-**Which parts use it.** MCLINN, and through `PlanCoupledStrips` the parts still to come: the coupled-line array
-(interdigital, combline, pseudo-interdigital and multi-line couplers). It is also what MIDC's non-adjacent fingers and
-MWPD's side-by-side section pairs need (§5, §6); neither uses it yet, which keeps them as they were.
+**Which parts use it.** MCLINN, MDLY's meander with `Coupled` (§3.16), and through `PlanCoupledStrips` the parts still
+to come: the coupled-line array (interdigital, combline, pseudo-interdigital and multi-line couplers). It is also what
+MIDC's non-adjacent fingers and MWPD's side-by-side section pairs need (§5, §6); neither uses it yet, which keeps them as
+they were.
 
 **Possible enhancements.**
 
@@ -566,11 +568,13 @@ It returns the sections, the next free plan node, the end pose and the copper's 
 **The length holds θ through the corners**: the legs share what is left of θ in MLIN's dispersive εeff at F after each
 corner's own insertion phase at F, as a length of the line (`PlanSection.LineLength`, the cornered rings' rule, now on
 every two-pin section). Every dimension is on the 2 nm grid. **Close turns**: legs under 3W apart edge to edge are a
-warning, `device.route.runs-coupled`, since they are stamped as separate lines; the N-line coupled section will take
-that case. Refusals: `device.route.spec-not-positive`, `device.route.pitch-too-small`, `device.route.too-short`.
-Tests (`PlanRouteTests`, `PassiveSiteTests`): θ = 90° meanders and corners of every corner kind hold S21 at −90° within
-0.5° in the plan model, on a board and on a GaAs die; every node is one point; a straight run is one `PlanLine`, field
-for field; the drawn copper's ends and extent are the route's.
+warning, `device.route.runs-coupled`, since they are stamped as separate lines. Built `coupled`, a meander's legs are
+one `PlanCoupledStrips` instead (§3.16), and the warning is not given. A plan passes a route's warnings on in
+`PassivePlan.Warnings`, which `MicrostripPlanModel` reports with its sections' own. Refusals:
+`device.route.spec-not-positive`, `device.route.pitch-too-small`, `device.route.too-short`. Tests (`PlanRouteTests`,
+`PassiveSiteTests`): θ = 90° meanders and corners of every corner kind hold S21 at −90° within 0.5° in the plan model,
+on a board and on a GaAs die; every node is one point; a straight run is one `PlanLine`, field for field; the drawn
+copper's ends and extent are the route's.
 
 ### 3.9 MGPD, MBPD and MTPD: the Gysel, Bagley polygon and tee dividers
 
@@ -1022,6 +1026,69 @@ on one side is wider than the coupled section opposite it. Corner tees close it 
 pitch, and either way each grounded end lies one gap from a tee, with no room for its via. So the part waits for the
 meander route helper, which shortens the arms' footprint; `Form` is not added until it can be drawn.
 
+### 3.16 The delay line (MDLY), and MRRC's meandered ring
+
+**MDLY** is the route helper as a part: a line θ long at F, for a delay, a phase shifter's reference arm or a length
+match. `DelayLinePlan.Build` takes the specs Z0, F and θ (`Theta`), finds MLIN's width for Z0 at F and hands the run to
+`PlanRoute` from pin 1 at the origin heading +x, ending on pin 2. The layout choices are stored as MRRC's `Corner` is:
+`Style` (`Straight`, `Corner`, `Meander`, a name), `Corner` (`Curve`, `Miter`, `Square`), `Turns`, `Pitch` (0: 6·W, so a
+half-turn's radius is 3W, where MCURVE's effective-radius fit starts, and the legs are 5W apart edge to edge, clear of
+the coupling warning) and `Side` (1 left of the heading, −1 right). The readout gives W and εeff, θ as a straight
+length, the copper's centre-line length and extent, and each run in order. It has no sites. Pins 1 and 2 sit on MLIN's;
+the glyph is a meander between them. Refusals: `device.delayline.spec-not-positive`, `device.delayline.turns` (a
+meander's turns not a whole number of at least one), `device.delayline.width-unreachable`, and the route's own.
+
+**Coupling between legs, `Coupled`.** 1 places a meander's k + 1 legs as one `PlanCoupledStrips` (§3.6), so every leg
+couples to every other in the model; 0, the default, keeps them separate lines with the route's warning. It cost one
+step at the end of `PlanRoute`'s meander: every leg spans x = 0..leg in the run's frame, so the legs, sorted top first,
+are the section's strips, and a leg heading back joins its far end first. The copper, the end pose, the extent and the
+nodes are unchanged; the turns stay separate pieces. The legs keep MLIN's length, so the phase at F moves by what the
+coupling does, which is what the option is for: on 20 mil RO4350B at 2.4 GHz, θ = 360° in three half-turns, S21 is
+1.04° off −θ with the legs 10W apart centre to centre, 2.73° at 4W (3W edge to edge, where the warning starts) and
+5.47° at 2W, where the separate legs hold −θ to 0.001°. The 1.04° that remains far apart is the N-line section's
+quasi-static εeff against MLIN's dispersive one (§3.6).
+
+**MRRC `Meander`**, the compact ring (Eccleston and Ong shortened a rat-race's arms with artificial lines,
+[10.1109/TMTT.2003.817442](https://doi.org/10.1109/TMTT.2003.817442); He and Wang meandered them,
+[10.1049/joe.2015.0102](https://doi.org/10.1049/joe.2015.0102)). `Meander` = k, odd, folds the 3λg/4 arm inside the
+ring; 0, the default, is the ring of §3.2 bit for bit (the fingerprint test is unchanged). The three λg/4 arms make a C:
+2 → 1 the upper run, 1 → 3 a `PlanRoute` U-turn (one turn, its legs taking what the half-turn of radius Y leaves of
+λg/4), 3 → 4 the lower run. Tee 2's and tee 4's free ends then face out of the C, so the 3λg/4 arm is a half-turn back
+in from tee 4, a `PlanRoute` meander of k turns between the runs, and a half-turn out to tee 2. Every turn of that arm
+has radius Y/(k + 2), which puts its legs 2Y/(k + 2) apart and as far from the runs, and the meander's θ is 3π/2 less
+the two half-turns' own phase at F. Y is the curved ring's radius for a λg/4 − 2·W0 half-turn, so the ring is no taller
+than the curved one, the U-turn keeps legs of about W0 and the folded legs (about λg/4 + W0 at k = 1) clear the U-turn's
+inside. On the example board at 2.4 GHz the drawn copper, feeds included, is 29.89 × 13.57 mm for k = 1 and 29.17 ×
+13.57 mm for k = 3, against 53.11 × 14.24 mm curved: 54 % and 52 % of its area. At F |S11| (−50.96 dB), |S44|, |S41|,
+|S23|, the Σ and Δ outputs (−3.13 to −3.23 dB) and their phases (−0.01° and −179.99°) are the curved ring's to 0.001 dB
+and 0.001° (`HybridSParamTests`), since every arm still holds its phase and the tees are the same. A cornered meander is
+refused (`device.ratrace.meander`, as is an even or fractional k): its two end turns would need corners of their own.
+
+Tests: `DelayLineSParamTests` (S21 at F within 0.5° of −θ for every style and corner, measured 0.000° to 0.021°; the
+part against MLIN, MCURVE, MMITER, MBEND and MCLINN wired by hand to 1e-9; the coupled phase as the legs close),
+`PlanRouteTests` (a coupled meander is its legs as one section over the same copper), `HybridPlanTests` (the meandered
+ring joined, its runs λg/4, its folded arm 3λg/4 at F to 0.5°; the refusals), `HybridSParamTests` (the meandered ring by
+hand to 1e-9, and against the curved one at F), `DelayLinePartTests` (registration; a 360° meander on the GaAs die drawn
+and −360° at 20 GHz; the meandered ring drawn smaller), and `F29-delay-line` through Update Layout and LVS, where a
+changed `Theta` on MDLY or `Meander` on MRRC is one `lvs.property.mismatch`.
+
+**Possible enhancements.**
+
+1. **Compensate a coupled meander's length.** With `Coupled` the legs could be shortened, by a bisection on the plan's
+   own S21 at F, until the run is θ again. Why: the option shows how far coupling pulls the phase (2.7° at a 4W pitch
+   above), and a designer who wants θ then has to tune the length by hand.
+2. **Couple the meandered ring's folded legs to its runs.** The outer legs run 2Y/(k + 2) from the ring's upper and
+   lower runs and are stamped apart from them. A `PlanCoupledStrips` of the run and the leg beside it would put that
+   coupling in the model. Why: on a thin substrate or at large k the gap closes towards 3W, where EM would see it and the circuit
+   would not.
+3. **Fold the λg/4 arms too.** The upper and lower runs are straight λg/4, so they now set the ring's width; meandering
+   each between its tees (an even number of turns, ending on the same heading) would shrink it again. Why: it is the next
+   factor in area, left out here to keep the ring's change small.
+4. **A cornered meandered ring.** The end turns as two corners and a line, as the route makes a cornered turn. Why:
+   mitred corners take less room than half-turns of the same pitch, and the plain ring already offers them.
+5. **Turns that couple.** Adjacent half-turns at one end of a tight meander also face each other; the N-line section
+   covers only the parallel legs. Why: at a pitch near 2W their coupling is the next term after the legs'.
+
 ## 4. What a new topology costs
 
 1. `src/Core/Devices/Microstrip/<X>Plan.cs` — the pure plan (and a section kind, with one case in
@@ -1285,3 +1352,11 @@ meander route helper, which shortens the arms' footprint; `Form` is not added un
 > K. S. Ang and I. D. Robertson, "Analysis and Design of Impedance-Transforming Planar Marchand Baluns," *IEEE
 > Transactions on Microwave Theory and Techniques*, vol. 49, no. 2, pp. 402–406, February 2001.
 > DOI [10.1109/22.903108](https://doi.org/10.1109/22.903108).
+
+> K. W. Eccleston and S. H. M. Ong, "Compact Planar Microstripline Branch-Line and Rat-Race Couplers," *IEEE Transactions
+> on Microwave Theory and Techniques*, vol. 51, no. 10, pp. 2119–2125, October 2003.
+> DOI [10.1109/TMTT.2003.817442](https://doi.org/10.1109/TMTT.2003.817442). Compact rings from artificial lines (§3.16).
+
+> J. He and B.-Z. Wang, "Compact rat-race ring coupler with meander high-impedance transmission line and port impedance
+> matching," *The Journal of Engineering*, vol. 2015, no. 8, pp. 252–254, August 2015.
+> DOI [10.1049/joe.2015.0102](https://doi.org/10.1049/joe.2015.0102). A rat-race whose arms are meandered (§3.16).

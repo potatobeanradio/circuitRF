@@ -164,6 +164,46 @@ public class HybridPlanTests
         AssertJoined(d.Plan);
     }
 
+    /// <summary>Meandered, the three λg/4 arms make a C and the 3λg/4 arm folds inside it: every piece meets the next, the
+    /// runs are λg/4, the folded arm's two half-turns and its meander together hold 3λg/4 at F, and the ring is as tall
+    /// as the curved one and narrower.</summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    public void TheRatRace_Meandered_KeepsItsSpacingsInsideASmallerRing(int turns)
+    {
+        var curved = RatRacePlan.Build(50.0, 2.4e9, Ro4350b);
+        var d = RatRacePlan.Build(50.0, 2.4e9, Ro4350b, meander: turns);
+        AssertJoined(d.Plan);
+        Assert.Equal(turns, d.MeanderTurns);
+        Assert.Equal(2, d.Plan.Sections.OfType<PlanLine>().Count(l => l.L == d.QuarterWaveMeters));
+        var curves = d.Plan.Sections.OfType<PlanCurve>().ToList();
+        Assert.Equal(1 + turns + 2, curves.Count);
+        Assert.Single(curves, c => c.Radius == d.RadiusMeters);
+        Assert.All(curves.Where(c => c.Radius != d.RadiusMeters), c => Assert.Equal(d.MeanderPitchMeters / 2.0, c.Radius));
+        Assert.True(d.RadiusMeters <= curved.RadiusMeters, $"{d.RadiusMeters} vs {curved.RadiusMeters}");
+
+        // The folded arm, tee 4's free end (node 12) to tee 2's (node 5), alone between lines of the ring's impedance:
+        // its two half-turns (12-13, 14-5) and the meander between (13-14, its own nodes after the U-turn's 15 and 16).
+        var arm = d.Plan.Sections.Where(x => x.Nodes.All(n => n is 5 or 12 or 13 or 14 || n >= 17)).ToList();
+        int[] inner = [.. arm.SelectMany(x => x.Nodes).Where(n => n is not (5 or 12)).Distinct()];
+        var alone = new PassivePlan(["a", "b"],
+            [.. arm.Select(x => x with { Nodes = [.. x.Nodes.Select(n => n == 12 ? 1 : n == 5 ? 2 : 3 + Array.IndexOf(inner, n))] })],
+            2 + inner.Length);
+        double phase = alone.S21(Ro4350b, 2.4e9, d.RingZ0).Phase * 180.0 / Math.PI;
+        Assert.True(Math.Abs(phase - 90.0) < 0.5, $"3λg/4 arm S21 phase {phase}° (want −270 ≡ 90)");
+    }
+
+    [Theory]
+    [InlineData(2.0, PlanCorner.Curve)]
+    [InlineData(1.5, PlanCorner.Curve)]
+    [InlineData(1.0, PlanCorner.Miter)]
+    public void ARatRaceMeanderThatCannotBeBuilt_IsACodedRefusal(double meander, PlanCorner corner)
+    {
+        var ex = Assert.Throws<ParameterRefusalException>(() => RatRacePlan.Build(50.0, 2.4e9, Ro4350b, corner, meander));
+        Assert.Equal("device.ratrace.meander", ex.Diagnostic?.Id);
+    }
+
     [Theory]
     [InlineData(0.0, 2.4e9, 1.0, "device.branchline.spec-not-positive")]
     [InlineData(50.0, -1.0, 1.0, "device.branchline.spec-not-positive")]
@@ -205,6 +245,12 @@ public class HybridPlanTests
                                          Math.Sign(c.AngleDeg) * c.Radius * (1.0 - Math.Cos(c.AngleDeg * Math.PI / 180.0)))],
                 PlanBend b => [(0, 0), (b.Arm * (1.0 + Math.Cos(b.AngleDeg * Math.PI / 180.0)),
                                         b.Arm * Math.Sin(b.AngleDeg * Math.PI / 180.0))],
+                // Strip k's near and far ends, its centre below strip k − 1's by their half widths and the gap.
+                PlanCoupledStrips m => [.. Enumerable.Range(0, m.W.Count).SelectMany(k =>
+                {
+                    double y = -Enumerable.Range(1, k).Sum(i => (m.W[i - 1] + m.W[i]) / 2.0 + m.S[i - 1]);
+                    return new[] { (0.0, y), (m.L, y) };
+                })],
                 _ => throw new InvalidOperationException(),
             };
             double th = section.RotationDeg * Math.PI / 180.0;

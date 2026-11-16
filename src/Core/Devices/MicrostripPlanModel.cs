@@ -32,6 +32,7 @@ public sealed class MicrostripPlanModel : ComponentModel, IReportsWarnings, IDcS
 {
     private readonly PassivePlan _plan;
     private readonly (ComponentModel Model, ElaboratedComponent At)[] _sections;
+    private readonly MicrostripValidityReporter _reporter;
 
     /// <summary>The plan this model stamps, its sites included: what LVS and Place site parts read a placed part's sites from.</summary>
     public PassivePlan Plan => _plan;
@@ -45,6 +46,8 @@ public sealed class MicrostripPlanModel : ComponentModel, IReportsWarnings, IDcS
     {
         _plan = plan;
         _sections = [.. plan.Sections.Select(section => Build(section, s, instancePath))];
+        _reporter = new MicrostripValidityReporter(instancePath);
+        foreach (var warning in plan.Warnings) _reporter.ReportOnce(warning.Id, warning.Render());
         DcShortedTerminals = Islands(plan);
     }
 
@@ -111,7 +114,7 @@ public sealed class MicrostripPlanModel : ComponentModel, IReportsWarnings, IDcS
 
     public IReadOnlyList<(string Key, string Message)> DrainWarnings()
         => [.. _sections.Select(x => x.Model).OfType<IReportsWarnings>().SelectMany(m => m.DrainWarnings())
-                        .DistinctBy(w => w.Key)];
+                        .DistinctBy(w => w.Key), .. _reporter.Drain()];
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {

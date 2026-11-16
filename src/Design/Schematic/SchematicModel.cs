@@ -756,6 +756,11 @@ public enum SymbolKind
     /// the reference line is laid (Reference); the C-section and the line are derived (SchiffmanPlan). Pins 1 and 2 the
     /// C-section's ends, 3 and 4 the reference line's.</summary>
     Msps,
+    /// <summary>A delay or phase line on microstrip (engine "MDLY", docs/design/rf-passives.md): specs Z0, F and Theta, the
+    /// electrical length at F, and how it is laid (Style: straight, round one Corner, or a meander of Turns legs Pitch
+    /// apart on one Side; Coupled models a meander's legs as coupled lines). The width and every length are derived
+    /// (DelayLinePlan). Two pins, 1 the start and 2 the end. Appended so no existing kind's ordinal moves.</summary>
+    Mdly,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

@@ -66,6 +66,7 @@ public static class GroundPourPlanner
         PassivePlanPCells.CoupledResonatorId,
         PassivePlanPCells.LadderId,
         PassivePlanPCells.SchiffmanId,
+        PassivePlanPCells.DelayLineId,
     };
 
     /// <summary>The clearance ring around a via's pad where it passes through the plane, µm. A default: no

@@ -155,6 +155,8 @@ public static class SymbolPortDefs
             // the middle, where the two sections' coupled strips end.
             // MCRC: in at the left on the first feed's row, out at the right on the last's, as the glyph's strips step.
             case SymbolKind.Mcrc:    return [("1", -400f, -100f), ("2", 400f, 100f)];
+            // MDLY: a line, on MLIN's left/right pins.
+            case SymbolKind.Mdly:    return [("1", -200f, 0f), ("2", 200f, 0f)];
             case SymbolKind.Mcbl:    return [("1", -600f, -100f), ("2", -100f, 200f), ("3", 100f, 200f),
                                              ("G2", -600f, 100f), ("G3", 600f, 100f)];
             // MLAD: the through line's ends at the left and right, and its via pins G1… along the bottom 200 apart and

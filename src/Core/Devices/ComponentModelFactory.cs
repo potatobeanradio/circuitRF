@@ -94,6 +94,8 @@ public static class ComponentModelFactory
             WilkinsonTypeName,
             BranchLineTypeName, RatRaceTypeName,
             GyselTypeName, BagleyTypeName, TeeDividerTypeName,
+            // A delay or phase line, laid straight, round a corner or meandered (PlanRoute).
+            DelayLineTypeName,
             // The coupled-line planned passives: MCLIN, MLIN and interdigitated sections, stamped the same way.
             CoupledLineCouplerTypeName, LangeTypeName, MarchandTypeName, SchiffmanTypeName,
             // The coupled-resonator filters: physical geometry in, every shape and form one plan of the same sections.
@@ -281,6 +283,8 @@ public static class ComponentModelFactory
             return CreateBagleyModel(parameters);
         if (typeName.Equals(TeeDividerTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateTeeDividerModel(parameters);
+        if (typeName.Equals(DelayLineTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateDelayLineModel(parameters);
         if (typeName.Equals(CoupledLineCouplerTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateCoupledLineCouplerModel(parameters);
         if (typeName.Equals(LangeTypeName, StringComparison.OrdinalIgnoreCase))
@@ -3068,10 +3072,11 @@ public static class ComponentModelFactory
                                     GetReal(parameters, "N", 1.0), SubstrateOf(parameters)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, BranchLineTypeName));
 
-    // MRRC: the specs Z0 and F, and how the ring turns (Corner); the plan derives the rest.
+    // MRRC: the specs Z0 and F, how the ring turns (Corner) and the 3λ/4 arm's turns folded inside it (Meander, 0 for
+    // none); the plan derives the rest.
     private static MicrostripPlanModel CreateRatRaceModel(IReadOnlyDictionary<string, Value> parameters)
         => new(RatRacePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
-                                 EnumNamed(parameters, "Corner", PlanCorner.Curve)).Plan,
+                                 EnumNamed(parameters, "Corner", PlanCorner.Curve), GetReal(parameters, "Meander", 0.0)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, RatRaceTypeName));
 
     /// <summary>The Gysel divider's engine token (pins 1, 2, 3, then R2 and R3, the isolation nodes for resistors to
@@ -3101,6 +3106,20 @@ public static class ComponentModelFactory
         => new(TeeDividerPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
                                     GetReal(parameters, "K", 1.0)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, TeeDividerTypeName));
+
+    /// <summary>The delay line's engine token (pins 1, 2).</summary>
+    public const string DelayLineTypeName = "MDLY";
+
+    // MDLY: the specs Z0, F and Theta (radians here), how the run is laid (Style, Corner, Turns, Pitch, Side) and whether
+    // a meander's legs are modelled coupled (Coupled, 0 or 1); the plan derives the rest.
+    private static MicrostripPlanModel CreateDelayLineModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(DelayLinePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
+                                   GetReal(parameters, "Theta", 2.0 * Math.PI), SubstrateOf(parameters),
+                                   EnumNamed(parameters, "Style", PlanRouteStyle.Meander),
+                                   EnumNamed(parameters, "Corner", PlanCorner.Curve), GetReal(parameters, "Turns", 2.0),
+                                   GetReal(parameters, "Pitch", 0.0), GetReal(parameters, "Side", 1.0),
+                                   GetReal(parameters, "Coupled", 0.0) != 0.0).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, DelayLineTypeName));
 
     /// <summary>The coupled-line coupler's engine token (pins 1 input, 2 through, 3 coupled, 4 isolated).</summary>
     public const string CoupledLineCouplerTypeName = "MCLC";

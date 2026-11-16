@@ -1259,7 +1259,7 @@ most often left wrong — <code>IncludeCapacitance</code> and <code>er</code> �
 Each part here is one RF topology, placed as one component and stated by what you specify rather than by its geometry:
 the port impedance and the centre frequency, and a coupler's coupling. There are ten: the Wilkinson, Gysel, Bagley
 polygon and tee dividers, the branch-line and rat-race hybrids, the coupled-line coupler, the interdigitated coupler,
-the coupled-line balun and the Schiffman phase shifter.
+the coupled-line balun and the Schiffman phase shifter; and a delay line, stated by its electrical length.
 circuitRF works out the lines on the workspace technology's substrate, the same way every time, and the layout draws
 exactly the pieces the circuit model simulates, so the schematic, the layout, LVS and EM all read the same few numbers.
 The parameters panel shows what the specs come out to — the widths, gaps and lengths, and a ring's radius — as values
@@ -1614,6 +1614,19 @@ at `F`, taken from the corner's model, plus the side, which is that much shorter
 square ones.
 Choose it for the same reasons as the divider's, `Miter` first.
 
+<a id="mrrc-meander"></a>**Folded: `Meander`.** `Meander` = k, an odd number of turns, folds the three-quarter-wave arm
+inside the ring, a compact rat-race in the line of Eccleston and Ong's, who shortened the arms with artificial lines,
+and He and Wang's, who meandered them. The three quarter-wave arms make a C: 2 to 1 along the top, 1 to 3 a U-turn, 3 to
+4 along the bottom. The long arm closes the C from the inside: a half-turn back in from terminal 4's tee, a meander of k
+turns between the top and bottom runs, laid by the same function as a [delay line's](#mdly), and a half-turn out to
+terminal 2's tee. Its half-turns' own electrical length at `F` comes out of the meander, so it is still three quarters
+of a wavelength, and every turn of it has the same radius, which puts its legs as far from one another as from the runs.
+The ring is no taller and about a quarter wave narrower: on the example board the copper, feeds included, is 29.89 ×
+13.57 mm with one turn, against 53.11 × 14.24 mm for the curved ring, 54 % of its area, and at `F` the match, the
+in-phase and antiphase outputs and the isolation are the curved ring's to 0.001 dB and 0.001°. The folded legs are
+separate lines in the model, uncoupled to each other and to the runs beside them; the turns are curves only, so `Corner`
+must be `Curve`. `Meander` = 0, the default, is the ring above, unchanged.
+
 **The model** is the MTEE, MLIN and MCURVE parts the layout draws, stamped together and reduced to the four terminals,
 with their limits, which it reports in Messages: MTEE's junction formulas are calibrated on alumina (εr 9.9) and on W/h
 from 0.5 to 2, and MCURVE's length rule is stated for bend radii of 3 to 7 widths, a smaller ring than most. A
@@ -1641,6 +1654,14 @@ example runs it on Planar MoM, EMerge and Palace.
 > M. Kirschning and R. H. Jansen, "Accurate model for effective dielectric constant of microstrip with validity up to
 > millimetre-wave frequencies," *Electronics Letters*, vol. 18, no. 6, pp. 272–273, 1982.
 > DOI [10.1049/el:19820186](https://doi.org/10.1049/el:19820186).
+
+> K. W. Eccleston and S. H. M. Ong, "Compact Planar Microstripline Branch-Line and Rat-Race Couplers," *IEEE Transactions
+> on Microwave Theory and Techniques*, vol. 51, no. 10, pp. 2119–2125, October 2003.
+> DOI [10.1109/TMTT.2003.817442](https://doi.org/10.1109/TMTT.2003.817442). Compact rings from artificial lines.
+
+> J. He and B.-Z. Wang, "Compact rat-race ring coupler with meander high-impedance transmission line and port impedance
+> matching," *The Journal of Engineering*, vol. 2015, no. 8, pp. 252–254, August 2015.
+> DOI [10.1049/joe.2015.0102](https://doi.org/10.1049/joe.2015.0102). A rat-race with meandered arms.
 
 ### Gysel Divider (MGPD) {#mgpd}
 
@@ -2013,6 +2034,62 @@ degree over 1.5:1 there. A tight ρ also needs a narrow gap: 90° needs at least
 > B. M. Schiffman, "A New Class of Broad-Band Microwave 90-Degree Phase Shifters," *IRE Transactions on Microwave Theory
 > and Techniques*, vol. 6, no. 2, pp. 232–237, April 1958.
 > DOI [10.1109/TMTT.1958.1124543](https://doi.org/10.1109/TMTT.1958.1124543).
+
+### Delay Line (MDLY) {#mdly}
+
+{{symbol: mdly}}
+
+A length of microstrip stated by its electrical length: `Theta` at `F`, laid straight, round one corner, or folded into
+a meander to fit a smaller space. Use it as a delay, a phase shifter's reference arm, or wherever a line must be a given
+phase long at a given frequency. Terminal 1 is where the run starts and terminal 2 where it ends; the line is
+reciprocal, so either may be the input.
+
+**What circuitRF derives** from `Z0`, `F` and `Theta` on the technology's substrate:
+
+- the width, for `Z0`, from the microstrip line model's own impedance at `F`;
+- `Theta` as a length of that line, `Theta`/360° · c₀ / (`F`·√εeff) with εeff at `F`;
+- the layout, by `Style`:
+  - `Straight`: one line of that length;
+  - `Corner`: two equal legs and one 90° corner, a curve of three widths' radius (`Corner` = `Curve`), a mitred corner
+    (`Miter`) or a square one (`Square`);
+  - `Meander`: `Turns` + 1 equal parallel legs joined by `Turns` 180° turns, `Pitch` apart centre to centre (0: six
+    widths, so a half-turn's radius is three widths), stacked to the left of the run's heading from terminal 1
+    (`Side` = 1) or to its right (−1). A turn is a half-turn of radius `Pitch`/2, or two corners and the line between
+    them. An odd number of turns ends heading back the way the run started.
+
+**The length holds through the corners.** Every corner or turn has its own phase at `F`, taken from its own model, and
+the legs are shortened by it, so S21 is −`Theta` at `F` in every style: on the example board within 0.03° for straight,
+cornered and meandered runs of 90° to 360°. The parameters panel shows the width, `Theta` as a straight length, the
+copper's length along its centre line, its extent and each run in order.
+
+**Legs that couple.** Legs close together couple, which slows the run and moves its phase. With `Coupled` = 0, the
+default, they are separate lines in the model and the run says so in Messages when they are under three widths apart
+edge to edge. `Coupled` = 1 puts the legs into the model as one section of [N coupled lines](#mclinen), every leg coupled
+to every other, over the same copper. On the example board a 360° meander of three half-turns at 2.4 GHz is then 1.0° off
+−`Theta` with its legs ten widths apart, 2.7° at four and 5.5° at two; the 1° that remains far apart
+is the coupled-line section's static permittivity against the single line's dispersive one. The turns are never
+coupled to one another.
+
+**The model** is the MLIN, MCURVE, MMITER or MBEND parts the layout draws (and with `Coupled` the coupled-line section),
+stamped together and reduced to the two terminals, with their limits, which it reports in Messages: MCURVE's length rule
+is stated for radii of 3 to 7 widths, so a meander's half-turns sit inside it at pitches of six to fourteen widths. A
+run too short for the turns asked of it, a pitch no wider than the line, or a turn count that is not a whole number is
+refused by name.
+
+{{table: components/Mdly}}
+
+**References**
+
+> E. Hammerstad and Ø. Jensen, "Accurate Models for Microstrip Computer-Aided Design," *1980 IEEE MTT-S International
+> Microwave Symposium Digest*, pp. 407–409. DOI [10.1109/MWSYM.1980.1124303](https://doi.org/10.1109/MWSYM.1980.1124303).
+
+> M. Kirschning and R. H. Jansen, "Accurate model for effective dielectric constant of microstrip with validity up to
+> millimetre-wave frequencies," *Electronics Letters*, vol. 18, no. 6, pp. 272–273, 1982.
+> DOI [10.1049/el:19820186](https://doi.org/10.1049/el:19820186). The dispersion `Theta` is measured in.
+
+> V. K. Tripathi and H. Lee, "Spectral-Domain Computation of Characteristic Impedances and Multiport Parameters of
+> Multiple Coupled Microstrip Lines," *IEEE Transactions on Microwave Theory and Techniques*, vol. 37, no. 1,
+> pp. 215–221, January 1989. DOI [10.1109/22.20041](https://doi.org/10.1109/22.20041). The coupled legs' section.
 
 ## Planar filters {#planar-filters}
 

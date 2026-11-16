@@ -1632,10 +1632,11 @@ public sealed partial class Elaborator
             }
             // A ring's Corner (MWPD, MRRC, MGPD, MBPD) is Curve, Miter or Square, a coupler's Compensation (MCLC) None,
             // Capacitive, Inductive or Wiggly, and a phase shifter's Reference (MSPS) Straight, Curve, Miter or Square:
-            // enum names, kept as such.
+            // enum names, kept as such; so are a delay line's Corner and Style (MDLY).
             if ((ov.Name == "Corner" && inst.Reference.ToUpperInvariant() is "MWPD" or "MRRC" or "MGPD" or "MBPD")
                 || (ov.Name == "Compensation" && inst.Reference.Equals("MCLC", StringComparison.OrdinalIgnoreCase))
-                || (ov.Name == "Reference" && inst.Reference.Equals("MSPS", StringComparison.OrdinalIgnoreCase)))
+                || (ov.Name == "Reference" && inst.Reference.Equals("MSPS", StringComparison.OrdinalIgnoreCase))
+                || (ov.Name is "Corner" or "Style" && inst.Reference.Equals("MDLY", StringComparison.OrdinalIgnoreCase)))
             {
                 result[ov.Name] = new Value(Unquote(ov.Expression));
                 continue;

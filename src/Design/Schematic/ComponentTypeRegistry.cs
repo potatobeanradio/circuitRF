@@ -14,6 +14,7 @@ using LoopArrangement = CircuitRF.Core.Devices.Microstrip.LoopArrangement;
 using LadderPlan = CircuitRF.Core.Devices.Microstrip.LadderPlan;
 using CouplerCompensation = CircuitRF.Core.Devices.Microstrip.CouplerCompensation;
 using SchiffmanReference = CircuitRF.Core.Devices.Microstrip.SchiffmanReference;
+using PlanRouteStyle = CircuitRF.Core.Devices.Microstrip.PlanRouteStyle;
 
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout.PCells;
@@ -889,6 +890,12 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MIDC", "Lange", "Lange coupler", "interdigitated coupler", "interdigital coupler",
                           "quadrature hybrid", "90 degree hybrid", "3 dB coupler", "coupler", "bond wire", "jumper"]),
+        // A delay or phase line: θ at F laid straight, round a corner or meandered (DelayLinePlan, PlanRoute).
+        [SymbolKind.Mdly]         = new("MDLY", "DLY",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MDLY", "delay line", "phase line", "meander", "meander line", "serpentine", "folded line",
+                          "phase shifter reference", "quarter wave", "electrical length", "length matching", "trombone"],
+            ExtraCategories: [ComponentCategory.TransmissionLine]),
         [SymbolKind.Mcbl]         = new("MCBL", "CBL",
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MCBL", "Marchand", "Marchand balun", "balun", "coupled-line balun", "planar balun",
@@ -1216,6 +1223,11 @@ public static class ComponentTypeRegistry
           + "and the part does not couple as specified. Six or eight fingers add J5-J8 and J9-J12: a jumper joins "
           + "J(4m+k) to terminal k's conductor.",
 
+        SymbolKind.Mdly =>
+            "Terminal 1 is where the run starts and 2 where it ends; the line is reciprocal, so either may be the input. "
+          + "The run leaves terminal 1 heading right; a meander stacks its legs to the left of that heading (Side 1) or "
+          + "to the right (Side −1).",
+
         SymbolKind.Mcbl =>
             "Not interchangeable: terminal 1 is the unbalanced input, 2 and 3 the balanced outputs, in antiphase. G2 and "
           + "G3 are the grounded ends of the strips that carry 2 and 3: put a via to ground (VIAGND) on each.",
@@ -1435,6 +1447,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Mcrc          => ComponentModelFactory.CoupledResonatorTypeName,
         SymbolKind.Mlad          => ComponentModelFactory.LadderTypeName,
         SymbolKind.Msps          => ComponentModelFactory.SchiffmanTypeName,
+        SymbolKind.Mdly          => ComponentModelFactory.DelayLineTypeName,
         SymbolKind.MimCap        => "MIMCAP",
         SymbolKind.Spiral        => "SPIRAL",
         SymbolKind.OctSpiral     => "OSPIRAL",
@@ -1611,6 +1624,7 @@ public static class ComponentTypeRegistry
         or SymbolKind.Mcrc
         or SymbolKind.Mlad
         or SymbolKind.Msps
+        or SymbolKind.Mdly
         or SymbolKind.Balun or SymbolKind.Circulator or SymbolKind.Switch or SymbolKind.Coupler
         or SymbolKind.Hybrid90 or SymbolKind.Hybrid180 or SymbolKind.Filter or SymbolKind.Atten or SymbolKind.Duplexer
         or SymbolKind.Combiner
@@ -1939,6 +1953,29 @@ public static class ComponentTypeRegistry
                                  + "the signal layer.",
         (SymbolKind.Mwpd, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below the "
                                               + "signal layer.",
+        (SymbolKind.Mrrc, "Meander") => "0: the plain ring. An odd number k: the 3λ/4 arm folded inside the ring with k turns, "
+                                      + "the three λ/4 arms round it, so the ring is about a quarter wave narrower. Curved "
+                                      + "corners only.",
+        (SymbolKind.Mdly, "Z0") => "The line's impedance; its width is derived from it on the technology's substrate.",
+        (SymbolKind.Mdly, "F") => "The frequency Theta is stated at, in the line's own effective permittivity there.",
+        (SymbolKind.Mdly, "Theta") => "Electrical length at F, every corner and turn counted at its own phase: 90° is a "
+                                    + "quarter wave, 360° a whole one.",
+        (SymbolKind.Mdly, "Style") => "Straight: one line. Corner: two equal legs and one 90° corner. Meander: Turns + 1 "
+                                    + "equal parallel legs joined by Turns 180° turns.",
+        (SymbolKind.Mdly, "Corner") => "How each corner or turn is made. Curve: an MCURVE (a meander's turn a half-turn of "
+                                     + "radius Pitch/2). Miter: MMITER at its usual chamfer; Square: MBEND, a turn being "
+                                     + "two of them and the line between.",
+        (SymbolKind.Mdly, "Turns") => "A meander's turns, 1 or more; an odd number ends heading back the way it started.",
+        (SymbolKind.Mdly, "Pitch") => "A meander's legs, centre to centre. 0: six line widths, so a half-turn's radius is "
+                                    + "3W, where MCURVE's fit starts, and the legs are 5W apart edge to edge.",
+        (SymbolKind.Mdly, "Side") => "1: a meander stacks its legs to the left of the run's heading from terminal 1; −1: to "
+                                   + "the right.",
+        (SymbolKind.Mdly, "Coupled") => "0: a meander's legs are separate lines, and the run warns when they are under 3W "
+                                      + "apart edge to edge. 1: they are one N-line coupled section, so the coupling "
+                                      + "between them is in the model.",
+        (SymbolKind.Mdly, "SignalLayer") => "The conductor the line is on. Empty: the technology's top conductor.",
+        (SymbolKind.Mdly, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below "
+                                              + "the signal layer.",
         (SymbolKind.GsgPad, "W") => "Width of the line leaving the signal pad. Placed: the 50 Ω width on the technology.",
         (SymbolKind.GsgPad, "L") => "Length of the line, from the signal pad's edge to terminal 2.",
         (SymbolKind.GsgPad, "Pitch") => "Probe pitch: centre of the signal pad to the centre of each ground pad. The probe's, "
@@ -2077,6 +2114,11 @@ public static class ComponentTypeRegistry
             "MCLIN for the C-section, an MLIN strap across its far ends, and the reference line's MLIN (with MCURVE or "
           + "MMITER/MBEND corners when folded), stamped together. Schiffman's design is TEM; microstrip's faster odd mode "
           + "leaves the C-section short of a quarter wave in one mode, so match and phase flatness depart from his curves.",
+        SymbolKind.Mdly =>
+            "MLIN, and MCURVE, MMITER or MBEND, the pieces the layout draws, stamped together and reduced to the two "
+          + "pins. Each corner's own phase at F comes out of the legs, so the run is Theta at F; elsewhere each piece "
+          + "follows its own model. A meander's legs are separate lines unless Coupled, when they are MCLINN's "
+          + "quasi-static N-line section (no dispersion). Turns never couple to one another.",
         SymbolKind.Mcbl =>
             "Two MCLIN quarter-wave sections and the MLIN joining them, stamped together. The coupling matches ZL on "
           + "each output to Z0 for TEM lines; microstrip's unequal mode velocities leave the outputs about 16° short of "
@@ -4317,6 +4359,20 @@ public static class ComponentTypeRegistry
                 return [new("Z0", "50",  "Ω",   true, UnitDimension.Resistance),
                         new("F",  "2.4", "GHz", true, UnitDimension.Frequency),
                         new("Corner", nameof(PlanCorner.Curve), "", false, UnitDimension.None),
+                        new("Meander", "0", "", false, UnitDimension.None),
+                        .. SignalGroundLayerParams];
+            // MDLY: the specs (Z0, F, Theta) and how the run is laid; W and every length are a readout (DelayLinePlan). Two
+            // turns end in line with the start, and leave a whole wave room for its 3W half-turns even on 1.6 mm FR-4.
+            case SymbolKind.Mdly:
+                return [new("Z0",      "50",   "Ω",   true,  UnitDimension.Resistance),
+                        new("F",       "2.4",  "GHz", true,  UnitDimension.Frequency),
+                        new("Theta",   "360",  "deg", true,  UnitDimension.Angle),
+                        new("Style",   nameof(PlanRouteStyle.Meander), "", true, UnitDimension.None),
+                        new("Corner",  nameof(PlanCorner.Curve), "", false, UnitDimension.None),
+                        new("Turns",   "2",    "",    false, UnitDimension.None),
+                        new("Pitch",   "0",    "mm",  false, UnitDimension.Length),
+                        new("Side",    "1",    "",    false, UnitDimension.None),
+                        new("Coupled", "0",    "",    false, UnitDimension.None),
                         .. SignalGroundLayerParams];
             // MGPD, MBPD, MTPD: the specs alone (GyselPlan, BagleyPlan, TeeDividerPlan); MBPD's N sets its pins, the
             // rings turn as Corner says, and the tee's K is its split.
@@ -4599,6 +4655,8 @@ public static class ComponentTypeRegistry
             case "LAD":      kind = SymbolKind.Mlad;         return true;
             case "MSPS":
             case "SPS":      kind = SymbolKind.Msps;         return true;
+            case "MDLY":
+            case "DLY":      kind = SymbolKind.Mdly;         return true;
             case "MIMCAP":   kind = SymbolKind.MimCap;       return true;
             case "SPIRAL":   kind = SymbolKind.Spiral;       return true;
             case "OSPIRAL":  kind = SymbolKind.OctSpiral;    return true;
@@ -4929,6 +4987,10 @@ public static class ComponentTypeRegistry
     private static readonly string[] PlanCornerOptions =
         [nameof(PlanCorner.Curve), nameof(PlanCorner.Miter), nameof(PlanCorner.Square)];
 
+    /// <summary>A delay line's style (MDLY): the names its plan parses.</summary>
+    private static readonly string[] PlanRouteStyleOptions =
+        [nameof(PlanRouteStyle.Straight), nameof(PlanRouteStyle.Corner), nameof(PlanRouteStyle.Meander)];
+
     /// <summary>
     /// The closed set of NAMES a parameter accepts, for a parameter whose value is an enum name
     /// rather than a number — <c>Response</c>, <c>Form</c>, <c>Direction</c>, <c>OffState</c>,
@@ -4986,7 +5048,7 @@ public static class ComponentTypeRegistry
         // A test pad's feed side and what its centre is (brief-dfr26-7): closed sets of words the generator reads.
         (SymbolKind.TestPad, "Feed")                                                     => TestPadFeedOptions,
         (SymbolKind.TestPad, "Centre")                                                   => TestPadCentreOptions,
-        (SymbolKind.Mwpd or SymbolKind.Mrrc or SymbolKind.Mgpd or SymbolKind.Mbpd, "Corner") => PlanCornerOptions,
+        (SymbolKind.Mwpd or SymbolKind.Mrrc or SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mdly, "Corner") => PlanCornerOptions,
         (SymbolKind.Mcrc, "Shape")                                                       => Enum.GetNames<ResonatorShape>(),
         (SymbolKind.Mcrc, "Profile")                                                     => ["Uniform", "SIR"],
         (SymbolKind.Mcrc, "Feed")                                                        => Enum.GetNames<ResonatorFeed>(),
@@ -4994,6 +5056,7 @@ public static class ComponentTypeRegistry
         (SymbolKind.Mcrc, "Arrangement")                                                 => Enum.GetNames<LoopArrangement>(),
         (SymbolKind.Mclc, "Compensation") => Enum.GetNames<CouplerCompensation>(),
         (SymbolKind.Msps, "Reference")    => Enum.GetNames<SchiffmanReference>(),
+        (SymbolKind.Mdly, "Style")                                                       => PlanRouteStyleOptions,
         // A composed FET's instance switches (brief-modelcomposer-21): yes or no. A switch bound to an expression keeps a
         // text box (ParameterRowViewModel), since a picker cannot hold one.
         (SymbolKind.ComposedFET, _) when ComposedSwitches.IsSwitch(paramName)                => ComposedSwitchOptions,

@@ -1,6 +1,7 @@
 using System.Numerics;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
+using CircuitRF.Diagnostics;
 
 namespace CircuitRF.Core.Devices.Microstrip;
 
@@ -146,6 +147,10 @@ public sealed record PassivePlan(IReadOnlyList<string> Pins, IReadOnlyList<PlanS
 {
     /// <summary>The lumped parts the plan expects on its pins (<see cref="PlanSite"/>). Empty for a part with none.</summary>
     public IReadOnlyList<PlanSite> Sites { get; init; } = [];
+
+    /// <summary>What the plan knows its model leaves out (a route's uncoupled legs, <see cref="PlanRoute"/>): reported by
+    /// <see cref="MicrostripPlanModel"/> with its sections' own warnings.</summary>
+    public IReadOnlyList<Diagnostic> Warnings { get; init; } = [];
 
     /// <summary>S21 of a two-pin plan at <paramref name="fHz"/> between terminations of <paramref name="z"/>, from
     /// <see cref="MicrostripPlanModel"/>: what a run's or a corner's insertion phase is read from.</summary>

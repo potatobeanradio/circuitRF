@@ -125,6 +125,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _mclcTandem    = BuildMclcTandem();
     private static readonly Symbol _msps          = BuildMsps();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _midcCache = new();
+    private static readonly Symbol _mdly          = BuildMdly();
     private static readonly Symbol _mimCap        = BuildMimCap();
     private static readonly Symbol _spiral        = BuildSpiral();
     private static readonly Symbol _octSpiral     = BuildOctSpiral();
@@ -301,6 +302,7 @@ public static class BuiltInSymbols
             case SymbolKind.Mcrc:       return _mcrc;
             case SymbolKind.Mlad:       return _mladCache.GetOrAdd(Math.Max(0, portCount - 2), BuildMlad);
             case SymbolKind.Msps:       return _msps;
+            case SymbolKind.Mdly:       return _mdly;
             case SymbolKind.MimCap:     return _mimCap;
             case SymbolKind.Spiral:     return _spiral;
             case SymbolKind.OctSpiral:  return _octSpiral;
@@ -2811,6 +2813,13 @@ public static class BuiltInSymbols
         Txt("λ/4",   200,  200, fontSize: 40, align: SymbolTextAlign.Left, vAlign: SymbolTextVAlign.Top),
         Txt("3λ/4", -200,  200, fontSize: 40, align: SymbolTextAlign.Right, vAlign: SymbolTextVAlign.Top),
     ], SymbolKind.Mrrc);
+
+    // MDLY — MLIN's pins with a meander between them, three turns, and the electrical length it holds: the glyph says
+    // "a line folded to a length" whatever the instance's Style.
+    private static Symbol BuildMdly() => Sym([
+        PLine(-200, 0, -120, 0, -120, -80, -40, -80, -40, 80, 40, 80, 40, -80, 120, -80, 120, 0, 200, 0),
+        Txt("θ", 0, -110, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
+    ], SymbolKind.Mdly);
 
     // MCLC — MCLIN's plan view of the pair, with the quarter wave it is cut to and the coupling arrow from the input's
     // strip to the coupled port's, which runs back towards the input end (a backward-wave coupler).

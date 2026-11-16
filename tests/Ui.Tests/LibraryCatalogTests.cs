@@ -252,7 +252,8 @@ public class LibraryCatalogTests
         // MRRC, MCLC, MIDC and MCBL, the coupled-line coupler, the interdigitated coupler and the coupled-line balun;
         // MGPD, MBPD and MTPD, the Gysel, Bagley polygon and tee dividers; MRADIAL, the radial stub, one sector or a
         // butterfly; MCLINN, N coupled microstrip lines; MCRC, every coupled-resonator filter;
-        // MLAD, the ladder of lines, gaps, tapers and stubs; and MSPS, the Schiffman phase shifter.
+        // MLAD, the ladder of lines, gaps, tapers and stubs; MSPS, the Schiffman phase shifter;
+        // and MDLY, the delay line, straight, cornered or meandered.
         var kinds = LibraryCatalog.ByCategory(ComponentCategory.Microstrip).Select(i => i.Kind).ToList();
         Assert.Contains(SymbolKind.Mlin, kinds);
         Assert.Contains(SymbolKind.MBend, kinds);
@@ -283,8 +284,9 @@ public class LibraryCatalogTests
         Assert.Contains(SymbolKind.Mcrc, kinds);
         Assert.Contains(SymbolKind.Mlad, kinds);
         Assert.Contains(SymbolKind.Msps, kinds);
+        Assert.Contains(SymbolKind.Mdly, kinds);
         Assert.DoesNotContain(SymbolKind.BCLine, kinds);
-        Assert.Equal(29, kinds.Count);
+        Assert.Equal(30, kinds.Count);
     }
 
     [Fact]

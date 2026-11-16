@@ -27,8 +27,11 @@ public sealed record PlanRouteResult(
 /// corners and the line between them. Every dimension is on <see cref="PassivePlan.OnGrid"/>.</para>
 ///
 /// <para><b>Limits.</b> The sections are stamped as separate lines, so adjacent legs do not couple in the model: a
-/// meander whose legs are under 3W apart edge to edge says so (<c>device.route.runs-coupled</c>). The start heading is a
-/// multiple of 90°, as every section's pose is.</para>
+/// meander whose legs are under 3W apart edge to edge says so (<c>device.route.runs-coupled</c>), unless it is built
+/// <c>coupled</c>, which places its legs as one N-line section (<see cref="PlanCoupledStrips"/>). The legs' length is
+/// still MLIN's, so a coupled meander's phase at F moves by what the coupling does to it, which is the point of asking.
+/// The turns stay separate pieces and do not couple to one another. The start heading is a multiple of 90°, as every
+/// section's pose is.</para>
 /// </summary>
 public static class PlanRoute
 {
@@ -37,10 +40,13 @@ public static class PlanRoute
     /// <param name="from">The plan node the run starts on.</param>
     /// <param name="to">The plan node it ends on.</param>
     /// <param name="next">The first free internal node; the result's <see cref="PlanRouteResult.NextNode"/> follows its own.</param>
+    /// <param name="coupled">A meander's legs as one <see cref="PlanCoupledStrips"/>, every leg coupled to every other,
+    /// in place of separate lines; the same copper.</param>
     public static PlanRouteResult Build(
         double x, double y, double rotationDeg, double w, double thetaRad, double fHz, MicrostripSubstrate s,
         PlanRouteStyle style = PlanRouteStyle.Straight, PlanCorner corner = PlanCorner.Curve,
-        int turns = 1, double pitch = 0.0, int side = 1, double radius = 0.0, int from = 1, int to = 2, int next = 3)
+        int turns = 1, double pitch = 0.0, int side = 1, double radius = 0.0, int from = 1, int to = 2, int next = 3,
+        bool coupled = false)
     {
         foreach (var (name, value) in new[] { ("W", w), ("θ", thetaRad), ("F", fHz) })
             if (!(value > 0))
@@ -134,13 +140,15 @@ public static class PlanRoute
                 }
                 double leg = PassivePlan.OnGrid((total - turns * turnLength) / (turns + 1));
                 Refuse(leg, thetaRad);
-                if (p - w < 3.0 * w)
+                if (p - w < 3.0 * w && !coupled)
                     warnings.Add(Diagnostic.Create("device.route.runs-coupled", DiagnosticSeverity.Warning,
                         "Route: the meander's legs are {gap} m apart edge to edge, under 3·W ({limit} m); the model takes them "
                       + "as separate lines and leaves out their coupling.", ("gap", p - w), ("limit", 3.0 * w)));
 
+                var legs = new List<int>();
                 for (int k = 0; k <= turns; k++)
                 {
+                    legs.Add(pieces.Count);
                     Add(Line(leg), last: k == turns);
                     if (k == turns) break;
                     int sign = k % 2 == 0 ? side : -side;            // every turn stacks the next leg the same way
@@ -151,6 +159,16 @@ public static class PlanRoute
                         if (across > 0.0) Add(Line(across), last: false);
                         Add(Bend(sign), last: false);
                     }
+                }
+                if (coupled)
+                {
+                    // Every leg spans x = 0..leg in the run's frame. As one N-line section, top leg first, each strip's
+                    // near (x = 0) end and then its far end: a leg heading back (180°) starts on its far end.
+                    var strips = legs.Select(i => (PlanLine)pieces[i]).OrderByDescending(l => l.Y).ToList();
+                    int[] nodes = [.. strips.SelectMany(l => l.RotationDeg == 0.0 ? l.Nodes : [l.Nodes[1], l.Nodes[0]])];
+                    pieces = [.. pieces.Where((_, i) => !legs.Contains(i)),
+                              new PlanCoupledStrips(nodes, 0.0, strips[0].Y, 0.0, [.. strips.Select(_ => w)],
+                                  [.. strips.Skip(1).Select(_ => p - w)], leg)];
                 }
                 break;
             }
