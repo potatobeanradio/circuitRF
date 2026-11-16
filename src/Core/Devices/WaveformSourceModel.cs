@@ -271,7 +271,8 @@ public sealed class WaveformSourceModel : ComponentModel, ITransientWaveform
         if (_period > 0)
         {
             tau %= _period;
-            if (tau == 0) return _v1;
+            // the corner where one period ends: its left value is the period's last, V2 when the pulse has no fall before it
+            if (tau == 0) return _fall == 0 && _rise + _width >= _period ? _v2 : _v1;
         }
         if (tau <= _rise) return _v1 + (_v2 - _v1) * (tau / _rise);
         if (tau <= _rise + _width) return _v2;

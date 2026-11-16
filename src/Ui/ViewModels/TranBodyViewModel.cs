@@ -158,9 +158,15 @@ public sealed partial class TranBodyViewModel : ObservableObject
         StartExpr = Blank(Start, "0"), MaxStepExpr = Blank(MaxStep, "auto"), RelTolExpr = Blank(RelTol, "1e-3"),
         VTolExpr = Blank(VTol, "1e-6"), ITolExpr = Blank(ITol, "1e-12"), IcExpr = Ic.Trim(),
         SaveSteps = SaveSteps ? "yes" : Analysis.NoiseDefault, MaxStepsExpr = Blank(MaxSteps, TransientAnalysis.MaxStepsDefault),
-        SpiceOptions = SpiceOptions.Trim(), SpiceLines = Blank(SpiceLines, TransientAnalysis.SpiceLinesDefault),
-        SpiceLineFreq = Blank(SpiceLineFreq, TransientAnalysis.SpiceLineFreqDefault), SpiceFit = Blank(SpiceFit, TransientAnalysis.SpiceFitDefault),
+        // On the native solver the ngspice-only keys go back to their defaults: the native run refuses any of them set, and the
+        // card greys their fields, so a value left behind by switching from ngspice could not be cleared.
+        SpiceOptions = Ng ? SpiceOptions.Trim() : "",
+        SpiceLines = Ng ? Blank(SpiceLines, TransientAnalysis.SpiceLinesDefault) : TransientAnalysis.SpiceLinesDefault,
+        SpiceLineFreq = Ng ? Blank(SpiceLineFreq, TransientAnalysis.SpiceLineFreqDefault) : TransientAnalysis.SpiceLineFreqDefault,
+        SpiceFit = Ng ? Blank(SpiceFit, TransientAnalysis.SpiceFitDefault) : TransientAnalysis.SpiceFitDefault,
     };
+
+    private bool Ng => SolverIndex == 1;
 
     private static string Blank(string v, string def) => v.Trim().Length == 0 ? def : v.Trim();
 }

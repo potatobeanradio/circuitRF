@@ -742,9 +742,21 @@ public sealed partial class HbEngine
 
         // brief TRN-8: InitialGuess=fallback after a failed DC start, and InitialGuess=transient after a failed warm start (a sweep
         // point its neighbour did not carry), start again from the transient seed, at full drive with no ramp.
+        // A seed the transient cannot run (an element it does not step, an operating point or step that fails) leaves the DC
+        // start's best-available result, with a note: thrown, it turned a point dc reports as unconverged into a failed run, and
+        // under a sweep the whole sweep (fallback is never worse than dc).
+        Complex[,]? vSeed = null;
         if (!solveResult.Converged && p.Seed.Seeds && seed is null)
         {
-            var vSeed = SeedFromTransient(V);
+            try { vSeed = SeedFromTransient(V); }
+            catch (InvalidOperationException ex)
+            {
+                ApplyToneContext();
+                _netlist.AddNoteOnce("hb-seed-refused", $"HB: the transient seed could not run, so the result is the DC start's: {ex.Message}");
+            }
+        }
+        if (vSeed is not null)
+        {
             for (int k = 1; k <= K; k++) iSrc[k] = extractor.Extract(k * omega0).ISrc;
             var again = HbNewton.Solve(vSeed, yNN, iSrc, f0, K, N,
                 _netlist, ifNodes, gridN, effectiveSettings, p.Tol, p.Lambda, p.GuardHarmonic, cc);

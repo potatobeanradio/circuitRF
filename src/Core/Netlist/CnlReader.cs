@@ -1248,13 +1248,22 @@ public sealed class CnlReader
         var tokens = TokeniseLine(rawLine);
         if (tokens.Count < 2) return false;
         var kv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string? last = null;
         for (int i = 1; i < tokens.Count; i++)
         {
             int eq = tokens[i].IndexOf('=');
-            if (eq <= 0) continue;
+            if (eq <= 0)
+            {
+                // "Stop=10 ns": a unit standing alone belongs to the number before it. Skipped, it left Stop=10 — ten
+                // SECONDS, with no message (PrepareAnalysisDirective lets a recognised unit through as a bare word).
+                if (last is not null && Units.IsRecognizedUnit(tokens[i]) &&
+                    double.TryParse(kv[last], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _))
+                    kv[last] += tokens[i];
+                continue;
+            }
             string val = tokens[i][(eq + 1)..];
             if (val.Length >= 2 && val[0] == '"' && val[^1] == '"') val = val[1..^1];
-            kv[tokens[i][..eq]] = val;
+            kv[last = tokens[i][..eq]] = val;
         }
         if (!kv.TryGetValue("type", out var type) || AnalysisDirectiveSchema.Find(type)?.Type != "tran") return false;
         result = new TransientAnalysis(tokens[0])

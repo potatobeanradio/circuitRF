@@ -97,7 +97,10 @@ public static class TransientPreset
         plots.Add(wavePlot);
 
         // ── the output's spectrum at the fundamental, through fft ──
-        if (cubes.TryGetValue(FundamentalCube, out var fc) && fc.RealValues.Length > 0 && fc.RealValues[0] > 0)
+        // Only when the record holds a whole period of it: fft refuses a shorter one, and the plot would hold nothing but an
+        // error (a pulse whose Period is longer than Stop, a 1 kHz tone over 100 us).
+        if (cubes.TryGetValue(FundamentalCube, out var fc) && fc.RealValues.Length > 0 && fc.RealValues[0] > 0
+            && tDim >= 0 && v.Axes[tDim].Values is { Length: >= 2 } tAxis && tAxis[^1] - tAxis[0] >= (1 - 1e-9) / fc.RealValues[0])
         {
             double f0 = fc.RealValues[0];
             string f0Text = f0.ToString("R", CultureInfo.InvariantCulture);

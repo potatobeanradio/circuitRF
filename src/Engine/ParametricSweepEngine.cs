@@ -800,8 +800,17 @@ public static class ParametricSweepEngine
 
             // brief-trn-1: the transient run at this point. The output grid is the directive's, so every point stacks; a swept
             // Stop or Step changes the grid's length and is refused by the stacking as any shape change is.
+            //
+            // SaveSteps=yes: the accepted steps are the adaptive stepper's own, a different count at every point, so they cannot
+            // stack — kept, they failed the whole sweep after its last point. Dropped here, with a note.
             case TransientAnalysis tra:
-                return Transient.TransientRunner.Run(Transient.TransientRunner.Resolve(tra, netlist.ResolvedGlobals), netlist, settings, control);
+            {
+                var ds = Transient.TransientRunner.Run(Transient.TransientRunner.Resolve(tra, netlist.ResolvedGlobals), netlist, settings, control);
+                if (ds.RemoveFromGroup(DataSet.DefaultGroup, "Steps.time") | ds.RemoveFromGroup(DataSet.DefaultGroup, "Steps.V"))
+                    netlist.AddNoteOnce("tran-sweep-steps:" + tra.Name,
+                        $"transient '{tra.Name}': SaveSteps keeps no accepted steps under a parametric sweep — each point takes a different number of them; the output grid is swept as usual.");
+                return ds;
+            }
 
             case SParameterAnalysis spa:
                 return RunSParam(spa, lib, tb, netlist, settings, baseDirectory, control);

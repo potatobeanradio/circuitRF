@@ -2355,6 +2355,14 @@ public sealed partial class Elaborator
                         foreach (var name in AstWalker.CollectRefs(Parser.Parse(raw)))
                         {
                             if (name == TimeVariable.Name) continue;
+                            // A variable whose value reads `time` is resolved here ONCE, in steady state (time > t0 is true), and
+                            // injected as a constant: `gate = if(time>1u,1,0)` played 5 V from t = 0 under Expr="5*gate", the
+                            // step lost with no message. Refused, naming it, as such a variable is refused elsewhere.
+                            if (BindingReadsTime(name, parentScope, 0))
+                                throw new ParameterRefusalException(
+                                    $"{inst.InstanceName}: Expr reads '{name}', whose value depends on time; a variable is resolved once, " +
+                                    "before the run, so it cannot follow the simulated time. Write the time condition in Expr itself, as " +
+                                    "Expr=\"5*if(time>1u,1,0)\".");
                             try { result[WaveformSourceModel.ScopeVarPrefix + name] = _evaluator.Resolve(name, parentScope); }
                             catch (ExpressionException) { /* the model's evaluation names it */ }
                         }
@@ -2367,6 +2375,18 @@ public sealed partial class Elaborator
             }
         }
         return result;
+    }
+
+    /// <summary>Whether the binding <paramref name="name"/> (through every binding it reads) names <c>time</c>.</summary>
+    private static bool BindingReadsTime(string name, Scope scope, int depth)
+    {
+        if (depth > 64 || scope.Lookup(name) is not { } found) return false;   // a cycle is the evaluator's to report
+        Expr ast;
+        try { ast = Parser.Parse(found.Expression); }
+        catch (ExpressionException) { return false; }
+        foreach (var r in AstWalker.CollectRefs(ast))
+            if (r == TimeVariable.Name || (r != name && BindingReadsTime(r, found.Owner, depth + 1))) return true;
+        return false;
     }
 
     // ── V_1Tone / V_nTone / I_1Tone / I_nTone parameter resolution ────────────

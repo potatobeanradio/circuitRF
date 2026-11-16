@@ -79,7 +79,7 @@ public sealed partial class OscBodyViewModel : ObservableObject
         InitialGuess = Analysis.IsDcStart(a.InitialGuess) ? Analysis.InitialGuessDc : a.InitialGuess.Trim().ToLowerInvariant(),
         SeedTol = a.SeedTolExpr, SeedPeriods = a.SeedPeriodsExpr,
         KickV = a.KickVExpr.Trim().Equals(Analysis.KickVDefault, System.StringComparison.OrdinalIgnoreCase) ? "" : a.KickVExpr.Trim(),
-        SeedFastBias = !a.SeedFastBias.Trim().Equals("no", System.StringComparison.OrdinalIgnoreCase),
+        SeedFastBias = !Analysis.SeedFastBiasOff(a.SeedFastBias),
         MoreExpanded = !Analysis.IsDcStart(a.InitialGuess),
     }.WithPortChoice(a.PnPortExpr.Trim());
 

@@ -5493,6 +5493,36 @@ Found building *Symbolically Defined Device (SDD)*'s bias-loop bench (an SDD tha
 - **The example's bias bench** gained its HB drive sweep (10 to 30 dBm into bench 5's maximum-power load, loop open and
   closed): 22 points, 1.2 s from the CLI, every one converged; 7.3 s before the stall test.
 
+## TRN series review (2026-11-16) — what the review of TRN-1…9 found in the engine and fixed
+
+- **gear2 reused nothing and under-estimated its error after a rejection.** The step ratio rho = h/h2 was rebuilt from
+  accumulated times, a few ulps off the ladder's power of two, so a0 (the stage cache's key) missed and factored afresh every
+  few steps; rho is now snapped to its power of two. The corrector's error constant was 2/9 at every ratio, which holds only for
+  equal steps: (1+rho)^2/(6 rho (1+2 rho)) is 0.375 at rho = 0.5 and 0.694 at 0.25, exactly the steps that follow a rejection.
+- **A switch with Hyst could change state at t = 0+ with nothing changing.** The operating point is solved with the switch off
+  (its window shifted Hyst/2); BeginTransient then read the UNSHIFTED u >= 0.5, a third rule. It now applies AcceptStep's rule
+  under the operating point's window, and every transient device's cached evaluation is cleared after BeginTransient.
+- **Transient-assisted HB:** a fallback seed the transient cannot run (an element it does not step, a failed operating point)
+  keeps the DC start's best-available result with a note instead of failing the run (and, under a sweep, the sweep); the
+  Fguess-free start-up ranked crossings by |W| AT the crossing, where every one scores -1, so the first won — it now uses the
+  bracket's own samples; a series OscProbe's monitor compared its loop current in amperes with 1 % of the kick in volts, so a
+  low-current oscillator was refused as never starting — the kick is carried over through |Z| at the time scale, floored at
+  50 ohm.
+- **SaveSteps under a parametric sweep** failed the whole sweep after its last point (each point accepts a different number of
+  steps, so Steps.* cannot stack); dropped there with a note.
+- **Step longer than the record, negative Start** are refused by Resolve (and therefore by check, which now runs Resolve:
+  check.tran.keys); they gave a two-point grid, or were clamped, silently.
+- **ngspice:** a rawfile ending short of Stop is refused rather than padded flat to Stop.
+- **Lines and fits:** an SnP with no point in (0, f_max] is refused (an order-1 fit matched a line extrapolated from two
+  points outside the band and was accepted); a tone termination past 128 bands is refused (a 10 MHz IF beside a 2 GHz LO was
+  2,000 placed resonators and an O(K^4) passivity step with nothing checking Stop).
+- **Envelope baseband line delay** (a TRN-4b regression): the baseband took the phase delay at 1 kHz, where the causal
+  conductor loss's phase over omega grows as f^-1/2 — a lossy microstrip's baseband delay read 3-4x long. It is taken across
+  the step's band now; a lossless line is unchanged.
+- **Left as found, for a decision:** HbEngine takes no RunControl, so a transient seed cannot be stopped; an oscillator sweep
+  re-runs the seed at every point; the step-floor stop discards the run and names no net; OP.V under ngspice with Start > 0 is
+  the state at Start.
+
 ## PCH review (2026-11-16) — the envelope channel, drops, the receive collapse, beam selection
 
 - **The receive collapse was wrong with elements Off.** The element side closes as a = Γ_ch·D·b, so (I − Γ_ch·S·D)·b = c and

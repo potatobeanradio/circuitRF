@@ -254,11 +254,14 @@ public static class OscEngine
             double fz = Math.Abs(wLo.Imaginary) <= Math.Abs(wHi.Imaginary) ? lo : hi;
             var wz = W(fz);
             if (!(wz.Magnitude <= bound) || !(wz.Real < 0)) continue;   // a pole, or no negative resistance
-            // With no Fguess, the crossing whose negative real part is strongest relative to the immittance's size there.
+            // With no Fguess, the crossing whose negative real part is strongest relative to the immittance's size there — the size
+            // over the BRACKET's own samples (bound / 2): the bisection has walked wLo and wHi onto the crossing itself, where
+            // Im W = 0 and |W| = |Re W|, so measured there every crossing scored −1 and the first one won.
+            double sizeThere = bound / 2;
             bool better = best is null || (p.NoFguess
-                ? wz.Real / Math.Max(wLo.Magnitude, wHi.Magnitude) < bestW.Real / Math.Max(bestScaleRef, 1e-300)
+                ? wz.Real / Math.Max(sizeThere, 1e-300) < bestW.Real / Math.Max(bestScaleRef, 1e-300)
                 : Math.Abs(fz - p.FguessHz) < Math.Abs(best.Value - p.FguessHz));
-            if (better) { best = fz; bestW = wz; bestScaleRef = Math.Max(wLo.Magnitude, wHi.Magnitude); }
+            if (better) { best = fz; bestW = wz; bestScaleRef = sizeThere; }
         }
 
         double scale = 0;

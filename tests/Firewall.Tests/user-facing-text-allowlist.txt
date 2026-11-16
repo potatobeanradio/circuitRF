@@ -1606,6 +1606,7 @@ src/Core/Elaboration/Elaborator.cs|'{childPath}' cannot be simulated by EM: {ans
 src/Core/Elaboration/Elaborator.cs|'{childPath}' sets {ov.Name}, which cell '{cell.Name}' declares both as a parameter and as a variable; 
 src/Core/Elaboration/Elaborator.cs|'{childPath}' sets {ov.Name}, which cell '{cell.Name}' neither declares as a parameter or variable nor reads.
 src/Core/Elaboration/Elaborator.cs|{who} is wired to {nets} net(s) and '{name}' holds {ports} port(s) ({string.Join(
+src/Core/Elaboration/Elaborator.cs|{inst.InstanceName}: Expr reads '{name}', whose value depends on time; a variable is resolved once, 
 src/Engine/Mom/PlanarGram.cs|Rooftops {bi} and {bj} share cells of three different sheet classes. A 
 
 src/Engine/Mom/EmProblem.cs|A material with a conductivity of {SigmaSm:G4} S/m has no complex permittivity until a 
@@ -1907,3 +1908,5 @@ src/Engine/Transient/TransientRunner.cs|{who}: Stop is required.
 src/Engine/Transient/TransientRunner.cs|{who}: Stop must be a positive time.
 src/Engine/Transient/TransientRunner.cs|{who}: {key} is read by the ngspice solver only; the native solver takes no {key}.
 src/Engine/Transient/TransientRunner.cs|{who}: {key}={expr} cannot be evaluated: {ex.Message}
+src/Engine/Transient/TransientRunner.cs|{who}: Start must be before Stop.
+src/Engine/Transient/TransientRunner.cs|{who}: Start must not be negative; the run starts at t = 0.

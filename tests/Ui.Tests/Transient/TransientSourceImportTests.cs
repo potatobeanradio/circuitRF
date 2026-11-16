@@ -91,4 +91,23 @@ public sealed class TransientSourceImportTests : IDisposable
         Assert.Contains(nl.Components, c => c.ComponentType == "V_Pulse");
         Assert.Contains(nl.Components, c => c.ComponentType == "Idc");
     }
+
+    /// <summary>The TRN review: a stimulus written without parentheses takes the numbers after it and stops at the first word
+    /// that is not one — `AC 1` used to be swallowed as two more arguments, and a PWL's as a time-value pair.</summary>
+    [Fact]
+    public void AStimulusWithoutParentheses_StopsAtTheFirstWordThatIsNotANumber()
+    {
+        const string deck = """
+            .subckt part a b
+            V1 a 0 PWL 0 0 1n 1 AC 1
+            R1 a b 1k
+            .ends part
+            """;
+        var t = SubcircuitTranslator.TranslateAll(SpiceNetlistReader.Read(deck)).Single(x => x.Elements.Count > 0);
+        Assert.Null(t.Refusal);
+        var v1 = t.Elements.Single(e => e.InstanceName == "V1");
+        Assert.Equal(SymbolKind.VPwl, v1.Symbol);
+        string points = v1.Parameters.Single(p => p.Name == "Points").Expression;
+        Assert.DoesNotContain("AC", points, StringComparison.OrdinalIgnoreCase);
+    }
 }

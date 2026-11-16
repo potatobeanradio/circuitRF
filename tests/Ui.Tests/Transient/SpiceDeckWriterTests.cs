@@ -87,7 +87,7 @@ public sealed class SpiceDeckWriterTests : IDisposable
         R:Ry y 0 R=1k
         V_Expr:VX z 0 Expr="sin(2*pi*1e8*time)"
         R:Rz z 0 R=1k
-        V_1Tone:V2 f 0 Freq=1 GHz V=1 Vdc=0.5 Delay=1n Damping=1e7
+        V_1Tone:V2 f 0 Freq=1 GHz V=1 Vdc=0.5 Delay=0 Damping=1e7
         SDD:D1 f 0 I[1,0]=1e-12*(exp(_v1/0.025)-1)
         Diode:D2 f 0 Is=2e-14 N=1.1 Cj0=1p
         Transformer:T1 a 0 n 0 N=2
@@ -178,6 +178,29 @@ public sealed class SpiceDeckWriterTests : IDisposable
         Assert.Contains(back.Components, c => c.Model is ToneSourceModelBase && c.InstancePath == deckOf["P1"]);
         var sw = back.Components.Single(c => c.InstancePath == deckOf["S1"]);
         Assert.Equal("SDD", sw.ComponentType);
+    }
+
+    /// <summary>The TRN review: a delayed tone is the behavioural source (the dialect's SIN holds VO + VA·sin(PHASE) before its
+    /// delay, circuitRF's tone is zero), and a VProbe's net is saved by the net's own deck name, once.</summary>
+    [Fact]
+    public void ADelayedTone_IsBehavioural_AndAVProbesNet_IsSavedUnderItsOwnName()
+    {
+        var w = Deck("""
+            V_1Tone:V2 f 0 Freq=1 GHz V=1 Delay=1n
+            R:R1 f out R=50
+            R:R2 out 0 R=50
+            VProbe:VP1 out
+            analysis TR1 type=tran Stop=5n Step=10p
+            """);
+        Assert.True(w.Deck.Ok, string.Join("\n", w.Deck.Refusals));
+        string text = w.Deck.Text!;
+        Assert.DoesNotContain("SIN(", text);
+        Assert.Contains("(time<(1E-09)) ? 0 : 1", text);
+        string save = text.Split('\n').Single(l => l.StartsWith(".save ", StringComparison.Ordinal));
+        string outDeck = w.Deck.Names.Net("out");
+        Assert.Contains($"v({outDeck})", save);
+        Assert.Equal(save.Split(' ').Length, save.Split(' ').Distinct().Count());
+        Assert.DoesNotContain("vp1", save, StringComparison.OrdinalIgnoreCase);   // the alias names no node of the deck
     }
 
     // ── gate 2 ───────────────────────────────────────────────────────────

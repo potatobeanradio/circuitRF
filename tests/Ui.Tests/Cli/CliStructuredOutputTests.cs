@@ -557,6 +557,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.touchstone.summary",
         "check.touchstone.z0-not-50",
         "check.tran.dc-differs",
+        "check.tran.keys",   // the TRN review: the transient's own key resolution
         "check.tran.line-fit",
         "check.tran.untranslatable",
         "check.view.defect",

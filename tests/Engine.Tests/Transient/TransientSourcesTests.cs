@@ -216,6 +216,21 @@ public sealed class TransientSourcesTests(ITestOutputHelper output)
         Assert.True(worst < 1e-8, $"worst {worst:E3}");
     }
 
+    /// <summary>The TRN review: a variable whose value reads `time` is resolved once, before the run, so V_Expr reading it is
+    /// refused by name — it used to play the steady-state value (5 V from t = 0) with the step lost.</summary>
+    [Fact]
+    public void VExpr_ReadingAVariableThatReadsTime_IsRefusedNamingIt()
+    {
+        var (lib, tb) = new CnlReader().Read("""
+            gate = if(time>1u,1,0)
+            V_Expr:V1 in 0 Expr="5*gate"
+            R:R1 in 0 R=1k
+            analysis TR1 type=tran Stop=2u
+            """);
+        var ex = Assert.ThrowsAny<Exception>(() => new Elaborator(lib).Elaborate(tb));
+        Assert.Contains("'gate', whose value depends on time", ex.ToString());
+    }
+
     /// <summary>Gate 6 — V_Expr Expr="1 - exp(-time/1u)" equals V_Exp with the same constants; `time` outside a condition in an
     /// HB bench is refused naming it, and inside one reads its steady state.</summary>
     [Fact]

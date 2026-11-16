@@ -9,6 +9,7 @@
 // ================================================================
 
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices;
@@ -164,6 +165,11 @@ public static class NgspiceRunner
         }
 
         var tOut = TransientEngine.OutputGrid(p, who);
+        // a rawfile that stops short of Stop (a run ngspice ended early with exit 0) was padded flat to Stop by Resample, and every
+        // measure over the tail read the last point
+        if (t[^1] < tOut[^1] * (1 - 1e-6))
+            throw new TransientRefusedException(string.Create(CultureInfo.InvariantCulture,
+                $"{who}: {tag}'s rawfile ends at {t[^1]:G6} s, short of Stop ({tOut[^1]:G6} s): {last()}"));
         var outVals = Resample(t, Point, tOut);
         var result = new TransientRunResult
         {

@@ -99,6 +99,9 @@ internal static class Osc
                 TolExpr = tol ?? o.TolExpr, AguessExpr = aguess ?? o.AguessExpr,
                 PhaseNoise = phaseNoise || o.PhaseNoise, PnStartExpr = o.PnStartExpr, PnStopExpr = o.PnStopExpr,
                 PnNptsExpr = o.PnNptsExpr, PnLog = o.PnLog, PnPortExpr = o.PnPortExpr,
+                // brief TRN-8's seed keys: dropped, an Fguess-free transient-seeded oscillator was refused for want of Fguess
+                InitialGuess = o.InitialGuess, SeedTolExpr = o.SeedTolExpr, SeedPeriodsExpr = o.SeedPeriodsExpr,
+                SeedFastBias = o.SeedFastBias, KickVExpr = o.KickVExpr,
             };
             // Fstart/Fstop left blank follow the new Fguess; stated ones stay as written.
         }

@@ -1128,7 +1128,16 @@ public static class SpiceNetlistReader
                 if (Typed.Contains(head) && wave is null)
                 {
                     var text = new System.Text.StringBuilder(paren > 0 ? w[paren..] : "");
-                    while (!Balanced(text.ToString()) && i + 1 < rest.Count) text.Append(' ').Append(rest[++i]);
+                    if (paren < 0 && i + 1 < rest.Count && !rest[i + 1].StartsWith('('))
+                    {
+                        // `PULSE 0 1 0 1n 1n 5n 10n AC 1`: no parentheses, so the arguments are the numbers (or {…}) that follow,
+                        // up to the first word that is neither. Gathered "until balanced", the rest of the line was swallowed —
+                        // `AC 1` read as arguments and dropped, or a PWL's time-value pair.
+                        while (i + 1 < rest.Count && (SpiceNumber.TryParse(rest[i + 1], out _) || rest[i + 1].StartsWith('{')))
+                            text.Append(' ').Append(rest[++i]);
+                    }
+                    else
+                        while (!Balanced(text.ToString()) && i + 1 < rest.Count) text.Append(' ').Append(rest[++i]);
                     string inner = text.ToString().Trim();
                     if (inner.StartsWith('(') && inner.EndsWith(')')) inner = inner[1..^1];
                     var args = Words(inner.Replace(',', ' ').Replace('\t', ' '));

@@ -55,6 +55,11 @@ public abstract class Analysis(string name)
     public static bool IsDcStart(string? initialGuess)
         => string.IsNullOrWhiteSpace(initialGuess) || initialGuess.Trim().Equals(InitialGuessDc, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>Whether a <c>SeedFastBias=</c> word turns it off — every word the engine reads as off (no, false, 0, off), so a
+    /// card opening a hand-written <c>off</c> does not save it back as yes.</summary>
+    public static bool SeedFastBiasOff(string? word)
+        => (word ?? "").Trim().ToLowerInvariant() is "no" or "false" or "0" or "off";
+
     /// <summary>The spelling that turns the margin diagnostic off.</summary>
     public const string MarginThresholdNone = "none";
 

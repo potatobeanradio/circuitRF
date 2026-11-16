@@ -92,7 +92,8 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
 
     /// <summary>Whether the choice applies: a fields analysis reads the EM result in its block, so there is no layout to
     /// simulate it by. A part set to EM in its bench stays EM; that is the part's own setting.</summary>
-    public bool SimulateByChoosable => !IsFields && !IsTrl && !IsOsc && !IsTran;   // transient: frequency-defined parts wait for TRN-4
+    // transient runs model=em since TRN-4 (R-trn4-5); hiding the choice made OK reset a card's model=em to circuit
+    public bool SimulateByChoosable => !IsFields && !IsTrl && !IsOsc;
 
     /// <summary>The EM setups that analyse this schematic's layout, by name; the first entry is "(the only setup)" or
     /// "(choose a setup)" so a picker always has a row to show.</summary>

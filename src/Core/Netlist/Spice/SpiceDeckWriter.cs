@@ -116,6 +116,8 @@ public static class SpiceDeckWriter
         private bool _uic, _gear, _rlgc, _fitOn;
         private double? _lineHz;
         private Dictionary<string, double> _ic = new(StringComparer.Ordinal);
+        /// <summary>The placed SPICE subcircuits' paths: their internal nets live inside an X line, not in the flat deck.</summary>
+        private List<string> _under = [];
         private SpiceFitSet? _fitSet;
 
         private void Refuse(string path, string type, string reason) => _refusals.Add(new SpiceRefusal(path, type, reason));
@@ -131,6 +133,7 @@ public static class SpiceDeckWriter
             ResolveAnalysis();
 
             var under = PlacedSpiceFiles();
+            _under = under;
             if (_fitOn && _refusals.Count == 0)
             {
                 if (req.Fits is null) Refuse(req.Analysis.Name, "tran", "SpiceFit=yes writes circuitRF's own fits, and none were supplied.");
@@ -192,7 +195,15 @@ public static class SpiceDeckWriter
                 {
                     int eq = item.IndexOf('=');
                     if (eq <= 0) { Refuse(who, "tran", $"IC entries are net=value, not '{item}'."); continue; }
-                    _ic[item[..eq].Trim()] = Eval("IC", item[(eq + 1)..], 0);
+                    // the net's own name, as the native run resolves it: an alias (a VProbe's) or an unknown name would
+                    // otherwise become a deck node nothing connects to, and the IC be silently lost
+                    string icNet = item[..eq].Trim();
+                    if (!_nl.Nodes.TryGetIndex(icNet, out int icIdx) || icIdx <= 0)
+                    {
+                        Refuse(who, "tran", $"IC names '{icNet}', which is not a net of the circuit.");
+                        continue;
+                    }
+                    _ic[_nl.Nodes.NameOf(icIdx)] = Eval("IC", item[(eq + 1)..], 0);
                 }
                 string lineFreq = a.SpiceLineFreq.Trim();
                 _lineHz = lineFreq.Length == 0 || lineFreq.Equals("auto", StringComparison.OrdinalIgnoreCase)
@@ -525,6 +536,9 @@ public static class SpiceDeckWriter
 
         private void Termination(ElaboratedComponent ec)
         {
+            // a Port or Term inside a sub-cell loads nothing (PortModel.TerminationAdmittance, which the native run stamps
+            // through): written as a resistor it added a load the native run does not have
+            if (ec.InstancePath.Contains('.')) return;
             Complex z = new(50, 0);
             if (ec.Parameters.TryGetValue("Z", out var v))
                 z = v.Kind switch { ValueKind.Real => v.AsReal(), ValueKind.Complex => v.AsComplex(), _ => Complex.NaN };
@@ -548,7 +562,7 @@ public static class SpiceDeckWriter
 
         private void DcSource(ElaboratedComponent ec, bool current)
         {
-            double v = current ? (Has(ec, "Idc") ? Real(ec, "Idc", 0) : Real(ec, "I", 0)) : Real(ec, "Vdc", 0);
+            double v = current ? (Has(ec, "Idc") ? Real(ec, "Idc", 0) : Real(ec, "I", 0)) : (Has(ec, "Vdc") ? Real(ec, "Vdc", 0) : Real(ec, "V", 0));   // VdcModel reads Vdc, else V
             var (a, b) = Nets(ec, current);
             string deck = _names.Instance(ec.InstancePath, current ? 'I' : 'V');
             if (!current) _vsourceDeck[ec.InstancePath] = deck;
@@ -642,7 +656,9 @@ public static class SpiceDeckWriter
         private static string Ramped(double dc, IEnumerable<(double Hz, Complex P)> tones, double delay, double ramp, double damping)
         {
             string tau = $"(time-({N(delay)}))";
-            string env = $"((time<({N(delay)})) ? 0 : ((({tau})<({N(ramp)})) ? (0.5*(1-cos({N(Math.PI / ramp)}*{tau}))) : 1))";
+            string env = ramp > 0
+                ? $"((time<({N(delay)})) ? 0 : ((({tau})<({N(ramp)})) ? (0.5*(1-cos({N(Math.PI / ramp)}*{tau}))) : 1))"
+                : $"((time<({N(delay)})) ? 0 : 1)";
             if (damping != 0) env = $"({env}*pow({SpiceExpressionWriter.E},-({N(damping)})*{tau}))";
             var sum = string.Join("+", tones.Select(t => $"({N(t.P.Magnitude)})*cos({N(2 * Math.PI * t.Hz)}*{tau}+({N(t.P.Phase)}))"));
             return $"({N(dc)})+{env}*({sum})";
@@ -660,7 +676,9 @@ public static class SpiceDeckWriter
                 if (Math.Abs(hz) < 1e-9) dc += p.Real;   // a tone at 0 Hz is part of the DC level, its real part
                 else tones.Add((hz, p));
             }
-            if (ramp > 0)
+            // A delayed tone is the behavioural source too: the dialect's SIN holds VO + VA·sin(PHASE) before its delay (measured on
+            // ngspice 47: a cosine tone sat at its full amplitude), where circuitRF's tone is zero until Delay.
+            if ((ramp > 0 || delay > 0) && tones.Count > 0)
             {
                 Line($"{_names.Instance(ec.InstancePath, 'B')} {a} {b} {(current ? "I" : "V")}={Ramped(dc, tones, delay, ramp, damping)}",
                      ec.InstancePath);
@@ -715,7 +733,7 @@ public static class SpiceDeckWriter
             var (delay, ramp, damping) = Shape(ec);
             string ext = Node(ec.Nodes[0]), rf = Node(ec.Nodes.Length > 1 ? ec.Nodes[1] : 0);
             string drv = _names.Internal(ec.InstancePath + "_drv");
-            string src = ramp > 0
+            string src = ramp > 0 || delay > 0   // a delayed tone as the behavioural source, for the reason Tone gives
                 ? $"{_names.Instance(ec.InstancePath, 'B')} {drv} {rf} V={Ramped(0, [(p1.FreqHz, phasor)], delay, ramp, damping)}"
                 : $"{_names.Instance(ec.InstancePath, 'V')} {drv} {rf} {Sin(0, p1.FreqHz, phasor, delay, damping)}";
             Line(src, ec.InstancePath);
@@ -853,7 +871,7 @@ public static class SpiceDeckWriter
             }
             if (!_osdi.Contains(osdi)) _osdi.Add(osdi);
             int pins = ext.ConnectedPinCount ?? ext.ExternalPinCount;
-            string model = "osdi_" + SpiceNameMap.Sanitize(ec.InstancePath, null);
+            string model = _names.Model("osdi_", ec.InstancePath);
             var parms = new List<string>();
             foreach (var (k, v) in ec.Parameters)
             {
@@ -915,7 +933,7 @@ public static class SpiceDeckWriter
             }
             if (refused) return;
             string type = m.CardType(ec.ComponentType);
-            string cardName = "m_" + SpiceNameMap.Sanitize(ec.InstancePath, null);
+            string cardName = _names.Model("m_", ec.InstancePath);
             string level = m.Level is int lv ? $" LEVEL={lv}" : "";
             Line($".model {cardName} {type}({level.TrimStart()}{(level.Length > 0 && card.Count > 0 ? " " : "")}{string.Join(' ', card)})",
                  ec.InstancePath + " (model)");
@@ -996,7 +1014,7 @@ public static class SpiceDeckWriter
                 var (worst, at) = SpiceLineFit.LargestDeltaS(x => line.LineAt(x), rlgc, SpiceLineFit.Grid(lo, hi));
                 var rep = new SpiceLineReport(ec.InstancePath, "TXL", f, worst, at, lo, hi, rlgc, null);
                 _lines.Add(rep);
-                string model = "txl_" + SpiceNameMap.Sanitize(ec.InstancePath, null);
+                string model = _names.Model("txl_", ec.InstancePath);
                 _el.Append("* ").AppendLine(rep.Sentence);
                 Line($".model {model} txl R={N(rlgc.R)} L={N(rlgc.L)} G={N(rlgc.G)} C={N(rlgc.C)} length=1", ec.InstancePath + " (model)");
                 Line($"{_names.Instance(ec.InstancePath, 'Y')} {a} 0 {b} 0 {model} LEN=1", ec.InstancePath);
@@ -1037,7 +1055,7 @@ public static class SpiceDeckWriter
             var (worst, at) = SpiceLineFit.LargestDeltaS(x => pair.PairAt(x), written, SpiceLineFit.Grid(lo, hi));
             var rep = new SpiceLineReport(ec.InstancePath, "CPL", f, worst, at, lo, hi, written.Self, written.Mutual);
             _lines.Add(rep);
-            string model = "cpl_" + SpiceNameMap.Sanitize(ec.InstancePath, null);
+            string model = _names.Model("cpl_", ec.InstancePath);
             var s = written.Self; var mu = written.Mutual;
             _el.Append("* ").AppendLine(rep.Sentence);
             Line($".model {model} CPL length=1 R={N(s.R)} 0 {N(s.R)} L={N(s.L)} {N(mu.L)} {N(s.L)} G={N(s.G)} 0 {N(s.G)} C={N(s.C)} {N(mu.C)} {N(s.C)}",
@@ -1207,8 +1225,16 @@ public static class SpiceDeckWriter
             saved = [];
             var (_, all) = _nl.Nodes.ResultRows(excludeInternal: true);
             var labeled = all.Where(n => _nl.Nodes.LabeledNames.Contains(n)).ToList();
+            // Each net by its OWN name (an alias — a VProbe's — saved as itself named a deck node no element connects to, and
+            // the run was refused for the missing vector); nets inside a placed .subckt are the X line's, not the flat deck's.
             foreach (var net in (labeled.Count > 0 ? labeled : all.ToList()).Distinct())
-                if (_nl.Nodes.TryGetIndex(net, out int idx) && idx > 0) saved.Add(($"v({_names.Net(net)})", net));
+                if (_nl.Nodes.TryGetIndex(net, out int idx) && idx > 0
+                    && !_under.Any(p => _nl.Nodes.NameOf(idx).StartsWith(p + ".", StringComparison.Ordinal)))
+                {
+                    // an alias and its net both map to the one vector; the .save line names it once
+                    string v = $"v({_names.Net(_nl.Nodes.NameOf(idx))})";
+                    if (!saved.Any(x => x.Vector == v && x.CircuitRf == net)) saved.Add((v, net));
+                }
             foreach (var p in _probePaths) saved.Add(($"i({_vsourceDeck[p]})", p));
             // brief TRN-7 R-trn7-6 — each IProbe's first net too, as the native engine records it, so the probe's power v·i is the
             // same product on either solver
@@ -1217,9 +1243,9 @@ public static class SpiceDeckWriter
                 {
                     string net = _nl.Nodes.NameOf(ec.Nodes[0]);
                     string v = $"v({_names.Net(net)})";
-                    if (!saved.Any(x => x.Vector == v)) saved.Add((v, net));
+                    if (!saved.Any(x => x.Vector == v && x.CircuitRf == net)) saved.Add((v, net));
                 }
-            if (saved.Count > 0) sb.Append(".save ").AppendLine(string.Join(' ', saved.Select(s => s.Vector)));
+            if (saved.Count > 0) sb.Append(".save ").AppendLine(string.Join(' ', saved.Select(s => s.Vector).Distinct(StringComparer.Ordinal)));
             if (_osdi.Count > 0)
             {
                 sb.AppendLine(".control");

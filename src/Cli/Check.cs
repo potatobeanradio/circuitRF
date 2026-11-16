@@ -2024,6 +2024,14 @@ internal static class Check
                 foreach (var (part, dc, at0) in CircuitRF.Engine.Transient.TransientSources.DcDiffersFromStart(nl))
                     f.Add(CliDiagnostics.CheckWaveformDcDiffers(path, part, dc, at0));
 
+            // The transient's own key resolution (Stop, Step, Method, IC, an ngspice-only key under the native solver): the run's
+            // refusal, as a finding — check reported 0 errors on Stop=0 or Method=euler, and the run then refused it.
+            foreach (var tran in tb.Analyses.OfType<TransientAnalysis>().Where(t => t.Enabled))
+            {
+                try { CircuitRF.Engine.Transient.TransientRunner.Resolve(tran, nl.ResolvedGlobals); }
+                catch (CircuitRF.Engine.Transient.TransientRefusedException ex) { f.Add(CliDiagnostics.CheckTranKeys(path, tran.Name, ex.Message)); }
+            }
+
             // brief-trn-6 R-trn6-11 — under Solver=ngspice, every element the deck writer would refuse (the run's own refusal,
             // said first), and under SpiceLines=rlgc each fitted line's largest |ΔS| (the number the run's note carries).
             foreach (var tran in tb.Analyses.OfType<TransientAnalysis>().Where(t => t.Enabled &&

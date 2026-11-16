@@ -5246,6 +5246,31 @@ What would cost time to rediscover:
 - **The curved plans are bit for bit.** The corners are a branch beside the curve code, which keeps its arithmetic and
   section order; the variants' and the rat-race's fingerprints were taken before the change.
 
+## TRN series review (2026-11-16) — what the review of TRN-1…9 found in src/Core and fixed
+
+- **Time-domain functions.** fft/fft_power/thd took their harmonic count from the 256-point resample, not from the record's
+  own samples, so a 2.4 GHz tone sampled every 1 ns reported 16 harmonics from a cubic through samples periods apart; the count
+  is the record's now, and a window holding fewer than four samples is refused (expr.tran.fft-resolution). overshoot,
+  undershoot and settle treated a record ending a microvolt from its start as a step of a microvolt (1e8 % overshoot); they use
+  Edge's own no-step rule (within a tenth of the swing). rise/fall accepted lo = 0 and always returned NaN; refused now.
+  undershoot took the deepest dip after the peak, not the first trough the docs promise. tmin/tmax refuse a window outside the
+  record as avg/rms do.
+- **`Stop=10 ns`** — a unit apart from its number — read as 10 s on a tran line (the bare unit passed the directive check and
+  the parser skipped it); it is glued to the number before it.
+- **V_Expr reading a variable that reads `time`** played the variable's steady-state value (resolved once, before the run):
+  refused, naming the variable.
+- **SPICE reader:** a stimulus without parentheses (`PWL 0 0 1n 1 AC 1`) swallowed the rest of the line; it takes the numbers
+  that follow and stops at the first word that is not one.
+- **PULSE corner:** with Fall = 0 and Rise + Width = Period, the period's end read V1 instead of its left value V2.
+- **Deck writer:** `.save`/`.ic` named an alias (a VProbe's) as a deck node no element connects to, so a VProbe under ngspice
+  failed the run and an IC through an alias was lost; both go through the net's own name now, nets inside a placed .subckt are
+  not saved, an unknown IC net is refused. A delayed tone is a behavioural source: the dialect's SIN holds VO + VA·sin(PHASE)
+  before its delay (measured on ngspice 47), where circuitRF's tone is zero. Model card names are made unique without regard to
+  case; a nested Port/Term writes no resistor (the native run loads none); a Vdc stated as V= is not written as 0 V.
+- **Left as found, for a decision:** a placed .subckt's overrides are evaluated against globals only; MOS level 3 with Tox
+  unstated may differ in gate charge (unverified against the dialect); a passive whose value has a `time` comparison is now
+  refused on import where it used to be read in steady state (the reader's comment says this is deliberate).
+
 ## PCH review (2026-11-16) — the Propagation Channel component, steerDelay
 
 - **`steerDelay` pointed the beam at −θ0.** steer's phase is −360·f0·path/c and a weight is e^(+jφ); a delay weighs e^(−j2πfτ),

@@ -215,7 +215,8 @@ public sealed class TransientEngine
         var holds = HeldRows(p.IcNets, who);
         SetClock(0);
         double[] x0 = p.Start == TransientStart.Op ? OperatingPoint(holds, who) : ZeroState(holds);
-        foreach (var (d, td) in _tdevs) td.BeginTransient(PortV(d, x0));
+        // a device's state may move here (a switch's hysteresis side), so its cached evaluation at x0 is stale
+        foreach (var (d, td) in _tdevs) { td.BeginTransient(PortV(d, x0)); d.LastV = null; }
         _lines?.Start(x0);
 
         // ── the recorded quantities ──────────────────────────────────────
@@ -310,6 +311,7 @@ public sealed class TransientEngine
             int order = be ? 1 : 2;
             int nh = hT.Count;
             double alpha;
+            double gearCm = 2.0 / 9;
             double[] hist = new double[_n];
             var phiN = hPhi[nh - 1];
             if (be)
@@ -326,6 +328,12 @@ public sealed class TransientEngine
             {
                 double h2 = hT[nh - 1] - hT[nh - 2];
                 double rho = h / h2;
+                // h2 is rebuilt from accumulated times, a few ulps off the ladder's step, so rho (and a0, the stage cache's key)
+                // differed in its last bits and every few steps factored afresh; a ratio that is a power of two to rounding is one
+                double r2 = Math.Pow(2, Math.Round(Math.Log2(rho)));
+                if (Math.Abs(rho / r2 - 1) < 1e-9) rho = r2;
+                // the variable-step BDF2 error constant: 2/9 only for equal steps, and a step after a rejection is shorter
+                gearCm = (1 + rho) * (1 + rho) / (6 * rho * (1 + 2 * rho));
                 double a0 = (1 + 2 * rho) / ((1 + rho) * h), a1 = -(1 + rho) / h, a2 = rho * rho / ((1 + rho) * h);
                 alpha = a0;
                 var phiM = hPhi[nh - 2];
@@ -347,7 +355,7 @@ public sealed class TransientEngine
                 phi = Charge(x);
                 ratio = segSteps == 0
                     ? FirstStepRatio(t, h, hX[nh - 1], phiN, phi, x, landing, methodRungs, k0)
-                    : ErrorRatio(hT, hPhi, t + h, phi, x, order, be ? 0.5 : p.Method == TransientMethod.Trap ? 1.0 / 12 : 2.0 / 9);
+                    : ErrorRatio(hT, hPhi, t + h, phi, x, order, be ? 0.5 : p.Method == TransientMethod.Trap ? 1.0 / 12 : gearCm);
                 SetClock(t + h);
             }
             if (x is null || ratio > 1)

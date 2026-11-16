@@ -154,6 +154,24 @@ public sealed class VSwitchTests(ITestOutputHelper output)
         Assert.Contains(nl2.Warnings, w => w.Contains("S1: Hyst=0.4 V applies in a transient analysis only", StringComparison.Ordinal));
     }
 
+    /// <summary>The TRN review: with Hyst, a control held between the two windows' rules starts on the conductance the operating
+    /// point balanced, so nothing moves at t = 0+ (it used to jump from about 6.7 kohm to 1 ohm).</summary>
+    [Fact]
+    public void Hysteresis_AHeldControl_StartsWhereTheOperatingPointIs()
+    {
+        var (lib, tb) = new CnlReader().Read("""
+            Vdc:VDD vdd 0 Vdc=1
+            R:RL vdd a R=100
+            VSwitch:S1 a 0 ctrl 0 Ron=1 Roff=1e9 Von=1 Voff=0 Hyst=0.5
+            Vdc:VC ctrl 0 Vdc=0.8
+            analysis TR1 type=tran Stop=10n Step=1n
+            """);
+        var nl = new Elaborator(lib).Elaborate(tb);
+        var r = new TransientEngine(nl).Run(TransientRunner.Resolve(tb.Analyses.OfType<TransientAnalysis>().Single(), nl.ResolvedGlobals));
+        int a = Array.IndexOf(r.NodeNames, "a");
+        Assert.All(r.V, v => Assert.Equal(r.V[0][a], v[a], 12));
+    }
+
     /// <summary>R-trn3-2 — DC and S-parameter: a switch biased on is Ron in series; biased off, Roff.</summary>
     [Fact]
     public void SParameter_LinearisedAtItsBias()

@@ -49,8 +49,9 @@ public sealed partial class Evaluator
             {
                 Arity(cl, 1, 3);
                 double lo = OptionalNumber(cl, scope, 1, 10), hi = OptionalNumber(cl, scope, 2, 90);
-                if (!(lo >= 0 && hi <= 100 && lo < hi))
-                    throw Refuse("expr.tran.levels", "{f}(): the levels are percentages of the swing with lo below hi, as {f}(x, 10, 90).", ("f", name));
+                // lo = 0 is refused: the swing starts AT 0 %, so the waveform never crosses it from below and every edge read NaN
+                if (!(lo > 0 && hi <= 100 && lo < hi))
+                    throw Refuse("expr.tran.levels", "{f}(): the levels are percentages of the swing with lo above 0 and below hi, as {f}(x, 10, 90).", ("f", name));
                 bool rising = name == "rise";
                 return Map(cl, scope, name, "s", (t, x) => Edge(t, x, rising, lo / 100, hi / 100));
             }
@@ -79,7 +80,7 @@ public sealed partial class Evaluator
                 Arity(cl, 1, 3);
                 var w = Window(cl, scope, name);
                 bool max = name == "tmax";
-                return Map(cl, scope, name, "s", (t, x) => ExtremeTime(t, x, w, max));
+                return Map(cl, scope, name, "s", (t, x) => ExtremeTime(t, x, w, max, name));
             }
             case "avg":
             case "rms":
@@ -96,7 +97,7 @@ public sealed partial class Evaluator
                 var (cube, dim) = Operand(cl, scope, name, 0);
                 var t = cube.Axes[dim].Values;
                 var grid = FftGrid(t, f0, periods, name);
-                int k = Harmonics(grid.N, periods);
+                int k = Harmonics(grid.Resolved, periods);
                 return Spectrum(cube, dim, k, x => Dft(grid, x, f0, k, hann), cube.Unit);
             }
             case "fft_power":
@@ -111,7 +112,7 @@ public sealed partial class Evaluator
                         ("v", AxesOf(v)), ("i", AxesOf(i)));
                 var t = v.Axes[dim].Values;
                 var grid = FftGrid(t, f0, periods, name);
-                int k = Harmonics(grid.N, periods);
+                int k = Harmonics(grid.Resolved, periods);
                 return SpectrumPower(v, i, dim, k, grid, f0, hann);
             }
             case "thd":
@@ -125,11 +126,11 @@ public sealed partial class Evaluator
                     throw Refuse("expr.tran.thd-n", "thd(): the highest harmonic counted is a whole number of at least 2, as thd(x, 1GHz, 10).");
                 var (cube, dim) = Operand(cl, scope, name, 0);
                 var grid = FftGrid(cube.Axes[dim].Values, f0, 1, name);
-                int k = Harmonics(grid.N, 1);
+                int k = Harmonics(grid.Resolved, 1);
                 if (n > k)
                     throw Refuse("expr.tran.thd-resolution",
                         "thd(): the last period holds {n} samples, which resolve harmonics up to {k}; ask for fewer, or run with a smaller Step.",
-                        ("n", grid.N.ToString(CultureInfo.InvariantCulture)), ("k", k.ToString(CultureInfo.InvariantCulture)));
+                        ("n", grid.Resolved.ToString(CultureInfo.InvariantCulture)), ("k", k.ToString(CultureInfo.InvariantCulture)));
                 return Map(cl, scope, name, "%", (_, x) =>
                 {
                     var s = Dft(grid, x, f0, n, false);
@@ -328,12 +329,21 @@ public sealed partial class Evaluator
     private static double Cross(double[] t, int s, double y0, double y1, double level)
         => y1 == y0 ? t[s] : t[s - 1] + (t[s] - t[s - 1]) * (level - y0) / (y1 - y0);
 
-    /// <summary>The waveform normalised to its step: 0 at the first value, 1 at the last. Null with no step.</summary>
+    /// <summary>The waveform normalised to its step: 0 at the first value, 1 at the last. Null with no step — a record that
+    /// ends near where it began (within a tenth of its swing, <see cref="Edge"/>'s rule), whose "percent of the step" would
+    /// otherwise be a finite, enormous and meaningless number.</summary>
     private static double[]? Normalised(double[] x)
     {
         double step = x[^1] - x[0];
-        if (!(Math.Abs(step) > 0)) return null;
+        if (!HasStep(x)) return null;
         return [.. x.Select(v => (v - x[0]) / step)];
+    }
+
+    /// <summary>Whether the record steps: it ends further from its first value than a tenth of its whole swing.</summary>
+    private static bool HasStep(double[] x)
+    {
+        double step = Math.Abs(x[^1] - x[0]);
+        return step > 0 && step > 0.1 * (x.Max() - x.Min());
     }
 
     /// <summary>How far the waveform goes past its final value, in percent of the step; 0 when it never does.</summary>
@@ -347,17 +357,21 @@ public sealed partial class Evaluator
         if (Normalised(x) is not { } y) return double.NaN;
         int peak = Array.IndexOf(y, y.Max());
         if (y[peak] <= 1) return 0;
-        double trough = double.PositiveInfinity;
-        for (int s = peak; s < y.Length; s++) trough = Math.Min(trough, y[s]);
+        // the first trough: down from the peak until the waveform turns up again, not the deepest dip in the rest of the record
+        // (a later load step or second edge is not this step's undershoot)
+        double trough = y[peak];
+        for (int s = peak + 1; s < y.Length && y[s] <= y[s - 1]; s++) trough = y[s];
         return 100 * Math.Max(0, 1 - trough);
     }
 
-    /// <summary>The time after which the waveform stays within <paramref name="tol"/> of the step of its final value (of its
-    /// final value when there is no step), interpolated; the first time when it always is.</summary>
+    /// <summary>The time after which the waveform stays within <paramref name="tol"/> of the step of its final value,
+    /// interpolated; the first time when it always is. With no step (<see cref="HasStep"/>: a pulse, a rail that starts where
+    /// it ends) the band is a fraction of the larger of the final value and the swing — of the step alone it would be a
+    /// fraction of a microvolt on a record ending a microvolt from its start, and the "settling" the record's end.</summary>
     private static double Settle(double[] t, double[] x, double tol)
     {
         double xf = x[^1], scale = Math.Abs(xf - x[0]);
-        if (!(scale > 0)) scale = Math.Abs(xf);
+        if (!HasStep(x)) scale = Math.Max(Math.Abs(xf), x.Max() - x.Min());
         if (!(scale > 0)) return t[0];
         double band = tol * scale;
         int last = -1;
@@ -389,8 +403,9 @@ public sealed partial class Evaluator
 
     // ── values and statistics over a window ───────────────────────────────────
 
-    private static double ExtremeTime(double[] t, double[] x, (double T1, double T2)? w, bool max)
+    private static double ExtremeTime(double[] t, double[] x, (double T1, double T2)? w, bool max, string name)
     {
+        if (w is { } r) CheckWindow(t, r.T1, r.T2, name);
         double best = double.NaN, at = double.NaN;
         for (int s = 0; s < x.Length; s++)
         {
@@ -405,9 +420,7 @@ public sealed partial class Evaluator
     {
         double t1 = w?.T1 ?? t[0], t2 = w?.T2 ?? t[^1];
         double tol = 1e-9 * (t[^1] - t[0]);
-        if (t1 < t[0] - tol || t2 > t[^1] + tol)
-            throw Refuse("expr.tran.window-outside", "{f}(): the window {t1} s to {t2} s runs past the record, which is {r1} s to {r2} s.",
-                ("f", name), ("t1", G(t1)), ("t2", G(t2)), ("r1", G(t[0])), ("r2", G(t[^1])));
+        CheckWindow(t, t1, t2, name);
         t1 = Math.Max(t1, t[0]); t2 = Math.Min(t2, t[^1]);
         // the samples inside, with the two ends interpolated onto the window's edges
         var ts = new List<double> { t1 };
@@ -418,6 +431,15 @@ public sealed partial class Evaluator
         var ta = ts.ToArray(); var xa = xs.ToArray();
         double integral = Integrate(ta, xa, 0, ta.Length - 1, rms);
         return rms ? Math.Sqrt(integral / (t2 - t1)) : integral / (t2 - t1);
+    }
+
+    /// <summary>Refuses a window running past the record — read silently, tmin/tmax would return NaN for it.</summary>
+    private static void CheckWindow(double[] t, double t1, double t2, string name)
+    {
+        double tol = 1e-9 * (t[^1] - t[0]);
+        if (t1 < t[0] - tol || t2 > t[^1] + tol)
+            throw Refuse("expr.tran.window-outside", "{f}(): the window {t1} s to {t2} s runs past the record, which is {r1} s to {r2} s.",
+                ("f", name), ("t1", G(t1)), ("t2", G(t2)), ("r1", G(t[0])), ("r2", G(t[^1])));
     }
 
     private static double Integrate(double[] t, double[] x, int from, int to, bool square)
@@ -451,7 +473,10 @@ public sealed partial class Evaluator
     /// starts the next period); otherwise the record interpolated (cubic, through the four nearest samples) onto as many
     /// equally spaced points as the window held, at least 256.
     /// </summary>
-    private sealed record FftSamples(int N, double TStart, double Dt, int First, double[]? Times, double[] Record);
+    /// <remarks><c>Resolved</c> is how many of the RECORD's own samples the window holds — what the harmonics a spectrum may
+    /// claim rest on. Interpolating onto 256 points adds no resolution: a 2.4 GHz tone sampled every 1 ns would otherwise
+    /// report 16 "harmonics" from a cubic through samples periods apart.</remarks>
+    private sealed record FftSamples(int N, double TStart, double Dt, int First, double[]? Times, double[] Record, int Resolved);
 
     private static FftSamples FftGrid(double[] t, double f0, int periods, string name)
     {
@@ -467,12 +492,19 @@ public sealed partial class Evaluator
         double steps = span / dt;
         int ns = (int)Math.Round(steps);
         if (uniform && ns >= 4 && Math.Abs(steps - ns) <= 1e-6 * steps && n - 1 - ns >= 0)
-            return new FftSamples(ns, tStart, dt, n - 1 - ns, null, t);
+            return new FftSamples(ns, tStart, dt, n - 1 - ns, null, t, ns);
         int inWindow = t.Count(v => v >= tStart);
+        // the intervals the window spans, as the uniform path's ns counts them (its end point starts the next period)
+        int resolved = Math.Max(0, inWindow - 1);
+        if (resolved < 4)
+            throw Refuse("expr.tran.fft-resolution",
+                "{f}(): the last {p} period(s) of {f0} Hz hold {n} of the record's samples, too few for a spectrum; run with a smaller Step.",
+                ("f", name), ("p", periods.ToString(CultureInfo.InvariantCulture)), ("f0", G(f0)),
+                ("n", inWindow.ToString(CultureInfo.InvariantCulture)));
         int m = Math.Max(256, inWindow);
         var times = new double[m];
         for (int s = 0; s < m; s++) times[s] = tStart + span * s / m;
-        return new FftSamples(m, tStart, span / m, -1, times, t);
+        return new FftSamples(m, tStart, span / m, -1, times, t, resolved);
     }
 
     /// <summary>The highest harmonic a window of <paramref name="n"/> samples over <paramref name="periods"/> periods resolves

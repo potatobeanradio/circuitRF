@@ -81,8 +81,11 @@ internal static class Tran
         if (names.Count == 0) names = trans;
         if (names.Count == 0)
             return JsonRun.Fail(CliDiagnostics.NoAnalysis(Verb, "the design declares no enabled transient analysis (analysis <name> type=tran Stop=...)."));
+        // A parametric sweep's own name runs its chain, as naming the transient inside it does (the fields verb's rule).
         foreach (string n in names)
-            if (!trans.Contains(n, StringComparer.OrdinalIgnoreCase))
+            if (!trans.Contains(n, StringComparer.OrdinalIgnoreCase)
+                && !(tb.Analyses.FirstOrDefault(a => a.Name.Equals(n, StringComparison.OrdinalIgnoreCase)) is { Enabled: true } named
+                     && ChainSelector.BaseOfChain(named, tb) is TransientAnalysis { Enabled: true }))
                 return JsonRun.Fail(CliDiagnostics.NoAnalysis(Verb, $"'{n}' is not an enabled transient analysis of this design" +
                                                                    (trans.Count > 0 ? $" (it has {string.Join(", ", trans)})." : ".")));
 
@@ -90,19 +93,29 @@ internal static class Tran
         if ((stop ?? step ?? method ?? solver) is not null)
             for (int i = 0; i < tb.Analyses.Count; i++)
             {
-                if (tb.Analyses[i] is not TransientAnalysis t || !names.Contains(t.Name, StringComparer.OrdinalIgnoreCase)) continue;
+                if (tb.Analyses[i] is not TransientAnalysis t || !Requested(t)) continue;
+                // --solver native: the ngspice-only keys go back to their defaults, since the native run refuses any of them set
+                bool native = solver is not null && solver.Trim().Equals(TransientAnalysis.SolverNative, StringComparison.OrdinalIgnoreCase);
                 tb.Analyses[i] = new TransientAnalysis(t.Name)
                 {
                     Enabled = t.Enabled, Model = t.Model, EmSetup = t.EmSetup,
                     StopExpr = stop ?? t.StopExpr, StepExpr = step ?? t.StepExpr, StartExpr = t.StartExpr, MaxStepExpr = t.MaxStepExpr,
                     Method = method ?? t.Method, RelTolExpr = t.RelTolExpr, VTolExpr = t.VTolExpr, ITolExpr = t.ITolExpr,
                     InitialState = t.InitialState, IcExpr = t.IcExpr, Solver = solver ?? t.Solver, SaveSteps = t.SaveSteps,
-                    MaxStepsExpr = t.MaxStepsExpr, SpiceOptions = t.SpiceOptions, SpiceLines = t.SpiceLines,
-                    SpiceLineFreq = t.SpiceLineFreq, SpiceFit = t.SpiceFit,
+                    MaxStepsExpr = t.MaxStepsExpr,
+                    SpiceOptions = native ? "" : t.SpiceOptions,
+                    SpiceLines = native ? TransientAnalysis.SpiceLinesDefault : t.SpiceLines,
+                    SpiceLineFreq = native ? TransientAnalysis.SpiceLineFreqDefault : t.SpiceLineFreq,
+                    SpiceFit = native ? TransientAnalysis.SpiceFitDefault : t.SpiceFit,
                 };
             }
         foreach (var (name, expr) in sets) Console.Error.WriteLine($"[circuitRF] set {name} = {expr}");
         JsonRun.AllCubes = all;
+
+        // a transient named directly, or the one at the base of a named sweep's chain
+        bool Requested(TransientAnalysis t) => names.Any(n => n.Equals(t.Name, StringComparison.OrdinalIgnoreCase)
+            || (tb.Analyses.FirstOrDefault(a => a.Name.Equals(n, StringComparison.OrdinalIgnoreCase)) is { } named
+                && ReferenceEquals(ChainSelector.BaseOfChain(named, tb), t)));
         JsonRun.InlineCubeLimit = 10_000;
 
         var request = new CircuitEvaluationRequest { Sets = sets, Analyses = names, Control = RunHost.Control, Measurements = true };
@@ -131,8 +144,15 @@ internal static class Tran
                 foreach (var (name, cube) in cubes)
                     CliEntry.PrintCube($"  {name}", cube, 24, false);
         }
+        // A measure line the run could not evaluate is said, not silently missing from the table.
+        foreach (string e in result.Errors.Where(e => e.StartsWith("measurements:", StringComparison.Ordinal)))
+            Console.Error.WriteLine($"[circuitRF] warning: {e}");
         JsonRun.Data = grouped;
         JsonRun.Analysis = string.Join(", ", names);
+        // An analysis that was refused or threw is a convergence entry with its message (CircuitEvaluation never throws); one
+        // transient of two failing is a failed run, not exit 0 with the other's waveforms.
+        var failed = result.Convergence.Where(c => c.Converged == false && c.Detail is not null).Select(c => $"'{c.Name}': {c.Detail}").ToList();
+        if (failed.Count > 0) return JsonRun.Fail(CliDiagnostics.RunFailed(string.Join("; ", failed)));
 
         if (output is not null)
         {

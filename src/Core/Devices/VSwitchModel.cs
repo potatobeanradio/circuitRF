@@ -156,9 +156,12 @@ public sealed class VSwitchModel : ComponentModel, ITransientDevice, IReportsWar
 
     public void BeginTransient(ReadOnlySpan<double> portV)
     {
-        // on when the steady-state conductance is past the middle of its decades
-        double u = (portV[1] - Voff) / (Von - Voff);
-        _on = u >= 0.5;
+        // The operating point was solved with the switch off (EnterTransient), its window shifted by Hyst/2; it starts on only
+        // where AcceptStep's own rule would turn it on under that window. Read unshifted from the middle of the decades, a
+        // control held between the two rules started the run on a different conductance from the one the operating point
+        // balanced (6.7 kohm to 1 ohm at t = 0+ with nothing changing).
+        double u = (portV[1] - Voff - Shift) / (Von - Voff);
+        _on = u >= 1;
     }
 
     public bool AcceptStep(ReadOnlySpan<double> portV)

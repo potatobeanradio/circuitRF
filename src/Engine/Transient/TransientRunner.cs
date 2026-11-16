@@ -64,8 +64,15 @@ public static class TransientRunner
         if (string.IsNullOrWhiteSpace(a.StopExpr)) throw new TransientRefusedException($"{who}: Stop is required.");
         double stop = Num("Stop", a.StopExpr, 0);
         if (!(stop > 0)) throw new TransientRefusedException($"{who}: Stop must be a positive time.");
+        double startS = Num("Start", a.StartExpr, 0);
+        if (startS < 0) throw new TransientRefusedException($"{who}: Start must not be negative; the run starts at t = 0.");
+        if (startS >= stop) throw new TransientRefusedException($"{who}: Start must be before Stop.");
         double step = Num("Step", a.StepExpr, stop / 1000);
         if (!(step > 0)) throw new TransientRefusedException($"{who}: Step must be a positive time.");
+        // a Step longer than the record reported only its two ends, and every measure over them read garbage with no message
+        if (step > (stop - startS) * (1 + 1e-9))
+            throw new TransientRefusedException(string.Create(CultureInfo.InvariantCulture,
+                $"{who}: Step ({step:G4} s) is longer than the record it reports, Start to Stop ({stop - startS:G4} s)."));
         double maxStep = Num("MaxStep", a.MaxStepExpr, 0);
         if (maxStep < 0) throw new TransientRefusedException($"{who}: MaxStep must be a positive time or auto.");
         double relTol = Num("RelTol", a.RelTolExpr, 1e-3), vTol = Num("VTol", a.VTolExpr, 1e-6), iTol = Num("ITol", a.ITolExpr, 1e-12);
@@ -94,7 +101,7 @@ public static class TransientRunner
         }
         return new TransientParams
         {
-            Name = a.Name, StopS = stop, StepS = step, StartS = Num("Start", a.StartExpr, 0), MaxStepS = maxStep, Method = method,
+            Name = a.Name, StopS = stop, StepS = step, StartS = startS, MaxStepS = maxStep, Method = method,
             RelTol = relTol, VTol = vTol, ITol = iTol, Start = start, IcNets = ic, SaveSteps = a.SaveStepsOn,
             MaxSteps = (long)Math.Min(maxSteps, long.MaxValue / 2),
             Solver = ngspice ? TransientSolver.Ngspice : TransientSolver.Native, Directive = a,

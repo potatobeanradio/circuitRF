@@ -46,6 +46,25 @@ public sealed class TransientEngineTests(ITestOutputHelper output)
         Assert.True(worst < 1e-5, $"worst error {worst:E3} of a 1 V swing");
     }
 
+    /// <summary>The TRN review: a unit standing apart from its number is the number's ("Stop=10 ns" is ten nanoseconds, not ten
+    /// seconds), and a Step longer than the record, or a negative Start, is refused by name.</summary>
+    [Fact]
+    public void ASpacedUnit_IsTheValues_AndAStepLongerThanTheRecord_IsRefused()
+    {
+        const string circuit = "Vdc:V1 in 0 Vdc=1\nR:R1 in out R=1k\nC:C1 out 0 C=1p\n";
+        var (_, tb) = new CnlReader().Read(circuit + "analysis TR1 type=tran Stop=10 ns Step=5 ps\n");
+        var tr = tb.Analyses.OfType<TransientAnalysis>().Single();
+        var p = TransientRunner.Resolve(tr, new Dictionary<string, CircuitRF.Core.Expressions.Value>());
+        Assert.Equal(10e-9, p.StopS, 1e-21);
+        Assert.Equal(5e-12, p.StepS, 1e-24);
+        foreach (string bad in new[] { "Stop=1n Step=2n", "Stop=1n Start=-1n" })
+        {
+            var (_, tb2) = new CnlReader().Read(circuit + $"analysis TR1 type=tran {bad}\n");
+            Assert.Throws<TransientRefusedException>(() =>
+                TransientRunner.Resolve(tb2.Analyses.OfType<TransientAnalysis>().Single(), new Dictionary<string, CircuitRF.Core.Expressions.Value>()));
+        }
+    }
+
     private const double L = 1e-6, Cap = 1e-9, R = 5;
     private static string Rlc(string method, string step = "1e-9", string maxStep = "auto") => $"""
         Vdc:V1 in 0 Vdc=1

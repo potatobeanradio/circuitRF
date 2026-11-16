@@ -79,7 +79,20 @@ public static class OscTransientSeed
         var swapped = s.FastBias ? HbTransientSeed.ScaleChokesAndBlocks(nl, settings, fScaleHz, scaled) : [];
         int[] ifNodes = [];
         int iA = -1, iB = -1, iBr = -1;
-        var cycles = new CycleMonitor(s.Tol, s.Periods is null, Math.Abs(kick));
+        // The monitor's thresholds (1 % of the kick to count as oscillating, the first Schmitt band) are in the probe signal's own
+        // units. A shunt probe watches a voltage, the kick's own; a series probe watches its loop CURRENT, so the kick is carried
+        // over through the impedance the probe sees at the time scale — floored at 50 ohm, so a loop near resonance (|Z| small)
+        // does not raise the bar past a real oscillation's current. Compared in volts, a loop current under 1 % of a supply-sized
+        // kick (a crystal, a low-power LC) was refused as never oscillating.
+        double reference = Math.Abs(kick);
+        if (!shunt)
+        {
+            double zMag = 0;
+            try { zMag = OscEngine.ProbeImpedance(nl, probe, dcV, 2 * Math.PI * fScaleHz, settings).Magnitude; }
+            catch (Exception ex) when (ex is InvalidOperationException or ArithmeticException or SingularMatrixException) { }
+            reference = Math.Abs(kick) / Math.Max(double.IsFinite(zMag) ? zMag : 0, 50);
+        }
+        var cycles = new CycleMonitor(s.Tol, s.Periods is null, reference);
         TransientRunResult r;
         try
         {

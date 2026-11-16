@@ -417,6 +417,9 @@ public sealed class TransientRealization : IDisposable
         FitZ0[ec.InstancePath] = e.Z0;
     }
 
+    /// <summary>The most harmonic bands a tone source's termination is realized over.</summary>
+    internal const int MaxTerminationBands = 128;
+
     /// <summary>A tone source's band-mapped termination: its drive kept, its impedance fitted as a one-port between the external
     /// node and the drive node, matched at every harmonic band centre up to f_max.</summary>
     private void RealizeTermination(ElaboratedComponent ec)
@@ -431,6 +434,15 @@ public sealed class TransientRealization : IDisposable
             return;
         }
         int bands = Math.Max(1, (int)Math.Ceiling(FMaxHz / fc));
+        // One placed resonator per band, and a dense fit and passivity step over all of them: a 10 MHz IF beside a 2 GHz LO is
+        // 2,000 bands, an effective hang with nothing checking for Stop. Refused by name past a bound no real termination needs.
+        if (bands > MaxTerminationBands)
+        {
+            Problems.Add(TransientElements.NotYetSupported(ec, string.Format(CultureInfo.InvariantCulture,
+                "its harmonic terminations span {0} bands of {1} up to the {2} this run resolves, more than the {3} a transient run "
+                + "realizes; a larger MaxStep lowers that frequency", bands, Hz(fc), Hz(FMaxHz), MaxTerminationBands)));
+            return;
+        }
         const double z0 = 50;
         var gk = Enumerable.Range(0, bands + 1).Select(n => { var zz = z(2 * Math.PI * n * fc); return (zz - z0) / (zz + z0); }).ToArray();
         string key = FormattableString.Invariant($"term|{fc:R}|{FMaxHz:R}|") + string.Join(",", gk.Select(v => v.ToString("R", CultureInfo.InvariantCulture)));
@@ -558,6 +570,15 @@ public sealed class TransientRealization : IDisposable
         var order = Enumerable.Range(0, s.FrequencyCount).OrderBy(k => s.Frequencies[k]).ToArray();
         double Fk(int k) => s.Frequencies[order[k]];
         Complex Sk(int k, int r) => s.Matrices[order[k]][r / n, r % n];
+        // No point in (0, f_max]: the whole band would be a straight line extrapolated from two points outside it, which the
+        // low-order fit then matches almost exactly and accepts — a fabricated response, refused instead.
+        if (Fk(0) >= fMax)
+        {
+            e.Refusal = string.Format(CultureInfo.InvariantCulture,
+                "its data starts at {0}, above the highest frequency this run resolves ({1}); a transient run needs the file's response "
+                + "within that band (a smaller MaxStep raises it)", Hz(Fk(0)), Hz(fMax));
+            return e;
+        }
         // the band: every point up to f_max, and the first one past it so the band's edge is inside the data
         int last = 0;
         while (last + 1 < order.Length && Fk(last) < fMax) last++;

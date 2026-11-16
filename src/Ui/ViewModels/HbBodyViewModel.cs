@@ -626,7 +626,7 @@ public sealed partial class HbBodyViewModel : ObservableObject
         vm.InitialGuess      = Analysis.IsDcStart(hb.InitialGuess) ? Analysis.InitialGuessDc : hb.InitialGuess.Trim().ToLowerInvariant();
         vm.SeedTolExpr       = hb.SeedTolExpr;
         vm.SeedPeriodsExpr   = hb.SeedPeriodsExpr;
-        vm.SeedFastBias      = !hb.SeedFastBias.Trim().Equals("no", StringComparison.OrdinalIgnoreCase);
+        vm.SeedFastBias      = !Analysis.SeedFastBiasOff(hb.SeedFastBias);
         vm.AdvancedExpanded  = vm.AdvancedExpanded || vm.SeedKeysEnabled && (hb.SeedTolExpr != Analysis.SeedTolDefault
                                || hb.SeedPeriodsExpr != Analysis.SeedPeriodsDefault || !vm.SeedFastBias);
 

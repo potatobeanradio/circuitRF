@@ -1913,6 +1913,13 @@ internal static class CliDiagnostics
         "{path}: {why}",
         ("path", path), ("analysis", analysis), ("why", why));
 
+    /// <summary>A transient analysis whose keys do not resolve (Stop, Step, Method, IC, an ngspice-only key under the native
+    /// solver): the run's own refusal, as a finding.</summary>
+    public static Diagnostic CheckTranKeys(string path, string analysis, string why) => Diagnostic.Create(
+        "check.tran.keys", DiagnosticSeverity.Error,
+        "{path}: {why}",
+        ("path", path), ("analysis", analysis), ("why", why));
+
     /// <summary>Briefs NZ-5/NZ-6 — an HB or loadpull noise run whose keys do not resolve, or whose NoiseIn/NoiseOut names no
     /// port or Tuner: the run's own refusal, as a finding.</summary>
     public static Diagnostic CheckNoiseKeys(string path, string analysis, string why) => Diagnostic.Create(

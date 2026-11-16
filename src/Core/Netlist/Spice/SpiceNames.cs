@@ -54,6 +54,12 @@ public sealed class SpiceNameMap
         return d;
     }
 
+    /// <summary>A model card's name for the element <paramref name="path"/>: <paramref name="prefix"/> and the sanitised path,
+    /// made unique without regard to case as every other deck name is — <c>D1</c> and <c>d1</c>, or <c>X1.D1</c> and
+    /// <c>X1_D1</c>, would otherwise write two <c>.model</c> cards of one name, and the dialect run one device on the other's
+    /// card.</summary>
+    public string Model(string prefix, string path) => Unique(prefix + Sanitize(path, null));
+
     /// <summary>A fresh internal node name derived from <paramref name="hint"/>, used only inside the deck.</summary>
     public string Internal(string hint)
     {

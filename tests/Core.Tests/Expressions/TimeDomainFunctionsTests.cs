@@ -122,4 +122,30 @@ public sealed class TimeDomainFunctionsTests
         Assert.Contains("overshoot()", ex.Message);
         Assert.Contains("no 'time' axis", ex.Message);
     }
+
+    // ── the TRN review ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void Fft_ClaimsOnlyTheHarmonicsTheRecordsOwnSamplesResolve_AndRefusesTooFew()
+    {
+        const double f = 1e6;
+        // 9.7 samples a period, so the window is resampled: the harmonics rest on the ~9 real samples, not on the 256 points
+        var (t, x) = Sample(10 / f, 97, s => Math.Cos(2 * Math.PI * f * s));
+        var spec = Eval("fft(TR1.s, 1MHz)", ("s", t, x)).AsCube();
+        Assert.Equal(4, spec.Axes.Single(a => a.Name == "harmonic").Length);
+        // 2.4 GHz sampled every 1 ns: no period holds even one sample
+        var (t2, x2) = Sample(1e-6, 1000, s => Math.Cos(2 * Math.PI * 2.4e9 * s));
+        var ex = Assert.ThrowsAny<ExpressionException>(() => Eval("fft(TR1.s, 2.4GHz)", ("s", t2, x2)));
+        Assert.Contains("too few", ex.Message);
+    }
+
+    [Fact]
+    public void ARecordEndingNearItsStart_HasNoStep_ForOvershootOrSettle()
+    {
+        // a ringing pulse that ends a microvolt from where it began: no step to take a percentage of
+        var (t, x) = Sample(1e-6, 10_000, s => (s > 1e-7 && s < 3e-7 ? 1 : 0) + 1e-6 * s / 1e-6);
+        Assert.True(double.IsNaN(Eval("overshoot(TR1.s)", ("s", t, x)).AsReal()));
+        Assert.True(Eval("settle(TR1.s, 1)", ("s", t, x)).AsReal() < 4e-7, "settles when the pulse ends, not at the record's end");
+        Assert.ThrowsAny<ExpressionException>(() => Eval("rise(TR1.s, 0, 90)", ("s", t, x)));
+    }
 }

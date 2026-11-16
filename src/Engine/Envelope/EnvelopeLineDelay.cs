@@ -348,13 +348,16 @@ public static class EnvelopeLineDelay
         return run;
     }
 
-    /// <summary>One product's Zc, delay and residual. The baseband takes the line's low-frequency delay and H~ = 1.</summary>
+    /// <summary>One product's Zc, delay and residual. The baseband takes the line's phase delay across the step's band and H~ = 1.</summary>
     private static Coeffs Of(DelayLineModel m, double fk, double h, double nyq)
     {
         var p = new Coeffs();
         if (fk <= 0)
         {
-            const double lo = 1e3;
+            // The phase delay where the baseband lives, the band the step resolves: at 1 kHz it read the causal conductor loss's
+            // phase (brief TRN-4b), which over ω grows as f^-1/2 and made a 25 mm FR4 microstrip's baseband delay 3-4x too long.
+            // A lossless line's phase delay is the same at every frequency, so it is unchanged.
+            double lo = Math.Max(1e3, nyq);
             p.Zc = m.At(0).Zc;
             p.Tau = m.At(lo).GammaLength.Imaginary / (2 * Math.PI * lo);
         }
