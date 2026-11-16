@@ -90,9 +90,10 @@ it.
 
 **The isolation is a null too, and the solvers find it less deep than the model.** Planar puts it at 2.4 GHz, 29 dB
 down rather than 36. EMerge and Palace put it lower, at the 2.09 GHz point, and shallower. Away from the null all three
-follow the model's |S23| within 2 to 3.4 dB. The null needs the resistor's path and the ring's to cancel exactly. In
-EM the resistor sits on a port across its 250 µm gap, a strip and delta gap on Planar and a lumped sheet in 3D, and
-that port's own reactance moves the cancellation.
+follow the model's |S23| within 2 to 3.4 dB. The null needs the resistor's path and the ring's to cancel exactly, and
+in 3D much of its shift is the coarse mesh: with about twice the tetrahedra and the same setups otherwise (1.8 to
+3.0 GHz, 7 points), EMerge reads −31.6 dB at 2.2 GHz and −29.4 dB at 2.4 GHz and Palace −24.7 and −21.7 dB, so both
+nulls move up to between 2.2 and 2.4 GHz and deepen, though neither reaches the model's −36.4 dB.
 
 **The 3D runs read further from the model away from 2.4 GHz**, Palace most. Both use coarse meshes (below), and in 3D
 each port is a lumped sheet from the line down to the ground plane, 20 mil tall, whose own inductance stays in the

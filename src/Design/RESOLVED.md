@@ -32082,6 +32082,13 @@ write back in that state, so opening a chain cannot record an edit. The default 
   as closing port 4 by hand (Planar |S23| −29.21 dB both ways). EMerge's Draft four-port is not quite passive
   (σ_max(S) up to 1.0037 at 4 of 11 points); its three-port run printed no such warning. The port's strip and sheet are new geometry, so each mesh changed under the same settings: Planar 2,944 cells
   against 3,036, Palace 78,748 tetrahedra against 54,807.
+- **The 3D isolation null at 2.09 GHz is mostly the Draft mesh.** Re-run once at about twice the tetrahedra, 1.8 to
+  3.0 GHz in 7 points, the same setups otherwise (EMerge MaxElementWavelengths 0.0992 and EdgeRefinement 0.15: 21,643
+  tetrahedra against 11,053; Palace 0.0496 and 0.12: 160,976 against 78,748, still first-order Draft). |S23| at 2.2 and
+  2.4 GHz: EMerge −31.6 and −29.4 dB, Palace −24.7 and −21.7 dB, model −29.8 and −36.4; both |S11| nulls land on
+  2.4 GHz and EMerge's four-port turns passive. Neither null reaches the model's depth. A first pass that only lowered
+  MaxElementWavelengths gave 12,933 tetrahedra: the element size along conductor edges sets the count here. The
+  example keeps the committed Draft results, since the refined runs cover a different sweep.
 
 ## RF passives stage 2 — MWPD's pins follow N (2026-11-16)
 
