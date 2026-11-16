@@ -44,7 +44,21 @@ public class CoupledResonatorPlanTests
         $"{Gaps};Shape=ZigZag;Form=Bandstop",
         $"{Gaps};Shape=Hairpin;Form=Bandstop;Sa=2.2e-3",
         "N=2;W=0.6e-3;L=18e-3;Form=Spurline;S1=0.2e-3;S2=0.3e-3",
+        // Coupling = Full: N-line sections.
+        $"{Gaps};Shape=Hairpin;Sa=2.2e-3;Coupling=Full",
+        $"{Gaps};Shape=Hairpin;Profile=SIR;Wc=0.5e-3;Uc=0.4;Feed=Tapped;Tap=9e-3;Coupling=Full",
+        $"{Gaps};Profile=SIR;Wc=0.5e-3;Uc=0.3;W2=0.8e-3;Coupling=Full",
+        $"{Gaps};Shape=Hairpin;Form=Bandstop;Sa=2.2e-3;Coupling=Full",
+        $"{Gaps};Shape=OpenLoop;Gap=1e-3;Coupling=Full",
     };
+
+    /// <summary>Each strip's centre-line offset in an N-line section, downward from the first.</summary>
+    private static double[] Offsets(PlanCoupledStrips m)
+    {
+        var y = new double[m.W.Count];
+        for (int k = 1; k < y.Length; k++) y[k] = y[k - 1] - (m.W[k - 1] + m.W[k]) / 2.0 - m.S[k - 1];
+        return y;
+    }
 
     /// <summary>Where each section's pins sit, posed, in its terminal order.</summary>
     private static (double X, double Y)[] PinsOf(PlanSection section)
@@ -57,6 +71,7 @@ public class CoupledResonatorPlanTests
                                      Math.Sign(c.AngleDeg) * c.Radius * (1.0 - Math.Cos(c.AngleDeg * Math.PI / 180.0)))],
             PlanBend b => [(0, 0), (b.Arm * (1.0 + Math.Cos(b.AngleDeg * Math.PI / 180.0)), b.Arm * Math.Sin(b.AngleDeg * Math.PI / 180.0))],
             PlanCoupledLine c => [(0, 0), (c.L, 0), (0, -(c.W + c.S)), (c.L, -(c.W + c.S))],
+            PlanCoupledStrips m => [.. Offsets(m).SelectMany(y => new[] { (0.0, y), (m.L, y) })],
             PlanGap g => [(0, 0), (g.S, 0)],
             PlanOpen => [(0, 0)],
             _ => throw new InvalidOperationException(section.GetType().Name),
@@ -73,6 +88,7 @@ public class CoupledResonatorPlanTests
     private static double WidthOf(PlanSection s) => s switch
     {
         PlanTee t => t.W1, PlanLine l => l.W, PlanCurve c => c.W, PlanBend b => b.W, PlanCoupledLine c => c.W,
+        PlanCoupledStrips m => m.W.Max(),
         PlanGap g => g.W, PlanOpen o => o.W, _ => 0.0,
     };
 
@@ -118,6 +134,7 @@ public class CoupledResonatorPlanTests
         {
             PlanLine l => [(0, -l.W / 2, l.L, l.W / 2, l.Nodes[0])],
             PlanCoupledLine c => [(0, -c.W / 2, c.L, c.W / 2, c.Nodes[0]), (0, -c.W * 1.5 - c.S, c.L, -c.W / 2 - c.S, c.Nodes[2])],
+            PlanCoupledStrips m => [.. Offsets(m).Select((y, k) => (0.0, y - m.W[k] / 2, m.L, y + m.W[k] / 2, m.Nodes[2 * k]))],
             PlanTee t => [(0, -t.W1 / 2, t.L1 + t.L2, t.W1 / 2, t.Nodes[0]), (t.L1 - t.W3 / 2, -t.L3, t.L1 + t.W3 / 2, 0, t.Nodes[0])],
             PlanBend b => [(0, -b.W / 2, b.Arm + b.W / 2, b.W / 2, b.Nodes[0]),
                            (b.Arm - b.W / 2, 0, b.Arm + b.W / 2, Math.Sign(b.AngleDeg) * (b.Arm + 0.0), b.Nodes[0])],
@@ -146,6 +163,7 @@ public class CoupledResonatorPlanTests
             IEnumerable<(int, int)> joins = s switch
             {
                 PlanCoupledLine => [(n[0], n[1]), (n[2], n[3])],
+                PlanCoupledStrips m => Enumerable.Range(0, m.W.Count).Select(k => (n[2 * k], n[2 * k + 1])),
                 PlanGap or PlanOpen => [],
                 _ => n.Skip(1).Select(x => (n[0], x)),
             };
@@ -210,5 +228,44 @@ public class CoupledResonatorPlanTests
         Assert.Equal(PassivePlan.OnGrid(37.17e-3 / 2.0), pairs[0], 12);
         Assert.Equal(PassivePlan.OnGrid(37.17e-3 / 2.0), pairs[1], 12);
         Assert.Equal(2, plan.Sections.OfType<PlanLine>().Count(l => Math.Abs(l.L - PassivePlan.OnGrid((38e-3 - 37.17e-3) / 2.0)) < 2e-9));
+    }
+
+    /// <summary>Coupling = Full: an aligned hairpin filter's arms, the feeds' strips included, are one N-line section
+    /// over the arms' length, every arm beside the next; a staggered stepped-impedance one is one section of every wide
+    /// end and one of each row's narrow arms. Pairs places only MCLIN pairs.</summary>
+    [Fact]
+    public void FullCoupling_PutsAHairpinsArmsInOneSection()
+    {
+        var pairs = CoupledResonatorPlan.Build(Spec($"{Gaps};Shape=Hairpin;Sa=2.2e-3"), Ro4350b);
+        Assert.Empty(pairs.Sections.OfType<PlanCoupledStrips>());
+        Assert.Equal(4, pairs.Sections.OfType<PlanCoupledLine>().Count());
+
+        var full = CoupledResonatorPlan.Build(Spec($"{Gaps};Shape=Hairpin;Sa=2.2e-3;Coupling=Full"), Ro4350b);
+        Assert.Empty(full.Sections.OfType<PlanCoupledLine>());
+        var arms = Assert.Single(full.Sections.OfType<PlanCoupledStrips>());
+        Assert.Equal(8, arms.W.Count);
+        // Feed, then each hairpin's two arms Sa apart, the next hairpin S on.
+        Assert.Equal([0.126e-3, 2.2e-3, 0.574e-3, 2.2e-3, 0.574e-3, 2.2e-3, 0.126e-3], arms.S.Select(x => Math.Round(x, 9)));
+
+        var sir = CoupledResonatorPlan.Build(Spec($"{Gaps};Shape=Hairpin;Sa=2.2e-3;Profile=SIR;Wc=0.5e-3;Uc=0.4;Coupling=Full"), Ro4350b);
+        var sections = sir.Sections.OfType<PlanCoupledStrips>().ToList();
+        Assert.Contains(sections, m => m.W.Count == 8 && m.W.All(w => Math.Abs(w - 1.058e-3) < 1e-12));
+        Assert.Contains(sections, m => m.W.Count == 4 && m.W.All(w => Math.Abs(w - 0.5e-3) < 1e-12));   // ∪ hairpins 1 and 3
+        Assert.Contains(sections, m => m.W.Count == 2 && m.W.All(w => Math.Abs(w - 0.5e-3) < 1e-12));   // ∩ hairpin 2
+    }
+
+    /// <summary>Neighbours of unequal width: refused as an MCLIN pair, built under Full as an N-line pair of two widths.</summary>
+    [Fact]
+    public void AnUnequalSirPair_BuildsUnderFullCoupling()
+    {
+        const string values = $"{Gaps};Profile=SIR;Wc=0.5e-3;Uc=0.3;W2=0.8e-3";
+        var ex = Assert.Throws<ParameterRefusalException>(() => CoupledResonatorPlan.Build(Spec(values), Ro4350b));
+        Assert.Equal("device.mcrc.unequal-pair", ex.Diagnostic!.Id);
+        var plan = CoupledResonatorPlan.Build(Spec(values + ";Coupling=Full"), Ro4350b);
+        var widths = plan.Sections.OfType<PlanCoupledStrips>().Select(m => (m.W[0], m.W[1])).ToList();
+        Assert.Equal(4, widths.Count);
+        double w = PassivePlan.OnGrid(1.058e-3), w2 = PassivePlan.OnGrid(0.8e-3);
+        Assert.Contains((w, w2), widths);
+        Assert.Contains((w2, w), widths);
     }
 }

@@ -1641,8 +1641,8 @@ public sealed partial class Elaborator
                 result[ov.Name] = new Value(Unquote(ov.Expression));
                 continue;
             }
-            // A coupled-resonator filter's Shape, Profile, Feed, Form and Arrangement are names, kept as names.
-            if (ov.Name is "Shape" or "Profile" or "Feed" or "Form" or "Arrangement"
+            // A coupled-resonator filter's Shape, Profile, Feed, Form, Arrangement and Coupling are names, kept as names.
+            if (ov.Name is "Shape" or "Profile" or "Feed" or "Form" or "Arrangement" or "Coupling"
                 && inst.Reference.Equals("MCRC", StringComparison.OrdinalIgnoreCase))
             {
                 result[ov.Name] = new Value(Unquote(ov.Expression));

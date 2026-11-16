@@ -2135,6 +2135,7 @@ input on terminal 1 and an output on terminal 2. Five names choose what it is.
 | `Sa`, `Gap`, `Sx` | The hairpin's arm gap, the loop's opening, the cross-coupling gap. |
 | `Tap` | A tapped feed's distance from the end resonator's midpoint. |
 | `Wc`, `Uc` | A SIR's centre width and its share of the length. |
+| `Coupling` | `Pairs` (the default) or `Full`: what the circuit couples, below. |
 
 **Building it.** Every coupled length is an MCLIN pair, every other run an MLIN, every fold a mitred MMITER corner, a ring
 two MCURVEs, a tap an MTEE, a ring's feed and a loop's opening an MGAP, and every free end an open end. Each strip couples
@@ -2142,7 +2143,19 @@ to the neighbour it lies against, which is what the textbook design methods desi
 further over and the corners are not coupled in the circuit, and an EM run of the artwork has them. A neighbour longer than
 the next couples over the shorter one's end; its extra length is a plain line. A combination the part cannot build is
 refused by name: a bandstop of straight resonators (coupled along their whole half wave they do not notch), a stepped
-profile on a loop, a tap that lands on a corner, a gap that is missing, neighbours of unequal width coupled side by side.
+profile on a loop, a tap that lands on a corner, a gap that is missing, and, with `Coupling` = `Pairs`, neighbours of
+unequal width coupled side by side.
+
+**`Coupling`.** `Pairs`, the default, couples each strip to the neighbour it lies against as an MCLIN pair, which has one
+width. `Full` places every coupled region as one section of the N-line model ([MCLINN](#mclinen)), with every strip its own
+width, so neighbours of unequal width build and each width can be the design's. For a hairpin it goes further: every arm
+that lies beside others over the same stretch is in one section, so a hairpin's own two arms couple, and so does every arm
+beyond its neighbour; for aligned hairpins that is one section of every arm and both feed strips. The artwork is the
+same either way. With the arms well apart the two agree closely (on the default board a hairpin filter's band moves by
+0.5 % with the arms four widths apart); with the arms close, `Full` has the arms' own coupling that `Pairs` leaves out
+(4.4 % higher and 27 % narrower with the arms half a width apart). `Full` still leaves out what is not side by side:
+the corners, a cross-coupled square's diagonal, a longer neighbour's overhang. The N-line model is quasi-static and
+solves each cross-section once, a few seconds for eight strips.
 
 **Designs.** The part does not synthesise. Textbook designs placed in it land where they were designed: on 20 mil
 RO4350B a three-resonator 2.4 GHz filter 10 % wide with 0.5 dB ripple, from Cohn's parallel-coupled method, comes within
