@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "F16-coupled-array-interdigital",
+  "CellName": "F32-coupled-array-combline",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -16,7 +16,7 @@
       "Parameters": [
         {
           "Name": "N",
-          "Expression": "3",
+          "Expression": "4",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -30,35 +30,35 @@
         },
         {
           "Name": "S",
-          "Expression": "0.6",
+          "Expression": "0.8",
           "Unit": "mm",
           "ShowOnSchematic": true,
           "Dimension": "Length"
         },
         {
           "Name": "L",
-          "Expression": "18",
+          "Expression": "9",
           "Unit": "mm",
           "ShowOnSchematic": true,
           "Dimension": "Length"
         },
         {
           "Name": "Form",
-          "Expression": "Interdigital",
+          "Expression": "Combline",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "Feed",
-          "Expression": "Tapped",
+          "Expression": "Coupled",
           "Unit": "",
           "ShowOnSchematic": false,
           "Dimension": "None"
         },
         {
           "Name": "Tap",
-          "Expression": "3",
+          "Expression": "2",
           "Unit": "mm",
           "ShowOnSchematic": false,
           "Dimension": "Length"
@@ -72,7 +72,7 @@
         },
         {
           "Name": "C",
-          "Expression": "1",
+          "Expression": "1.5",
           "Unit": "pF",
           "ShowOnSchematic": false,
           "Dimension": "Capacitance"
@@ -82,7 +82,7 @@
     {
       "InstanceName": "P1",
       "Symbol": "Term",
-      "X": 800,
+      "X": 700,
       "Y": 1200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -107,7 +107,7 @@
     {
       "InstanceName": "GND1",
       "Symbol": "Ground",
-      "X": 800,
+      "X": 700,
       "Y": 1400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -119,7 +119,7 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": 2400,
+      "X": 2500,
       "Y": 1200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -144,7 +144,7 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": 2400,
+      "X": 2500,
       "Y": 1400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -156,7 +156,7 @@
     {
       "InstanceName": "VIAG1",
       "Symbol": "ViaGnd",
-      "X": 1500,
+      "X": 1400,
       "Y": 400,
       "Rotation": "R180",
       "MirrorX": false,
@@ -223,6 +223,110 @@
     {
       "InstanceName": "VIAG2",
       "Symbol": "ViaGnd",
+      "X": 1400,
+      "Y": 1600,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "FromLayer",
+          "Expression": "",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "GroundLayer",
+          "Expression": "",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Drill",
+          "Expression": "",
+          "Unit": "mm",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "Pad",
+          "Expression": "",
+          "Unit": "mm",
+          "ShowOnSchematic": false,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "Antipad",
+          "Expression": "",
+          "Unit": "mm",
+          "ShowOnSchematic": false,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "Plating",
+          "Expression": "",
+          "Unit": "\u00B5m",
+          "ShowOnSchematic": false,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "IncludeC",
+          "Expression": "true",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "C",
+          "Expression": "",
+          "Unit": "pF",
+          "ShowOnSchematic": false,
+          "Dimension": "Capacitance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "C1",
+      "Symbol": "Capacitor",
+      "X": 1600,
+      "Y": 400,
+      "Rotation": "R180",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "C",
+          "Expression": "1.5",
+          "Unit": "pF",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        },
+        {
+          "Name": "Footprint",
+          "Expression": "smt:0201@N",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "GND3",
+      "Symbol": "Ground",
+      "X": 1600,
+      "Y": 200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "VIAG3",
+      "Symbol": "ViaGnd",
       "X": 1600,
       "Y": 1600,
       "Rotation": "R0",
@@ -288,11 +392,48 @@
       ]
     },
     {
-      "InstanceName": "VIAG3",
-      "Symbol": "ViaGnd",
-      "X": 1700,
+      "InstanceName": "C2",
+      "Symbol": "Capacitor",
+      "X": 1800,
       "Y": 400,
       "Rotation": "R180",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "C",
+          "Expression": "1.5",
+          "Unit": "pF",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        },
+        {
+          "Name": "Footprint",
+          "Expression": "smt:0201@N",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "GND4",
+      "Symbol": "Ground",
+      "X": 1800,
+      "Y": 200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "VIAG4",
+      "Symbol": "ViaGnd",
+      "X": 1800,
+      "Y": 1600,
+      "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
@@ -359,11 +500,11 @@
     {
       "Points": [
         [
-          800,
+          700,
           1000
         ],
         [
-          1200,
+          1100,
           1000
         ]
       ]
@@ -371,11 +512,11 @@
     {
       "Points": [
         [
-          2400,
+          2500,
           1000
         ],
         [
-          2000,
+          2100,
           1000
         ]
       ]

@@ -450,10 +450,10 @@ public sealed class ComparisonTests
     [InlineData("F10-rat-race-hybrid", "RRC1", "F", "2.5")]
     [InlineData("F14-radial-stub", "RS1", "Angle", "90")]
     [InlineData("F15-coupled-lines", "CLN1", "W[2]", "1.5")]
-    [InlineData("F16-coupled-array-interdigital", "CLA1", "Tap", "3.5")]
-    [InlineData("F16b-coupled-array-combline", "CLA1", "C", "1.6")]
-    [InlineData("F16c-coupled-array-pseudo", "CLA1", "L", "17")]
-    [InlineData("F16d-coupled-array-custom", "CLA1", "Ends", "SC JO JS")]
+    [InlineData("F31-coupled-array-interdigital", "CLA1", "Tap", "3.5")]
+    [InlineData("F32-coupled-array-combline", "CLA1", "C", "1.6")]
+    [InlineData("F33-coupled-array-pseudo", "CLA1", "L", "17")]
+    [InlineData("F34-coupled-array-custom", "CLA1", "Ends", "SC JO JS")]
     public void AHybridComparesCleanAndASpecMismatchIsAFinding(string design, string instance, string spec, string changed)
     {
         string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-hyb-" + Guid.NewGuid().ToString("N")[..12]);

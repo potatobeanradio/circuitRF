@@ -92,7 +92,7 @@ public sealed class CoupledArrayPartTests(ITestOutputHelper output) : IDisposabl
     [Fact]
     public void PlaceSiteParts_FillsTheComblinesCapacitorsAndVias()
     {
-        var p = SdlChecker.Prepare("F16b-coupled-array-combline", Path.Combine(_scratch, "combline"));
+        var p = SdlChecker.Prepare("F32-coupled-array-combline", Path.Combine(_scratch, "combline"));
         var model = p.Model;
         model.Components.RemoveAll(c => c.Symbol is SymbolKind.ViaGnd or SymbolKind.Capacitor
                                         || c.Symbol == SymbolKind.Ground && c.InstanceName is not ("GND1" or "GND2"));

@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "F16c-coupled-array-pseudo",
+  "CellName": "F33-coupled-array-pseudo",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
