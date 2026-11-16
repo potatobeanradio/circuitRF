@@ -35,6 +35,11 @@ public sealed record LangeDesign(
 /// and a jumper from pin k to Jk joins that conductor (J1/J2 the third finger's near/far ends, J3/J4 the second's).
 /// On a board that jumper is a bond wire, so layout, LVS and EM see it as the separate part it is.</para>
 ///
+/// <para><b>Six or eight fingers.</b> Ou's equations hold for any even N, so N is a spec: each further pair of inner
+/// fingers adds four landings, J(4m+1)/J(4m+2) on conductor A's finger 2m + 2 and J(4m+3)/J(4m+4) on conductor B's
+/// finger 2m + 1 (fingers counted from 0 at the top), and a jumper joins J(4m+j) to pin j's conductor, from pin j or from
+/// the landing beside it. More fingers reach tighter coupling at a wider gap, at the cost of narrower fingers.</para>
+///
 /// <para><b>Limits.</b> Ou's equations are TEM; in microstrip the even and odd εeff are taken as the pair's, and the
 /// mode-velocity difference costs directivity as in any microstrip coupler. Non-adjacent fingers are not coupled in the
 /// model, and the jumpers are assumed short against λ. Tight coupling needs narrow gaps: on 20 mil RO4350B at
@@ -43,11 +48,18 @@ public sealed record LangeDesign(
 /// </summary>
 public static class LangePlan
 {
-    /// <summary>The finger count this plan draws.</summary>
+    /// <summary>The finger count the part opens with.</summary>
     public const int Fingers = 4;
 
     /// <summary>The part's pins, in terminal order: the four ports, then the jumper landings J1-J4 (Jk joins pin k).</summary>
-    public static readonly IReadOnlyList<string> Pins = ["1", "2", "3", "4", "J1", "J2", "J3", "J4"];
+    public static readonly IReadOnlyList<string> Pins = PinsFor(Fingers);
+
+    /// <summary>The pins of an N-finger coupler: the four ports, then 2·(N − 2) landings, J(4m+j) joining pin j's conductor.</summary>
+    public static IReadOnlyList<string> PinsFor(int fingers)
+        => ["1", "2", "3", "4", .. Enumerable.Range(1, 2 * (fingers - 2)).Select(k => $"J{k}")];
+
+    /// <summary>The finger count a symbol of <paramref name="pins"/> pins draws: 2·N pins for N = 4, 6 or 8, else 4.</summary>
+    public static int FingersForPinCount(int pins) => pins is 12 or 16 ? pins / 2 : Fingers;
 
     /// <summary>Ou's coupler modes for <paramref name="fingers"/> strips from the modes of two adjacent ones.</summary>
     public static (double Ze, double Zo) Equivalent(double ze, double zo, int fingers)
@@ -66,22 +78,35 @@ public static class LangePlan
         return (r * zo, zo);
     }
 
-    public static LangeDesign Build(double couplingDb, double z0, double fHz, MicrostripSubstrate s)
+    public static LangeDesign Build(double couplingDb, double z0, double fHz, MicrostripSubstrate s, double fingers = Fingers)
     {
+        if (fingers is not (4 or 6 or 8))
+            throw new ParameterRefusalException(Diagnostic.Create("device.lange.fingers-invalid",
+                DiagnosticSeverity.Error, "Lange coupler: Fingers = {n}; it has 4, 6 or 8.", ("n", fingers)));
+        int n = (int)fingers;
         foreach (var (name, value) in new[] { ("Coupling", couplingDb), ("Z0", z0), ("F", fHz) })
             if (!(value > 0))
                 throw new ParameterRefusalException(Diagnostic.Create("device.lange.spec-not-positive",
                     DiagnosticSeverity.Error, "Lange coupler: {name} = {value} must be positive.",
                     ("name", name), ("value", value)));
 
-        var (pe, po) = PairFor(couplingDb, z0, Fingers);
+        var (pe, po) = PairFor(couplingDb, z0, n);
         var g = CoupledLineSynthesis.Synthesize(pe, po, fHz, s, "Lange coupler");
         double w = PassivePlan.OnGrid(g.WMeters), gap = PassivePlan.OnGrid(g.SMeters), l = PassivePlan.OnGrid(g.QuarterWaveMeters);
         var modes = CoupledLineCouplerPlan.Modes(w, gap, l, fHz, s);
-        var (ze, zo) = Equivalent(modes.Ze, modes.Zo, Fingers);
-        // Fingers top to bottom: 1-2 (conductor A, the ports), J3-J4 (B), J1-J2 (A), 3-4 (B, the ports).
-        var sections = new PlanSection[] { new PlanCoupledLine([1, 2, 7, 8, 5, 6, 3, 4], 0.0, 0.0, 0.0, w, gap, l, Fingers) };
-        return new LangeDesign(couplingDb, z0, fHz, Fingers, pe, po, ze, zo, w, gap, l, modes,
-            new PassivePlan(Pins, sections, NodeCount: 8));
+        var (ze, zo) = Equivalent(modes.Ze, modes.Zo, n);
+        // Fingers top to bottom: 1-2 (conductor A, the ports), then for each inner pair m the B finger 2m + 1 on
+        // J(4m+3)-J(4m+4) and the A finger 2m + 2 on J(4m+1)-J(4m+2), and last 3-4 (B, the ports). Four fingers:
+        // 1-2, J3-J4, J1-J2, 3-4. Jk is node 4 + k.
+        var nodes = new List<int> { 1, 2 };
+        for (int f = 1; f < n - 1; f++)
+        {
+            int m = (f - 1) / 2, first = f % 2 == 1 ? 4 * m + 3 : 4 * m + 1;
+            nodes.AddRange([4 + first, 5 + first]);
+        }
+        nodes.AddRange([3, 4]);
+        var sections = new PlanSection[] { new PlanCoupledLine([.. nodes], 0.0, 0.0, 0.0, w, gap, l, n) };
+        return new LangeDesign(couplingDb, z0, fHz, n, pe, po, ze, zo, w, gap, l, modes,
+            new PassivePlan(PinsFor(n), sections, NodeCount: 2 * n));
     }
 }

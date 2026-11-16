@@ -1,0 +1,20 @@
+# The six-finger interdigitated coupler (MIDC, Fingers = 6), a 25 ohm one: six strips, the ports on the outer two
+# and eight jumper landings on the inner four, each jumper an inductor with no artwork.
+lvs lvs.device.unmatched-schematic
+Info IDC1 added
+Info P1 port 1 placed at IDC1 pin 1
+Info P2 port 2 placed at IDC1 pin 2
+Info P3 port 3 placed at IDC1 pin 3
+Info P4 port 4 placed at IDC1 pin 4
+Warning W1 no layout view
+Warning W2 no layout view
+Warning W3 no layout view
+Warning W4 no layout view
+Warning W5 no layout view
+Warning W6 no layout view
+Warning W7 no layout view
+Warning W8 no layout view
+port P1 1
+port P2 2
+port P3 3
+port P4 4

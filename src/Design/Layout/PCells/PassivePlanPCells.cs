@@ -72,18 +72,41 @@ public static class PassivePlanPCells
 
     public static PCellResult GenerateCoupledLineCoupler(
         IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
-        => DrawOrRefuse(() => CoupledLineCouplerPlan.Build(parameters.Real("Coupling", 10.0), parameters.Real("Z0", 50.0),
-            parameters.Real("F", 2.4e9), SubstrateOf(technology, layerSelection)).Plan, technology, layerSelection);
+    {
+        double broadside = parameters.Real("Broadside", 0.0);
+        var stack = broadside != 0.0
+            ? SubstrateResolver.ResolveBroadsideStack(technology, layerSelection.SignalLayerNameOverride).Stack
+            : null;
+        return DrawOrRefuse(() => CoupledLineCouplerPlan.Build(parameters.Real("Coupling", 10.0), parameters.Real("Z0", 50.0),
+            parameters.Real("F", 2.4e9), SubstrateOf(technology, layerSelection), parameters.Real("Sections", 1.0),
+            parameters.Real("Band", CoupledLineCouplerPlan.DefaultBand), parameters.Real("Tandem", 0.0),
+            EnumOf(parameters, "Compensation", CouplerCompensation.None), broadside, stack).Plan, technology, layerSelection);
+    }
+
+    /// <summary>An enum-named parameter, a name; <paramref name="fallback"/> when absent or not one of the names.</summary>
+    private static T EnumOf<T>(IReadOnlyDictionary<string, PCellValue> parameters, string name, T fallback) where T : struct, Enum
+        => Enum.TryParse(parameters.Text(name), ignoreCase: true, out T v) && Enum.IsDefined(v) ? v : fallback;
 
     public static PCellResult GenerateLange(
         IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
         => DrawOrRefuse(() => LangePlan.Build(parameters.Real("Coupling", 4.0), parameters.Real("Z0", 50.0),
-            parameters.Real("F", 2.4e9), SubstrateOf(technology, layerSelection)).Plan, technology, layerSelection);
+            parameters.Real("F", 2.4e9), SubstrateOf(technology, layerSelection),
+            parameters.Real("Fingers", LangePlan.Fingers)).Plan, technology, layerSelection);
 
     public static PCellResult GenerateMarchand(
         IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
         => DrawOrRefuse(() => MarchandBalunPlan.Build(parameters.Real("Z0", 50.0), parameters.Real("ZL", 200.0),
             parameters.Real("F", 2.4e9), parameters.Real("Gap", 1e-3), SubstrateOf(technology, layerSelection)).Plan,
+            technology, layerSelection);
+
+    /// <summary>The Schiffman phase shifter (MSPS): <see cref="SchiffmanPlan"/>'s C-section and reference line.</summary>
+    public const string SchiffmanId = ComponentModelFactory.SchiffmanTypeName;
+
+    public static PCellResult GenerateSchiffman(
+        IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
+        => DrawOrRefuse(() => SchiffmanPlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
+            parameters.Real("Phase", 90.0), parameters.Real("Band", SchiffmanPlan.DefaultBand),
+            SubstrateOf(technology, layerSelection), EnumOf(parameters, "Reference", SchiffmanReference.Straight)).Plan,
             technology, layerSelection);
 
     /// <summary>The plan drawn, or its refusal as the cell's one diagnostic.</summary>
@@ -127,10 +150,18 @@ public static class PassivePlanPCells
                 }, technology, layerSelection),
                 PlanLine l => MlinPCell.Generate(new Dictionary<string, PCellValue> { ["W"] = l.W, ["L"] = l.L },
                     technology, layerSelection),
+                PlanCoupledLine { Fingers: 2, Wiggly: true } c => Wiggly(c, technology, layerSelection),
                 PlanCoupledLine { Fingers: 2 } c => CoupledLinePCells.GenerateMclin(new Dictionary<string, PCellValue>
                 {
                     ["W"] = c.W, ["S"] = c.S, ["L"] = c.L,
                 }, technology, layerSelection),
+                PlanBroadsideLine b => (b.Stack.Stripline ? (Func<IReadOnlyDictionary<string, PCellValue>, Technology?,
+                        PCellLayerSelection, PCellResult>)CoupledLinePCells.GenerateBclin : CoupledLinePCells.GenerateMbclin)(
+                    new Dictionary<string, PCellValue>
+                    {
+                        ["W"] = b.W, ["O"] = b.O, ["L"] = b.L,
+                        ["LayerA"] = PCellValue.Text(b.Stack.LayerA ?? ""), ["LayerB"] = PCellValue.Text(b.Stack.LayerB ?? ""),
+                    }, technology, layerSelection),
                 PlanCoupledLine c => Fingers(c, technology, layerSelection),
                 PlanBend b => b.M is { } m
                     ? MMiterPCell.Generate(new Dictionary<string, PCellValue>
@@ -199,5 +230,44 @@ public static class PassivePlanPCells
             if (k == 0 && strip.Diagnostics is { Count: > 0 } d) diagnostics = [.. d];
         }
         return new PCellResult(shapes, pins, diagnostics);
+    }
+
+    /// <summary>A wiggly pair (A. Podell, 1970): strip A from y = W/2 down to a triangle-wave edge about y = −W/2, strip B's
+    /// matching saw-tooth <see cref="PlanCoupledLine.WiggleGapOffset"/> lower and its straight edge W below that, each tooth
+    /// <see cref="PlanCoupledLine.WigglePitch"/> long and <see cref="PlanCoupledLine.WiggleDepth"/> deep; pins as MCLIN's,
+    /// at each strip's mean centre line.</summary>
+    private static PCellResult Wiggly(PlanCoupledLine c, Technology? technology, PCellLayerSelection layerSelection)
+    {
+        int dbu = LayoutUnits.DefaultDbuPerMicron;
+        long M(double m) => PCellUnits.MetresToDbu(m, dbu);
+        var layer = SubstrateResolver.ResolveSignalLayerKey(technology, layerSelection, out _);
+        long w = M(c.W), l = M(c.L), off = M(c.WiggleGapOffset), half = M(c.WiggleDepth / 2.0);
+        int teeth = (int)Math.Round(c.L / c.WigglePitch);
+        long hw = w / 2, yb = -(w + off);
+        // The saw-tooth about y = 0, from x = 0 to l: on the mean edge at each end and every half tooth, up at each first
+        // quarter and down at each third, so the strips' end faces are centred on their pins as MCLIN's are.
+        var edge = Enumerable.Range(0, 4 * teeth + 1)
+            .Select(i => (X: (long)Math.Round((double)l * i / (4 * teeth)), Y: (i % 4) switch { 1 => half, 3 => -half, _ => 0L }))
+            .ToList();
+        IEnumerable<long> Flat(IEnumerable<(long X, long Y)> pts) => pts.SelectMany(p => new[] { p.X, p.Y });
+        var a = new PolygonShape
+        {
+            Layer = layer,
+            Xy = [0, w - hw, .. Flat(edge.Select(p => (p.X, p.Y - hw))), l, w - hw],
+        };
+        // Strip B: its toothed top edge right to left, then its straight bottom edge.
+        var b = new PolygonShape
+        {
+            Layer = layer,
+            Xy = [.. Flat(Enumerable.Reverse(edge).Select(p => (p.X, p.Y - hw - off))), 0, yb - hw, l, yb - hw],
+        };
+        var pins = new[]
+        {
+            new PCellPin("1", 0, 0, layer, w, 180.0),
+            new PCellPin("2", l, 0, layer, w, 0.0),
+            new PCellPin("3", 0, yb, layer, w, 180.0),
+            new PCellPin("4", l, yb, layer, w, 0.0),
+        };
+        return new PCellResult([a, b], pins);
     }
 }

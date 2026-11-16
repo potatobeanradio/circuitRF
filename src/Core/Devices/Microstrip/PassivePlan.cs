@@ -110,6 +110,39 @@ public sealed record PassivePlan(IReadOnlyList<string> Pins, IReadOnlyList<PlanS
 /// an MCLIN (<see cref="MicrostripCoupledLineModel"/>). With more, alternate strips are the two conductors of an
 /// interdigitated coupler, modelled from the same pair's modes by Ou's equations (<see cref="InterdigitatedLineModel"/>);
 /// the strips of one conductor are joined only by parts on the passive's pins, never inside it.
+///
+/// <para><b>Wiggly edges</b> (two strips, <paramref name="OddLengthFactor"/> above 1): the facing edges are a saw-tooth
+/// of <see cref="WigglePitch"/> and peak-to-peak <see cref="WiggleDepth"/>, so the odd mode, whose current runs along
+/// them, travels <paramref name="OddLengthFactor"/> times the straight length (A. Podell, 1970). S is then the gap
+/// across the teeth; strip B sits <see cref="WiggleGapOffset"/> below strip A's mean edge.</para>
 /// </summary>
 public sealed record PlanCoupledLine(int[] Nodes, double X, double Y, double RotationDeg, double W, double S, double L,
-    int Fingers = 2) : PlanSection(Nodes, X, Y, RotationDeg);
+    int Fingers = 2, double OddLengthFactor = 1.0) : PlanSection(Nodes, X, Y, RotationDeg)
+{
+    /// <summary>True when the facing edges are a saw-tooth.</summary>
+    public bool Wiggly => OddLengthFactor > 1.0;
+
+    /// <summary>The saw-tooth's period: about one strip width, a whole number of teeth along L.</summary>
+    public double WigglePitch => L / Math.Max(1.0, Math.Round(L / W));
+
+    /// <summary>The saw-tooth's peak-to-peak depth: each half-tooth is k times its run, k the odd-length factor.</summary>
+    public double WiggleDepth => WigglePitch / 2.0 * Math.Sqrt(Math.Max(0.0, OddLengthFactor * OddLengthFactor - 1.0));
+
+    /// <summary>Strip B's mean edge below strip A's: S across the slanted teeth, S·k measured straight down.</summary>
+    public double WiggleGapOffset => S * Math.Max(1.0, OddLengthFactor);
+}
+
+/// <summary>A broadside pair's cross-section, as BCLIN (<see cref="Stripline"/>) or MBCLIN takes it, and the two
+/// conductors the strips are drawn on. <see cref="Ha"/> is NaN on a microstrip pair, <see cref="Hd"/> NaN on a stripline
+/// (and on a microstrip pair whose top strip is the surface).</summary>
+public sealed record BroadsideStack(double Hs, double Hb, double Ha, double Hd, double Ta, double Tb, double EpsR,
+    double SigmaSPerM, double TanD, bool Stripline, string? LayerA = null, string? LayerB = null);
+
+/// <summary>
+/// A broadside-coupled pair, strip A on one conductor and strip B on the next one down, centre to centre
+/// <paramref name="O"/> apart sideways: BCLIN on a stripline stack, MBCLIN otherwise
+/// (<see cref="StriplineBroadsideCoupledModel"/>, <see cref="MicrostripBroadsideCoupledModel"/>), drawn by their own
+/// generator. Nodes in MCLIN's order: A near, A far, B near, B far.
+/// </summary>
+public sealed record PlanBroadsideLine(int[] Nodes, double X, double Y, double RotationDeg, double W, double O, double L,
+    BroadsideStack Stack) : PlanSection(Nodes, X, Y, RotationDeg);

@@ -3774,6 +3774,20 @@ public static class NetExtractor
                 warningsOut?.Add($"{comp.InstanceName}: {warning}");
         }
 
+        // A broadside coupler (MCLC with Broadside on) is on two conductors: the pair's cross-section, resolved as BCLIN's
+        // or MBCLIN's, is appended after the microstrip substrate, so its Er, TanD and Sigma are the ones the model reads.
+        // A stack with no second signal layer appends nothing, and the plan refuses the part with a coded message.
+        if (comp.Symbol == SymbolKind.Mclc
+            && double.TryParse(comp.Parameters.FirstOrDefault(p => p.Name == "Broadside")?.Expression,
+                   System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double bs)
+            && bs != 0.0)
+        {
+            var (stack, reason) = CircuitRF.Design.Layout.PCells.SubstrateResolver.ResolveBroadsideStack(microstripTech,
+                NonEmptyOrNull(comp.Parameters.FirstOrDefault(p => p.Name == "SignalLayer")?.Expression));
+            if (stack is null) warningsOut?.Add($"{comp.InstanceName}: Broadside: {reason}");
+            else overrides2.AddRange(BroadsideSubstrateInjection.Overrides(stack));
+        }
+
         // brief-artsch-1: CPWG and SLIN, by PlanarLineSubstrateInjection's rule. A SLIN the technology cannot
         // give two planes is a refusal: it is reported here, and the line keeps its SignalLayer so the run's
         // own binding (CnlTechnologyBinding) refuses it again rather than simulating it on the fallback board.

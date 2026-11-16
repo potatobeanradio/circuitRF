@@ -33,7 +33,7 @@ public static class MicrostripSubstrateInjection
     private static readonly HashSet<SymbolKind> MicrostripKinds =
         [SymbolKind.Mlin, SymbolKind.MCLine, SymbolKind.MBend, SymbolKind.MCurve, SymbolKind.MMiter, SymbolKind.MGap, SymbolKind.MTee, SymbolKind.MCross,
          SymbolKind.Mtaper, SymbolKind.Mklopf, SymbolKind.GsgPad, SymbolKind.Mwpd, SymbolKind.Mblc, SymbolKind.Mrrc,
-         SymbolKind.Mclc, SymbolKind.Midc, SymbolKind.Mcbl];
+         SymbolKind.Mclc, SymbolKind.Midc, SymbolKind.Mcbl, SymbolKind.Msps];
 
     public static bool IsMicrostripKind(SymbolKind kind) => MicrostripKinds.Contains(kind);
 
@@ -337,7 +337,7 @@ public static class MicrostripSubstrateInjection
         // The planned passives' geometry is derived; their one stored length (MWPD's resistor span, MCBL's joining line)
         // is a layout choice no substrate changes.
         if (kind is SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mclc or SymbolKind.Midc
-                 or SymbolKind.Mcbl) return;
+                 or SymbolKind.Mcbl or SymbolKind.Msps) return;
         if (kind == SymbolKind.GsgPad) ApplyProbePadDefaults(parameters, technology);
         string targetUnit = SchematicLengthUnit(technology.DefaultDisplayUnit);
         double step = RoundStepFor(targetUnit);

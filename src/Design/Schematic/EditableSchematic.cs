@@ -108,17 +108,40 @@ public static class SymbolPortDefs
             case SymbolKind.Mblc:    return [("1", -400f, -200f), ("2", 400f, -200f), ("3", 400f, 200f), ("4", -400f, 200f)];
             // MRRC: the sum port at the top, the difference port at the bottom, the outputs either side.
             case SymbolKind.Mrrc:    return [("1", 0f, -400f), ("2", -400f, 0f), ("3", 400f, 0f), ("4", 0f, 400f)];
-            // MCLC: MCLIN's pins exactly, so a placed MCLIN is swapped for the coupler without rewiring.
-            case SymbolKind.Mclc:    return [("1", -200f, -100f), ("2", 200f, -100f),
-                                             ("3", -200f,  100f), ("4", 200f,  100f)];
+            // MCLC: MCLIN's pins exactly, so a placed MCLIN is swapped for the coupler without rewiring. A tandem (eight pins)
+            // as its board has it: coupler I above coupler II, 1 at the top left and 3 at the bottom right, 2 and 4 the
+            // leads out of the two crossovers on the left and right, and each crossover's landings J1/J2 (right) and
+            // J3/J4 (left) one above the other beside it.
+            case SymbolKind.Mclc:
+                return portCount == 8
+                    ? [("1", -400f, -300f), ("2", -400f, 100f), ("3", 400f, 300f), ("4", 400f, -100f),
+                       ("J1", 200f, -300f), ("J2", 200f, 100f), ("J3", -200f, 300f), ("J4", -200f, -100f)]
+                    : [("1", -200f, -100f), ("2", 200f, -100f), ("3", -200f,  100f), ("4", 200f,  100f)];
             // MIDC: each pin on its own finger's row, top to bottom 1/J3/J1/3 at the left and 2/J4/J2/4 at the right,
-            // as the fingers lie on the board (1-2 and J1-J2 one conductor, J3-J4 and 3-4 the other).
-            case SymbolKind.Midc:    return [("1", -400f, -300f), ("2", 400f, -300f), ("3", -400f, 300f), ("4", 400f, 300f),
-                                             ("J1", -400f, 100f), ("J2", 400f, 100f), ("J3", -400f, -100f), ("J4", 400f, -100f)];
+            // as the fingers lie on the board (1-2 and J1-J2 one conductor, J3-J4 and 3-4 the other). VARIADIC on the pin
+            // count, 2·N for N fingers: rows 200 apart, each finger's landings on its row (LangePlan.PinsFor's order).
+            case SymbolKind.Midc:
+            {
+                int n = CircuitRF.Core.Devices.Microstrip.LangePlan.FingersForPinCount(portCount);
+                float Row(int f) => -100f * (n - 1) + 200f * f;
+                var pins = new List<(string, float, float)>
+                {
+                    ("1", -400f, Row(0)), ("2", 400f, Row(0)), ("3", -400f, Row(n - 1)), ("4", 400f, Row(n - 1)),
+                };
+                for (int k = 1; k <= 2 * (n - 2); k++)
+                {
+                    int m = (k - 1) / 4, j = (k - 1) % 4;                 // J(4m+1..4m+4): A finger 2m+2, B finger 2m+1
+                    int f = j < 2 ? 2 * m + 2 : 2 * m + 1;
+                    pins.Add(($"J{k}", j % 2 == 0 ? -400f : 400f, Row(f)));
+                }
+                return [.. pins];
+            }
             // MCBL: the input and G2 at the left, G3 at the right, and the balanced outputs 2 and 3 side by side below
             // the middle, where the two sections' coupled strips end.
             case SymbolKind.Mcbl:    return [("1", -600f, -100f), ("2", -100f, 200f), ("3", 100f, 200f),
                                              ("G2", -600f, 100f), ("G3", 600f, 100f)];
+            // MSPS: the C-section's two ends at the left, top, and the reference line's ends below it, left and right.
+            case SymbolKind.Msps:    return [("1", -400f, -300f), ("2", -400f, -100f), ("3", -400f, 200f), ("4", 400f, 200f)];
             // The MMIC passives (AA-1): horizontal, on MLIN's left/right convention, because they sit
             // in a die's lines. MIMCAP 1 = top plate, 2 = bottom plate; SPIRAL 1 = outer end, 2 = inner
             // end; AIRBRIDGE 1/2 = the landings, and 3 (below) / 4 (above) the two ends of the line it crosses.
@@ -1191,6 +1214,18 @@ public sealed class EditableComponent
                 var sections = Parameters.FirstOrDefault(q => q.Name == "N");
                 return sections is not null && int.TryParse(sections.Expression, out int ns) && ns is >= 1 and <= CircuitRF.Core.Devices.Microstrip.WilkinsonPlan.MaxSections
                     ? 3 + 2 * ns : 5;
+            }
+
+            // A coupler's Tandem adds its crossovers' four landings; an interdigitated coupler's Fingers sets 2·N pins. Plain
+            // numbers only, as MWPD's N.
+            if (Symbol is SymbolKind.Mclc)
+                return double.TryParse(Parameters.FirstOrDefault(q => q.Name == "Tandem")?.Expression,
+                           System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double tv)
+                       && tv != 0 ? 8 : 4;
+            if (Symbol is SymbolKind.Midc)
+            {
+                var fingers = Parameters.FirstOrDefault(q => q.Name == "Fingers");
+                return fingers is not null && int.TryParse(fingers.Expression, out int nf) && nf is 4 or 6 or 8 ? 2 * nf : 8;
             }
 
             // The Combiner's N is its number of PATHS; it draws N + 1 pins, the common port with them.

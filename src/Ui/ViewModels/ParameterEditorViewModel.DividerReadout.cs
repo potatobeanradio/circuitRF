@@ -21,7 +21,7 @@ public partial class ParameterEditorViewModel
 {
     /// <summary>True for a planned passive with a readout: MWPD, the hybrids and the coupled-line parts.</summary>
     public bool IsDividerReadoutTarget => _target?.Symbol is SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
-                                          or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl;
+                                          or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Msps;
 
     /// <summary>The derived numbers, one per line, or empty.</summary>
     public string DividerReadoutText { get; private set; } = "";
@@ -36,7 +36,7 @@ public partial class ParameterEditorViewModel
         string text = "", note = "";
         if (_target?.Symbol is SymbolKind.Mblc or SymbolKind.Mrrc)
             (text, note) = HybridReadout(_target.Symbol);
-        else if (_target?.Symbol is SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl)
+        else if (_target?.Symbol is SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Msps)
             (text, note) = CoupledLineReadout(_target.Symbol);
         else if (IsDividerReadoutTarget)
         {

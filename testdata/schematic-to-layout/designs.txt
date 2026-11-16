@@ -37,3 +37,9 @@ F10-rat-race-hybrid RF-passives
 F11-coupled-line-coupler RF-passives
 F12-coupled-line-balun RF-passives
 F13-interdigitated-coupler RF-passives
+F11b-coupler-sections RF-passives
+F11c-coupler-tandem RF-passives
+F11d-coupler-wiggly RF-passives
+F11e-coupler-broadside RF-passives
+F13b-interdigitated-six RF-passives
+F14-schiffman-phase-shifter RF-passives

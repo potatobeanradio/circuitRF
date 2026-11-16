@@ -1664,8 +1664,11 @@ public static partial class SchematicLayoutPlanner
                 if (string.IsNullOrWhiteSpace(p.Expression)) continue;
             }
 
-            // A ring's Corner (MWPD, MRRC) is a word for its generator: Curve, Miter or Square.
-            if (comp.Symbol is SymbolKind.Mwpd or SymbolKind.Mrrc && p.Name == "Corner")
+            // A ring's Corner (MWPD, MRRC), a coupler's Compensation (MCLC) and a phase shifter's Reference (MSPS) are words
+            // for the generator.
+            if ((comp.Symbol is SymbolKind.Mwpd or SymbolKind.Mrrc && p.Name == "Corner")
+                || (comp.Symbol == SymbolKind.Mclc && p.Name == "Compensation")
+                || (comp.Symbol == SymbolKind.Msps && p.Name == "Reference"))
             {
                 if (p.Expression.Trim() is { Length: > 0 } corner) resolved[p.Name] = PCellValue.Text(corner);
                 continue;

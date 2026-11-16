@@ -172,6 +172,7 @@ public static class DeviceTypes
             ["MCLC"]   = SymbolKind.Mclc,
             ["MIDC"]   = SymbolKind.Midc,
             ["MCBL"]   = SymbolKind.Mcbl,
+            ["MSPS"]   = SymbolKind.Msps,
             // The MMIC passives (AA-1): each generator is keyed by its component's own token.
             ["MIMCAP"]    = SymbolKind.MimCap,
             ["SPIRAL"]    = SymbolKind.Spiral,
@@ -302,7 +303,7 @@ public static class DeviceTypes
         // is the same line whichever model the schematic chose for it (AS-11 swaps between them).
         SymbolKind.Mlin or SymbolKind.MBend or SymbolKind.MCurve or SymbolKind.MMiter or SymbolKind.MGap or SymbolKind.MTee
             or SymbolKind.MCross or SymbolKind.Mtaper or SymbolKind.Mklopf or SymbolKind.GsgPad or SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
-            or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl
+            or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Msps
             or SymbolKind.Tline or SymbolKind.Cpwg or SymbolKind.Slin
             or SymbolKind.CLine or SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine
             => DeviceKind.TransmissionLine,

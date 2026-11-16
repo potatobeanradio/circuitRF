@@ -9,10 +9,12 @@ namespace CircuitRF.Core.Devices;
 /// A planned microstrip passive (docs/design/rf-passives.md): MWPD, the equal-split Wilkinson divider
 /// (<see cref="WilkinsonPlan"/>), the hybrids MBLC (<see cref="BranchLinePlan"/>) and MRRC (<see cref="RatRacePlan"/>),
 /// and the coupled-line parts (<see cref="CoupledLineCouplerPlan"/>, <see cref="LangePlan"/>,
-/// <see cref="MarchandBalunPlan"/>). It has no line physics of its own: each section of the plan is the EXISTING
-/// part's model (<see cref="MicrostripTeeModel"/>, <see cref="MicrostripCurveModel"/>,
+/// <see cref="MarchandBalunPlan"/>, <see cref="SchiffmanPlan"/>). It has no line physics of its own: each section of the
+/// plan is the EXISTING part's model (<see cref="MicrostripTeeModel"/>, <see cref="MicrostripCurveModel"/>,
 /// <see cref="MicrostripLineModel"/>, <see cref="MicrostripCoupledLineModel"/>, <see cref="MicrostripMiterBendModel"/>,
-/// <see cref="MicrostripBendModel"/>), stamped into a
+/// <see cref="MicrostripBendModel"/>, <see cref="StriplineBroadsideCoupledModel"/>,
+/// <see cref="MicrostripBroadsideCoupledModel"/>; a wiggly pair is MCLIN's modes with a longer odd path,
+/// <see cref="WigglyLineModel"/>), stamped into a
 /// <see cref="LocalAdmittanceBlock"/> on the plan's nodes, and the internal nodes are Kron-reduced away so the
 /// instance stamps one block on its pins — the way MTEE stamps the arms it draws (<see cref="JunctionArms"/>).
 /// The same network built from explicit instances of those parts is therefore the same matrix.
@@ -46,9 +48,12 @@ public sealed class MicrostripPlanModel : ComponentModel, IReportsWarnings, IDcS
         foreach (var section in plan.Sections)
         {
             var n = section.Nodes;
-            var joins = section is PlanCoupledLine c
-                ? Enumerable.Range(0, c.Fingers).Select(k => (n[2 * k], n[2 * k + 1]))
-                : n.Skip(1).Select(x => (n[0], x));
+            var joins = section switch
+            {
+                PlanCoupledLine c => Enumerable.Range(0, c.Fingers).Select(k => (n[2 * k], n[2 * k + 1])),
+                PlanBroadsideLine => [(n[0], n[1]), (n[2], n[3])],
+                _ => n.Skip(1).Select(x => (n[0], x)),
+            };
             foreach (var (a, b) in joins) root[Find(a)] = Find(b);
         }
         int pins = plan.Pins.Count;
@@ -67,8 +72,13 @@ public sealed class MicrostripPlanModel : ComponentModel, IReportsWarnings, IDcS
                 s.SigmaSPerM, s.TanD, path, s.RoughnessMeters),
             PlanLine l => new MicrostripLineModel(l.W, l.L, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM, s.TanD, path,
                 s.RoughnessMeters),
+            PlanCoupledLine { Fingers: 2, Wiggly: true } p => new WigglyLineModel(p, s, path),
             PlanCoupledLine { Fingers: 2 } p => new MicrostripCoupledLineModel(p.W, p.S, p.L, s.HMeters, s.TMeters,
                 s.EpsR, s.SigmaSPerM, s.TanD, path, s.RoughnessMeters),
+            PlanBroadsideLine { Stack: { Stripline: true } b } p => new StriplineBroadsideCoupledModel(p.W, p.O, p.L,
+                b.Hs, b.Ha, b.Hb, b.Ta, b.Tb, b.EpsR, b.SigmaSPerM, b.TanD, path, s.RoughnessMeters),
+            PlanBroadsideLine { Stack: var b } p => new MicrostripBroadsideCoupledModel(p.W, p.O, p.L, b.Hb, b.Hs,
+                b.Ta, b.Tb, b.Hd, b.EpsR, b.SigmaSPerM, b.TanD, path, s.RoughnessMeters),
             PlanCoupledLine p => new InterdigitatedLineModel(p.W, p.S, p.L, p.Fingers, s, path),
             PlanBend b => b.M is { } m
                 ? new MicrostripMiterBendModel(b.W, b.AngleDeg, m, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM, s.TanD,
@@ -156,5 +166,54 @@ internal sealed class InterdigitatedLineModel : ComponentModel, IReportsWarnings
             CLineModel.StampModalPair(mna, n[2 * k], n[2 * k + 1], n[2 * b], n[2 * b + 1],
                 1.0 / yEven, ge * _l, 1.0 / yOdd, go * _l);
         }
+    }
+}
+
+/// <summary>
+/// An edge-coupled pair with saw-tooth facing edges (A. Podell, "A High Directivity Microstrip Coupler Technique," 1970
+/// G-MTT Symposium Digest, pp. 33-36, DOI 10.1109/GMTT.1970.1122761): MCLIN's own modes at the pair's W and S, with the
+/// odd mode run over <see cref="PlanCoupledLine.OddLengthFactor"/> times the length, the paper's effective odd-mode
+/// length correction for current that follows the teeth. Only approximate: the teeth also change the odd mode's
+/// capacitance, which this model does not see, and says so.
+/// </summary>
+internal sealed class WigglyLineModel : ComponentModel, IReportsWarnings, IDcShortedTerminals
+{
+    private readonly MicrostripCoupledLineModel _pair;
+    private readonly double _l, _k;
+    private readonly string _path;
+    private bool _warned;
+
+    public override int PortCount => 4;
+    public override ModelKind Kind => ModelKind.Linear;
+    public IReadOnlyList<(int A, int B)> DcShortedTerminals { get; } = [(0, 1), (2, 3)];
+
+    public WigglyLineModel(PlanCoupledLine p, MicrostripSubstrate s, string path)
+    {
+        _pair = new MicrostripCoupledLineModel(p.W, p.S, p.L, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM, s.TanD, path,
+            s.RoughnessMeters);
+        _l = p.L;
+        _k = p.OddLengthFactor;
+        _path = path;
+    }
+
+    public IReadOnlyList<(string Key, string Message)> DrainWarnings()
+    {
+        var w = _pair.DrainWarnings().ToList();
+        if (!_warned)
+        {
+            _warned = true;
+            w.Add(("wiggly-coupler:approximate", $"{_path}: the wiggly edges are modelled as a longer odd-mode path only "
+                + $"({_k:G4} times the length); the teeth's effect on the odd-mode impedance is not, so the directivity is an "
+                + "estimate and EM is the judge."));
+        }
+        return w;
+    }
+
+    public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
+    {
+        double f = omega / (2.0 * Math.PI);
+        var m = _pair.ModesAt(f);
+        var (ge, go) = _pair.Gamma(f, m);
+        CLineModel.StampModalPair(mna, c.Nodes[0], c.Nodes[1], c.Nodes[2], c.Nodes[3], m.Ze, ge * _l, m.Zo, go * _l * _k);
     }
 }

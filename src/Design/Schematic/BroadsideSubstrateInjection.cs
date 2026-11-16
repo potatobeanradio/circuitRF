@@ -79,4 +79,18 @@ public static class BroadsideSubstrateInjection
     }
 
     private static string Fmt(double v) => v.ToString("R", CultureInfo.InvariantCulture);
+
+    /// <summary>A resolved broadside stack as engine overrides, the names BCLIN and MBCLIN take (Ha only on a stripline,
+    /// Hd only where dielectric lies above strip A): what a broadside coupler (MCLC) is given at extraction.</summary>
+    public static IReadOnlyList<ParameterAssignment> Overrides(CircuitRF.Core.Devices.Microstrip.BroadsideStack stack)
+    {
+        var o = new List<ParameterAssignment>
+        {
+            new("Hs", Fmt(stack.Hs)), new("Hb", Fmt(stack.Hb)), new("Ta", Fmt(stack.Ta)), new("Tb", Fmt(stack.Tb)),
+            new("Er", Fmt(stack.EpsR)), new("TanD", Fmt(stack.TanD)), new("Sigma", Fmt(stack.SigmaSPerM)),
+        };
+        if (stack.Stripline) o.Add(new("Ha", Fmt(stack.Ha)));
+        if (!double.IsNaN(stack.Hd)) o.Add(new("Hd", Fmt(stack.Hd)));
+        return o;
+    }
 }
