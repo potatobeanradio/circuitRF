@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "F14-microstrip-ladder",
+  "CellName": "F24-microstrip-ladder",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,

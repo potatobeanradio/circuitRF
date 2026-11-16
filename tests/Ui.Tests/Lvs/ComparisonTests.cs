@@ -478,7 +478,7 @@ public sealed class ComparisonTests
         string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-lad-" + Guid.NewGuid().ToString("N")[..12]);
         try
         {
-            var p = SchematicSync.SdlChecker.Prepare("F14-microstrip-ladder", scratch);
+            var p = SchematicSync.SdlChecker.Prepare("F24-microstrip-ladder", scratch);
             var layout = p.Applied(p.Plan());
             Assert.Empty(SchematicSync.SdlChecker.Verify(p, layout));
             Assert.DoesNotContain(LvsRun.Run(p.CellDir).Findings, f => f.Severity == DiagnosticSeverity.Error);

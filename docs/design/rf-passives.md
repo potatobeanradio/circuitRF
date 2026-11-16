@@ -447,7 +447,7 @@ length. `LadderSParamTests`:
 
 `LadderStackTests`: the same quarter-wave stub on the GaAs, Si and RO4350B stacks simulates and draws. Also
 `ALaddersPins_FollowItsShortedStubs`, `LadderReadoutTests`, `PlanSectionsPCellTests` (the cross is MCROSS's own
-artwork), and `testdata/schematic-to-layout/F14-microstrip-ladder` with its via on G1, LVS clean and a changed list
+artwork), and `testdata/schematic-to-layout/F24-microstrip-ladder` with its via on G1, LVS clean and a changed list
 one mismatch.
 
 **Limits.**
