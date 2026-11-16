@@ -108,6 +108,21 @@ public static class SymbolPortDefs
             case SymbolKind.Mblc:    return [("1", -400f, -200f), ("2", 400f, -200f), ("3", 400f, 200f), ("4", -400f, 200f)];
             // MRRC: the sum port at the top, the difference port at the bottom, the outputs either side.
             case SymbolKind.Mrrc:    return [("1", 0f, -400f), ("2", -400f, 0f), ("3", 400f, 0f), ("4", 0f, 400f)];
+            // MGPD: round the ring as the board has it — the input at the left, the outputs at the top and bottom, and the
+            // isolation nodes R2/R3 at the right, 600 apart so no resistor dropped there spans both: each takes its own
+            // resistor to ground.
+            case SymbolKind.Mgpd:    return [("1", -400f, 0f), ("2", 0f, -400f), ("3", 0f, 400f),
+                                             ("R2", 400f, -300f), ("R3", 400f, 300f)];
+            // MBPD: the input at the left and the N outputs down the right, 200 apart in turn round the polygon. VARIADIC on
+            // the PIN count (N + 1, as PortCount answers); any other count, the one-argument overload's 2 included, is the
+            // three-way divider.
+            case SymbolKind.Mbpd:
+            {
+                int n = CircuitRF.Core.Devices.Microstrip.BagleyPlan.WaysForPinCount(portCount);
+                return [("1", -400f, 0f), .. Enumerable.Range(1, n).Select(k => ($"{k + 1}", 400f, (2f * k - n - 1) * 100f))];
+            }
+            // MTPD: the input at the left, the outputs at the right's top and bottom.
+            case SymbolKind.Mtpd:    return [("1", -400f, 0f), ("2", 400f, -200f), ("3", 400f, 200f)];
             // MCLC: MCLIN's pins exactly, so a placed MCLIN is swapped for the coupler without rewiring.
             case SymbolKind.Mclc:    return [("1", -200f, -100f), ("2", 200f, -100f),
                                              ("3", -200f,  100f), ("4", 200f,  100f)];
@@ -1211,6 +1226,14 @@ public sealed class EditableComponent
                 var strips = Parameters.FirstOrDefault(q => q.Name == "N");
                 return 2 * (strips is not null && int.TryParse(strips.Expression, out int nl) && nl >= 2
                     ? nl : CircuitRF.Core.Devices.MicrostripMultiLineModel.DefaultStrips);
+            }
+
+            // A Bagley divider's N is its number of outputs, odd; it draws N + 1 pins. A plain number only, as MWPD's N.
+            if (Symbol is SymbolKind.Mbpd)
+            {
+                var ways = Parameters.FirstOrDefault(q => q.Name == "N");
+                return ways is not null && int.TryParse(ways.Expression, out int nb)
+                       && nb is >= 3 and <= CircuitRF.Core.Devices.Microstrip.BagleyPlan.MaxWays && nb % 2 == 1 ? nb + 1 : 4;
             }
 
             // The Combiner's N is its number of PATHS; it draws N + 1 pins, the common port with them.

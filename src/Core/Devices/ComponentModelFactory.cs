@@ -93,6 +93,7 @@ public static class ComponentModelFactory
             // The planned passives (docs/design/rf-passives.md): specs in, MTEE, MCURVE and MLIN sections stamped as one block.
             WilkinsonTypeName,
             BranchLineTypeName, RatRaceTypeName,
+            GyselTypeName, BagleyTypeName, TeeDividerTypeName,
             // The coupled-line planned passives: MCLIN, MLIN and interdigitated sections, stamped the same way.
             CoupledLineCouplerTypeName, LangeTypeName, MarchandTypeName,
             // Grounded coplanar waveguide and stripline (brief-artsch-1), bound to the stackup as MLIN is.
@@ -270,6 +271,12 @@ public static class ComponentModelFactory
             return CreateBranchLineModel(parameters);
         if (typeName.Equals(RatRaceTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateRatRaceModel(parameters);
+        if (typeName.Equals(GyselTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateGyselModel(parameters);
+        if (typeName.Equals(BagleyTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateBagleyModel(parameters);
+        if (typeName.Equals(TeeDividerTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateTeeDividerModel(parameters);
         if (typeName.Equals(CoupledLineCouplerTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateCoupledLineCouplerModel(parameters);
         if (typeName.Equals(LangeTypeName, StringComparison.OrdinalIgnoreCase))
@@ -3056,6 +3063,34 @@ public static class ComponentModelFactory
         => new(RatRacePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
                                  EnumNamed(parameters, "Corner", PlanCorner.Curve)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, RatRaceTypeName));
+
+    /// <summary>The Gysel divider's engine token (pins 1, 2, 3, then R2 and R3, the isolation nodes for resistors to
+    /// ground).</summary>
+    public const string GyselTypeName = "MGPD";
+
+    /// <summary>The Bagley polygon divider's engine token (pins 1, the input, then 2 … N + 1, the outputs).</summary>
+    public const string BagleyTypeName = "MBPD";
+
+    /// <summary>The tee divider's engine token (pins 1, the input, then 2 and 3).</summary>
+    public const string TeeDividerTypeName = "MTPD";
+
+    // MGPD: the specs Z0 and F, and how the ring turns (Corner); the plan derives the rest.
+    private static MicrostripPlanModel CreateGyselModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(GyselPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
+                               EnumNamed(parameters, "Corner", PlanCorner.Curve)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, GyselTypeName));
+
+    // MBPD: the specs Z0, F and N (the outputs, which the pins follow), and Corner.
+    private static MicrostripPlanModel CreateBagleyModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(BagleyPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), GetReal(parameters, "N", 3.0),
+                                SubstrateOf(parameters), EnumNamed(parameters, "Corner", PlanCorner.Curve)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, BagleyTypeName));
+
+    // MTPD: the specs Z0, F and the split K.
+    private static MicrostripPlanModel CreateTeeDividerModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(TeeDividerPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
+                                    GetReal(parameters, "K", 1.0)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, TeeDividerTypeName));
 
     /// <summary>The coupled-line coupler's engine token (pins 1 input, 2 through, 3 coupled, 4 isolated).</summary>
     public const string CoupledLineCouplerTypeName = "MCLC";

@@ -705,7 +705,7 @@ public enum SymbolKind
     /// further section's resistor. Appended so no existing kind's ordinal moves.</summary>
     Mwpd,
     /// <summary>3 dB branch-line (90°) hybrid on microstrip (engine "MBLC", docs/design/rf-passives.md): specs Z0, F and
-    /// N, one or two sections; the arms and junctions are derived (BranchLinePlan). Four pins: 1 and 2 one through line,
+    /// N, one to four sections; the arms and junctions are derived (BranchLinePlan). Four pins: 1 and 2 one through line,
     /// 4 and 3 the other; driven at 1, 2 is through, 3 coupled and 4 isolated.</summary>
     Mblc,
     /// <summary>Rat-race (180°) hybrid on microstrip (engine "MRRC", docs/design/rf-passives.md): specs Z0 and F; the ring
@@ -732,6 +732,17 @@ public enum SymbolKind
     /// matrices. 2·N pins: the near ends 1..N, top strip first, then the far ends N + 1..2N. The substrate as MCLIN's.
     /// Appended so no existing kind's ordinal moves.</summary>
     MCLineN,
+    /// <summary>Gysel divider on microstrip (engine "MGPD", docs/design/rf-passives.md): specs Z0 and F, and how the ring
+    /// turns (Corner); the ring is derived (GyselPlan). Pins 1 the input, 2 and 3 the outputs, R2 and R3 the isolation
+    /// nodes beside them, each for an ordinary resistor of Z0 to ground — not part of the part.</summary>
+    Mgpd,
+    /// <summary>Bagley polygon divider on microstrip (engine "MBPD", docs/design/rf-passives.md): specs Z0, F and N, the odd
+    /// number of outputs, and Corner; the polygon is derived (BagleyPlan). N + 1 pins: 1 the input, 2 … N + 1 the outputs
+    /// in turn round the polygon. No resistors.</summary>
+    Mbpd,
+    /// <summary>Tee divider on microstrip (engine "MTPD", docs/design/rf-passives.md): specs Z0, F and the split K; an MTEE
+    /// whose through arms are quarter-wave transformers (TeeDividerPlan). Pins 1 the input, 2 and 3 the outputs.</summary>
+    Mtpd,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

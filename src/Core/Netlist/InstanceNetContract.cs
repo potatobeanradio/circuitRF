@@ -58,7 +58,7 @@ public static class InstanceNetContract
         MicrostripTeeModel                                                                    => 3,
         // A radial stub, one sector or a butterfly: its shunt node alone, over the implicit reference.
         MicrostripRadialStubModel                                                             => 1,
-        // A planned passive (MWPD, MBLC, MRRC): its plan's pins, each over the implicit reference.
+        // A planned passive (docs/design/rf-passives.md): its plan's pins, each over the implicit reference.
         MicrostripPlanModel plan                                                              => plan.PortCount,
         // A signal via is two terminals over the implicit reference, as MLIN is. A via to ground draws
         // one pin and binds two nets, like Term: the extractor appends "0".

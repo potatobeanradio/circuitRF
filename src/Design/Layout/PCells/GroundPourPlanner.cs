@@ -61,6 +61,7 @@ public static class GroundPourPlanner
         // The planned passives (docs/design/rf-passives.md) are microstrip too: without them a ring reaching past its
         // lines, as the rat-race's half-turns do, was left off the plane.
         PassivePlanPCells.WilkinsonId, PassivePlanPCells.BranchLineId, PassivePlanPCells.RatRaceId,
+        PassivePlanPCells.GyselId, PassivePlanPCells.BagleyId, PassivePlanPCells.TeeDividerId,
         PassivePlanPCells.CoupledLineCouplerId, PassivePlanPCells.LangeId, PassivePlanPCells.MarchandId,
     };
 

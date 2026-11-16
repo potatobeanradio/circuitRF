@@ -1,0 +1,18 @@
+# The Gysel divider as one part (MGPD): each port sits on its own pin, and a resistor of Z0 goes from each isolation
+# node (R2, R3) to a via to ground, the via beside the resistor's far pad.
+joinable nr2
+joinable nr3
+Info GPD1 added
+Info R1 added
+Info R2 added
+Info V1 added
+Info V2 added
+Info - Joined 2 of 2 connections; 0 left as ratsnest
+Info V1 placed beside R1 pin 2 and tied to its pad
+Info V2 placed beside R2 pin 2 and tied to its pad
+Info P1 port 1 placed at GPD1 pin 1
+Info P2 port 2 placed at GPD1 pin 2
+Info P3 port 3 placed at GPD1 pin 3
+port P1 1
+port P2 2
+port P3 3

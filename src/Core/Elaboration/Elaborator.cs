@@ -1630,9 +1630,8 @@ public sealed partial class Elaborator
                 result[ov.Name] = new Value(Unquote(ov.Expression));
                 continue;
             }
-            // A ring's Corner (MWPD, MRRC) is Curve, Miter or Square: an enum name, kept as one.
-            if (ov.Name == "Corner" && (inst.Reference.Equals("MWPD", StringComparison.OrdinalIgnoreCase)
-                                        || inst.Reference.Equals("MRRC", StringComparison.OrdinalIgnoreCase)))
+            // A ring's Corner (MWPD, MRRC, MGPD, MBPD) is Curve, Miter or Square: an enum name, kept as one.
+            if (ov.Name == "Corner" && inst.Reference.ToUpperInvariant() is "MWPD" or "MRRC" or "MGPD" or "MBPD")
             {
                 result[ov.Name] = new Value(Unquote(ov.Expression));
                 continue;

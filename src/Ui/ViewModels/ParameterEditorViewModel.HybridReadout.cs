@@ -35,6 +35,10 @@ public partial class ParameterEditorViewModel
             var lines = new List<string> { $"W {Mm(d.W0Meters, "0.#####")} (Z0 feeds)", Arm("Series arms", d.Series[0]) };
             lines.Add(Arm(d.Sections == 1 ? "Shunt arms" : "Outer shunt arms", d.Shunts[0]));
             if (d.Sections == 2) lines.Add(Arm("Middle shunt arm", d.Shunts[1]));
+            // Three and four sections: each distinct shunt arm from the outside in, as the arms mirror about the middle.
+            for (int i = 1; d.Sections > 2 && i <= d.Sections / 2; i++)
+                lines.Add(Arm(i < d.Sections / 2 ? "Next shunt arms" : d.Sections % 2 == 0 ? "Middle shunt arm" : "Middle shunt arms",
+                    d.Shunts[i]));
             lines.Add("L: between the junctions' reference planes, λg/4 at F");
             return (string.Join("\n", lines), "");
         }

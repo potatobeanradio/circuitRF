@@ -473,6 +473,39 @@ public sealed class ComparisonTests
         }
     }
 
+    /// <summary>The Gysel, Bagley and tee dividers (MGPD, MBPD, MTPD) as Update Layout places them compare clean, and a
+    /// spec changed on the schematic afterwards is exactly one property mismatch naming it: the Gysel's F, the Bagley's
+    /// Corner (a name: curved artwork against a schematic asking for mitred corners), and the tee's split K.</summary>
+    [Theory]
+    [InlineData("F16-gysel-divider", "GPD1", "F", "2.5")]
+    [InlineData("F17-bagley-divider", "BPD1", "Corner", "Miter")]
+    [InlineData("F18-tee-divider", "TPD1", "K", "1.4142")]
+    public void ADividerComparesCleanAndASpecMismatchIsAFinding(string design, string instance, string spec, string changed)
+    {
+        string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-div-" + Guid.NewGuid().ToString("N")[..12]);
+        try
+        {
+            var p = SchematicSync.SdlChecker.Prepare(design, scratch);
+            var layout = p.Applied(p.Plan());
+            Assert.Empty(SchematicSync.SdlChecker.Verify(p, layout));
+            Assert.DoesNotContain(LvsRun.Run(p.CellDir).Findings, f => f.Severity == DiagnosticSeverity.Error);
+
+            var part = p.Model.Components.Single(c => c.InstanceName == instance);
+            if (part.Parameters.SingleOrDefault(q => q.Name == spec) is { } row) row.Expression = changed;
+            else part.Parameters.Add(new EditableParameter { Name = spec, Expression = changed });
+            SchematicPersistence.SaveToFile(p.SchematicPath, p.Model, Path.GetFileNameWithoutExtension(p.SchematicPath));
+
+            var errors = LvsRun.Run(p.CellDir).Findings.Where(f => f.Severity == DiagnosticSeverity.Error).ToList();
+            var mismatch = Assert.Single(errors);
+            Assert.Equal("lvs.property.mismatch", mismatch.Id);
+            Assert.Equal(spec, mismatch.Diagnostic.Arguments["name"]);
+        }
+        finally
+        {
+            try { Directory.Delete(scratch, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
     // ── hand-built netlists ───────────────────────────────────────────────────────────────────
 
     /// <summary>
