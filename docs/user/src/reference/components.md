@@ -1175,6 +1175,17 @@ you read, not type. A lumped part the topology needs, such as a Wilkinson divide
 isolation resistor, is not inside the component: it is an ordinary part on two of its pins, with its own land pattern,
 so it reaches the layout, LVS and the bill of materials as itself.
 
+<a id="sites"></a>**Sites.** Each lumped part a component needs has a *site*: a pair of its pins (a series site) or one pin to
+ground (a shunt site), filled by an ordinary part — on a board an SMT resistor, inductor or capacitor, on a die a TFR,
+MIMCAP or SPIRAL, and for a ground or a crossover a VIAGND, a bond wire or an AIRBRIDGE. The parameters panel lists
+every site with the value the design wants there and, where the part sets it, the span between its pins. **Place Site
+Parts**, on the component's context menu and under that list, puts a part of that value on each empty site, wired to its
+pins, as one step you can undo; it leaves a jumper (a bond wire or air bridge) and a balun's load for you. Where the
+span is a parameter (`Gap` on MWPD and MCBL), it is a length by default; give the component a `Footprint`, in the same
+spelling a resistor's takes, and the span becomes that land's instead, for the run, the layout and LVS alike. The part on
+the site must then have the same footprint: **Update Layout from Schematic** reports one that does not fit, and LVS
+names the site and both footprints.
+
 ### Wilkinson Divider (MWPD) {#mwpd}
 
 {{symbol: mwpd}}
@@ -1224,7 +1235,12 @@ At RF that is an ordinary port, and closing it with the 100 Ω gives the isolati
 reads the ring's copper. The [Dividers and Couplers](../examples/dividers-and-couplers/index.html) example runs it on
 Planar MoM, EMerge and Palace.
 
-`Gap` is the span of the resistor's pins, 1.35 mm for an 0402 at nominal density. Change it with the land pattern.
+`Gap` is the span of the resistor's pins, 1.35 mm for an 0402 at nominal density. Change it with the land pattern, or
+let the land pattern set it:
+
+| Parameter | What it is |
+|---|---|
+| `Footprint` | Optional. The resistor's land, `smt:<case>[@density]` or a cell, as a resistor's own `Footprint` is spelt. When set, every resistor site's span is that land's (where a line meets each pad's outer edge) and `Gap` is not used; the resistors on R2–R3 (and R2_k–R3_k) must have the same footprint ([Sites](#sites)). |
 
 #### Unequal split: `K` {#mwpd-unequal}
 
@@ -1551,7 +1567,8 @@ side by side; alternate strips are joined at both ends into two conductors, so e
 three gaps instead of one and reaches couplings a single pair cannot. Terminals 1 to 4 are as MCLC's: 1 the input and
 2 the through port on the top finger, 3 the coupled port and 4 the isolated port on the bottom finger. `J1` to `J4` are
 the inner fingers' ends: **the joins are not part of the part**. Place a jumper from each terminal k to Jk — on a board,
-a bond wire across the finger between — so the layout, LVS and EM see it as the part it is.
+a bond wire across the finger between — so the layout, LVS and EM see it as the part it is. Each k–Jk pair is a series
+[site](#sites).
 
 **How it works (Ou's equations).** With only neighbouring fingers coupled, every finger has a capacitance to ground and a
 mutual capacitance to each neighbour, and both can be read off one pair of adjacent fingers: an outer finger's ground
@@ -1599,6 +1616,13 @@ refused; 200 Ω on each output needs −9.5 dB and a 102 µm gap, which is what 
 **Microstrip's limit is the phase.** The output voltages are exactly opposite only for TEM lines. In microstrip the odd
 mode runs faster than the even, neither section is a quarter wave for both, and on the example board the outputs come out
 about 16° short of 180°, with their amplitudes within 0.2 dB. A longer `Gap` moves the match off `F`.
+
+`G2` and `G3` are shunt [sites](#sites) for a via each, and outputs 2 and 3 face each other across `Gap`, the site of the
+balanced load:
+
+| Parameter | What it is |
+|---|---|
+| `Footprint` | Optional. The land of a two-pad part across outputs 2 and 3, `smt:<case>[@density]` or a cell. When set, the joining line is that land's span (where a line meets each pad's outer edge) and `Gap` is not used; the part across 2–3 must have the same footprint ([Sites](#sites)). |
 
 **In EM** the [Dividers and Couplers](../examples/dividers-and-couplers/index.html) example runs a balun with vias on
 `G2` and `G3` on EMerge and Palace. The Planar solver refuses it: its via-current kernel is validated to a tenth of a

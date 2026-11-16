@@ -2,7 +2,8 @@
 
 **Status:** six parts — MWPD, the Wilkinson divider, with its unequal-split (`K`) and multi-section (`N`) variants; MBLC
 and MRRC, the branch-line and rat-race hybrids; MCLC, MIDC and MCBL, the coupled-line coupler, interdigitated coupler
-and balun; MWPD's and MRRC's rings curved or cornered (`Corner`) · **Date:** 2026-11-16
+and balun; MWPD's and MRRC's rings curved or cornered (`Corner`); sites with an optional `Footprint` (§3.5) and a route
+helper (§3.6) · **Date:** 2026-11-16
 
 Dividers, couplers and baluns on microstrip, each one built-in part that is defined once and read the same way by the
 schematic, the layout, LVS and EM. Each part has its own subsection in §3.
@@ -48,6 +49,7 @@ it and the part is placed on those pins in the schematic, with its own land patt
 BOM, yield and the layout: a Wilkinson's isolation resistor is a resistor of 2·Z0 on `R2`–`R3`, and Update Layout from
 Schematic lays its 0402 across the ring's gap because `Gap` is the land pattern's pin span. A PCell has no sub-instances
 (`PCellResult`), so a resistor inside the part would need a contract change and would hide the part from all of these.
+Each such place is a plan's *site* (§3.5), which the readout lists and Place Site Parts fills.
 
 ## 2. Why a standard pattern and not one-off parts
 
@@ -283,7 +285,7 @@ cross a finger with a jumper, and the 3D view needs its bond wires drawn by hand
 between them: an MMITER at its own default chamfer (the Douville-James optimum for W/h, capped where its table ends) or
 an MBEND with no chamfer. Every spacing still counts every piece. A corner's electrical length is its insertion phase
 at F between two lines of the arm's impedance, from the corner's own model stamped as a one-section plan
-(`PlanBend.LineLength`), as a length of that line; the straight runs are shortened by it, so the plan stays a pure
+(`PlanSection.LineLength`), as a length of that line; the straight runs are shortened by it, so the plan stays a pure
 function of the specs and the substrate. MWPD: the input tee's line, 2·rise + across and two corners make λg/4. The
 rectangle keeps the curved ring's height, the upper run across at the half-turn's top (from the curved plan of the
 same specs), because the plan models no coupling between the arms: a rectangle as low as the tees allow would run
@@ -304,6 +306,84 @@ against their quarter waves and joined (`WilkinsonPlanTests`, `HybridPlanTests`)
 and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`WilkinsonSParamTests`,
 `HybridSParamTests`), and `testdata/schematic-to-layout/F8d-wilkinson-mitred` through Update Layout and LVS.
 
+### 3.5 Sites, and an optional `Footprint`
+
+**The rule.** Every lumped element of a planned passive is a *site*: a pin pair (series) or a pin to ground (shunt),
+filled by an ordinary part. On a board that part is an SMT R, L or C; on a die a TFR, MIMCAP or SPIRAL; a ground is a
+VIAGND, a crossover a bond wire or an AIRBRIDGE. The parts already worked this way by hand (MWPD's R2/R3, MIDC's J1-J4,
+MCBL's G2/G3); a plan now says so. `PassivePlan.Sites` lists each `PlanSite`: its role (R, L, C, via, jumper, or the load the
+part drives), its pins, series or shunt, the span between the pins where the plan sets it, and the value the design wants
+there. Sites are metadata, not copper: no section reads them, so every existing plan is unchanged bit for bit (the
+fingerprints in `WilkinsonPlanTests` and `HybridPlanTests` still pass). What the three parts declare:
+
+| Part | Sites |
+|---|---|
+| MWPD | an R site per resistor, R2-R3 and R2_k-R3_k, `Gap` apart, of that resistor's value (2·Z0, Z0·(K + 1/K), or Cohn's) |
+| MIDC | a jumper from each pin k to Jk, two finger pitches, 2·(W + S), across |
+| MCBL | a via on G2 and on G3; the balanced load across 2-3, `Gap` apart, of 2·ZL |
+
+The Properties readout lists them under the part's numbers.
+
+**`Footprint`.** `Gap` stays a length and stays the default. MWPD and MCBL, whose site span is that parameter, also take
+an optional `Footprint` in the R/C parts' own spelling, `smt:<case>[@density]` or a cell path, chosen with the R/C parts'
+own picker (two-pad lands only). When it is set the site span is that land's: where a line meets each pad's outer edge
+(`PadJoint`), so for a built-in land its outer span as `ChipLandPatternGenerator` draws it, IPC's Z (1.35 mm for an 0402
+at N, the default `Gap`), and for a cell path the distance between its two pins' joints. A footprint that does not resolve
+leaves `Gap` and says why. A new part whose site span is a parameter joins `MicrostripSubstrateInjection.HasSiteFootprint`.
+
+**Where it is resolved, and why there.** In the Design layer, at the seam where the substrate is injected
+(`MicrostripSubstrateInjection.SiteSpanMeters`, `ApplySiteFootprint`), so every Core plan still takes a plain length.
+Every consumer of `Gap` passes through it:
+
+- the schematic's extraction (`NetExtractor`): the run, `circuitrf netlist`, and LVS's schematic side, which reads the
+  extracted netlist's values;
+- a hand-written `.cnl` (`CnlTechnologyBinding`), against the netlist's own folder and technology;
+- Update Layout's PCell parameters (`SchematicLayoutPlanner.ResolveComponentLayout`), so the generated cell, its stored
+  parameters and LVS's layout side carry the span;
+- EM, which solves that layout's copper.
+
+`Footprint` is consumed there, as a layer choice is: the line carries the span as `Gap`, so a netlist written from a
+schematic runs the same from any folder and is not resolved twice. Moving `SmtCaseTable` down to Core was the other route;
+it was not needed, since the seam reaches all four, and a cell path needs the file system, which Core never touches.
+
+**Misfit.** The part on a site must have the passive's footprint when one is set. The geometry is Update Layout's existing
+bridge report (`ChainPlacer.BridgeFit`): an 0402 on a divider stating `smt:0603` is centred between the ring's ends, an
+0603's 2.4 mm apart, and reported as a part bridging them whose pads span 1.35 mm. LVS adds one property check on the drawing,
+`lvs.property.site-footprint`: a part on a series site of a passive that states a `Footprint`, with another footprint or
+none, is one error naming the passive, the site and both footprints.
+
+**Place Site Parts** (the schematic context menu and a button under the readout). `PassiveSites` reads each passive's
+plan from its elaborated model, so a site's value is the run's, finds each site's nets and the parts already across them,
+and `PlaceParts` adds a part on each empty one: a resistor, inductor or capacitor of the site's value, with the passive's
+`Footprint`, else a built-in land whose span is the site's (an 0402 for MWPD's default `Gap`), else the technology's R/C
+default; a VIAGND on a via site. A series part whose pins are a part's span apart in line, with no other pin between,
+lands on them as a resistor dropped on MWPD's R2-R3 does; otherwise it stands beside them, outward, with a wire to each.
+A shunt part stands on its pin, pointing away from the passive. Jumpers and the load are left, each with a note. The
+whole is one undo step (`PlaceSitePartsCommand`). Tests: `PlanSiteTests` (each plan's sites), `PassiveSiteTests` (the
+span, the extraction and a `.cnl`, the F8 divider with `smt:0603` through Update Layout and LVS, the misfit, Place Site
+Parts on MWPD and MCBL with undo, the readout).
+
+### 3.6 The route helper
+
+`PlanRoute.Build` lays a run of width W that is θ long at F from a start pose, as existing sections, for parts that need
+a line folded to fit (a compact rat-race, a phase shifter's reference line, a meander part):
+
+- `Straight`: one `PlanLine`, the same record a plan would write by hand;
+- `Corner`: two equal legs and one 90° corner of the given `PlanCorner` (an MCURVE of `Radius`, 3W when none is given; an
+  MMITER at its Douville-James chamfer; an MBEND);
+- `Meander`: k + 1 equal parallel legs joined by k turns back, stacked `Pitch` apart towards `Side`, each turn the other
+  way, so an odd k ends heading back; a turn is a half-turn MCURVE of radius Pitch/2, or two corners and the line across.
+
+It returns the sections, the next free plan node, the end pose and the copper's extent (centre lines widened by W/2).
+**The length holds θ through the corners**: the legs share what is left of θ in MLIN's dispersive εeff at F after each
+corner's own insertion phase at F, as a length of the line (`PlanSection.LineLength`, the cornered rings' rule, now on
+every two-pin section). Every dimension is on the 2 nm grid. **Close turns**: legs under 3W apart edge to edge are a
+warning, `device.route.runs-coupled`, since they are stamped as separate lines; the N-line coupled section will take
+that case. Refusals: `device.route.spec-not-positive`, `device.route.pitch-too-small`, `device.route.too-short`.
+Tests (`PlanRouteTests`, `PassiveSiteTests`): θ = 90° meanders and corners of every corner kind hold S21 at −90° within
+0.5° in the plan model, on a board and on a GaAs die; every node is one point; a straight run is one `PlanLine`, field
+for field; the drawn copper's ends and extent are the route's.
+
 ## 4. What a new topology costs
 
 1. `src/Core/Devices/Microstrip/<X>Plan.cs` — the pure plan (and a section kind, with one case in
@@ -320,7 +400,9 @@ and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`
    `EditableSchematic.PortCount`, `SymbolPortDefs.For` and `BuiltInSymbols.Primitives` (§3.1).
 5. Tests: the plan against its closed form, the composite against its parts by hand, a schematic-to-layout fixture; the
    records in `LibraryCatalogTests` and `PCellGeneratorVersioningTests`.
-6. Docs: a subsection under Dividers and couplers in `components.md`, and the example's README table.
+6. Its sites (§3.5): the plan's `Sites`; a kind with sites in `SchematicViewModel.HasSites`, and one whose site span is a
+   stored length in `MicrostripSubstrateInjection.HasSiteFootprint`. A folded line is `PlanRoute` (§3.6).
+7. Docs: a subsection under Dividers and couplers in `components.md`, and the example's README table.
 
 ## 5. Known limits
 
@@ -358,6 +440,13 @@ and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`
 6. **Smooth circuit curves in the example's plots.** Each bench sweeps only the EM runs' frequencies, so every marker is
    a solved point and the circuit line is coarse; a `.cdd` that also reads the cell's own fine sweep would draw it
    smoothly.
+
+7. **Bond wires and air bridges from Place Site Parts.** A jumper site (MIDC's) is left with a note, since a wire part
+   needs its own design; placing one would fill the last kind of site by hand.
+8. **Die parts sized from the site's value.** On an MMIC or RFIC stack Place Site Parts puts an ideal R, L or C with no
+   land; a TFR or MIMCAP sized for the value from the process would make a die design complete in one step.
+9. **A `Footprint` path relative to the schematic in a `.cnl`.** A written netlist resolves a cell path against its own
+   folder; one written elsewhere keeps the span extraction resolved but warns, since its folder holds no such cell.
 
 ## 7. References
 
