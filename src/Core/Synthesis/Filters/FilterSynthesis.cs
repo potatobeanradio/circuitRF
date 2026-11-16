@@ -32,8 +32,9 @@ public sealed record FilterSpec(
 /// </summary>
 public static class LowpassPrototype
 {
-    /// <summary>g0 … g(N+1) for <paramref name="response"/>. Butterworth and Chebyshev are closed forms; the other
-    /// responses are added by their own synthesis and are refused here until then.</summary>
+    /// <summary>g0 … g(N+1) for <paramref name="response"/>. Butterworth and Chebyshev are closed forms, Bessel is
+    /// extracted (<see cref="PrototypeLadder"/>); a response with finite zeros has resonators as well, so it is
+    /// <see cref="PrototypeLadder.For"/>'s and refused here.</summary>
     public static double[] GValues(FilterResponse response, int order, double rippleDb = 0.1)
     {
         if (order < 1) throw new ArgumentOutOfRangeException(nameof(order), order, "A prototype has at least one element.");
@@ -48,7 +49,7 @@ public static class LowpassPrototype
             case FilterResponse.Chebyshev:
             {
                 if (!(rippleDb > 0)) throw new ArgumentOutOfRangeException(nameof(rippleDb), rippleDb, "Ripple must be positive.");
-                double beta = Math.Log(1.0 / Math.Tanh(rippleDb / 17.37));
+                double beta = Math.Log(1.0 / Math.Tanh(rippleDb * Math.Log(10.0) / 40.0));   // the tables round 40/ln 10 to 17.37
                 double gamma = Math.Sinh(beta / (2.0 * order));
                 double A(int k) => Math.Sin((2 * k - 1) * Math.PI / (2.0 * order));
                 double B(int k) => gamma * gamma + Math.Pow(Math.Sin(k * Math.PI / order), 2);
@@ -58,6 +59,8 @@ public static class LowpassPrototype
                 g[order + 1] = order % 2 == 1 ? 1.0 : coth * coth;
                 return g;
             }
+            case FilterResponse.Bessel:
+                return PrototypeLadder.BesselG(order);
             default:
                 throw new NotSupportedException($"No closed-form prototype for {response} yet.");
         }
