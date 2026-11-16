@@ -8,9 +8,10 @@ namespace CircuitRF.Core.Devices;
 /// <summary>
 /// A planned microstrip passive (docs/design/rf-passives.md): MWPD, the equal-split Wilkinson divider
 /// (<see cref="WilkinsonPlan"/>), the hybrids MBLC (<see cref="BranchLinePlan"/>) and MRRC (<see cref="RatRacePlan"/>),
-/// and the coupled-line parts (<see cref="CoupledLineCouplerPlan"/>, <see cref="LangePlan"/>,
-/// <see cref="MarchandBalunPlan"/>). It has no line physics of its own: each section of the plan is the EXISTING
-/// part's model (<see cref="MicrostripTeeModel"/>, <see cref="MicrostripCrossModel"/>, <see cref="MicrostripCurveModel"/>,
+/// the coupled-line parts (<see cref="CoupledLineCouplerPlan"/>, <see cref="LangePlan"/>,
+/// <see cref="MarchandBalunPlan"/>) and the ladder (<see cref="LadderPlan"/>). It has no line physics of its own: each
+/// section of the plan is the EXISTING part's model (<see cref="MicrostripTeeModel"/>, <see cref="MicrostripCrossModel"/>,
+/// <see cref="MicrostripCurveModel"/>,
 /// <see cref="MicrostripLineModel"/>, <see cref="MicrostripCoupledLineModel"/>, <see cref="MicrostripMiterBendModel"/>,
 /// <see cref="MicrostripBendModel"/>, <see cref="MicrostripGapModel"/>, <see cref="MicrostripTaperModel"/>; an open
 /// end <see cref="MicrostripOpenEnd"/>'s capacitance on MLIN's or MCLIN's own line), stamped into a

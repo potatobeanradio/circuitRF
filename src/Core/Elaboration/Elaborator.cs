@@ -1638,6 +1638,13 @@ public sealed partial class Elaborator
                 continue;
             }
 
+            // A ladder's Sections is its list of sections in LadderPlan's own grammar: text, kept verbatim.
+            if (ov.Name == "Sections" && inst.Reference.Equals("MLAD", StringComparison.OrdinalIgnoreCase))
+            {
+                result[ov.Name] = new Value(Unquote(ov.Expression));
+                continue;
+            }
+
             // Frequency dependence has to TERMINATE at a model that binds `freq`. Anything else is
             // asking for a single number that does not exist, and saying so here — naming the
             // device, the parameter and the models that can take one — beats the bare
