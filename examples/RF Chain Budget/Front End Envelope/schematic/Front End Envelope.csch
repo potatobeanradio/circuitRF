@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "Front End Envelope",
+  "CellName": "Front End Envelope.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -448,8 +448,8 @@
         },
         {
           "Name": "Frf",
-          "Expression": "2450000000",
-          "Unit": "",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -462,8 +462,8 @@
         },
         {
           "Name": "Bocc",
-          "Expression": "4500000",
-          "Unit": "",
+          "Expression": "4.5",
+          "Unit": "MHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         }
@@ -566,18 +566,6 @@
           1100
         ],
         [
-          0,
-          1100
-        ],
-        [
-          0,
-          900
-        ],
-        [
-          -200,
-          900
-        ],
-        [
           -200,
           1100
         ]
@@ -587,18 +575,6 @@
       "Points": [
         [
           0,
-          0
-        ],
-        [
-          0,
-          -200
-        ],
-        [
-          300,
-          -200
-        ],
-        [
-          300,
           0
         ],
         [
@@ -612,22 +588,6 @@
         [
           4800,
           0
-        ],
-        [
-          4800,
-          200
-        ],
-        [
-          4500,
-          200
-        ],
-        [
-          4500,
-          -400
-        ],
-        [
-          5300,
-          -400
         ],
         [
           5300,
@@ -678,18 +638,6 @@
           0
         ],
         [
-          4400,
-          0
-        ],
-        [
-          4400,
-          300
-        ],
-        [
-          4700,
-          300
-        ],
-        [
           4700,
           0
         ]
@@ -734,12 +682,12 @@
       "OffsetY": 0
     },
     {
-      "X": 100,
-      "Y": -200,
+      "X": 125.36876856030244,
+      "Y": 0,
       "Name": "in",
       "OwnerWireIndex": 1,
-      "SegmentIndex": 1,
-      "AlongT": 0.3333333333333333,
+      "SegmentIndex": 0,
+      "AlongT": 0.25073753712060487,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -759,7 +707,7 @@
       "Name": "CANC_r",
       "OwnerWireIndex": 0,
       "SegmentIndex": 0,
-      "AlongT": 0.5,
+      "AlongT": 0.25,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -784,22 +732,22 @@
       "OffsetY": 0
     },
     {
-      "X": 4500,
-      "Y": 300,
+      "X": 4510.888575385911,
+      "Y": 0,
       "Name": "out",
       "OwnerWireIndex": 6,
-      "SegmentIndex": 2,
-      "AlongT": 0.3333333333333333,
+      "SegmentIndex": 0,
+      "AlongT": 0.6217771507718225,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 4900,
-      "Y": -400,
+      "X": 5087.285983139738,
+      "Y": 0,
       "Name": "load",
       "OwnerWireIndex": 2,
-      "SegmentIndex": 3,
-      "AlongT": 0.5,
+      "SegmentIndex": 0,
+      "AlongT": 0.5745719662794763,
       "OffsetX": 0,
       "OffsetY": 0
     }

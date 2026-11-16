@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "Front End 1-Tone",
+  "CellName": "Front End 1-Tone.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -418,8 +418,8 @@
         },
         {
           "Name": "Frf",
-          "Expression": "2450000000",
-          "Unit": "",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -676,18 +676,6 @@
           1100
         ],
         [
-          0,
-          1100
-        ],
-        [
-          0,
-          900
-        ],
-        [
-          -200,
-          900
-        ],
-        [
           -200,
           1100
         ]
@@ -734,18 +722,6 @@
         [
           4200,
           0
-        ],
-        [
-          4400,
-          0
-        ],
-        [
-          4400,
-          -200
-        ],
-        [
-          4700,
-          -200
         ],
         [
           4700,
@@ -825,7 +801,7 @@
       "Name": "CANC_r",
       "OwnerWireIndex": 0,
       "SegmentIndex": 0,
-      "AlongT": 0.5,
+      "AlongT": 0.25,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -851,11 +827,11 @@
     },
     {
       "X": 4500,
-      "Y": -200,
+      "Y": 0,
       "Name": "out",
       "OwnerWireIndex": 4,
-      "SegmentIndex": 2,
-      "AlongT": 0.3333333333333333,
+      "SegmentIndex": 0,
+      "AlongT": 0.6,
       "OffsetX": 0,
       "OffsetY": 0
     }
@@ -874,11 +850,13 @@
       "Enabled": true,
       "Sweeps": [
         {
-          "StartExpr": "2450000000",
-          "StopExpr": "2450000000",
+          "StartExpr": "2.45",
+          "StopExpr": "2.45",
           "NumPoints": 1,
           "Mode": "PointCount",
-          "Kind": "Linear"
+          "Kind": "Linear",
+          "StartUnit": "GHz",
+          "StopUnit": "GHz"
         }
       ],
       "NoiseExpr": "yes"

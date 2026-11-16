@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "Dual Conversion IF2 Envelope",
+  "CellName": "Dual Conversion IF2 Envelope.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -357,8 +357,8 @@
       "Parameters": [
         {
           "Name": "Freq",
-          "Expression": "328600000",
-          "Unit": "",
+          "Expression": "328.6",
+          "Unit": "MHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         },
@@ -603,8 +603,8 @@
         },
         {
           "Name": "Frf",
-          "Expression": "350000000",
-          "Unit": "",
+          "Expression": "350",
+          "Unit": "MHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -617,15 +617,15 @@
         },
         {
           "Name": "Flo1",
-          "Expression": "328600000",
-          "Unit": "",
+          "Expression": "328.6",
+          "Unit": "MHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "Bocc",
-          "Expression": "4500000",
-          "Unit": "",
+          "Expression": "4.5",
+          "Unit": "MHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         }
@@ -764,22 +764,6 @@
           0
         ],
         [
-          7700,
-          200
-        ],
-        [
-          7400,
-          200
-        ],
-        [
-          7400,
-          -400
-        ],
-        [
-          8200,
-          -400
-        ],
-        [
           8200,
           0
         ]
@@ -862,18 +846,6 @@
         [
           7100,
           0
-        ],
-        [
-          7300,
-          0
-        ],
-        [
-          7300,
-          300
-        ],
-        [
-          7600,
-          300
         ],
         [
           7600,
@@ -983,21 +955,21 @@
     },
     {
       "X": 7400,
-      "Y": 300,
+      "Y": 0,
       "Name": "out",
       "OwnerWireIndex": 9,
-      "SegmentIndex": 2,
-      "AlongT": 0.3333333333333333,
+      "SegmentIndex": 0,
+      "AlongT": 0.6,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 7800,
-      "Y": -400,
+      "X": 8081.505808358886,
+      "Y": 0,
       "Name": "load",
       "OwnerWireIndex": 2,
-      "SegmentIndex": 3,
-      "AlongT": 0.5,
+      "SegmentIndex": 0,
+      "AlongT": 0.7630116167177712,
       "OffsetX": 0,
       "OffsetY": 0
     }

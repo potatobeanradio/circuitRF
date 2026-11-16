@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "Array Combiners",
+  "CellName": "Array Combiners.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -420,7 +420,7 @@
     {
       "InstanceName": "PO_DP",
       "Symbol": "Term",
-      "X": 6100,
+      "X": 6500,
       "Y": 2300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -2064,7 +2064,7 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": 6100,
+      "X": 6500,
       "Y": 2500,
       "Rotation": "R0",
       "MirrorX": false,
@@ -2163,8 +2163,8 @@
         },
         {
           "Name": "Frf",
-          "Expression": "2450000000",
-          "Unit": "",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         }
@@ -2459,14 +2459,6 @@
         ],
         [
           6600,
-          23900
-        ],
-        [
-          6500,
-          23900
-        ],
-        [
-          6500,
           24200
         ],
         [
@@ -2499,14 +2491,6 @@
         ],
         [
           6600,
-          24700
-        ],
-        [
-          6500,
-          24700
-        ],
-        [
-          6500,
           24400
         ],
         [
@@ -3006,18 +2990,6 @@
           16900
         ],
         [
-          6600,
-          16900
-        ],
-        [
-          6600,
-          16700
-        ],
-        [
-          6900,
-          16700
-        ],
-        [
           6900,
           16900
         ]
@@ -3042,18 +3014,6 @@
           24300
         ],
         [
-          8300,
-          24300
-        ],
-        [
-          8300,
-          24100
-        ],
-        [
-          8600,
-          24100
-        ],
-        [
           8600,
           24300
         ]
@@ -3066,18 +3026,6 @@
           9500
         ],
         [
-          6800,
-          9500
-        ],
-        [
-          6800,
-          9300
-        ],
-        [
-          7100,
-          9300
-        ],
-        [
           7100,
           9500
         ]
@@ -3090,18 +3038,6 @@
           16900
         ],
         [
-          0,
-          16700
-        ],
-        [
-          400,
-          16700
-        ],
-        [
-          400,
-          16900
-        ],
-        [
           600,
           16900
         ]
@@ -3114,18 +3050,6 @@
           2100
         ],
         [
-          0,
-          1900
-        ],
-        [
-          400,
-          1900
-        ],
-        [
-          400,
-          2100
-        ],
-        [
           600,
           2100
         ]
@@ -3135,18 +3059,6 @@
       "Points": [
         [
           0,
-          24300
-        ],
-        [
-          0,
-          24100
-        ],
-        [
-          400,
-          24100
-        ],
-        [
-          400,
           24300
         ],
         [
@@ -3162,20 +3074,20 @@
           9500
         ],
         [
-          0,
-          9300
-        ],
-        [
-          400,
-          9300
-        ],
-        [
-          400,
-          9500
-        ],
-        [
           600,
           9500
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          5600,
+          2100
+        ],
+        [
+          6500,
+          2100
         ]
       ]
     }
@@ -3542,30 +3454,22 @@
       "OffsetY": 0
     },
     {
-      "X": 6100,
+      "X": 6156.410320718563,
       "Y": 2100,
       "Name": "out_DP",
+      "OwnerWireIndex": 43,
       "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 5600,
-      "Y": 2100,
-      "Name": "out_DP",
-      "SegmentIndex": 0,
-      "AlongT": 0,
+      "AlongT": 0.6182336896872919,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
       "X": 200,
-      "Y": 1900,
+      "Y": 2100,
       "Name": "w_DP",
       "OwnerWireIndex": 40,
-      "SegmentIndex": 1,
-      "AlongT": 0.5,
+      "SegmentIndex": 0,
+      "AlongT": 0.3333333333333333,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -3631,11 +3535,11 @@
     },
     {
       "X": 200,
-      "Y": 9300,
+      "Y": 9500,
       "Name": "w_TP",
       "OwnerWireIndex": 42,
-      "SegmentIndex": 1,
-      "AlongT": 0.5,
+      "SegmentIndex": 0,
+      "AlongT": 0.3333333333333333,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -3741,21 +3645,21 @@
     },
     {
       "X": 6900,
-      "Y": 9300,
+      "Y": 9500,
       "Name": "out_TP",
       "OwnerWireIndex": 38,
-      "SegmentIndex": 2,
-      "AlongT": 0.3333333333333333,
+      "SegmentIndex": 0,
+      "AlongT": 0.6,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
       "X": 200,
-      "Y": 16700,
+      "Y": 16900,
       "Name": "w_DA",
       "OwnerWireIndex": 39,
-      "SegmentIndex": 1,
-      "AlongT": 0.5,
+      "SegmentIndex": 0,
+      "AlongT": 0.3333333333333333,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -3831,21 +3735,21 @@
     },
     {
       "X": 6700,
-      "Y": 16700,
+      "Y": 16900,
       "Name": "out_DA",
       "OwnerWireIndex": 35,
-      "SegmentIndex": 2,
-      "AlongT": 0.3333333333333333,
+      "SegmentIndex": 0,
+      "AlongT": 0.6,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
       "X": 200,
-      "Y": 24100,
+      "Y": 24300,
       "Name": "w_TA",
       "OwnerWireIndex": 41,
-      "SegmentIndex": 1,
-      "AlongT": 0.5,
+      "SegmentIndex": 0,
+      "AlongT": 0.3333333333333333,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -3981,11 +3885,11 @@
     },
     {
       "X": 8400,
-      "Y": 24100,
+      "Y": 24300,
       "Name": "out_TA",
       "OwnerWireIndex": 37,
-      "SegmentIndex": 2,
-      "AlongT": 0.3333333333333333,
+      "SegmentIndex": 0,
+      "AlongT": 0.6,
       "OffsetX": 0,
       "OffsetY": 0
     }

@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "Front End Levels",
+  "CellName": "Front End Levels.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -432,22 +432,22 @@
         },
         {
           "Name": "Frf",
-          "Expression": "2450000000",
-          "Unit": "",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "F1",
-          "Expression": "2449500000",
-          "Unit": "",
+          "Expression": "2.4495",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "F2",
-          "Expression": "2450500000",
-          "Unit": "",
+          "Expression": "2.4505",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -662,18 +662,6 @@
           1100
         ],
         [
-          0,
-          1100
-        ],
-        [
-          0,
-          900
-        ],
-        [
-          -200,
-          900
-        ],
-        [
           -200,
           1100
         ]
@@ -720,18 +708,6 @@
         [
           4200,
           0
-        ],
-        [
-          4500,
-          0
-        ],
-        [
-          4500,
-          -200
-        ],
-        [
-          4700,
-          -200
         ],
         [
           4700,
@@ -811,7 +787,7 @@
       "Name": "CANC_r",
       "OwnerWireIndex": 0,
       "SegmentIndex": 0,
-      "AlongT": 0.5,
+      "AlongT": 0.25,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -841,7 +817,7 @@
       "Name": "out",
       "OwnerWireIndex": 4,
       "SegmentIndex": 0,
-      "AlongT": 0.3333333333333333,
+      "AlongT": 0.2,
       "OffsetX": 0,
       "OffsetY": 0
     }

@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "4 PA Loadpull",
+  "CellName": "4 PA Loadpull.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -8,9 +8,9 @@
     {
       "InstanceName": "SourceTuner1",
       "Symbol": "Tuner",
-      "X": 0,
-      "Y": 600,
-      "Rotation": "R90",
+      "X": -100,
+      "Y": 0,
+      "Rotation": "R180",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
@@ -49,12 +49,6 @@
           "ShowOnSchematic": true,
           "Dimension": "Resistance"
         }
-      ],
-      "LabelOffsets": [
-        [
-          330,
-          -413
-        ]
       ]
     },
     {
@@ -71,9 +65,9 @@
     {
       "InstanceName": "LoadTuner1",
       "Symbol": "Tuner",
-      "X": 1200,
-      "Y": 600,
-      "Rotation": "R90",
+      "X": 1300,
+      "Y": 0,
+      "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
@@ -119,19 +113,13 @@
           "ShowOnSchematic": true,
           "Dimension": "Resistance"
         }
-      ],
-      "LabelOffsets": [
-        [
-          330,
-          -413
-        ]
       ]
     },
     {
       "InstanceName": "VAR1",
       "Symbol": "Var",
-      "X": 0,
-      "Y": -900,
+      "X": -100,
+      "Y": -600,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -154,12 +142,8 @@
           0
         ],
         [
-          1200,
+          1000,
           0
-        ],
-        [
-          1200,
-          300
         ]
       ]
     },
@@ -170,19 +154,15 @@
           0
         ],
         [
-          0,
+          200,
           0
-        ],
-        [
-          0,
-          300
         ]
       ]
     }
   ],
   "NetLabels": [
     {
-      "X": 200,
+      "X": 300,
       "Y": 0,
       "Name": "s",
       "OwnerWireIndex": 1,
@@ -192,7 +172,7 @@
       "OffsetY": 0
     },
     {
-      "X": 1000,
+      "X": 900,
       "Y": 0,
       "Name": "out",
       "OwnerWireIndex": 0,

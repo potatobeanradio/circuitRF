@@ -4623,8 +4623,8 @@
         },
         {
           "Name": "Frf",
-          "Expression": "26000000000",
-          "Unit": "",
+          "Expression": "26",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         }

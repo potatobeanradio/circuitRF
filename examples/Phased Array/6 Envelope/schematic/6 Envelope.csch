@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "6 Envelope",
+  "CellName": "6 Envelope.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -8,8 +8,8 @@
     {
       "InstanceName": "SRC1",
       "Symbol": "ModSource",
-      "X": -2600,
-      "Y": 1200,
+      "X": -2200,
+      "Y": 1400,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -68,7 +68,7 @@
       "InstanceName": "Isrc",
       "Symbol": "IProbe",
       "X": -1700,
-      "Y": 800,
+      "Y": 1100,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -304,8 +304,8 @@
     {
       "InstanceName": "GND1",
       "Symbol": "Ground",
-      "X": -2600,
-      "Y": 1400,
+      "X": -2200,
+      "Y": 1600,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -316,8 +316,8 @@
     {
       "InstanceName": "VAR1",
       "Symbol": "Var",
-      "X": -2600,
-      "Y": -1400,
+      "X": -1500,
+      "Y": -100,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -402,11 +402,11 @@
           800
         ],
         [
-          3800,
+          3600,
           800
         ],
         [
-          3800,
+          3600,
           1100
         ],
         [
@@ -422,11 +422,11 @@
           1600
         ],
         [
-          3900,
+          3600,
           1600
         ],
         [
-          3900,
+          3600,
           1200
         ],
         [
@@ -506,37 +506,17 @@
     {
       "Points": [
         [
-          -2600,
-          1000
-        ],
-        [
-          -2600,
-          800
-        ],
-        [
-          -1900,
-          800
-        ],
-        [
-          -1900,
-          1100
+          -2200,
+          1200
         ],
         [
           -1700,
-          1100
-        ],
-        [
-          -1700,
-          900
+          1200
         ]
       ]
     },
     {
       "Points": [
-        [
-          -1600,
-          900
-        ],
         [
           -1600,
           1200
@@ -622,12 +602,12 @@
       "OffsetY": 0
     },
     {
-      "X": -2300,
-      "Y": 800,
+      "X": -1985.7142857142858,
+      "Y": 1200,
       "Name": "s",
       "OwnerWireIndex": 8,
-      "SegmentIndex": 1,
-      "AlongT": 0.42857142857142855,
+      "SegmentIndex": 0,
+      "AlongT": 0.42857142857142844,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -636,7 +616,7 @@
       "Y": 1200,
       "Name": "sc",
       "OwnerWireIndex": 9,
-      "SegmentIndex": 1,
+      "SegmentIndex": 0,
       "AlongT": 0.5,
       "OffsetX": 0,
       "OffsetY": 0
@@ -697,17 +677,17 @@
       "Name": "e2",
       "OwnerWireIndex": 1,
       "SegmentIndex": 0,
-      "AlongT": 0.5,
+      "AlongT": 0.625,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 3300,
+      "X": 3344.7540696532105,
       "Y": 1600,
       "Name": "e3",
       "OwnerWireIndex": 2,
       "SegmentIndex": 0,
-      "AlongT": 0.45454545454545453,
+      "AlongT": 0.6809425870665131,
       "OffsetX": 0,
       "OffsetY": 0
     },

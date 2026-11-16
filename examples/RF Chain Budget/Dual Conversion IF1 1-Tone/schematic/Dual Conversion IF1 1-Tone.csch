@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "Dual Conversion IF1 1-Tone",
+  "CellName": "Dual Conversion IF1 1-Tone.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -262,8 +262,8 @@
       "Parameters": [
         {
           "Name": "Freq",
-          "Expression": "2100000000",
-          "Unit": "",
+          "Expression": "2.1",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         },
@@ -386,8 +386,8 @@
         },
         {
           "Name": "Frf",
-          "Expression": "2450000000",
-          "Unit": "",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -407,8 +407,8 @@
         },
         {
           "Name": "Flo1",
-          "Expression": "2100000000",
-          "Unit": "",
+          "Expression": "2.1",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -678,18 +678,6 @@
           0
         ],
         [
-          4400,
-          0
-        ],
-        [
-          4400,
-          -200
-        ],
-        [
-          4700,
-          -200
-        ],
-        [
           4700,
           0
         ]
@@ -775,11 +763,11 @@
     },
     {
       "X": 4500,
-      "Y": -200,
+      "Y": 0,
       "Name": "out",
       "OwnerWireIndex": 4,
-      "SegmentIndex": 2,
-      "AlongT": 0.3333333333333333,
+      "SegmentIndex": 0,
+      "AlongT": 0.6,
       "OffsetX": 0,
       "OffsetY": 0
     }
@@ -814,9 +802,10 @@
       "GuardHarmonicExpr": "0",
       "LambdaExpr": "1",
       "MaxIterExpr": "100",
-      "SsStartExpr": "350001000",
-      "SsStopExpr": "350001000",
+      "SsStartExpr": "350.001",
+      "SsStopExpr": "350.001",
       "SsNptsExpr": "1",
+      "SsUnit": "MHz",
       "HbNoiseExpr": "yes",
       "HbNoiseSidebandExpr": "0,1",
       "HbNoiseContribExpr": "yes"

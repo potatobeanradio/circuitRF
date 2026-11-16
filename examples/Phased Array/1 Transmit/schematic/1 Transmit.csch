@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "1 Transmit",
+  "CellName": "1 Transmit.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -40,8 +40,8 @@
       "InstanceName": "PA1",
       "Symbol": "PhasedArray",
       "X": 1000,
-      "Y": 600,
-      "Rotation": "R90",
+      "Y": 300,
+      "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
@@ -143,12 +143,6 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
-      ],
-      "LabelOffsets": [
-        [
-          480,
-          -643
-        ]
       ]
     },
     {
@@ -167,7 +161,7 @@
       "InstanceName": "VAR1",
       "Symbol": "Var",
       "X": 0,
-      "Y": -800,
+      "Y": -700,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -198,8 +192,8 @@
     {
       "InstanceName": "MEAS1",
       "Symbol": "Meas",
-      "X": 1500,
-      "Y": -1100,
+      "X": 900,
+      "Y": -800,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -264,15 +258,7 @@
           300
         ],
         [
-          0,
-          100
-        ],
-        [
-          1000,
-          100
-        ],
-        [
-          1000,
+          700,
           300
         ]
       ]
@@ -280,12 +266,12 @@
   ],
   "NetLabels": [
     {
-      "X": 500,
-      "Y": 100,
+      "X": 362.75124055931406,
+      "Y": 300,
       "Name": "f",
       "OwnerWireIndex": 0,
-      "SegmentIndex": 1,
-      "AlongT": 0.5,
+      "SegmentIndex": 0,
+      "AlongT": 0.5182160579418772,
       "OffsetX": 0,
       "OffsetY": 0
     }

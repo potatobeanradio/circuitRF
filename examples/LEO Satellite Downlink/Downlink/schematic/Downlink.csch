@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "Downlink",
+  "CellName": "Downlink.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -120,7 +120,7 @@
     {
       "InstanceName": "TWTA",
       "Symbol": "Amp",
-      "X": 1900,
+      "X": 1500,
       "Y": -0,
       "Rotation": "R0",
       "MirrorX": false,
@@ -152,8 +152,8 @@
     {
       "InstanceName": "OMUX",
       "Symbol": "Filter",
-      "X": 3200,
-      "Y": -0,
+      "X": 2400,
+      "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -219,7 +219,7 @@
     {
       "InstanceName": "Itx",
       "Symbol": "IProbe",
-      "X": 4200,
+      "X": 3100,
       "Y": -100,
       "Rotation": "R0",
       "MirrorX": false,
@@ -235,8 +235,8 @@
     {
       "InstanceName": "CH1",
       "Symbol": "PropagationChannel",
-      "X": 5400,
-      "Y": -0,
+      "X": 4000,
+      "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -372,8 +372,8 @@
     {
       "InstanceName": "LNA",
       "Symbol": "Amp",
-      "X": 6800,
-      "Y": -0,
+      "X": 5100,
+      "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -404,7 +404,7 @@
     {
       "InstanceName": "Irx",
       "Symbol": "IProbe",
-      "X": 7900,
+      "X": 5700,
       "Y": -100,
       "Rotation": "R0",
       "MirrorX": false,
@@ -420,7 +420,7 @@
     {
       "InstanceName": "TERM",
       "Symbol": "Term",
-      "X": 8400,
+      "X": 6200,
       "Y": 500,
       "Rotation": "R0",
       "MirrorX": false,
@@ -463,7 +463,7 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": 8400,
+      "X": 6200,
       "Y": 700,
       "Rotation": "R0",
       "MirrorX": false,
@@ -608,19 +608,31 @@
           0
         ],
         [
-          1600,
-          0
+          1200,
+          -0
         ]
       ]
     },
     {
       "Points": [
+        [
+          1800,
+          -0
+        ],
         [
           2200,
           0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2600,
+          0
         ],
         [
-          3000,
+          3100,
           0
         ]
       ]
@@ -628,88 +640,12 @@
     {
       "Points": [
         [
-          3400,
+          5400,
           0
         ],
-        [
-          4000,
-          0
-        ],
-        [
-          4000,
-          200
-        ],
-        [
-          4200,
-          200
-        ],
-        [
-          4200,
-          0
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          7100,
-          0
-        ],
-        [
-          7700,
-          0
-        ],
-        [
-          7700,
-          200
-        ],
-        [
-          7900,
-          200
-        ],
-        [
-          7900,
-          0
-        ]
-      ]
-    },
-    {
-      "Points": [
         [
           5700,
           0
-        ],
-        [
-          6500,
-          0
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          8000,
-          0
-        ],
-        [
-          8000,
-          300
-        ],
-        [
-          7600,
-          300
-        ],
-        [
-          7600,
-          -400
-        ],
-        [
-          8400,
-          -400
-        ],
-        [
-          8400,
-          300
         ]
       ]
     },
@@ -720,19 +656,35 @@
           0
         ],
         [
-          4300,
-          200
-        ],
+          4800,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
         [
-          4900,
-          200
-        ],
-        [
-          4900,
+          5800,
           0
         ],
         [
-          5100,
+          6200,
+          0
+        ],
+        [
+          6200,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          3200,
+          0
+        ],
+        [
+          3700,
           0
         ]
       ]
@@ -766,7 +718,7 @@
       "OffsetY": 0
     },
     {
-      "X": 1200,
+      "X": 1000,
       "Y": 0,
       "Name": "a",
       "OwnerWireIndex": 0,
@@ -776,7 +728,7 @@
       "OffsetY": 0
     },
     {
-      "X": 2600,
+      "X": 2000,
       "Y": 0,
       "Name": "b",
       "OwnerWireIndex": 1,
@@ -786,27 +738,27 @@
       "OffsetY": 0
     },
     {
-      "X": 3700,
+      "X": 2787.5,
       "Y": 0,
       "Name": "c",
       "OwnerWireIndex": 2,
       "SegmentIndex": 0,
-      "AlongT": 0.5,
+      "AlongT": 0.375,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 4600,
-      "Y": 200,
+      "X": 3387.5,
+      "Y": 0,
       "Name": "tx",
       "OwnerWireIndex": 6,
-      "SegmentIndex": 1,
-      "AlongT": 0.5,
+      "SegmentIndex": 0,
+      "AlongT": 0.375,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 6100,
+      "X": 4550,
       "Y": 0,
       "Name": "rx",
       "OwnerWireIndex": 4,
@@ -816,24 +768,24 @@
       "OffsetY": 0
     },
     {
-      "X": 7400,
+      "X": 5512.5,
       "Y": 0,
       "Name": "lna",
       "OwnerWireIndex": 3,
       "SegmentIndex": 0,
-      "AlongT": 0.5,
+      "AlongT": 0.375,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 8000,
-      "Y": -400,
+      "X": 6084.8453926411485,
+      "Y": -25.21925355399122,
       "Name": "term",
       "OwnerWireIndex": 5,
-      "SegmentIndex": 3,
-      "AlongT": 0.5,
-      "OffsetX": 0,
-      "OffsetY": 0
+      "SegmentIndex": 0,
+      "AlongT": 0.9540327508098153,
+      "OffsetX": -96.76770768277763,
+      "OffsetY": -25.21925355399122
     }
   ],
   "Dots": [],

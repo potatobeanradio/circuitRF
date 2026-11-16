@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "Dual Conversion IF1 Envelope",
+  "CellName": "Dual Conversion IF1 Envelope.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -283,8 +283,8 @@
       "Parameters": [
         {
           "Name": "Freq",
-          "Expression": "2100000000",
-          "Unit": "",
+          "Expression": "2.1",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         },
@@ -416,8 +416,8 @@
         },
         {
           "Name": "Frf",
-          "Expression": "2450000000",
-          "Unit": "",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -430,15 +430,15 @@
         },
         {
           "Name": "Flo1",
-          "Expression": "2100000000",
-          "Unit": "",
+          "Expression": "2.1",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "Bocc",
-          "Expression": "4500000",
-          "Unit": "",
+          "Expression": "4.5",
+          "Unit": "MHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         }
@@ -553,18 +553,6 @@
           0
         ],
         [
-          0,
-          -200
-        ],
-        [
-          300,
-          -200
-        ],
-        [
-          300,
-          0
-        ],
-        [
           500,
           0
         ]
@@ -575,22 +563,6 @@
         [
           4800,
           0
-        ],
-        [
-          4800,
-          200
-        ],
-        [
-          4500,
-          200
-        ],
-        [
-          4500,
-          -400
-        ],
-        [
-          5300,
-          -400
         ],
         [
           5300,
@@ -641,18 +613,6 @@
           0
         ],
         [
-          4400,
-          0
-        ],
-        [
-          4400,
-          300
-        ],
-        [
-          4700,
-          300
-        ],
-        [
           4700,
           0
         ]
@@ -680,11 +640,11 @@
     },
     {
       "X": 100,
-      "Y": -200,
+      "Y": 0,
       "Name": "in",
       "OwnerWireIndex": 1,
-      "SegmentIndex": 1,
-      "AlongT": 0.3333333333333333,
+      "SegmentIndex": 0,
+      "AlongT": 0.2,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -730,21 +690,21 @@
     },
     {
       "X": 4500,
-      "Y": 300,
+      "Y": 0,
       "Name": "out",
       "OwnerWireIndex": 6,
-      "SegmentIndex": 2,
-      "AlongT": 0.3333333333333333,
+      "SegmentIndex": 0,
+      "AlongT": 0.6,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 4900,
-      "Y": -400,
+      "X": 5094.93367723071,
+      "Y": 0,
       "Name": "load",
       "OwnerWireIndex": 2,
-      "SegmentIndex": 3,
-      "AlongT": 0.5,
+      "SegmentIndex": 0,
+      "AlongT": 0.5898673544614194,
       "OffsetX": 0,
       "OffsetY": 0
     }

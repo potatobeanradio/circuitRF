@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "Superhet Envelope",
+  "CellName": "Superhet Envelope.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -283,8 +283,8 @@
       "Parameters": [
         {
           "Name": "Freq",
-          "Expression": "2100000000",
-          "Unit": "",
+          "Expression": "2.1",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         },
@@ -554,8 +554,8 @@
         },
         {
           "Name": "Frf",
-          "Expression": "2450000000",
-          "Unit": "",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -568,15 +568,15 @@
         },
         {
           "Name": "Flo1",
-          "Expression": "2100000000",
-          "Unit": "",
+          "Expression": "2.1",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "Bocc",
-          "Expression": "4500000",
-          "Unit": "",
+          "Expression": "4.5",
+          "Unit": "MHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         }
@@ -691,18 +691,6 @@
           0
         ],
         [
-          0,
-          -200
-        ],
-        [
-          300,
-          -200
-        ],
-        [
-          300,
-          0
-        ],
-        [
           500,
           0
         ]
@@ -713,22 +701,6 @@
         [
           7900,
           0
-        ],
-        [
-          7900,
-          200
-        ],
-        [
-          7600,
-          200
-        ],
-        [
-          7600,
-          -400
-        ],
-        [
-          8400,
-          -400
         ],
         [
           8400,
@@ -815,18 +787,6 @@
           0
         ],
         [
-          7500,
-          0
-        ],
-        [
-          7500,
-          300
-        ],
-        [
-          7800,
-          300
-        ],
-        [
           7800,
           0
         ]
@@ -854,11 +814,11 @@
     },
     {
       "X": 100,
-      "Y": -200,
+      "Y": 0,
       "Name": "in",
       "OwnerWireIndex": 1,
-      "SegmentIndex": 1,
-      "AlongT": 0.3333333333333333,
+      "SegmentIndex": 0,
+      "AlongT": 0.2,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -934,21 +894,21 @@
     },
     {
       "X": 7600,
-      "Y": 300,
+      "Y": 0,
       "Name": "out",
       "OwnerWireIndex": 9,
-      "SegmentIndex": 2,
-      "AlongT": 0.3333333333333333,
+      "SegmentIndex": 0,
+      "AlongT": 0.6,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 8000,
-      "Y": -400,
+      "X": 8266.62371028222,
+      "Y": 0,
       "Name": "load",
       "OwnerWireIndex": 2,
-      "SegmentIndex": 3,
-      "AlongT": 0.5,
+      "SegmentIndex": 0,
+      "AlongT": 0.7332474205644394,
       "OffsetX": 0,
       "OffsetY": 0
     }

@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "Array Steering",
+  "CellName": "Array Steering.csch",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
@@ -269,8 +269,8 @@
         },
         {
           "Name": "F",
-          "Expression": "2450000000",
-          "Unit": "Hz",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         }
@@ -379,8 +379,8 @@
         },
         {
           "Name": "F",
-          "Expression": "2450000000",
-          "Unit": "Hz",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         }
@@ -489,8 +489,8 @@
         },
         {
           "Name": "F",
-          "Expression": "2450000000",
-          "Unit": "Hz",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         }
@@ -635,8 +635,8 @@
         },
         {
           "Name": "Frf",
-          "Expression": "2450000000",
-          "Unit": "",
+          "Expression": "2.45",
+          "Unit": "GHz",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
@@ -938,19 +938,11 @@
           1400
         ],
         [
-          4700,
+          4800,
           1400
         ],
         [
-          4700,
-          1100
-        ],
-        [
-          3900,
-          1100
-        ],
-        [
-          3900,
+          4800,
           2000
         ],
         [
@@ -1043,18 +1035,6 @@
       "Points": [
         [
           0,
-          2100
-        ],
-        [
-          0,
-          1900
-        ],
-        [
-          400,
-          1900
-        ],
-        [
-          400,
           2100
         ],
         [
@@ -1193,11 +1173,11 @@
     },
     {
       "X": 200,
-      "Y": 1900,
+      "Y": 2100,
       "Name": "w",
       "OwnerWireIndex": 9,
-      "SegmentIndex": 1,
-      "AlongT": 0.5,
+      "SegmentIndex": 0,
+      "AlongT": 0.3333333333333333,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -1232,12 +1212,12 @@
       "OffsetY": 0
     },
     {
-      "X": 4400,
+      "X": 4800,
       "Y": 2000,
       "Name": "b2_PS",
       "OwnerWireIndex": 2,
-      "SegmentIndex": 4,
-      "AlongT": 0.45454545454545453,
+      "SegmentIndex": 1,
+      "AlongT": 1,
       "OffsetX": 0,
       "OffsetY": 0
     },

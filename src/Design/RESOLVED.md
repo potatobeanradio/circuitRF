@@ -32571,3 +32571,17 @@ now refused only for its Impedance boundary and its TE mode type.
   whole 1° sphere in the global axes. Export writes a whole-sphere Infinite Sphere every 2° for a setup that asks for the pattern.
 - Test trap: a `.c3d` copied through `Serialize`/`Deserialize` has 0 in every expression-held field until resolved, so the patcher's
   read-back comparison (resolved numbers) fails on it; edit a second translation instead.
+
+## Chain benches write frequencies in GHz and MHz (2026-11-16)
+
+- **Transfer writes a frequency in GHz from 1 GHz and MHz from 1 MHz** (`ChainBenches.Hz`/`HzParts`): the variables (Frf,
+  Flo, F1/F2, FB, Bocc), a line's F, an LO's Freq, a bare filter edge, the sparam point and the HB small-signal sweep. Each is
+  the shortest number that times the unit's scale is the same double, because the elaborator multiplies the two; where none
+  exists it stays bare Hz. Every shipped bench was elaborated before and after: every global, component value, tone and sweep
+  point is the same bit for bit.
+- **A frequency variable with a unit changes a degree field that names it** (var-unit-wins: a unit-bearing name puts the
+  expression in base SI, so the field's `deg` is not applied). The Canceller's `E=360*Frf*tau_leak deg` read 882 instead of
+  15.39 with `Frf = 2.45 GHz`. Its three degree fields name `Frf_hz = Frf` instead: a unit-less binding that names a
+  unit-bearing one is bare, and its value is Frf's Hz.
+- **`ChainBudgetExampleTests` compares a shipped bench with Transfer's by the netlist it runs as** (`SchematicCircuit.CnlTextOf`),
+  not by its file, so the examples' drawings can be tidied by hand; the displays are still compared as files.
