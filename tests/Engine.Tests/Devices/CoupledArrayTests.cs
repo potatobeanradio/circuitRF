@@ -1,0 +1,368 @@
+using System.Globalization;
+using System.Numerics;
+using System.Text;
+using CircuitRF.Core.Devices;
+using CircuitRF.Core.Devices.Microstrip;
+using CircuitRF.Core.Elaboration;
+using CircuitRF.Core.Netlist;
+using Xunit;
+using Xunit.Abstractions;
+
+namespace CircuitRF.Engine.Tests.Devices;
+
+/// <summary>
+/// MCLA, the coupled array, through the engine: each form is MCLINN, MLIN and its open ends' capacitances wired by hand to
+/// 1e-9; an interdigital filter designed from Matthaei's closed forms lands on its centre and its ripple band; a combline
+/// filter's loading capacitors, from the textbook resonance condition, set its centre.
+/// </summary>
+public class CoupledArrayTests(ITestOutputHelper output)
+{
+    private const string Sub = "H=0.508e-3 T=35e-6 Er=3.66 Sigma=5.8e7 TanD=0.0037";
+    /// <summary>The same board without loss, for the filters: the closed forms are lossless.</summary>
+    private const string Lossless = "H=0.508e-3 T=35e-6 Er=3.66 Sigma=1e15 TanD=0";
+    private static readonly MicrostripSubstrate Ro4350b = new(0.508e-3, 35e-6, 3.66, 5.8e7, 0.0037);
+    private const double C0 = 299_792_458.0;
+
+    private static string F(double v) => v.ToString("R", CultureInfo.InvariantCulture);
+
+    private static Complex[,] SAt(string cnl, double freqHz, int n)
+    {
+        var (lib, tb) = new CnlReader().Read(cnl);
+        var s = SParameterEngine.Run(new Elaborator(lib).Elaborate(tb), [freqHz])["S"];
+        var m = new Complex[n, n];
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++)
+                m[i, j] = (Complex)s[0, i, j];
+        return m;
+    }
+
+    /// <summary>|S21| in dB over <paramref name="freqs"/>, ports 1 and 2 only.</summary>
+    private static double[] S21Db(string cnl, double[] freqs)
+    {
+        var (lib, tb) = new CnlReader().Read(cnl);
+        var s = SParameterEngine.Run(new Elaborator(lib).Elaborate(tb), freqs)["S"];
+        return [.. Enumerable.Range(0, freqs.Length).Select(i => 20.0 * Math.Log10(((Complex)s[i, 1, 0]).Magnitude))];
+    }
+
+    private static string Ports(int n) => string.Join("\n",
+        Enumerable.Range(1, n).Select(k => $"Port:P{k} p{k} 0 Num={k} Z=50 Ohm"));
+
+    /// <summary>The part's own line: every strip's width and gap stated, the words as written.</summary>
+    private static string Line(CoupledArraySpec s, string nets, string sub = Sub)
+        => $"MCLA:A1 {nets} N={s.N} {string.Join(" ", s.W.Select((w, k) => $"W[{k + 1}]={F(w)}"))} "
+         + $"{string.Join(" ", s.S.Select((g, k) => $"S[{k + 1}]={F(g)}"))} "
+         + $"{string.Join(" ", s.C.Select((c, k) => $"C[{k + 1}]={F(c)}"))} L={F(s.L)} Form={s.Form} Feed={s.Feed} "
+         + (s.Ends is { } e ? $"Ends=\"{e}\" " : "") + $"Tap={F(s.Tap)} Wf={F(s.Wf)} {sub}";
+
+    private static CoupledArraySpec Spec(CoupledArrayForm form, CoupledArrayFeed feed, int n, string? ends = null)
+        => new([.. Enumerable.Range(0, n).Select(k => k == 1 ? 1.3e-3 : 1.0e-3)],
+               [.. Enumerable.Range(0, n - 1).Select(k => k == 0 ? 0.35e-3 : 0.5e-3)], 16e-3, form, feed, ends, 3e-3, 1.1e-3,
+               [.. Enumerable.Range(0, n).Select(k => (1.0 + 0.2 * k) * 1e-12)]);
+
+    /// <summary>
+    /// Every form (and a custom pattern of every end kind) is its plan's sections wired by hand as ordinary instances:
+    /// each <see cref="PlanCoupledStrips"/> an MCLINN on the strips' cut nodes, each tap, fold and feed an MLIN, each
+    /// open or loaded end MLIN's end capacitance as a C. Every pin a port, to 1e-9. The part is read from its netlist
+    /// line, so Form, Feed and Ends pass the elaborator as words.
+    /// </summary>
+    [Theory]
+    [InlineData(CoupledArrayForm.Interdigital, CoupledArrayFeed.Tapped, 3, null)]
+    [InlineData(CoupledArrayForm.Interdigital, CoupledArrayFeed.Coupled, 4, null)]
+    [InlineData(CoupledArrayForm.Combline, CoupledArrayFeed.Tapped, 3, null)]
+    [InlineData(CoupledArrayForm.Combline, CoupledArrayFeed.Coupled, 4, null)]
+    [InlineData(CoupledArrayForm.PseudoInterdigital, CoupledArrayFeed.Coupled, 6, null)]
+    [InlineData(CoupledArrayForm.PseudoInterdigital, CoupledArrayFeed.Tapped, 4, null)]
+    [InlineData(CoupledArrayForm.Custom, CoupledArrayFeed.Coupled, 4, "PS OC JO JP")]
+    public void TheArray_IsItsSectionsWiredByHand(CoupledArrayForm form, CoupledArrayFeed feed, int n, string? ends)
+    {
+        var spec = Spec(form, feed, n, ends);
+        var plan = CoupledArrayPlan.Build(spec, Ro4350b).Plan;
+        int pins = plan.Pins.Count;
+        string nets = string.Join(" ", Enumerable.Range(1, pins).Select(k => $"p{k}"));
+        double worst = 0.0;
+        foreach (double f in new[] { 1.1e9, 2.6e9, 4.3e9 })
+        {
+            var part = SAt($"{Ports(pins)}\n{Line(spec, nets)}", f, pins);
+            var byHand = SAt(ByHand(plan, f), f, pins);
+            for (int i = 0; i < pins; i++)
+                for (int j = 0; j < pins; j++)
+                    worst = Math.Max(worst, (part[i, j] - byHand[i, j]).Magnitude);
+        }
+        output.WriteLine($"{form}/{feed}, N = {n}: {pins} pins, {plan.Sections.Count} sections, worst |dS| {worst:G3}");
+        Assert.True(worst < 1e-9, $"worst |dS| {worst:G3}");
+    }
+
+    private static string ByHand(PassivePlan plan, double f)
+    {
+        int pins = plan.Pins.Count;
+        string Node(int n) => n <= pins ? $"p{n}" : $"i{n}";
+        var b = new StringBuilder(Ports(pins)).AppendLine();
+        int k = 0;
+        foreach (var section in plan.Sections)
+            b.AppendLine(section switch
+            {
+                PlanCoupledStrips m => $"MCLINN:K{++k} {string.Join(" ", m.ModelNodes.Select(Node))} N={m.W.Count} "
+                    + string.Join(" ", m.W.Select((w, j) => $"W[{j + 1}]={F(w)}")) + " "
+                    + string.Join(" ", m.S.Select((g, j) => $"S[{j + 1}]={F(g)}")) + $" L={F(m.L)} {Sub}",
+                PlanLine l => $"MLIN:L{++k} {string.Join(" ", l.Nodes.Select(Node))} W={F(l.W)} L={F(l.L)} {Sub}",
+                PlanOpen o => $"C:C{++k} {Node(o.Nodes[0])} 0 C={F(OpenEnd(o.W, f))}",
+                _ => throw new InvalidOperationException(section.GetType().Name),
+            });
+        return b.ToString();
+    }
+
+    private static MicrostripLineModel Mlin(double w)
+        => new(w, 0.0, Ro4350b.HMeters, Ro4350b.TMeters, Ro4350b.EpsR, Ro4350b.SigmaSPerM, Ro4350b.TanD, "test");
+
+    private static double Extension(double w)
+        => MicrostripOpenEnd.Extension(w, Ro4350b.HMeters, Ro4350b.EpsR, Mlin(w).LineParameters(0.0).EeffStatic);
+
+    /// <summary>A strip end's capacitance at <paramref name="f"/>: the closed form's extension on MLIN's own line.</summary>
+    private static double OpenEnd(double w, double f)
+    {
+        var p = Mlin(w).LineParameters(f);
+        return MicrostripOpenEnd.Capacitance(Extension(w), p.Eeff, p.Z0);
+    }
+
+    // ── An interdigital filter from Matthaei's closed forms ─────────────────────────────────────────────────────────
+
+    /// <summary>The Chebyshev low-pass prototype's g0..g(n+1) (Matthaei, Young and Jones, §4.05).</summary>
+    private static double[] ChebyshevG(int n, double rippleDb)
+    {
+        double beta = Math.Log(1.0 / Math.Tanh(rippleDb / 17.37)), gamma = Math.Sinh(beta / (2 * n));
+        var g = new double[n + 2];
+        g[0] = 1.0;
+        double A(int k) => Math.Sin((2 * k - 1) * Math.PI / (2 * n));
+        double B(int k) => gamma * gamma + Math.Pow(Math.Sin(k * Math.PI / n), 2);
+        g[1] = 2 * A(1) / gamma;
+        for (int k = 2; k <= n; k++) g[k] = 4 * A(k - 1) * A(k) / (B(k - 1) * g[k - 1]);
+        g[n + 1] = n % 2 == 1 ? 1.0 : Math.Pow(1.0 / Math.Tanh(beta / 4), 2);
+        return g;
+    }
+
+    /// <summary>
+    /// Matthaei's interdigital design (<a href="https://doi.org/10.1109/TMTT.1962.1125556">10.1109/TMTT.1962.1125556</a>,
+    /// Table I), terminating lines 0 and n + 1, in admittances per unit length normalised to the terminations' Y_A:
+    /// each line's admittance to ground (C_k/ε over 376.7·Y_A/√εr) and each adjacent pair's mutual one. θ1 is the
+    /// lines' electrical length at the lower band edge, <paramref name="h"/> the resonators' admittance scale.
+    /// </summary>
+    private static (double[] Ground, double[] Mutual) Matthaei(double[] g, double w, double h)
+    {
+        int n = g.Length - 2;
+        double t = Math.Tan(Math.PI / 2 * (1 - w / 2));
+        double[] j = [.. Enumerable.Range(0, n + 1).Select(k =>
+            k == 0 ? 1 / Math.Sqrt(g[0] * g[1]) : k == n ? 1 / Math.Sqrt(g[n] * g[n + 1]) : 1 / Math.Sqrt(g[k] * g[k + 1]))];
+        double N(int k) => Math.Sqrt(j[k] * j[k] + t * t / 4);
+        double m1 = Math.Sqrt(h) * j[0] + 1, mn = Math.Sqrt(h) * j[n] + 1;
+        var ground = new double[n + 2];
+        var mutual = new double[n + 1];
+        ground[0] = 2 - m1;
+        ground[n + 1] = 2 - mn;
+        mutual[0] = m1 - 1;
+        mutual[n] = mn - 1;
+        for (int k = 1; k < n; k++) mutual[k] = h * j[k];
+        for (int k = 1; k <= n; k++)
+        {
+            double inner = (k > 1 ? N(k - 1) - j[k - 1] : 0) + (k < n ? N(k) - j[k] : 0);
+            ground[k] = h * inner + (k == 1 ? 1 - m1 + h * (t / 2 + j[0] * j[0]) : 0)
+                                  + (k == n ? 1 - mn + h * (t / 2 + j[n] * j[n]) : 0);
+        }
+        return (ground, mutual);
+    }
+
+    /// <summary>
+    /// The strips' widths and gaps whose solved cross-section has the design's admittances per unit length: the
+    /// characteristic admittance matrix of the lossless modes, Yc = Tv·diag(1/v_m)·Tv⁻¹·L⁻¹ (Paul), each strip's row sum
+    /// its admittance to ground and each adjacent pair's off-diagonal their mutual. For a homogeneous dielectric that is
+    /// v·C, the design's own TEM form. A fixed-point walk: a width scales with its ground share, a gap with its mutual's
+    /// excess.
+    /// </summary>
+    private static (double[] W, double[] S, double Eeff) Fit(double[] ground, double[] mutual, double z0, MicrostripSubstrate sub)
+    {
+        int n = ground.Length;
+        double[] w = [.. Enumerable.Repeat(1.0e-3, n)], s = [.. Enumerable.Repeat(0.3e-3, n - 1)];
+        double eeff = 0;
+        for (int it = 0; it < 40; it++)
+        {
+            var section = new MicrostripMultiLineModel(w, s, 1.0, sub, "fit").Section;
+            eeff = section.Modes.Eeff.Average();
+            var yc = Admittance(section, n);
+            double worst = 0;
+            for (int k = 0; k < n; k++)
+            {
+                double own = Enumerable.Range(0, n).Sum(m => yc[k, m]), target = ground[k] / z0;
+                worst = Math.Max(worst, Math.Abs(own / target - 1));
+                w[k] *= Math.Pow(target / own, 0.8);
+            }
+            for (int k = 0; k < n - 1; k++)
+            {
+                double own = -yc[k, k + 1], target = mutual[k] / z0;
+                worst = Math.Max(worst, Math.Abs(own / target - 1));
+                s[k] *= Math.Pow(own / target, 0.8);
+            }
+            // The design is mirror-symmetric; the solver's grid is not quite, so the walk keeps it so.
+            for (int k = 0; k < n / 2; k++) w[k] = w[n - 1 - k] = (w[k] + w[n - 1 - k]) / 2;
+            for (int k = 0; k < (n - 1) / 2; k++) s[k] = s[n - 2 - k] = (s[k] + s[n - 2 - k]) / 2;
+            if (worst < 0.003) break;
+        }
+        return (w, s, eeff);
+    }
+
+    /// <summary>The lossless characteristic admittance matrix, Tv·diag(1/v_m)·Tv⁻¹·c²·C₀ (L⁻¹ = c²·C₀).</summary>
+    private static double[,] Admittance(MultiLineSection section, int n)
+    {
+        var m = section.Modes;
+        var a = new double[n, n];
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++)
+                a[i, j] = Enumerable.Range(0, n).Sum(k => m.Tv[i, k] / m.PhaseVelocity(k) * m.TvInv[k, j]);
+        var y = new double[n, n];
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++)
+                y[i, j] = Enumerable.Range(0, n).Sum(k => a[i, k] * C0 * C0 * section.C0[k, j]);
+        return y;
+    }
+
+    /// <summary>A Matthaei interdigital design realised on <paramref name="sub"/> and run lossless: its 3 dB edges, and its
+    /// ripple band, the outermost frequencies within the loss it actually ripples to between its first and last peaks.</summary>
+    private (double Centre, double Band, double Ripple) Interdigital(MicrostripSubstrate sub, string lossless, double h)
+    {
+        const double f0 = 2.4e9, fbw = 0.2, ripple = 0.1, z0 = 50.0;
+        var (ground, mutual) = Matthaei(ChebyshevG(3, ripple), fbw, h);
+        var (w, s, eeff) = Fit(ground, mutual, z0, sub);
+        output.WriteLine($"Er {sub.EpsR}, h {h}: W {string.Join(", ", w.Select(x => (x * 1e3).ToString("F3")))} mm; "
+                       + $"S {string.Join(", ", s.Select(x => (x * 1e3).ToString("F3")))} mm; eeff {eeff:F3}");
+        var line = new MicrostripLineModel(w[2], 0.0, sub.HMeters, sub.TMeters, sub.EpsR, sub.SigmaSPerM, sub.TanD, "test");
+        double l = C0 / Math.Sqrt(eeff) / (4 * f0)
+                 - MicrostripOpenEnd.Extension(w[2], sub.HMeters, sub.EpsR, line.LineParameters(0.0).EeffStatic);
+        var spec = new CoupledArraySpec(w, s, l, CoupledArrayForm.Interdigital, CoupledArrayFeed.Coupled, null, 0, 0,
+                                        [.. Enumerable.Repeat(1e-12, 5)]);
+        string nets = "p1 p2 " + string.Join(" ", Enumerable.Repeat("0", CoupledArrayPlan.Build(spec, sub).Plan.Pins.Count - 2));
+        double[] freqs = [.. Enumerable.Range(0, 801).Select(i => f0 * (0.6 + 0.8 * i / 800))];
+        var db = S21Db($"{Ports(2)}\n{Line(spec, nets, lossless)}", freqs);
+
+        var (lo3, hi3) = Edges(freqs, db, -3.0);
+        var peaks = Enumerable.Range(1, db.Length - 2).Where(i => db[i] >= db[i - 1] && db[i] > db[i + 1] && db[i] > -1.0).ToList();
+        double realised = -Enumerable.Range(peaks[0], peaks[^1] - peaks[0] + 1).Min(i => db[i]);
+        var (lo, hi) = Outermost(freqs, db, -Math.Max(realised, ripple) - 1e-3);
+        output.WriteLine($"  3 dB {lo3 / 1e9:F4}-{hi3 / 1e9:F4} GHz; ripples to {realised:F3} dB, {lo / 1e9:F4}-{hi / 1e9:F4} GHz; "
+                       + $"{peaks.Count} peaks");
+        return ((lo3 + hi3) / 2 / f0, (hi - lo) / (fbw * f0), realised);
+    }
+
+    /// <summary>
+    /// A three-resonator 0.1 dB Chebyshev interdigital filter, 20 % wide at 2.4 GHz, from Matthaei's closed forms: the
+    /// g-values, then each line's admittance to ground and each adjacent pair's mutual (resonator scale h = 0.15), then
+    /// the widths and gaps whose field-solved cross-section has them. Run lossless, as the closed forms are. In a
+    /// homogeneous dielectric (εr = 1, so TEM) it is the design itself: centre within 0.2 %, ripple 0.1 dB, ripple band
+    /// within 7 %. On 20 mil RO4350B its centre (the middle of the 3 dB band) lands within 3 % of 2.4 GHz and its ripple
+    /// band within 20 % of the design's, measured at the ripple it actually has: about 0.7 dB, since microstrip's modes
+    /// run at unequal velocities and the N-line model, quasi-static, keeps each at its own. The design is TEM; that
+    /// difference is what the tolerances are for.
+    /// </summary>
+    [Fact]
+    public void AnInterdigitalFilter_FromMatthaeisClosedForms_LandsOnItsCentreAndBand()
+    {
+        var air = Interdigital(new MicrostripSubstrate(0.508e-3, 35e-6, 1.0, 1e15, 0.0), "H=0.508e-3 T=35e-6 Er=1 Sigma=1e15 TanD=0", 0.15);
+        Assert.InRange(air.Centre, 0.998, 1.002);
+        Assert.InRange(air.Ripple, 0.08, 0.12);
+        Assert.InRange(air.Band, 0.93, 1.07);
+
+        var board = Interdigital(Ro4350b, Lossless, 0.15);
+        Assert.InRange(board.Centre, 0.97, 1.03);
+        Assert.InRange(board.Band, 0.8, 1.2);
+    }
+
+    /// <summary>
+    /// Hong and Lancaster's pseudo-interdigital board (<a href="https://doi.org/10.1109/75.401073">10.1109/75.401073</a>,
+    /// Fig. 2): three groups of interleaved hairpins between two feed strips on 1.27 mm of εr 10.8, strips 0.4 mm wide
+    /// (the feeds 0.5 mm), 0.3 mm from the feeds, 1.0 mm apart in a group and 1.1 mm between groups, the walls 0.5 mm clear
+    /// of the ends they pass, 26.5 mm overall (so 25.5 mm strips, less a wall and its clearance), run lossless. The paper's
+    /// filter is 15 % wide at 1.1 GHz with an attenuation pole at the upper band edge; the plan's 3 dB band lands within
+    /// 5 % of that centre and 20 % of that width, with the pole just above it.
+    /// </summary>
+    [Fact]
+    public void HongAndLancastersBoard_PassesItsMeasuredBand()
+    {
+        const string board = "H=1.27e-3 T=17e-6 Er=10.8 Sigma=1e15 TanD=0";
+        double[] w = [0.5e-3, .. Enumerable.Repeat(0.4e-3, 12), 0.5e-3];
+        double[] s = [0.3e-3, 1e-3, 1e-3, 1e-3, 1.1e-3, 1e-3, 1e-3, 1e-3, 1.1e-3, 1e-3, 1e-3, 1e-3, 0.3e-3];
+        var spec = new CoupledArraySpec(w, s, 25.5e-3, CoupledArrayForm.PseudoInterdigital, CoupledArrayFeed.Coupled, null,
+                                        0, 0, [.. Enumerable.Repeat(1e-12, 14)], 0.5e-3);
+        double[] freqs = [.. Enumerable.Range(0, 241).Select(i => 0.8e9 + 2.5e6 * i)];
+        var db = S21Db($"{Ports(2)}\n{Line(spec, "p1 p2", board)}", freqs);
+        var (lo3, hi3) = Edges(freqs, db, -3.0);
+        output.WriteLine($"3 dB {lo3 / 1e9:F4}-{hi3 / 1e9:F4} GHz, best {db.Max():F3} dB");
+        Assert.InRange((lo3 + hi3) / 2 / 1.1e9, 0.95, 1.05);
+        Assert.InRange((hi3 - lo3) / (0.15 * 1.1e9), 0.8, 1.2);
+        Assert.Contains(Enumerable.Range(0, freqs.Length), i => freqs[i] > hi3 && freqs[i] < hi3 + 0.1e9 && db[i] < -35.0);
+    }
+
+    /// <summary>The lowest and highest frequencies where |S21| is at least <paramref name="levelDb"/>.</summary>
+    private static (double Lo, double Hi) Outermost(double[] f, double[] db, double levelDb)
+    {
+        int lo = Array.FindIndex(db, x => x >= levelDb), hi = Array.FindLastIndex(db, x => x >= levelDb);
+        return lo < 0 ? (0, 0) : (f[lo], f[hi]);
+    }
+
+    // ── A combline filter: the loading capacitors from the resonance condition ──────────────────────────────────────
+
+    /// <summary>
+    /// A three-resonator combline filter, tapped a quarter of the way up from the shorts, on 20 mil RO4350B (lossless):
+    /// strips 1 mm wide and 1.2 mm apart, 45° long at 2 GHz, each loaded at
+    /// its open end by the textbook's C = Y·cot θ0/ω0 (Matthaei, <i>Microwave J.</i> 1963, no DOI). Y and θ0 are the
+    /// strip's own with its neighbours grounded: from the solved cross-section, Y = c·√(C₀kk·Ckk) and εeff = Ckk/C₀kk
+    /// (in a homogeneous medium v·Ckk, the textbook's own), θ0 counting the strip end's own fringing, which the part
+    /// models. Its centre, the middle of the 3 dB band, lands within 3 % of 2 GHz. The loading C is what sets it: every
+    /// C 20 % larger moves it down by about 8 %, as the resonance condition says (δf/f = −δC/C / (1 + θ0/(sin θ0·cos θ0))
+    /// at 45°).
+    /// </summary>
+    [Fact]
+    public void AComblineFilter_ItsLoadingCapacitorsFromTheResonanceCondition_LandsOnItsCentre()
+    {
+        const double f0 = 2.0e9, theta0 = Math.PI / 4;
+        double[] w = [1.0e-3, 1.0e-3, 1.0e-3], s = [1.2e-3, 1.2e-3];
+        var section = new MicrostripMultiLineModel(w, s, 1.0, Ro4350b, "combline").Section;
+        double omega = 2 * Math.PI * f0;
+        double Y(int k) => C0 * Math.Sqrt(section.C0[k, k] * section.C[k, k]);
+        double Beta(int k) => omega * Math.Sqrt(section.C[k, k] / section.C0[k, k]) / C0;
+        double l = theta0 / Beta(1) - Extension(w[1]);
+        double[] c = [.. Enumerable.Range(0, 3).Select(k => Y(k) / Math.Tan(Beta(k) * (l + Extension(w[k]))) / omega)];
+        output.WriteLine($"L {l * 1e3:F3} mm, C {string.Join(", ", c.Select(x => (x * 1e12).ToString("F3")))} pF");
+
+        double Centre(double scale)
+        {
+            var spec = new CoupledArraySpec(w, s, l, CoupledArrayForm.Combline, CoupledArrayFeed.Tapped, null, l / 4, 1.1e-3,
+                                            [.. c.Select(x => x * scale)]);
+            var plan = CoupledArrayPlan.Build(spec, Ro4350b).Plan;
+            var nets = new StringBuilder("p1 p2");
+            var loads = new StringBuilder();
+            foreach (var site in plan.Sites)
+                if (site.Role == PlanSiteRole.Via) nets.Append(" 0");
+                else
+                {
+                    nets.Append($" {site.PinA}");
+                    loads.AppendLine($"C:C{site.PinA} {site.PinA} 0 C={F(site.Value!.Value)}");
+                }
+            double[] freqs = [.. Enumerable.Range(0, 401).Select(i => f0 * (0.6 + 0.8 * i / 400))];
+            var db = S21Db($"{Ports(2)}\n{Line(spec, nets.ToString(), Lossless)}\n{loads}", freqs);
+            var (lo3, hi3) = Edges(freqs, db, -3.0);
+            output.WriteLine($"C x{scale}: 3 dB {lo3 / 1e9:F4}-{hi3 / 1e9:F4} GHz, best {db.Max():F3} dB");
+            return (lo3 + hi3) / 2;
+        }
+
+        double centre = Centre(1.0), heavier = Centre(1.2);
+        Assert.InRange(centre / f0, 0.97, 1.03);
+        Assert.InRange(heavier / centre, 0.85, 0.95);
+    }
+
+    /// <summary>The outermost frequencies either side of the response's peak where |S21| is still at least
+    /// <paramref name="levelDb"/>, walking out from the peak.</summary>
+    private static (double Lo, double Hi) Edges(double[] f, double[] db, double levelDb)
+    {
+        int peak = Array.IndexOf(db, db.Max()), lo = peak, hi = peak;
+        while (lo > 0 && db[lo - 1] >= levelDb) lo--;
+        while (hi < db.Length - 1 && db[hi + 1] >= levelDb) hi++;
+        return (f[lo], f[hi]);
+    }
+}

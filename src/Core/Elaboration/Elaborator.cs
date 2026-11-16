@@ -1637,6 +1637,12 @@ public sealed partial class Elaborator
                 result[ov.Name] = new Value(Unquote(ov.Expression));
                 continue;
             }
+            // A coupled array's Form and Feed are names, and its Ends a pattern of letters: words, kept as written.
+            if (ov.Name is "Form" or "Feed" or "Ends" && inst.Reference.Equals("MCLA", StringComparison.OrdinalIgnoreCase))
+            {
+                result[ov.Name] = new Value(Unquote(ov.Expression));
+                continue;
+            }
 
             // Frequency dependence has to TERMINATE at a model that binds `freq`. Anything else is
             // asking for a single number that does not exist, and saying so here — naming the
