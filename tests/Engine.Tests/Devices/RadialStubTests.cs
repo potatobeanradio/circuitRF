@@ -79,7 +79,7 @@ public class RadialStubTests
         Complex Yp(double r) => Complex.ImaginaryOne * omega * eps0 * eeff * alpha * r / h * shunt;
 
         double ri = MicrostripRadialStub.InnerRadius(W, Angle);
-        double roe = Ro + MicrostripRadialStub.OpenEndExtension(MicrostripRadialStub.EquivalentWidth(W, Ro, Angle), h,
+        double roe = Ro + MicrostripOpenEnd.Extension(MicrostripRadialStub.EquivalentWidth(W, Ro, Angle), h,
             Ro4350b.EpsR, p.EeffStatic);
         const int n = 20000;
         double dr = (ri - roe) / n;
@@ -111,7 +111,7 @@ public class RadialStubTests
         var line = new MicrostripLineModel(MicrostripRadialStub.EquivalentWidth(W, Ro, Angle), 0.0, Ro4350b.HMeters,
             Ro4350b.TMeters, Ro4350b.EpsR, Ro4350b.SigmaSPerM, Ro4350b.TanD, "S1");
         double ri = MicrostripRadialStub.InnerRadius(W, Angle);
-        double Roe(double f) => Ro + MicrostripRadialStub.OpenEndExtension(MicrostripRadialStub.EquivalentWidth(W, Ro, Angle),
+        double Roe(double f) => Ro + MicrostripOpenEnd.Extension(MicrostripRadialStub.EquivalentWidth(W, Ro, Angle),
             Ro4350b.HMeters, Ro4350b.EpsR, line.LineParameters(f).EeffStatic);
         double Numerator(double f)
         {

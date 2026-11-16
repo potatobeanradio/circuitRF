@@ -23,8 +23,8 @@ namespace CircuitRF.Core.Devices.Microstrip;
 /// wave sees εeff rather than εr: March takes it from a microstrip line whose width is the sector's chord at its mean
 /// radius, W_eq = (r_i + r_o)·sin(α/2). Here that line is MLIN itself (<see cref="MicrostripLineModel"/>, dispersion
 /// included), so η = η₀/√εeff and k is its β. The field also fringes past the arc, as it does past a line's open end:
-/// the arc is moved out by that line's open-end length, Kirschning, Jansen and Koster's closed form
-/// (<see href="https://doi.org/10.1049/el:19810088"/>), so r_o above is r_o + Δl. Giannini, Sorrentino and Vrba
+/// the arc is moved out by that line's open-end length, <see cref="MicrostripOpenEnd.Extension"/> (Kirschning, Jansen and Koster
+/// <see href="https://doi.org/10.1049/el:19810088"/>), so r_o above is r_o + Δl. Giannini, Sorrentino and Vrba
 /// analyse the stub as a planar circuit (<see href="https://doi.org/10.1109/TMTT.1984.1132907"/>), a mode expansion
 /// over the sector that is the more accurate reference; it is not used here.</para>
 ///
@@ -76,23 +76,6 @@ public static class MicrostripRadialStub
     }
 
     /// <summary>
-    /// The open end's length extension, m (Kirschning, Jansen and Koster): Δl/h = ξ1·ξ3·ξ5/ξ4 for a line of
-    /// <paramref name="w"/> with static effective permittivity <paramref name="eeff"/>. Their letter states it to
-    /// 2.5 % against the full-wave end-effect data it was fitted to.
-    /// </summary>
-    public static double OpenEndExtension(double w, double h, double epsR, double eeff)
-    {
-        double u = w / h;
-        double e81 = Math.Pow(eeff, 0.81), u8544 = Math.Pow(u, 0.8544);
-        double x1 = 0.434907 * (e81 + 0.26) / (e81 - 0.189) * (u8544 + 0.236) / (u8544 + 0.87);
-        double x2 = 1.0 + Math.Pow(u, 0.371) / (2.358 * epsR + 1.0);
-        double x3 = 1.0 + 0.5274 * Math.Atan(0.084 * Math.Pow(u, 1.9413 / x2)) / Math.Pow(eeff, 0.9236);
-        double x4 = 1.0 + 0.0377 * Math.Atan(0.067 * Math.Pow(u, 1.456)) * (6.0 - 5.0 * Math.Exp(0.036 * (1.0 - epsR)));
-        double x5 = 1.0 - 0.218 * Math.Exp(-7.5 * u);
-        return h * x1 * x3 * x5 / x4;
-    }
-
-    /// <summary>
     /// One sector's input impedance at the feed, Ω, at <paramref name="freqHz"/> &gt; 0. <paramref name="line"/> is the
     /// equivalent line (width <see cref="EquivalentWidth"/>) on the stub's substrate; its validity findings go to its own
     /// reporter. <paramref name="arcWavelengths"/> is the effective arc's length in guided wavelengths, for the
@@ -104,7 +87,7 @@ public static class MicrostripRadialStub
         var p = line.LineParameters(freqHz);
         double alpha = angleDeg * Math.PI / 180.0;
         double ri = InnerRadius(w, angleDeg);
-        double roe = ro + OpenEndExtension(EquivalentWidth(w, ro, angleDeg), s.HMeters, s.EpsR, p.EeffStatic);
+        double roe = ro + MicrostripOpenEnd.Extension(EquivalentWidth(w, ro, angleDeg), s.HMeters, s.EpsR, p.EeffStatic);
 
         double beta = p.BetaRadPerM;
         var series = new Complex(1.0, -2.0 * p.ConductorLossNpPerM / beta);    // 1 − jδc
