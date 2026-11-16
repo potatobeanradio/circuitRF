@@ -340,20 +340,24 @@ and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`
   likewise). It draws through them, so a change that bumps one of those generators' versions changes the part's artwork
   too and must bump the part's.
 
-## 6. Questions for the maintainer
+## 6. Possible enhancements
 
-1. **Specs as parameters** (Z0, F, and where a part has them K, N, `Coupling` or ZL), as MKLOPF does, against the "geometry is the input" rule MLIN keeps.
-   The readout shows the geometry; nothing derived is stored.
-2. **Part names.** MWPD (microstrip Wilkinson power divider, the literature's abbreviation), MBLC, MRRC, MCLC, MIDC and
-   MCBL: an M for microstrip, then the part, names of circuitRF's own rather than a commercial catalogue's.
-3. **Lumped parts outside the component, on pins**, rather than inside the PCell (which would need sub-instances in the
-   PCell contract).
-4. **`Gap` equal to the resistor's pin span**, as a stored layout choice with the 0402's span as its default.
-5. **Six new kinds in the closed registry**, all under Microstrip today; a "Dividers and couplers" palette
-   category may read better once there are several.
-6. **A parameter that sets a built-in's pins** (MWPD's `N`, 3 + 2·N), variadic on the pin count as the Combiner is on
-   its N, rather than one kind per section count; and a generated cell's pins checked against its symbol at the
-   generated count (§3.1).
+1. **Coupling between side-by-side lines.** The multi-section divider's line pairs run about `Gap` apart and are
+   stamped as two uncoupled lines (§5); EM sees the coupling and the circuit does not. A `PlanCoupledLine` per pair would
+   close that, with no new model or drawer code.
+2. **Phase compensation for MCBL.** Microstrip's odd mode is faster than its even mode, so the outputs sit about 170°
+   apart rather than 180°. A first section a few percent longer, solved in the plan, would restore 180°.
+3. **An EM cell for MIDC.** The Lange is checked in the circuit, Update Layout and LVS only: Planar cannot put a jumper
+   across a finger. A bond-wire jumper in Planar, or drawn wires in 3D, would let the example check it as it checks the
+   others.
+4. **Loop ports on cut cell instances.** A part on drawn pads whose copper closes a loop has its port (§5); a cut cell
+   instance whose pins the copper joins is still refused, since its pins are ground-referenced with no gap between two
+   of them.
+5. **A "Dividers and couplers" palette category.** Six new kinds under Microstrip make that list long; a category of
+   their own would make them easier to find.
+6. **Smooth circuit curves in the example's plots.** Each bench sweeps only the EM runs' frequencies, so every marker is
+   a solved point and the circuit line is coarse; a `.cdd` that also reads the cell's own fine sweep would draw it
+   smoothly.
 
 ## 7. References
 
