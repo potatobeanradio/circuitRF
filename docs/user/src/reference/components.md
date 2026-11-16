@@ -1980,6 +1980,114 @@ or silicon process the part takes the substrate from the technology like any lin
 > DOI [10.1002/0471221619](https://doi.org/10.1002/0471221619). Ring resonators, bandstop filters and the coupling-
 > coefficient design method.
 
+### Microstrip Ladder (MLAD) {#mlad}
+
+{{symbol: mlad}}
+
+One through line from terminal 1 to terminal 2, built from an ordered list of sections: series lines, gaps and tapers,
+and shunt stubs at junctions along it. One part holds stepped-impedance and stub lowpass filters (the elliptic kind
+included), shorted-stub bandpass and highpass filters, quarter-wave stub bandstop filters, end-coupled bandpass filters,
+DC blocks, single- and double-stub matchers and multi-section quarter-wave transformers. `Sections` is the list; `Z0` is
+the impedance of the lines the ladder is fed by, and `F` the frequency the readout states each section at. A shorted stub
+ends on a terminal `G1`, `G2`, … of its own: **the grounds are not part of the part**. Place a via to ground (VIAGND) on
+each; **Design ▸ Update Layout from Schematic** places it beside the stub's end.
+
+**The list.** Sections are separated by `;` and each is `kind(field=value, …)`, in the order they lie from terminal 1:
+
+| Section | Fields | What it is |
+|---|---|---|
+| `line(W=…, L=…)` | width, length | A series line. |
+| `gap(S=…)` | gap | A series end-to-end gap, between two ends of the width the ladder has there. |
+| `taper(W1=…, W2=…, L=…)` | the two widths, length | A series linear taper. |
+| `stub(W=…, L=…, end=…, side=…)` | width, length; `end` `open` or `short`; `side` `up`, `down` or `both` | A shunt stub at a junction, `L` from the through line's edge to its end. `end=open` and `side=up` unless stated. `both` is a stub on each side, `W` and `L` each. |
+
+A length is a number in metres, or a number with a length unit written straight after it: `1.1mm`, `250um`, `40mil`,
+`0.5cm`. A bare `m` means milli in circuitRF, not metres, so `1m` is refused. Names may be in any case, and spaces are
+ignored. The width "there" is the `Z0` line's at the ladder's ends, and past a line or taper it is that section's. A
+wrong section is refused with its number and its text, for example
+`Ladder: section 2 (stub(W=1mm)): stub needs L.`
+
+**What it is made of.** Each section is the part it would be on its own: a line is MLIN, a gap MGAP, a taper MTAPER, a
+one-sided stub an MTEE whose branch is the stub, and a two-sided stub an MCROSS. An open stub's end includes the field
+that fringes past it, as the extra length Kirschning, Jansen and Koster give for an open end. So a stub that is to be θ
+long at `F` is written that length less its open end's extension, which the readout states. The terminals sit exactly
+at the first section's start and the last section's end, so a matcher or a transformer ends on its own load.
+
+**The readout** lists every section at `F` on the technology's substrate: a line's or a stub's impedance and electrical
+length (an open stub's end extension beside it), a taper's impedance at each end and its length, and a gap's series and
+end capacitances.
+
+**Limits.** The step between two widths is not modelled, and neither is coupling between neighbouring stubs. MTEE's and
+MCROSS's junction formulas are calibrated on alumina (εr 9.9) and say so in Messages on any other board. A closed-form
+design places each stub at a point, while the model includes each junction's own reactance. That moves a filter's
+frequencies by an amount set by the junction. The two cases below where it matters most are a stub wider than the line
+it stands on, and a double-stub matcher on a load of low conductance.
+
+**Examples** on 20 mil RO4350B, each worked out from its closed form, with lengths rounded to the micrometre:
+
+- **Stepped-impedance lowpass** (Butterworth, N = 6, cutoff 2.5 GHz). Each shunt capacitor g is a 15 Ω line of
+  βl = g·15/50, and each series inductor a 120 Ω line of βl = g·50/120, at the cutoff. The −3 dB point is 2.38 GHz:
+  short lines only approximate the inductors and capacitors.
+  `line(W=5.482mm, L=1.637mm); line(W=0.114mm, L=7.026mm); line(W=5.482mm, L=6.108mm); line(W=0.114mm, L=9.597mm); line(W=5.482mm, L=4.471mm); line(W=0.114mm, L=2.572mm)`
+- **Open-stub lowpass** (Richards and Kuroda, Butterworth N = 3, cutoff 2.4 GHz). Every section is λ/8 at the cutoff.
+  The series stubs become shunt stubs by Kuroda's identity: open stubs of 100, 25 and 100 Ω joined by 100 Ω lines. The
+  25 Ω stub is drawn as two 50 Ω arms. The −3 dB point is 2.35 GHz.
+  `stub(W=0.223mm, L=9.517mm); line(W=0.223mm, L=9.661mm); stub(W=1.058mm, L=9.015mm, side=both); line(W=0.223mm, L=9.661mm); stub(W=0.223mm, L=9.517mm)`
+- **Elliptic kind**: a stepped-impedance lowpass with stubs. The prototype's shunt capacitor becomes an open stub that
+  is λ/4 at the wanted zero, here 3.12 GHz, and has the capacitor's admittance at the 2.4 GHz cutoff. The zero falls
+  at 3.21 GHz: the stub is wider than the 100 Ω line it stands on, and the junction shortens it.
+  `line(W=0.223mm, L=6.150mm); stub(W=0.635mm, L=14.274mm); line(W=0.223mm, L=6.150mm)`
+- **Shorted-stub bandpass** (Matthaei, Butterworth N = 3, centred on 2.4 GHz). Quarter-wave shorted stubs of
+  π·Z0·Δ/(4·g) are joined by quarter-wave 50 Ω lines, each stub two arms of twice that. With Δ = 1 the −3 dB band is
+  1.67 to 3.05 GHz. It has six via terminals, G1 to G6.
+  `stub(W=0.432mm, L=19.037mm, end=short, side=both); line(W=1.058mm, L=18.460mm); stub(W=1.554mm, L=18.170mm, end=short, side=both); line(W=1.058mm, L=18.460mm); stub(W=0.432mm, L=19.037mm, end=short, side=both)`
+- **Shorted-stub highpass**: the same design made wide (Δ = 1.6 about 4.8 GHz). The shorted stubs stop DC: it is below
+  −28 dB at 0.48 GHz and passes from about 2.9 GHz to 6.7 GHz, where the stubs near a half wave.
+  `stub(W=0.699mm, L=9.360mm, end=short); line(W=1.058mm, L=9.211mm); stub(W=0.699mm, L=9.360mm, end=short, side=both); line(W=1.058mm, L=9.211mm); stub(W=0.699mm, L=9.360mm, end=short, side=down)`
+- **Quarter-wave stub bandstop** (Butterworth N = 3 over Δ = 0.5 about 2.4 GHz). Open stubs of 4·Z0/(π·g·Δ) are λ/4
+  at the centre, joined by quarter-wave 50 Ω lines. The notch is at 2.415 GHz, −81 dB.
+  `stub(W=0.087mm, L=19.459mm); line(W=1.058mm, L=18.460mm); stub(W=0.681mm, L=18.573mm); line(W=1.058mm, L=18.460mm); stub(W=0.087mm, L=19.459mm)`
+- **End-coupled bandpass** (Cohn, Butterworth N = 3, 3 % wide at 10 GHz, on 25 mil alumina, where gaps reach the
+  outer couplings). Each J-inverter is a gap whose series capacitance gives it, and each half-wave resonator is shortened
+  for the inverters and for the gaps' end capacitance. The passband is centred on 10.004 GHz.
+  `gap(S=0.028mm); line(W=0.618mm, L=5.098mm); gap(S=0.576mm); line(W=0.618mm, L=5.293mm); gap(S=0.576mm); line(W=0.618mm, L=5.098mm); gap(S=0.028mm)`
+- **DC block**: one gap. Terminals 1 and 2 are separate copper. `gap(S=0.1mm)`
+- **Single-stub matcher**, 60 − j80 Ω to 50 Ω at 2 GHz: a shorted 50 Ω stub, 0.110 λ from the load. |S11| is −52 dB.
+  `stub(W=1.058mm, L=8.418mm, end=short); line(W=1.058mm, L=9.787mm)`
+- **Double-stub matcher**, 40 − j30 Ω to 50 Ω at 2 GHz: two open 70 Ω stubs λ/8 apart, the second at the load. Of the
+  two solutions, this one's stubs change least with length. |S11| is −39 dB.
+  `stub(W=0.560mm, L=40.760mm); line(W=1.058mm, L=11.079mm); stub(W=0.560mm, L=35.318mm, side=down)`
+- **Quarter-wave transformer**: three binomial sections from 50 to 100 Ω at 2.4 GHz, of 54.5, 70.7 and 91.7 Ω. |S11|
+  is −78 dB.
+  `line(W=0.910mm, L=18.569mm); line(W=0.548mm, L=18.903mm); line(W=0.289mm, L=19.224mm)`
+
+{{table: components/Mlad}}
+
+**References**
+
+> P. I. Richards, "Resistor-Transmission-Line Circuits," *Proceedings of the IRE*, vol. 36, no. 2, pp. 217–220, February
+> 1948. DOI [10.1109/JRPROC.1948.233274](https://doi.org/10.1109/JRPROC.1948.233274). Lumped elements as commensurate
+> stubs. Kuroda's identities, which turn series stubs into shunt ones, are textbook material with no DOI.
+
+> G. L. Matthaei, "Design of Wide-Band (and Narrow-Band) Band-Pass Microwave Filters on the Insertion Loss Basis," *IRE
+> Transactions on Microwave Theory and Techniques*, vol. 8, no. 6, pp. 580–593, November 1960.
+> DOI [10.1109/TMTT.1960.1124801](https://doi.org/10.1109/TMTT.1960.1124801). Quarter-wave stub filters.
+
+> S. B. Cohn, "Direct-Coupled-Resonator Filters," *Proceedings of the IRE*, vol. 45, no. 2, pp. 187–196, February 1957.
+> DOI [10.1109/JRPROC.1957.278389](https://doi.org/10.1109/JRPROC.1957.278389). End-coupled resonators.
+
+> J.-S. Hong and M. J. Lancaster, *Microstrip Filters for RF/Microwave Applications*, Wiley, 2001.
+> DOI [10.1002/0471221619](https://doi.org/10.1002/0471221619). Stepped-impedance, stub and end-coupled filters in
+> microstrip.
+
+> M. Kirschning, R. H. Jansen and N. H. L. Koster, "Accurate model for open end effect of microstrip lines,"
+> *Electronics Letters*, vol. 17, no. 3, pp. 123–125, February 1981.
+> DOI [10.1049/el:19810088](https://doi.org/10.1049/el:19810088). An open stub's end.
+
+> D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012: §5.2 and §5.3, single- and double-stub matching; §5.6,
+> binomial transformers; §8.3, §8.6 and §8.8, prototype values, stepped-impedance filters and quarter-wave stub filters.
+> A book, with no DOI: [the publisher's page](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553).
+
 ## MMIC passives {#mmic}
 
 The parts a die is drawn from. Like a microstrip line, each one takes its process from the workspace

@@ -98,6 +98,8 @@ public static class ComponentModelFactory
             CoupledLineCouplerTypeName, LangeTypeName, MarchandTypeName,
             // The coupled-resonator filters: physical geometry in, every shape and form one plan of the same sections.
             CoupledResonatorTypeName,
+            // The ladder: a list of MLIN, MGAP, MTAPER, MTEE and MCROSS sections, stamped the same way.
+            LadderTypeName,
             // Grounded coplanar waveguide and stripline (brief-artsch-1), bound to the stackup as MLIN is.
             "CPWG", "SLIN",
             // The two vias (brief-via-component.md): a signal via changing layers, and a via to ground.
@@ -287,6 +289,8 @@ public static class ComponentModelFactory
             return CreateMarchandModel(parameters);
         if (typeName.Equals(CoupledResonatorTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateCoupledResonatorModel(parameters);
+        if (typeName.Equals(LadderTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateLadderModel(parameters);
         if (typeName.Equals("VIA", StringComparison.OrdinalIgnoreCase))
             return new ViaModel(ReadViaGeometry(parameters, grounded: false));
         if (typeName.Equals("VIAGND", StringComparison.OrdinalIgnoreCase))
@@ -3135,6 +3139,17 @@ public static class ComponentModelFactory
                    key => parameters.TryGetValue(key, out var v) && v.Kind == ValueKind.String ? v.AsString() : null),
                    SubstrateOf(parameters)),
                SubstrateOf(parameters), MicrostripInstanceName(parameters, CoupledResonatorTypeName));
+
+    /// <summary>The microstrip ladder's engine token (pins 1 and 2, then G1… for each shorted stub arm).</summary>
+    public const string LadderTypeName = "MLAD";
+
+    // MLAD: the section list (Sections, text, LadderPlan's grammar) is the geometry; Z0 sets the ports' lines, F where
+    // their width is found. The pins follow the list's shorted stubs.
+    private static MicrostripPlanModel CreateLadderModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(LadderPlan.Build(
+                   parameters.TryGetValue("Sections", out var v) && v.Kind == ValueKind.String ? v.AsString() : LadderPlan.DefaultSections,
+                   GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, LadderTypeName));
 
     private static MicrostripKlopfModel CreateMicrostripKlopfModel(IReadOnlyDictionary<string, Value> parameters)
     {

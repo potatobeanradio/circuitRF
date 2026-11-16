@@ -3625,6 +3625,9 @@ public static class NetExtractor
                 // A Phased Antenna Array's Record is a path, and its Off a list that may hold spaces: both quoted, as an SnP's File is.
                 if (comp.Symbol == SymbolKind.PhasedArray && p.Name is "Record" or "Off" && !p.Expression.TrimStart().StartsWith('"'))
                     return new ParameterAssignment(p.Name, "\"" + p.Expression.Trim() + "\"", null);
+                // A ladder's Sections is its list, with spaces and commas in it: quoted likewise.
+                if (comp.Symbol == SymbolKind.Mlad && p.Name == "Sections" && !p.Expression.TrimStart().StartsWith('"'))
+                    return new ParameterAssignment(p.Name, "\"" + p.Expression.Trim() + "\"", null);
                 // The mask is a list with spaces and commas in it; unquoted, its words would read as nets.
                 string expr = p.Name == "PhaseNoise" && !p.Expression.TrimStart().StartsWith('"')
                     ? "\"" + p.Expression.Trim() + "\"" : p.Expression;

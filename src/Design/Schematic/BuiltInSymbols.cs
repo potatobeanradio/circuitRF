@@ -172,6 +172,8 @@ public static class BuiltInSymbols
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mwpdCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mclineNCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mbpdCache = new();
+    // MLAD per via-pin count, keyed by that count; Primitives takes its PIN count (2 + the shorted stub arms).
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mladCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<PhasedArrayGlyph, Symbol> _phasedArrayCache = new();
     // Tuner-family cache key: (kind, showBias) — per-instance bias-branch variant.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(SymbolKind, bool), Symbol> _tunerCache = new();
@@ -290,6 +292,7 @@ public static class BuiltInSymbols
                 return _mbpdCache.GetOrAdd(CircuitRF.Core.Devices.Microstrip.BagleyPlan.WaysForPinCount(portCount), BuildMbpd);
             case SymbolKind.Mtpd:       return _mtpd;
             case SymbolKind.Mcrc:       return _mcrc;
+            case SymbolKind.Mlad:       return _mladCache.GetOrAdd(Math.Max(0, portCount - 2), BuildMlad);
             case SymbolKind.MimCap:     return _mimCap;
             case SymbolKind.Spiral:     return _spiral;
             case SymbolKind.OctSpiral:  return _octSpiral;
@@ -2946,6 +2949,31 @@ public static class BuiltInSymbols
         Txt("1", -350, -125, fontSize: MixerPortFontSize),
         Txt("2",  350,  130, fontSize: MixerPortFontSize),
     ], SymbolKind.Mcrc);
+
+    // MLAD — a ladder as a filter on the board: a narrow, a wide and a narrow line in a row with an open stub up from the
+    // wide one, and a line down to each via pin G1… along the bottom (SymbolPortDefs.For), the ends moving out past them.
+    private static Symbol BuildMlad(int grounds)
+    {
+        double end = Math.Max(400, 100 * (grounds + 2));
+        var prims = new List<SymbolPrimitive>
+        {
+            L(-end, 0, -240, 0),
+            RRect(-160, 0, 160, 24, 4),
+            RRect(   0, 0, 160, 90, 6),
+            RRect( 160, 0, 160, 24, 4),
+            L( 240, 0,  end, 0),
+            RRect(0, -125, 24, 160, 4),
+            Txt("1", -end + 60, -30, fontSize: MixerPortFontSize, vAlign: SymbolTextVAlign.Bottom),
+            Txt("2",  end - 60, -30, fontSize: MixerPortFontSize, vAlign: SymbolTextVAlign.Bottom),
+        };
+        for (int k = 1; k <= grounds; k++)
+        {
+            double x = 100 * (2 * k - grounds - 1);
+            prims.Add(L(x, 45, x, 300));
+            prims.Add(Txt($"G{k}", x + 20, 250, fontSize: 22, align: SymbolTextAlign.Left));
+        }
+        return Sym(prims, SymbolKind.Mlad, 2 + grounds);
+    }
 
     private static Symbol BuildTestPad()
     {

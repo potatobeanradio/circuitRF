@@ -251,7 +251,8 @@ public class LibraryCatalogTests
         // end-to-end gap between two lines. The RF passives add MWPD, the Wilkinson divider, the hybrids MBLC and
         // MRRC, MCLC, MIDC and MCBL, the coupled-line coupler, the interdigitated coupler and the coupled-line balun;
         // MGPD, MBPD and MTPD, the Gysel, Bagley polygon and tee dividers; MRADIAL, the radial stub, one sector or a
-        // butterfly; MCLINN, N coupled microstrip lines; and MCRC, every coupled-resonator filter.
+        // butterfly; MCLINN, N coupled microstrip lines; MCRC, every coupled-resonator filter; and
+        // MLAD, the ladder of lines, gaps, tapers and stubs.
         var kinds = LibraryCatalog.ByCategory(ComponentCategory.Microstrip).Select(i => i.Kind).ToList();
         Assert.Contains(SymbolKind.Mlin, kinds);
         Assert.Contains(SymbolKind.MBend, kinds);
@@ -280,8 +281,9 @@ public class LibraryCatalogTests
         Assert.Contains(SymbolKind.Mbpd, kinds);
         Assert.Contains(SymbolKind.Mtpd, kinds);
         Assert.Contains(SymbolKind.Mcrc, kinds);
+        Assert.Contains(SymbolKind.Mlad, kinds);
         Assert.DoesNotContain(SymbolKind.BCLine, kinds);
-        Assert.Equal(27, kinds.Count);
+        Assert.Equal(28, kinds.Count);
     }
 
     [Fact]

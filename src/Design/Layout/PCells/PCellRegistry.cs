@@ -44,6 +44,7 @@ public static class PCellRegistry
             { PassivePlanPCells.LangeId, PassivePlanPCells.GenerateLange },
             { PassivePlanPCells.MarchandId, PassivePlanPCells.GenerateMarchand },
             { PassivePlanPCells.CoupledResonatorId, PassivePlanPCells.GenerateCoupledResonator },
+            { PassivePlanPCells.LadderId, PassivePlanPCells.GenerateLadder },
             // The recognised board's other two lines (designer report, round 16): a stripline is MLIN's strip on its
             // own layer, and a grounded coplanar line adds its side grounds.
             { CpwgPCell.GeneratorId, CpwgPCell.Generate },

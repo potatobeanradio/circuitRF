@@ -746,6 +746,11 @@ public enum SymbolKind
     /// <summary>Coupled-resonator filter on microstrip (engine "MCRC", CoupledResonatorPlan): physical geometry, N
     /// resonators of W and L and the gaps S1, S2, ..., in one of five shapes and three forms. Pins 1 in, 2 out.</summary>
     Mcrc,
+    /// <summary>Microstrip ladder (engine "MLAD", docs/design/rf-passives.md): an ordered list of series lines, gaps and
+    /// tapers and shunt stubs (Sections, LadderPlan's grammar), stored as physical geometry, plus Z0 for the ports' lines
+    /// and F for the readout. Pins 1 and 2 the through line's ends, then G1… one per shorted stub arm, for ordinary vias to
+    /// ground — so the pin count follows the list.</summary>
+    Mlad,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

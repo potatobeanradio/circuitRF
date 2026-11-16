@@ -6,7 +6,7 @@ namespace CircuitRF.Design.Layout.PCells;
 /// <summary>
 /// The planned passives' artwork (docs/design/rf-passives.md). A generator builds its part's plan in Core —
 /// the plan its model stamps — and <see cref="Draw"/> draws every section through the EXISTING part's own
-/// generator (<see cref="MTeePCell"/>, <see cref="MCurvePCell"/>, <see cref="MlinPCell"/>,
+/// generator (<see cref="MTeePCell"/>, <see cref="MCrossPCell"/>, <see cref="MCurvePCell"/>, <see cref="MlinPCell"/>,
 /// <see cref="CoupledLinePCells"/>, <see cref="MMiterPCell"/>, <see cref="MBendPCell"/>, <see cref="MGapPCell"/>,
 /// <see cref="MTaperPCell"/>, <see cref="MRadialPCell"/>; an interdigitated section's strips, and an N-line section's,
 /// each by <see cref="MlinPCell"/>; an open end draws nothing), turned and
@@ -141,6 +141,15 @@ public static class PassivePlanPCells
                 key => parameters.TryGetValue(key, out var v) && v.Kind == PCellValueKind.String ? v.AsText("") : null),
             SubstrateOf(technology, layerSelection)), technology, layerSelection);
 
+    /// <summary>The microstrip ladder (MLAD): <see cref="LadderPlan"/>'s list of sections.</summary>
+    public const string LadderId = ComponentModelFactory.LadderTypeName;
+
+    public static PCellResult GenerateLadder(
+        IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
+        => DrawOrRefuse(() => LadderPlan.Build(parameters.Text("Sections") is { Length: > 0 } list ? list : LadderPlan.DefaultSections,
+            parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9), SubstrateOf(technology, layerSelection)).Plan,
+            technology, layerSelection);
+
     /// <summary>The plan drawn, or its refusal as the cell's one diagnostic.</summary>
     private static PCellResult DrawOrRefuse(Func<PassivePlan> plan, Technology? technology, PCellLayerSelection layerSelection)
     {
@@ -175,6 +184,11 @@ public static class PassivePlanPCells
                 PlanTee t => MTeePCell.Generate(new Dictionary<string, PCellValue>
                 {
                     ["W1"] = t.W1, ["W2"] = t.W2, ["W3"] = t.W3, ["L1"] = t.L1, ["L2"] = t.L2, ["L3"] = t.L3,
+                }, technology, layerSelection),
+                PlanCross x => MCrossPCell.Generate(new Dictionary<string, PCellValue>
+                {
+                    ["W1"] = x.W1, ["W2"] = x.W2, ["W3"] = x.W3, ["W4"] = x.W4,
+                    ["L1"] = x.L1, ["L2"] = x.L2, ["L3"] = x.L3, ["L4"] = x.L4,
                 }, technology, layerSelection),
                 PlanCurve c => MCurvePCell.Generate(new Dictionary<string, PCellValue>
                 {
