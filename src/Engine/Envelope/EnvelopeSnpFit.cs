@@ -292,6 +292,10 @@ public static class EnvelopeSnpFit
         if (ws.Length == 0 || ec.IsNonlinear || ec.Model is IDcShortedTerminals
                 || ec.Model is ModSourceModel or RationalSnpModel or DelayLineModel or IInductiveBranch or WBondModel
                 || ec.Model is PropagationChannelModel   // brief-pch-6: stepped by EnvelopeChannel, never fitted
+                // brief-pch-10b R-pch10b-1 — a Phased Antenna Array keeps its value and slope at each harmonic: its coupling varies smoothly
+                // across an envelope band, a rational fit of an N-port array is never wanted, and the measure alone is a dense inversion per
+                // offset of a matrix as large as the array (minutes at 1024 elements, for a check that changed nothing)
+                || ec.Model is PhasedArrayModel or PhasedArrayFeedModel
                 or MutualInductanceModel or PortModel or TermModel or VdcModel or IdcModel or WaveformSourceModel or ToneSourceModelBase or TunerModel or P1ToneModel or PnToneModel)
             return false;
         try { return EnvelopeTangentCheck.ElementError(ec, ws, 2 * Math.PI * bandHz) > Tolerance; }

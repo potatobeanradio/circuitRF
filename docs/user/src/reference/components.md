@@ -2807,9 +2807,11 @@ PropagationChannel:CH1 tx rx Distance=250 TxHeight=10 RxHeight=1.5 PathLoss=twor
   drop is solved once. Each later drop solves only its receive side, driven by the recorded transmit waves, and the result
   is the same as solving both. A transmit array whose beam the channel picks per drop is solved once per distinct beam.
   The run says how many drops reused it. A DC supply shared by both sides prevents this. The receive side is still solved
-  in every drop. A receive array with channel cells gets much slower as it grows: one drop of a 1 µs record takes about
-  6 s at 64 elements and about 5 minutes at 256. A Monte Carlo over many drops into an array of 1024 or more elements is
-  impractical, so give such a link a pin receive end or a small array.
+  in every drop. A receive array whose channel cells are identical and linear is replaced by its feed for the run: the
+  reflection the closed array presents, with the rays arriving there, so a drop of a 1 µs record into 4096 elements takes
+  seconds. The run says so; a run with `Noise=yes` keeps the array, whose cells' noise is part of it. Nonlinear cells are
+  solved element by element: about 4 s a drop at 64 elements and a minute at 256, so a Monte Carlo over many drops into 1024
+  or more nonlinear elements is impractical.
 - **Rays.** `Multipath=none` uses the rays of the geometry: the line of sight, plus the ground ray for `tworay`.
   `Multipath=tdl` uses a tapped delay line named by `Profile=`. `Multipath=file` reads taps from `File=`, a CSV whose
   header names `delay (ns)`, `power (dB)`, and optionally `phase (deg)`, `doppler (Hz)`, `k (dB)` and `spectrum`. A sampled

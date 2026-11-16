@@ -40,6 +40,16 @@
 //  a transmit side that is not there: the joint start's own value, so a
 //  receive side with memory starts where the joint run's does.
 //
+//  The receive array replaced (brief PCH-10b R-pch10b-1). When the receive
+//  collapse is taken for every product, the run has no noise and the array
+//  transmits on no channel, the array, its feed and its channel cells are
+//  taken out of the run's netlist and a one-port at the feed takes their
+//  place, presenting the reflection Γ_F(f) the fast path closes the array
+//  to at whatever frequency it is stamped; the rays already land on the feed
+//  as Norton sources. The array's internal nets are held by 1 Ω each, the
+//  channel's harmonic-balance start reads the collapse from an untouched copy
+//  of the netlist, and everything is put back when the run ends.
+//
 //  Fading (brief PCH-7): each ray's gain is multiplied by its tap's
 //  fading at the receive time — the sum of sinusoids evaluated at t,
 //  with no state — at the reference frequency's f_D in every product
@@ -52,6 +62,7 @@ using System.Numerics;
 using CircuitRF.Core;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
+using CircuitRF.Core.Expressions;
 using RfCore.Signals;
 
 namespace CircuitRF.Engine.Envelope;
@@ -117,6 +128,51 @@ public static class EnvelopeChannel
 
     /// <summary>brief-pch-8b R-pch8b-2 — receive elements the last instance-end channel did not project onto (the collapse took its feed).</summary>
     public static int CollapsedElements { get; private set; }
+
+    /// <summary>brief-pch-10b — whether a receive array on the fast path is replaced by its feed (a test turns it off to compare).</summary>
+    public static bool ReplaceReceiveArrays { get; set; } = true;
+
+    /// <summary>brief-pch-10b R-pch10b-1 — the parts the last run took out (an array, its feed and its channel cells), 0 when none was replaced.</summary>
+    public static int ReplacedParts { get; private set; }
+
+    /// <summary>A receive array's feed while the array is out of the run: Γ_F from the fast path, solved at each product and at the product
+    /// ± the step the engine's affine stamp takes (AffineStamp: w, w ± dlt), and the line through those anywhere else near the product (the
+    /// tangent check's band edge), so a run costs three factorizations a product rather than one per frequency asked.</summary>
+    private sealed class FeedOnePortModel(ElaboratedNetlist whole, ElaboratedComponent array, double z0, IReadOnlyList<double> productHz) : ComponentModel
+    {
+        private readonly Dictionary<double, Complex> _gamma = [];
+        public override int PortCount => 1;
+        public override ModelKind Kind => ModelKind.Linear;
+
+        private Complex At(double hz)
+        {
+            lock (_gamma)
+            {
+                if (_gamma.TryGetValue(hz, out var g)) return g;
+                var (gf, why) = AntennaArray.PhasedArrayFastPath.FeedReflection(whole, array, hz);
+                return _gamma[hz] = gf ?? throw new InvalidOperationException($"envelope: the receive array '{array.InstancePath}' left the fast path at {hz:G6} Hz: {why}");
+            }
+        }
+
+        private Complex Gamma(double w)
+        {
+            // the nearest product; the baseband one is held at its value (the receive array presents what it does at 1 Hz)
+            double wk = productHz.Select(f => 2 * Math.PI * f).MinBy(x => Math.Abs(x - w));
+            if (wk <= 0) return At(1.0);
+            double dlt = AffineStamp.Delta(wk);
+            if (Math.Abs(w - wk) <= 1e-9 * wk) return At(wk / (2 * Math.PI));
+            if (Math.Abs(Math.Abs(w - wk) - dlt) <= 1e-9 * wk) return At(w / (2 * Math.PI));
+            Complex gp = At((wk + dlt) / (2 * Math.PI)), gm = At((wk - dlt) / (2 * Math.PI));
+            return At(wk / (2 * Math.PI)) + (w - wk) * (gp - gm) / (2 * dlt);
+        }
+
+        public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
+        {
+            var g = Gamma(Math.Abs(omega));
+            if (omega < 0) g = Complex.Conjugate(g);
+            mna.AddAdmittance(c.Nodes[0], 0, (1 - g) / (z0 * (1 + g)));
+        }
+    }
 
     /// <summary>The channels of one run: puts them back on <see cref="Dispose"/>, and carries their history.</summary>
     public sealed class Run : IDisposable
@@ -388,8 +444,13 @@ public static class EnvelopeChannel
             };
         }
 
+        private readonly List<Action> _restore = [];
+        internal void OnDispose(Action a) => _restore.Add(a);
+
         public void Dispose()
         {
+            foreach (var a in _restore) a();
+            _restore.Clear();
             foreach (var c in _chs) { c.Model.Stepping = false; c.Model.FrozenTimeS = c.Model.TimeOffsetS; c.Model.SteadyDrive = null; }
             foreach (var c in _ichs) { c.Model.Stepping = false; c.Model.FrozenTimeS = c.Model.TimeOffsetS; c.Model.SteadyDrive = null; }
             _chs.Clear();
@@ -413,7 +474,7 @@ public static class EnvelopeChannel
 
     /// <summary>brief-pch-8 R-pch8-3 — a channel with an instance end in its envelope form, with its cost counted and said.</summary>
     private static ICh Instance(ElaboratedNetlist nl, ElaboratedComponent ec, PropagationChannelModel m, IReadOnlyList<double> productHz, double h,
-                                ChannelRecording? drive = null, bool record = false)
+                                ChannelRecording? drive = null, bool record = false, Run? run = null, bool noise = false)
     {
         int[] txNode, txRef;
         Complex z0;
@@ -460,6 +521,10 @@ public static class EnvelopeChannel
                 CollapsedElements = rxSrc.Length;
                 rxSrc = [feedNode];
                 collapseNote = $" The receive array '{rca.Ec.InstancePath}' takes them as one source at its feed: {cols.First(c => c.Item1 is not null).Item2}";
+                // brief-pch-10b R-pch10b-1 — and when nothing else needs the array's insides, the array leaves the run
+                if (run is not null && ReplaceReceiveArrays && !noise && cols.All(c => c.Item1 is not null || c.Item2 == "")
+                    && !nl.Components.Any(o => o.Model is PropagationChannelModel om && ReferenceEquals(om.TxArray?.Ec, rca.Ec)))
+                    collapseNote += ReplaceArray(nl, run, m, rca.Ec, feedNode, cols.First(c => c.Item1 is not null).Item1!.Z0, productHz);
             }
             else collapseNote = " " + cols.FirstOrDefault(c => c.Item1 is null && c.Item2 != "").Item2;
         }
@@ -482,6 +547,34 @@ public static class EnvelopeChannel
         };
     }
 
+    /// <summary>brief-pch-10b — takes <paramref name="array"/>, its feed and its channel cells out of <paramref name="nl"/> for the run: a
+    /// one-port at <paramref name="feed"/> presents Γ_F, the array's other nets are held, and <paramref name="run"/> puts it all back.</summary>
+    private static string ReplaceArray(ElaboratedNetlist nl, Run run, PropagationChannelModel m, ElaboratedComponent array, int feed, double z0,
+                                       IReadOnlyList<double> productHz)
+    {
+        string prefix = array.InstancePath + ".";
+        bool Part(ElaboratedComponent c) => ReferenceEquals(c, array) || c.InstancePath.StartsWith(prefix, StringComparison.Ordinal);
+        var parts = nl.Components.Where(Part).ToList();
+        var inside = parts.SelectMany(c => c.Nodes.Append(c.ReferenceNode)).Where(n => n > 0 && n != feed).ToHashSet();
+        // a net inside the array that something else reaches keeps the array: the replacement would cut it
+        if (nl.Components.Any(c => !Part(c) && c.Model is not PropagationChannelModel && c.Nodes.Append(c.ReferenceNode).Any(inside.Contains))) return "";
+        var whole = nl.Copy();
+        var saved = nl.Components.ToList();
+        var holds = inside.OrderBy(n => n).Select(n => new ElaboratedComponent("R", $"__feedport_hold_{n}", [n, 0],
+                        new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(1.0) }, new ResistorModel()) { NoiseOff = true });
+        var port = new ElaboratedComponent("FeedPort", $"__feedport_{array.InstancePath}", [feed, 0], new Dictionary<string, Value>(StringComparer.Ordinal),
+                                           new FeedOnePortModel(whole, array, z0, productHz));
+        nl.Prune(Part, [port, .. holds], dispose: false);
+        m.CollapseNetlist = whole;
+        ReplacedParts = parts.Count;
+        run.OnDispose(() =>
+        {
+            nl.Prune(_ => true, saved, dispose: false);
+            m.CollapseNetlist = null;
+        });
+        return $" The array is replaced by its feed for the run (the reflection its fast path closes it to): {parts.Count} parts not stepped.";
+    }
+
     private sealed class ChannelResponseOf(PropagationChannelModel m, double carrierHz, double t0, double h) : IChannelResponse
     {
         public Complex Response(double offsetHz, double timeS)
@@ -495,9 +588,10 @@ public static class EnvelopeChannel
     /// <paramref name="record"/> keeps each transmit wave. Refuses a cycle of channels and a receive pin two channels drive.
     /// </summary>
     public static Run Apply(ElaboratedNetlist nl, IReadOnlyList<double> productHz, double h, long i0,
-                            IReadOnlyDictionary<string, ChannelRecording>? drive = null, bool record = false)
+                            IReadOnlyDictionary<string, ChannelRecording>? drive = null, bool record = false, bool noise = false)
     {
         var run = new Run(h, i0);
+        ReplacedParts = 0;
         var chans = nl.Components.Where(c => c.Model is PropagationChannelModel).ToList();
         if (chans.Count == 0) return run;
         if (PropagationChannelGraph.Cycles(nl) is { Count: > 0 } cycles)
@@ -511,7 +605,7 @@ public static class EnvelopeChannel
             m.FrozenTimeS = m.TimeOffsetS + i0 * h;
             if (m.HasInstanceEnd)
             {
-                run.Add(Instance(nl, ec, m, productHz, h, drive is not null && drive.TryGetValue(ec.InstancePath, out var ir) ? ir : null, record));
+                run.Add(Instance(nl, ec, m, productHz, h, drive is not null && drive.TryGetValue(ec.InstancePath, out var ir) ? ir : null, record, run, noise));
                 continue;
             }
             var rays = new Ray[productHz.Count][];

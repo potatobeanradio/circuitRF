@@ -297,6 +297,44 @@ public static class PhasedArrayFastPath
         return (result, Taken(parts));
     }
 
+    /// <summary>
+    /// brief-pch-10b R-pch10b-1 — Γ_F alone, the reflection the closed array presents at its feed at <paramref name="hz"/>: what a receive
+    /// array replaced by its feed presents. One factorization (M, not also Mᵀ: the transfer G is not needed), kept per resolved array,
+    /// channel, weights and frequency, and taken from a full collapse when one was made at that frequency. Null with the reason off the path.
+    /// </summary>
+    public static (Complex? GammaF, string Sentence) FeedReflection(ElaboratedNetlist nl, ElaboratedComponent array, double hz)
+    {
+        if (!Enabled) return (null, "Element by element: the array fast path is switched off.");
+        if (Split(nl, array.InstancePath) is not { } parts) return (null, "Element by element: the receive end is not a Feed-mode array.");
+        if (!parts.Path.Fast) return (null, "Element by element: " + parts.Path.Sentence);
+        var pa = parts.Array;
+        int n = pa.PortCount;
+        string key = $"{array.InstancePath}|{parts.ArrayKey}|{parts.Channel?.Key}|{pa.Feed!.WeightsKey()}|{hz.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}";
+        lock (_gate)
+        {
+            if (_receive.TryGetValue(key, out var kept)) return (kept.GammaF, Taken(parts));
+            if (_feedReflection.TryGetValue(key, out var g0)) return (g0, Taken(parts));
+        }
+        var ch = parts.Channel is { } channel ? SolveChannel(nl, channel, [hz], pa.Z0.Real)[0] : Through;
+        Complex s11 = ch[0], s12 = ch[1], s21 = ch[2], s22 = ch[3];
+        var t = new Complex[n];
+        double norm = 1 / Math.Sqrt(n);
+        for (int k = 0; k < n; k++) t[k] = pa.Lattice.IsOn(k) ? pa.Feed!.Quantised(k, hz) * norm : Complex.Zero;
+        var s = pa.SparseAt(hz);
+        var off = new HashSet<int>(Enumerable.Range(0, n).Where(k => !pa.Lattice.IsOn(k)));
+        var a = new Complex[n];
+        if (s22 == Complex.Zero) for (int k = 0; k < n; k++) a[k] = s21 * t[k];
+        else Factorise(s, s22, off).Lu.Solve(t.Select(x => s21 * x).ToArray(), a);
+        var b = new Complex[n];
+        s.Multiply(a, b);
+        Complex gammaF = 0;
+        for (int k = 0; k < n; k++) if (pa.Lattice.IsOn(k) && t[k] != Complex.Zero) gammaF += t[k] * (s11 * t[k] + s12 * b[k]);
+        lock (_gate) _feedReflection[key] = gammaF;
+        return (gammaF, Taken(parts));
+    }
+
+    private static readonly Dictionary<string, Complex> _feedReflection = [];
+
     private static string Taken(Parts parts)
         => $"Collapsed: {parts.Array.PortCount} receive elements reach the feed through one closure ({parts.Path.Sentence.Replace("Fast path: ", "")}), so each " +
            "channel's rays are stamped as one source at the feed rather than on every element.";

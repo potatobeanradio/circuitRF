@@ -5275,21 +5275,49 @@ bit-identical.
 first version of the gate's comparison take 60 s against 0.3 s for both sweeps. Read the array once.
 
 **What a drop costs (R-pch10-6)**, Debug, one drop's envelope run into a receive array with channel cells (CW, 1 µs record, 493 steps,
-one line-of-sight ray; the transmit side is a pin, so this is the receive side's cost, the part reuse cannot remove):
+one line-of-sight ray; the transmit side is a pin, so this is the receive side's cost, the part reuse cannot remove). As first measured,
+and after PCH-10b (below):
 
-| Receive array | Linear cells (3 dB attenuator) | Nonlinear cells (amplifier, IP3 20 dBm) |
-|---|---|---|
-| 64 | 6.0 s (12 ms a step), 0.5 GB | 8.6 s (17.5 ms a step) |
-| 256 | 288 s (584 ms a step), 0.6 GB | not run |
-| 1024 | not finished in 300 s; 5.3 GB when stopped | not run |
-| 4096 | not run | not run |
+| Receive array | Linear cells, as first measured | Linear cells, after PCH-10b | Nonlinear cells (amplifier), after PCH-10b's checks |
+|---|---|---|---|
+| 64 | 6.0 s | 0.5 s | 3.7 s |
+| 256 | 288 s | 0.9 s | 56 s |
+| 1024 | not finished in 300 s (5.3 GB) | 1.2 s | not finished in 300 s |
+| 4096 | not run | 5.4 s (2 GB) | not run |
 
-The step cost grows about as N^2.8 (64 → 256 elements: 48×), so **a large array with channel cells is impractical as a stepped receive
-side across many drops** — the 1024 and 4096 cases would take hours a drop, and the linear case is no better. The docs say so. What would
-change it is a receive side on the fast path that is not stepped at all (R-pch10-4's last clause), not built here:
-`docs/briefs/brief-pch-10b-unstepped-receive-array.md`.
+**The first measurement's cost was not the stepping.** It was three per-element checks the envelope makes before it steps
+(`EnvelopeTangentCheck.Measure`, `EnvelopeSnpFit.NotAffine`, `EnvelopeBaseband.Apply`), each stamping one element alone and inverting the
+result densely per offset: the array is one element with a port per element, and an instance-end channel's stamp carries two ray
+unknowns per ray — so a 2 × 2 transmit array through CDL-C (~460 rays) spent 19 s inverting ~1000 × 1000 matrices for checks whose
+answer changed nothing (an earlier version of this entry blamed `InstanceCouplings`; it takes 10-20 ms). See the PCH-10b entry below.
+A nonlinear receive array is still stepped element by element and its step cost grows faster than N (the harmonic-balance interface is
+every element's device): a Monte Carlo over many drops into 1024 or more nonlinear elements remains impractical, and the docs say so.
 
-**Separately, an instance end through a clustered delay line is slow before the first step:** a 2 × 2 transmit array through CDL-C
-(~460 rays) took 19 s against 0.15 s with one ray, nearly all of it outside the stepping (the engine's profile: 0.2 s), in building the
-per-ray element couplings (`PropagationChannelModel.InstanceCouplings`: each element's pattern evaluated from the EM record toward each
-ray, per product). PCH-8's code; noted in the follow-up brief.
+## A receive array replaced by its feed, and the checks that cost minutes (brief PCH-10b, 2026-11-15)
+
+**Three pre-stepping checks skip the channel and the arrays.** `EnvelopeTangentCheck.Measure` (the tangent warning), `EnvelopeSnpFit.NotAffine`
+(whether to fit an element) and `EnvelopeBaseband.Apply` (whether to hold an element at DC) each stamp one element alone and invert it
+densely per offset. A Phased Antenna Array is one element with a port per element: at 256 elements the three took 287 of a 288 s run, at
+1024 they did not finish in 300 s, and for the arrays measured they concluded nothing (no fit, no hold, no warning). An array's coupling
+is its record's, linear in f between record frequencies, so it is affine across an envelope band; it keeps its value and slope at each
+harmonic. The channel was already skipped by two of them and not by the baseband check, where an instance end's stamp alone carries two
+ray unknowns per ray (19 s for CDL-C's ~460 rays into a 2 × 2 array; 0.3 s after).
+
+**The receive array replaced (R-pch10b-1).** When the receive collapse is taken at every product, the run has no noise (the cells' own noise
+is part of the array) and the array transmits on no channel, `EnvelopeChannel` takes the array, its feed and its channel cells out of the
+run's netlist (`ElaboratedNetlist.Prune(…, dispose: false)`), holds the array's other nets by 1 Ω, and puts a one-port at the feed that
+presents Γ_F(f) (`PhasedArrayFastPath.FeedReflection`: one factorization of M, not also Mᵀ; cached). The rays already land on the feed as
+Norton sources; the channel's harmonic-balance start reads the collapse from an untouched copy of the netlist
+(`PropagationChannelModel.CollapseNetlist`); the run's Dispose puts everything back. The one-port solves Γ_F exactly at each product and at
+the product ± AffineStamp's dlt (the three frequencies the step's affine stamp is built from) and is the line through them anywhere else
+near the product (the tangent check's band edge): three factorizations a product. The first version solved Γ_F with both factorizations at
+every frequency asked: 66 s a drop at 4096 elements, against 5.4 s now.
+
+**Equal to the stepped array.** Both are first order around each harmonic (the stepped array affine per element, the one-port tangent to
+the exact Γ_F), so they agree to first order and could differ at second order in the offset; on the gates' 16 × 16 array they agree to the
+envelope's floor: every cube to 4.2e-10 through two rays and 9.8e-11 through CDL-C. Two cubes needed care in the comparison, not in the
+code: a PSD in dB has bins at −400 dB (round-off, compared only within 150 dB of the peak), and a CW's AM-PM is 8e-10° (held to 1e-9°
+absolute). Gates: Ui `ReceiveArrayFeedTests` — equality through rays and CDL-C with 258 parts replaced, a noisy run keeps the array, a
+reusing drop sweep into 32 × 32 replaces 1026 parts with the transmit pin solved once (64 × 64 does the same in 43 s, too long for the
+routine tier), and the couplings evaluate each pattern class once per ray (`PatternEvaluations`: 480 rays → 481, the extra one the line
+of sight the pin end's polarization is matched along; R-pch10b-2 was already so, the per-direction cache in `ArrayField.Toward`).

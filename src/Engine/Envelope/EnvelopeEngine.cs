@@ -346,7 +346,7 @@ public sealed class EnvelopeEngine
         // brief-pch-6 — every Propagation Channel is its explicit, one-way coupling for the run (EnvelopeChannel).
         foreach (var ec in _nl.Components) if (ec.Model is ICarrierContext carrierCtx) carrierCtx.SetCarrier(f0);
         using var channels = EnvelopeChannel.Apply(_nl, [.. Enumerable.Range(0, K + 1).Select(k => k * f0)], h,
-                                                   (long)Math.Round(p.StartS / h) - (int)Math.Round(p.WarmupS / h), p.ChannelDrive, p.RecordChannelWaves);
+                                                   (long)Math.Round(p.StartS / h) - (int)Math.Round(p.WarmupS / h), p.ChannelDrive, p.RecordChannelWaves, p.Noise);
         Action<int, Complex[]>? delayedMain = lines.Any || channels.Any ? (k, b) => { if (lines.Any) lines.AddMain(k, b); channels.AddMain(k, b); } : null;
         using var snpFit = EnvelopeSnpFit.Apply(_nl, K * f0 + 0.5 * rate, [.. Enumerable.Range(1, K).Select(k => k * f0)], 0.5 * rate);
         // An element whose fit was refused (any stamp whose 1 Hz / 2 Hz tangent is not exact) is held at its DC stamp for

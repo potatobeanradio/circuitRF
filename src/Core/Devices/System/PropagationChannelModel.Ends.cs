@@ -62,6 +62,11 @@ public sealed partial class PropagationChannelModel
         Interlocked.Exchange(ref _collapsedStamps, 0); Interlocked.Exchange(ref _collapseRefusals, 0); Interlocked.Exchange(ref _elementsNotStamped, 0);
     }
 
+    /// <summary>brief-pch-10b R-pch10b-2 — array element patterns evaluated toward a ray: once per pattern class and direction, the position
+    /// phase applied per element.</summary>
+    public static long PatternEvaluations => Interlocked.Read(ref _patternEvaluations);
+    private static long _patternEvaluations;
+
     /// <summary>brief-pch-8b R-pch8b-2 — stamps that took the receive collapse, stamps it refused, and receive elements not stamped by it.</summary>
     public static long CollapsedStamps => Interlocked.Read(ref _collapsedStamps);
     public static long CollapseRefusals => Interlocked.Read(ref _collapseRefusals);
@@ -78,6 +83,10 @@ public sealed partial class PropagationChannelModel
     /// <summary>(netlist, the receive array's component, frequency ≥ 0) → the collapse, or null with the sentence saying why not. Null
     /// when src/Engine has not installed it, and then every receive element is stamped.</summary>
     public static Func<ElaboratedNetlist, ElaboratedComponent, double, (ReceiveCollapse? Collapse, string Sentence)>? ReceiveCollapseSource { get; set; }
+
+    /// <summary>brief-pch-10b — the netlist the receive collapse reads the array from, while an envelope run has replaced the array by its
+    /// feed in the run's own netlist; null reads the bound one.</summary>
+    public ElaboratedNetlist? CollapseNetlist { get; set; }
 
     /// <summary>Whether the receive collapse is taken where it applies (a test turns it off to compare against the element stamp).</summary>
     public static bool CollapseEnabled { get; set; } = true;
@@ -151,6 +160,7 @@ public sealed partial class PropagationChannelModel
                     int p = rad.PatternOf[e];
                     if (!cache.TryGetValue(p, out var f))
                     {
+                        Interlocked.Increment(ref _patternEvaluations);
                         var (et, ep) = rad.At(p, th, ph);
                         f = GlobalBasis.Components(frame.ToGlobal(th, ph, et * scale, ep * scale), u);
                         cache[p] = f;
@@ -348,9 +358,9 @@ public sealed partial class PropagationChannelModel
         ReceiveCollapse? collapse = null;
         Complex[]? collapseG = null;
         Complex norton = 0;
-        if (_rxArray is not null && CollapseEnabled && ReceiveCollapseSource is { } src0 && _netlist is not null)
+        if (_rxArray is not null && CollapseEnabled && ReceiveCollapseSource is { } src0 && (CollapseNetlist ?? _netlist) is { } colNl)
         {
-            var (col, sentence) = src0(_netlist, _rxEc!, f);
+            var (col, sentence) = src0(colNl, _rxEc!, f);
             CollapseSentence = sentence;
             if (col is not null)
             {

@@ -147,13 +147,14 @@ public sealed class ElaboratedNetlist : IDisposable
     /// brief-pch-10 R-pch10-4 — removes the components <paramref name="remove"/> picks (disposing any that holds something, as
     /// <see cref="Dispose"/> would) and appends <paramref name="add"/>, rebuilding the index lists that name positions. The nodes are kept:
     /// a removed component's nets stay unknowns, which the caller must hold (a drop that reuses its transmit side holds them with a
-    /// resistor each). Called before anything reads indices.
+    /// resistor each). Called before anything reads indices. brief-pch-10b — <paramref name="dispose"/> false for parts taken out for one run
+    /// and put back after it.
     /// </summary>
-    public void Prune(Func<ElaboratedComponent, bool> remove, IEnumerable<ElaboratedComponent> add)
+    public void Prune(Func<ElaboratedComponent, bool> remove, IEnumerable<ElaboratedComponent> add, bool dispose = true)
     {
         var kept = Components.Where(c => !remove(c)).ToList();
         foreach (var c in Components)
-            if (remove(c) && c.Model is IDisposable d)
+            if (dispose && remove(c) && c.Model is IDisposable d)
                 try { d.Dispose(); }
                 catch (Exception ex) when (ex is not OutOfMemoryException) { }
         Components.Clear();

@@ -48,3 +48,13 @@ element. Element patterns over a drop's ray directions are evaluated together wh
 ## Not here
 
 Nonlinear receive arrays (they must be stepped); beam tracking within a drop.
+
+## Completion note (2026-11-15)
+
+- R-pch10b-1 built: `EnvelopeChannel` replaces a fast-path receive array, its feed and its cells by a one-port presenting Γ_F at the feed
+  (`PhasedArrayFastPath.FeedReflection`), for a noiseless run whose array transmits on no channel; equal to the stepped array to 4.2e-10
+  (two rays) and 9.8e-11 (CDL-C). Gate 2's sweep runs at 32 × 32 in the routine tier (64 × 64 is 43 s).
+- R-pch10b-2 was already met (one pattern evaluation per class and direction); gate 3 counts it. The slow setup the gap named was not the
+  couplings but three pre-stepping element checks inverting the array's and the channel's stamps densely; they now skip both.
+- R-pch10b-3: 64 / 256 / 1024 / 4096 linear elements 0.5 / 0.9 / 1.2 / 5.4 s a drop (from 6 s / 288 s / over 300 s / not run); nonlinear
+  64 / 256 elements 3.7 / 56 s, 1024 over 300 s. `src/Engine/RESOLVED.md`.

@@ -217,7 +217,7 @@ public sealed class EnvelopeEngineMt
         using var lines = EnvelopeLineDelay.Apply(_nl, [.. wMix.Select(w => Math.Abs(w) / (2 * Math.PI))], h, 0.5 * need);
         // brief-pch-6 — every Propagation Channel is its explicit, one-way coupling, each product in its |w| frame (EnvelopeChannel).
         foreach (var ec in _nl.Components) if (ec.Model is ICarrierContext carrierCtx) carrierCtx.SetCarrier(tones.Average());
-        using var channels = EnvelopeChannel.Apply(_nl, [.. wMix.Select(w => Math.Abs(w) / (2 * Math.PI))], h, i0, p.ChannelDrive, p.RecordChannelWaves);
+        using var channels = EnvelopeChannel.Apply(_nl, [.. wMix.Select(w => Math.Abs(w) / (2 * Math.PI))], h, i0, p.ChannelDrive, p.RecordChannelWaves, p.Noise);
         Action<int, Complex[]>? delayedMain = lines.Any || channels.Any ? (m, b) => { if (lines.Any) lines.AddMain(m, b); channels.AddMain(m, b); } : null;
         using var snpFit = EnvelopeSnpFit.Apply(_nl, stampHz.DefaultIfEmpty(0).Max() + 0.5 * rate, stampHz, 0.5 * rate);
         using var baseband = EnvelopeBaseband.Apply(_nl, Math.PI * need);    // as in EnvelopeEngine

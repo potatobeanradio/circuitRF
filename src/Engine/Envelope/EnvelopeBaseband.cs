@@ -127,7 +127,10 @@ public static class EnvelopeBaseband
         {
             var ec = nl.Components[i];
             if (ec.IsNonlinear || ec.Model is ModSourceModel or IInductiveBranch or MutualInductanceModel or PortModel or TermModel
-                    or VdcModel or IdcModel or WaveformSourceModel or ToneSourceModelBase or TunerModel or P1ToneModel or PnToneModel or DelayLineModel)
+                    or VdcModel or IdcModel or WaveformSourceModel or ToneSourceModelBase or TunerModel or P1ToneModel or PnToneModel or DelayLineModel
+                    // brief-pch-10b — stepped by EnvelopeChannel (H(0) = 0); stamped alone, an instance end's ray unknowns (two a ray) made
+                    // this check a dense inversion of ~1000 unknowns per call: 19 s of a 2 × 2 array's CDL-C run
+                    or PropagationChannelModel or PhasedArrayModel or PhasedArrayFeedModel)   // an array: as EnvelopeSnpFit.NotAffine says
                 continue;
             var model = new BasebandHeldModel(ec.Model, ec);
             var replacement = new ElaboratedComponent(ec.ComponentType, ec.InstancePath, ec.Nodes, ec.Parameters, model)

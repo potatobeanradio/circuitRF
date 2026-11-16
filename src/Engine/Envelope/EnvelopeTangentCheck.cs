@@ -46,7 +46,9 @@ public static class EnvelopeTangentCheck
         if (ws.Length == 0) return list;
         foreach (var ec in nl.Components)
         {
-            if (ec.IsNonlinear || ec.Model is ModSourceModel or DelayLineModel or PropagationChannelModel) continue;
+            // brief-pch-10b — nor an array: its coupling is the record's, linear in f between record frequencies (affine across a band),
+            // and measuring it is a dense inversion as large as the array per offset (EnvelopeSnpFit.NotAffine)
+            if (ec.IsNonlinear || ec.Model is ModSourceModel or DelayLineModel or PropagationChannelModel or PhasedArrayModel or PhasedArrayFeedModel) continue;
             double worst;
             try { worst = ElementError(ec, ws, bandRad); }
             catch (Exception) { continue; }    // an element that cannot be stamped or terminated alone is the run's to refuse, not this check's
