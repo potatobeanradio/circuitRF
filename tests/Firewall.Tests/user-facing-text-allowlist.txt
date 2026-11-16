@@ -1491,7 +1491,6 @@ src/Engine/Envelope/EnvelopeEngine.cs|envelope step {h:G4} s does not divide the
 src/Engine/Envelope/EnvelopeEngine.cs|envelope step {step} (t = {p.StartS + (step - nWarm) * h:G4} s) did not converge, even split into {MaxStepSplit} sub-steps
 src/Engine/Envelope/EnvelopeEngine.cs|envelope: singular port impedance matrix
 src/Engine/Envelope/EnvelopeEngine.cs|envelope: the harmonic-balance start point did not converge
-src/Engine/Envelope/EnvelopeEngine.cs|envelope: the linear network's size changes with frequency (a model adds unknowns only at some frequencies)
 src/Engine/Envelope/EnvelopeEngineMt.cs|envelope step {step} (t = {p.StartS + (step - nWarm) * h:G4} s) did not converge, even split into {EnvelopeEngine.MaxStepSplit} sub-steps
 src/Engine/Envelope/EnvelopeEngineMt.cs|envelope: mixing products {lat.Label(a)} and {lat.Label(b)} fall on the same frequency 
 src/Engine/Envelope/EnvelopeEngineMt.cs|envelope: the multi-tone harmonic-balance start point did not converge
@@ -1846,11 +1845,16 @@ src/Core/Devices/VSwitchModel.cs|VSwitch: TransitionPoints must be at least 1.
 src/Core/Devices/VSwitchModel.cs|VSwitch: Von and Voff must differ — the switch moves between them, and a transition of no width is a step no analysis can resolve.
 src/Core/Devices/VSwitchModel.cs|VSwitch: {key} is not a finite number.
 src/Core/Devices/VSwitchModel.cs|VSwitch: {key} must be a number.
+src/Core/Expressions/Evaluator.Reductions.cs|outage_over(): the threshold must be a number, e.g. outage_over(x, -95).
+src/Core/Expressions/Evaluator.cs|{cl.Name}(): the channel and the quantity are both quoted, e.g. {cl.Name}(\"CH1\", \"Gain_dB\").
 
 # ── brief TRN-7: ngspice as a transient solver (2026-11-15) ─────────────────────────────────
 # The ngspice run's refusals are TransientRefusedException, as every other transient refusal is; the rawfile reader's and
 # the 7z reader's are format invariants of a file circuitRF did not write.
 src/Design/Em3d/Install/SevenZip.cs|the archive entry '{key}' would be written outside {root}
+src/Engine/AffineStamp.cs|the linear network's size changes with frequency (a model adds unknowns only at some frequencies)
+src/Engine/Envelope/EnvelopeChannel.cs|envelope: the receive array '{array.InstancePath}' left the fast path at {hz:G6} Hz: {why}
+src/Engine/Envelope/EnvelopeDropReuse.cs|envelope drop reuse: the replayed run has {nt} samples and its recording {joint.Time.Length}.
 src/Engine/Transient/NgspiceRunner.cs|it holds no transient plot
 src/Engine/Transient/NgspiceRunner.cs|ngspice at '{program}' could not be started: {ex.Message}
 src/Engine/Transient/NgspiceRunner.cs|the ngspice run was cancelled
@@ -1884,3 +1888,22 @@ src/Engine/HarmonicBalance/HbTransientSeed.cs|{who}: SeedPeriods must be auto or
 src/Engine/HarmonicBalance/HbTransientSeed.cs|{who}: SeedTol must be a number between 0 and 1, not '{seedTol}'.
 src/Engine/HarmonicBalance/HbTransientSeed.cs|{who}: the seed needs a fundamental frequency.
 src/Engine/HarmonicBalance/HbTransientSeed.cs|{who}: the seed run ended before one whole period.
+src/Engine/Transient/TransientEngine.cs|{who} cannot run: 
+src/Engine/Transient/TransientEngine.cs|{who}: IC names '{name}', which is not a net of the circuit.
+src/Engine/Transient/TransientEngine.cs|{who}: Start must be before Stop.
+src/Engine/Transient/TransientEngine.cs|{who}: Stop must be a positive time.
+src/Engine/Transient/TransientEngine.cs|{who}: the DC operating point did not converge. InitialState=zero starts the run without one.
+src/Engine/Transient/TransientEngine.cs|{who}: the starting state did not converge. {failure} InitialState=zero starts the run without one.
+src/Engine/Transient/TransientRunner.cs|not a finite number
+src/Engine/Transient/TransientRunner.cs|{who}: IC entries are net=value, not '{item}'.
+src/Engine/Transient/TransientRunner.cs|{who}: InitialState must be op or zero, not '{a.InitialState}'.
+src/Engine/Transient/TransientRunner.cs|{who}: MaxStep must be a positive time or auto.
+src/Engine/Transient/TransientRunner.cs|{who}: MaxSteps must be at least 1.
+src/Engine/Transient/TransientRunner.cs|{who}: Method must be trap or gear2, not '{a.Method}'.
+src/Engine/Transient/TransientRunner.cs|{who}: RelTol, VTol and ITol must be positive.
+src/Engine/Transient/TransientRunner.cs|{who}: Solver must be native or ngspice, not '{a.Solver}'.
+src/Engine/Transient/TransientRunner.cs|{who}: Step must be a positive time.
+src/Engine/Transient/TransientRunner.cs|{who}: Stop is required.
+src/Engine/Transient/TransientRunner.cs|{who}: Stop must be a positive time.
+src/Engine/Transient/TransientRunner.cs|{who}: {key} is read by the ngspice solver only; the native solver takes no {key}.
+src/Engine/Transient/TransientRunner.cs|{who}: {key}={expr} cannot be evaluated: {ex.Message}

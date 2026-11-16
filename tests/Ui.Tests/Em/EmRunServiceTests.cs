@@ -84,7 +84,11 @@ public sealed class EmRunServiceTests : IDisposable
         Assert.Equal(EmRunStatus.Refused, run.Status);
         Assert.Equal("em.refused.memory", run.Diagnostic!.Id);
         Assert.Equal(Em3dMemoryLevel.Severe, asked!.Level);
-        Assert.Contains("calibration standards", asked.Text, StringComparison.Ordinal);
+        // ICP-10: past the limit with its standards, the run is retried with its drawn edge ports Uncalibrated, and the warning
+        // names what the standards would have cost; the retry is still past the limit on its own figure, so that is what it asks.
+        Assert.Contains(run.Warnings, w => w.Contains("are solved as Uncalibrated Ports", StringComparison.Ordinal)
+                                           && w.Contains("of it for the calibration standards", StringComparison.Ordinal));
+        Assert.DoesNotContain("calibration standards", asked.Text, StringComparison.Ordinal);
         Assert.Contains("--force", run.Error, StringComparison.Ordinal);
 
         var pre = EmRunService.Preflight(setup, source, memoryCeilingBytes: Machine);
