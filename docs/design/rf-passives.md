@@ -2,7 +2,8 @@
 
 **Status:** six parts — MWPD, the Wilkinson divider, with its unequal-split (`K`) and multi-section (`N`) variants; MBLC
 and MRRC, the branch-line and rat-race hybrids; MCLC, MIDC and MCBL, the coupled-line coupler, interdigitated coupler
-and balun; MWPD's and MRRC's rings curved or cornered (`Corner`) · **Date:** 2026-11-16
+and balun; MWPD's and MRRC's rings curved or cornered (`Corner`); the N-line coupled section and its part, MCLINN ·
+**Date:** 2026-11-16
 
 Dividers, couplers and baluns on microstrip, each one built-in part that is defined once and read the same way by the
 schematic, the layout, LVS and EM. Each part has its own subsection in §3.
@@ -20,7 +21,7 @@ one standard, generic design rather than six one-off parts. The rest of this sec
 takes the part's specs and the substrate and returns a `PassivePlan`: the part's pin names, and a list of sections. A
 section is an EXISTING microstrip part placed in the passive's frame — an MTEE (`PlanTee`), an MCURVE (`PlanCurve`),
 an MLIN (`PlanLine`), an MMITER or MBEND corner (`PlanBend`), an MCLIN or a set of interdigitated strips
-(`PlanCoupledLine`) — with the plan node each of its pins joins and a pose (where its pin 1 sits, a turn in quarters). Nothing in a plan is a new kind of line: it is the
+(`PlanCoupledLine`), N coupled strips (`PlanCoupledStrips`, §3.5) — with the plan node each of its pins joins and a pose (where its pin 1 sits, a turn in quarters). Nothing in a plan is a new kind of line: it is the
 vocabulary circuitRF already has, arranged. Every dimension is held on a 2 nm grid
 (`PassivePlan.OnGrid`), so halves are whole database units and two pieces that meet in the plan meet to the last unit
 in the artwork.
@@ -304,6 +305,83 @@ against their quarter waves and joined (`WilkinsonPlanTests`, `HybridPlanTests`)
 and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`WilkinsonSParamTests`,
 `HybridSParamTests`), and `testdata/schematic-to-layout/F8d-wilkinson-mitred` through Update Layout and LVS.
 
+### 3.5 The N-line coupled section (`PlanCoupledStrips`, MCLINN)
+
+A strip of an interdigital or combline filter, or of any array of coupled lines, couples to both neighbours at once and
+more weakly to the strips beyond them. A cascade of two-line MCLIN sections cannot say that, and Ou's equations
+(MIDC) keep only neighbours. The N-line section is the one piece that does: N strips, each of its own width `W[k]`,
+with a gap of its own `S[k]` below each but the last, all of length `L`, on the part's substrate.
+
+**The method** (Tripathi and Lee, [10.1109/22.20041](https://doi.org/10.1109/22.20041); Paul,
+[10.1109/9780470547212](https://doi.org/10.1109/9780470547212)). `MicrostripMultiLineModel` builds the cross-section as
+MLIN's: the strips at H to H + T over a ground plane, the substrate below them, air above. `QuasiStaticSolver2D`, which
+the broadside pairs already use, solves it twice: with the dielectric (the Maxwell C) and without it (C₀), and
+L = μ₀ε₀·C₀⁻¹. Loss: R is MLIN's Wheeler form per strip, R_kk = 2·Rs·Kr/W_k, which gives a symmetric pair's modes
+exactly MCLIN's conductor loss; G = ω·tanδ·εr/(εr − 1)·(C − C₀), MLIN's filling-factor form in matrix form (exactly MLIN's
+per mode, and ω·tanδ·C in a homogeneous dielectric). The 2N-port is the modal one. The lossless modes of L·C give Tv and
+Ti, each mode is an ordinary line of Zc = √(Zm/Ym) and γ = √(Zm·Ym), and the short-circuit admittance is
+Σ_m Ti[:,m]·y_m·Ti[:,m]ᵀ/e_m, with y_m the mode's coth and csch terms (`CLineModel.Modal`, shared with CLIN's).
+
+**One copy of the modal math.** The MoM quasi-static kernel already had it (`ModalDecomposition`, `RlgcToSparams`),
+in Engine, which Core cannot reference. It moved to RfCore as `MulticonductorLine`: the lossless eigenproblem and its
+ordering, the `Ti` normalisation, the per-frequency modal Z and Y with their coupling residual, and the block sum, which
+gives the open-circuit Z over Tv and the short-circuit Y over Ti. Engine's classes keep their public shape and call it,
+and the kernel's tests pass unchanged.
+
+**Solved once per geometry.** The solve runs at the first stamp, not per frequency, and is cached process-wide by the
+exact widths, gaps and substrate, as `BroadsideCoupledPair` caches its pairs. It takes about half a second in the debug
+build for three strips on a board.
+
+**Its limits, and what it says.** It is quasi-static, so there is no dispersion: each mode keeps its static εeff and
+Zc at every frequency. Past a cross-section of a tenth of the wavelength in the dielectric, the instance says so
+(`BroadsideCoupledPair.ReportQuasiStatic`, the broadside pairs' check, now shared). The solver's stated accuracy holds:
+C within about 0.5 % for strips with thickness, Z up to about 1.2 % low for zero-thickness ones, which it also says.
+Loss rides perturbatively on the lossless modes (Route A, with its residual), and the per-strip R leaves out current
+crowding between close strips. The solver's grid is not mirror-exact, so a symmetric set of strips is symmetric to about
+1e-3 in its modes and its S-parameters. Against MCLIN on 20 mil RO4350B at 1 GHz, with W = 1.1 mm and S = 0.2 and
+0.5 mm, Ze and Zo agree within 0.4 % and 1.2 %, the modal εeff within 0.4 %, and a 45 mm pair's S-parameters within 0.008
+(`MicrostripMultiLineTests`).
+
+**As a plan section.** `PlanCoupledStrips` carries `W` and `S` as lists; its nodes are `PlanCoupledLine`'s, each strip's
+near end and then its far end, top strip first. The model's pins are every near end and then every far end, so strip
+k's nodes 2k − 1 and 2k are its pins k and N + k (`ModelNodes`). `MicrostripPlanModel` stamps it through the N-line model
+and counts each strip as its own copper island; `PassivePlanPCells.Draw` draws one MLIN per strip, strip k's centre
+below strip k − 1's by their half widths and the gap between them, which for equal strips is exactly the old
+k·(W + S). `PlanCoupledLine` is unchanged: two fingers are MCLIN and an even set is Ou's interdigitated section, so the
+six parts above stamp and draw bit for bit as before. A plan asks for the N-line model by placing a `PlanCoupledStrips`,
+for any N and any widths, two strips included.
+
+**As a part, MCLINN.** The same model is a built-in element: N (3), W, S, L, with `W[k]` and `S[k]` rows for a strip or a
+gap of its own, as the Combiner's `IL[k]` are. Its 2N pins follow N (`EditableSchematic.PortCount`,
+`SymbolPortDefs.For`, `BuiltInSymbols.Primitives`, `InstanceNetContract`'s `N` rule), the near ends down the left and
+the far ends down the right. Its layout cell is a one-section plan through the same drawer, and LVS compares its
+parameters, the indexed ones included (`F14-coupled-lines`: a changed `W[2]` is one `lvs.property.mismatch`). Tests:
+`MicrostripMultiLineTests` (MCLIN at N = 2; three equal strips reciprocal, end-to-end and mirror symmetric, passive, with
+the odd, even and middle modes; a section with an internal node equal to MCLINN and MLIN wired by hand to 1e-9),
+`CoupledStripsPartTests` (registration, pins, artwork, the cross-section on the RFIC stack).
+
+**Which parts use it.** MCLINN, and through `PlanCoupledStrips` the parts still to come: the coupled-line array
+(interdigital, combline, pseudo-interdigital and multi-line couplers). It is also what MIDC's non-adjacent fingers and
+MWPD's side-by-side section pairs need (§5, §6); neither uses it yet, which keeps them as they were.
+
+**Possible enhancements.**
+
+1. **Dispersion.** A per-mode frequency correction, or a full-wave cross-section solve, would track the modes' εeff as
+   it rises with f·h, because a long resonator's quasi-static phase runs a few percent fast at the top of a board's
+   range.
+2. **Loss from the solved field.** The solver already returns ∮σ² over every conductor, and the broadside pairs' loss is
+   built on it. The full R matrix from it would count the current crowding on facing edges, which the per-strip
+   Wheeler R misses and which matters most in narrow-gap filters.
+3. **Coupled open ends.** An open-ended array (interdigital, combline) needs each strip end's fringing, and the end of a
+   coupled strip differs from MLIN's. The open-end Δl generalised to N strips would set the resonators' lengths right.
+4. **An option on MIDC and MWPD to model every coupling.** Placing their fingers or section pairs as one
+   `PlanCoupledStrips` would close §5's uncoupled-pairs limit and give the Lange its non-adjacent coupling. It belongs
+   in an option, so that their defaults stay as they are.
+5. **A "+" for `W[k]` and `S[k]`.** The rows are typed by hand today, as the Combiner's are. An indexed group in the
+   Properties editor (`UserParamTemplate`) would add a strip's width and gap in one click.
+6. **A mirror-symmetric grid.** Grading the solver's grid out from the cross-section's centre would make a symmetric set
+   of strips symmetric to round-off, so that a test, or an even/odd readout, could ask for exact symmetry.
+
 ## 4. What a new topology costs
 
 1. `src/Core/Devices/Microstrip/<X>Plan.cs` — the pure plan (and a section kind, with one case in
@@ -343,8 +421,8 @@ and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`
 ## 6. Possible enhancements
 
 1. **Coupling between side-by-side lines.** The multi-section divider's line pairs run about `Gap` apart and are
-   stamped as two uncoupled lines (§5); EM sees the coupling and the circuit does not. A `PlanCoupledLine` per pair would
-   close that, with no new model or drawer code.
+   stamped as two uncoupled lines (§5); EM sees the coupling and the circuit does not. A `PlanCoupledStrips` per pair
+   (§3.5) would close that, with no new model or drawer code.
 2. **Phase compensation for MCBL.** Microstrip's odd mode is faster than its even mode, so the outputs sit about 170°
    apart rather than 180°. A first section a few percent longer, solved in the plan, would restore 180°.
 3. **An EM cell for MIDC.** The Lange is checked in the circuit, Update Layout and LVS only: Planar cannot put a jumper
@@ -418,6 +496,15 @@ and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`
 > W. P. Ou, "Design Equations for an Interdigitated Directional Coupler," *IEEE Transactions on Microwave Theory and
 > Techniques*, vol. 23, no. 2, pp. 253–255, February 1975.
 > DOI [10.1109/TMTT.1975.1128534](https://doi.org/10.1109/TMTT.1975.1128534).
+
+> V. K. Tripathi and H. Lee, "Spectral-Domain Computation of Characteristic Impedances and Multiport Parameters of
+> Multiple Coupled Microstrip Lines," *IEEE Transactions on Microwave Theory and Techniques*, vol. 37, no. 1,
+> pp. 215–221, January 1989. DOI [10.1109/22.20041](https://doi.org/10.1109/22.20041). The N-line section's multiport
+> parameters from its modes.
+
+> C. R. Paul, *Analysis of Multiconductor Transmission Lines*, 2nd ed., Wiley-IEEE Press, 2007.
+> DOI [10.1109/9780470547212](https://doi.org/10.1109/9780470547212). The modal decomposition the N-line section and
+> the MoM quasi-static kernel share.
 
 > N. Marchand, "Transmission-Line Conversion Transformers," *Electronics*, vol. 17, no. 12, pp. 142–145, December 1944.
 > A trade magazine, with no DOI: [a scan of the issue](https://www.worldradiohistory.com/Archive-Electronics/40s/Electronics-1944-12.pdf).

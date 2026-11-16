@@ -17,7 +17,7 @@
 //
 //  Reference:
 //    • C. R. Paul, "Analysis of Multiconductor Transmission Lines",
-//      2nd ed., Wiley-IEEE Press, 2008, doi:10.1109/9780470547212 —
+//      2nd ed., Wiley-IEEE Press, 2007, doi:10.1109/9780470547212 —
 //      the modal (Tv, Ti) formulation of the 2N-port.
 // ================================================================
 

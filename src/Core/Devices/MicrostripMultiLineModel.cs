@@ -40,7 +40,8 @@ public sealed record MultiLineSection(Mat<double> C, Mat<double> C0, Mat<double>
 /// H + T over a ground plane, the substrate below them, air above — is solved by circuitRF's own 2D field solver
 /// (<see cref="QuasiStaticSolver2D"/>) twice, with the dielectric (C) and without (C₀); L = μ₀ε₀·C₀⁻¹. Conductor loss is
 /// MLIN's Wheeler form per strip, R_kk = 2·Rs·Kr/W_k (<see cref="MicrostripLoss.ConductorLossNpPerM"/> is Rs·Kr/(Z·W) = R/(2Z)),
-/// so a symmetric pair's modes carry exactly MCLIN's conductor loss; G is the filling-factor form above. The 2N-port is
+/// so a symmetric pair's modes carry exactly MCLIN's conductor loss; G = ω·tanδ·εr/(εr − 1)·(C − C₀), MLIN's
+/// filling-factor form (<see cref="MultiLineSection.CComplex"/>). The 2N-port is
 /// the modal one (<see cref="MulticonductorLine"/>, shared with the MoM quasi-static kernel): the modes of L·C from the
 /// lossless problem, each an ordinary line of its own Zc = √(Zm/Ym) and γ = √(Zm·Ym), recombined through Ti into the
 /// short-circuit admittance, Y = Σ_m Ti[:,m]·y_m·Ti[:,m]ᵀ/e_m.</para>
@@ -71,11 +72,10 @@ public sealed class MicrostripMultiLineModel : ComponentModel, IReportsWarnings,
     private readonly double _l;
     private readonly MicrostripSubstrate _sub;
     private readonly MicrostripValidityReporter _reporter;
+    private readonly Lazy<MultiLineSection> _section;
 
     /// <summary>Strips, N.</summary>
     public int Strips => _n;
-
-    private readonly Lazy<MultiLineSection> _section;
 
     /// <summary>The solved cross-section this instance stamps: solved at its first use (the first stamp of a sweep), not
     /// at construction, so building the part to ask its pin count costs no field solve.</summary>
@@ -199,6 +199,8 @@ public sealed class MicrostripMultiLineModel : ComponentModel, IReportsWarnings,
     }
 
     /// <summary>[R](f): MLIN's Wheeler conductor loss per strip, diagonal; none for a perfect conductor.</summary>
+    // ponytail: per-strip Wheeler R, no proximity crowding between close strips; the solver's ∮σ² over every conductor
+    // (CrossSectionSolution.SurfaceChargeSquare, the broadside pairs' loss) gives the full R matrix when narrow gaps need it.
     private Mat<double> Resistance(double freqHz)
     {
         var r = new Mat<double>(_n, _n);
