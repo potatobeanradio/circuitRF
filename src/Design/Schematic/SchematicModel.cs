@@ -724,6 +724,9 @@ public enum SymbolKind
     /// Gap between its two quarter-wave sections (MarchandBalunPlan). Pins 1 unbalanced, 2 and 3 balanced, G2 and G3 the
     /// strips' grounded ends — for ordinary vias to ground, not part of the part.</summary>
     Mcbl,
+    /// <summary>Coupled-resonator filter on microstrip (engine "MCRC", CoupledResonatorPlan): physical geometry, N
+    /// resonators of W and L and the gaps S1, S2, ..., in one of five shapes and three forms. Pins 1 in, 2 out.</summary>
+    Mcrc,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

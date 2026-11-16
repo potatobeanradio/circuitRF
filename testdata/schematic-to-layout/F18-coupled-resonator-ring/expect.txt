@@ -1,0 +1,7 @@
+# MCRC, Ring: one ring a guided wavelength round, fed across a gap at either side; each port on its feed
+# gap's outer end.
+Info CRC1 added
+Info P1 port 1 placed at CRC1 pin 1
+Info P2 port 2 placed at CRC1 pin 2
+port P1 1
+port P2 2

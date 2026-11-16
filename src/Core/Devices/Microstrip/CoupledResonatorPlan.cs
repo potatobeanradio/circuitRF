@@ -541,18 +541,20 @@ public static class CoupledResonatorPlan
     // ── Ring ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>One ring of centre-line circumference L, two 180° MCURVEs, fed at its leftmost and rightmost points
-    /// across an MGAP of S1 and S2 from line ends facing it.</summary>
+    /// across an MGAP of S1 and S2 from the end of a feed line one width long, the pin at its outer end.</summary>
     private static void Ring(Builder b, CoupledResonatorSpec p)
     {
         b.Context = "ring";
         double w = G(p.W[0]), r = G(p.L[0] / (2.0 * Math.PI)), s1 = G(p.S[1]), s2 = G(p.S[2]);
         int left = b.Node(), right = b.Node();
-        var feed = new Pen(-r - w / 2.0 - s1, 0.0, 0, w, 1);
+        var feed = new Pen(-r - w / 2.0 - s1 - w, 0.0, 0, w, 1);
         b.Pin1 = feed;
-        b.Gap(feed, s1, left, ends: false);
+        b.Gap(b.Line(feed, w), s1, left, ends: false);
         b.Sections.Add(new PlanCurve(w, 180.0, r, [left, right], -r, 0.0, 270.0));
         b.Sections.Add(new PlanCurve(w, 180.0, r, [right, left], r, 0.0, 90.0));
-        b.Gap(new Pen(r + w / 2.0, 0.0, 0, w, right), s2, 2, ends: false);
+        int outer = b.Node();
+        b.Gap(new Pen(r + w / 2.0, 0.0, 0, w, right), s2, outer, ends: false);
+        b.Line(new Pen(r + w / 2.0 + s2, 0.0, 0, w, outer), w, end: 2);
     }
 
     // ── Bandstop ─────────────────────────────────────────────────────────────────────────────────────────────────

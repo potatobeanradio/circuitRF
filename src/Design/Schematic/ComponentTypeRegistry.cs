@@ -6,6 +6,11 @@ using CircuitRF.Core.Matching;
 using CircuitRF.Core.Systems;
 using CircuitRF.WBond;
 using PlanCorner = CircuitRF.Core.Devices.Microstrip.PlanCorner;
+using ResonatorShape = CircuitRF.Core.Devices.Microstrip.ResonatorShape;
+using ResonatorProfile = CircuitRF.Core.Devices.Microstrip.ResonatorProfile;
+using ResonatorFeed = CircuitRF.Core.Devices.Microstrip.ResonatorFeed;
+using ResonatorForm = CircuitRF.Core.Devices.Microstrip.ResonatorForm;
+using LoopArrangement = CircuitRF.Core.Devices.Microstrip.LoopArrangement;
 
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout.PCells;
@@ -860,6 +865,12 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MCBL", "Marchand", "Marchand balun", "balun", "coupled-line balun", "planar balun",
                           "balanced", "unbalanced", "differential", "180 degree", "quarter wave"]),
+        [SymbolKind.Mcrc]         = new("MCRC", "CRC",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MCRC", "coupled-resonator filter", "bandpass filter", "edge-coupled filter", "parallel-coupled",
+                          "zig-zag filter", "hairpin filter", "SIR", "stepped-impedance resonator", "miniature hairpin",
+                          "open-loop filter", "cross-coupled", "quasi-elliptic", "ring resonator", "bandstop filter",
+                          "notch", "spurline", "tapped", "half wave"]),
         // The two vias (brief-via-component.md). Microstrip, because that is where they are used: a
         // line changing layers, and the return of a shunt part on a board. Not transmission lines.
         [SymbolKind.Via]          = new("VIA", "VIA",
@@ -1141,6 +1152,10 @@ public static class ComponentTypeRegistry
             "Not interchangeable: terminal 1 is the unbalanced input, 2 and 3 the balanced outputs, in antiphase. G2 and "
           + "G3 are the grounded ends of the strips that carry 2 and 3: put a via to ground (VIAGND) on each.",
 
+        SymbolKind.Mcrc =>
+            "Terminal 1 is the input feed (or the through line's start), 2 the output. A symmetric design is the same "
+          + "either way round.",
+
         SymbolKind.GsgPad =>
             "Not interchangeable: terminal 1 is where the probe's signal tip lands, the middle of the signal pad, "
           + "and terminal 2 the far end of the line. Put the measurement port on terminal 1.",
@@ -1337,6 +1352,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Mclc          => ComponentModelFactory.CoupledLineCouplerTypeName,
         SymbolKind.Midc          => ComponentModelFactory.LangeTypeName,
         SymbolKind.Mcbl          => ComponentModelFactory.MarchandTypeName,
+        SymbolKind.Mcrc          => ComponentModelFactory.CoupledResonatorTypeName,
         SymbolKind.MimCap        => "MIMCAP",
         SymbolKind.Spiral        => "SPIRAL",
         SymbolKind.OctSpiral     => "OSPIRAL",
@@ -1508,7 +1524,7 @@ public static class ComponentTypeRegistry
         or SymbolKind.Via or SymbolKind.ViaGnd or SymbolKind.WBond or SymbolKind.Match
         or SymbolKind.MimCap or SymbolKind.Spiral or SymbolKind.OctSpiral or SymbolKind.Tfr or SymbolKind.Airbridge
         or SymbolKind.TestPad or SymbolKind.GsgPad or SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
-        or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl
+        or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Mcrc
         or SymbolKind.Balun or SymbolKind.Circulator or SymbolKind.Switch or SymbolKind.Coupler
         or SymbolKind.Hybrid90 or SymbolKind.Hybrid180 or SymbolKind.Filter or SymbolKind.Atten or SymbolKind.Duplexer
         or SymbolKind.Combiner
@@ -1741,10 +1757,37 @@ public static class ComponentTypeRegistry
                                  + "1/√(1 + 2·ZL/Z0) matches it to Z0; low ZL needs tight coupling, which edge-coupled "
                                  + "microstrip may not reach.",
         (SymbolKind.Mcbl, "Gap") => "Length of the line joining the two sections, which the outputs 2 and 3 face across.",
-        (SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl, "SignalLayer") => "The conductor the strips are on. Empty: "
-                                 + "the technology's top conductor.",
-        (SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl, "GroundReference") => "The plane under it. Empty: the "
-                                 + "nearest ground-designated conductor below the signal layer.",
+        (SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Mcrc, "SignalLayer") => "The conductor the "
+                                 + "strips are on. Empty: the technology's top conductor.",
+        (SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Mcrc, "GroundReference") => "The plane under "
+                                 + "it. Empty: the nearest ground-designated conductor below the signal layer.",
+        (SymbolKind.Mcrc, "N") => "Number of resonators. A Ring is one; the cross-coupled open loops are four.",
+        (SymbolKind.Mcrc, "W") => "Width of every resonator and of the feed strip beside the first and last; W1, W2, ... give "
+                                + "one resonator its own. Neighbours coupled side by side take one width.",
+        (SymbolKind.Mcrc, "L") => "Each resonator's centre-line length, open end to open end, corners counted along the "
+                                + "centre line: about half a guided wavelength. A loop's is its perimeter less Gap, a "
+                                + "ring's its circumference. L1, L2, ... give one resonator its own.",
+        (SymbolKind.Mcrc, var s) when s.Length > 1 && s[0] == 'S' && char.IsDigit(s[1]) => "Coupling gap S_k: resonator "
+                                + "k's gap to the resonator or feed before it (S1 the input feed's, S(N+1) the output's; a "
+                                + "tapped feed has neither); a bandstop's gap to the through line; a spurline's slot.",
+        (SymbolKind.Mcrc, "Shape") => "Straight: the edge-coupled filter. ZigZag: each resonator folded 90° at its middle, "
+                                + "alternately. Hairpin: folded into a U. OpenLoop: square loops opened by Gap. Ring: one "
+                                + "ring fed across S1 and S2.",
+        (SymbolKind.Mcrc, "Profile") => "Uniform, or SIR: a stepped-impedance resonator whose centre is Wc wide over Uc of "
+                                + "its length (Straight, ZigZag, Hairpin). A SIR hairpin is the miniature hairpin.",
+        (SymbolKind.Mcrc, "Feed") => "Coupled: a strip beside the first and last resonator, S1 and S(N+1) off. Tapped: a "
+                                + "line joined to each, Tap from the resonator's midpoint.",
+        (SymbolKind.Mcrc, "Form") => "Bandpass; Bandstop: each resonator's first half (ZigZag) or arm (Hairpin) beside a "
+                                + "through line; Spurline: each resonator a spur cut into a through line 2·W + S wide.",
+        (SymbolKind.Mcrc, "Arrangement") => "For open loops: Inline, a row opened alternately top and bottom; Cross, four "
+                                + "in a square with loops 1 and 4 cross-coupled across Sx.",
+        (SymbolKind.Mcrc, "Sa") => "Hairpin: the gap between a hairpin's two arms.",
+        (SymbolKind.Mcrc, "Gap") => "OpenLoop: the opening in each loop, in the middle of one side.",
+        (SymbolKind.Mcrc, "Tap") => "Tapped feed: how far along the first and last resonator from its midpoint the line "
+                                + "joins it; further out is stronger coupling.",
+        (SymbolKind.Mcrc, "Wc") => "SIR: the width of each resonator's centre section.",
+        (SymbolKind.Mcrc, "Uc") => "SIR: the centre section's share of each resonator's length, between 0 and 1.",
+        (SymbolKind.Mcrc, "Sx") => "Cross-coupled open loops: the gap between loops 1 and 4.",
         (SymbolKind.Mwpd, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below the "
                                               + "signal layer.",
         (SymbolKind.GsgPad, "W") => "Width of the line leaving the signal pad. Placed: the 50 Ω width on the technology.",
@@ -1835,6 +1878,11 @@ public static class ComponentTypeRegistry
           + "each conductor's fingers at one potential, the pair's even and odd permittivities. Each finger carries its "
           + "own share, so the jumpers on J1-J4 are part of the circuit; ideal jumpers give Ou's pair exactly. "
           + "Kirschning-Jansen's range applies to W and S.",
+        SymbolKind.Mcrc =>
+            "The plan's MCLIN pairs, MLIN lines, MMITER corners, MCURVEs, MTEE taps and MGAPs stamped together, with "
+          + "each free end's open-end capacitance. Each strip couples only to the neighbour it is placed against: a "
+          + "hairpin's own arms, strips further over and the corners are uncoupled (an EM run of the artwork has them). "
+          + "Kirschning-Jansen's range applies to every coupled pair; a width step has no step model.",
         SymbolKind.Mcbl =>
             "Two MCLIN quarter-wave sections and the MLIN joining them, stamped together. The coupling matches ZL on "
           + "each output to Z0 for TEM lines; microstrip's unequal mode velocities leave the outputs about 16° short of "
@@ -4060,6 +4108,28 @@ public static class ComponentTypeRegistry
                         new("F",   "2.4",  "GHz", true, UnitDimension.Frequency),
                         new("Gap", "1",    "mm",  true, UnitDimension.Length),
                         .. SignalGroundLayerParams];
+            // MCRC: physical geometry, a three-resonator 2.4 GHz edge-coupled design on 20 mil RO4350B (Cohn's, 10 %
+            // wide, 0.5 dB ripple), and every shape's own dimensions so a change of Shape has something to draw.
+            case SymbolKind.Mcrc:
+                return [new("N",  "3",     "",   true, UnitDimension.None),
+                        new("W",  "1.058", "mm", true, UnitDimension.Length),
+                        new("L",  "37.17", "mm", true, UnitDimension.Length),
+                        new("S1", "0.126", "mm", true, UnitDimension.Length),
+                        new("S2", "0.574", "mm", true, UnitDimension.Length),
+                        new("S3", "0.574", "mm", true, UnitDimension.Length),
+                        new("S4", "0.126", "mm", true, UnitDimension.Length),
+                        new("Shape", nameof(ResonatorShape.Straight), "", true, UnitDimension.None),
+                        new("Profile", nameof(ResonatorProfile.Uniform), "", false, UnitDimension.None),
+                        new("Feed", nameof(ResonatorFeed.Coupled), "", false, UnitDimension.None),
+                        new("Form", nameof(ResonatorForm.Bandpass), "", true, UnitDimension.None),
+                        new("Arrangement", nameof(LoopArrangement.Inline), "", false, UnitDimension.None),
+                        new("Sa",  "2.2", "mm", false, UnitDimension.Length),
+                        new("Gap", "1",   "mm", false, UnitDimension.Length),
+                        new("Tap", "6",   "mm", false, UnitDimension.Length),
+                        new("Wc",  "0.4", "mm", false, UnitDimension.Length),
+                        new("Uc",  "0.3", "",   false, UnitDimension.None),
+                        new("Sx",  "0.5", "mm", false, UnitDimension.Length),
+                        .. SignalGroundLayerParams];
             case SymbolKind.GsgPad:
                 return [new("W",     "2.9", "mm", true, UnitDimension.Length),
                         new("L",     "100", "µm", true, UnitDimension.Length),
@@ -4245,6 +4315,8 @@ public static class ComponentTypeRegistry
             case "IDC":      kind = SymbolKind.Midc;         return true;
             case "MCBL":
             case "CBL":      kind = SymbolKind.Mcbl;         return true;
+            case "MCRC":
+            case "CRC":      kind = SymbolKind.Mcrc;         return true;
             case "MIMCAP":   kind = SymbolKind.MimCap;       return true;
             case "SPIRAL":   kind = SymbolKind.Spiral;       return true;
             case "OSPIRAL":  kind = SymbolKind.OctSpiral;    return true;
@@ -4631,6 +4703,11 @@ public static class ComponentTypeRegistry
         (SymbolKind.TestPad, "Feed")                                                     => TestPadFeedOptions,
         (SymbolKind.TestPad, "Centre")                                                   => TestPadCentreOptions,
         (SymbolKind.Mwpd or SymbolKind.Mrrc, "Corner")                                   => PlanCornerOptions,
+        (SymbolKind.Mcrc, "Shape")                                                       => Enum.GetNames<ResonatorShape>(),
+        (SymbolKind.Mcrc, "Profile")                                                     => ["Uniform", "SIR"],
+        (SymbolKind.Mcrc, "Feed")                                                        => Enum.GetNames<ResonatorFeed>(),
+        (SymbolKind.Mcrc, "Form")                                                        => Enum.GetNames<ResonatorForm>(),
+        (SymbolKind.Mcrc, "Arrangement")                                                 => Enum.GetNames<LoopArrangement>(),
         // A composed FET's instance switches (brief-modelcomposer-21): yes or no. A switch bound to an expression keeps a
         // text box (ParameterRowViewModel), since a picker cannot hold one.
         (SymbolKind.ComposedFET, _) when ComposedSwitches.IsSwitch(paramName)                => ComposedSwitchOptions,

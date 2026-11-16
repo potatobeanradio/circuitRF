@@ -1,0 +1,7 @@
+# MCRC, OpenLoop in the cross-coupled square: four loops, 1 and 4 coupled across their openings (Sx);
+# tapped feeds, each port on its tap's branch.
+Info CRC1 added
+Info P1 port 1 placed at CRC1 pin 1
+Info P2 port 2 placed at CRC1 pin 2
+port P1 1
+port P2 2

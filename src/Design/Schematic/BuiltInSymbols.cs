@@ -118,6 +118,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _mclc          = BuildMclc();
     private static readonly Symbol _midc          = BuildMidc();
     private static readonly Symbol _mcbl          = BuildMcbl();
+    private static readonly Symbol _mcrc          = BuildMcrc();
     private static readonly Symbol _mimCap        = BuildMimCap();
     private static readonly Symbol _spiral        = BuildSpiral();
     private static readonly Symbol _octSpiral     = BuildOctSpiral();
@@ -275,6 +276,7 @@ public static class BuiltInSymbols
             case SymbolKind.Mclc:       return _mclc;
             case SymbolKind.Midc:       return _midc;
             case SymbolKind.Mcbl:       return _mcbl;
+            case SymbolKind.Mcrc:       return _mcrc;
             case SymbolKind.MimCap:     return _mimCap;
             case SymbolKind.Spiral:     return _spiral;
             case SymbolKind.OctSpiral:  return _octSpiral;
@@ -2824,6 +2826,21 @@ public static class BuiltInSymbols
         Txt("2",  -140,  190, fontSize: MixerPortFontSize),
         Txt("3",   140,  190, fontSize: MixerPortFontSize),
     ], SymbolKind.Mcbl);
+
+    // MCRC — the edge-coupled filter as it lies on the board: the input feed, three half-wave resonators each coupled to
+    // the next over half its length, and the output feed, stepping down from 1 to 2. Every shape and form is this part.
+    private static Symbol BuildMcrc() => Sym([
+        PLine(-400, -100, -300, -100),
+        PLine( 300,  100,  400,  100),
+        RRect(-225, -100, 150, 24, 6),
+        RRect(-150,  -50, 300, 24, 6),
+        RRect(   0,    0, 300, 24, 6),
+        RRect( 150,   50, 300, 24, 6),
+        RRect( 225,  100, 150, 24, 6),
+        Txt("λ/2", 0, -30, fontSize: 11, vAlign: SymbolTextVAlign.Bottom),
+        Txt("1", -350, -125, fontSize: MixerPortFontSize),
+        Txt("2",  350,  130, fontSize: MixerPortFontSize),
+    ], SymbolKind.Mcrc);
 
     private static Symbol BuildTestPad()
     {

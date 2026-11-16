@@ -37,3 +37,8 @@ F10-rat-race-hybrid RF-passives
 F11-coupled-line-coupler RF-passives
 F12-coupled-line-balun RF-passives
 F13-interdigitated-coupler RF-passives
+F14-coupled-resonator-straight RF-passives
+F15-coupled-resonator-zigzag RF-passives
+F16-coupled-resonator-hairpin RF-passives
+F17-coupled-resonator-open-loop RF-passives
+F18-coupled-resonator-ring RF-passives

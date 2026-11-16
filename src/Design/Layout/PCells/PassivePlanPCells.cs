@@ -87,6 +87,16 @@ public static class PassivePlanPCells
             parameters.Real("F", 2.4e9), parameters.Real("Gap", 1e-3), SubstrateOf(technology, layerSelection)).Plan,
             technology, layerSelection);
 
+    /// <summary>The coupled-resonator filter (MCRC): <see cref="CoupledResonatorPlan"/>'s resonators, as stored.</summary>
+    public const string CoupledResonatorId = ComponentModelFactory.CoupledResonatorTypeName;
+
+    public static PCellResult GenerateCoupledResonator(
+        IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
+        => DrawOrRefuse(() => CoupledResonatorPlan.Build(CoupledResonatorSpec.Read(
+                key => parameters.TryGetValue(key, out var v) && v.Kind is PCellValueKind.Real or PCellValueKind.Int ? v.AsReal(0.0) : null,
+                key => parameters.TryGetValue(key, out var v) && v.Kind == PCellValueKind.String ? v.AsText("") : null),
+            SubstrateOf(technology, layerSelection)), technology, layerSelection);
+
     /// <summary>The plan drawn, or its refusal as the cell's one diagnostic.</summary>
     private static PCellResult DrawOrRefuse(Func<PassivePlan> plan, Technology? technology, PCellLayerSelection layerSelection)
     {
