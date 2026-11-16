@@ -308,6 +308,12 @@ public static class PCellRegistry
             // v2: N and Lc added, and a placed part opens as a three-segment serpentine. A cell drawn before
             // them states neither and reads as N = 1, the same straight film.
             { "TFR", 2 },
+            // v2: a planned passive's line sized to a phase at F follows MLIN's causal phase constant there
+            // (PlanarLineAngle.LengthMeters over MicrostripLineParameters), not its εeff alone: MDLY's run, MSPS's
+            // reference line, the ring dividers' quarter waves (MGPD, MBPD, MTPD), MRRC's meander and MCLC's tandem leads
+            // and inductive sections are resized (shorter where the conductor loss dominates), and a cell on disk carries
+            // the old lengths.
+            { "MDLY", 2 }, { "MSPS", 2 }, { "MGPD", 2 }, { "MBPD", 2 }, { "MTPD", 2 }, { "MRRC", 2 }, { "MCLC", 2 },
         };
 
     public static int GeneratorVersion(string generatorId)

@@ -27,7 +27,7 @@ public class PlanRouteTests
         var r = PlanRoute.Build(1e-3, 2e-3, 90.0, w, Math.PI / 2.0, f, Ro4350b);
 
         var line = Assert.IsType<PlanLine>(Assert.Single(r.Sections));
-        double l = PassivePlan.OnGrid(PlanarLineAngle.LengthMeters(Line(w, f, Ro4350b).Eeff, Math.PI / 2.0, f));
+        double l = PassivePlan.OnGrid(PlanarLineAngle.LengthMeters(Line(w, f, Ro4350b), Math.PI / 2.0));
         Assert.Equal(new PlanLine(line.Nodes, 1e-3, 2e-3, 90.0, w, l), line);
         Assert.Equal([1, 2], line.Nodes);
         Assert.Equal(3, r.NextNode);

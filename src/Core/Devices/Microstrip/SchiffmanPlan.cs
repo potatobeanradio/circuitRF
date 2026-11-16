@@ -102,7 +102,7 @@ public static class SchiffmanPlan
         double p = w + gap, l = PassivePlan.OnGrid(HalfTurnLength(w, gap, g.QuarterWaveMeters, z0, fHz, s));
         double w0 = PassivePlan.OnGrid(BranchLinePlan.Width(z0, fHz, s, part, "device.schiffman.width-unreachable"));
         var line = BranchLinePlan.Line(w0, s).LineParameters(fHz);
-        double q0 = PlanarLineAngle.LengthMeters(line.Eeff, Math.PI / 2.0, fHz);
+        double q0 = PlanarLineAngle.LengthMeters(line, Math.PI / 2.0);
         double lref = k * q0;
         // The reference line runs below the C-section, three of its widths clear of strip B.
         double y3 = PassivePlan.OnGrid(-p - w / 2.0 - 3.0 * w0 - w0 / 2.0);

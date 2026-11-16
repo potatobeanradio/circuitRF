@@ -35,8 +35,8 @@ public class LadderStackTests(ITestOutputHelper output)
 
         double w = LadderPlan.Width(50.0, f, s);
         double quarter = PlanarLineAngle.LengthMeters(
-            new MicrostripLineModel(w, 0.0, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM, s.TanD, "test").LineParameters(f).Eeff,
-            Math.PI / 2.0, f);
+            new MicrostripLineModel(w, 0.0, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM, s.TanD, "test").LineParameters(f),
+            Math.PI / 2.0);
         string sections = LadderPlan.Format([new LadderLine(w, quarter), new LadderStub(w, quarter, LadderStubEnd.Short),
                                              new LadderLine(w, quarter)]);
 

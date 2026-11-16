@@ -402,7 +402,7 @@ public static class CoupledLineCouplerPlan
                     throw new ParameterRefusalException(Diagnostic.Create("device.coupled-line-coupler.inductive-unreachable",
                         DiagnosticSeverity.Error, "Coupled-line coupler: the inductive compensation needs {x} ohm at each end, "
                       + "which a {z} ohm line section cannot give.", ("x", x), ("z", line.Z0)));
-                double li = PassivePlan.OnGrid(Math.Asin(x / line.Z0) / (k0 * Math.Sqrt(line.Eeff)));
+                double li = PassivePlan.OnGrid(PlanarLineAngle.LengthMeters(line, Math.Asin(x / line.Z0)));
                 double p = w + gap;
                 // Nodes: 1-4 the pins at the sections' outer ends; 5-8 the pair's own ends.
                 var sections = new PlanSection[]
@@ -454,7 +454,7 @@ public static class CoupledLineCouplerPlan
         var bend = new PlanBend([], 0.0, 0.0, 0.0, w, -90.0, PlanBend.MiterFor(PlanCorner.Miter, w, s));
         double r = bend.Arm;
         var lead = BranchLinePlan.Line(w, s).LineParameters(fHz);
-        double q = PlanarLineAngle.LengthMeters(lead.Eeff, Math.PI / 2.0, fHz);
+        double q = PlanarLineAngle.LengthMeters(lead, Math.PI / 2.0);
         double corner = bend.LineLength(s, fHz, lead.Z0, q);
 
         double a = 2.0 * w;                                              // I.2's line out to the right-hand run

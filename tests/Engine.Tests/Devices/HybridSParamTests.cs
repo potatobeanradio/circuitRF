@@ -210,8 +210,12 @@ public class HybridSParamTests(Xunit.Abstractions.ITestOutputHelper output)
             Assert.True(Math.Abs(Db(m[i, j]) - Db(c[i, j])) < 0.01, $"|S{i + 1}{j + 1}| {Db(m[i, j]):F3} vs {Db(c[i, j]):F3} dB");
         foreach (var (i, j) in new[] { (0, 0), (3, 3), (3, 0), (2, 1) })
             Assert.True(Db(m[i, j]) < -45.0, $"|S{i + 1}{j + 1}| {Db(m[i, j]):F2} dB");
-        Assert.True(Math.Abs(PhaseDeg(m[1, 0], m[2, 0]) - PhaseDeg(c[1, 0], c[2, 0])) < 0.1);
-        Assert.True(Math.Abs(Math.Abs(PhaseDeg(m[1, 3], m[2, 3])) - Math.Abs(PhaseDeg(c[1, 3], c[2, 3]))) < 0.1);
+        // The folded arm is sized by MLIN's causal phase at F (PlanRoute), the curved ring's arms by its εeff alone, which
+        // leaves them about 0.2° apart on this board: the meandered ring's Σ and Δ are the closer to 0° and 180°.
+        Assert.True(Math.Abs(PhaseDeg(m[1, 0], m[2, 0])) < 0.1);
+        Assert.True(Math.Abs(Math.Abs(PhaseDeg(m[1, 3], m[2, 3])) - 180.0) < 0.1);
+        Assert.True(Math.Abs(PhaseDeg(m[1, 0], m[2, 0]) - PhaseDeg(c[1, 0], c[2, 0])) < 0.3);
+        Assert.True(Math.Abs(Math.Abs(PhaseDeg(m[1, 3], m[2, 3])) - Math.Abs(PhaseDeg(c[1, 3], c[2, 3]))) < 0.3);
     }
 
     /// <summary>testdata/schematic-to-layout/C2-branch-line, the hand-drawn one-section coupler: four MTEEs, four

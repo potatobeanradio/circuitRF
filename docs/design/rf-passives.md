@@ -568,9 +568,12 @@ a line folded to fit (a compact rat-race, a phase shifter's reference line, a me
   way, so an odd k ends heading back; a turn is a half-turn MCURVE of radius Pitch/2, or two corners and the line across.
 
 It returns the sections, the next free plan node, the end pose and the copper's extent (centre lines widened by W/2).
-**The length holds θ through the corners**: the legs share what is left of θ in MLIN's dispersive εeff at F after each
-corner's own insertion phase at F, as a length of the line (`PlanSection.LineLength`, the cornered rings' rule, now on
-every two-pin section). Every dimension is on the 2 nm grid. **Close turns**: legs under 3W apart edge to edge are a
+**The length holds θ through the corners**: the legs share what is left of θ at F after each corner's own insertion
+phase at F, as a length of the line (`PlanSection.LineLength`, the cornered rings' rule, now on every two-pin section).
+Lengths follow the line's causal phase at F, MLIN's `PhaseRadPerM` (its dispersive β plus the phase its loss comes with),
+through the one helper `PlanarLineAngle.LengthMeters(MicrostripLineParameters, θ)` that the route, MDLY, MSPS's reference
+line, the ring dividers' quarter waves, the tandem's leads and the inductive compensation all size by. Every dimension is
+on the 2 nm grid. **Close turns**: legs under 3W apart edge to edge are a
 warning, `device.route.runs-coupled`, since they are stamped as separate lines. Built `coupled`, a meander's legs are
 one `PlanCoupledStrips` instead (§3.16), and the warning is not given. A plan passes a route's warnings on in
 `PassivePlan.Warnings`, which `MicrostripPlanModel` reports with its sections' own. Refusals:
@@ -1240,9 +1243,10 @@ step at the end of `PlanRoute`'s meander: every leg spans x = 0..leg in the run'
 are the section's strips, and a leg heading back joins its far end first. The copper, the end pose, the extent and the
 nodes are unchanged; the turns stay separate pieces. The legs keep MLIN's length, so the phase at F moves by what the
 coupling does, which is what the option is for: on 20 mil RO4350B at 2.4 GHz, θ = 360° in three half-turns, S21 is
-1.04° off −θ with the legs 10W apart centre to centre, 2.73° at 4W (3W edge to edge, where the warning starts) and
-5.47° at 2W, where the separate legs hold −θ to 0.001°. The 1.04° that remains far apart is the N-line section's
-quasi-static εeff against MLIN's dispersive one (§3.6).
+1.26° off −θ with the legs 10W apart centre to centre, 3.17° at 4W (3W edge to edge, where the warning starts) and
+6.11° at 2W, where the separate legs hold −θ to 0.001°. The 1.26° that remains far apart is the N-line section's
+quasi-static εeff against MLIN's dispersive one (§3.6), and the causal phase MLIN's loss comes with, which the legs'
+length follows and the N-line section does not have.
 
 **MRRC `Meander`**, the compact ring (Eccleston and Ong shortened a rat-race's arms with artificial lines,
 [10.1109/TMTT.2003.817442](https://doi.org/10.1109/TMTT.2003.817442); He and Wang meandered them,
@@ -1254,13 +1258,15 @@ in from tee 4, a `PlanRoute` meander of k turns between the runs, and a half-tur
 has radius Y/(k + 2), which puts its legs 2Y/(k + 2) apart and as far from the runs, and the meander's θ is 3π/2 less
 the two half-turns' own phase at F. Y is the curved ring's radius for a λg/4 − 2·W0 half-turn, so the ring is no taller
 than the curved one, the U-turn keeps legs of about W0 and the folded legs (about λg/4 + W0 at k = 1) clear the U-turn's
-inside. On the example board at 2.4 GHz the drawn copper, feeds included, is 29.89 × 13.57 mm for k = 1 and 29.17 ×
-13.57 mm for k = 3, against 53.11 × 14.24 mm curved: 54 % and 52 % of its area. At F |S11| (−50.96 dB), |S44|, |S41|,
-|S23|, the Σ and Δ outputs (−3.13 to −3.23 dB) and their phases (−0.01° and −179.99°) are the curved ring's to 0.001 dB
-and 0.001° (`HybridSParamTests`), since every arm still holds its phase and the tees are the same. A cornered meander is
+inside. On the example board at 2.4 GHz the drawn copper, feeds included, is 29.87 × 13.57 mm for k = 1 and 29.14 ×
+13.57 mm for k = 3, against 53.11 × 14.24 mm curved: 54 % and 52 % of its area. At F the Σ and Δ outputs (−3.13 to
+−3.23 dB) are the curved ring's to 0.002 dB and |S11|, |S44|, |S41| and |S23| are below −49 dB in both
+(`HybridSParamTests`), since every arm holds its phase and the tees are the same. The folded arm follows MLIN's causal
+phase at F and the curved ring's arms its εeff alone, so the meandered ring's Σ and Δ phases (−0.01° and −179.99°) are
+the closer to 0° and 180°, the curved ring's about 0.2° off. A cornered meander is
 refused (`device.ratrace.meander`, as is an even or fractional k): its two end turns would need corners of their own.
 
-Tests: `DelayLineSParamTests` (S21 at F within 0.5° of −θ for every style and corner, measured 0.000° to 0.021°; the
+Tests: `DelayLineSParamTests` (S21 at F within 0.5° of −θ for every style and corner, measured 0.000° to 0.039°; the
 part against MLIN, MCURVE, MMITER, MBEND and MCLINN wired by hand to 1e-9; the coupled phase as the legs close),
 `PlanRouteTests` (a coupled meander is its legs as one section over the same copper), `HybridPlanTests` (the meandered
 ring joined, its runs λg/4, its folded arm 3λg/4 at F to 0.5°; the refusals), `HybridSParamTests` (the meandered ring by
