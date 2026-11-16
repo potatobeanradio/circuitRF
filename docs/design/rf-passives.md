@@ -743,7 +743,7 @@ square's two zeros; the ring, bandstop and spurline within 2 % of their closed f
 wired by hand to 1e-9; under `Full`, a hairpin, a stepped tapped hairpin, an unequal stepped chain and a hairpin
 bandstop wired by hand as MCLINN instances to 1e-9, Full against Pairs for wide and tight arms, the unequal chain
 passing), `CoupledResonatorGaAsTests` (a hairpin on the shipped GaAs and Si processes), and the `F19`-`F23`
-schematic-to-layout fixtures, one per shape, with `F25` a hairpin under `Full`, each LVS clean with one stored value
+schematic-to-layout fixtures, one per shape, with `F28` a hairpin under `Full`, each LVS clean with one stored value
 changed giving exactly one `lvs.property.mismatch`. The plan tests also hold every `Full` sample joined and clear, and
 an aligned hairpin's arms one eight-strip section.
 

@@ -515,7 +515,7 @@ public sealed class ComparisonTests
     [InlineData("F21-coupled-resonator-hairpin", "Uc", "0.35")]
     [InlineData("F22-coupled-resonator-open-loop", "Arrangement", "Inline")]
     [InlineData("F23-coupled-resonator-ring", "L", "70")]
-    [InlineData("F25-coupled-resonator-full", "Coupling", "Pairs")]
+    [InlineData("F28-coupled-resonator-full", "Coupling", "Pairs")]
     public void ACoupledResonatorFilterComparesCleanAndAGeometryMismatchIsAFinding(string design, string spec, string changed)
     {
         string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-crc-" + Guid.NewGuid().ToString("N")[..12]);
