@@ -12,7 +12,7 @@ namespace CircuitRF.Ui.Tests.SchematicSync;
 /// <summary>
 /// The lumped realisations and the resistive pad in the schematic and the layout (docs/design/rf-passives.md, "Lumped
 /// realisations"): each layout's symbol has its plan's pins, the pad's bridged-T and splitters one list between them; Place
-/// Site Parts fills every site of the F16 lumped divider and the F17 pad with parts of the plan's values, each series part
+/// Site Parts fills every site of the F26 lumped divider and the F27 pad with parts of the plan's values, each series part
 /// straight on its pins; the readout lists them; and on a GaAs die the same plan builds with MIMCAP, SPIRAL and TFR parts
 /// on its sites. The fixtures' Update Layout and LVS are SdlDesignSetTests' and ComparisonTests'.
 /// </summary>
@@ -49,8 +49,8 @@ public sealed class LumpedPassiveTests : IDisposable
     /// <summary>The fixture with its site parts taken off: Place Site Parts puts back one part of the plan's value on every
     /// site, the series ones straight on their pins with no wire, and every site reads as filled; Undo takes them off.</summary>
     [Theory]
-    [InlineData("F16-wilkinson-lumped")]
-    [InlineData("F17-resistive-pad")]
+    [InlineData("F26-wilkinson-lumped")]
+    [InlineData("F27-resistive-pad")]
     public void PlaceSitePartsFillsEveryLumpedSite(string design)
     {
         var p = SdlChecker.Prepare(design, Path.Combine(_scratch, design));

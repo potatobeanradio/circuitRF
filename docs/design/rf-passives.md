@@ -619,10 +619,10 @@ a die part for its value.
 sites filled with ideal parts and each copper island one node give the ideal device at F to 1e-9 (S21, S31, S41, and the
 outputs' match and isolation); on the copper at 500 MHz the split, match, isolation and phase hold within the
 interconnect's detuning; each pad form gives its loss and its match at Z0 to 1e-6. `LumpedPassiveTests`: every layout's
-symbol has its plan's pins, the shared nine-pin list, Place Site Parts filling every site of F16 and F17 with the plan's
+symbol has its plan's pins, the shared nine-pin list, Place Site Parts filling every site of F26 and F27 with the plan's
 values and no wire, the readout, and the lumped Wilkinson on the GaAs die with a TFR, SPIRALs and MIMCAPs on its sites,
-bound to the process and simulated. `F16-wilkinson-lumped` (π arms, with the parts Place Site Parts put there) and
-`F17-resistive-pad` (a 6 dB T) go through Update Layout and LVS, and a changed F or `Attenuation` is one
+bound to the process and simulated. `F26-wilkinson-lumped` (π arms, with the parts Place Site Parts put there) and
+`F27-resistive-pad` (a 6 dB T) go through Update Layout and LVS, and a changed F or `Attenuation` is one
 `lvs.property.mismatch`.
 
 **Possible enhancements.**

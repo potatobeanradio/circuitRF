@@ -39,5 +39,5 @@ F12-coupled-line-balun RF-passives
 F13-interdigitated-coupler RF-passives
 F14-radial-stub RF-passives
 F15-coupled-lines RF-passives
-F16-wilkinson-lumped RF-passives
-F17-resistive-pad RF-passives
+F26-wilkinson-lumped RF-passives
+F27-resistive-pad RF-passives
