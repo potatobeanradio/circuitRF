@@ -897,7 +897,7 @@ the line, and an LC ladder of sites alone as a row of pads that meet. `LadderSit
   its −3 dB point at 200 MHz −1.2 %.
 
 `LadderSiteTests` covers drawing the radial ends and the pads, the readout with and without a `Footprint`, Place Site
-Parts filling the site, and `testdata/schematic-to-layout/F25-ladder-site`: a series capacitor's site that an 0402
+Parts filling the site, and `testdata/schematic-to-layout/F30-ladder-site`: a series capacitor's site that an 0402
 spans, LVS clean, and a changed list one mismatch.
 
 **Limits.**

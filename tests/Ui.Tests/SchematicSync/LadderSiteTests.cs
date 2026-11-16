@@ -25,7 +25,7 @@ public sealed class LadderSiteTests : IDisposable
     [Fact]
     public void ALadderWithASiteComparesCleanAndASectionsMismatchIsAFinding()
     {
-        var p = SdlChecker.Prepare("F25-ladder-site", _scratch);
+        var p = SdlChecker.Prepare("F30-ladder-site", _scratch);
         var layout = p.Applied(p.Plan());
         Assert.Empty(SdlChecker.Verify(p, layout));
         Assert.DoesNotContain(LvsRun.Run(p.CellDir).Findings, f => f.Severity == DiagnosticSeverity.Error);
@@ -44,7 +44,7 @@ public sealed class LadderSiteTests : IDisposable
     [Fact]
     public void PlaceSitePartsFillsTheLaddersSite()
     {
-        var p = SdlChecker.Prepare("F25-ladder-site", _scratch);
+        var p = SdlChecker.Prepare("F30-ladder-site", _scratch);
         var model = p.Model;
         model.Components.Remove(model.Components.Single(c => c.InstanceName == "C1"));
 
