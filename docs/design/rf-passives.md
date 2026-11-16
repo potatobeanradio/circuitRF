@@ -73,6 +73,64 @@ which fixes the curve radius. Each port pin sits one 50 Ω width of line beyond 
 Refusals: a non-positive spec, an impedance no width reaches on the substrate, and a quarter wave too short to make a
 ring (high F or a wide Gap).
 
+## 3b. Coupled lines: MCLC, MIDC and MCBL
+
+The coupled-line coupler (MCLC), the four-finger interdigitated coupler (MIDC) and the coupled-line balun (MCBL) are
+three more plans on the same pieces. What they added to the shared structure, and why:
+
+- **Two section kinds, used by every part that needs them.** `PlanLine` is an MLIN; `PlanCoupledLine` is `W`, `S`, `L`
+  and a finger count. With two fingers it is an MCLIN, nodes in MCLIN's own order; with more, alternate strips are the
+  two conductors of an interdigitated section, nodes listed strip by strip. Each kind is one case in
+  `MicrostripPlanModel.Build` and one in `PassivePlanPCells.Draw` (an MCLIN through `CoupledLinePCells`, each finger
+  through `MlinPCell`), so the three parts wrote no stamping and no drawing code of their own.
+- **One shared synthesis.** `CoupledLineSynthesis` turns a coupling and Z0 into Ze and Zo (Ze·Zo = Z0²), and Ze, Zo and
+  F into `W` and `S` by inverting MCLIN's own Kirschning–Jansen modes at F — two nested bisections over the model's
+  published range, so a pair outside it is a coded refusal rather than an extrapolation. The length is λg/4 in the mean
+  of the two modes' εeff. All three plans call it; they differ only in which Ze and Zo they ask for: the coupler's from
+  its coupling, the interdigitated coupler's adjacent pair from Ou's equations, the balun's from its match condition.
+- **DC by copper island.** The Wilkinson's pins are one piece of copper; a coupler's two strips are not. The model now
+  joins each section's strip ends and declares a tree of DC shorts per island, so a coupler passes DC along each strip
+  and not across.
+
+| Part | Stored | Derived (readout) | Pins |
+|---|---|---|---|
+| MCLC | `Coupling` dB (10), `Z0`, `F` | `W`, `S`, `L`, modal εeff, Ze, Zo | 1 in, 2 through, 3 coupled, 4 isolated |
+| MIDC | `Coupling` dB (4), `Z0`, `F` | finger `W`, `S`, `L`; the pair's and the coupler's Ze, Zo | 1-4 as MCLC; `J1`-`J4` jumper landings |
+| MCBL | `Z0`, `ZL` per output (200), `F`, `Gap` | `W`, `S`, `L` per section, Ze, Zo | 1 in, 2 and 3 out, `G2`, `G3` to ground |
+
+**What the topologies needed beyond the shared pieces, and why.**
+
+- **Finger jumpers on pins (MIDC).** The inner fingers are separate copper: on a board they are joined across the
+  finger between by bond wires, which are parts with their own model, assembly and LVS. So the inner fingers' ends are
+  pins `J1`-`J4`, and a jumper goes from pin k to Jk, as the Wilkinson's resistor goes on R2-R3. The model then has to
+  give those pins something to stand on: Ou's equations describe the coupler as two conductors, so each finger stamps
+  its own share of each mode's admittance (an outer finger the adjacent pair's own, an inner one its screened share),
+  paired with its mirror finger in the other conductor. With ideal jumpers the shares add to Ou's pair to 1e-9; a real
+  jumper carries its finger's current, and a missing one leaves a solvable, weaker coupler.
+- **Grounds on pins (MCBL).** The coupled strips' outer ends go to ground through vias, which LVS, the BOM and EM must
+  see, so they are pins `G2` and `G3` for an ordinary VIAGND each. Update Layout places each via beside its pin.
+- **A layout choice the specs do not decide (MCBL's `Gap`).** The two sections are joined by a line, and the outputs face
+  each other across it; its length is stored, like the Wilkinson's `Gap`, and the plan models it.
+- **Kron order.** The balun's open end has a near-zero self admittance at F (a quarter-wave null), and the block
+  eliminates without pivoting, so the plan numbers it to be eliminated last.
+
+**What the board builds** (20 mil RO4350B, 2.4 GHz, a 75-100 µm gap rule). MCLC: 10 dB needs 115 µm, 8 dB 65 µm.
+MIDC: 3 dB needs 138 µm fingers 69 µm apart, too tight; 4 dB needs 105 µm, so the part opens there. MCBL: 50 Ω on each
+output needs −4.8 dB sections, under the model's S/h = 0.1, and is refused; the match fixes 1/Zo − 1/Ze =
+√(2/(ZL·Z0)) whatever the impedance level, and 200 Ω on each output (−9.5 dB) needs 102 µm.
+
+**Limits.** In microstrip the odd mode outruns the even mode: the coupler's directivity is about 11 dB at 10 dB coupling
+(under 5 dB at 20 dB), and the balun's outputs are about 16° short of 180° (exactly 180° as TEM pairs). Ou's equations are
+TEM, nearest-neighbour, with the pair's εeff. Ideal `Short` jumpers close a loop of DC shorts with the fingers, which the
+DC solve cannot take (two ideal lines in parallel are the same case); a jumper with any resistance solves.
+
+**EM.** The example's coupler and balun run on the same three solvers as the Wilkinson, but not on its coarse recipe: a
+0.1 mm gap needs Planar's edge mesh (−10.72 dB coupling against the model's −10.49; −11.96 with it off) and refined 3D
+meshes (EMerge Standard with three adaptive passes, Palace Draft with three refinement passes, both still about 1 dB
+stronger than the model; their Draft presets read 3 to 5 dB too strong). Planar refuses the balun: its two ground vias
+are 0.71 λ apart at the band top, past the via kernel's validated 0.1 λ. MIDC has no example cell yet: Planar cannot
+cross a finger with a jumper, and the 3D view needs its bond wires drawn by hand.
+
 ## 4. What a new topology costs
 
 1. `src/Core/Devices/Microstrip/<X>Plan.cs` — the pure plan (and a section kind, with one case in
@@ -127,3 +185,23 @@ ring (high F or a wide Gap).
 > M. Kirschning and R. H. Jansen, "Accurate model for effective dielectric constant of microstrip with validity up to
 > millimetre-wave frequencies," *Electronics Letters*, vol. 18, no. 6, pp. 272–273, 1982.
 > DOI [10.1049/el:19820186](https://doi.org/10.1049/el:19820186). The dispersion λg/4 is measured in.
+
+> M. Kirschning and R. H. Jansen, "Accurate Wide-Range Design Equations for the Frequency-Dependent Characteristic of
+> Parallel Coupled Microstrip Lines," *IEEE Transactions on Microwave Theory and Techniques*, vol. 32, no. 1, pp. 83–90,
+> January 1984. DOI [10.1109/TMTT.1984.1132616](https://doi.org/10.1109/TMTT.1984.1132616); corrections, vol. 33, no. 3,
+> p. 288, 1985, DOI [10.1109/TMTT.1985.1133005](https://doi.org/10.1109/TMTT.1985.1133005). The modes the coupled-line
+> synthesis inverts.
+
+> J. Lange, "Interdigitated Stripline Quadrature Hybrid," *IEEE Transactions on Microwave Theory and Techniques*,
+> vol. 17, no. 12, pp. 1150–1151, December 1969. DOI [10.1109/TMTT.1969.1127115](https://doi.org/10.1109/TMTT.1969.1127115).
+
+> W. P. Ou, "Design Equations for an Interdigitated Directional Coupler," *IEEE Transactions on Microwave Theory and
+> Techniques*, vol. 23, no. 2, pp. 253–255, February 1975.
+> DOI [10.1109/TMTT.1975.1128534](https://doi.org/10.1109/TMTT.1975.1128534).
+
+> N. Marchand, "Transmission-Line Conversion Transformers," *Electronics*, vol. 17, no. 12, pp. 142–145, December 1944.
+> A trade magazine, with no DOI: [a scan of the issue](https://www.worldradiohistory.com/Archive-Electronics/40s/Electronics-1944-12.pdf).
+
+> K. S. Ang and I. D. Robertson, "Analysis and Design of Impedance-Transforming Planar Marchand Baluns," *IEEE
+> Transactions on Microwave Theory and Techniques*, vol. 49, no. 2, pp. 402–406, February 2001.
+> DOI [10.1109/22.903108](https://doi.org/10.1109/22.903108).

@@ -1240,6 +1240,127 @@ divider's as built; compare S22 and S23 with the circuit model with the resistor
 > millimetre-wave frequencies," *Electronics Letters*, vol. 18, no. 6, pp. 272–273, 1982.
 > DOI [10.1049/el:19820186](https://doi.org/10.1049/el:19820186).
 
+### Coupled-Line Coupler (MCLC) {#mclc}
+
+{{symbol: mclc}}
+
+A single-section backward-wave directional coupler on microstrip: two edge-coupled strips a quarter wavelength long at
+`F`. Power into terminal 1 goes on to the through port, terminal 2, and a fraction of it, `Coupling` dB down, appears at
+the coupled port, terminal 3, beside the input; the isolated port, terminal 4, ideally gets none. The coupled wave leaves
+90° ahead of the through wave. Its pins are MCLIN's, so the part is an MCLIN whose `W`, `S` and `L` are chosen for you.
+
+**How it works.** A symmetric pair carries two modes: the even mode, both strips at one voltage, and the odd mode, the
+strips at opposite voltages, each a line of its own impedance, Ze and Zo. With Ze·Zo = Z0² every port is matched at
+every frequency, and at the quarter wave the coupled voltage is c = (Ze − Zo)/(Ze + Zo). So a coupling of C dB, with
+c = 10^(−C/20), asks for Ze = Z0·√((1 + c)/(1 − c)) and Zo = Z0·√((1 − c)/(1 + c)).
+
+**What circuitRF derives.** The strip width and gap whose even and odd impedances at `F` are those two, found from the
+coupled-line model itself (the Kirschning–Jansen equations MCLIN uses), and the length, `c₀ / (4·F·√εeff)` with εeff
+the mean of the two modes' effective permittivities at `F`. The search covers the model's published range, W/h and S/h
+from 0.1 to 10: a coupling that would need a narrower gap, or a wider one, is refused by name.
+
+**Microstrip's limit is directivity.** The odd mode has more of its field in the air and travels faster than the even
+mode, so the strips cannot be a quarter wave for both. Coupling and match hold at `F`; the isolated port picks up the
+difference. On the example board (20 mil RO4350B, 2.4 GHz) the circuit model gives about 11 dB of directivity at 10 dB
+coupling and under 5 dB at 20 dB. Tight coupling needs narrow gaps there: 10 dB needs 115 µm, 8 dB 65 µm.
+
+**In EM** the coupling lives in that narrow gap, and the mesh has to resolve it: the
+[Dividers and Couplers](../examples/dividers-and-couplers/index.html) example runs the 10 dB coupler on Planar MoM with
+its edge mesh on (within 0.25 dB of the model at `F`) and on EMerge and Palace with refined meshes; their coarsest presets
+read the coupling several dB too strong.
+
+{{table: components/Mclc}}
+
+### Interdigitated Coupler (MIDC) {#midc}
+
+{{symbol: midc}}
+
+A four-finger interdigitated quadrature coupler on microstrip — the Lange coupler, unfolded. Four quarter-wave strips lie
+side by side; alternate strips are joined at both ends into two conductors, so each conductor couples to the other across
+three gaps instead of one and reaches couplings a single pair cannot. Terminals 1 to 4 are as MCLC's: 1 the input and
+2 the through port on the top finger, 3 the coupled port and 4 the isolated port on the bottom finger. `J1` to `J4` are
+the inner fingers' ends: **the joins are not part of the part**. Place a jumper from each terminal k to Jk — on a board,
+a bond wire across the finger between — so the layout, LVS and EM see it as the part it is.
+
+**How it works (Ou's equations).** With only neighbouring fingers coupled, every finger has a capacitance to ground and a
+mutual capacitance to each neighbour, and both can be read off one pair of adjacent fingers: an outer finger's ground
+share is the pair's even-mode admittance 1/Ze, the mutual is half the difference of the odd and even admittances, and a
+finger between two others keeps less of the ground share because its neighbours screen it. Adding the fingers of each
+conductor, with each conductor at one potential, gives the coupler's own modes:
+Ze,N = Ze(Ze + Zo)/(Ze + (N − 1)·Zo) and Zo,N = Zo(Ze + Zo)/(Zo + (N − 1)·Ze), with N = 4 here, and a coupling
+(N − 1)(R² − 1)/((N − 1)(R² + 1) + 2R) with R = Ze/Zo. circuitRF inverts that for `Coupling` and Ze,N·Zo,N = `Z0`²,
+then finds the adjacent pair's `W` and `S` exactly as MCLC does. The length is a quarter wave in the pair's mean εeff.
+
+**The model** is the pair's own modes, MCLIN's, put through Ou's equations, with each finger carrying its own share of
+each mode: an ideal jumper on each Jk gives Ou's two-conductor coupler exactly, a real jumper carries its finger's
+current, and a missing one is a different circuit, which still solves and couples less. Ou's equations are a TEM
+picture; the even and odd permittivities are the adjacent pair's, and fingers further apart than neighbours are not
+coupled.
+
+**What a board can build.** A 3 dB coupler needs tight gaps. On 20 mil RO4350B at 2.4 GHz it needs fingers 138 µm wide
+and 69 µm apart, under common board rules of 75 to 100 µm; 3.5 dB needs 86 µm and 4 dB 105 µm. The part opens at 4 dB
+for that reason, splitting about −2.4 dB and −4.2 dB in quadrature. A thinner laminate, or a process with finer gaps,
+reaches 3 dB.
+
+{{table: components/Midc}}
+
+### Coupled-Line Balun (MCBL) {#mcbl}
+
+{{symbol: mcbl}}
+
+A compensated coupled-line balun on microstrip — the Marchand balun in planar form. It turns the unbalanced signal on
+terminal 1 into two outputs of equal amplitude and opposite phase on terminals 2 and 3. Two quarter-wave coupled sections
+lie in a row: the input strip runs along both, across a line of length `Gap` between them, to an open end, and each
+section's other strip is a balanced output at the middle and grounded at its outer end. `G2` and `G3` are those outer
+ends: **the grounds are not part of the part**. Place a via to ground (VIAGND) on each.
+
+**How it works.** At the quarter wave a coupled section's open-circuit impedances reduce to two terms: between the ends
+of one strip, (Ze + Zo)/2, and between the far ends of the two strips, (Ze − Zo)/2. Solving the two sections with the
+open end and the grounds gives output voltages exactly equal and opposite whatever the loads, so long as they are alike,
+and an input impedance 2·(Ze·Zo)² / (ZL·(Ze − Zo)²) with `ZL` on each output. With lines of √(Ze·Zo) = `Z0`, matching
+that to `Z0` needs each section to couple c = 1/√(1 + 2·ZL/Z0); circuitRF finds the pair for it as MCLC does.
+
+**`ZL` is the load on each output**, half the balanced load. The match fixes the difference of the two mode admittances,
+1/Zo − 1/Ze = √(2/(ZL·Z0)), at whatever impedance level, and edge coupling at a buildable gap only reaches it for high
+loads. On 20 mil RO4350B at 2.4 GHz, 50 Ω on each output needs −4.8 dB sections, a gap under the model's 0.1·h, and is
+refused; 200 Ω on each output needs −9.5 dB and a 102 µm gap, which is what the part opens at.
+
+**Microstrip's limit is the phase.** The output voltages are exactly opposite only for TEM lines. In microstrip the odd
+mode runs faster than the even, neither section is a quarter wave for both, and on the example board the outputs come out
+about 16° short of 180°, with their amplitudes within 0.2 dB. A longer `Gap` moves the match off `F`.
+
+**In EM** the [Dividers and Couplers](../examples/dividers-and-couplers/index.html) example runs a balun with vias on
+`G2` and `G3` on EMerge and Palace. The Planar solver refuses it: its via-current kernel is validated to a tenth of a
+wavelength between vias, and the two grounds sit a balun's length apart.
+
+{{table: components/Mcbl}}
+
+**References** (for the three coupled-line parts)
+
+> M. Kirschning and R. H. Jansen, "Accurate Wide-Range Design Equations for the Frequency-Dependent Characteristic of
+> Parallel Coupled Microstrip Lines," *IEEE Transactions on Microwave Theory and Techniques*, vol. 32, no. 1, pp. 83–90,
+> January 1984. DOI [10.1109/TMTT.1984.1132616](https://doi.org/10.1109/TMTT.1984.1132616); corrections in vol. 33,
+> no. 3, p. 288, March 1985, DOI [10.1109/TMTT.1985.1133005](https://doi.org/10.1109/TMTT.1985.1133005). The coupled-line
+> model MCLIN and all three parts use.
+
+> D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012, §7.6 and §7.7, coupled-line directional couplers and the Lange
+> coupler. A book, with no DOI:
+> [the publisher's page](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553).
+
+> J. Lange, "Interdigitated Stripline Quadrature Hybrid," *IEEE Transactions on Microwave Theory and Techniques*,
+> vol. 17, no. 12, pp. 1150–1151, December 1969. DOI [10.1109/TMTT.1969.1127115](https://doi.org/10.1109/TMTT.1969.1127115).
+
+> W. P. Ou, "Design Equations for an Interdigitated Directional Coupler," *IEEE Transactions on Microwave Theory and
+> Techniques*, vol. 23, no. 2, pp. 253–255, February 1975.
+> DOI [10.1109/TMTT.1975.1128534](https://doi.org/10.1109/TMTT.1975.1128534).
+
+> N. Marchand, "Transmission-Line Conversion Transformers," *Electronics*, vol. 17, no. 12, pp. 142–145, December 1944.
+> A trade magazine, with no DOI: [a scan of the issue](https://www.worldradiohistory.com/Archive-Electronics/40s/Electronics-1944-12.pdf).
+
+> K. S. Ang and I. D. Robertson, "Analysis and Design of Impedance-Transforming Planar Marchand Baluns," *IEEE
+> Transactions on Microwave Theory and Techniques*, vol. 49, no. 2, pp. 402–406, February 2001.
+> DOI [10.1109/22.903108](https://doi.org/10.1109/22.903108).
+
 ## MMIC passives {#mmic}
 
 The parts a die is drawn from. Like a microstrip line, each one takes its process from the workspace
