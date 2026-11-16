@@ -99,9 +99,11 @@ public static class ContourResolve
         // Cache MXP / MXE for the renderer (surface stays out of renderer path).
         // MXP/MXE markers are the compression-based recommended terminations — independent of this
         // contour's metric/constraint (so they stay put when plotting e.g. Efficiency at Constant Pout).
+        // The markers sit at the fitted surface's peak over the measured region, so each is at the centre of the contours drawn
+        // from that fit; the best measured node was a tie-break on a flat peak and drew MXP away from them.
         var (mxpR, mxeR) = surface.RecommendedMxx(fit);
-        cd.MxpCoord = mxpR?.Measured;
-        cd.MxeCoord = mxeR?.Measured;
+        cd.MxpCoord = mxpR?.Interpolated;
+        cd.MxeCoord = mxeR?.Interpolated;
 
         // Marker surface-evaluation hooks — capture locals so the closures are stable.
         var      evalSurface = surface;

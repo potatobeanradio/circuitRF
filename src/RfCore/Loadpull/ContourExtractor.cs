@@ -212,7 +212,10 @@ namespace RfCore.Loadpull
         }
 
         /// <summary>
-        /// Build N evenly-spaced levels spanning the grid's finite min and max.
+        /// Build N evenly-spaced levels STRICTLY INSIDE the grid's finite min and max: min + (max − min)·k/(N + 1), k = 1…N.
+        /// A level AT the maximum is the peak's own value, so it traced a degenerate ring round the one raster node holding it — a
+        /// tiny contour drawn at every loadpull's optimum — and a level at the minimum did the same in a corner. One level is the
+        /// midpoint, as it always was.
         /// </summary>
         public static ContourLevelSet LevelsBetween(SurfaceGrid grid, int n)
         {
@@ -221,7 +224,7 @@ namespace RfCore.Loadpull
             if (n <= 1)    return new ContourLevelSet(new[] { (min + max) * 0.5 });
             var levels = new double[n];
             for (int i = 0; i < n; i++)
-                levels[i] = min + (max - min) * i / (n - 1);
+                levels[i] = min + (max - min) * (i + 1) / (n + 1);
             return new ContourLevelSet(levels);
         }
 

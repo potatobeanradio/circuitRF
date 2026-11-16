@@ -226,8 +226,11 @@ public class ContourExtractorTests
         // Grid values range from 0 (at origin) to ~2 (at corners ±1,±1)
         var levelSet = ContourExtractor.LevelsBetween(grid, 5);
 
-        Assert.True(levelSet.Levels[0] >= 0, "First level should be at grid min (≥0)");
-        Assert.True(levelSet.Levels[4] <= 2.0 + 1e-6, "Last level should be at grid max (≤2)");
+        // Strictly inside: a level at the maximum is the peak's own value and draws a degenerate ring round the node holding it.
+        double min = grid.Values.Where(double.IsFinite).Min(), max = grid.Values.Where(double.IsFinite).Max();
+        Assert.True(levelSet.Levels[0] > min, "First level should be above the grid min");
+        Assert.True(levelSet.Levels[4] < max, "Last level should be below the grid max");
+        Assert.Equal(min + (max - min) / 6, levelSet.Levels[0], 12);
 
         // Levels should be monotonically increasing
         for (int i = 1; i < levelSet.Levels.Length; i++)
