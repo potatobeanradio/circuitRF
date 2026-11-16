@@ -425,7 +425,7 @@ match is −11.6 dB at F: the modes' unequal speeds, which no length fixes. The 
 
 Registration: every row of §4, with a `Phase` that reaches the factory in radians (an authored "90 deg", as MCURVE's
 `Angle`) and the generator in degrees; `Reference` a name, kept as text by the elaborator and Update Layout. Tests:
-`CouplerOptionsPlanTests`, `CouplerOptionsSParamTests`, `F14-schiffman-phase-shifter` (a mitred fold) through Update
+`CouplerOptionsPlanTests`, `CouplerOptionsSParamTests`, `F25-schiffman-phase-shifter` (a mitred fold) through Update
 Layout and LVS with a `Phase` mismatch, the catalogue and the generator version.
 
 ### 3.7 MRRC's coupled-line form: not built
