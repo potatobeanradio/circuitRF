@@ -20,6 +20,13 @@ public abstract class CoupledResonatorRealiser(string name, ResonatorShape shape
 
     public string Name => name;
 
+    /// <summary>Where k and Qe are mapped to geometry (§6b): the circuit model, or with <see cref="CouplingRefine.Em"/>
+    /// curves <see cref="Em"/> measures, for the hairpins and open loops.</summary>
+    public CouplingRefine Refine { get; init; }
+
+    /// <summary>The EM solver <see cref="CouplingRefine.Em"/> measures with, which the host passes in.</summary>
+    public ICouplingCurveSolver? Em { get; init; }
+
     public bool Supports(FilterSpec spec, out string? why)
     {
         why = Check(spec)?.Message;
@@ -59,11 +66,13 @@ public abstract class CoupledResonatorRealiser(string name, ResonatorShape shape
             }
             var k = CoupledResonatorDesign.Couplings(g, fbw);
             double qe = CoupledResonatorDesign.ExternalQ(g, fbw);
-            v = CoupledResonatorDesign.FromCouplings(form, k, qe, f0, s);
+            v = CoupledResonatorDesign.FromCouplings(form, k, qe, f0, s, Refine == CouplingRefine.Em ? Em : null);
             note = $"Coupling coefficients k(1,2) = {(n > 1 ? k[0, 1] : 0.0).ToString("G3", CultureInfo.InvariantCulture)}… "
                  + $"and Qe = {qe.ToString("G3", CultureInfo.InvariantCulture)}, each gap and the "
                  + (feed == ResonatorFeed.Tapped ? "tap" : "feed gap") + " solved on the circuit model (MCLIN pairs; the "
-                 + (shape == ResonatorShape.Hairpin ? "arms' own coupling" : "corners' coupling") + " left out).";
+                 + (shape == ResonatorShape.Hairpin ? "arms' own coupling" : "corners' coupling") + " left out)"
+                 + (Refine == CouplingRefine.Em ? ", then the gaps" + (feed == ResonatorFeed.Tapped ? " and the tap" : "")
+                    + " read off EM curves measured around it." : ".");
         }
         foreach (var (key, fallback) in new[] { ("Shape", shape.ToString()), ("Profile", profile.ToString()), ("Feed", feed.ToString()),
                      ("Form", nameof(ResonatorForm.Bandpass)), ("Arrangement", nameof(LoopArrangement.Inline)),
@@ -82,8 +91,13 @@ public abstract class CoupledResonatorRealiser(string name, ResonatorShape shape
             var other => Convert.ToString(other, CultureInfo.InvariantCulture)!,
         });
 
-    private static ParameterRefusalException? Check(FilterSpec spec) => spec switch
+    private ParameterRefusalException? Check(FilterSpec spec) => spec switch
     {
+        _ when Refine == CouplingRefine.Em && shape is ResonatorShape.Straight or ResonatorShape.ZigZag => CouplingCurves.Refusal(
+            "closed-form", "Cohn's {shape} chain is closed form, with no k or Qe to measure; EM curves refine the hairpins "
+            + "and open loops.", ("shape", shape)),
+        _ when Refine == CouplingRefine.Em && Em is null => CouplingCurves.Refusal("no-solver",
+            "Refine = Em needs an EM solver passed in, and none was."),
         { Band: not FilterBand.Bandpass } => CoupledResonatorDesign.Refusal("band",
             "these realisers build bandpass filters; a {band} filter is another family's.", ("band", spec.Band)),
         { TransmissionZerosHz.Count: > 0 } => CoupledResonatorDesign.Refusal("zeros", "{n} transmission zeros need cross "

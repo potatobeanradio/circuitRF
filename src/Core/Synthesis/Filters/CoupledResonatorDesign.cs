@@ -127,10 +127,11 @@ public static class CoupledResonatorDesign
     /// (Sx), in the square itself, its other two loops shortened to 0.6·l (near 1.7·f0, out of the window) and its other
     /// gaps 5·h, so the split and the mean are the pair's own. Only |k| is realised: the square's geometry sets each
     /// sign. Any other non-zero k_ij further apart is refused. Returns the stored values: <paramref name="form"/>'s, plus
-    /// N, L_k, the gaps (and Sx) and Tap.
+    /// N, L_k, the gaps (and Sx) and Tap. With <paramref name="em"/>, each gap and a tap are then read off EM curves
+    /// measured around the circuit model's answer (§6b, <see cref="CouplingCurves"/>).
     /// </summary>
     public static Dictionary<string, object> FromCouplings(IReadOnlyDictionary<string, object> form, double[,] k, double qe,
-        double fHz, MicrostripSubstrate s)
+        double fHz, MicrostripSubstrate s, ICouplingCurveSolver? em = null)
     {
         int n = k.GetLength(0);
         bool cross = form.GetValueOrDefault("Arrangement") is "Cross";
@@ -143,12 +144,7 @@ public static class CoupledResonatorDesign
         s = Lossless(s);
         double w = (double)form["W"], h = s.HMeters, light = 3.0 * h;
         bool tapped = form.TryGetValue("Feed", out var feed) && feed is "Tapped";
-        PassivePlan Build(int count, double l, params (string Key, object Value)[] more)
-        {
-            var d = new Dictionary<string, object>(form) { ["N"] = (double)count, ["L"] = l, ["Arrangement"] = "Inline" };
-            foreach (var (key, value) in more) d[key] = value;
-            return CoupledResonatorPlan.Build(Spec(d), s);
-        }
+        PassivePlan Build(int count, double l, params (string Key, object Value)[] more) => Bench(form, s, count, l, more);
         (string, object)[] Light(int count) => [("Feed", "Coupled"), ("S1", light), ($"S{count + 1}", light)];
 
         // 1. One resonator at f0.
@@ -161,24 +157,34 @@ public static class CoupledResonatorDesign
         lone = Peaks(Build(1, l, Light(1)), s, 1, 0.5 * fHz, 1.5 * fHz)[0];
 
         // 2. The gaps from the pair's split: two in a row, or one of the cross square's own pairs in the square.
+        string Bed(string key) => cross && key is "S3" or "Sx" ? key : "";
+        PassivePlan PairPlan(string key, double gap) => Bed(key) == "" ? LightPair(form, l, gap, s)
+            : Build(4, l, [.. Light(4), ("Arrangement", "Cross"), ("S2", 5.0 * h), ("S3", 5.0 * h), ("S4", 5.0 * h),
+                ("Sx", 5.0 * h), (key, gap), .. Enumerable.Range(1, 4)
+                    .Select(i => ($"L{i}", (object)((i is 1 or 4) == (key == "Sx") ? l : 0.6 * l)))]);
         var pairs = new Dictionary<(string, double), double[]>();
-        double[] Pair(string key, double gap)
-        {
-            bool square = cross && key is "S3" or "Sx";
-            if (pairs.TryGetValue((square ? key : "", gap), out var f)) return f;
-            var plan = !square ? Build(2, l, [.. Light(2), ("S2", gap)])
-                : Build(4, l, [.. Light(4), ("Arrangement", "Cross"), ("S2", 5.0 * h), ("S3", 5.0 * h), ("S4", 5.0 * h),
-                    ("Sx", 5.0 * h), (key, gap), .. Enumerable.Range(1, 4)
-                        .Select(i => ($"L{i}", (object)((i is 1 or 4) == (key == "Sx") ? l : 0.6 * l)))]);
-            return pairs[(square ? key : "", gap)] = Peaks(plan, s, 2, 0.5 * lone, 1.5 * lone);
-        }
+        double[] Pair(string key, double gap) => pairs.TryGetValue((Bed(key), gap), out var f) ? f
+            : pairs[(Bed(key), gap)] = Peaks(PairPlan(key, gap), s, 2, 0.5 * lone, 1.5 * lone);
         static double Split(double[] f) => (f[1] * f[1] - f[0] * f[0]) / (f[1] * f[1] + f[0] * f[0]);
         var sides = Enumerable.Range(1, n - 1).Select(i => (I: i, J: i + 1, Key: $"S{i + 1}")).ToList();
         if (cross) sides.Add((1, n, "Sx"));
         var v = new Dictionary<string, object>(form) { ["N"] = (double)n };
+        var onEm = new Dictionary<(string, double), double>();
         foreach (var (i, j, key) in sides)
-            v[key] = PassivePlan.OnGrid(Solve(gap => Split(Pair(key, gap)), Math.Abs(k[i - 1, j - 1]), 0.1 * h, 5.0 * h,
-                log: true, $"k({i},{j}) = {k[i - 1, j - 1]:G3}"));
+        {
+            string what = $"k({i},{j}) = {k[i - 1, j - 1]:G3}";
+            double target = Math.Abs(k[i - 1, j - 1]);
+            double gap = Solve(gap => Split(Pair(key, gap)), target, 0.1 * h, 5.0 * h, log: true, what);
+            // EM: k(S) on the same bench through half, once and twice the circuit's gap.
+            if (em is not null)
+                gap = onEm.TryGetValue((Bed(key), gap), out var g) ? g : onEm[(Bed(key), gap)] = CouplingCurve.Through(
+                    [Math.Max(0.1 * h, gap / 2.0), gap, Math.Min(5.0 * h, 2.0 * gap)], x =>
+                    {
+                        var f = Pair(key, PassivePlan.OnGrid(x));
+                        return CouplingCurves.CouplingOf(em, PairPlan(key, PassivePlan.OnGrid(x)), s, Math.Sqrt(f[0] * f[1]));
+                    }).Where(target, what);
+            v[key] = PassivePlan.OnGrid(gap);
+        }
 
         // 3. The feed from one resonator's group delay.
         // A feed so heavy that the resonance drowns in the direct path between the taps counts as Qe = 0.
@@ -190,21 +196,29 @@ public static class CoupledResonatorDesign
             // its opening and, in an odd row or the square, on round the corner along the outer side, the corner
             // skipped (an even row's last loop has its coupled side there).
             double tap, arm = new PlanBend([1, 2], 0, 0, 0, w, 90.0, PlanBend.MiterFor(PlanCorner.Miter, w, s)).Arm;
+            // The tap along u in [lo, hi]; with EM, Qe(Tap) through it and a tenth of the range either side.
+            double Fit(Func<double, double> tapOf, double lo, double hi)
+            {
+                string what = $"Qe = {qe:G3}";
+                double u = Solve(x => Qe(Build(1, l, ("Tap", PassivePlan.OnGrid(tapOf(x))))), qe, lo, hi, log: false, what);
+                if (em is null) return tapOf(u);
+                double d = 0.1 * (hi - lo);
+                return tapOf(CouplingCurve.Through([Math.Max(lo, u - d), u, Math.Min(hi, u + d)],
+                    x => CouplingCurves.ExternalQOf(em, Build(1, l, ("Tap", PassivePlan.OnGrid(tapOf(x)))), s, lone))
+                    .Where(qe, what));
+            }
             if (form["Shape"] is "OpenLoop")
             {
                 double side = (l + (double)form["Gap"]) / 4.0;
                 double a = side / 2.0 - arm - w, b = side / 2.0 + arm + w;
                 double c = n % 2 == 1 || cross ? 1.5 * side - arm - w : b;
-                double Tap(double u) => u <= a ? u : u - a + b;
-                tap = Tap(Solve(u => Qe(Build(1, l, ("Tap", PassivePlan.OnGrid(Tap(u))))), qe, w, a + c - b, log: false,
-                    $"Qe = {qe:G3}"));
+                tap = Fit(u => u <= a ? u : u - a + b, w, a + c - b);
             }
             else
             {
                 double centre = form.GetValueOrDefault("Profile") is "Sir" ? (double)form["Uc"] * l
                               : w + (double)form["Sa"] + 2.0 * arm;
-                tap = Solve(t => Qe(Build(1, l, ("Tap", PassivePlan.OnGrid(t)))), qe, centre / 2.0 + 0.6 * w,
-                    l / 2.0 - 0.6 * w, log: false, $"Qe = {qe:G3}");
+                tap = Fit(t => t, centre / 2.0 + 0.6 * w, l / 2.0 - 0.6 * w);
             }
             v["Tap"] = PassivePlan.OnGrid(tap);
             fed = [("Tap", v["Tap"])];
@@ -228,6 +242,21 @@ public static class CoupledResonatorDesign
         }
         return v;
     }
+
+    /// <summary>The bench k and Qe are measured on: <paramref name="count"/> resonators of <paramref name="form"/>'s shape,
+    /// each <paramref name="l"/> long in a row, <paramref name="more"/>'s values on top.</summary>
+    public static PassivePlan Bench(IReadOnlyDictionary<string, object> form, MicrostripSubstrate s, int count, double l,
+        params (string Key, object Value)[] more)
+    {
+        var d = new Dictionary<string, object>(form) { ["N"] = (double)count, ["L"] = l, ["Arrangement"] = "Inline" };
+        foreach (var (key, value) in more) d[key] = value;
+        return CoupledResonatorPlan.Build(Spec(d), s);
+    }
+
+    /// <summary>Two resonators <paramref name="gap"/> apart, each lightly fed by a coupled strip 3·h off: the pair whose
+    /// split gives k.</summary>
+    public static PassivePlan LightPair(IReadOnlyDictionary<string, object> form, double l, double gap, MicrostripSubstrate s)
+        => Bench(form, s, 2, l, ("Feed", "Coupled"), ("S1", 3.0 * s.HMeters), ("S3", 3.0 * s.HMeters), ("S2", gap));
 
     /// <summary>The spec a placed part with these stored values reads as.</summary>
     public static CoupledResonatorSpec Spec(IReadOnlyDictionary<string, object> v)
