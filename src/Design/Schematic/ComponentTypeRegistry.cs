@@ -1774,6 +1774,9 @@ public static class ComponentTypeRegistry
                                  + "nearest ground-designated conductor below the signal layer.",
         (SymbolKind.Mwpd, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below the "
                                               + "signal layer.",
+        (SymbolKind.Mrrc, "Meander") => "0: the plain ring. An odd number k: the 3λ/4 arm folded inside the ring with k turns, "
+                                      + "the three λ/4 arms round it, so the ring is about a quarter wave narrower. Curved "
+                                      + "corners only.",
         (SymbolKind.GsgPad, "W") => "Width of the line leaving the signal pad. Placed: the 50 Ω width on the technology.",
         (SymbolKind.GsgPad, "L") => "Length of the line, from the signal pad's edge to terminal 2.",
         (SymbolKind.GsgPad, "Pitch") => "Probe pitch: centre of the signal pad to the centre of each ground pad. The probe's, "
@@ -4118,6 +4121,7 @@ public static class ComponentTypeRegistry
                 return [new("Z0", "50",  "Ω",   true, UnitDimension.Resistance),
                         new("F",  "2.4", "GHz", true, UnitDimension.Frequency),
                         new("Corner", nameof(PlanCorner.Curve), "", false, UnitDimension.None),
+                        new("Meander", "0", "", false, UnitDimension.None),
                         .. SignalGroundLayerParams];
             // MCLC / MIDC: the coupling, the ports' impedance and F; W, S and L are derived and shown as a readout.
             // MIDC opens at 4 dB, the tightest four fingers reach with 100 µm gaps on 20 mil RO4350B (3 dB needs 69 µm).

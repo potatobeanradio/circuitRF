@@ -56,7 +56,8 @@ public static class PassivePlanPCells
     public static PCellResult GenerateRatRace(
         IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
         => DrawOrRefuse(() => RatRacePlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
-            SubstrateOf(technology, layerSelection), CornerOf(parameters)).Plan, technology, layerSelection);
+            SubstrateOf(technology, layerSelection), CornerOf(parameters), parameters.Real("Meander", 0.0)).Plan,
+            technology, layerSelection);
 
     /// <summary>A ring's <c>Corner</c>, a name; Curve when it is absent or not one of the names.</summary>
     private static PlanCorner CornerOf(IReadOnlyDictionary<string, PCellValue> parameters)

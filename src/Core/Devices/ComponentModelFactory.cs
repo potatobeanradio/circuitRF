@@ -3051,10 +3051,11 @@ public static class ComponentModelFactory
                                     GetReal(parameters, "N", 1.0), SubstrateOf(parameters)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, BranchLineTypeName));
 
-    // MRRC: the specs Z0 and F, and how the ring turns (Corner); the plan derives the rest.
+    // MRRC: the specs Z0 and F, how the ring turns (Corner) and the 3λ/4 arm's turns folded inside it (Meander, 0 for
+    // none); the plan derives the rest.
     private static MicrostripPlanModel CreateRatRaceModel(IReadOnlyDictionary<string, Value> parameters)
         => new(RatRacePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
-                                 EnumNamed(parameters, "Corner", PlanCorner.Curve)).Plan,
+                                 EnumNamed(parameters, "Corner", PlanCorner.Curve), GetReal(parameters, "Meander", 0.0)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, RatRaceTypeName));
 
     /// <summary>The coupled-line coupler's engine token (pins 1 input, 2 through, 3 coupled, 4 isolated).</summary>

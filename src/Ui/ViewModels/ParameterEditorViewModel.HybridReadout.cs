@@ -20,10 +20,15 @@ public partial class ParameterEditorViewModel
         {
             if (kind == SymbolKind.Mrrc)
             {
-                var r = RatRacePlan.Build(z0, f, s, Corner());
+                if (Spec("Meander", 0.0) is not { } meander)
+                    return ("", "Meander is an expression, so the ring's dimensions are known only at run time.");
+                var r = RatRacePlan.Build(z0, f, s, Corner(), meander);
                 return ($"W {Mm(r.W0Meters, "0.#####")} (Z0), ring {Mm(r.RingWMeters, "0.#####")} ({Ohm(r.RingZ0)})\n"
                       + $"L {Mm(r.QuarterWaveMeters)} (λg/4 at F, εeff {Eeff(r.RingEeff)}); the ring is 6 of them\n"
-                      + (r.Corner == PlanCorner.Curve
+                      + (r.MeanderTurns > 0
+                          ? $"Half-turn radius {Mm(r.RadiusMeters)}; the 3λg/4 arm folded inside in {r.MeanderTurns} "
+                          + $"turns, legs {Mm(r.MeanderPitchMeters)} apart"
+                          : r.Corner == PlanCorner.Curve
                           ? $"Half-turn radius {Mm(r.RadiusMeters)}"
                           : $"Each end: a {Mm(r.SideMeters)} side between two {(r.Corner == PlanCorner.Miter ? "mitred" : "square")} "
                           + $"corners, each standing for {Mm(r.CornerMeters)} of ring at F"), "");
