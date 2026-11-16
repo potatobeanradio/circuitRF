@@ -1,0 +1,214 @@
+{
+ "name": "HolesAndQuadPort",
+ "variables": {},
+ "materials": [],
+ "designs": [
+  {
+   "name": "Holes",
+   "units": "mm",
+   "settings": {
+    "SolutionType": "Modal",
+    "AutoOpen": "Auto Open",
+    "AutoOpenBoundary": "Radiation",
+    "AutoOpenPadding": "10mm",
+    "RadiatingStructure": "False"
+   },
+   "variables": {},
+   "objects": [
+    {
+     "name": "Sub",
+     "history": [
+      {
+       "kind": "CreatePolyline",
+       "props": {
+        "Points": "0,0,0;20,0,0;20,10,0;0,10,0",
+        "SegmentTypes": "",
+        "Closed": "True",
+        "Covered": "True",
+        "Holes": "2,6,0;4,6,0;4,8,0;2,8,0|14,6,0;16,6,0;15,8,0"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "SweepAlongVector",
+       "props": {
+        "Vector": "0,0,1"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "FR4_epoxy",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Plane",
+     "history": [
+      {
+       "kind": "CreatePolyline",
+       "props": {
+        "Points": "0,0,0;20,0,0;20,10,0;0,10,0",
+        "SegmentTypes": "",
+        "Closed": "True",
+        "Covered": "True",
+        "Holes": "9,7,0;11,7,0;11,9,0;9,9,0"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Board",
+     "history": [
+      {
+       "kind": "CreatePolyline",
+       "props": {
+        "Points": "0,0,1;20,0,1;20,3.11,1;0,3,1",
+        "SegmentTypes": "",
+        "Closed": "True",
+        "Covered": "True",
+        "Holes": ""
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Pad",
+     "history": [
+      {
+       "kind": "CreatePolyline",
+       "props": {
+        "Points": "9,3.3495,1;11,3.3605,1;11,5,1;9,5,1",
+        "SegmentTypes": "",
+        "Closed": "True",
+        "Covered": "True",
+        "Holes": ""
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "PortSheet",
+     "history": [
+      {
+       "kind": "CreatePolyline",
+       "props": {
+        "Points": "9,3.0495,1;11,3.0605,1;11,3.3605,1;9,3.3495,1",
+        "SegmentTypes": "",
+        "Closed": "True",
+        "Covered": "True",
+        "Holes": ""
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    }
+   ],
+   "boundaries": [
+    {
+     "name": "Metal",
+     "kind": "Perfect E",
+     "props": {},
+     "faces": [],
+     "objects": [
+      "Plane",
+      "Board",
+      "Pad"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "excitations": [
+    {
+     "name": "P1",
+     "kind": "Lumped Port",
+     "props": {
+      "PortNumber": "1",
+      "Impedance": "50ohm",
+      "IntegrationLine": "10,3.055,1;10,3.355,1"
+     },
+     "faces": [],
+     "objects": [
+      "PortSheet"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "mesh_ops": [],
+   "setups": [
+    {
+     "name": "Setup1",
+     "props": {
+      "Enabled": "True",
+      "SolutionFrequencyMode": "Single",
+      "Frequency": "2GHz",
+      "MaximumPasses": "2"
+     },
+     "sweeps": [],
+     "eigen": false
+    }
+   ],
+   "spheres": [],
+   "reports": [],
+   "field_plots": [],
+   "coord_systems": [],
+   "optimetrics": [],
+   "parametrics": [],
+   "working_cs": "Global",
+   "notes": ""
+  }
+ ],
+ "format": "hertzon-project",
+ "version": 2
+}

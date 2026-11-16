@@ -1059,6 +1059,33 @@ mode-normalised header line (HZN-11's rule).
 are GroundedCPW, an LNA, a mixer, a VNA test set and the second glasses antenna's runs B and C — 99 3D designs, 49 open. Runs B and C
 (37 designs) are stopped by a polyline with holes and an axis-plane port sheet that is a rectangle only to ~0.3 %.
 
+### HZN-17 — polylines with holes, and a port sheet drawn as a quadrilateral in an axis plane (2026-11-16)
+
+Census on the local 0.3.26 copy: **49 → 84 of 99** (runB 29 of 30, runC 6 of 7; `Ex2_Benchmark` keeps a Multi-Frequencies setup and
+`T_thick` a `ThickenSheet`). A probe that stripped the two items from a scratch copy predicted exactly this before anything was built,
+so nothing else was hiding behind them.
+
+- **Nothing in the format or the engine was missing for holes.** `.c3d` prisms and sheets already carried `Holes` end to end (lowering,
+  all three solvers, port seams, sheet booleans, STEP). The translator refused the `Holes` property and `C3dToHzn` refused writing one;
+  both were the whole gap. The edit-and-save path needed nothing more: `HznPatch` diffs the writer's output for the baseline against the
+  edited document.
+- **Hole validity is the 2D layout's rule, reused**: `LayoutClipper.HolesAreValid` (inside the outline, crossing neither it nor another
+  hole). The translator refuses an invalid ring rather than repairing it as the `.clay` loader does (`EnsureValidHoles`, a Clipper
+  union): Hertzon's own repair bridges touching rings with a few µm of copper, a different shape.
+- **Winding does not matter downstream.** Hertzon takes any closed loop inside the outline as a hole whichever way it is drawn (its
+  changelog), and both EMerge paths (`EmergeScriptWriter`, sheets and extruded polygons) pass every ring through
+  `GmshGeoWriter.PlanarRings`, which winds holes like their outline (the clockwise-hole OCC trap recorded below).
+- **The port sheet** is the axis-plane twin of HZN-15's `TiltedRect` (`DrawnAxisQuad`): four points that pass
+  `Em3dPortQuad.Problem(DrawnTolerance)` but are no exact rectangle become `Corners`. runC's points name variables (`xf`, `gp`); the port
+  says its corners are numbers.
+- **A drawn port's end tolerance now scales with the port** (`C3dTurnedPorts.DrawnEndTolerance`: 4 DBU or a part in 10⁴ of its
+  longest side). The glasses file spells points to 0.1 µm, so the port's corners on the board's slanted edge are rounded either side
+  of it: one 25 nm inside, the other 27 nm outside, against 4 nm allowed. Contact inference found the right pair (an edge crossing the
+  copper touches it); only the drawn-end check refused. `SnapEnds` takes the same tolerance and puts each end exactly on its copper.
+  Inference keeps its own tolerance. A part in 10⁴ is what HZN-15 already allows a drawn shape's coplanarity.
+- `K1_IFA` converted, `check` gives 0 errors, and `em --dry-run` gives no refusal (its grid notes name the round hole's and the slot's
+  faces). Not solved, and not compared with Hertzon: the same family as run4, whose disagreement with its reference is still open.
+
 
 ## A run estimated between 100 % and 150 % of memory could not choose to swap (2026-11-05)
 

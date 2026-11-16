@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using CircuitRF.Core.Expressions;
+using CircuitRF.Design.Layout;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.ThreeD.Occ;
 
@@ -309,6 +310,12 @@ internal sealed partial class HznTranslator
         for (int e = 0; e < q.Outline.Count; e++)
             for (int k = 0; k < 2; k++)
                 if (!q.Outline[e][k].IsLiteral) C3dBindings.SetExpr(owner, spec.ElementAt(e), k, new C3dExpr(q.Outline[e][k].Text!, _siteUnit));
+        // brief-hzn-17 R-hzn17-1 — a polyline's holes, numbers
+        if (q.Holes is { Count: > 0 } holes)
+        {
+            var target = owner switch { C3dPrism pr => pr.Holes, C3dSheet sh => sh.Holes, _ => null };
+            target?.AddRange(holes.Select(h => h.ToList()));
+        }
     }
 
     /// <summary>A value that must be a plain number (a segment count, a flag): evaluated, never an expression.</summary>
@@ -369,6 +376,9 @@ internal sealed partial class HznTranslator
         /// <summary>brief-hzn-15 — a four-cornered sheet in a tilted plane that is a rectangle to a part in a hundred: its corners,
         /// world DBU (a port's <c>Corners</c>); null for every other sheet.</summary>
         public List<C3dPoint3>? Corners { get; init; }
+
+        /// <summary>brief-hzn-17 — the points <see cref="Corners"/> came from named variables, which the corners (numbers) do not keep.</summary>
+        public bool CornersNamedVariables { get; init; }
     }
 
     private sealed record Folded(C3dObject Tree, SheetGeom? Sheet, IReadOnlyList<string> Consumed, IReadOnlyList<HznStepOrigin> Steps);
@@ -805,8 +815,9 @@ internal sealed partial class HznTranslator
     /// <summary>A circle, or (brief-hzn-13) an ellipse when <paramref name="RadiusV"/> is set: its second radius, along the plane's v.</summary>
     private sealed record CircleInfo(C3dAxis Normal, Dim[] Centre, Dim Radius, Dim? RadiusV = null);
     /// <summary>A polyline in an axis plane: its offset and each point's (u, v), each component a number or an expression (brief-hzn-13).
-    /// <paramref name="Rect"/> is its rectangle when it is one (brief-hzn-14: a port may take it).</summary>
-    private sealed record PolyInfo(C3dPlane Plane, C3dAxis Normal, Dim Offset, List<Dim[]> Outline, SheetGeom? Rect = null);
+    /// <paramref name="Rect"/> is its rectangle when it is one (brief-hzn-14: a port may take it). <paramref name="Holes"/> (brief-hzn-17)
+    /// are its holes' (u, v) rings, DBU.</summary>
+    private sealed record PolyInfo(C3dPlane Plane, C3dAxis Normal, Dim Offset, List<Dim[]> Outline, SheetGeom? Rect = null, List<List<C3dPoint2>>? Holes = null);
 
     /// <summary>brief-hzn-14 R-hzn14-2 — a polyline standing in a vertical plane that is no axis plane: a sheet on <paramref name="Plane"/>
     /// (XZ or YZ) at offset 0, its outline (distance along the plane from <paramref name="Origin"/>, z), turned about z by
@@ -911,9 +922,10 @@ internal sealed partial class HznTranslator
             _r.Add(HznRefusalKind.CreationStep, "CreatePolyline with arcs or splines", $"segment types '{segments}' are not all straight lines", name);
             ok = false;
         }
-        if (!string.IsNullOrEmpty(p.GetValueOrDefault("Holes")))
+        string holesText = p.GetValueOrDefault("Holes") ?? "";
+        if (holesText.Length > 0 && line)
         {
-            _r.Add(HznRefusalKind.CreationStep, "CreatePolyline with holes", "holes in a polyline are not translated", name);
+            _r.Add(HznRefusalKind.CreationStep, "CreatePolyline with holes", "an open or uncovered polyline has no face for a hole to be cut from", name);
             ok = false;
         }
         if (!ok) return false;
@@ -949,6 +961,12 @@ internal sealed partial class HznTranslator
         var axes = new List<C3dAxis>();
         for (int a = 0; a < 3; a++)
             if (pts.All(q => Dbu(q[a]) == Dbu(pts[0][a]))) axes.Add((C3dAxis)a);
+        if (axes.Count != 1 && holesText.Length > 0)
+        {
+            // brief-hzn-17 R-hzn17-1 — no example has one; an upright or tilted sheet's outline is in its own frame, and its holes would be too
+            _r.Add(HznRefusalKind.CreationStep, "CreatePolyline with holes outside an axis plane", "holes are translated in an axis plane only", name);
+            return false;
+        }
         if (axes.Count != 1)
         {
             if (VerticalPolyline(pts, dims, name, Dbu) is { } vertical)
@@ -974,10 +992,72 @@ internal sealed partial class HznTranslator
         if (dims.Any(q => TextOf(q[ni]) != TextOf(offset)))
             _notes.Add($"{name}: its points spell their {normal} coordinate differently ({string.Join(", ", dims.Select(q => TextOf(q[ni])).Distinct().Take(4).Select(t => $"'{t}'"))}), " +
                        $"which all evaluate to the plane it lies in; the sheet's offset is the first point's, '{TextOf(offset)}'.");
-        st.Pending = Pend.Poly;
         var outline2 = dims.Select(q => new[] { q[ui], q[vi] }).ToList();
-        _pendingInfo = new PolyInfo(plane, normal, offset, outline2, AxisRect(plane, offset, outline2, pts.Select(q => (Dbu(q[ui]), Dbu(q[vi]))).ToList()));
+        List<List<C3dPoint2>>? holes = null;
+        if (holesText.Length > 0)
+        {
+            holes = PolylineHoles(holesText, pts, ui, vi, ni, Dbu, name, user);
+            if (holes is null) return false;
+        }
+        st.Pending = Pend.Poly;
+        // a sheet with holes is no port sheet
+        var rect = holes is null ? AxisRect(plane, offset, outline2, pts.Select(q => (Dbu(q[ui]), Dbu(q[vi]))).ToList()) : null;
+        if (rect?.Corners is not null && dims.Any(d => d.Any(c => !c.IsLiteral))) rect = rect with { CornersNamedVariables = true };
+        _pendingInfo = new PolyInfo(plane, normal, offset, outline2, rect, holes);
         return true;
+    }
+
+    /// <summary>
+    /// brief-hzn-17 R-hzn17-1 — a polyline's <c>Holes</c> (rings of <c>x,y,z</c> points, <c>;</c> between points and <c>|</c> between
+    /// rings) as the (u, v) rings of the outline's plane, DBU. Each ring has three distinct points in the outline's plane, and the
+    /// rings are checked by the 2D layout's own hole rule (<see cref="LayoutClipper.HolesAreValid"/>): inside the outline, crossing
+    /// neither it nor each other. Hertzon repairs touching rings with a bridge of its own; a different shape here would be silent, so an
+    /// invalid ring is refused. Null, with the refusal recorded, when any of that fails.
+    /// </summary>
+    private List<List<C3dPoint2>>? PolylineHoles(string text, List<double[]> outline, int ui, int vi, int ni, Func<double, long> dbu, string name, string user)
+    {
+        var rings = new List<List<C3dPoint2>>();
+        long plane = dbu(outline[0][ni]);
+        bool named = false;
+        foreach (string ringText in text.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var ring = new List<C3dPoint2>();
+            foreach (string pointText in ringText.Split(';', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var comps = HznExpressionTranslator.SplitTopLevel(pointText, ',');
+                if (comps.Count != 3) { _r.Add(HznRefusalKind.Expression, "polyline hole point", $"'{pointText}' is not three values", user); return null; }
+                var m = new double[3];
+                for (int i = 0; i < 3; i++)
+                {
+                    if (Len(comps[i], user) is not { } dim) return null;
+                    m[i] = Metres(dim);
+                    if (double.IsNaN(m[i])) return null;
+                    named |= !dim.IsLiteral;
+                }
+                if (dbu(m[ni]) != plane)
+                {
+                    _r.Add(HznRefusalKind.CreationStep, "CreatePolyline with a hole off its plane", $"the hole point '{pointText}' does not lie in the outline's plane", name);
+                    return null;
+                }
+                ring.Add(new C3dPoint2(dbu(m[ui]), dbu(m[vi])));
+            }
+            if (ring.Distinct().Count() < 3)
+            {
+                _r.Add(HznRefusalKind.CreationStep, "CreatePolyline with a degenerate hole", $"hole {rings.Count} has fewer than three distinct points", name);
+                return null;
+            }
+            rings.Add(ring);
+        }
+        static long[] Flat(IEnumerable<C3dPoint2> ring) => [.. ring.SelectMany(q => new[] { q.U, q.V })];
+        var all = new List<long[]> { Flat(outline.Select(q => new C3dPoint2(dbu(q[ui]), dbu(q[vi])))) };
+        all.AddRange(rings.Select(Flat));
+        if (!LayoutClipper.HolesAreValid(all))
+        {
+            _r.Add(HznRefusalKind.CreationStep, "CreatePolyline with an invalid hole", "a hole lies outside its outline, crosses it, or crosses another hole", name);
+            return null;
+        }
+        if (named) _notes.Add($"{name}: its holes named variables; a .c3d hole holds numbers, so they are the values at translation.");
+        return rings;
     }
 
     /// <summary>An open or uncovered polyline as a .c3d polyline (construction geometry, never solved), its vertices in 3D so each
@@ -999,14 +1079,34 @@ internal sealed partial class HznTranslator
         if (outline.Count != 4) return null;
         var us = at.Select(p => p.U).Distinct().ToList();
         var vs = at.Select(p => p.V).Distinct().ToList();
-        if ((us.Count != 2 || vs.Count != 2) && plane == C3dPlane.XY) return TurnedXyRect(offset, at);
-        if (us.Count != 2 || vs.Count != 2) return null;
-        foreach (long u in us) foreach (long v in vs) if (!at.Contains((u, v))) return null;
+        if ((us.Count != 2 || vs.Count != 2) && plane == C3dPlane.XY && TurnedXyRect(offset, at) is { } turned) return turned;
+        if (us.Count != 2 || vs.Count != 2) return DrawnAxisQuad(plane, offset, at);
+        foreach (long u in us) foreach (long v in vs) if (!at.Contains((u, v))) return DrawnAxisQuad(plane, offset, at);
         int iu0 = at.FindIndex(p => p.U == us.Min()), iu1 = at.FindIndex(p => p.U == us.Max());
         int iv0 = at.FindIndex(p => p.V == vs.Min()), iv1 = at.FindIndex(p => p.V == vs.Max());
         var min = new[] { outline[iu0][0], outline[iv0][1] };
         var size = new[] { Add(outline[iu1][0], Neg(outline[iu0][0])), Add(outline[iv1][1], Neg(outline[iv0][1])) };
         return new SheetGeom(plane, offset, min, size, Placed: false);
+    }
+
+    /// <summary>
+    /// brief-hzn-17 R-hzn17-2 — four axis-plane points that are neither an exact rectangle nor an exact turned one, but a rectangle to a
+    /// part in a hundred (a port sheet joining a slanted board edge to a pad): the port sheet it is, as its corners in world DBU and drawn
+    /// order, exactly as <see cref="TiltedRect"/> does in a tilted plane. Numbers only. Null when the points are no such quadrilateral.
+    /// </summary>
+    private SheetGeom? DrawnAxisQuad(C3dPlane plane, Dim offset, List<(long U, long V)> at)
+    {
+        long n = Dbu(offset);
+        var corners = at.Select(p => plane switch
+        {
+            C3dPlane.YZ => new C3dPoint3(n, p.U, p.V),
+            C3dPlane.XZ => new C3dPoint3(p.U, n, p.V),
+            _ => new C3dPoint3(p.U, p.V, n),
+        }).ToList();
+        static CircuitRF.Engine.Em3d.Point3 W(C3dPoint3 p) => new(p.X, p.Y, p.Z);
+        var quad = new CircuitRF.Engine.Em3d.Em3dPortQuad(W(corners[0]), W(corners[1]), W(corners[2]), W(corners[3]));
+        if (quad.Problem(CircuitRF.Engine.Em3d.Em3dPortQuad.DrawnTolerance) is not null) return null;
+        return new SheetGeom(plane, Dim.Zero, [Dim.Zero, Dim.Zero], [Dim.Zero, Dim.Zero], Placed: false) { Corners = corners };
     }
 
     /// <summary>brief-hzn-14 — four XY points that are a rectangle turned in the plane (each corner square and opposite sides equal, to

@@ -202,8 +202,8 @@ public static class C3dTurnedPorts
     /// </summary>
     internal static Em3dPortQuad SnapEnds(Em3dPortQuad quad, Point3 direction, string negative, string positive, C3dPortContext ctx)
     {
-        double tol = 4 * ctx.Dbu + ctx.OutlineMoveM;
         var (neg, pos) = quad.Ends(direction);
+        double tol = DrawnEndTolerance(ctx, neg, pos);
         var moved = new Dictionary<Point3, Point3>();
         foreach (var (name, (p, q)) in new[] { (negative, neg), (positive, pos) })
         {
@@ -253,13 +253,28 @@ public static class C3dTurnedPorts
     }
 
     /// <summary>
+    /// How far a drawn port's end may stand off its conductor and still be on it (the run then moves it exactly there,
+    /// <see cref="SnapEnds"/>): four DBU (brief-hzn-15: its corners and a tilted conductor are each rounded in their own frame), or
+    /// (brief-hzn-17) a part in 10⁴ of the port's longest side, whichever is more. An imported model writes its points to a fixed number
+    /// of decimals: Hertzon's glasses example spells them to 0.1 µm, so a corner on a slanted board edge is up to 0.05 µm off it, and a
+    /// 0.6 mm port's end was 0.027 µm off a board it lies along. A part in 10⁴ is the coplanarity HZN-15 already allows a drawn shape.
+    /// Contact inference does not use this: it measures a whole edge, which a corner rounded either side of the copper still touches.
+    /// </summary>
+    internal static double DrawnEndTolerance(C3dPortContext ctx, (Point3 A, Point3 B) neg, (Point3 A, Point3 B) pos)
+    {
+        double side = new[] { Geometry3.Length(Geometry3.Sub(neg.B, neg.A)), Geometry3.Length(Geometry3.Sub(pos.B, pos.A)),
+                              Geometry3.Length(Geometry3.Sub(pos.A, neg.A)), Geometry3.Length(Geometry3.Sub(pos.B, neg.B)) }.Max();
+        return Math.Max(4 * ctx.Dbu, 1e-4 * side) + ctx.OutlineMoveM;
+    }
+
+    /// <summary>
     /// brief-hzn-15 — a port drawn as its corners: each end must lie ON its conductor's surface, every ninth of the way along it within
     /// the tolerance (a sheet's face, a solid's face, whatever the plane). No seam is made: the end lies in that surface, which the
     /// mesher imprints, as it does a vertical port's end inside a sheet.
     /// </summary>
     private static string? DrawnEnds(string label, (Point3, Point3) neg, (Point3, Point3) pos, string negative, string positive, C3dPortContext ctx)
     {
-        double tol = 4 * ctx.Dbu + ctx.OutlineMoveM;
+        double tol = DrawnEndTolerance(ctx, neg, pos);
         foreach (var (name, (p, q), which) in new[] { (negative, neg, "negative"), (positive, pos, "positive") })
         {
             var c = ctx.Conductors.FirstOrDefault(k => k.Name == name);

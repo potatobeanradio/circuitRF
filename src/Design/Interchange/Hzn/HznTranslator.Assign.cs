@@ -385,6 +385,8 @@ internal sealed partial class HznTranslator
                     return;
                 }
                 port.Corners = drawn;
+                if (geom.CornersNamedVariables)
+                    _notes.Add($"Port '{name}': its sheet '{hz}' is drawn as its corners, which are numbers; the variables its points named move the copper and not the port.");
             }
             else if (geom.Angle != 0)
             {

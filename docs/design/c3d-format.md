@@ -298,7 +298,8 @@ Rules a reader must apply:
   of `Rect` on `Plane` (which, with `Angle`, are then not read). It lies in any plane, a tilted one included. It is a rectangle to
   a part in a hundred (opposite sides parallel and equal, corners square) and flat to a part in a hundred thousand: an exported
   model joins two edges that are not exactly parallel, and the port keeps both exactly. Its conductors are inferred from what its
-  edges touch, as any port's; each end must lie on its conductor's surface (within 4 DBU), and the run puts it exactly there.
+  edges touch, as any port's; each end must lie on its conductor's surface (within 4 DBU, or a part in 10⁴ of the port's longest side when that is more:
+  an imported model's points carry a fixed number of decimals), and the run puts it exactly there.
   Never a wave port, a ring or on a cylinder. EMerge runs it, its voltage integrated between its two ends; openEMS refuses it.
 - **`Annulus` makes a coaxial lumped port** (brief-cxp-1): its sheet is a ring, `{ "Centre": [u, v], "Inner": dbu,
   "Outer": dbu }` on the port's `Plane` and `Offset`, instead of `Rect`. Each value may be an expression.
