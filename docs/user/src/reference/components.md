@@ -1985,12 +1985,19 @@ or silicon process the part takes the substrate from the technology like any lin
 {{symbol: mlad}}
 
 One through line from terminal 1 to terminal 2, built from an ordered list of sections: series lines, gaps and tapers,
-and shunt stubs at junctions along it. One part holds stepped-impedance and stub lowpass filters (the elliptic kind
-included), shorted-stub bandpass and highpass filters, quarter-wave stub bandstop filters, end-coupled bandpass filters,
-DC blocks, single- and double-stub matchers and multi-section quarter-wave transformers. `Sections` is the list; `Z0` is
-the impedance of the lines the ladder is fed by, and `F` the frequency the readout states each section at. A shorted stub
-ends on a terminal `G1`, `G2`, … of its own: **the grounds are not part of the part**. Place a via to ground (VIAGND) on
-each; **Design ▸ Update Layout from Schematic** places it beside the stub's end.
+shunt stubs at junctions along it (open, shorted, or ending on a radial or butterfly stub), and sites for lumped parts.
+One part holds stepped-impedance and stub lowpass filters (the elliptic kind included), radial-stub and butterfly
+lowpass filters, shorted-stub bandpass and highpass filters, quarter-wave stub bandstop filters, end-coupled bandpass
+filters, DC blocks, single- and double-stub matchers, multi-section quarter-wave transformers, and semi-lumped and
+lumped LC ladders. `Sections` is the list; `Z0` is the impedance of the lines the ladder is fed by, `F` the frequency the
+readout states each section at, and `Gap` the span a series site leaves for its part.
+
+**The parts and the grounds are not part of the part.** A shorted stub ends on a terminal of its own, and a site's part
+goes on terminals of its own: `G1`, `G2`, … in the list's order, one per shorted stub arm, one per shunt site and two per
+series site. Place a via to ground (VIAGND) on each shorted stub's terminal, and the site's R, L or C on its terminals:
+across the two of a series site, or from a shunt site's one to ground. **Place Site Parts** does both, with the values
+the list states. **Design ▸ Update Layout from Schematic** places each via beside its stub's end and lays a series
+site's part across the copper's two ends.
 
 **The list.** Sections are separated by `;` and each is `kind(field=value, …)`, in the order they lie from terminal 1:
 
@@ -2000,6 +2007,8 @@ each; **Design ▸ Update Layout from Schematic** places it beside the stub's en
 | `gap(S=…)` | gap | A series end-to-end gap, between two ends of the width the ladder has there. |
 | `taper(W1=…, W2=…, L=…)` | the two widths, length | A series linear taper. |
 | `stub(W=…, L=…, end=…, side=…)` | width, length; `end` `open` or `short`; `side` `up`, `down` or `both` | A shunt stub at a junction, `L` from the through line's edge to its end. `end=open` and `side=up` unless stated. `both` is a stub on each side, `W` and `L` each. |
+| `stub(W=…, L=…, end=radial, Ro=…, angle=…)` | as above; the sector's radius from its apex and its angle in degrees (60 unless stated) | A stub whose end is a radial stub (MRADIAL): a feed `W` wide and `L` long, then a sector whose narrow end is `W`, fanning away from the line. `end=butterfly` is two sectors either side of the feed's end. |
+| `site(role=…, value=…, type=…, side=…)` | `R`, `L` or `C`; its value (`3.3pF`, `12nH`, `4.7kOhm`); `series` or `shunt`; for a shunt site `up` or `down` | A place for a lumped part. Series (unless stated): the copper stops `Gap` short and the part goes across. Shunt: a square pad off the line, the part from its end to ground. |
 
 A length is a number in metres, or a number with a length unit written straight after it: `1.1mm`, `250um`, `40mil`,
 `0.5cm`. A bare `m` means milli in circuitRF, not metres, so `1m` is refused. Names may be in any case, and spaces are
@@ -2008,16 +2017,23 @@ wrong section is refused with its number and its text, for example
 `Ladder: section 2 (stub(W=1mm)): stub needs L.`
 
 **What it is made of.** Each section is the part it would be on its own: a line is MLIN, a gap MGAP, a taper MTAPER, a
-one-sided stub an MTEE whose branch is the stub, and a two-sided stub an MCROSS. An open stub's end includes the field
+one-sided stub an MTEE whose branch is the stub, a two-sided stub an MCROSS, and a radial end MRADIAL. A site is copper
+only: a series site's two ends, `Gap` apart (or a `Footprint`'s land, which the ladder takes as MWPD does), and a shunt
+site's pad, a square of the line's width on a tee. Where a series site has no copper beside it (at either end, after a
+gap, or next to another series site) it gets a pad of its own there, so an LC ladder of sites alone is a row of pads
+with the parts between and beside them. An open stub's end includes the field
 that fringes past it, as the extra length Kirschning, Jansen and Koster give for an open end. So a stub that is to be θ
 long at `F` is written that length less its open end's extension, which the readout states. The terminals sit exactly
 at the first section's start and the last section's end, so a matcher or a transformer ends on its own load.
 
 **The readout** lists every section at `F` on the technology's substrate: a line's or a stub's impedance and electrical
-length (an open stub's end extension beside it), a taper's impedance at each end and its length, and a gap's series and
-end capacitances.
+length (an open stub's end extension beside it, and a radial end's reactance), a taper's impedance at each end and its
+length, a gap's series and end capacitances, and each site's part. Then it lists the sites with their terminals, values
+and spans, which is what Place Site Parts fills them with.
 
-**Limits.** The step between two widths is not modelled, and neither is coupling between neighbouring stubs. MTEE's and
+**Limits.** The step between two widths is not modelled, and neither is coupling between neighbouring stubs. The pads a
+lumped ladder stands on are in the model, and their own inductance and capacitance are not in a lumped design's values:
+on 20 mil RO4350B they lower a 1 GHz LC lowpass's cutoff about 5 %, and a 200 MHz one's about 1 %. MTEE's and
 MCROSS's junction formulas are calibrated on alumina (εr 9.9) and say so in Messages on any other board. A closed-form
 design places each stub at a point, while the model includes each junction's own reactance. That moves a filter's
 frequencies by an amount set by the junction. The two cases below where it matters most are a stub wider than the line
@@ -2060,6 +2076,15 @@ it stands on, and a double-stub matcher on a load of low conductance.
 - **Quarter-wave transformer**: three binomial sections from 50 to 100 Ω at 2.4 GHz, of 54.5, 70.7 and 91.7 Ω. |S11|
   is −78 dB.
   `line(W=0.910mm, L=18.569mm); line(W=0.548mm, L=18.903mm); line(W=0.289mm, L=19.224mm)`
+- **Radial-stub lowpass**: radial stubs on 0.5 mm feeds off 100 Ω lines, one up, a pair, one down. It passes 0.5 GHz
+  with −0.2 dB and is below −30 dB from 3.5 to 5 GHz.
+  `line(W=1.1mm, L=3mm); stub(W=0.6mm, L=0.5mm, end=radial, Ro=6mm, angle=60); line(W=0.22mm, L=6mm); stub(W=0.6mm, L=0.5mm, end=radial, Ro=6mm, angle=60, side=both); line(W=0.22mm, L=6mm); stub(W=0.6mm, L=0.5mm, end=radial, Ro=6mm, angle=60, side=down); line(W=1.1mm, L=3mm)`
+- **Butterfly lowpass**: a butterfly at the end of a 3 mm feed either side of a 100 Ω line, below −30 dB around 3 GHz.
+  `line(W=1.1mm, L=3mm); stub(W=0.6mm, L=3mm, end=butterfly, Ro=6mm); line(W=0.22mm, L=8mm); stub(W=0.6mm, L=3mm, end=butterfly, Ro=6mm, side=down); line(W=1.1mm, L=3mm)`
+- **Lumped LC lowpass** (Butterworth N = 3, cutoff 200 MHz): series L of g·R0/ωc, shunt C of g/(R0·ωc), series L, all
+  sites. Filled with the parts its sites state, its −3 dB point is 197.5 MHz.
+  `site(role=L, value=39.789nH); site(role=C, value=31.831pF, type=shunt); site(role=L, value=39.789nH)`
+- **DC block on a part**: a series capacitor's site between two lines. `line(W=1.1mm, L=5mm); site(role=C, value=10pF); line(W=1.1mm, L=5mm)`
 
 {{table: components/Mlad}}
 
