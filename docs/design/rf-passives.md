@@ -4,7 +4,7 @@
 and MRRC, the branch-line and rat-race hybrids; MCLC, MIDC and MCBL, the coupled-line coupler, interdigitated coupler
 and balun; MWPD's and MRRC's rings curved or cornered (`Corner`); the gap, taper and open-end sections (§1); the radial stub (MRADIAL);
 the N-line coupled section and its part, MCLINN; sites with an optional `Footprint` (§3.7) and a route helper
-(§3.8); lumped realisations of MWPD, MBLC, MRRC and MCBL, and the resistive pad MRPAD (§3.9) · **Date:** 2026-11-16
+(§3.8); lumped realisations of MWPD, MBLC, MRRC and MCBL, and the resistive pad MRPAD (§3.15) · **Date:** 2026-11-16
 
 Dividers, couplers and baluns on microstrip, each one built-in part that is defined once and read the same way by the
 schematic, the layout, LVS and EM. Each part has its own subsection in §3.
@@ -23,7 +23,7 @@ takes the part's specs and the substrate and returns a `PassivePlan`: the part's
 section is an EXISTING microstrip part placed in the passive's frame — an MTEE (`PlanTee`), an MCURVE (`PlanCurve`),
 an MLIN (`PlanLine`), an MMITER or MBEND corner (`PlanBend`), an MCLIN or a set of interdigitated strips
 (`PlanCoupledLine`), N coupled strips (`PlanCoupledStrips`, §3.6), an MGAP (`PlanGap`), an MTAPER (`PlanTaper`), an MCROSS
-(`PlanCross`, §3.9) — with the plan node each of its pins joins and a pose (where its pin 1 sits, a turn in quarters). Nothing in a plan is a new kind of line: it is the
+(`PlanCross`, §3.15) — with the plan node each of its pins joins and a pose (where its pin 1 sits, a turn in quarters). Nothing in a plan is a new kind of line: it is the
 vocabulary circuitRF already has, arranged. The one term that is not a part of its own is a line's open end
 (`PlanOpen`), below. Every dimension is held on a 2 nm grid
 (`PassivePlan.OnGrid`), so halves are whole database units and two pieces that meet in the plan meet to the last unit
@@ -544,7 +544,7 @@ Tests (`PlanRouteTests`, `PassiveSiteTests`): θ = 90° meanders and corners of 
 0.5° in the plan model, on a board and on a GaAs die; every node is one point; a straight run is one `PlanLine`, field
 for field; the drawn copper's ends and extent are the route's.
 
-### 3.9 Lumped realisations, and the resistive pad (MRPAD)
+### 3.15 Lumped realisations, and the resistive pad (MRPAD)
 
 **The rule.** MWPD, MBLC, MRRC and MCBL take `Realization` = `Distributed | Lumped`. Distributed is the default and the plans
 are unchanged bit for bit (the fingerprints in `WilkinsonPlanTests` and `HybridPlanTests` still pass). Lumped builds the
@@ -664,7 +664,7 @@ bound to the process and simulated. `F26-wilkinson-lumped` (π arms, with the pa
    records in `LibraryCatalogTests` and `PCellGeneratorVersioningTests`.
 6. Its sites (§3.7): the plan's `Sites`; a kind with sites in `SchematicViewModel.HasSites`, and one whose site span is a
    stored length in `MicrostripSubstrateInjection.HasSiteFootprint`. A folded line is `PlanRoute` (§3.8). A lumped
-   network is a `LumpedTopology` table and its values (§3.9); its pins follow `EditableComponent.LumpedLayout`.
+   network is a `LumpedTopology` table and its values (§3.15); its pins follow `EditableComponent.LumpedLayout`.
 7. Docs: a subsection under Dividers and couplers in `components.md`, and the example's README table.
 
 ## 5. Known limits
@@ -721,11 +721,11 @@ bound to the process and simulated. `F26-wilkinson-lumped` (π arms, with the pa
 
 > R. W. Vogel, "Analysis and Design of Lumped- and Lumped-Distributed-Element Directional Couplers for MIC and MMIC
 > Applications," *IEEE Transactions on Microwave Theory and Techniques*, vol. 40, no. 2, pp. 253–262, February 1992.
-> DOI [10.1109/22.120097](https://doi.org/10.1109/22.120097). The lumped branch-line coupler (§3.9).
+> DOI [10.1109/22.120097](https://doi.org/10.1109/22.120097). The lumped branch-line coupler (§3.15).
 
 > W. Bakalski, W. Simbürger, H. Knapp, H.-D. Wohlmuth and A. L. Scholtz, "Lumped and Distributed Lattice-Type LC-Baluns,"
 > *2002 IEEE MTT-S International Microwave Symposium Digest*, pp. 209–212.
-> DOI [10.1109/MWSYM.2002.1011595](https://doi.org/10.1109/MWSYM.2002.1011595). The lattice balun (§3.9).
+> DOI [10.1109/MWSYM.2002.1011595](https://doi.org/10.1109/MWSYM.2002.1011595). The lattice balun (§3.15).
 
 > D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012: §7.3, the Wilkinson power divider; §7.5 and §7.8, the
 > quadrature and 180° hybrids; §7.6 and §7.7, coupled-line directional couplers and the Lange coupler. A book, with no
