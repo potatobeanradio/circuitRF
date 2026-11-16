@@ -150,6 +150,14 @@ output: for three or more outputs that contains K3,3, which has no planar drawin
 bridge, second layer, or a resistor over a line). The two-way case is K3,2 and planar. The practical answer is a tree of
 two-way dividers (the example's `FourWay` cell is three MWPDs) and, for three equal ways, an unequal MWPD with K² = 2
 followed by an equal one.
+
+**EM.** The example's dividers run on a coarse recipe: Planar with the edge mesh and the local grid off, EMerge and
+Palace on their Draft presets with no mesh refinement, eleven log-spaced points from F/2 to 2F. It holds |S21| to the
+model within 0.04 dB at F. The 3D isolation null is shallow and low mostly because of the mesh: at twice the tetrahedra
+both nulls move up towards F and deepen, still short of the model's. The unequal split's 0.2 mm arm needs Planar at 2
+cells across a conductor, and its 3D runs send port 2 0.5 to 0.9 dB too much, which EMerge's Standard preset moves by
+only 0.09 dB; the cause is open. The studies are in `src/Design/RESOLVED.md`.
+
 ### 3.2 MBLC and MRRC, the branch-line and rat-race hybrids
 
 Both are plans of the shared sections and nothing else, so they stamp through `MicrostripPlanModel` and draw through
@@ -201,6 +209,11 @@ its tees' stubs) and `device.ratrace.*` (a non-positive spec, an unreachable wid
 equals its sections wired by hand to 1e-9; the C2 fixture; the split, match, isolation and phase at F; DC), the
 `F9-branch-line-hybrid` and `F10-rat-race-hybrid` schematic-to-layout fixtures, and an LVS clean run plus one spec
 mismatch for each. The generators' versions follow MTEE's, MLIN's and MCURVE's, as MWPD's do.
+
+**EM.** Palace refines the hybrids' mesh twice (`AdaptiveMaxIterations` 2): on the Draft mesh alone it read the
+branch-line's |S21| 1.2 dB low. Refined, the 3D solvers still read the branch-line's through port 0.33 to 0.40 dB below
+the model, and a series reactance per port in the model, standing in for the 3D lumped sheets, moves the split the
+other way; the cause is open.
 
 For the maintainer: the names MBLC and MRRC (microstrip branch-line and rat-race coupler) are circuitRF's own.
 

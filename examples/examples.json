@@ -59,7 +59,7 @@
     {
       "Folder": "Dividers and Couplers",
       "Title": "Dividers and Couplers",
-      "Summary": "Built-in dividers, hybrids, a coupler and a balun on 20 mil RO4350B at 2.4 GHz, each placed as one part from its specs: Wilkinson dividers (equal, unequal, two-section, a four-way tree), branch-line and rat-race hybrids, a 10 dB coupled-line coupler and a coupled-line balun, each laid out by Update Layout and solved by Planar MoM, EMerge and Palace against its circuit model."
+      "Summary": "Built-in dividers, hybrids, a coupler and a balun on 20 mil RO4350B at 2.4 GHz, each placed as one part from its specs and laid out by Update Layout. Run a cell's Planar MoM, EMerge and Palace setups, simulate its bench, and open its data display to see the circuit model against each solver."
     },
     {
       "Folder": "Patch Antenna",
