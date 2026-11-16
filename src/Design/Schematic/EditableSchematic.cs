@@ -53,9 +53,16 @@ public sealed class EditableParameter
 /// </summary>
 public static class SymbolPortDefs
 {
-    /// <summary>Convenience overload; uses portCount=2 for variadic types.</summary>
+    /// <summary>Convenience overload; uses <see cref="DefaultPortCount"/> for variadic types.</summary>
     public static (string Name, float LocalX, float LocalY)[] For(SymbolKind kind)
-        => For(kind, portCount: 2);
+        => For(kind, DefaultPortCount(kind));
+
+    /// <summary>The pin count a kind is asked at when no count is given: 2, which every variadic kind but one reads as
+    /// its default; MCLA's default array's (interdigital, tapped, three strips: 1, 2, E1-E3), since a count of 2 is a real
+    /// array of its own (a via-less pseudo-interdigital one), so the default part, its catalogue symbol and its
+    /// generator's default artwork agree.</summary>
+    public static int DefaultPortCount(SymbolKind kind)
+        => kind == SymbolKind.Mcla ? CircuitRF.Core.Devices.Microstrip.CoupledArrayPlan.DefaultPinCount : 2;
 
     /// <summary>
     /// Returns port definitions for the given kind and (for variadic types) port count.
