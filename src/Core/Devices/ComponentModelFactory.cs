@@ -93,6 +93,8 @@ public static class ComponentModelFactory
             // The planned passives (docs/design/rf-passives.md): specs in, MTEE, MCURVE and MLIN sections stamped as one block.
             WilkinsonTypeName,
             BranchLineTypeName, RatRaceTypeName,
+            // A delay or phase line, laid straight, round a corner or meandered (PlanRoute).
+            DelayLineTypeName,
             // The coupled-line planned passives: MCLIN, MLIN and interdigitated sections, stamped the same way.
             CoupledLineCouplerTypeName, LangeTypeName, MarchandTypeName,
             // Grounded coplanar waveguide and stripline (brief-artsch-1), bound to the stackup as MLIN is.
@@ -270,6 +272,8 @@ public static class ComponentModelFactory
             return CreateBranchLineModel(parameters);
         if (typeName.Equals(RatRaceTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateRatRaceModel(parameters);
+        if (typeName.Equals(DelayLineTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateDelayLineModel(parameters);
         if (typeName.Equals(CoupledLineCouplerTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateCoupledLineCouplerModel(parameters);
         if (typeName.Equals(LangeTypeName, StringComparison.OrdinalIgnoreCase))
@@ -3057,6 +3061,20 @@ public static class ComponentModelFactory
         => new(RatRacePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
                                  EnumNamed(parameters, "Corner", PlanCorner.Curve), GetReal(parameters, "Meander", 0.0)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, RatRaceTypeName));
+
+    /// <summary>The delay line's engine token (pins 1, 2).</summary>
+    public const string DelayLineTypeName = "MDLY";
+
+    // MDLY: the specs Z0, F and Theta (radians here), how the run is laid (Style, Corner, Turns, Pitch, Side) and whether
+    // a meander's legs are modelled coupled (Coupled, 0 or 1); the plan derives the rest.
+    private static MicrostripPlanModel CreateDelayLineModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(DelayLinePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
+                                   GetReal(parameters, "Theta", 2.0 * Math.PI), SubstrateOf(parameters),
+                                   EnumNamed(parameters, "Style", PlanRouteStyle.Meander),
+                                   EnumNamed(parameters, "Corner", PlanCorner.Curve), GetReal(parameters, "Turns", 2.0),
+                                   GetReal(parameters, "Pitch", 0.0), GetReal(parameters, "Side", 1.0),
+                                   GetReal(parameters, "Coupled", 0.0) != 0.0).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, DelayLineTypeName));
 
     /// <summary>The coupled-line coupler's engine token (pins 1 input, 2 through, 3 coupled, 4 isolated).</summary>
     public const string CoupledLineCouplerTypeName = "MCLC";

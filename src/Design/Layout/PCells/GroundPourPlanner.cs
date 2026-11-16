@@ -62,6 +62,7 @@ public static class GroundPourPlanner
         // lines, as the rat-race's half-turns do, was left off the plane.
         PassivePlanPCells.WilkinsonId, PassivePlanPCells.BranchLineId, PassivePlanPCells.RatRaceId,
         PassivePlanPCells.CoupledLineCouplerId, PassivePlanPCells.LangeId, PassivePlanPCells.MarchandId,
+        PassivePlanPCells.DelayLineId,
     };
 
     /// <summary>The clearance ring around a via's pad where it passes through the plane, µm. A default: no

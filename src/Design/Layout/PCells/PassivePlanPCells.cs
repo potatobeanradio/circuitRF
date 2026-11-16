@@ -59,7 +59,20 @@ public static class PassivePlanPCells
             SubstrateOf(technology, layerSelection), CornerOf(parameters), parameters.Real("Meander", 0.0)).Plan,
             technology, layerSelection);
 
-    /// <summary>A ring's <c>Corner</c>, a name; Curve when it is absent or not one of the names.</summary>
+    /// <summary>The delay line (MDLY): <see cref="DelayLinePlan"/>'s run, straight, round a corner or meandered. Theta
+    /// arrives in degrees, as every generator's angle does.</summary>
+    public const string DelayLineId = ComponentModelFactory.DelayLineTypeName;
+
+    public static PCellResult GenerateDelayLine(
+        IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
+        => DrawOrRefuse(() => DelayLinePlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
+            parameters.Real("Theta", 360.0) * Math.PI / 180.0, SubstrateOf(technology, layerSelection),
+            Enum.TryParse(parameters.Text("Style"), ignoreCase: true, out PlanRouteStyle style) && Enum.IsDefined(style)
+                ? style : PlanRouteStyle.Meander,
+            CornerOf(parameters), parameters.Real("Turns", 2.0), parameters.Real("Pitch", 0.0), parameters.Real("Side", 1.0),
+            parameters.Real("Coupled", 0.0) != 0.0).Plan, technology, layerSelection);
+
+    /// <summary>A ring's (or a delay line's) <c>Corner</c>, a name; Curve when it is absent or not one of the names.</summary>
     private static PlanCorner CornerOf(IReadOnlyDictionary<string, PCellValue> parameters)
         => Enum.TryParse(parameters.Text("Corner"), ignoreCase: true, out PlanCorner c) && Enum.IsDefined(c) ? c : PlanCorner.Curve;
 

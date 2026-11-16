@@ -1664,8 +1664,10 @@ public static partial class SchematicLayoutPlanner
                 if (string.IsNullOrWhiteSpace(p.Expression)) continue;
             }
 
-            // A ring's Corner (MWPD, MRRC) is a word for its generator: Curve, Miter or Square.
-            if (comp.Symbol is SymbolKind.Mwpd or SymbolKind.Mrrc && p.Name == "Corner")
+            // A ring's Corner (MWPD, MRRC) is a word for its generator: Curve, Miter or Square. So are a delay line's
+            // Corner and Style (MDLY).
+            if ((comp.Symbol is SymbolKind.Mwpd or SymbolKind.Mrrc && p.Name == "Corner")
+                || (comp.Symbol == SymbolKind.Mdly && p.Name is "Corner" or "Style"))
             {
                 if (p.Expression.Trim() is { Length: > 0 } corner) resolved[p.Name] = PCellValue.Text(corner);
                 continue;

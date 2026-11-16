@@ -117,6 +117,8 @@ public static class SymbolPortDefs
                                              ("J1", -400f, 100f), ("J2", 400f, 100f), ("J3", -400f, -100f), ("J4", 400f, -100f)];
             // MCBL: the input and G2 at the left, G3 at the right, and the balanced outputs 2 and 3 side by side below
             // the middle, where the two sections' coupled strips end.
+            // MDLY: a line, on MLIN's left/right pins.
+            case SymbolKind.Mdly:    return [("1", -200f, 0f), ("2", 200f, 0f)];
             case SymbolKind.Mcbl:    return [("1", -600f, -100f), ("2", -100f, 200f), ("3", 100f, 200f),
                                              ("G2", -600f, 100f), ("G3", 600f, 100f)];
             // The MMIC passives (AA-1): horizontal, on MLIN's left/right convention, because they sit

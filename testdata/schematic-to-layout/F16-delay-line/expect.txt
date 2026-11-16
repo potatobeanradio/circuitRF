@@ -1,0 +1,16 @@
+# A delay line as one part (MDLY): 270° at 2.4 GHz meandered in two mitred turns, each port on its own end; beside it
+# the rat-race folded (MRRC, Meander = 1), each port on its own pin's feed.
+Info DLY1 added
+Info RRC1 added
+Info P1 port 1 placed at DLY1 pin 1
+Info P2 port 2 placed at DLY1 pin 2
+Info P3 port 3 placed at RRC1 pin 1
+Info P4 port 4 placed at RRC1 pin 2
+Info P5 port 5 placed at RRC1 pin 3
+Info P6 port 6 placed at RRC1 pin 4
+port P1 1
+port P2 2
+port P3 3
+port P4 4
+port P5 5
+port P6 6

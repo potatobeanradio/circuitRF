@@ -732,6 +732,11 @@ public enum SymbolKind
     /// matrices. 2·N pins: the near ends 1..N, top strip first, then the far ends N + 1..2N. The substrate as MCLIN's.
     /// Appended so no existing kind's ordinal moves.</summary>
     MCLineN,
+    /// <summary>A delay or phase line on microstrip (engine "MDLY", docs/design/rf-passives.md): specs Z0, F and Theta, the
+    /// electrical length at F, and how it is laid (Style: straight, round one Corner, or a meander of Turns legs Pitch
+    /// apart on one Side; Coupled models a meander's legs as coupled lines). The width and every length are derived
+    /// (DelayLinePlan). Two pins, 1 the start and 2 the end. Appended so no existing kind's ordinal moves.</summary>
+    Mdly,
 }
 
 public enum PortConnectionState { Unconnected, Connected }
