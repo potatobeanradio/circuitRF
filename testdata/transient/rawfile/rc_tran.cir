@@ -1,0 +1,9 @@
+* brief TRN-7 gate 1: one transient run of an RC, written as a binary and as an ASCII rawfile
+VS in 0 DC 0 PULSE(0 1 1E-07 1E-09 1E-09 1E-05 4E-05)
+R1 in out 1000
+C1 out 0 1E-09
+VP out x DC 0
+R2 x 0 1000000
+.tran 1E-07 2E-06 0 1E-07
+.save v(in) v(out) i(VP)
+.end

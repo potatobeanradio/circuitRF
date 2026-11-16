@@ -5077,3 +5077,23 @@ source here is) — and `SpiceNetlistReader.ReadDeck`, which reads a flat deck's
 netlist and reads back each `RationalSnpModel` and lossy `TransientLineModel` it swapped in (with the fit's Z0, now recorded as
 `TransientRealization.FitZ0`). The deck realizes an S fit with RationalSnpModel's own rows, each state a node on a 1/|a| F
 capacitor so it carries the size of its input wave — a 1 F state would hold u/|a|, ~1e-10 V at GHz, below VNTOL.
+
+## brief TRN-7 — the deck wrote a device's internal pins as its terminals (2026-11-15)
+
+**Found by TRN-7's references, not by TRN-6's own gates.** The ring of MOS level-1 inverters written for
+`testdata/transient/ngspice/` did not oscillate under ngspice: every instance line read `MN1 n2 0 0 0` for
+`MOS1_N:MN1 n2 n1 0 0`. `SpiceDeckWriter` took the first `m.Terminals` of `ElaboratedComponent.Nodes`, but the elaborator
+EXPANDS a device's drawn nets into the model's ports: a MOS's four nets become six branch pairs (drain', source'), (bulk,
+source'), …, so the first four are `d s b s`; a BJT's first three are `bi ei bi`; a diode with `Rs` is `(a, int), (int, k)`.
+Only a plain diode came out right. Every MOS gate was written as its source, every BJT collector as its base, every Rs diode's
+cathode as a dangling internal node — and the deck still parsed and ran, which is why nothing complained.
+
+**Fix:** `SpiceDeckWriter.DrawnTerminals` reads the drawn terminals back from each expansion's documented layout (Elaborator's
+comments and `MosfetModelBase`/`BjtModel`'s port tables): MOS d = pin 0 (or pin 12 with Rd), g = pin 6, s = pin 1 (or the Rs
+pair's first), b = pin 2; BJT c = pin 4 (or the Rc pair's first), b = pin 6, e = pin 1 (or the Re pair's first); an Rs diode
+pins 0 and 3. The dialect's card carries RD/RS/RB/RE/RC and makes its own internal nodes. Gate:
+`tests/Ui.Tests/Transient/NgspiceSolverTests.Deck_WritesEachDevicesDrawnTerminals` (a MOS with Rd and Rs, a BJT with all three
+resistances, an Rs diode); after the fix the ring agrees with the native engine to 1.3e-4 of its swing over 8 periods.
+
+**Also:** the deck now `.save`s each IProbe's first net, which the native engine records so a probe's power is v·i at a
+recorded node; without it the ngspice result could not give `P` and `Vprobe`.

@@ -26,9 +26,6 @@ namespace CircuitRF.Engine.Transient;
 
 public static class TransientRunner
 {
-    /// <summary>The sentence a run with <c>Solver=ngspice</c> gets until brief TRN-7 builds the solver.</summary>
-    public const string NgspiceNotBuilt = "the ngspice solver is not built yet (brief TRN-7); use Solver=native.";
-
     /// <summary>The directive's text resolved against <paramref name="globals"/>: every value in base SI. Refuses a
     /// malformed value, and a key this solver does not take, by name.</summary>
     public static TransientParams Resolve(TransientAnalysis a, IReadOnlyDictionary<string, Value> globals)
@@ -51,9 +48,11 @@ public static class TransientRunner
         }
 
         string solver = a.Solver.Trim().ToLowerInvariant();
-        if (solver == TransientAnalysis.SolverNgspice) throw new TransientRefusedException($"{who}: {NgspiceNotBuilt}");
-        if (solver != TransientAnalysis.SolverNative)
+        if (solver is not (TransientAnalysis.SolverNative or TransientAnalysis.SolverNgspice or ""))
             throw new TransientRefusedException($"{who}: Solver must be native or ngspice, not '{a.Solver}'.");
+        bool ngspice = solver == TransientAnalysis.SolverNgspice;
+        // the ngspice-only keys: refused with the native solver, which reads none of them; the deck writer reads them for ngspice
+        if (!ngspice)
         foreach (var (key, value, def) in new[]
                  {
                      ("SpiceOptions", a.SpiceOptions, ""), ("SpiceLines", a.SpiceLines, TransientAnalysis.SpiceLinesDefault),
@@ -98,12 +97,17 @@ public static class TransientRunner
             Name = a.Name, StopS = stop, StepS = step, StartS = Num("Start", a.StartExpr, 0), MaxStepS = maxStep, Method = method,
             RelTol = relTol, VTol = vTol, ITol = iTol, Start = start, IcNets = ic, SaveSteps = a.SaveStepsOn,
             MaxSteps = (long)Math.Min(maxSteps, long.MaxValue / 2),
+            Solver = ngspice ? TransientSolver.Ngspice : TransientSolver.Native, Directive = a,
         };
     }
 
     /// <summary>Runs <paramref name="p"/> on <paramref name="nl"/> and packs the result.</summary>
+    /// <remarks>brief TRN-7 — with <c>Solver=ngspice</c>, <see cref="NgspiceRunner.Run"/> solves it instead, its deck under
+    /// <see cref="AnalysisSettings.OutputDirectory"/>; with no ngspice discovered that is a refusal, never a native run.</remarks>
     public static DataSet Run(TransientParams p, ElaboratedNetlist nl, AnalysisSettings? settings = null, RunControl? control = null)
-        => Pack(new TransientEngine(nl, settings).Run(p, control), nl);
+        => p.Solver == TransientSolver.Ngspice
+            ? NgspiceRunner.Run(p, nl, settings?.OutputDirectory, control, settings?.BenchName ?? "", settings?.ProgramVersion ?? "")
+            : Pack(new TransientEngine(nl, settings).Run(p, control), nl);
 
     /// <summary>The DataSet of one run.</summary>
     public static DataSet Pack(TransientRunResult r, ElaboratedNetlist nl)
@@ -163,8 +167,9 @@ public static class TransientRunner
 
     /// <summary>One line describing a resolved run, for the CLI and the run panel.</summary>
     public static string Describe(TransientParams p) => string.Format(CultureInfo.InvariantCulture,
-        "transient {0}: Stop {1:G4} s, Step {2:G4} s, {3}, start {4}", p.Name, p.StopS, p.StepS > 0 ? p.StepS : p.StopS / 1000,
-        p.Method == TransientMethod.Trap ? "trap" : "gear2", p.Start == TransientStart.Op ? "op" : "zero");
+        "transient {0}: Stop {1:G4} s, Step {2:G4} s, {3}, start {4}{5}", p.Name, p.StopS, p.StepS > 0 ? p.StepS : p.StopS / 1000,
+        p.Method == TransientMethod.Trap ? "trap" : "gear2", p.Start == TransientStart.Op ? "op" : "zero",
+        p.Solver == TransientSolver.Ngspice ? ", solved by ngspice" : "");
 
     private static double[] Index(int n)
     {

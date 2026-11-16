@@ -36,12 +36,22 @@
                        Foreground="{DynamicResource SystemBaseMediumColor}"/>
 
             <TextBlock Grid.Row="4" Classes="lbl" Text="Solver"/>
-            <ComboBox Grid.Row="4" Grid.Column="1" SelectedIndex="{Binding SolverIndex}" FontSize="11" HorizontalAlignment="Stretch">
+            <!-- brief TRN-7 R-trn7-7: ngspice is enabled only while discovery finds one; a bench that says ngspice with none found
+                 shows it greyed (Classes.greyed), and the note below says where to install it. -->
+            <ComboBox Grid.Row="4" Grid.Column="1" SelectedIndex="{Binding SolverIndex}" FontSize="11" HorizontalAlignment="Stretch"
+                      Classes.greyed="{Binding SolverGreyed}">
+                <ComboBox.Styles>
+                    <Style Selector="ComboBox.greyed /template/ ContentControl#ContentPresenter">
+                        <Setter Property="Opacity" Value="0.45"/>
+                    </Style>
+                </ComboBox.Styles>
                 <ComboBoxItem Content="native" ToolTip.Tip="circuitRF's own transient engine"/>
-                <ComboBoxItem Content="ngspice" IsEnabled="{Binding NgspiceAvailable}"
+                <ComboBoxItem Content="{Binding NgspiceLabel}" IsEnabled="{Binding NgspiceAvailable}"
                               ToolTip.Tip="{Binding NgspiceTooltip}" ToolTip.ShowOnDisabled="True"/>
             </ComboBox>
-            <TextBlock Grid.Row="5" Grid.ColumnSpan="4" Text="{Binding SolverNote}" FontSize="10" TextWrapping="Wrap" MinHeight="14"
+            <!-- one line, its space always reserved, so nothing below moves when it appears; the whole sentence is its tooltip -->
+            <TextBlock Grid.Row="5" Grid.ColumnSpan="4" Text="{Binding SolverNote}" FontSize="10" TextWrapping="NoWrap"
+                       TextTrimming="CharacterEllipsis" MinHeight="14" ToolTip.Tip="{Binding SolverNoteTip}"
                        Foreground="{DynamicResource SystemBaseMediumColor}"/>
         </Grid>
 

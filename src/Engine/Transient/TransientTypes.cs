@@ -52,7 +52,14 @@ public sealed record TransientParams
     public IReadOnlyList<ITransientDrive> Drives { get; init; } = [];
     /// <summary>The analysis, for the sentences a run writes.</summary>
     public string Name { get; init; } = "";
+    /// <summary>brief TRN-7 — which solver runs it: <c>Solver=native</c> or <c>ngspice</c>.</summary>
+    public TransientSolver Solver { get; init; } = TransientSolver.Native;
+    /// <summary>brief TRN-7 — the directive these values were resolved from: the ngspice solver writes its deck from it.</summary>
+    public CircuitRF.Core.Design.TransientAnalysis? Directive { get; init; }
 }
+
+/// <summary>brief TRN-7 — the solver a transient analysis runs on (D2).</summary>
+public enum TransientSolver { Native, Ngspice }
 
 /// <summary>One transient run, on the uniform output grid.</summary>
 public sealed class TransientRunResult

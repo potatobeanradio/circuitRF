@@ -585,12 +585,12 @@ internal static class ToolCatalog
                      new("stop",   "--stop",   OptKind.Str, "End time, s, replacing the directive's Stop."),
                      new("step",   "--step",   OptKind.Str, "Output grid spacing, s, replacing the directive's Step."),
                      new("method", "--method", OptKind.Str, "trap or gear2, replacing the directive's Method."),
-                     new("solver", "--solver", OptKind.Str, "native or ngspice, replacing the directive's Solver (ngspice is not built yet).")],
+                     new("solver", "--solver", OptKind.Str, "native or ngspice, replacing the directive's Solver. ngspice runs only where 'solver' finds one; with none the run is refused, never run native.")],
                     "Transient: the circuit in the time domain from its DC operating point (InitialState=op) or from zero, with an "
                   + "adaptive step and every source driven by its waveform (a tone source is its sinusoid). Every labelled net records "
                   + "V[time, node] and every IProbe I[time, branch] and P[time, branch], on the uniform grid Step sets; Tran.* are the "
-                  + "run's counters. Lumped linear parts and every nonlinear device run; a transmission line, an S-parameter block and "
-                  + "other frequency-defined parts are refused by name for now. The waveforms are in the shape and in -o's file; ask for "
+                  + "run's counters. With Solver=ngspice (or solver=ngspice) the bench is written as a SPICE deck and solved by the ngspice "
+                  + "'solver' lists, the same cubes on the same grid; an element the deck cannot write exactly is refused by name. The waveforms are in the shape and in -o's file; ask for "
                   + "them with all, only or group. Runs the parametric sweep when one wraps it. 'reference analyses' has the directive."),
                 // brief NZ-9: the `osc` verb — harmonic balance with the fundamental an unknown, at the circuit's OscProbe.
                 new("osc", ["osc"],
@@ -2010,7 +2010,7 @@ internal static class ToolCatalog
         // stay off this surface — both download or delete on the user's machine behind a consent that
         // is the PERSON's to give, and a tool call is not that person.
         new("solver",
-            "Which external 3D solvers (Palace, Gmsh, openEMS, EMerge, and Hertzon's command line) are installed here and what each build can do: "
+            "Which external solvers (ngspice, the transient analysis's Solver=ngspice; the 3D solvers Palace, Gmsh, openEMS, EMerge; and Hertzon's command line) are installed here and what each 3D build can do: "
           + "driven solves, wave ports, eigenmode solves, and with capability=gpu whether Palace solves on a GPU and "
           + "how many it finds; for EMerge, its sparse-solver tier and whether GPU solving is enabled, with the command "
           + "that enables it. result.machine is this machine's physical and logical cores and its memory, which is what "

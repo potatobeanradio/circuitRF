@@ -500,6 +500,20 @@ rawfile, renames the vectors through the map, and resamples them onto the output
 the native engine uses. A failed run (non-zero exit, no rawfile, a vector missing) is a refusal with ngspice's last
 message.
 
+**As built (brief TRN-7).** `SolverTool.Ngspice` (`src/Design/Em3d/SolverDiscovery.cs`) is found by the existing walk, version from the
+banner's `ngspice-<v> :`; on Windows the program is `ngspice_con.exe` (upstream's `ngspice.exe` opens a window even in batch mode).
+Recipes pin release 41 everywhere: conda-forge's newest build, which exists for x64 only (no `osx-arm64`, no `linux-aarch64`, checked
+2026-11-15), so macOS and Linux arm64 get a `ByHand` message; Windows takes upstream's archive of the same release from its
+`old-releases/41` folder, whose address does not move, published as `.7z` only and unpacked by SharpCompress (managed, MIT); Windows
+arm64 takes that x64 archive with `"emulated": true`, which the row and the consent say. `NgspiceRunner` (`src/Engine/Transient`) runs
+`-b -n -r out.raw deck.cir` (`-n`: no user `.spiceinit` plays a part); the program comes from `NgspiceRunner.Locator`, which
+`src/Design`'s `NgspiceLocator` installs from discovery as a module initializer. The rawfile's points are resampled with the native
+engine's own `Interpolate`; `OP.V` is ngspice's first point; the native solver's counters other than `Tran.AcceptedSteps` (ngspice's
+point count) are not reported. `.options INTERP` is NOT used anywhere: ngspice 47 writes a damaged rawfile with it (the header repeated
+inside the data, one point short). The references of §12.3 are put on the grid by ngspice's own `linearize`, in a control block the
+generator adds (`testdata/transient/ngspice/generate.py`). Writing them caught a TRN-6 defect: a MOS's, a BJT's and an Rs diode's
+terminals were written as the elaborator's internal pins (`SpiceDeckWriter.DrawnTerminals` now recovers the drawn ones).
+
 ### 9.4 What "the same answer as ngspice" means
 
 With `Solver=ngspice` the waveforms are ngspice's, solved by ngspice, on a deck the user can open and run by hand: it is

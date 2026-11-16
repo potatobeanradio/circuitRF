@@ -1,6 +1,6 @@
 // Gates for brief-trn-1 at the design and CLI layers: Simulate's path (CircuitEvaluation) runs a tran analysis; the verb as a process
 // exports the same bytes as that in-process run; a tran inside a parametric sweep is promoted to the sweep; the directive survives the
-// netlist and the schematic; and Solver=ngspice is refused with its sentence until TRN-7.
+// netlist and the schematic; and Solver=ngspice with no ngspice discovered is refused with its sentence (brief TRN-7), never run native.
 
 using System;
 using System.Diagnostics;
@@ -125,19 +125,30 @@ public sealed class TransientCliTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(Key(original), Key(fromCsch));
     }
 
-    /// <summary>Solver=ngspice is refused with its sentence until brief TRN-7; it never runs native instead.</summary>
+    /// <summary>brief TRN-7 gate 4, the CLI's half — Solver=ngspice with no usable ngspice (CIRCUITRF_NGSPICE names a file that is
+    /// not there, which discovery takes as the answer) exits 1 with the sentence naming Settings ▸ Solvers and the install verb,
+    /// and never runs native.</summary>
     [Fact]
-    public void Ngspice_IsRefused_NotRunNative()
+    public void Ngspice_WithNoneDiscovered_IsRefused_NotRunNative()
     {
         string cnl = Write("ng.cnl", Rc.Replace("Step=10e-9", "Step=10e-9 Solver=ngspice"));
-        var cli = RunCli("tran", cnl);
+        var env = new System.Collections.Generic.Dictionary<string, string>
+        {
+            ["CIRCUITRF_NGSPICE"] = Path.Combine(Path.GetTempPath(), "no-such-ngspice-" + Guid.NewGuid().ToString("N")),
+        };
+        var cli = RunCliWith(env, "tran", cnl);
         Assert.Equal(1, cli.ExitCode);
-        Assert.Contains("ngspice solver is not built yet", cli.StdErr + cli.StdOut);
+        Assert.Contains("Settings ▸ Solvers", cli.StdErr + cli.StdOut);
+        Assert.Contains("circuitrf solver install ngspice", cli.StdErr + cli.StdOut);
+        Assert.DoesNotContain("Tran.AcceptedSteps", cli.StdOut);
     }
 
-    private static (int ExitCode, string StdOut, string StdErr) RunCli(params string[] args)
+    private static (int ExitCode, string StdOut, string StdErr) RunCli(params string[] args) => RunCliWith(new(), args);
+
+    private static (int ExitCode, string StdOut, string StdErr) RunCliWith(System.Collections.Generic.Dictionary<string, string> env, params string[] args)
     {
         var psi = new ProcessStartInfo("dotnet") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        foreach (var (k, v) in env) psi.Environment[k] = v;
         string cliDir = typeof(TransientCliTests).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().First(a => a.Key == "CliDir").Value!;
         psi.ArgumentList.Add(Path.GetFullPath(Path.Combine(cliDir, "CircuitRF.Cli.dll")));
         foreach (string a in args) psi.ArgumentList.Add(a);

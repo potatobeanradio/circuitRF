@@ -211,6 +211,7 @@ public sealed class SolverInstaller
                 sb.AppendLine($"{name} {older.Version}, already installed, stays where it is. New runs use {recipe.Version}, and Settings ▸ Solvers offers to remove {older.Version}.");
         if (recipe.Tool == SolverTool.Palace) sb.AppendLine(ParmetisNote);
         foreach (string note in recipe.ConsentNotes) sb.AppendLine(note);
+        if (recipe.EmulationNote is { } emulated) sb.AppendLine(emulated);
         // brief-emi-3 R-emi3-2 — the optional tail is part of what is agreed to here; nothing asks again later.
         foreach (var (when, steps) in recipe.OptionalGroups)
             sb.AppendLine($"Only with {when.Name}: {string.Join("; ", steps.Select(st => st.Name))}. Without {when.Name} these are " +
@@ -827,11 +828,13 @@ public sealed class SolverInstaller
                   $"({record.SizeBytes / 1e9:0.00} GB). It passed the version check");
         sb.Append(recipe.Tool == SolverTool.Palace ? " and every capability probe." : ".");
         var found = discovery.Find(out _);
+        // brief TRN-7 — ngspice is run by a transient analysis, not a 3D one
+        string run = recipe.Tool == SolverTool.Ngspice ? "A transient run with Solver=ngspice" : "A 3D run";
         if (found is { HowFound: SolverHowFound.Installed } && found.Distribution == record.Distribution
             && (record.Distribution is null ? PathsEqual(found.Path, record.Program) : found.Path == record.Program))
-            sb.Append(" A 3D run now finds it (installed by circuitRF).");
+            sb.Append($" {run} now finds it (installed by circuitRF).");
         else if (found is not null)
-            sb.Append($" A 3D run still uses the {discovery.Name} {found.HowFoundText} ({found.Where}), which comes first; " +
+            sb.Append($" {run} still uses the {discovery.Name} {found.HowFoundText} ({found.Where}), which comes first; " +
                       "clear that in Settings ▸ Solvers to use this one.");
         // brief-emi-3 R-emi3-4 — EMerge's speed, in the sentence Settings and a run use.
         if (found is { HowFound: SolverHowFound.Installed } && EmergeAccelerator.Sentence(found) is { } speed)
@@ -1043,6 +1046,8 @@ public sealed class SolverInstaller
             log.WriteLine($"extract {archive} -> {into}");
             if (src.File!.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
                 ZipFile.ExtractToDirectory(archive, into, overwriteFiles: false);
+            else if (src.File.EndsWith(".7z", StringComparison.OrdinalIgnoreCase))
+                SevenZip.Extract(archive, into, control.ThrowIfCancellationRequested);
             else
             {
                 using var file = File.OpenRead(archive);

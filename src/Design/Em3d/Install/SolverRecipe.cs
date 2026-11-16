@@ -164,6 +164,15 @@ public sealed record SolverRecipe(
     /// licences of what is fetched), one each, in order. Data, so the installer names no package.</summary>
     public IReadOnlyList<string> ConsentNotes { get; init; } = [];
 
+    /// <summary>brief TRN-7 R-trn7-2 — the program is another architecture's build, which this platform runs under its own
+    /// emulation (ngspice's x64 archive on Windows arm64). The Settings row and the consent say so.</summary>
+    public bool Emulated { get; init; }
+
+    /// <summary>The sentence an <see cref="Emulated"/> recipe's row and consent carry; null for any other.</summary>
+    public string? EmulationNote => Emulated
+        ? $"Upstream publishes no {SolverRecipes.Describe(Architecture)} build, so this is its x64 build, which {SolverRecipes.Describe(Platform)} runs under its own emulation."
+        : null;
+
     /// <summary>brief-emi-3 — each optional prerequisite with the steps that need it, in recipe order.</summary>
     public IReadOnlyList<(RecipePrerequisite When, IReadOnlyList<RecipeStep> Steps)> OptionalGroups
         => Prerequisites.Where(p => p.Optional)
@@ -245,6 +254,12 @@ public static class SolverRecipes
     /// </summary>
     public static string? ByHand(SolverTool tool)
     {
+        // brief TRN-7 R-trn7-2 — conda-forge builds ngspice for x64 only, and circuitRF builds nothing from source (D10).
+        if (tool == SolverTool.Ngspice)
+            return "conda-forge publishes no ngspice for this machine, and circuitRF installs ngspice only from upstream's builds. " +
+                   "An ngspice installed with this system's package manager, on PATH or in its usual folder, is found without " +
+                   "anything to set; upstream's build instructions are in the INSTALL file of its source archive, " +
+                   "https://sourceforge.net/projects/ngspice/files/ng-spice-rework/.";
         if (tool != SolverTool.Gmsh) return null;
         string release = SolverDiscovery.Gmsh.ValidatedVersions[^1].Release;
         return $"Gmsh {release} builds from its source, https://gmsh.info/src/gmsh-{release}-source.tgz: " +
@@ -287,7 +302,7 @@ public static class SolverRecipes
         void Need(bool ok, string what) { if (!ok) problems.Add(what); }
 
         var tool = SolverHomes.ToolFromId(d.Tool);
-        Need(tool is not null, $"tool '{d.Tool}' is not palace, gmsh, openems or emerge");
+        Need(tool is not null, $"tool '{d.Tool}' is not palace, gmsh, openems, emerge or ngspice");
         RecipePlatform? platform = d.Platform switch { "macos" => RecipePlatform.MacOS, "linux" => RecipePlatform.Linux, "windows" => RecipePlatform.Windows, _ => null };
         Need(platform is not null, $"platform '{d.Platform}' is not macos, linux or windows");
         RecipeArchitecture? arch = d.Architecture switch { "arm64" => RecipeArchitecture.Arm64, "x64" => RecipeArchitecture.X64, _ => null };
@@ -419,7 +434,7 @@ public static class SolverRecipes
             d.Layout == "relocatable", d.LayoutNote!, d.NeedsSpaceFreePath,
             sources, prereqs, d.Environment ?? new(), d.ClearEnvironment ?? [], steps, d.SpackSpec, d.Program!,
             d.SpackInstallTree, new RecipeMeasured(d.Measured!.Minutes, d.Measured.DiskGB, d.Measured.Source!),
-            d.KnownFailures ?? []) { ConsentNotes = d.ConsentNotes ?? [] };
+            d.KnownFailures ?? []) { ConsentNotes = d.ConsentNotes ?? [], Emulated = d.Emulated };
     }
 
     /// <summary>A command that is a shell — refused by the loader, so no recipe can smuggle a string past
@@ -457,6 +472,7 @@ public static class SolverRecipes
         public string? Layout { get; set; }
         public string? LayoutNote { get; set; }
         public bool NeedsSpaceFreePath { get; set; }
+        public bool Emulated { get; set; }
         public List<SourceDto>? Sources { get; set; }
         public List<PrereqDto>? Prerequisites { get; set; }
         public Dictionary<string, string>? Environment { get; set; }

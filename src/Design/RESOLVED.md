@@ -32089,6 +32089,7 @@ to the floor.
 - **Not done.** The 3D view panel's padding tooltip (`C3dProblemAssembly.DefaultPaddingBasis`/`ShortBasis`) reads the elaboration
   alone, which has no ports. It still names the H rule where the run uses the column; the run's note and `explain` are right.
   No panel control for Return: it is a `.cem` key, and the cut entry's other per-pin options are edited the same way.
+
 ## brief-pch-11 — the Chain Budget's Link bench (2026-11-15)
 
 - **The received power is the channel's own gain, not S21 through the chain.** A Mixer converts nothing in an S-parameter run
@@ -32122,3 +32123,43 @@ to the floor.
   0.040 counted, 0.042 estimated. Gate 2: 12 GHz geostationary at 99.9 %, P.618 rain 2.14 dB at 0.1 %: 6 of 10,000 drawn drops
   above it (interval 0.022 to 0.131 %); with `Rain=fixed` every drop's term equals it to 1e-9 dB.
 
+## brief TRN-7 — ngspice in the install assistant (2026-11-15)
+
+**Upstream facts the recipes rest on, checked 2026-11-15.** ngspice's current release is 47; upstream publishes Windows builds as
+`.7z` only (`ngspice-<v>_64.7z`, x64; no arm64) and moves each release to `ng-spice-rework/old-releases/<v>/` when the next one
+comes out, so a URL into the current release's folder breaks later and one into `old-releases` does not. conda-forge's newest
+`ngspice` is **41** (2024-03), built for `linux-64`, `osx-64` and `win-64` only — no `osx-arm64`, no `linux-aarch64`.
+
+**So every recipe pins 41**: `ngspice-41-windows-{x64,arm64}` take upstream's `old-releases/41` archive (SHA-256 checked;
+arm64 is the same x64 archive with `"emulated": true`, a new optional recipe key, which `SolverRecipe.EmulationNote` turns into a
+sentence on the Settings row and in the consent); `ngspice-41-{macos,linux}-x64` download micromamba 2.10.0's static program
+(SHA-256 checked, equal to GitHub's own digest) and install `ngspice-exe=41=<build>` from conda-forge alone (`--no-rc
+--override-channels`), micromamba checking each package against the channel's SHA-256. macOS and Linux arm64 have no recipe and
+`SolverRecipes.ByHand` says why and that a package manager's ngspice is found with nothing to set. Discovery accepts any version
+(`untestedRuns`); the tested list is 41 (the recipes) and 47 (the references).
+
+**Where each was run (2026-11-15, Docker on an M4):**
+- **Linux x64** — `circuitrf solver install ngspice --yes` end to end in an emulated Debian x64 container: 25 s, 0.17 GB, then
+  `tran --solver ngspice` on the reference benches. Its first attempt failed at the last step: `micromamba clean` takes no
+  `--root-prefix` (it reads `MAMBA_ROOT_PREFIX`) and exits 109; both conda recipes now call `clean --all --yes`.
+- **Linux arm64** — no recipe; Debian 13's own ngspice 42 was found at `/usr/bin` with nothing set (untested version, runs with
+  the warning) and solved the benches. The row then no longer repeats the by-hand sentence, which is for when none is found.
+- **Windows x64** — upstream's archive, unpacked by `SevenZip.Extract`, ran under Wine 10 in a Debian x64 container; the win-x64
+  CLI found it at `C:\Spice64\bin` (the default-directory route) and solved the benches with the same numbers as Linux. The
+  Windows build writes an ASCII rawfile by default (`Values:`), which `RawFileReader` reads. The installer's download could not
+  be tested there: that Wine fails to import the system root certificates ("Failed to import system certs into registry"), so
+  every TLS connection is refused. Nothing has run on Windows itself, nor on Windows arm64.
+- **macOS x64** — not run (no Intel Mac, and no Rosetta on the M4); its steps are the Linux x64 recipe's.
+
+**`.7z` extraction is SharpCompress (0.50.9, managed, MIT).** 0.38.0 carries a known advisory (GHSA-6c8g-7p36-r338), which the
+build's NU1902-as-error refuses. A 7z archive is usually solid, so `SevenZip.Extract` reads it in one pass with
+`ExtractAllEntries` rather than opening each entry, and refuses an entry whose path climbs out of the target.
+
+**On Windows the program is `ngspice_con.exe`**: upstream's `ngspice.exe` is a windowed program and opens a window even in batch
+mode. Discovery's candidates there are `ngspice_con` then `ngspice`; its default folders are `C:\Spice64\bin` (upstream's
+instructions) and `Program Files\Spice64\bin`, passed as a new `windowsDirectories` argument because the shared
+`DefaultSearchDirectories` returns nothing on Windows for every other tool.
+
+**`CircuitSolvers.Tools`** lists the circuit programs (ngspice) apart from `Em3dSolvers.Tools`, which describes 3D solvers; `solver
+list`/`install`/`remove` take `CircuitSolvers.AllTools`, circuit first. "Remove all 3D solvers…" became "Remove all solvers…",
+since it removes a circuitRF-installed ngspice too.

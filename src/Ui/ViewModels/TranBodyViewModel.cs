@@ -7,8 +7,9 @@ namespace CircuitRF.Ui.ViewModels;
 /// <summary>
 /// The Transient analysis card body (type=tran, brief-trn-1 R-trn1-12). Every field is the directive's raw text, resolved at run
 /// time. Stop, Step, Method, Initial state and Solver are on the card; every other key under More (brief TRN-5 R-trn5-4), the
-/// ngspice-only ones enabled only with that solver. The solver list holds ngspice, disabled until brief TRN-7 builds it; a bench
-/// that already says ngspice keeps saying it, with the note beneath.
+/// ngspice-only ones enabled only with that solver. brief TRN-7 R-trn7-7 — the ngspice choice is enabled only while discovery finds
+/// a usable ngspice (<see cref="NgspiceAvailability"/>), and follows it live; a bench that already says ngspice while none is found
+/// keeps saying it, greyed, with the note beneath, and its run is refused rather than run native.
 /// </summary>
 public sealed partial class TranBodyViewModel : ObservableObject
 {
@@ -26,8 +27,32 @@ public sealed partial class TranBodyViewModel : ObservableObject
         "zero — every voltage and current starts at 0 (the IC nets at their values), with no DC solve",
     ];
 
-    /// <summary>The tooltip on the disabled ngspice choice, and the note under a bench that already names it.</summary>
-    public const string NgspiceNotBuilt = "The ngspice solver is not built yet. Set Solver back to native to run this analysis.";
+    /// <summary>The tooltip on the disabled ngspice choice, and the note's tooltip under a bench that already names it, when none is
+    /// found.</summary>
+    public const string NgspiceMissing =
+        "No usable ngspice was found. Install it, or name the one you have, in Settings ▸ Solvers. Until then a run with Solver=ngspice is refused.";
+
+    /// <summary>The note itself: one line, so it fits the space kept for it.</summary>
+    public const string NgspiceMissingNote = "No usable ngspice was found: install it, or name yours, in Settings ▸ Solvers.";
+
+    public TranBodyViewModel()
+    {
+        _availabilityChanged = OnAvailabilityChanged;
+        NgspiceAvailability.Subscribe(_availabilityChanged);
+    }
+
+    // held here: NgspiceAvailability keeps only a weak reference, so a closed card is not kept alive by it
+    private readonly Action _availabilityChanged;
+
+    private void OnAvailabilityChanged()
+    {
+        OnPropertyChanged(nameof(NgspiceAvailable));
+        OnPropertyChanged(nameof(NgspiceTooltip));
+        OnPropertyChanged(nameof(NgspiceLabel));
+        OnPropertyChanged(nameof(SolverNote));
+        OnPropertyChanged(nameof(SolverNoteTip));
+        OnPropertyChanged(nameof(SolverGreyed));
+    }
 
     [ObservableProperty] private string _stop = "1e-6";
     [ObservableProperty] private string _step = "";
@@ -73,17 +98,31 @@ public sealed partial class TranBodyViewModel : ObservableObject
     public string SpiceFitDescription => SpiceFitHelp[Math.Max(0, Array.IndexOf(SpiceFitOptions, SpiceFit))];
     partial void OnSpiceFitChanged(string value) => OnPropertyChanged(nameof(SpiceFitDescription));
 
-    /// <summary>Whether the ngspice choice can be picked: never, until brief TRN-7.</summary>
-    public bool NgspiceAvailable => false;
+    /// <summary>Whether the ngspice choice can be picked: while discovery finds a usable ngspice.</summary>
+    public bool NgspiceAvailable => NgspiceAvailability.Current is not null;
 
-    public string NgspiceTooltip => NgspiceNotBuilt;
+    /// <summary>The ngspice choice's text: its discovered version when there is one.</summary>
+    public string NgspiceLabel => NgspiceAvailability.Current is { } p ? $"ngspice {p.Version}" : "ngspice";
 
-    /// <summary>The line under the solver: empty with the native solver (its space kept, so nothing below moves).</summary>
-    public string SolverNote => SolverIndex == 1 ? NgspiceNotBuilt : "";
+    public string NgspiceTooltip => NgspiceAvailability.Current is { } p
+        ? $"ngspice {p.Version}, at {p.Path}: the bench is written as a SPICE deck and solved by ngspice"
+        : NgspiceMissing;
+
+    /// <summary>The line under the solver: empty unless the bench says ngspice and none is found (its space kept, so nothing below
+    /// moves).</summary>
+    public string SolverNote => SolverGreyed ? NgspiceMissingNote : "";
+
+    /// <summary>The note's tooltip: the whole sentence, or none.</summary>
+    public string? SolverNoteTip => SolverGreyed ? NgspiceMissing : null;
+
+    /// <summary>The bench says ngspice and none is found: the Solver box shows that value greyed.</summary>
+    public bool SolverGreyed => SolverIndex == 1 && !NgspiceAvailable && NgspiceAvailability.Known;
 
     partial void OnSolverIndexChanged(int value)
     {
         OnPropertyChanged(nameof(SolverNote));
+        OnPropertyChanged(nameof(SolverNoteTip));
+        OnPropertyChanged(nameof(SolverGreyed));
         OnPropertyChanged(nameof(IsNgspice));
     }
 

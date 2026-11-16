@@ -1,0 +1,6 @@
+; brief TRN-7 R-trn7-9 — a half-wave rectifier (TRN-1's nonlinear gate), against ngspice
+V_1Tone:Vs in 0 Freq=1e6 V=5 Phase=0 Vdc=0
+Diode:D1 in out Is=1e-14
+R:RL out 0 R=1 kOhm
+C:CL out 0 C=100 nF
+analysis TR1 type=tran Stop=10u Step=5n

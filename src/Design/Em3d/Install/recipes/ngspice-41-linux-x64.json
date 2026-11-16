@@ -1,0 +1,93 @@
+{
+  "$schema": "./recipe.schema.json",
+  "comment": "brief TRN-7 R-trn7-2. micromamba's single static program, checksummed, installs conda-forge's ngspice into an environment of circuitRF's own: no conda installation of the user's is read or changed. conda-forge's newest ngspice is 41, and it builds none for arm64 (checked 2026-11-15 on its package index), so macOS arm64 and Linux arm64 have no recipe and say so instead. Run end to end in a Debian x64 container (2026-11-15).",
+  "id": "ngspice-41-linux-x64",
+  "tool": "ngspice",
+  "version": "41",
+  "platform": "linux",
+  "architecture": "x64",
+  "layout": "in-place",
+  "layoutNote": "A conda environment writes its own absolute path into the files it installs, so the home is built where it stays.",
+  "sources": [
+    {
+      "id": "micromamba",
+      "url": "https://github.com/mamba-org/micromamba-releases/releases/download/2.10.0-0/micromamba-linux-64",
+      "fetchedBy": "circuitRF",
+      "file": "micromamba-linux-64",
+      "sha256": "701f39c06f8e6a670a0e186c8479b9e5c0502a2f0cda6cef65d83bdd2875e8bd"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/linux-64/",
+      "fetchedBy": "micromamba",
+      "sha256": null,
+      "checksumNote": "micromamba 2.10.0 checks every package it downloads against the SHA-256 conda-forge's index lists for it; ngspice-exe is pinned to its exact build, 41 hb224a76_0"
+    }
+  ],
+  "prerequisites": [],
+  "environment": {
+    "MAMBA_ROOT_PREFIX": "${home}/mamba",
+    "MAMBA_NO_BANNER": "1"
+  },
+  "clearEnvironment": [
+    "CONDA*",
+    "MAMBA_*",
+    "PYTHON*"
+  ],
+  "consentNotes": [
+    "ngspice is free software under the modified BSD licence, with parts under other free licences listed in its own documentation; circuitRF starts it as a separate program and distributes nothing.",
+    "micromamba is free software under the BSD licence; circuitRF runs it only to install ngspice and deletes it afterwards."
+  ],
+  "steps": [
+    {
+      "name": "Download micromamba 2.10.0",
+      "kind": "download",
+      "source": "micromamba"
+    },
+    {
+      "name": "Make micromamba runnable",
+      "kind": "run",
+      "command": "/bin/chmod",
+      "arguments": [
+        "u+x",
+        "${downloads}/micromamba-linux-64"
+      ]
+    },
+    {
+      "name": "Install ngspice 41 from conda-forge",
+      "kind": "run",
+      "command": "${downloads}/micromamba-linux-64",
+      "arguments": [
+        "create",
+        "--yes",
+        "--no-rc",
+        "--root-prefix",
+        "${home}/mamba",
+        "--prefix",
+        "${home}/env",
+        "--override-channels",
+        "--channel",
+        "conda-forge",
+        "ngspice-exe=41=hb224a76_0"
+      ],
+      "comment": "--no-rc and --override-channels: no .condarc of the user's, and no channel but conda-forge, plays any part."
+    },
+    {
+      "name": "Clear micromamba's package cache",
+      "kind": "run",
+      "command": "${downloads}/micromamba-linux-64",
+      "arguments": [
+        "clean",
+        "--all",
+        "--yes"
+      ],
+      "comment": "The cache holds every package a second time, and nothing reads it again. clean takes no --root-prefix: it reads MAMBA_ROOT_PREFIX, which this recipe sets."
+    }
+  ],
+  "program": "${home}/env/bin/ngspice",
+  "measured": {
+    "minutes": 0.4,
+    "diskGB": 0.17,
+    "source": "circuitRF's own install in a Debian x64 container (emulated on an M4), 2026-11-15: 25 s and 0.17 GB after the package cache was cleared; ngspice 41 then ran the testdata/transient/ngspice benches"
+  },
+  "knownFailures": []
+}

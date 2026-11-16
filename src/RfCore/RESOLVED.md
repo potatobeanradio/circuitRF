@@ -1583,3 +1583,13 @@ sense that way: MP ≈ −14 dB like every neighbour), and the 2.2 GHz Suburban 
   point uniform in it; a transition's state is the one it leaves over its first half (eq. 19's convention). The start state is then GOOD
   with eq. 19's pG: over 10⁴ drops 2501, 7310 and 8200 against 0.254, 0.719 and 0.810 (three sets), inside the 99.9 % intervals; event
   lengths average eq. 17a within 4 standard errors.
+
+## brief TRN-7 — `RawFileReader` (2026-11-15)
+
+`src/RfCore/Spice/RawFileReader.cs` reads SPICE rawfiles, binary and ASCII, real and complex, one plot or several in a row.
+Facts the reader depends on, measured on ngspice 47: binary values are little-endian doubles, point-major, two per variable
+(re, im) in a complex plot, the scale included; the ASCII form prints 16 significant digits (`%.15e`), one short of a double's
+round trip, so the two forms agree to the last printed digit rather than bit for bit; each ASCII point starts with its index;
+`Variables:` lines may carry extra words (`grid=3`). ngspice leaves the imaginary part of an AC plot's frequency scale
+uninitialised (a denormal), so nothing may read it. `SPICE_ASCIIRAWFILE=1` makes ngspice write ASCII. Gate:
+`tests/RfCore.Tests/Spice/RawFileReaderTests.cs` on `testdata/transient/rawfile/`.

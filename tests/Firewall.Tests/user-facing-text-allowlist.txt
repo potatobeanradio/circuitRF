@@ -1844,3 +1844,32 @@ src/Core/Devices/VSwitchModel.cs|VSwitch: TransitionPoints must be at least 1.
 src/Core/Devices/VSwitchModel.cs|VSwitch: Von and Voff must differ — the switch moves between them, and a transition of no width is a step no analysis can resolve.
 src/Core/Devices/VSwitchModel.cs|VSwitch: {key} is not a finite number.
 src/Core/Devices/VSwitchModel.cs|VSwitch: {key} must be a number.
+
+# ── brief TRN-7: ngspice as a transient solver (2026-11-15) ─────────────────────────────────
+# The ngspice run's refusals are TransientRefusedException, as every other transient refusal is; the rawfile reader's and
+# the 7z reader's are format invariants of a file circuitRF did not write.
+src/Design/Em3d/Install/SevenZip.cs|the archive entry '{key}' would be written outside {root}
+src/Engine/Transient/NgspiceRunner.cs|it holds no transient plot
+src/Engine/Transient/NgspiceRunner.cs|ngspice at '{program}' could not be started: {ex.Message}
+src/Engine/Transient/NgspiceRunner.cs|the ngspice run was cancelled
+src/Engine/Transient/NgspiceRunner.cs|{who}: the SPICE dialect has no exact translation of {deck.Refusals.Count} element{(deck.Refusals.Count == 1 ? 
+src/Engine/Transient/NgspiceRunner.cs|{who}: the deck saves no current of {c.InstancePath}.
+src/Engine/Transient/NgspiceRunner.cs|{who}: the deck saves no voltage of net {r.name}.
+src/Engine/Transient/NgspiceRunner.cs|{who}: the ngspice solver needs the analysis directive.
+src/Engine/Transient/NgspiceRunner.cs|{who}: {tag} stopped with exit code {exit}: {Last()} (its deck and log: {dir})
+src/Engine/Transient/NgspiceRunner.cs|{who}: {tag} wrote no rawfile: {Last()} (its deck and log: {dir})
+src/Engine/Transient/NgspiceRunner.cs|{who}: {tag}'s rawfile could not be read: {ex.Message} (its deck and log: {dir})
+src/Engine/Transient/NgspiceRunner.cs|{who}: {tag}'s rawfile has no points: {last()}
+src/Engine/Transient/NgspiceRunner.cs|{who}: {tag}'s rawfile has no time vector: {last()}
+src/Engine/Transient/NgspiceRunner.cs|{who}: {tag}'s rawfile has no vector {deckVector} ({what}): {last()}
+src/RfCore/Spice/RawFileReader.cs|a complex rawfile value is not re,im: '{tok}'
+src/RfCore/Spice/RawFileReader.cs|a rawfile header line has no key: '{line}'
+src/RfCore/Spice/RawFileReader.cs|rawfile point {p} does not begin with its index (found '{tok}')
+src/RfCore/Spice/RawFileReader.cs|rawfile variable {k} is malformed: '{vline.Trim()}'
+src/RfCore/Spice/RawFileReader.cs|the rawfile ends inside a header
+src/RfCore/Spice/RawFileReader.cs|the rawfile ends inside its variable list
+src/RfCore/Spice/RawFileReader.cs|the rawfile holds no plot
+src/RfCore/Spice/RawFileReader.cs|the rawfile lists its variables before saying how many
+src/RfCore/Spice/RawFileReader.cs|the rawfile's binary data stops short: {nPoints} points of {nVars} variables need {need} bytes, {data.Length - pos} remain
+src/RfCore/Spice/RawFileReader.cs|the rawfile's header does not give its variables and points
+src/RfCore/Spice/RawFileReader.cs|the rawfile's values stop at point {p}

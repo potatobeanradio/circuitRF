@@ -227,12 +227,8 @@ public sealed class TransientEngine
             return s;
         }
 
-        double start = Math.Max(0, p.StartS);
-        if (start >= p.StopS) throw new TransientRefusedException($"{who}: Start must be before Stop.");
-        int nOut = (int)Math.Floor((p.StopS - start) / step + 1e-9) + 1;
-        var tOut = new double[nOut];
-        for (int k = 0; k < nOut; k++) tOut[k] = start + k * step;
-        if (p.StopS - tOut[^1] > 1e-9 * step) { Array.Resize(ref tOut, nOut + 1); tOut[^1] = p.StopS; nOut++; }
+        var tOut = OutputGrid(p, who);
+        int nOut = tOut.Length;
         var outVals = new double[nOut][];
         int nextOut = 0;
         while (nextOut < nOut && tOut[nextOut] <= 0) outVals[nextOut++] = Snap(x0);
@@ -725,20 +721,24 @@ public sealed class TransientEngine
     // ── pieces ────────────────────────────────────────────────────────────
 
     /// <summary>The nets a run records: every labelled net, or every user-facing net when none is labelled.</summary>
-    private (string name, int row)[] RecordedNodes()
+    private (string name, int row)[] RecordedNodes() => RecordedNodes(_nl);
+
+    /// <summary>The nets a run on <paramref name="nl"/> records, with their rows (node − 1), in node order. brief TRN-7 — the
+    /// ngspice solver records the same nets.</summary>
+    internal static (string name, int row)[] RecordedNodes(ElaboratedNetlist nl)
     {
         var set = new SortedDictionary<int, string>();
-        foreach (var nm in _nl.Nodes.LabeledNames)
-            if (_nl.Nodes.TryGetIndex(nm, out int nd) && nd > 0 && !set.ContainsKey(nd)) set[nd] = nm;
+        foreach (var nm in nl.Nodes.LabeledNames)
+            if (nl.Nodes.TryGetIndex(nm, out int nd) && nd > 0 && !set.ContainsKey(nd)) set[nd] = nm;
         if (set.Count == 0)
         {
-            var (rows, names) = _nl.Nodes.ResultRows(excludeInternal: true);
+            var (rows, names) = nl.Nodes.ResultRows(excludeInternal: true);
             for (int i = 0; i < rows.Length; i++) if (rows[i] > 0 && !set.ContainsKey(rows[i])) set[rows[i]] = names[i];
         }
         // every IProbe's first node too, so its power is v·i at a recorded node
-        foreach (var ec in _nl.Components)
+        foreach (var ec in nl.Components)
             if (ec.Model is IProbeModel && ec.Nodes.Length >= 2 && ec.Nodes[0] > 0 && !set.ContainsKey(ec.Nodes[0]))
-                set[ec.Nodes[0]] = _nl.Nodes.NameOf(ec.Nodes[0]);
+                set[ec.Nodes[0]] = nl.Nodes.NameOf(ec.Nodes[0]);
         return [.. set.Select(kv => (kv.Value, kv.Key - 1))];
     }
 
@@ -1000,9 +1000,23 @@ public sealed class TransientEngine
         return g;
     }
 
+    /// <summary>The uniform output grid (D11): Start to Stop at Step, Stop always the last point. brief TRN-7 — the ngspice solver
+    /// reports on the same grid.</summary>
+    internal static double[] OutputGrid(TransientParams p, string who)
+    {
+        double step = p.StepS > 0 ? p.StepS : p.StopS / 1000;
+        double start = Math.Max(0, p.StartS);
+        if (start >= p.StopS) throw new TransientRefusedException($"{who}: Start must be before Stop.");
+        int nOut = (int)Math.Floor((p.StopS - start) / step + 1e-9) + 1;
+        var tOut = new double[nOut];
+        for (int k = 0; k < nOut; k++) tOut[k] = start + k * step;
+        if (p.StopS - tOut[^1] > 1e-9 * step) { Array.Resize(ref tOut, nOut + 1); tOut[^1] = p.StopS; }
+        return tOut;
+    }
+
     /// <summary>The value at <paramref name="t"/> between accepted steps: quadratic through the last three in the segment, else
-    /// linear between the last two.</summary>
-    private static double[] Interpolate(double t, double t0, double[]? s0, double t1, double[] s1, double t2, double[] s2)
+    /// linear between the last two. brief TRN-7 R-trn7-5 — the ngspice solver's points are resampled through this too.</summary>
+    internal static double[] Interpolate(double t, double t0, double[]? s0, double t1, double[] s1, double t2, double[] s2)
     {
         var o = new double[s2.Length];
         if (t2 == t1) { Array.Copy(s2, o, o.Length); return o; }

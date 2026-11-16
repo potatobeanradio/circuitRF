@@ -53,6 +53,10 @@
          graphics is not a UI framework); the Avalonia-bound part, loading the embedded IBM Plex
          faces, stays in src/Ui behind LayoutTextOutline.TypefaceSource. -->
     <PackageReference Include="SkiaSharp" Version="3.119.4" />
+
+    <!-- brief TRN-7 R-trn7-2 — the 7z reader the install assistant unpacks upstream's Windows ngspice archive with (upstream
+         publishes it as .7z only). Managed C#, MIT licence, no native code. -->
+    <PackageReference Include="SharpCompress" Version="0.50.9" />
   </ItemGroup>
 
   <!-- Shipped default technologies (docs/sonnet-briefs/brief-misc-termg-units-technologies.md §3,

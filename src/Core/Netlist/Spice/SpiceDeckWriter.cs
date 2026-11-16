@@ -919,10 +919,43 @@ public static class SpiceDeckWriter
             string level = m.Level is int lv ? $" LEVEL={lv}" : "";
             Line($".model {cardName} {type}({level.TrimStart()}{(level.Length > 0 && card.Count > 0 ? " " : "")}{string.Join(' ', card)})",
                  ec.InstancePath + " (model)");
-            string nodes = string.Join(' ', ec.Nodes.Take(m.Terminals).Select(Node));
+            string nodes = string.Join(' ', DrawnTerminals(ec).Take(m.Terminals).Select(Node));
             if (ec.Multiplicity != 1) inst.Add($"m={N(ec.Multiplicity)}");
             inst.Add($"temp={N(tDev)}");
             Line($"{_names.Instance(ec.InstancePath, m.Letter)} {nodes} {cardName} {string.Join(' ', inst)}", ec.InstancePath);
+        }
+
+        /// <summary>
+        /// brief TRN-7 — a device's DRAWN terminals in the dialect's order (diode a k; BJT c b e; MOS d g s b). The elaborator
+        /// expands them into the model's ports (Elaborator: a diode with Rs is (a, int), (int, k); a BJT's four junction ports and a
+        /// MOS's six branches come first, its ohmic resistors' pairs after), so the first nets of <see cref="ElaboratedComponent.Nodes"/>
+        /// are internal pins, not terminals. The dialect's card carries RS/RB/RE/RC/RD itself and makes its own internal nodes.
+        /// </summary>
+        private static int[] DrawnTerminals(ElaboratedComponent ec)
+        {
+            var n = ec.Nodes;
+            switch (ec.Model)
+            {
+                case DiodeModel { HasSeriesResistance: true } when n.Length == 4:
+                    return [n[0], n[3]];
+                case BjtModel bjt when n.Length >= 8:
+                {
+                    int k = 8;
+                    int c = bjt.HasCollectorResistance ? n[(k += 2) - 2] : n[4];
+                    int b = n[6];
+                    if (bjt.HasBaseResistance) k += 2;
+                    int e = bjt.HasEmitterResistance ? n[k] : n[1];
+                    return [c, b, e];
+                }
+                case Devices.Mos.MosfetModelBase mos when n.Length >= 12:
+                {
+                    int d = mos.HasDrainResistance ? n[12] : n[0];
+                    int src = mos.HasSourceResistance ? n[mos.HasDrainResistance ? 14 : 12] : n[1];
+                    return [d, n[6], src, n[2]];
+                }
+                default:
+                    return n;
+            }
         }
 
         // ── lines (R-trn6-9) and fits (R-trn6-8) ─────────────────────────
@@ -1177,6 +1210,15 @@ public static class SpiceDeckWriter
             foreach (var net in (labeled.Count > 0 ? labeled : all.ToList()).Distinct())
                 if (_nl.Nodes.TryGetIndex(net, out int idx) && idx > 0) saved.Add(($"v({_names.Net(net)})", net));
             foreach (var p in _probePaths) saved.Add(($"i({_vsourceDeck[p]})", p));
+            // brief TRN-7 R-trn7-6 — each IProbe's first net too, as the native engine records it, so the probe's power v·i is the
+            // same product on either solver
+            foreach (var ec in _nl.Components)
+                if (_probePaths.Contains(ec.InstancePath) && ec.Nodes.Length >= 2 && ec.Nodes[0] > 0)
+                {
+                    string net = _nl.Nodes.NameOf(ec.Nodes[0]);
+                    string v = $"v({_names.Net(net)})";
+                    if (!saved.Any(x => x.Vector == v)) saved.Add((v, net));
+                }
             if (saved.Count > 0) sb.Append(".save ").AppendLine(string.Join(' ', saved.Select(s => s.Vector)));
             if (_osdi.Count > 0)
             {

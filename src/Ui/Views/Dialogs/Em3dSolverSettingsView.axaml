@@ -115,6 +115,8 @@
       </StackPanel>
     </Border>
 
+    <SelectableTextBlock Text="EM" FontSize="13" FontWeight="SemiBold" Margin="2,6,0,6"/>
+
     <!-- ── Palace ─────────────────────────────────────────────────────── -->
     <Border Classes="group">
       <StackPanel>
@@ -342,9 +344,9 @@
     <dlg:HertzonSettingsRow/>
 
     <!-- ── brief-em3d-25 R-em3d25-2: every circuitRF-installed solver, one confirmation ── -->
-    <Button Name="RemoveAll" Content="Remove all 3D solvers…" FontSize="11" Padding="8,3" Margin="0,4,0,0"
+    <Button Name="RemoveAll" Content="Remove all solvers…" FontSize="11" Padding="8,3" Margin="0,4,0,0"
             HorizontalAlignment="Left" IsVisible="False" Click="OnRemoveAll"
-            ToolTip.Tip="Remove every 3D solver circuitRF installed for this account. Lists each with its size first; nothing is removed if any is in use. Your documents are not touched."/>
+            ToolTip.Tip="Remove every solver circuitRF installed for this account: ngspice and the 3D solvers. Lists each with its size first; nothing is removed if any is in use. Your documents are not touched."/>
     <!-- Where removing circuitRF runs none of its code (the macOS Trash, a .deb), the solvers stay behind
          (em-3d.md §7.2 point 4); this is where that user gets the space back. Hidden on Windows, whose
          Apps-list uninstall removes them. -->
@@ -369,6 +371,47 @@
                   ToolTip.Tip="Delete the built shapes kept on disk. They make a document with a large imported part reopen at once, and are rebuilt when next needed."/>
           <SelectableTextBlock Name="KernelCache" FontSize="11" Opacity="0.6" VerticalAlignment="Center"/>
         </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <!-- ── brief TRN-7 R-trn7-3: the Circuit group — ngspice, the transient analysis's second solver. At the BOTTOM of the tab
+         (owner, 2026-11-15): the EM solvers matter more, and are what a user opening Solvers looks for first. ──
+         The same row as every 3D program: what discovery found, where, which version, Install… where this machine has a recipe,
+         and the Uninstall… of a copy circuitRF installed. -->
+    <SelectableTextBlock Text="Circuit" FontSize="13" FontWeight="SemiBold" Margin="2,12,0,6"/>
+    <Border Classes="group">
+      <StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
+          <SelectableTextBlock Text="ngspice (transient, Solver=ngspice)" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          <StackPanel Name="NgspiceBadge" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"/>
+        </StackPanel>
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+          <TextBox Grid.Row="0" Grid.Column="0" Name="NgspiceBox" FontSize="12"
+                   PlaceholderText="Leave blank to search (CIRCUITRF_NGSPICE, PATH, the usual folders, then conda)"
+                   LostFocus="OnPathCommitted">
+            <ToolTip.Tip>
+              <TextBlock TextWrapping="Wrap" MaxWidth="360"
+                         Text="The ngspice program (on Windows, its console build ngspice_con.exe). circuitRF asks it for its version with ngspice -v. A transient analysis with Solver=ngspice writes its bench as a SPICE deck and runs this program on it in batch mode."/>
+            </ToolTip.Tip>
+          </TextBox>
+          <Button Grid.Row="0" Grid.Column="1" Content="…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
+                  Tag="NgspiceBox" Click="OnBrowse" ToolTip.Tip="Pick the ngspice program from disk"/>
+          <Button Grid.Row="1" Grid.Column="1" Name="NgspiceReveal" Classes="reveal" Tag="Ngspice" Click="OnReveal"/>
+          <SelectableTextBlock Grid.Row="1" Grid.Column="0" Name="NgspiceStatus" FontSize="11" Opacity="0.75"
+                     TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis"
+                     Margin="0,4,0,0" Text="Not checked yet.">
+            <SelectableTextBlock.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Copy" Click="OnCopyStatusClick"/>
+                <MenuItem Header="Copy All" Click="OnCopyAllStatusClick"/>
+              </ContextMenu>
+            </SelectableTextBlock.ContextMenu>
+          </SelectableTextBlock>
+          <Button Grid.Row="2" Grid.ColumnSpan="2" Name="NgspiceInstall" Content="Install ngspice…" FontSize="11" Padding="8,3"
+                  Margin="0,6,0,0" HorizontalAlignment="Left" IsVisible="False" Tag="Ngspice" Click="OnInstall"
+                  ToolTip.Tip="Download ngspice's own published build for this computer. Shows what it will fetch and where it will go before anything is downloaded."/>
+          <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Name="NgspiceRemovals" Spacing="4"/>
+        </Grid>
       </StackPanel>
     </Border>
   </StackPanel>

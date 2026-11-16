@@ -1,0 +1,9 @@
+; brief TRN-7 R-trn7-9 — TRN-3's buck converter (the voltage-controlled switch), its first 20 cycles, against ngspice
+Vdc:VIN vin 0 Vdc=12
+V_Pulse:VG gate 0 V1=0 V2=5 Delay=0 Rise=10n Fall=10n Width=490n Period=1u
+VSwitch:S1 vin sw gate 0 Ron=0.1 Roff=1e6 Von=3 Voff=2
+Diode:D1 0 sw Is=1e-14
+L:L1 sw out L=10 uH
+C:C1 out 0 C=1 uF
+R:RL out 0 R=5
+analysis TR1 type=tran Stop=20u Step=10n InitialState=zero

@@ -3623,10 +3623,11 @@ the cross-section, and the question is the same one asked before the line exists
 
 ## 22. `solver` — the 3D solver install assistant, headless
 
-`circuitrf solver list [--capability gpu]` · `circuitrf solver install <palace|gmsh|openems|emerge> [--version <v>] [--yes]` ·
-`circuitrf solver remove <palace|gmsh|openems|emerge> [--version <v>] [--yes]` · `circuitrf solver remove --all [--yes]`
+`circuitrf solver list [--capability gpu]` · `circuitrf solver install <palace|gmsh|openems|emerge|ngspice> [--version <v>] [--yes]` ·
+`circuitrf solver remove <palace|gmsh|openems|emerge|ngspice> [--version <v>] [--yes]` · `circuitrf solver remove --all [--yes]`
 
-The tool ids are `Em3dSolvers.Tools` (brief-emi-2), and the usage and diagnostics list them from there. EMerge's row in
+The tool ids are `Em3dSolvers.Tools` (brief-emi-2) followed by `CircuitSolvers.Tools` (brief TRN-7: ngspice, listed last, as
+Settings ▸ Solvers' Circuit group is at the foot of the tab), and the usage and diagnostics list them from there. EMerge's row in
 `--json` also carries `tier`, its probe's sparse-solver tier.
 
 (brief-em3d-24 R-em3d24-7; `em-3d.md` §7.2's "a build machine installs the same way the GUI does".)
@@ -5205,15 +5206,23 @@ a global before elaboration.
 
 - **stdout** is a summary per recorded net and IProbe (the value at Stop, the least and the most) and the run's counters (`Tran.*`); the
   waveforms are in `-o`'s file and, under `--json`, inline up to `JsonRun.InlineCubeLimit` values unless `--all`.
-- **Refusals** are the engine's, by name: an element a transient cannot step yet (a line, an S-parameter block, a series RLC), one refused
-  by what it is (a MOD_Source names the envelope analysis), `Solver=ngspice` until TRN-7, a run whose Stop/MaxStep exceeds MaxSteps.
+- **Refusals** are the engine's, by name: an element a transient cannot step, one refused by what it is (a MOD_Source names the
+  envelope analysis), a run whose Stop/MaxStep exceeds MaxSteps.
+- **`--solver ngspice`** (or `Solver=ngspice` on the directive; brief TRN-7, `transient.md` §9.3) writes the bench with `netlist`'s
+  translation (§46) into `results/ngspice/<analysis>-<time>/` beside the design (the deck, `names.txt`, ngspice's `ngspice.log` and
+  its rawfile), runs the ngspice `solver list` finds (`ngspice -b -n -r out.raw deck.cir`) and reads it back as the same cubes on the
+  same grid, its version and the deck's path in `__Ngspice`. Its messages are relayed prefixed `ngspice <version>:`. With no usable
+  ngspice the run is refused with the sentence naming Settings ▸ Solvers and `circuitrf solver install ngspice`, never run native; an
+  element the deck cannot write exactly, a non-zero exit, a missing rawfile or vector are refusals carrying ngspice's last message.
+  Ctrl-C kills ngspice and everything it started (exit 130).
 - **Exit codes:** 0 ran · 1 refused or failed · 130 cancelled.
 - `explain --analysis` adds the solver, the step bound and its reason, the steps that bound implies over Stop, and the circuit's slowest time
   constant against Stop (`TransientEngine.Plan`: the run's own setup with nothing solved, so a refusal there is the run's word for word).
 - MCP: `run analysis=tran` (`ToolCatalog`'s `tran` sub-verb, the same options).
 
 Gate: `tests/Ui.Tests/Transient/TransientCliTests.cs` (the verb as a process exports the same bytes as the in-process run; promotion inside
-a sweep; the directive through `.cnl` and `.csch`; the ngspice refusal).
+a sweep; the directive through `.cnl` and `.csch`; the refusal with no ngspice discovered). The live ngspice gates are
+`tests/Ui.Tests/Transient/NgspiceSolverTests.cs`, skipped with a reason where no ngspice is discovered.
 
 ## 46. `netlist -o out.cir` — the bench as a SPICE deck (brief-trn-6)
 

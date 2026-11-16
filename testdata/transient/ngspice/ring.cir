@@ -1,0 +1,63 @@
+* circuitRF transient deck: bench ring, analysis TR1
+* written by circuitRF 1.8.4
+* names (deck = circuitRF):
+*   net vdd = vdd
+*   net n2 = n2
+*   net n1 = n1
+*   net n3 = n3
+*   net n4 = n4
+*   net n5 = n5
+*   instance VDD_2 = VDD
+*   instance MN1 = MN1
+*   instance MP1 = MP1
+*   instance C1 = C1
+*   instance MN2 = MN2
+*   instance MP2 = MP2
+*   instance C2 = C2
+*   instance MN3 = MN3
+*   instance MP3 = MP3
+*   instance C3 = C3
+*   instance MN4 = MN4
+*   instance MP4 = MP4
+*   instance C4 = C4
+*   instance MN5 = MN5
+*   instance MP5 = MP5
+*   instance C5 = C5
+
+.temp 26.85
+.options TNOM=26.85 RELTOL=0.001 VNTOL=1E-06 ABSTOL=1E-12 METHOD=TRAP
+VDD_2 vdd 0 DC 3 ; VDD
+.model m_MN1 NMOS(LEVEL=1 VTO=0.7 KP=0.0001 LAMBDA=0.02 MJSW=0.33 TNOM=26.85) ; MN1 (model)
+MN1 n2 n1 0 0 m_MN1 W=2E-06 L=1E-06 NRD=0 NRS=0 temp=26.85 ; MN1
+.model m_MP1 PMOS(LEVEL=1 VTO=-0.7 KP=4E-05 LAMBDA=0.02 MJSW=0.33 TNOM=26.85) ; MP1 (model)
+MP1 n2 n1 vdd vdd m_MP1 W=5E-06 L=1E-06 NRD=0 NRS=0 temp=26.85 ; MP1
+C1 n2 0 2.0000000000000003E-14 ; C1
+.model m_MN2 NMOS(LEVEL=1 VTO=0.7 KP=0.0001 LAMBDA=0.02 MJSW=0.33 TNOM=26.85) ; MN2 (model)
+MN2 n3 n2 0 0 m_MN2 W=2E-06 L=1E-06 NRD=0 NRS=0 temp=26.85 ; MN2
+.model m_MP2 PMOS(LEVEL=1 VTO=-0.7 KP=4E-05 LAMBDA=0.02 MJSW=0.33 TNOM=26.85) ; MP2 (model)
+MP2 n3 n2 vdd vdd m_MP2 W=5E-06 L=1E-06 NRD=0 NRS=0 temp=26.85 ; MP2
+C2 n3 0 2.0000000000000003E-14 ; C2
+.model m_MN3 NMOS(LEVEL=1 VTO=0.7 KP=0.0001 LAMBDA=0.02 MJSW=0.33 TNOM=26.85) ; MN3 (model)
+MN3 n4 n3 0 0 m_MN3 W=2E-06 L=1E-06 NRD=0 NRS=0 temp=26.85 ; MN3
+.model m_MP3 PMOS(LEVEL=1 VTO=-0.7 KP=4E-05 LAMBDA=0.02 MJSW=0.33 TNOM=26.85) ; MP3 (model)
+MP3 n4 n3 vdd vdd m_MP3 W=5E-06 L=1E-06 NRD=0 NRS=0 temp=26.85 ; MP3
+C3 n4 0 2.0000000000000003E-14 ; C3
+.model m_MN4 NMOS(LEVEL=1 VTO=0.7 KP=0.0001 LAMBDA=0.02 MJSW=0.33 TNOM=26.85) ; MN4 (model)
+MN4 n5 n4 0 0 m_MN4 W=2E-06 L=1E-06 NRD=0 NRS=0 temp=26.85 ; MN4
+.model m_MP4 PMOS(LEVEL=1 VTO=-0.7 KP=4E-05 LAMBDA=0.02 MJSW=0.33 TNOM=26.85) ; MP4 (model)
+MP4 n5 n4 vdd vdd m_MP4 W=5E-06 L=1E-06 NRD=0 NRS=0 temp=26.85 ; MP4
+C4 n5 0 2.0000000000000003E-14 ; C4
+.model m_MN5 NMOS(LEVEL=1 VTO=0.7 KP=0.0001 LAMBDA=0.02 MJSW=0.33 TNOM=26.85) ; MN5 (model)
+MN5 n1 n5 0 0 m_MN5 W=2E-06 L=1E-06 NRD=0 NRS=0 temp=26.85 ; MN5
+.model m_MP5 PMOS(LEVEL=1 VTO=-0.7 KP=4E-05 LAMBDA=0.02 MJSW=0.33 TNOM=26.85) ; MP5 (model)
+MP5 n1 n5 vdd vdd m_MP5 W=5E-06 L=1E-06 NRD=0 NRS=0 temp=26.85 ; MP5
+C5 n1 0 2.0000000000000003E-14 ; C5
+.ic v(n1)=3
+.tran 5E-12 5E-09 0 5E-12 uic
+.save v(vdd) v(n2) v(n1) v(n3) v(n4) v(n5)
+.control
+run
+linearize
+write ring.raw
+.endc
+.end

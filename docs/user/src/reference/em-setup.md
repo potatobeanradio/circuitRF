@@ -2117,8 +2117,8 @@ There are three ways, and they all do the same thing:
 
 - **Uninstall …** under the solver's row in {{anchor: settings.html#em3d|Settings ▸ Solvers}}. There is one
   button for each version circuitRF installed.
-- **Remove all 3D solvers …** at the foot of that page. It removes every one after a single
-  confirmation.
+- **Remove all solvers …** at the foot of that page. It removes every one after a single
+  confirmation, ngspice included when circuitRF installed it.
 - `circuitrf solver remove palace --yes`, or `circuitrf solver remove --all --yes`, from a terminal.
   Without `--yes` it only shows what it would remove.
 
@@ -2159,11 +2159,11 @@ Remove circuitRF the way you remove any application. What happens to the 3D solv
 
 The warning is there because reinstalling circuitRF later means reinstalling the solvers too. It
 reaches only your own account: solvers another person installed on the same computer stay in their
-folder, and their own **Remove all 3D solvers** removes them.
+folder, and their own **Remove all solvers** removes them.
 
 **Where the solvers stay**, they wait in your user folder. When you install circuitRF again it finds
 them and uses them without reinstalling, and their Settings rows still offer **Uninstall …**. To get
-the space back instead, use **Remove all 3D solvers …** in
+the space back instead, use **Remove all solvers …** in
 {{anchor: settings.html#em3d|Settings ▸ Solvers}} before you remove circuitRF.
 
 **Updating circuitRF never removes a solver.**

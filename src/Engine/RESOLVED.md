@@ -5321,6 +5321,7 @@ absolute). Gates: Ui `ReceiveArrayFeedTests` — equality through rays and CDL-C
 reusing drop sweep into 32 × 32 replaces 1026 parts with the transmit pin solved once (64 × 64 does the same in 43 s, too long for the
 routine tier), and the couplings evaluate each pattern class once per ray (`PatternEvaluations`: 480 rays → 481, the extra one the line
 of sight the pin end's polarization is matched along; R-pch10b-2 was already so, the per-direction cache in `ArrayField.Toward`).
+
 ## An envelope probe past a Propagation Channel read as carrying no RF (brief PCH-11, 2026-11-15)
 
 `EnvelopeDataSet` blanks every output row of a probe whose fundamental-band power is below `NoRfFraction` (10⁻⁶, −60 dB) of the
@@ -5339,3 +5340,33 @@ label was a term of its own: 10,000 drops of a geostationary link wrote `link:CH
 clouds and scintillation` (`TermLabel`); the percentage is `RainTime_pct`. 10,000 drops: 6 MB, 2.3 s; the Link bench's own
 100,000: 64 MB, 14.6 s. The term's name in the model's notes is unchanged.
 
+## brief TRN-7 — ngspice as a transient solver (2026-11-15)
+
+**The runner lives in `src/Engine/Transient/NgspiceRunner.cs` and knows no discovery.** The program comes from
+`NgspiceRunner.Locator`, which `src/Design`'s `NgspiceLocator` fills from `SolverDiscovery.Ngspice` as a module initializer, read
+at the moment of each run, so an install that has just finished or a path just set is used with no restart. `Override` replaces
+it for one async flow (a test's stub). No locator, or one that finds nothing, is the refusal `NotFound`; there is no native
+fallback anywhere in the path.
+
+**The scratch folder is `results/ngspice/<analysis>-<time>-<pid>/` beside the design** (`AnalysisSettings.OutputDirectory`, set by
+`CircuitEvaluation.RunFiles` for a transient and for a sweep that wraps one), holding the deck, `names.txt`, `ngspice.log` and
+`out.raw`. Without a design folder it is the system temp folder.
+
+**Resampling is the native engine's own `Interpolate`** (made `internal static`, as are `OutputGrid` and `RecordedNodes`), so
+the two solvers' results differ only by what each solved. `OP.V` is ngspice's first point. The native counters other than
+`Tran.AcceptedSteps` (ngspice's point count) are removed from an ngspice result rather than reported as zeros.
+
+**`ngspice -b -n -r out.raw deck.cir`.** `-n` keeps a user's `.spiceinit` out of the run. ngspice writes "Note: No compatibility
+mode selected!" to stdout on every run; only stderr is relayed as notes, prefixed `ngspice <version>:`, and the whole output is in
+`ngspice.log`. Cancelling polls `RunControl` every 50 ms and kills the process tree; a `ProcessExit` hook kills it if circuitRF
+exits first.
+
+**`.options INTERP` is broken in ngspice 47** — its rawfile repeats the header (variable list and `Values:`) inside the data and
+states one point fewer than the grid has; binary output is then unreadable garbage. Nothing in circuitRF uses INTERP. The
+references in `testdata/transient/ngspice/` are put on the grid with `linearize` in a control block the generator adds.
+
+**Measured against ngspice 47, worst |native − ngspice| over the grid as a fraction of the swing:** RC 2.5e-6, RLC 3.4e-5,
+rectifier 1.0e-4, buck 1.2e-3, lossless line 1.7e-2 (ngspice's points straddle the delayed edge's corners and `linearize` joins
+them straight), MOS ring 1.3e-4 over 8 periods (first point skipped: circuitRF reports the zero state at t = 0 under
+InitialState=zero, ngspice's first `uic` point already has the sources applied). Live RC with RelTol 1e-5: ngspice 3.0e-6 V from
+the closed form and 1.3e-6 V from the native run.

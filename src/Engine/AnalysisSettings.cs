@@ -76,6 +76,27 @@ public sealed class AnalysisSettings
     /// </summary>
     public bool ChannelDropReuse { get; init; } = true;
 
+    /// <summary>brief TRN-7 R-trn7-4 — where a run may keep files of its own: the ngspice solver's scratch folder (deck, name map,
+    /// log, rawfile) goes under it, in <c>ngspice/</c>. Null is the system temp folder.</summary>
+    public string? OutputDirectory { get => _outputDirectory; init => _outputDirectory = value; }
+    private string? _outputDirectory;
+
+    /// <summary>brief TRN-7 — the bench's name and circuitRF's version, for the header of the ngspice deck a run writes.</summary>
+    public string? BenchName { get => _benchName; init => _benchName = value; }
+    private string? _benchName;
+    public string? ProgramVersion { get => _programVersion; init => _programVersion = value; }
+    private string? _programVersion;
+
+    /// <summary>A copy with <see cref="OutputDirectory"/>, <see cref="BenchName"/> and <see cref="ProgramVersion"/> set.</summary>
+    public AnalysisSettings WithRunFiles(string? outputDirectory, string? benchName, string? programVersion)
+    {
+        var copy = (AnalysisSettings)MemberwiseClone();
+        copy._outputDirectory = outputDirectory;
+        copy._benchName = benchName;
+        copy._programVersion = programVersion;
+        return copy;
+    }
+
     // ── Conductance regularization (gmin) ─────────────────────────────────────
 
     /// <summary>

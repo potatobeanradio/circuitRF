@@ -658,6 +658,12 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Em3dEmergePath { get; set; }
 
+    /// <summary>brief TRN-7 R-trn7-3 — the ngspice a transient analysis with Solver=ngspice runs. Null means search
+    /// (CIRCUITRF_NGSPICE, PATH, the default directories, conda, then the copy circuitRF installed).</summary>
+    [JsonPropertyName("ngspice")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? NgspicePath { get; set; }
+
     /// <summary>HZN-8 — Hertzon's <c>hertzon-cli</c>: the program, or the folder Hertzon is installed in. Null means search
     /// (CIRCUITRF_HERTZON, CIRCUITRF_HERTZON_HOME, PATH, then the installer's own folders).</summary>
     [JsonPropertyName("hertzon_cli")]

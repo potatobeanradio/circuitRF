@@ -3113,8 +3113,8 @@ circuitRF removes <strong>only what it installed</strong>. A solver you installe
 <ul>
 <li><strong>Uninstall …</strong> under the solver's row in <a href="settings.html#em3d">Settings ▸ Solvers</a>. There is one
 button for each version circuitRF installed.</li>
-<li><strong>Remove all 3D solvers …</strong> at the foot of that page. It removes every one after a single
-confirmation.</li>
+<li><strong>Remove all solvers …</strong> at the foot of that page. It removes every one after a single
+confirmation, ngspice included when circuitRF installed it.</li>
 <li><code>circuitrf solver remove palace --yes</code>, or <code>circuitrf solver remove --all --yes</code>, from a terminal.
 Without <code>--yes</code> it only shows what it would remove.</li>
 </ul>
@@ -3171,10 +3171,10 @@ by itself, because you may want to compare older results against it.</p>
 </table>
 <p>The warning is there because reinstalling circuitRF later means reinstalling the solvers too. It
 reaches only your own account: solvers another person installed on the same computer stay in their
-folder, and their own <strong>Remove all 3D solvers</strong> removes them.</p>
+folder, and their own <strong>Remove all solvers</strong> removes them.</p>
 <p><strong>Where the solvers stay</strong>, they wait in your user folder. When you install circuitRF again it finds
 them and uses them without reinstalling, and their Settings rows still offer <strong>Uninstall …</strong>. To get
-the space back instead, use <strong>Remove all 3D solvers …</strong> in
+the space back instead, use <strong>Remove all solvers …</strong> in
 <a href="settings.html#em3d">Settings ▸ Solvers</a> before you remove circuitRF.</p>
 <p><strong>Updating circuitRF never removes a solver.</strong></p>
 <h2 id="install-3d-solvers">Installing the 3D solvers by hand</h2>
