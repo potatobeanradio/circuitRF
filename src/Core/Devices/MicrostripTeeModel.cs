@@ -59,7 +59,7 @@ namespace CircuitRF.Core.Devices;
 /// A tee that declares no length (a file from before the lengths existed) is the junction alone, as it
 /// always simulated, reported once.
 /// </summary>
-public sealed class MicrostripTeeModel : ComponentModel, IReportsWarnings
+public sealed class MicrostripTeeModel : ComponentModel, IReportsWarnings, ILumpedNetwork
 {
     public override int PortCount => 3;
     public override ModelKind Kind => ModelKind.Linear;
@@ -179,8 +179,52 @@ public sealed class MicrostripTeeModel : ComponentModel, IReportsWarnings
             (block, ports) => StampJunction(block, ports[0], ports[1], ports[2], omega));
     }
 
+    /// <summary>brief TRN-6 R-trn6-10 — the star network alone, when the instance has no arm lines: L1 from each through pin and
+    /// L2 from the branch pin to the star node, CT from it to ground. Null with any arm (a line varies with frequency).</summary>
+    public LumpedNetwork? Lumped
+    {
+        get
+        {
+            if (IsStraightLine || _arms.Any(a => a is not null)) return null;
+            var (l1, l2, ct) = JunctionValues();
+            return new LumpedNetwork(3, 1,
+            [
+                new LumpedElement('L', 0, 3, l1),
+                new LumpedElement('L', 1, 3, l1),
+                new LumpedElement('L', 2, 3, l2),
+                new LumpedElement('C', 3, LumpedNetwork.Ground, ct),
+            ]);
+        }
+    }
+
     /// <summary>The Gupta-Garg-Chadha star network on its three reference-plane nodes.</summary>
     private void StampJunction(IMnaContext mna, int n1, int n2, int n3, double omega)
+    {
+        var (l1, l2, ct) = JunctionValues();
+
+        var a = 1.0 / (Complex.ImaginaryOne * omega * l1);
+        var b = 1.0 / (Complex.ImaginaryOne * omega * l2);
+        var yc = new Complex(0.0, omega * ct);
+        var d = 2.0 * a + b + yc;
+
+        var y11 = a - a * a / d;
+        var y33 = b - b * b / d;
+        var y12 = -(a * a) / d;
+        var y13 = -(a * b) / d;
+
+        mna.AddBlockAdmittance(n1, n1, y11);
+        mna.AddBlockAdmittance(n2, n2, y11);
+        mna.AddBlockAdmittance(n3, n3, y33);
+        mna.AddBlockAdmittance(n1, n2, y12);
+        mna.AddBlockAdmittance(n2, n1, y12);
+        mna.AddBlockAdmittance(n1, n3, y13);
+        mna.AddBlockAdmittance(n3, n1, y13);
+        mna.AddBlockAdmittance(n2, n3, y13);
+        mna.AddBlockAdmittance(n3, n2, y13);
+    }
+
+    /// <summary>L1, L2 and CT (H, H, F): eqs 6.41-6.42, of the widths, h, t and εr alone.</summary>
+    private (double L1, double L2, double Ct) JunctionValues()
     {
         if (!_warnedEpsR && (_epsR < 9.0 || _epsR > 10.8))
         {
@@ -232,25 +276,6 @@ public sealed class MicrostripTeeModel : ComponentModel, IReportsWarnings
         // eq (6.41): CT/W1 (pF/m); W1 here is the source's main-line width (our wMain).
         double ctOverW1 = 100.0 / Math.Tanh(0.0072 * z0Stub) + 0.64 * z0Stub - 261.0;
         double ct = ctOverW1 * wMain * 1e-12;
-
-        var a = 1.0 / (Complex.ImaginaryOne * omega * l1);
-        var b = 1.0 / (Complex.ImaginaryOne * omega * l2);
-        var yc = new Complex(0.0, omega * ct);
-        var d = 2.0 * a + b + yc;
-
-        var y11 = a - a * a / d;
-        var y33 = b - b * b / d;
-        var y12 = -(a * a) / d;
-        var y13 = -(a * b) / d;
-
-        mna.AddBlockAdmittance(n1, n1, y11);
-        mna.AddBlockAdmittance(n2, n2, y11);
-        mna.AddBlockAdmittance(n3, n3, y33);
-        mna.AddBlockAdmittance(n1, n2, y12);
-        mna.AddBlockAdmittance(n2, n1, y12);
-        mna.AddBlockAdmittance(n1, n3, y13);
-        mna.AddBlockAdmittance(n3, n1, y13);
-        mna.AddBlockAdmittance(n2, n3, y13);
-        mna.AddBlockAdmittance(n3, n2, y13);
+        return (l1, l2, ct);
     }
 }

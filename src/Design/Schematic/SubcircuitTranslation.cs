@@ -398,8 +398,17 @@ public static class SubcircuitTranslator
         // the reference, so a file that happens to define a subcircuit called 'E' still calls it.
         if (SpiceSourceTranslation.Handles(inst.Reference) &&
             inst.InstanceName.Length > 0 &&
-            char.ToUpperInvariant(inst.InstanceName[0]) is 'V' or 'I' or 'E' or 'G' or 'F' or 'H')
+            char.ToUpperInvariant(inst.InstanceName[0]) is 'V' or 'I' or 'E' or 'G' or 'F' or 'H' or 'B')
             return SpiceSourceTranslation.Translate(inst);
+
+        // brief TRN-6 — the single-type letters of the element table the reader turned into a type (K → Mutual, T → TLIN),
+        // dispatched on the letter as well as the reference, as the sources are.
+        if (inst.InstanceName.Length > 0 && SpiceElementTable.TypeForLetter(inst.InstanceName[0]) is { } lettered &&
+            lettered.Equals(inst.Reference, StringComparison.Ordinal) && lettered is not ("R" or "C" or "L") &&
+            SpiceSourceTranslation.KindOf(lettered) is { } letterKind)
+            return new SubcircuitElement(
+                inst.InstanceName, inst.Reference, inst.NetBindings,
+                letterKind, null, [.. InstanceParameters(inst, letterKind)], [], [], null);
 
         // A subcircuit call. Whether the definition it names can itself be built is settled in the
         // dependency pass, because the answer may not exist yet.

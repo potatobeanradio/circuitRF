@@ -134,7 +134,7 @@ public static class SpiceModelNetlist
                  + "of that name cannot also be used. Rename one of the two.";
         }
 
-        var cell = new Cell(sub.Name);
+        var cell = new Cell(sub.Name) { SpiceSource = sourcePath };
         cell.Ports.AddRange(sub.Definition.Ports);
         foreach (var d in sub.Definition.Parameters) cell.Parameters.Add(d);
         foreach (var v in sub.Definition.Variables)  cell.Variables.Add(v);
@@ -162,6 +162,37 @@ public static class SpiceModelNetlist
         library.Cells.Add(cell);
         claimedCells[sub.Name] = sourcePath;
         return null;
+    }
+
+    /// <summary>
+    /// brief TRN-6 — a deck read with <see cref="SpiceNetlistReader.ReadDeck"/> as a bench to elaborate: the deck cell's
+    /// elements, translated exactly as a subcircuit's are, become the bench's top level, and every subcircuit the deck
+    /// defines or includes becomes a library cell. This is circuitRF's own reader closing the round trip on its own writer
+    /// (<see cref="SpiceDeckWriter"/>): a translatable bench, written and read back, must elaborate to the same netlist.
+    /// Returns null and a refusal when an element does not translate.
+    /// </summary>
+    public static (Library Library, TestBench? Bench, string? Refusal) DeckBench(SpiceNetlistResult result, string deckCell)
+    {
+        var library = new Library("deck");
+        var all = SubcircuitTranslator.TranslateAll(result);
+        var deck = all.FirstOrDefault(t => t.Name.Equals(deckCell, StringComparison.Ordinal));
+        if (deck is null) return (library, null, $"the deck has no top level named '{deckCell}'.");
+        var claimed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var notes = new List<string>();
+        foreach (var t in all)
+            if (!ReferenceEquals(t, deck) && t.Refusal is null)
+            {
+                if (AddCell(t, "<deck>", library, claimed, notes) is { } why) return (library, null, why);
+                library.Find(t.Name)!.SpiceSource = null;   // read back from a deck, not placed from a file
+            }
+        var tb = new TestBench(deckCell);
+        foreach (var el in deck.Elements)
+        {
+            if (el.Refusal is { } why) return (library, null, $"{el.InstanceName}: {why}");
+            string reference = el.SubcircuitName ?? (el.Symbol is { } kind ? ComponentTypeRegistry.EngineReference(kind) : el.Reference);
+            tb.Instances.Add(new Instance(el.InstanceName, reference, el.Nets, Assignments(el.Parameters)));
+        }
+        return (library, tb, null);
     }
 
     /// <summary>The cell parameter a statistical vendor part's cell carries (brief vendorlib-5 R-vl5-3c).</summary>

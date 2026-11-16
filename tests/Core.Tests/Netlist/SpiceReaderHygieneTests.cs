@@ -175,7 +175,9 @@ public sealed class SpiceReaderHygieneTests
 
     [Theory]
     [InlineData("W1 a b VSENSE SWMOD", "current-controlled switch")]
-    [InlineData("T1 a 0 b 0 Z0=50 TD=1n", "transmission line")]
+    // brief TRN-6 reads a lossless line with one shared reference as a TLIN; one whose ports have different references
+    // excites two modes, which a TLIN does not carry, and is still refused by what it is
+    [InlineData("T1 a 0 b c Z0=50 TD=1n", "two modes")]
     [InlineData("O1 a 0 b 0 LMOD", "transmission line")]
     [InlineData("U1 a b UMOD", "circuitRF does not have")]
     public void H9_AnUnimplementedElementIsRefusedByName(string line, string mustSay)

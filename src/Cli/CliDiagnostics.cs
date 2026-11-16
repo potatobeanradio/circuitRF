@@ -3449,9 +3449,36 @@ internal static class CliDiagnostics
     /// format, so an extension that is not it is a caller who meant a different verb.</summary>
     public static Diagnostic NetlistOutputNotCnl(string path, string extension) => Diagnostic.Create(
         "netlist.output.not-cnl", DiagnosticSeverity.Error,
-        "netlist: '{path}' has extension '{extension}', and this verb writes a .cnl. "
-      + "`circuitrf render` writes a picture.",
+        "netlist: '{path}' has extension '{extension}', and this verb writes a .cnl, or a .cir (a SPICE deck of the bench's "
+      + "transient analysis). `circuitrf render` writes a picture.",
         ("path", path), ("extension", extension));
+
+    /// <summary>brief TRN-6 R-trn6-11 — the deck could not be written: every refusal, all at once; nothing written.</summary>
+    public static Diagnostic NetlistDeckRefused(string path, int count, string refusals) => Diagnostic.Create(
+        "netlist.deck.untranslatable", DiagnosticSeverity.Error,
+        "netlist: {count} element(s) of '{path}' have no exact translation into the SPICE dialect, so nothing was written:\n{refusals}",
+        ("path", path), ("count", count), ("refusals", refusals));
+
+    /// <summary>brief TRN-6 — which transient analysis the deck is for could not be decided.</summary>
+    public static Diagnostic NetlistDeckNoAnalysis(string path, string why) => Diagnostic.Create(
+        "netlist.deck.no-analysis", DiagnosticSeverity.Error,
+        "netlist: '{path}': {why}", ("path", path), ("why", why));
+
+    /// <summary>brief TRN-6 — the bench could not be read or elaborated for the deck.</summary>
+    public static Diagnostic NetlistDeckFailed(string path, string why) => Diagnostic.Create(
+        "netlist.deck.failed", DiagnosticSeverity.Error,
+        "netlist: '{path}' could not be written as a SPICE deck: {why}", ("path", path), ("why", why));
+
+    /// <summary>brief TRN-6 R-trn6-11 — under Solver=ngspice, an element the deck writer would refuse.</summary>
+    public static Diagnostic CheckTranUntranslatable(string path, string analysis, string refusal) => Diagnostic.Create(
+        "check.tran.untranslatable", DiagnosticSeverity.Error,
+        "{path}: transient '{analysis}' runs on ngspice, and the SPICE dialect has no exact translation of {refusal}",
+        ("path", path), ("analysis", analysis), ("refusal", refusal));
+
+    /// <summary>brief TRN-6 R-trn6-9 — under Solver=ngspice with SpiceLines=rlgc, how far a fitted line drifts.</summary>
+    public static Diagnostic CheckTranLineFit(string path, string analysis, string sentence) => Diagnostic.Create(
+        "check.tran.line-fit", DiagnosticSeverity.Info,
+        "{path}: transient '{analysis}': {sentence}.", ("path", path), ("analysis", analysis), ("sentence", sentence));
 
     public static Diagnostic NetlistNotASchematic(string path, string kind) => Diagnostic.Create(
         "netlist.path.not-a-schematic", DiagnosticSeverity.Error,

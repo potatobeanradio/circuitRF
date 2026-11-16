@@ -419,6 +419,13 @@ naming the circuitRF bench and version, a name map, the elements, `.options` (`R
 `SpiceOptions` verbatim), `.ic` for held nets, `.tran Step Stop Start MaxStep` with `uic` for `InitialState=zero`, and
 `.save` for every recorded net and probe current.
 
+As built (brief TRN-6), every element's spelling, the device parameter tables, the discontinuity classification, the TXL/CPL
+extraction and the fit subcircuits are recorded in `spice-models.md` §15. Three findings changed this table's reading: the
+dialect reads a zero PULSE rise, fall or width (and a zero EXP Delay2 or SFFM carrier) as its own default, so those are refused
+rather than written; its behavioural-source `exp` grows linearly past an argument of 14 and its power takes the magnitude of
+the base, so expressions are spelled around both; and its CPL takes R and G as diagonals only, so a coupled pair whose modes
+lose differently is refused.
+
 #### 9.2.1 The element table (TRN-6)
 
 | circuitRF | Dialect | Exact? |

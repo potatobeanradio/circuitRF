@@ -23,6 +23,13 @@ public sealed class Cell(string name)
     /// </summary>
     public string? Part { get; set; }
 
+    /// <summary>
+    /// brief TRN-6 R-trn6-5 — the SPICE file this definition was translated from (<c>spice "&lt;path&gt;"</c> inside its
+    /// <c>define</c>), or null for a cell that is not one. A SPICE deck written for the bench includes this file as it is and
+    /// calls the subcircuit by its name, instead of re-translating what circuitRF translated from it.
+    /// </summary>
+    public string? SpiceSource { get; set; }
+
     /// <summary>A copy sharing every list member, with <paramref name="corner"/>'s values as the defaults of the
     /// parameters it binds (a binding without a unit keeps the declaration's).</summary>
     public Cell CopyWith(CellCorner corner)
@@ -40,7 +47,7 @@ public sealed class Cell(string name)
     /// <summary>A copy under <paramref name="name"/> holding the same members (the lists are new, their items shared).</summary>
     public Cell CopyShallow(string name)
     {
-        var c = new Cell(name) { Part = Part };
+        var c = new Cell(name) { Part = Part, SpiceSource = SpiceSource };
         c.Ports.AddRange(Ports);
         c.Parameters.AddRange(Parameters);
         c.Variables.AddRange(Variables);

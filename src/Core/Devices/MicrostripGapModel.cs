@@ -15,7 +15,7 @@ namespace CircuitRF.Core.Devices;
 /// reason. Outside the closed form's stated range the instance warns, once per ratio, as every other
 /// microstrip discontinuity does.</para>
 /// </summary>
-public sealed class MicrostripGapModel : ComponentModel, IReportsWarnings
+public sealed class MicrostripGapModel : ComponentModel, IReportsWarnings, ILumpedNetwork
 {
     public override int PortCount => 2;
     public override ModelKind Kind => ModelKind.Linear;
@@ -38,6 +38,14 @@ public sealed class MicrostripGapModel : ComponentModel, IReportsWarnings
         _reporter = new MicrostripValidityReporter(instancePath);
         (SeriesCapacitance, ShuntCapacitance) = MicrostripGap.Capacitances(wMeters, sMeters, hMeters, epsR, _reporter);
     }
+
+    /// <summary>brief TRN-6 R-trn6-10 — the symmetric pi it stamps: Cg across the gap, Cp from each end to ground.</summary>
+    public LumpedNetwork? Lumped => new(2, 0,
+    [
+        new LumpedElement('C', 0, 1, SeriesCapacitance),
+        new LumpedElement('C', 0, LumpedNetwork.Ground, ShuntCapacitance),
+        new LumpedElement('C', 1, LumpedNetwork.Ground, ShuntCapacitance),
+    ]);
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {

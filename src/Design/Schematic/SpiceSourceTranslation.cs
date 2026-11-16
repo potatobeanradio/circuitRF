@@ -75,15 +75,10 @@ internal static class SpiceSourceTranslation
         // with Delay and Damping. The reader has already put its arguments under circuitRF's keys.
         if (Expression(inst, SpiceNetlistReader.SourceWaveformParameter) is { } wave)
         {
-            SymbolKind kind = (wave, current) switch
-            {
-                ("PULSE", false) => SymbolKind.VPulse, ("PULSE", true) => SymbolKind.IPulse,
-                ("PWL", false) => SymbolKind.VPwl, ("PWL", true) => SymbolKind.IPwl,
-                ("EXP", false) => SymbolKind.VExp, ("EXP", true) => SymbolKind.IExp,
-                ("SFFM", false) => SymbolKind.VSffm, ("SFFM", true) => SymbolKind.ISffm,
-                (_, false) => SymbolKind.ToneSource,
-                (_, true) => SymbolKind.CurrentToneSource,
-            };
+            // brief TRN-6 R-trn6-2 — the stimulus's type is the element table's, the row the deck writer writes it from.
+            SymbolKind kind = SpiceElementTable.TypeForStimulus(wave, current) is { } type && KindOf(type) is { } k
+                ? k
+                : current ? SymbolKind.CurrentToneSource : SymbolKind.ToneSource;
             var rows = inst.Overrides
                 .Where(o => o.Name != SpiceNetlistReader.SourceWaveformParameter && o.Name != SpiceNetlistReader.SourceDcParameter)
                 .Select(o => ModelCardCellBuilder.ImportedParameter(kind, o.Name, o.Expression))
@@ -169,6 +164,22 @@ internal static class SpiceSourceTranslation
                 [], notes, null);
         }
 
+        // ── a source of time alone (brief TRN-6) ─────────────────────────────
+        //
+        // An expression that senses nothing — no node, no branch, only `time` and constants — is a waveform, and
+        // circuitRF's V_Expr / I_Expr is exactly that source: the type the deck writer writes as a behavioural source in
+        // time. A current source takes its nets swapped, as every current source here does (the dialect's sinks from its
+        // first node, circuitRF's delivers into it).
+        if (charge is null && form.Pairs.Count == 1 && form.ControlSources.Count == 0 &&
+            SpiceExpression.ReferencesTime(form.Equation) && !SensesOwnPair(form.Equation))
+        {
+            var kind = isVoltage ? SymbolKind.VExpr : SymbolKind.IExpr;
+            IReadOnlyList<string> exprNets = isVoltage ? inst.NetBindings : [inst.NetBindings[1], inst.NetBindings[0]];
+            return new SubcircuitElement(
+                inst.InstanceName, inst.Reference, exprNets, kind, null,
+                [new EditableParameter { Name = "Expr", Expression = $"\"{form.Equation}\"" }], [], notes, null);
+        }
+
         // ── the equation-defined device ───────────────────────────────────────
         var nets = new List<string>(form.Pairs.Count * 2);
         foreach (var p in form.Pairs) { nets.Add(p.Plus); nets.Add(p.Minus); }
@@ -211,6 +222,50 @@ internal static class SpiceSourceTranslation
     // ─────────────────────────────────────────────────────────────────────────
     //  helpers
     // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Whether an equation reads its own port's voltage (<c>_v1</c>).</summary>
+    private static bool SensesOwnPair(string equation)
+    {
+        try
+        {
+            bool found = false;
+            void Walk(CircuitRF.Core.Expressions.Expr e)
+            {
+                switch (e)
+                {
+                    case CircuitRF.Core.Expressions.RefExpr r when r.Name == "_v1": found = true; break;
+                    case CircuitRF.Core.Expressions.UnaryExpr u: Walk(u.Operand); break;
+                    case CircuitRF.Core.Expressions.BinaryExpr b: Walk(b.Left); Walk(b.Right); break;
+                    case CircuitRF.Core.Expressions.CompareExpr c: Walk(c.Left); Walk(c.Right); break;
+                    case CircuitRF.Core.Expressions.LogicExpr l: Walk(l.Left); Walk(l.Right); break;
+                    case CircuitRF.Core.Expressions.ConditionalExpr cd: Walk(cd.Condition); Walk(cd.Then); Walk(cd.Else); break;
+                    case CircuitRF.Core.Expressions.CallExpr call: foreach (var a in call.Args) Walk(a); break;
+                }
+            }
+            Walk(CircuitRF.Core.Expressions.Parser.Parse(equation));
+            return found;
+        }
+        catch (Exception) { return true; }
+    }
+
+    private static readonly Dictionary<string, SymbolKind> _kindOfType = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The palette component whose engine type is <paramref name="type"/>, or null.</summary>
+    internal static SymbolKind? KindOf(string type)
+    {
+        lock (_kindOfType)
+        {
+            if (_kindOfType.Count == 0)
+                foreach (var k in Enum.GetValues<SymbolKind>())
+                {
+                    string r;
+                    try { r = ComponentTypeRegistry.EngineReference(k); }
+                    catch (Exception) { continue; }
+                    _kindOfType.TryAdd(r, k);
+                }
+            return _kindOfType.TryGetValue(type, out var kind) ? kind : null;
+        }
+    }
 
     private static string? Expression(Instance inst, string name)
         => inst.Overrides

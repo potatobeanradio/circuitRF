@@ -184,6 +184,15 @@ public sealed class CnlReader
             ParseCellCorner(line, StripInlineComment(line["corner".Length..]).Trim());
             return true;
         }
+        if (_currentCell is not null && FirstWordIs(line, "spice"))
+        {
+            // brief TRN-6 R-trn6-5 — the SPICE file this definition was translated from.
+            string file = StripInlineComment(line["spice".Length..]).Trim();
+            if (file.Length < 2 || file[0] != '"' || file[^1] != '"' || file[1..^1].Trim().Length == 0)
+                throw new CnlReadException(_lineNumber, line, "'spice' names the SPICE file a definition came from, quoted — spice \"part.sp\".");
+            _currentCell.SpiceSource = file[1..^1];
+            return true;
+        }
         if (_currentCell is not null && FirstWordIs(line, "part"))
         {
             string number = StripInlineComment(line["part".Length..]).Trim();

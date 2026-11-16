@@ -138,6 +138,10 @@ public static class CnlWriter
         if (cell.Part is { } part)
             sb.Append("  part ").AppendLine(part.Any(char.IsWhiteSpace) ? $"\"{part}\"" : part);
 
+        // brief TRN-6 R-trn6-5 — the SPICE file a translated definition came from, always quoted (a path may hold a space).
+        if (cell.SpiceSource is { } spice)
+            sb.Append("  spice \"").Append(spice).AppendLine("\"");
+
         if (cell.Parameters.Count > 0)
             sb.Append("  parameters ")
               .AppendLine(string.Join("  ", cell.Parameters.Select(FormatParamDecl)));

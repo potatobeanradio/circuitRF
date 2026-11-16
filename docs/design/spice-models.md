@@ -835,7 +835,10 @@ primitive is needed.
 | `Ex`/`Gx` referencing `time` | transient stimulus | the behavioural source, `time` kept: a transient analysis evaluates it (§8.10) |
 | `Sx` + `VSWITCH` card | voltage-controlled switch | `VSwitch` with `Ron`/`Roff`/`Von`/`Voff`; an unexpressible card parameter, or an `SW` card, refused by name (§8.7) |
 | `Wx` | current-controlled switch | refused **by name** (§8.7) |
-| `Tx`, `Ox`, `Ux` | line, opamp macro, digital | refused by name |
+| `Kx L1 L2 k` | coupling | `Mutual`, M = k·√(L1·L2) (brief TRN-6) |
+| `Tx n1 n2 n3 n4 Z0= TD=` (or `F= NL=`) | lossless line, one shared reference | `TLIN`, E = 2π rad at F = 1/TD; a different reference at each port (two modes) refused (brief TRN-6) |
+| `Bx a b I=…` / `V=…` | behavioural source | read as `G`/`E` with that VALUE; a source of `time` alone is `V_Expr`/`I_Expr` (brief TRN-6) |
+| `Ox`, `Ux` | lossy line, opamp macro, digital | refused by name |
 
 ### 9.4 Reader hygiene
 
@@ -1155,3 +1158,226 @@ by `SubcircuitTranslation` / `SpiceModelNetlist` like any other.
 - **Documents.** `VendorLibraryDocs.Find` lists what a library shipped by file type, nearest the root
   first; a `.txt` counts only when the index found no part in it.
 
+## 15. The SPICE deck writer (brief TRN-6)
+
+`SpiceDeckWriter` (`src/Core/Netlist/Spice`) writes an elaborated bench with a transient analysis as one flat deck in the
+dialect, for ngspice (`docs/design/transient.md` §9.2). It is the only writer of the dialect in circuitRF: `circuitrf netlist
+<bench> -o out.cir`, MCP `netlist` with a `.cir` output and `check`'s `check.tran.untranslatable` all call it.
+
+**Exact or refused (transient.md D7).** Every element is written with the same meaning, or refused by name with its reason.
+Every refusal is collected before anything is written, and nothing is written when there is one. The element table of
+transient.md §9.2.1 is data (`SpiceElementTable`): the stimuli and the element letters are read by the reader as well as the
+writer, so a mapping exists in both directions or in neither, and each row says what circuitRF's reader makes of the written
+line again (`ReadsBackAs`). The reader reads `K` (Mutual, M = k·√(L1·L2)), `T` (TLIN, E = 2π rad at F = 1/TD) and `B` (read as
+`E`/`G` with that VALUE; a source of `time` alone is `V_Expr`/`I_Expr`), and `SpiceNetlistReader.ReadDeck` reads a flat deck's
+top level as one cell, so a written deck reads back (`SpiceModelNetlist.DeckBench`).
+
+**The deck.** A header naming the bench and circuitRF's version; the name map (every net and element, deck name = circuitRF
+name) as comments; `.include` for each placed SPICE file; `.temp` at the ambient; `.options TNOM=26.85` with `RELTOL`, `VNTOL`
+(VTol), `ABSTOL` (ITol) and `METHOD` (`GEAR MAXORD=2` for gear2), then `SpiceOptions` verbatim on a line of its own; the
+elements, each with its circuitRF path as a trailing `;` comment; `.ic` for held nets; `.tran Step Stop Start MaxStep` (`uic`
+under `InitialState=zero`; an automatic MaxStep written as the value the native engine takes); `.save` for every recorded net
+(the labelled ones when any are labelled) and every IProbe's current; a `.control` block with `pre_osdi` for each compiled
+Verilog-A model.
+
+**Names.** Letters, digits and `_` only, unique after case folding, never `0` or `gnd` (the dialect's grounds), an element's
+name beginning with its letter. `SpiceNameMap` maps both ways.
+
+### 15.1 What is written how
+
+| circuitRF | written as | note |
+|---|---|---|
+| R, C, L | `R`, `C`, `L` | A resistor's TC1/TC2 resolved at its temperature. R = 0 refused (circuitRF stamps 1e12 S). An inductor's series R and C on an internal node. |
+| IC= on C, L | the device's `IC=` under `uic`; under op a capacitor to ground becomes an `.ic` hold | the dialect's own held-through-the-operating-point rule; IC across two nets, or on an inductor, under op is refused |
+| Mutual | `K`, k = M/√(L1·L2) | \|k\| > 1 refused |
+| Transformer | `E` across the primary through a zero-volt `V`, `F` into the secondary | V1 = N·V2, i_s = −N·i_p |
+| VCCS, VCVS | `G`, `E` | a delay T refused |
+| IProbe | zero-volt `V` | its current saved |
+| Port, Term | `R` of Z | a reactive or non-positive Z refused |
+| Vdc, Idc | `V`/`I` `DC` | `I` on the nets swapped |
+| waveform sources | `PULSE`, `PWL` (`r=` the first time for Repeat), `EXP`, `SFFM`, with `DC` at the t = 0 value | a zero Rise, Fall or Width refused (the dialect reads zero as its step or stop time); a Dc not the t = 0 value refused under op; File= written inline |
+| V_Expr, I_Expr | `B` in `time` | |
+| tone sources | one `SIN` per tone (in series for V, in parallel for I), phase φ + 90°; `B` with a Ramp | a P1Tone as `SIN` of amplitude √(8·P·R) behind `R`; Z[k] refused |
+| TLIN and any lossless non-dispersive line | `T` Z0 TD | |
+| VSwitch | `B` conductance: ln g = ln gOff + (ln gOn − ln gOff)(3u² − 2u³) | Hysteresis refused |
+| SDD | `B` per current; each charge a `B` voltage source driving 1 F; `V[p]` a `B` voltage source | H[w ≥ 2] refused; a control current only of an element written as a `V` |
+| SpiceModel (placed `.subckt`) | `.include` of the file as it is, `X` of the subcircuit | the cell carries the file (`spice "<path>"` in its `define`) |
+| VerilogA | `N` on the `.osdi` circuitRF loads (`OsdiBuilds`; a `.va` compiled first), `.model` of its module | |
+| Diode, BJT, MOS 1/3 | `D`, `Q`, `M` and a card | §15.2-15.5 |
+| discontinuities | `L`, `C` | §15.6 |
+| lines | `TXL` / `CPL` with `SpiceLines=rlgc` | §15.7 |
+| SnP, Filter, Duplexer, other frequency-defined | a subcircuit of circuitRF's fit with `SpiceFit=yes` | §15.8 |
+| everything else | refused by name | |
+
+**Expressions** (`SpiceExpressionWriter`): the dialect's behavioural-source `exp` grows linearly past 14 and its `pow`/`^` take
+the magnitude of the base, so `exp(x)` is written `pow(e, x)`, `x^n` with odd integer n `x*pow(x, n−1)`, and a non-constant
+exponent is refused. `tanh` and `sign`, which the behavioural source lacks, are written `1 − 2/(e^(2x) + 1)` and a conditional;
+`if` is the ternary; `atan2`, `round`, `int` and anything else are refused by name.
+
+### 15.2 Device models — the rules
+
+The four models below are written only where every parameter maps. A parameter that maps is written whenever its value is not
+the dialect's default for the same meaning. A parameter with no counterpart is omitted at circuitRF's default and refuses the
+instance otherwise ("<instance>: <param> has no counterpart in the SPICE dialect's <model>"). Rows marked "no effect" carry
+nothing a transient deck could hold (noise coefficients, temperature relations at T = Tnom, a process derivation that needs
+Tox). **A device whose temperature is not its Tnom is refused**: circuitRF's junction temperature relations (a temperature-dependent
+bandgap, `Temperature`) are not the dialect's, so away from Tnom the two are different equations; the card writes `TNOM` and the
+instance `temp` so both sit at Tnom. **One stated difference remains**: below −3·N·Vt the dialect's diode current is
+−Is·(1 + (3·N·Vt/(e·V))³) where circuitRF's stays Is·(exp(V/(N·Vt)) − 1); the two differ by under 0.05·Is there.
+
+### 15.3 Junction diode (`Diode` → `D`)
+
+| circuitRF | dialect | where | circuitRF default | dialect default | how |
+|---|---|---|---|---|---|
+| `Is` | `IS` | card | 1e-14 | 1e-14 | maps |
+| `N` | `N` | card | 1 | 1 | maps |
+| `Rs` | `RS` | card | 0 | 0 | maps |
+| `Cj0` | `CJO` | card | 0 | 0 | maps |
+| `Vj` | `VJ` | card | 1 | 1 | maps |
+| `M` | `M` | card | 0.5 | 0.5 | maps |
+| `Fc` | `FC` | card | 0.5 | 0.5 | maps |
+| `Tt` | `TT` | card | 0 | 0 | maps |
+| `Bv` | `BV` | card | 0 | 0 | maps. 0 is breakdown not modelled in circuitRF, which is the dialect's default (BV infinite). |
+| `Ibv` | `IBV` | card | 1e-3 | 1e-3 | maps |
+| `Nbv` | `NBV` | card | 1 | — | maps. The dialect's NBV defaults to N, circuitRF's to 1, so it is always written. |
+| `Isr` | — | — | 0 | — | no counterpart: refused when set off its default. the dialect models recombination only when ISR is given, and its manual does not state that term as circuitRF's second exponential Isr·(exp(V/(Nr·Vt)) − 1). |
+| `Nr` | — | — | 2 | — | no effect in a transient deck: omitted. Read only with Isr, which is refused when set. |
+| `Gmin` | — | — | 0 | — | no counterpart: refused when set off its default. the dialect adds its own GMIN across every junction from its options; circuitRF's diode has its own |
+| `Area` | `area` | instance | 1 | 1 | maps |
+| `Tnom` | `TNOM` | card | 26.85 | 27 | maps. circuitRF's nominal is 26.85 °C (300 K), the dialect's 27 °C, so it is always written. |
+| `Xti` | `XTI` | card | 3 | 3 | maps |
+| `Eg` | `EG` | card | 1.16 | 1.11 | maps |
+| `Kf` | `KF` | card | 0 | 0 | maps |
+| `Af` | `AF` | card | 1 | 1 | maps |
+
+### 15.4 Gummel-Poon BJT (`BJT_NPN`, `BJT_PNP` → `Q`, NPN/PNP)
+
+| circuitRF | dialect | where | circuitRF default | dialect default | how |
+|---|---|---|---|---|---|
+| `Is` | `IS` | card | 9.57e-17 | 1e-16 | maps |
+| `Bf` | `BF` | card | 131.1 | 100 | maps |
+| `Nf` | `NF` | card | 1.0 | 1 | maps |
+| `Vaf` | `VAF` | card | 71.02 | 0 | maps. 0 is not modelled in both (the dialect's infinite Early voltage). |
+| `Ikf` | `IKF` | card | 0.09745 | 0 | maps. 0 is not modelled in both. |
+| `Ise` | `ISE` | card | 1.618e-15 | 0 | maps |
+| `Ne` | `NE` | card | 1.692 | 1.5 | maps |
+| `Br` | `BR` | card | 3.287 | 1 | maps |
+| `Nr` | `NR` | card | 0.959 | 1 | maps |
+| `Var` | `VAR` | card | 4.081 | 0 | maps. 0 is not modelled in both. |
+| `Ikr` | `IKR` | card | 0.07617 | 0 | maps. 0 is not modelled in both. |
+| `Isc` | `ISC` | card | 5.969e-15 | 0 | maps |
+| `Nc` | `NC` | card | 1.974 | 2 | maps |
+| `Rb` | `RB` | card | 9.72444 | 0 | maps |
+| `Irb` | `IRB` | card | 3.017e-6 | 0 | maps |
+| `Rbm` | `RBM` | card | 6.94667 | 0 | maps |
+| `Re` | `RE` | card | 0.7979 | 0 | maps |
+| `Rc` | `RC` | card | 2.089 | 0 | maps |
+| `Cje` | `CJE` | card | 8.287e-14 | 0 | maps |
+| `Vje` | `VJE` | card | 0.8281 | 0.75 | maps |
+| `Mje` | `MJE` | card | 0.7138 | 0.33 | maps |
+| `Cjc` | `CJC` | card | 8.781e-14 | 0 | maps |
+| `Vjc` | `VJC` | card | 0.7715 | 0.75 | maps |
+| `Mjc` | `MJC` | card | 0.7552 | 0.33 | maps |
+| `Xcjc` | `XCJC` | card | 0.6209 | 1 | maps |
+| `Fc` | `FC` | card | 0.6275 | 0.5 | maps |
+| `Tf` | `TF` | card | 1.72653e-11 | 0 | maps |
+| `Xtf` | `XTF` | card | 0.07 | 0 | maps |
+| `Vtf` | `VTF` | card | 0.00381019 | 0 | maps. 0 is not modelled in both. |
+| `Itf` | `ITF` | card | 0.027024 | 0 | maps |
+| `Tr` | `TR` | card | 1.71536e-8 | 0 | maps |
+| `Area` | `area` | instance | 1 | 1 | maps |
+| `Tnom` | `TNOM` | card | 26.85 | 27 | maps. circuitRF's nominal is 26.85 °C (300 K), the dialect's 27 °C, so it is always written. |
+| `Xti` | `XTI` | card | 6.548 | 3 | maps |
+| `Xtb` | `XTB` | card | 1.303 | 0 | maps |
+| `Eg` | `EG` | card | 1.11 | 1.11 | maps |
+| `Kf` | `KF` | card | 0 | 0 | maps |
+| `Af` | `AF` | card | 1 | 1 | maps |
+
+### 15.5 MOS level 1 and level 3 (`MOS1_N`/`_P`, `MOS3_N`/`_P` → `M`, NMOS/PMOS LEVEL=1/3)
+
+`Lambda` is level 1's; `Eta`, `Theta`, `Kappa`, `Vmax`, `Delta`, `Xj` level 3's.
+
+| circuitRF | dialect | where | circuitRF default | dialect default | how |
+|---|---|---|---|---|---|
+| `Vto` | `VTO` | card | ±1 (by channel) | 0 | maps. circuitRF's default is +1 V n-channel, −1 V p-channel, so it is always written. |
+| `Kp` | `KP` | card | 2e-5 | 2e-5 | maps |
+| `Gamma` | `GAMMA` | card | 0 | 0 | maps |
+| `Phi` | `PHI` | card | 0.6 | 0.6 | maps |
+| `Lambda` | `LAMBDA` | card | 0 | 0 | maps |
+| `Eta` | `ETA` | card | 0 | 0 | maps |
+| `Theta` | `THETA` | card | 0 | 0 | maps |
+| `Kappa` | `KAPPA` | card | 0.2 | 0.2 | maps |
+| `Vmax` | `VMAX` | card | 0 | 0 | maps |
+| `Delta` | `DELTA` | card | 0 | 0 | maps |
+| `Xj` | `XJ` | card | 0 | 0 | maps |
+| `W` | `W` | instance | 100e-6 | — | maps. Always written: the dialect's default width is an option (DEFW). |
+| `L` | `L` | instance | 100e-6 | — | maps. Always written: the dialect's default length is an option (DEFL). |
+| `Ld` | `LD` | card | 0 | 0 | maps |
+| `Tox` | — | — | 0 | — | no counterpart: refused when set off its default. with Tox the gate charge is circuitRF's charge-based long-channel form and the dialect's is Meyer's capacitance set; with Tox unstated neither has a thin-oxide charge. |
+| `Uo` | — | — | 600 | — | no effect in a transient deck: omitted. Derives Kp only with Tox, which is refused when set. |
+| `Nsub` | — | — | 0 | — | no effect in a transient deck: omitted. Derives Gamma and Phi only with Tox, which is refused when set. |
+| `Cgso` | `CGSO` | card | 0 | 0 | maps |
+| `Cgdo` | `CGDO` | card | 0 | 0 | maps |
+| `Cgbo` | `CGBO` | card | 0 | 0 | maps |
+| `Is` | `IS` | card | 1e-14 | 1e-14 | maps |
+| `Js` | `JS` | card | 0 | 0 | maps |
+| `N` | — | — | 1 | — | no counterpart: refused when set off its default. the dialect's MOS bulk junctions have emission coefficient 1 and no parameter for it |
+| `Cbd` | `CBD` | card | 0 | 0 | maps |
+| `Cbs` | `CBS` | card | 0 | 0 | maps |
+| `Cj` | `CJ` | card | 0 | 0 | maps |
+| `Cjsw` | `CJSW` | card | 0 | 0 | maps |
+| `Ad` | `AD` | instance | 0 | 0 | maps |
+| `As` | `AS` | instance | 0 | 0 | maps |
+| `Pd` | `PD` | instance | 0 | 0 | maps |
+| `Ps` | `PS` | instance | 0 | 0 | maps |
+| `Pb` | `PB` | card | 0.8 | 0.8 | maps |
+| `Mj` | `MJ` | card | 0.5 | 0.5 | maps |
+| `Mjsw` | `MJSW` | card | 0.33 | 0.5 (level 1), 0.33 (level 3) | maps. Written for level 1, where the defaults differ. |
+| `Fc` | `FC` | card | 0.5 | 0.5 | maps |
+| `Rd` | `RD` | card | 0 | 0 | maps |
+| `Rs` | `RS` | card | 0 | 0 | maps |
+| `Rsh` | `RSH` | card | 0 | 0 | maps |
+| `Nrd` | `NRD` | instance | 0 | — | maps. Always written: the dialect's default squares differ by version. |
+| `Nrs` | `NRS` | instance | 0 | — | maps. Always written: the dialect's default squares differ by version. |
+| `Tnom` | `TNOM` | card | 26.85 | 27 | maps. circuitRF's nominal is 26.85 °C (300 K), the dialect's 27 °C, so it is always written. |
+| `Xti` | — | — | 3 | — | no effect in a transient deck: omitted. The dialect's level-1 and level-3 models have no XTI; it acts only away from Tnom, which is refused. |
+| `Eg` | — | — | 1.16 | — | no effect in a transient deck: omitted. As Xti. |
+| `Kf` | `KF` | card | 0 | 0 | maps |
+| `Af` | `AF` | card | 1 | 1 | maps |
+| `GammaN` | — | — | 2/3 | — | no effect in a transient deck: omitted. A channel thermal-noise coefficient; a transient run has no noise. |
+
+### 15.6 Discontinuities
+
+A model that is a fixed lumped network of its geometry alone (`ILumpedNetwork`, the network its own stamp stamps) is written
+exactly as its `L` and `C`; one whose response varies with frequency is refused by name unless `SpiceFit=yes`.
+
+| model | network | written |
+|---|---|---|
+| `MBEND` | L-C-L tee: L from each port to a centre node, C to ground (MicrostripBendLC, of W, h, εr) | exactly, as L, L, C |
+| `MGAP` | pi: Cg across, Cp at each end | exactly, as three C |
+| `MTEE` | star: L1, L1, L2 to a centre node, CT to ground (eqs 6.41-6.42) | exactly when it has no arm lengths; with arms (lines) it varies with frequency: refused unless `SpiceFit=yes` |
+| `MCROSS` | C at each port; L1, L1, L2 to the centre; L2 then L3 on arm 2 (eqs 6.44-6.45) | exactly when it has no arm lengths; with arms refused unless `SpiceFit=yes` |
+| `MMITER` | MLIN corner section around a lumped excess | its section is a dispersive line: refused unless `SpiceFit=yes` |
+| `MCURVE` | MLIN over an effective length | a line: `TXL` with `SpiceLines=rlgc`, else refused unless `SpiceFit=yes` |
+
+A junction's L may be negative (the closed forms give a negative L1 or L3 at some widths); it is written as it is.
+
+### 15.7 Lines as `TXL` and `CPL` (`SpiceLines=rlgc`)
+
+Confirmed against the ngspice manual (§6.4.1, §6.4.2): `TXL` is `Y n1 0 n2 0 model LEN=` with a `.model txl R L G C length`
+per unit length, transient only; `CPL` is `P in1 in2 0 out1 out2 0 model LEN=` with R, L, G, C in Maxwell matrix form, **R and
+G as diagonals only**, L and C as triangles. Each line is written with length 1 and its totals: R + jωL = Zc·γl and
+G + jωC = γl/Zc at `SpiceLineFreq` (default the highest frequency a source plays; `auto` with no source frequency is refused),
+so it has the model's Zc and γl there to round-off (`SpiceLineFit`). A coupled pair's matrices come from its even and odd modes;
+a pair whose modes lose differently has an off-diagonal R or G and is refused. For each line the largest |ΔS| over S11 and S21
+(the pair's 4×4) against circuitRF's model, on 401 frequencies spaced logarithmically from 1/Stop to 1/(2·MaxStep), is written
+as a comment, returned (`SpiceDeck.Lines`) for the run's note, and reported by `check` (`check.tran.line-fit`).
+
+### 15.8 Fits as subcircuits (`SpiceFit=yes`)
+
+The transient engine's own realization (`TransientRealization`, brief TRN-4) runs on the netlist through `TransientSpiceFits`
+and its fits are written: an S-matrix fit S = D + Σ R/(s − a) as, per port, a current sensor, Z0 in series and a `B` holding
+V − Z0·I = Σ D·u + Σ R·x with u = V + Z0·I and (s − a)x = u, each state a node on a 1/|a| F capacitor (RationalSnpModel's own
+rows and scaling); a lossy line as a lossless `T` (driven ideally, terminated in its own impedance) delaying the far wave
+W = V + Zc·I into the causal residual at each end. Each is labelled in the deck and returned (`SpiceDeck.Fits`): "ngspice ran
+circuitRF's fit of <element>, not the element itself". `SpiceLines=rlgc` wins for a line when both are set.

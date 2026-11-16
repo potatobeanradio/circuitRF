@@ -33,7 +33,7 @@ namespace CircuitRF.Core.Devices;
 /// distinct published L/C values</b> (None vs. Fifty/Optimal-with-Fifty's-coefficients), not merely
 /// by a geometric length proxy.
 /// </summary>
-public sealed class MicrostripBendModel : ComponentModel, IReportsWarnings
+public sealed class MicrostripBendModel : ComponentModel, IReportsWarnings, ILumpedNetwork
 {
     public override int PortCount => 2;
     public override ModelKind Kind => ModelKind.Linear;
@@ -61,6 +61,22 @@ public sealed class MicrostripBendModel : ComponentModel, IReportsWarnings
         _instancePath = instancePath;
         _reporter = new MicrostripValidityReporter(instancePath);
         _ = (angleDeg, tMeters, sigmaSPerM, tanD); // reserved: no verified angle/loss dependence is available (see MicrostripBendLC)
+    }
+
+    /// <summary>brief TRN-6 R-trn6-10 — the L-C-L tee it stamps: a series L from each port to the centre node, C from the
+    /// centre to ground. Its values are MicrostripBendLC's, of W, h and εr alone.</summary>
+    public LumpedNetwork? Lumped
+    {
+        get
+        {
+            var (l, cap, _) = MicrostripBendLC.Compute(_wMeters, _hMeters, _epsR, _miter, _reporter);
+            return new LumpedNetwork(2, 1,
+            [
+                new LumpedElement('L', 0, 2, l),
+                new LumpedElement('L', 2, 1, l),
+                new LumpedElement('C', 2, LumpedNetwork.Ground, cap),
+            ]);
+        }
     }
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)

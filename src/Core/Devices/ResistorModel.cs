@@ -33,6 +33,9 @@ public sealed class ResistorModel : ComponentModel, IReportsWarnings
     public ResistorModel(double temperatureFactor = 1.0)
         => _temperatureFactor = temperatureFactor;
 
+    /// <summary>brief TRN-6 — what the stated resistance is multiplied by (TC1/TC2 at the resistor's temperature).</summary>
+    public double TemperatureFactor => _temperatureFactor;
+
     public override int       PortCount => 2;
     public override ModelKind Kind      => ModelKind.Linear;
 

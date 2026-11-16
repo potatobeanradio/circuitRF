@@ -91,6 +91,10 @@ public sealed class TransientRealization : IDisposable
     public List<string> Problems { get; } = [];
     public List<TransientFitReport> Fits { get; } = [];
     public List<TransientLineReport> Lines { get; } = [];
+
+    /// <summary>brief TRN-6 — the reference impedance of each S-matrix fit swapped in, by instance path (the SPICE deck writer
+    /// realizes the same fit).</summary>
+    public Dictionary<string, double> FitZ0 { get; } = new(StringComparer.Ordinal);
     internal List<TransientLineModel> LineModels { get; } = [];
 
     /// <summary>Whether the lines leave their delayed waves out of their stamps (the transient engine's own stamps).</summary>
@@ -395,6 +399,7 @@ public sealed class TransientRealization : IDisposable
             ReferenceNode = ec.ReferenceNode,
             Multiplicity = ec.Multiplicity,
         });
+        FitZ0[ec.InstancePath] = e.Z0;
     }
 
     /// <summary>A System Filter, Duplexer or any other element whose stamp is not affine: its node-referenced S sampled from
@@ -409,6 +414,7 @@ public sealed class TransientRealization : IDisposable
         var e = Cache.GetOrAdd(key, _ => new Lazy<Entry>(() => BuildBlock(ec, nodes, FMaxHz, tol), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
         if (!Accept(ec, e, what ?? ec.ComponentType, whyNotAffine, quiet)) return;
         Swap(i, new ElaboratedComponent(ec.ComponentType, ec.InstancePath, nodes, ec.Parameters, new RationalSnpModel(e.Ports, e.Z0, e.Model!)));
+        FitZ0[ec.InstancePath] = e.Z0;
     }
 
     /// <summary>A tone source's band-mapped termination: its drive kept, its impedance fitted as a one-port between the external

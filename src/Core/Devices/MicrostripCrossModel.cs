@@ -68,7 +68,7 @@ namespace CircuitRF.Core.Devices;
 /// carries the junction. A cross declaring no length is the junction alone, as it always simulated,
 /// reported once.
 /// </summary>
-public sealed class MicrostripCrossModel : ComponentModel, IReportsWarnings
+public sealed class MicrostripCrossModel : ComponentModel, IReportsWarnings, ILumpedNetwork
 {
     public override int PortCount => 4;
     public override ModelKind Kind => ModelKind.Linear;
@@ -207,8 +207,80 @@ public sealed class MicrostripCrossModel : ComponentModel, IReportsWarnings
             (block, ports) => StampJunction(block, ports[0], ports[1], ports[2], ports[3], omega));
     }
 
+    /// <summary>brief TRN-6 R-trn6-10 — the cross network alone, when the instance has no arm lines: C from each pin to ground,
+    /// L1 from pins 1 and 3 to the centre, L2 from pin 4 to the centre and from pin 2 to an inner node, L3 from there to the
+    /// centre (Fig. 6.3(e)). Null with any arm.</summary>
+    public LumpedNetwork? Lumped
+    {
+        get
+        {
+            if (StraightLinePair != 0 || _arms.Any(a => a is not null)) return null;
+            var (cCap, l1, l2, l3) = JunctionValues();
+            const int centre = 4, inner = 5;
+            return new LumpedNetwork(4, 2,
+            [
+                new LumpedElement('C', 0, LumpedNetwork.Ground, cCap),
+                new LumpedElement('C', 1, LumpedNetwork.Ground, cCap),
+                new LumpedElement('C', 2, LumpedNetwork.Ground, cCap),
+                new LumpedElement('C', 3, LumpedNetwork.Ground, cCap),
+                new LumpedElement('L', 0, centre, l1),
+                new LumpedElement('L', 2, centre, l1),
+                new LumpedElement('L', 3, centre, l2),
+                new LumpedElement('L', 1, inner, l2),
+                new LumpedElement('L', inner, centre, l3),
+            ]);
+        }
+    }
+
     /// <summary>The Gupta-Garg-Chadha cross network on its four reference-plane nodes.</summary>
     private void StampJunction(IMnaContext mna, int n1, int n2, int n3, int n4, double omega)
+    {
+        var (cCap, l1, l2, l3) = JunctionValues();
+
+        var a1 = 1.0 / (Complex.ImaginaryOne * omega * l1);
+        var a2 = 1.0 / (Complex.ImaginaryOne * omega * l2);
+        var a3 = 1.0 / (Complex.ImaginaryOne * omega * l3);
+        var yc = new Complex(0.0, omega * cCap);
+        var sum23 = a2 + a3;
+        var e = 2.0 * a1 * sum23 + a2 * (a2 + 2.0 * a3);
+        var k1 = a1 * sum23 / e;
+        var k2 = a2 * a3 / e;
+        var k4 = a2 * sum23 / e;
+
+        var yThroughThrough = yc + a1 * (1.0 - k1);      // Y11 = Y33
+        var yThroughAcross = -a1 * k1;                    // Y13 = Y31
+        var yThroughStub2 = -(a1 * a2 * a3) / e;           // Y12=Y21=Y23=Y32 (arm2, the L3-bearing stub)
+        var yThroughStub4 = -(a1 * a2 * sum23) / e;        // Y14=Y41=Y34=Y43 (arm4, the direct stub)
+        var y22 = yc + a2 * a3 * (1.0 - k2) / sum23;       // Y22
+        var y44 = yc + a2 * (1.0 - k4);                    // Y44
+        var y24 = -(a2 * a2 * a3) / e;                     // Y24 = Y42
+
+        // Diagonal.
+        mna.AddBlockAdmittance(n1, n1, yThroughThrough);
+        mna.AddBlockAdmittance(n3, n3, yThroughThrough);
+        mna.AddBlockAdmittance(n2, n2, y22);
+        mna.AddBlockAdmittance(n4, n4, y44);
+
+        // Off-diagonal, both directions (reciprocal).
+        mna.AddBlockAdmittance(n1, n3, yThroughAcross);
+        mna.AddBlockAdmittance(n3, n1, yThroughAcross);
+
+        mna.AddBlockAdmittance(n1, n2, yThroughStub2);
+        mna.AddBlockAdmittance(n2, n1, yThroughStub2);
+        mna.AddBlockAdmittance(n3, n2, yThroughStub2);
+        mna.AddBlockAdmittance(n2, n3, yThroughStub2);
+
+        mna.AddBlockAdmittance(n1, n4, yThroughStub4);
+        mna.AddBlockAdmittance(n4, n1, yThroughStub4);
+        mna.AddBlockAdmittance(n3, n4, yThroughStub4);
+        mna.AddBlockAdmittance(n4, n3, yThroughStub4);
+
+        mna.AddBlockAdmittance(n2, n4, y24);
+        mna.AddBlockAdmittance(n4, n2, y24);
+    }
+
+    /// <summary>C, L1, L2 and L3 (F, H, H, H): eqs 6.44-6.45, of the widths and h alone.</summary>
+    private (double C, double L1, double L2, double L3) JunctionValues()
     {
         if (!_warnedEpsR && (_epsR < 9.0 || _epsR > 10.8))
         {
@@ -259,47 +331,6 @@ public sealed class MicrostripCrossModel : ComponentModel, IReportsWarnings
         // eq (6.45b): "-L3/h (nH/m) = ...", i.e. L3/h is the negative of the RHS.
         double l3OverHNegated = 337.5 + (1.0 + 7.0 / u1) / u2 - 5.0 * u2 * Math.Cos(Math.PI / 2.0 * (1.5 - u1));
         double l3 = -l3OverHNegated * _h * 1e-9;
-
-        var a1 = 1.0 / (Complex.ImaginaryOne * omega * l1);
-        var a2 = 1.0 / (Complex.ImaginaryOne * omega * l2);
-        var a3 = 1.0 / (Complex.ImaginaryOne * omega * l3);
-        var yc = new Complex(0.0, omega * cCap);
-
-        var sum23 = a2 + a3;
-        var e = 2.0 * a1 * sum23 + a2 * (a2 + 2.0 * a3);
-        var k1 = a1 * sum23 / e;
-        var k2 = a2 * a3 / e;
-        var k4 = a2 * sum23 / e;
-
-        var yThroughThrough = yc + a1 * (1.0 - k1);      // Y11 = Y33
-        var yThroughAcross = -a1 * k1;                    // Y13 = Y31
-        var yThroughStub2 = -(a1 * a2 * a3) / e;           // Y12=Y21=Y23=Y32 (arm2, the L3-bearing stub)
-        var yThroughStub4 = -(a1 * a2 * sum23) / e;        // Y14=Y41=Y34=Y43 (arm4, the direct stub)
-        var y22 = yc + a2 * a3 * (1.0 - k2) / sum23;       // Y22
-        var y44 = yc + a2 * (1.0 - k4);                    // Y44
-        var y24 = -(a2 * a2 * a3) / e;                     // Y24 = Y42
-
-        // Diagonal.
-        mna.AddBlockAdmittance(n1, n1, yThroughThrough);
-        mna.AddBlockAdmittance(n3, n3, yThroughThrough);
-        mna.AddBlockAdmittance(n2, n2, y22);
-        mna.AddBlockAdmittance(n4, n4, y44);
-
-        // Off-diagonal, both directions (reciprocal).
-        mna.AddBlockAdmittance(n1, n3, yThroughAcross);
-        mna.AddBlockAdmittance(n3, n1, yThroughAcross);
-
-        mna.AddBlockAdmittance(n1, n2, yThroughStub2);
-        mna.AddBlockAdmittance(n2, n1, yThroughStub2);
-        mna.AddBlockAdmittance(n3, n2, yThroughStub2);
-        mna.AddBlockAdmittance(n2, n3, yThroughStub2);
-
-        mna.AddBlockAdmittance(n1, n4, yThroughStub4);
-        mna.AddBlockAdmittance(n4, n1, yThroughStub4);
-        mna.AddBlockAdmittance(n3, n4, yThroughStub4);
-        mna.AddBlockAdmittance(n4, n3, yThroughStub4);
-
-        mna.AddBlockAdmittance(n2, n4, y24);
-        mna.AddBlockAdmittance(n4, n2, y24);
+        return (cCap, l1, l2, l3);
     }
 }

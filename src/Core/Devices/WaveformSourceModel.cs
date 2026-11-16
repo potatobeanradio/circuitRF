@@ -122,6 +122,27 @@ public sealed class WaveformSourceModel : ComponentModel, ITransientWaveform
     private readonly Expr? _expr;
     private readonly Evaluator? _ev;
     private readonly Scope? _scope;
+    private readonly Dictionary<string, Value> _exprScope = new(StringComparer.Ordinal);
+
+    // brief TRN-6 — the resolved waveform, read by the SPICE deck writer (SpiceDeckWriter), which writes each in the dialect.
+
+    /// <summary>A pulse's levels and timing (s); Width is +∞ when unstated, Period 0 for a single pulse.</summary>
+    public (double V1, double V2, double Delay, double Rise, double Fall, double Width, double Period) PulseShape =>
+        (_v1, _v2, _delay, _rise, _fall, _width, _period);
+
+    /// <summary>An exponential's levels and timing (s); Delay2 is +∞ when unstated.</summary>
+    public (double V1, double V2, double Delay1, double Tau1, double Delay2, double Tau2) ExpShape =>
+        (_v1, _v2, _delay, _tau1, _delay2, _tau2);
+
+    /// <summary>An SFFM's offset, amplitude, carrier (Hz), modulation index and signal frequency (Hz).</summary>
+    public (double Offset, double Amplitude, double Carrier, double ModIndex, double Signal) SffmShape =>
+        (_offset, _amp, _fc, _mdi, _fs);
+
+    /// <summary>A PWL's vertices — from Points= or File=, as read — and whether it repeats from its first vertex.</summary>
+    public (IReadOnlyList<double> Times, IReadOnlyList<double> Values, bool Repeat) PwlShape => (_pt, _pv, _repeat);
+
+    /// <summary>An Expr source's expression, and the resolved values of the names it reads besides <c>time</c>.</summary>
+    public (Expr? Expression, IReadOnlyDictionary<string, Value> Scope) ExprShape => (_expr, _exprScope);
     private const string ExprScopeName = "WaveformExpr";
 
     /// <param name="typeName">One of <see cref="TypeNames"/>.</param>
@@ -197,6 +218,7 @@ public sealed class WaveformSourceModel : ComponentModel, ITransientWaveform
                     string name = k[ScopeVarPrefix.Length..];
                     _scope.Bind(name, v.ToString()!);
                     _ev.InjectResolved(ExprScopeName, name, v);
+                    _exprScope[name] = v;
                 }
                 _scope.Bind(TimeVariable.Name, "0");
                 break;

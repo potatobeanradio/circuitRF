@@ -5023,3 +5023,57 @@ Gate measurements (`TransientMeasurementTests`): the −6 dBm Angelov stage over
 accepted steps, 3 rejected), against HB with MaxHarm 16: worst 8e-4 dB and 0.032° on harmonics 1–5 (H5 at −77 dBc). At
 4 dBm drive the worst was 1.8e-3 dB and 0.021°. HB itself floored at ‖F‖ 2.8e-10 (ideal chokes on ideal supplies), so the
 gate runs HB at Tol 1e-9.
+
+## brief-trn-6 — the SPICE deck writer (2026-11-15)
+
+**The dialect's defaults are not circuitRF's zeros, and that decides what PULSE can say.** The ngspice manual: "If parameters
+other than source values are omitted or set to zero, the default values shown are assumed" — a zero PULSE rise or fall is the
+run's output step, a zero width the stop time; a zero EXP Delay2 is Delay1 plus the step; a zero SFFM carrier or signal is
+1/Stop. circuitRF's abrupt edge (Rise=0) has no PULSE spelling, so it is refused by key rather than written as something that
+looks the same. An unbounded Width (unstated) and a single pulse (Period unstated) are written as twice the stop time, exact
+within the run. The SPICE reader still fills an unstated trailing PULSE argument with circuitRF's zero, not the dialect's step:
+a deck read from outside with `PULSE(0 1)` gets abrupt edges where the dialect would give one step's ramp. Noted, not changed.
+
+**Two behavioural-source functions are not the mathematical ones.** The manual: `exp` "has a limit of 14 for its argument,
+beyond that value it will increase linearily", and `pow`, `**`, `^` all resolve to `pow(fabs(x1), x2)`. So `exp(x)` is written
+`pow(e, x)`, `x^n` with odd integer n is `x*pow(x, n−1)` (an even power of |x| is the even power of x), and a non-constant
+exponent is refused — a negative base's sign would depend on the exponent's value. `tanh` and `sign` are not in the behavioural
+source's list and are written through `1 − 2/(e^(2x) + 1)` and a conditional; `atan2`, `round`, `int` are refused.
+
+**CPL takes R and G as diagonals.** The manual: "For the R and G matrices the diagonal elements must be specified, for L and C
+matrices the lower or upper triangular elements". A symmetric pair's per-unit-length matrices come from its modes, and R and
+G have an off-diagonal (Re − Ro)/2: zero only when both modes lose alike. Every lossy MCLIN has modes that lose differently
+(the conductor loss Rs/(Z·W) depends on the mode impedance), so under `SpiceLines=rlgc` only a lossless pair (CLIN) or an equal-loss pair
+is written; the rest are refused by name.
+
+**Device temperature relations differ, so a device away from its Tnom is refused.** circuitRF's junction relations take the
+temperature-dependent bandgap (`Temperature.BandgapAt`) with Eg as the 0 K gap (default 1.16 eV); the dialect's diode takes EG as an
+activation energy (default 1.11) and its MOS levels 1 and 3 have no XTI or EG at all. At T = Tnom every relation in both is the
+identity, so the card states `TNOM` and the instance `temp` and the device sits there; away from it they are different
+equations. circuitRF's nominal is 26.85 °C (300 K), the dialect's 27 °C, so `TNOM` is always written and `.options TNOM=26.85`.
+
+**The MOS gate charge is a different model.** circuitRF's level 1 and 3 gate charge is the charge-based long-channel form
+(`MosfetModelBase`); the dialect's is Meyer's capacitance set, included "only if TOX is specified". With Tox unstated neither
+has a thin-oxide charge and the two agree; a Tox is refused by name.
+
+**The diode's reverse region is not identical, and the table says so.** The dialect's diode below −3·N·Vt is
+−Is·(1 + (3·N·Vt/(e·V))³) (its manual, eq. 36); circuitRF's stays Is·(exp(V/(N·Vt)) − 1). They meet at −3·N·Vt and differ by
+under 0.05·Is beyond. Recombination (ISR) is modelled by the dialect only when given and its equation is not stated in the
+manual, so a non-zero `Isr` is refused rather than assumed equal.
+
+**A placed SPICE file is included, not re-translated — and that needed provenance.** The elaborated netlist holds what a
+`.subckt` flattened into, not that it came from a file, so `SpiceModelNetlist.AddCell` now records the file on the cell
+(`Cell.SpiceSource`), and `CnlWriter`/`CnlReader` carry it as `spice "<path>"` inside the `define` (beside `part`) — a schematic
+run goes `.csch` → `.cnl` → reader, and the field would otherwise vanish in that round trip. A cell scaled by
+`ScaleQuantity` (a statistical vendor part) is rebuilt without it, so its scaled contents are written element by element.
+
+**Reading the writer's deck back needed three letters and a top level.** `K` (Mutual, M = k·√(L1·L2) resolved when the cell is
+whole, since an inductor may follow its coupling), `T` (TLIN, E = 2π rad at F = 1/TD, the import's angle unit being radians)
+and `B` (as `E`/`G` with that VALUE; a source of `time` alone is `V_Expr`/`I_Expr`, nets swapped for a current as every current
+source here is) — and `SpiceNetlistReader.ReadDeck`, which reads a flat deck's elements into one cell instead of noting each.
+`T` was in the reader's refused letters; one whose two ports have different references (two modes) is still refused.
+
+**Fits for `SpiceFit=yes` come from the engine's own realization.** `TransientSpiceFits` runs `TransientRealization` on the
+netlist and reads back each `RationalSnpModel` and lossy `TransientLineModel` it swapped in (with the fit's Z0, now recorded as
+`TransientRealization.FitZ0`). The deck realizes an S fit with RationalSnpModel's own rows, each state a node on a 1/|a| F
+capacitor so it carries the size of its input wave — a 1 F state would hold u/|a|, ~1e-10 V at GHz, below VNTOL.

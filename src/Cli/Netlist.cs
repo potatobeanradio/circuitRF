@@ -1,3 +1,4 @@
+using CircuitRF.Core.Netlist.Spice;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Interchange;
@@ -49,7 +50,7 @@ internal static class Netlist
 {
     public static int Run(string[] args)
     {
-        string? path = null, output = null, cell = null;
+        string? path = null, output = null, cell = null, analysis = null;
         string? ipc = null, placement = null, bom = null;
         bool toSchematic = false;
 
@@ -59,6 +60,7 @@ internal static class Netlist
             {
                 case "-o" or "--output" when i + 1 < args.Length: output    = args[++i]; continue;
                 case "--cell" when i + 1 < args.Length:           cell      = args[++i]; continue;
+                case "-a" or "--analysis" when i + 1 < args.Length: analysis = args[++i]; continue;
                 case "--ipc" when i + 1 < args.Length:            ipc       = args[++i]; continue;
                 case "--placement" when i + 1 < args.Length:      placement = args[++i]; continue;
                 case "--bom" when i + 1 < args.Length:            bom       = args[++i]; continue;
@@ -98,6 +100,17 @@ internal static class Netlist
         if (board)
             return JsonRun.Fail(CliDiagnostics.NetlistBoardFlagsOnNonBoard(
                 path, DocumentKinds.Name(kind)));
+
+        // brief TRN-6 R-trn6-11 — `-o x.cir` is the SPICE deck of the bench's transient analysis. A netlist is a bench here,
+        // not something to re-emit, so a .cnl is taken as well as everything a schematic resolves through.
+        if (output is not null && string.Equals(Path.GetExtension(output), SpiceDeckWriter.Extension, StringComparison.OrdinalIgnoreCase))
+        {
+            if (kind == DocumentKind.Netlist) return SpiceDeckVerb.Run(path, kind, null, analysis, output);
+            var (deckCsch, deckRefusal) = Resolve(path, cell, kind);
+            if (deckRefusal is { } dr) return dr;
+            return SpiceDeckVerb.Run(path, DocumentKind.Schematic, deckCsch, analysis, output);
+        }
+        if (analysis is not null) return JsonRun.Fail(CliDiagnostics.NetlistUnknownOption("--analysis (only with -o out.cir)"));
 
         // The extension decides the format everywhere else on this surface, so it decides here too:
         // `-o plot.svg` is a caller that meant a different verb, and writing netlist text into it
@@ -145,6 +158,8 @@ internal static class Netlist
     {
         Console.Error.WriteLine(
             "Usage: circuitrf netlist <path.csch | cell-folder | workspace --cell N> [-o out.cnl]");
+        Console.Error.WriteLine(
+            "       circuitrf netlist <path.csch | path.cnl | cell-folder | workspace --cell N> -o out.cir [--analysis TRAN]");
         Console.Error.WriteLine(
             "       circuitrf netlist <path.clay | cell-folder> "
           + "[--ipc out.ipc] [--placement out.csv] [--bom out.csv]");

@@ -5214,3 +5214,24 @@ a global before elaboration.
 
 Gate: `tests/Ui.Tests/Transient/TransientCliTests.cs` (the verb as a process exports the same bytes as the in-process run; promotion inside
 a sweep; the directive through `.cnl` and `.csch`; the ngspice refusal).
+
+## 46. `netlist -o out.cir` — the bench as a SPICE deck (brief-trn-6)
+
+`circuitrf netlist <path.csch | path.cnl | cell-folder | workspace --cell N> -o out.cir [--analysis TRAN]` writes the bench's transient
+analysis as one flat deck in the SPICE dialect, for ngspice (`docs/design/transient.md` §9.2, `docs/design/spice-models.md` §15). The
+format comes from the extension, as `plot` and `render` take theirs; `.cir` is the only one that takes a `.cnl` as input, because a
+netlist is a bench here rather than something to re-emit. `--analysis` names the transient analysis when the bench has several; one is
+taken without it, none is a refusal.
+
+- **It owns no translation.** Every byte is `SpiceDeckWriter.Write`'s, on the bench elaborated as `check` elaborates it
+  (`SpiceDeckVerb.Deck`). The writer is exact or it refuses (D7): **any refusal exits 1 and writes nothing**, and every refusal is listed
+  at once (`netlist.deck.untranslatable`), never the first alone.
+- **stdout** is the path written; **stderr** carries one line per line written as `TXL`/`CPL` (`SpiceLines=rlgc`, with its largest
+  |ΔS|) and per element written as circuitRF's fit (`SpiceFit=yes`).
+- **`check`** under `Solver=ngspice` reports each element the writer would refuse as `check.tran.untranslatable` (an error) and each
+  fitted line's |ΔS| as `check.tran.line-fit` (info), before any run.
+- MCP: `netlist` with an `output` ending `.cir`, and `analysis`.
+
+Gate: `tests/Ui.Tests/Transient/SpiceDeckWriterTests.cs` (the verb as a process writes the in-process writer's bytes; a refusal exits 1
+and writes nothing; the round trip through circuitRF's own reader; the refusals; names; the TXL/CPL extraction; the discontinuity table;
+a comment-stripped scan finding the dialect written only by `SpiceDeckWriter`).

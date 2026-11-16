@@ -1408,7 +1408,10 @@ internal static class ToolCatalog
           + "it will run, and for checking your own authoring against a known-good one. Given a "
           + ".clay it PROJECTS the board instead: a board netlist, a placement table and a bill of "
           + "materials, from one reading of the artwork, so the three cannot disagree. With "
-          + "toSchematic it runs the other way: a .cnl you wrote becomes a readable drawn .csch.",
+          + "toSchematic it runs the other way: a .cnl you wrote becomes a readable drawn .csch. With an output ending .cir it "
+          + "writes the bench's transient analysis as a SPICE deck for ngspice — exact or refused: every element with no exact "
+          + "translation is listed at once and nothing is written (SpiceLines=rlgc and SpiceFit=yes on the tran line ask for the "
+          + "approximate ones, each reported).",
             null, null,
             [
                 new("", [ "netlist" ],
@@ -1418,8 +1421,11 @@ internal static class ToolCatalog
                     [
                         HostWorkspace,
                         new("output", "-o", OptKind.Path,
-                            "Where the .cnl is written. Without it the text comes back in the result."),
+                            "Where the .cnl is written, or a .cir for the SPICE deck of the bench's transient analysis (a .cnl "
+                          + "bench is taken too). Without it the .cnl text comes back in the result."),
                         new("cell", "--cell", OptKind.Str, "Which cell, when the path is a workspace."),
+                        new("analysis", "--analysis", OptKind.Str,
+                            "With a .cir output: which transient analysis the deck is for, when the bench has several."),
                         new("toSchematic", "--to-schematic", OptKind.Flag,
                             "The other direction: path is a .cnl, and the result is a DRAWN schematic (.csch) — "
                           + "the signal path left to right with the ports at its ends, shunt elements dropped "

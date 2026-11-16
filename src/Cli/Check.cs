@@ -2023,6 +2023,20 @@ internal static class Check
             if (tb.Analyses.Any(a => a is TransientAnalysis))
                 foreach (var (part, dc, at0) in CircuitRF.Engine.Transient.TransientSources.DcDiffersFromStart(nl))
                     f.Add(CliDiagnostics.CheckWaveformDcDiffers(path, part, dc, at0));
+
+            // brief-trn-6 R-trn6-11 — under Solver=ngspice, every element the deck writer would refuse (the run's own refusal,
+            // said first), and under SpiceLines=rlgc each fitted line's largest |ΔS| (the number the run's note carries).
+            foreach (var tran in tb.Analyses.OfType<TransientAnalysis>().Where(t => t.Enabled &&
+                         t.Solver.Trim().Equals(TransientAnalysis.SolverNgspice, StringComparison.OrdinalIgnoreCase)))
+            {
+                var deck = CircuitRF.Core.Netlist.Spice.SpiceDeckWriter.Write(new CircuitRF.Core.Netlist.Spice.SpiceDeckRequest
+                {
+                    Netlist = nl, Analysis = tran, Bench = tb, Library = lib, CompileVerilogA = false,
+                    Fits = new CircuitRF.Engine.Transient.TransientSpiceFits(),
+                });
+                foreach (var r in deck.Refusals) f.Add(CliDiagnostics.CheckTranUntranslatable(path, tran.Name, r.Message));
+                foreach (var l in deck.Lines) f.Add(CliDiagnostics.CheckTranLineFit(path, tran.Name, l.Sentence));
+            }
             foreach (var m in CircuitRF.Core.Expressions.TimeDomainUse.Find(tb))
                 f.Add(CliDiagnostics.CheckTimeFunctionNoTime(path, m.Measurement, m.Function, m.Analysis, m.AnalysisKind));
 
