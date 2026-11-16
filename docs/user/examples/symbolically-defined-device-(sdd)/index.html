@@ -245,11 +245,69 @@ loop of gain 16 (200 V/A times the device's 80 mA/V) leaves. A larger <code>Kloo
 simple also has a second, unphysical solution, the gate driven so far negative that gate-drain breakdown carries the supply
 current and the loop pushes the gate further still. With <code>Vspan=1000</code> the DC solve finds it at dVt = +0.3 V, the gate at
 −238 V.</p>
-<p><strong>What the bench leaves out.</strong> A real controller is slow: it holds the bias it set with no drive, while the RF swing raises
-a class-AB amplifier's average current. This one is instantaneous and would fight that rise, so the bench runs at DC only. A
-loop filter is a weighting function, <code>I[1,2]</code> with <code>H[2]=1/(1+j*2*pi*freq*Tloop)</code>, which acts at DC and not at the
-harmonics. A harmonic-balance run of such a loop needs a solved starting point: sweep <code>Kloop</code> up from 0, so each point
-starts from the last.</p>
+<p><strong>Under drive.</strong> The bench also runs a harmonic-balance drive sweep, 10 to 30 dBm at 2 GHz, into bench 5's maximum-power load
+(the <code>LOAD</code> tuner: 63.7 + j17.0 Ω at the drain, its harmonics shorted), with the loop open and closed:</p>
+<table>
+<thead>
+<tr>
+<th>Pin</th>
+<th>Idd, open loop</th>
+<th>Idd, closed loop</th>
+<th>Gate bias, closed loop</th>
+<th>Pout, open</th>
+<th>Pout, closed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10 dBm</td>
+<td>83.1 mA</td>
+<td>62.9 mA</td>
+<td>−3.29 V</td>
+<td>23.7 dBm</td>
+<td>21.5 dBm</td>
+</tr>
+<tr>
+<td>14 dBm</td>
+<td>116.7 mA</td>
+<td>65.5 mA</td>
+<td>−3.59 V</td>
+<td>28.9 dBm</td>
+<td>24.2 dBm</td>
+</tr>
+<tr>
+<td>18 dBm</td>
+<td>198.1 mA</td>
+<td>80.2 mA</td>
+<td>−4.05 V</td>
+<td>34.7 dBm</td>
+<td>27.4 dBm</td>
+</tr>
+<tr>
+<td>22 dBm</td>
+<td>340.2 mA</td>
+<td>204.8 mA</td>
+<td>−4.05 V</td>
+<td>39.7 dBm</td>
+<td>35.9 dBm</td>
+</tr>
+<tr>
+<td>30 dBm</td>
+<td>535.6 mA</td>
+<td>480.0 mA</td>
+<td>−4.05 V</td>
+<td>41.8 dBm</td>
+<td>41.7 dBm</td>
+</tr>
+</tbody>
+</table>
+<p>The RF swing raises a class-AB stage's average current, and this controller answers it instantly: it pushes the gate negative to
+hold the current near its 61.4 mA target, deeper towards class B, which costs gain (2.1 dB at 10 dBm, 7.4 dB at 18 dBm). At
+18 dBm it reaches its rail, VGS0 − Vspan = −4.05 V, and from there the current rises as the open loop's does, and the output
+meets it again at saturation. A loop filter, a weighting function <code>I[1,2]</code> with <code>H[2]=1/(1+j*2*pi*freq*Tloop)</code>, acts at DC and
+not at the harmonics, so it keeps RF off the controller's output; harmonic balance solves the steady state, where even a slow
+loop has settled on the average current, so the bias it reaches is the one above. A controller that holds the bias it set
+before the drive arrives, as a sampled one does between bursts, is a transient question.</p>
 
 </main>
 

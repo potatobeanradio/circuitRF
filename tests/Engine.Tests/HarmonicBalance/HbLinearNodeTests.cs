@@ -309,9 +309,18 @@ analysis HB1  type=hb  Tone=2e9  MaxHarm=3  Tol=1e-4
 
         output.WriteLine($"Checking divider ratio 0.8 × V[n_drain] = V[Vout2] at {nSweep} sweep pts × {K1} harmonics");
 
+        // brief-hb-control-loop-cold-start R-hbcl-3 — the second point is refused as a vacuous tolerance (1e-4 A against an RF drive
+        // of 1.6e-11 A through the 1 H choke) and its spectra read NaN; the ratio is checked where a point converged.
+        double[] converged = ds["Converged"].RealValues;
+        Assert.Contains(1.0, converged);
         for (int si = 0; si < nSweep; si++)
         for (int k  = 0; k  < K1;     k++)
         {
+            if (converged[si] < 0.5)
+            {
+                Assert.True(double.IsNaN(((Complex)vCube[si, vout2Idx, k]).Real), $"si={si} did not converge and reads a number");
+                continue;
+            }
             Complex vDrain = (Complex)vCube[si, drainIdx, k];
             Complex vOut2  = (Complex)vCube[si, vout2Idx, k];
             Complex exp    = 0.8 * vDrain;

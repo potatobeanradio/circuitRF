@@ -94,7 +94,9 @@ public sealed class SddExampleAuthoring
 
     /// <summary>The bias loop: bench 5's FET with its own bias tees, the gate fed through a choke from an SDD that reads the
     /// drain supply's current (C[1]=IDD) and sets its node to VGS0 − Vspan·tanh(Kloop·(Idd − Iset)/Vspan): proportional
-    /// control within ±Vspan of the nominal bias. DC, swept over a threshold shift dVt with the loop open and closed.</summary>
+    /// control within ±Vspan of the nominal bias. DC, swept over a threshold shift dVt with the loop open and closed; and harmonic
+    /// balance swept over drive into bench 5's maximum-power load (63.7 + j17.0 Ω at the drain: the tuner's j17.8 less the 100 pF
+    /// block's 0.8 Ω at 2 GHz, harmonics shorted), the loop open and closed (brief-hb-control-loop-cold-start R-hbcl-4).</summary>
     public static readonly string Bench6 = $"""
         VGS0 = -3.05
         VDS = 48
@@ -113,12 +115,18 @@ public sealed class SddExampleAuthoring
         IProbe:IDD  vdd  vds
         L:LD  vds  d  L=100 nH
         C:CBD  d  o  C=100 pF
-        R:RL  o  0  R=50 Ohm
+        Tuner:LOAD  o  0  Zdefault=1e-6  Z0=50  BiasTee=off  Z[1]=complex(63.7,17.8)  Z[2]=1e-6  Z[3]=1e-6
         analysis DC1 type=dc
         analysis SHIFT type=parametric_sweep Var=dVt Values=-0.3,0,0.3 Inner=DC1
         analysis LOOP type=parametric_sweep Var=Kloop Values=0,200 Inner=SHIFT
+        analysis HB1 type=hb Tone="RFfreq" ToneUnit=GHz MaxHarm=5 FFTOverSample=1 Tol=1e-6 DriveStepping=IfNecessary GuardHarmonic=0 Lambda=1 MaxIter=100
+        analysis DRIVE type=parametric_sweep Var=Pin Start=10 Stop=30 Step=2 Inner=HB1
+        analysis LOOPHB type=parametric_sweep Var=Kloop Values=0,200 Inner=DRIVE
         measure Idq_mA = 1000*DC1.I("IDD")
         measure Vgs_V = DC1.V("g")
+        measure Pout_dBm = 10*log10(1000*0.5*mag(HB1.V("o",1))^2*real(1/complex(63.7,17.8)))
+        measure Idd_mA = 1000*real(HB1.I("IDD",0))
+        measure Vgs_HB_V = real(HB1.V("g",0))
         labelednets g d vg
         """;
 

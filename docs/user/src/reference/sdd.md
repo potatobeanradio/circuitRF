@@ -238,7 +238,10 @@ full `I[p,w]` / `Q[p]` / `H[w]` behavior applies to the DUT at every termination
 
 - **Harmonic Balance** — full weighting sum, single- and multi-tone, with `H[w]` taken at every
   harmonic and mixing product (and conjugated for a product the lattice keeps at a negative
-  frequency). The control-current Jacobian coupling gives fast convergence.
+  frequency). The control-current Jacobian coupling gives fast convergence. A loop that holds a node through a small
+  resistance — a bias controller reading the supply's current, say — is solved from its DC point at any drive: when the
+  first attempt stalls, harmonic balance solves it again from the same start with a line search that weighs each node by
+  its own admittance, and the run's notes say so. No sweep of the loop's gain up from zero is needed.
 
 - **Envelope** — full weighting sum, with `H[w]` taken at each harmonic's or mixing product's
   carrier frequency: it is held constant across that envelope's own bandwidth.

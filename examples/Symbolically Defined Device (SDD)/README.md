@@ -159,8 +159,21 @@ simple also has a second, unphysical solution, the gate driven so far negative t
 current and the loop pushes the gate further still. With `Vspan=1000` the DC solve finds it at dVt = +0.3 V, the gate at
 −238 V.
 
-**What the bench leaves out.** A real controller is slow: it holds the bias it set with no drive, while the RF swing raises
-a class-AB amplifier's average current. This one is instantaneous and would fight that rise, so the bench runs at DC only. A
-loop filter is a weighting function, `I[1,2]` with `H[2]=1/(1+j*2*pi*freq*Tloop)`, which acts at DC and not at the
-harmonics. A harmonic-balance run of such a loop needs a solved starting point: sweep `Kloop` up from 0, so each point
-starts from the last.
+**Under drive.** The bench also runs a harmonic-balance drive sweep, 10 to 30 dBm at 2 GHz, into bench 5's maximum-power load
+(the `LOAD` tuner: 63.7 + j17.0 Ω at the drain, its harmonics shorted), with the loop open and closed:
+
+| Pin | Idd, open loop | Idd, closed loop | Gate bias, closed loop | Pout, open | Pout, closed |
+|---|---|---|---|---|---|
+| 10 dBm | 83.1 mA | 62.9 mA | −3.29 V | 23.7 dBm | 21.5 dBm |
+| 14 dBm | 116.7 mA | 65.5 mA | −3.59 V | 28.9 dBm | 24.2 dBm |
+| 18 dBm | 198.1 mA | 80.2 mA | −4.05 V | 34.7 dBm | 27.4 dBm |
+| 22 dBm | 340.2 mA | 204.8 mA | −4.05 V | 39.7 dBm | 35.9 dBm |
+| 30 dBm | 535.6 mA | 480.0 mA | −4.05 V | 41.8 dBm | 41.7 dBm |
+
+The RF swing raises a class-AB stage's average current, and this controller answers it instantly: it pushes the gate negative to
+hold the current near its 61.4 mA target, deeper towards class B, which costs gain (2.1 dB at 10 dBm, 7.4 dB at 18 dBm). At
+18 dBm it reaches its rail, VGS0 − Vspan = −4.05 V, and from there the current rises as the open loop's does, and the output
+meets it again at saturation. A loop filter, a weighting function `I[1,2]` with `H[2]=1/(1+j*2*pi*freq*Tloop)`, acts at DC and
+not at the harmonics, so it keeps RF off the controller's output; harmonic balance solves the steady state, where even a slow
+loop has settled on the average current, so the bias it reaches is the one above. A controller that holds the bias it set
+before the drive arrives, as a sampled one does between bursts, is a transient question.

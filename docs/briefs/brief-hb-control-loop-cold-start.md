@@ -76,3 +76,30 @@ is removed.
 ## Not here
 
 A slow (sampled or held) bias controller model as a component; transient analysis of the loop's settling.
+
+## Completion note (2026-11-16)
+
+Built as above.
+
+- **R-hbcl-1, the cause:** no Jacobian block disagrees. The FD oracle's relative metric reported 4e-2 at the seed and 2.6e-2 at
+  the solution in the bias node's DC row, and that figure grows as 1/ε: roundoff in a row carrying `ForcedDc`'s ~1e6 S. Scaled by
+  its own row (`MaxRowScaledError`, new) the Jacobian agrees to 4e-7 and 5e-7, and reads 1.0 with `J_cc` off. The cause was the
+  line search judging ‖F‖ in amperes: the stiff bias row (1 mΩ times the loop gain) vetoed every step from the DC seed.
+- **R-hbcl-2:** a control-current solve whose line search crawls (5 iterations running at λ ≤ 1/32) is solved again from the same
+  start judging either norm, with a run note; if that fails, the usual solve runs whole as before. Cold starts at Kloop 50, 200
+  and 1,000 and 10, 20 and 30 dBm converge in 10 to 21 iterations and equal the warm-started solution to 2.1e-5 V. Circuits
+  without control currents are untouched; a control-current circuit that converges today changes only if its line search crawls
+  for 5 iterations running (the bias loop at 30 dBm did: 45 to 80 iterations before, 17 to 21 now, the same answer). It is not a
+  continuation, so nothing ramps.
+- **R-hbcl-3:** an unconverged HB point in a sweep keeps `Converged` 0 and `Residual` and reads NaN in every other cube, so its
+  measurements are NaN; a run note says so.
+- **R-hbcl-4:** bench 6 gains `HB1`, `DRIVE` (Pin 10 to 30 dBm) and `LOOPHB` (Kloop 0, 200), its 50 Ω load replaced by a tuner
+  presenting bench 5's maximum-power load (`SddExampleAuthoring.Bench6` changed with it); the README's paragraph now tables the
+  sweep and the line telling the user to sweep `Kloop` up from 0 is gone. 22 points, 1.2 s.
+- **Gates:** `Engine.Tests/HarmonicBalance/HbControlLoopColdStartTests` (5), `Ui.Tests/Examples/SddExampleTests` (8, one new);
+  gate 3's filter, 1,013 tests, passes after one change: `HbLinearNodeTests.T5_Sweep_FullNodes` read numbers at a point refused as
+  a vacuous tolerance, which R-hbcl-3 makes NaN on purpose; it now checks the converged point. Sweep, measurement, transient and
+  oscillator Engine tests (262), and the Harmonica and Ui HB classes that read `Converged` (112), pass. `Firewall.Tests` fails two
+  user-facing-text checks on transient, envelope and expression files this brief did not touch.
+- Docs: simulations (Parametric Sweep: an unconverged HB point), sdd (control-current loops), the example page; findings in
+  `src/Engine/RESOLVED.md`.

@@ -494,26 +494,68 @@
       ]
     },
     {
-      "InstanceName": "RL",
-      "Symbol": "Resistor",
+      "InstanceName": "LOAD",
+      "Symbol": "Tuner",
       "X": 2300,
-      "Y": 2800,
-      "Rotation": "R0",
+      "Y": 2900,
+      "Rotation": "R90",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
         {
-          "Name": "R",
+          "Name": "TunerName",
+          "Expression": "\u0022LOAD\u0022",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Zdefault",
+          "Expression": "1e-6",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Z0",
           "Expression": "50",
-          "Unit": "Ohm",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "BiasTee",
+          "Expression": "\u0022off\u0022",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z[1]",
+          "Expression": "complex(63.7,17.8)",
+          "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "Resistance"
+        },
+        {
+          "Name": "Z[2]",
+          "Expression": "1e-6",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z[3]",
+          "Expression": "1e-6",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
         }
       ],
       "LabelOffsets": [
         [
-          260,
-          -325
+          330,
+          -413
         ]
       ]
     },
@@ -569,18 +611,6 @@
       "InstanceName": "GND5",
       "Symbol": "Ground",
       "X": 1300,
-      "Y": 3000,
-      "Rotation": "R0",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [],
-      "ShowTypeLabel": false,
-      "ShowInstanceName": false
-    },
-    {
-      "InstanceName": "GND6",
-      "Symbol": "Ground",
-      "X": 2300,
       "Y": 3000,
       "Rotation": "R0",
       "MirrorX": false,
@@ -668,6 +698,27 @@
         {
           "Name": "Vgs_V",
           "Expression": "DC1.V(\u0022g\u0022)",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Pout_dBm",
+          "Expression": "10*log10(1000*0.5*mag(HB1.V(\u0022o\u0022,1))^2*real(1/complex(63.7,17.8)))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Idd_mA",
+          "Expression": "1000*real(HB1.I(\u0022IDD\u0022,0))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Vgs_HB_V",
+          "Expression": "real(HB1.V(\u0022g\u0022,0))",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -948,6 +999,45 @@
         200
       ],
       "PsaInnerName": "SHIFT"
+    },
+    {
+      "Type": "hb",
+      "Name": "HB1",
+      "Enabled": true,
+      "ToneExpr": "RFfreq",
+      "ToneUnit": "GHz",
+      "NumFreqsExpr": "1",
+      "MaxMixOrderExpr": "5",
+      "MaxHarmonicExpr": "5",
+      "FFTOverSampleExpr": "1",
+      "TolExpr": "1e-6",
+      "DriveSteppingExpr": "IfNecessary",
+      "GuardHarmonicExpr": "0",
+      "LambdaExpr": "1",
+      "MaxIterExpr": "100"
+    },
+    {
+      "Type": "sweep",
+      "Name": "DRIVE",
+      "Enabled": true,
+      "PsaVarName": "Pin",
+      "PsaInnerName": "HB1",
+      "PsaMode": "StepSize",
+      "PsaStart": 10,
+      "PsaStop": 30,
+      "PsaStepOrCount": 2,
+      "PsaKind": "Linear"
+    },
+    {
+      "Type": "sweep",
+      "Name": "LOOPHB",
+      "Enabled": true,
+      "PsaVarName": "Kloop",
+      "PsaValues": [
+        0,
+        200
+      ],
+      "PsaInnerName": "DRIVE"
     }
   ]
 }

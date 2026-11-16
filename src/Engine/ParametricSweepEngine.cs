@@ -554,6 +554,31 @@ public static class ParametricSweepEngine
         => ex is OperationCanceledException
            || ex is AggregateException a && a.Flatten().InnerExceptions.Any(e => e is OperationCanceledException);
 
+    /// <summary>brief-hb-control-loop-cold-start R-hbcl-3 — the note a sweep with an unconverged HB point carries, once.</summary>
+    public const string UnconvergedHbPointKey = "sweep-hb-unconverged-nan";
+
+    /// <summary>
+    /// brief-hb-control-loop-cold-start R-hbcl-3 — an HB point that did not converge, as a sweep stacks it: <c>Converged</c> (0),
+    /// <c>Residual</c>, the tone frequencies, the mixing order, the transient seed's own cubes and metadata as the run wrote them;
+    /// every other cube NaN at its shape. The loadpull engine leaves a failed step's spectra out and its readers pick converged steps
+    /// by its <c>Converged</c> cube; an HB sweep's measurements read the spectra directly, so here the spectra themselves say it.
+    /// </summary>
+    internal static DataSet UnconvergedHbPoint(DataSet point)
+    {
+        var ds = new DataSet();
+        foreach (string group in point.Groups)
+            foreach (var (name, c) in point.CubesIn(group))
+            {
+                bool keep = name.StartsWith("__", StringComparison.Ordinal) || name is "Converged" or "Residual" or "ToneFreqs" or "MetaMixOrder"
+                            || name.StartsWith("Seed.", StringComparison.Ordinal);
+                int n = c.BufferLength;
+                ds.AddToGroup(group, name, keep ? c : c.DataKind == DataKind.Complex
+                    ? new DataCube([.. c.Axes], Enumerable.Repeat(new Complex(double.NaN, double.NaN), n).ToArray()) { Unit = c.Unit }
+                    : new DataCube([.. c.Axes], Enumerable.Repeat(double.NaN, n).ToArray()) { Unit = c.Unit });
+            }
+        return ds;
+    }
+
     /// <summary>A failed point's stand-in: every cube of a finished point at the same shape, all NaN; metadata kept.</summary>
     private static DataSet NaNLike(DataSet template)
     {
@@ -750,6 +775,13 @@ public static class ParametricSweepEngine
                 // point resets the chain — design §11.1's rule, kept for every tone count: with the
                 // line search in, non-convergence is rare, and the reset is the belt to its braces.
                 hbConvergedSeed = rr.Converged ? rr.InterfaceV : null;
+                if (!rr.Converged)
+                {
+                    netlist.AddNoteOnce(UnconvergedHbPointKey,
+                        "HB: a sweep point that did not converge is reported with Converged 0 and its residual, and its voltages, " +
+                        "currents and every measurement read from them are NaN there: the last iterate is not a solution.");
+                    return UnconvergedHbPoint(rr.DataSet);
+                }
                 return rr.DataSet;
             }
 

@@ -5451,8 +5451,45 @@ Found building *Symbolically Defined Device (SDD)*'s bias-loop bench (an SDD tha
 - **DC left a weighted term's control-current derivative out of its Jacobian.** `NonlinearDcEngine` stamped a `w ≥ 2` term's
   value and voltage derivatives but not `JacCtrl` (∂I[p,w]/∂_cn), so the loop written on a low-pass weight (`H[2]` = 1 at DC)
   did not converge where the same loop on `w = 0` did. Gate: `SddWeightedControlDcTests`.
-- **Open: closed-loop HB of that loop does not converge from a cold start** (loop gain 50 or more), with or without a bleed
-  resistor on the bias node, though continuation from a small loop gain finds the solution and DC converges. Not chased
-  (owner, 2026-11-16); the example's bias bench runs at DC only and its README says to sweep `Kloop` up from 0 for HB.
+- **Closed-loop HB of that loop did not converge from a cold start** (loop gain 50 or more), with or without a bleed resistor
+  on the bias node, though continuation from a small loop gain found the solution and DC converged. **Resolved** by
+  brief-hb-control-loop-cold-start: the line search, not the Jacobian (next section).
 - A DC solve with an SDD drain current independent of Vds (a pure current source behind a resistor) and a control-current loop
   did not move from its zero start in 1,500 iterations; with a Vds dependence it converges. Recorded, not investigated.
+
+## A control-current loop's HB from a cold start: the line search vetoed it, the Jacobian was right (brief-hb-control-loop-cold-start)
+
+- **The FD oracle found no Jacobian error.** At the DC seed and at the warm-started solution of the SDD example's bias loop
+  (Kloop 200, 10 dBm) the oracle's relative metric read 4e-2 and 2.6e-2, every worst entry in the bias node's DC row against
+  the drain's harmonics. Swept over its step, that error grows as 1/ε (3e-3 at ε = 1e-5, 4e-2 at 1e-6, 3.6e-1 at 1e-7): it is
+  roundoff. The row holds the ~1e6 S `ForcedDc` puts between `vg` and `g`, so its F values are millions of amperes and a central
+  difference resolves its 0.2-sized entries to ~1e-3 at best. Against the largest entry of its own row
+  (`JacobianComparisonResult.MaxRowScaledError`, added) the analytic Jacobian agrees to 4e-7 at the seed and 5e-7 at the
+  solution; with `J_cc` switched off the same metric reads 1.0. The relative metric's floor (1e-7 of the whole matrix's largest
+  entry) cannot see this: the floor is 0.1 here, and the entries sit just above it.
+- **The cause was the line search's norm.** The bias node is held through Rc = 1 mΩ and the loop multiplies the drain current
+  into it by Kloop, so the node's row of F reads thousands of amperes per volt of error. The first Newton step from the DC
+  seed raises the RF swing, the swing raises the average drain current by rectification, and that row's residual rises by
+  hundreds of amperes; judged by ‖F‖₂ in amperes the line search cut λ to 1/128–1/256 and held it there for 100 iterations.
+  At zero drive the same seed converges in two full steps at any loop gain, which is what pointed away from the Jacobian.
+  Judged by the self-admittance-scaled norm (MC-25's), Rc = 1 mΩ at 10 dBm and 200 V/A converges in 7 iterations; Rc = 1 Ω
+  took 25 under the plain norm and 6 under the scaled one.
+- **The fix: a stalled control-current solve is solved again judging either norm** (`HbNewton.Solve`, `ScaledOrPlain`).
+  Only for a solve with control currents, and only once the usual one stalls: 5 line searches running that each cut λ to
+  1/32 or less. Waiting for the usual solve to fail first cost 1 to 1.3 s a point on the example's drive sweep, every point from
+  10 to 20 dBm warm-started or not (its 100 iterations each evaluated 9 trials); a stall test on fully rejected searches alone
+  missed 10 dBm at 50 V/A, which crawled at λ 1/64 to 1/128 and never stalled. When the retry fails too, the usual solve runs
+  again from the same start with nothing cut short. Circuits without control currents are untouched by construction; a
+  control-current circuit is changed only if its usual solve crawls for 5 iterations running (at 30 dBm the bias loop did, and
+  converged anyway in 45 to 80; it now converges in 17 to 21 to the same answer).
+- **Cold against warm:** Kloop 50, 200 and 1,000 at 10, 20 and 30 dBm all converge from cold in 10 to 21 iterations and equal
+  the solution reached by raising Kloop from 0 to within 2.1e-5 V (Kloop 1,000 at 20 dBm; 4e-12 to 2.5e-7 V elsewhere).
+- **R-hbcl-3, a failed point is NaN.** An HB point inside a parametric sweep that did not converge keeps `Converged` 0, its
+  `Residual`, its tone frequencies and its seed cubes; every other cube is NaN (`ParametricSweepEngine.UnconvergedHbPoint`), so a
+  measurement reads NaN there. The loadpull engine leaves a failed step's spectra out and its readers select converged steps
+  by its `Converged` cube; an HB sweep's measurements read the spectra directly, so the spectra carry it. One existing test read
+  numbers at such a point (`HbLinearNodeTests.T5_Sweep_FullNodes`, a point refused as a vacuous tolerance: 1e-4 A against an
+  RF drive of 1.6e-11 A through a 1 H choke, returning its DC seed); it now checks the converged point and that the refused one
+  reads NaN.
+- **The example's bias bench** gained its HB drive sweep (10 to 30 dBm into bench 5's maximum-power load, loop open and
+  closed): 22 points, 1.2 s from the CLI, every one converged; 7.3 s before the stall test.

@@ -1115,6 +1115,11 @@ several variables; the innermost analysis is what each point solves.
     <caption>A whole sweep tree writes a single results file named after its innermost analysis.</caption>
   </table>
 
+**A harmonic-balance point that does not converge** keeps its place in the sweep with `Converged` 0 and its residual, and
+its voltages, currents and every measurement read from them are NaN there, so a plot leaves a gap rather than drawing the
+last iterate as though it were an answer. The run's notes say so, and its warnings give each such point's residual. The
+next point starts from the last one that converged.
+
 ## Loadpull / Sourcepull {#loadpull}
 
 **Computes:** figures of merit (Pout, gain, efficiency, PAE) as the load (or source) reflection
