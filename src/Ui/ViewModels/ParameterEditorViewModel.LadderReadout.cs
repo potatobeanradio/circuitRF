@@ -34,7 +34,7 @@ public partial class ParameterEditorViewModel
                     + (b.End is LadderStubEnd.Radial or LadderStubEnd.Butterfly
                         ? $", then a sector of Ro {Mm(b.Ro)}, {Deg(b.AngleDeg)}: {(a.EndOhms < 0 ? "−" : "+")}j{Ohm(Math.Abs(a.EndOhms))}"
                         : ""),
-                (LadderSite c, _) => $"site, {c.Kind.ToString().ToLowerInvariant()}: {c.Role} {SiteValue(c.Role, c.Value)}",
+                (LadderSite c, _) => $"site, {(c.Parallel ? "parallel" : c.Kind.ToString().ToLowerInvariant())}: {c.Role} {SiteValue(c.Role, c.Value)}",
                 _ => "",
             });
             // The vias as they always read; the lumped parts' sites, with their spans, as every planned passive lists them.
