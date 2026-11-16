@@ -21,7 +21,7 @@
             <TextBlock Classes="lbl" Text="Stop time (s)"/>
             <TextBox Grid.Column="1" Text="{Binding Stop}" ToolTip.Tip="End time of the run, in seconds (5e-6, or an expression)"/>
             <TextBlock Grid.Column="2" Classes="lbl" Text="Step (s)" Margin="12,0,8,0"/>
-            <TextBox Grid.Column="3" Text="{Binding Step}" Watermark="Stop/1000"
+            <TextBox Grid.Column="3" Text="{Binding Step}" PlaceholderText="Stop/1000"
                      ToolTip.Tip="Output grid: every result is reported at this spacing. Also the largest step unless Max step says otherwise."/>
 
             <TextBlock Grid.Row="1" Classes="lbl" Text="Method"/>
@@ -74,7 +74,7 @@
                 <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding ITol}" ToolTip.Tip="Absolute current tolerance"/>
 
                 <TextBlock Grid.Row="3" Classes="lbl" Text="IC"/>
-                <TextBox Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding Ic}" Watermark="out=0, bias=1.2"
+                <TextBox Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding Ic}" PlaceholderText="out=0, bias=1.2"
                          ToolTip.Tip="Net voltages held during the operating-point solve and released at t = 0 (with Initial state zero, their starting values)"/>
 
                 <CheckBox Grid.Row="4" Grid.ColumnSpan="4" FontSize="11" Content="Keep the engine's own steps" IsChecked="{Binding SaveSteps}"
@@ -98,7 +98,7 @@
                            Foreground="{DynamicResource SystemBaseMediumColor}"/>
                 <TextBlock Grid.Row="10" Classes="lbl" Text="Options"/>
                 <TextBox Grid.Row="10" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding SpiceOptions}" IsEnabled="{Binding IsNgspice}"
-                         Watermark="reltol=1e-4 abstol=1e-12"
+                         PlaceholderText="reltol=1e-4 abstol=1e-12"
                          ToolTip.Tip="Written verbatim as one .options line of the deck ngspice runs"/>
             </Grid>
         </Expander>

@@ -1,0 +1,4 @@
+refusal Port 1 ('1') at (0, 68.3359 mil) is not on any conductor of this EM setup's signal layers. Move it onto the metal, or check that the artwork it names is on a layer bound to a signal conductor in the technology's stackup.
+note 8 placed instance(s) could not be resolved and contributed no geometry to the EM problem. A cell that does not resolve is invisible to the solver even though its placeholder is drawn in the layout — check the cell reference, or flatten the instance.
+no-alpha 
+unknown-temperature 

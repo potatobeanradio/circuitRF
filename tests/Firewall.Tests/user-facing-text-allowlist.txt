@@ -101,6 +101,8 @@ src/Core/Devices/External/VerilogACompiler.cs|The compiled-model cache directory
 src/Core/Devices/External/VerilogAFileResolver.cs|The model file '{modelFile}' does not exist. Point the component's model file at 
 src/Core/Devices/MatchModel.cs|Match: ladder element '{e.Name}' has the unusable value {e.Value}. 
 src/Core/Devices/Microstrip/KlopfensteinTaper.cs|Klopfenstein taper: GammaMax={gammaMax:G6} must be strictly less than 
+src/Core/Devices/Microstrip/LocalAdmittanceBlock.cs|A branch with no impedance of its own cannot be reduced in a local block.
+src/Core/Devices/MicrostripPlanModel.cs|An interdigitated section has an even number of strips, at least 4; {fingers} given.
 src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': '{path}' is a '{target.ComponentType}', which carries
 src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': inductor '{path1}' not found
 src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': inductor '{path2}' not found

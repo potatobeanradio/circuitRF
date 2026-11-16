@@ -1,0 +1,3 @@
+refusal This layout draws metal only on ground-reference conductors, so there is no signal conductor for a port to drive.
+no-alpha 
+unknown-temperature 

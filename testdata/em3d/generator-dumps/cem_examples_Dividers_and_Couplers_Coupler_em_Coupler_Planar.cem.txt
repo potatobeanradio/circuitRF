@@ -1,0 +1,4 @@
+refusal This layout draws metal only on ground-reference conductors, so there is no signal conductor for a port to drive.
+note 9 placed instance(s) could not be resolved and contributed no geometry to the EM problem. A cell that does not resolve is invisible to the solver even though its placeholder is drawn in the layout — check the cell reference, or flatten the instance.
+no-alpha 
+unknown-temperature 
