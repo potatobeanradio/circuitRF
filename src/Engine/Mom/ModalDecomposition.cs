@@ -19,6 +19,7 @@
 
 using System.Numerics;
 using NumFlat;
+using RfCore;
 
 namespace CircuitRF.Engine.Mom;
 
@@ -122,24 +123,10 @@ public static class ModalDecomposition
     /// residual is reported separately (<see cref="RlgcModel.AsymmetryResidual"/>) rather than being
     /// silently averaged out of existence here.
     /// </summary>
-    public static Mat<Complex> Symmetrise(Mat<Complex> m)
-    {
-        var r = new Mat<Complex>(m.RowCount, m.ColCount);
-        for (int i = 0; i < m.RowCount; i++)
-        for (int j = 0; j < m.ColCount; j++)
-            r[i, j] = 0.5 * (m[i, j] + m[j, i]);
-        return r;
-    }
+    public static Mat<Complex> Symmetrise(Mat<Complex> m) => MulticonductorLine.Symmetrise(m);
 
     /// <inheritdoc cref="Symmetrise(Mat{Complex})"/>
-    public static Mat<double> Symmetrise(Mat<double> m)
-    {
-        var r = new Mat<double>(m.RowCount, m.ColCount);
-        for (int i = 0; i < m.RowCount; i++)
-        for (int j = 0; j < m.ColCount; j++)
-            r[i, j] = 0.5 * (m[i, j] + m[j, i]);
-        return r;
-    }
+    public static Mat<double> Symmetrise(Mat<double> m) => MulticonductorLine.Symmetrise(m);
 
     /// <summary>
     /// <b>R-cpl-8 — geometric symmetry is a SEPARATE check from matrix symmetry, and it decides
@@ -306,455 +293,61 @@ public static class ModalDecomposition
     /// paths that will eventually disagree, and the one that drifts would be the rarely-exercised
     /// one.
     ///
-    /// <para><b>Route A, and what it approximates.</b> The modal matrix is taken from the
-    /// <i>lossless</i> problem — <c>[L][C]·Tv = Tv·diag(1/v_p²)</c>, a real symmetric-definite
-    /// generalized eigenproblem <c>[C]v = λ[L]⁻¹v</c> that NumFlat CAN solve — and loss is then
-    /// carried perturbatively by forming the full modal matrices <i>with</i> loss in them and keeping
-    /// only their diagonals. <b>That discard is the entire approximation</b>, and its size is
-    /// measurable: see <see cref="ModalPoint.ModeCouplingResidual"/>.</para>
-    ///
-    /// <para><b>R-gen-1 — <see cref="Symmetrise(Mat{double})"/> is a PRECONDITION of the eigensolve,
-    /// not a tidy-up.</b> NumFlat's GEVD reads only the upper triangle and does not check; point
-    /// collocation does not produce a symmetric [C] (R-cpl-7, measured at 0.554% off-diagonal
-    /// residual at default mesh settings). Handing it the raw [C] silently decomposes a matrix that
-    /// is not the one you have.</para>
+    /// <para>The decomposition itself is RfCore's (<see cref="MulticonductorLine.Decompose"/>): Route
+    /// A, the lossless generalized eigenproblem and the <c>Ti</c> normalisation, shared with Core's
+    /// N-line coupled microstrip so the arithmetic exists once. This reads the RLGC model's matrices
+    /// into it.</para>
     /// </summary>
-    /// <param name="Tv">
-    /// The voltage modal matrix — <c>V_conductor = Tv · V_mode</c>. Columns are modes, in
-    /// <see cref="Lambda"/>-ascending order (R-gen-7). Real, and <b>frequency-independent</b>: it
-    /// comes from the lossless problem, which has no ω in it, so mode identity is fixed for a whole
-    /// sweep by construction — a real advantage of Route A over a per-frequency Route B.
-    /// </param>
-    /// <param name="Ti">
-    /// The current modal matrix — <c>I_conductor = Ti · I_mode</c>. The biorthogonal partner
-    /// <c>(Tvᵀ)⁻¹</c>, <b>rescaled per mode so that each mode's current pattern matches its own
-    /// voltage pattern</b> (exactly equal when the two are parallel, which is what a symmetric pair
-    /// gives). See <see cref="DecomposeGeneral"/>'s remarks for why that particular scaling is the
-    /// one that makes the REPORTED <c>Zc_m</c> come out in ohms rather than in metres per second.
-    /// </param>
-    /// <param name="Lambda">λ_m = 1/v_p,m² — the generalized eigenvalues, s²/m².</param>
-    /// <param name="Eeff">c²λ_m — the mode's effective permittivity.</param>
-    /// <param name="LPerM">(Tv⁻¹[L]Ti)_mm — the mode's own inductance, H/m.</param>
-    /// <param name="C0PerM">(Ti⁻¹[C₀]Tv)_mm — the mode's air-filled capacitance, F/m.</param>
-    /// <param name="CComplexPerM">(Ti⁻¹[C]Tv)_mm — the mode's complex capacitance (R-mom-6 carries
-    /// G in its imaginary part, so a mode's shunt admittance stays one complex number).</param>
-    /// <param name="CurrentScale">
-    /// e_m, the per-mode factor relating <see cref="Ti"/> to the strict biorthogonal partner
-    /// (<c>Ti = (Tvᵀ)⁻¹·diag(e)</c>). Exposed so the 2N-port blocks can be assembled as
-    /// <c>Σ_m (x_m/e_m)·Tv[i,m]·Tv[j,m]</c>, which is <b>bit-exactly symmetric</b> — that is what
-    /// keeps reciprocity a structural property rather than a numerical one.
-    /// </param>
-    public sealed record GeneralModes(
-        Mat<double>            Tv,
-        Mat<double>            Ti,
-        Mat<double>            TvInv,
-        Mat<double>            TiInv,
-        IReadOnlyList<double>  Lambda,
-        IReadOnlyList<double>  Eeff,
-        IReadOnlyList<double>  LPerM,
-        IReadOnlyList<double>  C0PerM,
-        IReadOnlyList<Complex> CComplexPerM,
-        IReadOnlyList<double>  CurrentScale,
-        double                 AsymmetryResidual)
+    /// <exception cref="InvalidOperationException">The eigensolve failed — reported by name rather
+    /// than as a bare linear-algebra exception.</exception>
+    public static MulticonductorLine.GeneralModes DecomposeGeneral(RlgcModel rlgc)
     {
-        /// <summary>How many modes — one per conductor.</summary>
-        public int ModeCount => Lambda.Count;
-
-        /// <summary>v_p,m = 1/√λ_m, m/s.</summary>
-        public double PhaseVelocity(int mode) => Math.Sqrt(1.0 / Lambda[mode]);
-
-        /// <summary>
-        /// The mode's STATIC, lossless characteristic impedance √(L_m/C_m) — the number a
-        /// coupled-line designer means by "Z_e" or "Z_o". Ohms, because of the
-        /// <see cref="Ti"/> normalisation (R-gen-3a).
-        /// </summary>
-        public double Z0(int mode)
-        {
-            double c = CComplexPerM[mode].Real;
-            return c > 0 && LPerM[mode] > 0 ? Math.Sqrt(LPerM[mode] / c) : 0;
-        }
-
-        /// <summary>
-        /// For N = 2 only: which mode is the EVEN (c) mode and which the ODD (π) mode, identified
-        /// from the sign pattern of <see cref="Tv"/>'s columns rather than from mode order — the two
-        /// conductors move together in the even mode and in opposition in the odd one, whatever
-        /// order <see cref="Lambda"/> happened to put them in. Returns false when the pattern is not
-        /// unambiguous, in which case no Even/Odd alias should be published.
-        /// </summary>
-        public bool TryIdentifyEvenOdd(out int even, out int odd)
-        {
-            even = odd = -1;
-            if (ModeCount != 2) return false;
-
-            bool Same(int m) => Tv[0, m] * Tv[1, m] > 0;
-            bool s0 = Same(0), s1 = Same(1);
-            if (s0 == s1) return false;                 // both, or neither — say nothing
-
-            even = s0 ? 0 : 1;
-            odd  = s0 ? 1 : 0;
-            return true;
-        }
+        ArgumentNullException.ThrowIfNull(rlgc);
+        if (rlgc.ConductorCount < 1) throw new InvalidOperationException("MoM: the RLGC model has no conductors.");
+        return MulticonductorLine.Decompose(rlgc.CComplex, rlgc.C0, rlgc.L, rlgc.AsymmetryResidual);
     }
 
     /// <summary>
-    /// The per-frequency modal quantities, plus <b>R-gen-5's measurement of what Route A threw
-    /// away</b>.
+    /// Derive <c>Ti</c> and every per-mode quantity from a GIVEN voltage modal matrix — the tail of
+    /// <see cref="DecomposeGeneral"/> (<see cref="MulticonductorLine.FromVoltageModalMatrix"/>), kept
+    /// here for R-gen-3's normalisation-invariance gate: scale Tv's columns by a deliberately vicious
+    /// spread, rebuild through this, and assert the 2N-port blocks are unchanged.
     /// </summary>
-    /// <param name="Z">Zm_mm = (Tv⁻¹([R]+jω[L])Ti)_mm — the mode's series impedance, Ω/m.</param>
-    /// <param name="Y">Ym_mm = (Ti⁻¹(jω[C])Tv)_mm — the mode's shunt admittance, S/m.</param>
-    /// <param name="RPerM">(Tv⁻¹[R](ω)Ti)_mm — the mode's series resistance alone, Ω/m.</param>
-    /// <param name="ZCouplingResidual">
-    /// <c>max_{i≠j}|Zm_ij| / min_i|Zm_ii|</c> — the fraction of the modal series matrix that Route A
-    /// discarded at this frequency.
-    /// </param>
-    /// <param name="YCouplingResidual">The same for Ym.</param>
-    public sealed record ModalPoint(
-        Complex[] Z,
-        Complex[] Y,
-        double[]  RPerM,
-        double    ZCouplingResidual,
-        double    YCouplingResidual)
+    public static MulticonductorLine.GeneralModes FromVoltageModalMatrix(
+        RlgcModel rlgc, Mat<double> tv, IReadOnlyList<double> lambda)
     {
-        /// <summary>
-        /// <b>R-gen-5.</b> The exact analogue of R-cpl-7's asymmetry residual: the thing being
-        /// thrown away, surfaced rather than assumed small, so a user can see when Route A's
-        /// perturbative treatment of loss is under strain. A pair for which this is 1e-9 is being
-        /// decomposed essentially exactly; one for which it is 0.2 is not.
-        /// </summary>
-        public double ModeCouplingResidual => Math.Max(ZCouplingResidual, YCouplingResidual);
+        ArgumentNullException.ThrowIfNull(rlgc);
+        return MulticonductorLine.FromVoltageModalMatrix(rlgc.CComplex, rlgc.C0, rlgc.L, tv, lambda,
+                                                         rlgc.AsymmetryResidual);
+    }
+
+    /// <summary>
+    /// <b>Route A, steps 4–5 — and step 5 IS the approximation.</b> The full modal matrices with
+    /// loss in them at ω, their diagonals kept and the discard measured
+    /// (<see cref="MulticonductorLine.EvaluateAt"/>, on this model's [R](ω), [L] and [C]).
+    /// </summary>
+    public static MulticonductorLine.ModalPoint EvaluateAt(
+        RlgcModel rlgc, MulticonductorLine.GeneralModes modes, double omegaRadS)
+    {
+        ArgumentNullException.ThrowIfNull(rlgc);
+        return MulticonductorLine.EvaluateAt(rlgc.RMatrix(omegaRadS), rlgc.L, rlgc.CComplex, modes, omegaRadS);
     }
 
     /// <summary>Above this the discarded mode coupling is worth telling the user about.</summary>
     public const double ModeCouplingWarnThreshold = 0.02;
 
     /// <summary>
-    /// <b>Route A, steps 1–3.</b> Symmetrise, solve the lossless generalized eigenproblem, derive
-    /// <c>Ti</c>. Frequency-independent — call once per sweep; <see cref="EvaluateAt"/> is the only
-    /// per-frequency part.
+    /// <b>The lossless modal eigenproblem [C]v = λ[L]⁻¹v</b> and R-gen-7's physical ordering of its
+    /// answer (<see cref="MulticonductorLine.VoltageModalMatrix"/>).
     ///
-    /// <para><b>Why <c>Ti</c> is rescaled, and why the rescale cannot move the terminal answer.</b>
-    /// The physics fixes <c>Ti</c> only up to one scalar per mode: scaling column m of Ti by e
-    /// multiplies <c>Zm_mm</c> by e and divides <c>Ym_mm</c> by e, so γ_m = √(Zm·Ym) is untouched
-    /// while <c>Zc_m = √(Zm/Ym)</c> scales by e. The 2N-port blocks are <c>Tv·diag(x_m)·Ti⁻¹</c>
-    /// with <c>x_m ∝ Zc_m</c>, so the e in <c>x</c> and the 1/e in <c>Ti⁻¹</c> cancel exactly
-    /// (R-gen-3). The scaling is therefore <b>purely a reporting choice</b> — and R-gen-3a says
-    /// which choice to make: the one under which a symmetric pair's reported Zc reproduces L7b's own
-    /// Z_e and Z_o.</para>
-    ///
-    /// <para><b>The choice: "each conductor carries the mode's own current."</b> Take the strict
-    /// biorthogonal partner <c>Tib = (Tvᵀ)⁻¹</c> and scale its column m so it is the least-squares
-    /// closest to <c>Tv</c>'s column m — which, because <c>Tvᵀ·Tib = I</c>, is simply
-    /// <c>Ti_m = Tib_m / ‖Tib_m‖²</c>. When the two are parallel (a symmetric pair: both columns are
-    /// (1,1) and (1,−1)) it makes them <b>equal</b>, which is exactly L7b's convention, so
-    /// <c>Zc_even</c> comes out as √(L_even/C_even) in ohms rather than as the mode's phase velocity.
-    /// A pleasant consequence: under this rule <c>Zm_mm</c> and <c>Ym_mm</c> are ALSO invariant to
-    /// scaling <c>Tv</c>'s columns, so no reported per-mode quantity depends on whatever
-    /// normalisation LAPACK happened to hand back.</para>
-    /// </summary>
-    /// <exception cref="InvalidOperationException">The eigensolve failed — reported by name rather
-    /// than as a bare linear-algebra exception.</exception>
-    public static GeneralModes DecomposeGeneral(RlgcModel rlgc)
-    {
-        ArgumentNullException.ThrowIfNull(rlgc);
-
-        int n = rlgc.ConductorCount;
-        if (n < 1) throw new InvalidOperationException("MoM: the RLGC model has no conductors.");
-
-        // 1 — R-gen-1. NOT a tidy-up: NumFlat's GEVD reads only the upper triangle and never checks.
-        var c    = Symmetrise(rlgc.CComplex);
-        var c0   = Symmetrise(rlgc.C0);
-        var l    = Symmetrise(rlgc.L);
-        var lInv = Symmetrise(RlgcExtractor.Invert(l));
-
-        // 2/3 — the lossless problem and its ordering, shared with PCAL4's modal port calibration.
-        var tv = VoltageModalMatrix(RealPart(c), lInv, out var lambda);
-
-        return FromVoltageModalMatrix(rlgc, tv, lambda);
-    }
-
-    /// <summary>
-    /// Derive <c>Ti</c> and every per-mode quantity from a GIVEN voltage modal matrix. The tail of
-    /// <see cref="DecomposeGeneral"/>, exposed for two reasons that are both about not having a
-    /// second copy of this arithmetic:
-    ///
-    /// <list type="bullet">
-    ///   <item><b>R-gen-3's normalisation-invariance gate.</b> Scale Tv's columns by a deliberately
-    ///     vicious spread, rebuild through this, and assert the 2N-port blocks are unchanged. That
-    ///     exercises the production derivation rather than a re-statement of it — which matters,
-    ///     because the test exists to catch a wrong <c>Ti</c>.</item>
-    ///   <item>If a Route B ever produces a per-frequency Tv, this is where it plugs in.</item>
-    /// </list>
-    ///
-    /// <para><paramref name="lambda"/> carries the lossless eigenvalues 1/v_p² through unchanged;
-    /// they are a property of the modes, not of the scaling.</para>
-    /// </summary>
-    public static GeneralModes FromVoltageModalMatrix(
-        RlgcModel rlgc, Mat<double> tv, IReadOnlyList<double> lambda)
-    {
-        ArgumentNullException.ThrowIfNull(rlgc);
-        ArgumentNullException.ThrowIfNull(lambda);
-
-        int n = tv.RowCount;
-        var c  = Symmetrise(rlgc.CComplex);
-        var c0 = Symmetrise(rlgc.C0);
-        var l  = Symmetrise(rlgc.L);
-
-        var tvInv = RlgcExtractor.Invert(tv);
-
-        // Ti_m = Tib_m / ‖Tib_m‖², with Tib = (Tvᵀ)⁻¹ — i.e. Tib's column m is Tv⁻¹'s ROW m.
-        var ti    = new Mat<double>(n, n);
-        var tiInv = new Mat<double>(n, n);
-        var scale = new double[n];
-        for (int m = 0; m < n; m++)
-        {
-            double norm2 = 0;
-            for (int k = 0; k < n; k++) norm2 += tvInv[m, k] * tvInv[m, k];
-            if (!(norm2 > 0))
-                throw new InvalidOperationException(
-                    $"MoM: modal matrix column {m} is degenerate — the modes are not independent.");
-
-            double e = 1.0 / norm2;                       // the per-mode scale, Ti = Tib·diag(e)
-            scale[m] = e;
-            for (int k = 0; k < n; k++)
-            {
-                ti[k, m]    = tvInv[m, k] * e;            // Ti  = Tib · diag(e)
-                tiInv[m, k] = tv[k, m] * norm2;           // Ti⁻¹ = diag(1/e) · Tvᵀ — EXACT, never a
-                                                          // second numerical inversion.
-            }
-        }
-
-        // The frequency-independent modal quantities. Lmodal, C0modal and Cmodal are diagonal to
-        // round-off by construction for a GEVD basis (Tvᵀ[L]⁻¹Tv, Tvᵀ[C₀]Tv and Tvᵀ[C]Tv are all
-        // diagonal there); Cmodal picks up off-diagonals only from a dielectric loss distribution
-        // that is not proportional to [C] itself.
-        var lModal  = DiagonalOf(Mul(Mul(tvInv, l), ti));
-        var c0Modal = DiagonalOf(Mul(Mul(tiInv, c0), tv));
-        var cModal  = DiagonalOf(Mul(Mul(ToComplex(tiInv), c), ToComplex(tv)));
-
-        var eeff = new double[n];
-        var lam  = new double[n];
-        for (int m = 0; m < n; m++)
-        {
-            lam[m]  = lambda[m];
-            eeff[m] = lambda[m] * EmConstants.C0 * EmConstants.C0;
-        }
-
-        return new GeneralModes(tv, ti, tvInv, tiInv, lam, eeff, lModal, c0Modal, cModal,
-                                scale, rlgc.AsymmetryResidual);
-    }
-
-    /// <summary>
-    /// <b>Route A, steps 4–5 — and step 5 IS the approximation.</b> Form the FULL modal matrices
-    /// with loss in them, then keep only their diagonals — and report how much was discarded.
-    /// </summary>
-    public static ModalPoint EvaluateAt(RlgcModel rlgc, GeneralModes modes, double omegaRadS)
-    {
-        ArgumentNullException.ThrowIfNull(rlgc);
-        ArgumentNullException.ThrowIfNull(modes);
-
-        int n = modes.ModeCount;
-        var r = Symmetrise(rlgc.RMatrix(omegaRadS));
-
-        // Zm(ω) = Tv⁻¹·([R] + jω[L])·Ti — real [R] and [L], so the product is assembled once.
-        var rModalFull = Mul(Mul(modes.TvInv, r), modes.Ti);
-        var lModalFull = Mul(Mul(modes.TvInv, Symmetrise(rlgc.L)), modes.Ti);
-        var zFull = new Mat<Complex>(n, n);
-        for (int i = 0; i < n; i++)
-        for (int j = 0; j < n; j++)
-            zFull[i, j] = new Complex(rModalFull[i, j], omegaRadS * lModalFull[i, j]);
-
-        // Ym(ω) = Ti⁻¹·(jω[C_complex])·Tv — R-mom-6: G rides in Im[C], so there is no separate [G].
-        var cModalFull = Mul(Mul(ToComplex(modes.TiInv), Symmetrise(rlgc.CComplex)), ToComplex(modes.Tv));
-        var yFull = new Mat<Complex>(n, n);
-        for (int i = 0; i < n; i++)
-        for (int j = 0; j < n; j++)
-            yFull[i, j] = Complex.ImaginaryOne * omegaRadS * cModalFull[i, j];
-
-        var z = new Complex[n];
-        var y = new Complex[n];
-        var rr = new double[n];
-        for (int m = 0; m < n; m++)
-        {
-            z[m]  = zFull[m, m];
-            y[m]  = yFull[m, m];
-            rr[m] = rModalFull[m, m];
-        }
-
-        return new ModalPoint(z, y, rr, CouplingResidual(zFull), CouplingResidual(yFull));
-    }
-
-    /// <summary><c>max_{i≠j}|M_ij| / min_i|M_ii|</c>. Zero for a 1×1 (there is nothing to discard).</summary>
-    internal static double CouplingResidual(Mat<Complex> m)
-    {
-        int n = m.RowCount;
-        if (n < 2) return 0;
-
-        double off = 0, minDiag = double.MaxValue;
-        for (int i = 0; i < n; i++)
-        {
-            minDiag = Math.Min(minDiag, m[i, i].Magnitude);
-            for (int j = 0; j < n; j++)
-                if (i != j) off = Math.Max(off, m[i, j].Magnitude);
-        }
-        return minDiag > 0 ? off / minDiag : (off > 0 ? double.PositiveInfinity : 0);
-    }
-
-    /// <summary>
-    /// R-gen-7 — <b>order the modes deterministically, and say by what</b>: by λ ASCENDING, tie-broken
-    /// by the eigenvector's own largest-magnitude conductor index so a degenerate pair still orders
-    /// stably, and finally by the raw LAPACK index so the comparison is a total order.
-    ///
-    /// <para><b>A note on the brief's own wording.</b> R-gen-7 says "ascending — slowest mode first";
-    /// those two are not the same thing, because λ = 1/v_p², so ascending λ is <i>fastest</i> mode
-    /// first. The operative instruction (ascending, deterministic, a physical property rather than
-    /// whatever LAPACK returned) is what is implemented; for a microstrip pair that puts the odd mode
-    /// — more field in air, lower ε_eff, higher v_p — at index 0. Nothing downstream depends on which
-    /// end is which: <see cref="GeneralModes.TryIdentifyEvenOdd"/> names the modes from their sign
-    /// pattern, not from their position.</para>
-    /// </summary>
-    /// <summary>
-    /// <b>The lossless modal eigenproblem [C]v = λ[L]⁻¹v, and R-gen-7's physical ordering of its
-    /// answer.</b> λ = 1/v_p,m²; the columns of the returned matrix are the voltage eigenvectors,
-    /// signed so a re-run reports the same matrix.
-    ///
-    /// <para>Extracted so that <b>PCAL4's modal port calibration asks the same question of the same
+    /// <para>Here so that <b>PCAL4's modal port calibration asks the same question of the same
     /// code</b> rather than keeping a second GEVD. What it may NOT share is what
     /// <see cref="FromVoltageModalMatrix"/> does next: that rescales <c>Ti</c> to R-gen-3a's
     /// REPORTING convention, and a modal port calibration needs the strict biorthogonal
     /// <c>Ti = (Tvᵀ)⁻¹</c> instead — under which, and only under which, the modal-to-terminal wave
     /// map is complex-orthogonal and PCAL4's gauge condition holds. Both normalisations are correct
     /// and they are for different purposes; the eigenproblem underneath them is one.</para>
-    ///
-    /// <para>The column NORMALISATION is whatever the GEVD returned and deliberately not touched:
-    /// every quantity either caller derives is invariant to it (scaling column m by c scales that
-    /// mode's capacitance by c² and its Z_c by 1/c², and the two cancel).</para>
     /// </summary>
-    public static Mat<double> VoltageModalMatrix(Mat<double> cReal, Mat<double> lInv,
-                                                 out double[] lambda)
-    {
-        int n = cReal.RowCount;
-
-        Mat<double> vRaw;
-        Vec<double> dRaw;
-        try
-        {
-            var gevd = MatrixDecompositions.Gevd(cReal, lInv);
-            vRaw = gevd.V;
-            dRaw = gevd.D;
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            throw new InvalidOperationException(
-                "MoM: the lossless modal eigenproblem [C]v = λ[L]⁻¹v could not be solved. Both " +
-                "matrices must be symmetric positive definite; a degenerate cross-section (a " +
-                "conductor with no capacitance to anything, or two conductors solved as one) is " +
-                "the usual cause.", ex);
-        }
-
-        // R-gen-7. Order the modes by a PHYSICAL property, never by whatever LAPACK returned.
-        var order = SortModes(vRaw, dRaw, n);
-
-        var tv = new Mat<double>(n, n);
-        lambda = new double[n];
-        for (int m = 0; m < n; m++)
-        {
-            int src = order[m];
-            lambda[m] = dRaw[src];
-
-            // Sign is arbitrary in an eigenvector; pin it so a re-run reports the same Tv.
-            int big = 0;
-            for (int k = 1; k < n; k++)
-                if (Math.Abs(vRaw[k, src]) > Math.Abs(vRaw[big, src])) big = k;
-            double sign = vRaw[big, src] < 0 ? -1.0 : 1.0;
-
-            for (int k = 0; k < n; k++) tv[k, m] = sign * vRaw[k, src];
-        }
-        return tv;
-    }
-
-    private static int[] SortModes(Mat<double> v, Vec<double> d, int n)
-    {
-        var idx = new int[n];
-        for (int i = 0; i < n; i++) idx[i] = i;
-
-        int BigIndex(int col)
-        {
-            int big = 0;
-            for (int k = 1; k < n; k++)
-                if (Math.Abs(v[k, col]) > Math.Abs(v[big, col])) big = k;
-            return big;
-        }
-
-        Array.Sort(idx, (a, b) =>
-        {
-            // A relative tolerance, so a genuinely degenerate pair (R-gen-6 — two identical
-            // conductors far apart have the SAME velocity, guaranteed, not as a corner case) falls
-            // through to the tie-break rather than ordering on round-off.
-            double scale = Math.Max(Math.Abs(d[a]), Math.Abs(d[b]));
-            if (Math.Abs(d[a] - d[b]) > 1e-9 * scale) return d[a].CompareTo(d[b]);
-            int ba = BigIndex(a), bb = BigIndex(b);
-            return ba != bb ? ba.CompareTo(bb) : a.CompareTo(b);
-        });
-        return idx;
-    }
-
-    // ── tiny dense helpers (N is the conductor count — single digits) ──────────────────────────
-
-    private static Mat<double> RealPart(Mat<Complex> a)
-    {
-        var r = new Mat<double>(a.RowCount, a.ColCount);
-        for (int i = 0; i < a.RowCount; i++)
-        for (int j = 0; j < a.ColCount; j++)
-            r[i, j] = a[i, j].Real;
-        return r;
-    }
-
-    private static Mat<Complex> ToComplex(Mat<double> a)
-    {
-        var r = new Mat<Complex>(a.RowCount, a.ColCount);
-        for (int i = 0; i < a.RowCount; i++)
-        for (int j = 0; j < a.ColCount; j++)
-            r[i, j] = a[i, j];
-        return r;
-    }
-
-    internal static Mat<double> Mul(Mat<double> a, Mat<double> b)
-    {
-        var r = new Mat<double>(a.RowCount, b.ColCount);
-        for (int i = 0; i < a.RowCount; i++)
-        for (int k = 0; k < a.ColCount; k++)
-        {
-            double v = a[i, k];
-            if (v == 0) continue;
-            for (int j = 0; j < b.ColCount; j++) r[i, j] += v * b[k, j];
-        }
-        return r;
-    }
-
-    internal static Mat<Complex> Mul(Mat<Complex> a, Mat<Complex> b)
-    {
-        var r = new Mat<Complex>(a.RowCount, b.ColCount);
-        for (int i = 0; i < a.RowCount; i++)
-        for (int k = 0; k < a.ColCount; k++)
-        {
-            var v = a[i, k];
-            if (v == Complex.Zero) continue;
-            for (int j = 0; j < b.ColCount; j++) r[i, j] += v * b[k, j];
-        }
-        return r;
-    }
-
-    private static double[] DiagonalOf(Mat<double> a)
-    {
-        var d = new double[a.RowCount];
-        for (int i = 0; i < a.RowCount; i++) d[i] = a[i, i];
-        return d;
-    }
-
-    private static Complex[] DiagonalOf(Mat<Complex> a)
-    {
-        var d = new Complex[a.RowCount];
-        for (int i = 0; i < a.RowCount; i++) d[i] = a[i, i];
-        return d;
-    }
+    public static Mat<double> VoltageModalMatrix(Mat<double> cReal, Mat<double> lInv, out double[] lambda)
+        => MulticonductorLine.VoltageModalMatrix(cReal, lInv, out lambda);
 }
