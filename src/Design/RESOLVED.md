@@ -32140,3 +32140,15 @@ write back in that state, so opening a chain cannot record an edit. The default 
   port; Planar is within 0.22 dB of the model the other way. A series reactance at each port in the circuit model,
   standing in for the 3D lumped sheets, moves the split the opposite way, so the lumped ports alone do not explain it.
   Not pursued further.
+
+## RF passives — a ring's `Corner` through the layout and LVS (2026-11-16)
+
+- **A word on a built-in generator has to be passed as text.** Update Layout resolves every row of a built-in through the
+  numeric resolver, so `Corner = Miter` failed there and the part got no artwork. `SchematicLayoutPlanner` hands MWPD's
+  and MRRC's `Corner` to the generator as text, as a test pad's words are. `ResolveDefaultParameters` skips a row it
+  cannot evaluate, so the default artwork and the generator fingerprint stay the curved ring's.
+- **LVS compares `Corner` as a string.** The elaborator keeps it as text for MWPD and MRRC, as an enum name, and the
+  generated cell's snapshot carries it as text, so mitred artwork against a schematic asking for `Curve` is one
+  `lvs.property.mismatch` (`testdata/schematic-to-layout/F8d-wilkinson-mitred`).
+- **The ground pour covers a cornered ring.** It covers each passive instance's own extent, so the rectangle is under the
+  plane with the usual five-substrate-height margin, checked on the mitred divider and rat-race.

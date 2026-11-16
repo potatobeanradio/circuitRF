@@ -1664,6 +1664,13 @@ public static partial class SchematicLayoutPlanner
                 if (string.IsNullOrWhiteSpace(p.Expression)) continue;
             }
 
+            // A ring's Corner (MWPD, MRRC) is a word for its generator: Curve, Miter or Square.
+            if (comp.Symbol is SymbolKind.Mwpd or SymbolKind.Mrrc && p.Name == "Corner")
+            {
+                if (p.Expression.Trim() is { Length: > 0 } corner) resolved[p.Name] = PCellValue.Text(corner);
+                continue;
+            }
+
             // A TFR's film is a drawing layer's NAME for its generator, and empty states nothing, so a part stating no film
             // hashes to the cell it always did.
             if (comp.Symbol == SymbolKind.Tfr && p.Name == MmicPassiveInjection.FilmParam)

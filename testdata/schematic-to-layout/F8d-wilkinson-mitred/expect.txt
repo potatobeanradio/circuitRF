@@ -1,0 +1,14 @@
+# The Wilkinson divider with mitred corners (MWPD, Corner = Miter): the ring is a rectangle of MMITER corners and
+# straight runs, still closing across Gap, so the resistor on R2-R3 lands on both ends with no line, and each port
+# sits on its own pin's feed.
+joinable nr2
+joinable nr3
+Info WPD1 added
+Info R1 added
+Info P1 port 1 placed at WPD1 pin 1
+Info P2 port 2 placed at WPD1 pin 2
+Info P3 port 3 placed at WPD1 pin 3
+Info - Joined 2 of 2 connections; 0 left as ratsnest
+port P1 1
+port P2 2
+port P3 3

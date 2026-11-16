@@ -48,20 +48,20 @@ public partial class ParameterEditorViewModel
                 var (h, t, er) = ResolveMlinSubstrate();
                 try
                 {
-                    var d = WilkinsonPlan.Build(z0, f, gap, new MicrostripSubstrate(h, t, er, 0.0, 0.0), k, n, band);
+                    var d = WilkinsonPlan.Build(z0, f, gap, new MicrostripSubstrate(h, t, er, 0.0, 0.0), k, n, band, Corner());
                     // Widths to the plan's own 2 nm grid, so a line drawn to meet a pin can be typed exactly: a
                     // rounded width leaves a sliver step at the joint that DRC reports.
                     if (d.K == 1.0 && d.Sections == 1)
                         text = $"W {Mm(d.W0Meters, "0.#####")} (Z0), arms {Mm(d.ArmWMeters, "0.#####")} ({Ohm(d.ArmZ0)})\n"
                              + $"L {Mm(d.QuarterWaveMeters)} (λg/4 at F, εeff {d.ArmEeff.ToString("0.###", CultureInfo.InvariantCulture)})\n"
-                             + $"Ring radius {Mm(d.RingRadiusMeters)}\n"
+                             + Ring(d)
                              + $"Isolation R = 2·Z0 = {Ohm(d.IsolationOhms)}, across R2-R3";
                     else
                         // A variant: every quarter-wave line (λg/4 at F) and every resistor, as the plan has them.
                         text = $"W {Mm(d.W0Meters, "0.#####")} (Z0)\n"
                              + string.Concat(d.Lines.Select(l =>
                                    $"{l.Name}: {Ohm(l.Z)}, W {Mm(l.WMeters, "0.#####")}, L {Mm(l.QuarterWaveMeters)}\n"))
-                             + $"Ring radius {Mm(d.RingRadiusMeters)}\n"
+                             + Ring(d)
                              + string.Join("\n", d.Resistors.Select((r, i) =>
                                    $"R{(d.Sections > 1 ? (i + 1).ToString(CultureInfo.InvariantCulture) : "")} = {Ohm(r.Ohms)}, across {r.PinA}-{r.PinB}"));
                 }
@@ -86,6 +86,20 @@ public partial class ParameterEditorViewModel
          : NumericText.TryParseDouble(row.Expression, out double raw)
             ? raw * (Units.Scale(UnitNormalizer.ToEngineUnit(row.Unit)) ?? 1.0)
             : null;
+
+    /// <summary>A ring's <c>Corner</c>, a name; Curve when the row is absent or names none (the picker offers only the names).</summary>
+    private PlanCorner Corner()
+        => Enum.TryParse(_target?.Parameters.FirstOrDefault(p => p.Name == "Corner")?.Expression?.Trim(), ignoreCase: true,
+               out PlanCorner c) && Enum.IsDefined(c) ? c : PlanCorner.Curve;
+
+    /// <summary>The ring's radius, or with corners each arm's straight runs: shortened by the corners' own length at F.</summary>
+    private static string Ring(WilkinsonDesign d)
+        => d.Corner == PlanCorner.Curve
+            ? $"Ring radius {Mm(d.RingRadiusMeters)}\n"
+            : string.Concat(d.Arms.Select(a =>
+                $"{(d.Arms.Count > 1 || d.Sections > 1 ? a.Name : "Each arm")}: {Mm(a.AcrossMeters)} across, "
+              + $"{Mm(a.RiseMeters)} up and down; each {(d.Corner == PlanCorner.Miter ? "mitred" : "square")} corner stands for "
+              + $"{Mm(a.CornerMeters)} of it at F\n"));
 
     private static string Mm(double m, string format = "0.###") => (m * 1e3).ToString(format, CultureInfo.InvariantCulture) + " mm";
     private static string Ohm(double r) => r.ToString("0.#", CultureInfo.InvariantCulture) + " Ω";

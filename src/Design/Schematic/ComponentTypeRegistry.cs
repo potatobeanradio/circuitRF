@@ -5,6 +5,7 @@ using CircuitRF.Core.Devices.Composed;
 using CircuitRF.Core.Matching;
 using CircuitRF.Core.Systems;
 using CircuitRF.WBond;
+using PlanCorner = CircuitRF.Core.Devices.Microstrip.PlanCorner;
 
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout.PCells;
@@ -1702,6 +1703,10 @@ public static class ComponentTypeRegistry
                                 + "isolation resistor. Sets the pin count, 3 + 2·N, so it must be a plain number.",
         (SymbolKind.Mwpd, "Band") => "For N above 1: the design band's upper edge over its lower, f2/f1, centred on F. The sections "
                                    + "are an equal-ripple transformer over it.",
+        (SymbolKind.Mwpd or SymbolKind.Mrrc, "Corner") => "How the ring turns. Curve: 180° curves. Miter: a rectangle with four "
+                                   + "mitred 90° corners (MMITER at its usual chamfer); Square: the same with square corners "
+                                   + "(MBEND). With corners the straight runs are shortened by the corners' own electrical length, "
+                                   + "so every spacing is still λg/4 at F.",
         (SymbolKind.Mwpd, "Z0") => "The ports' impedance. Each arm is √2·Z0 and the isolation resistor 2·Z0; the widths are "
                                  + "derived from it on the technology's substrate.",
         (SymbolKind.Mwpd, "F") => "Centre frequency: each arm is a quarter wavelength long here, in the line's own effective "
@@ -1806,7 +1811,8 @@ public static class ComponentTypeRegistry
           + "MTEE's closed forms are calibrated at εr 9.9 and say so on any other board; MCURVE's effective radius is "
           + "stated for 3W to 7W. An unequal split adds a quarter-wave transformer on each output tee's branch; each "
           + "further section is a pair of lines run on from the ring with a tee at every junction, their coupling to "
-          + "each other not modelled. The isolation resistors are not in the model: they are the resistors on the pins.",
+          + "each other not modelled. With Corner = Miter or Square the curves are MMITER or MBEND corners and MLIN runs, "
+          + "with those parts' validity. The isolation resistors are not in the model: they are the resistors on the pins.",
         SymbolKind.Mblc =>
             "MTEE and MLIN, the pieces the layout draws: a tee at each junction, a line for each arm and a Z0 feed to each "
           + "pin, stamped together and reduced to the four pins. Each arm is λg/4 at F between the junctions' reference "
@@ -1817,7 +1823,8 @@ public static class ComponentTypeRegistry
             "MTEE, MLIN and MCURVE, the pieces the layout draws: four tees on a ring of two straight runs and two 180° "
           + "curves, stamped together and reduced to the four pins. Every spacing is measured between the junctions' "
           + "reference planes at F. MTEE's closed forms are calibrated at εr 9.9 and say so on any other board; "
-          + "MCURVE's effective radius is stated for 3W to 7W.",
+          + "MCURVE's effective radius is stated for 3W to 7W. With Corner = Miter or Square each curve is two MMITER or "
+          + "MBEND corners and an MLIN side, with those parts' validity.",
         SymbolKind.Mclc =>
             "MCLIN, the pair the layout draws: Kirschning-Jansen even and odd modes (0.1 <= W/H, S/H <= 10, er <= 18), "
           + "each mode at its own velocity. W and S are synthesised for Coupling and Z0 at F, L is a quarter wave in the "
@@ -4016,7 +4023,8 @@ public static class ComponentTypeRegistry
             // the probe's own numbers are in µm, which no technology rewrites — a probe's pitch is the probe's.
             // MWPD (docs/design/rf-passives.md): the specs and the resistor's pin span. W, L and the ring radius are derived
             // (WilkinsonPlan) and shown as a readout. K is the split ratio, N the section count (the pins follow it), Band
-            // the multi-section design's f2/f1; at their defaults the part is the equal-split divider it always was.
+            // the multi-section design's f2/f1, Corner how the ring turns; at their defaults the part is the equal-split
+            // divider it always was.
             case SymbolKind.Mwpd:
                 return [new("Z0",   "50",   "Ω",   true,  UnitDimension.Resistance),
                         new("F",    "2.4",  "GHz", true,  UnitDimension.Frequency),
@@ -4024,6 +4032,7 @@ public static class ComponentTypeRegistry
                         new("K",    "1",    "",    true,  UnitDimension.None),
                         new("N",    "1",    "",    true,  UnitDimension.None),
                         new("Band", "2",    "",    false, UnitDimension.None),
+                        new("Corner", nameof(PlanCorner.Curve), "", false, UnitDimension.None),
                         .. SignalGroundLayerParams];
             // MBLC and MRRC: the specs alone (BranchLinePlan, RatRacePlan); every width and length is a readout.
             case SymbolKind.Mblc:
@@ -4034,6 +4043,7 @@ public static class ComponentTypeRegistry
             case SymbolKind.Mrrc:
                 return [new("Z0", "50",  "Ω",   true, UnitDimension.Resistance),
                         new("F",  "2.4", "GHz", true, UnitDimension.Frequency),
+                        new("Corner", nameof(PlanCorner.Curve), "", false, UnitDimension.None),
                         .. SignalGroundLayerParams];
             // MCLC / MIDC: the coupling, the ports' impedance and F; W, S and L are derived and shown as a readout.
             // MIDC opens at 4 dB, the tightest four fingers reach with 100 µm gaps on 20 mil RO4350B (3 dB needs 69 µm).
@@ -4559,6 +4569,10 @@ public static class ComponentTypeRegistry
     private static readonly string[] TestPadFeedOptions = [TestPadPCell.ViaFeed, "N", "E", "S", "W"];
     private static readonly string[] TestPadCentreOptions = [TestPadPCell.CentreOpen, TestPadPCell.CentrePort];
 
+    /// <summary>A ring's corners (MWPD, MRRC): the names the plans parse.</summary>
+    private static readonly string[] PlanCornerOptions =
+        [nameof(PlanCorner.Curve), nameof(PlanCorner.Miter), nameof(PlanCorner.Square)];
+
     /// <summary>
     /// The closed set of NAMES a parameter accepts, for a parameter whose value is an enum name
     /// rather than a number — <c>Response</c>, <c>Form</c>, <c>Direction</c>, <c>OffState</c>,
@@ -4616,6 +4630,7 @@ public static class ComponentTypeRegistry
         // A test pad's feed side and what its centre is (brief-dfr26-7): closed sets of words the generator reads.
         (SymbolKind.TestPad, "Feed")                                                     => TestPadFeedOptions,
         (SymbolKind.TestPad, "Centre")                                                   => TestPadCentreOptions,
+        (SymbolKind.Mwpd or SymbolKind.Mrrc, "Corner")                                   => PlanCornerOptions,
         // A composed FET's instance switches (brief-modelcomposer-21): yes or no. A switch bound to an expression keeps a
         // text box (ParameterRowViewModel), since a picker cannot hold one.
         (SymbolKind.ComposedFET, _) when ComposedSwitches.IsSwitch(paramName)                => ComposedSwitchOptions,

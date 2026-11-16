@@ -409,10 +409,12 @@ public sealed class ComparisonTests
     }
 
     /// <summary>The two variants compare on their own specs too: an unequal split's K and a multi-section divider's Band
-    /// are what its artwork was drawn from, so another value in the schematic is one property finding naming it.</summary>
+    /// are what its artwork was drawn from, so another value in the schematic is one property finding naming it. So is
+    /// a ring's Corner, a name: mitred artwork against a schematic asking for curves.</summary>
     [Theory]
     [InlineData("F8b-wilkinson-unequal", "K", "2")]
     [InlineData("F8c-wilkinson-sections", "Band", "3")]
+    [InlineData("F8d-wilkinson-mitred", "Corner", "Curve")]
     public void AWilkinsonVariantComparesCleanAndASpecMismatchIsAFinding(string design, string spec, string other)
     {
         string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-wpdv-" + Guid.NewGuid().ToString("N")[..12]);
