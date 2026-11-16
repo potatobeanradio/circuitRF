@@ -32060,7 +32060,7 @@ write back in that state, so opening a chain cannot record an edit. The default 
   from its neighbours, so each pin has a straight 5 mm line to its port.
 - **Palace on the Draft mesh with no refinement is not converged on the branch-line.** It read |S21| 1.2 dB below the
   model at F and put the deepest |S11| at 2.09 GHz for F = 2.4 GHz; with `AdaptiveMaxIterations` 2 (69,610 to 215,686
-  tetrahedra, 7 min, 5.9 GB on one itee node) it lands within 0.15 dB of EMerge's Draft run. The hybrids' example
+  tetrahedra, 7 min, 5.9 GB on one compute node) it lands within 0.15 dB of EMerge's Draft run. The hybrids' example
   setups refine twice.
 - **On the branch-line the 3D solvers and Planar disagree on the split by a few tenths of a dB.** At F, EMerge and the
   refined Palace put 0.33-0.40 dB less into the through port than the model and up to 0.2 dB more into the coupled
