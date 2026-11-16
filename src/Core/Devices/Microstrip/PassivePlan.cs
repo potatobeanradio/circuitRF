@@ -31,6 +31,15 @@ public abstract record PlanSection(int[] Nodes, double X, double Y, double Rotat
 public sealed record PlanTee(double W1, double W2, double W3, double L1, double L2, double L3,
     int[] Nodes, double X, double Y, double RotationDeg) : PlanSection(Nodes, X, Y, RotationDeg);
 
+/// <summary>An MCROSS: arms 1-4 along the part's +x, +y, −x and −y, of widths W1-W4, and L1-L4 each arm from the junction
+/// centre to its pin, as <c>MCrossPCell</c> draws them and <see cref="MicrostripCrossModel"/> simulates them. Unlike the
+/// other sections it is posed at its centre, MCROSS's own origin (R-pc-3's symmetric junction), not at a pin. Nodes: arm 1
+/// to arm 4. MCROSS keeps its junction only while each pair of arms reaches past the other pair: a pair ending at the
+/// other's edges is, to it, a straight line with pins on its sides.</summary>
+public sealed record PlanCross(int[] Nodes, double X, double Y, double RotationDeg,
+    double W1, double W2, double W3, double W4, double L1, double L2, double L3, double L4)
+    : PlanSection(Nodes, X, Y, RotationDeg);
+
 /// <summary>An MCURVE: width, signed turn (degrees, counter-clockwise positive) and centre-line radius.</summary>
 public sealed record PlanCurve(double W, double AngleDeg, double Radius,
     int[] Nodes, double X, double Y, double RotationDeg) : PlanSection(Nodes, X, Y, RotationDeg);

@@ -10,7 +10,7 @@ namespace CircuitRF.Core.Devices;
 /// (<see cref="WilkinsonPlan"/>), the hybrids MBLC (<see cref="BranchLinePlan"/>) and MRRC (<see cref="RatRacePlan"/>),
 /// and the coupled-line parts (<see cref="CoupledLineCouplerPlan"/>, <see cref="LangePlan"/>,
 /// <see cref="MarchandBalunPlan"/>). It has no line physics of its own: each section of the plan is the EXISTING
-/// part's model (<see cref="MicrostripTeeModel"/>, <see cref="MicrostripCurveModel"/>,
+/// part's model (<see cref="MicrostripTeeModel"/>, <see cref="MicrostripCrossModel"/>, <see cref="MicrostripCurveModel"/>,
 /// <see cref="MicrostripLineModel"/>, <see cref="MicrostripCoupledLineModel"/>, <see cref="MicrostripMiterBendModel"/>,
 /// <see cref="MicrostripBendModel"/>, <see cref="MicrostripGapModel"/>, <see cref="MicrostripTaperModel"/>; an open
 /// end <see cref="MicrostripOpenEnd"/>'s capacitance on MLIN's or MCLIN's own line), stamped into a
@@ -67,6 +67,8 @@ public sealed class MicrostripPlanModel : ComponentModel, IReportsWarnings, IDcS
         {
             PlanTee t => new MicrostripTeeModel(t.W1, t.W2, t.W3, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM, s.TanD,
                 path, t.L1, t.L2, t.L3, s.RoughnessMeters),
+            PlanCross x => new MicrostripCrossModel(x.W1, x.W2, x.W3, x.W4, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM,
+                s.TanD, path, [x.L1, x.L2, x.L3, x.L4], s.RoughnessMeters),
             PlanCurve c => new MicrostripCurveModel(c.W, c.AngleDeg, c.Radius, s.HMeters, s.TMeters, s.EpsR,
                 s.SigmaSPerM, s.TanD, path, s.RoughnessMeters),
             PlanLine l => new MicrostripLineModel(l.W, l.L, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM, s.TanD, path,

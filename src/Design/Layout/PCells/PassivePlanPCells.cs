@@ -6,7 +6,7 @@ namespace CircuitRF.Design.Layout.PCells;
 /// <summary>
 /// The planned passives' artwork (docs/design/rf-passives.md). A generator builds its part's plan in Core —
 /// the plan its model stamps — and <see cref="Draw"/> draws every section through the EXISTING part's own
-/// generator (<see cref="MTeePCell"/>, <see cref="MCurvePCell"/>, <see cref="MlinPCell"/>,
+/// generator (<see cref="MTeePCell"/>, <see cref="MCrossPCell"/>, <see cref="MCurvePCell"/>, <see cref="MlinPCell"/>,
 /// <see cref="CoupledLinePCells"/>, <see cref="MMiterPCell"/>, <see cref="MBendPCell"/>, <see cref="MGapPCell"/>,
 /// <see cref="MTaperPCell"/>; an interdigitated section's strips each by <see cref="MlinPCell"/>; an open end draws
 /// nothing), turned and
@@ -121,6 +121,11 @@ public static class PassivePlanPCells
                 PlanTee t => MTeePCell.Generate(new Dictionary<string, PCellValue>
                 {
                     ["W1"] = t.W1, ["W2"] = t.W2, ["W3"] = t.W3, ["L1"] = t.L1, ["L2"] = t.L2, ["L3"] = t.L3,
+                }, technology, layerSelection),
+                PlanCross x => MCrossPCell.Generate(new Dictionary<string, PCellValue>
+                {
+                    ["W1"] = x.W1, ["W2"] = x.W2, ["W3"] = x.W3, ["W4"] = x.W4,
+                    ["L1"] = x.L1, ["L2"] = x.L2, ["L3"] = x.L3, ["L4"] = x.L4,
                 }, technology, layerSelection),
                 PlanCurve c => MCurvePCell.Generate(new Dictionary<string, PCellValue>
                 {

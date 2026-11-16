@@ -42,6 +42,22 @@ public class PlanSectionsPCellTests
         Assert.Equal(200_000L, lines[1].X1 - lines[0].X2);
     }
 
+    /// <summary>A cross is MCROSS's own artwork, posed at its centre (MCROSS's origin), not at a pin.</summary>
+    [Fact]
+    public void ACross_IsMcrossOwnArtwork_PosedAtItsCentre()
+    {
+        var own = MCrossPCell.Generate(new Dictionary<string, PCellValue>
+        {
+            ["W1"] = 1e-3, ["W2"] = 0.6e-3, ["W3"] = 1e-3, ["W4"] = 0.6e-3,
+            ["L1"] = 0.4e-3, ["L2"] = 5e-3, ["L3"] = 0.4e-3, ["L4"] = 5e-3,
+        }, null, Layers);
+        var plan = new PassivePlan(["1", "2", "3", "4"],
+            [new PlanCross([1, 2, 3, 4], 0.0, 0.0, 0.0, 1e-3, 0.6e-3, 1e-3, 0.6e-3, 0.4e-3, 5e-3, 0.4e-3, 5e-3)], 4);
+        Assert.Equal(Art(own), Art(PassivePlanPCells.Draw(plan, null, Layers)));
+        var moved = PassivePlanPCells.Draw(plan with { Sections = [((PlanCross)plan.Sections[0]) with { X = 2e-3 }] }, null, Layers);
+        Assert.Equal([2_400_000L, 2_000_000L, 1_600_000L, 2_000_000L], moved.Pins.Select(p => p.X));
+    }
+
     [Fact]
     public void AnOpenEnd_DrawsNothing()
         => Assert.Equal(
