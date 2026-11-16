@@ -1,6 +1,8 @@
 using System.Numerics;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
+using CircuitRF.Design.Layout.PCells;
+using CircuitRF.Design.Layout.SchematicSync;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Engine;
 using Xunit;
@@ -9,9 +11,10 @@ using Xunit.Abstractions;
 namespace CircuitRF.Ui.Tests.Mmic;
 
 /// <summary>
-/// MCRC on the shipped MMIC and RFIC processes: a hand-written .cnl in a GaAs or Si workspace takes the 100 µm substrate
-/// from the technology, as every microstrip part does, and a hairpin filter drawn for it passes where its resonators are
-/// half a guided wavelength.
+/// MCRC as placed: at the registry's defaults it draws its two pins as every shape the picker offers; and on the shipped
+/// MMIC and RFIC processes a hand-written .cnl in a GaAs or Si workspace takes the 100 µm substrate from the technology,
+/// as every microstrip part does, and a hairpin filter drawn for it passes where its resonators are half a guided
+/// wavelength.
 /// </summary>
 public sealed class CoupledResonatorGaAsTests(ITestOutputHelper output) : IDisposable
 {
@@ -49,5 +52,26 @@ public sealed class CoupledResonatorGaAsTests(ITestOutputHelper output) : IDispo
         output.WriteLine($"{tech}: H {h * 1e6} µm, Er {er}; half-wave {half / 1e9:F2} GHz, |S21| peaks {db.Max():F2} dB at {peak / 1e9:F2} GHz");
         Assert.True(db.Max() > -6.0, $"|S21| peaks at {db.Max()} dB");   // gold on GaAs, gaps not designed for a match
         Assert.InRange(peak / half, 0.9, 1.1);
+    }
+
+    /// <summary>A freshly placed part switched to any shape the picker offers draws, with its two pins and nothing
+    /// refused: the registry states S1 to S4, and the four cross-coupled loops take S5 from the common gap S.</summary>
+    [Theory]
+    [InlineData("Straight", "Inline", 3)]
+    [InlineData("ZigZag", "Inline", 3)]
+    [InlineData("Hairpin", "Inline", 3)]
+    [InlineData("OpenLoop", "Inline", 3)]
+    [InlineData("OpenLoop", "Cross", 4)]
+    [InlineData("Ring", "Inline", 1)]
+    public void AFreshlyPlacedPart_DrawsItsTwoPins_AsEveryShape(string shape, string arrangement, int n)
+    {
+        var p = new Dictionary<string, PCellValue>(SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mcrc, 2))
+        {
+            ["Shape"] = PCellValue.Text(shape), ["Arrangement"] = PCellValue.Text(arrangement), ["N"] = n,
+        };
+        Assert.True(PCellRegistry.TryGet(ComponentModelFactory.CoupledResonatorTypeName, out var generate));
+        var art = generate(p, null, PCellLayerSelection.Default);
+        Assert.True(art.Diagnostics is null or { Count: 0 }, string.Join("; ", art.Diagnostics ?? []));
+        Assert.Equal(["1", "2"], art.Pins.Select(x => x.Name));
     }
 }

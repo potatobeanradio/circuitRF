@@ -2428,6 +2428,7 @@ input on terminal 1 and an output on terminal 2. Five names choose what it is.
 | `W`, `W1`, `W2`, … | Each resonator's width, and the feed strip's beside it; `Wk` gives resonator k its own. Neighbours coupled side by side take one width. |
 | `L`, `L1`, `L2`, … | Each resonator's centre-line length, open end to open end, about half a guided wavelength; `Lk` gives resonator k its own. Corners count along the centre line. A loop's is its perimeter less `Gap`, a ring's its circumference. |
 | `S1` … `S(N+1)` | `Sk` is resonator k's gap to the resonator or feed before it; `S(N+1)` the output feed's. A bandstop's `Sk` is resonator k's gap to the through line, a spurline's its slot. |
+| `S` | Every gap not given its own `Sk`, as `W` and `L` are for `Wk` and `Lk`: switched to four cross-coupled loops, a part takes `S5` from it. |
 | `Sa`, `Gap`, `Sx` | The hairpin's arm gap, the loop's opening, the cross-coupling gap. |
 | `Tap` | A tapped feed's distance from the end resonator's midpoint. |
 | `Wc`, `Uc` | A SIR's centre width and its share of the length. |
@@ -2439,7 +2440,7 @@ to the neighbour it lies against, which is what the textbook design methods desi
 further over and the corners are not coupled in the circuit, and an EM run of the artwork has them. A neighbour longer than
 the next couples over the shorter one's end; its extra length is a plain line. A combination the part cannot build is
 refused by name: a bandstop of straight resonators (coupled along their whole half wave they do not notch), a stepped
-profile on a loop, a tap that lands on a corner, a gap that is missing, and, with `Coupling` = `Pairs`, neighbours of
+profile on a loop, a tap that lands on a corner, and, with `Coupling` = `Pairs`, neighbours of
 unequal width coupled side by side.
 
 **`Coupling`.** `Pairs`, the default, couples each strip to the neighbour it lies against as an MCLIN pair, which has one
