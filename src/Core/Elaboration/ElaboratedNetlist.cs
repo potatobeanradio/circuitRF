@@ -143,6 +143,26 @@ public sealed class ElaboratedNetlist : IDisposable
             _wspProbes.Add(w with { ComponentIndex = Components.FindIndex(c => c.InstancePath == w.Label && c.Model is WSProbeModel) });
     }
 
+    /// <summary>
+    /// brief-pch-10 R-pch10-4 — removes the components <paramref name="remove"/> picks (disposing any that holds something, as
+    /// <see cref="Dispose"/> would) and appends <paramref name="add"/>, rebuilding the index lists that name positions. The nodes are kept:
+    /// a removed component's nets stay unknowns, which the caller must hold (a drop that reuses its transmit side holds them with a
+    /// resistor each). Called before anything reads indices.
+    /// </summary>
+    public void Prune(Func<ElaboratedComponent, bool> remove, IEnumerable<ElaboratedComponent> add)
+    {
+        var kept = Components.Where(c => !remove(c)).ToList();
+        foreach (var c in Components)
+            if (remove(c) && c.Model is IDisposable d)
+                try { d.Dispose(); }
+                catch (Exception ex) when (ex is not OutOfMemoryException) { }
+        Components.Clear();
+        _nonlinearComponents.Clear();
+        _nonlinearNodes.Clear();
+        _wspProbes.Clear();
+        foreach (var c in kept.Concat(add)) AddComponent(c);
+    }
+
     internal void SetResolvedGlobal(string name, Value val) => _resolvedGlobals[name] = val;
 
     /// <summary>

@@ -374,6 +374,10 @@ and give <code>lo, hi</code> before it to take part of the axis):</p>
 <td>the fraction of trials for which the condition holds: <code>yield_over(Gain &gt; 14)</code></td>
 </tr>
 <tr>
+<td><code>outage_over(x, threshold)</code></td>
+<td>the fraction of present values below the threshold, with its exact 95 % binomial interval stored beside it as <code>lo</code> and <code>hi</code>: <code>outage_over(Prx, -95, &quot;drop&quot;)</code> over a Propagation Channel's drops</td>
+</tr>
+<tr>
 <td><code>cpk(x, lo, hi)</code></td>
 <td>the process capability index; write either limit as <code>&quot;none&quot;</code> for a one-sided spec</td>
 </tr>

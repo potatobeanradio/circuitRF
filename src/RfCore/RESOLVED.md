@@ -1534,3 +1534,52 @@ an independent random permutation (Fisher-Yates), so every pair step 2 names is 
 uniform on (−π, π). Streams are `<stream>:cdl:<n>:aod|zoa|zod|phase`, n the cluster, phase draw k = 4m + i. κ = 10^(XPR/10)
 per cluster, so the cross terms are κ^−½ (CDL-C: −7 dB). The specular ray's matrix is [[1, 0], [0, −1]], which is the line of
 sight in the (θ̂, φ̂) bases of a direction and its reverse.
+
+## Drops: shadowing, line of sight, rain, TR 38.901 scenario drops, ITU-R P.681 states (brief PCH-10, 2026-11-15)
+
+**Every draw is `StatDraws.Uniform(Seed, Drop, Id("<channel>:<quantity>"), k)`** (`Propagation/Drops.cs`): `shadowing`, `los`,
+`rain`, and a scenario drop's `scen:<quantity>` streams (`lsp`, `delay`, `zeta`, `aoa:x|y`, …, `perm:<aod|zoa|zod>:<cluster>:<sub>`,
+`xpr:<cluster>`, `phase:<cluster>`). Over 10⁴ drops the shadowing's one-sample KS distance against N(0, σ) is 0.0124 (critical 0.0195 at
+α = 0.001); the line-of-sight fraction sits inside its 99.9 % interval.
+
+**Hash a stream once, not per draw.** The first version of `Tr38901Drop` built `stream + ":scen:" + quantity` and ran FNV over it for
+every one of ~2,500 draws a drop: UMi-NLOS's 10⁴-drop gate took 20 s. Hashing each quantity's stream once per drop and drawing with
+`StatDraws.Uniform(seed, drop, id, k)` gives the same draws (same ids) in 4.5 s.
+
+**`Rain=drawn`** takes `ModelInputs.RainTimePercent`: the rain term is the attenuation exceeded for the drawn percentage, clamped at
+0.001 %, and zero beyond the method's own range — P.530 §2.4.1 stops at 1 %, P.618 §2.2.1.1 at 5 %. Neither recommendation gives the
+probability of rain itself without P.837's map (not bundled), so "rain-free beyond the method's range" is the reading, said in the
+notes. A drawn rain joins clouds and scintillation in P.618 §2.5's ≤ 5 % form whenever it is there. A single evaluation (the Chain
+Budget) still refuses `Rain=drawn`.
+
+**TR 38.901 scenario drops** (`Tr38901Drop.cs`, V18.0.0 §7.5 Steps 4-10). Gated against `testdata/propagation/scenario_drop_reference.py`,
+written by a separate agent from the report alone with its own transcription of every table: for UMi and InH, both states, the realized
+DS, ASD, ASA, ZSD, ZSA and K over 10⁴ drops agree by a two-sample KS distance of 0.007-0.018 against a critical 0.0276 (α = 0.001).
+Two transcriptions agreed on every value of Table 7.5-6 for those cases. The readings, each stated in the drop's notes:
+- **The −25 dB removal compares eq. 7.5-6's powers**, not eq. 7.5-8's. The report puts the sentence after 7.5-8 but says the 7.5-8 powers
+  are used only in eqs. 7.5-9 and 7.5-14. Applied to the 7.5-8 powers (the line-of-sight spike in cluster 1), a UMi-LOS drop at high K keeps
+  as few as 1 of 12 clusters and its realized K exceeds the drawn K by up to 16.6 dB; on the 7.5-6 powers the realized K is the drawn K to
+  0.03 dB. The reference carries both; the gate compares the 7.5-6 variant.
+- **In line of sight the channel's delays are τ_n/C_τ** (eq. 7.5-4): the report says the scaled delays are not used in the power
+  generation, which leaves Step 11 as their use. UMi-LOS median realized DS 33 ns against 32.5 ns drawn this way (10.3 ns unscaled).
+- Angles are generated for all N clusters (eqs. 7.5-12/17 need cluster 1's draws) and the removed clusters then dropped; powers are not
+  renormalized (the kept rays carry 0.987-1 of the power). The two strongest clusters by 7.5-6 power are split into Table 7.5-5's
+  sub-clusters (c_DS N/A is 3.91 ns), rays coupled within each sub-cluster.
+- Every scenario's Table 7.5-6 correlation matrix is positive definite (Cholesky, Step 4's own choice), checked by a test.
+- The realized circular spread of Annex A is not bounded by Step 4's 104°/52° clips (those bound the drawn LSPs): 12.9 % of UMi-NLOS
+  drops realize an ASA above 104°, from the cluster spreading and ray offsets. Not a defect.
+
+**ITU-R P.681-11 (08/2019) has two states, GOOD and BAD** (§6, the enhanced 2-state semi-Markov model), not the three the design note
+named (line of sight, shadowed, blocked): BAD includes blockage. `ItuP681.cs` transcribes Annex 2's 54 parameter sets by script from the
+PDF's text and spot-checked against the pages. **The document has three printing faults**, transcribed as printed: the 2.2 GHz Village 30°
+and 3.8 GHz Suburban 30° sets label their MA, h and g rows "h, g, h" (read by position, as Table 7 orders them — the values only make
+sense that way: MP ≈ −14 dB like every neighbour), and the 2.2 GHz Suburban 70° set repeats the Urban 70° numbers exactly.
+- Event lengths and the MA draws are sampled from their truncated distributions by the inverse CDF, one draw each: the same law as §6.2's
+  "redraw until inside", stateless.
+- The direct signal's correlated shadowing (eq. 29's first-order filter, correlation e^(−Δx/Lcorr)) is a sum of 32 sinusoids at spatial
+  frequencies drawn from that correlation's Cauchy spectrum, so it can be read at any position without state.
+- A drop starts at a uniformly placed point of the stationary series: a GOOD event, a BAD event or a transition with probabilities in
+  proportion to ⟨dur⟩G, ⟨dur⟩B and 2⟨dur⟩T (eq. 17), an event's length then length-biased (ln x ~ N(µ + σ², σ), the same durmin), the
+  point uniform in it; a transition's state is the one it leaves over its first half (eq. 19's convention). The start state is then GOOD
+  with eq. 19's pG: over 10⁴ drops 2501, 7310 and 8200 against 0.254, 0.719 and 0.810 (three sets), inside the 99.9 % intervals; event
+  lengths average eq. 17a within 4 standard errors.

@@ -330,6 +330,7 @@ public sealed partial class PropagationChannelModel
             }
         }
         if (Stepping || hz == 0) return;
+        if (SteadyDrive is { } sd) { sd(mna, omega); return; }   // brief-pch-10: the transmit side is a recording
 
         var r = At(ReferenceHz(f));
         var (txF, rxF) = EndFields(r, f);

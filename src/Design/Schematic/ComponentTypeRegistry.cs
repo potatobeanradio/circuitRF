@@ -2340,7 +2340,11 @@ public static class ComponentTypeRegistry
     public static IReadOnlyList<string>? ChannelWordOptions(string name)
     {
         if (name == "PathLoss") return [.. RfCore.Propagation.PropagationModels.All.Select(m => m.Name)];
-        if (name == "Multipath") return ["none", "tdl", "cdl", "file", "rays"];
+        if (name == "Multipath") return ["none", "tdl", "cdl", "file", "rays", "scenario"];
+        // brief-pch-10 — what a drop draws
+        if (name == "Shadowing") return ["on", "off"];
+        if (name == "States") return ["off", "p681"];
+        if (name == "StateEnvironment") return RfCore.Propagation.ItuP681.Words;
         // brief-pch-8 — polarizations and the ray list's frame
         if (name is "TxPol" or "RxPol") return ["theta", "phi", "rhcp", "lhcp"];
         if (name == "RayFrame") return ["global", "ends"];
@@ -2371,6 +2375,7 @@ public static class ComponentTypeRegistry
             or "Sinusoids" or "ASD" or "ASA" or "ZSD" or "ZSA" or "Xpr" or "RayFrame" => "Small scale",
         "TxGain" or "RxGain" or "TxPattern" or "RxPattern" or "TxZ" or "RxZ" or "RxTant" or "Tx" or "Rx" or "TxPol" or "RxPol" => "Ends",
         "TimeOffset" or "DopplerComp" or "Reverse" or "Seed" or "Drop" => "Realization",
+        "States" or "StateEnvironment" => "Small scale",
         "BeamSelect" or "BeamRank" or "TxBeam" or "RxBeam" or "Codebook" or "BeamSearch" or "ScanLimit" => "Beam",
         _ => "Large scale",
     };
@@ -2443,7 +2448,8 @@ public static class ComponentTypeRegistry
                         + "satellite, P1812). Its parameters, and the added losses, are written beside it by the model's own names.",
             "Multipath" => "none: the rays the geometry gives (the line of sight, and tworay's ground ray). tdl: a tapped delay line by Profile=. "
                          + "cdl: a clustered delay line by Profile= (rays with directions and polarization). file: the taps of a power-delay profile "
-                         + "(File=). rays: a ray list with departure and arrival directions (File=).",
+                         + "(File=). rays: a ray list with departure and arrival directions (File=). scenario: a TR 38.901 drop for the "
+                         + "38901 model's scenario (its spreads, clusters and rays drawn per drop).",
             "File" => "Multipath=file: a CSV of delay (ns), power (dB) and optionally phase (deg), doppler (Hz), k (dB) and spectrum, one tap a row; "
                     + "or delay, re, im (a sampled impulse response). Delay is in excess of the line of sight; the powers are normalized to sum to 1.",
             "Profile" => "Multipath=tdl: the tapped delay line, TR 38.901 TDL-A to TDL-E, TS 36.104 EPA/EVA/ETU, ITU-R M.1225 PedA/PedB/VehA/VehB "
@@ -2470,7 +2476,13 @@ public static class ComponentTypeRegistry
             "Faraday" => "A Faraday rotation of every ray's field, degrees. Blank: P.531's on a satellite path with Ionosphere=on, when an end has a "
                        + "polarization.",
             "Seed" => "The seed of the fading draws.",
-            "Drop" => "Which realization: sweep it (Drop=drop with a parametric sweep over drop) for a Monte Carlo. Drop N alone equals drop N in a sweep.",
+            "Drop" => "Which realization: sweep it (Drop=drop with a parametric sweep over drop) for a Monte Carlo. Drop N alone equals drop N in a sweep. "
+                    + "A drop draws the shadowing, the line-of-sight state (Los=auto), the rain (Rain=drawn) and the fading.",
+            "Shadowing" => "on: each drop draws the large-scale model's shadowing from its σ. off: held at 0.",
+            "States" => "p681: ITU-R P.681's land mobile-satellite states (GOOD and BAD, each with its Loo statistics and event lengths) on a "
+                      + "satellite path, the terminal moving at Velocity. off: none.",
+            "StateEnvironment" => "States=p681: the environment whose parameter set is used (urban, suburban, village, ruralwooded, residential, "
+                                + "rural, highway, railway).",
             "TxGain" => "Transmit antenna gain, dBi, the same in every direction. TxPattern replaces it with a pattern.",
             "RxGain" => "Receive antenna gain, dBi, the same in every direction. RxPattern replaces it with a pattern.",
             "TxPattern" or "RxPattern" => "One port of an EM result's far field, written path#port (port from 1): the end's realized gain toward "

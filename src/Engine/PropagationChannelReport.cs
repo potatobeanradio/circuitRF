@@ -51,6 +51,7 @@ public static class PropagationChannelReport
             ds.Add(key + "RayDoppler_Hz", new DataCube([rayAxis], [.. r.Rays.Select(x => x.DopplerHz)]) { Unit = "Hz" });
             ds.Add(key + "RayGain", new DataCube([rayAxis], terms0.Length == n ? [.. terms0.Select(t => t.Amplitude)] : new Complex[n]));
             AddSmallScale(ds, key, ch, r, hz, env, nl, ec.InstancePath);
+            if (r.Drop is { } drop) AddDrop(ds, key, ch, drop, env);
             if (ch.BeamTable is AntennaArray.BeamTable beam) AddBeam(ds, key, beam);
             if (hb && (r.Rays.Any(x => x.DopplerHz != 0) || r.Fading))
                 nl.AddNoteOnce("hb-channel-doppler:" + ec.InstancePath,
@@ -58,6 +59,39 @@ public static class PropagationChannelReport
                     "leave the harmonic grid) and its fading frozen there; an envelope run carries both.");
         }
     }
+
+    /// <summary>
+    /// brief-pch-10 R-pch10-1 — what the drop drew, so a sweep over Drop stacks each one's statistics: the shadowing (dB, added to the loss),
+    /// the line-of-sight state (1 line of sight, 0 not; NaN when it was not drawn), the rain's time percentage (NaN when not drawn), a
+    /// scenario drop's large-scale parameters, and P.681's state (1 GOOD, 0 BAD) at TimeOffset with, in an envelope run, the fraction of
+    /// the record spent GOOD.
+    /// </summary>
+    private static void AddDrop(DataSet ds, string key, PropagationChannelModel ch, PropagationChannelModel.DropState d, EnvelopeSpan? env)
+    {
+        ds.Add(key + "Shadowing_dB", DataCube.Scalar(d.ShadowingDb));
+        bool? los = d.Scenario?.Los ?? d.Los;
+        ds.Add(key + "LosState", DataCube.Scalar(los is bool l ? (l ? 1 : 0) : double.NaN));
+        ds.Add(key + "RainTime_pct", DataCube.Scalar(d.RainTimePercent ?? double.NaN));
+        if (d.Scenario is { } sc)
+        {
+            ds.Add(key + "DS_s", DataCube.Scalar(sc.Ds));
+            ds.Add(key + "ASD_deg", DataCube.Scalar(sc.Asd));
+            ds.Add(key + "ASA_deg", DataCube.Scalar(sc.Asa));
+            ds.Add(key + "ZSD_deg", DataCube.Scalar(sc.Zsd));
+            ds.Add(key + "ZSA_deg", DataCube.Scalar(sc.Zsa));
+            ds.Add(key + "K_dB", DataCube.Scalar(sc.KDb ?? double.NaN));
+        }
+        if (d.States is { } st)
+        {
+            double t = ch.FrozenTimeS;
+            ds.Add(key + "State", DataCube.Scalar(st.Series.GoodAt(st.PositionM(t)) ? 1 : 0));
+            double from = st.PositionM(ch.TimeOffsetS + (env?.StartS ?? 0)), to = st.PositionM(ch.TimeOffsetS + (env?.StopS ?? 0));
+            ds.Add(key + "StateGood_frac", DataCube.Scalar(to > from ? Math.Clamp(GoodBetween(st.Series, from, to), 0, 1) : st.Series.GoodAt(from) ? 1 : 0));
+        }
+    }
+
+    private static double GoodBetween(P681Series s, double from, double to)
+        => (s.GoodFraction(to) * to - (from > 0 ? s.GoodFraction(from) * from : 0)) / (to - Math.Max(0, from));
 
     /// <summary>
     /// brief-pch-9 R-pch9-6 — the beam table: every scored (or visited) pair's metric (dB, the linear pattern model), its rank among distinct

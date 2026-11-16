@@ -53,6 +53,9 @@ namespace RfCore.Propagation
         public TerrainProfile? Profile { get; init; }
         /// <summary>Parameter values by name, as text in each parameter's SI unit.</summary>
         public IReadOnlyDictionary<string, string> Values { get; init; } = new Dictionary<string, string>();
+        /// <summary>brief-pch-10 R-pch10-1 — <c>Rain=drawn</c>: the time percentage this drop drew (0–100), the rain attenuation then
+        /// the one exceeded for it. Null outside a drop, and <c>Rain=drawn</c> is then refused.</summary>
+        public double? RainTimePercent { get; init; }
 
         public double Distance3DM => Math.Sqrt(DistanceM * DistanceM + (TxHeightM - RxHeightM) * (TxHeightM - RxHeightM));
     }
@@ -303,6 +306,7 @@ namespace RfCore.Propagation
                 {
                     Model = inputs.Model, FrequencyHz = inputs.FrequencyHz, DistanceM = profile.LengthKm * 1000,
                     TxHeightM = inputs.TxHeightM, RxHeightM = inputs.RxHeightM, Profile = profile, Values = inputs.Values,
+                    RainTimePercent = inputs.RainTimePercent,
                 };
 
             var args = new ModelArgs(model, inputs, profile);

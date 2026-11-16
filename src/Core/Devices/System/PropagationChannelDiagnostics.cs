@@ -24,8 +24,9 @@ public static class PropagationChannelDiagnostics
     public static Diagnostic DopplerComp(string word) => E("doppler-comp", "DopplerComp={word} is none or common.", ("word", word));
     public static Diagnostic RayListNeedsFile() => E("ray-list-file", "Multipath=file reads its rays from File=, a ray list (delay, power, phase, doppler).");
     public static Diagnostic Multipath(string word)
-        => E("multipath", "Multipath={word} is none (the rays of the geometry), tdl (a tapped delay line, Profile=) or file (a ray list or "
-                          + "power-delay profile).", ("word", word));
+        => E("multipath", "Multipath={word} is none (the rays of the geometry), tdl (a tapped delay line, Profile=), file (a ray list or "
+                          + "power-delay profile), cdl (a clustered delay line, Profile=), rays (a directional ray list, File=) or scenario (a "
+                          + "TR 38.901 drop, PathLoss=38901).", ("word", word));
 
     // brief-pch-7 — fading and tapped delay lines
     public static Diagnostic Fading(string word) => E("fading", "Fading={word} is rayleigh, rician or nakagami.", ("word", word));
@@ -82,8 +83,22 @@ public static class PropagationChannelDiagnostics
         => E("kfactor", "KFactor is a Rician tap's line-of-sight to diffuse power ratio, dB: it goes with Fading=rician, a line-of-sight "
                         + "profile or a file's k column, and Fading=rician needs it.");
     public static Diagnostic ModelValue(string name) => E("model-value", "{name} must be a number or a word.", ("name", name));
-    public static Diagnostic RainDrawn()
-        => E("rain-drawn", "Rain=drawn draws a rain attenuation per drop, and this channel draws nothing; Rain=fixed is the attenuation at the availability.");
+    // brief-pch-10 — what a drop draws
+    public static Diagnostic Shadowing(string word) => E("shadowing", "Shadowing={word} is on (a draw of the model's σ per drop) or off.", ("word", word));
+    public static Diagnostic ScenarioNeeds38901(string model)
+        => E("scenario-model", "Multipath=scenario draws a TR 38.901 drop for the model's scenario, so it takes PathLoss=38901; this channel's is {model}.",
+             ("model", model));
+    public static Diagnostic ScenarioOwns(string key)
+        => E("scenario-owns", "Multipath=scenario draws its own spreads, K, Dopplers and fading from the scenario's statistics; {key} does not apply to it.",
+             ("key", key));
+    public static Diagnostic States(string word) => E("states", "States={word} is off or p681 (ITU-R P.681's land mobile-satellite states).", ("word", word));
+    public static Diagnostic StatesNeedSatellite(string model)
+        => E("states-model", "States=p681 is the land mobile-satellite state model, on a satellite path: it takes PathLoss=satellite; this channel's is {model}.",
+             ("model", model));
+    public static Diagnostic StatesEnvironment(string word, string words)
+        => E("states-environment", "States=p681 takes StateEnvironment=, one of {words}{word}.", ("word", word), ("words", words));
+    public static Diagnostic StatesOwns(string key)
+        => E("states-owns", "States=p681 is the link's fading and shadowing (its states' Loo statistics); {key} does not apply with it.", ("key", key));
     public static Diagnostic NoPlacement() => E("placement", "Distance (metres) or TxPos and RxPos place the two ends.");
     public static Diagnostic NoPatternReader()
         => E("no-pattern-reader", "TxPattern and RxPattern read an EM result, and this process has no reader for one.");

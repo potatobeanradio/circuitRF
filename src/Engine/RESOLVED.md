@@ -5246,3 +5246,50 @@ Gate 3 went from 9.1e-4 to 1.1e-4 (the same at RelTol 1e-7 and 1e-9: what is lef
 3e-4. Cost on TRN-1/TRN-3's benches: the RC ring 7 → 8 factorizations for its 4,007 steps; the buck 33,226 → 33,252
 accepted steps, 4 → 6 rejected, 812 → 820 factorizations, Vout unchanged at 5.5175 V. The second backward-Euler step was
 always checked (two points of history).
+
+## Reuse across drops: one transmit solve per distinct transmit side (brief PCH-10 R-pch10-4, 2026-11-15)
+
+`EnvelopeDropReuse` + `ParametricSweepEngine.RunEnvelopePoints`. The sides are `PropagationChannelGraph`'s islands: receive = every
+island a channel receives on and everything downstream; transmit = the rest. A part with no island (a supply) takes the side of every
+part its nets reach, and **a supply both sides reach refuses the reuse** (its current would be half one run's), said in a note. The key
+hashes the transmit parts (type, path, nodes, resolved values), each transmit array's `WeightsKey()` after the drop's beam selection
+(`BeamSelection.Apply` run first on the point's netlist; the engine's own call then hits its cache), the transmit end each channel
+presents (pin node, TxZ, TxPattern) and the run's own `EnvelopeParams` (Seed, Noise, Stop …). The first drop of a key runs jointly and
+records every channel's transmit waves per segment (an instance end per transmit element: `ChannelRecording.Elements`); a later drop of
+that key runs on the receive side alone (every transmit part removed but the MOD_Sources, which carry the signal and time base; every
+transmit net held by 1 Ω, `Noise=off`), takes the recording run's segmentation (`EnvelopeRunner.PrepareLike`, so each segment replays
+its own segment's recording on the same step grid), and gets the transmit side's node voltages, IProbes, supplies, wires and source
+drives back from the recording run's record by name before `EnvelopeDataSet.Build`, so every measurement is the joint run's.
+
+**The harmonic-balance start is the one place the replay is not free.** The joint start solves both sides with the coupling frozen; a
+receive side alone would start with nothing incident, and one with memory (a filter) would start elsewhere and differ until it settled.
+So a driven channel's start stamps the recording's first sample as a known source on its receive rows (`SteadyDrive`: H(f_k)·w at a pin,
+each ray's projection at an array) in place of the coupling — the value the joint start couples in.
+
+Gates: Engine `DropReuseTests` — 50 drops of a fading channel, nonlinear PA, series-LC receive side: every cube of every drop
+**bit-identical** with the reuse and without (worst difference 0), counters (1 transmit solve, 49 replays). Ui `DropReuseArrayTests` — an
+8 × 8 steered transmit array turned 15° every third drop (`TxAz=15*floor(drop/3)`): 4 distinct beams, 4 transmit solves, 5 replays,
+bit-identical.
+
+**A test-side trap worth knowing:** `DataCube.ComplexValues`/`RealValues` copy on every read; indexing them inside a loop made the
+first version of the gate's comparison take 60 s against 0.3 s for both sweeps. Read the array once.
+
+**What a drop costs (R-pch10-6)**, Debug, one drop's envelope run into a receive array with channel cells (CW, 1 µs record, 493 steps,
+one line-of-sight ray; the transmit side is a pin, so this is the receive side's cost, the part reuse cannot remove):
+
+| Receive array | Linear cells (3 dB attenuator) | Nonlinear cells (amplifier, IP3 20 dBm) |
+|---|---|---|
+| 64 | 6.0 s (12 ms a step), 0.5 GB | 8.6 s (17.5 ms a step) |
+| 256 | 288 s (584 ms a step), 0.6 GB | not run |
+| 1024 | not finished in 300 s; 5.3 GB when stopped | not run |
+| 4096 | not run | not run |
+
+The step cost grows about as N^2.8 (64 → 256 elements: 48×), so **a large array with channel cells is impractical as a stepped receive
+side across many drops** — the 1024 and 4096 cases would take hours a drop, and the linear case is no better. The docs say so. What would
+change it is a receive side on the fast path that is not stepped at all (R-pch10-4's last clause), not built here:
+`docs/briefs/brief-pch-10b-unstepped-receive-array.md`.
+
+**Separately, an instance end through a clustered delay line is slow before the first step:** a 2 × 2 transmit array through CDL-C
+(~460 rays) took 19 s against 0.15 s with one ray, nearly all of it outside the stepping (the engine's profile: 0.2 s), in building the
+per-ray element couplings (`PropagationChannelModel.InstanceCouplings`: each element's pattern evaluated from the EM record toward each
+ray, per product). PCH-8's code; noted in the follow-up brief.

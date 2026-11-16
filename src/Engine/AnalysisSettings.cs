@@ -69,6 +69,13 @@ public sealed class AnalysisSettings
     /// <summary>Singleton default — all settings at their recommended defaults.</summary>
     public static readonly AnalysisSettings Default = new();
 
+    /// <summary>
+    /// brief-pch-10 R-pch10-4 — in an envelope sweep over a Propagation Channel's drops, solve a transmit side once per distinct
+    /// transmit side (its resolved parameters and its arrays' weights) and replay its recorded waves into the receive side alone.
+    /// Exact (the coupling is explicit and one way); off only to compare against the joint solve.
+    /// </summary>
+    public bool ChannelDropReuse { get; init; } = true;
+
     // ── Conductance regularization (gmin) ─────────────────────────────────────
 
     /// <summary>

@@ -353,6 +353,11 @@ public static class ParametricSweepEngine
         var pointControl = control?.Child();
         Exception? pending = null;
         using var slots = new SemaphoreSlim(concurrent);
+        // brief-pch-10 R-pch10-4 — a transmit side solved once per distinct key, its recording replayed into every other drop's receive side
+        bool reuse = settings?.ChannelDropReuse ?? true;
+        var cache = new Dictionary<string, ReuseEntry>(StringComparer.Ordinal);
+        int reused = 0;
+        string? noReuse = null;
         try
         {
             for (int si = 0; si < n; si++)
@@ -372,18 +377,47 @@ public static class ParametricSweepEngine
 
                 Envelope.EnvelopeRunner.Prepared? prepared = null;
                 ElaboratedNetlist netlist;
+                Envelope.EnvelopeDropReuse.Partition? part = null;
+                ReuseEntry? from = null, entry = null;
                 try
                 {
                     netlist = nets[si] = new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
                     try
                     {
                         var plan = Envelope.EnvelopeRunner.Resolve(env, netlist.ResolvedGlobals).ForPoint(drive);
-                        bool first = true;
-                        prepared = Envelope.EnvelopeRunner.Prepare(plan, () =>
+                        string? key = null;
+                        if (reuse && !plan.EvmSplit)
                         {
-                            if (first) { first = false; return netlist; }
-                            return new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
-                        }, segmentBudget, m => netlist.AddWarningOnce("env-note:" + at + m, at + m), settings);
+                            part = Envelope.EnvelopeDropReuse.Plan(netlist, out string why);
+                            if (part is null) noReuse ??= why;
+                            else
+                            {
+                                PreselectBeams(netlist);
+                                key = Envelope.EnvelopeDropReuse.Key(netlist, part, plan.Params);
+                                cache.TryGetValue(key, out from);
+                            }
+                        }
+                        bool first = true;
+                        var partNow = part;
+                        ElaboratedNetlist Next()
+                        {
+                            var nl = first ? netlist : new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
+                            first = false;
+                            return nl;
+                        }
+                        if (from is not null)
+                            prepared = Envelope.EnvelopeRunner.PrepareLike(from.Prepared, plan, () =>
+                            {
+                                var nl = Next();
+                                Envelope.EnvelopeDropReuse.Prune(nl, partNow!);
+                                return nl;
+                            });
+                        else
+                        {
+                            prepared = Envelope.EnvelopeRunner.Prepare(plan, Next, segmentBudget, m => netlist.AddWarningOnce("env-note:" + at + m, at + m), settings);
+                            if (key is not null && !(prepared.Fundamentals == 2 && Envelope.EnvelopeDropReuse.Weights(netlist, part!).Length > 0))
+                                cache[key] = entry = new ReuseEntry(prepared, Envelope.EnvelopeDropReuse.Weights(netlist, part!));
+                        }
                     }
                     catch (Exception ex) when (!IsCancellation(ex))
                     {
@@ -404,12 +438,27 @@ public static class ParametricSweepEngine
                     continue;
                 }
                 int i = si;
+                if (from is not null) reused++;
+                var partRun = part;
                 running.Add(Task.Run(() =>
                 {
                     try
                     {
-                        points[i] = Envelope.EnvelopeRunner.Execute(prepared, settings, pointControl,
-                            m => netlist.AddWarningOnce("env-note:" + at + m, at + m));
+                        Envelope.EnvelopeDropReuse.DropRun? drop = null;
+                        if (from is not null)
+                        {
+                            // the drop whose key this is ran (or runs) the transmit side: wait for its recording
+                            var (joint, recordings) = from.Done.Task.GetAwaiter().GetResult();
+                            drop = new() { Drives = recordings, Merge = r => Envelope.EnvelopeDropReuse.Merge(joint, r, partRun!) };
+                        }
+                        else if (entry is not null) drop = new() { Record = true };
+                        try
+                        {
+                            points[i] = Envelope.EnvelopeRunner.Execute(prepared, settings, pointControl,
+                                m => netlist.AddWarningOnce("env-note:" + at + m, at + m), drop);
+                            if (entry is not null) entry.Done.TrySetResult((drop!.Merged!, drop.Recorded!));
+                        }
+                        catch (Exception ex) { entry?.Done.TrySetException(ex); throw; }
                     }
                     catch (Exception ex) when (!IsCancellation(ex))
                     {
@@ -443,6 +492,22 @@ public static class ParametricSweepEngine
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(pending).Throw();
         }
 
+        // brief-pch-10 R-pch10-4 — the counters, in a note and for a test to read
+        if (cache.Count > 0)
+        {
+            int beams = cache.Values.Select(e => e.Weights).Where(w => w.Length > 0).Distinct().Count();
+            Envelope.EnvelopeDropReuse.LastCounters = (cache.Count, reused, beams);
+            diagnosticsInto?.AddNoteOnce("envelope-drop-reuse:" + env.Name,
+                $"envelope '{env.Name}' over {n} drop(s): the transmit side was solved {cache.Count} time(s)" +
+                (beams > 0 ? $" ({beams} distinct beam(s))" : "") + $"; {reused} drop(s) replayed its recorded waves into the receive side alone (exact: the channel is one way).");
+        }
+        else
+        {
+            Envelope.EnvelopeDropReuse.LastCounters = (0, 0, 0);
+            if (reuse && noReuse is not null && noReuse != "no Propagation Channel")
+                diagnosticsInto?.AddNoteOnce("envelope-drop-noreuse:" + env.Name, $"envelope '{env.Name}': every point solved both sides of its channels: {noReuse}.");
+        }
+
         for (int i = 0; i < n; i++)
         {
             if (nets[i] is { } nl) diagnosticsInto?.MergeDiagnosticsFrom(nl);
@@ -454,6 +519,27 @@ public static class ParametricSweepEngine
             }
             datasets.Add(points[i]!);
         }
+    }
+
+    /// <summary>brief-pch-10 — one transmit side solved: its run's segmentation and, once it has run, its record and recordings.</summary>
+    private sealed class ReuseEntry(Envelope.EnvelopeRunner.Prepared prepared, string weights)
+    {
+        public Envelope.EnvelopeRunner.Prepared Prepared { get; } = prepared;
+        public string Weights { get; } = weights;
+        public TaskCompletionSource<(Envelope.EnvelopeRunResult Joint, IReadOnlyDictionary<string, Envelope.ChannelRecording>?[] Recordings)> Done { get; }
+            = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    /// <summary>brief-pch-10 — the drop's beams taken into its arrays before the reuse key reads their weights, as the envelope engine
+    /// takes them (BeamSelection is cached, so the run's own selection finds the same choice).</summary>
+    private static void PreselectBeams(ElaboratedNetlist nl)
+    {
+        if (!nl.Components.Any(c => c.Model is Core.Devices.PropagationChannelModel { HasInstanceEnd: true })) return;
+        var src = nl.Components.Select(c => c.Model).OfType<Core.Devices.ModSourceModel>().FirstOrDefault();
+        if (src is null) return;
+        double bw = nl.Components.Select(c => c.Model).OfType<Core.Devices.ModSourceModel>().SelectMany(m => m.Signal.Carriers)
+                      .Select(c => c.Spec.BandwidthHz).DefaultIfEmpty(0).Max();
+        AntennaArray.BeamSelection.Apply(nl, src.FcHz, bw, setCarrier: true);
     }
 
     /// <summary>How many envelope sweep points the last sweep on this thread ran at once. Test-facing: the claim is

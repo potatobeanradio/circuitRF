@@ -617,8 +617,8 @@ step.</li>
 </ul>
 <p>The DC offset is not delayed. The same three keys work on <a href="#currenttonesource">ITone</a>,
 <a href="#p1tone">P1Tone</a> and <a href="#pntone">PnTone</a>. A P1Tone or PnTone keeps its available power and source
-impedance in a transient run; one with a harmonic termination <code>Z[k]</code> different from <code>Z[1]</code> is not
-yet supported there.</p>
+impedance in a transient run, and its harmonic terminations <code>Z[k]</code> too: the run presents each band's
+impedance at that band's harmonic, and its note gives the realization's error.</p>
 <table class="param-table">
 <thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
 <tr><td>1</td><td>+</td></tr>
@@ -1767,6 +1767,15 @@ written in the technology's length unit. For a physical-form line, <code>circuit
 electrical length it resolves to at <code>F</code>.</p>
 <pre><code>TLIN:TL1 a b Z=50 Ohm L=25 mm Eeff=3.2 Ac=4 Ad=2 F=2 GHz
 </code></pre>
+<p><strong>Loss and phase.</strong> A line's loss comes with the phase a physical loss has, in every analysis. The
+conductor term (<code>Ac</code>) adds an internal reactance equal to its loss. The dielectric term (<code>A</code> or <code>Ad</code>)
+makes the line slightly slower below <code>F</code> and slightly faster above it, as a material with a flat loss
+tangent is. At <code>F</code> the line is exactly as stated.</p>
+<p>In a transient analysis a lossless line is exact: each end sees <code>Z</code> in series with the wave that left
+the other end one delay earlier, and an edge crossing the line lands on a step. A lossy line runs as
+that delay plus a rational fit of the rest of its response. The run's note gives the fit's departure
+from the line up to the run's highest frequency (half the inverse of the largest step). A line that
+cannot be fitted within 10⁻³ there is refused by name, with its error.</p>
 <table class="param-table">
 <thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
 <tr><td>1</td><td>1</td></tr>
@@ -1818,6 +1827,9 @@ pair is matched to 50 Ω.</li>
 <code>E</code>, which is the homogeneous (stripline) case with ideal isolation. Set it shorter than <code>E</code> to model
 a medium such as microstrip, where the odd mode travels faster and the directivity is finite.</li>
 </ul>
+<p>In a transient analysis the pair runs exactly, as its even and odd modes, each a delay of its own.
+The physical coupled lines (MCLIN, BCLIN, MBCLIN) have loss and dispersion and are refused there by
+name.</p>
 <table class="param-table">
 <thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
 <tr><td>1</td><td>1</td></tr>
@@ -1919,6 +1931,13 @@ substrate; type a Z0 there instead and <code>W</code> is set to the width that g
 <strong>Use electrical length</strong> in the parameters dialog converts the current <code>L</code> at the line's own εeff, and
 <strong>Use physical length</strong> converts it back, so switching never changes the line a run simulates. CPWG and
 SLIN have the same button. Layout always draws the physical length.</p>
+<p><strong>Loss and phase.</strong> The substrate's <code>Er</code> and <code>TanD</code> are the values at 1 GHz. A loss tangent that stays
+the same over many decades comes with a permittivity that falls slowly as frequency rises, so MLIN, CPWG
+and SLIN lines are slightly slower below 1 GHz and slightly faster above it. A long line on a lossy
+board, such as 25 mm on FR4 with <code>TanD</code> 0.02, gains about 7° less phase at 10 GHz than a constant <code>Er</code>
+would give. The conductor loss also brings the metal's internal inductance, which adds a little phase.
+Neither changes the Z0 or εeff the dialog reports. In a transient analysis these lines run as a delay
+plus a rational fit, as a lossy <a href="#tline">TLIN</a> does.</p>
 <table class="param-table">
 <thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
 <tr><td>1</td><td>1</td></tr>
@@ -2824,6 +2843,13 @@ and only the lower entries (<code>SdB_3_1</code>, never <code>SdB_1_3</code>) ar
 <code>auto</code> ties a file whose S(i,j) and S(j,i) agree (every passive file does) and unties one that does
 not (an amplifier).</li>
 </ul>
+<p><strong>Transient.</strong> In a transient analysis the file is replaced by a rational fit of its S-parameters from DC
+to the run's highest frequency, half the inverse of the largest step. Data that starts above DC is
+extrapolated to DC from its two lowest points, and data that stops short of that frequency is held at its
+last value; the run's note says when either happens. The fit is checked for passivity between and beyond
+the file's points. Where it would make energy, the smallest change that stops it is made, and the run
+reports that change and the fit's error. A file the fit cannot follow within 10⁻³ is refused by name. A
+System Filter, a Duplexer and EM cells run with <code>model=em</code> are fitted the same way.</p>
 <p><strong>Noise.</strong> In an S-parameter run with <a href="simulations.html#sp-noise"><code>Noise=yes</code></a>, a two-port file's Touchstone noise
 block makes the block noisy by that data. The data is linear between rows, and the end rows are held outside them, with
 a warning. A passive file with no noise block is thermal at the block's own <code>Temp</code> (°C), or <code>Dtemp</code> above the ambient,
@@ -5744,8 +5770,33 @@ Write a bare number or <code>metre</code>: <code>m</code> means milli in every v
 as <code>x,y,z</code> in m/s, give each ray its Doppler.</li>
 <li><strong>Large scale.</strong> <code>PathLoss</code> is any model of the propagation library (<code>free</code>, <code>logdist</code>, <code>multislope</code>, <code>tworay</code>, <code>38901</code>,
 <code>P1238</code>, <code>P1411</code>, <code>P526</code>, <code>satellite</code>, <code>P1812</code>). Its parameters, and the added losses (gas, rain, clutter and the rest),
-are written beside it by the model's own names. Shadowing is held at 0, since a draw belongs to a drop of a Monte Carlo.
-<code>Rain=fixed</code> adds the attenuation at the stated availability, and <code>Rain=drawn</code> is refused.</li>
+are written beside it by the model's own names. <code>Rain=fixed</code> adds the attenuation at the stated availability.</li>
+<li><strong>Drops.</strong> Each channel is one drop, numbered by <code>Drop</code> under <code>Seed</code>. A drop draws the shadowing from the model's σ (in dB,
+added to the loss; <code>Shadowing=off</code> holds it at 0). It also draws the line-of-sight state from the model's probability when
+<code>Los=auto</code>, and with <code>Rain=drawn</code> a time percentage, taking the rain exceeded for it. That rain is zero beyond P.530's 1 %
+or P.618's 5 %. Every draw depends only on <code>Seed</code>, <code>Drop</code> and the channel's name, so drop 37 alone equals drop 37 in a sweep.
+The run reports <code>link:CH1:Shadowing_dB</code>, <code>LosState</code> (1, 0, or NaN when not drawn) and <code>RainTime_pct</code>.</li>
+<li><strong>Scenario drops.</strong> <code>Multipath=scenario</code> with <code>PathLoss=38901</code> draws a TR 38.901 drop for the ends' geometry, with the
+transmit end as the base station. Each drop draws the scenario's correlated large-scale parameters (shadowing, K, delay and
+angle spreads), then its clusters' delays, powers and angles, 20 rays a cluster, their cross-polar ratios and phases. The
+run reports them as <code>DS_s</code>, <code>ASD_deg</code>, <code>ASA_deg</code>, <code>ZSD_deg</code>, <code>ZSA_deg</code> and <code>K_dB</code>. The spreads, K and Doppler come from
+the scenario, so <code>DelaySpread</code>, <code>KFactor</code>, the angle spreads, <code>Fading</code>, <code>Velocity</code> and <code>fD</code> don't apply to it.</li>
+<li><strong>Satellite states.</strong> <code>States=p681</code> on <code>PathLoss=satellite</code> applies ITU-R P.681's land mobile-satellite model. The link
+moves between a GOOD state (line of sight and light shadowing) and a BAD state (heavy shadowing and blockage). Each state
+has lognormal event lengths and its own Loo statistics: a lognormal direct signal plus Rayleigh multipath. The parameter
+set is the one for <code>StateEnvironment</code> nearest the frequency and elevation, valid from 1.5 to 20 GHz above 20°. The terminal
+moves at <code>Velocity</code> (m/s); still, the drop is one state. The run reports <code>State</code> (1 GOOD, 0 BAD) and, in an envelope run,
+<code>StateGood_frac</code>. P.681's current edition has two states, not three.</li>
+<li><strong>Monte Carlo.</strong> A sweep over <code>Drop</code> is the Monte Carlo: <code>Drop=drop</code> on the channel, a variable <code>drop</code>, and
+<code>analysis MC type=parametric_sweep Var=drop Start=1 Stop=500 Step=1 Inner=ENV1</code>. <code>outage_over(x, threshold, &quot;drop&quot;)</code>
+gives the fraction of drops below a threshold, with its 95 % interval as <code>lo</code> and <code>hi</code>. <code>cdf</code>, <code>pctl_over</code>, <code>mean_over</code>,
+<code>std_over</code> and <code>yield_over</code> work over the same axis. In an envelope sweep, a transmit side that is the same in every
+drop is solved once. Each later drop solves only its receive side, driven by the recorded transmit waves, and the result
+is the same as solving both. A transmit array whose beam the channel picks per drop is solved once per distinct beam.
+The run says how many drops reused it. A DC supply shared by both sides prevents this. The receive side is still solved
+in every drop. A receive array with channel cells gets much slower as it grows: one drop of a 1 µs record takes about
+6 s at 64 elements and about 5 minutes at 256. A Monte Carlo over many drops into an array of 1024 or more elements is
+impractical, so give such a link a pin receive end or a small array.</li>
 <li><strong>Rays.</strong> <code>Multipath=none</code> uses the rays of the geometry: the line of sight, plus the ground ray for <code>tworay</code>.
 <code>Multipath=tdl</code> uses a tapped delay line named by <code>Profile=</code>. <code>Multipath=file</code> reads taps from <code>File=</code>, a CSV whose
 header names <code>delay (ns)</code>, <code>power (dB)</code>, and optionally <code>phase (deg)</code>, <code>doppler (Hz)</code>, <code>k (dB)</code> and <code>spectrum</code>. A sampled
@@ -5860,7 +5911,7 @@ coherence time against the record and the subcarrier spacing, and the coherence 
 <tr><td>TxHeight</td><td><code>1.5</code></td><td>metre</td><td>&mdash;</td><td>Transmit antenna height above the ground, metres.</td></tr>
 <tr><td>RxHeight</td><td><code>1.5</code></td><td>metre</td><td>&mdash;</td><td>Receive antenna height above the ground, metres.</td></tr>
 <tr><td>PathLoss</td><td><code>free</code></td><td>&mdash;</td><td>shown</td><td>The large-scale model, by its recommendation or report (free, logdist, multislope, tworay, 38901, P1238, P1411, P526, satellite, P1812). Its parameters, and the added losses, are written beside it by the model&#39;s own names.</td></tr>
-<tr><td>Multipath</td><td><code>none</code></td><td>&mdash;</td><td>&mdash;</td><td>none: the rays the geometry gives (the line of sight, and tworay&#39;s ground ray). tdl: a tapped delay line by Profile=. cdl: a clustered delay line by Profile= (rays with directions and polarization). file: the taps of a power-delay profile (File=). rays: a ray list with departure and arrival directions (File=).</td></tr>
+<tr><td>Multipath</td><td><code>none</code></td><td>&mdash;</td><td>&mdash;</td><td>none: the rays the geometry gives (the line of sight, and tworay&#39;s ground ray). tdl: a tapped delay line by Profile=. cdl: a clustered delay line by Profile= (rays with directions and polarization). file: the taps of a power-delay profile (File=). rays: a ray list with departure and arrival directions (File=). scenario: a TR 38.901 drop for the 38901 model&#39;s scenario (its spreads, clusters and rays drawn per drop).</td></tr>
 <tr><td>Tx</td><td>&mdash;</td><td>&mdash;</td><td>shown</td><td>A Phased Antenna Array&#39;s instance name: that end is the array&#39;s own elements (their patterns, positions and orientation from Az/El/Roll) and has no pin. Blank: the end is a pin.</td></tr>
 <tr><td>Rx</td><td>&mdash;</td><td>&mdash;</td><td>shown</td><td>A Phased Antenna Array&#39;s instance name: that end is the array&#39;s own elements (their patterns, positions and orientation from Az/El/Roll) and has no pin. Blank: the end is a pin.</td></tr>
 <tr><td>TxGain</td><td><code>0</code></td><td>&mdash;</td><td>&mdash;</td><td>Transmit antenna gain, dBi, the same in every direction. TxPattern replaces it with a pattern.</td></tr>

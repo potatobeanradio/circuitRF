@@ -354,6 +354,24 @@ public static class EnvelopeRunner
         return prepared;
     }
 
+    /// <summary>
+    /// brief-pch-10 R-pch10-4 — a run with <paramref name="template"/>'s segmentation (step, warm-up, boundaries, tails, fundamentals) on
+    /// netlists <paramref name="elaborate"/> gives: what a drop replaying a recorded transmit side runs, so each of its segments reads the
+    /// recording of the same segment, and steps exactly where the joint run stepped.
+    /// </summary>
+    internal static Prepared PrepareLike(Prepared template, Plan plan, Func<ElaboratedNetlist> elaborate)
+    {
+        var nets = new ElaboratedNetlist[template.Segments];
+        var prepared = new Prepared
+        {
+            Plan = plan, Nets = nets, Fundamentals = template.Fundamentals, StepS = template.StepS, WarmS = template.WarmS,
+            Bound = template.Bound, TailSteps = template.TailSteps,
+        };
+        try { for (int s = 0; s < nets.Length; s++) nets[s] = elaborate(); }
+        catch { prepared.Dispose(); throw; }
+        return prepared;
+    }
+
     /// <summary>The longest excess delay of any Propagation Channel at its carrier (s); 0 with none.</summary>
     private static double ChannelDelayS(ElaboratedNetlist nl)
     {
@@ -455,7 +473,7 @@ public static class EnvelopeRunner
     /// <summary>Simulates a prepared run. Touches no testbench and elaborates nothing, so prepared runs of different
     /// sweep points may execute at the same time.</summary>
     internal static DataSet Execute(Prepared prepared, AnalysisSettings? settings = null, RunControl? control = null,
-                                  Action<string>? note = null)
+                                  Action<string>? note = null, EnvelopeDropReuse.DropRun? drop = null)
     {
         var plan = prepared.Plan;
         var p = plan.Params;
@@ -463,7 +481,14 @@ public static class EnvelopeRunner
         int segs = nets.Length;
         double warm = prepared.WarmS;
 
-        var (merged, seam) = Simulate(prepared, p, settings, control, note, quiet: false);
+        var (merged, seam) = Simulate(prepared, p, settings, control, note, quiet: false, drop);
+        // brief-pch-10 R-pch10-4 — a drop that recorded its transmit side keeps the joint record; one that replayed it takes the transmit
+        // side's signals back from that record, so everything below measures the joint run's record
+        if (drop is not null)
+        {
+            if (drop.Record) drop.Merged = merged;
+            if (drop.Merge is { } m) merged = m(merged);
+        }
 
         // EvmSplit (brief NZ-8): the same record again with every noise source and mask off — the same netlists, the same
         // steps — so EVM splits into distortion and noise and the noise the first run added can be measured in-channel.
@@ -537,7 +562,8 @@ public static class EnvelopeRunner
     /// <summary>Runs every segment of <paramref name="prepared"/> with <paramref name="p"/> and stitches them: the record and
     /// its worst seam error. The <paramref name="quiet"/> run (EvmSplit's second) reports nothing a first run has not.</summary>
     private static (EnvelopeRunResult Merged, double Seam) Simulate(Prepared prepared, EnvelopeParams p, AnalysisSettings? settings,
-                                                                    RunControl? control, Action<string>? note, bool quiet)
+                                                                    RunControl? control, Action<string>? note, bool quiet,
+                                                                    EnvelopeDropReuse.DropRun? drop = null)
     {
         var sw = prepared.Clock;
         var plan = prepared.Plan;
@@ -559,6 +585,9 @@ public static class EnvelopeRunner
                     StopS = (bound[s + 1] - bound[s] + (s < segs - 1 ? tailSteps : 0)) * h,
                     WarmupS = segs > 1 && s > 0 ? warm : (plan.Segments == 1 || segs == 1 ? (double.IsNaN(plan.WarmupS) ? 0 : plan.WarmupS) : warm),
                 };
+                // brief-pch-10 R-pch10-4 — each segment records its own transmit waves, or replays the recording segment's
+                if (drop is not null && !quiet)
+                    ps = ps with { RecordChannelWaves = ps.RecordChannelWaves || drop.Record, ChannelDrive = drop.Drives?[s] ?? ps.ChannelDrive };
                 results[s] = fundamentals == 2
                     ? new EnvelopeEngineMt(nets[s], settings).Run(ps, plan.MaxMixOrder, control)
                     : new EnvelopeEngine(nets[s], settings).Run(ps, control);
@@ -611,6 +640,7 @@ public static class EnvelopeRunner
             }
         }
         var R = results[0];
+        if (drop is not null && drop.Record && !quiet) drop.Recorded = [.. results.Select(x => x.ChannelRecordings)];
         var merged = new EnvelopeRunResult
         {
             Time = time.ToArray(), ProbeNames = R.ProbeNames, Probe = probe.ToArray(), SupplyNames = R.SupplyNames,

@@ -395,6 +395,7 @@ and give `lo, hi` before it to take part of the axis):
 | `pctl_over(x, p)` | the p-th percentile, p from 0 to 100 |
 | `skew_over(x)`, `kurt_over(x)` | the skewness and the excess kurtosis (0 for a normal distribution) |
 | `yield_over(condition)` | the fraction of trials for which the condition holds: `yield_over(Gain > 14)` |
+| `outage_over(x, threshold)` | the fraction of present values below the threshold, with its exact 95 % binomial interval stored beside it as `lo` and `hi`: `outage_over(Prx, -95, "drop")` over a Propagation Channel's drops |
 | `cpk(x, lo, hi)` | the process capability index; write either limit as `"none"` for a one-sided spec |
 | `sigma_to(x, limit)` | how many standard deviations the limit lies from the mean (positive above it) |
 

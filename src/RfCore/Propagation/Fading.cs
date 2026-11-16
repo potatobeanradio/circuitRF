@@ -116,6 +116,22 @@ namespace RfCore.Propagation
         public TapFading Spec { get; }
         private readonly double[] _w, _phi;
         private readonly double _losW, _losPhi, _a, _b;
+        private readonly Func<double, Complex>? _custom;     // brief-pch-10 — a gain another model supplies (ITU-R P.681's states)
+
+        /// <summary>brief-pch-10 R-pch10-3 — a tap whose gain another model supplies (ITU-R P.681's land mobile-satellite states):
+        /// <paramref name="spec"/> describes it for the regime (its Rician K and f_D, what the coherence time and Doppler spectrum
+        /// read), <paramref name="gain"/> is its gain at any time.</summary>
+        public FadingProcess(TapFading spec, Func<double, Complex> gain, int sinusoids)
+        {
+            Spec = spec;
+            _custom = gain;
+            _w = new double[Math.Max(1, sinusoids)];
+            _phi = new double[_w.Length];
+            for (int k = 0; k < _w.Length; k++) _w[k] = 2 * Math.PI * spec.FdHz * Math.Cos(2 * Math.PI * (k + 0.5) / _w.Length);
+        }
+
+        /// <summary>True when another model supplies the gain (<see cref="FadingProcess(TapFading, Func{double, Complex}, int)"/>).</summary>
+        public bool Supplied => _custom is not null;
 
         /// <param name="spec">The distribution and spectrum.</param>
         /// <param name="seed">The run's seed.</param>
@@ -160,6 +176,7 @@ namespace RfCore.Propagation
         /// <summary>The tap's complex gain at time <paramref name="t"/> (s); 1 for a static tap.</summary>
         public Complex Gain(double t)
         {
+            if (_custom is not null) return _custom(t);
             if (_w.Length == 0) return Complex.One;
             double re = 0, im = 0;
             for (int k = 0; k < _w.Length; k++)

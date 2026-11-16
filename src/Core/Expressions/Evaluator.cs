@@ -326,6 +326,7 @@ public sealed partial class Evaluator
             "mean_over" or "std_over" or "median_over" or "skew_over" or "kurt_over" or "yield_over"
                         => EvalStatisticOver(cl, scope),
             "pctl_over" => EvalPercentileOver(cl, scope),
+            "outage_over" => EvalOutageOver(cl, scope),   // brief-pch-10 R-pch10-5
             "unwrap"    => EvalUnwrap(cl, scope),
             "deriv"     => EvalDeriv(cl, scope),
             "cpk"       => EvalCpk(cl, scope),

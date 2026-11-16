@@ -4971,3 +4971,20 @@ its own operating-point solve, which clears the note, so a transient run never s
 because VSwitch's own Roff default (1e9) is not the dialect's (1e6). SW switches abruptly at VT with hysteresis VH, which a
 smooth transition cannot express: refused naming VT. The dialect's VSWITCH transition shape is its own; what maps is the four
 values, not the curve between them.
+
+## The Propagation Channel's drop (brief PCH-10, 2026-11-15)
+
+- **`Shadowing=on` is the default**: each drop adds the model's σ times a normal draw to the excess loss (a scenario drop's correlated
+  SF instead, negated: TR 38.901's positive SF is more received power). No committed test or example used a model with σ > 0 in a
+  channel, so nothing moved. `link:<ch>:PathLoss_dB` stays the model's loss; the draw is `Shadowing_dB`.
+- **`Los=auto` draws the state** (`LosProbability` of the model) and evaluates the model again with `Los` forced; a stated `Los` draws
+  nothing. The Chain Budget still evaluates the median (the more probable state).
+- `Multipath=scenario` takes the transmit end as the base station (the 38901 model's `TxHeight` is hBS) and refuses `DelaySpread`,
+  `KFactor`, the angle spreads, `Xpr`, `Fading`, `Velocity` and `fD`. `States=p681` needs `PathLoss=satellite`, `Multipath=none`, no
+  `Fading`/`KFactor`/`fD`, the satellite model's `Scenario=none` (TR 38.811's states and P.681's describe the same surroundings) and a
+  `StateEnvironment`; the terminal moves at `Velocity`.
+- A P.681 ray's gain rides in `FadingProcess` through a supplied gain function (`FadingProcess(TapFading, Func<double, Complex>, int)`),
+  described for the regime as Rician at the state's mean direct-over-multipath K.
+- `SteadyDrive` (set by `EnvelopeChannel` for a drop that replays a recorded transmit side): the harmonic-balance start stamps the
+  recording's first sample on the receive rows in place of the frozen coupling. `ElaboratedNetlist.Prune` removes components and appends
+  others, rebuilding the index lists; removed parts that hold something are disposed.

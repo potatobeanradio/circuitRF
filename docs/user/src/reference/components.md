@@ -2783,8 +2783,33 @@ PropagationChannel:CH1 tx rx Distance=250 TxHeight=10 RxHeight=1.5 PathLoss=twor
   as `x,y,z` in m/s, give each ray its Doppler.
 - **Large scale.** `PathLoss` is any model of the propagation library (`free`, `logdist`, `multislope`, `tworay`, `38901`,
   `P1238`, `P1411`, `P526`, `satellite`, `P1812`). Its parameters, and the added losses (gas, rain, clutter and the rest),
-  are written beside it by the model's own names. Shadowing is held at 0, since a draw belongs to a drop of a Monte Carlo.
-  `Rain=fixed` adds the attenuation at the stated availability, and `Rain=drawn` is refused.
+  are written beside it by the model's own names. `Rain=fixed` adds the attenuation at the stated availability.
+- **Drops.** Each channel is one drop, numbered by `Drop` under `Seed`. A drop draws the shadowing from the model's σ (in dB,
+  added to the loss; `Shadowing=off` holds it at 0). It also draws the line-of-sight state from the model's probability when
+  `Los=auto`, and with `Rain=drawn` a time percentage, taking the rain exceeded for it. That rain is zero beyond P.530's 1 %
+  or P.618's 5 %. Every draw depends only on `Seed`, `Drop` and the channel's name, so drop 37 alone equals drop 37 in a sweep.
+  The run reports `link:CH1:Shadowing_dB`, `LosState` (1, 0, or NaN when not drawn) and `RainTime_pct`.
+- **Scenario drops.** `Multipath=scenario` with `PathLoss=38901` draws a TR 38.901 drop for the ends' geometry, with the
+  transmit end as the base station. Each drop draws the scenario's correlated large-scale parameters (shadowing, K, delay and
+  angle spreads), then its clusters' delays, powers and angles, 20 rays a cluster, their cross-polar ratios and phases. The
+  run reports them as `DS_s`, `ASD_deg`, `ASA_deg`, `ZSD_deg`, `ZSA_deg` and `K_dB`. The spreads, K and Doppler come from
+  the scenario, so `DelaySpread`, `KFactor`, the angle spreads, `Fading`, `Velocity` and `fD` don't apply to it.
+- **Satellite states.** `States=p681` on `PathLoss=satellite` applies ITU-R P.681's land mobile-satellite model. The link
+  moves between a GOOD state (line of sight and light shadowing) and a BAD state (heavy shadowing and blockage). Each state
+  has lognormal event lengths and its own Loo statistics: a lognormal direct signal plus Rayleigh multipath. The parameter
+  set is the one for `StateEnvironment` nearest the frequency and elevation, valid from 1.5 to 20 GHz above 20°. The terminal
+  moves at `Velocity` (m/s); still, the drop is one state. The run reports `State` (1 GOOD, 0 BAD) and, in an envelope run,
+  `StateGood_frac`. P.681's current edition has two states, not three.
+- **Monte Carlo.** A sweep over `Drop` is the Monte Carlo: `Drop=drop` on the channel, a variable `drop`, and
+  `analysis MC type=parametric_sweep Var=drop Start=1 Stop=500 Step=1 Inner=ENV1`. `outage_over(x, threshold, "drop")`
+  gives the fraction of drops below a threshold, with its 95 % interval as `lo` and `hi`. `cdf`, `pctl_over`, `mean_over`,
+  `std_over` and `yield_over` work over the same axis. In an envelope sweep, a transmit side that is the same in every
+  drop is solved once. Each later drop solves only its receive side, driven by the recorded transmit waves, and the result
+  is the same as solving both. A transmit array whose beam the channel picks per drop is solved once per distinct beam.
+  The run says how many drops reused it. A DC supply shared by both sides prevents this. The receive side is still solved
+  in every drop. A receive array with channel cells gets much slower as it grows: one drop of a 1 µs record takes about
+  6 s at 64 elements and about 5 minutes at 256. A Monte Carlo over many drops into an array of 1024 or more elements is
+  impractical, so give such a link a pin receive end or a small array.
 - **Rays.** `Multipath=none` uses the rays of the geometry: the line of sight, plus the ground ray for `tworay`.
   `Multipath=tdl` uses a tapped delay line named by `Profile=`. `Multipath=file` reads taps from `File=`, a CSV whose
   header names `delay (ns)`, `power (dB)`, and optionally `phase (deg)`, `doppler (Hz)`, `k (dB)` and `spectrum`. A sampled

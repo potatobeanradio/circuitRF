@@ -209,9 +209,10 @@ its fading comes from the rays' phases beating against each other.
 
 ### 4.4 Satellite states (PCH-10)
 
-A land-mobile satellite link moves between line of sight, shadowed and blocked. ITU-R P.681's state model gives each
-state's lognormal-shadowed Rician statistics and the state durations; a drop draws the state sequence over the record (or,
-for a record much shorter than a state, the one state), and a run reports the state.
+A land-mobile satellite link moves between clear and obstructed conditions. ITU-R P.681-11's state model has two states,
+GOOD (line of sight and light shadowing) and BAD (heavy shadowing, blockage included), each with its Loo statistics (a
+lognormal direct signal plus Rayleigh multipath) and lognormal state durations; a drop draws the state sequence over the
+record (or, for a record much shorter than a state, the one state), and a run reports the state.
 
 ## 5. The component
 
