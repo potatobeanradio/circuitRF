@@ -601,6 +601,37 @@ count of site parts unlike the sites'), `unreachable` (a prototype that never re
 
 **Tests.** `tests/Ui.Tests/Synthesis/FilterTuningTests.cs`: the detuned edge-coupled filter, its lines appended to the
 bench and run through `OptimizationRun`, meets both stop goals and centres within 1 %; each refusal by its code.
+## 6b. Coupling curves on Planar MoM
+
+**What it does.** The hairpin and open-loop realisers (§4) map k to a gap and Qe to a tap on the circuit model. With
+`Refine` = `Em` they then measure the same quantities with an EM solver around that answer and read the geometry off the
+measured curves. The pure part is `src/Core/Synthesis/Filters/CouplingCurves.cs`; the solver is a seam,
+`ICouplingCurveSolver` (a two-pin plan and a sweep in, S-parameters out), so Core stays EM-free. The Design layer's
+`CouplingCurvePlanarSolver` (`src/Design/Layout/Em/`) is its Planar MoM: the plan drawn as its PCell draws it, the copper
+unioned into one sheet on the substrate's grounded slab, an edge port on each pin, a coarse mesh, no de-embedding.
+
+**k against S** (Hong and Lancaster, [10.1002/0471221619](https://doi.org/10.1002/0471221619), §8.2). The bench is
+§4's: two resonators lightly fed by coupled strips 3·h off, or for the cross square's own pairs (S3, Sx) the square
+itself, as §4.1 measures them. It is swept over 21 points, ±15 % about the circuit model's mean resonance. Then k = (f2² − f1²)/(f2² + f1²). A lightly fed resonance is far narrower than that grid's step, so f1
+and f2 are not read off the samples: they are the real parts of S21's two poles, from a rational fit over the band
+(numerator of degree 3, monic denominator of degree 2, Levy's linearised least squares reweighted by 1/|D| as Sanathanan
+and Koerner do, [10.1109/TAC.1963.1105517](https://doi.org/10.1109/TAC.1963.1105517)).
+
+**Qe against the tap.** One resonator, tapped, singly loaded: pin 2's tap is left open, S11' = S11 + S12·S21/(1 − S22).
+About the resonance S11' = (1 − j·2Qe·δ)/(1 + j·2Qe·δ) up to a slow phase, whose phase turns ±90° at f0 ± f0/(2·Qe), so
+Qe = f0/Δf±90°. With 21 points these are again read off the fit, a one-pole one: Qe = Re f_p/(2·|Im f_p|).
+
+**The curves.** `CouplingCurve` holds measured points and is read backwards by linear interpolation in ln y. Under
+`Refine` = `Em`, `FromCouplings` measures k at half, once and twice each circuit gap, and Qe at the circuit tap and a
+tenth of its range either side, then reads the gap and the tap off those three points. A target outside them is refused.
+The resonator lengths stay the circuit model's, as does a coupled feed's Qe(S1): with its output strip left open, a
+coupled feed is no longer a singly loaded resonator.
+
+**Refusals.** `synthesis.em.*`: `no-solver` (`Refine` = `Em` and no solver passed in), `closed-form` (`Em` on Cohn's
+edge-coupled or zig-zag chain, which has no k or Qe to measure), `out-of-curve`.
+
+**Tests.** `tests/Core.Tests/Synthesis/CouplingCurveTests.cs`: from synthetic S-parameters on the 21-point grid, a Q =
+300 pair's k to 1e-4, and Qe = 15 behind 30 ps of line to 1 %, and the curve read backwards and refused outside.
 
 ## 7. Possible enhancements
 
@@ -715,6 +746,11 @@ bench and run through `OptimizationRun`, meets both stop goals and centres withi
 - **k(S) and Qe tables per substrate and width** (§4). Solve the pair and the fed resonator once over a grid of gaps and
   taps, then interpolate. Why: a design takes 2 to 7 s now, too slow for a designer's preview that redraws as the
   specification is typed.
+- **The EM curves checked against the circuit model** (§6b). One hairpin pair at three gaps, 21 points on the coarse
+  mesh, its EM k(S) within 20 % of the circuit model's and with the same trend, tagged `Category=Benchmark`. Why: the
+  Planar MoM side of the seam builds but has not been run against a design yet.
+- **Qe(S1) on EM for coupled feeds** (§6b). The doubly loaded bench's pole gives the loaded Q, Qe = 2·QL. Why: under
+  `Refine` = `Em` a coupled hairpin's feed gap is still the circuit model's.
 - **Unequal external Q at the two ends** (§4). `FromCouplings` takes one Qe and MCRC one Tap. Why: a filter between
   unequal terminations, or a multiplexer's channel, needs a different Qe at each end.
 - **A trisection on MCRC** (§4.1). An arrangement of three open loops in a triangle, 1-3 coupled, after Hong and Lancaster's
@@ -789,3 +825,5 @@ bench and run through `OptimizationRun`, meets both stop goals and centres withi
 - C. R. Paul, *Analysis of Multiconductor Transmission Lines*, 2nd ed., Wiley-IEEE Press, 2007.
   DOI [10.1109/9780470547212](https://doi.org/10.1109/9780470547212). The characteristic admittance matrix and the
   shorted array's susceptance (§5).
+- C. Sanathanan and J. Koerner, "Transfer function synthesis as a ratio of two complex polynomials," IEEE Trans. AC
+  8(1), 1963: [10.1109/TAC.1963.1105517](https://doi.org/10.1109/TAC.1963.1105517) (§6b).
