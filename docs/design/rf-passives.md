@@ -4,7 +4,7 @@
 and MRRC, the branch-line and rat-race hybrids; MCLC, MIDC and MCBL, the coupled-line coupler, interdigitated coupler
 and balun; MWPD's and MRRC's rings curved or cornered (`Corner`); the gap, taper and open-end sections (§1); the radial stub (MRADIAL);
 the N-line coupled section and its part, MCLINN; sites with an optional `Footprint` (§3.7) and a route helper
-(§3.8); the coupled array, MCLA, every coupled-array filter as one part (§3.9) · **Date:** 2026-11-16
+(§3.8); the coupled array, MCLA, every coupled-array filter as one part (§3.17) · **Date:** 2026-11-16
 
 Dividers, couplers and baluns on microstrip, each one built-in part that is defined once and read the same way by the
 schematic, the layout, LVS and EM. Each part has its own subsection in §3.
@@ -442,7 +442,7 @@ parameters, the indexed ones included (`F15-coupled-lines`: a changed `W[2]` is 
 the odd, even and middle modes; a section with an internal node equal to MCLINN and MLIN wired by hand to 1e-9),
 `CoupledStripsPartTests` (registration, pins, artwork, the cross-section on the RFIC stack).
 
-**Which parts use it.** MCLINN, and through `PlanCoupledStrips` the coupled array, MCLA (§3.9): interdigital,
+**Which parts use it.** MCLINN, and through `PlanCoupledStrips` the coupled array, MCLA (§3.17): interdigital,
 combline and pseudo-interdigital filters. It is also what MIDC's non-adjacent fingers and
 MWPD's side-by-side section pairs need (§5, §6); neither uses it yet, which keeps them as they were.
 
@@ -542,7 +542,7 @@ Tests (`PlanRouteTests`, `PassiveSiteTests`): θ = 90° meanders and corners of 
 0.5° in the plan model, on a board and on a GaAs die; every node is one point; a straight run is one `PlanLine`, field
 for field; the drawn copper's ends and extent are the route's.
 
-### 3.9 The coupled array (MCLA)
+### 3.17 The coupled array (MCLA)
 
 Every coupled-array filter is one part: N parallel strips over one `PlanCoupledStrips` section (§3.6), every strip
 coupled to every other, and each strip end one of five things. The form is only the pattern of ends, so interdigital,

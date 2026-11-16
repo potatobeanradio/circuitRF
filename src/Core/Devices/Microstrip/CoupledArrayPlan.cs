@@ -3,7 +3,7 @@ using CircuitRF.Diagnostics;
 
 namespace CircuitRF.Core.Devices.Microstrip;
 
-/// <summary>What one end of a coupled array's strip is (docs/design/rf-passives.md §3.9). Its letter in <c>Ends</c> is
+/// <summary>What one end of a coupled array's strip is (docs/design/rf-passives.md §3.17). Its letter in <c>Ends</c> is
 /// the first of its name, but C for <see cref="Site"/>.</summary>
 public enum StripEnd
 {
