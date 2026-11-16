@@ -459,7 +459,7 @@ switched off with its **Enabled** box to see what it costs and what it changes.
 
 ### Measured: a connector pin's fillet {#curved-measured}
 
-The **3D Connector** example (*File ▸ New ▸ Examples ▸ 3D Connector*) asks the question with numbers. A 0.4 mm pin in a
+The **3D Connector** example (*File ▸ New ▸ Examples ▸ 3D EM ▸ 3D Connector (booleans, fillets, STEP)*) asks the question with numbers. A 0.4 mm pin in a
 1.34 mm PTFE bore — 50.06 Ω by the coaxial closed form — launches onto a 62 mil line on 20 mil of laminate — 49.85 Ω
 by Hammerstad and Jensen's — and the pin's tip is rounded by a 0.1 mm fillet. Those two impedances are closed-form
 references; everything below is the solvers' output. Each setup ran twice, the fillet enabled and disabled, over 2–18

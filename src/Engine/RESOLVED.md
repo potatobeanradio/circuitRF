@@ -5434,3 +5434,25 @@ the closed form and 1.3e-6 V from the native run.
 `ScaledRatio`'s summary "twice ChokeRatio", the `SeedFastBias` key's reference summary "to 20x", and the Simulations page "more
 than 10 times … scaled to 50 times". All four now say 50 and why. No behaviour changed. Checked on the class-E example: its
 100 nH drain choke is left alone, a 10 µH one is scaled ×0.0149 and named.
+
+## The SDD example's bias loop: two DC defects in HB and DC, and one open convergence problem
+
+Found building *Symbolically Defined Device (SDD)*'s bias-loop bench (an SDD that reads the drain supply's current through
+`C[1]` and feeds the FET's gate through a choke).
+
+- **HB decoupled two interface nodes an ideal inductor joins.** At DC they are one node, so Z_NN(0) is rank-deficient with
+  no zero diagonal; `HbLinearExtractor.ExtractDC` recognised only a zero diagonal (a node pinned by a source) as singular and
+  inverted the rest, and the Gauss-Jordan pass left the two nodes decoupled: −2 V and 0 V where DC has both at −2 V, a
+  silent wrong answer. `RankDeficientAt` now finds the rank deficiency and takes the inductance-regularization path. When the
+  pair has no DC path to ground but gmin, Z_NN(0) is ~1e12 Ω and the 1 µΩ is lost in double precision, so the matrix stays
+  singular; `ForcedDc` then takes Y_NN(0) and I_src(0) with every interface node held by an ideal source (Y ~1e6 S between
+  the two). Used only when Z_NN(0) is still rank-deficient after regularization; every other circuit is untouched (1,007
+  HB/DC/SDD/loadpull/hero tests unchanged). Gate: `HarmonicBalance/HbInterfaceShortTests` (both cases against DC).
+- **DC left a weighted term's control-current derivative out of its Jacobian.** `NonlinearDcEngine` stamped a `w ≥ 2` term's
+  value and voltage derivatives but not `JacCtrl` (∂I[p,w]/∂_cn), so the loop written on a low-pass weight (`H[2]` = 1 at DC)
+  did not converge where the same loop on `w = 0` did. Gate: `SddWeightedControlDcTests`.
+- **Open: closed-loop HB of that loop does not converge from a cold start** (loop gain 50 or more), with or without a bleed
+  resistor on the bias node, though continuation from a small loop gain finds the solution and DC converges. Not chased
+  (owner, 2026-11-16); the example's bias bench runs at DC only and its README says to sweep `Kloop` up from 0 for HB.
+- A DC solve with an SDD drain current independent of Vds (a pure current source behind a resistor) and a control-current loop
+  did not move from its zero start in 1,500 iterations; with a Vds dependence it converges. Recorded, not investigated.

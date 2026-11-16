@@ -73,7 +73,7 @@ naming both — a heat source spread through or lying in it, a probe reading it,
 one of its faces — so a temperature is never read off a model you did not mean to solve. An effective block's own
 <strong>Enabled</strong> is its switch, shown in Properties as <strong>Model</strong>.</p>
 <h2 id="die-to-heatsink">Worked example: Die to Heatsink</h2>
-<p><em>File ▸ New ▸ Examples ▸ Thermal: Die to Heatsink.</em> A GaN-on-SiC die (its transistor one 0.8 × 0.25 mm heat-source sheet) on a
+<p><em>File ▸ New ▸ Examples ▸ Thermal ▸ Die to Heatsink.</em> A GaN-on-SiC die (its transistor one 0.8 × 0.25 mm heat-source sheet) on a
 copper–molybdenum flange, the flange on a two-layer board with a 5 × 3 field of plated vias, the board on a 100 µm thermal
 interface material on a heatsink held at 85 °C. The die attach and the flange solder are contact resistances. <code>Pdiss</code> sweeps
 from 3 W to 11 W; the run takes about 1 min 17 s and 1.1 GB on an Apple M4 (the Debug build), on 543,980 tetrahedra.</p>
@@ -110,7 +110,7 @@ of these, and they differ by about 8 %.</p>
 13.9 K cooler than the vias drawn, and in 3 min 10 s rather than 1 min 17 s on this board. The block is an approximation that
 runs cool; it pays where there are hundreds of vias.</p>
 <h2 id="channel-vs-surface">Worked example: Channel vs Surface</h2>
-<p><em>File ▸ New ▸ Examples ▸ Thermal: Channel vs Surface.</em> One GaN finger's unit cell — SiC substrate, GaN epitaxy with the library's
+<p><em>File ▸ New ▸ Examples ▸ Thermal ▸ Channel vs Surface.</em> One GaN finger's unit cell — SiC substrate, GaN epitaxy with the library's
 GaN/SiC interface resistance, passivation, gate, <strong>field plate</strong>, source and drain — with the finger's heat (0.25 W, 5 W/mm)
 in a 0.5 × 0.25 µm channel at the drain-side edge of the gate, the substrate's bottom at 85 °C, and a symmetry plane at the
 finger's mid-width. About 3 min 28 s and 2.0 GB, on 216,837 tetrahedra.</p>
@@ -195,7 +195,7 @@ this view's EM result — pin p is port p — and solve the wires at every drive
 temperatures. Nothing goes back into the circuit.</li>
 </ul>
 <h2 id="output-wires">Worked example: Output Wires</h2>
-<p><em>File ▸ New ▸ Examples ▸ Thermal: Output Wires.</em> Six 1 mil gold wires, wedge-bonded from a drain pad on a SiC die to a copper package
+<p><em>File ▸ New ▸ Examples ▸ Thermal ▸ Output Wires.</em> Six 1 mil gold wires, wedge-bonded from a drain pad on a SiC die to a copper package
 lead, <strong>all of it embedded in a mould compound — the overmold</strong> — over a copper–molybdenum flange held at 85 °C. The die, its
 pad and the lead finger are a layout; the wires are its <code>.wBond</code>; the rest is drawn in the 3D view. The mould's glass transition
 (150 °C) is every wire probe's <em>Limit</em>. Each setup runs in seconds on an Apple M4 (the Release build): <code>DcSweep</code> in 21 s, on

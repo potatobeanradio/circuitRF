@@ -1553,6 +1553,20 @@ public sealed class NonlinearDcEngine
                         if (dg == 0.0) continue;
                         StampDg(j, np, nm, qp, qm, dg);
                     }
+
+                    // ∂I[p,w]/∂_cn: a weighted term reading a control current (brief PCH-12). Its value was in the
+                    // residual and its derivative was not, so a bias loop on a filtered weight (H[2] a low-pass, 1 at DC)
+                    // was solved by a Newton blind to the loop's own gain and did not converge.
+                    if (term.JacCtrl is not null && sddModel is not null)
+                        for (int ci = 0; ci < sddModel.ControlRefs.Length; ci++)
+                        {
+                            double dc = hwReal * term.JacCtrl[p, ci];
+                            if (dc == 0.0) continue;
+                            int col = sddModel.ControlBranchIndices[ci];
+                            if (col < 0) continue;
+                            if (np > 0) j.Add((np - 1, col, +dc));
+                            if (nm > 0) j.Add((nm - 1, col, -dc));
+                        }
                 }
             }
         }

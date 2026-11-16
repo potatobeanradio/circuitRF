@@ -17,7 +17,7 @@ section pictures — works on a machine with no 3D solver at all. A solver is ne
 which problem.
 
 This page teaches the editor through the **3D Package** example — an MMIC die in a ceramic package with a
-lid — which was drawn with exactly the gestures below. Open it with **File ▸ New ▸ Examples ▸ 3D Package**. The
+lid — which was drawn with exactly the gestures below. Open it with **File ▸ New ▸ Examples ▸ 3D EM ▸ 3D Package (the 3D editor)**. The
 **3D Connector** example teaches the operations the geometry kernel adds — booleans, fillets and STEP
 parts — through a coaxial connector launching onto a board ([below](#connector)).
 
@@ -126,7 +126,7 @@ turns on the clip plane. A new 3D view opens orthographic. The line along the bo
 
 ## The example: an MMIC in a package {#example}
 
-**File ▸ New ▸ Examples ▸ 3D Package** copies a workspace with two cells to a folder you choose, and opens its
+**File ▸ New ▸ Examples ▸ 3D EM ▸ 3D Package (the 3D editor)** copies a workspace with two cells to a folder you choose, and opens its
 `README.md`, which carries the numbers quoted here.
 
 - **Thru die** — an MMIC's **layout**, drawn in **µm** on a GaAs technology (`tech/mmic-gaas.ctech`: 100 µm
@@ -150,7 +150,7 @@ ports do not depend on them: a bigger cavity leaves the die where it is and move
 
 ## The second example: a connector launch {#connector}
 
-**File ▸ New ▸ Examples ▸ 3D Connector** is a coaxial connector launching onto a 50 Ω microstrip at a board's edge —
+**File ▸ New ▸ Examples ▸ 3D EM ▸ 3D Connector (booleans, fillets, STEP)** is a coaxial connector launching onto a 50 Ω microstrip at a board's edge —
 the 3D problem an RF board meets most — and it is built from the operations the geometry kernel adds:
 
 - **Board** — a layout in **mil**: 20 mil of PTFE-glass laminate over a ground plane, with a 62 mil line.
@@ -1448,7 +1448,7 @@ die stays put. The closed form then says 20.87 GHz — a mode below 22 GHz, walk
 on *Lid modes* finds where the drawn package puts it.
 
 For the question on its own, a resonance inside the band and a grounded post that moves it out, open **File ▸
-New ▸ Examples ▸ 3D Eigenmode** ({{anchor: em-setup.html#eigenmodes|EM Setup ▸ Eigenmodes}} quotes its numbers).
+New ▸ Examples ▸ 3D EM ▸ 3D Eigenmode (a cavity resonance)** ({{anchor: em-setup.html#eigenmodes|EM Setup ▸ Eigenmodes}} quotes its numbers).
 
 ## Temperature {#thermal}
 
@@ -1456,7 +1456,7 @@ The same model solves for heat. A **thermal setup** (*Simulate ▸ Setup Analyse
 whose *Solver* is set to **Thermal**) is solved by circuitRF's own steady-conduction solver after Gmsh meshes every solid
 — air is not meshed. What it needs is drawn in the
 view, and what it is worth is typed in the setup, so one model carries several thermal setups beside its EM ones.
-What a run models, and three worked examples with their numbers (*File ▸ New ▸ Examples ▸ Thermal: …*), are in
+What a run models, and three worked examples with their numbers (*File ▸ New ▸ Examples ▸ Thermal ▸ …*), are in
 {{anchor: thermal.html|Thermal}}; this section is the gestures.
 
 <figure class="figure fixed"><span class="frame">

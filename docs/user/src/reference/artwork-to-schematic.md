@@ -47,7 +47,7 @@ said, with a count, in the [report](#report).
 
 ## A worked example {#example}
 
-**File ▸ New ▸ Examples ▸ Artwork to Schematic** is a small two-layer board as a fabricator receives it: Gerber and
+**File ▸ New ▸ Examples ▸ Layout and Interchange ▸ Artwork to Schematic** is a small two-layer board as a fabricator receives it: Gerber and
 drill files, a placement file and a bill of materials in its `fab` folder, already imported as the cell **Board**.
 A microstrip line enters at the left edge, turns through a 90° bend, passes a tee with an open stub, a series
 capacitor C1, a shunt inductor L1 to a ground via, and a series resistor R1, and leaves at the top edge. The bill of

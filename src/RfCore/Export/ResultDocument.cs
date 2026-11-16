@@ -4030,6 +4030,7 @@ namespace RfCore.Export
     /// <param name="Files">With a name only: every file a copy carries, relative to the workspace.</param>
     /// <param name="Workspace">With a name only: the cells, their views and their declared analyses,
     /// as <c>find</c> reports a workspace.</param>
+    /// <param name="Group">The topic File ▸ New ▸ Examples files it under.</param>
     public sealed record ReferenceExampleJson(
         string  Name,
         string  Title,
@@ -4040,7 +4041,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         IReadOnlyList<ReferenceExampleFileJson>? Files = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        FoundWorkspaceJson? Workspace = null);
+        FoundWorkspaceJson? Workspace = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Group = null);
 
     /// <param name="Path">Relative to the example's workspace folder, with forward slashes.</param>
     public sealed record ReferenceExampleFileJson(string Path, long Bytes);

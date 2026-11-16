@@ -3579,7 +3579,7 @@ materials from the embedded `.cmat` libraries, and the examples from the index t
 <h3 id="reference-examples">The example workspaces</h3>
 
 `reference examples` lists the worked designs that ship with circuitRF, the same ones
-**File ▸ New ▸ Examples** offers. `reference examples <name>` gives one example's README (what each
+**File ▸ New ▸ Examples** offers, under the same topics (each row's `group` in `--json`). `reference examples <name>` gives one example's README (what each
 bench shows and the order to run them in), every file in it, and its cells with the analyses each
 declares. Copy one with [`new example`](#new-example) to run it or change it. An example added to
 circuitRF appears here as soon as it is in the menu; nothing else lists them.

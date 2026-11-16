@@ -20,7 +20,7 @@ in *Reference ▸ Simulations ▸ Small-signal noise*.
 
 ## Running a bench
 
-1. **File ▸ New ▸ Examples ▸ S-Parameter Noise** copies this workspace to a folder you choose and opens it.
+1. **File ▸ New ▸ Examples ▸ Noise ▸ S-Parameter Noise** copies this workspace to a folder you choose and opens it.
 2. In the Workspace tree, open a bench's schematic, for example `1 Attenuator`'s.
 3. **Simulate.**
 4. The bench's Data Display, `1 Attenuator.cdd` beside the `.cws`, opens on the new result. It is in the tree too, to

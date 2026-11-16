@@ -168,8 +168,8 @@ off without one. <code>circuitrf explain &lt;file&gt; --analysis</code> lists ev
 </tr>
 </tbody>
 </table>
-<p><strong>Worked examples.</strong> <strong>File ▸ New ▸ Examples ▸ S-Parameter Noise</strong> checks the S-parameter noise against closed forms.
-<strong>File ▸ New ▸ Examples ▸ Receiver Noise</strong> goes through a 2.45 GHz receiver, one bench per analysis: an LNA noise match,
+<p><strong>Worked examples.</strong> <strong>File ▸ New ▸ Examples ▸ Noise ▸ S-Parameter Noise</strong> checks the S-parameter noise against closed forms.
+<strong>File ▸ New ▸ Examples ▸ Noise ▸ Receiver Noise</strong> goes through a 2.45 GHz receiver, one bench per analysis: an LNA noise match,
 the chain's budget against Friis, a diode mixer's SSB and DSB noise figure, the LNA under a blocker, a noise sourcepull,
 an NR signal's EVM through the chain with a phase-noisy LO, and the VCO whose phase noise that LO carries.</p>
 <h3 id="sp-noise">Small-signal noise</h3>
@@ -375,7 +375,7 @@ measure NF2   = ns_circle(SP1.S, 2)
 Zopt = 19.2 + j38.2 Ω. <code>NF</code> is 2.948 dB, which is the noise figure from the 50 Ω source, and its noise
 temperature <code>Te</code> is 282 K against a <code>Tmin</code> of 129 K. <code>NFopt</code> is 1.6 dB again. <code>NF2</code> is the 2 dB noise circle:
 its centre is at 0.563∠100° and its radius is 0.245. The book rounds these to 0.56 and 0.24.</p>
-<p><strong>Worked examples.</strong> <strong>File ▸ New ▸ Examples ▸ S-Parameter Noise</strong> has three benches, each with a Data Display
+<p><strong>Worked examples.</strong> <strong>File ▸ New ▸ Examples ▸ Noise ▸ S-Parameter Noise</strong> has three benches, each with a Data Display
 that opens when it is simulated. A matched 6 dB pad is swept over its temperature, and its NF lies on
 1 + (T/T0)(L − 1). A low-noise stage, a pad and a second stage lie on Friis' formula as the pad's loss is swept.
 A noise-matched LNA shows NF against NFmin, Te against Tmin, its Sopt and two <code>ns_circle</code> circles on a

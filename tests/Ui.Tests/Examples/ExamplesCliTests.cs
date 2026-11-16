@@ -53,12 +53,16 @@ public sealed class ExamplesCliTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(onDisk.OrderBy(x => x, StringComparer.Ordinal),
                      rows.Select(r => r.GetProperty("name").GetString()!).OrderBy(x => x, StringComparer.Ordinal));
 
+        // in the menu's order (the index's topics), each row carrying its topic, title and summary
         using var index = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "examples.json")));
-        var indexed = index.RootElement.GetProperty("Examples").EnumerateArray().ToArray();
-        Assert.Equal(indexed.Select(e => e.GetProperty("Folder").GetString()),
-                     rows.Select(r => r.GetProperty("name").GetString()));
-        Assert.Equal(indexed.Select(e => e.GetProperty("Summary").GetString()),
+        var byFolder = index.RootElement.GetProperty("Examples").EnumerateArray().ToDictionary(e => e.GetProperty("Folder").GetString()!);
+        var inOrder = index.RootElement.GetProperty("Groups").EnumerateArray()
+            .SelectMany(g => g.GetProperty("Examples").EnumerateArray().Select(e => (Topic: g.GetProperty("Title").GetString(), Folder: e.GetString()!)))
+            .ToArray();
+        Assert.Equal(inOrder.Select(x => x.Folder), rows.Select(r => r.GetProperty("name").GetString()));
+        Assert.Equal(inOrder.Select(x => byFolder[x.Folder].GetProperty("Summary").GetString()),
                      rows.Select(r => r.GetProperty("summary").GetString()));
+        Assert.Equal(inOrder.Select(x => x.Topic), rows.Select(r => r.GetProperty("group").GetString()));
 
         var topics = Payload(RunCli("reference", "--json").StdOut).GetProperty("reference").GetProperty("topics");
         Assert.Contains(topics.EnumerateArray(), t => t.GetProperty("topic").GetString() == "examples");

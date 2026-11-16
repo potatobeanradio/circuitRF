@@ -197,14 +197,14 @@ is P.530's, on a satellite path P.618's.</p>
 <tr><td class="nowrap"><code>P1812</code></td><td>ITU-R P.1812 point-to-area over a profile</td><td>ITU-R P.1812-8 (09/2025)</td><td><code>Profile</code>, <code>Time</code>, <code>Locations</code>, <code>DeltaN</code>, <code>N0</code>, <code>Latitude</code>, <code>CoastTx</code>, <code>CoastRx</code>, <code>SigmaL</code>, <code>Resolution</code>, <code>Polarization</code> (a terrain profile)</td><td>30 MHz to 6 GHz, paths 0.25 to 3000 km over a terrain profile, antennas 1 to 3000 m above ground, 1 to 50 % of time, 1 to 99 % of locations, latitude within &#177;80&#176;</td></tr>
 </tbody></table>
 <p>Each model's own parameters, written on the channel beside <code>PathLoss=</code>:</p>
-<h3 id="logdist"><code>logdist</code></h3>
+<h3 id="model-logdist"><code>logdist</code></h3>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
 <tr><td class="nowrap"><code>n</code></td><td>—</td><td><code>2</code></td><td>0.1 to 10</td><td>the distance exponent beyond d0</td></tr>
 <tr><td class="nowrap"><code>d0</code></td><td>m</td><td><code>1</code></td><td>0.001 to 1000000</td><td>the reference distance: free space up to it</td></tr>
 <tr><td class="nowrap"><code>Sigma</code></td><td>dB</td><td><code>0</code></td><td>0 to 30</td><td>the shadowing standard deviation</td></tr>
 </tbody></table>
-<h3 id="multislope"><code>multislope</code></h3>
+<h3 id="model-multislope"><code>multislope</code></h3>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
 <tr><td class="nowrap"><code>Breaks</code></td><td>m</td><td>—</td><td>a comma-separated list</td><td>the breakpoints, increasing, comma-separated</td></tr>
@@ -212,14 +212,14 @@ is P.530's, on a satellite path P.618's.</p>
 <tr><td class="nowrap"><code>d0</code></td><td>m</td><td><code>1</code></td><td>0.001 to 1000000</td><td>the reference distance: free space up to it</td></tr>
 <tr><td class="nowrap"><code>Sigma</code></td><td>dB</td><td><code>0</code></td><td>0 to 30</td><td>the shadowing standard deviation</td></tr>
 </tbody></table>
-<h3 id="tworay"><code>tworay</code></h3>
+<h3 id="model-tworay"><code>tworay</code></h3>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
 <tr><td class="nowrap"><code>GroundEr</code></td><td>—</td><td><code>15</code></td><td>1 to 100</td><td>the ground&#39;s relative permittivity</td></tr>
 <tr><td class="nowrap"><code>GroundSigma</code></td><td>S/m</td><td><code>0.005</code></td><td>0 to 100</td><td>the ground&#39;s conductivity</td></tr>
 <tr><td class="nowrap"><code>Polarization</code></td><td>—</td><td><code>vertical</code></td><td><code>vertical</code>, <code>horizontal</code></td><td>the polarization</td></tr>
 </tbody></table>
-<h3 id="section"><code>38901</code></h3>
+<h3 id="model-38901"><code>38901</code></h3>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
 <tr><td class="nowrap"><code>Scenario</code></td><td>—</td><td><code>UMa</code></td><td><code>uma</code>, <code>umi</code>, <code>rma</code>, <code>inh-mixed</code>, <code>inh-open</code>, <code>inf-sl</code>, <code>inf-dl</code>, <code>inf-sh</code>, <code>inf-dh</code>, <code>inf-hh</code></td><td>the scenario</td></tr>
@@ -233,7 +233,7 @@ is P.530's, on a satellite path P.618's.</p>
 <tr><td class="nowrap"><code>HallWidth</code></td><td>m</td><td>—</td><td>1 to 1000</td><td>InF: the hall&#39;s width (blank: the sub-scenario&#39;s)</td></tr>
 <tr><td class="nowrap"><code>HallHeight</code></td><td>m</td><td>—</td><td>1 to 100</td><td>InF: the hall&#39;s height (blank: the sub-scenario&#39;s)</td></tr>
 </tbody></table>
-<h3 id="p1238"><code>P1238</code></h3>
+<h3 id="model-p1238"><code>P1238</code></h3>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
 <tr><td class="nowrap"><code>Environment</code></td><td>—</td><td><code>office</code></td><td><code>office</code>, <code>corridor</code>, <code>industrial</code>, <code>conference</code></td><td>the indoor environment</td></tr>
@@ -242,7 +242,7 @@ is P.530's, on a satellite path P.618's.</p>
 <tr><td class="nowrap"><code>Building</code></td><td>—</td><td><code>office</code></td><td><code>office</code>, <code>commercial</code>, <code>residential</code></td><td>the building type for the floor penetration loss</td></tr>
 <tr><td class="nowrap"><code>FloorLoss</code></td><td>dB</td><td>—</td><td>0 to 200</td><td>a stated floor penetration loss (blank: the recommendation&#39;s table)</td></tr>
 </tbody></table>
-<h3 id="p1411"><code>P1411</code></h3>
+<h3 id="model-p1411"><code>P1411</code></h3>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
 <tr><td class="nowrap"><code>Mode</code></td><td>—</td><td><code>belowroof</code></td><td><code>belowroof</code>, <code>aboveroof</code>, <code>lowheight</code>, <code>corner</code></td><td>which of the recommendation&#39;s models</td></tr>
@@ -260,7 +260,7 @@ is P.530's, on a satellite path P.618's.</p>
 <tr><td class="nowrap"><code>RoadHeight</code></td><td>m</td><td><code>0</code></td><td>0 to 10</td><td>corner, up to 15 GHz: the effective road height hs (traffic)</td></tr>
 <tr><td class="nowrap"><code>n</code></td><td>—</td><td><code>2</code></td><td>1 to 5</td><td>corner, above 15 GHz: the line-of-sight street&#39;s loss exponent</td></tr>
 </tbody></table>
-<h3 id="p526"><code>P526</code></h3>
+<h3 id="model-p526"><code>P526</code></h3>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
 <tr><td class="nowrap"><code>Mode</code></td><td>—</td><td><code>profile</code></td><td><code>knifeedge</code>, <code>sphere</code>, <code>profile</code></td><td>knifeedge: one edge; sphere: a smooth Earth; profile: a general path over a profile</td></tr>
@@ -272,7 +272,7 @@ is P.530's, on a satellite path P.618's.</p>
 <tr><td class="nowrap"><code>Polarization</code></td><td>—</td><td><code>vertical</code></td><td><code>vertical</code>, <code>horizontal</code></td><td>the polarization</td></tr>
 <tr><td class="nowrap"><code>Profile</code></td><td>—</td><td>—</td><td>a CSV file</td><td>a terrain profile CSV: distance and height columns with units, optional clutter, surface and zone</td></tr>
 </tbody></table>
-<h3 id="satellite"><code>satellite</code></h3>
+<h3 id="model-satellite"><code>satellite</code></h3>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
 <tr><td class="nowrap"><code>Altitude</code></td><td>km</td><td><code>600</code></td><td>1 to 1000000</td><td>the satellite&#39;s altitude (a circular orbit; 35786 is geostationary)</td></tr>
@@ -281,7 +281,7 @@ is P.530's, on a satellite path P.618's.</p>
 <tr><td class="nowrap"><code>Scenario</code></td><td>—</td><td><code>none</code></td><td><code>none</code>, <code>denseurban</code>, <code>urban</code>, <code>suburban</code>, <code>rural</code></td><td>TR 38.811&#39;s terminal environment for line of sight, shadowing and clutter (none: open, line of sight)</td></tr>
 <tr><td class="nowrap"><code>Los</code></td><td>—</td><td><code>auto</code></td><td><code>auto</code>, <code>los</code>, <code>nlos</code></td><td>with a scenario: the propagation state; auto gives the more probable one</td></tr>
 </tbody></table>
-<h3 id="p1812"><code>P1812</code></h3>
+<h3 id="model-p1812"><code>P1812</code></h3>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
 <tr><td class="nowrap"><code>Profile</code></td><td>—</td><td>—</td><td>a CSV file</td><td>a terrain profile CSV: distance and height columns with units, optional clutter, surface and zone</td></tr>
@@ -296,7 +296,7 @@ is P.530's, on a satellite path P.618's.</p>
 <tr><td class="nowrap"><code>Resolution</code></td><td>m</td><td><code>100</code></td><td>1 to 100000</td><td>the prediction resolution the location variability applies over</td></tr>
 <tr><td class="nowrap"><code>Polarization</code></td><td>—</td><td><code>vertical</code></td><td><code>vertical</code>, <code>horizontal</code></td><td>the polarization</td></tr>
 </tbody></table>
-<h3 id="the-added-losses-on-any-model">The added losses, on any model</h3>
+<h3 id="added-losses">The added losses, on any model</h3>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
 <tr><td class="nowrap"><code>Partitions</code></td><td>dB</td><td>—</td><td>a comma-separated list</td><td>partition losses on the path, dB each, comma-separated</td></tr>

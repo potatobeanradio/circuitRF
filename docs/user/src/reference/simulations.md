@@ -128,8 +128,8 @@ off without one. `circuitrf explain <file> --analysis` lists every part's noise 
 | Ports and sources | Noiseless. A port's termination enters only as the T0 reference of a noise figure. In an envelope run, `Noise=yes` on a source makes its impedance thermal. |
 | Random noise | Only an envelope run draws random noise, from `Seed` (1 by default). The same seed gives the same bits on every computer and in every split of the run. |
 
-**Worked examples.** **File ▸ New ▸ Examples ▸ S-Parameter Noise** checks the S-parameter noise against closed forms.
-**File ▸ New ▸ Examples ▸ Receiver Noise** goes through a 2.45 GHz receiver, one bench per analysis: an LNA noise match,
+**Worked examples.** **File ▸ New ▸ Examples ▸ Noise ▸ S-Parameter Noise** checks the S-parameter noise against closed forms.
+**File ▸ New ▸ Examples ▸ Noise ▸ Receiver Noise** goes through a 2.45 GHz receiver, one bench per analysis: an LNA noise match,
 the chain's budget against Friis, a diode mixer's SSB and DSB noise figure, the LNA under a blocker, a noise sourcepull,
 an NR signal's EVM through the chain with a phase-noisy LO, and the VCO whose phase noise that LO carries.
 
@@ -286,7 +286,7 @@ Zopt = 19.2 + j38.2 Ω. `NF` is 2.948 dB, which is the noise figure from the 50 
 temperature `Te` is 282 K against a `Tmin` of 129 K. `NFopt` is 1.6 dB again. `NF2` is the 2 dB noise circle:
 its centre is at 0.563∠100° and its radius is 0.245. The book rounds these to 0.56 and 0.24.
 
-**Worked examples.** **File ▸ New ▸ Examples ▸ S-Parameter Noise** has three benches, each with a Data Display
+**Worked examples.** **File ▸ New ▸ Examples ▸ Noise ▸ S-Parameter Noise** has three benches, each with a Data Display
 that opens when it is simulated. A matched 6 dB pad is swept over its temperature, and its NF lies on
 1 + (T/T0)(L − 1). A low-noise stage, a pad and a second stage lie on Friis' formula as the pad's loss is swept.
 A noise-matched LNA shows NF against NFmin, Te against Tmin, its Sopt and two `ns_circle` circles on a

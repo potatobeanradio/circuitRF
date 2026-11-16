@@ -9,6 +9,7 @@
 *.spl
 *.lpcwave
 *.mat
+*.ds
 
 # Per-user session state: panel layout, open tabs, tree expansion, colour theme. It belongs
 # to whoever is sitting here, not to the design, and nothing is lost by leaving it out.
@@ -32,4 +33,5 @@
 *.palace_*/
 *.openems/
 *.thermal/
+.staging-*/
 

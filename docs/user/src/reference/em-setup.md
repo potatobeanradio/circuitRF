@@ -1783,7 +1783,7 @@ table leaves out.
 - **Participation** is the fraction of each mode's electric energy in each meshed region: it is what
   says where a mode lives.
 
-**Worked example.** **File ▸ New ▸ Examples ▸ 3D Eigenmode** asks the question on its own: a 50 Ω line through an
+**Worked example.** **File ▸ New ▸ Examples ▸ 3D EM ▸ 3D Eigenmode (a cavity resonance)** asks the question on its own: a 50 Ω line through an
 aluminium housing, in the band 8–12 GHz. The empty cavity's closed form puts its lowest mode at 10.13 GHz, an upper
 bound, since the laminate on the floor pulls the mode down. The cavity's first mode is at **9.956 GHz** (Q **539**),
 inside the band, and the driven S21 has a **−11.69 dB** notch there. With a grounded post beside the line, the mode is

@@ -10,10 +10,12 @@ picks and opens it there. The user's copy is theirs; nothing writes back into th
 ## Adding an example
 
 1. Make the workspace in here, as a folder with a `.cws` in it.
-2. Add a row to `examples.json` — the folder name, the title the menu shows, and one sentence.
-   The order of that file is the order of the menu. A folder that is not in the index is offered
-   by nothing; an index row whose folder is missing is skipped rather than shown as a menu item
-   that fails when pressed.
+2. Add a row to `examples.json` — the folder name, the title, and one sentence — and put its folder
+   in one of the `Groups`: File ▸ New ▸ Examples is one submenu per topic, in the order `Groups`
+   lists them, each holding its examples in its own order. `MenuTitle` names a row inside its
+   submenu when the topic already says what part of the title would ("Die to Heatsink" under
+   Thermal). A folder that is not in the index is offered by nothing; an index row whose folder is
+   missing is skipped rather than shown as a menu item that fails when pressed.
 3. **Put every design in a cell**, the way File ▸ New Cell makes one: a folder with a `.ccell`, and
    its schematic, symbol, layout and 3D view in `schematic/`, `symbol/`, `layout/` and `3d/`, each
    named after the cell. A part placed into another view (a board placed into a 3D assembly, a die
@@ -28,7 +30,7 @@ picks and opens it there. The user's copy is theirs; nothing writes back into th
    anything else degrades to plain text (`src/Ui/Markdown/`). A picture inside a sentence, or one
    that does not resolve, shows its alt text, so write the alt text as a sentence.
 5. Add its abstract to the user documentation's **Example Workspaces** page,
-   `docs/user/src/examples/index.md`: a `###` heading with the menu title and an `{#ex-<folder>}` anchor, 100–250
+   `docs/user/src/examples/index.md`, under its topic's `##` section: a `###` heading with the menu title and an `{#ex-<folder>}` anchor, 100–250
    words on what it builds and shows, and a `*Folder:*` line naming the folder. Each heading is its own search result,
    which is how a user finds an example by subject. DocGen also renders this README, with its pictures, as
    `docs/user/examples/<folder>/index.html`, which the abstract links to; regenerate with DocGen.

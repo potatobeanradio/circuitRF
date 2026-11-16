@@ -69,19 +69,26 @@ public partial class WorkspaceViewModel
 
     private ObservableCollection<Control>? _exampleMenuItems;
 
+    /// <summary>One submenu per topic (the index's <c>Groups</c>, <see cref="ExampleWorkspaces.Grouped"/>), its examples inside;
+    /// the macOS menu bar builds the same from the same call.</summary>
     private ObservableCollection<Control> BuildExampleMenuItems()
     {
         var items = new ObservableCollection<Control>();
-        foreach (var e in Examples)
+        foreach (var (title, examples) in ExampleWorkspaces.Grouped(Examples))
         {
-            var item = new MenuItem
+            var topic = new MenuItem { Header = title };
+            foreach (var e in examples)
             {
-                Header           = e.Title,
-                Command          = OpenExampleCommand,
-                CommandParameter = e.Folder,
-            };
-            ToolTip.SetTip(item, e.Summary);
-            items.Add(item);
+                var item = new MenuItem
+                {
+                    Header           = e.MenuText,
+                    Command          = OpenExampleCommand,
+                    CommandParameter = e.Folder,
+                };
+                ToolTip.SetTip(item, e.Summary);
+                topic.Items.Add(item);
+            }
+            items.Add(topic);
         }
         return items;
     }

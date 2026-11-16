@@ -51,7 +51,7 @@ differences that matter here:
 
 - **Tools ▸ RF Chain Budget** opens a new chain: an LNA, a filter and a second amplifier.
 - A `.cchain` in the workspace tree opens on a double-click.
-- **File ▸ New ▸ Examples ▸ RF Chain Budget** has a 2.45 GHz superhet, a four-element steered array, a front end
+- **File ▸ New ▸ Examples ▸ Systems and Radio Links ▸ RF Chain Budget** has a 2.45 GHz superhet, a four-element steered array, a front end
   with a canceller, a dual-conversion receiver and a 26 GHz link, each already transferred.
 
 {{ui: chain-budget}}

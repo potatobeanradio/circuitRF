@@ -90,43 +90,43 @@ Every model, from the registry the channel, the Chain Budget and `circuitrf refe
 
 Each model's own parameters, written on the channel beside `PathLoss=`:
 
-### `logdist`
+### `logdist` {#model-logdist}
 
 {{table: propagation/logdist}}
 
-### `multislope`
+### `multislope` {#model-multislope}
 
 {{table: propagation/multislope}}
 
-### `tworay`
+### `tworay` {#model-tworay}
 
 {{table: propagation/tworay}}
 
-### `38901`
+### `38901` {#model-38901}
 
 {{table: propagation/38901}}
 
-### `P1238`
+### `P1238` {#model-p1238}
 
 {{table: propagation/P1238}}
 
-### `P1411`
+### `P1411` {#model-p1411}
 
 {{table: propagation/P1411}}
 
-### `P526`
+### `P526` {#model-p526}
 
 {{table: propagation/P526}}
 
-### `satellite`
+### `satellite` {#model-satellite}
 
 {{table: propagation/satellite}}
 
-### `P1812`
+### `P1812` {#model-p1812}
 
 {{table: propagation/P1812}}
 
-### The added losses, on any model
+### The added losses, on any model {#added-losses}
 
 {{table: propagation/losses}}
 

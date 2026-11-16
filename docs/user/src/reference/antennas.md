@@ -436,7 +436,7 @@ physical, and it is ideally non-zero.</p>
 
 ## Worked example: a 5.8 GHz inset-fed patch {#example}
 
-**File ▸ New ▸ Examples ▸ Patch Antenna** installs this workspace wherever you choose it, ready to open —
+**File ▸ New ▸ Examples ▸ Antennas and Arrays ▸ Patch Antenna** installs this workspace wherever you choose it, ready to open —
 one inset-fed patch on the shipped **PCB 2-Layer RO4350B (30 mil, 1 oz)** technology, ε<sub>r</sub>
 3.66, tanδ 0.0037, 762 µm to the ground plane. Open `patch/em/patch-5p8GHz.cem` and press
 **Simulate**; it arrives with the radiation pattern, the radiating-sheet mesh and the resonance search

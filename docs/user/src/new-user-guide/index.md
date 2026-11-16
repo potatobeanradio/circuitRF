@@ -224,7 +224,8 @@ Because RF data comes in different flavors:
 ## 10 · Two worked examples {#examples}
 
 Beyond these two, circuitRF ships with complete example workspaces you can open, edit and run from
-**File ▸ New ▸ Examples**; [Example Workspaces](../examples/index.html) lists every one with what it shows.
+**File ▸ New ▸ Examples**, loosely organized by topic, one submenu each; [Example Workspaces](../examples/index.html) lists
+every one with what it shows.
 
 ### A. The simplest possible DC simulation
 
@@ -312,7 +313,7 @@ worked amplifier examples — is in <a href="../reference/match.html">The Match 
 Ten minutes, and nothing to draw. It shows what the 3D editor's geometry kernel adds — booleans, fillets and
 imported parts — and what a solver does and does not see of a curved surface.
 
-1. **File ▸ New ▸ Examples ▸ 3D Connector**, and choose a folder for your copy. The copy opens in the window you
+1. **File ▸ New ▸ Examples ▸ 3D EM ▸ 3D Connector (booleans, fillets, STEP)**, and choose a folder for your copy. The copy opens in the window you
    chose the menu from when that window has no workspace, no torn-off document window and no unsaved work,
    and in a new window otherwise, so nothing you are working on is replaced. It opens `README.md`; open the
    **Launch** cell's 3D view from the Project panel.
@@ -339,7 +340,7 @@ Ten minutes, and nothing to draw. A **wave port** makes a region of the air box'
 line that ends there, so the port adds no gap and no parasitic of its own. This example uses one on a coax, and then
 on pairs of lines that end on one face, where each line becomes a port of its own.
 
-1. **File ▸ New ▸ Examples ▸ 3D Wave Ports**, and open the **Launch** cell's 3D view. It is §13's connector with its back
+1. **File ▸ New ▸ Examples ▸ 3D EM ▸ 3D Wave Ports**, and open the **Launch** cell's 3D view. It is §13's connector with its back
    end open: the coax runs to the air box's face, and **P1** there is a wave port. Its arrow runs from the housing to
    the pin. P1 states only its rectangle: delete it and draw it again with the Port tool (**Shift+A P**) on that face,
    2 mm square round the axis, and the same arrow is inferred, along a ray from the bore's wall to the pin, because the

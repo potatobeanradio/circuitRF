@@ -1100,3 +1100,21 @@ with a reason where none is discovered). What building them found:
   1 ps transient confirms (87.96 %). 31 is no slower here, so it ships, and the README tables all three.
 - **The Harmonic Balance example's README said a Term is open outside S-parameters.** That stopped being true when a Term
   became a load of its `Z` in DC and harmonic balance; the paragraph and its abstract were corrected.
+
+## File ▸ New ▸ Examples by topic, and the SDD example (2026-11-16)
+
+- **The menu is one submenu per topic.** `examples.json` (schema 2) carries `Groups`: each topic's title and its examples'
+  folders, in menu order; `MenuTitle` names a row inside its submenu where the topic says what part of the title would
+  ("Die to Heatsink" under Thermal). `ExampleWorkspaces.All` returns the examples in the groups' order and `Grouped` the
+  topics; both menus (in-window and the macOS menu bar), `reference examples` (each row's `group`) and the Example Workspaces
+  page follow it. An example in no group lands under "Other", last, so it is never lost. The owner chose the topics and their
+  order and expects both to change: `ExampleWorkspacesTests` holds only that every example is under exactly one topic and no
+  topic is empty, never a position.
+- **Schematic from Image removed.** It showed image recognition only (its *Matching board* is a layout traced from a picture,
+  not a schematic from a layout, which *Artwork to Schematic* shows), and that is no longer offered as an example.
+- **Symbolically Defined Device (SDD)**, under Models: the hero SDD FET built up over five loadpull benches (drain current, gate
+  current, 1D charges, 2D charges, Cgd as its own SDD block; bench 5 reads exactly what bench 4 reads) and a DC bias loop whose
+  SDD reads the supply's current. Its folder name has parentheses, so its docs slug and anchor do too; HTML ids and CommonMark
+  links take them, and the generated page links correctly. Built by `tests/Ui.Tests/Examples/SddExampleAuthoring`
+  (CRF_AUTHOR_SDD_EXAMPLE=1); gate `SddExampleTests`.
+- The SDD example's load grid is the Loadpull example's with 48 more points where the optima fall: on the 49-point grid the interpolated MXP sat off the centre of the innermost Pout contour (owner).
