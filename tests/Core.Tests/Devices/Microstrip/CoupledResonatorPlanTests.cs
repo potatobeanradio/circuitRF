@@ -198,7 +198,6 @@ public class CoupledResonatorPlanTests
     [InlineData("n-invalid", "N=2.5;S1=1e-4;S2=1e-4;S3=1e-4")]
     [InlineData("n-invalid", "N=0")]
     [InlineData("spec-not-positive", $"{Gaps};W2=-1e-3")]
-    [InlineData("gap-missing", "S1=1e-4;S2=1e-4;S3=1e-4")]
     [InlineData("name-unknown", $"{Gaps};Shape=Spiral")]
     [InlineData("form-shape", $"{Gaps};Form=Bandstop")]
     [InlineData("form-shape", "N=3;Form=Spurline;Shape=Hairpin;S1=1e-4;S2=1e-4;S3=1e-4")]
@@ -267,5 +266,19 @@ public class CoupledResonatorPlanTests
         double w = PassivePlan.OnGrid(1.058e-3), w2 = PassivePlan.OnGrid(0.8e-3);
         Assert.Contains((w, w2), widths);
         Assert.Contains((w2, w), widths);
+    }
+
+    /// <summary>A gap the part does not state is the common S, as W_k is W: four cross-coupled loops given S1 to S4 take
+    /// S5 from S, and a part stating nothing at all (a generator called with no parameters) builds on the defaults.</summary>
+    [Fact]
+    public void AGapNotGiven_IsTheCommonS()
+    {
+        var spec = Spec($"{Gaps};N=4;Shape=OpenLoop;Arrangement=Cross;S=0.3e-3");
+        Assert.Equal(0.3e-3, spec.S[5]);
+        Assert.Equal(0.126e-3, spec.S[1]);
+        Assert.NotEmpty(CoupledResonatorPlan.Build(spec, Ro4350b).Sections);
+        var bare = Spec("");
+        Assert.All(bare.S.Values, s => Assert.Equal(CoupledResonatorSpec.DefaultS, s));
+        Assert.NotEmpty(CoupledResonatorPlan.Build(bare, Ro4350b).Sections);
     }
 }

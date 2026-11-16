@@ -1962,6 +1962,9 @@ public static class ComponentTypeRegistry
         (SymbolKind.Mcrc, "L") => "Each resonator's centre-line length, open end to open end, corners counted along the "
                                 + "centre line: about half a guided wavelength. A loop's is its perimeter less Gap, a "
                                 + "ring's its circumference. L1, L2, ... give one resonator its own.",
+        (SymbolKind.Mcrc, "S") => "Every coupling gap not given one of its own: an S_k the filter needs and the part does "
+                                + "not state is S, as W_k falls back to W and L_k to L. Switching to four cross-coupled loops, "
+                                + "say, takes S5 from it.",
         (SymbolKind.Mcrc, var s) when s.Length > 1 && s[0] == 'S' && char.IsDigit(s[1]) => "Coupling gap S_k: resonator "
                                 + "k's gap to the resonator or feed before it (S1 the input feed's, S(N+1) the output's; a "
                                 + "tapped feed has neither); a bandstop's gap to the through line; a spurline's slot.",
@@ -4566,6 +4569,7 @@ public static class ComponentTypeRegistry
                 return [new("N",  "3",     "",   true, UnitDimension.None),
                         new("W",  "1.058", "mm", true, UnitDimension.Length),
                         new("L",  "37.17", "mm", true, UnitDimension.Length),
+                        new("S",  "0.574", "mm", false, UnitDimension.Length),
                         new("S1", "0.126", "mm", true, UnitDimension.Length),
                         new("S2", "0.574", "mm", true, UnitDimension.Length),
                         new("S3", "0.574", "mm", true, UnitDimension.Length),

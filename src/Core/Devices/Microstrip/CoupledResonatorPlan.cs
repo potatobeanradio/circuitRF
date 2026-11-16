@@ -43,7 +43,7 @@ public enum ResonatorCoupling { Pairs, Full }
 /// plan draws (docs/design/rf-passives.md §3.5). Lengths in metres. <see cref="W"/> and <see cref="L"/> hold one value
 /// per resonator, index 0 for resonator 1. <see cref="S"/> holds the gaps by number: S_k is resonator k's gap to the
 /// resonator or feed before it (bandpass; S_(N+1) the output feed's), or to the through line (bandstop), or its slot
-/// (spurline). A tapped feed has no S1 or S_(N+1).
+/// (spurline). A tapped feed has no S1 or S_(N+1). A gap stated as no S_k of its own is the common S.
 /// </summary>
 public sealed record CoupledResonatorSpec(
     int N, IReadOnlyList<double> W, IReadOnlyList<double> L, IReadOnlyDictionary<int, double> S,
@@ -58,6 +58,9 @@ public sealed record CoupledResonatorSpec(
     public const double DefaultW = 1.058e-3, DefaultL = 37.17e-3, DefaultSa = 2.2e-3, DefaultGap = 1.0e-3,
         DefaultTap = 6.0e-3, DefaultWc = 0.4e-3, DefaultUc = 0.3, DefaultSx = 0.5e-3;
 
+    /// <summary>The common gap's fallback: the default design's inner gap.</summary>
+    public const double DefaultS = 0.574e-3;
+
     /// <summary>The gap numbers this filter needs.</summary>
     public IEnumerable<int> GapNumbers => (Form, Shape, Feed) switch
     {
@@ -68,8 +71,9 @@ public sealed record CoupledResonatorSpec(
 
     /// <summary>
     /// The spec from named values: <paramref name="real"/> a length or count in SI, <paramref name="text"/> a name, each
-    /// null when the part does not state it. W_k and L_k (W1, L2, ...) fall back to W and L; a gap the filter needs is
-    /// refused when absent. The factory and the PCell both read a part through this.
+    /// null when the part does not state it. W_k, L_k and S_k (W1, L2, S5, ...) fall back to W, L and S, so a part whose
+    /// N, Shape or Feed asks for a gap it was not given (four cross-coupled loops take S5) still builds, on S. The factory
+    /// and the PCell both read a part through this.
     /// </summary>
     public static CoupledResonatorSpec Read(Func<string, double?> real, Func<string, string?> text)
     {
@@ -81,9 +85,8 @@ public sealed record CoupledResonatorSpec(
         double w = real("W") ?? DefaultW, l = real("L") ?? DefaultL;
         var widths = Enumerable.Range(1, n).Select(k => real($"W{k}") ?? w).ToArray();
         var lengths = Enumerable.Range(1, n).Select(k => real($"L{k}") ?? l).ToArray();
-        var gaps = new Dictionary<int, double>();
-        for (int k = 1; k <= n + 1; k++)
-            if (real($"S{k}") is { } g) gaps[k] = g;
+        double s = real("S") ?? DefaultS;
+        var gaps = Enumerable.Range(1, n + 1).ToDictionary(k => k, k => real($"S{k}") ?? s);
         var spec = new CoupledResonatorSpec(n, widths, lengths, gaps,
             Named(text("Shape"), ResonatorShape.Straight), Named(text("Profile"), ResonatorProfile.Uniform),
             Named(text("Feed"), ResonatorFeed.Coupled), Named(text("Form"), ResonatorForm.Bandpass),
@@ -111,14 +114,7 @@ public sealed record CoupledResonatorSpec(
             if (!(v > 0)) throw Refusal("spec-not-positive", "{name} = {value} must be positive.", ("name", name), ("value", v));
         }
         for (int k = 1; k <= N; k++) { Positive($"W{k}", W[k - 1]); Positive($"L{k}", L[k - 1]); }
-        foreach (int k in GapNumbers)
-        {
-            if (!S.TryGetValue(k, out double g))
-                throw Refusal("gap-missing", "S{k} is not given: with N = {n}, {form} {shape} with a {feed} feed takes S{first} "
-                  + "to S{last}.", ("k", k), ("n", N), ("form", Form), ("shape", Shape), ("feed", Feed),
-                    ("first", GapNumbers.First()), ("last", GapNumbers.Last()));
-            Positive($"S{k}", g);
-        }
+        foreach (int k in GapNumbers) Positive($"S{k}", S[k]);
 
         if (Form == ResonatorForm.Bandstop && Shape is not (ResonatorShape.ZigZag or ResonatorShape.Hairpin))
             throw Refusal("form-shape", "a bandstop's resonators are ZigZag (folded once, the first half beside the through "

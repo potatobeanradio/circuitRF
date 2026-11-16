@@ -659,6 +659,7 @@ used by the factory and the PCell alike.
 | `W`, `W1` … `WN` | yes, m | Each resonator's width (its end sections' for a SIR), and the feed strip's beside it. `Wk` overrides `W`. |
 | `L`, `L1` … `LN` | yes, m | Each resonator's centre-line length, open end to open end, its corners counted along the centre line (2·arm each, `PlanBend.Arm`). A loop's is 4·side − `Gap`; a ring's its circumference. `Lk` overrides `L`. |
 | `S1` … `S(N+1)` | yes, m | Bandpass: `Sk` between resonator k and the resonator or feed before it; `S(N+1)` the output feed's. Tapped: `S2` … `SN` only. Bandstop: `Sk` resonator k to the through line. Spurline: `Sk` spur k's slot. |
+| `S` | yes, m | The common gap: every `Sk` the filter needs and the part does not state. So a part switched to a shape or `N` needing more gaps (four cross-coupled loops take `S5`) still builds, and a part stating none builds on the default design's inner gap. |
 | `Shape` | yes, a name | `Straight`, `ZigZag`, `Hairpin`, `OpenLoop`, `Ring`. |
 | `Profile` | yes, a name | `Uniform`, or `SIR`: centre `Wc` wide over `Uc`·L (Straight, ZigZag, Hairpin bandpass). |
 | `Feed` | yes, a name | `Coupled`, or `Tapped` at `Tap` from the end resonators' midpoints (bandpass). |
@@ -741,7 +742,7 @@ part.
 | Bandstop | `N`, `W`, `L`/`Lk`, `S1` … `SN`, `Sa` for Hairpin | Each resonator notches where it is λg/2 (corners' excess added); the gaps set each notch's coupling. Spacing is fixed: back to back. |
 | Spurline | `N`, `W`, `L`/`Lk`, `S1` … `SN` | The spur is a quarter wave in the odd mode at the notch, less its open end. The line is 2·W + S wide. |
 
-Refusals: `device.mcrc.*` — `n-invalid`, `spec-not-positive`, `gap-missing`, `name-unknown`, `form-shape`, `form-feed`,
+Refusals: `device.mcrc.*` — `n-invalid`, `spec-not-positive`, `name-unknown`, `form-shape`, `form-feed`,
 `profile-shape`, `ring`, `cross-n`, `sir-ratio`, `sir-centre`, `unequal-pair` (`Pairs` only), `tap-off-line`, `too-short`,
 `no-overlap`.
 Tests: `CoupledResonatorPlanTests` (every node one place, every copper island clear of the others, open ends first, pin 1
