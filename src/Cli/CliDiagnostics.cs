@@ -4378,6 +4378,53 @@ internal static class CliDiagnostics
     public static Diagnostic ChainTransferRefused(string why) => Diagnostic.Create(
         "chain.transfer.refused", DiagnosticSeverity.Error, "Transfer to schematic: {why}", ("why", why));
 
+    // ── filter (filter synthesis, headless) ─────────────────────────────────────
+
+    public static Diagnostic FilterUnknownOption(string option) => Diagnostic.Create(
+        "filter.args.unknown-option", DiagnosticSeverity.Error,
+        "filter does not take '{option}'. It takes --response, --band, --order, --f1, --f2, --ripple, --stop, --z0, --zeros, "
+      + "--tech, --signal, --ground, --realiser, --points, -o and --to-schematic.",
+        ("option", option));
+
+    public static Diagnostic FilterBadValue(string option, string value, string wants) => Diagnostic.Create(
+        "filter.args.bad-value", DiagnosticSeverity.Error,
+        "{option} takes {wants}; '{value}' is not one.", ("option", option), ("value", value), ("wants", wants));
+
+    /// <summary>What the specification lacks, or why it cannot be a filter: an edge missing, an order below one.</summary>
+    public static Diagnostic FilterSpecRefused(string why) => Diagnostic.Create(
+        "filter.spec.refused", DiagnosticSeverity.Error, "The specification is refused: {why}", ("why", why));
+
+    public static Diagnostic FilterTechNotFound(string tech, string ids) => Diagnostic.Create(
+        "filter.tech.not-found", DiagnosticSeverity.Error,
+        "'{tech}' is no technology: not a .ctech, nor a folder in a workspace, nor a shipped id ({ids}).",
+        ("tech", tech), ("ids", ids));
+
+    /// <summary>The technology has no microstrip between the layers asked for; a realiser then gets no substrate.</summary>
+    public static Diagnostic FilterNoSubstrate(string why) => Diagnostic.Create(
+        "filter.tech.no-substrate", DiagnosticSeverity.Warning,
+        "No substrate: {why}. A realiser that needs one refuses.", ("why", why));
+
+    /// <summary>One realiser of the list, and whether it can build the specification.</summary>
+    public static Diagnostic FilterRealiserListed(string name, bool supports, string why) => Diagnostic.Create(
+        "filter.realiser.listed", DiagnosticSeverity.Info,
+        supports ? "{name}: can build it." : "{name}: {why}", ("name", name), ("supports", supports), ("why", why));
+
+    public static Diagnostic FilterRealiserUnknown(string name, string names) => Diagnostic.Create(
+        "filter.realiser.unknown", DiagnosticSeverity.Error,
+        "No realiser is named '{name}'. The realisers: {names}.", ("name", name), ("names", names));
+
+    /// <summary>The realiser's own refusal: its <c>Supports</c> sentence, or what <c>Realise</c> threw.</summary>
+    public static Diagnostic FilterRealiserRefused(string name, string why) => Diagnostic.Create(
+        "filter.realiser.refused", DiagnosticSeverity.Error, "{name} cannot build it: {why}", ("name", name), ("why", why));
+
+    public static Diagnostic FilterOutputRequired() => Diagnostic.Create(
+        "filter.output.required", DiagnosticSeverity.Error,
+        "filter --realiser writes a netlist: name it with -o <file.cnl>.");
+
+    /// <summary>A realisation's note for the designer, or a site the bench left to the user.</summary>
+    public static Diagnostic FilterNote(string note) => Diagnostic.Create(
+        "filter.note", DiagnosticSeverity.Info, "{note}", ("note", note));
+
     public static Diagnostic CheckChainSummary(string path, int stages, double gainDb, double nfDb) => Diagnostic.Create(
         "check.chain.summary", DiagnosticSeverity.Info,
         "{path}: {stages} stage(s), gain {gain} dB, NF {nf} dB.",

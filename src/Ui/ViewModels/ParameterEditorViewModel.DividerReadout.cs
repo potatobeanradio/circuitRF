@@ -89,6 +89,7 @@ public partial class ParameterEditorViewModel
         DividerReadoutText = text;
         DividerReadoutNote = note;
         OnPropertyChanged(nameof(IsDividerReadoutTarget));
+        OnPropertyChanged(nameof(IsFilterSynthesisTarget));
         OnPropertyChanged(nameof(HasSites));
         OnPropertyChanged(nameof(DividerReadoutText));
         OnPropertyChanged(nameof(DividerReadoutNote));
