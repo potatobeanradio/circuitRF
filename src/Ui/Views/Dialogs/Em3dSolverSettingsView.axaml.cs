@@ -110,6 +110,7 @@ public partial class Em3dSolverSettingsView : UserControl
             GmshBox.Text    = p.Em3dGmshPath    ?? "";
             OpenEmsBox.Text = p.Em3dOpenEmsPath ?? "";
             EmergeBox.Text  = p.Em3dEmergePath  ?? "";
+            NgspiceBox.Text = p.NgspicePath     ?? "";
             MpiBox.Text     = p.Em3dMpiLauncherPath ?? "";
             string device = CircuitRF.Ui.Layout.Em.EmEmergeDevicePreference.Preferred.Id();
             EmergeDeviceBox.SelectedItem = EmergeDeviceBox.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string?)i.Tag == device);
@@ -212,6 +213,7 @@ public partial class Em3dSolverSettingsView : UserControl
         (SolverDiscovery.Gmsh,    GmshStatus,    GmshInstall,    GmshRemovals),
         (SolverDiscovery.OpenEms, OpenEmsStatus, OpenEmsInstall, OpenEmsRemovals),
         (SolverDiscovery.Emerge,  EmergeStatus,  EmergeInstall,  EmergeRemovals),
+        (SolverDiscovery.Ngspice, NgspiceStatus, NgspiceInstall, NgspiceRemovals),
     ];
 
     private void RefreshAll()
@@ -304,7 +306,7 @@ public partial class Em3dSolverSettingsView : UserControl
         try
         {
             await CircuitRF.Ui.Views.Dialogs.SolverRemovalRunner.RemoveAsync(
-                u => u.PlanAll(), TopLevel.GetTopLevel(this) as Window, messages: null, "Remove all 3D solvers");
+                u => u.PlanAll(), TopLevel.GetTopLevel(this) as Window, messages: null, "Remove all solvers");
         }
         finally { RemoveAll.IsEnabled = true; }
     }
@@ -559,7 +561,8 @@ public partial class Em3dSolverSettingsView : UserControl
                $"MPI launcher: {StatusText(MpiStatus)}",
                $"Gmsh: {StatusText(GmshStatus)}",
                $"openEMS: {StatusText(OpenEmsStatus)}",
-               $"EMerge: {StatusText(EmergeStatus)}"));
+               $"EMerge: {StatusText(EmergeStatus)}",
+               $"ngspice: {StatusText(NgspiceStatus)}"));
 
     private static string StatusText(TextBlock status) => status.Tag as string ?? status.Text ?? "";
 
@@ -689,6 +692,8 @@ public partial class Em3dSolverSettingsView : UserControl
         else if (box == GmshBox)    { AppPreferencesIo.Update(p => p.Em3dGmshPath    = typed); Refresh(SolverDiscovery.Gmsh,    GmshStatus,    GmshInstall); }
         else if (box == OpenEmsBox) { AppPreferencesIo.Update(p => p.Em3dOpenEmsPath = typed); Refresh(SolverDiscovery.OpenEms, OpenEmsStatus, OpenEmsInstall); }
         else if (box == EmergeBox)  { AppPreferencesIo.Update(p => p.Em3dEmergePath  = typed); Refresh(SolverDiscovery.Emerge,  EmergeStatus,  EmergeInstall); }
+        // brief TRN-7 R-trn7-7 — a path set here enables (or disables) the transient card's ngspice choice at once
+        else if (box == NgspiceBox) { AppPreferencesIo.Update(p => p.NgspicePath     = typed); Refresh(SolverDiscovery.Ngspice, NgspiceStatus, NgspiceInstall); _ = CircuitRF.Ui.ViewModels.NgspiceAvailability.Refresh(); }
     }
 
     /// <summary>brief-emi-10 R-emi10-4 — stores the memory limit, blank as Automatic; a refused value is said and not stored.</summary>
@@ -755,6 +760,7 @@ public partial class Em3dSolverSettingsView : UserControl
         SolverTool.Palace  => (PalaceBadge,  PalaceReveal),
         SolverTool.Gmsh    => (GmshBadge,    GmshReveal),
         SolverTool.OpenEms => (OpenEmsBadge, OpenEmsReveal),
+        SolverTool.Ngspice => (NgspiceBadge, NgspiceReveal),
         _                  => (EmergeBadge,  EmergeReveal),
     };
 

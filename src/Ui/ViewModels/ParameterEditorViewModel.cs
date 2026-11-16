@@ -982,7 +982,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     /// </summary>
     private void GroupRows(SymbolKind kind)
     {
-        string[] order = ["Geometry", "Large scale", "Small scale", "Ends", "Realization"];
+        string[] order = ["Geometry", "Large scale", "Small scale", "Ends", "Beam", "Realization"];
         if (Rows.Count == 0 || ComponentTypeRegistry.ParameterGroup(kind, Rows[0].Name) is null) return;
         int Index(ParameterRowViewModel r) => Array.IndexOf(order, ComponentTypeRegistry.ParameterGroup(kind, r.Name)) is var i and >= 0 ? i : order.Length;
         var sorted = Rows.OrderBy(Index).ToList();

@@ -47,6 +47,19 @@ public abstract class Analysis(string name)
     /// <summary>The default <c>MarginThreshold=</c>, in dB — [M] §IV's own rule of thumb.</summary>
     public const string MarginThresholdDefault = "-15";
 
+    // ── brief TRN-8: the transient seed's words and defaults, shared by hb and osc ──
+    public const string InitialGuessDc = "dc", InitialGuessTransient = "transient", InitialGuessFallback = "fallback";
+    public const string SeedTolDefault = "1e-3", SeedPeriodsDefault = "auto", SeedFastBiasDefault = "yes", KickVDefault = "auto";
+
+    /// <summary>Whether <paramref name="initialGuess"/> is the default DC start.</summary>
+    public static bool IsDcStart(string? initialGuess)
+        => string.IsNullOrWhiteSpace(initialGuess) || initialGuess.Trim().Equals(InitialGuessDc, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Whether a <c>SeedFastBias=</c> word turns it off — every word the engine reads as off (no, false, 0, off), so a
+    /// card opening a hand-written <c>off</c> does not save it back as yes.</summary>
+    public static bool SeedFastBiasOff(string? word)
+        => (word ?? "").Trim().ToLowerInvariant() is "no" or "false" or "0" or "off";
+
     /// <summary>The spelling that turns the margin diagnostic off.</summary>
     public const string MarginThresholdNone = "none";
 
@@ -241,6 +254,21 @@ public sealed class OscillatorAnalysis(string name) : Analysis(name)
     /// <summary><c>Aguess=</c>: the generator amplitude to start from (volts for a shunt probe, amperes for a series one);
     /// blank to ramp up from a small one.</summary>
     public string AguessExpr   { get; init; } = "";
+
+    // ── brief TRN-8: transient-assisted harmonic balance (docs/design/transient.md §10) ─────────
+
+    /// <summary><c>InitialGuess=</c>: <c>dc</c> (the default: the DC point, the drive stepped up), <c>transient</c> (a native transient
+    /// run's last period) or <c>fallback</c> (DC, then the transient seed when that fails). A word, read by the engine.</summary>
+    public string InitialGuess    { get; init; } = InitialGuessDc;
+    /// <summary><c>SeedTol=</c>: how closely consecutive periods of the seed must agree, relative.</summary>
+    public string SeedTolExpr     { get; init; } = SeedTolDefault;
+    /// <summary><c>SeedPeriods=</c>: <c>auto</c> (until settled, at most 200) or a number of periods.</summary>
+    public string SeedPeriodsExpr { get; init; } = SeedPeriodsDefault;
+    /// <summary><c>SeedFastBias=</c>: <c>yes</c> scales RF chokes and blocks in the seed run only.</summary>
+    public string SeedFastBias    { get; init; } = SeedFastBiasDefault;
+    /// <summary><c>KickV=</c> (osc): the kick at the OscProbe's node that starts the seed, volts; <c>auto</c> for 1 % of the largest DC
+    /// supply.</summary>
+    public string KickVExpr       { get; init; } = KickVDefault;
 
     // ── Brief NZ-10: phase noise ─────────────────────────────────────────────
 
@@ -449,6 +477,68 @@ public sealed class EnvelopeAnalysis(string name) : Analysis(name)
 }
 
 /// <summary>
+/// Transient analysis directive (<c>type=tran</c>, docs/design/transient.md §3). Every field is the directive's raw text,
+/// resolved at run time like <see cref="EnvelopeAnalysis"/>'s; the defaults are the note's.
+/// </summary>
+public sealed class TransientAnalysis(string name) : Analysis(name)
+{
+    public const string MethodTrap = "trap", MethodGear2 = "gear2";
+    public const string InitialOp = "op", InitialZero = "zero";
+    public const string SolverNative = "native", SolverNgspice = "ngspice";
+    public const string MaxStepsDefault = "10000000";
+    public const string SpiceLinesDefault = "refuse", SpiceLineFreqDefault = "auto", SpiceFitDefault = "no";
+
+    /// <summary>End time (s). Required.</summary>
+    public string StopExpr { get; init; } = "";
+    /// <summary>Output grid spacing (s); blank is <c>Stop/1000</c>. Also the largest step unless <see cref="MaxStepExpr"/> says otherwise.</summary>
+    public string StepExpr { get; init; } = "";
+    /// <summary>First reported time (s); the run still starts at 0.</summary>
+    public string StartExpr { get; init; } = "0";
+    /// <summary>Largest accepted step (s), or <c>auto</c>: the smaller of the step and 1/(20 f) for the highest source frequency.</summary>
+    public string MaxStepExpr { get; init; } = "auto";
+    /// <summary><c>trap</c> or <c>gear2</c>.</summary>
+    public string Method { get; init; } = MethodTrap;
+    public string RelTolExpr { get; init; } = "1e-3";
+    /// <summary>Absolute voltage tolerance (V).</summary>
+    public string VTolExpr { get; init; } = "1e-6";
+    /// <summary>Absolute current tolerance (A).</summary>
+    public string ITolExpr { get; init; } = "1e-12";
+    /// <summary><c>op</c> (the DC operating point, <see cref="IcExpr"/> held during it) or <c>zero</c>.</summary>
+    public string InitialState { get; init; } = InitialOp;
+    /// <summary>Net voltages held through the operating-point solve and released at t = 0⁺: <c>out=0, bias=1.2</c>.</summary>
+    public string IcExpr { get; init; } = "";
+    /// <summary><c>native</c> or <c>ngspice</c>.</summary>
+    public string Solver { get; init; } = SolverNative;
+    /// <summary><c>yes</c> adds the accepted-step cubes beside the output grid.</summary>
+    public string SaveSteps { get; init; } = NoiseDefault;
+    /// <summary>The most steps a run may take; refused before the run when Stop/MaxStep exceeds it.</summary>
+    public string MaxStepsExpr { get; init; } = MaxStepsDefault;
+    /// <summary>ngspice only: one <c>.options</c> line, verbatim.</summary>
+    public string SpiceOptions { get; init; } = "";
+    /// <summary>ngspice only: <c>refuse</c> or <c>rlgc</c> (transient.md §9.2.3).</summary>
+    public string SpiceLines { get; init; } = SpiceLinesDefault;
+    /// <summary>ngspice only: the frequency <c>rlgc</c> lines are fitted at, or <c>auto</c>.</summary>
+    public string SpiceLineFreq { get; init; } = SpiceLineFreqDefault;
+    /// <summary>ngspice only: <c>yes</c> writes frequency-defined elements as subcircuits of circuitRF's fit.</summary>
+    public string SpiceFit { get; init; } = SpiceFitDefault;
+
+    // ── brief MTR-2: the results of a modulated transient ─────────────────
+    public const string StoreAuto = "auto", StoreBaseband = "baseband", StoreRf = "rf";
+    public const string StoreHarmDefault = "3", MeasureFromDefault = "auto";
+    /// <summary><c>Store=</c>: <c>auto</c> (baseband when the bench has a MOD_Source, RF otherwise), <c>baseband</c> (the
+    /// envelopes about the MOD_Source's Fc, at the signal's rate, measured as the envelope analysis measures them) or <c>rf</c>
+    /// (every output point of the waveform).</summary>
+    public string Store { get; init; } = StoreAuto;
+    /// <summary><c>StoreHarm=</c>: the harmonics of Fc baseband storage keeps, 0 to K.</summary>
+    public string StoreHarmExpr { get; init; } = StoreHarmDefault;
+    /// <summary><c>MeasureFrom=</c>: where baseband measurements start (s); <c>auto</c> after the largest MOD_Source Ramp.</summary>
+    public string MeasureFromExpr { get; init; } = MeasureFromDefault;
+
+    /// <summary>Whether <see cref="SaveSteps"/> asks for the accepted-step cubes.</summary>
+    public bool SaveStepsOn => ParseNdf(SaveSteps);
+}
+
+/// <summary>
 /// HB analysis directive (harmonic-balance.md §3.2).
 /// Key=value fields store raw expression strings (resolved later via ResolvedGlobals).
 ///
@@ -489,6 +579,18 @@ public sealed class HarmonicBalanceAnalysis(string name) : Analysis(name)
     public string LambdaExpr        { get; init; } = "1";
     /// <summary>Max Newton iterations per HB solve before continuation backoff. Default 100.</summary>
     public string MaxIterExpr       { get; init; } = "100";
+
+    // ── brief TRN-8: transient-assisted harmonic balance (docs/design/transient.md §10) ─────────
+
+    /// <summary><c>InitialGuess=</c>: <c>dc</c> (the default: the DC point, the drive stepped up), <c>transient</c> (a native transient
+    /// run's last period) or <c>fallback</c> (DC, then the transient seed when that fails). A word, read by the engine.</summary>
+    public string InitialGuess    { get; init; } = InitialGuessDc;
+    /// <summary><c>SeedTol=</c>: how closely consecutive periods of the seed must agree, relative.</summary>
+    public string SeedTolExpr     { get; init; } = SeedTolDefault;
+    /// <summary><c>SeedPeriods=</c>: <c>auto</c> (until settled, at most 200) or a number of periods.</summary>
+    public string SeedPeriodsExpr { get; init; } = SeedPeriodsDefault;
+    /// <summary><c>SeedFastBias=</c>: <c>yes</c> scales RF chokes and blocks in the seed run only.</summary>
+    public string SeedFastBias    { get; init; } = SeedFastBiasDefault;
     /// <summary>
     /// <c>MarginThreshold=</c>, as on a <c>sparam</c> directive — the WSProbe stability margin in dB
     /// below which the run notes a probe as worth looking at, or <c>none</c> to disable the note.

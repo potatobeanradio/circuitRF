@@ -105,8 +105,14 @@ public sealed partial class Elaborator
         return _evaluator.Eval(expression, scope);
     }
 
+    /// <summary>brief-pch-9 — full elaborations on this thread (a re-weigh is not one): what a beam selection's gate counts, per thread so
+    /// another test elaborating at the same time does not move it.</summary>
+    public static long Elaborations => _elaborations;
+    [ThreadStatic] private static long _elaborations;
+
     public ElaboratedNetlist Elaborate(TestBench tb)
     {
+        _elaborations++;
         try { return ElaborateCore(tb); }
         catch (UnresolvedNameException ex) when (SkippedLineNaming(tb, ex.Name) is { } why)
         {
@@ -1556,6 +1562,8 @@ public sealed partial class Elaborator
             inst.Reference.Equals("I_1Tone", StringComparison.OrdinalIgnoreCase) ||
             inst.Reference.Equals("I_nTone", StringComparison.OrdinalIgnoreCase))
             return ResolveToneSourceParameters(inst, parentScope);
+        if (WaveformSourceModel.IsTypeName(inst.Reference))
+            return ResolveWaveformParameters(inst, parentScope);
         if (inst.Reference.Equals("P1Tone", StringComparison.OrdinalIgnoreCase))
             return ResolveP1ToneParameters(inst, parentScope);
         if (inst.Reference.Equals("PnTone", StringComparison.OrdinalIgnoreCase))
@@ -1686,6 +1694,10 @@ public sealed partial class Elaborator
                 ? _evaluator.EvalParameter(ov.Expression, parentScope, ov.Unit ?? "deg", $"{inst.InstanceName}.{ov.Name}")
                 : EvalOverride(inst, ov, parentScope);
         }
+
+        // brief-trn-3 — a switch names itself in the note a steady-state analysis gives about its Hyst.
+        if (inst.Reference.Equals(VSwitchModel.TypeName, StringComparison.OrdinalIgnoreCase))
+            result["__instanceLabel"] = new Value(inst.InstanceName);
 
         ValidatePortPairNetCount(inst, result);
         return result;
@@ -2327,6 +2339,87 @@ public sealed partial class Elaborator
         }
     }
 
+    // ── V_Pulse … I_Expr (brief TRN-2) ────────────────────────────────────────
+    // Points= is a list of expressions, evaluated here one entry at a time and handed on as plain numbers; File= is a path,
+    // resolved like every other file reference; Repeat= is a word; Expr= is evaluated by the model at every time step, so it
+    // is stored verbatim with the resolved value of every name it reads beside it (WaveformSourceModel.ScopeVarPrefix).
+    // Every other key is an ordinary numeric expression.
+    private IReadOnlyDictionary<string, Value> ResolveWaveformParameters(Instance inst, Scope parentScope)
+    {
+        var result = new Dictionary<string, Value>(StringComparer.Ordinal);
+        foreach (var ov in inst.Overrides)
+        {
+            string raw = ov.Expression.Trim();
+            if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"') raw = raw[1..^1];
+            switch (ov.Name)
+            {
+                case "Points":
+                {
+                    var tokens = raw.Split([',', ' ', '\t', '\n', '\r', ';'], StringSplitOptions.RemoveEmptyEntries);
+                    var nums = new List<string>(tokens.Length);
+                    try
+                    {
+                        foreach (var tok in tokens)
+                        {
+                            var v = _evaluator.Eval(tok, parentScope);
+                            double d = v.Kind == ValueKind.Real ? v.AsReal() : v.AsComplex().Real;
+                            nums.Add(d.ToString("R", CultureInfo.InvariantCulture));
+                        }
+                        var pairs = new List<string>();
+                        for (int i = 0; i + 1 < nums.Count; i += 2) pairs.Add(nums[i] + " " + nums[i + 1]);
+                        if (nums.Count % 2 == 1) pairs.Add(nums[^1]);
+                        result[ov.Name] = new Value(string.Join(", ", pairs));
+                    }
+                    catch (ExpressionException) { result[ov.Name] = new Value(raw); }   // the model names the pair it cannot read
+                    break;
+                }
+                case "File":
+                    result[ov.Name] = new Value(ResolveFileReference(raw, BaseDirectory));
+                    break;
+                case "Repeat":
+                    result[ov.Name] = new Value(raw);
+                    break;
+                case "Expr":
+                    result[ov.Name] = new Value(raw);
+                    try
+                    {
+                        foreach (var name in AstWalker.CollectRefs(Parser.Parse(raw)))
+                        {
+                            if (name == TimeVariable.Name) continue;
+                            // A variable whose value reads `time` is resolved here ONCE, in steady state (time > t0 is true), and
+                            // injected as a constant: `gate = if(time>1u,1,0)` played 5 V from t = 0 under Expr="5*gate", the
+                            // step lost with no message. Refused, naming it, as such a variable is refused elsewhere.
+                            if (BindingReadsTime(name, parentScope, 0))
+                                throw new ParameterRefusalException(
+                                    $"{inst.InstanceName}: Expr reads '{name}', whose value depends on time; a variable is resolved once, " +
+                                    "before the run, so it cannot follow the simulated time. Write the time condition in Expr itself, as " +
+                                    "Expr=\"5*if(time>1u,1,0)\".");
+                            try { result[WaveformSourceModel.ScopeVarPrefix + name] = _evaluator.Resolve(name, parentScope); }
+                            catch (ExpressionException) { /* the model's evaluation names it */ }
+                        }
+                    }
+                    catch (ExpressionException) { /* the model refuses an Expr that does not parse, naming it */ }
+                    break;
+                default:
+                    result[ov.Name] = EvalOverride(inst, ov, parentScope);
+                    break;
+            }
+        }
+        return result;
+    }
+
+    /// <summary>Whether the binding <paramref name="name"/> (through every binding it reads) names <c>time</c>.</summary>
+    private static bool BindingReadsTime(string name, Scope scope, int depth)
+    {
+        if (depth > 64 || scope.Lookup(name) is not { } found) return false;   // a cycle is the evaluator's to report
+        Expr ast;
+        try { ast = Parser.Parse(found.Expression); }
+        catch (ExpressionException) { return false; }
+        foreach (var r in AstWalker.CollectRefs(ast))
+            if (r == TimeVariable.Name || (r != name && BindingReadsTime(r, found.Owner, depth + 1))) return true;
+        return false;
+    }
+
     // ── V_1Tone / V_nTone / I_1Tone / I_nTone parameter resolution ────────────
     // One resolver for both flavours: the amplitude/offset keys differ ("V"/"Vdc" against
     // "I"/"Idc") and nothing else does, so both spellings are listed rather than the resolver
@@ -2479,11 +2572,18 @@ public sealed partial class Elaborator
                           .Where(p => p.Kind != RfCore.Propagation.ParameterKind.Number)
                           .GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)       // several models share a name (Los, Scenario)
                           .ToDictionary(g => g.Key, g => g.First().Kind, StringComparer.OrdinalIgnoreCase);
+        // the registry's numbers are read in the registry's unit, which an expression's own unit scale does not know
+        var registryUnit = RfCore.Propagation.PropagationModels.All.SelectMany(m => m.Parameters)
+                          .Concat(RfCore.Propagation.AddedLosses.Parameters)
+                          .Where(p => p.Kind == RfCore.Propagation.ParameterKind.Number)
+                          .GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+                          .ToDictionary(g => g.Key, g => g.First().Unit, StringComparer.OrdinalIgnoreCase);
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         foreach (var ov in inst.Overrides)
         {
-            bool file = ov.Name is "File" or "TxPattern" or "RxPattern"
-                        || words.TryGetValue(ov.Name, out var kind) && kind == RfCore.Propagation.ParameterKind.File;
+            // brief-pch-7 — Profile names a tapped delay line (a word); the terrain profile a model reads is Terrain= on the channel
+            bool file = ov.Name is "File" or "TxPattern" or "RxPattern" or "Terrain" or "Codebook"
+                        || ov.Name != "Profile" && words.TryGetValue(ov.Name, out var kind) && kind == RfCore.Propagation.ParameterKind.File;
             if (PropagationChannelModel.WordParameters.Contains(ov.Name) || words.ContainsKey(ov.Name))
             {
                 string raw = Unquote(ov.Expression.Trim());
@@ -2495,7 +2595,9 @@ public sealed partial class Elaborator
                 result[ov.Name] = new Value(raw);
                 continue;
             }
-            if (PropagationChannelModel.AngleParameters.Contains(ov.Name))
+            registryUnit.TryGetValue(ov.Name, out string? regUnit);
+            // a registry angle (Elevation, RainTilt, a latitude …) as the orientations are: "30 deg" is 30, not 0.52
+            if (PropagationChannelModel.AngleParameters.Contains(ov.Name) || regUnit == "deg")
             {
                 var v = _evaluator.EvalPhase(ov.Expression, parentScope, ov.Unit, $"{inst.InstanceName}.{ov.Name}");
                 result[ov.Name] = v.Kind == ValueKind.Real ? new Value(v.AsReal() * 180.0 / Math.PI) : v;
@@ -2503,9 +2605,14 @@ public sealed partial class Elaborator
             }
             // a length typed in "m" is a thousand times too small (m is milli in every expression), and a channel's lengths are
             // exactly where a user writes metres
-            if (ov.Name is "Distance" or "TxHeight" or "RxHeight" && ov.Unit == "m")
+            if ((ov.Name is "Distance" or "TxHeight" or "RxHeight" || regUnit is "m" or "km") && ov.Unit == "m")
                 throw new ParameterRefusalException(PropagationChannelDiagnostics.MetreIsMilli(inst.InstanceName, ov.Name, ov.Expression));
-            result[ov.Name] = EvalOverride(inst, ov, parentScope);
+            var value = EvalOverride(inst, ov, parentScope);
+            // a length or frequency typed with its own unit arrives in SI (metres, Hz): back to the registry's km or GHz
+            if (value.Kind == ValueKind.Real && ov.Unit is { Length: > 0 } typed && Units.IsKnown(typed)
+                && (regUnit == "km" && Units.BaseUnit(typed) == "metre" || regUnit == "GHz" && Units.BaseUnit(typed) == "Hz"))
+                value = new Value(value.AsReal() / (regUnit == "km" ? 1e3 : 1e9));
+            result[ov.Name] = value;
         }
         return result;
     }
@@ -2517,6 +2624,40 @@ public sealed partial class Elaborator
     private static void BindReverseChannels(ElaboratedNetlist netlist)
     {
         var channels = netlist.Components.Where(c => c.Model is PropagationChannelModel).ToList();
+        // brief-pch-7 — the fading draws' streams are named by the instance (design note §8.1)
+        foreach (var ec in channels) ((PropagationChannelModel)ec.Model).InstancePath = ec.InstancePath;
+        // brief-pch-8 R-pch8-1 — each instance end bound to its Phased Antenna Array, and those channels stamped after every array
+        var withInstance = new List<ElaboratedComponent>();
+        foreach (var ec in channels)
+        {
+            var m = (PropagationChannelModel)ec.Model;
+            if (!m.HasInstanceEnd) continue;
+            ElaboratedComponent? Find(string? name, string end)
+            {
+                if (name is null) return null;
+                int dot = ec.InstancePath.LastIndexOf('.');
+                string sibling = dot >= 0 ? ec.InstancePath[..(dot + 1)] + name : name;
+                var hit = netlist.Components.FirstOrDefault(c => c.InstancePath == sibling) ?? netlist.Components.FirstOrDefault(c => c.InstancePath == name);
+                if (hit?.Model is PhasedArrayModel) return hit;
+                // brief-pch-8b R-pch8b-4 — an EM Field Data block's ports radiate and receive through its record's patterns
+                if (hit?.Model is SnpModel && hit.ComponentType.Equals(EmFieldDataRecord.TypeName, StringComparison.OrdinalIgnoreCase)) return hit;
+                var arrays = netlist.Components.Where(c => c.Model is PhasedArrayModel && !c.InstancePath.EndsWith(".feed", StringComparison.Ordinal))
+                                    .Select(c => c.InstancePath).ToList();
+                throw new ParameterRefusalException(PropagationChannelDiagnostics.EndUnknown(ec.InstancePath, end, name,
+                    arrays.Count == 0 ? "none" : string.Join(", ", arrays)));
+            }
+            var tx = Find(m.TxInstance, "Tx");
+            var rx = Find(m.RxInstance, "Rx");
+            m.BindEnds(tx, rx, netlist);
+            withInstance.Add(ec);
+            WarnIfNearField(netlist, ec, m, tx, rx);
+        }
+        netlist.MoveToEnd(withInstance);
+        // brief-pch-8 R-pch8-9 — several channels may end on one array: their waves add on its elements
+        foreach (var g in withInstance.Where(c => ((PropagationChannelModel)c.Model).RxArray is not null)
+                                      .GroupBy(c => ((PropagationChannelModel)c.Model).RxArray!.Value.Ec.InstancePath).Where(g => g.Count() > 1))
+            netlist.AddNoteOnce($"channel-shared-rx:{g.Key}", $"'{g.Key}' receives through {string.Join(", ", g.Select(c => $"'{c.InstancePath}'"))}: " +
+                                "their waves add on its elements, so each is the others' interference at its feed.");
         foreach (var ec in channels)
         {
             var m = (PropagationChannelModel)ec.Model;
@@ -2530,6 +2671,31 @@ public sealed partial class Elaborator
             if (ReferenceEquals(fwd, ec) || ((PropagationChannelModel)fwd.Model).ReverseOf is not null)
                 throw new ParameterRefusalException(PropagationChannelDiagnostics.ReverseOfReverse(ec.InstancePath, name));
             m.BindReverse((PropagationChannelModel)fwd.Model);
+        }
+    }
+
+    /// <summary>
+    /// brief-pch-8 R-pch8-10 — the channel assumes each end is in the other's far field: warned when the distance is under 2D²/λ for an
+    /// array end's largest dimension D (its aperture's diagonal), λ at the channel's f0 or else the array record's highest frequency.
+    /// </summary>
+    private static void WarnIfNearField(ElaboratedNetlist netlist, ElaboratedComponent ec, PropagationChannelModel m, ElaboratedComponent? tx,
+                                        ElaboratedComponent? rx)
+    {
+        foreach (var (end, arr) in new[] { ("Tx", tx), ("Rx", rx) })
+        {
+            if (arr?.Model is not PhasedArrayModel a) continue;
+            double hz = m.ReferenceHz(a.NetworkFrequencies.DefaultIfEmpty(0).Max());
+            if (!(hz > 0)) continue;
+            double d = m.ApproximateDistanceM;
+            if (!(d > 0)) continue;
+            var pos = Enumerable.Range(0, a.Lattice.Count).Select(a.Lattice.Position).ToList();
+            double w = pos.Max(q => q.X) - pos.Min(q => q.X) + a.Lattice.Dx, h = pos.Max(q => q.Y) - pos.Min(q => q.Y) + a.Lattice.Dy;
+            double diag = Math.Sqrt(w * w + h * h), lambda = RfCore.Propagation.PropagationMath.C / hz, far = 2 * diag * diag / lambda;
+            if (d < far)
+                netlist.AddWarningOnce($"channel-near-field:{ec.InstancePath}:{end}", string.Format(CultureInfo.InvariantCulture,
+                    "Propagation Channel '{0}': its {1} end '{2}' is {3:G4} m across, so its far field begins at 2D²/λ = {4:G4} m at {5:G4} GHz, and the ends are "
+                    + "{6:G4} m apart: the channel treats them as each other's far field, which overstates the array's gain here.",
+                    ec.InstancePath, end, arr.InstancePath, diag, far, hz / 1e9, d));
         }
     }
 

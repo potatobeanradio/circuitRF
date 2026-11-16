@@ -51,7 +51,7 @@ differences that matter here:
 
 - **Tools ▸ RF Chain Budget** opens a new chain: an LNA, a filter and a second amplifier.
 - A `.cchain` in the workspace tree opens on a double-click.
-- **File ▸ New ▸ Examples ▸ RF Chain Budget** has a 2.45 GHz superhet, a four-element steered array, a front end
+- **File ▸ New ▸ Examples ▸ Systems and Radio Links ▸ RF Chain Budget** has a 2.45 GHz superhet, a four-element steered array, a front end
   with a canceller, a dual-conversion receiver and a 26 GHz link, each already transferred.
 
 {{ui: chain-budget}}
@@ -311,7 +311,7 @@ IIP3 10 dBm), at the combiner's output and per element:
 
 ## A link in front of the chain {#link}
 
-On the **Link** tab, **a transmitter and a path in front of the chain** adds a transmit array and a line-of-sight path:
+On the **Link** tab, **a transmitter and a path in front of the chain** adds a transmit array and the path to the receiver, with its margins:
 the power they deliver to each receive element becomes the chain's input power, and the receive array is the chain's
 own [Combiner](#array) (one element with none). The transmitter and the path are not stages, because a stage before the
 combiner is one receive element's branch and every number is referred to that element's input. Each input but
@@ -326,20 +326,54 @@ combiner is one receive element's branch and every number is referred to that el
 | `Elements` | Mtx, the transmit elements, all in phase toward the receiver. |
 | `PaGain`, `PAE`, `Pdc` | For the DC power: the PA's gain and its power-added efficiency at the back-off, %, or each element's DC power stated. |
 
+The path is the **Propagation** section, in four groups. **Path:**
+
 | Path | Meaning |
 |---|---|
-| `Distance` | The path: metres, or with `m` or `km` (`200 m`, `0.2 km`). |
-| `Attenuation` | Extra or atmospheric attenuation along it, dB/km: a number, an expression or a table of the carrier. |
+| `Distance` | The path: metres, or with `m` or `km` (`200 m`, `0.2 km`). On a satellite path the slant range comes from the orbit instead. |
+| `Attenuation` | Extra attenuation along it, dB/km: a number, an expression or a table of the carrier. |
 | `RxAntennaGain` | Each receive element's gain, dBi. |
+| `Model` | The large-scale model, by its ITU-R recommendation or 3GPP report: any model of the [Propagation Channel](propagation-channel.html#models) (`free`, `logdist`, `multislope`, `tworay`, `38901`, `P1238`, `P1411`, `P526`, `satellite`, `P1812`). Blank is free space. |
+| `TxHeight`, `RxHeight` | The antennas' heights, 1.5 m when blank. |
+
+**Large scale** holds the chosen model's own parameters and **Added losses** the losses every model takes (partitions,
+clutter, building entry, vegetation, polarization and pointing, gas, rain, clouds, scintillation, the ionosphere), both read
+from the same registry as the component's, with the same names; each field shows its default. **Margins:**
+
+| Margins | Meaning |
+|---|---|
+| `Availability` | The percentage of time (or of locations) the link must work, 99 % when blank. Rain, clouds and scintillation are taken at 100 minus it. |
+| `Fading` | The small-scale fading the margin covers: `none` (blank), `rayleigh`, `rician`, `nakagami`. |
+| `KFactor`, `m` | Rician K in dB (blank: the model's, where it gives one); Nakagami m (blank: 1). |
+| `Sigma` | The shadowing standard deviation in dB; blank: the model's. A model that states its own (`logdist`) shows it under Large scale instead. |
+| `Margin` | `composite` (blank): the margin of shadowing and fading together; `sum`: the two margins added, the conservative bound. |
+| `TargetBer`, `Modulation` | The uncoded bit error rate the link must reach, and the modulation (blank: the Demo bench's 64-QAM). Without a target, the stated Required SNR is used. |
 
 ```
 Pout = Psat − Backoff
 EIRP = Pout − Loss + AntennaGain + 20·log10(Mtx)           Mtx PAs in phase: Mtx of power, Mtx of directivity
-Lfs  = 20·log10(4π·d·f / c)                                 free space
-A    = Attenuation · d / 1000
-Prx  = EIRP − Lfs − A + RxAntennaGain                       at each receive element
+L    = Lfs + (L_model − Lfs) + Σ added losses + Attenuation·d/1000     rain at the availability is in L
+Prx  = EIRP − L + RxAntennaGain                             at each receive element
 Pin  = min(Prx, IP1dB − RxBackoff)                          the chain's input
+
+M_shadow = σ · Q⁻¹(1 − p)                                   lognormal shadowing at availability p
+M_fade   = −10·log10(x),  F(x) = 1 − p                      F the fading power's distribution at mean 1:
+           Rayleigh −10·log10(−ln p): 19.98 dB at 99 %, 30.00 dB at 99.9 %; Rician and Nakagami numerically
+M_comp   = the same for lognormal-shadowed fading           the default margin
+SNR_req  = Eb/N0 at the target BER + 10·log10(bits per symbol)
+margin   = Prx − M − (MDS + SNR_req)                        the availability is met when it is 0 or more
 ```
+
+With `Model=free` and only `Distance` and `Attenuation`, the link is exactly the free-space one: every other term is 0.
+
+The readouts beneath the Blocks view's propagation card and in the summary are the loss, the margins at the availability,
+the sensitivity, the **link margin**, whether the availability is met and the distance at which the margin is zero. The
+breakdown is one row and one cube per term: `Lfs_dB`, `Excess_dB` (the model over free space), `Atm_dB`, `Gas_dB`,
+`Rain_dB`, `Clutter_dB`, `Partitions_dB`, `BuildingEntry_dB`, `Vegetation_dB`, `Polarization_dB`, `Pointing_dB`,
+`Ionosphere_dB`, their total `PathLoss_dB`, and `Loss_dB` over all of them; then `Sigma_dB`, `Mshadow_dB`, `Mfade_dB`,
+`Mcomp_dB`, `Msum_dB`, `Margins_dB` (the one taken), `SNRreq_dB`, `LinkMargin_dB` and `ZeroMarginDistance_m`. A satellite
+path adds `Latency_ms`, `Doppler_Hz` and `DopplerRate_Hzps`. `Rain=drawn` is taken as `fixed` here, at the availability,
+and drawn drop by drop on the [Link bench](#link-bench), which checks every one of these margins by Monte Carlo.
 
 **The receiver's ceiling.** A link that delivers more than the receiver takes is held at its input P1dB less
 `RxBackoff` (10 dB), as power control or a variable gain would hold it, and the Notes say so. Without a link the input
@@ -383,13 +417,16 @@ have an NF of 16.7 dB and cost the chain 1 dB. It is what tells how much gain an
 
 ## Sweeps {#sweeps}
 
-The **Sweeps** row of the Link tab takes up to three sweeps, each one line, as the Blockers are:
+The **Sweeps** row of the Link tab takes up to six sweeps, each one line, as the Blockers are:
 
 | Sweep | Line | Points |
 |---|---|---|
 | `Frequency` | `20 GHz, 40 GHz, 41` | carriers evenly from the first to the last |
 | `TxElements` | `4, 1024, 9` | transmit array sizes spread evenly in ratio, each rounded to a whole element and kept once |
 | `RxElements` | `1, 64, 13` | the receive Combiner's N, the same way; 1 is one element with no combiner |
+| `Distance` | `50, 5000, 41` | the link's distance, m, spread evenly in ratio; not on a satellite path, whose distance is its slant range |
+| `Elevation` | `10, 90, 17` | a satellite path's elevation, deg, evenly, to 90 at most |
+| `Availability` | `90, 99.99, 21` | the availability, %, evenly, below 100 |
 
 Each point is the whole chain budgeted again there, every expression and table read at that point's carrier. Each sweep
 has its own tab: the link levels (EIRP, the received power at each element, the chain's input, the ceiling and the
@@ -422,6 +459,7 @@ with more than one mixer gets most of them once per [conversion](#conversions):
 | `<chain> Canceller` | the canceller on its own: a wanted signal and an interference from MOD_Sources | envelope runs, swept | the depth against each error, the wanted signal's EVM, SNR and constellation with and without cancellation. See [The canceller](#canceller) |
 | `<chain> Demo` | a MOD_Source of NR 64-QAM and one of DBPSK per element; the LO with a phase-noise mask | envelope with `Noise=yes` and `EvmSplit=yes`, the input power swept | the constellation, the EVM against the input power, its noise and distortion parts. See [The demo](#demo) |
 | `<chain> TX` | a chain with a [link](#link): one transmit element's PA, an NR 64-QAM carrier from a MOD_Source, through its `Loss` | envelope, swept over the back-off from `Psat` | the output against the budget's Pout − Loss, the EVM and the adjacent-channel ratios. See [The TX bench](#tx) |
+| `<chain> Link` | a chain with a [link](#link) and no receive array: the TX bench's PA, a [Propagation Channel](components.html#propagationchannel) with the link's model, availability and fading, the receive chain, a modulated source | an S-parameter run swept over the drops; envelope with `Equalizer=pilot` at two of them | the outage at the budget's margin, the received power at the availability, the margin, the rain; EVM and BER at the median drop and at the outage drop. See [The Link bench](#link-bench) |
 
 The chain's parts are placed as written. Three things are the bench's and not the chain's:
 
@@ -457,6 +495,44 @@ output is 0.92 dB below `Psat` − 8 dB and the EVM 6.3 %, at 12 dB 0.41 dB and 
 ACPR the link needs, from this table. A memoryless PA's EVM and ACPR do not depend on the bandwidth, so the bench's NR
 carrier is the 15 kHz-spacing channel nearest the chain's bandwidth, 50 MHz at most; the subcarrier spacing changes
 neither the budget nor what a memoryless block does to a carrier's EVM.
+
+### The Link bench {#link-bench}
+
+The budget's received power and margins are closed forms; the Link bench simulates them. It is the TX bench's PA at the
+link's `Backoff`, its `Loss`, the path's `Attenuation` as an Attenuator, then a Propagation Channel `CH1` carrying the
+link's model with its distance, heights and every parameter of the Propagation section, its availability and its fading
+(`Fading`, `KFactor`, `m`), `f0` at the chain's frequency, `TxGain` = `AntennaGain` + 20·log10(`Elements`) and `RxGain`
+= `RxAntennaGain`. Then the receive chain as written and a 50 Ω Port. The source is the Demo bench's NR carrier at the
+link's `Modulation` (64-QAM when blank), or a single carrier filling the bandwidth on a satellite link and for BPSK or
+8PSK. Each drop is one realization of the channel: its shadowing, its fading (frozen, `fD=0`) and, with `Rain=drawn`,
+its rain.
+
+**The margins.** An S-parameter run is swept over `drop` from 1 to 100/(1 − p) drops at the availability p (10,000 at
+99 %, 100,000 at 99.9 %, at least 1,000 and at most 100,000), about a hundred of them below the margin. Each drop's
+received power is the PA's output at the antenna less the attenuation plus the channel's gain, its report's `Gain_dB`.
+The display sets beside the budget:
+
+| Row | Budget | Drops |
+|---|---|---|
+| outage at the margin | 1 − p | the fraction of drops below the budget's received power less its margins, with its exact 95 % interval |
+| received power at the availability | received power − margins | the drops' (1 − p) percentile |
+| margin | the margins taken | the budget's received power less that percentile |
+| rain at the availability (with `Rain`) | the rain margin | the drops' rain at the availability's percentile |
+
+and the drops' received power as a CDF, whole and around the margin. On a Rayleigh link at 99 % the outage at the
+20 dB margin reads 1 %, within its interval; on a geostationary link at 99.9 % with `Rain=drawn`, 0.1 % of the drops
+rain harder than the budget's rain margin. `Rain=drawn` is the bench's: the budget takes the rain at the availability,
+as `Rain=fixed` does, and the drop sweep draws the rain's time percentage for each drop.
+
+**The signal.** An envelope run with `Equalizer=pilot` at two drops picked from that sweep — its median and the drop at
+its (1 − p) percentile, ranked by received power — so EVM, counted BER and estimated BER are read where the budget says
+the link is typical and where it is about to fail. Beside each EVM, the EVM the budget's SNR gives at that drop's
+received power (noise alone, 1/√SNR); the difference is mostly the PA's distortion at its back-off, which the TX bench
+shows on its own. The transmit side is solved once and replayed into the second drop.
+
+A chain whose receive side is an array has no Link bench: a Propagation Channel reaches an array through a Phased
+Antenna Array end, which a bench does not emit. In the Blocks view, a click on the propagation card opens the Link bench
+once Transfer to Schematic has written it.
 
 ## More than one conversion {#conversions}
 

@@ -194,7 +194,7 @@ internal static class EmergeLoweringRules
         if (p.Kind == Em3dPortKind.Wave && problem.Type == Em3dProblemType.Eigenmode)
             return $"Port {n} is a wave port, and circuitRF runs EMerge's eigenmode solve with lumped ports only: a wave port's " +
                    "condition is a driven problem's. Make the port lumped, or solve a driven problem.";
-        if (p.Kind == Em3dPortKind.Wave && !p.Hollow && FdtdWavePorts.IsHollow(problem, p))
+        if (p.Kind == Em3dPortKind.Wave && !p.Hollow && p.Floquet is null && FdtdWavePorts.IsHollow(problem, p))
             return $"Port {n} names one conductor at both ends, or two of the air box's faces, and the port reader did not find a hollow " +
                    "guide there: a hollow guide's port states neither end. Remove its Positive and Negative and let the reader decide.";
         return null;
@@ -243,6 +243,7 @@ internal static class EmergeLoweringRules
     private static string? PortRefusal(Em3dPort p)
     {
         int n = p.SourceNumber ?? p.Number;
+        if (p.Floquet is not null) return null;     // brief-hzn-16 — normalised to its modes, its own condition
         if (p.Kind == Em3dPortKind.Wave)
             return p.Z0.Imaginary != 0 || !(p.Z0.Real > 0)
                 ? $"Port {n}'s reference impedance is {Ohms(p.Z0)}. EMerge's wave port refers its S-parameters to the mode, and " +
@@ -474,7 +475,7 @@ internal static class EmergeLoweringRules
     /// <summary>brief-emw-2 R-emw2-5 — explain's row for a wave port of one terminal; brief-emw-3, for a terminal of a group.</summary>
     private static string WaveMapping(Em3dProblem problem, Em3dPort p)
     {
-        if (p.FaceGroup is { } fg) return TerminalMapping(problem, p, [.. problem.Ports.Where(q => q.FaceGroup == fg).OrderBy(q => q.Number)]);
+        if (p.IsTerminal && p.FaceGroup is { } fg) return TerminalMapping(problem, p, [.. problem.Ports.Where(q => q.FaceGroup == fg).OrderBy(q => q.Number)]);
         var r = Region(p.Min, p.Max);
         bool mixed = RegionMaterials(problem, p).Count > 1;
         string path = p.VoltagePath is { } vp
@@ -483,7 +484,12 @@ internal static class EmergeLoweringRules
             : "no voltage path";
         double shift = p.ReferencePlane.ShiftM;
         // brief-hzn-11 — a hollow guide's mode is of any type and its impedance always varies; one normalised to its mode is kept so
-        string mode = p.Hollow
+        string mode = p.HollowMode is { } hm
+            // brief-hzn-20 — one of a hollow guide's several modes on one EMerge wave port
+            ? $"mode {hm.Mode} ({hm.Name}) of {Count(hm.Modes)} on one EMerge wave port of the face, the modes fixed at the sweep's top by " +
+              "the largest propagation constant and followed to every frequency, each absorbed with its own, its sign set by its own " +
+              "polarity line, so its impedance varies with frequency"
+            : p.Hollow
             ? "its lowest mode, of any type (a hollow guide has no TEM mode), fixed at the sweep's top and followed to every frequency, " +
               "so its impedance varies with frequency"
             : "its mode solved at every frequency (the condition is built from it) " +
@@ -528,6 +534,7 @@ internal static class EmergeLoweringRules
         Em3dBoundaryKind.Pec => "PEC (EMerge's default outer boundary)",
         Em3dBoundaryKind.Pmc => "PMC",
         Em3dBoundaryKind.Absorbing => "absorbing boundary (second order)",
+        Em3dBoundaryKind.Periodic => "periodic (EMerge's periodic cell, the scan's Floquet phase)",
         _ => kind.ToString(),
     };
 

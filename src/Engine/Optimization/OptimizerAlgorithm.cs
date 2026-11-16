@@ -264,12 +264,7 @@ public sealed class SplitMix64(ulong seed)
     /// <summary>The output mix: a bijection of 64-bit words that scatters every input bit over every
     /// output bit. Statistical streams (docs/design/yield.md) hash with it, so a draw is a pure
     /// function of its inputs on every platform.</summary>
-    public static ulong Mix(ulong z)
-    {
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
-        return z ^ (z >> 31);
-    }
+    public static ulong Mix(ulong z) => RfCore.Statistics.StatDraws.Mix(z);
 
     /// <summary>Uniform in [0, 1).</summary>
     public double NextDouble() => (NextULong() >> 11) * (1.0 / (1UL << 53));

@@ -1,0 +1,160 @@
+{
+  "FormatVersion": 2,
+  "SelectedDataSource": "3 Charges (1D).npy",
+  "ActiveTabIndex": 0,
+  "Tabs": [
+    {
+      "Name": "Loadpull",
+      "Plots": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Width": 560,
+          "Height": 560,
+          "PlotType": "Smith",
+          "CustomTitle": "Pout (dBm, MXP marked) and PAE (%, MXE marked) at 3 dB compression",
+          "CustomTitleOn": true,
+          "Legend": "Inside",
+          "Traces": [
+            {
+              "SourcePath": "3 Charges (1D).npy",
+              "Label": "Pout_dBm",
+              "ContourTrace": {
+                "MetricName": "Pout_dBm",
+                "ConstraintKind": "Compression",
+                "ConstraintValue": 3,
+                "LevelMode": "Range",
+                "LevelStart": 38,
+                "LevelStep": 1,
+                "LevelStop": 41,
+                "ShowIsoLines": true,
+                "ShowFill": false,
+                "DrawLabels": true,
+                "LineColor": 4284111450,
+                "LineColorOverridden": true,
+                "StrokeWidth": 1.5,
+                "DisplayMxp": true,
+                "DisplayMxe": false,
+                "LabelBackground": 2348876033
+              }
+            },
+            {
+              "SourcePath": "3 Charges (1D).npy",
+              "Label": "PAE",
+              "ContourTrace": {
+                "MetricName": "PAE",
+                "ConstraintKind": "Compression",
+                "ConstraintValue": 3,
+                "LevelMode": "Range",
+                "LevelStart": 50,
+                "LevelStep": 5,
+                "LevelStop": 65,
+                "ShowIsoLines": true,
+                "ShowFill": false,
+                "DrawLabels": true,
+                "LineColor": 4288309802,
+                "LineColorOverridden": true,
+                "StrokeWidth": 1.5,
+                "DisplayMxp": false,
+                "DisplayMxe": true,
+                "LabelBackground": 2348876033
+              }
+            }
+          ]
+        },
+        {
+          "Left": 580,
+          "Top": 0,
+          "Width": 560,
+          "Height": 90,
+          "PlotType": "Table",
+          "CustomTitle": "At maximum power (MXP)",
+          "CustomTitleOn": true,
+          "TableOptimum": "Mxp",
+          "TableReadMode": "Interp",
+          "TableCompression": 3,
+          "Traces": [
+            {
+              "SourcePath": "3 Charges (1D).npy",
+              "SummaryColumn": {
+                "Kind": "Metric",
+                "MetricName": "Pout_dBm",
+                "Header": "Pout (dBm)"
+              }
+            },
+            {
+              "SourcePath": "3 Charges (1D).npy",
+              "SummaryColumn": {
+                "Kind": "Metric",
+                "MetricName": "Gt_dB",
+                "Header": "Gt (dB)"
+              }
+            },
+            {
+              "SourcePath": "3 Charges (1D).npy",
+              "SummaryColumn": {
+                "Kind": "Metric",
+                "MetricName": "PAE",
+                "Header": "PAE (%)"
+              }
+            },
+            {
+              "SourcePath": "3 Charges (1D).npy",
+              "SummaryColumn": {
+                "Kind": "Zload",
+                "MetricName": "",
+                "Header": "ZL (\u03A9)"
+              }
+            }
+          ]
+        },
+        {
+          "Left": 580,
+          "Top": 110,
+          "Width": 560,
+          "Height": 90,
+          "PlotType": "Table",
+          "CustomTitle": "At maximum efficiency (MXE)",
+          "CustomTitleOn": true,
+          "TableOptimum": "Mxe",
+          "TableReadMode": "Interp",
+          "TableCompression": 3,
+          "Traces": [
+            {
+              "SourcePath": "3 Charges (1D).npy",
+              "SummaryColumn": {
+                "Kind": "Metric",
+                "MetricName": "Pout_dBm",
+                "Header": "Pout (dBm)"
+              }
+            },
+            {
+              "SourcePath": "3 Charges (1D).npy",
+              "SummaryColumn": {
+                "Kind": "Metric",
+                "MetricName": "Gt_dB",
+                "Header": "Gt (dB)"
+              }
+            },
+            {
+              "SourcePath": "3 Charges (1D).npy",
+              "SummaryColumn": {
+                "Kind": "Metric",
+                "MetricName": "PAE",
+                "Header": "PAE (%)"
+              }
+            },
+            {
+              "SourcePath": "3 Charges (1D).npy",
+              "SummaryColumn": {
+                "Kind": "Zload",
+                "MetricName": "",
+                "Header": "ZL (\u03A9)"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

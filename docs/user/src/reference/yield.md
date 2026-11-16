@@ -382,7 +382,7 @@ predicted beside what the simulation gave. **Send to Tuning** loads the point in
 
 ## The example {#example}
 
-**File ▸ New ▸ Examples ▸ Yield, Corners and Centering** is a workspace with one bench per part of this
+**File ▸ New ▸ Examples ▸ Design Flow ▸ Yield, Corners and Centering** is a workspace with one bench per part of this
 page, each run taking a second or two: a bandpass filter estimated against specs loosened from its
 optimizer goals, with its one-click yield display saved; an amplifier with six generated temperature and
 supply corners and a statistical corner, failing hot at low supply until it is optimized across all of

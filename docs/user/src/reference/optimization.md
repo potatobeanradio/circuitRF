@@ -42,7 +42,7 @@ schematic's values on its own**: the best point is yours to Push, lock in as a p
 
 {{ui: optimizer-panel}}
 
-**Start with the example.** File ▸ New ▸ Examples ▸ *Tuning and Optimization* has three benches that each
+**Start with the example.** File ▸ New ▸ Examples ▸ Design Flow ▸ *Tuning and Optimization* has three benches that each
 optimize in under a second: a two-value L-section match, a four-value bandpass filter set up for
 Minimax, and an amplifier stabilized for μ ≥ 1.05 while its source impedance is tuned by magnitude
 and phase — with one range drawn too narrow on purpose, to show what a railed variable looks like.

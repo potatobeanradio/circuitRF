@@ -1,0 +1,425 @@
+{
+ "name": "PeriodicCell",
+ "variables": {},
+ "materials": [
+  {
+   "name": "slab3",
+   "permittivity": "3",
+   "permeability": "1",
+   "conductivity": "0",
+   "loss_tangent": "0.001",
+   "magnetic_loss_tangent": "0",
+   "color": "#bebebe",
+   "pec": false,
+   "library": "Project",
+   "description": "",
+   "dispersion": "None",
+   "measured_frequency": "1GHz",
+   "eps_static": "4.6",
+   "eps_infinity": "4.2",
+   "relaxation_frequency": "1GHz",
+   "anisotropic": false,
+   "permittivity_tensor": "",
+   "permeability_tensor": "",
+   "loss_tangent_tensor": "",
+   "emsutil_key": ""
+  }
+ ],
+ "format": "hertzon-project",
+ "version": 2,
+ "designs": [
+  {
+   "name": "Cell",
+   "units": "mm",
+   "settings": {
+    "SolutionType": "Modal",
+    "AutoOpen": "Off",
+    "AutoOpenBoundary": "Auto",
+    "AutoOpenPadding": "",
+    "RadiatingStructure": "False"
+   },
+   "variables": {
+    "p": "12mm",
+    "theta": "10deg"
+   },
+   "objects": [
+    {
+     "name": "Cell",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "-p/2,-p/2,-10mm",
+        "XSize": "p",
+        "YSize": "p",
+        "ZSize": "20mm"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Slab",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "-p/2,-p/2,0",
+        "XSize": "p",
+        "YSize": "p",
+        "ZSize": "1mm"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "slab3",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Cross",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "-4mm,-0.5mm,1mm",
+        "Axis": "Z",
+        "XSize": "8mm",
+        "YSize": "1mm"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Unite",
+       "props": {
+        "Tools": "CrossY",
+        "KeepOriginals": "False"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "pec",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "CrossY",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "-0.5mm,-4mm,1mm",
+        "Axis": "Z",
+        "XSize": "1mm",
+        "YSize": "8mm"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "pec",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": "Cross",
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "SideXm",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "-p/2,-p/2,-10mm",
+        "Axis": "X",
+        "YSize": "p",
+        "ZSize": "20mm"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "SideXp",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "p/2,-p/2,-10mm",
+        "Axis": "X",
+        "YSize": "p",
+        "ZSize": "20mm"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "SideYm",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "-p/2,-p/2,-10mm",
+        "Axis": "Y",
+        "XSize": "p",
+        "ZSize": "20mm"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "SideYp",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "-p/2,p/2,-10mm",
+        "Axis": "Y",
+        "XSize": "p",
+        "ZSize": "20mm"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "PortBottom",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "-p/2,-p/2,-10mm",
+        "Axis": "Z",
+        "XSize": "p",
+        "YSize": "p"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "PortTop",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "-p/2,-p/2,10mm",
+        "Axis": "Z",
+        "XSize": "p",
+        "YSize": "p"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    }
+   ],
+   "boundaries": [
+    {
+     "name": "Primary_X",
+     "kind": "Primary",
+     "props": {
+      "UVector": "0,0,0;0,1,0"
+     },
+     "faces": [],
+     "objects": [
+      "SideXm"
+     ],
+     "edges": [],
+     "enabled": true
+    },
+    {
+     "name": "Secondary_X",
+     "kind": "Secondary",
+     "props": {
+      "Primary": "Primary_X",
+      "UVector": "0,0,0;0,1,0",
+      "PhaseMode": "Scan Angles",
+      "ScanTheta": "theta",
+      "ScanPhi": "0deg",
+      "PhaseDelay": "0deg"
+     },
+     "faces": [],
+     "objects": [
+      "SideXp"
+     ],
+     "edges": [],
+     "enabled": true
+    },
+    {
+     "name": "Primary_Y",
+     "kind": "Primary",
+     "props": {
+      "UVector": "0,0,0;1,0,0"
+     },
+     "faces": [],
+     "objects": [
+      "SideYm"
+     ],
+     "edges": [],
+     "enabled": true
+    },
+    {
+     "name": "Secondary_Y",
+     "kind": "Secondary",
+     "props": {
+      "Primary": "Primary_Y",
+      "UVector": "0,0,0;1,0,0",
+      "PhaseMode": "Scan Angles",
+      "ScanTheta": "theta",
+      "ScanPhi": "0deg",
+      "PhaseDelay": "0deg"
+     },
+     "faces": [],
+     "objects": [
+      "SideYp"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "excitations": [
+    {
+     "name": "Lower",
+     "kind": "Floquet Port",
+     "props": {
+      "PortNumber": "1",
+      "NumberOfModes": "2",
+      "Permittivity": "1"
+     },
+     "faces": [],
+     "objects": [
+      "PortBottom"
+     ],
+     "edges": [],
+     "enabled": true
+    },
+    {
+     "name": "Upper",
+     "kind": "Floquet Port",
+     "props": {
+      "PortNumber": "2",
+      "NumberOfModes": "2",
+      "Permittivity": "1"
+     },
+     "faces": [],
+     "objects": [
+      "PortTop"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "mesh_ops": [],
+   "setups": [
+    {
+     "name": "Setup1",
+     "props": {
+      "Enabled": "True",
+      "SolutionFrequencyMode": "Single",
+      "Frequency": "12GHz",
+      "MaximumPasses": "2"
+     },
+     "sweeps": [],
+     "eigen": false
+    }
+   ],
+   "spheres": [],
+   "reports": [],
+   "field_plots": [],
+   "coord_systems": [],
+   "optimetrics": [],
+   "parametrics": [],
+   "working_cs": "Global",
+   "notes": ""
+  }
+ ]
+}

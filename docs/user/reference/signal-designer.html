@@ -1649,6 +1649,11 @@ has no <strong>Seed</strong>. The carrier is a modulation, with no standard's fr
 </code></pre>
 <p><code>Rs</code> takes sps, ksps or Msps (MBd, kBd and Bd read the same). Every field but <code>Off</code> and <code>P</code> may be left out, and
 then its default applies.</p>
+<p><strong>Through a link.</strong> A single carrier is the signal of most satellite links. Played through a
+<a href="propagation-channel.html#satellite">Propagation Channel</a> into an envelope run with <code>Equalizer=pilot</code>, the preamble and
+pilot blocks train the receiver's equalizer, the pass's Doppler is measured and removed (<code>CFO_Hz</code>), and EVM, counted bit
+errors and the estimated BER are read at the far end. The <em>LEO Satellite Downlink</em> example sends 16APSK this way through a
+transponder.</p>
 <h2 id="preview">The spectrum and the CCDF</h2>
 <p>The <strong>Spectrum</strong> is the composite power spectral density against the offset from <code>Fc</code>, framed on the
 occupied channels; for a pulsed-CW source it is the train's. The <strong>CCDF</strong> is the probability that the instantaneous power exceeds the average by

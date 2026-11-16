@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Pulse Response</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Pulse Response/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Pulse Response</p>
+  </div>
+
+  <h1>Pulse Response</h1>
+  <p class="lede">A 5th-order Butterworth low-pass filter and a lossless line driven by a fast step, each simulated by the native transient engine and by ngspice side by side: rise time, overshoot, settling and the line&#39;s reflection.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Pulse Response (transient)</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>Two circuits driven by a fast step, each simulated twice: once by circuitRF's own transient engine and once by
+ngspice. The pairs are drawn identically; the only difference is the analysis card's <strong>Solver</strong>.</p>
+<p>Run any bench with <strong>Simulate</strong>. When a run ends, the Messages panel offers <strong>Open Transient plots</strong>: the voltages
+against time, the output's spectrum over its last period and the measures as a table.</p>
+<h2 id="filter_native-and-filter_ngspice">Filter_Native and Filter_ngspice</h2>
+<p>A 5th-order Butterworth low-pass filter, 1 GHz cut-off, between 50 Ω terminations: shunt C, series L, shunt C,
+series L, shunt C (1.967 pF, 12.88 nH, 6.366 pF, 12.88 nH, 1.967 pF). <code>VS</code> steps from 0 to 1 V at 1 ns with a 50 ps
+rise. A <code>V_Pulse</code> with no <code>Width</code> holds <code>V2</code> to the end of the run, so it is a step.</p>
+<p>The measures read the output's edge:</p>
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Native</th>
+<th>ngspice</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Trise</code></td>
+<td>408.9 ps</td>
+<td>409.0 ps</td>
+<td>10 % to 90 % of the step at <code>out</code></td>
+</tr>
+<tr>
+<td><code>Overshoot_pct</code></td>
+<td>12.73 %</td>
+<td>12.73 %</td>
+<td>How far <code>out</code> goes past its final 0.5 V</td>
+</tr>
+<tr>
+<td><code>Tsettle</code></td>
+<td>3.23 ns</td>
+<td>3.23 ns</td>
+<td>When <code>out</code> stays within 1 % of its final value (from t = 0)</td>
+</tr>
+<tr>
+<td><code>Vfinal</code></td>
+<td>0.5 V</td>
+<td>0.5 V</td>
+<td>The 50 Ω divider</td>
+</tr>
+</tbody>
+</table>
+<p>12.7 % is the textbook overshoot of a 5th-order Butterworth step response: a flat passband rings on an edge.</p>
+<h2 id="line_native-and-line_ngspice">Line_Native and Line_ngspice</h2>
+<p>A lossless 50 Ω line, 1 ns long (<code>E</code> = 360° at 1 GHz), driven through 50 Ω and terminated in 100 Ω. The step
+launches 0.5 V down the line. At the load the reflection coefficient is (100 − 50)/(100 + 50) = 1/3, so after the
+round trip of 2 ns the input rises to 0.5 · (1 + 1/3) = 0.667 V and stays there, because the 50 Ω source absorbs
+the returning wave.</p>
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Native</th>
+<th>ngspice</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Vincident</code> (<code>V(in)</code> at 1.5 ns)</td>
+<td>0.5 V</td>
+<td>0.5 V</td>
+</tr>
+<tr>
+<td><code>Vsettled</code> (<code>V(in)</code> at 4 ns)</td>
+<td>0.666667 V</td>
+<td>0.666667 V</td>
+</tr>
+<tr>
+<td><code>Gamma</code></td>
+<td>0.333333</td>
+<td>0.333333</td>
+</tr>
+</tbody>
+</table>
+<p>Plot <code>V(in)</code> and <code>V(out)</code> together to see the step leave, arrive 1 ns later at 0.667 V, and the reflection come back.
+The native engine steps a lossless line exactly as its delay, which its run message says along with the line's
+error against its frequency-domain model.</p>
+<h2 id="the-ngspice-benches">The ngspice benches</h2>
+<p><code>Filter_ngspice</code> and <code>Line_ngspice</code> need ngspice. Install it from <strong>Settings ▸ Solvers ▸ Install ngspice…</strong>, or
+with <code>circuitrf solver install ngspice</code>; an ngspice from your system's package manager is found with nothing to
+set. Without one the <strong>ngspice</strong> choice on the card is greyed and a run is refused with a sentence saying how to get
+one. It never falls back to the native engine.</p>
+<p>Each ngspice run writes the deck it ran into <code>results/ngspice/TR1-&lt;time&gt;-&lt;id&gt;/deck.cir</code> and names it in the
+Messages panel. It is an ordinary SPICE deck: <code>ngspice -b deck.cir</code> runs it by hand. <code>circuitrf netlist &lt;bench&gt; -o deck.cir</code> writes the same deck without running anything.</p>
+<h2 id="settings-traded-for-run-time">Settings traded for run time</h2>
+<p>None that move a number. <code>Step=5p</code> is the output grid. The native engine also takes it as its largest step, and
+halving it moves <code>Trise</code> by 0.03 ps and <code>Overshoot_pct</code> by 0.004 %. Each bench runs in well under a second.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

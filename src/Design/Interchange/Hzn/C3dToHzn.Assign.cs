@@ -45,11 +45,11 @@ internal sealed partial class C3dToHznWriter
     // ── conductor sheets ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>A sheet is metal in a <c>.c3d</c>; in Hertzon it is metal because a boundary says so. One Perfect E for the perfect ones,
-    /// one Finite Conductivity for each conductivity and thickness.</summary>
+    /// one Finite Conductivity for each conductivity, thickness and (brief-hzn-18) one- or two-sidedness.</summary>
     private void Sheets()
     {
         var perfect = new List<string>();
-        var finite = new List<(double Sigma, string Thickness, List<string> Names)>();
+        var finite = new List<(double Sigma, string Thickness, bool OneSided, List<string> Names)>();
         foreach (var h in _objects.ToList())
         {
             // brief-hzn-10 — a boolean of sheets is metal by its Blank's material and thickness, and the boundary names the result.
@@ -79,8 +79,8 @@ internal sealed partial class C3dToHznWriter
                     ? _x.Write(e.Expr, e.Unit ?? "Um", h.Name)?.Text
                     : HznExpressionWriter.Digits(t) + "um";
             string key = thickness ?? "";
-            var group = finite.FirstOrDefault(g => g.Sigma == v.Conductivity && g.Thickness == key);
-            if (group.Names is null) finite.Add(group = (v.Conductivity, key, []));
+            var group = finite.FirstOrDefault(g => g.Sigma == v.Conductivity && g.Thickness == key && g.OneSided == sh.OneSided);
+            if (group.Names is null) finite.Add(group = (v.Conductivity, key, sh.OneSided, []));
             group.Names.Add(h.Name);
         }
         if (perfect.Count > 0)
@@ -89,12 +89,13 @@ internal sealed partial class C3dToHznWriter
             _boundaries.Add(new HAssign
             {
                 Name = UniqueBoundaryName("FiniteConductivity"), Kind = "Finite Conductivity", Objects = g.Names,
-                Props = FiniteConductivityProps(g.Sigma, g.Thickness.Length > 0 ? g.Thickness : null, twoSided: true),
+                Props = FiniteConductivityProps(g.Sigma, g.Thickness.Length > 0 ? g.Thickness : null, twoSided: !g.OneSided),
             });
     }
 
     /// <summary>A Finite Conductivity boundary's props. A sheet is two-sided: a lossy .c3d sheet is a thin conductor solved separately
-    /// on both sides, as Hertzon's two-sided one is. A solid's faces have one side, so the flag is off there.</summary>
+    /// on both sides, as Hertzon's two-sided one is, unless it is OneSided (brief-hzn-18). A solid's faces have one side, so the flag is
+    /// off there.</summary>
     private static List<(string, string)> FiniteConductivityProps(double sigma, string? thickness, bool twoSided = false) =>
         P(("UseMaterial", "False"), ("Material", ""), ("Conductivity", Num(sigma)), ("Permeability", "1"), ("Roughness", "0um"),
           ("UseThickness", thickness is null ? "False" : "True"), ("Thickness", thickness ?? "0um"), ("TwoSided", twoSided ? "True" : "False"));
@@ -110,6 +111,7 @@ internal sealed partial class C3dToHznWriter
         // (one per conductor reaching it), so every port is written as one Wave Port, numbered in the order of its terminals
         _terminalDesign = _doc.Ports.Any(C3dPorts.HasTerminals);
         var terminalOrder = _doc.Ports.OrderBy(p => C3dPorts.HasTerminals(p) ? p.Terminals!.Min(t => t.Number) : p.Number).ToList();
+        var modeOrder = _doc.Ports.Any(p => p.Modes > 1) ? _doc.Ports.OrderBy(p => p.Number).ToList() : null;
         foreach (var port in _doc.Ports)
         {
             string name = port.Name.Length > 0 ? port.Name : $"P{port.Number}";
@@ -131,10 +133,21 @@ internal sealed partial class C3dToHznWriter
                     continue;
                 }
                 renorm = Num(tz.Real) + "ohm";
+                if (port.DeembedUm != 0)
+                {
+                    _r.Add(HznRefusalKind.Excitation, "terminal port with de-embedding", "a terminal port's reference plane is written on its face", name);
+                    continue;
+                }
             }
             if (port.Cylinder is not null)
             {
                 _r.Add(HznRefusalKind.Excitation, "cylindrical port", "Hertzon's port is a rectangle sheet in an axis plane", name);
+                continue;
+            }
+            // brief-hzn-16 — not written yet: a .hzn opened from Hertzon keeps its own Floquet ports when saved, unedited
+            if (port.Floquet is not null)
+            {
+                _r.Add(HznRefusalKind.Excitation, "Floquet port", "writing a Floquet port to a Hertzon design is not built yet", name);
                 continue;
             }
             // brief-cxp-1 R-cxp1-5 — a coaxial port's sheet is its ring
@@ -143,7 +156,7 @@ internal sealed partial class C3dToHznWriter
                 _r.Add(HznRefusalKind.Excitation, "coaxial port", "Hertzon's port is a rectangle sheet in an axis plane", name);
                 continue;
             }
-            bool turned = port.Angle != 0;   // brief-hzn-14 — written as its four corners, a polyline sheet
+            bool turned = port.Turned;   // brief-hzn-14 (brief-hzn-15: or tilted) — written as its four corners, a polyline sheet
             if (wave && port.VoltagePath is not null)
             {
                 _r.Add(HznRefusalKind.Excitation, "wave port with a stated voltage path", "a wave port's polarity is not written", name);
@@ -177,7 +190,9 @@ internal sealed partial class C3dToHznWriter
             {
                 Name = name, Kind = wave ? "Wave Port" : "Lumped Port", Objects = [sheet.Name], Enabled = port.Model,
             };
-            int number = _terminalDesign ? terminalOrder.IndexOf(port) + 1 : port.Number;
+            // brief-hzn-20 R-hzn20-3 — with a port of several modes the document numbers each mode; Hertzon numbers ports in port order
+            int number = _terminalDesign ? terminalOrder.IndexOf(port) + 1
+                       : modeOrder is not null ? modeOrder.IndexOf(port) + 1 : port.Number;
             x.Props.Add(("PortNumber", number.ToString(CultureInfo.InvariantCulture)));
             if (wave && _terminalDesign)
             {
@@ -188,14 +203,15 @@ internal sealed partial class C3dToHznWriter
             }
             else if (wave)
             {
-                x.Props.Add(("NumberOfModes", "1"));
+                x.Props.Add(("NumberOfModes", port.Modes.ToString(CultureInfo.InvariantCulture)));
                 x.Props.Add(("ModeType", "Auto"));
                 x.Props.Add(("ImpedanceDefinition", "Zpv"));
                 // Hertzon keeps RenormImpedance with Renormalize False, at its own 50 ohm
                 x.Props.Add(("Renormalize", mode ? "False" : "True"));
                 x.Props.Add(("RenormImpedance", mode ? "50ohm" : Num(z.Real) + "ohm"));
-                x.Props.Add(("Deembed", "False"));
-                x.Props.Add(("DeembedDistance", "0"));
+                // brief-hzn-20 R-hzn20-3 — the reference plane moved into the structure, in mm
+                x.Props.Add(("Deembed", port.DeembedUm != 0 ? "True" : "False"));
+                x.Props.Add(("DeembedDistance", port.DeembedUm != 0 ? Num(port.DeembedUm / 1000) + "mm" : "0"));
             }
             else
             {
@@ -238,6 +254,7 @@ internal sealed partial class C3dToHznWriter
     /// <summary>A turned port's four corners, world DBU, in order round it; in an upright plane the first two are the lower edge.</summary>
     private static List<C3dPoint3> TurnedCorners(C3dPort port)
     {
+        if (port.Corners is { } drawn) return [.. drawn];          // brief-hzn-15
         double u0 = port.Rect.Min.U, v0 = port.Rect.Min.V, u1 = u0 + port.Rect.Size.U, v1 = v0 + port.Rect.Size.V;
         var map = C3dTurnedPorts.MapDbu(port.Plane, port.Angle, u0, v0, u1, v1, port.Offset);
         static long R(double d) => (long)Math.Round(d, MidpointRounding.AwayFromZero);
@@ -547,6 +564,8 @@ internal sealed partial class C3dToHznWriter
                 _r.Add(HznRefusalKind.Boundary, $"air box face boundary not stated ({BoxFaceNames[i]})", "state it in the setup", DesignName);
             else if (f.Boundary is Em3dBoundaryKind.Symmetry)
                 _r.Add(HznRefusalKind.Boundary, "symmetry on an air box face", "Hertzon's symmetry wall is a perfect E or a perfect H, which are the PEC and PMC faces", DesignName);
+            else if (f.Boundary is Em3dBoundaryKind.Periodic)
+                _r.Add(HznRefusalKind.Boundary, $"periodic air box face ({BoxFaceNames[i]})", "writing a periodic cell to a Hertzon design is not built yet", DesignName);
         }
         if (_r.Any) return;
 

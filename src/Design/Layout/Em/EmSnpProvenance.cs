@@ -93,7 +93,7 @@ public static class EmSnpProvenance
         IReadOnlyList<string>? caveats = null,
         IReadOnlyList<string>? portMap = null, string? stamp = null, int? unknowns = null)
         => BuildHeader(PlanarKernel.KernelName,
-                       GeometryHash(problem), MeshHash(mesh), PortHash(ports),
+                       GeometryHash(problem), MeshHash(mesh, problem), PortHash(ports),
                        setupName, layoutRef, when, caveats, PlanarKernel.ModelRevision, portMap, stamp, unknowns);
 
     /// <summary>
@@ -283,7 +283,8 @@ public static class EmSnpProvenance
         {
             var np = solve.NonPassivePoints;
             double worst = 0;
-            foreach (var e in np) if (e.SigmaMax > worst) worst = e.SigmaMax;
+            PlanarPassivityExcess? worstPoint = null;
+            foreach (var e in np) if (e.SigmaMax > worst) { worst = e.SigmaMax; worstPoint = e; }
 
             string which = np.Count == 1
                 ? Eng(np[0].FrequencyHz) + "Hz"
@@ -307,6 +308,8 @@ public static class EmSnpProvenance
                 $"{worst.ToString("0.0###", CultureInfo.InvariantCulture)}. " +
                 "A passive structure cannot exceed 1, so the excess is this analysis rather than the " +
                 "design." +
+                // ICF-4 R-icf4-5 — which ports carry it, as the panel note says; empty on a file whose run measured none.
+                (worstPoint?.CarryingClause ?? "") +
                 (solve.NonPassivityCause.Length > 0 ? " " + solve.NonPassivityCause : ""));
         }
 
@@ -544,8 +547,10 @@ public static class EmSnpProvenance
     /// while describing a result the tool can no longer reproduce, which is precisely what this field
     /// exists to prevent. So every pre-ANT-2 planar <c>.snp</c> reads as stale once, correctly.</para>
     /// </summary>
-    public static string MeshHash(PlanarMeshSettings m)
-        => Sha($"{m.Auto}|{m.CellsPerWavelength}|{m.EdgeMesh}|{m.EdgeCells}|{m.BoundaryCells}|" +
+    public static string MeshHash(PlanarMeshSettings m) => Sha(MeshHashText(m));
+
+    private static string MeshHashText(PlanarMeshSettings m)
+        => ($"{m.Auto}|{m.CellsPerWavelength}|{m.EdgeMesh}|{m.EdgeCells}|{m.BoundaryCells}|" +
                $"{(m.MeshFrequencyHz is { } f ? R(f) : "auto")}" +
                (m.MinCellsAcrossConductor == PlanarMeshSettings.DefaultMinCellsAcrossConductor
                     ? "" : $"|across={m.MinCellsAcrossConductor}") +
@@ -564,6 +569,17 @@ public static class EmSnpProvenance
              + (m.StackedRegions ? "|stacked=True" : "")
              // PMS-4, PMS-7 — omitted while off, and on is the product default: the stacked term's reasoning above.
              + (m.LocalGrid ? "|local=True" : ""));
+
+    /// <summary>
+    /// <see cref="MeshHash(PlanarMeshSettings)"/> for <paramref name="problem"/>: brief-icf-4 R-icf4-1 — where the local grid may
+    /// start an axis from one block across the artwork (<see cref="SurfaceMesher.LocalGridStartsFromArtwork"/>), the term
+    /// <c>|base=artwork</c> marks a result meshed before that rule stale, once. Asked of the problem rather than added to every
+    /// local-grid hash, because the rule moves only artwork within two base blocks: a board's partition is the one it had.
+    /// </summary>
+    public static string MeshHash(PlanarMeshSettings m, PlanarProblem? problem)
+        => problem is not null && SurfaceMesher.LocalGridStartsFromArtwork(problem, m)
+            ? Sha($"{MeshHashText(m)}|base=artwork")
+            : MeshHash(m);
 
     /// <summary>
     /// A port's identity for staleness purposes is its number, its POSITION, its inferred side and
@@ -647,7 +663,7 @@ public static class EmSnpProvenance
     /// <summary>D9 — the planar counterpart, so a planar run's stamp can go stale at all.</summary>
     public static string? DescribeStaleness(
         string snpPath, PlanarProblem problem, PlanarMeshSettings mesh, IReadOnlyList<PlanarPort> ports)
-        => Compare(snpPath, GeometryHash(problem), MeshHash(mesh), PortHash(ports),
+        => Compare(snpPath, GeometryHash(problem), MeshHash(mesh, problem), PortHash(ports),
                    "the layout geometry", "the ports", PlanarKernel.ModelRevision);
 
     /// <param name="modelRevision">

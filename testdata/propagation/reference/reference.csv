@@ -63,7 +63,7 @@ P526 sphere within line of sight,P526,1000000000.0,30000.0,50.0,20.0,Mode=sphere
 "P526 sphere 15 MHz vertical, beta from K",P526,15000000.0,80000.0,30.0,10.0,Mode=sphere;EarthRadiusFactor=1.3333333333333333;GroundEr=22.0;GroundSigma=0.003;Polarization=vertical,148.80086380649502,0.0,
 P526 sphere horizontal over sea,P526,100000000.0,70000.0,30.0,10.0,Mode=sphere;EarthRadiusFactor=1.3333333333333333;GroundEr=80.0;GroundSigma=5.0;Polarization=horizontal,156.25962933714646,0.0,
 "P676 gas, terrestrial 60 GHz",free,60000000000.0,1000.0,10.0,10.0,Gas=on,142.6664922038665,0.0,
-"P530 rain on 38901 UMi, 99.9 %",38901,28000000000.0,200.0,10.0,1.5,Scenario=UMi;Los=los;Rain=fixed;Availability=99.9;RainTilt=90,111.2760119248388,4.0,0.09351798732692025
+"P530 rain on 38901 UMi, 99.9 %",38901,28000000000.0,200.0,10.0,1.5,Scenario=UMi;Los=los;Rain=fixed;Availability=99.9;RainTilt=90,110.80544362332719,4.0,0.09351798732692025
 "satellite GEO Ka, gas, rain, clouds, scintillation at 99.9 %",satellite,20000000000.0,nan,1.5,1.5,Altitude=35786.0;Elevation=40.0;Gas=on;Rain=fixed;Clouds=on;Scintillation=on;Availability=99.9,217.1288329524834,0.0,
 "satellite LEO S band, urban NLOS, gas and ionosphere at 99 %",satellite,2200000000.0,nan,1.5,1.5,Altitude=600.0;Elevation=32.0;Scenario=urban;Los=nlos;Gas=on;Ionosphere=on;S4=0.5;Availability=99,191.66076550228678,6,0.493
 "satellite Ka rural auto, gas from a raised station",satellite,20000000000.0,nan,1.5,1.5,Altitude=1200.0;Elevation=55.0;Scenario=rural;Gas=on;StationHeight=1.2,181.6478317846464,3.1,0.94

@@ -112,14 +112,15 @@ internal static class EnvelopeVerb
                 foreach (var w in diag.Warnings) Console.Error.WriteLine($"[circuitRF] warning: {w}");
                 foreach (var n in diag.Notes) Console.Error.WriteLine($"[circuitRF] note: {n}");
                 JsonRun.Analysis = sweep.Name;
-                JsonRun.Data = sds;
+                var sout = WithMeasurements(tb, diag, env.Name, sds);
+                JsonRun.Data = sout;
                 PrintSweep(sds, sweep);
                 if (exportPath is not null)
                 {
                     var fmt = exportPath.EndsWith(".mat", StringComparison.OrdinalIgnoreCase) ? ExportFormat.Mat : ExportFormat.Npy;
                     var dir0 = Path.GetDirectoryName(Path.GetFullPath(exportPath));
                     if (!string.IsNullOrEmpty(dir0)) Directory.CreateDirectory(dir0);
-                    DataSetExporter.Export(sds, exportPath, fmt, new ExportOptions(Format: fmt));
+                    DataSetExporter.Export(sout, exportPath, fmt, new ExportOptions(Format: fmt));
                     Console.WriteLine($"Wrote {exportPath}");
                     JsonRun.AddOutput(JsonRun.KindOf(exportPath), exportPath);
                 }
@@ -141,14 +142,15 @@ internal static class EnvelopeVerb
             foreach (var w in first.Warnings) Console.Error.WriteLine($"[circuitRF] warning: {w}");
             foreach (var n in first.Notes) Console.Error.WriteLine($"[circuitRF] note: {n}");
             JsonRun.Analysis = env.Name;
-            JsonRun.Data = ds;
+            var output = WithMeasurements(tb, first, env.Name, ds);
+            JsonRun.Data = output;
             Print(ds, env.Name, input);
             if (exportPath is not null)
             {
                 var format = exportPath.EndsWith(".mat", StringComparison.OrdinalIgnoreCase) ? ExportFormat.Mat : ExportFormat.Npy;
                 var dir = Path.GetDirectoryName(Path.GetFullPath(exportPath));
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-                DataSetExporter.Export(ds, exportPath, format, new ExportOptions(Format: format));
+                DataSetExporter.Export(output, exportPath, format, new ExportOptions(Format: format));
                 Console.WriteLine($"Wrote {exportPath}");
                 JsonRun.AddOutput(JsonRun.KindOf(exportPath), exportPath);
             }
@@ -160,6 +162,21 @@ internal static class EnvelopeVerb
             if (Environment.GetEnvironmentVariable("CRF_DEBUG") is not null) Console.Error.WriteLine(ex);
             return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message));
         }
+    }
+
+    /// <summary>brief PCH-12 — the TestBench's measure lines over the envelope run, exactly as the GUI evaluates them
+    /// (<see cref="HbCircuitRun.Measure"/>, which sparam, hb, lp and lpp share), merged into the result as its
+    /// <c>measurements</c> group; each one that fails is reported as theirs are. This verb evaluated none before, so an
+    /// envelope bench's measures were reachable only by opening it.</summary>
+    private static DataSet WithMeasurements(TestBench tb, ElaboratedNetlist nl, string analysisName, DataSet ds)
+    {
+        var meas = HbCircuitRun.Measure(tb, nl, analysisName, ds, null, out var errors);
+        foreach (var e in errors)
+        {
+            Console.Error.WriteLine($"[circuitRF] measurement: {e}");
+            JsonRun.Note(CliDiagnostics.MeasurementFailed(e));
+        }
+        return HbCircuitRun.Merge(ds, meas);
     }
 
     private static double S(DataSet ds, string k) => ds.Cubes.TryGetValue(k, out var c) ? c.RealValues[0] : double.NaN;

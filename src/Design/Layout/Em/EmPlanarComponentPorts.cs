@@ -79,6 +79,10 @@ public sealed record EmPlanarComponentPort(
     /// chain and every pin by class), shared by its ports; null otherwise.</summary>
     public EmCoSimCut? CutPart { get; init; }
 
+    /// <summary>brief-icf-6 R-icf6-1 — a cut pin's stated return (<see cref="EmComponentPort.ReturnOf"/>): the conductor its 3D edge
+    /// sheet returns through. Null for the walk, and for a pin referenced to another (its gap sheet returns through that pin).</summary>
+    public string? Return { get; init; }
+
     /// <summary>brief-lcp-7 — a connector by its refdes (<see cref="C3dComponentPorts.IsConnectorRefdes"/>): a Port line of the
     /// co-simulation netlist, not a part across its port. A layout has no 3D shell to bridge, so the refdes is all that says so.</summary>
     public bool Connector { get; init; }
@@ -262,7 +266,8 @@ public static class EmPlanarComponentPorts
     /// notice an edit made to the same object.</summary>
     private static string KeyOf(EmSetup setup, EmLayoutSource? source)
         => string.Join("|", setup.ComponentPorts.Select(c => $"{c.Refdes}\u001f{c.Z0}\u001f{c.Reference}\u001f{c.WidthUm?.ToString("R", CultureInfo.InvariantCulture)}" +
-                                                             $"\u001f{c.Cell}\u001f{c.PortAt}\u001f{c.KeepOutUm}\u001f{c.Construction}\u001f{c.Keep}\u001f{c.Pins}\u001f{c.Ground}"))
+                                                             $"\u001f{c.Cell}\u001f{c.PortAt}\u001f{c.KeepOutUm}\u001f{c.Construction}\u001f{c.Keep}\u001f{c.Pins}\u001f{c.Ground}" +
+                                                             (c.Return is null ? "" : $"\u001freturn={c.Return}")))
            + (setup.CutGroundFallbacks.Count == 0 ? "" : "|fallback\u001f" + string.Join("\u001f", setup.CutGroundFallbacks.Keys.Order(StringComparer.Ordinal)))
            + "#" + string.Join(",", setup.AnalysisLevelNames) + "#" + setup.SolveRegion?.Describe() + (setup.Is3D ? "#3d" : "")
            + "#" + (source is null ? "" : source.View.Shapes.Count + "/" + source.View.Instances.Count + "/" + source.View.EditCount + "/" + source.DbuPerMicron);
@@ -529,6 +534,7 @@ public static class EmPlanarComponentPorts
                     Conductor = EmPinConductor.Of(source.Technology, pin.Layer)?.Name,
                     ClayPath = source.AbsolutePath, Cutout = true, Cell = pin.Cell, CutPart = part,
                     SchematicId = instances.At(pin.Path)?.SchematicId,
+                    Return = pin.Reference is null ? entry?.ReturnOf(pin.Pin) : null,
                 });
             }
         }
@@ -544,14 +550,17 @@ public static class EmPlanarComponentPorts
             var coSimCuts = EmCoSimCut.Of(cut, instances, cuts);
             foreach (string path in cut.Excluded.Where(x => !results.Any(r => r.Cutout && r.Ok && r.Refdes.Equals(x, StringComparison.OrdinalIgnoreCase))))
             {
-                warnings.Add($"{path} is cut out of the problem and has no port left on it: the co-simulation netlist places its model with " +
-                             "each terminal on ground, the N-port's reference or an open node, so it reaches the EM result only through ground.");
+                warnings.Add(PortlessWarning(path));
                 if (coSimCuts.GetValueOrDefault(path) is { } c)
                     portless.Add(new EmCoSimPart(path, null, null, [], instances.At(path)?.SchematicId, source.AbsolutePath, (null, null), false) { Cut = c });
             }
         }
         // A 3D run's cut ports are sheets, described by the 3D view that builds them; the notes here are the cut's own.
         if (!threeD) foreach (var r in results.Where(p => p.Ok)) notes.Add(Describe(r, source));
+        // brief-icf-6 R-icf6-1 — a stated Return chooses where a 3D sheet lands; a Planar cut port has no sheet. Said once.
+        if (!threeD && cuts.Any(c => c.Entry.StatesReturn))
+            notes.Add("The cut entries' Return is not used on Planar: a Planar cut port is grounded, or referenced to another pin, with " +
+                      "no sheet to land. It chooses where a 3D run's sheets return.");
         // R-lcp7-2 — the .c3d's sentence (C3dComponentPorts.Build), word for word: the co-simulation netlist stands a placeholder there.
         if (noModel.Count > 0)
             warnings.Add($"{string.Join(", ", noModel)} {(noModel.Count == 1 ? "has" : "have")} no model on the board's schematic, so the " +
@@ -816,6 +825,12 @@ public static class EmPlanarComponentPorts
 
     private static string Mm(double m) => C3dComponentPorts.Mm(m);
     private static string Um(double m) => C3dComponentPorts.Um(m);
+
+    /// <summary>brief-icf-2 R-icf2-2 — the warning for a cut instance left with no port, on both solvers: a 3D run says it too of one whose
+    /// every sheet the generator refused (<c>C3dComponentPorts.Build</c>).</summary>
+    internal static string PortlessWarning(string path)
+        => $"{path} is cut out of the problem and has no port left on it: the co-simulation netlist places its model with " +
+           "each terminal on ground, the N-port's reference or an open node, so it reaches the EM result only through ground.";
 
     /// <summary>One built port's line: what the run notes and the setup's list show.</summary>
     public static string Describe(EmPlanarComponentPort p, EmLayoutSource source)

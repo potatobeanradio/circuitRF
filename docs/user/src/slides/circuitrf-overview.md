@@ -16,7 +16,7 @@ circuitRF in one sentence, and the shape of the tool.
 
 - A **cross-platform RF circuit simulator**: DC, S-parameters, harmonic balance, loadpull and sourcepull.
 - Built around the **RF design loop** — gain, match, power, efficiency, intermodulation, terminations.
-- **Not a SPICE simulator.** It does not chase time-domain transients, and it does not pretend to.
+- **Harmonic balance first.** A transient analysis sits beside it for pulses, start-up and settling, natively or on ngspice.
 - One design database with four views per cell — **symbol, schematic, layout and 3D** — plus a planar EM solver, a 3D bondwire kernel and an interactive load-pull bench.
 
 > **The short version** — if your day is spent asking **what does this network do across frequency, and what happens when I drive it hard**, this is the tool shaped for that question.
@@ -187,7 +187,7 @@ circuitrf hb    pa.cnl   --set Pavs=22 -o sweep.npy
 
 ## What circuitRF is not
 
-- **Not a transient simulator.** No time-domain SPICE analysis, and none is planned for v1.
+- **Not a mixed-signal simulator.** The transient analysis runs analog circuits, with no digital elements and no transient noise.
 - **Not a full-wave 3D EM solver.** The MoM kernel is planar and says so; a genuinely 3D structure needs a 3D tool.
 - **No sign-off.** There is no tape-out guarantee. Design-rule checking and layout-versus-schematic both exist, but neither is a foundry sign-off deck: LVS compares topology and values, and says nothing about manufacturability or parasitics.
 - **Not finished.** It is in active development, and the documentation tracks the current build.

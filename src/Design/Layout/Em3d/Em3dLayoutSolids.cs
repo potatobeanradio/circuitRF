@@ -111,6 +111,11 @@ public sealed record Em3dLayoutSolidsResult(
     /// z) where a standalone run of the layout floors its air box; null when it would not floor it.</summary>
     public double? UndrawnGroundTopM { get; init; }
 
+    /// <summary>brief-icf-6 R-icf6-3 — lowered as an instance with no board outline, the dielectric slabs bounded by the box round the
+    /// drawn geometry (one solid each, no film, opening or conformal cover): what a 3D view may run out to its air box's sides when the
+    /// box is padded from a port column, since nothing drawn says where the substrate ends. Empty when an outline is drawn.</summary>
+    public IReadOnlyList<string> ArtworkBoundedSlabs { get; init; } = [];
+
     /// <summary>brief-emb-2 R-emb2-3 — the farthest Robust meshing moved any outline point, metres; 0 when it is off or moved
     /// nothing. A port edge that touched the artwork as drawn is within this of the outline the run meshes.</summary>
     public double OutlineMoveM { get; init; }
@@ -1013,10 +1018,15 @@ public static class Em3dLayoutSolids
                     if (fullExtent is not null) unboundedDielectrics++;
                 }
                 else
+                {
                     for (int k = 0; k < lateral.Count; k++)
                         solids.Add(Origin(new Em3dSolid(lateral.Count == 1 ? b.Layer.Name : $"{b.Layer.Name}/{k + 1}",
                                                         material, Em3dRole.Dielectric, Extrude(lateral[k], z0, z1), order),
                                           Em3dObjectKind.Dielectric, b.Layer.Name));
+                    // brief-icf-6 R-icf6-3 — an instance's slab whose only bound is the artwork's box.
+                    if (fullExtent is null && film is null && _outline.Count == 0 && lateral.Count == 1 && !_openings.ContainsKey(b.Index))
+                        _artworkBounded.Add(b.Layer.Name);
+                }
                 if (film is null) airBottom = double.IsNaN(airBottom) ? z1 : Math.Max(airBottom, z1);
             }
 
@@ -1261,6 +1271,7 @@ public static class Em3dLayoutSolids
 
         // ── Lateral bounds (SlabLateralBound) ───────────────────────────────────────────────────────
         private readonly List<string> _slabBounds = [];
+        private readonly List<string> _artworkBounded = [];
         private Em3dAirBox? _displayBox;
 
         /// <summary>
@@ -1320,6 +1331,7 @@ public static class Em3dLayoutSolids
             ViaNetAdoptions = ViaNetAdoptionMap,
             GroundBandObjects = GroundBandObjectList,
             UndrawnGroundTopM = UndrawnGroundTopM,
+            ArtworkBoundedSlabs = _artworkBounded,
             OutlineMoveM = _robust.MaxMoveM,
             Wires = WireBuild?.Reports ?? [],
             NoAlpha = NoAlphaList,

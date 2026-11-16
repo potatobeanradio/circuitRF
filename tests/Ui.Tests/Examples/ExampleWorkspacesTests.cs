@@ -225,10 +225,11 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
         var found = ExampleWorkspaces.All(SourceExamplesRoot());
         Assert.NotEmpty(found);
 
+        // the menu's order is the index's topics, each one's examples in the order it lists them
         var indexed = JsonDocument.Parse(File.ReadAllText(
             Path.Combine(SourceExamplesRoot(), ExampleWorkspaces.IndexFileName)))
-            .RootElement.GetProperty("Examples")
-            .EnumerateArray().Select(e => e.GetProperty("Folder").GetString()!).ToList();
+            .RootElement.GetProperty("Groups")
+            .EnumerateArray().SelectMany(g => g.GetProperty("Examples").EnumerateArray().Select(e => e.GetString()!)).ToList();
 
         Assert.Equal(indexed, found.Select(f => f.Folder).ToList());
 
@@ -238,6 +239,35 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
             Assert.False(string.IsNullOrWhiteSpace(e.Summary));
             Assert.True(File.Exists(e.CwsPath));
         }
+    }
+
+    /// <summary>
+    /// File ▸ New ▸ Examples is one submenu per topic (the index's <c>Groups</c>): every example is under exactly one topic,
+    /// and every topic has an example, so none is lost from the menu and none is an empty submenu. Where a topic or an
+    /// example sits is the index's to say and is not held here.
+    /// </summary>
+    [Fact]
+    public void EveryExampleIsUnderExactlyOneTopic_AndNoTopicIsEmpty()
+    {
+        var root = JsonDocument.Parse(File.ReadAllText(Path.Combine(SourceExamplesRoot(), ExampleWorkspaces.IndexFileName))).RootElement;
+        var folders = root.GetProperty("Examples").EnumerateArray().Select(e => e.GetProperty("Folder").GetString()!).ToList();
+        var groups = root.GetProperty("Groups").EnumerateArray()
+            .Select(g => (Title: g.GetProperty("Title").GetString()!, Examples: g.GetProperty("Examples").EnumerateArray().Select(e => e.GetString()!).ToList()))
+            .ToList();
+
+        foreach (var (title, examples) in groups)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(title));
+            Assert.True(examples.Count > 0, $"the topic '{title}' has no example: it would be an empty submenu");
+            foreach (string f in examples)
+                Assert.True(folders.Contains(f), $"the topic '{title}' names '{f}', which the index's Examples do not");
+        }
+        Assert.Equal(groups.Count, groups.Select(g => g.Title).Distinct().Count());
+        foreach (string f in folders)
+            Assert.True(groups.Count(g => g.Examples.Contains(f)) == 1,
+                $"'{f}' is under {groups.Count(g => g.Examples.Contains(f))} topics; it belongs under exactly one");
+
+        Assert.All(ExampleWorkspaces.All(SourceExamplesRoot()), e => Assert.NotEqual(ExampleWorkspaces.Ungrouped, e.Group));
     }
 
     /// <summary>A folder entry that tries to leave the examples tree is dropped, not resolved.</summary>
@@ -765,15 +795,22 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
     {
         var vm = new WorkspaceViewModel();
 
-        Assert.Equal(WorkspaceViewModel.Examples.Count, vm.ExampleMenuItems.Count);
-
-        foreach (var (control, example) in vm.ExampleMenuItems.Zip(WorkspaceViewModel.Examples))
+        // one submenu per topic, each example's row inside it
+        var topics = ExampleWorkspaces.Grouped(WorkspaceViewModel.Examples);
+        Assert.Equal(topics.Count, vm.ExampleMenuItems.Count);
+        foreach (var (control, (title, examples)) in vm.ExampleMenuItems.Zip(topics))
         {
-            var item = Assert.IsType<Avalonia.Controls.MenuItem>(control);
-            Assert.Equal(example.Title, item.Header);
-            Assert.Equal(example.Folder, item.CommandParameter);
-            Assert.Same(vm.OpenExampleCommand, item.Command);
-            Assert.True(item.Command!.CanExecute(example.Folder));
+            var topic = Assert.IsType<Avalonia.Controls.MenuItem>(control);
+            Assert.Equal(title, topic.Header);
+            Assert.Equal(examples.Count, topic.Items.Count);
+            foreach (var (row, example) in topic.Items.Zip(examples))
+            {
+                var item = Assert.IsType<Avalonia.Controls.MenuItem>(row);
+                Assert.Equal(example.MenuText, item.Header);
+                Assert.Equal(example.Folder, item.CommandParameter);
+                Assert.Same(vm.OpenExampleCommand, item.Command);
+                Assert.True(item.Command!.CanExecute(example.Folder));
+            }
         }
     }
 

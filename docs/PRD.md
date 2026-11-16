@@ -33,7 +33,7 @@ circuitRF's distinguishing promises are: (1) it is an **RF simulator, not a SPIC
 
 circuitRF is deliberately bounded. The following are **not** in scope today:
 
-- **Not a SPICE simulator.** There is no transient analysis; circuitRF ships DC, S-parameters, harmonic balance (with loadpull/sourcepull) and EM.
+- **Not a SPICE simulator.** Harmonic balance (with loadpull/sourcepull), S-parameters, DC, envelope and EM are the primary analyses. A transient analysis exists beside them for time-domain questions (pulse responses, start-up, switching), and a bench can be handed to ngspice; neither makes circuitRF a SPICE replacement, and harmonic balance stays the analysis the workflow is built around. See [`design/transient.md`](design/transient.md).
 - **No layout auto-router.** Schematic→layout places components; the user routes. Obstacle-aware auto-routing applies to schematic wiring only.
 - **A third-party cell database is not the storage layer.** circuitRF uses its own human-readable native format. An optional third-party *cell import/export bridge* may come later; full support is out of scope.
 - **No co-simulation and no system/behavioral-level model generation** (e.g., X-parameter generation).

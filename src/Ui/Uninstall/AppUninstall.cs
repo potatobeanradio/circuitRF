@@ -88,7 +88,7 @@ internal static class AppUninstall
         }
         sb.AppendLine();
         sb.AppendLine("This reaches only your account. Solvers another account installed on this computer are theirs and stay; " +
-                      "each account's own Settings ▸ Solvers ▸ Remove all 3D solvers is how they go.");
+                      "each account's own Settings ▸ Solvers ▸ Remove all solvers is how they go.");
         sb.AppendLine();
         sb.Append(removal.Describe);
         return sb.ToString();

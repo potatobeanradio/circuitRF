@@ -84,11 +84,11 @@ public static class InstanceNetContract
         // ── Sources, probes and terminations whose reference terminal is implicit on the glyph ──
         // Each declares ONE port and takes TWO nets. This is the family the catalogue got wrong.
         // SeriesProbeModelBase covers IProbe and WSProbe alike — both bind two nets, G/+ then L/−.
-        VdcModel or SeriesProbeModelBase or OscProbeModel or TunerModel or ToneSourceModelBase
+        VdcModel or IdcModel or WaveformSourceModel or SeriesProbeModelBase or OscProbeModel or TunerModel or ToneSourceModelBase
             or P1ToneModel or PnToneModel or ModSourceModel or NonlinearCModel                => 2,
 
         // ── Controlled sources: an output pair and a control pair, two ports of two nets each ──
-        VccsModel or VcvsModel                                                                => 4,
+        VccsModel or VcvsModel or VSwitchModel                                                => 4,
         // The ideal transformer: the primary pair, then the secondary pair.
         IdealTransformerModel                                                                 => 4,
         // The op-amp: in+, in−, out, and V+, V− with Pins=5 — the model's own resolved count.
@@ -98,7 +98,8 @@ public static class InstanceNetContract
         ChainModel                                                                            => 4,
 
         // brief-pch-6 — the Propagation Channel: its transmit and receive pins, each over ground.
-        PropagationChannelModel                                                               => 2,
+        // brief-pch-8: one net per pin end; an end Tx=/Rx= names an instance has none
+        PropagationChannelModel ch                                                            => ch.PortCount,
 
         // ── Ideal system blocks: every RF port is a signal net and a reference net ──
         // Atten is 2 ports → 4 nets; Balun and Circulator 3 → 6; Coupler 4 → 8.

@@ -1,0 +1,25 @@
+* circuitRF transient deck: bench rectifier, analysis TR1
+* written by circuitRF 1.8.4
+* names (deck = circuitRF):
+*   net in = in
+*   net out = out
+*   instance Vs = Vs
+*   instance D1 = D1
+*   instance RL = RL
+*   instance CL = CL
+
+.temp 26.85
+.options TNOM=26.85 RELTOL=0.001 VNTOL=1E-06 ABSTOL=1E-12 METHOD=TRAP
+Vs in 0 SIN(0 5 1000000 0 0 90) ; Vs
+.model m_D1 D(TNOM=26.85 EG=1.16) ; D1 (model)
+D1 in out m_D1 temp=26.85 ; D1
+RL out 0 1000 ; RL
+CL out 0 1.0000000000000001E-07 ; CL
+.tran 5E-09 9.999999999999999E-06 0 5E-09
+.save v(in) v(out)
+.control
+run
+linearize
+write rectifier.raw
+.endc
+.end

@@ -234,6 +234,34 @@ public static class SurfaceMesher
     /// <param name="multiLevel">Whether the problem needs the general (multi-level) kernel.</param>
     public static bool UsesAcceleratedCeiling(bool aimOn, bool multiLevel) => aimOn && !multiLevel;
 
+    /// <summary>M0 — the mesh frequency (the sweep's top unless stated), λ_g there and the wave cell λ_g/N, for resolved
+    /// <paramref name="s"/>.</summary>
+    private static (double MeshFreqHz, double LambdaG, double HWave) WaveCell(PlanarProblem problem, PlanarMeshSettings s)
+    {
+        double meshFreqHz = s.MeshFrequencyHz is { } mf && mf > 0 ? mf : problem.MaxFrequencyHz;
+        double lambdaG = meshFreqHz == problem.MaxFrequencyHz
+            ? problem.GuidedWavelengthM
+            : (problem with { MaxFrequencyHz = meshFreqHz }).GuidedWavelengthM;
+        return (meshFreqHz, lambdaG, double.IsInfinity(lambdaG) ? double.PositiveInfinity : lambdaG / s.CellsPerWavelength);
+    }
+
+    /// <summary>
+    /// brief-icf-4 R-icf4-1 — whether <paramref name="problem"/>'s local grid can start an axis from one block across the artwork
+    /// (<see cref="PlanarLocalGrid.StartsFromArtwork"/>), asked of the drawn artwork and the wave cell: what the provenance hash
+    /// reads, so a result whose partition the rule may have moved reads as stale and no other does. Conservative by
+    /// construction — the mesher asks it of a grid that is never narrower (a grown feed lead only widens it) and of a base step
+    /// never coarser (a pitch field's coarsest is at most the wave cell), so every mesh the rule moves is flagged.
+    /// </summary>
+    public static bool LocalGridStartsFromArtwork(PlanarProblem problem, PlanarMeshSettings? settings)
+    {
+        ArgumentNullException.ThrowIfNull(problem);
+        var s = (settings ?? PlanarMeshSettings.Default).Resolved;
+        if (!s.LocalGrid || problem.PolygonCount == 0) return false;
+        double hWave = WaveCell(problem, s).HWave;
+        var (x0, y0, x1, y1) = problem.Bounds();
+        return PlanarLocalGrid.StartsFromArtwork(x1 - x0, hWave) || PlanarLocalGrid.StartsFromArtwork(y1 - y0, hWave);
+    }
+
     /// <summary>
     /// <b>The unknown ceiling a mesh is judged against, in ONE place.</b> With no memory limit it is
     /// the shipped ceiling of the path <paramref name="accelerated"/> names. With one, it is the
@@ -506,12 +534,7 @@ public static class SurfaceMesher
         //
         // The `with` pattern is PlanarKernel.cs:197's, reused rather than re-derived — there is one
         // way to ask a problem for λ_g at some other frequency, and this is it.
-        double meshFreqHz = s.MeshFrequencyHz is { } mf && mf > 0 ? mf : problem.MaxFrequencyHz;
-        double lambdaG = meshFreqHz == problem.MaxFrequencyHz
-            ? problem.GuidedWavelengthM
-            : (problem with { MaxFrequencyHz = meshFreqHz }).GuidedWavelengthM;
-        double hWave   = double.IsInfinity(lambdaG) ? double.PositiveInfinity
-                                                    : lambdaG / s.CellsPerWavelength;
+        var (meshFreqHz, lambdaG, hWave) = WaveCell(problem, s);
 
         var layerNames = new List<string>(problem.Layers.Count);
         foreach (var l in problem.Layers) layerNames.Add(l.Name);
@@ -1348,8 +1371,11 @@ public static class SurfaceMesher
             // Leaving it reading "the highest frequency of the sweep" once MeshFrequencyHz exists
             // would produce a report claiming a mesh was sized at 20 GHz when it was sized at 10 —
             // the exact class of silently wrong statement this area keeps finding.
-            bool sizedAtSweepTop = !(s.MeshFrequencyHz is { } setF && setF > 0)
-                                   || meshFreqHz >= problem.MaxFrequencyHz;
+            // A STATED mesh frequency is the one used, above the sweep's top as well as below it (WaveCell), so only an unstated one is
+            // "the top of the sweep": a 22 GHz stated over a 16 GHz sweep was reported as the sweep's top, its top moving the mesh.
+            bool stated = s.MeshFrequencyHz is { } setF && setF > 0;
+            string baseBlock = $"λ_g/{s.CellsPerWavelength} = {fmt(hWave)} at {Eng(meshFreqHz)}Hz, " +
+                               (stated ? "as Mesh frequency states" : "the top of the sweep");
 
             // WHICH quantity actually set the cell size — BuildRefusal's own question, asked here too
             // (owner report, 2026-09-09). hx/hy are Math.Min(hWave, narrow/MinCells), so the cap binds
@@ -1375,7 +1401,7 @@ public static class SurfaceMesher
             notes.Add(capBinds
                 ? $"Cell size capped at λ_g/{s.CellsPerWavelength} = {fmt(hWave)} — λ_g = {fmt(lambdaG)} " +
                   $"in εᵣ = {problem.Slab.Material.EpsR:G4} at {Eng(meshFreqHz)}Hz, " +
-                  (sizedAtSweepTop
+                  (!stated
                       ? "the highest frequency of the sweep. Widening the sweep upward will change " +
                         "this, and with it the unknown count."
                       : "the frequency the mesh is sized at. Changing it changes the unknown count.")
@@ -1406,12 +1432,17 @@ public static class SurfaceMesher
                   // merely expensive is still sent round the two knobs this note has just called
                   // dead and never told which one is alive.
                   // brief-icf-1 R-icf1-5 — on the local grid the sentence below is false: its base block IS λ_g/N at the mesh
-                  // frequency, so both knobs move it, and on artwork smaller than a block they move the whole partition.
+                  // frequency, so both knobs move it. Since R-icf4-1, artwork at most two blocks across on both axes starts from one
+                  // block across it (BaseCuts), and there the two knobs set only how wide a block may grow: the note says which.
                   : local is not null
-                  ? $"The local grid's base block is λ_g/{s.CellsPerWavelength} = {fmt(hWave)} at {Eng(meshFreqHz)}Hz" +
-                    (sizedAtSweepTop ? ", the top of the sweep" : "") + ", so Cells per wavelength and Mesh frequency set it" +
-                    (sizedAtSweepTop ? " — and so does the sweep's top frequency" : "") + $"; the narrowest metal ({fmt(narrowest)}, " +
-                    $"{s.MinCellsAcrossConductor} across) sets the finest cells, {fmt(Math.Min(hx, hy))}, near the features."
+                  ? (PlanarLocalGrid.StartsFromArtwork(gx[^1] - gx[0], hWave) && PlanarLocalGrid.StartsFromArtwork(gy[^1] - gy[0], hWave)
+                        ? $"The local grid starts from one block across the artwork: it spans at most {PlanarLocalGrid.ArtworkBaseBlocks:G} " +
+                          $"base blocks of {baseBlock}, so Cells per wavelength and Mesh frequency set only how wide a block may grow, not " +
+                          "where its first cuts fall"
+                        : $"The local grid's base block is {baseBlock}, so Cells per wavelength and Mesh frequency set it" +
+                          (stated ? "" : " — and so does the sweep's top frequency")) +
+                    $"; the narrowest metal ({fmt(narrowest)}, {s.MinCellsAcrossConductor} across) sets the finest cells, " +
+                    $"{fmt(Math.Min(hx, hy))}, near the features."
                   : $"Cells per wavelength and Mesh frequency do NOT set this mesh. The λ_g/" +
                     $"{s.CellsPerWavelength} cap is {fmt(hWave)}; the narrowest metal ({fmt(narrowest)}, " +
                     $"{s.MinCellsAcrossConductor} across) forces {fmt(Math.Min(hx, hy))} — " +
@@ -1431,7 +1462,7 @@ public static class SurfaceMesher
             // while the cells were in fact 56 µm — λ_g/1120 — and told the user to raise the very
             // controls the refusal beside it had just said were inert. Same defect as the refusal's
             // own, in a note.
-            if (!sizedAtSweepTop && problem.MaxFrequencyHz > 0 && capBinds)
+            if (stated && meshFreqHz < problem.MaxFrequencyHz && problem.MaxFrequencyHz > 0 && capBinds)
             {
                 double effCellsPerLambda =
                     s.CellsPerWavelength * meshFreqHz / problem.MaxFrequencyHz;

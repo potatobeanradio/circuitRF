@@ -32,20 +32,49 @@
 //
 //  A recorded transmit wave can drive the receive side alone (the
 //  partition drops reuse, PCH-10): the receive pin then reads the
-//  recording instead of its own transmit pin.
+//  recording instead of its own transmit pin. An instance end records
+//  and replays each transmit element's wave (brief PCH-10 R-pch10-4).
+//  A driven run's harmonic-balance start takes the recording's first
+//  sample as a known source on the receive rows, H(f_k)·w at a pin and
+//  each ray's projection on an array, in place of the frozen coupling to
+//  a transmit side that is not there: the joint start's own value, so a
+//  receive side with memory starts where the joint run's does.
+//
+//  The receive array replaced (brief PCH-10b R-pch10b-1). When the receive
+//  collapse is taken for every product, the run has no noise and the array
+//  transmits on no channel, the array, its feed and its channel cells are
+//  taken out of the run's netlist and a one-port at the feed takes their
+//  place, presenting the reflection Γ_F(f) the fast path closes the array
+//  to at whatever frequency it is stamped; the rays already land on the feed
+//  as Norton sources. The array's internal nets are held by 1 Ω each, the
+//  channel's harmonic-balance start reads the collapse from an untouched copy
+//  of the netlist, and everything is put back when the run ends.
+//
+//  Fading (brief PCH-7): each ray's gain is multiplied by its tap's
+//  fading at the receive time — the sum of sinusoids evaluated at t,
+//  with no state — at the reference frequency's f_D in every product
+//  (the spread of f_D across a product's band is f_D·Δf/f, 1e-4 of it
+//  for a 200 MHz band at 2 GHz).
 // ================================================================
 
 using System.Globalization;
 using System.Numerics;
+using CircuitRF.Core;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
+using CircuitRF.Core.Expressions;
 using RfCore.Signals;
 
 namespace CircuitRF.Engine.Envelope;
 
 /// <summary>A channel's transmit wave over a run, per product: <c>Waves[k][i]</c> is product k at absolute record sample
-/// <c>FirstSample + i</c> (the run's step grid).</summary>
-public sealed record ChannelRecording(long FirstSample, Complex[][] Waves);
+/// <c>FirstSample + i</c> (the run's step grid). brief-pch-10 — an instance end's per transmit element, <c>Elements[k][m][i]</c>
+/// (then <c>Waves</c> is empty).</summary>
+public sealed record ChannelRecording(long FirstSample, Complex[][] Waves, Complex[][][]? Elements = null)
+{
+    /// <summary>The complex samples it holds (what a reuse cache keeps).</summary>
+    public long Samples => Waves.Sum(w => (long)w.Length) + (Elements?.Sum(k => k.Sum(m => (long)m.Length)) ?? 0);
+}
 
 public static class EnvelopeChannel
 {
@@ -54,6 +83,7 @@ public static class EnvelopeChannel
         public Complex A;
         public double Steps;            // h + τ, in steps
         public double Nu, Drift;
+        public PropagationChannelModel.RayTerm Term;   // its fading (brief PCH-7), read at the receive time
     }
 
     internal sealed class Ch
@@ -71,26 +101,128 @@ public static class EnvelopeChannel
         public int BTx = -1, BRx = -1;
     }
 
+    /// <summary>brief-pch-8 R-pch8-3 — a channel with an instance end: each transmit element's wave, each ray's two coupling
+    /// vectors per product, and the receive end's rows.</summary>
+    internal sealed class ICh
+    {
+        public required ElaboratedComponent Ec;
+        public required PropagationChannelModel Model;
+        public required int[] TxNode;                       // per transmit source (a pin is one)
+        public required int[] TxRef;
+        public required Complex Z0Tx;
+        public int[] TxBranch = [];
+        public required int[] RxSource;                     // an array receive end's source nodes; empty for a pin
+        public int BRx = -1;
+        public required PropagationChannelModel.RayCoupling[][] Rays;   // per product
+        public required double[][] Steps;                   // per product, per ray: 1 + τ/h
+        public required double[] Hz;
+        public required int Ring;
+        public Complex[][][] W = null!;                     // [product][source][ring]
+        public long MultiplyAdds;                           // per step, all products
+        public ChannelRecording? Drive;                     // brief-pch-10 — the transmit elements' waves replayed
+        public List<Complex>[][]? Record;                   // [product][source]
+    }
+
+    /// <summary>brief-pch-8 — the multiply-adds per step, rays and elements of the last run's instance-end channels (R-pch8-3's counters).</summary>
+    public static (long MultiplyAddsPerStep, int Rays, int TxElements, int RxElements) LastInstanceCost { get; private set; }
+
+    /// <summary>brief-pch-8b R-pch8b-2 — receive elements the last instance-end channel did not project onto (the collapse took its feed).</summary>
+    public static int CollapsedElements { get; private set; }
+
+    /// <summary>brief-pch-10b — whether a receive array on the fast path is replaced by its feed (a test turns it off to compare).</summary>
+    public static bool ReplaceReceiveArrays { get; set; } = true;
+
+    /// <summary>brief-pch-10b R-pch10b-1 — the parts the last run took out (an array, its feed and its channel cells), 0 when none was replaced.</summary>
+    public static int ReplacedParts { get; private set; }
+
+    /// <summary>A receive array's feed while the array is out of the run: Γ_F from the fast path, solved at each product and at the product
+    /// ± the step the engine's affine stamp takes (AffineStamp: w, w ± dlt), and the line through those anywhere else near the product (the
+    /// tangent check's band edge), so a run costs three factorizations a product rather than one per frequency asked.</summary>
+    private sealed class FeedOnePortModel(ElaboratedNetlist whole, ElaboratedComponent array, double z0, IReadOnlyList<double> productHz) : ComponentModel
+    {
+        private readonly Dictionary<double, Complex> _gamma = [];
+        public override int PortCount => 1;
+        public override ModelKind Kind => ModelKind.Linear;
+
+        private Complex At(double hz)
+        {
+            lock (_gamma)
+            {
+                if (_gamma.TryGetValue(hz, out var g)) return g;
+                var (gf, why) = AntennaArray.PhasedArrayFastPath.FeedReflection(whole, array, hz);
+                return _gamma[hz] = gf ?? throw new InvalidOperationException($"envelope: the receive array '{array.InstancePath}' left the fast path at {hz:G6} Hz: {why}");
+            }
+        }
+
+        private Complex Gamma(double w)
+        {
+            // the nearest product; the baseband one is held at its value (the receive array presents what it does at 1 Hz)
+            double wk = productHz.Select(f => 2 * Math.PI * f).MinBy(x => Math.Abs(x - w));
+            if (wk <= 0) return At(1.0);
+            double dlt = AffineStamp.Delta(wk);
+            if (Math.Abs(w - wk) <= 1e-9 * wk) return At(wk / (2 * Math.PI));
+            if (Math.Abs(Math.Abs(w - wk) - dlt) <= 1e-9 * wk) return At(w / (2 * Math.PI));
+            Complex gp = At((wk + dlt) / (2 * Math.PI)), gm = At((wk - dlt) / (2 * Math.PI));
+            return At(wk / (2 * Math.PI)) + (w - wk) * (gp - gm) / (2 * dlt);
+        }
+
+        public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
+        {
+            var g = Gamma(Math.Abs(omega));
+            if (omega < 0) g = Complex.Conjugate(g);
+            mna.AddAdmittance(c.Nodes[0], 0, (1 - g) / (z0 * (1 + g)));
+        }
+    }
+
     /// <summary>The channels of one run: puts them back on <see cref="Dispose"/>, and carries their history.</summary>
     public sealed class Run : IDisposable
     {
         private readonly List<Ch> _chs = [];
+        private readonly List<ICh> _ichs = [];
         private readonly double _h;
         private readonly long _i0;
         private int _n;
 
         internal Run(double h, long i0) { _h = h; _i0 = i0; }
 
-        public bool Any => _chs.Count > 0;
+        public bool Any => _chs.Count > 0 || _ichs.Count > 0;
 
         /// <summary>The longest simulated delay, h + τ_max (s): the receive side's start that has no history of its own.</summary>
         public double LatencyS { get; private set; }
 
         /// <summary>The product being stamped: each channel stamps its two ends alone. Null: the steady state, H frozen.</summary>
-        public int? Product { set { foreach (var c in _chs) c.Model.Stepping = value is not null; } }
+        public int? Product { set { foreach (var c in _chs) c.Model.Stepping = value is not null; foreach (var c in _ichs) c.Model.Stepping = value is not null; } }
 
         /// <summary>Takes each channel's branch rows from the stamp just made.</summary>
-        public void Bind() { foreach (var c in _chs) { c.BTx = c.Model.PortBranches[0]; c.BRx = c.Model.PortBranches[1]; } }
+        public void Bind()
+        {
+            foreach (var c in _chs) { c.BTx = c.Model.PortBranches[0]; c.BRx = c.Model.PortBranches[1]; }
+            foreach (var c in _ichs)
+            {
+                // a driven channel reads no transmit branch: its transmit side is not in the run
+                c.TxBranch = c.Drive is not null ? [] : c.Model.TxArray is { } ta ? [.. ta.Array.PortBranchIndices] : [c.Model.PortBranches[0]];
+                c.BRx = c.Model.PortBranches[1];
+            }
+        }
+
+        /// <summary>brief-pch-10 — transmit element <paramref name="s"/>'s wave of product <paramref name="k"/> at step <paramref name="n"/>:
+        /// the recording's when driven, else the solved one.</summary>
+        private Complex IWaveAt(ICh c, int k, int s, int n, Complex[] x)
+        {
+            if (c.Drive is not { } d) return IWave(c, s, x);
+            var w = d.Elements![k][s];
+            long i = _i0 + Math.Max(n, 0) - d.FirstSample;
+            if (i < 0 || i >= w.Length)
+                throw new InvalidOperationException(PropagationChannelDiagnostics.RecordingTooShort(c.Ec.InstancePath, _i0 + n).Render());
+            return w[i];
+        }
+
+        private static Complex IWave(ICh c, int s, Complex[] x)
+        {
+            Complex v = c.TxNode[s] > 0 ? x[c.TxNode[s] - 1] : Complex.Zero;
+            if (c.TxRef[s] > 0) v -= x[c.TxRef[s] - 1];
+            return (v + c.Z0Tx * x[c.TxBranch[s]]) / Math.Sqrt(c.Z0Tx.Real);
+        }
 
         private static Complex Wave(Ch c, int k, Complex[] x)
         {
@@ -102,6 +234,20 @@ public static class EnvelopeChannel
         public void Start(Complex[][] x)
         {
             _n = 0;
+            foreach (var c in _ichs)
+            {
+                c.W = new Complex[c.Rays.Length][][];
+                for (int k = 0; k < c.Rays.Length; k++)
+                {
+                    c.W[k] = new Complex[c.TxNode.Length][];
+                    for (int s = 0; s < c.TxNode.Length; s++)
+                    {
+                        c.W[k][s] = new Complex[c.Ring];
+                        Array.Fill(c.W[k][s], IWaveAt(c, k, s, 0, x[k]));
+                        c.Record?[k][s].Add(c.W[k][s][0]);
+                    }
+                }
+            }
             foreach (var c in _chs)
             {
                 c.W = new Complex[c.Rays.Length][];
@@ -118,6 +264,14 @@ public static class EnvelopeChannel
         public void Push(Complex[][] x)
         {
             _n++;
+            foreach (var c in _ichs)
+                for (int k = 0; k < c.Rays.Length; k++)
+                    for (int s = 0; s < c.TxNode.Length; s++)
+                    {
+                        var w = IWaveAt(c, k, s, _n, x[k]);
+                        c.W[k][s][_n % c.Ring] = w;
+                        c.Record?[k][s].Add(w);
+                    }
             foreach (var c in _chs)
                 for (int k = 0; k < c.Rays.Length; k++)
                 {
@@ -153,13 +307,50 @@ public static class EnvelopeChannel
             {
                 double q = last - (pos - r.Steps);              // steps back from the last solved step
                 int n0 = (int)Math.Floor(q);
-                EnvelopeLineDelay.Lagrange(q - n0, l, ld);
+                DelayInterpolation.Lagrange(q - n0, l, ld);
                 Complex w = 0;
                 for (int j = 0; j < 3; j++)
                     w += (l[j] - g1 * ld[j] / _h) * At(c, k, last - n0 - j);   // the nodes run back in time: d/dt is −ld/h
-                sum += r.A * Complex.FromPolarCoordinates(1, 2 * Math.PI * r.Nu * tt + Math.PI * r.Drift * tt * tt) * w;
+                sum += r.A * r.Term.FadeAt(tt) * Complex.FromPolarCoordinates(1, 2 * Math.PI * r.Nu * tt + Math.PI * r.Drift * tt * tt) * w;
             }
             return sum;
+        }
+
+        /// <summary>brief-pch-8 — an instance-end channel's sources for product <paramref name="k"/> at step position <paramref name="pos"/>:
+        /// per ray, the departure field from each transmit element's wave at t − h − τ (quadratic Lagrange on solved steps), turned by the
+        /// ray's fading and Doppler, then projected on each receive element (½·(j)·F_rxᵀ·y on its source row) or on the pin's wave row.</summary>
+        private void DriveInstance(ICh c, int k, double pos, int last, Complex[] b)
+        {
+            double tt = c.Model.FrozenTimeS + pos * _h;
+            var l = new double[3]; var ld = new double[3];
+            Complex g1 = new Complex(0, 1 / (2 * Math.PI * c.Hz[k]));
+            var rays = c.Rays[k];
+            for (int ri = 0; ri < rays.Length; ri++)
+            {
+                var rc = rays[ri];
+                double q = last - (pos - c.Steps[k][ri]);
+                int n0 = (int)Math.Floor(q);
+                DelayInterpolation.Lagrange(q - n0, l, ld);
+                Complex c0 = l[0] - g1 * ld[0] / _h, c1 = l[1] - g1 * ld[1] / _h, c2 = l[2] - g1 * ld[2] / _h;
+                int s0 = last - n0, s1 = s0 - 1, s2 = s0 - 2;
+                int i0 = s0 <= 0 ? 0 : s0 % c.Ring, i1 = s1 <= 0 ? 0 : s1 % c.Ring, i2 = s2 <= 0 ? 0 : s2 % c.Ring;
+                Complex yt = 0, yp = 0;
+                var waves = c.W[k];
+                for (int m = 0; m < waves.Length; m++)
+                {
+                    Complex tT = rc.TxTheta[m], tP = rc.TxPhi[m];
+                    if (tT == Complex.Zero && tP == Complex.Zero) continue;
+                    var wm = waves[m];
+                    Complex w = c0 * wm[i0] + c1 * wm[i1] + c2 * wm[i2];
+                    yt += tT * w; yp += tP * w;
+                }
+                Complex turn = rc.Term.FadeAt(tt) * Complex.FromPolarCoordinates(1, 2 * Math.PI * rc.DopplerHz * tt + Math.PI * rc.DriftHzps * tt * tt);
+                yt *= turn; yp *= turn;
+                if (c.RxSource.Length == 0) b[c.BRx] += rc.RxTheta[0] * yt + rc.RxPhi[0] * yp;
+                else
+                    for (int n = 0; n < c.RxSource.Length; n++)
+                        if (c.RxSource[n] > 0) b[c.RxSource[n] - 1] += 0.5 * (rc.RxTheta[n] * yt + rc.RxPhi[n] * yp);
+            }
         }
 
         /// <summary>The receive rows' sources for product <paramref name="k"/> of the full step being taken.</summary>
@@ -167,6 +358,7 @@ public static class EnvelopeChannel
         {
             foreach (var c in _chs)
                 if (c.Rays[k].Length > 0) b[c.BRx] += Drive(c, k, _n + 1, _n);
+            foreach (var c in _ichs) DriveInstance(c, k, _n + 1, _n, b);
         }
 
         /// <summary>The same for sub-step <paramref name="i"/> of <paramref name="split"/> (still on the solved full steps:
@@ -175,12 +367,63 @@ public static class EnvelopeChannel
         {
             foreach (var c in _chs)
                 if (c.Rays[k].Length > 0) b[c.BRx] += Drive(c, k, _n + (double)i / split, _n);
+            foreach (var c in _ichs) DriveInstance(c, k, _n + (double)i / split, _n, b);
         }
 
         /// <summary>Each channel's recorded transmit wave (instance path to recording), when the run asked for them.</summary>
         public IReadOnlyDictionary<string, ChannelRecording> Recordings
             => _chs.Where(c => c.Record is not null)
-                   .ToDictionary(c => c.Ec.InstancePath, c => new ChannelRecording(_i0, [.. c.Record!.Select(l => l.ToArray())]), StringComparer.Ordinal);
+                   .Select(c => (c.Ec.InstancePath, new ChannelRecording(_i0, [.. c.Record!.Select(l => l.ToArray())])))
+                   .Concat(_ichs.Where(c => c.Record is not null)
+                                .Select(c => (c.Ec.InstancePath, new ChannelRecording(_i0, [], [.. c.Record!.Select(k => k.Select(l => l.ToArray()).ToArray())]))))
+                   .ToDictionary(x => x.Item1, x => x.Item2, StringComparer.Ordinal);
+
+        /// <summary>brief-pch-10 — a driven channel's harmonic-balance start: the recording's first sample as a known source on its receive
+        /// rows, at the product nearest the stamped frequency (conjugated on the negative side).</summary>
+        private void SteadyPin(Ch c, IMnaContext mna, double omega)
+        {
+            double hz = omega / (2 * Math.PI);
+            int k = Nearest(c.Hz, Math.Abs(hz));
+            if (k < 0 || c.Model.PortBranches[1] < 0) return;
+            var w = At(c, k, 0);
+            mna.AddSourceValue(c.Model.PortBranches[1], c.Model.H(hz) * (hz < 0 ? Complex.Conjugate(w) : w));
+        }
+
+        private void SteadyInstance(ICh c, IMnaContext mna, double omega)
+        {
+            double hz = omega / (2 * Math.PI);
+            int k = Nearest(c.Hz, Math.Abs(hz));
+            if (k < 0) return;
+            var b = new Dictionary<int, Complex>();
+            double tt = c.Model.FrozenTimeS;
+            foreach (var rc in c.Rays[k])
+            {
+                Complex yt = 0, yp = 0;
+                for (int m = 0; m < c.TxNode.Length; m++)
+                {
+                    var w = IWaveAt(c, k, m, 0, []);
+                    yt += rc.TxTheta[m] * w; yp += rc.TxPhi[m] * w;
+                }
+                Complex turn = rc.Term.FadeAt(tt) * Complex.FromPolarCoordinates(1, 2 * Math.PI * rc.DopplerHz * tt + Math.PI * rc.DriftHzps * tt * tt);
+                yt *= turn; yp *= turn;
+                if (c.RxSource.Length == 0) Add(-1, rc.RxTheta[0] * yt + rc.RxPhi[0] * yp);
+                else for (int n = 0; n < c.RxSource.Length; n++) if (c.RxSource[n] > 0) Add(c.RxSource[n], 0.5 * (rc.RxTheta[n] * yt + rc.RxPhi[n] * yp));
+            }
+            foreach (var (node, v) in b)
+            {
+                var value = hz < 0 ? Complex.Conjugate(v) : v;
+                if (node < 0) mna.AddSourceValue(c.Model.PortBranches[1], value);
+                else mna.AddCurrentInjection(node, value);
+            }
+            void Add(int node, Complex v) => b[node] = b.GetValueOrDefault(node) + v;
+        }
+
+        private static int Nearest(double[] hz, double f)
+        {
+            int best = -1; double gap = double.PositiveInfinity;
+            for (int i = 0; i < hz.Length; i++) if (Math.Abs(hz[i] - f) < gap) { gap = Math.Abs(hz[i] - f); best = i; }
+            return best >= 0 && gap <= 1e-6 * Math.Max(f, 1) ? best : -1;
+        }
 
         /// <summary>The true channel for the genie equalizer (R-pch6-9), as a snapshot that outlives the run; H at the carrier plus the offset at the window time after record sample start, with the run's latency h as the phase slope a received envelope carries: (IProbe path, carrier Hz, window start) to the
         /// channel receiving at that probe's node. Null when the run has no channel.</summary>
@@ -201,17 +444,141 @@ public static class EnvelopeChannel
             };
         }
 
+        private readonly List<Action> _restore = [];
+        internal void OnDispose(Action a) => _restore.Add(a);
+
         public void Dispose()
         {
-            foreach (var c in _chs) { c.Model.Stepping = false; c.Model.FrozenTimeS = c.Model.TimeOffsetS; }
+            foreach (var a in _restore) a();
+            _restore.Clear();
+            foreach (var c in _chs) { c.Model.Stepping = false; c.Model.FrozenTimeS = c.Model.TimeOffsetS; c.Model.SteadyDrive = null; }
+            foreach (var c in _ichs) { c.Model.Stepping = false; c.Model.FrozenTimeS = c.Model.TimeOffsetS; c.Model.SteadyDrive = null; }
             _chs.Clear();
+            _ichs.Clear();
+        }
+
+        internal void Add(ICh c)
+        {
+            _ichs.Add(c);
+            if (c.Drive is not null) c.Model.SteadyDrive = (mna, w) => SteadyInstance(c, mna, w);
+            LatencyS = Math.Max(LatencyS, c.Steps.SelectMany(r => r).Select(x => x * _h).DefaultIfEmpty(_h).Max());
         }
 
         internal void Add(Ch c)
         {
             _chs.Add(c);
+            if (c.Drive is not null) c.Model.SteadyDrive = (mna, w) => SteadyPin(c, mna, w);
             LatencyS = Math.Max(LatencyS, c.Rays.SelectMany(r => r).Select(r => r.Steps * _h).DefaultIfEmpty(_h).Max());
         }
+    }
+
+    /// <summary>brief-pch-8 R-pch8-3 — a channel with an instance end in its envelope form, with its cost counted and said.</summary>
+    private static ICh Instance(ElaboratedNetlist nl, ElaboratedComponent ec, PropagationChannelModel m, IReadOnlyList<double> productHz, double h,
+                                ChannelRecording? drive = null, bool record = false, Run? run = null, bool noise = false)
+    {
+        if (m.TxEnd is not null && m.TxArray is null || m.RxEnd is not null && m.RxArray is null)
+            throw new InvalidOperationException(PropagationChannelDiagnostics.FieldDataInEnvelope(ec.InstancePath).Render());
+        int[] txNode, txRef;
+        Complex z0;
+        if (m.TxArray is { } ta)
+        {
+            int n = ta.Array.PortCount;
+            txNode = [.. Enumerable.Range(0, n).Select(i => ta.Array.Radiates(i) ? ta.Ec.Nodes[i] : 0)];
+            txRef = [.. Enumerable.Repeat(ta.Ec.ReferenceNode, n)];
+            z0 = ta.Array.Z0;
+        }
+        else { txNode = [ec.Nodes[m.TxPin]]; txRef = [0]; z0 = m.End(0, productHz.FirstOrDefault(f => f > 0, 1e9)).Z0; }
+        int[] rxSrc = m.RxArray is { } ra ? [.. Enumerable.Range(0, ra.Array.PortCount).Select(i => PhasedArrayModel.SourceNode(ra.Ec, i, ra.Array.PortCount))] : [];
+        CollapsedElements = 0;
+        var rays = new PropagationChannelModel.RayCoupling[productHz.Count][];
+        var steps = new double[productHz.Count][];
+        double worst = 1;
+        for (int k = 0; k < productHz.Count; k++)
+        {
+            rays[k] = productHz[k] > 0 ? m.InstanceCouplings(productHz[k]) : [];
+            steps[k] = [.. rays[k].Select(r => 1 + r.DelayS / h)];
+            foreach (double s in steps[k]) worst = Math.Max(worst, s);
+        }
+        // brief-pch-8b R-pch8b-1 — a receive array on the fast path takes each ray as one source at its feed, in every product
+        string collapseNote = "";
+        if (m.RxArray is { } rca && PropagationChannelModel.CollapseEnabled)
+        {
+            var cols = productHz.Select(f => f > 0 ? AntennaArray.PhasedArrayFastPath.Receive(nl, rca.Ec, f) : (null, "")).ToArray();
+            if (cols.All(c => c.Item1 is not null || c.Item2 == "") && cols.Any(c => c.Item1 is not null))
+            {
+                int feedNode = cols.First(c => c.Item1 is not null).Item1!.FeedNode;
+                for (int k = 0; k < productHz.Count; k++)
+                {
+                    if (cols[k].Item1 is not { } col) continue;
+                    Complex norton = 2 / (Math.Sqrt(col.Z0) * (1 + col.GammaF));
+                    rays[k] = [.. rays[k].Select(rc =>
+                    {
+                        Complex t = 0, p = 0;
+                        for (int n = 0; n < rc.RxTheta.Length; n++) { t += col.G[n] * rc.RxTheta[n]; p += col.G[n] * rc.RxPhi[n]; }
+                        return rc with { RxTheta = [norton * t], RxPhi = [norton * p] };
+                    })];
+                }
+                CollapsedElements = rxSrc.Length;
+                rxSrc = [feedNode];
+                collapseNote = $" The receive array '{rca.Ec.InstancePath}' takes them as one source at its feed: {cols.First(c => c.Item1 is not null).Item2}";
+                // brief-pch-10b R-pch10b-1 — and when nothing else needs the array's insides, the array leaves the run
+                if (run is not null && ReplaceReceiveArrays && !noise && cols.All(c => c.Item1 is not null || c.Item2 == "")
+                    && !nl.Components.Any(o => o.Model is PropagationChannelModel om && ReferenceEquals(om.TxArray?.Ec, rca.Ec))
+                    // a second channel into the array (an interferer) collapses onto its feed too: replaced by the first, the
+                    // second would find no feed and inject element by element into nets the replacement holds
+                    && nl.Components.Count(o => o.Model is PropagationChannelModel om && ReferenceEquals(om.RxArray?.Ec, rca.Ec)) == 1)
+                    collapseNote += ReplaceArray(nl, run, m, rca.Ec, feedNode, cols.First(c => c.Item1 is not null).Item1!.Z0, productHz);
+            }
+            else collapseNote = " " + cols.FirstOrDefault(c => c.Item1 is null && c.Item2 != "").Item2;
+        }
+        int nr = rays.Select(r => r.Length).DefaultIfEmpty(0).Max();
+        long madds = rays.Sum(r => (long)r.Length * (3L * txNode.Length + 2L * txNode.Length + 2L * Math.Max(1, rxSrc.Length)));
+        LastInstanceCost = (madds, nr, txNode.Length, Math.Max(1, rxSrc.Length));
+        var real = m.At(m.ReferenceHz(productHz.FirstOrDefault(f => f > 0, 1e9)));
+        nl.AddNoteOnce("env-channel:" + ec.InstancePath, string.Format(CultureInfo.InvariantCulture,
+            "Propagation Channel '{0}': {1} ray(s) between {2} transmit and {3} receive element(s), stepped explicitly and one way: each ray's departure field "
+            + "from the transmit waves one step plus its excess delay (up to {4:G4} s) earlier, projected on each receive element; {5:N0} multiply-adds a step. "
+            + "The bulk delay τ0 = {6:G4} s is reported and not simulated.{7}",
+            ec.InstancePath, nr, txNode.Length, Math.Max(1, rxSrc.Length), real.MaxExcessDelayS, madds, real.BulkDelayS, collapseNote));
+        if (drive is not null && (drive.Elements is null || drive.Elements.Length != productHz.Count || drive.Elements.Any(e => e.Length != txNode.Length)))
+            throw new InvalidOperationException(PropagationChannelDiagnostics.RecordingProducts(ec.InstancePath, drive.Elements?.Length ?? 0, productHz.Count).Render());
+        return new ICh
+        {
+            Ec = ec, Model = m, TxNode = txNode, TxRef = txRef, Z0Tx = z0, RxSource = rxSrc, Rays = rays, Steps = steps, Hz = [.. productHz],
+            Ring = (int)Math.Ceiling(worst) + 4, MultiplyAdds = madds, Drive = drive,
+            Record = record ? [.. Enumerable.Range(0, productHz.Count).Select(_ => Enumerable.Range(0, txNode.Length).Select(_ => new List<Complex>()).ToArray())] : null,
+        };
+    }
+
+    /// <summary>brief-pch-10b — takes <paramref name="array"/>, its feed and its channel cells out of <paramref name="nl"/> for the run: a
+    /// one-port at <paramref name="feed"/> presents Γ_F, the array's other nets are held, and <paramref name="run"/> puts it all back.</summary>
+    private static string ReplaceArray(ElaboratedNetlist nl, Run run, PropagationChannelModel m, ElaboratedComponent array, int feed, double z0,
+                                       IReadOnlyList<double> productHz)
+    {
+        string prefix = array.InstancePath + ".";
+        bool Part(ElaboratedComponent c) => ReferenceEquals(c, array) || c.InstancePath.StartsWith(prefix, StringComparison.Ordinal);
+        var parts = nl.Components.Where(Part).ToList();
+        // a channel cell's transmission line is already in its stepped delay form (EnvelopeLineDelay ran first) and the line set
+        // binds its branches: pruned, it would write rows that are no longer its own, and Γ_F would be read through the delay form
+        if (parts.Any(c => c.Model is DelayLineModel)) return "";
+        var inside = parts.SelectMany(c => c.Nodes.Append(c.ReferenceNode)).Where(n => n > 0 && n != feed).ToHashSet();
+        // a net inside the array that something else reaches keeps the array: the replacement would cut it
+        if (nl.Components.Any(c => !Part(c) && c.Model is not PropagationChannelModel && c.Nodes.Append(c.ReferenceNode).Any(inside.Contains))) return "";
+        var whole = nl.Copy();
+        var saved = nl.Components.ToList();
+        var holds = inside.OrderBy(n => n).Select(n => new ElaboratedComponent("R", $"__feedport_hold_{n}", [n, 0],
+                        new Dictionary<string, Value>(StringComparer.Ordinal) { ["R"] = new Value(1.0) }, new ResistorModel()) { NoiseOff = true });
+        var port = new ElaboratedComponent("FeedPort", $"__feedport_{array.InstancePath}", [feed, 0], new Dictionary<string, Value>(StringComparer.Ordinal),
+                                           new FeedOnePortModel(whole, array, z0, productHz));
+        nl.Prune(Part, [port, .. holds], dispose: false);
+        m.CollapseNetlist = whole;
+        ReplacedParts = parts.Count;
+        run.OnDispose(() =>
+        {
+            nl.Prune(_ => true, saved, dispose: false);
+            m.CollapseNetlist = null;
+        });
+        return $" The array is replaced by its feed for the run (the reflection its fast path closes it to): {parts.Count} parts not stepped.";
     }
 
     private sealed class ChannelResponseOf(PropagationChannelModel m, double carrierHz, double t0, double h) : IChannelResponse
@@ -227,9 +594,10 @@ public static class EnvelopeChannel
     /// <paramref name="record"/> keeps each transmit wave. Refuses a cycle of channels and a receive pin two channels drive.
     /// </summary>
     public static Run Apply(ElaboratedNetlist nl, IReadOnlyList<double> productHz, double h, long i0,
-                            IReadOnlyDictionary<string, ChannelRecording>? drive = null, bool record = false)
+                            IReadOnlyDictionary<string, ChannelRecording>? drive = null, bool record = false, bool noise = false)
     {
         var run = new Run(h, i0);
+        ReplacedParts = 0;
         var chans = nl.Components.Where(c => c.Model is PropagationChannelModel).ToList();
         if (chans.Count == 0) return run;
         if (PropagationChannelGraph.Cycles(nl) is { Count: > 0 } cycles)
@@ -241,6 +609,11 @@ public static class EnvelopeChannel
         {
             var m = (PropagationChannelModel)ec.Model;
             m.FrozenTimeS = m.TimeOffsetS + i0 * h;
+            if (m.HasInstanceEnd)
+            {
+                run.Add(Instance(nl, ec, m, productHz, h, drive is not null && drive.TryGetValue(ec.InstancePath, out var ir) ? ir : null, record, run, noise));
+                continue;
+            }
             var rays = new Ray[productHz.Count][];
             var z0 = new Complex[productHz.Count];
             double worst = 0;
@@ -248,7 +621,7 @@ public static class EnvelopeChannel
             {
                 double f = productHz[k];
                 z0[k] = m.End(0, f).Z0;
-                rays[k] = [.. m.Terms(f).Select(t => new Ray { A = t.Amplitude, Steps = 1 + t.DelayS / h, Nu = t.DopplerHz, Drift = t.DriftHzps })];
+                rays[k] = [.. m.Terms(f).Select(t => new Ray { A = t.Amplitude, Steps = 1 + t.DelayS / h, Nu = t.DopplerHz, Drift = t.DriftHzps, Term = t })];
                 foreach (var r in rays[k]) worst = Math.Max(worst, r.Steps);
             }
             ChannelRecording? d = null;

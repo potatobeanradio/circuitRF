@@ -309,6 +309,31 @@ ring. A bench off the fast path is refused here, with the reason.
 A frame is one evaluation of the fields analysis. With the fast path it takes about 25 ms at 1024 elements and 65 ms at 4096 in a
 Release build.
 
+**Channel.** Shown when the array is an end of a [Propagation Channel](propagation-channel.html#beam). The (u, v) map draws
+that channel's rays of the current drop — departure directions on a transmit array, arrival directions on a receive array,
+each sized by its power — and the codebook's candidate beams; **Beams** beside it lists the ranked distinct pairs with their
+power through the channel, the chosen one in bold. Click a pair, or a ray on the map, to use it: the channel gets
+`BeamSelect=index` with that `TxBeam`/`RxBeam`. The check button (*Apply to array*) writes the selected directions into each
+steered array's `steer()` VARs and sets `BeamSelect=manual`. Each is one undo step. The **Drop** slider shows another
+realization of the channel and writes nothing; the scoring runs in the background, its bar beside the slider.
+
+## 11. As an end of a Propagation Channel {#channel-end}
+
+A Propagation Channel's `Tx=` or `Rx=` names an array, and that end of the channel is the array's own elements: their
+patterns, their positions on the lattice, and the array's orientation (`TxAz`, `TxEl`, `TxRoll`, or facing the other end).
+The coupling is two unknowns per ray — never a matrix of receive elements by transmit elements — and each receive element
+takes exactly what an incident wave from that direction gives it in [Receiving](#receive). Several channels may end on one
+receive array, and their waves add on its elements: a wanted link and an interferer, each with its own path, fading and
+direction of arrival.
+
+When the array's weights are a `steer()`, the run picks the beam through the channel, `BeamSelect=auto` by default, and sets
+it for the run only, without elaborating again; the [Channel](#tool) tab above shows the candidates and lets you pick
+another. A Feed-mode receive array whose channel cells are identical and linear is reduced to its feed: a harmonic-balance
+run reports the power each channel delivers there (`link:CH1:FeedPower_dBm`) and, with several channels, each one's share
+(`link:PA1:SIR_dB`); an envelope run with no noise replaces the array by the reflection it presents, so a drop into 4096
+elements takes seconds. With nonlinear cells, or with `Noise=yes`, the array is solved element by element. Every channel
+parameter and what the run reports: [Components › Propagation Channel](components.html#propagationchannel).
+
 ## Limits {#limits}
 
 - Rectangular and triangular lattices only (`Lattice=rect` or `tri`); no conformal or arbitrary positions.

@@ -224,7 +224,10 @@ referenced current is a solver unknown).</p>
 </li>
 <li><p><strong>Harmonic Balance</strong> — full weighting sum, single- and multi-tone, with <code>H[w]</code> taken at every
 harmonic and mixing product (and conjugated for a product the lattice keeps at a negative
-frequency). The control-current Jacobian coupling gives fast convergence.</p>
+frequency). The control-current Jacobian coupling gives fast convergence. A loop that holds a node through a small
+resistance — a bias controller reading the supply's current, say — is solved from its DC point at any drive: when the
+first attempt stalls, harmonic balance solves it again from the same start with a line search that weighs each node by
+its own admittance, and the run's notes say so. No sweep of the loop's gain up from zero is needed.</p>
 </li>
 <li><p><strong>Envelope</strong> — full weighting sum, with <code>H[w]</code> taken at each harmonic's or mixing product's
 carrier frequency: it is held constant across that envelope's own bandwidth.</p>

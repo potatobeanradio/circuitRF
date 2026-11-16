@@ -43,6 +43,18 @@ public sealed partial class C3dPropertiesViewModel
     [ObservableProperty] private bool _portCanBeModeNormalised;
     /// <summary>False while the port is normalised to its mode: the impedance box then has nothing to say.</summary>
     [ObservableProperty] private bool _portZ0Editable = true;
+    /// <summary>brief-hzn-20 R-hzn20-4 — how many modes a hollow guide's port carries: a picker of 1 and 2.</summary>
+    public static IReadOnlyList<string> PortModeCounts { get; } = ["1", "2"];
+    [ObservableProperty] private string _portModes = "1";
+    /// <summary>True for a wave port the reader finds a hollow guide in (or one already of several modes): the only port the Modes
+    /// picker is offered for. Shown disabled on every other port, so the rows below never move.</summary>
+    [ObservableProperty] private bool _portModesEnabled;
+    /// <summary>Which modes the port carries, as the reader names them (<c>TE10, TE01</c>); empty when it is not a hollow guide.</summary>
+    [ObservableProperty] private string _portModeNames = "";
+    /// <summary>brief-hzn-20 R-hzn20-4 — the wave port's reference plane moved into the structure, a length in the document's unit;
+    /// blank is on its face.</summary>
+    [ObservableProperty] private string _portDeembed = "";
+    [ObservableProperty] private bool _portDeembedEnabled;
     [ObservableProperty] private string _portPlane = "XY";
     [ObservableProperty] private string _portAt = "";
     [ObservableProperty] private string _portCentreU = "";
@@ -83,6 +95,7 @@ public sealed partial class C3dPropertiesViewModel
         PortName = port.Name;
         PortNumber = port.Number.ToString(System.Globalization.CultureInfo.InvariantCulture);
         ShowPortReference(port);
+        ShowPortModes(port);
         ShowPortPlace(port);
         if (port.Annulus is not null) LoadRing(port);
     }
@@ -142,6 +155,38 @@ public sealed partial class C3dPropertiesViewModel
         ShowPortReference(port);
     }
 
+    /// <summary>brief-hzn-20 — the Modes picker, the modes it names and the De-embed box, from what the port states and how the
+    /// reader resolved it.</summary>
+    private void ShowPortModes(C3dPort port)
+    {
+        bool was = _loading;
+        _loading = true;
+        try
+        {
+            var r = editor.PortResults.FirstOrDefault(x => x.Port.Number == port.Number && x.Port.Name == port.Name);
+            bool hollow = r?.Resolved is { Hollow: true };
+            bool wave = port.Kind == Em3dPortKind.Wave && port.Floquet is null;
+            PortModes = Math.Clamp(port.Modes, 1, 2).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            PortModesEnabled = wave && !C3dPorts.HasTerminals(port) && (hollow || port.Modes > 1);
+            PortModeNames = r?.Terminals is { } ms && ms[0].HollowMode is not null ? string.Join(", ", ms.Select(m => m.HollowMode!.Name))
+                          : hollow ? "TE10"
+                          : port.Modes > 1 ? "not read: " + (r?.Refusal ?? "the port is not resolved")
+                          : "";
+            PortDeembedEnabled = wave;
+            PortDeembed = port.DeembedUm == 0 ? "" : Spell((long)Math.Round(port.DeembedUm * editor.Document.DbuPerMicron));
+        }
+        finally { _loading = was; }
+    }
+
+    /// <summary>Another count of modes: written at once, one undo entry (two modes make the port's Z0 "mode" in the same entry).</summary>
+    partial void OnPortModesChanged(string value)
+    {
+        if (_loading || _shownPort is not { } port || !int.TryParse(value, out int n)) return;
+        Error = editor.SetPortModes(port, n) ?? "";
+        ShowPortReference(port);
+        ShowPortModes(port);
+    }
+
     private void ShowPortPlace(C3dPort port)
     {
         bool was = _loading;
@@ -177,6 +222,14 @@ public sealed partial class C3dPropertiesViewModel
         if (PortName.Trim() != port.Name) why ??= editor.SetPortName(port, PortName);
         if (PortNumber.Trim() != port.Number.ToString(System.Globalization.CultureInfo.InvariantCulture)) why ??= editor.SetPortNumber(port, PortNumber);
         if (PortZ0Editable && PortZ0.Trim() != port.Z0) why ??= editor.SetPortZ0(port.Number, PortZ0);
+        // brief-hzn-20 — the de-embedding distance, a length in the document's unit; blank is 0
+        if (PortDeembedEnabled)
+        {
+            if (string.IsNullOrWhiteSpace(PortDeembed)) why ??= editor.SetPortDeembed(port, 0);
+            else if (LayoutUnits.TryParse(PortDeembed, doc.DisplayUnit, doc.DbuPerMicron, out long dd))
+                why ??= editor.SetPortDeembed(port, (double)dd / doc.DbuPerMicron);
+            else why ??= $"A de-embedding distance is a length, in {LayoutUnits.Suffix(doc.DisplayUnit)} unless a unit is written; blank is the port's face.";
+        }
         if (PortPlaceEditable)
         {
             long L(string text, long fallback) => LayoutUnits.TryParse(text, doc.DisplayUnit, doc.DbuPerMicron, out long v) ? v : fallback;
@@ -197,7 +250,7 @@ public sealed partial class C3dPropertiesViewModel
                     : "A port's angle is a number of degrees.";
         }
         Error = why ?? "";
-        if (why is not null) { PortName = port.Name; PortNumber = port.Number.ToString(System.Globalization.CultureInfo.InvariantCulture); ShowPortReference(port); ShowPortPlace(port); }
+        if (why is not null) { PortName = port.Name; PortNumber = port.Number.ToString(System.Globalization.CultureInfo.InvariantCulture); ShowPortReference(port); ShowPortModes(port); ShowPortPlace(port); }
     }
 
     // ── a component port ─────────────────────────────────────────────────────────────────────

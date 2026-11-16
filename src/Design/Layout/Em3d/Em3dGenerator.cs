@@ -123,6 +123,10 @@ public sealed record Em3dGenerationResult(Em3dProblem? Problem, string? Refusal,
     /// through a level the technology does not mark: where a port went that its user would not assume.</summary>
     public IReadOnlyList<string> PortsMoved { get; init; } = [];
 
+    /// <summary>brief-icf-6 R-icf6-2 — the warnings (also among <see cref="Warnings"/>) for drawn ports whose sheet falls to the floor
+    /// through more than λ/20: a 3D view made for a <c>.cem</c> carries them over (<c>C3dHierarchy.ViewForSetup</c>).</summary>
+    public IReadOnlyList<string> TallPorts { get; init; } = [];
+
     /// <summary>Why a solve would have refused the geometry, when it was generated with <c>padsOptional</c> and drawn
     /// anyway: no conductor artwork, or a wire end over no pad. Null otherwise.</summary>
     public string? PadRefusal { get; init; }
@@ -171,20 +175,44 @@ public sealed record Em3dDefaultPadding(double CapM, string CapBasis, double? He
     /// that face's axis. The H rule is rounded to the nearest <see cref="RoundToPercent"/> % of the span, never below it; an
     /// axis with no extent keeps the length.</summary>
     public double For(string face, double spanM)
+        => ColumnGoverns(face, spanM) ? Math.Min(Rounded(Em3dGenerator.DefaultPaddingColumn * ColumnM!.Value, spanM), CapM) : ByHeight(face, spanM);
+
+    private double ByHeight(string face, double spanM)
     {
         if (TopByExtent && face == "zmax" && spanM > 0) return Math.Min(Em3dGenerator.DefaultPaddingTopPercent / 100 * spanM, CapM);
         if (H(face) is not { } h) return CapM;
-        double pad = Multiple(face) * h;
-        if (spanM > 0)
-        {
-            double pct = Math.Max(RoundToPercent, Math.Round(pad / spanM * 100 / RoundToPercent, MidpointRounding.AwayFromZero) * RoundToPercent);
-            pad = pct / 100 * spanM;
-        }
-        return Math.Min(pad, CapM);
+        return Math.Min(Rounded(Multiple(face) * h, spanM), CapM);
     }
 
+    private static double Rounded(double pad, double spanM)
+    {
+        if (!(spanM > 0)) return pad;
+        double pct = Math.Max(RoundToPercent, Math.Round(pad / spanM * 100 / RoundToPercent, MidpointRounding.AwayFromZero) * RoundToPercent);
+        return pct / 100 * spanM;
+    }
+
+    /// <summary>brief-icf-6 R-icf6-3 — the height of the port column, metres: from the undrawn ground floor a port sheet reaches up
+    /// to the top metal. Set, it pads the four sides by <see cref="Em3dGenerator.DefaultPaddingColumn"/> × that height wherever that
+    /// is more than the H rule gives: a sheet ~750 µm tall on a thick die was otherwise boxed ~17 µm from the metal. Null: no port
+    /// sheet reaches the floor, and nothing changes.</summary>
+    public double? ColumnM { get; init; }
+
+    /// <summary>Whether the port column sets <paramref name="face"/>'s padding: one of the four sides, and more than the H rule.</summary>
+    public bool ColumnGoverns(string face, double spanM)
+        => ColumnM is > 0 && face is "xmin" or "xmax" or "ymin" or "ymax"
+           && Math.Min(Rounded(Em3dGenerator.DefaultPaddingColumn * ColumnM.Value, spanM), CapM) > ByHeight(face, spanM);
+
+    /// <summary>Whether the column's padding reached <see cref="CapM"/>, which then stands.</summary>
+    private bool ColumnCapped(double spanM) => ColumnM is { } c && Rounded(Em3dGenerator.DefaultPaddingColumn * c, spanM) >= CapM;
+
     /// <summary>Why <paramref name="face"/> stands where it does, as the panel's tooltip and <c>explain</c> print it.</summary>
-    public string Basis(string face, double spanM) => TopByExtent && face == "zmax" && spanM > 0 && For(face, spanM) < CapM
+    public string Basis(string face, double spanM) => ColumnGoverns(face, spanM) && ColumnCapped(spanM)
+        ? CapBasis
+        : ColumnGoverns(face, spanM)
+        ? $"{Em3dGenerator.DefaultPaddingColumn.ToString(CultureInfo.InvariantCulture)} × the port column, " +
+          $"{(ColumnM!.Value * 1e6).ToString("G4", CultureInfo.InvariantCulture)} µm from the floor a port sheet reaches to the top metal" +
+          (spanM > 0 ? $", to the nearest {RoundToPercent.ToString(CultureInfo.InvariantCulture)} %" : "")
+        : TopByExtent && face == "zmax" && spanM > 0 && For(face, spanM) < CapM
         ? $"{Em3dGenerator.DefaultPaddingTopPercent.ToString(CultureInfo.InvariantCulture)} % of the content's height"
         : H(face) is { } h && For(face, spanM) < CapM
         ? $"{Multiple(face).ToString(CultureInfo.InvariantCulture)} × H, H = {(h * 1e6).ToString("G4", CultureInfo.InvariantCulture)} µm of " +
@@ -194,7 +222,11 @@ public sealed record Em3dDefaultPadding(double CapM, string CapBasis, double? He
 
     /// <summary>brief-dfr34-2 R-dfr34-2-5 — the rule in a few words, as the panel prints it after the length ("10 × H",
     /// "λ/4 at 2.45 GHz").</summary>
-    public string ShortBasis(string face, double spanM) => TopByExtent && face == "zmax" && spanM > 0 && For(face, spanM) < CapM
+    public string ShortBasis(string face, double spanM) => ColumnGoverns(face, spanM) && ColumnCapped(spanM)
+        ? CapShort ?? CapBasis
+        : ColumnGoverns(face, spanM)
+        ? $"{Em3dGenerator.DefaultPaddingColumn.ToString(CultureInfo.InvariantCulture)} × port column"
+        : TopByExtent && face == "zmax" && spanM > 0 && For(face, spanM) < CapM
         ? "the content's height"
         : H(face) is not null && For(face, spanM) < CapM
         ? $"{Multiple(face).ToString(CultureInfo.InvariantCulture)} × H"
@@ -318,7 +350,9 @@ public static class Em3dGenerator
     /// brief-icp-3 R-icp3-2 — the layout's problem with <paramref name="setup"/>'s cell instances cut out
     /// (<see cref="EmPlanarComponentPorts.Of"/>) and a sheet at each cut face, built exactly as a drawn edge port's is: the same
     /// return walk, the same width rule (the face's whole edge), the same refusals. Built port by port (<c>portsEach</c>), so a face
-    /// that cannot have a sheet is left out alone. What a 3D view reads its cut ports off; never a solve of its own.
+    /// that cannot have a sheet is left out alone; a stated Return short of the face by more than
+    /// <see cref="ReturnGapToleranceOfWidth"/> is refused, as a solve refuses it, not moved in. What a 3D view reads its cut ports
+    /// off; never a solve of its own.
     /// </summary>
     public static Em3dGenerationResult GenerateCutPorts(EmSetup setup, EmLayoutSource source, Technology tech)
     {
@@ -348,6 +382,7 @@ public static class Em3dGenerator
         private readonly Dictionary<int, Em3dPortReturn> _portReturns = [];
         private readonly List<Em3dPortLeftOut> _portsLeftOut = [];
         private readonly List<string> _portsMoved = [];
+        private readonly List<string> _tallPorts = [];
         /// <summary>Each drawn port's label by its number: what the result names the port by, as a Planar result does.</summary>
         private readonly Dictionary<int, LabelShape> _labelOf = [];
         private readonly Dictionary<string, Em3dViaNetFix> _viaNetFixes = new(StringComparer.Ordinal);
@@ -411,6 +446,16 @@ public static class Em3dGenerator
             foreach (int n in setup.Ports3D.Where(q => q.Kind == Em3dPortKind.Wave).Select(q => q.Port).Distinct())
                 if (_portRefusal is null && ports.All(q => q.Number != n) && _portsLeftOut.All(q => q.Port != n))
                     return No($"The setup makes port {n} a wave port, and this layout has no port {n}.");
+            // brief-icf-6 R-icf6-2, for a drawn port too — a lumped sheet that falls to the floor through more than λ/20 is warned of
+            // by the cut ports' own check. Not for a .c3d's ports (portsEach: rectangles its user moves; a cut port's warning names its
+            // pin, C3dCellCuts), a picture, or a static solve, which has no wavelength.
+            if (!portsEach && !displaySlabs && !setup.IsStatic3D)
+                foreach (var q in ports)
+                    if (_portReturns.GetValueOrDefault(q.Number) is { Floor: true } r && waves.All(w => w.Port.Number != q.Number) &&
+                        CircuitRF.Design.ThreeD.C3dCellCuts.TallLanding(q.Min.Z, q.Max.Z, bands, fMax) is { } fraction)
+                        _tallPorts.Add(CircuitRF.Design.ThreeD.C3dCellCuts.TallLandingWarning($"Port {q.Number}", q.Max.Z - q.Min.Z, r.Layer,
+                            fraction, fMax, "State its Return in the setup's 3D port table to land the sheet on nearer metal."));
+            _g.WarningList.AddRange(_tallPorts);
 
             // ── Content bounds (the builder's), then the air box (R-em3d3-6) ─────────────────
             var (cx0, cy0, cx1, cy1, zLow, zHigh) = (_g.Cx0, _g.Cy0, _g.Cx1, _g.Cy1, _g.ZLow, _g.ZHigh);
@@ -426,9 +471,13 @@ public static class Em3dGenerator
                 _g.Bands.Where(b => b.Layer.Kind == StackupKind.Dielectric).Select(b => (b.BottomM, b.TopM)));
             // Designer round 33 — an unbroken drawn bottom ground plane is the floor when the setup states nothing for ZMin.
             double? planeFloor = !pecFloor && setup.AirBox?.ZMin is null && ByHeightApplies(setup) ? _g.PlaneFloorZ : null;
+            // brief-icf-6 R-icf6-3 — a port sheet down to the undrawn ground floor: the sides are padded from that column too.
+            double? column = pecFloor && _portReturns.Values.Any(r => r.Floor) && zHigh > floorZ ? zHigh - floorZ : null;
             var airBox = PaddedAirBox(setup, (cx0, cy0, cx1, cy1, zLow, zHigh), fMin, pecFloor ? floorZ : planeFloor,
                                 waves.Select(w => (w.Face, w.EdgeAt, w.Port.Number)).ToList(), _notes, out string? boxRefusal, paddingH,
-                                paddingHBelow);
+                                paddingHBelow, column);
+            if (boxRefusal is null && ColumnNote(setup, (cx0, cy0, cx1, cy1, zLow, zHigh), fMin, paddingH, paddingHBelow, column) is { } columnNote)
+                _notes.Add(columnNote);
             if (boxRefusal is not null) return No(boxRefusal);
             // A wave port is still its lumped sheet here, and it belongs ON its face: only a lumped port is moved clear.
             airBox = ClearOfPortSheets(airBox!, [.. ports.Where(q => waves.All(w => w.Port.Number != q.Number))], _notes,
@@ -523,6 +572,7 @@ public static class Em3dGenerator
                 PaddedContent = (new Point3(cx0, cy0, zLow), new Point3(cx1, cy1, zHigh)),
                 PaddingHeightM = paddingH,
                 PaddingHeightBelowM = paddingHBelow,
+                PaddingColumnM = column,
                 ArtworkBarrels = ArtworkBarrels(solids, _g.OriginMap),
             };
             if (MeshFrequencyNote(problem, setup) is { } meshedAt) _notes.Add(meshedAt);
@@ -548,6 +598,7 @@ public static class Em3dGenerator
                 PortReturns = _portReturns,
                 PortsLeftOut = _portsLeftOut,
                 PortsMoved = _portsMoved,
+                TallPorts = _tallPorts,
                 PadRefusal = _g.PadRefusal,
                 WantsDc = _wantsDc,
             };
@@ -733,7 +784,10 @@ public static class Em3dGenerator
                         bool lineSpansSheet = gap is not { } g0 || g0 <= tolerance
                             || (MetalAt(piece.Poly, p.Side, inside, lo + 0.01 * (hi - lo))
                                 && MetalAt(piece.Poly, p.Side, inside, hi - 0.01 * (hi - lo)));
-                        if (gap is { } g && g <= (portsEach ? Math.Max(tolerance, TranslatedReturnGapOfWidth * (hi - lo)) : tolerance) && !wave &&
+                        // A cut port's stated Return is a solve's port, which its user cannot move, so it keeps a solve's tenth:
+                        // moved the .c3d's three widths, a sheet slid along its line onto a via stack of its own net (R-icf6-1).
+                        bool translated = portsEach && !(CutPorts && stated is not null);
+                        if (gap is { } g && g <= (translated ? Math.Max(tolerance, TranslatedReturnGapOfWidth * (hi - lo)) : tolerance) && !wave &&
                             lineSpansSheet &&
                             PieceContaining(on, p.Side, moved, mid) is { } near &&
                             MetalAt(piece.Poly, p.Side, inside, mid))
@@ -1122,7 +1176,7 @@ public static class Em3dGenerator
                 tech.Stackup.Layers.Any(l => l.Kind == StackupKind.Conductor && l.Name == s.Layer))
                 return null;
             return s.PerPort
-                ? $"Port {port}'s Return states '{s.Layer}', but technology '{tech.Name}' has no conductor stackup " +
+                ? $"{(CutPorts ? "Its cut entry's" : $"Port {port}'s")} Return states '{s.Layer}', but technology '{tech.Name}' has no conductor stackup " +
                   "layer with that name."
                 : $"This EM setup names '{s.Layer}' as its return plane, but technology '{tech.Name}' " +
                   "has no conductor stackup layer with that name.";
@@ -1140,13 +1194,16 @@ public static class Em3dGenerator
         /// <summary>brief-dfr34-1 R-dfr34-1-3 — where the user states a port's return: a <c>.cem</c>'s port table; a layout's
         /// ports being brought into a <c>.c3d</c> have no Return — a 3D port returns through what its (−) end touches, so it is
         /// moved (Move… on the port) to change it.</summary>
-        private string StateReturn => portsEach
+        private string StateReturn => CutPorts
+            ? "state the port's return in the cut entry's Return (or the pin's own, in its Pins)"
+            : portsEach
             ? "move the port in the 3D editor (Move… on the port) to the metal it should return through"
             : "state the port's return in the Return column of the .cem setup's 3D port table (a 3D view's port is moved in the 3D editor instead)";
 
         /// <summary>Why a port returns where it does, for its note.</summary>
         private string ReturnReason(StatedReturn? stated) => stated switch
         {
+            { PerPort: true } when CutPorts => "as its cut entry's Return states",
             { PerPort: true } s => $"as port {s.Port}'s Return states",
             not null            => "as this setup names",
             _ when AnyGroundReference(_g.Bands) => "the nearest ground-reference plane with metal under the port",
@@ -1837,7 +1894,7 @@ public static class Em3dGenerator
     public static Em3dAirBox? PaddedAirBox(EmSetup setup, (double X0, double Y0, double X1, double Y1, double Z0, double Z1) extent,
                                            double fMin, double? floorZ, IReadOnlyList<(string Face, double EdgeAt, int Port)> waves,
                                            List<string> notes, out string? refusal, double? paddingHeightM = null,
-                                           double? paddingHeightBelowM = null)
+                                           double? paddingHeightBelowM = null, double? columnM = null)
     {
         refusal = null;
         var (cx0, cy0, cx1, cy1, zLow, zHigh) = extent;
@@ -1846,7 +1903,7 @@ public static class Em3dGenerator
         // package-sized problem can mesh.
         bool radiating = setup.Radiates3D;
         var defaults = DefaultFacePadding(setup, fMin, Math.Max(Math.Max(cx1 - cx0, cy1 - cy0), zHigh - zLow), paddingHeightM,
-                                          paddingHeightBelowM);
+                                          paddingHeightBelowM, columnM);
         double pad = defaults.CapM;
         // brief-dfr34-2 R-dfr34-2-1 — the note names the rule that set the padding, the cap included when it applied.
         if (radiating)
@@ -1920,7 +1977,7 @@ public static class Em3dGenerator
                       $"zero (the content is flat there), so those faces take the default padding ({Fmt(defaults.For(a == 'z' ? "zmax" : "xmax", 0) * 1e3)} mm) instead.");
         var faces = new Em3dFaces(Kind(box.XMin), Kind(box.XMax), Kind(box.YMin), Kind(box.YMax),
                                   floorZ is not null ? Em3dBoundaryKind.Pec : Kind(box.ZMin), Kind(box.ZMax));
-        return new Em3dAirBox(boxMin, boxMax, faces);
+        return new Em3dAirBox(boxMin, boxMax, faces) { Scan = box.Scan };
     }
 
     /// <summary>
@@ -2020,6 +2077,24 @@ public static class Em3dGenerator
         return largestExtentM > 0 && largestExtentM < eighth
             ? (largestExtentM, $"the structure's largest extent, less than λ/8 at {Hz(fMin)}", "largest extent")
             : (eighth, $"λ/8 at {Hz(fMin)}, the sweep's lowest frequency", $"λ/8 at {Hz(fMin)}");
+    }
+
+    /// <summary>brief-icf-6 R-icf6-3 — the note a box padded from the port column carries: which sides it set and how far. Null when
+    /// the column set no side's default (no port to the floor, a side the setup states, or the H rule already wider).</summary>
+    public static string? ColumnNote(EmSetup setup, (double X0, double Y0, double X1, double Y1, double Z0, double Z1) extent, double fMin,
+                                     double? paddingHeightM, double? paddingHeightBelowM, double? columnM)
+    {
+        if (columnM is not > 0) return null;
+        var (x0, y0, x1, y1, z0, z1) = extent;
+        var d = DefaultFacePadding(setup, fMin, Math.Max(Math.Max(x1 - x0, y1 - y0), z1 - z0), paddingHeightM, paddingHeightBelowM, columnM);
+        var box = setup.AirBox;
+        var set = new[] { ("xmin", box?.XMin, x1 - x0), ("xmax", box?.XMax, x1 - x0), ("ymin", box?.YMin, y1 - y0), ("ymax", box?.YMax, y1 - y0) }
+                  .Where(f => f.Item2 is not { PaddingUm: not null } and not { PaddingPercent: not null } && d.ColumnGoverns(f.Item1, f.Item3))
+                  .ToList();
+        if (set.Count == 0) return null;
+        return $"A port sheet reaches the undrawn ground floor, a column {Fmt(columnM.Value * 1e6)} µm from the floor to the top metal, so the " +
+               $"air box's {string.Join(", ", set.Select(f => f.Item1))} padding is {string.Join(" / ", set.Select(f => Fmt(d.For(f.Item1, f.Item3) * 1e6)).Distinct())} µm — " +
+               $"{d.Basis(set[0].Item1, set[0].Item3)} — rather than the height under the top metal. A padding the setup's AirBox states is used as stated.";
     }
 
     /// <summary>brief-dfr34-2 R-dfr34-2-1 (D1) — a radiating setup's default padding is never more than this many times the
@@ -2187,13 +2262,20 @@ public static class Em3dGenerator
     /// extent. Never more than <see cref="DefaultPadding"/>'s wavelength rule, which every other problem still takes.
     /// </summary>
     public static Em3dDefaultPadding DefaultFacePadding(EmSetup setup, double fMin, double largestExtentM, double? heightM,
-                                                        double? heightBelowM = null)
+                                                        double? heightBelowM = null, double? columnM = null)
     {
         var (cap, basis, brief) = DefaultPadding(setup, fMin, largestExtentM);
         bool byHeight = ByHeightApplies(setup) && heightM is > 0;
         return new Em3dDefaultPadding(cap, basis, byHeight ? heightM : null, TopByExtent: ByHeightApplies(setup),
-                                      HeightBelowM: byHeight && heightBelowM is > 0 ? heightBelowM : null, CapShort: brief);
+                                      HeightBelowM: byHeight && heightBelowM is > 0 ? heightBelowM : null, CapShort: brief)
+               { ColumnM = ByHeightApplies(setup) && columnM is > 0 ? columnM : null };
     }
+
+    /// <summary>brief-icf-6 R-icf6-3 — the four sides' default padding in multiples of the port column (floor to top metal) when a
+    /// port sheet reaches the undrawn ground floor. A vertical sheet's field spreads sideways by about its own height — the rule a
+    /// structure that does not radiate is already capped by (its largest extent, which on a thick die IS the column) — so one
+    /// column; the H rule's 20 × applied to it would put the sides ~15 mm from a 40 µm cell on a 750 µm die.</summary>
+    public const double DefaultPaddingColumn = 1;
 
     /// <summary>Designer round 33 — the problems the H rule and the floor on an unbroken bottom ground plane are for: driven,
     /// not asking for a radiation pattern. A radiator keeps every face absorbing and λ/4 of air (its far field needs both);

@@ -34,7 +34,7 @@ namespace CircuitRF.Core.Devices;
 /// <see cref="TLineModel.StampUniformLine"/> clamps a single line (same floor), and DC (θ = 0) is
 /// the same degeneracy.
 /// </summary>
-public sealed class CLineModel : ComponentModel, IDcShortedTerminals
+public sealed class CLineModel : ComponentModel, IDcShortedTerminals, ICoupledPair
 {
     /// <summary>Lossless at DC: each line of the pair a short end to end (line A 1-2, line B 3-4), the coupling
     /// (an inductance and a capacitance) vanishing there.</summary>
@@ -85,6 +85,18 @@ public sealed class CLineModel : ComponentModel, IDcShortedTerminals
 
     /// <summary>Coupling coefficient (Ze − Zo)/(Ze + Zo): the coupled-port voltage at a quarter wave.</summary>
     public double CouplingCoefficient => (_ze - _zo) / (_ze + _zo);
+
+    /// <summary>brief-trn-4 R-trn4-2 — the even- and odd-mode impedances (Ω) and delays (s) a transient run steps the pair
+    /// as: each mode an ideal line, its delay its electrical length over 2πF.</summary>
+    public (double Ze, double Zo, double EvenDelayS, double OddDelayS) Modes =>
+        (_ze, _zo, _eRad / (2 * Math.PI * _fRefHz), _eoRad / (2 * Math.PI * _fRefHz));
+
+    /// <summary>brief TRN-6 — each mode's impedance and γl at <paramref name="freqHz"/>, as stamped.</summary>
+    public (double Ze, Complex GammaLengthEven, double Zo, Complex GammaLengthOdd) PairAt(double freqHz)
+    {
+        double ratio = freqHz / _fRefHz;
+        return (_ze, new Complex(0.0, _eRad * ratio), _zo, new Complex(0.0, _eoRad * ratio));
+    }
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {

@@ -1,0 +1,6 @@
+* brief TRN-7 gate 1: one small-signal run of an RC (complex vectors), written as a binary and as an ASCII rawfile
+VS in 0 DC 0 AC 1
+R1 in out 1000
+C1 out 0 1E-09
+.ac dec 4 1e3 1e7
+.end

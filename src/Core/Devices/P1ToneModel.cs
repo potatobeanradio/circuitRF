@@ -168,9 +168,18 @@ public sealed class P1ToneModel : ComponentModel, IDriveScalable
         if (nRef > 0) mna.AddConstraint(brDrive, nRef, new Complex(-1, 0));
         mna.AddSourceValue(brDrive, driveV);
 
-        // Z_Port: harmonic-band impedance between nExt and nDrv.
-        StampZPort(mna, nExt, nDrv, GetZ(omega));
+        // Z_Port: harmonic-band impedance between nExt and nDrv — unless a transient run realizes it beside the source.
+        if (!DriveOnly) StampZPort(mna, nExt, nDrv, GetZ(omega));
     }
+
+    /// <summary>
+    /// brief-trn-4 R-trn4-6 — set by a transient run that realizes the band-mapped impedance as a rational fit of its own
+    /// between the external node and the drive node: the source then stamps its drive branch alone. False everywhere else.
+    /// </summary>
+    public bool DriveOnly { get; set; }
+
+    /// <summary>The band-centre frequency the last tone context set (Hz); 0 in S-parameter mode.</summary>
+    public double BandCentreHz => _fc;
 
     // ── Impedance lookup ─────────────────────────────────────────────────────────
 
@@ -203,6 +212,13 @@ public sealed class P1ToneModel : ComponentModel, IDriveScalable
     /// <summary>Returns the declared Z for harmonic band n; falls back to Zdefault.</summary>
     public Complex GetDeclaredZ(int n)
         => _harmonicZ.TryGetValue(n, out var z) ? z : _zDefault;
+
+    /// <summary>
+    /// brief-trn-2 R-trn2-5 — whether any band other than the fundamental presents an impedance of its own (a Z[k] that is not
+    /// Z[1]). A transient run realizes such a termination by a rational fit of its impedance (brief TRN-4 R-trn4-6).
+    /// </summary>
+    public bool HasHarmonicTerminations
+        => _zDefault != GetDeclaredZ(1) || _harmonicZ.Values.Any(z => z != GetDeclaredZ(1));
 
     // ── Shared stamp primitive ────────────────────────────────────────────────────
 

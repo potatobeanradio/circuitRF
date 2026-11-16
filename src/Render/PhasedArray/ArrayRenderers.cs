@@ -84,6 +84,13 @@ public sealed record UvScene(float[] Db, int Nu, int Nv, double Du, double Dv, d
 
     /// <summary>sin of the scan limit; 0 hides it.</summary>
     public double ScanLimitSin { get; init; }
+
+    /// <summary>brief-pch-9 R-pch9-7 — a channel's rays at this end (u, v) with their size, 0 (weakest drawn) to 1 (strongest).</summary>
+    public IReadOnlyList<(double U, double V, double Size)> Rays { get; init; } = [];
+
+    /// <summary>brief-pch-9 — the codebook's beams at this end, and the one the channel selects.</summary>
+    public IReadOnlyList<(double U, double V)> CodebookBeams { get; init; } = [];
+    public (double U, double V)? SelectedBeam { get; init; }
 }
 
 /// <summary>Where a (u,v) picture was drawn.</summary>
@@ -200,6 +207,9 @@ public static class ArrayRenderers
 
     /// <summary>Draws the (u,v) map: realized gain over the top <see cref="UvScene.RangeDb"/> dB, the unit circle of real space, the scan
     /// limit, the grating lobes for the current steer (red inside real space) and the beam marker (hollow when it cannot be dragged).</summary>
+    /// <summary>brief-pch-9 — the radius (px) of the weakest and the strongest ray drawn on the (u,v) map.</summary>
+    public const double RayMinRadius = 2, RayMaxRadius = 7;
+
     public static UvLayout DrawUvMap(SKCanvas c, SKRect bounds, UvScene s, RenderTheme theme)
     {
         using (var bg = Fill(theme.BackgroundColor)) c.DrawRect(bounds, bg);
@@ -245,6 +255,38 @@ public static class ArrayRenderers
             using var p = Stroke(visible ? Warn(theme) : theme.TextColor, visible ? 2.2f : 1.2f);
             c.DrawLine(x - 5, y - 5, x + 5, y + 5, p);
             c.DrawLine(x - 5, y + 5, x + 5, y - 5, p);
+        }
+        // brief-pch-9 — the codebook's beams (small light dots), the rays (discs sized by power), then the channel's selected beam on top
+        if (s.CodebookBeams.Count > 0)
+        {
+            using var dot = Fill(new SKColor(255, 255, 255, 190));
+            using var rim = Stroke(new SKColor(0, 0, 0, 120), 0.8f);
+            foreach (var (u, v) in s.CodebookBeams)
+            {
+                var (x, y) = layout.ToPixel(u, v);
+                c.DrawCircle(x, y, 2.2f, dot);
+                c.DrawCircle(x, y, 2.2f, rim);
+            }
+        }
+        if (s.Rays.Count > 0)
+        {
+            using var fill = Fill(Second(theme).WithAlpha(200));
+            using var edge = Stroke(theme.DarkMode ? SKColors.Black : SKColors.White, 0.8f);
+            foreach (var (u, v, size) in s.Rays.OrderBy(r => r.Size))
+            {
+                var (x, y) = layout.ToPixel(u, v);
+                float r = (float)(RayMinRadius + (RayMaxRadius - RayMinRadius) * Math.Clamp(size, 0, 1));
+                c.DrawCircle(x, y, r, fill);
+                c.DrawCircle(x, y, r, edge);
+            }
+        }
+        if (s.SelectedBeam is { } sb)
+        {
+            var (x, y) = layout.ToPixel(sb.U, sb.V);
+            using var fill = Fill(Accent(theme));
+            using var edge = Stroke(SKColors.White, 2f);
+            c.DrawCircle(x, y, 5.5f, fill);
+            c.DrawCircle(x, y, 5.5f, edge);
         }
         if (s.Beam is { } b)
         {

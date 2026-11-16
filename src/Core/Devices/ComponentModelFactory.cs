@@ -43,6 +43,8 @@ public static class ComponentModelFactory
             { "PRC",   () => new ParallelRcModel()   },
             { "PLC",   () => new ParallelLcModel()   },
             { "Vdc",   () => new VdcModel() },
+            // The DC current source (brief TRN-2 R-trn2-2), Vdc's counterpart: reads Idc= at stamp time.
+            { "Idc",   () => new IdcModel() },
             { "Port",  () => new PortModel()          },
             { "Term",  () => new TermModel()          },
             { "Short",  () => new ShortModel()          },
@@ -67,6 +69,10 @@ public static class ComponentModelFactory
         {
             "SnP", DeembedTypeName, EmFieldDataRecord.TypeName, PhasedArrayModel.TypeName, PropagationChannelModel.TypeName, "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "I_1Tone", "I_nTone",
             "Tuner", "P1Tone", "PnTone", "MOD_Source",
+            // The waveform sources (brief TRN-2): one WaveformSourceModel under all ten.
+            "V_Pulse", "V_PWL", "V_Exp", "V_SFFM", "V_Expr", "I_Pulse", "I_PWL", "I_Exp", "I_SFFM", "I_Expr",
+            // The voltage-controlled switch (brief TRN-3); "Switch" is the system block's.
+            VSwitchModel.TypeName,
             "NonlinearC", "Diode", "SemiC", "VerilogA",
             "FET_Curtice", "FET_CurticeCubic", "FET_Statz", "FET_Materka", "FET_Angelov",
             // p-channel exists only for the three laws that mirror unambiguously — see
@@ -210,6 +216,11 @@ public static class ComponentModelFactory
             typeName.Equals("I_1Tone", StringComparison.OrdinalIgnoreCase) ||
             typeName.Equals("I_nTone", StringComparison.OrdinalIgnoreCase))
             return CreateToneSourceModel(typeName, parameters, functions);
+        if (WaveformSourceModel.IsTypeName(typeName))
+            return new WaveformSourceModel(typeName, parameters, functions);
+        if (typeName.Equals(VSwitchModel.TypeName, StringComparison.OrdinalIgnoreCase))
+            return new VSwitchModel(parameters,
+                parameters.TryGetValue("__instanceLabel", out var swl) && swl.Kind == ValueKind.String ? swl.AsString() : "");
         if (typeName.Equals("Tuner", StringComparison.OrdinalIgnoreCase))
             return CreateTunerModel(parameters);
         if (typeName.Equals("P1Tone", StringComparison.OrdinalIgnoreCase))

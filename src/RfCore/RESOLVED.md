@@ -1446,3 +1446,197 @@ band Rs(1 + α).
 
 **Its refusals are coded.** `ScDiagnostics` (`signal.sc.*`) carried by `ScCarrierRefusal`, a `FormatException`, so
 every caller that catches a carrier's `FormatException` (the netlist reader, the Signal Designer card) is unchanged.
+
+## brief-pch-7 — the fading generator and the tapped-delay-line tables (2026-11-15)
+
+**The generator is a sum of sinusoids at equally spaced quantiles turned by one draw** (`Propagation/Fading.cs`). For the
+classical spectrum, α_k = (2πk + θ)/N with one uniform θ per tap and drop, and a uniform phase per sinusoid. With
+equally spaced angles, one realization's time autocorrelation is the trapezoid rule for J0, which is exact to
+J_N(2πf_Dτ). Gate 2 measures 1.1e-3 over J0's first three zeros (the gate allows 0.02). That residue is the finite
+record, not the rule. Drawing the angles independently would have needed N ≈ 100 just for the autocorrelation: the
+jittered-stratified error goes as x·2π/(√12·N^1.5).
+
+**The envelope distribution sets N, and N = 64 is the default.** N equal phasors depart from Rayleigh by O(1/N). Over
+10⁵ samples (1,000 drops × 100 instants 10/f_D apart), the Kolmogorov-Smirnov distance D against the CDF was 0.0059 at
+N = 32 (fails the 1 % level, 0.00515) and 0.0025 at N = 64 (Rician K = 3 and 10: 0.0021 and 0.0020). N = 48 would pass
+by only 1.35×, so 64 is the smallest with margin. Nakagami's D equals Rayleigh's to every digit. That is expected: the
+envelope is mapped through the Nakagami quantile of the Rayleigh probability, a monotone map, and a monotone map leaves
+the KS distance unchanged. Level crossings at −10 dB: rate +0.7 %, fade duration −2.4 % at 250 samples a fade period,
+over 8,666 crossings.
+
+**The Nakagami quantile is solved by Newton, not by `GammaFunction.InverseP`.** `InverseP` bisects for up to 2,000
+steps, which is fine for a margin computed once but too slow per sample. `FadingMath.NakagamiQuantileX` runs Newton on
+P(m, x), started at m·r², and reads the upper tail from 1 − P.
+
+**The yield engine's stateless draw moved down to RfCore** as `Statistics/StatDraws` (Mix, Id, Hash, Uniform), since
+RfCore cannot reach `src/Engine`. `StatStreams` and `SplitMix64.Mix` forward to it, the code is identical, and every
+existing draw is unchanged (the yield statistics tests pass as they were). Streams are named `<instance>:tap<n>:angle`,
+`:phase` and `:los`.
+
+**The tables, as transcribed** (`Propagation/TdlProfiles.cs`): TR 38.901 V18.0.0 Tables 7.7.2-1..5 (from ETSI TR 138 901
+V18.0.0, its own text), TS 36.104 V18.6.0 Annex B.2, ITU-R M.1225 (02/97) Tables 4-5, TR 38.811 V15.4.0 Tables 6.9.2-1..4
+(the 3GPP archive's .doc; cells shorter than three characters needed `strings -n 1`). Two things the tables do not say on
+their face:
+- The printed powers don't sum to 1: TDL-A sums to +5.4 dB, EPA +4.9 dB, TDL-D +0.3 dB. They are normalized, because the
+  large-scale model carries the mean power.
+- The normalized tables' own RMS delay spread is not exactly 1. TDL-A is 1.00006 and NTN-TDL-A 0.99997, from rounding.
+  TDL-D (0.99372) and TDL-E differ by more. They are divided by their own spread, so DelaySpread is exact (gate 4 to
+  1e-9). That is TR 38.901 §7.7.6's renormalization step, applied to every profile rather than only after a K change.
+  The note gives each factor. TDL-D's line-of-sight entry (−0.2 dB) and its Rayleigh entry at delay 0 (−13.5 dB) become
+  one Rician tap with K = 13.3 dB, which is the table note's K1.
+
+**A Rician tap's line of sight is at 0.7 f_D**, TR 38.901 §7.7.2's figure for TDL-D/E, and that is used for every
+Rician tap. `gaussian` uses σ = f_D/√2, the classical spectrum's RMS spread, so a gaussian and a classical tap at the same
+f_D have the same level-crossing rate.
+
+**A profile file gained `k (dB)`, `spectrum`, and `re`/`im`.** `RayListFile` reads all three. A `k` column makes its tap
+Rician, and a `spectrum` column makes its tap fade with that spectrum. `re` and `im` are a sampled impulse response
+(power and phase from the complex gain) and cannot be mixed with power and phase.
+
+## brief-pch-8 — the clustered-delay-line tables (2026-11-15)
+
+**The tables, as transcribed** (`Propagation/CdlProfiles.cs`): TR 38.901 V18.0.0 Tables 7.7.1-1…5 (CDL-A…E, from ETSI TR 138 901's
+own text), Table 7.5-3's 20 ray offsets, and TR 38.811 V15.4.0 Tables 6.9.1-1…4 (NTN-CDL-A…D, the 3GPP archive's .doc read with
+`strings -n 1`, since cells shorter than three characters are lost at the default length). CDL-E's last cluster is printed at
+20.6419, where TDL-E's last tap is 20.6519: both are kept as printed.
+
+**What the tables do not say on their face.**
+- The printed powers do not sum to one, and the rays are normalized (the large-scale model carries the mean power).
+- The normalized delays' own RMS spread is not exactly 1. CDL-A's is 1.00006, CDL-D's 0.99372 (the same as TDL-D), CDL-E's 1.00002 and
+  the NTN tables' within 6e-5. Every profile is divided by its own spread (§7.7.6's renormalization step), so DelaySpread is exact
+  (gate 4: 4e-15).
+- The NLOS profiles state no line of sight to translate from. Their angles are taken as given in the tables' frame, the ends on
+  the reference axis: AOD 0°, AOA 180°, ZOD and ZOA 90° for TR 38.901; ZOD 140° and ZOA 40° for TR 38.811, whose tables are at a
+  50° elevation (ZOD = 90° + elevation, eq. 6.9-1, and the LOS profiles' ZOA). A line-of-sight profile translates from its
+  specular ray.
+- TR 38.811's departure spreads are zero (c_ASD = c_ZSD = 0, every AOD 0°). A stated ASD or ZSD on an NTN-CDL profile is refused,
+  since there is nothing to scale.
+
+**Angle scaling meets Annex A's spread, not eq. 7.7-5's ratio.** §7.7.5.1 scales every ray angle about the circular mean by
+AS_desired/AS_model, with both spreads by Annex A (eq. A-1, the circular √(−2 ln |Σ P e^(jφ)|/Σ P)). A linear scale does not
+move a circular spread linearly, so one ratio does not land on the stated spread. The ratio is the starting point, refined by
+bisection with secant steps until Annex A's spread equals the stated one (gate 4: to 1e-9 for ASD, ASA, ZSD and ZSA on all five
+TR 38.901 profiles). A zenith leaving [0°, 180°] is reflected back (§7.5's rule), which is why the refinement re-measures rather
+than solving in closed form.
+
+**A line-of-sight profile cannot reach an NLOS angle spread.** CDL-D's specular ray holds 93 % of the power, so
+|Σ P e^(jφ)| ≥ 0.86 and the circular spread is at most about 31°. An ASA of 45° (one of §7.7.5.1's example values) on CDL-D is
+refused with that reason. The examples are NLOS figures.
+
+**Translation, not rotation.** The ends' line is reached as TR 38.901 eq. 7.5-12 reaches it: every AOD, AOA, ZOD and ZOA moves
+by the difference between the requested line-of-sight angle and the profile's reference one. Zeniths are then reflected into
+[0°, 180°]. The specular ray lands on the requested angles exactly, and every other ray moves by the same differences. This
+also performs TR 38.811 eq. 6.9-1/-2's change of elevation. A true 3D rotation would keep every ray's angle to the line of
+sight; translation is what the reports specify.
+
+**Coupling and draws.** Within a Laplacian cluster, ray m takes the AOA offset α_m. Its AOD, ZOA and ZOD offsets each come from
+an independent random permutation (Fisher-Yates), so every pair step 2 names is coupled at random. The four initial phases are
+uniform on (−π, π). Streams are `<stream>:cdl:<n>:aod|zoa|zod|phase`, n the cluster, phase draw k = 4m + i. κ = 10^(XPR/10)
+per cluster, so the cross terms are κ^−½ (CDL-C: −7 dB). The specular ray's matrix is [[1, 0], [0, −1]], which is the line of
+sight in the (θ̂, φ̂) bases of a direction and its reverse.
+
+## Drops: shadowing, line of sight, rain, TR 38.901 scenario drops, ITU-R P.681 states (brief PCH-10, 2026-11-15)
+
+**Every draw is `StatDraws.Uniform(Seed, Drop, Id("<channel>:<quantity>"), k)`** (`Propagation/Drops.cs`): `shadowing`, `los`,
+`rain`, and a scenario drop's `scen:<quantity>` streams (`lsp`, `delay`, `zeta`, `aoa:x|y`, …, `perm:<aod|zoa|zod>:<cluster>:<sub>`,
+`xpr:<cluster>`, `phase:<cluster>`). Over 10⁴ drops the shadowing's one-sample KS distance against N(0, σ) is 0.0124 (critical 0.0195 at
+α = 0.001); the line-of-sight fraction sits inside its 99.9 % interval.
+
+**Hash a stream once, not per draw.** The first version of `Tr38901Drop` built `stream + ":scen:" + quantity` and ran FNV over it for
+every one of ~2,500 draws a drop: UMi-NLOS's 10⁴-drop gate took 20 s. Hashing each quantity's stream once per drop and drawing with
+`StatDraws.Uniform(seed, drop, id, k)` gives the same draws (same ids) in 4.5 s.
+
+**`Rain=drawn`** takes `ModelInputs.RainTimePercent`: the rain term is the attenuation exceeded for the drawn percentage, clamped at
+0.001 %, and zero beyond the method's own range — P.530 §2.4.1 stops at 1 %, P.618 §2.2.1.1 at 5 %. Neither recommendation gives the
+probability of rain itself without P.837's map (not bundled), so "rain-free beyond the method's range" is the reading, said in the
+notes. A drawn rain joins clouds and scintillation in P.618 §2.5's ≤ 5 % form whenever it is there. A single evaluation (the Chain
+Budget) still refuses `Rain=drawn`.
+
+**TR 38.901 scenario drops** (`Tr38901Drop.cs`, V18.0.0 §7.5 Steps 4-10). Gated against `testdata/propagation/scenario_drop_reference.py`,
+written by a separate agent from the report alone with its own transcription of every table: for UMi and InH, both states, the realized
+DS, ASD, ASA, ZSD, ZSA and K over 10⁴ drops agree by a two-sample KS distance of 0.007-0.018 against a critical 0.0276 (α = 0.001).
+Two transcriptions agreed on every value of Table 7.5-6 for those cases. The readings, each stated in the drop's notes:
+- **The −25 dB removal compares eq. 7.5-6's powers**, not eq. 7.5-8's. The report puts the sentence after 7.5-8 but says the 7.5-8 powers
+  are used only in eqs. 7.5-9 and 7.5-14. Applied to the 7.5-8 powers (the line-of-sight spike in cluster 1), a UMi-LOS drop at high K keeps
+  as few as 1 of 12 clusters and its realized K exceeds the drawn K by up to 16.6 dB; on the 7.5-6 powers the realized K is the drawn K to
+  0.03 dB. The reference carries both; the gate compares the 7.5-6 variant.
+- **In line of sight the channel's delays are τ_n/C_τ** (eq. 7.5-4): the report says the scaled delays are not used in the power
+  generation, which leaves Step 11 as their use. UMi-LOS median realized DS 33 ns against 32.5 ns drawn this way (10.3 ns unscaled).
+- Angles are generated for all N clusters (eqs. 7.5-12/17 need cluster 1's draws) and the removed clusters then dropped; powers are not
+  renormalized (the kept rays carry 0.987-1 of the power). The two strongest clusters by 7.5-6 power are split into Table 7.5-5's
+  sub-clusters (c_DS N/A is 3.91 ns), rays coupled within each sub-cluster.
+- Every scenario's Table 7.5-6 correlation matrix is positive definite (Cholesky, Step 4's own choice), checked by a test.
+- The realized circular spread of Annex A is not bounded by Step 4's 104°/52° clips (those bound the drawn LSPs): 12.9 % of UMi-NLOS
+  drops realize an ASA above 104°, from the cluster spreading and ray offsets. Not a defect.
+
+**ITU-R P.681-11 (08/2019) has two states, GOOD and BAD** (§6, the enhanced 2-state semi-Markov model), not the three the design note
+named (line of sight, shadowed, blocked): BAD includes blockage. `ItuP681.cs` transcribes Annex 2's 54 parameter sets by script from the
+PDF's text and spot-checked against the pages. **The document has three printing faults**, transcribed as printed: the 2.2 GHz Village 30°
+and 3.8 GHz Suburban 30° sets label their MA, h and g rows "h, g, h" (read by position, as Table 7 orders them — the values only make
+sense that way: MP ≈ −14 dB like every neighbour), and the 2.2 GHz Suburban 70° set repeats the Urban 70° numbers exactly.
+- Event lengths and the MA draws are sampled from their truncated distributions by the inverse CDF, one draw each: the same law as §6.2's
+  "redraw until inside", stateless.
+- The direct signal's correlated shadowing (eq. 29's first-order filter, correlation e^(−Δx/Lcorr)) is a sum of 32 sinusoids at spatial
+  frequencies drawn from that correlation's Cauchy spectrum, so it can be read at any position without state.
+- A drop starts at a uniformly placed point of the stationary series: a GOOD event, a BAD event or a transition with probabilities in
+  proportion to ⟨dur⟩G, ⟨dur⟩B and 2⟨dur⟩T (eq. 17), an event's length then length-biased (ln x ~ N(µ + σ², σ), the same durmin), the
+  point uniform in it; a transition's state is the one it leaves over its first half (eq. 19's convention). The start state is then GOOD
+  with eq. 19's pG: over 10⁴ drops 2501, 7310 and 8200 against 0.254, 0.719 and 0.810 (three sets), inside the 99.9 % intervals; event
+  lengths average eq. 17a within 4 standard errors.
+
+## brief TRN-7 — `RawFileReader` (2026-11-15)
+
+`src/RfCore/Spice/RawFileReader.cs` reads SPICE rawfiles, binary and ASCII, real and complex, one plot or several in a row.
+Facts the reader depends on, measured on ngspice 47: binary values are little-endian doubles, point-major, two per variable
+(re, im) in a complex plot, the scale included; the ASCII form prints 16 significant digits (`%.15e`), one short of a double's
+round trip, so the two forms agree to the last printed digit rather than bit for bit; each ASCII point starts with its index;
+`Variables:` lines may carry extra words (`grid=3`). ngspice leaves the imaginary part of an AC plot's frequency scale
+uninitialised (a denormal), so nothing may read it. `SPICE_ASCIIRAWFILE=1` makes ngspice write ASCII. Gate:
+`tests/RfCore.Tests/Spice/RawFileReaderTests.cs` on `testdata/transient/rawfile/`.
+
+## brief PCH-12 — a single carrier's frequency offset: the delay taken nearest zero, and acquisition before the fit
+
+Found building the *LEO Satellite Downlink* example: a 16APSK carrier through a 600 km pass at 20 GHz (Doppler −399 kHz)
+read BER 0.49 and a CFO scattered between −82 kHz and +261 kHz from drop to drop. Measured on a line-of-sight channel with
+only a Doppler (`TxVel`), 10 Msym/s over 0.2 ms: 200 Hz read −0.5 Hz, 500 Hz read −1.2 Hz, 2 kHz read right, 10 kHz read
+11.4 kHz and failed, 100 kHz and 400 kHz failed entirely.
+
+- **The delay was taken a whole record away.** `SignalQuality.Receive` fits the delay from the received-against-sent
+  response over the passband, and the sent record repeats every `nTot` samples, so the fit is defined only modulo the record
+  (51.1 µs for PN9 16APSK). It returned ~55 µs instead of ~4 µs. With no offset that is invisible; with one, the circular
+  shift moves the window's wrap — and with it the offset's phase-ramp jump — into the middle of the window, so the ramp became
+  a sawtooth and the slope fit read ~0. The delay is now reduced to the representative nearest zero. Alone this reads offsets
+  to about 10 kHz (two bins of the window).
+- **Beyond about a bin, nothing aligns**: the delay fit compares the two spectra bin by bin and an offset of a few bins turns
+  that response across the band. `SignalQuality.CoarseOffset` acquires first: the received and sent power spectra carry the
+  same data's line-by-line pattern, which a delay does not move and an offset shifts, so their cross-correlation (each with its
+  smooth shape taken out over ~16 lines) peaks at the offset; parabolic between bins; taken only when it stands above twice
+  the correlation at no shift, searched to a quarter of the bandwidth. The envelope's `Read` (DBPSK and SC) starts the fine
+  removal from there; `Equalizer=none` still reads the waveform as it came. Every offset from 200 Hz to 400 kHz now reads to
+  a few mHz with EVM 4e-4 %. Gate: `tests/Engine.Tests/Envelope/EnvelopeScTests.Doppler_IsAcquired_AndTheSymbolsDecidedRight`
+  (500 Hz and 100 kHz).
+
+## PCH review (2026-11-16) — models, fading, the single-carrier offset
+
+- **Nakagami m ≥ 3 blew up.** Newton on P(m, x) from x = m·r² had no bracket: a small r² overshot to where dP/dx underflows
+  and returned x ~1e14 (m = 4, r² = 0.1929: |g| +135 dB; 1.6 % of samples at m = 4, 21 % at m = 10). It keeps a bracket now,
+  and the upper tail reads `GammaFunction.Q` (new) rather than 1 − P. Gate `FadingTests.NakagamiQuantile_StaysBracketed_AtLargeM`.
+- **The SC/DBPSK offset slipped cycles at moderate SNR.** Each point is one noisy symbol, and step-to-step unwrapping adds a
+  cycle to every later point whenever two neighbours differ by more than π (16QAM at Es/N0 12 dB: 261 Hz rms). It acquires on the
+  products' spectrum (zero-padded, the instants' own grid), then unwraps what is left against a ±16-point running phase track and
+  fits. Gate `SignalEqualizerTests.ScOffset_AtModerateSnr_DoesNotSlipCycles`. The OFDM response average now skips a symbol that
+  wraps the window, as its phases already did.
+- **Coherence time** was infinite for static rays with different Dopplers (CDL, scenario, directional rays, a moving two-ray
+  link); now only a channel with neither fading nor a Doppler spread is. J0 is a fixed-cost series/asymptotic form (it cost
+  64 + 2⌈x⌉ cosines, ~10⁹ a TDL-D report), and each distinct tap spectrum is evaluated once per lag. P.681's direct signal is
+  real, so its tap's line-of-sight line sits at 0 Hz (`TapFading.LosDopplerFactor`), not 0.7·f_m.
+- **Refused now, silent before:** an InF-SH/DH base station at or below the clutter height (P_LOS read 3.05, or 3e89, or NaN),
+  a UMa/UMi base station at or below hE = 1 m, P.833's woodland fit outside 900-2200 MHz (94 dB at 28 GHz), and "NaN" typed for
+  a number or in a list. P.530's r is capped at 2.5 (step 4; a 100 m path at 28 GHz read r = 5.3), and the reference script
+  with it. A satellite path's P.2109 façade elevation is the path's elevation unless stated (it was 0°: 12.7 dB at 60°).
+- **R-pch2-3's rain depolarization was not built:** P.618 §4.1's XPD (Cf − CA + Cτ + Cθ + Cσ less the ice term) is now a note
+  beside the P.618 rain, 6-55 GHz, θ ≤ 60°, 0.001-1 %, τ the RainTilt. Not checked against the SG3 workbook.
+- **Unconfirmed, for a look:** P.1238 residential floor-loss cells at 2.4/5.2 GHz (the office values are used); P.531's
+  Nakagami m (an exponential fit, where earlier editions give 1/S4²); P.530's worst-month conversion (R-pch2-2) is not built;
+  `SignalQuality.CoarseOffset` may lock to a wrong bin with a window one record long and no preamble (a Python model of it
+  did; the gate uses 16APSK with a preamble).

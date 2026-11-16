@@ -338,7 +338,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         var faceImageHosts = e.FaceImages.Select(u => u.Object).ToHashSet(StringComparer.Ordinal);
         // brief-em3d-88 — the one problem a view draws, which `render` builds a thermal section's picture from too.
         var problem = C3dProblemAssembly.ViewProblem(solids, sheets, materials,
-                                                     [.. records.Ports.Select(r => r.Resolved).OfType<Em3dPort>(),
+                                                     // brief-hzn-20 — a hollow guide of several modes draws each mode's polarity line
+                                                     [.. records.Ports.SelectMany(r => r.Terminals is { } ms && ms[0].HollowMode is not null
+                                                                                           ? ms : r.Resolved is { } one ? [one] : (IEnumerable<Em3dPort>)[]),
                                                       .. records.ComponentPorts.Select(c => c.Result?.Resolved).OfType<Em3dPort>()], box,
                                                      e.CylinderSheets) with { PlaneWave = records.PlaneWave };
         var notes = new List<string>(e.Refusals);

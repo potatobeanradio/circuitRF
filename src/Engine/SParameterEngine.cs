@@ -585,6 +585,9 @@ public static partial class SParameterEngine
     private static Prepared Prepare(
         ElaboratedNetlist netlist, double[] freqsHz, AnalysisSettings settings, NdfRequest? ndf = null)
     {
+        // brief-pch-9 — a channel's beam, selected and taken into its arrays before anything is stamped (at the band's middle, as the
+        // channel's report is read)
+        if (freqsHz.Length > 0) AntennaArray.BeamSelection.Apply(netlist, freqsHz[freqsHz.Length / 2]);
         // ── Identify ports + build branch-label map ───────────────────────────
         int nonGroundNodes = netlist.Nodes.Count - 1;
         var (ports, branchLabels) = CollectPortsAndBranchLabels(netlist, nonGroundNodes, freqsHz);

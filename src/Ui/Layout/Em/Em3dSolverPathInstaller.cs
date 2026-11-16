@@ -30,6 +30,8 @@ internal static class Em3dSolverPathInstaller
         SolverDiscovery.Gmsh.PreferredCommand    = () => AppPreferencesIo.Load().Em3dGmshPath;
         SolverDiscovery.OpenEms.PreferredCommand = () => AppPreferencesIo.Load().Em3dOpenEmsPath;
         SolverDiscovery.Emerge.PreferredCommand  = () => AppPreferencesIo.Load().Em3dEmergePath;
+        // brief TRN-7 — the transient analysis's ngspice, found by the same machinery
+        SolverDiscovery.Ngspice.PreferredCommand = () => AppPreferencesIo.Load().NgspicePath;
         PalaceRun.PreferredMpiLauncher           = () => AppPreferencesIo.Load().Em3dMpiLauncherPath;
         // brief-em3d-26 — Automatic, Native, or one Linux subsystem distribution (Windows).
         SolverDiscovery.Palace.PreferredLocation = () => PalaceLocation.Parse(AppPreferencesIo.Load().Em3dPalaceLocation);

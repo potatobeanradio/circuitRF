@@ -4773,3 +4773,800 @@ symbol's end, and an echo inside it reads something the source did not play (0.1
 - **What a run reports.** `PropagationChannelReport.Add` writes `link:<instance>:PathLoss_dB`, `Loss_dB[term]`, `Delay0_s`,
   `Doppler0_Hz`, `Reference_Hz`, `RayDelay_s`, `RayDoppler_Hz` and `RayGain[ray]` into the S-parameter, HB (all three paths) and
   envelope results. HB also notes once that it holds the channel with no Doppler shift.
+
+## brief-pch-7 — fading in the envelope, and the genie through a fading channel (2026-11-15)
+
+**The genie no longer takes the fitted offset out before dividing by the channel's H(f, t).** `EnvelopeDataSet.Read` ran
+`RemoveOffset` (a phase, frequency and drift fit over the symbols) and then divided by H, which already holds the
+channel's Doppler and fading phase. So the channel's phase was removed twice: a fading tap's random phase walk was
+partly "fitted" as an offset. Since PCH-6 this applied to a single Doppler ray as well, but no gate exercised the genie
+through a channel. With a channel response the genie now equalizes the symbols as they came. The offset is still
+measured and reported, and `none` and `pilot` are unchanged.
+
+**Gate 6 against an independent prediction, to 0.3 %.** NR 10 MHz at 30 kHz through flat Rayleigh at f_D = 300, 600 and
+1200 Hz (f_D/Δf_sc = 0.01, 0.02, 0.04) reads 0.950 %, 1.627 % and 4.097 % EVM. `testdata/propagation/ici_reference.py`
+predicts 0.951 %, 1.622 % and 4.099 %. The script writes the generator again from its definition and computes each
+symbol's error by Parseval, (var_W(h) + |mean_W(h) − h_c|²)/|h_c|² over the useful part. It reads none of circuitRF's
+demodulator, equalizer or engine. The prediction depends on the realization, not only on f_D/Δf_sc. A genie error is
+ICI/h, and E[1/|h|²] diverges for Rayleigh, so an ensemble formula cannot be met within 10 % by one drop. The test
+therefore reads each measured symbol's middle from the receiver and averages the script's E(t) there. The script picks
+the first seed whose |h| stays above 0.4 over the window (seed 1). The window is not a whole record, so no symbol wraps
+it. A wrapped symbol joins the end of the window to its start, which a time-varying channel makes a discontinuity.
+
+**Cost.** Each fading ray adds 64 sinusoids per step per product. A 24-tap TDL-C through 1 ms of NR 10 MHz (58,000
+steps at 16.3 ns) ran in 1.36 s wall. The three gate-6 runs take 2 s together.
+
+**What a run reports** (`PropagationChannelReport`): `RmsDelaySpread_s`, `CoherenceBandwidth_Hz`, `fD_Hz`, `Tc_s` (the
+first lag where the power-weighted |Σ p_i R_i(τ)| falls to one half, infinite when it never does),
+`PowerDelayProfile_dB[delay]`, `DopplerSpectrum_dB[doppler]` (the drop's lines in 32 bins over ±1.25 f_D), and
+`TapGain[ray, time]` (256 instants over the record, or TimeOffset alone). An envelope run adds `H[time, offset]` (64 × 33
+over the widest carrier's band), `fDxTrecord`, `fDoverSCS` and a regime note. The Signal quality preset draws the
+first channel's power-delay profile and Doppler spectrum under its table, points only, with the Doppler axis in Hz
+(a plot defaults to GHz).
+
+## brief-pch-8 — instance ends in the envelope, and what was not built (2026-11-15)
+
+**The envelope steps each ray from the transmit elements' waves.** `EnvelopeChannel.ICh` keeps a ring of every transmit
+element's wave per product. Per ray it forms the departure field from the waves one step plus its excess delay earlier,
+using quadratic Lagrange on solved steps with PCH-6's first-order slope term, turns it by the ray's fading and Doppler,
+and adds ½·(j)·F_rxᵀ·y on each receive element's source row (or the pin's wave row). The cost is K·(5·N_t + 2·N_r)
+multiply-adds per step per product. It is counted (`EnvelopeChannel.LastInstanceCost`) and stated in the run's note.
+Through two directional rays into a 4 × 4 array, the envelope settles on the harmonic-balance feed/transmit voltage
+ratio to 9e-9 at Tol 1e-12. The residual follows the Newton tolerance (6e-8 at draft accuracy), so it is the solve's,
+not the coupling's.
+
+**Gate 2 is held by counting, not by solving.** A 64 × 64 array to a 64 × 64 one through CDL-A (460 rays) stamps 920
+unknowns and 4.35 M entries. The bound is 2K·(2N_t + N_r) = 11.3 M; rays from behind an aperture meet a pattern of zero,
+since the record covers θ ≤ 90°. N_r × N_t would be 16.8 M. The channel's longest coefficient array is 4096. Nothing
+solved the link; the arrays' own 4096-element solves are PAA-8's.
+
+**Gates 5 and 6 against an independent sum, to the sixth decimal.** A boresight beam on a 16 × 16 isolated-element array
+loses 27.752902 dB in one CDL-C drop (480 rays) against the line of sight. Two transmitters at 5.9 and 5.95 GHz into one
+array give an SIR of 37.391671 dB, and the signal is unchanged to 1e-9 dB with the interferer present.
+`testdata/propagation/array_link_reference.py` reproduces both from the rays the channel realized: each element's
+wave, the array factor and the beamformer's sum. The rays are committed and the test checks them, so the script reads
+exactly what the run used. The element's pattern along each ray is circuitRF's own reading of the record (PAA's,
+gated there), passed to the script as data.
+
+**Not built:**
+- **R-pch8-4, the receive collapse, and gate 3.** Forming the beamformed output from Σ_r AF_rx·… instead of element by element
+  needs an engine path that replaces a fast-path receive array's channel cells and elements by one source at its feed.
+  Today every receive element is stamped.
+- **R-pch8-9's reported per-channel received power and SINR at the feed.** Several channels into one array add, which gate 6
+  measures, and a run note names the channels sharing a receive end. The cubes naming each channel's feed power and the
+  SINR need each channel's share of the solution, which the report does not see.
+- **An EM Field Data block as an end** is refused (see src/Core/RESOLVED.md).
+
+## brief-pch-8b — the receive collapse, each channel's share at the feed, Field Data ends (2026-11-15)
+
+**The collapse keeps the array's own stamp and moves only the channel's injection.** A Feed-mode receive array that
+meets PAA-8's fast-path conditions is linear between its elements' emitted waves and its feed. So the channel does not
+inject on each element's source row. It adds one Norton current at the feed, J = 2·b_m/(√Z0·(1 + Γ_F)), where b_m =
+Σ_n G_n·c_n is what the elements' waves deliver into a matched load at the feed. The array's stamp, which does not
+depend on the field, still supplies Γ_F to the rest of the circuit, so the equivalence is exact.
+`PhasedArrayFastPath.Receive` forms G = S12_ch·M⁻¹·t from the fast path's own closure matrix M = I − Γ_ch·D·S (it was
+M⁻ᵀ·t, with Mᵀ factorized explicitly, until the PCH review below: the two agree only with every element on). Γ_F is formed as `TryWaves` forms it. Through CDL-C (480 rays) into a 16 × 16 array with identical
+mismatched channels and coupling on, S21 matches the element-by-element stamp to 2.5e-15. Harmonic balance matches to
+2.7e-11, its floor on this bench. A 4 × 4 envelope run matches to 2.6e-11.
+
+**G and Γ_F are kept, the feed's node never is.** Caching the whole collapse per (array, resolved values, channel, frequency)
+injected at a node index from an earlier netlist, where the same array's feed has another number. The feed was 24 dB
+low, exactly 10·log10(256), until the node came from the current netlist.
+
+**The envelope still steps the receive array.** With the collapse, each ray is projected on one node (the counters say 1
+instead of N). But the array's channel cells and elements are still in the envelope's circuit. An envelope run of the
+16 × 16 array with its 256 channel cells takes over 8 minutes whatever the rays. Taking such an array out of the
+envelope entirely (note §8.2's "not stepped at all") needs the envelope to stand the closed array at its feed, as the
+fast path's outer circuit does for S-parameters. It is not built.
+
+**Each channel's share** comes from its own ray unknowns in the harmonic-balance solution
+(`HbLinearBackSolver.GetSolution`), mapped to the matched-load feed wave by the coefficients the collapse stamped.
+`link:<channel>:FeedPower_dBm` equals the run with only that channel to 1e-9 dB. `link:<array>:SIR_dB[channel]` equals
+array_link_reference.py's to six decimals. It is a signal-to-interference ratio: the noise term R-pch8b-3 asks for is
+not in it, because the noise is the S-parameter noise analysis's (SystemTempK), which the HB run does not hold. An array
+off the fast path reports NaN and says why. Multi-tone HB does not report shares.
+
+**EM Field Data ends** couple onto the block's own rows in the form the block stamped at that frequency
+(`SnpModel.StampsAsWaves`): 2b − 2S·a = 2c, or v − Z·i = 2√Z0·(I − S)⁻¹·c. The block's stamp is unchanged.
+A one-port block on e1 receives what a 1 × 1 array on the same record does to 1.0e-12 (the (I − S)⁻¹ path), and
+transmits identically. Envelope runs refuse a Field Data end.
+
+
+## brief-trn-1 — the transient engine on lumped and nonlinear models (2026-11-15)
+
+`src/Engine/Transient/` (`TransientEngine`, `TransientElements`, `TransientRunner`, `TransientTypes`); design in
+`docs/design/transient.md` §4. Gates: `tests/Engine.Tests/Transient/TransientEngineTests.cs`, `TransientElementsTests.cs`,
+`tests/Ui.Tests/Transient/TransientCliTests.cs`.
+
+- **The two-stamp recovery is one class now, `AffineStamp`.** It was written out three times (the envelope's single-fundamental
+  products, its multi-fundamental lattice in `EnvelopeEngineMt`, and `EnvelopeMemory`'s pole estimate); all three call it, with the
+  same arithmetic in the same order, and the 126 envelope tests pass unchanged. The transient engine takes its baseband pair, real.
+- **Which elements run is measured, not listed.** `TransientElements.AffineError` stamps each linear element alone at 1 and 2 Hz,
+  recovers G and C, and compares G + jωC with the element's true stamp from 1 kHz to 100 GHz by the envelope's terminated measure
+  (`EnvelopeTangentCheck.TerminatedDiff`, made internal for it). Lumped models come out at round-off. **SRLC, and an `L` with `C=`,
+  are refused**: a capacitor in series on one inductor branch stamps 1/(jωC) on that branch's own row, which no real G and C
+  reproduce; it needs a state of its own, which TRN-4's realization gives. A Port or Term is measured through
+  `PortModel.TerminationAdmittance`, as the linear partition stamps it.
+- **TLIN prints its own 1 Hz degeneracy line to stderr** (`TLineModel` writes `Console.Error` directly rather than queueing through
+  `IReportsWarnings`), so the probe at 1 Hz makes it appear beside the transient's refusal of the line. The envelope's own probes
+  trigger the same line. Models that queue their warnings have the probe's drained and dropped.
+- **Sources need no per-model work either.** b(t) is Re Σ_f B_f e^(j2πft) over the frequency set of every tone source (0 included),
+  each B_f the linear partition's own right-hand side at that frequency (`BuildSourceRhs`). A tone is harmonic balance's phasor, so a
+  V_1Tone with Phase=0 starts at its peak and the operating point is solved there (the RC test checks 1.5·10/11 V, not 0.5·10/11).
+- **The DC engine has no limiter or damping to call** (it takes full Newton steps, λ = 1, backing off only on a model's refusal), so
+  R-trn1-6's "limiting and damping are NonlinearDcEngine's" has nothing to reuse. The transient's defences are the step itself: a
+  failed Newton halves h, and the opening backward-Euler steps after every corner. None of the gate circuits needed more.
+- **LTE tolerance is relative to each row's running peak, not its instantaneous charge.** On a 200-section lossless LC ladder the deep
+  sections' inductor rows have tiny currents and an absolute flux tolerance of L·ITol ≈ 1e-22 Wb at 0.1 nH, which round-off-level
+  ripple exceeds; the step was pinned at a few hundred femtoseconds. Against max |Φ_i| over the accepted steps, a zero start of that
+  amplifier went from 60,828 to 14,128 steps. The absolute term is kept.
+- **A step so small that t + h rounds back to t would be accepted forever**: the floor is max(MaxStep/2^40, 1e-13·Stop).
+- **Newton's last evaluation is reused** for the step's charges and error estimate (each device keeps its last result and port
+  voltages), so an accepted step costs (Newton iterations) evaluations rather than two more; `Tran.DeviceEvaluations` counts them.
+- **gear2's damping is ~1e-3 of a damped ring's own decay** at the steps the default tolerance picks, below what a peak fit resolves,
+  so R-trn1 gate 2's second half is an undamped LC: trap holds 0.9999 of the amplitude over 20 cycles, gear2 0.900 at the default
+  tolerance — about 0.5 % a cycle, which is what Method=gear2 costs an oscillation at RelTol 1e-3 (0.9855 before the tolerance was made
+  relative to each row's peak, when the steps were smaller).
+- **Both Newton paths give identical waveforms (1.2e-13 V on the rectifier)** because they converge to the same tolerance on the same
+  steps; the brief's "1e-9 relative" holds with margin. The full path factors once per Newton iteration (42,498 on the rectifier against
+  26 for the interface path).
+
+### The interface/full threshold (R-trn1-6)
+
+Measured with a scratch harness (each circuit run on both paths, same steps; Debug build, one core), after `J = I + Zp·D` was
+made to use D's sparsity (it holds entries only between a device's own ports — a plain triple loop made the ring of 101 take 16.6 s
+on the interface path):
+
+| Circuit | Interface ports | Steps | Interface path | Full path |
+|---|---|---|---|---|
+| One Curtice FET, 2 × 200-section LC ladders (≈1,200 unknowns) | 2 | 3,649 | 0.23 s | 1.35 s |
+| Bridge rectifier, 4 diodes | 4 | 4,006 | 0.03 s | 0.04 s |
+| Ring of 15 CMOS inverters (MOS level 1) | 16 | 2,041 | 0.22 s | 0.23 s |
+| Ring of 51 | 52 | 2,025 | 0.80 s | 0.56 s |
+| Ring of 101 | 102 | 2,023 | 2.14 s | 1.04 s |
+
+`TransientEngine.InterfaceThreshold` is 32: the interface path wins wherever a few devices sit in a large linear network (the RF
+case), the two are even near 16 ports, and above ~32 the dense solve (N³/3 per Newton iteration) loses to one sparse factorization of
+the whole Jacobian. The full path factors once per Newton iteration; its symbolic analysis is not yet reused between iterations, which
+is the first thing to try if the threshold matters.
+
+### A worker-hosted device (R-trn1-13)
+
+`tools/DeviceWorkerExample`'s square-law FET in a common-source stage (a 1 MHz tone on the gate, 20 µs, 2,006 accepted steps), against
+MOS level 1 with the same law in the same circuit: **2.99 evaluations per accepted step** for both (Newton's 2.46 per step plus the
+operating point and the opening steps; the charge and error estimate reuse Newton's last evaluation), **36 µs per evaluation through the
+worker against 1.5 µs built in** — 0.22 s against 0.01 s for the run. Each evaluation is one round trip: transient cannot batch over time
+as harmonic balance batches over samples. Batching one Newton iteration's devices into one round trip is the remedy if a design with
+many worker devices needs it, and it is the worker protocol's to add (note §13.6).
+
+The example worker models saturation only (no triode region): a drain resistor large enough to push it below 0 V has no solution at
+all, which the transient reports as its starting state not converging, naming the drain net. That is the model, not the engine.
+
+## brief-pch-9 — picking the beam (BeamSelection, 2026-11-15)
+
+**Where the selection runs.** At the start of a run, in the engine, because the carrier is known there and not at elaboration:
+`SParameterEngine.Prepare` (the band's middle frequency, as the channel report is read), the three HB carrier blocks, `EnvelopeEngine` /
+`EnvelopeEngineMt` (over the signal's band, before the noise is formed from the stamps), and `PhasedArrayFastPath.TryWaves` (before it reads
+the weights). The elaborator leaves an `ArraySteering` on every Feed-mode array: its `steer()` call (`SteerCall`, the reading the tool's drag
+uses) and a `Weigh(θ, φ)` that is `FeedWeights` on the instance with the call's two arguments replaced by literal degrees. The chosen entry's
+weights are copied into the array's own beamformer (`PhasedArrayFeedModel.TakeWeights`), so a beam costs no elaboration (gate 4: 1
+elaboration for a scored 64 × 64 codebook and its HB run).
+
+- **A VAR argument is replaced in the array's own field, not set.** Two ends steered by one VAR would move together, and anything else
+  reading it would move with them. The tool's Apply is what writes the VAR.
+- **Selected once per run, keyed on the beamformers too.** A re-weighed netlist (PAA-8b) shares the channel model with the kept one but has
+  new beamformers; a cache on frequency and time alone returned the old table and left the new feeds with the authored weights.
+- **The receive collapse's cache key had no weights in it.** `G = S12·M⁻ᵀ·t` and `Γ_F` carry the beamformer's `t`, and `ArrayKey` leaves out
+  what only moves the weights, so a re-weighed receive array (a selected beam, or a tuned steer VAR — the latter a PCH-8b defect) was handed
+  the previous beam's collapse. `PhasedArrayFeedModel.WeightsKey()` is in the key now.
+- **A fields analysis on a channel's transmit array crashed** (`MnaSystem.StableOrderByColThenRow`, index out of range): the fast path
+  solves the circuit outside the array with the array closed at F, and the channel was in that circuit, stamping rows against element
+  branches the system never allocated. The channel only reads the transmit array's waves, so it is left out of that solve; a channel that
+  receives on the array puts rays on its elements, so that array is solved whole. Both predate PCH-9; the tool on a channel end needed them.
+- **A literal angle inside an expression is glued: `30deg`.** `30 deg` is a number followed by a name and the parser refuses it (and a space
+  splits a netlist line). PAA-9's literal rewrite wrote the spaced form; `PhasedArraySteering.Rewritten` and `SteerCall.Rewritten` glue it.
+- **Unstated BeamSelect with nothing steerable is plain manual, said nowhere.** Every PCH-8 bench's arrays have no `steer()`; a note on
+  each would be noise. Stated, an end that cannot be steered refuses with the reason and names `manual`.
+
+**The codebook.** One beamwidth is the DFT spacing Δu = λ/(Cols·dx), Δv = λ/(Rows·dy) — a beam's peak to its first null — so a grid
+neighbour, diagonals included, is "within one beamwidth" (Chebyshev distance ≤ 1 in units of the spacing) and rank 2 skips it. On the gate's
+two-cluster channel the second-strongest pair overall is such a neighbour (rank 1's receive beam with the diagonal transmit neighbour),
+stronger than the other cluster's pair (rank 2, −54.55 dB against rank 1's −42.20 dB).
+
+**Alternating.** Started from the beams nearest the strongest rays, up to 8 distinct starting pairs. With 4 starts from the 4 strongest rays
+(often one cluster's) it missed the exhaustive best on one of the three CDL-C drops of gate 6 by 0.10 dB; with 8 distinct starts it finds it
+on all three, scoring 1,469 / 886 / 1,327 of 22,201 pairs (16 × 16 both ends).
+
+**The bound** is phase-only and unconstrained, alternating dominant eigenvectors from the best pair; it is never below the best codebook pair
+(it is taken as the larger). Through CDL-C at 16 × 16 the codebook costs 7-8 dB against it — the bound combines several clusters coherently,
+which one steered beam cannot; through a single ray the cost is the grid's straddle loss (≈3 dB on 8 × 8 with the ray between entries).
+
+**Cost** (Debug build, `explain --analysis` on a CDL-C bench, both ends 64 × 64, default codebooks of 2,501 entries each, alternating, 44,938 of
+6.26 M pairs scored; the same bench with a 64-entry codebook per end takes 4 s, which is the elaboration and the realization):
+
+| | Total | Peak RSS |
+|---|---|---|
+| Every entry weighed through `FeedWeights` and held | 51 s | 1.76 GB |
+| Entries let go once their factors are taken | 53 s | 317 MB |
+| Closed-form weighing for scoring (`ArraySteering.Fast`) | 14 s | 303 MB |
+| … and the rays' phase tables built once per end, not per entry | **9 s** | 279 MB |
+| The same with `PhaseBits=4` (the quantised weights are not separable: K·N per entry) | 17 s | 283 MB |
+
+The choice is the same in every row. **The closed form** applies only when the field is exactly the bare call (Phase `steer(θ0, φ0, f0)`, Delay
+`steerDelay(θ0, φ0)`) and f0 reads no element name; it starts from one exact weighing (each element's amplitude, sign kept, and the other
+field's values) and forms the phase in closed form, quantised as `FeedWeights` quantises. Against the exact weighing at four directions on 16 × 16
+it is within 4e-15 (continuous; Taylor taper with PhaseBits=5 and AttenStep=0.5; steerDelay with a Phase offset), no quantisation boundary
+crossed. It is used for SCORING only: what a run applies, and what a kept selection is validated by, is always weighed through `FeedWeights`,
+so a phase sitting exactly on a quantisation boundary could move a candidate's score by that rounding and never the run. Any other field (an
+offset beside the call, a 5-argument form) is scored through the exact weighing, as before. **The phase tables**: `FactorOnce` rebuilt the
+rays' K·(R + C) exponentials for every entry, ~300 M sin/cos over 5,002 entries; `ArrayPattern.TransientTables` builds them once per end.
+
+**Selections kept across netlists.** An envelope run's segments and a sweep's points elaborate the same channel and arrays again, each with
+models of its own, so each searched again. A selection is kept (the last 8; a table can hold 10⁶ pairs) under a key of the channel's instance,
+resolved parameters and the files they name (with write times), each end's instance, resolved parameters, record and elaborated weights, the
+reference frequency, TimeOffset and the band. A hit is taken only after the chosen entries are weighed again exactly and match, so a key that
+misses something costs a search, never a wrong beam. Concurrent selections of one key (parallel segments start together) wait for the first
+and take its choice (gate: four netlists in parallel, one search, three hits).
+
+**Progress and Stop.** The selection starts deep inside every engine, none of which is handed the run's `RunControl` the same way, so
+`CircuitEvaluation.ExecuteCore` makes it ambient for the run (`BeamSelection.Use`, an `AsyncLocal`, so it flows into tasks the run starts).
+The selection reports on the control's STAGE counter — "Beam of CH1: weighing the codebooks n / N beam(s)", then "scoring every pair n / A"
+or "alternating search n / 8 start(s)", then "the phase-only bound" — and restores the analysis's own stage after. Stop is answered between
+codebook entries (~9 ms each at 64 × 64, Debug) and between search steps, as `OperationCanceledException`, which every run already treats as
+cancelled. Before this a 64 × 64 selection sat for ~50 s with the run's bar unmoved and Stop ignored.
+
+**A beam drag on an auto-selected array re-ran the whole search at every step.** Each drag step re-weighs the netlist, so the arrays have
+new beamformers and the once-per-run cache (keyed on them) missed. Every candidate replaces θ0 and φ0, so a tuned steer VAR changes no
+candidate: when each steered end's chosen entry weighs exactly as before, the choice is taken again (one weighing per end, `Reused`
+counts it, no pairs scored). Anything that does move a candidate — a taper VAR, PhaseBits — changes that weighing and the search runs.
+
+**Counters are per thread** (`Elaborator.Elaborations`, `ArraySteering.Weighings`, `PhasedArrayFeedModel.WeightsTaken`,
+`ArraySteering.FastWeighings`, `BeamSelection.PairsScored`, `BeamSelection.Reused`): a run is synchronous on its caller's thread, and a
+process-wide count moved under other tests elaborating in parallel. `BeamSelection.Selections` and `CacheHits` are process-wide, since parallel
+segments select on several threads; only a channel with a steered array end moves them, and those tests share one collection.
+
+## brief-trn-2 — sources and initial conditions in the transient engine (2026-11-15)
+
+**Each waveform source and each shaped tone source gets its own right-hand-side column, by difference.** The aggregate
+per-frequency phasor columns are built with every waveform source stamping 0 at DC (`StampOverride = 0`) and every shaped
+tone source at `DriveScale = 0`; a source's own column is then the right-hand side with it alone switched on, less the
+aggregate — exact, b being linear in each source. Nothing about any model's stamp is repeated in the engine. A shaped tone
+(`Delay`, `Ramp`, `Damping` non-zero) adds env(t)·Re{b e^{jω(t − Delay)}} at each step, env = 0 up to Delay, a raised cosine
+over Ramp, times e^{−Damping (t − Delay)}; its DC offset stays in the aggregate (not delayed). Breakpoints: every
+waveform's corners, and a shaped tone's Delay and Delay + Ramp. The automatic step bound also counts an SFFM's
+carrier + (|ModIndex| + 1)·Signal.
+
+**IC= is held in the operating-point solve, then released.** A capacitor's by `HoldConductance` across it (a Norton
+source of G·V, both nodes or one); an inductor's by `HoldResistance` = 1e9 Ω on its branch row, which then reads
+V(a) − V(b) + K i = K I, so the current departs from I by the branch voltage over K. `InitialState=zero` writes them into
+the starting state directly. Gate 5: an RC from IC=1 follows e^(−t/τ) within 7.6e-7 (RelTol=1e-6), an RL from IC=1m within 1e-8.
+
+**An SDD reading `time` invalidates its cached evaluation when the clock moves.** The engine caches each device's last
+evaluation by its port voltages; with `time` in the equation the same voltages at another time are a different answer, so
+`SetClock` clears that cache for those devices. The clock is set to 0 for the starting state (NonlinearDcEngine's seed
+included) and to t + h before each step, and cleared in `Run`'s finally.
+
+**A P1Tone/PnTone with a harmonic termination of its own is refused** (`HasHarmonicTerminations`: any band whose Z differs
+from Z[1]) before the affine check, with a sentence naming Z[k]; TRN-4 realizes it.
+
+Gates (`tests/Engine.Tests/Transient/TransientSourcesTests`): a pulse train's 16 corners are accepted steps and the output
+equals the definition to 1.0e-14; PWL File= equals Points= bit for bit and a repeated time is refused naming line 3;
+Ramp=10/f follows the raised cosine to 1.6e-14; a damped delayed sine equals A·e^(−θ(t−td))·sin(2πf(t−td)+φ) to 1.5e-14;
+HB and S-parameter benches with a pulse equal Vdc at its first level bit for bit, and HB is bit-identical with
+Delay/Ramp/Damping set; V_Expr equals V_Exp exactly; `time` outside a condition in HB is refused naming it.
+
+## brief-trn-3 — soft breakpoints and the first hard-switching measurement (2026-11-15)
+
+**A soft window limits the step without landing.** `ITransientDevice.SoftWindow` gives a control port and a voltage window; before
+each step `SoftRung` extrapolates that port's voltage along its slope over the segment's last two accepted steps, and when the
+step from the current rung would reach into the window, moves down the ladder until h ≤ window / (TransitionPoints·|slope|). Only
+the ladder rung changes, so the step still factors from the kept rung set and nothing is landed on. A segment's first step has no
+slope and no limit, which costs nothing because a segment opens six rungs down. Measured: a 1 V window crossed in 50 ns with
+MaxStep = 50 ns takes 8 accepted steps (7 inside), where the unlimited ladder would take one or two.
+
+**A state change between steps clears the device's cached evaluation** (`AcceptStep` returns true): its i(v) is a different
+function afterwards, and the cache is keyed on port voltages only.
+
+**R-trn3-6 — a buck converter, the first hard-switching circuit measured.** 12 V in, VSwitch (Ron 0.1 Ω, Roff 1 MΩ, Von 3 V,
+Voff 2 V) driven by a 0-5 V 1 MHz pulse (10 ns edges, 490 ns width), a diode (Is 1e-14) from ground, 10 µH, 1 µF, 5 Ω, 200 µs
+(200 cycles) from InitialState=zero, Step 10 ns, Debug. It runs without failure: 33,226 accepted steps, 4 rejected, 84,695 Newton
+iterations (2.5 per step), 812 factorizations, 231,794 device evaluations, 801 breakpoints landed, 14 method-rung pairs, the
+interface path; 0.21 s. The settled output (mean of the last 20 cycles) is 5.5175 V with 40 mV ripple, against the duty-cycle
+estimate D(Vin − I·Ron) − (1 − D)·Vd = 5.5269 V: −0.17 %.
+Gate 3 (HB against transient): a tone-driven switch's current agrees on its first five harmonics to 1e-4 dB.
+
+## brief-trn-4 — lines and frequency-defined elements in transient (2026-11-15)
+
+**Where it lives.** `src/Engine/Transient/TransientRealization.cs` replaces, for one run, every element the transient
+engine cannot stamp as fixed G and C (and refuses the rest by name); `TransientLines.cs` steps lossless lines;
+`src/Engine/RationalPassivity.cs` checks and enforces passivity of a rational S matrix; `src/Engine/DelayInterpolation.cs`
+is the envelope's quadratic Lagrange moved down unchanged (`EnvelopeLineDelay` and `EnvelopeChannel` call it; the envelope
+classes and their fixed files pass unchanged). The fit band is DC to f_max = 1/(2 MaxStep), MaxStep found from the sources
+before anything is stamped.
+
+### R-trn4-3 stopped and reported: no shipped lossy line is causal within 1e-3
+
+The design note's method (the residual e^(−γl)·e^(jωτ) given the minimum phase of its magnitude by the cepstrum, τ the
+high-frequency delay, the residual fitted rationally, Zc held) was measured on the shipped microstrip, stripline and
+coplanar models at three geometries each, with a scratch harness evaluating `IUniformLine.LineAt` directly: |ΔS21| in
+50 Ω between that realization and the model, DC to f_max.
+
+| model, geometry | loss at 20 GHz | Δφ at band edge (20 GHz) | residual fit | max \|ΔS21\| 20 GHz (best τ) | max \|ΔS21\| 5 GHz |
+|---|---|---|---|---|---|
+| MLIN 0.254 mm Er 3.66, L 10 mm | 0.23 dB | −0.045 rad | order 4, 8.5e-5 | 2.3e-2 | 2.6e-3 |
+| MLIN FR4 0.8 mm, tanD 0.02, L 25 mm | 1.73 dB | −0.55 rad | order 5, 6.5e-5 | 0.22 | 2.1e-2 |
+| MLIN GaAs 100 µm, L 2 mm | 0.23 dB | −0.021 rad | order 5, 3.7e-5 | 9.7e-3 | 2.7e-3 |
+| SLIN b 0.5 mm Er 3.5, L 10 mm | 0.20 dB | −0.040 rad | order 4, 6.7e-5 | 4.4e-3 | 1.7e-3 |
+| SLIN FR4 b 1.0 mm, L 25 mm | 2.07 dB | −0.58 rad | order 5, 8.3e-5 | 4.0e-2 | 1.3e-2 |
+| SLIN LTCC Er 7.8, L 3 mm | 0.13 dB | −0.018 rad | order 4, 4.8e-5 | 2.8e-3 | 1.3e-3 |
+| CPW 0.254 mm Er 3.66, L 10 mm | 0.17 dB | −0.040 rad | order 4, 6.2e-5 | 1.2e-2 | 1.5e-3 |
+| CPW FR4, L 25 mm | 1.44 dB | −0.52 rad | order 5, 7.5e-5 | 0.14 | 1.1e-2 |
+| CPW GaAs, L 2 mm | 0.22 dB | −0.024 rad | order 3, 2.6e-5 | 5.2e-3 | 3.9e-3 |
+| MLIN, no loss (dispersion only) | 0 | 0 | order 1 | 1.9e-2 | 7.7e-4 |
+
+"Best τ" lowers τ below the high-frequency delay by the least-squares best amount (still causal); with τ the
+high-frequency delay itself the 20 GHz errors are 1.5-2.4× larger. The fit is never the problem (≤ 1e-4); the causality
+correction is. The loss models attenuate with no matching phase, and the minimum phase of that attenuation is a real
+phase lag that the frequency-domain model does not have — so the realization is "wrong" by exactly the model's
+non-causality, and that is 1e-3 to 0.2. Dispersion (ε_eff(f)) is a phase with no magnitude, so a minimum-phase residual
+drops it entirely: the lossless microstrip alone misses by 1.9e-2 at 20 GHz. Zc held constant costs ≤ 9e-4 (S21 depends
+on the mismatch squared).
+
+**So, as the brief directs, lossy and dispersive lines are refused in transient by name**, the sentence naming the
+measured |ΔS| of the line as a lossless delay and the analyses that support it. What runs:
+- a line whose delay alone reproduces its own model within 1e-3 (|ΔS11|, |ΔS21| in 50 Ω, DC to f_max) is stepped as that
+  delay — every ideal TLIN, a lossless physical TLIN, a lossless stripline, the Delay block, and a low-loss line at a
+  low enough f_max;
+- a lossy line with f_max·τ ≤ 2 is offered to the ordinary wideband fit of its own stamp (R-trn4-4, causal by
+  construction, its error measured against the model) and runs if that meets 1e-3.
+
+### Lines (R-trn4-1/2)
+
+Rows `v − Zc i − W_other(t − τ) = 0` are real and constant (G). τ ≥ h: the delayed wave is read from accepted steps by
+the quadratic through three steps that do not straddle a corner (a breakpoint landing), else linearly. τ < h: linear
+between the last step and the unknown one, the unknown's share (h − τ)/h a term of the stepped matrix — stages are then
+keyed (alpha, h), and only then, so a run with no short line keeps TRN-1's factorization counts. The operating point
+couples each line fully (a lossless line is a short at DC). Breakpoints τ and 2τ after every source corner (the start
+included), capped at 200,000. CLIN runs by its even/odd modes (Zc = Ze/2, Zo/2, delays E/(2πF), Eo/(2πF)). Gate 1's
+reflection matches the closed form to 4.4e-11 V and gate 2's NEXT/FEXT to 5.3e-12 V.
+
+### Wideband fits (R-trn4-4)
+
+- **The fit loop** walks orders (to 60) until the relative RMS error over the data's own points meets 1e-3 (1e-9 for a
+  System Filter/Duplexer, exactly rational), and **stops when eight orders have not halved the error** — a delay or a
+  non-causal response would otherwise walk every order (the envelope's 132 s MCLIN). An order with a pole of damping
+  −Re(a)/|a| < 1e-6 is not taken: see the terminations below.
+- **Passivity** is checked on a uniform grid ten times denser than the samples (≥ 2,001 points) to f_max, a log tail to
+  100·f_max, every pole's frequency and s → ∞. Enforcement moves residues and D (poles kept) by the least-norm change of
+  the RESPONSE over the samples (the basis Gram matrix as the weight) that brings σmax to 1 − 1e-6 at the constraints, and
+  repeats. **Constraining only local peaks failed on a plateau**: a file with |S21| 2 % too large across the passband
+  ended at σmax 1.031 after 40 iterations (worse than 1.020) and took 20 s; constraining the peak plus 24 points spread
+  across each violating band converges in a few iterations (σmax 0.99999983, change 3.1e-3) in well under a second. The
+  2×2 singular value is in closed form (power iteration was most of those 20 s).
+- **The committed band-pass** (`testdata/transient/bandpass_1ghz.s2p`, from `bandpass_1ghz.py`, independent of
+  circuitRF) fits at order 6, error 2.8e-7, σmax 1.0000009 made passive by a 2e-6 change. Driven by a 0.4 ns pulse, the
+  output's transform against the file's S21 across 0.8-1.2 GHz is set by the INTEGRATION, not the fit: 4.1e-3 at
+  RelTol 1e-5 (2,816 steps), 2.3e-4 at 1e-7 (10,302), 1.1e-4 at 1e-9 (45,656). Gate 4 therefore bounds it by the fit's
+  error plus 5e-4 at RelTol 1e-7, not by the fit's error alone. Gate 5 (the enforced active copy, 10⁴ × its slowest pole's
+  3.5 ns, 697,000 steps, ~1 s) decays to 2.5e-314 V from a 2.8 mV peak.
+
+### Tone source terminations (R-trn4-6): placed poles, not a fit
+
+A P1Tone/PnTone keeps its drive (`DriveOnly`) and its band-mapped impedance is realized beside it, between the external
+and drive nodes. **Vector fitting cannot do this**: sampled at the harmonics alone it put lossless poles exactly on the
+samples (Re a ~ −1e-32 at 1.8, 2.0 and 2.2 GHz — a "fit" that reads −0.667 at 2 GHz to round-off and rings forever, so
+the run saw 50 Ω there); sampled flat across each band it is a staircase (error 0.26); a smooth real-valued blend between
+harmonics is zero-phase, which no causal function is (error 0.55). Only the harmonics are read in a periodic steady
+state, so the poles are placed — one pair of damping 0.2 on each harmonic — and the residues and constant solved so Γ
+takes every harmonic's value exactly (2N + 1 real equations and unknowns), then made passive like any fit. A 2 GHz current
+then sees 50 Ω ∥ 10 Ω to 7e-5.
+
+### EM cells (R-trn4-5)
+
+Nothing new: `model=em` already builds the EM bench for any analysis kind and dispatches a tran through
+`RunTypedAnalysis`; the EM instance arrives as an SnP on the cached Touchstone and is fitted like any file
+(`tests/Ui.Tests/Transient/TransientEmCellTests`).
+
+### Refusals (R-trn4-7)
+
+Unchanged by-kind list (Mixer, PhasedArray, PropagationChannel, Tuner, WSProbe, OscProbe, EmFieldData, MOD_Source), each
+naming its analysis; added: lossy/dispersive single lines (above), MCLIN/BCLIN/MBCLIN by name, a Deembed (it would have to
+advance what a network delays), and any element whose fit misses its tolerance, the fit's error and order in the sentence.
+The sentence is now "is not supported in transient" (it was "not yet supported").
+
+## brief-trn-4b — causal loss in the line models, and lossy lines in transient (2026-11-15)
+
+**The fix was in the models.** TRN-4 refused every lossy line because the shipped losses carry no phase. `CausalLoss`
+(`src/Core/Devices/Planar/CausalLoss.cs`) gives them theirs, carried as `MicrostripLineParameters.LossPhaseRadPerM`
+beside the lossless β, so Z0 and ε_eff (what the line calculator reports) do not move:
+- conductor: Δβ_c = α_c(f) − α_c(1 Hz) — the skin effect's internal reactance equals its resistance. **The DC floor
+  matters**: with Δβ_c = α_c, a thin-metal line (GaAs CPW, 3 µm gold; LTCC stripline, 10 µm), whose loss levels off at
+  the sheet resistance below the skin-depth transition, was itself non-causal (a constant loss with a constant reactance)
+  and missed by 2e-2 at 5 GHz; without the floor's reactance it fits within 6e-5.
+- dielectric: Δβ_d = −(2/π)·α_d·ln(f/f_ref), the mid-band wideband Debye relation (permittivity falling by
+  (2/π)·tanD·εr per e-fold), pinned at f_ref = 1 GHz for MLIN/SLIN/CPWG (`CausalLoss.DielectricReferenceHz`) and at `F`
+  for TLIN. MTAPER and MKLOPF sections take the same phase.
+
+**How far S21 moved** (50 Ω, |ΔS21| and the added phase), measured on the shipped code:
+
+| line | 0.1 GHz | 1 GHz | 10 GHz | 20 GHz |
+|---|---|---|---|---|
+| MLIN 0.254 mm Er 3.66, 10 mm | 1.1e-3 (0.06°) | 3.1e-3 (0.18°) | 1.2e-3 (0.07°) | 8.6e-3 (−0.5°) |
+| MLIN FR4 0.8 mm tanD 0.02, 25 mm | 2.1e-3 (0.12°) | 2.7e-3 (0.16°) | 0.11 (−7°) | 0.28 (−20°) |
+| MLIN GaAs, 2 mm | 1.8e-3 (0.1°) | 5.6e-3 (0.33°) | 1.7e-2 (1°) | 2.3e-2 (1.4°) |
+| SLIN FR4 b 1 mm, 25 mm | 2.4e-3 (0.14°) | 3.6e-3 (0.21°) | 0.13 (−8.5°) | 0.31 (−23°) |
+| CPWG FR4, 25 mm | 1.8e-3 (0.1°) | 3.2e-3 (0.19°) | 8.7e-2 (−5.4°) | 0.23 (−15°) |
+| any lossless line | 0 | 0 | 0 | 0 |
+
+Near f_ref a design moves by tenths of a degree (the conductor's internal inductance); a long lossy FR4 line far above it
+moves by degrees, which is the permittivity a flat loss tangent of 0.02 implies (4 % lower by 20 GHz). |S21| in dB does not
+move (≤ 0.002 dB: the loss is unchanged, only its phase is new). Expressed as electrical length, which is what moves a
+resonator built from the line: FR4 (tanD 0.02) −0.8 % at 5 GHz, −1.3 % at 10 GHz, −1.7 % at 20 GHz (a 10 GHz stub resonance
+about 126 MHz higher); the low-loss board lines within ±0.2 % above 1 GHz; narrow thin-metal MMIC microstrip (70 µm wide,
+3 µm gold) +4.7 % at 1 GHz and +1.4 % at 10 GHz, from the internal inductance of a conductor that thin and narrow (the √f
+conductor law MLIN uses does not level off at the thickness, so this follows the loss it already reported). Tests re-baselined:
+`TLineModelLossTests.PhysicalForm_WithAcAndAd_MatchesTheClosedForm` and
+`MklopfPerformanceAndMessagesTests.Gate2_…` (their closed forms gain the phase, written out, not called);
+`TrlAnalysisTests.PointsOutsideTheUsableBand_…` (its TLIN standard, exactly 20° at 2 GHz, is 0.12° shorter there, so the
+2 GHz point joins the unusable run: "(1-2 GHz)").
+
+**The transient realization** (`TransientRealization.FitLossyLine`): τ = max(0, τ_min − 1.5/f_max), the residual
+H̃ = e^(−γl)·e^(j2πfτ) vector-fitted DIRECTLY (a minimum-phase residual drops dispersion, a phase with no magnitude),
+the order the lowest whose realization meets 3e-4 |ΔS21| on a 2,060-point check grid, among fits with |H̃| ≤ 1 on
+RationalPassivity's grid (one barely above 1 is scaled down). Its states are extra unknowns at each end (`TransientLineModel`),
+the delayed wave entering the main row with weight −D and each state row with −1 (−2 for a pair's first).
+Findings, each measured:
+- **τ at the smallest phase delay fits badly**: the residual is then barely causal, and 40 poles miss by 1.4e-2 on 0.8 mm
+  FR4 at 20 GHz; leaving rotation in the fit (τ × 0.9, 0.6, 0.4 → 5.6e-3, 1.1e-3, 4.5e-4 at order 40) is what works;
+  1.5 periods of f_max is the rule taken.
+- **Choose the order by the realization's own |ΔS21| on a dense grid**, not the fit's error on its samples: the latter
+  over-fits between samples near DC (order 58 reading 1e-4 on its samples was 5.3e-3 off between them).
+- **General passivity enforcement wrecks a line residual**: a spurious narrow peak (|H̃| 1.29 at 3.1 GHz on LTCC, 1.09 at
+  4.5 MHz on the board MLIN) drove the least-change enforcement to |ΔS21| = 2 and to divergence (σmax 764). Rejecting an
+  order that rises above 1 + 3e-4 and scaling a marginal one is safe and cheap.
+- **The order loop needs a stall stop** (eight orders without halving the error): a line whose best was order 11 at 3.4e-4,
+  just above the 3e-4 target, walked all 40 orders in 8.8 s; with the stop every line fits in 0.04-0.7 s.
+- At f_max 5 and 20 GHz every line of the nine geometries, and both TLIN forms, is realized within |ΔS21| 1e-3 (largest
+  9.9e-4, CPW GaAs at 20 GHz). At 50 GHz the 0.8 mm FR4 microstrip (7.9e-3) and coplanar (2.0e-3) lines still miss and
+  are refused by name. |ΔS11| is set by the held Zc of the dispersive models (2.5e-2 on 0.8 mm FR4 at 20 GHz, ≤ 1.3e-3
+  on the others); a warning names a line above 1e-2.
+
+**Gate 3's two traps.** (1) A pulse's spectral images fold back into the band on a coarse output grid: at 5 ps the
+transform of a line realized within 2.6e-4 read 1.4e-3 off at 4 GHz (a magnitude droop ∝ f², the triangle pulse near its
+5 GHz null); a lossless line hides this because e^(−jωτ) repeats exactly across the images. 1 ps and 0.1 ns edges fix it.
+(2) What remained, 9.1e-4 at 4 GHz on a line realized within 7e-5 there, was a magnitude deficit that did not move with
+RelTol (1e-7 or 1e-9) or Stop (10 or 40 ns) but fell 6× with MaxStep 50 → 20 ps: **the backward-Euler step that opens
+every segment, at MaxStep/64, was never error-checked** (`ErrorRatio` returns 0 with one point of history), so its damping,
+∝ (ω·MaxStep/64)², was outside the tolerance — and every line adds delayed-corner breakpoints, so more such steps.
+**Fixed**: `TransientEngine.FirstStepRatio` checks that step by step doubling — the same interval in two backward-Euler
+half steps, the full step's error twice the charge difference (C·h² against 2·C(h/2)²) — and rejects it down the ladder
+like any other step. The half-step stage is the trapezoidal stage of the same rung, so it rarely costs a factorization.
+Gate 3 went from 9.1e-4 to 1.1e-4 (the same at RelTol 1e-7 and 1e-9: what is left is the fit's own error) and is held at
+3e-4. Cost on TRN-1/TRN-3's benches: the RC ring 7 → 8 factorizations for its 4,007 steps; the buck 33,226 → 33,252
+accepted steps, 4 → 6 rejected, 812 → 820 factorizations, Vout unchanged at 5.5175 V. The second backward-Euler step was
+always checked (two points of history).
+
+## Reuse across drops: one transmit solve per distinct transmit side (brief PCH-10 R-pch10-4, 2026-11-15)
+
+`EnvelopeDropReuse` + `ParametricSweepEngine.RunEnvelopePoints`. The sides are `PropagationChannelGraph`'s islands: receive = every
+island a channel receives on and everything downstream; transmit = the rest. A part with no island (a supply) takes the side of every
+part its nets reach, and **a supply both sides reach refuses the reuse** (its current would be half one run's), said in a note. The key
+hashes the transmit parts (type, path, nodes, resolved values), each transmit array's `WeightsKey()` after the drop's beam selection
+(`BeamSelection.Apply` run first on the point's netlist; the engine's own call then hits its cache), the transmit end each channel
+presents (pin node, TxZ, TxPattern) and the run's own `EnvelopeParams` (Seed, Noise, Stop …). The first drop of a key runs jointly and
+records every channel's transmit waves per segment (an instance end per transmit element: `ChannelRecording.Elements`); a later drop of
+that key runs on the receive side alone (every transmit part removed but the MOD_Sources, which carry the signal and time base; every
+transmit net held by 1 Ω, `Noise=off`), takes the recording run's segmentation (`EnvelopeRunner.PrepareLike`, so each segment replays
+its own segment's recording on the same step grid), and gets the transmit side's node voltages, IProbes, supplies, wires and source
+drives back from the recording run's record by name before `EnvelopeDataSet.Build`, so every measurement is the joint run's.
+
+**The harmonic-balance start is the one place the replay is not free.** The joint start solves both sides with the coupling frozen; a
+receive side alone would start with nothing incident, and one with memory (a filter) would start elsewhere and differ until it settled.
+So a driven channel's start stamps the recording's first sample as a known source on its receive rows (`SteadyDrive`: H(f_k)·w at a pin,
+each ray's projection at an array) in place of the coupling — the value the joint start couples in.
+
+Gates: Engine `DropReuseTests` — 50 drops of a fading channel, nonlinear PA, series-LC receive side: every cube of every drop
+**bit-identical** with the reuse and without (worst difference 0), counters (1 transmit solve, 49 replays). Ui `DropReuseArrayTests` — an
+8 × 8 steered transmit array turned 15° every third drop (`TxAz=15*floor(drop/3)`): 4 distinct beams, 4 transmit solves, 5 replays,
+bit-identical.
+
+**A test-side trap worth knowing:** `DataCube.ComplexValues`/`RealValues` copy on every read; indexing them inside a loop made the
+first version of the gate's comparison take 60 s against 0.3 s for both sweeps. Read the array once.
+
+**What a drop costs (R-pch10-6)**, Debug, one drop's envelope run into a receive array with channel cells (CW, 1 µs record, 493 steps,
+one line-of-sight ray; the transmit side is a pin, so this is the receive side's cost, the part reuse cannot remove). As first measured,
+and after PCH-10b (below):
+
+| Receive array | Linear cells, as first measured | Linear cells, after PCH-10b | Nonlinear cells (amplifier), after PCH-10b's checks |
+|---|---|---|---|
+| 64 | 6.0 s | 0.5 s | 3.7 s |
+| 256 | 288 s | 0.9 s | 56 s |
+| 1024 | not finished in 300 s (5.3 GB) | 1.2 s | not finished in 300 s |
+| 4096 | not run | 5.4 s (2 GB) | not run |
+
+**The first measurement's cost was not the stepping.** It was three per-element checks the envelope makes before it steps
+(`EnvelopeTangentCheck.Measure`, `EnvelopeSnpFit.NotAffine`, `EnvelopeBaseband.Apply`), each stamping one element alone and inverting the
+result densely per offset: the array is one element with a port per element, and an instance-end channel's stamp carries two ray
+unknowns per ray — so a 2 × 2 transmit array through CDL-C (~460 rays) spent 19 s inverting ~1000 × 1000 matrices for checks whose
+answer changed nothing (an earlier version of this entry blamed `InstanceCouplings`; it takes 10-20 ms). See the PCH-10b entry below.
+A nonlinear receive array is still stepped element by element and its step cost grows faster than N (the harmonic-balance interface is
+every element's device): a Monte Carlo over many drops into 1024 or more nonlinear elements remains impractical, and the docs say so.
+
+## A receive array replaced by its feed, and the checks that cost minutes (brief PCH-10b, 2026-11-15)
+
+**Three pre-stepping checks skip the channel and the arrays.** `EnvelopeTangentCheck.Measure` (the tangent warning), `EnvelopeSnpFit.NotAffine`
+(whether to fit an element) and `EnvelopeBaseband.Apply` (whether to hold an element at DC) each stamp one element alone and invert it
+densely per offset. A Phased Antenna Array is one element with a port per element: at 256 elements the three took 287 of a 288 s run, at
+1024 they did not finish in 300 s, and for the arrays measured they concluded nothing (no fit, no hold, no warning). An array's coupling
+is its record's, linear in f between record frequencies, so it is affine across an envelope band; it keeps its value and slope at each
+harmonic. The channel was already skipped by two of them and not by the baseband check, where an instance end's stamp alone carries two
+ray unknowns per ray (19 s for CDL-C's ~460 rays into a 2 × 2 array; 0.3 s after).
+
+**The receive array replaced (R-pch10b-1).** When the receive collapse is taken at every product, the run has no noise (the cells' own noise
+is part of the array) and the array transmits on no channel, `EnvelopeChannel` takes the array, its feed and its channel cells out of the
+run's netlist (`ElaboratedNetlist.Prune(…, dispose: false)`), holds the array's other nets by 1 Ω, and puts a one-port at the feed that
+presents Γ_F(f) (`PhasedArrayFastPath.FeedReflection`: one factorization of M, not also Mᵀ; cached). The rays already land on the feed as
+Norton sources; the channel's harmonic-balance start reads the collapse from an untouched copy of the netlist
+(`PropagationChannelModel.CollapseNetlist`); the run's Dispose puts everything back. The one-port solves Γ_F exactly at each product and at
+the product ± AffineStamp's dlt (the three frequencies the step's affine stamp is built from) and is the line through them anywhere else
+near the product (the tangent check's band edge): three factorizations a product. The first version solved Γ_F with both factorizations at
+every frequency asked: 66 s a drop at 4096 elements, against 5.4 s now.
+
+**Equal to the stepped array.** Both are first order around each harmonic (the stepped array affine per element, the one-port tangent to
+the exact Γ_F), so they agree to first order and could differ at second order in the offset; on the gates' 16 × 16 array they agree to the
+envelope's floor: every cube to 4.2e-10 through two rays and 9.8e-11 through CDL-C. Two cubes needed care in the comparison, not in the
+code: a PSD in dB has bins at −400 dB (round-off, compared only within 150 dB of the peak), and a CW's AM-PM is 8e-10° (held to 1e-9°
+absolute). Gates: Ui `ReceiveArrayFeedTests` — equality through rays and CDL-C with 258 parts replaced, a noisy run keeps the array, a
+reusing drop sweep into 32 × 32 replaces 1026 parts with the transmit pin solved once (64 × 64 does the same in 43 s, too long for the
+routine tier), and the couplings evaluate each pattern class once per ray (`PatternEvaluations`: 480 rays → 481, the extra one the line
+of sight the pin end's polarization is matched along; R-pch10b-2 was already so, the per-direction cache in `ArrayField.Toward`).
+
+## An envelope probe past a Propagation Channel read as carrying no RF (brief PCH-11, 2026-11-15)
+
+`EnvelopeDataSet` blanks every output row of a probe whose fundamental-band power is below `NoRfFraction` (10⁻⁶, −60 dB) of the
+available drive, meant for a supply or bias probe. A receiver at the end of a link sits 60 to 140 dB below the drive, so a Link
+bench drop in a 10 dB fade (−61 dBm out of a 2 dBm drive) came back with no EVM, BER, Gt or ACLR at all while the drop beside it,
+at −52 dBm, read 9 %; and a sweep over the two refused to stack (`SINR_dB` one element against 7 × 1272). `EnvelopeRunner.PathGain`
+now passes `Build` the product of each pin-end channel's |H|² at the carrier, at most 1 each, and the threshold is 10⁻⁶ of the drive
+times that. A circuit with no channel is unchanged to the bit.
+
+## A drawn rain's term label grew a drop sweep's result as N² (brief PCH-11, 2026-11-15)
+
+`AddedLosses` names a drawn rain's term with the drop's own time percentage ("P.618 rain at 0.0321 % of the time (drawn), …"),
+and `PropagationChannelReport` used term names as the `Loss_dB` cube's `term` labels. Stacked over a drop sweep, every drop's
+label was a term of its own: 10,000 drops of a geostationary link wrote `link:CH1:Loss_dB` as 10,000 × 10,001 (807 MB, 19 s);
+30,000 reached 5.7 GB before it was stopped. The report now labels a drawn rain `P.530 rain (drawn)` or `P.618 rain (drawn),
+clouds and scintillation` (`TermLabel`); the percentage is `RainTime_pct`. 10,000 drops: 6 MB, 2.3 s; the Link bench's own
+100,000: 64 MB, 14.6 s. The term's name in the model's notes is unchanged.
+
+## brief TRN-7 — ngspice as a transient solver (2026-11-15)
+
+**The runner lives in `src/Engine/Transient/NgspiceRunner.cs` and knows no discovery.** The program comes from
+`NgspiceRunner.Locator`, which `src/Design`'s `NgspiceLocator` fills from `SolverDiscovery.Ngspice` as a module initializer, read
+at the moment of each run, so an install that has just finished or a path just set is used with no restart. `Override` replaces
+it for one async flow (a test's stub). No locator, or one that finds nothing, is the refusal `NotFound`; there is no native
+fallback anywhere in the path.
+
+**The scratch folder is `results/ngspice/<analysis>-<time>-<pid>/` beside the design** (`AnalysisSettings.OutputDirectory`, set by
+`CircuitEvaluation.RunFiles` for a transient and for a sweep that wraps one), holding the deck, `names.txt`, `ngspice.log` and
+`out.raw`. Without a design folder it is the system temp folder.
+
+**Resampling is the native engine's own `Interpolate`** (made `internal static`, as are `OutputGrid` and `RecordedNodes`), so
+the two solvers' results differ only by what each solved. `OP.V` is ngspice's first point. The native counters other than
+`Tran.AcceptedSteps` (ngspice's point count) are removed from an ngspice result rather than reported as zeros.
+
+**`ngspice -b -n -r out.raw deck.cir`.** `-n` keeps a user's `.spiceinit` out of the run. ngspice writes "Note: No compatibility
+mode selected!" to stdout on every run; only stderr is relayed as notes, prefixed `ngspice <version>:`, and the whole output is in
+`ngspice.log`. Cancelling polls `RunControl` every 50 ms and kills the process tree; a `ProcessExit` hook kills it if circuitRF
+exits first.
+
+**`.options INTERP` is broken in ngspice 47** — its rawfile repeats the header (variable list and `Values:`) inside the data and
+states one point fewer than the grid has; binary output is then unreadable garbage. Nothing in circuitRF uses INTERP. The
+references in `testdata/transient/ngspice/` are put on the grid with `linearize` in a control block the generator adds.
+
+**Measured against ngspice 47, worst |native − ngspice| over the grid as a fraction of the swing:** RC 2.5e-6, RLC 3.4e-5,
+rectifier 1.0e-4, buck 1.2e-3, lossless line 1.7e-2 (ngspice's points straddle the delayed edge's corners and `linearize` joins
+them straight), MOS ring 1.3e-4 over 8 periods (first point skipped: circuitRF reports the zero state at t = 0 under
+InitialState=zero, ngspice's first `uic` point already has the sources applied). Live RC with RelTol 1e-5: ngspice 3.0e-6 V from
+the closed form and 1.3e-6 V from the native run.
+
+## brief TRN-8 — transient-assisted harmonic balance and oscillator start-up (2026-11-15)
+
+- **Every BJT failed in the native transient at t = 0.** The interface Newton (`TransientNewtonPath.Interface`, the `Auto`
+  choice up to 32 interface ports) condenses the linear partition G + αC onto the interface, and a BJT's internal collector,
+  base and emitter nodes (joined to its terminals by its own ohmic ports, so present with the default parasitics) carry
+  nothing in the linear partition but gmin. The condensed impedance is a teraohm and Newton never converges, even for a
+  resistor-biased transistor with no drive ("the step fell below 5E-22 s at t = 0"). TRN-1..7's references hold no BJT. `Auto`
+  now takes the full path when an interface node has no conductance above 1000·gmin and no capacitance
+  (`TransientEngine.LinearlyTouched`). A forced `NewtonPath=Interface` still fails there.
+- **Harmonic balance's line search converges hard-driven stages from DC.** A class-E stage on `VSwitch` converges from DC in
+  3 iterations at any switch steepness: a switch whose control is an ideal source is a linear time-varying conductance, so the
+  problem is linear in the unknowns. A built-in FET law driven to 42 dBm still converges from DC (30-38 iterations); only with
+  a gate diode and a body diode does it take 29 at 30 dBm. Gate 1 therefore states an iteration budget (`MaxIter=20`) as
+  `HbDriveSteppingTests` does: the DC start fails within it, the seed converges in 8, the drive ladder in 82 over 11 rungs, and
+  the seeded and drive-stepped solutions agree to 7e-12 of each node's largest harmonic.
+- **Fast bias trades seed accuracy for settling time.** Scaled to a reactance ratio of 20 (just over the threshold), a coupling
+  capacitor's reactance is 5 % of the impedance it sees and the seed is a few per cent off at the fundamental: on the class-E
+  bench 26 Newton iterations from it, against 12 with no scaling. At 50 the biased-PA gate (10 µH, 1 µF at 2 GHz) settles in
+  121 periods with 5 iterations from it (20: 50 periods, 7 iterations); without scaling it is still 5 % apart after 200.
+  `HbTransientSeed.ScaledRatio = 50`.
+- **Consecutive-period agreement alone passes a drifting bias.** A 1 µF block charging through 50 Ω changes by microvolts per
+  carrier period and passes a 1e-3 per-period test long before it has settled. The settle test extrapolates: the last change
+  over 1 − ρ, ρ the least-squares ratio of the last two period-to-period difference waveforms (`SettleMonitor`).
+- **A parametric divider for the divider gate.** `q = c2 v²` alone has a capacitance that goes negative below −CT/(2 c2), where
+  the transient stops (the charge has a turning point); a cosine pump switched on at t = 0 rings the tank there within a
+  nanosecond. The gate's divider starts the pump at zero (`Phase=-90`) and limits the half-frequency with a cubic charge term
+  (`c3 > c2²/(3 CT)` keeps the capacitance positive), not a cubic loss, which also loads the pump. From DC, harmonic balance on
+  the half-frequency grid stays on the undivided solution (|V1| 6e-12): the odd harmonics' residual is zero there and Newton
+  never leaves it. From the seed, |V1| = 3.6224 V; a 100 ns native transient gives 3.6171 V.
+- **The shipped VCO without Fguess** (Receiver Noise ▸ 7 VCO Phase Noise): the seed settles in 12 cycles with Cb scaled ×0.004,
+  0.03 % off in frequency and 3 % in amplitude, and the search finishes in 3 Newton steps (6 from Fguess) at the same
+  oscillation to 7e-12 in frequency and 3e-10 in amplitude.
+- **An idle OscProbe is no longer refused in transient**: it is a short or an open, as in every analysis but the oscillator's,
+  and the oscillator's seed runs with it in place.
+
+## brief PCH-12 — findings from building the three Propagation Channel examples
+
+- **A channel into an array crashed every envelope run with `Noise=yes`** (IndexOutOfRange in `EnvelopeNoise.Add`). Such a
+  channel declares no noise source (it has no receive pin to be thermal at `RxTant`) and reports itself `Passive`, so
+  `SParameterNoise` classed it thermal on its stamp: noise injected on both arrays' element nodes, the ray unknowns and the
+  absent pin's placeholder node (1073741822), which ran past the right-hand side. It is now noiseless by definition
+  (`IsNoiselessByDefinition`, `PropagationChannelModel { RxPin: < 0 }`): the channel adds no noise and the array's is its
+  elements' own (PAA-7), as the design note says.
+- **An envelope run's cost with many nonlinear devices is quadratic in the interface nodes.** `HbNewton.RunDevicePass`
+  allocates and FFTs dense `[N, N, grid]` Jacobian arrays over every interface node for every device pass, though each device
+  touches only its own ports. 256 nonlinear element amplifiers (N ≈ 512) cost ~120 ms a step: one drop of two 60 kHz NR
+  symbols (1,250 steps) ran over ten minutes; with the elements linear and one nonlinear pre-driver, ~4.5 s a drop of four
+  symbols. Not changed here (it is HB's assembly too); the *mmWave Array Link* example keeps its element amplifiers linear and
+  says so. A sparse per-device assembly is the fix.
+- **A `.cnl` Amp with no `IP3` is nonlinear** (the 40 dBm default); `IP3=200` is exactly linear. A "linear" receive cell
+  written without it kept a receive array off the fast path.
+- **Reuse across drops does not apply with `Noise=yes`**: each drop solved the transmit side again in all three examples
+  (stated in their READMEs and the user page).
+- `link:<ch>:Drift0_Hzps` is written beside `Doppler0_Hz`: the common Doppler's rate the channel already applied and named only
+  in its note (−991 Hz/s for the LEO pass).
+
+## brief TRN-9 — fast bias scales only beyond a ratio of 50, which three descriptions did not say
+
+`HbTransientSeed.FastBiasPlan` scales a choke or block only when its reactance ratio exceeds `ScaledRatio` (50); one between
+`ChokeRatio` (10) and 50 is left alone, since scaling it to 50 would slow it. The file header still said "the ratio is 20",
+`ScaledRatio`'s summary "twice ChokeRatio", the `SeedFastBias` key's reference summary "to 20x", and the Simulations page "more
+than 10 times … scaled to 50 times". All four now say 50 and why. No behaviour changed. Checked on the class-E example: its
+100 nH drain choke is left alone, a 10 µH one is scaled ×0.0149 and named.
+
+## The SDD example's bias loop: two DC defects in HB and DC, and one open convergence problem
+
+Found building *Symbolically Defined Device (SDD)*'s bias-loop bench (an SDD that reads the drain supply's current through
+`C[1]` and feeds the FET's gate through a choke).
+
+- **HB decoupled two interface nodes an ideal inductor joins.** At DC they are one node, so Z_NN(0) is rank-deficient with
+  no zero diagonal; `HbLinearExtractor.ExtractDC` recognised only a zero diagonal (a node pinned by a source) as singular and
+  inverted the rest, and the Gauss-Jordan pass left the two nodes decoupled: −2 V and 0 V where DC has both at −2 V, a
+  silent wrong answer. `RankDeficientAt` now finds the rank deficiency and takes the inductance-regularization path. When the
+  pair has no DC path to ground but gmin, Z_NN(0) is ~1e12 Ω and the 1 µΩ is lost in double precision, so the matrix stays
+  singular; `ForcedDc` then takes Y_NN(0) and I_src(0) with every interface node held by an ideal source (Y ~1e6 S between
+  the two). Used only when Z_NN(0) is still rank-deficient after regularization; every other circuit is untouched (1,007
+  HB/DC/SDD/loadpull/hero tests unchanged). Gate: `HarmonicBalance/HbInterfaceShortTests` (both cases against DC).
+- **DC left a weighted term's control-current derivative out of its Jacobian.** `NonlinearDcEngine` stamped a `w ≥ 2` term's
+  value and voltage derivatives but not `JacCtrl` (∂I[p,w]/∂_cn), so the loop written on a low-pass weight (`H[2]` = 1 at DC)
+  did not converge where the same loop on `w = 0` did. Gate: `SddWeightedControlDcTests`.
+- **Closed-loop HB of that loop did not converge from a cold start** (loop gain 50 or more), with or without a bleed resistor
+  on the bias node, though continuation from a small loop gain found the solution and DC converged. **Resolved** by
+  brief-hb-control-loop-cold-start: the line search, not the Jacobian (next section).
+- A DC solve with an SDD drain current independent of Vds (a pure current source behind a resistor) and a control-current loop
+  did not move from its zero start in 1,500 iterations; with a Vds dependence it converges. Recorded, not investigated.
+
+## A control-current loop's HB from a cold start: the line search vetoed it, the Jacobian was right (brief-hb-control-loop-cold-start)
+
+- **The FD oracle found no Jacobian error.** At the DC seed and at the warm-started solution of the SDD example's bias loop
+  (Kloop 200, 10 dBm) the oracle's relative metric read 4e-2 and 2.6e-2, every worst entry in the bias node's DC row against
+  the drain's harmonics. Swept over its step, that error grows as 1/ε (3e-3 at ε = 1e-5, 4e-2 at 1e-6, 3.6e-1 at 1e-7): it is
+  roundoff. The row holds the ~1e6 S `ForcedDc` puts between `vg` and `g`, so its F values are millions of amperes and a central
+  difference resolves its 0.2-sized entries to ~1e-3 at best. Against the largest entry of its own row
+  (`JacobianComparisonResult.MaxRowScaledError`, added) the analytic Jacobian agrees to 4e-7 at the seed and 5e-7 at the
+  solution; with `J_cc` switched off the same metric reads 1.0. The relative metric's floor (1e-7 of the whole matrix's largest
+  entry) cannot see this: the floor is 0.1 here, and the entries sit just above it.
+- **The cause was the line search's norm.** The bias node is held through Rc = 1 mΩ and the loop multiplies the drain current
+  into it by Kloop, so the node's row of F reads thousands of amperes per volt of error. The first Newton step from the DC
+  seed raises the RF swing, the swing raises the average drain current by rectification, and that row's residual rises by
+  hundreds of amperes; judged by ‖F‖₂ in amperes the line search cut λ to 1/128–1/256 and held it there for 100 iterations.
+  At zero drive the same seed converges in two full steps at any loop gain, which is what pointed away from the Jacobian.
+  Judged by the self-admittance-scaled norm (MC-25's), Rc = 1 mΩ at 10 dBm and 200 V/A converges in 7 iterations; Rc = 1 Ω
+  took 25 under the plain norm and 6 under the scaled one.
+- **The fix: a stalled control-current solve is solved again judging either norm** (`HbNewton.Solve`, `ScaledOrPlain`).
+  Only for a solve with control currents, and only once the usual one stalls: 5 line searches running that each cut λ to
+  1/32 or less. Waiting for the usual solve to fail first cost 1 to 1.3 s a point on the example's drive sweep, every point from
+  10 to 20 dBm warm-started or not (its 100 iterations each evaluated 9 trials); a stall test on fully rejected searches alone
+  missed 10 dBm at 50 V/A, which crawled at λ 1/64 to 1/128 and never stalled. When the retry fails too, the usual solve runs
+  again from the same start with nothing cut short. Circuits without control currents are untouched by construction; a
+  control-current circuit is changed only if its usual solve crawls for 5 iterations running (at 30 dBm the bias loop did, and
+  converged anyway in 45 to 80; it now converges in 17 to 21 to the same answer).
+- **Cold against warm:** Kloop 50, 200 and 1,000 at 10, 20 and 30 dBm all converge from cold in 10 to 21 iterations and equal
+  the solution reached by raising Kloop from 0 to within 2.1e-5 V (Kloop 1,000 at 20 dBm; 4e-12 to 2.5e-7 V elsewhere).
+- **R-hbcl-3, a failed point is NaN.** An HB point inside a parametric sweep that did not converge keeps `Converged` 0, its
+  `Residual`, its tone frequencies and its seed cubes; every other cube is NaN (`ParametricSweepEngine.UnconvergedHbPoint`), so a
+  measurement reads NaN there. The loadpull engine leaves a failed step's spectra out and its readers select converged steps
+  by its `Converged` cube; an HB sweep's measurements read the spectra directly, so the spectra carry it. One existing test read
+  numbers at such a point (`HbLinearNodeTests.T5_Sweep_FullNodes`, a point refused as a vacuous tolerance: 1e-4 A against an
+  RF drive of 1.6e-11 A through a 1 H choke, returning its DC seed); it now checks the converged point and that the refused one
+  reads NaN.
+- **The example's bias bench** gained its HB drive sweep (10 to 30 dBm into bench 5's maximum-power load, loop open and
+  closed): 22 points, 1.2 s from the CLI, every one converged; 7.3 s before the stall test.
+
+## TRN series review (2026-11-16) — what the review of TRN-1…9 found in the engine and fixed
+
+- **gear2 reused nothing and under-estimated its error after a rejection.** The step ratio rho = h/h2 was rebuilt from
+  accumulated times, a few ulps off the ladder's power of two, so a0 (the stage cache's key) missed and factored afresh every
+  few steps; rho is now snapped to its power of two. The corrector's error constant was 2/9 at every ratio, which holds only for
+  equal steps: (1+rho)^2/(6 rho (1+2 rho)) is 0.375 at rho = 0.5 and 0.694 at 0.25, exactly the steps that follow a rejection.
+- **A switch with Hyst could change state at t = 0+ with nothing changing.** The operating point is solved with the switch off
+  (its window shifted Hyst/2); BeginTransient then read the UNSHIFTED u >= 0.5, a third rule. It now applies AcceptStep's rule
+  under the operating point's window, and every transient device's cached evaluation is cleared after BeginTransient.
+- **Transient-assisted HB:** a fallback seed the transient cannot run (an element it does not step, a failed operating point)
+  keeps the DC start's best-available result with a note instead of failing the run (and, under a sweep, the sweep); the
+  Fguess-free start-up ranked crossings by |W| AT the crossing, where every one scores -1, so the first won — it now uses the
+  bracket's own samples; a series OscProbe's monitor compared its loop current in amperes with 1 % of the kick in volts, so a
+  low-current oscillator was refused as never starting — the kick is carried over through |Z| at the time scale, floored at
+  50 ohm.
+- **SaveSteps under a parametric sweep** failed the whole sweep after its last point (each point accepts a different number of
+  steps, so Steps.* cannot stack); dropped there with a note.
+- **Step longer than the record, negative Start** are refused by Resolve (and therefore by check, which now runs Resolve:
+  check.tran.keys); they gave a two-point grid, or were clamped, silently.
+- **ngspice:** a rawfile ending short of Stop is refused rather than padded flat to Stop.
+- **Lines and fits:** an SnP with no point in (0, f_max] is refused (an order-1 fit matched a line extrapolated from two
+  points outside the band and was accepted); a tone termination past 128 bands is refused (a 10 MHz IF beside a 2 GHz LO was
+  2,000 placed resonators and an O(K^4) passivity step with nothing checking Stop).
+- **Envelope baseband line delay** (a TRN-4b regression): the baseband took the phase delay at 1 kHz, where the causal
+  conductor loss's phase over omega grows as f^-1/2 — a lossy microstrip's baseband delay read 3-4x long. It is taken across
+  the step's band now; a lossless line is unchanged.
+- **Left as found, for a decision:** HbEngine takes no RunControl, so a transient seed cannot be stopped; an oscillator sweep
+  re-runs the seed at every point; the step-floor stop discards the run and names no net; OP.V under ngspice with Start > 0 is
+  the state at Start.
+
+## PCH review (2026-11-16) — the envelope channel, drops, the receive collapse, beam selection
+
+- **The receive collapse was wrong with elements Off.** The element side closes as a = Γ_ch·D·b, so (I − Γ_ch·S·D)·b = c and
+  G = S12·(I − Γ_ch·D·Sᵀ)⁻¹·t: for the reciprocal array, M⁻¹·t, not M⁻ᵀ·t. With D = I they agree, which is why the 8b gates held.
+  Gate: `ChannelArrayEndTests.Gate8b1_SParameters_WithElementsOff_…` (fails on the old form). The collapse key now carries the
+  Off set (ArrayKey leaves it out), and both collapse caches clear past 512 entries.
+- **Drop reuse replayed a relay's second hop.** Every channel was recorded and every recording replayed, so a channel transmitting
+  from the receive side heard the recording drop's relay output. `Partition.DrivenChannels` limits the replay to channels whose
+  transmit end is on the transmit side. A tone on the transmit side (an upconverter's LO) now refuses the reuse (the pruned run
+  lost the second fundamental); a faulted recording entry is dropped so the next drop records afresh rather than every drop of
+  that key failing; and a drop whose channel delay outlasts the recording's warm-up (`EnvelopeRunner.WarmCovers`) solves jointly.
+- **A second channel into a replaced receive array lost its contribution.** The replacement now happens only when one channel
+  receives on the array; nor when its channel cells hold a line already swapped to its stepped delay form.
+- **An EM Field Data end crashed the envelope and `explain`** (`TxArray`/`RxArray` were a tuple with a null array): they are
+  null for a non-array end now, and the envelope's refusal comes before anything reads them.
+- **The channel report evaluated tap gains and H(f, t) at TimeOffset + t, without the run's Start** (the record's axis is
+  0-based; the channel stepped from Start). `EnvelopeSpan.OffsetS` carries it.
+- **Beam bound:** a non-steered end kept unit-modulus phases, losing its taper; it keeps its weights now. **The kept beam's key**
+  timestamps a `path#port` pattern by its path.
+- **Left as found, for a decision:** SC/DBPSK BERest averages BER over a 65-symbol SINR estimate and is biased high near
+  BER 1e-3…1e-5 (×1.25 at 8 dB, ×4 at 12 dB Eb/N0 QPSK); pooling the SINR removes it but stops BERest following fading in the
+  window. The genie equalizer with a channel skips the offset removal, so a transmitter's own CFO is not taken out. Drop reuse
+  is exact only with a linear receive side (the joint step's iteration history differs). Recordings are kept for every key for
+  the whole sweep. `outage_over` drops NaN drops from both counts. `CollapsedElements`, `ReplacedParts`, `LastInstanceCost`
+  are process-wide counters, so the 8b envelope test can read another class's run under load (`PatternEvaluations`, counted on
+  the caller's thread, is per thread now, which settled `ReceiveArrayFeedTests.Gate3_…`).
+
+## brief MTR-1…3 — a MOD_Source in native transient, kept at baseband (2026-11-16)
+
+- **The drive** is a column of its own at Fc, taken by difference like a shaped tone. At each step it is multiplied by
+  g(t)·b(RecordStart + t)·e^(jωt), with b read from a table that `ModulatedSignal.CompositeWindow` builds once (32 × the
+  record's widest excursion from Fc, cubic between points). On the gate bench (LTE 5 MHz at 1 GHz into 50 Ω, explicit
+  MaxStep = Step/5), the load voltage at RF rate equals ½·Re{Vs·b·e^(jωt)} to 1.5e-6 of Vs at RecordStart 0 and at 1 µs.
+- **Interpolated output points are not good enough for downconversion.** At the automatic step (20 a period), the
+  engine's quadratic interpolation between accepted steps is about 1e-3 of the carrier, and it lands in the envelopes.
+  Baseband storage therefore steps on a whole subdivision of its RF grid (4(K+1) points a carrier period, at least 20
+  steps a period of the highest frequency), so every grid point is an accepted step. With that, the harmonic-1 envelope
+  is ½·Vs·b to 8e-6 of Vs and harmonics 0, 2 and 3 are below 8e-6.
+- **A few µs of OFDM is not the record's unit mean.** Delivered power into the matched load was −2.05 dBm against
+  Pavg = 0 dBm over a 3 µs window, and it equals 10·log10(mean |b|²) over that window. A test comparing a short window's
+  power with Pavg is wrong, not the run.
+- **EVM needs whole symbols** (about 70 µs for LTE). At the stepping above that is several million steps, so EVM is not
+  in the routine gate. The envelope's own code reads it, and a window too short for a symbol is reported by that code.
+- **The Transient preset** now takes only a real `V` cube. A baseband result's `V` is the envelope's complex
+  [time, node, harmonic], and the envelope's displays read it.
+- **The HB and oscillator seeds** set PlayModulation = false: a MOD_Source there is its CW tone at Fc, the steady state
+  harmonic balance solves for.

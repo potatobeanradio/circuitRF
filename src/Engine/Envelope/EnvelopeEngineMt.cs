@@ -186,6 +186,8 @@ public sealed class EnvelopeEngineMt
         int[] toneMix = new int[T];
         for (int t = 0; t < T; t++) { var k = new int[T]; k[t] = 1; toneMix[t] = lat.IndexOf(k); }
 
+        // brief-pch-9 — a channel's beam, selected over the signal's band and taken into its arrays before anything is stamped
+        AntennaArray.BeamSelection.Apply(_nl, tones.Average(), sources.SelectMany(x => x.Signal.Carriers).Select(c => c.Spec.BandwidthHz).DefaultIfEmpty(0).Max(), setCarrier: true);
         // Noise (brief NZ-7), from every part's own stamp, before a line or an S-parameter block is replaced for the run.
         // A product at a negative frequency is stepped in the frame of |w|, so its noise is read there.
         var thermal = p.Noise ? EnvelopeNoise.Thermal(_nl, _settings, [.. wMix.Select(w => Math.Abs(w) / (2 * Math.PI))], h, p.Seed, tones.Average()) : null;
@@ -215,7 +217,7 @@ public sealed class EnvelopeEngineMt
         using var lines = EnvelopeLineDelay.Apply(_nl, [.. wMix.Select(w => Math.Abs(w) / (2 * Math.PI))], h, 0.5 * need);
         // brief-pch-6 — every Propagation Channel is its explicit, one-way coupling, each product in its |w| frame (EnvelopeChannel).
         foreach (var ec in _nl.Components) if (ec.Model is ICarrierContext carrierCtx) carrierCtx.SetCarrier(tones.Average());
-        using var channels = EnvelopeChannel.Apply(_nl, [.. wMix.Select(w => Math.Abs(w) / (2 * Math.PI))], h, i0, p.ChannelDrive, p.RecordChannelWaves);
+        using var channels = EnvelopeChannel.Apply(_nl, [.. wMix.Select(w => Math.Abs(w) / (2 * Math.PI))], h, i0, p.ChannelDrive, p.RecordChannelWaves, p.Noise);
         Action<int, Complex[]>? delayedMain = lines.Any || channels.Any ? (m, b) => { if (lines.Any) lines.AddMain(m, b); channels.AddMain(m, b); } : null;
         using var snpFit = EnvelopeSnpFit.Apply(_nl, stampHz.DefaultIfEmpty(0).Max() + 0.5 * rate, stampHz, 0.5 * rate);
         using var baseband = EnvelopeBaseband.Apply(_nl, Math.PI * need);    // as in EnvelopeEngine
@@ -245,24 +247,16 @@ public sealed class EnvelopeEngineMt
             for (int m = 0; m < M; m++)
             {
                 double w = Math.Abs(wMix[m]);
-                double dlt = Math.Max(1e-6 * Math.Max(w, 2 * Math.PI * 1e6), 2 * Math.PI * 1.0);
+                double dlt = AffineStamp.Delta(w);
                 CompressedColumnStorage<Complex> A0, C;
                 baseband.Holding = m == 0;            // the whole baseband product, its right-hand side included
                 lines.Product = m;
                 channels.Product = m;
                 if (m == 0)
-                {
-                    var a1 = EnvelopeEngine.Stamp(extractor, mna, dlt);
-                    var a2 = EnvelopeEngine.Stamp(extractor, mna, 2 * dlt);
-                    C = EnvelopeEngine.Combine(a2, a1, 1.0 / new Complex(0, dlt), -1.0 / new Complex(0, dlt));
-                    A0 = EnvelopeEngine.Combine(a1, C, 1.0, -new Complex(0, dlt));
-                }
+                    (A0, C) = AffineStamp.Baseband(extractor, mna, dlt);
                 else
                 {
-                    var ap = EnvelopeEngine.Stamp(extractor, mna, w + dlt);
-                    var am = EnvelopeEngine.Stamp(extractor, mna, w - dlt);
-                    C = EnvelopeEngine.Combine(ap, am, 1.0 / new Complex(0, 2 * dlt), -1.0 / new Complex(0, 2 * dlt));
-                    A0 = EnvelopeEngine.Stamp(extractor, mna, w);
+                    (A0, C) = AffineStamp.AtHarmonic(extractor, mna, w, dlt);
                     // the band-edge tangent check the single-fundamental engine makes (affine models: ~round-off)
                     if (w - Math.PI * rate > 0)
                     {

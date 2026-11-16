@@ -1,3 +1,4 @@
+using CircuitRF.Core.Devices;
 namespace CircuitRF.Core.Netlist.Spice;
 
 /// <summary>
@@ -478,6 +479,7 @@ public static class SpiceModelCardTranslation
             "RES" or "R"        => Resistor(card),
             "CAP" or "C"        => Passive(card, "C", CapacitorMap, "capacitance"),
             "IND" or "L"        => Passive(card, "L", InductorMap, "inductance"),
+            "VSWITCH"           => VSwitch(card),
             _                   => new ModelCardTranslation(card, null, RefusalFor(card, type)),
         };
     }
@@ -490,7 +492,30 @@ public static class SpiceModelCardTranslation
         modelType?.Trim().ToUpperInvariant() is
             "D" or "NPN" or "PNP" or "NMF" or "PMF" or "NJF" or "PJF"
             or "NMOS" or "PMOS" or "VDMOS" or "BEAD"
-            or "RES" or "R" or "CAP" or "C" or "IND" or "L";
+            or "RES" or "R" or "CAP" or "C" or "IND" or "L" or "VSWITCH";
+
+    /// <summary>
+    /// A VSWITCH card (brief TRN-3 R-trn3-5): its on and off resistances and the two control voltages it moves between are
+    /// circuitRF's VSwitch's own four. Every one is written, at the dialect's default where the card is silent (RON 1, ROFF 1e6,
+    /// VON 1, VOFF 0) — VSwitch's own Roff default is 1e9, so leaving one out would change the part. A parameter the card
+    /// states beyond those four refuses the card, by that parameter's name.
+    /// </summary>
+    private static ModelCardTranslation VSwitch(SpiceModelCard card)
+    {
+        string[] known = ["RON", "ROFF", "VON", "VOFF"];
+        foreach (var key in card.Parameters.Keys)
+            if (!known.Contains(key.ToUpperInvariant()))
+                return new ModelCardTranslation(card, null,
+                    $"'{card.Name}' is a VSWITCH card stating {key.ToUpperInvariant()}, which circuitRF's VSwitch has no parameter "
+                    + "for: it takes RON, ROFF, VON and VOFF only.");
+        var parameters = new List<ModelCardParameter>();
+        foreach (var (target, source, def) in new[] { ("Ron", "RON", "1"), ("Roff", "ROFF", "1e6"), ("Von", "VON", "1"), ("Voff", "VOFF", "0") })
+            parameters.Add(new ModelCardParameter(target, Find(card, [source]).Value ?? def, source));
+        if (parameters[2].Expression == parameters[3].Expression)
+            return new ModelCardTranslation(card, null,
+                $"'{card.Name}' is a VSWITCH card whose VON equals its VOFF: a switch with no transition, which circuitRF's VSwitch refuses.");
+        return new ModelCardTranslation(card, new ModelCardBinding(VSwitchModel.TypeName, parameters, [], []), null);
+    }
 
     /// <summary>
     /// The drain and source lead resistances a MESFET card states, which circuitRF's FET has no
@@ -1112,9 +1137,14 @@ public static class SpiceModelCardTranslation
             + "model through the VerilogA component, which takes its parameters from the model file "
             + "rather than from a card.",
 
-        "SW" or "CSW" or "VSWITCH" or "ISWITCH" =>
-            $"'{card.Name}' is a {type} card (a controlled switch). circuitRF's Switch component is "
-            + "an ideal RF block set by its own parameters, not a card-driven behavioural switch.",
+        "SW" =>
+            $"'{card.Name}' is an SW card: a switch that changes abruptly at VT, with hysteresis VH. circuitRF's VSwitch moves "
+            + "smoothly between two control voltages and cannot express an abrupt threshold; write the card as VSWITCH with "
+            + "VON and VOFF either side of VT.",
+
+        "CSW" or "ISWITCH" =>
+            $"'{card.Name}' is a {type} card (a current-controlled switch), which circuitRF does not have; its VSwitch is "
+            + "voltage-controlled.",
 
         "" =>
             $"'{card.Name}' names no model type, so there is nothing to identify it by.",

@@ -337,12 +337,18 @@ public partial class WorkspaceWindow : Window
             }
 
             menu.Items.Clear();
-            foreach (var example in WorkspaceViewModel.Examples)
-                menu.Items.Add(new NativeMenuItem(example.Title)
-                {
-                    Command          = _vm.OpenExampleCommand,
-                    CommandParameter = example.Folder,
-                });
+            // One submenu per topic, as the in-window mirror builds it (ExampleWorkspaces.Grouped).
+            foreach (var (title, examples) in ExampleWorkspaces.Grouped(WorkspaceViewModel.Examples))
+            {
+                var topic = new NativeMenu();
+                foreach (var example in examples)
+                    topic.Items.Add(new NativeMenuItem(example.MenuText)
+                    {
+                        Command          = _vm.OpenExampleCommand,
+                        CommandParameter = example.Folder,
+                    });
+                menu.Items.Add(new NativeMenuItem(title) { Menu = topic });
+            }
             return;
         }
     }

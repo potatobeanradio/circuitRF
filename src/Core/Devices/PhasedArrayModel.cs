@@ -58,6 +58,9 @@ public sealed class PhasedArrayModel : ComponentModel, IReportsWarnings
     /// <summary>R-paa4-5 — what was placed per element, for the run's notes and explain; null in Elements mode.</summary>
     public PhasedArrayChannels? Channels { get; internal set; }
 
+    /// <summary>brief-pch-9 R-pch9-5 — Feed mode: what a channel's beam selection may set on this array (null in Elements mode).</summary>
+    public ArraySteering? Steering { get; internal set; }
+
     /// <summary>PAA-1's decision 4: a pitch further than this many free-space wavelengths from the record's is warned about (D5).</summary>
     public const double PitchWarningWavelengths = 0.02;
 

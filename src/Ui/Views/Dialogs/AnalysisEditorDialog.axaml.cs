@@ -36,6 +36,7 @@ public partial class AnalysisEditorDialog : Window
         EnvBodyViewControl.DataContext = vm.EnvBody;
         TrlBodyViewControl.DataContext = vm.TrlBody;
         OscBodyViewControl.DataContext = vm.OscBody;
+        TranBodyViewControl.DataContext = vm.TranBody;
 
         var heading = isEdit ? "Edit Analysis" : "Add Analysis";
         DialogTitle.Text = heading;
@@ -51,6 +52,7 @@ public partial class AnalysisEditorDialog : Window
         EnvRadio.IsChecked = vm.IsEnv;
         TrlRadio.IsChecked = vm.IsTrl;
         OscRadio.IsChecked = vm.IsOsc;
+        TranRadio.IsChecked = vm.IsTran;
         NameBox.Text           = vm.Name;
         EnabledCheck.IsChecked = vm.Enabled;
 
@@ -109,6 +111,7 @@ public partial class AnalysisEditorDialog : Window
             nameof(EnvRadio) => AnalysisEditorViewModel.AnalysisKind.ENV,
             nameof(TrlRadio) => AnalysisEditorViewModel.AnalysisKind.TRL,
             nameof(OscRadio) => AnalysisEditorViewModel.AnalysisKind.OSC,
+            nameof(TranRadio) => AnalysisEditorViewModel.AnalysisKind.TRAN,
             _               => Vm.Type,
         };
         Vm.Type = kind;
@@ -126,6 +129,7 @@ public partial class AnalysisEditorDialog : Window
         EnvBodyPanel.IsVisible = kind == AnalysisEditorViewModel.AnalysisKind.ENV;
         TrlBodyPanel.IsVisible = kind == AnalysisEditorViewModel.AnalysisKind.TRL;
         OscBodyPanel.IsVisible = kind == AnalysisEditorViewModel.AnalysisKind.OSC;
+        TranBodyPanel.IsVisible = kind == AnalysisEditorViewModel.AnalysisKind.TRAN;
         UpdateSimulateBy();
         if (kind == AnalysisEditorViewModel.AnalysisKind.Fields) Vm.FieldsBody.PickBlock();
     }

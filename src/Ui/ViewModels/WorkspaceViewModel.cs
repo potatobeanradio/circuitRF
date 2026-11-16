@@ -4265,6 +4265,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 await RefreshOpenDataDisplaysAsync(written);
                 if (written.Count > 0)
                     await AutoOpenOrCreateDataDisplayAsync(baseDir, schematicKey, written[0]);
+                // brief TRN-5 R-trn5-4 — a transient run offers its preset: waveforms, the output's spectrum, the measures.
+                if (written.Count > 0 && result.Results.FirstOrDefault(ar => ar.Data.Contains("Tran.AcceptedSteps")) is { } tran)
+                {
+                    string resultPath = written[0];
+                    Messages.PostAction(MessageLevel.Info,
+                        $"Transient '{tran.Name}': the waveforms, the output's spectrum over its last period and the measures, as plots.",
+                        "Open Transient plots", () => OpenTransientAsync(resultPath), resultPath);
+                }
                 break;
         }
 
@@ -4285,7 +4293,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // p.Stage (the current analysis name) is deliberately NOT shown: on a multi-analysis run it
         // changes mid-row, which is exactly the kind of width change this split exists to keep off
         // the bar's left. It still drives an immediate progress report at each analysis boundary.
-        if (p.Total > 0)
+        //
+        // brief-pch-9 — a COUNTED stage inside the run (a Propagation Channel's beam selection: minutes on a 64 × 64 array, before the
+        // analysis's first unit) is shown while it runs, its name beside the bench and its own counter on the bar, or the row would sit at
+        // 0 / 1 with the bar unmoved. The stage ends by restoring the analysis's own, uncounted, and the row returns to the run's counter.
+        if (p.StageTotal > 0)
+            live.Update($"Running '{benchName}' · {p.Stage}",
+                        $"{FormatCounter(p.StageCompleted, p.StageTotal)}{(p.StageUnit.Length > 0 ? " " + p.StageUnit : "")}",
+                        100.0 * p.StageCompleted / p.StageTotal);
+        else if (p.Total > 0)
             live.Update($"Running '{benchName}'",
                         FormatCounter(p.Completed, p.Total),
                         100.0 * p.Completed / p.Total);
@@ -10880,6 +10896,38 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         WireDataDisplayTreeDirty(doc);
         _factory.OpenDocument(doc);
         if (vm.Window.DataDisplay is { } dd) await dd.AddSignalQualityAsync();
+    }
+
+    /// <summary>
+    /// brief TRN-5 R-trn5-3 — a new Data Display on the result <paramref name="path"/>, holding its transient run's waveforms, the
+    /// output's spectrum and the measures: one action from the result's context menu, and offered when a transient run ends. A
+    /// result with no transient run is refused by name and opens nothing.
+    /// </summary>
+    public async Task OpenTransientAsync(string path)
+    {
+        if (!File.Exists(path))
+        {
+            Messages.Error($"'{path}' is no longer there.");
+            return;
+        }
+        var vm  = new DataDisplayDocumentViewModel();
+        vm.Window.GetResultsRootAction = GetResultsRoot;
+        var lib = vm.Window.DataSourceLibrary;
+        lib.RefreshAvailableDataSources();
+        await lib.SelectDataSourceAsync(CircuitRF.Ui.DataDisplay.ViewModels.DataDisplayViewModel.ComputeSourceKey(path, lib));
+        if (!TransientPreset.Available(lib.SelectedEntry?.Data))
+        {
+            Messages.Warning($"{Path.GetFileName(path)} holds no transient run, so there are no waveforms to draw.", path);
+            return;
+        }
+
+        var doc = new DataDisplayDocument(NextDataDisplayTitle(), vm);
+        _scratchDataDisplays.Add(doc);
+        vm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
+        WireDataDisplayLibraryEvents(vm);
+        WireDataDisplayTreeDirty(doc);
+        _factory.OpenDocument(doc);
+        if (vm.Window.DataDisplay is { } dd) await dd.AddTransientAsync();
     }
 
     /// <summary>Opens a <c>.cdd</c> as a Data Display tab, as double-clicking it in the Workspace does — the S-Parameter

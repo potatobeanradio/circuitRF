@@ -1,0 +1,6 @@
+; brief TRN-7 R-trn7-9 — a series RLC rung by a step (TRN-1's ring), against ngspice
+V_Pulse:VS in 0 V1=0 V2=1 Delay=10n Rise=1n Fall=1n Width=10u Period=40u
+R:R1 in a R=5
+L:L1 a b L=1 uH
+C:C1 b 0 C=1 nF
+analysis TR1 type=tran Stop=2u Step=1n

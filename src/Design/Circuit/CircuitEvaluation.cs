@@ -444,6 +444,9 @@ public static class CircuitEvaluation
                                          IReadOnlyList<string> expressions, Action<string>? breadcrumb, FieldsRun fieldsRun)
     {
         using var disposeFields = fieldsRun;
+        // brief-pch-9 — a channel's beam is selected at the start of an analysis, deep inside its engine: it reports to this run's progress
+        // and stops on its Stop (BeamSelection.Use)
+        using var beamControl = CircuitRF.Engine.AntennaArray.BeamSelection.Use(control);
         var results     = new List<AnalysisResult>();
         var fields      = fieldsRun.Artifacts;
         var notes       = new List<string>();
@@ -679,6 +682,10 @@ public static class CircuitEvaluation
                         + " us, x" + CircuitRF.Engine.Envelope.EnvelopeRunner.Oversampling(plan, nl) + " oversampling, segments " + segs, 1, false);
             }
 
+            case TransientAnalysis tra:
+                return (CircuitRF.Engine.Transient.TransientRunner.Describe(
+                            CircuitRF.Engine.Transient.TransientRunner.Resolve(tra, nl.ResolvedGlobals)), 1, false);
+
             case HarmonicBalanceAnalysis hba:
             {
                 var p     = HbEngine.Resolve(hba, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
@@ -810,6 +817,21 @@ public static class CircuitEvaluation
         return false;
     }
 
+    /// <summary>brief TRN-7 R-trn7-4 — <paramref name="settings"/> with the run's own files placed: an ngspice deck goes under the
+    /// design's results folder, its header naming the bench and circuitRF's version.</summary>
+    private static AnalysisSettings RunFiles(AnalysisSettings settings, TestBench tb, string? baseDirectory)
+        => settings.WithRunFiles(baseDirectory is { Length: > 0 } ? CircuitRF.Design.Results.ResultsWriter.ResultsDirectory(baseDirectory) : null,
+                                 tb.Name, NgspiceLocator.ProgramVersion);
+
+    /// <summary>Whether a sweep runs a transient analysis at its points, however deeply nested.</summary>
+    private static bool HasTransient(ParametricSweepAnalysis psa, TestBench tb, int depth)
+        => depth < 16 && tb.Analyses.FirstOrDefault(a => a.Name == psa.InnerAnalysisName) switch
+        {
+            TransientAnalysis => true,
+            ParametricSweepAnalysis inner => HasTransient(inner, tb, depth + 1),
+            _ => false,
+        };
+
     private static DataSet? RunTypedAnalysis(
         Analysis          analysis,
         ElaboratedNetlist nl,
@@ -859,6 +881,15 @@ public static class CircuitEvaluation
                                                                     n => nl.AddWarningOnce("env-note:" + n, n));
             }
 
+            // brief-trn-1 — the native transient analysis (docs/design/transient.md)
+            case TransientAnalysis tra:
+            {
+                var p = CircuitRF.Engine.Transient.TransientRunner.Resolve(tra, nl.ResolvedGlobals);
+                var ds = CircuitRF.Engine.Transient.TransientRunner.Run(p, nl, RunFiles(loadpullSettings ?? AnalysisSettings.Default, tb, baseDirectory), control);
+                converged = true;
+                return ds;
+            }
+
             case HarmonicBalanceAnalysis hba:
             {
                 var p = HbEngine.Resolve(hba, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
@@ -903,7 +934,9 @@ public static class CircuitEvaluation
                     if (fields is not null)
                         fields.Metrics[resultName ?? swept.Name] = CircuitRF.Design.Em3d.FieldCosimulation.SweptMetrics(swept, psa);
                 }
-                return ParametricSweepEngine.Run(psa, lib, tb, loadpullSettings,
+                // brief TRN-7 — a sweep around an ngspice transient keeps each point's deck under the results folder
+                var sweepSettings = HasTransient(psa, tb, 0) ? RunFiles(loadpullSettings ?? AnalysisSettings.Default, tb, baseDirectory) : loadpullSettings;
+                return ParametricSweepEngine.Run(psa, lib, tb, sweepSettings,
                     baseDirectory: baseDirectory, control: control, diagnosticsInto: nl, runOtherInner: fieldsPoint);
             }
 

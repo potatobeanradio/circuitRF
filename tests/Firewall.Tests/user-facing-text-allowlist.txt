@@ -101,6 +101,8 @@ src/Core/Devices/External/VerilogACompiler.cs|The compiled-model cache directory
 src/Core/Devices/External/VerilogAFileResolver.cs|The model file '{modelFile}' does not exist. Point the component's model file at 
 src/Core/Devices/MatchModel.cs|Match: ladder element '{e.Name}' has the unusable value {e.Value}. 
 src/Core/Devices/Microstrip/KlopfensteinTaper.cs|Klopfenstein taper: GammaMax={gammaMax:G6} must be strictly less than 
+src/Core/Devices/Microstrip/LocalAdmittanceBlock.cs|A branch with no impedance of its own cannot be reduced in a local block.
+src/Core/Devices/MicrostripPlanModel.cs|An interdigitated section has an even number of strips, at least 4; {fingers} given.
 src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': '{path}' is a '{target.ComponentType}', which carries
 src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': inductor '{path1}' not found
 src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': inductor '{path2}' not found
@@ -324,6 +326,7 @@ src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's Pins names '
 src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's Pins.{pin.Name} is an object with Reference, Port or Ground.
 src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's Pins.{pin.Name} takes Reference (a pin name, Ground or Common), 
 src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's Pins.{pin.Name}.Reference '{rn}' is not a pin name, Ground or Common.
+src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's {key} '{name}' is not a stackup conductor's name.
 src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry's {key} is {string.Join(
 src/Design/Layout/Em/EmSetupPersistence.cs|ComponentPorts is \"*\" or a list of reference designators.
 src/Design/Thermal/ThermalFosterNetlist.cs|an empty network
@@ -1488,7 +1491,6 @@ src/Engine/Envelope/EnvelopeEngine.cs|envelope step {h:G4} s does not divide the
 src/Engine/Envelope/EnvelopeEngine.cs|envelope step {step} (t = {p.StartS + (step - nWarm) * h:G4} s) did not converge, even split into {MaxStepSplit} sub-steps
 src/Engine/Envelope/EnvelopeEngine.cs|envelope: singular port impedance matrix
 src/Engine/Envelope/EnvelopeEngine.cs|envelope: the harmonic-balance start point did not converge
-src/Engine/Envelope/EnvelopeEngine.cs|envelope: the linear network's size changes with frequency (a model adds unknowns only at some frequencies)
 src/Engine/Envelope/EnvelopeEngineMt.cs|envelope step {step} (t = {p.StartS + (step - nWarm) * h:G4} s) did not converge, even split into {EnvelopeEngine.MaxStepSplit} sub-steps
 src/Engine/Envelope/EnvelopeEngineMt.cs|envelope: mixing products {lat.Label(a)} and {lat.Label(b)} fall on the same frequency 
 src/Engine/Envelope/EnvelopeEngineMt.cs|envelope: the multi-tone harmonic-balance start point did not converge
@@ -1604,6 +1606,7 @@ src/Core/Elaboration/Elaborator.cs|'{childPath}' cannot be simulated by EM: {ans
 src/Core/Elaboration/Elaborator.cs|'{childPath}' sets {ov.Name}, which cell '{cell.Name}' declares both as a parameter and as a variable; 
 src/Core/Elaboration/Elaborator.cs|'{childPath}' sets {ov.Name}, which cell '{cell.Name}' neither declares as a parameter or variable nor reads.
 src/Core/Elaboration/Elaborator.cs|{who} is wired to {nets} net(s) and '{name}' holds {ports} port(s) ({string.Join(
+src/Core/Elaboration/Elaborator.cs|{inst.InstanceName}: Expr reads '{name}', whose value depends on time; a variable is resolved once, 
 src/Engine/Mom/PlanarGram.cs|Rooftops {bi} and {bj} share cells of three different sheet classes. A 
 
 src/Engine/Mom/EmProblem.cs|A material with a conductivity of {SigmaSm:G4} S/m has no complex permittivity until a 
@@ -1813,3 +1816,104 @@ src/RfCore/Signals/SignalEqualizer.cs|only an SC carrier is equalized here
 src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to an SC carrier
 src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a symbol rate: a number with sps, ksps or Msps
 src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a whole number
+src/Core/Devices/PhasedArrayFeedModel.cs|{from.Elements} weights for {Elements} elements.
+src/Core/Devices/WaveformSourceModel.cs|'{typeName}' is not a waveform source type.
+src/Core/Devices/WaveformSourceModel.cs|{TypeLabel}: {key} is not a finite number.
+src/Core/Devices/WaveformSourceModel.cs|{TypeLabel}: {key} must be a number, not '{Text(v)}'.
+src/Core/Devices/WaveformSourceModel.cs|{TypeLabel}: {key} must not be negative.
+src/Core/Devices/WaveformSourceModel.cs|{TypeName} takes {string.Join(
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: Delay2 must not be before Delay1.
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: Expr= is required, an expression in time and the globals.
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: Expr= must be a number, not {v.Kind}.
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: Expr=\"{text}\" does not parse: {ex.Message}
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: Points= and File= are both given; a PWL source takes one or the other.
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: Repeat=yes needs at least two points to repeat.
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: Rise + Width + Fall ({_rise + _width + _fall:G6} s) is longer than Period ({_period:G6} s).
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: Tau1 must be a positive time.
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: Tau2 must be a positive time.
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: give the waveform as Points=\"t v, t v, ...\" or File= (two columns, time and value).
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: its value at t = 0 is not a finite number; give Dc= the value other analyses use.
+src/Core/Devices/WaveformSourceModel.cs|{who}: '{Path.GetFileName(path)}' holds no points.
+src/Core/Devices/WaveformSourceModel.cs|{who}: File='{path}' does not exist.
+src/Core/Devices/WaveformSourceModel.cs|{who}: Points= pair {i + 1} ('{tok[2 * i]} {tok[2 * i + 1]}') is not two numbers.
+src/Core/Devices/WaveformSourceModel.cs|{who}: Points= takes time-value pairs; it has {tok.Length} number(s).
+src/Core/Devices/WaveformSourceModel.cs|{who}: line {lineNo} of '{Path.GetFileName(path)}' is not two numbers (time, value): '{line}'.
+src/Engine/Array/ArrayPattern.cs|The tables were built for another lattice.
+src/Core/Devices/VSwitchModel.cs|VSwitch takes {string.Join(
+src/Core/Devices/VSwitchModel.cs|VSwitch: Hyst must not be negative.
+src/Core/Devices/VSwitchModel.cs|VSwitch: Ron and Roff must be positive resistances.
+src/Core/Devices/VSwitchModel.cs|VSwitch: TransitionPoints must be at least 1.
+src/Core/Devices/VSwitchModel.cs|VSwitch: Von and Voff must differ — the switch moves between them, and a transition of no width is a step no analysis can resolve.
+src/Core/Devices/VSwitchModel.cs|VSwitch: {key} is not a finite number.
+src/Core/Devices/VSwitchModel.cs|VSwitch: {key} must be a number.
+src/Core/Expressions/Evaluator.Reductions.cs|outage_over(): the threshold must be a number, e.g. outage_over(x, -95).
+src/Core/Expressions/Evaluator.cs|{cl.Name}(): the channel and the quantity are both quoted, e.g. {cl.Name}(\"CH1\", \"Gain_dB\").
+
+# ── brief TRN-7: ngspice as a transient solver (2026-11-15) ─────────────────────────────────
+# The ngspice run's refusals are TransientRefusedException, as every other transient refusal is; the rawfile reader's and
+# the 7z reader's are format invariants of a file circuitRF did not write.
+src/Design/Em3d/Install/SevenZip.cs|the archive entry '{key}' would be written outside {root}
+src/Engine/AffineStamp.cs|the linear network's size changes with frequency (a model adds unknowns only at some frequencies)
+src/Engine/Envelope/EnvelopeChannel.cs|envelope: the receive array '{array.InstancePath}' left the fast path at {hz:G6} Hz: {why}
+src/Engine/Envelope/EnvelopeDropReuse.cs|envelope drop reuse: the replayed run has {nt} samples and its recording {joint.Time.Length}.
+src/Engine/Transient/NgspiceRunner.cs|it holds no transient plot
+src/Engine/Transient/NgspiceRunner.cs|ngspice at '{program}' could not be started: {ex.Message}
+src/Engine/Transient/NgspiceRunner.cs|the ngspice run was cancelled
+src/Engine/Transient/NgspiceRunner.cs|{who}: the SPICE dialect has no exact translation of {deck.Refusals.Count} element{(deck.Refusals.Count == 1 ? 
+src/Engine/Transient/NgspiceRunner.cs|{who}: the deck saves no current of {c.InstancePath}.
+src/Engine/Transient/NgspiceRunner.cs|{who}: the deck saves no voltage of net {r.name}.
+src/Engine/Transient/NgspiceRunner.cs|{who}: the ngspice solver needs the analysis directive.
+src/Engine/Transient/NgspiceRunner.cs|{who}: {tag} stopped with exit code {exit}: {Last()} (its deck and log: {dir})
+src/Engine/Transient/NgspiceRunner.cs|{who}: {tag} wrote no rawfile: {Last()} (its deck and log: {dir})
+src/Engine/Transient/NgspiceRunner.cs|{who}: {tag}'s rawfile could not be read: {ex.Message} (its deck and log: {dir})
+src/Engine/Transient/NgspiceRunner.cs|{who}: {tag}'s rawfile has no points: {last()}
+src/Engine/Transient/NgspiceRunner.cs|{who}: {tag}'s rawfile has no time vector: {last()}
+src/Engine/Transient/NgspiceRunner.cs|{who}: {tag}'s rawfile has no vector {deckVector} ({what}): {last()}
+src/RfCore/Spice/RawFileReader.cs|a complex rawfile value is not re,im: '{tok}'
+src/RfCore/Spice/RawFileReader.cs|a rawfile header line has no key: '{line}'
+src/RfCore/Spice/RawFileReader.cs|rawfile point {p} does not begin with its index (found '{tok}')
+src/RfCore/Spice/RawFileReader.cs|rawfile variable {k} is malformed: '{vline.Trim()}'
+src/RfCore/Spice/RawFileReader.cs|the rawfile ends inside a header
+src/RfCore/Spice/RawFileReader.cs|the rawfile ends inside its variable list
+src/RfCore/Spice/RawFileReader.cs|the rawfile holds no plot
+src/RfCore/Spice/RawFileReader.cs|the rawfile lists its variables before saying how many
+src/RfCore/Spice/RawFileReader.cs|the rawfile's binary data stops short: {nPoints} points of {nVars} variables need {need} bytes, {data.Length - pos} remain
+src/RfCore/Spice/RawFileReader.cs|the rawfile's header does not give its variables and points
+src/RfCore/Spice/RawFileReader.cs|the rawfile's values stop at point {p}
+# brief TRN-8 — the transient seed's key refusals and the incommensurate-tone refusal.
+src/Engine/HarmonicBalance/HbEngine.cs|HB: InitialGuess=transient needs one tone, or tones whose products fall on a common fundamental; {tones} have 
+src/Engine/HarmonicBalance/HbTransientSeed.cs|{who}: InitialGuess must be dc, transient or fallback, not '{initialGuess}'.
+src/Engine/HarmonicBalance/HbTransientSeed.cs|{who}: KickV must be a non-zero voltage or auto, not '{kickV}'.
+src/Engine/HarmonicBalance/HbTransientSeed.cs|{who}: SeedFastBias must be yes or no, not '{seedFastBias}'.
+src/Engine/HarmonicBalance/HbTransientSeed.cs|{who}: SeedPeriods must be auto or a whole number of periods from 3 to {MaxPeriods}, not '{seedPeriods}'.
+src/Engine/HarmonicBalance/HbTransientSeed.cs|{who}: SeedTol must be a number between 0 and 1, not '{seedTol}'.
+src/Engine/HarmonicBalance/HbTransientSeed.cs|{who}: the seed needs a fundamental frequency.
+src/Engine/HarmonicBalance/HbTransientSeed.cs|{who}: the seed run ended before one whole period.
+src/Engine/Transient/TransientEngine.cs|{who} cannot run: 
+src/Engine/Transient/TransientEngine.cs|{who}: IC names '{name}', which is not a net of the circuit.
+src/Engine/Transient/TransientEngine.cs|{who}: Start must be before Stop.
+src/Engine/Transient/TransientEngine.cs|{who}: Stop must be a positive time.
+src/Engine/Transient/TransientEngine.cs|{who}: the DC operating point did not converge. InitialState=zero starts the run without one.
+src/Engine/Transient/TransientEngine.cs|{who}: the starting state did not converge. {failure} InitialState=zero starts the run without one.
+src/Engine/Transient/TransientRunner.cs|not a finite number
+src/Engine/Transient/TransientRunner.cs|{who}: IC entries are net=value, not '{item}'.
+src/Engine/Transient/TransientRunner.cs|{who}: InitialState must be op or zero, not '{a.InitialState}'.
+src/Engine/Transient/TransientRunner.cs|{who}: MaxStep must be a positive time or auto.
+src/Engine/Transient/TransientRunner.cs|{who}: MaxSteps must be at least 1.
+src/Engine/Transient/TransientRunner.cs|{who}: Method must be trap or gear2, not '{a.Method}'.
+src/Engine/Transient/TransientRunner.cs|{who}: RelTol, VTol and ITol must be positive.
+src/Engine/Transient/TransientRunner.cs|{who}: Solver must be native or ngspice, not '{a.Solver}'.
+src/Engine/Transient/TransientRunner.cs|{who}: Step must be a positive time.
+src/Engine/Transient/TransientRunner.cs|{who}: Stop is required.
+src/Engine/Transient/TransientRunner.cs|{who}: Stop must be a positive time.
+src/Engine/Transient/TransientRunner.cs|{who}: {key} is read by the ngspice solver only; the native solver takes no {key}.
+src/Engine/Transient/TransientRunner.cs|{who}: {key}={expr} cannot be evaluated: {ex.Message}
+src/Engine/Transient/TransientRunner.cs|{who}: MeasureFrom must not be negative.
+src/Engine/Transient/TransientRunner.cs|{who}: Start must be before Stop.
+src/Engine/Transient/TransientRunner.cs|{who}: Start must not be negative; the run starts at t = 0.
+src/Engine/Transient/TransientRunner.cs|{who}: Store must be auto, baseband or rf, not '{a.Store}'.
+src/Engine/Transient/TransientRunner.cs|{who}: Store=baseband is the native solver's; ngspice keeps the waveform (Store=rf).
+src/Engine/Transient/TransientRunner.cs|{who}: StoreHarm must be a whole number from 0 to 16.
+src/Engine/Transient/TransientBaseband.cs|{who}: Store=baseband reads every carrier from one place in its record, and {string.Join(
+src/Engine/Transient/TransientBaseband.cs|{who}: Store=baseband takes its envelopes about a MOD_Source's Fc, and this bench has none; Store=rf keeps the waveform.
+src/Engine/Transient/TransientBaseband.cs|{who}: the run produced no envelope sample.

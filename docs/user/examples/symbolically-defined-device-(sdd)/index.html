@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Symbolically Defined Device (SDD)</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Symbolically Defined Device (SDD)/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Symbolically Defined Device (SDD)</p>
+  </div>
+
+  <h1>Symbolically Defined Device (SDD)</h1>
+  <p class="lede">A nonlinear GaN FET model written as SDD equations and built up bench by bench: the drain current, the gate&#39;s diode and breakdown, 1D charges on the weight-1 path, 2D charges, and the gate-drain capacitor as an SDD block of its own, each under the same loadpull with its MXP and MXE contours and summary tables. A sixth bench&#39;s SDD reads the drain supply&#39;s current to hold the quiescent current against a threshold shift.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Symbolically Defined Device (SDD)</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A nonlinear GaN FET model written as equations, built up in five steps from its drain current to its charges, each step a
+bench of its own under the same loadpull, so you can see what each equation does to the device. A sixth bench reads
+another part's current inside an SDD.</p>
+<p>The FET is the one every harmonic-balance reference in circuitRF is checked against, at the <em>Loadpull and Pursuit</em>
+example's 1.25 mm periphery, 48 V and −3.05 V bias, 2 GHz and polar load grid (<code>load_grid.gam</code>), with more load points
+where the optima fall.</p>
+<h2 id="what-an-sdd-is">What an SDD is</h2>
+<p>A <strong>Symbolically Defined Device</strong> describes a part by the currents at its ports as expressions of the voltages across them.
+There is no compiled model behind it: what you write is the model.</p>
+<ul>
+<li><strong>Ports.</strong> An SDD with N ports takes 2N nets, a <code>+</code> and a <code>−</code> for each. The FET here is a 2-port, <code>Vin 0 Vout 0</code>: port 1
+is gate to source (ground), port 2 drain to source. Inside the equations <strong><code>_v1</code> is Vgs and <code>_v2</code> is Vds</strong>.</li>
+<li><strong>Equations.</strong> <strong><code>I[p,w]</code></strong> is a contribution to the current into port p's <code>+</code> net, out of its <code>−</code> net. Every
+contribution to one port is summed.</li>
+<li><strong>Weights.</strong> The second index, <strong><code>w</code></strong>, says how the expression becomes a current. circuitRF evaluates <code>I[p,w]</code> in the time
+domain, takes its spectrum, multiplies it by a weighting function <code>H[w](f)</code>, and adds the result to port p's current:
+<ul>
+<li><strong><code>w = 0</code></strong>, <code>H[0] = 1</code>: the expression <strong>is</strong> a current. A resistor, a diode, a transconductance.</li>
+<li><strong><code>w = 1</code></strong>, <code>H[1] = j2πf</code>: the expression is a <strong>charge</strong>, and the current is its time derivative, dQ/dt. A
+capacitor. At DC it passes nothing, as a capacitor should.</li>
+<li><strong><code>w ≥ 2</code></strong>: weights you define, as expressions of <code>freq</code> (<code>H[2]=1/(1+j*2*pi*freq*tau)</code> is a low-pass, for one).</li>
+</ul>
+</li>
+<li><strong>Everything else on the line</strong> is a parameter the equations read (<code>B</code>, <code>TV0</code>, <code>Cgs0</code> …). Edit one on the schematic and the
+model changes; sweep it, tune it or optimize it like any other value.</li>
+</ul>
+<p>circuitRF differentiates every expression exactly (automatic differentiation), so the conductances <code>∂I/∂V</code> and capacitances
+<code>∂Q/∂V</code> the solver needs come from the equations you wrote, with nothing else to supply. Write charges, not capacitances:
+a charge <code>Q(V)</code> whose derivative is the capacitance you want conserves charge in harmonic balance; a capacitance written
+directly does not.</p>
+<p>Open each bench's schematic and double-click the SDD to read its equations.</p>
+<h2 id="drain-current">1 Drain Current</h2>
+<p>The least an FET model can be: the drain current as a function of both port voltages.</p>
+<pre><code>I[1,0] = _v1/50
+I[2,0] = Periphery_mm*(B*TC*tanh(_v2*a*(tanh(g*(TV0-_v1+_v2*th+Sc*ln(exp(-(Sv-_v1)/Sc)+1)))+1))
+         *ln(exp(-(2*TV0-2*_v1+2*_v2*th+2*Sc*ln(exp(-(Sv-_v1)/Sc)+1))/TC)+1)*(_v2*lam+1))/2
+</code></pre>
+<p><code>I[2,0]</code> is the drain current Ids(Vgs, Vds): the soft pinch-off (<code>Sv</code>, <code>Sc</code>), the transconductance's shape (<code>TV0</code>, <code>TC</code>),
+the knee (<code>tanh(_v2*a…)</code>), output conductance (<code>lam</code>) and scale (<code>B</code>, times the periphery). <code>I[1,0] = _v1/50</code> gives the gate
+50 Ω to ground, which is how this reference model sets its input impedance. Nothing here stores charge, so the device is
+instantaneous: its loadpull optimum sits on the real axis.</p>
+<h2 id="gate-current">2 Gate Current</h2>
+<p>The gate is a Schottky diode to the channel, and a high enough drain voltage breaks down to the gate. Both join the
+equations as further <code>w = 0</code> currents:</p>
+<pre><code>Igs = Periphery_mm*Isg*(if(_v1/Vtg&lt;40, exp(_v1/Vtg), exp(40)*(1+_v1/Vtg-40)) - 1)          forward gate conduction
+Ibr = Periphery_mm*Ibk*if((_v2-_v1-Vbr)/Vbk&lt;40, exp(…), exp(40)*(1+…-40))                  gate-drain breakdown past Vbr
+I[1,0] = _v1/50 + Igs - Ibr
+I[2,0] = Ids + Ibr
+</code></pre>
+<p><strong>The breakdown current leaves the drain and enters the gate, so it appears in both ports with opposite signs</strong>: a current
+between two terminals of a multi-port SDD is always written that way. The <code>if()</code> continues each exponential along its
+tangent past an argument of 40. The model is the same where the device works, and a Newton iterate that overshoots can't
+overflow. Near compression the gate swings positive and conducts, which clamps the drive: maximum power falls by 0.2 dB.</p>
+<h2 id="charges-1d">3 Charges (1D)</h2>
+<p>Now the device stores charge. Two charges on the <code>w = 1</code> path, each a function of <strong>one</strong> voltage:</p>
+<pre><code>I[1,1] = Periphery_mm*(Cgsp*_v1 + Cgs0/2*(_v1 + ln(cosh(Kgs*(_v1-Vgs0)))/Kgs))      Qgs(Vgs)
+I[2,1] = Periphery_mm*(Cdsm*_v2 + (Cds0-Cdsm)*Vds0*(1-exp(-_v2/Vds0)))               Qds(Vds)
+</code></pre>
+<p>Differentiate each and you get the capacitance you meant: Cgs(Vgs) = <code>Cgsp + Cgs0/2·(1 + tanh(Kgs·(Vgs − Vgs0)))</code>, rising
+from 0.3 to 1.3 pF/mm as the channel opens; Cds(Vds) = <code>Cdsm + (Cds0 − Cdsm)·exp(−Vds/Vds0)</code>, falling from 0.5 to 0.2 pF/mm as
+the drain voltage rises. Each is a <strong>1D nonlinear capacitor</strong>: its charge depends on its own voltage only. The output
+capacitance must be resonated by the load, so the optimum loads move up into the inductive half of the chart.</p>
+<h2 id="charges-2d">4 Charges (2D)</h2>
+<p>Real FET charges depend on both voltages. Two changes make them two-dimensional:</p>
+<pre><code>Qgs  = Periphery_mm*(Cgsp*_v1 + Cgs0/2*(_v1 + ln(cosh(Kgs*(_v1-Vgs0)))/Kgs)*(1 + Dgs*tanh(-_v2/Vgsd)))
+Qgd  = Periphery_mm*(Cgdm*(_v1-_v2) - (Cgd0-Cgdm)*Vgd0*(1-exp(-(_v2-_v1)/Vgd0)))
+I[1,1] = Qgs + Qgd
+I[2,1] = Qds - Qgd
+</code></pre>
+<ul>
+<li><strong>Qgs now also falls as Vds rises</strong> (the channel pinches off at the drain end). The gate charge depends on Vds, so
+∂Qg/∂Vds is a transcapacitance: a change of drain voltage moves charge at the gate.</li>
+<li><strong>Qgd is the gate-drain charge</strong>, a function of the voltage <em>between</em> the two ports, Vgd = <code>_v1 − _v2</code>, with
+Cgd(Vdg) falling from 0.15 to 0.04 pF/mm as the drain rises above the gate. Like the breakdown current, a charge between two
+terminals is added at one port and subtracted at the other.</li>
+</ul>
+<p>Cgd is feedback from output to input, and it costs gain: Gt at maximum power falls from 15.3 to 14.9 dB.</p>
+<h2 id="cgd-as-an-sdd-block">5 Cgd as an SDD Block</h2>
+<p>The same model with Qgd taken out of the FET and drawn as <strong>its own one-port SDD</strong>, <code>CGD</code>, connected from gate to drain:</p>
+<pre><code>SDD:CGD  Vin  Vout     I[1,1] = Periphery_mm*(Cgdm*_v1 - (Cgd0-Cgdm)*Vgd0*(1-exp(_v1/Vgd0)))
+</code></pre>
+<p>Its one port's <code>+</code> net is the gate and its <code>−</code> net the drain, so its <code>_v1</code> is Vgd. That is a 1D nonlinear capacitor anywhere
+in a schematic, between any two nets, written in one line. The loadpull reads <strong>exactly</strong> what bench 4 reads. Equations
+inside one SDD and equations split across several are the same circuit, which is how a large model can be assembled from
+blocks you can check one at a time. (A <strong>NonlinearC</strong> component does the same job as a polynomial C(V); an SDD takes any
+expression.)</p>
+<h2 id="the-loadpull">The loadpull</h2>
+<p>Each of benches 1 to 5 runs the <em>Loadpull and Pursuit</em> example's loadpull: source and load tuners with their bias tees,
+the load swept over 97 points (the example's polar grid at 30° steps, and rings every 0.05 in |Γ| and 15° in angle where
+the optima fall, so the interpolated optimum lands where the contours say), the drive raised at each load to 3 dB gain
+compression. Its display, which Simulate
+opens, draws the <strong>Pout contours with the maximum-power point MXP (P)</strong> and the <strong>PAE contours with the maximum-efficiency
+point MXE (E)</strong> on one Smith chart, and a summary table at each optimum, read between grid points:</p>
+<table>
+<thead>
+<tr>
+<th>Bench</th>
+<th>MXP: Pout</th>
+<th>Gt</th>
+<th>PAE</th>
+<th>ZL (Ω)</th>
+<th>MXE: Pout</th>
+<th>PAE</th>
+<th>ZL (Ω)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 Drain Current</td>
+<td>41.6 dBm</td>
+<td>15.4 dB</td>
+<td>63.8 %</td>
+<td>63.3 + j0.2</td>
+<td>40.4 dBm</td>
+<td>68.7 %</td>
+<td>101.3 − j1.2</td>
+</tr>
+<tr>
+<td>2 Gate Current</td>
+<td>41.4 dBm</td>
+<td>15.7 dB</td>
+<td>65.9 %</td>
+<td>68.0 + j0.3</td>
+<td>40.4 dBm</td>
+<td>68.7 %</td>
+<td>102.1 − j1.9</td>
+</tr>
+<tr>
+<td>3 Charges (1D)</td>
+<td>41.4 dBm</td>
+<td>15.3 dB</td>
+<td>66.1 %</td>
+<td>65.2 + j14.7</td>
+<td>40.6 dBm</td>
+<td>68.6 %</td>
+<td>85.6 + j27.8</td>
+</tr>
+<tr>
+<td>4 Charges (2D)</td>
+<td>41.4 dBm</td>
+<td>14.9 dB</td>
+<td>66.0 %</td>
+<td>63.7 + j17.0</td>
+<td>40.7 dBm</td>
+<td>68.5 %</td>
+<td>80.4 + j31.7</td>
+</tr>
+<tr>
+<td>5 Cgd as an SDD Block</td>
+<td>41.4 dBm</td>
+<td>14.9 dB</td>
+<td>66.0 %</td>
+<td>63.7 + j17.0</td>
+<td>40.7 dBm</td>
+<td>68.5 %</td>
+<td>80.4 + j31.7</td>
+</tr>
+</tbody>
+</table>
+<p>Each runs in one or two seconds.</p>
+<h2 id="bias-loop-control-current">6 Bias Loop (control current)</h2>
+<p>An SDD equation can read the <strong>current in another part</strong> as <code>_cn</code>, bound by <code>C[n]=&lt;instance&gt;</code>. Here that builds an
+<strong>active bias controller</strong>: an SDD that senses the drain supply's current and sets the gate bias so the quiescent current
+stays at its target, whatever the transistor's threshold.</p>
+<pre><code>SDD:BIAS  vg 0    I[1,0] = (_v1 - VGS0 - Vspan*tanh(Kloop*(Iset - _c1)/Vspan))/Rc    C[1] = IDD
+</code></pre>
+<p><code>C[1] = IDD</code> makes <code>_c1</code> the current through the IProbe <code>IDD</code> in the drain supply line. The equation is a source behind
+<code>Rc</code> = 1 mΩ that holds its node at <code>VGS0 − Vspan·tanh(Kloop·(Idd − Iset)/Vspan)</code>: proportional control, <code>Kloop</code> volts of
+gate per amp of error, with its output held within <code>Vspan</code> = ±1 V of the nominal bias by the tanh, as a real controller is
+held by its supply rails. The gate is fed from that node through a choke. Bench 5's FET is swept over a threshold shift <code>dVt</code>
+(added to <code>TV0</code>), with the loop open (<code>Kloop</code> = 0) and closed (200 V/A), at DC:</p>
+<table>
+<thead>
+<tr>
+<th>dVt</th>
+<th>Idq, open loop</th>
+<th>Idq, closed loop</th>
+<th>Gate bias, closed loop</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>−0.3 V</td>
+<td>91.4 mA</td>
+<td>62.9 mA</td>
+<td>−3.34 V</td>
+</tr>
+<tr>
+<td>0</td>
+<td>61.4 mA</td>
+<td>61.4 mA</td>
+<td>−3.05 V</td>
+</tr>
+<tr>
+<td>+0.3 V</td>
+<td>41.2 mA</td>
+<td>59.9 mA</td>
+<td>−2.75 V</td>
+</tr>
+</tbody>
+</table>
+<p>Open loop, a 0.3 V threshold spread moves the quiescent current by ±50 %; closed, by ±2.5 %, the residual a proportional
+loop of gain 16 (200 V/A times the device's 80 mA/V) leaves. A larger <code>Kloop</code> holds it tighter. The rails matter: a loop this
+simple also has a second, unphysical solution, the gate driven so far negative that gate-drain breakdown carries the supply
+current and the loop pushes the gate further still. With <code>Vspan=1000</code> the DC solve finds it at dVt = +0.3 V, the gate at
+−238 V.</p>
+<p><strong>Under drive.</strong> The bench also runs a harmonic-balance drive sweep, 10 to 30 dBm at 2 GHz, into bench 5's maximum-power load
+(the <code>LOAD</code> tuner: 63.7 + j17.0 Ω at the drain, its harmonics shorted), with the loop open and closed:</p>
+<table>
+<thead>
+<tr>
+<th>Pin</th>
+<th>Idd, open loop</th>
+<th>Idd, closed loop</th>
+<th>Gate bias, closed loop</th>
+<th>Pout, open</th>
+<th>Pout, closed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10 dBm</td>
+<td>83.1 mA</td>
+<td>62.9 mA</td>
+<td>−3.29 V</td>
+<td>23.7 dBm</td>
+<td>21.5 dBm</td>
+</tr>
+<tr>
+<td>14 dBm</td>
+<td>116.7 mA</td>
+<td>65.5 mA</td>
+<td>−3.59 V</td>
+<td>28.9 dBm</td>
+<td>24.2 dBm</td>
+</tr>
+<tr>
+<td>18 dBm</td>
+<td>198.1 mA</td>
+<td>80.2 mA</td>
+<td>−4.05 V</td>
+<td>34.7 dBm</td>
+<td>27.4 dBm</td>
+</tr>
+<tr>
+<td>22 dBm</td>
+<td>340.2 mA</td>
+<td>204.8 mA</td>
+<td>−4.05 V</td>
+<td>39.7 dBm</td>
+<td>35.9 dBm</td>
+</tr>
+<tr>
+<td>30 dBm</td>
+<td>535.6 mA</td>
+<td>480.0 mA</td>
+<td>−4.05 V</td>
+<td>41.8 dBm</td>
+<td>41.7 dBm</td>
+</tr>
+</tbody>
+</table>
+<p>The RF swing raises a class-AB stage's average current, and this controller answers it instantly: it pushes the gate negative to
+hold the current near its 61.4 mA target, deeper towards class B, which costs gain (2.1 dB at 10 dBm, 7.4 dB at 18 dBm). At
+18 dBm it reaches its rail, VGS0 − Vspan = −4.05 V, and from there the current rises as the open loop's does, and the output
+meets it again at saturation. A loop filter, a weighting function <code>I[1,2]</code> with <code>H[2]=1/(1+j*2*pi*freq*Tloop)</code>, acts at DC and
+not at the harmonics, so it keeps RF off the controller's output; harmonic balance solves the steady state, where even a slow
+loop has settled on the average current, so the bias it reaches is the one above. A controller that holds the bias it set
+before the drive arrives, as a sampled one does between bursts, is a transient question.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

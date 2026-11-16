@@ -698,6 +698,18 @@ public enum SymbolKind
     /// edges, holding two small antennas in the schematic antenna symbol (a mast under an open triangle on its point) and the waves
     /// leaving the transmit one.</summary>
     PropagationChannel,
+
+    /// <summary>brief-trn-2 — the waveform sources (engine V_Pulse … I_Expr, one WaveformSourceModel under all ten) and the DC
+    /// current source (engine "Idc"). Two pins, + at (0,−300) and − at (0,300), as Vdc and the tone sources: a voltage type's value
+    /// is V(+) − V(−), a current type's is delivered INTO +. A circle whose body draws the waveform's shape.</summary>
+    VPulse, VPwl, VExp, VSffm, VExpr,
+    IPulse, IPwl, IExp, ISffm, IExpr,
+    Idc,
+
+    /// <summary>brief-trn-3 — the voltage-controlled switch (engine "VSwitch"). Four pins in VCCS's layout and order: [0] p (0,−200),
+    /// [1] n (0,200), the switched pair; [2] ctrl+ (−300,−100), [3] ctrl− (−300,100), the control pair, which draws no current.
+    /// A switch blade between two contacts, its control leads ending at an actuator linked to the blade by a dashed line.</summary>
+    VSwitch,
     /// <summary>Wilkinson divider on microstrip (engine "MWPD", docs/design/rf-passives.md): specs Z0 and F, the split
     /// ratio K and the section count N (with its Band), and the resistor's pin span Gap; the arms, ring and junctions are
     /// derived (WilkinsonPlan). 3 + 2·N pins: 1 the input, 2 and 3 the outputs, R2 and R3 the ends the isolation resistor

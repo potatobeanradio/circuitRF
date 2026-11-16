@@ -201,6 +201,10 @@ public sealed record C3dElaboration(
     /// each would floor its air box (one height for all of them, each placed upright); null when any placed layout would not.</summary>
     public double? UndrawnGroundFloorZ { get; init; }
 
+    /// <summary>brief-icf-6 R-icf6-3 — each placed layout's dielectric slabs bounded only by the box round its drawn geometry (no board
+    /// outline), by object name (<see cref="Em3dLayoutSolidsResult.ArtworkBoundedSlabs"/>).</summary>
+    public IReadOnlyList<string> ArtworkBoundedSlabs { get; init; } = [];
+
     /// <summary>brief-emb-2 R-emb2-3 — the farthest Robust meshing moved any placed layout's outline, metres (0: nothing moved).
     /// Port inference measures against the moved outline and lets an edge that touched the drawn one follow it.</summary>
     public double OutlineMoveM { get; init; }
@@ -824,6 +828,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         private readonly Dictionary<string, Em3dViaNetAdoption> _viaNetAdoptions = new(StringComparer.Ordinal);
         private readonly List<string> _groundBand = [];
         private readonly List<double> _undrawnFloors = [];
+        private readonly List<string> _artworkBounded = [];
         private bool _layoutWithoutFloor;
         private double _outlineMove;
         private readonly Dictionary<string, Em3dObjectOrigin> _origins = new(StringComparer.Ordinal);
@@ -962,6 +967,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 GroundBandObjects = _groundBand,
                 UndrawnGroundFloorZ = _undrawnFloors.Count > 0 && !_layoutWithoutFloor && _undrawnFloors.All(z => Math.Abs(z - _undrawnFloors[0]) <= 1e-12)
                     ? _undrawnFloors[0] : null,
+                ArtworkBoundedSlabs = _artworkBounded,
                 OutlineMoveM = _outlineMove,
                 MaterialSources = sources,
                 SolidMaterials = records,
@@ -1269,13 +1275,20 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                     return;
                 }
                 double t = C3dSheetBooleans.Carrier(obj)?.ThicknessUm is { } um ? um * 1e-6 : 0;
+                // brief-hzn-18 R-hzn18-1 — one-sided means one surface impedance, so it means nothing on a perfect conductor
+                bool oneSided = C3dSheetBooleans.Carrier(obj)?.OneSided == true;
+                if (oneSided && (!(values.SigmaSm > 0) || double.IsInfinity(values.SigmaSm)))
+                {
+                    _warnings.Add($"Sheet '{name}' is OneSided, but its metal '{material.Name}' is a perfect conductor, which has no surface impedance; OneSided does nothing here.");
+                    oneSided = false;
+                }
                 // brief-hzn-10 — a sheet boolean in several pieces is a sheet per piece; each names the object (below).
                 IReadOnlyList<C3dSheetGeometry> pieces = lowered.SheetPieces.Count > 0 ? lowered.SheetPieces : [g];
                 for (int k = 0; k < pieces.Count; k++)
                 {
                     var piece = pieces[k];
                     _uses.Add((_sheets.Count, true, techName, material.Name));
-                    _sheets.Add(new Em3dSheet(C3dSheetBooleans.PieceName(name, k), key, piece.Outline, piece.Holes, piece.Z, t, ++_order) { Frame = piece.Frame });
+                    _sheets.Add(new Em3dSheet(C3dSheetBooleans.PieceName(name, k), key, piece.Outline, piece.Holes, piece.Z, t, ++_order) { Frame = piece.Frame, OneSided = oneSided });
                 }
             }
             else
@@ -1923,6 +1936,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             foreach (var (obj, conflict) in solids.ViaNetConflicts) _viaNetConflicts[prefix + obj] = conflict;
             foreach (var (obj, adoption) in solids.ViaNetAdoptions) _viaNetAdoptions[prefix + obj] = adoption;
             _groundBand.AddRange(solids.GroundBandObjects.Select(o => prefix + o));
+            _artworkBounded.AddRange(solids.ArtworkBoundedSlabs.Select(o => prefix + o));
             // brief-icp-10 — where this placement's undrawn ground lies in the world, when it is placed upright.
             if (solids.UndrawnGroundTopM is { } gz && t.M20 == 0 && t.M21 == 0 && t.M02 == 0 && t.M12 == 0 && t.M22 > 0)
                 _undrawnFloors.Add(t.M22 * gz + t.Tz);

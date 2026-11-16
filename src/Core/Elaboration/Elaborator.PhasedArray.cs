@@ -45,6 +45,7 @@ public sealed partial class Elaborator
         // ── the weights, per element, quantised (R-paa4-4) ────────────────────────────────────────
         var (feed, scopes, bits, step) = FeedWeights(inst, childPath, scope, lattice, p, array.Z0);
         array.Feed = feed;
+        array.Steering = SteeringOf(inst, childPath, scope, lattice, p, array.Z0);
         int off = lattice.Off.Count;
         array.FeedNote = $"Feed mode: one pin, F, split {n} ways to the elements through their weights; phases " +
                          (bits > 0 ? $"rounded to {360 / Math.Pow(2, bits):G6}° ({bits} bits)" : "continuous") + ", amplitudes " +
@@ -163,6 +164,7 @@ public sealed partial class Elaborator
                 throw new InvalidOperationException($"'{c.InstancePath}' is not a Phased Antenna Array at the top of the bench, so its weights are not re-weighed.");
             var (feed, _, _, _) = FeedWeights(inst, c.InstancePath, globalScope, pa.Lattice, c.Parameters, pa.Z0);
             feeds[c.InstancePath + ".feed"] = (c.InstancePath, pa, feed);
+            pa.Steering = SteeringOf(inst, c.InstancePath, globalScope, pa.Lattice, c.Parameters, pa.Z0);
         }
         var nl = template.Copy(c => feeds.TryGetValue(c.InstancePath, out var f)
                                     ? new ElaboratedComponent(c.ComponentType, c.InstancePath, c.Nodes, c.Parameters, f.Feed)
@@ -259,6 +261,138 @@ public sealed partial class Elaborator
             quantised[e] = Complex.FromPolarCoordinates(ArrayWeights.QuantiseAmplitude(Math.Abs(amp[e]), largest, step), ArrayWeights.QuantisePhase(ph, bits));
         }
         return (new PhasedArrayFeedModel(requested, quantised, delay, z0), scopes, bits, step);
+    }
+
+    /// <summary>
+    /// brief-pch-9 R-pch9-5 — what a beam selection may set on this array: its steer() call (SteerCall, the reading the Phased Array tool's
+    /// drag shares), and a weighing at any (θ0, φ0) that is <see cref="FeedWeights"/> on the instance with the call's two arguments replaced by
+    /// literal degrees — the field's own text otherwise, so the taper, f0, an offset beside the call, PhaseBits and AttenStep are the array's.
+    /// A VAR argument is replaced in THIS field rather than set: two ends steered by one VAR would otherwise move together, and anything else
+    /// reading it would move with them. Refused, with a sentence naming BeamSelect=manual: weights that are not a steer(), an argument that is
+    /// neither a VAR nor a literal, an [n] override of the call's field (it wins at its element, so the beam is not the call's), an array
+    /// inside a cell.
+    /// </summary>
+    private ArraySteering SteeringOf(Instance inst, string childPath, Scope scope, ArrayLattice lattice, IReadOnlyDictionary<string, Value> p, Complex z0)
+    {
+        string? Text(string field) => inst.Overrides.FirstOrDefault(o => o.Name.Equals(field, StringComparison.OrdinalIgnoreCase))?.Expression;
+        var call = SteerCall.Find(Text, _globalNames.ToHashSet(StringComparer.Ordinal));
+        const string manual = " BeamSelect=manual uses the weights as they are.";
+        string who = PhasedArrayModel.Describe(childPath);
+        var indexed = call is null ? null
+            : inst.Overrides.FirstOrDefault(o => PhasedArrayModel.IsElementParameter(o.Name, out string b, out int? k) && k is not null
+                                                 && b.Equals(call.Field, StringComparison.OrdinalIgnoreCase));
+        string? refusal = call is null ? $"{who}: {SteerCall.NotSteered}{manual}"
+                        : !call.Settable ? $"{who}: {call.Refusal}{manual}"
+                        : childPath.Contains('.') ? $"{who} is inside a cell, and a beam is selected only on an array at the top of the bench.{manual}"
+                        : indexed is not null ? $"{who}: {indexed.Name}={indexed.Expression} sets that element's own {call.Field}, which wins over the " +
+                                                $"{call.Function}() there, so the beam is not the call's.{manual}"
+                        : null;
+        (double, double)? authored = null;
+        if (refusal is null)
+        {
+            try
+            {
+                var t = _evaluator.Eval(call!.Theta!.Text, scope);
+                var f = _evaluator.Eval(call.Phi!.Text, scope);
+                if (t.Kind == ValueKind.Real && f.Kind == ValueKind.Real) authored = (t.AsReal(), f.AsReal());
+            }
+            catch (ExpressionException) { /* the elaboration of the weights already said what is wrong */ }
+        }
+        return new ArraySteering
+        {
+            Call = call,
+            Refusal = refusal,
+            Authored = authored,
+            Fast = refusal is null ? FastSteering(inst, childPath, scope, lattice, p, z0, call!) : null,
+            Weigh = (thetaDeg, phiDeg) =>
+            {
+                if (refusal is not null) throw new InvalidOperationException(refusal);
+                string text = call!.Rewritten(thetaDeg, phiDeg);
+                var overrides = inst.Overrides.Select(o => o.Name.Equals(call.Field, StringComparison.OrdinalIgnoreCase)
+                                                          ? new ParameterAssignment(o.Name, text, o.Unit) : o);
+                var steered = new Instance(inst.InstanceName, inst.Reference, inst.NetBindings, overrides) { RefNetBinding = inst.RefNetBinding };
+                ArraySteering.CountWeighing();
+                return FeedWeights(steered, childPath, scope, lattice, p, z0).Feed;
+            },
+        };
+    }
+
+    /// <summary>
+    /// brief-pch-9 — <see cref="ArraySteering.Fast"/>: null unless the field is exactly the bare call with the element's own position and f0
+    /// reads no element name. One exact weighing at boresight gives each element's amplitude (sign kept) and the other field's values; a
+    /// direction then costs N multiplications and the quantisation, as <see cref="FeedWeights"/> quantises.
+    /// </summary>
+    private Func<double, double, PhasedArrayFeedModel>? FastSteering(Instance inst, string childPath, Scope scope, ArrayLattice lattice,
+                                                                    IReadOnlyDictionary<string, Value> p, Complex z0, SteerCall call)
+    {
+        var ov = inst.Overrides.FirstOrDefault(o => o.Name.Equals(call.Field, StringComparison.OrdinalIgnoreCase));
+        if (ov is null) return null;
+        Expr ast;
+        try { ast = Parser.Parse(ov.Expression); }
+        catch (Exception e) when (e is ParseException or ExpressionException) { return null; }
+        bool delay = call.Field.Equals("Delay", StringComparison.OrdinalIgnoreCase);
+        if (ast is not CallExpr c || c.Name != (delay ? "steerDelay" : "steer") || c.Args.Length != (delay ? 2 : 3)) return null;
+        double f0 = 0;
+        if (!delay)
+        {
+            if (AstWalker.CollectRefs(c.Args[2]).Any(r => ElementScope.Names.Contains(r))) return null;
+            try
+            {
+                var v = _evaluator.EvalExpr(c.Args[2], scope);
+                if (v.Kind != ValueKind.Real || !double.IsFinite(v.AsReal())) return null;
+                f0 = v.AsReal();
+            }
+            catch (ExpressionException) { return null; }
+        }
+        // the phase field's site unit, as EvalPhase reads a bare steer() (a number of degrees at it)
+        string siteUnit = ov.Unit is { Length: > 0 } u && Units.BaseUnit(u) == "rad" ? u : "deg";
+        double site = Units.Scale(siteUnit) ?? Math.PI / 180;
+        if (delay && ov.Unit is { Length: > 0 } du && (Units.Scale(du) ?? 0) != 1) return null;   // a delay typed in a scaled unit: leave it exact
+        int bits = WholeParameter(p, "PhaseBits", childPath, 0, 24);
+        double step = p.TryGetValue("AttenStep", out var sv) ? RealParameter(sv, "AttenStep", childPath) : 0;
+        int n = lattice.Count;
+        PhasedArrayFeedModel? baseFeed = null;
+        double[]? amp = null, other = null, xs = null, ys = null;
+        double largest = 0;
+        string boresight = call.Rewritten(0, 0);
+        return (thetaDeg, phiDeg) =>
+        {
+            if (baseFeed is null)
+            {
+                var overrides = inst.Overrides.Select(o => ReferenceEquals(o, ov) ? new ParameterAssignment(o.Name, boresight, o.Unit) : o);
+                var at0 = new Instance(inst.InstanceName, inst.Reference, inst.NetBindings, overrides) { RefNetBinding = inst.RefNetBinding };
+                ArraySteering.CountWeighing();
+                baseFeed = FeedWeights(at0, childPath, scope, lattice, p, z0).Feed;
+                amp = new double[n]; other = new double[n]; xs = new double[n]; ys = new double[n];
+                for (int e = 0; e < n; e++)
+                {
+                    // at boresight the steer is 0: Phase's weight is the amplitude itself (its sign kept), Delay the field's own; a steerDelay
+                    // field leaves Phase's value in the requested weight's angle
+                    var r = baseFeed.RequestedStored(e);
+                    amp[e] = delay ? r.Magnitude : r.Real;
+                    other[e] = delay ? r.Phase : baseFeed.DelayStored(e);
+                    (xs[e], ys[e]) = lattice.Position(e);
+                    if (lattice.IsOn(e)) largest = Math.Max(largest, Math.Abs(amp[e]));
+                }
+            }
+            ArraySteering.CountFast();
+            double t = thetaDeg * Math.PI / 180, ph = phiDeg * Math.PI / 180;
+            double su = Math.Sin(t) * Math.Cos(ph), sv2 = Math.Sin(t) * Math.Sin(ph);
+            var requested = new Complex[n];
+            var quantised = new Complex[n];
+            var delays = new double[n];
+            for (int e = 0; e < n; e++)
+            {
+                double path = xs![e] * su + ys![e] * sv2;
+                double phase = delay ? other![e] : -360 * f0 / Evaluator.SpeedOfLight * path * site;
+                delays[e] = delay ? path / Evaluator.SpeedOfLight : other![e];   // steerDelay's: e^(−j2πf·path/c) is steer's phase at every f
+                if (!lattice.IsOn(e)) continue;
+                requested[e] = amp![e] * Complex.FromPolarCoordinates(1, phase);
+                double q = phase + (amp[e] < 0 ? Math.PI : 0);
+                quantised[e] = Complex.FromPolarCoordinates(ArrayWeights.QuantiseAmplitude(Math.Abs(amp[e]), largest, step), ArrayWeights.QuantisePhase(q, bits));
+            }
+            return new PhasedArrayFeedModel(requested, quantised, delays, z0);
+        };
     }
 
     /// <summary>R-paa4-5 — which of element scope's five names <paramref name="cell"/>'s expressions read, its own and every cell below it,

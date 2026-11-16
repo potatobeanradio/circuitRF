@@ -7,6 +7,10 @@
 //  one IProbe — the first whose EVM is a number, which is the probe carrying the signal — and one
 //  carrier, the first with an EVM. Every trace is an ordinary cube trace the user can re-point
 //  afterwards; nothing here computes a number.
+//
+//  A run through a fading Propagation Channel (brief PCH-7) adds two more under them: the channel's
+//  power-delay profile and the drop's Doppler spectrum (link:<instance>:PowerDelayProfile_dB and
+//  DopplerSpectrum_dB), points only, for the first channel the result reports.
 // ================================================================
 
 using System;
@@ -192,6 +196,45 @@ public static class SignalQualityPreset
             x += p.Width + Gap; h = Math.Max(h, p.Height);
         }
         tab.Left = 0; tab.Top = h > 0 ? h + Gap : 0;
+
+        // ── a Propagation Channel's power-delay profile and Doppler spectrum (brief PCH-7) ──
+        double y0 = tab.Top + tab.Height + Gap, x0 = 0;
+        foreach (var (suffix, title, xLabel) in new[]
+                 {
+                     (":PowerDelayProfile_dB", "Power-delay profile", "Excess delay (s)"),
+                     (":DopplerSpectrum_dB", "Doppler spectrum", "Doppler (Hz)"),
+                 })
+        {
+            string? name = cubes.Keys.Where(k => k.StartsWith("link:", StringComparison.Ordinal) && k.EndsWith(suffix, StringComparison.Ordinal))
+                                .OrderBy(k => k, StringComparer.Ordinal).FirstOrDefault();
+            if (name is null) continue;
+            var cube = cubes[name];
+            var slice = new List<AxisSliceConfig>();
+            for (int i = 0; i < cube.Rank - 1; i++) slice.Add(new AxisSliceConfig { AxisName = cube.Axes[i].Name, Index = 0 });
+            slice.Add(new AxisSliceConfig { AxisName = cube.Axes[^1].Name, Role = AxisRole.KeepAsX });
+            string instance = name["link:".Length..^suffix.Length];
+            plots.Add(new PlotContainerConfig
+            {
+                PlotType = PlotType.Rect, Width = 420, Height = 300, Left = x0, Top = y0,
+                FreqUnit = FreqUnit.Hz,                              // a Doppler is a few hertz to kilohertz, not GHz
+                CustomTitle = $"{title}, {instance}", CustomTitleOn = true,
+                CustomXLabel = xLabel, CustomXLabelOn = true,
+                CustomYLabel = "Power (dB)", CustomYLabelOn = true,
+                Traces =
+                [
+                    new TraceConfig
+                    {
+                        SourcePath = sourceRef, CubeName = q + name, CubeSlice = slice, Label = title,
+                        Properties = new TracePropertiesConfig
+                        {
+                            LineEnabled = false, MarkerEnabled = true, MarkerType = MarkerType.Circle, MarkerSize = 1.2,
+                            LineColorIndex = received, MarkerColorIndex = received,
+                        },
+                    },
+                ],
+            });
+            x0 += 420 + Gap;
+        }
         return plots;
     }
 

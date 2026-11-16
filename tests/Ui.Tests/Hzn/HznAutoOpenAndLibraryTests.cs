@@ -121,7 +121,7 @@ public sealed class HznAutoOpenAndLibraryTests : IDisposable
     }
 
     [Fact]
-    public void TwoSidedFiniteConductivityOnASheet_IsALossySheet_AndOneSidedIsRefused()
+    public void TwoSidedFiniteConductivityOnASheet_IsALossySheet_AndOneSidedIsAOneSidedOne()
     {
         var t = Translate(WithFiniteConductivityOnTrace(twoSided: true));
         Assert.True(t.Ok, t.Refusal?.Render());
@@ -129,9 +129,12 @@ public sealed class HznAutoOpenAndLibraryTests : IDisposable
         Assert.Equal(35, trace.ThicknessUm);
         Assert.Equal(5.8e7, t.Technology!.FindMaterial(trace.Material!)!.Sigma20);
 
+        Assert.False(trace.OneSided);
+
+        // brief-hzn-18 R-hzn18-1 — one-sided is the same lossy sheet, its metal one surface impedance for both faces
         var one = Translate(WithFiniteConductivityOnTrace(twoSided: false));
-        Assert.False(one.Ok);
-        Assert.Contains(one.Refusals, i => i.What == "Finite Conductivity on one side of a sheet");
+        Assert.True(one.Ok, one.Refusal?.Render());
+        Assert.True(Assert.IsType<C3dSheet>(one.Document!.Objects.Single(o => o.Name == "Trace")).OneSided);
     }
 
     [Fact]

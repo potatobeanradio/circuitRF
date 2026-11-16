@@ -7,9 +7,10 @@
 // depth, so `steer(30 deg, 0, f0)` rewrites `30 deg` and nothing else of the field's text.
 //
 // The value written keeps the form it replaces: a VAR whose unit column says deg takes a number, rad takes radians; any other VAR and
-// every literal take `<value> deg`, since a bare number in a trig argument is radians and would mean something else.
+// every literal take `<value>deg` (a literal glued, `<value> deg` for a VAR row), since a bare number in a trig argument is radians.
 
 using System.Globalization;
+using CircuitRF.Core.Devices.Arrays;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Design.Schematic;
 
@@ -27,34 +28,16 @@ public sealed record PhasedArraySteering(string Field, string Function, SteerArg
     /// <summary>True when a drag can write both angles.</summary>
     public bool Draggable => Refusal is null && Theta is not null && Phi is not null;
 
-    public const string NotSteered = "The weights are not a steer() or steerDelay() call, so the beam is not steered from here.";
+    public const string NotSteered = SteerCall.NotSteered;
 
-    /// <summary>The steering of <paramref name="array"/> in a drawing whose components are <paramref name="components"/>.</summary>
+    /// <summary>The steering of <paramref name="array"/> in a drawing whose components are <paramref name="components"/>: the call as
+    /// <see cref="SteerCall"/> reads it (brief-pch-9 — the one reading a channel's beam selection shares).</summary>
     public static PhasedArraySteering Of(EditableComponent array, IEnumerable<EditableComponent> components)
     {
-        var vars = VarNames(components);
-        foreach (string field in (string[])["Phase", "Delay"])
-        {
-            if (array.Parameters.FirstOrDefault(p => p.Name == field) is not { } param || string.IsNullOrWhiteSpace(param.Expression)) continue;
-            string text = param.Expression;
-            Token[] tokens;
-            try { tokens = new Tokenizer(text).Tokenize(); Parser.Parse(text); }
-            catch (Exception e) when (e is ExpressionException or ParseException) { continue; }
-            int at = -1;
-            for (int i = 0; i + 1 < tokens.Length && at < 0; i++)
-                if (tokens[i].Kind == TokenKind.Identifier && tokens[i].Text is "steer" or "steerDelay" && tokens[i + 1].Kind == TokenKind.LParen) at = i;
-            if (at < 0) continue;
-            string fn = tokens[at].Text;
-            var args = Arguments(tokens, at + 1);
-            if (args.Count < 2) return new(field, fn, null, null, $"The {fn}() in {field} has no θ0 and φ0 to write.");
-            var theta = Argument(text, tokens, args[0], vars);
-            var phi = Argument(text, tokens, args[1], vars);
-            string? why = theta is null ? $"θ0 in {field} is '{Span(text, tokens, args[0])}', neither a VAR of this schematic nor a number, so a drag cannot write it."
-                        : phi is null ? $"φ0 in {field} is '{Span(text, tokens, args[1])}', neither a VAR of this schematic nor a number, so a drag cannot write it."
-                        : null;
-            return new(field, fn, theta, phi, why);
-        }
-        return new("", "", null, null, NotSteered);
+        var call = SteerCall.Find(field => array.Parameters.FirstOrDefault(p => p.Name == field)?.Expression, VarNames(components));
+        if (call is null) return new("", "", null, null, NotSteered);
+        static SteerArgument? Arg(SteerSpan? s) => s is null ? null : new SteerArgument(s.Var, s.Start, s.Length, s.Text);
+        return new(call.Field, call.Function, Arg(call.Theta), Arg(call.Phi), call.Refusal);
     }
 
     /// <summary>The tunable values a drag to (θ₀, φ₀) evaluates with — a VAR by its name, a literal as the whole field rewritten
@@ -74,8 +57,10 @@ public sealed record PhasedArraySteering(string Field, string Function, SteerArg
     {
         string text = fields.First(p => p.Name == Field).Expression;
         var spans = new List<(SteerArgument Arg, string Value)>();
-        if (Theta is { IsVar: false }) spans.Add((Theta, Degrees(thetaDeg)));
-        if (Phi is { IsVar: false }) spans.Add((Phi, Degrees(phiDeg)));
+        // glued (30deg): inside an expression `30 deg` is a number followed by a name, which the parser refuses, and a space would also split
+        // the netlist line the field is written on
+        if (Theta is { IsVar: false }) spans.Add((Theta, Number(thetaDeg) + "deg"));
+        if (Phi is { IsVar: false }) spans.Add((Phi, Number(phiDeg) + "deg"));
         foreach (var (arg, value) in spans.OrderByDescending(s => s.Arg.Start))
             text = text[..arg.Start] + value + text[(arg.Start + arg.Length)..];
         return text;
@@ -111,49 +96,4 @@ public sealed record PhasedArraySteering(string Field, string Function, SteerArg
     private static HashSet<string> VarNames(IEnumerable<EditableComponent> components)
         => components.Where(c => c.Symbol == SymbolKind.Var && c.Disable is not (DisableState.Open or DisableState.Short))
                      .SelectMany(c => c.Parameters).Select(p => p.Name.Trim()).Where(n => n.Length > 0).ToHashSet(StringComparer.Ordinal);
-
-    /// <summary>The token ranges [first, last] of each argument of the call whose '(' is at <paramref name="open"/>.</summary>
-    private static List<(int First, int Last)> Arguments(Token[] tokens, int open)
-    {
-        var args = new List<(int, int)>();
-        int depth = 0, start = open + 1;
-        for (int i = open; i < tokens.Length; i++)
-        {
-            var k = tokens[i].Kind;
-            if (k is TokenKind.LParen or TokenKind.LBracket) { depth++; continue; }
-            if (k is TokenKind.RParen or TokenKind.RBracket)
-            {
-                depth--;
-                if (depth == 0) { if (i > start) args.Add((start, i - 1)); return args; }
-                continue;
-            }
-            if (k == TokenKind.Comma && depth == 1) { args.Add((start, i - 1)); start = i + 1; }
-        }
-        return args;
-    }
-
-    private static string Span(string text, Token[] tokens, (int First, int Last) r)
-    {
-        int s = tokens[r.First].Position, e = tokens[r.Last].Position + tokens[r.Last].Text.Length;
-        return text[s..Math.Min(e, text.Length)].Trim();
-    }
-
-    /// <summary>A VAR reference or a literal (a number, a quantity, either signed, or a number and a separate unit word), else null.</summary>
-    private static SteerArgument? Argument(string text, Token[] tokens, (int First, int Last) r, HashSet<string> vars)
-    {
-        int s = tokens[r.First].Position, e = tokens[r.Last].Position + tokens[r.Last].Text.Length;
-        string span = text[s..Math.Min(e, text.Length)];
-        var kinds = Enumerable.Range(r.First, r.Last - r.First + 1).Select(i => tokens[i]).ToList();
-        if (kinds.Count == 1 && kinds[0].Kind == TokenKind.Identifier)
-            return vars.Contains(kinds[0].Text) ? new SteerArgument(kinds[0].Text, s, e - s, span) : null;
-        int k = 0;
-        if (kinds[0].Kind is TokenKind.Minus or TokenKind.Plus) k = 1;
-        bool literal = (kinds.Count - k) switch
-        {
-            1 => kinds[k].Kind is TokenKind.Number or TokenKind.Quantity,
-            2 => kinds[k].Kind == TokenKind.Number && kinds[k + 1].Kind == TokenKind.Identifier && Units.IsRecognizedUnit(kinds[k + 1].Text),
-            _ => false,
-        };
-        return literal ? new SteerArgument(null, s, e - s, span) : null;
-    }
 }

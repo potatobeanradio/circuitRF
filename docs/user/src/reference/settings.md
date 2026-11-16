@@ -560,6 +560,17 @@ it is one circuitRF has validated (for Gmsh, openEMS and EMerge, tested), where 
 Beside each program's name, a green check and **Installed** means a run would find it; a grey **Not Installed**
 means it would not. The MPI launcher is part of Palace, so it sits inside Palace's panel.
 
+**Circuit** comes last, below the 3D solvers, with one program: **ngspice**, the second solver of a transient analysis
+(`Solver=ngspice`). Its row works like the others. Blank searches `CIRCUITRF_NGSPICE`, then a copy circuitRF installed, then
+`PATH`, then the usual folders (Homebrew's on macOS, `/usr/bin` on Linux, `C:\Spice64\bin` on Windows), then conda environments.
+The version is what `ngspice -v` prints. On Windows the program is ngspice's console build, `ngspice_con.exe`.
+**Install ngspice …** fetches upstream's own build: on Windows the official archive (on Windows arm64 that is the x64
+build, which Windows runs under emulation, and the row says so), and on macOS and Linux x64 the conda-forge package, put
+into a folder of circuitRF's own. conda-forge builds no ngspice for macOS or Linux on arm64, so there the row says how to
+get one; an ngspice from the system's package manager is found with nothing to set. The transient analysis's ngspice
+choice is enabled only while this row finds one, and follows it as soon as an install finishes, a path is set here, or
+an uninstall completes.
+
 | Control | Default | What it does |
 |---|---|---|
 | **Preferred layout solver** | Planar (MoM) | The solver a new EM setup (`.cem`) starts with, from File ▸ New ▸ EM Setup or the layout editor's EM button: **Planar (MoM)**, **Palace (FEM)**, **EMerge (FEM)** or **openEMS (FDTD)**. A solver that is not installed is listed greyed and cannot be chosen. An EM setup's own Solver can still be changed afterwards. Thermal is not offered: a thermal setup lives in a 3D view. |
@@ -570,7 +581,7 @@ means it would not. The MPI launcher is part of Palace, so it sits inside Palace
 | **Location** (Palace, Windows only) | Automatic | Where Palace is looked for. **Automatic** uses a native Palace if there is one, then the Linux subsystem (WSL 2), trying each distribution in the order `wsl -l` lists them. **Native** looks on this computer only, and **Linux subsystem: *name*** looks in that one distribution only. **Install Palace …** builds it in the distribution chosen here, or in the default one. See [Palace on Windows](em-setup.html#palace-windows). |
 | **Install …** (one per program) | shown when it would help | Installs the program from its own upstream, after showing you what it will fetch and where it will go. Shown when this computer has an install recipe for it and nothing validated (for Gmsh, openEMS and EMerge, tested) was found. See [Letting circuitRF install them](em-setup.html#install-assistant). |
 | **Uninstall …** (one per version circuitRF installed) | shown when there is one | Removes that copy, after showing the space it frees. An older version reads **Remove older …**. A Palace installed in the Linux subsystem names its distribution, and one whose distribution was removed reads **Clean up … (missing)**. See [Removing the 3D solvers](em-setup.html#uninstall-solvers). |
-| **Remove all 3D solvers …** | shown when there is one | Removes every solver circuitRF installed for you, after one confirmation. Nothing is removed if one of them is in use. On macOS and with a Linux `.deb`, removing circuitRF leaves the solvers behind, so use this first to get the space back ([Uninstalling circuitRF](em-setup.html#uninstall-circuitrf)). |
+| **Remove all solvers …** | shown when there is one | Removes every solver circuitRF installed for you, ngspice included, after one confirmation. Nothing is removed if one of them is in use. On macOS and with a Linux `.deb`, removing circuitRF leaves the solvers behind, so use this first to get the space back ([Uninstalling circuitRF](em-setup.html#uninstall-circuitrf)). |
 | **…** (one per program) | shown when it is found | Shows where the program is, in Finder, Explorer or your file manager: the whole folder when circuitRF installed it, otherwise the program itself in its folder. |
 | **MPI launcher** (in Palace's panel) | blank | The `mpirun` that lets Palace use more than one core. A Palace circuitRF installed brings its own, which its badge reads **Installed with Palace**: **Uninstall Palace …** removes it too, so it has no Uninstall of its own. **Blank means search**: `CIRCUITRF_MPIRUN`, then an `mpirun` beside Palace, then — for a Palace built with Spack — the MPI that build was linked against, then `PATH` and the usual install folders. The row shows which one a run would use. Without one, Palace still runs, on one core. For a Palace in the Linux subsystem, the row shows the `mpirun` found inside that distribution, and the path box is not used. |
 

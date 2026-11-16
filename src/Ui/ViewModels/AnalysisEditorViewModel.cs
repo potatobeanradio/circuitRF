@@ -21,7 +21,7 @@ namespace CircuitRF.Ui.ViewModels;
 /// </summary>
 public sealed partial class AnalysisEditorViewModel : ObservableObject
 {
-    public enum AnalysisKind { DC, SP, HB, LP, LPP, Fields, ENV, TRL, OSC }
+    public enum AnalysisKind { DC, SP, HB, LP, LPP, Fields, ENV, TRL, OSC, TRAN }
 
     private readonly SchematicEditModel _model;
     private readonly List<string>       _existingNames;
@@ -37,7 +37,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     // ── Type selection ────────────────────────────────────────────────────────
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsDc), nameof(IsSp), nameof(IsHb), nameof(IsLp), nameof(IsLpp), nameof(IsFields), nameof(IsEnv), nameof(IsTrl), nameof(IsOsc),
+    [NotifyPropertyChangedFor(nameof(IsDc), nameof(IsSp), nameof(IsHb), nameof(IsLp), nameof(IsLpp), nameof(IsFields), nameof(IsEnv), nameof(IsTrl), nameof(IsOsc), nameof(IsTran),
                               nameof(ShowSweeps), nameof(SimulateByChoosable))]
     private AnalysisKind _type = AnalysisKind.DC;
 
@@ -64,6 +64,12 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     /// <summary>Brief NZ-9 — the oscillator analysis's body.</summary>
     public OscBodyViewModel OscBody { get; private set; } = null!;
 
+    /// <summary>brief-trn-1 — a transient analysis.</summary>
+    public bool IsTran => Type == AnalysisKind.TRAN;
+
+    /// <summary>brief-trn-1 — the transient analysis's body.</summary>
+    public TranBodyViewModel TranBody { get; private set; } = new();
+
     /// <summary>Parametric-sweep chains are supported on every analysis type — including freq-swept
     /// Loadpull and Loadpull-Pursuit over a tone VAR (FreqSweptLoadpull brief, Layers A–E).</summary>
     public bool ShowSweeps => !IsTrl;   // not a TRL calibration, which solves no circuit; a fields analysis too, over a far field (brief-cosim-pattern-5); the run refuses a block with a field set
@@ -86,6 +92,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
 
     /// <summary>Whether the choice applies: a fields analysis reads the EM result in its block, so there is no layout to
     /// simulate it by. A part set to EM in its bench stays EM; that is the part's own setting.</summary>
+    // transient runs model=em since TRN-4 (R-trn4-5); hiding the choice made OK reset a card's model=em to circuit
     public bool SimulateByChoosable => !IsFields && !IsTrl && !IsOsc;
 
     /// <summary>The EM setups that analyse this schematic's layout, by name; the first entry is "(the only setup)" or
@@ -197,6 +204,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
         TrlBody        = new TrlBodyViewModel(model, workspaceRoot);
         TrlBody.UseName(_name);
         OscBody        = new OscBodyViewModel(model);
+        TranBody.UseSchematic(model);   // brief MTR-3: the RF-rate warning reads the schematic's MOD_Sources
         LoadEmSetups(null);
         ValidateName();
     }
@@ -228,6 +236,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
         TrlBody = inner is TrlAnalysis trl0 ? TrlBodyViewModel.From(trl0, model, workspaceRoot) : new TrlBodyViewModel(model, workspaceRoot);
         TrlBody.UseName(_name);
         OscBody = inner is OscillatorAnalysis osc0 ? OscBodyViewModel.From(osc0, model) : new OscBodyViewModel(model);
+        TranBody = (inner is TransientAnalysis tran0 ? TranBodyViewModel.FromAnalysis(tran0) : new TranBodyViewModel()).UseSchematic(model);
         switch (inner)
         {
             case EnvelopeAnalysis:
@@ -286,6 +295,14 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
 
             case OscillatorAnalysis:
                 _type   = AnalysisKind.OSC;
+                SpBody  = new SpBodyViewModel(model);
+                HbBody  = SeededHb(model);
+                LpBody  = SeededLp(model, workspaceRoot);
+                LppBody = SeededLpp(model, workspaceRoot);
+                break;
+
+            case TransientAnalysis:
+                _type   = AnalysisKind.TRAN;
                 SpBody  = new SpBodyViewModel(model);
                 HbBody  = SeededHb(model);
                 LpBody  = SeededLp(model, workspaceRoot);
@@ -445,6 +462,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
             AnalysisKind.ENV => "ENV",
             AnalysisKind.TRL => "CAL",
             AnalysisKind.OSC => "OSC",
+            AnalysisKind.TRAN => "TRAN",
             _                => "DC",
         };
         for (int n = 1; n <= 999; n++)
@@ -495,6 +513,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
             AnalysisKind.ENV => EnvBody.BuildAnalysis(name, Enabled),
             AnalysisKind.TRL => TrlBody.IsValid ? TrlBody.BuildAnalysis(name, Enabled) : null,
             AnalysisKind.OSC => OscBody.IsValid ? OscBody.BuildAnalysis(name, Enabled) : null,
+            AnalysisKind.TRAN => TranBody.IsValid ? TranBody.BuildAnalysis(name, Enabled) : null,
             _                => null,
         };
         if (inner is null) return null;

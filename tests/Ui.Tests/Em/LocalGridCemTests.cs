@@ -34,6 +34,23 @@ public class LocalGridCemTests
         Assert.True(EmSetupPersistence.Deserialize(node.ToJsonString()).PlanarMesh.LocalGrid);
     }
 
+    /// <summary>ICF-4 R-icf4-1 — the local grid now starts small artwork from one block, so a result meshed before reads stale on
+    /// such artwork only: a 100 µm pad on GaAs at 40 GHz gains the term, a 20 mm line and the grid switched off do not.</summary>
+    [Fact]
+    public void SmallArtwork_GainsTheBaseTerm_ABoardDoesNot()
+    {
+        static PlanarProblem Rect(double w, double l) =>
+            new([new PlanarConductorLayer("Metal1", [new PlanarPolygon([new EmPoint(0, 0), new EmPoint(l, 0), new EmPoint(l, w), new EmPoint(0, w)])],
+                                          4.1e7, 3e-6)], GroundedSlab.GaAsStarter, 40e9);
+        var on = EmSetup.DefaultPlanarMesh;
+        var pad = Rect(100e-6, 100e-6);
+        var board = Rect(500e-6, 20e-3);
+        Assert.NotEqual(EmSnpProvenance.MeshHash(on), EmSnpProvenance.MeshHash(on, pad));
+        Assert.Equal(EmSnpProvenance.MeshHash(on), EmSnpProvenance.MeshHash(on, board));
+        var off = on with { LocalGrid = false };
+        Assert.Equal(EmSnpProvenance.MeshHash(off), EmSnpProvenance.MeshHash(off, pad));
+    }
+
     [Fact]
     public void OnAndOff_HashApart()
     {

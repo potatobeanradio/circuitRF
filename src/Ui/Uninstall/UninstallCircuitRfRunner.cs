@@ -36,7 +36,7 @@ internal static class UninstallCircuitRfRunner
         {
             await TextConfirmDialog.AskAsync(owner, Title, "circuitRF cannot uninstall this copy",
                 removal.Describe + (plan.CanProceed
-                    ? " The 3D solvers circuitRF installed can still be removed from Settings ▸ Solvers ▸ Remove all 3D solvers."
+                    ? " The solvers circuitRF installed can still be removed from Settings ▸ Solvers ▸ Remove all solvers."
                     : ""), confirmLabel: null);
             return;
         }

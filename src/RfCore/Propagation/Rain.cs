@@ -83,7 +83,9 @@ namespace RfCore.Propagation
             var (k, alpha) = ItuP838.Coefficients(fGhz, 0, tiltDeg);
             double gamma = k * Math.Pow(r001, alpha);
             double fr = Math.Max(fGhz, 6), dr = Math.Min(dKm, 30), rr = Math.Max(r001, 3);
-            double r = 1 / (0.477 * Math.Pow(dr, 0.633) * Math.Pow(rr, 0.073 * alpha) * Math.Pow(fr, 0.123) - 10.579 * (1 - Math.Exp(-0.024 * dr)));
+            // Step 4: the recommendation caps r at 2.5 (a denominator below 0.4); without the cap a sub-km path reads up to ~8.
+            double den = 0.477 * Math.Pow(dr, 0.633) * Math.Pow(rr, 0.073 * alpha) * Math.Pow(fr, 0.123) - 10.579 * (1 - Math.Exp(-0.024 * dr));
+            double r = den < 0.4 ? 2.5 : 1 / den;
             double a001 = gamma * dKm * r;
             double c0 = fGhz >= 10 ? 0.12 + 0.4 * Math.Pow(Math.Log10(fGhz / 10), 0.8) : 0.12;
             double c1 = Math.Pow(0.07, c0) * Math.Pow(0.12, 1 - c0);

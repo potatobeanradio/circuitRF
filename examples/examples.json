@@ -1,10 +1,35 @@
 {
-  "SchemaVersion": 1,
+  "SchemaVersion": 2,
   "Examples": [
     {
       "Folder": "S-Parameters",
       "Title": "S-Parameters",
       "Summary": "A Touchstone black box swept for gain and stability, a pair of coupled inductors, and a FET two-port on the Two-Port Stability template's own Data Display. Stability factors K and mu are written as measurement expressions."
+    },
+    {
+      "Folder": "TRL and De-embedding",
+      "Title": "TRL and De-embedding",
+      "Summary": "TRL calibration from a Thru, a Reflect and a Line measured through two fixtures, the two fixture files it writes, a filter de-embedded with them and laid over the truth, and a GaN FET de-embedded to its intrinsic plane, where Cgs, Cgd, gm and Rds come out flat with frequency. The measurements are synthetic, made by circuitRF from cells you can open."
+    },
+    {
+      "Folder": "Smith Chart",
+      "Title": "Smith Chart (narrowband match)",
+      "Summary": "A device input of 8 \u2212 j12 \u03a9, stated over three frequencies, matched to 50 \u03a9 by hand with a series L and a shunt C. Drag either gripper and watch the band edges move."
+    },
+    {
+      "Folder": "Hierarchy",
+      "Title": "Hierarchy",
+      "Summary": "A 9 dB attenuator built as cells inside cells: a parameterised pi pad placed twice on a board, simulated from a test bench, laid out with Update Layout from Schematic at both levels, and assembled in 3D from 3D views of other cells you can push into."
+    },
+    {
+      "Folder": "Optimization",
+      "Title": "Tuning and Optimization",
+      "Summary": "An L-section match, a three-resonator bandpass filter set up for minimax, and a FET amplifier stabilized for \u00b5 \u2265 1.05 while its complex source impedance is tuned by magnitude and phase. Each optimizes in under a second; the amplifier has one range drawn too narrow on purpose."
+    },
+    {
+      "Folder": "Yield",
+      "Title": "Yield, Corners and Centering",
+      "Summary": "A bandpass filter built from ±2 % parts and judged against loosened specs, an amplifier that fails one of six temperature and supply corners until it is optimized across all of them, a bias divider whose yield is centred from about 70 % to above 95 %, and an amplifier and spiral inductor, both Touchstone blocks, ranked in the Sensitivity panel. Every run takes a second or two."
     },
     {
       "Folder": "S-Parameter Noise",
@@ -15,21 +40,6 @@
       "Folder": "Receiver Noise",
       "Title": "Receiver Noise",
       "Summary": "The noise work of a 2.45 GHz receiver, bench by bench: a FET LNA noise-matched with its circles and which part sets its noise, the chain's budget against Friis, a diode mixer's SSB and DSB noise figure against LO drive, the LNA under a blocker, a noise sourcepull under drive, an NR signal's EVM through the chain with a phase-noisy LO, and the VCO whose phase noise that LO carries."
-    },
-    {
-      "Folder": "RF Chain Budget",
-      "Title": "RF Chain Budget",
-      "Summary": "A receive chain as a budget, stage by stage: a 2.45 GHz superhet, a four-element steered array into a combiner, a front end with a canceller and a dual-conversion receiver, each with its gain, NF, intercepts, compression, sensitivity and SFDR in closed form, and transferred to test benches whose S-parameter, harmonic-balance and envelope runs put a simulated number beside every one of them, the dual-conversion one conversion by conversion. And a 26 GHz link whose stages scale with the frequency: EIRP, the path, SNR, rate and DC power, swept over the carrier and both arrays."
-    },
-    {
-      "Folder": "TRL and De-embedding",
-      "Title": "TRL and De-embedding",
-      "Summary": "TRL calibration from a Thru, a Reflect and a Line measured through two fixtures, the two fixture files it writes, a filter de-embedded with them and laid over the truth, and a GaN FET de-embedded to its intrinsic plane, where Cgs, Cgd, gm and Rds come out flat with frequency. The measurements are synthetic, made by circuitRF from cells you can open."
-    },
-    {
-      "Folder": "Hierarchy",
-      "Title": "Hierarchy",
-      "Summary": "A 9 dB attenuator built as cells inside cells: a parameterised pi pad placed twice on a board, simulated from a test bench, laid out with Update Layout from Schematic at both levels, and assembled in 3D from 3D views of other cells you can push into."
     },
     {
       "Folder": "Harmonic Balance",
@@ -52,6 +62,36 @@
       "Summary": "The same device swept over a polar load grid (LP), and again with the pursuit search walking to the optimum (LPP)."
     },
     {
+      "Folder": "Model Composer",
+      "Title": "Model Composer",
+      "Summary": "Device models built from data: a GaN FET from synthetic DC, pulsed and two-temperature S data, with a fitted network, ANN currents and charges, self-heating and drain lag, placed as an 8-finger device in a power sweep and a loadpull; a spiral-inductor family placed between two measured turn counts; and a model from a simulator's tables."
+    },
+    {
+      "Folder": "Symbolically Defined Device (SDD)",
+      "Title": "Symbolically Defined Device (SDD)",
+      "Summary": "A nonlinear GaN FET model written as SDD equations and built up bench by bench: the drain current, the gate's diode and breakdown, 1D charges on the weight-1 path, 2D charges, and the gate-drain capacitor as an SDD block of its own, each under the same loadpull with its MXP and MXE contours and summary tables. A sixth bench's SDD reads the drain supply's current to hold the quiescent current against a threshold shift."
+    },
+    {
+      "Folder": "PDK PCells",
+      "Title": "PDK PCells (Python artwork)",
+      "Summary": "A parameterised microstrip line, two spiral inductors and a MIM capacitor whose layout artwork is generated by Python, and a serpentine thin-film resistor. The kit ships inside the workspace."
+    },
+    {
+      "Folder": "LVS",
+      "Title": "Layout versus schematic",
+      "Summary": "A 3 dB attenuator whose artwork matches its drawing, the SAME board with six deliberate faults in its artwork, and an MMIC bias tee. The broken copy is broken ON PURPOSE \u2014 each fault is one thing LVS exists to find, and the README says what it is and what the report should say about it."
+    },
+    {
+      "Folder": "Artwork to Schematic",
+      "Title": "Artwork to Schematic",
+      "Summary": "A small board as a fabricator receives it \u2014 Gerber, drill, placement and BOM files \u2014 imported and turned into a schematic of lines, a bend, a tee and three parts in seconds. The BOM leaves one inductor out on purpose, so it arrives as a variable to tune against the design the board was drawn from."
+    },
+    {
+      "Folder": "Power Rail",
+      "Title": "Power Rail Integrity",
+      "Summary": "A four-layer board with one 3.3 V rail: the DC drop and where it goes, Z(f) against a flat target, and which of thirteen capacitors are actually doing anything."
+    },
+    {
       "Folder": "Klopfenstein Taper",
       "Title": "Klopfenstein Taper vs MoM",
       "Summary": "A 50-to-100 ohm taper solved twice: once from the closed-form model, once by the planar EM engine. Run the EM setup and compare."
@@ -62,9 +102,24 @@
       "Summary": "Built-in dividers, hybrids, a coupler and a balun on 20 mil RO4350B at 2.4 GHz, each placed as one part from its specs and laid out by Update Layout. Run a cell's Planar MoM, EMerge and Palace setups, simulate its bench, and open its data display to see the circuit model against each solver."
     },
     {
-      "Folder": "Patch Antenna",
-      "Title": "Patch Antenna",
-      "Summary": "A 5.8 GHz microstrip patch with an inset feed, set up for a full-wave planar solve with a radiation pattern."
+      "Folder": "PCB Component Ports",
+      "Title": "PCB Component Ports",
+      "Summary": "A 50 ohm line with a three-part pi low-pass filter, solved once with each part as a component port, on Planar MoM, Palace and EMerge. A test bench puts the parts back and lays the three answers over the schematic alone; change a part value and no EM run is needed."
+    },
+    {
+      "Folder": "MMIC Component Ports",
+      "Title": "MMIC Component Ports",
+      "Summary": "A small GaAs stage — input and output lines, a series MIM capacitor, a shunt spiral and a three-pin device cell — solved once on the Planar solver with the device and the MIM capacitor cut out of the layout and a port at each of their pins, then closed by their own models beside the circuit-model answer."
+    },
+    {
+      "Folder": "Via Contact Resistor",
+      "Title": "Via Contact Resistor",
+      "Summary": "A thin-film resistor on a level of its own on a silicon back-end, contacted through vias, with a Metal1 line crossing under it that does not touch it."
+    },
+    {
+      "Folder": "Passivated Pad",
+      "Title": "Passivated Pad",
+      "Summary": "Two dielectrics over the top metal of a GaAs process, entered as the process states them: a line with and without them, a probe pad seen through an opening in both, in 3D and planar, and a through-silicon via that passes through the oxide and the silicon as one via."
     },
     {
       "Folder": "3D EM",
@@ -87,11 +142,6 @@
       "Summary": "How to set up a wave port: the 3D Connector's launch with its back end open and fed by a coaxial wave port on Palace and on openEMS, and an edge-coupled stripline pair whose four strip ends are each a terminal of a wave port on openEMS, plotted against Cohn's ideal coupled line."
     },
     {
-      "Folder": "Loop Sensor",
-      "Title": "Loop Sensor (coaxial port, connector on an antenna)",
-      "Summary": "A printed split-ring loop sensor from a published paper, fed through a real-size edge-launch SMA built with the 3D editor's operations: a coaxial port at the connector's back face, set against an ideal port across the loop's two ends and a gap port, with and without a water sample in its reservoir. Solved on Palace, EMerge and openEMS."
-    },
-    {
       "Folder": "3D Eigenmode",
       "Title": "3D Eigenmode (a cavity resonance)",
       "Summary": "Is there a cavity resonance in my band? A 50 ohm line through an aluminium housing whose first mode lies inside 8-12 GHz, found by Palace's eigenmode solve and seen as a notch in a driven sweep, and the same housing with one grounded post, which shortens the cavity the mode sees and moves it above the band."
@@ -107,24 +157,9 @@
       "Summary": "A test pad on the far side of a six-layer board with no nets, joined to a 50 ohm line through a via with unused inner pads: its capacitance as built and with the pads removed, what goes wrong when the ground planes are left floating, and a schematic showing the electrostatic C reproduce a driven 3D run below the via's resonance."
     },
     {
-      "Folder": "SAR MRI Loop Coil",
-      "Title": "SAR: MRI Loop Coil",
-      "Summary": "A 7 T surface coil beside a head phantom with every capacitor gap a port: openEMS runs once and keeps each port's fields, and a schematic then tunes, matches and optimizes the coil against S11, B1 and psSAR goals while B1 and SAR follow every value with no new EM run."
-    },
-    {
-      "Folder": "SAR Phone Dipole",
-      "Title": "SAR: Phone Dipole",
-      "Summary": "A system-check dipole 10 mm under a flat phantom of head tissue-simulating liquid, run at two bands by a band sweep, with psSAR1g and psSAR10g at the rated power beside published reference values."
-    },
-    {
-      "Folder": "PCB Component Ports",
-      "Title": "PCB Component Ports",
-      "Summary": "A 50 ohm line with a three-part pi low-pass filter, solved once with each part as a component port, on Planar MoM, Palace and EMerge. A test bench puts the parts back and lays the three answers over the schematic alone; change a part value and no EM run is needed."
-    },
-    {
-      "Folder": "MMIC Component Ports",
-      "Title": "MMIC Component Ports",
-      "Summary": "A small GaAs stage — input and output lines, a series MIM capacitor, a shunt spiral and a three-pin device cell — solved once on the Planar solver with the device and the MIM capacitor cut out of the layout and a port at each of their pins, then closed by their own models beside the circuit-model answer."
+      "Folder": "Patch Antenna",
+      "Title": "Patch Antenna",
+      "Summary": "A 5.8 GHz microstrip patch with an inset feed, set up for a full-wave planar solve with a radiation pattern."
     },
     {
       "Folder": "Antenna Co-Simulation",
@@ -137,34 +172,59 @@
       "Summary": "A patch array at 5.9 GHz built from one EM run of a 5 x 5 sub-array: a 16 x 16 transmit array with amplifier channels steered by a VAR and swept, an 8 x 8 receiver with its G/T, an interferer swept in angle, and four power amplifiers on a 1 x 4 array in harmonic balance and under a modulated signal, their active reflections over the amplifier's loadpull contours."
     },
     {
+      "Folder": "Loop Sensor",
+      "Title": "Loop Sensor (coaxial port, connector on an antenna)",
+      "Summary": "A printed split-ring loop sensor from a published paper, fed through a real-size edge-launch SMA built with the 3D editor's operations: a coaxial port at the connector's back face, set against an ideal port across the loop's two ends and a gap port, with and without a water sample in its reservoir. Solved on Palace, EMerge and openEMS."
+    },
+    {
+      "Folder": "SAR MRI Loop Coil",
+      "Title": "SAR: MRI Loop Coil",
+      "MenuTitle": "MRI Loop Coil",
+      "Summary": "A 7 T surface coil beside a head phantom with every capacitor gap a port: openEMS runs once and keeps each port's fields, and a schematic then tunes, matches and optimizes the coil against S11, B1 and psSAR goals while B1 and SAR follow every value with no new EM run."
+    },
+    {
+      "Folder": "SAR Phone Dipole",
+      "Title": "SAR: Phone Dipole",
+      "MenuTitle": "Phone Dipole",
+      "Summary": "A system-check dipole 10 mm under a flat phantom of head tissue-simulating liquid, run at two bands by a band sweep, with psSAR1g and psSAR10g at the rated power beside published reference values."
+    },
+    {
       "Folder": "Thermal Die to Heatsink",
       "Title": "Thermal: Die to Heatsink",
+      "MenuTitle": "Die to Heatsink",
       "Summary": "A GaN-on-SiC die on a copper\u2013molybdenum flange, a board with a field of plated vias, and a heatsink at 85 \u00b0C: the junction temperature and Rth against dissipated power, with the via field solved as drawn or as one effective block."
     },
     {
       "Folder": "Thermal Channel vs Surface",
       "Title": "Thermal: Channel vs Surface",
+      "MenuTitle": "Channel vs Surface",
       "Summary": "One GaN finger under its field plate, and eight at their pitch: how much hotter the channel is than what an IR camera sees, the Rth matrix across the fingers, and a radar pulse through the fitted Z_th."
     },
     {
       "Folder": "Thermal Output Wires",
       "Title": "Thermal: Output Wires",
+      "MenuTitle": "Output Wires",
       "Summary": "Six gold bond wires from a die to a package lead inside a mould compound: how hot each wire runs under DC current up to thermal runaway, under RF current at 2 GHz (the edge wires run hottest), and under the currents of a power amplifier's harmonic-balance drive sweep."
     },
     {
-      "Folder": "PDK PCells",
-      "Title": "PDK PCells (Python artwork)",
-      "Summary": "A parameterised microstrip line, two spiral inductors and a MIM capacitor whose layout artwork is generated by Python, and a serpentine thin-film resistor. The kit ships inside the workspace."
+      "Folder": "Pulse Response",
+      "Title": "Pulse Response (transient)",
+      "Summary": "A 5th-order Butterworth low-pass filter and a lossless line driven by a fast step, each simulated by the native transient engine and by ngspice side by side: rise time, overshoot, settling and the line's reflection."
     },
     {
-      "Folder": "Via Contact Resistor",
-      "Title": "Via Contact Resistor",
-      "Summary": "A thin-film resistor on a level of its own on a silicon back-end, contacted through vias, with a Metal1 line crossing under it that does not touch it."
+      "Folder": "Buck Converter",
+      "Title": "Buck Converter (transient)",
+      "Summary": "A 12 V to 5.5 V buck at 1 MHz with a voltage-controlled switch, a diode and an LC filter: start-up from rest, ripple and settling, and initial conditions (IC=) that start the run in steady state."
     },
     {
-      "Folder": "Passivated Pad",
-      "Title": "Passivated Pad",
-      "Summary": "Two dielectrics over the top metal of a GaAs process, entered as the process states them: a line with and without them, a probe pad seen through an opening in both, in 3D and planar, and a through-silicon via that passes through the oxide and the silicon as one via."
+      "Folder": "Class-E with a Transient Seed",
+      "Title": "Class-E with a Transient Seed",
+      "Summary": "A 1 GHz class-E stage solved by harmonic balance started from a transient run (InitialGuess=transient), beside a transient bench showing the drain waveforms the start came from. 31.4 dBm at 88 % drain efficiency."
+    },
+    {
+      "Folder": "RF Chain Budget",
+      "Title": "RF Chain Budget",
+      "Summary": "A receive chain as a budget, stage by stage: a 2.45 GHz superhet, a four-element steered array into a combiner, a front end with a canceller and a dual-conversion receiver, each with its gain, NF, intercepts, compression, sensitivity and SFDR in closed form, and transferred to test benches whose S-parameter, harmonic-balance and envelope runs put a simulated number beside every one of them, the dual-conversion one conversion by conversion. And a 26 GHz link whose stages scale with the frequency: EIRP, the path, SNR, rate and DC power, swept over the carrier and both arrays."
     },
     {
       "Folder": "System Design",
@@ -172,44 +232,35 @@
       "Summary": "A 2.4 GHz transmitter and receiver drawn twice \u2014 direct conversion and superheterodyne \u2014 from the System block library, plus a transmitter whose final stage is a nonlinear FET and a cascade gain/IP3/noise budget."
     },
     {
-      "Folder": "Power Rail",
-      "Title": "Power Rail Integrity",
-      "Summary": "A four-layer board with one 3.3 V rail: the DC drop and where it goes, Z(f) against a flat target, and which of thirteen capacitors are actually doing anything."
+      "Folder": "Indoor IoT Link",
+      "Title": "Indoor IoT Link",
+      "Summary": "An 868 MHz FSK sensor two floors from its gateway through a Propagation Channel: ITU-R P.1238 office loss with floors and walls, a tapped delay line read from the office's power-delay profile file, received power and outage over 2,000 drops, and bit errors counted over 50."
     },
     {
-      "Folder": "Smith Chart",
-      "Title": "Smith Chart (narrowband match)",
-      "Summary": "A device input of 8 \u2212 j12 \u03a9, stated over three frequencies, matched to 50 \u03a9 by hand with a series L and a shunt C. Drag either gripper and watch the band edges move."
+      "Folder": "LEO Satellite Downlink",
+      "Title": "LEO Satellite Downlink",
+      "Summary": "A 20 GHz 16APSK single carrier through a transponder and a 600 km low-orbit pass at 30\u00b0 elevation: P.618 rain, clouds and scintillation at 99.5 %, P.676 gas, ITU-R P.681 land mobile-satellite states, the pass's 400 kHz Doppler acquired and removed, and EVM, bit errors and outage over 40 drops."
     },
     {
-      "Folder": "Optimization",
-      "Title": "Tuning and Optimization",
-      "Summary": "An L-section match, a three-resonator bandpass filter set up for minimax, and a FET amplifier stabilized for \u00b5 \u2265 1.05 while its complex source impedance is tuned by magnitude and phase. Each optimizes in under a second; the amplifier has one range drawn too narrow on purpose."
-    },
-    {
-      "Folder": "Yield",
-      "Title": "Yield, Corners and Centering",
-      "Summary": "A bandpass filter built from ±2 % parts and judged against loosened specs, an amplifier that fails one of six temperature and supply corners until it is optimized across all of them, a bias divider whose yield is centred from about 70 % to above 95 %, and an amplifier and spiral inductor, both Touchstone blocks, ranked in the Sensitivity panel. Every run takes a second or two."
-    },
-    {
-      "Folder": "LVS",
-      "Title": "Layout versus schematic",
-      "Summary": "A 3 dB attenuator whose artwork matches its drawing, the SAME board with six deliberate faults in its artwork, and an MMIC bias tee. The broken copy is broken ON PURPOSE \u2014 each fault is one thing LVS exists to find, and the README says what it is and what the report should say about it."
-    },
-    {
-      "Folder": "Artwork to Schematic",
-      "Title": "Artwork to Schematic",
-      "Summary": "A small board as a fabricator receives it \u2014 Gerber, drill, placement and BOM files \u2014 imported and turned into a schematic of lines, a bend, a tee and three parts in seconds. The BOM leaves one inductor out on purpose, so it arrives as a variable to tune against the design the board was drawn from."
-    },
-    {
-      "Folder": "Schematic from Image",
-      "Title": "Schematic from Image",
-      "Summary": "A picture of a schematic and a picture of its board, each made into a cell by Create Schematic from Image: the parts read from the pictures, drawn over them, and the values no picture states arriving as variables to tune."
-    },
-    {
-      "Folder": "Model Composer",
-      "Title": "Model Composer",
-      "Summary": "Device models built from data: a GaN FET from synthetic DC, pulsed and two-temperature S data, with a fitted network, ANN currents and charges, self-heating and drain lag, placed as an 8-finger device in a power sweep and a loadpull; a spiral-inductor family placed between two measured turn counts; and a model from a simulator's tables."
+      "Folder": "mmWave Array Link",
+      "Title": "mmWave Array Link",
+      "Summary": "A 28 GHz 16 \u00d7 16 transmit array to an 8 \u00d7 8 receive array through 3GPP TR 38.901 UMi without line of sight and CDL-C: the beam pair found automatically in every drop, NR 64-QAM equalized from pilots, and EVM, bit errors and outage over 20 drops. The patch element's EM record ships with it."
     }
+  ],
+  "Groups": [
+    { "Title": "Linear and Calibration", "Examples": ["S-Parameters", "TRL and De-embedding", "Smith Chart"] },
+    { "Title": "Design Flow", "Examples": ["Hierarchy", "Optimization", "Yield"] },
+    { "Title": "Noise", "Examples": ["S-Parameter Noise", "Receiver Noise"] },
+    { "Title": "Nonlinear", "Examples": ["Harmonic Balance", "Envelope", "Pulsed Radar", "Loadpull"] },
+    { "Title": "Models", "Examples": ["Model Composer", "Symbolically Defined Device (SDD)"] },
+    { "Title": "Layout and Interchange", "Examples": ["PDK PCells", "LVS", "Artwork to Schematic"] },
+    { "Title": "Power Distribution Networks", "Examples": ["Power Rail"] },
+    { "Title": "Planar EM and Boards", "Examples": ["Klopfenstein Taper", "Dividers and Couplers", "PCB Component Ports", "MMIC Component Ports", "Via Contact Resistor", "Passivated Pad"] },
+    { "Title": "3D EM", "Examples": ["3D EM", "3D Package", "3D Connector", "3D Wave Ports", "3D Eigenmode", "Capacitance Extraction", "Test Pad Capacitance"] },
+    { "Title": "Antennas and Arrays", "Examples": ["Patch Antenna", "Antenna Co-Simulation", "Phased Array", "Loop Sensor"] },
+    { "Title": "SAR", "Examples": ["SAR MRI Loop Coil", "SAR Phone Dipole"] },
+    { "Title": "Thermal", "Examples": ["Thermal Die to Heatsink", "Thermal Channel vs Surface", "Thermal Output Wires"] },
+    { "Title": "Transient", "Examples": ["Pulse Response", "Buck Converter", "Class-E with a Transient Seed"] },
+    { "Title": "Systems and Radio Links", "Examples": ["RF Chain Budget", "System Design", "Indoor IoT Link", "LEO Satellite Downlink", "mmWave Array Link"] }
   ]
 }

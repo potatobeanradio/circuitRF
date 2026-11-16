@@ -29,7 +29,7 @@ internal sealed partial class HznPatch
         foreach (string name in names)
         {
             string? project = HznNames.HznProjectName(name);
-            string hzn = project ?? name;
+            string hzn = HznNames.HznVariableName(name);
             if (after?[hzn] is not HznJsonScalar { StringValue: { } text })
             {
                 Refuse($"Variable '{name}': it cannot be written to the Hertzon design.");
@@ -56,7 +56,7 @@ internal sealed partial class HznPatch
                 Note($"Project variable '{project}' was left in the project: other designs of it may use it.");
                 continue;
             }
-            if (DesignVariables.Remove(name)) _changed = true;
+            if (DesignVariables.Remove(HznNames.HznVariableName(name))) _changed = true;
             HertzonOnlyNaming([name], "variable");
         }
     }

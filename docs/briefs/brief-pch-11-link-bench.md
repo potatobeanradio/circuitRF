@@ -36,3 +36,17 @@ percentile drop picked from that sweep: EVM, counted and semi-analytic BER at ea
 ## Not here
 
 A bench that emits PhasedArrays (`phased-array.md` §11).
+
+## Completion note (2026-11-15)
+
+- R-pch11-1: `ChainBench.Link` (`<chain> Link`) for a chain with a link and no receive array; `ChainLinkBench` maps the link onto a
+  Propagation Channel and picks the signal (NR at the link's modulation, a single carrier on a satellite link or for BPSK/8PSK).
+- R-pch11-2: an S-parameter run swept over 100/(1 − p) drops (1,000 to 100,000); each drop's received power is the antenna power
+  plus the channel's `Gain_dB`, read by the new `A.link("CH1", "Gain_dB")` accessor; rows for the outage (with its interval),
+  the received power at the availability, the margin and the rain, each budget, simulated and difference.
+- R-pch11-3: an envelope run with `Equalizer=pilot` at the sweep's median and outage-percentile drops, picked when the bench is
+  written by evaluating each drop's channel (the same draws as the run); EVM beside the budget's SNR, BER counted and estimated.
+  An envelope probe past a channel read as carrying no RF and was blanked; the threshold now allows for the channel's gain.
+- R-pch11-4: listed with the benches Transfer writes; the Blocks view's propagation card opens the written bench.
+- Gates in `tests/Ui.Tests/Chain/ChainLinkBenchTests` (gate 2 over 10,000 drops rather than the bench's 100,000). `Rain=drawn` is
+  now accepted by the budget (taken as `fixed`). Findings in `src/Design/RESOLVED.md` and `src/Engine/RESOLVED.md`.

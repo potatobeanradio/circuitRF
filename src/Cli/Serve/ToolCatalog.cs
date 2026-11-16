@@ -578,6 +578,20 @@ internal static class ToolCatalog
                   + "Thru (trusted inside 20-160 degrees, with a warning outside), Gamma the solved reflect. The reference plane is the "
                   + "middle of the Thru, and a part de-embedded with the fixtures is referenced to the Line's impedance. 'reference analyses' "
                   + "has the directive."),
+                // brief-trn-1: the `tran` verb — the native transient analysis.
+                new("tran", ["tran"],
+                    [new("path", true, "The .cnl or .csch whose transient (type=tran) analyses to run.")],
+                    [Analysis, Set, Output, All,
+                     new("stop",   "--stop",   OptKind.Str, "End time, s, replacing the directive's Stop."),
+                     new("step",   "--step",   OptKind.Str, "Output grid spacing, s, replacing the directive's Step."),
+                     new("method", "--method", OptKind.Str, "trap or gear2, replacing the directive's Method."),
+                     new("solver", "--solver", OptKind.Str, "native or ngspice, replacing the directive's Solver. ngspice runs only where 'solver' finds one; with none the run is refused, never run native.")],
+                    "Transient: the circuit in the time domain from its DC operating point (InitialState=op) or from zero, with an "
+                  + "adaptive step and every source driven by its waveform (a tone source is its sinusoid). Every labelled net records "
+                  + "V[time, node] and every IProbe I[time, branch] and P[time, branch], on the uniform grid Step sets; Tran.* are the "
+                  + "run's counters. With Solver=ngspice (or solver=ngspice) the bench is written as a SPICE deck and solved by the ngspice "
+                  + "'solver' lists, the same cubes on the same grid; an element the deck cannot write exactly is refused by name. The waveforms are in the shape and in -o's file; ask for "
+                  + "them with all, only or group. Runs the parametric sweep when one wraps it. 'reference analyses' has the directive."),
                 // brief NZ-9: the `osc` verb — harmonic balance with the fundamental an unknown, at the circuit's OscProbe.
                 new("osc", ["osc"],
                     [new("path", true, "The .cnl or .csch whose oscillator (type=osc) analysis to run.")],
@@ -1394,7 +1408,10 @@ internal static class ToolCatalog
           + "it will run, and for checking your own authoring against a known-good one. Given a "
           + ".clay it PROJECTS the board instead: a board netlist, a placement table and a bill of "
           + "materials, from one reading of the artwork, so the three cannot disagree. With "
-          + "toSchematic it runs the other way: a .cnl you wrote becomes a readable drawn .csch.",
+          + "toSchematic it runs the other way: a .cnl you wrote becomes a readable drawn .csch. With an output ending .cir it "
+          + "writes the bench's transient analysis as a SPICE deck for ngspice — exact or refused: every element with no exact "
+          + "translation is listed at once and nothing is written (SpiceLines=rlgc and SpiceFit=yes on the tran line ask for the "
+          + "approximate ones, each reported).",
             null, null,
             [
                 new("", [ "netlist" ],
@@ -1404,8 +1421,11 @@ internal static class ToolCatalog
                     [
                         HostWorkspace,
                         new("output", "-o", OptKind.Path,
-                            "Where the .cnl is written. Without it the text comes back in the result."),
+                            "Where the .cnl is written, or a .cir for the SPICE deck of the bench's transient analysis (a .cnl "
+                          + "bench is taken too). Without it the .cnl text comes back in the result."),
                         new("cell", "--cell", OptKind.Str, "Which cell, when the path is a workspace."),
+                        new("analysis", "--analysis", OptKind.Str,
+                            "With a .cir output: which transient analysis the deck is for, when the bench has several."),
                         new("toSchematic", "--to-schematic", OptKind.Flag,
                             "The other direction: path is a .cnl, and the result is a DRAWN schematic (.csch) — "
                           + "the signal path left to right with the ports at its ends, shunt elements dropped "
@@ -1990,7 +2010,7 @@ internal static class ToolCatalog
         // stay off this surface — both download or delete on the user's machine behind a consent that
         // is the PERSON's to give, and a tool call is not that person.
         new("solver",
-            "Which external 3D solvers (Palace, Gmsh, openEMS, EMerge, and Hertzon's command line) are installed here and what each build can do: "
+            "Which external solvers (ngspice, the transient analysis's Solver=ngspice; the 3D solvers Palace, Gmsh, openEMS, EMerge; and Hertzon's command line) are installed here and what each 3D build can do: "
           + "driven solves, wave ports, eigenmode solves, and with capability=gpu whether Palace solves on a GPU and "
           + "how many it finds; for EMerge, its sparse-solver tier and whether GPU solving is enabled, with the command "
           + "that enables it. result.machine is this machine's physical and logical cores and its memory, which is what "

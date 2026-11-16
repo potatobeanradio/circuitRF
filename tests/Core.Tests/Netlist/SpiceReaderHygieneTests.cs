@@ -135,13 +135,13 @@ public sealed class SpiceReaderHygieneTests
 
     /// <summary>
     /// The comma keeps the value and the condition in one word, so nothing read as a value and the
-    /// capacitor was refused for having none — losing a component over a setting circuitRF has no
-    /// analysis for anyway.
+    /// capacitor was refused for having none. Both are kept: the capacitance, and the initial
+    /// condition a transient analysis applies (brief TRN-2 R-trn2-8).
     /// </summary>
     [Theory]
     [InlineData("CQB b 0 1u,IC=0")]
     [InlineData("CQB b 0 1u,IC = 0")]
-    public void H7_ACapacitorKeepsItsValueAndNotesTheInitialCondition(string line)
+    public void H7_ACapacitorKeepsItsValueAndItsInitialCondition(string line)
     {
         var r = Read($"""
             .subckt part b
@@ -152,9 +152,7 @@ public sealed class SpiceReaderHygieneTests
         var c = Cell(r, "part").Instances.Single();
         Assert.Equal("C", c.Reference);
         Assert.Equal("1E-06", c.Overrides.Single(o => o.Name == "C").Expression);
-        Assert.DoesNotContain(c.Overrides, o => o.Name.Equals("IC", StringComparison.OrdinalIgnoreCase));
-
-        Assert.Contains("initial condition", Notes(r), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("0", c.Overrides.Single(o => o.Name == "IC").Expression);
         Assert.Empty(r.IncompleteCells);
     }
 
@@ -176,9 +174,10 @@ public sealed class SpiceReaderHygieneTests
     // ── element letters circuitRF will not implement ──────────────────────────
 
     [Theory]
-    [InlineData("S1 a b c d SWMOD", "switch")]
-    [InlineData("W1 a b VSENSE SWMOD", "switch")]
-    [InlineData("T1 a 0 b 0 Z0=50 TD=1n", "transmission line")]
+    [InlineData("W1 a b VSENSE SWMOD", "current-controlled switch")]
+    // brief TRN-6 reads a lossless line with one shared reference as a TLIN; one whose ports have different references
+    // excites two modes, which a TLIN does not carry, and is still refused by what it is
+    [InlineData("T1 a 0 b c Z0=50 TD=1n", "two modes")]
     [InlineData("O1 a 0 b 0 LMOD", "transmission line")]
     [InlineData("U1 a b UMOD", "circuitRF does not have")]
     public void H9_AnUnimplementedElementIsRefusedByName(string line, string mustSay)
@@ -247,18 +246,19 @@ public sealed class SpiceReaderHygieneTests
     // ── time ──────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// circuitRF solves in steady state, where any elapsed time has passed, so a lower bound on the
-    /// time variable holds. That is an interpretation of a transient construct and has to say so out
-    /// loud.
+    /// A steady-state analysis, where any elapsed time has passed, reads a lower bound on the time
+    /// variable as holding. The comparison is kept as written for a transient analysis to read at the
+    /// simulated time (brief TRN-2), the expression engine gives it its steady-state reading, and the
+    /// note says which that is.
     /// </summary>
     [Fact]
-    public void H12_TimeInsideAConditionIsReadAsSteadyStateAndNoted()
+    public void H12_TimeInsideAConditionIsKeptReadAsSteadyStateAndNoted()
     {
         var notes = new List<string>();
         string expr = SpiceExpression.Rewrite("if(time > 0, a*2, 0)", null, notes);
 
         Assert.Equal(4.0, Value(expr, ("a", "2")), 12);
-        Assert.False(SpiceExpression.ReferencesTime(expr));
+        Assert.True(SpiceExpression.ReferencesTime(expr));
         Assert.Contains("steady state", Assert.Single(notes));
     }
 
@@ -309,7 +309,7 @@ public sealed class SpiceReaderHygieneTests
         Assert.Single(notes);
     }
 
-    /// <summary>A ramp has no steady-state value at all, so it stays refused — and refused by name.</summary>
+    /// <summary>A passive whose value ramps with time is refused by name: its value is fixed for a run.</summary>
     [Fact]
     public void H14_TimeOutsideAConditionIsRefusedByName()
     {
@@ -321,7 +321,7 @@ public sealed class SpiceReaderHygieneTests
 
         Assert.Contains("part", r.IncompleteCells);
         Assert.Contains("transient time variable", Notes(r));
-        Assert.Contains("no transient analysis", Notes(r));
+        Assert.Contains("fixed for a run", Notes(r));
     }
 
     // ── the two dialects' spellings of the same functions ─────────────────────
@@ -442,7 +442,7 @@ public sealed class SpiceReaderHygieneTests
         var inst = Cell(r, "part").Instances.Single(i => i.InstanceName == "C1");
 
         Assert.Equal("1E-06", inst.Overrides.Single(o => o.Name == "C").Expression);
-        Assert.Contains("initial condition", Notes(r), StringComparison.Ordinal);
+        Assert.Equal("0", inst.Overrides.Single(o => o.Name == "IC").Expression);
     }
 
     // ── a comment on one continuation line ────────────────────────────────────

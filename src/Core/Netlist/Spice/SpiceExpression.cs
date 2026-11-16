@@ -168,10 +168,10 @@ public static class SpiceExpression
     /// <summary>
     /// Whether a rewritten expression still names the transient time variable.
     ///
-    /// <para>Asked AFTER <see cref="Rewrite"/>, because a <c>time</c> inside a condition has already
-    /// been read as steady state and is gone. What is left is a genuine transient stimulus — a ramp,
-    /// a <c>time*k</c> — for which there is no steady-state reading at all, so the caller refuses the
-    /// line rather than inventing one.</para>
+    /// <para>A <c>time</c> inside a condition is kept as written (brief TRN-2) and read by the expression
+    /// engine's one rule (<see cref="TimeVariable"/>), so this answers whether the text names it at all.
+    /// A behavioural source that does is read; a transient analysis evaluates it, and a steady-state
+    /// analysis refuses a <c>time</c> outside a condition by name.</para>
     /// </summary>
     public static bool ReferencesTime(string expr) => MentionsIdentifier(expr, TimeIdentifier);
 
@@ -521,25 +521,14 @@ public static class SpiceExpression
     }
 
     /// <summary>
-    /// Reads a COMPARISON against <c>time</c> at its steady-state value.
+    /// Notes every COMPARISON against <c>time</c>, with its steady-state value, and keeps the expression as written.
     ///
-    /// <para><b>This is an interpretation, not a spelling change, which is why every one is
-    /// noted.</b> circuitRF has no transient analysis; DC, S-parameter and harmonic-balance runs are
-    /// all steady state, where any elapsed time has passed. These constructs exist to suppress a
-    /// start-up transient or to gate a differentiator, and the steady state is what the circuit
-    /// settles to.</para>
-    ///
-    /// <para><b>The comparison is what is read, not the conditional around it, and that distinction
-    /// is the whole correctness of this.</b> <c>time &gt; 0</c> is TRUE in steady state and
-    /// <c>time &lt; 1n</c> is FALSE — so an <c>if</c> whose condition merely MENTIONS time cannot
-    /// simply be replaced by its then-branch. A real file writes
-    /// <c>if((V(r) &gt; 0.5) | time &lt; 1n, 0, …)</c>, where taking the then-branch means the
-    /// device's output is stuck at 0 forever, which converges and is a different circuit. Replacing
-    /// only the comparison leaves the rest of the condition intact and lets it decide.</para>
-    ///
-    /// <para>A <c>time</c> that is not one side of a comparison — a ramp, <c>time*k</c> — has no
-    /// steady-state value at all. It is left exactly as written, so
-    /// <see cref="ReferencesTime"/> reports it and the caller refuses the line by name.</para>
+    /// <para>A transient analysis reads <c>time</c> at the simulated time (brief TRN-2), and the
+    /// expression engine reads it in steady state by one rule (<see cref="TimeVariable"/>: an operand of a
+    /// comparison is +infinity, every finite instant having passed), so the text is kept and the note
+    /// says what a steady-state run will make of it. <c>time &gt; 0</c> is true there and
+    /// <c>time &lt; 1n</c> false; a <c>time</c> outside a comparison has no steady-state value and a
+    /// steady-state run refuses it by name.</para>
     /// </summary>
     public static string RewriteTimeConditions(string expr, ICollection<string>? notes = null)
     {
@@ -549,14 +538,13 @@ public static class SpiceExpression
         try { ast = Parser.Parse(expr); }
         catch { return expr; }        // unreadable for other reasons; the caller's own error wins
 
+        // brief-trn-2 R-trn2-8: the comparison is NOTED and kept as written. A transient analysis reads `time` at the
+        // simulated time; every steady-state analysis reads it through the expression engine's one rule (TimeVariable),
+        // which gives exactly the truth value the note states.
         var said = new List<string>();
-        Expr rewritten = SteadyState(ast, said);
-        if (said.Count == 0) return expr;
-
+        SteadyState(ast, said);
         foreach (string n in said) notes?.Add(n);
-
-        try { return SpiceBehaviouralSource.Print(rewritten); }
-        catch (NotSupportedException) { return expr; }
+        return expr;
     }
 
     private static Expr SteadyState(Expr e, List<string> notes)
@@ -581,10 +569,9 @@ public static class SpiceExpression
                 if (truth is not { } value) return e;
 
                 notes.Add(
-                    $"'{Shorten(SafePrint(e))}' compares against the transient time variable. "
-                    + "circuitRF has no transient analysis and solves in steady state, where that "
-                    + $"comparison is {(value ? "true" : "false")}; the rest of the expression is "
-                    + "unchanged.");
+                    $"'{Shorten(SafePrint(e))}' compares against the transient time variable. A transient "
+                    + "analysis reads it at the simulated time; DC, S-parameter and harmonic-balance runs solve "
+                    + $"in steady state, where that comparison is {(value ? "true" : "false")}.");
 
                 return value
                     ? new CompareExpr(">", new NumberExpr(1), new NumberExpr(0))

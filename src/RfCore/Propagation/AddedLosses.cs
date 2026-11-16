@@ -152,7 +152,11 @@ namespace RfCore.Propagation
         }
 
         /// <summary>Am = A1·f^α with the 900-2200 MHz woodland fit, dB.</summary>
-        public static double DefaultMaxAttenuation(double fHz) => 1.15 * Math.Pow(fHz / 1e6, 0.43);
+        public static double DefaultMaxAttenuation(double fHz)
+        {
+            PropagationMath.Range("P833", "the frequency for the woodland fit Am = A1·f^α (state VegMax otherwise)", fHz / 1e6, 900, 2200, "MHz");
+            return 1.15 * Math.Pow(fHz / 1e6, 0.43);
+        }
 
         /// <summary>Eq. (1): the excess attenuation for one terminal a depth d (m) into woodland.</summary>
         public static double Woodland(double depthM, double gammaDbPerM, double maxDb)
@@ -276,8 +280,16 @@ namespace RfCore.Propagation
 
             string bel = a.Word("BuildingEntry");
             if (bel != "off")
+            {
+                double facade = a.Number("FacadeElevation");
+                if (!a.Given("FacadeElevation") && baseResult.Geometry is { } fg)
+                {
+                    facade = fg.ElevationDeg;
+                    notes.Add($"P.2109 façade elevation taken from the path's elevation, {PropagationMath.F(facade)}°.");
+                }
                 terms.Add(new("P.2109 building entry", ItuP2109.Loss(a.F, a.Number("BuildingProbability"),
-                    bel == "efficient" ? BuildingClass.ThermallyEfficient : BuildingClass.Traditional, a.Number("FacadeElevation"))));
+                    bel == "efficient" ? BuildingClass.ThermallyEfficient : BuildingClass.Traditional, facade)));
+            }
 
             if (a.Word("Vegetation") == "on")
             {
@@ -301,12 +313,26 @@ namespace RfCore.Propagation
             string model = a.Inputs.Model;
             bool gas = a.Word("Gas") == "on", clouds = a.Word("Clouds") == "on", scint = a.Word("Scintillation") == "on", iono = a.Word("Ionosphere") == "on";
             string rain = a.Word("Rain");
-            if (rain == "drawn")
+            // brief-pch-10 R-pch10-1 — Rain=drawn: the drop's own time percentage for the rain, the availability's for everything else
+            double? drawn = rain == "drawn" ? a.Inputs.RainTimePercent : null;
+            if (rain == "drawn" && drawn is null)
                 throw new PropagationRefusal($"{model}: Rain=drawn takes a rain attenuation per drop of a Monte Carlo; a single evaluation takes Rain=fixed (the attenuation at the availability).");
-            bool rainOn = rain == "fixed";
+            bool rainOn = rain is "fixed" or "drawn";
             if (!(gas || rainOn || clouds || scint || iono)) return;
 
             double p = 100 - a.Number("Availability");          // the one conversion from availability to time percentage
+            // the rain's own time percentage: the drawn one, clamped at the method's lower end; beyond its upper end the drop is rain-free
+            double pr = p;
+            string rainAt = PropagationMath.F(p) + " % of the time";
+            if (drawn is double pd)
+            {
+                double top = baseResult.Geometry is null ? 1 : 5;
+                pr = pd > top ? double.PositiveInfinity : Math.Max(pd, 0.001);
+                rainAt = $"{PropagationMath.F(pd)} % of the time (drawn)";
+                notes.Add(pd > top
+                    ? $"Rain=drawn: this drop drew {PropagationMath.F(pd)} % of the time, beyond {(top == 1 ? "P.530's" : "P.618's")} {PropagationMath.F(top)} %: no rain."
+                    : $"Rain=drawn: this drop drew {PropagationMath.F(pd)} % of the time{(pd < 0.001 ? ", taken at the method's 0.001 %" : "")}; the rain is the attenuation exceeded for it.");
+            }
             double fGhz = a.F / 1e9;
             double tK = a.Number("SurfaceTemperature") + 273.15, rho = a.Number("WaterVapour");
             var surface = new AtmosphereState(tK, a.Number("SurfacePressure"), rho);
@@ -318,8 +344,8 @@ namespace RfCore.Propagation
                     throw new PropagationRefusal($"{model}: Clouds, Scintillation and Ionosphere are Earth-space effects (ITU-R P.840, P.618, P.531); this is a terrestrial path. Use the satellite model.");
                 double dKm = a.D3 / 1000;
                 if (gas) terms.Add(new("P.676 gas", ItuP676.Terrestrial(fGhz, dKm, surface)));
-                if (rainOn) terms.Add(new($"P.530 rain at {PropagationMath.F(p)} % of the time",
-                                           ItuP530.Rain(fGhz, dKm, a.Number("RainRate"), p, a.Number("RainTilt"))));
+                if (rainOn) terms.Add(new($"P.530 rain at {rainAt}",
+                                           double.IsInfinity(pr) ? 0 : ItuP530.Rain(fGhz, dKm, a.Number("RainRate"), pr, a.Number("RainTilt"))));
                 return;
             }
 
@@ -333,8 +359,11 @@ namespace RfCore.Propagation
             }
             if (rainOn)
             {
-                if (p <= 5) ar = ItuP618.Rain(fGhz, el, a.Number("RainTilt"), p, hs, a.Number("RainHeight"), a.Number("RainRate"), a.Number("StationLatitude"));
-                else notes.Add($"Rain is not part of P.618's total above 5 % of the time; at {PropagationMath.F(p)} % it adds nothing.");
+                if (pr <= 5) ar = ItuP618.Rain(fGhz, el, a.Number("RainTilt"), pr, hs, a.Number("RainHeight"), a.Number("RainRate"), a.Number("StationLatitude"));
+                else if (drawn is null) notes.Add($"Rain is not part of P.618's total above 5 % of the time; at {PropagationMath.F(p)} % it adds nothing.");
+                // §4.1 — the depolarization the rain gives (a discrimination, not a loss), where the recommendation gives it
+                if (ar > 0 && fGhz >= 6 && fGhz <= 55 && el <= 60 && pr >= 0.001 && pr <= 1)
+                    notes.Add($"P.618 §4.1: rain and ice crystals leave a cross-polarization discrimination of {PropagationMath.F(ItuP618.RainXpd(fGhz, el, a.Number("RainTilt"), pr, ar))} dB at {PropagationMath.F(pr)} % of the time.");
             }
             if (clouds) ac = ItuP840.Cloud(fGhz, el, a.Number("CloudWater"));
             if (scint)
@@ -344,8 +373,10 @@ namespace RfCore.Propagation
             }
             if (rainOn || clouds || scint)
             {
-                double combined = ItuP618.Total(p, 0, ac, ar, aS);
-                terms.Add(new($"P.618 rain, clouds and scintillation at {PropagationMath.F(p)} % of the time", combined));
+                // a drawn rain has its own percentage: it joins clouds and scintillation in §2.5's ≤ 5 % form whenever it is there
+                double combined = ItuP618.Total(drawn is null ? p : Math.Min(p, 5), 0, ac, ar, aS);
+                terms.Add(new(drawn is null ? $"P.618 rain, clouds and scintillation at {PropagationMath.F(p)} % of the time"
+                                            : $"P.618 rain at {rainAt}, clouds and scintillation at {PropagationMath.F(p)} %", combined));
                 notes.Add($"P.618 §2.5 combines rain {PropagationMath.F(ar)} dB, clouds {PropagationMath.F(ac)} dB and scintillation {PropagationMath.F(aS)} dB as √((rain + clouds)² + scintillation²).");
             }
             if (iono)

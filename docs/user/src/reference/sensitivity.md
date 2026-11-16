@@ -175,7 +175,7 @@ level has no running total, because its shares overlap.
 
 ## The example {#example}
 
-**File ▸ New ▸ Examples ▸ Yield, Corners and Centering** includes **SnpSensitivity**: an amplifier's
+**File ▸ New ▸ Examples ▸ Design Flow ▸ Yield, Corners and Centering** includes **SnpSensitivity**: an amplifier's
 Touchstone block followed by a spiral inductor's, with a toleranced shunt capacitor and two specs. The
 spiral's file is reciprocal and the amplifier's is not, so the two tiles show a tied and an untied
 block. Its README says what to click.

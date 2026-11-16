@@ -24,6 +24,7 @@ namespace CircuitRF.DocGen.Pipeline;
 ///   <item><term><c>{{snapglyph: pin}}</c></term><description>one geometry-snap glyph, inline, for a table cell</description></item>
 ///   <item><term><c>{{table: components/Resistor}}</c></term><description>a parameter table read from the live registry</description></item>
 ///   <item><term><c>{{table: optimizers}}</c></term><description>the Optimizer's algorithm menu, read from <c>OptimizerAlgorithms.All</c></description></item>
+///   <item><term><c>{{table: propagation-models}}</c></term><description>every propagation model, from <c>PropagationModels.All</c>; <c>propagation/38901</c> one model's parameters, <c>propagation/losses</c> the added losses</description></item>
 ///   <item><term><c>{{anchor: components#sdd}}</c></term><description>a checked cross-link; add <c>|Link text</c> to word it</description></item>
 ///   <item><term><c>{{toc: site}}</c></term><description>the complete table of contents, from the reading order</description></item>
 ///   <item><term><c>{{regions: workspace}}</c></term><description>the numbered legend of the workspace figure</description></item>
@@ -198,8 +199,12 @@ public sealed class Placeholders
             ["footprints"]           => DocTables.FootprintCases(),
             // The Optimizer's algorithm menu, from the registry the menu itself reads (TO-12).
             ["optimizers"]           => DocTables.Optimizers(),
+            // The propagation registry (brief PCH-12): every model, and each one's parameters or the added losses.
+            ["propagation-models"]   => DocTables.PropagationModels(),
+            ["propagation", var m]   => DocTables.PropagationParameters(m),
             _ => throw new InvalidOperationException(
-                    $"unknown table '{spec}'. Supported: components, components/<SymbolKind>, footprints, optimizers."),
+                    $"unknown table '{spec}'. Supported: components, components/<SymbolKind>, footprints, optimizers, "
+                  + "propagation-models, propagation/<model or losses>."),
         };
     }
 

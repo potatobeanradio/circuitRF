@@ -95,6 +95,21 @@ public sealed class NonPassiveCaveatTests(ITestOutputHelper output)
             Assert.True(c < 128, $"the caveat carries U+{(int)c:X4} ('{c}'), which the .sNp writes as '?'.");
     }
 
+    /// <summary>ICF-4 R-icf4-5 — the file names the ports carrying the excess at the worst point, as the panel note does, in
+    /// ASCII; a point that measured none adds nothing.</summary>
+    [Fact]
+    public void TheCaveatNamesTheCarryingPorts()
+    {
+        string caveat = Assert.Single(EmSnpProvenance.ValidityCaveats(Result(
+            new PlanarPassivityExcess(31e9, 1.01),
+            new PlanarPassivityExcess(40e9, 1.03) { CarriedBy = [(2, 0.9)] })));
+        output.WriteLine(caveat);
+        Assert.Contains("The excess is carried by port 2 (90% of the wave that gains most).", caveat, StringComparison.Ordinal);
+        Assert.All(caveat, c => Assert.True(c < 128));
+        Assert.DoesNotContain("carried by", Assert.Single(EmSnpProvenance.ValidityCaveats(Result(new PlanarPassivityExcess(1.6e8, 1.09)))),
+                              StringComparison.Ordinal);
+    }
+
     /// <summary>A clearance breach and a non-passive sweep are two different facts and the file
     /// carries both — the clearance one first, because it is the cause where there is one.</summary>
     [Fact]

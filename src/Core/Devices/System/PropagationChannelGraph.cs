@@ -18,7 +18,7 @@ public static class PropagationChannelGraph
         int Find(int i) { while (parent[i] != i) i = parent[i] = parent[parent[i]]; return i; }
         var acGround = new HashSet<int> { 0 };
         foreach (var ec in nl.Components)
-            if (ec.Model is VdcModel)
+            if (ec.Model is VdcModel or WaveformSourceModel { IsCurrent: false })
                 foreach (int node in ec.Nodes) acGround.Add(node);
         foreach (var ec in nl.Components)
         {
@@ -36,11 +36,24 @@ public static class PropagationChannelGraph
         return island;
     }
 
+    /// <summary>A channel's transmit and receive nodes: its pin, or (brief PCH-8) an element node of the array an instance end names.</summary>
+    public static (int Tx, int Rx) EndNodes(ElaboratedComponent ec)
+    {
+        var m = (PropagationChannelModel)ec.Model;
+        int Pin(int i) => i >= 0 && i < ec.Nodes.Length ? ec.Nodes[i] : 0;
+        int tx = m.TxEnd is { } te ? (te.Nodes.Length > 0 ? te.Nodes[0] : 0) : Pin(m.TxPin);
+        int rx = m.RxEnd is { } re ? (re.Nodes.Length > 0 ? re.Nodes[0] : 0) : Pin(m.RxPin);
+        return (tx, rx);
+    }
+
     private static IEnumerable<(ElaboratedComponent Ec, int Tx, int Rx)> Edges(ElaboratedNetlist nl, int[] island)
     {
         foreach (var ec in nl.Components)
-            if (ec.Model is PropagationChannelModel && ec.Nodes.Length >= 2)
-                yield return (ec, ec.Nodes[0] > 0 ? island[ec.Nodes[0]] : -1, ec.Nodes[1] > 0 ? island[ec.Nodes[1]] : -1);
+            if (ec.Model is PropagationChannelModel)
+            {
+                var (tx, rx) = EndNodes(ec);
+                yield return (ec, tx > 0 && tx < island.Length ? island[tx] : -1, rx > 0 && rx < island.Length ? island[rx] : -1);
+            }
     }
 
     /// <summary>Every cycle of channels: the instances whose receive sides lead back to a transmit side of the same set, each
@@ -73,10 +86,11 @@ public static class PropagationChannelGraph
         return cycles;
     }
 
-    /// <summary>Each receive net more than one channel drives, with those channels: a pin receive end takes one channel.</summary>
+    /// <summary>Each receive net more than one channel drives, with those channels: a pin receive end takes one channel (an instance
+    /// receive end takes any number, brief PCH-8 R-pch8-9).</summary>
     public static IReadOnlyList<(string Net, IReadOnlyList<string> Channels)> SharedReceivePins(ElaboratedNetlist nl)
-        => [.. nl.Components.Where(c => c.Model is PropagationChannelModel && c.Nodes.Length >= 2 && c.Nodes[1] > 0)
-                 .GroupBy(c => c.Nodes[1]).Where(g => g.Count() > 1)
+        => [.. nl.Components.Where(c => c.Model is PropagationChannelModel m && m.RxPin >= 0 && m.RxPin < c.Nodes.Length && c.Nodes[m.RxPin] > 0)
+                 .GroupBy(c => c.Nodes[((PropagationChannelModel)c.Model).RxPin]).Where(g => g.Count() > 1)
                  .Select(g => (nl.Nodes.NameOf(g.Key), (IReadOnlyList<string>)[.. g.Select(c => c.InstancePath)]))];
 
     /// <summary>The one channel whose receive side holds <paramref name="node"/>, or null (none, or more than one).</summary>

@@ -16,7 +16,7 @@ namespace CircuitRF.Design.Schematic;
 //    - Id never persisted
 //    - format_version reject-on-mismatch (enforced by the CschFile wrapper)
 //
-//  Type discriminator: CschAnalysis.Type is "dc" / "sp" / "hb" / "sweep" / "lp" / "lpp" / "fields" / "trl" / "osc".
+//  Type discriminator: CschAnalysis.Type is "dc" / "sp" / "hb" / "sweep" / "lp" / "lpp" / "fields" / "trl" / "osc" / "tran".
 //  Loadpull ("lp") and Loadpull-Pursuit ("lpp") round-trip here (authoring forms: briefs 05-06).
 //  Their tone serializes as LpToneExpr + LpToneUnit — the same coefficient+unit pair HB uses, so a
 //  VAR tone with or without a unit resolves correctly via the var-unit-wins rule (brief 04b).
@@ -54,7 +54,7 @@ public sealed class CschFrequencySpec
 /// </summary>
 public sealed class CschAnalysis
 {
-    /// <summary>Type tag: "dc" | "sp" | "hb" | "sweep" | "lp" | "lpp" | "fields" | "trl" | "osc".  Unknown tags are skipped on load.</summary>
+    /// <summary>Type tag: "dc" | "sp" | "hb" | "sweep" | "lp" | "lpp" | "fields" | "trl" | "osc" | "tran".  Unknown tags are skipped on load.</summary>
     public string Type    { get; set; } = "";
     public string Name    { get; set; } = "";
     /// <summary>False = skip at run time (VendorC "enabled" pattern). Defaults true; absent on old files → true.</summary>
@@ -87,6 +87,13 @@ public sealed class CschAnalysis
     /// <summary>The WSProbe stability-margin report threshold in dB, or "none" (WSP-9). Null /
     /// absent → the default, so a file written before this key existed reads unchanged.</summary>
     public string?   MarginThresholdExpr { get; set; }
+    /// <summary>brief TRN-8 — hb and osc: InitialGuess and the transient seed's keys, and osc's KickV. Null / absent → the
+    /// default (the DC start), so a file written before they existed reads unchanged.</summary>
+    public string?   SeedInitialGuess  { get; set; }
+    public string?   SeedTol           { get; set; }
+    public string?   SeedPeriods       { get; set; }
+    public string?   SeedFastBias      { get; set; }
+    public string?   OscKickV          { get; set; }
     /// <summary>The NDF knob and its two passivation lists (brief-wsprobe-6). All null / absent on a
     /// file written before they existed, which reads back as the run that file always had.</summary>
     public string?   NdfExpr           { get; set; }
@@ -130,6 +137,27 @@ public sealed class CschAnalysis
     public string?   TrlReflectType    { get; set; }
     public string?   TrlFixtureA       { get; set; }
     public string?   TrlFixtureB       { get; set; }
+    // brief-trn-1 — a transient analysis ("tran"): each key as the directive writes it, null where it is at its default.
+    public string?   TranStop          { get; set; }
+    public string?   TranStep          { get; set; }
+    public string?   TranStart         { get; set; }
+    public string?   TranMaxStep       { get; set; }
+    public string?   TranMethod        { get; set; }
+    public string?   TranRelTol        { get; set; }
+    public string?   TranVTol          { get; set; }
+    public string?   TranITol          { get; set; }
+    public string?   TranInitialState  { get; set; }
+    public string?   TranIc            { get; set; }
+    public string?   TranSolver        { get; set; }
+    public string?   TranSaveSteps     { get; set; }
+    public string?   TranMaxSteps      { get; set; }
+    public string?   TranSpiceOptions  { get; set; }
+    public string?   TranSpiceLines    { get; set; }
+    public string?   TranSpiceLineFreq { get; set; }
+    public string?   TranSpiceFit      { get; set; }
+    public string?   TranStore         { get; set; }   // brief MTR-2
+    public string?   TranStoreHarm     { get; set; }
+    public string?   TranMeasureFrom   { get; set; }
     // Brief NZ-9 — an oscillator ("osc"): MaxHarm, FFTOverSample and Tol reuse the HB fields above.
     public string?   OscProbe          { get; set; }
     public string?   OscFguess         { get; set; }
@@ -370,7 +398,13 @@ public static class AnalysisSerialization
 
     /// <summary>An omitted key rather than an empty string, so a document that declared nothing
     /// writes nothing and reads back identical.</summary>
+    private static string? NullIfDefault(string value, string def)
+        => string.IsNullOrWhiteSpace(value) || value.Trim().Equals(def, StringComparison.OrdinalIgnoreCase) ? null : value.Trim();
+
     private static string? NullIfBlank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
+
+    /// <summary>The value, or null when it is the default (so a document without the key reads back the same).</summary>
+    private static string? Nd(string value, string def) => value.Trim().Equals(def, StringComparison.OrdinalIgnoreCase) ? null : value;
 
     /// <summary>The analysis as the <c>.csch</c> stores it, its <c>model=</c> choice included (brief-sdl-6 R-sdl6-1).</summary>
     public static CschAnalysis ToDto(Analysis a)
@@ -405,6 +439,25 @@ public static class AnalysisSerialization
             OscPnStart = o.PhaseNoise ? o.PnStartExpr : null, OscPnStop = o.PhaseNoise ? o.PnStopExpr : null,
             OscPnNpts = o.PhaseNoise ? o.PnNptsExpr : null, OscPnLog = o.PhaseNoise ? o.PnLog : null,
             OscPnPort = o.PhaseNoise && o.PnPortExpr.Length > 0 ? o.PnPortExpr : null,
+            SeedInitialGuess = Analysis.IsDcStart(o.InitialGuess) ? null : o.InitialGuess.Trim(),
+            SeedTol = NullIfDefault(o.SeedTolExpr, Analysis.SeedTolDefault), SeedPeriods = NullIfDefault(o.SeedPeriodsExpr, Analysis.SeedPeriodsDefault),
+            SeedFastBias = NullIfDefault(o.SeedFastBias, Analysis.SeedFastBiasDefault), OscKickV = NullIfDefault(o.KickVExpr, Analysis.KickVDefault),
+        },
+
+        TransientAnalysis tr => new CschAnalysis
+        {
+            Type = "tran", Name = a.Name, Enabled = a.Enabled, TranStop = tr.StopExpr,
+            TranStep = Nd(tr.StepExpr, ""), TranStart = Nd(tr.StartExpr, "0"), TranMaxStep = Nd(tr.MaxStepExpr, "auto"),
+            TranMethod = Nd(tr.Method, TransientAnalysis.MethodTrap), TranRelTol = Nd(tr.RelTolExpr, "1e-3"),
+            TranVTol = Nd(tr.VTolExpr, "1e-6"), TranITol = Nd(tr.ITolExpr, "1e-12"),
+            TranInitialState = Nd(tr.InitialState, TransientAnalysis.InitialOp), TranIc = Nd(tr.IcExpr, ""),
+            TranSolver = Nd(tr.Solver, TransientAnalysis.SolverNative), TranSaveSteps = Nd(tr.SaveSteps, Analysis.NoiseDefault),
+            TranMaxSteps = Nd(tr.MaxStepsExpr, TransientAnalysis.MaxStepsDefault), TranSpiceOptions = Nd(tr.SpiceOptions, ""),
+            TranSpiceLines = Nd(tr.SpiceLines, TransientAnalysis.SpiceLinesDefault),
+            TranSpiceLineFreq = Nd(tr.SpiceLineFreq, TransientAnalysis.SpiceLineFreqDefault),
+            TranSpiceFit = Nd(tr.SpiceFit, TransientAnalysis.SpiceFitDefault),
+            TranStore = Nd(tr.Store, TransientAnalysis.StoreAuto), TranStoreHarm = Nd(tr.StoreHarmExpr, TransientAnalysis.StoreHarmDefault),
+            TranMeasureFrom = Nd(tr.MeasureFromExpr, TransientAnalysis.MeasureFromDefault),
         },
 
         TrlAnalysis t => new CschAnalysis
@@ -467,6 +520,10 @@ public static class AnalysisSerialization
             MaxIterExpr       = hb.MaxIterExpr,
             MarginThresholdExpr = hb.MarginThresholdExpr != Analysis.MarginThresholdDefault
                 ? hb.MarginThresholdExpr : null,
+            SeedInitialGuess  = Analysis.IsDcStart(hb.InitialGuess) ? null : hb.InitialGuess.Trim(),
+            SeedTol           = NullIfDefault(hb.SeedTolExpr, Analysis.SeedTolDefault),
+            SeedPeriods       = NullIfDefault(hb.SeedPeriodsExpr, Analysis.SeedPeriodsDefault),
+            SeedFastBias      = NullIfDefault(hb.SeedFastBias, Analysis.SeedFastBiasDefault),
             SsStartExpr       = NullIfBlank(hb.SsStartExpr),
             SsStopExpr        = NullIfBlank(hb.SsStopExpr),
             SsStepExpr        = NullIfBlank(hb.SsStepExpr),
@@ -634,6 +691,24 @@ public static class AnalysisSerialization
             PhaseNoise = dto.OscPhaseNoise ?? false, PnStartExpr = dto.OscPnStart ?? OscillatorAnalysis.DefaultPnStart,
             PnStopExpr = dto.OscPnStop ?? OscillatorAnalysis.DefaultPnStop, PnNptsExpr = dto.OscPnNpts ?? OscillatorAnalysis.DefaultPnNpts,
             PnLog = dto.OscPnLog ?? true, PnPortExpr = dto.OscPnPort ?? "",
+            InitialGuess = dto.SeedInitialGuess ?? Analysis.InitialGuessDc, SeedTolExpr = dto.SeedTol ?? Analysis.SeedTolDefault,
+            SeedPeriodsExpr = dto.SeedPeriods ?? Analysis.SeedPeriodsDefault, SeedFastBias = dto.SeedFastBias ?? Analysis.SeedFastBiasDefault,
+            KickVExpr = dto.OscKickV ?? Analysis.KickVDefault,
+        },
+
+        "tran" => new TransientAnalysis(dto.Name)
+        {
+            Enabled = dto.Enabled, StopExpr = dto.TranStop ?? "", StepExpr = dto.TranStep ?? "", StartExpr = dto.TranStart ?? "0",
+            MaxStepExpr = dto.TranMaxStep ?? "auto", Method = dto.TranMethod ?? TransientAnalysis.MethodTrap,
+            RelTolExpr = dto.TranRelTol ?? "1e-3", VTolExpr = dto.TranVTol ?? "1e-6", ITolExpr = dto.TranITol ?? "1e-12",
+            InitialState = dto.TranInitialState ?? TransientAnalysis.InitialOp, IcExpr = dto.TranIc ?? "",
+            Solver = dto.TranSolver ?? TransientAnalysis.SolverNative, SaveSteps = dto.TranSaveSteps ?? Analysis.NoiseDefault,
+            MaxStepsExpr = dto.TranMaxSteps ?? TransientAnalysis.MaxStepsDefault, SpiceOptions = dto.TranSpiceOptions ?? "",
+            SpiceLines = dto.TranSpiceLines ?? TransientAnalysis.SpiceLinesDefault,
+            SpiceLineFreq = dto.TranSpiceLineFreq ?? TransientAnalysis.SpiceLineFreqDefault,
+            SpiceFit = dto.TranSpiceFit ?? TransientAnalysis.SpiceFitDefault,
+            Store = dto.TranStore ?? TransientAnalysis.StoreAuto, StoreHarmExpr = dto.TranStoreHarm ?? TransientAnalysis.StoreHarmDefault,
+            MeasureFromExpr = dto.TranMeasureFrom ?? TransientAnalysis.MeasureFromDefault,
         },
 
         "trl" => new TrlAnalysis(dto.Name)
@@ -689,6 +764,10 @@ public static class AnalysisSerialization
             LambdaExpr        = dto.LambdaExpr        ?? "1",
             MaxIterExpr       = dto.MaxIterExpr        ?? "100",
             MarginThresholdExpr = dto.MarginThresholdExpr ?? Analysis.MarginThresholdDefault,
+            InitialGuess      = dto.SeedInitialGuess  ?? Analysis.InitialGuessDc,
+            SeedTolExpr       = dto.SeedTol           ?? Analysis.SeedTolDefault,
+            SeedPeriodsExpr   = dto.SeedPeriods       ?? Analysis.SeedPeriodsDefault,
+            SeedFastBias      = dto.SeedFastBias      ?? Analysis.SeedFastBiasDefault,
             SsStartExpr       = dto.SsStartExpr       ?? "",
             SsStopExpr        = dto.SsStopExpr        ?? "",
             SsStepExpr        = dto.SsStepExpr        ?? "",

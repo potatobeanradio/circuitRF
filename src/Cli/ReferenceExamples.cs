@@ -67,7 +67,7 @@ internal static partial class Reference
         => RenderExamples([.. ExampleWorkspaces.All().Select(ExampleRow)]);
 
     private static ReferenceExampleJson ExampleRow(ExampleWorkspace e)
-        => new(e.Folder, e.Title, e.Summary, e.Directory);
+        => new(e.Folder, e.Title, e.Summary, e.Directory, Group: e.Group);
 
     private static ReferenceExampleJson ExampleDetail(ExampleWorkspace e)
     {
@@ -85,7 +85,7 @@ internal static partial class Reference
             .ToList();
 
         return new ReferenceExampleJson(e.Folder, e.Title, e.Summary, e.Directory,
-            readme, files, Find.Describe(e.Directory, analyses: true));
+            readme, files, Find.Describe(e.Directory, analyses: true), e.Group);
     }
 
     private static string RenderExamples(IReadOnlyList<ReferenceExampleJson> rows)
@@ -97,8 +97,11 @@ internal static partial class Reference
         sb.AppendLine("                                                  (MCP: create what=example path=<dir> name=<name>)");
         sb.AppendLine("The shipped copies are read-only; run and change a copy.");
         sb.AppendLine();
+        string? topic = null;
         foreach (var r in rows)
         {
+            // under each topic's heading, as File ▸ New ▸ Examples files them
+            if (r.Group != topic) { if (topic is not null) sb.AppendLine(); sb.AppendLine($"── {r.Group} ──"); topic = r.Group; }
             sb.AppendLine(r.Title == r.Name ? r.Name : $"{r.Name}   ({r.Title})");
             sb.AppendLine($"  {r.Summary}");
         }
@@ -110,6 +113,7 @@ internal static partial class Reference
         var sb = new StringBuilder();
         sb.AppendLine($"{e.Name}   ({e.Title})");
         sb.AppendLine($"  {e.Summary}");
+        if (e.Group is { } g) sb.AppendLine($"  topic:      {g}");
         sb.AppendLine($"  shipped at: {e.Directory}   (read-only)");
         sb.AppendLine($"  copy it:    circuitrf new example <dir> \"{e.Name}\"   (MCP: create what=example path=<dir> name=\"{e.Name}\")");
         sb.AppendLine();

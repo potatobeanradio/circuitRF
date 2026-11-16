@@ -49,6 +49,12 @@ its polarity line. EMerge sets a mode's sign by that line only for a TEM mode, s
 column when its mode integrates negative along the line; its Z0 is Z_PV = |V|^2 / 2 on the line. "modeNormalised" changes
 nothing here: circuitRF keeps such a port's S as it is.
 
+(brief-hzn-20) A hollow entry with "hollowModes" is a hollow guide of several modes: ONE WavePort with number_of_modes the
+list's length (EMerge fixes the modes with the largest beta^2 at the sweep's top and follows them, each absorbed with its own
+propagation constant), the modes numbered <number>.1 ... <number>.N in EMerge's S and circuitRF's numbers in mode order. Each
+mode is checked to be the one named (its field along its own polarity line is the largest of its integrals along every mode's
+line) and signed by its own line, as a single hollow mode is; gamma.npy and Z0.npy carry each mode's own (Z_PV on its line).
+
 (brief-emi-7) When problem.json has a "fields" block, the solve also writes FIELDS, in the .vtu layout circuitRF reads for
 Palace (an UnstructuredGrid of Lagrange tetrahedra, every cell with its own nodes, inline-base64 geometry, appended-raw
 arrays, no compression, complex quantities as <name>_real/<name>_imag):
@@ -138,10 +144,23 @@ def main(argv):
     import time
     started = time.time()
     report(stage="geometry")
-    try:
-        sim, counts, model = build(problem, os.path.dirname(path), em, gmsh, GeoVolume, GeoSurface)
-    except Exception as e:  # EMerge's or Gmsh's own refusal, reported as the run's
-        fail(named(e))
+    # brief-hzn-15 -- with a turned port, a model the kernel cannot fragment exactly is built again, joining what lies within a tenth
+    # of a nanometre, then within a nanometre (a DBU): such a port meets its copper at whatever angle the model drew, and the exact
+    # intersection of two faces meeting at a few degrees along a shared edge splits that edge again on the kernel's second pass.
+    joins = [0.0] + ([1e-10, 1e-9] if any("corners" in p for p in problem["ports"]) else [])
+    for k, join in enumerate(joins):
+        try:
+            sim, counts, model = build(problem, os.path.dirname(path), em, gmsh, GeoVolume, GeoSurface, join)
+            if join > 0:
+                warnings.append("The geometry kernel could not fragment the model exactly, so it was built joining what lies within "
+                                "%g nm of itself." % (join * 1e9))
+            break
+        except GeometryNotFragmented as e:
+            if k == len(joins) - 1:
+                fail(named(e))
+            gmsh.clear()
+        except Exception as e:  # EMerge's or Gmsh's own refusal, reported as the run's
+            fail(named(e))
     if argv[2] == "mesh":
         if model["waves"]:
             counts["wavePorts"] = wave_conditions(sim, model["waves"])
@@ -581,9 +600,93 @@ def ring(gmsh, a):
     return [t for d, t in out if d == 2]
 
 
+# brief-hzn-15 -- the share of a turned port's gap each of its voltage lines stops short of both conductors: a point ON metal lies
+# outside the meshed space, where EMerge reads the field as zero (RING_LINE_INSET's reason).
+DRAWN_LINE_INSET = 0.01
+
+
+def drawn_port_lines(bc, ends):
+    """brief-hzn-15 -- a turned port's voltage lines, set here rather than left to EMerge: EMerge starts its lines at the sheet's nodes
+    whose projection on the direction is exactly the least, which on a sheet turned off the axes is one corner, and from a corner of
+    a sheet drawn as its corners its line left the gap (the Ex2 antenna's feed read as a short). Five lines run from the negative end to
+    the positive end, at a tenth, three tenths ... of the way along them, each stopping DRAWN_LINE_INSET of the gap inside both
+    conductors and scaled back to the whole gap (the lumped port's field is uniform along it)."""
+    import numpy as np
+    from emerge._emerge.coord import Line
+    (n0, n1), (p0, p1) = [[np.array(c, dtype=float) for c in e] for e in ends]
+    bc.voltage_integration_line = []
+    for s in (0.1, 0.3, 0.5, 0.7, 0.9):
+        a = n0 + s * (n1 - n0)
+        b = p0 + s * (p1 - p0)
+        line = Line.from_points(a + DRAWN_LINE_INSET * (b - a), b - DRAWN_LINE_INSET * (b - a), 21)
+        scale = 1 / (1 - 2 * DRAWN_LINE_INSET)
+        line.dx, line.dy, line.dz = line.dx * scale, line.dy * scale, line.dz * scale
+        bc.voltage_integration_line.append(line)
+    bc.v_integration = True
+
+
+def periodic_cell(problem, lo, hi):
+    """brief-hzn-16 -- EMerge's rectangular periodic cell for the air box. Its faces are found and paired in the geometry's own
+    units (model units: this driver builds in micrometres), while its Floquet phases and lattice are physics, in metres: the cell
+    is EMerge's RectCell with its width and height in metres, its face planes moved to the box's in model units, and the periodic
+    conditions it makes given their displacement in metres."""
+    from emerge._emerge.periodic import RectCell
+    from emerge._emerge.bc import Periodic
+    k = MODEL_SCALE
+    per = problem["periodic"]
+    w, h = hi[0] - lo[0], hi[1] - lo[1]
+    cx, cy, cz = (lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2
+
+    class BoxCell(RectCell):
+        """The faces are found and paired here in Gmsh's own model units, from the geometry kernel's centres: after its mesh,
+        EMerge reports a face's centre in metres while the kernel's stay in model units, and its own pairing mixed the two."""
+
+        def __init__(self):
+            super().__init__(w, h)      # metres: the Floquet port's lattice
+
+        def cell_data(self):
+            import gmsh
+            import numpy as np
+            from emerge._emerge.selection import FaceSelection
+            faces = [(t, np.array(gmsh.model.occ.getCenterOfMass(2, t)), gmsh.model.occ.getMass(2, t))
+                     for _, t in gmsh.model.getEntities(2)]
+            size = max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) * k
+            tol = 1e-9 * size
+            for axis, on in ((0, per["x"]), (1, per["y"])):
+                if not on:
+                    continue
+                low = [f for f in faces if abs(f[1][axis] - lo[axis] * k) <= tol and self._flat(f[0], axis)]
+                high = [f for f in faces if abs(f[1][axis] - hi[axis] * k) <= tol and self._flat(f[0], axis)]
+                shift = np.zeros(3)
+                shift[axis] = (hi[axis] - lo[axis]) * k
+                for t1, c1, a1 in low:
+                    for t2, c2, a2 in high:
+                        if np.linalg.norm(c1 + shift - c2) <= tol and abs(a1 - a2) <= 1e-9 * max(a1, a2):
+                            yield FaceSelection([t1]), FaceSelection([t2]), tuple(shift)
+
+        @staticmethod
+        def _flat(tag, axis):
+            import gmsh
+            lo_, hi_ = gmsh.model.getBoundingBox(2, tag)[:3], gmsh.model.getBoundingBox(2, tag)[3:]
+            return abs(hi_[axis] - lo_[axis]) <= 1e-9 * max(1.0, max(abs(v) for v in hi_))
+
+        def generate_bcs(self):
+            bcs = [Periodic(f1, f2, tuple(v / k for v in vec)) for f1, f2, vec in self.cell_data()]
+            if not bcs:
+                raise ValueError("the periodic cell's faces were not found on the air box's planes")
+            self._bcs = bcs
+            self._apply_scanangle()
+            return bcs
+
+    return BoxCell()
+
+
 def port_surface(gmsh, p):
     """A lumped port's sheet: its ring when it is coaxial, else its rectangle."""
-    return ring(gmsh, p["annulus"]) if "annulus" in p else rectangle(gmsh, p["origin"], p["u"], p["v"])
+    if "annulus" in p:
+        return ring(gmsh, p["annulus"])
+    # brief-hzn-15 -- a turned port is its corners as drawn, which a port drawn as its corners needs (it is a rectangle only to 1 %)
+    return planar(gmsh, [p["corners"]]) if "corners" in p else rectangle(gmsh, p["origin"], p["u"], p["v"])
 
 
 # brief-cxp-3 — the elements across a coaxial port's radial gap, as circuitRF's Gmsh lowering puts there for Palace
@@ -838,7 +941,7 @@ def impedance(element):
 
 # -- the model -----------------------------------------------------------------------------------------------------------
 
-def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
+def build(problem, folder, em, gmsh, GeoVolume, GeoSurface, join=0.0):
     from emerge._emerge.attributes import FiniteThickness
     sim = em.Simulation("circuitrf")
     sim.set_scale_factor(MODEL_SCALE)
@@ -894,9 +997,14 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
     # brief-emw-2: a wave port's region is a surface of its own on the air box's face, built as a lumped port's plate is;
     # commit_geometry fragments it into the face.
     regions = [(w, GeoSurface(rectangle(gmsh, w["origin"], w["u"], w["v"]), name=w["name"])) for w in problem["wavePorts"]]
-    for entry, g in sheets + ports + elements + regions:
+    # brief-hzn-16 -- each Floquet port's face, a region of the box's z face as a wave port's is
+    floquet = [(f, GeoSurface(rectangle(gmsh, f["origin"], f["u"], f["v"]), name=f["name"])) for f in problem.get("floquetPorts", [])]
+    regions_all = regions + floquet
+    for entry, g in sheets + ports + elements + regions_all:
         described.update({(2, t): "'%s'" % entry["name"] for t in g.tags})
 
+    # brief-hzn-15 -- the join main() asks for, in model units (0: the kernel's exact booleans, Gmsh's default)
+    gmsh.option.setNumber("Geometry.ToleranceBoolean", join * MODEL_SCALE)
     commit_whole(sim, gmsh, described)
 
     # Conductors are voids, as in Palace's mesh: EMerge has already fragmented the model and resolved every overlap by
@@ -930,7 +1038,12 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
     # brief-emw-2: a port region's fragments over a conductor's face bounded only metal and went with it (the Launch's square
     # over its housing), so the region is what is left: the part over meshed space.
     left = {t for _, t in gmsh.model.getEntities(2)}
-    for _, g in regions:
+    for _, g in regions_all:
+        g.tags = [t for t in g.tags if t in left]
+    # brief-hzn-15: and a sheet's (or a lumped element's) piece inside a conductor went with it too (a feed pad the feed pin passes
+    # through), so the sheet is the pieces left in meshed space; a boundary on a removed piece stopped the run on its unknown tag.
+    # A lumped port's sheet likewise: a port whose end lies on a conductor's face can keep a sliver of its sheet inside the conductor.
+    for _, g in sheets + elements + ports:
         g.tags = [t for t in g.tags if t in left]
     # commit_geometry has already cached every object's boundary faces and generated EMerge's default boundary conditions
     # from them: a removed conductor would keep a surface impedance on faces that no longer exist, and the solve stops on
@@ -939,6 +1052,12 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
     for g in sim.all_geos():
         g._cache_gmsh()
     sim.mw.reset()
+    # brief-hzn-16 -- a periodic cell, set after the conditions are cleared (which forgets one) and before the mesh, which pairs
+    # its faces' nodes
+    cell = None
+    if problem.get("periodic") is not None:
+        cell = periodic_cell(problem, lo, hi)
+        sim.set_periodic_cell(cell)
 
     sim.mw.set_basis_space(element_order=settings["elementOrder"])
     sim.mw.set_resolution(settings["resolution"])
@@ -984,7 +1103,7 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
               "zmin": (2, lo[2] * k), "zmax": (2, hi[2] * k)}
     faces = {key: [] for key in planes}
     # A port region's fragments are its port, never the face's boundary: a region left PEC is a short across the port.
-    in_region = {t for _, g in regions for t in g.tags}
+    in_region = {t for _, g in regions_all for t in g.tags}     # brief-hzn-16: and a Floquet port's face
     for _, tag in gmsh.model.getEntities(2):
         if tag in in_region:
             continue
@@ -1012,6 +1131,13 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
         else:
             # brief-em3d-139: coth(gamma*thickness), so a slab of thickness h with current on both faces is thickness = h/2, in metres.
             sim.mw.bc.SurfaceImpedance(em.FaceSelection(tags), mats[mat], thickness=h / 2)
+    # brief-hzn-18 -- a one-sided lossy sheet: ONE surface impedance on its faces, carrying the current of both sides, stated before
+    # EMerge's own boundary set-up, which then makes no split thin conductor there (it never overwrites a face's condition). No
+    # thickness is the plain skin-effect impedance, as Hertzon's one-sided sheet without "Use thickness".
+    for sh, g in sheets:
+        if sh.get("oneSided") and g.tags and not problem["materials"][sh["material"]]["pec"]:
+            t = sh["thicknessM"]
+            sim.mw.bc.SurfaceImpedance(em.FaceSelection(g.tags), mats[sh["material"]], thickness=t if t > 0 else None)
     scattered = None
     for key, kind in box["faces"].items():
         if not faces[key] or kind == "pec":
@@ -1032,8 +1158,11 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
             # brief-cxp-3 — registered as EMerge registers its own conditions, so it is one of the simulation's ports
             lumped.append((p, sim.mw.bc._construct_bc(radial)(plate, numbers[p["number"]], p["annulus"], p["z0"])))
             continue
-        lumped.append((p, sim.mw.bc.LumpedPort(plate, numbers[p["number"]], width=p["widthM"], height=p["heightM"],
-                                               direction=tuple(p["direction"]), Z0=p["z0"])))
+        bc = sim.mw.bc.LumpedPort(plate, numbers[p["number"]], width=p["widthM"], height=p["heightM"],
+                                  direction=tuple(p["direction"]), Z0=p["z0"])
+        if "ends" in p:
+            drawn_port_lines(bc, p["ends"])
+        lumped.append((p, bc))
     for e, plate in elements:
         sim.mw.bc.LumpedElement(plate, impedance(e), width=e["widthM"], height=e["heightM"])
     waves = []
@@ -1050,7 +1179,8 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
             if wave is None:
                 raise Refused("Port '%s' is a hollow guide, and this EMerge has no WavePort to solve one; circuitRF's EMerge "
                               "3.0.0 has it." % w["name"])
-            bc = wave(region, numbers[w["number"]], modetype=None)
+            # brief-hzn-20 — a guide of several modes: one wave port carrying them all
+            bc = wave(region, numbers[w["number"]], modetype=None, number_of_modes=len(w.get("hollowModes", [None])))
         else:
             bc = wave(region, numbers[w["number"]], modetype="TEM") if wave is not None else conditions.WavePortIH(region, numbers[w["number"]])
         # R-emw2-2a — the one line that decides a wave port's polarity: EMerge turns the mode so its integral along this line
@@ -1074,7 +1204,14 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
                 for k, tags in sorted(plated.items())]
     surfaces += [{"kind": "Sheet", "name": sh["name"], "material": sh["material"], "thicknessM": sh["thicknessM"],
                   "tags": (lambda g=g: list(g.tags)), "normal": sh["normal"]} for sh, g in sheets]
-    model = {"names": names, "volumes": volumes, "ports": lumped + waves, "waves": waves, "absorbing": absorbing,
+    # brief-hzn-16 -- a Floquet port on the cell's face: its modes (TE00, TM00, then grating modes), its medium, the scan
+    floquets = []
+    for f, region in floquet:
+        fp = sim.mw.bc.floquet_port(region, numbers[f["number"]], number_of_modes=len(f["modes"]), er=f["er"])
+        floquets.append((f, fp))
+    if cell is not None:
+        cell.set_scanangle(problem["periodic"]["thetaDeg"], problem["periodic"]["phiDeg"])
+    model = {"names": names, "volumes": volumes, "ports": lumped + waves, "waves": waves, "absorbing": absorbing, "floquet": floquets,
              "surfaces": surfaces}
     if plane_wave is not None:
         model["scattered"] = scattered
@@ -1105,7 +1242,14 @@ def solve(problem, folder, sim, model, heard, warnings):
     if problem.get("planeWave") is not None:
         return scattered_run(problem, folder, sim, model, warnings)
 
-    if settings["adaptiveMesh"] > 0:
+    if settings["adaptiveMesh"] > 0 and problem.get("periodic") is not None:
+        # brief-hzn-16 -- EMerge's local refinement splits a periodic face's triangles without splitting its partner's the same
+        # way, and the periodic condition then cannot pair them (it stopped on an index out of bounds): a cell is solved on its
+        # initial mesh
+        warnings.append("EMerge's mesh refinement does not keep a periodic cell's paired faces meshed alike, so the cell was solved on "
+                        "its initial mesh with no refinement pass. Lower EMerge.MaxElementWavelengths or EMerge.EdgeRefinement for "
+                        "a finer one.")
+    elif settings["adaptiveMesh"] > 0:
         # Up to adaptiveMesh refinements: EMerge counts solve passes, the first on the initial mesh. Held (brief-sdl-8 D7),
         # every pass is made: no run of converged passes can be as long as the passes there are.
         if settings.get("holdMesh"):
@@ -1150,15 +1294,29 @@ def sweep(problem, folder, sim, model, heard, freqs, adaptive, groups, stalled):
     if waves:
         # brief-hzn-11 R-hzn11-2 — a hollow guide's mode sign, set by its polarity line (EMerge sets it so only for a TEM mode)
         for w, bc in waves:
-            if w.get("hollow"):
+            if "hollowModes" in w:
+                # brief-hzn-20 — each mode checked to be the one named, and signed by its own polarity line
+                for m, sign in zip(w["hollowModes"], hollow_mode_signs(w, bc, float(np.max(freqs)))):
+                    if sign < 0:
+                        k = every.index(m["number"])
+                        S[:, k, :] *= -1
+                        S[:, :, k] *= -1
+            elif w.get("hollow"):
                 k = every.index(w["number"])
                 if hollow_sign(bc, float(np.max(freqs))) < 0:
                     S[:, k, :] *= -1
                     S[:, :, k] *= -1
-        wz, wg = wave_modes(sim, [(w, bc) for w, bc in waves if "terminals" not in w], freqs, adaptive)
-        for j, (w, _) in enumerate([(w, bc) for w, bc in waves if "terminals" not in w]):
+        singles = [(w, bc) for w, bc in waves if "terminals" not in w and "hollowModes" not in w]
+        wz, wg = wave_modes(sim, singles, freqs, adaptive)
+        for j, (w, _) in enumerate(singles):
             z0[:, every.index(w["number"])] = wz[:, j]
             gamma[:, every.index(w["number"])] = wg[:, j]
+        for w, bc in waves:
+            if "hollowModes" in w:
+                mz, mg = hollow_mode_data(sim, w, bc, freqs)
+                for k, m in enumerate(w["hollowModes"]):
+                    z0[:, every.index(m["number"])] = mz[:, k]
+                    gamma[:, every.index(m["number"])] = mg[:, k]
     if groups:
         # brief-emw-3 R-emw3-4 — every wave-port entry's mode data, the conversion's input; and V where the run solved directly
         arrays = terminal_arrays(sim, waves, every, freqs, adaptive)
@@ -1187,7 +1345,7 @@ def sweep(problem, folder, sim, model, heard, freqs, adaptive, groups, stalled):
     if adaptive:
         out["error"] = heard.error
         out["converged"] = heard.converged
-    if problem.get("fields") is not None and problem["fields"]["frequenciesHz"]:
+    if problem.get("fields") is not None and problem["fields"]["frequenciesHz"] and not model.get("floquet"):
         out.update(driven_fields(problem, folder, sim, model, [] if adaptive else list(data.field.iter())))
     return out
 
@@ -1347,6 +1505,58 @@ def hollow_sign(bc, top):
     return -1.0 if v.real < 0 else 1.0
 
 
+def mode_lines(w):
+    """brief-hzn-20 — each of a hollow guide's modes' polarity lines, in mode order."""
+    from emerge._emerge.coord import Line
+    return [Line.from_points(tuple(m["path"]["from"]), tuple(m["path"]["to"]), 101) for m in w["hollowModes"]]
+
+
+def hollow_mode_signs(w, bc, top):
+    """brief-hzn-20 — +1 or -1 for each of a hollow guide's modes: the sign of the mode integrated along its own polarity line, at
+    the mode set fixed at the sweep's top. Each mode is first checked to be the one circuitRF named for its place: its integral
+    along its own line is the largest of its integrals along every mode's line (TE10 along TE01's line is 0, TE01 along TE10's 0,
+    TE20 along TE10's 0, and TE10 along TE20's 0.71 of its own), so a mode set EMerge fixed out of order, or a degenerate pair it
+    mixed, is a refusal naming what it found rather than an S-matrix whose rows belong to other modes."""
+    import numpy as np
+    k_ref = getattr(bc, "_k0_ref", None)
+    modes = bc.available_modes.get(k_ref) if k_ref is not None else None
+    if not modes:
+        modes = bc.get_modes(2 * np.pi * top / C0)
+    lines = mode_lines(w)
+    names = [m["name"] for m in w["hollowModes"]]
+    if len(modes) < len(lines):
+        raise Refused("Port '%s' is a hollow guide of %d modes (%s), and EMerge fixed %d mode(s) on its face at %.6g GHz."
+                      % (w["name"], len(lines), ", ".join(names), len(modes), top / 1e9))
+    signs = []
+    for k, line in enumerate(lines):
+        v = [complex(l.line_integral(modes[k].E_function)) for l in lines]
+        if abs(v[k]) < max(abs(x) for x in v) * (1 - 1e-6) or abs(v[k]) == 0:
+            raise Refused("Port '%s''s mode %d should be %s, and the mode EMerge put there (beta = %.4g rad/m at %.6g GHz) is not: "
+                          "its field along %s's polarity line is %.3g of its largest along another mode's. EMerge fixed the face's "
+                          "modes in another order, or mixed two of one cutoff; this guide's modes cannot be told apart."
+                          % (w["name"], k + 1, names[k], complex(modes[k].beta).real, top / 1e9, names[k],
+                             abs(v[k]) / max(abs(x) for x in v)))
+        signs.append(-1.0 if v[k].real < 0 else 1.0)
+    return signs
+
+
+def hollow_mode_data(sim, w, bc, freqs):
+    """brief-hzn-20 — each of a hollow guide's modes' Z_PV (|V|^2 / 2 on its own polarity line; the mode carries 1 W) and its
+    propagation constant alpha + j beta at every requested frequency, [f, mode]."""
+    import numpy as np
+    lines = mode_lines(w)
+    z = np.zeros((len(freqs), len(lines)), dtype=np.complex128)
+    g = np.zeros((len(freqs), len(lines)), dtype=np.complex128)
+    for i, f in enumerate(freqs):
+        k0 = 2 * np.pi * f / C0
+        sim.mw._wave_port_modes(bc, float(f))
+        modes = bc.get_modes(k0)
+        for k, line in enumerate(lines):
+            z[i, k] = abs(complex(line.line_integral(modes[k].E_function))) ** 2 / 2
+            g[i, k] = 1j * complex(bc.get_beta(k0, k + 1))
+    return z, g
+
+
 def second_modes(sim, waves, top):
     """R-emw2-3a — whether each wave port's face carries a second mode at the sweep's top: a mode solve asking for two, with
     the port's TEM-only filter lifted for it (a box mode is TE or TM). EMerge keeps only modes that carry power, so a second
@@ -1355,7 +1565,7 @@ def second_modes(sim, waves, top):
     k0 = 2 * np.pi * top / C0
     out = []
     for w, bc in waves:
-        own = len(w.get("terminals", [None]))
+        own = len(w.get("terminals", w.get("hollowModes", [None])))
         saved = bc.available_modes.pop(k0, None)
         state = (bc.forced_modetype, bc._last_k0, bc._first_k0, bc.initialized)
         try:
@@ -1403,14 +1613,17 @@ SAME_SPEED = 1e-3        # two TEM modes whose Re beta agree to this are of one 
 
 def entry_numbers(w):
     """The circuitRF port numbers a wave-port entry carries: its terminals' in terminal order, or its own."""
+    if "hollowModes" in w:      # brief-hzn-20 — a hollow guide's modes, in mode order
+        return [m["number"] for m in w["hollowModes"]]
     return [t["number"] for t in w["terminals"]] if "terminals" in w else [w["number"]]
 
 
 def emerge_numbers(problem):
     """Each EMerge port's number, by the circuitRF number of its entry: EMerge requires them to run 1, 2, ... K, and a
     terminal group is one EMerge port carrying several circuitRF numbers, so EMerge's are the entries' ranks. Without a
-    group they are circuitRF's own."""
-    entries = sorted([p["number"] for p in problem["ports"]] + [w["number"] for w in problem["wavePorts"]])
+    group they are circuitRF's own. (brief-hzn-16: a Floquet port is one entry too, its modes p.1, p.2, ...)"""
+    entries = sorted([p["number"] for p in problem["ports"]] + [w["number"] for w in problem["wavePorts"]]
+                     + [f["number"] for f in problem.get("floquetPorts", [])])
     return {n: k + 1 for k, n in enumerate(entries)}
 
 
@@ -1423,8 +1636,16 @@ def entry_keys(problem):
         if "terminals" in w:
             for k, t in enumerate(w["terminals"]):
                 keys[t["number"]] = float("%d.%d" % (numbers[w["number"]], k + 1))
+        elif "hollowModes" in w:    # brief-hzn-20 — EMerge names a port's modes p.m
+            for k, m in enumerate(w["hollowModes"]):
+                keys[m["number"]] = float("%d.%d" % (numbers[w["number"]], k + 1))
         else:
             keys[w["number"]] = numbers[w["number"]]
+    for f in problem.get("floquetPorts", []):
+        modes = f["modes"]
+        width = len(str(len(modes)))
+        for k, n in enumerate(modes):
+            keys[n] = numbers[f["number"]] if len(modes) == 1 else float("%d.%0*d" % (numbers[f["number"]], width, k + 1))
     return keys
 
 
@@ -1862,7 +2083,7 @@ def driven_fields(problem, folder, sim, model, solved):
     for i, f in enumerate(freqs):
         field = have[f]
         for j, (p, bc) in enumerate(ports):
-            if "terminals" in p:
+            if "terminals" in p or "hollowModes" in p:
                 continue        # brief-emw-3: a terminal group's excitations are modal; a terminal's own is not formed here
             field.excite_port(keys[p["number"]])
             v, vinc = port_voltage(field, bc), getattr(bc, "voltage", None)

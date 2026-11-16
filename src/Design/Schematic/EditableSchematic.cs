@@ -365,6 +365,11 @@ public static class SymbolPortDefs
             case SymbolKind.Vcvs:
                 return [("out+", 0f, -200f), ("out-", 0f, 200f),
                         ("ctrl+", -300f, -100f), ("ctrl-", -300f, 100f)];
+            // VSwitch (brief TRN-3): VCCS's layout and order — the switched pair vertical, the control pair on the left —
+            // [0] p, [1] n, [2] ctrl+, [3] ctrl−, the order VSwitchModel reads its two ports in.
+            case SymbolKind.VSwitch:
+                return [("p", 0f, -200f), ("n", 0f, 200f),
+                        ("ctrl+", -300f, -100f), ("ctrl-", -300f, 100f)];
             // Op-amp: pins in the NET order OpAmpModel reads — in+, in−, out — though the glyph
             // draws the inverting input on top. The five-pin tile appends the supplies, V+ above.
             case SymbolKind.OpAmp:
@@ -430,9 +435,16 @@ public static class SymbolPortDefs
             case SymbolKind.Delay:
             case SymbolKind.PhaseShifter:
                 return [("1", -300f, 0f), ("2", 300f, 0f)];
-            // Propagation Channel (brief-pch-6): the transmit antenna's terminals, then the receive antenna's.
+            // Propagation Channel (brief-pch-6): the transmit antenna's terminals, then the receive antenna's. brief-pch-8: an end that names
+            // an instance (Tx=, Rx=) has no pin, so the count is a code: 2 both, 1 the receive pin alone, 3 the transmit pin alone, 0 none.
             case SymbolKind.PropagationChannel:
-                return [("tx", -300f, 0f), ("rx", 300f, 0f)];
+                return portCount switch
+                {
+                    0 => [],
+                    1 => [("rx", 300f, 0f)],
+                    3 => [("tx", -300f, 0f)],
+                    _ => [("tx", -300f, 0f), ("rx", 300f, 0f)],
+                };
             // Duplexer: the antenna against the two branches it splits into.
             case SymbolKind.Duplexer:
                 return [("ANT", -300f, 0f), ("TX", 300f, -100f), ("RX", 300f, 100f)];
@@ -487,6 +499,10 @@ public static class SymbolPortDefs
             // ITone's "+" is the pin its arrowhead points at — the engine's "a current source
             // injects into its first node" convention, which BuildCurrentToneSource draws.
             case SymbolKind.CurrentToneSource:
+            // brief-trn-2 — the waveform sources and Idc: + and −, as Vdc and the tone sources.
+            case SymbolKind.VPulse: case SymbolKind.VPwl: case SymbolKind.VExp: case SymbolKind.VSffm: case SymbolKind.VExpr:
+            case SymbolKind.IPulse: case SymbolKind.IPwl: case SymbolKind.IExp: case SymbolKind.ISffm: case SymbolKind.IExpr:
+            case SymbolKind.Idc:
             case SymbolKind.P1Tone:
             case SymbolKind.PnTone:
             case SymbolKind.ModSource:
@@ -1215,6 +1231,8 @@ public sealed class EditableComponent
         SymbolKind.Filter     => BuiltInSymbols.PrimitivesForFilter(FilterGlyphForm()),
         // brief-paa-5 — the aperture, the beam and the pins, from the resolved lattice, Off and steering.
         SymbolKind.PhasedArray => BuiltInSymbols.PrimitivesForPhasedArray(ArrayGlyph()),
+        // brief-pch-8 — only the pins the channel has
+        SymbolKind.PropagationChannel => BuiltInSymbols.PrimitivesForPropagationChannel(PortCount),
         // The model's own terminal names where the file has been read, numbers otherwise. The
         // lookup is a dictionary probe and NOTHING else — see
         // VerilogAModelIntrospection.CachedTerminalLabels for why this path may not describe a file
@@ -1315,6 +1333,15 @@ public sealed class EditableComponent
                 name => Parameters.FirstOrDefault(q => q.Name == name)?.Expression)
             : null;
 
+    /// <summary>brief-pch-8 — SymbolPortDefs' pin code for a Propagation Channel: 2 both pins, 1 the receive pin alone (Tx= names an
+    /// instance), 3 the transmit pin alone (Rx= does), 0 none.</summary>
+    public static int ChannelPinCode(IEnumerable<EditableParameter> parameters)
+    {
+        bool Named(string n) => parameters.Any(q => q.Name == n && q.Expression.Trim().Trim('"').Length > 0);
+        bool tx = !Named("Tx"), rx = !Named("Rx");
+        return tx && rx ? 2 : rx ? 1 : tx ? 3 : 0;
+    }
+
     public int PortCount
     {
         get
@@ -1334,6 +1361,8 @@ public sealed class EditableComponent
             // resistive pad's form's. A plain word only, as N is a plain number.
             if (LumpedLayout() is { } lumped) return lumped.Pins.Count;
 
+            // brief-pch-8 — a Propagation Channel's pins as SymbolPortDefs' code: an end naming an instance has none.
+            if (Symbol is SymbolKind.PropagationChannel) return ChannelPinCode(Parameters);
             // A Wilkinson divider's N is its number of sections; it draws 3 + 2·N pins. A plain number only — an expression
             // is the one-section divider's five, as the plan cannot be asked for more pins than the symbol draws.
             if (Symbol is SymbolKind.Mwpd)

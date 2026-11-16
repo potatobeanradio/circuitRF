@@ -166,6 +166,17 @@
                 </Grid>
             </StackPanel>
 
+            <!-- ── brief TRN-8: where the Newton starts ─────────────────────── -->
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="Initial guess" FontSize="10" Opacity="0.6"/>
+                    <ComboBox ItemsSource="{x:Static vm:HbBodyViewModel.InitialGuessOptions}"
+                              SelectedItem="{Binding InitialGuess, Mode=TwoWay}"
+                              HorizontalAlignment="Stretch" FontSize="11"
+                              ToolTip.Tip="dc: the DC point with the drive stepped up. transient: the last period of a transient run from rest at full drive. fallback: dc, then transient if that does not converge."/>
+                </StackPanel>
+            </Grid>
+
             <!-- ── Separator before Small-signal ──────────────────────────── -->
             <Separator Opacity="0.3"/>
 
@@ -317,6 +328,22 @@
                                        FontSize="10" Opacity="0.55"/>
                         </StackPanel>
                     </Grid>
+
+                    <!-- Row 3 (brief TRN-8): the transient seed, when InitialGuess asks for one -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10" IsEnabled="{Binding SeedKeysEnabled}">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Seed tolerance" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding SeedTolExpr, Mode=TwoWay}" FontSize="11"
+                                     ToolTip.Tip="Consecutive periods of every interface waveform must agree within this, relative."/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Seed periods" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding SeedPeriodsExpr, Mode=TwoWay}" FontSize="11"
+                                     ToolTip.Tip="auto runs until settled, at most 200 periods; a number runs that many."/>
+                        </StackPanel>
+                    </Grid>
+                    <CheckBox Content="Fast bias (scale RF chokes and blocks in the seed run)"
+                              IsChecked="{Binding SeedFastBias, Mode=TwoWay}" IsEnabled="{Binding SeedKeysEnabled}" FontSize="11"/>
 
                     <!-- Row 3: Newton λ + Max iterations -->
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="10">

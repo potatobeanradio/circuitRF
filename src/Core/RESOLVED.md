@@ -4841,6 +4841,262 @@ read 37 ms: re-weigh 18 ms, fields run 22 ms).
   envelope noise read it through the device-source path. An S-parameter run with `RxTant=150` gives the receive port's wave noise
   k·150 = 2.07e-21 and Te = T_ant/|H|² at the input.
 
+## brief-pch-7 — fading and tapped delay lines on the Propagation Channel (2026-11-15)
+
+**Nakagami's m is `NakagamiM`, not `m`.** `m` is the device multiplier on every component, read by the elaborator before
+any model sees it. The channel has branch unknowns, so `m=2` is refused outright, and on any other device it would
+multiply silently. The brief's `m` cannot be spelled `m`.
+
+**`Profile` names the tapped delay line; a terrain profile is `Terrain=`.** PCH-6 passed `Profile` through to the
+large-scale model, which reads a terrain CSV under that name, and the elaborator resolved it as a file path (so `TDL-A`
+became `<dir>/TDL-A`). `Profile` is now a channel word, resolved verbatim and refused without `Multipath=tdl`. `Terrain`
+is a file, handed to the model as its `Profile`. The parameter editor's file picker moved from `Profile` to `Terrain`,
+and `Profile` became a picker of the profile names. PCH-6 was not pushed, so nothing written with the old spelling
+exists outside this repo.
+
+**A file's taps are normalized now, including PCH-6's static ray lists**, as R-pch7-5 asks, and the note says by how
+much. PCH-6 took a ray's power as relative to the large-scale loss. Any existing ray list that does not sum to 0 dB
+moves by that sum. A static ray keeps its Doppler; a fading tap with no `doppler` column has none of its own, since
+its motion is in its fading.
+
+**The draws' stream names need the instance path, which a model does not get at construction.** `BindReverseChannels`
+(the post-elaboration pass) now sets `PropagationChannelModel.InstancePath` on every channel first, and setting it clears
+the realization cache. That matters because a stated `f0` realizes once in the constructor to validate the model, under
+an empty name. A `Reverse=` channel uses its forward channel's fades, so it is the same realization transposed.
+
+**Velocity is m/s, a bare number.** The design note's example writes `Velocity=3 km/h`, but `km/h` is not a unit the
+expression engine knows. Adding one is a global change to `Units`, which this brief did not make. Blank `Velocity` is
+the ends' relative speed from `TxVel`/`RxVel`.
+
+**Where fading reaches.** S-parameter and HB runs see H frozen at `TimeOffset`, fading included. HB's note now says the
+fading is frozen too. The envelope multiplies each ray by its tap's gain at the receive time, at the reference
+frequency's f_D in every product.
+
+## brief-pch-8 — instance ends, clustered delay lines, polarization on the Propagation Channel (2026-11-15)
+
+**An instance end is coupled through ray unknowns, and the coupling needs the array's branches.** Each ray is two
+auxiliary unknowns (θ and φ of the field it delivers). Each unknown's row reads the transmit elements' incident waves,
+(v + Z0·i)/√Re Z0 from the element node and the branch the array allocated, and each receive element's source row reads
+the ray pairs. The array allocates its branches in its own `Stamp`, so a channel with an instance end has to be stamped
+after every array. `ElaboratedNetlist.MoveToEnd` moves those channels last during elaboration. It rebuilds the two
+position-indexed lists (the nonlinear partition, the WSProbes') because both store component indices, and moving a
+component without rebuilding them would point both at the wrong components with no error.
+
+**PAA-7's j, and only on an array receive end.** A receive element takes ½·j·Σ_r F_nᵀ·y_r. That is eq. (4) through the
+channel: a pin of EIRP P·G at distance d delivers exactly what PAA-7's incident wave of density P·G/(4πd²) does,
+2.5e-11 relative including phase (gate 1, off boresight, at an oblique polarization). A pin receive end keeps PCH-6's H
+without the j. The bulk phase is not simulated, so a constant phase is invisible, and pin-to-pin numbers are unchanged.
+
+**The polarized form is used only where it is needed.** Pin to pin with no ray matrix, no stated polarization and no
+Faraday rotation keeps PCH-6's `Couplings` exactly. Everything else uses F_rxᵀ·M·F_tx in the global frame's (θ̂, φ̂) at
+each ray's directions. The line-of-sight matrix is diag(1, −1): φ̂ of a direction and of its opposite are opposite, so
+it carries the field vector unchanged. For a line-of-sight ray this equals PCH-6's global dot product. A gain end with
+no `TxPol`/`RxPol` is matched to the other end's reference element along the line of sight, as PCH-6's gain end was
+co-polar. Two such gain ends are both θ̂.
+
+**Nets.** `InstanceNetContract` takes the channel's net count from its `PortCount` (one per pin end). The schematic's
+pin table for the channel is a code in `SymbolPortDefs.For`: 2 both, 1 the receive pin alone, 3 the transmit pin alone,
+0 none, read from the `Tx`/`Rx` rows by `EditableComponent.ChannelPinCode`. The symbol has to build its pins from that
+code itself, because `Sym` treats 0 as "the default" and would have given every channel two pins. The netlist drawer's
+variadic-count insertion skips the channel, as it skips the array, so it does not invent a "Tx and Rx" row.
+
+**An EM Field Data block as an end is refused.** It is an `SnpModel` with no received-wave source nodes, so receiving into one
+needs those nodes added to it. The refusal names a Phased Antenna Array on the same record as the way to have that end.
+
+**Faraday rotation is applied where the coupling carries polarization.** With `Ionosphere=on` on a satellite path,
+P.531's rotation turns every ray's field (R(Ω)·M), and its polarization-loss term comes out of the excess, since the
+ends' polarizations now say what the rotation costs. A pin-to-pin link with no polarization keeps the loss term, as
+PCH-2 had it. `Faraday=` states the angle. The rotation is applied at any frequency, not only below 3 GHz: P.531 gives
+it everywhere, and it is a fraction of a degree above.
+
+**CDL and ray lists take their Doppler from geometry.** ν_r = (v_rx·û_A + v_tx·û_D)·f/c. `Velocity`, `fD` and `Fading` are
+refused with them, because those make a tap with no directions fade.
+
+## brief-trn-2 — waveform sources, Idc, IC=, `time` (2026-11-15)
+
+**One model under ten types.** `WaveformSourceModel` (V_/I_ Pulse, PWL, Exp, SFFM, Expr) holds the waveform arithmetic once,
+as `ToneSourceModelBase` holds the tone table. Outside transient it stamps exactly as Vdc/Idc: its `Dc`, else the waveform
+at t = 0, at DC and nothing (short / open) elsewhere. `ITransientWaveform.StampOverride` replaces that DC value while set —
+the transient engine reads each source's own right-hand-side column with it (value 1 minus value 0) and clears it. A corner
+of zero duration reads its LEFT value at the corner itself (segments closed on the right), so the step that lands on the
+corner integrates towards the level before it and the jump starts the next segment.
+
+**`time` is one rule in `TimeVariable`, applied lazily by the Evaluator.** Unbound, `time` inside a comparison operand
+resolves to +∞ (steady state: every finite instant has passed — `time > 0` true, `time < 1n` false, `exp(-time/τ) < 0.5`
+true), and outside one throws `TimeOutsideConditionException`, naming it. The Evaluator counts comparison depth and
+**resets it while resolving a named binding**: otherwise a global `t2 = time*2` first resolved inside `t2 > 1` would be
+memoized as +∞ and then read silently as +∞ outside any comparison. So `time` must be written in the comparison itself to
+take the steady-state reading, which is also what `TimeVariable.SteadyStateError` checks on an AST.
+
+**An SDD reads `time` through one more parameter slot.** When an equation names it, `SddModel` compiles with a `time`
+parameter (+∞ by default) and `Time` sets that slot on every compiled equation (`CompiledSddExpr.SetParameter`; the
+register program reads parameter slots at call time, nothing folds them). A steady-state evaluation of an equation that
+reads `time` outside a condition throws at `Evaluate`/`EvaluateGrid`. A transient run sets `Time` before each step and
+clears it after, so the model is back in steady state for whatever runs next.
+
+**PWL `Points=` is evaluated per entry by the elaborator** and handed to the model as plain numbers; `File=` resolves
+through `ResolveFileReference` like an SnP's, so the workspace archive (which treats any `File` parameter as a reference)
+carries it. `Expr=` is stored verbatim with the resolved value of every name it reads (`_var_<name>`); a global that
+itself names `time` is resolved once at elaboration and is therefore refused, not followed.
+
+**The SPICE reader's current sources were reversed on import, and are not any more.** The dialect's `I a b v` sinks `v`
+from `a`; circuitRF's current sources deliver into their first node (this file, "The two current sources"). The import
+placed the same value on the same nets — every imported DC current source pushed the wrong way, silently. A current
+source now takes its nets swapped (`SpiceSourceTranslation.Independent`), held by `SpiceSourceImportTests.S3`.
+
+**SIN maps onto a tone source with two conversions.** The dialect's phase is a sine's in degrees; a tone source's is a
+cosine's in radians, so `Phase = (φ − 90)·π/180`. And a tone source with `Delay` is zero before it, where the dialect
+holds VO + VA·sin φ: identical for φ = 0 (the common case), different by VA·sin φ before TD otherwise. Noted for TRN-6,
+which writes the dialect back.
+
+## brief-trn-3 — the voltage-controlled switch (2026-11-15)
+
+**It is `VSwitch`, not `Switch`.** `Switch` was already the ideal SPST/SPDT system block's engine type (`Throws`, `State`), so the
+owner chose `VSwitch` — the dialect's VSWITCH family, with room for a current-controlled one beside it.
+
+**The transition is a cubic smoothstep in the LOGARITHM of the conductance.** ln g = ln gOff + (ln gOn − ln gOff)(3u² − 2u³),
+u = (vc − Voff)/(Von − Voff) clamped to [0, 1]. Linear in g would cross nine decades almost entirely at the on end (g passes
+1/Roff·1e3 only at u ≈ 1e-6 of the way), so a step limit sized to the window would be spent where nothing happens; in ln g the
+decades are crossed evenly. The cubic's zero slope at both ends makes g and dg/dvc continuous (gate 2: the largest step in
+dg/dv over 200,000 samples is 1.4e-4 of its peak). Von = Voff is refused: a transition of no width is a step no analysis resolves.
+
+**Hyst is state, kept only in transient, and flips only where it moves nothing.** Off, the window sits Hyst/2 further towards
+Von; on, Hyst/2 further towards Voff; the state flips once the device is fully across its window, where g is at its end value
+in both windows, so the flip changes g by exactly nothing and needs no breakpoint. Outside transient the model has no state and
+queues a note; `NonlinearDcEngine` drains `ITransientDevice` models after its stamp loop (nonlinear models are skipped there),
+which reaches DC, HB's seed, the S-parameter pre-pass and the envelope's start. A transient run calls `EnterTransient` before
+its own operating-point solve, which clears the note, so a transient run never shows it.
+
+**The reader maps VSWITCH and refuses SW.** Every VSWITCH value is written at the dialect's default when the card is silent,
+because VSwitch's own Roff default (1e9) is not the dialect's (1e6). SW switches abruptly at VT with hysteresis VH, which a
+smooth transition cannot express: refused naming VT. The dialect's VSWITCH transition shape is its own; what maps is the four
+values, not the curve between them.
+
+## The Propagation Channel's drop (brief PCH-10, 2026-11-15)
+
+- **`Shadowing=on` is the default**: each drop adds the model's σ times a normal draw to the excess loss (a scenario drop's correlated
+  SF instead, negated: TR 38.901's positive SF is more received power). No committed test or example used a model with σ > 0 in a
+  channel, so nothing moved. `link:<ch>:PathLoss_dB` stays the model's loss; the draw is `Shadowing_dB`.
+- **`Los=auto` draws the state** (`LosProbability` of the model) and evaluates the model again with `Los` forced; a stated `Los` draws
+  nothing. The Chain Budget still evaluates the median (the more probable state).
+- `Multipath=scenario` takes the transmit end as the base station (the 38901 model's `TxHeight` is hBS) and refuses `DelaySpread`,
+  `KFactor`, the angle spreads, `Xpr`, `Fading`, `Velocity` and `fD`. `States=p681` needs `PathLoss=satellite`, `Multipath=none`, no
+  `Fading`/`KFactor`/`fD`, the satellite model's `Scenario=none` (TR 38.811's states and P.681's describe the same surroundings) and a
+  `StateEnvironment`; the terminal moves at `Velocity`.
+- A P.681 ray's gain rides in `FadingProcess` through a supplied gain function (`FadingProcess(TapFading, Func<double, Complex>, int)`),
+  described for the regime as Rician at the state's mean direct-over-multipath K.
+- `SteadyDrive` (set by `EnvelopeChannel` for a drop that replays a recorded transmit side): the harmonic-balance start stamps the
+  recording's first sample on the receive rows in place of the frozen coupling. `ElaboratedNetlist.Prune` removes components and appends
+  others, rebuilding the index lists; removed parts that hold something are disposed.
+
+## brief-trn-5 — time-domain measurements (2026-11-15)
+
+**Two of the note's names collided and were renamed, not shadowed.** `at(x, t)` became `value_at(x, t)`: `at(x, "axis", i)`
+already pinned an axis by position, and `value_at` already read a point by its value, so the new function was the old one
+with a default — `value_at` now takes `time` after `freq`. `freq(x)` became `frequency(x)`: `freq` is the frequency variable
+(`FreqDeferral.FreqName`). Every other name was checked against the built-ins and the variables first.
+
+**`fft` is a direct DFT at the harmonics, on the record's own times.** Xₖ = 2Σx e^{−jk2πf₀t}/N with t absolute, so a phase
+reads as harmonic balance's (whose phasors are full-amplitude, v = V₀ + Σ Re{Vₖ e^{jkωt}}) without aligning anything. The
+window is the last whole periods ending at the record's end. On a uniform grid whose step divides the window the record's
+own samples are used, the window's end point left out (it is the next period's first); otherwise the record is interpolated
+(cubic, four nearest samples) onto as many points as the window held, at least 256. It reports at most 16 harmonics: at 64,
+a −6 dBm amplifier's spectrum showed a smooth −65 to −82 dBm floor above H8 that only cluttered the preset.
+
+**Harmonic power needs the probe's voltage, which the transient did not keep.** `P[time, branch]` is v·i, and the Fourier
+transform of a product is not the product of transforms, so a harmonic's power could not be read from it. The run now keeps
+`Vprobe[time, branch]` (the v it multiplied by), and `fft_power(v, i, f0)` gives V₀I₀ at DC and ½Re(VₖIₖ*) above, HB's
+`Pprobe_W` exactly — the DC term is why it is a function and not `0.5*real(fft(v)*conj(fft(i)))`, which halves it.
+`A.Vprobe("probe")` reads one probe as `A.I("probe")` does.
+
+**The step functions read the step from the first value to the last.** A record that ends where it began has no step, so
+`rise`/`fall` then take the minimum-to-maximum swing (when the end-to-start step is under a tenth of the range); `rise`
+measures from the last crossing of lo before the first crossing of hi, so a noisy foot does not lengthen it. `undershoot` is
+the first trough after the overshoot's peak (e^{−2ζπ/√(1−ζ²)} on a second-order step), not a dip below the starting value. A
+waveform with no such edge gives NaN, so one sweep point does not fail the rest.
+
+**check refuses a time-domain function only where the run would.** An envelope result has real `time`-axis cubes
+(`Pout_t_dBm`, `Idc`, `Pprobe_t_W`), on which every function works, so `TimeDomainUse` counts transient and envelope
+analyses (and sweeps around them) as having time, and anything else as not.
+
+Gate measurements (`TransientMeasurementTests`): the −6 dBm Angelov stage over 30 ns at T/512, RelTol 1e-6 (15,846
+accepted steps, 3 rejected), against HB with MaxHarm 16: worst 8e-4 dB and 0.032° on harmonics 1–5 (H5 at −77 dBc). At
+4 dBm drive the worst was 1.8e-3 dB and 0.021°. HB itself floored at ‖F‖ 2.8e-10 (ideal chokes on ideal supplies), so the
+gate runs HB at Tol 1e-9.
+
+## brief-trn-6 — the SPICE deck writer (2026-11-15)
+
+**The dialect's defaults are not circuitRF's zeros, and that decides what PULSE can say.** The ngspice manual: "If parameters
+other than source values are omitted or set to zero, the default values shown are assumed" — a zero PULSE rise or fall is the
+run's output step, a zero width the stop time; a zero EXP Delay2 is Delay1 plus the step; a zero SFFM carrier or signal is
+1/Stop. circuitRF's abrupt edge (Rise=0) has no PULSE spelling, so it is refused by key rather than written as something that
+looks the same. An unbounded Width (unstated) and a single pulse (Period unstated) are written as twice the stop time, exact
+within the run. The SPICE reader still fills an unstated trailing PULSE argument with circuitRF's zero, not the dialect's step:
+a deck read from outside with `PULSE(0 1)` gets abrupt edges where the dialect would give one step's ramp. Noted, not changed.
+
+**Two behavioural-source functions are not the mathematical ones.** The manual: `exp` "has a limit of 14 for its argument,
+beyond that value it will increase linearily", and `pow`, `**`, `^` all resolve to `pow(fabs(x1), x2)`. So `exp(x)` is written
+`pow(e, x)`, `x^n` with odd integer n is `x*pow(x, n−1)` (an even power of |x| is the even power of x), and a non-constant
+exponent is refused — a negative base's sign would depend on the exponent's value. `tanh` and `sign` are not in the behavioural
+source's list and are written through `1 − 2/(e^(2x) + 1)` and a conditional; `atan2`, `round`, `int` are refused.
+
+**CPL takes R and G as diagonals.** The manual: "For the R and G matrices the diagonal elements must be specified, for L and C
+matrices the lower or upper triangular elements". A symmetric pair's per-unit-length matrices come from its modes, and R and
+G have an off-diagonal (Re − Ro)/2: zero only when both modes lose alike. Every lossy MCLIN has modes that lose differently
+(the conductor loss Rs/(Z·W) depends on the mode impedance), so under `SpiceLines=rlgc` only a lossless pair (CLIN) or an equal-loss pair
+is written; the rest are refused by name.
+
+**Device temperature relations differ, so a device away from its Tnom is refused.** circuitRF's junction relations take the
+temperature-dependent bandgap (`Temperature.BandgapAt`) with Eg as the 0 K gap (default 1.16 eV); the dialect's diode takes EG as an
+activation energy (default 1.11) and its MOS levels 1 and 3 have no XTI or EG at all. At T = Tnom every relation in both is the
+identity, so the card states `TNOM` and the instance `temp` and the device sits there; away from it they are different
+equations. circuitRF's nominal is 26.85 °C (300 K), the dialect's 27 °C, so `TNOM` is always written and `.options TNOM=26.85`.
+
+**The MOS gate charge is a different model.** circuitRF's level 1 and 3 gate charge is the charge-based long-channel form
+(`MosfetModelBase`); the dialect's is Meyer's capacitance set, included "only if TOX is specified". With Tox unstated neither
+has a thin-oxide charge and the two agree; a Tox is refused by name.
+
+**The diode's reverse region is not identical, and the table says so.** The dialect's diode below −3·N·Vt is
+−Is·(1 + (3·N·Vt/(e·V))³) (its manual, eq. 36); circuitRF's stays Is·(exp(V/(N·Vt)) − 1). They meet at −3·N·Vt and differ by
+under 0.05·Is beyond. Recombination (ISR) is modelled by the dialect only when given and its equation is not stated in the
+manual, so a non-zero `Isr` is refused rather than assumed equal.
+
+**A placed SPICE file is included, not re-translated — and that needed provenance.** The elaborated netlist holds what a
+`.subckt` flattened into, not that it came from a file, so `SpiceModelNetlist.AddCell` now records the file on the cell
+(`Cell.SpiceSource`), and `CnlWriter`/`CnlReader` carry it as `spice "<path>"` inside the `define` (beside `part`) — a schematic
+run goes `.csch` → `.cnl` → reader, and the field would otherwise vanish in that round trip. A cell scaled by
+`ScaleQuantity` (a statistical vendor part) is rebuilt without it, so its scaled contents are written element by element.
+
+**Reading the writer's deck back needed three letters and a top level.** `K` (Mutual, M = k·√(L1·L2) resolved when the cell is
+whole, since an inductor may follow its coupling), `T` (TLIN, E = 2π rad at F = 1/TD, the import's angle unit being radians)
+and `B` (as `E`/`G` with that VALUE; a source of `time` alone is `V_Expr`/`I_Expr`, nets swapped for a current as every current
+source here is) — and `SpiceNetlistReader.ReadDeck`, which reads a flat deck's elements into one cell instead of noting each.
+`T` was in the reader's refused letters; one whose two ports have different references (two modes) is still refused.
+
+**Fits for `SpiceFit=yes` come from the engine's own realization.** `TransientSpiceFits` runs `TransientRealization` on the
+netlist and reads back each `RationalSnpModel` and lossy `TransientLineModel` it swapped in (with the fit's Z0, now recorded as
+`TransientRealization.FitZ0`). The deck realizes an S fit with RationalSnpModel's own rows, each state a node on a 1/|a| F
+capacitor so it carries the size of its input wave — a 1 F state would hold u/|a|, ~1e-10 V at GHz, below VNTOL.
+
+## brief TRN-7 — the deck wrote a device's internal pins as its terminals (2026-11-15)
+
+**Found by TRN-7's references, not by TRN-6's own gates.** The ring of MOS level-1 inverters written for
+`testdata/transient/ngspice/` did not oscillate under ngspice: every instance line read `MN1 n2 0 0 0` for
+`MOS1_N:MN1 n2 n1 0 0`. `SpiceDeckWriter` took the first `m.Terminals` of `ElaboratedComponent.Nodes`, but the elaborator
+EXPANDS a device's drawn nets into the model's ports: a MOS's four nets become six branch pairs (drain', source'), (bulk,
+source'), …, so the first four are `d s b s`; a BJT's first three are `bi ei bi`; a diode with `Rs` is `(a, int), (int, k)`.
+Only a plain diode came out right. Every MOS gate was written as its source, every BJT collector as its base, every Rs diode's
+cathode as a dangling internal node — and the deck still parsed and ran, which is why nothing complained.
+
+**Fix:** `SpiceDeckWriter.DrawnTerminals` reads the drawn terminals back from each expansion's documented layout (Elaborator's
+comments and `MosfetModelBase`/`BjtModel`'s port tables): MOS d = pin 0 (or pin 12 with Rd), g = pin 6, s = pin 1 (or the Rs
+pair's first), b = pin 2; BJT c = pin 4 (or the Rc pair's first), b = pin 6, e = pin 1 (or the Re pair's first); an Rs diode
+pins 0 and 3. The dialect's card carries RD/RS/RB/RE/RC and makes its own internal nodes. Gate:
+`tests/Ui.Tests/Transient/NgspiceSolverTests.Deck_WritesEachDevicesDrawnTerminals` (a MOS with Rd and Rs, a BJT with all three
+resistances, an Rs diode); after the fix the ring agrees with the native engine to 1.3e-4 of its swing over 8 periods.
+
+**Also:** the deck now `.save`s each IProbe's first net, which the native engine records so a probe's power is v·i at a
+recorded node; without it the ngspice result could not give `P` and `Vprobe`.
 ## RF passives — the Wilkinson plan and the planned-passive model (2026-11-15)
 
 - **A plan is existing parts, placed.** `PassivePlan` is sections (`PlanTee`, `PlanCurve`) with node lists and poses;
@@ -4989,3 +5245,43 @@ What would cost time to rediscover:
   on 2 nm (each run is a width less two arms).
 - **The curved plans are bit for bit.** The corners are a branch beside the curve code, which keeps its arithmetic and
   section order; the variants' and the rat-race's fingerprints were taken before the change.
+
+## TRN series review (2026-11-16) — what the review of TRN-1…9 found in src/Core and fixed
+
+- **Time-domain functions.** fft/fft_power/thd took their harmonic count from the 256-point resample, not from the record's
+  own samples, so a 2.4 GHz tone sampled every 1 ns reported 16 harmonics from a cubic through samples periods apart; the count
+  is the record's now, and a window holding fewer than four samples is refused (expr.tran.fft-resolution). overshoot,
+  undershoot and settle treated a record ending a microvolt from its start as a step of a microvolt (1e8 % overshoot); they use
+  Edge's own no-step rule (within a tenth of the swing). rise/fall accepted lo = 0 and always returned NaN; refused now.
+  undershoot took the deepest dip after the peak, not the first trough the docs promise. tmin/tmax refuse a window outside the
+  record as avg/rms do.
+- **`Stop=10 ns`** — a unit apart from its number — read as 10 s on a tran line (the bare unit passed the directive check and
+  the parser skipped it); it is glued to the number before it.
+- **V_Expr reading a variable that reads `time`** played the variable's steady-state value (resolved once, before the run):
+  refused, naming the variable.
+- **SPICE reader:** a stimulus without parentheses (`PWL 0 0 1n 1 AC 1`) swallowed the rest of the line; it takes the numbers
+  that follow and stops at the first word that is not one.
+- **PULSE corner:** with Fall = 0 and Rise + Width = Period, the period's end read V1 instead of its left value V2.
+- **Deck writer:** `.save`/`.ic` named an alias (a VProbe's) as a deck node no element connects to, so a VProbe under ngspice
+  failed the run and an IC through an alias was lost; both go through the net's own name now, nets inside a placed .subckt are
+  not saved, an unknown IC net is refused. A delayed tone is a behavioural source: the dialect's SIN holds VO + VA·sin(PHASE)
+  before its delay (measured on ngspice 47), where circuitRF's tone is zero. Model card names are made unique without regard to
+  case; a nested Port/Term writes no resistor (the native run loads none); a Vdc stated as V= is not written as 0 V.
+- **Left as found, for a decision:** a placed .subckt's overrides are evaluated against globals only; MOS level 3 with Tox
+  unstated may differ in gate charge (unverified against the dialect); a passive whose value has a `time` comparison is now
+  refused on import where it used to be read in steady state (the reader's comment says this is deliberate).
+
+## PCH review (2026-11-16) — the Propagation Channel component, steerDelay
+
+- **`steerDelay` pointed the beam at −θ0.** steer's phase is −360·f0·path/c and a weight is e^(+jφ); a delay weighs e^(−j2πfτ),
+  so the delay that matches it is +path/c. It was −path/c in `Evaluator.Array` and in the elaborator's closed form. Gate
+  `PhasedArrayFeedTests.SteerDelay_PointsTheBeamWhereSteerDoes`.
+- **A channel's registry numbers ignored the registry's unit.** `Elevation=30 deg` went through the ordinary unit scale and
+  arrived as 0.52°; `d0=1 m` as 1 mm. A registry `deg` parameter is now read as the orientations are (EvalPhase), a registry
+  `m`/`km` length typed in `m` is the metre-is-milli refusal, and a length or frequency typed in its own unit is brought back to
+  the registry's km or GHz.
+- **`PathLoss=Satellite`** passed `Find` and then failed every case-sensitive "satellite" test: the model takes the registry's
+  own spelling now. A pin end with a pattern no longer reads its record at DC (it warned on every DC/HB run and stamped the RF
+  S11 as the DC termination), and the nearest-record warning is said once per record frequency, not per swept point.
+- **Left as found:** a gain end with no stated polarization projects a fixed Cartesian vector on each ray, so off the line of
+  sight it is dipole-like; SIR sums interferers' powers where HB sums their fields.

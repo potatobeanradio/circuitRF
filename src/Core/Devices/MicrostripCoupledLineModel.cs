@@ -24,7 +24,7 @@ namespace CircuitRF.Core.Devices;
 /// <c>W</c> strip width, <c>S</c> edge-to-edge gap, <c>L</c> length (m); <c>H</c>, <c>T</c>,
 /// <c>Er</c>, <c>Sigma</c>, <c>TanD</c>, optional <c>Roughness</c> — exactly MLIN's.</para>
 /// </summary>
-public sealed class MicrostripCoupledLineModel : ComponentModel, IReportsWarnings, IDcShortedTerminals
+public sealed class MicrostripCoupledLineModel : ComponentModel, IReportsWarnings, IDcShortedTerminals, ICoupledPair
 {
     /// <summary>Lossless at DC (both modes' γ are zero there): each strip a short end to end (1-2, 3-4).</summary>
     public IReadOnlyList<(int A, int B)> DcShortedTerminals { get; } = [(0, 1), (2, 3)];
@@ -86,6 +86,14 @@ public sealed class MicrostripCoupledLineModel : ComponentModel, IReportsWarning
             return new Complex(alpha, 2.0 * Math.PI * freqHz / MicrostripLoss.SpeedOfLight * Math.Sqrt(eeff));
         }
         return (One(m.Ze, m.EeffE), One(m.Zo, m.EeffO));
+    }
+
+    /// <summary>brief TRN-6 — each mode's impedance and γl over the pair's length at <paramref name="freqHz"/>, as stamped.</summary>
+    public (double Ze, Complex GammaLengthEven, double Zo, Complex GammaLengthOdd) PairAt(double freqHz)
+    {
+        var m = ModesAt(freqHz);
+        var (ge, go) = Gamma(freqHz, m);
+        return (m.Ze, ge * _l, m.Zo, go * _l);
     }
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)

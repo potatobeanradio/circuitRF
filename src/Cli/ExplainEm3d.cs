@@ -178,7 +178,7 @@ internal static class ExplainEm3d
         var (contentLo, contentHi) = Em3dGenerator.ContentBounds(p);
         var defaults = Em3dGenerator.DefaultFacePadding(setup, p.Frequency.StartHz,
             Math.Max(Math.Max(contentHi.X - contentLo.X, contentHi.Y - contentLo.Y), contentHi.Z - contentLo.Z), p.PaddingHeightM,
-            p.PaddingHeightBelowM);
+            p.PaddingHeightBelowM, p.PaddingColumnM);
         double Span(string face) => face[0] switch
         {
             'x' => contentHi.X - contentLo.X, 'y' => contentHi.Y - contentLo.Y, _ => contentHi.Z - contentLo.Z,
@@ -832,7 +832,7 @@ internal static class ExplainEm3d
     private static string Boundary(Em3dBoundaryKind k) => k switch
     {
         Em3dBoundaryKind.Pec => "PEC", Em3dBoundaryKind.Pmc => "PMC",
-        Em3dBoundaryKind.Symmetry => "symmetry", _ => "absorbing",
+        Em3dBoundaryKind.Symmetry => "symmetry", Em3dBoundaryKind.Periodic => "periodic", _ => "absorbing",
     };
 
     private static string Primitive(Em3dPrimitive p) => p switch

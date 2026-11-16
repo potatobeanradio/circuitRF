@@ -35,9 +35,26 @@ public static class C3dTurnedPorts
     /// </summary>
     public static double Tolerance(C3dPortContext ctx) => 2 * ctx.Dbu + ctx.OutlineMoveM;
 
+    /// <summary>brief-hzn-15 — the tolerance for <paramref name="port"/>: a port drawn as its corners meets copper that is itself rounded
+    /// to the DBU in a tilted frame (up to √3/2 DBU off in the world, as the port's corners are), so it takes four DBU.</summary>
+    public static double Tolerance(C3dPortContext ctx, C3dPort port) => port.Corners is null ? Tolerance(ctx) : 4 * ctx.Dbu + ctx.OutlineMoveM;
+
     /// <summary>Why <paramref name="port"/>, whose Angle is not 0, cannot be turned; null when it can.</summary>
     internal static string? AngleRefusal(C3dPort port, string label)
     {
+        if (port.Corners is { } corners)
+        {
+            // brief-hzn-15 — a port drawn as its corners
+            if (corners.Count != 4) return $"{label} has {corners.Count} Corners; a port drawn as its corners has four.";
+            if (port.Angle != 0) return $"{label} states both Angle and Corners; its corners say where it is. Remove Angle.";
+            if (port.Kind == Em3dPortKind.Wave)
+                return $"{label} is a wave port with Corners. A wave port is a rectangle of an air-box face; remove its Corners.";
+            if (port.Cylinder is not null) return $"{label} is a gap on a cylinder with Corners; remove one of them.";
+            static Point3 W(C3dPoint3 c) => new(c.X, c.Y, c.Z);
+            var q = new Em3dPortQuad(W(corners[0]), W(corners[1]), W(corners[2]), W(corners[3]));
+            if (q.Problem(Em3dPortQuad.DrawnTolerance) is { } shape) return $"{label}'s corners {shape}.";
+            return null;
+        }
         if (!double.IsFinite(port.Angle)) return $"{label}'s Angle is {port.Angle}; write a number of degrees.";
         if (port.Kind == Em3dPortKind.Wave)
             return $"{label} is a wave port with an Angle of {Deg(port.Angle)}°. A wave port is a rectangle of an air-box face, " +
@@ -51,6 +68,11 @@ public static class C3dTurnedPorts
     /// <summary>The port's two in-plane axes, world: its plane's, turned by its Angle when it is a turned port.</summary>
     public static (Point3 U, Point3 V) Axes(C3dPort port)
     {
+        if (port.Corners is not null)
+        {
+            var f = Frame(port, 1000);
+            return (f.U, f.V);
+        }
         if (port.Angle == 0) return C3dPorts.PlaneAxes(port.Plane);
         var (_, u, v) = Map(port.Plane, port.Angle, 0, 0, 0, 0, 0);
         return (u, v);
@@ -60,6 +82,48 @@ public static class C3dTurnedPorts
     /// about the rectangle's centre at height <paramref name="h"/>, and the two turned axes.</summary>
     internal static (Func<double, double, Point3> P, Point3 U, Point3 V) Map(double degrees, double u0, double v0, double u1, double v1, double h)
         => Map(C3dPlane.XY, degrees, u0, v0, u1, v1, h);
+
+    /// <summary>A port's sheet as the rest of the port code measures it, metres: its parameter rectangle (u0, v0)–(u1, v1) at
+    /// height <paramref name="H"/>, the map <paramref name="P"/> from it to the world, and the two in-plane axes.</summary>
+    public sealed record PortFrame(double U0, double V0, double U1, double V1, double H, Func<double, double, Point3> P, Point3 U, Point3 V);
+
+    /// <summary>
+    /// The frame of any planar port: its Rect on its plane, turned by its Angle; or (brief-hzn-15) its Corners, where u runs from 0 to
+    /// the mean length of the sides A–B and D–C and v from 0 to the mean of A–D and B–C, mapped bilinearly so that each edge of the
+    /// parameter rectangle is exactly one side of the drawn quadrilateral.
+    /// </summary>
+    public static PortFrame Frame(C3dPort port, int dbuPerMicron)
+    {
+        double M(long v) => C3dLowering.Metres(v, dbuPerMicron);
+        if (port.Corners is { Count: 4 } cs)
+        {
+            var (a, b, c, d) = (W(cs[0]), W(cs[1]), W(cs[2]), W(cs[3]));
+            double w = (Dist(a, b) + Dist(d, c)) / 2, l = (Dist(a, d) + Dist(b, c)) / 2;
+            Point3 P(double u, double v)
+            {
+                double s = u / w, t = v / l;
+                double ka = (1 - s) * (1 - t), kb = s * (1 - t), kc = s * t, kd = (1 - s) * t;
+                return new Point3(ka * a.X + kb * b.X + kc * c.X + kd * d.X, ka * a.Y + kb * b.Y + kc * c.Y + kd * d.Y, ka * a.Z + kb * b.Z + kc * c.Z + kd * d.Z);
+            }
+            return new PortFrame(0, 0, w, l, 0, P, Unit(Sum(Sub(b, a), Sub(c, d))), Unit(Sum(Sub(d, a), Sub(c, b))));
+            Point3 W(C3dPoint3 q) => new(M(q.X), M(q.Y), M(q.Z));
+        }
+        double u0 = M(port.Rect.Min.U), v0 = M(port.Rect.Min.V);
+        double u1 = M(port.Rect.Min.U + port.Rect.Size.U), v1 = M(port.Rect.Min.V + port.Rect.Size.V);
+        double h = M(port.Offset);
+        if (port.Angle != 0)
+        {
+            var (p, tu, tv) = Map(port.Plane, port.Angle, u0, v0, u1, v1, h);
+            return new PortFrame(u0, v0, u1, v1, h, p, tu, tv);
+        }
+        var (eu, ev) = C3dPorts.PlaneAxes(port.Plane);
+        return new PortFrame(u0, v0, u1, v1, h, (u, v) => C3dLowering.OnPlane(port.Plane, u, v, h), eu, ev);
+
+        static Point3 Sub(Point3 p, Point3 q) => new(p.X - q.X, p.Y - q.Y, p.Z - q.Z);
+        static Point3 Sum(Point3 p, Point3 q) => new(p.X + q.X, p.Y + q.Y, p.Z + q.Z);
+        static double Dist(Point3 p, Point3 q) => Math.Sqrt((p.X - q.X) * (p.X - q.X) + (p.Y - q.Y) * (p.Y - q.Y) + (p.Z - q.Z) * (p.Z - q.Z));
+        static Point3 Unit(Point3 p) { double n = Math.Sqrt(p.X * p.X + p.Y * p.Y + p.Z * p.Z); return new(p.X / n, p.Y / n, p.Z / n); }
+    }
 
     /// <summary>brief-hzn-14 — the same map in whatever unit its arguments are in (the Hertzon writer works in DBU).</summary>
     public static Func<double, double, Point3> MapDbu(C3dPlane plane, double degrees, double u0, double v0, double u1, double v1, double h)
@@ -93,10 +157,11 @@ public static class C3dTurnedPorts
     /// side of that outline. Returns the refusal, or null with <paramref name="seams"/>.
     /// </summary>
     internal static string? Ends(string label, Em3dPortQuad quad, Point3 direction, string negative, string positive, C3dPortContext ctx,
-                                 out IReadOnlyList<C3dSeam> seams)
+                                 out IReadOnlyList<C3dSeam> seams, bool drawn = false)
     {
         seams = [];
         var (neg, pos) = quad.Ends(direction);
+        if (drawn) return DrawnEnds(label, neg, pos, negative, positive, ctx);
         var found = new List<C3dSeam>(2);
         double tol = Tolerance(ctx);
         bool vertical = quad.Corners.Max(c => c.Z) - quad.Corners.Min(c => c.Z) > tol;
@@ -126,6 +191,103 @@ public static class C3dTurnedPorts
             found.Add(new C3dSeam(name, a, b));
         }
         seams = found;
+        return null;
+    }
+
+    /// <summary>
+    /// brief-hzn-15 — <paramref name="quad"/> with each corner of each end moved onto its conductor, within the drawn-port tolerance:
+    /// onto the nearest point of a sheet's outline (an end lies along a sheet's edge, so it meets it there and not a nanometre inside or
+    /// out), else onto the nearest point of the conductor's surface. A corner farther than the tolerance is left where it is (the end
+    /// check refuses it).
+    /// </summary>
+    internal static Em3dPortQuad SnapEnds(Em3dPortQuad quad, Point3 direction, string negative, string positive, C3dPortContext ctx)
+    {
+        var (neg, pos) = quad.Ends(direction);
+        double tol = DrawnEndTolerance(ctx, neg, pos);
+        var moved = new Dictionary<Point3, Point3>();
+        foreach (var (name, (p, q)) in new[] { (negative, neg), (positive, pos) })
+        {
+            var c = ctx.Conductors.FirstOrDefault(k => k.Name == name);
+            if (c is null) continue;
+            foreach (var corner in new[] { p, q })
+                if (Snap(corner, c, tol) is { } to) moved[corner] = to;
+        }
+        Point3 M(Point3 x) => moved.TryGetValue(x, out var to) ? to : x;
+        return new Em3dPortQuad(M(quad.A), M(quad.B), M(quad.C), M(quad.D));
+    }
+
+    private static Point3? Snap(Point3 x, C3dPortContext.Conductor c, double tol)
+    {
+        Point3? best = null;
+        double bd = double.PositiveInfinity;
+        if (c.Sheet is { } sh)
+        {
+            // a vertex of the outline first: a corner a nanometre from one is that vertex, never a point of the side beside it
+            foreach (var ring in sh.Holes.Prepend(sh.Outline))
+                foreach (var v in ring)
+                {
+                    var w = sh.World(v);
+                    double d = Geometry3.Length(Geometry3.Sub(w, x));
+                    if (d < bd) (bd, best) = (d, w);
+                }
+            if (bd <= tol) return best;
+            bd = double.PositiveInfinity;
+        }
+        if (c.Sheet is { } sheet)
+            foreach (var ring in sheet.Holes.Prepend(sheet.Outline))
+                for (int i = 0; i < ring.Count; i++)
+                {
+                    var on = Geometry3.ClosestOnSegment(x, sheet.World(ring[i]), sheet.World(ring[(i + 1) % ring.Count]));
+                    double d = Geometry3.Length(Geometry3.Sub(on, x));
+                    if (d < bd) (bd, best) = (d, on);
+                }
+        if (bd <= tol) return best;
+        if (c.Mesh is not { } m) return null;
+        foreach (var t in m.Triangles)
+        {
+            var on = Geometry3.ClosestOnTriangle(x, m.Vertices[t.A], m.Vertices[t.B], m.Vertices[t.C]);
+            double d = Geometry3.Length(Geometry3.Sub(on, x));
+            if (d < bd) (bd, best) = (d, on);
+        }
+        return bd <= tol ? best : null;
+    }
+
+    /// <summary>
+    /// How far a drawn port's end may stand off its conductor and still be on it (the run then moves it exactly there,
+    /// <see cref="SnapEnds"/>): four DBU (brief-hzn-15: its corners and a tilted conductor are each rounded in their own frame), or
+    /// (brief-hzn-17) a part in 10⁴ of the port's longest side, whichever is more. An imported model writes its points to a fixed number
+    /// of decimals: Hertzon's glasses example spells them to 0.1 µm, so a corner on a slanted board edge is up to 0.05 µm off it, and a
+    /// 0.6 mm port's end was 0.027 µm off a board it lies along. A part in 10⁴ is the coplanarity HZN-15 already allows a drawn shape.
+    /// Contact inference does not use this: it measures a whole edge, which a corner rounded either side of the copper still touches.
+    /// </summary>
+    internal static double DrawnEndTolerance(C3dPortContext ctx, (Point3 A, Point3 B) neg, (Point3 A, Point3 B) pos)
+    {
+        double side = new[] { Geometry3.Length(Geometry3.Sub(neg.B, neg.A)), Geometry3.Length(Geometry3.Sub(pos.B, pos.A)),
+                              Geometry3.Length(Geometry3.Sub(pos.A, neg.A)), Geometry3.Length(Geometry3.Sub(pos.B, neg.B)) }.Max();
+        return Math.Max(4 * ctx.Dbu, 1e-4 * side) + ctx.OutlineMoveM;
+    }
+
+    /// <summary>
+    /// brief-hzn-15 — a port drawn as its corners: each end must lie ON its conductor's surface, every ninth of the way along it within
+    /// the tolerance (a sheet's face, a solid's face, whatever the plane). No seam is made: the end lies in that surface, which the
+    /// mesher imprints, as it does a vertical port's end inside a sheet.
+    /// </summary>
+    private static string? DrawnEnds(string label, (Point3, Point3) neg, (Point3, Point3) pos, string negative, string positive, C3dPortContext ctx)
+    {
+        double tol = DrawnEndTolerance(ctx, neg, pos);
+        foreach (var (name, (p, q), which) in new[] { (negative, neg, "negative"), (positive, pos, "positive") })
+        {
+            var c = ctx.Conductors.FirstOrDefault(k => k.Name == name);
+            if (c is null) return $"{label}'s {which} end is on '{name}', which is no conductor of the elaborated model.";
+            for (int k = 0; k <= 8; k++)
+            {
+                var at = new Point3(p.X + (q.X - p.X) * k / 8, p.Y + (q.Y - p.Y) * k / 8, p.Z + (q.Z - p.Z) * k / 8);
+                double d = ctx.Distance(c, at, at, bounded: false);
+                if (d > tol)
+                    return $"{label}'s {which} end, from ({Mm(p.X)}, {Mm(p.Y)}, {Mm(p.Z)}) to ({Mm(q.X)}, {Mm(q.Y)}, {Mm(q.Z)}) mm, leaves '{name}' " +
+                           $"({Um(d)} µm off it): draw the port so each end lies along its conductor.";
+            }
+        }
         return null;
     }
 

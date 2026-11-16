@@ -1,0 +1,6 @@
+; brief TRN-7 R-trn7-9 — a lossless line's pulse reflection (TRN-4's gate), against ngspice
+V_Pulse:VS s 0 V1=0 V2=1 Delay=0.5n Rise=0.1n Fall=0.1n Width=20n
+R:RS s in R=50
+TLIN:TL1 in out Z=50 E=360 deg F=1 GHz
+R:RL out 0 R=100
+analysis TR1 type=tran Stop=4n Step=0.01n

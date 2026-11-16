@@ -119,4 +119,43 @@ public sealed class SignalQualityPresetTests
         PlotConfigLoader.RestoreAxes(back, JsonSerializer.Deserialize<AxesConfig>(json));
         Assert.True(back.Axes.EqualAspect);
     }
+
+    /// <summary>
+    /// Brief PCH-7 R-pch7-6: a run through a fading Propagation Channel adds the channel's power-delay profile and the drop's
+    /// Doppler spectrum under the table, points only, each a cube trace on the link cubes the run reports.
+    /// </summary>
+    [Fact]
+    public void AFadingChannel_AddsThePowerDelayProfileAndTheDopplerSpectrum()
+    {
+        var (lib, tb) = new CnlReader().Read("""
+            MOD_Source:S1 s 0 Fc=2e9 Pavg=-20 Z=50 Record=0.5e-3 Carrier[1]="LTE;BW=5MHz;Mod=16QAM;Off=0;P=0;Seed=3"
+            PropagationChannel:CH1 s rx Distance=1 TxGain=10 RxGain=10 Multipath=tdl Profile=EPA fD=70 Seed=2
+            IProbe:Irx rx c
+            R:RL c 0 R=50 Ohm
+            analysis ENV1 type=env Accuracy=draft MaxHarm=1 Segments=1 Warmup=1e-6 Stop=0.5e-3 Equalizer=genie
+            """);
+        using var nl = new Elaborator(lib).Elaborate(tb);
+        var plan = EnvelopeRunner.Resolve(tb.Analyses.OfType<EnvelopeAnalysis>().Single(), nl.ResolvedGlobals);
+        bool used = false;
+        ElaboratedNetlist Elab() { if (used) return new Elaborator(lib).Elaborate(tb); used = true; return nl; }
+        var ds = new DataSet();
+        foreach (var (name, cube) in EnvelopeRunner.Run(plan, Elab).Cubes) ds.AddToGroup("ENV1", name, cube);
+
+        var plots = SignalQualityPreset.Build(ds, "link.npy");
+        Assert.Equal(5, plots.Count);
+        var table = plots.Single(p => p.PlotType == PlotType.Table);
+        var pdp = plots[3]; var dop = plots[4];
+        Assert.Equal("ENV1.link:CH1:PowerDelayProfile_dB", pdp.Traces.Single().CubeName);
+        Assert.Equal("ENV1.link:CH1:DopplerSpectrum_dB", dop.Traces.Single().CubeName);
+        Assert.Equal(FreqUnit.Hz, dop.FreqUnit);
+        foreach (var p in new[] { pdp, dop })
+        {
+            Assert.False(p.Traces[0].Properties.LineEnabled);
+            Assert.True(p.Top >= table.Top + table.Height);
+        }
+        // EPA's seven delays, as printed (no DelaySpread asked): 0 to 410 ns
+        var profile = ds.CubesIn("ENV1")["link:CH1:PowerDelayProfile_dB"];
+        Assert.Equal(7, profile.Axes[0].Length);
+        Assert.Equal(410e-9, profile.Axes[0].Values[^1], 1e-21);
+    }
 }

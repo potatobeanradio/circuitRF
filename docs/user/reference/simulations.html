@@ -31,8 +31,8 @@
   <div class="page-top">
     <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Simulations</p>
     <nav class="page-nav-top" aria-label="Previous and next page">
-      <a class="prev" href="chain-budget.html" title="Previous: RF Chain Budget"><span class="arrow">‹</span><span class="name">RF Chain Budget</span></a>
-      <a class="next" href="measurements.html" title="Next: Measurements"><span class="name">Measurements</span><span class="arrow">›</span></a>
+      <a class="prev" href="propagation-channel.html" title="Previous: The Propagation Channel: a radio link in one schematic"><span class="arrow">‹</span><span class="name">The Propagation Channel: a radio link in one schematic</span></a>
+      <a class="next" href="transient.html" title="Next: Transient"><span class="name">Transient</span><span class="arrow">›</span></a>
     </nav>
   </div>
 
@@ -52,6 +52,7 @@
       <li><a href="#loadpull-pursuit">Loadpull Pursuit</a></li>
       <li><a href="#two-tone">Multi-Tone Harmonic Balance</a></li>
       <li><a href="#envelope">Circuit Envelope (modulated signals)</a></li>
+      <li><a href="#transient">Transient (time domain)</a></li>
       <li><a href="#fields">Fields (pattern, B1 and SAR from a circuit)</a></li>
       <li><a href="#cli">Running an analysis from the command line</a></li>
     </ol>
@@ -167,8 +168,8 @@ off without one. <code>circuitrf explain &lt;file&gt; --analysis</code> lists ev
 </tr>
 </tbody>
 </table>
-<p><strong>Worked examples.</strong> <strong>File ▸ New ▸ Examples ▸ S-Parameter Noise</strong> checks the S-parameter noise against closed forms.
-<strong>File ▸ New ▸ Examples ▸ Receiver Noise</strong> goes through a 2.45 GHz receiver, one bench per analysis: an LNA noise match,
+<p><strong>Worked examples.</strong> <strong>File ▸ New ▸ Examples ▸ Noise ▸ S-Parameter Noise</strong> checks the S-parameter noise against closed forms.
+<strong>File ▸ New ▸ Examples ▸ Noise ▸ Receiver Noise</strong> goes through a 2.45 GHz receiver, one bench per analysis: an LNA noise match,
 the chain's budget against Friis, a diode mixer's SSB and DSB noise figure, the LNA under a blocker, a noise sourcepull,
 an NR signal's EVM through the chain with a phase-noisy LO, and the VCO whose phase noise that LO carries.</p>
 <h3 id="sp-noise">Small-signal noise</h3>
@@ -374,7 +375,7 @@ measure NF2   = ns_circle(SP1.S, 2)
 Zopt = 19.2 + j38.2 Ω. <code>NF</code> is 2.948 dB, which is the noise figure from the 50 Ω source, and its noise
 temperature <code>Te</code> is 282 K against a <code>Tmin</code> of 129 K. <code>NFopt</code> is 1.6 dB again. <code>NF2</code> is the 2 dB noise circle:
 its centre is at 0.563∠100° and its radius is 0.245. The book rounds these to 0.56 and 0.24.</p>
-<p><strong>Worked examples.</strong> <strong>File ▸ New ▸ Examples ▸ S-Parameter Noise</strong> has three benches, each with a Data Display
+<p><strong>Worked examples.</strong> <strong>File ▸ New ▸ Examples ▸ Noise ▸ S-Parameter Noise</strong> has three benches, each with a Data Display
 that opens when it is simulated. A matched 6 dB pad is swept over its temperature, and its NF lies on
 1 + (T/T0)(L − 1). A low-noise stage, a pad and a second stage lie on Friis' formula as the pad's loss is swept.
 A noise-matched LNA shows NF against NFmin, Te against Tmin, its Sopt and two <code>ns_circle</code> circles on a
@@ -404,6 +405,8 @@ compression and IM3, and passive intermodulation on the blocks that carry it. Tw
       <tr><td>GuardHarmonic</td><td>Extra guard harmonic(s) beyond <code>MaxHarm</code> for anti-alias safety.</td><td>0</td></tr>
       <tr><td>Lambda</td><td>Newton damping factor (1 = full step; lower damps an unstable solve).</td><td>1</td></tr>
       <tr><td>MaxIter</td><td>Maximum Newton iterations per solve point.</td><td>100</td></tr>
+      <tr><td>InitialGuess</td><td>Where the Newton starts: <code>dc</code> (the DC point, the drive stepped up as DriveStepping says), <code>transient</code> (the last period of a transient run from rest at full drive) or <code>fallback</code> (dc, then transient if that does not converge). See <a href="#hb-transient-start">Starting from a transient run</a>.</td><td>dc</td></tr>
+      <tr><td>SeedTol / SeedPeriods / SeedFastBias</td><td>The transient start's settling tolerance, its length (<code>auto</code>: until settled, at most 200 periods) and whether RF chokes and blocks are scaled in it.</td><td>1e-3 / auto / yes</td></tr>
       <tr><td>SSStart / SSStop / SSNpts / SSStep / SSUnit / SSLog</td><td>The small-signal "tickle" sweep a <a href="components.html#wsprobe">WSProbe</a> is driven over, around the converged large-signal operating point. Absent, there is no small-signal solve and the run is unchanged. See <a href="wsprobe.html#hb">The WSProbe under harmonic balance</a>.</td><td>0.1-10 GHz</td></tr>
       <tr><td>SSMaxHarm</td><td>Sidebands retained in the conversion matrix for that solve.</td><td>= MaxHarm</td></tr>
       <tr><td>MarginThreshold</td><td>As for S-parameters, applied at each operating point.</td><td>-15 dB</td></tr>
@@ -414,6 +417,34 @@ compression and IM3, and passive intermodulation on the blocks that carry it. Tw
     </tbody>
     <caption>Multi-tone analysis adds the extra tones and a mixing order (≥ 5 at two tones, to capture close-in IM products; lower it as tones are added).</caption>
   </table>
+<h3 id="hb-transient-start">Starting from a transient run</h3>
+<p>Harmonic balance starts from the DC point and steps the drive up. Some circuits are a long way from there: a switching PA
+whose devices only conduct at full drive, a hard-driven mixer, a divider whose divided solution cannot be reached by
+turning the drive up gradually. With <code>InitialGuess=transient</code> the run first simulates the circuit in time, from rest, at
+full drive, until one period looks like the next. The last period's spectrum is where Newton starts, with no drive
+stepping. The answer is still harmonic balance's, to its own <code>Tol</code>: the transient run only supplies the start.</p>
+<pre><code>analysis HB1 type=hb Tone=1 ToneUnit=GHz MaxHarm=15 InitialGuess=transient
+</code></pre>
+<ul>
+<li><strong>The transient run.</strong> Its step is a period divided by 8·(MaxHarm + 1). It stops when consecutive periods of every
+waveform at the nonlinear devices agree within <code>SeedTol</code> of the waveform's peak, counting the change still to come at
+the rate the difference is shrinking, so a bias network that is still charging slowly does not count as settled. It
+never runs longer than 200 periods (<code>SeedPeriods=auto</code>); a number runs exactly that many.</li>
+<li><strong>Bias networks.</strong> A choke or a DC block settles over thousands of carrier periods. With <code>SeedFastBias=yes</code> (the
+default) the transient run alone uses smaller values for each inductor whose reactance at the fundamental is more than
+50 times the impedance it sees, and each capacitor whose reactance is less than a fiftieth of it (measured with the circuit
+at its DC point). Each is scaled to exactly 50 times, or a fiftieth of, that impedance, which it still chokes or blocks,
+and which settles in about eight periods. Harmonic balance then solves the circuit with its real values.</li>
+<li><strong><code>fallback</code></strong> runs harmonic balance as usual and starts it again from a transient run only when it does not converge.</li>
+<li><strong>Tones.</strong> One tone, or several whose products fall on a common fundamental, which the transient run then uses as its
+period. Tones with no common period are refused with <code>transient</code>; <code>fallback</code> starts them from DC and says so.</li>
+<li><strong>Sweeps.</strong> Inside a parametric sweep only the first point is started from a transient run, and any point that does not
+converge from its neighbour's answer. The rest start from their neighbour as before.</li>
+</ul>
+<p>The run adds <code>Seed.Periods</code> (0 for a point that was not seeded), <code>Seed.Settled</code> (1 or 0), <code>Seed.HbIterations</code> (Newton
+iterations from the transient start) and <code>Seed.ScaledElements</code> (each scaled part's factor), and a message saying how the
+transient run went. <code>circuitrf explain --analysis</code> shows the settings, the step, the longest the transient run can take
+and the parts fast bias would scale, without running anything.</p>
 <h3 id="hb-noise">Noise in harmonic balance</h3>
 <p><strong>Computes:</strong> the noise figure of a circuit with a large signal in it — a mixer's SSB and DSB noise figure, an LNA's noise
 figure while a blocker drives it, or a receiver chain's with its LO running. The S-parameter
@@ -542,7 +573,7 @@ negative resistance runs out, which brackets the oscillation, and Newton's metho
 </tr>
 <tr>
 <td><code>Fguess</code></td>
-<td>(required)</td>
+<td>(required unless <code>InitialGuess=transient</code>)</td>
 <td>Where the start-up search is centred, in <code>Unit</code></td>
 </tr>
 <tr>
@@ -565,8 +596,29 @@ negative resistance runs out, which brackets the oscillation, and Newton's metho
 <td>ramp from small</td>
 <td>Amplitude to start from: volts in shunt, amperes in series</td>
 </tr>
+<tr>
+<td><code>InitialGuess</code></td>
+<td>dc</td>
+<td><code>transient</code> starts from a transient run and makes <code>Fguess</code> optional; <code>fallback</code> tries <code>dc</code> first</td>
+</tr>
+<tr>
+<td><code>SeedTol</code>, <code>SeedPeriods</code>, <code>SeedFastBias</code></td>
+<td>1e-3, auto, yes</td>
+<td>As harmonic balance's <a href="#hb-transient-start">transient start</a></td>
+</tr>
+<tr>
+<td><code>KickV</code></td>
+<td>1 % of the largest DC supply</td>
+<td>The kick that starts the transient run, volts</td>
+</tr>
 </tbody>
 </table>
+<p><strong>Starting from a transient run.</strong> With <code>InitialGuess=transient</code> you do not need to know the frequency. The circuit is
+simulated in time from its DC point, with the OscProbe's node held <code>KickV</code> above its DC voltage and released at the start,
+until the oscillation's period and amplitude stop changing (within <code>SeedTol</code>, at most 200 periods). The last cycle's
+frequency, amplitude and waveforms are where the search starts, with no amplitude ramp. Without <code>Fguess</code> the start-up
+search spans 1 kHz to 1 THz and the step of the transient run follows the strongest start-up point it finds. If no
+oscillation settles, the run stops and quotes the start-up search's result, which says whether the circuit starts at all.</p>
 <p><strong>Results.</strong> The run writes the cubes a harmonic-balance analysis writes, at the oscillation (<code>V</code>, <code>I</code>, <code>ToneFreqs</code> and the
 rest), so every HB measurement and Data Display preset works on it. It adds:</p>
 <ul>
@@ -1006,7 +1058,8 @@ density in dBm/Hz.</p>
 <p>Every IProbe gets every row, so the branch axis is the same at every sweep point. A probe that carries
 no RF, such as a supply or bias probe, is blank in the output rows (<code>Gt_dB</code>, <code>DE_pct</code>, <code>NMSE_dB</code>,
 <code>ACLR</code>, <code>PAPR_dB</code>, <code>CCDF</code>, AM-AM, AM-PM and EVM): its fundamental-band power is below 10⁻⁶ of the available
-drive. Its <code>Pprobe_W</code> still reads its DC power.</p>
+drive, or, past a Propagation Channel, of the drive less the channel's own power gain (each channel's |H|² at the
+carrier), so a receiver at the end of a long path is read. Its <code>Pprobe_W</code> still reads its DC power.</p>
 <p>A design with a <a href="wbond.html">wBond</a> also gets <code>WireTemp</code> and <code>WireTempState</code> (axis <code>wire array</code>): each array's
 hottest wire under the record's average heat (<a href="wbond.html#wt-envelope">wBond ▸ In a circuit envelope run</a>).</p>
 <p>A <a href="#parametric-sweep">Parametric Sweep</a> around an envelope analysis (sweeping the source's <code>Pavg</code>, say)
@@ -1480,13 +1533,16 @@ a fade on some subcarriers reads as distortion, and a carrier offset turns the c
 </tr>
 </tbody>
 </table>
-<p><code>genie</code> takes out everything linear and is the best a receiver can do. <code>pilot</code> is what a receiver achieves, with the
+<p>Through a <a href="propagation-channel.html#far-end">Propagation Channel</a>, <code>genie</code> divides by the channel's own H(f, t). <code>genie</code> takes out everything linear and is the best a receiver can do. <code>pilot</code> is what a receiver achieves, with the
 noise of its own estimates. At 40 dB SNR the two are within half a decibel of each other. FSK and CSS are decided by
 their own detectors and take no equalizer.</p>
 <p><strong>The frequency offset</strong> is measured in every mode from the phase of each symbol (LTE, NR, SC) or bit (DBPSK) against the
 signal sent: <code>CFO_Hz</code> and its drift, <code>CFOdrift_Hzps</code>. With <code>genie</code> or <code>pilot</code> it is taken out of the envelope before
 the equalizer, so it leaves no interference between subcarriers. With <code>none</code> it is reported and left in, so <code>none</code>
-reads exactly as it always did. An offset beyond half the subcarrier spacing cannot be told from one a subcarrier away.</p>
+reads exactly as it always did. An offset beyond half the subcarrier spacing cannot be told from one a subcarrier away. A
+DBPSK or single carrier is acquired first, to the nearest bin of the window, from its power spectrum against the one sent,
+then fitted from its symbols, so an offset of any size within a quarter of its bandwidth is read: a low-orbit satellite's
+400 kHz at 20 GHz to a fraction of a hertz. A drift shows only if it moves the frequency within the record.</p>
 <p><strong>Errors.</strong> After the equalizer each symbol is decided to the nearest point and compared with what was sent:</p>
 <table>
 <thead>
@@ -1526,6 +1582,18 @@ FSK is decided by the sign of its frequency, and CSS by the bin of each de-chirp
 to count: 10⁻⁶ needs some 10⁸ bits for 100 errors. <code>BERest</code> reaches lower, because it treats noise and distortion as
 Gaussian. With <code>EvmSplit=yes</code>, a run whose distortion is far from Gaussian says so, and there <code>BERest</code> is a rough
 estimate. <code>SINR_dB</code> is per element, so you can map it to a coded error rate of your own.</p>
+<h2 id="transient">Transient (time domain)</h2>
+<p><strong>Computes:</strong> the circuit's voltages and currents against time, from the DC operating point or from rest, with every
+source playing its waveform: a pulse's edges, a reflection, a converter's start-up and ripple.</p>
+<p><strong>Method:</strong> the elaborated netlist is integrated in time (trapezoidal or second-order backward difference) with an
+adaptive step and a Newton solve per step, on the same component models every other analysis uses. Lossless lines are
+exact delays; lossy lines and frequency-defined blocks are rational fits checked against their models. <code>Solver=ngspice</code>
+runs the bench on ngspice instead.</p>
+<pre><code>analysis TR1 type=tran Stop=10n Step=5p
+</code></pre>
+<p>A steady-state RF answer belongs to harmonic balance and a modulated one to the envelope; transient is for the questions
+in between. Everything about it, the keys, initial conditions, the measurements, ngspice and starting harmonic balance
+from a transient run, is on its own page: <a href="transient.html">Transient</a>.</p>
 <h2 id="fields">Fields (pattern, B1 and SAR from a circuit)</h2>
 <p>A Fields analysis recombines the per-port results an EM run kept — a far field, a field set, or both — with the waves the
 circuit around the block delivers, so the radiation pattern, B1 and SAR follow every part value with no new EM run. <code>block</code>
@@ -1596,6 +1664,10 @@ several variables; the innermost analysis is what each point solves.</p>
     </tbody>
     <caption>A whole sweep tree writes a single results file named after its innermost analysis.</caption>
   </table>
+<p><strong>A harmonic-balance point that does not converge</strong> keeps its place in the sweep with <code>Converged</code> 0 and its residual, and
+its voltages, currents and every measurement read from them are NaN there, so a plot leaves a gap rather than drawing the
+last iterate as though it were an answer. The run's notes say so, and its warnings give each such point's residual. The
+next point starts from the last one that converged.</p>
 <h2 id="loadpull">Loadpull / Sourcepull</h2>
 <p><strong>Computes:</strong> figures of merit (Pout, gain, efficiency, PAE) as the load (or source) reflection
 coefficient is swept over a grid on the Smith chart — the classic loadpull experiment — ready to
@@ -2164,8 +2236,8 @@ the two paths share the elaborator, the engines and the measurement evaluator.</
   <a href="cli.html">The command line</a>.</p>
 
 <nav class="page-nav">
-  <a class="prev" href="chain-budget.html"><span class="dir">Previous</span><span class="name">RF Chain Budget</span></a>
-  <a class="next" href="measurements.html"><span class="dir">Next</span><span class="name">Measurements</span></a>
+  <a class="prev" href="propagation-channel.html"><span class="dir">Previous</span><span class="name">The Propagation Channel: a radio link in one schematic</span></a>
+  <a class="next" href="transient.html"><span class="dir">Next</span><span class="name">Transient</span></a>
 </nav>
 </main>
 

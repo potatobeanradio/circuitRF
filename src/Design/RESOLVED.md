@@ -1005,6 +1005,165 @@ listed as unused. A port facing x or z uses the same world order, which is assum
 - `Meta_Ex1`: a one-sided lossy sheet;
 - the PlaneWave designs: radiation boundaries inside the model.
 
+### HZN-15 — tilted geometry, corner-drawn ports, and the EMerge driver's turned-port fixes (2026-11-15)
+
+**Census** (local example set, 58 3D designs): 40 → 44 (`PlaneWave` ×2, the second smart-glasses antenna's run3 and run4). TRN-5's
+`frequency()` built-in had closed `PlaneWave` (a design variable of that name); it is `frequency_hzn` in the document and written back
+as `frequency` (`HznNames.C3dVariableName`/`HznVariableName`). Behind it, a non-model field-plot plane 0.6 µm past the radiation
+box moved the "outer extent" (`Content(modelOnly: true)` now), and an open polyline was refused (now a construction polyline).
+
+**Black box.** Faceted cylinder, from the nodes of Hertzon's own `mesh.npz` (12, 10, 7 sides on Z, X, Y): vertices ON the circle, the
+first along the next axis round (Z → +x, X → +y, Y → +z). Lumped ports in a Terminal design with no wave ports: the Touchstone is the
+Modal design's to every printed digit (ports by PortNumber, each referred to its Impedance), so they translate as modal ports.
+
+**The Ex2 port is a trapezoid.** It joins the trace's edge (exactly) to the board's side face (exactly, 0.2 nm), two edges 0.2° from
+parallel: sides 0.4017/0.4020 mm and 0.2458/0.2443 mm. No rectangle keeps both contacts, so `C3dPort.Corners` keeps the drawn corners
+(a rectangle to 1 %); the tilted-frame `Tilt` first built for it was replaced.
+
+**The flat short, and its cause.** The first solves read S11 = −0.967 at 180° at every frequency, with a lossy or a perfect trace,
+on 42k or 498k tetrahedra, and on a fixture whose trace touches nothing. It was EMerge's lumped-port voltage: EMerge starts its
+integration lines at the port nodes whose projection on the direction is EXACTLY the least (`dotprod == np.min(dotprod)`), which on a
+turned sheet is one corner, and from a corner of a trapezoid its line read no voltage. The driver now sets five lines of its own
+between the two ends (`drawn_port_lines`, inset 1 % and scaled back), and the fixture reads a capacitive open (0.94–0.97 at −14° to
+−19°) for port angles of 35°, 17° and 3°. Two other faults found on the way:
+- a sheet's, element's or port's piece inside a conductor went when the conductor's interior was removed, and the driver kept its tag
+  ("Unknown model face … a piece of 'FeedPad'", then of 'port/1'); it now keeps only pieces left, as it did for wave-port regions;
+- a port edge a nanometre off its copper (each rounded to the DBU in its own frame) left a sliver tetrahedron of quality 0; ends are
+  snapped onto their conductor (`C3dTurnedPorts.SnapEnds`: outline vertex, side, then surface).
+
+**Fragile fragmentation.** A port meeting its trace at 3° along a shared edge: the exact boolean, 1 nm and 10⁻⁵ nm fuzzy all fail the
+kernel's second pass on the full model ("could not fragment 'Ch5' and 'FeedPad' and 'GndTab' and 'TopTrace' and 'port/1' cleanly");
+0.1 nm passes. With a turned port the driver now builds again at 0.1 nm, then 1 nm, with a warning.
+
+**Open: Ex2 run4 against Hertzon's `A29.s1p`.** It resonates, but the low band sits at 2.2 GHz (−4.3 dB) against 2.45 (−8.2), the high
+band at 6.15 (−22.6) against 6.0 (−11.5), and the 7.25 GHz parasitic dip is missing. 363k tetrahedra (6 min) and a held 616k (33 min)
+give the same curve: the model differs, not the mesh. Not yet found; candidates are the Unite tools the file does not record as
+consumed (they include the 2.4 GHz arm and the parasitic's branches), the steel Finite Conductivity boundary now applied to a copper
+chassis part, and the 0-thickness lossy hinge sheet.
+
+### HZN-16 — a periodic cell and Floquet ports (2026-11-15)
+
+Census 44 → 46 (`CrossDipoleFSS`, `F_UnitCell_Periodic`). **EMerge's own periodic cell does not work under the driver's global
+scale**: its face planes are metres against a model built in micrometres, and after the mesh EMerge reports a face's centre in metres
+while the kernel's stay in micrometres, so its pairing compared the two ("Periodic Boundary conditions not generated"). The driver's
+cell finds and pairs faces itself in model units and gives the periodic conditions their displacement in metres. Setting the cell
+before `sim.mw.reset()` lost it ("Periodic cel must be defined"). EMerge's local refinement breaks the pairs (index out of bounds pairing
+triangles), so a cell is solved on its first mesh, with a warning.
+
+**Against Hertzon** (its own runs, 0.3.19, refined mesh; circuitRF unrefined): the FSS resonates at 10 GHz in both (|S11| 0.997 / 0.964);
+away from it |S11| and |S31| agree within 0.06–0.15 (8, 12, 14, 16 GHz) with phases within 4–20°. The backed cell's reflection phase
+agrees within 1.5–8° at 7, 9, 10, 11, 13 GHz. Hertzon's Floquet Touchstone states `R 376.73`; circuitRF's states `R 1` with the
+mode-normalised header line (HZN-11's rule).
+
+**Upstream examples** (checked against the Hertzon repository, 0.3.26, 2026-11-15): the reference files used here are unchanged; new
+are GroundedCPW, an LNA, a mixer, a VNA test set and the second glasses antenna's runs B and C — 99 3D designs, 49 open. Runs B and C
+(37 designs) are stopped by a polyline with holes and an axis-plane port sheet that is a rectangle only to ~0.3 %.
+
+### HZN-17 — polylines with holes, and a port sheet drawn as a quadrilateral in an axis plane (2026-11-16)
+
+Census on the local 0.3.26 copy: **49 → 84 of 99** (runB 29 of 30, runC 6 of 7; `Ex2_Benchmark` keeps a Multi-Frequencies setup and
+`T_thick` a `ThickenSheet`). A probe that stripped the two items from a scratch copy predicted exactly this before anything was built,
+so nothing else was hiding behind them.
+
+- **Nothing in the format or the engine was missing for holes.** `.c3d` prisms and sheets already carried `Holes` end to end (lowering,
+  all three solvers, port seams, sheet booleans, STEP). The translator refused the `Holes` property and `C3dToHzn` refused writing one;
+  both were the whole gap. The edit-and-save path needed nothing more: `HznPatch` diffs the writer's output for the baseline against the
+  edited document.
+- **Hole validity is the 2D layout's rule, reused**: `LayoutClipper.HolesAreValid` (inside the outline, crossing neither it nor another
+  hole). The translator refuses an invalid ring rather than repairing it as the `.clay` loader does (`EnsureValidHoles`, a Clipper
+  union): Hertzon's own repair bridges touching rings with a few µm of copper, a different shape.
+- **Winding does not matter downstream.** Hertzon takes any closed loop inside the outline as a hole whichever way it is drawn (its
+  changelog), and both EMerge paths (`EmergeScriptWriter`, sheets and extruded polygons) pass every ring through
+  `GmshGeoWriter.PlanarRings`, which winds holes like their outline (the clockwise-hole OCC trap recorded below).
+- **The port sheet** is the axis-plane twin of HZN-15's `TiltedRect` (`DrawnAxisQuad`): four points that pass
+  `Em3dPortQuad.Problem(DrawnTolerance)` but are no exact rectangle become `Corners`. runC's points name variables (`xf`, `gp`); the port
+  says its corners are numbers.
+- **A drawn port's end tolerance now scales with the port** (`C3dTurnedPorts.DrawnEndTolerance`: 4 DBU or a part in 10⁴ of its
+  longest side). The glasses file spells points to 0.1 µm, so the port's corners on the board's slanted edge are rounded either side
+  of it: one 25 nm inside, the other 27 nm outside, against 4 nm allowed. Contact inference found the right pair (an edge crossing the
+  copper touches it); only the drawn-end check refused. `SnapEnds` takes the same tolerance and puts each end exactly on its copper.
+  Inference keeps its own tolerance. A part in 10⁴ is what HZN-15 already allows a drawn shape's coplanarity.
+- `K1_IFA` converted, `check` gives 0 errors, and `em --dry-run` gives no refusal (its grid notes name the round hole's and the slot's
+  faces). Not solved, and not compared with Hertzon: the same family as run4, whose disagreement with its reference is still open.
+
+
+### HZN-18 — one-sided lossy sheets, Multi-Frequencies setups, and Thicken Sheet (2026-11-16)
+
+Census **84 → 88 of 99**: glasses Ex1 and Ex2 run2 (one-sided sheets), `Ex2_Benchmark` (Multi-Frequencies) and `T_thick`
+(ThickenSheet). Every glasses design now opens. Scratch probes with each item removed found nothing else behind any of them.
+
+- **One-sided, from Hertzon's own changelog (0.3.22).** A one-sided Finite Conductivity sheet is "one surface impedance" carrying
+  "the current of both sides", about twice a strip's conductor loss. It was Hertzon's default before 0.3.22, and old projects keep it
+  with a Validation Check warning. Two-sided is EMerge's split thin conductor, which is what a lossy `.c3d` sheet already was.
+- **EMerge 3.0.0 makes a lossy interior sheet a `ThinConductor` by itself**, in its default boundary set-up, assigned with
+  `no_overwrite`, so it skips any face that already has a condition. The driver therefore states one `SurfaceImpedance` on a
+  one-sided sheet's faces (no thickness unless the sheet states one, as Hertzon's Use thickness off), and EMerge adds no thin
+  conductor there. An empty thin-conductor set did not trip the split repair (`install_thin_conductor_split`).
+- **`oneSided` is written into the EMerge problem only when true.** Writing `false` on every sheet changed every problem's geometry
+  hash (the Touchstone provenance golden in `EmergeRunTests` caught it), which would have made every existing EMerge result look out
+  of date.
+- **Measured** (a 16 mm open stub 1 mm over a perfect ground, 2·10⁴ S/m, EMerge first order, 4–5.2 GHz): one-sided |S11| 0.655–0.716,
+  two-sided 0.774–0.797. The power absorbed (loss plus radiation) is 1.3–1.5× larger one-sided at every point, which is Hertzon's
+  direction. Hertzon's own figure is an efficiency (86.0 % against 91.9 % on a strip dipole), not compared one for one.
+- Palace and openEMS refuse a one-sided sheet in `Em3dModePorts.SolverRefusal`, as they refuse a periodic cell.
+- **Multi-Frequencies**: `Ex2_Benchmark`'s file holds its `setups` key twice. The second one, which has no sweeps, is the one the reader
+  keeps, so the setup solves only at `2.44GHz,6.1GHz`. Auto Open read `Frequency` (5 GHz) for such a setup; it now takes the lowest
+  listed frequency.
+- **Thicken Sheet** is the sweep along the sheet's normal, with Hertzon's documented direction (positive along the main axis,
+  Reverse flips it). `BothSides` is refused, because whether its thickness is per side or in total is not established.
+
+### HZN-19 — what lies outside a closed design, and a wave port on a coaxial end cap (2026-11-16)
+
+Census **88 → 89 of 99** (`Coax50`).
+
+- **A closed design's flush air box was right only when boxes fill it.** circuitRF solved what no object fills as air, but Hertzon
+  solves only inside its objects, and the surface of what it solves is perfect conductor. Round a coaxial line's cylinder the box has
+  four corners outside it, which would have been solved as air, making the square box the outer conductor. All 13 closed designs that
+  opened before are filled by boxes, so no earlier result was wrong. `Outside()` now adds a hidden perfect-conductor
+  `hzn_outside` (the box less every modelled solid) when the solids do not tile their box. Tiling is decided exactly, on the grid the
+  boxes' faces make.
+- **A Subtract that keeps its tools has to cut as their union.** The first cut copied the line's dielectric with its kept pin, so
+  the copy drew the pin a second time and the port met three conductors.
+- **Measure the box from modelled objects only** (HZN-15's rule). PlaneWave's field-plot plane lies 0.6 µm outside its box, which
+  briefly gave it an outside and refused it.
+- **A disc wave port is its bounding square.** The EMerge driver already keeps only the part of a port region over meshed space,
+  so the square's corners on `hzn_outside` go with the conductor and the port is the coaxial opening. It resolves as the pin against
+  `hzn_outside`, not as a hollow guide.
+- **Against the analytic line**: |S21| 0.997–0.999 (tan δ predicts 0.997 at 10 GHz), |S11| ≤ 0.046, ∠S21 within 0.9 % of −βL
+  over 1–10 GHz (εeff 2.138 against 2.1, a faceted circle in a first-order mesh). EMerge only; not run on Palace.
+
+### HZN-20 — wave ports of two modes, and a wave port's reference plane moved by a stated distance (2026-11-16)
+
+Census **89 → 90 of 99** (`H_TwoModeWaveguide`).
+
+- **EMerge 3.0.0's mode order and sign on a two-mode face were right** (the brief's risk). Its `WavePort(number_of_modes=2)` fixes
+  the modes with the largest β² at the sweep's top and tracks them down, and on the 22.86 × 15 mm guide TE10 came first and TE01
+  second. The driver does not trust that blindly: each mode is integrated along every mode's polarity line, and must be largest on
+  its own line (TE10 on TE20's line is 0.71 of its own, so "largest" separates them where "zero elsewhere" would not). A mode set
+  out of order, or a degenerate pair mixed, is a refusal naming the β it found. Each mode is then signed by its own line, as
+  HZN-11 signs one.
+- **A port of several modes is one `Em3dPort` per mode sharing a `FaceGroup`**, as a Floquet port's (HZN-16), marked by
+  `HollowMode`. Every place that meant "terminal group" by `FaceGroup is not null` now asks `IsTerminal`: the terminal conversion,
+  the run service's terminal facts, explain's mapping and the face-group validation. Without it a hollow pair would have been
+  sent through the modal-to-terminal conversion, which needs a reference conductor it does not have.
+- **γ per mode was already per result port.** `gamma.npy` is [f, ports] in circuitRF order, so `WavePortReferences.Shift` moves
+  each mode by its own γ once the driver writes one column per mode (`hollow_mode_data`). De-embedding needed no new arithmetic.
+- **Which modes a port carries is the port reader's to say**, because only it knows the walls (the air box and the design's
+  conductors). The translator therefore elaborates the translated design (with its own technology attached; without it the
+  elaboration stops on the first material and the check passes silently) and refuses a `NumberOfModes` port the reader refuses,
+  with the reader's sentence. A design with no such port is not elaborated.
+- **Port numbers follow Hertzon's port order.** With a port of several modes every port is renumbered by PortNumber, each taking
+  as many result numbers as it has modes; the export writes PortNumber back as the port's rank. A result port is named
+  `<port>_M<m>`, or `P<n>_M<m>` when the port's name is only a number.
+- **The editor's scene drew only a port's first neutral port.** For a two-mode port it now draws each mode, so both polarity lines
+  show; terminal groups are unchanged.
+- **Against the analytic guide** (22.86 × 15 × 40 mm, 11.2 GHz, Draft, 785 tetrahedra, 4 s): ∠S31 −76.01° against −76.14° for
+  e^{−jβ₁₀L}, ∠S42 117.60° against 117.07° for e^{−jβ₀₁L}, |S| 1.0000, every cross term and reflection ≤ 0.0026. With port 2's
+  plane moved 5 mm, S31 advanced 54.5168° (β₁₀d 54.5169°) and S42 30.3641° (β₀₁d 30.366°, the solved β against the analytic).
+- **`H_TwoModeWaveguide`** (Setup_PortsOnly, 6 points 10.3–11.8 GHz, 9,554 tetrahedra, 8 s): reciprocal (S − Sᵀ is 0 to the
+  file's digits), passive (largest column power 0.9999, lossless ceramic), and the 35° post converts: |S(WP2_M2, WP1_M1)| 0.26–0.28
+  against 1e-4 in the empty guide. **Not compared with Hertzon's own run**: this download has no `hertzon-cli`.
+
 ## A run estimated between 100 % and 150 % of memory could not choose to swap (2026-11-05)
 
 Only a Severe verdict (past 150 %) was asked about, and only answering it lifted the ceiling, so a run at 141 % started with its ceiling and was
@@ -32021,6 +32180,189 @@ write back in that state, so opening a chain cannot record an edit. The default 
 **The Data Display table's label column did not widen with `FreqColumnWidth`** for the 1-D `Loss_dB` table over the
 `term` axis (280 was set, ~115 drawn). Rather than chase it in the Data Display, the one long label was shortened.
 
+## brief-icf-6 — 3D on a thick die: where cut-port sheets land, and the air box (2026-11-15)
+
+Measured on a synthetic fixture (`tests/Ui.Tests/Em3d/ThickDieCutPortTests.cs`): the shipped silicon RFIC technology with its
+substrate made 750 µm thick, the backside its undrawn ground, a 40 × 20 µm cell cut out of a 10 µm Metal3 line with local Metal1
+under one face only. That reproduces the field test's shape: one sheet lands on Metal1 3.85 µm down, the other falls 754.85 µm
+to the floor.
+
+- **Return (R-icf6-1).** `EmComponentPort.Return` and `EmPinOptions.Return` (`"Return"` on the entry and in `Pins`), resolved
+  per pin by `EmComponentPort.ReturnOf` (pin, then the finger's base name, then the entry) and carried on
+  `EmPlanarComponentPort.Return`. `C3dCellCuts.Ports` hands each cut port's stated return to `GenerateCutPorts` as an
+  `EmPort3D(Number, Return:)`, so `ReturnStated` and `ReturnWalk` run unchanged. Only the wording knows it is a cut port
+  (`CutPorts`): "as its cut entry's Return states", and the remedy names the cut entry's Return rather than the port table or
+  the 3D editor's Move. A layer that does not cover the face goes through the walk's own refusal, prefixed `X1.B: `, and that
+  pin is left out as any refused cut port is. A pin referenced to another pin gets no Return (its gap sheet has no walk).
+  The entry's Return goes into `EmPlanarComponentPorts.KeyOf` only when stated, so every existing key is unchanged. Planar
+  notes once that it does not use it.
+- **The fixture needed a second shape for gate 1.** With Metal1 under every face, the walk lands on Metal1 anyway through
+  R-dfr34-1-5's unmarked-level rule, so "Return: Metal1" and no Return give the same sheet. Gate 1 therefore puts the pins on
+  Metal2 between a Metal3 plate (1 µm up) and a Metal1 plate (0.85 µm down): the walk takes Metal1, and `Return: Metal3` sends
+  both sheets up. A per-pin Return moves only its own pin.
+- **The landing warning (R-icf6-2).** ICF-1 had already put each sheet's landing and height on its port line (`check`,
+  `explain`, Check). New: `C3dCellCuts.TallLanding` adds a build warning when a sheet that reaches the floor spans more than
+  `TallLandingFraction` (λ/20) of the wavelength at the sweep's top, measured as Σ band height × √(εr μr) over the stack's
+  dielectric bands it crosses. On the fixture at 40 GHz the floor sheet is 0.346 λ and the Metal1 sheet ~0.0009 λ. It is a
+  build warning, so `check` shows it as `check.cem.component-port-warning` (or `check.c3d.component-port`), and the run and
+  the dry run say it too. Nothing in `src/Cli` changed for it.
+- **The air box (R-icf6-3).** `Em3dDefaultPadding.ColumnM`: when a port sheet reaches the undrawn floor, the four sides take
+  `DefaultPaddingColumn` × the column (floor to the top of the conductors) wherever that is more than the H rule. It is
+  wired in both places that pad: `C3dProblemAssembly.Assemble`, when the floor is the undrawn plane (`PortColumn`: a modelled
+  vertical port rectangle whose bottom is within 1.5 DBU of it), and the generator's `Go()`, when `pecFloor` and a port
+  return is the floor. The multiple was first set to 2 and came out at 1 anyway: a non-radiating setup's every default is
+  already capped at the structure's largest extent (`DefaultPadding`), and on a thick die the largest extent is the column. So
+  it is 1, and `Basis` names the cap where the cap is what stood. Carried as `Em3dProblem.PaddingColumnM` so `explain` and
+  Palace's half-padding remedy see the same default. `ColumnNote` says which sides it set. `ExplainEm3d.cs` passes it on.
+- **The substrate reaches the box.** Lowered as an instance, `Em3dLayoutSolids` now lists the slabs whose only bound was the
+  artwork's box (no board outline, one solid, no film, opening or conformal cover; `ArtworkBoundedSlabs`). The elaborator
+  carries them, prefixed. When the column sets a side, `RunSlabsToBox` widens each one that is an axis-aligned rectangle
+  filling the content's whole lateral extent to the box's sides, so with two layouts side by side neither widens. The
+  problem's `PaddedContent` then keeps the extent the box was padded around, as a `.cem`'s does (brief-dfr32-1). A drawn
+  board outline is never widened.
+- **Byte identity.** `git worktree` at HEAD (be00c4b17), CLI built there, against this tree's CLI: `em --dry-run` and
+  `explain --json` identical on the fixture with Metal1 under both faces (no sheet to the floor), and on the shipped
+  `Via 3D.cem` and `Bond wire 3D.cem`. Bond wire's two ports land on its undrawn floor, and the H rule (100 µm substrate)
+  stays wider than the column, so nothing moved. `check` identical on all 33 shipped `.c3d`. `em --dry-run` identical on all 39
+  of their non-thermal setups once the lines that name the machine (kernel path, free disk, time estimates) are masked.
+  Without the geometry kernel linked into the worktree, 12 views first differed only by "needs the geometry kernel".
+- **Two existing setups move, and should.** `examples/Passivated Pad/2 Probe Pad/em/Probe Pad Planar.cem` and
+  `testdata/em-tfr/zigzag-via/zigzag/em/zigzag.cem` have drawn ports down to the undrawn floor of a multi-level stack, so
+  their sides grow: zigzag from 40 µm (5 %, 20 × a ~2 µm H) beside 100 µm sheets to 120 µm, Probe Pad from 10 % to 20-25 %.
+  `Em3dGeneratorDumpTests` caught both. The dumps record the generator's split, not the padding policy, so the two cases
+  now state their old box in `GoldenAirBoxes`, as the file's own rule says. The 8 phased-array cases that fail the same test
+  have no dump file at all (PAA-10); they fail without this change too.
+- **EMerge by hand (gate 5)**, 20 GHz, one point, both CLIs on the same files, under an RSS/disk/time watchdog:
+
+  | | box sides | mesh | S11 (lands on Metal1) | S22 (falls to the floor) |
+  |---|---|---|---|---|
+  | before, Standard | 72-78 µm (20 × H, H = 3.85 µm) | 890 tets, 3 s | 0.9991∠−12.2° | 0.8885∠−11.0° |
+  | after, Standard | 756 µm (1 × column) | 2,820 tets, 2 s | 0.9990∠−21.5° | 0.8811∠−59.7° |
+  | before, Accurate + 3 passes | as above | 2,514 tets, 2 s | 0.9997∠−6.3° | 0.9050∠−10.5° |
+  | after, Accurate + 3 passes | as above | 9,123 tets, 7 s | 0.9999∠−7.3° | 0.9351∠−46.0° |
+
+  The Standard pair is mesh-limited (S11 moved 14° between presets on the same box), so the Accurate pair is the measurement.
+  The pin that lands nearby barely moves, and the pin whose sheet falls to the floor moves by 35°. The old box was a 240 × 40 µm
+  silicon pillar in air, with absorbing sides 72 µm from a 755 µm sheet. With the silicon running to the sides, the sheet
+  sees the substrate's capacitance to the floor.
+- **Not done.** The 3D view panel's padding tooltip (`C3dProblemAssembly.DefaultPaddingBasis`/`ShortBasis`) reads the elaboration
+  alone, which has no ports. It still names the H rule where the run uses the column; the run's note and `explain` are right.
+  No panel control for Return: it is a `.cem` key, and the cut entry's other per-pin options are edited the same way.
+
+## brief-pch-11 — the Chain Budget's Link bench (2026-11-15)
+
+- **The received power is the channel's own gain, not S21 through the chain.** A Mixer converts nothing in an S-parameter run
+  (`MixerModel.Stamp` is empty), so S21 to a superhet's output is leakage, not received power. Each drop's received power is
+  the PA's output at the antenna less the path's attenuation plus `link:CH1:Gain_dB`, 20·log10|H(f0)| at TimeOffset, which
+  `PropagationChannelReport` now writes for a pin-end channel. The S-parameter run stays the drop sweep's inner analysis: it is
+  the cheapest analysis that carries the report (about 0.3 ms a drop; 10,000 drops in ~3 s).
+- **A measurement could not name a `link:…` cube.** The tokenizer's identifiers hold no colon, so `SP1.link:CH1:Gain_dB` is three
+  tokens. `Evaluator.EvalQualifiedAccessor` gains `A.link("CH1", "Gain_dB")`, taken only when no cube is literally named `link`,
+  refusing an unknown quantity by listing the ones the channel reports.
+- **The envelope's two drops are picked when the bench is written.** An analysis's sweep values cannot come from another
+  analysis's result, so `ChainLinkBench.Pick` elaborates the channel line once (as the bench elaborates it), rebuilds the model at
+  each drop with the same parameters and `InstancePath`, so the same draws, and ranks |H(f0)|. About 25 µs a drop in Release,
+  run in parallel and cached by its arguments, because every listing of a chain's benches (the window's levels refresh, the
+  display writer, `check`) builds the Link bench. The gate holds each pick's received power to the run's own drop to 1e-9 and
+  to the sweep's sorted ranks 5,000 and 100 (of 10,000).
+- **`Rain=drawn` refused the budget.** `AddedLosses.Atmosphere` refuses a drawn rain in a single evaluation, which a budget is.
+  `ChainPropagation.Evaluate` now hands the model `Rain=fixed` and notes it; the Link bench passes `drawn` through to the channel.
+- **The outage drop's rank is rounded before its floor** (`ChainLinkBench.OutageRank`): 1 − 99.9/100 is 0.000999999… in
+  binary, so (1 − p)·N floored to rank 99 of 100,000 where 99 % gives rank 100 of 10,000. Measured on a geostationary bench:
+  rank 99 was drop 100,000, which looked like an off-by-one in the draws and was not.
+- **`Fading=none` is refused by the channel** ("Fading=none is rayleigh, rician or nakagami"), where the chain writes `none`
+  for no fading: the bench leaves the key out.
+- **The chain's `Sigma` has no channel key** unless the model owns it; the channel draws the model's own σ, and Transfer says so
+  when the stated σ differs. `Los=auto` draws the line-of-sight state per drop where the budget takes the more probable one; also
+  said.
+- **A receive array has no Link bench**: `BenchesFor` leaves it out with the reason, since a channel reaches an array only through
+  a Phased Antenna Array end (phased-array.md §11). That also keeps every existing array test's bench count.
+- Numbers (gate 1): 2 GHz, 500 m free space, Rayleigh at 99 %: 1.05 % of 10,000 drops below the 19.98 dB margin, interval 0.86 to
+  1.27 %; median drop EVM 7.8 % against 1.1 % from its SNR (the PA at 8 dB of back-off), outage drop 14.9 % against 9.5 %, BER
+  0.040 counted, 0.042 estimated. Gate 2: 12 GHz geostationary at 99.9 %, P.618 rain 2.14 dB at 0.1 %: 6 of 10,000 drawn drops
+  above it (interval 0.022 to 0.131 %); with `Rain=fixed` every drop's term equals it to 1e-9 dB.
+
+## brief TRN-7 — ngspice in the install assistant (2026-11-15)
+
+**Upstream facts the recipes rest on, checked 2026-11-15.** ngspice's current release is 47; upstream publishes Windows builds as
+`.7z` only (`ngspice-<v>_64.7z`, x64; no arm64) and moves each release to `ng-spice-rework/old-releases/<v>/` when the next one
+comes out, so a URL into the current release's folder breaks later and one into `old-releases` does not. conda-forge's newest
+`ngspice` is **41** (2024-03), built for `linux-64`, `osx-64` and `win-64` only — no `osx-arm64`, no `linux-aarch64`.
+
+**So every recipe pins 41**: `ngspice-41-windows-{x64,arm64}` take upstream's `old-releases/41` archive (SHA-256 checked;
+arm64 is the same x64 archive with `"emulated": true`, a new optional recipe key, which `SolverRecipe.EmulationNote` turns into a
+sentence on the Settings row and in the consent); `ngspice-41-{macos,linux}-x64` download micromamba 2.10.0's static program
+(SHA-256 checked, equal to GitHub's own digest) and install `ngspice-exe=41=<build>` from conda-forge alone (`--no-rc
+--override-channels`), micromamba checking each package against the channel's SHA-256. macOS and Linux arm64 have no recipe and
+`SolverRecipes.ByHand` says why and that a package manager's ngspice is found with nothing to set. Discovery accepts any version
+(`untestedRuns`); the tested list is 41 (the recipes) and 47 (the references).
+
+**Where each was run (2026-11-15, Docker on an M4):**
+- **Linux x64** — `circuitrf solver install ngspice --yes` end to end in an emulated Debian x64 container: 25 s, 0.17 GB, then
+  `tran --solver ngspice` on the reference benches. Its first attempt failed at the last step: `micromamba clean` takes no
+  `--root-prefix` (it reads `MAMBA_ROOT_PREFIX`) and exits 109; both conda recipes now call `clean --all --yes`.
+- **Linux arm64** — no recipe; Debian 13's own ngspice 42 was found at `/usr/bin` with nothing set (untested version, runs with
+  the warning) and solved the benches. The row then no longer repeats the by-hand sentence, which is for when none is found.
+- **Windows x64** — upstream's archive, unpacked by `SevenZip.Extract`, ran under Wine 10 in a Debian x64 container; the win-x64
+  CLI found it at `C:\Spice64\bin` (the default-directory route) and solved the benches with the same numbers as Linux. The
+  Windows build writes an ASCII rawfile by default (`Values:`), which `RawFileReader` reads. The installer's download could not
+  be tested there: that Wine fails to import the system root certificates ("Failed to import system certs into registry"), so
+  every TLS connection is refused. Nothing has run on Windows itself, nor on Windows arm64.
+- **macOS x64** — not run (no Intel Mac, and no Rosetta on the M4); its steps are the Linux x64 recipe's.
+
+**`.7z` extraction is SharpCompress (0.50.9, managed, MIT).** 0.38.0 carries a known advisory (GHSA-6c8g-7p36-r338), which the
+build's NU1902-as-error refuses. A 7z archive is usually solid, so `SevenZip.Extract` reads it in one pass with
+`ExtractAllEntries` rather than opening each entry, and refuses an entry whose path climbs out of the target.
+
+**On Windows the program is `ngspice_con.exe`**: upstream's `ngspice.exe` is a windowed program and opens a window even in batch
+mode. Discovery's candidates there are `ngspice_con` then `ngspice`; its default folders are `C:\Spice64\bin` (upstream's
+instructions) and `Program Files\Spice64\bin`, passed as a new `windowsDirectories` argument because the shared
+`DefaultSearchDirectories` returns nothing on Windows for every other tool.
+
+**`CircuitSolvers.Tools`** lists the circuit programs (ngspice) apart from `Em3dSolvers.Tools`, which describes 3D solvers; `solver
+list`/`install`/`remove` take `CircuitSolvers.AllTools`, circuit first. "Remove all 3D solvers…" became "Remove all solvers…",
+since it removes a circuitRF-installed ngspice too.
+## ICF follow-ups — what re-running the field test on main found (2026-11-16)
+
+The field test of issue 69 was run again on main (ICF-1 to ICF-6 in). Each item below is one commit with its gate; the fixtures
+are ICF-6's thick die (`ThickDieCutPortTests`) and ICF-4's spiral (`ThickSiliconCoilFixture`).
+
+- **A stated Return was moved along the line, silently.** `GenerateCutPorts` runs with `portsEach`, which is the `.c3d`'s rule: a
+  return plane up to `TranslatedReturnGapOfWidth` (3 widths) short of a line's end moves the sheet in to where it begins. A cut
+  port's stated Return took that rule, so on the field test a capacitor pin's sheet with `Return: Metal1` moved 4.05 µm along
+  its line onto the pad of a via stack of its own net (a shorted port), and an emitter's 4.075 µm, leaving a stub beyond the port.
+  The page says a layer with no metal across the face is refused, and R-icf6-1 asks for the refusal a drawn port's stated
+  return gets, so the intended rule is a solve's: a stated Return keeps `ReturnGapToleranceOfWidth` (a tenth) and is refused beyond it. Automatic is
+  unchanged (a walked plane short of the face still moves the sheet in); whether it should keep a solve's tenth too is left
+  open. The move's sentence was written but never reached `check` or the run: `C3dCellCuts.Ports` forwarded only `PortsMoved`
+  entries starting `"Port 6 "`, and the generator's possessive sentences (`"Port 6's sheet is … inside its line's end"`,
+  `"Port 6's return passes through an opening"`) never matched. Both forms are forwarded now, the possessive as
+  `X1.B (port 2): its …`. Gates: `AStatedReturnShortOfTheFace_IsRefused_NotMovedAlongTheLine`,
+  `TheGeneratorsNotesAboutACutPort_ReachTheRun_UnderItsPin`.
+- **A 3D cut instance whose every sheet was refused dropped out of `_cosim` unnamed.** ICF-2's `Portless` is decided by the cut
+  (`EmPlanarComponentPorts.Of`), which sees an instance's routed pins as ported; in 3D the generator refuses a sheet only later,
+  in `C3dCellCuts.Ports`, so an instance whose every sheet it refused (on the field test, `X1/Q2` with `Return: Metal1`) was in
+  neither the ports nor `Portless`, and nothing said so. `C3dComponentPorts.Build` now adds such an instance to `Portless` (its
+  refused ports carry its `EmCoSimCut`) with the same warning, `EmPlanarComponentPorts.PortlessWarning`; `EmCoSimCuts.Close`
+  puts each of its routed pins on `nc_<name>_<pin>`, as for a ported instance's refused pin. Gate:
+  `ACutInstanceWhoseEverySheetIsRefused_IsPlacedInTheNetlist_AndNamed`. em-setup still said such an instance is missing from the
+  netlist (true before ICF-2); it now says it is placed.
+- **A drawn port's tall sheet had no λ/20 warning.** R-icf6-2's check was in `C3dCellCuts` only, so on the field test the four
+  drawn ports on Metal1 fell 755 µm to the floor (0.35 λ at 40 GHz) beside cut pins that warned. The generator now asks the same
+  `C3dCellCuts.TallLanding` of every drawn lumped sheet whose return is the floor (edge and pad-to-plane; not a wave port, a
+  `.c3d`'s translated ports, a picture or a static solve), and words it with the same `TallLandingWarning`, the remedy naming
+  the port table's Return. It is among the generator's `Warnings`, and `TallPorts` carries it through the in-memory 3D view a
+  `.cem` with component ports is built in (`TranslateWith` → `C3dSetupView.Warnings` → `Em3dSetupProblem`), since the
+  assembly sees only the ports' rectangles. The same λ/20 reaches boards: 1.6 mm of FR-4 passes it near 4.5 GHz. Of the
+  shipped setups the generator dumps cover, two gain it and their dumps were rewritten (`CRF_WRITE_GENERATOR_DUMPS=1`,
+  `CRF_WRITE_WIRE_DUMPS=1`), each by its warning lines only: `Package lid modes.cem` (254 µm of alumina, 0.053 λ at 20 GHz)
+  and the planar `Taper-MoM.cem` made 3D by the dump (a 762 µm board laminate, 0.058 λ at 12 GHz). Gate:
+  `ADrawnPortsSheetFallingToTheFloor_IsWarnedOf_AsACutPinsIs`.
+- **A refused cut pin was named by a number another pin was built with.** The generator's refusals name the port by the number
+  the cut gave it (`Port 5 is on 'Metal1' …`), but `C3dCellCuts.Ports` numbers only the sheets it builds, so on the field test
+  `Q1.C: Port 5 …` was refused and `Q1.E` became port 5. A refused pin's sentence already starts with its name, so the leading
+  `Port n` is put as "the port" (`Port n's` as "its") rather than renumbered: `X1.A: the port on 'Metal3' finds no metal of
+  'Metal1' …`. Gate: `ARefusedPin_IsNotNamedByTheNumberTheNextPinIsBuiltWith`.
 ## RF passives — MWPD through the layout, LVS and EM (2026-11-15)
 
 - **`PassivePlanPCells.Draw` reuses the parts' own generators** (`MTeePCell`, `MCurvePCell`), turned by quarter turns
@@ -32152,3 +32494,26 @@ write back in that state, so opening a chain cannot record an edit. The default 
   `lvs.property.mismatch` (`testdata/schematic-to-layout/F8d-wilkinson-mitred`).
 - **The ground pour covers a cornered ring.** It covers each passive instance's own extent, so the rectangle is under the
   plane with the usual five-substrate-height margin, checked on the mitred divider and rat-race.
+
+## Tests that read an example's generated cells (2026-11-16)
+
+`.generated-cells/` is git-ignored, so on a fresh clone a layout's placed PCells resolve to nothing until something rebuilds
+them. Six tests (`Em3dGeneratorDumpTests` for the PDK PCells, PCB and MMIC Component Ports and Dividers and Couplers setups,
+`CellPortCliTests` ×2, `MimResonatorCompositionTests.MIM14`) passed only where an earlier session had left the folder, and
+three committed dumps had recorded the cells-missing refusal as their expected output. The PDK PCells layouts also reference
+cell names from an older content key (the kit or circuitRF's PCell package changed since they were saved), which a run
+redirects to the rebuilt cell only for as long as the run lives. `tests/Ui.Tests/Support/ExampleGeneratedCells` now builds
+them (Disk, the example's own kit trusted) and keeps each run alive for the test process; a CLI-process test passes
+`--trust-kit` for that kit.
+
+## PCH review (2026-11-16) — the Chain Budget's link
+
+- **No Link bench for a P526/P1812 link with a terrain profile:** the registry's `Profile` went onto the channel as `Profile=`,
+  which there names a tapped delay line; it is `Terrain=` now. **99.9 % asked for 100,001 drops** (1 − 0.999 is
+  0.0009999999999998899): q is rounded to 1e-12 first. **The window showed none of the propagation notes** (the model's, the
+  Rician K, Rain=drawn, the zero-margin distance's reason), which only the CLI added; the view model adds them now. The margin
+  bisection widens past 120 dB instead of returning its bracket's edge.
+- **Left as found:** with Clouds or Scintillation on and Rain off, the P.618 row is still labelled "rain (P.618)"; a two-ray link
+  with fading fades its rays independently, so the bench's mean power is not the budget's coherent two-ray loss; `chain
+  --to-schematic` without `--json` prints nothing about a bench left out; the Link bench's drop picks are keyed by a terrain
+  file's path, not its contents.

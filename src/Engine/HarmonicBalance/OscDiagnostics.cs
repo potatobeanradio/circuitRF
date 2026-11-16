@@ -68,6 +68,36 @@ public static class OscDiagnostics
         "narrow Fstart/Fstop around the start-up frequency.",
         ("analysis", analysis), ("f", Ghz(hz)), ("a", amplitude), ("r", residual.ToString("E2", CultureInfo.InvariantCulture)));
 
+    // ── brief TRN-8: the transient seed ──────────────────────────────────────
+
+    /// <summary>No Fguess and no transient seed to find the frequency instead.</summary>
+    public static Diagnostic NoFguess(string analysis) => Diagnostic.Create(
+        "osc.no-fguess", DiagnosticSeverity.Error,
+        "Oscillator analysis '{analysis}' needs Fguess, where the start-up search is centred, unless InitialGuess=transient, " +
+        "which finds the frequency from a transient run instead.",
+        ("analysis", analysis));
+
+    /// <summary>The seed run's oscillation did not grow, or did not reach a steady amplitude, within its periods.</summary>
+    public static Diagnostic SeedNoOscillation(string analysis, string probe, int periods, double scaleHz, string startup) => Diagnostic.Create(
+        "osc.seed-no-oscillation", DiagnosticSeverity.Error,
+        "Oscillator analysis '{analysis}': the transient seed, kicked at {probe}, did not settle into an oscillation within {n} " +
+        "periods of {f} GHz. The small-signal start-up search {startup}",
+        ("analysis", analysis), ("probe", probe), ("n", periods.ToString(CultureInfo.InvariantCulture)), ("f", Ghz(scaleHz)),
+        ("startup", startup));
+
+    /// <summary>The start-up result, as the seed's refusal quotes it.</summary>
+    public static string StartupSentence(OscStartup s)
+    {
+        string span = $"between {Ghz(s.FreqsHz[0])} and {Ghz(s.FreqsHz[^1])} GHz";
+        string what = s.Shunt ? "admittance" : "impedance";
+        return s.StartHz is { } f
+            ? $"found the start-up condition at {Ghz(f)} GHz ({what} real part {s.Immittance.Real.ToString("G3", CultureInfo.InvariantCulture)} " +
+              $"{(s.Shunt ? "S" : "ohm")} {span}): the circuit starts there, so raise SeedPeriods or KickV, or start from Fguess " +
+              "with InitialGuess=dc."
+            : $"found no negative real part of the {what} at a zero of its imaginary part {span}: the circuit does not start to " +
+              "oscillate. Check the bias and the loop gain.";
+    }
+
     // ── Brief NZ-10: phase noise ─────────────────────────────────────────────
 
     private static string Hz(double hz) => hz.ToString("G6", CultureInfo.InvariantCulture) + " Hz";

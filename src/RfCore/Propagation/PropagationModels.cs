@@ -38,8 +38,10 @@ namespace RfCore.Propagation
                                         double Min = double.NegativeInfinity, double Max = double.PositiveInfinity,
                                         IReadOnlyList<string>? Words = null, string Group = "Large scale");
 
+    /// <param name="Validity">Where the model holds, as it refuses outside it: one line for the user documentation and
+    /// <c>reference</c>, beside the parameters' own ranges.</param>
     public sealed record ModelDescriptor(string Name, string Title, string Document, IReadOnlyList<ModelParameter> Parameters,
-                                         bool UsesHeights, bool UsesProfile, Func<ModelArgs, PathLossResult> Run);
+                                         bool UsesHeights, bool UsesProfile, Func<ModelArgs, PathLossResult> Run, string Validity = "");
 
     /// <summary>The geometry every model shares, and the parameter values as text.</summary>
     public sealed class ModelInputs
@@ -53,6 +55,9 @@ namespace RfCore.Propagation
         public TerrainProfile? Profile { get; init; }
         /// <summary>Parameter values by name, as text in each parameter's SI unit.</summary>
         public IReadOnlyDictionary<string, string> Values { get; init; } = new Dictionary<string, string>();
+        /// <summary>brief-pch-10 R-pch10-1 — <c>Rain=drawn</c>: the time percentage this drop drew (0–100), the rain attenuation then
+        /// the one exceeded for it. Null outside a drop, and <c>Rain=drawn</c> is then refused.</summary>
+        public double? RainTimePercent { get; init; }
 
         public double Distance3DM => Math.Sqrt(DistanceM * DistanceM + (TxHeightM - RxHeightM) * (TxHeightM - RxHeightM));
     }
@@ -112,7 +117,7 @@ namespace RfCore.Propagation
             if (t.Length == 0) return double.NaN;
             if (!double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
                 throw new PropagationRefusal($"{_model.Name}: {p.Name} must be a number{(p.Unit.Length > 0 ? " in " + p.Unit : "")}; it is '{t}'.");
-            if (v < p.Min || v > p.Max)
+            if (double.IsNaN(v) || v < p.Min || v > p.Max)
                 throw new PropagationRefusal(PropagationDiagnostics.OutOfRange(_model.Name, p.Name, v, p.Min, p.Max, p.Unit));
             return v;
         }
@@ -132,7 +137,7 @@ namespace RfCore.Propagation
             string t = Text(name);
             if (t.Length == 0) return Array.Empty<double>();
             return t.Split(',').Select(s =>
-                double.TryParse(s.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double v)
+                double.TryParse(s.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double v) && double.IsFinite(v)
                     ? v
                     : throw new PropagationRefusal($"{_model.Name}: {p.Name} is a comma-separated list of numbers; '{s.Trim()}' is not one.")).ToArray();
         }
@@ -158,14 +163,15 @@ namespace RfCore.Propagation
         public static readonly IReadOnlyList<ModelDescriptor> All = new List<ModelDescriptor>
         {
             new("free", "Free space", FreeSpaceModel.Document, Array.Empty<ModelParameter>(), true, false,
-                a => FreeSpaceModel.Evaluate(a.F, a.D3)),
+                a => FreeSpaceModel.Evaluate(a.F, a.D3), "any frequency and distance: λ/4πd between isotropic antennas"),
 
             new("logdist", "Log-distance", LogDistanceModel.Document, new[]
             {
                 N("n", "", "2", "the distance exponent beyond d0", 0.1, 10),
                 N("d0", "m", "1", "the reference distance: free space up to it", 1e-3, 1e6),
                 N("Sigma", "dB", "0", "the shadowing standard deviation", 0, 30),
-            }, true, false, a => LogDistanceModel.LogDistance(a.F, a.D3, a.Number("n"), a.Number("d0"), a.Number("Sigma"))),
+            }, true, false, a => LogDistanceModel.LogDistance(a.F, a.D3, a.Number("n"), a.Number("d0"), a.Number("Sigma")),
+                "any frequency; free space to d0, the stated exponent beyond: the numbers are yours, from a measurement or a reference"),
 
             new("multislope", "Multi-slope log-distance", LogDistanceModel.Document, new[]
             {
@@ -173,7 +179,8 @@ namespace RfCore.Propagation
                 new ModelParameter("Exponents", "", "2", "one exponent per segment (one more than the breakpoints)", ParameterKind.List),
                 N("d0", "m", "1", "the reference distance: free space up to it", 1e-3, 1e6),
                 N("Sigma", "dB", "0", "the shadowing standard deviation", 0, 30),
-            }, true, false, a => LogDistanceModel.MultiSlope("multislope", a.F, a.D3, a.Number("d0"), a.List("Breaks"), a.List("Exponents"), a.Number("Sigma"))),
+            }, true, false, a => LogDistanceModel.MultiSlope("multislope", a.F, a.D3, a.Number("d0"), a.List("Breaks"), a.List("Exponents"), a.Number("Sigma")),
+                "any frequency; free space to d0, one stated exponent per segment between increasing breakpoints"),
 
             new("tworay", "Two-ray ground reflection", TwoRayModel.Document, new[]
             {
@@ -181,7 +188,8 @@ namespace RfCore.Propagation
                 N("GroundSigma", "S/m", "0.005", "the ground's conductivity", 0, 100),
                 W("Polarization", "vertical", "the polarization", PolWords),
             }, true, false, a => TwoRayModel.Evaluate(a.F, a.D, a.Htx, a.Hrx, a.Number("GroundEr"), a.Number("GroundSigma"),
-                    a.Word("Polarization") == "horizontal" ? TwoRayModel.Polarization.Horizontal : TwoRayModel.Polarization.Vertical)),
+                    a.Word("Polarization") == "horizontal" ? TwoRayModel.Polarization.Horizontal : TwoRayModel.Polarization.Vertical),
+                "line of sight over flat ground, any frequency; both heights above 0"),
 
             new("38901", "3GPP TR 38.901 scenarios", Tr38901.Document, new[]
             {
@@ -195,7 +203,8 @@ namespace RfCore.Propagation
                 N("HallLength", "m", "", "InF: the hall's length (blank: the sub-scenario's)", 1, 1000),
                 N("HallWidth", "m", "", "InF: the hall's width (blank: the sub-scenario's)", 1, 1000),
                 N("HallHeight", "m", "", "InF: the hall's height (blank: the sub-scenario's)", 1, 100),
-            }, true, false, Run38901),
+            }, true, false, Run38901,
+                "0.5 to 100 GHz (RMa to 30 GHz); UMa and UMi 10 m to 5 km, RMa 10 m to 10 km in line of sight and 5 km without, InH 1 to 150 m, InF 1 to 600 m; the report's base station and terminal heights"),
 
             new("P1238", "ITU-R P.1238 indoor", ItuP1238.Document, new[]
             {
@@ -217,7 +226,7 @@ namespace RfCore.Propagation
                     }, a.Word("Los") == "los", a.F, a.D3, (int)floors,
                     a.Word("Building") switch { "commercial" => FloorBuilding.Commercial, "residential" => FloorBuilding.Residential, _ => FloorBuilding.Office },
                     a.Number("FloorLoss"));
-            }),
+            }, "0.3 to 300 GHz and 2 to 160 m, each environment and state over its own row of the recommendation's Table 2; floor losses at 0.9, 1.8 to 2, 2.4, 3.5, 5.2 and 5.8 GHz, or stated"),
 
             new("P1411", "ITU-R P.1411 short-range outdoor", ItuP1411.Document, new[]
             {
@@ -235,7 +244,8 @@ namespace RfCore.Propagation
                 W("Chamfered", "no", "corner, above 2 GHz: a chamfered corner building", "no", "yes"),
                 N("RoadHeight", "m", "0", "corner, up to 15 GHz: the effective road height hs (traffic)", 0, 10),
                 N("n", "", "2", "corner, above 15 GHz: the line-of-sight street's loss exponent", 1, 5),
-            }, true, false, RunP1411),
+            }, true, false, RunP1411,
+                "below and above roof: 0.45 to 300 GHz over the distances of each environment's row; terminals near street level: 300 MHz to 3 GHz, to 3 km; around a corner: 0.8 to 38 GHz"),
 
             new("P526", "ITU-R P.526 diffraction", ItuP526.Document, new[]
             {
@@ -247,7 +257,8 @@ namespace RfCore.Propagation
                 N("GroundSigma", "S/m", "0.003", "sphere, profile: the ground's conductivity", 0, 100),
                 W("Polarization", "vertical", "the polarization", PolWords),
                 ProfileParam,
-            }, true, true, RunP526),
+            }, true, true, RunP526,
+                "knife edge and a general path over a profile from 30 MHz, a smooth spherical Earth from 10 MHz, any distance"),
 
             new("satellite", "Satellite path", "circular-orbit geometry; " + Tr38811.Document, new[]
             {
@@ -257,7 +268,8 @@ namespace RfCore.Propagation
                 W("Scenario", "none", "TR 38.811's terminal environment for line of sight, shadowing and clutter (none: open, line of sight)",
                   "none", "denseurban", "urban", "suburban", "rural"),
                 W("Los", "auto", "with a scenario: the propagation state; auto gives the more probable one", LosWords),
-            }, false, false, RunSatellite),
+            }, false, false, RunSatellite,
+                "a circular orbit of any altitude, elevation 0 to 90° (10° and up with a TR 38.811 scenario); the atmospheric terms each over their own recommendation's range"),
 
             new("P1812", "ITU-R P.1812 point-to-area over a profile", ItuP1812.Document, new[]
             {
@@ -275,7 +287,8 @@ namespace RfCore.Propagation
             }, true, true, a => ItuP1812.Evaluate(a.RequireProfile(), new P1812Inputs(
                 a.F, a.Number("Time"), a.Number("Locations"), a.Htx, a.Hrx, a.Word("Polarization") == "vertical",
                 a.Number("DeltaN"), a.Number("N0"), a.Number("Latitude"), a.Number("CoastTx"), a.Number("CoastRx"),
-                a.Number("SigmaL"), a.Number("Resolution")))),
+                a.Number("SigmaL"), a.Number("Resolution"))),
+                "30 MHz to 6 GHz, paths 0.25 to 3000 km over a terrain profile, antennas 1 to 3000 m above ground, 1 to 50 % of time, 1 to 99 % of locations, latitude within ±80°"),
         };
 
         public static ModelDescriptor? Find(string name)
@@ -303,6 +316,7 @@ namespace RfCore.Propagation
                 {
                     Model = inputs.Model, FrequencyHz = inputs.FrequencyHz, DistanceM = profile.LengthKm * 1000,
                     TxHeightM = inputs.TxHeightM, RxHeightM = inputs.RxHeightM, Profile = profile, Values = inputs.Values,
+                    RainTimePercent = inputs.RainTimePercent,
                 };
 
             var args = new ModelArgs(model, inputs, profile);

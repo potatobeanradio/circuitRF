@@ -830,7 +830,25 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     {
         if (Library?.SelectedEntry is not { FilePath: { } path } entry || !SignalQualityPreset.Available(entry.Data))
             return [];
-        var configs = SignalQualityPreset.Build(entry.Data!, ComputeSourceKey(path, Library));
+        return await AddPresetGroupAsync(SignalQualityPreset.Build(entry.Data!, ComputeSourceKey(path, Library)), SignalQualityPreset.Gap);
+    }
+
+    /// <summary>
+    /// brief TRN-5 R-trn5-3 — the <see cref="TransientPreset"/> plots of the selected source's transient result: the recorded
+    /// voltages against time, the output's spectrum through fft and the bench's measures as a table, placed together as
+    /// <see cref="AddSignalQualityAsync"/> places its plots. Empty, and nothing added, when the source has no transient result.
+    /// </summary>
+    public async Task<IReadOnlyList<PlotContainerViewModel>> AddTransientAsync()
+    {
+        if (Library?.SelectedEntry is not { FilePath: { } path } entry || !TransientPreset.Available(entry.Data))
+            return [];
+        return await AddPresetGroupAsync(TransientPreset.Build(entry.Data!, ComputeSourceKey(path, Library)), TransientPreset.Gap);
+    }
+
+    /// <summary>A preset's plots, laid out together from (0, 0), added as Add Plot places a plot their combined size, each one
+    /// undo step. A display holding nothing but its empty seeded plot gets them in that plot's place.</summary>
+    private async Task<IReadOnlyList<PlotContainerViewModel>> AddPresetGroupAsync(IReadOnlyList<PlotContainerConfig> configs, double gap)
+    {
         if (configs.Count == 0) return [];
         if (Plots.Count == 1 && Plots[0].Inspector.Traces.Count == 0) InternalRemoveContainer(Plots[0]);
         // The preset lays its plots out together; the group lands where Add Plot would put a plot its size, moved down
@@ -843,7 +861,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             foreach (var p in Plots)
                 if (p.Left < x0 + w && x0 < p.Left + p.Width && p.Top < y0 + h && y0 < p.Top + p.Height)
                 {
-                    y0 = p.Top + p.Height + SignalQualityPreset.Gap;
+                    y0 = p.Top + p.Height + gap;
                     moved = true;
                 }
         }

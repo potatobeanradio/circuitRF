@@ -83,6 +83,17 @@ internal sealed class DuplicateAnalysisCommand : IUiCommand
                 FixtureA = t.FixtureA, FixtureB = t.FixtureB,
             },
 
+        TransientAnalysis tr =>
+            new TransientAnalysis(newName)
+            {
+                Enabled = a.Enabled, StopExpr = tr.StopExpr, StepExpr = tr.StepExpr, StartExpr = tr.StartExpr, MaxStepExpr = tr.MaxStepExpr,
+                Method = tr.Method, RelTolExpr = tr.RelTolExpr, VTolExpr = tr.VTolExpr, ITolExpr = tr.ITolExpr,
+                InitialState = tr.InitialState, IcExpr = tr.IcExpr, Solver = tr.Solver, SaveSteps = tr.SaveSteps,
+                MaxStepsExpr = tr.MaxStepsExpr, SpiceOptions = tr.SpiceOptions, SpiceLines = tr.SpiceLines,
+                SpiceLineFreq = tr.SpiceLineFreq, SpiceFit = tr.SpiceFit,
+                Store = tr.Store, StoreHarmExpr = tr.StoreHarmExpr, MeasureFromExpr = tr.MeasureFromExpr,
+            },
+
         OscillatorAnalysis o =>
             new OscillatorAnalysis(newName)
             {
@@ -90,6 +101,8 @@ internal sealed class DuplicateAnalysisCommand : IUiCommand
                 Unit = o.Unit, MaxHarmonicExpr = o.MaxHarmonicExpr, FFTOverSampleExpr = o.FFTOverSampleExpr, TolExpr = o.TolExpr,
                 AguessExpr = o.AguessExpr, PhaseNoise = o.PhaseNoise, PnStartExpr = o.PnStartExpr, PnStopExpr = o.PnStopExpr,
                 PnNptsExpr = o.PnNptsExpr, PnLog = o.PnLog, PnPortExpr = o.PnPortExpr,
+                InitialGuess = o.InitialGuess, SeedTolExpr = o.SeedTolExpr, SeedPeriodsExpr = o.SeedPeriodsExpr,
+                SeedFastBias = o.SeedFastBias, KickVExpr = o.KickVExpr,
             },
 
         SParameterAnalysis sp => sp.WithSweeps(newName, sp.Sweeps),
@@ -124,6 +137,10 @@ internal sealed class DuplicateAnalysisCommand : IUiCommand
                 LambdaExpr        = hb.LambdaExpr,
                 MaxIterExpr       = hb.MaxIterExpr,
                 MarginThresholdExpr = hb.MarginThresholdExpr,
+                InitialGuess      = hb.InitialGuess,
+                SeedTolExpr       = hb.SeedTolExpr,
+                SeedPeriodsExpr   = hb.SeedPeriodsExpr,
+                SeedFastBias      = hb.SeedFastBias,
                 SsStartExpr       = hb.SsStartExpr,
                 SsStopExpr        = hb.SsStopExpr,
                 SsStepExpr        = hb.SsStepExpr,

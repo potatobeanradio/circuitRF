@@ -1,0 +1,5 @@
+; brief TRN-7 R-trn7-9 — an RC step: the analytic gate of TRN-1, against ngspice
+V_Pulse:VS in 0 V1=0 V2=1 Delay=0.1u Rise=1n Fall=1n Width=10u Period=40u
+R:R1 in out R=1 kOhm
+C:C1 out 0 C=1 nF
+analysis TR1 type=tran Stop=5u Step=5n

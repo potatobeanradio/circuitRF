@@ -82,7 +82,7 @@ public static class PhasedArrayFastPath
     public static bool Enabled { get; set; } = true;
 
     /// <summary>Drops every kept channel solve and factor.</summary>
-    public static void Clear() { lock (_gate) _states.Clear(); }
+    public static void Clear() { lock (_gate) { _states.Clear(); _receive.Clear(); } }
 
     /// <summary>How the array at <paramref name="block"/> in <paramref name="nl"/> is solved, and why. Null when it is not a Feed-mode array.</summary>
     public static PhasedArraySolvePath? Decide(ElaboratedNetlist nl, string block)
@@ -99,6 +99,11 @@ public static class PhasedArrayFastPath
     public static Solved? TryWaves(ElaboratedNetlist nl, string block, double[] freqs, IReadOnlyList<(int Port, Complex Amplitude)> drives)
     {
         if (!Enabled || Split(nl, block) is not { Path.Fast: true } parts) return null;
+        // brief-pch-9 — a channel's beam is selected before the weights below are read
+        if (freqs.Length > 0) BeamSelection.Apply(nl, freqs[freqs.Length / 2]);
+        // brief-pch-9 — a Propagation Channel that RECEIVES on this array puts its rays on the elements, which the closed array at F does
+        // not carry: solved whole instead
+        if (nl.Components.Any(c => c.Model is PropagationChannelModel ch && ReferenceEquals(ch.RxEnd, parts.Block))) return null;
         var pa = parts.Array;
         var feed = pa.Feed!;
         int n = pa.PortCount;
@@ -224,6 +229,125 @@ public static class PhasedArrayFastPath
     }
 
     private static readonly Complex[] Through = [Complex.Zero, Complex.One, Complex.One, Complex.Zero];
+
+    // ── brief-pch-8b R-pch8b-1 — the receive collapse ─────────────────────────────────────────────────────────
+
+    private static readonly Dictionary<string, PropagationChannelModel.ReceiveCollapse> _receive = new(StringComparer.Ordinal);
+
+    /// <summary>Receive collapses formed in this process (one per array, frequency and resolved values).</summary>
+    public static long ReceiveCollapses => Interlocked.Read(ref _receiveCollapses);
+    private static long _receiveCollapses;
+
+    [System.Runtime.CompilerServices.ModuleInitializer]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA2255:The 'ModuleInitializer' attribute should not be used in libraries",
+        Justification = "src/Core cannot reference src/Engine; the receive collapse is installed into its seam when the engine loads, as src/Design installs the pattern readers.")]
+    internal static void InstallReceive() => PropagationChannelModel.ReceiveCollapseSource = Receive;
+
+    /// <summary>
+    /// What a Feed-mode receive array that meets the fast path's conditions does with the waves its elements emit (b = S·a + c), with its feed
+    /// matched: the beamformer is matched and isolating, so the wave from channel k's beamformer side leaves at F with t_k and nothing comes
+    /// back; the element side closes with a = Γ_ch·D·b (D the elements whose channel is placed, Γ_ch the channel's S22), so
+    /// (I − Γ_ch·S·D)·b = c and the feed sends b_F = S12_ch·tᵀ·(I − Γ_ch·S·D)⁻¹·c into a matched load: G = S12_ch·(I − Γ_ch·D·Sᵀ)⁻¹·t, which
+    /// for the reciprocal array (S = Sᵀ) is S12_ch·M⁻¹·t with M = I − Γ_ch·D·S, the fast path's own closure matrix, solved with its one
+    /// factor. (M⁻ᵀ·t, which this once was, agrees only when every element is on.) Γ_F is what the closed array presents at F, as <see cref="TryWaves"/> forms it. Null, with the fast path's sentence, where
+    /// it does not apply.
+    /// </summary>
+    public static (PropagationChannelModel.ReceiveCollapse? Collapse, string Sentence) Receive(ElaboratedNetlist nl, ElaboratedComponent array, double hz)
+    {
+        if (!Enabled) return (null, "Element by element: the array fast path is switched off.");
+        if (Split(nl, array.InstancePath) is not { } parts) return (null, "Element by element: the receive end is not a Feed-mode array.");
+        if (!parts.Path.Fast) return (null, "Element by element: " + parts.Path.Sentence);
+        var pa = parts.Array;
+        int n = pa.PortCount;
+        double z0 = pa.Z0.Real;
+        // brief-pch-9 — and per WEIGHTS: G = S12·M⁻¹·t and Γ_F carry the beamformer's t, and ArrayKey leaves out what only moves the weights,
+        // so a key without them handed a re-weighed array (a selected beam, a tuned steer VAR) the previous beam's collapse
+        string key = CollapseKey(array, parts, hz);
+        // G and Γ_F are kept per resolved array, channel, weights and frequency; the feed's node is this netlist's own, never kept
+        lock (_gate)
+            if (_receive.TryGetValue(key, out var kept)) return (kept with { FeedNode = parts.Feed.Nodes[0] }, Taken(parts));
+        var ch = parts.Channel is { } channel ? SolveChannel(nl, channel, [hz], z0)[0] : Through;
+        Complex s11 = ch[0], s12 = ch[1], s21 = ch[2], s22 = ch[3];
+        var feed = pa.Feed!;
+        var t = new Complex[n];
+        double norm = 1 / Math.Sqrt(n);
+        for (int k = 0; k < n; k++) t[k] = pa.Lattice.IsOn(k) ? feed.Quantised(k, hz) * norm : Complex.Zero;
+        var s = pa.SparseAt(hz);
+        var off = new HashSet<int>(Enumerable.Range(0, n).Where(k => !pa.Lattice.IsOn(k)));
+        // M = I − s22·D·S (off rows the identity's); z = M⁻¹·t (S reciprocal), a = M⁻¹·(s21·t)
+        var z = new Complex[n];
+        var a = new Complex[n];
+        if (s22 == Complex.Zero) { Array.Copy(t, z, n); for (int k = 0; k < n; k++) a[k] = s21 * t[k]; }
+        else
+        {
+            var (lu, _) = Factorise(s, s22, off);
+            var r = t.Select(x => s21 * x).ToArray();
+            lu.Solve(r, a);
+            lu.Solve(t, z);
+        }
+        var g = new Complex[n];
+        for (int k = 0; k < n; k++) g[k] = s12 * z[k];
+        var b = new Complex[n];
+        s.Multiply(a, b);
+        Complex gammaF = 0;
+        for (int k = 0; k < n; k++) if (pa.Lattice.IsOn(k) && t[k] != Complex.Zero) gammaF += t[k] * (s11 * t[k] + s12 * b[k]);
+        var result = new PropagationChannelModel.ReceiveCollapse(parts.Feed.Nodes[0], g, gammaF, z0);
+        lock (_gate) { if (_receive.Count >= MaxKept) _receive.Clear(); _receive[key] = result; }
+        Interlocked.Increment(ref _receiveCollapses);
+        return (result, Taken(parts));
+    }
+
+    /// <summary>
+    /// brief-pch-10b R-pch10b-1 — Γ_F alone, the reflection the closed array presents at its feed at <paramref name="hz"/>: what a receive
+    /// array replaced by its feed presents. One factorization (M, not also Mᵀ: the transfer G is not needed), kept per resolved array,
+    /// channel, weights and frequency, and taken from a full collapse when one was made at that frequency. Null with the reason off the path.
+    /// </summary>
+    public static (Complex? GammaF, string Sentence) FeedReflection(ElaboratedNetlist nl, ElaboratedComponent array, double hz)
+    {
+        if (!Enabled) return (null, "Element by element: the array fast path is switched off.");
+        if (Split(nl, array.InstancePath) is not { } parts) return (null, "Element by element: the receive end is not a Feed-mode array.");
+        if (!parts.Path.Fast) return (null, "Element by element: " + parts.Path.Sentence);
+        var pa = parts.Array;
+        int n = pa.PortCount;
+        string key = CollapseKey(array, parts, hz);
+        lock (_gate)
+        {
+            if (_receive.TryGetValue(key, out var kept)) return (kept.GammaF, Taken(parts));
+            if (_feedReflection.TryGetValue(key, out var g0)) return (g0, Taken(parts));
+        }
+        var ch = parts.Channel is { } channel ? SolveChannel(nl, channel, [hz], pa.Z0.Real)[0] : Through;
+        Complex s11 = ch[0], s12 = ch[1], s21 = ch[2], s22 = ch[3];
+        var t = new Complex[n];
+        double norm = 1 / Math.Sqrt(n);
+        for (int k = 0; k < n; k++) t[k] = pa.Lattice.IsOn(k) ? pa.Feed!.Quantised(k, hz) * norm : Complex.Zero;
+        var s = pa.SparseAt(hz);
+        var off = new HashSet<int>(Enumerable.Range(0, n).Where(k => !pa.Lattice.IsOn(k)));
+        var a = new Complex[n];
+        if (s22 == Complex.Zero) for (int k = 0; k < n; k++) a[k] = s21 * t[k];
+        else Factorise(s, s22, off).Lu.Solve(t.Select(x => s21 * x).ToArray(), a);
+        var b = new Complex[n];
+        s.Multiply(a, b);
+        Complex gammaF = 0;
+        for (int k = 0; k < n; k++) if (pa.Lattice.IsOn(k) && t[k] != Complex.Zero) gammaF += t[k] * (s11 * t[k] + s12 * b[k]);
+        lock (_gate) { if (_feedReflection.Count >= MaxKept) _feedReflection.Clear(); _feedReflection[key] = gammaF; }
+        return (gammaF, Taken(parts));
+    }
+
+    private static readonly Dictionary<string, Complex> _feedReflection = [];
+
+    /// <summary>The collapses kept at once: every weights change and frequency adds one (an N-element G), so a long session or a drop
+    /// sweep would grow them without bound; past this many they are formed afresh.</summary>
+    private const int MaxKept = 512;
+
+    /// <summary>A collapse's key: the resolved array (ArrayKey leaves out what only moves the weights, the Off set among them, which
+    /// moves D here), its channel, weights and frequency.</summary>
+    private static string CollapseKey(ElaboratedComponent array, Parts parts, double hz)
+        => $"{array.InstancePath}|{parts.ArrayKey}|off={string.Join(",", parts.Array.Lattice.Off.Order())}|{parts.Channel?.Key}|" +
+           $"{parts.Array.Feed!.WeightsKey()}|{hz.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}";
+
+    private static string Taken(Parts parts)
+        => $"Collapsed: {parts.Array.PortCount} receive elements reach the feed through one closure ({parts.Path.Sentence.Replace("Fast path: ", "")}), so each " +
+           "channel's rays are stamped as one source at the feed rather than on every element.";
 
     // ── R-paa8-4 — the estimate a slider shows where the fast path does not apply ──────────────────────────────
 
@@ -636,7 +760,10 @@ public static class PhasedArrayFastPath
     /// <summary>The circuit outside the array with the closed array standing at F.</summary>
     private static (ElaboratedNetlist Nl, string LoadPath) Outer(ElaboratedNetlist nl, Parts parts, Dictionary<double, Complex> gammaF, double z0)
     {
-        var (sub, map) = Sub(nl, parts.Outer, name => name);
+        // brief-pch-9 — a Propagation Channel that TRANSMITS from this array reads its element waves (one way: it loads nothing back on
+        // them), and those waves are not unknowns of the circuit outside the array: it is left out of that solve, which it cannot change.
+        // Before, it stamped its rows against the array's element branches there, which that system never allocated.
+        var (sub, map) = Sub(nl, [.. parts.Outer.Where(c => !(c.Model is PropagationChannelModel ch && ReferenceEquals(ch.TxEnd, parts.Block)))], name => name);
         const string path = "__paa_feed_load";
         sub.AddComponent(new ElaboratedComponent("PhasedArrayFeedLoad", path, [map(parts.Feed.Nodes[0]), 0],
                                                  new Dictionary<string, Value>(StringComparer.Ordinal), new ArrayFeedLoadModel(gammaF, z0)));

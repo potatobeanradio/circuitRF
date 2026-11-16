@@ -47,8 +47,13 @@ public sealed record SolverStatus(
         bool offer = (recipe is not null || SolverInstallPlan.HasRoute(tool)) && SolverInstaller.WouldHelp(d, found);
         // With no Install … to offer, the row says where to build it from instead (Gmsh on Linux arm64).
         string summary = d.DescribeForSettings(found, rejected);
-        if (recipe is null && !SolverInstallPlan.HasRoute(tool) && found is not { Validated: true } && SolverRecipes.ByHand(tool) is { } byHand)
+        // ngspice: any version runs, so one found needs no word on how to get another
+        bool foundEnough = found is { Validated: true } || (tool == SolverTool.Ngspice && found is not null);
+        if (recipe is null && !SolverInstallPlan.HasRoute(tool) && !foundEnough && SolverRecipes.ByHand(tool) is { } byHand)
             summary += " " + byHand;
+        // brief TRN-7 R-trn7-2 — an x64 build on arm64 Windows says that it runs under emulation.
+        if (recipe?.EmulationNote is { } emulated && (found is null || found.HowFound == SolverHowFound.Installed))
+            summary += " " + emulated;
         return new SolverStatus(tool, d.Name, found, rejected, summary, capabilities, recipe, offer)
         {
             OfferUpdate = tool == SolverTool.Emerge && SolverInstaller.OffersUpdate(d, found, recipe),

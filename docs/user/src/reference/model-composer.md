@@ -768,7 +768,7 @@ once when it is placed outside the fitted range.
 
 ## The example {#example}
 
-**File ▸ New ▸ Examples ▸ Model Composer** opens a workspace with three documents built this way:
+**File ▸ New ▸ Examples ▸ Models ▸ Model Composer** opens a workspace with three documents built this way:
 
 - `synthetic-gan`: a GaN FET built from synthetic DC, pulsed and multi-bias S data, with a fitted network, ANN
   currents, adjoint-ANN charges, self-heating and drain lag. Its 8-finger model drives a class-AB power sweep and a

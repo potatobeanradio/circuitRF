@@ -866,7 +866,13 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         if (r.Totals is not null) RefillSweeps(d, sweepNotes);
         PlotsUpdated?.Invoke(this, EventArgs.Empty);
         Refusals = string.Join("\n", r.Refusals);
-        Notes = string.Join("\n", r.Notes.Concat(ChainLink.Power(r)?.Note is { } dc ? [dc] : []).Concat(sweepNotes));
+        var propagationNotes = new List<string>();
+        if (r.Design is { Link: { } lk } dd && lk.Budget(dd.FrequencyHz).Propagation is { } pp)
+        {
+            propagationNotes.AddRange(pp.Notes);
+            if (ChainPropagation.LinkMargin(r)?.DistanceNote is { } dn) propagationNotes.Add(dn);
+        }
+        Notes = string.Join("\n", r.Notes.Concat(propagationNotes).Concat(ChainLink.Power(r)?.Note is { } dc ? [dc] : []).Concat(sweepNotes));
         Summary = r.Totals is not { } t ? "" :
             $"Gain {D(t.GainDb)} dB    NF {D(t.NfDb)} dB (Te {t.TeK:0.#} K)    IIP3 {D(t.Iip3Dbm)} dBm    OIP3 {D(t.Oip3Dbm)} dBm    " +
             $"IP1dB {D(t.Ip1dbDbm)} dBm    OP1dB {D(t.Op1dbDbm)} dBm    Pout {D(t.PoutDbm)} dBm\n" +

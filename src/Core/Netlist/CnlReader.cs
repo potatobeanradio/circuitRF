@@ -115,6 +115,8 @@ public sealed class CnlReader
                 tb.Analyses.Add(fieldsAnalysis!);
             else if (TryParseTrlDirective(rawLine, out var trlAnalysis))
                 tb.Analyses.Add(trlAnalysis!);
+            else if (TryParseTranDirective(rawLine, out var tranAnalysis))
+                tb.Analyses.Add(tranAnalysis!);
             else if (TryParseOscDirective(rawLine, out var oscAnalysis))
                 tb.Analyses.Add(oscAnalysis!);
             else if (TryParseSParamDirective(rawLine, out var spAnalysis))
@@ -180,6 +182,15 @@ public sealed class CnlReader
         if (_currentCell is not null && FirstWordIs(line, "corner"))
         {
             ParseCellCorner(line, StripInlineComment(line["corner".Length..]).Trim());
+            return true;
+        }
+        if (_currentCell is not null && FirstWordIs(line, "spice"))
+        {
+            // brief TRN-6 R-trn6-5 — the SPICE file this definition was translated from.
+            string file = StripInlineComment(line["spice".Length..]).Trim();
+            if (file.Length < 2 || file[0] != '"' || file[^1] != '"' || file[1..^1].Trim().Length == 0)
+                throw new CnlReadException(_lineNumber, line, "'spice' names the SPICE file a definition came from, quoted — spice \"part.sp\".");
+            _currentCell.SpiceSource = file[1..^1];
             return true;
         }
         if (_currentCell is not null && FirstWordIs(line, "part"))
@@ -1228,6 +1239,61 @@ public sealed class CnlReader
     }
 
     /// <summary>
+    /// brief-trn-1 — a "Name type=tran Stop=… [Step=…] …" directive as a <see cref="TransientAnalysis"/>. Every value is kept as
+    /// written and resolved at run time (PrepareAnalysisDirective has already canonicalised the keys and refused unknown ones).
+    /// </summary>
+    private static bool TryParseTranDirective(string rawLine, out TransientAnalysis? result)
+    {
+        result = null;
+        var tokens = TokeniseLine(rawLine);
+        if (tokens.Count < 2) return false;
+        var kv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string? last = null;
+        for (int i = 1; i < tokens.Count; i++)
+        {
+            int eq = tokens[i].IndexOf('=');
+            if (eq <= 0)
+            {
+                // "Stop=10 ns": a unit standing alone belongs to the number before it. Skipped, it left Stop=10 — ten
+                // SECONDS, with no message (PrepareAnalysisDirective lets a recognised unit through as a bare word).
+                if (last is not null && Units.IsRecognizedUnit(tokens[i]) &&
+                    double.TryParse(kv[last], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _))
+                    kv[last] += tokens[i];
+                continue;
+            }
+            string val = tokens[i][(eq + 1)..];
+            if (val.Length >= 2 && val[0] == '"' && val[^1] == '"') val = val[1..^1];
+            kv[last = tokens[i][..eq]] = val;
+        }
+        if (!kv.TryGetValue("type", out var type) || AnalysisDirectiveSchema.Find(type)?.Type != "tran") return false;
+        result = new TransientAnalysis(tokens[0])
+        {
+            StopExpr      = kv.GetValueOrDefault("Stop", ""),
+            StepExpr      = kv.GetValueOrDefault("Step", ""),
+            StartExpr     = kv.GetValueOrDefault("Start", "0"),
+            MaxStepExpr   = kv.GetValueOrDefault("MaxStep", "auto"),
+            Method        = kv.GetValueOrDefault("Method", TransientAnalysis.MethodTrap),
+            RelTolExpr    = kv.GetValueOrDefault("RelTol", "1e-3"),
+            VTolExpr      = kv.GetValueOrDefault("VTol", "1e-6"),
+            ITolExpr      = kv.GetValueOrDefault("ITol", "1e-12"),
+            InitialState  = kv.GetValueOrDefault("InitialState", TransientAnalysis.InitialOp),
+            IcExpr        = kv.GetValueOrDefault("IC", ""),
+            Solver        = kv.GetValueOrDefault("Solver", TransientAnalysis.SolverNative),
+            SaveSteps     = kv.GetValueOrDefault("SaveSteps", Analysis.NoiseDefault),
+            MaxStepsExpr  = kv.GetValueOrDefault("MaxSteps", TransientAnalysis.MaxStepsDefault),
+            SpiceOptions  = kv.GetValueOrDefault("SpiceOptions", ""),
+            SpiceLines    = kv.GetValueOrDefault("SpiceLines", TransientAnalysis.SpiceLinesDefault),
+            SpiceLineFreq = kv.GetValueOrDefault("SpiceLineFreq", TransientAnalysis.SpiceLineFreqDefault),
+            SpiceFit      = kv.GetValueOrDefault("SpiceFit", TransientAnalysis.SpiceFitDefault),
+            Store         = kv.GetValueOrDefault("Store", TransientAnalysis.StoreAuto),
+            StoreHarmExpr = kv.GetValueOrDefault("StoreHarm", TransientAnalysis.StoreHarmDefault),
+            MeasureFromExpr = kv.GetValueOrDefault("MeasureFrom", TransientAnalysis.MeasureFromDefault),
+            Enabled       = ParseEnabledToken(tokens),
+        };
+        return true;
+    }
+
+    /// <summary>
     /// brief-de-4 — a "Name type=trl thru=… reflect=… line=… reflectType=… [fixtureA=…] [fixtureB=…]" directive as a
     /// <see cref="TrlAnalysis"/>. The fixture paths are kept as written: they resolve at run time exactly as an SnP's File does.
     /// </summary>
@@ -1254,7 +1320,9 @@ public sealed class CnlReader
         result = new OscillatorAnalysis(tokens[0])
         {
             Probe             = kv.GetValueOrDefault("Probe", ""),
-            FguessExpr        = kv.GetValueOrDefault("Fguess", "1"),
+            // brief TRN-8: Fguess is optional with InitialGuess=transient; blank when absent, and the engine refuses a blank one
+            // otherwise.
+            FguessExpr        = kv.GetValueOrDefault("Fguess", ""),
             FstartExpr        = kv.GetValueOrDefault("Fstart", ""),
             FstopExpr         = kv.GetValueOrDefault("Fstop", ""),
             Unit              = kv.GetValueOrDefault("Unit", "GHz"),
@@ -1268,6 +1336,11 @@ public sealed class CnlReader
             PnNptsExpr        = kv.GetValueOrDefault("PnNpts", OscillatorAnalysis.DefaultPnNpts),
             PnLog             = IsYes(kv.GetValueOrDefault("PnLog", "yes")),
             PnPortExpr        = kv.GetValueOrDefault("PnPort", ""),
+            InitialGuess      = kv.GetValueOrDefault("InitialGuess", CircuitRF.Core.Design.Analysis.InitialGuessDc),
+            SeedTolExpr       = kv.GetValueOrDefault("SeedTol", CircuitRF.Core.Design.Analysis.SeedTolDefault),
+            SeedPeriodsExpr   = kv.GetValueOrDefault("SeedPeriods", CircuitRF.Core.Design.Analysis.SeedPeriodsDefault),
+            SeedFastBias      = kv.GetValueOrDefault("SeedFastBias", CircuitRF.Core.Design.Analysis.SeedFastBiasDefault),
+            KickVExpr         = kv.GetValueOrDefault("KickV", CircuitRF.Core.Design.Analysis.KickVDefault),
             Enabled           = ParseEnabledToken(tokens),
         };
         return true;
@@ -1947,6 +2020,11 @@ public sealed class CnlReader
             NoiseOutExpr      = kv.GetValueOrDefault("NoiseOut",      CircuitRF.Core.Design.HarmonicBalanceAnalysis.NoiseOutDefault),
             NoiseSidebandExpr = kv.GetValueOrDefault("NoiseSideband", CircuitRF.Core.Design.HarmonicBalanceAnalysis.NoiseSidebandDefault),
             NoiseContribExpr  = kv.GetValueOrDefault("NoiseContrib",  CircuitRF.Core.Design.Analysis.NoiseContribDefault),
+            // brief TRN-8: the transient seed; every default is the DC start, so a line without these runs as it did.
+            InitialGuess      = kv.GetValueOrDefault("InitialGuess",  CircuitRF.Core.Design.Analysis.InitialGuessDc),
+            SeedTolExpr       = kv.GetValueOrDefault("SeedTol",       CircuitRF.Core.Design.Analysis.SeedTolDefault),
+            SeedPeriodsExpr   = kv.GetValueOrDefault("SeedPeriods",   CircuitRF.Core.Design.Analysis.SeedPeriodsDefault),
+            SeedFastBias      = kv.GetValueOrDefault("SeedFastBias",  CircuitRF.Core.Design.Analysis.SeedFastBiasDefault),
             Enabled           = ParseEnabledToken(tokens),
 #pragma warning disable CS0618
             SweepVarName      = sweepVar,

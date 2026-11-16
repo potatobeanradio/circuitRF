@@ -421,6 +421,11 @@
       <Link>examples/Phased Array/results/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- brief-pch-12: the mmWave Array Link example's arrays read its 28 GHz element's record, reduced as the two above are. -->
+    <None Include="../../examples/mmWave Array Link/results/Patch Element*">
+      <Link>examples/mmWave Array Link/results/%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

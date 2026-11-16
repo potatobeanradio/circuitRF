@@ -52,8 +52,12 @@ internal static class Solver
         return Usage();
     }
 
-    /// <summary>The ids <c>install</c> and <c>remove</c> take, from the registry: <c>palace</c>, <c>gmsh</c>, …</summary>
-    internal static IEnumerable<string> ToolIds => Em3dSolvers.Tools.Select(SolverHomes.ToolId);
+    /// <summary>The ids <c>install</c> and <c>remove</c> take, from the registries: <c>palace</c>, <c>gmsh</c>, … and last the
+    /// circuit programs (brief TRN-7: <c>ngspice</c>).</summary>
+    internal static IEnumerable<string> ToolIds => AllTools.Select(SolverHomes.ToolId);
+
+    /// <summary>Every program listed: the 3D solvers of <c>Em3dSolvers.Tools</c>, then the circuit programs.</summary>
+    private static IReadOnlyList<CircuitRF.Design.Em3d.SolverTool> AllTools => [.. Em3dSolvers.Tools, .. CircuitSolvers.Tools];
 
     /// <summary><see cref="ToolIds"/> as a sentence lists them: <c>palace, gmsh, openems or emerge</c>.</summary>
     internal static string ToolIdSentence => string.Join(", ", ToolIds.SkipLast(1)) + " or " + ToolIds.Last();
@@ -90,7 +94,7 @@ internal static class Solver
         }
 
         var report = new List<SolverJson>();
-        foreach (var tool in Em3dSolvers.Tools)
+        foreach (var tool in AllTools)
         {
             var s = SolverStatus.Of(tool, gpu: gpu);
             string state = s.Found is null ? "not found" : s.InstalledByCircuitRf ? "installed by circuitRF" : "found";

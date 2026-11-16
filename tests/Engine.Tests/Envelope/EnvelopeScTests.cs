@@ -51,4 +51,35 @@ public sealed class EnvelopeScTests(ITestOutputHelper output)
         Assert.True(ds["Bits"].RealValues[0] > 1000);
         Assert.Equal(3, ds["Const"].Rank);
     }
+
+    /// <summary>
+    /// Brief PCH-12: a single carrier offset by a line-of-sight Doppler is read at that offset and decided right. 500 Hz is a
+    /// tenth of a bin over the 0.2 ms record: it was fitted as 0 Hz, because the delay fit took a delay a whole record away and
+    /// its circular shift put the offset's phase ramp's jump mid-window. 100 kHz is twenty bins: past the fine fit, found by
+    /// the power spectra's cross-correlation first (SignalQuality.CoarseOffset). A low-orbit downlink's 400 kHz read BER 0.5.
+    /// </summary>
+    [Theory]
+    [InlineData(7.5)]
+    [InlineData(1500.0)]
+    public void Doppler_IsAcquired_AndTheSymbolsDecidedRight(double velocity)
+    {
+        string cnl = $"""
+            MOD_Source:S1 tx 0 Fc=20 GHz Pavg=0 dBm Z=50 Ohm Carrier[1]="SC;Rs=10Msps;Mod=16APSK;RollOff=0.2;Data=PN9;Preamble=64;PilotBlock=36/1440;Off=0;P=0"
+            PropagationChannel:CH1 tx rx Distance=1000 TxVel="{velocity.ToString(System.Globalization.CultureInfo.InvariantCulture)},0,0" TxGain=40 RxGain=40
+            IProbe:Irx rx o
+            Port:PO o 0 Num=1 Z=50 Ohm
+            analysis ENV1 type=env Stop=0.2e-3 Accuracy=draft MaxHarm=1 SaveWaveforms=no Equalizer=pilot
+            """;
+        var (lib, tb) = new CnlReader().Read(cnl);
+        using var nl = new Elaborator(lib).Elaborate(tb);
+        var plan = EnvelopeRunner.Resolve(tb.Analyses.OfType<EnvelopeAnalysis>().Single(), nl.ResolvedGlobals);
+        bool used = false;
+        ElaboratedNetlist Elab() { if (used) return new Elaborator(lib).Elaborate(tb); used = true; return nl; }
+        var ds = EnvelopeRunner.Run(plan, Elab);
+        double doppler = ds["link:CH1:Doppler0_Hz"].RealValues[0], cfo = ds["CFO_Hz"].RealValues[0];
+        output.WriteLine($"Doppler {doppler:G9} Hz, read {cfo:G9} Hz, EVM {ds["EVM_pct"].RealValues[0]:G4} %, bit errors {ds["BitErrors"].RealValues[0]}");
+        Assert.Equal(doppler, cfo, 0.1);
+        Assert.Equal(0, ds["BitErrors"].RealValues[0]);
+        Assert.True(ds["EVM_pct"].RealValues[0] < 0.01);
+    }
 }

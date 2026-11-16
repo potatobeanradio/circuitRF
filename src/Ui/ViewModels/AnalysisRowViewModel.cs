@@ -57,6 +57,7 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
         ParametricSweepAnalysis  => "SW",
         FieldsAnalysis           => "FLD",
         TrlAnalysis              => "TRL",
+        TransientAnalysis        => "TRAN",
         OscillatorAnalysis       => "OSC",
         _                        => "?",
     };
@@ -138,6 +139,9 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
         LoadpullAnalysis lp        => FormatLpSummary(lp),
         ParametricSweepAnalysis ps => FormatSweepSummary(ps),
         FieldsAnalysis fa          => $"{fa.Block} at {fa.FrequencyText}, port {fa.DriveExpr} driven" + (fa.Average ? "" : ", local only"),
+        TransientAnalysis tr       => $"Stop {tr.StopExpr}" + (tr.StepExpr.Trim().Length > 0 ? $", Step {tr.StepExpr}" : "") +
+                                      $", {tr.Method}, start {tr.InitialState}" +
+                                      (tr.Solver.Equals(TransientAnalysis.SolverNative, StringComparison.OrdinalIgnoreCase) ? "" : $", {tr.Solver}"),
         TrlAnalysis t              => $"{t.Thru} / {t.Reflect} ({t.ReflectType}) / {t.Line} → " +
                                       $"{System.IO.Path.GetFileName(t.FixtureAPath)}, {System.IO.Path.GetFileName(t.FixtureBPath)}",
         OscillatorAnalysis o       => $"Oscillator around {o.FguessExpr} {o.Unit}" + (o.Probe.Length > 0 ? $" at {o.Probe}" : "") +

@@ -240,6 +240,19 @@ public static class HbNewton
     /// Run Newton loop. V is modified in-place ([N, K+1] complex).
     /// yNN[k][n,m] for k=0..K; iSrc[k][n] for k=0..K.
     /// k=0 entries are the real DC admittance/Norton source from HbLinearExtractor.ExtractDC.
+    ///
+    /// <para><b>A control-current loop's retry (brief-hb-control-loop-cold-start R-hbcl-2).</b> An SDD that reads another part's
+    /// current inside a feedback loop puts a stiff row on the interface: its node is held through a small resistance (1 mΩ on the
+    /// SDD example's bias controller) and the loop's gain multiplies it, so one milliampere of rectified drain current moves that
+    /// row's residual by amperes. Judged by ‖F‖ in amperes, the first Newton step from the DC seed — which raises the drive's
+    /// swing, and with it the average drain current the loop answers — raises ‖F‖ by thousands, and the line search cuts λ to
+    /// 1/256 for every iteration that follows: a correct Jacobian (the FD oracle agrees) and a solution that exists, never
+    /// reached. Judged by either norm decreasing (<see cref="LineSearchJudge.ScaledOrPlain"/>), the same Newton converges in 5
+    /// to 16 iterations from cold at loop gains to 1,000 V/A and 10 to 30 dBm. That judge runs only for a solve with control
+    /// currents, and only once the usual one has STALLED: <see cref="ControlLoopStallLimit"/> line searches running that each cut
+    /// λ to 1/32 or less. Waiting for the usual solve to spend all its iterations first cost 1 to 1.3 s a point on the SDD example's drive
+    /// sweep, every point from 10 to 20 dBm, warm-started or not. When the retry fails as well, the usual solve runs again from the
+    /// same start with nothing abandoned, so no circuit loses an answer it reached before; the run says so in a note.</para>
     /// </summary>
     public static SolveResult Solve(
         Complex[,]         V,              // [N, K+1] — initial guess in, converged out
@@ -258,6 +271,50 @@ public static class HbNewton
         ControlCurrentContext? cc         = null,   // brief #2: per-iterate _c_ref context
         bool               useControlJacobian = true)  // brief #3: J_cc on (quadratic) vs off (quasi-Newton)
     {
+        var judge = JudgeFor(netlist, interfaceNodes);
+        var start = cc is not null && judge == LineSearchJudge.Plain ? (Complex[,])V.Clone() : null;
+        var first = SolveJudged(V, yNN, iSrc, f0, K, N, netlist, interfaceNodes, gridN, settings, tol, lambda, guardHarmonic,
+                                cc, useControlJacobian, judge, start is null ? 0 : ControlLoopStallLimit, out bool abandoned);
+        if (first.Converged || start is null || double.IsFinite(first.VacuousToleranceScale)) return first;
+
+        var retryV = (Complex[,])start.Clone();
+        var retry = SolveJudged(retryV, yNN, iSrc, f0, K, N, netlist, interfaceNodes, gridN, settings, tol, lambda, guardHarmonic,
+                                cc, useControlJacobian, LineSearchJudge.ScaledOrPlain, 0, out _);
+        if (retry.Converged)
+        {
+            Array.Copy(retryV, V, V.Length);
+            netlist.AddNoteOnce(ControlLoopRetryKey,
+                "HB: a control-current loop (an SDD reading another part's current) stalled with the line search judging the " +
+                "residual in amperes, whose stiff loop row vetoed every step; it was solved from the same start judging either the " +
+                "residual or its self-admittance-scaled form decreasing.");
+            // the cost of both attempts, in the order they ran
+            return retry with { Iterations = first.Iterations + retry.Iterations, IterTrace = [.. first.IterTrace, .. retry.IterTrace] };
+        }
+        if (!abandoned) return first;
+        // neither converged and the first was cut short: the usual solve, whole, as it ran before the retry existed
+        Array.Copy(start, V, V.Length);
+        return SolveJudged(V, yNN, iSrc, f0, K, N, netlist, interfaceNodes, gridN, settings, tol, lambda, guardHarmonic,
+                           cc, useControlJacobian, judge, 0, out _);
+    }
+
+    /// <summary>The note's key: said once per run, however many points or rungs needed the retry.</summary>
+    public const string ControlLoopRetryKey = "hb-control-loop-judge";
+
+    /// <summary>How many line searches running, each cutting λ at least <see cref="ControlLoopCrawlBacktracks"/> times (to 1/32 or
+    /// less), end a control-current solve's first attempt: a crawl, which on the bias loop at 10 dBm and 50 V/A accepted λ of 1/64
+    /// to 1/128 every step and spent its 100 iterations without arriving.</summary>
+    public const int ControlLoopStallLimit = 5;
+
+    /// <summary>The halvings that make a line search part of a crawl (<see cref="ControlLoopStallLimit"/>).</summary>
+    public const int ControlLoopCrawlBacktracks = 5;
+
+    private static SolveResult SolveJudged(
+        Complex[,] V, Complex[][,] yNN, Complex[][] iSrc, double f0, int K, int N, ElaboratedNetlist netlist,
+        int[] interfaceNodes, int gridN, AnalysisSettings settings, double tol, double lambda, int guardHarmonic,
+        ControlCurrentContext? cc, bool useControlJacobian, LineSearchJudge judge, int stallLimit, out bool abandoned)
+    {
+        abandoned = false;
+        int stalls = 0;
         double omega0  = 2.0 * Math.PI * f0;
         int    unknowns = 2 * N * (K + 1);  // real-split: all harmonics k=0..K
         var    trace   = new List<HbConvergenceTrace.IterRecord>();
@@ -275,7 +332,6 @@ public static class HbNewton
 
         // Scratch the line search steps FROM — the accepted iterate every trial restarts at.
         var V0 = new Complex[N, K + 1];
-        var judge = JudgeFor(netlist, interfaceNodes);
 
         // ── 0. One evaluation before the loop ─────────────────────────────────
         // From here the loop's ENTRY state is always the last accepted trial's evaluation, so
@@ -353,6 +409,15 @@ public static class HbNewton
             trace.Add(new HbConvergenceTrace.IterRecord(
                 iter, fEntry, step.Lambda, step.Backtracks, step.Stalled,
                 worst, worstShare, moved, stepSize));
+            stalls = step.Backtracks >= ControlLoopCrawlBacktracks ? stalls + 1 : 0;
+            if (stallLimit > 0 && stalls >= stallLimit)
+            {
+                abandoned = true;
+                trace.Add(new HbConvergenceTrace.IterRecord(iter + 1, fN, WorstNode: WorstNode(F, N, K, out double s), WorstShare: s));
+                return new SolveResult(false, iter + 1, trace,
+                    TotalInjection(iNl, qNl, higherBuckets, N, K, omega0), portITime,
+                    G, C, higherBuckets, Conduction: iNl);
+            }
         }
 
         // Max iterations. ‖F‖ at the final iterate is already known — the last accepted trial
@@ -1420,7 +1485,18 @@ public static class HbNewton
         // per Maas §7.3 to prevent Jacobian singularity — FD gives 0, analytic gives a00.
         // These N×N entries are excluded from MaxAbsError / MaxRelError.
         int    DcDummyCount,
-        double DcDummyMaxAbsError);
+        double DcDummyMaxAbsError)
+    {
+        /// <summary>
+        /// brief-hb-control-loop-cold-start R-hbcl-1 — the worst |analytic − FD| of any entry against the largest entry of its own
+        /// row (DC dummies excluded). <see cref="MaxRelError"/> divides by the entry itself, floored at 1e-7 of the whole matrix's
+        /// largest entry; a row that holds a huge admittance (the ~1e6 S <c>ForcedDc</c> puts between two nodes an inductor joins)
+        /// has F values of millions of amperes, so a central difference resolves its small entries only to ~1e-9 of the row, and the
+        /// relative metric then reports that roundoff (it grows as 1/ε) as a Jacobian error. Judged by its row, each entry is
+        /// measured against what that row of F can resolve.
+        /// </summary>
+        public double MaxRowScaledError { get; init; }
+    }
 
     /// <summary>
     /// Compare BuildJ (analytic) to a central-difference Jacobian of BuildF.
@@ -1547,8 +1623,22 @@ public static class HbNewton
         discrepancies.Sort((a, b) => b.AbsError.CompareTo(a.AbsError));
         if (discrepancies.Count > 20) discrepancies = discrepancies.GetRange(0, 20);
 
+        // R-hbcl-1 — each entry against its own row's largest
+        double maxRowScaled = 0;
+        for (int r = 0; r < dof; r++)
+        {
+            double rowScale = 0;
+            for (int c = 0; c < dof; c++)
+                if (!(IsDcImDof(r, K) && IsDcImDof(c, K)))
+                    rowScale = Math.Max(rowScale, Math.Max(Math.Abs(analyticJ[r * dof + c]), Math.Abs(fdJ[r * dof + c])));
+            if (rowScale <= 0) continue;
+            for (int c = 0; c < dof; c++)
+                if (!(IsDcImDof(r, K) && IsDcImDof(c, K)))
+                    maxRowScaled = Math.Max(maxRowScaled, Math.Abs(analyticJ[r * dof + c] - fdJ[r * dof + c]) / rowScale);
+        }
+
         return new JacobianComparisonResult(maxAbsErr, maxRelErr, maxAbsRow, maxAbsCol,
-            maxRelRow, maxRelCol, dof, N, K, discrepancies, dcDummyCount, dcDummyMaxAbsErr);
+            maxRelRow, maxRelCol, dof, N, K, discrepancies, dcDummyCount, dcDummyMaxAbsErr) { MaxRowScaledError = maxRowScaled };
     }
 
     // Per-term G/C weight: accounts for HbFft amplitude convention vs Maas.

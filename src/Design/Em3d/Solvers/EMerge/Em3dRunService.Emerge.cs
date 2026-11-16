@@ -248,7 +248,8 @@ public static partial class Em3dRunService
         // brief-emw-3 R-emw3-5 — with a terminal group, EMerge's S is MODAL on that face: every port goes through the conversion
         // (a one-entry face reduces to the renormalisation from its Z_PV), from S and the faces' own modes
         (WavePortModalSamples Samples, WavePortTerminalOutcome Outcome, EmergeModalArrays Arrays)? terminal = null;
-        if (Em3dPortMap.HasTerminals(ports))
+        // brief-hzn-16 — a Floquet port's modes share a face group but are not terminals: their S is modal as solved
+        if (ports.Any(p => p.IsTerminal))
         {
             var arrays = EmergeTerminalS.Read(dir, requested.Length, ports.Count, out string? arraysError);
             if (arrays is null) return Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(arraysError!));
@@ -360,9 +361,15 @@ public static partial class Em3dRunService
         foreach (var m in facts.SecondModes.Where(m => m.Error is not null))
             log.Notes.Add($"Whether port {m.Port}'s second mode propagates was not checked: {m.Error}.");
         string? Group(EmergeSecondMode m) => problem.Ports.FirstOrDefault(p => p.Number == m.Port)?.FaceGroupLabel;
+        bool Modes(EmergeSecondMode m) => problem.Ports.FirstOrDefault(p => p.Number == m.Port)?.HollowMode is not null;
         foreach (var m in facts.SecondModes.Where(m => m.Propagating))
             log.Warnings.Add(Group(m) is { } label
-                ? $"Port '{label}''s face supports a propagating mode past its {m.Own} terminals' own at {Fmt(m.FrequencyHz / 1e9)} GHz " +
+                ? Modes(m)
+                    // brief-hzn-20 — a hollow guide of several modes: the face's modes past the port's own
+                    ? $"Port '{label}''s face supports a propagating mode past its {m.Own} modes at {Fmt(m.FrequencyHz / 1e9)} GHz " +
+                      $"(EMerge's β = {Fmt(m.Second!.Value.Real)} rad/m, its first mode's {Fmt(m.Betas[0].Real)}), so its S-parameters " +
+                      "are those of its own modes alone and power the extra mode carries is not in them. Lower the sweep's top."
+                    : $"Port '{label}''s face supports a propagating mode past its {m.Own} terminals' own at {Fmt(m.FrequencyHz / 1e9)} GHz " +
                   $"(EMerge's β = {Fmt(m.Second!.Value.Real)} rad/m, the terminals' first mode's {Fmt(m.Betas[0].Real)}), so its S-parameters " +
                   "are those of its terminals' modes alone and power the extra mode carries is not in them. Make the port region smaller " +
                   "(the Ports3D Width and Height), or lower the sweep's top."

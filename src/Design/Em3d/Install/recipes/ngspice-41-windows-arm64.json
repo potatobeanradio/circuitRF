@@ -1,0 +1,45 @@
+{
+  "$schema": "./recipe.schema.json",
+  "comment": "brief TRN-7 R-trn7-2. Upstream's own Windows build of ngspice 41, the release the conda-forge recipes install too, from its old-releases folder, whose address does not move when a newer release comes out. Upstream publishes the archive as .7z only, which the assistant unpacks itself (SevenZip.cs). The archive's layout (Spice64/bin/ngspice_con.exe) was read with the assistant's own 7z reader; the unpacked program ran under Wine 10 in a Debian x64 container (2026-11-15), where circuitRF's win-x64 CLI found it at C:\\Spice64\\bin and solved the testdata/transient/ngspice benches with it. The download itself is untested there (that Wine could not validate any TLS certificate), and nothing has run on Windows itself. Upstream publishes no arm64 build, so this is the x64 archive, which Windows on arm64 runs under its own emulation; the Settings row says so.",
+  "id": "ngspice-41-windows-arm64",
+  "tool": "ngspice",
+  "version": "41",
+  "platform": "windows",
+  "architecture": "arm64",
+  "emulated": true,
+  "layout": "relocatable",
+  "layoutNote": "Upstream's binary archive: one folder, Spice64, holding the program, its code models and its scripts, which nothing outside it names, so the home is built in .partial and renamed into place.",
+  "sources": [
+    {
+      "id": "archive",
+      "url": "https://downloads.sourceforge.net/project/ngspice/ng-spice-rework/old-releases/41/ngspice-41_64.7z",
+      "fetchedBy": "circuitRF",
+      "file": "ngspice-41_64.7z",
+      "sha256": "ddad0ef2bb6949e1f9fc47c30b22f45047c67cf9e24fb6f3135b311e12dca943"
+    }
+  ],
+  "prerequisites": [],
+  "consentNotes": [
+    "ngspice is free software under the modified BSD licence, with parts under other free licences listed in its own documentation; circuitRF starts it as a separate program and distributes nothing."
+  ],
+  "steps": [
+    {
+      "name": "Download ngspice 41",
+      "kind": "download",
+      "source": "archive"
+    },
+    {
+      "name": "Unpack ngspice",
+      "kind": "extract",
+      "source": "archive",
+      "into": "${home}"
+    }
+  ],
+  "program": "${home}/Spice64/bin/ngspice_con.exe",
+  "measured": {
+    "minutes": null,
+    "diskGB": null,
+    "source": "the archive is 6.9 MB; not measured on Windows"
+  },
+  "knownFailures": []
+}

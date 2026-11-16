@@ -48,7 +48,7 @@ section pictures — works on a machine with no 3D solver at all. A solver is ne
 <a href="em-3d.html#getting">3D EM ▸ Getting the solvers</a>), and <a href="em-solvers.html">EM Solvers</a> says which one suits
 which problem.</p>
 <p>This page teaches the editor through the <strong>3D Package</strong> example — an MMIC die in a ceramic package with a
-lid — which was drawn with exactly the gestures below. Open it with <strong>File ▸ New ▸ Examples ▸ 3D Package</strong>. The
+lid — which was drawn with exactly the gestures below. Open it with <strong>File ▸ New ▸ Examples ▸ 3D EM ▸ 3D Package (the 3D editor)</strong>. The
 <strong>3D Connector</strong> example teaches the operations the geometry kernel adds — booleans, fillets and STEP
 parts — through a coaxial connector launching onto a board (<a href="#connector">below</a>).</p>
 <nav class="toc">
@@ -149,7 +149,7 @@ and this editor share the camera, the clip plane, the mesh and field displays, a
 turns on the clip plane. A new 3D view opens orthographic. The line along the bottom of the view is the
 <strong>status line</strong>: what the armed tool wants next, or what the last edit did, or why it was refused.</p>
 <h2 id="example">The example: an MMIC in a package</h2>
-<p><strong>File ▸ New ▸ Examples ▸ 3D Package</strong> copies a workspace with two cells to a folder you choose, and opens its
+<p><strong>File ▸ New ▸ Examples ▸ 3D EM ▸ 3D Package (the 3D editor)</strong> copies a workspace with two cells to a folder you choose, and opens its
 <code>README.md</code>, which carries the numbers quoted here.</p>
 <ul>
 <li><strong>Thru die</strong> — an MMIC's <strong>layout</strong>, drawn in <strong>µm</strong> on a GaAs technology (<code>tech/mmic-gaas.ctech</code>: 100 µm
@@ -345,7 +345,7 @@ that the floor, the base, the walls and the lid are all written in terms of, so 
 package (see <a href="#expressions">Dimensions as expressions</a>). The die, its pad, the leads, the wires and the
 ports do not depend on them: a bigger cavity leaves the die where it is and moves the walls out.</p>
 <h2 id="connector">The second example: a connector launch</h2>
-<p><strong>File ▸ New ▸ Examples ▸ 3D Connector</strong> is a coaxial connector launching onto a 50 Ω microstrip at a board's edge —
+<p><strong>File ▸ New ▸ Examples ▸ 3D EM ▸ 3D Connector (booleans, fillets, STEP)</strong> is a coaxial connector launching onto a 50 Ω microstrip at a board's edge —
 the 3D problem an RF board meets most — and it is built from the operations the geometry kernel adds:</p>
 <ul>
 <li><strong>Board</strong> — a layout in <strong>mil</strong>: 20 mil of PTFE-glass laminate over a ground plane, with a 62 mil line.</li>
@@ -917,6 +917,17 @@ unchanged. Unlike Transparency it <strong>is</strong> part of the solved model: 
 or moving an object while it is not modelled does not, since no run has it.</li>
 <li>A not-modelled object is still <strong>exported</strong> — to STEP and by Export Drawing — because those export what is drawn.</li>
 <li><code>circuitrf check</code> lists what is not modelled and reports the refusals above; <code>explain</code> names it in its walk.</li>
+</ul>
+<h3 id="one-sided">One-sided sheet</h3>
+<p>A lossy sheet (one whose metal has a finite conductivity) is normally solved as a thin conductor with a current on each
+of its two faces. Tick <strong>One-sided</strong> in Properties and its metal is instead <strong>one surface impedance carrying the current
+of both faces</strong>, which loses about twice as much in the conductor. It is how a Hertzon design whose Finite Conductivity
+boundary has Two-sided off is solved, so such a design gives the same answer in both programs.</p>
+<ul>
+<li>The box appears only for a sheet whose metal is lossy: a perfect conductor has no surface impedance, and <code>check</code> warns
+if <code>OneSided</code> is written on one.</li>
+<li><strong>EMerge</strong> runs it. <strong>Palace</strong> and <strong>openEMS</strong> refuse the run, naming the sheet.</li>
+<li>One click is one undo step. It is saved in the <code>.c3d</code> only when ticked, as <code>&quot;OneSided&quot;: true</code>.</li>
 </ul>
 <h3 id="copy-paste">Copy and Paste between 3D views</h3>
 <p>Objects copy out of one 3D view and paste into another — in this workspace, another workspace, or another running
@@ -1996,13 +2007,13 @@ leaves out.</p>
 die stays put. The closed form then says 20.87 GHz — a mode below 22 GHz, walking toward the band — and <strong>Run</strong>
 on <em>Lid modes</em> finds where the drawn package puts it.</p>
 <p>For the question on its own, a resonance inside the band and a grounded post that moves it out, open <strong>File ▸
-New ▸ Examples ▸ 3D Eigenmode</strong> (<a href="em-setup.html#eigenmodes">EM Setup ▸ Eigenmodes</a> quotes its numbers).</p>
+New ▸ Examples ▸ 3D EM ▸ 3D Eigenmode (a cavity resonance)</strong> (<a href="em-setup.html#eigenmodes">EM Setup ▸ Eigenmodes</a> quotes its numbers).</p>
 <h2 id="thermal">Temperature</h2>
 <p>The same model solves for heat. A <strong>thermal setup</strong> (<em>Simulate ▸ Setup Analyses…</em>, the thermometer button — or any setup
 whose <em>Solver</em> is set to <strong>Thermal</strong>) is solved by circuitRF's own steady-conduction solver after Gmsh meshes every solid
 — air is not meshed. What it needs is drawn in the
 view, and what it is worth is typed in the setup, so one model carries several thermal setups beside its EM ones.
-What a run models, and three worked examples with their numbers (<em>File ▸ New ▸ Examples ▸ Thermal: …</em>), are in
+What a run models, and three worked examples with their numbers (<em>File ▸ New ▸ Examples ▸ Thermal ▸ …</em>), are in
 <a href="thermal.html">Thermal</a>; this section is the gestures.</p>
 <figure class="figure fixed"><span class="frame">
     <img src="../assets/fixed/output-wires-dc-along-wire.png" alt="A gold bond wire in a mould compound, cut along its length: the wire hottest at mid-span, the heat spreading into the mould around it">

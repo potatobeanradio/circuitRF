@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Numerics;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices;
@@ -58,6 +59,10 @@ public sealed record HbAnalysisParams(
 {
     /// <summary>Convenience: fundamental frequency for single-tone runs.</summary>
     public double ToneHz      => ToneFreqsHz[0];
+
+    /// <summary>brief TRN-8 — where the Newton starts (<c>InitialGuess=</c>) and the transient seed's keys. <see cref="HbSeedSettings.Off"/>
+    /// (the DC start) unless the directive says otherwise, and a run with it is the one from before.</summary>
+    public HbSeedSettings Seed { get; init; } = HbSeedSettings.Off;
 
     /// <summary>The small-signal grid, never null.</summary>
     public double[] SsGrid    => SsFreqsHz ?? [];
@@ -412,7 +417,12 @@ public sealed partial class HbEngine
             MaxIter: maxIter, Lambda: lambda,
             SsFreqsHz: ssGrid, SsMaxHarm: ssMaxHarm,
             MarginThresholdDb: Analysis.ParseMarginThresholdDb(hba.MarginThresholdExpr),
-            Noise: NoiseRequest(hba, toneFreqsHz.Length, ssGrid is not null, Num));
+            Noise: NoiseRequest(hba, toneFreqsHz.Length, ssGrid is not null, Num))
+        {
+            // brief TRN-8: where the Newton starts, refused by name when a key is malformed
+            Seed = HbSeedSettings.Resolve($"HB '{hba.Name}'", hba.InitialGuess, hba.SeedTolExpr, hba.SeedPeriodsExpr,
+                                          hba.SeedFastBias, "", e => Num(e, double.NaN)),
+        };
     }
 
     /// <summary>
@@ -471,6 +481,19 @@ public sealed partial class HbEngine
         // either multi-tone path, and say so (issue 65; HbEngine.Commensurate.cs).
         if (p.ToneFreqsHz.Length >= 2 && Commensurate(p, _settings.HbMaxMixProducts) is { } commensurate)
             return RunCommensurate(p, commensurate, warmStart);
+        // brief TRN-8 R-trn8-3: tones with no common period have no transient period to seed from
+        if (p.ToneFreqsHz.Length >= 2 && p.Seed.Seeds)
+        {
+            string tones = string.Join(", ", p.ToneFreqsHz.Select(f => (f / 1e9).ToString("G10", CultureInfo.InvariantCulture) + " GHz"));
+            if (p.Seed.Mode == HbInitialGuess.Transient)
+                throw new InvalidOperationException(
+                    $"HB: InitialGuess=transient needs one tone, or tones whose products fall on a common fundamental; {tones} have " +
+                    "none within the retained products, so a transient run has no period to seed from. InitialGuess=fallback starts " +
+                    "them from DC instead.");
+            _netlist.AddNoteOnce("hb-seed-incommensurate",
+                $"HB: the tones {tones} have no common period, so InitialGuess=fallback starts harmonic balance from DC; a transient " +
+                "run has no period to seed from.");
+        }
         // TWO OR MORE tones go to the APFT lattice path. Two tones used to be routed to the
         // rectangular-FFT path instead; AnalysisSettings.HbTwoToneOnLattice (default TRUE since
         // 2026-08-30) is the switch back, and that setting carries the measurements the default
@@ -515,6 +538,12 @@ public sealed partial class HbEngine
         // A commensurate multi-tone run made here keeps the multi-tone band ruler and default drive (issue 65).
         double bandFc       = _commensurateRuler?.Fc ?? f0;
         double defaultDrive = _commensurateRuler?.DefaultDriveHz ?? f0;
+        AntennaArray.BeamSelection.Apply(_netlist, bandFc, setCarrier: true);   // brief-pch-9: a channel's beam, before anything is stamped
+        ApplyToneContext();
+        // brief TRN-8: the seed's transient run sets its own tone context (each source at its own frequency); this puts harmonic
+        // balance's back before anything is stamped again.
+        void ApplyToneContext()
+        {
         foreach (var ec in _netlist.Components)
         {
             if (ec.Model is ICarrierContext carrierCtx) carrierCtx.SetCarrier(bandFc);   // brief-pch-6: a channel's f0
@@ -536,6 +565,7 @@ public sealed partial class HbEngine
             {
                 GiveTunerItsBandRuler(tn, bandFc);
             }
+        }
         }
 
         // ── Extract Y_{N×N}(0) and I_src(0) for DC (k=0): real DC admittance + Norton source.
@@ -571,7 +601,22 @@ public sealed partial class HbEngine
         // when supplied (skips the per-point nonlinear-DC solve — harmonic-balance.md §11); otherwise
         // seed from a fresh DC operating point.
         Complex[,] V;
-        if (warmStart is not null && warmStart.GetLength(0) == N && warmStart.GetLength(1) == K + 1)
+        // brief TRN-8: InitialGuess=transient starts a cold point from the transient seed, and any point that fails from the seed.
+        HbSeed? seed = null;
+        HbNewton.SolveResult? seededSolve = null;
+        Complex[,] SeedFromTransient(Complex[,]? fallback)
+        {
+            seed = HbTransientSeed.Run(_netlist, _settings, f0, K, p.Seed, "HB");
+            ApplyToneContext();
+            return HbTransientSeed.OnInterface(seed, ifNodes, K, fallback);
+        }
+        bool seedNow = p.Seed.Mode == HbInitialGuess.Transient
+                       && !(warmStart is not null && warmStart.GetLength(0) == N && warmStart.GetLength(1) == K + 1);
+        if (seedNow)
+        {
+            V = SeedFromTransient(null);
+        }
+        else if (warmStart is not null && warmStart.GetLength(0) == N && warmStart.GetLength(1) == K + 1)
         {
             V = (Complex[,])warmStart.Clone();
         }
@@ -625,9 +670,17 @@ public sealed partial class HbEngine
                   NonlinearAbsTol           = _settings.NonlinearAbsTol,
               }
             : _settings;
-        // A cold solve first unless the directive says to ramp unconditionally (DriveStepping=Always).
+        // A cold solve first unless the directive says to ramp unconditionally (DriveStepping=Always). A seeded start never ramps:
+        // the seed is already at full drive.
         HbNewton.SolveResult? solveResult = null;
-        if (p.DriveStepping != DcBiasSteppingMode.Always)
+        if (seedNow)
+        {
+            solveResult = seededSolve = HbNewton.Solve(V, yNN, iSrc, f0, K, N,
+                _netlist, ifNodes, gridN, effectiveSettings, p.Tol, p.Lambda, p.GuardHarmonic, cc);
+            trace.AddStep(new HbConvergenceTrace.StepRecord(
+                0.0, solveResult.Iterations, solveResult.Converged, solveResult.IterTrace));
+        }
+        else if (p.DriveStepping != DcBiasSteppingMode.Always)
         {
             solveResult = HbNewton.Solve(V, yNN, iSrc, f0, K, N,
                 _netlist, ifNodes, gridN, effectiveSettings, p.Tol,
@@ -642,7 +695,7 @@ public sealed partial class HbEngine
         // Never = report the failure as it stands; IfNecessary = ramp only when the cold solve did
         // not converge; Always = ramp without trying cold. The line search catches most of what used
         // to land here (HB-P3 M1), so IfNecessary is normally free.
-        if (p.DriveStepping != DcBiasSteppingMode.Never &&
+        if (!seedNow && p.DriveStepping != DcBiasSteppingMode.Never &&
             (solveResult is null || !solveResult.Converged) &&
             // A vacuous tolerance is not a hard solve — every ramp rung LOWERS the drive, so each one
             // is vacuous too. Ramping would spend the whole ladder to arrive at the same refusal.
@@ -686,6 +739,36 @@ public sealed partial class HbEngine
             trace.AddStep(new HbConvergenceTrace.StepRecord(
                 0.0, solveResult.Iterations, solveResult.Converged, solveResult.IterTrace));
         }
+
+        // brief TRN-8: InitialGuess=fallback after a failed DC start, and InitialGuess=transient after a failed warm start (a sweep
+        // point its neighbour did not carry), start again from the transient seed, at full drive with no ramp.
+        // A seed the transient cannot run (an element it does not step, an operating point or step that fails) leaves the DC
+        // start's best-available result, with a note: thrown, it turned a point dc reports as unconverged into a failed run, and
+        // under a sweep the whole sweep (fallback is never worse than dc).
+        Complex[,]? vSeed = null;
+        if (!solveResult.Converged && p.Seed.Seeds && seed is null)
+        {
+            try { vSeed = SeedFromTransient(V); }
+            catch (InvalidOperationException ex)
+            {
+                ApplyToneContext();
+                _netlist.AddNoteOnce("hb-seed-refused", $"HB: the transient seed could not run, so the result is the DC start's: {ex.Message}");
+            }
+        }
+        if (vSeed is not null)
+        {
+            for (int k = 1; k <= K; k++) iSrc[k] = extractor.Extract(k * omega0).ISrc;
+            var again = HbNewton.Solve(vSeed, yNN, iSrc, f0, K, N,
+                _netlist, ifNodes, gridN, effectiveSettings, p.Tol, p.Lambda, p.GuardHarmonic, cc);
+            trace.AddStep(new HbConvergenceTrace.StepRecord(0.0, again.Iterations, again.Converged, again.IterTrace));
+            seededSolve = again;
+            if (again.Converged || !(again.IterTrace.LastOrDefault()?.ResidualNorm >= solveResult.IterTrace.LastOrDefault()?.ResidualNorm))
+            {
+                Array.Copy(vSeed, V, V.Length);
+                solveResult = again;
+            }
+        }
+        if (seed is not null) _netlist.AddNoteOnce("hb-seed", HbTransientSeed.Describe(seed, seededSolve?.Iterations ?? 0, seededSolve?.Converged ?? false));
 
         if (!solveResult.Converged && double.IsFinite(solveResult.VacuousToleranceScale))
         {
@@ -820,7 +903,8 @@ public sealed partial class HbEngine
             _netlist.Nodes.LabeledNames, probeCurrents, opVars, probeVoltages);
         AddWireTemperature(ds, solveResult.Converged,
             [.. Enumerable.Range(0, K + 1).Select(k => k * f0)], k => backSolver.GetSolution(k, 0));
-        PropagationChannelReport.Add(ds, _netlist, f0, hb: true);
+        PropagationChannelReport.Add(ds, _netlist, f0, hb: true, solution: k => backSolver.GetSolution(k, 0));
+        if (p.Seed.Seeds) HbTransientSeed.AddCubes(ds, seed, seededSolve?.Iterations ?? 0);   // brief TRN-8 R-trn8-6
 
         // ── The WSProbe small-signal sweep (brief-wsprobe-5) ──────────────────
         // The conversion-matrix solve linearises THIS converged periodic steady state, which is why
@@ -990,6 +1074,7 @@ public sealed partial class HbEngine
 
         // ── Configure P1Tone / PnTone sources with tone context (must precede extraction) ──
         double fcTwoTone = (f1 + f2) / 2.0;
+        AntennaArray.BeamSelection.Apply(_netlist, fcTwoTone, setCarrier: true);   // brief-pch-9: a channel's beam, before anything is stamped
         foreach (var ec in _netlist.Components)
         {
             if (ec.Model is ICarrierContext carrierCtx) carrierCtx.SetCarrier(fcTwoTone);   // brief-pch-6: a channel's f0
@@ -1307,6 +1392,7 @@ public sealed partial class HbEngine
         for (int t = 0; t < T; t++) fc += f[t];
         fc /= T;
 
+        AntennaArray.BeamSelection.Apply(_netlist, fc, setCarrier: true);   // brief-pch-9: a channel's beam, before anything is stamped
         foreach (var ec in _netlist.Components)
         {
             if (ec.Model is ICarrierContext carrierCtx) carrierCtx.SetCarrier(fc);   // brief-pch-6: a channel's f0

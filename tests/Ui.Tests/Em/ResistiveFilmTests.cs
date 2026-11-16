@@ -257,8 +257,12 @@ public sealed class ResistiveFilmTests
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 File.WriteAllBytes(path, Encoding.UTF8.GetBytes(text));
             }
-            Assert.Equal(File.ReadAllText(path), text);
+            // Every number to 12 significant digits, the rest byte for byte: the grid's last digit follows the platform's maths
+            // library (0.00031477989759620575 on one, 0.0003147798975962058 on another), not this code.
+            Assert.Equal(Digits12(File.ReadAllText(path)), Digits12(text));
         }
+        static string Digits12(string t) => Regex.Replace(t, @"-?\d+\.\d+(?:[eE][-+]?\d+)?", m =>
+            double.Parse(m.Value, System.Globalization.CultureInfo.InvariantCulture).ToString("G12", System.Globalization.CultureInfo.InvariantCulture));
 
         var settings = PalaceSettings.Resolve(setup.Palace);
         var low = GmshGeoWriter.Write(problem, settings);

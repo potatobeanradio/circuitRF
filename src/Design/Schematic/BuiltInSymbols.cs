@@ -67,6 +67,9 @@ public static class BuiltInSymbols
     private static readonly Symbol _vdcSrc       = BuildVdc();
     private static readonly Symbol _toneSrc      = BuildToneSource();
     private static readonly Symbol _iToneSrc     = BuildCurrentToneSource();
+    private static readonly Dictionary<SymbolKind, Symbol> _waveSrc = BuildWaveformSources();
+    private static readonly Symbol _idcSrc       = BuildIdc();
+    private static readonly Symbol _vswitch      = BuildVSwitch();
     private static readonly Symbol _vccs         = BuildVccs();
     private static readonly Symbol _vcvs         = BuildVcvs();
     private static readonly Symbol _opAmp        = BuildOpAmp(supplies: false);
@@ -321,6 +324,11 @@ public static class BuiltInSymbols
             case SymbolKind.Vdc:        return _vdcSrc;
             case SymbolKind.ToneSource: return _toneSrc;
             case SymbolKind.CurrentToneSource: return _iToneSrc;
+            case SymbolKind.Idc:        return _idcSrc;
+            case SymbolKind.VSwitch:    return _vswitch;
+            case SymbolKind.VPulse or SymbolKind.VPwl or SymbolKind.VExp or SymbolKind.VSffm or SymbolKind.VExpr
+              or SymbolKind.IPulse or SymbolKind.IPwl or SymbolKind.IExp or SymbolKind.ISffm or SymbolKind.IExpr:
+                return _waveSrc[kind];
             case SymbolKind.Vccs:       return _vccs;
             case SymbolKind.Vcvs:       return _vcvs;
             case SymbolKind.OpAmp:      return _opAmp;
@@ -1015,6 +1023,99 @@ public static class BuiltInSymbols
         Sine(0,    0,  22,    1,   70, SineAxis.Horizontal),  // AC mark — identical to VTone's
         Poly(true, 0, -160, -20, -114, 20, -114),   // current-direction arrowhead, tip toward pin 1
     ], SymbolKind.CurrentToneSource);
+
+    // ── Waveform sources (brief-trn-2 R-trn2-4) — VTone's circle and leads, the body drawing the waveform's SHAPE instead of
+    // the sine: a pulse train, a piecewise-linear ramp, a rise and fall of exponentials, a sine whose cycles bunch and spread
+    // (SFFM), and f(t) for an expression. A voltage type carries VTone's + and −, a current type ITone's arrowhead on the top
+    // lead, so the polarity cue of each family is unchanged. Pins: (0,-200) + / (0,+200) −.
+
+    private static Dictionary<SymbolKind, Symbol> BuildWaveformSources()
+    {
+        // Each shape is a polyline in the body, x across −40..40, y −22 (up) .. 22.
+        static List<SymbolPrimitive> Polyline(IReadOnlyList<(double X, double Y)> pts)
+        {
+            var list = new List<SymbolPrimitive>();
+            for (int i = 1; i < pts.Count; i++) list.Add(L(pts[i - 1].X, pts[i - 1].Y, pts[i].X, pts[i].Y));
+            return list;
+        }
+        static IReadOnlyList<(double, double)> Sampled(Func<double, double> y, int n = 24)
+        {
+            var pts = new List<(double, double)>();
+            for (int i = 0; i <= n; i++) { double u = (double)i / n; pts.Add((-40 + 80 * u, y(u))); }
+            return pts;
+        }
+        var shapes = new Dictionary<string, List<SymbolPrimitive>>
+        {
+            ["Pulse"] = Polyline([(-40, 16), (-26, 16), (-20, -16), (2, -16), (8, 16), (22, 16), (28, -16), (40, -16)]),
+            ["Pwl"] = Polyline([(-40, 16), (-24, -10), (-6, -2), (12, -20), (40, 16)]),
+            ["Exp"] = Polyline(Sampled(u => u < 0.5
+                ? 16 - 34 * (1 - Math.Exp(-u / 0.1))
+                : 16 - 34 * (1 - Math.Exp(-0.5 / 0.1)) + 34 * (1 - Math.Exp(-(u - 0.5) / 0.1)), 32)),
+            ["Sffm"] = Polyline(Sampled(u => -18 * Math.Sin(2 * Math.PI * (2.5 * u + 0.35 * Math.Sin(2 * Math.PI * u))), 48)),
+            ["Expr"] = [Txt("f(t)", 0, 0, fontSize: 46, fontStyle: SymbolFontStyle.Italic)],
+        };
+        var map = new Dictionary<SymbolKind, Symbol>();
+        foreach (var (kind, shape, current) in new[]
+                 {
+                     (SymbolKind.VPulse, "Pulse", false), (SymbolKind.VPwl, "Pwl", false), (SymbolKind.VExp, "Exp", false),
+                     (SymbolKind.VSffm, "Sffm", false), (SymbolKind.VExpr, "Expr", false),
+                     (SymbolKind.IPulse, "Pulse", true), (SymbolKind.IPwl, "Pwl", true), (SymbolKind.IExp, "Exp", true),
+                     (SymbolKind.ISffm, "Sffm", true), (SymbolKind.IExpr, "Expr", true),
+                 })
+        {
+            var prims = new List<SymbolPrimitive>
+            {
+                L(0, -200, 0, -60),                 // top lead
+                Circ(0, 0, 60),                     // body circle (stroked)
+                L(0, 60, 0, 200),                   // bottom lead
+            };
+            prims.AddRange(shapes[shape]);
+            if (current)
+                prims.Add(Poly(true, 0, -160, -20, -114, 20, -114));   // ITone's arrowhead, tip toward pin 1
+            else
+            {
+                prims.Add(Txt("+", -25, -130, fontSize: PolarityFontSize, colorRole: SymbolColorRole.SymbolPlus));
+                prims.Add(Txt("−", -25, +130, fontSize: PolarityFontSize));
+            }
+            map[kind] = Sym(prims, kind);
+        }
+        return map;
+    }
+
+    // ── Idc — the DC current source: the textbook circle with an arrow inside, pointing at pin 1 (+), where a positive Idc is
+    // delivered. No sine: it is constant. Pins: (0,-200) + / (0,+200) −.
+
+    private static Symbol BuildIdc() => Sym([
+        L(   0, -200,   0,  -60),           // top lead
+        Circ(  0,    0,  60),                // body circle (stroked)
+        L(   0,   60,   0,  200),           // bottom lead
+        L(   0,   38,   0,  -14),           // arrow shaft
+        Poly(true, 0, -40, -16, -10, 16, -10),   // arrowhead, tip toward pin 1
+    ], SymbolKind.Idc);
+
+    // ── VSwitch (brief-trn-3 R-trn3-4) — the voltage-controlled switch. Pins: [0] p (0,-200), [1] n (0,+200), [2] ctrl+ (-300,-100),
+    // [3] ctrl- (-300,+100), VCCS's layout. The switched pair is a blade hinged at the lower contact, drawn open, swinging towards
+    // the upper one; the control leads stop at an actuator box with + and −, and a dashed line from the box to the blade's middle
+    // says what moves it. As on the VCCS, the control leads do not touch the switched path: they sense a voltage and carry nothing.
+
+    private static Symbol BuildVSwitch() => Sym([
+        L(   0, -200,    0,  -70),          // lead to the upper contact (p)
+        Circ(  0,  -60,   10, filled: true), // upper contact
+        L(   0,  200,    0,   70),          // lead to the lower contact (n)
+        Circ(  0,   60,   10, filled: true), // lower contact, the hinge
+        L(   0,   60,   48,  -52),          // the blade, open
+        L(-300, -100, -200, -100),          // control lead, upper (ctrl+)
+        L(-300,  100, -200,  100),          // control lead, lower (ctrl-)
+        Poly(false, -200, -40, -140, -40, -140, 40, -200, 40),   // actuator
+        L(-200,  -40, -200, -100),          // actuator to ctrl+
+        L(-200,   40, -200,  100),          // actuator to ctrl-
+        L(-140,    0, -110,    0),          // the link, dashed
+        L( -90,    0,  -60,    0),
+        L( -40,    0,  -10,    0),
+        L(  10,    0,   22,    0),
+        Txt("+", -235, -130, fontSize: PolarityFontSize, colorRole: SymbolColorRole.SymbolPlus),
+        Txt("−", -235, +130, fontSize: PolarityFontSize),
+    ], SymbolKind.VSwitch);
 
     // ── VCCS — ideal voltage-controlled current source ────────────────────────
     // Pins: [0] out+ (0,-200), [1] out- (0,+200), [2] ctrl+ (-300,-100), [3] ctrl- (-300,+100).
@@ -2295,18 +2396,34 @@ public static class BuiltInSymbols
     // antenna's triangle towards the receive antenna. Each antenna spans y in [-21, 21], centred in the body, so the drawing
     // reads as a radio path and says which way it runs.
 
-    private static Symbol BuildPropagationChannel() => Sym([
-        RRect(0, 0, 200, 200, 12),                    // body, x in [-100,100]  y in [-100,100]
-        L(-300, 0, -100, 0),                          // the tx lead, to the body's edge
-        L(-55, 21, -55, -1),                          // the transmit antenna: its mast
-        Poly(false, -67, -21, -43, -21, -55, -1),     // and its triangle, on its point
-        A(-55, -11, 24, -35, 70),                     // the waves, leaving towards the receive antenna
-        A(-55, -11, 37, -35, 70),
-        A(-55, -11, 50, -35, 70),
-        L(55, 21, 55, -1),                            // the receive antenna
-        Poly(false, 43, -21, 67, -21, 55, -1),
-        L(100, 0, 300, 0),                            // the rx lead, from the body's edge
-    ], SymbolKind.PropagationChannel);
+    private static Symbol BuildPropagationChannel() => PrimitivesForPropagationChannel(2);
+
+    /// <summary>
+    /// brief-pch-8 R-pch8-1 — the channel drawn with only the pins it has: <paramref name="pins"/> is
+    /// <see cref="SymbolPortDefs"/>'s code for it (2 both, 1 the receive pin alone, 3 the transmit pin alone, 0 none: an end that
+    /// names an instance has no pin, and its lead is not drawn).
+    /// </summary>
+    public static Symbol PrimitivesForPropagationChannel(int pins)
+    {
+        bool tx = pins is 2 or 3, rx = pins is 1 or 2;
+        var prims = new List<SymbolPrimitive> { RRect(0, 0, 200, 200, 12) };      // body, x in [-100,100]  y in [-100,100]
+        if (tx) prims.Add(L(-300, 0, -100, 0));                                   // the tx lead, to the body's edge
+        prims.AddRange([
+            L(-55, 21, -55, -1),                          // the transmit antenna: its mast
+            Poly(false, -67, -21, -43, -21, -55, -1),     // and its triangle, on its point
+            A(-55, -11, 24, -35, 70),                     // the waves, leaving towards the receive antenna
+            A(-55, -11, 37, -35, 70),
+            A(-55, -11, 50, -35, 70),
+            L(55, 21, 55, -1),                            // the receive antenna
+            Poly(false, 43, -21, 67, -21, 55, -1),
+        ]);
+        if (rx) prims.Add(L(100, 0, 300, 0));                                     // the rx lead, from the body's edge
+        // the pins are the code's (Sym treats 0 as "the default"), so a channel with no pin is built here
+        var defs = SymbolPortDefs.For(SymbolKind.PropagationChannel, pins);
+        var pinList = defs.Select((d, i) => new SymbolPin(d.LocalX, d.LocalY, i, d.Name)).ToList();
+        SymbolPinSides.Assign(pinList);
+        return new Symbol(prims, pinList);
+    }
 
     // ── Phase Shifter — a square carrying φ (brief-paa-4) ─────────────────────
     // Pins: (-300,0) · (+300,0), interchangeable, as the delay's are. The delay's body with an italic φ, the letter a phase is

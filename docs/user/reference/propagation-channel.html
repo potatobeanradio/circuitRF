@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — The Propagation Channel: a radio link in one schematic</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/propagation-channel.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="index.html">Reference Guide</a>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Propagation Channel</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="chain-budget.html" title="Previous: RF Chain Budget"><span class="arrow">‹</span><span class="name">RF Chain Budget</span></a>
+      <a class="next" href="simulations.html" title="Next: Simulations"><span class="name">Simulations</span><span class="arrow">›</span></a>
+    </nav>
+  </div>
+
+  <h1>The Propagation Channel: a radio link in one schematic</h1>
+  <p class="lede">Everything between a transmit antenna and a receive antenna that is not an antenna — path loss, shadowing, multipath, Doppler, rain and the atmosphere — as one component, so a transmitter, the path and a receiver are simulated together and read as received power, EVM, bit errors and outage.</p>
+
+<nav class="toc">
+    <h2>On this page</h2>
+    <ol>
+      <li><a href="#what">What it is, and what it is not</a></li>
+      <li><a href="#choosing">Choosing a model</a></li>
+      <li><a href="#models">The models</a></li>
+      <li><a href="#ends">Pin ends and array ends</a></li>
+      <li><a href="#regime">The regime readouts</a></li>
+      <li><a href="#fading">Fading and multipath</a></li>
+      <li><a href="#drops">Drops: a Monte Carlo over realizations</a></li>
+      <li><a href="#far-end">The far end: equalizer, frequency offset and bit errors</a></li>
+      <li><a href="#beam">Picking the beam</a></li>
+      <li><a href="#satellite">Satellite links</a></li>
+      <li><a href="#far-field">The far-field warning</a></li>
+      <li><a href="#examples">Examples</a></li>
+    </ol>
+  </nav>
+<p>The <strong>Propagation Channel</strong> (System, <code>.cnl</code> type <code>PropagationChannel</code>, prefix <code>CH</code>) carries what arrives at a transmit
+antenna's terminals to a receive antenna's terminals. The transmitter's amplifiers, the antennas or arrays, the receiver's
+noise and linearity are ordinary parts around it, simulated with it in one run, and what the run reports is what a system
+designer reads at the far end: received power, SINR, EVM after equalization, bit errors, outage. Its symbol and every
+parameter are on the <a href="components.html#propagationchannel">Components</a> page; this page says which model to pick and what
+each result means.</p>
+<h2 id="what">What it is, and what it is not</h2>
+<p><strong>A channel predicts distributions, not a site.</strong> Every model here is statistical: a path loss and its spread for an
+environment, a delay profile and its fading for a kind of place. A run is one realization of that statistic, a <strong>drop</strong>, and
+the answer to &quot;will this link work&quot; is a percentage of drops, which a sweep over <code>Drop</code> gives. A particular street, building
+or hill is not in any of them. A ray tracer's output can be read in as a ray list (<code>Multipath=rays</code>) and a measured terrain
+profile as a CSV (<code>P526</code>, <code>P1812</code>), and nothing else about a site is: no map, terrain or clutter database is bundled.</p>
+<p><strong>It is one way.</strong> It carries the transmit end to the receive end and nothing back, so its S12 is 0. Power scattered back
+returns at the square of the path gain, −120 dB on a 60 dB path. A reverse link is a second channel; <code>Reverse=CH1</code> makes it
+the same realization with its ends exchanged.</p>
+<p><strong>It adds no noise.</strong> A receive pin is thermal at the antenna temperature <code>RxTant</code>; a receive array's noise is its own,
+from what its elements' patterns see. The channel itself is noiseless.</p>
+<p><strong>What each analysis sees:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Analysis</th>
+<th>The channel</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DC</td>
+<td>Open; the pins are their impedances</td>
+</tr>
+<tr>
+<td>S-parameter, noise</td>
+<td>A two-port frozen at <code>TimeOffset</code>: S21 = H(f), S12 = 0</td>
+</tr>
+<tr>
+<td>Harmonic balance</td>
+<td>The same frozen H at every tone, each at its own frequency, with no Doppler shift</td>
+</tr>
+<tr>
+<td>Envelope</td>
+<td>Every ray delayed, faded and turned by its Doppler as the run steps</td>
+</tr>
+</tbody>
+</table>
+<p>The bulk delay d/c (3.3 µs at 1 km, 3.6 ms to a satellite 1,075 km away) is reported as <code>link:CH1:Delay0_s</code> and never
+simulated: the envelope adds one step of latency plus each ray's delay in excess of the first.</p>
+<h2 id="choosing">Choosing a model</h2>
+<p>Pick by where the antennas are and the band. Each model refuses outside the range its document gives rather than
+extrapolating, and the refusal names the range.</p>
+<table>
+<thead>
+<tr>
+<th>Where</th>
+<th>Band</th>
+<th><code>PathLoss=</code></th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Anywhere with a clear line of sight, or to check a bench</td>
+<td>any</td>
+<td><code>free</code></td>
+<td>ITU-R P.525: λ/4πd between isotropic antennas</td>
+</tr>
+<tr>
+<td>A measured or quoted exponent</td>
+<td>any</td>
+<td><code>logdist</code>, <code>multislope</code></td>
+<td>Your numbers; <code>multislope</code> takes breakpoints</td>
+</tr>
+<tr>
+<td>A mast over open, flat ground</td>
+<td>any</td>
+<td><code>tworay</code></td>
+<td>The direct and ground-reflected rays: the deep nulls and the fourth-power fall-off beyond the break</td>
+</tr>
+<tr>
+<td>Cellular: macro (<code>uma</code>), street-canyon micro (<code>umi</code>), rural (<code>rma</code>)</td>
+<td>0.5–100 GHz (RMa to 30)</td>
+<td><code>38901</code></td>
+<td>3GPP TR 38.901: path loss, line-of-sight probability, shadowing, and the delay and angle spreads; <code>Multipath=scenario</code> draws a whole drop</td>
+</tr>
+<tr>
+<td>Indoor office, mall, factory hall</td>
+<td>0.5–100 GHz</td>
+<td><code>38901</code> with <code>inh-…</code> or <code>inf-…</code></td>
+<td>Indoor hotspot and indoor factory scenarios</td>
+</tr>
+<tr>
+<td>Indoor, by environment, with floors between</td>
+<td>0.3–300 GHz</td>
+<td><code>P1238</code></td>
+<td>ITU-R P.1238: office, corridor, industrial, conference room; <code>Floors</code> and <code>Partitions</code> add their losses</td>
+</tr>
+<tr>
+<td>Outdoor short range: below or above rooftops, terminals at street level, around one corner</td>
+<td>0.3–300 GHz by mode</td>
+<td><code>P1411</code></td>
+<td>ITU-R P.1411</td>
+</tr>
+<tr>
+<td>Over an obstacle: one edge, the Earth's curvature, or a terrain profile</td>
+<td>from 10–30 MHz</td>
+<td><code>P526</code></td>
+<td>ITU-R P.526 diffraction</td>
+</tr>
+<tr>
+<td>Point to area over a terrain profile with clutter</td>
+<td>30 MHz–6 GHz</td>
+<td><code>P1812</code></td>
+<td>ITU-R P.1812, at a time and location percentage</td>
+</tr>
+<tr>
+<td>Earth to a satellite: low, medium or geostationary orbit</td>
+<td>the atmospheric terms' ranges</td>
+<td><code>satellite</code></td>
+<td>Slant range, latency and Doppler from the orbit; TR 38.811's terminal environments; P.618 rain, P.676 gas, P.840 clouds, P.531 ionosphere</td>
+</tr>
+</tbody>
+</table>
+<p>The added losses go on top of any model, each a line of its own in the loss breakdown: <code>Partitions</code> (walls on the path),
+<code>Clutter</code> (ITU-R P.2108), <code>BuildingEntry</code> (P.2109), <code>Vegetation</code> (P.833), <code>PolLoss</code>, <code>PointingLoss</code>, and the
+atmosphere (<code>Gas</code>, <code>Rain</code>, <code>Clouds</code>, <code>Scintillation</code>, <code>Ionosphere</code>) taken at one <code>Availability</code>. On a terrestrial path rain
+is P.530's, on a satellite path P.618's.</p>
+<h2 id="models">The models</h2>
+<p>Every model, from the registry the channel, the Chain Budget and <code>circuitrf reference</code> all read:</p>
+<table class="param-table">
+<thead><tr><th><code>PathLoss=</code></th><th>Model</th><th>Document</th><th>Its own parameters</th><th>Valid</th></tr></thead><tbody>
+<tr><td class="nowrap"><code>free</code></td><td>Free space</td><td>ITU-R P.525-5 (11/2024)</td><td>—</td><td>any frequency and distance: λ/4πd between isotropic antennas</td></tr>
+<tr><td class="nowrap"><code>logdist</code></td><td>Log-distance</td><td>log-distance: free space to d0, then a stated exponent per segment</td><td><code>n</code>, <code>d0</code>, <code>Sigma</code></td><td>any frequency; free space to d0, the stated exponent beyond: the numbers are yours, from a measurement or a reference</td></tr>
+<tr><td class="nowrap"><code>multislope</code></td><td>Multi-slope log-distance</td><td>log-distance: free space to d0, then a stated exponent per segment</td><td><code>Breaks</code>, <code>Exponents</code>, <code>d0</code>, <code>Sigma</code></td><td>any frequency; free space to d0, one stated exponent per segment between increasing breakpoints</td></tr>
+<tr><td class="nowrap"><code>tworay</code></td><td>Two-ray ground reflection</td><td>two-ray: direct and flat-ground reflected rays, Fresnel reflection coefficient</td><td><code>GroundEr</code>, <code>GroundSigma</code>, <code>Polarization</code></td><td>line of sight over flat ground, any frequency; both heights above 0</td></tr>
+<tr><td class="nowrap"><code>38901</code></td><td>3GPP TR 38.901 scenarios</td><td>3GPP TR 38.901 V18.0.0 (2024-05)</td><td><code>Scenario</code>, <code>Los</code>, <code>StreetWidth</code>, <code>BuildingHeight</code>, <code>ClutterDensity</code>, <code>ClutterHeight</code>, <code>ClutterSize</code>, <code>HallLength</code>, <code>HallWidth</code>, <code>HallHeight</code></td><td>0.5 to 100 GHz (RMa to 30 GHz); UMa and UMi 10 m to 5 km, RMa 10 m to 10 km in line of sight and 5 km without, InH 1 to 150 m, InF 1 to 600 m; the report&#39;s base station and terminal heights</td></tr>
+<tr><td class="nowrap"><code>P1238</code></td><td>ITU-R P.1238 indoor</td><td>ITU-R P.1238-13 (09/2025)</td><td><code>Environment</code>, <code>Los</code>, <code>Floors</code>, <code>Building</code>, <code>FloorLoss</code></td><td>0.3 to 300 GHz and 2 to 160 m, each environment and state over its own row of the recommendation&#39;s Table 2; floor losses at 0.9, 1.8 to 2, 2.4, 3.5, 5.2 and 5.8 GHz, or stated</td></tr>
+<tr><td class="nowrap"><code>P1411</code></td><td>ITU-R P.1411 short-range outdoor</td><td>ITU-R P.1411-13 (09/2025)</td><td><code>Mode</code>, <code>Environment</code>, <code>Los</code>, <code>Urban</code>, <code>Locations</code>, <code>CornerDistance</code>, <code>X1</code>, <code>X2</code>, <code>W1</code>, <code>W2</code>, <code>CornerAngle</code>, <code>Chamfered</code>, <code>RoadHeight</code>, <code>n</code></td><td>below and above roof: 0.45 to 300 GHz over the distances of each environment&#39;s row; terminals near street level: 300 MHz to 3 GHz, to 3 km; around a corner: 0.8 to 38 GHz</td></tr>
+<tr><td class="nowrap"><code>P526</code></td><td>ITU-R P.526 diffraction</td><td>ITU-R P.526-16 (11/2025)</td><td><code>Mode</code>, <code>EdgeHeight</code>, <code>EdgeDistance</code>, <code>EarthRadiusFactor</code>, <code>GroundEr</code>, <code>GroundSigma</code>, <code>Polarization</code>, <code>Profile</code> (a terrain profile)</td><td>knife edge and a general path over a profile from 30 MHz, a smooth spherical Earth from 10 MHz, any distance</td></tr>
+<tr><td class="nowrap"><code>satellite</code></td><td>Satellite path</td><td>circular-orbit geometry; 3GPP TR 38.811 V15.4.0 (2020-09)</td><td><code>Altitude</code>, <code>Elevation</code>, <code>Pass</code>, <code>Scenario</code>, <code>Los</code></td><td>a circular orbit of any altitude, elevation 0 to 90&#176; (10&#176; and up with a TR 38.811 scenario); the atmospheric terms each over their own recommendation&#39;s range</td></tr>
+<tr><td class="nowrap"><code>P1812</code></td><td>ITU-R P.1812 point-to-area over a profile</td><td>ITU-R P.1812-8 (09/2025)</td><td><code>Profile</code>, <code>Time</code>, <code>Locations</code>, <code>DeltaN</code>, <code>N0</code>, <code>Latitude</code>, <code>CoastTx</code>, <code>CoastRx</code>, <code>SigmaL</code>, <code>Resolution</code>, <code>Polarization</code> (a terrain profile)</td><td>30 MHz to 6 GHz, paths 0.25 to 3000 km over a terrain profile, antennas 1 to 3000 m above ground, 1 to 50 % of time, 1 to 99 % of locations, latitude within &#177;80&#176;</td></tr>
+</tbody></table>
+<p>Each model's own parameters, written on the channel beside <code>PathLoss=</code>:</p>
+<h3 id="model-logdist"><code>logdist</code></h3>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
+<tr><td class="nowrap"><code>n</code></td><td>—</td><td><code>2</code></td><td>0.1 to 10</td><td>the distance exponent beyond d0</td></tr>
+<tr><td class="nowrap"><code>d0</code></td><td>m</td><td><code>1</code></td><td>0.001 to 1000000</td><td>the reference distance: free space up to it</td></tr>
+<tr><td class="nowrap"><code>Sigma</code></td><td>dB</td><td><code>0</code></td><td>0 to 30</td><td>the shadowing standard deviation</td></tr>
+</tbody></table>
+<h3 id="model-multislope"><code>multislope</code></h3>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
+<tr><td class="nowrap"><code>Breaks</code></td><td>m</td><td>—</td><td>a comma-separated list</td><td>the breakpoints, increasing, comma-separated</td></tr>
+<tr><td class="nowrap"><code>Exponents</code></td><td>—</td><td><code>2</code></td><td>a comma-separated list</td><td>one exponent per segment (one more than the breakpoints)</td></tr>
+<tr><td class="nowrap"><code>d0</code></td><td>m</td><td><code>1</code></td><td>0.001 to 1000000</td><td>the reference distance: free space up to it</td></tr>
+<tr><td class="nowrap"><code>Sigma</code></td><td>dB</td><td><code>0</code></td><td>0 to 30</td><td>the shadowing standard deviation</td></tr>
+</tbody></table>
+<h3 id="model-tworay"><code>tworay</code></h3>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
+<tr><td class="nowrap"><code>GroundEr</code></td><td>—</td><td><code>15</code></td><td>1 to 100</td><td>the ground&#39;s relative permittivity</td></tr>
+<tr><td class="nowrap"><code>GroundSigma</code></td><td>S/m</td><td><code>0.005</code></td><td>0 to 100</td><td>the ground&#39;s conductivity</td></tr>
+<tr><td class="nowrap"><code>Polarization</code></td><td>—</td><td><code>vertical</code></td><td><code>vertical</code>, <code>horizontal</code></td><td>the polarization</td></tr>
+</tbody></table>
+<h3 id="model-38901"><code>38901</code></h3>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
+<tr><td class="nowrap"><code>Scenario</code></td><td>—</td><td><code>UMa</code></td><td><code>uma</code>, <code>umi</code>, <code>rma</code>, <code>inh-mixed</code>, <code>inh-open</code>, <code>inf-sl</code>, <code>inf-dl</code>, <code>inf-sh</code>, <code>inf-dh</code>, <code>inf-hh</code></td><td>the scenario</td></tr>
+<tr><td class="nowrap"><code>Los</code></td><td>—</td><td><code>auto</code></td><td><code>auto</code>, <code>los</code>, <code>nlos</code></td><td>the propagation state: auto gives the more probable one, with its probability</td></tr>
+<tr><td class="nowrap"><code>StreetWidth</code></td><td>m</td><td><code>20</code></td><td>5 to 50</td><td>RMa: the average street width W</td></tr>
+<tr><td class="nowrap"><code>BuildingHeight</code></td><td>m</td><td><code>5</code></td><td>5 to 50</td><td>RMa: the average building height h</td></tr>
+<tr><td class="nowrap"><code>ClutterDensity</code></td><td>—</td><td>—</td><td>0.000001 to 0.999999</td><td>InF: the fraction of the hall&#39;s area occupied by clutter (blank: the sub-scenario&#39;s)</td></tr>
+<tr><td class="nowrap"><code>ClutterHeight</code></td><td>m</td><td>—</td><td>0 to 25</td><td>InF: the effective clutter height (blank: the sub-scenario&#39;s)</td></tr>
+<tr><td class="nowrap"><code>ClutterSize</code></td><td>m</td><td>—</td><td>0.01 to 100</td><td>InF: the typical clutter size (blank: the sub-scenario&#39;s)</td></tr>
+<tr><td class="nowrap"><code>HallLength</code></td><td>m</td><td>—</td><td>1 to 1000</td><td>InF: the hall&#39;s length (blank: the sub-scenario&#39;s)</td></tr>
+<tr><td class="nowrap"><code>HallWidth</code></td><td>m</td><td>—</td><td>1 to 1000</td><td>InF: the hall&#39;s width (blank: the sub-scenario&#39;s)</td></tr>
+<tr><td class="nowrap"><code>HallHeight</code></td><td>m</td><td>—</td><td>1 to 100</td><td>InF: the hall&#39;s height (blank: the sub-scenario&#39;s)</td></tr>
+</tbody></table>
+<h3 id="model-p1238"><code>P1238</code></h3>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
+<tr><td class="nowrap"><code>Environment</code></td><td>—</td><td><code>office</code></td><td><code>office</code>, <code>corridor</code>, <code>industrial</code>, <code>conference</code></td><td>the indoor environment</td></tr>
+<tr><td class="nowrap"><code>Los</code></td><td>—</td><td><code>los</code></td><td><code>los</code>, <code>nlos</code></td><td>line of sight or not</td></tr>
+<tr><td class="nowrap"><code>Floors</code></td><td>—</td><td><code>0</code></td><td>0 to 50</td><td>floors between the stations</td></tr>
+<tr><td class="nowrap"><code>Building</code></td><td>—</td><td><code>office</code></td><td><code>office</code>, <code>commercial</code>, <code>residential</code></td><td>the building type for the floor penetration loss</td></tr>
+<tr><td class="nowrap"><code>FloorLoss</code></td><td>dB</td><td>—</td><td>0 to 200</td><td>a stated floor penetration loss (blank: the recommendation&#39;s table)</td></tr>
+</tbody></table>
+<h3 id="model-p1411"><code>P1411</code></h3>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
+<tr><td class="nowrap"><code>Mode</code></td><td>—</td><td><code>belowroof</code></td><td><code>belowroof</code>, <code>aboveroof</code>, <code>lowheight</code>, <code>corner</code></td><td>which of the recommendation&#39;s models</td></tr>
+<tr><td class="nowrap"><code>Environment</code></td><td>—</td><td><code>urbanlowrise</code></td><td><code>urbanhighrise</code>, <code>urbanlowrise</code>, <code>suburban</code>, <code>residential</code></td><td>belowroof, aboveroof and corner: the environment</td></tr>
+<tr><td class="nowrap"><code>Los</code></td><td>—</td><td><code>los</code></td><td><code>los</code>, <code>nlos</code></td><td>belowroof, aboveroof: line of sight or not</td></tr>
+<tr><td class="nowrap"><code>Urban</code></td><td>—</td><td><code>urban</code></td><td><code>suburban</code>, <code>urban</code>, <code>denseurban</code></td><td>lowheight: the urban category</td></tr>
+<tr><td class="nowrap"><code>Locations</code></td><td>%</td><td><code>50</code></td><td>1 to 99</td><td>lowheight: the percentage of locations the loss is not exceeded at</td></tr>
+<tr><td class="nowrap"><code>CornerDistance</code></td><td>m</td><td>—</td><td>0 to 3000</td><td>lowheight: the corner distance when known (blank: the recommendation&#39;s statistics)</td></tr>
+<tr><td class="nowrap"><code>X1</code></td><td>m</td><td>—</td><td>0 to 10000</td><td>corner: distance along the line-of-sight street to the crossing</td></tr>
+<tr><td class="nowrap"><code>X2</code></td><td>m</td><td>—</td><td>0 to 10000</td><td>corner: distance from the crossing along the second street</td></tr>
+<tr><td class="nowrap"><code>W1</code></td><td>m</td><td><code>20</code></td><td>1 to 200</td><td>corner: width of the line-of-sight street</td></tr>
+<tr><td class="nowrap"><code>W2</code></td><td>m</td><td><code>20</code></td><td>1 to 200</td><td>corner: width of the second street</td></tr>
+<tr><td class="nowrap"><code>CornerAngle</code></td><td>deg</td><td><code>90</code></td><td>0 to 180</td><td>corner: the angle between the streets</td></tr>
+<tr><td class="nowrap"><code>Chamfered</code></td><td>—</td><td><code>no</code></td><td><code>no</code>, <code>yes</code></td><td>corner, above 2 GHz: a chamfered corner building</td></tr>
+<tr><td class="nowrap"><code>RoadHeight</code></td><td>m</td><td><code>0</code></td><td>0 to 10</td><td>corner, up to 15 GHz: the effective road height hs (traffic)</td></tr>
+<tr><td class="nowrap"><code>n</code></td><td>—</td><td><code>2</code></td><td>1 to 5</td><td>corner, above 15 GHz: the line-of-sight street&#39;s loss exponent</td></tr>
+</tbody></table>
+<h3 id="model-p526"><code>P526</code></h3>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
+<tr><td class="nowrap"><code>Mode</code></td><td>—</td><td><code>profile</code></td><td><code>knifeedge</code>, <code>sphere</code>, <code>profile</code></td><td>knifeedge: one edge; sphere: a smooth Earth; profile: a general path over a profile</td></tr>
+<tr><td class="nowrap"><code>EdgeHeight</code></td><td>m</td><td><code>0</code></td><td>-100000 to 100000</td><td>knifeedge: the edge&#39;s height above the line between the antennas (negative below)</td></tr>
+<tr><td class="nowrap"><code>EdgeDistance</code></td><td>m</td><td>—</td><td>0 to 100000000</td><td>knifeedge: the edge&#39;s distance from the transmitter</td></tr>
+<tr><td class="nowrap"><code>EarthRadiusFactor</code></td><td>—</td><td><code>1.333333333</code></td><td>0.1 to 100</td><td>sphere, profile: the effective Earth-radius factor k</td></tr>
+<tr><td class="nowrap"><code>GroundEr</code></td><td>—</td><td><code>22</code></td><td>1 to 100</td><td>sphere, profile: the ground&#39;s relative permittivity</td></tr>
+<tr><td class="nowrap"><code>GroundSigma</code></td><td>S/m</td><td><code>0.003</code></td><td>0 to 100</td><td>sphere, profile: the ground&#39;s conductivity</td></tr>
+<tr><td class="nowrap"><code>Polarization</code></td><td>—</td><td><code>vertical</code></td><td><code>vertical</code>, <code>horizontal</code></td><td>the polarization</td></tr>
+<tr><td class="nowrap"><code>Profile</code></td><td>—</td><td>—</td><td>a CSV file</td><td>a terrain profile CSV: distance and height columns with units, optional clutter, surface and zone</td></tr>
+</tbody></table>
+<p>On the channel the terrain profile is written <code>Terrain=</code>, because <code>Profile=</code> there names a tapped delay line; the Chain
+Budget's Propagation section calls it <code>Profile</code>.</p>
+<h3 id="model-satellite"><code>satellite</code></h3>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
+<tr><td class="nowrap"><code>Altitude</code></td><td>km</td><td><code>600</code></td><td>1 to 1000000</td><td>the satellite&#39;s altitude (a circular orbit; 35786 is geostationary)</td></tr>
+<tr><td class="nowrap"><code>Elevation</code></td><td>deg</td><td><code>30</code></td><td>0 to 90</td><td>the satellite&#39;s elevation seen from the earth station</td></tr>
+<tr><td class="nowrap"><code>Pass</code></td><td>—</td><td><code>setting</code></td><td><code>rising</code>, <code>setting</code></td><td>for the Doppler: the satellite rising (approaching) or setting (receding)</td></tr>
+<tr><td class="nowrap"><code>Scenario</code></td><td>—</td><td><code>none</code></td><td><code>none</code>, <code>denseurban</code>, <code>urban</code>, <code>suburban</code>, <code>rural</code></td><td>TR 38.811&#39;s terminal environment for line of sight, shadowing and clutter (none: open, line of sight)</td></tr>
+<tr><td class="nowrap"><code>Los</code></td><td>—</td><td><code>auto</code></td><td><code>auto</code>, <code>los</code>, <code>nlos</code></td><td>with a scenario: the propagation state; auto gives the more probable one</td></tr>
+</tbody></table>
+<h3 id="model-p1812"><code>P1812</code></h3>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
+<tr><td class="nowrap"><code>Profile</code></td><td>—</td><td>—</td><td>a CSV file</td><td>a terrain profile CSV: distance and height columns with units, optional clutter, surface and zone</td></tr>
+<tr><td class="nowrap"><code>Time</code></td><td>%</td><td><code>50</code></td><td>1 to 50</td><td>the percentage of time the loss is not exceeded</td></tr>
+<tr><td class="nowrap"><code>Locations</code></td><td>%</td><td><code>50</code></td><td>1 to 99</td><td>the percentage of locations the loss is not exceeded at</td></tr>
+<tr><td class="nowrap"><code>DeltaN</code></td><td>N-units/km</td><td><code>45</code></td><td>0 to 156.9</td><td>the average refractivity lapse rate through the lowest 1 km</td></tr>
+<tr><td class="nowrap"><code>N0</code></td><td>N-units</td><td><code>325</code></td><td>200 to 450</td><td>the sea-level surface refractivity</td></tr>
+<tr><td class="nowrap"><code>Latitude</code></td><td>deg</td><td><code>45</code></td><td>-80 to 80</td><td>the path centre&#39;s latitude</td></tr>
+<tr><td class="nowrap"><code>CoastTx</code></td><td>km</td><td><code>500</code></td><td>0 to 10000</td><td>the transmitter&#39;s distance from the coast (paths over sea)</td></tr>
+<tr><td class="nowrap"><code>CoastRx</code></td><td>km</td><td><code>500</code></td><td>0 to 10000</td><td>the receiver&#39;s distance from the coast (paths over sea)</td></tr>
+<tr><td class="nowrap"><code>SigmaL</code></td><td>dB</td><td>—</td><td>0 to 30</td><td>the location variability&#39;s standard deviation (blank: from the resolution)</td></tr>
+<tr><td class="nowrap"><code>Resolution</code></td><td>m</td><td><code>100</code></td><td>1 to 100000</td><td>the prediction resolution the location variability applies over</td></tr>
+<tr><td class="nowrap"><code>Polarization</code></td><td>—</td><td><code>vertical</code></td><td><code>vertical</code>, <code>horizontal</code></td><td>the polarization</td></tr>
+</tbody></table>
+<p>The terrain profile is <code>Terrain=</code> on the channel, as for <code>P526</code>.</p>
+<h3 id="added-losses">The added losses, on any model</h3>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
+<tr><td class="nowrap"><code>Partitions</code></td><td>dB</td><td>—</td><td>a comma-separated list</td><td>partition losses on the path, dB each, comma-separated</td></tr>
+<tr><td class="nowrap"><code>Clutter</code></td><td>—</td><td><code>off</code></td><td><code>off</code>, <code>terminal</code>, <code>terrestrial</code>, <code>earthspace</code></td><td>ITU-R P.2108 clutter loss: terminal correction, terrestrial statistics, or toward an elevated platform</td></tr>
+<tr><td class="nowrap"><code>ClutterEnd</code></td><td>—</td><td><code>rx</code></td><td><code>rx</code>, <code>tx</code>, <code>both</code></td><td>which terminal is in clutter</td></tr>
+<tr><td class="nowrap"><code>ClutterType</code></td><td>—</td><td><code>urban</code></td><td><code>water</code>, <code>open</code>, <code>suburban</code>, <code>urban</code>, <code>denseurban</code></td><td>terminal: the clutter type</td></tr>
+<tr><td class="nowrap"><code>TerminalClutterHeight</code></td><td>m</td><td>—</td><td>0.1 to 200</td><td>terminal: the representative clutter height (blank: the recommendation&#39;s for the type)</td></tr>
+<tr><td class="nowrap"><code>ClutterStreetWidth</code></td><td>m</td><td><code>27</code></td><td>1 to 200</td><td>terminal: the street width</td></tr>
+<tr><td class="nowrap"><code>ClutterLocations</code></td><td>%</td><td><code>50</code></td><td>0.000001 to 99.999999</td><td>terrestrial, earthspace: the percentage of locations the loss is not exceeded at</td></tr>
+<tr><td class="nowrap"><code>ClutterElevation</code></td><td>deg</td><td>—</td><td>0 to 90</td><td>earthspace: the platform&#39;s elevation seen from the terminal</td></tr>
+<tr><td class="nowrap"><code>BuildingEntry</code></td><td>—</td><td><code>off</code></td><td><code>off</code>, <code>traditional</code>, <code>efficient</code></td><td>ITU-R P.2109 building entry loss</td></tr>
+<tr><td class="nowrap"><code>BuildingProbability</code></td><td>—</td><td><code>0.5</code></td><td>0.000001 to 0.999999</td><td>the probability the building entry loss is not exceeded</td></tr>
+<tr><td class="nowrap"><code>FacadeElevation</code></td><td>deg</td><td><code>0</code></td><td>-90 to 90</td><td>the path&#39;s elevation at the building fa&#231;ade</td></tr>
+<tr><td class="nowrap"><code>Vegetation</code></td><td>—</td><td><code>off</code></td><td><code>off</code>, <code>on</code></td><td>ITU-R P.833 woodland: one terminal inside it</td></tr>
+<tr><td class="nowrap"><code>VegDepth</code></td><td>m</td><td><code>0</code></td><td>0 to 100000</td><td>the depth of the terminal inside the woodland</td></tr>
+<tr><td class="nowrap"><code>VegGamma</code></td><td>dB/m</td><td>—</td><td>0.000001 to 100</td><td>the woodland&#39;s specific attenuation (blank: the recommendation&#39;s table)</td></tr>
+<tr><td class="nowrap"><code>VegMax</code></td><td>dB</td><td>—</td><td>0.000001 to 500</td><td>the maximum woodland attenuation (blank: the recommendation&#39;s fit A1&#183;f^α)</td></tr>
+<tr><td class="nowrap"><code>PolLoss</code></td><td>dB</td><td><code>0</code></td><td>0 to 100</td><td>a polarization mismatch loss</td></tr>
+<tr><td class="nowrap"><code>PointingLoss</code></td><td>dB</td><td><code>0</code></td><td>0 to 100</td><td>a pointing loss</td></tr>
+<tr><td class="nowrap"><code>Availability</code></td><td>%</td><td><code>99</code></td><td>50 to 99.9999</td><td>the percentage of time the link must be available: rain, clouds and scintillation are taken at 100 minus it</td></tr>
+<tr><td class="nowrap"><code>Gas</code></td><td>—</td><td><code>off</code></td><td><code>off</code>, <code>on</code></td><td>ITU-R P.676 gaseous absorption: along the path, or through the atmosphere on a satellite path</td></tr>
+<tr><td class="nowrap"><code>SurfaceTemperature</code></td><td>degC</td><td><code>15</code></td><td>-80 to 60</td><td>the surface air temperature</td></tr>
+<tr><td class="nowrap"><code>SurfacePressure</code></td><td>hPa</td><td><code>1013.25</code></td><td>300 to 1100</td><td>the surface total air pressure</td></tr>
+<tr><td class="nowrap"><code>WaterVapour</code></td><td>g/m3</td><td><code>7.5</code></td><td>0 to 50</td><td>the surface water vapour density</td></tr>
+<tr><td class="nowrap"><code>Rain</code></td><td>—</td><td><code>off</code></td><td><code>off</code>, <code>fixed</code>, <code>drawn</code></td><td>rain attenuation at the availability: ITU-R P.530 on a terrestrial path, P.618 on a satellite path; drawn is per drop</td></tr>
+<tr><td class="nowrap"><code>RainRate</code></td><td>mm/h</td><td><code>40</code></td><td>0 to 300</td><td>the rain rate exceeded for 0.01 % of an average year</td></tr>
+<tr><td class="nowrap"><code>RainHeight</code></td><td>km</td><td><code>3.4</code></td><td>0 to 8</td><td>satellite path: the rain height above sea level</td></tr>
+<tr><td class="nowrap"><code>RainTilt</code></td><td>deg</td><td><code>45</code></td><td>0 to 90</td><td>the polarization tilt from horizontal for rain: 0 horizontal, 90 vertical, 45 circular</td></tr>
+<tr><td class="nowrap"><code>StationHeight</code></td><td>km</td><td><code>0</code></td><td>0 to 8</td><td>satellite path: the earth station&#39;s height above sea level</td></tr>
+<tr><td class="nowrap"><code>StationLatitude</code></td><td>deg</td><td><code>45</code></td><td>-90 to 90</td><td>satellite path: the earth station&#39;s latitude</td></tr>
+<tr><td class="nowrap"><code>Clouds</code></td><td>—</td><td><code>off</code></td><td><code>off</code>, <code>on</code></td><td>satellite path: ITU-R P.840 cloud attenuation</td></tr>
+<tr><td class="nowrap"><code>CloudWater</code></td><td>kg/m2</td><td><code>0.5</code></td><td>0 to 10</td><td>satellite path: the integrated cloud liquid water content</td></tr>
+<tr><td class="nowrap"><code>Scintillation</code></td><td>—</td><td><code>off</code></td><td><code>off</code>, <code>on</code></td><td>satellite path: ITU-R P.618 tropospheric scintillation fade at the availability</td></tr>
+<tr><td class="nowrap"><code>AntennaDiameter</code></td><td>m</td><td><code>1</code></td><td>0.01 to 100</td><td>satellite path, scintillation: the earth station antenna&#39;s diameter</td></tr>
+<tr><td class="nowrap"><code>AntennaEfficiency</code></td><td>—</td><td><code>0.5</code></td><td>0.01 to 1</td><td>satellite path, scintillation: the antenna efficiency</td></tr>
+<tr><td class="nowrap"><code>Ionosphere</code></td><td>—</td><td><code>off</code></td><td><code>off</code>, <code>on</code></td><td>satellite path: ITU-R P.531 Faraday rotation and ionospheric scintillation</td></tr>
+<tr><td class="nowrap"><code>Tec</code></td><td>TECU</td><td><code>50</code></td><td>0 to 1000</td><td>the total electron content along the path, 1 TECU = 1e16 el/m2</td></tr>
+<tr><td class="nowrap"><code>MagneticField</code></td><td>uT</td><td><code>50</code></td><td>0 to 70</td><td>the average geomagnetic field along the path</td></tr>
+<tr><td class="nowrap"><code>LinearPolarization</code></td><td>—</td><td><code>yes</code></td><td><code>yes</code>, <code>no</code></td><td>a linear polarization fixed for no rotation (Faraday rotation is then a loss)</td></tr>
+<tr><td class="nowrap"><code>S4</code></td><td>—</td><td><code>0</code></td><td>0 to 1.5</td><td>the amplitude scintillation index at S4Frequency (0: none)</td></tr>
+<tr><td class="nowrap"><code>S4Frequency</code></td><td>GHz</td><td><code>1.5</code></td><td>0.1 to 10</td><td>the frequency the S4 index is stated at</td></tr>
+</tbody></table>
+<p>No ITU digital map is bundled. The values a map would give — the rain rate exceeded 0.01 % of the time, the rain height,
+the surface water vapour, the cloud liquid water — are the parameters above with stated defaults, so a result never
+depends on a data file you cannot see. Two ITU-R methods are not offered, because their data may not be redistributed:
+P.1546's tabulated curves (<code>P1812</code> covers the same ground over a profile) and P.676's approximate method (the line-by-line
+method is used instead).</p>
+<h2 id="ends">Pin ends and array ends</h2>
+<p><strong>A pin end</strong> is an antenna terminal: <code>tx</code> drives the channel, <code>rx</code> is driven by it, each over ground. Its antenna is
+<code>TxGain</code>/<code>RxGain</code> in dBi, the same in every direction, or one port of an EM result's far field (<code>TxPattern=&quot;results/patch.cemr#1&quot;</code>),
+whose realized gain toward each ray and S11 are then the end's. <code>TxAz</code>, <code>TxEl</code>, <code>TxRoll</code> turn it; unstated, its boresight
+faces the other end.</p>
+<p><strong>An array end</strong> names a Phased Antenna Array (<code>Tx=PA1</code>, <code>Rx=PA2</code>), and that side has no pin: the array's own elements,
+patterns and positions are the end, and the symbol draws only the pins that remain. The coupling is two unknowns per ray,
+never a matrix of receive elements by transmit elements, and each receive element takes exactly the wave an incident plane
+wave from that direction gives it. Several channels may end on one receive array, their waves adding on its elements, which
+is how co-channel interference arrives with its own path, fading and direction. A pin receive end takes one channel.</p>
+<p>The two mix: a base-station array to a one-antenna handset is <code>Tx=PA1</code> with an <code>rx</code> pin.</p>
+<h2 id="regime">The regime readouts</h2>
+<p>Whether a channel is &quot;fast&quot; or &quot;slow&quot;, flat or frequency-selective, is a property of the run against the channel, and each
+run says which it is, in its notes and in <code>explain --analysis</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Readout</th>
+<th>Cube</th>
+<th>What it means for the result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Maximum Doppler f_D</td>
+<td><code>link:CH1:fD_Hz</code></td>
+<td><code>Velocity</code>·f/c, or <code>fD</code>, or the ends' relative speed</td>
+</tr>
+<tr>
+<td>Coherence time T_c</td>
+<td><code>link:CH1:Tc_s</code></td>
+<td>Where the fading's correlation first falls to one half: 0.24/f_D for the classical spectrum. A record much shorter than T_c sees a frozen channel, and its statistics come only from many drops</td>
+</tr>
+<tr>
+<td>f_D · T_record</td>
+<td><code>link:CH1:fDxTrecord</code></td>
+<td>Below about 0.05 the record is frozen; near 1 or above, the channel turns within it</td>
+</tr>
+<tr>
+<td>f_D / subcarrier spacing</td>
+<td><code>link:CH1:fDoverSCS</code></td>
+<td>OFDM only: above about 0.01 the fading's inter-carrier interference shows in the EVM, and grows with it</td>
+</tr>
+<tr>
+<td>RMS delay spread, coherence bandwidth</td>
+<td><code>link:CH1:RmsDelaySpread_s</code>, <code>CoherenceBandwidth_Hz</code></td>
+<td>A signal much narrower than the coherence bandwidth fades flat, all of it together; a wider one fades frequency by frequency, which an equalizer has to undo</td>
+</tr>
+<tr>
+<td>Common Doppler ν₀</td>
+<td><code>link:CH1:Doppler0_Hz</code></td>
+<td>A frequency offset the receiver must track; the demodulation measures it as <code>CFO_Hz</code></td>
+</tr>
+</tbody>
+</table>
+<p>A 100 kb/s FSK signal in an office (40 ns of delay spread, 11 MHz of coherence bandwidth) fades flat; a 50 MHz NR carrier on
+the same path does not. At 28 GHz and walking pace (f_D ≈ 78 Hz, T_c ≈ 3 ms) a 1 ms record is frozen; at 100 km/h it is not.</p>
+<h2 id="fading">Fading and multipath</h2>
+<p><code>Multipath=</code> says where the rays come from:</p>
+<table>
+<thead>
+<tr>
+<th><code>Multipath=</code></th>
+<th>Rays</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>none</code> (default)</td>
+<td>The geometry's: the line of sight, and the ground ray for <code>tworay</code></td>
+</tr>
+<tr>
+<td><code>tdl</code> with <code>Profile=</code></td>
+<td>A tapped delay line: TR 38.901 <code>TDL-A</code>…<code>TDL-E</code>, TS 36.104 <code>EPA</code>, <code>EVA</code>, <code>ETU</code>, ITU-R M.1225 <code>PedA</code>, <code>PedB</code>, <code>VehA</code>, <code>VehB</code>, TR 38.811 <code>NTN-TDL-A</code>…<code>D</code>. The normalized ones need <code>DelaySpread</code></td>
+</tr>
+<tr>
+<td><code>file</code> with <code>File=</code></td>
+<td>Your power-delay profile: a CSV of <code>delay (ns)</code>, <code>power (dB)</code>, optionally <code>phase</code>, <code>doppler</code>, <code>k</code> and <code>spectrum</code> per tap</td>
+</tr>
+<tr>
+<td><code>cdl</code> with <code>Profile=</code></td>
+<td>A clustered delay line, rays with directions and polarization: TR 38.901 <code>CDL-A</code>…<code>CDL-E</code>, TR 38.811 <code>NTN-CDL-A</code>…<code>D</code>. For arrays: beamforming gain depends on the angular spread, which a tapped line does not have</td>
+</tr>
+<tr>
+<td><code>rays</code> with <code>File=</code></td>
+<td>Your ray list: delay, power, departure and arrival angles, cross-polar ratio or a 2×2 matrix</td>
+</tr>
+<tr>
+<td><code>scenario</code></td>
+<td>A whole TR 38.901 drop for the ends' geometry (<code>PathLoss=38901</code>): correlated large-scale parameters, clusters, rays</td>
+</tr>
+</tbody>
+</table>
+<p>Each tap's gain fades by <code>Fading=rayleigh</code>, <code>rician</code> (<code>KFactor</code>) or <code>nakagami</code> (<code>NakagamiM</code>) with a <code>Doppler=</code> spectrum
+(<code>classical</code>, <code>flat</code>, <code>gaussian</code>, <code>los</code>), generated as a sum of <code>Sinusoids</code> sinusoids whose draws depend only on <code>Seed</code>,
+<code>Drop</code> and the channel's name. A clustered line's rays need no generator: each has its own Doppler from its directions and
+the ends' velocities, and the fading is the rays beating against each other.</p>
+<h2 id="drops">Drops: a Monte Carlo over realizations</h2>
+<p>One run is one drop. A drop draws the shadowing (on by default, from the model's σ), the line-of-sight state when
+<code>Los=auto</code>, the rain's time percentage when <code>Rain=drawn</code>, the satellite state when <code>States=p681</code>, and every tap's or ray's
+fading. <strong>A Monte Carlo is a sweep over <code>Drop</code></strong>, with no analysis of its own:</p>
+<pre><code>drop = 1
+PropagationChannel:CH1 tx rx … Seed=1 Drop=drop
+analysis MC type=parametric_sweep Var=drop Start=1 Stop=2000 Step=1 Inner=SP1
+measure Prx_dBm = 10 + SP1.link(&quot;CH1&quot;, &quot;Gain_dB&quot;)
+measure Outage = outage_over(Prx_dBm, -98, &quot;drop&quot;)
+</code></pre>
+<p><code>outage_over(x, threshold, &quot;drop&quot;)</code> is the fraction of drops below the threshold, with its exact 95 % interval as
+<code>Outage:lo</code> and <code>Outage:hi</code>; <code>cdf</code>, <code>pctl_over</code>, <code>mean_over</code>, <code>std_over</code> and <code>yield_over</code> read the same axis. Drop 37 alone
+equals drop 37 inside the sweep.</p>
+<p><strong>Cheap drops first.</strong> Received power over thousands of drops is an S-parameter sweep: each drop's <code>link:CH1:Gain_dB</code> is
+20·log10|H| at the reference frequency with the antenna gains, shadowing and fading in it, and a drop costs a millisecond.
+The signal — EVM, bit errors — is an envelope run, seconds a drop, so it is read over tens of drops, or at the drops the
+power sweep picks out (the median and the one at the outage percentile, as the Chain Budget's
+<a href="chain-budget.html#link-bench">Link bench</a> does).</p>
+<p><strong>Reuse across drops.</strong> In an envelope sweep a transmit side that is the same in every drop is solved once and replayed into
+each later drop's receive side, which is exactly what solving both gives, because the channel is one way. A transmit array
+whose beam changes with the drop is solved once per distinct beam. The run says how many drops it replayed. A receive array
+whose channel cells are identical and linear is replaced by its feed for the run when the run has no noise; with
+<code>Noise=yes</code> the array is kept, because its cells' noise is part of it.</p>
+<p><strong>What drops cost.</strong> A receive array of nonlinear cells is stepped element by element, about 4 s a drop at 64 elements
+and a minute at 256 for a 1 µs record. A transmit array of nonlinear amplifiers costs the same per step, once per beam.
+So a link through large arrays keeps its receive cells linear, its beam the same across the drops, and its record a few
+symbols long; the examples below say what they traded.</p>
+<h2 id="far-end">The far end: equalizer, frequency offset and bit errors</h2>
+<p>Through a channel with delay spread, one gain over the record no longer reads a signal as a receiver would: a fade on some
+subcarriers reads as distortion. The envelope analysis's <code>Equalizer=</code> key says how each carrier is read:</p>
+<table>
+<thead>
+<tr>
+<th><code>Equalizer=</code></th>
+<th>Use it for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>none</code> (default)</td>
+<td>A circuit's own error, its ripple included, exactly as before any channel existed</td>
+</tr>
+<tr>
+<td><code>genie</code></td>
+<td>The best a receiver can do: each subcarrier divided by the channel's own H(f, t), fading included. What remains is the circuit's distortion, the noise and the inter-carrier interference the fading causes</td>
+</tr>
+<tr>
+<td><code>pilot</code></td>
+<td>What a receiver achieves: the response read from pilots (<code>Pilots=</code> on OFDM; a trained <code>Taps=</code> equalizer on DBPSK and single carrier), interpolated, with its estimation noise</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The frequency offset</strong> (<code>CFO_Hz</code>, <code>CFOdrift_Hzps</code>) is measured in every mode and removed before <code>genie</code> and <code>pilot</code>. A
+single carrier or DBPSK carrier is first acquired to the nearest bin of the window from its power spectrum, so a satellite's
+hundreds of kilohertz of Doppler are read to a fraction of a hertz, then fitted from the symbols' phases. A drift is
+measurable only when it moves the frequency within the record: a low-orbit pass's kilohertz a second moves a 0.2 ms
+record by a fifth of a hertz, so the channel's own drift, <code>link:CH1:Drift0_Hzps</code>, is the one to read.</p>
+<p><strong>Errors.</strong> <code>BER</code>, <code>SER</code>, <code>BitErrors</code>, <code>Bits</code> and the exact interval <code>BERlo</code>/<code>BERhi</code> are counted after the decisions;
+<code>BERest</code> estimates the BER from each symbol's SINR, treating noise and distortion as Gaussian, and reaches below what a short
+record can count. <code>SINR_dB</code> per symbol maps to a coded error rate of your own; forward error correction is not modelled.
+The cubes and their definitions: <a href="simulations.html#envelope-equalizer">Simulations › Equalizer, frequency offset and bit errors</a>.</p>
+<h2 id="beam">Picking the beam</h2>
+<p>When an end is a Feed-mode array whose <code>Phase</code> is a <code>steer()</code>, the run picks its beam through the drop's channel. Each end's
+candidates are a grid in (u, v) one beamwidth apart out to <code>ScanLimit</code>, each made through the array's own <code>steer()</code> and
+<code>PhaseBits</code> (or <code>Codebook=</code> names a CSV of directions). Every pair is scored by the power the two array factors carry
+through the drop's rays, averaged over the signal's band, through the linear pattern model; the run that follows is the
+full circuit.</p>
+<table>
+<thead>
+<tr>
+<th><code>BeamSelect=</code></th>
+<th>Beam used</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>auto</code> (default)</td>
+<td>The strongest pair</td>
+</tr>
+<tr>
+<td><code>rank</code> with <code>BeamRank=n</code></td>
+<td>The n-th strongest <strong>distinct</strong> pair: one within a beamwidth of a stronger pair at both ends is the same path, so rank 2 is the next path, not the neighbouring beam</td>
+</tr>
+<tr>
+<td><code>index</code> with <code>TxBeam=</code>, <code>RxBeam=</code></td>
+<td>A codebook entry (a number from 1) or a direction <code>(θ, φ)</code> per end</td>
+</tr>
+<tr>
+<td><code>manual</code></td>
+<td>The arrays' own weights, as written</td>
+</tr>
+</tbody>
+</table>
+<p>The beam is set for the run only; the schematic keeps its <code>steer()</code>. The run reports every pair scored
+(<code>link:CH1:Beam_dB[pair]</code>, strongest first), the pair chosen, and <code>BeamBound_dB</code>, the best any phase-only weights could do
+through these rays, so <code>BeamCodebookLoss_dB</code> is the price of the codebook.</p>
+<p><strong>Picking another beam in the tool.</strong> In the Phased Array tool (<em>Tools ▸ Phased Array</em>), an array that is a channel end has a
+<strong>Channel</strong> tab: the drop's rays on the (u, v) map — departures on a transmit array, arrivals on a receive array, sized by
+power — with the candidates, and the ranked pairs in a list beside it. Click a pair or a ray to use it: that writes
+<code>BeamSelect=index</code> with <code>TxBeam</code>/<code>RxBeam</code> on the channel. The check button (<em>Apply to array</em>) writes the directions into the arrays' <code>steer()</code> and
+sets <code>BeamSelect=manual</code>. Each is one undo step. The drop slider shows another realization without changing anything.</p>
+<h2 id="satellite">Satellite links</h2>
+<p><code>PathLoss=satellite</code> takes the orbit's <code>Altitude</code> and the <code>Elevation</code> the earth station sees it at, and gives the slant
+range, the latency, and the Doppler and its rate for a <code>rising</code> or <code>setting</code> <code>Pass</code> at the frequency. A low orbit at 600 km
+seen at 30° is 1,075 km away (3.6 ms) and moves the carrier by about 400 kHz at 20 GHz. <code>Scenario=</code> adds TR 38.811's
+line-of-sight probability, shadowing and clutter for a terminal in dense urban, urban, suburban or rural surroundings.</p>
+<p>The atmosphere is taken at <code>Availability</code>: <code>Rain=fixed</code> adds P.618's attenuation exceeded for 100 − <code>Availability</code> % of
+the time, the budget's number; <code>Rain=drawn</code> draws the time percentage per drop, so a drop sweep's rain statistics are the
+model's. <code>Gas</code>, <code>Clouds</code>, <code>Scintillation</code> and <code>Ionosphere</code> add their terms the same way.</p>
+<p><code>States=p681</code> with <code>StateEnvironment=</code> applies ITU-R P.681's land mobile-satellite model: the link moves between a GOOD
+state (line of sight, light shadowing) and a BAD state (heavy shadowing and blockage), each with its own direct-signal and
+multipath statistics, valid from 1.5 to 20 GHz above 20° elevation. A terminal moving at <code>Velocity</code> crosses states along the
+record; a record much shorter than a state is one state, so the fraction of BAD drops is the fraction of time the link is
+shadowed. The run reports <code>link:CH1:State</code> (1 GOOD, 0 BAD).</p>
+<p>A transponder is ordinary parts: an input filter, an amplifier at its back-off, an output filter, and the channel after it.
+<code>DopplerComp=common</code> pre-compensates the common Doppler at the transmit end, as a terminal that knows the ephemeris does.</p>
+<h2 id="far-field">The far-field warning</h2>
+<p>The channel takes each end to be in the other's far field: its rays are plane waves. <code>check</code> and the run warn when the ends
+are closer than 2D²/λ for an array's largest dimension D, its aperture's diagonal. A 16 × 16 half-wavelength array at
+28 GHz is 121 mm corner to corner and needs 2.7 m; a 64 × 64 one needs 44 m, so a 10 m indoor link to it is in its near
+field and the gain the channel gives is overstated. Near-field coupling between ends is not modelled.</p>
+<h2 id="examples">Examples</h2>
+<p>Three examples build a link each (<em>File ▸ New ▸ Examples</em>):</p>
+<ul>
+<li><strong>Indoor IoT Link</strong> — an 868 MHz FSK sensor two floors from its gateway: P.1238 with partitions, a tapped delay line read
+from a power-delay profile file, received power and outage over 2,000 drops, and bit errors over 50.</li>
+<li><strong>LEO Satellite Downlink</strong> — a 20 GHz downlink from 600 km at 30° elevation: P.618 rain at 99.5 %, P.681 states, the pass's
+Doppler, and a 16APSK single carrier through a transponder.</li>
+<li><strong>mmWave Array Link</strong> — a 16 × 16 transmit array with an amplifier per element to an 8 × 8 receive array, TR 38.901 UMi
+through CDL-C, the beam pair found automatically, an NR signal, EVM and bit errors over drops.</li>
+</ul>
+<hr />
+<p>See also: <a href="components.html#propagationchannel">Components › Propagation Channel</a> ·
+<a href="chain-budget.html#link">RF Chain Budget › A link in front of the chain</a> · <a href="phased-array.html">Phased Antenna Array</a> ·
+<a href="simulations.html#envelope">Simulations › Envelope</a> · <a href="signal-designer.html#sc">Signal Designer › A single carrier</a> ·
+<a href="measurements.html#statistics">Measurements › Statistics</a></p>
+
+<nav class="page-nav">
+  <a class="prev" href="chain-budget.html"><span class="dir">Previous</span><span class="name">RF Chain Budget</span></a>
+  <a class="next" href="simulations.html"><span class="dir">Next</span><span class="name">Simulations</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

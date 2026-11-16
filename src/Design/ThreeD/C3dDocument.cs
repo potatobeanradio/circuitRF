@@ -538,6 +538,12 @@ public sealed class C3dSheet : C3dObject
     /// <summary>The metal's real thickness, micrometres — what the solver's surface impedance uses.</summary>
     public double? ThicknessUm { get; set; }
 
+    /// <summary>brief-hzn-18 R-hzn18-1 — the sheet's metal is one surface impedance carrying the current of both its faces, not a thin
+    /// conductor with a current on each face (about twice the conductor loss of a strip in air): Hertzon's one-sided Finite
+    /// Conductivity sheet. Meaningful only on a lossy conductor; EMerge runs it, Palace and openEMS refuse it. Written only when true.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool OneSided { get; set; }
+
     /// <summary>brief-em3d-101 R-em3d101-1 — the sheet is drawn with this image instead of its material's colour (the image fills
     /// its rectangle, <see cref="C3dImages.FillRect"/>). Drawing only: the sheet takes part in a solve as any sheet does when it is
     /// modelled, and nothing reads the image. Written only when set.</summary>
@@ -1075,6 +1081,21 @@ public sealed class C3dVoltagePath
 /// <see cref="Negative"/> say (both, or neither). A wave port's rectangle is a region of an air-box face of the setup
 /// being run. Every setup uses every port.
 /// </summary>
+/// <summary>brief-hzn-16 — a Floquet port's modes (<see cref="C3dPort.Floquet"/>).</summary>
+public sealed class C3dFloquet
+{
+    /// <summary>How many modes the port has in the result, 1 or more: 1 the TE wave of the (0, 0) harmonic, 2 also its TM wave.</summary>
+    public int Modes { get; set; } = 2;
+
+    /// <summary>The relative permittivity of the medium at the port; 1 when omitted.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double Er { get; set; }
+
+    /// <summary>The permittivity the run uses: <see cref="Er"/>, or 1.</summary>
+    [JsonIgnore]
+    public double EffectiveEr => Er > 0 ? Er : 1;
+}
+
 public sealed class C3dPort
 {
     public int    Number { get; set; }
@@ -1092,6 +1113,46 @@ public sealed class C3dPort
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public double Angle { get; set; }
+
+    /// <summary>
+    /// brief-hzn-15 — a lumped port whose sheet is this flat four-cornered polygon, world DBU, in order round it, instead of
+    /// <see cref="Rect"/> on <see cref="Plane"/> (which, with <see cref="Angle"/>, are then not read): a port in any plane, a tilted
+    /// one included. Opposite sides are parallel and equal and its corners square to within a part in a hundred (an exported model
+    /// joins two edges that are not exactly parallel, and the sheet keeps both exactly). Its two ends are inferred from what its edges
+    /// touch, as any port's are. Written only when set; a wave port, a ring and a gap on a cylinder never have corners.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<C3dPoint3>? Corners { get; set; }
+
+    /// <summary>
+    /// brief-hzn-16 — a Floquet port: a wave port over a whole z face of a periodic cell (the setup's air box periodic in x and
+    /// y), with <see cref="C3dFloquet.Modes"/> modes numbered <see cref="Number"/>, <see cref="Number"/> + 1, …: 1 the TE wave of the
+    /// (0, 0) harmonic, 2 its TM wave, more the grating harmonics by cutoff. Its S-parameters are normalised to the modes, so its
+    /// <see cref="Z0"/> is <c>"mode"</c>. Written only when set.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public C3dFloquet? Floquet { get; set; }
+
+    /// <summary>
+    /// brief-hzn-20 R-hzn20-1 — how many modes a hollow-guide wave port carries, 1 or 2: its modes are result ports <see cref="Number"/>,
+    /// <see cref="Number"/> + 1, … in cutoff order (TE10 across the broad side, then whichever of TE01 and TE20 is cut off lower), each
+    /// normalised to its mode, so its <see cref="Z0"/> is <c>"mode"</c>. 1 when omitted, and written only above 1.
+    /// </summary>
+    [DefaultValue(1)]
+    public int Modes { get; set; } = 1;
+
+    /// <summary>
+    /// brief-hzn-20 R-hzn20-2 — a wave port's reference plane moved this many micrometres from its face, positive into the structure:
+    /// each mode's S is multiplied by e^{γd} with its own solved γ, so a positive distance removes that much guide. Written only when
+    /// not 0. A lumped port's reference is its sheet, so a lumped port with it is refused.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double DeembedUm { get; set; }
+
+    /// <summary>brief-hzn-15 — true when the port does not lie along its plane's axes: turned by <see cref="Angle"/>, or drawn as
+    /// <see cref="Corners"/>.</summary>
+    [JsonIgnore]
+    public bool Turned => Angle != 0 || Corners is not null;
 
     /// <summary>
     /// brief-sar-8b R-sar8b-1 — a lumped port whose gap is a patch of a cylinder instead of <see cref="Rect"/> on <see cref="Plane"/>

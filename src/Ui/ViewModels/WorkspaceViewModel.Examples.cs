@@ -69,19 +69,28 @@ public partial class WorkspaceViewModel
 
     private ObservableCollection<Control>? _exampleMenuItems;
 
+    /// <summary>One submenu per topic (the index's <c>Groups</c>, <see cref="ExampleWorkspaces.Grouped"/>), its examples inside;
+    /// the macOS menu bar builds the same from the same call.</summary>
     private ObservableCollection<Control> BuildExampleMenuItems()
     {
         var items = new ObservableCollection<Control>();
-        foreach (var e in Examples)
+        foreach (var (title, examples) in ExampleWorkspaces.Grouped(Examples))
         {
-            var item = new MenuItem
+            // The rows go in as a plain list (ItemsSource), not by Items.Add: adding to a MenuItem's own collection subscribes a
+            // change listener, which Avalonia allows only on its dispatcher's thread, and a static list needs no listener.
+            var rows = new List<Control>(examples.Count);
+            foreach (var e in examples)
             {
-                Header           = e.Title,
-                Command          = OpenExampleCommand,
-                CommandParameter = e.Folder,
-            };
-            ToolTip.SetTip(item, e.Summary);
-            items.Add(item);
+                var item = new MenuItem
+                {
+                    Header           = e.MenuText,
+                    Command          = OpenExampleCommand,
+                    CommandParameter = e.Folder,
+                };
+                ToolTip.SetTip(item, e.Summary);
+                rows.Add(item);
+            }
+            items.Add(new MenuItem { Header = title, ItemsSource = rows });
         }
         return items;
     }

@@ -88,6 +88,20 @@ public static class SpiceNetlistReader
     }
 
     /// <summary>
+    /// brief TRN-6 — reads a flat DECK: the elements outside any subcircuit go into one cell named <paramref name="deckCell"/>
+    /// (with no ports) instead of being noted and skipped. This is how circuitRF reads back a deck its own writer
+    /// (<see cref="SpiceDeckWriter"/>) wrote, to check that the translation means what the bench means.
+    /// </summary>
+    public static SpiceNetlistResult ReadDeck(string text, string deckCell, string? sourceDirectory = null, string fileLabel = "<deck>")
+    {
+        t_reads++;
+        var lines = text.Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
+        var session = new Session(SpiceDistributions.Live) { Deck = new Cell(deckCell) };
+        session.Run(lines, fileLabel, sourceDirectory, null, depth: 0);
+        return session.Finish(lines.Length);
+    }
+
+    /// <summary>
     /// A blank section name is NO section, not a section called "". The value arrives from a stored
     /// component parameter and from a combo box, both of which spell "unset" as an empty string, and
     /// a "" that reached <c>Session.Run</c> would report every section as one the file does not
@@ -129,6 +143,9 @@ public static class SpiceNetlistReader
         /// <summary>Open subcircuits, innermost last. The dialect permits nesting.</summary>
         private readonly List<Cell> _cells = [];
 
+        /// <summary>brief TRN-6 — the cell a deck's top-level elements are read into (<see cref="ReadDeck"/>); null otherwise.</summary>
+        public Cell? Deck { get; init; }
+
         /// <summary>
         /// Every parameter whose value is known so far, for evaluating a conditional. Flat by
         /// design: a conditional is nearly always guarded on a top-level constant, and a scope chain
@@ -160,6 +177,12 @@ public static class SpiceNetlistReader
             // A card may be declared after — or in a different file from — the subcircuit that uses
             // it, so this cannot be done at the element line without making the result depend on
             // read order. See SpicePassiveModelBinding.
+            if (Deck is not null)
+            {
+                ResolveMutuals(Deck, _filesRead.Count > 0 ? _filesRead[0] : "<deck>");
+                _library.Cells.Add(Deck);
+            }
+
             SpicePassiveModelBinding.Bind(
                 _library, _cards,
                 note:           m => Note(_filesRead.Count > 0 ? _filesRead[0] : "<text>", 0, m),
@@ -270,6 +293,15 @@ public static class SpiceNetlistReader
             if (s[0] == '.')
             {
                 DispatchDirective(s, file, number, directory, depth);
+                return;
+            }
+
+            if (Current is null && Deck is not null)
+            {
+                // brief TRN-6 — a deck read as a deck: its top level is one cell.
+                _cells.Add(Deck);
+                try { ReadElement(s, file, number); }
+                finally { _cells.RemoveAt(_cells.Count - 1); }
                 return;
             }
 
@@ -385,9 +417,46 @@ public static class SpiceNetlistReader
                      $"'.ends {words[1]}' closes '{CurrentName}', which is a different name. The " +
                      "subcircuit is closed anyway, as the name after '.ends' carries no meaning.");
 
+            ResolveMutuals(Current, file);
             _library.Cells.Add(Current);
             _cells.RemoveAt(_cells.Count - 1);
         }
+
+        /// <summary>
+        /// brief TRN-6 — a K line's coupling coefficient as circuitRF's Mutual states it, M = k·√(L1·L2), once the cell is whole:
+        /// the inductors may be written after the K line, and resolving at the line would make the result depend on the order.
+        /// </summary>
+        private void ResolveMutuals(Cell cell, string file)
+        {
+            for (int i = 0; i < cell.Instances.Count; i++)
+            {
+                var inst = cell.Instances[i];
+                if (inst.Reference != "Mutual" || inst.Overrides.FirstOrDefault(o => o.Name == CouplingParameter) is not { } k) continue;
+                string Ind(string key) => (inst.Overrides.FirstOrDefault(o => o.Name == key)?.Expression ?? "").Trim('"');
+                string? L(string name) => cell.Instances
+                    .FirstOrDefault(x => x.InstanceName.Equals(name, StringComparison.OrdinalIgnoreCase) && x.Reference == "L")?
+                    .Overrides.FirstOrDefault(o => o.Name == "L")?.Expression;
+                string a = Ind("Inductor1"), b = Ind("Inductor2");
+                if (L(a) is not { } la || L(b) is not { } lb)
+                {
+                    Note(file, 0, $"'{inst.InstanceName}' couples '{a}' and '{b}', which are not both inductors of '{cell.Name}' with a value; skipped.");
+                    cell.Instances.RemoveAt(i--);
+                    _incomplete.Add(cell.Name);
+                    continue;
+                }
+                // the inductor names as the cell spells them, so the Mutual finds them by its own case-sensitive rule
+                string Spelled(string name) => cell.Instances.First(x => x.InstanceName.Equals(name, StringComparison.OrdinalIgnoreCase)).InstanceName;
+                cell.Instances[i] = new Instance(inst.InstanceName, "Mutual", [],
+                [
+                    new ParameterAssignment("Inductor1", $"\"{Spelled(a)}\""),
+                    new ParameterAssignment("Inductor2", $"\"{Spelled(b)}\""),
+                    new ParameterAssignment("M", $"({k.Expression})*sqrt(({la})*({lb}))"),
+                ]);
+            }
+        }
+
+        /// <summary>The coupling coefficient a K line states, held until <see cref="ResolveMutuals"/> turns it into M.</summary>
+        private const string CouplingParameter = "__K";
 
         // ── .param / .func / .model ───────────────────────────────────────────
 
@@ -757,6 +826,9 @@ public static class SpiceNetlistReader
             // name-is-the-last-bare-word rule covers the rest — which is why that rule was written
             // that way. Observed on a kit as a four-terminal resistor with a thermal node.
             ['N'] = (2, true),
+            // The voltage-controlled switch (brief TRN-3): its two switched nets, its two control nets and its .model,
+            // which becomes circuitRF's VSwitch (SpiceModelCardTranslation).
+            ['S'] = (4, true),
             ['X'] = (0, true),      // a subcircuit call: as many nets as the definition has ports
         };
 
@@ -772,12 +844,7 @@ public static class SpiceNetlistReader
         /// </summary>
         private static readonly Dictionary<char, string> Unimplemented = new()
         {
-            ['S'] = "a voltage-controlled switch, and circuitRF has no switch device — a switch is a "
-                  + "discontinuity, and circuitRF has no transient analysis to resolve one in",
-            ['W'] = "a current-controlled switch, and circuitRF has no switch device — a switch is a "
-                  + "discontinuity, and circuitRF has no transient analysis to resolve one in",
-            ['T'] = "a lossless transmission line stated in the time domain. circuitRF's own line "
-                  + "models are frequency-domain and are placed from the palette, not read from here",
+            ['W'] = "a current-controlled switch, which circuitRF does not have (its VSwitch is voltage-controlled)",
             ['O'] = "a lossy transmission line, which circuitRF does not read from this dialect",
             ['U'] = "a distributed or digital-behavioural element, which circuitRF does not have",
         };
@@ -834,6 +901,85 @@ public static class SpiceNetlistReader
                 result.Add(w[(at + 1)..]);
             }
             return result;
+        }
+
+        /// <summary>brief TRN-6 — <c>K name L1 L2 k</c>: circuitRF's Mutual between two inductors, M = k·√(L1·L2) resolved when
+        /// the cell is whole.</summary>
+        private void ReadCoupling(List<string> words, string name, string file, int number)
+        {
+            var (bare, _) = SplitBareAndAssignments(words.Skip(1));
+            if (bare.Count != 3)
+            {
+                Note(file, number, $"'{name}' gives {bare.Count} word(s); a coupling names two inductors and its coefficient. Skipped.");
+                MarkIncomplete();
+                return;
+            }
+            string type = SpiceElementTable.TypeForLetter('K')!;
+            Current!.Instances.Add(new Instance(name, type, [],
+            [
+                new ParameterAssignment("Inductor1", $"\"{bare[0]}\""),
+                new ParameterAssignment("Inductor2", $"\"{bare[1]}\""),
+                new ParameterAssignment(CouplingParameter, Rewrite(bare[2], file, number)),
+            ]));
+        }
+
+        /// <summary>brief TRN-6 — <c>T name n1 n2 n3 n4 Z0= TD=</c> (or <c>F= [NL=]</c>): circuitRF's TLIN, E = 2π rad at
+        /// F = 1/TD. Both ports must share a reference — the one mode a TLIN carries; four distinct nodes excite two.</summary>
+        private void ReadLosslessLine(List<string> words, string name, string file, int number)
+        {
+            var (bare, assignments) = SplitBareAndAssignments(words.Skip(1));
+            string? Get(string key) => assignments.FirstOrDefault(a => a.Name.Equals(key, StringComparison.OrdinalIgnoreCase)).Value;
+            if (bare.Count != 4 || Get("Z0") is not { } z0)
+            {
+                Note(file, number, $"'{name}' is read as a lossless line with four nets and Z0=; skipped.");
+                MarkIncomplete();
+                return;
+            }
+            if (!bare[1].Equals(bare[3], StringComparison.OrdinalIgnoreCase))
+            {
+                Note(file, number, $"'{name}' has a different reference at each port ({bare[1]}, {bare[3]}), which excites two "
+                                   + "modes; circuitRF's TLIN carries one. Skipped.");
+                MarkIncomplete();
+                return;
+            }
+            string? td = Get("TD");
+            string? f = Get("F");
+            string delay;
+            if (td is not null) delay = Rewrite(td, file, number);
+            else if (f is not null) delay = $"({Rewrite(Get("NL") ?? "0.25", file, number)})/({Rewrite(f, file, number)})";
+            else
+            {
+                Note(file, number, $"'{name}' states neither TD nor F; skipped.");
+                MarkIncomplete();
+                return;
+            }
+            var nets = bare[1] == "0" ? new List<string> { bare[0], bare[2] } : [bare[0], bare[2], bare[1]];
+            Current!.Instances.Add(new Instance(name, SpiceElementTable.TypeForLetter('T')!, nets,
+            [
+                new ParameterAssignment("Z", Rewrite(z0, file, number)),
+                new ParameterAssignment("E", "6.283185307179586"),
+                new ParameterAssignment("F", $"1/({delay})"),
+            ]));
+        }
+
+        /// <summary>brief TRN-6 — <c>B name n+ n- I=expr</c> or <c>V=expr</c>: exactly a <c>G</c> or <c>E</c> with that VALUE.</summary>
+        private void ReadBehavioural(List<string> words, string name, string file, int number)
+        {
+            int eq = -1;
+            for (int k = 1; k < words.Count; k++)
+                if (words[k].StartsWith("I=", StringComparison.OrdinalIgnoreCase) || words[k].StartsWith("V=", StringComparison.OrdinalIgnoreCase))
+                { eq = k; break; }
+            if (eq < 3)
+            {
+                Note(file, number, $"'{name}' states neither I= nor V= after its two nets; skipped.");
+                MarkIncomplete();
+                return;
+            }
+            char kind = char.ToUpperInvariant(words[eq][0]);
+            // the expression runs to the end of the line: the dialect allows spaces in it ("a ? b : c")
+            string expr = string.Join(' ', words.Skip(eq))[2..];
+            var rewritten = new List<string> { name, words[1], words[2], "VALUE={" + expr + "}" };
+            ReadSourceElement(rewritten, name, kind == 'I' ? 'G' : 'E', file, number);
         }
 
         /// <summary>
@@ -916,15 +1062,17 @@ public static class SpiceNetlistReader
                 overrides.Add(new ParameterAssignment(k, Rewrite(v, file, number)));
             }
 
+            // brief-trn-2 R-trn2-8: a behavioural source that reads the transient time variable is read. A transient
+            // analysis evaluates it at the simulated time; a steady-state analysis refuses a `time` outside a condition by
+            // name (TimeVariable), so it is noted here rather than refused.
             foreach (var o in overrides)
             {
                 if (!SpiceExpression.ReferencesTime(o.Expression)) continue;
                 Note(file, number,
-                     $"'{name}' is a function of the transient time variable ('{Shorten(o.Expression)}'). "
-                     + "circuitRF has no transient analysis, and outside a condition there is no "
-                     + "steady-state value to read it as; skipped.");
-                MarkIncomplete();
-                return;
+                     $"'{name}' reads the transient time variable ('{Shorten(o.Expression)}'). A transient "
+                     + "analysis evaluates it at the simulated time; a DC, S-parameter or harmonic-balance run "
+                     + "refuses a 'time' outside a condition.");
+                break;
             }
 
             // The reference is the LETTER's own normalised family — 'E' for either behavioural
@@ -954,6 +1102,7 @@ public static class SpiceNetlistReader
             // when nothing states one.
             string? stated   = null;
             string? fallback = null;
+            (string Head, List<string> Args)? wave = null;
 
             var dcBinding = assignments.FirstOrDefault(a => a.Name.Equals("DC", StringComparison.OrdinalIgnoreCase));
             if (dcBinding.Name is not null) stated = dcBinding.Value;
@@ -974,6 +1123,36 @@ public static class SpiceNetlistReader
                 // as a number is indistinguishable from a source that never had one.
                 int paren = w.IndexOf('(');
                 string head = paren > 0 ? w[..paren] : w;
+                // brief-trn-2 R-trn2-8 — a stimulus circuitRF has a type for is read as that type: its whole argument list,
+                // which may run over several words (`PULSE (0 1 1n …)`, `PULSE(0 1` … `10n)`).
+                if (Typed.Contains(head) && wave is null)
+                {
+                    var text = new System.Text.StringBuilder(paren > 0 ? w[paren..] : "");
+                    if (paren < 0 && i + 1 < rest.Count && !rest[i + 1].StartsWith('('))
+                    {
+                        // `PULSE 0 1 0 1n 1n 5n 10n AC 1`: no parentheses, so the arguments are the numbers (or {…}) that follow,
+                        // up to the first word that is neither. Gathered "until balanced", the rest of the line was swallowed —
+                        // `AC 1` read as arguments and dropped, or a PWL's time-value pair.
+                        while (i + 1 < rest.Count && (SpiceNumber.TryParse(rest[i + 1], out _) || rest[i + 1].StartsWith('{')))
+                            text.Append(' ').Append(rest[++i]);
+                    }
+                    else
+                        while (!Balanced(text.ToString()) && i + 1 < rest.Count) text.Append(' ').Append(rest[++i]);
+                    string inner = text.ToString().Trim();
+                    if (inner.StartsWith('(') && inner.EndsWith(')')) inner = inner[1..^1];
+                    var args = Words(inner.Replace(',', ' ').Replace('\t', ' '));
+                    if (TypedArgsSuffice(head, args.Count))
+                    {
+                        wave = (head.ToUpperInvariant(), args);
+                        fallback ??= args[0];
+                        continue;
+                    }
+                    Note(file, number,
+                         $"'{name}' states a {head.ToUpperInvariant()} stimulus with {args.Count} argument(s), fewer than circuitRF "
+                         + "reads it from; it contributes its first level and the waveform was dropped.");
+                    fallback ??= args.Count > 0 && SpiceNumber.TryParse(args[0], out _) ? args[0] : "0";
+                    continue;
+                }
                 if (Waveforms.Contains(head))
                 {
                     // A waveform's FIRST argument is its DC contribution — the initial level of a
@@ -1013,6 +1192,23 @@ public static class SpiceNetlistReader
 
             string? dc = stated ?? fallback;
 
+            if (wave is { } wv)
+            {
+                overrides.Add(new ParameterAssignment(SourceWaveformParameter, wv.Head));
+                // each argument in circuitRF's spelling first: the keys are built from rewritten numbers, so a PWL's quoted
+                // list carries no dialect suffix and a SIN's phase arithmetic wraps a number circuitRF reads
+                var argsRewritten = wv.Args.Select(x => Rewrite(x, file, number)).ToList();
+                foreach (var (key, expr) in WaveformKeys(wv.Head, argsRewritten, letter == 'I'))
+                    overrides.Add(new ParameterAssignment(key, expr));
+                if (stated is not null && wv.Head is not ("SIN" or "SINE"))
+                    overrides.Add(new ParameterAssignment("Dc", Rewrite(stated, file, number)));
+                if (wv.Head is "SIN" or "SINE" && stated is not null)
+                    Note(file, number,
+                         $"'{name}' states both a DC value and a SIN offset; the SIN offset is the tone source's Vdc in every analysis.");
+                overrides.Add(new ParameterAssignment(SourceDcParameter, Rewrite(dc!, file, number)));
+                return true;
+            }
+
             if (dc is null)
             {
                 Note(file, number,
@@ -1024,6 +1220,68 @@ public static class SpiceNetlistReader
 
             overrides.Add(new ParameterAssignment(SourceDcParameter, Rewrite(dc, file, number)));
             return true;
+        }
+
+        /// <summary>brief-trn-2 — the stimuli read as a source type: PULSE → V_Pulse, PWL → V_PWL, EXP → V_Exp, SFFM → V_SFFM,
+        /// SIN → V_1Tone with Delay and Damping (and the I_ forms).</summary>
+        private static readonly HashSet<string> Typed =
+            new(StringComparer.OrdinalIgnoreCase) { "PULSE", "PWL", "EXP", "SFFM", "SIN", "SINE" };
+
+        /// <summary>Whether a stimulus states enough arguments to be read as its type. Fewer leaves a default the dialect takes from
+        /// the run (its step or stop time), which circuitRF does not invent.</summary>
+        private static bool TypedArgsSuffice(string head, int n) => head.ToUpperInvariant() switch
+        {
+            "PULSE" => n >= 2,
+            "PWL" => n >= 2 && n % 2 == 0,
+            "EXP" => n >= 4,
+            "SFFM" => n == 3 || n >= 5,
+            "SIN" or "SINE" => n >= 3,
+            _ => false,
+        };
+
+        private static bool Balanced(string s)
+        {
+            int depth = 0;
+            bool opened = false;
+            foreach (char c in s)
+            {
+                if (c == '(') { depth++; opened = true; }
+                else if (c == ')') depth--;
+            }
+            return opened && depth <= 0;
+        }
+
+        /// <summary>
+        /// A stimulus's arguments as circuitRF's keys (docs/design/transient.md §6.1, §7.2). SIN's phase is a SINE's, in degrees,
+        /// and a tone source's phase is a COSINE's in radians, so it is written as (φ − 90)·π/180; SIN's damping factor θ is
+        /// Damping. Unstated trailing arguments take circuitRF's own defaults (a zero rise or fall, one pulse, no delay).
+        /// </summary>
+        internal static List<(string Key, string Expr)> WaveformKeys(string head, IReadOnlyList<string> a, bool current)
+        {
+            var keys = head switch
+            {
+                "PULSE" => new[] { current ? "I1" : "V1", current ? "I2" : "V2", "Delay", "Rise", "Fall", "Width", "Period" },
+                "EXP" => [current ? "I1" : "V1", current ? "I2" : "V2", "Delay1", "Tau1", "Delay2", "Tau2"],
+                "SFFM" => ["Offset", "Amplitude", "Carrier", "ModIndex", "Signal"],
+                "SIN" or "SINE" => [current ? "Idc" : "Vdc", current ? "I" : "V", "Freq", "Delay", "Damping", "Phase"],
+                _ => [],
+            };
+            var list = new List<(string, string)>();
+            if (head == "PWL")
+            {
+                var pairs = new List<string>();
+                for (int i = 0; i + 1 < a.Count; i += 2) pairs.Add(a[i] + " " + a[i + 1]);
+                list.Add(("Points", "\"" + string.Join(", ", pairs) + "\""));
+                return list;
+            }
+            for (int i = 0; i < Math.Min(keys.Length, a.Count); i++)
+            {
+                if (keys[i] == "Phase") continue;
+                list.Add((keys[i], a[i]));
+            }
+            if (head is "SIN" or "SINE")
+                list.Add(("Phase", a.Count > 5 ? $"({a[5]}-90)*pi/180" : "-pi/2"));
+            return list;
         }
 
         /// <summary>Stimulus shapes stated as a waveform, all of which reduce to their DC contribution.</summary>
@@ -1084,6 +1342,12 @@ public static class SpiceNetlistReader
                 return;
             }
 
+            // brief TRN-6 — the three letters a deck circuitRF writes uses beyond the reader's own: K (a coupling, circuitRF's
+            // Mutual), T (a lossless line, circuitRF's TLIN) and B (a behavioural source, read exactly as E or G with VALUE).
+            if (letter == 'K') { ReadCoupling(words, name, file, number); return; }
+            if (letter == 'T') { ReadLosslessLine(words, name, file, number); return; }
+            if (letter == 'B') { ReadBehavioural(words, name, file, number); return; }
+
             if (!Elements.TryGetValue(letter, out var shape))
             {
                 Note(file, number, Unimplemented.TryGetValue(letter, out string? what)
@@ -1102,6 +1366,16 @@ public static class SpiceNetlistReader
             // 'PARAMS:'. That refusal names the wrong thing entirely, and it is the one the file's
             // own reader would never make.
             bare.RemoveAll(w => w.Equals("params:", StringComparison.OrdinalIgnoreCase));
+
+            // A switch line may end with ON or OFF, the dialect's hint for the state its operating-point search starts from.
+            // circuitRF's switch has no such state — its conductance is a function of the control voltage — so the word is
+            // noted and dropped rather than read as the model's name.
+            if (letter == 'S' && bare.Count > shape.Nets + 1 && bare[^1].ToUpperInvariant() is "ON" or "OFF")
+            {
+                Note(file, number, $"'{name}' states an initial {bare[^1].ToUpperInvariant()} state; circuitRF's switch "
+                                   + "follows its control voltage from the start, so it was dropped.");
+                bare.RemoveAt(bare.Count - 1);
+            }
 
             string? area = null;
             if (shape.NamesModel && letter != 'X' && bare.Count > shape.Nets + 1 &&
@@ -1189,15 +1463,19 @@ public static class SpiceNetlistReader
             if (area is not null) overrides.Add(new ParameterAssignment("area", area));
             foreach (var (k, v) in assignments)
             {
-                // A transient initial condition. circuitRF has no transient analysis, so there is
-                // nothing for it to set — but the value it is attached to is the component's, and
-                // the component is not in doubt. Noted and dropped; the line keeps its value.
+                // A transient initial condition (brief TRN-2 R-trn2-8): kept on a capacitor (its voltage) and an inductor
+                // (its current), where a transient analysis applies it in the starting-state solve and every other
+                // analysis ignores it. On anything else it sets nothing and is noted and dropped.
                 if (k.Equals("IC", StringComparison.OrdinalIgnoreCase))
                 {
+                    if (letter is 'C' or 'L' && reference is "C" or "L")
+                    {
+                        overrides.Add(new ParameterAssignment("IC", Rewrite(v, file, number)));
+                        continue;
+                    }
                     Note(file, number,
-                         $"'{name}' states an initial condition (IC={v}). circuitRF has no transient "
-                         + "analysis, so it sets nothing and was dropped; the component's own value "
-                         + "is unaffected.");
+                         $"'{name}' states an initial condition (IC={v}). circuitRF applies IC= on a capacitor or "
+                         + "an inductor; it was dropped here, and the component's own value is unaffected.");
                     continue;
                 }
 
@@ -1218,16 +1496,16 @@ public static class SpiceNetlistReader
                 overrides.Add(new ParameterAssignment(spelling, Rewrite(v, file, number)));
             }
 
-            // A transient stimulus that survived the steady-state reading of a CONDITION (see
-            // SpiceExpression.RewriteTimeConditions) is a ramp, and a ramp has no steady-state value
-            // at all. Refused by name rather than evaluated at some arbitrary instant.
+            // A passive's value is fixed for a run: circuitRF's transient analysis binds `time` in a behavioural source's
+            // equation and a waveform source, not in a resistance, capacitance or inductance. Refused by name rather than
+            // evaluated at some arbitrary instant.
             foreach (var o in overrides)
             {
                 if (!SpiceExpression.ReferencesTime(o.Expression)) continue;
                 Note(file, number,
-                     $"'{name}' is a function of the transient time variable ('{Shorten(o.Expression)}'). "
-                     + "circuitRF has no transient analysis, and outside a condition there is no "
-                     + "steady-state value to read it as; skipped.");
+                     $"'{name}' has a value that is a function of the transient time variable ('{Shorten(o.Expression)}'). "
+                     + "A passive's value is fixed for a run; a time-varying element is written as a behavioural "
+                     + "source (B, E or G with VALUE=); skipped.");
                 MarkIncomplete();
                 return;
             }
@@ -1315,7 +1593,7 @@ public static class SpiceNetlistReader
         /// <summary>Every override circuitRF's native inductor reads (<c>InductorModel</c> plus the
         /// elaborator's multiplier), in the spelling <see cref="NormalisePassiveParameter"/> produces.</summary>
         private static readonly HashSet<string> InductorParameters =
-            new(StringComparer.Ordinal) { "L", "R", "C", Elaborator.MultiplierParamName };
+            new(StringComparer.Ordinal) { "L", "R", "C", "IC", Elaborator.MultiplierParamName };
 
         // ── shared plumbing ───────────────────────────────────────────────────
 
@@ -1388,6 +1666,10 @@ public static class SpiceNetlistReader
 
     /// <summary>The parameter a <c>V</c>/<c>I</c> instance carries its DC value in.</summary>
     public const string SourceDcParameter = "DC";
+
+    /// <summary>The parameter a <c>V</c>/<c>I</c> instance names its stimulus in (PULSE, PWL, EXP, SFFM, SIN), with the stimulus's
+    /// arguments beside it under circuitRF's own keys (brief TRN-2).</summary>
+    public const string SourceWaveformParameter = "WAVEFORM";
 
     // ─────────────────────────────────────────────────────────────────────────
     //  line assembly and tokenising — static, and shared by the session

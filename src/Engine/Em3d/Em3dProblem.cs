@@ -29,7 +29,27 @@ public readonly record struct Point3(double X, double Y, double Z);
 public enum Em3dRole { Dielectric, Conductor, Air }
 
 /// <summary>What one face of the air box does to the field.</summary>
-public enum Em3dBoundaryKind { Absorbing, Pec, Pmc, Symmetry }
+public enum Em3dBoundaryKind
+{
+    Absorbing, Pec, Pmc, Symmetry,
+    /// <summary>brief-hzn-16 — one face of a periodic pair (x or y): the field on it is the field on the opposite face, shifted in
+    /// phase by the air box's <see cref="Em3dAirBox.Scan"/>. Both faces of the pair are Periodic, or neither.</summary>
+    Periodic,
+}
+
+/// <summary>brief-hzn-16 — the direction a periodic cell is scanned to: the Floquet phase between its periodic faces is that of a
+/// plane wave arriving from (θ, φ), θ from +z and φ from +x toward +y, in degrees.</summary>
+public sealed record Em3dScan(double ThetaDeg, double PhiDeg);
+
+/// <summary>brief-hzn-16 — one mode of a Floquet port: <paramref name="Mode"/> of <paramref name="Modes"/> (1 the TE wave of the (0, 0)
+/// harmonic, 2 its TM wave, more the grating harmonics by cutoff), in a medium of relative permittivity <paramref name="Er"/>.</summary>
+public sealed record Em3dFloquet(int Mode, int Modes, double Er);
+
+/// <summary>brief-hzn-20 — one mode of a hollow-guide wave port of several modes: <paramref name="Mode"/> of <paramref name="Modes"/>
+/// in cutoff order, named <paramref name="Name"/> (<c>TE10</c>, <c>TE01</c>, <c>TE20</c>), cut off where the guide's
+/// <paramref name="CutoffLengthM"/> is half a wavelength in its fill (the broad side for TE10, the narrow side for TE01, half the broad
+/// side for TE20).</summary>
+public sealed record Em3dHollowMode(int Mode, int Modes, string Name, double CutoffLengthM);
 
 /// <summary>How the frequency points are spaced between start and stop.</summary>
 public enum Em3dSweepKind { Linear, Log }
@@ -395,6 +415,10 @@ public sealed record Em3dSheet(
     /// </summary>
     public Em3dPlaneFrame? Frame { get; init; }
 
+    /// <summary>brief-hzn-18 R-hzn18-1 — one surface impedance carrying the current of both faces (a one-sided lossy sheet), not a
+    /// thin conductor with a current on each.</summary>
+    public bool OneSided { get; init; }
+
     /// <summary>A point of the outline, in the world.</summary>
     public Point3 World(Point2 q) => Frame is { } f ? f.World(q.X, q.Y, Z) : new Point3(q.X, q.Y, Z);
 
@@ -530,8 +554,22 @@ public sealed record Em3dPort(
     /// </summary>
     public double? HollowBroadM { get; init; }
 
+    /// <summary>brief-hzn-16 — a mode of a Floquet port: a wave port whose region is a whole z face of a periodic cell, one entry
+    /// per mode, the modes of one port sharing a <see cref="FaceGroup"/>. Its S-parameters are normalised to the mode
+    /// (<see cref="ModeNormalised"/>). Null on every other port.</summary>
+    public Em3dFloquet? Floquet { get; init; }
+
+    /// <summary>brief-hzn-20 — a mode of a hollow-guide wave port of several modes: one entry per mode, the modes of one port sharing
+    /// a <see cref="FaceGroup"/> and its rectangle, each <see cref="Hollow"/> and normalised to its mode, with its own polarity line
+    /// (<see cref="VoltagePath"/>). Null on every other port, a hollow port of one mode included.</summary>
+    public Em3dHollowMode? HollowMode { get; init; }
+
     /// <summary>brief-hzn-11 — true for a hollow-guide wave port (<see cref="HollowBroadM"/> set).</summary>
     public bool Hollow => HollowBroadM is not null;
+
+    /// <summary>brief-hzn-20 — true for a terminal of a multi-terminal wave port (brief-em3d-114): in a face group that is neither a
+    /// Floquet port's modes nor a hollow guide's.</summary>
+    public bool IsTerminal => FaceGroup is not null && Floquet is null && HollowMode is null;
 
     /// <summary>
     /// brief-hzn-11 R-hzn11-1 — a wave port whose S-parameters are normalised to its mode's own power wave (a <c>.c3d</c>'s
@@ -579,7 +617,8 @@ public sealed record Em3dPortQuad(Point3 A, Point3 B, Point3 C, Point3 D)
     public (double Length, double Width) Extent(Point3 direction)
     {
         var (u, v) = Sides;
-        double lu = Norm(u), lv = Norm(v);
+        // brief-hzn-15 — the mean of each pair of opposite sides (equal on a rectangle; a drawn port's may differ by a part in a hundred)
+        double lu = (Norm(u) + Norm(Sub(C, D))) / 2, lv = (Norm(v) + Norm(Sub(C, B))) / 2;
         bool alongU = Math.Abs(Dot(u, direction)) * lv >= Math.Abs(Dot(v, direction)) * lu;
         return alongU ? (lu, lv) : (lv, lu);
     }
@@ -599,15 +638,28 @@ public sealed record Em3dPortQuad(Point3 A, Point3 B, Point3 C, Point3 D)
     /// <summary>Why these corners are not a rectangle lying flat, or null when they are: opposite sides equal and parallel and
     /// adjacent sides square, each to one part in a hundred million of the longer side (a solver measures the sheet's length
     /// to one part in a million).</summary>
-    public string? Problem()
+    public string? Problem() => Problem(1e-8);
+
+    /// <summary>brief-hzn-15 — how far a port drawn as its corners may be from a rectangle: a part in a hundred.</summary>
+    public const double DrawnTolerance = 1e-2;
+
+    /// <summary>Why these corners are not a flat rectangle to within <paramref name="tolerance"/> (a fraction of the longer side, and the
+    /// cosine of the corner angle), or null. A drawn port (brief-hzn-15) is checked to <see cref="DrawnTolerance"/>, and must still be
+    /// flat to a part in a hundred thousand (its corners are rounded to the DBU).</summary>
+    public string? Problem(double tolerance)
     {
         var (u, v) = Sides;
         double lu = Norm(u), lv = Norm(v), scale = Math.Max(lu, lv);
         if (!(lu > 0) || !(lv > 0)) return "has a side of zero length";
         var c = Add(A, Add(u, v));
         double off = Norm(Sub(c, C));
-        if (off > 1e-8 * scale) return "is not a parallelogram";
-        if (Math.Abs(Dot(u, v)) > 1e-8 * lu * lv) return "is not square at its corners";
+        if (off > tolerance * scale) return "is not a parallelogram";
+        if (Math.Abs(Dot(u, v)) > tolerance * lu * lv) return "is not square at its corners";
+        if (tolerance > 1e-8)
+        {
+            var n = new Point3(u.Y * v.Z - u.Z * v.Y, u.Z * v.X - u.X * v.Z, u.X * v.Y - u.Y * v.X);
+            if (Math.Abs(Dot(Sub(C, A), n)) / Norm(n) > 1e-5 * scale) return "do not lie in one plane";
+        }
         return null;
     }
 
@@ -735,6 +787,10 @@ public sealed record Em3dFaces(
 /// generator clips nothing (R-em3d3-6b).</summary>
 public sealed record Em3dAirBox(Point3 Min, Point3 Max, Em3dFaces Faces)
 {
+    /// <summary>brief-hzn-16 — the scan of a periodic cell (its faces' <see cref="Em3dBoundaryKind.Periodic"/> pairs); null is
+    /// broadside (θ = 0), and is read only when a pair is periodic.</summary>
+    public Em3dScan? Scan { get; init; }
+
     /// <summary>
     /// 3D editor round 3 — the material that fills the box where no solid is (one of the problem's materials): Air by
     /// default, and whatever the user gave the air box — Vacuum, say — otherwise. Null keeps the older rule (the problem's
@@ -809,6 +865,10 @@ public sealed record Em3dProblem(
     /// <summary>brief-dfr34-2 R-dfr34-2-3 — the dielectric height over the BOTTOM metal that the default floor was padded by
     /// (10 H below), when its builder found one; null when the floor took <see cref="PaddingHeightM"/>. Nothing lowers it.</summary>
     public double? PaddingHeightBelowM { get; init; }
+
+    /// <summary>brief-icf-6 R-icf6-3 — the port column (the undrawn ground floor a port sheet reaches, up to the top metal) the default
+    /// sides were padded from, when one was; null otherwise. Nothing lowers it.</summary>
+    public double? PaddingColumnM { get; init; }
 
     /// <summary>A static problem's terminals, in index order (terminal k is index k + 1).</summary>
     public IReadOnlyList<Em3dTerminal> Terminals { get; init; } = [];
@@ -1008,7 +1068,7 @@ public sealed record Em3dProblem(
             if (p.ModeNormalised && p.Kind != Em3dPortKind.Wave)
                 problems.Add($"Port {p.Number} is normalised to its mode, and only a wave port has a mode to be normalised to.");
             // brief-hzn-11 — a hollow guide's walls are one boundary: it names no conductor at either end
-            foreach (string end in p.Hollow ? [] : new[] { p.PositiveObject, p.NegativeObject })
+            foreach (string end in p.Hollow || p.Floquet is not null ? [] : new[] { p.PositiveObject, p.NegativeObject })   // brief-hzn-16: nor a Floquet mode
             {
                 if (objects.Contains(end)) continue;
                 if (box.FaceKind(end) is { } face)
@@ -1037,9 +1097,8 @@ public sealed record Em3dProblem(
             {
                 if (p.Kind == Em3dPortKind.Wave) problems.Add($"Port {p.Number} is a wave port turned in its plane; a wave port's region is a rectangle of an air-box face.");
                 if (p.Annulus is not null) problems.Add($"Port {p.Number} is coaxial and turned; an annulus has no angle to turn.");
-                if (quad.Problem() is { } shape) problems.Add($"Port {p.Number}'s turned sheet {shape}.");
-                // brief-hzn-14 — or in an upright plane turned about z (its normal horizontal): an edge port at a turned line's end
-                else if (zeroAxes != 1 && !quad.Upright) problems.Add($"Port {p.Number}'s turned sheet lies flat neither in a plane of constant x, y or z nor in an upright plane.");
+                if (quad.Problem(Em3dPortQuad.DrawnTolerance) is { } shape) problems.Add($"Port {p.Number}'s turned sheet {shape}.");
+                // brief-hzn-14 — or in an upright plane turned about z; brief-hzn-15 — or in any plane (a rectangle is flat by construction)
                 else if (!Inside(p.Min.X, p.Min.Y, p.Min.Z, p.Max.X, p.Max.Y, p.Max.Z))
                     problems.Add($"Port {p.Number}'s sheet extends outside the air box.");
                 continue;
@@ -1116,7 +1175,9 @@ public sealed record Em3dProblem(
         }
 
         ValidateFaceGroups(problems);
+        ValidateHollowModes(problems);
         ValidateFaceBoundaries(problems);
+        ValidatePeriodic(problems);
 
         if (PlaneWave is { } wave)
         {
@@ -1148,9 +1209,78 @@ public sealed record Em3dProblem(
     /// brief-em3d-114 R-em3d114-2b — a multi-terminal wave port's terminals: every one a wave port with a voltage path, on one
     /// rectangle of one face, with one reference, and each its own conductor.
     /// </summary>
+    /// <summary>
+    /// brief-hzn-16 — periodic faces come in x and y pairs (both or neither), never on z; a Floquet port is a wave port over a whole z
+    /// face of a cell periodic in x and y, in a driven problem, normalised to its modes, its modes numbered one after another.
+    /// </summary>
+    private void ValidatePeriodic(List<string> problems)
+    {
+        var f = Boundary.Faces;
+        if ((f.XMin == Em3dBoundaryKind.Periodic) != (f.XMax == Em3dBoundaryKind.Periodic))
+            problems.Add("Only one of the air box's x faces is periodic; a periodic face is half of a pair, so make both xmin and xmax periodic, or neither.");
+        if ((f.YMin == Em3dBoundaryKind.Periodic) != (f.YMax == Em3dBoundaryKind.Periodic))
+            problems.Add("Only one of the air box's y faces is periodic; a periodic face is half of a pair, so make both ymin and ymax periodic, or neither.");
+        if (f.ZMin == Em3dBoundaryKind.Periodic || f.ZMax == Em3dBoundaryKind.Periodic)
+            problems.Add("A z face of the air box is periodic. A periodic cell repeats in x and y; its z faces are its ports, a ground or open space.");
+        if (Boundary.Scan is { } scan && (!double.IsFinite(scan.ThetaDeg) || !double.IsFinite(scan.PhiDeg) || scan.ThetaDeg < 0 || scan.ThetaDeg >= 90))
+            problems.Add($"The periodic cell's scan θ is {scan.ThetaDeg}°; it is a number of degrees from 0 up to, not including, 90.");
+        var floquet = Ports.Where(p => p.Floquet is not null).ToList();
+        if (floquet.Count == 0) return;
+        bool cell = f.XMin == Em3dBoundaryKind.Periodic && f.YMin == Em3dBoundaryKind.Periodic;
+        foreach (var g in floquet.GroupBy(p => p.FaceGroup ?? p.Number))
+        {
+            var p = g.OrderBy(q => q.Number).First();
+            string label = p.FaceGroupLabel ?? p.Name;
+            if (Type != Em3dProblemType.Driven) problems.Add($"Floquet port '{label}' is in a {Type} problem; a Floquet port is a driven problem's.");
+            if (!cell) problems.Add($"Floquet port '{label}' is on an air box whose x and y faces are not both periodic pairs; a Floquet port is a periodic cell's.");
+            if (p.Kind != Em3dPortKind.Wave) problems.Add($"Floquet port '{label}' is not a wave port.");
+            string? face = FaceOf(p.Min, p.Max);
+            if (face is not ("zmin" or "zmax")) problems.Add($"Floquet port '{label}' does not lie on the air box's zmin or zmax face.");
+            else
+            {
+                double tol = 1e-9 * Math.Max(1.0, Math.Max(Boundary.Max.X - Boundary.Min.X, Boundary.Max.Y - Boundary.Min.Y));
+                if (Math.Abs(p.Min.X - Boundary.Min.X) > tol || Math.Abs(p.Max.X - Boundary.Max.X) > tol ||
+                    Math.Abs(p.Min.Y - Boundary.Min.Y) > tol || Math.Abs(p.Max.Y - Boundary.Max.Y) > tol)
+                    problems.Add($"Floquet port '{label}' covers part of the {face} face; a Floquet port is the whole face of its cell.");
+            }
+            var modes = g.Select(q => q.Floquet!).ToList();
+            if (modes.Any(m => m.Modes != modes[0].Modes) || modes.Count != modes[0].Modes ||
+                !modes.Select(m => m.Mode).Order().SequenceEqual(Enumerable.Range(1, modes[0].Modes)))
+                problems.Add($"Floquet port '{label}' does not have one entry for each of its {modes[0].Modes} modes.");
+            if (!(modes[0].Er >= 1)) problems.Add($"Floquet port '{label}''s permittivity is {modes[0].Er}; it is 1 or more.");
+            if (g.Any(q => !q.ModeNormalised)) problems.Add($"Floquet port '{label}' is referred to an impedance; a Floquet mode's S-parameters are normalised to the mode.");
+        }
+    }
+
+    /// <summary>
+    /// brief-hzn-20 — a hollow guide's modes: wave ports of one rectangle, each hollow and normalised to its mode, one entry for each
+    /// mode, numbered one after another.
+    /// </summary>
+    private void ValidateHollowModes(List<string> problems)
+    {
+        foreach (var g in Ports.Where(p => p.HollowMode is not null).GroupBy(p => p.FaceGroup ?? p.Number))
+        {
+            var ps = g.OrderBy(p => p.Number).ToList();
+            string label = ps[0].FaceGroupLabel ?? ps[0].Name;
+            if (ps.Any(p => p.Kind != Em3dPortKind.Wave || !p.Hollow))
+                problems.Add($"Port '{label}' has modes that are not hollow-guide wave ports; a port of several modes is a hollow guide's.");
+            if (ps.Any(p => !p.ModeNormalised))
+                problems.Add($"Port '{label}' is referred to an impedance; each mode of a hollow guide of several modes is normalised to the mode.");
+            if (ps.Any(p => p.Min != ps[0].Min || p.Max != ps[0].Max))
+                problems.Add($"Port '{label}''s modes do not share one rectangle.");
+            var modes = ps.Select(p => p.HollowMode!).ToList();
+            if (modes.Any(m => m.Modes != modes[0].Modes) || modes.Count != modes[0].Modes ||
+                !modes.Select(m => m.Mode).SequenceEqual(Enumerable.Range(1, modes[0].Modes)) ||
+                ps.Select(p => p.Number).Zip(ps.Skip(1).Select(p => p.Number)).Any(x => x.Second != x.First + 1))
+                problems.Add($"Port '{label}' does not have one entry for each of its {modes[0].Modes} modes, numbered one after another in mode order.");
+            if (modes.Any(m => !(m.CutoffLengthM > 0)))
+                problems.Add($"Port '{label}' has a mode with no cutoff length.");
+        }
+    }
+
     private void ValidateFaceGroups(List<string> problems)
     {
-        foreach (var g in Ports.Where(p => p.FaceGroup is not null).GroupBy(p => p.FaceGroup!.Value))
+        foreach (var g in Ports.Where(p => p.IsTerminal).GroupBy(p => p.FaceGroup!.Value))
         {
             var ps = g.OrderBy(p => p.Number).ToList();
             string name = ps[0].FaceGroupLabel is { } l ? $"Port '{l}'" : $"Face group {g.Key}";

@@ -455,6 +455,13 @@ metal. A run past memory only because it calibrates its drawn ports is solved wi
 ([the budget](#budget)). A run with uncalibrated ports is 3–8× faster than the calibrated one, which solves its standards beside the
 structure (4.0 s against 13.8 s, and 4.9 s against 39.3 s, on the lines above). What it costs is the launch, above.
 
+**On a thick substrate the port's height matters.** The grounded source runs from the line down to the ground plane with
+no current along its height. On a spiral over 750 µm of silicon that stopped describing the launch between 0.26 and 0.28
+of a wavelength in the substrate, and the passive part read non-passive from about 31 GHz; returning each lead through a
+drawn via chain to the backside made it passive again. So once a grounded Uncalibrated Port's height passes a quarter
+wavelength in the dielectric under it, the run warns, naming the port, its height and the frequency the quarter wavelength
+falls at, and listing the swept points past it. A drawn return to the ground plane, or a lower top frequency, avoids it.
+
 **At a cut cell instance's pins.** The faces a cut leaves are Uncalibrated Ports. Cutting a 200 µm section out of a 72 µm
 line and putting it back as an ideal line of its length reads 6.1e-2 against the whole line at 20 GHz, where calibrated
 faces read 1.7e-2. In 3D a cut instance's ports are lumped sheets from the face to the return, and the sheet's height is
@@ -994,6 +1001,11 @@ standard did not resemble the taper's own flanks. That is what the automatic fee
 prevent, and what the passivity check exists to catch if anything like it ever happens again.</p>
 </div>
 
+The warning, and the caveat line the `.sNp` carries, name the ports the excess is on: the incident wave that comes back
+largest at the worst point, read as each port's share of its power (*"The excess is carried by port 2 (… of the wave that
+gains most)"*). Where the run cannot say why, and the substrate under the top metal is more than a tenth of a wavelength
+thick at the worst point, it gives that thickness in wavelengths instead of saying the cause was not identified.
+
 ### On a conducting substrate {#deembedding-conducting}
 
 A dielectric that [states a conductivity](stackup.html#conducting-substrate) has a different permittivity at every frequency, so the
@@ -1325,6 +1337,16 @@ On two 250 µm test blocks, solved de-embedded at 1, 5 and 10 GHz, the local gri
 refinement on the shared grid moves the first block by 7.6 × 10⁻⁵ to 7.5 × 10⁻⁴, so the local grid
 costs about what the mesh's own resolution already does. The DC point, the current-density map and
 the far field read the local grid too.
+
+**On a small part the local grid does not follow the sweep.** It starts from blocks a guided wavelength over Cells per
+wavelength wide at the mesh frequency, so on artwork one or two blocks across, where the first block edge fell used to be the
+whole of the partition: a 140 µm spiral was cut in two at a 40 GHz mesh frequency and left whole at 22 GHz, and a point read
+differently in a 1–40 GHz sweep than in a 16–22 GHz one. An axis whose artwork spans at most two blocks now starts from one
+block across the artwork, so those two sweeps mesh it identically. Larger artwork is meshed as before. A result solved
+before this on artwork that small reads as stale once. The run's mesh note says which applies: it names the frequency the
+blocks were taken at (**Mesh frequency** when stated, above the sweep's top or below it, otherwise the top of the sweep),
+and on artwork that small on both axes that the grid starts from one block across it, so Cells per wavelength and Mesh
+frequency then set only how wide a block may grow.
 
 A port calibration that takes in [a neighbouring conductor](#passive-neighbour) or
 [a coupled port](#group) reads the metal beside the feed gridline by gridline, which the local grid

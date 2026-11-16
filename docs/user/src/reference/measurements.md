@@ -4,7 +4,7 @@ slug: reference/measurements.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Measurements
 lede: A measurement is a named figure of merit computed from a run's results — Gain, PAE, Pout, whatever you can write as an equation over the analysis output. It draws no current and stamps nothing; it is cube algebra evaluated after the analyses finish, and its result plots like any other trace.
-keywords: measure, measurement syntax, expression syntax, syntax, how to write a measurement, MEAS, post-processing, expression, equation, derived result, post process, gain vs pout, PAE
+keywords: measure, measurement syntax, expression syntax, syntax, how to write a measurement, MEAS, post-processing, expression, equation, derived result, post process, gain vs pout, PAE, rise time, overshoot, settling time, THD, fft, transient
 ---
 
 <figure class="symbol"><span class="frame">
@@ -81,6 +81,7 @@ HB1.I("M1:d", 1, All)  device-port branch current, fundamental, swept
 DC1.I("Iout")          no sweep → a scalar
 HB1.P("Iout")          power through IProbe Iout, fundamental band, in W — see Power through an IProbe
 ENV1.Pt("Iout")        the same power at every envelope step (SaveWaveforms=yes)
+SP1.link("CH1", "Gain_dB")   a Propagation Channel's report cube link:CH1:Gain_dB, every sweep axis kept
 ```
 
 **Why use it:** it is order-independent — the engine locates each axis by name, so adding or
@@ -330,8 +331,9 @@ spectral axis is `harmonic` (or `mixIndex`) and a small-signal sweep is `ssfreq`
 
 ## One point by its value: `value_at` {#value-at}
 
-`value_at(x, v)` is `x` at the frequency `v`. When `v` is a grid point it is read straight off; between
-two points it is interpolated linearly. Name another axis as the last argument to read along that one
+`value_at(x, v)` is `x` at the frequency `v`, or at the time `v` when `x` has no frequency axis and a time
+axis (a [transient](transient.html) or envelope waveform). When `v` is a grid point it is read straight off;
+between two points it is interpolated linearly. Name another axis as the last argument to read along that one
 instead.
 
 ```text
@@ -350,6 +352,38 @@ measure  Pout_10  = value_at(dBm(ENV1.P("Iout")), 10, "Pin")   the output power 
 
 A measurement that comes out a single number shows as one cell of a [Table plot](data-display.html), so a
 few `value_at`, `max_over` and `min_over` lines make a readout of the numbers you care about.
+
+## Time-domain functions {#time-domain}
+
+A [transient](transient.html) run's waveforms, and an envelope run's real ones, have a `time` axis. These
+functions read along it and keep every other axis, so a transient inside a parametric sweep gives one value per
+sweep point. The waveform argument is a real cube, such as `TR1.V("out")` or `TR1.I("IL")`.
+
+| Function | Returns |
+|---|---|
+| `rise(x, lo=10, hi=90)`, `fall(…)` | The first edge from `lo` % to `hi` % of the swing (s). The swing is the step from the first value to the last; a record that ends near where it began (a pulse) takes its minimum and maximum |
+| `overshoot(x)` | How far `x` goes past its final value, in % of the step from the first value to the last; 0 when it never does |
+| `undershoot(x)` | How far `x` comes back below its final value after the overshoot's peak, in % of the step: the first trough of a ringing step |
+| `settle(x, tol=1)` | The time after which `x` stays within `tol` % of the step of its final value (s) |
+| `period(x)`, `frequency(x)` | From the rising crossings of the mean, averaged over the last half of the record (s, Hz) |
+| `value_at(x, t)` | `x` at time `t`, interpolated |
+| `tmin(x, t1, t2)`, `tmax(…)` | The time of the minimum (maximum) between `t1` and `t2`, or over the whole record (s) |
+| `avg(x, t1, t2)`, `rms(x, t1, t2)` | The time-weighted mean and rms between `t1` and `t2` |
+| `fft(x, f0, periods=1, window="none")` | The spectrum of the last whole `periods` of `x` at `f0` and its harmonics, shaped like a harmonic-balance result: a `harmonic` axis, full-amplitude phasors with the record's own time origin. `"hann"` windows it |
+| `fft_power(v, i, f0, periods=1)` | The power per harmonic from a voltage and a current, V₀I₀ at DC and ½Re(VₖIₖ*) above it (W), as harmonic balance's `Pprobe_W` |
+| `thd(x, f0, n=10)` | Total harmonic distortion of the last period, harmonics 2 to `n` against the fundamental (%) |
+
+```text
+measure  Trise     = rise(TR1.V("out"))
+measure  Ripple    = value_at(TR1.V("out"), tmax(TR1.V("out"), 199u, 200u)) - value_at(TR1.V("out"), tmin(TR1.V("out"), 199u, 200u))
+measure  Pout_dBm  = 10*log10(1000*value_at(fft_power(TR1.Vprobe("IOUT"), TR1.I("IOUT"), 1GHz), 1, "harmonic"))
+```
+
+`Vprobe` is the voltage at an IProbe's first net, which with its current gives the power through it. Because `fft`
+is shaped like a harmonic-balance spectrum, a trace written for one plots the other: `dB(Vout)` reads
+`HB1.V("out")` on one bench and `fft(TR1.V("out"), 1GHz)` on another unchanged. A waveform with no edge of the kind
+asked for gives a missing value rather than an error, so one sweep point without one does not fail the rest. A
+waveform with no `time` axis is refused, naming the function, and `circuitrf check` finds it before a run.
 
 ## Spec checks: the worst value over a band {#spec}
 
@@ -395,6 +429,7 @@ and give `lo, hi` before it to take part of the axis):
 | `pctl_over(x, p)` | the p-th percentile, p from 0 to 100 |
 | `skew_over(x)`, `kurt_over(x)` | the skewness and the excess kurtosis (0 for a normal distribution) |
 | `yield_over(condition)` | the fraction of trials for which the condition holds: `yield_over(Gain > 14)` |
+| `outage_over(x, threshold)` | the fraction of present values below the threshold, with its exact 95 % binomial interval stored beside it as `lo` and `hi`: `outage_over(Prx, -95, "drop")` over a Propagation Channel's drops |
 | `cpk(x, lo, hi)` | the process capability index; write either limit as `"none"` for a one-sided spec |
 | `sigma_to(x, limit)` | how many standard deviations the limit lies from the mean (positive above it) |
 

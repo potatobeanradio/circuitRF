@@ -9,8 +9,22 @@ using CircuitRF.Design.Layout.Em3d;
 namespace CircuitRF.Design.Em3d;
 
 /// <summary>The programs a 3D EM run can need. circuitRF distributes none of them (em-3d.md §7.1). brief-emi-2 — EMerge is
-/// a Python interpreter with EMerge importable; appended, so no stored value changes.</summary>
-public enum SolverTool { Palace, Gmsh, OpenEms, Emerge }
+/// a Python interpreter with EMerge importable; appended, so no stored value changes. brief TRN-7 R-trn7-1 — ngspice, the
+/// transient analysis's second solver (transient.md §9.1), appended for the same reason; it is the one CIRCUIT program, listed
+/// by <see cref="CircuitSolvers.Tools"/> rather than by the 3D solver registry.</summary>
+public enum SolverTool { Palace, Gmsh, OpenEms, Emerge, Ngspice }
+
+/// <summary>brief TRN-7 R-trn7-3 — the programs a circuit analysis can run on: Settings ▸ Solvers' Circuit group and the last
+/// rows of <c>circuitrf solver list</c>, after the 3D solvers, which matter more (owner, 2026-11-15).</summary>
+public static class CircuitSolvers
+{
+    /// <summary>The circuit programs, in the order they are listed.</summary>
+    public static IReadOnlyList<SolverTool> Tools { get; } = [SolverTool.Ngspice];
+
+    /// <summary>Every program the install assistant knows, the 3D solvers first: what <c>solver list</c> lists and
+    /// <c>solver install</c> takes.</summary>
+    public static IReadOnlyList<SolverTool> AllTools => [.. Em3dSolvers.Tools, .. Tools];
+}
 
 /// <summary>Where a program was found — the column the Settings row shows. <see cref="Installed"/> and
 /// <see cref="Conda"/> are brief-em3d-24's two routes; they are appended so no stored value changes.</summary>
@@ -220,6 +234,14 @@ public sealed partial class SolverDiscovery
     public static SolverDiscovery Emerge { get; } = Create(SolverTool.Emerge);
 
     /// <summary>
+    /// brief TRN-7 R-trn7-1 — ngspice, the transient analysis's second solver (transient.md §9.1). <c>ngspice -v</c> prints a
+    /// banner whose second line is <c>** ngspice-47 : Circuit level simulation program</c>; the word after the dash is the
+    /// version. On Windows the program is upstream's console build, <c>ngspice_con.exe</c>: its <c>ngspice.exe</c> opens a
+    /// window of its own even in batch mode. Any version runs; the list is of the versions circuitRF has run.
+    /// </summary>
+    public static SolverDiscovery Ngspice { get; } = Create(SolverTool.Ngspice);
+
+    /// <summary>
     /// A new instance for <paramref name="tool"/> with the shipped data and none of the shared
     /// instance's state — its own counters, no preference, the process's environment. Tests configure
     /// one of these rather than the shared instance, which every other test in the process also reads.
@@ -295,7 +317,25 @@ public sealed partial class SolverDiscovery
             ],
             extraDirectories: [], untestedRuns: true, installedOnly: true),
 
-        _ => throw new ArgumentOutOfRangeException(nameof(tool), tool, "No such 3D solver program."),
+        SolverTool.Ngspice => new(
+            SolverTool.Ngspice, "ngspice", "CIRCUITRF_NGSPICE",
+            OperatingSystem.IsWindows() ? ["ngspice_con", "ngspice"] : ["ngspice"],
+            versionArguments: ["-v"],
+            // TESTED versions, oldest first; any other runs, with a warning. 41 is the newest conda-forge build, so it is what
+            // circuitRF's macOS x64 and Linux x64 recipes install, and the Windows recipe pins the same release from upstream's
+            // archive (testdata/transient/README.md). 47 generated the committed native-versus-ngspice references.
+            validated: [
+                new SolverValidatedVersion("41", "41", null),
+                new SolverValidatedVersion("47", "47", null),
+            ],
+            // the default directories (transient.md §9.1): /usr/bin on Linux (a distribution's package), and on Windows the
+            // folder upstream's archive unpacks to, at the drive root its instructions name or under Program Files
+            extraDirectories: OperatingSystem.IsLinux() ? ["/usr/bin"] : [],
+            windowsDirectories: [@"C:\Spice64\bin",
+                                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Spice64", "bin")],
+            spackPackage: "ngspice", untestedRuns: true),
+
+        _ => throw new ArgumentOutOfRangeException(nameof(tool), tool, "No such solver program."),
     };
 
     /// <summary>The instance for <paramref name="tool"/>.</summary>
@@ -304,6 +344,7 @@ public sealed partial class SolverDiscovery
         SolverTool.Palace => Palace,
         SolverTool.Gmsh   => Gmsh,
         SolverTool.Emerge => Emerge,
+        SolverTool.Ngspice => Ngspice,
         _                 => OpenEms,
     };
 
@@ -352,7 +393,8 @@ public sealed partial class SolverDiscovery
     internal SolverDiscovery(
         SolverTool tool, string name, string environmentVariable, IReadOnlyList<string> candidates,
         IReadOnlyList<string> versionArguments, IReadOnlyList<SolverValidatedVersion> validated,
-        IReadOnlyList<string> extraDirectories, string? spackPackage = null, bool untestedRuns = false, bool installedOnly = false)
+        IReadOnlyList<string> extraDirectories, string? spackPackage = null, bool untestedRuns = false, bool installedOnly = false,
+        IReadOnlyList<string>? windowsDirectories = null)
     {
         Tool                = tool;
         Name                = name;
@@ -360,7 +402,9 @@ public sealed partial class SolverDiscovery
         CandidateCommands   = candidates;
         _versionArguments   = versionArguments;
         ValidatedVersions   = validated;
-        SearchDirectories   = DefaultSearchDirectories(extraDirectories);
+        SearchDirectories   = OperatingSystem.IsWindows()
+            ? [.. (windowsDirectories ?? []).Where(d => d.Length > 0 && Path.IsPathRooted(d))]
+            : DefaultSearchDirectories(extraDirectories);
         SpackPackage        = spackPackage;
         UntestedRuns        = untestedRuns;
         InstalledOnly       = installedOnly;
@@ -734,7 +778,9 @@ public sealed partial class SolverDiscovery
     public string DescribeFailure(IReadOnlyList<string> rejected, bool windows)
     {
         var sb = new StringBuilder();
-        sb.Append($"{Name} was not found, so this 3D setup cannot run. ");
+        sb.Append(Tool == SolverTool.Ngspice
+            ? $"{Name} was not found, so a transient analysis with Solver=ngspice cannot run. "
+            : $"{Name} was not found, so this 3D setup cannot run. ");
         if (InstalledOnly)
             // brief-emi-2 R-emi2-3a — EMerge is a Python environment, and circuitRF takes none from PATH.
             sb.Append($"To use an {Name} that is already installed, name its Python in Settings ▸ Solvers (the interpreter, " +
@@ -744,7 +790,8 @@ public sealed partial class SolverDiscovery
         {
             sb.Append($"To use a {Name} that is already installed, name it in Settings ▸ Solvers, or set the " +
                       $"environment variable {EnvironmentVariable} to its full path. ");
-            sb.Append($"To install it, follow “{ManualInstallSection}” in the EM Setup reference ({ManualInstallPage}).");
+            if (Tool != SolverTool.Ngspice)
+                sb.Append($"To install it, follow “{ManualInstallSection}” in the EM Setup reference ({ManualInstallPage}).");
         }
         // brief-em3d-24 — the assistant, where this machine has a recipe; brief-em3d-26 — on Windows, Palace's
         // recipe runs inside the Linux subsystem.
@@ -1148,6 +1195,7 @@ public sealed partial class SolverDiscovery
 
     private static readonly Regex PalaceVersion  = new(@"^\s*Palace version:\s*(\S+)\s*$", RegexOptions.Multiline);
     private static readonly Regex PalaceSchema   = new(@"^\s*Schema version:\s*(\S+)\s*$", RegexOptions.Multiline);
+    private static readonly Regex NgspiceVersion = new(@"^\*+\s*ngspice-(\S+)\s*:.*$", RegexOptions.Multiline);
     private static readonly Regex GmshVersion    = new(@"^\s*(\d+\.\d+(?:\.\d+)?)(\S*)\s*$", RegexOptions.Multiline);
     private static readonly Regex OpenEmsVersion = new(@"^.*\bopenEMS\b.*--\s*version\s+(\S+)\s*$", RegexOptions.Multiline);
     private static readonly Regex CsxcadVersion  = new(@"^\s*CSXCAD\s*--\s*Version:\s*(\S+)\s*$", RegexOptions.Multiline);
@@ -1170,6 +1218,13 @@ public sealed partial class SolverDiscovery
                 var s = PalaceSchema.Match(output);
                 return new ParsedVersion(v.Groups[1].Value, s.Success ? s.Groups[1].Value : null,
                                          s.Success ? $"{v.Value.Trim()}, {s.Value.Trim()}" : v.Value.Trim());
+            }
+            case SolverTool.Ngspice:
+            {
+                // brief TRN-7 — "** ngspice-47 : Circuit level simulation program"; the program prints this banner and nothing
+                // with that shape is printed by anything else on a PATH.
+                var v = NgspiceVersion.Match(output);
+                return v.Success ? new ParsedVersion(v.Groups[1].Value, null, v.Value.Trim().TrimStart('*').Trim()) : null;
             }
             case SolverTool.Gmsh:
             {

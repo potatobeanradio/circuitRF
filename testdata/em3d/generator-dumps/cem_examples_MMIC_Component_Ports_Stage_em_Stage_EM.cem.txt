@@ -1,3 +1,13 @@
-refusal Port 1 ('1') at (0, 135 µm) is not on any conductor of this EM setup's signal layers. Move it onto the metal, or check that the artwork it names is on a layer bound to a signal conductor in the technology's stackup.
+refusal 1 touches 'U1/Metal1/3' on its top edge and nothing on its bottom. Its bottom edge misses 'U1/Metal1/4' by 302.672 µm. A lumped port lies between two conductors, one on each of two opposite edges. Move the port (Move… on the port) so its bottom edge lies on the metal it returns through, or draw that metal.
+note This setup names component ports, so its problem is built in a 3D view of the layout, made in memory as New 3D View from Layout makes one; nothing is written.
+note U1: 8 shape(s) came from 6 placed instance(s), flattened into world coordinates for extraction.
+note U1: 4 overlapping conductor shape(s) were merged into 2 — copper that overlaps on one level is one conductor, in 3D as in the planar model.
+note U1: Dielectric 'MIM Dielectric' exists only where 'Nitride' is drawn, and nothing is drawn there, so it is not in the 3D problem.
+note U1: Robust meshing removed 3 of 53 outline points that lay within a fraction of a micrometre of the line through their neighbours; no outline moved by more than 0 µm.
+note U1: Via barrels in this EM problem are solid: 'Backside Via' (Fill Plated, 3 µm wall) is built solid; 'Metal1-Metal2 Post' (Fill Solid) is solid. A hollow barrel's air core changes nothing an RF answer can see and meshes into inverted elements; a thermal problem keeps the wall.
+note U1: Placed in a 3D view, the layout draws no board outline, so its slabs are bounded by the box round its drawn geometry. Draw a board outline when the board's edge matters.
+note 8 shape(s) came from 6 placed instance(s), flattened into world coordinates for extraction.
+note 5 cut face(s) of cell instances left out of the problem carry a lumped sheet from the face to its return, as a drawn edge port's does, as wide as the face; the instances and the sheets are in the solved problem only, not the layout.
+note The air box's floor is below the geometry: a 3D view states no floor of its own, so every face is the setup's (absorbing unless its AirBox says otherwise).
 no-alpha 
 unknown-temperature 

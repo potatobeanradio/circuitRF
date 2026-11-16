@@ -17,7 +17,7 @@ section pictures — works on a machine with no 3D solver at all. A solver is ne
 which problem.
 
 This page teaches the editor through the **3D Package** example — an MMIC die in a ceramic package with a
-lid — which was drawn with exactly the gestures below. Open it with **File ▸ New ▸ Examples ▸ 3D Package**. The
+lid — which was drawn with exactly the gestures below. Open it with **File ▸ New ▸ Examples ▸ 3D EM ▸ 3D Package (the 3D editor)**. The
 **3D Connector** example teaches the operations the geometry kernel adds — booleans, fillets and STEP
 parts — through a coaxial connector launching onto a board ([below](#connector)).
 
@@ -126,7 +126,7 @@ turns on the clip plane. A new 3D view opens orthographic. The line along the bo
 
 ## The example: an MMIC in a package {#example}
 
-**File ▸ New ▸ Examples ▸ 3D Package** copies a workspace with two cells to a folder you choose, and opens its
+**File ▸ New ▸ Examples ▸ 3D EM ▸ 3D Package (the 3D editor)** copies a workspace with two cells to a folder you choose, and opens its
 `README.md`, which carries the numbers quoted here.
 
 - **Thru die** — an MMIC's **layout**, drawn in **µm** on a GaAs technology (`tech/mmic-gaas.ctech`: 100 µm
@@ -150,7 +150,7 @@ ports do not depend on them: a bigger cavity leaves the die where it is and move
 
 ## The second example: a connector launch {#connector}
 
-**File ▸ New ▸ Examples ▸ 3D Connector** is a coaxial connector launching onto a 50 Ω microstrip at a board's edge —
+**File ▸ New ▸ Examples ▸ 3D EM ▸ 3D Connector (booleans, fillets, STEP)** is a coaxial connector launching onto a 50 Ω microstrip at a board's edge —
 the 3D problem an RF board meets most — and it is built from the operations the geometry kernel adds:
 
 - **Board** — a layout in **mil**: 20 mil of PTFE-glass laminate over a ground plane, with a 62 mil line.
@@ -496,6 +496,18 @@ you tick it again. Hiding an object is not the same thing: a hidden object is st
   or moving an object while it is not modelled does not, since no run has it.
 - A not-modelled object is still **exported** — to STEP and by Export Drawing — because those export what is drawn.
 - `circuitrf check` lists what is not modelled and reports the refusals above; `explain` names it in its walk.
+
+### One-sided sheet {#one-sided}
+
+A lossy sheet (one whose metal has a finite conductivity) is normally solved as a thin conductor with a current on each
+of its two faces. Tick **One-sided** in Properties and its metal is instead **one surface impedance carrying the current
+of both faces**, which loses about twice as much in the conductor. It is how a Hertzon design whose Finite Conductivity
+boundary has Two-sided off is solved, so such a design gives the same answer in both programs.
+
+- The box appears only for a sheet whose metal is lossy: a perfect conductor has no surface impedance, and `check` warns
+  if `OneSided` is written on one.
+- **EMerge** runs it. **Palace** and **openEMS** refuse the run, naming the sheet.
+- One click is one undo step. It is saved in the `.c3d` only when ticked, as `"OneSided": true`.
 
 ### Copy and Paste between 3D views {#copy-paste}
 
@@ -1436,7 +1448,7 @@ die stays put. The closed form then says 20.87 GHz — a mode below 22 GHz, walk
 on *Lid modes* finds where the drawn package puts it.
 
 For the question on its own, a resonance inside the band and a grounded post that moves it out, open **File ▸
-New ▸ Examples ▸ 3D Eigenmode** ({{anchor: em-setup.html#eigenmodes|EM Setup ▸ Eigenmodes}} quotes its numbers).
+New ▸ Examples ▸ 3D EM ▸ 3D Eigenmode (a cavity resonance)** ({{anchor: em-setup.html#eigenmodes|EM Setup ▸ Eigenmodes}} quotes its numbers).
 
 ## Temperature {#thermal}
 
@@ -1444,7 +1456,7 @@ The same model solves for heat. A **thermal setup** (*Simulate ▸ Setup Analyse
 whose *Solver* is set to **Thermal**) is solved by circuitRF's own steady-conduction solver after Gmsh meshes every solid
 — air is not meshed. What it needs is drawn in the
 view, and what it is worth is typed in the setup, so one model carries several thermal setups beside its EM ones.
-What a run models, and three worked examples with their numbers (*File ▸ New ▸ Examples ▸ Thermal: …*), are in
+What a run models, and three worked examples with their numbers (*File ▸ New ▸ Examples ▸ Thermal ▸ …*), are in
 {{anchor: thermal.html|Thermal}}; this section is the gestures.
 
 <figure class="figure fixed"><span class="frame">

@@ -1,0 +1,731 @@
+# circuitRF — Transient analysis, the ngspice solver, transient-assisted harmonic balance
+
+**Status:** built (briefs TRN-1 to TRN-9): the native engine (§3–§4), every element class of §5 (TRN-4b gave the line
+models' losses their phase, so lossy single lines run), the sources, `IC` and the switch, built as `VSwitch` (§6–§7), the
+time-domain measures and the Transient preset (§8), the SPICE deck writer and ngspice as a second solver (§9),
+transient-assisted harmonic balance for `hb` and `osc` (§10), the CLI, MCP, `check` and `explain` (§11), the user page
+(`docs/user/src/reference/transient.md`) and three examples (Pulse Response, Buck Converter, Class-E with a Transient
+Seed). **Not built:** lossy or dispersive coupled lines in transient (refused by name, §5.3); FET-law, composed-FET, JFET,
+IGBT, VDMOS and nonlinear-capacitor translations to the dialect (refused, §9.2.1); everything in §14. **Not tested:** ngspice
+on Windows itself (x64 or arm64), its Windows download, and an Intel Mac; Linux x64, Linux arm64 and the Windows build under
+Wine were run (TRN-7) · **Series:** [`brief-trn-0-overview.md`](../briefs/brief-trn-0-overview.md) ·
+**Builds on:** the envelope engine (`src/Engine/Envelope`: its stepping, `EnvelopeSnpFit`, `EnvelopeLineDelay`), the
+nonlinear DC engine ([`nonlinear-dc.md`](nonlinear-dc.md)), harmonic balance ([`harmonic-balance.md`](harmonic-balance.md)),
+the SPICE-dialect reader ([`spice-models.md`](spice-models.md)), the solver discovery and install machinery
+(`src/Design/Em3d/SolverDiscovery.cs`, `src/Design/Em3d/Install`), measurements ([`measurements.md`](measurements.md)).
+
+circuitRF is a harmonic-balance simulator first, and that does not change. This note adds three things beside it:
+
+1. **A native transient analysis**, `type=tran`, solving the elaborated netlist in the time domain from a DC operating
+   point, on the same component models every other analysis uses. It is the default solver for a transient analysis.
+2. **ngspice as an optional transient solver**, chosen on the analysis card. circuitRF writes the bench's netlist in the
+   SPICE dialect, runs the user's ngspice on it as a separate process, and reads its waveforms back into an ordinary
+   `DataSet`, so a design drawn once in circuitRF can be simulated by ngspice without being drawn again. Where an element
+   has no exact counterpart, the translation refuses it by name; it never substitutes an approximation silently.
+3. **Transient-assisted harmonic balance**: a short native transient run, from the DC point, whose last period becomes
+   harmonic balance's starting point. It is meant for circuits harmonic balance struggles to start from DC: switching
+   PAs, hard-driven mixers, frequency dividers and oscillators.
+
+The native engine is designed and written here from first principles. ngspice's source code is not read for it; ngspice
+is a solver circuitRF calls and a reference circuitRF is measured against, nothing more.
+
+---
+
+## 0. Terms
+
+| Term | Meaning here |
+|---|---|
+| **Transient analysis** | A solution x(t) of the circuit equations over a time interval, from an initial state, with every source driven by its waveform. `.cnl` `analysis … type=tran`. |
+| **Native** | circuitRF's own transient engine (§4). |
+| **ngspice** | The open-source SPICE-dialect simulator, installed by the user or by circuitRF's recipe (§9.1), run as a separate process. |
+| **Accepted step** | A time step whose local error estimate passed; the engine's own, non-uniform time grid. |
+| **Output grid** | The uniform time axis every transient result is reported on (`Step`), interpolated from accepted steps (§4.6). |
+| **Breakpoint** | A time at which a source's waveform has a corner (a pulse edge, a PWL vertex, a delay ending). A step always lands on it. |
+| **Interface** | The ports of nonlinear devices, as in harmonic balance: the unknowns the nonlinear Newton works on when the linear rest is condensed away (§4.4). |
+| **Seed** | The starting point a transient run hands to harmonic balance or the oscillator analysis (§10). |
+| **Translation** | The `.cir` file circuitRF writes for ngspice from an elaborated bench (§9.2). |
+
+## 1. What circuitRF already has
+
+| Piece | Where | What transient gets from it |
+|---|---|---|
+| Charge-based device evaluation: `i(v)`, `q(v)`, `dg`, `dc` | `ComponentModel.Evaluate` | Every nonlinear device works in the time domain as it stands; this is the form transient integration needs |
+| A time-stepping circuit solver | `EnvelopeEngine` (BDF2 with a backward-Euler start, the device Jacobian from `HbNewton`) | The structure of a stepped Newton on the interface; its harmonic-0 case is a fixed-step transient |
+| Recovery of `G` and `C` from two frequency-domain stamps | `EnvelopeEngine` (exact for any stamp affine in jω) | Every lumped linear model in the time domain with no per-model work |
+| Rational realization of frequency-defined elements as extra linear unknowns, `G + jωC` at every ω | `EnvelopeSnpFit` (SnP blocks, System Filters, Duplexers, Z(freq) blocks, tapers; passivity checked) | S-parameter files, filters and EM-cell results in the time domain |
+| Lines as delays, method of characteristics, sub-step interpolation that is passive | `EnvelopeLineDelay` | Transmission lines, exactly when lossless |
+| A robust DC operating point | `NonlinearDcEngine`, `BiasFreeze` | The transient's starting state |
+| A model's slowest time constant | `ComponentModel.SlowestTimeConstant` (envelope warm-up) | Settling estimates for `explain` and for seeding (§10) |
+| HB warm starts | `HbEngine`'s `warmStart` (`Complex[N, K]` on the interface) | The seed's destination (§10) |
+| The oscillator analysis and its probe | `OscEngine`, `OscProbeModel` (`Fguess`, `Aguess`) | The oscillator seed's destination (§10.3) |
+| A SPICE-dialect reader, element mapping and the charge idiom | `src/Core/Netlist/Spice`, `spice-models.md` §8–§9 | The translation's element table, run backwards, and its round-trip gate (§9.2) |
+| A placed SPICE model that points at its file | `SpiceModel` component | An exact translation by construction: the file is written into the deck as it is |
+| Verilog-A compiled to `.osdi`, per platform | `VerilogACompiler`, `OsdiBuilds` | ngspice loads the same compiled file (§9.2) |
+| Solver discovery, consent, recipes, Settings rows | `SolverDiscovery`, `SolverRecipes`, `SolverInstaller`, `SolverInstallRunner`, Settings ▸ Solvers | ngspice is one more `SolverTool` (§9.1) |
+| Time-axis cubes, plots and measurements | envelope results, Data Display, `MeasurementEvaluator` | Transient waveforms plot and measure through the same path |
+
+What is missing: an engine with an adaptive step, breakpoints and robust per-step Newton; time-domain waveforms on
+sources; a switch; initial conditions; a causal wideband treatment of lossy lines; a translation to the SPICE dialect;
+a rawfile reader; and a way to hand a transient's last period to harmonic balance.
+
+## 2. Decisions
+
+- **D1 — One analysis, `type=tran`** (alias `transient`), attached to a TestBench like every other. It runs on circuit
+  models; `model=em` on a tran analysis runs EM cells through their fitted results (§5.4).
+- **D2 — `Solver=native|ngspice`, native by default.** The solver is a key on the analysis directive, so a bench says
+  which solver produced its result and the CLI runs what the GUI runs. **On the analysis card the ngspice choice is
+  disabled (greyed) whenever discovery finds no usable ngspice** — not installed, its path gone, or a version that does
+  not answer `ngspice -v` — with a tooltip naming Settings ▸ Solvers, where Install… is. It becomes selectable as soon
+  as an install finishes or a path is set, with no restart. A bench that already says `Solver=ngspice` (written on
+  another machine, or by hand) keeps its value: the card shows it, disabled, with the same note beneath, and a run —
+  from the GUI, the CLI or MCP — is refused with that sentence and `circuitrf solver install ngspice`. It never falls
+  back to native.
+- **D3 — Transient quantities are real.** Voltages, currents and charges in the time domain are `double`; result cubes are
+  `DataKind.Real`. The complex-signal invariant covers AC and HB quantities and is untouched.
+- **D4 — No new analysis for the seed.** Transient-assisted HB is a key on the existing `hb` and `osc` directives
+  (`InitialGuess=dc|transient|fallback`, §10), default `dc`, so every existing result is unchanged.
+- **D5 — One source type per waveform, named after it**: `V_Pulse`, `V_PWL`, `V_Exp`, `V_SFFM`, `V_Expr` and their
+  `I_` twins, plus `Idc`, the DC current source circuitRF has lacked. Each type carries only its own keys and maps one
+  to one onto the dialect's stimulus, and all share one model class underneath, as the tone sources share
+  `ToneSourceModelBase`. There is no separate sine type: the tone sources are sines, and gain the transient-only keys
+  `Delay`, `Ramp` and `Damping` (§6.2), none of which changes another analysis.
+- **D6 — In DC, S-parameter, HB and envelope, a waveform source is its `Dc` value**, default the waveform's value at
+  t = 0, as the dialect does. Nothing time-varying leaks into a steady-state analysis.
+- **D7 — The translation is exact or it refuses.** An element with no exact counterpart in the dialect is refused by
+  name, with the reason, and the run does not start. A parameter of a translated model that the dialect cannot express
+  is refused by parameter. There is no "close enough" mapping. Optional approximate translations (a rational fit written
+  as a subcircuit, §9.2.3) are asked for by a key and labelled as such in the result.
+- **D8 — ngspice is a separate process, never a linked library.** It is run in batch mode on a scratch deck, its
+  waveforms read from its binary rawfile. A crash in ngspice is a failed run, not a failed circuitRF, and no native
+  dependency is added.
+- **D9 — ngspice is named, as the integrated EM solvers are.** It appears in Settings, on the analysis card, in the CLI
+  and in the docs. No other simulator is named anywhere; the dialect is "the SPICE dialect", as `spice-models.md` §0
+  already has it.
+- **D10 — Install from upstream binaries only; no source build is shipped** (§9.1). A platform with no binary gets a
+  `ByHand` message, as Gmsh on Linux arm64 does today.
+- **D11 — Every result is on a uniform output grid** (`Step`), whichever solver produced it, so plots, FFTs, measurements
+  and the native-versus-ngspice comparison all read one layout. The engine's own accepted steps are available on request
+  (`SaveSteps=yes`).
+- **D12 — Every parameter is an expression**; structural words (`Method`, `Solver`, `InitialState`,
+  `InitialGuess`) are words.
+
+## 3. The analysis directive
+
+```
+analysis TR1 type=tran Stop=2u Step=1n
+analysis TR2 type=tran Stop=50n Step=10p MaxStep=20p Method=gear2 InitialState=op Solver=ngspice
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Stop` | required | End time (s). |
+| `Step` | `Stop/1000` | Output grid spacing (s). Also the largest step unless `MaxStep` says otherwise. |
+| `Start` | `0` | First reported time; the run still starts at 0. |
+| `MaxStep` | `auto` | Largest accepted step: the smaller of `Step` and 1/(20·f) for the highest frequency any source carries. |
+| `Method` | `trap` | `trap` (trapezoidal, second order, no numerical damping) or `gear2` (second-order backward difference, damps ringing). Either takes backward-Euler steps after each breakpoint (§4.2). |
+| `RelTol` | `1e-3` | Relative tolerance on Newton updates and on the local error estimate. |
+| `VTol` | `1e-6` | Absolute voltage tolerance (V). |
+| `ITol` | `1e-12` | Absolute current tolerance (A). |
+| `InitialState` | `op` | `op`: the DC operating point, with every `IC=` held during the solve and released at t = 0⁺. `zero`: every unknown at 0 except the `IC=`s, with no DC solve. |
+| `IC` | | Net voltages held during the operating-point solve: `IC="out=0, bias=1.2"`. Parts carry their own `IC=` (§7.2). |
+| `Solver` | `native` | `native` or `ngspice` (§9). |
+| `SaveSteps` | `no` | `yes` adds the accepted-step cubes beside the output grid. |
+| `MaxSteps` | `10000000` | A refusal, before the run, when `Stop/MaxStep` exceeds it; `explain` gives the estimate (§11). |
+| `SpiceOptions` | | ngspice only: written verbatim as one `.options` line. Refused with `Solver=native`. |
+| `SpiceLines` | `refuse` | ngspice only: `rlgc` writes lines as ngspice's lossy lines fitted at `SpiceLineFreq`, each with its error reported (§9.2.3). |
+| `SpiceLineFreq` | `auto` | ngspice only: the frequency `rlgc` lines match circuitRF's model at; `auto` is the highest source frequency. |
+| `SpiceFit` | `no` | ngspice only: `yes` writes frequency-defined elements as subcircuits of circuitRF's rational fit, labelled (§9.2.3). |
+
+Recorded, as in the envelope analysis: every labelled net's voltage and every `IProbe`'s current, with no key needed.
+
+Result cubes: `V[net, time]` (V), `I[probe, time]` (A), `P[probe, time]` (instantaneous v·i, W), `Vprobe[probe, time]`
+(the voltage at the probe's first net, V, which with `I` gives a harmonic's power through `fft_power`, §8), `OP.V[net]` (the
+starting state), `__TranFundamental_Hz` (the lowest carrier a source plays, else a repeating pulse's rate: where the
+Transient preset reads the spectrum), and counters `Tran.AcceptedSteps`, `Tran.RejectedSteps`, `Tran.NewtonIterations`,
+`Tran.Factorizations` (the gates' evidence, never timings). With `Solver=ngspice` the same cubes, plus
+`Ngspice.Version` and the deck's path in the provenance.
+
+## 4. The native engine
+
+### 4.1 The equations
+
+After elaboration the circuit is
+
+```
+G x(t) + C dx/dt + i(x(t)) + dq(x(t))/dt + y_ext(t) = b(t)
+```
+
+- `G`, `C` — the linear part, recovered from each lumped model's frequency-domain stamp at two frequencies
+  (exact for any stamp affine in jω, as the envelope already does); a rational realization's extra unknowns
+  are in the same `G` and `C` (§5.4).
+- `i`, `q` — the nonlinear devices' currents and charges at their ports, from `Evaluate`.
+- `y_ext` — the delayed-wave terms of lines (§5.3), known at each step from earlier steps.
+- `b(t)` — the sources' waveforms (§6).
+
+Everything is real (D3).
+
+### 4.2 Integration
+
+A step from t_n to t_{n+1} = t_n + h replaces each time derivative by a linear combination of the unknown at t_{n+1} and
+known values at earlier steps. Two second-order methods are offered:
+
+- **`trap`** (default): the derivative at t_{n+1} is 2/h times the change minus the derivative at t_n. It preserves an
+  undamped oscillation's amplitude, which is right for RF waveforms, and it can carry a non-physical alternating error
+  after a discontinuity.
+- **`gear2`**: the derivative is a fixed combination of the new value and the two previous ones, using the actual
+  (unequal) step sizes. It damps high-frequency error, at the cost of some damping of real oscillations at coarse steps.
+
+After every breakpoint and at the first step, two backward-Euler steps are taken whichever method is chosen: a corner
+in a source would otherwise excite trapezoidal's alternating error, and the first step has no history for `gear2`.
+Each method's stepped companion is `G + α C` with α fixed by the method and h, plus history terms on the right-hand side.
+
+### 4.3 Step control
+
+- **Error estimate.** Each accepted step keeps the charges and fluxes of every reactive element. A predictor
+  extrapolates them to t_{n+1} from previous steps; after Newton converges the corrector's value is compared with the
+  prediction. The difference, scaled by the method's error constant, estimates the local error. A step is accepted when
+  the estimate is within `RelTol·|q| + abs` on every reactive element (abs from `VTol`/`ITol` through the element's
+  own scale), and the next h is chosen from the estimate's ratio to the tolerance, with growth capped at 2× per step.
+- **A ladder of step sizes.** h is always `MaxStep / 2^k`, k ≥ 0, except the single step that lands on a breakpoint.
+  With a fixed set of h values, the factorization of `G + α C` for each rung is computed once and kept, so a run's
+  linear cost is one factorization per rung visited plus one back-substitution per Newton iteration. This is the
+  envelope engine's "factor once per run" property generalized to an adaptive step.
+- **Breakpoints.** Every source reports the corners of its waveform in the run interval. A step that would pass a
+  breakpoint is shortened to land on it exactly; that one step's factorization is computed and discarded.
+- **The first step after a breakpoint** has no history to predict from, so its error is estimated by step doubling: the
+  same interval in two backward-Euler half steps, the full step's error twice the charge difference. It is rejected down
+  the ladder like any other step (TRN-4b; before that it was taken unchecked at MaxStep/64, and its damping was outside the
+  tolerance whatever RelTol said).
+- **Rejection.** A failed Newton or an over-tolerance estimate halves h (one rung down) and retries. Below
+  `MaxStep / 2^40` the run stops with the time, the last converged state, and the device whose Newton update was largest.
+
+### 4.4 Newton per step
+
+Two paths, chosen per run from the interface size:
+
+- **Interface path** (few nonlinear ports, the common RF case: a few transistors in a large linear network). The linear
+  part is condensed onto the interface through the rung's factorization (a Schur complement), so each Newton iteration
+  solves a small dense system on the interface and one sparse back-substitution recovers the rest, as the envelope does.
+- **Full path** (many nonlinear ports: logic-like or power circuits). The whole system `G + αC + ∂i/∂x + α∂q/∂x` is
+  assembled sparse and factored each iteration (real CSparse LU, symbolic analysis reused).
+
+The threshold between them is measured in TRN-1 and recorded in `src/Engine/RESOLVED.md`. Convergence needs both the
+update (within `RelTol·|x| + VTol`/`ITol`) and the residual to pass. Junction-voltage limiting and step damping are the
+DC engine's own (`NonlinearDcEngine`), reused rather than written again. Devices that prefer batch evaluation evaluate
+one point at a time here; an external (worker) device costs one round trip per evaluation, which TRN-1 measures and
+records.
+
+### 4.5 The starting state
+
+`InitialState=op` solves the DC operating point with `NonlinearDcEngine`, waveform sources at their t = 0 value, each
+`IC=` net held by a stiff source and each part's `IC=` applied (§7.2), then releases the holds at t = 0⁺.
+`InitialState=zero` starts every unknown at 0 except the `IC=`s and solves nothing first. The starting state is reported
+(`OP.V`).
+
+### 4.6 The output grid
+
+Accepted steps are non-uniform. The result is reported on `Start, Start+Step, …, Stop` by the integration's own
+interpolant over the accepted step containing each output time, which is second order and introduces no extra error
+beyond the step's own. Breakpoints are honoured by the steps, not by the grid. `SaveSteps=yes` adds `Steps.time` and
+`Steps.V[net, step]` as recorded.
+
+### 4.7 What the envelope engine keeps
+
+Nothing in `EnvelopeEngine` changes. Transient lives in `src/Engine/Transient`. What is shared is moved down, not
+copied: the two-stamp `G`/`C` recovery, the rational realization (§5.4) and the line delay (§5.3) become shared pieces
+both engines call, each with its existing envelope gates still green.
+
+## 5. Elements in the time domain
+
+### 5.1 Lumped linear models — exact
+
+R, L, C, mutual inductance, the ideal transformer, VCCS, VCVS, ports and terminations, series and parallel RLC, and
+every other model whose stamp is affine in jω, through the two-stamp recovery. TRN-1 lists every model the recovery
+classifies as affine, and the gate holds that list.
+
+### 5.2 Nonlinear devices — as they are
+
+Every device that implements `Evaluate` works unchanged: diode, BJT, the FET laws, MOS levels, SDD, Verilog-A,
+nonlinear capacitors, composed FETs. A device whose charge is linearised at the bias point (`IBiasFrozen`) is frozen at
+the starting state, which is what that setting means.
+
+### 5.3 Transmission lines
+
+- **Lossless uniform lines**: exact, as delays, by the method of characteristics: each end is its Zc in series with the
+  wave that left the other end τ earlier, interpolated on accepted steps with the envelope's passive quadratic
+  interpolation. A breakpoint is added at τ after each source breakpoint, so a pulse edge that travels the line lands
+  on a step.
+- **Lossy and dispersive lines**: the line is its delay times a residual H̃(f) = e^(−γl)·e^(j2πfτ). The envelope does not
+  fit H̃ globally because the line models attenuate with no matching phase, so H̃ is not causal, and a non-causal
+  response cannot be stepped in time. Transient covers the band from DC up, so it must. The residual is made causal by
+  keeping its magnitude and giving it the phase a causal minimum-phase response with that magnitude has; that response is
+  smooth, so a low-order rational fit realizes it as extra linear unknowns at the line's far end. The delay τ is then
+  the line's high-frequency delay, so nothing is double-counted. This changes the line's phase by the causality
+  correction only; TRN-4 reports its size against the frequency-domain model at the band edge and warns, naming the
+  line, when that exceeds a stated tolerance.
+
+  **As built (TRN-4, TRN-4b).** TRN-4 measured this method on the shipped microstrip, stripline and coplanar models and
+  found the causality correction alone moving S21 by up to 0.22 at 20 GHz: the models attenuated with no matching phase.
+  TRN-4b gave the models that phase (`CausalLoss`: the conductor's internal reactance, equal to its loss above its DC
+  floor; the dielectric's permittivity falling with frequency as a flat loss tangent implies, pinned where Er and TanD are
+  stated — 1 GHz for MLIN/SLIN/CPWG, `F` for TLIN), which moves every lossy line's S-parameters in every analysis
+  (`src/Engine/RESOLVED.md`, brief-trn-4b, has the table). The transient then fits the residual directly rather than
+  through its minimum phase, since dispersion is a phase with no magnitude, with τ the smallest phase delay in band less
+  1.5 periods of `f_max` (a residual at the smallest delay is barely causal and fits badly). Every shipped line at three
+  geometries is realized within |ΔS21| 1e-3 up to 20 GHz; a line that is not, at its run's `f_max`, is refused by name
+  with its error. |ΔS11| is limited by the characteristic impedance, which the dispersive models vary with frequency and
+  the realization holds at mid-range; above 1e-2 the run warns, naming the line.
+- **Coupled lines**: lossless coupled lines by modal decomposition into independent delays with the frequency-independent
+  modal transformation; lossy or dispersive coupled lines are refused by name in v1 (their models' losses do not yet carry
+  their phase either).
+
+### 5.4 Frequency-defined elements — wideband rational fits
+
+SnP blocks, System Filters, Duplexers, Z(freq) blocks, tapers, and EM cells run with `model=em` are realized as the
+envelope's pole-residue fit, but over the whole band the transient sees, DC up to `f_max` = 1/(2·`MaxStep`), rather
+than around harmonics. A frequency-defined element must be passive over the whole band, not just at its samples, or the
+transient grows without bound. TRN-4 therefore checks passivity on a dense frequency grid beyond the samples, enforces
+it by the smallest residue perturbation that restores it, and reports the fit error and the perturbation. A fit that
+misses its tolerance is refused naming the element; there is no first-order fallback in transient, since there is no
+harmonic to be first order around. Data that stops short of DC is extrapolated to DC from its lowest points and the run
+says so; data that stops below `f_max` is held at its last measured value and the run says so.
+
+As built (TRN-4, `TransientRealization`, `RationalPassivity`): the check grid is ten times denser than the samples to
+`f_max`, with a logarithmic tail to 100·`f_max`, every pole's frequency and s → ∞; enforcement moves residues and D by the
+least change of the response over the samples, constraining each violating band's peak and points spread across it. A
+fit order with a pole closer to the jω axis than a damping of 1e-6 is not taken. A tone source's harmonic terminations are
+not fitted but placed: one damped resonator pair on each harmonic, the residues solved so every harmonic takes its band's
+impedance exactly (a fit asked for the harmonics alone puts undamped poles on them).
+
+### 5.5 Refused elements
+
+Behavioural frequency-domain system blocks whose definition is a spectrum operation (Mixer, the System Amplifier's
+spectral form), the Phased Array, the Propagation Channel, Tuners, WSProbe and the EM Field Data block are refused by
+name in a tran analysis, each with a sentence naming the analysis that supports it. A `MOD_Source` was refused here until
+brief MTR-1, which plays it over a window of its record (§6.4).
+
+## 6. Sources
+
+### 6.1 Waveform sources
+
+| Type (`V_` and `I_`) | Palette | Keys | Breakpoints |
+|---|---|---|---|
+| `V_Pulse` | Pulse | `V1 V2 Delay Rise Fall Width Period` (`Period` blank: one pulse) | every corner |
+| `V_PWL` | PWL | `Points="0 0, 1n 1, 2n 1, 3n 0"` (time value pairs) or `File=` (two columns, time and value; CSV or whitespace), not both; `Repeat=yes|no` | every vertex |
+| `V_Exp` | Exponential | `V1 V2 Delay1 Tau1 Delay2 Tau2` | `Delay1`, `Delay2` |
+| `V_SFFM` | SFFM | `Offset Amplitude Carrier ModIndex Signal` | — |
+| `V_Expr` | Expression | `Expr=` an expression in `time` and the globals | none; `MaxStep` governs |
+
+The `I_` types take the same keys in amperes (`I1`/`I2` where the voltage type says `V1`/`V2`). Each also takes `Dc=`,
+the value in non-transient analyses; blank, its waveform at t = 0 (D6). Every numeric key is an expression.
+
+`Idc:I1 p n Idc=1m` is the DC current source, the counterpart of `Vdc`: constant in every analysis, an open at every
+frequency but DC.
+
+### 6.2 Existing sources in transient
+
+- **DC sources** (`Vdc`, `Idc`, and a tone source's `Vdc`/`Idc` offset): constant.
+- **Tone sources** (`V_1Tone`, `I_1Tone`, `V_nTone`, `I_nTone`, `P1Tone`, `PnTone`): each tone is a sinusoid at its
+  frequency, amplitude and phase, plus the DC offset. Three transient-only keys, ignored by every other analysis:
+  `Delay` (the tone starts at this time), `Ramp` (it reaches full amplitude over this time along a raised-cosine
+  envelope; default 0, a step) and `Damping` (an exponential decay rate after `Delay`, 1/s; default 0). Breakpoints at
+  `Delay` and `Delay + Ramp`. With these, a tone source is everything the dialect's `SIN` stimulus is. `P1Tone`/`PnTone` keep their available power and source impedance; harmonic
+  terminations `Z[k]` other than the fundamental impedance are frequency-defined and realized by §5.4's fit.
+- **`MOD_Source`**: its signal on its carrier (§6.4).
+
+### 6.4 `MOD_Source` (brief MTR-1)
+
+`v(t) = Re{Vs·g(t)·b(RecordStart + t)·e^(j2πFc·t)}` behind `Z`. In that expression:
+- `Vs = √(8·Re Z·Pavg)` is the peak available-drive phasor, as in every analysis.
+- `b` is the composite baseband record: unit mean power, each carrier at its offset from `Fc`.
+- `g` is a raised-cosine rise over `Ramp`.
+
+`RecordStart` (default 0) and `Ramp` (default 0) are read in transient only.
+
+Like a shaped tone, the source is its own right-hand-side column, taken by difference. `b` is read from a table over the
+run's window, built once:
+- by the signal's band-limited window interpolation (`ModulatedSignal.CompositeWindow`), at 32 × the record's widest
+  excursion from `Fc` (its largest offset plus half its native rate);
+- read between points by the cubic through the four nearest;
+- refused past 2^24 points.
+
+The automatic step bound counts `Fc` plus that excursion. The HB and oscillator seeds (§10) play the source as its CW
+tone at `Fc`, the steady state they seed. ngspice does not play it: a sampled stimulus written into a deck would be an
+approximation (D7).
+
+### 6.3 `time` in expressions
+
+`time` is the simulated time in a tran analysis. It is bound only in transient: in every other analysis an expression
+that uses `time` outside a condition is refused naming it, and inside a condition keeps the steady-state reading
+`spice-models.md` §8.10 already gives it (`time > 0` true). This one rule serves `V_Expr`, SDD equations
+and imported behavioural sources.
+
+## 7. The switch and initial conditions
+
+### 7.1 `VSwitch`
+
+Built as `VSwitch` (TRN-3): `Switch` was already the ideal SPST/SPDT system block. `VSwitch:S1 p n cp cn Ron=1 Roff=1e9 Von=1 Voff=0`: a two-terminal conductance controlled by the voltage between
+`cp` and `cn`. Its conductance moves between 1/Roff and 1/Ron along a smooth monotone transition between `Voff` and
+`Von` (`Von < Voff` gives hysteresis-free inverse logic; a separate `Hyst=` adds hysteresis in transient only). It is an
+ordinary nonlinear `ComponentModel`, so it also works in DC, S-parameter (at its bias) and HB, where the smooth
+transition is what keeps harmonic balance's spectrum finite. The transition's corners are reported to the step control
+as soft breakpoints (the step is limited across them, not forced to land).
+
+### 7.2 Initial conditions
+
+`IC=` on a capacitor (its voltage) and on an inductor (its current), applied in the operating-point solve (§4.5).
+The SPICE-dialect reader keeps `IC=` instead of noting and dropping it (`spice-models.md` §8.6), and stimuli
+become the matching type instead of `Vdc` at their DC value (§9.3 of that note): `PULSE` → `V_Pulse`, `PWL` → `V_PWL`,
+`EXP` → `V_Exp`, `SFFM` → `V_SFFM`, `SIN` → `V_1Tone` with `Delay` and `Damping`, a DC current source → `Idc`, and the
+`I_` forms likewise.
+
+## 8. Measurements and display
+
+Time-domain functions in the one expression engine (`Evaluator.TimeDomain.cs`), over a cube's `time` axis — a transient's,
+or an envelope's real waveforms — usable in `measure` lines, goals and traces. The waveform argument is a real cube; the
+time axis is read and every other axis kept, so a transient inside a parametric sweep gives one value per sweep point.
+
+| Function | Returns |
+|---|---|
+| `rise(x, lo=10, hi=90)`, `fall(…)` | The first edge between lo % and hi % of the swing (s): the time x first reaches hi, less the last time before it that x crossed lo, both interpolated. The swing is the step from the first value to the last; a record that ends near where it began (a pulse) takes its minimum and maximum. |
+| `overshoot(x)` | How far x goes past its final value, in % of the step from the first value to the last; 0 when it never does |
+| `undershoot(x)` | How far x comes back below its final value after the overshoot's peak, in % of the step: a ringing step's first trough; 0 when it does not |
+| `settle(x, tol=1)` | The time after which x stays within tol % of the step of its final value (of the final value itself when there is no step), interpolated (s) |
+| `period(x)`, `frequency(x)` | From the interpolated rising crossings of the mean, averaged over the last half of the record (s, Hz) |
+| `value_at(x, t)` | x at time t, interpolated: `value_at`'s default axis is `freq`, then `time` |
+| `tmin(x, t1, t2)`, `tmax(…)` | The time of the minimum (maximum) over the window, the whole record without one (s) |
+| `avg(x, t1, t2)`, `rms(x, t1, t2)` | Time-weighted mean and rms by the trapezoidal rule, the window's ends interpolated |
+| `fft(x, f0, periods=1, window="none")` | Complex spectrum of the last whole `periods` of x at f0 and its harmonics, an axis cube shaped like an HB result: a `harmonic` axis 0…K placed last, full-amplitude phasors (x = X₀ + Σ Re{Xₖ e^{jk2πf₀t}}) with the record's own t, so phases read as HB's. K is what the window's samples resolve, at most 16. `"hann"` windows it. |
+| `fft_power(v, i, f0, periods=1, window="none")` | The power per harmonic, V₀I₀ at DC and ½Re(VₖIₖ*) above it (W): HB's `Pprobe_W` |
+| `thd(x, f0, n=10)` | Total harmonic distortion of the last period, harmonics 2…n against the fundamental (%) |
+
+A waveform with no edge of the kind asked for gives NaN, a missing value, so one sweep point without one does not fail the
+others. A value with no `time` axis is refused naming the function.
+
+**Two names differ from this note's first draft, which collided** (R-trn5-1): `at(x, t)` is `value_at(x, t)`, since
+`at(x, "axis", index)` already pins an axis by position and `value_at` already read a point by its value — it now defaults
+to the `time` axis after `freq` — and `freq(x)` is `frequency(x)`, since `freq` is the frequency variable.
+
+`fft` of a settled transient is shaped like the HB spectrum on purpose: the transient-versus-HB consistency gate (§12) and
+the seed (§10) both read it, and one trace (`dB(Vout)`, a measure that is `HB1.V("out")` on one bench and
+`fft(TR1.V("out"), 1GHz)` on the other) plots either result unedited.
+
+The Data Display gains a **Transient** preset (`TransientPreset`): the recorded voltages against time (up to twelve), the
+output's spectrum over its last period — the power through the IProbe whose name says "out" (else the last one) in dBm
+through `fft_power`, or the output net's voltage in dBV through `fft` when there is no probe — drawn as stems on the
+harmonic axis, and the bench's single-number measures as a table. It is a toolbar action, a result's context-menu item,
+and offered in the Messages panel when a transient run ends. The analysis card shows `Stop`, `Step`, `Method`,
+`InitialState` and `Solver`, with every other key under More — the ngspice-only ones as word pickers, enabled only with
+that solver; `Solver`'s ngspice choice is enabled only when ngspice is discovered (D2). The note beneath it has its space
+reserved whether shown or not, so the card's controls do not move when ngspice appears or disappears.
+
+### 8.1 Baseband results of a modulated run (brief MTR-2)
+
+`Store=auto|baseband|rf` on the directive; `auto` is `baseband` when the bench has a `MOD_Source`.
+
+**How the run downconverts.** With baseband storage, the run reports a uniform RF-rate grid, 4(K+1) points per carrier
+period (K = `StoreHarm`, default 3), to a streaming downconverter and keeps none of it. With `MaxStep` automatic, the
+engine steps on a whole subdivision of that grid, at least 20 steps per period of the highest frequency. Every grid point
+is therefore an accepted step, not a quadratic interpolation between two. That interpolation's error, about 1e-3 of the
+carrier at 20 steps a period, would land in the envelopes.
+
+**The envelopes.** For each recorded quantity and k = 0 … K:
+
+`X_k(t_m) = c_k·Σ w(t_j − t_m)·x(t_j)·e^(−jk2πFc·t_j) / Σ w`, where c₀ = 1 and c_k = 2 above it.
+
+- `w` is a Kaiser-windowed sinc low-pass (80 dB): flat to half the signal rate, and stopped by the envelope's Nyquist
+  frequency.
+- The envelope rate is the envelope analysis's own rule (the signal rate, at least twice oversampled).
+- A carrier below the envelope rate is refused, because a neighbouring harmonic would fold in.
+- The quantities recorded are the envelope's: labelled nets, each IProbe's current and its first net's voltage, and the
+  non-zero DC supplies.
+
+**The result.** The envelopes, the drive and the carriers are packed as an envelope run result and measured by
+`EnvelopeDataSet.Build`. A baseband transient therefore has the envelope analysis's cubes (V, I, Pprobe_W, PSD, ACLR, EVM,
+Const, AM-AM, Gt, DE), beside `Tran.*` and `__TranStore`. The Transient preset leaves it to the envelope's displays, since
+its `V` is complex. `MeasureFrom` (default: after the largest `Ramp`) is the settling skip.
+
+**Restrictions.** All sources share one `Fc` and one `RecordStart`. With `Store=rf`, an automatic `Step` is 1/(20·f_max)
+rather than Stop/1000.
+
+On the gate bench (an LTE 5 MHz carrier at 1 GHz into its matched load), the harmonic-1 envelope equals ½·Vs·b(τ) to
+8e-6 of Vs, and the other harmonics are below 8e-6.
+
+## 9. ngspice
+
+### 9.1 Discovery and install
+
+`SolverTool.Ngspice` joins Palace, Gmsh, openEMS and EMerge in the existing machinery, with no new mechanism:
+
+- **Discovery** — Settings path, `CIRCUITRF_NGSPICE`, PATH, the default directories (Homebrew's prefixes on macOS,
+  `/usr/bin` on Linux, the archive's install folder on Windows), conda environments, and circuitRF's own install.
+  Version from `ngspice -v`. The Settings ▸ Solvers tab gets a **Circuit** group, with the ngspice row; as built it sits below the EM solvers.
+- **Install** — an upstream binary per platform through a recipe; no source build (D10):
+  - **Windows**: the official release archive, downloaded and extracted (the Gmsh pattern). If upstream publishes no
+    arm64 build, Windows on arm64 runs the x64 build under the operating system's emulation and the row says so.
+  - **macOS and Linux**: the conda-forge package, installed into circuitRF's own environment by a micromamba bootstrap
+    (micromamba's single static binary, downloaded and checksummed as uv is for EMerge). Distribution packages are
+    found by discovery but are not what the recipe installs, because their versions lag.
+  - A platform with neither gets a `ByHand` message naming upstream's build instructions.
+  - Every recipe pins one version and checksums every download, as every existing recipe does.
+- **No credential, no network unasked** — the existing consent dialog and `circuitrf solver install ngspice` are the
+  only routes that download anything.
+
+### 9.2 Translation
+
+`SpiceDeckWriter` (`src/Core/Netlist/Spice`) writes the elaborated bench, flattened, as one deck: a header comment
+naming the circuitRF bench and version, a name map, the elements, `.options` (`RelTol`, `VTol`, `ITol`, `Method`, and
+`SpiceOptions` verbatim), `.ic` for held nets, `.tran Step Stop Start MaxStep` with `uic` for `InitialState=zero`, and
+`.save` for every recorded net and probe current.
+
+As built (brief TRN-6), every element's spelling, the device parameter tables, the discontinuity classification, the TXL/CPL
+extraction and the fit subcircuits are recorded in `spice-models.md` §15. Three findings changed this table's reading: the
+dialect reads a zero PULSE rise, fall or width (and a zero EXP Delay2 or SFFM carrier) as its own default, so those are refused
+rather than written; its behavioural-source `exp` grows linearly past an argument of 14 and its power takes the magnitude of
+the base, so expressions are spelled around both; and its CPL takes R and G as diagonals only, so a coupled pair whose modes
+lose differently is refused.
+
+#### 9.2.1 The element table (TRN-6)
+
+| circuitRF | Dialect | Exact? |
+|---|---|---|
+| R, C, L (with `IC=`) | `R`, `C`, `L` | yes |
+| Mutual | `K` | yes |
+| Transformer (ideal N:1) | a VCVS/CCCS pair | yes |
+| VCCS, VCVS | `G`, `E` | yes |
+| `IProbe` | a zero-volt `V` (its current read back) | yes |
+| Port / Term (undriven) | `R` of its Z | yes (a complex or frequency-dependent Z is §5.4's, refused) |
+| `Vdc`, `Idc`, a tone source's offset | `V`/`I` `DC` | yes |
+| `V_Pulse`, `V_PWL`, `V_Exp`, `V_SFFM` and the `I_` types | `PULSE`, `PWL`, `EXP`, `SFFM` | yes; a `File=` PWL written inline |
+| `V_Expr`, `I_Expr` | a behavioural source in `time` | yes |
+| Tone sources, `P1Tone` | `SIN` with `Delay` and `Damping` (behavioural with `Ramp`), series `R` for a P1Tone's impedance, amplitude from available power | yes; non-default `Z[k]` refused |
+| Ideal lossless TLine | `T` | yes |
+| `VSwitch` | a behavioural conductance with the same transition | yes |
+| SDD | behavioural current sources; each charge as a behavioural voltage source driving a unit capacitor — the inverse of the charge idiom `spice-models.md` §8.8 reads | yes |
+| `SpiceModel` (placed file) | the file included as it is, its instance line as read | yes, by construction |
+| Verilog-A, `.osdi` | ngspice's OSDI loader on the same compiled file | yes |
+| Diode, BJT, MOS level 1 and 3 | the dialect's models | only where every parameter maps one to one; TRN-6 tabulates each model's parameters and refuses the rest by parameter |
+| FET laws (Curtice, Statz, Materka, Angelov), composed FETs, JFET, IGBT, VDMOS, nonlinear and semiconductor capacitors, beads | — | refused by name in v1 |
+| Microstrip, stripline and coplanar lines; lossy ideal lines | `TXL` (lossy line, per-unit-length R, L, G, C) | no: refused by name unless `SpiceLines=rlgc` (§9.2.3) |
+| Coupled lines of those families | `CPL` (coupled lossy lines, per-unit-length matrices) | no: refused by name unless `SpiceLines=rlgc` (§9.2.3) |
+| Discontinuities (bends, tees, gaps, steps, crosses, opens) | `L`, `C`, `R` | yes where circuitRF's model is a fixed lumped network whose values depend only on geometry; otherwise refused by name unless `SpiceFit=yes` (§9.2.3) |
+| SnP, filters, EM cells, other frequency-defined elements | — | refused by name unless `SpiceFit=yes` (§9.2.3) |
+| System blocks, Phased Array, Propagation Channel, Tuner, probes other than `IProbe` | — | refused by name |
+
+#### 9.2.2 Names
+
+Dialect names are case-insensitive and restricted in their characters; circuitRF's are neither. Every net and
+instance path is written as a sanitized name, unique after case folding, and the map is written into the deck's header
+as comments and kept beside the run, so every vector read back is renamed to its circuitRF net or instance path. Every
+element line carries its circuitRF path as a trailing comment.
+
+#### 9.2.3 Approximate translations, asked for
+
+**Lines as ngspice's own lossy lines — `SpiceLines=rlgc`.** ngspice has lossy-line elements described by per-unit-length
+R, L, G and C (`TXL` for one line, `CPL` for a coupled set) but no line described by its geometry and substrate.
+circuitRF's line models are: they carry dispersion and a loss that grows roughly with the square root of frequency,
+which constant per-unit-length values cannot. With `SpiceLines=rlgc`, each microstrip, stripline, coplanar or lossy
+ideal line is written as `TXL`, and each coupled set as `CPL`, with R, L, G and C (matrices for `CPL`) extracted from
+circuitRF's own model at `SpiceLineFreq` (default: the highest frequency any source carries): L and C from the
+model's characteristic impedance and effective permittivity there, R and G from its conductor and dielectric loss
+there. The values therefore match circuitRF's model exactly at that one frequency and drift from it elsewhere.
+
+How far they drift is reported, not left to the user to guess: for each line, the writer compares the S-parameters of
+the `TXL`/`CPL` line (computed in closed form from its R, L, G, C) with circuitRF's model on a grid from the lowest to
+the highest frequency the transient resolves (`1/Stop` to `f_max`), and the result carries one note per line, "ngspice
+ran <line> as a TXL fitted at <f>; largest |ΔS| <x> at <f'>". Absolute |ΔS| is the measure, since a small S entry's dB
+error says little. `check` under `Solver=ngspice` reports the same number before a run. Default `SpiceLines=refuse`.
+
+**Fits as subcircuits — `SpiceFit=yes`.** It writes each frequency-defined element (§5.4) as a subcircuit realizing the native engine's rational fit,
+and each lossy line as a lossless `T` plus that same causal residual's realization. The result then carries a note per
+element: "ngspice ran circuitRF's fit of <element>, not the element itself". Default `no`.
+
+The two can be combined. Where both apply to a line, `SpiceLines=rlgc` wins, because it is ngspice's own element and
+the reason a user would ask for it; `SpiceFit=yes` then covers what `rlgc` cannot (SnP, filters, EM cells, and
+discontinuities whose models vary with frequency). `SpiceFit` is the closer answer across the band for a line too, and
+a user who wants that leaves `SpiceLines` at `refuse`.
+
+#### 9.2.4 The round trip
+
+The writer is gated by circuitRF's own reader: every translatable bench, written and read back, elaborates to the same
+netlist. The reader and the writer share the element table, so a mapping cannot drift in one direction only.
+
+### 9.3 Running and reading back
+
+The deck and the map are written to a scratch folder under the run's output directory; ngspice is run in batch mode
+with a binary rawfile as its output, on a `RunControl` that kills the process on cancel. ngspice's own messages are
+relayed verbatim, prefixed with its name and version. `RawFileReader` (`src/RfCore`) reads the binary and ASCII
+rawfile, renames the vectors through the map, and resamples them onto the output grid (D11) with the same interpolation
+the native engine uses. A failed run (non-zero exit, no rawfile, a vector missing) is a refusal with ngspice's last
+message.
+
+**As built (brief TRN-7).** `SolverTool.Ngspice` (`src/Design/Em3d/SolverDiscovery.cs`) is found by the existing walk, version from the
+banner's `ngspice-<v> :`; on Windows the program is `ngspice_con.exe` (upstream's `ngspice.exe` opens a window even in batch mode).
+Recipes pin release 41 everywhere: conda-forge's newest build, which exists for x64 only (no `osx-arm64`, no `linux-aarch64`, checked
+2026-11-15), so macOS and Linux arm64 get a `ByHand` message; Windows takes upstream's archive of the same release from its
+`old-releases/41` folder, whose address does not move, published as `.7z` only and unpacked by SharpCompress (managed, MIT); Windows
+arm64 takes that x64 archive with `"emulated": true`, which the row and the consent say. `NgspiceRunner` (`src/Engine/Transient`) runs
+`-b -n -r out.raw deck.cir` (`-n`: no user `.spiceinit` plays a part); the program comes from `NgspiceRunner.Locator`, which
+`src/Design`'s `NgspiceLocator` installs from discovery as a module initializer. The rawfile's points are resampled with the native
+engine's own `Interpolate`; `OP.V` is ngspice's first point; the native solver's counters other than `Tran.AcceptedSteps` (ngspice's
+point count) are not reported. `.options INTERP` is NOT used anywhere: ngspice 47 writes a damaged rawfile with it (the header repeated
+inside the data, one point short). The references of §12.3 are put on the grid by ngspice's own `linearize`, in a control block the
+generator adds (`testdata/transient/ngspice/generate.py`). Writing them caught a TRN-6 defect: a MOS's, a BJT's and an Rs diode's
+terminals were written as the elaborator's internal pins (`SpiceDeckWriter.DrawnTerminals` now recovers the drawn ones).
+
+### 9.4 What "the same answer as ngspice" means
+
+With `Solver=ngspice` the waveforms are ngspice's, solved by ngspice, on a deck the user can open and run by hand: it is
+ngspice's answer to the circuit as translated. Because the translation is exact or refuses (D7), that is the drawn
+circuit's answer, with one caveat the docs state: a model circuitRF and the dialect both name (a diode, a BJT) is
+translated only where the equations match parameter for parameter, so the set of translatable benches is deliberately
+smaller than the set the native engine runs.
+
+## 10. Transient-assisted harmonic balance
+
+### 10.1 The idea
+
+Harmonic balance solves for a periodic steady state directly, from a starting guess, usually the DC point with the
+drive stepped up. A circuit whose steady state is far from that path (a switch that only conducts at full drive, a
+divider whose divided solution is not reachable continuously from the undivided one, an oscillator) can fail to
+converge or converge to the wrong solution. A transient run approaches the steady state the physical way, from rest.
+A few periods of it, transformed, are a starting point that is already near the solution, and harmonic balance then
+finishes in a few Newton iterations to its own accuracy.
+
+### 10.2 For `hb`
+
+`InitialGuess=transient` on an `hb` directive (single fundamental, or commensurate tones whose period is the common
+one):
+
+1. Solve the DC point (as HB already does).
+2. Run the native transient from it with every source at its full HB drive, step `T/(8·(MaxHarm+1))`, for up to
+   `SeedPeriods` periods (`auto`: until two consecutive periods of every interface waveform agree within `SeedTol`,
+   default 1e-3 relative, capped at 200 periods).
+3. Transform the last period on the interface nodes (§8's `fft`) into `V[N, K+1]` and hand it to `HbEngine` as
+   `warmStart`. Harmonic balance converges from there with no drive stepping.
+
+**Bias networks.** An RF bias network settles over its choke's and block's time constants, which can be 10⁴–10⁶
+carrier periods. Running that long only to start harmonic balance would defeat the purpose. With `SeedFastBias=yes`
+(default), the seeding run scales down each inductor and capacitor whose reactance at the fundamental makes it an RF
+choke or block (|X| > 10× or < 0.1× the impedance it sees, measured at the DC point), by the factor that brings its
+time constant to a few periods while its reactance at the fundamental stays beyond that threshold. They remain chokes
+and blocks at RF and settle quickly. Only the seed run is altered, harmonic balance solves the real circuit, and the
+run notes which elements were scaled. The seed's DC component is taken from the transient's last-period average and
+harmonic balance corrects any residual shift.
+
+`InitialGuess=fallback` tries the DC start first and seeds from transient only when that fails to converge. In a
+parametric sweep, only the first point (and any point that fails) is seeded by transient; the rest warm-start from
+their neighbour as today. Multi-tone HB that is not commensurate is refused with `transient`, and `fallback` falls back
+to the DC start with a note.
+
+### 10.3 For `osc`
+
+`InitialGuess=transient` on an `osc` directive makes `Fguess` optional. The seed run starts from the DC point with a
+small kick at the OscProbe's node (an initial condition of `KickV`, default 1 % of the supply, released at t = 0⁺), runs
+until the probe node's amplitude is constant within `SeedTol` over consecutive periods, and reads the frequency from its
+level crossings and the amplitude from its fundamental. Those become `Fguess` and `Aguess`, and the interface waveforms
+of the last period become the oscillator analysis's harmonic starting point. If no oscillation grows within the
+period cap, the refusal says so and includes the probe's small-signal start-up result, which says whether the start-up
+condition held anywhere.
+
+### 10.3a As built (brief TRN-8)
+
+- **The settle test.** Consecutive periods agreeing within `SeedTol` is not enough on its own: a bias network that is still
+  charging changes by a tiny amount each period and would pass. `HbTransientSeed.SettleMonitor` checks, per recorded
+  waveform, the last period-to-period change Δ and its ratio ρ to the one before (least squares over the period, clamped at
+  0); settled when Δ/(1 − ρ), the change still to come at that rate, is within `SeedTol` of the waveform's peak. A drift has
+  ρ near 1 and is not settled; numerical noise has ρ near 0. A stated `SeedPeriods` runs them all and reports the same test.
+- **Fast bias.** The note's "time constant a few periods while beyond the threshold" is implemented as the ratio of the
+  part's reactance to the impedance it sees brought to 50 (five times the threshold), a time constant against that impedance
+  of 50/2π ≈ 8 periods. Scaling to just beyond the threshold (20 was measured) settles faster but leaves the seed a few
+  per cent off at the fundamental, which costs Newton iterations: on the class-E gate 26 against 12 with no scaling, while
+  50 gives the biased-PA gate a settled seed in 121 periods and 5 Newton iterations from it. Parts a `Mutual` couples, series
+  RLC inductors and parts with a multiplier are left alone. The parts are swapped in the netlist for scaled copies (as
+  `TransientRealization` swaps its realizations) and put back before harmonic balance stamps again.
+- **The oscillator.** The kick is an `IC` on the OscProbe's first node, `KickV` above its DC voltage, held through the
+  operating point and released at t = 0⁺. The probe signal (the voltage across a shunt probe, the current through a series
+  probe's branch) is cut into cycles by rising crossings of the previous cycle's mean with a hysteresis of a tenth of the last
+  amplitude; settled when each cycle's period and amplitude pass the same Δ/(1 − ρ) test. The last cycle is resampled at
+  8(K+1) points and transformed; every interface harmonic is rotated by e^(−jkφ), φ the probe fundamental's phase, so the
+  generator (real at cos) starts in phase, and the search starts at the seed's frequency and amplitude with no ramp. Without
+  `Fguess` the start-up search spans 1 kHz to 1 THz logarithmically and takes the crossing whose negative real part is
+  largest relative to the immittance there; its frequency sets the seed's step and cap.
+- **An idle OscProbe now steps in transient** (a short in series, an open in shunt), as it does nothing in every other
+  analysis; TRN-1 had refused it.
+- **Found on the way:** the native transient's interface Newton condenses the linear partition, which is singular at a node
+  only a device touches. Every BJT (whose ohmic ports join internal nodes to its terminals) failed at t = 0. `Auto` now takes
+  the full path when an interface node has no conductance above 1000·gmin and no capacitance in the linear partition.
+
+### 10.4 Reported
+
+`Seed.Periods`, `Seed.Settled` (bool), `Seed.ScaledElements` (names), `Seed.HbIterations`, and the note "harmonic
+balance started from a transient seed". The seed is never the result; the result is harmonic balance's, to its own
+tolerance.
+
+## 11. CLI, MCP, `check`, `explain`
+
+- **`circuitrf tran <bench>`** — a run verb on `cli.md`'s five-step anatomy, as `hb` is; `--set`, `-o out.{mat,npy,txt}`,
+  promotion of a tran inside a `parametric_sweep`. `--solver ngspice` replaces the directive's `Solver`.
+- **`circuitrf netlist <bench> -o out.cir`** — the translation (§9.2), written for the bench's tran analysis; any
+  refusal exits 1 and writes nothing.
+- **`circuitrf solver install ngspice`** — the existing verb, with the new tool.
+- **MCP** — `run analysis=tran`, `netlist` with a `.cir` output, `solver` reporting ngspice.
+- **`check`** — under `Solver=ngspice`, every element the translation would refuse, coded `check.tran.untranslatable`;
+  in any tran bench, refused elements (§5.5); a waveform source whose `Dc` differs from its t = 0 value
+  (`check.tran.dc-differs`, info, since it means the DC point and the first step disagree on purpose); in any bench, a
+  `measure` calling a time-domain function over an analysis whose result has no time axis
+  (`check.measure.time-function`, an error naming the function; a transient's and an envelope's results have one).
+- **`explain --analysis`** — the solver, the step bound and its reason, the estimated step count, the slowest time
+  constant against `Stop`, and a steering line when `Stop` spans more than 10⁵ periods of the highest carrier a source
+  plays (a tone, a MOD_Source's or an SFFM's carrier; a pulse's edges are not one): "this bench is 2.4·10⁶ periods of a
+  2.4 GHz carrier: harmonic balance answers a steady-state question in a fraction of the time", naming envelope instead
+  when a source is modulated (a MOD_Source, an SFFM with a modulation index).
+
+## 12. Validation
+
+1. **Analytic.** RC and RL steps, an RLC ring, a charge-pump, a lossless line's pulse reflection: closed forms, to
+   `RelTol`-consistent tolerances stated per gate.
+2. **Transient against HB, no external tool.** A circuit driven by a tone, run to steady state, its last period through
+   `fft`, equals the HB solution of the same circuit: harmonics within 0.01 dB and 0.1° for a weakly nonlinear amplifier.
+   This gates the integration, the device evaluation and `fft` against an engine already gated against the heroes.
+3. **Against ngspice, externally generated.** Decks written by the translation, run once by ngspice, their waveforms
+   committed under `testdata/transient/` with the deck, the script and the ngspice version: references produced
+   independently of circuitRF, in the PRD's sense. The native engine is compared to them on the output grid; tolerances
+   are stated per circuit because two adaptive-step engines agree to their tolerances, not to round-off.
+4. **The ngspice path itself.** Tests that need a live ngspice skip with a reason when none is discovered (the
+   `FixtureFact` pattern), so CI without ngspice stays green and the owner's machine runs them.
+5. **Translation round trip** (§9.2.4) and refusal-by-name tests for every refused class.
+6. **Seed.** A class-E stage that harmonic balance does not converge from DC without drive stepping converges with
+   `InitialGuess=transient` to the same solution as a drive-stepped run where one exists; a ÷2 divider converges to its
+   divided solution; an oscillator without `Fguess` finds the frequency and amplitude the `Fguess` run finds.
+
+## 13. Risks
+
+1. **Convergence on hard-switching circuits.** Per-step Newton on a circuit that switches abruptly is the hardest part
+   of any transient engine and has no end of special cases. The step ladder, backward-Euler steps at breakpoints,
+   junction limiting and the soft breakpoints of §7.1 are the defences; ngspice beside it limits how far this has to go,
+   because a user with a pathological switching circuit has a second solver one click away. TRN-1 states which circuits
+   it was measured on.
+2. **Wideband rational fits and passivity.** An envelope run sees narrow bands around harmonics; transient sees
+   everything from DC up, and a fit that is non-passive anywhere grows without bound. §5.4's dense check and enforcement
+   are the defence; data that is noisy or stops short of DC is the remaining risk, reported per element.
+3. **Lossy-line causality.** §5.3's minimum-phase residual is the designed answer; if it cannot meet a useful tolerance
+   for the shipped microstrip models, TRN-4 stops and reports, and lossy lines are refused by name in transient rather
+   than shipped with an unchecked approximation.
+4. **The translatable set is small at first.** Exact-or-refuse (D7) means most RF benches with microstrip, SnP blocks or
+   FET-law devices do not run on ngspice in v1. That is the honest scope, stated in the docs; `SpiceLines=rlgc`, `SpiceFit=yes` and later
+   FET-law translations widen it, each with its error or label in the result.
+5. **Time-scale disparity.** RF circuits with bias networks are stiff in time. `explain`'s steering line and `MaxSteps`
+   keep a user from waiting an hour for an answer harmonic balance gives in seconds; §10.2's fast-bias scaling exists
+   for the same reason.
+6. **External devices.** A Verilog-A device in a worker process costs a round trip per evaluation, and transient cannot
+   batch over time. TRN-1 measures it on the reference worker and records it; if it dominates, a batched Newton on the
+   interface (all of one iteration's device evaluations in one round trip) is the remedy, and it is the worker
+   protocol's to add.
+
+## 14. Not here
+
+Transient noise; digital and mixed-signal elements; current-controlled switches; lossy coupled lines; Monte Carlo
+beyond what a parametric sweep already gives; a periodic-steady-state (shooting) analysis, which this engine makes
+possible later; `MOD_Source` in transient; ngspice for any analysis but transient; FET-law translations to the dialect
+(each a later brief if wanted); linking ngspice as a library.

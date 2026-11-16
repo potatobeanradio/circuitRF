@@ -1,0 +1,199 @@
+{
+ "name": "CoaxLine",
+ "variables": {},
+ "materials": [],
+ "designs": [
+  {
+   "name": "Line",
+   "units": "mm",
+   "settings": {
+    "SolutionType": "Modal",
+    "AutoOpen": "Off"
+   },
+   "variables": {
+    "ra": "0.5mm",
+    "rb": "1.675mm",
+    "len": "20mm"
+   },
+   "objects": [
+    {
+     "name": "Fill",
+     "history": [
+      {
+       "kind": "CreateCylinder",
+       "props": {
+        "CenterPosition": "0,0,0",
+        "Axis": "Z",
+        "Radius": "rb",
+        "Height": "len",
+        "NumberOfSegments": "0"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Subtract",
+       "props": {
+        "Tools": "Pin",
+        "KeepOriginals": "True"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "Teflon (tm)",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Pin",
+     "history": [
+      {
+       "kind": "CreateCylinder",
+       "props": {
+        "CenterPosition": "0,0,0",
+        "Axis": "Z",
+        "Radius": "ra",
+        "Height": "len",
+        "NumberOfSegments": "0"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "pec",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "PortA",
+     "history": [
+      {
+       "kind": "CreateCircle",
+       "props": {
+        "CenterPosition": "0,0,0",
+        "Axis": "Z",
+        "Radius": "rb",
+        "NumberOfSegments": "0"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "PortB",
+     "history": [
+      {
+       "kind": "CreateCircle",
+       "props": {
+        "CenterPosition": "0,0,len",
+        "Axis": "Z",
+        "Radius": "rb",
+        "NumberOfSegments": "0"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    }
+   ],
+   "boundaries": [],
+   "excitations": [
+    {
+     "name": "1",
+     "kind": "Wave Port",
+     "props": {
+      "PortNumber": "1",
+      "NumberOfModes": "1",
+      "ModeType": "Auto",
+      "ImpedanceDefinition": "Zpv",
+      "Renormalize": "False",
+      "RenormImpedance": "50ohm",
+      "Deembed": "False",
+      "DeembedDistance": "0"
+     },
+     "faces": [],
+     "objects": [
+      "PortA"
+     ],
+     "edges": [],
+     "enabled": true
+    },
+    {
+     "name": "2",
+     "kind": "Wave Port",
+     "props": {
+      "PortNumber": "2",
+      "NumberOfModes": "1",
+      "ModeType": "Auto",
+      "ImpedanceDefinition": "Zpv",
+      "Renormalize": "False",
+      "RenormImpedance": "50ohm",
+      "Deembed": "False",
+      "DeembedDistance": "0"
+     },
+     "faces": [],
+     "objects": [
+      "PortB"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "mesh_ops": [],
+   "setups": [
+    {
+     "name": "S1",
+     "props": {
+      "Enabled": "True",
+      "SolutionFrequencyMode": "Single",
+      "Frequency": "5GHz",
+      "MaximumPasses": "2"
+     },
+     "sweeps": [],
+     "eigen": false
+    }
+   ],
+   "spheres": [],
+   "reports": [],
+   "field_plots": [],
+   "coord_systems": [],
+   "optimetrics": [],
+   "parametrics": [],
+   "working_cs": "Global",
+   "notes": ""
+  }
+ ],
+ "format": "hertzon-project",
+ "version": 2
+}

@@ -1,0 +1,65 @@
+refusal (none)
+note 18 overlapping conductor shape(s) were merged into 9 — copper that overlaps on one level is one conductor, in 3D as in the planar model.
+note Port 1 ('1') at (-25.86, 14.21 mm) was taken to be on the conductor's low-y (bottom) end (the port's own direction), driving current in the +y direction, at 50 Ω.
+note Port 2 ('2') at (0, 14.21 mm) was taken to be on the conductor's low-y (bottom) end (the port's own direction), driving current in the +y direction, at 50 Ω.
+note Port 3 ('3') at (25.86, 14.21 mm) was taken to be on the conductor's low-y (bottom) end (the port's own direction), driving current in the +y direction, at 50 Ω.
+note Port 4 ('4') at (-25.86, -11.65 mm) was taken to be on the conductor's low-y (bottom) end (the port's own direction), driving current in the +y direction, at 50 Ω.
+note Port 5 ('5') at (0, -11.65 mm) was taken to be on the conductor's low-y (bottom) end (the port's own direction), driving current in the +y direction, at 50 Ω.
+note Port 6 ('6') at (25.86, -11.65 mm) was taken to be on the conductor's low-y (bottom) end (the port's own direction), driving current in the +y direction, at 50 Ω.
+note Port 7 ('7') at (-25.86, -37.51 mm) was taken to be on the conductor's low-y (bottom) end (the port's own direction), driving current in the +y direction, at 50 Ω.
+note Port 8 ('8') at (0, -37.51 mm) was taken to be on the conductor's low-y (bottom) end (the port's own direction), driving current in the +y direction, at 50 Ω.
+note Port 9 ('9') at (25.86, -37.51 mm) was taken to be on the conductor's low-y (bottom) end (the port's own direction), driving current in the +y direction, at 50 Ω.
+note Port 1 at its line's end is a vertical lumped sheet 1680 µm (1.68 mm) wide and 762 µm (0.762 mm) tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
+note Port 2 at its line's end is a vertical lumped sheet 1680 µm (1.68 mm) wide and 762 µm (0.762 mm) tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
+note Port 3 at its line's end is a vertical lumped sheet 1680 µm (1.68 mm) wide and 762 µm (0.762 mm) tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
+note Port 4 at its line's end is a vertical lumped sheet 1680 µm (1.68 mm) wide and 762 µm (0.762 mm) tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
+note Port 5 at its line's end is a vertical lumped sheet 1680 µm (1.68 mm) wide and 762 µm (0.762 mm) tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
+note Port 6 at its line's end is a vertical lumped sheet 1680 µm (1.68 mm) wide and 762 µm (0.762 mm) tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
+note Port 7 at its line's end is a vertical lumped sheet 1680 µm (1.68 mm) wide and 762 µm (0.762 mm) tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
+note Port 8 at its line's end is a vertical lumped sheet 1680 µm (1.68 mm) wide and 762 µm (0.762 mm) tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
+note Port 9 at its line's end is a vertical lumped sheet 1680 µm (1.68 mm) wide and 762 µm (0.762 mm) tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
+note The air box's default padding is 12.9221 mm on every face — λ/4 at 5.8 GHz, the sweep's lowest frequency, since a radiation pattern is asked for — because a radiation pattern was asked for: its equivalence surface sits inside the absorber with room to spare around the structure. The setup names no pattern frequency, so the sweep's lowest stands in for it; state one to size the box for it. A padding the setup's AirBox states is used as stated.
+note The air box's floor is 'Bottom Copper (1 oz)' as a PEC plane at 35 µm: it is the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it.
+solid Laminate Laminate Dielectric 1 box (-0.04725208870689655,-0.050432088706896555,3.5000000000000004E-05) (0.04725208870689655,0.04543208870689656,0.0007970000000000001)
+solid air Air Air 2 box (-0.04725208870689655,-0.050432088706896555,0.0007970000000000001) (0.04725208870689655,0.04543208870689656,0.013754088706896551)
+solid Top Copper (1 oz)/1 Copper Conductor 3 extrude 0.0007970000000000001 0.0008320000000000001 [-0.02502,0.02321 -0.024020000000000003,0.02321 -0.024020000000000003,0.01921 -0.017390000000000003,0.01921 -0.017390000000000003,0.032510000000000004 -0.03433,0.032510000000000004 -0.03433,0.01921 -0.027700000000000002,0.01921 -0.027700000000000002,0.02321 -0.0267,0.02321 -0.0267,0.01421 -0.02502,0.01421]
+solid Top Copper (1 oz)/2 Copper Conductor 4 extrude 0.0007970000000000001 0.0008320000000000001 [0.00084,0.02321 0.00184,0.02321 0.00184,0.01921 0.00847,0.01921 0.00847,0.032510000000000004 -0.00847,0.032510000000000004 -0.00847,0.01921 -0.00184,0.01921 -0.00184,0.02321 -0.00084,0.02321 -0.00084,0.01421 0.00084,0.01421]
+solid Top Copper (1 oz)/3 Copper Conductor 5 extrude 0.0007970000000000001 0.0008320000000000001 [0.0267,0.02321 0.027700000000000002,0.02321 0.027700000000000002,0.01921 0.03433,0.01921 0.03433,0.032510000000000004 0.017390000000000003,0.032510000000000004 0.017390000000000003,0.01921 0.024020000000000003,0.01921 0.024020000000000003,0.02321 0.02502,0.02321 0.02502,0.01421 0.0267,0.01421]
+solid Top Copper (1 oz)/4 Copper Conductor 6 extrude 0.0007970000000000001 0.0008320000000000001 [-0.02502,-0.00265 -0.024020000000000003,-0.00265 -0.024020000000000003,-0.0066500000000000005 -0.017390000000000003,-0.0066500000000000005 -0.017390000000000003,0.0066500000000000005 -0.03433,0.0066500000000000005 -0.03433,-0.0066500000000000005 -0.027700000000000002,-0.0066500000000000005 -0.027700000000000002,-0.00265 -0.0267,-0.00265 -0.0267,-0.01165 -0.02502,-0.01165]
+solid Top Copper (1 oz)/5 Copper Conductor 7 extrude 0.0007970000000000001 0.0008320000000000001 [0.00084,-0.00265 0.00184,-0.00265 0.00184,-0.0066500000000000005 0.00847,-0.0066500000000000005 0.00847,0.0066500000000000005 -0.00847,0.0066500000000000005 -0.00847,-0.0066500000000000005 -0.00184,-0.0066500000000000005 -0.00184,-0.00265 -0.00084,-0.00265 -0.00084,-0.01165 0.00084,-0.01165]
+solid Top Copper (1 oz)/6 Copper Conductor 8 extrude 0.0007970000000000001 0.0008320000000000001 [0.0267,-0.00265 0.027700000000000002,-0.00265 0.027700000000000002,-0.0066500000000000005 0.03433,-0.0066500000000000005 0.03433,0.0066500000000000005 0.017390000000000003,0.0066500000000000005 0.017390000000000003,-0.0066500000000000005 0.024020000000000003,-0.0066500000000000005 0.024020000000000003,-0.00265 0.02502,-0.00265 0.02502,-0.01165 0.0267,-0.01165]
+solid Top Copper (1 oz)/7 Copper Conductor 9 extrude 0.0007970000000000001 0.0008320000000000001 [-0.02502,-0.02851 -0.024020000000000003,-0.02851 -0.024020000000000003,-0.032510000000000004 -0.017390000000000003,-0.032510000000000004 -0.017390000000000003,-0.01921 -0.03433,-0.01921 -0.03433,-0.032510000000000004 -0.027700000000000002,-0.032510000000000004 -0.027700000000000002,-0.02851 -0.0267,-0.02851 -0.0267,-0.03751 -0.02502,-0.03751]
+solid Top Copper (1 oz)/8 Copper Conductor 10 extrude 0.0007970000000000001 0.0008320000000000001 [0.00084,-0.02851 0.00184,-0.02851 0.00184,-0.032510000000000004 0.00847,-0.032510000000000004 0.00847,-0.01921 -0.00847,-0.01921 -0.00847,-0.032510000000000004 -0.00184,-0.032510000000000004 -0.00184,-0.02851 -0.00084,-0.02851 -0.00084,-0.03751 0.00084,-0.03751]
+solid Top Copper (1 oz)/9 Copper Conductor 11 extrude 0.0007970000000000001 0.0008320000000000001 [0.0267,-0.02851 0.027700000000000002,-0.02851 0.027700000000000002,-0.032510000000000004 0.03433,-0.032510000000000004 0.03433,-0.01921 0.017390000000000003,-0.01921 0.017390000000000003,-0.032510000000000004 0.024020000000000003,-0.032510000000000004 0.024020000000000003,-0.02851 0.02502,-0.02851 0.02502,-0.03751 0.0267,-0.03751]
+material Copper 1 - 0 1 58000000
+material Laminate 3.66 - 0.0037 1 0
+material Air 1 - 0 1 0
+port 1 port/1 Lumped Top Copper (1 oz)/1 airbox/zmin (-0.0267,0.01421,3.5000000000000004E-05) (-0.02502,0.01421,0.0007970000000000001) (0,0,1) 50 0 (-0.02586,0.01421,0.00041600000000000003) (0,1,0) 0 - -
+port 2 port/2 Lumped Top Copper (1 oz)/2 airbox/zmin (-0.00084,0.01421,3.5000000000000004E-05) (0.00084,0.01421,0.0007970000000000001) (0,0,1) 50 0 (0,0.01421,0.00041600000000000003) (0,1,0) 0 - -
+port 3 port/3 Lumped Top Copper (1 oz)/3 airbox/zmin (0.02502,0.01421,3.5000000000000004E-05) (0.0267,0.01421,0.0007970000000000001) (0,0,1) 50 0 (0.02586,0.01421,0.00041600000000000003) (0,1,0) 0 - -
+port 4 port/4 Lumped Top Copper (1 oz)/4 airbox/zmin (-0.0267,-0.01165,3.5000000000000004E-05) (-0.02502,-0.01165,0.0007970000000000001) (0,0,1) 50 0 (-0.02586,-0.01165,0.00041600000000000003) (0,1,0) 0 - -
+port 5 port/5 Lumped Top Copper (1 oz)/5 airbox/zmin (-0.00084,-0.01165,3.5000000000000004E-05) (0.00084,-0.01165,0.0007970000000000001) (0,0,1) 50 0 (0,-0.01165,0.00041600000000000003) (0,1,0) 0 - -
+port 6 port/6 Lumped Top Copper (1 oz)/6 airbox/zmin (0.02502,-0.01165,3.5000000000000004E-05) (0.0267,-0.01165,0.0007970000000000001) (0,0,1) 50 0 (0.02586,-0.01165,0.00041600000000000003) (0,1,0) 0 - -
+port 7 port/7 Lumped Top Copper (1 oz)/7 airbox/zmin (-0.0267,-0.03751,3.5000000000000004E-05) (-0.02502,-0.03751,0.0007970000000000001) (0,0,1) 50 0 (-0.02586,-0.03751,0.00041600000000000003) (0,1,0) 0 - -
+port 8 port/8 Lumped Top Copper (1 oz)/8 airbox/zmin (-0.00084,-0.03751,3.5000000000000004E-05) (0.00084,-0.03751,0.0007970000000000001) (0,0,1) 50 0 (0,-0.03751,0.00041600000000000003) (0,1,0) 0 - -
+port 9 port/9 Lumped Top Copper (1 oz)/9 airbox/zmin (0.02502,-0.03751,3.5000000000000004E-05) (0.0267,-0.03751,0.0007970000000000001) (0,0,1) 50 0 (0.02586,-0.03751,0.00041600000000000003) (0,1,0) 0 - -
+box (-0.04725208870689655,-0.050432088706896555,3.5000000000000004E-05) (0.04725208870689655,0.04543208870689656,0.013754088706896551) Em3dFaces { XMin = Absorbing, XMax = Absorbing, YMin = Absorbing, YMax = Absorbing, ZMin = Pec, ZMax = Absorbing }
+freq 5800000000 6000000000 3 Linear 20
+type Driven eigen 3 5800000000
+ground 
+origin Laminate Dielectric Laminate - -
+origin Top Copper (1 oz)/1 Conductor Top Copper (1 oz) LayerKey { Layer = 1, Datatype = 0 } -
+origin Top Copper (1 oz)/2 Conductor Top Copper (1 oz) LayerKey { Layer = 1, Datatype = 0 } -
+origin Top Copper (1 oz)/3 Conductor Top Copper (1 oz) LayerKey { Layer = 1, Datatype = 0 } -
+origin Top Copper (1 oz)/4 Conductor Top Copper (1 oz) LayerKey { Layer = 1, Datatype = 0 } -
+origin Top Copper (1 oz)/5 Conductor Top Copper (1 oz) LayerKey { Layer = 1, Datatype = 0 } -
+origin Top Copper (1 oz)/6 Conductor Top Copper (1 oz) LayerKey { Layer = 1, Datatype = 0 } -
+origin Top Copper (1 oz)/7 Conductor Top Copper (1 oz) LayerKey { Layer = 1, Datatype = 0 } -
+origin Top Copper (1 oz)/8 Conductor Top Copper (1 oz) LayerKey { Layer = 1, Datatype = 0 } -
+origin Top Copper (1 oz)/9 Conductor Top Copper (1 oz) LayerKey { Layer = 1, Datatype = 0 } -
+origin air Air - - -
+material-source Air built in (free space)
+material-source Copper technology 'PCB 2-Layer (30 mil, 1 oz)' Materials
+material-source Laminate stackup entry 'Laminate' (its own numbers)
+no-alpha 
+unknown-temperature 

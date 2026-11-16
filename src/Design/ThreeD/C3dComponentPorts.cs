@@ -370,12 +370,22 @@ public static class C3dComponentPorts
         foreach (var r in final.Where(p => p.Refusal is not null))
             warnings.Add($"{r.Refusal} {r.Refdes} is left out of this run; the other component ports are built.");
         // brief-icp-3 R-icp3-2 — the cut instances' pin ports follow the parts', numbered on from them (ICP-2's order on Planar).
+        List<CircuitRF.Design.Layout.Em.EmCoSimPart> portless = cuts is null ? []
+            : [.. cuts.Layouts.SelectMany(l => l.Build.Portless.Select(p => p with { Refdes = l.Prefix + p.Refdes, ClayPath = l.Frame.DocumentPath }))];
         if (cuts is not null)
         {
             var (cutPorts, cutNotes, cutWarnings) = C3dCellCuts.Ports(cuts, applied, document, next);
             final.AddRange(cutPorts);
             notes.AddRange(cutNotes);
             warnings.AddRange(cutWarnings);
+            // brief-icf-2 R-icf2-2 in 3D — an instance whose every sheet the generator refused is left with no port as surely as one
+            // the cut left portless, but only here is that known: it is placed in the co-simulation netlist and named, as that one is.
+            foreach (var g in cutPorts.Where(p => p.CutPart is not null).GroupBy(p => p.Refdes, StringComparer.OrdinalIgnoreCase))
+                if (g.All(p => !p.Ok) && !portless.Any(p => p.Refdes.Equals(g.Key, StringComparison.OrdinalIgnoreCase)))
+                {
+                    portless.Add(CircuitRF.Design.Layout.Em.EmCoSimPart.Of(g.First()) with { Pin = null, ReferencePin = null });
+                    warnings.Add(CircuitRF.Design.Layout.Em.EmPlanarComponentPorts.PortlessWarning(g.Key));
+                }
         }
         if (noModel.Count > 0)
             warnings.Add($"{string.Join(", ", noModel)} {(noModel.Count == 1 ? "has" : "have")} no model on the board's schematic, so the " +
@@ -387,10 +397,7 @@ public static class C3dComponentPorts
         if (landings > 0)
             notes.Add($"{landings} landing rectangle(s) extend the copper facing {final.Count(p => p.Landings.Count > 0)} component port(s) " +
                       "to a straight face; they are in the solved problem only and are not written to the layout.");
-        return new C3dComponentPortBuild(final, applied, bridges, notes, warnings, null)
-        {
-            Portless = cuts is null ? [] : [.. cuts.Layouts.SelectMany(l => l.Build.Portless.Select(p => p with { Refdes = l.Prefix + p.Refdes, ClayPath = l.Frame.DocumentPath }))],
-        };
+        return new C3dComponentPortBuild(final, applied, bridges, notes, warnings, null) { Portless = portless };
 
         static C3dComponentPort Refused(string rd, string why) => new(rd, null, null, null, 0, 0, false, [], why, false);
     }

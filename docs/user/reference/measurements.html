@@ -31,7 +31,7 @@
   <div class="page-top">
     <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Measurements</p>
     <nav class="page-nav-top" aria-label="Previous and next page">
-      <a class="prev" href="simulations.html" title="Previous: Simulations"><span class="arrow">‹</span><span class="name">Simulations</span></a>
+      <a class="prev" href="transient.html" title="Previous: Transient"><span class="arrow">‹</span><span class="name">Transient</span></a>
       <a class="next" href="netlist.html" title="Next: The Netlist (.cnl) Format"><span class="name">The Netlist (.cnl) Format</span><span class="arrow">›</span></a>
     </nav>
   </div>
@@ -97,6 +97,7 @@ HB1.I(&quot;M1:d&quot;, 1, All)  device-port branch current, fundamental, swept
 DC1.I(&quot;Iout&quot;)          no sweep → a scalar
 HB1.P(&quot;Iout&quot;)          power through IProbe Iout, fundamental band, in W — see Power through an IProbe
 ENV1.Pt(&quot;Iout&quot;)        the same power at every envelope step (SaveWaveforms=yes)
+SP1.link(&quot;CH1&quot;, &quot;Gain_dB&quot;)   a Propagation Channel's report cube link:CH1:Gain_dB, every sweep axis kept
 </code></pre>
 <p><strong>Why use it:</strong> it is order-independent — the engine locates each axis by name, so adding or
 reordering sweep axes never breaks the expression. This is the right choice for measurements you
@@ -297,8 +298,9 @@ different frequency grids, leaves <code>freq</code> unresolved and the measureme
 two it was — rather than silently computing against the wrong grid. Under harmonic balance the
 spectral axis is <code>harmonic</code> (or <code>mixIndex</code>) and a small-signal sweep is <code>ssfreq</code>; neither is <code>freq</code>.</p>
 <h2 id="value-at">One point by its value: <code>value_at</code></h2>
-<p><code>value_at(x, v)</code> is <code>x</code> at the frequency <code>v</code>. When <code>v</code> is a grid point it is read straight off; between
-two points it is interpolated linearly. Name another axis as the last argument to read along that one
+<p><code>value_at(x, v)</code> is <code>x</code> at the frequency <code>v</code>, or at the time <code>v</code> when <code>x</code> has no frequency axis and a time
+axis (a <a href="transient.html">transient</a> or envelope waveform). When <code>v</code> is a grid point it is read straight off;
+between two points it is interpolated linearly. Name another axis as the last argument to read along that one
 instead.</p>
 <pre><code class="language-text">measure  G_2G45   = value_at(dB(SP1.S(2,1)), 2.45GHz)      the gain at 2.45 GHz
 measure  NF_2G45  = value_at(SP1.NF, 2.45GHz)              the noise figure there
@@ -315,6 +317,73 @@ number that looks right and is not.</li>
 </ul>
 <p>A measurement that comes out a single number shows as one cell of a <a href="data-display.html">Table plot</a>, so a
 few <code>value_at</code>, <code>max_over</code> and <code>min_over</code> lines make a readout of the numbers you care about.</p>
+<h2 id="time-domain">Time-domain functions</h2>
+<p>A <a href="transient.html">transient</a> run's waveforms, and an envelope run's real ones, have a <code>time</code> axis. These
+functions read along it and keep every other axis, so a transient inside a parametric sweep gives one value per
+sweep point. The waveform argument is a real cube, such as <code>TR1.V(&quot;out&quot;)</code> or <code>TR1.I(&quot;IL&quot;)</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>rise(x, lo=10, hi=90)</code>, <code>fall(…)</code></td>
+<td>The first edge from <code>lo</code> % to <code>hi</code> % of the swing (s). The swing is the step from the first value to the last; a record that ends near where it began (a pulse) takes its minimum and maximum</td>
+</tr>
+<tr>
+<td><code>overshoot(x)</code></td>
+<td>How far <code>x</code> goes past its final value, in % of the step from the first value to the last; 0 when it never does</td>
+</tr>
+<tr>
+<td><code>undershoot(x)</code></td>
+<td>How far <code>x</code> comes back below its final value after the overshoot's peak, in % of the step: the first trough of a ringing step</td>
+</tr>
+<tr>
+<td><code>settle(x, tol=1)</code></td>
+<td>The time after which <code>x</code> stays within <code>tol</code> % of the step of its final value (s)</td>
+</tr>
+<tr>
+<td><code>period(x)</code>, <code>frequency(x)</code></td>
+<td>From the rising crossings of the mean, averaged over the last half of the record (s, Hz)</td>
+</tr>
+<tr>
+<td><code>value_at(x, t)</code></td>
+<td><code>x</code> at time <code>t</code>, interpolated</td>
+</tr>
+<tr>
+<td><code>tmin(x, t1, t2)</code>, <code>tmax(…)</code></td>
+<td>The time of the minimum (maximum) between <code>t1</code> and <code>t2</code>, or over the whole record (s)</td>
+</tr>
+<tr>
+<td><code>avg(x, t1, t2)</code>, <code>rms(x, t1, t2)</code></td>
+<td>The time-weighted mean and rms between <code>t1</code> and <code>t2</code></td>
+</tr>
+<tr>
+<td><code>fft(x, f0, periods=1, window=&quot;none&quot;)</code></td>
+<td>The spectrum of the last whole <code>periods</code> of <code>x</code> at <code>f0</code> and its harmonics, shaped like a harmonic-balance result: a <code>harmonic</code> axis, full-amplitude phasors with the record's own time origin. <code>&quot;hann&quot;</code> windows it</td>
+</tr>
+<tr>
+<td><code>fft_power(v, i, f0, periods=1)</code></td>
+<td>The power per harmonic from a voltage and a current, V₀I₀ at DC and ½Re(VₖIₖ*) above it (W), as harmonic balance's <code>Pprobe_W</code></td>
+</tr>
+<tr>
+<td><code>thd(x, f0, n=10)</code></td>
+<td>Total harmonic distortion of the last period, harmonics 2 to <code>n</code> against the fundamental (%)</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-text">measure  Trise     = rise(TR1.V(&quot;out&quot;))
+measure  Ripple    = value_at(TR1.V(&quot;out&quot;), tmax(TR1.V(&quot;out&quot;), 199u, 200u)) - value_at(TR1.V(&quot;out&quot;), tmin(TR1.V(&quot;out&quot;), 199u, 200u))
+measure  Pout_dBm  = 10*log10(1000*value_at(fft_power(TR1.Vprobe(&quot;IOUT&quot;), TR1.I(&quot;IOUT&quot;), 1GHz), 1, &quot;harmonic&quot;))
+</code></pre>
+<p><code>Vprobe</code> is the voltage at an IProbe's first net, which with its current gives the power through it. Because <code>fft</code>
+is shaped like a harmonic-balance spectrum, a trace written for one plots the other: <code>dB(Vout)</code> reads
+<code>HB1.V(&quot;out&quot;)</code> on one bench and <code>fft(TR1.V(&quot;out&quot;), 1GHz)</code> on another unchanged. A waveform with no edge of the kind
+asked for gives a missing value rather than an error, so one sweep point without one does not fail the rest. A
+waveform with no <code>time</code> axis is refused, naming the function, and <code>circuitrf check</code> finds it before a run.</p>
 <h2 id="spec">Spec checks: the worst value over a band</h2>
 <p>A specification line asks for the <strong>worst</strong> value of a quantity over a frequency band: &quot;insertion
 loss ≤ 1 dB from 0.1 to 3 GHz&quot;, &quot;rejection ≥ 20 dB from 6 to 12 GHz&quot;. <code>max_over</code> and <code>min_over</code>
@@ -374,6 +443,10 @@ and give <code>lo, hi</code> before it to take part of the axis):</p>
 <td>the fraction of trials for which the condition holds: <code>yield_over(Gain &gt; 14)</code></td>
 </tr>
 <tr>
+<td><code>outage_over(x, threshold)</code></td>
+<td>the fraction of present values below the threshold, with its exact 95 % binomial interval stored beside it as <code>lo</code> and <code>hi</code>: <code>outage_over(Prx, -95, &quot;drop&quot;)</code> over a Propagation Channel's drops</td>
+</tr>
+<tr>
 <td><code>cpk(x, lo, hi)</code></td>
 <td>the process capability index; write either limit as <code>&quot;none&quot;</code> for a one-sided spec</td>
 </tr>
@@ -428,7 +501,7 @@ evaluation of it is a whole Monte Carlo run.</li>
   <code>docs/design/measurements.md</code>.</p>
 
 <nav class="page-nav">
-  <a class="prev" href="simulations.html"><span class="dir">Previous</span><span class="name">Simulations</span></a>
+  <a class="prev" href="transient.html"><span class="dir">Previous</span><span class="name">Transient</span></a>
   <a class="next" href="netlist.html"><span class="dir">Next</span><span class="name">The Netlist (.cnl) Format</span></a>
 </nav>
 </main>

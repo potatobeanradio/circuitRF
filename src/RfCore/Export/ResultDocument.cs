@@ -2482,7 +2482,15 @@ namespace RfCore.Export
         /// <summary>brief-pch-6 R-pch6-10 — each Propagation Channel the analysis runs: its model and edition, the breakdown, τ0, ν0,
         /// the rays and the regime, or the sentence refusing it. Null when the design has no channel.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<string>? Channels = null);
+        IReadOnlyList<string>? Channels = null,
+        /// <summary>brief-trn-1 R-trn1-11 — a transient analysis: its solver, its step bound and why, the steps that bound implies, and
+        /// the circuit's slowest time constant against Stop; or the sentence refusing it. Null for any other analysis.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<string>? Transient = null,
+        /// <summary>brief TRN-8 R-trn8-6 — an hb or osc analysis that starts from a transient seed: the seed's settings, its step and
+        /// estimated length, and the chokes and blocks fast bias would scale; or the sentence refusing it. Null otherwise.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<string>? Seed = null);
 
     /// <summary>brief-paa-3 — <c>explain --analysis</c>'s lines for a Phased Antenna Array: the level sentence, the coupling range, and each
     /// pattern the array takes with the elements (1-based, row-major) that take it — or the sentence the run refuses with.</summary>
@@ -4022,6 +4030,7 @@ namespace RfCore.Export
     /// <param name="Files">With a name only: every file a copy carries, relative to the workspace.</param>
     /// <param name="Workspace">With a name only: the cells, their views and their declared analyses,
     /// as <c>find</c> reports a workspace.</param>
+    /// <param name="Group">The topic File ▸ New ▸ Examples files it under.</param>
     public sealed record ReferenceExampleJson(
         string  Name,
         string  Title,
@@ -4032,7 +4041,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         IReadOnlyList<ReferenceExampleFileJson>? Files = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        FoundWorkspaceJson? Workspace = null);
+        FoundWorkspaceJson? Workspace = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Group = null);
 
     /// <param name="Path">Relative to the example's workspace folder, with forward slashes.</param>
     public sealed record ReferenceExampleFileJson(string Path, long Bytes);

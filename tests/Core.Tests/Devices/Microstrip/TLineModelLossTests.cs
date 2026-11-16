@@ -27,7 +27,8 @@ public class TLineModelLossTests
         Assert.Equal(1.0 / 50.0, mna.Entries[(1, 2)].Imaginary, 1e-9);
     }
 
-    // brief-artsch-2 R-as2-2: θ = 2π·f·L·√Eeff/c₀ and αl = (Ac·√(f/F) + Ad·f/F)·L/8.686, through the factory.
+    // brief-artsch-2 R-as2-2: θ = 2π·f·L·√Eeff/c₀ and αl = (Ac·√(f/F) + Ad·f/F)·L/8.686, through the factory; brief-trn-4b
+    // adds the losses' phase to θ.
     [Fact]
     public void PhysicalForm_WithAcAndAd_MatchesTheClosedForm()
     {
@@ -43,8 +44,10 @@ public class TLineModelLossTests
             var mna = new CapturingMnaContext();
             model.Stamp(mna, MakeEc(model, [1, 2]), 2 * Math.PI * f);
 
-            double theta = 2 * Math.PI * f * l * Math.Sqrt(eeff) / 2.99792458e8;
-            double alphaL = (ac * Math.Sqrt(f / fRef) + ad * f / fRef) * l / (20 / Math.Log(10));
+            double acL = ac * Math.Sqrt(f / fRef) * l / (20 / Math.Log(10)), adL = ad * f / fRef * l / (20 / Math.Log(10));
+            // brief-trn-4b: the losses' own phase — the conductor's equal to its √f loss, the dielectric's pinned at F
+            double theta = 2 * Math.PI * f * l * Math.Sqrt(eeff) / 2.99792458e8 + acL - 2 / Math.PI * adL * Math.Log(f / fRef);
+            double alphaL = acL + adL;
             var gl = new Complex(alphaL, theta);
             Complex y11 = Complex.Cosh(gl) / (z0 * Complex.Sinh(gl));
             Complex y12 = -1.0 / (z0 * Complex.Sinh(gl));

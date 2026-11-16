@@ -42,6 +42,12 @@ public partial class PhasedArrayWindow : Window, ICrfMenuWindow
 
     private PhasedArrayToolViewModel? Vm => DataContext as PhasedArrayToolViewModel;
 
+    /// <summary>brief-pch-9 — a row of the Beams list clicked: that pair selected on the channel.</summary>
+    private void OnBeamRowClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: BeamRow row }) Vm?.SelectPair(row);
+    }
+
     public string WindowMenuHeader => Vm?.Title ?? "Phased Array";
 
     /// <summary>The window's host: the UI thread, and the thread pool.</summary>

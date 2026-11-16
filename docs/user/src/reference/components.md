@@ -45,6 +45,8 @@ An ideal, frequency-independent resistor. `R` is the resistance.
 {{symbol: inductor}}
 
 An ideal inductor. `L` is the inductance. Couple two inductors with a [Mutual](#mutual) element.
+`IC` is its starting current in a transient analysis (amperes, flowing from pin 1 to pin 2); every
+other analysis ignores it.
 
 {{table: components/Inductor}}
 
@@ -53,7 +55,8 @@ An ideal inductor. `L` is the inductance. Couple two inductors with a [Mutual](#
 {{symbol: capacitor}}
 
 An ideal, linear capacitor. `C` is the capacitance. For a voltage-dependent capacitance, see
-[NonlinearC](#nonlinearc).
+[NonlinearC](#nonlinearc). `IC` is its starting voltage in a transient analysis (pin 1 over pin 2);
+every other analysis ignores it.
 
 {{table: components/Capacitor}}
 
@@ -281,12 +284,34 @@ A fixed DC voltage — gate and drain bias supplies. `Vdc` is the voltage.
 
 {{table: components/Vdc}}
 
+### DC Current Source (Idc) {#idc}
+
+{{symbol: idc}}
+
+A fixed DC current, the counterpart of [Vdc](#vdc). `Idc` is the current, delivered **into** the
+**+** pin, where the arrow points. It is constant in every analysis, transient included, and an open
+circuit at every frequency other than DC.
+
+{{table: components/Idc}}
+
 ### Tone Source (VTone) {#tonesource}
 
 {{symbol: tone-source}}
 
 A single-tone (sinusoidal) voltage source for harmonic balance, with an optional DC offset. `V` is the
 tone amplitude, `Freq` the tone frequency, and `Vdc` a DC offset.
+
+In a transient analysis three more keys shape the tone, and every other analysis ignores them:
+
+- `Delay` — the tone starts at this time (seconds), and its phase is counted from it.
+- `Ramp` — the tone rises to full amplitude over this time along a raised cosine; 0 (the default) is a
+  step.
+- `Damping` — the tone decays as e<sup>−Damping·(t − Delay)</sup> after `Delay` (1/s).
+
+The DC offset is not delayed. The same three keys work on [ITone](#currenttonesource),
+[P1Tone](#p1tone) and [PnTone](#pntone). A P1Tone or PnTone keeps its available power and source
+impedance in a transient run, and its harmonic terminations `Z[k]` too: the run presents each band's
+impedance at that band's harmonic, and its note gives the realization's error.
 
 {{table: components/ToneSource}}
 
@@ -398,7 +423,137 @@ In a harmonic-balance or loadpull run a MOD_Source is a CW tone at `Fc` carrying
 average power, or for a pulsed-CW source the pulse-top power, the steady state of a pulse that never ends;
 in an S-parameter run it is the passive impedance `Z`.
 
+In a native [transient run](transient.html#modulated) it plays its signal on its carrier over a window of its record,
+picked by `RecordStart` (where in the record the run starts, default 0 s) and softened by `Ramp` (a raised-cosine rise
+over that time, default 0 s). Every other analysis ignores both.
+
 {{table: components/ModSource}}
+
+### Waveform sources {#waveform-sources}
+
+Sources for a transient analysis (`type=tran`), one type per waveform, each in a voltage (`V_`) and a
+current (`I_`) form. A voltage type's waveform is the voltage at **+** relative to **−**; a current type
+delivers its value into **+**, as the arrow shows. Every value can be an expression.
+
+In every analysis other than transient — DC, S-parameter, harmonic balance, loadpull, envelope — a
+waveform source is a constant: its `Dc` value, or, when `Dc` is not set, the waveform's value at
+t = 0. A voltage type is then a short at every frequency but DC and a current type an open, exactly as
+[Vdc](#vdc) and [Idc](#idc) are.
+
+Each corner of a waveform (a pulse's edges, a PWL vertex, an exponential's start) is a time the
+transient analysis lands a step on exactly, so an edge is never smeared across a step.
+
+### Pulse (V_Pulse, I_Pulse) {#vpulse}
+
+{{symbol: v-pulse}}
+
+`V1` until `Delay`, a straight rise over `Rise` to `V2`, held for `Width`, a straight fall over `Fall`
+back to `V1`, repeating every `Period` (blank: one pulse). A blank `Width` holds `V2` for the rest of
+the run. The current form says `I1` and `I2`.
+
+{{table: components/VPulse}}
+
+### Current pulse (I_Pulse) {#ipulse}
+
+{{symbol: i-pulse}}
+
+{{table: components/IPulse}}
+
+### Piecewise linear (V_PWL, I_PWL) {#vpwl}
+
+{{symbol: v-pwl}}
+
+Straight lines through time-value pairs, given either as `Points="0 0, 1n 1, 5n 1, 6n 0"` or as
+`File=`, a file of two columns (time, value) separated by a comma or whitespace, with `#` starting a
+comment — not both. Times must increase; a file line that breaks this is refused by its number.
+Before the first time the first value holds, after the last the last. `Repeat=yes` repeats the points
+with a period of the last time minus the first. A `File` path is relative to the workspace and is
+archived with it.
+
+{{table: components/VPwl}}
+
+### Current PWL (I_PWL) {#ipwl}
+
+{{symbol: i-pwl}}
+
+{{table: components/IPwl}}
+
+### Exponential (V_Exp, I_Exp) {#vexp}
+
+{{symbol: v-exp}}
+
+`V1` until `Delay1`, then an exponential rise towards `V2` with time constant `Tau1`; from `Delay2`
+(blank: never) an exponential return towards `V1` with time constant `Tau2` (blank: `Tau1`).
+
+{{table: components/VExp}}
+
+### Current exponential (I_Exp) {#iexp}
+
+{{symbol: i-exp}}
+
+{{table: components/IExp}}
+
+### Frequency-modulated sine (V_SFFM, I_SFFM) {#vsffm}
+
+{{symbol: v-sffm}}
+
+`Offset + Amplitude·sin(2π·Carrier·t + ModIndex·sin(2π·Signal·t))`. The automatic step bound counts
+the carrier and its modulation sidebands.
+
+{{table: components/VSffm}}
+
+### Current SFFM (I_SFFM) {#isffm}
+
+{{symbol: i-sffm}}
+
+{{table: components/ISffm}}
+
+### Expression (V_Expr, I_Expr) {#vexpr}
+
+{{symbol: v-expr}}
+
+Any expression in `time` — the simulated time in seconds — and the globals:
+`Expr="1 - exp(-time/1u)"`. An expression has no corners to report, so the transient analysis's
+`MaxStep` sets how finely it is followed.
+
+`time` is read only where a transient analysis evaluates it: here, and in an
+[SDD](#sdd)'s equations. Anywhere else — a resistor's value, a global — it is refused by name, except
+as one side of a comparison, which every steady-state analysis reads with all time elapsed:
+`time > 0` is true and `time < 1n` false.
+
+{{table: components/VExpr}}
+
+### Current expression (I_Expr) {#iexpr}
+
+{{symbol: i-expr}}
+
+{{table: components/IExpr}}
+
+### Voltage-Controlled Switch (VSwitch) {#vswitch}
+
+{{symbol: vswitch}}
+
+A resistance between **p** and **n** set by the voltage between **ctrl+** and **ctrl−**, which draw no
+current: `Roff` at and beyond `Voff`, `Ron` at and beyond `Von`, and in between a smooth, monotone
+transition — the conductance's logarithm follows a cubic, so the conductance and its slope are
+continuous everywhere. A `Von` below `Voff` is inverse logic.
+
+It works in every analysis. DC, harmonic balance and envelope runs evaluate it as the nonlinear
+device it is (the smooth transition is what keeps a harmonic-balance spectrum finite); an S-parameter
+run linearises it at its bias, so a switch biased on is `Ron` in series.
+
+In a transient analysis two more keys apply:
+
+- `Hyst` — hysteresis in volts. Off, the switch does not turn fully on until `Hyst/2` past `Von`; on,
+  it does not turn fully off until `Hyst/2` past `Voff`. Every other analysis ignores it, with a note.
+- `TransitionPoints` — at least this many accepted steps across a full crossing of the transition
+  (default 8). The step is limited while the control voltage crosses; no step is forced to land on
+  the crossing.
+
+`Switch` is a different component: the ideal SPST/SPDT [system block](system-components.html), set by
+its `State`.
+
+{{table: components/VSwitch}}
 
 ### Voltage-Controlled Current Source (VCCS) {#vccs}
 
@@ -774,6 +929,17 @@ electrical length it resolves to at `F`.
 TLIN:TL1 a b Z=50 Ohm L=25 mm Eeff=3.2 Ac=4 Ad=2 F=2 GHz
 ```
 
+**Loss and phase.** A line's loss comes with the phase a physical loss has, in every analysis. The
+conductor term (`Ac`) adds an internal reactance equal to its loss. The dielectric term (`A` or `Ad`)
+makes the line slightly slower below `F` and slightly faster above it, as a material with a flat loss
+tangent is. At `F` the line is exactly as stated.
+
+In a transient analysis a lossless line is exact: each end sees `Z` in series with the wave that left
+the other end one delay earlier, and an edge crossing the line lands on a step. A lossy line runs as
+that delay plus a rational fit of the rest of its response. The run's note gives the fit's departure
+from the line up to the run's highest frequency (half the inverse of the largest step). A line that
+cannot be fitted within 10⁻³ there is refused by name, with its error.
+
 {{table: components/Tline}}
 
 ### Coupled Line (CLIN) {#cline}
@@ -792,6 +958,10 @@ coupled-line filter section before committing to a geometry.
 - **Inhomogeneous media.** `Eo` is the odd mode's electrical length. Left blank, both modes share
   `E`, which is the homogeneous (stripline) case with ideal isolation. Set it shorter than `E` to model
   a medium such as microstrip, where the odd mode travels faster and the directivity is finite.
+
+In a transient analysis the pair runs exactly, as its even and odd modes, each a delay of its own.
+The physical coupled lines (MCLIN, BCLIN, MBCLIN) have loss and dispersion and are refused there by
+name.
 
 {{table: components/CLine}}
 
@@ -834,6 +1004,14 @@ The length can be stated electrically instead, as `E` at `F` in place of `L`, ex
 **Use electrical length** in the parameters dialog converts the current `L` at the line's own εeff, and
 **Use physical length** converts it back, so switching never changes the line a run simulates. CPWG and
 SLIN have the same button. Layout always draws the physical length.
+
+**Loss and phase.** The substrate's `Er` and `TanD` are the values at 1 GHz. A loss tangent that stays
+the same over many decades comes with a permittivity that falls slowly as frequency rises, so MLIN, CPWG
+and SLIN lines are slightly slower below 1 GHz and slightly faster above it. A long line on a lossy
+board, such as 25 mm on FR4 with `TanD` 0.02, gains about 7° less phase at 10 GHz than a constant `Er`
+would give. The conductor loss also brings the metal's internal inductance, which adds a little phase.
+Neither changes the Z0 or εeff the dialog reports. In a transient analysis these lines run as a delay
+plus a rational fit, as a lossy [TLIN](#tline) does.
 
 {{table: components/Mlin}}
 
@@ -2639,6 +2817,14 @@ circuit and interpolated onto the analysis sweep.
   `auto` ties a file whose S(i,j) and S(j,i) agree (every passive file does) and unties one that does
   not (an amplifier).
 
+**Transient.** In a transient analysis the file is replaced by a rational fit of its S-parameters from DC
+to the run's highest frequency, half the inverse of the largest step. Data that starts above DC is
+extrapolated to DC from its two lowest points, and data that stops short of that frequency is held at its
+last value; the run's note says when either happens. The fit is checked for passivity between and beyond
+the file's points. Where it would make energy, the smallest change that stops it is made, and the run
+reports that change and the fit's error. A file the fit cannot follow within 10⁻³ is refused by name. A
+System Filter, a Duplexer and EM cells run with `model=em` are fitted the same way.
+
 **Noise.** In an S-parameter run with [`Noise=yes`](simulations.html#sp-noise), a two-port file's Touchstone noise
 block makes the block noisy by that data. The data is linear between rows, and the end rows are held outside them, with
 a warning. A passive file with no noise block is thermal at the block's own `Temp` (°C), or `Dtemp` above the ambient,
@@ -3940,20 +4126,104 @@ PropagationChannel:CH1 tx rx Distance=250 TxHeight=10 RxHeight=1.5 PathLoss=twor
   as `x,y,z` in m/s, give each ray its Doppler.
 - **Large scale.** `PathLoss` is any model of the propagation library (`free`, `logdist`, `multislope`, `tworay`, `38901`,
   `P1238`, `P1411`, `P526`, `satellite`, `P1812`). Its parameters, and the added losses (gas, rain, clutter and the rest),
-  are written beside it by the model's own names. Shadowing is held at 0, since a draw belongs to a drop of a Monte Carlo.
-  `Rain=fixed` adds the attenuation at the stated availability, and `Rain=drawn` is refused.
+  are written beside it by the model's own names. `Rain=fixed` adds the attenuation at the stated availability.
+- **Drops.** Each channel is one drop, numbered by `Drop` under `Seed`. A drop draws the shadowing from the model's σ (in dB,
+  added to the loss; `Shadowing=off` holds it at 0). It also draws the line-of-sight state from the model's probability when
+  `Los=auto`, and with `Rain=drawn` a time percentage, taking the rain exceeded for it. That rain is zero beyond P.530's 1 %
+  or P.618's 5 %. Every draw depends only on `Seed`, `Drop` and the channel's name, so drop 37 alone equals drop 37 in a sweep.
+  The run reports `link:CH1:Shadowing_dB`, `LosState` (1, 0, or NaN when not drawn) and `RainTime_pct`.
+- **Scenario drops.** `Multipath=scenario` with `PathLoss=38901` draws a TR 38.901 drop for the ends' geometry, with the
+  transmit end as the base station. Each drop draws the scenario's correlated large-scale parameters (shadowing, K, delay and
+  angle spreads), then its clusters' delays, powers and angles, 20 rays a cluster, their cross-polar ratios and phases. The
+  run reports them as `DS_s`, `ASD_deg`, `ASA_deg`, `ZSD_deg`, `ZSA_deg` and `K_dB`. The spreads, K and Doppler come from
+  the scenario, so `DelaySpread`, `KFactor`, the angle spreads, `Fading`, `Velocity` and `fD` don't apply to it.
+- **Satellite states.** `States=p681` on `PathLoss=satellite` applies ITU-R P.681's land mobile-satellite model. The link
+  moves between a GOOD state (line of sight and light shadowing) and a BAD state (heavy shadowing and blockage). Each state
+  has lognormal event lengths and its own Loo statistics: a lognormal direct signal plus Rayleigh multipath. The parameter
+  set is the one for `StateEnvironment` nearest the frequency and elevation, valid from 1.5 to 20 GHz above 20°. The terminal
+  moves at `Velocity` (m/s); still, the drop is one state. The run reports `State` (1 GOOD, 0 BAD) and, in an envelope run,
+  `StateGood_frac`. P.681's current edition has two states, not three.
+- **Monte Carlo.** A sweep over `Drop` is the Monte Carlo: `Drop=drop` on the channel, a variable `drop`, and
+  `analysis MC type=parametric_sweep Var=drop Start=1 Stop=500 Step=1 Inner=ENV1`. `outage_over(x, threshold, "drop")`
+  gives the fraction of drops below a threshold, with its 95 % interval as `lo` and `hi`. `cdf`, `pctl_over`, `mean_over`,
+  `std_over` and `yield_over` work over the same axis. In an envelope sweep, a transmit side that is the same in every
+  drop is solved once. Each later drop solves only its receive side, driven by the recorded transmit waves, and the result
+  is the same as solving both. A transmit array whose beam the channel picks per drop is solved once per distinct beam.
+  The run says how many drops reused it. A DC supply shared by both sides prevents this. The receive side is still solved
+  in every drop. A receive array whose channel cells are identical and linear is replaced by its feed for the run: the
+  reflection the closed array presents, with the rays arriving there, so a drop of a 1 µs record into 4096 elements takes
+  seconds. The run says so; a run with `Noise=yes` keeps the array, whose cells' noise is part of it. Nonlinear cells are
+  solved element by element: about 4 s a drop at 64 elements and a minute at 256, so a Monte Carlo over many drops into 1024
+  or more nonlinear elements is impractical.
 - **Rays.** `Multipath=none` uses the rays of the geometry: the line of sight, plus the ground ray for `tworay`.
-  `Multipath=file` reads a ray list from `File=`: a CSV whose header names `delay (ns)`, `power (dB)`, and optionally
-  `phase (deg)` and `doppler (Hz)`. Each row is one ray, with its delay in excess of the line of sight and its power
-  relative to the large-scale loss.
+  `Multipath=tdl` uses a tapped delay line named by `Profile=`. `Multipath=file` reads taps from `File=`, a CSV whose
+  header names `delay (ns)`, `power (dB)`, and optionally `phase (deg)`, `doppler (Hz)`, `k (dB)` and `spectrum`. A sampled
+  impulse response writes `re` and `im` in place of power and phase. Each row is one tap, with its delay in excess of the
+  line of sight. A file whose powers don't sum to 1 is normalized, and the run says by how much: the large-scale loss
+  carries the mean power.
+- **Tapped delay lines.** `Profile=` is one of TR 38.901's `TDL-A` to `TDL-E`, TS 36.104's `EPA`, `EVA` and `ETU`,
+  ITU-R M.1225's `PedA`, `PedB`, `VehA` and `VehB`, or TR 38.811's `NTN-TDL-A` to `NTN-TDL-D`. Each table is embedded with its
+  document's edition. The TDL and NTN-TDL delays are normalized, so `DelaySpread` (in seconds) is required for them and
+  their delays are scaled until the RMS delay spread equals it exactly. The tables in ns are used as printed unless
+  `DelaySpread` is stated. `TDL-D`, `TDL-E`, `NTN-TDL-C` and `NTN-TDL-D` have a line-of-sight tap, and `KFactor` (dB)
+  rescales them as TR 38.901 §7.7.6 describes. A terrain profile for `P526` or `P1812` is written `Terrain=`.
+- **Array ends.** `Tx=PA1` or `Rx=PA1` names a Phased Antenna Array (either mode). That end is the array's own elements:
+  their patterns, their positions, and an orientation from `TxAz`/`TxEl`/`TxRoll` (or `Rx…`), facing the other end when
+  unstated. Such an end has no pin, so the symbol draws only the pins that remain, and the two kinds mix (a pin source
+  into an array, an array into a pin, or array to array). The coupling is stamped as two unknowns per ray, never as a matrix of
+  receive elements by transmit elements, and a receive element takes exactly the wave PAA-7's incident wave from that
+  direction gives it. Several channels may end on one array; their waves add on its elements. `check` and the run warn when
+  the ends are closer than 2D²/λ for an array's aperture D. An EM Field Data block may be an end too, each port radiating and
+  receiving through its record's pattern, in S-parameter and harmonic-balance runs (an envelope run refuses it for now).
+- **Receive arrays on the fast path.** A Feed-mode receive array whose channel cells are identical and linear (the conditions
+  the Phased Array's fast path states) takes each channel's rays as one source at its feed instead of on every element. The
+  result is the same, and the run says whether this happened and why. A harmonic-balance run then reports
+  `link:CH1:FeedPower_dBm`, the power that channel alone delivers at the feed into a matched load. For an array several
+  channels reach, it also reports `link:PA1:SIR_dB[channel]`, each one's power over the sum of the others'. The array's own
+  noise at the feed comes from the S-parameter noise analysis (`SystemTempK`).
+- **Clustered delay lines and ray lists.** `Multipath=cdl` with `Profile=` one of TR 38.901's `CDL-A` to `CDL-E` or TR 38.811's
+  `NTN-CDL-A` to `NTN-CDL-D` gives rays with directions and polarization. Their delays are scaled to `DelaySpread`, the
+  angle spreads to `ASD`, `ASA`, `ZSD` and `ZSA` (degrees) when stated, and the clusters are turned so the line-of-sight
+  cluster lies on the line between the ends. `Multipath=rays` reads a ray list from `File=` with
+  `delay (ns), power (dB), theta_d (deg), phi_d (deg), theta_a (deg), phi_a (deg)`, and optionally `xpr (dB)` or a 2×2 matrix
+  (`tt_re`, `tt_im`, … `pp_im`). The angles are in the global frame, or in each end's own frame with `RayFrame=ends`. Each
+  such ray's Doppler comes from `TxVel`, `RxVel` and its own directions.
+- **Beam.** When an end is a Feed-mode array whose `Phase` is a `steer()`, the run picks its beam through this channel.
+  Each end's candidates are a grid in (u, v), one beamwidth apart, reaching out to `ScanLimit` (60° by default). Each candidate goes through
+  the array's own `steer()` and `PhaseBits`, or `Codebook=` names a CSV of `theta, phi` in degrees (a third column `tx`, `rx` or `both`
+  picks the end). Every pair of candidates is scored by the power the array factors and the centre element's pattern carry through the
+  drop's rays at `TimeOffset`, averaged across the signal's band in an envelope run. `BeamSearch=exhaustive` scores every pair;
+  `alternating`, the default past a million pairs, fixes one end and picks the other's best, then the reverse. `BeamSelect=auto` (the
+  default) takes the strongest pair. `rank` with `BeamRank=n` takes the n-th strongest distinct pair: a pair within one beamwidth of a
+  stronger one at both ends is the same path and isn't counted. `index` with `TxBeam=`/`RxBeam=` takes a codebook entry (a number from 1)
+  or a direction `(θ, φ)`. `manual` keeps the arrays' own weights. The beam is set for the run only, without elaborating
+  again: the schematic keeps its `steer()`. `auto`, `rank` or `index` written on an array whose weights aren't a `steer()` is
+  refused. Left blank on such an array, the weights are used as written. The run reports `link:CH1:Beam_dB[pair]`, `BeamRank[pair]`, `BeamTx[pair]` and
+  `BeamRx[pair]` (the two codebook entries) for every pair scored, strongest first, the codebooks as `TxCodebook_deg` and `RxCodebook_deg`,
+  and `BeamChosen`, `TxBeam_deg` and `RxBeam_deg`. It also reports `BeamBound_dB`, the best any phase-only weights could do
+  through these rays, and `BeamCodebookLoss_dB`, the chosen pair's shortfall against it. `explain --analysis` lists the same. In the
+  Phased Array tool, the **Channel** tab of an array that is a channel end draws the drop's rays and the candidates on the (u, v) map and
+  lists the ranked pairs. A click on a pair or a ray selects it (`BeamSelect=index`). **Apply** writes the directions into the arrays'
+  `steer()` and sets `BeamSelect=manual`. Each is one undo step, and the drop slider only shows another realization.
+- **Polarization.** Each ray carries its 2×2 polarization matrix (the line of sight's is diag(1, −1)). A gain end's
+  polarization is `TxPol`/`RxPol` (`theta`, `phi`, `rhcp`, `lhcp` or an angle) in its own frame, or matched to the other end
+  along the line of sight when unstated. `Faraday=` (degrees) rotates every ray's field. On a satellite path with
+  `Ionosphere=on`, P.531's rotation is applied this way whenever an end has a polarization, and its polarization-loss
+  term is then dropped.
+- **Fading.** `Fading=rayleigh`, `rician` (with `KFactor`, a line-of-sight component at 0.7 f_D and its own phase) or
+  `nakagami` (with `NakagamiM`) makes each tap's gain fade. Left blank, a profile's taps fade as the profile says, and
+  `none` or a plain file stays static. `Doppler=classical`, `flat`, `gaussian` or `los` is the Doppler spectrum. The
+  maximum Doppler is `fD`, or `Velocity` (m/s) times the carrier over c, or the ends' relative speed from `TxVel` and
+  `RxVel`. Each tap is a sum of `Sinusoids` sinusoids (64 by default). Every draw comes from `Seed` and `Drop`, so drop 37
+  run alone is the same as drop 37 inside a sweep over `Drop`, and adding a tap leaves the other taps unchanged.
 
 What each analysis sees:
 
 | Analysis | The channel |
 |---|---|
 | S-parameter, noise | A two-port frozen at `TimeOffset`: S21 = H(f), S12 = 0, S11 and S22 the ends' impedances |
-| Harmonic balance | The same frozen H at every tone, each at its own frequency, with no Doppler shift |
-| Envelope | Every ray's delayed transmit wave, rotated, scaled and turned by its Doppler, drives the receive pin |
+| Harmonic balance | The same frozen H at every tone, each at its own frequency, with no Doppler shift and the fading frozen |
+| Envelope | Every ray's delayed transmit wave, rotated, scaled, faded and turned by its Doppler, drives the receive pin |
 
 H(f) is λ/(4πd) times the model's loss in excess of free space, times each ray's gain, delay and antenna gains, summed over
 the rays. d is the distance the model uses (the slant range on a satellite path). The excess loss is the model's at `f0`:
@@ -3964,8 +4234,16 @@ latency out of every measurement. A cycle of channels in an envelope bench is re
 two channels.
 
 Each run adds the loss breakdown, the total path loss, the bulk delay, the common Doppler and the rays to its result,
-as `link:CH1:Loss_dB`, `link:CH1:PathLoss_dB` and the rest. `explain --analysis` states the same, with the envelope regime:
-the Doppler spread against the record and the subcarrier spacing, and the coherence bandwidth against the signal's.
+as `link:CH1:Loss_dB`, `link:CH1:PathLoss_dB`, `Delay0_s`, `Doppler0_Hz` and its rate `Drift0_Hzps` (a satellite pass's), and the rest; `link:CH1:Gain_dB`, the drop's 20·log10|H| at the
+reference frequency with the antenna gains, shadowing and fading in it; and, with `Rain`, `link:CH1:Rain_dB`, the rain
+term alone. A measurement reads any of them as `SP1.link("CH1", "Gain_dB")`, over every sweep axis of the run. It also adds the small scale: `RmsDelaySpread_s`,
+`CoherenceBandwidth_Hz`, `fD_Hz`, the coherence time `Tc_s` (where the correlation first falls to one half, 0.24/f_D for
+the classical spectrum), `PowerDelayProfile_dB`, the drop's `DopplerSpectrum_dB`, and `TapGain` over the record. An
+envelope run adds `H` across the signal's band over the record, `fDxTrecord` and `fDoverSCS`, and the **Signal quality**
+preset then draws the power-delay profile and the Doppler spectrum under its table. With `Equalizer=genie` the equalizer
+divides by the channel's own H(f, t), fading included, so what remains is the inter-carrier interference the fading
+causes within each symbol. `explain --analysis` states the same, with the envelope regime: the Doppler spread and
+coherence time against the record and the subcarrier spacing, and the coherence bandwidth against the signal's.
 
 {{table: components/PropagationChannel}}
 

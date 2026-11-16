@@ -2008,6 +2008,16 @@ program a panel of its own, and each says what circuitRF found: the version, whe
 it is one circuitRF has validated (for Gmsh, openEMS and EMerge, tested), where the program is, and how it was found.
 Beside each program's name, a green check and <strong>Installed</strong> means a run would find it; a grey <strong>Not Installed</strong>
 means it would not. The MPI launcher is part of Palace, so it sits inside Palace's panel.</p>
+<p><strong>Circuit</strong> comes last, below the 3D solvers, with one program: <strong>ngspice</strong>, the second solver of a transient analysis
+(<code>Solver=ngspice</code>). Its row works like the others. Blank searches <code>CIRCUITRF_NGSPICE</code>, then a copy circuitRF installed, then
+<code>PATH</code>, then the usual folders (Homebrew's on macOS, <code>/usr/bin</code> on Linux, <code>C:\Spice64\bin</code> on Windows), then conda environments.
+The version is what <code>ngspice -v</code> prints. On Windows the program is ngspice's console build, <code>ngspice_con.exe</code>.
+<strong>Install ngspice …</strong> fetches upstream's own build: on Windows the official archive (on Windows arm64 that is the x64
+build, which Windows runs under emulation, and the row says so), and on macOS and Linux x64 the conda-forge package, put
+into a folder of circuitRF's own. conda-forge builds no ngspice for macOS or Linux on arm64, so there the row says how to
+get one; an ngspice from the system's package manager is found with nothing to set. The transient analysis's ngspice
+choice is enabled only while this row finds one, and follows it as soon as an install finishes, a path is set here, or
+an uninstall completes.</p>
 <table>
 <thead>
 <tr>
@@ -2058,9 +2068,9 @@ means it would not. The MPI launcher is part of Palace, so it sits inside Palace
 <td>Removes that copy, after showing the space it frees. An older version reads <strong>Remove older …</strong>. A Palace installed in the Linux subsystem names its distribution, and one whose distribution was removed reads <strong>Clean up … (missing)</strong>. See <a href="em-setup.html#uninstall-solvers">Removing the 3D solvers</a>.</td>
 </tr>
 <tr>
-<td><strong>Remove all 3D solvers …</strong></td>
+<td><strong>Remove all solvers …</strong></td>
 <td>shown when there is one</td>
-<td>Removes every solver circuitRF installed for you, after one confirmation. Nothing is removed if one of them is in use. On macOS and with a Linux <code>.deb</code>, removing circuitRF leaves the solvers behind, so use this first to get the space back (<a href="em-setup.html#uninstall-circuitrf">Uninstalling circuitRF</a>).</td>
+<td>Removes every solver circuitRF installed for you, ngspice included, after one confirmation. Nothing is removed if one of them is in use. On macOS and with a Linux <code>.deb</code>, removing circuitRF leaves the solvers behind, so use this first to get the space back (<a href="em-setup.html#uninstall-circuitrf">Uninstalling circuitRF</a>).</td>
 </tr>
 <tr>
 <td><strong>…</strong> (one per program)</td>

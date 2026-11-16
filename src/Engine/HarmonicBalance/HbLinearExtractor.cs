@@ -86,6 +86,9 @@ public sealed class HbLinearExtractor
     // Sticky once IfNecessary mode has engaged: the DC interface was voltage-pinned, so every later
     // ExtractDC stamps with regularization from the start rather than re-discovering it.
     private bool _dcIndRegEngaged;
+    // brief PCH-12: sticky once Z_NN(0) stayed rank-deficient after regularization; every later ExtractDC takes Y_NN(0) and
+    // I_src(0) from ForcedDc rather than by inverting Z_NN(0).
+    private bool _dcForcedEngaged;
 
     // One MnaSystem per (omega, regularized?), reused across solves so MnaSystem's own sparsity
     // pattern and AMD ordering (SP-P2) survive — a repeat stamp then writes straight into the CSC
@@ -191,6 +194,12 @@ public sealed class HbLinearExtractor
         if (entry.YNN is null)
         {
             var (zNN, singularIdxs) = ZColumns(entry.Lu, entry.Size);
+            // An ideal inductor BETWEEN two interface nodes (a choke from a nonlinear bias source to a device's gate) makes
+            // them one node at DC: Z_NN(0) is rank-deficient though no diagonal is zero, and inverting it decoupled the two
+            // (a bias controller's node at -4 V, the gate it fed through 100 nH at 0 V). The inductors' series R cures it as
+            // it cures a pinned node.
+            if (singularIdxs.Count == 0 && !reg && RankDeficientAt(zNN) is int deficient and >= 0)
+                singularIdxs.Add(deficient);
 
             if (singularIdxs.Count > 0 && !reg)
             {
@@ -208,14 +217,18 @@ public sealed class HbLinearExtractor
                 (zNN, _) = ZColumns(entry.Lu, entry.Size);
             }
 
-            entry.YNN = InvertNN(RegularizePinned(zNN), _N);
+            var zr = RegularizePinned(zNN);
+            if (RankDeficientAt(zr) >= 0) _dcForcedEngaged = true;
+            else entry.YNN = InvertNN(zr, _N);
         }
+        if (_dcForcedEngaged) return ForcedDc();
 
         // V_oc with the bias sources active, against the SAME factorization.
         var bSrc = mna.BuildRhs();
         var xSrc = new Complex[entry.Size];
         entry.Lu.Solve(bSrc, xSrc);
-        return (entry.YNN, ISrcFromVoc(entry.YNN, xSrc));
+        var yNN = entry.YNN!;
+        return (yNN, ISrcFromVoc(yNN, xSrc));
     }
 
     // ── DC extraction helpers ─────────────────────────────────────────────────
@@ -276,6 +289,81 @@ public sealed class HbLinearExtractor
             if (Complex.Abs(zNN[i, i]) < 1e-15) singular.Add(i);
 
         return (zNN, singular);
+    }
+
+    /// <summary>
+    /// brief PCH-12 — Y_NN(0) and I_src(0) with every interface node held by an ideal source, for a DC interface whose Z_NN
+    /// is singular even regularized: a group of interface nodes with no DC path to ground but gmin (a gate fed through a
+    /// choke from a nonlinear bias source) has Z of order 1/gmin = 1e12 Ω, and the inductors' 1 µΩ is 18 decades below it,
+    /// so the two nodes' columns stay equal in double precision. Held at known voltages, the network's currents are the
+    /// admittance directly, with the inductors' series R regularized as ever (Y of order 1e6 S between the two nodes). The
+    /// source on node k carries I_k = −(Y·V + I_src)_k: all held at 0 V with the bias sources on gives −I_src; node j at
+    /// 1 V and every source zeroed gives −Y[:, j].
+    /// </summary>
+    private (Complex[,] YNN, Complex[] ISrc) ForcedDc()
+    {
+        var held = new MnaSystem(_nonGroundCount);
+        StampInto(held, 0.0, zeroDrive: false);
+        ApplyInductanceReg(held);
+        var branch = new int[_N];
+        for (int k = 0; k < _N; k++)
+        {
+            branch[k] = -1;
+            int node = _interfaceNodes[k];
+            if (node <= 0) continue;
+            branch[k] = held.AddBranch();
+            held.AddConstraint(branch[k], node, Complex.One);
+            held.AddBranchCurrent(branch[k], node, 0);
+        }
+        var sources = held.BuildRhs();
+        var lu = held.Factorize(nodeNamer: _nodeNamer, branchNamer: _branchNamer);
+        int size = held.Size;
+        var x = new Complex[size];
+
+        lu.Solve(sources, x);
+        var iSrc = new Complex[_N];
+        for (int k = 0; k < _N; k++) iSrc[k] = branch[k] >= 0 ? -x[branch[k]] : Complex.Zero;
+
+        var yNN = new Complex[_N, _N];
+        var b = new Complex[size];
+        for (int j = 0; j < _N; j++)
+        {
+            if (branch[j] < 0) continue;
+            Array.Clear(b);
+            b[branch[j]] = Complex.One;
+            lu.Solve(b, x);
+            for (int k = 0; k < _N; k++) yNN[k, j] = branch[k] >= 0 ? -x[branch[k]] : Complex.Zero;
+        }
+        return (yNN, iSrc);
+    }
+
+    /// <summary>
+    /// brief PCH-12 — the interface index at which Gaussian elimination of <paramref name="zNN"/> (partial pivoting) finds a
+    /// pivot below 1e-12 of the matrix's largest entry, or -1 when it is of full rank. Two interface nodes the network joins
+    /// with no impedance (an ideal inductor at DC) give two equal columns.
+    /// </summary>
+    internal static int RankDeficientAt(Complex[,] zNN)
+    {
+        int n = zNN.GetLength(0);
+        var a = (Complex[,])zNN.Clone();
+        double scale = 0;
+        foreach (var z in a) scale = Math.Max(scale, Complex.Abs(z));
+        if (!(scale > 0)) return -1;
+        for (int col = 0; col < n; col++)
+        {
+            int pivot = col;
+            for (int row = col + 1; row < n; row++)
+                if (Complex.Abs(a[row, col]) > Complex.Abs(a[pivot, col])) pivot = row;
+            if (Complex.Abs(a[pivot, col]) < 1e-12 * scale) return col;
+            if (pivot != col)
+                for (int j = 0; j < n; j++) (a[col, j], a[pivot, j]) = (a[pivot, j], a[col, j]);
+            for (int row = col + 1; row < n; row++)
+            {
+                Complex f = a[row, col] / a[col, col];
+                for (int j = col; j < n; j++) a[row, j] -= f * a[col, j];
+            }
+        }
+        return -1;
     }
 
     /// <summary>
@@ -715,7 +803,7 @@ public sealed class HbLinearExtractor
     // ToneSourceModelBase covers both flavours: the voltage tone source's drive is a branch source
     // value, the current tone source's is an RHS injection, and ZeroDriveMna zeroes both.
     private static bool IsIndependentSource(ElaboratedComponent ec) =>
-        ec.Model is VdcModel or ToneSourceModelBase or TunerModel;
+        ec.Model is VdcModel or IdcModel or WaveformSourceModel or ToneSourceModelBase or TunerModel;
     // TunerModel contains an internal V_1Tone drive (SourceTuner) and a bias supply
     // (both roles) — it must be stamped via ZeroDriveMna in the zeroDrive=true path
     // so its source values are zeroed for the Y_NN extraction. The ZeroDriveMna passes
@@ -897,6 +985,10 @@ public sealed class HbLinearExtractor
 
                 case VdcModel vm when vm.LastBranchIndex >= _nonGroundCount:
                     names[vm.LastBranchIndex - _nonGroundCount] = $"V:{ec.InstancePath}";
+                    break;
+
+                case WaveformSourceModel wm when wm.LastBranchIndex >= _nonGroundCount:
+                    names[wm.LastBranchIndex - _nonGroundCount] = $"{ec.ComponentType}:{ec.InstancePath}";
                     break;
 
                 // IProbe and WSProbe — the label names the TYPE, as the inductive branches do.

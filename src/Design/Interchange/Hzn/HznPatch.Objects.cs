@@ -40,7 +40,7 @@ internal sealed partial class HznPatch
         // A sheet is metal because a boundary says so; a change to which metal, or how thick, is a change to that boundary.
         if (!HznJsonOps.Same(wb.Json!["boundaries"], we.Json!["boundaries"]))
         {
-            Refuse($"Object '{name}': its metal (the material or thickness of a sheet) is a boundary in a Hertzon design, and a change to it is not saved. " +
+            Refuse($"Object '{name}': its metal (the material, thickness or one-sidedness of a sheet) is a boundary in a Hertzon design, and a change to it is not saved. " +
                    "Undo that change, or Save As a .c3d.");
             return;
         }

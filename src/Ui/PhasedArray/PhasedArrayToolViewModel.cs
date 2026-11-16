@@ -215,7 +215,11 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
     {
         while (true)
         {
-            var result = session?.Evaluate(tunables, interactive, steer);
+            // brief-pch-9 — a settled frame's stages (a channel's beam selection) on the status line while it runs
+            var result = session?.Evaluate(tunables, interactive, steer, progress: interactive ? null : new PostedProgress(_host, p =>
+            {
+                if (!_disposed && p.Stage.Length > 0) Status = "Evaluating · " + PhasedArrayToolViewModel.Describe(p);
+            }));
             _host.Post(() => Show(result));
             lock (_gate)
             {
@@ -242,6 +246,7 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
         Status = $"{st.Lattice.Rows} × {st.Lattice.Cols} at {st.Hz / 1e9:0.###} GHz{time}" + (st.Estimated ? " · estimated" : "");
         RefreshQuantities();
         RefreshReadouts();
+        if (!_dragging) RefreshChannel();   // brief-pch-9 — the channel this array ends, scored again for the bench as it now stands
         Redraw?.Invoke(this, EventArgs.Empty);
     }
 
@@ -576,6 +581,7 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
     {
         _disposed = true;
         CancelScan();
+        _channelCancel?.Cancel();   // brief-pch-9 — a scoring of the channel still running
         Schematic.EditModel.Changed -= OnSchematicChanged;
     }
 }

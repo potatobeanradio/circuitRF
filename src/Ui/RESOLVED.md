@@ -42338,3 +42338,43 @@ Findings:
   a VAR block and evaluates the bench's own netlist. Gate 6 does the same for its channel.
 - **NetlistSchematic keeps a relative reference relative**, and the extraction then rebases it from a root the snapshot's base
   directory is not. UiSnapshot makes the bench's `Record=`/`File=` absolute in memory and draws with no schematic directory.
+
+## brief-pch-9 — the Phased Array tool on a channel end (2026-11-15)
+
+- **A Channel tab, shown only when the array is a channel's Tx= or Rx=.** The Beam tab is unchanged; the tab carries its own (u,v) map (the
+  same canvas, drawing the drop's rays sized by power down to 30 dB below the strongest, the codebook as light dots, the selected beam
+  filled), the Beams list of ranked distinct pairs, a drop slider and Apply. The status line keeps two lines whatever it says.
+- **The tab scores with `BeamSelection.Score`**: the run's selection with nothing applied and nothing cached on the channel, `manual` scored as
+  `auto`. It elaborates the bench once with only the channel's Drop changed, so the slider writes nothing.
+- **A pair click writes codebook indices; a ray click writes the ray's directions** `(θ,φ)` with no space (the netlist line splits on one).
+- **Apply writes every steered end's direction, not only the tool's own array.** It sets BeamSelect=manual on the channel, which is
+  channel-wide; writing one end alone would leave the other on its authored beam, a pair nobody chose. Same write as a beam drag (VARs, or
+  glued literals), TxBeam/RxBeam/BeamRank removed, one undo step.
+- **The realized-gain map on a channel end shows the selected beam**, since the fields analysis runs with it applied; the drag marker
+  stays at the schematic's authored steer, which `auto` overrides for the run.
+- **Scoring never runs on the UI thread, and it shows that it is running.** It runs on the host's worker (the window's `Task.Run`), with a
+  `RunControl` whose stage reports reach the tab's status line ("Beam of CH1: weighing the codebooks n / N beam(s)") and a progress bar in
+  the toolbar. The bar keeps its place and only fades in and out, so nothing in the row moves. A newer request (the drop slider dragged
+  across, an edit) cancels the one running, which then starts the newest; closing the window cancels it. A settled frame's evaluation
+  passes its stages to the window's status bar the same way ("Evaluating · Beam of CH1: …"), since a run with a channel selects there too.
+- **Simulate's run row shows a counted stage.** `ReportRunProgress` showed only the run's counter, which a beam selection (before the
+  analysis's first unit) leaves at 0 / 1 for as long as it takes. While a stage has a total the row reads "Running 'bench' · <stage>"
+  with the stage's own counter on the bar; the selection restores the analysis's uncounted stage when it ends and the row is the run's
+  again. Nothing else in a circuit run sets a counted stage, so every other run's row is as it was.
+- UiSnapshot: `--pa-tab channel`, and `--pa-tab channel-busy` for the tab mid-scoring (the immediate host finishes a scoring before any
+  frame is captured).
+
+## Two Linux-only defects found by the container run (2026-11-16)
+
+- `MarkdownDocument.FindWorkspaceReadme`: `Directory.EnumerateFiles(dir, "*.md")` matches case-sensitively on Linux, so a
+  `readme.MD` was never listed; now enumerated with `MatchCasing.CaseInsensitive`. Other `"*.ext"` enumerations in `src`
+  have the same property and were left as they are.
+- `WorkspaceViewModel.BuildExampleMenuItems`: `MenuItem.Items.Add` subscribes a change listener, which Avalonia allows only on
+  the dispatcher's thread; each topic's rows now go in as a plain list (`ItemsSource`). The test failed or passed by which
+  thread had touched the dispatcher first.
+
+## PCH review (2026-11-16)
+
+- **The Phased Array tool's Channel tab labelled `Drop=drop` as drop 1.** The written drop came from parsing the override's text,
+  which a variable does not parse as; it is the elaborated channel's Drop now, so the slider and the status line name the drop
+  whose rays the tab shows.

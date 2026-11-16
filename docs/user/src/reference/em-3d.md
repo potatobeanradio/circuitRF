@@ -142,6 +142,11 @@ full description.
   one, except that openEMS cannot feed a hollow waveguide and Palace cannot give a port with several
   terminals. [Wave ports](em-setup.html#wave-ports).
 
+  A lumped sheet that falls to the air box's floor through more than λ/20 of the sweep's shortest wavelength in the
+  dielectric it crosses is a warning naming the port, as a [cut pin's sheet](#cell-instance-ports) is: on a thick
+  substrate the column's inductance and delay are in the result. Its **Return** lands it on nearer metal. On a board the
+  threshold is a substrate λ/20 thick at the top of the sweep: 1.6 mm of FR-4 (εr 4.4) passes it near 4.5 GHz.
+
   <a id="port-width"></a>**How wide a lumped port's sheet is.** As wide as the port's bar in the layout, which the
   port's **Use edge width** and **Width** set ([Ports](layout-editor.html#ports)): the whole conductor edge with the
   box ticked; otherwise the Width you state, or 2 × H (H, the dielectric height from the port's conductor to its
@@ -226,7 +231,11 @@ full description.
   is in the result**: a 200 µm line segment on 100 µm GaAs, cut out and put back as an ideal line, matched the whole
   line to |ΔS| 2.0e-2 at 5 GHz, 8.0e-2 at 20 GHz and 1.1e-1 at 30 GHz (EMerge). All of it is a phase lag growing with frequency,
   about the delay of 30 µm of that line at each face (the sheet is 100 µm tall, 1/28 of a wavelength in GaAs at
-  30 GHz). On a thick substrate or at mm-wave, compare that against what the model needs.
+  30 GHz). On a thick substrate or at mm-wave, compare that against what the model needs. Each sheet's landing and
+  height are on its port's line in **Check**, `check` and `explain` (`landing down to the floor, 'Backside Metal',
+  754.85 µm`), and a sheet that falls to the floor through more than λ/20 of the sweep's shortest wavelength in the
+  dielectric it crosses is a warning naming the pin. The remedy is the entry's
+  [Return](em-setup.html#cut-return), which lands the sheets on a nearer plane, such as local Metal1 ground.
 
   The result names a drawn port by its label's text, as the Planar result of the same `.cem` does, and its header has
   the same line per port and DC line ([Cutting out a cell instance](em-setup.html#cell-instances)): a lumped sheet reads
@@ -265,7 +274,11 @@ full description.
   PEC face, when that plane is undrawn, or when it is drawn under all the other metal. That holds in a 3D view too: when
   every layout it places leaves its stackup's ground plane undrawn, at one height, with nothing below it, the view's floor
   is that plane, so the ports a layout brings in (and a cut instance's sheets) land on it as they do when the layout runs
-  on its own. A drawn bottom conductor that
+  on its own. When a port's sheet reaches that undrawn floor, the four sides are padded by the port column instead,
+  floor to top metal, wherever that is more than 20 H: on a die with several metal levels over a thick substrate, H is
+  the thin oxide under the top metal, and 20 H put the sides a few µm from a sheet hundreds of µm tall. With a 3D view
+  whose layout draws no board outline, the dielectric slabs then run to the box's sides too, rather than standing as a
+  pillar the size of the artwork. The notes say both. A padding the setup states is used as stated. A drawn bottom conductor that
   covers 95 % of the footprint is that floor even when the technology does not mark it as ground, and the notes say so. A hole in that plane is allowed
   when nothing of another net lies in or over it, so the drill holes of ground vias do not keep the floor off. A hole
   with a signal via or other metal of another net in it does, because a floor there would short that metal to
@@ -689,7 +702,7 @@ across it. How a placed layout comes into a 3D view is in
 
 ## Walking through the example {#example}
 
-**File ▸ New ▸ Examples ▸ 3D EM** copies a workspace with three cells to a folder you choose and opens it.
+**File ▸ New ▸ Examples ▸ 3D EM ▸ 3D EM (Palace)** copies a workspace with three cells to a folder you choose and opens it.
 Each cell is something a planar solver cannot do, or can do only as a comparison. Every setup runs in
 minutes on a 16 GB laptop. Its `README.md` opens first and carries the same numbers as this section. The
 numbers also live in `expected-numbers.json` beside it, which circuitRF's own tests re-run against, so the

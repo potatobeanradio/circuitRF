@@ -155,16 +155,11 @@ internal sealed partial class C3dToHznWriter
             _r.Add(HznRefusalKind.CreationStep, "oblique prism", "a sheared prism is a swept polyline Hertzon cannot be read back as", label);
             return false;
         }
-        if (p.Holes.Count > 0)
-        {
-            _r.Add(HznRefusalKind.CreationStep, "prism with holes", "a polyline with holes is not read back by circuitRF", label);
-            return false;
-        }
         var (_, _, n) = Axes(p.Plane);
         // brief-hzn-13 R-hzn13-3 — the outline's expressions are the points', and the offset is written into every point.
         string at = Dim(p, nameof(C3dPrism.Offset), 0, p.Offset);
         string pts = OutlinePoints(p, nameof(C3dPrism.Outline), p.Plane, p.Outline, at);
-        steps.Add(new("CreatePolyline", P(("Points", pts), ("SegmentTypes", ""), ("Closed", "True"), ("Covered", "True"), ("Holes", ""))));
+        steps.Add(new("CreatePolyline", P(("Points", pts), ("SegmentTypes", ""), ("Closed", "True"), ("Covered", "True"), ("Holes", HolePoints(p.Plane, p.Holes, at)))));
         string h = Dim(p, nameof(C3dPrism.Height), 0, p.Height);
         string[] v = ["0", "0", "0"];
         v[n] = h;
@@ -192,11 +187,6 @@ internal sealed partial class C3dToHznWriter
             return true;
         }
         if (s.Ellipse is { } el) return EllipseSteps(s, el, steps, label);
-        if (s.Holes.Count > 0)
-        {
-            _r.Add(HznRefusalKind.CreationStep, "sheet with holes", "a polyline with holes is not read back by circuitRF", label);
-            return false;
-        }
         if (s.Outline.Count < 3)
         {
             _r.Add(HznRefusalKind.CreationStep, "sheet without an outline", "it has neither a rectangle nor three points", label);
@@ -204,9 +194,14 @@ internal sealed partial class C3dToHznWriter
         }
         string at = Dim(s, nameof(C3dSheet.Offset), 0, s.Offset);
         string pts = OutlinePoints(s, nameof(C3dSheet.Outline), s.Plane, s.Outline, at);
-        steps.Add(new("CreatePolyline", P(("Points", pts), ("SegmentTypes", ""), ("Closed", "True"), ("Covered", "True"), ("Holes", ""))));
+        steps.Add(new("CreatePolyline", P(("Points", pts), ("SegmentTypes", ""), ("Closed", "True"), ("Covered", "True"), ("Holes", HolePoints(s.Plane, s.Holes, at)))));
         return true;
     }
+
+    /// <summary>brief-hzn-17 R-hzn17-3 — holes in Hertzon's spelling: each ring's points as <c>u,v,n</c> in world order (numbers; a .c3d hole
+    /// holds no expression), <c>;</c> between points and <c>|</c> between rings, <paramref name="at"/> the plane's coordinate.</summary>
+    private string HolePoints(C3dPlane plane, List<List<C3dPoint2>> holes, string at) =>
+        string.Join("|", holes.Select(h => string.Join(";", h.Select(q => Point(plane, Lit(q.U), Lit(q.V), at)))));
 
     /// <summary>brief-hzn-13 — each outline point as Hertzon's <c>u,v,n</c> in world order, a component holding an expression written
     /// as that expression, <paramref name="at"/> the plane's coordinate.</summary>

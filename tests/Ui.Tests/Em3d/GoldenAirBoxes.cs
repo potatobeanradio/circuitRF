@@ -33,6 +33,8 @@ internal static class GoldenAirBoxes
         ["ball start vertical=True"] = new(XMin: Pct(100), XMax: Pct(100), YMin: Pct(1100), YMax: Pct(1100), ZMax: Pct(401.02950788683813)),
         ["cem examples/3D EM/Via through a plane/em/Via planar.cem"] = new(XMin: Pct(40), XMax: Pct(40), YMin: Pct(80), YMax: Pct(80), ZMin: Pct(395), ZMax: Pct(790)),
         ["cem examples/Klopfenstein Taper/Taper/em/Taper-MoM.cem"] = new(XMin: Pct(100), XMax: Pct(100), YMin: Um(15000.000000000002), YMax: Um(15000.000000000002), ZMax: Um(15000.000000000004)),
+        // brief-icf-6 — ports down to the undrawn floor of a multi-level stack: the column pads their sides now; the dumps keep the H rule's box.
+        ["cem examples/Passivated Pad/2 Probe Pad/em/Probe Pad Planar.cem"] = new(XMin: Pct(10), XMax: Pct(10), YMin: Pct(10), YMax: Pct(10)),
         ["cem examples/PDK PCells/SpiralInductor/em/SpiralInductor.cem"] = new(XMin: Pct(20), XMax: Pct(20), YMin: Pct(25), YMax: Pct(25), ZMax: Pct(55.00000000000003)),
         ["cem examples/PDK PCells/SpiralResonator/em/SpiralResonator.cem"] = new(XMin: Pct(15), XMax: Pct(15), YMin: Pct(20), YMax: Pct(20), ZMax: Um(54.5)),
         ["cem examples/Patch Antenna/patch/em/patch-5p8GHz.cem"] = new(XMin: Um(14141.153679245284), XMax: Um(14141.15367924528), YMin: Um(14141.15367924528), YMax: Um(14141.15367924528), ZMin: Um(14141.153679245284), ZMax: Um(14141.153679245284)),
@@ -40,6 +42,7 @@ internal static class GoldenAirBoxes
         ["cem testdata/em3d/f0/B-via/planar/ws-meshed-plane/via/em/via.cem"] = new(XMin: Pct(40), XMax: Pct(40), YMin: Pct(80), YMax: Pct(80), ZMin: Pct(395), ZMax: Pct(790)),
         ["cem testdata/em3d/f0/B-via/planar/ws/via/em/via-both-levels.cem"] = new(XMin: Pct(40), XMax: Pct(40), YMin: Pct(80), YMax: Pct(80), ZMin: Pct(395), ZMax: Pct(790)),
         ["cem testdata/em3d/f0/B-via/planar/ws/via/em/via.cem"] = new(XMin: Pct(40), XMax: Pct(40), YMin: Pct(80), YMax: Pct(80), ZMin: Pct(395), ZMax: Pct(790)),
+        ["cem testdata/em-tfr/zigzag-via/zigzag/em/zigzag.cem"] = new(XMin: Pct(5), XMax: Pct(5), YMin: Pct(5), YMax: Pct(5)),
         ["cem testdata/portcal/coupled-asym/em/coupled-asym.cem"] = new(XMin: Pct(100), XMax: Pct(100), YMin: Um(3830.0000000000005), YMax: Um(3830.0000000000005), ZMax: Um(3830.0000000000005)),
         ["cem testdata/portcal/coupled-pair-passive/em/coupled-pair-passive.cem"] = new(XMin: Pct(100), XMax: Pct(100), YMin: Um(3830.0000000000005), YMax: Um(3830.0000000000005), ZMax: Um(3830.0000000000005)),
         ["cem testdata/portcal/coupled-pair/em/coupled-pair.cem"] = new(XMin: Pct(100), XMax: Pct(100), YMin: Um(3830.0000000000005), YMax: Um(3830.0000000000005), ZMax: Um(3830.0000000000005)),

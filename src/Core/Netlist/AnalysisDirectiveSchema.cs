@@ -155,6 +155,31 @@ public static partial class AnalysisDirectiveSchema
             new("Training",  Default: "64",      Summary: "Equalizer=pilot on a single carrier: the symbols the FIR is trained on; EVM and errors are read on the rest."),
         ]),
 
+        // brief-trn-1 — the transient analysis (docs/design/transient.md §3)
+        new("tran", ["transient"],
+        [
+            new("Stop",         Required: true,  Summary: "End time (s)."),
+            new("Step",         Default: "Stop/1000", Summary: "Output grid spacing (s): every result is reported on a uniform grid from Start to Stop at this step. Also the largest step unless MaxStep says otherwise."),
+            new("Start",        Default: "0",    Summary: "First reported time (s); the run still starts at 0."),
+            new("MaxStep",      Default: "auto", Summary: "Largest accepted step (s), or auto: the smaller of Step and 1/(20 f) for the highest frequency any source carries."),
+            new("Method",       Default: "trap", Summary: "trap (trapezoidal: second order, no numerical damping) or gear2 (second-order backward difference: damps ringing). Either takes two backward-Euler steps at the start and after every source corner."),
+            new("RelTol",       Default: "1e-3", Summary: "Relative tolerance on Newton updates and on each step's local error estimate."),
+            new("VTol",         Default: "1e-6", Summary: "Absolute voltage tolerance (V)."),
+            new("ITol",         Default: "1e-12",Summary: "Absolute current tolerance (A)."),
+            new("InitialState", Default: "op",   Summary: "op: start from the DC operating point, with every IC net held during the solve and released at t = 0. zero: every unknown starts at 0 except the IC nets, with no DC solve."),
+            new("IC",           Default: "",     Summary: "Net voltages held during the operating-point solve, comma-separated: IC=\"out=0, bias=1.2\"."),
+            new("Solver",       Default: "native", Summary: "native (circuitRF's transient engine) or ngspice."),
+            new("SaveSteps",    Default: "no",   Summary: "yes adds the engine's own accepted steps (Steps.time, Steps.V) beside the output grid."),
+            new("MaxSteps",     Default: CircuitRF.Core.Design.TransientAnalysis.MaxStepsDefault, Summary: "A refusal before the run when Stop/MaxStep exceeds it."),
+            new("SpiceOptions", Default: "",     Summary: "ngspice only: written verbatim as one .options line."),
+            new("SpiceLines",   Default: "refuse", Summary: "ngspice only: rlgc writes lines as ngspice's lossy lines fitted at SpiceLineFreq, each with its error reported."),
+            new("SpiceLineFreq",Default: "auto", Summary: "ngspice only: the frequency rlgc lines match circuitRF's model at; auto is the highest source frequency."),
+            new("SpiceFit",     Default: "no",   Summary: "ngspice only: yes writes frequency-defined elements as subcircuits of circuitRF's rational fit, labelled."),
+            new("Store",        Default: "auto", Summary: "auto, baseband or rf. baseband keeps the envelopes about a MOD_Source's Fc at the signal's rate and measures them as the envelope analysis does (PSD, ACLR, EVM); rf keeps every output point. auto is baseband when the bench has a MOD_Source."),
+            new("StoreHarm",    Default: "3",    Summary: "Baseband storage: the harmonics of Fc kept, 0 to this."),
+            new("MeasureFrom",  Default: "auto", Summary: "Baseband storage: where the measurements start (s); auto is after the largest MOD_Source Ramp."),
+        ]),
+
         new("hb", ["harmonic_balance", "harmonicbalance"],
         [
             new("Tone",                       Summary: "Fundamental frequency expression. Single-tone spelling; a multi-tone run writes Tone[1], Tone[2], …"),
@@ -184,6 +209,10 @@ public static partial class AnalysisDirectiveSchema
             new("NoiseOut",   Default: "2",   Summary: "The port the output noise is read at."),
             new("NoiseSideband", Default: "0",Summary: "The input sideband carrying the signal: the input frequency is f_out + k*f0. 0 for an amplifier; +1 for f_IF = f_RF - f_LO; -1 for f_IF = f_LO - f_RF. A multi-tone run takes one integer per tone, comma-separated (k1,k2). The image is the negated sideband. explain prints the input frequency at the first and last output point."),
             new("NoiseContrib", Default: "no",Summary: "yes adds NFc [ssfreq, part] (each part's share of F - 1, SSB; the input termination's other sidebands are one entry, so F - 1 is their sum) and NFpct (the same as a percentage of F - 1) to a Noise=yes run."),
+            new("InitialGuess", Default: "dc", Summary: "Where the Newton starts: dc (the DC point, the drive stepped up as DriveStepping says), transient (the last period of a native transient run from rest at full drive, no drive stepping; one tone, or tones on a common fundamental) or fallback (dc, then the transient seed if that does not converge). In a parametric sweep only the first point and a point that fails are seeded. Adds Seed.Periods, Seed.Settled, Seed.HbIterations and Seed.ScaledElements."),
+            new("SeedTol",    Default: "1e-3", Summary: "The seed runs until consecutive periods of every interface waveform agree within this, relative to its peak, with the change still to come (extrapolated from how fast it shrinks) included."),
+            new("SeedPeriods",Default: "auto", Summary: "auto runs the seed until it settles, at most 200 periods; a number runs that many."),
+            new("SeedFastBias",Default: "yes", Summary: "yes scales each RF choke whose |X| is more than 50x the impedance it sees at the fundamental (at the DC point), and each block whose |X| is less than 1/50 of it, in the seed run only, to exactly 50x (1/50), so it settles in about eight periods. Harmonic balance solves the unscaled circuit."),
         ], RequiredOneOf: [["Tone", "Tone[1]"]]),
 
         new("loadpull", ["lp"],
@@ -293,7 +322,7 @@ public static partial class AnalysisDirectiveSchema
         new("osc", ["oscillator"],
         [
             new("Probe",         Summary: "Instance name of the OscProbe the auxiliary generator is inserted at (X1, or CORE.X1 inside a cell). Blank when the circuit holds exactly one."),
-            new("Fguess",        Required: true, Summary: "Where the start-up search is centred, in Unit."),
+            new("Fguess",        Summary: "Where the start-up search is centred, in Unit. Required unless InitialGuess=transient."),
             new("Fstart",        Summary: "Low end of the start-up search, in Unit. Default half of Fguess."),
             new("Fstop",         Summary: "High end of the start-up search, in Unit. Default 1.5 x Fguess."),
             new("Unit",          Default: "GHz", Summary: "Unit for Fguess, Fstart and Fstop."),
@@ -308,6 +337,11 @@ public static partial class AnalysisDirectiveSchema
             new("PnNpts",        Default: "61",     Summary: "Number of offsets."),
             new("PnLog",         Default: "yes",    Summary: "yes: offsets evenly spaced in log-frequency; no: linearly."),
             new("PnPort",        Summary: "Num of the Port or Term the noise is read at. Blank reads it across a shunt OscProbe, or at the circuit's one Port or Term when the OscProbe is in series."),
+            new("InitialGuess",  Default: "dc", Summary: "dc: the start-up search about Fguess, then the amplitude ramp. transient: a native transient run kicked at the OscProbe's node until the oscillation is steady; its frequency (level crossings), amplitude and waveforms start the solve, and Fguess is optional (without it the start-up search spans 1 kHz to 1 THz). fallback: dc, then transient if that fails."),
+            new("SeedTol",       Default: "1e-3", Summary: "As HB's: consecutive periods of the seed must agree within this, relative."),
+            new("SeedPeriods",   Default: "auto", Summary: "As HB's: auto runs until steady, at most 200 periods after the oscillation has grown; a number runs that many periods in all."),
+            new("SeedFastBias",  Default: "yes", Summary: "As HB's, at the small-signal start-up frequency."),
+            new("KickV",         Default: "auto", Summary: "The kick at the OscProbe's node, held through the DC solve and released at t = 0+, volts. auto is 1 % of the largest DC supply."),
         ]),
     ];
 

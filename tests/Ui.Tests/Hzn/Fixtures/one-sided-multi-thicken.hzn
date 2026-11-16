@@ -1,0 +1,244 @@
+{
+ "name": "OneSidedMultiThicken",
+ "variables": {},
+ "materials": [],
+ "designs": [
+  {
+   "name": "OneSided",
+   "units": "mm",
+   "settings": {
+    "SolutionType": "Modal",
+    "AutoOpen": "Auto Open",
+    "AutoOpenBoundary": "Radiation",
+    "AutoOpenPadding": "",
+    "RadiatingStructure": "False"
+   },
+   "variables": {
+    "t_down": "0.25mm"
+   },
+   "objects": [
+    {
+     "name": "Gnd",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "0,0,0",
+        "Axis": "Z",
+        "XSize": "20",
+        "YSize": "10"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Strip",
+     "history": [
+      {
+       "kind": "CreatePolyline",
+       "props": {
+        "Points": "2,4.5,1;18,4.5,1;18,5.5,1;2,5.5,1",
+        "SegmentTypes": "",
+        "Closed": "True",
+        "Covered": "True",
+        "Holes": ""
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "PortSheet",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "2,4.5,0",
+        "Axis": "X",
+        "YSize": "1",
+        "ZSize": "1"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Slab",
+     "history": [
+      {
+       "kind": "CreatePolyline",
+       "props": {
+        "Points": "0,7,0;4,7,0;4,9,0;0,9,0",
+        "SegmentTypes": "",
+        "Closed": "True",
+        "Covered": "True",
+        "Holes": ""
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "ThickenSheet",
+       "props": {
+        "Thickness": "0.5",
+        "BothSides": "False",
+        "ReverseDirection": "False"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "FR4_epoxy",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Down",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "10,7,0",
+        "Axis": "Z",
+        "XSize": "4",
+        "YSize": "2"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "ThickenSheet",
+       "props": {
+        "Thickness": "t_down",
+        "BothSides": "False",
+        "ReverseDirection": "True"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "FR4_epoxy",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    }
+   ],
+   "boundaries": [
+    {
+     "name": "GndPEC",
+     "kind": "Perfect E",
+     "props": {
+      "InfGroundPlane": "False"
+     },
+     "faces": [],
+     "objects": [
+      "Gnd"
+     ],
+     "edges": [],
+     "enabled": true
+    },
+    {
+     "name": "StripCu",
+     "kind": "Finite Conductivity",
+     "props": {
+      "UseMaterial": "True",
+      "Material": "copper",
+      "Conductivity": "58000000",
+      "Permeability": "1",
+      "Roughness": "0um",
+      "UseThickness": "False",
+      "Thickness": "35um",
+      "TwoSided": "False"
+     },
+     "faces": [],
+     "objects": [
+      "Strip"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "excitations": [
+    {
+     "name": "P1",
+     "kind": "Lumped Port",
+     "props": {
+      "PortNumber": "1",
+      "Impedance": "50ohm"
+     },
+     "faces": [],
+     "objects": [
+      "PortSheet"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "mesh_ops": [],
+   "setups": [
+    {
+     "name": "S1",
+     "props": {
+      "Enabled": "True",
+      "SolutionFrequencyMode": "Multi-Frequencies",
+      "Frequency": "5GHz",
+      "MultiFrequencies": "2.44GHz;6.1GHz",
+      "MaximumPasses": "2"
+     },
+     "sweeps": [],
+     "eigen": false
+    }
+   ],
+   "spheres": [],
+   "reports": [],
+   "field_plots": [],
+   "coord_systems": [],
+   "optimetrics": [],
+   "parametrics": [],
+   "working_cs": "Global",
+   "notes": ""
+  }
+ ],
+ "format": "hertzon-project",
+ "version": 2
+}

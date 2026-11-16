@@ -22,8 +22,8 @@
 //  keeps DC exact.
 //
 //  τ is usually shorter than a step, so the delayed wave is interpolated:
-//  quadratic Lagrange on the step grid (passive: |L| <= 1 to Nyquist,
-//  measured; cubic is not), whose weight on the CURRENT step, when τ < h,
+//  quadratic Lagrange on the step grid (DelayInterpolation, shared with the
+//  transient's lines: passive, |L| <= 1 to Nyquist, measured; cubic is not), whose weight on the CURRENT step, when τ < h,
 //  is a term of the stepped matrix (fixed per run: one factorization per
 //  product, as before).  A split step interpolates linearly.
 //
@@ -305,13 +305,6 @@ public static class EnvelopeLineDelay
         }
     }
 
-    /// <summary>Quadratic Lagrange weights on nodes 0, 1, 2 at <paramref name="d"/> (value) and their d/dx.</summary>
-    internal static void Lagrange(double d, double[] l, double[] ld)
-    {
-        l[0] = (d - 1) * (d - 2) / 2; l[1] = -d * (d - 2); l[2] = d * (d - 1) / 2;
-        ld[0] = (2 * d - 3) / 2;      ld[1] = -(2 * d - 2);  ld[2] = (2 * d - 1) / 2;
-    }
-
     /// <summary>
     /// Replaces each two-conductor line of <paramref name="nl"/> by its delay realization for one envelope run whose
     /// products sit at <paramref name="productHz"/> (index 0 the baseband, all ≥ 0), stepped at <paramref name="h"/>, with
@@ -355,13 +348,16 @@ public static class EnvelopeLineDelay
         return run;
     }
 
-    /// <summary>One product's Zc, delay and residual. The baseband takes the line's low-frequency delay and H~ = 1.</summary>
+    /// <summary>One product's Zc, delay and residual. The baseband takes the line's phase delay across the step's band and H~ = 1.</summary>
     private static Coeffs Of(DelayLineModel m, double fk, double h, double nyq)
     {
         var p = new Coeffs();
         if (fk <= 0)
         {
-            const double lo = 1e3;
+            // The phase delay where the baseband lives, the band the step resolves: at 1 kHz it read the causal conductor loss's
+            // phase (brief TRN-4b), which over ω grows as f^-1/2 and made a 25 mm FR4 microstrip's baseband delay 3-4x too long.
+            // A lossless line's phase delay is the same at every frequency, so it is unchanged.
+            double lo = Math.Max(1e3, nyq);
             p.Zc = m.At(0).Zc;
             p.Tau = m.At(lo).GammaLength.Imaginary / (2 * Math.PI * lo);
         }
@@ -384,7 +380,7 @@ public static class EnvelopeLineDelay
         p.Tau = Math.Max(0, p.Tau);
         double D = p.Tau / h;
         p.N0 = (int)Math.Floor(D);
-        Lagrange(D - p.N0, p.L, p.Ld);
+        DelayInterpolation.Lagrange(D - p.N0, p.L, p.Ld);
         for (int j = 0; j < 3; j++) p.Ld[j] *= -1 / h;                         // nodes run back in time
         if (fk <= 0) p.G1 = 0;
         return p;

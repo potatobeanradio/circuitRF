@@ -648,6 +648,8 @@ public sealed partial class ProjectTreeNodeViewModel : ObservableObject
     public IRelayCommand OpenNoiseCirclesCommand { get; }
     /// <summary>brief NZ-8 — the envelope run's constellation, EVM table and spectrum in a new Data Display.</summary>
     public IRelayCommand OpenSignalQualityCommand { get; }
+    /// <summary>brief TRN-5 — the transient run's waveforms, output spectrum and measures in a new Data Display.</summary>
+    public IRelayCommand OpenTransientCommand { get; }
     /// <summary>brief-dfr32-3 R-dfr32-3-2 — moves the saved field files of this 3D view's or EM setup's runs to the Trash.</summary>
     public IRelayCommand DeleteSavedFieldsCommand { get; }
 
@@ -1002,6 +1004,10 @@ public sealed partial class ProjectTreeNodeViewModel : ObservableObject
 
         OpenSignalQualityCommand = new RelayCommand(
             () => _actions?.OpenSignalQuality(this),
+            () => _actions is not null && IsResultFile);
+
+        OpenTransientCommand = new RelayCommand(
+            () => _actions?.OpenTransient(this),
             () => _actions is not null && IsResultFile);
 
         DeleteSavedFieldsCommand = new RelayCommand(() => _actions?.DeleteSavedFields(this), () => _actions is not null);

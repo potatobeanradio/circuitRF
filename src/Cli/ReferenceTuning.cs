@@ -168,7 +168,7 @@ internal static partial class Reference
             "(stat:<key>, z:<key>, goal:<name>:pass|margin|worst, pass, status), the nominal group and the yield " +
             "summary. These reduce over the trial axis by default (else freq), skipping a trial with no value: " +
             "mean_over, std_over, median_over, pctl_over(x, p), skew_over, kurt_over, " +
-            "yield_over(condition), cpk(x, lo, hi) (either limit \"none\"), sigma_to(x, limit) — min_over and " +
+            "yield_over(condition), outage_over(x, threshold) (lo, hi beside it), cpk(x, lo, hi) (either limit \"none\"), sigma_to(x, limit) — min_over and " +
             "max_over take the same default axis but keep a missing value missing; and these build an " +
             "axis: histogram(x, bins[, lo, hi][, \"percent\"]), cdf(x), normq(x), yield_sens(pass, x, bins). They work in measure lines " +
             "and goals. A goal written over the trials' spread (std_over of a trial-stacked " +
@@ -605,6 +605,20 @@ internal static partial class Reference
             "over the points in [lo, hi] (freq unless named). So: measure G_2G45 = value_at(dB(SP1.S(2,1)), 2.45GHz), " +
             "measure NF_worst = max_over(SP1.NF, 2.4GHz, 2.5GHz). A measure that comes out a single number is one cell of a " +
             "Table plot.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+        // brief TRN-5 R-trn5-1: the time-domain functions over a transient's waveforms.
+        foreach (var line in Wrap(
+            "Time-domain functions read a waveform along a transient (or envelope) result's time axis, every other axis kept: " +
+            "rise(x[, lo, hi]) and fall(...) the first edge between lo % and hi % of the swing (10, 90), overshoot(x) and " +
+            "undershoot(x) in % of the step from the first value to the last, settle(x[, tol]) the time after which x stays " +
+            "within tol % of that step of its final value (1), period(x) and frequency(x) from the rising crossings of the mean " +
+            "over the record's last half, tmin(x[, t1, t2]) and tmax(...) the time of the extreme, avg(x[, t1, t2]) and " +
+            "rms(...) time-weighted; value_at(x, t) reads one instant. fft(x, f0[, periods, \"none\"|\"hann\"]) is the last whole " +
+            "periods' spectrum at f0 and its harmonics, shaped and scaled as a harmonic-balance spectrum (a harmonic axis, up to " +
+            "16), fft_power(v, i, f0, ...) the power per harmonic as HB's Pprobe_W, thd(x, f0[, n]) the distortion of the last " +
+            "period in % (harmonics 2 to n, 10). So: measure tr = rise(TR1.V(\"out\")), " +
+            "measure Pout_dBm = dBm(fft_power(TR1.Vprobe(\"Iout\"), TR1.I(\"Iout\"), 1GHz)).", 96))
             sb.AppendLine("  " + line);
         sb.AppendLine();
     }

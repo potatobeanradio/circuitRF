@@ -75,6 +75,7 @@ public static class SolverHomes
         SolverTool.Palace => "palace",
         SolverTool.Gmsh   => "gmsh",
         SolverTool.Emerge => "emerge",
+        SolverTool.Ngspice => "ngspice",
         _                 => "openems",
     };
 
@@ -85,6 +86,7 @@ public static class SolverHomes
         "gmsh"    => SolverTool.Gmsh,
         "openems" => SolverTool.OpenEms,
         "emerge"  => SolverTool.Emerge,
+        "ngspice" => SolverTool.Ngspice,
         _         => null,
     };
 

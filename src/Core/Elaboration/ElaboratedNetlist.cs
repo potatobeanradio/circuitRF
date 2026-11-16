@@ -123,6 +123,47 @@ public sealed class ElaboratedNetlist : IDisposable
             _wspProbes.Add(new WspProbeEntry(idx, c.InstancePath, _wspProbes.Count + 1));
     }
 
+    /// <summary>
+    /// brief-pch-8 — moves <paramref name="last"/> to the end of the component list, in their order, and rebuilds the index lists that
+    /// name positions (the nonlinear partition, the WSProbes'). A Propagation Channel with an instance end reads the array's branches
+    /// from the array's own stamp, so it is stamped after every array. Called once, during elaboration, before anything reads indices.
+    /// </summary>
+    internal void MoveToEnd(IReadOnlyCollection<ElaboratedComponent> last)
+    {
+        if (last.Count == 0) return;
+        var set = new HashSet<ElaboratedComponent>(last, ReferenceEqualityComparer.Instance);
+        var kept = Components.Where(c => !set.Contains(c)).Concat(Components.Where(set.Contains)).ToList();
+        Components.Clear();
+        Components.AddRange(kept);
+        _nonlinearComponents.Clear();
+        for (int i = 0; i < Components.Count; i++) if (Components[i].IsNonlinear) _nonlinearComponents.Add(i);
+        var probes = _wspProbes.ToList();
+        _wspProbes.Clear();
+        foreach (var w in probes)
+            _wspProbes.Add(w with { ComponentIndex = Components.FindIndex(c => c.InstancePath == w.Label && c.Model is WSProbeModel) });
+    }
+
+    /// <summary>
+    /// brief-pch-10 R-pch10-4 — removes the components <paramref name="remove"/> picks (disposing any that holds something, as
+    /// <see cref="Dispose"/> would) and appends <paramref name="add"/>, rebuilding the index lists that name positions. The nodes are kept:
+    /// a removed component's nets stay unknowns, which the caller must hold (a drop that reuses its transmit side holds them with a
+    /// resistor each). Called before anything reads indices. brief-pch-10b — <paramref name="dispose"/> false for parts taken out for one run
+    /// and put back after it.
+    /// </summary>
+    public void Prune(Func<ElaboratedComponent, bool> remove, IEnumerable<ElaboratedComponent> add, bool dispose = true)
+    {
+        var kept = Components.Where(c => !remove(c)).ToList();
+        foreach (var c in Components)
+            if (dispose && remove(c) && c.Model is IDisposable d)
+                try { d.Dispose(); }
+                catch (Exception ex) when (ex is not OutOfMemoryException) { }
+        Components.Clear();
+        _nonlinearComponents.Clear();
+        _nonlinearNodes.Clear();
+        _wspProbes.Clear();
+        foreach (var c in kept.Concat(add)) AddComponent(c);
+    }
+
     internal void SetResolvedGlobal(string name, Value val) => _resolvedGlobals[name] = val;
 
     /// <summary>

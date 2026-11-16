@@ -74,7 +74,8 @@ public static class EnvelopeDataSet
     public const int AmMinSamples = 16;
 
     /// <summary>A probe whose mean fundamental-band power is below this fraction of the available drive (−60 dB) carries
-    /// no RF: a supply or a bias probe. Its output rows are NaN.</summary>
+    /// no RF: a supply or a bias probe. Its output rows are NaN. Beyond a Propagation Channel the fraction is taken of the drive
+    /// less the path (<see cref="Build"/>'s <c>pathGain</c>), or a receiver 100 dB down the link would read as a supply.</summary>
     public const double NoRfFraction = 1e-6;
 
     /// <summary>The memory cloud keeps every m-th aligned sample, m the smallest that leaves at most this many.</summary>
@@ -91,8 +92,10 @@ public static class EnvelopeDataSet
     public const int MinimumSamples = 16;
 
     /// <param name="quiet">EvmSplit's second run, with every noise source and mask off (brief NZ-8); null without one.</param>
+    /// <param name="pathGain">brief-pch-11 — the power gain of the run's Propagation Channels at the carrier, at most 1 each and
+    /// multiplied: the no-RF test's drive is the drive less it.</param>
     public static DataSet Build(EnvelopeRunResult r, EnvelopeRunner.Plan plan, double skipS = 0, Action<string>? note = null,
-                                EnvelopeRunResult? quiet = null)
+                                EnvelopeRunResult? quiet = null, double pathGain = 1)
     {
         var ds = new DataSet();
         var pulse = EnvelopePulse.Of(r);
@@ -300,7 +303,7 @@ public static class EnvelopeDataSet
         {
             AddProbePower(ds, r, plan.SaveWaveforms, ks, branchAxis, pk, pf);
             // A probe carrying no RF is NaN in every output row, so the branch axis is the same at every sweep point.
-            var noRf = pf.Select(x => !(x >= NoRfFraction * pinW)).ToArray();
+            var noRf = pf.Select(x => !(x >= NoRfFraction * pinW * pathGain)).ToArray();
             static double Dbm(double w) => w > 0 ? 10 * Math.Log10(w * 1e3) : double.NaN;
 
             var psd = new List<double>(nb * 8192);
@@ -437,8 +440,11 @@ public static class EnvelopeDataSet
             if (d is null) return null;
             var moved = SignalEqualizer.RemoveOffset(d, o => SignalEvm.Demodulate(rec, record, y, fs, start, off + o.FrequencyHz, out _, o.DriftHzps),
                                                      SignalEqualizer.EstimateOffset, out var cfo);
-            // brief-pch-6 R-pch6-9 — the genie reads a Propagation Channel's own H(f, t) where one channel receives at the probe
-            var e = SignalEqualizer.Ofdm(eq.Mode == EqualizerMode.None ? d : moved, eq, eq.Mode == EqualizerMode.Genie ? channel : null);
+            // brief-pch-6 R-pch6-9 — the genie reads a Propagation Channel's own H(f, t) where one channel receives at the probe.
+            // That H already holds the channel's Doppler and fading phase (brief PCH-7), so the genie divides the symbols as they
+            // came: taking the fitted offset out first as well would remove the channel's phase twice. The offset is still reported.
+            var genieChannel = eq.Mode == EqualizerMode.Genie ? channel : null;
+            var e = SignalEqualizer.Ofdm(eq.Mode == EqualizerMode.None || genieChannel is not null ? d : moved, eq, genieChannel);
             var m = rec.Spec.Modulation;
             return new Reading(e.RmsPercent, e.PeakPercent, double.NaN, double.NaN, e.Points, e.Ideal, null, null, d)
             {
@@ -448,10 +454,21 @@ public static class EnvelopeDataSet
         }
         var w = SignalQuality.Receive(rec, record, y, fs, start, off, out why);
         if (w is null) return null;
+        // DBPSK and SC: an offset beyond a bin of the window is acquired first (SignalQuality.CoarseOffset), then fitted from
+        // there. Within a bin the coarse offset is 0 and nothing below changes; none still reads w, as it came.
+        double coarse = meter is Meter.Dbpsk or Meter.Sc ? SignalQuality.CoarseOffset(rec, record, y, fs, start, off) : 0;
+        var start0 = coarse == 0 ? w : SignalQuality.Receive(rec, record, y, fs, start, off + coarse, out _) ?? w;
+        if (ReferenceEquals(start0, w)) coarse = 0;
+        ReceivedWaveform RemoveOffset(out CarrierOffset cfo)
+        {
+            var r = SignalEqualizer.RemoveOffset(start0, o => SignalQuality.Receive(rec, record, y, fs, start, off + coarse + o.FrequencyHz, out _, o.DriftHzps),
+                                                 SignalEqualizer.EstimateOffset, out var fine);
+            cfo = new CarrierOffset(fine.FrequencyHz + coarse, fine.DriftHzps);
+            return r;
+        }
         if (meter == Meter.Dbpsk)
         {
-            var moved = SignalEqualizer.RemoveOffset(w, o => SignalQuality.Receive(rec, record, y, fs, start, off + o.FrequencyHz, out _, o.DriftHzps),
-                                                     SignalEqualizer.EstimateOffset, out var cfo);
+            var moved = RemoveOffset(out var cfo);
             var e = SignalEqualizer.Dbpsk(eq.Mode == EqualizerMode.None ? w : moved, eq);
             int m = (eq.Mode == EqualizerMode.None ? w : moved).X.Length, sps = Dbpsk.SamplesPerBit;
             var at = e.Instants ?? [];
@@ -465,8 +482,7 @@ public static class EnvelopeDataSet
         if (meter == Meter.Sc)
         {
             // the single carrier (brief PCH-5): matched filter, the offset, the equalizer, nearest-point decisions
-            var moved = SignalEqualizer.RemoveOffset(w, o => SignalQuality.Receive(rec, record, y, fs, start, off + o.FrequencyHz, out _, o.DriftHzps),
-                                                     SignalEqualizer.EstimateOffset, out var cfo);
+            var moved = RemoveOffset(out var cfo);
             var e = SignalEqualizer.Sc(eq.Mode == EqualizerMode.None ? w : moved, eq);
             var shape = ScQam.Resolve(rec.Spec);
             return new Reading(e.RmsPercent, e.PeakPercent, double.NaN, double.NaN, e.Points, e.Ideal, null, null, w)

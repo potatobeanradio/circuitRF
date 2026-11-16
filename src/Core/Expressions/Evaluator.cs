@@ -43,12 +43,17 @@ public sealed partial class Evaluator
     /// </summary>
     public Value Resolve(string name, Scope scope)
     {
+        // brief-trn-2 R-trn2-7 — `time` with nothing binding it: steady state (TimeVariable). As an operand of a comparison it
+        // is +infinity, every finite instant having passed; anywhere else it is refused, naming it.
+        var found = scope.Lookup(name);
+        if (found is null && name == TimeVariable.Name)
+            return _compareDepth > 0 ? new Value(TimeVariable.SteadyState) : throw new TimeOutsideConditionException();
         // brief-paa-4 R-paa4-2 — one of element scope's five names, outside element scope: say where it is valid.
-        var found = scope.Lookup(name)
-            ?? throw new UnresolvedNameException(name, scope.DebugName, ElementScope.IsName(name) ? ElementScope.WhereValid(name)
+        if (found is null)
+            throw new UnresolvedNameException(name, scope.DebugName, ElementScope.IsName(name) ? ElementScope.WhereValid(name)
                 : name == "el" ? "el is the elevation above the horizon, bound only while a Phased Antenna Array's Tsky is evaluated" : null);
 
-        var (expression, unit, owningScope) = found;
+        var (expression, unit, owningScope) = found.Value;
         var key = $"{owningScope.DebugName}::{name}";
 
         if (_memo.TryGetValue(key, out var cached))
@@ -64,6 +69,11 @@ public sealed partial class Evaluator
 
         _resolving.Add(name);
         PushStatFrame(owningScope, name);   // a distribution in this binding draws on the binding's own stream
+        // A binding's own expression is not inside the comparison that referenced it: `time` must be written in the
+        // comparison itself to take its steady-state reading (TimeVariable), and a memoized binding then reads the same
+        // wherever it is used.
+        int compareDepth = _compareDepth;
+        _compareDepth = 0;
         try
         {
             // A binding's own unit is a site unit like any other, and var-unit-wins applies to it: `b = 2*a`
@@ -76,10 +86,14 @@ public sealed partial class Evaluator
         }
         finally
         {
+            _compareDepth = compareDepth;
             PopStatFrame();
             _resolving.Remove(name);
         }
     }
+
+    // How many comparisons the expression being evaluated sits inside (TimeVariable's steady-state rule).
+    private int _compareDepth;
 
     /// <summary>
     /// Evaluate an already-parsed AST in the given scope.
@@ -169,8 +183,14 @@ public sealed partial class Evaluator
 
     private Value EvalCompare(CompareExpr cmp, Scope scope)
     {
-        var l = EvalExpr(cmp.Left, scope);
-        var r = EvalExpr(cmp.Right, scope);
+        Value l, r;
+        _compareDepth++;
+        try
+        {
+            l = EvalExpr(cmp.Left, scope);
+            r = EvalExpr(cmp.Right, scope);
+        }
+        finally { _compareDepth--; }
         return cmp.Op switch
         {
             "<"  => Value.LessThan(l, r),
@@ -249,6 +269,9 @@ public sealed partial class Evaluator
         if (cl.Name == "limit")    return EvalClamp(cl, scope);
         if (cl.Name == "validrange") return EvalValidRange(cl, scope);
 
+        // The time-domain measurements over a transient result (Evaluator.TimeDomain.cs, brief TRN-5).
+        if (TimeDomainFunctions.Contains(cl.Name)) return EvalTimeDomain(cl, scope);
+
         // built-ins — cube-aware variants handle DataCube args; scalars fall through to normal math
         return cl.Name switch
         {
@@ -306,6 +329,7 @@ public sealed partial class Evaluator
             "mean_over" or "std_over" or "median_over" or "skew_over" or "kurt_over" or "yield_over"
                         => EvalStatisticOver(cl, scope),
             "pctl_over" => EvalPercentileOver(cl, scope),
+            "outage_over" => EvalOutageOver(cl, scope),   // brief-pch-10 R-pch10-5
             "unwrap"    => EvalUnwrap(cl, scope),
             "deriv"     => EvalDeriv(cl, scope),
             "cpk"       => EvalCpk(cl, scope),
@@ -376,6 +400,26 @@ public sealed partial class Evaluator
             return new Value(ds.PortTrace(accessorName, pi, pj));
         }
 
+        // ── link("CH1", "Gain_dB") — a Propagation Channel's report cube link:<instance>:<quantity> (brief PCH-11), whose name
+        // holds colons no identifier can; a sweep's axes come with it ──
+        if (accessorName == "link" && cl.Args.Length == 2 && !ds.Contains(accessorName))
+        {
+            var inst = EvalExpr(cl.Args[0], scope);
+            var quantity = EvalExpr(cl.Args[1], scope);
+            if (inst.Kind != ValueKind.String || quantity.Kind != ValueKind.String)
+                throw new ExpressionException($"{cl.Name}(): the channel and the quantity are both quoted, e.g. {cl.Name}(\"CH1\", \"Gain_dB\").");
+            string name = $"link:{inst.AsString()}:{quantity.AsString()}";
+            if (!ds.Contains(name))
+            {
+                string prefix = $"link:{inst.AsString()}:";
+                var have = ds.Cubes.Keys.Where(n => n.StartsWith(prefix, StringComparison.Ordinal)).Select(n => n[prefix.Length..]).ToList();
+                throw new ExpressionException(have.Count == 0
+                    ? $"{cl.Name}(): '{analysisName}' reports no Propagation Channel '{inst.AsString()}'."
+                    : $"{cl.Name}(): '{analysisName}' reports no '{quantity.AsString()}' for '{inst.AsString()}'; it reports {string.Join(", ", have)}.");
+            }
+            return new Value(ds[name]);
+        }
+
         // ── P("probe"[, k]) / Pt("probe") — power through an IProbe (brief ENV-MEAS-2) ──
         // Taken when the first argument is a string and no cube is literally named P / Pt; a DataSet that
         // holds one keeps the generic positional path below (no analysis emits one).
@@ -397,12 +441,13 @@ public sealed partial class Evaluator
         //
         // QUALIFIED ONLY, deliberately: DC1.OP("X1.gm"). There is no unqualified spelling, so a
         // testbench that runs two analyses never has to be guessed about.
-        if (accessorName is "V" or "INl" or "I" or "OP")
+        // Vprobe — a transient's voltage at each IProbe (brief TRN-5), on the probe's branch axis as I is.
+        if (accessorName is "V" or "INl" or "I" or "OP" or "Vprobe")
         {
             var cube = ds[accessorName];
             string axisName = accessorName switch
             {
-                "I"  => "branch",
+                "I" or "Vprobe" => "branch",
                 "OP" => "opvar",
                 _    => "node",
             };

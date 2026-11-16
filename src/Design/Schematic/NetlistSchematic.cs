@@ -163,7 +163,9 @@ public static class NetlistSchematic
     [
         SymbolKind.Term, SymbolKind.TermG, SymbolKind.Tuner, SymbolKind.LoadTuner,
         SymbolKind.SourceTuner, SymbolKind.P1Tone, SymbolKind.PnTone, SymbolKind.ToneSource,
-        SymbolKind.CurrentToneSource, SymbolKind.Vdc, SymbolKind.ZPort,
+        SymbolKind.CurrentToneSource, SymbolKind.Vdc, SymbolKind.ZPort, SymbolKind.Idc,
+        SymbolKind.VPulse, SymbolKind.VPwl, SymbolKind.VExp, SymbolKind.VSffm, SymbolKind.VExpr,
+        SymbolKind.IPulse, SymbolKind.IPwl, SymbolKind.IExp, SymbolKind.ISffm, SymbolKind.IExpr,
     ];
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -828,7 +830,7 @@ public static class NetlistSchematic
         // the symbol has no other way to know how many pins to draw.
         if (ComponentTypeRegistry.PortCountParameter(kind) is { } countParam
             && kind is not (SymbolKind.Switch or SymbolKind.SwitchD or SymbolKind.WBond or SymbolKind.PhasedArray or SymbolKind.Mlad
-                            or SymbolKind.Mcla)
+                            or SymbolKind.Mcla or SymbolKind.PropagationChannel)
             && !comp.Parameters.Any(p => p.Name == countParam))
         {
             int n = kind is SymbolKind.Sdd or SymbolKind.ZPort ? nets.Count / 2

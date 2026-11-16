@@ -241,6 +241,10 @@ public static class ChainPropagation
         var registry = RegistryParameters(model).Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var values = link.Path.Where(kv => registry.Contains(kv.Key) && !ChainNames.Contains(kv.Key) || kv.Key == "Sigma" && ModelOwnsSigma(model))
                               .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+        // brief-pch-11 — Rain=drawn is the Link bench's: it draws the rain's time percentage per drop. A budget is one evaluation, so
+        // it takes the rain at the availability, as Rain=fixed, which the bench's drop sweep then checks.
+        bool drawnRain = values.TryGetValue("Rain", out var rainWord) && rainWord.Trim().Equals("drawn", StringComparison.OrdinalIgnoreCase);
+        if (drawnRain) values["Rain"] = "fixed";
         var res = PropagationModels.Evaluate(new ModelInputs
         {
             Model = model.Name, FrequencyHz = fHz, DistanceM = satellite ? double.NaN : d,
@@ -272,7 +276,9 @@ public static class ChainPropagation
         double total = fs + atm + rest;
 
         var notes = new List<string>(res.NoteList);
-        double sigma = ModelOwnsSigma(model) || link.GetPath("Sigma").Trim().Length == 0 ? res.SigmaDb : Num(link, "Sigma");
+        if (drawnRain)
+            notes.Add("Rain=drawn: the budget takes the rain at the availability; the Link bench draws it drop by drop.");
+        double sigma =ModelOwnsSigma(model) || link.GetPath("Sigma").Trim().Length == 0 ? res.SigmaDb : Num(link, "Sigma");
         double rain = sums["Rain_dB"];
         var margins = Margins(link, res, sigma, rain, notes);
         return new ChainPropagationResult(model.Name, res.Document, total, fs, atm, rows, sigma, res.LosProbability, res.Geometry,
@@ -368,6 +374,9 @@ public static class ChainPropagation
             return s * h;
         }
         double lo = -40, hi = 120;   // dB: an outage of nearly 1 below, of nearly 0 above
+        // A wide shadowing at a high availability can need more than 120 dB (σ 30 dB at 99.99 % is ~112 dB on the shadowing
+        // alone): widen the bracket rather than return its edge as though it were the root.
+        while (Outage(hi) > q && hi < 1000) { lo = hi; hi *= 2; }
         for (int i = 0; i < 200 && hi - lo > 1e-11; i++)
         {
             double mid = 0.5 * (lo + hi);

@@ -47,7 +47,7 @@ one of its faces — so a temperature is never read off a model you did not mean
 
 ## Worked example: Die to Heatsink {#die-to-heatsink}
 
-*File ▸ New ▸ Examples ▸ Thermal: Die to Heatsink.* A GaN-on-SiC die (its transistor one 0.8 × 0.25 mm heat-source sheet) on a
+*File ▸ New ▸ Examples ▸ Thermal ▸ Die to Heatsink.* A GaN-on-SiC die (its transistor one 0.8 × 0.25 mm heat-source sheet) on a
 copper–molybdenum flange, the flange on a two-layer board with a 5 × 3 field of plated vias, the board on a 100 µm thermal
 interface material on a heatsink held at 85 °C. The die attach and the flange solder are contact resistances. `Pdiss` sweeps
 from 3 W to 11 W; the run takes about 1 min 17 s and 1.1 GB on an Apple M4 (the Debug build), on 543,980 tetrahedra.
@@ -70,7 +70,7 @@ runs cool; it pays where there are hundreds of vias.
 
 ## Worked example: Channel vs Surface {#channel-vs-surface}
 
-*File ▸ New ▸ Examples ▸ Thermal: Channel vs Surface.* One GaN finger's unit cell — SiC substrate, GaN epitaxy with the library's
+*File ▸ New ▸ Examples ▸ Thermal ▸ Channel vs Surface.* One GaN finger's unit cell — SiC substrate, GaN epitaxy with the library's
 GaN/SiC interface resistance, passivation, gate, **field plate**, source and drain — with the finger's heat (0.25 W, 5 W/mm)
 in a 0.5 × 0.25 µm channel at the drain-side edge of the gate, the substrate's bottom at 85 °C, and a symmetry plane at the
 finger's mid-width. About 3 min 28 s and 2.0 GB, on 216,837 tetrahedra.
@@ -151,7 +151,7 @@ with no mould around them — see [wBond ▸ Wire temperature](wbond.html#wire-t
 
 ## Worked example: Output Wires {#output-wires}
 
-*File ▸ New ▸ Examples ▸ Thermal: Output Wires.* Six 1 mil gold wires, wedge-bonded from a drain pad on a SiC die to a copper package
+*File ▸ New ▸ Examples ▸ Thermal ▸ Output Wires.* Six 1 mil gold wires, wedge-bonded from a drain pad on a SiC die to a copper package
 lead, **all of it embedded in a mould compound — the overmold** — over a copper–molybdenum flange held at 85 °C. The die, its
 pad and the lead finger are a layout; the wires are its `.wBond`; the rest is drawn in the 3D view. The mould's glass transition
 (150 °C) is every wire probe's *Limit*. Each setup runs in seconds on an Apple M4 (the Release build): `DcSweep` in 21 s, on

@@ -1,0 +1,25 @@
+* circuitRF transient deck: bench line, analysis TR1
+* written by circuitRF 1.8.4
+* names (deck = circuitRF):
+*   net s = s
+*   net in = in
+*   net out = out
+*   instance VS = VS
+*   instance RS = RS
+*   instance TL1 = TL1
+*   instance RL = RL
+
+.temp 26.85
+.options TNOM=26.85 RELTOL=0.001 VNTOL=1E-06 ABSTOL=1E-12 METHOD=TRAP
+VS s 0 DC 0 PULSE(0 1 5E-10 1.0000000000000002E-10 1.0000000000000002E-10 2E-08 4.14E-08) ; VS
+RS s in 50 ; RS
+TL1 in 0 out 0 Z0=50 TD=1E-09 ; TL1
+RL out 0 100 ; RL
+.tran 1.0000000000000001E-11 4E-09 0 1.0000000000000001E-11
+.save v(s) v(in) v(out)
+.control
+run
+linearize
+write line.raw
+.endc
+.end

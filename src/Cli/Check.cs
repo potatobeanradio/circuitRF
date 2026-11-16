@@ -1960,7 +1960,7 @@ internal static class Check
                 {
                     if (noiseAnalyses.Count > 0) f.Add(CliDiagnostics.CheckNoisySourceSteadyState(path, ec.InstancePath, noiseAnalyses));
                 }
-                else if (ec.Model is IDriveScalable or VdcModel)
+                else if (ec.Model is IDriveScalable or VdcModel or IdcModel or WaveformSourceModel)
                     f.Add(CliDiagnostics.CheckNoisySourceIdeal(path, ec.InstancePath));
             }
 
@@ -2017,6 +2017,36 @@ internal static class Check
                 else if (!qam)
                     f.Add(CliDiagnostics.CheckEvmSplitNothing(path, env.Name, "no source plays a carrier with symbols (LTE, NR, DBPSK, FSK, CSS or SC), so there is no error to split"));
             }
+
+            // brief-trn-5 R-trn5-6 — in a transient bench, a waveform source whose DC value is not its t = 0 value (info); in any
+            // bench, a measurement calling a time-domain function over a result with no time axis (the run's own refusal, said first).
+            if (tb.Analyses.Any(a => a is TransientAnalysis))
+                foreach (var (part, dc, at0) in CircuitRF.Engine.Transient.TransientSources.DcDiffersFromStart(nl))
+                    f.Add(CliDiagnostics.CheckWaveformDcDiffers(path, part, dc, at0));
+
+            // The transient's own key resolution (Stop, Step, Method, IC, an ngspice-only key under the native solver): the run's
+            // refusal, as a finding — check reported 0 errors on Stop=0 or Method=euler, and the run then refused it.
+            foreach (var tran in tb.Analyses.OfType<TransientAnalysis>().Where(t => t.Enabled))
+            {
+                try { CircuitRF.Engine.Transient.TransientRunner.Resolve(tran, nl.ResolvedGlobals); }
+                catch (CircuitRF.Engine.Transient.TransientRefusedException ex) { f.Add(CliDiagnostics.CheckTranKeys(path, tran.Name, ex.Message)); }
+            }
+
+            // brief-trn-6 R-trn6-11 — under Solver=ngspice, every element the deck writer would refuse (the run's own refusal,
+            // said first), and under SpiceLines=rlgc each fitted line's largest |ΔS| (the number the run's note carries).
+            foreach (var tran in tb.Analyses.OfType<TransientAnalysis>().Where(t => t.Enabled &&
+                         t.Solver.Trim().Equals(TransientAnalysis.SolverNgspice, StringComparison.OrdinalIgnoreCase)))
+            {
+                var deck = CircuitRF.Core.Netlist.Spice.SpiceDeckWriter.Write(new CircuitRF.Core.Netlist.Spice.SpiceDeckRequest
+                {
+                    Netlist = nl, Analysis = tran, Bench = tb, Library = lib, CompileVerilogA = false,
+                    Fits = new CircuitRF.Engine.Transient.TransientSpiceFits(),
+                });
+                foreach (var r in deck.Refusals) f.Add(CliDiagnostics.CheckTranUntranslatable(path, tran.Name, r.Message));
+                foreach (var l in deck.Lines) f.Add(CliDiagnostics.CheckTranLineFit(path, tran.Name, l.Sentence));
+            }
+            foreach (var m in CircuitRF.Core.Expressions.TimeDomainUse.Find(tb))
+                f.Add(CliDiagnostics.CheckTimeFunctionNoTime(path, m.Measurement, m.Function, m.Analysis, m.AnalysisKind));
 
             foreach (var bridge in CircuitRF.Design.Em3d.EmFieldBlocks.GapPortBridges(nl))
                 f.Add(CliDiagnostics.CheckPartBetweenGapPorts(path, bridge.Part, bridge.Block, bridge.PortA, bridge.PortB));

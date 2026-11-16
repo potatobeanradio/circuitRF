@@ -120,6 +120,20 @@ public static class CnlWriter
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    /// <summary>brief TRN-8 — <c>InitialGuess</c> and the seed keys, each only when it differs from its default, so a directive
+    /// without them writes the bytes it always did.</summary>
+    private static string SeedKeys(string initialGuess, string seedTol, string seedPeriods, string seedFastBias)
+    {
+        var sb = new StringBuilder();
+        if (!Analysis.IsDcStart(initialGuess)) sb.Append($" InitialGuess={initialGuess.Trim()}");
+        if (seedTol.Trim().Length > 0 && seedTol.Trim() != Analysis.SeedTolDefault) sb.Append($" SeedTol=\"{seedTol.Trim()}\"");
+        if (seedPeriods.Trim().Length > 0 && !seedPeriods.Trim().Equals(Analysis.SeedPeriodsDefault, StringComparison.OrdinalIgnoreCase))
+            sb.Append($" SeedPeriods=\"{seedPeriods.Trim()}\"");
+        if (seedFastBias.Trim().Length > 0 && !seedFastBias.Trim().Equals(Analysis.SeedFastBiasDefault, StringComparison.OrdinalIgnoreCase))
+            sb.Append($" SeedFastBias={seedFastBias.Trim()}");
+        return sb.ToString();
+    }
+
     private static bool HasContent(TestBench tb)
         => tb.Instances.Count > 0 || HasDirectives(tb);
 
@@ -137,6 +151,10 @@ public static class CnlWriter
         // Quoted when it holds a space: a model folder, and so its part number, may be named "BFP 740".
         if (cell.Part is { } part)
             sb.Append("  part ").AppendLine(part.Any(char.IsWhiteSpace) ? $"\"{part}\"" : part);
+
+        // brief TRN-6 R-trn6-5 — the SPICE file a translated definition came from, always quoted (a path may hold a space).
+        if (cell.SpiceSource is { } spice)
+            sb.Append("  spice \"").Append(spice).AppendLine("\"");
 
         if (cell.Parameters.Count > 0)
             sb.Append("  parameters ")
@@ -377,6 +395,7 @@ public static class CnlWriter
         ParametricSweepAnalysis ps    => FormatParametricSweepAnalysis(ps),
         SParameterAnalysis sp         => FormatSParameterAnalysis(sp),
         DcAnalysis dc                 => $"analysis {dc.Name} type=dc",
+        TransientAnalysis tr          => FormatTransientAnalysis(tr),
         FieldsAnalysis fa             => $"analysis {fa.Name} type=fields block={fa.Block} freq=\"{fa.FreqExpr}\" freqUnit={fa.FreqUnit} " +
                                          $"drive={fa.DriveExpr} {(fa.WeightsExpr.Length > 0 ? $"weights=\"{fa.WeightsExpr}\" " : "")}norm={fa.Norm} average={fa.AverageExpr}" +
                                          (fa.FromHarmonicBalance ? $" waves={fa.Waves.Trim()}" : "") +
@@ -384,11 +403,13 @@ public static class CnlWriter
                                          (fa.DirsExpr.Trim().Length > 0 ? $" dirs=\"{fa.DirsExpr.Trim()}\"" : ""),
         OscillatorAnalysis osc        => $"analysis {osc.Name} type=osc" +
                                          (osc.Probe.Length > 0 ? $" Probe={osc.Probe}" : "") +
-                                         $" Fguess=\"{osc.FguessExpr}\"" +
+                                         (osc.FguessExpr.Trim().Length > 0 ? $" Fguess=\"{osc.FguessExpr}\"" : "") +
                                          (osc.FstartExpr.Length > 0 ? $" Fstart=\"{osc.FstartExpr}\"" : "") +
                                          (osc.FstopExpr.Length > 0 ? $" Fstop=\"{osc.FstopExpr}\"" : "") +
                                          $" Unit={osc.Unit} MaxHarm=\"{osc.MaxHarmonicExpr}\" FFTOverSample=\"{osc.FFTOverSampleExpr}\" Tol=\"{osc.TolExpr}\"" +
                                          (osc.AguessExpr.Length > 0 ? $" Aguess=\"{osc.AguessExpr}\"" : "") +
+                                         SeedKeys(osc.InitialGuess, osc.SeedTolExpr, osc.SeedPeriodsExpr, osc.SeedFastBias) +
+                                         (osc.KickVExpr.Trim() != Analysis.KickVDefault && osc.KickVExpr.Trim().Length > 0 ? $" KickV=\"{osc.KickVExpr.Trim()}\"" : "") +
                                          // Brief NZ-10: written only when asked for, so an oscillator without it writes what it did before.
                                          (osc.PhaseNoise
                                              ? $" PhaseNoise=yes PnStart=\"{osc.PnStartExpr}\" PnStop=\"{osc.PnStopExpr}\" PnNpts=\"{osc.PnNptsExpr}\"" +
@@ -400,7 +421,41 @@ public static class CnlWriter
         _                             => $"analysis {analysis.Name}",
     };
 
-    private static string FormatHbAnalysis(HarmonicBalanceAnalysis hb)
+    /// <summary>brief-trn-1 — a tran directive: Stop always, every other key only when it differs from its default, so a
+    /// line written by hand round-trips to what it said.</summary>
+    private static string FormatTransientAnalysis(TransientAnalysis t)
+    {
+        var sb = new StringBuilder($"analysis {t.Name} type=tran Stop={Q(t.StopExpr)}");
+        void Opt(string key, string value, string def)
+        {
+            if (!string.Equals(value.Trim(), def, StringComparison.OrdinalIgnoreCase)) sb.Append($" {key}={Q(value)}");
+        }
+        Opt("Step", t.StepExpr, "");
+        Opt("Start", t.StartExpr, "0");
+        Opt("MaxStep", t.MaxStepExpr, "auto");
+        Opt("Method", t.Method, TransientAnalysis.MethodTrap);
+        Opt("RelTol", t.RelTolExpr, "1e-3");
+        Opt("VTol", t.VTolExpr, "1e-6");
+        Opt("ITol", t.ITolExpr, "1e-12");
+        Opt("InitialState", t.InitialState, TransientAnalysis.InitialOp);
+        Opt("IC", t.IcExpr, "");
+        Opt("Solver", t.Solver, TransientAnalysis.SolverNative);
+        Opt("SaveSteps", t.SaveSteps, Analysis.NoiseDefault);
+        Opt("MaxSteps", t.MaxStepsExpr, TransientAnalysis.MaxStepsDefault);
+        Opt("SpiceOptions", t.SpiceOptions, "");
+        Opt("SpiceLines", t.SpiceLines, TransientAnalysis.SpiceLinesDefault);
+        Opt("SpiceLineFreq", t.SpiceLineFreq, TransientAnalysis.SpiceLineFreqDefault);
+        Opt("SpiceFit", t.SpiceFit, TransientAnalysis.SpiceFitDefault);
+        Opt("Store", t.Store, TransientAnalysis.StoreAuto);
+        Opt("StoreHarm", t.StoreHarmExpr, TransientAnalysis.StoreHarmDefault);
+        Opt("MeasureFrom", t.MeasureFromExpr, TransientAnalysis.MeasureFromDefault);
+        return sb.ToString();
+
+        // A value with whitespace, a comma or an equals sign is quoted, so the tokenizer reads it as one token.
+        static string Q(string v) => v.IndexOfAny([' ', '\t', ',', '=']) >= 0 ? $"\"{v}\"" : v;
+    }
+
+        private static string FormatHbAnalysis(HarmonicBalanceAnalysis hb)
     {
         var sb = new StringBuilder($"analysis {hb.Name} type=hb");
         sb.Append($" Tone=\"{hb.ToneExpr}\" ToneUnit={hb.ToneUnit}");
@@ -448,6 +503,7 @@ public static class CnlWriter
         if (hb.NoiseSidebandExpr != HarmonicBalanceAnalysis.NoiseSidebandDefault)
             sb.Append($" NoiseSideband=\"{hb.NoiseSidebandExpr}\"");
         if (hb.NoiseContribExpr != Analysis.NoiseContribDefault) sb.Append($" NoiseContrib={hb.NoiseContribExpr}");
+        sb.Append(SeedKeys(hb.InitialGuess, hb.SeedTolExpr, hb.SeedPeriodsExpr, hb.SeedFastBias));
 
 #pragma warning disable CS0618
         if (hb.SweepVarName is not null)

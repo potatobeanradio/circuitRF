@@ -171,7 +171,8 @@ public sealed class ParametricEmStubTests : IDisposable
         }
 
         Assert.Equal(KeyOfPathA(), KeyOfPathB(null));
-        Assert.Equal(KeyOfPathA(("w50", "300e-6")), KeyOfPathB("300"));
+        // A --set keeps the variable's unit column (PAA-10): w50 is a µm row, so 300 is 300 µm, as the instance's 300 um is.
+        Assert.Equal(KeyOfPathA(("w50", "300")), KeyOfPathB("300"));
         Assert.NotEqual(KeyOfPathA(), KeyOfPathB("300"));
     }
 

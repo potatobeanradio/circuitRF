@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — mmWave Array Link</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/mmWave Array Link/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › mmWave Array Link</p>
+  </div>
+
+  <h1>mmWave Array Link</h1>
+  <p class="lede">A 28 GHz 16 &#215; 16 transmit array to an 8 &#215; 8 receive array through 3GPP TR 38.901 UMi without line of sight and CDL-C: the beam pair found automatically in every drop, NR 64-QAM equalized from pilots, and EVM, bit errors and outage over 20 drops. The patch element&#39;s EM record ships with it.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ mmWave Array Link</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A 28 GHz base station with a 16 × 16 array sends NR 64-QAM to an 8 × 8 array 400 m down a street, around a corner. The
+path is 3GPP TR 38.901's street-canyon micro cell without line of sight, and its multipath is the report's clustered delay
+line CDL-C: 24 clusters of 20 rays, each with its own direction at both ends. Each <strong>drop</strong> of the channel finds the best
+pair of beams through that drop's rays, and the envelope run reads EVM and bit errors through them.</p>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Patch Element</code></td>
+<td>One inset-fed patch, 3.57 × 2.80 mm on a 0.161 mm laminate (εr 3.66): the <em>Phased Array</em> example's 5.9 GHz patch scaled by 5.9/28, so it resonates at 28 GHz (S11 −14 dB). Its EM result ships in <code>results/</code></td>
+</tr>
+<tr>
+<td><code>TxChannel</code></td>
+<td>Each transmit element's path: a 12 dB driver and a 20 dB amplifier</td>
+</tr>
+<tr>
+<td><code>RxChannel</code></td>
+<td>Each receive element's path: a 20 dB, 1.5 dB NF LNA and a 3 dB attenuator</td>
+</tr>
+<tr>
+<td><code>Array Link</code></td>
+<td>The bench</td>
+</tr>
+</tbody>
+</table>
+<p>In the bench, <code>GNB</code> plays NR 20 MHz at 60 kHz subcarrier spacing into <code>PRE</code>, a pre-driver whose compression sets the
+transmitter's EVM, and the transmit array <code>PT</code> (Feed mode, half a wavelength, each element through <code>TxChannel</code>). <code>CH1</code>
+carries it, <code>Tx=PT Rx=PR</code>, to the receive array <code>PR</code>, whose feed is the probe <code>Irx</code>. Both arrays' phases are
+<code>steer(0,0,f0)</code>, so the channel picks their beams (<code>BeamSelect</code> unstated is <code>auto</code>) from a grid of candidates one beamwidth
+apart, through each array's own <code>steer()</code>. <code>ENV1</code> is four OFDM symbols with <code>Noise=yes</code> and <code>Equalizer=pilot</code>; <code>DROPS</code>
+sweeps it over drops 1 to 20.</p>
+<h2 id="the-path">The path</h2>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Path loss</td>
+<td>145.1 dB: 113.4 free space, 31.6 the UMi non-line-of-sight excess</td>
+</tr>
+<tr>
+<td>Shadowing σ, drawn per drop (<code>link:CH1:Shadowing_dB</code>)</td>
+<td>7.8 dB</td>
+</tr>
+<tr>
+<td>Delay spread, coherence bandwidth</td>
+<td>100 ns, 2 MHz: the 20 MHz signal fades frequency by frequency, and the pilot equalizer undoes it</td>
+</tr>
+</tbody>
+</table>
+<p>The ends are far apart: the 16 × 16 array's far field begins 2.7 m away, so the channel's plane-wave rays hold.</p>
+<h2 id="the-beams">The beams</h2>
+<p>Every drop scores 5,365 beam pairs through its rays (<code>link:CH1:Beam_dB</code> lists them, strongest first) and takes the
+strongest. Over the 20 drops the transmit beam is one of two (7.2° and 14.5° off boresight) and the receive beam one of
+six: the clusters are the same in every drop, their phases are not, and which pair adds up best changes with them. The
+power through the chosen pair, <code>Beam_dB</code>, runs from −95.6 to −123.8 dB, the shadowing's spread and the clusters'
+interference together. <code>BoundLoss_dB</code> is what the codebook costs against the best any phase-only weights could do through
+the same rays: 2.3 to 9.0 dB, because a grid of single beams points at one cluster while the bound collects several.</p>
+<p><strong>Open the bench in the Phased Array tool</strong> (<em>Tools ▸ Phased Array</em>, with <code>PT</code> or <code>PR</code> selected) and its <strong>Channel</strong> tab
+draws the drop's rays on the (u, v) map with the candidate beams, and lists the ranked pairs. Click another pair to use it
+(it writes <code>BeamSelect=index</code>), or the check button to write it into the arrays' <code>steer()</code>; move the drop slider to see
+another realization.</p>
+<h2 id="evm-and-bit-errors-over-the-drops">EVM and bit errors over the drops</h2>
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MER over the drops</td>
+<td>6.3 to 33.8 dB, median 25.7 dB</td>
+</tr>
+<tr>
+<td>EVM at the strongest drops</td>
+<td>2.0 %, the pre-driver's compression</td>
+</tr>
+<tr>
+<td>Drops with bit errors</td>
+<td>8 of 20</td>
+</tr>
+<tr>
+<td><code>Outage</code>, the drops whose MER is below 20 dB (<code>MerReq</code>)</td>
+<td>20 %, its exact 95 % interval 5.7 to 43.7 %</td>
+</tr>
+</tbody>
+</table>
+<p><code>BERest</code> estimates each drop's bit error rate from its symbols' SINR, below what four symbols can count. With no velocity
+stated the channel is frozen within each drop (<code>link:CH1:fD_Hz</code> is 0); give <code>RxVel</code> a speed and each ray's Doppler follows
+from its direction.</p>
+<h2 id="what-was-traded-for-run-time">What was traded for run time</h2>
+<p><strong>The amplifiers in each element's path are linear</strong> (<code>IP3</code> 200 dBm). An envelope run evaluates every nonlinear device at
+every step, and with 256 nonlinear amplifiers one drop of two symbols ran for more than ten minutes; the compression is
+carried by the one pre-driver instead. The <em>Phased Array</em> example's <strong>6 Envelope</strong> bench shows what each element's own compression
+does to a beam. <strong>Four OFDM symbols</strong> (72 µs) is enough for EVM and the pilot equalizer, and 20 drops take about a minute in
+a Release build; <code>Noise=yes</code> keeps each drop from replaying the transmitter's waves, so every drop solves both arrays. <strong>The
+element is isolated</strong>: its record is one patch, so the arrays carry its pattern and its match but no coupling between
+elements.</p>
+<p>The element record is reduced to 28 GHz and a 5° grid (110 KB). Simulating <code>Patch Element/em/Patch Element.cem</code> writes the
+full one again in a few seconds; the bench reads either.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

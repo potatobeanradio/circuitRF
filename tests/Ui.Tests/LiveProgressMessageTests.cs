@@ -298,6 +298,21 @@ public sealed class LiveProgressMessageTests
         Assert.DoesNotContain("SP1", entry.Text);
     }
 
+    /// <summary>brief-pch-9 — a counted stage inside the run (a channel's beam selection, before the analysis's first unit) shows its name
+    /// and its own counter while it runs; when it ends the row is the run's again.</summary>
+    [Fact]
+    public void ReportRunProgress_ACountedStage_ShowsItsNameAndCounter_ThenTheRunsAgain()
+    {
+        var (live, entry) = NewLive();
+        WorkspaceViewModel.ReportRunProgress(live, "Link.csch", new RunProgress("Beam of CH1: weighing the codebooks", 0, 1, 120, 5002, "beam(s)"));
+        Assert.Equal("Running 'Link.csch' · Beam of CH1: weighing the codebooks", entry.Text);
+        Assert.Equal("120 / 5,002 beam(s)", entry.ProgressText);
+
+        WorkspaceViewModel.ReportRunProgress(live, "Link.csch", new RunProgress("HB1", 1, 1));
+        Assert.Equal("Running 'Link.csch'", entry.Text);
+        Assert.Equal("1 / 1", entry.ProgressText);
+    }
+
     /// <summary>Indeterminate work has no counter to show — the row must not leave a stale one behind
     /// from an earlier determinate stage.</summary>
     [Fact]

@@ -335,6 +335,8 @@ public sealed class EnvelopeEngine
         foreach (var sg in signals)
             if (Math.Abs(sg.RecordSeconds - record) > 1e-12)
                 throw new InvalidOperationException("all MOD_Sources in one envelope run must use the same record length");
+        // brief-pch-9 — a channel's beam, selected over the signal's band and taken into its arrays before anything is stamped
+        AntennaArray.BeamSelection.Apply(_nl, f0, signals.SelectMany(sg => sg.Carriers).Select(c => c.Spec.BandwidthHz).DefaultIfEmpty(0).Max(), setCarrier: true);
         // Noise (brief NZ-7), from every part's own stamp, before a line or an S-parameter block is replaced for the run.
         var thermal = p.Noise ? EnvelopeNoise.Thermal(_nl, _settings, [.. Enumerable.Range(0, K + 1).Select(k => k * f0)], h, p.Seed, f0) : null;
         var phase = p.PhaseNoise ? EnvelopePhaseNoise.Of(_nl, (int)Math.Round(nRec), recordRate, p.Seed) : null;
@@ -344,7 +346,7 @@ public sealed class EnvelopeEngine
         // brief-pch-6 — every Propagation Channel is its explicit, one-way coupling for the run (EnvelopeChannel).
         foreach (var ec in _nl.Components) if (ec.Model is ICarrierContext carrierCtx) carrierCtx.SetCarrier(f0);
         using var channels = EnvelopeChannel.Apply(_nl, [.. Enumerable.Range(0, K + 1).Select(k => k * f0)], h,
-                                                   (long)Math.Round(p.StartS / h) - (int)Math.Round(p.WarmupS / h), p.ChannelDrive, p.RecordChannelWaves);
+                                                   (long)Math.Round(p.StartS / h) - (int)Math.Round(p.WarmupS / h), p.ChannelDrive, p.RecordChannelWaves, p.Noise);
         Action<int, Complex[]>? delayedMain = lines.Any || channels.Any ? (k, b) => { if (lines.Any) lines.AddMain(k, b); channels.AddMain(k, b); } : null;
         using var snpFit = EnvelopeSnpFit.Apply(_nl, K * f0 + 0.5 * rate, [.. Enumerable.Range(1, K).Select(k => k * f0)], 0.5 * rate);
         // An element whose fit was refused (any stamp whose 1 Hz / 2 Hz tangent is not exact) is held at its DC stamp for
@@ -399,24 +401,16 @@ public sealed class EnvelopeEngine
             for (int k = 0; k <= K; k++)
             {
                 double w = k * omega0;
-                double dlt = Math.Max(1e-6 * Math.Max(w, 2 * Math.PI * 1e6), 2 * Math.PI * 1.0);
+                double dlt = AffineStamp.Delta(w);
                 CompressedColumnStorage<Complex> A0, C;
                 baseband.Holding = k == 0;            // the whole baseband product, its right-hand side included
                 lines.Product = k;
                 channels.Product = k;
                 if (k == 0)
-                {
-                    var a1 = Stamp(extractor, mna, dlt);
-                    var a2 = Stamp(extractor, mna, 2 * dlt);
-                    C = Combine(a2, a1, 1.0 / new Complex(0, dlt), -1.0 / new Complex(0, dlt));
-                    A0 = Combine(a1, C, 1.0, -new Complex(0, dlt));
-                }
+                    (A0, C) = AffineStamp.Baseband(extractor, mna, dlt);
                 else
                 {
-                    var ap = Stamp(extractor, mna, w + dlt);
-                    var am = Stamp(extractor, mna, w - dlt);
-                    C = Combine(ap, am, 1.0 / new Complex(0, 2 * dlt), -1.0 / new Complex(0, 2 * dlt));
-                    A0 = Stamp(extractor, mna, w);
+                    (A0, C) = AffineStamp.AtHarmonic(extractor, mna, w, dlt);
                     // tangent check at the envelope band edge (affine models: ~round-off)
                     double band = 0.5 * rate;
                     if (w - 2 * Math.PI * band > 0)
@@ -848,11 +842,7 @@ public sealed class EnvelopeEngine
     internal static Action<int, Complex[]>? WithNoise(Action<int, Complex[]>? delayed, EnvelopeNoise? thermal, long sample) =>
         thermal is null ? delayed : (k, b) => { delayed?.Invoke(k, b); thermal.Add(k, sample, b); };
 
-    internal static CompressedColumnStorage<Complex> Stamp(HbLinearExtractor ex, MnaSystem mna, double omega)
-    {
-        ex.StampSmallSignal(mna, omega);
-        return mna.BuildCsc();
-    }
+    internal static CompressedColumnStorage<Complex> Stamp(HbLinearExtractor ex, MnaSystem mna, double omega) => AffineStamp.Stamp(ex, mna, omega);
 
     internal static Complex[] RhsAt(HbLinearExtractor ex, MnaSystem mna, double omega, ModSourceModel[] srcs, int? unit)
     {
@@ -863,27 +853,9 @@ public sealed class EnvelopeEngine
         return b;
     }
 
-    /// <summary>a·A + b·B over the union pattern.</summary>
+    /// <summary>a·A + b·B over the union pattern (<see cref="AffineStamp.Combine"/>).</summary>
     internal static CompressedColumnStorage<Complex> Combine(CompressedColumnStorage<Complex> A, CompressedColumnStorage<Complex> B, Complex a, Complex b)
-    {
-        int n = A.RowCount;
-        if (B.RowCount != n || A.ColumnCount != B.ColumnCount)
-            throw new InvalidOperationException("envelope: the linear network's size changes with frequency (a model adds unknowns only at some frequencies)");
-        var dict = new Dictionary<long, Complex>();
-        void Add(CompressedColumnStorage<Complex> M, Complex s)
-        {
-            for (int j = 0; j < M.ColumnCount; j++)
-                for (int p = M.ColumnPointers[j]; p < M.ColumnPointers[j + 1]; p++)
-                {
-                    long key = (long)M.RowIndices[p] * n + j;
-                    dict[key] = (dict.TryGetValue(key, out var v) ? v : 0) + s * M.Values[p];
-                }
-        }
-        Add(A, a); Add(B, b);
-        var tri = new CoordinateStorage<Complex>(n, A.ColumnCount, dict.Count);
-        foreach (var kv in dict) tri.At((int)(kv.Key / n), (int)(kv.Key % n), kv.Value);
-        return SparseMatrix.OfIndexed(tri);
-    }
+        => AffineStamp.Combine(A, B, a, b);
 
     internal static double RelDiff(CompressedColumnStorage<Complex> A, CompressedColumnStorage<Complex> B)
     {

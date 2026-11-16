@@ -248,6 +248,33 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Sources,
             SearchTerms: ["ITone", "CurrentToneSource", "current source", "tone", "RF", "signal", "I"],
             IsCommon: true),
+        // brief-trn-2 — the waveform sources and the DC current source. Pulse, PWL, Exponential, SFFM and Expression in their
+        // voltage and current forms, one WaveformSourceModel under all ten; in every analysis but transient each is its Dc value.
+        [SymbolKind.VPulse] = new("V_Pulse", "V", Category: ComponentCategory.Sources,
+            SearchTerms: ["Pulse", "V_Pulse", "PULSE", "square", "clock", "step", "transient", "voltage"]),
+        [SymbolKind.VPwl] = new("V_PWL", "V", Category: ComponentCategory.Sources,
+            SearchTerms: ["PWL", "V_PWL", "piecewise linear", "ramp", "waveform", "transient", "voltage"]),
+        [SymbolKind.VExp] = new("V_Exp", "V", Category: ComponentCategory.Sources,
+            SearchTerms: ["Exponential", "V_Exp", "EXP", "transient", "voltage"]),
+        [SymbolKind.VSffm] = new("V_SFFM", "V", Category: ComponentCategory.Sources,
+            SearchTerms: ["SFFM", "V_SFFM", "FM", "frequency modulated", "transient", "voltage"]),
+        [SymbolKind.VExpr] = new("V_Expr", "V", Category: ComponentCategory.Sources,
+            SearchTerms: ["Expression", "V_Expr", "behavioural", "time", "transient", "voltage"]),
+        [SymbolKind.IPulse] = new("I_Pulse", "I", Category: ComponentCategory.Sources,
+            SearchTerms: ["Pulse", "I_Pulse", "PULSE", "square", "clock", "step", "transient", "current"]),
+        [SymbolKind.IPwl] = new("I_PWL", "I", Category: ComponentCategory.Sources,
+            SearchTerms: ["PWL", "I_PWL", "piecewise linear", "ramp", "waveform", "transient", "current"]),
+        [SymbolKind.IExp] = new("I_Exp", "I", Category: ComponentCategory.Sources,
+            SearchTerms: ["Exponential", "I_Exp", "EXP", "transient", "current"]),
+        [SymbolKind.ISffm] = new("I_SFFM", "I", Category: ComponentCategory.Sources,
+            SearchTerms: ["SFFM", "I_SFFM", "FM", "frequency modulated", "transient", "current"]),
+        [SymbolKind.IExpr] = new("I_Expr", "I", Category: ComponentCategory.Sources,
+            SearchTerms: ["Expression", "I_Expr", "behavioural", "time", "transient", "current"]),
+        [SymbolKind.Idc] = new("Idc", "I", Category: ComponentCategory.Sources,
+            SearchTerms: ["Idc", "DC current", "current source", "bias", "I"]),
+        // brief-trn-3 — the voltage-controlled switch, under Sources beside the controlled sources ("S", the dialect's letter).
+        [SymbolKind.VSwitch] = new("VSwitch", "S", Category: ComponentCategory.Sources,
+            SearchTerms: ["VSwitch", "switch", "voltage-controlled switch", "VSWITCH", "Ron", "Roff", "transient", "converter"]),
         // VCCS: "G" is its instance prefix by long convention (the SPICE G element), even though
         // circuitRF's own current DIRECTION is the opposite of that element's — see VccsModel.
         [SymbolKind.Vccs]          = new("VCCS", "G",
@@ -1089,6 +1116,8 @@ public static class ComponentTypeRegistry
         SymbolKind.PhasedArray                               => "Rows × Cols",
         // The coupled array: 1, 2 and a pin on each shorted or loaded strip end, which four parameters set together.
         SymbolKind.Mcla                                      => "N, Form, Feed and Ends",
+        // brief-pch-8 — a pin per end that does not name an instance: none, one or both
+        SymbolKind.PropagationChannel                        => "Tx and Rx",
         // A wBond's terminals are 2 per wire array it places, plus the reference pin when RefPin is
         // on — so the count follows the arrays selected out of the design it carries or links to,
         // and there is no fixed answer at all until one is chosen.
@@ -1341,6 +1370,16 @@ public static class ComponentTypeRegistry
           + "arrow on the + lead points at. Note this is the opposite sense to the VCCS's arrow, "
           + "which is a controlled source and is drawn the way controlled sources are.",
 
+        SymbolKind.VPulse or SymbolKind.VPwl or SymbolKind.VExp or SymbolKind.VSffm or SymbolKind.VExpr =>
+            "The waveform is the voltage at + relative to −.",
+
+        SymbolKind.VSwitch =>
+            "p and n are the switched pair and interchangeable; the control voltage is ctrl+ relative to ctrl−, and swapping "
+          + "that pair inverts the switch.",
+
+        SymbolKind.IPulse or SymbolKind.IPwl or SymbolKind.IExp or SymbolKind.ISffm or SymbolKind.IExpr or SymbolKind.Idc =>
+            "A positive value is delivered INTO the + terminal and drawn out of the −, as the arrow on the + lead shows.",
+
         SymbolKind.P1Tone or SymbolKind.PnTone or SymbolKind.ModSource =>
             "+ is the RF output and − the reference, normally ground — Term's own convention, since "
           + "this is a source with Term's internal resistance in front of it. The source's internal "
@@ -1392,6 +1431,18 @@ public static class ComponentTypeRegistry
         SymbolKind.Vdc           => "Vdc",
         SymbolKind.ToneSource    => "V_1Tone",
         SymbolKind.CurrentToneSource => "I_1Tone",
+        SymbolKind.VPulse        => "V_Pulse",
+        SymbolKind.VPwl          => "V_PWL",
+        SymbolKind.VExp          => "V_Exp",
+        SymbolKind.VSffm         => "V_SFFM",
+        SymbolKind.VExpr         => "V_Expr",
+        SymbolKind.IPulse        => "I_Pulse",
+        SymbolKind.IPwl          => "I_PWL",
+        SymbolKind.IExp          => "I_Exp",
+        SymbolKind.ISffm         => "I_SFFM",
+        SymbolKind.IExpr         => "I_Expr",
+        SymbolKind.Idc           => "Idc",
+        SymbolKind.VSwitch       => VSwitchModel.TypeName,
         SymbolKind.Vccs          => "VCCS",
         SymbolKind.Vcvs          => "VCVS",
         SymbolKind.OpAmp         => "OpAmp",
@@ -1546,7 +1597,8 @@ public static class ComponentTypeRegistry
     public static bool IsFilePathParameter(SymbolKind kind, string parameterName)
         => (kind is SymbolKind.VerilogA or SymbolKind.WBond && parameterName.Equals("File", StringComparison.Ordinal))
         || (kind is SymbolKind.PhasedArray && parameterName.Equals("Record", StringComparison.Ordinal))
-        || (kind is SymbolKind.PropagationChannel && parameterName is "File" or "Profile");
+        || (kind is SymbolKind.VPwl or SymbolKind.IPwl && parameterName.Equals("File", StringComparison.Ordinal))
+        || (kind is SymbolKind.PropagationChannel && parameterName is "File" or "Terrain" or "Codebook");
 
     /// <summary>A newly placed wBond's operating temperature, °C: <see cref="CircuitRF.WBond.WireMaterials.DefaultOperatingTempC"/>,
     /// the one default wire temperature, so the Inspector and the wBond editor cannot disagree.</summary>
@@ -1748,6 +1800,7 @@ public static class ComponentTypeRegistry
          : TlineParameterDescription(kind, parameterName) is { Length: > 0 } tlDesc ? tlDesc
          : DeviceNoiseParameterDescription(kind, parameterName) is { Length: > 0 } nzDesc ? nzDesc
          : PhaseNoiseParameterDescription(kind, parameterName) is { Length: > 0 } pnDesc ? pnDesc
+         : WaveformParameterDescription(kind, parameterName) is { Length: > 0 } wfDesc ? wfDesc
          : kind is SymbolKind.ComposedFET ? ComposedFetParameterDescription(parameterName)
          : kind is SymbolKind.Deembed ? DeembedParameterDescription(parameterName)
          : kind is SymbolKind.PropagationChannel ? ChannelParameterDescription(parameterName)
@@ -1782,6 +1835,15 @@ public static class ComponentTypeRegistry
         (SymbolKind.Vccs or SymbolKind.Vcvs, "T") =>
             "Delay applied to the gain, as a time: the transfer becomes gain x e^(-jwT), a phase that "
           + "grows in proportion to frequency. 0 is no delay, and DC is unaffected.",
+        (SymbolKind.VSwitch, "Ron") => "The resistance between p and n when the switch is on.",
+        (SymbolKind.VSwitch, "Roff") => "The resistance between p and n when the switch is off.",
+        (SymbolKind.VSwitch, "Von") => "The control voltage at and beyond which the switch is fully on.",
+        (SymbolKind.VSwitch, "Voff") => "The control voltage at and beyond which the switch is fully off. Between the two the "
+                                        + "conductance moves smoothly; Von below Voff is inverse logic.",
+        (SymbolKind.VSwitch, "Hyst") => "Hysteresis, volts, in a transient analysis only: off, the switch turns on Hyst/2 past Von; "
+                                        + "on, it turns off Hyst/2 past Voff. Every other analysis ignores it, with a note.",
+        (SymbolKind.VSwitch, "TransitionPoints") => "How many accepted transient steps a full crossing of the transition takes at "
+                                                    + "least (default 8). The step is limited across it; nothing is landed on.",
         _ => "",
     };
 
@@ -2834,7 +2896,21 @@ public static class ComponentTypeRegistry
     public static IReadOnlyList<string>? ChannelWordOptions(string name)
     {
         if (name == "PathLoss") return [.. RfCore.Propagation.PropagationModels.All.Select(m => m.Name)];
-        if (name == "Multipath") return ["none", "file"];
+        if (name == "Multipath") return ["none", "tdl", "cdl", "file", "rays", "scenario"];
+        // brief-pch-10 — what a drop draws
+        if (name == "Shadowing") return ["on", "off"];
+        if (name == "States") return ["off", "p681"];
+        if (name == "StateEnvironment") return RfCore.Propagation.ItuP681.Words;
+        // brief-pch-8 — polarizations and the ray list's frame
+        if (name is "TxPol" or "RxPol") return ["theta", "phi", "rhcp", "lhcp"];
+        if (name == "RayFrame") return ["global", "ends"];
+        // brief-pch-9 — the beam
+        if (name == "BeamSelect") return ["auto", "rank", "index", "manual"];
+        if (name == "BeamSearch") return ["exhaustive", "alternating"];
+        // brief-pch-7 — the fading words and the tapped delay lines (Profile is a TDL's name; a terrain profile is Terrain=)
+        if (name == "Fading") return RfCore.Propagation.TapFading.FadingWords;
+        if (name == "Doppler") return RfCore.Propagation.TapFading.DopplerWords;
+        if (name == "Profile") return [.. RfCore.Propagation.TdlProfiles.All.Select(p => p.Name), .. RfCore.Propagation.CdlProfiles.All.Select(p => p.Name)];
         if (name == "DopplerComp") return ["none", "common"];
         var words = RfCore.Propagation.PropagationModels.All.SelectMany(m => m.Parameters).Concat(RfCore.Propagation.AddedLosses.Parameters)
                           .Where(p => p.Name == name && p.Kind == RfCore.Propagation.ParameterKind.Word && p.Words is not null)
@@ -2846,15 +2922,70 @@ public static class ComponentTypeRegistry
     /// brief-pch-6 R-pch6-11 — the group a channel parameter is shown under (design note §5.5): Geometry, Large scale, Small scale,
     /// Ends or Realization. A parameter the channel does not own is the large-scale model's. Null for any other component.
     /// </summary>
-    public static string? ParameterGroup(SymbolKind kind, string name) => kind is not SymbolKind.PropagationChannel ? null : name switch
+    public static string? ParameterGroup(SymbolKind kind, string name) => IsWaveformSource(kind) ? WaveformParameterGroup(name)
+        : kind is not SymbolKind.PropagationChannel ? null : name switch
     {
         "Distance" or "TxHeight" or "RxHeight" or "TxPos" or "RxPos" or "TxVel" or "RxVel"
             or "TxAz" or "TxEl" or "TxRoll" or "RxAz" or "RxEl" or "RxRoll" => "Geometry",
-        "Multipath" or "File" => "Small scale",
-        "TxGain" or "RxGain" or "TxPattern" or "RxPattern" or "TxZ" or "RxZ" or "RxTant" => "Ends",
-        "TimeOffset" or "DopplerComp" or "Reverse" => "Realization",
+        "Multipath" or "File" or "Profile" or "DelaySpread" or "Fading" or "KFactor" or "NakagamiM" or "Doppler" or "Velocity" or "fD"
+            or "Sinusoids" or "ASD" or "ASA" or "ZSD" or "ZSA" or "Xpr" or "RayFrame" => "Small scale",
+        "TxGain" or "RxGain" or "TxPattern" or "RxPattern" or "TxZ" or "RxZ" or "RxTant" or "Tx" or "Rx" or "TxPol" or "RxPol" => "Ends",
+        "TimeOffset" or "DopplerComp" or "Reverse" or "Seed" or "Drop" => "Realization",
+        "States" or "StateEnvironment" => "Small scale",
+        "BeamSelect" or "BeamRank" or "TxBeam" or "RxBeam" or "Codebook" or "BeamSearch" or "ScanLimit" => "Beam",
         _ => "Large scale",
     };
+
+    /// <summary>brief-trn-2 — the ten waveform sources (V_Pulse … I_Expr).</summary>
+    public static bool IsWaveformSource(SymbolKind kind) => kind is SymbolKind.VPulse or SymbolKind.VPwl or SymbolKind.VExp
+        or SymbolKind.VSffm or SymbolKind.VExpr or SymbolKind.IPulse or SymbolKind.IPwl or SymbolKind.IExp or SymbolKind.ISffm or SymbolKind.IExpr;
+
+    /// <summary>brief-trn-2 R-trn2-4 — a waveform source's groups: Levels, Timing, Waveform, Steady state.</summary>
+    private static string WaveformParameterGroup(string name) => name switch
+    {
+        "V1" or "V2" or "I1" or "I2" or "Offset" or "Amplitude" => "Levels",
+        "Delay" or "Rise" or "Fall" or "Width" or "Period" or "Delay1" or "Tau1" or "Delay2" or "Tau2" => "Timing",
+        "Carrier" or "ModIndex" or "Signal" => "Modulation",
+        "Points" or "File" or "Repeat" or "Expr" => "Waveform",
+        "Dc" => "Steady state",
+        _ => "Waveform",
+    };
+
+    /// <summary>brief-trn-2 — what each waveform-source key means (docs/design/transient.md §6.1).</summary>
+    private static string WaveformParameterDescription(SymbolKind kind, string name)
+    {
+        if (!IsWaveformSource(kind) && kind is not SymbolKind.Idc) return "";
+        bool v = kind is SymbolKind.VPulse or SymbolKind.VPwl or SymbolKind.VExp or SymbolKind.VSffm or SymbolKind.VExpr;
+        string unit = v ? "V" : "A";
+        return name switch
+        {
+            "V1" or "I1" => kind is SymbolKind.VExp or SymbolKind.IExp ? $"The level before Delay1, {unit}." : $"The level before Delay and between pulses, {unit}.",
+            "V2" or "I2" => kind is SymbolKind.VExp or SymbolKind.IExp ? $"The level the first exponential approaches, {unit}." : $"The pulse level, {unit}.",
+            "Delay" => "When the first pulse starts to rise, seconds.",
+            "Rise" => "The rise from the first level to the pulse level, seconds; 0 is a step.",
+            "Fall" => "The fall back to the first level, seconds; 0 is a step.",
+            "Width" => "How long the pulse level is held, seconds. Blank: held for the rest of the run.",
+            "Period" => "The repetition period, seconds. Blank: one pulse.",
+            "Delay1" => "When the rise towards the second level begins, seconds.",
+            "Tau1" => "The time constant of the rise, seconds.",
+            "Delay2" => "When the return towards the first level begins, seconds. Blank: never.",
+            "Tau2" => "The time constant of the return, seconds. Blank: Tau1.",
+            "Offset" => $"The level the modulated sine is centred on, {unit}.",
+            "Amplitude" => $"The peak of the modulated sine, {unit}.",
+            "Carrier" => "The carrier frequency, Hz.",
+            "ModIndex" => "The modulation index: the peak phase deviation, radians.",
+            "Signal" => "The modulating frequency, Hz.",
+            "Points" => $"Time-value pairs, \"0 0, 1n 1, 2n 1, 3n 0\": seconds and {unit}, times increasing, straight lines between. Before the "
+                      + "first time the first value holds; after the last, the last. Points or File, not both.",
+            "File" => "A file of two columns, time (s) and value, separated by a comma or whitespace; # starts a comment; times increasing. "
+                    + "Points or File, not both.",
+            "Repeat" => "yes repeats the points with a period of the last time minus the first.",
+            "Expr" => "An expression in time (the simulated time, s) and the globals: \"1 - exp(-time/1u)\".",
+            "Dc" => $"The value in every analysis but transient, {unit}. Blank: the waveform at t = 0.",
+            "Idc" => "The DC current, A, delivered into +. Constant in every analysis; an open at every frequency but DC.",
+            _ => "",
+        };
+    }
 
     private static string ChannelParameterDescription(string name)
     {
@@ -2871,10 +3002,43 @@ public static class ComponentTypeRegistry
             "TxRoll" or "RxRoll" => "Roll of the end's pattern about its boresight, degrees.",
             "PathLoss" => "The large-scale model, by its recommendation or report (free, logdist, multislope, tworay, 38901, P1238, P1411, P526, "
                         + "satellite, P1812). Its parameters, and the added losses, are written beside it by the model's own names.",
-            "Multipath" => "none: the rays the geometry gives (the line of sight, and tworay's ground ray). file: the rays of a ray list (File=), "
-                         + "held static.",
-            "File" => "Multipath=file: the ray list, a CSV of delay (ns), power (dB) and optionally phase (deg) and doppler (Hz), one ray a row; "
-                    + "delay is in excess of the line of sight, power relative to the large-scale loss.",
+            "Multipath" => "none: the rays the geometry gives (the line of sight, and tworay's ground ray). tdl: a tapped delay line by Profile=. "
+                         + "cdl: a clustered delay line by Profile= (rays with directions and polarization). file: the taps of a power-delay profile "
+                         + "(File=). rays: a ray list with departure and arrival directions (File=). scenario: a TR 38.901 drop for the "
+                         + "38901 model's scenario (its spreads, clusters and rays drawn per drop).",
+            "File" => "Multipath=file: a CSV of delay (ns), power (dB) and optionally phase (deg), doppler (Hz), k (dB) and spectrum, one tap a row; "
+                    + "or delay, re, im (a sampled impulse response). Delay is in excess of the line of sight; the powers are normalized to sum to 1.",
+            "Profile" => "Multipath=tdl: the tapped delay line, TR 38.901 TDL-A to TDL-E, TS 36.104 EPA/EVA/ETU, ITU-R M.1225 PedA/PedB/VehA/VehB "
+                       + "or TR 38.811 NTN-TDL-A to D.",
+            "DelaySpread" => "The RMS delay spread a tapped delay line is scaled to, seconds. Required for the normalized profiles (TDL, NTN-TDL); "
+                           + "EPA..VehB are used as printed unless it is stated.",
+            "Fading" => "rayleigh, rician or nakagami: how each tap's gain fades. Blank: a profile's own (Rayleigh, a line-of-sight tap Rician), "
+                      + "and static for none or a plain file.",
+            "KFactor" => "Rician K, dB: the line-of-sight to diffuse power. On TDL-D/E and NTN-TDL-C/D it rescales the profile (TR 38.901 §7.7.6).",
+            "NakagamiM" => "Nakagami m (0.5 or more) of every tap when Fading=nakagami; 1 is Rayleigh.",
+            "Doppler" => "Each tap's Doppler spectrum: classical, flat, gaussian or los (one line at fD).",
+            "Velocity" => "Speed, m/s, setting the maximum Doppler fD = Velocity·f/c. Blank: the ends' relative speed (TxVel, RxVel).",
+            "fD" => "Maximum Doppler, Hz, in place of Velocity.",
+            "Sinusoids" => "Sinusoids summed per fading tap. Blank is the default the statistics gates were met with.",
+            "Terrain" => "A terrain profile CSV for a model that reads one (P526, P1812): distance and height columns with units.",
+            "Tx" or "Rx" => "A Phased Antenna Array's instance name: that end is the array's own elements (their patterns, positions and orientation "
+                          + "from Az/El/Roll) and has no pin. Blank: the end is a pin.",
+            "TxPol" or "RxPol" => "A gain end's polarization in its own frame: theta, phi, rhcp, lhcp or an angle in degrees. Blank: matched to the "
+                                + "other end along the line of sight.",
+            "ASD" or "ASA" or "ZSD" or "ZSA" => "Multipath=cdl: the RMS departure/arrival azimuth or zenith spread the clusters are scaled to, "
+                                              + "degrees. Blank keeps the profile's.",
+            "Xpr" => "Multipath=rays: the cross-polar ratio, dB, of a ray the file gives no matrix or xpr for.",
+            "RayFrame" => "Multipath=rays: global (angles in the global frame) or ends (departure in the transmit end's frame, arrival in the receive end's).",
+            "Faraday" => "A Faraday rotation of every ray's field, degrees. Blank: P.531's on a satellite path with Ionosphere=on, when an end has a "
+                       + "polarization.",
+            "Seed" => "The seed of the fading draws.",
+            "Drop" => "Which realization: sweep it (Drop=drop with a parametric sweep over drop) for a Monte Carlo. Drop N alone equals drop N in a sweep. "
+                    + "A drop draws the shadowing, the line-of-sight state (Los=auto), the rain (Rain=drawn) and the fading.",
+            "Shadowing" => "on: each drop draws the large-scale model's shadowing from its σ. off: held at 0.",
+            "States" => "p681: ITU-R P.681's land mobile-satellite states (GOOD and BAD, each with its Loo statistics and event lengths) on a "
+                      + "satellite path, the terminal moving at Velocity. off: none.",
+            "StateEnvironment" => "States=p681: the environment whose parameter set is used (urban, suburban, village, ruralwooded, residential, "
+                                + "rural, highway, railway).",
             "TxGain" => "Transmit antenna gain, dBi, the same in every direction. TxPattern replaces it with a pattern.",
             "RxGain" => "Receive antenna gain, dBi, the same in every direction. RxPattern replaces it with a pattern.",
             "TxPattern" or "RxPattern" => "One port of an EM result's far field, written path#port (port from 1): the end's realized gain toward "
@@ -2888,6 +3052,17 @@ public static class ComponentTypeRegistry
                            + "leaving only the spread.",
             "Reverse" => "Another channel's instance name: this one becomes its realization transposed, the reverse link of the same path.",
             "f0" => "The frequency the large-scale model and the patterns are evaluated at, Hz. Blank is the run's carrier.",
+            "BeamSelect" => "The beam a Phased Antenna Array end steers to: auto (the strongest pair of beams through this channel), rank (the "
+                          + "BeamRank-th strongest distinct pair), index (TxBeam, RxBeam) or manual (the arrays' own weights). Blank is auto when an "
+                          + "end's Phase is a steer(), otherwise manual. Applied for the run only; the schematic keeps its own steer().",
+            "BeamRank" => "BeamSelect=rank: which distinct pair, 1 the strongest. A pair within one beamwidth of a stronger one at both ends is the "
+                        + "same path and is not counted.",
+            "TxBeam" or "RxBeam" => "BeamSelect=index: the end's beam, a codebook entry (a number from 1) or a direction (θ, φ) in degrees.",
+            "Codebook" => "A CSV of steering directions, theta and phi in degrees (a third column tx, rx or both picks the end). Blank: a grid "
+                        + "one beamwidth apart within ScanLimit, each through the array's own steer() and PhaseBits.",
+            "BeamSearch" => "exhaustive scores every pair of beams; alternating fixes one end and picks the other's best, then the reverse. Blank: "
+                          + "exhaustive up to a million pairs, alternating past it.",
+            "ScanLimit" => "How far from boresight the default codebook reaches, degrees.",
             _ => "",
         };
         if (own.Length > 0) return own;
@@ -3031,6 +3206,39 @@ public static class ComponentTypeRegistry
                                                 new("Phase", "0", "deg", false, UnitDimension.Angle),
                                                 new("Idc",   "0", "mA",  false, UnitDimension.Current),
                                                 .. PhaseNoiseRows];
+            // brief-trn-2 — the waveform sources: each type's own keys (docs/design/transient.md §6.1), levels and timing shown.
+            // Dc is not seeded: unset, every analysis but transient uses the waveform at t = 0.
+            case SymbolKind.VPulse:     return [new("V1", "0", "V", true, UnitDimension.Voltage), new("V2", "1", "V", true, UnitDimension.Voltage),
+                                                new("Delay", "0", "ns", false, UnitDimension.Time), new("Rise", "1", "ns", true, UnitDimension.Time),
+                                                new("Fall", "1", "ns", true, UnitDimension.Time), new("Width", "10", "ns", true, UnitDimension.Time),
+                                                new("Period", "25", "ns", true, UnitDimension.Time)];
+            case SymbolKind.IPulse:     return [new("I1", "0", "mA", true, UnitDimension.Current), new("I2", "1", "mA", true, UnitDimension.Current),
+                                                new("Delay", "0", "ns", false, UnitDimension.Time), new("Rise", "1", "ns", true, UnitDimension.Time),
+                                                new("Fall", "1", "ns", true, UnitDimension.Time), new("Width", "10", "ns", true, UnitDimension.Time),
+                                                new("Period", "25", "ns", true, UnitDimension.Time)];
+            case SymbolKind.VPwl:
+            case SymbolKind.IPwl:       return [new("Points", "\"0 0, 1n 1, 5n 1, 6n 0\"", "", true, UnitDimension.None),
+                                                new("Repeat", "no", "", false, UnitDimension.None)];
+            case SymbolKind.VExp:       return [new("V1", "0", "V", true, UnitDimension.Voltage), new("V2", "1", "V", true, UnitDimension.Voltage),
+                                                new("Delay1", "0", "ns", false, UnitDimension.Time), new("Tau1", "1", "ns", true, UnitDimension.Time),
+                                                new("Delay2", "10", "ns", true, UnitDimension.Time), new("Tau2", "1", "ns", true, UnitDimension.Time)];
+            case SymbolKind.IExp:       return [new("I1", "0", "mA", true, UnitDimension.Current), new("I2", "1", "mA", true, UnitDimension.Current),
+                                                new("Delay1", "0", "ns", false, UnitDimension.Time), new("Tau1", "1", "ns", true, UnitDimension.Time),
+                                                new("Delay2", "10", "ns", true, UnitDimension.Time), new("Tau2", "1", "ns", true, UnitDimension.Time)];
+            case SymbolKind.VSffm:      return [new("Offset", "0", "V", false, UnitDimension.Voltage), new("Amplitude", "1", "V", true, UnitDimension.Voltage),
+                                                new("Carrier", "100", "MHz", true, UnitDimension.Frequency), new("ModIndex", "1", "", true, UnitDimension.None),
+                                                new("Signal", "1", "MHz", true, UnitDimension.Frequency)];
+            case SymbolKind.ISffm:      return [new("Offset", "0", "mA", false, UnitDimension.Current), new("Amplitude", "1", "mA", true, UnitDimension.Current),
+                                                new("Carrier", "100", "MHz", true, UnitDimension.Frequency), new("ModIndex", "1", "", true, UnitDimension.None),
+                                                new("Signal", "1", "MHz", true, UnitDimension.Frequency)];
+            case SymbolKind.VExpr:      return [new("Expr", "\"sin(2*pi*1e6*time)\"", "", true, UnitDimension.None)];
+            case SymbolKind.IExpr:      return [new("Expr", "\"1e-3*sin(2*pi*1e6*time)\"", "", true, UnitDimension.None)];
+            case SymbolKind.Idc:        return [new("Idc", "1", "mA", true, UnitDimension.Current)];
+            // brief-trn-3 — the switch's four; Hyst and TransitionPoints are added by hand when wanted.
+            case SymbolKind.VSwitch:    return [new("Ron", "1", "Ω", true, UnitDimension.Resistance),
+                                                new("Roff", "1", "GΩ", true, UnitDimension.Resistance),
+                                                new("Von", "1", "V", true, UnitDimension.Voltage),
+                                                new("Voff", "0", "V", true, UnitDimension.Voltage)];
             // VCCS: one parameter, the transconductance. I = G·(V(ctrl+) − V(ctrl−)).
             // T (issue 55) is the delay, e^(−jωT) on the gain; 0 is no delay, and the row is hidden
             // until it is set.
@@ -3269,6 +3477,9 @@ public static class ComponentTypeRegistry
                         new("RxHeight",   "1.5", "metre", false, UnitDimension.Length),
                         new("PathLoss",   "free", "",     true,  UnitDimension.None),
                         new("Multipath",  "none", "",     false, UnitDimension.None),
+                        // brief-pch-8 — an end on a Phased Antenna Array: blank is a pin; shown when set, since it changes the pins
+                        new("Tx",         "",    "",      true,  UnitDimension.None),
+                        new("Rx",         "",    "",      true,  UnitDimension.None),
                         new("TxGain",     "0",   "",      false, UnitDimension.None),
                         new("RxGain",     "0",   "",      false, UnitDimension.None),
                         new("TxZ",        "50",  "Ω",     false, UnitDimension.Resistance),
@@ -4673,6 +4884,7 @@ public static class ComponentTypeRegistry
             case "VDC":    kind = SymbolKind.Vdc;           return true;
             case "VTONE":  kind = SymbolKind.ToneSource;    return true;
             case "ITONE":  kind = SymbolKind.CurrentToneSource; return true;
+            case "IDC":    kind = SymbolKind.Idc;           return true;
             case "VCCS":
             case "G":      kind = SymbolKind.Vccs;          return true;
             case "MIXER":
@@ -4786,8 +4998,7 @@ public static class ComponentTypeRegistry
             case "TPD":      kind = SymbolKind.Mtpd;         return true;
             case "MCLC":
             case "CLC":      kind = SymbolKind.Mclc;         return true;
-            case "MIDC":
-            case "IDC":      kind = SymbolKind.Midc;         return true;
+            case "MIDC":     kind = SymbolKind.Midc;         return true;   // "IDC" is the DC current source (Idc)
             case "MCBL":
             case "CBL":      kind = SymbolKind.Mcbl;         return true;
             case "MCRC":
@@ -5128,6 +5339,8 @@ public static class ComponentTypeRegistry
     private static readonly string[] TestPadFeedOptions = [TestPadPCell.ViaFeed, "N", "E", "S", "W"];
     private static readonly string[] TestPadCentreOptions = [TestPadPCell.CentreOpen, TestPadPCell.CentrePort];
 
+    /// <summary>brief-trn-2 — a PWL source's Repeat.</summary>
+    private static readonly string[] PwlRepeatOptions = ["no", "yes"];
     /// <summary>A ring's corners (MWPD, MRRC, MGPD, MBPD): the names the plans parse.</summary>
     private static readonly string[] PlanCornerOptions =
         [nameof(PlanCorner.Curve), nameof(PlanCorner.Miter), nameof(PlanCorner.Square)];
@@ -5168,6 +5381,7 @@ public static class ComponentTypeRegistry
         (SymbolKind.PhasedArray, "Coupling")                      => PhasedArrayCouplingOptions,
         (SymbolKind.Switch or SymbolKind.SwitchD, "OffState")     => SwitchOffStateOptions,
         (SymbolKind.OscProbe, "Mode")                             => OscProbeModeOptions,
+        (SymbolKind.VPwl or SymbolKind.IPwl, "Repeat")            => PwlRepeatOptions,
         // The switch position (owner, 2026-09-13). A closed set of numerals rather than a free-text
         // box: a State naming a throw that does not exist closes nothing SILENTLY, by the model's own
         // rule, so a typo'd "3" is an open switch with nothing said anywhere. An expression — the

@@ -353,6 +353,11 @@ public static class ParametricSweepEngine
         var pointControl = control?.Child();
         Exception? pending = null;
         using var slots = new SemaphoreSlim(concurrent);
+        // brief-pch-10 R-pch10-4 — a transmit side solved once per distinct key, its recording replayed into every other drop's receive side
+        bool reuse = settings?.ChannelDropReuse ?? true;
+        var cache = new Dictionary<string, ReuseEntry>(StringComparer.Ordinal);
+        int reused = 0;
+        string? noReuse = null;
         try
         {
             for (int si = 0; si < n; si++)
@@ -372,18 +377,52 @@ public static class ParametricSweepEngine
 
                 Envelope.EnvelopeRunner.Prepared? prepared = null;
                 ElaboratedNetlist netlist;
+                Envelope.EnvelopeDropReuse.Partition? part = null;
+                ReuseEntry? from = null, entry = null;
                 try
                 {
                     netlist = nets[si] = new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
                     try
                     {
                         var plan = Envelope.EnvelopeRunner.Resolve(env, netlist.ResolvedGlobals).ForPoint(drive);
-                        bool first = true;
-                        prepared = Envelope.EnvelopeRunner.Prepare(plan, () =>
+                        string? key = null;
+                        if (reuse && !plan.EvmSplit)
                         {
-                            if (first) { first = false; return netlist; }
-                            return new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
-                        }, segmentBudget, m => netlist.AddWarningOnce("env-note:" + at + m, at + m), settings);
+                            part = Envelope.EnvelopeDropReuse.Plan(netlist, out string why);
+                            if (part is null) noReuse ??= why;
+                            else
+                            {
+                                PreselectBeams(netlist);
+                                key = Envelope.EnvelopeDropReuse.Key(netlist, part, plan.Params);
+                                cache.TryGetValue(key, out from);
+                                // a recording drop that failed (its own receive side refused or did not converge) records
+                                // nothing: this drop solves jointly and records afresh, rather than every later drop failing
+                                if (from is { Done.Task.IsFaulted: true }) { cache.Remove(key); from = null; }
+                                // a drop whose channel delay outlasts the recording's warm-up cannot take its segmentation
+                                if (from is not null && !Envelope.EnvelopeRunner.WarmCovers(from.Prepared, netlist)) from = null;
+                            }
+                        }
+                        bool first = true;
+                        var partNow = part;
+                        ElaboratedNetlist Next()
+                        {
+                            var nl = first ? netlist : new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
+                            first = false;
+                            return nl;
+                        }
+                        if (from is not null)
+                            prepared = Envelope.EnvelopeRunner.PrepareLike(from.Prepared, plan, () =>
+                            {
+                                var nl = Next();
+                                Envelope.EnvelopeDropReuse.Prune(nl, partNow!);
+                                return nl;
+                            });
+                        else
+                        {
+                            prepared = Envelope.EnvelopeRunner.Prepare(plan, Next, segmentBudget, m => netlist.AddWarningOnce("env-note:" + at + m, at + m), settings);
+                            if (key is not null && !(prepared.Fundamentals == 2 && Envelope.EnvelopeDropReuse.Weights(netlist, part!).Length > 0))
+                                cache[key] = entry = new ReuseEntry(prepared, Envelope.EnvelopeDropReuse.Weights(netlist, part!));
+                        }
                     }
                     catch (Exception ex) when (!IsCancellation(ex))
                     {
@@ -404,12 +443,28 @@ public static class ParametricSweepEngine
                     continue;
                 }
                 int i = si;
+                if (from is not null) reused++;
+                var partRun = part;
                 running.Add(Task.Run(() =>
                 {
                     try
                     {
-                        points[i] = Envelope.EnvelopeRunner.Execute(prepared, settings, pointControl,
-                            m => netlist.AddWarningOnce("env-note:" + at + m, at + m));
+                        Envelope.EnvelopeDropReuse.DropRun? drop = null;
+                        if (from is not null)
+                        {
+                            // the drop whose key this is ran (or runs) the transmit side: wait for its recording
+                            var (joint, recordings) = from.Done.Task.GetAwaiter().GetResult();
+                            // only the channels the transmit side drives replay: a relay's second hop is receive side, solved live
+                            drop = new() { Drives = Envelope.EnvelopeDropReuse.Driven(recordings, partRun!), Merge = r => Envelope.EnvelopeDropReuse.Merge(joint, r, partRun!) };
+                        }
+                        else if (entry is not null) drop = new() { Record = true };
+                        try
+                        {
+                            points[i] = Envelope.EnvelopeRunner.Execute(prepared, settings, pointControl,
+                                m => netlist.AddWarningOnce("env-note:" + at + m, at + m), drop);
+                            if (entry is not null) entry.Done.TrySetResult((drop!.Merged!, drop.Recorded!));
+                        }
+                        catch (Exception ex) { entry?.Done.TrySetException(ex); throw; }
                     }
                     catch (Exception ex) when (!IsCancellation(ex))
                     {
@@ -443,6 +498,22 @@ public static class ParametricSweepEngine
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(pending).Throw();
         }
 
+        // brief-pch-10 R-pch10-4 — the counters, in a note and for a test to read
+        if (cache.Count > 0)
+        {
+            int beams = cache.Values.Select(e => e.Weights).Where(w => w.Length > 0).Distinct().Count();
+            Envelope.EnvelopeDropReuse.LastCounters = (cache.Count, reused, beams);
+            diagnosticsInto?.AddNoteOnce("envelope-drop-reuse:" + env.Name,
+                $"envelope '{env.Name}' over {n} drop(s): the transmit side was solved {cache.Count} time(s)" +
+                (beams > 0 ? $" ({beams} distinct beam(s))" : "") + $"; {reused} drop(s) replayed its recorded waves into the receive side alone (exact: the channel is one way).");
+        }
+        else
+        {
+            Envelope.EnvelopeDropReuse.LastCounters = (0, 0, 0);
+            if (reuse && noReuse is not null && noReuse != "no Propagation Channel")
+                diagnosticsInto?.AddNoteOnce("envelope-drop-noreuse:" + env.Name, $"envelope '{env.Name}': every point solved both sides of its channels: {noReuse}.");
+        }
+
         for (int i = 0; i < n; i++)
         {
             if (nets[i] is { } nl) diagnosticsInto?.MergeDiagnosticsFrom(nl);
@@ -456,6 +527,27 @@ public static class ParametricSweepEngine
         }
     }
 
+    /// <summary>brief-pch-10 — one transmit side solved: its run's segmentation and, once it has run, its record and recordings.</summary>
+    private sealed class ReuseEntry(Envelope.EnvelopeRunner.Prepared prepared, string weights)
+    {
+        public Envelope.EnvelopeRunner.Prepared Prepared { get; } = prepared;
+        public string Weights { get; } = weights;
+        public TaskCompletionSource<(Envelope.EnvelopeRunResult Joint, IReadOnlyDictionary<string, Envelope.ChannelRecording>?[] Recordings)> Done { get; }
+            = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    /// <summary>brief-pch-10 — the drop's beams taken into its arrays before the reuse key reads their weights, as the envelope engine
+    /// takes them (BeamSelection is cached, so the run's own selection finds the same choice).</summary>
+    private static void PreselectBeams(ElaboratedNetlist nl)
+    {
+        if (!nl.Components.Any(c => c.Model is Core.Devices.PropagationChannelModel { HasInstanceEnd: true })) return;
+        var src = nl.Components.Select(c => c.Model).OfType<Core.Devices.ModSourceModel>().FirstOrDefault();
+        if (src is null) return;
+        double bw = nl.Components.Select(c => c.Model).OfType<Core.Devices.ModSourceModel>().SelectMany(m => m.Signal.Carriers)
+                      .Select(c => c.Spec.BandwidthHz).DefaultIfEmpty(0).Max();
+        AntennaArray.BeamSelection.Apply(nl, src.FcHz, bw, setCarrier: true);
+    }
+
     /// <summary>How many envelope sweep points the last sweep on this thread ran at once. Test-facing: the claim is
     /// that points run side by side, which a timing cannot hold steadily and a count can.</summary>
     [ThreadStatic] internal static int LastEnvelopeConcurrency;
@@ -467,6 +559,31 @@ public static class ParametricSweepEngine
     private static bool IsCancellation(Exception ex)
         => ex is OperationCanceledException
            || ex is AggregateException a && a.Flatten().InnerExceptions.Any(e => e is OperationCanceledException);
+
+    /// <summary>brief-hb-control-loop-cold-start R-hbcl-3 — the note a sweep with an unconverged HB point carries, once.</summary>
+    public const string UnconvergedHbPointKey = "sweep-hb-unconverged-nan";
+
+    /// <summary>
+    /// brief-hb-control-loop-cold-start R-hbcl-3 — an HB point that did not converge, as a sweep stacks it: <c>Converged</c> (0),
+    /// <c>Residual</c>, the tone frequencies, the mixing order, the transient seed's own cubes and metadata as the run wrote them;
+    /// every other cube NaN at its shape. The loadpull engine leaves a failed step's spectra out and its readers pick converged steps
+    /// by its <c>Converged</c> cube; an HB sweep's measurements read the spectra directly, so here the spectra themselves say it.
+    /// </summary>
+    internal static DataSet UnconvergedHbPoint(DataSet point)
+    {
+        var ds = new DataSet();
+        foreach (string group in point.Groups)
+            foreach (var (name, c) in point.CubesIn(group))
+            {
+                bool keep = name.StartsWith("__", StringComparison.Ordinal) || name is "Converged" or "Residual" or "ToneFreqs" or "MetaMixOrder"
+                            || name.StartsWith("Seed.", StringComparison.Ordinal);
+                int n = c.BufferLength;
+                ds.AddToGroup(group, name, keep ? c : c.DataKind == DataKind.Complex
+                    ? new DataCube([.. c.Axes], Enumerable.Repeat(new Complex(double.NaN, double.NaN), n).ToArray()) { Unit = c.Unit }
+                    : new DataCube([.. c.Axes], Enumerable.Repeat(double.NaN, n).ToArray()) { Unit = c.Unit });
+            }
+        return ds;
+    }
 
     /// <summary>A failed point's stand-in: every cube of a finished point at the same shape, all NaN; metadata kept.</summary>
     private static DataSet NaNLike(DataSet template)
@@ -664,6 +781,13 @@ public static class ParametricSweepEngine
                 // point resets the chain — design §11.1's rule, kept for every tone count: with the
                 // line search in, non-convergence is rare, and the reset is the belt to its braces.
                 hbConvergedSeed = rr.Converged ? rr.InterfaceV : null;
+                if (!rr.Converged)
+                {
+                    netlist.AddNoteOnce(UnconvergedHbPointKey,
+                        "HB: a sweep point that did not converge is reported with Converged 0 and its residual, and its voltages, " +
+                        "currents and every measurement read from them are NaN there: the last iterate is not a solution.");
+                    return UnconvergedHbPoint(rr.DataSet);
+                }
                 return rr.DataSet;
             }
 
@@ -672,6 +796,20 @@ public static class ParametricSweepEngine
             {
                 var op = OscEngine.Resolve(osa, netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
                 return OscEngine.Run(netlist, tb, op, settings, lib, baseDirectory).Data;
+            }
+
+            // brief-trn-1: the transient run at this point. The output grid is the directive's, so every point stacks; a swept
+            // Stop or Step changes the grid's length and is refused by the stacking as any shape change is.
+            //
+            // SaveSteps=yes: the accepted steps are the adaptive stepper's own, a different count at every point, so they cannot
+            // stack — kept, they failed the whole sweep after its last point. Dropped here, with a note.
+            case TransientAnalysis tra:
+            {
+                var ds = Transient.TransientRunner.Run(Transient.TransientRunner.Resolve(tra, netlist.ResolvedGlobals), netlist, settings, control);
+                if (ds.RemoveFromGroup(DataSet.DefaultGroup, "Steps.time") | ds.RemoveFromGroup(DataSet.DefaultGroup, "Steps.V"))
+                    netlist.AddNoteOnce("tran-sweep-steps:" + tra.Name,
+                        $"transient '{tra.Name}': SaveSteps keeps no accepted steps under a parametric sweep — each point takes a different number of them; the output grid is swept as usual.");
+                return ds;
             }
 
             case SParameterAnalysis spa:

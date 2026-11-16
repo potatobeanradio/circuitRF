@@ -63,12 +63,9 @@ internal static class EnvelopeMemory
         var mna = ex.NewSmallSignalMna();
         double dlt = 2 * Math.PI;
         baseband.Holding = true;
-        var a1 = EnvelopeEngine.Stamp(ex, mna, dlt);
-        var a2 = EnvelopeEngine.Stamp(ex, mna, 2 * dlt);
+        var (G, C) = AffineStamp.Baseband(ex, mna, dlt);
         baseband.Holding = false;
-        var C = EnvelopeEngine.Combine(a2, a1, 1.0 / new Complex(0, dlt), -1.0 / new Complex(0, dlt));
         if (C.Values is null || C.Values.All(v => v == Complex.Zero)) return null;   // nothing stores energy
-        var G = EnvelopeEngine.Combine(a1, C, 1.0, -new Complex(0, dlt));
 
         double sigma = 1e-3 / stopS;
         SparseLU lu;

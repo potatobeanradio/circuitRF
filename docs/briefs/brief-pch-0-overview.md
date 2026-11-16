@@ -56,6 +56,7 @@ free-space link in closed form. Five things stop that from being a link:
 | `brief-pch-6-component-pin-ends.md` | The `PropagationChannel` component with pin ends, deterministic: large-scale loss, static multipath, Doppler shift, the one-way coupling in every analysis, `check`/`explain`, symbol, editor | 1 |
 | `brief-pch-7-fading-and-tdl.md` | The fading generator; Rayleigh, Rician, Nakagami; Doppler spectra; TDL profiles and user power-delay profiles | 6 |
 | `brief-pch-8-arrays-and-cdl.md` | Instance ends (`Tx=PA1 Rx=PA2`), ray unknowns, CDL profiles, user ray lists, polarization, per-ray Doppler, interference, the far-field check | 7 |
+| `brief-pch-8b-receive-collapse-and-shares.md` | The receive collapse for fast-path arrays, each channel's power and SINR at the feed, EM Field Data blocks as ends | 8 |
 | `brief-pch-9-beam-selection.md` | Codebooks, the strongest pair by default, `rank`/`index`/`manual`, the beam table and bound, the Phased Array tool's rays and Beams list | 8 |
 | `brief-pch-10-drops-and-statistics.md` | Drops, reuse across drops, statistics functions, 3GPP TR 38.901 scenario drops, ITU-R P.681 satellite states | 7 (8, 9 for arrays) |
 | `brief-pch-11-link-bench.md` | The Chain Budget's Link bench: margins by Monte Carlo, the signal demodulated at the median and outage drops | 3, 4, 7, 10 |

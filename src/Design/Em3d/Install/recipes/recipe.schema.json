@@ -59,13 +59,14 @@
   "properties": {
     "$schema": { "type": "string" },
     "comment": { "type": "string" },
-    "id": { "type": "string", "pattern": "^(palace|gmsh|openems|emerge)-[0-9][0-9A-Za-z.\\-]*-(macos|linux|windows)-(arm64|x64)$" },
-    "tool": { "enum": ["palace", "gmsh", "openems", "emerge"] },
+    "id": { "type": "string", "pattern": "^(palace|gmsh|openems|emerge|ngspice)-[0-9][0-9A-Za-z.\\-]*-(macos|linux|windows)-(arm64|x64)$" },
+    "tool": { "enum": ["palace", "gmsh", "openems", "emerge", "ngspice"] },
     "version": { "type": "string", "minLength": 1 },
     "platform": { "enum": ["macos", "linux", "windows"] },
     "architecture": { "enum": ["arm64", "x64"] },
     "layout": { "enum": ["relocatable", "in-place"] },
     "layoutNote": { "type": "string", "minLength": 1 },
+    "emulated": { "type": "boolean", "description": "brief TRN-7: the program is another architecture's build, which this platform runs under its own emulation (ngspice's x64 archive on Windows arm64)." },
     "needsSpaceFreePath": { "type": "boolean" },
     "sources": {
       "type": "array",

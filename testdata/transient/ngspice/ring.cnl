@@ -1,0 +1,18 @@
+; brief TRN-7 R-trn7-9 — a five-stage ring of MOS level-1 inverters, started from zero with one node held, against ngspice
+Vdc:VDD vdd 0 Vdc=3
+MOS1_N:MN1 n2 n1 0 0 Vto=0.7 Kp=1e-4 W=2e-6 L=1e-6 Lambda=0.02
+MOS1_P:MP1 n2 n1 vdd vdd Vto=-0.7 Kp=4e-5 W=5e-6 L=1e-6 Lambda=0.02
+C:C1 n2 0 C=20 fF
+MOS1_N:MN2 n3 n2 0 0 Vto=0.7 Kp=1e-4 W=2e-6 L=1e-6 Lambda=0.02
+MOS1_P:MP2 n3 n2 vdd vdd Vto=-0.7 Kp=4e-5 W=5e-6 L=1e-6 Lambda=0.02
+C:C2 n3 0 C=20 fF
+MOS1_N:MN3 n4 n3 0 0 Vto=0.7 Kp=1e-4 W=2e-6 L=1e-6 Lambda=0.02
+MOS1_P:MP3 n4 n3 vdd vdd Vto=-0.7 Kp=4e-5 W=5e-6 L=1e-6 Lambda=0.02
+C:C3 n4 0 C=20 fF
+MOS1_N:MN4 n5 n4 0 0 Vto=0.7 Kp=1e-4 W=2e-6 L=1e-6 Lambda=0.02
+MOS1_P:MP4 n5 n4 vdd vdd Vto=-0.7 Kp=4e-5 W=5e-6 L=1e-6 Lambda=0.02
+C:C4 n5 0 C=20 fF
+MOS1_N:MN5 n1 n5 0 0 Vto=0.7 Kp=1e-4 W=2e-6 L=1e-6 Lambda=0.02
+MOS1_P:MP5 n1 n5 vdd vdd Vto=-0.7 Kp=4e-5 W=5e-6 L=1e-6 Lambda=0.02
+C:C5 n1 0 C=20 fF
+analysis TR1 type=tran Stop=5n Step=5p InitialState=zero IC="n1=3"

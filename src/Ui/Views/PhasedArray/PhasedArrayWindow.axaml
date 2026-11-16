@@ -134,6 +134,63 @@
                 </Grid>
             </TabItem>
 
+            <!-- brief-pch-9 R-pch9-7 — when the array is an end of a Propagation Channel: the drop's rays and the codebook's beams on the (u,v)
+                 map, the ranked distinct pairs beside it. A click on a pair or a ray selects it on the channel (BeamSelect=index); Apply writes the
+                 direction into the steer() and sets BeamSelect=manual. Each is one undo step. The drop slider changes nothing in the schematic. -->
+            <TabItem Header="Channel" x:Name="ChannelTab" IsVisible="{Binding HasChannel}">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8,6">
+                        <TextBlock Classes="lbl" Text="Drop"/>
+                        <Slider Value="{Binding DropValue}" Minimum="1" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" Width="220"
+                                VerticalAlignment="Center" ToolTip.Tip="Another realization of the channel, shown here only: the channel's own Drop is not written"/>
+                        <TextBlock Text="{Binding DropValue, StringFormat='{}{0:0}'}" FontSize="12" Width="36" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                        <Button Classes="glyph" Command="{Binding ApplyBeamCommand}" Margin="12,0,0,0"
+                                ToolTip.Tip="Apply to array: write the selected beam's direction into each steered array's steer() and set BeamSelect=manual on the channel (one undo step)">
+                            <mi:MaterialIcon Kind="Check"/>
+                        </Button>
+                        <!-- the scoring runs off the UI thread; its bar holds its place and only fades, so nothing in the row moves -->
+                        <ProgressBar Width="180" Height="6" Minimum="0" Maximum="1" Value="{Binding ChannelProgress}" Margin="16,0,0,0"
+                                     VerticalAlignment="Center" Opacity="{Binding ScoringChannel, Converter={x:Static pav:BusyOpacity.Instance}}"
+                                     ToolTip.Tip="Scoring the beams through the channel"/>
+                    </StackPanel>
+                    <!-- the status keeps two lines whatever it says, so nothing below it moves -->
+                    <TextBlock DockPanel.Dock="Bottom" Text="{Binding ChannelStatus}" FontSize="12" Height="34" TextWrapping="Wrap" Margin="8,2,8,4"/>
+                    <Grid ColumnDefinitions="*,380">
+                        <Border Classes="pane">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Classes="panelhdr" Text="Rays and beams in (u, v)" Margin="0,0,0,6"/>
+                                <pav:UvMapCanvas x:Name="ChannelMap"/>
+                            </DockPanel>
+                        </Border>
+                        <Border Classes="pane" Grid.Column="1">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Classes="panelhdr" Text="Beams" Margin="0,0,0,6"/>
+                                <ScrollViewer>
+                                    <ItemsControl ItemsSource="{Binding BeamRows}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:BeamRow">
+                                                <Button Click="OnBeamRowClick" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                                        Background="Transparent" BorderThickness="0" Padding="4,2,16,2"
+                                                        ToolTip.Tip="Select this pair on the channel (BeamSelect=index, one undo step)">
+                                                    <Grid ColumnDefinitions="26,*,66">
+                                                        <TextBlock Text="{Binding RankText}" FontSize="12"
+                                                                   FontWeight="{Binding Chosen, Converter={x:Static pav:ChosenWeight.Instance}}"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                                   FontWeight="{Binding Chosen, Converter={x:Static pav:ChosenWeight.Instance}}"/>
+                                                        <TextBlock Grid.Column="2" Text="{Binding Metric}" FontSize="12" HorizontalAlignment="Right"
+                                                                   FontWeight="{Binding Chosen, Converter={x:Static pav:ChosenWeight.Instance}}"/>
+                                                    </Grid>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
+                </DockPanel>
+            </TabItem>
+
             <TabItem Header="Scan maps" x:Name="ScanTab">
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8,6">

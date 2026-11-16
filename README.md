@@ -29,6 +29,7 @@ circuitRF is for RF practitioners or researchers who can't justify the cost of t
 
 ## Features
 - schematic + circuit simulation (DC, S-param, HB, Loadpull, Envelope)
+- transient analysis, natively or on [ngspice](https://ngspice.sourceforge.io/), and harmonic balance started from a transient run
 - noise analysis (noise figure, noise circles, phase noise)
 - 2D layout editor (imports and exports Gerber, GDSII, OASIS, DXF, .kicad_pcb)
 - 3D geometry editor (imports / exports Step)
@@ -353,7 +354,7 @@ var dataset          = SParameterEngine.Run(netlist, freqsHz);   // → a DataSe
 
 ## What circuitRF doesn't do yet
 
-- **Transient analysis** — circuitRF is frequency-domain by design; there is no time-domain solver.
+- **Transient noise, and digital or mixed-signal elements** — a transient analysis runs analog circuits only, without noise.
 
 If you want to contribute to any of the above, please contact me.
 

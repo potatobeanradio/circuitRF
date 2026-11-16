@@ -85,6 +85,39 @@ public sealed class SddModel : ComponentModel
     /// <summary>Instance name (for error messages).</summary>
     public string Name => _name;
 
+    // brief-trn-2 — `time`'s parameter slot in every compiled equation (−1 when no equation reads it), and the refusal a
+    // steady-state evaluation gets when an equation reads it outside a condition.
+    private readonly int _timeParam = -1;
+    private readonly string? _timeError;
+    private double? _time;
+
+    /// <summary>Whether any equation reads <c>time</c> (brief TRN-2).</summary>
+    public bool UsesTime => _timeParam >= 0;
+
+    /// <summary>
+    /// The simulated time a transient run evaluates the equations at; null — every other analysis — is steady state, where a
+    /// <c>time</c> inside a comparison reads +infinity (<see cref="TimeVariable"/>) and one outside a comparison is refused.
+    /// </summary>
+    public double? Time
+    {
+        get => _time;
+        set
+        {
+            _time = value;
+            if (_timeParam < 0) return;
+            double tv = value ?? TimeVariable.SteadyState;
+            foreach (var c in _compiledCurrent) c?.SetParameter(_timeParam, tv);
+            foreach (var c in _compiledCharge) c?.SetParameter(_timeParam, tv);
+            foreach (var c in _compiledVoltage) c?.SetParameter(_timeParam, tv);
+            foreach (var list in _compiledHigher) foreach (var (_, c) in list) c.SetParameter(_timeParam, tv);
+        }
+    }
+
+    private void GuardTime()
+    {
+        if (_time is null && _timeError is not null) throw new TimeOutsideConditionException($"SDD '{_name}'");
+    }
+
     /// <summary>
     /// Raw control-current references from .cnl parsing.
     /// (N, RefInstance, Port): N is the 1-based _cn index; Port=0 means Cport absent.
@@ -141,6 +174,22 @@ public sealed class SddModel : ComponentModel
         // seed array (ControlRefs[i].N at seed index i), which is what a compiled slot i must agree
         // with at evaluation time.
         var controlNs = ControlRefs.Select(r => r.N).ToArray();
+
+        // brief-trn-2 R-trn2-7 — `time` in an equation is one more parameter slot, set by a transient run (Time) and
+        // +infinity otherwise: the steady-state reading TimeVariable gives a `time` inside a comparison. An equation that
+        // reads it anywhere else has no steady-state value, and a steady-state evaluation is refused with that sentence.
+        var allAsts = _currentAst.Concat(_chargeAst).Concat(_voltageAst).Where(a => a is not null).Select(a => a!)
+            .Concat(_higherAst.SelectMany(h => h.Select(x => x.Ast))).ToList();
+        IReadOnlyDictionary<string, double> compileParams = _params;
+        if (!_params.ContainsKey(TimeVariable.Name) && allAsts.Any(TimeVariable.Mentions))
+        {
+            var withTime = new Dictionary<string, double>(_params, StringComparer.Ordinal) { [TimeVariable.Name] = TimeVariable.SteadyState };
+            int idx = 0;
+            foreach (var kv in withTime) { if (kv.Key == TimeVariable.Name) { _timeParam = idx; break; } idx++; }
+            compileParams = withTime;
+            _timeError = allAsts.Select(a => TimeVariable.SteadyStateError(a, $"SDD '{_name}'")).FirstOrDefault(e => e is not null);
+        }
+
         _compiledCurrent = new CompiledSddExpr?[_portCount];
         _compiledCharge  = new CompiledSddExpr?[_portCount];
         _compiledVoltage = new CompiledSddExpr?[_portCount];
@@ -148,18 +197,18 @@ public sealed class SddModel : ComponentModel
         var branchPorts  = new List<int>();
         for (int p = 0; p < _portCount; p++)
         {
-            if (_currentAst[p] is { } ca) _compiledCurrent[p] = CompiledSddExpr.Compile(ca, _params, _portCount, controlNs, _name);
-            if (_chargeAst[p]  is { } qa) _compiledCharge[p]  = CompiledSddExpr.Compile(qa, _params, _portCount, controlNs, _name);
+            if (_currentAst[p] is { } ca) _compiledCurrent[p] = CompiledSddExpr.Compile(ca, compileParams, _portCount, controlNs, _name);
+            if (_chargeAst[p]  is { } qa) _compiledCharge[p]  = CompiledSddExpr.Compile(qa, compileParams, _portCount, controlNs, _name);
             if (_voltageAst[p] is { } va)
             {
-                _compiledVoltage[p] = CompiledSddExpr.Compile(va, _params, _portCount, controlNs, _name);
+                _compiledVoltage[p] = CompiledSddExpr.Compile(va, compileParams, _portCount, controlNs, _name);
                 branchPorts.Add(p);
             }
 
             var higher = _higherAst[p];
             var compiled = new (int, CompiledSddExpr)[higher.Count];
             for (int j = 0; j < higher.Count; j++)
-                compiled[j] = (higher[j].W, CompiledSddExpr.Compile(higher[j].Ast, _params, _portCount, controlNs, _name));
+                compiled[j] = (higher[j].W, CompiledSddExpr.Compile(higher[j].Ast, compileParams, _portCount, controlNs, _name));
             _compiledHigher[p] = compiled;
         }
 
@@ -306,6 +355,7 @@ public sealed class SddModel : ComponentModel
     /// </summary>
     public override NonlinearResult Evaluate(in PortVoltages v, in ControlCurrents c)
     {
+        GuardTime();
         NonlinearEvalDiagnostics.CountScalar();
         int n  = _portCount;
         int nC = c.Count;
@@ -552,6 +602,7 @@ public sealed class SddModel : ComponentModel
         ReadOnlySpan<double> portVoltages, ReadOnlySpan<double> controlCurrents,
         int sampleCount, GridResult into)
     {
+        GuardTime();
         if (!_supportsGrid)
         {
             base.EvaluateGrid(portVoltages, controlCurrents, sampleCount, into);

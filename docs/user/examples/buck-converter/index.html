@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Buck Converter</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Buck Converter/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Buck Converter</p>
+  </div>
+
+  <h1>Buck Converter</h1>
+  <p class="lede">A 12 V to 5.5 V buck at 1 MHz with a voltage-controlled switch, a diode and an LC filter: start-up from rest, ripple and settling, and initial conditions (IC=) that start the run in steady state.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Buck Converter (transient)</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A 12 V to 5.5 V buck converter switching at 1 MHz, simulated in time: the start-up from rest, the output ripple and
+how long the output takes to settle, and how initial conditions skip the start-up when only the steady state is
+wanted.</p>
+<p><strong>Run <code>Startup</code> first.</strong> <code>SteadyState</code>'s initial conditions are numbers read from its result.</p>
+<h2 id="the-circuit">The circuit</h2>
+<p><code>VIN</code> (12 V) feeds the voltage-controlled switch <code>S1</code>, whose control is <code>VG</code>, a 5 V gate drive at <code>Fsw</code> = 1 MHz with
+duty <code>Duty</code> = 0.5 (both are variables on the <code>VAR</code> block). <code>S1</code> is 0.1 Ω on and 1 MΩ off, turning on above 3 V of
+control and off below 2 V, with a smooth transition between. When it opens, the inductor current carries on through
+the free-wheeling diode <code>D1</code>. <code>L1</code> (10 µH) and <code>C1</code> (1 µF) filter the switched node into a 5 Ω load. The IProbe <code>IL</code>
+records the inductor current.</p>
+<p>The load <code>RL</code> is a Term of 5 Ω. Outside S-parameters a Term is a load of its <code>Z</code>, so here it is a 5 Ω resistor.</p>
+<h2 id="startup">Startup</h2>
+<p><code>InitialState=zero</code>: every voltage and current starts at 0, the supply included, so the run begins with the supply
+switched on. 200 µs is about ten periods of the LC filter's 50 kHz resonance, which a 5 Ω load damps to a Q of 1.6.</p>
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Result</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Vout</code></td>
+<td>5.518 V</td>
+<td><code>V(out)</code> averaged over the last switching cycle</td>
+</tr>
+<tr>
+<td><code>Ripple</code></td>
+<td>39.9 mV</td>
+<td>Peak to peak over the last switching cycle</td>
+</tr>
+<tr>
+<td><code>Overshoot_pct</code></td>
+<td>34.4 %</td>
+<td>How far the output rises past 5.5 V on the way up</td>
+</tr>
+<tr>
+<td><code>Tsettle</code></td>
+<td>34.9 µs</td>
+<td>When the output stays within 2 % of its final value</td>
+</tr>
+<tr>
+<td><code>IL_valley</code></td>
+<td>0.947 A</td>
+<td>The inductor current at its lowest in the last cycle</td>
+</tr>
+</tbody>
+</table>
+<p>The output is below <code>Duty</code> × 12 V = 6 V by the diode's drop during the off half of each cycle and the switch's
+resistance.</p>
+<h2 id="steadystate">SteadyState</h2>
+<p>The same circuit, started where <code>Startup</code> ends. A switching cycle begins when <code>S1</code> turns on, which is when the
+inductor current is at its valley, so the run takes two initial conditions from <code>Startup</code>:</p>
+<ul>
+<li><code>IC=&quot;out=5.518&quot;</code> on the analysis card holds the output at 5.518 V while the operating point is solved and releases
+it at t = 0. It is <code>V(out)</code> at the start of a cycle late in <code>Startup</code>.</li>
+<li><code>IC=0.947</code> on <code>L1</code> starts the inductor at 0.947 A, the <code>IL_valley</code> above.</li>
+</ul>
+<p>The output is steady from the first cycle, so 10 µs replaces 200 µs:</p>
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Startup (last cycle of 200 µs)</th>
+<th>SteadyState (last cycle of 10 µs)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Vout</code></td>
+<td>5.5175 V</td>
+<td>5.5172 V</td>
+</tr>
+<tr>
+<td><code>Ripple</code></td>
+<td>39.85 mV</td>
+<td>39.95 mV</td>
+</tr>
+<tr>
+<td><code>IL_valley</code></td>
+<td>0.9470 A</td>
+<td>0.9471 A</td>
+</tr>
+</tbody>
+</table>
+<p>Without the inductor's <code>IC</code> the output still starts at 5.518 V, but the inductor starts empty and the filter rings
+again: the output swings 1.95 V over the first 10 µs and the last cycle reads 5.19 V. Both stored energies have to
+be right.</p>
+<h2 id="things-to-try">Things to try</h2>
+<ul>
+<li>Change <code>Duty</code> to 0.4 and run <code>Startup</code>: the output settles at 4.26 V with 38 mV of ripple, and <code>IL_valley</code> is
+0.70 A. <code>SteadyState</code>'s <code>IC</code> values then need reading again.</li>
+<li><code>circuitrf tran &quot;Buck Converter/Startup/schematic/Startup.csch&quot;</code> runs the same bench headlessly and prints the
+measures.</li>
+</ul>
+<h2 id="settings-traded-for-run-time">Settings traded for run time</h2>
+<p>None. <code>Step=10n</code> is the output grid, 100 points per switching cycle, and the largest step. Inside it the engine lands a
+step on every corner of <code>VG</code> and takes at least eight steps across each turn-on and turn-off of <code>S1</code> (its
+<code>TransitionPoints</code>), so the edges are resolved whatever the grid.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

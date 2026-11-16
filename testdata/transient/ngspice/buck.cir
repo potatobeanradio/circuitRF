@@ -1,0 +1,33 @@
+* circuitRF transient deck: bench buck, analysis TR1
+* written by circuitRF 1.8.4
+* names (deck = circuitRF):
+*   net vin = vin
+*   net gate = gate
+*   net sw = sw
+*   net out = out
+*   instance VIN_2 = VIN
+*   instance VG = VG
+*   instance B_S1 = S1
+*   instance D1 = D1
+*   instance L1 = L1
+*   instance C1 = C1
+*   instance RL = RL
+
+.temp 26.85
+.options TNOM=26.85 RELTOL=0.001 VNTOL=1E-06 ABSTOL=1E-12 METHOD=TRAP
+VIN_2 vin 0 DC 12 ; VIN
+VG gate 0 DC 0 PULSE(0 5 0 1E-08 1E-08 4.900000000000001E-07 1E-06) ; VG
+B_S1 vin sw I=V(vin,sw)*pow(2.718281828459045,(-13.815510557964274)+(16.11809565095832)*(3*min(max((V(gate,0)-(2))/(1),0),1)*min(max((V(gate,0)-(2))/(1),0),1)-2*min(max((V(gate,0)-(2))/(1),0),1)*min(max((V(gate,0)-(2))/(1),0),1)*min(max((V(gate,0)-(2))/(1),0),1))) ; S1
+.model m_D1 D(TNOM=26.85 EG=1.16) ; D1 (model)
+D1 0 sw m_D1 temp=26.85 ; D1
+L1 sw out 9.999999999999999E-06 ; L1
+C1 out 0 1E-06 ; C1
+RL out 0 5 ; RL
+.tran 1E-08 1.9999999999999998E-05 0 1E-08 uic
+.save v(vin) v(gate) v(sw) v(out)
+.control
+run
+linearize
+write buck.raw
+.endc
+.end

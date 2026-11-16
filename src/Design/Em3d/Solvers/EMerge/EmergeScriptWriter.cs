@@ -146,6 +146,35 @@ public static partial class EmergeScriptWriter
         foreach (var (key, kind) in EmergeLoweringRules.FaceKinds(problem)) e.Key(key).Str(FaceWord(kind));
         e.EndObject().EndObject();
 
+        // brief-hzn-16 — a periodic cell: its x and y pairs and its scan; written only on one, so every other problem.json is the
+        // bytes it was
+        if (box.Faces.XMin == Em3dBoundaryKind.Periodic || box.Faces.YMin == Em3dBoundaryKind.Periodic)
+        {
+            var scan = box.Scan ?? new Em3dScan(0, 0);
+            e.Key("periodic").BeginObject().Key("x").Bool(box.Faces.XMin == Em3dBoundaryKind.Periodic)
+             .Key("y").Bool(box.Faces.YMin == Em3dBoundaryKind.Periodic)
+             .Key("thetaDeg").Number(scan.ThetaDeg).Key("phiDeg").Number(scan.PhiDeg).EndObject();
+        }
+        var floquetGroups = problem.Ports.Where(p => p.Floquet is not null).GroupBy(p => p.FaceGroup ?? p.Number)
+                                   .Select(g => g.OrderBy(p => p.Number).ToList()).ToList();
+        if (floquetGroups.Count > 0)
+        {
+            // brief-hzn-16 — each Floquet port: its whole face, its modes' circuitRF numbers in mode order and its medium
+            e.Key("floquetPorts").BeginArray();
+            foreach (var g in floquetGroups)
+            {
+                var p = g[0];
+                var r = EmergeLoweringRules.Region(p.Min, p.Max);
+                e.BeginObject().Key("number").Int(p.Number).Key("name").Str(p.FaceGroupLabel ?? p.Name)
+                 .Key("face").Str(problem.FaceOf(p.Min, p.Max)!)
+                 .Key("origin").Point(r.Origin).Key("u").Point(r.U).Key("v").Point(r.V)
+                 .Key("er").Number(p.Floquet!.Er).Key("modes").BeginArray();
+                foreach (var m in g) e.Int(m.Number);
+                e.EndArray().EndObject();
+            }
+            e.EndArray();
+        }
+
         // brief-em3d-139 R-em3d139-3 — written only on a thin conductor, so every other run's problem.json is the bytes it was.
         var thinFaces = Em3dThinMetalLoss.CorrectedFaces(problem);
         e.Key("solids").BeginArray();
@@ -162,13 +191,18 @@ public static partial class EmergeScriptWriter
 
         e.Key("sheets").BeginArray();
         foreach (var sh in problem.Sheets)
+        {
             e.BeginObject().Key("name").Str(sh.Name).Key("material").Int(materials.Of(sh.Material, conductor: true))
-             .Key("thicknessM").Number(sh.ThicknessM)
+             .Key("thicknessM").Number(sh.ThicknessM);
+            // brief-hzn-18 R-hzn18-1 — written only when true, so every other problem (and its geometry hash) is unchanged
+            if (sh.OneSided) e.Key("oneSided").Bool(true);
+            e
              // brief-emi-11 — its +n (the local +z through World, the side Plot Field ▸ Top side names): the driver orients the
              // sheet's surface current and its triangles by it
              .Key("normal").Point(sh.Frame?.Normal ?? new Point3(0, 0, 1))
              .Key("rings").Rings(GmshGeoWriter.PlanarRings(new[] { sh.Outline }.Concat(sh.Holes)).Select(r => r.Select(sh.World)))
              .EndObject();
+        }
         e.EndArray();
 
         e.Key("ports").BeginArray();
@@ -192,8 +226,24 @@ public static partial class EmergeScriptWriter
             }
             var r = EmergeLoweringRules.PortRect(p)!.Value;
             e.BeginObject().Key("number").Int(p.Number).Key("name").Str(p.Name)
-             .Key("origin").Point(r.Origin).Key("u").Point(r.U).Key("v").Point(r.V)
-             .Key("widthM").Number(r.Width).Key("heightM").Number(r.Height)
+             .Key("origin").Point(r.Origin).Key("u").Point(r.U).Key("v").Point(r.V);
+            // brief-hzn-15 — a turned port's sheet is its four corners: a port drawn as its corners need not be an exact parallelogram,
+            // and origin + u + v would put its fourth corner off its copper (inside the board on the Ex2 antenna, which shorted it)
+            // (the fourth corner put on the plane of the other three: rounded to the DBU it stands up to a DBU off it, and the geometry
+            // kernel makes no plane surface of a ring that is not flat to its own tolerance)
+            if (p.Quad is { } quad)
+            {
+                var c = OnPlane(quad.C, quad.A, quad.B, quad.D);
+                var flat = quad with { C = c };
+                var (neg, pos) = flat.Ends(p.Direction);
+                e.Key("corners").BeginArray().Point(quad.A).Point(quad.B).Point(c).Point(quad.D).EndArray();
+                // the two ends the voltage runs between: the driver integrates across the sheet between them itself, since EMerge
+                // starts its own lines at the sheet's nodes of exactly the least projection on the direction, which on a turned sheet
+                // is one corner
+                e.Key("ends").BeginArray().BeginArray().Point(neg.Item1).Point(neg.Item2).EndArray()
+                                          .BeginArray().Point(pos.Item1).Point(pos.Item2).EndArray().EndArray();
+            }
+            e.Key("widthM").Number(r.Width).Key("heightM").Number(r.Height)
              .Key("direction").Point(p.Direction).Key("z0").Number(p.Z0.Real)
              .EndObject();
         }
@@ -205,7 +255,7 @@ public static partial class EmergeScriptWriter
         // are shared, and `terminals` lists each terminal's number, name and path in terminal order, the driver's modes 1…N.
         // A one-terminal wave port is written exactly as EMW-2 writes it.
         e.Key("wavePorts").BeginArray();
-        foreach (var p in problem.Ports.Where(p => p.Kind == Em3dPortKind.Wave))
+        foreach (var p in problem.Ports.Where(p => p.Kind == Em3dPortKind.Wave && p.Floquet is null))
         {
             var group = p.FaceGroup is { } g ? problem.Ports.Where(q => q.FaceGroup == g).OrderBy(q => q.Number).ToList() : null;
             if (group is not null && group[0] != p) continue;
@@ -223,7 +273,21 @@ public static partial class EmergeScriptWriter
             // to its mode keeps EMerge's S as it is
             if (p.Hollow) e.Key("hollow").Bool(true);
             if (p.ModeNormalised) e.Key("modeNormalised").Bool(true);
-            if (group is not null)
+            if (group is not null && p.HollowMode is not null)
+            {
+                // brief-hzn-20 R-hzn20-1 — a hollow guide of several modes: one wave port of that many modes, each mode's number,
+                // name and polarity line in mode order (the driver signs each by its own line and checks it is the mode named)
+                e.Key("hollowModes").BeginArray();
+                foreach (var m in group)
+                {
+                    var mp = m.VoltagePath!.Value;
+                    e.BeginObject().Key("number").Int(m.Number).Key("name").Str(m.HollowMode!.Name)
+                     .Key("path").BeginObject().Key("from").Point(mp.From).Key("to").Point(mp.To).EndObject()
+                     .EndObject();
+                }
+                e.EndArray();
+            }
+            else if (group is not null)
             {
                 // A face of one material: its modes are solved once, before the sweep, around this effective index
                 // (R-emw3-4: 0.9 of the material's own, off the TEM eigenvalue EMerge's own shift sits on).
@@ -440,6 +504,19 @@ public static partial class EmergeScriptWriter
     {
         Em3dBoundaryKind.Pmc       => "pmc",
         Em3dBoundaryKind.Absorbing => "absorbing",
+        Em3dBoundaryKind.Periodic  => "periodic",
         _                          => "pec",
     };
+
+    /// <summary>brief-hzn-15 — <paramref name="q"/> moved onto the plane through <paramref name="a"/>, <paramref name="b"/> and
+    /// <paramref name="d"/>, along its normal.</summary>
+    private static Point3 OnPlane(Point3 q, Point3 a, Point3 b, Point3 d)
+    {
+        double ux = b.X - a.X, uy = b.Y - a.Y, uz = b.Z - a.Z, vx = d.X - a.X, vy = d.Y - a.Y, vz = d.Z - a.Z;
+        double nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        double nn = nx * nx + ny * ny + nz * nz;
+        if (!(nn > 0)) return q;
+        double t = ((q.X - a.X) * nx + (q.Y - a.Y) * ny + (q.Z - a.Z) * nz) / nn;
+        return new Point3(q.X - t * nx, q.Y - t * ny, q.Z - t * nz);
+    }
 }

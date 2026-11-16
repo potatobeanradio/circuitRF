@@ -32,12 +32,13 @@ public sealed partial class Evaluator
     {
         "max_over", "min_over", "mean_over", "std_over", "median_over", "pctl_over", "skew_over", "kurt_over",
         "yield_over", "cpk", "sigma_to", "histogram", "cdf", "normq", "yield_sens", "unwrap", "deriv",
-        "value_at",
+        "value_at", "outage_over",
     };
 
     /// <summary>Whether <paramref name="expression"/> calls one of <see cref="AxisFunctions"/> — a name followed by
     /// <c>(</c>, not part of a longer identifier.</summary>
-    public static bool CallsAxisFunction(string expression) => CallsAny(expression, AxisFunctions.Contains);
+    public static bool CallsAxisFunction(string expression)
+        => CallsAny(expression, n => AxisFunctions.Contains(n) || TimeDomainFunctions.Contains(n));
 
     /// <summary>Whether <paramref name="expression"/> calls a network metric, a noise function or a circle function
     /// (Evaluator.Network.cs, Evaluator.Circles.cs): each reads a whole S cube and the analysis it came from, so a trace
@@ -93,7 +94,7 @@ public sealed partial class Evaluator
     /// <summary>
     /// <c>value_at(x, v [, "axis"])</c>: x at the point whose axis value is <c>v</c>, read straight off the grid when
     /// <c>v</c> is a grid point and interpolated linearly between the two either side of it when it is not. The axis
-    /// defaults to <c>freq</c>, then a rank-1 cube's only axis. Every other axis is kept, so a swept run gives one
+    /// defaults to <c>freq</c>, then <c>time</c> (a transient's waveform), then a rank-1 cube's only axis. Every other axis is kept, so a swept run gives one
     /// value per sweep point; real and complex values alike (a complex one is interpolated as a complex number).
     /// </summary>
     /// <remarks>
@@ -123,6 +124,7 @@ public sealed partial class Evaluator
             axisName = a.Kind == ValueKind.String ? a.AsString() : a.ToString()!;
         }
         else if (cube.Axes.Any(a => a.Name == "freq")) axisName = "freq";
+        else if (cube.Axes.Any(a => a.Name == TimeAxisName)) axisName = TimeAxisName;   // a transient's waveform (brief TRN-5)
         else if (cube.Rank == 1)                       axisName = cube.Axes[0].Name;
         else throw new ExpressionException(ValueAtDiagnostics.NoFreqAxis(axes));
         if (!cube.Axes.Any(a => a.Name == axisName))
@@ -193,6 +195,31 @@ public sealed partial class Evaluator
         if (!(p >= 0 && p <= 100))
             throw new ExpressionException("pctl_over(): the percentile must be a number from 0 to 100, e.g. pctl_over(x, 95).");
         return ReduceAlong(cube, axis, lo, hi, "pctl_over", cube.Unit, xs => SampleStatistics.Percentile(xs, p));
+    }
+
+    /// <summary>
+    /// <c>outage_over(x, threshold [, lo, hi] [, "axis"])</c> — the fraction of the present values below <c>threshold</c> (brief PCH-10
+    /// R-pch10-5: the outage over a drop axis), with its exact (Clopper–Pearson) 95 % binomial interval as the companions <c>lo</c> and
+    /// <c>hi</c>. The axis rule is every reduction's; name a sweep over drops by its variable, e.g. <c>outage_over(p, -95, "drop")</c>.
+    /// </summary>
+    private Value EvalOutageOver(CallExpr cl, Scope scope)
+    {
+        var (cube, axis, lo, hi) = ReduceOperand(cl, scope, "outage_over", 1, out var fixedArgs);
+        if (fixedArgs[0].Kind != ValueKind.Real)
+            throw new ExpressionException("outage_over(): the threshold must be a number, e.g. outage_over(x, -95).");
+        double threshold = fixedArgs[0].AsReal();
+        (int Below, int N) Count(double[] xs)
+        {
+            int n = 0, below = 0;
+            foreach (double x in xs) { if (double.IsNaN(x)) continue; n++; if (x < threshold) below++; }
+            return (below, n);
+        }
+        var fraction = ReduceAlong(cube, axis, lo, hi, "outage_over", "", xs => { var (b, n) = Count(xs); return n == 0 ? double.NaN : (double)b / n; });
+        var low = ReduceAlong(cube, axis, lo, hi, "outage_over", "", xs => { var (b, n) = Count(xs); return RfCore.Statistics.BetaFunction.BinomialInterval(b, n).Low; });
+        var high = ReduceAlong(cube, axis, lo, hi, "outage_over", "", xs => { var (b, n) = Count(xs); return RfCore.Statistics.BetaFunction.BinomialInterval(b, n).High; });
+        static DataCube AsCube(Value v) => v.Kind == ValueKind.Cube ? v.AsCube() : DataCube.Scalar(v.AsReal());
+        _companions = new() { ["lo"] = AsCube(low), ["hi"] = AsCube(high) };
+        return fraction;
     }
 
     /// <summary><c>cpk(x, lo, hi [, "axis"])</c> — the process capability index; either limit may be written

@@ -128,6 +128,8 @@ namespace RfCore.Propagation
                     PropagationMath.Range(m, "the UT height", hUT, 1.5, 22.5, "m");
                     PropagationMath.Range(m, "the 2D distance", d2D, 10, 5_000, "m");
                     const double hE = 1.0;
+                    if (!(hBS > hE))
+                        throw new PropagationRefusal($"{m}: the BS height must exceed the effective environment height hE = 1 m; it is {PropagationMath.F(hBS)} m.");
                     double dBP = 4 * (hBS - hE) * (hUT - hE) * fHz / C;
                     double plLos;
                     if (d2D <= dBP)
@@ -203,6 +205,9 @@ namespace RfCore.Propagation
                     double k = -c.SizeM / Math.Log(1 - c.Density);
                     if (s is Scenario38901.InFSH or Scenario38901.InFDH)
                     {
+                        if (!(hBS > c.HeightM))
+                            throw new PropagationRefusal(
+                                $"{m}: the BS height ({PropagationMath.F(hBS)} m) must exceed the clutter height ({PropagationMath.F(c.HeightM)} m): this sub-scenario's BS is above the clutter.");
                         if (!(c.HeightM > hUT))
                             throw new PropagationRefusal(
                                 $"{m}: the clutter height ({PropagationMath.F(c.HeightM)} m) must exceed the UT height ({PropagationMath.F(hUT)} m): the UT is clutter-embedded in this sub-scenario.");

@@ -8,8 +8,16 @@ namespace CircuitRF.Design.Workspace;
 /// <param name="Title">What the menu calls it.</param>
 /// <param name="Summary">One sentence, for the menu's tooltip.</param>
 /// <param name="Directory">Where that folder actually is on this machine, resolved.</param>
-public sealed record ExampleWorkspace(string Folder, string Title, string Summary, string Directory)
+/// <param name="Group">The topic the menu files it under (the index's <c>Groups</c>); <see cref="ExampleWorkspaces.Ungrouped"/>
+/// for one the index puts in none.</param>
+/// <param name="MenuTitle">What it is called inside its topic's submenu, where the topic already says what a prefix such as
+/// "Thermal: " would; the <see cref="Title"/> when the index states none.</param>
+public sealed record ExampleWorkspace(string Folder, string Title, string Summary, string Directory,
+                                      string Group = ExampleWorkspaces.Ungrouped, string? MenuTitle = null)
 {
+    /// <summary>The submenu row's text.</summary>
+    public string MenuText => MenuTitle is { Length: > 0 } m ? m : Title;
+
     /// <summary>The workspace manifest inside it.</summary>
     public string CwsPath => Path.Combine(Directory, WorkspaceFileName);
 
@@ -49,6 +57,9 @@ public static class ExampleWorkspaces
     /// <summary>The index file inside it.</summary>
     public const string IndexFileName = "examples.json";
 
+    /// <summary>The topic of an example the index's <c>Groups</c> do not name: listed last, so it is never lost.</summary>
+    public const string Ungrouped = "Other";
+
     /// <summary>Where a macOS .app keeps the examples, beside <c>Contents/MacOS</c> (see <see cref="ResolveRoot"/>).</summary>
     public const string MacBundleResourcesFolder = "Resources";
 
@@ -83,7 +94,15 @@ public static class ExampleWorkspaces
         }
         if (index?.Examples is not { Count: > 0 } entries) return [];
 
-        var found = new List<ExampleWorkspace>(entries.Count);
+        // Each folder's topic, and the menu's order: the topics in the order the index lists them, each one's examples in
+        // its own order, then any example no topic names.
+        var groupOf = new Dictionary<string, (string Title, int Rank)>(StringComparer.OrdinalIgnoreCase);
+        int rank = 0;
+        foreach (var g in index.Groups ?? [])
+            foreach (string f in g.Examples ?? [])
+                if (g.Title is { Length: > 0 } title && !groupOf.ContainsKey(f)) groupOf[f] = (title, rank++);
+
+        var found = new List<(ExampleWorkspace Example, int Rank)>(entries.Count);
         foreach (var e in entries)
         {
             if (e.Folder is not { Length: > 0 } folder) continue;
@@ -95,14 +114,24 @@ public static class ExampleWorkspaces
             string dir = Path.Combine(root, folder);
             if (!File.Exists(Path.Combine(dir, ExampleWorkspace.WorkspaceFileName))) continue;
 
-            found.Add(new ExampleWorkspace(
+            var (group, at) = groupOf.TryGetValue(folder, out var g) ? g : (Ungrouped, int.MaxValue);
+            found.Add((new ExampleWorkspace(
                 folder,
                 e.Title   is { Length: > 0 } t ? t : folder,
                 e.Summary ?? "",
-                dir));
+                dir,
+                group,
+                e.MenuTitle is { Length: > 0 } mt ? mt : null), at));
         }
-        return found;
+        return [.. found.Select((x, i) => (x.Example, x.Rank, i)).OrderBy(x => x.Rank).ThenBy(x => x.i).Select(x => x.Example)];
     }
+
+    /// <summary>
+    /// <paramref name="all"/> as the File ▸ New ▸ Examples submenus show it: one topic each, in the order <see cref="All"/>
+    /// gives (the index's <c>Groups</c>, then <see cref="Ungrouped"/>).
+    /// </summary>
+    public static IReadOnlyList<(string Title, IReadOnlyList<ExampleWorkspace> Examples)> Grouped(IReadOnlyList<ExampleWorkspace> all)
+        => [.. all.GroupBy(e => e.Group).Select(g => (g.Key, (IReadOnlyList<ExampleWorkspace>)[.. g]))];
 
     /// <summary>
     /// The examples root, or null when there is none.
@@ -212,12 +241,21 @@ public static class ExampleWorkspaces
     {
         public int SchemaVersion { get; set; } = 1;
         public List<Entry>? Examples { get; set; }
+        /// <summary>Schema 2: the menu's topics, each with its examples' folders, in menu order.</summary>
+        public List<GroupEntry>? Groups { get; set; }
     }
 
     private sealed class Entry
     {
-        public string? Folder  { get; set; }
-        public string? Title   { get; set; }
-        public string? Summary { get; set; }
+        public string? Folder    { get; set; }
+        public string? Title     { get; set; }
+        public string? MenuTitle { get; set; }
+        public string? Summary   { get; set; }
+    }
+
+    private sealed class GroupEntry
+    {
+        public string? Title { get; set; }
+        public List<string>? Examples { get; set; }
     }
 }

@@ -433,9 +433,12 @@ public sealed class MicrostripKlopfModel : ComponentModel, IReportsWarnings
             var (z0, eeff) = KirschningJansen.Compute(
                 freqHz, sec.WidthMeters / k.HMeters, k.EpsR, k.HMeters, sec.Z0Static, sec.Eeff0, reporter);
 
-            double alphaNpPerM = MicrostripLoss.ConductorLossNpPerM(freqHz, k.SigmaSPerM, sec.WidthMeters, z0)
-                + MicrostripLoss.DielectricLossNpPerM(freqHz, k.EpsR, eeff, k.TanD);
-            double betaRadPerM = 2.0 * Math.PI * freqHz / MicrostripLoss.SpeedOfLight * Math.Sqrt(eeff);
+            double alphaC = MicrostripLoss.ConductorLossNpPerM(freqHz, k.SigmaSPerM, sec.WidthMeters, z0);
+            double alphaD = MicrostripLoss.DielectricLossNpPerM(freqHz, k.EpsR, eeff, k.TanD);
+            double alphaNpPerM = alphaC + alphaD;
+            // brief-trn-4b: the phase the losses come with (a √f conductor law has no DC floor)
+            double betaRadPerM = 2.0 * Math.PI * freqHz / MicrostripLoss.SpeedOfLight * Math.Sqrt(eeff)
+                + Planar.CausalLoss.Phase(freqHz, alphaC, 0, alphaD);
             var gammaLength = new Complex(alphaNpPerM * sec.ArcLengthMeters, betaRadPerM * sec.ArcLengthMeters);
 
             var section = MicrostripAbcd.UniformSection(new Complex(z0, 0.0), gammaLength);

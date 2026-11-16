@@ -449,6 +449,18 @@ co-simulation netlist places it. Several pins may share one reference where thei
 is refused: neither solver has a construction for it. A pin unticked under **Port** (`"Port": false`) is only the return
 of other pins' ports.
 
+<a id="cut-return"></a>**Return — where a 3D sheet lands.** In 3D a cut pin's sheet runs from its face to the first
+plane the return walk finds under (or over) it, as a drawn port's does when its **Return** is Automatic. On a thick die
+that is often the backside, hundreds of µm down, and the sheet's own inductance is then in the result. An entry's
+`"Return": "Metal1"` lands every sheet of the instance on that stackup conductor instead, and a pin's own
+(`"Pins": { "B": { "Return": "Metal1" } }`) overrides it for that pin. It is the same walk with the plane stated: a layer
+with no metal across the face, or with other metal in the way, is refused, and that pin is left out of the run with the
+reason. So is a layer whose metal starts further along the line than a tenth of the face's width: the sheet is not moved
+along the line to where it starts, because that metal can be the line's own, such as the pad of a via stack on the pin's
+net. Where the walk does move a sheet in, or passes through an opening on its way, the run's notes and `check` say so
+under the pin's name. Planar ignores it, since a Planar cut port has no sheet, and its notes say so once. A pin
+referenced to another pin has no Return either: its sheet runs between the two faces.
+
 **Grounded pins** (**Ground**, `"Ground": ["E"]`) are tied to the ground plane at their face by a ground via as wide as
 the face, and take no port. Use it for an emitter or a source that sits on a via in the real chip but has none drawn
 in the layout.
@@ -481,8 +493,10 @@ of faces.
 A routed pin whose conductor, followed through the vias between the analysis levels, reaches no other port and no ground
 is reported as **not connected**, with a warning naming the pin and its port: the port drives an isolated piece of metal
 and reads an open, |S| = 0 dB. The usual cause is a via that lands on no metal, such as a via stack that misses the finger it
-was drawn to reach; the run's mesh note counts those vias as dropped. An instance that ends up with no port at all is
-missing from the co-simulation netlist, and the run says so by name.
+was drawn to reach; the run's mesh note counts those vias as dropped. An instance that ends up with no port at all, in 3D
+also one whose every sheet was refused, is still placed in the co-simulation netlist, each terminal on ground, the
+reference or an open node ([A cut cell instance's model](cosimulation.html#cut-models)), and the run says so by name: it
+then reaches the EM result only through ground.
 
 **Each cut face is an Uncalibrated Port** on Planar: driven against the ground plane at the face and not de-embedded, so
 the launch is in the result. [The Uncalibrated Port](mom-engine.html#uncalibrated-port) says what that costs and why
@@ -1612,8 +1626,8 @@ several terminals ([below](#wave-port-terminals-emerge)):
   renormalisation, and the run's notes say how far it moved.
 - **The run asks each face for a second mode** at the top of the sweep and warns when one propagates,
   as Palace's run does.
-- **A hollow waveguide** runs on Palace. EMerge refuses it by name, as it does a wave port in an
-  eigenmode problem.
+- **A hollow waveguide** runs on EMerge and on Palace: its mode is the guide's lowest, of any type, and its
+  sign is set by a polarity line across the narrow side. One of [two modes](#hollow-two-modes) runs on EMerge only.
 
 #### Several conductors on one face {#wave-port-terminals}
 
@@ -1786,7 +1800,7 @@ table leaves out.
 - **Participation** is the fraction of each mode's electric energy in each meshed region: it is what
   says where a mode lives.
 
-**Worked example.** **File ▸ New ▸ Examples ▸ 3D Eigenmode** asks the question on its own: a 50 Ω line through an
+**Worked example.** **File ▸ New ▸ Examples ▸ 3D EM ▸ 3D Eigenmode (a cavity resonance)** asks the question on its own: a 50 Ω line through an
 aluminium housing, in the band 8–12 GHz. The empty cavity's closed form puts its lowest mode at 10.13 GHz, an upper
 bound, since the laminate on the floor pulls the mode down. The cavity's first mode is at **9.956 GHz** (Q **539**),
 inside the band, and the driven S21 has a **−11.69 dB** notch there. With a grounded post beside the line, the mode is
@@ -1870,6 +1884,62 @@ cross-section. openEMS runs a plane wave on its Cartesian grid only.
 
 A **faceted sphere** is a sphere with `FacetVertices` above 0 in the 3D view: the convex hull of that many points spread
 evenly over it, as Hertzon builds one. A Hertzon design's faceted sphere opens as one.
+
+### A periodic cell and Floquet ports {#periodic-cell}
+
+A frequency-selective surface, a reflectarray element or a metasurface is one cell of an infinite array. Solve one cell:
+make the setup's air box **Periodic** on both x faces and both y faces (a periodic face is half of a pair, so both faces of
+an axis are periodic or neither), flush with the cell. The field on one face of a pair is the field on the other, shifted in
+phase by the cell's **Scan** in the air box (θ from +z and φ from +x toward +y, in degrees). With no Scan the cell is
+illuminated broadside.
+
+A **Floquet port** is a wave port over the whole zmin or zmax face of the cell (`Floquet` on the port in the 3D view, with
+`Modes` and, for a medium other than vacuum, `Er`). Each mode is a port of the result, numbered from the port's own number:
+1 is the TE wave of the (0, 0) harmonic, 2 its TM wave, and more are the grating harmonics in order of cutoff. The
+S-parameters are normalised to the modes, so the Touchstone file states `R 1`. A cell with a ground on one side has one
+Floquet port, on the other side, and a PEC face where its ground is.
+
+Periodic cells and Floquet ports run on **EMerge** only; Palace and openEMS refuse them by name. EMerge's mesh refinement
+does not keep the two faces of a pair meshed alike, so a cell is solved on its first mesh (the run says so): make it finer
+with **Largest element** and **At metal**. On a crossed-dipole cell 15 mm square, against Hertzon's own run on its refined
+mesh, the cell's resonance fell at the same 10 GHz, and away from it each S-parameter came within 0.06 to 0.15; on a cell
+over a ground, the reflection phase came within 2° to 8°.
+
+### A hollow guide of two modes, and moving a wave port's reference plane {#hollow-two-modes}
+
+A hollow guide whose broad side a is more than its narrow side b carries TE10 above c/2a, and a second mode once the
+frequency passes the next cutoff: TE01 at c/2b, or TE20 at c/a when b is less than half of a. Something in the guide that
+is not symmetric — a tilted post, a step in one wall — turns one mode into the other, and a port of one mode then misses
+the power the other carries. Set the port's **Modes** to 2 in Properties (offered on a hollow guide's wave port; the row
+beside it names the two modes, `TE10, TE01`). Both modes are ports of the result, numbered from the port's own number and
+named `P1_M1`, `P1_M2` in the Touchstone file, so a two-mode port at each end of a guide makes a four-port: S31 is TE10's
+thru, S42 TE01's, and S41 how much TE10 at port 1 leaves port 2 as TE01. The canvas labels such a port `P1 (2 modes)` and
+draws both polarity lines: TE10's across the narrow side at the broad side's centre, TE01's across the broad side at the
+narrow side's centre, TE20's across the narrow side at a quarter of the broad side.
+
+- **Each mode is normalised to itself**, so the port's Reference is Mode and the Touchstone file states `R 1`.
+- **Refused by name:** more than two modes, a square opening, a narrow side equal to half the broad side (the second mode
+  would be degenerate), and a sweep point below either mode's cutoff.
+- **EMerge** runs it as one wave port of two modes, each absorbed with its own propagation constant. The run checks each
+  mode is the one named before it reads S, and refuses rather than reports a matrix whose rows belong to other modes.
+  Palace and openEMS refuse a port of two modes by name.
+
+A wave port's **De-embed** length (Properties, in the document's unit) moves its reference plane that far into the
+structure: each mode's S-parameters are multiplied by e^(γd) with its own solved propagation constant, so a positive length
+removes that much guide. EMerge and Palace apply it, and the run's notes say how far each port moved. A lumped port's
+reference is its sheet, so a lumped port refuses one.
+
+On an empty guide 22.86 × 15 mm and 40 mm long at 11.2 GHz, EMerge's S31 and S42 came within 0.13° and 0.53° of e^(−jβL) for
+TE10 and TE01, with every cross term and reflection below 0.003; moving port 2's plane 5 mm advanced each mode's phase by its
+own β·d to 0.002°.
+
+### Ports drawn as their corners {#corner-ports}
+
+A lumped port can be drawn as its four corners (`Corners` on the port in the 3D view) in any plane, a tilted one included.
+It needs to be a rectangle only to a part in a hundred, which is what an exported model gives when it joins two edges that
+are not exactly parallel (a trace's edge and a board's side face, say): the port keeps both of its ends where they were drawn.
+Each end must lie on its conductor, and the run puts it exactly there. EMerge runs it, reading the voltage between the two
+ends itself; openEMS refuses it.
 
 ### Looking at a 3D mesh before solving {#mesh-3d}
 
@@ -2120,8 +2190,8 @@ There are three ways, and they all do the same thing:
 
 - **Uninstall …** under the solver's row in {{anchor: settings.html#em3d|Settings ▸ Solvers}}. There is one
   button for each version circuitRF installed.
-- **Remove all 3D solvers …** at the foot of that page. It removes every one after a single
-  confirmation.
+- **Remove all solvers …** at the foot of that page. It removes every one after a single
+  confirmation, ngspice included when circuitRF installed it.
 - `circuitrf solver remove palace --yes`, or `circuitrf solver remove --all --yes`, from a terminal.
   Without `--yes` it only shows what it would remove.
 
@@ -2162,11 +2232,11 @@ Remove circuitRF the way you remove any application. What happens to the 3D solv
 
 The warning is there because reinstalling circuitRF later means reinstalling the solvers too. It
 reaches only your own account: solvers another person installed on the same computer stay in their
-folder, and their own **Remove all 3D solvers** removes them.
+folder, and their own **Remove all solvers** removes them.
 
 **Where the solvers stay**, they wait in your user folder. When you install circuitRF again it finds
 them and uses them without reinstalling, and their Settings rows still offer **Uninstall …**. To get
-the space back instead, use **Remove all 3D solvers …** in
+the space back instead, use **Remove all solvers …** in
 {{anchor: settings.html#em3d|Settings ▸ Solvers}} before you remove circuitRF.
 
 **Updating circuitRF never removes a solver.**

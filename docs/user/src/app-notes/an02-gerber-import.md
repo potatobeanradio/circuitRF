@@ -30,7 +30,7 @@ through a 90° bend, passes a tee whose branch is an open stub, then a series 2.
 L1 to a ground via, and a series 10 Ω resistor R1, and leaves at the top edge. The bottom layer is a solid ground
 plane under a 254 µm laminate.
 
-**File ▸ New ▸ Examples ▸ Artwork to Schematic** gives you a copy. Its `fab` folder holds what left the design office:
+**File ▸ New ▸ Examples ▸ Layout and Interchange ▸ Artwork to Schematic** gives you a copy. Its `fab` folder holds what left the design office:
 
 | File | What it is |
 |---|---|

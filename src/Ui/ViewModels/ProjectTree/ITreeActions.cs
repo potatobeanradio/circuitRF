@@ -95,6 +95,10 @@ public interface ITreeActions
     /// constellation, EVM per carrier and spectrum.</summary>
     void OpenSignalQuality(ProjectTreeNodeViewModel node) { }
 
+    /// <summary>brief TRN-5 — Open Transient Plots on a result file: a new Data Display holding its transient run's waveforms,
+    /// output spectrum and measures.</summary>
+    void OpenTransient(ProjectTreeNodeViewModel node) { }
+
     /// <summary>brief-dfr32-3 — whether a <c>.c3d</c>'s or <c>.cem</c>'s runs hold saved fields now.</summary>
     bool HasSavedFields(ProjectTreeNodeViewModel node) => false;
 

@@ -406,6 +406,12 @@ Carrier[1]="SC;Rs=10Msps;Mod=16APSK;RollOff=0.2;Data=PN15;Preamble=64;PilotBlock
 `Rs` takes sps, ksps or Msps (MBd, kBd and Bd read the same). Every field but `Off` and `P` may be left out, and
 then its default applies.
 
+**Through a link.** A single carrier is the signal of most satellite links. Played through a
+[Propagation Channel](propagation-channel.html#satellite) into an envelope run with `Equalizer=pilot`, the preamble and
+pilot blocks train the receiver's equalizer, the pass's Doppler is measured and removed (`CFO_Hz`), and EVM, counted bit
+errors and the estimated BER are read at the far end. The *LEO Satellite Downlink* example sends 16APSK this way through a
+transponder.
+
 ## The spectrum and the CCDF {#preview}
 
 The **Spectrum** is the composite power spectral density against the offset from `Fc`, framed on the

@@ -247,6 +247,9 @@ return JsonRun.Finish(exit);
     // brief-de-4: a bench's TRL calibrations — two fixture files from three measured standards. It owns no calibration:
     // the run is CircuitEvaluation's, which dispatches TrlRun as Simulate does.
     "trl"    => CircuitRF.Cli.Trl.Run,
+    // brief-trn-1: a bench's transient analyses. It owns no simulation: the run is CircuitEvaluation's, which dispatches the
+    // transient engine as Simulate does.
+    "tran" or "transient" => CircuitRF.Cli.Tran.Run,
     // brief NZ-9: a design's oscillator analysis — harmonic balance with the fundamental an unknown. It owns no solve: the
     // run is CircuitEvaluation's, which dispatches the oscillator engine as Simulate does.
     "osc"    => CircuitRF.Cli.Osc.Run,
@@ -2548,6 +2551,14 @@ internal static Analysis ApplyHbOverrides(TestBench tb, Analysis top,
             NoiseOutExpr      = h.NoiseOutExpr,
             NoiseSidebandExpr = h.NoiseSidebandExpr,
             NoiseContribExpr  = h.NoiseContribExpr,
+            // brief TRN-8's seed keys and the run's model: rebuilt without them, --maxharm turned a transient-seeded run back
+            // into a DC start and a model=em run into a circuit one, silently
+            InitialGuess      = h.InitialGuess,
+            SeedTolExpr       = h.SeedTolExpr,
+            SeedPeriodsExpr   = h.SeedPeriodsExpr,
+            SeedFastBias      = h.SeedFastBias,
+            Model             = h.Model,
+            EmSetup           = h.EmSetup,
             Enabled           = h.Enabled,
             SweepVarName      = h.SweepVarName,
             SweepStartExpr    = h.SweepStartExpr,
@@ -3062,6 +3073,7 @@ static int PrintHelp()
     Console.WriteLine("  lpp    <file.cnl|.csch>   (loadpull pursuit: searches for MXP / MXE)");
     Console.WriteLine("  em     <file.cem>   (electromagnetic extraction of the layout it names)");
     Console.WriteLine("  trl    <file.cnl|.csch> [--fixture-a p] [--fixture-b p]  (TRL: two fixture files from Thru, Reflect, Line)");
+    Console.WriteLine("  tran   <file.cnl|.csch> [--stop t] [--step t] [--method trap|gear2]  (transient; runs the sweep if one wraps it)");
     Console.WriteLine("  osc    <file.cnl|.csch> [--fguess f] [--aguess a]  (oscillator: Fosc, Aosc and the HB result at the oscillation)");
     Console.WriteLine("  opt    <file.cnl|.csch>   (optimize: the tune, goal and optimize lines; exit 3 = a goal unmet)");
     Console.WriteLine("  yield  mc|estimate|trial <file.cnl|.csch>   (Monte Carlo / yield; exit 3 = below --target)");
@@ -3089,7 +3101,7 @@ static int PrintHelp()
     Console.WriteLine("  find    <root>         (what is here: workspaces, cells, views, analyses)");
     Console.WriteLine("  reference [topic] [type]  (what a caller may WRITE: the prose pages, and the");
     Console.WriteLine("                          generated component catalogue. Takes no path.)");
-    Console.WriteLine($"  solver list            ({string.Join(", ", CircuitRF.Design.Em3d.Em3dSolvers.Tools.Select(t => CircuitRF.Design.Em3d.SolverDiscovery.For(t).Name))}: found where, which version, what they can do)");
+    Console.WriteLine($"  solver list            ({string.Join(", ", CircuitRF.Design.Em3d.CircuitSolvers.AllTools.Select(t => CircuitRF.Design.Em3d.SolverDiscovery.For(t).Name))}: found where, which version, what they can do)");
     Console.WriteLine($"  solver install <{string.Join("|", Solver.ToolIds)}> [--yes]  (from its own upstream; without --yes,");
     Console.WriteLine("                          prints what it would fetch and where it would go, and exits 1)");
     Console.WriteLine("  serve   --root <dir>   (a protocol server on stdin/stdout, for an external client)");

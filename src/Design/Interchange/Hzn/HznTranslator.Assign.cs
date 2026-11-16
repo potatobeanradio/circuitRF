@@ -168,12 +168,13 @@ internal sealed partial class HznTranslator
     };
 
     /// <summary>The union of what is left in the document: the extent an air box is padded around.</summary>
-    private Box3? Content()
+    private Box3? Content(bool modelOnly = false)
     {
         Box3? all = null;
         bool first = true;
         foreach (var o in _doc.Objects)
         {
+            if (modelOnly && (!o.Model || o is C3dPolyline)) continue;
             var b = Bounds(o);
             if (b is null) return null;
             all = first ? b : Union(all, b);
@@ -301,6 +302,7 @@ internal sealed partial class HznTranslator
             switch (x.Kind)
             {
                 case "Lumped Port" or "Wave Port": Port(x, name); break;
+                case "Floquet Port": FloquetPort(x, name); break;      // brief-hzn-16
                 case "Incident Plane Wave": PlaneWave(x, name); break;
                 default:
                     _r.Add(HznRefusalKind.Excitation, x.Kind ?? "(no kind)", "no equivalent in circuitRF", name);
@@ -309,6 +311,8 @@ internal sealed partial class HznTranslator
         }
         if (_doc.PlaneWaves.Any(w => w.Enabled) && _doc.Ports.Any(p => p.Model))
             _r.Add(HznRefusalKind.Excitation, "Incident Plane Wave beside a port", "a plane wave is translated only with no port beside it", DesignName);
+        NumberFloquetPorts();
+        NumberModePorts();
         var dup = _doc.Ports.GroupBy(p => p.Number).FirstOrDefault(g => g.Count() > 1);
         if (dup is not null) _r.Add(HznRefusalKind.Excitation, $"port number {dup.Key}", "two excitations have it", DesignName);
     }
@@ -320,11 +324,22 @@ internal sealed partial class HznTranslator
         int? number = Plain(props["PortNumber"], name) is { } n && n == Math.Floor(n) ? (int)n : null;
         if (number is null) { _r.Add(HznRefusalKind.Excitation, "port number", "it is not a whole number", name); return; }
         string z0 = "50";
+        int modes = 1;
+        double deembedUm = 0;
         if (wave)
         {
-            if (Plain(props["NumberOfModes"] ?? "1", name) is not 1)
+            // brief-hzn-20 R-hzn20-3 — NumberOfModes N is a hollow guide's Modes (the port reader refuses it on any other port, and
+            // Check below turns that refusal into this design's), each mode normalised to itself as Hertzon's Renormalize False is
+            if (Plain(props["NumberOfModes"] ?? "1", name) is not { } nm || nm != Math.Floor(nm) || nm < 1)
             {
-                _r.Add(HznRefusalKind.Excitation, "Wave Port with several modes", "one mode is translated", name);
+                _r.Add(HznRefusalKind.Excitation, "Wave Port modes", "NumberOfModes is not a whole number of 1 or more", name);
+                return;
+            }
+            modes = (int)nm;
+            if (modes > 1 && IsTrue(props["Renormalize"]))
+            {
+                _r.Add(HznRefusalKind.Excitation, "Wave Port with several modes, renormalised",
+                       "each mode of a port of several modes is translated normalised to itself (Renormalize False)", name);
                 return;
             }
             if (props["ModeType"] is { } modeType && !modeType.Trim().Equals("Auto", StringComparison.OrdinalIgnoreCase))
@@ -333,30 +348,40 @@ internal sealed partial class HznTranslator
                        "circuitRF's wave port takes the face's own lowest mode, which is Hertzon's Auto", name);
                 return;
             }
-            if ((props["Deembed"] is { } de && IsTrue(de)) && Plain(props["DeembedDistance"], name) is not 0)
+            // brief-hzn-20 R-hzn20-3 — Deembed True moves the reference plane DeembedDistance into the structure (Hertzon's S·e^{γd},
+            // positive removing guide); Deembed False reads no distance, which is listed as unused below
+            if (props["Deembed"] is { } de && IsTrue(de) && props["DeembedDistance"] is { } dd)
             {
-                _r.Add(HznRefusalKind.Excitation, "Wave Port with de-embedding", "a reference-plane shift is not translated", name);
-                return;
+                if (Len(dd, name) is not { } d) return;
+                double m = Metres(d);
+                if (!double.IsFinite(m)) return;
+                deembedUm = Math.Round(m * 1e6, 6);
+                if (!d.IsLiteral)
+                    _notes.Add($"Port '{name}': its de-embedding distance '{dd}' is {Num(deembedUm)} µm in the port, which holds a number.");
             }
             // brief-hzn-11 R-hzn11-5 — without renormalisation Hertzon's S is normalised to the mode: circuitRF's Z0 "mode"
             z0 = !IsTrue(props["Renormalize"]) ? C3dPorts.ModeZ0
                : ImpedanceOhms(props["RenormImpedance"], name) is { } rz ? Num(rz) : "";
         }
         else z0 = ImpedanceOhms(props["Impedance"], name) is { } lz ? Num(lz) : "";
-        if (Terminal)
+        // brief-hzn-15 R-hzn15-6 — established black-box: with lumped ports only, a Terminal design's S-parameters are its Modal
+        // design's to every digit (ports by PortNumber, each referred to its Impedance), so such a port translates as a modal one
+        bool terminalPort = Terminal && (wave || _design.Excitations.Any(e => e.Enabled != false && e.Kind == "Wave Port"));
+        if (terminalPort)
         {
             // brief-hzn-14 R-hzn14-3 — established black-box: a Terminal design's Touchstone is referenced to each port's
             // RenormImpedance whether or not the port renormalises
             if (!wave)
             {
-                _r.Add(HznRefusalKind.Excitation, "Lumped Port in a Terminal design", "how Hertzon numbers a lumped port among the terminals is not established", name);
+                _r.Add(HznRefusalKind.Excitation, "Lumped Port beside wave ports in a Terminal design", "how Hertzon numbers a lumped port among the terminals is not established", name);
                 return;
             }
             z0 = ImpedanceOhms(props["RenormImpedance"] ?? "50ohm", name) is { } tz ? Num(tz) : "";
         }
         if (z0.Length == 0) return;
 
-        var port = new C3dPort { Number = number.Value, Name = name, Kind = wave ? Em3dPortKind.Wave : Em3dPortKind.Lumped, Z0 = z0 };
+        var port = new C3dPort { Number = number.Value, Name = name, Kind = wave ? Em3dPortKind.Wave : Em3dPortKind.Lumped, Z0 = z0,
+                                 Modes = modes, DeembedUm = deembedUm };
         string? sheetObject = null;
         if (x.Objects.Count == 1 && x.Faces.Count == 0)
         {
@@ -364,13 +389,35 @@ internal sealed partial class HznTranslator
             if (!_sheets.TryGetValue(hz, out var geom) || geom.Placed)
             {
                 _r.Add(HznRefusalKind.Excitation, $"{x.Kind} on '{hz}'",
-                       "a port is a rectangle sheet in an axis plane or an upright one, drawn and not moved or rotated afterwards", name);
+                       "a port is a rectangle sheet, drawn and not moved or rotated afterwards", name);
+                return;
+            }
+            // brief-hzn-19 — a disc is a wave port's sheet only on a coaxial line's end cap in a closed design
+            if (geom.Disc && (!wave || DiscRefusal(geom, hz) is { } notCoax))
+            {
+                _r.Add(HznRefusalKind.Excitation, $"{x.Kind} on '{hz}'",
+                       wave ? DiscRefusal(geom, hz)! : "its sheet is a circle; a lumped port is a rectangle sheet", name);
                 return;
             }
             sheetObject = hz;
             port.Plane = geom.Plane;
             port.Offset = Dbu(geom.Offset);
-            if (geom.Angle != 0)
+            if (geom.Disc)
+                _notes.Add($"Port '{name}' is the end cap of a coaxial line ('{hz}', a disc); its rectangle is the disc's square, whose corners lie on " +
+                           "the perfect conductor outside the line, so the port is the line's opening.");
+            if (geom.Corners is { } drawn)
+            {
+                // brief-hzn-15 R-hzn15-3 — a rectangle in a tilted plane: a lumped port drawn as its corners
+                if (wave)
+                {
+                    _r.Add(HznRefusalKind.Excitation, $"{x.Kind} on '{hz}'", "its sheet lies in a tilted plane, and a wave port lies on an air-box face", name);
+                    return;
+                }
+                port.Corners = drawn;
+                if (geom.CornersNamedVariables)
+                    _notes.Add($"Port '{name}': its sheet '{hz}' is drawn as its corners, which are numbers; the variables its points named move the copper and not the port.");
+            }
+            else if (geom.Angle != 0)
             {
                 // brief-hzn-14 R-hzn14-1 — a sheet in a turned upright plane: a lumped port turned about the vertical through its centre
                 if (wave)
@@ -417,12 +464,70 @@ internal sealed partial class HznTranslator
         }
         _doc.Ports.Add(port);
         _prov.Ports.Add(new HznPortOrigin(port.Number, name, sheetObject));
-        if (Terminal) _terminalPorts.Add((port, props["ReferenceConductor"] ?? ""));
+        if (terminalPort) _terminalPorts.Add((port, props["ReferenceConductor"] ?? ""));
         foreach (var (k, v) in props.Names.Select(k => (k, props[k]!)))
             // a port normalised to its mode reads no RenormImpedance (the save keeps it as written)
-            if (k is not ("PortNumber" or "Impedance" or "Renormalize" or "NumberOfModes" or "Deembed" or "DeembedDistance" or "ModeType")
-                && !(k == "RenormImpedance" && z0 != C3dPorts.ModeZ0) && !(Terminal && k == "ReferenceConductor"))
+            if (k is not ("PortNumber" or "Impedance" or "Renormalize" or "NumberOfModes" or "Deembed" or "ModeType")
+                && !(k == "DeembedDistance" && (deembedUm != 0 || ZeroLength(v) || !wave))
+                && !(k == "RenormImpedance" && z0 != C3dPorts.ModeZ0) && !(terminalPort && k == "ReferenceConductor"))
                 _prov.Unused.Add(new HznUnusedSetting($"port {name}", k, v));
+    }
+
+    /// <summary>
+    /// brief-hzn-20 R-hzn20-3 — a port of several modes takes that many result numbers, one after another, and Hertzon numbers the
+    /// modes "in port order" (its tutorial): port 1's modes first, then the next port's. With any such port every port is renumbered
+    /// by PortNumber so; without one nothing changes.
+    /// </summary>
+    /// <summary>A distance written as zero in any unit (<c>0</c>, <c>0mm</c>, <c>0.0 um</c>): read by nothing, so not listed as unused.</summary>
+    private static bool ZeroLength(string v)
+        => System.Text.RegularExpressions.Regex.Match(v.Trim(), @"^[+-]?[0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?\s*[A-Za-z]*$") is { Success: true }
+           && double.TryParse(System.Text.RegularExpressions.Regex.Match(v.Trim(), @"^[+-]?[0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?").Value,
+                              System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d) && d == 0;
+
+    private void NumberModePorts()
+    {
+        if (!_doc.Ports.Any(p => p.Modes > 1)) return;
+        int next = 1;
+        foreach (var p in _doc.Ports.OrderBy(p => p.Number).ToList())
+        {
+            int own = p.Number;
+            p.Number = next;
+            var origin = _prov.Ports.FindIndex(o => o.Number == own && o.Excitation == p.Name);
+            if (origin >= 0) _prov.Ports[origin] = _prov.Ports[origin] with { Number = next };
+            if (p.Modes > 1)
+                _notes.Add($"Port '{p.Name}' (PortNumber {own}) has {p.Modes} modes: ports {next}–{next + p.Modes - 1} of the result, " +
+                           $"named {string.Join(", ", Enumerable.Range(1, p.Modes).Select(m => $"{p.Name}_M{m}"))}, as Hertzon numbers them.");
+            else if (own != next)
+                _notes.Add($"Port '{p.Name}' (PortNumber {own}) is port {next} of the result, after the modes of the ports before it.");
+            next += p.Modes;
+        }
+    }
+
+    /// <summary>
+    /// brief-hzn-19 — why the disc <paramref name="geom"/> (sheet <paramref name="hz"/>) cannot be a wave port, or null when it can: it
+    /// must be in a closed design, lie on the model's outer extent (an air-box face), and be an end cap of a top-level cylinder (or of a
+    /// boolean whose blank is one) of the same axis, centre and radius. The port's rectangle is then the disc's square, and the square's
+    /// corners are outside the cylinder, which in a closed design is perfect conductor (<see cref="Outside"/>), so the region a run keeps
+    /// is the line's opening.
+    /// </summary>
+    private string? DiscRefusal(SheetGeom geom, string hz)
+    {
+        if (!_closedDomain) return "a disc is a wave port only on a coaxial line's end in a closed design (Auto Open off, no region)";
+        var (u, v, n) = Axes(geom.Plane);
+        long r = Dbu(geom.Size[0]) / 2, cu = Dbu(geom.Min[0]) + r, cv = Dbu(geom.Min[1]) + r, at = Dbu(geom.Offset);
+        string self = _c3dName.GetValueOrDefault(hz, hz);
+        if (Content() is not { } all || (at != all.Min[n] && at != all.Max[n]))
+            return "a disc is a wave port only where it lies on the model's outer extent, an air-box face";
+        foreach (var o in _doc.Objects.Where(o => o.Model && o.Name != self))
+        {
+            var shape = o;
+            while (shape is C3dBoolean { Op: C3dBooleanOp.Subtract, Blank: { } b }) shape = b;
+            if (shape is not C3dCylinder c || (int)c.Axis != n || o.Placement.Rotate.Count > 0 || o.Placement.MirrorX || shape.Placement.Rotate.Count > 0) continue;
+            long[] bas = [c.Base.X + o.Placement.Origin.X, c.Base.Y + o.Placement.Origin.Y, c.Base.Z + o.Placement.Origin.Z];
+            if (shape != o) { bas[0] += shape.Placement.Origin.X; bas[1] += shape.Placement.Origin.Y; bas[2] += shape.Placement.Origin.Z; }
+            if (c.Radius == r && bas[u] == cu && bas[v] == cv && (bas[n] == at || bas[n] + c.Length == at)) return null;
+        }
+        return "a disc is a wave port only as the end cap of a cylinder of the same axis, centre and radius (a coaxial line's opening)";
     }
 
     private long Dbu(Dim d) => d.IsLiteral ? d.Dbu : (long)Math.Round(Metres(d) * 1e6 * HznToC3d.DbuPerMicron);
@@ -477,12 +582,15 @@ internal sealed partial class HznTranslator
                     foreach (string k in b.Props.Names) _prov.Unused.Add(new HznUnusedSetting($"boundary {name}", k, b.Props[k] ?? ""));
                     break;
                 case "Symmetry": Symmetry(b, name); break;
+                case "Primary": PeriodicFace(b, name, secondary: false); break;     // brief-hzn-16
+                case "Secondary": PeriodicFace(b, name, secondary: true); break;
                 case "Lumped RLC": Lumped(b, name); break;
                 default:
                     _r.Add(HznRefusalKind.Boundary, b.Kind ?? "(no kind)", "no equivalent in circuitRF", name);
                     break;
             }
         }
+        CheckPeriodicPairs();
         if (_autoOpen is not null)
             for (int slot = 0; slot < 6; slot++)
                 if (_air[slot] is not null)
@@ -581,23 +689,35 @@ internal sealed partial class HznTranslator
             // brief-hzn-10 — a boundary on a boolean of sheets dresses the result: its Blank carries the metal.
             if (C3dSheetBooleans.Carrier(obj) is { } sheet)
             {
-                if (finite && !twoSided)
-                {
-                    _r.Add(HznRefusalKind.Boundary, "Finite Conductivity on one side of a sheet",
-                           "a lossy .c3d sheet is a thin conductor carrying current on both sides (Hertzon's TwoSided)", name);
-                    continue;
-                }
                 var m = Material(sheetMaterial!, name);
                 sheet.Material = m?.Material.Name;
                 sheet.Role = m?.Role ?? Em3dRole.Conductor;
                 if (thicknessUm is { } t) sheet.ThicknessUm = t;
+                if (finite && !twoSided)
+                {
+                    // brief-hzn-18 R-hzn18-1 — Hertzon's one-sided sheet: one surface impedance carrying both faces' current
+                    sheet.OneSided = true;
+                    _notes.Add($"Boundary '{name}' on '{hz}' is one-sided: one surface impedance carries the current of both faces, about twice a " +
+                               "two-sided sheet's conductor loss. It is Hertzon's older default, kept so the two give the same answer; EMerge runs it.");
+                }
                 _prov.FaceBoundaries.Add(new HznBoundaryOrigin(name, c3d, "(sheet)", null));
                 continue;
             }
-            if (finite) Material(faceMaterial, name);
+            var faceMat = finite ? Material(faceMaterial, name) : null;
             if (IsConductorMaterial(C3dValidation.EffectiveMaterial(obj)))
             {
-                _notes.Add($"Boundary '{name}' on '{hz}': a conductor is already bounded by its metal, so nothing was added.");
+                // brief-hzn-15 — a Finite Conductivity boundary on a conductor makes its faces that metal; circuitRF solves a conductor
+                // by the surface impedance of its own metal on its faces, so the solid takes the boundary's material
+                var carrier = obj;
+                while (carrier is C3dOperation && C3dOperands.Inner(carrier) is { } inner) carrier = inner;
+                if (faceMat is { } fm && carrier.Material != fm.Material.Name)
+                {
+                    _notes.Add($"Boundary '{name}' on '{hz}': its faces are {faceMaterial}, so the conductor is {faceMaterial} here (circuitRF solves a conductor by its faces' metal).");
+                    carrier.Material = fm.Material.Name;
+                    carrier.Role = fm.Role;
+                    _prov.FaceBoundaries.Add(new HznBoundaryOrigin(name, c3d, "(solid)", null));
+                }
+                else _notes.Add($"Boundary '{name}' on '{hz}': a conductor is already bounded by its metal, so nothing was added.");
                 continue;
             }
             foreach (string face in obj.FaceNames())
@@ -613,6 +733,12 @@ internal sealed partial class HznTranslator
                 continue;
             }
             if (finite) Material(faceMaterial, name);
+            // brief-hzn-16 — a perfect wall on an outer face of a periodic cell (its backplane) is the air box's own face there
+            if (!finite && Periodic && _closedDomain && Array.IndexOf(BoxFaces, face) is >= 0 and var slot && OnOuterExtent(c3d, slot))
+            {
+                SetAir(slot, Em3dBoundaryKind.Pec, name);
+                continue;
+            }
             FaceBoundary(c3d, face, finite, faceMaterial, name, (int?)f.Face);
         }
     }
@@ -703,7 +829,9 @@ internal sealed partial class HznTranslator
                 _r.Add(HznRefusalKind.Boundary, "open boundary inside the region", $"'{c3d}' lies inside the region; the air box is the region", boundary);
                 return;
             }
-            var content = Content();
+            // A non-model object (a field-plot plane, say) is never solved, so it does not move the outer extent: PlaneWave's plot
+            // plane pokes 0.6 um past the box that carries the radiation boundary.
+            var content = Content(modelOnly: true);
             if (content is null || _top.GetValueOrDefault(c3d) is not { } obj || Bounds(obj) is not { } own)
             {
                 _r.Add(HznRefusalKind.Boundary, "open boundary on a shape whose extent is not stated", $"'{c3d}'", boundary);
@@ -720,6 +848,14 @@ internal sealed partial class HznTranslator
             }
         }
         SetAir(slot, kind, boundary);
+    }
+
+    /// <summary>brief-hzn-16 — whether <paramref name="c3d"/>'s face <paramref name="slot"/> lies on the model's outer extent.</summary>
+    private bool OnOuterExtent(string c3d, int slot)
+    {
+        if (Content(modelOnly: true) is not { } content || _top.GetValueOrDefault(c3d) is not { } obj || Bounds(obj) is not { } own) return false;
+        int a = slot / 2;
+        return slot % 2 == 0 ? own.Min[a] == content.Min[a] : own.Max[a] == content.Max[a];
     }
 
     private void SetAir(int slot, Em3dBoundaryKind kind, string by)
@@ -824,7 +960,11 @@ internal sealed partial class HznTranslator
             if (sweeps.Count == 0)
             {
                 string mode = s.Props["SolutionFrequencyMode"] ?? "Single";
-                if (Q(mode == "Broadband" ? s.Props["LowFrequency"] : s.Props["Frequency"]) is { } f) all.Add(f);
+                // brief-hzn-18 R-hzn18-2 — a Multi-Frequencies setup solves at its listed frequencies, the lowest of which sizes the box
+                if (mode == "Multi-Frequencies")
+                    all.AddRange(HznExpressionTranslator.SplitTopLevel(s.Props["MultiFrequencies"] ?? "", ',')
+                                                        .SelectMany(x => HznExpressionTranslator.SplitTopLevel(x, ';')).Select(x => Q(x)).OfType<double>());
+                else if (Q(mode == "Broadband" ? s.Props["LowFrequency"] : s.Props["Frequency"]) is { } f) all.Add(f);
                 continue;
             }
             foreach (var w in sweeps)
@@ -851,6 +991,8 @@ internal sealed partial class HznTranslator
         _airBox = new Layout.Em.CemAirBox
         {
             XMin = Face(0), XMax = Face(1), YMin = Face(2), YMax = Face(3), ZMin = Face(4), ZMax = Face(5),
+            Scan = _scan is { } sc && (sc.Scan.ThetaDeg != 0 || sc.Scan.PhiDeg != 0)
+                ? new Layout.Em.CemScan { ThetaDeg = sc.Scan.ThetaDeg, PhiDeg = sc.Scan.PhiDeg } : null,
         };
         if (_air.All(a => a is null) && _regionName is null && _autoOpen is null)
             _notes.Add("No boundary sits on the model's outer faces: the air box is flush with the model and every face is a perfect conductor, as a closed Hertzon design's outer faces are.");
@@ -875,7 +1017,7 @@ internal sealed partial class HznTranslator
             _r.Add(HznRefusalKind.Boundary, "Lumped element from a Touchstone file", "a mount from data is not translated", name);
             return;
         }
-        if (b.Objects.Count != 1 || b.Faces.Count != 0 || !_sheets.TryGetValue(b.Objects[0], out var geom) || geom.Placed || geom.Angle != 0)
+        if (b.Objects.Count != 1 || b.Faces.Count != 0 || !_sheets.TryGetValue(b.Objects[0], out var geom) || geom.Placed || geom.Angle != 0 || geom.Disc)
         {
             _r.Add(HznRefusalKind.Boundary, "Lumped RLC not on one drawn sheet", "the element's gap is the rectangle of a sheet", name);
             return;

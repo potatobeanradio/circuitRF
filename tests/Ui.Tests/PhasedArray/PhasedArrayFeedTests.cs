@@ -78,6 +78,18 @@ public sealed class PhasedArrayFeedTests(ITestOutputHelper output) : IDisposable
         Assert.True(points[0].Zip(points[2]).Max(z => (z.First - z.Second).Magnitude) > 1e-3 * points[0].Max(c => c.Magnitude), "the points' patterns are one pattern");
     }
 
+    /// <summary>Delay=steerDelay(theta0, 0) points the beam at θ0, as Phase=steer does: a delay τ weighs e^(−j2πfτ), so the delay
+    /// that points the beam is +path/c (−path/c, which it once was, pointed it at −θ0 with nothing to say so).</summary>
+    [Fact]
+    public void SteerDelay_PointsTheBeamWhereSteerDoes()
+    {
+        string line = Port + "theta0 = 30 deg\n" +
+                      $"PhasedArray:PA1 f {E5} Mode=feed Rows=16 Cols=16 Delay=steerDelay(theta0,0)\n" + Fields;
+        var run = Run(line, "PointingErrorDeg(F1, 30, 0)", "HpbwDeg(F1, \"elevation\")");
+        output.WriteLine($"steerDelay to 30°: pointing error {Value(run, 0):F4}°, beamwidth {Value(run, 1):F3}°");
+        Assert.True(Value(run, 0) <= 0.1 * Value(run, 1), $"pointing error {Value(run, 0)}°");
+    }
+
     /// <summary>Gate 2 — Phase=steer(…) in element scope and the same phases written as 256 Phase[n] overrides give one pattern to 1e-12; a
     /// VAR reading row is refused, naming where row is valid.</summary>
     [Fact]

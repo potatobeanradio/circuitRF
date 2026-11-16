@@ -528,8 +528,10 @@ public static class C3dProblemAssembly
         double? paddingH = PaddingHeight(e);
         double? paddingHBelow = PaddingHeightBelow(e);
         double? planeFloor = PlaneFloor(setup, e, out bool unmarkedFloor, out bool undrawnFloor);
+        // brief-icf-6 R-icf6-3 — a port sheet down to the undrawn ground floor: the sides are padded from that column too.
+        double? column = undrawnFloor && planeFloor is { } gz ? PortColumn(portDocument, e, gz) : null;
         var box = Em3dGenerator.PaddedAirBox(setup, (extent.X0, extent.Y0, extent.X1, extent.Y1, extent.Z0, extent.Z1),
-                                             fMin, planeFloor, waves: [], notes, out string? boxRefusal, paddingH, paddingHBelow);
+                                             fMin, planeFloor, waves: [], notes, out string? boxRefusal, paddingH, paddingHBelow, column);
         if (boxRefusal is not null || box is null) return No(boxRefusal ?? "The air box could not be built.", e.Warnings);
         notes.Add(undrawnFloor
             ? "The air box's floor is the stackup's ground-reference plane, which the placed layout leaves undrawn: a PEC face at its " +
@@ -547,6 +549,27 @@ public static class C3dProblemAssembly
         var solids = e.Solids.ToList();
         var sheets = e.Sheets.ToList();
         var materials = e.Materials.ToList();
+        // brief-icf-6 R-icf6-3 — padded from the column, the substrate runs to the box's sides rather than stopping at the artwork's
+        // box: a die is not a pillar the size of its cell. Only slabs nothing but the artwork bounded, and only what one layout fills.
+        (Point3 Lo, Point3 Hi)? paddedContent = null;
+        if (column is not null)
+        {
+            var extentTuple = (extent.X0, extent.Y0, extent.X1, extent.Y1, extent.Z0, extent.Z1);
+            if (Em3dGenerator.ColumnNote(setup, extentTuple, fMin, paddingH, paddingHBelow, column) is { } columnNote) notes.Add(columnNote);
+            var d = Em3dGenerator.DefaultFacePadding(setup, fMin, Math.Max(Math.Max(extent.X1 - extent.X0, extent.Y1 - extent.Y0), extent.Z1 - extent.Z0),
+                                                     paddingH, paddingHBelow, column);
+            if (d.ColumnGoverns("xmin", extent.X1 - extent.X0) || d.ColumnGoverns("ymin", extent.Y1 - extent.Y0))
+            {
+                var run = RunSlabsToBox(solids, e.ArtworkBoundedSlabs, extent, box);
+                if (run.Count > 0)
+                {
+                    paddedContent = (new Point3(extent.X0, extent.Y0, extent.Z0), new Point3(extent.X1, extent.Y1, extent.Z1));
+                    notes.Add($"The dielectric slab{(run.Count == 1 ? "" : "s")} {string.Join(", ", run.Select(n => $"'{n}'"))} run{(run.Count == 1 ? "s" : "")} to the air box's sides: " +
+                              "the layout draws no board outline, so nothing says where the die ends, and a slab the size of the artwork " +
+                              "would stand as a pillar in air beside a port column that tall. Draw a board outline to bound it.");
+                }
+            }
+        }
         // 3D editor round 3 — the air box's fill (owner decision): the document's AirBoxMaterial, Air when it names none — the
         // technology's material of that name, else (for Air and Vacuum) a built-in one with free space's values.
         var materialSources = new Dictionary<string, string>(e.MaterialSources, StringComparer.Ordinal);
@@ -658,6 +681,8 @@ public static class C3dProblemAssembly
             Type = setup.Problem3D,
             PaddingHeightM = paddingH,
             PaddingHeightBelowM = paddingHBelow,
+            PaddingColumnM = column,
+            PaddedContent = paddedContent,
             FaceBoundaries = faceBoundaries,
             MeshRegions = MeshRegions(document),
             Terminals = terminals,
@@ -699,6 +724,47 @@ public static class C3dProblemAssembly
                                                                         .Where(n => solids.Any(s => s.Name == n)).Distinct()]))
                     .Where(b => b.Item2.Count > 0))],
         };
+    }
+
+    /// <summary>
+    /// brief-icf-6 R-icf6-3 — the port column: when a modelled port's sheet is vertical and reaches the undrawn ground floor at
+    /// <paramref name="floorZ"/>, the height from that floor to the top of the modelled conductors. Null when none reaches it.
+    /// </summary>
+    internal static double? PortColumn(C3dDocument ports, C3dElaboration e, double floorZ)
+    {
+        double per = C3dLowering.Metres(1, ports.DbuPerMicron);
+        bool reaches = ports.Ports.Any(p => p.Model && p.Plane != C3dPlane.XY && p.Angle == 0 && p.Cylinder is null && p.Annulus is null
+                                            && Math.Abs(p.Rect.Min.V * per - floorZ) <= 1.5 * per);
+        if (!reaches) return null;
+        var tops = e.Solids.Where(s => s.Role == Em3dRole.Conductor && !e.NotModelled.Contains(s.Name))
+                           .Select(s => Em3dProblem.Bounds(s.Primitive).Z1).ToList();
+        if (tops.Count == 0) return null;
+        double h = tops.Max() - floorZ;
+        return h > 0 ? h : null;
+    }
+
+    /// <summary>brief-icf-6 R-icf6-3 — each of <paramref name="names"/> that is one axis-aligned rectangle filling the content's whole
+    /// lateral extent, widened to the box's sides in place; the names widened.</summary>
+    private static List<string> RunSlabsToBox(List<Em3dSolid> solids, IReadOnlyList<string> names,
+                                              (double X0, double Y0, double Z0, double X1, double Y1, double Z1) extent, Em3dAirBox box)
+    {
+        var run = new List<string>();
+        var wanted = names.ToHashSet(StringComparer.Ordinal);
+        double tol = 1e-9 * Math.Max(1e-3, Math.Max(extent.X1 - extent.X0, extent.Y1 - extent.Y0));
+        for (int i = 0; i < solids.Count; i++)
+        {
+            var s = solids[i];
+            if (s.Role != Em3dRole.Dielectric || !wanted.Contains(s.Name) || s.Primitive is not Em3dExtrudedPolygon { Holes.Count: 0, Outline.Count: 4 } ep)
+                continue;
+            double x0 = ep.Outline.Min(q => q.X), x1 = ep.Outline.Max(q => q.X), y0 = ep.Outline.Min(q => q.Y), y1 = ep.Outline.Max(q => q.Y);
+            bool rect = ep.Outline.All(q => (Math.Abs(q.X - x0) <= tol || Math.Abs(q.X - x1) <= tol) && (Math.Abs(q.Y - y0) <= tol || Math.Abs(q.Y - y1) <= tol));
+            if (!rect || Math.Abs(x0 - extent.X0) > tol || Math.Abs(x1 - extent.X1) > tol || Math.Abs(y0 - extent.Y0) > tol || Math.Abs(y1 - extent.Y1) > tol)
+                continue;
+            var (bx0, by0, bx1, by1) = (box.Min.X, box.Min.Y, box.Max.X, box.Max.Y);
+            solids[i] = s with { Primitive = ep with { Outline = [new Point2(bx0, by0), new Point2(bx1, by0), new Point2(bx1, by1), new Point2(bx0, by1)] } };
+            run.Add(s.Name);
+        }
+        return run;
     }
 
     /// <summary>brief-emb-1 R-emb1-2 — component ports are numbered after every number the document's own ports use.</summary>
@@ -922,6 +988,10 @@ public static class C3dPortReports
     {
         if (r.Resolved is not { } p) return r.Refusal ?? "";
         // brief-em3d-114 R-em3d114-4 — a multi-terminal port: its reference and why, then each terminal as a port of the result
+        // brief-hzn-20 — a hollow guide of several modes: its walls, each mode and its polarity line
+        if (r.Terminals is { } ms && ms[0].HollowMode is not null)
+            return $"{r.Label} (wave, hollow guide of {ms.Count} modes) on the {Em3dProblemFace(p)} face: {r.Reason}; each mode's " +
+                   "S-parameters are normalised to the mode.";
         if (r.Terminals is { } ts)
             return $"{r.Label} (wave, {ts.Count} terminals) on the {Em3dProblemFace(p)} face: the reference is '{p.NegativeObject}' — " +
                    $"{r.Reason}; " + string.Join("; ", ts.Select(t => $"terminal {t.Number}{(t.SourceLabel is { } n ? $" '{n}'" : "")} runs to " +

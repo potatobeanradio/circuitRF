@@ -55,8 +55,8 @@
 <h2 id="what">What circuitRF is</h2>
 <p>circuitRF is a lightweight, cross-platform RF circuit simulator. If you've used a SPICE tool or a
 commercial RF/microwave EDA suite, you'll be at home — but the analyses and the workflow are built
-around the <strong>RF problem</strong>, not the time-domain transient problem. It is deliberately <strong>not a SPICE
-simulator</strong>.</p>
+around the <strong>RF problem</strong>: harmonic balance first, with a <a href="../reference/transient.html">transient analysis</a>
+beside it for pulses, start-up and settling.</p>
 <p><strong>Simulations available:</strong></p>
 <ul>
 <li><p><strong>DC</strong> — operating point (linear and nonlinear), the bias prerequisite for HB.</p>
@@ -71,6 +71,10 @@ intermodulation.</p>
 <li><p><strong>Loadpull / sourcepull</strong> — a first-class experiment: sweep the source/load reflection
 coefficient over a Smith-chart grid and contour the figures of merit. <strong>Loadpull Pursuit</strong>
 automatically searches for the terminations that optimize a metric.</p>
+</li>
+<li><p><strong>Transient</strong> — the circuit in time from its operating point or from rest: rise time, overshoot,
+reflections, a converter's start-up and ripple. Runs natively or on ngspice, and can start a harmonic
+balance run that struggles from DC.</p>
 </li>
 <li><p><strong>Parametric sweeps</strong> — wrap <em>any</em> analysis in one or more swept variables (available power, a
 bias voltage, a frequency, any user variable).</p>
