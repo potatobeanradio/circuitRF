@@ -62,6 +62,11 @@
       "Summary": "Built-in dividers, hybrids, a coupler and a balun on 20 mil RO4350B at 2.4 GHz, each placed as one part from its specs and laid out by Update Layout. Run a cell's Planar MoM, EMerge and Palace setups, simulate its bench, and open its data display to see the circuit model against each solver."
     },
     {
+      "Folder": "Planar Filters",
+      "Title": "Planar Filters",
+      "Summary": "Microstrip filters on 20 mil RO4350B, one cell per form: edge-coupled, hairpin, cross-coupled open-loop, end-coupled, interdigital and combline bandpass filters at 2.4 GHz, and stepped-impedance, stub and lumped LC lowpass filters near 2 GHz. Each is one built-in part holding its geometry, laid out by Update Layout. Simulate a cell's bench and open its data display to see the circuit model against the ideal prototype it was designed from, and against Planar MoM where the cell has a setup."
+    },
+    {
       "Folder": "Patch Antenna",
       "Title": "Patch Antenna",
       "Summary": "A 5.8 GHz microstrip patch with an inset feed, set up for a full-wave planar solve with a radiation pattern."

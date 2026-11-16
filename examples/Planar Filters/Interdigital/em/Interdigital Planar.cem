@@ -1,0 +1,29 @@
+{
+  "FormatVersion": 1,
+  "Name": "Interdigital Planar",
+  "LayoutRef": "Interdigital/layout/Interdigital.clay",
+  "Frequency": {
+    "StartExpr": "1.8",
+    "StopExpr": "3.0",
+    "StepExpr": "",
+    "NumPoints": 7,
+    "Mode": "PointCount",
+    "Kind": "Linear",
+    "StartUnit": "GHz",
+    "StopUnit": "GHz",
+    "StepUnit": "GHz"
+  },
+  "AnalysisKind": "Planar",
+  "PlanarMesh": {
+    "Auto": false,
+    "CellsPerWavelength": 10,
+    "EdgeMesh": false,
+    "EdgeCells": 3,
+    "MinCellsAcrossConductor": 2
+  },
+  "ConductorThicknessCorrection": true,
+  "RobustMeshing": true,
+  "CreateSnpSchematic": false,
+  "ComponentPorts": [],
+  "DirectVerticalKernel": true
+}
