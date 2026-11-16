@@ -1308,15 +1308,14 @@ follow the shorted stubs with the open ends first, and every section meets its n
 length. `LadderSParamTests`:
 
 - every kind against its MLIN, MGAP, MTAPER, MTEE and MCROSS by hand, to 1e-9;
-- the stepped-impedance lowpass's −3 dB point at the g-values' cutoff, −4.6 %;
-- the Kuroda stub lowpass's, −2.1 %;
-- the elliptic kind's zero, +2.9 %;
-- the shorted-stub bandpass's centre (Matthaei), −1.7 %, and the highpass;
-- the bandstop's notch, +0.6 %;
-- the end-coupled bandpass's centre (Cohn, 25 mil alumina at 10 GHz), +0.04 %;
+- the shorted-stub highpass, which stops low and passes high;
 - the DC block;
 - |S11| at F of −52 dB for the single-stub matcher, −39 dB for the double-stub matcher and −78 dB for the binomial
   transformer.
+
+The textbook filters (stepped-impedance, Richards and Kuroda, the stub lowpass with zeros, the shorted-stub bandpass,
+the bandstop and the end-coupled bandpass) are written by the ladder's realisers and tested through them
+(`LadderRealiserTests`, docs/design/filter-synthesis.md §3).
 
 `LadderStackTests`: the same quarter-wave stub on the GaAs, Si and RO4350B stacks simulates and draws. Also
 `ALaddersPins_FollowItsShortedStubs`, `LadderReadoutTests`, `PlanSectionsPCellTests` (the cross is MCROSS's own
