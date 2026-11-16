@@ -4,7 +4,7 @@ slug: reference/components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Components
 lede: Every component in the standard library — its symbol, what it does, and its parameters.
-keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, Wilkinson, MWPD, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox
+keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, Wilkinson, MWPD, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox, MCRC, coupled-resonator filter, edge-coupled filter, parallel-coupled filter, hairpin filter, zig-zag filter, SIR, open-loop filter, cross-coupled filter, ring resonator filter, bandstop filter, spurline
 ---
 
 Symbols are rendered from the live drawing engine, with their connection leads and their pins shown
@@ -1631,6 +1631,91 @@ wavelength between vias, and the two grounds sit a balun's length apart.
 > K. S. Ang and I. D. Robertson, "Analysis and Design of Impedance-Transforming Planar Marchand Baluns," *IEEE
 > Transactions on Microwave Theory and Techniques*, vol. 49, no. 2, pp. 402–406, February 2001.
 > DOI [10.1109/22.903108](https://doi.org/10.1109/22.903108).
+
+## Planar filters {#planar-filters}
+
+A filter here is one component stated by its **geometry**: the widths, lengths and gaps you or a filter synthesis chose.
+Unlike the dividers and couplers above, nothing is derived from a specification, so the part draws and simulates exactly
+the numbers it holds, on whichever technology it is placed. The layout draws the pieces the circuit model simulates, and
+LVS compares every stored dimension and name.
+
+### Coupled-Resonator Filter (MCRC) {#mcrc}
+
+{{symbol: mcrc}}
+
+One part for every coupled-resonator microstrip filter: `N` resonators, each coupled to the next across a gap, between an
+input on terminal 1 and an output on terminal 2. Five names choose what it is.
+
+- **`Shape`**, how each resonator is laid out:
+  - `Straight`, the parallel-coupled (edge-coupled) filter: each half-wave resonator lies in two halves, the first beside
+    the resonator before it and the second beside the one after;
+  - `ZigZag`, the same, each resonator folded 90° at its middle, alternately right and left, so the filter runs in steps
+    instead of a long diagonal;
+  - `Hairpin`, each resonator folded into a U whose arms are `Sa` apart, the U's alternately inverted, neighbouring arms
+    coupled;
+  - `OpenLoop`, square loops each opened by `Gap` in the middle of one side. `Arrangement` = `Inline` sets them in a row,
+    opened alternately at the top and the bottom; `Cross` sets four in a square, loops 1 and 4 cross-coupled across `Sx`,
+    as in Hong and Lancaster's quasi-elliptic four-pole filter, with a transmission zero either side of the passband;
+  - `Ring`, one ring `L` round, fed across `S1` and `S2` from a short line on either side.
+- **`Profile`**: `Uniform`, or `SIR`, a stepped-impedance resonator (Makimoto and Yamashita) whose centre is `Wc` wide over
+  `Uc` of its length, for `Straight`, `ZigZag` and `Hairpin`. A narrow centre shortens the resonator and moves its first
+  spurious response up; a SIR hairpin is the miniature hairpin. The hairpins are staggered so their wide ends face.
+- **`Feed`**: `Coupled`, a strip beside the first and the last resonator, or `Tapped`, a line joined to each, `Tap` along
+  it from its midpoint (further out couples more strongly). A tapped filter has no `S1` or `S(N+1)`.
+- **`Form`**: `Bandpass`; `Bandstop`, resonators beside a through line, alternately above and below, each coupled over
+  its first half (`ZigZag`: the other half folded away) or one arm (`Hairpin`), notching where it is half a wavelength;
+  `Spurline`, each resonator a spur cut into a through line `2·W + S` wide by an L-shaped slot `S` wide (Bates), notching
+  where the spur is a quarter wavelength in the coupled pair's odd mode.
+
+| Parameter | Meaning |
+|---|---|
+| `N` | Resonators. A `Ring` is one; the `Cross` loops are four. |
+| `W`, `W1`, `W2`, … | Each resonator's width, and the feed strip's beside it; `Wk` gives resonator k its own. Neighbours coupled side by side take one width. |
+| `L`, `L1`, `L2`, … | Each resonator's centre-line length, open end to open end, about half a guided wavelength; `Lk` gives resonator k its own. Corners count along the centre line. A loop's is its perimeter less `Gap`, a ring's its circumference. |
+| `S1` … `S(N+1)` | `Sk` is resonator k's gap to the resonator or feed before it; `S(N+1)` the output feed's. A bandstop's `Sk` is resonator k's gap to the through line, a spurline's its slot. |
+| `Sa`, `Gap`, `Sx` | The hairpin's arm gap, the loop's opening, the cross-coupling gap. |
+| `Tap` | A tapped feed's distance from the end resonator's midpoint. |
+| `Wc`, `Uc` | A SIR's centre width and its share of the length. |
+
+**Building it.** Every coupled length is an MCLIN pair, every other run an MLIN, every fold a mitred MMITER corner, a ring
+two MCURVEs, a tap an MTEE, a ring's feed and a loop's opening an MGAP, and every free end an open end. Each strip couples
+to the neighbour it lies against, which is what the textbook design methods design with; a hairpin's own two arms, strips
+further over and the corners are not coupled in the circuit, and an EM run of the artwork has them. A neighbour longer than
+the next couples over the shorter one's end; its extra length is a plain line. A combination the part cannot build is
+refused by name: a bandstop of straight resonators (coupled along their whole half wave they do not notch), a stepped
+profile on a loop, a tap that lands on a corner, a gap that is missing, neighbours of unequal width coupled side by side.
+
+**Designs.** The part does not synthesise. Textbook designs placed in it land where they were designed: on 20 mil
+RO4350B a three-resonator 2.4 GHz filter 10 % wide with 0.5 dB ripple, from Cohn's parallel-coupled method, comes within
+1 % of its centre and 6 % of its ripple bandwidth as `Straight`, `ZigZag` and `Hairpin`, and an open-loop design from Hong
+and Lancaster's coupling coefficients within 1 % and 5 %. The default values are the `Straight` design. On a 100 µm GaAs
+or silicon process the part takes the substrate from the technology like any line.
+
+{{table: components/Mcrc}}
+
+**References**
+
+> S. B. Cohn, "Parallel-Coupled Transmission-Line-Resonator Filters," *IRE Transactions on Microwave Theory and
+> Techniques*, vol. 6, no. 2, pp. 223–231, April 1958. DOI [10.1109/TMTT.1958.1124542](https://doi.org/10.1109/TMTT.1958.1124542).
+
+> E. G. Cristal and S. Frankel, "Hairpin-Line and Hybrid Hairpin-Line/Half-Wave Parallel-Coupled-Line Filters," *IEEE
+> Transactions on Microwave Theory and Techniques*, vol. 20, no. 11, pp. 719–728, November 1972.
+> DOI [10.1109/TMTT.1972.1127860](https://doi.org/10.1109/TMTT.1972.1127860).
+
+> M. Makimoto and S. Yamashita, "Bandpass Filters Using Parallel Coupled Stripline Stepped Impedance Resonators," *IEEE
+> Transactions on Microwave Theory and Techniques*, vol. 28, no. 12, pp. 1413–1417, December 1980.
+> DOI [10.1109/TMTT.1980.1130258](https://doi.org/10.1109/TMTT.1980.1130258).
+
+> J.-S. Hong and M. J. Lancaster, "Couplings of Microstrip Square Open-Loop Resonators for Cross-Coupled Planar
+> Microwave Filters," *IEEE Transactions on Microwave Theory and Techniques*, vol. 44, no. 11, pp. 2099–2109, 1996.
+> DOI [10.1109/22.543968](https://doi.org/10.1109/22.543968).
+
+> R. N. Bates, "Design of Microstrip Spur-Line Band-Stop Filters," *IEE Journal on Microwaves, Optics and Acoustics*,
+> vol. 1, no. 6, p. 209, 1977. DOI [10.1049/ij-moa.1977.0029](https://doi.org/10.1049/ij-moa.1977.0029).
+
+> J.-S. Hong and M. J. Lancaster, *Microstrip Filters for RF/Microwave Applications*, Wiley, 2001.
+> DOI [10.1002/0471221619](https://doi.org/10.1002/0471221619). Ring resonators, bandstop filters and the coupling-
+> coefficient design method.
 
 ## MMIC passives {#mmic}
 

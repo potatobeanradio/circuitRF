@@ -2,7 +2,8 @@
 
 **Status:** six parts — MWPD, the Wilkinson divider, with its unequal-split (`K`) and multi-section (`N`) variants; MBLC
 and MRRC, the branch-line and rat-race hybrids; MCLC, MIDC and MCBL, the coupled-line coupler, interdigitated coupler
-and balun; MWPD's and MRRC's rings curved or cornered (`Corner`); the gap, taper and open-end sections (§1) · **Date:** 2026-11-16
+and balun; MWPD's and MRRC's rings curved or cornered (`Corner`); the gap, taper and open-end sections (§1); MCRC, every
+coupled-resonator filter as one part of stored geometry (§3.5) · **Date:** 2026-11-16
 
 Dividers, couplers and baluns on microstrip, each one built-in part that is defined once and read the same way by the
 schematic, the layout, LVS and EM. Each part has its own subsection in §3.
@@ -334,6 +335,113 @@ against their quarter waves and joined (`WilkinsonPlanTests`, `HybridPlanTests`)
 and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`WilkinsonSParamTests`,
 `HybridSParamTests`), and `testdata/schematic-to-layout/F8d-wilkinson-mitred` through Update Layout and LVS.
 
+### 3.5 MCRC, the coupled-resonator filters
+
+One part for every coupled-resonator microstrip filter, planned by `CoupledResonatorPlan` from the shared sections and
+nothing else. It differs from the parts above in one way, on purpose: it **stores physical geometry**, not specs. A filter's
+widths, lengths and gaps are a design, every number chosen with the others, and the design method depends on the shape
+(J-inverters, coupling coefficients, closed forms); a filter synthesis will be written later and fill in exactly these
+parameters. Until then a user, a script or an optimizer states them. `CoupledResonatorSpec.Read` is the one reader,
+used by the factory and the PCell alike.
+
+| Parameter | Stored | Meaning |
+|---|---|---|
+| `N` | yes | Resonators, 1 to 20. Ring: 1. Cross: 4. |
+| `W`, `W1` … `WN` | yes, m | Each resonator's width (its end sections' for a SIR), and the feed strip's beside it. `Wk` overrides `W`. |
+| `L`, `L1` … `LN` | yes, m | Each resonator's centre-line length, open end to open end, its corners counted along the centre line (2·arm each, `PlanBend.Arm`). A loop's is 4·side − `Gap`; a ring's its circumference. `Lk` overrides `L`. |
+| `S1` … `S(N+1)` | yes, m | Bandpass: `Sk` between resonator k and the resonator or feed before it; `S(N+1)` the output feed's. Tapped: `S2` … `SN` only. Bandstop: `Sk` resonator k to the through line. Spurline: `Sk` spur k's slot. |
+| `Shape` | yes, a name | `Straight`, `ZigZag`, `Hairpin`, `OpenLoop`, `Ring`. |
+| `Profile` | yes, a name | `Uniform`, or `SIR`: centre `Wc` wide over `Uc`·L (Straight, ZigZag, Hairpin bandpass). |
+| `Feed` | yes, a name | `Coupled`, or `Tapped` at `Tap` from the end resonators' midpoints (bandpass). |
+| `Form` | yes, a name | `Bandpass`; `Bandstop` (ZigZag or Hairpin); `Spurline` (Straight). |
+| `Arrangement` | yes, a name | Open loops: `Inline` or `Cross`. |
+| `Sa`, `Gap`, `Sx`, `Tap`, `Wc`, `Uc` | yes | Hairpin arm gap; loop opening; cross-coupling gap (loops 1-4); tap distance; SIR centre width and share. |
+| `SignalLayer`, `GroundReference` | yes | As for MWPD. |
+
+**The plans.** *Chain* (Straight, ZigZag, Hairpin): each resonator is walked from one open end to the other — an end
+section, the centre (a straight run, one corner, or a U of two corners and the run across `Sa`), the other end section —
+and the next resonator's first end section is placed W + S beside this one's second, on the side away from the fold, so
+every pair is aligned by construction and every fold turns away from the strip it last coupled to. ZigZag turns right,
+then left; Hairpin starts ∪ and alternates. A SIR's end sections are W wide and couple; its centre is `Wc` over `Uc`·L,
+and the SIR hairpins come out staggered so their wide ends face. A shorter neighbour sets a pair's length; the longer end
+runs on as a plain line. *Loops*: each square is walked counter-clockwise from its opening (an MGAP of `Gap`); two loops
+couple wherever a straight side of one lies W + S beside a straight side of the other, over their overlap, which handles
+loops of different sizes and the cross square's offset rows alike. *Ring*: two 180° MCURVEs, each feed a W-long line and
+an MGAP. *Bandstop*: the through line is the pairs' other strips, back to back, so neighbouring resonators sit a coupled
+length (about λg/4) apart, alternately above and below. *Spurline*: per spur, `S` of line 2·W + S wide, then the through
+strip and the spur as one MCLIN pair joined at its near end, the spur's far end open, the through strip `S` on.
+
+**What is coupled.** Each strip couples to the one neighbour it is placed against, as an MCLIN pair: the coupling Cohn,
+Cristal and Frankel (without the arms' self-coupling) and Hong and Lancaster design with. Left out of the circuit, and
+present in an EM run of the artwork: a hairpin's own two arms; strips further over (the resonator two along, the cross
+square's diagonal); the overhang of a longer neighbour; the corners' coupling; a coupled end's even/odd end difference
+where the pair ends at a loop opening (the MGAP takes it); the spurline's slot end. `Builder.Couple` is the one place
+pairs are made. The N-strip coupled section (a W per strip, an S per gap) replaces it there: unequal neighbours (refused
+today, `device.mcrc.unequal-pair`) become one asymmetric pair, and the strips beside a pair can join it as one section.
+
+**Open ends.** Every free end is a `PlanOpen`, and a loop's two ends at its opening an MGAP's; all of them are numbered
+first of the internal nodes, after the pins, so the unpivoted block eliminates them last.
+
+**What it needed beyond the pattern, and why.**
+
+- **Names in the model and the layout.** `Shape`, `Profile`, `Feed`, `Form` and `Arrangement` reach the factory and the
+  generator as text, as `Corner` does: one clause in the elaborator, one in the layout planner. LVS compares them as strings.
+- **No substrate rule.** `MicrostripSubstrateInjection` leaves MCRC's widths and lengths alone on every technology: they
+  are one design, which only a synthesis can carry to another substrate.
+- **Inline loops opened alternately.** Loops opened on the same side couple through sides whose points carry opposite
+  voltages and equal currents (the facing sides span the same distances from the two loops' ends, s and L − s), so their
+  electric and magnetic coupling cancel exactly for TEM lines and nearly in microstrip: two such loops in the model did
+  not reach a coupling coefficient of 0.04 even 0.1·h apart. Opened alternately top and bottom the two add (Hong and
+  Lancaster's mixed coupling), and 0.8 mm gives it.
+- **A ring's pins on copper.** An MGAP draws no copper, so a pin on its outer end had none under it and LVS refused it
+  (`lvs.pin.no-copper`); each feed is a line one W long.
+- **The spurline's notch.** With the through strip and the spur joined at the near end and the spur open at the far end,
+  the pair's transfer admittance is 2/(j(Ze·sin θe − Zo·tan θo·cos θe)), which vanishes where θo = π/2: the notch is where
+  the spur is a quarter wave in the odd mode. The model's notch is 0.24 % from that closed form with the spur's open end.
+
+**What synthesis must produce, for each shape.** All of it as the stored parameters above; nothing is derived inside the
+part.
+
+| Shape / form | Synthesis produces | Notes for the synthesis |
+|---|---|---|
+| Straight | `N`, `W`, `L` (or `Lk`), `S1` … `S(N+1)`; tapped: `S2` … `SN` and `Tap` | Each coupled section is an end section, (L − centre)/2 long. Cohn's J-inverters give each section's Ze, Zo; with one W the gap alone sets (Ze − Zo)/(Ze + Zo) = JZ0/(1 + (JZ0)²). L is two sections less the two open ends' Δl (`MicrostripOpenEnd`). Per-section widths need the N-strip section. |
+| ZigZag | as Straight | L adds each corner's excess, 2·arm − `PlanBend.LineLength`. |
+| Hairpin | as Straight, plus `Sa` | The U is W + `Sa` + 2·arm of centre line: L adds two corners' excess. `Sa` wide enough that the arms' own coupling (not modelled) is small, or the synthesis accounts for it (Cristal and Frankel). |
+| SIR (any of the three) | plus `Wc`, `Uc` | The impedance step and the length share set the resonance and the first spurious (Makimoto and Yamashita). `Uc`·L must hold the fold. |
+| OpenLoop, Inline | `N`, `W`, `Lk` per loop, `Gap`, `S2` … `SN`, and `S1`, `S(N+1)` or `Tap` | Coupling coefficients from split frequencies, Qe from a loaded loop. Each loop is sized for its surroundings: a coupled side lowers a loop's resonance (by 3 % at 0.8 mm on 20 mil RO4350B), so the middle loops come out smaller. |
+| OpenLoop, Cross | as Inline with `N` = 4, plus `Sx` | M12 = M34 (mixed), M23 (magnetic, S3), M14 (electric, `Sx`) of opposite sign: a zero either side of the band. |
+| Ring | `W`, `L`, `S1`, `S2` | L one guided wavelength at f0; the gaps set the external Q. |
+| Bandstop | `N`, `W`, `L`/`Lk`, `S1` … `SN`, `Sa` for Hairpin | Each resonator notches where it is λg/2 (corners' excess added); the gaps set each notch's coupling. Spacing is fixed: back to back. |
+| Spurline | `N`, `W`, `L`/`Lk`, `S1` … `SN` | The spur is a quarter wave in the odd mode at the notch, less its open end. The line is 2·W + S wide. |
+
+Refusals: `device.mcrc.*` — `n-invalid`, `spec-not-positive`, `gap-missing`, `name-unknown`, `form-shape`, `form-feed`,
+`profile-shape`, `ring`, `cross-n`, `sir-ratio`, `sir-centre`, `unequal-pair`, `tap-off-line`, `too-short`, `no-overlap`.
+Tests: `CoupledResonatorPlanTests` (every node one place, every copper island clear of the others, open ends first, pin 1
+at the origin, each refusal's code), `CoupledResonatorSParamTests` (a textbook design per shape within 2 % of its centre
+and 15 % of its ripple bandwidth — Cohn as Straight, ZigZag and Hairpin, Hong and Lancaster for inline loops; the cross
+square's two zeros; the ring, bandstop and spurline within 2 % of their closed forms; every shape and form its sections
+wired by hand to 1e-9), `CoupledResonatorGaAsTests` (a hairpin on the shipped GaAs and Si processes), and the
+`F14`-`F18` schematic-to-layout fixtures, one per shape, each LVS clean with one stored value changed giving exactly one
+`lvs.property.mismatch`.
+
+#### Possible enhancements
+
+1. **The N-strip coupled section in `Builder.Couple`.** It would lift the refusal of unequal neighbours, which a W per
+   resonator needs, and couple a hairpin's own arms and the strips two over, which Cristal and Frankel's hairpin design
+   and a tightly folded open-loop filter both depend on.
+2. **A through line of its own width for the bandstop.** Today each through-line stretch is as wide as the resonator
+   beside it, because an MCLIN pair has one width; a 50 Ω line with resonators of another impedance is the usual design,
+   and the asymmetric pair from (1) gives it.
+3. **Spacing parameters for the bandstop and the spurline.** Resonators sit back to back, about λg/4 apart, and spurs 2·S
+   apart; optimum bandstop designs and cascaded spurlines choose the spacing, so a synthesis would want to state it.
+4. **The spurline's slot end.** The spur's open end faces the full-width line across the slot's short leg, a gap the
+   model leaves out; an MGAP there would follow narrow slots, where it pulls the notch down.
+5. **A readout of each resonator's frequency and each coupling.** The part shows geometry only; the resonators' own
+   frequencies, the coupling coefficients and Qe, computed from the plan as the tests compute them, would let a user check
+   a hand-made design before running it.
+6. **More cross-coupled arrangements.** Trisections and cascaded quadruplets of open loops are the same loops in other
+   places; the coupling search already finds facing sides wherever loops sit.
+
 ## 4. What a new topology costs
 
 1. `src/Core/Devices/Microstrip/<X>Plan.cs` — the pure plan (and a section kind, with one case in
@@ -453,6 +561,29 @@ and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`
 > January 1984. DOI [10.1109/TMTT.1984.1132616](https://doi.org/10.1109/TMTT.1984.1132616); corrections, vol. 33, no. 3,
 > p. 288, 1985, DOI [10.1109/TMTT.1985.1133005](https://doi.org/10.1109/TMTT.1985.1133005). The modes the coupled-line
 > synthesis inverts.
+
+> S. B. Cohn, "Parallel-Coupled Transmission-Line-Resonator Filters," *IRE Transactions on Microwave Theory and
+> Techniques*, vol. 6, no. 2, pp. 223–231, April 1958. DOI [10.1109/TMTT.1958.1124542](https://doi.org/10.1109/TMTT.1958.1124542).
+> MCRC's Straight, ZigZag and Hairpin test designs.
+
+> E. G. Cristal and S. Frankel, "Hairpin-Line and Hybrid Hairpin-Line/Half-Wave Parallel-Coupled-Line Filters," *IEEE
+> Transactions on Microwave Theory and Techniques*, vol. 20, no. 11, pp. 719–728, November 1972.
+> DOI [10.1109/TMTT.1972.1127860](https://doi.org/10.1109/TMTT.1972.1127860).
+
+> M. Makimoto and S. Yamashita, "Bandpass Filters Using Parallel Coupled Stripline Stepped Impedance Resonators," *IEEE
+> Transactions on Microwave Theory and Techniques*, vol. 28, no. 12, pp. 1413–1417, December 1980.
+> DOI [10.1109/TMTT.1980.1130258](https://doi.org/10.1109/TMTT.1980.1130258). The SIR profile.
+
+> J.-S. Hong and M. J. Lancaster, "Couplings of Microstrip Square Open-Loop Resonators for Cross-Coupled Planar
+> Microwave Filters," *IEEE Transactions on Microwave Theory and Techniques*, vol. 44, no. 11, pp. 2099–2109, 1996.
+> DOI [10.1109/22.543968](https://doi.org/10.1109/22.543968). The open loops, their couplings and the cross-coupled square.
+
+> R. N. Bates, "Design of Microstrip Spur-Line Band-Stop Filters," *IEE Journal on Microwaves, Optics and Acoustics*,
+> vol. 1, no. 6, p. 209, 1977. DOI [10.1049/ij-moa.1977.0029](https://doi.org/10.1049/ij-moa.1977.0029).
+
+> J.-S. Hong and M. J. Lancaster, *Microstrip Filters for RF/Microwave Applications*, Wiley, 2001.
+> DOI [10.1002/0471221619](https://doi.org/10.1002/0471221619). Ring resonators, bandstop filters and the
+> coupling-coefficient design method.
 
 > J. Lange, "Interdigitated Stripline Quadrature Hybrid," *IEEE Transactions on Microwave Theory and Techniques*,
 > vol. 17, no. 12, pp. 1150–1151, December 1969. DOI [10.1109/TMTT.1969.1127115](https://doi.org/10.1109/TMTT.1969.1127115).

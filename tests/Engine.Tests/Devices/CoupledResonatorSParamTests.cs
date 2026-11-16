@@ -248,7 +248,7 @@ public class CoupledResonatorSParamTests(ITestOutputHelper output)
     }
 
     /// <summary>
-    /// Hong and Lancaster's method (IEEE Trans. MTT 44(12), 1996), on the model itself: the lowpass prototype's coupling
+    /// Hong and Lancaster's method (IEEE Trans. MTT 44(11), 1996), on the model itself: the lowpass prototype's coupling
     /// coefficients M(k,k+1) = FBW/√(g_k·g_(k+1)) and external Q, Qe = g0·g1/FBW. Each gap is the one whose two loops,
     /// lightly fed, split into f1 and f2 with (f2² − f1²)/(f2² + f1²) = M; the tap the one at which one loop, tapped at
     /// both ends, has a 3 dB bandwidth of 2·f0/Qe. Each loop is then sized for f0 where it sits: a coupled side lowers a
@@ -372,10 +372,11 @@ public class CoupledResonatorSParamTests(ITestOutputHelper output)
     }
 
     /// <summary>
-    /// A spurline notches where its spur is a quarter wavelength in the coupled pair's odd mode (R. N. Bates, IEE J.
-    /// Microwaves, Optics and Acoustics 1(6), 1977): with the through strip and the spur joined at the near end and the
-    /// spur open at the far end, the pair's transfer admittance is 2/(j(Ze·sin θe − Zo·tan θo·cos θe)), which vanishes
-    /// at θo = π/2. Its closed form here: L plus the spur's open end, a quarter wave in the odd mode's εeff at the notch.
+    /// A spurline (R. N. Bates, IEE J. Microwaves, Optics and Acoustics 1(6), 1977: the through strip and the spur an
+    /// edge-coupled pair joined at one end) notches where its spur is a quarter wavelength in the pair's odd mode. With
+    /// the two joined at the near end and the spur open at the far end, the pair's transfer admittance is
+    /// 2/(j(Ze·sin θe − Zo·tan θo·cos θe)), which vanishes at θo = π/2. Its closed form here: L plus the spur's open end,
+    /// a quarter wave in the odd mode's εeff at the notch.
     /// </summary>
     [Fact]
     public void ASpurline_NotchesWhereItsSpurIsAnOddModeQuarterWave()
