@@ -88,6 +88,8 @@ public static class ComponentModelFactory
             // sign, and a sign the symbol has to show.
             "JFET_N", "JFET_P",
             "TLIN", "CLIN", "MLIN", "MCLIN", "BCLIN", "MBCLIN", "MBEND", "MCURVE", "MMITER", "MGAP", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
+            // The radial stub, one sector or a butterfly, on one terminal (MicrostripRadialStub).
+            RadialStubTypeName,
             // The planned passives (docs/design/rf-passives.md): specs in, MTEE, MCURVE and MLIN sections stamped as one block.
             WilkinsonTypeName,
             BranchLineTypeName, RatRaceTypeName,
@@ -252,6 +254,8 @@ public static class ComponentModelFactory
             return CreateMicrostripGapModel(parameters);
         if (typeName.Equals("MTEE", StringComparison.OrdinalIgnoreCase))
             return CreateMicrostripTeeModel(parameters);
+        if (typeName.Equals(RadialStubTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateRadialStubModel(parameters);
         if (typeName.Equals("MCROSS", StringComparison.OrdinalIgnoreCase))
             return CreateMicrostripCrossModel(parameters);
         if (typeName.Equals("MTAPER", StringComparison.OrdinalIgnoreCase))
@@ -2934,6 +2938,17 @@ public static class ComponentModelFactory
         => new(GetReal(parameters, "W", 0.0), GetReal(parameters, "S", 0.0),
                GetReal(parameters, "H", DefaultSubstrateHMeters), GetReal(parameters, "Er", DefaultSubstrateEpsR),
                MicrostripInstanceName(parameters, "MGAP"));
+
+    /// <summary>The radial stub's engine token (one terminal, the shunt node).</summary>
+    public const string RadialStubTypeName = "MRADIAL";
+
+    // MRADIAL: W (the feed's width), Ro (the arc's radius from the apex) and Sides in SI; Angle arrives in RADIANS, as
+    // MCURVE's does, and is converted back once. W and Ro have no default: an absent one reads as 0, which is refused.
+    private static MicrostripRadialStubModel CreateRadialStubModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(GetReal(parameters, "W", 0.0), GetReal(parameters, "Ro", 0.0),
+               GetReal(parameters, "Angle", Math.PI / 3.0) * 180.0 / Math.PI,
+               (int)Math.Round(GetReal(parameters, "Sides", 1.0)), SubstrateOf(parameters),
+               MicrostripInstanceName(parameters, RadialStubTypeName));
 
     private static MicrostripTeeModel CreateMicrostripTeeModel(IReadOnlyDictionary<string, Value> parameters)
     {

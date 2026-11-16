@@ -12,7 +12,7 @@ namespace CircuitRF.Core.Devices;
 /// <see cref="MarchandBalunPlan"/>). It has no line physics of its own: each section of the plan is the EXISTING
 /// part's model (<see cref="MicrostripTeeModel"/>, <see cref="MicrostripCurveModel"/>,
 /// <see cref="MicrostripLineModel"/>, <see cref="MicrostripCoupledLineModel"/>, <see cref="MicrostripMiterBendModel"/>,
-/// <see cref="MicrostripBendModel"/>), stamped into a
+/// <see cref="MicrostripBendModel"/>, <see cref="MicrostripRadialStubModel"/>), stamped into a
 /// <see cref="LocalAdmittanceBlock"/> on the plan's nodes, and the internal nodes are Kron-reduced away so the
 /// instance stamps one block on its pins — the way MTEE stamps the arms it draws (<see cref="JunctionArms"/>).
 /// The same network built from explicit instances of those parts is therefore the same matrix.
@@ -75,6 +75,7 @@ public sealed class MicrostripPlanModel : ComponentModel, IReportsWarnings, IDcS
                     path, s.RoughnessMeters)
                 : new MicrostripBendModel(b.W, b.AngleDeg, MicrostripBendMiter.None, s.HMeters, s.TMeters, s.EpsR,
                     s.SigmaSPerM, s.TanD, path),
+            PlanRadialStub r => new MicrostripRadialStubModel(r.W, r.Ro, r.AngleDeg, r.Sides, s, path),
             _ => throw new NotSupportedException(section.GetType().Name),
         };
         return (model, new ElaboratedComponent(model.GetType().Name, path, section.Nodes,

@@ -113,3 +113,13 @@ public sealed record PassivePlan(IReadOnlyList<string> Pins, IReadOnlyList<PlanS
 /// </summary>
 public sealed record PlanCoupledLine(int[] Nodes, double X, double Y, double RotationDeg, double W, double S, double L,
     int Fingers = 2) : PlanSection(Nodes, X, Y, RotationDeg);
+
+/// <summary>
+/// A radial stub (MRADIAL, <see cref="MicrostripRadialStubModel"/>): a sector of <paramref name="AngleDeg"/> whose narrow
+/// end is <paramref name="W"/> wide, open at <paramref name="Ro"/> from its apex, or with <paramref name="Sides"/> = 2 a
+/// butterfly. Its one node is the shunt node, the middle of the narrow end, where the stub hangs off a tee's branch or
+/// a line's end. In the part's own frame one sector fans along +x from its pin; a butterfly's second sector fans along
+/// −x, and its pin faces −y.
+/// </summary>
+public sealed record PlanRadialStub(int[] Nodes, double X, double Y, double RotationDeg, double W, double Ro,
+    double AngleDeg, int Sides = 1) : PlanSection(Nodes, X, Y, RotationDeg);
