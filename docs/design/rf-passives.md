@@ -1,8 +1,9 @@
 # circuitRF — RF passives: one plan per topology
 
-**Status:** six parts — MWPD, the Wilkinson divider, with its unequal-split (`K`) and multi-section (`N`) variants; MBLC
-and MRRC, the branch-line and rat-race hybrids; MCLC, MIDC and MCBL, the coupled-line coupler, interdigitated coupler
-and balun; MWPD's and MRRC's rings curved or cornered (`Corner`) · **Date:** 2026-11-16
+**Status:** nine parts — MWPD, the Wilkinson divider, with its unequal-split (`K`) and multi-section (`N`, to seven)
+variants; MGPD, MBPD and MTPD, the Gysel, Bagley polygon and tee dividers; MBLC (to four sections) and MRRC, the
+branch-line and rat-race hybrids; MCLC, MIDC and MCBL, the coupled-line coupler, interdigitated coupler and balun; the
+rings curved or cornered (`Corner`) · **Date:** 2026-11-16
 
 Dividers, couplers and baluns on microstrip, each one built-in part that is defined once and read the same way by the
 schematic, the layout, LVS and EM. Each part has its own subsection in §3.
@@ -81,7 +82,7 @@ which fixes the curve radius. Each port pin sits one 50 Ω width of line beyond 
 | `Gap` | yes, m | The isolation resistor's pin span; the ring closes across it. 1.35 mm is an 0402 at nominal density. |
 | `SignalLayer`, `GroundReference` | yes | The usual layer choices; empty follows the technology. |
 | `K` | yes, 1 | Split ratio, P3/P2 = K² (§3.1). |
-| `N` | yes, 1 | Sections, 1 to 3; the pins are 3 + 2·N (§3.1). |
+| `N` | yes, 1 | Sections, 1 to 7; the pins are 3 + 2·N (§3.1). |
 | `Band` | yes, 2 | f2/f1 of the multi-section design, centred on F. |
 | `Corner` | yes, a name | `Curve` (the default), or `Miter` / `Square`: the ring a rectangle of MMITER or MBEND corners (§3.4). |
 | W, arm W, L, ring radius, isolation R | readout | Derived by `WilkinsonPlan.Build` on the substrate; for a variant, every line and resistor. |
@@ -110,7 +111,7 @@ across `Gap`) and takes the difference up in the input tee's two through lengths
 off the input's axis. At K = 1 the transformers are Z0 lines and are left out, which is what keeps the equal split
 bit-exact; the cost is a 90° step in the outputs' phase between K = 1 and a K just off it.
 
-**Multi-section, `N` = 2, 3** (Cohn). The even-mode half is a chain of quarter waves from 2·Z0 to Z0, made equal-ripple
+**Multi-section, `N` = 2 to 7** (Cohn). The even-mode half is a chain of quarter waves from 2·Z0 to Z0, made equal-ripple
 over the band f1 = 2F/(1 + Band) … f2 = 2F·Band/(1 + Band) and symmetric (z_k·z_(N+1−k) = 2), so one unknown, z_1, is
 found by bisection where the reflection vanishes at the first Chebyshev zero, cos θ = cos θm·cos(π/(2N)), θm = π/(1 + Band).
 The odd-mode half is a short at the input, the same sections, and half of each resistor to ground at every junction; the
@@ -118,7 +119,16 @@ resistors make that half's admittance exactly Z0⁻¹ at the even mode's own zer
 π − θ1; for N = 3 also π/2), N real equations in N conductances solved by Newton's method from all ones. Matched in both
 modes there, every port is matched and the outputs isolated. The tests hold the N = 2 solve to an independent closed
 form (the two-section transformer's z_1 = √(A + √(A² + 2)), A = 1/(2·tan²θ1), and the two resistors from the odd-mode
-match), and the N = 2 and 3 solutions on ideal TLIN lines to |S| < 1e-9 at every zero. The ring is the section next to
+match), and the N = 2 to 7 solutions on ideal TLIN lines to |S| < 1e-9 at every zero. Above three sections the
+bisection has more than one unknown, so `WilkinsonPlan.ChebyshevSections` solves the same two conditions for any N: the
+⌊N/2⌋ free impedances by Gauss–Newton on the reflection at the Chebyshev zeros below π/2 (with the symmetry each zero is
+one real condition, and having all of them makes the transformer the equal-ripple one), and the N conductances by
+Newton's method. A plain start fails for four or more sections in narrow bands, where the zeros crowd together near π/2,
+so both are continued from f2/f1 = 10, where they converge from evenly spaced impedances and resistors of 4, to the band
+asked for in 5 % steps, each step starting from the last one's answer. N = 2 and 3 keep the bisection, so their numbers
+and fingerprints stay bit for bit; the general solve gives them to eleven places. Below f2/f1 = 1.1 the odd mode's
+equations are nearly dependent (seven sections lose the solution at 1.05), so four or more sections there are refused
+(`device.wilkinson.sections-unsolved`). The ring is the section next to
 the input; each further section is a pair of straight lines run on from the ring's output tees, parallel either side of
 the gap's centre line, and every junction is a tee whose branch reaches the gap's edge. Resistors are numbered from the
 outputs, as the paper numbers them: resistor 1 on R2–R3, resistor k on `R2_k`–`R3_k`.
@@ -134,7 +144,8 @@ outputs, as the paper numbers them: resistor 1 on R2–R3, resistor k on `R2_k`�
   generated pin count, which a fixed symbol ignores. `InstanceNetContract` states the plan's pin count, so a short
   `.cnl` line is refused.
 - **A small solver inside a plan.** The multi-section impedances and resistors have no closed form for N = 3, so
-  `WilkinsonPlan.BroadbandSections` bisects and runs a 3 × 3 Newton. It is still pure and fast enough for the readout.
+  `WilkinsonPlan.BroadbandSections` bisects and runs a 3 × 3 Newton, and above three a continued Newton of up to 7 × 7
+  over about fifty band steps. It is still pure and well under a millisecond, fast enough for the readout.
 - **The ground pour counts the part.** `GroundPourPlanner` covered only the line generators, so a divider beyond its
   lines (the second stage of a tree) was left off the plane.
 
@@ -165,7 +176,7 @@ Both are plans of the shared sections and nothing else, so they stamp through `M
 `PassivePlanPCells.Draw` with no model or drawing code of their own: `BranchLinePlan` and `RatRacePlan` are the whole of
 each topology, and the PCell generators are three-line wrappers.
 
-**MBLC, the 3 dB branch-line (90°) hybrid**, one or two sections. Pins `1`–`2` and `4`–`3` are the two through lines;
+**MBLC, the 3 dB branch-line (90°) hybrid**, one to four sections. Pins `1`–`2` and `4`–`3` are the two through lines;
 driven at 1, 2 is through, 3 coupled and 4 isolated. Sections: an MTEE at each junction (four, or six for two sections),
 a `PlanLine` for each series and shunt arm, and a `Z0` `PlanLine` feed to each pin, in line with the through line. One
 section: series arms Z0/√2, shunt arms Z0. Two sections: series arms Z0 and shunt arms (1 + √2)·Z0, √2·Z0, (1 + √2)·Z0.
@@ -173,6 +184,22 @@ The synthesis method is Levy and Lind's and Muraguchi, Yukitake and Naito's (§7
 conditions, in normalised admittances (match and isolation b = 2at²/(1 + a²), 3 dB b/t² = 1/√2, with t = 1), and the
 circuit model checks them (`HybridSParamTests`: matched, isolated and 3 dB at F). Every arm is λg/4 at F between the
 reference planes of the tees it joins.
+
+Three and four sections keep the series arms at Z0, as two do, and solve the shunt arms from the same conditions
+(`BranchLinePlan.ShuntAdmittances`). At F each half is a chain of quarter waves with an eighth-wave stub of j·y at every
+junction; its A = D, it is matched when B = C, and the split is 3 dB in quadrature when |B| = 1/√2. Three sections
+(y1, y2, y2, y1) have a closed form: B = j(y2² − 1) gives y2 = √(1 − 1/√2), and B = C then y1 = √2·y2·(√(1 + 1/√2) − 1),
+shunt arms of 4.26·Z0 and 1.85·Z0. Four (y1, y2, y3, y2, y1) solve both conditions in closed form given y3 —
+y2 = (1 − √(1 − y3/√2))/y3 and a quadratic in 1 − y1·y2 — and y3 is set where the even half's reflection is also flat at
+F (ρ = Γ/(jT), real on the real axis, with ρ' = 0), by bisection on a central difference: shunt arms of 7.40·Z0, 2.55·Z0
+and 1.99·Z0. A maximally flat design that frees the series arms as well (computed for comparison, not built) needs
+higher outer arms still, 5.3·Z0 and 10.6·Z0 for three and four sections, for a few per cent more band, so the series arms
+stay at Z0. Both keep port 3 a quarter period behind port 2.
+
+The outer arms are the cost. 213 Ω in a 50 Ω system is 1.3 µm wide on 20 mil RO4350B, which the line model accepts
+and no board draws, and its conductor loss takes 1 dB of the split; on 60 mil PTFE it is 70 µm, and there the
+three-section coupler is matched and isolated to −43 dB at F. Four sections' 370 Ω is outside the line model and
+refused by name; the tests take a 35 Ω system on the PTFE board, 259 Ω and 11 µm.
 
 **MRRC, the rat-race (180°) hybrid.** Pin `1` is Σ, `4` is Δ, `2` and `3` the outputs. Sections: four MTEEs on a ring
 of √2·Z0, `PlanLine` runs between them and two 180° `PlanCurve`s; each pin is the tee's branch, one W0 long. The pins
@@ -182,7 +209,7 @@ sit in ring order 2, 1, 3, 4, spaced λg/4, λg/4, λg/4 and 3λg/4 between refe
 |---|---|---|---|
 | `Z0` | both | yes, Ω | Port impedance; the arms' impedances follow from it. |
 | `F` | both | yes, Hz | Centre frequency: every arm or spacing is λg/4 (or 3λg/4) here. |
-| `N` | MBLC | yes | Sections, 1 or 2. |
+| `N` | MBLC | yes | Sections, 1 to 4. |
 | `Corner` | MRRC | yes | `Curve`, `Miter` or `Square`, as MWPD's (§3.4). |
 | `SignalLayer`, `GroundReference` | both | yes | As for MWPD. |
 | W and L of each arm; the ring's width, λg/4 and bend radius | — | readout | `BranchLinePlan.Build`, `RatRacePlan.Build`. |
@@ -205,7 +232,7 @@ sit in ring order 2, 1, 3, 4, spaced λg/4, λg/4, λg/4 and 3λg/4 between refe
   lacked. The ground pour counts the planned passives' generators: without them it covered only the lines placed beside
   the part, which left the rat-race's half-turns off the plane.
 
-Refusals: `device.branchline.*` (a non-positive spec, `N` other than 1 or 2, an unreachable width, an arm too short for
+Refusals: `device.branchline.*` (a non-positive spec, `N` other than 1 to 4, an unreachable width, an arm too short for
 its tees' stubs) and `device.ratrace.*` (a non-positive spec, an unreachable width, a ring too small for F). Tests:
 `HybridPlanTests` (closed forms, reference planes, every plan node one point, refusals), `HybridSParamTests` (each part
 equals its sections wired by hand to 1e-9; the C2 fixture; the split, match, isolation and phase at F; DC), the
@@ -304,6 +331,71 @@ against their quarter waves and joined (`WilkinsonPlanTests`, `HybridPlanTests`)
 and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`WilkinsonSParamTests`,
 `HybridSParamTests`), and `testdata/schematic-to-layout/F8d-wilkinson-mitred` through Update Layout and LVS.
 
+### 3.5 MGPD, MBPD and MTPD: the Gysel, Bagley polygon and tee dividers
+
+Three more dividers, each a plan of the shared sections and nothing else, so they stamp through `MicrostripPlanModel` and
+draw through `PassivePlanPCells.Draw` with no model or drawing code of their own.
+
+| Part | Stored | Derived (readout) | Pins |
+|---|---|---|---|
+| MGPD | `Z0`, `F`, `Corner` | the three lines' W and λg/4, the ring's turns, R = Z0 | 1 in, 2 and 3 out, `R2` and `R3` the isolation nodes |
+| MBPD | `Z0`, `F`, `N` (odd, 3 to 9), `Corner` | the input arms' and sides' W and λg/4, the ring's turns | 1 in, 2 … N + 1 out, the count following `N` |
+| MTPD | `Z0`, `F`, `K` | each transformer's W and λg/4 | 1 in, 2 and 3 out |
+
+**MGPD, the Gysel divider** (Gysel 1975). The ring runs 1, 2, R2, R3, 3: quarter waves of √2·Z0 from the input to each
+output, quarter waves of Z2 from each output to an isolation node, and a half wave of Z3 between the nodes, each node to
+ground through an ordinary resistor on its pin. The numbers come from the even/odd analysis about the line through 1 and
+the half wave's middle. Even: the middle is an open, so each isolation node, a quarter wave away, is a short and its
+resistor carries nothing, and the isolation arm, a quarter wave further, is an open at the output; the output sees its
+input arm alone, which matches 2·Z0 to Z0 at √2·Z0. Odd: 1 and the middle are grounds, the input arm and the half line
+are shorted quarter waves, opens at the output and at the node, and the output sees Z2²/R, Z0 when R = Z2²/Z0. Z2 is
+free; Z0 makes R = Z0, and makes the Z0 line each resistor lands on matched by it. Z3 does not enter at F; on ideal
+lines a lower one widens the band (|S11|, |S22| and |S23| under −20 dB over ±9 % of F with Z0, ±11 % with Z0/√2, ±12 %
+with Z0/2), and the plan takes Z0/√2, whose width stays within about twice the port line's. On the example board the
+divider is matched and isolated to −50 dB at F and under −20 dB from 2.11 to 2.65 GHz, with any `Corner`.
+
+**MBPD, the Bagley polygon** (Sakagami et al. 2007; Bagley's own design is unpublished). The outputs are the corners of a
+polygon of half-wave sides of Z0; the input feeds the middle of the closing side, a quarter wave from the first and last
+corners. A half wave repeats its voltage inverted, so every corner has one amplitude and neighbours are opposite, and N
+must be odd for the two ways round to agree. Equal voltages into equal loads divide the power equally; the corners'
+currents sum to N·V/(2·Z0) at the first and last corners, which a quarter wave of Z_a turns into Z_a²·N/(4·Z0) at the
+input, Z0 for Z_a = 2·Z0/√N. The sides' impedance does not enter at F; Z0 gives the widest input match at three ways
+(±17 % on ideal lines, against ±13 % at Z0/√2 and ±15 % at √2·Z0). Only the input is matched.
+
+**MTPD, the tee divider** (Pozar §7.2, a textbook, no DOI). One MTEE whose through arms are quarter-wave transformers of
+Z0·√(1 + K²) to 2 and Z0·√(1 + K²)/K to 3, so the junction sees Z0·(1 + K²) and Z0·(1 + K²)/K² in parallel, Z0, split as
+K². No isolation and only the input matched: there is no resistor.
+
+**What they needed beyond the shared pieces, and why.**
+
+- **One ring builder for both rings (`RacetrackRing`).** The Gysel's ring and the Bagley's polygon are both the
+  rat-race's racetrack: tees on two straight runs and a turn at each end. The builder takes each run's stops (a tee with
+  its branch pin, or a line), carries the shorter run's difference as a line at each of its ends, makes each turn and
+  those lines the span it must have between the tees it joins, and turns on half-turns (π·(R − 0.2·W)) or on two corners
+  at their own electrical length (`PlanBend.LineLength`) and a side, as MRRC's. MRRC itself is left as it is, so its
+  plan stays bit for bit; it is the same geometry.
+- **Where the Bagley's corners go.** For N = 2m + 1 the input and its nearest ⌊(m + 1)/2⌋ corners each side sit on the
+  upper run and the rest on the lower, which leaves the runs within about a half wave of each other for every N; the side
+  between the two runs goes round the turn.
+- **Grounded resistors on pins (MGPD).** Each isolation node is a pin for a resistor to a ground via, as MCBL's G2/G3
+  are for its vias, so LVS, the BOM and EM see each resistor; Update Layout places the resistor on its pin and the via
+  beside its far pad (`F14-gysel-divider`). The two pins sit 600 apart on the symbol, so no resistor dropped there spans
+  both.
+- **A second variadic pin count (MBPD).** N + 1 pins, as MWPD's 3 + 2·N: `EditableSchematic.PortCount` reads a plain odd
+  `N`, and `SymbolPortDefs.For` and `BuiltInSymbols.Primitives` answer any other count with the three-way divider
+  (`BagleyPlan.WaysForPinCount`).
+
+Refusals: `device.gysel.*`, `device.bagley.*` (also an even `N`, or one outside 3 to 9) and `device.teedivider.*`: a
+non-positive spec, an unreachable width, a ring too small for F. Tests: `DividerPlanTests` (the closed forms; each
+spacing walked round the ring between reference planes; every piece joined; refusals), `DividerSParamTests` (each part
+equal to its sections wired by hand to 1e-9; at F the Gysel matched and isolated and split 3 dB in phase, the Bagley a
+third to each output in alternate phase, the tee split as K²), `DividersOnMmicTests` (each plans, draws and divides on
+the GaAs MMIC technology), the `F14`–`F16` schematic-to-layout fixtures and an LVS clean run plus one spec mismatch each.
+The generators' versions follow MTEE's, MLIN's and MCURVE's (and MMITER's and MBEND's for the rings' corners).
+
+For the maintainer: the names MGPD, MBPD and MTPD (microstrip Gysel, Bagley polygon and tee power divider) are
+circuitRF's own.
+
 ## 4. What a new topology costs
 
 1. `src/Core/Devices/Microstrip/<X>Plan.cs` — the pure plan (and a section kind, with one case in
@@ -317,7 +409,8 @@ and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`
    `BuiltInSymbols` (glyph); `MicrostripSubstrateInjection` (kind set); `SymbolArtworkGenerator`.
 4. `PassivePlanPCells.Generate<X>` and its `PCellRegistry` row; the generator row in `Lvs/DeviceType`; the generator
    in `GroundPourPlanner`'s line set. A part whose pins follow a parameter also needs its count in
-   `EditableSchematic.PortCount`, `SymbolPortDefs.For` and `BuiltInSymbols.Primitives` (§3.1).
+   `EditableSchematic.PortCount`, `SymbolPortDefs.For` and `BuiltInSymbols.Primitives` (§3.1). A ring of tees on two
+   runs is `RacetrackRing.Build` (§3.5) and costs nothing more.
 5. Tests: the plan against its closed form, the composite against its parts by hand, a schematic-to-layout fixture; the
    records in `LibraryCatalogTests` and `PCellGeneratorVersioningTests`.
 6. Docs: a subsection under Dividers and couplers in `components.md`, and the example's README table.
@@ -334,8 +427,12 @@ and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`
   stated for radii of 3W to 7W, and a low-frequency ring is larger. Both warnings reach Messages through the part.
 - **The multi-section pair is two uncoupled lines in the model.** The lines run about `Gap` apart; their coupling is
   in EM and not in the circuit. On the example board Planar and EMerge follow the model's isolation to a few dB.
-- **`N` must be a plain number**, since it sets the pins. The catalogue (`circuitrf reference`) lists MWPD at its
-  five terminals and says in the terminals note how `N` adds pairs.
+- **`N` must be a plain number** for MWPD and MBPD, since it sets the pins. The catalogue (`circuitrf reference`) lists
+  MWPD at its five terminals and MBPD at its four, and says in the terminals note how `N` adds pins.
+- **A multi-section branch-line's outer arms are high.** Three sections need 4.26·Z0 and four 7.40·Z0; in a 50 Ω system
+  the first is a line no board draws on 20 mil RO4350B and the second is outside the line model (§3.2).
+- **The Bagley and the tee match only their input.** Their outputs see each other: the Bagley's three-way outputs are
+  at −3.7 dB return loss and −9.6 dB coupling to each other on the example board, the tee's at −6 dB.
 - **The MWPD generator's version follows MTEE's and MCURVE's**, and with corners MMITER's, MBEND's and MLIN's (MRRC's
   likewise). It draws through them, so a change that bumps one of those generators' versions changes the part's artwork
   too and must bump the part's.
@@ -353,9 +450,21 @@ and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`
 4. **Loop ports on cut cell instances.** A part on drawn pads whose copper closes a loop has its port (§5); a cut cell
    instance whose pins the copper joins is still refused, since its pins are ground-referenced with no gap between two
    of them.
-5. **A "Dividers and couplers" palette category.** Six new kinds under Microstrip make that list long; a category of
+5. **A "Dividers and couplers" palette category.** Nine new kinds under Microstrip make that list long; a category of
    their own would make them easier to find.
-6. **Smooth circuit curves in the example's plots.** Each bench sweeps only the EM runs' frequencies, so every marker is
+6. **An unequal split for MGPD.** The nodal analysis at F gives one directly: input arms of Z0·√(1 + K²) and
+   Z0·√(1 + K²)/K, isolation arms in the ratio K, and the two resistors in parallel K²·Z2²/(Z0·(1 + K²)), the half wave
+   tying them; the literature has closed forms for it, but none could be checked against its paper here, and the free
+   choices (Z2, how R splits) change the band. With a checked source it is one more spec, as MWPD's `K` is.
+7. **A band for MBLC.** Four sections at a flat match need 7.40·Z0 outer arms. The one free value trades flatness for
+   lower arms and more band: with the middle arm at 2.86·Z0 instead of 1.99·Z0 the outer arms fall to 4.4·Z0 and, on
+   ideal lines, |S11| and |S41| stay under −20 dB over ±35 % of F, against ±27 % when flat. Stated as a band, as MWPD's
+   `Band` is, it would bring four sections onto the boards that build three.
+8. **A Bagley with outputs in phase.** Alternate outputs leave half a period apart; a half-wave line on every other
+   output, planned in, would bring them into phase for an array feed, at the cost of length.
+9. **The Gysel's N-way form.** Gysel's paper divides N ways with each output's isolation line meeting at one floating
+   node; like Wilkinson's N-way it does not lie flat for three or more outputs (§3.1), and would need a crossing part.
+10. **Smooth circuit curves in the example's plots.** Each bench sweeps only the EM runs' frequencies, so every marker is
    a solved point and the circuit line is coarse; a `.cdd` that also reads the cell's own fine sweep would draw it
    smoothly.
 
@@ -364,8 +473,16 @@ and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`
 > E. J. Wilkinson, "An N-Way Hybrid Power Divider," *IRE Transactions on Microwave Theory and Techniques*, vol. 8,
 > no. 1, pp. 116–118, January 1960. DOI [10.1109/TMTT.1960.1124668](https://doi.org/10.1109/TMTT.1960.1124668).
 
-> D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012: §7.3, the Wilkinson power divider; §7.5 and §7.8, the
-> quadrature and 180° hybrids; §7.6 and §7.7, coupled-line directional couplers and the Lange coupler. A book, with no
+> U. H. Gysel, "A New N-Way Power Divider/Combiner Suitable for High-Power Applications," *MTT-S International Microwave
+> Symposium Digest*, vol. 75, pp. 116–118, 1975. DOI [10.1109/MWSYM.1975.1123301](https://doi.org/10.1109/MWSYM.1975.1123301).
+
+> I. Sakagami, T. Wuren, M. Fujii and M. Tahara, "Compact Multi-Way Power Dividers Similar to the Bagley Polygon,"
+> *2007 IEEE/MTT-S International Microwave Symposium*, pp. 419–422, June 2007.
+> DOI [10.1109/MWSYM.2007.380477](https://doi.org/10.1109/MWSYM.2007.380477). The polygon divider's analysis; G. Bagley's
+> original design is unpublished.
+
+> D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012: §7.2, the lossless T-junction divider; §7.3, the
+> Wilkinson power divider; §7.5 and §7.8, the quadrature and 180° hybrids; §7.6 and §7.7, coupled-line directional couplers and the Lange coupler. A book, with no
 > DOI: [the publisher's page](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553).
 
 > J. Reed and G. J. Wheeler, "A Method of Analysis of Symmetrical Four-Port Networks," *IRE Transactions on Microwave

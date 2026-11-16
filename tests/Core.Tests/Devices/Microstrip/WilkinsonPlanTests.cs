@@ -389,6 +389,18 @@ public class WilkinsonPlanTests
         }
     }
 
+    /// <summary>The octave's numbers for four and seven sections, to four places, as components.md tabulates them.</summary>
+    [Fact]
+    public void AnOctave_GivesTheTabulatedNumbers_UpToSeven()
+    {
+        var (z4, r4) = WilkinsonPlan.BroadbandSections(4, 2.0);
+        Assert.Equal([1.0591, 1.2572, 1.5908, 1.8883], z4.Select(v => Math.Round(v, 4)));
+        Assert.Equal([21.3804, 6.5989, 3.6670, 1.9667], r4.Select(v => Math.Round(v, 4)));
+        var (z7, r7) = WilkinsonPlan.BroadbandSections(7, 2.0);
+        Assert.Equal([1.0089, 1.0568, 1.1863, 1.4142, 1.6859, 1.8924, 1.9823], z7.Select(v => Math.Round(v, 4)));
+        Assert.Equal([161.4511, 29.9643, 11.6766, 7.0555, 5.2838, 3.8258, 2.0029], r7.Select(v => Math.Round(v, 4)));
+    }
+
     /// <summary>A seven-section divider plans: 17 pins, a resistor pair per section Gap apart, every piece joined.</summary>
     [Fact]
     public void SevenSections_Plan()

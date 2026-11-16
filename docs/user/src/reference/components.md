@@ -1166,8 +1166,9 @@ most often left wrong — <code>IncludeCapacitance</code> and <code>er</code> �
 ## Dividers and couplers {#dividers}
 
 Each part here is one RF topology, placed as one component and stated by what you specify rather than by its geometry:
-the port impedance and the centre frequency, and a coupler's coupling. There are six: the Wilkinson divider, the
-branch-line and rat-race hybrids, the coupled-line coupler, the interdigitated coupler and the coupled-line balun.
+the port impedance and the centre frequency, and a coupler's coupling. There are nine: the Wilkinson, Gysel, Bagley
+polygon and tee dividers, the branch-line and rat-race hybrids, the coupled-line coupler, the interdigitated coupler and
+the coupled-line balun.
 circuitRF works out the lines on the workspace technology's substrate, the same way every time, and the layout draws
 exactly the pieces the circuit model simulates, so the schematic, the layout, LVS and EM all read the same few numbers.
 The parameters panel shows what the specs come out to — the widths, gaps and lengths, and a ring's radius — as values
@@ -1252,7 +1253,7 @@ leaves them out; a `K` just off 1 puts them in, so its outputs are a quarter wav
 
 #### Broadband: `N` sections {#mwpd-sections}
 
-`N` = 2 or 3 cascades that many quarter-wave sections, each with its own isolation resistor, to divide over a band rather
+`N` = 2 to 7 cascades that many quarter-wave sections, each with its own isolation resistor, to divide over a band rather
 than at one frequency. `Band` is the band's upper edge over its lower, f2/f1, centred on `F` (2, an octave, by default).
 The part grows two terminals per section: resistor 1 goes on `R2`–`R3` at the outputs as before, and resistor k on
 `R2_k`–`R3_k`, counted from the outputs inward; the readout lists every section and every resistor's value. Dropped on
@@ -1275,6 +1276,15 @@ For an octave, the sections and resistors, from the outputs inward, in units of 
 | 1 | 1.4142 | 2 |
 | 2 | 1.2196, 1.6399 | 4.8428, 1.9539 |
 | 3 | 1.1130, 1.4142, 1.7970 | 10.468, 3.9009, 1.9410 |
+| 4 | 1.0591, 1.2572, 1.5908, 1.8883 | 21.380, 6.5989, 3.6670, 1.9667 |
+| 7 | 1.0089, 1.0568, 1.1863, 1.4142, 1.6859, 1.8924, 1.9823 | 161.45, 29.964, 11.677, 7.0555, 5.2838, 3.8258, 2.0029 |
+
+Two and three sections are solved by a bisection on the first section's impedance; four to seven by the same two
+conditions for any N, solved together (a Gauss–Newton step on the transformer's reflection, Newton's method on the
+resistors), started from a 10:1 band where the solution is easy to find and carried to the band asked for in 5 % steps.
+The general solve gives the two- and three-section numbers too, to eleven places. The resistor at the outputs grows
+quickly with N: at an octave it is 21·`Z0` for four sections and 161·`Z0` for seven, where it does little, and the one
+nearest the input stays near 2·`Z0`.
 
 **Layout.** The ring is the section next to the input. Each further section is a pair of straight lines run on from the
 ring's output tees, one each side of the gap's centre line, with a tee at every junction whose short branch reaches the
@@ -1284,7 +1294,8 @@ gap's edge, so every resistor lands across the gap at its own junction as the fi
 coupling to each other is not in it. EM includes it; on the example board the EM isolation follows the model's to a few
 dB, so there it is small, but a narrow `Gap` on a thick substrate couples more. The tees at the junctions are MTEE's
 model, with its limits. `N` sets the number of terminals, so it must be a plain number, not an expression or a swept
-variable; above 3, a `Band` not above 1, or a `K` other than 1 with more than one section is refused by name.
+variable; above 7, a `Band` not above 1 (or under 1.1 with four or more sections, where the resistors' equations become
+dependent), or a `K` other than 1 with more than one section is refused by name.
 
 On the example board, the two-section divider keeps |S11| below −20 dB from 1.31 to 3.22 GHz and |S23| from 1.31 to
 3.36 GHz, a 2.5:1 band, where one section does from 1.98 to 2.85 GHz and from 1.92 to 2.77 GHz, 1.4:1. It pays for it with
@@ -1365,7 +1376,7 @@ port 3, and on port 2 a line as long as that divider if the three outputs must b
 
 {{symbol: mblc}}
 
-A 3 dB quadrature (90°) hybrid on microstrip, in one or two sections. Two through lines, 1–2 and 4–3, are joined by
+A 3 dB quadrature (90°) hybrid on microstrip, in one to four sections. Two through lines, 1–2 and 4–3, are joined by
 quarter-wave shunt arms. Power into terminal 1 divides equally between terminal 2 (through) and terminal 3 (coupled),
 which leave a quarter period apart, 3 behind 2; terminal 4 is isolated and every terminal is matched at the centre
 frequency `F`. The coupler is symmetric, so any terminal can be the input, with the other three taking the same roles
@@ -1387,6 +1398,20 @@ gives a = √2 − 1 and b = 1/√2: outer shunt arms of (1 + √2)·`Z0` and a 
 50 Ω system. At `F` it is matched, isolated and split 3 dB, the through port now half a period behind the input and
 3 again a quarter period behind 2.
 
+Three and four sections keep the series arms at `Z0` too, and solve the shunt arms from the same two conditions at `F`.
+At `F` each half is a chain of quarter waves with an eighth-wave open (or shorted) stub at every junction, and its ABCD
+matrix has A = D; the half is matched when B = C, and the split is 3 dB in quadrature when |B| = 1/√2. Three sections,
+four shunt arms a, b, b, a, have a closed form: b = √(1 − 1/√2) and a = √2·b·(√(1 + 1/√2) − 1), shunt arms of
+4.26·`Z0` and 1.85·`Z0`, 213 Ω and 92.4 Ω in a 50 Ω system. Four sections, five shunt arms, leave one value free once
+both conditions hold; circuitRF sets the middle arm so the match is flat at `F` as well as exact, which gives shunt arms
+of 7.40·`Z0`, 2.55·`Z0` and 1.99·`Z0` from the outside in.
+
+**The outer arms are the limit.** Each section added widens the band and raises the outer arms' impedance. 213 Ω on
+20 mil RO4350B is a line 1.3 µm wide, which the line model accepts and no board draws, and whose conductor loss takes
+1 dB of the split; on 60 mil PTFE (εr 2.2) it is 70 µm, and there the three-section coupler is matched and isolated to
+−43 dB at `F`. Four sections' 7.40·`Z0` is 370 Ω in a 50 Ω system, outside the line model on both boards and refused
+by name; in a 35 Ω system on the PTFE board it is 259 Ω and 11 µm wide.
+
 **What circuitRF derives** from `Z0`, `F` and `N` on the technology's substrate, by the one function the model and the
 layout share:
 
@@ -1406,7 +1431,7 @@ limits, which it reports in Messages: MTEE's junction formulas are calibrated on
 and on a branch of 25 to 100 Ω, and the two-section coupler's 120.7 Ω outer arms are outside the last. The junctions'
 own reactance moves the best match a little below `F`: 2.36 GHz for `F` = 2.4 GHz on the example board, where |S11| is
 still −30 dB at `F`. A specification the substrate cannot build is refused by name: an impedance no width reaches, an arm
-too short to leave each tee its stub (a high `F`), or `N` other than 1 or 2.
+too short to leave each tee its stub (a high `F`), or `N` other than 1 to 4.
 
 **The coupler is narrowband.** On the example board (20 mil RO4350B, 2.4 GHz) the circuit model keeps |S11| and |S41|
 below −20 dB from 2.24 to 2.49 GHz with one section, and from 2.08 to 2.64 GHz with two. The
@@ -1431,10 +1456,9 @@ EMerge and Palace.
 > M. Muraguchi, T. Yukitake and Y. Naito, "Optimum Design of 3-dB Branch-Line Couplers Using Microstrip Lines," *IEEE
 > Transactions on Microwave Theory and Techniques*, vol. 31, no. 8, pp. 674–678, August 1983.
 > DOI [10.1109/TMTT.1983.1131568](https://doi.org/10.1109/TMTT.1983.1131568).
-> These two are the synthesis of multi-section branch-line couplers that the two-section design follows. The arm
-> impedances used here, outer shunt arms of (1 + √2)·`Z0` and a middle one of √2·`Z0` with series arms of `Z0`, come from
-> the even/odd conditions under **How it works**, and the circuit model checks them: matched, isolated and split 3 dB at
-> `F`.
+> These two are the synthesis of multi-section branch-line couplers that the two- to four-section designs follow. The
+> arm impedances used here, with series arms of `Z0`, come from the even/odd conditions under **How it works**, not from
+> a table in either paper, and the circuit model checks them: matched, isolated and split 3 dB at `F`.
 
 > E. Hammerstad and Ø. Jensen, "Accurate Models for Microstrip Computer-Aided Design," *1980 IEEE MTT-S International
 > Microwave Symposium Digest*, pp. 407–409. DOI [10.1109/MWSYM.1980.1124303](https://doi.org/10.1109/MWSYM.1980.1124303).
@@ -1510,6 +1534,130 @@ example runs it on Planar MoM, EMerge and Palace.
 > M. Kirschning and R. H. Jansen, "Accurate model for effective dielectric constant of microstrip with validity up to
 > millimetre-wave frequencies," *Electronics Letters*, vol. 18, no. 6, pp. 272–273, 1982.
 > DOI [10.1049/el:19820186](https://doi.org/10.1049/el:19820186).
+
+### Gysel Divider (MGPD) {#mgpd}
+
+{{symbol: mgpd}}
+
+An in-phase two-way power divider on microstrip whose isolation resistors go to ground. Power into terminal 1 divides
+equally between terminals 2 and 3, in phase, matched and isolated from each other at the centre frequency `F`. `R2` and
+`R3` are the isolation nodes beside outputs 2 and 3: **the resistors are not part of the part**. Place a resistor of
+`Z0` from each to a via to ground (VIAGND); **Design ▸ Update Layout from Schematic** puts each resistor on its pin and
+its via beside the resistor's far pad. Because each resistor has one end grounded, it can be as large as the power it
+has to take, sit on its own heat sink, or be a termination off the board on a connector: that is what the divider is
+for, combining amplifiers whose imbalance would overheat a Wilkinson's floating resistor.
+
+**How it works.** The ring runs 1, 2, `R2`, `R3`, 3 and back to 1: a quarter wave of √2·`Z0` from the input to each
+output, a quarter wave of `Z0` from each output to its isolation node, and a half wave of `Z0`/√2 between the two
+isolation nodes. Split it into halves about the line through terminal 1 and the half wave's middle. Driven alike, the
+outputs see an open at the half wave's middle; a quarter wave from it each isolation node is a short, so its resistor
+carries nothing, and a quarter wave further the isolation arm is an open at the output. Each output then sees only its
+input arm, which turns the input's 2·`Z0` half into `Z0`. Driven opposite, terminal 1 and the half wave's middle are
+virtual grounds: the input arm and the half line are shorted quarter waves, opens at the output and at the isolation
+node, and the output sees its resistor through the isolation arm, `Z0`²/R, which is `Z0` when R = `Z0`. Matched in both
+halves, every terminal is matched and the outputs are isolated at `F`. The half wave's impedance does not enter at `F`:
+it sets the band, and a lower one widens it (on ideal lines |S11|, |S22| and |S23| stay under −20 dB over ±9 % of `F`
+with `Z0`, ±11 % with `Z0`/√2, ±12 % with `Z0`/2); circuitRF takes `Z0`/√2, whose width stays within about twice the
+port line's.
+
+**What circuitRF derives** from `Z0` and `F` on the technology's substrate, by the one function the model and the layout
+share: the three lines' widths, from the microstrip line model's own impedance at `F`, and their quarter waves in each
+line's own effective permittivity at `F`, every spacing measured between the reference planes of the tees on the ring;
+and the ring's shape. As the rat-race's, it is two straight runs joined by two 180° bends: 2, 1 and 3 on the upper run
+with their lines leaving upward, `R2` and `R3` on the lower run with theirs downward and the half wave between them; each
+isolation arm goes round a bend, and the lower run carries the difference in length as a short line at each end.
+`Corner` = `Miter` or `Square` turns each end on two 90° corners instead, as [the divider's](#mwpd-corner), the
+corners' own electrical length taken out of the side between them. Each terminal is one port-line width of `Z0` line
+beyond its tee; at `R2` and `R3` that line is matched by the `Z0` resistor at its end, so it changes nothing.
+
+**The model** is the MTEE, MLIN and MCURVE (or MMITER and MBEND) parts the layout draws, stamped together and reduced to
+the five terminals, with their limits, which it reports in Messages. On the example board (20 mil RO4350B, 2.4 GHz) with
+50 Ω on `R2` and `R3`, |S11|, |S22| and |S23| are −50, −59 and −52 dB at `F`, the split −3.15 dB each, and all three stay
+under −20 dB from 2.11 to 2.65 GHz, with any `Corner`. A specification the substrate cannot build is refused by name: an
+impedance no width reaches, or a quarter wave too short to leave the bends a radius of one line width (too high an
+`F`).
+
+{{table: components/Mgpd}}
+
+**References**
+
+> U. H. Gysel, "A New N-Way Power Divider/Combiner Suitable for High-Power Applications," *MTT-S International Microwave
+> Symposium Digest*, vol. 75, pp. 116–118, 1975. DOI [10.1109/MWSYM.1975.1123301](https://doi.org/10.1109/MWSYM.1975.1123301).
+> The topology. The line impedances and resistor used here are derived above from the even and odd halves, and the
+> circuit model checks them.
+
+> J. Reed and G. J. Wheeler, "A Method of Analysis of Symmetrical Four-Port Networks," *IRE Transactions on Microwave
+> Theory and Techniques*, vol. 4, no. 4, pp. 246–252, October 1956.
+> DOI [10.1109/TMTT.1956.1125071](https://doi.org/10.1109/TMTT.1956.1125071). The even- and odd-mode method.
+
+### Bagley Polygon Divider (MBPD) {#mbpd}
+
+{{symbol: mbpd}}
+
+A lossless N-way divider on microstrip with no resistors, for an odd number of outputs, 3 by default. Power into
+terminal 1 divides equally among terminals 2 to N + 1, which `N` sets: the pin count follows it. The outputs alternate in
+phase: 2, 4, 6 … leave a quarter period behind the input and 3, 5 … half a period from those. Only the input is matched;
+the outputs see each other and are not isolated, so it suits feeding equal loads, such as an antenna array's elements,
+where a sign can be taken up by the element's orientation or a half-wave line.
+
+**How it works.** The outputs are the corners of a polygon whose sides are half-wave lines of `Z0`, and the input feeds
+the middle of the one side that closes it, a quarter wave from the first corner and from the last. A half-wave line repeats
+the voltage at one end at the other, inverted, so every corner has the same amplitude and neighbouring corners are
+opposite; `N` must be odd so the two ways round from the input agree at every corner. Equal voltages into equal loads
+take equal power. The input arms then only have to match: the corners' currents add up to N·V/(2·`Z0`) at the first and
+last corners, which a quarter wave of Z_a turns into Z_a²·N/(4·`Z0`) at the input, `Z0` when Z_a = 2·`Z0`/√N: 57.7 Ω for
+three ways in a 50 Ω system. The sides' impedance does not enter at `F`; `Z0` gives the widest input match at three
+ways (on ideal lines, |S11| under −20 dB over ±17 % of `F`).
+
+**What circuitRF derives** from `Z0`, `F` and `N` on the technology's substrate, by the one function the model and the
+layout share: the input arms' and the sides' widths and quarter waves at `F`, every spacing measured between the
+reference planes of the tees on the ring, and the ring's shape. It is laid out as the Gysel's: the input on the upper run
+between its two nearest corners, the far corners on the lower run, and the side that crosses from one run to the other
+round each bend, so the runs come out nearly equal. `Corner` turns the ends on 90° corners, as the divider's does.
+
+**The model** is the MTEE, MLIN and MCURVE (or corner) parts the layout draws, stamped together and reduced to the
+terminals. On the example board (20 mil RO4350B, 2.4 GHz) the three-way divider's |S11| is −46 dB at `F` and stays
+under −20 dB from 1.95 to 2.73 GHz, and each output takes −4.9 dB; five ways with square corners, −38 dB at `F` and each
+output −7.0 dB. A specification the substrate cannot build is refused by name, as is an even `N` or one above 9.
+
+{{table: components/Mbpd}}
+
+**References**
+
+> I. Sakagami, T. Wuren, M. Fujii and M. Tahara, "Compact Multi-Way Power Dividers Similar to the Bagley Polygon,"
+> *2007 IEEE/MTT-S International Microwave Symposium*, pp. 419–422, June 2007.
+> DOI [10.1109/MWSYM.2007.380477](https://doi.org/10.1109/MWSYM.2007.380477). The analysis of the polygon divider;
+> G. Bagley's original design was never published.
+
+### Tee Divider (MTPD) {#mtpd}
+
+{{symbol: mtpd}}
+
+The simplest divider: one tee junction whose two arms are quarter-wave transformers to the outputs. Power into terminal 1
+divides between terminals 2 and 3, in phase, port 3 taking `K`² times what port 2 takes. Only the input is matched;
+the outputs see each other and are not isolated, as nothing dissipates what one reflects. Choose it where the outputs
+are well matched loads and isolation does not matter, or as the junction of a corporate feed.
+
+**How it works.** At the junction the two arms are in parallel, and each must look like the resistance that takes its
+share of the power: `Z0`·(1 + K²) towards port 2 and `Z0`·(1 + K²)/K² towards port 3, which together are `Z0`. A
+quarter wave of Z_t turns the output's `Z0` into Z_t²/`Z0`, so the transformers are `Z0`·√(1 + K²) to port 2 and
+`Z0`·√(1 + K²)/K to port 3: √2·`Z0` each for the equal split.
+
+**What circuitRF derives** from `Z0`, `F` and `K` on the technology's substrate: each transformer's width and its quarter
+wave at `F`, from the junction's reference plane to its terminal. The part is that one MTEE: the input on its branch,
+one port-line width of `Z0` line from the junction, and the transformers its two through arms.
+
+**The model** is MTEE's, with its limits. On the example board (20 mil RO4350B, 2.4 GHz) |S11| is −29 dB at `F`, the
+junction's own reactance moving the best match a little low, and stays under −20 dB from 1.85 to 2.67 GHz; the outputs
+see each other at −6 dB.
+
+{{table: components/Mtpd}}
+
+**References**
+
+> D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012, §7.2, the lossless T-junction divider, and §5.4, the
+> quarter-wave transformer. A textbook, with no DOI:
+> [the publisher's page](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553).
 
 ### Coupled-Line Coupler (MCLC) {#mclc}
 
