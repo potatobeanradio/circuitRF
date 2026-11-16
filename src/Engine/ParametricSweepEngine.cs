@@ -395,6 +395,11 @@ public static class ParametricSweepEngine
                                 PreselectBeams(netlist);
                                 key = Envelope.EnvelopeDropReuse.Key(netlist, part, plan.Params);
                                 cache.TryGetValue(key, out from);
+                                // a recording drop that failed (its own receive side refused or did not converge) records
+                                // nothing: this drop solves jointly and records afresh, rather than every later drop failing
+                                if (from is { Done.Task.IsFaulted: true }) { cache.Remove(key); from = null; }
+                                // a drop whose channel delay outlasts the recording's warm-up cannot take its segmentation
+                                if (from is not null && !Envelope.EnvelopeRunner.WarmCovers(from.Prepared, netlist)) from = null;
                             }
                         }
                         bool first = true;
@@ -449,7 +454,8 @@ public static class ParametricSweepEngine
                         {
                             // the drop whose key this is ran (or runs) the transmit side: wait for its recording
                             var (joint, recordings) = from.Done.Task.GetAwaiter().GetResult();
-                            drop = new() { Drives = recordings, Merge = r => Envelope.EnvelopeDropReuse.Merge(joint, r, partRun!) };
+                            // only the channels the transmit side drives replay: a relay's second hop is receive side, solved live
+                            drop = new() { Drives = Envelope.EnvelopeDropReuse.Driven(recordings, partRun!), Merge = r => Envelope.EnvelopeDropReuse.Merge(joint, r, partRun!) };
                         }
                         else if (entry is not null) drop = new() { Record = true };
                         try

@@ -145,6 +145,7 @@ namespace RfCore.Signals
                 Array.Clear(hk);
                 for (int s = 0; s < d.Symbols; s++)
                 {
+                    if (d.WrapsWindow?[s] == true) continue;   // as the phases below: a symbol across the window's seam is not one symbol
                     double tau = times[s] - tMid;
                     var undo = Complex.FromPolarCoordinates(1.0, -(2 * Math.PI * est.FrequencyHz * tau + Math.PI * est.DriftHzps * tau * tau));
                     for (int k = 0; k < nsc; k++) hk[k] += d.Received[s * nsc + k] * Complex.Conjugate(d.Sent[s * nsc + k]) * undo;
@@ -165,29 +166,82 @@ namespace RfCore.Signals
 
         /// <summary>DBPSK: each bit centre's phase, received·conj(sent) (the sent sign takes the data out), over time; SC
         /// the same at every symbol instant, data and known.</summary>
+        /// <para>Each point is ONE noisy symbol (OFDM's sums a symbol's subcarriers), so unwrapped step to step a pair of
+        /// noisy phases more than π apart adds a cycle to every later point: 16QAM at Es/N0 12 dB read hundreds of Hz rms.
+        /// So the offset is acquired first as the peak of the products' spectrum on the instants' own grid, and the
+        /// phases left after it are unwrapped against a running sum of their neighbours (a phase track ±<see cref="TrackHalf"/>
+        /// points wide, which noise cannot slip and which still follows a drift), then fitted.</para>
         public static CarrierOffset EstimateOffset(ReceivedWaveform w)
         {
             if (w.Kind is not (QualityKind.Dbpsk or QualityKind.Sc)) return CarrierOffset.Zero;
-            var t = new List<double>(); var ph = new List<double>();
-            foreach (int i in w.At.Concat(w.KnownAt ?? []).Order())
+            var idx = new List<int>(); var v = new List<Complex>();
+            foreach (int i in w.At.Concat(w.KnownAt ?? []).Distinct().Order())
             {
-                var v = w.X[i] * Complex.Conjugate(w.S[i]);
-                if (v == Complex.Zero) continue;
-                t.Add(i / w.NativeHz); ph.Add(v.Phase);
+                var z = w.X[i] * Complex.Conjugate(w.S[i]);
+                if (z == Complex.Zero) continue;
+                idx.Add(i); v.Add(z);
             }
-            return Fit(t, ph);
+            int n = idx.Count;
+            if (n < 2) return CarrierOffset.Zero;
+
+            // the acquisition: a zero-padded spectrum over the instants' grid (their spacing's greatest common divisor)
+            int step = 0;
+            for (int j = 1; j < n; j++) step = Gcd(step, idx[j] - idx[0]);
+            long len = (idx[^1] - idx[0]) / step + 1;
+            double f0 = 0;
+            if (len <= 1 << 21)
+            {
+                int pad = 8;   // eight times the span where that is at most 2^21 points (32 MB), the span's own at least
+                while (pad < len || pad < 8 * len && pad < 1 << 21) pad <<= 1;
+                var g = new Complex[pad];
+                for (int j = 0; j < n; j++) g[(idx[j] - idx[0]) / step] += v[j];
+                Fft.Transform(g, inverse: false);   // e^(−j): a tone at +f peaks at +k
+                int best = 0;
+                for (int b = 1; b < pad; b++) if (g[b].Magnitude > g[best].Magnitude) best = b;
+                f0 = (best <= pad / 2 ? best : best - pad) * w.NativeHz / ((double)step * pad);
+            }
+
+            // the phases left, about the middle instant, unwrapped against their running phase track
+            double tm = idx.Average() / w.NativeHz;
+            var t = new double[n]; var r = new Complex[n];
+            for (int j = 0; j < n; j++)
+            {
+                t[j] = idx[j] / w.NativeHz;
+                r[j] = v[j] * Complex.FromPolarCoordinates(1.0, -2 * Math.PI * f0 * (t[j] - tm));
+            }
+            var prefix = new Complex[n + 1];
+            for (int j = 0; j < n; j++) prefix[j + 1] = prefix[j] + r[j];
+            var ph = new double[n];
+            double track = 0;
+            for (int j = 0; j < n; j++)
+            {
+                var sum = prefix[Math.Min(n, j + TrackHalf + 1)] - prefix[Math.Max(0, j - TrackHalf)];
+                double tj = sum == Complex.Zero ? track : sum.Phase;
+                if (j > 0) tj += 2 * Math.PI * Math.Round((track - tj) / (2 * Math.PI));
+                track = tj;
+                ph[j] = track + Wrap(r[j].Phase - track);
+            }
+            var fine = Fit(t, ph, unwrap: false);
+            return new CarrierOffset(f0 + fine.FrequencyHz, fine.DriftHzps);
         }
+
+        /// <summary>The single-carrier phase track's half width, in points.</summary>
+        internal const int TrackHalf = 16;
+
+        private static int Gcd(int a, int b) { while (b != 0) (a, b) = (b, a % b); return Math.Abs(a); }
+
+        private static double Wrap(double x) => x - 2 * Math.PI * Math.Round(x / (2 * Math.PI));
 
         /// <summary>The phases, sorted by time and unwrapped step to step, fitted as a + b·τ + c·τ² (a line under five
         /// points, nothing under two), τ from the middle: f = b/2π, ḟ = c/π.</summary>
-        internal static CarrierOffset Fit(IReadOnlyList<double> time, IReadOnlyList<double> phase)
+        internal static CarrierOffset Fit(IReadOnlyList<double> time, IReadOnlyList<double> phase, bool unwrap = true)
         {
             int n = time.Count;
             if (n < 2) return CarrierOffset.Zero;
             var order = Enumerable.Range(0, n).OrderBy(i => time[i]).ToArray();
             var t = order.Select(i => time[i]).ToArray();
             var p = order.Select(i => phase[i]).ToArray();
-            for (int i = 1; i < n; i++) p[i] += 2 * Math.PI * Math.Round((p[i - 1] - p[i]) / (2 * Math.PI));
+            if (unwrap) for (int i = 1; i < n; i++) p[i] += 2 * Math.PI * Math.Round((p[i - 1] - p[i]) / (2 * Math.PI));
             double tm = t.Average();
             for (int i = 0; i < n; i++) t[i] -= tm;
             int deg = n >= 5 ? 2 : 1;

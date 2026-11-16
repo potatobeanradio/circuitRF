@@ -152,7 +152,11 @@ namespace RfCore.Propagation
         }
 
         /// <summary>Am = A1·f^α with the 900-2200 MHz woodland fit, dB.</summary>
-        public static double DefaultMaxAttenuation(double fHz) => 1.15 * Math.Pow(fHz / 1e6, 0.43);
+        public static double DefaultMaxAttenuation(double fHz)
+        {
+            PropagationMath.Range("P833", "the frequency for the woodland fit Am = A1·f^α (state VegMax otherwise)", fHz / 1e6, 900, 2200, "MHz");
+            return 1.15 * Math.Pow(fHz / 1e6, 0.43);
+        }
 
         /// <summary>Eq. (1): the excess attenuation for one terminal a depth d (m) into woodland.</summary>
         public static double Woodland(double depthM, double gammaDbPerM, double maxDb)
@@ -276,8 +280,16 @@ namespace RfCore.Propagation
 
             string bel = a.Word("BuildingEntry");
             if (bel != "off")
+            {
+                double facade = a.Number("FacadeElevation");
+                if (!a.Given("FacadeElevation") && baseResult.Geometry is { } fg)
+                {
+                    facade = fg.ElevationDeg;
+                    notes.Add($"P.2109 façade elevation taken from the path's elevation, {PropagationMath.F(facade)}°.");
+                }
                 terms.Add(new("P.2109 building entry", ItuP2109.Loss(a.F, a.Number("BuildingProbability"),
-                    bel == "efficient" ? BuildingClass.ThermallyEfficient : BuildingClass.Traditional, a.Number("FacadeElevation"))));
+                    bel == "efficient" ? BuildingClass.ThermallyEfficient : BuildingClass.Traditional, facade)));
+            }
 
             if (a.Word("Vegetation") == "on")
             {
@@ -349,6 +361,9 @@ namespace RfCore.Propagation
             {
                 if (pr <= 5) ar = ItuP618.Rain(fGhz, el, a.Number("RainTilt"), pr, hs, a.Number("RainHeight"), a.Number("RainRate"), a.Number("StationLatitude"));
                 else if (drawn is null) notes.Add($"Rain is not part of P.618's total above 5 % of the time; at {PropagationMath.F(p)} % it adds nothing.");
+                // §4.1 — the depolarization the rain gives (a discrimination, not a loss), where the recommendation gives it
+                if (ar > 0 && fGhz >= 6 && fGhz <= 55 && el <= 60 && pr >= 0.001 && pr <= 1)
+                    notes.Add($"P.618 §4.1: rain and ice crystals leave a cross-polarization discrimination of {PropagationMath.F(ItuP618.RainXpd(fGhz, el, a.Number("RainTilt"), pr, ar))} dB at {PropagationMath.F(pr)} % of the time.");
             }
             if (clouds) ac = ItuP840.Cloud(fGhz, el, a.Number("CloudWater"));
             if (scint)

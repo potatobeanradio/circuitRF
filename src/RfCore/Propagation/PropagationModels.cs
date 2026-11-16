@@ -117,7 +117,7 @@ namespace RfCore.Propagation
             if (t.Length == 0) return double.NaN;
             if (!double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
                 throw new PropagationRefusal($"{_model.Name}: {p.Name} must be a number{(p.Unit.Length > 0 ? " in " + p.Unit : "")}; it is '{t}'.");
-            if (v < p.Min || v > p.Max)
+            if (double.IsNaN(v) || v < p.Min || v > p.Max)
                 throw new PropagationRefusal(PropagationDiagnostics.OutOfRange(_model.Name, p.Name, v, p.Min, p.Max, p.Unit));
             return v;
         }
@@ -137,7 +137,7 @@ namespace RfCore.Propagation
             string t = Text(name);
             if (t.Length == 0) return Array.Empty<double>();
             return t.Split(',').Select(s =>
-                double.TryParse(s.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double v)
+                double.TryParse(s.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double v) && double.IsFinite(v)
                     ? v
                     : throw new PropagationRefusal($"{_model.Name}: {p.Name} is a comma-separated list of numbers; '{s.Trim()}' is not one.")).ToArray();
         }

@@ -272,6 +272,8 @@ is P.530's, on a satellite path P.618's.</p>
 <tr><td class="nowrap"><code>Polarization</code></td><td>—</td><td><code>vertical</code></td><td><code>vertical</code>, <code>horizontal</code></td><td>the polarization</td></tr>
 <tr><td class="nowrap"><code>Profile</code></td><td>—</td><td>—</td><td>a CSV file</td><td>a terrain profile CSV: distance and height columns with units, optional clutter, surface and zone</td></tr>
 </tbody></table>
+<p>On the channel the terrain profile is written <code>Terrain=</code>, because <code>Profile=</code> there names a tapped delay line; the Chain
+Budget's Propagation section calls it <code>Profile</code>.</p>
 <h3 id="model-satellite"><code>satellite</code></h3>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>
@@ -296,6 +298,7 @@ is P.530's, on a satellite path P.618's.</p>
 <tr><td class="nowrap"><code>Resolution</code></td><td>m</td><td><code>100</code></td><td>1 to 100000</td><td>the prediction resolution the location variability applies over</td></tr>
 <tr><td class="nowrap"><code>Polarization</code></td><td>—</td><td><code>vertical</code></td><td><code>vertical</code>, <code>horizontal</code></td><td>the polarization</td></tr>
 </tbody></table>
+<p>The terrain profile is <code>Terrain=</code> on the channel, as for <code>P526</code>.</p>
 <h3 id="added-losses">The added losses, on any model</h3>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Unit</th><th>Default</th><th>Range or words</th><th>Meaning</th></tr></thead><tbody>

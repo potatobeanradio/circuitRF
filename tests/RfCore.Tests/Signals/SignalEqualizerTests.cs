@@ -136,4 +136,34 @@ public class SignalEqualizerTests
         // the exact interval of no errors in 100 trials reaches 1 − 0.025^(1/100)
         Assert.Equal(1 - Math.Pow(0.025, 0.01), BetaFunction.BinomialInterval(0, 100).High, 1e-9);
     }
+
+    /// <summary>A single carrier's offset at a moderate SNR: each point is one noisy symbol, and unwrapped step to step a pair of
+    /// noisy phases more than π apart slipped a cycle into every later point (16QAM at Es/N0 12 dB read hundreds of Hz rms). 300 Hz on
+    /// 511 16QAM symbols at 1 Msps, Es/N0 12 dB, 20 seeds: each estimate within 50 Hz (the bound on its spread is ~9 Hz rms).</summary>
+    [Fact]
+    public void ScOffset_AtModerateSnr_DoesNotSlipCycles()
+    {
+        const int sps = ScQam.SamplesPerSymbol, n = 511;
+        const double rs = 1e6, offset = 300, esn0 = 15.85;   // 12 dB
+        double fs = rs * sps;
+        double[] levels = [-3, -1, 1, 3];
+        double sigma = Math.Sqrt(1 / esn0 / 2);              // per axis, unit mean symbol energy
+        for (int seed = 1; seed <= 20; seed++)
+        {
+            var r = new Random(seed);
+            var x = new Complex[n * sps];
+            var sent = new Complex[n * sps];
+            var at = new int[n];
+            for (int k = 0; k < n; k++)
+            {
+                int i = k * sps;
+                at[k] = i;
+                sent[i] = new Complex(levels[r.Next(4)], levels[r.Next(4)]) / Math.Sqrt(10);
+                x[i] = sent[i] * Complex.FromPolarCoordinates(1, 2 * Math.PI * offset * i / fs) + Gauss(r, sigma);
+            }
+            var w = new ReceivedWaveform(null!, QualityKind.Sc, x, sent, at, sps, 0, x.Length, fs, 0, true);
+            double got = SignalEqualizer.EstimateOffset(w).FrequencyHz;
+            Assert.True(Math.Abs(got - offset) < 50, $"seed {seed}: {got:F1} Hz against {offset} Hz");
+        }
+    }
 }

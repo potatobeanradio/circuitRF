@@ -2521,6 +2521,12 @@ public sealed partial class Elaborator
                           .Where(p => p.Kind != RfCore.Propagation.ParameterKind.Number)
                           .GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)       // several models share a name (Los, Scenario)
                           .ToDictionary(g => g.Key, g => g.First().Kind, StringComparer.OrdinalIgnoreCase);
+        // the registry's numbers are read in the registry's unit, which an expression's own unit scale does not know
+        var registryUnit = RfCore.Propagation.PropagationModels.All.SelectMany(m => m.Parameters)
+                          .Concat(RfCore.Propagation.AddedLosses.Parameters)
+                          .Where(p => p.Kind == RfCore.Propagation.ParameterKind.Number)
+                          .GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+                          .ToDictionary(g => g.Key, g => g.First().Unit, StringComparer.OrdinalIgnoreCase);
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         foreach (var ov in inst.Overrides)
         {
@@ -2538,7 +2544,9 @@ public sealed partial class Elaborator
                 result[ov.Name] = new Value(raw);
                 continue;
             }
-            if (PropagationChannelModel.AngleParameters.Contains(ov.Name))
+            registryUnit.TryGetValue(ov.Name, out string? regUnit);
+            // a registry angle (Elevation, RainTilt, a latitude …) as the orientations are: "30 deg" is 30, not 0.52
+            if (PropagationChannelModel.AngleParameters.Contains(ov.Name) || regUnit == "deg")
             {
                 var v = _evaluator.EvalPhase(ov.Expression, parentScope, ov.Unit, $"{inst.InstanceName}.{ov.Name}");
                 result[ov.Name] = v.Kind == ValueKind.Real ? new Value(v.AsReal() * 180.0 / Math.PI) : v;
@@ -2546,9 +2554,14 @@ public sealed partial class Elaborator
             }
             // a length typed in "m" is a thousand times too small (m is milli in every expression), and a channel's lengths are
             // exactly where a user writes metres
-            if (ov.Name is "Distance" or "TxHeight" or "RxHeight" && ov.Unit == "m")
+            if ((ov.Name is "Distance" or "TxHeight" or "RxHeight" || regUnit is "m" or "km") && ov.Unit == "m")
                 throw new ParameterRefusalException(PropagationChannelDiagnostics.MetreIsMilli(inst.InstanceName, ov.Name, ov.Expression));
-            result[ov.Name] = EvalOverride(inst, ov, parentScope);
+            var value = EvalOverride(inst, ov, parentScope);
+            // a length or frequency typed with its own unit arrives in SI (metres, Hz): back to the registry's km or GHz
+            if (value.Kind == ValueKind.Real && ov.Unit is { Length: > 0 } typed && Units.IsKnown(typed)
+                && (regUnit == "km" && Units.BaseUnit(typed) == "metre" || regUnit == "GHz" && Units.BaseUnit(typed) == "Hz"))
+                value = new Value(value.AsReal() / (regUnit == "km" ? 1e3 : 1e9));
+            result[ov.Name] = value;
         }
         return result;
     }

@@ -42372,3 +42372,9 @@ Findings:
 - `WorkspaceViewModel.BuildExampleMenuItems`: `MenuItem.Items.Add` subscribes a change listener, which Avalonia allows only on
   the dispatcher's thread; each topic's rows now go in as a plain list (`ItemsSource`). The test failed or passed by which
   thread had touched the dispatcher first.
+
+## PCH review (2026-11-16)
+
+- **The Phased Array tool's Channel tab labelled `Drop=drop` as drop 1.** The written drop came from parsing the override's text,
+  which a variable does not parse as; it is the elaborated channel's Drop now, so the slider and the status line name the drop
+  whose rays the tab shows.

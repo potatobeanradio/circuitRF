@@ -476,6 +476,8 @@ public static class EnvelopeChannel
     private static ICh Instance(ElaboratedNetlist nl, ElaboratedComponent ec, PropagationChannelModel m, IReadOnlyList<double> productHz, double h,
                                 ChannelRecording? drive = null, bool record = false, Run? run = null, bool noise = false)
     {
+        if (m.TxEnd is not null && m.TxArray is null || m.RxEnd is not null && m.RxArray is null)
+            throw new InvalidOperationException(PropagationChannelDiagnostics.FieldDataInEnvelope(ec.InstancePath).Render());
         int[] txNode, txRef;
         Complex z0;
         if (m.TxArray is { } ta)
@@ -488,8 +490,6 @@ public static class EnvelopeChannel
         else { txNode = [ec.Nodes[m.TxPin]]; txRef = [0]; z0 = m.End(0, productHz.FirstOrDefault(f => f > 0, 1e9)).Z0; }
         int[] rxSrc = m.RxArray is { } ra ? [.. Enumerable.Range(0, ra.Array.PortCount).Select(i => PhasedArrayModel.SourceNode(ra.Ec, i, ra.Array.PortCount))] : [];
         CollapsedElements = 0;
-        if (m.TxEnd is not null && m.TxArray is null || m.RxEnd is not null && m.RxArray is null)
-            throw new InvalidOperationException(PropagationChannelDiagnostics.FieldDataInEnvelope(ec.InstancePath).Render());
         var rays = new PropagationChannelModel.RayCoupling[productHz.Count][];
         var steps = new double[productHz.Count][];
         double worst = 1;
@@ -523,7 +523,10 @@ public static class EnvelopeChannel
                 collapseNote = $" The receive array '{rca.Ec.InstancePath}' takes them as one source at its feed: {cols.First(c => c.Item1 is not null).Item2}";
                 // brief-pch-10b R-pch10b-1 — and when nothing else needs the array's insides, the array leaves the run
                 if (run is not null && ReplaceReceiveArrays && !noise && cols.All(c => c.Item1 is not null || c.Item2 == "")
-                    && !nl.Components.Any(o => o.Model is PropagationChannelModel om && ReferenceEquals(om.TxArray?.Ec, rca.Ec)))
+                    && !nl.Components.Any(o => o.Model is PropagationChannelModel om && ReferenceEquals(om.TxArray?.Ec, rca.Ec))
+                    // a second channel into the array (an interferer) collapses onto its feed too: replaced by the first, the
+                    // second would find no feed and inject element by element into nets the replacement holds
+                    && nl.Components.Count(o => o.Model is PropagationChannelModel om && ReferenceEquals(om.RxArray?.Ec, rca.Ec)) == 1)
                     collapseNote += ReplaceArray(nl, run, m, rca.Ec, feedNode, cols.First(c => c.Item1 is not null).Item1!.Z0, productHz);
             }
             else collapseNote = " " + cols.FirstOrDefault(c => c.Item1 is null && c.Item2 != "").Item2;
@@ -555,6 +558,9 @@ public static class EnvelopeChannel
         string prefix = array.InstancePath + ".";
         bool Part(ElaboratedComponent c) => ReferenceEquals(c, array) || c.InstancePath.StartsWith(prefix, StringComparison.Ordinal);
         var parts = nl.Components.Where(Part).ToList();
+        // a channel cell's transmission line is already in its stepped delay form (EnvelopeLineDelay ran first) and the line set
+        // binds its branches: pruned, it would write rows that are no longer its own, and Γ_F would be read through the delay form
+        if (parts.Any(c => c.Model is DelayLineModel)) return "";
         var inside = parts.SelectMany(c => c.Nodes.Append(c.ReferenceNode)).Where(n => n > 0 && n != feed).ToHashSet();
         // a net inside the array that something else reaches keeps the array: the replacement would cut it
         if (nl.Components.Any(c => !Part(c) && c.Model is not PropagationChannelModel && c.Nodes.Append(c.ReferenceNode).Any(inside.Contains))) return "";

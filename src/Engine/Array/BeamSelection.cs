@@ -271,8 +271,10 @@ public static class BeamSelection
                     Core.Expressions.ValueKind.Bool => v.AsBool() ? "1" : "0",
                     _ => v.AsString(),
                 });
-                if (v.Kind == Core.Expressions.ValueKind.String && v.AsString().Trim('"') is { Length: > 0 } text && File.Exists(text))
-                    sb.Append('@').Append(File.GetLastWriteTimeUtc(text).Ticks);
+                // a pattern is path#port: the file's time is the path's, so a record re-solved in place re-scores
+                if (v.Kind == Core.Expressions.ValueKind.String && v.AsString().Trim('"') is { Length: > 0 } text
+                    && (k is "TxPattern" or "RxPattern" && text.LastIndexOf('#') is > 0 and var hash ? text[..hash] : text) is var file && File.Exists(file))
+                    sb.Append('@').Append(File.GetLastWriteTimeUtc(file).Ticks);
                 sb.Append(';');
             }
         }
@@ -696,7 +698,13 @@ public static class BeamSelection
             var w = new Complex[count];
             if (end.Array is not { } pa) { w[0] = 1; return w; }
             var feed = end.Feed(entry, keep: true);
-            for (int n = 0; n < count; n++) { var q = feed.Quantised(n, f); w[n] = q == Complex.Zero ? Complex.Zero : Complex.FromPolarCoordinates(1, q.Phase); }
+            // a steered end starts phase-only (the bound's own constraint); an end that is not steered is never updated, so it keeps its
+            // weights as they are, taper and all — taking its amplitudes off overstated the bound and the codebook's cost
+            for (int n = 0; n < count; n++)
+            {
+                var q = feed.Quantised(n, f);
+                w[n] = !end.Steered ? q : q == Complex.Zero ? Complex.Zero : Complex.FromPolarCoordinates(1, q.Phase);
+            }
             return w;
         }
         var wt = Start(txEnd, best.A, nt);

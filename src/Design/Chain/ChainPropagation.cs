@@ -374,6 +374,9 @@ public static class ChainPropagation
             return s * h;
         }
         double lo = -40, hi = 120;   // dB: an outage of nearly 1 below, of nearly 0 above
+        // A wide shadowing at a high availability can need more than 120 dB (σ 30 dB at 99.99 % is ~112 dB on the shadowing
+        // alone): widen the bracket rather than return its edge as though it were the root.
+        while (Outage(hi) > q && hi < 1000) { lo = hi; hi *= 2; }
         for (int i = 0; i < 200 && hi - lo > 1e-11; i++)
         {
             double mid = 0.5 * (lo + hi);

@@ -64,8 +64,10 @@ public sealed partial class PropagationChannelModel
 
     /// <summary>brief-pch-10b R-pch10b-2 — array element patterns evaluated toward a ray: once per pattern class and direction, the position
     /// phase applied per element.</summary>
-    public static long PatternEvaluations => Interlocked.Read(ref _patternEvaluations);
-    private static long _patternEvaluations;
+    /// <para>Per thread: the couplings are evaluated on the caller's thread, and a process-wide count read another test's run
+    /// under parallel load.</para>
+    public static long PatternEvaluations => _patternEvaluations;
+    [ThreadStatic] private static long _patternEvaluations;
 
     /// <summary>brief-pch-8b R-pch8b-2 — stamps that took the receive collapse, stamps it refused, and receive elements not stamped by it.</summary>
     public static long CollapsedStamps => Interlocked.Read(ref _collapsedStamps);
@@ -160,7 +162,7 @@ public sealed partial class PropagationChannelModel
                     int p = rad.PatternOf[e];
                     if (!cache.TryGetValue(p, out var f))
                     {
-                        Interlocked.Increment(ref _patternEvaluations);
+                        _patternEvaluations++;
                         var (et, ep) = rad.At(p, th, ph);
                         f = GlobalBasis.Components(frame.ToGlobal(th, ph, et * scale, ep * scale), u);
                         cache[p] = f;

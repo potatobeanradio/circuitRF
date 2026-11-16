@@ -183,4 +183,27 @@ public class FadingTests(ITestOutputHelper output)
         _ = new FadingProcess(new TapFading(FadingKind.Rayleigh, DopplerShape.Classical, Fd), 7, 37, "CH1:tap2").Gain(0.0123);
         Assert.Equal(alone, Process(FadingKind.Rayleigh, 37).Gain(0.0123));
     }
+
+    /// <summary>The Nakagami quantile above m = 2: unguarded, Newton from a small r² at m ≥ 3 overshot to where dP/dx underflows and
+    /// returned x ~1e14 (m = 4, r² = 0.1929: |g| of +135 dB). Over m = 3…20 and r² from 1e-4 to 30, P(m, x) = 1 − e^(−r²) to 1e-10
+    /// (the upper tail read from Q). And J0 at fixed cost against its integral.</summary>
+    [Fact]
+    public void NakagamiQuantile_StaysBracketed_AtLargeM()
+    {
+        Assert.Equal(2.1733639776526843, FadingMath.NakagamiQuantileX(4, 0.1929), 9);
+        foreach (double m in (double[])[3, 4, 5, 8, 10, 20])
+            for (double r2 = 1e-4; r2 <= 30; r2 *= 1.7)
+            {
+                double x = FadingMath.NakagamiQuantileX(m, r2);
+                Assert.True(double.IsFinite(x) && x < 200, $"m {m}, r² {r2}: x = {x}");
+                double rel = r2 > 1 ? Math.Abs(GammaFunction.Q(m, x) / Math.Exp(-r2) - 1) : Math.Abs(GammaFunction.P(m, x) / (1 - Math.Exp(-r2)) - 1);
+                Assert.True(rel < 1e-10, $"m {m}, r² {r2}: relative error {rel:E2}");
+            }
+        foreach (double z in (double[])[0, 2.404825557695773, 7.3, 11.99, 12.01, 40, 600])
+        {
+            int nq = 64 + 2 * (int)Math.Ceiling(z);
+            double integral = Enumerable.Range(0, nq).Sum(k => Math.Cos(z * Math.Sin(2 * Math.PI * k / nq))) / nq;
+            Assert.Equal(integral, FadingMath.J0(z), 11);
+        }
+    }
 }

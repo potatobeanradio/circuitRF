@@ -1,7 +1,9 @@
 // brief-paa-4 R-paa4-3 — the weight functions of a Phased Antenna Array, valid anywhere (docs/design/phased-array.md §4.3):
 //
 //   steer(theta0, phi0, f0[, x, y])   degrees, −360·f0/c·(x·sinθ0·cosφ0 + y·sinθ0·sinφ0): the phase that points a phase-shifter beam;
-//   steerDelay(theta0, phi0[, x, y])  seconds, −(x·sinθ0·cosφ0 + y·sinθ0·sinφ0)/c: the delay that points a true-time-delay beam;
+//   steerDelay(theta0, phi0[, x, y])  seconds, (x·sinθ0·cosφ0 + y·sinθ0·sinφ0)/c: the delay that points a true-time-delay beam
+//                                     (a delay τ weighs e^(−j2πfτ), so this is steer's phase −360·f·path/c at every f — the minus is
+//                                     the weight's, not the delay's; with it here as well the beam pointed at −θ0);
 //   taylor(sll, nbar), chebyshev(sll), cosq(q)   separable amplitude tapers over rows and columns, 1 at the peak.
 //
 // The angles are angles as any trig argument's are: a unit-bearing value (30 deg) is already radians, a bare number is radians. f0 is
@@ -59,7 +61,7 @@ public sealed partial class Evaluator
                 double path = x * Math.Sin(theta0) * Math.Cos(phi0) + y * Math.Sin(theta0) * Math.Sin(phi0);
                 return cl.Name == "steer"
                     ? new Value(-360 * f0 / SpeedOfLight * path)
-                    : new Value(-path / SpeedOfLight);
+                    : new Value(path / SpeedOfLight);
             }
             default:
             {

@@ -180,4 +180,26 @@ public sealed class ChainLinkBenchTests(ITestOutputHelper output) : IDisposable
             Assert.InRange(0.001, lo, hi);
         }
     }
+
+    /// <summary>Two things the bench once got wrong without a word: 1 − 0.999 is 0.0009999999999998899 in binary, so 99.9 % asked
+    /// for 100,001 drops (and noted its interval wider); and a P526/P1812 link's terrain profile, the chain's Profile, went onto the
+    /// channel as Profile=, which there names a tapped delay line — the channel refused it and no Link bench was written.</summary>
+    [Fact]
+    public void Drops_AtThreeNines_AndTheTerrainProfile_GoOnTheChannelAsTerrain()
+    {
+        Assert.Equal(100_000, ChainLinkBench.Wanted(99.9));
+        Assert.Equal(10_000, ChainLinkBench.Wanted(99));
+        Directory.CreateDirectory(_ws);
+        string terrain = Path.Combine(_ws, "terrain.csv");
+        File.WriteAllText(terrain, "distance (km), height (m)\n0, 100\n1, 140\n2, 100\n");
+        var d = Terrestrial();
+        d.Link!.Path["Distance"] = "2 km";
+        d.Link.Path["Model"] = "P526";
+        d.Link.Path["Profile"] = terrain;
+        var notes = new List<string>();
+        string line = ChainLinkBench.ChannelParameters(d, d.Link.Budget(d.FrequencyHz), notes);
+        output.WriteLine(line);
+        Assert.Contains("Terrain=", line);
+        Assert.DoesNotContain(" Profile=", " " + line);
+    }
 }

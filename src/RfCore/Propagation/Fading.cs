@@ -46,7 +46,9 @@ namespace RfCore.Propagation
     /// What a tap's fading is: its distribution, its Doppler spectrum and maximum Doppler f_D (Hz), the Rician K (linear,
     /// line-of-sight power over the diffuse power) and the Nakagami m.
     /// </summary>
-    public sealed record TapFading(FadingKind Kind, DopplerShape Spectrum, double FdHz, double K = 0, double M = 1)
+    /// <para><c>LosDopplerFactor</c>: a Rician tap's line-of-sight Doppler as a fraction of f_D (0.7, TR 38.901 §7.7.2);
+    /// 0 for a gain whose direct part does not turn (the P.681 states').</para>
+    public sealed record TapFading(FadingKind Kind, DopplerShape Spectrum, double FdHz, double K = 0, double M = 1, double LosDopplerFactor = 0.7)
     {
         /// <summary>The words <c>Fading=</c> takes.</summary>
         public static readonly string[] FadingWords = ["rayleigh", "rician", "nakagami"];
@@ -58,7 +60,7 @@ namespace RfCore.Propagation
         public static readonly TapFading Static = new(FadingKind.Static, DopplerShape.Classical, 0);
 
         /// <summary>The Doppler of a Rician tap's line-of-sight component, 0.7 f_D (TR 38.901 §7.7.2).</summary>
-        public double LosDopplerHz => Spectrum == DopplerShape.Los ? FdHz : 0.7 * FdHz;
+        public double LosDopplerHz => Spectrum == DopplerShape.Los ? FdHz : LosDopplerFactor * FdHz;
 
         public static bool TryParseKind(string word, out FadingKind kind)
         {
@@ -222,15 +224,25 @@ namespace RfCore.Propagation
         /// </summary>
         public static double CoherenceTime(IReadOnlyList<ChannelRay> rays, IReadOnlyList<FadingProcess> fades, double fdHz)
         {
-            if (!(fdHz > 0) || !fades.Any(f => f.Spec.Kind != FadingKind.Static)) return double.PositiveInfinity;
+            // A channel of static rays decorrelates too when the rays carry different Dopplers (CDL, scenario or directional
+            // rays between moving ends, a moving two-ray link): only a channel with neither is infinitely coherent.
+            bool fading = fades.Any(f => f.Spec.Kind != FadingKind.Static);
+            bool spread = rays.Select(r => r.DopplerHz).Distinct().Skip(1).Any();
+            if (!(fdHz > 0) || !fading && !spread) return double.PositiveInfinity;
             double total = 0;
             var w = new double[rays.Count];
             for (int i = 0; i < w.Length; i++) { w[i] = rays[i].Gain.Magnitude * rays[i].Gain.Magnitude; total += w[i]; }
+            // each distinct spectrum's autocorrelation once a lag (a tapped delay line's taps share one)
+            var specs = fades.Select(f => f.Spec).Distinct().ToArray();
+            var at = new int[rays.Count];
+            for (int i = 0; i < at.Length; i++) at[i] = i < fades.Count ? Array.IndexOf(specs, fades[i].Spec) : -1;
+            var ac = new Complex[specs.Length];
             double Rho(double tau)
             {
+                for (int s = 0; s < specs.Length; s++) ac[s] = specs[s].Autocorrelation(tau);
                 Complex acc = 0;
                 for (int i = 0; i < w.Length; i++)
-                    acc += w[i] * (i < fades.Count ? fades[i].Spec.Autocorrelation(tau) : Complex.One)
+                    acc += w[i] * (at[i] >= 0 ? ac[at[i]] : Complex.One)
                                 * Complex.FromPolarCoordinates(1, 2 * Math.PI * rays[i].DopplerHz * tau);
                 return acc.Magnitude / total;
             }
@@ -278,21 +290,44 @@ namespace RfCore.Propagation
     /// <summary>Small special functions the fading needs.</summary>
     public static class FadingMath
     {
-        /// <summary>The Bessel function J0(x): (1/π)∫₀^π cos(x sin θ) dθ by the trapezoid rule on its period, exact to
-        /// J_N(x), N above |x| by a margin.</summary>
+        /// <summary>The Bessel function J0(x), to about 1e-12 at a fixed cost: its power series Σ (−x²/4)^k/(k!)² to |x| = 12,
+        /// the large-argument expansion √(2/πx)·(P cos χ − Q sin χ), χ = x − π/4, beyond (each series summed while its
+        /// terms fall). The coherence-time scan calls it up to ~10⁵ times a tap, so its cost may not grow with x.</summary>
         public static double J0(double x)
         {
             x = Math.Abs(x);
-            int n = 64 + 2 * (int)Math.Ceiling(x);
-            double s = 0;
-            for (int k = 0; k < n; k++) s += Math.Cos(x * Math.Sin(2 * Math.PI * k / n));
-            return s / n;
+            if (x <= 12)
+            {
+                double q = -x * x / 4, t = 1, s = 1;
+                for (int k = 1; k < 80; k++)
+                {
+                    t *= q / ((double)k * k);
+                    s += t;
+                    if (Math.Abs(t) < 1e-17 * Math.Max(1, Math.Abs(s))) break;
+                }
+                return s;
+            }
+            // c_j = Π_{i≤j} (2i − 1)² / (j!·8^j); P takes the even j with signs + − + …, Q the odd j with signs − + − …
+            double p = 0, qq = 0, c = 1, xp = 1, prev = double.PositiveInfinity;
+            for (int j = 0; j < 30; j++)
+            {
+                if (j > 0) { c *= (2.0 * j - 1) * (2.0 * j - 1) / (8.0 * j); xp /= x; }
+                double term = c * xp;
+                if (term > prev) break;
+                prev = term;
+                if (j % 2 == 0) p += (j / 2 % 2 == 0 ? 1 : -1) * term;
+                else qq += ((j - 1) / 2 % 2 == 0 ? -1 : 1) * term;
+                if (term < 1e-17) break;
+            }
+            double chi = x - Math.PI / 4;
+            return Math.Sqrt(2 / (Math.PI * x)) * (p * Math.Cos(chi) - qq * Math.Sin(chi));
         }
 
         /// <summary>
         /// The x with P(m, x) = 1 − e^(−r²): the Nakagami-m quantile (as m·R², Ω = 1) of the probability a unit-power Rayleigh
         /// envelope of squared value <paramref name="r2"/> has. Newton on the regularized incomplete gamma function, reading the
-        /// upper tail from Q so a large r² keeps its precision.
+        /// upper tail from Q so a large r² keeps its precision. The Newton step is kept inside a bracket of the root: unguarded,
+        /// a small r² at m ≥ 3 overshot to where dP/dx underflows and returned x ~1e14 (|g| of +135 dB).
         /// </summary>
         public static double NakagamiQuantileX(double m, double r2)
         {
@@ -300,17 +335,17 @@ namespace RfCore.Propagation
             bool upper = r2 > 1;                         // P ≥ 0.63: solve Q(m, x) = e^(−r²)
             double target = upper ? Math.Exp(-r2) : r2 < 1e-5 ? r2 * (1 - r2 / 2 * (1 - r2 / 3)) : 1 - Math.Exp(-r2);
             double lg = GammaFunction.LogGamma(m);
-            double x = Math.Max(1e-300, m * r2);
-            for (int i = 0; i < 100; i++)
+            double lo = 0, hi = double.PositiveInfinity, x = Math.Max(1e-300, m * r2);
+            for (int i = 0; i < 200; i++)
             {
-                double p = GammaFunction.P(m, x);
-                double f = upper ? (1 - p) - target : p - target;
+                double g = upper ? target - GammaFunction.Q(m, x) : GammaFunction.P(m, x) - target;   // increasing in x
+                if (g == 0) return x;
+                if (g > 0) hi = x; else lo = x;
                 double d = Math.Exp((m - 1) * Math.Log(x) - x - lg);       // dP/dx
-                if (!(d > 0)) break;
-                double step = upper ? -f / -d : -f / d;
-                double next = x + step;
-                if (next <= 0) next = x / 2;
-                if (Math.Abs(next - x) <= 1e-14 * x) { x = next; break; }
+                double next = d > 0 && !double.IsInfinity(d) ? x - g / d : double.NaN;
+                if (!(next > lo && next < hi))
+                    next = double.IsPositiveInfinity(hi) ? 2 * x + 1 : lo > 0 ? Math.Sqrt(lo * hi) : 0.5 * hi;
+                if (Math.Abs(next - x) <= 1e-14 * x) return next;
                 x = next;
             }
             return x;

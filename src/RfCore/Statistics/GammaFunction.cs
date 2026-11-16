@@ -28,9 +28,15 @@ public static class GammaFunction
 
     /// <summary>The regularized lower incomplete gamma function P(a, x): the series below a + 1, the continued fraction
     /// of Q = 1 − P above it.</summary>
-    public static double P(double a, double x)
+    public static double P(double a, double x) => Regularized(a, x, upper: false);
+
+    /// <summary>The regularized upper incomplete gamma function Q(a, x) = 1 − P(a, x), read from the continued fraction
+    /// directly above a + 1, so a far upper tail keeps its precision (1 − P is 0 there).</summary>
+    public static double Q(double a, double x) => Regularized(a, x, upper: true);
+
+    private static double Regularized(double a, double x, bool upper)
     {
-        if (x <= 0) return 0;
+        if (x <= 0) return upper ? 1 : 0;
         double lead = Math.Exp(-x + a * Math.Log(x) - LogGamma(a));
         if (x < a + 1)
         {
@@ -41,7 +47,8 @@ public static class GammaFunction
                 sum += term;
                 if (Math.Abs(term) < 1e-17 * Math.Abs(sum)) break;
             }
-            return Math.Min(1, sum * lead);
+            double pl = Math.Min(1, sum * lead);
+            return upper ? 1 - pl : pl;
         }
         const double tiny = 1e-300;
         double b = x + 1 - a, c = 1 / tiny, d = 1 / b, h = d;
@@ -56,7 +63,8 @@ public static class GammaFunction
             h *= del;
             if (Math.Abs(del - 1) < 1e-16) break;
         }
-        return Math.Max(0, 1 - lead * h);
+        double q = Math.Clamp(lead * h, 0, 1);
+        return upper ? q : 1 - q;
     }
 
     /// <summary>The x at which P(a, x) = p, by bisection on log x (0 &lt; p &lt; 1).</summary>

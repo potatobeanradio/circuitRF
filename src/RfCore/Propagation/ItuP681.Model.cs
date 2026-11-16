@@ -277,7 +277,8 @@ namespace RfCore.Propagation
         {
             var tri = Series.TripletAt(0);
             double k = Math.Pow(10, (tri.Ma - tri.Mp) / 10);
-            return new FadingProcess(new TapFading(FadingKind.Rician, DopplerShape.Classical, FmHz, k), Gain, sinusoids);
+            // the direct signal 10^(A/20) is real: its line sits at 0 Hz, not at 0.7 f_m
+            return new FadingProcess(new TapFading(FadingKind.Rician, DopplerShape.Classical, FmHz, k, LosDopplerFactor: 0), Gain, sinusoids);
         }
     }
 }

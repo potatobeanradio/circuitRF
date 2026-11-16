@@ -315,12 +315,12 @@ public sealed class ChannelArrayEndTests(ITestOutputHelper output) : IDisposable
 
     /// <summary>A 16 × 16 Feed-mode receive array on the 5 × 5 record (embedded, coupling on), each element through an identical, mismatched
     /// linear channel (an attenuator with 12 dB return loss), reached from a pin through CDL-C.</summary>
-    private static string CollapseBench(string channelCell = "Atten:ATT el 0 bf 0 Loss=3 RL=12", string multipath = Cdl, int size = 16) => $"""
+    private static string CollapseBench(string channelCell = "Atten:ATT el 0 bf 0 Loss=3 RL=12", string multipath = Cdl, int size = 16, string off = "") => $"""
         define rxch ( bf el )
         {channelCell}
         end
         PropagationChannel:CH1 tx Rx=PA1 TxPos="80,0,1.5" RxPos="0,0,1.5" RxAz=0 RxEl=0 TxGain=6 TxPol=phi f0=5.9 GHz {multipath}
-        PhasedArray:PA1 f {E5} Mode=feed Rows={size} Cols={size} Channel=rxch
+        PhasedArray:PA1 f {E5} Mode=feed Rows={size} Cols={size} Channel=rxch{off}
         """;
 
     private (Complex Collapsed, Complex Elements) BothWaysS21(string body)
@@ -372,6 +372,18 @@ public sealed class ChannelArrayEndTests(ITestOutputHelper output) : IDisposable
                          $"{PropagationChannelModel.ElementsNotStamped} elements not stamped");
         Assert.True(rs <= 1e-12, $"S21 {rs:E2}");
         Assert.True(PropagationChannelModel.CollapsedStamps > 0 && PropagationChannelModel.ElementsNotStamped >= 256);
+    }
+
+    /// <summary>8b gate 1 with elements switched off: an Off element has no channel placed (its row of the closure the identity's), so the
+    /// collapse's G is S12·M⁻¹·t — M⁻ᵀ·t, which it once was, agrees only with every element on.</summary>
+    [Fact]
+    public void Gate8b1_SParameters_WithElementsOff_TheCollapseEqualsTheElementStamp()
+    {
+        var sp = BothWaysS21("Port:P1 tx 0 Num=1 Z=50 Ohm\nPort:P2 f 0 Num=2 Z=50 Ohm\n" + CollapseBench(off: " Off=6,100,256") +
+                             "\nanalysis SP1 type=sparam start=5.9 stop=5.9 npts=1 Unit=GHz\n");
+        double rs = (sp.Collapsed - sp.Elements).Magnitude / sp.Elements.Magnitude;
+        output.WriteLine($"S21 collapsed {sp.Collapsed} element {sp.Elements} ({rs:E2})");
+        Assert.True(rs <= 1e-12, $"S21 {rs:E2}");
     }
 
     /// <summary>8b gate 1 (harmonic balance) — the same bench's feed voltage, collapsed against element by element, to 1e-10: harmonic

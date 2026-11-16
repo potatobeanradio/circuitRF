@@ -417,13 +417,16 @@ have an NF of 16.7 dB and cost the chain 1 dB. It is what tells how much gain an
 
 ## Sweeps {#sweeps}
 
-The **Sweeps** row of the Link tab takes up to three sweeps, each one line, as the Blockers are:
+The **Sweeps** row of the Link tab takes up to six sweeps, each one line, as the Blockers are:
 
 | Sweep | Line | Points |
 |---|---|---|
 | `Frequency` | `20 GHz, 40 GHz, 41` | carriers evenly from the first to the last |
 | `TxElements` | `4, 1024, 9` | transmit array sizes spread evenly in ratio, each rounded to a whole element and kept once |
 | `RxElements` | `1, 64, 13` | the receive Combiner's N, the same way; 1 is one element with no combiner |
+| `Distance` | `50, 5000, 41` | the link's distance, m, spread evenly in ratio; not on a satellite path, whose distance is its slant range |
+| `Elevation` | `10, 90, 17` | a satellite path's elevation, deg, evenly, to 90 at most |
+| `Availability` | `90, 99.99, 21` | the availability, %, evenly, below 100 |
 
 Each point is the whole chain budgeted again there, every expression and table read at that point's carrier. Each sweep
 has its own tab: the link levels (EIRP, the received power at each element, the chain's input, the ceiling and the

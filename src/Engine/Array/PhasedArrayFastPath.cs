@@ -246,9 +246,10 @@ public static class PhasedArrayFastPath
     /// <summary>
     /// What a Feed-mode receive array that meets the fast path's conditions does with the waves its elements emit (b = S·a + c), with its feed
     /// matched: the beamformer is matched and isolating, so the wave from channel k's beamformer side leaves at F with t_k and nothing comes
-    /// back; the element side closes as M·b = c with M = I − Γ_ch·D·S (D the elements whose channel is placed, Γ_ch the channel's S22) — the
-    /// fast path's own closure matrix. So the feed sends b_F = S12_ch·tᵀ·M⁻¹·c into a matched load: G = S12_ch·M⁻ᵀ·t, solved with Mᵀ factorised
-    /// explicitly. Γ_F is what the closed array presents at F, as <see cref="TryWaves"/> forms it. Null, with the fast path's sentence, where
+    /// back; the element side closes with a = Γ_ch·D·b (D the elements whose channel is placed, Γ_ch the channel's S22), so
+    /// (I − Γ_ch·S·D)·b = c and the feed sends b_F = S12_ch·tᵀ·(I − Γ_ch·S·D)⁻¹·c into a matched load: G = S12_ch·(I − Γ_ch·D·Sᵀ)⁻¹·t, which
+    /// for the reciprocal array (S = Sᵀ) is S12_ch·M⁻¹·t with M = I − Γ_ch·D·S, the fast path's own closure matrix, solved with its one
+    /// factor. (M⁻ᵀ·t, which this once was, agrees only when every element is on.) Γ_F is what the closed array presents at F, as <see cref="TryWaves"/> forms it. Null, with the fast path's sentence, where
     /// it does not apply.
     /// </summary>
     public static (PropagationChannelModel.ReceiveCollapse? Collapse, string Sentence) Receive(ElaboratedNetlist nl, ElaboratedComponent array, double hz)
@@ -259,9 +260,9 @@ public static class PhasedArrayFastPath
         var pa = parts.Array;
         int n = pa.PortCount;
         double z0 = pa.Z0.Real;
-        // brief-pch-9 — and per WEIGHTS: G = S12·M⁻ᵀ·t and Γ_F carry the beamformer's t, and ArrayKey leaves out what only moves the weights,
+        // brief-pch-9 — and per WEIGHTS: G = S12·M⁻¹·t and Γ_F carry the beamformer's t, and ArrayKey leaves out what only moves the weights,
         // so a key without them handed a re-weighed array (a selected beam, a tuned steer VAR) the previous beam's collapse
-        string key = $"{array.InstancePath}|{parts.ArrayKey}|{parts.Channel?.Key}|{pa.Feed!.WeightsKey()}|{hz.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}";
+        string key = CollapseKey(array, parts, hz);
         // G and Γ_F are kept per resolved array, channel, weights and frequency; the feed's node is this netlist's own, never kept
         lock (_gate)
             if (_receive.TryGetValue(key, out var kept)) return (kept with { FeedNode = parts.Feed.Nodes[0] }, Taken(parts));
@@ -273,7 +274,7 @@ public static class PhasedArrayFastPath
         for (int k = 0; k < n; k++) t[k] = pa.Lattice.IsOn(k) ? feed.Quantised(k, hz) * norm : Complex.Zero;
         var s = pa.SparseAt(hz);
         var off = new HashSet<int>(Enumerable.Range(0, n).Where(k => !pa.Lattice.IsOn(k)));
-        // M = I − s22·D·S (off rows the identity's); z = M⁻ᵀ·t, a = M⁻¹·(s21·t)
+        // M = I − s22·D·S (off rows the identity's); z = M⁻¹·t (S reciprocal), a = M⁻¹·(s21·t)
         var z = new Complex[n];
         var a = new Complex[n];
         if (s22 == Complex.Zero) { Array.Copy(t, z, n); for (int k = 0; k < n; k++) a[k] = s21 * t[k]; }
@@ -282,8 +283,7 @@ public static class PhasedArrayFastPath
             var (lu, _) = Factorise(s, s22, off);
             var r = t.Select(x => s21 * x).ToArray();
             lu.Solve(r, a);
-            var luT = FactoriseTranspose(s, s22, off);
-            luT.Solve(t, z);
+            lu.Solve(t, z);
         }
         var g = new Complex[n];
         for (int k = 0; k < n; k++) g[k] = s12 * z[k];
@@ -292,7 +292,7 @@ public static class PhasedArrayFastPath
         Complex gammaF = 0;
         for (int k = 0; k < n; k++) if (pa.Lattice.IsOn(k) && t[k] != Complex.Zero) gammaF += t[k] * (s11 * t[k] + s12 * b[k]);
         var result = new PropagationChannelModel.ReceiveCollapse(parts.Feed.Nodes[0], g, gammaF, z0);
-        lock (_gate) _receive[key] = result;
+        lock (_gate) { if (_receive.Count >= MaxKept) _receive.Clear(); _receive[key] = result; }
         Interlocked.Increment(ref _receiveCollapses);
         return (result, Taken(parts));
     }
@@ -309,7 +309,7 @@ public static class PhasedArrayFastPath
         if (!parts.Path.Fast) return (null, "Element by element: " + parts.Path.Sentence);
         var pa = parts.Array;
         int n = pa.PortCount;
-        string key = $"{array.InstancePath}|{parts.ArrayKey}|{parts.Channel?.Key}|{pa.Feed!.WeightsKey()}|{hz.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}";
+        string key = CollapseKey(array, parts, hz);
         lock (_gate)
         {
             if (_receive.TryGetValue(key, out var kept)) return (kept.GammaF, Taken(parts));
@@ -329,45 +329,25 @@ public static class PhasedArrayFastPath
         s.Multiply(a, b);
         Complex gammaF = 0;
         for (int k = 0; k < n; k++) if (pa.Lattice.IsOn(k) && t[k] != Complex.Zero) gammaF += t[k] * (s11 * t[k] + s12 * b[k]);
-        lock (_gate) _feedReflection[key] = gammaF;
+        lock (_gate) { if (_feedReflection.Count >= MaxKept) _feedReflection.Clear(); _feedReflection[key] = gammaF; }
         return (gammaF, Taken(parts));
     }
 
     private static readonly Dictionary<string, Complex> _feedReflection = [];
 
+    /// <summary>The collapses kept at once: every weights change and frequency adds one (an N-element G), so a long session or a drop
+    /// sweep would grow them without bound; past this many they are formed afresh.</summary>
+    private const int MaxKept = 512;
+
+    /// <summary>A collapse's key: the resolved array (ArrayKey leaves out what only moves the weights, the Off set among them, which
+    /// moves D here), its channel, weights and frequency.</summary>
+    private static string CollapseKey(ElaboratedComponent array, Parts parts, double hz)
+        => $"{array.InstancePath}|{parts.ArrayKey}|off={string.Join(",", parts.Array.Lattice.Off.Order())}|{parts.Channel?.Key}|" +
+           $"{parts.Array.Feed!.WeightsKey()}|{hz.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}";
+
     private static string Taken(Parts parts)
         => $"Collapsed: {parts.Array.PortCount} receive elements reach the feed through one closure ({parts.Path.Sentence.Replace("Fast path: ", "")}), so each " +
            "channel's rays are stamped as one source at the feed rather than on every element.";
-
-    /// <summary>LU of Mᵀ, M = I − s22·D·S with the rows of <paramref name="identityRows"/> the identity's (so Mᵀ has those columns the identity's).</summary>
-    private static SparseLU FactoriseTranspose(ArraySparseMatrix s, Complex s22, HashSet<int> identityRows)
-    {
-        int n = s.Size;
-        var cols = new List<(int Row, Complex Value)>[n];      // column i of Mᵀ is row i of M
-        for (int i = 0; i < n; i++)
-        {
-            cols[i] = [];
-            if (identityRows.Contains(i)) { cols[i].Add((i, Complex.One)); continue; }
-            bool diag = false;
-            foreach (var (c, v) in s.Row(i))
-            {
-                Complex m = -s22 * v;
-                if (c == i) { m += 1; diag = true; }
-                cols[i].Add((c, m));
-            }
-            if (!diag) cols[i].Add((i, Complex.One));
-        }
-        var colPtr = new int[n + 1];
-        for (int c = 0; c < n; c++) colPtr[c + 1] = colPtr[c] + cols[c].Count;
-        var rowIdx = new int[colPtr[n]];
-        var values = new Complex[colPtr[n]];
-        for (int c = 0; c < n; c++)
-        {
-            cols[c].Sort((x, y) => x.Row.CompareTo(y.Row));
-            for (int k = 0; k < cols[c].Count; k++) { rowIdx[colPtr[c] + k] = cols[c][k].Row; values[colPtr[c] + k] = cols[c][k].Value; }
-        }
-        return SparseLU.Create(new SparseMatrix(n, n, values, rowIdx, colPtr), ClosureOrdering, 1.0);
-    }
 
     // ── R-paa8-4 — the estimate a slider shows where the fast path does not apply ──────────────────────────────
 

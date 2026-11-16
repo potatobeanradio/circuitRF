@@ -485,7 +485,8 @@ def p530(f, d, R, p, tau):
     k, a = p838(f, 0, tau)
     g = k * R ** a
     fr, dr, rr = max(f, 6), min(d, 30), max(R, 3)
-    r = 1 / (0.477 * dr ** 0.633 * rr ** (0.073 * a) * fr ** 0.123 - 10.579 * (1 - math.exp(-0.024 * dr)))
+    den = 0.477 * dr ** 0.633 * rr ** (0.073 * a) * fr ** 0.123 - 10.579 * (1 - math.exp(-0.024 * dr))
+    r = 2.5 if den < 0.4 else 1 / den  # step 4: r is capped at 2.5
     c0 = 0.12 + 0.4 * log10(f / 10) ** 0.8 if f >= 10 else 0.12
     c1 = 0.07 ** c0 * 0.12 ** (1 - c0)
     return g * d * r * c1 * p ** (-((0.855 * c0 + 0.546 * (1 - c0)) + (0.139 * c0 + 0.043 * (1 - c0)) * log10(p)))

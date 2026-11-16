@@ -372,6 +372,12 @@ public static class EnvelopeRunner
         return prepared;
     }
 
+    /// <summary>Whether <paramref name="template"/>'s warm-up also covers <paramref name="nl"/>'s channels (Prepare's rule): a drop
+    /// that draws a longer delay than the recording drop did (a scenario drop draws its delays) must not take its segmentation, or
+    /// each later segment's receive side reads before its recording begins.</summary>
+    internal static bool WarmCovers(Prepared template, ElaboratedNetlist nl)
+        => template.Segments == 1 || ChannelDelayS(nl) is var d && (d <= 0 || template.WarmS >= 2 * (d + template.StepS));
+
     /// <summary>The longest excess delay of any Propagation Channel at its carrier (s); 0 with none.</summary>
     private static double ChannelDelayS(ElaboratedNetlist nl)
     {
@@ -510,7 +516,7 @@ public static class EnvelopeRunner
         var ds = EnvelopeDataSet.Build(merged, plan, skip, note, quiet, PathGain(nets[0], carrierHz));
         double[] productHz = merged.MixFreqHz ?? [.. Enumerable.Range(0, merged.MaxHarm + 1).Select(k => k * merged.F0Hz)];
         EnvelopeWireTemperature.Add(ds, nets[0], merged, productHz, skip);
-        PropagationChannelReport.Add(ds, nets[0], carrierHz, env: ChannelSpan(merged));
+        PropagationChannelReport.Add(ds, nets[0], carrierHz, env: ChannelSpan(merged) is { } span ? span with { OffsetS = plan.Params.StartS } : null);
         ds.Add("__EnvSegments", DataCube.Scalar(segs));
         ds.Add("__EnvWarmup_s", DataCube.Scalar(warm));
         ds.Add("__EnvSeamError", DataCube.Scalar(seam));

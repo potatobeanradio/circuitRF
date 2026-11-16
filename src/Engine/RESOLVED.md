@@ -4844,9 +4844,8 @@ meets PAA-8's fast-path conditions is linear between its elements' emitted waves
 inject on each element's source row. It adds one Norton current at the feed, J = 2·b_m/(√Z0·(1 + Γ_F)), where b_m =
 Σ_n G_n·c_n is what the elements' waves deliver into a matched load at the feed. The array's stamp, which does not
 depend on the field, still supplies Γ_F to the rest of the circuit, so the equivalence is exact.
-`PhasedArrayFastPath.Receive` forms G = S12_ch·M⁻ᵀ·t from the fast path's own closure matrix M = I − Γ_ch·D·S. Mᵀ is
-assembled and factorized explicitly, because CSparse's complex `SolveTranspose` is documented as A′x = b, which may
-conjugate. Γ_F is formed as `TryWaves` forms it. Through CDL-C (480 rays) into a 16 × 16 array with identical
+`PhasedArrayFastPath.Receive` forms G = S12_ch·M⁻¹·t from the fast path's own closure matrix M = I − Γ_ch·D·S (it was
+M⁻ᵀ·t, with Mᵀ factorized explicitly, until the PCH review below: the two agree only with every element on). Γ_F is formed as `TryWaves` forms it. Through CDL-C (480 rays) into a 16 × 16 array with identical
 mismatched channels and coupling on, S21 matches the element-by-element stamp to 2.5e-15. Harmonic balance matches to
 2.7e-11, its floor on this bench. A 4 × 4 envelope run matches to 2.6e-11.
 
@@ -5493,3 +5492,30 @@ Found building *Symbolically Defined Device (SDD)*'s bias-loop bench (an SDD tha
   reads NaN.
 - **The example's bias bench** gained its HB drive sweep (10 to 30 dBm into bench 5's maximum-power load, loop open and
   closed): 22 points, 1.2 s from the CLI, every one converged; 7.3 s before the stall test.
+
+## PCH review (2026-11-16) — the envelope channel, drops, the receive collapse, beam selection
+
+- **The receive collapse was wrong with elements Off.** The element side closes as a = Γ_ch·D·b, so (I − Γ_ch·S·D)·b = c and
+  G = S12·(I − Γ_ch·D·Sᵀ)⁻¹·t: for the reciprocal array, M⁻¹·t, not M⁻ᵀ·t. With D = I they agree, which is why the 8b gates held.
+  Gate: `ChannelArrayEndTests.Gate8b1_SParameters_WithElementsOff_…` (fails on the old form). The collapse key now carries the
+  Off set (ArrayKey leaves it out), and both collapse caches clear past 512 entries.
+- **Drop reuse replayed a relay's second hop.** Every channel was recorded and every recording replayed, so a channel transmitting
+  from the receive side heard the recording drop's relay output. `Partition.DrivenChannels` limits the replay to channels whose
+  transmit end is on the transmit side. A tone on the transmit side (an upconverter's LO) now refuses the reuse (the pruned run
+  lost the second fundamental); a faulted recording entry is dropped so the next drop records afresh rather than every drop of
+  that key failing; and a drop whose channel delay outlasts the recording's warm-up (`EnvelopeRunner.WarmCovers`) solves jointly.
+- **A second channel into a replaced receive array lost its contribution.** The replacement now happens only when one channel
+  receives on the array; nor when its channel cells hold a line already swapped to its stepped delay form.
+- **An EM Field Data end crashed the envelope and `explain`** (`TxArray`/`RxArray` were a tuple with a null array): they are
+  null for a non-array end now, and the envelope's refusal comes before anything reads them.
+- **The channel report evaluated tap gains and H(f, t) at TimeOffset + t, without the run's Start** (the record's axis is
+  0-based; the channel stepped from Start). `EnvelopeSpan.OffsetS` carries it.
+- **Beam bound:** a non-steered end kept unit-modulus phases, losing its taper; it keeps its weights now. **The kept beam's key**
+  timestamps a `path#port` pattern by its path.
+- **Left as found, for a decision:** SC/DBPSK BERest averages BER over a 65-symbol SINR estimate and is biased high near
+  BER 1e-3…1e-5 (×1.25 at 8 dB, ×4 at 12 dB Eb/N0 QPSK); pooling the SINR removes it but stops BERest following fading in the
+  window. The genie equalizer with a channel skips the offset removal, so a transmitter's own CFO is not taken out. Drop reuse
+  is exact only with a linear receive side (the joint step's iteration history differs). Recordings are kept for every key for
+  the whole sweep. `outage_over` drops NaN drops from both counts. `CollapsedElements`, `ReplacedParts`, `LastInstanceCost`
+  are process-wide counters, so the 8b envelope test can read another class's run under load (`PatternEvaluations`, counted on
+  the caller's thread, is per thread now, which settled `ReceiveArrayFeedTests.Gate3_…`).

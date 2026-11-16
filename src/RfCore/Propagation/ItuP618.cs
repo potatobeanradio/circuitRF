@@ -15,6 +15,10 @@
 //             averaging factor (eqs (44)-(46)), σ (eq (47)), and the fade
 //             depth a(p)·σ for 0.01 % ≤ p ≤ 50 % (eqs (48), (49)).
 //             4 to 55 GHz, θ ≥ 5°.
+//  XPD        §4.1, steps 1-8: the cross-polarization discrimination not
+//             exceeded for p % of the time from rain (Cf − CA + Cτ + Cθ + Cσ)
+//             with the ice crystal term taken off, 6 to 55 GHz, θ ≤ 60°,
+//             0.001 % ≤ p ≤ 1 %. A depolarization, not a loss: reported.
 //  Total      §2.5: AT = AG + √((AR + AC)² + AS²) for 0.001 % ≤ p ≤ 5 %
 //             (eq (65)), AG + √(AC² + AS²) for 5 % < p ≤ 50 % (eq (66)),
 //             AC and AG held at their 5 % values below 5 % (eqs (67), (68)).
@@ -28,6 +32,30 @@ namespace RfCore.Propagation
     {
         public const string Document = "ITU-R P.618-14 (08/2023)";
         private const string M = "P618";
+
+        /// <summary>§4.1: the XPD (dB) not exceeded for <paramref name="pPercent"/> % of the time, from the rain attenuation
+        /// <paramref name="apDb"/> exceeded for the same percentage; <paramref name="tiltDeg"/> the polarization's tilt from the
+        /// horizontal (45° for circular). σ, the canting angle's spread, is 0, 5, 10 and 15° at 1, 0.1, 0.01 and 0.001 %: linear
+        /// in log p, which is how it is read between them.</summary>
+        public static double RainXpd(double fGhz, double elevationDeg, double tiltDeg, double pPercent, double apDb)
+        {
+            PropagationMath.Range(M, "the frequency (XPD)", fGhz, 6, 55, "GHz");
+            PropagationMath.Range(M, "the elevation (XPD)", elevationDeg, 0, 60, "deg");
+            PropagationMath.Range(M, "the time percentage (XPD)", pPercent, 0.001, 1, "%");
+            PropagationMath.Positive(M, "the rain attenuation (XPD)", apDb, "dB");
+            double lf = Math.Log10(fGhz);
+            double cf = fGhz < 9 ? 60 * lf - 28.3 : fGhz < 36 ? 26 * lf + 4.1 : 35.9 * lf - 11.3;
+            double v = fGhz < 9 ? 12.8 * Math.Pow(fGhz, 0.19) : fGhz < 36 ? 22.6 : 13.0 * Math.Pow(fGhz, 0.15);
+            double ca = v * Math.Log10(apDb);
+            double tau = tiltDeg * Math.PI / 180;
+            double ct = -10 * Math.Log10(1 - 0.484 * (1 + Math.Cos(4 * tau)));
+            double cth = -40 * Math.Log10(Math.Cos(elevationDeg * Math.PI / 180));
+            double sigma = -5 * Math.Log10(pPercent);
+            double cs = 0.0053 * sigma * sigma;
+            double xpdRain = cf - ca + ct + cth + cs;
+            double cIce = xpdRain * (0.3 + 0.1 * Math.Log10(pPercent)) / 2;
+            return xpdRain - cIce;
+        }
 
         /// <summary>§2.2.1.1: the rain attenuation exceeded for p % of an average year, dB.</summary>
         /// <param name="stationKm">hs, the station's height above sea level, km.</param>

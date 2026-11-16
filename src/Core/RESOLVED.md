@@ -5245,3 +5245,18 @@ What would cost time to rediscover:
   on 2 nm (each run is a width less two arms).
 - **The curved plans are bit for bit.** The corners are a branch beside the curve code, which keeps its arithmetic and
   section order; the variants' and the rat-race's fingerprints were taken before the change.
+
+## PCH review (2026-11-16) — the Propagation Channel component, steerDelay
+
+- **`steerDelay` pointed the beam at −θ0.** steer's phase is −360·f0·path/c and a weight is e^(+jφ); a delay weighs e^(−j2πfτ),
+  so the delay that matches it is +path/c. It was −path/c in `Evaluator.Array` and in the elaborator's closed form. Gate
+  `PhasedArrayFeedTests.SteerDelay_PointsTheBeamWhereSteerDoes`.
+- **A channel's registry numbers ignored the registry's unit.** `Elevation=30 deg` went through the ordinary unit scale and
+  arrived as 0.52°; `d0=1 m` as 1 mm. A registry `deg` parameter is now read as the orientations are (EvalPhase), a registry
+  `m`/`km` length typed in `m` is the metre-is-milli refusal, and a length or frequency typed in its own unit is brought back to
+  the registry's km or GHz.
+- **`PathLoss=Satellite`** passed `Find` and then failed every case-sensitive "satellite" test: the model takes the registry's
+  own spelling now. A pin end with a pattern no longer reads its record at DC (it warned on every DC/HB run and stamped the RF
+  S11 as the DC termination), and the nearest-record warning is said once per record frequency, not per swept point.
+- **Left as found:** a gain end with no stated polarization projects a fixed Cartesian vector on each ray, so off the line of
+  sight it is dipole-like; SIR sums interferers' powers where HB sums their fields.

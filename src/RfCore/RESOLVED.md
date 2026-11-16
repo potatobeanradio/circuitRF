@@ -1615,3 +1615,28 @@ only a Doppler (`TxVel`), 10 Msym/s over 0.2 ms: 200 Hz read −0.5 Hz, 500 Hz r
   removal from there; `Equalizer=none` still reads the waveform as it came. Every offset from 200 Hz to 400 kHz now reads to
   a few mHz with EVM 4e-4 %. Gate: `tests/Engine.Tests/Envelope/EnvelopeScTests.Doppler_IsAcquired_AndTheSymbolsDecidedRight`
   (500 Hz and 100 kHz).
+
+## PCH review (2026-11-16) — models, fading, the single-carrier offset
+
+- **Nakagami m ≥ 3 blew up.** Newton on P(m, x) from x = m·r² had no bracket: a small r² overshot to where dP/dx underflows
+  and returned x ~1e14 (m = 4, r² = 0.1929: |g| +135 dB; 1.6 % of samples at m = 4, 21 % at m = 10). It keeps a bracket now,
+  and the upper tail reads `GammaFunction.Q` (new) rather than 1 − P. Gate `FadingTests.NakagamiQuantile_StaysBracketed_AtLargeM`.
+- **The SC/DBPSK offset slipped cycles at moderate SNR.** Each point is one noisy symbol, and step-to-step unwrapping adds a
+  cycle to every later point whenever two neighbours differ by more than π (16QAM at Es/N0 12 dB: 261 Hz rms). It acquires on the
+  products' spectrum (zero-padded, the instants' own grid), then unwraps what is left against a ±16-point running phase track and
+  fits. Gate `SignalEqualizerTests.ScOffset_AtModerateSnr_DoesNotSlipCycles`. The OFDM response average now skips a symbol that
+  wraps the window, as its phases already did.
+- **Coherence time** was infinite for static rays with different Dopplers (CDL, scenario, directional rays, a moving two-ray
+  link); now only a channel with neither fading nor a Doppler spread is. J0 is a fixed-cost series/asymptotic form (it cost
+  64 + 2⌈x⌉ cosines, ~10⁹ a TDL-D report), and each distinct tap spectrum is evaluated once per lag. P.681's direct signal is
+  real, so its tap's line-of-sight line sits at 0 Hz (`TapFading.LosDopplerFactor`), not 0.7·f_m.
+- **Refused now, silent before:** an InF-SH/DH base station at or below the clutter height (P_LOS read 3.05, or 3e89, or NaN),
+  a UMa/UMi base station at or below hE = 1 m, P.833's woodland fit outside 900-2200 MHz (94 dB at 28 GHz), and "NaN" typed for
+  a number or in a list. P.530's r is capped at 2.5 (step 4; a 100 m path at 28 GHz read r = 5.3), and the reference script
+  with it. A satellite path's P.2109 façade elevation is the path's elevation unless stated (it was 0°: 12.7 dB at 60°).
+- **R-pch2-3's rain depolarization was not built:** P.618 §4.1's XPD (Cf − CA + Cτ + Cθ + Cσ less the ice term) is now a note
+  beside the P.618 rain, 6-55 GHz, θ ≤ 60°, 0.001-1 %, τ the RainTilt. Not checked against the SG3 workbook.
+- **Unconfirmed, for a look:** P.1238 residential floor-loss cells at 2.4/5.2 GHz (the office values are used); P.531's
+  Nakagami m (an exponential fit, where earlier editions give 1/S4²); P.530's worst-month conversion (R-pch2-2) is not built;
+  `SignalQuality.CoarseOffset` may lock to a wrong bin with a window one record long and no preamble (a Python model of it
+  did; the gate uses 16APSK with a preamble).

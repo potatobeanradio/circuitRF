@@ -38,11 +38,12 @@ public static class ChainLinkBench
     /// held between <see cref="MinDrops"/> and <see cref="MaxDrops"/>.</summary>
     public static int Drops(double availabilityPct) => (int)Math.Clamp(Wanted(availabilityPct), MinDrops, MaxDrops);
 
-    /// <summary>100/(1 − p), rounded up; to 1e-9 first, so 99.9 % is 100,000 and not 100,001.</summary>
+    /// <summary>100/(1 − p), rounded up; q and the ratio are rounded first, so 99.9 % is 100,000 and not 100,001
+    /// (1 − 0.999 is 0.0009999999999998899 in binary, and 100/q carries that error into the ninth decimal).</summary>
     public static double Wanted(double availabilityPct)
     {
-        double q = 1 - availabilityPct / 100;
-        return q > 0 ? Math.Ceiling(Math.Round(100 / q, 9)) : double.PositiveInfinity;
+        double q = Math.Round(1 - availabilityPct / 100, 12);
+        return q > 0 ? Math.Ceiling(Math.Round(100 / q, 6)) : double.PositiveInfinity;
     }
 
     private static string G(double v) => v.ToString("R", CultureInfo.InvariantCulture);
@@ -83,7 +84,9 @@ public static class ChainLinkBench
             if (ChainNames.Contains(rp.Name) && !(rp.Name == "Sigma" && ownsSigma)) continue;
             if (!link.Path.TryGetValue(rp.Name, out var v) || v.Trim().Length == 0) continue;
             string t = v.Trim();
-            w.Add($"{rp.Name}={(t.Any(char.IsWhiteSpace) ? $"\"{t}\"" : t)}");
+            // The chain names the terrain profile Profile (the registry's name); on the channel Profile= is a tapped delay line.
+            string key = rp.Name == "Profile" && model.UsesProfile ? "Terrain" : rp.Name;
+            w.Add($"{key}={(t.Any(char.IsWhiteSpace) ? $"\"{t}\"" : t)}");
         }
         w.Add("Seed=1");
         w.Add("Drop=drop");

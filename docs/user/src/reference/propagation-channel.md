@@ -118,6 +118,9 @@ Each model's own parameters, written on the channel beside `PathLoss=`:
 
 {{table: propagation/P526}}
 
+On the channel the terrain profile is written `Terrain=`, because `Profile=` there names a tapped delay line; the Chain
+Budget's Propagation section calls it `Profile`.
+
 ### `satellite` {#model-satellite}
 
 {{table: propagation/satellite}}
@@ -125,6 +128,8 @@ Each model's own parameters, written on the channel beside `PathLoss=`:
 ### `P1812` {#model-p1812}
 
 {{table: propagation/P1812}}
+
+The terrain profile is `Terrain=` on the channel, as for `P526`.
 
 ### The added losses, on any model {#added-losses}
 

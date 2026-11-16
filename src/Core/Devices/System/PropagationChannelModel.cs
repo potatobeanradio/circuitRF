@@ -192,9 +192,10 @@ public sealed partial class PropagationChannelModel : ComponentModel, IReportsWa
     public string? RxInstance => _rxInstance;
     /// <summary>True when either end is an instance: the coupling is then stamped through ray unknowns (note §5.4).</summary>
     public bool HasInstanceEnd => _txInstance is not null || _rxInstance is not null;
-    /// <summary>The bound transmit and receive arrays and their components (null for a pin end, or before binding).</summary>
-    public (ElaboratedComponent Ec, PhasedArrayModel Array)? TxArray => _txEc is null ? null : (_txEc, _txArray!);
-    public (ElaboratedComponent Ec, PhasedArrayModel Array)? RxArray => _rxEc is null ? null : (_rxEc, _rxArray!);
+    /// <summary>The bound transmit and receive arrays and their components (null for a pin end, an EM Field Data end — see
+    /// <see cref="TxEnd"/> — or before binding).</summary>
+    public (ElaboratedComponent Ec, PhasedArrayModel Array)? TxArray => _txArray is null ? null : (_txEc!, _txArray);
+    public (ElaboratedComponent Ec, PhasedArrayModel Array)? RxArray => _rxArray is null ? null : (_rxEc!, _rxArray);
 
     /// <summary>The index in the component's nets of the transmit pin, or -1 for an instance end.</summary>
     public int TxPin => _txInstance is null ? 0 : -1;
@@ -313,9 +314,10 @@ public sealed partial class PropagationChannelModel : ComponentModel, IReportsWa
         };
         _xprDb = p.ContainsKey("Xpr") ? Num("Xpr", 0) : null;
         _faradayDeg = p.ContainsKey("Faraday") ? Num("Faraday", 0) : null;
-        _model = Word("PathLoss", "free");
-        if (PropagationModels.Find(_model) is null)
-            throw new ParameterRefusalException(PropagationChannelDiagnostics.UnknownModel(_model, string.Join(", ", PropagationModels.All.Select(m => m.Name))));
+        string modelWord = Word("PathLoss", "free");
+        // the registry's own spelling, so every comparison below ("satellite", "tworay" …) holds however it was typed
+        _model = PropagationModels.Find(modelWord)?.Name
+                 ?? throw new ParameterRefusalException(PropagationChannelDiagnostics.UnknownModel(modelWord, string.Join(", ", PropagationModels.All.Select(m => m.Name))));
         _f0 = p.ContainsKey("f0") ? Num("f0", double.NaN) : null;
         if (_f0 is double f0v && !(f0v > 0)) throw new ParameterRefusalException(PropagationChannelDiagnostics.F0NotPositive());
 
@@ -884,9 +886,11 @@ public sealed partial class PropagationChannelModel : ComponentModel, IReportsWa
         ChannelPattern pat;
         try { pat = PatternSource!(w.Path, w.Port, hz); }
         catch (InvalidOperationException ex) { throw new ParameterRefusalException(PropagationChannelDiagnostics.Pattern(end, ex.Message)); }
-        if (Math.Abs(pat.FrequencyHz - hz) > 1e-9 * Math.Max(hz, 1) && _said.Add($"{end}:{pat.FrequencyHz}:{hz}"))
-            _pending.Add(($"channel-pattern-nearest:{end}:{hz}",
-                $"{end}Pattern: '{pat.Record}' has no far field at {Ghz(hz)}; its nearest, {Ghz(pat.FrequencyHz)}, is used."));
+        // one warning per record frequency, not per point: a swept run would otherwise say it at every frequency
+        if (Math.Abs(pat.FrequencyHz - hz) > 1e-9 * Math.Max(hz, 1) && _said.Add($"{end}:{pat.FrequencyHz}"))
+            _pending.Add(($"channel-pattern-nearest:{end}:{pat.FrequencyHz}",
+                $"{end}Pattern: '{pat.Record}' has no far field at {Ghz(hz)}; its nearest, {Ghz(pat.FrequencyHz)}, is used there and " +
+                "wherever else it is the nearest."));
         return pat;
     }
 
@@ -897,7 +901,9 @@ public sealed partial class PropagationChannelModel : ComponentModel, IReportsWa
     public (Complex Z0, Complex S) End(int port, double hz)
     {
         bool tx = port == 0;
-        if (PatternAt(tx ? _txPattern : _rxPattern, hz, tx ? "Tx" : "Rx") is { } pat) return (new Complex(pat.Z0, 0), pat.S11);
+        // at DC (a DC or HB run's 0 Hz) an antenna's RF reflection is no termination, and asking its record warns on every run:
+        // the stated impedance presented, as an end without a pattern
+        if (hz > 0 && PatternAt(tx ? _txPattern : _rxPattern, hz, tx ? "Tx" : "Rx") is { } pat) return (new Complex(pat.Z0, 0), pat.S11);
         return (Complex.Conjugate(tx ? _txZ : _rxZ), Complex.Zero);
     }
 

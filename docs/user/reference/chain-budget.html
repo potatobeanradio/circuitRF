@@ -1891,7 +1891,7 @@ closed forms above are checked against an independent calculation, <code>testdat
 <p>The <strong>NF left</strong> column of the cascade table is the last of these: after the example's LNA, the rest of the chain may
 have an NF of 16.7 dB and cost the chain 1 dB. It is what tells how much gain an LNA needs before a noisy mixer.</p>
 <h2 id="sweeps">Sweeps</h2>
-<p>The <strong>Sweeps</strong> row of the Link tab takes up to three sweeps, each one line, as the Blockers are:</p>
+<p>The <strong>Sweeps</strong> row of the Link tab takes up to six sweeps, each one line, as the Blockers are:</p>
 <table>
 <thead>
 <tr>
@@ -1915,6 +1915,21 @@ have an NF of 16.7 dB and cost the chain 1 dB. It is what tells how much gain an
 <td><code>RxElements</code></td>
 <td><code>1, 64, 13</code></td>
 <td>the receive Combiner's N, the same way; 1 is one element with no combiner</td>
+</tr>
+<tr>
+<td><code>Distance</code></td>
+<td><code>50, 5000, 41</code></td>
+<td>the link's distance, m, spread evenly in ratio; not on a satellite path, whose distance is its slant range</td>
+</tr>
+<tr>
+<td><code>Elevation</code></td>
+<td><code>10, 90, 17</code></td>
+<td>a satellite path's elevation, deg, evenly, to 90 at most</td>
+</tr>
+<tr>
+<td><code>Availability</code></td>
+<td><code>90, 99.99, 21</code></td>
+<td>the availability, %, evenly, below 100</td>
 </tr>
 </tbody>
 </table>

@@ -32505,3 +32505,15 @@ cell names from an older content key (the kit or circuitRF's PCell package chang
 redirects to the rebuilt cell only for as long as the run lives. `tests/Ui.Tests/Support/ExampleGeneratedCells` now builds
 them (Disk, the example's own kit trusted) and keeps each run alive for the test process; a CLI-process test passes
 `--trust-kit` for that kit.
+
+## PCH review (2026-11-16) — the Chain Budget's link
+
+- **No Link bench for a P526/P1812 link with a terrain profile:** the registry's `Profile` went onto the channel as `Profile=`,
+  which there names a tapped delay line; it is `Terrain=` now. **99.9 % asked for 100,001 drops** (1 − 0.999 is
+  0.0009999999999998899): q is rounded to 1e-12 first. **The window showed none of the propagation notes** (the model's, the
+  Rician K, Rain=drawn, the zero-margin distance's reason), which only the CLI added; the view model adds them now. The margin
+  bisection widens past 120 dB instead of returning its bracket's edge.
+- **Left as found:** with Clouds or Scintillation on and Rain off, the P.618 row is still labelled "rain (P.618)"; a two-ray link
+  with fading fades its rays independently, so the bench's mean power is not the budget's coherent two-ray loss; `chain
+  --to-schematic` without `--json` prints nothing about a bench left out; the Link bench's drop picks are keyed by a terrain
+  file's path, not its contents.

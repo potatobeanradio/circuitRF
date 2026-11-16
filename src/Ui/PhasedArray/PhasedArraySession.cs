@@ -237,6 +237,9 @@ public sealed class PhasedArraySession
             using var nl = new Core.Elaboration.Elaborator(lib) { BaseDirectory = Circuit.BaseDirectory }.Elaborate(copy);
             var ec = nl.Components.FirstOrDefault(c => c.InstancePath == inst.InstanceName);
             if (ec?.Model is not Core.Devices.PropagationChannelModel ch) return new(inst.InstanceName, isTx, null, $"'{inst.InstanceName}' did not elaborate as a channel.", at, written);
+            // Drop=drop (a variable, as every example writes it) does not parse above: the drop the bench draws is the elaborated value.
+            if (drop is null && ec.Parameters.TryGetValue("Drop", out var dv) && dv.Kind == ValueKind.Real)
+                at = written = (long)Math.Round(dv.AsReal());
             var table = BeamSelection.Score(ch, inst.InstanceName, hz, control);
             return new(inst.InstanceName, isTx, table, table is null ? $"Nothing to choose: neither end of '{inst.InstanceName}' is an array steered by steer()." : null, at, written);
         }

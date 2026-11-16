@@ -385,7 +385,7 @@ public sealed partial class Elaborator
             {
                 double path = xs![e] * su + ys![e] * sv2;
                 double phase = delay ? other![e] : -360 * f0 / Evaluator.SpeedOfLight * path * site;
-                delays[e] = delay ? -path / Evaluator.SpeedOfLight : other![e];
+                delays[e] = delay ? path / Evaluator.SpeedOfLight : other![e];   // steerDelay's: e^(−j2πf·path/c) is steer's phase at every f
                 if (!lattice.IsOn(e)) continue;
                 requested[e] = amp![e] * Complex.FromPolarCoordinates(1, phase);
                 double q = phase + (amp[e] < 0 ? Math.PI : 0);

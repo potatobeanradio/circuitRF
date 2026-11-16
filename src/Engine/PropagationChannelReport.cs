@@ -18,7 +18,9 @@ public static class PropagationChannelReport
 {
     /// <summary>What an envelope run tells the report: the record's span (s, the run's own time axis), the signal's bandwidth
     /// and its subcarrier spacing (null when it is not OFDM).</summary>
-    public sealed record EnvelopeSpan(double StartS, double StopS, double BandwidthHz, double? SubcarrierHz);
+    /// <para><c>OffsetS</c>: the run's Start, which the record's own 0-based time axis leaves out and the channel stepped at
+    /// (its step 0 is Start): added where the channel is evaluated, never to the axes.</para>
+    public sealed record EnvelopeSpan(double StartS, double StopS, double BandwidthHz, double? SubcarrierHz, double OffsetS = 0);
 
     /// <summary>
     /// Adds each channel's report to <paramref name="ds"/>, at the reference frequency of <paramref name="hz"/> (its f0, else
@@ -105,7 +107,8 @@ public static class PropagationChannelReport
         {
             double t = ch.FrozenTimeS;
             ds.Add(key + "State", DataCube.Scalar(st.Series.GoodAt(st.PositionM(t)) ? 1 : 0));
-            double from = st.PositionM(ch.TimeOffsetS + (env?.StartS ?? 0)), to = st.PositionM(ch.TimeOffsetS + (env?.StopS ?? 0));
+            double off = env?.OffsetS ?? 0;
+            double from = st.PositionM(ch.TimeOffsetS + off + (env?.StartS ?? 0)), to = st.PositionM(ch.TimeOffsetS + off + (env?.StopS ?? 0));
             ds.Add(key + "StateGood_frac", DataCube.Scalar(to > from ? Math.Clamp(GoodBetween(st.Series, from, to), 0, 1) : st.Series.GoodAt(from) ? 1 : 0));
         }
     }
@@ -187,7 +190,7 @@ public static class PropagationChannelReport
         var gains = new Complex[r.Rays.Count * times.Length];
         for (int i = 0; i < r.Rays.Count; i++)
             for (int t = 0; t < times.Length; t++)
-                gains[i * times.Length + t] = r.Rays[i].Gain * (i < r.Fades.Count ? r.Fades[i].Gain(ch.TimeOffsetS + times[t]) : Complex.One);
+                gains[i * times.Length + t] = r.Rays[i].Gain * (i < r.Fades.Count ? r.Fades[i].Gain(ch.TimeOffsetS + (env?.OffsetS ?? 0) + times[t]) : Complex.One);
         ds.Add(key + "TapGain", new DataCube([Index("ray", r.Rays.Select(x => x.Name)), new Axis("time", times, "s")], gains));
 
         if (env is not { } en) return;
@@ -199,7 +202,7 @@ public static class PropagationChannelReport
         ch.FrozenTimeS = ch.TimeOffsetS;
         var h = new Complex[nt * nf];
         for (int t = 0; t < nt; t++)
-            for (int f = 0; f < nf; f++) h[t * nf + f] = ch.H(hz + offs[f], ht[t]);
+            for (int f = 0; f < nf; f++) h[t * nf + f] = ch.H(hz + offs[f], en.OffsetS + ht[t]);
         ch.FrozenTimeS = save;
         ds.Add(key + "H", new DataCube([new Axis("time", ht, "s"), new Axis("offset", offs, "Hz")], h));
 

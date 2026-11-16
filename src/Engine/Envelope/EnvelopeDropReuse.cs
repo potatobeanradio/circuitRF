@@ -51,8 +51,17 @@ public static class EnvelopeDropReuse
 
     /// <summary>How one netlist splits: the transmit parts to remove (paths), the transmit MOD_Sources kept (paths), the nets to hold, the
     /// transmit side's node names, supplies, IProbes and wires (for the merge), and which source rows are transmit side.</summary>
+    /// <para><c>DrivenChannels</c>: the channels whose transmit end is on the transmit side, which a reusing drop replays; a relay's
+    /// channel transmits from the receive side and is solved live.</para>
     public sealed record Partition(IReadOnlySet<string> Remove, IReadOnlySet<string> KeepSources, IReadOnlySet<int> Hold,
-                                   IReadOnlySet<string> TxNodeNames, IReadOnlySet<string> TxParts, IReadOnlySet<int> TxSourceRows);
+                                   IReadOnlySet<string> TxNodeNames, IReadOnlySet<string> TxParts, IReadOnlySet<int> TxSourceRows,
+                                   IReadOnlySet<string> DrivenChannels);
+
+    /// <summary>The recordings a reusing drop replays: each segment's, of <see cref="Partition.DrivenChannels"/> only.</summary>
+    internal static IReadOnlyDictionary<string, ChannelRecording>?[] Driven(IReadOnlyDictionary<string, ChannelRecording>?[] recordings, Partition part)
+        => [.. recordings.Select(r => r is null ? null
+               : (IReadOnlyDictionary<string, ChannelRecording>)r.Where(kv => part.DrivenChannels.Contains(kv.Key))
+                                                                  .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal))];
 
     /// <summary>The counters of the last reusing sweep on this thread (test-facing; the run also says them in a note): transmit sides
     /// solved, drops that replayed one, and distinct transmit array weights among the solved ones.</summary>
@@ -98,11 +107,21 @@ public static class EnvelopeDropReuse
         foreach (var c in tx) foreach (int n in c.Nodes) if (n > 0 && Isl(n) < 0) hold.Add(n);
         var sources = nl.Components.Where(c => c.Model is ModSourceModel).ToList();
         var keep = tx.Where(c => c.Model is ModSourceModel).Select(c => c.InstancePath).ToHashSet(StringComparer.Ordinal);
+        if (tx.FirstOrDefault(c => c.Model is not ModSourceModel && IsTone(c.Model)) is { } lo)
+        {
+            // a tone on the transmit side (an upconverter's LO) is what made the joint run two-fundamental; pruned, the replay
+            // would find one fundamental, or another lattice, and fail - so the drop is solved jointly instead
+            why = $"'{lo.InstancePath}' is a tone on the transmit side";
+            return null;
+        }
+        var driven = chans.Where((c, i) => edges[i].Tx >= 0 && transmit.Contains(edges[i].Tx)).Select(c => c.InstancePath).ToHashSet(StringComparer.Ordinal);
         return new Partition(
             tx.Where(c => c.Model is not ModSourceModel).Select(c => c.InstancePath).ToHashSet(StringComparer.Ordinal), keep, hold,
             hold.Select(n => nl.Nodes.NameOf(n)).ToHashSet(StringComparer.Ordinal), tx.Select(c => c.InstancePath).ToHashSet(StringComparer.Ordinal),
-            Enumerable.Range(0, sources.Count).Where(i => keep.Contains(sources[i].InstancePath)).ToHashSet());
+            Enumerable.Range(0, sources.Count).Where(i => keep.Contains(sources[i].InstancePath)).ToHashSet(), driven);
     }
+
+    private static bool IsTone(CircuitRF.Core.ComponentModel m) => m is P1ToneModel or PnToneModel or ToneSourceModelBase;
 
     /// <summary>The transmit side's key (see the file header). The drop's beam must already be in its arrays.</summary>
     public static string Key(ElaboratedNetlist nl, Partition part, EnvelopeParams p)
