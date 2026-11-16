@@ -1,4 +1,5 @@
 using System.Numerics;
+using RfCore.Numerics;
 using CircuitRF.Engine.Mom;
 using CircuitRF.Engine.Tests.Mom.Support;
 using Xunit;
