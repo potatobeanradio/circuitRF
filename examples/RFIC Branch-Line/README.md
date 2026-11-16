@@ -35,5 +35,6 @@ the Metal1 ground under the lines, and LVS finds no error.
 | \|S31\|, coupled | −3.01 dB | −14.4 dB |
 | ∠S21 − ∠S31 | 90.0° | 90.0° |
 
-The quadrature holds, but the 1.8 µm of oxide costs about 9 dB in the lines' conductor loss. Referenced to the backside
-instead, the lines would sit on the conducting silicon, whose loss their closed form leaves out.
+The quadrature holds. The 9 dB lost is the thin-film microstrip's conductor loss on 1.8 µm of oxide at 60 GHz, not a
+fault of the model. Referenced to the backside instead, the lines would sit on the conducting silicon, whose loss their
+closed form leaves out.
