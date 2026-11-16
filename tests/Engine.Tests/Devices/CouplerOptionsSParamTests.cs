@@ -297,10 +297,28 @@ public class CouplerOptionsSParamTests(ITestOutputHelper output)
     [InlineData("Straight", 2.4e9)]
     [InlineData("Miter", 2.4e9)]
     [InlineData("Curve", 3.0e9)]
+    [InlineData("Meander", 1.8e9)]
+    [InlineData("Meander", 2.4e9)]
     public void TheSchiffman_IsItsSectionsWiredByHand(string reference, double f)
     {
         var plan = SchiffmanPlan.Build(50.0, F0, 90.0, 1.5, Ro4350b, Enum.Parse<SchiffmanReference>(reference)).Plan;
         AssertSame(SAt(Schiffman(reference), f, 4), SAt(Ports(4) + "\n" + ByHand(plan, n => Pin(n, 4), Sub), f, 4), f);
+    }
+
+    /// <summary>The meandered reference holds its phase through the turn, so at F the two paths still differ by 90°, and
+    /// over the band by what the straight reference's do, to a few hundredths of a degree.</summary>
+    [Fact]
+    public void TheMeanderedSchiffman_HoldsTheStraightOnesPhase()
+    {
+        foreach (double f in new[] { 1.92e9, 2.4e9, 2.88e9 })
+        {
+            var m = SAt(Schiffman("Meander"), f, 4);
+            var st = SAt(Schiffman(), f, 4);
+            double dm = Wrap(Deg(m[1, 0]) - Deg(m[3, 2])), ds = Wrap(Deg(st[1, 0]) - Deg(st[3, 2]));
+            output.WriteLine($"{f / 1e9:F2} GHz: meandered {dm:F3} deg, straight {ds:F3} deg, S43 {Db(m[3, 2]):F3} dB");
+            Assert.InRange(dm - ds, -0.5, 0.5);
+            if (f == F0) Assert.Equal(90.0, dm, 1);
+        }
     }
 
     /// <summary>Schiffman's C-section as TEM lines: a CLIN of ρ = Ze/Zo with its far ends joined is matched at every

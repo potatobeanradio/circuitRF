@@ -63,3 +63,5 @@ F33-coupled-array-pseudo RF-passives
 F34-coupled-array-custom RF-passives
 F26-wilkinson-lumped RF-passives
 F27-resistive-pad RF-passives
+F35-rat-race-coupled-line RF-passives
+F36-schiffman-meander RF-passives

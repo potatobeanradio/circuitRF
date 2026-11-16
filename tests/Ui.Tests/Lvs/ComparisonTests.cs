@@ -590,6 +590,8 @@ public sealed class ComparisonTests
     [InlineData("F11e-coupler-broadside", "CLC1", "Coupling", "4")]
     [InlineData("F13b-interdigitated-six", "IDC1", "Coupling", "4")]
     [InlineData("F25-schiffman-phase-shifter", "SPS1", "Phase", "60")]
+    [InlineData("F35-rat-race-coupled-line", "RRC1", "Coupling", "12")]
+    [InlineData("F36-schiffman-meander", "SPS1", "Phase", "60")]
     public void ACouplerOptionComparesCleanAndASpecMismatchIsAFinding(string design, string instance, string spec, string changed)
     {
         string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-cpl-" + Guid.NewGuid().ToString("N")[..12]);

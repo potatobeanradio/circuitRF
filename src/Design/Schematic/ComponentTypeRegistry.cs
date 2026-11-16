@@ -15,6 +15,7 @@ using ResonatorCoupling = CircuitRF.Core.Devices.Microstrip.ResonatorCoupling;
 using LadderPlan = CircuitRF.Core.Devices.Microstrip.LadderPlan;
 using CouplerCompensation = CircuitRF.Core.Devices.Microstrip.CouplerCompensation;
 using SchiffmanReference = CircuitRF.Core.Devices.Microstrip.SchiffmanReference;
+using RatRaceForm = CircuitRF.Core.Devices.Microstrip.RatRaceForm;
 using PlanRouteStyle = CircuitRF.Core.Devices.Microstrip.PlanRouteStyle;
 using CoupledArrayForm = CircuitRF.Core.Devices.Microstrip.CoupledArrayForm;
 using CoupledArrayFeed = CircuitRF.Core.Devices.Microstrip.CoupledArrayFeed;
@@ -1251,7 +1252,8 @@ public static class ComponentTypeRegistry
             "Not interchangeable: 1 is the sum (Σ) port and 4 the difference (Δ) port; 2 and 3 are the outputs. Driven at "
           + "1, 2 and 3 are in phase and 4 is isolated; driven at 4, 2 and 3 are 180° apart and 1 is isolated. With "
           + "Realization = Lumped: an inductor across each of L1a-L1b … L3a-L3b, a capacitor across C1a-C1b and to ground on "
-          + "G1 and G3, as the readout lists them.",
+          + "G1 and G3, as the readout lists them. With Form = CoupledLine: G2 and G4 are the coupled section's grounded "
+          + "ends, beside ports 2 and 4; put a via to ground (VIAGND) on each.",
         SymbolKind.Mgpd =>
             "Not interchangeable: terminal 1 is the input and 2 and 3 the two outputs, alike by symmetry. R2 and R3 are the "
           + "isolation nodes beside outputs 2 and 3: put a resistor of Z0 from each to ground (a VIAGND, or a "
@@ -2068,6 +2070,12 @@ public static class ComponentTypeRegistry
                                  + "the signal layer.",
         (SymbolKind.Mwpd, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below the "
                                               + "signal layer.",
+        (SymbolKind.Mrrc, "Form") => "Ring: the 3λ/4 arm is line. CoupledLine: it is a quarter-wave coupled section with two "
+                                   + "diagonal far ends grounded (March), a 270° line at F, so the ring is a square of three "
+                                   + "λ/4 arms and the section, with pins G2 and G4 for its vias.",
+        (SymbolKind.Mrrc, "Coupling") => "With Form = CoupledLine: the section's coupling, dB. Any value gives the 270° arm; "
+                                   + "3 dB is March's own section, and a weaker one is a wider, lower-impedance pair that edge "
+                                   + "coupling builds (10 dB on a 20 mil board).",
         (SymbolKind.Mrrc, "Meander") => "0: the plain ring. An odd number k: the 3λ/4 arm folded inside the ring with k turns, "
                                       + "the three λ/4 arms round it, so the ring is about a quarter wave narrower. Curved "
                                       + "corners only.",
@@ -2232,7 +2240,9 @@ public static class ComponentTypeRegistry
           + "curves, stamped together and reduced to the four pins. Every spacing is measured between the junctions' "
           + "reference planes at F. MTEE's closed forms are calibrated at εr 9.9 and say so on any other board; "
           + "MCURVE's effective radius is stated for 3W to 7W. With Corner = Miter or Square each curve is two MMITER or "
-          + "MBEND corners and an MLIN side, with those parts' validity.",
+          + "MBEND corners and an MLIN side, with those parts' validity. Form = CoupledLine: the section is an MCLIN, "
+          + "its grounded ends the vias on G2 and G4 (not the model), sized so its Y11 is zero at F; microstrip's "
+          + "unequal mode speeds leave it a 270° line at F only, as March's TEM section is over a band.",
         SymbolKind.MCLineN =>
             "Quasi-static: the cross-section's C and C0 from circuitRF's 2D field solver (within about 0.5 % for strips "
           + "with thickness), L from C0, and the line's modes from L·C, each at its own velocity; every strip couples to "
@@ -4689,6 +4699,8 @@ public static class ComponentTypeRegistry
                         new("F",  "2.4", "GHz", true, UnitDimension.Frequency),
                         new("Corner", nameof(PlanCorner.Curve), "", false, UnitDimension.None),
                         new("Meander", "0", "", false, UnitDimension.None),
+                        new("Form", nameof(RatRaceForm.Ring), "", false, UnitDimension.None),
+                        new("Coupling", "10", "dB", false, UnitDimension.None),
                         new("Realization", nameof(PlanRealization.Distributed), "", false, UnitDimension.None),
                         new("Gap", "1.35", "mm", false, UnitDimension.Length),
                         .. SignalGroundLayerParams];
@@ -5418,6 +5430,7 @@ public static class ComponentTypeRegistry
         (SymbolKind.Mcrc, "Form")                                                        => Enum.GetNames<ResonatorForm>(),
         (SymbolKind.Mcrc, "Arrangement")                                                 => Enum.GetNames<LoopArrangement>(),
         (SymbolKind.Mclc, "Compensation") => Enum.GetNames<CouplerCompensation>(),
+        (SymbolKind.Mrrc, "Form")         => Enum.GetNames<RatRaceForm>(),
         (SymbolKind.Msps, "Reference")    => Enum.GetNames<SchiffmanReference>(),
         (SymbolKind.Mdly, "Style")                                                       => PlanRouteStyleOptions,
         (SymbolKind.Mcrc, "Coupling")                                                    => Enum.GetNames<ResonatorCoupling>(),

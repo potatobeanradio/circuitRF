@@ -118,7 +118,13 @@ public static class SymbolPortDefs
             // MBLC: as the board has it — 1 and 2 the ends of the upper through line, 4 and 3 of the lower.
             case SymbolKind.Mblc:    return [("1", -400f, -200f), ("2", 400f, -200f), ("3", 400f, 200f), ("4", -400f, 200f)];
             // MRRC: the sum port at the top, the difference port at the bottom, the outputs either side.
-            case SymbolKind.Mrrc:    return [("1", 0f, -400f), ("2", -400f, 0f), ("3", 400f, 0f), ("4", 0f, 400f)];
+            // A coupled-line ring (six pins) as its board has it: 3 at the top, 1 at the right, 4 at the lower left and 2 below
+            // the lower right, the section along the bottom with G2 (strip A's far end) inside and G4 (strip B's near end)
+            // below.
+            case SymbolKind.Mrrc:
+                return portCount == 6
+                    ? [("1", 400f, 0f), ("2", 200f, 400f), ("3", 0f, -400f), ("4", -400f, 200f), ("G2", 100f, 100f), ("G4", -100f, 400f)]
+                    : [("1", 0f, -400f), ("2", -400f, 0f), ("3", 400f, 0f), ("4", 0f, 400f)];
             // MGPD: round the ring as the board has it — the input at the left, the outputs at the top and bottom, and the
             // isolation nodes R2/R3 at the right, 600 apart so no resistor dropped there spans both: each takes its own
             // resistor to ground.
@@ -1370,6 +1376,12 @@ public sealed class EditableComponent
 
             // brief-pch-8 — a Propagation Channel's pins as SymbolPortDefs' code: an end naming an instance has none.
             if (Symbol is SymbolKind.PropagationChannel) return ChannelPinCode(Parameters);
+
+            // A rat-race's coupled-line form adds G2 and G4, its section's grounded ends. A plain word only.
+            if (Symbol is SymbolKind.Mrrc)
+                return Enum.TryParse(Parameters.FirstOrDefault(q => q.Name == "Form")?.Expression?.Trim(), ignoreCase: true,
+                           out CircuitRF.Core.Devices.Microstrip.RatRaceForm form) && form == CircuitRF.Core.Devices.Microstrip.RatRaceForm.CoupledLine
+                    ? 6 : 4;
             // A Wilkinson divider's N is its number of sections; it draws 3 + 2·N pins. A plain number only — an expression
             // is the one-section divider's five, as the plan cannot be asked for more pins than the symbol draws.
             if (Symbol is SymbolKind.Mwpd)

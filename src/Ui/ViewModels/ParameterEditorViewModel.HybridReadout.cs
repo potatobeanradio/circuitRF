@@ -22,6 +22,20 @@ public partial class ParameterEditorViewModel
             {
                 if (Spec("Meander", 0.0) is not { } meander)
                     return ("", "Meander is an expression, so the ring's dimensions are known only at run time.");
+                var form = Enum.TryParse(_target?.Parameters.FirstOrDefault(p => p.Name == "Form")?.Expression?.Trim(),
+                    ignoreCase: true, out RatRaceForm rf) && Enum.IsDefined(rf) ? rf : RatRaceForm.Ring;
+                if (form == RatRaceForm.CoupledLine)
+                {
+                    if (Spec("Coupling", RatRacePlan.DefaultSectionCoupling) is not { } cdb)
+                        return ("", "Coupling is an expression, so the ring's dimensions are known only at run time.");
+                    var c = RatRacePlan.Build(z0, f, s, Corner(), 0, RatRaceForm.CoupledLine, cdb);
+                    return ($"W {Mm(c.W0Meters, "0.#####")} (Z0), ring {Mm(c.RingWMeters, "0.#####")} ({Ohm(c.RingZ0)}), "
+                          + $"L {Mm(c.QuarterWaveMeters)} (λg/4 at F, εeff {Eeff(c.RingEeff)})\n"
+                          + $"Section (the 3λg/4 arm): Ze {Ohm(c.SectionModes.Ze)}, Zo {Ohm(c.SectionModes.Zo)}, "
+                          + $"{cdb.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)} dB; W {Mm(c.Section.W, "0.#####")}, "
+                          + $"S {Mm(c.Section.S, "0.#####")}, L {Mm(c.Section.L)}\n"
+                          + $"Corners stand for {Mm(c.CornerMeters)} of ring each at F; a via to ground on G2 and on G4", "");
+                }
                 var r = RatRacePlan.Build(z0, f, s, Corner(), meander);
                 return ($"W {Mm(r.W0Meters, "0.#####")} (Z0), ring {Mm(r.RingWMeters, "0.#####")} ({Ohm(r.RingZ0)})\n"
                       + $"L {Mm(r.QuarterWaveMeters)} (λg/4 at F, εeff {Eeff(r.RingEeff)}); the ring is 6 of them\n"

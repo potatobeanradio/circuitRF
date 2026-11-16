@@ -4,8 +4,9 @@ namespace CircuitRF.Core.Devices.Microstrip;
 
 /// <summary>How a Schiffman phase shifter's reference line is laid: straight along +x, or folded back beside the C-section
 /// on a 180° MCURVE (<see cref="Curve"/>) or two 90° corners (<see cref="Miter"/>, <see cref="Square"/>, as
-/// <see cref="PlanCorner"/>'s). A meandered route joins these when the shared route helper does.</summary>
-public enum SchiffmanReference { Straight, Curve, Miter, Square }
+/// <see cref="PlanCorner"/>'s), or <see cref="Meander"/>ed by <see cref="PlanRoute"/> so its legs are the C-section's
+/// length and the two paths sit as one block, all four pins on its left edge.</summary>
+public enum SchiffmanReference { Straight, Curve, Miter, Square, Meander }
 
 /// <summary>What a Schiffman phase shifter comes out to on one substrate.</summary>
 /// <param name="Rho">Ze/Zo of the C-section, Schiffman's ρ.</param>
@@ -15,7 +16,11 @@ public enum SchiffmanReference { Straight, Curve, Miter, Square }
 public sealed record SchiffmanDesign(
     double Z0, double FreqHz, double PhaseDeg, double Band, double Rho, double ReferenceTurns, double RippleDeg,
     double Ze, double Zo, double WMeters, double SMeters, double LengthMeters, KirschningJansenCoupled.Modes Modes,
-    double W0Meters, double ReferenceMeters, SchiffmanReference Reference, PassivePlan Plan);
+    double W0Meters, double ReferenceMeters, SchiffmanReference Reference, PassivePlan Plan)
+{
+    /// <summary>Meander: the folded reference's legs centre to centre; 0 for the other forms.</summary>
+    public double MeanderPitchMeters { get; init; }
+}
 
 /// <summary>
 /// The Schiffman differential phase shifter (B. M. Schiffman, "A New Class of Broad-Band Microwave 90-Degree Phase
@@ -113,10 +118,49 @@ public static class SchiffmanPlan
             new PlanCoupledLine([1, 5, 2, 6], 0.0, 0.0, 0.0, w, gap, l),
             new PlanLine([5, 6], l + w / 2.0, w / 2.0, 270.0, w, p + w),
         };
+        if (reference == SchiffmanReference.Meander)
+        {
+            var route = Meandered(phaseDeg * Math.PI / 180.0 + Math.PI, l, w0, y3, fHz, s);
+            sections.AddRange(route.Sections);
+            return new SchiffmanDesign(z0, fHz, phaseDeg, band, rho, k, ripple * 180.0 / Math.PI, ze, zo, w, gap, l,
+                CoupledLineCouplerPlan.Modes(w, gap, l, fHz, s), w0, lref, reference,
+                new PassivePlan(Pins, sections, NodeCount: route.NextNode - 1) { Warnings = route.Warnings })
+            {
+                MeanderPitchMeters = ((PlanCurve)route.Sections[1]).Radius * 2.0,
+            };
+        }
         sections.AddRange(Reference(reference, lref, w0, y3, fHz, s, line.Z0, q0, part));
         return new SchiffmanDesign(z0, fHz, phaseDeg, band, rho, k, ripple * 180.0 / Math.PI, ze, zo, w, gap, l,
             CoupledLineCouplerPlan.Modes(w, gap, l, fHz, s), w0, lref, reference,
             new PassivePlan(Pins, sections, NodeCount: 10));
+    }
+
+    /// <summary>
+    /// The meandered reference: a <see cref="PlanRoute"/> meander of θ = ΔΦ + π from pin 3 heading +x, one turn of curved
+    /// half-turn stacked downward, so it ends on pin 4 heading back to the left edge under pin 3. Its pitch is set by
+    /// bisection so each leg is the C-section's length <paramref name="l"/>, and the reference lies under the section as
+    /// one block; when even six widths' pitch leaves legs shorter than that, six widths it is, clear of the route's
+    /// coupling warning, and the legs are what θ leaves. The route holds θ through the turn.
+    /// </summary>
+    private static PlanRouteResult Meandered(double theta, double l, double w0, double y, double fHz, MicrostripSubstrate s)
+    {
+        PlanRouteResult Route(double pitch) => PlanRoute.Build(0.0, y, 0.0, w0, theta, fHz, s, PlanRouteStyle.Meander,
+            PlanCorner.Curve, turns: 1, pitch: pitch, side: -1, from: 3, to: 4, next: 7);
+        double Leg(double pitch)
+        {
+            try { return ((PlanLine)Route(pitch).Sections[0]).L; }
+            catch (ParameterRefusalException) { return double.NegativeInfinity; }
+        }
+        double lo = PassivePlan.OnGrid(6.0 * w0);
+        if (Leg(lo) <= l) return Route(lo);
+        double hi = lo;
+        while (Leg(hi) > l) hi *= 2.0;
+        for (int i = 0; i < 50; i++)
+        {
+            double mid = 0.5 * (lo + hi);
+            if (Leg(mid) > l) lo = mid; else hi = mid;
+        }
+        return Route(PassivePlan.OnGrid(hi));
     }
 
     /// <summary>
