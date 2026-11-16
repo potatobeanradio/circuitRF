@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — MMIC Wilkinson</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/MMIC Wilkinson/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › MMIC Wilkinson</p>
+  </div>
+
+  <h1>MMIC Wilkinson</h1>
+  <p class="lede">A Wilkinson divider at 20 GHz on a 100 &#181;m GaAs die, its isolation resistor a thin-film resistor across the ring&#39;s gap, laid out by Update Layout, its circuit model set beside an equations model of ideal lines.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ MMIC Wilkinson</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>The Wilkinson divider of the Dividers and Couplers example on a die: an MWPD at 20 GHz on the shipped GaAs stack, 100 µm
+of GaAs under gold, with its isolation resistor a thin-film resistor (TFR). It is laid out by Update Layout from
+Schematic, and a test bench sets its circuit model beside an equations model. The workspace's default technology is the
+die's, <code>tech/mmic-GaAs_2LM_100um.ctech</code>.</p>
+<h2 id="the-cells">The cells</h2>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>Views</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Wilkinson</strong></td>
+<td>schematic, layout</td>
+<td>A 0.5 mm input line, the MWPD, a TFR across R2-R3, and each output bending away through a 90° MCURVE of 0.35 mm radius and a 0.5 mm line to its port, all on Metal1</td>
+</tr>
+<tr>
+<td><strong>Wilkinson Bench</strong></td>
+<td>schematic</td>
+<td>The cell's circuit, and its equations model: ideal lines of the closed-form impedances and lengths, an ideal 100 Ω resistor, and each feed an ideal line of its own impedance and length at F</td>
+</tr>
+<tr>
+<td><code>Wilkinson.cdd</code></td>
+<td>data display</td>
+<td>|S21|, |S31|, |S11| and |S23|, the circuit model as a line and the equations model dashed</td>
+</tr>
+</tbody>
+</table>
+<h2 id="run-it">Run it</h2>
+<p>Simulate <strong>Wilkinson Bench</strong> and open <code>Wilkinson.cdd</code>. No results ship.</p>
+<h2 id="wilkinson">Wilkinson</h2>
+<p>An MWPD with <code>Z0</code> 50 Ω, <code>F</code> 20 GHz and <code>Gap</code> 56 µm: the TFR's pin span, its 40 µm film and a contact at each end, so
+Update Layout lays it straight across the ring's gap. The TFR is two 20 µm squares of the 50 Ω/sq film, 100 Ω. Every
+line is on Metal1, the film's own metal, through <code>SignalLayer</code>; left empty it would be the top metal, Metal2. LVS matches
+the layout to the schematic.</p>
+<p><img class="readme-picture" src="pictures/wilkinson-layout.png" alt="The die: the input line on the left, the divider's ring, the thin-film resistor across the ring's gap, and the two outputs bending away to their ports." width="700"></p>
+<p><img class="readme-picture" src="pictures/wilkinson-results.png" alt="Wilkinson.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the equations model dashed." width="600"></p>
+<table>
+<thead>
+<tr>
+<th>At 20 GHz</th>
+<th>Equations</th>
+<th>Circuit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S11|</td>
+<td>below −100 dB</td>
+<td>−36.7 dB</td>
+</tr>
+<tr>
+<td>|S21| = |S31|</td>
+<td>−3.01 dB</td>
+<td>−3.53 dB</td>
+</tr>
+<tr>
+<td>|S23|</td>
+<td>below −100 dB</td>
+<td>−33.1 dB</td>
+</tr>
+</tbody>
+</table>
+<p>The model loses 0.5 dB at 20 GHz in the 3 µm gold lines, and stays matched and isolated below −30 dB.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>
