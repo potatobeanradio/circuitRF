@@ -107,11 +107,21 @@ public sealed partial class SmithChartViewModel
             _ = lib.SelectDataSourceAsync(value.LogicalId);
             OnPropertyChanged();
             OnPropertyChanged(nameof(SelectedDataSourceAbs));
+            OnPropertyChanged(nameof(SourceComboTip));
         }
     }
 
-    /// <summary>What the combo's tooltip shows — the file the selection actually names.</summary>
+    /// <summary>The file the selection actually names.</summary>
     public string? SelectedDataSourceAbs => PlotHost.Library?.SelectedDataSourceAbs;
+
+    /// <summary>What the combo's tooltip shows: what the combo is for — users kept asking — and then the file it names.</summary>
+    public string SourceComboTip => SourceComboPurpose + (SelectedDataSourceAbs is { Length: > 0 } abs ? "\n\n" + abs : "");
+
+    /// <summary>The combo's purpose, in the words the user reference uses (smith-chart.md, "The chart's top strip").</summary>
+    public const string SourceComboPurpose =
+        "Overlay source: the data the next overlay is drawn from, such as a device's measured S11 to match to. It lists the " +
+        "workspace's run results and the Touchstone files among its Known Files. Choosing one draws nothing by itself: right-click " +
+        "the chart ▸ Plot Properties… ▸ Add. A file not listed: Add from file… on the trace card's own source list.";
 
     /// <summary>Re-enumerates the sources without loading any file. The shell calls it when the
     /// workspace's results change.</summary>
@@ -120,6 +130,7 @@ public sealed partial class SmithChartViewModel
         PlotHost.Library?.RefreshAvailableDataSources();
         OnPropertyChanged(nameof(SelectedDataSourceItem));
         OnPropertyChanged(nameof(SelectedDataSourceAbs));
+        OnPropertyChanged(nameof(SourceComboTip));
     }
 
     /// <summary>

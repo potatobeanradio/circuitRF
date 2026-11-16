@@ -55,6 +55,15 @@ chart's own top strip &mdash; Undo and Redo on the keys you already use, tear-of
 floating, and it is restored when you reopen the workspace. It also needs no workspace at all &mdash; a
 scratch chart opens with nothing else loaded, and **Save As** gives it a home later.
 
+### The chart's top strip {#top-strip}
+
+| | |
+|---|---|
+| **The source combo** (left) | Chooses the **data the next overlay is drawn from**. Overlays put reference data under your matching network &mdash; a transistor's measured S11 or S22, an antenna's measured impedance, a simulated result, a stability circle &mdash; so you can see whether the network actually reaches it. **Choosing an entry draws nothing by itself**: the overlay appears when you right-click the chart &rsaquo; **Plot Properties&hellip;** &rsaquo; **Add**. What the list holds, and how to get a file into it, is in [Overlays and markers](#overlays). |
+| **Copy** | Puts the chart on the clipboard as PDF, SVG and a bitmap at once. |
+| **Save**, **Save As&hellip;** | Write the `.csmith`. |
+| **Constant Q** | Draws the pair of constant-Q arcs; drag either arc to change Q. See [Constant Q and the swept band](#q). |
+
 <div class="callout note">
 <span class="label">This tool and the Match Designer answer different questions</span>
 <p>Reaching for the wrong one wastes an afternoon, so it is worth being blunt about which is which.</p>
@@ -448,12 +457,27 @@ Smith chart on a Data Display**:
 2. right-click the chart &rsaquo; **Plot Properties&hellip;**;
 3. press **Add**, and edit the trace card that appears.
 
-The two sources circuitRF already has are both offered:
+The combo only chooses **what the next Add draws**. An overlay already on the chart keeps its own file, so
+changing the combo afterwards moves nothing; pick another source and press **Add** again for a second overlay.
 
-- **a Touchstone file**. The combo's **Add from file&hellip;** loads one with no workspace open at all,
-  which is what makes a scratch `.csmith` a real document. It is **referenced, never copied into the
-  file**, by a path relative to the document &mdash; so the pair survives a moved or archived workspace;
-- **a cube in an open data set**, referenced the way a Data Display trace card references one.
+**What the combo lists.** It is the same list a Data Display's source combo shows:
+
+| Listed | Comes from |
+|---|---|
+| **Simulation results** | Every run result (`.npy`) in the workspace's `results` folder, newest first &mdash; an S-parameter, harmonic-balance or EM run, whatever wrote it &mdash; and the Monte Carlo, yield, corner and DOE results beside the schematics. With no workspace open, the results of runs in this session. |
+| **Touchstone files** | The `.sNp` files in the workspace's **Known Files** &mdash; drop a file onto the **Project** panel to add one &mdash; and any Touchstone this chart has already loaded. A Touchstone that a run wrote is listed only once it is a Known File; the run's own `.npy` result is listed regardless. |
+| **Loadpull files** | The `.spl` and `.lpcwave` files in the workspace's Known Files. |
+
+To use a Touchstone file that is not in the list, without adding it to the workspace, load it from the trace
+card instead: press **Add**, then pick **Add from file&hellip;** at the bottom of the **trace card's own source
+list**. That works with no workspace open at all, which is what makes a scratch `.csmith` a real document,
+and the file joins the combo's list from then on.
+
+Either way, an overlay is one of the two sources circuitRF already has:
+
+- **a Touchstone file**, **referenced, never copied into the `.csmith`**, by a path relative to the document
+  &mdash; so the pair survives a moved or archived workspace;
+- **a cube in a data set**, referenced the way a Data Display trace card references one.
 
 Because it is the ordinary trace card, everything on it is yours: the matrix element, a virtual Z or Y,
 a derived quantity &mdash; of which **SourceStabilityCircle** and **LoadStabilityCircle** are drawn as
