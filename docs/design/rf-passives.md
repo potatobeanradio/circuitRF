@@ -657,6 +657,7 @@ used by the factory and the PCell alike.
 | `Form` | yes, a name | `Bandpass`; `Bandstop` (ZigZag or Hairpin); `Spurline` (Straight). |
 | `Arrangement` | yes, a name | Open loops: `Inline` or `Cross`. |
 | `Sa`, `Gap`, `Sx`, `Tap`, `Wc`, `Uc` | yes | Hairpin arm gap; loop opening; cross-coupling gap (loops 1-4); tap distance; SIR centre width and share. |
+| `Coupling` | yes, a name | `Pairs` (the default): MCLIN pairs of one width. `Full`: every coupled region one N-line section (below). |
 | `SignalLayer`, `GroundReference` | yes | As for MWPD. |
 
 **The plans.** *Chain* (Straight, ZigZag, Hairpin): each resonator is walked from one open end to the other — an end
@@ -672,13 +673,30 @@ an MGAP. *Bandstop*: the through line is the pairs' other strips, back to back, 
 length (about λg/4) apart, alternately above and below. *Spurline*: per spur, `S` of line 2·W + S wide, then the through
 strip and the spur as one MCLIN pair joined at its near end, the spur's far end open, the through strip `S` on.
 
-**What is coupled.** Each strip couples to the one neighbour it is placed against, as an MCLIN pair: the coupling Cohn,
-Cristal and Frankel (without the arms' self-coupling) and Hong and Lancaster design with. Left out of the circuit, and
-present in an EM run of the artwork: a hairpin's own two arms; strips further over (the resonator two along, the cross
-square's diagonal); the overhang of a longer neighbour; the corners' coupling; a coupled end's even/odd end difference
-where the pair ends at a loop opening (the MGAP takes it); the spurline's slot end. `Builder.Couple` is the one place
-pairs are made. The N-strip coupled section (a W per strip, an S per gap) replaces it there: unequal neighbours (refused
-today, `device.mcrc.unequal-pair`) become one asymmetric pair, and the strips beside a pair can join it as one section.
+**What is coupled.** With `Coupling` = `Pairs`, each strip couples to the one neighbour it is placed against, as an MCLIN
+pair: the coupling Cohn, Cristal and Frankel (without the arms' self-coupling) and Hong and Lancaster design with. Left
+out of the circuit, and present in an EM run of the artwork: a hairpin's own two arms; strips further over (the
+resonator two along, the cross square's diagonal); the overhang of a longer neighbour; the corners' coupling; a coupled
+end's even/odd end difference where the pair ends at a loop opening (the MGAP takes it); the spurline's slot end. An
+MCLIN pair has one width, so neighbours of unequal width are refused (`device.mcrc.unequal-pair`). `Builder.Couple` is
+the one place pairs are made.
+
+**`Coupling` = `Full`: every coupled region one N-line section.** `Builder.Couple` places a `PlanCoupledStrips` (§3.6)
+in place of the MCLIN pair, so each strip keeps its own width and unequal neighbours build: a W per resonator, a stepped
+chain whose middle resonator is narrower. Straight, ZigZag, open loops, the bandstop and the spurline are still pairs,
+now through the N-line model. Hairpins go further: every straight stretch along the arms (end sections, narrow arms,
+overhangs, the feeds' strips, a tapped arm either side of its tee) is held, cut wherever a parallel stretch starts or
+ends, and the pieces that span the same stretch of the axis become one section, side by side in order
+(`Builder.Group`). Aligned hairpins are one section of every arm, feeds included (eight strips for three resonators), so
+each arm couples to its own resonator's other arm and to every arm beyond; staggered stepped-impedance hairpins are one
+section of every wide end and one of each row's narrow arms; a hairpin bandstop is the through line and both arms. A
+region is not cut into three-strip pieces (a resonator's two arms and one neighbour's): each arm would then belong to two
+sections at once, or every other resonator's own arms would go uncoupled. What it costs: the N-line model is
+quasi-static and solves each cross-section once (a few seconds for eight strips, then cached). On Cohn's hairpin design
+on 20 mil RO4350B, with the arms 4·W apart Full's 3 dB band sits 0.5 % above Pairs' and 4 % narrower, the arms' own
+coupling being weak and the rest the two models' differences (the N-line model has no dispersion); with the arms W/2
+apart, as tight as the U's corners allow, it sits 4.4 % higher and 27 % narrower: the self-coupling Pairs leaves out.
+`Pairs` stays the default, and its plans are unchanged to the bit.
 
 **Open ends.** Every free end is a `PlanOpen`, and a loop's two ends at its opening an MGAP's; all of them are numbered
 first of the internal nodes, after the pins, so the unpivoted block eliminates them last.
@@ -705,9 +723,9 @@ part.
 
 | Shape / form | Synthesis produces | Notes for the synthesis |
 |---|---|---|
-| Straight | `N`, `W`, `L` (or `Lk`), `S1` … `S(N+1)`; tapped: `S2` … `SN` and `Tap` | Each coupled section is an end section, (L − centre)/2 long. Cohn's J-inverters give each section's Ze, Zo; with one W the gap alone sets (Ze − Zo)/(Ze + Zo) = JZ0/(1 + (JZ0)²). L is two sections less the two open ends' Δl (`MicrostripOpenEnd`). Per-section widths need the N-strip section. |
+| Straight | `N`, `W`, `L` (or `Lk`), `S1` … `S(N+1)`; tapped: `S2` … `SN` and `Tap` | Each coupled section is an end section, (L − centre)/2 long. Cohn's J-inverters give each section's Ze, Zo; with one W the gap alone sets (Ze − Zo)/(Ze + Zo) = JZ0/(1 + (JZ0)²). L is two sections less the two open ends' Δl (`MicrostripOpenEnd`). A width per resonator needs `Coupling` = `Full`. |
 | ZigZag | as Straight | L adds each corner's excess, 2·arm − `PlanBend.LineLength`. |
-| Hairpin | as Straight, plus `Sa` | The U is W + `Sa` + 2·arm of centre line: L adds two corners' excess. `Sa` wide enough that the arms' own coupling (not modelled) is small, or the synthesis accounts for it (Cristal and Frankel). |
+| Hairpin | as Straight, plus `Sa` | The U is W + `Sa` + 2·arm of centre line: L adds two corners' excess. Under `Pairs`, `Sa` wide enough that the arms' own coupling (not modelled) is small; under `Full` the model has it, so the synthesis accounts for it (Cristal and Frankel). |
 | SIR (any of the three) | plus `Wc`, `Uc` | The impedance step and the length share set the resonance and the first spurious (Makimoto and Yamashita). `Uc`·L must hold the fold. |
 | OpenLoop, Inline | `N`, `W`, `Lk` per loop, `Gap`, `S2` … `SN`, and `S1`, `S(N+1)` or `Tap` | Coupling coefficients from split frequencies, Qe from a loaded loop. Each loop is sized for its surroundings: a coupled side lowers a loop's resonance (by 3 % at 0.8 mm on 20 mil RO4350B), so the middle loops come out smaller. |
 | OpenLoop, Cross | as Inline with `N` = 4, plus `Sx` | M12 = M34 (mixed), M23 (magnetic, S3), M14 (electric, `Sx`) of opposite sign: a zero either side of the band. |
@@ -716,31 +734,44 @@ part.
 | Spurline | `N`, `W`, `L`/`Lk`, `S1` … `SN` | The spur is a quarter wave in the odd mode at the notch, less its open end. The line is 2·W + S wide. |
 
 Refusals: `device.mcrc.*` — `n-invalid`, `spec-not-positive`, `gap-missing`, `name-unknown`, `form-shape`, `form-feed`,
-`profile-shape`, `ring`, `cross-n`, `sir-ratio`, `sir-centre`, `unequal-pair`, `tap-off-line`, `too-short`, `no-overlap`.
+`profile-shape`, `ring`, `cross-n`, `sir-ratio`, `sir-centre`, `unequal-pair` (`Pairs` only), `tap-off-line`, `too-short`,
+`no-overlap`.
 Tests: `CoupledResonatorPlanTests` (every node one place, every copper island clear of the others, open ends first, pin 1
 at the origin, each refusal's code), `CoupledResonatorSParamTests` (a textbook design per shape within 2 % of its centre
 and 15 % of its ripple bandwidth — Cohn as Straight, ZigZag and Hairpin, Hong and Lancaster for inline loops; the cross
 square's two zeros; the ring, bandstop and spurline within 2 % of their closed forms; every shape and form its sections
-wired by hand to 1e-9), `CoupledResonatorGaAsTests` (a hairpin on the shipped GaAs and Si processes), and the
-`F14`-`F18` schematic-to-layout fixtures, one per shape, each LVS clean with one stored value changed giving exactly one
-`lvs.property.mismatch`.
+wired by hand to 1e-9; under `Full`, a hairpin, a stepped tapped hairpin, an unequal stepped chain and a hairpin
+bandstop wired by hand as MCLINN instances to 1e-9, Full against Pairs for wide and tight arms, the unequal chain
+passing), `CoupledResonatorGaAsTests` (a hairpin on the shipped GaAs and Si processes), and the `F19`-`F23`
+schematic-to-layout fixtures, one per shape, with `F25` a hairpin under `Full`, each LVS clean with one stored value
+changed giving exactly one `lvs.property.mismatch`. The plan tests also hold every `Full` sample joined and clear, and
+an aligned hairpin's arms one eight-strip section.
 
 #### Possible enhancements
 
-1. **The N-strip coupled section in `Builder.Couple`.** It would lift the refusal of unequal neighbours, which a W per
-   resonator needs, and couple a hairpin's own arms and the strips two over, which Cristal and Frankel's hairpin design
-   and a tightly folded open-loop filter both depend on.
-2. **A through line of its own width for the bandstop.** Today each through-line stretch is as wide as the resonator
-   beside it, because an MCLIN pair has one width; a 50 Ω line with resonators of another impedance is the usual design,
-   and the asymmetric pair from (1) gives it.
-3. **Spacing parameters for the bandstop and the spurline.** Resonators sit back to back, about λg/4 apart, and spurs 2·S
+1. **Coupling across loops under `Full`.** Loops couple only through sides that lie straight beside each other, as pairs,
+   so the cross-coupled square's diagonal (1 to 3, 2 to 4), a loop's sides beyond the facing one and the corners' fields
+   stay out: none of them are strips side by side over one stretch, which is all an N-line section describes. They move
+   the square's transmission zeros, so a synthesis placing the zeros precisely would take them from an EM solve of the
+   square, or from a model of coupled corners.
+2. **The overhang of a longer neighbour under `Full`.** Straight and ZigZag chains stay pairs, and a longer
+   resonator's overhang runs beside its neighbour's other half as a plain line. Joining the overhang to that half's
+   section, as hairpins' stretches are joined, would couple it; the overhang is half the two lengths' difference, so it
+   matters as much as that difference does.
+3. **Dispersion in `Full`.** The N-line model is quasi-static, so a long resonator's phase runs slightly fast; part of
+   the 0.5 % by which `Full` sits above `Pairs` on Cohn's hairpin with widely spaced arms is that. A dispersive N-line
+   model (§3.6, enhancement 1) would remove it.
+4. **A through line of its own width for the bandstop.** Each through-line stretch is as wide as the resonator beside
+   it. `Full` now couples strips of unequal width, so one more parameter, the line's width, would give the usual design
+   of a 50 Ω line with resonators of another impedance.
+5. **Spacing parameters for the bandstop and the spurline.** Resonators sit back to back, about λg/4 apart, and spurs 2·S
    apart; optimum bandstop designs and cascaded spurlines choose the spacing, so a synthesis would want to state it.
-4. **The spurline's slot end.** The spur's open end faces the full-width line across the slot's short leg, a gap the
+6. **The spurline's slot end.** The spur's open end faces the full-width line across the slot's short leg, a gap the
    model leaves out; an MGAP there would follow narrow slots, where it pulls the notch down.
-5. **A readout of each resonator's frequency and each coupling.** The part shows geometry only; the resonators' own
+7. **A readout of each resonator's frequency and each coupling.** The part shows geometry only; the resonators' own
    frequencies, the coupling coefficients and Qe, computed from the plan as the tests compute them, would let a user check
    a hand-made design before running it.
-6. **More cross-coupled arrangements.** Trisections and cascaded quadruplets of open loops are the same loops in other
+8. **More cross-coupled arrangements.** Trisections and cascaded quadruplets of open loops are the same loops in other
    places; the coupling search already finds facing sides wherever loops sit.
 
 ### 3.11 MLAD, the microstrip ladder
