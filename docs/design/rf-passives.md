@@ -1,19 +1,28 @@
 # circuitRF — RF passives: one plan per topology
 
-**Status:** MWPD, the Wilkinson divider, with its unequal-split (`K`) and multi-section (`N`, to seven) variants; MGPD,
-MBPD and MTPD, the Gysel, Bagley polygon and tee dividers; MBLC (to four sections) and MRRC, the branch-line and
-rat-race hybrids; MCLC, MIDC and MCBL, the coupled-line coupler, interdigitated coupler and balun, with MCLC's
-`Sections`, `Broadside`, `Tandem` and `Compensation` and MIDC's `Fingers` (§3.12); MSPS, the Schiffman phase shifter
-(§3.13); the rings curved or cornered (`Corner`); the gap, taper, cross and open-end sections (§1); MRADIAL, the radial
-stub; MCLINN and the N-line coupled section; sites with an optional `Footprint`, and a route helper; MCRC, every
-coupled-resonator filter as one part of stored geometry (§3.10); MLAD, the microstrip ladder, an ordered list of
-sections (§3.11); MDLY, the delay line, and MRRC's meandered ring
-(§3.16); MCLA, the coupled array, every
-coupled-array filter as one part (§3.17); lumped realisations of MWPD, MBLC, MRRC and MCBL, and the
-resistive pad MRPAD (§3.15) · **Date:** 2026-11-16
+**Status:** built; each part below simulates, draws, goes through Update Layout and LVS, and has its tests ·
+**Date:** 2026-11-16
 
-Dividers, couplers and baluns on microstrip, each one built-in part that is defined once and read the same way by the
-schematic, the layout, LVS and EM. Each part has its own subsection in §3.
+- **Sections** (§1): line, tee, curve, mitred or square corner, gap, taper, cross, open end, coupled pair or
+  interdigitated set, N coupled strips (§3.6), broadside pair (§3.10) and radial stub (§3.5).
+- **Elements:** MRADIAL, the radial and butterfly stub (§3.5); MCLINN, N coupled lines (§3.6).
+- **Shared pieces:** sites, with an optional `Footprint` (§3.7); `PlanRoute`, a line folded to a phase at F (§3.8).
+- **Dividers and couplers**, with their options:
+  - MWPD, the Wilkinson divider: `K`, `N` to seven with `Band` (§3.1), `Corner` (§3.4);
+  - MGPD, MBPD and MTPD, the Gysel, Bagley polygon and tee dividers: `Corner` on the rings, MBPD's `N`, MTPD's `K` (§3.9);
+  - MBLC, the branch-line hybrid: `N` to four (§3.2);
+  - MRRC, the rat-race hybrid: `Corner` (§3.4), `Meander` (§3.12), `Form` = `CoupledLine` (§3.13);
+  - MCLC, MIDC and MCBL, the coupled-line coupler, interdigitated coupler and balun (§3.3): MCLC's `Sections`,
+    `Broadside`, `Tandem` and `Compensation`, MIDC's `Fingers` (§3.10);
+  - MSPS, the Schiffman phase shifter: `Reference` (§3.11);
+  - MDLY, the delay line: `Style`, `Corner`, `Coupled` (§3.12);
+  - MRPAD, the resistive attenuator and splitter: `Form` (§3.14).
+- **Filters**, three families that store geometry: MCRC, the coupled-resonator filters (§3.15); MLAD, the microstrip
+  ladder (§3.16); MCLA, the coupled array (§3.17).
+- **Lumped realisations** of MWPD, MBLC, MRRC and MCBL, `Realization` = `Lumped` (§3.14).
+
+Dividers, couplers, baluns and planar filters on microstrip, each one built-in part that is defined once and read the
+same way by the schematic, the layout, LVS and EM. Each part has its own subsection in §3.
 
 ## 1. The idea
 
@@ -22,13 +31,16 @@ joined at numbered nodes and placed in the part's frame. One model stamper (`Mic
 and one PCell drawer (`PassivePlanPCells.Draw`) draws any plan, each section through the existing part's own model and
 its own generator. A new topology is therefore only a new plan function: it writes no model and no drawing code, its
 circuit and its copper cannot disagree, and LVS and EM read the specs it was planned from. That is what makes the set
-one standard, generic design rather than six one-off parts. The rest of this section is how each piece works.
+one standard, generic design rather than a set of one-off parts. The rest of this section is how each piece works.
 
 **A plan made of sections.** Each topology has one pure function in Core, `src/Core/Devices/Microstrip/<X>Plan.cs`, that
 takes the part's specs and the substrate and returns a `PassivePlan`: the part's pin names, and a list of sections. A
-section is an EXISTING microstrip part placed in the passive's frame — an MTEE (`PlanTee`), an MCURVE (`PlanCurve`),
-an MLIN (`PlanLine`), an MMITER or MBEND corner (`PlanBend`), an MCLIN or a set of interdigitated strips
-(`PlanCoupledLine`), N coupled strips (`PlanCoupledStrips`, §3.6), an MGAP (`PlanGap`), an MTAPER (`PlanTaper`), an MCROSS (`PlanCross`) — with the plan node each of its pins joins and a pose (where its pin 1 sits, a turn in quarters; a cross's centre, its own origin). Nothing in a plan is a new kind of line: it is the
+section is an EXISTING microstrip part placed in the passive's frame — an MTEE (`PlanTee`), an MCURVE (`PlanCurve`), an
+MLIN (`PlanLine`), an MMITER or MBEND corner (`PlanBend`), an MCLIN or a set of interdigitated strips
+(`PlanCoupledLine`), N coupled strips (`PlanCoupledStrips`, §3.6), an MGAP (`PlanGap`), an MTAPER (`PlanTaper`), an
+MCROSS (`PlanCross`), an MRADIAL (`PlanRadialStub`, §3.5), a BCLIN or MBCLIN pair (`PlanBroadsideLine`, §3.10) — with
+the plan node each of its pins joins and a pose (where its pin 1 sits, a turn in quarters; a cross's centre, its own
+origin). Nothing in a plan is a new kind of line: it is the
 vocabulary circuitRF already has, arranged. The one term that is not a part of its own is a line's open end
 (`PlanOpen`), below. Every dimension is held on a 2 nm grid
 (`PassivePlan.OnGrid`), so halves are whole database units and two pieces that meet in the plan meet to the last unit
@@ -36,14 +48,15 @@ in the artwork.
 
 **One model for every plan.** `MicrostripPlanModel` stamps each section through that part's own model
 (`MicrostripTeeModel`, `MicrostripCurveModel`, `MicrostripLineModel`, `MicrostripCoupledLineModel`,
-`MicrostripMiterBendModel`, `MicrostripBendModel`, `MicrostripGapModel`, `MicrostripTaperModel`, `MicrostripCrossModel`, with their own validity
+`MicrostripMiterBendModel`, `MicrostripBendModel`, `MicrostripGapModel`, `MicrostripTaperModel`, `MicrostripCrossModel`,
+`MicrostripMultiLineModel`, `MicrostripRadialStubModel` and the broadside pairs' models, with their own validity
 warnings; an open end is `MicrostripOpenEnd`'s capacitance on MLIN's or MCLIN's own line) into a `LocalAdmittanceBlock` on the plan's nodes and Kron-reduces the internal nodes away — the way
 MTEE already stamps the arms it draws (`JunctionArms`).
 The block is shared with MTEE for that reason. A topology therefore writes no stamping code at all.
 
 **One drawing path from the same plan.** `PassivePlanPCells.Draw` draws each section through that part's own generator
 (`MTeePCell`, `MCurvePCell`, `MlinPCell`, `CoupledLinePCells`, `MMiterPCell`, `MBendPCell`, `MGapPCell`, `MTaperPCell`,
-`MCrossPCell`; an
+`MCrossPCell`, `MRadialPCell`; an
 open end draws nothing), turned and moved to its pose, and takes the passive's
 pins from those parts' own pins. So the model and the layout are the same pieces by construction, not by two
 implementations agreeing.
@@ -80,7 +93,8 @@ the part has them N (sections), `Coupling` or `ZL` — plus the few layout choic
 are derived on the technology's substrate, every time, by the plan. The Properties editor shows them
 (`ParameterEditorViewModel.DividerReadout.cs`, which calls the plan itself), and they are never stored, so a design moved
 to another board re-derives its lines rather than keeping the wrong ones. This is MKLOPF's shape (Z1/Z2 stored, widths
-derived), not MLIN's (W stored).
+derived), not MLIN's (W stored). The filters (§3.15 to §3.17) are the exception, on purpose: they store geometry, which
+a synthesis fills.
 
 **Lumped parts stay ordinary parts on pins.** A topology that needs a resistor, a capacitor or a via has a pin pair for
 it and the part is placed on those pins in the schematic, with its own land pattern. It is then a real device to LVS, the
@@ -120,10 +134,12 @@ which fixes the curve radius. Each port pin sits one 50 Ω width of line beyond 
 | `F` | yes, Hz | Centre frequency: each arm is λg/4 here. |
 | `Gap` | yes, m | The isolation resistor's pin span; the ring closes across it. 1.35 mm is an 0402 at nominal density. |
 | `SignalLayer`, `GroundReference` | yes | The usual layer choices; empty follows the technology. |
-| `K` | yes, 1 | Split ratio, P3/P2 = K² (§3.1). |
-| `N` | yes, 1 | Sections, 1 to 7; the pins are 3 + 2·N (§3.1). |
+| `K` | yes, 1 | Split ratio, P3/P2 = K² (below). |
+| `N` | yes, 1 | Sections, 1 to 7; the pins are 3 + 2·N (below). |
 | `Band` | yes, 2 | f2/f1 of the multi-section design, centred on F. |
 | `Corner` | yes, a name | `Curve` (the default), or `Miter` / `Square`: the ring a rectangle of MMITER or MBEND corners (§3.4). |
+| `Realization`, `Arm` | yes, names | `Distributed` (the default) or `Lumped`, and the lumped arm, `Pi` or `Tee` (§3.14). |
+| `Footprint` | optional | The resistor's land; when set, its span replaces `Gap` (§3.7). |
 | W, arm W, L, ring radius, isolation R | readout | Derived by `WilkinsonPlan.Build` on the substrate; for a variant, every line and resistor. |
 
 Refusals: a non-positive spec, an impedance no width reaches on the substrate, and a quarter wave too short to make a
@@ -186,7 +202,7 @@ outputs, as the paper numbers them: resistor 1 on R2–R3, resistor k on `R2_k`�
   `WilkinsonPlan.BroadbandSections` bisects and runs a 3 × 3 Newton, and above three a continued Newton of up to 7 × 7
   over about fifty band steps. It is still pure and well under a millisecond, fast enough for the readout.
 - **The ground pour counts the part.** `GroundPourPlanner` covered only the line generators, so a divider beyond its
-  lines (the second stage of a tree) was left off the plane.
+  lines (the second divider of a tree) was left off the plane.
 
 **Why one part with `N` rather than a separate kind per section count.** Separate kinds keep a fixed pin list each, but
 cost every registration row in §4 twice more and two more palette tiles for one topology. The variadic pins are a few
@@ -250,6 +266,8 @@ sit in ring order 2, 1, 3, 4, spaced λg/4, λg/4, λg/4 and 3λg/4 between refe
 | `F` | both | yes, Hz | Centre frequency: every arm or spacing is λg/4 (or 3λg/4) here. |
 | `N` | MBLC | yes | Sections, 1 to 4. |
 | `Corner` | MRRC | yes | `Curve`, `Miter` or `Square`, as MWPD's (§3.4). |
+| `Meander`, `Form`, `Coupling` | MRRC | yes | The meandered ring (§3.12) and the coupled-line form (§3.13). |
+| `Realization`, `Gap` | both | yes | The lumped hybrid and its series sites' span, which a `Footprint` sets (§3.7, §3.14). |
 | `SignalLayer`, `GroundReference` | both | yes | As for MWPD. |
 | W and L of each arm; the ring's width, λg/4 and bend radius | — | readout | `BranchLinePlan.Build`, `RatRacePlan.Build`. |
 
@@ -288,7 +306,8 @@ For the maintainer: the names MBLC and MRRC (microstrip branch-line and rat-race
 ### 3.3 MCLC, MIDC and MCBL, the coupled-line parts
 
 The coupled-line coupler (MCLC), the four-finger interdigitated coupler (MIDC) and the coupled-line balun (MCBL) are
-three more plans on the same pieces. What they added to the shared structure, and why:
+three more plans on the same pieces; MCLC's and MIDC's options are §3.10, and MCBL's lumped lattice is §3.14. What they
+added to the shared structure, and why:
 
 - **One more section kind.** `PlanCoupledLine` is `W`, `S`, `L` and a finger count. With two fingers it is an MCLIN,
   nodes in MCLIN's own order; with more, alternate strips are the two conductors of an interdigitated section, nodes
@@ -463,7 +482,7 @@ k's nodes 2k − 1 and 2k are its pins k and N + k (`ModelNodes`). `MicrostripPl
 and counts each strip as its own copper island; `PassivePlanPCells.Draw` draws one MLIN per strip, strip k's centre
 below strip k − 1's by their half widths and the gap between them, which for equal strips is exactly the old
 k·(W + S). `PlanCoupledLine` is unchanged: two fingers are MCLIN and an even set is Ou's interdigitated section, so the
-six parts above stamp and draw bit for bit as before. A plan asks for the N-line model by placing a `PlanCoupledStrips`,
+parts built on it stamp and draw bit for bit as before. A plan asks for the N-line model by placing a `PlanCoupledStrips`,
 for any N and any widths, two strips included.
 
 **As a part, MCLINN.** The same model is a built-in element: N (3), W, S, L, with `W[k]` and `S[k]` rows for a strip or a
@@ -475,7 +494,7 @@ parameters, the indexed ones included (`F15-coupled-lines`: a changed `W[2]` is 
 the odd, even and middle modes; a section with an internal node equal to MCLINN and MLIN wired by hand to 1e-9),
 `CoupledStripsPartTests` (registration, pins, artwork, the cross-section on the RFIC stack).
 
-**Which parts use it.** MCLINN; MDLY's meander with `Coupled` (§3.16); MCRC with `Coupling = Full` (§3.10); and the
+**Which parts use it.** MCLINN; MDLY's meander with `Coupled` (§3.12); MCRC with `Coupling = Full` (§3.15); and the
 coupled array, MCLA (§3.17): interdigital, combline and pseudo-interdigital filters. It is also what MIDC's
 non-adjacent fingers and MWPD's side-by-side section pairs need (§5, §6); neither uses it yet, which keeps them as
 they were.
@@ -483,46 +502,51 @@ they were.
 **Possible enhancements.**
 
 1. **Dispersion.** A per-mode frequency correction, or a full-wave cross-section solve, would track the modes' εeff as
-   it rises with f·h, because a long resonator's quasi-static phase runs a few percent fast at the top of a board's
-   range.
+   it rises with f·h. Why: a long resonator's quasi-static phase runs a few percent fast at the top of a board's range;
+   it is part of the 0.5 % by which MCRC's `Full` sits above `Pairs` on Cohn's hairpin (§3.15), and of the 1.26° a
+   coupled MDLY meander keeps with its legs far apart (§3.12).
 2. **Loss from the solved field.** The solver already returns ∮σ² over every conductor, and the broadside pairs' loss is
-   built on it. The full R matrix from it would count the current crowding on facing edges, which the per-strip
-   Wheeler R misses and which matters most in narrow-gap filters.
-3. **Coupled open ends.** An open-ended array (interdigital, combline) needs each strip end's fringing, and the end of a
-   coupled strip differs from MLIN's. The open-end Δl generalised to N strips would set the resonators' lengths right.
-4. **An option on MIDC and MWPD to model every coupling.** Placing their fingers or section pairs as one
-   `PlanCoupledStrips` would close §5's uncoupled-pairs limit and give the Lange its non-adjacent coupling. It belongs
-   in an option, so that their defaults stay as they are.
-5. **A "+" for `W[k]` and `S[k]`.** The rows are typed by hand today, as the Combiner's are. An indexed group in the
-   Properties editor (`UserParamTemplate`) would add a strip's width and gap in one click.
-6. **A mirror-symmetric grid.** Grading the solver's grid out from the cross-section's centre would make a symmetric set
-   of strips symmetric to round-off, so that a test, or an even/odd readout, could ask for exact symmetry.
+   built on it. The full R matrix from it would count the current crowding on facing edges. Why: the per-strip Wheeler
+   R misses that crowding, and it matters most in narrow-gap filters.
+3. **Coupled open ends.** The open-end Δl generalised to N strips, from the solved cross-section. Why: an array's strip
+   ends (an interdigital array's open ends, a combline's loaded ends, §3.17) sit beside their neighbours', and the
+   single-strip Δl misses the mutual fringing that sets the resonators' frequency to about a percent.
+4. **A "+" for `W[k]` and `S[k]`.** An indexed group in the Properties editor (`UserParamTemplate`). Why: the rows are
+   typed by hand today, as the Combiner's are, and the group would add a strip's width and gap in one click.
+5. **A mirror-symmetric grid.** Grading the solver's grid out from the cross-section's centre. Why: a symmetric set of
+   strips would then be symmetric to round-off, so that a test, or an even/odd readout, could ask for exact symmetry.
 
 ### 3.7 Sites, and an optional `Footprint`
 
-**The rule.** Every lumped element of a planned passive is a *site*: a pin pair (series) or a pin to ground (shunt),
+**The rule.** A lumped element of a planned passive is a *site*: a pin pair (series) or a pin to ground (shunt),
 filled by an ordinary part. On a board that part is an SMT R, L or C; on a die a TFR, MIMCAP or SPIRAL; a ground is a
 VIAGND, a crossover a bond wire or an AIRBRIDGE. The parts already worked this way by hand (MWPD's R2/R3, MIDC's J1-J4,
 MCBL's G2/G3); a plan now says so. `PassivePlan.Sites` lists each `PlanSite`: its role (R, L, C, via, jumper, or the load the
 part drives), its pins, series or shunt, the span between the pins where the plan sets it, and the value the design wants
 there. Sites are metadata, not copper: no section reads them, so every existing plan is unchanged bit for bit (the
-fingerprints in `WilkinsonPlanTests` and `HybridPlanTests` still pass). What the three parts declare:
+fingerprints in `WilkinsonPlanTests` and `HybridPlanTests` still pass). What each part declares:
 
 | Part | Sites |
 |---|---|
 | MWPD | an R site per resistor, R2-R3 and R2_k-R3_k, `Gap` apart, of that resistor's value (2·Z0, Z0·(K + 1/K), or Cohn's) |
 | MIDC | a jumper from each pin k to Jk, two finger pitches, 2·(W + S), across |
 | MCBL | a via on G2 and on G3; the balanced load across 2-3, `Gap` apart, of 2·ZL |
-| MLAD | a via on each shorted stub's G pin, and each `site` of its list, a series one `Gap` apart (§3.11) |
+| MLAD | a via on each shorted stub's G pin, and each `site` of its list, a series one `Gap` apart (§3.16) |
+| MCLA | a via on each shorted end, and a C site of the strip's `C[k]` on each loaded end, on its `E` pins (§3.17) |
+| the lumped realisations, MRPAD | every L, C and R of the network, the series ones `Gap` apart (§3.14) |
 
-The Properties readout lists them under the part's numbers.
+The Properties readout lists them under the part's numbers. MGPD's grounded resistors, the coupled-line rat-race's
+grounds and MCLC's compensation capacitors and tandem jumpers are pins with no site declared: a user places their
+parts by hand.
 
-**`Footprint`.** `Gap` stays a length and stays the default. MWPD and MCBL, whose site span is that parameter, also take
-an optional `Footprint` in the R/C parts' own spelling, `smt:<case>[@density]` or a cell path, chosen with the R/C parts'
-own picker (two-pad lands only). When it is set the site span is that land's: where a line meets each pad's outer edge
-(`PadJoint`), so for a built-in land its outer span as `ChipLandPatternGenerator` draws it, IPC's Z (1.35 mm for an 0402
-at N, the default `Gap`), and for a cell path the distance between its two pins' joints. A footprint that does not resolve
-leaves `Gap` and says why. A new part whose site span is a parameter joins `MicrostripSubstrateInjection.HasSiteFootprint`.
+**`Footprint`.** `Gap` stays a length and stays the default. The parts whose site span is that parameter (MWPD, MCBL,
+MLAD, MRPAD, and MBLC and MRRC for their lumped sites) also take an optional `Footprint` in the R/C parts' own spelling,
+`smt:<case>[@density]` or a cell path, chosen with the R/C parts' own picker (two-pad lands only). When it is set the
+site span is that land's: where a line meets each pad's outer edge (`PadJoint`), so for a built-in land its outer span
+as `ChipLandPatternGenerator` draws it, IPC's Z (1.35 mm for an 0402 at N, the default `Gap`), and for a cell path the
+distance between its two pins' joints. A footprint that does not resolve
+leaves `Gap` and says why. Those parts are `MicrostripSubstrateInjection.SetsSiteSpan`; `HasSiteFootprint` holds
+them and MCLA, whose `Footprint` only chooses its capacitors' land, since its sites are shunt and have no span (§3.17).
 
 **Where it is resolved, and why there.** In the Design layer, at the seam where the substrate is injected
 (`MicrostripSubstrateInjection.SiteSpanMeters`, `ApplySiteFootprint`), so every Core plan still takes a plain length.
@@ -575,7 +599,7 @@ through the one helper `PlanarLineAngle.LengthMeters(MicrostripLineParameters, �
 line, the ring dividers' quarter waves, the tandem's leads and the inductive compensation all size by. Every dimension is
 on the 2 nm grid. **Close turns**: legs under 3W apart edge to edge are a
 warning, `device.route.runs-coupled`, since they are stamped as separate lines. Built `coupled`, a meander's legs are
-one `PlanCoupledStrips` instead (§3.16), and the warning is not given. A plan passes a route's warnings on in
+one `PlanCoupledStrips` instead (§3.12), and the warning is not given. A plan passes a route's warnings on in
 `PassivePlan.Warnings`, which `MicrostripPlanModel` reports with its sections' own. Refusals:
 `device.route.spec-not-positive`, `device.route.pitch-too-small`, `device.route.too-short`. Tests (`PlanRouteTests`,
 `PassiveSiteTests`): θ = 90° meanders and corners of every corner kind hold S21 at −90° within 0.5° in the plan model,
@@ -641,13 +665,362 @@ non-positive spec, an unreachable width, a ring too small for F. Tests: `Divider
 spacing walked round the ring between reference planes; every piece joined; refusals), `DividerSParamTests` (each part
 equal to its sections wired by hand to 1e-9; at F the Gysel matched and isolated and split 3 dB in phase, the Bagley a
 third to each output in alternate phase, the tee split as K²), `DividersOnMmicTests` (each plans, draws and divides on
-the GaAs MMIC technology), the `F14`–`F16` schematic-to-layout fixtures and an LVS clean run plus one spec mismatch each.
+the GaAs MMIC technology), the `F16`–`F18` schematic-to-layout fixtures and an LVS clean run plus one spec mismatch each.
 The generators' versions follow MTEE's, MLIN's and MCURVE's (and MMITER's and MBEND's for the rings' corners).
 
 For the maintainer: the names MGPD, MBPD and MTPD (microstrip Gysel, Bagley polygon and tee power divider) are
 circuitRF's own.
 
-### 3.10 MCRC, the coupled-resonator filters
+### 3.10 MCLC's options and MIDC's fingers
+
+Each option is a parameter of the existing part, off by default, and with every option off the plan is the single
+section's to the last bit (`CouplerOptionsPlanTests.OneSection_IsThePlainCoupler_ToTheBit`). They are one at a time:
+a second is `device.coupled-line-coupler.options-combined`. All of them are plans of the shared sections; two needed a
+section kind and one a drawer case, each with its one model case, as §4 states.
+
+| Parameter | Part | Default | Builds |
+|---|---|---|---|
+| `Sections`, `Band` | MCLC | 1, 2 | n (odd, to 9) pairs in a row, equal-ripple over `Band` |
+| `Broadside` | MCLC | 0 | one BCLIN or MBCLIN pair on the signal layer and the conductor below |
+| `Tandem` | MCLC | 0 | two couplers of the weaker coupling, joined around both ends; pins J1-J4 |
+| `Compensation` | MCLC | `None` | `Capacitive`, `Inductive` or `Wiggly` |
+| `Fingers` | MIDC | 4 | 4, 6 or 8 fingers; 2·N pins |
+
+**Sections** (Cristal and Young). With Ze·Zo = Z0² in every section a TEM coupler is matched and isolated at every
+frequency and couples the reflection of its even-mode chain z_1 … z_n between unit loads. For a symmetric chain of odd
+n, Γ/T = jQ(sin θ) with Q an odd polynomial of degree n, so the optimum — the coupling rippling equally about its mean
+over the band — is the odd polynomial that ripples equally about a constant on sin θ1 ≤ sin θ ≤ 1. `EqualRipple` finds
+it by Remez exchange in u = sin²θ (extremes refined by Newton's method on the error's derivative), scales it until the
+coupling's mean in dB is the spec, and fits the chain's (n + 1)/2 impedances to it at as many points by Newton's
+method, which fixes them; Q of a chain is `ChainQ`, Im(B − C)/2 of its ABCD. The tables are this design worked; no
+number is copied from them. The three-section case has a closed form (a cubic minimax, extremes at s1, √((1 + s1 +
+s1²)/3) and 1), and the tests hold the solve to it to 1e-9; five sections are held to an equal ripple on a fine grid.
+Each section is then `CoupledLineSynthesis`'s pair, λg/4 at its own mean εeff, the sections centred on one gap centre
+line. The width steps between sections are not modelled, as MSTEP is not.
+
+**Broadside.** One section kind, `PlanBroadsideLine`: W, O and L and the stack (`BroadsideStack`), stamped by
+`StriplineBroadsideCoupledModel` on a stack with a ground above and below, `MicrostripBroadsideCoupledModel` otherwise,
+and drawn by `CoupledLinePCells`' own BCLIN/MBCLIN generator on the stack's two conductors. `BroadsideSynthesis` finds
+W and O whose solved modes are the asked pair, by Newton's method in (ln W, O) on the pair's own quasi-static solve,
+capped so a stack that cannot give it is refused in bounded time. The stack comes from one resolver
+(`SubstrateResolver.ResolveBroadsideStack`, BCLIN's pair if the stack has one, MBCLIN's otherwise, strip A on
+`SignalLayer`) used by the extraction (which appends it after the microstrip substrate, so its εr is the one read),
+the PCell and the readout. With no second signal layer next to the signal layer nothing is appended and the plan
+refuses with `device.coupled-line-coupler.no-second-layer`; a coupling tighter than the strips reach one over the other
+is `device.coupled-line.broadside-too-tight`. On a board with 2 mil between the top two layers, 3 dB is W 0.22 mm,
+O 0.12 mm.
+
+**Tandem** (Shelton, Wolfe and Van Wagoner). A TEM backward-wave coupler takes its inputs on two diagonal corners (1,
+4) to its outputs on the other two (2, 3) as [[t, c], [c, t]]; feeding the second coupler's diagonal pair from the
+first's gives [[t² + c², 2tc], [2tc, t² + c²]], so two couplings c1 = sin(asin(c)/2) make c. The layout: coupler I above
+coupler II, I.2 joined around the right end to II.2' and I.3 around the left to II.3', equal by the layout's 180°
+symmetry (the left-hand pieces are the right-hand ones turned about the centre). II.1' is the through port 2, II.4' the
+coupled port 3, I.4 the isolated port 4. The two joins and the four ports form a cycle with one port of each coupler
+inside it, whatever the arrangement, so a flat layout has two crossings: each join is broken where a port's lead
+crosses it, and J1/J2 and J3/J4 are the break's ends, for a jumper each, as MIDC's J pins are. Every line is the
+coupled strips' width (the joins run beside the couplers' strips a gap apart at their ends), mitred at the corners, and
+the space between the couplers leaves each run at least one width either side of the break: a run of zero length
+would swamp the block's elimination. Pins 1 and 3 get straight leads as long at F as the bent leads of 2 and 4.
+
+**Compensation.** All three re-synthesise the single pair so both half-circuits are the same electrical length at F
+with impedances whose product is Z0² and whose ratio is the coupling; the pair is iterated until it is so.
+- *Capacitive* (Dydyk): [2C][Zo, θo][2C] is the line (Zo·sin θo/sin θe, θe) when 2ωC = (cos θo − cos θe)/(Zo·sin θo),
+  with the pair λg/4 in the even mode. No new section: the capacitors go on pins 1-3 and 2-4, the readout giving C.
+- *Inductive* (Phromloungsri et al.): [X][Z, θ][X] is the line (Z·sin θ'/sin θ, θ') with cos θ' = cos θ −
+  (X/Z)·sin θ, so θ'e = θ'o = π/2 needs X = Ze·cot θe = Zo·cot θo, a length under λg/4. Each X is a `PlanLine` of 2·Z0,
+  its series term Z_L·sin(β_L·ℓ) = X; its shunt term is the realisation's error.
+- *Wiggly* (Podell): `PlanCoupledLine.OddLengthFactor` k = √(εe/εo); the drawer's one new case draws the facing edges
+  as a triangle wave of about one width per tooth whose path is k times the length, the gap S across the teeth, the
+  strips' end faces centred on MCLIN's pins. Its model case, `WigglyLineModel`, is MCLIN's own modes with the odd
+  mode's γ·L multiplied by k: the effective odd-mode length correction the paper describes, and only that. The teeth
+  also raise the odd mode's capacitance, which it does not see; it says so as a validity warning, and EM is the judge.
+
+**MIDC's fingers.** Ou's equations and `InterdigitatedLineModel` already held for any even N; `LangePlan` takes N = 4,
+6 or 8, and each further inner pair adds landings J(4m+1)/J(4m+2) on conductor A's finger 2m + 2 and J(4m+3)/J(4m+4)
+on conductor B's finger 2m + 1, J(4m+k) joining pin k's conductor; four fingers are the old nodes exactly. The pins are
+variadic as MWPD's: `EditableSchematic.PortCount` reads a plain-number `Fingers` (2·N pins), `SymbolPortDefs.For` and
+`BuiltInSymbols.Primitives` answer any count, an unknown one with the four-finger part. MCLC's tandem pins follow
+`Tandem` the same way (8 or 4).
+
+**What they needed beyond the pattern.**
+
+- **Pivoting in the shared block.** The tandem's first layout left a 0-length run beside a jumper landing, and two
+  orders of elimination differed at 1e-8. `LocalAdmittanceBlock.EliminateFrom` now takes, among the internal nodes,
+  the one with the largest self-admittance next (branch rows still first, in order): the order changes only the
+  rounding, and a node whose admittance all but vanishes at F is left for last. Every part still matches its
+  sections by hand to 1e-9.
+- **A fixture with its own board.** The broadside fixture needs a second signal layer, so `SdlChecker.Prepare` takes a
+  design's own `.ctech` when its folder has one (`F11e-coupler-broadside/board.ctech`, a four-layer board).
+
+**What the board builds** (20 mil RO4350B, 2.4 GHz). Three sections at 15 dB over 2:1: z = 1.028, 1.264, 1.028, ±0.03
+dB as TEM lines, 0.23 dB of spread from 1.6 to 3.2 GHz on the board where one section has 1.3 dB. A 3 dB tandem of two
+8.34 dB couplers: within 1 dB of an even split from 1.7 to 2.8 GHz, 90° to within a degree. At 10 dB coupling the
+directivity at F is 11 dB plain, 47.6 dB with the 0.17 pF capacitors, 24 dB with the series sections, and 45 dB in the
+wiggly model (k = 1.133). Six fingers at 50 Ω are refused (their pair is near 3·Z0, past the model's narrowest
+strip); at 25 Ω they build 3 dB with 350 µm fingers 63 µm apart. On the GaAs process at 10 GHz (`CouplerOptionsOnMmicTests`)
+three sections, the tandem, the wiggly coupler and the phase shifter all build; the process's broadside pair resolves
+to Metal2 over the MIM plate, 2.55 µm of air under one weighted εr, which is no coupler.
+
+Tests: `CouplerOptionsPlanTests` (the closed forms, the pins, the refusals), `CouplerOptionsSParamTests` (each option
+against its sections by hand to 1e-9 — the wiggly pair against a CLIN of its modes on a lossless board — and its
+coupling, quadrature, directivity and flatness), the `F11b`-`F11e` and `F13b` fixtures through Update Layout and LVS,
+each with one spec mismatch (`ComparisonTests.ACouplerOptionComparesCleanAndASpecMismatchIsAFinding`).
+
+### 3.11 MSPS, the Schiffman phase shifter
+
+A new part: pins 1-2 a C-section, 3-4 a reference line, specs `Z0`, `F`, `Phase` (90°) and `Band` (1.4), and how the
+reference is laid (`Reference`). The C-section is a `PlanCoupledLine` whose far ends are joined by a `PlanLine` strap
+one strip width wide across the gap; the reference is a `PlanLine`, or folded back beneath itself on a `PlanCurve`
+half-turn or two `PlanBend` corners (PlanCorner's `Miter` and `Square`), each turn counted at its own electrical
+length (`PlanBend.LineLength`, MCURVE's π·(R − 0.2·W)), or meandered through `PlanRoute` (§3.8).
+
+**The design** (Schiffman). With Ze·Zo = Z0² the C-section is an all-pass of phase tan(φ/2) = tan θ/√ρ, ρ = Ze/Zo; the
+reference is kθ with k = 2(ΔΦ + π)/π, so Δφ = kθ − φ is ΔΦ at F and its deviation is odd about F. Over θ1 = π/(1 +
+Band) … π/2 it ripples equally when its band-edge value is minus its peak inside: one equation in ρ, monotone, solved by
+bisection from ρ = (k/2)², where Δφ is flat at F. 90°: ρ = 2.40 over 1.5:1 (±0.57°), 2.73 over 2:1 (±2.7°, the
+classic octave design); never under 2.25. The part opens at 1.4:1 (ρ = 2.35, a 7.9 dB pair), the widest band a 90°
+part builds on the fallback 1.6 mm FR-4, so the catalogue and the generator's default draw one. The tests hold the plan to that equal ripple and the C-section as TEM lines
+to Schiffman's cos φ = (ρ − tan²θ)/(ρ + tan²θ) and a perfect match.
+
+**On the board.** The C-section's length is where its own model, strap included, is 180° at F (bisection about λg/4
+at the modes' mean εeff), so the difference is exactly ΔΦ at F on any substrate; the reference is k quarter waves at
+its own εeff. On 20 mil RO4350B at 2.4 GHz the difference is 89.2° to 90.4° over 1.92 to 2.88 GHz, but the C-section's
+match is −11.6 dB at F: the modes' unequal speeds, which no length fixes. The part says so (`ModelValidity`), and
+§6 (item 13) has the remedies.
+
+Registration: every row of §4, with a `Phase` that reaches the factory in radians (an authored "90 deg", as MCURVE's
+`Angle`) and the generator in degrees; `Reference` a name, kept as text by the elaborator and Update Layout. Tests:
+`CouplerOptionsPlanTests`, `CouplerOptionsSParamTests`, `F25-schiffman-phase-shifter` (a mitred fold) through Update
+Layout and LVS with a `Phase` mismatch, the catalogue and the generator version.
+
+**`Reference` = `Meander`.** The reference goes through `PlanRoute`'s meander from pin 3 heading +x: one curved
+half-turn stacked downward, so it ends on pin 4 heading back to the left edge under pin 3, and all four pins sit in a
+column on the block's left. The pitch is set by bisection so each leg is the C-section's length, and the reference lies
+under the section as one block; when six widths' pitch already leaves shorter legs (a small `Phase`), six widths it is,
+clear of the route's coupling warning. The route holds θ through the turn, so at F the difference is still exactly
+`Phase`, and over 1.92 to 2.88 GHz on the example board it is the straight reference's to 0.001°
+(`CouplerOptionsSParamTests.TheMeanderedSchiffman_HoldsTheStraightOnesPhase`). Tests: the legs, the pins' column and
+every node (`RatRaceCoupledLinePlanTests`), the part against its sections by hand to 1e-9, and `F36-schiffman-meander`
+through Update Layout and LVS with a `Phase` mismatch.
+
+### 3.12 The delay line (MDLY), and MRRC's meandered ring
+
+**MDLY** is the route helper as a part: a line θ long at F, for a delay, a phase shifter's reference arm or a length
+match. `DelayLinePlan.Build` takes the specs Z0, F and θ (`Theta`), finds MLIN's width for Z0 at F and hands the run to
+`PlanRoute` from pin 1 at the origin heading +x, ending on pin 2. The layout choices are stored as MRRC's `Corner` is:
+`Style` (`Straight`, `Corner`, `Meander`, a name), `Corner` (`Curve`, `Miter`, `Square`), `Turns`, `Pitch` (0: 6·W, so a
+half-turn's radius is 3W, where MCURVE's effective-radius fit starts, and the legs are 5W apart edge to edge, clear of
+the coupling warning) and `Side` (1 left of the heading, −1 right). The readout gives W and εeff, θ as a straight
+length, the copper's centre-line length and extent, and each run in order. It has no sites. Pins 1 and 2 sit on MLIN's;
+the glyph is a meander between them. Refusals: `device.delayline.spec-not-positive`, `device.delayline.turns` (a
+meander's turns not a whole number of at least one), `device.delayline.width-unreachable`, and the route's own.
+
+**Coupling between legs, `Coupled`.** 1 places a meander's k + 1 legs as one `PlanCoupledStrips` (§3.6), so every leg
+couples to every other in the model; 0, the default, keeps them separate lines with the route's warning. It cost one
+step at the end of `PlanRoute`'s meander: every leg spans x = 0..leg in the run's frame, so the legs, sorted top first,
+are the section's strips, and a leg heading back joins its far end first. The copper, the end pose, the extent and the
+nodes are unchanged; the turns stay separate pieces. The legs keep MLIN's length, so the phase at F moves by what the
+coupling does, which is what the option is for: on 20 mil RO4350B at 2.4 GHz, θ = 360° in three half-turns, S21 is
+1.26° off −θ with the legs 10W apart centre to centre, 3.17° at 4W (3W edge to edge, where the warning starts) and
+6.11° at 2W, where the separate legs hold −θ to 0.001°. The 1.26° that remains far apart is the N-line section's
+quasi-static εeff against MLIN's dispersive one (§3.6), and the causal phase MLIN's loss comes with, which the legs'
+length follows and the N-line section does not have.
+
+**MRRC `Meander`**, the compact ring (Eccleston and Ong shortened a rat-race's arms with artificial lines,
+[10.1109/TMTT.2003.817442](https://doi.org/10.1109/TMTT.2003.817442); He and Wang meandered them,
+[10.1049/joe.2015.0102](https://doi.org/10.1049/joe.2015.0102)). `Meander` = k, odd, folds the 3λg/4 arm inside the
+ring; 0, the default, is the ring of §3.2 bit for bit (the fingerprint test is unchanged). The three λg/4 arms make a C:
+2 → 1 the upper run, 1 → 3 a `PlanRoute` U-turn (one turn, its legs taking what the half-turn of radius Y leaves of
+λg/4), 3 → 4 the lower run. Tee 2's and tee 4's free ends then face out of the C, so the 3λg/4 arm is a half-turn back
+in from tee 4, a `PlanRoute` meander of k turns between the runs, and a half-turn out to tee 2. Every turn of that arm
+has radius Y/(k + 2), which puts its legs 2Y/(k + 2) apart and as far from the runs, and the meander's θ is 3π/2 less
+the two half-turns' own phase at F. Y is the curved ring's radius for a λg/4 − 2·W0 half-turn, so the ring is no taller
+than the curved one, the U-turn keeps legs of about W0 and the folded legs (about λg/4 + W0 at k = 1) clear the U-turn's
+inside. On the example board at 2.4 GHz the drawn copper, feeds included, is 29.87 × 13.57 mm for k = 1 and 29.14 ×
+13.57 mm for k = 3, against 53.11 × 14.24 mm curved: 54 % and 52 % of its area. At F the Σ and Δ outputs (−3.13 to
+−3.23 dB) are the curved ring's to 0.002 dB and |S11|, |S44|, |S41| and |S23| are below −49 dB in both
+(`HybridSParamTests`), since every arm holds its phase and the tees are the same. The folded arm follows MLIN's causal
+phase at F and the curved ring's arms its εeff alone, so the meandered ring's Σ and Δ phases (−0.01° and −179.99°) are
+the closer to 0° and 180°, the curved ring's about 0.2° off. A cornered meander is
+refused (`device.ratrace.meander`, as is an even or fractional k): its two end turns would need corners of their own.
+
+Tests: `DelayLineSParamTests` (S21 at F within 0.5° of −θ for every style and corner, measured 0.000° to 0.039°; the
+part against MLIN, MCURVE, MMITER, MBEND and MCLINN wired by hand to 1e-9; the coupled phase as the legs close),
+`PlanRouteTests` (a coupled meander is its legs as one section over the same copper), `HybridPlanTests` (the meandered
+ring joined, its runs λg/4, its folded arm 3λg/4 at F to 0.5°; the refusals), `HybridSParamTests` (the meandered ring by
+hand to 1e-9, and against the curved one at F), `DelayLinePartTests` (registration; a 360° meander on the GaAs die drawn
+and −360° at 20 GHz; the meandered ring drawn smaller), and `F29-delay-line` through Update Layout and LVS, where a
+changed `Theta` on MDLY or `Meander` on MRRC is one `lvs.property.mismatch`.
+
+**Possible enhancements.**
+
+1. **Compensate a coupled meander's length.** With `Coupled` the legs could be shortened, by a bisection on the plan's
+   own S21 at F, until the run is θ again. Why: the option shows how far coupling pulls the phase (3.2° at a 4W pitch
+   above), and a designer who wants θ then has to tune the length by hand.
+2. **Couple the meandered ring's folded legs to its runs.** The outer legs run 2Y/(k + 2) from the ring's upper and
+   lower runs and are stamped apart from them. A `PlanCoupledStrips` of the run and the leg beside it would put that
+   coupling in the model. Why: on a thin substrate or at large k the gap closes towards 3W, where EM would see it and the circuit
+   would not.
+3. **Fold the λg/4 arms too.** The upper and lower runs are straight λg/4, so they now set the ring's width; meandering
+   each between its tees (an even number of turns, ending on the same heading) would shrink it again. Why: it is the next
+   factor in area, left out here to keep the ring's change small.
+4. **A cornered meandered ring.** The end turns as two corners and a line, as the route makes a cornered turn. Why:
+   mitred corners take less room than half-turns of the same pitch, and the plain ring already offers them.
+5. **Turns that couple.** Adjacent half-turns at one end of a tight meander also face each other; the N-line section
+   covers only the parallel legs. Why: at a pitch near 2W their coupling is the next term after the legs'.
+
+### 3.13 MRRC's coupled-line form
+
+`Form` = `CoupledLine` makes the compact rat-race of S. March
+([10.1109/TMTT.1968.1126693](https://doi.org/10.1109/TMTT.1968.1126693)): the 3λ/4 arm becomes a λ/4 coupled section
+with two diagonal far ends grounded. `Ring`, the default, is the ring of §3.2 and §3.12 to the last bit
+(`RatRaceCoupledLinePlanTests.TheRingOfLine_IsUnchanged`; the generator's fingerprint is unchanged), and with
+`Realization` = `Lumped` the lumped hybrid still wins, as before.
+
+**The section.** Shorting ports 2 and 3 of a pair leaves Y11 = −j(Ye + Yo)/2·cot θ and Y14 = j(Ye − Yo)/2·csc θ: at θ =
+π/2 a 270° line of 2·Ze·Zo/(Ze − Zo), with the 3λ/4 arm's sign (the open diagonal would be a 90° line, so only the
+grounded form replaces the arm). Setting that to √2·Z0 is one condition; the section's `Coupling` c (10 dB by default)
+is the other, √(Ze·Zo) = √2·Z0·c/√(1 − c²), March's own section being the 3 dB one. The pair is `CoupledLineSynthesis`'s,
+and its length is where its own model, grounded ends in place, has Y11 = 0 at F (a bisection about λg/4 at the modes'
+mean εeff). The tests hold the plan to both conditions to 1e-9, and the section as TEM lines to a 270° line of √2·Z0
+(`RatRaceCoupledLineTests.TheSection_AsTemLines_IsA270DegreeLine`).
+
+**What a board builds.** Whatever c is, 1/Zo − 1/Ze = 2/(√2·Z0): the coupling only trades a narrower gap for wider
+strips. Edge coupling at the coupled-line model's narrowest gap (S/h = 0.1, over W/h up to 10) reaches about 0.022 S on
+20 mil RO4350B, 0.028 S on 25 mil alumina and 0.033 S on 100 µm GaAs, against 0.028 S for a 50 Ω ring. So a 50 Ω ring
+builds on the GaAs process (a 10 dB section of 227 µm strips 11 µm apart at 10 GHz), and on the board from about 65 Ω
+(75 Ω: 1.6 mm strips 53 µm apart); elsewhere the part refuses with `device.ratrace.coupled-line-unbuildable`, naming
+the admittance it needs. A broadside section would reach 50 Ω on a board (§6, item 19).
+
+**The layout** closes now that the arms are runs and corners rather than one straight line each. The section lies along
+the bottom, strip A on top. Tee 4 sits on strip A's near end, its port running on to the left and the ring rising from
+its branch; tee 2 on strip B's far end, its port leaving down from its branch and the ring running on to the right. So
+each grounded end faces away from the tee beside it: G2, strip A's far end, inside the ring with three port widths or
+more before its right side, and G4, strip B's near end, outside below port 4, each a pin for an ordinary via as MCBL's
+G2 and G3 are. Each tee's junction is the section's strip width high, so it keeps the coupler's gap from the grounded
+strip beside it; a tee wider than the strip plus two gaps is `device.ratrace.coupled-line-tight`. The three λg/4 arms go
+around the other three sides: 2 → 1 a run of 2·W0, a corner and a rise to tee 1 on the right side (port to the right);
+1 → 3 a rise, a corner and a run to tee 3 on the top (port up); 3 → 4 a run, a corner and a drop into tee 4. Each
+corner is an MCURVE quarter turn of 3W or an MMITER or MBEND corner by `Corner`, counted at its own electrical length
+at F (`PlanSection.LineLength`). The square closes on x (the left side lands on tee 4's branch) and on y (one top run
+for both sides); the right side is the taller by the pair's pitch and the junctions, which the top's split between
+1 → 3 and 3 → 4 takes up, so the rise in 1 → 3 is (λg/4 − corner − Lc − Wr/2 + pitch − W0 + junction)/2 whatever the
+run below. An arm left with less than one ring width of line is `device.ratrace.ring-too-small`. The pins follow `Form`:
+six with G2 and G4 (`EditableSchematic.PortCount`, `SymbolPortDefs.For`, `BuiltInSymbols`), as MWPD's follow `N`.
+
+**At F**, with ideal vias, on GaAs at 10 GHz: |S11| −52 dB, |S44| −40 dB, |S41| −49 dB, |S23| −41 dB; Σ splits to 2 and
+3 at −3.64 dB within 1.4° of in phase, Δ within 1.1° of 180° (the 3 µm gold costs 0.6 dB). The 75 Ω ring on the board:
+−44, −64, −43 and −46 dB, −3.22 dB, 0.4° and 179.7°.
+
+Tests: `RatRaceCoupledLinePlanTests` (the section's two conditions; each arm λg/4 at F counting its corner, the last to
+the grid; every node one place; the tees' gap and G2's room; the ring of line unchanged; the refusals),
+`RatRaceCoupledLineTests` (the ring against its MCLIN, MTEE, MLIN and corner sections by hand to 1e-9 on GaAs and the
+board, every corner kind; the rat-race at F), and `F35-rat-race-coupled-line` (75 Ω on the board, a via on each G pin)
+through Update Layout and LVS, where a changed `Coupling` is one `lvs.property.mismatch`.
+
+### 3.14 Lumped realisations, and the resistive pad (MRPAD)
+
+**The rule.** MWPD, MBLC, MRRC and MCBL take `Realization` = `Distributed | Lumped`. Distributed is the default and the plans
+are unchanged bit for bit (the fingerprints in `WilkinsonPlanTests` and `HybridPlanTests` still pass). Lumped builds the
+lines' lumped equivalent at F, and every L, C and R of it is a site (§3.7): a pin pair, or a pin to ground, filled by an
+ordinary part, an SMT part on a board and an ideal or a TFR, MIMCAP or SPIRAL part on a die. The passive's own copper is
+only the pads' interconnect, so its model is that interconnect, and the parts on its sites make it a divider, a hybrid or
+a balun. MRPAD, the resistive attenuator and splitter, is a new part with this realisation only. All of it is
+`LumpedPlan`.
+
+**The values**, the closed forms at F (ω = 2πF). A λ/4 line of Zc is, at F only, a low-pass π (a series L = Zc/ω between
+two shunt C = 1/(ω·Zc)) or T (two L = Zc/ω about one C = 1/(ω·Zc)), and a 3λ/4 line (−270° ≡ +90°) is the high-pass π (a
+series C = 1/(ω·Zc) between two shunt L = Zc/ω), a textbook result with no DOI (Pozar, §7). Shunt elements at one node add.
+
+| Part | Sites |
+|---|---|
+| MWPD, `Arm` = `Pi` | L = √2·Z0/ω on each arm (`L1a`-`L1b`, `L2a`-`L2b`); C = √2/(ω·Z0) on `G1` at the input, 1/(√2·ω·Z0) on `G2` and `G3`; 2·Z0 on `R2`-`R3` |
+| MWPD, `Arm` = `Tee` | two L = √2·Z0/ω per arm (`L1`, `L2` to 2, `L3`, `L4` to 3); C = 1/(√2·ω·Z0) on `G1` and `G2`, the arms' midpoints; 2·Z0 on `R2`-`R3` |
+| MBLC | L = Z0/(√2·ω) on the series arms (`L1`, `L3`), Z0/ω on the shunt arms (`L2`, `L4`); C = (1 + √2)/(ω·Z0) on `G1`-`G4` (Vogel) |
+| MRRC | L = √2·Z0/ω on 2-1, 1-3, 3-4 (`L1`-`L3`); C = 1/(√2·ω·Z0) on 4-2 (`C1`); C = √2/(ω·Z0) on `G1` and `G3` |
+| MCBL | the lattice (Bakalski et al.): L = X/ω on 1-2 (`L1`) and on `G3`, C = 1/(ω·X) on 1-3 (`C1`) and on `G2`, X = √(2·Z0·ZL) |
+
+The rat-race's ports 2 and 4 each meet a π's shunt C and the high-pass section's shunt L; they resonate at F, an open
+circuit there, and are left out. The lattice gives V2 = −j·V1·ZL/X and V3 = +j·V1·ZL/X for any equal loads, so the
+outputs are exactly opposite on any board, and the input is X²/(2·ZL) = Z0. The lumped MWPD is the equal split in one
+section (`device.wilkinson.lumped-equal-split`) and the lumped MBLC one section (`device.branchline.lumped-one-section`).
+
+**One layout for every network.** `LumpedPlan.Layout` places a `LumpedTopology`: junctions on a square grid, edges between
+neighbours, each edge a series site (its two pins named) or a line, each junction's outward arms ending on a port or a
+pin to ground (`G…`, as MCBL's G2 and G3). Every junction is the Z0 line's width W, every arm W from the junction's
+centre to its pin, and neighbours 2·W + span apart, so the two pins of every series site face each other across the span
+(`Gap`, or the `Footprint`'s, §3.7) as MWPD's R2-R3 do, and Update Layout lays a part across each with no line. A
+junction with four arms is an MCROSS, three an MTEE, two in line an MLIN, two at a right angle an MBEND square corner with
+MLIN out to the arms' ends. A topology is then a table of junctions and edges: the Wilkinson's π is a 2 × 2 grid (input at
+both left corners, joined by a line, the outputs at the right), its T and the bridged-T and splitters 3 × 1 to 3 × 2,
+the hybrids 2 × 2 with a port at each corner.
+
+What it needed beyond the shared pieces, and why:
+
+- **`PlanCross` at four-arm junctions.** A π-arm Wilkinson's or the branch-line's junction joins a port, two series
+  sites and a part to ground: four arms. Two tees would double the interconnect there, so the junction is a `PlanCross`,
+  MCROSS through its own model and generator, as a ladder's two-sided stub is (§3.16). Its pose is MCROSS's own origin,
+  the junction's centre.
+- **Pins that follow a word.** The pins follow the layout, which follows `Realization`, `Arm` and `Form`, words, where
+  MWPD's N is a number, and a count does not name a layout: MWPD's lumped T and its six-section ring both have fifteen
+  pins, 3 + 2·6. So the part's own words are read wherever the part is at hand. `LumpedPlan.LayoutFor` reads them from any
+  source: `EditableComponent.LumpedLayout` from its rows, for `PortCount`, `SymbolPortDefs.For(EditableComponent)` (which
+  extraction, the netlist view, Place Site Parts and every port position ask) and the per-instance glyph
+  (`InstanceGlyph`, which the drawing, the paste and drag ghosts and the hit box read); the generated cell store from the
+  cell's own parameters, to check its pins against the symbol's. A count alone (`SymbolPortDefs.For(kind, n)`,
+  `BuiltInSymbols.Primitives`) is always the distributed part's, and only the pad, which has no distributed form, is named
+  by its count (`LumpedPlan.PadForPins`); its bridged-T and two splitters, nine pins each, share one list. The symbol is a
+  box: each series site's pin pair on top, 400 apart, a resistor's own span, so Place Site Parts lays the part straight on
+  both; the `G` pins below; the ports at the sides.
+- **Words kept as words.** `Realization`, `Arm` and `Form` go through the elaborator, Update Layout and LVS as `Corner`
+  does: text, compared as a string.
+- **A span on the hybrids.** MBLC and MRRC had no `Gap`; they take one for their lumped sites, and they and MRPAD join
+  `MicrostripSubstrateInjection.HasSiteFootprint`.
+
+**The resistive pad (MRPAD).** `Form` = `Pi`, `T` or `BridgedT` is a matched attenuator of `Attenuation` dB, K = 10^(A/20):
+π, a series Z0·(K² − 1)/(2K) and Z0·(K + 1)/(K − 1) to ground at each port; T, two series Z0·(K − 1)/(K + 1) and
+2·Z0·K/(K² − 1) to ground; bridged-T, two series Z0, Z0·(K − 1) across them and Z0/(K − 1) to ground. `Wye` and `Delta`
+are matched three-port splitters, arms of Z0/3 and sides of Z0 (the star's Δ-Y equal), 6.02 dB between any two ports,
+which matching all three fixes; `Attenuation` does not apply. These are textbook closed forms with no DOI. The pad's
+shunt resistors sit on its terminals, not on `G` pins: the π's on 1 and 2, the T's and bridged-T's on 3, the middle node.
+That is what lets the bridged-T and the splitters share one pin list (a splitter's 3 is its third port), and it keeps
+the T's middle node a terminal a user can return elsewhere. Its interconnect is the Z0 width from MLIN at 1 MHz,
+quasi-static, since a pad has no frequency of its own.
+
+**Limits.** The values do not absorb the interconnect. On 20 mil RO4350B at 500 MHz with 1.35 mm spans, the parts ideal,
+every lumped part is matched and isolated below −15 dB and splits within 0.5 dB of 3 dB; the branch-line, four arms at
+each corner, is the most affected (−19.7 dB, 2.86 and 3.38 dB). Like the lines it stands for, each network is exact at F
+only. On a die the sites take TFR, MIMCAP and SPIRAL parts, but Place Site Parts puts an ideal part there and nothing sizes
+a die part for its value (§6, item 17).
+
+**Tests.** `LumpedSParamTests`: each part alone is its MCROSS, MTEE, MLIN and MBEND sections wired by hand to 1e-9; its
+sites filled with ideal parts and each copper island one node give the ideal device at F to 1e-9 (S21, S31, S41, and the
+outputs' match and isolation); on the copper at 500 MHz the split, match, isolation and phase hold within the
+interconnect's detuning; each pad form gives its loss and its match at Z0 to 1e-6. `LumpedPassiveTests`: every layout's
+symbol has its plan's pins, the shared nine-pin list, Place Site Parts filling every site of F26 and F27 with the plan's
+values and no wire, the readout, and the lumped Wilkinson on the GaAs die with a TFR, SPIRALs and MIMCAPs on its sites,
+bound to the process and simulated. `F26-wilkinson-lumped` (π arms, with the parts Place Site Parts put there) and
+`F27-resistive-pad` (a 6 dB T) go through Update Layout and LVS, and a changed F or `Attenuation` is one
+`lvs.property.mismatch`.
+
+**Possible enhancements.**
+
+1. **Absorb the interconnect into the values.** Each copper island's own line capacitance comes off its shunt C and each
+   series site's arms' inductance off its L, from the same MLIN model at F; a ladder's site pads (§3.16) likewise. Why:
+   at 500 MHz on a board the branch-line's match is −19.7 dB from the interconnect alone, a lumped ladder's pads lower a
+   1 GHz cutoff about 5 %, and the share grows with F, so above a few hundred megahertz the readout values detune the
+   part they are for.
+2. **Unequal and multi-section lumped dividers, and a two-section lumped branch-line.** The same π per line covers them;
+   they need more junctions than the 2 × 2 grid has corners. Why: the unequal split and the wider band are what the
+   distributed parts offer, and a die design wants them small too.
+3. **High-pass arms for the Wilkinson.** A series C between two shunt L is the arm's +90° equivalent. Why: it blocks DC
+   between the ports and returns each output to ground through an inductor, which is a bias path for an amplifier.
+4. **The rat-race's resonant pairs as an option.** Ports 2 and 4 drop a shunt L and C that are open at F. Why: kept, every
+   section is its line's own equivalent off F as well, which changes the band's shape; which is wider is worth measuring.
+5. **A matching pad.** The π and T with two port impedances are the minimum-loss matching pads. Why: a resistive match
+   between two impedances over a decade is a common bench need, and it is the same network with one more spec.
+
+### 3.15 MCRC, the coupled-resonator filters
 
 One part for every coupled-resonator microstrip filter, planned by `CoupledResonatorPlan` from the shared sections and
 nothing else. It differs from the parts above in one way, on purpose: it **stores physical geometry**, not specs. A filter's
@@ -772,39 +1145,38 @@ couplings than the inline design's; the Optimizer, on six numbers and three goal
 GHz, |S21| below −25 dB either side), meets them on the model in seconds. Its prototype is those goals' order-4
 elliptic, whose two zeros each side the square's one each side does not reach.
 
-#### Possible enhancements
+**Possible enhancements.**
 
-1. **Coupling across loops under `Full`.** Loops couple only through sides that lie straight beside each other, as pairs,
-   so the cross-coupled square's diagonal (1 to 3, 2 to 4), a loop's sides beyond the facing one and the corners' fields
-   stay out: none of them are strips side by side over one stretch, which is all an N-line section describes. They move
-   the square's transmission zeros, so a synthesis placing the zeros precisely would take them from an EM solve of the
-   square, or from a model of coupled corners.
+1. **Coupling across loops under `Full`.** The cross-coupled square's diagonal (1 to 3, 2 to 4), a loop's sides beyond
+   the facing one and the corners' fields, from an EM solve of the square or a model of coupled corners. Loops couple
+   only through sides that lie straight beside each other, as pairs, and none of these are strips side by side over one
+   stretch, which is all an N-line section describes. Why: they move the square's transmission zeros, which a synthesis
+   placing the zeros precisely needs.
 2. **The overhang of a longer neighbour under `Full`.** Straight and ZigZag chains stay pairs, and a longer
-   resonator's overhang runs beside its neighbour's other half as a plain line. Joining the overhang to that half's
-   section, as hairpins' stretches are joined, would couple it; the overhang is half the two lengths' difference, so it
-   matters as much as that difference does.
-3. **Dispersion in `Full`.** The N-line model is quasi-static, so a long resonator's phase runs slightly fast; part of
-   the 0.5 % by which `Full` sits above `Pairs` on Cohn's hairpin with widely spaced arms is that. A dispersive N-line
-   model (§3.6, enhancement 1) would remove it.
-4. **A through line of its own width for the bandstop.** Each through-line stretch is as wide as the resonator beside
-   it. `Full` now couples strips of unequal width, so one more parameter, the line's width, would give the usual design
-   of a 50 Ω line with resonators of another impedance.
-5. **Spacing parameters for the bandstop and the spurline.** Resonators sit back to back, about λg/4 apart, and spurs 2·S
-   apart; optimum bandstop designs and cascaded spurlines choose the spacing, so a synthesis would want to state it.
-6. **The spurline's slot end.** The spur's open end faces the full-width line across the slot's short leg, a gap the
-   model leaves out; an MGAP there would follow narrow slots, where it pulls the notch down.
-7. **A readout of each resonator's frequency and each coupling.** The part shows geometry only; the resonators' own
-   frequencies, the coupling coefficients and Qe, computed from the plan as the tests compute them, would let a user check
-   a hand-made design before running it.
-8. **More cross-coupled arrangements.** Trisections and cascaded quadruplets of open loops are the same loops in other
-   places; the coupling search already finds facing sides wherever loops sit.
-9. **The square's couplings from the square.** The test's cross-coupled loops reuse an inline design's gaps, so M23
+   resonator's overhang runs beside its neighbour's other half as a plain line; joining the overhang to that half's
+   section, as hairpins' stretches are joined, would couple it. Why: the overhang is half the two lengths' difference,
+   so it matters as much as that difference does.
+3. **A through line of its own width for the bandstop.** One more parameter, the line's width; each through-line
+   stretch is as wide as the resonator beside it today, and `Full` couples strips of unequal width. Why: it gives the
+   usual design, a 50 Ω line with resonators of another impedance.
+4. **Spacing parameters for the bandstop and the spurline.** Resonators sit back to back, about λg/4 apart, and spurs
+   2·S apart. Why: optimum bandstop designs and cascaded spurlines choose the spacing, so a synthesis would want to
+   state it.
+5. **The spurline's slot end.** An MGAP where the spur's open end faces the full-width line across the slot's short
+   leg, a gap the model leaves out. Why: in narrow slots it pulls the notch down, which the model would then follow.
+6. **A readout of each resonator's frequency and each coupling.** The resonators' own frequencies, the coupling
+   coefficients and Qe, computed from the plan as the tests compute them. Why: the part shows geometry only, and these
+   would let a user check a hand-made design before running it.
+7. **More cross-coupled arrangements.** Trisections and cascaded quadruplets of open loops are the same loops in other
+   places, and the coupling search already finds facing sides wherever loops sit. Why: they are the usual way to
+   place more transmission zeros than the square's two, with no new section.
+8. **The square's couplings from the square.** The test's cross-coupled loops reuse an inline design's gaps, so M23
    (magnetic) and M14 (electric) are not what a four-pole prototype asks for, and the example closes the gap with the
    Optimizer. Why: the lightly fed square's four resonances are ±R ± s, with R and s set by M12, M23 and M14 through
    the mirror's even and odd modes, so its gaps could be extracted as the inline ones are, once each loop's own
    frequency shift in the square (two coupled sides of different kinds) is taken out.
 
-### 3.11 MLAD, the microstrip ladder
+### 3.16 MLAD, the microstrip ladder
 
 MLAD stores **geometry** rather than specs, as MCRC does: one through line from pin 1 to pin 2 built from an
 ordered list of sections. A filter synthesis, written later, will produce exactly that list. The list alone covers the
@@ -853,7 +1225,7 @@ not radial refuses `Ro` and `angle`, and a series site refuses `side`, so no lis
 Every list written before them parses, builds and draws as it did: `LadderPlanTests`, `LadderSParamTests` and the F24
 fixture are unchanged.
 
-**The plan.** Every section is an existing part, with no new model or drawer code beyond one section kind:
+**The plan.** Every section is an existing part, with no model or drawer code of its own:
 
 - `line` is a `PlanLine`, `gap` a `PlanGap` at the width there, and `taper` a `PlanTaper`. The width there starts as the
   ports' lines' (W0) and is each line's W or each taper's W2 after it.
@@ -861,8 +1233,8 @@ fixture are unchanged.
   whole stub, `L` past the wider through arm's edge: MTEE's own reference planes, so the junction is MTEE's and `L` is
   the line beyond it. Its through arms take the widths either side. MTEE's branch leaves along its own −y, so an `up`
   stub's tee is turned over.
-- A two-sided `stub` is a `PlanCross`, the new section: one case in `MicrostripPlanModel.Build`
-  (`MicrostripCrossModel`) and one in `PassivePlanPCells.Draw` (`MCrossPCell`), posed at its centre, MCROSS's own
+- A two-sided `stub` is a `PlanCross`, MCROSS through its own model (`MicrostripCrossModel`) and generator
+  (`MCrossPCell`), posed at its centre, MCROSS's own
   origin. MCROSS reads a pair of arms ending at the other pair's edges as a straight line with pins on its sides, a rule
   for a cross drawn alone, which would drop the junction. So the cross's through arms reach 1 µm past the stubs
   (`LadderPlan.CrossThroughPast`): enough for the junction, and 0.01° at 10 GHz.
@@ -888,8 +1260,8 @@ fixture are unchanged.
 
 **What it needed beyond the pattern.** Its pins follow the list: `EditableSchematic.PortCount` counts the G pins
 (`LadderPlan.Grounds`, 0 for a list that does not parse), and `SymbolPortDefs.For` and `BuiltInSymbols.Primitives` draw
-G1… along the bottom, 200 apart. The symbol is drawn from the pin count alone, as every variadic symbol here is, so a
-site's pins cannot have names of their own: every pin after 1 and 2 is a G pin, in list order, a via's or a part's, and a
+G1… along the bottom, 200 apart. The symbol is drawn from the pin count alone, as MWPD's is, so a
+site's pins cannot have names of their own (§6, item 20): every pin after 1 and 2 is a G pin, in list order, a via's or a part's, and a
 list with no site keeps exactly the pins it had. G pins 200 apart are closer than a lumped part's 400, which Place Site
 Parts used to leave to the user; it now stands such a part beside its pins with a wire to each, as it does for pins
 farther apart than a part. Unlike MWPD's, the ladder's symbol differs at two and three pins, so the catalogue
@@ -947,7 +1319,7 @@ length. `LadderSParamTests`:
 artwork), and `testdata/schematic-to-layout/F24-microstrip-ladder` with its via on G1, LVS clean and a changed list
 one mismatch.
 
-For the radial ends and the sites: `LadderSitesTests` covers the new kinds reading back what they write, their defaults
+For the radial ends and the sites: `LadderSitesTests` covers those kinds reading back what they write, their defaults
 and spellings, each refusal naming its section, the G pins and sites in list order, the radial sections turned away from
 the line, and an LC ladder of sites alone as a row of pads that meet. `LadderSitesSParamTests` holds:
 
@@ -974,7 +1346,7 @@ where Planar does.
 
 **Limits.**
 
-- **The step between widths is not modelled.** There is no MSTEP: upstream left it out on purpose. A stepped-impedance
+- **The step between widths is not modelled.** There is no MSTEP model, by choice. A stepped-impedance
   design is its lines cascaded, and the step capacitance is a known limit.
 - **The junctions are MTEE's and MCROSS's fits,** calibrated at εr 9.9. A stub wider than the line it stands on moves a
   zero: +2.9 % for the elliptic example, by MTEE's negative branch inductance.
@@ -991,379 +1363,21 @@ where Planar does.
 
 **Possible enhancements.**
 
-1. **Expressions in the list.** A list holds numbers, so an optimiser cannot tune one section's length. Expressions in
-   fields, or one tunable per field, would let a synthesis hand its result to the optimiser for the last per cent the
-   junctions take.
-2. **A step section, if a step model is ever added.** It would be one model case and one drawer case, and the
-   stepped-impedance cutoff would include the steps.
-3. **Junction-aware lengths.** The closed forms place stubs at points. A helper that measured each junction's own phase,
-   as `PlanBend.LineLength` does for a corner, would let a synthesis correct its stubs exactly.
-4. **Coupled neighbours.** Stubs or lines closer than about three widths couple. A `PlanCoupledLine` between them would
-   put that in the model with no new model code.
-5. **A stub overlap refusal.** Two stubs on one side closer than their widths overlap; the plan could refuse that, as it
-   refuses a ring too small for its F.
-6. **Meandered stubs.** A low-frequency stub is long and straight; the route helper (S4) could fold it, at the cost of
-   the corner corrections it already carries.
-7. **A span per site.** A `gap=` field on a series site, or a footprint per site, would let parts of different cases sit
-   at their own lands, which a lumped ladder of mixed L and C sizes needs. Today every series site spans the part's
-   `Gap`.
-8. **Pads the design can count.** The readout could state each site pad's own L and C at F. A lumped synthesis could
-   then take them out of its values, rather than leaving the cutoff a few per cent low at higher frequencies.
-9. **Names for a site's pins.** A symbol drawn from the list rather than from its pin count could name a site's pins by
-   site and draw a series site's two 400 apart, so a part dropped on them lands with no wire. That needs every caller of
-   `SymbolPortDefs.For` to ask the instance, which is wider than this part.
-
-### 3.12 MCLC's options and MIDC's fingers
-
-Each option is a parameter of the existing part, off by default, and with every option off the plan is the single
-section's to the last bit (`CouplerOptionsPlanTests.OneSection_IsThePlainCoupler_ToTheBit`). They are one at a time:
-a second is `device.coupled-line-coupler.options-combined`. All of them are plans of the shared sections; two needed a
-section kind and one a drawer case, each with its one model case, as §4 states.
-
-| Parameter | Part | Default | Builds |
-|---|---|---|---|
-| `Sections`, `Band` | MCLC | 1, 2 | n (odd, to 9) pairs in a row, equal-ripple over `Band` |
-| `Broadside` | MCLC | 0 | one BCLIN or MBCLIN pair on the signal layer and the conductor below |
-| `Tandem` | MCLC | 0 | two couplers of the weaker coupling, joined around both ends; pins J1-J4 |
-| `Compensation` | MCLC | `None` | `Capacitive`, `Inductive` or `Wiggly` |
-| `Fingers` | MIDC | 4 | 4, 6 or 8 fingers; 2·N pins |
-
-**Sections** (Cristal and Young). With Ze·Zo = Z0² in every section a TEM coupler is matched and isolated at every
-frequency and couples the reflection of its even-mode chain z_1 … z_n between unit loads. For a symmetric chain of odd
-n, Γ/T = jQ(sin θ) with Q an odd polynomial of degree n, so the optimum — the coupling rippling equally about its mean
-over the band — is the odd polynomial that ripples equally about a constant on sin θ1 ≤ sin θ ≤ 1. `EqualRipple` finds
-it by Remez exchange in u = sin²θ (extremes refined by Newton's method on the error's derivative), scales it until the
-coupling's mean in dB is the spec, and fits the chain's (n + 1)/2 impedances to it at as many points by Newton's
-method, which fixes them; Q of a chain is `ChainQ`, Im(B − C)/2 of its ABCD. The tables are this design worked; no
-number is copied from them. The three-section case has a closed form (a cubic minimax, extremes at s1, √((1 + s1 +
-s1²)/3) and 1), and the tests hold the solve to it to 1e-9; five sections are held to an equal ripple on a fine grid.
-Each section is then `CoupledLineSynthesis`'s pair, λg/4 at its own mean εeff, the sections centred on one gap centre
-line. The width steps between sections are not modelled, as MSTEP is not.
-
-**Broadside.** One section kind, `PlanBroadsideLine`: W, O and L and the stack (`BroadsideStack`), stamped by
-`StriplineBroadsideCoupledModel` on a stack with a ground above and below, `MicrostripBroadsideCoupledModel` otherwise,
-and drawn by `CoupledLinePCells`' own BCLIN/MBCLIN generator on the stack's two conductors. `BroadsideSynthesis` finds
-W and O whose solved modes are the asked pair, by Newton's method in (ln W, O) on the pair's own quasi-static solve,
-capped so a stack that cannot give it is refused in bounded time. The stack comes from one resolver
-(`SubstrateResolver.ResolveBroadsideStack`, BCLIN's pair if the stack has one, MBCLIN's otherwise, strip A on
-`SignalLayer`) used by the extraction (which appends it after the microstrip substrate, so its εr is the one read),
-the PCell and the readout. With no second signal layer next to the signal layer nothing is appended and the plan
-refuses with `device.coupled-line-coupler.no-second-layer`; a coupling tighter than the strips reach one over the other
-is `device.coupled-line.broadside-too-tight`. On a board with 2 mil between the top two layers, 3 dB is W 0.22 mm,
-O 0.12 mm.
-
-**Tandem** (Shelton, Wolfe and Van Wagoner). A TEM backward-wave coupler takes its inputs on two diagonal corners (1,
-4) to its outputs on the other two (2, 3) as [[t, c], [c, t]]; feeding the second coupler's diagonal pair from the
-first's gives [[t² + c², 2tc], [2tc, t² + c²]], so two couplings c1 = sin(asin(c)/2) make c. The layout: coupler I above
-coupler II, I.2 joined around the right end to II.2' and I.3 around the left to II.3', equal by the layout's 180°
-symmetry (the left-hand pieces are the right-hand ones turned about the centre). II.1' is the through port 2, II.4' the
-coupled port 3, I.4 the isolated port 4. The two joins and the four ports form a cycle with one port of each coupler
-inside it, whatever the arrangement, so a flat layout has two crossings: each join is broken where a port's lead
-crosses it, and J1/J2 and J3/J4 are the break's ends, for a jumper each, as MIDC's J pins are. Every line is the
-coupled strips' width (the joins run beside the couplers' strips a gap apart at their ends), mitred at the corners, and
-the space between the couplers leaves each run at least one width either side of the break: a run of zero length
-would swamp the block's elimination. Pins 1 and 3 get straight leads as long at F as the bent leads of 2 and 4.
-
-**Compensation.** All three re-synthesise the single pair so both half-circuits are the same electrical length at F
-with impedances whose product is Z0² and whose ratio is the coupling; the pair is iterated until it is so.
-- *Capacitive* (Dydyk): [2C][Zo, θo][2C] is the line (Zo·sin θo/sin θe, θe) when 2ωC = (cos θo − cos θe)/(Zo·sin θo),
-  with the pair λg/4 in the even mode. No new section: the capacitors go on pins 1-3 and 2-4, the readout giving C.
-- *Inductive* (Phromloungsri et al.): [X][Z, θ][X] is the line (Z·sin θ'/sin θ, θ') with cos θ' = cos θ −
-  (X/Z)·sin θ, so θ'e = θ'o = π/2 needs X = Ze·cot θe = Zo·cot θo, a length under λg/4. Each X is a `PlanLine` of 2·Z0,
-  its series term Z_L·sin(β_L·ℓ) = X; its shunt term is the realisation's error.
-- *Wiggly* (Podell): `PlanCoupledLine.OddLengthFactor` k = √(εe/εo); the drawer's one new case draws the facing edges
-  as a triangle wave of about one width per tooth whose path is k times the length, the gap S across the teeth, the
-  strips' end faces centred on MCLIN's pins. Its model case, `WigglyLineModel`, is MCLIN's own modes with the odd
-  mode's γ·L multiplied by k: the effective odd-mode length correction the paper describes, and only that. The teeth
-  also raise the odd mode's capacitance, which it does not see; it says so as a validity warning, and EM is the judge.
-
-**MIDC's fingers.** Ou's equations and `InterdigitatedLineModel` already held for any even N; `LangePlan` takes N = 4,
-6 or 8, and each further inner pair adds landings J(4m+1)/J(4m+2) on conductor A's finger 2m + 2 and J(4m+3)/J(4m+4)
-on conductor B's finger 2m + 1, J(4m+k) joining pin k's conductor; four fingers are the old nodes exactly. The pins are
-variadic as MWPD's: `EditableSchematic.PortCount` reads a plain-number `Fingers` (2·N pins), `SymbolPortDefs.For` and
-`BuiltInSymbols.Primitives` answer any count, an unknown one with the four-finger part. MCLC's tandem pins follow
-`Tandem` the same way (8 or 4).
-
-**What they needed beyond the pattern.**
-
-- **Pivoting in the shared block.** The tandem's first layout left a 0-length run beside a jumper landing, and two
-  orders of elimination differed at 1e-8. `LocalAdmittanceBlock.EliminateFrom` now takes, among the internal nodes,
-  the one with the largest self-admittance next (branch rows still first, in order): the order changes only the
-  rounding, and a node whose admittance all but vanishes at F is left for last. Every #71 part still matches its
-  sections by hand to 1e-9.
-- **A fixture with its own board.** The broadside fixture needs a second signal layer, so `SdlChecker.Prepare` takes a
-  design's own `.ctech` when its folder has one (`F11e-coupler-broadside/board.ctech`, a four-layer board).
-
-**What the board builds** (20 mil RO4350B, 2.4 GHz). Three sections at 15 dB over 2:1: z = 1.028, 1.264, 1.028, ±0.03
-dB as TEM lines, 0.23 dB of spread from 1.6 to 3.2 GHz on the board where one section has 1.3 dB. A 3 dB tandem of two
-8.34 dB couplers: within 1 dB of an even split from 1.7 to 2.8 GHz, 90° to within a degree. At 10 dB coupling the
-directivity at F is 11 dB plain, 47.6 dB with the 0.17 pF capacitors, 24 dB with the series sections, and 45 dB in the
-wiggly model (k = 1.133). Six fingers at 50 Ω are refused (their pair is near 3·Z0, past the model's narrowest
-strip); at 25 Ω they build 3 dB with 350 µm fingers 63 µm apart. On the GaAs process at 10 GHz (`CouplerOptionsOnMmicTests`)
-three sections, the tandem, the wiggly coupler and the phase shifter all build; the process's broadside pair resolves
-to Metal2 over the MIM plate, 2.55 µm of air under one weighted εr, which is no coupler.
-
-Tests: `CouplerOptionsPlanTests` (the closed forms, the pins, the refusals), `CouplerOptionsSParamTests` (each option
-against its sections by hand to 1e-9 — the wiggly pair against a CLIN of its modes on a lossless board — and its
-coupling, quadrature, directivity and flatness), the `F11b`-`F11e` and `F13b` fixtures through Update Layout and LVS,
-each with one spec mismatch (`ComparisonTests.ACouplerOptionComparesCleanAndASpecMismatchIsAFinding`).
-
-### 3.13 MSPS, the Schiffman phase shifter
-
-A new part: pins 1-2 a C-section, 3-4 a reference line, specs `Z0`, `F`, `Phase` (90°) and `Band` (1.4), and how the
-reference is laid (`Reference`). The C-section is a `PlanCoupledLine` whose far ends are joined by a `PlanLine` strap
-one strip width wide across the gap; the reference is a `PlanLine`, or folded back beneath itself on a `PlanCurve`
-half-turn or two `PlanBend` corners (PlanCorner's `Miter` and `Square`), each turn counted at its own electrical
-length (`PlanBend.LineLength`, MCURVE's π·(R − 0.2·W)), or meandered through `PlanRoute` (§3.14).
-
-**The design** (Schiffman). With Ze·Zo = Z0² the C-section is an all-pass of phase tan(φ/2) = tan θ/√ρ, ρ = Ze/Zo; the
-reference is kθ with k = 2(ΔΦ + π)/π, so Δφ = kθ − φ is ΔΦ at F and its deviation is odd about F. Over θ1 = π/(1 +
-Band) … π/2 it ripples equally when its band-edge value is minus its peak inside: one equation in ρ, monotone, solved by
-bisection from ρ = (k/2)², where Δφ is flat at F. 90°: ρ = 2.40 over 1.5:1 (±0.57°), 2.73 over 2:1 (±2.7°, the
-classic octave design); never under 2.25. The part opens at 1.4:1 (ρ = 2.35, a 7.9 dB pair), the widest band a 90°
-part builds on the fallback 1.6 mm FR-4, so the catalogue and the generator's default draw one. The tests hold the plan to that equal ripple and the C-section as TEM lines
-to Schiffman's cos φ = (ρ − tan²θ)/(ρ + tan²θ) and a perfect match.
-
-**On the board.** The C-section's length is where its own model, strap included, is 180° at F (bisection about λg/4
-at the modes' mean εeff), so the difference is exactly ΔΦ at F on any substrate; the reference is k quarter waves at
-its own εeff. On 20 mil RO4350B at 2.4 GHz the difference is 89.2° to 90.4° over 1.92 to 2.88 GHz, but the C-section's
-match is −11.6 dB at F: the modes' unequal speeds, which no length fixes. The part says so (`ModelValidity`), and
-"Possible enhancements" has the remedies.
-
-Registration: every row of §4, with a `Phase` that reaches the factory in radians (an authored "90 deg", as MCURVE's
-`Angle`) and the generator in degrees; `Reference` a name, kept as text by the elaborator and Update Layout. Tests:
-`CouplerOptionsPlanTests`, `CouplerOptionsSParamTests`, `F25-schiffman-phase-shifter` (a mitred fold) through Update
-Layout and LVS with a `Phase` mismatch, the catalogue and the generator version.
-
-### 3.14 MRRC's coupled-line form
-
-`Form` = `CoupledLine` makes the compact rat-race of S. March
-([10.1109/TMTT.1968.1126693](https://doi.org/10.1109/TMTT.1968.1126693)): the 3λ/4 arm becomes a λ/4 coupled section
-with two diagonal far ends grounded. `Ring`, the default, is the ring of §3.2 and §3.16 to the last bit
-(`RatRaceCoupledLinePlanTests.TheRingOfLine_IsUnchanged`; the generator's fingerprint is unchanged), and with
-`Realization` = `Lumped` the lumped hybrid still wins, as before.
-
-**The section.** Shorting ports 2 and 3 of a pair leaves Y11 = −j(Ye + Yo)/2·cot θ and Y14 = j(Ye − Yo)/2·csc θ: at θ =
-π/2 a 270° line of 2·Ze·Zo/(Ze − Zo), with the 3λ/4 arm's sign (the open diagonal would be a 90° line, so only the
-grounded form replaces the arm). Setting that to √2·Z0 is one condition; the section's `Coupling` c (10 dB by default)
-is the other, √(Ze·Zo) = √2·Z0·c/√(1 − c²), March's own section being the 3 dB one. The pair is `CoupledLineSynthesis`'s,
-and its length is where its own model, grounded ends in place, has Y11 = 0 at F (a bisection about λg/4 at the modes'
-mean εeff). The tests hold the plan to both conditions to 1e-9, and the section as TEM lines to a 270° line of √2·Z0
-(`RatRaceCoupledLineTests.TheSection_AsTemLines_IsA270DegreeLine`).
-
-**What a board builds.** Whatever c is, 1/Zo − 1/Ze = 2/(√2·Z0): the coupling only trades a narrower gap for wider
-strips. Edge coupling at the coupled-line model's narrowest gap (S/h = 0.1, over W/h up to 10) reaches about 0.022 S on
-20 mil RO4350B, 0.028 S on 25 mil alumina and 0.033 S on 100 µm GaAs, against 0.028 S for a 50 Ω ring. So a 50 Ω ring
-builds on the GaAs process (a 10 dB section of 227 µm strips 11 µm apart at 10 GHz), and on the board from about 65 Ω
-(75 Ω: 1.6 mm strips 53 µm apart); elsewhere the part refuses with `device.ratrace.coupled-line-unbuildable`, naming
-the admittance it needs. A broadside section would reach 50 Ω on a board; see "Possible enhancements".
-
-**The layout** closes now that the arms are runs and corners rather than one straight line each. The section lies along
-the bottom, strip A on top. Tee 4 sits on strip A's near end, its port running on to the left and the ring rising from
-its branch; tee 2 on strip B's far end, its port leaving down from its branch and the ring running on to the right. So
-each grounded end faces away from the tee beside it: G2, strip A's far end, inside the ring with three port widths or
-more before its right side, and G4, strip B's near end, outside below port 4, each a pin for an ordinary via as MCBL's
-G2 and G3 are. Each tee's junction is the section's strip width high, so it keeps the coupler's gap from the grounded
-strip beside it; a tee wider than the strip plus two gaps is `device.ratrace.coupled-line-tight`. The three λg/4 arms go
-around the other three sides: 2 → 1 a run of 2·W0, a corner and a rise to tee 1 on the right side (port to the right);
-1 → 3 a rise, a corner and a run to tee 3 on the top (port up); 3 → 4 a run, a corner and a drop into tee 4. Each
-corner is an MCURVE quarter turn of 3W or an MMITER or MBEND corner by `Corner`, counted at its own electrical length
-at F (`PlanSection.LineLength`). The square closes on x (the left side lands on tee 4's branch) and on y (one top run
-for both sides); the right side is the taller by the pair's pitch and the junctions, which the top's split between
-1 → 3 and 3 → 4 takes up, so the rise in 1 → 3 is (λg/4 − corner − Lc − Wr/2 + pitch − W0 + junction)/2 whatever the
-run below. An arm left with less than one ring width of line is `device.ratrace.ring-too-small`. The pins follow `Form`:
-six with G2 and G4 (`EditableSchematic.PortCount`, `SymbolPortDefs.For`, `BuiltInSymbols`), as MWPD's follow `N`.
-
-**At F**, with ideal vias, on GaAs at 10 GHz: |S11| −52 dB, |S44| −40 dB, |S41| −49 dB, |S23| −41 dB; Σ splits to 2 and
-3 at −3.64 dB within 1.4° of in phase, Δ within 1.1° of 180° (the 3 µm gold costs 0.6 dB). The 75 Ω ring on the board:
-−44, −64, −43 and −46 dB, −3.22 dB, 0.4° and 179.7°.
-
-Tests: `RatRaceCoupledLinePlanTests` (the section's two conditions; each arm λg/4 at F counting its corner, the last to
-the grid; every node one place; the tees' gap and G2's room; the ring of line unchanged; the refusals),
-`RatRaceCoupledLineTests` (the ring against its MCLIN, MTEE, MLIN and corner sections by hand to 1e-9 on GaAs and the
-board, every corner kind; the rat-race at F), and `F35-rat-race-coupled-line` (75 Ω on the board, a via on each G pin)
-through Update Layout and LVS, where a changed `Coupling` is one `lvs.property.mismatch`.
-
-**MSPS `Reference` = `Meander`.** The reference goes through `PlanRoute`'s meander from pin 3 heading +x: one curved
-half-turn stacked downward, so it ends on pin 4 heading back to the left edge under pin 3, and all four pins sit in a
-column on the block's left. The pitch is set by bisection so each leg is the C-section's length, and the reference lies
-under the section as one block; when six widths' pitch already leaves shorter legs (a small `Phase`), six widths it is,
-clear of the route's coupling warning. The route holds θ through the turn, so at F the difference is still exactly
-`Phase`, and over 1.92 to 2.88 GHz on the example board it is the straight reference's to 0.001°
-(`CouplerOptionsSParamTests.TheMeanderedSchiffman_HoldsTheStraightOnesPhase`). Tests: the legs, the pins' column and
-every node (`RatRaceCoupledLinePlanTests`), the part against its sections by hand to 1e-9, and `F36-schiffman-meander`
-through Update Layout and LVS with a `Phase` mismatch.
-
-### 3.15 Lumped realisations, and the resistive pad (MRPAD)
-
-**The rule.** MWPD, MBLC, MRRC and MCBL take `Realization` = `Distributed | Lumped`. Distributed is the default and the plans
-are unchanged bit for bit (the fingerprints in `WilkinsonPlanTests` and `HybridPlanTests` still pass). Lumped builds the
-lines' lumped equivalent at F, and every L, C and R of it is a site (§3.7): a pin pair, or a pin to ground, filled by an
-ordinary part, an SMT part on a board and an ideal or a TFR, MIMCAP or SPIRAL part on a die. The passive's own copper is
-only the pads' interconnect, so its model is that interconnect, and the parts on its sites make it a divider, a hybrid or
-a balun. MRPAD, the resistive attenuator and splitter, is a new part with this realisation only. All of it is
-`LumpedPlan`.
-
-**The values**, the closed forms at F (ω = 2πF). A λ/4 line of Zc is, at F only, a low-pass π (a series L = Zc/ω between
-two shunt C = 1/(ω·Zc)) or T (two L = Zc/ω about one C = 1/(ω·Zc)), and a 3λ/4 line (−270° ≡ +90°) is the high-pass π (a
-series C = 1/(ω·Zc) between two shunt L = Zc/ω), a textbook result with no DOI (Pozar, §7). Shunt elements at one node add.
-
-| Part | Sites |
-|---|---|
-| MWPD, `Arm` = `Pi` | L = √2·Z0/ω on each arm (`L1a`-`L1b`, `L2a`-`L2b`); C = √2/(ω·Z0) on `G1` at the input, 1/(√2·ω·Z0) on `G2` and `G3`; 2·Z0 on `R2`-`R3` |
-| MWPD, `Arm` = `Tee` | two L = √2·Z0/ω per arm (`L1`, `L2` to 2, `L3`, `L4` to 3); C = 1/(√2·ω·Z0) on `G1` and `G2`, the arms' midpoints; 2·Z0 on `R2`-`R3` |
-| MBLC | L = Z0/(√2·ω) on the series arms (`L1`, `L3`), Z0/ω on the shunt arms (`L2`, `L4`); C = (1 + √2)/(ω·Z0) on `G1`-`G4` (Vogel) |
-| MRRC | L = √2·Z0/ω on 2-1, 1-3, 3-4 (`L1`-`L3`); C = 1/(√2·ω·Z0) on 4-2 (`C1`); C = √2/(ω·Z0) on `G1` and `G3` |
-| MCBL | the lattice (Bakalski et al.): L = X/ω on 1-2 (`L1`) and on `G3`, C = 1/(ω·X) on 1-3 (`C1`) and on `G2`, X = √(2·Z0·ZL) |
-
-The rat-race's ports 2 and 4 each meet a π's shunt C and the high-pass section's shunt L; they resonate at F, an open
-circuit there, and are left out. The lattice gives V2 = −j·V1·ZL/X and V3 = +j·V1·ZL/X for any equal loads, so the
-outputs are exactly opposite on any board, and the input is X²/(2·ZL) = Z0. The lumped MWPD is the equal split in one
-section (`device.wilkinson.lumped-equal-split`) and the lumped MBLC one section (`device.branchline.lumped-one-section`).
-
-**One layout for every network.** `LumpedPlan.Layout` places a `LumpedTopology`: junctions on a square grid, edges between
-neighbours, each edge a series site (its two pins named) or a line, each junction's outward arms ending on a port or a
-pin to ground (`G…`, as MCBL's G2 and G3). Every junction is the Z0 line's width W, every arm W from the junction's
-centre to its pin, and neighbours 2·W + span apart, so the two pins of every series site face each other across the span
-(`Gap`, or the `Footprint`'s, §3.7) as MWPD's R2-R3 do, and Update Layout lays a part across each with no line. A
-junction with four arms is an MCROSS, three an MTEE, two in line an MLIN, two at a right angle an MBEND square corner with
-MLIN out to the arms' ends. A topology is then a table of junctions and edges: the Wilkinson's π is a 2 × 2 grid (input at
-both left corners, joined by a line, the outputs at the right), its T and the bridged-T and splitters 3 × 1 to 3 × 2,
-the hybrids 2 × 2 with a port at each corner.
-
-What it needed beyond the shared pieces, and why:
-
-- **`PlanCross`, a section kind.** A π-arm Wilkinson's or the branch-line's junction joins a port, two series sites and a
-  part to ground: four arms. Two tees would double the interconnect there, so the MCROSS the library already has is one
-  record, one case in `MicrostripPlanModel.Build` (`MicrostripCrossModel` with its arms) and one in
-  `PassivePlanPCells.Draw` (`MCrossPCell`). Its pose is MCROSS's own origin, the junction's centre.
-- **Pins that follow a word.** The pins follow the layout, which follows `Realization`, `Arm` and `Form`, words, where
-  MWPD's N is a number, and a count does not name a layout: MWPD's lumped T and its six-section ring both have fifteen
-  pins, 3 + 2·6. So the part's own words are read wherever the part is at hand. `LumpedPlan.LayoutFor` reads them from any
-  source: `EditableComponent.LumpedLayout` from its rows, for `PortCount`, `SymbolPortDefs.For(EditableComponent)` (which
-  extraction, the netlist view, Place Site Parts and every port position ask) and the per-instance glyph
-  (`InstanceGlyph`, which the drawing, the paste and drag ghosts and the hit box read); the generated cell store from the
-  cell's own parameters, to check its pins against the symbol's. A count alone (`SymbolPortDefs.For(kind, n)`,
-  `BuiltInSymbols.Primitives`) is always the distributed part's, and only the pad, which has no distributed form, is named
-  by its count (`LumpedPlan.PadForPins`); its bridged-T and two splitters, nine pins each, share one list. The symbol is a
-  box: each series site's pin pair on top, 400 apart, a resistor's own span, so Place Site Parts lays the part straight on
-  both; the `G` pins below; the ports at the sides.
-- **Words kept as words.** `Realization`, `Arm` and `Form` go through the elaborator, Update Layout and LVS as `Corner`
-  does: text, compared as a string.
-- **A span on the hybrids.** MBLC and MRRC had no `Gap`; they take one for their lumped sites, and they and MRPAD join
-  `MicrostripSubstrateInjection.HasSiteFootprint`.
-
-**The resistive pad (MRPAD).** `Form` = `Pi`, `T` or `BridgedT` is a matched attenuator of `Attenuation` dB, K = 10^(A/20):
-π, a series Z0·(K² − 1)/(2K) and Z0·(K + 1)/(K − 1) to ground at each port; T, two series Z0·(K − 1)/(K + 1) and
-2·Z0·K/(K² − 1) to ground; bridged-T, two series Z0, Z0·(K − 1) across them and Z0/(K − 1) to ground. `Wye` and `Delta`
-are matched three-port splitters, arms of Z0/3 and sides of Z0 (the star's Δ-Y equal), 6.02 dB between any two ports,
-which matching all three fixes; `Attenuation` does not apply. These are textbook closed forms with no DOI. The pad's
-shunt resistors sit on its terminals, not on `G` pins: the π's on 1 and 2, the T's and bridged-T's on 3, the middle node.
-That is what lets the bridged-T and the splitters share one pin list (a splitter's 3 is its third port), and it keeps
-the T's middle node a terminal a user can return elsewhere. Its interconnect is the Z0 width from MLIN at 1 MHz,
-quasi-static, since a pad has no frequency of its own.
-
-**Limits.** The values do not absorb the interconnect. On 20 mil RO4350B at 500 MHz with 1.35 mm spans, the parts ideal,
-every lumped part is matched and isolated below −15 dB and splits within 0.5 dB of 3 dB; the branch-line, four arms at
-each corner, is the most affected (−19.7 dB, 2.86 and 3.38 dB). Like the lines it stands for, each network is exact at F
-only. On a die the sites take TFR, MIMCAP and SPIRAL parts, but Place Site Parts puts an ideal part there and nothing sizes
-a die part for its value.
-
-**Tests.** `LumpedSParamTests`: each part alone is its MCROSS, MTEE, MLIN and MBEND sections wired by hand to 1e-9; its
-sites filled with ideal parts and each copper island one node give the ideal device at F to 1e-9 (S21, S31, S41, and the
-outputs' match and isolation); on the copper at 500 MHz the split, match, isolation and phase hold within the
-interconnect's detuning; each pad form gives its loss and its match at Z0 to 1e-6. `LumpedPassiveTests`: every layout's
-symbol has its plan's pins, the shared nine-pin list, Place Site Parts filling every site of F26 and F27 with the plan's
-values and no wire, the readout, and the lumped Wilkinson on the GaAs die with a TFR, SPIRALs and MIMCAPs on its sites,
-bound to the process and simulated. `F26-wilkinson-lumped` (π arms, with the parts Place Site Parts put there) and
-`F27-resistive-pad` (a 6 dB T) go through Update Layout and LVS, and a changed F or `Attenuation` is one
-`lvs.property.mismatch`.
-
-**Possible enhancements.**
-
-1. **Absorb the interconnect into the values.** Each copper island's own line capacitance comes off its shunt C and each
-   series site's arms' inductance off its L, from the same MLIN model at F. Why: at 500 MHz on a board the branch-line's
-   match is −19.7 dB from the interconnect alone, and the share grows with F, so above a few hundred megahertz the readout
-   values detune the part they are for.
-2. **Size TFR, MIMCAP and SPIRAL sites for the value on a die.** Place Site Parts would put a MIMCAP of the plate area the
-   process's capacitance per area gives, a SPIRAL of the turns its inductance model gives, a TFR of the squares its sheet
-   resistance gives (§6, 8). Why: on a die the lumped realisation is the reason to choose lumped at all, and today each
-   part's geometry is sized by hand against the readout.
-3. **Unequal and multi-section lumped dividers, and a two-section lumped branch-line.** The same π per line covers them;
-   they need more junctions than the 2 × 2 grid has corners. Why: the unequal split and the wider band are what the
-   distributed parts offer, and a die design wants them small too.
-4. **High-pass arms for the Wilkinson.** A series C between two shunt L is the arm's +90° equivalent. Why: it blocks DC
-   between the ports and returns each output to ground through an inductor, which is a bias path for an amplifier.
-5. **The rat-race's resonant pairs as an option.** Ports 2 and 4 drop a shunt L and C that are open at F. Why: kept, every
-   section is its line's own equivalent off F as well, which changes the band's shape; which is wider is worth measuring.
-6. **A matching pad.** The π and T with two port impedances are the minimum-loss matching pads. Why: a resistive match
-   between two impedances over a decade is a common bench need, and it is the same network with one more spec.
-
-### 3.16 The delay line (MDLY), and MRRC's meandered ring
-
-**MDLY** is the route helper as a part: a line θ long at F, for a delay, a phase shifter's reference arm or a length
-match. `DelayLinePlan.Build` takes the specs Z0, F and θ (`Theta`), finds MLIN's width for Z0 at F and hands the run to
-`PlanRoute` from pin 1 at the origin heading +x, ending on pin 2. The layout choices are stored as MRRC's `Corner` is:
-`Style` (`Straight`, `Corner`, `Meander`, a name), `Corner` (`Curve`, `Miter`, `Square`), `Turns`, `Pitch` (0: 6·W, so a
-half-turn's radius is 3W, where MCURVE's effective-radius fit starts, and the legs are 5W apart edge to edge, clear of
-the coupling warning) and `Side` (1 left of the heading, −1 right). The readout gives W and εeff, θ as a straight
-length, the copper's centre-line length and extent, and each run in order. It has no sites. Pins 1 and 2 sit on MLIN's;
-the glyph is a meander between them. Refusals: `device.delayline.spec-not-positive`, `device.delayline.turns` (a
-meander's turns not a whole number of at least one), `device.delayline.width-unreachable`, and the route's own.
-
-**Coupling between legs, `Coupled`.** 1 places a meander's k + 1 legs as one `PlanCoupledStrips` (§3.6), so every leg
-couples to every other in the model; 0, the default, keeps them separate lines with the route's warning. It cost one
-step at the end of `PlanRoute`'s meander: every leg spans x = 0..leg in the run's frame, so the legs, sorted top first,
-are the section's strips, and a leg heading back joins its far end first. The copper, the end pose, the extent and the
-nodes are unchanged; the turns stay separate pieces. The legs keep MLIN's length, so the phase at F moves by what the
-coupling does, which is what the option is for: on 20 mil RO4350B at 2.4 GHz, θ = 360° in three half-turns, S21 is
-1.26° off −θ with the legs 10W apart centre to centre, 3.17° at 4W (3W edge to edge, where the warning starts) and
-6.11° at 2W, where the separate legs hold −θ to 0.001°. The 1.26° that remains far apart is the N-line section's
-quasi-static εeff against MLIN's dispersive one (§3.6), and the causal phase MLIN's loss comes with, which the legs'
-length follows and the N-line section does not have.
-
-**MRRC `Meander`**, the compact ring (Eccleston and Ong shortened a rat-race's arms with artificial lines,
-[10.1109/TMTT.2003.817442](https://doi.org/10.1109/TMTT.2003.817442); He and Wang meandered them,
-[10.1049/joe.2015.0102](https://doi.org/10.1049/joe.2015.0102)). `Meander` = k, odd, folds the 3λg/4 arm inside the
-ring; 0, the default, is the ring of §3.2 bit for bit (the fingerprint test is unchanged). The three λg/4 arms make a C:
-2 → 1 the upper run, 1 → 3 a `PlanRoute` U-turn (one turn, its legs taking what the half-turn of radius Y leaves of
-λg/4), 3 → 4 the lower run. Tee 2's and tee 4's free ends then face out of the C, so the 3λg/4 arm is a half-turn back
-in from tee 4, a `PlanRoute` meander of k turns between the runs, and a half-turn out to tee 2. Every turn of that arm
-has radius Y/(k + 2), which puts its legs 2Y/(k + 2) apart and as far from the runs, and the meander's θ is 3π/2 less
-the two half-turns' own phase at F. Y is the curved ring's radius for a λg/4 − 2·W0 half-turn, so the ring is no taller
-than the curved one, the U-turn keeps legs of about W0 and the folded legs (about λg/4 + W0 at k = 1) clear the U-turn's
-inside. On the example board at 2.4 GHz the drawn copper, feeds included, is 29.87 × 13.57 mm for k = 1 and 29.14 ×
-13.57 mm for k = 3, against 53.11 × 14.24 mm curved: 54 % and 52 % of its area. At F the Σ and Δ outputs (−3.13 to
-−3.23 dB) are the curved ring's to 0.002 dB and |S11|, |S44|, |S41| and |S23| are below −49 dB in both
-(`HybridSParamTests`), since every arm holds its phase and the tees are the same. The folded arm follows MLIN's causal
-phase at F and the curved ring's arms its εeff alone, so the meandered ring's Σ and Δ phases (−0.01° and −179.99°) are
-the closer to 0° and 180°, the curved ring's about 0.2° off. A cornered meander is
-refused (`device.ratrace.meander`, as is an even or fractional k): its two end turns would need corners of their own.
-
-Tests: `DelayLineSParamTests` (S21 at F within 0.5° of −θ for every style and corner, measured 0.000° to 0.039°; the
-part against MLIN, MCURVE, MMITER, MBEND and MCLINN wired by hand to 1e-9; the coupled phase as the legs close),
-`PlanRouteTests` (a coupled meander is its legs as one section over the same copper), `HybridPlanTests` (the meandered
-ring joined, its runs λg/4, its folded arm 3λg/4 at F to 0.5°; the refusals), `HybridSParamTests` (the meandered ring by
-hand to 1e-9, and against the curved one at F), `DelayLinePartTests` (registration; a 360° meander on the GaAs die drawn
-and −360° at 20 GHz; the meandered ring drawn smaller), and `F29-delay-line` through Update Layout and LVS, where a
-changed `Theta` on MDLY or `Meander` on MRRC is one `lvs.property.mismatch`.
-
-**Possible enhancements.**
-
-1. **Compensate a coupled meander's length.** With `Coupled` the legs could be shortened, by a bisection on the plan's
-   own S21 at F, until the run is θ again. Why: the option shows how far coupling pulls the phase (2.7° at a 4W pitch
-   above), and a designer who wants θ then has to tune the length by hand.
-2. **Couple the meandered ring's folded legs to its runs.** The outer legs run 2Y/(k + 2) from the ring's upper and
-   lower runs and are stamped apart from them. A `PlanCoupledStrips` of the run and the leg beside it would put that
-   coupling in the model. Why: on a thin substrate or at large k the gap closes towards 3W, where EM would see it and the circuit
-   would not.
-3. **Fold the λg/4 arms too.** The upper and lower runs are straight λg/4, so they now set the ring's width; meandering
-   each between its tees (an even number of turns, ending on the same heading) would shrink it again. Why: it is the next
-   factor in area, left out here to keep the ring's change small.
-4. **A cornered meandered ring.** The end turns as two corners and a line, as the route makes a cornered turn. Why:
-   mitred corners take less room than half-turns of the same pitch, and the plain ring already offers them.
-5. **Turns that couple.** Adjacent half-turns at one end of a tight meander also face each other; the N-line section
-   covers only the parallel legs. Why: at a pitch near 2W their coupling is the next term after the legs'.
+1. **Expressions in the list.** Expressions in fields, or one tunable per field. Why: a list holds numbers, so an
+   optimiser cannot tune one section's length, and a synthesis would hand its result to the optimiser for the last per
+   cent the junctions take.
+2. **A step section, if a step model is ever added.** One model case and one drawer case. Why: the stepped-impedance
+   cutoff would then include the steps.
+3. **Junction-aware lengths.** A helper that measured each junction's own phase, as `PlanBend.LineLength` does for a
+   corner. Why: the closed forms place stubs at points, and the helper would let a synthesis correct its stubs exactly.
+4. **Coupled neighbours.** A `PlanCoupledLine` between stubs or lines closer than about three widths, with no new model
+   code. Why: they couple, and the model leaves it out.
+5. **A stub overlap refusal.** The plan refusing two stubs on one side closer than their widths, as it refuses a ring
+   too small for its F. Why: such stubs overlap today without a word.
+6. **Meandered stubs.** The route helper (§3.8) folding a stub, at the cost of the corner corrections it already
+   carries. Why: a low-frequency stub is long and straight.
+7. **A span per site.** A `gap=` field on a series site, or a footprint per site. Why: every series site spans the
+   part's `Gap` today, and a lumped ladder of mixed L and C sizes needs parts of different cases at their own lands.
 
 ### 3.17 The coupled array (MCLA)
 
@@ -1412,7 +1426,7 @@ sections of the same strips, which cascade exactly (one cross-section, solved on
 | `G` | A join past other strips: its wall's clearance from the ends it passes (the paper's g). |
 
 **Pins.** `1`, `2`, then `E1`, `E2`, … on every shorted or loaded end, strip by strip from the top, near end before far.
-The names follow the pin count alone, as every variadic part's do: `SymbolPortDefs.For` takes a kind and a count, and
+The names follow the pin count alone, as MWPD's and MLAD's do: `SymbolPortDefs.For` takes a kind and a count, and
 some forty callers (net extraction, the generated-cell pin check, Place Site Parts, the renderer) read the names from
 there. A count does not say which ends are shorts and which are sites, so the role is the plan's site on the pin, which
 the readout lists (`E3: C 1.5 pF`) and Place Site Parts acts on. `EditableSchematic.PortCount` reads N, Form, Feed and
@@ -1427,8 +1441,8 @@ combline's every far end, a pseudo-interdigital pair's open ends), so pairing th
 rest another. Open-end nodes are numbered first of the internal nodes, to be eliminated last. A join's corners, its
 wall's coupling to the ends it passes, and a tap's junction are not modelled.
 
-**Shared changes.** `HasSiteFootprint` now means "takes a `Footprint` for its site parts" (MWPD, MCBL, MCLA) and
-`SetsSiteSpan` "and its `Gap` is that land's span" (MWPD, MCBL): a coupled array's sites are shunt and have no span, so
+**Shared changes.** `HasSiteFootprint` means "takes a `Footprint` for its site parts" and `SetsSiteSpan` "and its
+`Gap` is that land's span" (§3.7), and MCLA is in the first only: a coupled array's sites are shunt and have no span, so
 its `Footprint` only chooses the capacitors' land. Form, Feed and Ends are words through the elaborator and Update
 Layout, as `Corner` is; Ends drops its spaces on the way, as the netlist does, so LVS reads one word on both sides.
 
@@ -1471,149 +1485,160 @@ within 0.3 %.
 
 **Possible enhancements.**
 
-1. **Coupled open ends for N strips.** The open-end Δl generalised to N strips from the solved cross-section (§3.6,
-   enhancement 3). Why: a combline's loaded ends and an interdigital array's open ends sit beside their neighbours', and
-   the single-strip Δl misses the mutual fringing that sets the resonators' frequency to about a percent.
-2. **The tap's junction.** An MTEE-like junction at each tap, with the strip uncoupled over the feed's width. Why: the
+1. **The tap's junction.** An MTEE-like junction at each tap, with the strip uncoupled over the feed's width. Why: the
    junction's reactance pulls the end resonators' frequency and the external Q a little, most at a wide feed.
-3. **A tap per port.** `Tap[1]` and `Tap[2]`. Why: unequal source and load impedances need unequal external Qs, and one
+2. **A tap per port.** `Tap[1]` and `Tap[2]`. Why: unequal source and load impedances need unequal external Qs, and one
    `Tap` serves only a symmetric filter.
-4. **More ports for multi-line couplers.** P on any end, numbered as pins. Why: an array whose four corner ends are
+3. **More ports for multi-line couplers.** P on any end, numbered as pins. Why: an array whose four corner ends are
    ports is a multi-line coupler; the part allows two ports only, the filters' case.
-5. **Die parts on the sites.** A MIMCAP sized for `C[k]`, and a die via, from Place Site Parts on an MMIC stack (§6,
-   enhancement 8). Why: on a die the combline's capacitors are MIM capacitors, and today they come out ideal.
-6. **Pin names that say the role.** An instance-aware pin list (G for a via, C for a capacitor) through the symbol's
-   callers. Why: `E` pins are read from the readout; a name on the pin would say it on the schematic, at the cost of
-   letting `SymbolPortDefs` see an instance.
-7. **The synthesis seam.** A synthesis that fills N, W/S, L, Ends, Tap and C from a prototype. Why: the tests' helper
+4. **The synthesis seam.** A synthesis that fills N, W/S, L, Ends, Tap and C from a prototype. Why: the tests' helper
    already goes from Matthaei's closed forms to widths and gaps through the field solver; that belongs in a tool, not
    a test.
 
 ## 4. What a new topology costs
 
-1. `src/Core/Devices/Microstrip/<X>Plan.cs` — the pure plan (and a section kind, with one case in
-   `MicrostripPlanModel.Build` and one in `PassivePlanPCells.Draw`, if it needs a part the plans do not use yet).
-   `PlanBend` (MMITER and MBEND, for `Corner`) cost exactly one model case and one drawer case; because MBEND stamps in
-   branch (Z) form, the shared local block also learned to take branch rows, once, for any such part
-   (`LocalAdmittanceBlock`). `PlanGap`, `PlanTaper` and `PlanCross` cost the same, and `PlanOpen` that plus its closed form
-   (`MicrostripOpenEnd`); a gap and an open end also join no copper, one line in the model's DC islands.
-2. `ComponentModelFactory` — the type name, `_parameterizedTypes` and one dispatch line to `MicrostripPlanModel`.
-3. `SchematicModel.SymbolKind`; `ComponentTypeRegistry` (entry, terminals text, `EngineReference`, parameter
-   descriptions, `ModelValidity`, `HasNoiseSwitch`, `DefaultParameters`, token); `EditableSchematic.SymbolPortDefs`;
-   `BuiltInSymbols` (glyph); `MicrostripSubstrateInjection` (kind set); `SymbolArtworkGenerator`.
-4. `PassivePlanPCells.Generate<X>` and its `PCellRegistry` row; the generator row in `Lvs/DeviceType`; the generator
-   in `GroundPourPlanner`'s line set. A part whose pins follow a parameter also needs its count in
-   `EditableSchematic.PortCount`, `SymbolPortDefs.For` and `BuiltInSymbols.Primitives` (§3.1), and, where two and three
-   pins draw differently, `ComponentTypeRegistry.PortCountParameter` (§3.11). A ring of tees on two
-   runs is `RacetrackRing.Build` (§3.9) and costs nothing more.
-5. Tests: the plan against its closed form, the composite against its parts by hand, a schematic-to-layout fixture; the
-   records in `LibraryCatalogTests` and `PCellGeneratorVersioningTests`.
-6. Its sites (§3.7): the plan's `Sites`; a kind with sites in `SchematicViewModel.HasSites`, one whose site parts take
-   its `Footprint` in `MicrostripSubstrateInjection.HasSiteFootprint`, and one whose site span is a stored length also in
-   `SetsSiteSpan`. A folded line is `PlanRoute` (§3.8). A lumped
-   network is a `LumpedTopology` table and its values (§3.15); its pins follow `EditableComponent.LumpedLayout`.
-7. Docs: a subsection under Dividers and couplers in `components.md`, and the example's README table; the part's symbol
-   artwork (`--generate-symbols`, its two files only).
+A new part touches these places; a new option on an existing part touches only the ones it changes.
+
+1. **The plan.** `src/Core/Devices/Microstrip/<X>Plan.cs`, a pure function of the specs and the substrate, with its
+   refusals (`device.<topology>.*`). A ring of tees on two runs is `RacetrackRing.Build` (§3.9), a folded line
+   `PlanRoute` (§3.8), and a lumped network a `LumpedTopology` table and its values (§3.14).
+2. **A section kind**, only if the plan needs a part no plan uses yet: one record in `PassivePlan.cs`, one case in
+   `MicrostripPlanModel.Build` and one in `PassivePlanPCells.Draw`. A section that joins no copper (a gap, an open
+   end) is also one line in the model's DC islands, and one with a closed form of its own adds it (`MicrostripOpenEnd`).
+   The shared local block takes branch (Z) rows, for a part that stamps in that form as MBEND does
+   (`LocalAdmittanceBlock`).
+3. **The model.** `ComponentModelFactory`: the type name, `_parameterizedTypes` and one dispatch line to
+   `MicrostripPlanModel`. `InstanceNetContract` states every planned passive's pins from its plan, with no row of its
+   own.
+4. **The part.** `SchematicModel.SymbolKind`; `ComponentTypeRegistry`: the entry and its search terms, `TerminalNote`,
+   `EngineReference`, the parameter descriptions, `ModelValidity`, `HasNoiseSwitch`, `DefaultParameters`, the token,
+   and `NamedParamOptions` for a parameter that is a name; `EditableSchematic.SymbolPortDefs`; `BuiltInSymbols` (the
+   glyph); `MicrostripSubstrateInjection` (the kind set); `SymbolArtworkGenerator`; its readout
+   (`ParameterEditorViewModel.*Readout.cs`).
+5. **Pins that follow a parameter.** The count in `EditableSchematic.PortCount`, `SymbolPortDefs.For` and
+   `BuiltInSymbols.Primitives` (§3.1); where two and three pins draw differently, also
+   `ComponentTypeRegistry.PortCountParameter` (§3.16), and `NetlistSchematic`'s list of parts whose line keeps its own
+   parameters rather than a count inferred from its nets. Pins that follow a word rather than a number go through
+   `EditableComponent.LumpedLayout` and `SymbolPortDefs.For(EditableComponent)` (§3.14).
+6. **Names and text.** A parameter that is a name or a list (`Corner`, `Form`, `Sections`) has its clause in the
+   elaborator (`Elaborator`) and in Update Layout (`SchematicLayoutPlanner`), which keep it as text; LVS then compares it
+   as a string.
+7. **The layout cell.** `PassivePlanPCells.Generate<X>` and its `PCellRegistry` row; the generator row in
+   `Lvs/DeviceType`; the generator in `GroundPourPlanner`'s line set. Its version is 1 unless `PCellRegistry`'s version
+   table says otherwise, and a change to its artwork, its own or a generator's it draws through, bumps it there.
+8. **Sites** (§3.7). The plan's `Sites`; the kind in `SchematicViewModel.HasSites`; a part whose site parts take a
+   `Footprint` in `MicrostripSubstrateInjection.HasSiteFootprint`, and one whose `Gap` is that land's span also in
+   `SetsSiteSpan`.
+9. **Tests.** The plan against its closed form, the composite against its sections wired by hand, and a
+   schematic-to-layout fixture listed in `testdata/schematic-to-layout/designs.txt`, LVS clean with one spec mismatch
+   giving one `lvs.property.mismatch`; the records in `LibraryCatalogTests` and `PCellGeneratorVersioningTests` (each
+   generator's version and its artwork's fingerprint).
+10. **Docs.** An entry in `components.md` under Dividers and couplers or Planar filters, a subsection here, and the
+    example's README table; the part's symbol artwork (`--generate-symbols`, its two files only).
 
 ## 5. Known limits
 
-- **The isolation resistor's component port closes a loop.** The ring joins R2 to R3, so the resistor's two pads are one
-  piece of copper. Both component-port builders build a port across such a part as across two conductors, when air lies
-  between the pads (`EmPlanarComponentPorts.Construct`; `C3dComponentPorts.Construct`, whose sheet's ends are then
-  inferred as a loop's), and warn that the 0 Hz row reads the loop (`em.component-port.across-loop`). So an EM run has the
-  resistor's port, and the co-simulation netlist closes it with the 100 Ω. A cut cell instance whose pins the copper joins
-  is still refused: its pins are ground-referenced ports, with no gap between two pins to tell a loop from a short.
-- **MTEE's closed forms are calibrated at εr 9.9** and say so on any other substrate; MCURVE's effective-radius rule is
-  stated for radii of 3W to 7W, and a low-frequency ring is larger. Both warnings reach Messages through the part.
-- **The multi-section pair is two uncoupled lines in the model.** The lines run about `Gap` apart; their coupling is
-  in EM and not in the circuit. On the example board Planar and EMerge follow the model's isolation to a few dB.
-- **`N` must be a plain number** for MWPD and MBPD, since it sets the pins. The catalogue (`circuitrf reference`) lists
-  MWPD at its five terminals and MBPD at its four, and says in the terminals note how `N` adds pins.
-- **A multi-section branch-line's outer arms are high.** Three sections need 4.26·Z0 and four 7.40·Z0; in a 50 Ω system
-  the first is a line no board draws on 20 mil RO4350B and the second is outside the line model (§3.2).
-- **The Bagley and the tee match only their input.** Their outputs see each other: the Bagley's three-way outputs are
-  at −3.7 dB return loss and −9.6 dB coupling to each other on the example board, the tee's at −6 dB.
-- **The MWPD generator's version follows MTEE's and MCURVE's**, and with corners MMITER's, MBEND's and MLIN's (MRRC's
-  likewise). It draws through them, so a change that bumps one of those generators' versions changes the part's artwork
-  too and must bump the part's.
+Each part's own limits are in its subsection; these cut across parts.
 
-- **Wiggly couplers are approximate in the circuit.** The model is the odd-mode length correction alone (§3.12).
-- **The broadside readout solves on the UI thread.** A few cross-section solves, a second or more on a fine stack.
-- **The Schiffman C-section's match** is microstrip's: about −12 dB at F on 20 mil RO4350B (§3.13).
+1. **The isolation resistor's component port closes a loop.** The ring joins R2 to R3, so the resistor's two pads are
+   one piece of copper. Both component-port builders build a port across such a part as across two conductors, when
+   air lies between the pads (`EmPlanarComponentPorts.Construct`; `C3dComponentPorts.Construct`, whose sheet's ends are
+   then inferred as a loop's), and warn that the 0 Hz row reads the loop (`em.component-port.across-loop`). So an EM
+   run has the resistor's port, and the co-simulation netlist closes it with the 100 Ω. A cut cell instance whose pins
+   the copper joins is still refused: its pins are ground-referenced ports, with no gap between two pins to tell a loop
+   from a short.
+2. **MTEE's and MCROSS's closed forms are calibrated at εr 9.9** and say so on any other substrate; MCURVE's
+   effective-radius rule is stated for radii of 3W to 7W, and a low-frequency ring is larger. The warnings reach
+   Messages through the part.
+3. **Lines side by side are uncoupled unless a plan couples them.** The multi-section divider's pairs run about `Gap`
+   apart as two separate lines, MIDC's fingers couple only to their neighbours, and the meandered ring's folded legs and
+   MDLY's legs without `Coupled` are separate lines. EM sees their coupling and the circuit does not; on the example
+   board Planar and EMerge follow the divider's isolation to a few dB.
+4. **Parameters that set the pins must be plain values**: MWPD's and MBPD's `N`, MCLINN's `N`, MIDC's `Fingers`, MCLC's
+   `Tandem`, MRRC's `Form`, the lumped parts' `Realization` and `Arm`, MLAD's `Sections`, and MCLA's `N`, `Form`, `Feed`
+   and `Ends`. An expression there draws the default part's pins. The catalogue (`circuitrf reference`) lists each part
+   at its default terminals, and MWPD's and MBPD's terminals notes say how `N` adds pins.
+5. **A multi-section branch-line's outer arms are high.** Three sections need 4.26·Z0 and four 7.40·Z0; in a 50 Ω system
+   the first is a line no board draws on 20 mil RO4350B and the second is outside the line model (§3.2).
+6. **The Bagley and the tee match only their input.** Their outputs see each other: the Bagley's three-way outputs are
+   at −3.7 dB return loss and −9.6 dB coupling to each other on the example board, the tee's at −6 dB.
+7. **Wiggly couplers are approximate in the circuit.** The model is the odd-mode length correction alone (§3.10).
+8. **The Schiffman C-section's match** is microstrip's: about −12 dB at F on 20 mil RO4350B (§3.11).
+9. **The broadside readout solves on the UI thread.** A few cross-section solves, a second or more on a fine stack.
+10. **A planned passive's artwork follows its sections' generators.** It draws through MTEE's, MLIN's, MCURVE's and the
+    other sections' generators, so a change that bumps one of their versions changes the passive's artwork too and must
+    bump the passive's (§4, item 7).
 
 ## 6. Possible enhancements
 
-1. **Coupling between side-by-side lines.** The multi-section divider's line pairs run about `Gap` apart and are
-   stamped as two uncoupled lines (§5); EM sees the coupling and the circuit does not. A `PlanCoupledStrips` per pair
-   (§3.6) would close that, with no new model or drawer code.
-2. **Phase compensation for MCBL.** Microstrip's odd mode is faster than its even mode, so the outputs sit about 170°
-   apart rather than 180°. A first section a few percent longer, solved in the plan, would restore 180°.
-3. **An EM cell for MIDC.** The Lange is checked in the circuit, Update Layout and LVS only: Planar cannot put a jumper
-   across a finger. A bond-wire jumper in Planar, or drawn wires in 3D, would let the example check it as it checks the
-   others.
-4. **Loop ports on cut cell instances.** A part on drawn pads whose copper closes a loop has its port (§5); a cut cell
-   instance whose pins the copper joins is still refused, since its pins are ground-referenced with no gap between two
-   of them.
-5. **A "Dividers and couplers" palette category.** The new kinds under Microstrip make that list long; a category of
-   their own would make them easier to find.
-6. **Coupled ends' own model.** A coupled pair's open ends take the single line's Δl form once per mode (§1), which
-   is not a fit to coupled ends. Kirschning, Jansen and Koster's coupled parallel-gap model (§7) was made for them, and
-   the edge-coupled filters' resonator lengths, which these ends set, would follow it more closely.
+Each part's own enhancements are in its subsection (§3.5, §3.6, §3.12, §3.14 to §3.17); these are the rest.
+
+1. **Coupling between side-by-side lines in MWPD and MIDC.** The multi-section divider's line pairs, and MIDC's fingers,
+   each placed as one `PlanCoupledStrips` (§3.6), as an option so that their defaults stay as they are; it needs no new
+   model or drawer code. Why: the pairs are two uncoupled lines in the model, which EM sees coupled (§5, item 3), and
+   the Lange's non-adjacent fingers couple too, which Ou's equations leave out.
+2. **Phase compensation for MCBL.** A first section a few percent longer, solved in the plan. Why: microstrip's odd mode
+   is faster than its even mode, so the outputs sit about 16° short of 180° on the example board (§3.3).
+3. **An EM cell for MIDC.** A bond-wire jumper in Planar, or drawn wires in 3D. Why: the Lange is checked in the circuit,
+   Update Layout and LVS only, since Planar cannot put a jumper across a finger, and the example checks the other
+   couplers against EM.
+4. **Loop ports on cut cell instances.** A port across a cut cell instance's pins that its copper joins, as a part on
+   drawn pads already has (§5, item 1). Why: such an instance is refused today, since its pins are ground-referenced
+   with no gap between two of them.
+5. **A "Dividers and couplers" palette category.** Why: the planned passives under Microstrip make that list long, and a
+   category of their own would make them easier to find.
+6. **Coupled ends' own model.** Kirschning, Jansen and Koster's coupled parallel-gap model (§7) for a coupled pair's open
+   ends. Why: those ends take the single line's Δl form once per mode (§1), which is not a fit to coupled ends, and they
+   set the edge-coupled filters' resonator lengths.
 7. **An unequal split for MGPD.** The nodal analysis at F gives one directly: input arms of Z0·√(1 + K²) and
    Z0·√(1 + K²)/K, isolation arms in the ratio K, and the two resistors in parallel K²·Z2²/(Z0·(1 + K²)), the half wave
-   tying them; the literature has closed forms for it, but none could be checked against its paper here, and the free
-   choices (Z2, how R splits) change the band. With a checked source it is one more spec, as MWPD's `K` is.
-8. **A band for MBLC.** Four sections at a flat match need 7.40·Z0 outer arms. The one free value trades flatness for
-   lower arms and more band: with the middle arm at 2.86·Z0 instead of 1.99·Z0 the outer arms fall to 4.4·Z0 and, on
-   ideal lines, |S11| and |S41| stay under −20 dB over ±35 % of F, against ±27 % when flat. Stated as a band, as MWPD's
-   `Band` is, it would bring four sections onto the boards that build three.
-9. **A Bagley with outputs in phase.** Alternate outputs leave half a period apart; a half-wave line on every other
-   output, planned in, would bring them into phase for an array feed, at the cost of length.
-10. **The Gysel's N-way form.** Gysel's paper divides N ways with each output's isolation line meeting at one floating
-   node; like Wilkinson's N-way it does not lie flat for three or more outputs (§3.1), and would need a crossing part.
-11. **Smooth circuit curves in the example's plots.** Each bench sweeps only the EM runs' frequencies, so every marker is
-   a solved point and the circuit line is coarse; a `.cdd` that also reads the cell's own fine sweep would draw it
-   smoothly.
-12. **Options together.** MCLC takes one option at a time. A tandem of compensated couplers, or of three-section ones,
-   is a real design (the tandem's directivity is the microstrip couplers'), and the plan composes from the same
-   builders; the cost is the tandem layout taking per-section widths.
-13. **A compensated Schiffman C-section.** The section's mismatch is the mode-velocity difference (§3.13); the
-    capacitive form's end capacitor, or a wiggly section, would restore it as for the coupler.
-14. **The step between coupler sections.** The multi-section coupler's width steps are not modelled, as MSTEP is not;
-    a coupled-line step model would close it.
-15. **EM cells for the options.** A tandem's jumpers and a wiggly coupler are the ones whose circuit model is least
-    exact; Planar MoM runs of each would check them as the example checks the plain coupler.
-
-16. **Bond wires and air bridges from Place Site Parts.** A jumper site (MIDC's) is left with a note, since a wire part
-   needs its own design; placing one would fill the last kind of site by hand.
-17. **Die parts sized from the site's value.** On an MMIC or RFIC stack Place Site Parts puts an ideal R, L or C with no
-   land; a TFR or MIMCAP sized for the value from the process would make a die design complete in one step.
-18. **A `Footprint` path relative to the schematic in a `.cnl`.** A written netlist resolves a cell path against its own
-   folder; one written elsewhere keeps the span extraction resolved but warns, since its folder holds no such cell.
-19. **A broadside section for the coupled-line ring.** MRRC's coupled-line form needs 1/Zo − 1/Ze = √2/Z0 whatever
-   its coupling (§3.14), which edge coupling on a board reaches only from about 65 Ω; MCLC's broadside pair reaches it
-   at 50 Ω on a stack with two signal layers, and the section is one `PlanBroadsideLine` in place of the MCLIN.
+   tying them. With a source checked against its paper it is one more spec, as MWPD's `K` is. Why: MWPD and MTPD split
+   unequally and MGPD does not; the literature's closed forms could not be checked here, and the free choices (Z2, how R
+   splits) change the band.
+8. **A band for MBLC.** The one free value of four sections trades flatness for lower arms and more band: with the middle
+   arm at 2.86·Z0 instead of 1.99·Z0 the outer arms fall from 7.40·Z0 to 4.4·Z0 and, on ideal lines, |S11| and |S41|
+   stay under −20 dB over ±35 % of F, against ±27 % when flat; stated as a band, as MWPD's `Band` is. Why: it would bring
+   four sections onto the boards that build three.
+9. **A Bagley with outputs in phase.** A half-wave line on every other output, planned in. Why: alternate outputs leave
+   half a period apart, and an array feed wants them in phase; the cost is length.
+10. **The Gysel's N-way form.** Each output's isolation line meeting at one floating node, as Gysel's paper divides N
+    ways. Why: high-power N-way combining is what the paper is for; the cost is a crossing part, since like Wilkinson's
+    N-way it does not lie flat for three or more outputs (§3.1).
+11. **Smooth circuit curves in the example's plots.** A `.cdd` that also reads the cell's own fine sweep. Why: each
+    bench sweeps only the EM runs' frequencies, so every marker is a solved point and the circuit line is coarse.
+12. **Options together.** MCLC takes one option at a time; the plan composes from the same builders, and the cost is the
+    tandem layout taking per-section widths. Why: a tandem of compensated couplers, or of three-section ones, is a real
+    design, and the tandem's directivity is the microstrip couplers'.
+13. **A compensated Schiffman C-section.** The capacitive form's end capacitor, or a wiggly section, as for the coupler.
+    Why: the section's mismatch, about −12 dB at F on a board (§3.11), is the mode-velocity difference those forms
+    correct.
+14. **The step between coupler sections.** A coupled-line step model. Why: the multi-section coupler's width steps are
+    not modelled, as MSTEP is not, so the circuit joins its sections ideally.
+15. **EM cells for the options.** Planar MoM runs of a tandem and a wiggly coupler. Why: theirs are the least exact of
+    the coupler's circuit models (the tandem's jumpers, the wiggly coupler's odd-mode correction alone), and the example
+    checks only the plain coupler.
+16. **Bond wires and air bridges from Place Site Parts.** A wire part placed on a jumper site (MIDC's). Why: a jumper is
+    the one kind of site Place Site Parts leaves with a note, since a wire part needs its own design.
+17. **Die parts sized for a site's value.** On an MMIC or RFIC stack Place Site Parts puts an ideal R, L or C with no
+    land; it would put a MIMCAP of the plate area the process's capacitance per area gives, a SPIRAL of the turns its
+    inductance model gives, a TFR of the squares its sheet resistance gives, and a die via on a via site. Why: on a die
+    the lumped realisations (§3.14) and a combline's loading capacitors (§3.17) are these parts, and today each one's
+    geometry is sized by hand against the readout.
+18. **A `.cnl`'s `Footprint` cell path relative to its schematic.** A written netlist resolves a cell path against its
+    own folder. Why: one written elsewhere keeps the span extraction resolved but warns, since its folder holds no such
+    cell.
+19. **A broadside section for the coupled-line ring.** One `PlanBroadsideLine` in place of the MCLIN. Why: MRRC's
+    coupled-line form needs 1/Zo − 1/Ze = √2/Z0 whatever its coupling (§3.13), which edge coupling on a board reaches only
+    from about 65 Ω; MCLC's broadside pair reaches it at 50 Ω on a stack with two signal layers.
+20. **Pin names from the instance for MLAD and MCLA.** A ladder's site pins named by site, with a series site's two drawn
+    400 apart, and a coupled array's `E` pins named by role (G for a via, C for a capacitor), through
+    `SymbolPortDefs.For(EditableComponent)`, the instance's path the lumped realisations take (§3.14), at the cost of the
+    callers that still ask by count. Why: every pin after 1 and 2 is named by its order today, so a part dropped on a
+    ladder's series site needs a wire, and a pin's role is read from the readout rather than the schematic.
 
 ## 7. References
 
-> E. J. Wilkinson, "An N-Way Hybrid Power Divider," *IRE Transactions on Microwave Theory and Techniques*, vol. 8,
-> no. 1, pp. 116–118, January 1960. DOI [10.1109/TMTT.1960.1124668](https://doi.org/10.1109/TMTT.1960.1124668).
-
-> U. H. Gysel, "A New N-Way Power Divider/Combiner Suitable for High-Power Applications," *MTT-S International Microwave
-> Symposium Digest*, vol. 75, pp. 116–118, 1975. DOI [10.1109/MWSYM.1975.1123301](https://doi.org/10.1109/MWSYM.1975.1123301).
-
-> I. Sakagami, T. Wuren, M. Fujii and M. Tahara, "Compact Multi-Way Power Dividers Similar to the Bagley Polygon,"
-> *2007 IEEE/MTT-S International Microwave Symposium*, pp. 419–422, June 2007.
-> DOI [10.1109/MWSYM.2007.380477](https://doi.org/10.1109/MWSYM.2007.380477). The polygon divider's analysis; G. Bagley's
-> original design is unpublished.
-
-> R. W. Vogel, "Analysis and Design of Lumped- and Lumped-Distributed-Element Directional Couplers for MIC and MMIC
-> Applications," *IEEE Transactions on Microwave Theory and Techniques*, vol. 40, no. 2, pp. 253–262, February 1992.
-> DOI [10.1109/22.120097](https://doi.org/10.1109/22.120097). The lumped branch-line coupler (§3.15).
-
-> W. Bakalski, W. Simbürger, H. Knapp, H.-D. Wohlmuth and A. L. Scholtz, "Lumped and Distributed Lattice-Type LC-Baluns,"
-> *2002 IEEE MTT-S International Microwave Symposium Digest*, pp. 209–212.
-> DOI [10.1109/MWSYM.2002.1011595](https://doi.org/10.1109/MWSYM.2002.1011595). The lattice balun (§3.15).
+**Line models and methods.**
 
 > D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012: §7.2, the lossless T-junction divider; §7.3, the
 > Wilkinson power divider; §7.5 and §7.8, the quadrature and 180° hybrids; §7.6 and §7.7, coupled-line directional couplers and the Lange coupler. A book, with no
@@ -1623,43 +1648,9 @@ within 0.3 %.
 > Theory and Techniques*, vol. 4, no. 4, pp. 246–252, October 1956.
 > DOI [10.1109/TMTT.1956.1125071](https://doi.org/10.1109/TMTT.1956.1125071). The even- and odd-mode method.
 
-> R. Levy and L. F. Lind, "Synthesis of Symmetrical Branch-Guide Directional Couplers," *IEEE Transactions on Microwave
-> Theory and Techniques*, vol. 16, no. 2, pp. 80–89, February 1968.
-> DOI [10.1109/TMTT.1968.1126612](https://doi.org/10.1109/TMTT.1968.1126612).
-
-> M. Muraguchi, T. Yukitake and Y. Naito, "Optimum Design of 3-dB Branch-Line Couplers Using Microstrip Lines," *IEEE
-> Transactions on Microwave Theory and Techniques*, vol. 31, no. 8, pp. 674–678, August 1983.
-> DOI [10.1109/TMTT.1983.1131568](https://doi.org/10.1109/TMTT.1983.1131568). With Levy and Lind, the synthesis of
-> multi-section branch-line couplers that MBLC's two-section design follows; its arm impedances are derived in §3.2 from
-> the even/odd conditions and checked by the circuit model, not taken from a table in either paper.
-
 > E. Hammerstad and Ø. Jensen, "Accurate Models for Microstrip Computer-Aided Design," *1980 IEEE MTT-S International
 > Microwave Symposium Digest*, pp. 407–409. DOI [10.1109/MWSYM.1980.1124303](https://doi.org/10.1109/MWSYM.1980.1124303).
 > The static line model the widths are synthesised on.
-
-> L. I. Parad and R. L. Moynihan, "Split-Tee Power Divider," *IEEE Transactions on Microwave Theory and Techniques*,
-> vol. 13, no. 1, pp. 91–95, January 1965. DOI [10.1109/TMTT.1965.1125934](https://doi.org/10.1109/TMTT.1965.1125934).
-> The unequal split.
-
-> S. B. Cohn, "A Class of Broadband Three-Port TEM-Mode Hybrids," *IEEE Transactions on Microwave Theory and
-> Techniques*, vol. 16, no. 2, pp. 110–116, February 1968.
-> DOI [10.1109/TMTT.1968.1126617](https://doi.org/10.1109/TMTT.1968.1126617). The multi-section divider.
-
-> R. J. P. Douville and D. S. James, "Experimental Study of Symmetric Microstrip Bends and Their Compensation," *IEEE
-> Transactions on Microwave Theory and Techniques*, vol. 26, no. 3, pp. 175–182, March 1978.
-> DOI [10.1109/TMTT.1978.1129340](https://doi.org/10.1109/TMTT.1978.1129340). The mitred corner's chamfer.
-
-> M. Kirschning, R. H. Jansen and N. H. L. Koster, "Measurement and Computer-Aided Modeling of Microstrip
-> Discontinuities by an Improved Resonator Method," *1983 IEEE MTT-S International Microwave Symposium Digest*,
-> pp. 495–497. DOI [10.1109/MWSYM.1983.1130959](https://doi.org/10.1109/MWSYM.1983.1130959). The square corner's model.
-
-> M. Kirschning, R. H. Jansen and N. H. L. Koster, "Accurate model for open end effect of microstrip lines,"
-> *Electronics Letters*, vol. 17, no. 3, pp. 123–125, February 1981.
-> DOI [10.1049/el:19810088](https://doi.org/10.1049/el:19810088). The open end's extension (`PlanOpen`).
-
-> M. Kirschning, R. H. Jansen and N. H. L. Koster, "Coupled microstrip parallel-gap model for improved filter and
-> coupler design," *Electronics Letters*, vol. 19, no. 10, pp. 377–379, May 1983.
-> DOI [10.1049/el:19830261](https://doi.org/10.1049/el:19830261). Coupled open ends and gaps (§6).
 
 > M. Kirschning and R. H. Jansen, "Accurate model for effective dielectric constant of microstrip with validity up to
 > millimetre-wave frequencies," *Electronics Letters*, vol. 18, no. 6, pp. 272–273, 1982.
@@ -1671,35 +1662,22 @@ within 0.3 %.
 > p. 288, 1985, DOI [10.1109/TMTT.1985.1133005](https://doi.org/10.1109/TMTT.1985.1133005). The modes the coupled-line
 > synthesis inverts.
 
-> S. B. Cohn, "Parallel-Coupled Transmission-Line-Resonator Filters," *IRE Transactions on Microwave Theory and
-> Techniques*, vol. 6, no. 2, pp. 223–231, April 1958. DOI [10.1109/TMTT.1958.1124542](https://doi.org/10.1109/TMTT.1958.1124542).
-> MCRC's Straight, ZigZag and Hairpin test designs.
+> M. Kirschning, R. H. Jansen and N. H. L. Koster, "Accurate model for open end effect of microstrip lines,"
+> *Electronics Letters*, vol. 17, no. 3, pp. 123–125, February 1981.
+> DOI [10.1049/el:19810088](https://doi.org/10.1049/el:19810088). The open end's extension (`PlanOpen`), and the
+> radial stub's effective radius (§3.5).
 
-> E. G. Cristal and S. Frankel, "Hairpin-Line and Hybrid Hairpin-Line/Half-Wave Parallel-Coupled-Line Filters," *IEEE
-> Transactions on Microwave Theory and Techniques*, vol. 20, no. 11, pp. 719–728, November 1972.
-> DOI [10.1109/TMTT.1972.1127860](https://doi.org/10.1109/TMTT.1972.1127860).
+> M. Kirschning, R. H. Jansen and N. H. L. Koster, "Measurement and Computer-Aided Modeling of Microstrip
+> Discontinuities by an Improved Resonator Method," *1983 IEEE MTT-S International Microwave Symposium Digest*,
+> pp. 495–497. DOI [10.1109/MWSYM.1983.1130959](https://doi.org/10.1109/MWSYM.1983.1130959). The square corner's model.
 
-> M. Makimoto and S. Yamashita, "Bandpass Filters Using Parallel Coupled Stripline Stepped Impedance Resonators," *IEEE
-> Transactions on Microwave Theory and Techniques*, vol. 28, no. 12, pp. 1413–1417, December 1980.
-> DOI [10.1109/TMTT.1980.1130258](https://doi.org/10.1109/TMTT.1980.1130258). The SIR profile.
+> M. Kirschning, R. H. Jansen and N. H. L. Koster, "Coupled microstrip parallel-gap model for improved filter and
+> coupler design," *Electronics Letters*, vol. 19, no. 10, pp. 377–379, May 1983.
+> DOI [10.1049/el:19830261](https://doi.org/10.1049/el:19830261). Coupled open ends and gaps (§6).
 
-> J.-S. Hong and M. J. Lancaster, "Couplings of Microstrip Square Open-Loop Resonators for Cross-Coupled Planar
-> Microwave Filters," *IEEE Transactions on Microwave Theory and Techniques*, vol. 44, no. 11, pp. 2099–2109, 1996.
-> DOI [10.1109/22.543968](https://doi.org/10.1109/22.543968). The open loops, their couplings and the cross-coupled square.
-
-> R. N. Bates, "Design of Microstrip Spur-Line Band-Stop Filters," *IEE Journal on Microwaves, Optics and Acoustics*,
-> vol. 1, no. 6, p. 209, 1977. DOI [10.1049/ij-moa.1977.0029](https://doi.org/10.1049/ij-moa.1977.0029).
-
-> J.-S. Hong and M. J. Lancaster, *Microstrip Filters for RF/Microwave Applications*, Wiley, 2001.
-> DOI [10.1002/0471221619](https://doi.org/10.1002/0471221619). Ring resonators, bandstop filters and the
-> coupling-coefficient design method.
-
-> J. Lange, "Interdigitated Stripline Quadrature Hybrid," *IEEE Transactions on Microwave Theory and Techniques*,
-> vol. 17, no. 12, pp. 1150–1151, December 1969. DOI [10.1109/TMTT.1969.1127115](https://doi.org/10.1109/TMTT.1969.1127115).
-
-> W. P. Ou, "Design Equations for an Interdigitated Directional Coupler," *IEEE Transactions on Microwave Theory and
-> Techniques*, vol. 23, no. 2, pp. 253–255, February 1975.
-> DOI [10.1109/TMTT.1975.1128534](https://doi.org/10.1109/TMTT.1975.1128534).
+> R. J. P. Douville and D. S. James, "Experimental Study of Symmetric Microstrip Bends and Their Compensation," *IEEE
+> Transactions on Microwave Theory and Techniques*, vol. 26, no. 3, pp. 175–182, March 1978.
+> DOI [10.1109/TMTT.1978.1129340](https://doi.org/10.1109/TMTT.1978.1129340). The mitred corner's chamfer.
 
 > V. K. Tripathi and H. Lee, "Spectral-Domain Computation of Characteristic Impedances and Multiport Parameters of
 > Multiple Coupled Microstrip Lines," *IEEE Transactions on Microwave Theory and Techniques*, vol. 37, no. 1,
@@ -1709,6 +1687,67 @@ within 0.3 %.
 > C. R. Paul, *Analysis of Multiconductor Transmission Lines*, 2nd ed., Wiley-IEEE Press, 2007.
 > DOI [10.1109/9780470547212](https://doi.org/10.1109/9780470547212). The modal decomposition the N-line section and
 > the MoM quasi-static kernel share.
+
+**Dividers.**
+
+> E. J. Wilkinson, "An N-Way Hybrid Power Divider," *IRE Transactions on Microwave Theory and Techniques*, vol. 8,
+> no. 1, pp. 116–118, January 1960. DOI [10.1109/TMTT.1960.1124668](https://doi.org/10.1109/TMTT.1960.1124668).
+
+> L. I. Parad and R. L. Moynihan, "Split-Tee Power Divider," *IEEE Transactions on Microwave Theory and Techniques*,
+> vol. 13, no. 1, pp. 91–95, January 1965. DOI [10.1109/TMTT.1965.1125934](https://doi.org/10.1109/TMTT.1965.1125934).
+> The unequal split.
+
+> S. B. Cohn, "A Class of Broadband Three-Port TEM-Mode Hybrids," *IEEE Transactions on Microwave Theory and
+> Techniques*, vol. 16, no. 2, pp. 110–116, February 1968.
+> DOI [10.1109/TMTT.1968.1126617](https://doi.org/10.1109/TMTT.1968.1126617). The multi-section divider.
+
+> U. H. Gysel, "A New N-Way Power Divider/Combiner Suitable for High-Power Applications," *MTT-S International Microwave
+> Symposium Digest*, vol. 75, pp. 116–118, 1975. DOI [10.1109/MWSYM.1975.1123301](https://doi.org/10.1109/MWSYM.1975.1123301).
+
+> I. Sakagami, T. Wuren, M. Fujii and M. Tahara, "Compact Multi-Way Power Dividers Similar to the Bagley Polygon,"
+> *2007 IEEE/MTT-S International Microwave Symposium*, pp. 419–422, June 2007.
+> DOI [10.1109/MWSYM.2007.380477](https://doi.org/10.1109/MWSYM.2007.380477). The polygon divider's analysis; G. Bagley's
+> original design is unpublished.
+
+**Hybrids.**
+
+> R. Levy and L. F. Lind, "Synthesis of Symmetrical Branch-Guide Directional Couplers," *IEEE Transactions on Microwave
+> Theory and Techniques*, vol. 16, no. 2, pp. 80–89, February 1968.
+> DOI [10.1109/TMTT.1968.1126612](https://doi.org/10.1109/TMTT.1968.1126612).
+
+> M. Muraguchi, T. Yukitake and Y. Naito, "Optimum Design of 3-dB Branch-Line Couplers Using Microstrip Lines," *IEEE
+> Transactions on Microwave Theory and Techniques*, vol. 31, no. 8, pp. 674–678, August 1983.
+> DOI [10.1109/TMTT.1983.1131568](https://doi.org/10.1109/TMTT.1983.1131568). With Levy and Lind, the synthesis of
+> multi-section branch-line couplers that MBLC's two-section design follows; its arm impedances are derived in §3.2 from
+> the even/odd conditions and checked by the circuit model, not taken from a table in either paper.
+
+> S. March, "A Wideband Stripline Hybrid Ring," *IEEE Transactions on Microwave Theory and Techniques*, vol. 16, no. 6,
+> p. 361, June 1968. DOI [10.1109/TMTT.1968.1126693](https://doi.org/10.1109/TMTT.1968.1126693). The coupled-line rat-race
+> (§3.13).
+
+> K. W. Eccleston and S. H. M. Ong, "Compact Planar Microstripline Branch-Line and Rat-Race Couplers," *IEEE Transactions
+> on Microwave Theory and Techniques*, vol. 51, no. 10, pp. 2119–2125, October 2003.
+> DOI [10.1109/TMTT.2003.817442](https://doi.org/10.1109/TMTT.2003.817442). Compact rings from artificial lines (§3.12).
+
+> J. He and B.-Z. Wang, "Compact rat-race ring coupler with meander high-impedance transmission line and port impedance
+> matching," *The Journal of Engineering*, vol. 2015, no. 8, pp. 252–254, August 2015.
+> DOI [10.1049/joe.2015.0102](https://doi.org/10.1049/joe.2015.0102). A rat-race whose arms are meandered (§3.12).
+
+**Coupled-line parts.**
+
+> J. Lange, "Interdigitated Stripline Quadrature Hybrid," *IEEE Transactions on Microwave Theory and Techniques*,
+> vol. 17, no. 12, pp. 1150–1151, December 1969. DOI [10.1109/TMTT.1969.1127115](https://doi.org/10.1109/TMTT.1969.1127115).
+
+> W. P. Ou, "Design Equations for an Interdigitated Directional Coupler," *IEEE Transactions on Microwave Theory and
+> Techniques*, vol. 23, no. 2, pp. 253–255, February 1975.
+> DOI [10.1109/TMTT.1975.1128534](https://doi.org/10.1109/TMTT.1975.1128534).
+
+> N. Marchand, "Transmission-Line Conversion Transformers," *Electronics*, vol. 17, no. 12, pp. 142–145, December 1944.
+> A trade magazine, with no DOI: [a scan of the issue](https://www.worldradiohistory.com/Archive-Electronics/40s/Electronics-1944-12.pdf).
+
+> K. S. Ang and I. D. Robertson, "Analysis and Design of Impedance-Transforming Planar Marchand Baluns," *IEEE
+> Transactions on Microwave Theory and Techniques*, vol. 49, no. 2, pp. 402–406, February 2001.
+> DOI [10.1109/22.903108](https://doi.org/10.1109/22.903108).
 
 > E. G. Cristal and L. Young, "Theory and Tables of Optimum Symmetrical TEM-Mode Coupled-Transmission-Line Directional
 > Couplers," *IEEE Transactions on Microwave Theory and Techniques*, vol. 13, no. 5, pp. 544–558, September 1965.
@@ -1739,12 +1778,17 @@ within 0.3 %.
 > and Techniques*, vol. 6, no. 2, pp. 232–237, April 1958.
 > DOI [10.1109/TMTT.1958.1124543](https://doi.org/10.1109/TMTT.1958.1124543).
 
-> S. March, "A Wideband Stripline Hybrid Ring," *IEEE Transactions on Microwave Theory and Techniques*, vol. 16, no. 6,
-> p. 361, June 1968. DOI [10.1109/TMTT.1968.1126693](https://doi.org/10.1109/TMTT.1968.1126693). The coupled-line rat-race
-> (§3.14).
+**Lumped realisations.**
 
-> N. Marchand, "Transmission-Line Conversion Transformers," *Electronics*, vol. 17, no. 12, pp. 142–145, December 1944.
-> A trade magazine, with no DOI: [a scan of the issue](https://www.worldradiohistory.com/Archive-Electronics/40s/Electronics-1944-12.pdf).
+> R. W. Vogel, "Analysis and Design of Lumped- and Lumped-Distributed-Element Directional Couplers for MIC and MMIC
+> Applications," *IEEE Transactions on Microwave Theory and Techniques*, vol. 40, no. 2, pp. 253–262, February 1992.
+> DOI [10.1109/22.120097](https://doi.org/10.1109/22.120097). The lumped branch-line coupler (§3.14).
+
+> W. Bakalski, W. Simbürger, H. Knapp, H.-D. Wohlmuth and A. L. Scholtz, "Lumped and Distributed Lattice-Type LC-Baluns,"
+> *2002 IEEE MTT-S International Microwave Symposium Digest*, pp. 209–212.
+> DOI [10.1109/MWSYM.2002.1011595](https://doi.org/10.1109/MWSYM.2002.1011595). The lattice balun (§3.14).
+
+**The radial stub.**
 
 > S. L. March, "Analyzing Lossy Radial-Line Stubs," *IEEE Transactions on Microwave Theory and Techniques*, vol. 33,
 > no. 3, pp. 269–271, March 1985. DOI [10.1109/TMTT.1985.1132997](https://doi.org/10.1109/TMTT.1985.1132997). The
@@ -1754,21 +1798,42 @@ within 0.3 %.
 > Microwave Theory and Techniques*, vol. 32, no. 12, pp. 1652–1655, December 1984.
 > DOI [10.1109/TMTT.1984.1132907](https://doi.org/10.1109/TMTT.1984.1132907).
 
-> M. Kirschning, R. H. Jansen and N. H. L. Koster, "Accurate model for open end effect of microstrip lines,"
-> *Electronics Letters*, vol. 17, no. 3, pp. 123–125, February 1981.
-> DOI [10.1049/el:19810088](https://doi.org/10.1049/el:19810088). The radial stub's effective radius.
+**Filters.**
 
-> K. S. Ang and I. D. Robertson, "Analysis and Design of Impedance-Transforming Planar Marchand Baluns," *IEEE
-> Transactions on Microwave Theory and Techniques*, vol. 49, no. 2, pp. 402–406, February 2001.
-> DOI [10.1109/22.903108](https://doi.org/10.1109/22.903108).
+> S. B. Cohn, "Parallel-Coupled Transmission-Line-Resonator Filters," *IRE Transactions on Microwave Theory and
+> Techniques*, vol. 6, no. 2, pp. 223–231, April 1958. DOI [10.1109/TMTT.1958.1124542](https://doi.org/10.1109/TMTT.1958.1124542).
+> MCRC's Straight, ZigZag and Hairpin test designs.
 
-> K. W. Eccleston and S. H. M. Ong, "Compact Planar Microstripline Branch-Line and Rat-Race Couplers," *IEEE Transactions
-> on Microwave Theory and Techniques*, vol. 51, no. 10, pp. 2119–2125, October 2003.
-> DOI [10.1109/TMTT.2003.817442](https://doi.org/10.1109/TMTT.2003.817442). Compact rings from artificial lines (§3.16).
+> E. G. Cristal and S. Frankel, "Hairpin-Line and Hybrid Hairpin-Line/Half-Wave Parallel-Coupled-Line Filters," *IEEE
+> Transactions on Microwave Theory and Techniques*, vol. 20, no. 11, pp. 719–728, November 1972.
+> DOI [10.1109/TMTT.1972.1127860](https://doi.org/10.1109/TMTT.1972.1127860).
 
-> J. He and B.-Z. Wang, "Compact rat-race ring coupler with meander high-impedance transmission line and port impedance
-> matching," *The Journal of Engineering*, vol. 2015, no. 8, pp. 252–254, August 2015.
-> DOI [10.1049/joe.2015.0102](https://doi.org/10.1049/joe.2015.0102). A rat-race whose arms are meandered (§3.16).
+> M. Makimoto and S. Yamashita, "Bandpass Filters Using Parallel Coupled Stripline Stepped Impedance Resonators," *IEEE
+> Transactions on Microwave Theory and Techniques*, vol. 28, no. 12, pp. 1413–1417, December 1980.
+> DOI [10.1109/TMTT.1980.1130258](https://doi.org/10.1109/TMTT.1980.1130258). The SIR profile.
+
+> J.-S. Hong and M. J. Lancaster, "Couplings of Microstrip Square Open-Loop Resonators for Cross-Coupled Planar
+> Microwave Filters," *IEEE Transactions on Microwave Theory and Techniques*, vol. 44, no. 11, pp. 2099–2109, 1996.
+> DOI [10.1109/22.543968](https://doi.org/10.1109/22.543968). The open loops, their couplings and the cross-coupled square.
+
+> R. N. Bates, "Design of Microstrip Spur-Line Band-Stop Filters," *IEE Journal on Microwaves, Optics and Acoustics*,
+> vol. 1, no. 6, p. 209, 1977. DOI [10.1049/ij-moa.1977.0029](https://doi.org/10.1049/ij-moa.1977.0029).
+
+> J.-S. Hong and M. J. Lancaster, *Microstrip Filters for RF/Microwave Applications*, Wiley, 2001.
+> DOI [10.1002/0471221619](https://doi.org/10.1002/0471221619). Ring resonators, bandstop filters and the
+> coupling-coefficient design method.
+
+> P. I. Richards, "Resistor-Transmission-Line Circuits," *Proceedings of the IRE*, vol. 36, no. 2, pp. 217–220, February
+> 1948. DOI [10.1109/JRPROC.1948.233274](https://doi.org/10.1109/JRPROC.1948.233274). Lumped elements as commensurate
+> stubs, MLAD's Richards and Kuroda designs; Kuroda's identities are textbook material with no DOI.
+
+> G. L. Matthaei, "Design of Wide-Band (and Narrow-Band) Band-Pass Microwave Filters on the Insertion Loss Basis," *IRE
+> Transactions on Microwave Theory and Techniques*, vol. 8, no. 6, pp. 580–593, November 1960.
+> DOI [10.1109/TMTT.1960.1124801](https://doi.org/10.1109/TMTT.1960.1124801). MLAD's quarter-wave stub filters.
+
+> S. B. Cohn, "Direct-Coupled-Resonator Filters," *Proceedings of the IRE*, vol. 45, no. 2, pp. 187–196, February 1957.
+> DOI [10.1109/JRPROC.1957.278389](https://doi.org/10.1109/JRPROC.1957.278389). MLAD's end-coupled resonators and their
+> J-inverter gaps.
 
 > G. L. Matthaei, "Interdigital Band-Pass Filters," *IRE Transactions on Microwave Theory and Techniques*, vol. 10, no. 6,
 > pp. 479–491, November 1962. DOI [10.1109/TMTT.1962.1125556](https://doi.org/10.1109/TMTT.1962.1125556). The interdigital

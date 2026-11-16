@@ -4,7 +4,7 @@ slug: reference/components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Components
 lede: Every component in the standard library — its symbol, what it does, and its parameters.
-keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, MCLINN, coupled lines, multiconductor, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, Wilkinson, MWPD, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox, MCRC, coupled-resonator filter, edge-coupled filter, parallel-coupled filter, hairpin filter, zig-zag filter, SIR, open-loop filter, cross-coupled filter, ring resonator filter, bandstop filter, spurline, lumped, Realization, MRPAD, attenuator, resistive pad, resistive splitter
+keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, MCLINN, coupled lines, multiconductor, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, Wilkinson, MWPD, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox, MCRC, coupled-resonator filter, edge-coupled filter, parallel-coupled filter, hairpin filter, zig-zag filter, SIR, open-loop filter, cross-coupled filter, ring resonator filter, bandstop filter, spurline, lumped, Realization, MRPAD, attenuator, resistive pad, resistive splitter, MRADIAL, radial stub, butterfly stub, MGPD, Gysel, MBPD, Bagley, MTPD, tee divider, MBLC, branch-line, MRRC, rat-race, MCLC, directional coupler, MIDC, Lange, MCBL, balun, Marchand, MSPS, Schiffman, phase shifter, MDLY, delay line, meander, MLAD, ladder, stub filter, stepped-impedance filter, MCLA, interdigital filter, combline filter, pseudo-interdigital, sites, Place Site Parts
 ---
 
 Symbols are rendered from the live drawing engine, with their connection leads and their pins shown
@@ -1435,10 +1435,10 @@ most often left wrong — <code>IncludeCapacitance</code> and <code>er</code> �
 ## Dividers and couplers {#dividers}
 
 Each part here is one RF topology, placed as one component and stated by what you specify rather than by its geometry:
-the port impedance and the centre frequency, and a coupler's coupling. There are eleven: the Wilkinson, Gysel,
-Bagley polygon and tee dividers, the branch-line and rat-race hybrids, the coupled-line coupler, the interdigitated
-coupler, the coupled-line balun, the Schiffman phase shifter and the resistive attenuator and splitter; and a delay
-line, stated by its electrical length.
+the port impedance and the centre frequency, a coupler's coupling, a delay line's electrical length or a pad's
+attenuation. There are twelve: the Wilkinson divider, the branch-line and rat-race hybrids, the Gysel, Bagley polygon
+and tee dividers, the coupled-line coupler, the interdigitated coupler, the coupled-line balun, the Schiffman phase
+shifter, the delay line, and the resistive attenuator and splitter.
 circuitRF works out the lines on the workspace technology's substrate, the same way every time, and the layout draws
 exactly the pieces the circuit model simulates, so the schematic, the layout, LVS and EM all read the same few numbers.
 The parameters panel shows what the specs come out to — the widths, gaps and lengths, and a ring's radius — as values
@@ -1446,16 +1446,19 @@ you read, not type. A lumped part the topology needs, such as a Wilkinson divide
 isolation resistor, is not inside the component: it is an ordinary part on two of its pins, with its own land pattern,
 so it reaches the layout, LVS and the bill of materials as itself.
 
-<a id="sites"></a>**Sites.** Each lumped part a component needs has a *site*: a pair of its pins (a series site) or one pin to
+<a id="sites"></a>**Sites.** A lumped part a component needs has a *site*: a pair of its pins (a series site) or one pin to
 ground (a shunt site), filled by an ordinary part — on a board an SMT resistor, inductor or capacitor, on a die a TFR,
 MIMCAP or SPIRAL, and for a ground or a crossover a VIAGND, a bond wire or an AIRBRIDGE. The parameters panel lists
 every site with the value the design wants there and, where the part sets it, the span between its pins. **Place Site
 Parts**, on the component's context menu and under that list, puts a part of that value on each empty site, wired to its
-pins, as one step you can undo; it leaves a jumper (a bond wire or air bridge) and a balun's load for you. Where the
-span is a parameter (`Gap` on MWPD, MCBL and MRPAD, and on MBLC and MRRC when lumped), it is a length by default; give the component a `Footprint`, in the same
+pins, as one step you can undo; it leaves a jumper (a bond wire or air bridge) and a balun's load for you. The Gysel
+divider's resistors, the coupled-line rat-race's vias and the coupled-line coupler's capacitors and jumpers have no
+site: place them by hand, as on any pin. Where the span is a parameter (`Gap` on MWPD, MCBL, MLAD and MRPAD, and on
+MBLC and MRRC when lumped), it is a length by default; give the component a `Footprint`, in the same
 spelling a resistor's takes, and the span becomes that land's instead, for the run, the layout and LVS alike. The part on
 the site must then have the same footprint: **Update Layout from Schematic** reports one that does not fit, and LVS
-names the site and both footprints.
+names the site and both footprints. A coupled array's sites are to ground and have no span, so its `Footprint` only
+chooses its capacitors' land.
 
 <a id="lumped"></a>**Lumped realisations.** The Wilkinson divider, the two hybrids and the balun also come lumped:
 `Realization` = `Lumped` replaces each quarter-wave line by the inductors and capacitors that equal it at `F`, and every
@@ -2134,6 +2137,43 @@ RO4350B a 3 dB tandem splits within 1 dB of even from 1.7 to 2.8 GHz with its ou
 
 {{table: components/Mclc}}
 
+**References**
+
+> M. Kirschning and R. H. Jansen, "Accurate Wide-Range Design Equations for the Frequency-Dependent Characteristic of
+> Parallel Coupled Microstrip Lines," *IEEE Transactions on Microwave Theory and Techniques*, vol. 32, no. 1, pp. 83–90,
+> January 1984. DOI [10.1109/TMTT.1984.1132616](https://doi.org/10.1109/TMTT.1984.1132616); corrections in vol. 33,
+> no. 3, p. 288, March 1985, DOI [10.1109/TMTT.1985.1133005](https://doi.org/10.1109/TMTT.1985.1133005). The coupled-line
+> model, MCLIN's, the pair is found from.
+
+> D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012, §7.6, coupled-line directional couplers. A book, with
+> no DOI:
+> [the publisher's page](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553).
+
+> E. G. Cristal and L. Young, "Theory and Tables of Optimum Symmetrical TEM-Mode Coupled-Transmission-Line Directional
+> Couplers," *IEEE Transactions on Microwave Theory and Techniques*, vol. 13, no. 5, pp. 544–558, September 1965.
+> DOI [10.1109/TMTT.1965.1126050](https://doi.org/10.1109/TMTT.1965.1126050).
+
+> J. P. Shelton, J. Wolfe and R. C. Van Wagoner, "Tandem Couplers and Phase Shifters for Multi-Octave Bandwidth,"
+> *Microwaves*, April 1965. A trade magazine, with no DOI.
+
+> E. Carpenter, "The Virtues of Mixing Tandem and Cascade Coupler Connections," *1971 IEEE G-MTT International
+> Microwave Symposium Digest*, pp. 8–9. DOI [10.1109/GMTT.1971.1122878](https://doi.org/10.1109/GMTT.1971.1122878).
+
+> M. Dydyk, "Accurate Design of Microstrip Directional Couplers with Capacitive Compensation," *IEEE MTT-S
+> International Microwave Symposium Digest*, 1990, pp. 581–584.
+> DOI [10.1109/MWSYM.1990.99647](https://doi.org/10.1109/MWSYM.1990.99647).
+
+> M. Dydyk, "Microstrip Directional Couplers with Ideal Performance via Single-Element Compensation," *IEEE Transactions
+> on Microwave Theory and Techniques*, vol. 47, no. 6, pp. 956–964, June 1999.
+> DOI [10.1109/22.769332](https://doi.org/10.1109/22.769332).
+
+> R. Phromloungsri, M. Chongcheawchamnan and I. D. Robertson, "Inductively Compensated Parallel Coupled Microstrip Lines
+> and Their Applications," *IEEE Transactions on Microwave Theory and Techniques*, vol. 54, no. 9, pp. 3571–3582,
+> September 2006. DOI [10.1109/TMTT.2006.881026](https://doi.org/10.1109/TMTT.2006.881026).
+
+> A. Podell, "A High Directivity Microstrip Coupler Technique," *1970 G-MTT International Microwave Symposium*,
+> pp. 33–36. DOI [10.1109/GMTT.1970.1122761](https://doi.org/10.1109/GMTT.1970.1122761).
+
 ### Interdigitated Coupler (MIDC) {#midc}
 
 {{symbol: midc}}
@@ -2175,6 +2215,24 @@ a thin substrate: at 50 Ω their fingers are narrower than the coupled-line mode
 refused, while a 25 Ω six-finger coupler builds 3 dB there.
 
 {{table: components/Midc}}
+
+**References**
+
+> M. Kirschning and R. H. Jansen, "Accurate Wide-Range Design Equations for the Frequency-Dependent Characteristic of
+> Parallel Coupled Microstrip Lines," *IEEE Transactions on Microwave Theory and Techniques*, vol. 32, no. 1, pp. 83–90,
+> January 1984. DOI [10.1109/TMTT.1984.1132616](https://doi.org/10.1109/TMTT.1984.1132616); corrections in vol. 33,
+> no. 3, p. 288, March 1985, DOI [10.1109/TMTT.1985.1133005](https://doi.org/10.1109/TMTT.1985.1133005). The coupled-line
+> model, MCLIN's, the pair is found from.
+
+> D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012, §7.7, the Lange coupler. A book, with no DOI:
+> [the publisher's page](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553).
+
+> J. Lange, "Interdigitated Stripline Quadrature Hybrid," *IEEE Transactions on Microwave Theory and Techniques*,
+> vol. 17, no. 12, pp. 1150–1151, December 1969. DOI [10.1109/TMTT.1969.1127115](https://doi.org/10.1109/TMTT.1969.1127115).
+
+> W. P. Ou, "Design Equations for an Interdigitated Directional Coupler," *IEEE Transactions on Microwave Theory and
+> Techniques*, vol. 23, no. 2, pp. 253–255, February 1975.
+> DOI [10.1109/TMTT.1975.1128534](https://doi.org/10.1109/TMTT.1975.1128534).
 
 ### Coupled-Line Balun (MCBL) {#mcbl}
 
@@ -2225,24 +2283,13 @@ input is `Z0`. Unlike the coupled lines, a lattice reaches any `ZL`, 50 Ω on ea
 
 {{table: components/Mcbl}}
 
-**References** (for the three coupled-line parts)
+**References**
 
 > M. Kirschning and R. H. Jansen, "Accurate Wide-Range Design Equations for the Frequency-Dependent Characteristic of
 > Parallel Coupled Microstrip Lines," *IEEE Transactions on Microwave Theory and Techniques*, vol. 32, no. 1, pp. 83–90,
 > January 1984. DOI [10.1109/TMTT.1984.1132616](https://doi.org/10.1109/TMTT.1984.1132616); corrections in vol. 33,
 > no. 3, p. 288, March 1985, DOI [10.1109/TMTT.1985.1133005](https://doi.org/10.1109/TMTT.1985.1133005). The coupled-line
-> model MCLIN and all three parts use.
-
-> D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012, §7.6 and §7.7, coupled-line directional couplers and the Lange
-> coupler. A book, with no DOI:
-> [the publisher's page](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553).
-
-> J. Lange, "Interdigitated Stripline Quadrature Hybrid," *IEEE Transactions on Microwave Theory and Techniques*,
-> vol. 17, no. 12, pp. 1150–1151, December 1969. DOI [10.1109/TMTT.1969.1127115](https://doi.org/10.1109/TMTT.1969.1127115).
-
-> W. P. Ou, "Design Equations for an Interdigitated Directional Coupler," *IEEE Transactions on Microwave Theory and
-> Techniques*, vol. 23, no. 2, pp. 253–255, February 1975.
-> DOI [10.1109/TMTT.1975.1128534](https://doi.org/10.1109/TMTT.1975.1128534).
+> model, MCLIN's, the pair is found from.
 
 > N. Marchand, "Transmission-Line Conversion Transformers," *Electronics*, vol. 17, no. 12, pp. 142–145, December 1944.
 > A trade magazine, with no DOI: [a scan of the issue](https://www.worldradiohistory.com/Archive-Electronics/40s/Electronics-1944-12.pdf).
@@ -2286,32 +2333,7 @@ degree over 1.5:1 there. A tight ρ also needs a narrow gap: 90° needs at least
 
 {{table: components/Msps}}
 
-**References** (for the coupler's options and the phase shifter)
-
-> E. G. Cristal and L. Young, "Theory and Tables of Optimum Symmetrical TEM-Mode Coupled-Transmission-Line Directional
-> Couplers," *IEEE Transactions on Microwave Theory and Techniques*, vol. 13, no. 5, pp. 544–558, September 1965.
-> DOI [10.1109/TMTT.1965.1126050](https://doi.org/10.1109/TMTT.1965.1126050).
-
-> J. P. Shelton, J. Wolfe and R. C. Van Wagoner, "Tandem Couplers and Phase Shifters for Multi-Octave Bandwidth,"
-> *Microwaves*, April 1965. A trade magazine, with no DOI.
-
-> E. Carpenter, "The Virtues of Mixing Tandem and Cascade Coupler Connections," *1971 IEEE G-MTT International
-> Microwave Symposium Digest*, pp. 8–9. DOI [10.1109/GMTT.1971.1122878](https://doi.org/10.1109/GMTT.1971.1122878).
-
-> M. Dydyk, "Accurate Design of Microstrip Directional Couplers with Capacitive Compensation," *IEEE MTT-S
-> International Microwave Symposium Digest*, 1990, pp. 581–584.
-> DOI [10.1109/MWSYM.1990.99647](https://doi.org/10.1109/MWSYM.1990.99647).
-
-> M. Dydyk, "Microstrip Directional Couplers with Ideal Performance via Single-Element Compensation," *IEEE Transactions
-> on Microwave Theory and Techniques*, vol. 47, no. 6, pp. 956–964, June 1999.
-> DOI [10.1109/22.769332](https://doi.org/10.1109/22.769332).
-
-> R. Phromloungsri, M. Chongcheawchamnan and I. D. Robertson, "Inductively Compensated Parallel Coupled Microstrip Lines
-> and Their Applications," *IEEE Transactions on Microwave Theory and Techniques*, vol. 54, no. 9, pp. 3571–3582,
-> September 2006. DOI [10.1109/TMTT.2006.881026](https://doi.org/10.1109/TMTT.2006.881026).
-
-> A. Podell, "A High Directivity Microstrip Coupler Technique," *1970 G-MTT International Microwave Symposium*,
-> pp. 33–36. DOI [10.1109/GMTT.1970.1122761](https://doi.org/10.1109/GMTT.1970.1122761).
+**References**
 
 > B. M. Schiffman, "A New Class of Broad-Band Microwave 90-Degree Phase Shifters," *IRE Transactions on Microwave Theory
 > and Techniques*, vol. 6, no. 2, pp. 232–237, April 1958.
@@ -2418,7 +2440,16 @@ are in the model, and add their own small phase and reactance as the frequency r
 A filter here is one component stated by its **geometry**: the widths, lengths and gaps you or a filter synthesis chose.
 Unlike the dividers and couplers above, nothing is derived from a specification, so the part draws and simulates exactly
 the numbers it holds, on whichever technology it is placed. The layout draws the pieces the circuit model simulates, and
-LVS compares every stored dimension and name.
+LVS compares every stored dimension and name. There are three, each one family of filters:
+
+- the [coupled-resonator filter](#mcrc) (MCRC): edge-coupled, zig-zag, hairpin, open-loop, cross-coupled and ring
+  bandpass filters, and bandstop and spurline filters;
+- the [microstrip ladder](#mlad) (MLAD): an ordered list of lines, gaps, tapers, stubs and lumped parts, which holds the
+  stepped-impedance, stub and end-coupled filters, matchers, transformers and LC ladders;
+- the [coupled array](#mcla) (MCLA): interdigital, combline and pseudo-interdigital filters.
+
+A ladder's and an array's vias, capacitors and lumped parts are [sites](#sites), which **Place Site Parts** fills as it
+does a divider's.
 
 ### Coupled-Resonator Filter (MCRC) {#mcrc}
 
@@ -2651,9 +2682,9 @@ it stands on, and a double-stub matcher on a load of low conductance.
 
 Every coupled-array filter as one part: `N` parallel microstrip strips over one coupled section, every strip coupled to
 every other as in [MCLINN](#mclinen), and each strip end open, shorted, loaded by a capacitor, joined to its neighbour or
-a port. The filter's form is only that pattern of ends. Unlike the parts above, the coupled array stores its geometry —
-widths, gaps, length, taps and loading capacitances — rather than specs, so a design from a filter synthesis or from your
-own calculation goes straight in, and the layout, LVS and EM read the same numbers.
+a port. The filter's form is only that pattern of ends. Like the other filters here, the coupled array stores its
+geometry — widths, gaps, length, taps and loading capacitances — rather than specs, so a design from a filter synthesis
+or from your own calculation goes straight in, and the layout, LVS and EM read the same numbers.
 
 **Forms.** `Form` fills the pattern (strip 1 is the top one; the near end is the left one):
 
