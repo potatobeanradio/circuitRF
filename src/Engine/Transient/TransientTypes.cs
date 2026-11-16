@@ -56,6 +56,13 @@ public sealed record TransientParams
     public TransientSolver Solver { get; init; } = TransientSolver.Native;
     /// <summary>brief TRN-7 — the directive these values were resolved from: the ngspice solver writes its deck from it.</summary>
     public CircuitRF.Core.Design.TransientAnalysis? Directive { get; init; }
+    /// <summary>brief TRN-8 — a harmonic-balance seed's recording: handed the run's interface nodes once the network is stamped,
+    /// it returns the unknowns to record in place of the nets (a node's row is its index − 1; a branch's row as its model last
+    /// stamped it). Null records the nets.</summary>
+    internal Func<int[], int[]>? RecordRows { get; init; }
+    /// <summary>brief TRN-8 — called at every output point with its time and recorded values; true ends the run at that point,
+    /// and the result holds the output grid up to it.</summary>
+    internal Func<double, double[], bool>? StopWhen { get; init; }
 }
 
 /// <summary>brief TRN-7 — the solver a transient analysis runs on (D2).</summary>

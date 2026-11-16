@@ -404,6 +404,8 @@ compression and IM3, and passive intermodulation on the blocks that carry it. Tw
       <tr><td>GuardHarmonic</td><td>Extra guard harmonic(s) beyond <code>MaxHarm</code> for anti-alias safety.</td><td>0</td></tr>
       <tr><td>Lambda</td><td>Newton damping factor (1 = full step; lower damps an unstable solve).</td><td>1</td></tr>
       <tr><td>MaxIter</td><td>Maximum Newton iterations per solve point.</td><td>100</td></tr>
+      <tr><td>InitialGuess</td><td>Where the Newton starts: <code>dc</code> (the DC point, the drive stepped up as DriveStepping says), <code>transient</code> (the last period of a transient run from rest at full drive) or <code>fallback</code> (dc, then transient if that does not converge). See <a href="#hb-transient-start">Starting from a transient run</a>.</td><td>dc</td></tr>
+      <tr><td>SeedTol / SeedPeriods / SeedFastBias</td><td>The transient start's settling tolerance, its length (<code>auto</code>: until settled, at most 200 periods) and whether RF chokes and blocks are scaled in it.</td><td>1e-3 / auto / yes</td></tr>
       <tr><td>SSStart / SSStop / SSNpts / SSStep / SSUnit / SSLog</td><td>The small-signal "tickle" sweep a <a href="components.html#wsprobe">WSProbe</a> is driven over, around the converged large-signal operating point. Absent, there is no small-signal solve and the run is unchanged. See <a href="wsprobe.html#hb">The WSProbe under harmonic balance</a>.</td><td>0.1-10 GHz</td></tr>
       <tr><td>SSMaxHarm</td><td>Sidebands retained in the conversion matrix for that solve.</td><td>= MaxHarm</td></tr>
       <tr><td>MarginThreshold</td><td>As for S-parameters, applied at each operating point.</td><td>-15 dB</td></tr>
@@ -414,6 +416,34 @@ compression and IM3, and passive intermodulation on the blocks that carry it. Tw
     </tbody>
     <caption>Multi-tone analysis adds the extra tones and a mixing order (≥ 5 at two tones, to capture close-in IM products; lower it as tones are added).</caption>
   </table>
+<h3 id="hb-transient-start">Starting from a transient run</h3>
+<p>Harmonic balance starts from the DC point and steps the drive up. Some circuits are a long way from there: a switching PA
+whose devices only conduct at full drive, a hard-driven mixer, a divider whose divided solution cannot be reached by
+turning the drive up gradually. With <code>InitialGuess=transient</code> the run first simulates the circuit in time, from rest, at
+full drive, until one period looks like the next. The last period's spectrum is where Newton starts, with no drive
+stepping. The answer is still harmonic balance's, to its own <code>Tol</code>: the transient run only supplies the start.</p>
+<pre><code>analysis HB1 type=hb Tone=1 ToneUnit=GHz MaxHarm=15 InitialGuess=transient
+</code></pre>
+<ul>
+<li><strong>The transient run.</strong> Its step is a period divided by 8·(MaxHarm + 1). It stops when consecutive periods of every
+waveform at the nonlinear devices agree within <code>SeedTol</code> of the waveform's peak, counting the change still to come at
+the rate the difference is shrinking, so a bias network that is still charging slowly does not count as settled. It
+never runs longer than 200 periods (<code>SeedPeriods=auto</code>); a number runs exactly that many.</li>
+<li><strong>Bias networks.</strong> A choke or a DC block settles over thousands of carrier periods. With <code>SeedFastBias=yes</code> (the
+default) the transient run alone uses smaller values for each inductor whose reactance at the fundamental is more than
+10 times the impedance it sees, and each capacitor whose reactance is less than a tenth of it (measured with the circuit
+at its DC point). Each is scaled to 50 times, or a fiftieth of, that impedance, which it still chokes or blocks, and which
+settles in about eight periods. Harmonic balance then solves the circuit with its real values.</li>
+<li><strong><code>fallback</code></strong> runs harmonic balance as usual and starts it again from a transient run only when it does not converge.</li>
+<li><strong>Tones.</strong> One tone, or several whose products fall on a common fundamental, which the transient run then uses as its
+period. Tones with no common period are refused with <code>transient</code>; <code>fallback</code> starts them from DC and says so.</li>
+<li><strong>Sweeps.</strong> Inside a parametric sweep only the first point is started from a transient run, and any point that does not
+converge from its neighbour's answer. The rest start from their neighbour as before.</li>
+</ul>
+<p>The run adds <code>Seed.Periods</code> (0 for a point that was not seeded), <code>Seed.Settled</code> (1 or 0), <code>Seed.HbIterations</code> (Newton
+iterations from the transient start) and <code>Seed.ScaledElements</code> (each scaled part's factor), and a message saying how the
+transient run went. <code>circuitrf explain --analysis</code> shows the settings, the step, the longest the transient run can take
+and the parts fast bias would scale, without running anything.</p>
 <h3 id="hb-noise">Noise in harmonic balance</h3>
 <p><strong>Computes:</strong> the noise figure of a circuit with a large signal in it — a mixer's SSB and DSB noise figure, an LNA's noise
 figure while a blocker drives it, or a receiver chain's with its LO running. The S-parameter
@@ -542,7 +572,7 @@ negative resistance runs out, which brackets the oscillation, and Newton's metho
 </tr>
 <tr>
 <td><code>Fguess</code></td>
-<td>(required)</td>
+<td>(required unless <code>InitialGuess=transient</code>)</td>
 <td>Where the start-up search is centred, in <code>Unit</code></td>
 </tr>
 <tr>
@@ -565,8 +595,29 @@ negative resistance runs out, which brackets the oscillation, and Newton's metho
 <td>ramp from small</td>
 <td>Amplitude to start from: volts in shunt, amperes in series</td>
 </tr>
+<tr>
+<td><code>InitialGuess</code></td>
+<td>dc</td>
+<td><code>transient</code> starts from a transient run and makes <code>Fguess</code> optional; <code>fallback</code> tries <code>dc</code> first</td>
+</tr>
+<tr>
+<td><code>SeedTol</code>, <code>SeedPeriods</code>, <code>SeedFastBias</code></td>
+<td>1e-3, auto, yes</td>
+<td>As harmonic balance's <a href="#hb-transient-start">transient start</a></td>
+</tr>
+<tr>
+<td><code>KickV</code></td>
+<td>1 % of the largest DC supply</td>
+<td>The kick that starts the transient run, volts</td>
+</tr>
 </tbody>
 </table>
+<p><strong>Starting from a transient run.</strong> With <code>InitialGuess=transient</code> you do not need to know the frequency. The circuit is
+simulated in time from its DC point, with the OscProbe's node held <code>KickV</code> above its DC voltage and released at the start,
+until the oscillation's period and amplitude stop changing (within <code>SeedTol</code>, at most 200 periods). The last cycle's
+frequency, amplitude and waveforms are where the search starts, with no amplitude ramp. Without <code>Fguess</code> the start-up
+search spans 1 kHz to 1 THz and the step of the transient run follows the strongest start-up point it finds. If no
+oscillation settles, the run stops and quotes the start-up search's result, which says whether the circuit starts at all.</p>
 <p><strong>Results.</strong> The run writes the cubes a harmonic-balance analysis writes, at the oscillation (<code>V</code>, <code>I</code>, <code>ToneFreqs</code> and the
 rest), so every HB measurement and Data Display preset works on it. It adds:</p>
 <ul>
@@ -1006,7 +1057,8 @@ density in dBm/Hz.</p>
 <p>Every IProbe gets every row, so the branch axis is the same at every sweep point. A probe that carries
 no RF, such as a supply or bias probe, is blank in the output rows (<code>Gt_dB</code>, <code>DE_pct</code>, <code>NMSE_dB</code>,
 <code>ACLR</code>, <code>PAPR_dB</code>, <code>CCDF</code>, AM-AM, AM-PM and EVM): its fundamental-band power is below 10⁻⁶ of the available
-drive. Its <code>Pprobe_W</code> still reads its DC power.</p>
+drive, or, past a Propagation Channel, of the drive less the channel's own power gain (each channel's |H|² at the
+carrier), so a receiver at the end of a long path is read. Its <code>Pprobe_W</code> still reads its DC power.</p>
 <p>A design with a <a href="wbond.html">wBond</a> also gets <code>WireTemp</code> and <code>WireTempState</code> (axis <code>wire array</code>): each array's
 hottest wire under the record's average heat (<a href="wbond.html#wt-envelope">wBond ▸ In a circuit envelope run</a>).</p>
 <p>A <a href="#parametric-sweep">Parametric Sweep</a> around an envelope analysis (sweeping the source's <code>Pavg</code>, say)

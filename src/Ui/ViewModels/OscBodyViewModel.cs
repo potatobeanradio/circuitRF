@@ -28,6 +28,19 @@ public sealed partial class OscBodyViewModel : ObservableObject
     [ObservableProperty] private string _tol = "1e-6";
     [ObservableProperty] private string _aguess = "";
 
+    // brief TRN-8: where the search starts, and the transient seed's keys (under More).
+    public static IReadOnlyList<string> InitialGuessOptions { get; } =
+        [Analysis.InitialGuessDc, Analysis.InitialGuessTransient, Analysis.InitialGuessFallback];
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(SeedKeysEnabled), nameof(Problem), nameof(IsValid))]
+    private string _initialGuess = Analysis.InitialGuessDc;
+    [ObservableProperty] private string _seedTol = Analysis.SeedTolDefault;
+    [ObservableProperty] private string _seedPeriods = Analysis.SeedPeriodsDefault;
+    [ObservableProperty] private string _kickV = "";
+    [ObservableProperty] private bool _seedFastBias = true;
+    [ObservableProperty] private bool _moreExpanded;
+    public bool SeedKeysEnabled => !Analysis.IsDcStart(InitialGuess);
+    private bool FguessOptional => InitialGuess == Analysis.InitialGuessTransient;
+
     // Brief NZ-10: phase noise.
     [ObservableProperty] private bool _phaseNoise;
     [ObservableProperty] private string _pnStart = OscillatorAnalysis.DefaultPnStart;
@@ -63,6 +76,11 @@ public sealed partial class OscBodyViewModel : ObservableObject
         FftOverSample = a.FFTOverSampleExpr, Tol = a.TolExpr, Aguess = a.AguessExpr,
         PhaseNoise = a.PhaseNoise, PnStart = a.PnStartExpr, PnStop = a.PnStopExpr, PnNpts = a.PnNptsExpr, PnLog = a.PnLog,
         PnPort = a.PnPortExpr.Trim().Length > 0 ? a.PnPortExpr.Trim() : DefaultReadAt,
+        InitialGuess = Analysis.IsDcStart(a.InitialGuess) ? Analysis.InitialGuessDc : a.InitialGuess.Trim().ToLowerInvariant(),
+        SeedTol = a.SeedTolExpr, SeedPeriods = a.SeedPeriodsExpr,
+        KickV = a.KickVExpr.Trim().Equals(Analysis.KickVDefault, System.StringComparison.OrdinalIgnoreCase) ? "" : a.KickVExpr.Trim(),
+        SeedFastBias = !a.SeedFastBias.Trim().Equals("no", System.StringComparison.OrdinalIgnoreCase),
+        MoreExpanded = !Analysis.IsDcStart(a.InitialGuess),
     }.WithPortChoice(a.PnPortExpr.Trim());
 
     /// <summary>A PnPort the bench no longer numbers stays selectable, so opening the dialog never rewrites it.</summary>
@@ -74,12 +92,12 @@ public sealed partial class OscBodyViewModel : ObservableObject
 
     /// <summary>What the run would refuse, or null. Shown, not blocking: a probe may be placed after the analysis is added.</summary>
     public string? Problem =>
-        string.IsNullOrWhiteSpace(Fguess) ? "Give Fguess, where the start-up search is centred."
+        string.IsNullOrWhiteSpace(Fguess) && !FguessOptional ? "Give Fguess, where the start-up search is centred, or start from a transient seed."
         : Probes.Count == 0 ? "Place an OscProbe in the oscillator's loop, or across its resonator with Mode=shunt."
         : Probes.Count > 1 && string.IsNullOrWhiteSpace(Probe) ? "Choose the OscProbe the generator goes at."
         : null;
 
-    public bool IsValid => !string.IsNullOrWhiteSpace(Fguess);
+    public bool IsValid => !string.IsNullOrWhiteSpace(Fguess) || FguessOptional;
 
     public OscillatorAnalysis BuildAnalysis(string name, bool enabled) => new(name)
     {
@@ -92,6 +110,9 @@ public sealed partial class OscBodyViewModel : ObservableObject
         PhaseNoise = PhaseNoise, PnStartExpr = Blank(PnStart, OscillatorAnalysis.DefaultPnStart),
         PnStopExpr = Blank(PnStop, OscillatorAnalysis.DefaultPnStop), PnNptsExpr = Blank(PnNpts, OscillatorAnalysis.DefaultPnNpts),
         PnLog = PnLog, PnPortExpr = PnPort == DefaultReadAt ? "" : (PnPort ?? "").Trim(),
+        InitialGuess = InitialGuess, SeedTolExpr = Blank(SeedTol, Analysis.SeedTolDefault),
+        SeedPeriodsExpr = Blank(SeedPeriods, Analysis.SeedPeriodsDefault), SeedFastBias = SeedFastBias ? "yes" : "no",
+        KickVExpr = Blank(KickV, Analysis.KickVDefault),
     };
 
     private static string Blank(string s, string def) => string.IsNullOrWhiteSpace(s) ? def : s.Trim();

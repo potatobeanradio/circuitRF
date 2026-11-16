@@ -1308,7 +1308,9 @@ public sealed class CnlReader
         result = new OscillatorAnalysis(tokens[0])
         {
             Probe             = kv.GetValueOrDefault("Probe", ""),
-            FguessExpr        = kv.GetValueOrDefault("Fguess", "1"),
+            // brief TRN-8: Fguess is optional with InitialGuess=transient; blank when absent, and the engine refuses a blank one
+            // otherwise.
+            FguessExpr        = kv.GetValueOrDefault("Fguess", ""),
             FstartExpr        = kv.GetValueOrDefault("Fstart", ""),
             FstopExpr         = kv.GetValueOrDefault("Fstop", ""),
             Unit              = kv.GetValueOrDefault("Unit", "GHz"),
@@ -1322,6 +1324,11 @@ public sealed class CnlReader
             PnNptsExpr        = kv.GetValueOrDefault("PnNpts", OscillatorAnalysis.DefaultPnNpts),
             PnLog             = IsYes(kv.GetValueOrDefault("PnLog", "yes")),
             PnPortExpr        = kv.GetValueOrDefault("PnPort", ""),
+            InitialGuess      = kv.GetValueOrDefault("InitialGuess", CircuitRF.Core.Design.Analysis.InitialGuessDc),
+            SeedTolExpr       = kv.GetValueOrDefault("SeedTol", CircuitRF.Core.Design.Analysis.SeedTolDefault),
+            SeedPeriodsExpr   = kv.GetValueOrDefault("SeedPeriods", CircuitRF.Core.Design.Analysis.SeedPeriodsDefault),
+            SeedFastBias      = kv.GetValueOrDefault("SeedFastBias", CircuitRF.Core.Design.Analysis.SeedFastBiasDefault),
+            KickVExpr         = kv.GetValueOrDefault("KickV", CircuitRF.Core.Design.Analysis.KickVDefault),
             Enabled           = ParseEnabledToken(tokens),
         };
         return true;
@@ -2001,6 +2008,11 @@ public sealed class CnlReader
             NoiseOutExpr      = kv.GetValueOrDefault("NoiseOut",      CircuitRF.Core.Design.HarmonicBalanceAnalysis.NoiseOutDefault),
             NoiseSidebandExpr = kv.GetValueOrDefault("NoiseSideband", CircuitRF.Core.Design.HarmonicBalanceAnalysis.NoiseSidebandDefault),
             NoiseContribExpr  = kv.GetValueOrDefault("NoiseContrib",  CircuitRF.Core.Design.Analysis.NoiseContribDefault),
+            // brief TRN-8: the transient seed; every default is the DC start, so a line without these runs as it did.
+            InitialGuess      = kv.GetValueOrDefault("InitialGuess",  CircuitRF.Core.Design.Analysis.InitialGuessDc),
+            SeedTolExpr       = kv.GetValueOrDefault("SeedTol",       CircuitRF.Core.Design.Analysis.SeedTolDefault),
+            SeedPeriodsExpr   = kv.GetValueOrDefault("SeedPeriods",   CircuitRF.Core.Design.Analysis.SeedPeriodsDefault),
+            SeedFastBias      = kv.GetValueOrDefault("SeedFastBias",  CircuitRF.Core.Design.Analysis.SeedFastBiasDefault),
             Enabled           = ParseEnabledToken(tokens),
 #pragma warning disable CS0618
             SweepVarName      = sweepVar,

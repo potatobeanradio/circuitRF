@@ -4,7 +4,7 @@
              x:Class="CircuitRF.Ui.Views.Analyses.OscBodyView"
              x:DataType="vm:OscBodyViewModel">
     <!-- Brief NZ-9: the OscProbe, the start-up search, and the harmonic-balance keys an oscillator shares with HB. -->
-    <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
+    <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
         <TextBlock Grid.Row="0" Grid.Column="0" Text="OscProbe:" FontSize="12" VerticalAlignment="Center"/>
         <ComboBox  Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3" FontSize="12" HorizontalAlignment="Stretch"
                    ItemsSource="{Binding Probes}" SelectedItem="{Binding Probe}" PlaceholderText="the OscProbe on this bench"
@@ -34,27 +34,49 @@
         <TextBlock Grid.Row="4" Grid.Column="2" Text="Aguess:" FontSize="12" VerticalAlignment="Center"/>
         <TextBox   Grid.Row="4" Grid.Column="3" FontSize="12" Text="{Binding Aguess}" PlaceholderText="ramp from small"
                    ToolTip.Tip="The generator amplitude to start from: volts for a shunt OscProbe, amperes for a series one. Blank ramps it up until the negative resistance runs out."/>
+        <!-- brief TRN-8: where the search starts; the seed's keys are under More, below -->
+        <TextBlock Grid.Row="5" Grid.Column="0" Text="Initial guess:" FontSize="12" VerticalAlignment="Center"/>
+        <ComboBox  Grid.Row="5" Grid.Column="1" FontSize="12" HorizontalAlignment="Stretch"
+                   ItemsSource="{x:Static vm:OscBodyViewModel.InitialGuessOptions}" SelectedItem="{Binding InitialGuess}"
+                   ToolTip.Tip="dc: the start-up search about Fguess, then the amplitude ramp. transient: a transient run kicked at the OscProbe gives the frequency, amplitude and waveforms to start from, and Fguess is optional. fallback: dc, then transient if that fails."/>
         <!-- Brief NZ-10: phase noise, from the circuit's own noise sources. Disabled, never hidden, when off. -->
-        <CheckBox  Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="4" FontSize="12" IsChecked="{Binding PhaseNoise, Mode=TwoWay}"
+        <CheckBox  Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="4" FontSize="12" IsChecked="{Binding PhaseNoise, Mode=TwoWay}"
                    Content="Phase noise (PN, AN, each part's share, flicker corner)"
                    ToolTip.Tip="The oscillation's phase and amplitude noise in dBc/Hz over an offset sweep, from every noise source in the circuit; each Port and Term is a load at 290 K."/>
-        <TextBlock Grid.Row="6" Grid.Column="0" Text="PnStart:" FontSize="12" VerticalAlignment="Center" IsEnabled="{Binding PhaseNoise}"/>
-        <TextBox   Grid.Row="6" Grid.Column="1" FontSize="12" Text="{Binding PnStart}" IsEnabled="{Binding PhaseNoise}"
+        <TextBlock Grid.Row="7" Grid.Column="0" Text="PnStart:" FontSize="12" VerticalAlignment="Center" IsEnabled="{Binding PhaseNoise}"/>
+        <TextBox   Grid.Row="7" Grid.Column="1" FontSize="12" Text="{Binding PnStart}" IsEnabled="{Binding PhaseNoise}"
                    ToolTip.Tip="Lowest offset from the carrier, with an optional mHz, Hz, kHz, MHz or GHz."/>
-        <TextBlock Grid.Row="6" Grid.Column="2" Text="PnStop:" FontSize="12" VerticalAlignment="Center" IsEnabled="{Binding PhaseNoise}"/>
-        <TextBox   Grid.Row="6" Grid.Column="3" FontSize="12" Text="{Binding PnStop}" IsEnabled="{Binding PhaseNoise}"
+        <TextBlock Grid.Row="7" Grid.Column="2" Text="PnStop:" FontSize="12" VerticalAlignment="Center" IsEnabled="{Binding PhaseNoise}"/>
+        <TextBox   Grid.Row="7" Grid.Column="3" FontSize="12" Text="{Binding PnStop}" IsEnabled="{Binding PhaseNoise}"
                    ToolTip.Tip="Highest offset from the carrier. Offsets at or beyond half the carrier are NaN."/>
-        <TextBlock Grid.Row="7" Grid.Column="0" Text="Points:" FontSize="12" VerticalAlignment="Center" IsEnabled="{Binding PhaseNoise}"/>
-        <TextBox   Grid.Row="7" Grid.Column="1" FontSize="12" Text="{Binding PnNpts}" IsEnabled="{Binding PhaseNoise}"
+        <TextBlock Grid.Row="8" Grid.Column="0" Text="Points:" FontSize="12" VerticalAlignment="Center" IsEnabled="{Binding PhaseNoise}"/>
+        <TextBox   Grid.Row="8" Grid.Column="1" FontSize="12" Text="{Binding PnNpts}" IsEnabled="{Binding PhaseNoise}"
                    ToolTip.Tip="Number of offsets."/>
-        <CheckBox  Grid.Row="7" Grid.Column="2" Grid.ColumnSpan="2" FontSize="12" IsChecked="{Binding PnLog, Mode=TwoWay}"
+        <CheckBox  Grid.Row="8" Grid.Column="2" Grid.ColumnSpan="2" FontSize="12" IsChecked="{Binding PnLog, Mode=TwoWay}"
                    IsEnabled="{Binding PhaseNoise}" Content="Log spacing"
                    ToolTip.Tip="Offsets evenly spaced in log-frequency; off spaces them linearly."/>
-        <TextBlock Grid.Row="8" Grid.Column="0" Text="Read at:" FontSize="12" VerticalAlignment="Center" IsEnabled="{Binding PhaseNoise}"/>
-        <ComboBox  Grid.Row="8" Grid.Column="1" Grid.ColumnSpan="3" FontSize="12" HorizontalAlignment="Stretch"
+        <TextBlock Grid.Row="9" Grid.Column="0" Text="Read at:" FontSize="12" VerticalAlignment="Center" IsEnabled="{Binding PhaseNoise}"/>
+        <ComboBox  Grid.Row="9" Grid.Column="1" Grid.ColumnSpan="3" FontSize="12" HorizontalAlignment="Stretch"
                    ItemsSource="{Binding PnPortChoices}" SelectedItem="{Binding PnPort}" IsEnabled="{Binding PhaseNoise}"
                    ToolTip.Tip="The Port or Term (by Num) the noise is read at. The first row reads it across a shunt OscProbe, or at the circuit's one port when the OscProbe is in series."/>
-        <TextBlock Grid.Row="9" Grid.Column="0" Grid.ColumnSpan="4" FontSize="11" Foreground="{DynamicResource CrfWarningBrush}"
+        <!-- brief TRN-8: the transient seed's keys, enabled when InitialGuess asks for a seed -->
+        <Expander  Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="4" Header="More" FontSize="11" IsExpanded="{Binding MoreExpanded}">
+            <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8"
+                  Margin="0,6,0,0" IsEnabled="{Binding SeedKeysEnabled}">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Seed tol:" FontSize="12" VerticalAlignment="Center"/>
+                <TextBox   Grid.Row="0" Grid.Column="1" FontSize="12" Text="{Binding SeedTol}"
+                           ToolTip.Tip="Consecutive cycles' period and amplitude must agree within this, relative."/>
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="Seed periods:" FontSize="12" VerticalAlignment="Center"/>
+                <TextBox   Grid.Row="0" Grid.Column="3" FontSize="12" Text="{Binding SeedPeriods}"
+                           ToolTip.Tip="auto runs until steady, at most 200 periods; a number runs that many."/>
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Kick:" FontSize="12" VerticalAlignment="Center"/>
+                <TextBox   Grid.Row="1" Grid.Column="1" FontSize="12" Text="{Binding KickV}" PlaceholderText="1 % of the supply"
+                           ToolTip.Tip="Volts added to the OscProbe's node through the DC solve and released at t = 0+. auto is 1 % of the largest DC supply."/>
+                <CheckBox  Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="4" FontSize="12" IsChecked="{Binding SeedFastBias, Mode=TwoWay}"
+                           Content="Fast bias (scale RF chokes and blocks in the seed run)"/>
+            </Grid>
+        </Expander>
+        <TextBlock Grid.Row="11" Grid.Column="0" Grid.ColumnSpan="4" FontSize="11" Foreground="{DynamicResource CrfWarningBrush}"
                    Text="{Binding Problem}" TextTrimming="CharacterEllipsis" MinHeight="15"/>
     </Grid>
 </UserControl>

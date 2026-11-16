@@ -5062,6 +5062,13 @@ rest of its `Pn*` keys are kept). `explain --analysis` adds the offsets and the 
 reports keys that do not resolve or name nowhere to read (`check.osc.phase-noise`, the run's own `osc.pn.*` sentence). The
 engine's half is `docs/design/hb-noise.md` §10.
 
+**A transient start (brief TRN-8).** `InitialGuess=transient` on an `osc` makes `Fguess` optional (blank, it is not written,
+and a missing one without the seed is `osc.no-fguess`); a seed that settles into no oscillation is `osc.seed-no-oscillation`,
+quoting the start-up search. On an `hb` or `osc` whose `InitialGuess` is not `dc`, `explain --analysis` prints `Seed:` lines
+(`seed` in `--json`): the settings, the step T/(8(K+1)) and the longest the seed can run, an oscillator's kick and the
+frequency its step follows, and the chokes and blocks fast bias would scale (`HbTransientSeed.FastBiasPlan`, which the run
+calls) — or the run's refusal of a malformed key. Nothing is solved. `docs/design/transient.md` §10.
+
 ## 40. The shipped examples: `reference examples` and `new example`
 
 `circuitrf reference examples [name]` is a generated reference topic, so it is also the MCP resource

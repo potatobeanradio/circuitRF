@@ -61,3 +61,18 @@ length.
 ## Not here
 
 A shooting (periodic-steady-state) analysis, seeding envelope runs, seeding loadpull beyond what its HB points inherit.
+
+## Completion note (2026-11-15)
+
+Built as specified, with these choices. The settle test extrapolates the period-to-period change (Δ/(1 − ρ)) because plain
+consecutive-period agreement passes a slowly charging bias network. Fast bias scales chokes and blocks to a reactance ratio of
+50 (an 8-period time constant against the impedance seen): 20 settled faster but left the seed far enough off to double the
+Newton iterations. Harmonic balance's line search converges every hard-driven stage tried from DC, so gate 1 states an
+iteration budget (`MaxIter=20`), as an existing drive-stepping test does. An oscillator's seed uses the small-signal start-up
+frequency (a 1 kHz to 1 THz search without Fguess) for its step, cuts the probe signal into cycles and settles on period and
+amplitude. The native transient could not run any BJT circuit (its interface Newton condensed a singular linear partition at the
+transistor's internal nodes); `Auto` now takes the full path there, which gate 5 needed. An idle OscProbe now steps in transient.
+Gates: `tests/Engine.Tests/HarmonicBalance/TransientSeedTests.cs` (gates 1-4, incommensurate tones, the sweep) and
+`tests/Ui.Tests/Transient/TransientSeedSurfaceTests.cs` (gate 5 on the shipped VCO, the keys through .cnl, .csch and both cards,
+malformed keys). Findings in `src/Engine/RESOLVED.md`; design in `docs/design/transient.md` §10.3a and
+`docs/design/harmonic-balance.md` §10.

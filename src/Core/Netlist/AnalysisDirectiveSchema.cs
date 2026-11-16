@@ -206,6 +206,10 @@ public static partial class AnalysisDirectiveSchema
             new("NoiseOut",   Default: "2",   Summary: "The port the output noise is read at."),
             new("NoiseSideband", Default: "0",Summary: "The input sideband carrying the signal: the input frequency is f_out + k*f0. 0 for an amplifier; +1 for f_IF = f_RF - f_LO; -1 for f_IF = f_LO - f_RF. A multi-tone run takes one integer per tone, comma-separated (k1,k2). The image is the negated sideband. explain prints the input frequency at the first and last output point."),
             new("NoiseContrib", Default: "no",Summary: "yes adds NFc [ssfreq, part] (each part's share of F - 1, SSB; the input termination's other sidebands are one entry, so F - 1 is their sum) and NFpct (the same as a percentage of F - 1) to a Noise=yes run."),
+            new("InitialGuess", Default: "dc", Summary: "Where the Newton starts: dc (the DC point, the drive stepped up as DriveStepping says), transient (the last period of a native transient run from rest at full drive, no drive stepping; one tone, or tones on a common fundamental) or fallback (dc, then the transient seed if that does not converge). In a parametric sweep only the first point and a point that fails are seeded. Adds Seed.Periods, Seed.Settled, Seed.HbIterations and Seed.ScaledElements."),
+            new("SeedTol",    Default: "1e-3", Summary: "The seed runs until consecutive periods of every interface waveform agree within this, relative to its peak, with the change still to come (extrapolated from how fast it shrinks) included."),
+            new("SeedPeriods",Default: "auto", Summary: "auto runs the seed until it settles, at most 200 periods; a number runs that many."),
+            new("SeedFastBias",Default: "yes", Summary: "yes scales each RF choke (|X| > 10x the impedance it sees at the fundamental, at the DC point) and block (|X| < 0.1x) in the seed run only, to 20x, so it settles in a few periods. Harmonic balance solves the unscaled circuit."),
         ], RequiredOneOf: [["Tone", "Tone[1]"]]),
 
         new("loadpull", ["lp"],
@@ -315,7 +319,7 @@ public static partial class AnalysisDirectiveSchema
         new("osc", ["oscillator"],
         [
             new("Probe",         Summary: "Instance name of the OscProbe the auxiliary generator is inserted at (X1, or CORE.X1 inside a cell). Blank when the circuit holds exactly one."),
-            new("Fguess",        Required: true, Summary: "Where the start-up search is centred, in Unit."),
+            new("Fguess",        Summary: "Where the start-up search is centred, in Unit. Required unless InitialGuess=transient."),
             new("Fstart",        Summary: "Low end of the start-up search, in Unit. Default half of Fguess."),
             new("Fstop",         Summary: "High end of the start-up search, in Unit. Default 1.5 x Fguess."),
             new("Unit",          Default: "GHz", Summary: "Unit for Fguess, Fstart and Fstop."),
@@ -330,6 +334,11 @@ public static partial class AnalysisDirectiveSchema
             new("PnNpts",        Default: "61",     Summary: "Number of offsets."),
             new("PnLog",         Default: "yes",    Summary: "yes: offsets evenly spaced in log-frequency; no: linearly."),
             new("PnPort",        Summary: "Num of the Port or Term the noise is read at. Blank reads it across a shunt OscProbe, or at the circuit's one Port or Term when the OscProbe is in series."),
+            new("InitialGuess",  Default: "dc", Summary: "dc: the start-up search about Fguess, then the amplitude ramp. transient: a native transient run kicked at the OscProbe's node until the oscillation is steady; its frequency (level crossings), amplitude and waveforms start the solve, and Fguess is optional (without it the start-up search spans 1 kHz to 1 THz). fallback: dc, then transient if that fails."),
+            new("SeedTol",       Default: "1e-3", Summary: "As HB's: consecutive periods of the seed must agree within this, relative."),
+            new("SeedPeriods",   Default: "auto", Summary: "As HB's: auto runs until steady, at most 200 periods after the oscillation has grown; a number runs that many periods in all."),
+            new("SeedFastBias",  Default: "yes", Summary: "As HB's, at the small-signal start-up frequency."),
+            new("KickV",         Default: "auto", Summary: "The kick at the OscProbe's node, held through the DC solve and released at t = 0+, volts. auto is 1 % of the largest DC supply."),
         ]),
     ];
 

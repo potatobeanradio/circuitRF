@@ -320,6 +320,8 @@ compression and IM3, and passive intermodulation on the blocks that carry it. Tw
       <tr><td>GuardHarmonic</td><td>Extra guard harmonic(s) beyond <code>MaxHarm</code> for anti-alias safety.</td><td>0</td></tr>
       <tr><td>Lambda</td><td>Newton damping factor (1 = full step; lower damps an unstable solve).</td><td>1</td></tr>
       <tr><td>MaxIter</td><td>Maximum Newton iterations per solve point.</td><td>100</td></tr>
+      <tr><td>InitialGuess</td><td>Where the Newton starts: <code>dc</code> (the DC point, the drive stepped up as DriveStepping says), <code>transient</code> (the last period of a transient run from rest at full drive) or <code>fallback</code> (dc, then transient if that does not converge). See <a href="#hb-transient-start">Starting from a transient run</a>.</td><td>dc</td></tr>
+      <tr><td>SeedTol / SeedPeriods / SeedFastBias</td><td>The transient start's settling tolerance, its length (<code>auto</code>: until settled, at most 200 periods) and whether RF chokes and blocks are scaled in it.</td><td>1e-3 / auto / yes</td></tr>
       <tr><td>SSStart / SSStop / SSNpts / SSStep / SSUnit / SSLog</td><td>The small-signal "tickle" sweep a <a href="components.html#wsprobe">WSProbe</a> is driven over, around the converged large-signal operating point. Absent, there is no small-signal solve and the run is unchanged. See <a href="wsprobe.html#hb">The WSProbe under harmonic balance</a>.</td><td>0.1-10 GHz</td></tr>
       <tr><td>SSMaxHarm</td><td>Sidebands retained in the conversion matrix for that solve.</td><td>= MaxHarm</td></tr>
       <tr><td>MarginThreshold</td><td>As for S-parameters, applied at each operating point.</td><td>-15 dB</td></tr>
@@ -330,6 +332,38 @@ compression and IM3, and passive intermodulation on the blocks that carry it. Tw
     </tbody>
     <caption>Multi-tone analysis adds the extra tones and a mixing order (≥ 5 at two tones, to capture close-in IM products; lower it as tones are added).</caption>
   </table>
+
+### Starting from a transient run {#hb-transient-start}
+
+Harmonic balance starts from the DC point and steps the drive up. Some circuits are a long way from there: a switching PA
+whose devices only conduct at full drive, a hard-driven mixer, a divider whose divided solution cannot be reached by
+turning the drive up gradually. With `InitialGuess=transient` the run first simulates the circuit in time, from rest, at
+full drive, until one period looks like the next. The last period's spectrum is where Newton starts, with no drive
+stepping. The answer is still harmonic balance's, to its own `Tol`: the transient run only supplies the start.
+
+```
+analysis HB1 type=hb Tone=1 ToneUnit=GHz MaxHarm=15 InitialGuess=transient
+```
+
+- **The transient run.** Its step is a period divided by 8·(MaxHarm + 1). It stops when consecutive periods of every
+  waveform at the nonlinear devices agree within `SeedTol` of the waveform's peak, counting the change still to come at
+  the rate the difference is shrinking, so a bias network that is still charging slowly does not count as settled. It
+  never runs longer than 200 periods (`SeedPeriods=auto`); a number runs exactly that many.
+- **Bias networks.** A choke or a DC block settles over thousands of carrier periods. With `SeedFastBias=yes` (the
+  default) the transient run alone uses smaller values for each inductor whose reactance at the fundamental is more than
+  10 times the impedance it sees, and each capacitor whose reactance is less than a tenth of it (measured with the circuit
+  at its DC point). Each is scaled to 50 times, or a fiftieth of, that impedance, which it still chokes or blocks, and which
+  settles in about eight periods. Harmonic balance then solves the circuit with its real values.
+- **`fallback`** runs harmonic balance as usual and starts it again from a transient run only when it does not converge.
+- **Tones.** One tone, or several whose products fall on a common fundamental, which the transient run then uses as its
+  period. Tones with no common period are refused with `transient`; `fallback` starts them from DC and says so.
+- **Sweeps.** Inside a parametric sweep only the first point is started from a transient run, and any point that does not
+  converge from its neighbour's answer. The rest start from their neighbour as before.
+
+The run adds `Seed.Periods` (0 for a point that was not seeded), `Seed.Settled` (1 or 0), `Seed.HbIterations` (Newton
+iterations from the transient start) and `Seed.ScaledElements` (each scaled part's factor), and a message saying how the
+transient run went. `circuitrf explain --analysis` shows the settings, the step, the longest the transient run can take
+and the parts fast bias would scale, without running anything.
 
 ### Noise in harmonic balance {#hb-noise}
 
@@ -417,11 +451,21 @@ negative resistance runs out, which brackets the oscillation, and Newton's metho
 | Key | Default | |
 |---|---|---|
 | `Probe` | the only OscProbe | Which OscProbe, when there are several |
-| `Fguess` | (required) | Where the start-up search is centred, in `Unit` |
+| `Fguess` | (required unless `InitialGuess=transient`) | Where the start-up search is centred, in `Unit` |
 | `Fstart`, `Fstop` | Fguess/2, 1.5·Fguess | The start-up search's span |
 | `Unit` | GHz | Unit of the three frequencies |
 | `MaxHarm`, `FFTOverSample`, `Tol` | 7, 1, 1e-6 | As [harmonic balance](#harmonic-balance)'s |
 | `Aguess` | ramp from small | Amplitude to start from: volts in shunt, amperes in series |
+| `InitialGuess` | dc | `transient` starts from a transient run and makes `Fguess` optional; `fallback` tries `dc` first |
+| `SeedTol`, `SeedPeriods`, `SeedFastBias` | 1e-3, auto, yes | As harmonic balance's [transient start](#hb-transient-start) |
+| `KickV` | 1 % of the largest DC supply | The kick that starts the transient run, volts |
+
+**Starting from a transient run.** With `InitialGuess=transient` you do not need to know the frequency. The circuit is
+simulated in time from its DC point, with the OscProbe's node held `KickV` above its DC voltage and released at the start,
+until the oscillation's period and amplitude stop changing (within `SeedTol`, at most 200 periods). The last cycle's
+frequency, amplitude and waveforms are where the search starts, with no amplitude ramp. Without `Fguess` the start-up
+search spans 1 kHz to 1 THz and the step of the transient run follows the strongest start-up point it finds. If no
+oscillation settles, the run stops and quotes the start-up search's result, which says whether the circuit starts at all.
 
 **Results.** The run writes the cubes a harmonic-balance analysis writes, at the oscillation (`V`, `I`, `ToneFreqs` and the
 rest), so every HB measurement and Data Display preset works on it. It adds:

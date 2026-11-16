@@ -1873,3 +1873,12 @@ src/RfCore/Spice/RawFileReader.cs|the rawfile lists its variables before saying 
 src/RfCore/Spice/RawFileReader.cs|the rawfile's binary data stops short: {nPoints} points of {nVars} variables need {need} bytes, {data.Length - pos} remain
 src/RfCore/Spice/RawFileReader.cs|the rawfile's header does not give its variables and points
 src/RfCore/Spice/RawFileReader.cs|the rawfile's values stop at point {p}
+# brief TRN-8 — the transient seed's key refusals and the incommensurate-tone refusal.
+src/Engine/HarmonicBalance/HbEngine.cs|HB: InitialGuess=transient needs one tone, or tones whose products fall on a common fundamental; {tones} have 
+src/Engine/HarmonicBalance/HbTransientSeed.cs|{who}: InitialGuess must be dc, transient or fallback, not '{initialGuess}'.
+src/Engine/HarmonicBalance/HbTransientSeed.cs|{who}: KickV must be a non-zero voltage or auto, not '{kickV}'.
+src/Engine/HarmonicBalance/HbTransientSeed.cs|{who}: SeedFastBias must be yes or no, not '{seedFastBias}'.
+src/Engine/HarmonicBalance/HbTransientSeed.cs|{who}: SeedPeriods must be auto or a whole number of periods from 3 to {MaxPeriods}, not '{seedPeriods}'.
+src/Engine/HarmonicBalance/HbTransientSeed.cs|{who}: SeedTol must be a number between 0 and 1, not '{seedTol}'.
+src/Engine/HarmonicBalance/HbTransientSeed.cs|{who}: the seed needs a fundamental frequency.
+src/Engine/HarmonicBalance/HbTransientSeed.cs|{who}: the seed run ended before one whole period.

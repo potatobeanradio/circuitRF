@@ -205,6 +205,16 @@ public sealed partial class HbBodyViewModel : ObservableObject
     /// </summary>
     [ObservableProperty] private string _marginThresholdExpr = Analysis.MarginThresholdDefault;
 
+    // ── brief TRN-8: where the Newton starts, and the transient seed's keys (under Advanced) ──
+    /// <summary>The <c>InitialGuess=</c> words, as the directive spells them.</summary>
+    public static readonly string[] InitialGuessOptions = [Analysis.InitialGuessDc, Analysis.InitialGuessTransient, Analysis.InitialGuessFallback];
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(SeedKeysEnabled))] private string _initialGuess = Analysis.InitialGuessDc;
+    [ObservableProperty] private string _seedTolExpr     = Analysis.SeedTolDefault;
+    [ObservableProperty] private string _seedPeriodsExpr = Analysis.SeedPeriodsDefault;
+    [ObservableProperty] private bool   _seedFastBias    = true;
+    /// <summary>The seed keys mean something only when a seed can run.</summary>
+    public bool SeedKeysEnabled => !Analysis.IsDcStart(InitialGuess);
+
     // ── Advanced: Newton / convergence ────────────────────────────────────────
     [ObservableProperty] private bool   _advancedExpanded    = false;
     [ObservableProperty] private string _fftOverSampleExpr   = "1";
@@ -512,6 +522,10 @@ public sealed partial class HbBodyViewModel : ObservableObject
                 SsLogExpr         = SsLog ? "true" : "",
                 SsMaxHarmExpr     = SsMaxHarmExpr,
                 MarginThresholdExpr = MarginThresholdExpr,
+                InitialGuess      = InitialGuess,
+                SeedTolExpr       = SeedTolExpr.Trim().Length > 0 ? SeedTolExpr.Trim() : Analysis.SeedTolDefault,
+                SeedPeriodsExpr   = SeedPeriodsExpr.Trim().Length > 0 ? SeedPeriodsExpr.Trim() : Analysis.SeedPeriodsDefault,
+                SeedFastBias      = SeedFastBias ? "yes" : "no",
                 NoiseExpr         = NoiseExpr,
                 NoiseInExpr       = NoiseInExpr,
                 NoiseOutExpr      = NoiseOutExpr,
@@ -537,6 +551,10 @@ public sealed partial class HbBodyViewModel : ObservableObject
                 SsLogExpr         = SsLog ? "true" : "",
                 SsMaxHarmExpr     = SsMaxHarmExpr,
                 MarginThresholdExpr = MarginThresholdExpr,
+                InitialGuess      = InitialGuess,
+                SeedTolExpr       = SeedTolExpr.Trim().Length > 0 ? SeedTolExpr.Trim() : Analysis.SeedTolDefault,
+                SeedPeriodsExpr   = SeedPeriodsExpr.Trim().Length > 0 ? SeedPeriodsExpr.Trim() : Analysis.SeedPeriodsDefault,
+                SeedFastBias      = SeedFastBias ? "yes" : "no",
                 NoiseExpr         = NoiseExpr,
                 NoiseInExpr       = NoiseInExpr,
                 NoiseOutExpr      = NoiseOutExpr,
@@ -605,6 +623,12 @@ public sealed partial class HbBodyViewModel : ObservableObject
         vm.GuardHarmonicExpr = hb.GuardHarmonicExpr;
         vm.LambdaExpr        = hb.LambdaExpr;
         vm.MaxIterExpr       = hb.MaxIterExpr;
+        vm.InitialGuess      = Analysis.IsDcStart(hb.InitialGuess) ? Analysis.InitialGuessDc : hb.InitialGuess.Trim().ToLowerInvariant();
+        vm.SeedTolExpr       = hb.SeedTolExpr;
+        vm.SeedPeriodsExpr   = hb.SeedPeriodsExpr;
+        vm.SeedFastBias      = !hb.SeedFastBias.Trim().Equals("no", StringComparison.OrdinalIgnoreCase);
+        vm.AdvancedExpanded  = vm.AdvancedExpanded || vm.SeedKeysEnabled && (hb.SeedTolExpr != Analysis.SeedTolDefault
+                               || hb.SeedPeriodsExpr != Analysis.SeedPeriodsDefault || !vm.SeedFastBias);
 
         // Small-signal
         vm.SsStartExpr          = hb.SsStartExpr;

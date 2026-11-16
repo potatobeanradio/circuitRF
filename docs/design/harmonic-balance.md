@@ -396,6 +396,18 @@ A good first guess is decisive (deck slides 13, 16 — Newton converges fast fro
 1. **DC operating point first.** Solve the **nonlinear DC** problem at the interface — the k = 0 balance alone — using the **Phase-3 nonlinear-DC solver** (`nonlinear-dc.md`): Newton on the `Evaluate` contract with `gmin` continuity and **`DcBiasStepping`** (the bias-supply ramp, default `IfNecessary`). This is already built and validated (Phase 3's hero converged to vds ≈ 47.0 V); **Phase 4 calls it, it does not re-implement it.** This is the bias point the deck initializes from (`Vds[0]=48 V`, `Vgs[0]=−3.05 V` in slide 28).
 2. **Seed the harmonics small.** Set the fundamental and higher harmonics to a small perturbation (the deck's `1e-3`), not zero — a pure-DC guess gives the Jacobian no harmonic signal to work from. Slide 28 shows this `1e-3` seed converging to `< 1e-10` total error in ~7 iterations at K = 5.
 3. **Or continue from a neighbor.** Under a sweep (power, Γ), the converged `V` of the previous point is a far better seed than the cold DC start — see §11.
+4. **Or start from a transient run (brief TRN-8, `InitialGuess=transient|fallback`).** `HbTransientSeed` runs the native
+   transient engine from the DC point at full drive, step T/(8(K+1)), until consecutive periods of every interface waveform
+   agree within `SeedTol` with the change still to come (the last change over 1 − ρ, ρ the least-squares ratio of the last two
+   period-to-period difference waveforms) included, at most 200 periods; the last period's DFT on the run's own time origin is
+   `V[N, K+1]` in the full-amplitude convention of §5, handed to the single-tone Newton as its start with drive stepping off.
+   `transient` seeds a cold point (a warm-started sweep point is seeded only if it fails); `fallback` seeds after the DC start
+   (and any ramp `DriveStepping` allows) fails. Commensurate tones run on the single-tone path (§6) and are seeded on their
+   common fundamental; tones with none are refused (`transient`) or start from DC with a note (`fallback`). With
+   `SeedFastBias=yes` each choke (|X_L| > 10 |Z_seen|) and block (|X_C| < |Z_seen|/10), Z_seen the impedance across the part at
+   the fundamental with the circuit linearised at its DC point, is scaled in the seed run only to a ratio of 50 (a time
+   constant against Z_seen of 50/2π ≈ 8 periods). `Seed.*` cubes and a note report it. The full description, and the
+   oscillator's kicked seed, are `docs/design/transient.md` §10.
 
 The nonlinear-DC solver is **owned by Phase 3** (`nonlinear-dc.md`) — it is the Newton-on-`Evaluate` problem with the same `(i, q→0 at DC, dg)` contract and `gmin` continuity the linear DC formulation underlies. The linear note owns the *linear* DC; Phase 3 owns the *nonlinear* DC; **this note (Phase 4) consumes the nonlinear-DC solve as its k = 0 seed.** (Earlier drafts, written when HB was Phase 3, described building the nonlinear DC here — that work is done; Phase 4 only calls it.)
 

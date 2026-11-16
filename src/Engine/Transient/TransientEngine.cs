@@ -193,7 +193,10 @@ public sealed class TransientEngine
         {
             TransientNewtonPath.Interface => true,
             TransientNewtonPath.Full => false,
-            _ => _nIf <= InterfaceThreshold,
+            // brief TRN-8: the interface path condenses the linear partition, which is singular at a node only a device touches
+            // (a BJT's internal collector, base and emitter, joined to its terminals by its own ohmic ports): every BJT run failed
+            // at t = 0 until the full path was taken there.
+            _ => _nIf <= InterfaceThreshold && _ifRows.All(LinearlyTouched),
         };
 
         // ── the step bound ───────────────────────────────────────────────
@@ -216,7 +219,9 @@ public sealed class TransientEngine
         _lines?.Start(x0);
 
         // ── the recorded quantities ──────────────────────────────────────
-        var rec = RecordedNodes();
+        var rec = p.RecordRows is { } rows
+            ? [.. rows([.. ex.InterfaceNodes]).Select(r => ($"row{r}", r))]
+            : RecordedNodes();
         int nRec = rec.Length, nPr = probeNames.Length;
         double Rec(double[] x, int r) => r >= 0 ? x[r] : 0.0;
         double[] Snap(double[] x)
@@ -231,7 +236,11 @@ public sealed class TransientEngine
         int nOut = tOut.Length;
         var outVals = new double[nOut][];
         int nextOut = 0;
-        while (nextOut < nOut && tOut[nextOut] <= 0) outVals[nextOut++] = Snap(x0);
+        while (nextOut < nOut && tOut[nextOut] <= 0)
+        {
+            outVals[nextOut++] = Snap(x0);
+            p.StopWhen?.Invoke(tOut[nextOut - 1], outVals[nextOut - 1]);   // the start is never where a seed settles
+        }
 
         var stepTimes = p.SaveSteps ? new List<double> { 0.0 } : null;
         var stepVals = p.SaveSteps ? new List<double[]> { Snap(x0)[..nRec] } : null;
@@ -281,6 +290,7 @@ public sealed class TransientEngine
         string lastFailure = "";
         control?.BeginStage("Transient", 1000, "");
         long lastTick = 0;
+        bool stopped = false;
 
         while (t < p.StopS * (1 - 1e-15))
         {
@@ -366,7 +376,10 @@ public sealed class TransientEngine
             {
                 outVals[nextOut] = Interpolate(tOut[nextOut], prev2T, prev2Snap, prevT, prevSnap, tNew, snap);
                 nextOut++;
+                // brief TRN-8 — a seed that has settled ends the run at this output point
+                if (p.StopWhen is { } stop && stop(tOut[nextOut - 1], outVals[nextOut - 1])) { nOut = nextOut; stopped = true; break; }
             }
+            if (stopped) break;
             stepTimes?.Add(tNew);
             stepVals?.Add(snap[..nRec]);
             stepKinds?.Add(be ? 'E' : p.Method == TransientMethod.Trap ? 'T' : 'G');
@@ -421,7 +434,7 @@ public sealed class TransientEngine
         }
         var r = new TransientRunResult
         {
-            Time = tOut, NodeNames = [.. rec.Select(z => z.name)], V = V, ProbeNames = probeNames, I = I, P = Pw, VProbe = Vp,
+            Time = tOut.Length == nOut ? tOut : tOut[..nOut], NodeNames = [.. rec.Select(z => z.name)], V = V, ProbeNames = probeNames, I = I, P = Pw, VProbe = Vp,
             OpV = [.. rec.Select(z => Rec(x0, z.row))],
             StepTime = stepTimes?.ToArray(), StepV = stepVals?.ToArray(), StepMethod = stepKinds?.ToArray(),
             AcceptedSteps = accepted, RejectedSteps = rejected, NewtonIterations = _newton, Factorizations = _factorizations,
@@ -1283,6 +1296,18 @@ public sealed class TransientEngine
             st.Zcol[j] = z;
             for (int i = 0; i < _nIf; i++) st.Zp[i, j] = z[_ifRows[i]];
         }
+    }
+
+    /// <summary>Whether the linear partition holds <paramref name="row"/>'s node: a conductance in its column above a thousand times
+    /// gmin (gmin alone condenses to an interface impedance of a teraohm), or any capacitance.</summary>
+    private bool LinearlyTouched(int row)
+    {
+        static bool Has(CompressedColumnStorage<double> m, int c, double floor)
+        {
+            for (int k = m.ColumnPointers[c]; k < m.ColumnPointers[c + 1]; k++) if (Math.Abs(m.Values[k]) > floor) return true;
+            return false;
+        }
+        return Has(_g, row, 1e3 * Math.Max(_settings.Gmin, 1e-15)) || Has(_c, row, 0);
     }
 
     private SparseLU Factor(CompressedColumnStorage<double> a)

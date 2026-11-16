@@ -2486,7 +2486,11 @@ namespace RfCore.Export
         /// <summary>brief-trn-1 R-trn1-11 — a transient analysis: its solver, its step bound and why, the steps that bound implies, and
         /// the circuit's slowest time constant against Stop; or the sentence refusing it. Null for any other analysis.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<string>? Transient = null);
+        IReadOnlyList<string>? Transient = null,
+        /// <summary>brief TRN-8 R-trn8-6 — an hb or osc analysis that starts from a transient seed: the seed's settings, its step and
+        /// estimated length, and the chokes and blocks fast bias would scale; or the sentence refusing it. Null otherwise.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<string>? Seed = null);
 
     /// <summary>brief-paa-3 — <c>explain --analysis</c>'s lines for a Phased Antenna Array: the level sentence, the coupling range, and each
     /// pattern the array takes with the elements (1-based, row-major) that take it — or the sentence the run refuses with.</summary>

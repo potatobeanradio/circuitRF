@@ -42,7 +42,8 @@ public static class TransientElements
         PropagationChannelModel => $"{ec.InstancePath} (PropagationChannel): a propagation channel is simulated by S-parameter, harmonic balance and envelope analyses.",
         TunerModel => $"{ec.InstancePath} (Tuner): a tuner presents an impedance per harmonic; loadpull and harmonic balance support it.",
         WSProbeModel => $"{ec.InstancePath} (WSProbe): the stability probe is read by S-parameter and harmonic balance analyses.",
-        OscProbeModel => $"{ec.InstancePath} (OscProbe): the oscillator probe belongs to the oscillator analysis (type=osc).",
+        // brief TRN-8: an idle OscProbe (a short in series, an open in shunt) is stepped like any lumped part; the oscillator's
+        // transient seed runs with it in place.
         _ when ec.ComponentType == EmFieldDataRecord.TypeName =>
             $"{ec.InstancePath} (EmFieldData): an EM field record is read by the fields analysis (type=fields) and S-parameter analysis.",
         _ => null,

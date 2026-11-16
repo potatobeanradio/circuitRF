@@ -120,6 +120,20 @@ public static class CnlWriter
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    /// <summary>brief TRN-8 — <c>InitialGuess</c> and the seed keys, each only when it differs from its default, so a directive
+    /// without them writes the bytes it always did.</summary>
+    private static string SeedKeys(string initialGuess, string seedTol, string seedPeriods, string seedFastBias)
+    {
+        var sb = new StringBuilder();
+        if (!Analysis.IsDcStart(initialGuess)) sb.Append($" InitialGuess={initialGuess.Trim()}");
+        if (seedTol.Trim().Length > 0 && seedTol.Trim() != Analysis.SeedTolDefault) sb.Append($" SeedTol=\"{seedTol.Trim()}\"");
+        if (seedPeriods.Trim().Length > 0 && !seedPeriods.Trim().Equals(Analysis.SeedPeriodsDefault, StringComparison.OrdinalIgnoreCase))
+            sb.Append($" SeedPeriods=\"{seedPeriods.Trim()}\"");
+        if (seedFastBias.Trim().Length > 0 && !seedFastBias.Trim().Equals(Analysis.SeedFastBiasDefault, StringComparison.OrdinalIgnoreCase))
+            sb.Append($" SeedFastBias={seedFastBias.Trim()}");
+        return sb.ToString();
+    }
+
     private static bool HasContent(TestBench tb)
         => tb.Instances.Count > 0 || HasDirectives(tb);
 
@@ -389,11 +403,13 @@ public static class CnlWriter
                                          (fa.DirsExpr.Trim().Length > 0 ? $" dirs=\"{fa.DirsExpr.Trim()}\"" : ""),
         OscillatorAnalysis osc        => $"analysis {osc.Name} type=osc" +
                                          (osc.Probe.Length > 0 ? $" Probe={osc.Probe}" : "") +
-                                         $" Fguess=\"{osc.FguessExpr}\"" +
+                                         (osc.FguessExpr.Trim().Length > 0 ? $" Fguess=\"{osc.FguessExpr}\"" : "") +
                                          (osc.FstartExpr.Length > 0 ? $" Fstart=\"{osc.FstartExpr}\"" : "") +
                                          (osc.FstopExpr.Length > 0 ? $" Fstop=\"{osc.FstopExpr}\"" : "") +
                                          $" Unit={osc.Unit} MaxHarm=\"{osc.MaxHarmonicExpr}\" FFTOverSample=\"{osc.FFTOverSampleExpr}\" Tol=\"{osc.TolExpr}\"" +
                                          (osc.AguessExpr.Length > 0 ? $" Aguess=\"{osc.AguessExpr}\"" : "") +
+                                         SeedKeys(osc.InitialGuess, osc.SeedTolExpr, osc.SeedPeriodsExpr, osc.SeedFastBias) +
+                                         (osc.KickVExpr.Trim() != Analysis.KickVDefault && osc.KickVExpr.Trim().Length > 0 ? $" KickV=\"{osc.KickVExpr.Trim()}\"" : "") +
                                          // Brief NZ-10: written only when asked for, so an oscillator without it writes what it did before.
                                          (osc.PhaseNoise
                                              ? $" PhaseNoise=yes PnStart=\"{osc.PnStartExpr}\" PnStop=\"{osc.PnStopExpr}\" PnNpts=\"{osc.PnNptsExpr}\"" +
@@ -484,6 +500,7 @@ public static class CnlWriter
         if (hb.NoiseSidebandExpr != HarmonicBalanceAnalysis.NoiseSidebandDefault)
             sb.Append($" NoiseSideband=\"{hb.NoiseSidebandExpr}\"");
         if (hb.NoiseContribExpr != Analysis.NoiseContribDefault) sb.Append($" NoiseContrib={hb.NoiseContribExpr}");
+        sb.Append(SeedKeys(hb.InitialGuess, hb.SeedTolExpr, hb.SeedPeriodsExpr, hb.SeedFastBias));
 
 #pragma warning disable CS0618
         if (hb.SweepVarName is not null)

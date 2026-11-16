@@ -87,6 +87,13 @@ public sealed class CschAnalysis
     /// <summary>The WSProbe stability-margin report threshold in dB, or "none" (WSP-9). Null /
     /// absent → the default, so a file written before this key existed reads unchanged.</summary>
     public string?   MarginThresholdExpr { get; set; }
+    /// <summary>brief TRN-8 — hb and osc: InitialGuess and the transient seed's keys, and osc's KickV. Null / absent → the
+    /// default (the DC start), so a file written before they existed reads unchanged.</summary>
+    public string?   SeedInitialGuess  { get; set; }
+    public string?   SeedTol           { get; set; }
+    public string?   SeedPeriods       { get; set; }
+    public string?   SeedFastBias      { get; set; }
+    public string?   OscKickV          { get; set; }
     /// <summary>The NDF knob and its two passivation lists (brief-wsprobe-6). All null / absent on a
     /// file written before they existed, which reads back as the run that file always had.</summary>
     public string?   NdfExpr           { get; set; }
@@ -388,6 +395,9 @@ public static class AnalysisSerialization
 
     /// <summary>An omitted key rather than an empty string, so a document that declared nothing
     /// writes nothing and reads back identical.</summary>
+    private static string? NullIfDefault(string value, string def)
+        => string.IsNullOrWhiteSpace(value) || value.Trim().Equals(def, StringComparison.OrdinalIgnoreCase) ? null : value.Trim();
+
     private static string? NullIfBlank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
 
     /// <summary>The value, or null when it is the default (so a document without the key reads back the same).</summary>
@@ -426,6 +436,9 @@ public static class AnalysisSerialization
             OscPnStart = o.PhaseNoise ? o.PnStartExpr : null, OscPnStop = o.PhaseNoise ? o.PnStopExpr : null,
             OscPnNpts = o.PhaseNoise ? o.PnNptsExpr : null, OscPnLog = o.PhaseNoise ? o.PnLog : null,
             OscPnPort = o.PhaseNoise && o.PnPortExpr.Length > 0 ? o.PnPortExpr : null,
+            SeedInitialGuess = Analysis.IsDcStart(o.InitialGuess) ? null : o.InitialGuess.Trim(),
+            SeedTol = NullIfDefault(o.SeedTolExpr, Analysis.SeedTolDefault), SeedPeriods = NullIfDefault(o.SeedPeriodsExpr, Analysis.SeedPeriodsDefault),
+            SeedFastBias = NullIfDefault(o.SeedFastBias, Analysis.SeedFastBiasDefault), OscKickV = NullIfDefault(o.KickVExpr, Analysis.KickVDefault),
         },
 
         TransientAnalysis tr => new CschAnalysis
@@ -502,6 +515,10 @@ public static class AnalysisSerialization
             MaxIterExpr       = hb.MaxIterExpr,
             MarginThresholdExpr = hb.MarginThresholdExpr != Analysis.MarginThresholdDefault
                 ? hb.MarginThresholdExpr : null,
+            SeedInitialGuess  = Analysis.IsDcStart(hb.InitialGuess) ? null : hb.InitialGuess.Trim(),
+            SeedTol           = NullIfDefault(hb.SeedTolExpr, Analysis.SeedTolDefault),
+            SeedPeriods       = NullIfDefault(hb.SeedPeriodsExpr, Analysis.SeedPeriodsDefault),
+            SeedFastBias      = NullIfDefault(hb.SeedFastBias, Analysis.SeedFastBiasDefault),
             SsStartExpr       = NullIfBlank(hb.SsStartExpr),
             SsStopExpr        = NullIfBlank(hb.SsStopExpr),
             SsStepExpr        = NullIfBlank(hb.SsStepExpr),
@@ -669,6 +686,9 @@ public static class AnalysisSerialization
             PhaseNoise = dto.OscPhaseNoise ?? false, PnStartExpr = dto.OscPnStart ?? OscillatorAnalysis.DefaultPnStart,
             PnStopExpr = dto.OscPnStop ?? OscillatorAnalysis.DefaultPnStop, PnNptsExpr = dto.OscPnNpts ?? OscillatorAnalysis.DefaultPnNpts,
             PnLog = dto.OscPnLog ?? true, PnPortExpr = dto.OscPnPort ?? "",
+            InitialGuess = dto.SeedInitialGuess ?? Analysis.InitialGuessDc, SeedTolExpr = dto.SeedTol ?? Analysis.SeedTolDefault,
+            SeedPeriodsExpr = dto.SeedPeriods ?? Analysis.SeedPeriodsDefault, SeedFastBias = dto.SeedFastBias ?? Analysis.SeedFastBiasDefault,
+            KickVExpr = dto.OscKickV ?? Analysis.KickVDefault,
         },
 
         "tran" => new TransientAnalysis(dto.Name)
@@ -737,6 +757,10 @@ public static class AnalysisSerialization
             LambdaExpr        = dto.LambdaExpr        ?? "1",
             MaxIterExpr       = dto.MaxIterExpr        ?? "100",
             MarginThresholdExpr = dto.MarginThresholdExpr ?? Analysis.MarginThresholdDefault,
+            InitialGuess      = dto.SeedInitialGuess  ?? Analysis.InitialGuessDc,
+            SeedTolExpr       = dto.SeedTol           ?? Analysis.SeedTolDefault,
+            SeedPeriodsExpr   = dto.SeedPeriods       ?? Analysis.SeedPeriodsDefault,
+            SeedFastBias      = dto.SeedFastBias      ?? Analysis.SeedFastBiasDefault,
             SsStartExpr       = dto.SsStartExpr       ?? "",
             SsStopExpr        = dto.SsStopExpr        ?? "",
             SsStepExpr        = dto.SsStepExpr        ?? "",

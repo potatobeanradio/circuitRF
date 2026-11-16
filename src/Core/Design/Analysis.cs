@@ -47,6 +47,14 @@ public abstract class Analysis(string name)
     /// <summary>The default <c>MarginThreshold=</c>, in dB — [M] §IV's own rule of thumb.</summary>
     public const string MarginThresholdDefault = "-15";
 
+    // ── brief TRN-8: the transient seed's words and defaults, shared by hb and osc ──
+    public const string InitialGuessDc = "dc", InitialGuessTransient = "transient", InitialGuessFallback = "fallback";
+    public const string SeedTolDefault = "1e-3", SeedPeriodsDefault = "auto", SeedFastBiasDefault = "yes", KickVDefault = "auto";
+
+    /// <summary>Whether <paramref name="initialGuess"/> is the default DC start.</summary>
+    public static bool IsDcStart(string? initialGuess)
+        => string.IsNullOrWhiteSpace(initialGuess) || initialGuess.Trim().Equals(InitialGuessDc, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>The spelling that turns the margin diagnostic off.</summary>
     public const string MarginThresholdNone = "none";
 
@@ -241,6 +249,21 @@ public sealed class OscillatorAnalysis(string name) : Analysis(name)
     /// <summary><c>Aguess=</c>: the generator amplitude to start from (volts for a shunt probe, amperes for a series one);
     /// blank to ramp up from a small one.</summary>
     public string AguessExpr   { get; init; } = "";
+
+    // ── brief TRN-8: transient-assisted harmonic balance (docs/design/transient.md §10) ─────────
+
+    /// <summary><c>InitialGuess=</c>: <c>dc</c> (the default: the DC point, the drive stepped up), <c>transient</c> (a native transient
+    /// run's last period) or <c>fallback</c> (DC, then the transient seed when that fails). A word, read by the engine.</summary>
+    public string InitialGuess    { get; init; } = InitialGuessDc;
+    /// <summary><c>SeedTol=</c>: how closely consecutive periods of the seed must agree, relative.</summary>
+    public string SeedTolExpr     { get; init; } = SeedTolDefault;
+    /// <summary><c>SeedPeriods=</c>: <c>auto</c> (until settled, at most 200) or a number of periods.</summary>
+    public string SeedPeriodsExpr { get; init; } = SeedPeriodsDefault;
+    /// <summary><c>SeedFastBias=</c>: <c>yes</c> scales RF chokes and blocks in the seed run only.</summary>
+    public string SeedFastBias    { get; init; } = SeedFastBiasDefault;
+    /// <summary><c>KickV=</c> (osc): the kick at the OscProbe's node that starts the seed, volts; <c>auto</c> for 1 % of the largest DC
+    /// supply.</summary>
+    public string KickVExpr       { get; init; } = KickVDefault;
 
     // ── Brief NZ-10: phase noise ─────────────────────────────────────────────
 
@@ -539,6 +562,18 @@ public sealed class HarmonicBalanceAnalysis(string name) : Analysis(name)
     public string LambdaExpr        { get; init; } = "1";
     /// <summary>Max Newton iterations per HB solve before continuation backoff. Default 100.</summary>
     public string MaxIterExpr       { get; init; } = "100";
+
+    // ── brief TRN-8: transient-assisted harmonic balance (docs/design/transient.md §10) ─────────
+
+    /// <summary><c>InitialGuess=</c>: <c>dc</c> (the default: the DC point, the drive stepped up), <c>transient</c> (a native transient
+    /// run's last period) or <c>fallback</c> (DC, then the transient seed when that fails). A word, read by the engine.</summary>
+    public string InitialGuess    { get; init; } = InitialGuessDc;
+    /// <summary><c>SeedTol=</c>: how closely consecutive periods of the seed must agree, relative.</summary>
+    public string SeedTolExpr     { get; init; } = SeedTolDefault;
+    /// <summary><c>SeedPeriods=</c>: <c>auto</c> (until settled, at most 200) or a number of periods.</summary>
+    public string SeedPeriodsExpr { get; init; } = SeedPeriodsDefault;
+    /// <summary><c>SeedFastBias=</c>: <c>yes</c> scales RF chokes and blocks in the seed run only.</summary>
+    public string SeedFastBias    { get; init; } = SeedFastBiasDefault;
     /// <summary>
     /// <c>MarginThreshold=</c>, as on a <c>sparam</c> directive — the WSProbe stability margin in dB
     /// below which the run notes a probe as worth looking at, or <c>none</c> to disable the note.

@@ -569,6 +569,34 @@ of the last period become the oscillator analysis's harmonic starting point. If 
 period cap, the refusal says so and includes the probe's small-signal start-up result, which says whether the start-up
 condition held anywhere.
 
+### 10.3a As built (brief TRN-8)
+
+- **The settle test.** Consecutive periods agreeing within `SeedTol` is not enough on its own: a bias network that is still
+  charging changes by a tiny amount each period and would pass. `HbTransientSeed.SettleMonitor` checks, per recorded
+  waveform, the last period-to-period change Δ and its ratio ρ to the one before (least squares over the period, clamped at
+  0); settled when Δ/(1 − ρ), the change still to come at that rate, is within `SeedTol` of the waveform's peak. A drift has
+  ρ near 1 and is not settled; numerical noise has ρ near 0. A stated `SeedPeriods` runs them all and reports the same test.
+- **Fast bias.** The note's "time constant a few periods while beyond the threshold" is implemented as the ratio of the
+  part's reactance to the impedance it sees brought to 50 (five times the threshold), a time constant against that impedance
+  of 50/2π ≈ 8 periods. Scaling to just beyond the threshold (20 was measured) settles faster but leaves the seed a few
+  per cent off at the fundamental, which costs Newton iterations: on the class-E gate 26 against 12 with no scaling, while
+  50 gives the biased-PA gate a settled seed in 121 periods and 5 Newton iterations from it. Parts a `Mutual` couples, series
+  RLC inductors and parts with a multiplier are left alone. The parts are swapped in the netlist for scaled copies (as
+  `TransientRealization` swaps its realizations) and put back before harmonic balance stamps again.
+- **The oscillator.** The kick is an `IC` on the OscProbe's first node, `KickV` above its DC voltage, held through the
+  operating point and released at t = 0⁺. The probe signal (the voltage across a shunt probe, the current through a series
+  probe's branch) is cut into cycles by rising crossings of the previous cycle's mean with a hysteresis of a tenth of the last
+  amplitude; settled when each cycle's period and amplitude pass the same Δ/(1 − ρ) test. The last cycle is resampled at
+  8(K+1) points and transformed; every interface harmonic is rotated by e^(−jkφ), φ the probe fundamental's phase, so the
+  generator (real at cos) starts in phase, and the search starts at the seed's frequency and amplitude with no ramp. Without
+  `Fguess` the start-up search spans 1 kHz to 1 THz logarithmically and takes the crossing whose negative real part is
+  largest relative to the immittance there; its frequency sets the seed's step and cap.
+- **An idle OscProbe now steps in transient** (a short in series, an open in shunt), as it does nothing in every other
+  analysis; TRN-1 had refused it.
+- **Found on the way:** the native transient's interface Newton condenses the linear partition, which is singular at a node
+  only a device touches. Every BJT (whose ohmic ports join internal nodes to its terminals) failed at t = 0. `Auto` now takes
+  the full path when an interface node has no conductance above 1000·gmin and no capacitance in the linear partition.
+
 ### 10.4 Reported
 
 `Seed.Periods`, `Seed.Settled` (bool), `Seed.ScaledElements` (names), `Seed.HbIterations`, and the note "harmonic

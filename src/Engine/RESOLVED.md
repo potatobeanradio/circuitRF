@@ -5370,3 +5370,38 @@ rectifier 1.0e-4, buck 1.2e-3, lossless line 1.7e-2 (ngspice's points straddle t
 them straight), MOS ring 1.3e-4 over 8 periods (first point skipped: circuitRF reports the zero state at t = 0 under
 InitialState=zero, ngspice's first `uic` point already has the sources applied). Live RC with RelTol 1e-5: ngspice 3.0e-6 V from
 the closed form and 1.3e-6 V from the native run.
+
+## brief TRN-8 — transient-assisted harmonic balance and oscillator start-up (2026-11-15)
+
+- **Every BJT failed in the native transient at t = 0.** The interface Newton (`TransientNewtonPath.Interface`, the `Auto`
+  choice up to 32 interface ports) condenses the linear partition G + αC onto the interface, and a BJT's internal collector,
+  base and emitter nodes (joined to its terminals by its own ohmic ports, so present with the default parasitics) carry
+  nothing in the linear partition but gmin. The condensed impedance is a teraohm and Newton never converges, even for a
+  resistor-biased transistor with no drive ("the step fell below 5E-22 s at t = 0"). TRN-1..7's references hold no BJT. `Auto`
+  now takes the full path when an interface node has no conductance above 1000·gmin and no capacitance
+  (`TransientEngine.LinearlyTouched`). A forced `NewtonPath=Interface` still fails there.
+- **Harmonic balance's line search converges hard-driven stages from DC.** A class-E stage on `VSwitch` converges from DC in
+  3 iterations at any switch steepness: a switch whose control is an ideal source is a linear time-varying conductance, so the
+  problem is linear in the unknowns. A built-in FET law driven to 42 dBm still converges from DC (30-38 iterations); only with
+  a gate diode and a body diode does it take 29 at 30 dBm. Gate 1 therefore states an iteration budget (`MaxIter=20`) as
+  `HbDriveSteppingTests` does: the DC start fails within it, the seed converges in 8, the drive ladder in 82 over 11 rungs, and
+  the seeded and drive-stepped solutions agree to 7e-12 of each node's largest harmonic.
+- **Fast bias trades seed accuracy for settling time.** Scaled to a reactance ratio of 20 (just over the threshold), a coupling
+  capacitor's reactance is 5 % of the impedance it sees and the seed is a few per cent off at the fundamental: on the class-E
+  bench 26 Newton iterations from it, against 12 with no scaling. At 50 the biased-PA gate (10 µH, 1 µF at 2 GHz) settles in
+  121 periods with 5 iterations from it (20: 50 periods, 7 iterations); without scaling it is still 5 % apart after 200.
+  `HbTransientSeed.ScaledRatio = 50`.
+- **Consecutive-period agreement alone passes a drifting bias.** A 1 µF block charging through 50 Ω changes by microvolts per
+  carrier period and passes a 1e-3 per-period test long before it has settled. The settle test extrapolates: the last change
+  over 1 − ρ, ρ the least-squares ratio of the last two period-to-period difference waveforms (`SettleMonitor`).
+- **A parametric divider for the divider gate.** `q = c2 v²` alone has a capacitance that goes negative below −CT/(2 c2), where
+  the transient stops (the charge has a turning point); a cosine pump switched on at t = 0 rings the tank there within a
+  nanosecond. The gate's divider starts the pump at zero (`Phase=-90`) and limits the half-frequency with a cubic charge term
+  (`c3 > c2²/(3 CT)` keeps the capacitance positive), not a cubic loss, which also loads the pump. From DC, harmonic balance on
+  the half-frequency grid stays on the undivided solution (|V1| 6e-12): the odd harmonics' residual is zero there and Newton
+  never leaves it. From the seed, |V1| = 3.6224 V; a 100 ns native transient gives 3.6171 V.
+- **The shipped VCO without Fguess** (Receiver Noise ▸ 7 VCO Phase Noise): the seed settles in 12 cycles with Cb scaled ×0.004,
+  0.03 % off in frequency and 3 % in amplitude, and the search finishes in 3 Newton steps (6 from Fguess) at the same
+  oscillation to 7e-12 in frequency and 3e-10 in amplitude.
+- **An idle OscProbe is no longer refused in transient**: it is a short or an open, as in every analysis but the oscillator's,
+  and the oscillator's seed runs with it in place.

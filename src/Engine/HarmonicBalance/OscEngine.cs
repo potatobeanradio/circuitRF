@@ -26,6 +26,13 @@ public sealed record OscParams(
 
     /// <summary>Brief NZ-10: the phase-noise sweep of <c>PhaseNoise=yes</c>, or null — and a null run is the one from before.</summary>
     public OscPhaseNoiseParams? PhaseNoise { get; init; }
+
+    /// <summary>brief TRN-8: <c>InitialGuess=</c> and the seed's keys; the DC start (the search about Fguess) by default.</summary>
+    public HbSeedSettings Seed { get; init; } = HbSeedSettings.Off;
+
+    /// <summary>brief TRN-8: true when no Fguess was given (InitialGuess=transient): the start-up search then spans Fstart..Fstop
+    /// logarithmically and takes the crossing with the most negative real part.</summary>
+    public bool NoFguess => !(FguessHz > 0);
 }
 
 /// <summary>The small-signal start-up search: the probe's admittance across the span, and where the start-up condition holds.</summary>
@@ -63,6 +70,9 @@ public sealed record OscResult(DataSet Data, HbRunResult Run, double FoscHz, dou
 /// </summary>
 public static class OscEngine
 {
+    /// <summary>brief TRN-8: the start-up search's span with no Fguess, 1 kHz to 1 THz, sampled logarithmically.</summary>
+    public const double WideStartHz = 1e3, WideStopHz = 1e12;
+
     /// <summary>Resolves an <c>osc</c> directive against the elaborated globals.</summary>
     public static OscParams Resolve(OscillatorAnalysis a, IReadOnlyDictionary<string, Value> globals,
                                     IReadOnlyCollection<string>? globalsWithUnit = null)
@@ -86,10 +96,16 @@ public static class OscEngine
             catch (ExpressionException) { return def; }
         }
 
-        double guess = Hz("Fguess", a.FguessExpr);
-        double start = string.IsNullOrWhiteSpace(a.FstartExpr) ? 0.5 * guess : Hz("Fstart", a.FstartExpr);
-        double stop  = string.IsNullOrWhiteSpace(a.FstopExpr)  ? 1.5 * guess : Hz("Fstop", a.FstopExpr);
-        if (!(start > 0 && start < guess && guess < stop))
+        // brief TRN-8: the seed's keys first, since Fguess is optional under InitialGuess=transient
+        var seed = HbSeedSettings.Resolve($"Oscillator analysis '{a.Name}'", a.InitialGuess, a.SeedTolExpr, a.SeedPeriodsExpr,
+                                          a.SeedFastBias, a.KickVExpr, e => Num(e, double.NaN));
+        bool noGuess = string.IsNullOrWhiteSpace(a.FguessExpr);
+        if (noGuess && seed.Mode != HbInitialGuess.Transient)
+            throw new InvalidOperationException(OscDiagnostics.NoFguess(a.Name).Render());
+        double guess = noGuess ? 0 : Hz("Fguess", a.FguessExpr);
+        double start = string.IsNullOrWhiteSpace(a.FstartExpr) ? (noGuess ? WideStartHz : 0.5 * guess) : Hz("Fstart", a.FstartExpr);
+        double stop  = string.IsNullOrWhiteSpace(a.FstopExpr)  ? (noGuess ? WideStopHz : 1.5 * guess) : Hz("Fstop", a.FstopExpr);
+        if (noGuess ? !(start > 0 && start < stop) : !(start > 0 && start < guess && guess < stop))
             throw new InvalidOperationException(OscDiagnostics.BadSpan(a.Name, start, guess, stop).Render());
         double aGuess = Num(a.AguessExpr, double.NaN);
         return new OscParams(a.Name, a.Probe.Trim(), guess, start, stop,
@@ -97,6 +113,7 @@ public static class OscEngine
             double.IsFinite(aGuess) && aGuess > 0 ? aGuess : null)
         {
             PhaseNoise = a.PhaseNoise ? ResolvePhaseNoise(a, globals) : null,
+            Seed = seed,
         };
     }
 
@@ -210,13 +227,17 @@ public static class OscEngine
         var y = new Complex[n];
         for (int i = 0; i < n; i++)
         {
-            f[i] = p.FstartHz + (p.FstopHz - p.FstartHz) * i / (n - 1);
+            // brief TRN-8: without Fguess the span is nine decades, sampled evenly in log-frequency
+            f[i] = p.NoFguess
+                ? p.FstartHz * Math.Pow(p.FstopHz / p.FstartHz, (double)i / (n - 1))
+                : p.FstartHz + (p.FstopHz - p.FstartHz) * i / (n - 1);
             w[i] = W(f[i]);
             y[i] = shunt ? w[i] : 1.0 / w[i];
         }
 
         double? best = null;
         Complex bestW = Complex.Zero;
+        double bestScaleRef = 0;
         for (int i = 0; i + 1 < n; i++)
         {
             double lo = f[i], hi = f[i + 1];
@@ -233,7 +254,11 @@ public static class OscEngine
             double fz = Math.Abs(wLo.Imaginary) <= Math.Abs(wHi.Imaginary) ? lo : hi;
             var wz = W(fz);
             if (!(wz.Magnitude <= bound) || !(wz.Real < 0)) continue;   // a pole, or no negative resistance
-            if (best is null || Math.Abs(fz - p.FguessHz) < Math.Abs(best.Value - p.FguessHz)) { best = fz; bestW = wz; }
+            // With no Fguess, the crossing whose negative real part is strongest relative to the immittance's size there.
+            bool better = best is null || (p.NoFguess
+                ? wz.Real / Math.Max(wLo.Magnitude, wHi.Magnitude) < bestW.Real / Math.Max(bestScaleRef, 1e-300)
+                : Math.Abs(fz - p.FguessHz) < Math.Abs(best.Value - p.FguessHz));
+            if (better) { best = fz; bestW = wz; bestScaleRef = Math.Max(wLo.Magnitude, wHi.Magnitude); }
         }
 
         double scale = 0;
@@ -251,10 +276,28 @@ public static class OscEngine
     internal static Complex ProbeImpedance(ElaboratedNetlist nl, ElaboratedComponent probe, double[] dcNodeVoltages,
                                            double omega, AnalysisSettings settings)
     {
-        var mna = new MnaSystem(nl.Nodes.Count - 1);
+        var lu = LinearizedMna(nl, probe, dcNodeVoltages, omega, settings, out var mna);
+        var b  = new Complex[mna.Size];
+        var x  = new Complex[mna.Size];
+        int a = probe.Nodes[0], c = probe.Nodes[1];
+        if (a > 0) b[a - 1] += Complex.One;
+        if (c > 0) b[c - 1] -= Complex.One;
+        lu.Solve(b, x);
+        return (a > 0 ? x[a - 1] : Complex.Zero) - (c > 0 ? x[c - 1] : Complex.Zero);
+    }
+
+    /// <summary>The circuit at <paramref name="omega"/> linearised about <paramref name="dcNodeVoltages"/>, every source zeroed and
+    /// <paramref name="exclude"/> left out, as harmonic balance sees the linear part (a Port or Term is its termination), with gmin
+    /// on every node; factored. The probe's impedance above and the transient seed's choke and block test (brief TRN-8) read
+    /// it.</summary>
+    internal static CSparse.Complex.Factorization.SparseLU LinearizedMna(
+        ElaboratedNetlist nl, ElaboratedComponent? exclude, double[] dcNodeVoltages, double omega, AnalysisSettings settings,
+        out MnaSystem mna)
+    {
+        mna = new MnaSystem(nl.Nodes.Count - 1);
         foreach (var ec in nl.Components)
         {
-            if (ReferenceEquals(ec, probe) || ec.Model is MutualInductanceModel) continue;
+            if (ReferenceEquals(ec, exclude) || ec.Model is MutualInductanceModel) continue;
             if (ec.Model is PortModel or TermModel)
             {
                 if (PortModel.TerminationAdmittance(ec, omega) is { } yPort)
@@ -272,15 +315,7 @@ public static class OscEngine
             if (ec.Model is MutualInductanceModel) ec.Stamp(mna, omega);
         for (int node = 1; node <= mna.NodeCount; node++)
             mna.AddAdmittance(node, 0, new Complex(settings.Gmin, 0));
-
-        var lu = mna.Factorize();
-        var b  = new Complex[mna.Size];
-        var x  = new Complex[mna.Size];
-        int a = probe.Nodes[0], c = probe.Nodes[1];
-        if (a > 0) b[a - 1] += Complex.One;
-        if (c > 0) b[c - 1] -= Complex.One;
-        lu.Solve(b, x);
-        return (a > 0 ? x[a - 1] : Complex.Zero) - (c > 0 ? x[c - 1] : Complex.Zero);
+        return mna.Factorize();
     }
 
     // ── The oscillation ──────────────────────────────────────────────────────
@@ -297,7 +332,45 @@ public static class OscEngine
         settings ??= AnalysisSettings.Default;
         var startup = Startup(nl, p, settings);
         var probe   = FindProbe(nl, p.Analysis, p.Probe);
-        if (startup.StartHz is not { } fs)
+        // brief TRN-8 R-trn8-5: the transient seed, at the start-up frequency's time scale (Fguess's when the search found none)
+        OscSeed Seed()
+        {
+            double fScale = startup.StartHz ?? (p.FguessHz > 0 ? p.FguessHz
+                : throw new InvalidOperationException(
+                    OscDiagnostics.NoStartup(p.Analysis, probe.InstancePath, startup.Shunt, p.FstartHz, p.FstopHz).Render()));
+            return OscTransientSeed.Run(nl, settings, probe, startup.Shunt, fScale, p.MaxHarmonic, p.Seed, p.Analysis, startup);
+        }
+        switch (p.Seed.Mode)
+        {
+            case HbInitialGuess.Transient:
+                return RunCore(nl, tb, p, settings, lib, baseDirectory, startup, probe, Seed());
+            case HbInitialGuess.Fallback:
+                try { return RunCore(nl, tb, p, settings, lib, baseDirectory, startup, probe, null); }
+                catch (InvalidOperationException) { return RunCore(nl, tb, p, settings, lib, baseDirectory, startup, probe, Seed()); }
+            default:
+                return RunCore(nl, tb, p, settings, lib, baseDirectory, startup, probe, null);
+        }
+    }
+
+    /// <summary>brief TRN-8: the immittance's scale and real part at <paramref name="hz"/>, for a seeded run whose start-up search
+    /// found no crossing to read them at.</summary>
+    private static (double Scale, double Re) ScaleAt(ElaboratedNetlist nl, ElaboratedComponent probe, bool shunt, double hz,
+                                                     AnalysisSettings settings)
+    {
+        var dc = NonlinearDcEngine.Run(nl, settings);
+        Complex W(double f)
+        {
+            var z = ProbeImpedance(nl, probe, dc.NodeVoltages, 2 * Math.PI * f, settings);
+            return shunt ? 1.0 / z : z;
+        }
+        double df = 1e-6 * hz;
+        return ((W(hz + df) - W(hz - df)).Magnitude / (2 * df) * hz, W(hz).Real);
+    }
+
+    private static OscResult RunCore(ElaboratedNetlist nl, TestBench tb, OscParams p, AnalysisSettings settings, Library? lib,
+                                     string? baseDirectory, OscStartup startup, ElaboratedComponent probe, OscSeed? seed)
+    {
+        if ((startup.StartHz ?? seed?.FreqHz) is not { } fs)
             throw new InvalidOperationException(
                 OscDiagnostics.NoStartup(p.Analysis, probe.InstancePath, startup.Shunt, p.FstartHz, p.FstopHz).Render());
 
@@ -306,10 +379,13 @@ public static class OscEngine
         // Scale of the probe's immittance: its slope with frequency at the start-up point, in siemens (shunt) or ohms
         // (series). The residual is measured against it, and the generator's own conductance is set from it — large enough
         // to make every driven solve well posed (it outweighs the circuit's negative resistance), and nothing at the answer.
-        double scale = Math.Max(startup.Scale, 2 * Math.Abs(startup.Immittance.Real));
+        var (sScale, sRe) = startup.StartHz is null && seed is not null
+            ? ScaleAt(nl, probe, shunt, seed.FreqHz, settings)
+            : (startup.Scale, startup.Immittance.Real);
+        double scale = Math.Max(sScale, 2 * Math.Abs(sRe));
         if (!(scale > 0) || !double.IsFinite(scale)) scale = 1;
-        double gGen = shunt ? scale + 2 * Math.Abs(startup.Immittance.Real)
-                            : 1.0 / (scale + 2 * Math.Abs(startup.Immittance.Real));
+        double gGen = shunt ? scale + 2 * Math.Abs(sRe)
+                            : 1.0 / (scale + 2 * Math.Abs(sRe));
         string unit = shunt ? "V" : "A";
         string Amp(double a) => a.ToString("G6", CultureInfo.InvariantCulture) + " " + unit;
 
@@ -347,14 +423,16 @@ public static class OscEngine
         try
         {
             // ── Ramp the amplitude from small until the negative resistance runs out ──
-            double f = fs;
+            // brief TRN-8: a seeded run starts at the seed's frequency and amplitude, from its waveforms, with no ramp.
+            double f = seed?.FreqHz ?? fs;
             double small = shunt ? 1e-3 : 1e-3 / scale;
-            double a = p.Aguess ?? small;
+            double a = seed?.Amplitude ?? p.Aguess ?? small;
+            if (seed is not null) warm = seed.V;
             var first = Eval(a, f);
             // Aguess is a start, not a promise: at the start-up frequency, which can lie well off the oscillation's, the
             // stated amplitude may not solve, and the ramp from small is then the way in, as it is without one.
-            bool ramp = p.Aguess is null || first is null;
-            if (first is null && p.Aguess is not null) a = small;
+            bool ramp = (p.Aguess is null && seed is null) || first is null;
+            if (first is null && (p.Aguess is not null || seed is not null)) { a = small; warm = null; }
             var r = first ?? Eval(a, f) ?? throw Fail(f, a, "the first small-amplitude solve");
             if (ramp)
             {
@@ -424,6 +502,16 @@ public static class OscEngine
             ds.Add("Fosc", new DataCube(Array.Empty<Axis>(), [f]) { Unit = "Hz" });
             ds.Add("Aosc", new DataCube(Array.Empty<Axis>(), [a]) { Unit = unit });
             ds.Add("Startup", new DataCube([new Axis("freq", startup.FreqsHz, "Hz")], startup.Admittance) { Unit = "S" });
+            // brief TRN-8 R-trn8-6: the seed's cubes on every run that asks for one (zeros where the DC start sufficed), and its note
+            if (p.Seed.Seeds)
+            {
+                HbTransientSeed.AddCubes(ds, seed is null ? null : new HbSeed
+                {
+                    Rows = [], Spectrum = new Complex[0, 0], LastPeriod = [], PeriodS = 1 / seed.FreqHz, Periods = seed.Periods,
+                    Settled = seed.Settled, Scaled = seed.Scaled,
+                }, iter);
+                if (seed is not null) nl.AddNoteOnce("osc-seed", OscTransientSeed.Describe(seed, iter));
+            }
 
             // ── Brief NZ-10: phase noise about this oscillation ──
             if (p.PhaseNoise is { } pn)

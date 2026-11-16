@@ -1670,6 +1670,7 @@ internal static class Explain
         var arrays = ArraysOf(lib, tb, sourcePath);
         var channels = ChannelsOf(lib, tb, sourcePath);
         var transients = TransientsOf(lib, tb, sourcePath);
+        var seeds = SeedsOf(lib, tb, sourcePath);
 
         var rows = new List<ExplainAnalysisJson>(tb.Analyses.Count);
         foreach (var a in tb.Analyses)
@@ -1724,7 +1725,8 @@ internal static class Explain
                 Oscillator: osc.GetValueOrDefault(a.Name),
                 Array: arrays.GetValueOrDefault(a.Name),
                 Channels: channels.Count > 0 ? ChannelLines(channels, a, tb) : null,
-                Transient: transients.GetValueOrDefault(a.Name)));
+                Transient: transients.GetValueOrDefault(a.Name),
+                Seed: seeds.GetValueOrDefault(a.Name)));
         }
 
         return (rows, exit);
@@ -1765,6 +1767,73 @@ internal static class Explain
             catch (CircuitRF.Engine.Transient.TransientRefusedException e) { list.Add("WOULD BE REFUSED — " + e.Message); }
             catch (Exception) { /* reported by check; nothing to explain here */ }
             lines[tr.Name] = list;
+        }
+        return lines;
+    }
+
+    /// <summary>
+    /// brief-trn-8 R-trn8-6 — each hb or osc analysis whose <c>InitialGuess</c> is not <c>dc</c>, by its name: the seed's settings
+    /// (resolved as the run resolves them, so a malformed key is the run's refusal word for word), its step and estimated length,
+    /// and the chokes and blocks fast bias would scale, from <c>HbTransientSeed.FastBiasPlan</c>, which the run calls.
+    /// </summary>
+    private static Dictionary<string, IReadOnlyList<string>> SeedsOf(Library lib, TestBench tb, string? sourcePath)
+    {
+        var lines = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        var asking = tb.Analyses.Where(a => a is HarmonicBalanceAnalysis h && !Analysis.IsDcStart(h.InitialGuess)
+                                            || a is OscillatorAnalysis o && !Analysis.IsDcStart(o.InitialGuess)).ToList();
+        if (asking.Count == 0) return lines;
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        foreach (var a in asking)
+        {
+            var list = new List<string>();
+            try
+            {
+                using var nl = Check.ElaborateReadOnly(lib, tb, sourcePath);
+                CircuitRF.Engine.HarmonicBalance.HbSeedSettings seed;
+                double? f0 = null;
+                int maxHarm;
+                if (a is HarmonicBalanceAnalysis hba)
+                {
+                    var p = CircuitRF.Engine.HarmonicBalance.HbEngine.Resolve(hba, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
+                    seed = p.Seed;
+                    maxHarm = p.MaxHarmonic;
+                    if (p.ToneFreqsHz.Length == 1) f0 = p.ToneHz;
+                    else list.Add("several tones: seeded over their common fundamental when their products share one; with none, " +
+                                  (seed.Mode == CircuitRF.Engine.HarmonicBalance.HbInitialGuess.Transient
+                                      ? "InitialGuess=transient is refused" : "InitialGuess=fallback starts from DC"));
+                }
+                else
+                {
+                    var o = (OscillatorAnalysis)a;
+                    var p = CircuitRF.Engine.HarmonicBalance.OscEngine.Resolve(o, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
+                    seed = p.Seed;
+                    maxHarm = p.MaxHarmonic;
+                    var s = CircuitRF.Engine.HarmonicBalance.OscEngine.Startup(nl, p);
+                    f0 = s.StartHz ?? (p.FguessHz > 0 ? p.FguessHz : null);
+                    list.Add(string.Format(inv, "kicked by {0:G3} V at the OscProbe; the time scale is the {1}",
+                        seed.KickV ?? CircuitRF.Engine.HarmonicBalance.OscTransientSeed.DefaultKick(nl),
+                        s.StartHz is not null ? string.Format(inv, "small-signal start-up frequency, {0:G6} GHz", s.StartHz / 1e9)
+                        : f0 is not null ? "Fguess (the start-up search found no crossing)" : "start-up frequency, and the search found none: WOULD BE REFUSED"));
+                }
+                list.Insert(0, seed.Describe());
+                if (f0 is { } f)
+                {
+                    int m = CircuitRF.Engine.HarmonicBalance.HbTransientSeed.SamplesPerPeriod(maxHarm);
+                    int cap = seed.Periods ?? CircuitRF.Engine.HarmonicBalance.HbSeedSettings.AutoCap;
+                    list.Add(string.Format(inv, "step T/{0} = {1:G4} s; {2} {3} periods of {4:G6} GHz ({5:G4} s, about {6} steps)",
+                        m, 1 / (f * m), seed.Periods is null ? "until settled, at most" : "for", cap, f / 1e9, cap / f, cap * m));
+                    if (seed.FastBias)
+                    {
+                        var plan = CircuitRF.Engine.HarmonicBalance.HbTransientSeed.FastBiasPlan(nl, CircuitRF.Engine.AnalysisSettings.Default, f);
+                        list.Add(plan.Count == 0 ? "fast bias: no choke or block to scale"
+                            : "fast bias scales, in the seed run only: " + string.Join(", ", plan.Select(x =>
+                                string.Format(inv, "{0} ({1}, ratio {2:G3}) x{3:G3}", x.Scale.Path, x.Scale.Kind == "L" ? "choke" : "block", x.Scale.Ratio, x.Scale.Factor))));
+                    }
+                }
+            }
+            catch (InvalidOperationException e) { list.Add("WOULD BE REFUSED — " + e.Message); }
+            catch (Exception) { /* reported by check; nothing to explain here */ }
+            lines[a.Name] = list;
         }
         return lines;
     }
@@ -2717,6 +2786,9 @@ internal static class Explain
 
                 // brief-trn-1: a transient analysis's solver, step bound and memory.
                 foreach (var line in a.Transient ?? []) Console.WriteLine($"      {line}");
+
+                // brief-trn-8: a harmonic balance or oscillator started from a transient seed.
+                foreach (var line in a.Seed ?? []) Console.WriteLine($"      Seed: {line}");
 
                 // NZ-9: an oscillator's start-up search, before any harmonic balance runs.
                 if (a.Oscillator is { } os)
