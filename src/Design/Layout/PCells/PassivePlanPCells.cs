@@ -147,8 +147,8 @@ public static class PassivePlanPCells
     public static PCellResult GenerateLadder(
         IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
         => DrawOrRefuse(() => LadderPlan.Build(parameters.Text("Sections") is { Length: > 0 } list ? list : LadderPlan.DefaultSections,
-            parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9), SubstrateOf(technology, layerSelection)).Plan,
-            technology, layerSelection);
+            parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9), SubstrateOf(technology, layerSelection),
+            parameters.Real("Gap", LadderPlan.DefaultGap)).Plan, technology, layerSelection);
 
     /// <summary>The plan drawn, or its refusal as the cell's one diagnostic.</summary>
     private static PCellResult DrawOrRefuse(Func<PassivePlan> plan, Technology? technology, PCellLayerSelection layerSelection)

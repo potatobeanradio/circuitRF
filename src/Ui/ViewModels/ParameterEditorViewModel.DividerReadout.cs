@@ -125,13 +125,16 @@ public partial class ParameterEditorViewModel
                 PlanSiteRole.C => "C",
                 _ => "R",
             })
-            + (site.Value is { } v ? " " + (site.Role switch
-            {
-                PlanSiteRole.L => (v * 1e9).ToString("0.###", CultureInfo.InvariantCulture) + " nH",
-                PlanSiteRole.C => (v * 1e12).ToString("0.###", CultureInfo.InvariantCulture) + " pF",
-                _ => Ohm(v),
-            }) : "")
+            + (site.Value is { } v ? " " + SiteValue(site.Role, v) : "")
             + (site.SpanMeters is { } span ? $", span {Mm(span, "0.####")}" : "")));
+
+    /// <summary>A site's value in the unit its part states: nH, pF or Ω.</summary>
+    private static string SiteValue(PlanSiteRole role, double v) => role switch
+    {
+        PlanSiteRole.L => (v * 1e9).ToString("0.###", CultureInfo.InvariantCulture) + " nH",
+        PlanSiteRole.C => (v * 1e12).ToString("0.###", CultureInfo.InvariantCulture) + " pF",
+        _ => Ohm(v),
+    };
 
     /// <summary>A spec row's SI value when it is a plain number; <paramref name="absent"/> when the part has no such row
     /// (a divider placed before the row existed).</summary>

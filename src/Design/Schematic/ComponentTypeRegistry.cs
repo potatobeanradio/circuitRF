@@ -1214,9 +1214,10 @@ public static class ComponentTypeRegistry
             "Terminal 1 is the input feed (or the through line's start), 2 the output. A symmetric design is the same "
           + "either way round.",
         SymbolKind.Mlad =>
-            "Terminals 1 and 2 are the through line's ends, the first section at 1. G1, G2, … follow, one per shorted "
-          + "stub arm in the list's order (up before down): put a via to ground (VIAGND) on each. A list with no "
-          + "shorted stub has terminals 1 and 2 only.",
+            "Terminals 1 and 2 are the through line's ends, the first section at 1. G1, G2, … follow in the list's "
+          + "order: one per shorted stub arm (up before down), for a via to ground (VIAGND); one per shunt site, for its "
+          + "part to ground; and two per series site, for the part across them. A list with neither has terminals 1 "
+          + "and 2 only.",
 
         SymbolKind.GsgPad =>
             "Not interchangeable: terminal 1 is where the probe's signal tip lands, the middle of the signal pad, "
@@ -1885,8 +1886,11 @@ public static class ComponentTypeRegistry
         (SymbolKind.Mcrc, "Sx") => "Cross-coupled open loops: the gap between loops 1 and 4.",
         (SymbolKind.Mlad, "Sections") => "The ladder, pin 1 to pin 2: sections separated by ';', each kind(field=value, …). "
                                  + "line(W, L); gap(S), at the width there; taper(W1, W2, L); stub(W, L, end=open|short, "
-                                 + "side=up|down|both), L from the through line's edge. Lengths in metres or with mm, um, mil. "
-                                 + "Each shorted stub arm adds a pin G1, G2, … for a via to ground.",
+                                 + "side=up|down|both), L from the through line's edge, or end=radial|butterfly with Ro and angle; "
+                                 + "site(role=R|L|C, value, type=series|shunt) for a lumped part. Lengths in metres or with mm, "
+                                 + "um, mil. Each shorted stub arm and shunt site adds a pin, each series site two: G1, G2, ….",
+        (SymbolKind.Mlad, "Gap") => "The span of every series site: where the copper stops for the part across it. 1.35 mm "
+                                 + "is an 0402 at nominal density. A Footprint sets it from its land instead.",
         (SymbolKind.Mlad, "Z0") => "The ports' impedance: the lines the ladder is fed by, whose width a gap or a stub at "
                                  + "either end sits on. The readout states each section's impedance beside it.",
         (SymbolKind.Mlad, "F") => "The frequency the readout states each section's impedance and electrical length at, and "
@@ -2035,7 +2039,8 @@ public static class ComponentTypeRegistry
             "MLIN, MGAP, MTAPER, MTEE and MCROSS, the pieces the layout draws, with each one's validity, stamped together "
           + "and reduced to the pins; an open stub's end is Kirschning-Jansen-Koster's extension. The step between two "
           + "widths is not modelled, nor the coupling between neighbouring stubs. MTEE's and MCROSS's closed forms are "
-          + "calibrated at er 9.9 and say so on any other board. The grounds are the vias on G1…, not the model.",
+          + "calibrated at er 9.9 and say so on any other board. A radial or butterfly end is MRADIAL. A site is open in "
+          + "the model: its part, a via or an R, L or C on the G pins, is an ordinary one.",
         SymbolKind.GsgPad =>
             "MLIN, twice: half the signal pad (PadW wide, PadL/2 long, from the tip to its edge), then the line, "
           + "cascaded, with MLIN's validity. The ground pads are ideal ground at the probe's reference plane; their "
@@ -4295,12 +4300,13 @@ public static class ComponentTypeRegistry
                         new("F",   "2.4",  "GHz", true, UnitDimension.Frequency),
                         .. SignalGroundLayerParams];
             // MCBL: 200 Ω on each output is the lightest load a 100 µm gap matches on 20 mil RO4350B (50 Ω is refused).
-            // MLAD: the list is the geometry (LadderPlan's grammar); Z0 the ports' lines, F the readout's. Placed as a
-            // stepped-impedance lowpass on 20 mil RO4350B, which has no shorted stub and so two pins.
+            // MLAD: the list is the geometry (LadderPlan's grammar); Z0 the ports' lines, F the readout's, Gap the series
+            // sites' span. Placed as a stepped-impedance lowpass on 20 mil RO4350B, which has no G pins and so two pins.
             case SymbolKind.Mlad:
                 return [new("Sections", LadderPlan.DefaultSections, "", false, UnitDimension.None),
                         new("Z0",  "50",   "Ω",   true, UnitDimension.Resistance),
                         new("F",   "2.4",  "GHz", true, UnitDimension.Frequency),
+                        new("Gap", "1.35", "mm",  false, UnitDimension.Length),
                         .. SignalGroundLayerParams];
             case SymbolKind.Mcbl:
                 return [new("Z0",  "50",   "Ω",   true, UnitDimension.Resistance),

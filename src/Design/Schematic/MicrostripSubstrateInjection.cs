@@ -48,8 +48,8 @@ public static class MicrostripSubstrateInjection
     // Update Layout's PCell parameters — reads the span the land pattern gives.
 
     /// <summary>The planned passives whose site span is a stored length, <see cref="SiteSpanParameter"/>, that a
-    /// <c>Footprint</c> can set instead: MWPD's resistor pins, MCBL's balanced outputs.</summary>
-    public static bool HasSiteFootprint(SymbolKind kind) => kind is SymbolKind.Mwpd or SymbolKind.Mcbl;
+    /// <c>Footprint</c> can set instead: MWPD's resistor pins, MCBL's balanced outputs, MLAD's series sites.</summary>
+    public static bool HasSiteFootprint(SymbolKind kind) => kind is SymbolKind.Mwpd or SymbolKind.Mcbl or SymbolKind.Mlad;
 
     /// <summary>The length a site <c>Footprint</c> sets.</summary>
     public const string SiteSpanParameter = "Gap";
