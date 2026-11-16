@@ -66,16 +66,14 @@ public sealed class TransientElementsTests
         Assert.Contains("rational fit", only);
     }
 
-    /// <summary>A modulated source is refused naming the envelope analysis.</summary>
+    /// <summary>brief MTR-1 — a modulated source is no longer refused: the native transient plays it.</summary>
     [Fact]
-    public void AModulatedSource_NamesTheEnvelopeAnalysis()
+    public void AModulatedSource_IsPlayed()
     {
         var problems = ProblemsOf("""
             MOD_Source:S1 s 0 Fc=1e9 Pavg=-30 Z=50 Record=0.5e-3 Carrier[1]="CW;Off=0;P=0"
             R:R1 s 0 R=50 Ohm
             """);
-        Assert.Single(problems);
-        Assert.Contains("envelope analysis (type=env)", problems[0]);
-        Assert.StartsWith("S1 (MOD_Source)", problems[0]);
+        Assert.Empty(problems);
     }
 }

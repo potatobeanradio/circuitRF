@@ -1908,5 +1908,12 @@ src/Engine/Transient/TransientRunner.cs|{who}: Stop is required.
 src/Engine/Transient/TransientRunner.cs|{who}: Stop must be a positive time.
 src/Engine/Transient/TransientRunner.cs|{who}: {key} is read by the ngspice solver only; the native solver takes no {key}.
 src/Engine/Transient/TransientRunner.cs|{who}: {key}={expr} cannot be evaluated: {ex.Message}
+src/Engine/Transient/TransientRunner.cs|{who}: MeasureFrom must not be negative.
 src/Engine/Transient/TransientRunner.cs|{who}: Start must be before Stop.
 src/Engine/Transient/TransientRunner.cs|{who}: Start must not be negative; the run starts at t = 0.
+src/Engine/Transient/TransientRunner.cs|{who}: Store must be auto, baseband or rf, not '{a.Store}'.
+src/Engine/Transient/TransientRunner.cs|{who}: Store=baseband is the native solver's; ngspice keeps the waveform (Store=rf).
+src/Engine/Transient/TransientRunner.cs|{who}: StoreHarm must be a whole number from 0 to 16.
+src/Engine/Transient/TransientBaseband.cs|{who}: Store=baseband reads every carrier from one place in its record, and {string.Join(
+src/Engine/Transient/TransientBaseband.cs|{who}: Store=baseband takes its envelopes about a MOD_Source's Fc, and this bench has none; Store=rf keeps the waveform.
+src/Engine/Transient/TransientBaseband.cs|{who}: the run produced no envelope sample.

@@ -801,6 +801,9 @@ the spectrum, the CCDF and the EVM of the signal before you simulate it.</p>
 <p>In a harmonic-balance or loadpull run a MOD_Source is a CW tone at <code>Fc</code> carrying <code>Pavg</code> — the signal's
 average power, or for a pulsed-CW source the pulse-top power, the steady state of a pulse that never ends;
 in an S-parameter run it is the passive impedance <code>Z</code>.</p>
+<p>In a native <a href="transient.html#modulated">transient run</a> it plays its signal on its carrier over a window of its record,
+picked by <code>RecordStart</code> (where in the record the run starts, default 0 s) and softened by <code>Ramp</code> (a raised-cosine rise
+over that time, default 0 s). Every other analysis ignores both.</p>
 <table class="param-table">
 <thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
 <tr><td>1</td><td>+</td></tr>

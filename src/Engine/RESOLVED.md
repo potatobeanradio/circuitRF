@@ -5549,3 +5549,24 @@ Found building *Symbolically Defined Device (SDD)*'s bias-loop bench (an SDD tha
   the whole sweep. `outage_over` drops NaN drops from both counts. `CollapsedElements`, `ReplacedParts`, `LastInstanceCost`
   are process-wide counters, so the 8b envelope test can read another class's run under load (`PatternEvaluations`, counted on
   the caller's thread, is per thread now, which settled `ReceiveArrayFeedTests.Gate3_…`).
+
+## brief MTR-1…3 — a MOD_Source in native transient, kept at baseband (2026-11-16)
+
+- **The drive** is a column of its own at Fc, taken by difference like a shaped tone. At each step it is multiplied by
+  g(t)·b(RecordStart + t)·e^(jωt), with b read from a table that `ModulatedSignal.CompositeWindow` builds once (32 × the
+  record's widest excursion from Fc, cubic between points). On the gate bench (LTE 5 MHz at 1 GHz into 50 Ω, explicit
+  MaxStep = Step/5), the load voltage at RF rate equals ½·Re{Vs·b·e^(jωt)} to 1.5e-6 of Vs at RecordStart 0 and at 1 µs.
+- **Interpolated output points are not good enough for downconversion.** At the automatic step (20 a period), the
+  engine's quadratic interpolation between accepted steps is about 1e-3 of the carrier, and it lands in the envelopes.
+  Baseband storage therefore steps on a whole subdivision of its RF grid (4(K+1) points a carrier period, at least 20
+  steps a period of the highest frequency), so every grid point is an accepted step. With that, the harmonic-1 envelope
+  is ½·Vs·b to 8e-6 of Vs and harmonics 0, 2 and 3 are below 8e-6.
+- **A few µs of OFDM is not the record's unit mean.** Delivered power into the matched load was −2.05 dBm against
+  Pavg = 0 dBm over a 3 µs window, and it equals 10·log10(mean |b|²) over that window. A test comparing a short window's
+  power with Pavg is wrong, not the run.
+- **EVM needs whole symbols** (about 70 µs for LTE). At the stepping above that is several million steps, so EVM is not
+  in the routine gate. The envelope's own code reads it, and a window too short for a symbol is reported by that code.
+- **The Transient preset** now takes only a real `V` cube. A baseband result's `V` is the envelope's complex
+  [time, node, harmonic], and the envelope's displays read it.
+- **The HB and oscillator seeds** set PlayModulation = false: a MOD_Source there is its CW tone at Fc, the steady state
+  harmonic balance solves for.

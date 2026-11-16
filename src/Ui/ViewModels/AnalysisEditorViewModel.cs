@@ -204,6 +204,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
         TrlBody        = new TrlBodyViewModel(model, workspaceRoot);
         TrlBody.UseName(_name);
         OscBody        = new OscBodyViewModel(model);
+        TranBody.UseSchematic(model);   // brief MTR-3: the RF-rate warning reads the schematic's MOD_Sources
         LoadEmSetups(null);
         ValidateName();
     }
@@ -235,7 +236,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
         TrlBody = inner is TrlAnalysis trl0 ? TrlBodyViewModel.From(trl0, model, workspaceRoot) : new TrlBodyViewModel(model, workspaceRoot);
         TrlBody.UseName(_name);
         OscBody = inner is OscillatorAnalysis osc0 ? OscBodyViewModel.From(osc0, model) : new OscBodyViewModel(model);
-        TranBody = inner is TransientAnalysis tran0 ? TranBodyViewModel.FromAnalysis(tran0) : new TranBodyViewModel();
+        TranBody = (inner is TransientAnalysis tran0 ? TranBodyViewModel.FromAnalysis(tran0) : new TranBodyViewModel()).UseSchematic(model);
         switch (inner)
         {
             case EnvelopeAnalysis:

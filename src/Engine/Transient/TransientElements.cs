@@ -36,7 +36,7 @@ public static class TransientElements
     /// <summary>The refusal, by what the element is, of one that no transient brief will step; null for every other.</summary>
     public static string? RefusalByKind(ElaboratedComponent ec) => ec.Model switch
     {
-        ModSourceModel => $"{ec.InstancePath} (MOD_Source): modulated signals are simulated by the envelope analysis (type=env), which steps the signal's envelope instead of every carrier cycle.",
+        // brief MTR-1: a MOD_Source plays its signal, carrier-resolved, over a window of its record
         MixerModel => $"{ec.InstancePath} (Mixer): a behavioural mixer is defined on the spectrum; harmonic balance (type=hb) and the envelope analysis support it.",
         PhasedArrayModel => $"{ec.InstancePath} (PhasedArray): a phased array is simulated by harmonic balance, S-parameter and envelope analyses.",
         PropagationChannelModel => $"{ec.InstancePath} (PropagationChannel): a propagation channel is simulated by S-parameter, harmonic balance and envelope analyses.",

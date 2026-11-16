@@ -175,6 +175,9 @@ public static partial class AnalysisDirectiveSchema
             new("SpiceLines",   Default: "refuse", Summary: "ngspice only: rlgc writes lines as ngspice's lossy lines fitted at SpiceLineFreq, each with its error reported."),
             new("SpiceLineFreq",Default: "auto", Summary: "ngspice only: the frequency rlgc lines match circuitRF's model at; auto is the highest source frequency."),
             new("SpiceFit",     Default: "no",   Summary: "ngspice only: yes writes frequency-defined elements as subcircuits of circuitRF's rational fit, labelled."),
+            new("Store",        Default: "auto", Summary: "auto, baseband or rf. baseband keeps the envelopes about a MOD_Source's Fc at the signal's rate and measures them as the envelope analysis does (PSD, ACLR, EVM); rf keeps every output point. auto is baseband when the bench has a MOD_Source."),
+            new("StoreHarm",    Default: "3",    Summary: "Baseband storage: the harmonics of Fc kept, 0 to this."),
+            new("MeasureFrom",  Default: "auto", Summary: "Baseband storage: where the measurements start (s); auto is after the largest MOD_Source Ramp."),
         ]),
 
         new("hb", ["harmonic_balance", "harmonicbalance"],

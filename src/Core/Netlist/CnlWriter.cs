@@ -446,6 +446,9 @@ public static class CnlWriter
         Opt("SpiceLines", t.SpiceLines, TransientAnalysis.SpiceLinesDefault);
         Opt("SpiceLineFreq", t.SpiceLineFreq, TransientAnalysis.SpiceLineFreqDefault);
         Opt("SpiceFit", t.SpiceFit, TransientAnalysis.SpiceFitDefault);
+        Opt("Store", t.Store, TransientAnalysis.StoreAuto);
+        Opt("StoreHarm", t.StoreHarmExpr, TransientAnalysis.StoreHarmDefault);
+        Opt("MeasureFrom", t.MeasureFromExpr, TransientAnalysis.MeasureFromDefault);
         return sb.ToString();
 
         // A value with whitespace, a comma or an equals sign is quoted, so the tokenizer reads it as one token.

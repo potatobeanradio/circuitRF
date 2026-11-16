@@ -387,7 +387,11 @@ steps as well, to see where it worked hardest.</p>
 <td>A rational fit from DC to the run's highest frequency, made passive if it is not, its error and any correction reported. Data that stops short of DC is extrapolated and the run says so</td>
 </tr>
 <tr>
-<td>Lossy coupled lines, mixers and system amplifiers, the Phased Antenna Array, the Propagation Channel, tuners, the WSProbe, the EM Field Data block, <code>MOD_Source</code></td>
+<td><code>MOD_Source</code></td>
+<td>Its signal on its carrier, over a window of its record (<a href="#modulated">Modulated sources</a>)</td>
+</tr>
+<tr>
+<td>Lossy coupled lines, mixers and system amplifiers, the Phased Antenna Array, the Propagation Channel, tuners, the WSProbe, the EM Field Data block</td>
 <td>Refused by name, each with the analysis that does run it</td>
 </tr>
 </tbody>
@@ -776,6 +780,74 @@ table. Every trace is an ordinary trace to re-point afterwards.</p>
 													I(IL)
 											</text></g></g></g></g></g></g></svg></span>
 </span><figcaption>The Buck Converter example&#39;s Startup from rest: the output overshoots by 34 % and settles to 5.52 V, and the inductor current through IL settles to its switching ripple about 1.1 A.</figcaption></figure>
+<h2 id="modulated">Modulated sources</h2>
+<p>A <a href="components.html#modsource">MOD_Source</a> plays its signal in a native transient run, carrier-resolved: its LTE, NR,
+QAM, FSK, chirp or imported I/Q record on its carrier <code>Fc</code>, behind its <code>Z</code>. Use it where the <a href="simulations.html#envelope">envelope
+analysis</a> assumes too much: a switching or saturating stage driven by a real modulated
+signal, a modulated signal beside an unrelated tone, a start-up while the modulation runs, or a check of an envelope result
+on the same bench. Otherwise the envelope analysis answers a modulated question in a fraction of the time.</p>
+<p>A run plays a <strong>window</strong> of the record, since every carrier cycle is stepped: 10 µs of a 2.4 GHz carrier is about half
+a million steps, a whole 1 ms record fifty times that. Two keys on the source pick the window:</p>
+<table>
+<thead>
+<tr>
+<th>Key on the MOD_Source</th>
+<th>Default</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RecordStart</code></td>
+<td><code>0</code></td>
+<td>Where in the record the run starts (s). The record repeats, so any time is a place in it</td>
+</tr>
+<tr>
+<td><code>Ramp</code></td>
+<td><code>0</code></td>
+<td>A raised-cosine rise of the drive over this time (s), so the circuit is not hit with the signal at full power</td>
+</tr>
+</tbody>
+</table>
+<p>Every other analysis ignores both. ngspice does not play a MOD_Source.</p>
+<p>What the run keeps is the tran card's <strong>Store</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Key on the tran directive</th>
+<th>Default</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Store</code></td>
+<td><code>auto</code></td>
+<td><code>baseband</code>: the envelopes about <code>Fc</code>, at the signal's own sample rate. <code>rf</code>: every output point of the waveform. <code>auto</code> is <code>baseband</code> when the bench has a MOD_Source</td>
+</tr>
+<tr>
+<td><code>StoreHarm</code></td>
+<td><code>3</code></td>
+<td>Baseband: the harmonics of <code>Fc</code> kept, 0 to this</td>
+</tr>
+<tr>
+<td><code>MeasureFrom</code></td>
+<td><code>auto</code></td>
+<td>Baseband: where the measurements start (s); <code>auto</code> is after the largest <code>Ramp</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Baseband</strong> results are the <a href="simulations.html#envelope">envelope analysis's</a> own: <code>V[time, node, harmonic]</code>,
+<code>I[time, branch, harmonic]</code> and, at every IProbe, the power, the spectrum (<code>PSD</code>), <code>ACLR</code>, <code>EVM</code>, the constellation,
+<code>AM-AM</code> and the gain, measured by the same code. A plot or <code>measure</code> line written for an envelope run reads a
+modulated transient unchanged. The run downconverts as it steps and never holds the waveform, so memory stays small however
+long the window. EVM needs whole symbols: an OFDM symbol is about 70 µs, so a window shorter than that reports no EVM, and
+says so.</p>
+<p><strong>RF</strong> keeps the waveform itself, at an output step of 1/20 of the carrier's period unless <code>Step</code> says otherwise, and
+the card warns how many points that is. Read it with the <a href="measurements.html#time-domain">time-domain functions</a>, as any
+transient result.</p>
+<p>All sources in a baseband run share one <code>Fc</code> and one <code>RecordStart</code>; a bench whose sources differ is refused and names
+<code>Store=rf</code>.</p>
 <h2 id="steering">When circuitRF suggests another analysis</h2>
 <p><code>circuitrf explain --analysis</code> on a transient bench reports, without running it, the solver, the step bound and why,
 roughly how many steps the run will take, and the slowest time constant against <code>Stop</code>:</p>

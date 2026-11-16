@@ -133,6 +133,10 @@ public sealed class TransientEngine
     // phasor columns, the parts' IC= and the SDDs whose equations read `time`.
     private (ITransientWaveform Src, int[] Rows, double[] Vals)[] _waves = [];
     private Shaped[] _shaped = [];
+    private TransientModulated[] _mods = [];
+
+    /// <summary>brief MTR-2 — the MOD_Sources this run plays, after Setup: the baseband results' drive and carriers.</summary>
+    internal IReadOnlyList<TransientModulated> Modulated => _mods;
     private (int A, int B, double V)[] _capIc = [];
     private (int Row, double I)[] _indIc = [];
     private SddModel[] _clocked = [];
@@ -235,12 +239,19 @@ public sealed class TransientEngine
 
         var tOut = OutputGrid(p, who);
         int nOut = tOut.Length;
-        var outVals = new double[nOut][];
+        // brief MTR-2 — with DiscardOutput every point goes to the sink and none is kept
+        var outVals = new double[p.DiscardOutput ? 0 : nOut][];
+        void Emit(int k, double[] v)
+        {
+            p.OutputSink?.Invoke(tOut[k], v);
+            if (!p.DiscardOutput) outVals[k] = v;
+        }
         int nextOut = 0;
         while (nextOut < nOut && tOut[nextOut] <= 0)
         {
-            outVals[nextOut++] = Snap(x0);
-            p.StopWhen?.Invoke(tOut[nextOut - 1], outVals[nextOut - 1]);   // the start is never where a seed settles
+            var v0 = Snap(x0);
+            Emit(nextOut++, v0);
+            p.StopWhen?.Invoke(tOut[nextOut - 1], v0);   // the start is never where a seed settles
         }
 
         var stepTimes = p.SaveSteps ? new List<double> { 0.0 } : null;
@@ -251,6 +262,7 @@ public sealed class TransientEngine
         var bps = new SortedSet<double> { p.StopS };
         foreach (var d in p.Drives) foreach (var tb in d.Breakpoints(0, p.StopS)) if (tb > 0 && tb < p.StopS) bps.Add(tb);
         foreach (var (src, _, _) in _waves) foreach (var tb in src.Breakpoints(0, p.StopS)) if (tb > 0 && tb < p.StopS) bps.Add(tb);
+        foreach (var md in _mods) if (md.RampS > 0 && md.RampS < p.StopS) bps.Add(md.RampS);
         foreach (var sh in _shaped)
             foreach (var tb in new[] { sh.Delay, sh.Delay + sh.Ramp }) if (tb > 0 && tb < p.StopS) bps.Add(tb);
         // brief-trn-4 R-trn4-1: τ and 2τ after every source corner (the start included), so an edge that crosses a line and its
@@ -382,10 +394,11 @@ public sealed class TransientEngine
             var snap = Snap(x);
             while (nextOut < nOut && tOut[nextOut] <= tNew * (1 + 1e-12))
             {
-                outVals[nextOut] = Interpolate(tOut[nextOut], prev2T, prev2Snap, prevT, prevSnap, tNew, snap);
+                var vOut = Interpolate(tOut[nextOut], prev2T, prev2Snap, prevT, prevSnap, tNew, snap);
+                Emit(nextOut, vOut);
                 nextOut++;
                 // brief TRN-8 — a seed that has settled ends the run at this output point
-                if (p.StopWhen is { } stop && stop(tOut[nextOut - 1], outVals[nextOut - 1])) { nOut = nextOut; stopped = true; break; }
+                if (p.StopWhen is { } stop && stop(tOut[nextOut - 1], vOut)) { nOut = nextOut; stopped = true; break; }
             }
             if (stopped) break;
             stepTimes?.Add(tNew);
@@ -421,6 +434,7 @@ public sealed class TransientEngine
         }
 
         // ── the result ───────────────────────────────────────────────────
+        if (p.DiscardOutput) nOut = 0;
         var V = new double[nOut][];
         var I = new double[nOut][];
         var Pw = new double[nOut][];
@@ -475,11 +489,13 @@ public sealed class TransientEngine
     /// refusals, or none.</summary>
     private List<string> Setup(TransientParams p)
     {
+        _p = p;
         // Tone context before anything is stamped: a P1Tone drives at its own frequency, its impedance band ruler with it.
         foreach (var ec in _nl.Components)
         {
             if (ec.Model is P1ToneModel p1) p1.SetToneContext(fc: p1.FreqHz, driveFreqHz: p1.FreqHz);
             else if (ec.Model is PnToneModel pn && pn.ToneFreqsHz.Count > 0) pn.SetToneContext(fc: pn.ToneFreqsHz.Where(f => f > 0).DefaultIfEmpty(1).Min());
+            else if (ec.Model is ModSourceModel mod) mod.SetToneContext(mod.FcHz);   // brief MTR-1: its drive branch at Fc
         }
         // brief-trn-4: lines, frequency-defined elements and terminations realized over the band the step resolves, DC to
         // f_max = 1/(2 MaxStep) (note §5.4)
@@ -508,6 +524,7 @@ public sealed class TransientEngine
         // the aggregate with it alone switched on, less the aggregate — exact, the right-hand side being linear in each source.
         var waves = _nl.Components.Where(c => c.Model is ITransientWaveform).ToList();
         var shaped = new List<(ElaboratedComponent Ec, IDriveScalable Src, double Delay, double Ramp, double Damping, double[] Hz)>();
+        var mods = new List<TransientModulated>();
         var freqs = new SortedSet<double> { 0.0 };
         foreach (var ec in _nl.Components)
         {
@@ -516,10 +533,19 @@ public sealed class TransientEngine
                 ToneSourceModelBase ts => [.. ts.ToneFreqsHz.Where(f => f > 0)],
                 P1ToneModel p1 when p1.FreqHz > 0 => [p1.FreqHz],
                 PnToneModel pn => [.. pn.ToneFreqsHz.Where(f => f > 0)],
+                ModSourceModel mod when mod.FcHz > 0 => [mod.FcHz],
                 _ => [],
             };
             foreach (var f in hz) freqs.Add(f);
             if (ec.Model is not IDriveScalable ds || hz.Length == 0) continue;
+            // brief MTR-1: a MOD_Source plays its record (a column of its own, its drive multiplied by its baseband at each step)
+            if (ec.Model is ModSourceModel played && p.PlayModulation)
+            {
+                var md = TransientModulated.Create(ec, played, p.StopS, out string? why);
+                if (why is not null) { problems.Add(why); continue; }
+                mods.Add(md);
+                continue;
+            }
             double delay = Key(ec, "Delay"), ramp = Key(ec, "Ramp"), damping = Key(ec, "Damping");
             if (delay < 0 || ramp < 0)
             {
@@ -531,10 +557,12 @@ public sealed class TransientEngine
         if (problems.Count > 0) return problems;
 
         var scales = shaped.Select(sh => sh.Src.DriveScale).ToArray();
+        var modScales = mods.Select(md => md.Model.DriveScale).ToArray();
         try
         {
             foreach (var w in waves) ((ITransientWaveform)w.Model).StampOverride = 0;
             foreach (var sh in shaped) sh.Src.DriveScale = 0;
+            foreach (var md in mods) md.Model.DriveScale = 0;
             _srcHz = [.. freqs];
             _srcRe = new double[_srcHz.Length][];
             _srcIm = new double[_srcHz.Length][];
@@ -576,11 +604,23 @@ public sealed class TransientEngine
                 sh.Src.DriveScale = 0;
                 _shaped[i] = new Shaped { Ec = sh.Ec, Delay = sh.Delay, Ramp = sh.Ramp, Damping = sh.Damping, Hz = sh.Hz, Re = re, Im = im };
             }
+            for (int i = 0; i < mods.Count; i++)
+            {
+                var md = mods[i];
+                md.Model.DriveScale = modScales[i];
+                int agg = Array.IndexOf(_srcHz, md.Model.FcHz);
+                var b = ex.BuildSourceRhs(2 * Math.PI * md.Model.FcHz);
+                md.Re = new double[_n]; md.Im = new double[_n];
+                for (int r = 0; r < _n; r++) { md.Re[r] = b[r].Real - _srcRe[agg][r]; md.Im[r] = b[r].Imaginary - _srcIm[agg][r]; }
+                md.Model.DriveScale = 0;
+            }
+            _mods = [.. mods];
         }
         finally
         {
             foreach (var w in waves) ((ITransientWaveform)w.Model).StampOverride = null;
             for (int i = 0; i < shaped.Count; i++) shaped[i].Src.DriveScale = scales[i];
+            for (int i = 0; i < mods.Count; i++) mods[i].Model.DriveScale = modScales[i];
         }
 
         // ── IC= on capacitors (volts) and inductors (amperes), note §7.2 ─
@@ -614,6 +654,8 @@ public sealed class TransientEngine
                 ToneSourceModelBase ts => ts.ToneFreqsHz,
                 P1ToneModel p1 => [p1.FreqHz],
                 PnToneModel pn => pn.ToneFreqsHz,
+                // brief MTR-1: the carrier plus the record's widest excursion
+                ModSourceModel mod when mod.FcHz > 0 => [_p.PlayModulation ? TransientModulated.HighestHz(mod) : mod.FcHz],
                 _ => [],
             };
             foreach (var f in hz) if (f > hi) hi = f;
@@ -861,6 +903,7 @@ public sealed class TransientEngine
                 for (int i = 0; i < _n; i++) b[i] += re[i] * cw - im[i] * sw;
             }
         }
+        foreach (var md in _mods) md.AddTo(t, b);
         foreach (var d in _p.Drives) d.AddTo(t, b);
         return b;
     }

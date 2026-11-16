@@ -1285,6 +1285,9 @@ public sealed class CnlReader
             SpiceLines    = kv.GetValueOrDefault("SpiceLines", TransientAnalysis.SpiceLinesDefault),
             SpiceLineFreq = kv.GetValueOrDefault("SpiceLineFreq", TransientAnalysis.SpiceLineFreqDefault),
             SpiceFit      = kv.GetValueOrDefault("SpiceFit", TransientAnalysis.SpiceFitDefault),
+            Store         = kv.GetValueOrDefault("Store", TransientAnalysis.StoreAuto),
+            StoreHarmExpr = kv.GetValueOrDefault("StoreHarm", TransientAnalysis.StoreHarmDefault),
+            MeasureFromExpr = kv.GetValueOrDefault("MeasureFrom", TransientAnalysis.MeasureFromDefault),
             Enabled       = ParseEnabledToken(tokens),
         };
         return true;

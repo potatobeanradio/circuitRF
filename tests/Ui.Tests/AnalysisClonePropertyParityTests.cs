@@ -56,6 +56,7 @@ public sealed class AnalysisClonePropertyParityTests
             RelTolExpr = "1e-4", VTolExpr = "1e-7", ITolExpr = "1e-13", InitialState = TransientAnalysis.InitialZero, IcExpr = "out=0, b=1.2",
             Solver = TransientAnalysis.SolverNgspice, SaveSteps = "yes", MaxStepsExpr = "1000", SpiceOptions = "gmin=1e-15",
             SpiceLines = "rlgc", SpiceLineFreq = "2e9", SpiceFit = "yes",
+            Store = TransientAnalysis.StoreRf, StoreHarmExpr = "5", MeasureFromExpr = "200n",
         },
 
         [typeof(OscillatorAnalysis)] = new OscillatorAnalysis("OSC1")

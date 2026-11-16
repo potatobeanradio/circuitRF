@@ -17,7 +17,7 @@
         </Style>
     </UserControl.Styles>
     <StackPanel Spacing="6">
-        <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6">
+        <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6">
             <TextBlock Classes="lbl" Text="Stop time (s)"/>
             <TextBox Grid.Column="1" Text="{Binding Stop}" ToolTip.Tip="End time of the run, in seconds (5e-6, or an expression)"/>
             <TextBlock Grid.Column="2" Classes="lbl" Text="Step (s)" Margin="12,0,8,0"/>
@@ -53,10 +53,20 @@
             <TextBlock Grid.Row="5" Grid.ColumnSpan="4" Text="{Binding SolverNote}" FontSize="10" TextWrapping="NoWrap"
                        TextTrimming="CharacterEllipsis" MinHeight="14" ToolTip.Tip="{Binding SolverNoteTip}"
                        Foreground="{DynamicResource SystemBaseMediumColor}"/>
+
+            <!-- brief MTR-3: what the run keeps. The warning keeps its row whether shown or not, so nothing below moves. -->
+            <TextBlock Grid.Row="6" Classes="lbl" Text="Store"/>
+            <ComboBox Grid.Row="6" Grid.Column="1" ItemsSource="{x:Static vm:TranBodyViewModel.StoreOptions}" SelectedItem="{Binding Store}"
+                      FontSize="11" HorizontalAlignment="Stretch"
+                      ToolTip.Tip="What the run keeps: the envelopes about a MOD_Source's Fc (baseband), or every output point (rf)"/>
+            <TextBlock Grid.Row="7" Grid.ColumnSpan="4" Text="{Binding StoreDescription}" FontSize="10" TextWrapping="Wrap"
+                       Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            <TextBlock Grid.Row="8" Grid.ColumnSpan="4" Text="{Binding StoreWarning}" FontSize="10" TextWrapping="NoWrap"
+                       TextTrimming="CharacterEllipsis" MinHeight="14" Foreground="{DynamicResource SystemErrorTextColor}"/>
         </Grid>
 
         <Expander Header="More" IsExpanded="{Binding MoreExpanded, Mode=TwoWay}" FontSize="11" HorizontalAlignment="Stretch">
-            <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6" Margin="0,8,0,0">
+            <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6" Margin="0,8,0,0">
                 <TextBlock Classes="lbl" Text="Start (s)"/>
                 <TextBox Grid.Column="1" Text="{Binding Start}" ToolTip.Tip="First reported time; the run still starts at 0"/>
                 <TextBlock Grid.Column="2" Classes="lbl" Text="Max step (s)" Margin="12,0,8,0"/>
@@ -100,6 +110,14 @@
                 <TextBox Grid.Row="10" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding SpiceOptions}" IsEnabled="{Binding IsNgspice}"
                          PlaceholderText="reltol=1e-4 abstol=1e-12"
                          ToolTip.Tip="Written verbatim as one .options line of the deck ngspice runs"/>
+
+                <!-- brief MTR-3 — baseband storage of a modulated run -->
+                <TextBlock Grid.Row="11" Classes="lbl" Text="Harmonics kept" Margin="0,6,8,0"/>
+                <TextBox Grid.Row="11" Grid.Column="1" Text="{Binding StoreHarm}" Margin="0,6,0,0"
+                         ToolTip.Tip="Baseband storage: the harmonics of Fc kept, 0 to this"/>
+                <TextBlock Grid.Row="11" Grid.Column="2" Classes="lbl" Text="Measure from (s)" Margin="12,6,8,0"/>
+                <TextBox Grid.Row="11" Grid.Column="3" Text="{Binding MeasureFrom}" Margin="0,6,0,0"
+                         ToolTip.Tip="Baseband storage: where the measurements start, or auto: after the largest MOD_Source Ramp"/>
             </Grid>
         </Expander>
     </StackPanel>

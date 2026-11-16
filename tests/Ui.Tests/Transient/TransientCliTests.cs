@@ -111,6 +111,7 @@ public sealed class TransientCliTests(ITestOutputHelper output) : IDisposable
             RelTolExpr = "1e-4", VTolExpr = "1e-7", ITolExpr = "1e-13", InitialState = TransientAnalysis.InitialZero, IcExpr = "out=0, b=1.2",
             Solver = TransientAnalysis.SolverNgspice, SaveSteps = "yes", MaxStepsExpr = "1000", SpiceOptions = "gmin=1e-15 reltol=1e-4",
             SpiceLines = "rlgc", SpiceLineFreq = "2e9", SpiceFit = "yes",
+            Store = TransientAnalysis.StoreBaseband, StoreHarmExpr = "5", MeasureFromExpr = "200n",   // brief MTR-3
         };
         var tb = new TestBench("tb");
         tb.Analyses.Add(original);
@@ -120,7 +121,7 @@ public sealed class TransientCliTests(ITestOutputHelper output) : IDisposable
                                                             CircuitRF.Design.Schematic.AnalysisSerialization.ToDto(original)));
         static object Key(TransientAnalysis t) => string.Join("|", t.Name, t.Enabled, t.StopExpr, t.StepExpr, t.StartExpr, t.MaxStepExpr, t.Method,
             t.RelTolExpr, t.VTolExpr, t.ITolExpr, t.InitialState, t.IcExpr, t.Solver, t.SaveSteps, t.MaxStepsExpr, t.SpiceOptions,
-            t.SpiceLines, t.SpiceLineFreq, t.SpiceFit);
+            t.SpiceLines, t.SpiceLineFreq, t.SpiceFit, t.Store, t.StoreHarmExpr, t.MeasureFromExpr);
         Assert.Equal(Key(original), Key(fromCnl));
         Assert.Equal(Key(original), Key(fromCsch));
     }

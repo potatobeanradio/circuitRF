@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using CircuitRF.Core.Design;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -126,6 +127,70 @@ public sealed partial class TranBodyViewModel : ObservableObject
         OnPropertyChanged(nameof(IsNgspice));
     }
 
+    // ── brief MTR-2/MTR-3: what a modulated run keeps ──────────────────────
+    public static readonly string[] StoreOptions = [TransientAnalysis.StoreAuto, TransientAnalysis.StoreBaseband, TransientAnalysis.StoreRf];
+    public static readonly string[] StoreHelp =
+    [
+        "auto — baseband when the schematic has a MOD_Source, every output point otherwise",
+        "baseband — the envelopes about the MOD_Source's Fc, measured as the envelope analysis measures them (PSD, ACLR, EVM)",
+        "rf — every output point of the waveform",
+    ];
+
+    [ObservableProperty] private string _store = TransientAnalysis.StoreAuto;
+    [ObservableProperty] private string _storeHarm = TransientAnalysis.StoreHarmDefault;
+    [ObservableProperty] private string _measureFrom = TransientAnalysis.MeasureFromDefault;
+
+    /// <summary>The highest frequency a MOD_Source on the schematic plays (its Fc), or null when there is none; 0 when one is
+    /// there but its Fc is not a plain number.</summary>
+    public double? ModSourceHz { get; private set; }
+
+    /// <summary>Reads the schematic's MOD_Sources, for the RF-rate warning.</summary>
+    public TranBodyViewModel UseSchematic(CircuitRF.Design.Schematic.SchematicEditModel model)
+    {
+        var fcs = model.Components.Where(c => c.Symbol == CircuitRF.Design.Schematic.SymbolKind.ModSource)
+                                  .Select(c => c.Parameters.FirstOrDefault(p => p.Name == "Fc") is { } fc ? Number(fc.Expression, fc.Unit) ?? 0 : 0)
+                                  .ToList();
+        ModSourceHz = fcs.Count == 0 ? null : fcs.Max();
+        OnPropertyChanged(nameof(StoreWarning));
+        return this;
+    }
+
+    public string StoreDescription => StoreHelp[Math.Max(0, Array.IndexOf(StoreOptions, Store))];
+
+    /// <summary>The warning under Store: RF storage of a modulated bench keeps every carrier cycle. Empty otherwise; its row is kept
+    /// either way, so nothing below moves.</summary>
+    public string StoreWarning
+    {
+        get
+        {
+            if (Store != TransientAnalysis.StoreRf || ModSourceHz is not { } fc) return "";
+            if (fc > 0 && Number(Stop, null) is { } stop && stop > 0)
+                return string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "RF rate stores every carrier cycle: about {0} points per net", Points(stop * 20 * fc));
+            return "RF rate stores every carrier cycle";
+        }
+    }
+
+    private static string Points(double n) => n >= 1e9 ? $"{n / 1e9:0.#} billion" : n >= 1e6 ? $"{n / 1e6:0.#} million"
+        : n >= 1e3 ? $"{n / 1e3:0.#} thousand" : $"{n:0}";
+
+    private static double? Number(string text, string? unit)
+    {
+        try
+        {
+            var v = new CircuitRF.Core.Expressions.Evaluator().Eval(text, new CircuitRF.Core.Expressions.Scope("card"),
+                                                                     string.IsNullOrWhiteSpace(unit) ? null : unit);
+            return v.Kind == CircuitRF.Core.Expressions.ValueKind.Real ? v.AsReal() : null;
+        }
+        catch (Exception) { return null; }
+    }
+
+    partial void OnStoreChanged(string value)
+    {
+        OnPropertyChanged(nameof(StoreDescription));
+        OnPropertyChanged(nameof(StoreWarning));
+    }
+
     public string MethodDescription => MethodHelp[Math.Max(0, Array.IndexOf(MethodOptions, Method))];
     partial void OnMethodChanged(string value) => OnPropertyChanged(nameof(MethodDescription));
 
@@ -134,7 +199,11 @@ public sealed partial class TranBodyViewModel : ObservableObject
 
     /// <summary>A transient needs a Stop.</summary>
     public bool IsValid => Stop.Trim().Length > 0;
-    partial void OnStopChanged(string value) => OnPropertyChanged(nameof(IsValid));
+    partial void OnStopChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsValid));
+        OnPropertyChanged(nameof(StoreWarning));
+    }
 
     public static TranBodyViewModel FromAnalysis(TransientAnalysis a) => new()
     {
@@ -148,6 +217,8 @@ public sealed partial class TranBodyViewModel : ObservableObject
         SpiceLines = Array.IndexOf(SpiceLinesOptions, a.SpiceLines.Trim().ToLowerInvariant()) >= 0 ? a.SpiceLines.Trim().ToLowerInvariant() : a.SpiceLines,
         SpiceLineFreq = a.SpiceLineFreq,
         SpiceFit = Array.IndexOf(SpiceFitOptions, a.SpiceFit.Trim().ToLowerInvariant()) >= 0 ? a.SpiceFit.Trim().ToLowerInvariant() : a.SpiceFit,
+        Store = Array.IndexOf(StoreOptions, a.Store.Trim().ToLowerInvariant()) >= 0 ? a.Store.Trim().ToLowerInvariant() : a.Store,
+        StoreHarm = a.StoreHarmExpr, MeasureFrom = a.MeasureFromExpr,
     };
 
     public TransientAnalysis BuildAnalysis(string name, bool enabled) => new(name)
@@ -164,6 +235,8 @@ public sealed partial class TranBodyViewModel : ObservableObject
         SpiceLines = Ng ? Blank(SpiceLines, TransientAnalysis.SpiceLinesDefault) : TransientAnalysis.SpiceLinesDefault,
         SpiceLineFreq = Ng ? Blank(SpiceLineFreq, TransientAnalysis.SpiceLineFreqDefault) : TransientAnalysis.SpiceLineFreqDefault,
         SpiceFit = Ng ? Blank(SpiceFit, TransientAnalysis.SpiceFitDefault) : TransientAnalysis.SpiceFitDefault,
+        Store = Blank(Store, TransientAnalysis.StoreAuto), StoreHarmExpr = Blank(StoreHarm, TransientAnalysis.StoreHarmDefault),
+        MeasureFromExpr = Blank(MeasureFrom, TransientAnalysis.MeasureFromDefault),
     };
 
     private bool Ng => SolverIndex == 1;

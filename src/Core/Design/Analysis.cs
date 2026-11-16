@@ -522,6 +522,18 @@ public sealed class TransientAnalysis(string name) : Analysis(name)
     /// <summary>ngspice only: <c>yes</c> writes frequency-defined elements as subcircuits of circuitRF's fit.</summary>
     public string SpiceFit { get; init; } = SpiceFitDefault;
 
+    // ── brief MTR-2: the results of a modulated transient ─────────────────
+    public const string StoreAuto = "auto", StoreBaseband = "baseband", StoreRf = "rf";
+    public const string StoreHarmDefault = "3", MeasureFromDefault = "auto";
+    /// <summary><c>Store=</c>: <c>auto</c> (baseband when the bench has a MOD_Source, RF otherwise), <c>baseband</c> (the
+    /// envelopes about the MOD_Source's Fc, at the signal's rate, measured as the envelope analysis measures them) or <c>rf</c>
+    /// (every output point of the waveform).</summary>
+    public string Store { get; init; } = StoreAuto;
+    /// <summary><c>StoreHarm=</c>: the harmonics of Fc baseband storage keeps, 0 to K.</summary>
+    public string StoreHarmExpr { get; init; } = StoreHarmDefault;
+    /// <summary><c>MeasureFrom=</c>: where baseband measurements start (s); <c>auto</c> after the largest MOD_Source Ramp.</summary>
+    public string MeasureFromExpr { get; init; } = MeasureFromDefault;
+
     /// <summary>Whether <see cref="SaveSteps"/> asks for the accepted-step cubes.</summary>
     public bool SaveStepsOn => ParseNdf(SaveSteps);
 }

@@ -423,6 +423,10 @@ In a harmonic-balance or loadpull run a MOD_Source is a CW tone at `Fc` carrying
 average power, or for a pulsed-CW source the pulse-top power, the steady state of a pulse that never ends;
 in an S-parameter run it is the passive impedance `Z`.
 
+In a native [transient run](transient.html#modulated) it plays its signal on its carrier over a window of its record,
+picked by `RecordStart` (where in the record the run starts, default 0 s) and softened by `Ramp` (a raised-cosine rise
+over that time, default 0 s). Every other analysis ignores both.
+
 {{table: components/ModSource}}
 
 ### Waveform sources {#waveform-sources}

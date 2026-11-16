@@ -63,7 +63,24 @@ public sealed record TransientParams
     /// <summary>brief TRN-8 — called at every output point with its time and recorded values; true ends the run at that point,
     /// and the result holds the output grid up to it.</summary>
     internal Func<double, double[], bool>? StopWhen { get; init; }
+    /// <summary>brief MTR-1 — a MOD_Source plays its modulated signal (true), or its CW tone at Fc as harmonic balance sees it
+    /// (false: the HB and oscillator seeds, which want the steady state).</summary>
+    public bool PlayModulation { get; init; } = true;
+    /// <summary>brief MTR-2 — what the run keeps: every output point (Rf), or the envelopes about a MOD_Source's Fc (Baseband);
+    /// Auto is Baseband when the netlist has a MOD_Source.</summary>
+    public TransientStore Store { get; init; } = TransientStore.Auto;
+    /// <summary>brief MTR-2 — the harmonics of Fc baseband storage keeps, 0 to this.</summary>
+    public int StoreHarm { get; init; } = 3;
+    /// <summary>brief MTR-2 — where baseband measurements start (s); NaN: after the largest MOD_Source Ramp.</summary>
+    public double MeasureFromS { get; init; } = double.NaN;
+    /// <summary>brief MTR-2 — handed every output point (time, the recorded values) as it is made.</summary>
+    internal Action<double, double[]>? OutputSink { get; init; }
+    /// <summary>brief MTR-2 — the output points go to <see cref="OutputSink"/> only: the result holds no waveform.</summary>
+    internal bool DiscardOutput { get; init; }
 }
+
+/// <summary>brief MTR-2 — what a transient run keeps (Store=).</summary>
+public enum TransientStore { Auto, Rf, Baseband }
 
 /// <summary>brief TRN-7 — the solver a transient analysis runs on (D2).</summary>
 public enum TransientSolver { Native, Ngspice }

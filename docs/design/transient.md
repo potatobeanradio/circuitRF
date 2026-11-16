@@ -301,9 +301,8 @@ impedance exactly (a fit asked for the harmonics alone puts undamped poles on th
 
 Behavioural frequency-domain system blocks whose definition is a spectrum operation (Mixer, the System Amplifier's
 spectral form), the Phased Array, the Propagation Channel, Tuners, WSProbe and the EM Field Data block are refused by
-name in a tran analysis, each with a sentence naming the analysis that supports it. A `MOD_Source` is refused with
-"modulated signals are simulated by the envelope analysis" (its waveform upconverted to RF would be carrier-resolved
-over a symbol record, which is what the envelope exists to avoid).
+name in a tran analysis, each with a sentence naming the analysis that supports it. A `MOD_Source` was refused here until
+brief MTR-1, which plays it over a window of its record (§6.4).
 
 ## 6. Sources
 
@@ -332,7 +331,27 @@ frequency but DC.
   envelope; default 0, a step) and `Damping` (an exponential decay rate after `Delay`, 1/s; default 0). Breakpoints at
   `Delay` and `Delay + Ramp`. With these, a tone source is everything the dialect's `SIN` stimulus is. `P1Tone`/`PnTone` keep their available power and source impedance; harmonic
   terminations `Z[k]` other than the fundamental impedance are frequency-defined and realized by §5.4's fit.
-- **`MOD_Source`**: refused (§5.5).
+- **`MOD_Source`**: its signal on its carrier (§6.4).
+
+### 6.4 `MOD_Source` (brief MTR-1)
+
+`v(t) = Re{Vs·g(t)·b(RecordStart + t)·e^(j2πFc·t)}` behind `Z`. In that expression:
+- `Vs = √(8·Re Z·Pavg)` is the peak available-drive phasor, as in every analysis.
+- `b` is the composite baseband record: unit mean power, each carrier at its offset from `Fc`.
+- `g` is a raised-cosine rise over `Ramp`.
+
+`RecordStart` (default 0) and `Ramp` (default 0) are read in transient only.
+
+Like a shaped tone, the source is its own right-hand-side column, taken by difference. `b` is read from a table over the
+run's window, built once:
+- by the signal's band-limited window interpolation (`ModulatedSignal.CompositeWindow`), at 32 × the record's widest
+  excursion from `Fc` (its largest offset plus half its native rate);
+- read between points by the cubic through the four nearest;
+- refused past 2^24 points.
+
+The automatic step bound counts `Fc` plus that excursion. The HB and oscillator seeds (§10) play the source as its CW
+tone at `Fc`, the steady state they seed. ngspice does not play it: a sampled stimulus written into a deck would be an
+approximation (D7).
 
 ### 6.3 `time` in expressions
 
@@ -399,6 +418,38 @@ and offered in the Messages panel when a transient run ends. The analysis card s
 `InitialState` and `Solver`, with every other key under More — the ngspice-only ones as word pickers, enabled only with
 that solver; `Solver`'s ngspice choice is enabled only when ngspice is discovered (D2). The note beneath it has its space
 reserved whether shown or not, so the card's controls do not move when ngspice appears or disappears.
+
+### 8.1 Baseband results of a modulated run (brief MTR-2)
+
+`Store=auto|baseband|rf` on the directive; `auto` is `baseband` when the bench has a `MOD_Source`.
+
+**How the run downconverts.** With baseband storage, the run reports a uniform RF-rate grid, 4(K+1) points per carrier
+period (K = `StoreHarm`, default 3), to a streaming downconverter and keeps none of it. With `MaxStep` automatic, the
+engine steps on a whole subdivision of that grid, at least 20 steps per period of the highest frequency. Every grid point
+is therefore an accepted step, not a quadratic interpolation between two. That interpolation's error, about 1e-3 of the
+carrier at 20 steps a period, would land in the envelopes.
+
+**The envelopes.** For each recorded quantity and k = 0 … K:
+
+`X_k(t_m) = c_k·Σ w(t_j − t_m)·x(t_j)·e^(−jk2πFc·t_j) / Σ w`, where c₀ = 1 and c_k = 2 above it.
+
+- `w` is a Kaiser-windowed sinc low-pass (80 dB): flat to half the signal rate, and stopped by the envelope's Nyquist
+  frequency.
+- The envelope rate is the envelope analysis's own rule (the signal rate, at least twice oversampled).
+- A carrier below the envelope rate is refused, because a neighbouring harmonic would fold in.
+- The quantities recorded are the envelope's: labelled nets, each IProbe's current and its first net's voltage, and the
+  non-zero DC supplies.
+
+**The result.** The envelopes, the drive and the carriers are packed as an envelope run result and measured by
+`EnvelopeDataSet.Build`. A baseband transient therefore has the envelope analysis's cubes (V, I, Pprobe_W, PSD, ACLR, EVM,
+Const, AM-AM, Gt, DE), beside `Tran.*` and `__TranStore`. The Transient preset leaves it to the envelope's displays, since
+its `V` is complex. `MeasureFrom` (default: after the largest `Ramp`) is the settling skip.
+
+**Restrictions.** All sources share one `Fc` and one `RecordStart`. With `Store=rf`, an automatic `Step` is 1/(20·f_max)
+rather than Stop/1000.
+
+On the gate bench (an LTE 5 MHz carrier at 1 GHz into its matched load), the harmonic-1 envelope equals ½·Vs·b(τ) to
+8e-6 of Vs, and the other harmonics are below 8e-6.
 
 ## 9. ngspice
 

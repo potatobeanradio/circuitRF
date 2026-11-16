@@ -136,7 +136,8 @@ The result carries the run's counters, `Tran.AcceptedSteps`, `Tran.RejectedSteps
 | A lossless line, a lossless coupled pair | Exact, as delays. The run's message gives the delay and the error against the line's model |
 | A lossy microstrip, stripline, coplanar or ideal line | Its delay and a rational fit of the rest, checked against the model up to the run's highest frequency, 1/(2 `MaxStep`). A line that cannot be fitted within 1e-3 of \|S21\| there is refused by name with its error |
 | SnP blocks, filters, Z(freq) blocks, tapers, EM cells | A rational fit from DC to the run's highest frequency, made passive if it is not, its error and any correction reported. Data that stops short of DC is extrapolated and the run says so |
-| Lossy coupled lines, mixers and system amplifiers, the Phased Antenna Array, the Propagation Channel, tuners, the WSProbe, the EM Field Data block, `MOD_Source` | Refused by name, each with the analysis that does run it |
+| `MOD_Source` | Its signal on its carrier, over a window of its record ([Modulated sources](#modulated)) |
+| Lossy coupled lines, mixers and system amplifiers, the Phased Antenna Array, the Propagation Channel, tuners, the WSProbe, the EM Field Data block | Refused by name, each with the analysis that does run it |
 
 A term or port is a load of its `Z` in transient, as in harmonic balance.
 
@@ -160,6 +161,46 @@ table. Every trace is an ordinary trace to re-point afterwards.
 {{ui: transient-line-reflection}}
 
 {{ui: transient-buck-startup}}
+
+## Modulated sources {#modulated}
+
+A [MOD_Source](components.html#modsource) plays its signal in a native transient run, carrier-resolved: its LTE, NR,
+QAM, FSK, chirp or imported I/Q record on its carrier `Fc`, behind its `Z`. Use it where the [envelope
+analysis](simulations.html#envelope) assumes too much: a switching or saturating stage driven by a real modulated
+signal, a modulated signal beside an unrelated tone, a start-up while the modulation runs, or a check of an envelope result
+on the same bench. Otherwise the envelope analysis answers a modulated question in a fraction of the time.
+
+A run plays a **window** of the record, since every carrier cycle is stepped: 10 µs of a 2.4 GHz carrier is about half
+a million steps, a whole 1 ms record fifty times that. Two keys on the source pick the window:
+
+| Key on the MOD_Source | Default | |
+|---|---|---|
+| `RecordStart` | `0` | Where in the record the run starts (s). The record repeats, so any time is a place in it |
+| `Ramp` | `0` | A raised-cosine rise of the drive over this time (s), so the circuit is not hit with the signal at full power |
+
+Every other analysis ignores both. ngspice does not play a MOD_Source.
+
+What the run keeps is the tran card's **Store**:
+
+| Key on the tran directive | Default | |
+|---|---|---|
+| `Store` | `auto` | `baseband`: the envelopes about `Fc`, at the signal's own sample rate. `rf`: every output point of the waveform. `auto` is `baseband` when the bench has a MOD_Source |
+| `StoreHarm` | `3` | Baseband: the harmonics of `Fc` kept, 0 to this |
+| `MeasureFrom` | `auto` | Baseband: where the measurements start (s); `auto` is after the largest `Ramp` |
+
+**Baseband** results are the [envelope analysis's](simulations.html#envelope) own: `V[time, node, harmonic]`,
+`I[time, branch, harmonic]` and, at every IProbe, the power, the spectrum (`PSD`), `ACLR`, `EVM`, the constellation,
+`AM-AM` and the gain, measured by the same code. A plot or `measure` line written for an envelope run reads a
+modulated transient unchanged. The run downconverts as it steps and never holds the waveform, so memory stays small however
+long the window. EVM needs whole symbols: an OFDM symbol is about 70 µs, so a window shorter than that reports no EVM, and
+says so.
+
+**RF** keeps the waveform itself, at an output step of 1/20 of the carrier's period unless `Step` says otherwise, and
+the card warns how many points that is. Read it with the [time-domain functions](measurements.html#time-domain), as any
+transient result.
+
+All sources in a baseband run share one `Fc` and one `RecordStart`; a bench whose sources differ is refused and names
+`Store=rf`.
 
 ## When circuitRF suggests another analysis {#steering}
 

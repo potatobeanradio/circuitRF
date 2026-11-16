@@ -92,6 +92,21 @@ public static class TransientRunner
             TransientAnalysis.InitialZero => TransientStart.Zero,
             _ => throw new TransientRefusedException($"{who}: InitialState must be op or zero, not '{a.InitialState}'."),
         };
+        // brief MTR-2 — what the run keeps
+        var store = a.Store.Trim().ToLowerInvariant() switch
+        {
+            TransientAnalysis.StoreAuto or "" => TransientStore.Auto,
+            TransientAnalysis.StoreBaseband => TransientStore.Baseband,
+            TransientAnalysis.StoreRf => TransientStore.Rf,
+            _ => throw new TransientRefusedException($"{who}: Store must be auto, baseband or rf, not '{a.Store}'."),
+        };
+        double storeHarm = Num("StoreHarm", a.StoreHarmExpr, 3);
+        if (!(storeHarm >= 0 && storeHarm <= 16 && storeHarm == Math.Floor(storeHarm)))
+            throw new TransientRefusedException($"{who}: StoreHarm must be a whole number from 0 to 16.");
+        double measureFrom = Num("MeasureFrom", a.MeasureFromExpr, double.NaN);
+        if (measureFrom < 0) throw new TransientRefusedException($"{who}: MeasureFrom must not be negative.");
+        if (ngspice && store == TransientStore.Baseband)
+            throw new TransientRefusedException($"{who}: Store=baseband is the native solver's; ngspice keeps the waveform (Store=rf).");
         var ic = new Dictionary<string, double>(StringComparer.Ordinal);
         foreach (var item in a.IcExpr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
@@ -105,6 +120,7 @@ public static class TransientRunner
             RelTol = relTol, VTol = vTol, ITol = iTol, Start = start, IcNets = ic, SaveSteps = a.SaveStepsOn,
             MaxSteps = (long)Math.Min(maxSteps, long.MaxValue / 2),
             Solver = ngspice ? TransientSolver.Ngspice : TransientSolver.Native, Directive = a,
+            Store = store, StoreHarm = (int)storeHarm, MeasureFromS = measureFrom,
         };
     }
 
@@ -112,9 +128,22 @@ public static class TransientRunner
     /// <remarks>brief TRN-7 — with <c>Solver=ngspice</c>, <see cref="NgspiceRunner.Run"/> solves it instead, its deck under
     /// <see cref="AnalysisSettings.OutputDirectory"/>; with no ngspice discovered that is a refusal, never a native run.</remarks>
     public static DataSet Run(TransientParams p, ElaboratedNetlist nl, AnalysisSettings? settings = null, RunControl? control = null)
-        => p.Solver == TransientSolver.Ngspice
-            ? NgspiceRunner.Run(p, nl, settings?.OutputDirectory, control, settings?.BenchName ?? "", settings?.ProgramVersion ?? "")
-            : Pack(new TransientEngine(nl, settings).Run(p, control), nl);
+    {
+        if (p.Solver == TransientSolver.Ngspice)
+            return NgspiceRunner.Run(p, nl, settings?.OutputDirectory, control, settings?.BenchName ?? "", settings?.ProgramVersion ?? "");
+        // brief MTR-2 — a modulated bench keeps its envelopes by default
+        bool modulated = nl.Components.Any(c => c.Model is Core.Devices.ModSourceModel);
+        var store = p.Store == TransientStore.Auto ? (modulated ? TransientStore.Baseband : TransientStore.Rf) : p.Store;
+        if (store == TransientStore.Baseband)
+            return TransientBaseband.Run(p, nl, settings, control);
+        // RF storage of a modulated bench: an automatic Step resolves the carrier, not Stop/1000 (R-mtr2-6)
+        if (modulated && p.Directive is { } d && (string.IsNullOrWhiteSpace(d.StepExpr) || d.StepExpr.Trim().Equals("auto", StringComparison.OrdinalIgnoreCase)))
+        {
+            double fHi = nl.Components.Select(c => c.Model).OfType<Core.Devices.ModSourceModel>().Select(TransientModulated.HighestHz).Max();
+            p = p with { StepS = Math.Min(p.StopS / 1000, 1 / (20 * fHi)) };
+        }
+        return Pack(new TransientEngine(nl, settings).Run(p, control), nl);
+    }
 
     /// <summary>The DataSet of one run.</summary>
     public static DataSet Pack(TransientRunResult r, ElaboratedNetlist nl)

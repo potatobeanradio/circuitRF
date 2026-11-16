@@ -107,6 +107,7 @@ internal static class Tran
                     SpiceLines = native ? TransientAnalysis.SpiceLinesDefault : t.SpiceLines,
                     SpiceLineFreq = native ? TransientAnalysis.SpiceLineFreqDefault : t.SpiceLineFreq,
                     SpiceFit = native ? TransientAnalysis.SpiceFitDefault : t.SpiceFit,
+                    Store = t.Store, StoreHarmExpr = t.StoreHarmExpr, MeasureFromExpr = t.MeasureFromExpr,
                 };
             }
         foreach (var (name, expr) in sets) Console.Error.WriteLine($"[circuitRF] set {name} = {expr}");

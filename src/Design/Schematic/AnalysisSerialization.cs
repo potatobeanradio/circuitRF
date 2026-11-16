@@ -155,6 +155,9 @@ public sealed class CschAnalysis
     public string?   TranSpiceLines    { get; set; }
     public string?   TranSpiceLineFreq { get; set; }
     public string?   TranSpiceFit      { get; set; }
+    public string?   TranStore         { get; set; }   // brief MTR-2
+    public string?   TranStoreHarm     { get; set; }
+    public string?   TranMeasureFrom   { get; set; }
     // Brief NZ-9 — an oscillator ("osc"): MaxHarm, FFTOverSample and Tol reuse the HB fields above.
     public string?   OscProbe          { get; set; }
     public string?   OscFguess         { get; set; }
@@ -453,6 +456,8 @@ public static class AnalysisSerialization
             TranSpiceLines = Nd(tr.SpiceLines, TransientAnalysis.SpiceLinesDefault),
             TranSpiceLineFreq = Nd(tr.SpiceLineFreq, TransientAnalysis.SpiceLineFreqDefault),
             TranSpiceFit = Nd(tr.SpiceFit, TransientAnalysis.SpiceFitDefault),
+            TranStore = Nd(tr.Store, TransientAnalysis.StoreAuto), TranStoreHarm = Nd(tr.StoreHarmExpr, TransientAnalysis.StoreHarmDefault),
+            TranMeasureFrom = Nd(tr.MeasureFromExpr, TransientAnalysis.MeasureFromDefault),
         },
 
         TrlAnalysis t => new CschAnalysis
@@ -702,6 +707,8 @@ public static class AnalysisSerialization
             SpiceLines = dto.TranSpiceLines ?? TransientAnalysis.SpiceLinesDefault,
             SpiceLineFreq = dto.TranSpiceLineFreq ?? TransientAnalysis.SpiceLineFreqDefault,
             SpiceFit = dto.TranSpiceFit ?? TransientAnalysis.SpiceFitDefault,
+            Store = dto.TranStore ?? TransientAnalysis.StoreAuto, StoreHarmExpr = dto.TranStoreHarm ?? TransientAnalysis.StoreHarmDefault,
+            MeasureFromExpr = dto.TranMeasureFrom ?? TransientAnalysis.MeasureFromDefault,
         },
 
         "trl" => new TrlAnalysis(dto.Name)

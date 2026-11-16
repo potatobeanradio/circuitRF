@@ -39,7 +39,8 @@ public static class TransientPreset
     {
         if (ds is null) return null;
         foreach (var g in ds.Groups)
-            if (ds.CubesIn(g).ContainsKey(Marker) && ds.CubesIn(g).ContainsKey("V")) return g;
+            // a baseband transient (brief MTR-2) holds the envelope analysis's complex envelopes: the envelope's displays read it
+            if (ds.CubesIn(g).ContainsKey(Marker) && ds.CubesIn(g).TryGetValue("V", out var v) && v.DataKind == DataKind.Real) return g;
         return null;
     }
 

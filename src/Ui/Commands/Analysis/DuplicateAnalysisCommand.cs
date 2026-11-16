@@ -91,6 +91,7 @@ internal sealed class DuplicateAnalysisCommand : IUiCommand
                 InitialState = tr.InitialState, IcExpr = tr.IcExpr, Solver = tr.Solver, SaveSteps = tr.SaveSteps,
                 MaxStepsExpr = tr.MaxStepsExpr, SpiceOptions = tr.SpiceOptions, SpiceLines = tr.SpiceLines,
                 SpiceLineFreq = tr.SpiceLineFreq, SpiceFit = tr.SpiceFit,
+                Store = tr.Store, StoreHarmExpr = tr.StoreHarmExpr, MeasureFromExpr = tr.MeasureFromExpr,
             },
 
         OscillatorAnalysis o =>
