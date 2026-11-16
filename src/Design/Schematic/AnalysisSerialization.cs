@@ -130,6 +130,8 @@ public sealed class CschAnalysis
     public string?   FieldsWaves       { get; set; }
     public string?   FieldsHarmonicExpr { get; set; }
     public string?   FieldsDirsExpr    { get; set; }
+    // brief-paa-11 — the planes of an array's fine pattern cuts; absent for the default 0,90.
+    public string?   FieldsCutsExpr    { get; set; }
     // brief-de-4 — a TRL calibration ("trl"): the three standards' SnP instances, the reflect's side, and the two fixture files.
     public string?   TrlThru           { get; set; }
     public string?   TrlReflect        { get; set; }
@@ -426,6 +428,7 @@ public static class AnalysisSerialization
             FieldsWaves = f.FromHarmonicBalance ? f.Waves.Trim() : null,
             FieldsHarmonicExpr = f.HarmonicExpr.Trim().Length > 0 ? f.HarmonicExpr.Trim() : null,
             FieldsDirsExpr = f.DirsExpr.Trim().Length > 0 ? f.DirsExpr.Trim() : null,
+            FieldsCutsExpr = f.CutsExpr.Trim().Length > 0 ? f.CutsExpr.Trim() : null,
         },
 
         OscillatorAnalysis o => new CschAnalysis
@@ -681,6 +684,7 @@ public static class AnalysisSerialization
             Enabled = dto.Enabled, Block = dto.FieldsBlock ?? "", FreqExpr = dto.FieldsFreqExpr ?? "", FreqUnit = dto.FieldsFreqUnit ?? "Hz",
             DriveExpr = dto.FieldsDriveExpr ?? "1", WeightsExpr = dto.FieldsWeightsExpr ?? "", Norm = dto.FieldsNorm ?? FieldsAnalysis.NormAccepted, AverageExpr = dto.FieldsAverageExpr ?? "yes",
             Waves = dto.FieldsWaves ?? "", HarmonicExpr = dto.FieldsHarmonicExpr ?? "", DirsExpr = dto.FieldsDirsExpr ?? "",
+            CutsExpr = dto.FieldsCutsExpr ?? "",
         },
 
         "osc" => new OscillatorAnalysis(dto.Name)

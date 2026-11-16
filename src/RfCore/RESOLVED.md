@@ -1653,3 +1653,18 @@ only a Doppler (`TxVel`), 10 Msym/s over 0.2 ms: 200 Hz read −0.5 Hz, 500 Hz r
   (4/65), every symbol takes the record's SINR; a fade within the record keeps the local window. Gate
   `SignalEqualizerTests.ScBerEst_InPlainNoise_IsTheClosedForm_AndAFadeKeepsTheLocalWindow`.
 - **Not built:** P.530's worst-month to average-year conversion (R-pch2-2).
+
+## Loadpull contours: no ring at the peak, and MXP/MXE at the fitted peak (2026-11-16)
+
+- **A tiny contour at every loadpull's optimum.** `ContourExtractor.LevelsBetween` (the Data Display's default *Count* levels,
+  harmonicaRF's panels, the Model Composer's plots) spaced its N levels from the surface's minimum to its maximum INCLUSIVE, so
+  the top level was the peak's own value and marching squares traced a degenerate ring round the one raster node holding it (and
+  another at the minimum, in a corner). The levels are now min + (max − min)·k/(N + 1), k = 1…N; one level is still the midpoint.
+- **MXP drawn off the contours.** The Data Display marked `MxxResult.Measured`, the best measured load, and on a flat peak that is
+  a tie-break: the Loadpull example reads 41.43 dBm at 0.2∠±30° and 41.41 at 0.2∠0°, and MXP was drawn at +30° while the surface
+  the contours come from peaks on the real axis at Γ ≈ 0.124. `Interpolated` searched only a VSWR 1.2 circle round the measured
+  argmax, which did not reach it either. `GetMxx` now searches the fitted surface over the measured nodes' convex hull (never past
+  the data), coarse then fine round the best cell, keeping the circle only when there is no hull; the Data Display marks
+  `Interpolated`, and the auto-zoom box still frames the measured loads. The summary table and the Model Composer's validation
+  read the same `Interpolated`. The fit is approximating (smoothing 0.1), so its peak reads 41.53 dBm where the best measured
+  load reads 41.43. Gates: `LoadpullMxpTests` (MXP on the axis, levels strictly inside), `ContourExtractorTests`.

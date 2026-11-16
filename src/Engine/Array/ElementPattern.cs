@@ -62,18 +62,22 @@ public sealed class ElementPattern
         => ReferenceEquals(a, b) || (a.ThetaDeg.SequenceEqual(b.ThetaDeg) && a.PhiDeg.SequenceEqual(b.PhiDeg));
 
     /// <summary>The pattern at θ, φ in radians. Zero beyond the grid's last θ.</summary>
-    public (Complex ETheta, Complex EPhi) At(double thetaRad, double phiRad)
+    public (Complex ETheta, Complex EPhi) At(double thetaRad, double phiRad) => AtDegrees(thetaRad * 180 / Math.PI, phiRad * 180 / Math.PI);
+
+    /// <summary>brief-paa-11 — <see cref="At"/> with θ and φ in degrees, so a direction written on the record's own grid (a pattern cut's
+    /// samples) lands on its grid point exactly rather than one rounding away from it.</summary>
+    public (Complex ETheta, Complex EPhi) AtDegrees(double thetaDeg, double phiDeg)
     {
         var th = Grid.ThetaDeg;
         var ph = Grid.PhiDeg;
-        double t = thetaRad * 180 / Math.PI;
+        double t = thetaDeg;
         if (t < th[0] - 1e-9 || t > th[^1] + 1e-9) return (Complex.Zero, Complex.Zero);
         t = Math.Clamp(t, th[0], th[^1]);
         int i = Bracket(th, t);
         int i1 = Math.Min(i + 1, th.Count - 1);
         double ft = i1 == i ? 0 : (t - th[i]) / (th[i1] - th[i]);
 
-        double p = phiRad * 180 / Math.PI;
+        double p = phiDeg;
         int j, j1;
         double fp;
         int np = ph.Count;
@@ -94,6 +98,9 @@ public sealed class ElementPattern
             fp = j1 == j ? 0 : (p - ph[j]) / (ph[j1] - ph[j]);
         }
         int a = Grid.IndexOf(i, j), b = Grid.IndexOf(i, j1), c = Grid.IndexOf(i1, j), d = Grid.IndexOf(i1, j1);
+        // brief-paa-11 — a direction ON a grid point is read, not rebuilt from its magnitude and phase: that is one rounding off, which a
+        // near-null sum of several classes magnifies past a cut's 1e-12 agreement with the overview
+        if (ft == 0 && fp == 0) return (ETheta[a], EPhi[a]);
         return (Bilinear(ETheta[a], ETheta[b], ETheta[c], ETheta[d], ft, fp), Bilinear(EPhi[a], EPhi[b], EPhi[c], EPhi[d], ft, fp));
     }
 

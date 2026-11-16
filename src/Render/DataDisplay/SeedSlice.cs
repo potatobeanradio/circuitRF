@@ -84,6 +84,7 @@ public static class SeedSlice
     public static AxisSlice[] Build(DataCube cube)
     {
         var axes = cube.Axes;
+        if (CutSlice(axes) is { } cut) return cut;
         // One frequency under a sweep is one point along freq: a value per sweep point reads along the sweep (a far field's metrics, brief-cosim-pattern-5 R-cp5-5).
         // Not a pattern, whose X is an angle the seed has no way to choose.
         if (axes.Any(a => a.Name == "freq" && a.Length == 1) && !axes.Any(a => a.Name is "theta" or "phi"))
@@ -109,6 +110,36 @@ public static class SeedSlice
         for (int d = 0; d < axes.Count; d++)
             slice[d] = d == xIdx      ? new AxisSlice(axes[d].Name, AxisRole.KeepAsX, 0)
                      : d == familyIdx ? new AxisSlice(axes[d].Name, AxisRole.FamilyIterate, 0)
+                     : Pinned(axes[d]);
+        return slice;
+    }
+
+    /// <summary>brief-paa-11 — the signed angle of a plane cut (<c>farfield.CutU</c> and its companions): −90° … +90° through boresight.</summary>
+    public const string CutAngleAxis = "angle";
+
+    /// <summary>
+    /// brief-paa-11 R-paa11-3 — a PLANE CUT is a function of its angle, whatever else it carries: its signed <c>angle</c> is X, its <c>cut</c>
+    /// plane pinned at the first, and the innermost sweep around it a family (a θ0 sweep overlays one cut per steering), as a curve tracer's is.
+    /// Null for any other cube.
+    /// </summary>
+    private static AxisSlice[]? CutSlice(IReadOnlyList<Axis> axes)
+    {
+        int x = -1;
+        bool plane = false;
+        for (int d = 0; d < axes.Count; d++)
+        {
+            if (axes[d].Name == CutAngleAxis && axes[d].Length > 1) x = d;
+            else if (axes[d].Name == "cut") plane = true;
+        }
+        if (x < 0 || !plane) return null;
+        int family = -1;
+        for (int d = 0; d < axes.Count; d++)
+            if (d != x && axes[d].Length > 1 && axes[d].Name is not ("cut" or "freq") && !IsStructuralAxis(axes[d].Name)) family = d;
+        if (family >= 0 && axes[family].Length > Trace.MaxFamilyCurves) family = -1;
+        var slice = new AxisSlice[axes.Count];
+        for (int d = 0; d < axes.Count; d++)
+            slice[d] = d == x      ? new AxisSlice(axes[d].Name, AxisRole.KeepAsX, 0)
+                     : d == family ? new AxisSlice(axes[d].Name, AxisRole.FamilyIterate, 0)
                      : Pinned(axes[d]);
         return slice;
     }

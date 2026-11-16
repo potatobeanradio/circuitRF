@@ -1919,3 +1919,10 @@ src/Engine/Transient/TransientRunner.cs|{who}: Store=baseband is the native solv
 src/Engine/Transient/TransientRunner.cs|{who}: StoreHarm must be a whole number from 0 to 16.
 src/Engine/Transient/TransientBaseband.cs|{who}: Store=baseband reads every carrier from one place in its record, and {string.Join(
 src/Engine/Transient/TransientBaseband.cs|{who}: Store=baseband takes its envelopes about a MOD_Source's Fc, and this bench has none; Store=rf keeps the waveform.
+src/Design/Em3d/FieldCosimulation.Cuts.cs|{who}: cuts= item '{item}' is not a plane: write each plane's φ in degrees, comma-separated (0,45,90).
+src/Design/Em3d/FieldCosimulation.Cuts.cs|{who}: cuts= names the plane φ = {G(phi)}° twice (a plane and the one 180° round are one plane, from −90° to +90°).
+src/Design/Em3d/FieldCosimulation.Cuts.cs|{who}: cuts= names {items.Length} planes, and a run cuts at most {MaxCutPlanes}. Name fewer.
+src/Engine/Array/ArrayPattern.Cuts.cs|A cut grid needs at least one plane.
+src/Engine/Array/ArrayPattern.Cuts.cs|{lattice.Count} elements and {elements.PatternOf.Count} pattern assignments.
+src/Engine/Array/ArrayPattern.Cuts.cs|{lattice.Count} elements and {weights.Count} weights.
+src/Engine/HarmonicBalance/HbLinearExtractor.cs|The DC interface could not be held: its held network is singular.

@@ -136,7 +136,7 @@ public static partial class FieldCosimulation
     public static DataSet Run(FieldsAnalysis fa, ElaboratedNetlist nl, List<string> notes, RunControl? control = null,
                               List<CircuitRF.Design.Circuit.FieldsArtifact>? artifacts = null,
                               CircuitRF.Design.Circuit.FieldsOutput output = CircuitRF.Design.Circuit.FieldsOutput.Written,
-                              string? label = null, Action<IFieldMetrics>? metrics = null, string? sweepPoint = null)
+                              string? label = null, Action<IFieldMetrics>? metrics = null, string? sweepPoint = null, CutMemo? cutMemo = null)
     {
         ArgumentNullException.ThrowIfNull(fa);
         ArgumentNullException.ThrowIfNull(nl);
@@ -146,11 +146,12 @@ public static partial class FieldCosimulation
                                                 "Run it from the schematic or the fields verb.");
         var (snp, recordPath, hz, drives) = Prepare(fa, nl, who);
         // brief-paa-3 — a Phased Antenna Array's pattern is formed by its own path; an EM Field Data block's below is unchanged.
-        if (ArrayBlock(fa, nl) is { } array) return RunArray(fa, nl, array, hz, drives, notes, control, output, metrics, sweepPoint);
+        if (ArrayBlock(fa, nl) is { } array) return RunArray(fa, nl, array, hz, drives, notes, control, output, metrics, sweepPoint, cutMemo: cutMemo);
         var plan = sweepPoint is null ? PlanOf(fa, recordPath, hz, who, out var far) : SweepPlanOf(fa, recordPath, hz, who, out far);
         var lines = new List<string>();
         var warnings = new List<string>();
         var data = new DataSet();
+        if (CutsNotApplied(fa) is { } notCut) lines.Add(notCut);
         CosimFieldMetrics? provider = null;
         PortFieldSet? set = null;
         bool handedOver = false;

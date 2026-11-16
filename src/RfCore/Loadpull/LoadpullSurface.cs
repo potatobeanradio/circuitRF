@@ -737,27 +737,49 @@ namespace RfCore.Loadpull
             }
             var measured = new Complex(rbf.NodesRe[maxIdx], rbf.NodesIm[maxIdx]);
 
-            // 2. Interpolated peak — high-res search in VSWR=1.2 circle around measured
-            double searchVswr = 1.2;
-            Complex? z0ref    = z0 ?? (plane == SurfacePlane.Gamma ? new Complex(AssumedSourceZ0, 0) : null);
-            var searchCircle  = VswrCirclePoints(measured, searchVswr, plane, z0ref);
-
-            double cMinRe = searchCircle.MinRe, cMaxRe = searchCircle.MaxRe;
-            double cMinIm = searchCircle.MinIm, cMaxIm = searchCircle.MaxIm;
-
-            int hRes = 50;
-            var hx   = Linspace(cMinRe, cMaxRe, hRes);
-            var hy   = Linspace(cMinIm, cMaxIm, hRes);
-
+            // 2. Interpolated peak — the fitted surface's maximum over the MEASURED region: a coarse pass over the nodes' convex hull,
+            //    then a fine one around its best cell. It used to search only a VSWR 1.2 circle round the measured argmax, and on a
+            //    flat peak that argmax is a tie-break: the example loadpull's Pout reads 41.43 dBm at 0.2∠±30° and 41.41 at 0.2∠0°,
+            //    the surface peaks on the real axis at |Γ| ≈ 0.13, 0.11 away, outside the circle, so MXP was drawn at +30°, off the
+            //    centre of the contours drawn from the same fit. The hull keeps the search off the extrapolation outside the data.
+            //    Fewer than three non-collinear nodes have no hull, and keep the circle.
             Complex interpolated = measured;
-            double  interpMax    = double.NegativeInfinity;
-            for (int yi = 0; yi < hRes; yi++)
+            double  interpMax    = rbf.Evaluate(measured.Real, measured.Imaginary);
+            void Consider(double re, double im)
             {
-                for (int xi = 0; xi < hRes; xi++)
-                {
-                    double v = rbf.Evaluate(hx[xi], hy[yi]);
-                    if (v > interpMax) { interpMax = v; interpolated = new Complex(hx[xi], hy[yi]); }
-                }
+                double v = rbf.Evaluate(re, im);
+                if (v > interpMax) { interpMax = v; interpolated = new Complex(re, im); }
+            }
+
+            var nodes = new Complex[rbf.NodeCount];
+            for (int i = 0; i < nodes.Length; i++) nodes[i] = new Complex(rbf.NodesRe[i], rbf.NodesIm[i]);
+            var hull = ConvexHull(nodes);
+            if (hull.Count >= 3)
+            {
+                const int coarse = 60, fine = 24;
+                var cx = Linspace(hull.Min(h => h.Real), hull.Max(h => h.Real), coarse);
+                var cy = Linspace(hull.Min(h => h.Imaginary), hull.Max(h => h.Imaginary), coarse);
+                for (int yi = 0; yi < coarse; yi++)
+                    for (int xi = 0; xi < coarse; xi++)
+                        if (InsideHull(hull, cx[xi], cy[yi])) Consider(cx[xi], cy[yi]);
+                double dx = cx[1] - cx[0], dy = cy[1] - cy[0];
+                var (bx, by) = (interpolated.Real, interpolated.Imaginary);
+                var fx = Linspace(bx - dx, bx + dx, fine);
+                var fy = Linspace(by - dy, by + dy, fine);
+                for (int yi = 0; yi < fine; yi++)
+                    for (int xi = 0; xi < fine; xi++)
+                        if (InsideHull(hull, fx[xi], fy[yi])) Consider(fx[xi], fy[yi]);
+            }
+            else
+            {
+                double searchVswr = 1.2;
+                Complex? z0ref    = z0 ?? (plane == SurfacePlane.Gamma ? new Complex(AssumedSourceZ0, 0) : null);
+                var searchCircle  = VswrCirclePoints(measured, searchVswr, plane, z0ref);
+                int hRes = 50;
+                var hx   = Linspace(searchCircle.MinRe, searchCircle.MaxRe, hRes);
+                var hy   = Linspace(searchCircle.MinIm, searchCircle.MaxIm, hRes);
+                for (int yi = 0; yi < hRes; yi++)
+                    for (int xi = 0; xi < hRes; xi++) Consider(hx[xi], hy[yi]);
             }
 
             return new MxxResult(measured, interpolated);
@@ -1256,6 +1278,43 @@ namespace RfCore.Loadpull
                 if (r > max) max = r;
             }
             return max;
+        }
+
+        /// <summary>The convex hull of <paramref name="pts"/>, counter-clockwise (monotone chain); the points themselves when fewer than three.</summary>
+        internal static IReadOnlyList<Complex> ConvexHull(IReadOnlyList<Complex> pts)
+        {
+            if (pts.Count < 3) return pts;
+            var sorted = pts.OrderBy(p => p.Real).ThenBy(p => p.Imaginary).ToList();
+            static double Cross(Complex o, Complex a, Complex b)
+                => (a.Real - o.Real) * (b.Imaginary - o.Imaginary) - (a.Imaginary - o.Imaginary) * (b.Real - o.Real);
+            static List<Complex> Chain(List<Complex> seq)
+            {
+                var half = new List<Complex>();
+                foreach (var p in seq)
+                {
+                    while (half.Count >= 2 && Cross(half[^2], half[^1], p) <= 0) half.RemoveAt(half.Count - 1);
+                    half.Add(p);
+                }
+                half.RemoveAt(half.Count - 1);
+                return half;
+            }
+            var lower = Chain(sorted);
+            sorted.Reverse();
+            lower.AddRange(Chain(sorted));
+            return lower;
+        }
+
+        /// <summary>Whether (re, im) is inside the polygon <paramref name="hull"/> (even-odd).</summary>
+        internal static bool InsideHull(IReadOnlyList<Complex> hull, double re, double im)
+        {
+            if (hull.Count < 3) return false;
+            bool inside = false;
+            for (int i = 0, j = hull.Count - 1; i < hull.Count; j = i++)
+            {
+                double xi = hull[i].Real, yi = hull[i].Imaginary, xj = hull[j].Real, yj = hull[j].Imaginary;
+                if (yi > im != yj > im && re < (xj - xi) * (im - yi) / (yj - yi) + xi) inside = !inside;
+            }
+            return inside;
         }
 
         private static double[] Linspace(double min, double max, int n)

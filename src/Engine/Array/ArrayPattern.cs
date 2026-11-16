@@ -104,7 +104,7 @@ public sealed record ArrayField(ArrayDirections Directions, Complex[] ETheta, Co
 }
 
 /// <summary>R-paa2-2 — the array factor and the pattern sum.</summary>
-public static class ArrayPattern
+public static partial class ArrayPattern
 {
     private static readonly ConditionalWeakTable<ArrayDirections, List<ArrayPhaseTables>> _tables = new();
     private static long _built, _separable;

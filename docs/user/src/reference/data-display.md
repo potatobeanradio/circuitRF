@@ -77,7 +77,7 @@ Undoing every edit since the last save leaves the `.cdd` unmodified again.
 the displays of different workspaces. A pasted plot shows the same data it showed where it was copied.
 When that is also the data source the pasting display has selected, the pasted plot follows the toolbar
 selection like the plots already there. To make a pasted plot show this display's results instead, press
-**Use display source** at the top of its Plot Inspector: every trace then reads the source selected in the
+**Use display source** (the database button with circling arrows, at the top of its Plot Inspector, beside the frequency unit): every trace then reads the source selected in the
 toolbar and follows it from then on. It is one undo step.
 
 There are four plot types, and which one will accept which data is the single most important rule in the

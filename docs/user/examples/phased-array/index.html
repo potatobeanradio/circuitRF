@@ -79,8 +79,10 @@ example's: 12 cells a wavelength with the edge mesh off (the 5 × 5 sub-array is
 patch's resonance to about 5.88 GHz. That is why everything here is at 5.9 GHz rather than 5.8.</p>
 <p>Simulating <code>Patch 5x5/em/Patch 5x5.cem</code> again writes the full result (5.8, 5.9 and 6.0 GHz, 1° grid) over the shipped one:
 about 15 minutes and 3.2 GB of memory. The benches then read it unchanged. The 5° grid is coarse for an array's beam, but the
-array never reads its beam off it: the cuts and readouts are formed on a fine grid around the beam with the element pattern
-interpolated, and only the overview (the polar plots in the displays) is drawn on the record's grid.</p>
+array never reads its beam off it: the readouts are formed on a fine grid around the beam with the element pattern
+interpolated, and so are the pattern cuts every fields analysis on an array publishes (<code>farfield.CutU</code>, in the planes <code>cuts=</code>
+names, φ = 0 and 90° by default, at a tenth of the beamwidth or finer), which is what the polar plots in the displays draw. Only
+the overview, <code>farfield.U</code> and the 3D view, is on the record's grid.</p>
 <h2 id="transmit">1 Transmit</h2>
 <p>A 16 × 16 array in Feed mode: one pin, <code>F</code>, and a beamformer inside that splits the feed 256 ways. Each element's weight is
 <code>Amp=taylor(-25,4)</code> (a −25 dB Taylor taper) and <code>Phase=steer(theta0,phi0,f0)</code>, rounded to 6-bit phase shifters
@@ -126,7 +128,7 @@ coupled array with one sparse factorisation that a change of steering only back-
 53.90 dBi at boresight to 53.24 at 30° and 50.04 at 60°. The taper is attenuation after an equal split, so the power it takes
 from the edge elements is dissipated: against uniform weights it costs 6.2 dB of realized gain at boresight (60.14 dBi), for
 sidelobes at −24 dB instead of −12.6.</p>
-<p><strong>1 Transmit.cdd</strong> draws the cut in the steering plane at each <code>theta0</code>, the realized gain against <code>theta0</code>, and every
+<p><strong>1 Transmit.cdd</strong> draws the cut in the steering plane (<code>F2.farfield.CutU</code> at φ = 0, −90 to +90°) at each <code>theta0</code>, the realized gain against <code>theta0</code>, and every
 element's |Γ_act| at 0, 30 and 60° (the edges and corners differ most, because their neighbours differ). Measures that read the
 pattern (<code>SllDb(F1)</code> and the rest) are one number per run, so they read <code>F1</code>, which no sweep wraps.</p>
 <p><strong>Open it in the Phased Array tool</strong> (Tools ▸ Phased Array, with the schematic active): the aperture coloured by amplitude,
@@ -267,7 +269,7 @@ the harmonic-balance solution, so each amplifier's compression shows in the beam
 <p>At 22 dBm each amplifier gives about 40 dBm. At boresight the inner two run at 68 % PAE and the outer two at 63 %; steered to 45°
 the inner two fall to 37 % and the outer two to 44 and 51 %, because each one's active load moves differently.</p>
 <p><strong>5 Brute Force.cdd</strong> draws each element's Γ_act against <code>theta0</code> on a Smith chart, the same loci over the Pout and PAE contours
-of <em>4 PA Loadpull</em> (which elements leave the high-efficiency region at which angle), the cut at each <code>theta0</code>, the peak realized
+of <em>4 PA Loadpull</em> (which elements leave the high-efficiency region at which angle), the φ = 0 cut (<code>F1.farfield.CutU</code>) at each <code>theta0</code>, the peak realized
 gain, and each amplifier's Pout and PAE against <code>theta0</code>. In the Phased Array tool, colour the aperture by PA PAE: the tool reads
 the measures named <code>PAE1</code> … <code>PAE4</code>.</p>
 <h2 id="envelope">6 Envelope</h2>
@@ -281,7 +283,7 @@ active reflection over the record, and the time-averaged pattern. It takes about
 the steering phase, so off the beam, where the carrier is weak, it is relatively stronger.
 At −8 dBm every direction reads the source's own EVM (0.2 to 0.4 %).</p>
 <p><strong>6 Envelope.cdd</strong> draws each element's Γ_act over the record as a cloud, the clouds over the loadpull contours, the
-time-averaged cut at each drive, the radiated spectrum in each direction, and ACPR1 and EVM against drive per direction.</p>
+time-averaged φ = 0 cut (<code>F1.farfield.CutU</code>) at each drive, the radiated spectrum in each direction, and ACPR1 and EVM against drive per direction.</p>
 <p>The result is about 34 MB (four sweep points of 19,662 steps), so it is not something to keep: run it again rather than saving it.</p>
 
 </main>

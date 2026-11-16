@@ -71,7 +71,7 @@ internal sealed class DuplicateAnalysisCommand : IUiCommand
             new FieldsAnalysis(newName)
             {
                 Enabled = a.Enabled, Block = f.Block, FreqExpr = f.FreqExpr, FreqUnit = f.FreqUnit, DriveExpr = f.DriveExpr,
-                WeightsExpr = f.WeightsExpr, Norm = f.Norm, AverageExpr = f.AverageExpr, Waves = f.Waves, HarmonicExpr = f.HarmonicExpr, DirsExpr = f.DirsExpr,
+                WeightsExpr = f.WeightsExpr, Norm = f.Norm, AverageExpr = f.AverageExpr, Waves = f.Waves, HarmonicExpr = f.HarmonicExpr, DirsExpr = f.DirsExpr, CutsExpr = f.CutsExpr,
             },
 
         // A copy keeps its fixture paths as written; an empty one follows the copy's own name, so two copies left at the

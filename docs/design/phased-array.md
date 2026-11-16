@@ -406,6 +406,15 @@ factor is **never evaluated only on the record's grid**:
 - **Cuts and readouts** are formed on a fine local grid: the principal cuts through the peak at a step no coarser than
   a tenth of the beamwidth, and a small patch around the peak (and each sidelobe the metrics read) at the same step.
   Beamwidth, sidelobe level, pointing error and scan loss are computed only from these.
+- **Published cuts.** A fields analysis on an array also publishes plane cuts through boresight beside the overview,
+  `farfield.CutU`, `CutEtheta` and `CutEphi` over [freq, cut, angle, port]: each plane φc (`cuts=`, default `0,90`) over a
+  signed angle t from −90° to +90°, t < 0 being the plane's φc + 180° half, so one trace is the whole plane. The step is a
+  tenth of `ArrayBeam`'s estimated beamwidth (the uniform beam at boresight, which scan and taper only widen), floored at
+  0.05° (3,601 samples at most), and the record's θ step divided by a whole number, so every record direction in the plane
+  is a sample and reads the overview's own value. The element pattern is evaluated once per class and sample, the phases
+  come from the row and column tables, and each class's factor is one pass over the elements per sample; the grid, its
+  tables and its sampled patterns are kept across evaluations, and a sweep keeps its first point's grid so the cubes stack.
+  An `OnDemand` evaluation forms none. The overview says its grid when that is coarser than a tenth of the beam.
 - **The (u,v) map** is the 2-D FFT of the weights on the lattice, zero-padded to at least 8× the array in each
   direction (512×512 for 64×64, under a millisecond on the numpy measurement above), sampled onto the visible circle.
 - **The element pattern** is smooth over a beamwidth of the array (it is one element's), so at any fine point it is

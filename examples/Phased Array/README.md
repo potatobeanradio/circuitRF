@@ -29,8 +29,10 @@ patch's resonance to about 5.88 GHz. That is why everything here is at 5.9 GHz r
 
 Simulating `Patch 5x5/em/Patch 5x5.cem` again writes the full result (5.8, 5.9 and 6.0 GHz, 1° grid) over the shipped one:
 about 15 minutes and 3.2 GB of memory. The benches then read it unchanged. The 5° grid is coarse for an array's beam, but the
-array never reads its beam off it: the cuts and readouts are formed on a fine grid around the beam with the element pattern
-interpolated, and only the overview (the polar plots in the displays) is drawn on the record's grid.
+array never reads its beam off it: the readouts are formed on a fine grid around the beam with the element pattern
+interpolated, and so are the pattern cuts every fields analysis on an array publishes (`farfield.CutU`, in the planes `cuts=`
+names, φ = 0 and 90° by default, at a tenth of the beamwidth or finer), which is what the polar plots in the displays draw. Only
+the overview, `farfield.U` and the 3D view, is on the record's grid.
 
 ## 1 Transmit
 
@@ -56,7 +58,7 @@ The realized gain counts the channels' 32 dB, because it is per watt available a
 from the edge elements is dissipated: against uniform weights it costs 6.2 dB of realized gain at boresight (60.14 dBi), for
 sidelobes at −24 dB instead of −12.6.
 
-**1 Transmit.cdd** draws the cut in the steering plane at each `theta0`, the realized gain against `theta0`, and every
+**1 Transmit.cdd** draws the cut in the steering plane (`F2.farfield.CutU` at φ = 0, −90 to +90°) at each `theta0`, the realized gain against `theta0`, and every
 element's |Γ_act| at 0, 30 and 60° (the edges and corners differ most, because their neighbours differ). Measures that read the
 pattern (`SllDb(F1)` and the rest) are one number per run, so they read `F1`, which no sweep wraps.
 
@@ -133,7 +135,7 @@ At 22 dBm each amplifier gives about 40 dBm. At boresight the inner two run at 6
 the inner two fall to 37 % and the outer two to 44 and 51 %, because each one's active load moves differently.
 
 **5 Brute Force.cdd** draws each element's Γ_act against `theta0` on a Smith chart, the same loci over the Pout and PAE contours
-of *4 PA Loadpull* (which elements leave the high-efficiency region at which angle), the cut at each `theta0`, the peak realized
+of *4 PA Loadpull* (which elements leave the high-efficiency region at which angle), the φ = 0 cut (`F1.farfield.CutU`) at each `theta0`, the peak realized
 gain, and each amplifier's Pout and PAE against `theta0`. In the Phased Array tool, colour the aperture by PA PAE: the tool reads
 the measures named `PAE1` … `PAE4`.
 
@@ -151,6 +153,6 @@ the steering phase, so off the beam, where the carrier is weak, it is relatively
 At −8 dBm every direction reads the source's own EVM (0.2 to 0.4 %).
 
 **6 Envelope.cdd** draws each element's Γ_act over the record as a cloud, the clouds over the loadpull contours, the
-time-averaged cut at each drive, the radiated spectrum in each direction, and ACPR1 and EVM against drive per direction.
+time-averaged φ = 0 cut (`F1.farfield.CutU`) at each drive, the radiated spectrum in each direction, and ACPR1 and EVM against drive per direction.
 
 The result is about 34 MB (four sweep points of 19,662 steps), so it is not something to keep: run it again rather than saving it.

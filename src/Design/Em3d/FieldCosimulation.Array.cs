@@ -44,7 +44,7 @@ public static partial class FieldCosimulation
     /// <summary>R-paa3-6 — <see cref="Run"/> on a Phased Antenna Array.</summary>
     private static DataSet RunArray(FieldsAnalysis fa, ElaboratedNetlist nl, PhasedArrayModel pa, double hz, List<(int Port, Complex Amplitude)> drives,
                                     List<string> notes, RunControl? control, CircuitRF.Design.Circuit.FieldsOutput output,
-                                    Action<IFieldMetrics>? metrics, string? sweepPoint, HbWaveSource? hb = null)
+                                    Action<IFieldMetrics>? metrics, string? sweepPoint, HbWaveSource? hb = null, CutMemo? cutMemo = null)
     {
         string who = $"Fields '{fa.Name}'";
         string name = Path.GetFileName(pa.RecordPath);
@@ -106,6 +106,11 @@ public static partial class FieldCosimulation
                 data.Add($"{group}.{cube}", value);
         AddWaves(data, freqs, waves, [.. Enumerable.Range(1, n)]);
         AddArrayCubes(data, pa, freqs, waves);
+        // brief-paa-11 R-paa11-1 / R-paa11-6 — the fine cuts beside the overview; an OnDemand evaluation (an optimizer's point) forms none,
+        // since nothing it hands back is a plot
+        var cutLines = new List<string>();
+        if (output != CircuitRF.Design.Circuit.FieldsOutput.OnDemand)
+            AddArrayCuts(data, fa, pa, far, freqs, waves, elements, drives[0].Port, cutMemo, cutLines);
         if (hb is not null)
         {
             // brief-paa-6 R-paa6-3 — the watts HB delivers into each element, beside the per-watt cubes
@@ -119,6 +124,7 @@ public static partial class FieldCosimulation
             lines.Add(pa.LevelNote);
             if (pa.CouplingNote is { } hbCoupling) lines.Add(hbCoupling);
             lines.AddRange(sentences.Skip(1));
+            lines.AddRange(cutLines);
             Interlocked.Increment(ref _runs);
             Report(fa, nl, notes, lines, [], sweepPoint, hb);
             if (metrics is not null)
@@ -150,6 +156,7 @@ public static partial class FieldCosimulation
         var solvePath = pa.Feed is not null ? quick?.Path ?? PhasedArrayFastPath.Decide(nl, fa.Block) : null;
         if (solvePath is { } path) lines.Add(path.Sentence);
         lines.AddRange(sentences.Skip(1));
+        lines.AddRange(cutLines);
         Interlocked.Increment(ref _runs);
         if (quick is { Path.Fast: false }) notes.Add($"Fields '{fa.Name}': {PhasedArrayFastPath.EstimatedSentence}");
 
@@ -167,7 +174,6 @@ public static partial class FieldCosimulation
                                             elements[0], solvePath, quick is { Path.Fast: false }, false);
             metrics(new ArrayFieldsMetrics(fa, pa, far, freqs[0], waves[0], elements[0], pattern, nl, drives, state));
         }
-        _ = output;
         return data;
     }
 

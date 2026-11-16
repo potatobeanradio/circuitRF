@@ -540,15 +540,15 @@
                      hidden, so the row does not move — enabled when a trace reads a file of its own, which is what a
                      pasted plot carries. -->
                 <Button Grid.Column="2"
-                        Content="Use display source"
+                        Classes="seg-btn"
                         Command="{Binding UseDisplaySourceCommand}"
                         IsEnabled="{Binding HasPinnedSource}"
                         IsVisible="{Binding CanEditTraceSet}"
                         HorizontalAlignment="Right"
-                        FontSize="11"
-                        Padding="8,3"
                         Margin="4,0,8,0"
-                        ToolTip.Tip="Point every trace at the data source selected in this display's toolbar, so the plot shows this display's results and follows the selection. A pasted plot keeps the source it was copied with until this is pressed."/>
+                        ToolTip.Tip="Use display source: point every trace at the data source selected in this display's toolbar, so the plot shows this display's results and follows the selection. A pasted plot keeps the source it was copied with until this is pressed.">
+                    <mi:MaterialIcon Kind="DatabaseSyncOutline" Width="16" Height="16"/>
+                </Button>
 
                 <TextBlock Grid.Column="3" Text="Freq"
                            Classes="label" Margin="0,0,4,0"/>

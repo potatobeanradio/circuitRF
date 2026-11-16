@@ -65,14 +65,15 @@ public static partial class FieldCosimulation
         int at = bench.Analyses.IndexOf(source);
         var standIn = new FieldsAnalysis(source.Name) { Block = fa.Block, Waves = source.Name, HarmonicExpr = fa.HarmonicExpr, Enabled = true };
         Complex[,]? seed = null;
+        var cuts = new CutMemo();   // brief-paa-11 — one cut grid for every point, so the cut cubes stack
         DataSet Point(Analysis _, ElaboratedNetlist pointNl, RunControl? pointControl)
         {
             string point = pointNl.WireThermal?.Drive ?? "a sweep point";
-            if (source is EnvelopeAnalysis env) return FromEnvelope(fa, pointNl, env, ctx, [], pointControl, null, point);
+            if (source is EnvelopeAnalysis env) return FromEnvelope(fa, pointNl, env, ctx, [], pointControl, null, point, cuts);
             var hba = (HarmonicBalanceAnalysis)source;
             var run = RunHb(hba, pointNl, ctx, seed);
             seed = run.Converged ? run.InterfaceV : null;
-            return FromHarmonicBalance(fa, pointNl, hba.Name, run, [], pointControl, null, point);
+            return FromHarmonicBalance(fa, pointNl, hba.Name, run, [], pointControl, null, point, cuts);
         }
         bench.Analyses[at] = standIn;
         try
@@ -89,13 +90,13 @@ public static partial class FieldCosimulation
     }
 
     /// <summary>R-cp5-1's runner, for a sweep that wraps a fields analysis with <c>waves=</c> directly: HB at each point, then the pattern.</summary>
-    private static DataSet HbSweepPoint(FieldsAnalysis fa, ElaboratedNetlist nl, FieldsHbContext ctx, RunControl? control)
+    private static DataSet HbSweepPoint(FieldsAnalysis fa, ElaboratedNetlist nl, FieldsHbContext ctx, RunControl? control, CutMemo cuts)
     {
         string point = nl.WireThermal?.Drive ?? "a sweep point";
         var source = WavesAnalysisOf(fa, ctx.Bench, $"Fields '{fa.Name}'");
-        if (source is EnvelopeAnalysis env) return FromEnvelope(fa, nl, env, ctx, [], control, null, point);
+        if (source is EnvelopeAnalysis env) return FromEnvelope(fa, nl, env, ctx, [], control, null, point, cuts);
         var hba = (HarmonicBalanceAnalysis)source;
-        return FromHarmonicBalance(fa, nl, hba.Name, RunHb(hba, nl, ctx, null), [], control, null, point);
+        return FromHarmonicBalance(fa, nl, hba.Name, RunHb(hba, nl, ctx, null), [], control, null, point, cuts);
     }
 
     /// <summary>The analysis <c>waves=</c> names — harmonic balance (brief-paa-6) or envelope (brief-paa-6b) — or the refusal: none of that name, or
@@ -138,7 +139,7 @@ public static partial class FieldCosimulation
 
     /// <summary>The pattern and the array group from one HB solution.</summary>
     private static DataSet FromHarmonicBalance(FieldsAnalysis fa, ElaboratedNetlist nl, string hbName, HbRunResult run, List<string> notes,
-                                               RunControl? control, Action<IFieldMetrics>? metrics, string? sweepPoint)
+                                               RunControl? control, Action<IFieldMetrics>? metrics, string? sweepPoint, CutMemo? cutMemo = null)
     {
         string who = $"Fields '{fa.Name}'";
         string where = sweepPoint is null ? "" : $" at {sweepPoint}";
@@ -195,7 +196,7 @@ public static partial class FieldCosimulation
         var waves = HbWavesAt(fa, nl, block, back, k, hz, z0s);
         var source = new HbWaveSource(hbName, k, f0, waves);
         return block.Model is PhasedArrayModel array
-            ? RunArray(fa, nl, array, hz, [(1, Complex.One)], notes, control, FieldsOutput.Written, metrics, sweepPoint, source)
+            ? RunArray(fa, nl, array, hz, [(1, Complex.One)], notes, control, FieldsOutput.Written, metrics, sweepPoint, source, cutMemo)
             : RunBlockFromHb(fa, nl, far, i, source, notes, control, metrics, sweepPoint);
     }
 
@@ -302,6 +303,7 @@ public static partial class FieldCosimulation
         var pattern = PublishFarField(fa, nl, far, [i], [(1, Complex.One)], data, lines, warnings, control, FieldsOutput.Written, out _, source);
         double[] freqs = [far.FrequenciesHz[i]];
         AddElementCubes(data, freqs, [source.Waves], far.PortNumbers, null);
+        if (CutsNotApplied(fa) is { } notCut) lines.Add(notCut);
         Interlocked.Increment(ref _runs);
         Report(fa, nl, notes, lines, warnings, sweepPoint, source);
         metrics?.Invoke(new HbBlockMetrics(fa, pattern, source.Waves));
