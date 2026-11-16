@@ -8,8 +8,8 @@ namespace CircuitRF.Design.Layout.PCells;
 /// the plan its model stamps — and <see cref="Draw"/> draws every section through the EXISTING part's own
 /// generator (<see cref="MTeePCell"/>, <see cref="MCurvePCell"/>, <see cref="MlinPCell"/>,
 /// <see cref="CoupledLinePCells"/>, <see cref="MMiterPCell"/>, <see cref="MBendPCell"/>, <see cref="MGapPCell"/>,
-/// <see cref="MTaperPCell"/>, <see cref="MRadialPCell"/>; an interdigitated section's strips each by
-/// <see cref="MlinPCell"/>; an open end draws nothing), turned and
+/// <see cref="MTaperPCell"/>, <see cref="MRadialPCell"/>; an interdigitated section's strips, and an N-line section's,
+/// each by <see cref="MlinPCell"/>; an open end draws nothing), turned and
 /// moved to the section's pose. The
 /// copper is therefore the copper those parts draw on their own, piece for piece, and the pins are those
 /// parts' own pins wherever a section ends on one of the passive's pins — never a second rounding of where
@@ -87,6 +87,25 @@ public static class PassivePlanPCells
             parameters.Real("F", 2.4e9), parameters.Real("Gap", 1e-3), SubstrateOf(technology, layerSelection)).Plan,
             technology, layerSelection);
 
+    /// <summary>N coupled microstrip lines (MCLINN): one <see cref="PlanCoupledStrips"/> section, its pins the strips'
+    /// near ends 1..N and far ends N + 1..2N, as <see cref="MicrostripMultiLineModel"/> numbers them.</summary>
+    public const string CoupledStripsId = MicrostripMultiLineModel.TypeName;
+
+    public static PCellResult GenerateCoupledStrips(
+        IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
+    {
+        int n = (int)Math.Round(parameters.Real("N", 3.0));
+        var (w, s) = MicrostripMultiLineModel.StripsOf(n, parameters.Real, ComponentModelFactory.DefaultCoupledWidthMeters,
+            ComponentModelFactory.DefaultCoupledGapMeters);
+        double l = parameters.Real("L", 10e-3);
+        if (MicrostripMultiLineModel.Refusal(w, s, l, SubstrateOf(technology, layerSelection)) is { } why)
+            return new PCellResult([], [], [why.Render()]);
+        var plan = new PassivePlan([.. Enumerable.Range(1, 2 * n).Select(k => $"{k}")],
+            [new PlanCoupledStrips([.. Enumerable.Range(1, n).SelectMany(k => new[] { k, n + k })], 0.0, 0.0, 0.0, w, s, l)],
+            2 * n);
+        return Draw(plan, technology, layerSelection);
+    }
+
     /// <summary>The plan drawn, or its refusal as the cell's one diagnostic.</summary>
     private static PCellResult DrawOrRefuse(Func<PassivePlan> plan, Technology? technology, PCellLayerSelection layerSelection)
     {
@@ -132,7 +151,9 @@ public static class PassivePlanPCells
                 {
                     ["W"] = c.W, ["S"] = c.S, ["L"] = c.L,
                 }, technology, layerSelection),
-                PlanCoupledLine c => Fingers(c, technology, layerSelection),
+                PlanCoupledLine c => Strips([.. Enumerable.Repeat(c.W, c.Fingers)], [.. Enumerable.Repeat(c.S, c.Fingers - 1)],
+                    c.L, technology, layerSelection),
+                PlanCoupledStrips m => Strips(m.W, m.S, m.L, technology, layerSelection),
                 PlanBend b => b.M is { } m
                     ? MMiterPCell.Generate(new Dictionary<string, PCellValue>
                     {
@@ -187,27 +208,33 @@ public static class PassivePlanPCells
         return new PCellResult(shapes, [.. pins.OrderBy(p => order.IndexOf(p.Name))], diagnostics);
     }
 
-    /// <summary>An interdigitated section: each strip an MLIN, strip k centred k·(W + S) below the first as MCLIN places
-    /// its second, with the strips' pins in the section's node order (each strip's near end, then its far end).</summary>
-    private static PCellResult Fingers(PlanCoupledLine c, Technology? technology, PCellLayerSelection layerSelection)
+    /// <summary>A section of coupled strips (an interdigitated <see cref="PlanCoupledLine"/>, or <see cref="PlanCoupledStrips"/>):
+    /// each strip an MLIN of its own width, strip k's centre below strip k − 1's by their half widths and the gap between
+    /// them (for equal strips k·(W + S) below the first, as MCLIN places its second), with the strips' pins in the
+    /// section's node order (each strip's near end, then its far end).</summary>
+    private static PCellResult Strips(IReadOnlyList<double> w, IReadOnlyList<double> s, double l, Technology? technology,
+                                      PCellLayerSelection layerSelection)
     {
         int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
-        long pitch = PCellUnits.MetresToDbu(c.W, dbuPerMicron) + PCellUnits.MetresToDbu(c.S, dbuPerMicron);
         var shapes = new List<LayoutShape>();
         var pins = new List<PCellPin>();
         List<string>? diagnostics = null;
-        for (int k = 0; k < c.Fingers; k++)
+        long dy = 0;
+        for (int k = 0; k < w.Count; k++)
         {
-            var strip = MlinPCell.Generate(new Dictionary<string, PCellValue> { ["W"] = c.W, ["L"] = c.L },
+            if (k > 0)
+                dy -= (PCellUnits.MetresToDbu(w[k - 1], dbuPerMicron) + PCellUnits.MetresToDbu(w[k], dbuPerMicron)) / 2
+                    + PCellUnits.MetresToDbu(s[k - 1], dbuPerMicron);
+            var strip = MlinPCell.Generate(new Dictionary<string, PCellValue> { ["W"] = w[k], ["L"] = l },
                 technology, layerSelection);
-            long dy = -k * pitch;
-            var down = new LayoutCoordinateTransform((x, y) => (x, y + dy), m => m);
+            long at = dy;
+            var down = new LayoutCoordinateTransform((x, y) => (x, y + at), m => m);
             foreach (var shape in strip.Shapes)
             {
                 LayoutCoordinateWalk.Transform(shape, down);
                 shapes.Add(shape);
             }
-            pins.AddRange(strip.Pins.Select(p => p with { Y = p.Y + dy }));
+            pins.AddRange(strip.Pins.Select(p => p with { Y = p.Y + at }));
             if (k == 0 && strip.Diagnostics is { Count: > 0 } d) diagnostics = [.. d];
         }
         return new PCellResult(shapes, pins, diagnostics);

@@ -75,6 +75,8 @@ public static class InstanceNetContract
         // The coupled pairs: four signal terminals over the implicit reference, in CLIN's port order.
         CLineModel or MicrostripCoupledLineModel
             or StriplineBroadsideCoupledModel or MicrostripBroadsideCoupledModel              => 4,
+        // N coupled strips: each strip's two ends, near ends first, over the implicit reference.
+        MicrostripMultiLineModel lines                                                        => lines.PortCount,
 
         // The mutual-inductance element names two inductors by parameter, not two nets by position.
         MutualInductanceModel                                                                 => 0,
@@ -241,6 +243,7 @@ public static class InstanceNetContract
         "WBOND"    => "Arrays",
         "VERILOGA" => "Pins",
         "OPAMP"    => "Pins",
+        "MCLINN"   => "N",
         _          => null,
     };
 

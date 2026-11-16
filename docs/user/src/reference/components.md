@@ -4,7 +4,7 @@ slug: reference/components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Components
 lede: Every component in the standard library — its symbol, what it does, and its parameters.
-keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, Wilkinson, MWPD, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox
+keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, MCLINN, coupled lines, multiconductor, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, Wilkinson, MWPD, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox
 ---
 
 Symbols are rendered from the live drawing engine, with their connection leads and their pins shown
@@ -908,6 +908,43 @@ and the run says it is an extrapolation. On placement `W` starts at the workspac
 at the same value.
 
 {{table: components/MCLine}}
+
+### N Coupled Microstrip Lines (MCLINN) {#mclinen}
+
+{{symbol: mclinen}}
+
+`N` edge-coupled microstrip strips on the technology's substrate, all of length `L`. Every strip is `W` wide and every
+gap `S` unless it states its own: add a row `W[k]` for strip k (strip 1 is the top one) or `S[k]` for the gap below it.
+Terminals 1 to `N` are the strips' near ends and `N` + 1 to 2`N` their far ends, so strip k runs from k to `N` + k, and
+the symbol grows with `N`. Two strips are MCLIN's pair with its pins in that order, not CLIN's.
+
+**Every strip couples to every other.** A strip in an interdigital or combline filter couples to both neighbours at once
+and, more weakly, to the strips beyond them, which no chain of coupled pairs can describe. circuitRF solves the
+cross-section itself: its 2D field solver gives the strips' capacitance matrix with the substrate and without it, the
+second gives the inductance matrix (L = μ₀ε₀·C₀⁻¹), and the line's `N` modes are the eigenvectors of L·C, each with its
+own impedance and its own εeff. The terminal network is those modes recombined, the multiconductor-line method of
+Tripathi and Lee, in the modal form of Paul's book. Conductor and roughness loss are MLIN's per strip, dielectric loss
+its filling-factor form.
+
+**Its limits.** The solve is quasi-static, done once per geometry: there is no dispersion, so each mode keeps its
+static εeff and impedance at every frequency, and past a cross-section a tenth of a wavelength across the run says so.
+The solver is within about 0.5 % for strips with thickness; strips with `T` = 0 come out up to about 1.2 % low in
+impedance, and the run says that too. Against MCLIN on 20 mil RO4350B at 1 GHz, two 1.1 mm strips 0.2 mm apart have
+their even and odd impedances within 1.2 % and their S-parameters within 0.008. On placement `W` starts at the
+workspace's 50 Ω width and `S` at the same value, as MCLIN's.
+
+{{table: components/MCLineN}}
+
+**References**
+
+> V. K. Tripathi and H. Lee, "Spectral-Domain Computation of Characteristic Impedances and Multiport Parameters of
+> Multiple Coupled Microstrip Lines," *IEEE Transactions on Microwave Theory and Techniques*, vol. 37, no. 1,
+> pp. 215–221, January 1989. DOI [10.1109/22.20041](https://doi.org/10.1109/22.20041). The multiport parameters of N
+> coupled microstrip lines from their modes.
+
+> C. R. Paul, *Analysis of Multiconductor Transmission Lines*, 2nd ed., Wiley-IEEE Press, 2007.
+> DOI [10.1109/9780470547212](https://doi.org/10.1109/9780470547212). The modal decomposition of L·C and the 2N-port
+> it gives.
 
 ### Broadside-Coupled Microstrip (MBCLIN) {#mbcline}
 

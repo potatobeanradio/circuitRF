@@ -160,6 +160,15 @@ public static class SymbolPortDefs
             case SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine:
                                      return [("1", -200f, -100f), ("2", 200f, -100f),
                                              ("3", -200f,  100f), ("4", 200f,  100f)];
+            // MCLINN: the strips' near ends 1..N down the left and their far ends N + 1..2N down the right, strip k on the
+            // row (2k − N − 1)·100, so every pin is on the grid and two strips sit on MCLIN's corners. VARIADIC on the PIN
+            // count (2·N, as PortCount answers); any other count, the one-argument overload's 2 included, is three strips.
+            case SymbolKind.MCLineN:
+            {
+                int n = CircuitRF.Core.Devices.MicrostripMultiLineModel.StripsForPinCount(portCount);
+                return [.. Enumerable.Range(1, n).Select(k => ($"{k}", -200f, (2f * k - n - 1) * 100f)),
+                        .. Enumerable.Range(1, n).Select(k => ($"{n + k}", 200f, (2f * k - n - 1) * 100f))];
+            }
             // MLIN: horizontal 2-port, matching TLIN's own left/right convention.
             case SymbolKind.Mlin:    return [("1", -200f, 0f), ("2", 200f, 0f)];
             case SymbolKind.Cpwg:    return [("1", -200f, 0f), ("2", 200f, 0f)];
@@ -1193,6 +1202,15 @@ public sealed class EditableComponent
                 var sections = Parameters.FirstOrDefault(q => q.Name == "N");
                 return sections is not null && int.TryParse(sections.Expression, out int ns) && ns is >= 1 and <= CircuitRF.Core.Devices.Microstrip.WilkinsonPlan.MaxSections
                     ? 3 + 2 * ns : 5;
+            }
+
+            // N coupled strips draw 2·N pins, each strip's two ends. A plain number only — an expression is the default
+            // three strips, as the model cannot be asked for more pins than the symbol draws.
+            if (Symbol is SymbolKind.MCLineN)
+            {
+                var strips = Parameters.FirstOrDefault(q => q.Name == "N");
+                return 2 * (strips is not null && int.TryParse(strips.Expression, out int nl) && nl >= 2
+                    ? nl : CircuitRF.Core.Devices.MicrostripMultiLineModel.DefaultStrips);
             }
 
             // The Combiner's N is its number of PATHS; it draws N + 1 pins, the common port with them.

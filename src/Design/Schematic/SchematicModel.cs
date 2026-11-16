@@ -727,6 +727,11 @@ public enum SymbolKind
     /// <summary>Microstrip radial stub (engine "MRADIAL"): W (the feed's width), Ro (the arc's radius from the sector's
     /// apex), Angle and Sides (1, or 2 for a butterfly). One pin, the shunt node at the sector's narrow end.</summary>
     MRadial,
+    /// <summary>N coupled microstrip lines (engine "MCLINN"): N strips with a width W (or W[k]) each and a gap S (or S[k])
+    /// between each two, all of length L, every strip coupled to every other through the cross-section's own C and L
+    /// matrices. 2·N pins: the near ends 1..N, top strip first, then the far ends N + 1..2N. The substrate as MCLIN's.
+    /// Appended so no existing kind's ordinal moves.</summary>
+    MCLineN,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

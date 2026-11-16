@@ -87,6 +87,7 @@ public static class SymbolArtworkGenerator
         (SymbolKind.Tline,           "tline",             2),
         (SymbolKind.CLine,           "cline",             4),
         (SymbolKind.MCLine,          "mcline",            4),
+        (SymbolKind.MCLineN,         "mclinen",           6),
         (SymbolKind.BCLine,          "bcline",            4),
         (SymbolKind.MBCLine,         "mbcline",           4),
         (SymbolKind.Mutual,          "mutual",            2),

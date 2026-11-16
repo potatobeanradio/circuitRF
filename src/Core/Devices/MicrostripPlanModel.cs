@@ -13,8 +13,8 @@ namespace CircuitRF.Core.Devices;
 /// part's model (<see cref="MicrostripTeeModel"/>, <see cref="MicrostripCurveModel"/>,
 /// <see cref="MicrostripLineModel"/>, <see cref="MicrostripCoupledLineModel"/>, <see cref="MicrostripMiterBendModel"/>,
 /// <see cref="MicrostripBendModel"/>, <see cref="MicrostripGapModel"/>, <see cref="MicrostripTaperModel"/>,
-/// <see cref="MicrostripRadialStubModel"/>; an open end <see cref="MicrostripOpenEnd"/>'s capacitance on MLIN's or
-/// MCLIN's own line), stamped into a
+/// <see cref="MicrostripRadialStubModel"/>, the N-line <see cref="MicrostripMultiLineModel"/>; an open end
+/// <see cref="MicrostripOpenEnd"/>'s capacitance on MLIN's or MCLIN's own line), stamped into a
 /// <see cref="LocalAdmittanceBlock"/> on the plan's nodes, and the internal nodes are Kron-reduced away so the
 /// instance stamps one block on its pins — the way MTEE stamps the arms it draws (<see cref="JunctionArms"/>).
 /// The same network built from explicit instances of those parts is therefore the same matrix.
@@ -51,6 +51,7 @@ public sealed class MicrostripPlanModel : ComponentModel, IReportsWarnings, IDcS
             IEnumerable<(int, int)> joins = section switch
             {
                 PlanCoupledLine c => Enumerable.Range(0, c.Fingers).Select(k => (n[2 * k], n[2 * k + 1])),
+                PlanCoupledStrips m => Enumerable.Range(0, m.W.Count).Select(k => (n[2 * k], n[2 * k + 1])),
                 PlanGap or PlanOpen => [],
                 _ => n.Skip(1).Select(x => (n[0], x)),
             };
@@ -75,6 +76,7 @@ public sealed class MicrostripPlanModel : ComponentModel, IReportsWarnings, IDcS
             PlanCoupledLine { Fingers: 2 } p => new MicrostripCoupledLineModel(p.W, p.S, p.L, s.HMeters, s.TMeters,
                 s.EpsR, s.SigmaSPerM, s.TanD, path, s.RoughnessMeters),
             PlanCoupledLine p => new InterdigitatedLineModel(p.W, p.S, p.L, p.Fingers, s, path),
+            PlanCoupledStrips m => new MicrostripMultiLineModel(m.W, m.S, m.L, s, path),
             PlanBend b => b.M is { } m
                 ? new MicrostripMiterBendModel(b.W, b.AngleDeg, m, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM, s.TanD,
                     path, s.RoughnessMeters)
@@ -87,8 +89,8 @@ public sealed class MicrostripPlanModel : ComponentModel, IReportsWarnings, IDcS
             PlanRadialStub r => new MicrostripRadialStubModel(r.W, r.Ro, r.AngleDeg, r.Sides, s, path),
             _ => throw new NotSupportedException(section.GetType().Name),
         };
-        return (model, new ElaboratedComponent(model.GetType().Name, path, section.Nodes,
-            new Dictionary<string, Value>(), model));
+        return (model, new ElaboratedComponent(model.GetType().Name, path,
+            section is PlanCoupledStrips strips ? strips.ModelNodes : section.Nodes, new Dictionary<string, Value>(), model));
     }
 
     public IReadOnlyList<(string Key, string Message)> DrainWarnings()

@@ -54,7 +54,8 @@ public static class GroundPourPlanner
     /// <summary>The generators whose artwork is a microstrip line returning through a ground plane.</summary>
     public static readonly IReadOnlySet<string> MicrostripGenerators = new HashSet<string>(StringComparer.Ordinal)
     {
-        MlinPCell.GeneratorId, CoupledLinePCells.McLinId, MBendPCell.GeneratorId, MCurvePCell.GeneratorId,
+        MlinPCell.GeneratorId, CoupledLinePCells.McLinId, PassivePlanPCells.CoupledStripsId, MBendPCell.GeneratorId,
+        MCurvePCell.GeneratorId,
         MMiterPCell.GeneratorId, MTeePCell.GeneratorId,
         MCrossPCell.GeneratorId, MTaperPCell.GeneratorId, MKlopfPCell.GeneratorId, MRadialPCell.GeneratorId,
         // The planned passives (docs/design/rf-passives.md) are microstrip too: without them a ring reaching past its

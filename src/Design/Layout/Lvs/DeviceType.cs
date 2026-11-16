@@ -150,6 +150,7 @@ public static class DeviceTypes
         {
             ["MLIN"]   = SymbolKind.Mlin,
             ["MCLIN"]  = SymbolKind.MCLine,
+            ["MCLINN"] = SymbolKind.MCLineN,
             ["BCLIN"]  = SymbolKind.BCLine,
             ["MBCLIN"] = SymbolKind.MBCLine,
             ["MBEND"]  = SymbolKind.MBend,
@@ -305,7 +306,7 @@ public static class DeviceTypes
             or SymbolKind.MCross or SymbolKind.Mtaper or SymbolKind.Mklopf or SymbolKind.GsgPad or SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
             or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.MRadial
             or SymbolKind.Tline or SymbolKind.Cpwg or SymbolKind.Slin
-            or SymbolKind.CLine or SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine
+            or SymbolKind.CLine or SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine or SymbolKind.MCLineN
             => DeviceKind.TransmissionLine,
 
         SymbolKind.Airbridge => DeviceKind.Crossover,

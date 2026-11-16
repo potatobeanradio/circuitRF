@@ -131,7 +131,8 @@ public sealed record PassivePlan(IReadOnlyList<string> Pins, IReadOnlyList<PlanS
 /// far end, top strip first — for two strips exactly MCLIN's order (A near, A far, B near, B far), and the section is
 /// an MCLIN (<see cref="MicrostripCoupledLineModel"/>). With more, alternate strips are the two conductors of an
 /// interdigitated coupler, modelled from the same pair's modes by Ou's equations (<see cref="InterdigitatedLineModel"/>);
-/// the strips of one conductor are joined only by parts on the passive's pins, never inside it.
+/// the strips of one conductor are joined only by parts on the passive's pins, never inside it. Strips of their own
+/// widths and gaps, or a section with every coupling modelled, are <see cref="PlanCoupledStrips"/>.
 /// </summary>
 public sealed record PlanCoupledLine(int[] Nodes, double X, double Y, double RotationDeg, double W, double S, double L,
     int Fingers = 2) : PlanSection(Nodes, X, Y, RotationDeg);
@@ -145,3 +146,21 @@ public sealed record PlanCoupledLine(int[] Nodes, double X, double Y, double Rot
 /// </summary>
 public sealed record PlanRadialStub(int[] Nodes, double X, double Y, double RotationDeg, double W, double Ro,
     double AngleDeg, int Sides = 1) : PlanSection(Nodes, X, Y, RotationDeg);
+/// N edge-coupled strips, each of its own width (<paramref name="W"/>, top strip first) with a gap of its own below each
+/// but the last (<paramref name="S"/>, N − 1 of them), all of length L, running from x = 0 to +X and stacked downward
+/// from the first as <see cref="PlanCoupledLine"/>'s are. The general N-strip section: the N-line model stamps it
+/// (<see cref="MicrostripMultiLineModel"/>, MCLINN's), every strip coupled to every other through the cross-section's
+/// own C and L, so a strip couples to both neighbours at once and to the strips beyond them. A plan that wants that for
+/// two strips, or for an interdigitated set, asks by placing this rather than a <see cref="PlanCoupledLine"/>.
+///
+/// <para>Nodes as <see cref="PlanCoupledLine"/>'s: each strip's near (x = 0) end, then its far end, top strip first.
+/// The model's pins are the near ends 1..N, then the far ends N + 1..2N (<see cref="ModelNodes"/>), so strip k's
+/// nodes 2k − 1 and 2k are its pins k and N + k.</para>
+/// </summary>
+public sealed record PlanCoupledStrips(int[] Nodes, double X, double Y, double RotationDeg, IReadOnlyList<double> W,
+    IReadOnlyList<double> S, double L) : PlanSection(Nodes, X, Y, RotationDeg)
+{
+    /// <summary><see cref="PlanSection.Nodes"/> in the model's pin order: every near end, then every far end.</summary>
+    public int[] ModelNodes => [.. Enumerable.Range(0, W.Count).Select(k => Nodes[2 * k]),
+                                .. Enumerable.Range(0, W.Count).Select(k => Nodes[2 * k + 1])];
+}
