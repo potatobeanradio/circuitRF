@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "F18-coupled-resonator-ring",
+  "CellName": "F23-coupled-resonator-ring",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,

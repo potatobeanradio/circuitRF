@@ -474,11 +474,11 @@ public sealed class ComparisonTests
     /// one stored dimension or name changed on the schematic afterwards is exactly one property mismatch naming it: the
     /// artwork is drawn from the geometry the part stores.</summary>
     [Theory]
-    [InlineData("F14-coupled-resonator-straight", "S2", "0.6")]
-    [InlineData("F15-coupled-resonator-zigzag", "Tap", "7")]
-    [InlineData("F16-coupled-resonator-hairpin", "Uc", "0.35")]
-    [InlineData("F17-coupled-resonator-open-loop", "Arrangement", "Inline")]
-    [InlineData("F18-coupled-resonator-ring", "L", "70")]
+    [InlineData("F19-coupled-resonator-straight", "S2", "0.6")]
+    [InlineData("F20-coupled-resonator-zigzag", "Tap", "7")]
+    [InlineData("F21-coupled-resonator-hairpin", "Uc", "0.35")]
+    [InlineData("F22-coupled-resonator-open-loop", "Arrangement", "Inline")]
+    [InlineData("F23-coupled-resonator-ring", "L", "70")]
     public void ACoupledResonatorFilterComparesCleanAndAGeometryMismatchIsAFinding(string design, string spec, string changed)
     {
         string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-crc-" + Guid.NewGuid().ToString("N")[..12]);

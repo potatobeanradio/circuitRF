@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "CellName": "F17-coupled-resonator-open-loop",
+  "CellName": "F22-coupled-resonator-open-loop",
   "GridSize": 100,
   "GridSnap": true,
   "AuthorGridDivisor": 20,
