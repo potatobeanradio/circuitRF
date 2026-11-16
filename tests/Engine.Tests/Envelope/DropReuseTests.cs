@@ -28,9 +28,9 @@ public sealed class DropReuseTests(ITestOutputHelper output)
         analysis MC type=parametric_sweep Var=drop Start=1 Stop=50 Step=1 Inner=ENV1
         """;
 
-    private static DataSet Run(bool reuse, out (int, int, int) counters)
+    private static DataSet Run(bool reuse, out (int, int, int) counters, string? bench = null)
     {
-        var (lib, tb) = new CnlReader().Read(Bench);
+        var (lib, tb) = new CnlReader().Read(bench ?? Bench);
         var ds = ParametricSweepEngine.Run(tb.Analyses.OfType<ParametricSweepAnalysis>().Single(), lib, tb,
                                            new AnalysisSettings { ChannelDropReuse = reuse });
         counters = EnvelopeDropReuse.LastCounters;
@@ -85,5 +85,21 @@ public sealed class DropReuseTests(ITestOutputHelper output)
         output.WriteLine($"{compared} cubes compared over 50 drops; the worst relative difference {worst:G3} ('{worstName}')");
         Assert.True(compared > 10);
         Assert.True(worst <= 1e-12, $"'{worstName}': {worst:G3}");
+    }
+
+    /// <summary>A nonlinear receive side (an LNA after the channel) refuses the reuse: the joint step is judged over both sides, so the
+    /// recorded transmit waves carry the recording drop's receive iterations, and replayed they agreed only to the solve's tolerance
+    /// (AM-PM and Delay of a CW not at all). Every drop is solved jointly, and the run says why.</summary>
+    [Fact]
+    public void ANonlinearReceiveSide_IsSolvedJointly()
+    {
+        string bench = Bench.Replace("L:L1 rx m L=2e-9", "Amp:LNA rx 0 r2 0 Gain=30 IP3=-30\nL:L1 r2 m L=2e-9")
+                            .Replace("Stop=50", "Stop=3");
+        Run(true, out var on, bench);
+        Assert.Equal((0, 0, 0), on);
+        var (lib, tb) = new CnlReader().Read(bench);
+        var nl = new CircuitRF.Core.Elaboration.Elaborator(lib).Elaborate(tb);
+        Assert.Null(EnvelopeDropReuse.Plan(nl, out string why));
+        Assert.Contains("'LNA'", why);
     }
 }

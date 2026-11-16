@@ -8,7 +8,8 @@
 //
 //  The sides. A side ("island") is PropagationChannelGraph's: nets joined through anything but a channel, a DC supply's net an
 //  AC ground. The receive side is every island a channel receives on and every island downstream of one; the transmit side is
-//  every other island (a relay, which receives on one channel and transmits on another, is receive side and is solved). A part
+//  every other island (a relay, which receives on one channel and transmits on another, is receive side and is solved). A
+//  receive side with a nonlinear part refuses the reuse (it would agree only to the solve's tolerance). A part
 //  on a transmit island is transmit side; a supply is the side of every part its nets reach, and a supply both sides reach
 //  refuses the reuse (its current would be half one run's and half another's).
 //
@@ -105,6 +106,15 @@ public static class EnvelopeDropReuse
         var hold = new HashSet<int>();
         for (int n = 1; n < Math.Min(island.Length, nl.Nodes.Count); n++) if (transmit.Contains(island[n])) hold.Add(n);
         foreach (var c in tx) foreach (int n in c.Nodes) if (n > 0 && Isl(n) < 0) hold.Add(n);
+        // a nonlinear receive side refuses: the joint step's Newton and predictor acceptance are judged over every unknown, so the
+        // transmit waves the recording drop kept carry its own receive side's iterations. Measured on a 50-drop sweep with an LNA
+        // (IP3 −30 dBm) after the channel: V to 2e-5 and I to 2e-4 of their peaks, AM-PM and Delay of a CW not at all. A linear
+        // receive side converges in the step's first iteration and leaves nothing behind, which is what makes the reuse exact.
+        if (nl.Components.FirstOrDefault(c => c.Model is not PropagationChannelModel && !tx.Contains(c) && c.Model.Kind == CircuitRF.Core.ModelKind.Nonlinear) is { } nonlinear)
+        {
+            why = $"the receive side is nonlinear ('{nonlinear.InstancePath}'), and the joint solve's steps are judged over both sides";
+            return null;
+        }
         var sources = nl.Components.Where(c => c.Model is ModSourceModel).ToList();
         var keep = tx.Where(c => c.Model is ModSourceModel).Select(c => c.InstancePath).ToHashSet(StringComparer.Ordinal);
         if (tx.FirstOrDefault(c => c.Model is not ModSourceModel && IsTone(c.Model)) is { } lo)

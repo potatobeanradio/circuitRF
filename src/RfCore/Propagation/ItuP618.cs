@@ -45,7 +45,8 @@ namespace RfCore.Propagation
             PropagationMath.Positive(M, "the rain attenuation (XPD)", apDb, "dB");
             double lf = Math.Log10(fGhz);
             double cf = fGhz < 9 ? 60 * lf - 28.3 : fGhz < 36 ? 26 * lf + 4.1 : 35.9 * lf - 11.3;
-            double v = fGhz < 9 ? 12.8 * Math.Pow(fGhz, 0.19) : fGhz < 36 ? 22.6 : 13.0 * Math.Pow(fGhz, 0.15);
+            // eq (72)'s V(f) has its own four bands, not eq (71)'s three
+            double v = fGhz < 9 ? 30.8 * Math.Pow(fGhz, -0.21) : fGhz < 20 ? 12.8 * Math.Pow(fGhz, 0.19) : fGhz < 40 ? 22.6 : 13.0 * Math.Pow(fGhz, 0.15);
             double ca = v * Math.Log10(apDb);
             double tau = tiltDeg * Math.PI / 180;
             double ct = -10 * Math.Log10(1 - 0.484 * (1 + Math.Cos(4 * tau)));

@@ -5283,6 +5283,10 @@ What would cost time to rediscover:
 - **`PathLoss=Satellite`** passed `Find` and then failed every case-sensitive "satellite" test: the model takes the registry's
   own spelling now. A pin end with a pattern no longer reads its record at DC (it warned on every DC/HB run and stamped the RF
   S11 as the DC termination), and the nearest-record warning is said once per record frequency, not per swept point.
+- **`outage_over` dropped NaN drops from both counts**, so a metric that reads NaN when the receiver loses the signal (exactly
+  the outage) under-counted it. The fraction is still over the values present, but the interval takes each NaN both ways (no
+  outage for `lo`, an outage for `hi`, over every drop) and the evaluation's note says how many. Gate
+  `PropagationChannelDropTests.OutageOver_ANaNDrop_WidensTheInterval_AndIsSaid`.
 - **Left as found:** a gain end with no stated polarization projects a fixed Cartesian vector on each ray, so off the line of
   sight it is dipole-like; SIR sums interferers' powers where HB sums their fields.
 

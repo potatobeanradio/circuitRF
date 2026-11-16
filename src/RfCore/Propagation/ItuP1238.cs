@@ -25,7 +25,9 @@ namespace RfCore.Propagation
 {
     public enum IndoorEnvironment { Office, Corridor, Industrial, Conference }
 
-    public enum FloorBuilding { Office, Commercial, Residential }
+    /// <summary>Table 5's columns; a residential building's own rows at 2.4 and 5.2 GHz are an apartment's (concrete walls)
+    /// and a house's (wooden mortar).</summary>
+    public enum FloorBuilding { Office, Commercial, Residential, Apartment, House }
 
     public static class ItuP1238
     {
@@ -56,9 +58,15 @@ namespace RfCore.Propagation
             {
                 case FloorBuilding.Commercial:
                     return band182 ? 6 + 3 * (floors - 1) : null;
-                case FloorBuilding.Residential when band182:
+                case FloorBuilding.Residential or FloorBuilding.Apartment or FloorBuilding.House when band182:
                     return 4.0 * floors;
-                default:   // office, and residential outside 1.8-2 GHz takes the office value
+                case FloorBuilding.Apartment when Near(2.4) || Near(5.2):
+                    return floors == 1 ? (Near(2.4) ? 10 : 13) : null;
+                case FloorBuilding.House when Near(2.4) || Near(5.2):
+                    return floors == 1 ? (Near(2.4) ? 5 : 7) : null;
+                case FloorBuilding.Residential when Near(2.4) || Near(5.2):
+                    return null;   // Table 5 gives an apartment's and a house's: Evaluate asks which
+                default:   // office, and a residential building where Table 5 states none takes the office value, as it says to
                     if (band182) return 15 + 4 * (floors - 1);
                     if (Near(0.9)) return floors switch { 1 => 9, 2 => 19, 3 => 24, _ => null };
                     if (Near(2.4)) return floors == 1 ? 14 : null;
@@ -92,11 +100,16 @@ namespace RfCore.Propagation
                 if (!double.IsNaN(floorLossDb)) lf = floorLossDb;
                 else
                 {
+                    bool ownRow = Math.Abs(fHz / 2.4e9 - 1) <= 0.05 || Math.Abs(fHz / 5.2e9 - 1) <= 0.05;
+                    if (building == FloorBuilding.Residential && ownRow)
+                        throw new PropagationRefusal(
+                            $"{m}: at {PropagationMath.Ghz(fHz)} Table 5 gives a residential floor loss for an apartment (concrete walls) and for a house (wooden mortar): state Building=apartment or Building=house, or FloorLoss.");
                     lf = FloorLoss(building, fHz, floors)
                          ?? throw new PropagationRefusal(
                              $"{m}: Table 5 gives no floor penetration loss for {floors} floor(s) of a {building.ToString().ToLowerInvariant()} building at {PropagationMath.Ghz(fHz)}; state FloorLoss.");
-                    if (building == FloorBuilding.Residential && !(fHz >= 1.71e9 && fHz <= 2.1e9))
-                        notes.Add("Residential floor loss outside 1.8-2 GHz takes the office value, as P.1238 says to.");
+                    if (building is FloorBuilding.Residential or FloorBuilding.Apartment or FloorBuilding.House
+                        && !(fHz >= 1.71e9 && fHz <= 2.1e9) && !ownRow)
+                        notes.Add("Residential floor loss where Table 5 states none (only 1.8-2, 2.4 and 5.2 GHz) takes the office value, as P.1238 says to.");
                 }
                 terms.Add(new($"floor penetration ({floors} floor{(floors == 1 ? "" : "s")})", lf));
                 lb += lf;

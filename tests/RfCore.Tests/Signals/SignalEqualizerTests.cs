@@ -166,4 +166,58 @@ public class SignalEqualizerTests
             Assert.True(Math.Abs(got - offset) < 50, $"seed {seed}: {got:F1} Hz against {offset} Hz");
         }
     }
+
+    private sealed class Turning(double hz) : IChannelResponse
+    {
+        public Complex Response(double offsetHz, double timeS) => Complex.FromPolarCoordinates(1, 2 * Math.PI * hz * timeS);
+    }
+
+    /// <summary>The genie through a channel whose response it reads: the channel's own turning (a 400 Hz Doppler) is the response's,
+    /// and a 150 Hz offset of the transmitter's own is not. Fitted with the response divided out, the offset left is the 150 Hz alone,
+    /// and taken out before the genie the EVM is the no-offset EVM (the genie once took out nothing, and the 150 Hz stayed in).</summary>
+    [Fact]
+    public void Genie_ThroughAChannel_TakesOutTheOffsetTheChannelDoesNotHold()
+    {
+        var rec = Record(QamOrder.Qam64, 1e-3, out double rs);
+        double fs = rec.NativeRateHz;
+        var y = rec.Native.Select((v, n) => v * Complex.FromPolarCoordinates(1.0, 2 * Math.PI * (400 + 150) * n / fs)).ToArray();
+        ReceivedSymbols? Read(CarrierOffset o) => SignalEvm.Demodulate(rec, rs, y, fs, 0, o.FrequencyHz, out _, o.DriftHzps);
+        var channel = new Turning(400);
+        var moved = SignalEqualizer.RemoveOffset(Read(CarrierOffset.Zero)!, Read,
+                                                 x => SignalEqualizer.EstimateOffset(SignalEqualizer.WithoutChannel(x, channel)), out var left);
+        Assert.Equal(150, left.FrequencyHz, 0.5);
+        var genie = new EqualizerSettings(EqualizerMode.Genie);
+        double with = SignalEqualizer.Ofdm(moved, genie, channel).RmsPercent;
+        // against the same channel with no offset of the transmitter's own (the 400 Hz's inter-carrier interference is in both)
+        var channelOnly = rec.Native.Select((v, n) => v * Complex.FromPolarCoordinates(1.0, 2 * Math.PI * 400 * n / fs)).ToArray();
+        double clean = SignalEqualizer.Ofdm(SignalEvm.Demodulate(rec, rs, channelOnly, fs, 0, 0, out _)!, genie, channel).RmsPercent;
+        double untouched = SignalEqualizer.Ofdm(Read(CarrierOffset.Zero)!, genie, channel).RmsPercent;
+        Assert.True(Math.Abs(with - clean) < 0.05 * clean, $"EVM {with} % against {clean} % with no offset of its own");
+        Assert.True(untouched > 2 * clean, $"the 150 Hz left in reads {untouched} % against {clean} %");
+    }
+
+    /// <summary>A single carrier's BERest in plain noise is the closed form: its SINR from the whole record when the record's error power
+    /// is one power (the 65-symbol window read ×4 high at 12 dB), and still symbol by symbol when the channel fades within it.</summary>
+    [Fact]
+    public void ScBerEst_InPlainNoise_IsTheClosedForm_AndAFadeKeepsTheLocalWindow()
+    {
+        const int n = 16384;
+        double ebn0 = Math.Pow(10, 1.2), esn0 = 2 * ebn0, sigma = Math.Sqrt(1 / esn0 / 2);
+        var r = new Random(3);
+        var ideal = new Complex[n]; var rx = new Complex[n]; var faded = new Complex[n];
+        for (int i = 0; i < n; i++)
+        {
+            ideal[i] = new Complex(r.Next(2) * 2 - 1, r.Next(2) * 2 - 1) / Math.Sqrt(2);
+            var e = Gauss(r, sigma);
+            rx[i] = ideal[i] + e;
+            faded[i] = ideal[i] + e * (1 + 9 * Math.Pow(Math.Sin(Math.PI * i / n), 8));   // a fade: the error grows ten-fold mid-record
+        }
+        var plain = SignalEqualizer.SingleCarrier(EqualizerMode.Genie, new EvmResult(0, 0, 0, rx, ideal, n, 1), null);
+        double est = SignalDecisions.SemiAnalytic(plain.Sinr, g => 0.5 * Normal.Erfc(Math.Sqrt(g / 2)));
+        double closed = 0.5 * Normal.Erfc(Math.Sqrt(ebn0));
+        Assert.True(Math.Abs(est / closed - 1) < 0.25, $"BERest {est:G4}, closed form {closed:G4}");
+        Assert.Single(plain.Sinr.Distinct());
+        var fade = SignalEqualizer.SingleCarrier(EqualizerMode.Genie, new EvmResult(0, 0, 0, faded, ideal, n, 1), null);
+        Assert.True(fade.Sinr.Max() / fade.Sinr.Min() > 10, "a fade within the record is followed symbol by symbol");
+    }
 }

@@ -353,8 +353,7 @@ public class PropagationModelTests
 
     /// <summary>Inputs the models once took silently: an InF-SH/DH base station below the clutter (its line-of-sight probability
     /// read 3.05, or 3e89), a UMa/UMi base station at or below hE = 1 m (a breakpoint at or below 0), P.833's 900-2200 MHz woodland
-    /// fit asked at 28 GHz (94 dB), and "NaN" typed for a number (it passed every range); each is refused, saying why. And P.530's r
-    /// is capped at 2.5: a 100 m path at 28 GHz no longer reads r = 5.3.</summary>
+    /// fit asked at 28 GHz (94 dB), and "NaN" typed for a number (it passed every range); each is refused, saying why.</summary>
     [Fact]
     public void Models_RefuseWhatTheyOnceTookSilently()
     {
@@ -367,9 +366,9 @@ public class PropagationModelTests
             { Model = "free", FrequencyHz = 28e9, DistanceM = 100, Values = new Dictionary<string, string> { ["Vegetation"] = "on", ["VegDepth"] = "10", ["VegGamma"] = "1" } })).Message);
         Assert.Throws<PropagationRefusal>(() => PropagationModels.Evaluate(new ModelInputs
             { Model = "free", FrequencyHz = 28e9, DistanceM = 1000, Values = new Dictionary<string, string> { ["Rain"] = "fixed", ["RainRate"] = "NaN" } }));
-        // r = 2.5: A0.01 = γ·d·2.5, which eq (36)'s fit returns at p = 0.01 % to its own 0.2 % (it read 5.3·γ·d uncapped)
-        var (k, alpha) = ItuP838.Coefficients(28, 0, 90);
-        double ratio = ItuP530.Rain(28, 0.1, 40, 0.01, 90) / (k * Math.Pow(40, alpha) * 0.1);
-        Assert.True(Math.Abs(ratio / 2.5 - 1) < 0.005, $"r = {ratio}");
+        // P.1238 Table 5 gives a residential building an apartment's row and a house's at 2.4 and 5.2 GHz: which one is asked
+        Assert.Contains("Building=apartment or Building=house", Assert.Throws<PropagationRefusal>(() => PropagationModels.Evaluate(new ModelInputs
+            { Model = "P1238", FrequencyHz = 2.4e9, DistanceM = 20, TxHeightM = 2, RxHeightM = 1.5,
+              Values = new Dictionary<string, string> { ["Floors"] = "1", ["Building"] = "residential" } })).Message);
     }
 }

@@ -156,4 +156,22 @@ public sealed class PropagationChannelDropTests(ITestOutputHelper output)
         Assert.InRange(0.01, lo, hi);
         Assert.InRange(outage, lo, hi);
     }
+
+    /// <summary>A drop whose metric is NaN (the receiver could not read it — often the deep fade the outage is about) is out of the
+    /// fraction, but the interval takes it both ways, and the evaluation says how many there were. Dropped from both counts, 2 of 10
+    /// below with 3 NaN read [0.025, 0.56] for 2/7, where those 3 may be outages.</summary>
+    [Fact]
+    public void OutageOver_ANaNDrop_WidensTheInterval_AndIsSaid()
+    {
+        double[] v = [-90, -100, double.NaN, -91, -101, double.NaN, -92, double.NaN, -93, -94];
+        var ds = new DataSet();
+        ds.Add("prx", new DataCube([new Axis("drop", [.. Enumerable.Range(1, v.Length).Select(i => (double)i)])], v) { Unit = "dB" });
+        var ev = new Evaluator(new MeasurementContext(new Dictionary<string, DataSet> { ["MC"] = ds }));
+        double outage = ev.Eval("outage_over(MC.prx, -95, \"drop\")", new Scope("t")).AsReal();
+        var c = ev.TakeCompanions();
+        Assert.Equal(2.0 / 7, outage, 12);
+        Assert.Equal(RfCore.Statistics.BetaFunction.BinomialInterval(2, 10).Low, c["lo"].RealValues[0], 12);
+        Assert.Equal(RfCore.Statistics.BetaFunction.BinomialInterval(5, 10).High, c["hi"].RealValues[0], 12);
+        Assert.Contains(ev.TakeNotes(), n => n.Contains("3 value(s) are NaN", StringComparison.Ordinal));
+    }
 }

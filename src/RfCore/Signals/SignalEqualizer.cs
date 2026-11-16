@@ -164,6 +164,23 @@ namespace RfCore.Signals
             return est;
         }
 
+        /// <summary>The OFDM symbols with a channel's own response divided out of each element (an element where it is 0 kept as
+        /// 0): what is left turns only with what the channel does not hold, a transmitter's or an LO's own offset.</summary>
+        public static ReceivedSymbols WithoutChannel(ReceivedSymbols d, IChannelResponse channel)
+        {
+            if (d.SymbolTimeS is not { } times) return d;
+            int nsc = d.SubcarrierHz.Length;
+            var rx = new Complex[d.Received.Length];
+            for (int r = 0; r < d.Symbols; r++)
+                for (int k = 0; k < nsc; k++)
+                {
+                    int i = r * nsc + k;
+                    var h = channel.Response(d.SubcarrierHz[k], times[r]);
+                    rx[i] = h == Complex.Zero ? Complex.Zero : d.Received[i] / h;
+                }
+            return d with { Received = rx };
+        }
+
         /// <summary>DBPSK: each bit centre's phase, received·conj(sent) (the sent sign takes the data out), over time; SC
         /// the same at every symbol instant, data and known.</summary>
         /// <para>Each point is ONE noisy symbol (OFDM's sums a symbol's subcarriers), so unwrapped step to step a pair of
@@ -224,6 +241,11 @@ namespace RfCore.Signals
             var fine = Fit(t, ph, unwrap: false);
             return new CarrierOffset(f0 + fine.FrequencyHz, fine.DriftHzps);
         }
+
+        /// <summary>How many times a 65-symbol estimate's own log-power variance (1/65) the blocks' may spread and still be one
+        /// power: 4, so plain noise reads as fading about once in 1,000 records of 7 blocks and not once in 20,000 of 15,
+        /// while a Rayleigh fade's log-power spreads π²/6, some 25 times the bound.</summary>
+        internal const double HomogeneousSpread = 4;
 
         /// <summary>The single-carrier phase track's half width, in points.</summary>
         internal const int TrackHalf = 16;
@@ -629,8 +651,15 @@ namespace RfCore.Signals
             }
         }
 
-        /// <summary>A single carrier's SINR, symbol by symbol: Es over the error power of the 65 symbols around it.</summary>
-        private static Equalized SingleCarrier(EqualizerMode mode, EvmResult e, string? note)
+        /// <summary>A single carrier's SINR, symbol by symbol: Es over the error power of the 65 symbols around it — or of the whole
+        /// record, when the record's error power is one power.</summary>
+        /// <para>A 65-symbol estimate spreads ±12 %, and the BER curve is convex, so averaging BER over it read high: ×1.25 at Eb/N0
+        /// 8 dB, ×4 at 12 dB for QPSK in plain noise. So the error power is first tested for being one power: its blocks of 65 symbols
+        /// are compared, and when their log-powers spread no more than a 65-symbol estimate's own spread explains (variance within
+        /// <see cref="HomogeneousSpread"/> times 1/65, the variance of a mean of 65 exponentials' logarithm) every symbol takes the
+        /// record's SINR, which is unbiased. A channel that fades within the record spreads them far more, and keeps the local
+        /// window so the estimate follows the fades. Fewer than four blocks cannot be tested and take the record's.</para>
+        internal static Equalized SingleCarrier(EqualizerMode mode, EvmResult e, string? note)
         {
             int n = e.Received.Length;
             const int half = 32;
@@ -644,10 +673,31 @@ namespace RfCore.Signals
             }
             es /= Math.Max(1, n);
             var sinr = new double[n];
+            const int block = 2 * half + 1;
+            int blocks = n / block;
+            bool oneLevel = true;
+            if (blocks >= 4)
+            {
+                var logs = new double[blocks];
+                bool zero = false;
+                for (int k = 0; k < blocks; k++)
+                {
+                    double p = (err[(k + 1) * block] - err[k * block]) / block;
+                    if (!(p > 0)) { zero = true; break; }
+                    logs[k] = Math.Log(p);
+                }
+                if (!zero)
+                {
+                    double mean = logs.Average();
+                    double variance = logs.Sum(v => (v - mean) * (v - mean)) / (blocks - 1);
+                    oneLevel = variance <= HomogeneousSpread / block;
+                }
+            }
+            double pooled = err[n] / Math.Max(1, n);
             for (int i = 0; i < n; i++)
             {
-                int a = Math.Max(0, i - half), b = Math.Min(n, i + half + 1);
-                double p = (err[b] - err[a]) / (b - a);
+                int a = oneLevel ? 0 : Math.Max(0, i - half), b = oneLevel ? n : Math.Min(n, i + half + 1);
+                double p = oneLevel ? pooled : (err[b] - err[a]) / (b - a);
                 sinr[i] = p > 0 ? es / p : double.PositiveInfinity;
             }
             return new Equalized(mode, e.Received, e.Ideal, e.RmsPercent, e.PeakPercent, sinr, (double[])sinr.Clone(), n, 1, note);

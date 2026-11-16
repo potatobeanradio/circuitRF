@@ -202,21 +202,34 @@ public sealed partial class Evaluator
     /// R-pch10-5: the outage over a drop axis), with its exact (Clopper–Pearson) 95 % binomial interval as the companions <c>lo</c> and
     /// <c>hi</c>. The axis rule is every reduction's; name a sweep over drops by its variable, e.g. <c>outage_over(p, -95, "drop")</c>.
     /// </summary>
+    /// <para>A NaN value — a drop whose metric could not be read, often exactly because the receiver lost the signal — is not a
+    /// value, so the fraction is over the present ones; but it is not ignored either: the interval takes it both ways, as no
+    /// outage for <c>lo</c> and as an outage for <c>hi</c>, over every drop, and the measurement warns how many there were.
+    /// Dropped from both counts, a metric that reads NaN in a deep fade under-counted the outage it was meant to find.</para>
     private Value EvalOutageOver(CallExpr cl, Scope scope)
     {
         var (cube, axis, lo, hi) = ReduceOperand(cl, scope, "outage_over", 1, out var fixedArgs);
         if (fixedArgs[0].Kind != ValueKind.Real)
             throw new ExpressionException("outage_over(): the threshold must be a number, e.g. outage_over(x, -95).");
         double threshold = fixedArgs[0].AsReal();
-        (int Below, int N) Count(double[] xs)
+        int missing = 0;
+        (int Below, int N, int Missing) Count(double[] xs)
         {
-            int n = 0, below = 0;
-            foreach (double x in xs) { if (double.IsNaN(x)) continue; n++; if (x < threshold) below++; }
-            return (below, n);
+            int n = 0, below = 0, nan = 0;
+            foreach (double x in xs) { if (double.IsNaN(x)) { nan++; continue; } n++; if (x < threshold) below++; }
+            return (below, n, nan);
         }
-        var fraction = ReduceAlong(cube, axis, lo, hi, "outage_over", "", xs => { var (b, n) = Count(xs); return n == 0 ? double.NaN : (double)b / n; });
-        var low = ReduceAlong(cube, axis, lo, hi, "outage_over", "", xs => { var (b, n) = Count(xs); return RfCore.Statistics.BetaFunction.BinomialInterval(b, n).Low; });
-        var high = ReduceAlong(cube, axis, lo, hi, "outage_over", "", xs => { var (b, n) = Count(xs); return RfCore.Statistics.BetaFunction.BinomialInterval(b, n).High; });
+        var fraction = ReduceAlong(cube, axis, lo, hi, "outage_over", "", xs =>
+        {
+            var (b, n, nan) = Count(xs);
+            missing += nan;
+            return n == 0 ? double.NaN : (double)b / n;
+        });
+        var low = ReduceAlong(cube, axis, lo, hi, "outage_over", "", xs => { var (b, n, nan) = Count(xs); return RfCore.Statistics.BetaFunction.BinomialInterval(b, n + nan).Low; });
+        var high = ReduceAlong(cube, axis, lo, hi, "outage_over", "", xs => { var (b, n, nan) = Count(xs); return RfCore.Statistics.BetaFunction.BinomialInterval(b + nan, n + nan).High; });
+        if (missing > 0)
+            (_notes ??= []).Add($"outage_over(): {missing} value(s) are NaN (a drop whose metric could not be read); the fraction is over the " +
+                         "values present, and the interval counts them as no outage at its low end and as outages at its high end.");
         static DataCube AsCube(Value v) => v.Kind == ValueKind.Cube ? v.AsCube() : DataCube.Scalar(v.AsReal());
         _companions = new() { ["lo"] = AsCube(low), ["hi"] = AsCube(high) };
         return fraction;
