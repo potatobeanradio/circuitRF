@@ -30,7 +30,13 @@ public sealed class CoupledArrayPartTests(ITestOutputHelper output) : IDisposabl
         Assert.Equal("MCLA", ComponentTypeRegistry.EngineReference(kind, 5));
         Assert.Contains(ComponentTypeRegistry.DefaultParameters(kind, 5), p => p.Name == "Form" && p.Expression == "Interdigital");
         Assert.Equal(Enum.GetNames<CoupledArrayForm>(), ComponentTypeRegistry.NamedParamOptions(kind, "Form"));
-        Assert.True(PCellRegistry.TryGet("MCLA", out _));
+        Assert.True(PCellRegistry.TryGet("MCLA", out var generate));
+        // With no count given, the symbol is the default part's, as the generator's default artwork is: 1, 2, E1-E3.
+        Assert.Equal(["1", "2", "E1", "E2", "E3"], SymbolPortDefs.For(kind).Select(p => p.Name));
+        Assert.Equal(["1", "2", "E1", "E2", "E3"],
+                     generate(new Dictionary<string, PCellValue>(), null, PCellLayerSelection.Default).Pins.Select(p => p.Name));
+        Assert.Same(BuiltInSymbols.Primitives(kind), BuiltInSymbols.Primitives(kind, 5));
+        Assert.Equal(2, SymbolPortDefs.For(kind, 2).Length);                    // a via-less array keeps its two pins
 
         var component = new EditableComponent { Symbol = kind };
         foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, 5))

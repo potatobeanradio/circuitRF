@@ -202,7 +202,7 @@ public static class BuiltInSymbols
     /// Returns the primitive list for a built-in symbol kind.
     /// For SDD/ZPort: uses the default portCount=2. Prefer the portCount overload.
     /// </summary>
-    public static Symbol Primitives(SymbolKind kind) => Primitives(kind, 2);
+    public static Symbol Primitives(SymbolKind kind) => Primitives(kind, SymbolPortDefs.DefaultPortCount(kind));
 
     /// <summary>
     /// Returns the primitive list for a built-in symbol kind.
