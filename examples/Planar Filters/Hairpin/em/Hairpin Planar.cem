@@ -1,0 +1,28 @@
+{
+  "FormatVersion": 1,
+  "Name": "Hairpin Planar",
+  "LayoutRef": "Hairpin/layout/Hairpin.clay",
+  "Frequency": {
+    "StartExpr": "1.8",
+    "StopExpr": "3.0",
+    "StepExpr": "",
+    "NumPoints": 61,
+    "Mode": "PointCount",
+    "Kind": "Linear",
+    "StartUnit": "GHz",
+    "StopUnit": "GHz",
+    "StepUnit": "GHz"
+  },
+  "AnalysisKind": "Planar",
+  "PlanarMesh": {
+    "Auto": true,
+    "CellsPerWavelength": 20,
+    "EdgeMesh": false,
+    "EdgeCells": 3,
+    "MinCellsAcrossConductor": 2
+  },
+  "ConductorThicknessCorrection": true,
+  "RobustMeshing": true,
+  "CreateSnpSchematic": false,
+  "ComponentPorts": []
+}

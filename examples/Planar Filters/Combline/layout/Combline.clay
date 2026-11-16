@@ -1,0 +1,496 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Um",
+	"SnapDbu": 0,
+	"AngleMode": "AnyAngle",
+	"TechRef": "../../tech/pcb-2layer_RO4350B_20mil_1oz.ctech",
+	"SchematicPCellSnapshots": {
+		"TL1": {
+			"W": 0.0010580000000000001,
+			"L": 0.005
+		},
+		"CLA1": {
+			"N": 3,
+			"W": 0.001,
+			"S": 0.001021,
+			"L": 0.009192,
+			"Form": "Combline",
+			"Feed": "Tapped",
+			"Tap": 0.002457,
+			"Wf": 0.0010580000000000001,
+			"C": 1.186E-12,
+			"C[1]": 1.234E-12,
+			"C[3]": 1.234E-12
+		},
+		"TL2": {
+			"W": 0.0010580000000000001,
+			"L": 0.005
+		},
+		"VIAG1": {},
+		"C1": {},
+		"VIAG2": {},
+		"C2": {},
+		"VIAG3": {},
+		"C3": {}
+	},
+	"GeneratedPlacements": {
+		"C1": {
+			"X": 6558000,
+			"Y": 4533500,
+			"RotationDeg": 90,
+			"Mirror": false
+		},
+		"C2": {
+			"X": 8579000,
+			"Y": 4533500,
+			"RotationDeg": 90,
+			"Mirror": false
+		},
+		"C3": {
+			"X": 10600000,
+			"Y": 4533500,
+			"RotationDeg": 90,
+			"Mirror": false
+		},
+		"CLA1": {
+			"X": 6558000,
+			"Y": -5333500,
+			"RotationDeg": 90,
+			"Mirror": false
+		},
+		"P1": {
+			"X": 0,
+			"Y": -2876500,
+			"RotationDeg": 0,
+			"Mirror": false,
+			"Text": "1"
+		},
+		"P2": {
+			"X": 17158000,
+			"Y": -2876500,
+			"RotationDeg": 180,
+			"Mirror": false,
+			"Text": "2"
+		},
+		"TL1": {
+			"X": 0,
+			"Y": -2876500,
+			"RotationDeg": 0,
+			"Mirror": false,
+			"ChainAnchor": true
+		},
+		"TL2": {
+			"X": 12158000,
+			"Y": -2876500,
+			"RotationDeg": 0,
+			"Mirror": false
+		},
+		"VIAG1": {
+			"X": 6558000,
+			"Y": -6288300,
+			"RotationDeg": 180,
+			"Mirror": false
+		},
+		"VIAG2": {
+			"X": 8579000,
+			"Y": -6288300,
+			"RotationDeg": 180,
+			"Mirror": false
+		},
+		"VIAG3": {
+			"X": 10600000,
+			"Y": -6288300,
+			"RotationDeg": 180,
+			"Mirror": false
+		}
+	},
+	"PCellSnapshots": {
+		"MLIN_2fbfa302d4f9": {
+			"GeneratorId": "MLIN",
+			"Parameters": {
+				"W": 0.0010580000000000001,
+				"L": 0.005
+			},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		},
+		"MCLA_4640e54d0207": {
+			"GeneratorId": "MCLA",
+			"Parameters": {
+				"N": 3,
+				"W": 0.001,
+				"S": 0.001021,
+				"L": 0.009192,
+				"Form": "Combline",
+				"Feed": "Tapped",
+				"Tap": 0.002457,
+				"Wf": 0.0010580000000000001,
+				"C": 1.186E-12,
+				"C[1]": 1.234E-12,
+				"C[3]": 1.234E-12
+			},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		},
+		"VIAGND_d4e05b13643e": {
+			"GeneratorId": "VIAGND",
+			"Parameters": {},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		},
+		"smt-0402@N_23d6a1a986ad": {
+			"GeneratorId": "smt:0402@N",
+			"Parameters": {},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		}
+	},
+	"GroundViaKeys": [
+		"C1:2",
+		"C2:2",
+		"C3:2"
+	],
+	"Shapes": [
+		{
+			"$type": "Path",
+			"Xy": [
+				6558000, -5333500,
+				6558000, -6593100
+			],
+			"Width": 609600,
+			"End": "Flush",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Path",
+			"Xy": [
+				8579000, -5333500,
+				8579000, -6593100
+			],
+			"Width": 609600,
+			"End": "Flush",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Path",
+			"Xy": [
+				10600000, -5333500,
+				10600000, -6593100
+			],
+			"Width": 609600,
+			"End": "Flush",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 0,
+			"Y": -2876500,
+			"Text": "1",
+			"Height": 529000,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P1",
+			"PortDirection": "R0",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 17158000,
+			"Y": -2876500,
+			"Text": "2",
+			"Height": 529000,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P2",
+			"PortDirection": "R180",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Path",
+			"Xy": [
+				6558000, 4933500,
+				6558000, 5968100
+			],
+			"Width": 609600,
+			"End": "Flush",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Generated": "ground-via C1:2"
+		},
+		{
+			"$type": "Via",
+			"X": 6558000,
+			"Y": 5663300,
+			"PadSize": 609600,
+			"DrillSize": 304800,
+			"Layer": {
+				"Layer": 7,
+				"Datatype": 0
+			},
+			"Generated": "ground-via C1:2 @6558000,5663300"
+		},
+		{
+			"$type": "Path",
+			"Xy": [
+				8579000, 4933500,
+				8579000, 5968100
+			],
+			"Width": 609600,
+			"End": "Flush",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Generated": "ground-via C2:2"
+		},
+		{
+			"$type": "Via",
+			"X": 8579000,
+			"Y": 5663300,
+			"PadSize": 609600,
+			"DrillSize": 304800,
+			"Layer": {
+				"Layer": 7,
+				"Datatype": 0
+			},
+			"Generated": "ground-via C2:2 @8579000,5663300"
+		},
+		{
+			"$type": "Path",
+			"Xy": [
+				10600000, 4933500,
+				10600000, 5968100
+			],
+			"Width": 609600,
+			"End": "Flush",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Generated": "ground-via C3:2"
+		},
+		{
+			"$type": "Via",
+			"X": 10600000,
+			"Y": 5663300,
+			"PadSize": 609600,
+			"DrillSize": 304800,
+			"Layer": {
+				"Layer": 7,
+				"Datatype": 0
+			},
+			"Generated": "ground-via C3:2 @10600000,5663300"
+		},
+		{
+			"$type": "Poly",
+			"Xy": [
+				19698000, 8508100,
+				-2540000, 8508100,
+				-2540000, -9133100,
+				19698000, -9133100
+			],
+			"Layer": {
+				"Layer": 2,
+				"Datatype": 0
+			},
+			"Generated": "ground-pour"
+		}
+	],
+	"Instances": [
+		{
+			"CellRef": "../../.generated-cells/MLIN_2fbfa302d4f9",
+			"X": 0,
+			"Y": -2876500,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TL1",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MCLA_4640e54d0207",
+			"X": 6558000,
+			"Y": -5333500,
+			"Rot": "R90",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "CLA1",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 90,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MLIN_2fbfa302d4f9",
+			"X": 12158000,
+			"Y": -2876500,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TL2",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/VIAGND_d4e05b13643e",
+			"X": 6558000,
+			"Y": -6288300,
+			"Rot": "R180",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "VIAG1",
+			"OrientationLink": {
+				"SchematicDeg": 180,
+				"SchematicMirror": false,
+				"LayoutDeg": 180,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/smt-0402@N_23d6a1a986ad",
+			"X": 6558000,
+			"Y": 4533500,
+			"Rot": "R90",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "C1",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 90,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/VIAGND_d4e05b13643e",
+			"X": 8579000,
+			"Y": -6288300,
+			"Rot": "R180",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "VIAG2",
+			"OrientationLink": {
+				"SchematicDeg": 180,
+				"SchematicMirror": false,
+				"LayoutDeg": 180,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/smt-0402@N_23d6a1a986ad",
+			"X": 8579000,
+			"Y": 4533500,
+			"Rot": "R90",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "C2",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 90,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/VIAGND_d4e05b13643e",
+			"X": 10600000,
+			"Y": -6288300,
+			"Rot": "R180",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "VIAG3",
+			"OrientationLink": {
+				"SchematicDeg": 180,
+				"SchematicMirror": false,
+				"LayoutDeg": 180,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/smt-0402@N_23d6a1a986ad",
+			"X": 10600000,
+			"Y": 4533500,
+			"Rot": "R90",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "C3",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 90,
+				"LayoutMirror": false
+			}
+		}
+	]
+}

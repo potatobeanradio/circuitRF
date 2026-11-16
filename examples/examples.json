@@ -132,6 +132,11 @@
       "Summary": "Two dielectrics over the top metal of a GaAs process, entered as the process states them: a line with and without them, a probe pad seen through an opening in both, in 3D and planar, and a through-silicon via that passes through the oxide and the silicon as one via."
     },
     {
+      "Folder": "Planar Filters",
+      "Title": "Planar Filters",
+      "Summary": "Microstrip filters on 20 mil RO4350B, one cell per form: edge-coupled, hairpin, cross-coupled open-loop, end-coupled, interdigital and combline bandpass filters at 2.4 GHz, and stepped-impedance, stub and lumped LC lowpass filters near 2 GHz. Each is one built-in part holding its geometry, laid out by Update Layout. Simulate a cell's bench and open its data display to see the circuit model against the ideal prototype it was designed from, and against Planar MoM where the cell has a setup."
+    },
+    {
       "Folder": "3D EM",
       "Title": "3D EM (Palace)",
       "Summary": "A bond wire, a via through a ground plane and a lidded package, each solved in 3D by Palace in minutes: S-parameters, capacitance and inductance matrices, and the lid's resonances. Simulate offers to install Palace the first time."
@@ -265,7 +270,7 @@
     { "Title": "Models", "Examples": ["Model Composer", "Symbolically Defined Device (SDD)"] },
     { "Title": "Layout and Interchange", "Examples": ["PDK PCells", "LVS", "Artwork to Schematic"] },
     { "Title": "Power Distribution Networks", "Examples": ["Power Rail"] },
-    { "Title": "Planar EM and Boards", "Examples": ["Klopfenstein Taper", "Dividers and Couplers", "MMIC Wilkinson", "RFIC Branch-Line", "PCB Component Ports", "MMIC Component Ports", "Via Contact Resistor", "Passivated Pad"] },
+    { "Title": "Planar EM and Boards", "Examples": ["Klopfenstein Taper", "Dividers and Couplers", "Planar Filters", "MMIC Wilkinson", "RFIC Branch-Line", "PCB Component Ports", "MMIC Component Ports", "Via Contact Resistor", "Passivated Pad"] },
     { "Title": "3D EM", "Examples": ["3D EM", "3D Package", "3D Connector", "3D Wave Ports", "3D Eigenmode", "Capacitance Extraction", "Test Pad Capacitance"] },
     { "Title": "Antennas and Arrays", "Examples": ["Patch Antenna", "Antenna Co-Simulation", "Phased Array", "Loop Sensor"] },
     { "Title": "SAR", "Examples": ["SAR MRI Loop Coil", "SAR Phone Dipole"] },

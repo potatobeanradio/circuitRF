@@ -759,6 +759,19 @@ schematic-to-layout fixtures, one per shape, with `F28` a hairpin under `Full`, 
 changed giving exactly one `lvs.property.mismatch`. The plan tests also hold every `Full` sample joined and clear, and
 an aligned hairpin's arms one eight-strip section.
 
+**In the example.** `examples/Planar Filters` holds three MCRC designs, each bench laying the model over its ideal
+prototype (the Filter block at the design's response, order, ripple and band) and, for the edge-coupled and hairpin
+cells, Planar MoM on its Draft mesh (2 cells across a strip, the edge mesh off). Cohn's edge-coupled design lands 0.6 %
+below the prototype's centre and Planar 0.8 % below that, with the same 2.0 dB least loss and a band 19 % narrower. The
+hairpin is that design with `Sa` = 2W and tapped feeds, its tap where one hairpin tapped at both ends has a 3 dB
+bandwidth of 2·f0/Qe with Qe = g0·g1/FBW, the end resonators shortened by the tap's own pull and the whole centred on F;
+the model holds the prototype's centre within 0.4 %, and Planar puts it 1.6 % lower and 37 % narrower, of which `Full`
+(the arms' own coupling) accounts for 9 points. The cross-coupled square starts from the test's loops
+(`TheCrossCoupledLoops_HaveAZeroEitherSide`), which ripple by about 4 dB because each loop of the square sees other
+couplings than the inline design's; the Optimizer, on six numbers and three goals (|S11| below −15 dB over 2.36–2.44
+GHz, |S21| below −25 dB either side), meets them on the model in seconds. Its prototype is those goals' order-4
+elliptic, whose two zeros each side the square's one each side does not reach.
+
 #### Possible enhancements
 
 1. **Coupling across loops under `Full`.** Loops couple only through sides that lie straight beside each other, as pairs,
@@ -785,6 +798,11 @@ an aligned hairpin's arms one eight-strip section.
    a hand-made design before running it.
 8. **More cross-coupled arrangements.** Trisections and cascaded quadruplets of open loops are the same loops in other
    places; the coupling search already finds facing sides wherever loops sit.
+9. **The square's couplings from the square.** The test's cross-coupled loops reuse an inline design's gaps, so M23
+   (magnetic) and M14 (electric) are not what a four-pole prototype asks for, and the example closes the gap with the
+   Optimizer. Why: the lightly fed square's four resonances are ±R ± s, with R and s set by M12, M23 and M14 through
+   the mirror's even and odd modes, so its gaps could be extracted as the inline ones are, once each loop's own
+   frequency shift in the square (two coupled sides of different kinds) is taken out.
 
 ### 3.11 MLAD, the microstrip ladder
 
@@ -941,6 +959,18 @@ the line, and an LC ladder of sites alone as a row of pads that meet. `LadderSit
 `LadderSiteTests` covers drawing the radial ends and the pads, the readout with and without a `Footprint`, Place Site
 Parts filling the site, and `testdata/schematic-to-layout/F30-ladder-site`: a series capacitor's site that an 0402
 spans, LVS clean, and a changed list one mismatch.
+
+**In the example.** `examples/Planar Filters` holds four ladders, each from the closed forms above and each bench laying
+the model over its ideal prototype; three also run Planar MoM on its Draft mesh. The stepped-impedance lowpass (N = 6, 2
+GHz) cuts off 5.5 % below the Butterworth prototype, short lines only approximating its elements, and Planar 5 % below
+the model, from the steps the model leaves out; the Kuroda stub lowpass lands within 1 % of the model in Planar. The
+end-coupled filter shows where the closed form leaves the board: Cohn's outer inverters for a 2 % filter at 2.4 GHz need
+0.243 pF in series, and MGAP on the 50 Ω line gives 0.05 pF at a 20 µm gap, so the outer two are series C sites (0402
+parts) and only the inner two, 0.075 mm, are gaps. The resonators keep the closed form's lengths, the sites' pads
+unaccounted, and the model still centres on the Butterworth prototype's 2.400 GHz, at 7.3 dB of loss for a 2 % band. The
+lumped LC lowpass of sites alone cuts off 10 % below its prototype, from the pads, and Planar 21 % below that: a
+schematic with 1.2 nH under the shunt capacitor, its land and ground via, which the schematic grounds ideally, cuts off
+where Planar does.
 
 **Limits.**
 
@@ -1424,6 +1454,20 @@ on the GaAs die.
 `F31-coupled-array-interdigital`, `F32-…-combline`, `F33-…-pseudo` and `F34-…-custom` run each form through Update
 Layout and LVS with its vias and capacitors placed by Place Site Parts, and one changed parameter on each (`Tap`, `C`,
 `L`, `Ends`) is exactly one `lvs.property.mismatch`.
+
+**In the example.** `examples/Planar Filters` holds the tests' interdigital design (coupled feed) and a combline
+(tapped, its loading capacitors 0402 parts placed by Place Site Parts), each bench laying the model over its ideal
+prototype. The interdigital's vias are 21.8 mm apart, 0.22 λ at 3 GHz, past the 0.1 λ Planar's fitted vertical kernel is
+validated to, so its Planar setup turns on `DirectVerticalKernel`, which integrates the kernel directly at any
+separation and is slow: seven minutes a point on the Draft mesh and three to six at the 10 cells a wavelength the setup
+uses. A coupled feed's port end sits beside its neighbour's shorted end and via, 0.09 mm away, so a 50 Ω line straight
+on would touch the via's pad: the cell turns the line away through a 90° MCURVE at the terminating strip's own width
+first. The model sits 4.6 % below the 0.1 dB Chebyshev prototype's centre: 2.8 % is microstrip's unequal mode speeds, as
+in the test, and 1.8 % the vias' inductance, which ideal shorts leave out. Planar's seven points, 25 minutes on a loaded
+machine, put the band near 2.1 GHz, lower still; whether that is the 10-cells-a-wavelength mesh is open. The test's
+combline sets its centre and not its band, so the example's starts from it and the Optimizer moves the gap, the tap and
+the capacitors to |S11| below −15 dB over 2.3–2.5 GHz; it then holds that band's 0.14 dB Chebyshev prototype's centre
+within 0.3 %.
 
 **Possible enhancements.**
 

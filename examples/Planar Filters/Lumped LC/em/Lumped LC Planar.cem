@@ -1,0 +1,32 @@
+{
+  "FormatVersion": 1,
+  "Name": "Lumped LC Planar",
+  "LayoutRef": "Lumped LC/layout/Lumped LC.clay",
+  "Frequency": {
+    "StartExpr": "0.2",
+    "StopExpr": "5.0",
+    "StepExpr": "",
+    "NumPoints": 25,
+    "Mode": "PointCount",
+    "Kind": "Linear",
+    "StartUnit": "GHz",
+    "StopUnit": "GHz",
+    "StepUnit": "GHz"
+  },
+  "AnalysisKind": "Planar",
+  "PlanarMesh": {
+    "Auto": true,
+    "CellsPerWavelength": 20,
+    "EdgeMesh": false,
+    "EdgeCells": 3,
+    "MinCellsAcrossConductor": 2
+  },
+  "ConductorThicknessCorrection": true,
+  "RobustMeshing": true,
+  "CreateSnpSchematic": false,
+  "ComponentPorts": [
+    "L1",
+    "C1",
+    "L2"
+  ]
+}
