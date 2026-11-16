@@ -1562,6 +1562,8 @@ public sealed partial class Elaborator
             inst.Reference.Equals("I_1Tone", StringComparison.OrdinalIgnoreCase) ||
             inst.Reference.Equals("I_nTone", StringComparison.OrdinalIgnoreCase))
             return ResolveToneSourceParameters(inst, parentScope);
+        if (WaveformSourceModel.IsTypeName(inst.Reference))
+            return ResolveWaveformParameters(inst, parentScope);
         if (inst.Reference.Equals("P1Tone", StringComparison.OrdinalIgnoreCase))
             return ResolveP1ToneParameters(inst, parentScope);
         if (inst.Reference.Equals("PnTone", StringComparison.OrdinalIgnoreCase))
@@ -2293,6 +2295,67 @@ public sealed partial class Elaborator
             }
             catch { /* unresolvable — factory will catch real errors */ }
         }
+    }
+
+    // ── V_Pulse … I_Expr (brief TRN-2) ────────────────────────────────────────
+    // Points= is a list of expressions, evaluated here one entry at a time and handed on as plain numbers; File= is a path,
+    // resolved like every other file reference; Repeat= is a word; Expr= is evaluated by the model at every time step, so it
+    // is stored verbatim with the resolved value of every name it reads beside it (WaveformSourceModel.ScopeVarPrefix).
+    // Every other key is an ordinary numeric expression.
+    private IReadOnlyDictionary<string, Value> ResolveWaveformParameters(Instance inst, Scope parentScope)
+    {
+        var result = new Dictionary<string, Value>(StringComparer.Ordinal);
+        foreach (var ov in inst.Overrides)
+        {
+            string raw = ov.Expression.Trim();
+            if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"') raw = raw[1..^1];
+            switch (ov.Name)
+            {
+                case "Points":
+                {
+                    var tokens = raw.Split([',', ' ', '\t', '\n', '\r', ';'], StringSplitOptions.RemoveEmptyEntries);
+                    var nums = new List<string>(tokens.Length);
+                    try
+                    {
+                        foreach (var tok in tokens)
+                        {
+                            var v = _evaluator.Eval(tok, parentScope);
+                            double d = v.Kind == ValueKind.Real ? v.AsReal() : v.AsComplex().Real;
+                            nums.Add(d.ToString("R", CultureInfo.InvariantCulture));
+                        }
+                        var pairs = new List<string>();
+                        for (int i = 0; i + 1 < nums.Count; i += 2) pairs.Add(nums[i] + " " + nums[i + 1]);
+                        if (nums.Count % 2 == 1) pairs.Add(nums[^1]);
+                        result[ov.Name] = new Value(string.Join(", ", pairs));
+                    }
+                    catch (ExpressionException) { result[ov.Name] = new Value(raw); }   // the model names the pair it cannot read
+                    break;
+                }
+                case "File":
+                    result[ov.Name] = new Value(ResolveFileReference(raw, BaseDirectory));
+                    break;
+                case "Repeat":
+                    result[ov.Name] = new Value(raw);
+                    break;
+                case "Expr":
+                    result[ov.Name] = new Value(raw);
+                    try
+                    {
+                        foreach (var name in AstWalker.CollectRefs(Parser.Parse(raw)))
+                        {
+                            if (name == TimeVariable.Name) continue;
+                            try { result[WaveformSourceModel.ScopeVarPrefix + name] = _evaluator.Resolve(name, parentScope); }
+                            catch (ExpressionException) { /* the model's evaluation names it */ }
+                        }
+                    }
+                    catch (ExpressionException) { /* the model refuses an Expr that does not parse, naming it */ }
+                    break;
+                default:
+                    result[ov.Name] = EvalOverride(inst, ov, parentScope);
+                    break;
+            }
+        }
+        return result;
     }
 
     // ── V_1Tone / V_nTone / I_1Tone / I_nTone parameter resolution ────────────

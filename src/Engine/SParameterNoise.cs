@@ -362,7 +362,7 @@ public static class SParameterNoise
     /// <summary>Ports (the run's noiseless terminations, or inert when buried), tuners (a loadpull's terminations: noiseless
     /// by definition, as a port is — brief NZ-6) and independent sources (zeroed).</summary>
     private static bool IsNoiselessByDefinition(ElaboratedComponent ec) =>
-        ec.Model is PortModel or TermModel or TunerModel or VdcModel or IDriveScalable;   // IDriveScalable: P1Tone, ModSource, PnTone, tones
+        ec.Model is PortModel or TermModel or TunerModel or VdcModel or IdcModel or WaveformSourceModel or IDriveScalable;   // IDriveScalable: P1Tone, ModSource, PnTone, tones
 
     /// <summary>A linear part with no dependent source: thermal noise at its own temperature. A passive S-parameter block
     /// with no noise data is one (its activity is measured on its file), and so is a passive system block carrying a

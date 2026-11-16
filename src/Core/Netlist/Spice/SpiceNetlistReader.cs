@@ -772,10 +772,8 @@ public static class SpiceNetlistReader
         /// </summary>
         private static readonly Dictionary<char, string> Unimplemented = new()
         {
-            ['S'] = "a voltage-controlled switch, and circuitRF has no switch device — a switch is a "
-                  + "discontinuity, and circuitRF has no transient analysis to resolve one in",
-            ['W'] = "a current-controlled switch, and circuitRF has no switch device — a switch is a "
-                  + "discontinuity, and circuitRF has no transient analysis to resolve one in",
+            ['S'] = "a voltage-controlled switch, and circuitRF has no switch device",
+            ['W'] = "a current-controlled switch, and circuitRF has no switch device",
             ['T'] = "a lossless transmission line stated in the time domain. circuitRF's own line "
                   + "models are frequency-domain and are placed from the palette, not read from here",
             ['O'] = "a lossy transmission line, which circuitRF does not read from this dialect",
@@ -916,15 +914,17 @@ public static class SpiceNetlistReader
                 overrides.Add(new ParameterAssignment(k, Rewrite(v, file, number)));
             }
 
+            // brief-trn-2 R-trn2-8: a behavioural source that reads the transient time variable is read. A transient
+            // analysis evaluates it at the simulated time; a steady-state analysis refuses a `time` outside a condition by
+            // name (TimeVariable), so it is noted here rather than refused.
             foreach (var o in overrides)
             {
                 if (!SpiceExpression.ReferencesTime(o.Expression)) continue;
                 Note(file, number,
-                     $"'{name}' is a function of the transient time variable ('{Shorten(o.Expression)}'). "
-                     + "circuitRF has no transient analysis, and outside a condition there is no "
-                     + "steady-state value to read it as; skipped.");
-                MarkIncomplete();
-                return;
+                     $"'{name}' reads the transient time variable ('{Shorten(o.Expression)}'). A transient "
+                     + "analysis evaluates it at the simulated time; a DC, S-parameter or harmonic-balance run "
+                     + "refuses a 'time' outside a condition.");
+                break;
             }
 
             // The reference is the LETTER's own normalised family — 'E' for either behavioural
@@ -954,6 +954,7 @@ public static class SpiceNetlistReader
             // when nothing states one.
             string? stated   = null;
             string? fallback = null;
+            (string Head, List<string> Args)? wave = null;
 
             var dcBinding = assignments.FirstOrDefault(a => a.Name.Equals("DC", StringComparison.OrdinalIgnoreCase));
             if (dcBinding.Name is not null) stated = dcBinding.Value;
@@ -974,6 +975,27 @@ public static class SpiceNetlistReader
                 // as a number is indistinguishable from a source that never had one.
                 int paren = w.IndexOf('(');
                 string head = paren > 0 ? w[..paren] : w;
+                // brief-trn-2 R-trn2-8 — a stimulus circuitRF has a type for is read as that type: its whole argument list,
+                // which may run over several words (`PULSE (0 1 1n …)`, `PULSE(0 1` … `10n)`).
+                if (Typed.Contains(head) && wave is null)
+                {
+                    var text = new System.Text.StringBuilder(paren > 0 ? w[paren..] : "");
+                    while (!Balanced(text.ToString()) && i + 1 < rest.Count) text.Append(' ').Append(rest[++i]);
+                    string inner = text.ToString().Trim();
+                    if (inner.StartsWith('(') && inner.EndsWith(')')) inner = inner[1..^1];
+                    var args = Words(inner.Replace(',', ' ').Replace('\t', ' '));
+                    if (TypedArgsSuffice(head, args.Count))
+                    {
+                        wave = (head.ToUpperInvariant(), args);
+                        fallback ??= args[0];
+                        continue;
+                    }
+                    Note(file, number,
+                         $"'{name}' states a {head.ToUpperInvariant()} stimulus with {args.Count} argument(s), fewer than circuitRF "
+                         + "reads it from; it contributes its first level and the waveform was dropped.");
+                    fallback ??= args.Count > 0 && SpiceNumber.TryParse(args[0], out _) ? args[0] : "0";
+                    continue;
+                }
                 if (Waveforms.Contains(head))
                 {
                     // A waveform's FIRST argument is its DC contribution — the initial level of a
@@ -1013,6 +1035,23 @@ public static class SpiceNetlistReader
 
             string? dc = stated ?? fallback;
 
+            if (wave is { } wv)
+            {
+                overrides.Add(new ParameterAssignment(SourceWaveformParameter, wv.Head));
+                // each argument in circuitRF's spelling first: the keys are built from rewritten numbers, so a PWL's quoted
+                // list carries no dialect suffix and a SIN's phase arithmetic wraps a number circuitRF reads
+                var argsRewritten = wv.Args.Select(x => Rewrite(x, file, number)).ToList();
+                foreach (var (key, expr) in WaveformKeys(wv.Head, argsRewritten, letter == 'I'))
+                    overrides.Add(new ParameterAssignment(key, expr));
+                if (stated is not null && wv.Head is not ("SIN" or "SINE"))
+                    overrides.Add(new ParameterAssignment("Dc", Rewrite(stated, file, number)));
+                if (wv.Head is "SIN" or "SINE" && stated is not null)
+                    Note(file, number,
+                         $"'{name}' states both a DC value and a SIN offset; the SIN offset is the tone source's Vdc in every analysis.");
+                overrides.Add(new ParameterAssignment(SourceDcParameter, Rewrite(dc!, file, number)));
+                return true;
+            }
+
             if (dc is null)
             {
                 Note(file, number,
@@ -1024,6 +1063,68 @@ public static class SpiceNetlistReader
 
             overrides.Add(new ParameterAssignment(SourceDcParameter, Rewrite(dc, file, number)));
             return true;
+        }
+
+        /// <summary>brief-trn-2 — the stimuli read as a source type: PULSE → V_Pulse, PWL → V_PWL, EXP → V_Exp, SFFM → V_SFFM,
+        /// SIN → V_1Tone with Delay and Damping (and the I_ forms).</summary>
+        private static readonly HashSet<string> Typed =
+            new(StringComparer.OrdinalIgnoreCase) { "PULSE", "PWL", "EXP", "SFFM", "SIN", "SINE" };
+
+        /// <summary>Whether a stimulus states enough arguments to be read as its type. Fewer leaves a default the dialect takes from
+        /// the run (its step or stop time), which circuitRF does not invent.</summary>
+        private static bool TypedArgsSuffice(string head, int n) => head.ToUpperInvariant() switch
+        {
+            "PULSE" => n >= 2,
+            "PWL" => n >= 2 && n % 2 == 0,
+            "EXP" => n >= 4,
+            "SFFM" => n == 3 || n >= 5,
+            "SIN" or "SINE" => n >= 3,
+            _ => false,
+        };
+
+        private static bool Balanced(string s)
+        {
+            int depth = 0;
+            bool opened = false;
+            foreach (char c in s)
+            {
+                if (c == '(') { depth++; opened = true; }
+                else if (c == ')') depth--;
+            }
+            return opened && depth <= 0;
+        }
+
+        /// <summary>
+        /// A stimulus's arguments as circuitRF's keys (docs/design/transient.md §6.1, §7.2). SIN's phase is a SINE's, in degrees,
+        /// and a tone source's phase is a COSINE's in radians, so it is written as (φ − 90)·π/180; SIN's damping factor θ is
+        /// Damping. Unstated trailing arguments take circuitRF's own defaults (a zero rise or fall, one pulse, no delay).
+        /// </summary>
+        internal static List<(string Key, string Expr)> WaveformKeys(string head, IReadOnlyList<string> a, bool current)
+        {
+            var keys = head switch
+            {
+                "PULSE" => new[] { current ? "I1" : "V1", current ? "I2" : "V2", "Delay", "Rise", "Fall", "Width", "Period" },
+                "EXP" => [current ? "I1" : "V1", current ? "I2" : "V2", "Delay1", "Tau1", "Delay2", "Tau2"],
+                "SFFM" => ["Offset", "Amplitude", "Carrier", "ModIndex", "Signal"],
+                "SIN" or "SINE" => [current ? "Idc" : "Vdc", current ? "I" : "V", "Freq", "Delay", "Damping", "Phase"],
+                _ => [],
+            };
+            var list = new List<(string, string)>();
+            if (head == "PWL")
+            {
+                var pairs = new List<string>();
+                for (int i = 0; i + 1 < a.Count; i += 2) pairs.Add(a[i] + " " + a[i + 1]);
+                list.Add(("Points", "\"" + string.Join(", ", pairs) + "\""));
+                return list;
+            }
+            for (int i = 0; i < Math.Min(keys.Length, a.Count); i++)
+            {
+                if (keys[i] == "Phase") continue;
+                list.Add((keys[i], a[i]));
+            }
+            if (head is "SIN" or "SINE")
+                list.Add(("Phase", a.Count > 5 ? $"({a[5]}-90)*pi/180" : "-pi/2"));
+            return list;
         }
 
         /// <summary>Stimulus shapes stated as a waveform, all of which reduce to their DC contribution.</summary>
@@ -1189,15 +1290,19 @@ public static class SpiceNetlistReader
             if (area is not null) overrides.Add(new ParameterAssignment("area", area));
             foreach (var (k, v) in assignments)
             {
-                // A transient initial condition. circuitRF has no transient analysis, so there is
-                // nothing for it to set — but the value it is attached to is the component's, and
-                // the component is not in doubt. Noted and dropped; the line keeps its value.
+                // A transient initial condition (brief TRN-2 R-trn2-8): kept on a capacitor (its voltage) and an inductor
+                // (its current), where a transient analysis applies it in the starting-state solve and every other
+                // analysis ignores it. On anything else it sets nothing and is noted and dropped.
                 if (k.Equals("IC", StringComparison.OrdinalIgnoreCase))
                 {
+                    if (letter is 'C' or 'L' && reference is "C" or "L")
+                    {
+                        overrides.Add(new ParameterAssignment("IC", Rewrite(v, file, number)));
+                        continue;
+                    }
                     Note(file, number,
-                         $"'{name}' states an initial condition (IC={v}). circuitRF has no transient "
-                         + "analysis, so it sets nothing and was dropped; the component's own value "
-                         + "is unaffected.");
+                         $"'{name}' states an initial condition (IC={v}). circuitRF applies IC= on a capacitor or "
+                         + "an inductor; it was dropped here, and the component's own value is unaffected.");
                     continue;
                 }
 
@@ -1218,16 +1323,16 @@ public static class SpiceNetlistReader
                 overrides.Add(new ParameterAssignment(spelling, Rewrite(v, file, number)));
             }
 
-            // A transient stimulus that survived the steady-state reading of a CONDITION (see
-            // SpiceExpression.RewriteTimeConditions) is a ramp, and a ramp has no steady-state value
-            // at all. Refused by name rather than evaluated at some arbitrary instant.
+            // A passive's value is fixed for a run: circuitRF's transient analysis binds `time` in a behavioural source's
+            // equation and a waveform source, not in a resistance, capacitance or inductance. Refused by name rather than
+            // evaluated at some arbitrary instant.
             foreach (var o in overrides)
             {
                 if (!SpiceExpression.ReferencesTime(o.Expression)) continue;
                 Note(file, number,
-                     $"'{name}' is a function of the transient time variable ('{Shorten(o.Expression)}'). "
-                     + "circuitRF has no transient analysis, and outside a condition there is no "
-                     + "steady-state value to read it as; skipped.");
+                     $"'{name}' has a value that is a function of the transient time variable ('{Shorten(o.Expression)}'). "
+                     + "A passive's value is fixed for a run; a time-varying element is written as a behavioural "
+                     + "source (B, E or G with VALUE=); skipped.");
                 MarkIncomplete();
                 return;
             }
@@ -1315,7 +1420,7 @@ public static class SpiceNetlistReader
         /// <summary>Every override circuitRF's native inductor reads (<c>InductorModel</c> plus the
         /// elaborator's multiplier), in the spelling <see cref="NormalisePassiveParameter"/> produces.</summary>
         private static readonly HashSet<string> InductorParameters =
-            new(StringComparer.Ordinal) { "L", "R", "C", Elaborator.MultiplierParamName };
+            new(StringComparer.Ordinal) { "L", "R", "C", "IC", Elaborator.MultiplierParamName };
 
         // ── shared plumbing ───────────────────────────────────────────────────
 
@@ -1388,6 +1493,10 @@ public static class SpiceNetlistReader
 
     /// <summary>The parameter a <c>V</c>/<c>I</c> instance carries its DC value in.</summary>
     public const string SourceDcParameter = "DC";
+
+    /// <summary>The parameter a <c>V</c>/<c>I</c> instance names its stimulus in (PULSE, PWL, EXP, SFFM, SIN), with the stimulus's
+    /// arguments beside it under circuitRF's own keys (brief TRN-2).</summary>
+    public const string SourceWaveformParameter = "WAVEFORM";
 
     // ─────────────────────────────────────────────────────────────────────────
     //  line assembly and tokenising — static, and shared by the session

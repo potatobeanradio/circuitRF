@@ -127,7 +127,7 @@ public static class EnvelopeBaseband
         {
             var ec = nl.Components[i];
             if (ec.IsNonlinear || ec.Model is ModSourceModel or IInductiveBranch or MutualInductanceModel or PortModel or TermModel
-                    or VdcModel or ToneSourceModelBase or TunerModel or P1ToneModel or PnToneModel or DelayLineModel)
+                    or VdcModel or IdcModel or WaveformSourceModel or ToneSourceModelBase or TunerModel or P1ToneModel or PnToneModel or DelayLineModel)
                 continue;
             var model = new BasebandHeldModel(ec.Model, ec);
             var replacement = new ElaboratedComponent(ec.ComponentType, ec.InstancePath, ec.Nodes, ec.Parameters, model)

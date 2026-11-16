@@ -381,6 +381,10 @@ public static class SymbolPortDefs
             // ITone's "+" is the pin its arrowhead points at — the engine's "a current source
             // injects into its first node" convention, which BuildCurrentToneSource draws.
             case SymbolKind.CurrentToneSource:
+            // brief-trn-2 — the waveform sources and Idc: + and −, as Vdc and the tone sources.
+            case SymbolKind.VPulse: case SymbolKind.VPwl: case SymbolKind.VExp: case SymbolKind.VSffm: case SymbolKind.VExpr:
+            case SymbolKind.IPulse: case SymbolKind.IPwl: case SymbolKind.IExp: case SymbolKind.ISffm: case SymbolKind.IExpr:
+            case SymbolKind.Idc:
             case SymbolKind.P1Tone:
             case SymbolKind.PnTone:
             case SymbolKind.ModSource:

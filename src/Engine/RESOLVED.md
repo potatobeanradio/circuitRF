@@ -5025,3 +5025,33 @@ counts it, no pairs scored). Anything that does move a candidate — a taper VAR
 `ArraySteering.FastWeighings`, `BeamSelection.PairsScored`, `BeamSelection.Reused`): a run is synchronous on its caller's thread, and a
 process-wide count moved under other tests elaborating in parallel. `BeamSelection.Selections` and `CacheHits` are process-wide, since parallel
 segments select on several threads; only a channel with a steered array end moves them, and those tests share one collection.
+
+## brief-trn-2 — sources and initial conditions in the transient engine (2026-11-15)
+
+**Each waveform source and each shaped tone source gets its own right-hand-side column, by difference.** The aggregate
+per-frequency phasor columns are built with every waveform source stamping 0 at DC (`StampOverride = 0`) and every shaped
+tone source at `DriveScale = 0`; a source's own column is then the right-hand side with it alone switched on, less the
+aggregate — exact, b being linear in each source. Nothing about any model's stamp is repeated in the engine. A shaped tone
+(`Delay`, `Ramp`, `Damping` non-zero) adds env(t)·Re{b e^{jω(t − Delay)}} at each step, env = 0 up to Delay, a raised cosine
+over Ramp, times e^{−Damping (t − Delay)}; its DC offset stays in the aggregate (not delayed). Breakpoints: every
+waveform's corners, and a shaped tone's Delay and Delay + Ramp. The automatic step bound also counts an SFFM's
+carrier + (|ModIndex| + 1)·Signal.
+
+**IC= is held in the operating-point solve, then released.** A capacitor's by `HoldConductance` across it (a Norton
+source of G·V, both nodes or one); an inductor's by `HoldResistance` = 1e9 Ω on its branch row, which then reads
+V(a) − V(b) + K i = K I, so the current departs from I by the branch voltage over K. `InitialState=zero` writes them into
+the starting state directly. Gate 5: an RC from IC=1 follows e^(−t/τ) within 7.6e-7 (RelTol=1e-6), an RL from IC=1m within 1e-8.
+
+**An SDD reading `time` invalidates its cached evaluation when the clock moves.** The engine caches each device's last
+evaluation by its port voltages; with `time` in the equation the same voltages at another time are a different answer, so
+`SetClock` clears that cache for those devices. The clock is set to 0 for the starting state (NonlinearDcEngine's seed
+included) and to t + h before each step, and cleared in `Run`'s finally.
+
+**A P1Tone/PnTone with a harmonic termination of its own is refused** (`HasHarmonicTerminations`: any band whose Z differs
+from Z[1]) before the affine check, with a sentence naming Z[k]; TRN-4 realizes it.
+
+Gates (`tests/Engine.Tests/Transient/TransientSourcesTests`): a pulse train's 16 corners are accepted steps and the output
+equals the definition to 1.0e-14; PWL File= equals Points= bit for bit and a repeated time is refused naming line 3;
+Ramp=10/f follows the raised cosine to 1.6e-14; a damped delayed sine equals A·e^(−θ(t−td))·sin(2πf(t−td)+φ) to 1.5e-14;
+HB and S-parameter benches with a pulse equal Vdc at its first level bit for bit, and HB is bit-identical with
+Delay/Ramp/Damping set; V_Expr equals V_Exp exactly; `time` outside a condition in HB is refused naming it.

@@ -698,6 +698,13 @@ public enum SymbolKind
     /// edges, holding two small antennas in the schematic antenna symbol (a mast under an open triangle on its point) and the waves
     /// leaving the transmit one.</summary>
     PropagationChannel,
+
+    /// <summary>brief-trn-2 — the waveform sources (engine V_Pulse … I_Expr, one WaveformSourceModel under all ten) and the DC
+    /// current source (engine "Idc"). Two pins, + at (0,−300) and − at (0,300), as Vdc and the tone sources: a voltage type's value
+    /// is V(+) − V(−), a current type's is delivered INTO +. A circle whose body draws the waveform's shape.</summary>
+    VPulse, VPwl, VExp, VSffm, VExpr,
+    IPulse, IPwl, IExp, ISffm, IExpr,
+    Idc,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

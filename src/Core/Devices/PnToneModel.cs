@@ -157,6 +157,14 @@ public sealed class PnToneModel : ComponentModel, IDriveScalable
     public Complex GetDeclaredZ(int n)
         => _harmonicZ.TryGetValue(n, out var z) ? z : _zDefault;
 
+    /// <summary>
+    /// brief-trn-2 R-trn2-5 — whether any band other than the fundamental presents an impedance of its own (a Z[k] that is not
+    /// Z[1]). A transient run realizes one impedance at every frequency, so such a source is refused there until brief TRN-4
+    /// fits the frequency-defined termination.
+    /// </summary>
+    public bool HasHarmonicTerminations
+        => _zDefault != GetDeclaredZ(1) || _harmonicZ.Values.Any(z => z != GetDeclaredZ(1));
+
     private static void StampZPort(IMnaContext mna, int na, int nb, Complex z)
     {
         int br = mna.AddBranch();

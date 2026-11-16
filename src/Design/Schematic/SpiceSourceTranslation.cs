@@ -66,6 +66,31 @@ internal static class SpiceSourceTranslation
         string dc = Expression(inst, SpiceNetlistReader.SourceDcParameter) ?? "0";
         var notes = new List<string>();
 
+        // The dialect's I element SINKS its value from its first node; circuitRF's current sources deliver INTO their first
+        // node (src/Engine/CLAUDE.md, "Current-source direction"). The same value on the same two nets would reverse every
+        // imported current — a sign that solves and plots without complaint — so a current source takes the nets swapped.
+        IReadOnlyList<string> nets = current ? [inst.NetBindings[1], inst.NetBindings[0]] : inst.NetBindings;
+
+        // brief-trn-2 R-trn2-8 — a stimulus is its own type: PULSE, PWL, EXP and SFFM the waveform sources, SIN a tone source
+        // with Delay and Damping. The reader has already put its arguments under circuitRF's keys.
+        if (Expression(inst, SpiceNetlistReader.SourceWaveformParameter) is { } wave)
+        {
+            SymbolKind kind = (wave, current) switch
+            {
+                ("PULSE", false) => SymbolKind.VPulse, ("PULSE", true) => SymbolKind.IPulse,
+                ("PWL", false) => SymbolKind.VPwl, ("PWL", true) => SymbolKind.IPwl,
+                ("EXP", false) => SymbolKind.VExp, ("EXP", true) => SymbolKind.IExp,
+                ("SFFM", false) => SymbolKind.VSffm, ("SFFM", true) => SymbolKind.ISffm,
+                (_, false) => SymbolKind.ToneSource,
+                (_, true) => SymbolKind.CurrentToneSource,
+            };
+            var rows = inst.Overrides
+                .Where(o => o.Name != SpiceNetlistReader.SourceWaveformParameter && o.Name != SpiceNetlistReader.SourceDcParameter)
+                .Select(o => ModelCardCellBuilder.ImportedParameter(kind, o.Name, o.Expression))
+                .ToList();
+            return new SubcircuitElement(inst.InstanceName, inst.Reference, nets, kind, null, rows, [], notes, null);
+        }
+
         if (!current && IsExactlyZero(dc))
         {
             notes.Add("A zero-volt source is the current-sensor idiom, so it is placed as an "
@@ -82,20 +107,11 @@ internal static class SpiceSourceTranslation
                 [ModelCardCellBuilder.ImportedParameter(SymbolKind.Vdc, "Vdc", dc)],
                 [], notes, null);
 
-        // circuitRF has no DC-only current-source component. ITone at zero amplitude IS one — its
-        // DC offset is a parameter of its own, and a tone of zero amplitude at zero frequency
-        // contributes nothing else — so this places the smallest thing that says what the line says
-        // rather than adding a component that would exist for this one case.
-        notes.Add("circuitRF has no DC-only current source; this is an ITone carrying the line's "
-                + "DC value as its offset, with no tone.");
+        // The DC current source (brief TRN-2 R-trn2-2), Vdc's counterpart: the line's value, on the same two nets.
         return new SubcircuitElement(
-            inst.InstanceName, inst.Reference, inst.NetBindings,
-            SymbolKind.CurrentToneSource, null,
-            [
-                ModelCardCellBuilder.ImportedParameter(SymbolKind.CurrentToneSource, "Idc",  dc),
-                ModelCardCellBuilder.ImportedParameter(SymbolKind.CurrentToneSource, "I",    "0"),
-                ModelCardCellBuilder.ImportedParameter(SymbolKind.CurrentToneSource, "Freq", "0"),
-            ],
+            inst.InstanceName, inst.Reference, nets,
+            SymbolKind.Idc, null,
+            [ModelCardCellBuilder.ImportedParameter(SymbolKind.Idc, "Idc", dc)],
             [], notes, null);
     }
 

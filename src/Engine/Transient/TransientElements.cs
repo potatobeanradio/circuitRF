@@ -68,6 +68,14 @@ public static class TransientElements
                 continue;
             }
             if (ec.Model is MutualInductanceModel) continue;   // jwM between two inductor branches: affine by its stamp
+            // brief-trn-2 R-trn2-5: a P1Tone/PnTone keeps its available power and source impedance in transient; a harmonic
+            // termination of its own is frequency-defined, and brief TRN-4 realizes it.
+            if (ec.Model is P1ToneModel { HasHarmonicTerminations: true } or PnToneModel { HasHarmonicTerminations: true })
+            {
+                list.Add(NotYetSupported(ec, "a harmonic termination Z[k] other than the fundamental's impedance is frequency-defined "
+                                             + "(brief TRN-4 realizes it); give every band the impedance Z[1] has"));
+                continue;
+            }
             if (AffineError(ec) is { } why) list.Add(NotYetSupported(ec, why));
         }
         return list;

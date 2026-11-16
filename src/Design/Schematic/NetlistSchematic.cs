@@ -163,7 +163,9 @@ public static class NetlistSchematic
     [
         SymbolKind.Term, SymbolKind.TermG, SymbolKind.Tuner, SymbolKind.LoadTuner,
         SymbolKind.SourceTuner, SymbolKind.P1Tone, SymbolKind.PnTone, SymbolKind.ToneSource,
-        SymbolKind.CurrentToneSource, SymbolKind.Vdc, SymbolKind.ZPort,
+        SymbolKind.CurrentToneSource, SymbolKind.Vdc, SymbolKind.ZPort, SymbolKind.Idc,
+        SymbolKind.VPulse, SymbolKind.VPwl, SymbolKind.VExp, SymbolKind.VSffm, SymbolKind.VExpr,
+        SymbolKind.IPulse, SymbolKind.IPwl, SymbolKind.IExp, SymbolKind.ISffm, SymbolKind.IExpr,
     ];
 
     // ─────────────────────────────────────────────────────────────────────────

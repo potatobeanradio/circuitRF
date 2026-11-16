@@ -1,0 +1,9 @@
+<!-- GENERATED FILE - do not edit. Regenerate every component symbol with:
+     dotnet run ––project src/Ui –– ––generate-symbols docs/user/assets/symbols
+     (the flags above are ordinary double hyphens; XML comments cannot contain them.)
+     Source: src/Ui/Diagnostics/SymbolArtworkGenerator.cs -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 25.96L120 60.29" /><ellipse fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" cx="120" cy="75" rx="14.71" ry="14.71" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 89.71L120 124.04" /><text fill="#2D14C3" transform="translate(120 75)" font-size="11.28" font-style="italic" font-family="IBM Plex Sans" x="-7.24, -3.77, -0.07331, 3.54" y="4.23">
+			f(t)
+	</text><path fill="#2D14C3" d="M120 35.77L115.1 47.05L124.9 47.05L120 35.77Z" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="117" y="22.96" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="117" y="121.04" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="96.61, 102.95, 111.34, 120.34, 128.5, 137.5" y="172.32">
+			I_Expr
+	</text></svg>

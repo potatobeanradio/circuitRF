@@ -65,12 +65,9 @@ public class SpiceSourceImportTests
         Assert.Equal("5", P(e, "Vdc"));
     }
 
-    /// <summary>
-    /// circuitRF has no DC-only current source. What it places instead is stated as a note rather
-    /// than left for someone to discover from the schematic.
-    /// </summary>
+    /// <summary>A DC current line is the DC current source, Idc (brief TRN-2 R-trn2-2).</summary>
     [Fact]
-    public void S3_ADcCurrentSourceBecomesAToneSourceCarryingOnlyItsOffset()
+    public void S3_ADcCurrentSourceBecomesIdc()
     {
         var e = E(Only("""
             .subckt part a b
@@ -79,10 +76,10 @@ public class SpiceSourceImportTests
             .ends part
             """), "I1");
 
-        Assert.Equal(SymbolKind.CurrentToneSource, e.Symbol);
+        Assert.Equal(SymbolKind.Idc, e.Symbol);
         Assert.Equal("0.002", P(e, "Idc"));
-        Assert.Equal("0", P(e, "I"));
-        Assert.Contains(e.Notes, n => n.Contains("no DC-only current source", StringComparison.Ordinal));
+        // the dialect's I sinks from its first node, circuitRF's Idc delivers into its first: the nets are swapped
+        Assert.Equal(["b", "a"], e.Nets);
     }
 
     // ── the ideal controlled sources ──────────────────────────────────────────

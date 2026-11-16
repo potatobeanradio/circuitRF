@@ -326,7 +326,9 @@ public static class DeviceTypes
         // The FIXTURE (R-lvs4-4c): sources, terminations, ports and the tuner family. Excluded
         // from the default comparison and named here so the exclusion can be STATED rather than
         // guessed at by a second list somewhere else.
-        SymbolKind.Vdc or SymbolKind.ToneSource or SymbolKind.CurrentToneSource
+        SymbolKind.Vdc or SymbolKind.ToneSource or SymbolKind.CurrentToneSource or SymbolKind.Idc
+            or SymbolKind.VPulse or SymbolKind.VPwl or SymbolKind.VExp or SymbolKind.VSffm or SymbolKind.VExpr
+            or SymbolKind.IPulse or SymbolKind.IPwl or SymbolKind.IExp or SymbolKind.ISffm or SymbolKind.IExpr
             or SymbolKind.Term or SymbolKind.TermG or SymbolKind.ZPort
             or SymbolKind.P1Tone or SymbolKind.PnTone or SymbolKind.ModSource
             or SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner

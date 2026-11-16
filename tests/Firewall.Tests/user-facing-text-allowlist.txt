@@ -1815,4 +1815,25 @@ src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to an SC carrier
 src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a symbol rate: a number with sps, ksps or Msps
 src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a whole number
 src/Core/Devices/PhasedArrayFeedModel.cs|{from.Elements} weights for {Elements} elements.
+src/Core/Devices/WaveformSourceModel.cs|'{typeName}' is not a waveform source type.
+src/Core/Devices/WaveformSourceModel.cs|{TypeLabel}: {key} is not a finite number.
+src/Core/Devices/WaveformSourceModel.cs|{TypeLabel}: {key} must be a number, not '{Text(v)}'.
+src/Core/Devices/WaveformSourceModel.cs|{TypeLabel}: {key} must not be negative.
+src/Core/Devices/WaveformSourceModel.cs|{TypeName} takes {string.Join(
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: Delay2 must not be before Delay1.
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: Expr= is required, an expression in time and the globals.
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: Expr= must be a number, not {v.Kind}.
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: Expr=\"{text}\" does not parse: {ex.Message}
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: Points= and File= are both given; a PWL source takes one or the other.
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: Repeat=yes needs at least two points to repeat.
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: Rise + Width + Fall ({_rise + _width + _fall:G6} s) is longer than Period ({_period:G6} s).
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: Tau1 must be a positive time.
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: Tau2 must be a positive time.
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: give the waveform as Points=\"t v, t v, ...\" or File= (two columns, time and value).
+src/Core/Devices/WaveformSourceModel.cs|{TypeName}: its value at t = 0 is not a finite number; give Dc= the value other analyses use.
+src/Core/Devices/WaveformSourceModel.cs|{who}: '{Path.GetFileName(path)}' holds no points.
+src/Core/Devices/WaveformSourceModel.cs|{who}: File='{path}' does not exist.
+src/Core/Devices/WaveformSourceModel.cs|{who}: Points= pair {i + 1} ('{tok[2 * i]} {tok[2 * i + 1]}') is not two numbers.
+src/Core/Devices/WaveformSourceModel.cs|{who}: Points= takes time-value pairs; it has {tok.Length} number(s).
+src/Core/Devices/WaveformSourceModel.cs|{who}: line {lineNo} of '{Path.GetFileName(path)}' is not two numbers (time, value): '{line}'.
 src/Engine/Array/ArrayPattern.cs|The tables were built for another lattice.

@@ -170,9 +170,13 @@ public static class SubcircuitTranslator
         foreach (var e in t.Elements)
         {
             string? via = null;
+            // brief-trn-2 R-trn2-8: a behavioural source reading `time` itself is read — its equation is evaluated at the
+            // simulated time by a transient run, and a steady-state run refuses a `time` outside a condition by name. What is
+            // still refused is a `time` reached through a parameter, which is resolved once, before any run starts.
+            bool behavioural = e.Symbol is SymbolKind.Sdd || e.Reference is "E" or "G" or "SDD";
             if (e.Refusal is null)
                 foreach (var q in e.Parameters)
-                    if ((via = Reads(q.Expression, tainted)) is not null) break;
+                    if ((via = Reads(q.Expression, tainted, behavioural)) is not null) break;
 
             if (via is null) { elements.Add(e); continue; }
 
@@ -180,8 +184,8 @@ public static class SubcircuitTranslator
                 $"'{e.InstanceName}' depends on the transient time variable"
                 + (via.Equals(SpiceExpression.TimeIdentifier, StringComparison.OrdinalIgnoreCase)
                     ? ". " : $", through '{via}'. ")
-                + "circuitRF has no transient analysis, and outside a condition there is no "
-                + "steady-state value to read it as.";
+                + "A parameter is resolved once, before a run starts, so it has no value that follows the "
+                + "simulated time; only a behavioural source's own equation reads 'time'.";
             refusal ??= why;
             elements.Add(e with { Refusal = why });
         }
@@ -192,9 +196,9 @@ public static class SubcircuitTranslator
 
         // The first name an expression reads that has no steady-state value — `time` itself, or a
         // name that resolves to it. Null when the expression is clean.
-        static string? Reads(string expression, IReadOnlySet<string> tainted)
+        static string? Reads(string expression, IReadOnlySet<string> tainted, bool timeAllowed = false)
         {
-            if (SpiceExpression.ReferencesTime(expression)) return SpiceExpression.TimeIdentifier;
+            if (!timeAllowed && SpiceExpression.ReferencesTime(expression)) return SpiceExpression.TimeIdentifier;
             if (tainted.Count == 0) return null;
 
             Expr ast;

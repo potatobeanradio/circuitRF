@@ -232,6 +232,30 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Sources,
             SearchTerms: ["ITone", "CurrentToneSource", "current source", "tone", "RF", "signal", "I"],
             IsCommon: true),
+        // brief-trn-2 — the waveform sources and the DC current source. Pulse, PWL, Exponential, SFFM and Expression in their
+        // voltage and current forms, one WaveformSourceModel under all ten; in every analysis but transient each is its Dc value.
+        [SymbolKind.VPulse] = new("V_Pulse", "V", Category: ComponentCategory.Sources,
+            SearchTerms: ["Pulse", "V_Pulse", "PULSE", "square", "clock", "step", "transient", "voltage"]),
+        [SymbolKind.VPwl] = new("V_PWL", "V", Category: ComponentCategory.Sources,
+            SearchTerms: ["PWL", "V_PWL", "piecewise linear", "ramp", "waveform", "transient", "voltage"]),
+        [SymbolKind.VExp] = new("V_Exp", "V", Category: ComponentCategory.Sources,
+            SearchTerms: ["Exponential", "V_Exp", "EXP", "transient", "voltage"]),
+        [SymbolKind.VSffm] = new("V_SFFM", "V", Category: ComponentCategory.Sources,
+            SearchTerms: ["SFFM", "V_SFFM", "FM", "frequency modulated", "transient", "voltage"]),
+        [SymbolKind.VExpr] = new("V_Expr", "V", Category: ComponentCategory.Sources,
+            SearchTerms: ["Expression", "V_Expr", "behavioural", "time", "transient", "voltage"]),
+        [SymbolKind.IPulse] = new("I_Pulse", "I", Category: ComponentCategory.Sources,
+            SearchTerms: ["Pulse", "I_Pulse", "PULSE", "square", "clock", "step", "transient", "current"]),
+        [SymbolKind.IPwl] = new("I_PWL", "I", Category: ComponentCategory.Sources,
+            SearchTerms: ["PWL", "I_PWL", "piecewise linear", "ramp", "waveform", "transient", "current"]),
+        [SymbolKind.IExp] = new("I_Exp", "I", Category: ComponentCategory.Sources,
+            SearchTerms: ["Exponential", "I_Exp", "EXP", "transient", "current"]),
+        [SymbolKind.ISffm] = new("I_SFFM", "I", Category: ComponentCategory.Sources,
+            SearchTerms: ["SFFM", "I_SFFM", "FM", "frequency modulated", "transient", "current"]),
+        [SymbolKind.IExpr] = new("I_Expr", "I", Category: ComponentCategory.Sources,
+            SearchTerms: ["Expression", "I_Expr", "behavioural", "time", "transient", "current"]),
+        [SymbolKind.Idc] = new("Idc", "I", Category: ComponentCategory.Sources,
+            SearchTerms: ["Idc", "DC current", "current source", "bias", "I"]),
         // VCCS: "G" is its instance prefix by long convention (the SPICE G element), even though
         // circuitRF's own current DIRECTION is the opposite of that element's — see VccsModel.
         [SymbolKind.Vccs]          = new("VCCS", "G",
@@ -1146,6 +1170,12 @@ public static class ComponentTypeRegistry
           + "arrow on the + lead points at. Note this is the opposite sense to the VCCS's arrow, "
           + "which is a controlled source and is drawn the way controlled sources are.",
 
+        SymbolKind.VPulse or SymbolKind.VPwl or SymbolKind.VExp or SymbolKind.VSffm or SymbolKind.VExpr =>
+            "The waveform is the voltage at + relative to −.",
+
+        SymbolKind.IPulse or SymbolKind.IPwl or SymbolKind.IExp or SymbolKind.ISffm or SymbolKind.IExpr or SymbolKind.Idc =>
+            "A positive value is delivered INTO the + terminal and drawn out of the −, as the arrow on the + lead shows.",
+
         SymbolKind.P1Tone or SymbolKind.PnTone or SymbolKind.ModSource =>
             "+ is the RF output and − the reference, normally ground — Term's own convention, since "
           + "this is a source with Term's internal resistance in front of it. The source's internal "
@@ -1197,6 +1227,17 @@ public static class ComponentTypeRegistry
         SymbolKind.Vdc           => "Vdc",
         SymbolKind.ToneSource    => "V_1Tone",
         SymbolKind.CurrentToneSource => "I_1Tone",
+        SymbolKind.VPulse        => "V_Pulse",
+        SymbolKind.VPwl          => "V_PWL",
+        SymbolKind.VExp          => "V_Exp",
+        SymbolKind.VSffm         => "V_SFFM",
+        SymbolKind.VExpr         => "V_Expr",
+        SymbolKind.IPulse        => "I_Pulse",
+        SymbolKind.IPwl          => "I_PWL",
+        SymbolKind.IExp          => "I_Exp",
+        SymbolKind.ISffm         => "I_SFFM",
+        SymbolKind.IExpr         => "I_Expr",
+        SymbolKind.Idc           => "Idc",
         SymbolKind.Vccs          => "VCCS",
         SymbolKind.Vcvs          => "VCVS",
         SymbolKind.OpAmp         => "OpAmp",
@@ -1334,6 +1375,7 @@ public static class ComponentTypeRegistry
     public static bool IsFilePathParameter(SymbolKind kind, string parameterName)
         => (kind is SymbolKind.VerilogA or SymbolKind.WBond && parameterName.Equals("File", StringComparison.Ordinal))
         || (kind is SymbolKind.PhasedArray && parameterName.Equals("Record", StringComparison.Ordinal))
+        || (kind is SymbolKind.VPwl or SymbolKind.IPwl && parameterName.Equals("File", StringComparison.Ordinal))
         || (kind is SymbolKind.PropagationChannel && parameterName is "File" or "Terrain" or "Codebook");
 
     /// <summary>A newly placed wBond's operating temperature, °C: <see cref="CircuitRF.WBond.WireMaterials.DefaultOperatingTempC"/>,
@@ -1528,6 +1570,7 @@ public static class ComponentTypeRegistry
          : TlineParameterDescription(kind, parameterName) is { Length: > 0 } tlDesc ? tlDesc
          : DeviceNoiseParameterDescription(kind, parameterName) is { Length: > 0 } nzDesc ? nzDesc
          : PhaseNoiseParameterDescription(kind, parameterName) is { Length: > 0 } pnDesc ? pnDesc
+         : WaveformParameterDescription(kind, parameterName) is { Length: > 0 } wfDesc ? wfDesc
          : kind is SymbolKind.ComposedFET ? ComposedFetParameterDescription(parameterName)
          : kind is SymbolKind.Deembed ? DeembedParameterDescription(parameterName)
          : kind is SymbolKind.PropagationChannel ? ChannelParameterDescription(parameterName)
@@ -2302,7 +2345,8 @@ public static class ComponentTypeRegistry
     /// brief-pch-6 R-pch6-11 — the group a channel parameter is shown under (design note §5.5): Geometry, Large scale, Small scale,
     /// Ends or Realization. A parameter the channel does not own is the large-scale model's. Null for any other component.
     /// </summary>
-    public static string? ParameterGroup(SymbolKind kind, string name) => kind is not SymbolKind.PropagationChannel ? null : name switch
+    public static string? ParameterGroup(SymbolKind kind, string name) => IsWaveformSource(kind) ? WaveformParameterGroup(name)
+        : kind is not SymbolKind.PropagationChannel ? null : name switch
     {
         "Distance" or "TxHeight" or "RxHeight" or "TxPos" or "RxPos" or "TxVel" or "RxVel"
             or "TxAz" or "TxEl" or "TxRoll" or "RxAz" or "RxEl" or "RxRoll" => "Geometry",
@@ -2313,6 +2357,57 @@ public static class ComponentTypeRegistry
         "BeamSelect" or "BeamRank" or "TxBeam" or "RxBeam" or "Codebook" or "BeamSearch" or "ScanLimit" => "Beam",
         _ => "Large scale",
     };
+
+    /// <summary>brief-trn-2 — the ten waveform sources (V_Pulse … I_Expr).</summary>
+    public static bool IsWaveformSource(SymbolKind kind) => kind is SymbolKind.VPulse or SymbolKind.VPwl or SymbolKind.VExp
+        or SymbolKind.VSffm or SymbolKind.VExpr or SymbolKind.IPulse or SymbolKind.IPwl or SymbolKind.IExp or SymbolKind.ISffm or SymbolKind.IExpr;
+
+    /// <summary>brief-trn-2 R-trn2-4 — a waveform source's groups: Levels, Timing, Waveform, Steady state.</summary>
+    private static string WaveformParameterGroup(string name) => name switch
+    {
+        "V1" or "V2" or "I1" or "I2" or "Offset" or "Amplitude" => "Levels",
+        "Delay" or "Rise" or "Fall" or "Width" or "Period" or "Delay1" or "Tau1" or "Delay2" or "Tau2" => "Timing",
+        "Carrier" or "ModIndex" or "Signal" => "Modulation",
+        "Points" or "File" or "Repeat" or "Expr" => "Waveform",
+        "Dc" => "Steady state",
+        _ => "Waveform",
+    };
+
+    /// <summary>brief-trn-2 — what each waveform-source key means (docs/design/transient.md §6.1).</summary>
+    private static string WaveformParameterDescription(SymbolKind kind, string name)
+    {
+        if (!IsWaveformSource(kind) && kind is not SymbolKind.Idc) return "";
+        bool v = kind is SymbolKind.VPulse or SymbolKind.VPwl or SymbolKind.VExp or SymbolKind.VSffm or SymbolKind.VExpr;
+        string unit = v ? "V" : "A";
+        return name switch
+        {
+            "V1" or "I1" => kind is SymbolKind.VExp or SymbolKind.IExp ? $"The level before Delay1, {unit}." : $"The level before Delay and between pulses, {unit}.",
+            "V2" or "I2" => kind is SymbolKind.VExp or SymbolKind.IExp ? $"The level the first exponential approaches, {unit}." : $"The pulse level, {unit}.",
+            "Delay" => "When the first pulse starts to rise, seconds.",
+            "Rise" => "The rise from the first level to the pulse level, seconds; 0 is a step.",
+            "Fall" => "The fall back to the first level, seconds; 0 is a step.",
+            "Width" => "How long the pulse level is held, seconds. Blank: held for the rest of the run.",
+            "Period" => "The repetition period, seconds. Blank: one pulse.",
+            "Delay1" => "When the rise towards the second level begins, seconds.",
+            "Tau1" => "The time constant of the rise, seconds.",
+            "Delay2" => "When the return towards the first level begins, seconds. Blank: never.",
+            "Tau2" => "The time constant of the return, seconds. Blank: Tau1.",
+            "Offset" => $"The level the modulated sine is centred on, {unit}.",
+            "Amplitude" => $"The peak of the modulated sine, {unit}.",
+            "Carrier" => "The carrier frequency, Hz.",
+            "ModIndex" => "The modulation index: the peak phase deviation, radians.",
+            "Signal" => "The modulating frequency, Hz.",
+            "Points" => $"Time-value pairs, \"0 0, 1n 1, 2n 1, 3n 0\": seconds and {unit}, times increasing, straight lines between. Before the "
+                      + "first time the first value holds; after the last, the last. Points or File, not both.",
+            "File" => "A file of two columns, time (s) and value, separated by a comma or whitespace; # starts a comment; times increasing. "
+                    + "Points or File, not both.",
+            "Repeat" => "yes repeats the points with a period of the last time minus the first.",
+            "Expr" => "An expression in time (the simulated time, s) and the globals: \"1 - exp(-time/1u)\".",
+            "Dc" => $"The value in every analysis but transient, {unit}. Blank: the waveform at t = 0.",
+            "Idc" => "The DC current, A, delivered into +. Constant in every analysis; an open at every frequency but DC.",
+            _ => "",
+        };
+    }
 
     private static string ChannelParameterDescription(string name)
     {
@@ -2526,6 +2621,34 @@ public static class ComponentTypeRegistry
                                                 new("Phase", "0", "deg", false, UnitDimension.Angle),
                                                 new("Idc",   "0", "mA",  false, UnitDimension.Current),
                                                 .. PhaseNoiseRows];
+            // brief-trn-2 — the waveform sources: each type's own keys (docs/design/transient.md §6.1), levels and timing shown.
+            // Dc is not seeded: unset, every analysis but transient uses the waveform at t = 0.
+            case SymbolKind.VPulse:     return [new("V1", "0", "V", true, UnitDimension.Voltage), new("V2", "1", "V", true, UnitDimension.Voltage),
+                                                new("Delay", "0", "ns", false, UnitDimension.Time), new("Rise", "1", "ns", true, UnitDimension.Time),
+                                                new("Fall", "1", "ns", true, UnitDimension.Time), new("Width", "10", "ns", true, UnitDimension.Time),
+                                                new("Period", "25", "ns", true, UnitDimension.Time)];
+            case SymbolKind.IPulse:     return [new("I1", "0", "mA", true, UnitDimension.Current), new("I2", "1", "mA", true, UnitDimension.Current),
+                                                new("Delay", "0", "ns", false, UnitDimension.Time), new("Rise", "1", "ns", true, UnitDimension.Time),
+                                                new("Fall", "1", "ns", true, UnitDimension.Time), new("Width", "10", "ns", true, UnitDimension.Time),
+                                                new("Period", "25", "ns", true, UnitDimension.Time)];
+            case SymbolKind.VPwl:
+            case SymbolKind.IPwl:       return [new("Points", "\"0 0, 1n 1, 5n 1, 6n 0\"", "", true, UnitDimension.None),
+                                                new("Repeat", "no", "", false, UnitDimension.None)];
+            case SymbolKind.VExp:       return [new("V1", "0", "V", true, UnitDimension.Voltage), new("V2", "1", "V", true, UnitDimension.Voltage),
+                                                new("Delay1", "0", "ns", false, UnitDimension.Time), new("Tau1", "1", "ns", true, UnitDimension.Time),
+                                                new("Delay2", "10", "ns", true, UnitDimension.Time), new("Tau2", "1", "ns", true, UnitDimension.Time)];
+            case SymbolKind.IExp:       return [new("I1", "0", "mA", true, UnitDimension.Current), new("I2", "1", "mA", true, UnitDimension.Current),
+                                                new("Delay1", "0", "ns", false, UnitDimension.Time), new("Tau1", "1", "ns", true, UnitDimension.Time),
+                                                new("Delay2", "10", "ns", true, UnitDimension.Time), new("Tau2", "1", "ns", true, UnitDimension.Time)];
+            case SymbolKind.VSffm:      return [new("Offset", "0", "V", false, UnitDimension.Voltage), new("Amplitude", "1", "V", true, UnitDimension.Voltage),
+                                                new("Carrier", "100", "MHz", true, UnitDimension.Frequency), new("ModIndex", "1", "", true, UnitDimension.None),
+                                                new("Signal", "1", "MHz", true, UnitDimension.Frequency)];
+            case SymbolKind.ISffm:      return [new("Offset", "0", "mA", false, UnitDimension.Current), new("Amplitude", "1", "mA", true, UnitDimension.Current),
+                                                new("Carrier", "100", "MHz", true, UnitDimension.Frequency), new("ModIndex", "1", "", true, UnitDimension.None),
+                                                new("Signal", "1", "MHz", true, UnitDimension.Frequency)];
+            case SymbolKind.VExpr:      return [new("Expr", "\"sin(2*pi*1e6*time)\"", "", true, UnitDimension.None)];
+            case SymbolKind.IExpr:      return [new("Expr", "\"1e-3*sin(2*pi*1e6*time)\"", "", true, UnitDimension.None)];
+            case SymbolKind.Idc:        return [new("Idc", "1", "mA", true, UnitDimension.Current)];
             // VCCS: one parameter, the transconductance. I = G·(V(ctrl+) − V(ctrl−)).
             // T (issue 55) is the delay, e^(−jωT) on the gain; 0 is no delay, and the row is hidden
             // until it is set.
@@ -4003,6 +4126,7 @@ public static class ComponentTypeRegistry
             case "VDC":    kind = SymbolKind.Vdc;           return true;
             case "VTONE":  kind = SymbolKind.ToneSource;    return true;
             case "ITONE":  kind = SymbolKind.CurrentToneSource; return true;
+            case "IDC":    kind = SymbolKind.Idc;           return true;
             case "VCCS":
             case "G":      kind = SymbolKind.Vccs;          return true;
             case "MIXER":
@@ -4424,6 +4548,9 @@ public static class ComponentTypeRegistry
     private static readonly string[] TestPadFeedOptions = [TestPadPCell.ViaFeed, "N", "E", "S", "W"];
     private static readonly string[] TestPadCentreOptions = [TestPadPCell.CentreOpen, TestPadPCell.CentrePort];
 
+    /// <summary>brief-trn-2 — a PWL source's Repeat.</summary>
+    private static readonly string[] PwlRepeatOptions = ["no", "yes"];
+
     /// <summary>
     /// The closed set of NAMES a parameter accepts, for a parameter whose value is an enum name
     /// rather than a number — <c>Response</c>, <c>Form</c>, <c>Direction</c>, <c>OffState</c>,
@@ -4456,6 +4583,7 @@ public static class ComponentTypeRegistry
         (SymbolKind.PhasedArray, "Coupling")                      => PhasedArrayCouplingOptions,
         (SymbolKind.Switch or SymbolKind.SwitchD, "OffState")     => SwitchOffStateOptions,
         (SymbolKind.OscProbe, "Mode")                             => OscProbeModeOptions,
+        (SymbolKind.VPwl or SymbolKind.IPwl, "Repeat")            => PwlRepeatOptions,
         // The switch position (owner, 2026-09-13). A closed set of numerals rather than a free-text
         // box: a State naming a throw that does not exist closes nothing SILENTLY, by the model's own
         // rule, so a typo'd "3" is an open switch with nothing said anywhere. An expression — the

@@ -18,7 +18,7 @@ public static class PropagationChannelGraph
         int Find(int i) { while (parent[i] != i) i = parent[i] = parent[parent[i]]; return i; }
         var acGround = new HashSet<int> { 0 };
         foreach (var ec in nl.Components)
-            if (ec.Model is VdcModel)
+            if (ec.Model is VdcModel or WaveformSourceModel { IsCurrent: false })
                 foreach (int node in ec.Nodes) acGround.Add(node);
         foreach (var ec in nl.Components)
         {

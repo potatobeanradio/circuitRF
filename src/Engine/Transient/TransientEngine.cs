@@ -38,6 +38,7 @@ using CircuitRF.Core;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Devices.External;
 using CircuitRF.Core.Elaboration;
+using CircuitRF.Core.Expressions;
 using CircuitRF.Engine.HarmonicBalance;
 using CSparse;
 using CSparse.Double;
@@ -64,6 +65,30 @@ public sealed class TransientEngine
 
     /// <summary>The conductance (S) an IC net is held by during the operating-point solve: a 1 µΩ source.</summary>
     internal const double HoldConductance = 1e6;
+
+    /// <summary>The resistance (Ω) an inductor's IC= current is held through during the operating-point solve: its branch row
+    /// reads V(a) − V(b) + K i = K I, so the current departs from I by the branch voltage over K.</summary>
+    internal const double HoldResistance = 1e9;
+
+    /// <summary>A tone source with the transient-only keys (note §6.2): Delay, Ramp (a raised-cosine rise) and Damping. Its
+    /// tones are left out of the aggregate phasor columns and added at each step through <see cref="Envelope"/>, referred to
+    /// t − Delay.</summary>
+    private sealed class Shaped
+    {
+        public required ElaboratedComponent Ec;
+        public required double Delay, Ramp, Damping;
+        public required double[] Hz;
+        public required double[][] Re, Im;
+
+        /// <summary>0 up to Delay; the raised cosine over Ramp; times e^(−Damping (t − Delay)).</summary>
+        public double Envelope(double t)
+        {
+            double tau = t - Delay;
+            if (tau <= 0) return 0;
+            double env = Ramp > 0 && tau < Ramp ? 0.5 * (1 - Math.Cos(Math.PI * tau / Ramp)) : 1;
+            return Damping == 0 ? env : env * Math.Exp(-Damping * tau);
+        }
+    }
 
     private readonly ElaboratedNetlist _nl;
     private readonly AnalysisSettings _settings;
@@ -104,6 +129,13 @@ public sealed class TransientEngine
     private double[] _srcHz = [];
     private double[][] _srcRe = [], _srcIm = [];
     private double[] _absCol = [];          // per unknown: VTol (node) or ITol (branch)
+    // brief-trn-2 — each waveform source's own right-hand-side column (its value 1 at DC), each shaped tone source's own
+    // phasor columns, the parts' IC= and the SDDs whose equations read `time`.
+    private (ITransientWaveform Src, int[] Rows, double[] Vals)[] _waves = [];
+    private Shaped[] _shaped = [];
+    private (int A, int B, double V)[] _capIc = [];
+    private (int Row, double I)[] _indIc = [];
+    private SddModel[] _clocked = [];
     private double[] _phiPeak = [];         // per row: the largest |Phi| any accepted step has had
     private TransientParams _p = null!;
     private readonly Dictionary<double, Stage> _stages = new();
@@ -113,6 +145,12 @@ public sealed class TransientEngine
     /// <summary>Runs <paramref name="p"/> on the netlist. Throws <see cref="TransientRefusedException"/> when an element cannot be
     /// stepped or the run cannot finish, naming why.</summary>
     public TransientRunResult Run(TransientParams p, RunControl? control = null)
+    {
+        try { return RunCore(p, control); }
+        finally { SetClock(null); }    // an SDD that reads `time` is back in steady state for whatever runs next
+    }
+
+    private TransientRunResult RunCore(TransientParams p, RunControl? control)
     {
         _p = p;
         string who = p.Name.Length > 0 ? $"transient '{p.Name}'" : "transient";
@@ -162,6 +200,7 @@ public sealed class TransientEngine
 
         // ── the starting state ───────────────────────────────────────────
         var holds = HeldRows(p.IcNets, who);
+        SetClock(0);
         double[] x0 = p.Start == TransientStart.Op ? OperatingPoint(holds, who) : ZeroState(holds);
 
         // ── the recorded quantities ──────────────────────────────────────
@@ -193,6 +232,9 @@ public sealed class TransientEngine
         // ── breakpoints ──────────────────────────────────────────────────
         var bps = new SortedSet<double> { p.StopS };
         foreach (var d in p.Drives) foreach (var tb in d.Breakpoints(0, p.StopS)) if (tb > 0 && tb < p.StopS) bps.Add(tb);
+        foreach (var (src, _, _) in _waves) foreach (var tb in src.Breakpoints(0, p.StopS)) if (tb > 0 && tb < p.StopS) bps.Add(tb);
+        foreach (var sh in _shaped)
+            foreach (var tb in new[] { sh.Delay, sh.Delay + sh.Ramp }) if (tb > 0 && tb < p.StopS) bps.Add(tb);
 
         // ── stepping ─────────────────────────────────────────────────────
         // History within the current segment (since the last breakpoint): time, state, total charge.
@@ -262,6 +304,7 @@ public sealed class TransientEngine
             for (int i = 0; i < _n; i++) rhs[i] -= hist[i];
             var stage = StageFor(alpha, keep: !landing);
             var guess = Predict(hT, hX, t + h);
+            SetClock(t + h);
             var x = Solve(stage, alpha, rhs, guess, out string failure);
 
             double ratio = 0;
@@ -391,24 +434,116 @@ public sealed class TransientEngine
         _c = Real(cC);
 
         // ── sources: each frequency's phasor right-hand side ─────────────
+        // A waveform source and a shaped tone source each get columns of their own (brief TRN-2), so the aggregate is built with
+        // every one of them silent: a waveform source stamping 0 at DC, a shaped tone at DriveScale 0. Each one's column is then
+        // the aggregate with it alone switched on, less the aggregate — exact, the right-hand side being linear in each source.
+        var waves = _nl.Components.Where(c => c.Model is ITransientWaveform).ToList();
+        var shaped = new List<(ElaboratedComponent Ec, IDriveScalable Src, double Delay, double Ramp, double Damping, double[] Hz)>();
         var freqs = new SortedSet<double> { 0.0 };
         foreach (var ec in _nl.Components)
         {
-            if (ec.Model is ToneSourceModelBase ts) foreach (var f in ts.ToneFreqsHz) if (f > 0) freqs.Add(f);
-            if (ec.Model is P1ToneModel p1 && p1.FreqHz > 0) freqs.Add(p1.FreqHz);
-            if (ec.Model is PnToneModel pn) foreach (var f in pn.ToneFreqsHz) if (f > 0) freqs.Add(f);
+            double[] hz = ec.Model switch
+            {
+                ToneSourceModelBase ts => [.. ts.ToneFreqsHz.Where(f => f > 0)],
+                P1ToneModel p1 when p1.FreqHz > 0 => [p1.FreqHz],
+                PnToneModel pn => [.. pn.ToneFreqsHz.Where(f => f > 0)],
+                _ => [],
+            };
+            foreach (var f in hz) freqs.Add(f);
+            if (ec.Model is not IDriveScalable ds || hz.Length == 0) continue;
+            double delay = Key(ec, "Delay"), ramp = Key(ec, "Ramp"), damping = Key(ec, "Damping");
+            if (delay < 0 || ramp < 0)
+            {
+                problems.Add($"{ec.InstancePath}: {(delay < 0 ? "Delay" : "Ramp")} must not be negative.");
+                continue;
+            }
+            if (delay != 0 || ramp != 0 || damping != 0) shaped.Add((ec, ds, delay, ramp, damping, hz));
         }
-        _srcHz = [.. freqs];
-        _srcRe = new double[_srcHz.Length][];
-        _srcIm = new double[_srcHz.Length][];
-        for (int k = 0; k < _srcHz.Length; k++)
+        if (problems.Count > 0) return problems;
+
+        var scales = shaped.Select(sh => sh.Src.DriveScale).ToArray();
+        try
         {
-            var b = ex.BuildSourceRhs(2 * Math.PI * _srcHz[k]);
-            _srcRe[k] = [.. b.Select(z => z.Real)];
-            _srcIm[k] = [.. b.Select(z => z.Imaginary)];
+            foreach (var w in waves) ((ITransientWaveform)w.Model).StampOverride = 0;
+            foreach (var sh in shaped) sh.Src.DriveScale = 0;
+            _srcHz = [.. freqs];
+            _srcRe = new double[_srcHz.Length][];
+            _srcIm = new double[_srcHz.Length][];
+            for (int k = 0; k < _srcHz.Length; k++)
+            {
+                var b = ex.BuildSourceRhs(2 * Math.PI * _srcHz[k]);
+                _srcRe[k] = [.. b.Select(z => z.Real)];
+                _srcIm[k] = [.. b.Select(z => z.Imaginary)];
+            }
+            _waves = new (ITransientWaveform, int[], double[])[waves.Count];
+            for (int i = 0; i < waves.Count; i++)
+            {
+                var src = (ITransientWaveform)waves[i].Model;
+                src.StampOverride = 1;
+                var b = ex.BuildSourceRhs(0);
+                src.StampOverride = 0;
+                var rows = new List<int>(); var vals = new List<double>();
+                for (int r = 0; r < _n; r++)
+                {
+                    double d = b[r].Real - _srcRe[0][r];
+                    if (d != 0) { rows.Add(r); vals.Add(d); }
+                }
+                _waves[i] = (src, [.. rows], [.. vals]);
+            }
+            _shaped = new Shaped[shaped.Count];
+            for (int i = 0; i < shaped.Count; i++)
+            {
+                var sh = shaped[i];
+                sh.Src.DriveScale = scales[i];
+                var re = new double[sh.Hz.Length][];
+                var im = new double[sh.Hz.Length][];
+                for (int k = 0; k < sh.Hz.Length; k++)
+                {
+                    int agg = Array.IndexOf(_srcHz, sh.Hz[k]);
+                    var b = ex.BuildSourceRhs(2 * Math.PI * sh.Hz[k]);
+                    re[k] = new double[_n]; im[k] = new double[_n];
+                    for (int r = 0; r < _n; r++) { re[k][r] = b[r].Real - _srcRe[agg][r]; im[k][r] = b[r].Imaginary - _srcIm[agg][r]; }
+                }
+                sh.Src.DriveScale = 0;
+                _shaped[i] = new Shaped { Ec = sh.Ec, Delay = sh.Delay, Ramp = sh.Ramp, Damping = sh.Damping, Hz = sh.Hz, Re = re, Im = im };
+            }
         }
+        finally
+        {
+            foreach (var w in waves) ((ITransientWaveform)w.Model).StampOverride = null;
+            for (int i = 0; i < shaped.Count; i++) shaped[i].Src.DriveScale = scales[i];
+        }
+        _waveHz = waves.Select(w => ((ITransientWaveform)w.Model).HighestFrequencyHz).DefaultIfEmpty(0).Max();
+
+        // ── IC= on capacitors (volts) and inductors (amperes), note §7.2 ─
+        var capIc = new List<(int, int, double)>();
+        var indIc = new List<(int, double)>();
+        foreach (var ec in _nl.Components)
+        {
+            if (!ec.Parameters.TryGetValue("IC", out var icv) || icv.Kind is not (ValueKind.Real or ValueKind.Complex)) continue;
+            double ic = icv.Kind == ValueKind.Real ? icv.AsReal() : icv.AsComplex().Real;
+            if (ec.Model is CapacitorModel && ec.Nodes.Length >= 2) capIc.Add((ec.Nodes[0] - 1, ec.Nodes[1] - 1, ic));
+            else if (ec.Model is InductorModel ind && ind.LastBranchIndex >= 0) indIc.Add((ind.LastBranchIndex, ic));
+        }
+        _capIc = [.. capIc];
+        _indIc = [.. indIc];
+        _clocked = [.. _nl.Components.Select(c => c.Model).OfType<SddModel>().Where(m => m.UsesTime)];
 
         return problems;
+    }
+
+    private double _waveHz;
+
+    private static double Key(ElaboratedComponent ec, string key) =>
+        ec.Parameters.TryGetValue(key, out var v) && v.Kind is ValueKind.Real or ValueKind.Complex
+            ? (v.Kind == ValueKind.Real ? v.AsReal() : v.AsComplex().Real) : 0;
+
+    /// <summary>Sets <c>time</c> for every SDD that reads it, and forgets their last evaluation (it was at another time).</summary>
+    private void SetClock(double? t)
+    {
+        if (_clocked.Length == 0) return;
+        foreach (var m in _clocked) m.Time = t;
+        foreach (var d in _devs) if (d.Ec.Model is SddModel { UsesTime: true }) d.LastV = null;
     }
 
     /// <summary>The largest step and why (note §3): MaxStep as stated, else the smaller of the output step and 1/20 of the
@@ -416,7 +551,7 @@ public sealed class TransientEngine
     private (double MaxStep, string Reason) StepBound(TransientParams p)
     {
         double step = p.StepS > 0 ? p.StepS : p.StopS / 1000;
-        double fHi = _srcHz.Length > 0 ? _srcHz[^1] : 0;
+        double fHi = Math.Max(_srcHz.Length > 0 ? _srcHz[^1] : 0, _waveHz);
         if (p.MaxStepS > 0) return (p.MaxStepS, "MaxStep as stated");
         if (fHi > 0 && 1 / (20 * fHi) < step)
             return (1 / (20 * fHi), string.Format(CultureInfo.InvariantCulture, "1/20 of the period of the highest source frequency, {0:G4} Hz", fHi));
@@ -510,6 +645,13 @@ public sealed class TransientEngine
         BiasFreeze.Ensure(_nl, _settings);
         var x = new double[_n];
         foreach (var (row, v) in holds) x[row] = v;
+        // the parts' IC=: a capacitor's voltage on its first node over its second's, an inductor's current on its branch
+        foreach (var (a, b, v) in _capIc)
+        {
+            if (a >= 0) x[a] = v + (b >= 0 ? x[b] : 0);
+            else if (b >= 0) x[b] = -v;
+        }
+        foreach (var (row, i) in _indIc) x[row] = i;
         return x;
     }
 
@@ -534,15 +676,21 @@ public sealed class TransientEngine
         }
         foreach (var (row, v) in holds) x[row] = v;
 
-        // alpha = 0: G x + i(x) = b(0) (+ the holds), solved by the full Newton
+        // alpha = 0: G x + i(x) = b(0) (+ the holds), solved by the full Newton. A capacitor's IC= is held across it by the same
+        // stiff conductance as a net's (a Norton source of G·V); an inductor's by K on its branch row, which then reads
+        // V(a) − V(b) + K i = K I (note §4.5, §7.2). All are released at t = 0⁺.
         var a = _g;
-        if (holds.Count > 0)
-        {
-            var extra = holds.Select(hd => (hd.row, hd.row, HoldConductance)).ToList();
-            a = Add(_g, extra);
-        }
+        var extra = holds.Select(hd => (hd.row, hd.row, HoldConductance)).ToList();
         var rhs = Rhs(0);
         foreach (var (row, v) in holds) rhs[row] += HoldConductance * v;
+        foreach (var (ra, rb, v) in _capIc)
+        {
+            if (ra >= 0) { extra.Add((ra, ra, HoldConductance)); rhs[ra] += HoldConductance * v; }
+            if (rb >= 0) { extra.Add((rb, rb, HoldConductance)); rhs[rb] -= HoldConductance * v; }
+            if (ra >= 0 && rb >= 0) { extra.Add((ra, rb, -HoldConductance)); extra.Add((rb, ra, -HoldConductance)); }
+        }
+        foreach (var (row, i) in _indIc) { extra.Add((row, row, HoldResistance)); rhs[row] += HoldResistance * i; }
+        if (extra.Count > 0) a = Add(_g, extra);
         var stage = new Stage { Lu = Factor(a), A = a };
         var sol = SolveFull(stage, 0, rhs, x, out string failure);
         return sol ?? throw new TransientRefusedException($"{who}: the starting state did not converge. {failure} InitialState=zero starts the run without one.");
@@ -558,6 +706,23 @@ public sealed class TransientEngine
             var re = _srcRe[k]; var im = _srcIm[k];
             if (_srcHz[k] == 0) for (int i = 0; i < _n; i++) b[i] += re[i];
             else for (int i = 0; i < _n; i++) b[i] += re[i] * cw - im[i] * sw;
+        }
+        foreach (var (src, rows, vals) in _waves)
+        {
+            double v = src.ValueAt(t);
+            if (v == 0) continue;
+            for (int i = 0; i < rows.Length; i++) b[rows[i]] += v * vals[i];
+        }
+        foreach (var sh in _shaped)
+        {
+            double env = sh.Envelope(t);
+            if (env == 0) continue;
+            for (int k = 0; k < sh.Hz.Length; k++)
+            {
+                double w = 2 * Math.PI * sh.Hz[k] * (t - sh.Delay), cw = env * Math.Cos(w), sw = env * Math.Sin(w);
+                var re = sh.Re[k]; var im = sh.Im[k];
+                for (int i = 0; i < _n; i++) b[i] += re[i] * cw - im[i] * sw;
+            }
         }
         foreach (var d in _p.Drives) d.AddTo(t, b);
         return b;

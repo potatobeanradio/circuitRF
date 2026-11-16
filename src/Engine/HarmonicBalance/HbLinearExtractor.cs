@@ -715,7 +715,7 @@ public sealed class HbLinearExtractor
     // ToneSourceModelBase covers both flavours: the voltage tone source's drive is a branch source
     // value, the current tone source's is an RHS injection, and ZeroDriveMna zeroes both.
     private static bool IsIndependentSource(ElaboratedComponent ec) =>
-        ec.Model is VdcModel or ToneSourceModelBase or TunerModel;
+        ec.Model is VdcModel or IdcModel or WaveformSourceModel or ToneSourceModelBase or TunerModel;
     // TunerModel contains an internal V_1Tone drive (SourceTuner) and a bias supply
     // (both roles) — it must be stamped via ZeroDriveMna in the zeroDrive=true path
     // so its source values are zeroed for the Y_NN extraction. The ZeroDriveMna passes
@@ -897,6 +897,10 @@ public sealed class HbLinearExtractor
 
                 case VdcModel vm when vm.LastBranchIndex >= _nonGroundCount:
                     names[vm.LastBranchIndex - _nonGroundCount] = $"V:{ec.InstancePath}";
+                    break;
+
+                case WaveformSourceModel wm when wm.LastBranchIndex >= _nonGroundCount:
+                    names[wm.LastBranchIndex - _nonGroundCount] = $"{ec.ComponentType}:{ec.InstancePath}";
                     break;
 
                 // IProbe and WSProbe — the label names the TYPE, as the inductive branches do.

@@ -75,6 +75,13 @@ public sealed class CompiledSddExpr
     }
 
     /// <summary>
+    /// Sets the parameter at <paramref name="index"/> — its position in the parameter dictionary's enumeration when compiled —
+    /// to <paramref name="value"/>. The one parameter that changes between evaluations is <c>time</c> in a transient run
+    /// (<c>SddModel.Time</c>, brief TRN-2); every other parameter is fixed at compile.
+    /// </summary>
+    public void SetParameter(int index, double value) => _paramDuals[index] = Dual.Param(value, _n);
+
+    /// <summary>
     /// Compiles <paramref name="ast"/> against a fixed shape: <paramref name="portCount"/> port
     /// voltages ("_v1".."_v{portCount}"), control currents named by <paramref name="controlNs"/> (the
     /// declared 1-based index of each — <c>SddModel.ControlRefs[i].N</c>, in the SAME order

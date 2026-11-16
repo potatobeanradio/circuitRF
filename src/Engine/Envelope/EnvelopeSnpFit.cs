@@ -292,7 +292,7 @@ public static class EnvelopeSnpFit
         if (ws.Length == 0 || ec.IsNonlinear || ec.Model is IDcShortedTerminals
                 || ec.Model is ModSourceModel or RationalSnpModel or DelayLineModel or IInductiveBranch or WBondModel
                 || ec.Model is PropagationChannelModel   // brief-pch-6: stepped by EnvelopeChannel, never fitted
-                or MutualInductanceModel or PortModel or TermModel or VdcModel or ToneSourceModelBase or TunerModel or P1ToneModel or PnToneModel)
+                or MutualInductanceModel or PortModel or TermModel or VdcModel or IdcModel or WaveformSourceModel or ToneSourceModelBase or TunerModel or P1ToneModel or PnToneModel)
             return false;
         try { return EnvelopeTangentCheck.ElementError(ec, ws, 2 * Math.PI * bandHz) > Tolerance; }
         catch (Exception) { return false; }    // an element that cannot be stamped alone is the run's to refuse

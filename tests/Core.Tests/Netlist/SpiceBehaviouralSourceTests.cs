@@ -109,12 +109,11 @@ public sealed class SpiceBehaviouralSourceTests
     }
 
     /// <summary>
-    /// circuitRF drives a design from its own TestBench, so a stimulus inside a device definition
-    /// contributes its DC level — and says so, because a waveform read as a number is
-    /// indistinguishable from a source that never had one.
+    /// A stimulus is read as its waveform (brief TRN-2 R-trn2-8): the instance names it and carries its arguments under
+    /// circuitRF's keys, with its first level as the DC value every steady-state analysis uses.
     /// </summary>
     [Fact]
-    public void B6_AWaveformContributesItsDcLevelAndIsNoted()
+    public void B6_AWaveformIsReadWithItsArgumentsAndItsDcLevel()
     {
         var r = Read("""
             .subckt part a b
@@ -122,8 +121,12 @@ public sealed class SpiceBehaviouralSourceTests
             .ends part
             """);
 
-        Assert.Equal("3", Value(r.Library.Cells.Single().Instances.Single(), "DC"));
-        Assert.Contains("PULSE", string.Join("\n", r.Notes.Select(n => n.Message)));
+        var inst = r.Library.Cells.Single().Instances.Single();
+        Assert.Equal("3", Value(inst, "DC"));
+        Assert.Equal("PULSE", Value(inst, SpiceNetlistReader.SourceWaveformParameter));
+        Assert.Equal("5", Value(inst, "V2"));
+        foreach (var key in new[] { "V1", "Delay", "Rise", "Fall", "Width", "Period" })
+            Assert.Contains(inst.Overrides, o => o.Name == key);
         Assert.Empty(r.IncompleteCells);
     }
 

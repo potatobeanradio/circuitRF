@@ -45,6 +45,8 @@ An ideal, frequency-independent resistor. `R` is the resistance.
 {{symbol: inductor}}
 
 An ideal inductor. `L` is the inductance. Couple two inductors with a [Mutual](#mutual) element.
+`IC` is its starting current in a transient analysis (amperes, flowing from pin 1 to pin 2); every
+other analysis ignores it.
 
 {{table: components/Inductor}}
 
@@ -53,7 +55,8 @@ An ideal inductor. `L` is the inductance. Couple two inductors with a [Mutual](#
 {{symbol: capacitor}}
 
 An ideal, linear capacitor. `C` is the capacitance. For a voltage-dependent capacitance, see
-[NonlinearC](#nonlinearc).
+[NonlinearC](#nonlinearc). `IC` is its starting voltage in a transient analysis (pin 1 over pin 2);
+every other analysis ignores it.
 
 {{table: components/Capacitor}}
 
@@ -281,12 +284,34 @@ A fixed DC voltage — gate and drain bias supplies. `Vdc` is the voltage.
 
 {{table: components/Vdc}}
 
+### DC Current Source (Idc) {#idc}
+
+{{symbol: idc}}
+
+A fixed DC current, the counterpart of [Vdc](#vdc). `Idc` is the current, delivered **into** the
+**+** pin, where the arrow points. It is constant in every analysis, transient included, and an open
+circuit at every frequency other than DC.
+
+{{table: components/Idc}}
+
 ### Tone Source (VTone) {#tonesource}
 
 {{symbol: tone-source}}
 
 A single-tone (sinusoidal) voltage source for harmonic balance, with an optional DC offset. `V` is the
 tone amplitude, `Freq` the tone frequency, and `Vdc` a DC offset.
+
+In a transient analysis three more keys shape the tone, and every other analysis ignores them:
+
+- `Delay` — the tone starts at this time (seconds), and its phase is counted from it.
+- `Ramp` — the tone rises to full amplitude over this time along a raised cosine; 0 (the default) is a
+  step.
+- `Damping` — the tone decays as e<sup>−Damping·(t − Delay)</sup> after `Delay` (1/s).
+
+The DC offset is not delayed. The same three keys work on [ITone](#currenttonesource),
+[P1Tone](#p1tone) and [PnTone](#pntone). A P1Tone or PnTone keeps its available power and source
+impedance in a transient run; one with a harmonic termination `Z[k]` different from `Z[1]` is not
+yet supported there.
 
 {{table: components/ToneSource}}
 
@@ -399,6 +424,106 @@ average power, or for a pulsed-CW source the pulse-top power, the steady state o
 in an S-parameter run it is the passive impedance `Z`.
 
 {{table: components/ModSource}}
+
+### Waveform sources {#waveform-sources}
+
+Sources for a transient analysis (`type=tran`), one type per waveform, each in a voltage (`V_`) and a
+current (`I_`) form. A voltage type's waveform is the voltage at **+** relative to **−**; a current type
+delivers its value into **+**, as the arrow shows. Every value can be an expression.
+
+In every analysis other than transient — DC, S-parameter, harmonic balance, loadpull, envelope — a
+waveform source is a constant: its `Dc` value, or, when `Dc` is not set, the waveform's value at
+t = 0. A voltage type is then a short at every frequency but DC and a current type an open, exactly as
+[Vdc](#vdc) and [Idc](#idc) are.
+
+Each corner of a waveform (a pulse's edges, a PWL vertex, an exponential's start) is a time the
+transient analysis lands a step on exactly, so an edge is never smeared across a step.
+
+### Pulse (V_Pulse, I_Pulse) {#vpulse}
+
+{{symbol: v-pulse}}
+
+`V1` until `Delay`, a straight rise over `Rise` to `V2`, held for `Width`, a straight fall over `Fall`
+back to `V1`, repeating every `Period` (blank: one pulse). A blank `Width` holds `V2` for the rest of
+the run. The current form says `I1` and `I2`.
+
+{{table: components/VPulse}}
+
+### Current pulse (I_Pulse) {#ipulse}
+
+{{symbol: i-pulse}}
+
+{{table: components/IPulse}}
+
+### Piecewise linear (V_PWL, I_PWL) {#vpwl}
+
+{{symbol: v-pwl}}
+
+Straight lines through time-value pairs, given either as `Points="0 0, 1n 1, 5n 1, 6n 0"` or as
+`File=`, a file of two columns (time, value) separated by a comma or whitespace, with `#` starting a
+comment — not both. Times must increase; a file line that breaks this is refused by its number.
+Before the first time the first value holds, after the last the last. `Repeat=yes` repeats the points
+with a period of the last time minus the first. A `File` path is relative to the workspace and is
+archived with it.
+
+{{table: components/VPwl}}
+
+### Current PWL (I_PWL) {#ipwl}
+
+{{symbol: i-pwl}}
+
+{{table: components/IPwl}}
+
+### Exponential (V_Exp, I_Exp) {#vexp}
+
+{{symbol: v-exp}}
+
+`V1` until `Delay1`, then an exponential rise towards `V2` with time constant `Tau1`; from `Delay2`
+(blank: never) an exponential return towards `V1` with time constant `Tau2` (blank: `Tau1`).
+
+{{table: components/VExp}}
+
+### Current exponential (I_Exp) {#iexp}
+
+{{symbol: i-exp}}
+
+{{table: components/IExp}}
+
+### Frequency-modulated sine (V_SFFM, I_SFFM) {#vsffm}
+
+{{symbol: v-sffm}}
+
+`Offset + Amplitude·sin(2π·Carrier·t + ModIndex·sin(2π·Signal·t))`. The automatic step bound counts
+the carrier and its modulation sidebands.
+
+{{table: components/VSffm}}
+
+### Current SFFM (I_SFFM) {#isffm}
+
+{{symbol: i-sffm}}
+
+{{table: components/ISffm}}
+
+### Expression (V_Expr, I_Expr) {#vexpr}
+
+{{symbol: v-expr}}
+
+Any expression in `time` — the simulated time in seconds — and the globals:
+`Expr="1 - exp(-time/1u)"`. An expression has no corners to report, so the transient analysis's
+`MaxStep` sets how finely it is followed.
+
+`time` is read only where a transient analysis evaluates it: here, and in an
+[SDD](#sdd)'s equations. Anywhere else — a resistor's value, a global — it is refused by name, except
+as one side of a comparison, which every steady-state analysis reads with all time elapsed:
+`time > 0` is true and `time < 1n` false.
+
+{{table: components/VExpr}}
+
+### Current expression (I_Expr) {#iexpr}
+
+{{symbol: i-expr}}
+
+{{table: components/IExpr}}
 
 ### Voltage-Controlled Current Source (VCCS) {#vccs}
 

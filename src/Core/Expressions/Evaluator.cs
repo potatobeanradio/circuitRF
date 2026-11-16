@@ -43,12 +43,17 @@ public sealed partial class Evaluator
     /// </summary>
     public Value Resolve(string name, Scope scope)
     {
+        // brief-trn-2 R-trn2-7 — `time` with nothing binding it: steady state (TimeVariable). As an operand of a comparison it
+        // is +infinity, every finite instant having passed; anywhere else it is refused, naming it.
+        var found = scope.Lookup(name);
+        if (found is null && name == TimeVariable.Name)
+            return _compareDepth > 0 ? new Value(TimeVariable.SteadyState) : throw new TimeOutsideConditionException();
         // brief-paa-4 R-paa4-2 — one of element scope's five names, outside element scope: say where it is valid.
-        var found = scope.Lookup(name)
-            ?? throw new UnresolvedNameException(name, scope.DebugName, ElementScope.IsName(name) ? ElementScope.WhereValid(name)
+        if (found is null)
+            throw new UnresolvedNameException(name, scope.DebugName, ElementScope.IsName(name) ? ElementScope.WhereValid(name)
                 : name == "el" ? "el is the elevation above the horizon, bound only while a Phased Antenna Array's Tsky is evaluated" : null);
 
-        var (expression, unit, owningScope) = found;
+        var (expression, unit, owningScope) = found.Value;
         var key = $"{owningScope.DebugName}::{name}";
 
         if (_memo.TryGetValue(key, out var cached))
@@ -64,6 +69,11 @@ public sealed partial class Evaluator
 
         _resolving.Add(name);
         PushStatFrame(owningScope, name);   // a distribution in this binding draws on the binding's own stream
+        // A binding's own expression is not inside the comparison that referenced it: `time` must be written in the
+        // comparison itself to take its steady-state reading (TimeVariable), and a memoized binding then reads the same
+        // wherever it is used.
+        int compareDepth = _compareDepth;
+        _compareDepth = 0;
         try
         {
             // A binding's own unit is a site unit like any other, and var-unit-wins applies to it: `b = 2*a`
@@ -76,10 +86,14 @@ public sealed partial class Evaluator
         }
         finally
         {
+            _compareDepth = compareDepth;
             PopStatFrame();
             _resolving.Remove(name);
         }
     }
+
+    // How many comparisons the expression being evaluated sits inside (TimeVariable's steady-state rule).
+    private int _compareDepth;
 
     /// <summary>
     /// Evaluate an already-parsed AST in the given scope.
@@ -169,8 +183,14 @@ public sealed partial class Evaluator
 
     private Value EvalCompare(CompareExpr cmp, Scope scope)
     {
-        var l = EvalExpr(cmp.Left, scope);
-        var r = EvalExpr(cmp.Right, scope);
+        Value l, r;
+        _compareDepth++;
+        try
+        {
+            l = EvalExpr(cmp.Left, scope);
+            r = EvalExpr(cmp.Right, scope);
+        }
+        finally { _compareDepth--; }
         return cmp.Op switch
         {
             "<"  => Value.LessThan(l, r),

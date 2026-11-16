@@ -4911,3 +4911,40 @@ it everywhere, and it is a fraction of a degree above.
 
 **CDL and ray lists take their Doppler from geometry.** ν_r = (v_rx·û_A + v_tx·û_D)·f/c. `Velocity`, `fD` and `Fading` are
 refused with them, because those make a tap with no directions fade.
+
+## brief-trn-2 — waveform sources, Idc, IC=, `time` (2026-11-15)
+
+**One model under ten types.** `WaveformSourceModel` (V_/I_ Pulse, PWL, Exp, SFFM, Expr) holds the waveform arithmetic once,
+as `ToneSourceModelBase` holds the tone table. Outside transient it stamps exactly as Vdc/Idc: its `Dc`, else the waveform
+at t = 0, at DC and nothing (short / open) elsewhere. `ITransientWaveform.StampOverride` replaces that DC value while set —
+the transient engine reads each source's own right-hand-side column with it (value 1 minus value 0) and clears it. A corner
+of zero duration reads its LEFT value at the corner itself (segments closed on the right), so the step that lands on the
+corner integrates towards the level before it and the jump starts the next segment.
+
+**`time` is one rule in `TimeVariable`, applied lazily by the Evaluator.** Unbound, `time` inside a comparison operand
+resolves to +∞ (steady state: every finite instant has passed — `time > 0` true, `time < 1n` false, `exp(-time/τ) < 0.5`
+true), and outside one throws `TimeOutsideConditionException`, naming it. The Evaluator counts comparison depth and
+**resets it while resolving a named binding**: otherwise a global `t2 = time*2` first resolved inside `t2 > 1` would be
+memoized as +∞ and then read silently as +∞ outside any comparison. So `time` must be written in the comparison itself to
+take the steady-state reading, which is also what `TimeVariable.SteadyStateError` checks on an AST.
+
+**An SDD reads `time` through one more parameter slot.** When an equation names it, `SddModel` compiles with a `time`
+parameter (+∞ by default) and `Time` sets that slot on every compiled equation (`CompiledSddExpr.SetParameter`; the
+register program reads parameter slots at call time, nothing folds them). A steady-state evaluation of an equation that
+reads `time` outside a condition throws at `Evaluate`/`EvaluateGrid`. A transient run sets `Time` before each step and
+clears it after, so the model is back in steady state for whatever runs next.
+
+**PWL `Points=` is evaluated per entry by the elaborator** and handed to the model as plain numbers; `File=` resolves
+through `ResolveFileReference` like an SnP's, so the workspace archive (which treats any `File` parameter as a reference)
+carries it. `Expr=` is stored verbatim with the resolved value of every name it reads (`_var_<name>`); a global that
+itself names `time` is resolved once at elaboration and is therefore refused, not followed.
+
+**The SPICE reader's current sources were reversed on import, and are not any more.** The dialect's `I a b v` sinks `v`
+from `a`; circuitRF's current sources deliver into their first node (this file, "The two current sources"). The import
+placed the same value on the same nets — every imported DC current source pushed the wrong way, silently. A current
+source now takes its nets swapped (`SpiceSourceTranslation.Independent`), held by `SpiceSourceImportTests.S3`.
+
+**SIN maps onto a tone source with two conversions.** The dialect's phase is a sine's in degrees; a tone source's is a
+cosine's in radians, so `Phase = (φ − 90)·π/180`. And a tone source with `Delay` is zero before it, where the dialect
+holds VO + VA·sin φ: identical for φ = 0 (the common case), different by VA·sin φ before TD otherwise. Noted for TRN-6,
+which writes the dialect back.

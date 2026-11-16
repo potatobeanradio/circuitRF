@@ -572,9 +572,11 @@ interpolated parameter carry no meaning inside an expression; they group nothing
 ### 8.6 A capacitor's transient initial condition (1 line)
 
 `CQB b 0 1u,IC = 0` — the comma-attached `IC=` is tokenised into the value word, so the value is
-lost and the line is refused as *"has no value and names no model"*. `IC` is a transient initial
-condition, which circuitRF has no analysis for; the right outcome is to **recognise it, note it, and
-keep the capacitance**, not to lose the component.
+lost and the line is refused as *"has no value and names no model"*. The reader splits it off and
+**keeps both**: the capacitance, and `IC=` on the capacitor (and on an inductor, its current), which a
+transient analysis applies in its starting-state solve and every other analysis ignores
+(`docs/design/transient.md` §7.2). An `IC=` on any other element sets nothing and is noted and
+dropped.
 
 ### 8.7 Switches — `S`, `W` (2 lines)
 
@@ -638,17 +640,20 @@ the user (§7.1).
 ### 8.10 `time` in a condition
 
 `E_OUT out 0 VALUE = {if(time > 0, -V(sig), 0)}` — three occurrences across two files, all of them
-inside a differentiator or start-up-suppression block. `time` is transient-only and circuitRF has no
-transient analysis.
+inside a differentiator or start-up-suppression block.
 
-The defensible reading is that in DC, S-parameter and HB analysis the circuit is in **steady state**,
-so `time > 0` is true and the expression is its then-branch. That is a decision, not a free
-translation, and it must be a named note. It is also worth far more than it looks: it takes the
+The expression is **kept as written**. A transient analysis reads `time` at the simulated time. Every
+other analysis — DC, S-parameter, HB, loadpull, envelope — reads it by one rule in the expression
+engine (`TimeVariable`, `docs/design/transient.md` §6.3): the circuit is in **steady state**, every
+finite instant has passed, so `time` as an operand of a comparison is +∞ — `time > 0` is true and
+`time < 1n` false — and the reader notes the comparison with that truth value. This takes the
 importable count from 22 of 45 to **37 of 45**, and the top-level parts from 7 of 10 to 9 of 10,
 because one such line sits inside a subcircuit that two otherwise-clean parts depend on.
 
-A `time` reference anywhere **other** than a condition (a ramp, `V=time*k`) has no steady-state
-reading and stays refused by name.
+A `time` anywhere **other** than a condition (a ramp, `VALUE={time*k}`) in a behavioural source is
+**read**: the transient analysis evaluates it, and a steady-state analysis refuses it by name. A
+passive whose value names `time` is still refused at import (its value is fixed for a run), and so is
+an element that reaches `time` through a `.param`, which is resolved once before any run.
 
 ### 8.11 What is a `.lib` *section*, then?
 
@@ -812,15 +817,17 @@ primitive is needed.
 |---|---|---|
 | `Vx a b 0` | zero-volt sensor | `IProbe` |
 | `Vx a b <dc>` / `DC <dc>` | DC source | `Vdc` |
-| `Vx a b … AC …` / `PULSE`/`SIN`/`PWL` | stimulus | `Vdc` at its DC value, **noted**: circuitRF drives the design from its own TestBench |
-| `Ix a b <dc>` | DC current source | current-source primitive (an SDD with a constant equation until one exists) |
+| `Vx a b … AC …` | AC stimulus | `Vdc` at its DC value, **noted** |
+| `PULSE`, `PWL`, `EXP`, `SFFM` | stimulus | `V_Pulse`, `V_PWL`, `V_Exp`, `V_SFFM` (and `I_`), the arguments under circuitRF's keys; too few arguments to read is the DC level, noted |
+| `SIN(VO VA FREQ TD THETA PHASE)` | stimulus | `V_1Tone` (`I_1Tone`): `Vdc`=VO, `V`=VA, `Freq`, `Delay`=TD, `Damping`=THETA, `Phase`=(PHASE − 90)° — a tone source's phase is a cosine's |
+| `Ix a b <dc>` | DC current source | `Idc`, on the nets swapped: the dialect's `I` sinks from its first node and circuitRF's sources deliver into it |
 | `Gx a b c d <gm>` | VCCS | `VCCS` (exists) |
 | `Gx a b VALUE={f}` | behavioural current | **SDD** (§9.1) |
 | `Ex a b c d <k>` | VCVS | new linear `VCVS` (§9.2.1) |
 | `Ex a b VALUE={f}` | behavioural voltage | affine → `VCVS`; otherwise the nonlinear branch row (§9.2.2) |
 | `Fx` | current-controlled current | SDD with a control-current reference |
 | `Hx` | current-controlled voltage | `VCVS`/branch row with a control-current reference |
-| `Ex`/`Gx` referencing `time` | transient stimulus | refused **by name**: circuitRF has no transient analysis (§7) |
+| `Ex`/`Gx` referencing `time` | transient stimulus | the behavioural source, `time` kept: a transient analysis evaluates it (§8.10) |
 | `Sx`, `Wx` | switch | refused **by name** (§8.7) |
 | `Tx`, `Ox`, `Ux` | line, opamp macro, digital | refused by name |
 

@@ -1960,7 +1960,7 @@ internal static class Check
                 {
                     if (noiseAnalyses.Count > 0) f.Add(CliDiagnostics.CheckNoisySourceSteadyState(path, ec.InstancePath, noiseAnalyses));
                 }
-                else if (ec.Model is IDriveScalable or VdcModel)
+                else if (ec.Model is IDriveScalable or VdcModel or IdcModel or WaveformSourceModel)
                     f.Add(CliDiagnostics.CheckNoisySourceIdeal(path, ec.InstancePath));
             }
 
