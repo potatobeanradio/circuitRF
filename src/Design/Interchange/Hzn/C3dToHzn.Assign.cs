@@ -45,11 +45,11 @@ internal sealed partial class C3dToHznWriter
     // ── conductor sheets ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>A sheet is metal in a <c>.c3d</c>; in Hertzon it is metal because a boundary says so. One Perfect E for the perfect ones,
-    /// one Finite Conductivity for each conductivity and thickness.</summary>
+    /// one Finite Conductivity for each conductivity, thickness and (brief-hzn-18) one- or two-sidedness.</summary>
     private void Sheets()
     {
         var perfect = new List<string>();
-        var finite = new List<(double Sigma, string Thickness, List<string> Names)>();
+        var finite = new List<(double Sigma, string Thickness, bool OneSided, List<string> Names)>();
         foreach (var h in _objects.ToList())
         {
             // brief-hzn-10 — a boolean of sheets is metal by its Blank's material and thickness, and the boundary names the result.
@@ -79,8 +79,8 @@ internal sealed partial class C3dToHznWriter
                     ? _x.Write(e.Expr, e.Unit ?? "Um", h.Name)?.Text
                     : HznExpressionWriter.Digits(t) + "um";
             string key = thickness ?? "";
-            var group = finite.FirstOrDefault(g => g.Sigma == v.Conductivity && g.Thickness == key);
-            if (group.Names is null) finite.Add(group = (v.Conductivity, key, []));
+            var group = finite.FirstOrDefault(g => g.Sigma == v.Conductivity && g.Thickness == key && g.OneSided == sh.OneSided);
+            if (group.Names is null) finite.Add(group = (v.Conductivity, key, sh.OneSided, []));
             group.Names.Add(h.Name);
         }
         if (perfect.Count > 0)
@@ -89,12 +89,13 @@ internal sealed partial class C3dToHznWriter
             _boundaries.Add(new HAssign
             {
                 Name = UniqueBoundaryName("FiniteConductivity"), Kind = "Finite Conductivity", Objects = g.Names,
-                Props = FiniteConductivityProps(g.Sigma, g.Thickness.Length > 0 ? g.Thickness : null, twoSided: true),
+                Props = FiniteConductivityProps(g.Sigma, g.Thickness.Length > 0 ? g.Thickness : null, twoSided: !g.OneSided),
             });
     }
 
     /// <summary>A Finite Conductivity boundary's props. A sheet is two-sided: a lossy .c3d sheet is a thin conductor solved separately
-    /// on both sides, as Hertzon's two-sided one is. A solid's faces have one side, so the flag is off there.</summary>
+    /// on both sides, as Hertzon's two-sided one is, unless it is OneSided (brief-hzn-18). A solid's faces have one side, so the flag is
+    /// off there.</summary>
     private static List<(string, string)> FiniteConductivityProps(double sigma, string? thickness, bool twoSided = false) =>
         P(("UseMaterial", "False"), ("Material", ""), ("Conductivity", Num(sigma)), ("Permeability", "1"), ("Roughness", "0um"),
           ("UseThickness", thickness is null ? "False" : "True"), ("Thickness", thickness ?? "0um"), ("TwoSided", twoSided ? "True" : "False"));

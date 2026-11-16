@@ -1275,13 +1275,20 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                     return;
                 }
                 double t = C3dSheetBooleans.Carrier(obj)?.ThicknessUm is { } um ? um * 1e-6 : 0;
+                // brief-hzn-18 R-hzn18-1 — one-sided means one surface impedance, so it means nothing on a perfect conductor
+                bool oneSided = C3dSheetBooleans.Carrier(obj)?.OneSided == true;
+                if (oneSided && (!(values.SigmaSm > 0) || double.IsInfinity(values.SigmaSm)))
+                {
+                    _warnings.Add($"Sheet '{name}' is OneSided, but its metal '{material.Name}' is a perfect conductor, which has no surface impedance; OneSided does nothing here.");
+                    oneSided = false;
+                }
                 // brief-hzn-10 — a sheet boolean in several pieces is a sheet per piece; each names the object (below).
                 IReadOnlyList<C3dSheetGeometry> pieces = lowered.SheetPieces.Count > 0 ? lowered.SheetPieces : [g];
                 for (int k = 0; k < pieces.Count; k++)
                 {
                     var piece = pieces[k];
                     _uses.Add((_sheets.Count, true, techName, material.Name));
-                    _sheets.Add(new Em3dSheet(C3dSheetBooleans.PieceName(name, k), key, piece.Outline, piece.Holes, piece.Z, t, ++_order) { Frame = piece.Frame });
+                    _sheets.Add(new Em3dSheet(C3dSheetBooleans.PieceName(name, k), key, piece.Outline, piece.Holes, piece.Z, t, ++_order) { Frame = piece.Frame, OneSided = oneSided });
                 }
             }
             else

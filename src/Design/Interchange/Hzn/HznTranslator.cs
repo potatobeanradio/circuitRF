@@ -607,6 +607,7 @@ internal sealed partial class HznTranslator
             case "CreateEllipse": return CreateEllipse(st, p, user);
             case "CreatePolyline": return CreatePolyline(st, p, user);
             case "SweepAlongVector": return Sweep(st, p, user);
+            case "ThickenSheet": return Thicken(st, p, user);
             case "Subtract" or "Unite" or "Intersect": return Boolean(st, o, p, kind, user);
             case "Move": return Move(st, p, user);
             case "Rotate": return Rotate(st, p, user);
@@ -1303,6 +1304,43 @@ internal sealed partial class HznTranslator
         st.Pending = Pend.None;
         _pendingInfo = null;
         return true;
+    }
+
+    /// <summary>
+    /// brief-hzn-18 R-hzn18-3 — Thicken Sheet: by Hertzon's tutorial a positive thickness grows to the positive side of the sheet's main
+    /// axis (+z for a sheet in the XY plane), a negative one to the other side, and Reverse direction flips it. So it is the sweep along
+    /// the sheet's normal by that thickness, written as one and translated by <see cref="Sweep"/>. Both sides at once is refused: whether
+    /// its thickness is per side or in total is not established.
+    /// </summary>
+    private bool Thicken(State st, Dictionary<string, string> p, string user)
+    {
+        string name = user.Split(' ')[0];
+        if (IsTrue(p.GetValueOrDefault("BothSides")))
+        {
+            _r.Add(HznRefusalKind.Operation, "ThickenSheet on both sides", "whether its thickness is per side or in total is not established", name);
+            return false;
+        }
+        C3dAxis? normal = st.Pending switch
+        {
+            Pend.Rect => ((RectInfo)_pendingInfo!).Normal,
+            Pend.Circle => ((CircleInfo)_pendingInfo!).Normal,
+            Pend.Poly => ((PolyInfo)_pendingInfo!).Normal,
+            _ => null,
+        };
+        if (normal is null)
+        {
+            _r.Add(HznRefusalKind.Operation, "ThickenSheet", "only a rectangle, circle or polyline in an axis plane is thickened", name);
+            return false;
+        }
+        if (p.GetValueOrDefault("Thickness") is not { Length: > 0 } t)
+        {
+            _r.Add(HznRefusalKind.Setting, "missing property", $"{user} Thickness is not stated", DesignName);
+            return false;
+        }
+        string along = IsTrue(p.GetValueOrDefault("ReverseDirection")) ? $"-({t})" : t;
+        string[] v = ["0", "0", "0"];
+        v[(int)normal.Value] = along;
+        return Sweep(st, new Dictionary<string, string>(StringComparer.Ordinal) { ["Vector"] = string.Join(",", v) }, user);
     }
 
     private bool Sweep(State st, Dictionary<string, string> p, string user)

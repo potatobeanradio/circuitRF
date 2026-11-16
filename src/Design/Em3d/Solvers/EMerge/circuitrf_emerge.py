@@ -1125,6 +1125,13 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface, join=0.0):
         else:
             # brief-em3d-139: coth(gamma*thickness), so a slab of thickness h with current on both faces is thickness = h/2, in metres.
             sim.mw.bc.SurfaceImpedance(em.FaceSelection(tags), mats[mat], thickness=h / 2)
+    # brief-hzn-18 -- a one-sided lossy sheet: ONE surface impedance on its faces, carrying the current of both sides, stated before
+    # EMerge's own boundary set-up, which then makes no split thin conductor there (it never overwrites a face's condition). No
+    # thickness is the plain skin-effect impedance, as Hertzon's one-sided sheet without "Use thickness".
+    for sh, g in sheets:
+        if sh.get("oneSided") and g.tags and not problem["materials"][sh["material"]]["pec"]:
+            t = sh["thicknessM"]
+            sim.mw.bc.SurfaceImpedance(em.FaceSelection(g.tags), mats[sh["material"]], thickness=t if t > 0 else None)
     scattered = None
     for key, kind in box["faces"].items():
         if not faces[key] or kind == "pec":

@@ -918,6 +918,17 @@ or moving an object while it is not modelled does not, since no run has it.</li>
 <li>A not-modelled object is still <strong>exported</strong> — to STEP and by Export Drawing — because those export what is drawn.</li>
 <li><code>circuitrf check</code> lists what is not modelled and reports the refusals above; <code>explain</code> names it in its walk.</li>
 </ul>
+<h3 id="one-sided">One-sided sheet</h3>
+<p>A lossy sheet (one whose metal has a finite conductivity) is normally solved as a thin conductor with a current on each
+of its two faces. Tick <strong>One-sided</strong> in Properties and its metal is instead <strong>one surface impedance carrying the current
+of both faces</strong>, which loses about twice as much in the conductor. It is how a Hertzon design whose Finite Conductivity
+boundary has Two-sided off is solved, so such a design gives the same answer in both programs.</p>
+<ul>
+<li>The box appears only for a sheet whose metal is lossy: a perfect conductor has no surface impedance, and <code>check</code> warns
+if <code>OneSided</code> is written on one.</li>
+<li><strong>EMerge</strong> runs it. <strong>Palace</strong> and <strong>openEMS</strong> refuse the run, naming the sheet.</li>
+<li>One click is one undo step. It is saved in the <code>.c3d</code> only when ticked, as <code>&quot;OneSided&quot;: true</code>.</li>
+</ul>
 <h3 id="copy-paste">Copy and Paste between 3D views</h3>
 <p>Objects copy out of one 3D view and paste into another — in this workspace, another workspace, or another running
 circuitRF — or back into the same one:</p>

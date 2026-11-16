@@ -1087,6 +1087,31 @@ so nothing else was hiding behind them.
   faces). Not solved, and not compared with Hertzon: the same family as run4, whose disagreement with its reference is still open.
 
 
+### HZN-18 — one-sided lossy sheets, Multi-Frequencies setups, and Thicken Sheet (2026-11-16)
+
+Census **84 → 88 of 99**: glasses Ex1 and Ex2 run2 (one-sided sheets), `Ex2_Benchmark` (Multi-Frequencies) and `T_thick`
+(ThickenSheet). Every glasses design now opens. Scratch probes with each item removed found nothing else behind any of them.
+
+- **One-sided, from Hertzon's own changelog (0.3.22).** A one-sided Finite Conductivity sheet is "one surface impedance" carrying
+  "the current of both sides", about twice a strip's conductor loss. It was Hertzon's default before 0.3.22, and old projects keep it
+  with a Validation Check warning. Two-sided is EMerge's split thin conductor, which is what a lossy `.c3d` sheet already was.
+- **EMerge 3.0.0 makes a lossy interior sheet a `ThinConductor` by itself**, in its default boundary set-up, assigned with
+  `no_overwrite`, so it skips any face that already has a condition. The driver therefore states one `SurfaceImpedance` on a
+  one-sided sheet's faces (no thickness unless the sheet states one, as Hertzon's Use thickness off), and EMerge adds no thin
+  conductor there. An empty thin-conductor set did not trip the split repair (`install_thin_conductor_split`).
+- **`oneSided` is written into the EMerge problem only when true.** Writing `false` on every sheet changed every problem's geometry
+  hash (the Touchstone provenance golden in `EmergeRunTests` caught it), which would have made every existing EMerge result look out
+  of date.
+- **Measured** (a 16 mm open stub 1 mm over a perfect ground, 2·10⁴ S/m, EMerge first order, 4–5.2 GHz): one-sided |S11| 0.655–0.716,
+  two-sided 0.774–0.797. The power absorbed (loss plus radiation) is 1.3–1.5× larger one-sided at every point, which is Hertzon's
+  direction. Hertzon's own figure is an efficiency (86.0 % against 91.9 % on a strip dipole), not compared one for one.
+- Palace and openEMS refuse a one-sided sheet in `Em3dModePorts.SolverRefusal`, as they refuse a periodic cell.
+- **Multi-Frequencies**: `Ex2_Benchmark`'s file holds its `setups` key twice. The second one, which has no sweeps, is the one the reader
+  keeps, so the setup solves only at `2.44GHz,6.1GHz`. Auto Open read `Frequency` (5 GHz) for such a setup; it now takes the lowest
+  listed frequency.
+- **Thicken Sheet** is the sweep along the sheet's normal, with Hertzon's documented direction (positive along the main axis,
+  Reverse flips it). `BothSides` is refused, because whether its thickness is per side or in total is not established.
+
 ## A run estimated between 100 % and 150 % of memory could not choose to swap (2026-11-05)
 
 Only a Severe verdict (past 150 %) was asked about, and only answering it lifted the ceiling, so a run at 141 % started with its ceiling and was

@@ -14,7 +14,7 @@ internal sealed partial class HznTranslator
     /// <summary>The setup keys the translation reads; every other key is listed as unused.</summary>
     private static readonly HashSet<string> UsedSetupKeys = new(StringComparer.Ordinal)
     {
-        "Enabled", "SolutionFrequencyMode", "Frequency", "MaximumPasses", "BasisOrder",
+        "Enabled", "SolutionFrequencyMode", "Frequency", "MaximumPasses", "BasisOrder", "MultiFrequencies",
     };
 
     /// <summary>HZN-7 — the sweep keys the translation reads (the frequency plan and the sweep's kind); every other sweep key is
@@ -50,6 +50,13 @@ internal sealed partial class HznTranslator
             var sweeps = s.Json.GetArray("sweeps")?.Items.OfType<HznJsonObject>().Select(o => new HznSweep(o)).Where(w => w.Enabled).ToList() ?? [];
             if (sweeps.Count == 0)
             {
+                // brief-hzn-18 R-hzn18-2 — a Multi-Frequencies setup solves at each of its frequencies
+                if (s.Props["SolutionFrequencyMode"] == "Multi-Frequencies")
+                {
+                    if (MultiFrequenciesHz(s, name) is not { Count: > 0 } list) continue;
+                    Emit(name, name, s, (Freq(list[0], list[0], 1, null), [.. list.Skip(1).Select(x => Freq(x, x, 1, null))]), order, passes, adaptiveSweep: false);
+                    continue;
+                }
                 if (SolutionHz(s, name) is not { } f) continue;
                 Emit(name, name, s, Single(f), order, passes, adaptiveSweep: false);
                 continue;
@@ -84,6 +91,27 @@ internal sealed partial class HznTranslator
             return null;
         }
         return Hz(text, user);
+    }
+
+    /// <summary>brief-hzn-18 R-hzn18-2 — a Multi-Frequencies setup's frequencies, Hz, in their order (Hertzon takes ',' or ';' between
+    /// them); null, with the refusal recorded, when the list is missing or an entry does not evaluate.</summary>
+    internal List<double>? MultiFrequenciesHz(HznSetup s, string user)
+    {
+        var parts = HznExpressionTranslator.SplitTopLevel(s.Props["MultiFrequencies"] ?? "", ',')
+                                           .SelectMany(x => HznExpressionTranslator.SplitTopLevel(x, ';'))
+                                           .Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
+        if (parts.Count == 0)
+        {
+            _r.Add(HznRefusalKind.Setting, "Multi-Frequencies setup without frequencies", "its MultiFrequencies list is empty", user);
+            return null;
+        }
+        var list = new List<double>();
+        foreach (string p in parts)
+        {
+            if (Hz(p, user) is not { } hz) return null;
+            list.Add(hz);
+        }
+        return list;
     }
 
     private double? Hz(string text, string user)

@@ -538,6 +538,12 @@ public sealed class C3dSheet : C3dObject
     /// <summary>The metal's real thickness, micrometres — what the solver's surface impedance uses.</summary>
     public double? ThicknessUm { get; set; }
 
+    /// <summary>brief-hzn-18 R-hzn18-1 — the sheet's metal is one surface impedance carrying the current of both its faces, not a thin
+    /// conductor with a current on each face (about twice the conductor loss of a strip in air): Hertzon's one-sided Finite
+    /// Conductivity sheet. Meaningful only on a lossy conductor; EMerge runs it, Palace and openEMS refuse it. Written only when true.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool OneSided { get; set; }
+
     /// <summary>brief-em3d-101 R-em3d101-1 — the sheet is drawn with this image instead of its material's colour (the image fills
     /// its rectangle, <see cref="C3dImages.FillRect"/>). Drawing only: the sheet takes part in a solve as any sheet does when it is
     /// modelled, and nothing reads the image. Written only when set.</summary>

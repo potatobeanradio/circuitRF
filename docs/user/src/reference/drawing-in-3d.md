@@ -497,6 +497,18 @@ you tick it again. Hiding an object is not the same thing: a hidden object is st
 - A not-modelled object is still **exported** — to STEP and by Export Drawing — because those export what is drawn.
 - `circuitrf check` lists what is not modelled and reports the refusals above; `explain` names it in its walk.
 
+### One-sided sheet {#one-sided}
+
+A lossy sheet (one whose metal has a finite conductivity) is normally solved as a thin conductor with a current on each
+of its two faces. Tick **One-sided** in Properties and its metal is instead **one surface impedance carrying the current
+of both faces**, which loses about twice as much in the conductor. It is how a Hertzon design whose Finite Conductivity
+boundary has Two-sided off is solved, so such a design gives the same answer in both programs.
+
+- The box appears only for a sheet whose metal is lossy: a perfect conductor has no surface impedance, and `check` warns
+  if `OneSided` is written on one.
+- **EMerge** runs it. **Palace** and **openEMS** refuse the run, naming the sheet.
+- One click is one undo step. It is saved in the `.c3d` only when ticked, as `"OneSided": true`.
+
 ### Copy and Paste between 3D views {#copy-paste}
 
 Objects copy out of one 3D view and paste into another — in this workspace, another workspace, or another running

@@ -443,6 +443,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         ClearTransparency();
         ClearAppearanceGroup();
         ClearModel();
+        ClearOneSided();
         ClearImage();
         ClearFaceImage();
         ClearPortPages();
@@ -707,6 +708,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         else if (editor.AddressOf(index).Top is >= 0 and var top && top < editor.Document.Objects.Count)
             OperandLookNote = OperandLookText(editor.Document.Objects[top].Name, C3dValidation.EffectiveMaterial(obj));
         if (!operand) LoadModel([index], [], obj.Name);            // brief-em3d-93 — nor a Model: its result's is the operation's
+        if (!operand) LoadOneSided(index);                         // brief-hzn-18
         if (!operand && obj is C3dSheet { Image: not null } imageSheet) LoadImage(index, imageSheet);   // brief-em3d-101
         NameText = editor.ObjectLabel(index);
         Material = C3dValidation.EffectiveMaterial(obj);

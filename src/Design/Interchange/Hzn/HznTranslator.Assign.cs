@@ -602,16 +602,17 @@ internal sealed partial class HznTranslator
             // brief-hzn-10 — a boundary on a boolean of sheets dresses the result: its Blank carries the metal.
             if (C3dSheetBooleans.Carrier(obj) is { } sheet)
             {
-                if (finite && !twoSided)
-                {
-                    _r.Add(HznRefusalKind.Boundary, "Finite Conductivity on one side of a sheet",
-                           "a lossy .c3d sheet is a thin conductor carrying current on both sides (Hertzon's TwoSided)", name);
-                    continue;
-                }
                 var m = Material(sheetMaterial!, name);
                 sheet.Material = m?.Material.Name;
                 sheet.Role = m?.Role ?? Em3dRole.Conductor;
                 if (thicknessUm is { } t) sheet.ThicknessUm = t;
+                if (finite && !twoSided)
+                {
+                    // brief-hzn-18 R-hzn18-1 — Hertzon's one-sided sheet: one surface impedance carrying both faces' current
+                    sheet.OneSided = true;
+                    _notes.Add($"Boundary '{name}' on '{hz}' is one-sided: one surface impedance carries the current of both faces, about twice a " +
+                               "two-sided sheet's conductor loss. It is Hertzon's older default, kept so the two give the same answer; EMerge runs it.");
+                }
                 _prov.FaceBoundaries.Add(new HznBoundaryOrigin(name, c3d, "(sheet)", null));
                 continue;
             }
@@ -872,7 +873,11 @@ internal sealed partial class HznTranslator
             if (sweeps.Count == 0)
             {
                 string mode = s.Props["SolutionFrequencyMode"] ?? "Single";
-                if (Q(mode == "Broadband" ? s.Props["LowFrequency"] : s.Props["Frequency"]) is { } f) all.Add(f);
+                // brief-hzn-18 R-hzn18-2 — a Multi-Frequencies setup solves at its listed frequencies, the lowest of which sizes the box
+                if (mode == "Multi-Frequencies")
+                    all.AddRange(HznExpressionTranslator.SplitTopLevel(s.Props["MultiFrequencies"] ?? "", ',')
+                                                        .SelectMany(x => HznExpressionTranslator.SplitTopLevel(x, ';')).Select(x => Q(x)).OfType<double>());
+                else if (Q(mode == "Broadband" ? s.Props["LowFrequency"] : s.Props["Frequency"]) is { } f) all.Add(f);
                 continue;
             }
             foreach (var w in sweeps)

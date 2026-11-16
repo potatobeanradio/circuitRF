@@ -142,6 +142,9 @@
                  selected ports or a heat source. Indeterminate where the members differ; a click writes every one, one undo entry. -->
             <CheckBox Content="Model" IsVisible="{Binding HasModel}" IsChecked="{Binding ModelChecked}" IsThreeState="False"
                       ToolTip.Tip="{Binding ModelTip}"/>
+            <!-- brief-hzn-18 R-hzn18-1 — a lossy sheet's metal as one surface impedance for both faces; one undo entry per click. -->
+            <CheckBox Content="One-sided" IsVisible="{Binding HasOneSided}" IsChecked="{Binding OneSidedChecked}"
+                      ToolTip.Tip="{Binding OneSidedTip}"/>
 
             <!-- brief-sar-3 R-sar3-2 — a phantom's layers, outermost first: each one's material, one undo entry per choice. -->
             <StackPanel Spacing="4" IsVisible="{Binding IsPhantom}">

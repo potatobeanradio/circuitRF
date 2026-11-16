@@ -191,13 +191,18 @@ public static partial class EmergeScriptWriter
 
         e.Key("sheets").BeginArray();
         foreach (var sh in problem.Sheets)
+        {
             e.BeginObject().Key("name").Str(sh.Name).Key("material").Int(materials.Of(sh.Material, conductor: true))
-             .Key("thicknessM").Number(sh.ThicknessM)
+             .Key("thicknessM").Number(sh.ThicknessM);
+            // brief-hzn-18 R-hzn18-1 — written only when true, so every other problem (and its geometry hash) is unchanged
+            if (sh.OneSided) e.Key("oneSided").Bool(true);
+            e
              // brief-emi-11 — its +n (the local +z through World, the side Plot Field ▸ Top side names): the driver orients the
              // sheet's surface current and its triangles by it
              .Key("normal").Point(sh.Frame?.Normal ?? new Point3(0, 0, 1))
              .Key("rings").Rings(GmshGeoWriter.PlanarRings(new[] { sh.Outline }.Concat(sh.Holes)).Select(r => r.Select(sh.World)))
              .EndObject();
+        }
         e.EndArray();
 
         e.Key("ports").BeginArray();

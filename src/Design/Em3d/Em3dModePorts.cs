@@ -68,6 +68,9 @@ public static class Em3dModePorts
                 return $"Port {fp.FaceGroupLabel ?? Label(fp)} is a Floquet port, which circuitRF runs on EMerge only. Set the setup's solver to EMerge.";
             if (f.XMin == Em3dBoundaryKind.Periodic || f.YMin == Em3dBoundaryKind.Periodic)
                 return "The air box's x or y faces are periodic, which circuitRF runs on EMerge only. Set the setup's solver to EMerge.";
+            // brief-hzn-18 R-hzn18-1 — a one-sided lossy sheet is EMerge's single surface impedance on the sheet's faces
+            if (problem.Sheets.FirstOrDefault(s => s.OneSided) is { } one)
+                return $"Sheet '{one.Name}' is one-sided (one surface impedance carrying the current of both its faces), which circuitRF runs on EMerge only. Set the setup's solver to EMerge, or untick One-sided.";
         }
         if (solver != OpenEmsSolver.Id) return null;
         if (problem.Ports.FirstOrDefault(p => p.Kind == Em3dPortKind.Wave && FdtdWavePorts.IsHollow(problem, p)) is { } hollow)

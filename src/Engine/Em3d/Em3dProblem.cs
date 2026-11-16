@@ -409,6 +409,10 @@ public sealed record Em3dSheet(
     /// </summary>
     public Em3dPlaneFrame? Frame { get; init; }
 
+    /// <summary>brief-hzn-18 R-hzn18-1 — one surface impedance carrying the current of both faces (a one-sided lossy sheet), not a
+    /// thin conductor with a current on each.</summary>
+    public bool OneSided { get; init; }
+
     /// <summary>A point of the outline, in the world.</summary>
     public Point3 World(Point2 q) => Frame is { } f ? f.World(q.X, q.Y, Z) : new Point3(q.X, q.Y, Z);
 
