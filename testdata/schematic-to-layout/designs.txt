@@ -57,3 +57,7 @@ F25-schiffman-phase-shifter RF-passives
 F29-delay-line RF-passives
 F28-coupled-resonator-full RF-passives
 F30-ladder-site RF-passives
+F31-coupled-array-interdigital RF-passives
+F32-coupled-array-combline RF-passives
+F33-coupled-array-pseudo RF-passives
+F34-coupled-array-custom RF-passives

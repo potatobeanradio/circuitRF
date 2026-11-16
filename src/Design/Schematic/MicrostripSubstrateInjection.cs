@@ -36,7 +36,7 @@ public static class MicrostripSubstrateInjection
          SymbolKind.Mtaper, SymbolKind.Mklopf, SymbolKind.GsgPad, SymbolKind.Mwpd, SymbolKind.Mblc, SymbolKind.Mrrc,
          SymbolKind.Mclc, SymbolKind.Midc, SymbolKind.Mcbl, SymbolKind.MRadial,
          SymbolKind.Mgpd, SymbolKind.Mbpd, SymbolKind.Mtpd,
-         SymbolKind.Mcrc, SymbolKind.Mlad, SymbolKind.Msps, SymbolKind.Mdly];
+         SymbolKind.Mcrc, SymbolKind.Mlad, SymbolKind.Msps, SymbolKind.Mdly, SymbolKind.Mcla];
 
     public static bool IsMicrostripKind(SymbolKind kind) => MicrostripKinds.Contains(kind);
 
@@ -47,9 +47,14 @@ public static class MicrostripSubstrateInjection
     // consumer that reads Gap — the extracted netlist (simulation, LVS, a .cnl run through CnlTechnologyBinding) and
     // Update Layout's PCell parameters — reads the span the land pattern gives.
 
+    /// <summary>The planned passives that take a <c>Footprint</c> for the parts on their sites: MWPD and MCBL, whose site
+    /// span it also sets (<see cref="SetsSiteSpan"/>), and MCLA, whose capacitor sites are shunt and have no span.</summary>
+    public static bool HasSiteFootprint(SymbolKind kind) => kind is SymbolKind.Mwpd or SymbolKind.Mcbl or SymbolKind.Mcla
+                                                            or SymbolKind.Mlad;
+
     /// <summary>The planned passives whose site span is a stored length, <see cref="SiteSpanParameter"/>, that a
-    /// <c>Footprint</c> can set instead: MWPD's resistor pins, MCBL's balanced outputs, MLAD's series sites.</summary>
-    public static bool HasSiteFootprint(SymbolKind kind) => kind is SymbolKind.Mwpd or SymbolKind.Mcbl or SymbolKind.Mlad;
+    /// <c>Footprint</c> sets instead: MWPD's resistor pins, MCBL's balanced outputs, MLAD's series sites.</summary>
+    public static bool SetsSiteSpan(SymbolKind kind) => kind is SymbolKind.Mwpd or SymbolKind.Mcbl or SymbolKind.Mlad;
 
     /// <summary>The length a site <c>Footprint</c> sets.</summary>
     public const string SiteSpanParameter = "Gap";
@@ -107,6 +112,7 @@ public static class MicrostripSubstrateInjection
         if (!HasSiteFootprint(kind)) return;
         string? footprint = overrides.LastOrDefault(o => ArtworkParameters.IsArtworkOnly(o.Name))?.Expression?.Trim('"', ' ');
         overrides.RemoveAll(o => ArtworkParameters.IsArtworkOnly(o.Name));
+        if (!SetsSiteSpan(kind)) return;
         if (SiteSpanMeters(footprint, baseDirectory, technology, out string? refusal) is { } span)
         {
             overrides.RemoveAll(o => o.Name == SiteSpanParameter);
@@ -470,7 +476,8 @@ public static class MicrostripSubstrateInjection
                 bool narrowEnd = kind == SymbolKind.Mtaper && p.Name == "W2";
                 value = ConvertMmTo(targetUnit, narrowEnd ? w100Mm!.Value : w50Mm.Value);
             }
-            else if (kind is SymbolKind.MCLine or SymbolKind.MCLineN && p.Name == "S" && w50Mm is not null)
+            else if ((kind is SymbolKind.MCLine or SymbolKind.MCLineN && p.Name == "S"
+                      || kind == SymbolKind.Mcla && p.Name is "S" or "Wf" or "G") && w50Mm is not null)
             {
                 // The gap starts at the strip's own width (S = W) on THIS technology: a loose, ordinary
                 // starting coupling rather than a millimetre baseline that is absurd on a thin substrate.
@@ -494,6 +501,11 @@ public static class MicrostripSubstrateInjection
                 // curve whose model is still inside its claim (MicrostripCurve), on THIS technology's
                 // own 50-ohm width rather than a radius carried over from the millimetre baseline.
                 value = ConvertMmTo(targetUnit, 3.0 * w50Mm.Value);
+            }
+            else if (kind == SymbolKind.Mcla && p.Name == "Tap" && NiceLengthFor(targetUnit, kind) is { } line)
+            {
+                // A fifth of the strips' own round length from the short: a moderate external coupling to start from.
+                value = line / 5.0;
             }
             else if (p.Name == "L" && NiceLengthFor(targetUnit, kind) is { } nice)
             {

@@ -10,7 +10,7 @@ namespace CircuitRF.Core.Devices;
 /// (<see cref="WilkinsonPlan"/>), the hybrids MBLC (<see cref="BranchLinePlan"/>) and MRRC (<see cref="RatRacePlan"/>),
 /// the Gysel, Bagley and tee dividers (<see cref="GyselPlan"/>, <see cref="BagleyPlan"/>, <see cref="TeeDividerPlan"/>),
 /// the coupled-line parts (<see cref="CoupledLineCouplerPlan"/>, <see cref="LangePlan"/>,
-/// <see cref="MarchandBalunPlan"/>, <see cref="SchiffmanPlan"/>), the coupled-resonator filters
+/// <see cref="MarchandBalunPlan"/>, <see cref="SchiffmanPlan"/>), the coupled array (<see cref="CoupledArrayPlan"/>), the coupled-resonator filters
 /// (<see cref="CoupledResonatorPlan"/>) and the ladder (<see cref="LadderPlan"/>). It has no line physics of its own: each
 /// section of the plan is the EXISTING part's model (<see cref="MicrostripTeeModel"/>, <see cref="MicrostripCrossModel"/>,
 /// <see cref="MicrostripCurveModel"/>,

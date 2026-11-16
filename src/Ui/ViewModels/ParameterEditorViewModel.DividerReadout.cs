@@ -25,7 +25,7 @@ public partial class ParameterEditorViewModel
     public bool IsDividerReadoutTarget => _target?.Symbol is SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
                                           or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl
                                           or SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd or SymbolKind.Mlad
-                                          or SymbolKind.Msps or SymbolKind.Mdly;
+                                          or SymbolKind.Msps or SymbolKind.Mdly or SymbolKind.Mcla;
 
     /// <summary>The derived numbers, one per line, or empty.</summary>
     public string DividerReadoutText { get; private set; } = "";
@@ -48,6 +48,8 @@ public partial class ParameterEditorViewModel
             (text, note) = LadderReadout();
         else if (_target?.Symbol is SymbolKind.Mdly)
             (text, note) = DelayLineReadout();
+        else if (_target?.Symbol is SymbolKind.Mcla)
+            (text, note) = CoupledArrayReadout();
         else if (IsDividerReadoutTarget)
         {
             if (Spec("Z0") is not { } z0 || Spec("F") is not { } f || SiteGap(ref note) is not { } gap

@@ -444,7 +444,8 @@ public sealed class ComparisonTests
     /// <summary>The hybrids (MBLC, MRRC) as Update Layout places them compare clean, and a spec changed on the
     /// schematic afterwards is exactly one property mismatch naming it. So does a radial stub (MRADIAL) on its angle,
     /// and N coupled lines (MCLINN) on one strip's own width; a delay line (MDLY) on its electrical length, and the
-    /// meandered rat-race beside it on its turns.</summary>
+    /// meandered rat-race beside it on its turns; and the coupled array (MCLA) on its tap,
+    /// its loading C and a custom end pattern's join moved to another strip's end.</summary>
     [Theory]
     [InlineData("F9-branch-line-hybrid", "BLC1", "N", "1")]
     [InlineData("F10-rat-race-hybrid", "RRC1", "F", "2.5")]
@@ -452,6 +453,10 @@ public sealed class ComparisonTests
     [InlineData("F15-coupled-lines", "CLN1", "W[2]", "1.5")]
     [InlineData("F29-delay-line", "DLY1", "Theta", "180")]
     [InlineData("F29-delay-line", "RRC1", "Meander", "3")]
+    [InlineData("F31-coupled-array-interdigital", "CLA1", "Tap", "3.5")]
+    [InlineData("F32-coupled-array-combline", "CLA1", "C", "1.6")]
+    [InlineData("F33-coupled-array-pseudo", "CLA1", "L", "17")]
+    [InlineData("F34-coupled-array-custom", "CLA1", "Ends", "SC JO JS")]
     public void AHybridComparesCleanAndASpecMismatchIsAFinding(string design, string instance, string spec, string changed)
     {
         string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-hyb-" + Guid.NewGuid().ToString("N")[..12]);

@@ -102,6 +102,8 @@ public static class ComponentModelFactory
             CoupledResonatorTypeName,
             // The ladder: a list of MLIN, MGAP, MTAPER, MTEE and MCROSS sections, stamped the same way.
             LadderTypeName,
+            // The coupled array: N strips over one N-line section, its ends open, shorted, loaded, joined or ports.
+            CoupledArrayTypeName,
             // Grounded coplanar waveguide and stripline (brief-artsch-1), bound to the stackup as MLIN is.
             "CPWG", "SLIN",
             // The two vias (brief-via-component.md): a signal via changing layers, and a via to ground.
@@ -297,6 +299,8 @@ public static class ComponentModelFactory
             return CreateLadderModel(parameters);
         if (typeName.Equals(SchiffmanTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateSchiffmanModel(parameters);
+        if (typeName.Equals(CoupledArrayTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateCoupledArrayModel(parameters);
         if (typeName.Equals("VIA", StringComparison.OrdinalIgnoreCase))
             return new ViaModel(ReadViaGeometry(parameters, grounded: false));
         if (typeName.Equals("VIAGND", StringComparison.OrdinalIgnoreCase))
@@ -3206,6 +3210,17 @@ public static class ComponentModelFactory
                    GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
                    GetReal(parameters, "Gap", LadderPlan.DefaultGap)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, LadderTypeName));
+
+    /// <summary>The coupled array's engine token (pins 1 and 2, then E1, E2, … on its shorted and loaded strip ends).</summary>
+    public const string CoupledArrayTypeName = "MCLA";
+
+    // MCLA: stored geometry, as a synthesis fills it (CoupledArraySpec): N, W/S and their rows, L, the ends' Form (a
+    // name) or Ends, the Feed (a name) with Tap and Wf, and each site's C.
+    private static MicrostripPlanModel CreateCoupledArrayModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(CoupledArrayPlan.Build(CoupledArraySpec.Of((name, fallback) => GetReal(parameters, name, fallback),
+                   name => parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.String ? v.AsString() : null),
+                   SubstrateOf(parameters)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, CoupledArrayTypeName));
 
     private static MicrostripKlopfModel CreateMicrostripKlopfModel(IReadOnlyDictionary<string, Value> parameters)
     {

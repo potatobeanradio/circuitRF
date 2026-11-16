@@ -1687,6 +1687,14 @@ public static partial class SchematicLayoutPlanner
                 if (p.Expression.Trim() is { Length: > 0 } list) resolved[p.Name] = PCellValue.Text(list);
                 continue;
             }
+            // A coupled array's Form and Feed are names and its Ends a pattern of letters: words for its generator, Ends
+            // without its spaces, as the netlist writes it, so LVS reads the same word on both sides.
+            if (comp.Symbol == SymbolKind.Mcla && p.Name is "Form" or "Feed" or "Ends")
+            {
+                if (string.Concat(p.Expression.Where(c => !char.IsWhiteSpace(c))) is { Length: > 0 } word)
+                    resolved[p.Name] = PCellValue.Text(word);
+                continue;
+            }
 
             // A TFR's film is a drawing layer's NAME for its generator, and empty states nothing, so a part stating no film
             // hashes to the cell it always did.
@@ -1783,7 +1791,7 @@ public static partial class SchematicLayoutPlanner
         // A planned passive's Footprint sets its site span (Gap) here exactly as extraction sets it for the run
         // (MicrostripSubstrateInjection.ApplySiteFootprint), so the copper's gap is the land pattern's span and LVS compares
         // equal Gaps on both sides.
-        if (MicrostripSubstrateInjection.HasSiteFootprint(comp.Symbol))
+        if (MicrostripSubstrateInjection.SetsSiteSpan(comp.Symbol))
         {
             string? siteFootprint = comp.Parameters.FirstOrDefault(p => ArtworkParameters.IsArtworkOnly(p.Name))?.Expression;
             if (MicrostripSubstrateInjection.SiteSpanMeters(siteFootprint, schematicDir, technology, out string? siteRefusal) is { } span)

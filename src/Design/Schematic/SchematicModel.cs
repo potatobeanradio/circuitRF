@@ -761,6 +761,11 @@ public enum SymbolKind
     /// apart on one Side; Coupled models a meander's legs as coupled lines). The width and every length are derived
     /// (DelayLinePlan). Two pins, 1 the start and 2 the end. Appended so no existing kind's ordinal moves.</summary>
     Mdly,
+    /// <summary>Coupled array on microstrip (engine "MCLA", CoupledArrayPlan): N strips over one N-line section, each
+    /// end open, shorted, loaded by a capacitor, joined to its neighbour or a port — interdigital, combline,
+    /// pseudo-interdigital or a custom pattern, tapped or coupled-fed. Pins 1 and 2, then E1, E2, … on the shorted and
+    /// loaded ends, for ordinary vias and capacitors to ground. Appended so no existing kind's ordinal moves.</summary>
+    Mcla,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

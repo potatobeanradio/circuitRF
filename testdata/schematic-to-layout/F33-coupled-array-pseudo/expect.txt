@@ -1,0 +1,8 @@
+# The coupled array (MCLA) as a pseudo-interdigital filter with the coupled feed: four strips folded into two interleaved
+# hairpins, the first and third joined by a wall beyond the far ends, the second and fourth beyond the near ends, between
+# two feed strips. No vias, so the only pins are the ports.
+Info CLA1 added
+Info P1 port 1 placed at CLA1 pin 1
+Info P2 port 2 placed at CLA1 pin 2
+port P1 1
+port P2 2
