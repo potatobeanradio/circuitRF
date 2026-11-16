@@ -1207,6 +1207,7 @@ item     := kind "(" field { "," field } ")"
 field    := name "=" value                any order; names and words in any case; whitespace ignored
 line(W, L)   gap(S)   taper(W1, W2, L)   stub(W, L, end=open|short, side=up|down|both)
 stub(W, L, end=radial|butterfly, Ro, angle, side)   site(role=R|L|C, value, type=series|shunt, side=up|down)
+site(role=R|L|C, value, type=parallel)
 ```
 
 A length is a number in metres or a number with a length unit glued on (`mm`, `um`, `nm`, `cm`, `mil`, `in`); `m` alone
@@ -1223,7 +1224,10 @@ new `end` words with two new fields that only they take (`Ro`, `angle`, 60° unl
 site's value is a number with its role's unit or a bare SI prefix (`3.3pF`, `12nH`, `4.7kOhm`, `2.2p`). A stub that is
 not radial refuses `Ro` and `angle`, and a series site refuses `side`, so no list reads one way and is drawn another.
 Every list written before them parses, builds and draws as it did: `LadderPlanTests`, `LadderSParamTests` and the F24
-fixture are unchanged.
+fixture are unchanged. A site of `type=parallel` came the same way, for the lumped filter synthesis
+(docs/design/filter-synthesis.md §1): one more part on the pins of the site before it, in parallel with that site's part
+(a tank in the line, or a resonator to ground), with no copper or pins of its own, and refused with no site before it
+(`device.ladder.parallel-alone`).
 
 **The plan.** Every section is an existing part, with no model or drawer code of its own:
 
