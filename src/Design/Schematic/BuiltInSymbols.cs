@@ -208,9 +208,9 @@ public static class BuiltInSymbols
     /// </summary>
     public static Symbol Primitives(SymbolKind kind, int portCount)
     {
-        // A lumped realisation or a resistive pad: its layout's box, cached per layout (SymbolPortDefs.Lumped).
-        if (SymbolPortDefs.Lumped(kind, portCount) is { } lumped)
-            return _lumpedCache.GetOrAdd(lumped, t => BuildLumped(kind, t));
+        // A resistive pad: its form's box by its pin count (SymbolPortDefs.Lumped). A lumped MWPD, MBLC, MRRC or MCBL is
+        // drawn per instance (EditableComponent.InstanceGlyph), since its count alone does not name it.
+        if (SymbolPortDefs.Lumped(kind, portCount) is { } lumped) return PrimitivesForLumped(kind, lumped);
         switch (kind)
         {
             case SymbolKind.ZPort:
@@ -504,11 +504,13 @@ public static class BuiltInSymbols
 
     // ── Sym helper ────────────────────────────────────────────────────────────
 
-    private static Symbol Sym(IReadOnlyList<SymbolPrimitive> prims, SymbolKind kind, int portCount = 0)
+    private static Symbol Sym(IReadOnlyList<SymbolPrimitive> prims, SymbolKind kind, int portCount = 0,
+                              (string Name, float LocalX, float LocalY)[]? defs = null)
     {
-        var portDefs = portCount > 0
-            ? SymbolPortDefs.For(kind, portCount)
-            : SymbolPortDefs.For(kind);
+        var portDefs = defs
+            ?? (portCount > 0
+                ? SymbolPortDefs.For(kind, portCount)
+                : SymbolPortDefs.For(kind));
         var pins = portDefs
             .Select((d, i) => new SymbolPin(d.LocalX, d.LocalY, i, d.Name))
             .ToList();
@@ -2809,6 +2811,11 @@ public static class BuiltInSymbols
     // A lumped realisation or a resistive pad — a box: a lead from each pin in to it, each named, and the layout's word in
     // the middle. The series sites' pin pairs are along the top, so each gap between a pair's two leads is where the part
     // goes; the pins to ground are along the bottom, the ports at the sides (SymbolPortDefs.LumpedPins).
+    /// <summary>A lumped layout's box for <paramref name="kind"/>, cached per layout; its pins are the layout's own
+    /// (<see cref="SymbolPortDefs.LumpedPins"/>), never a pin count's.</summary>
+    public static Symbol PrimitivesForLumped(SymbolKind kind, CircuitRF.Core.Devices.Microstrip.LumpedTopology t)
+        => _lumpedCache.GetOrAdd(t, x => BuildLumped(kind, x));
+
     private static Symbol BuildLumped(SymbolKind kind, CircuitRF.Core.Devices.Microstrip.LumpedTopology t)
     {
         var (bx, by, _, _, _, _) = SymbolPortDefs.LumpedBox(t);
@@ -2823,7 +2830,7 @@ public static class BuiltInSymbols
                     : Txt(name, ex + (x < 0 ? 15 : -15), ey, fontSize: MixerPortFontSize,
                           align: x < 0 ? SymbolTextAlign.Left : SymbolTextAlign.Right));
         }
-        return Sym(prims, kind, t.Pins.Count);
+        return Sym(prims, kind, defs: SymbolPortDefs.LumpedPins(t));
     }
 
     // MBLC — the branch-line coupler as it is drawn on the board: two through lines joined by two shunt arms, a junction

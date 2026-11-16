@@ -25,25 +25,103 @@ public sealed class LumpedPassiveTests : IDisposable
         try { Directory.Delete(_scratch, recursive: true); } catch { /* best effort */ }
     }
 
-    /// <summary>Every layout's symbol pins are its plan's, in order, on the grid and apart; the bridged-T and the two
-    /// splitters share one list, so a pad's pin count names it; the distributed parts' counts are as they were.</summary>
+    /// <summary>A placed part of <paramref name="kind"/> with its default rows and <paramref name="rows"/> on top.</summary>
+    private static EditableComponent Part(SymbolKind kind, string name, double x, params (string Name, string Value)[] rows)
+    {
+        var part = new EditableComponent { InstanceName = name, Symbol = kind, X = x };
+        foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, 5))
+            part.Parameters.Add(new EditableParameter { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, Dimension = dp.Dimension });
+        foreach (var (n, v) in rows)
+        {
+            if (part.Parameters.FirstOrDefault(q => q.Name == n) is { } row) row.Expression = v;
+            else part.Parameters.Add(new EditableParameter { Name = n, Expression = v });
+        }
+        return part;
+    }
+
+    /// <summary>The words that make a part of <paramref name="t"/>'s kind draw <paramref name="t"/>.</summary>
+    private static (string, string)[] WordsFor(LumpedTopology t)
+        => t.Part == "MRPAD"
+            ? [("Form", Enum.GetValues<ResistivePadForm>().First(f => LumpedPlan.PadTopology(f) == t).ToString())]
+            : t.Part == "MWPD" ? [("Realization", "Lumped"), ("Arm", t == LumpedPlan.WilkinsonTee ? "Tee" : "Pi")]
+            : [("Realization", "Lumped")];
+
+    /// <summary>Every layout, placed: its part's own words name it, and its pins, its symbol's pins and its drawn ports are
+    /// the plan's, in order, on the grid and apart. A pin count alone names a pad's layout (the bridged-T and the two
+    /// splitters share one list) but never another part's, which is always the distributed one.</summary>
     [Fact]
     public void EveryLumpedSymbolHasItsPlansPins()
     {
         foreach (var t in LumpedPlan.All)
         {
             Assert.True(ComponentTypeRegistry.TryParseCode(t.Part, out var kind, out _), t.Part);
-            var defs = SymbolPortDefs.For(kind, t.Pins.Count);
+            var part = Part(kind, "X1", 0.0, WordsFor(t));
+            Assert.Same(t, part.LumpedLayout());
+            Assert.Equal(t.Pins.Count, part.PortCount);
+            var defs = SymbolPortDefs.For(part);
             Assert.Equal(t.Pins, defs.Select(d => d.Name));
             Assert.All(defs, d => Assert.True(d.LocalX % 100 == 0 && d.LocalY % 100 == 0, $"{t.Part} {d.Name}"));
             Assert.Equal(defs.Length, defs.Select(d => (d.LocalX, d.LocalY)).Distinct().Count());
-            Assert.Equal(defs.Length, BuiltInSymbols.Primitives(kind, t.Pins.Count).Pins.Count);
+            var drawn = part.ToRenderComponent();
+            Assert.Equal(t.Pins, drawn.InstanceSymbol!.Pins.Select(q => q.Name));
+            Assert.Equal(t.Pins, drawn.Ports.Select(q => q.Name));
+            if (kind == SymbolKind.Mrpad) Assert.Equal(defs, SymbolPortDefs.For(kind, t.Pins.Count));
+            else Assert.DoesNotContain(SymbolPortDefs.For(kind, t.Pins.Count), d => d.Name.StartsWith('L'));
         }
         var bridged = SymbolPortDefs.LumpedPins(LumpedPlan.PadBridgedT);
         Assert.Equal(bridged, SymbolPortDefs.LumpedPins(LumpedPlan.PadWye));
         Assert.Equal(bridged, SymbolPortDefs.LumpedPins(LumpedPlan.PadDelta));
-        Assert.Equal([5, 7, 9, 4, 5], new[] { (SymbolKind.Mwpd, 5), (SymbolKind.Mwpd, 7), (SymbolKind.Mwpd, 9), (SymbolKind.Mblc, 4),
-            (SymbolKind.Mcbl, 5) }.Select(x => SymbolPortDefs.For(x.Item1, x.Item2).Length));
+    }
+
+    /// <summary>A six-section ring divider and a lumped T divider side by side: both have fifteen pins, 3 + 2·6, and each
+    /// keeps its own. The ring's pins are its sections' resistor pairs and its symbol is the ring, with no per-instance glyph;
+    /// the T's are its layout's on its box. Each one's generated cell meets its own symbol's pins, so Update Layout makes both,
+    /// and the schematic binds each one's nets in its own order.</summary>
+    [Fact]
+    public void ASixSectionRingAndALumpedTeeKeepTheirOwnPins()
+    {
+        var ring = Part(SymbolKind.Mwpd, "WPD1", 0.0, ("N", "6"));
+        var tee = Part(SymbolKind.Mwpd, "WPD2", 4000.0, ("Realization", "Lumped"), ("Arm", "Tee"));
+        Assert.Equal((15, 15), (ring.PortCount, tee.PortCount));
+
+        Assert.Null(ring.LumpedLayout());
+        Assert.Equal(WilkinsonPlan.PinsFor(6), SymbolPortDefs.For(ring).Select(d => d.Name));
+        var ringDrawn = ring.ToRenderComponent();
+        Assert.Null(ringDrawn.InstanceSymbol);
+        Assert.Equal(WilkinsonPlan.PinsFor(6), ringDrawn.Ports.Select(q => q.Name));
+        Assert.Equal(SymbolPortDefs.For(ring).Select(d => (d.LocalX, d.LocalY)),
+            BuiltInSymbols.Primitives(SymbolKind.Mwpd, 15).Pins.Select(q => ((float)q.LocalX, (float)q.LocalY)));
+
+        Assert.Same(LumpedPlan.WilkinsonTee, tee.LumpedLayout());
+        Assert.Equal(LumpedPlan.WilkinsonTee.Pins, SymbolPortDefs.For(tee).Select(d => d.Name));
+        var teeDrawn = tee.ToRenderComponent();
+        Assert.Same(BuiltInSymbols.PrimitivesForLumped(SymbolKind.Mwpd, LumpedPlan.WilkinsonTee), teeDrawn.InstanceSymbol);
+        Assert.Equal(LumpedPlan.WilkinsonTee.Pins, teeDrawn.Ports.Select(q => q.Name));
+        Assert.NotEqual(ring.GetPortWorldCoord(14).X - ring.X, tee.GetPortWorldCoord(14).X - tee.X);
+
+        Directory.CreateDirectory(_scratch);
+        foreach (var (rows, pins) in new[]
+        {
+            (new Dictionary<string, Design.Layout.PCells.PCellValue> { ["N"] = 6.0 }, WilkinsonPlan.PinsFor(6)),
+            (new Dictionary<string, Design.Layout.PCells.PCellValue>
+            {
+                ["Realization"] = Design.Layout.PCells.PCellValue.Text("Lumped"), ["Arm"] = Design.Layout.PCells.PCellValue.Text("Tee"),
+            }, LumpedPlan.WilkinsonTee.Pins),
+        })
+        {
+            string cell = Design.Layout.PCells.GeneratedCellStore.GetOrCreate(_scratch, "MWPD", rows, null, null,
+                Design.Layout.PCells.PCellLayerSelection.Default, out _);
+            Assert.True(Directory.Exists(cell));
+            Assert.Equal(pins, Design.Layout.PCells.PassivePlanPCells.GenerateWilkinson(rows, null,
+                Design.Layout.PCells.PCellLayerSelection.Default).Pins.Select(q => q.Name));
+        }
+
+        var model = new SchematicEditModel();
+        model.Components.Add(ring);
+        model.Components.Add(tee);
+        var extracted = SchematicCircuit.Extract(model, "tb").TestBench.Instances;
+        Assert.Equal((15, 15), (extracted.Single(i => i.InstanceName == "WPD1").NetBindings.Count,
+                                extracted.Single(i => i.InstanceName == "WPD2").NetBindings.Count));
     }
 
     /// <summary>The fixture with its site parts taken off: Place Site Parts puts back one part of the plan's value on every

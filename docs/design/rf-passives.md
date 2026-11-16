@@ -1159,13 +1159,17 @@ What it needed beyond the shared pieces, and why:
   part to ground: four arms. Two tees would double the interconnect there, so the MCROSS the library already has is one
   record, one case in `MicrostripPlanModel.Build` (`MicrostripCrossModel` with its arms) and one in
   `PassivePlanPCells.Draw` (`MCrossPCell`). Its pose is MCROSS's own origin, the junction's centre.
-- **Pins that follow a word.** The pin count follows the layout, which follows `Realization`, `Arm` and `Form`, words,
-  where MWPD's N is a number. `EditableComponent.LumpedLayout` reads them and `PortCount` answers the layout's count;
-  `SymbolPortDefs.For` and `BuiltInSymbols.Primitives` answer a count that is a lumped layout's (`LumpedPlan.ForPins`) with
-  that layout's pins, and every other count as before. The symbol is a box: each series site's pin pair on top, 400 apart,
-  a resistor's own span, so Place Site Parts lays the part straight on both; the `G` pins below; the ports at the sides.
-  Because the count must name one list, the counts differ from the distributed parts' (MWPD's lumped 12 and 15 against
-  3 + 2·N; MBLC 16, MRRC 14, MCBL 9), and the pad's bridged-T and its two splitters, nine pins each, share one list.
+- **Pins that follow a word.** The pins follow the layout, which follows `Realization`, `Arm` and `Form`, words, where
+  MWPD's N is a number, and a count does not name a layout: MWPD's lumped T and its six-section ring both have fifteen
+  pins, 3 + 2·6. So the part's own words are read wherever the part is at hand. `LumpedPlan.LayoutFor` reads them from any
+  source: `EditableComponent.LumpedLayout` from its rows, for `PortCount`, `SymbolPortDefs.For(EditableComponent)` (which
+  extraction, the netlist view, Place Site Parts and every port position ask) and the per-instance glyph
+  (`InstanceGlyph`, which the drawing, the paste and drag ghosts and the hit box read); the generated cell store from the
+  cell's own parameters, to check its pins against the symbol's. A count alone (`SymbolPortDefs.For(kind, n)`,
+  `BuiltInSymbols.Primitives`) is always the distributed part's, and only the pad, which has no distributed form, is named
+  by its count (`LumpedPlan.PadForPins`); its bridged-T and two splitters, nine pins each, share one list. The symbol is a
+  box: each series site's pin pair on top, 400 apart, a resistor's own span, so Place Site Parts lays the part straight on
+  both; the `G` pins below; the ports at the sides.
 - **Words kept as words.** `Realization`, `Arm` and `Form` go through the elaborator, Update Layout and LVS as `Corner`
   does: text, compared as a string.
 - **A span on the hybrids.** MBLC and MRRC had no `Gap`; they take one for their lumped sites, and they and MRPAD join

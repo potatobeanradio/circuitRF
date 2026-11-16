@@ -128,10 +128,36 @@ public static class LumpedPlan
     public static readonly IReadOnlyList<LumpedTopology> All =
         [WilkinsonPi, WilkinsonTee, BranchLineLayout, RatRaceLayout, LatticeBalunLayout, PadPi, PadT, PadBridgedT, PadWye, PadDelta];
 
-    /// <summary>The layout of <paramref name="part"/> (its engine token) with <paramref name="pins"/> pins, or null when it has
-    /// none: how a variadic symbol tells a lumped realisation from its distributed one, whose pin counts differ.</summary>
-    public static LumpedTopology? ForPins(string part, int pins)
-        => All.FirstOrDefault(t => t.Part.Equals(part, StringComparison.OrdinalIgnoreCase) && t.Pins.Count == pins);
+    /// <summary>
+    /// The layout a part draws, from its own words (<paramref name="word"/> answers a parameter's text, or null): MWPD, MBLC,
+    /// MRRC or MCBL with <c>Realization = Lumped</c> (MWPD's π or T by <c>Arm</c>), a resistive pad by its <c>Form</c>; null
+    /// for anything else. What its pins and its symbol follow wherever its parameters are at hand, a placed part's rows or a
+    /// generated cell's parameters: its pin count alone does not name it, since MWPD's T and its six-section ring both have
+    /// fifteen pins (3 + 2·6).
+    /// </summary>
+    public static LumpedTopology? LayoutFor(string part, Func<string, string?> word)
+    {
+        bool Is<T>(string name, T value) where T : struct, Enum
+            => Enum.TryParse(word(name)?.Trim(), ignoreCase: true, out T v) && v.Equals(value);
+        if (part.Equals("MRPAD", StringComparison.OrdinalIgnoreCase))
+            return PadTopology(Enum.TryParse(word("Form")?.Trim(), ignoreCase: true, out ResistivePadForm form) && Enum.IsDefined(form)
+                ? form : ResistivePadForm.Pi);
+        if (!Is("Realization", PlanRealization.Lumped)) return null;
+        return part.ToUpperInvariant() switch
+        {
+            "MWPD" => Is("Arm", LumpedArm.Tee) ? WilkinsonTee : WilkinsonPi,
+            "MBLC" => BranchLineLayout,
+            "MRRC" => RatRaceLayout,
+            "MCBL" => LatticeBalunLayout,
+            _ => null,
+        };
+    }
+
+    /// <summary>The resistive pad's layout with <paramref name="pins"/> pins, the π's for any count that is no form's. Unlike
+    /// the four spec-driven parts' (<see cref="LayoutFor"/>), a pad's pin count does name its layout: it has no distributed
+    /// form whose count could be the same, and the bridged-T and the splitters, nine pins each, share one pin list.</summary>
+    public static LumpedTopology PadForPins(int pins)
+        => All.FirstOrDefault(t => t.Part == "MRPAD" && t.Pins.Count == pins) ?? PadPi;
 
     /// <summary>The resistive pad's layout for <paramref name="form"/>.</summary>
     public static LumpedTopology PadTopology(ResistivePadForm form) => form switch

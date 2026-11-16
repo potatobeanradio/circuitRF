@@ -811,7 +811,7 @@ public static class NetlistSchematic
     }
 
     private static (float X, float Y)[] LocalPins(EditableComponent comp)
-        => [.. (comp.IsSnpBox ? comp.GetEffectiveSnpPortDefs() : SymbolPortDefs.For(comp.Symbol, comp.PortCount))
+        => [.. (comp.IsSnpBox ? comp.GetEffectiveSnpPortDefs() : SymbolPortDefs.For(comp))
                .Select(p => (p.LocalX, p.LocalY))];
 
     /// <summary>

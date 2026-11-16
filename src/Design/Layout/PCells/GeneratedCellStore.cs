@@ -140,7 +140,7 @@ public static class GeneratedCellStore
         // until now nothing checked it. A generator that disagrees produced a cell that silently could
         // not be compared, and the mismatch surfaced — if at all — as wrong connectivity much later.
         var terminals = TerminalMap.FromGeneratorPins(
-            [.. result.Pins.Select(p => p.Name)], SymbolPinNamesOf(generatorId, result.Pins.Count), out string? refusal);
+            [.. result.Pins.Select(p => p.Name)], SymbolPinNamesOf(generatorId, parameters, result.Pins.Count), out string? refusal);
 
         if (refusal is not null)
             throw new InvalidOperationException(
@@ -388,11 +388,15 @@ public static class GeneratedCellStore
     /// the port order.</para>
     /// </summary>
     /// <summary>The registered symbol's pin names, asked at the generated cell's own pin count: a fixed symbol ignores
-    /// the count, and one whose pins follow a parameter (MWPD's N) answers for the variant that was generated.</summary>
-    private static IReadOnlyList<string> SymbolPinNamesOf(string generatorId, int pinCount)
-        => Lvs.DeviceTypes.TryGetSymbolKind(generatorId, out var kind)
-            ? [.. SymbolPortDefs.For(kind, pinCount).Select(p => p.Name)]
-            : [];
+    /// the count, and one whose pins follow a parameter (MWPD's N) answers for the variant that was generated. A lumped
+    /// realisation's are its layout's, read from the cell's own parameters (<see cref="CircuitRF.Core.Devices.Microstrip.LumpedPlan.LayoutFor"/>), since its
+    /// count alone does not name it.</summary>
+    private static IReadOnlyList<string> SymbolPinNamesOf(string generatorId, IReadOnlyDictionary<string, PCellValue> parameters,
+                                                          int pinCount)
+        => !Lvs.DeviceTypes.TryGetSymbolKind(generatorId, out var kind) ? []
+         : CircuitRF.Core.Devices.Microstrip.LumpedPlan.LayoutFor(generatorId, name => parameters.Text(name)) is { } lumped
+            ? lumped.Pins
+         : [.. SymbolPortDefs.For(kind, pinCount).Select(p => p.Name)];
 
     /// <summary>
     /// brief-L5-followups-2.md §4.2/R-L5g-6: records (or refreshes) <paramref name="view"/>'s own
