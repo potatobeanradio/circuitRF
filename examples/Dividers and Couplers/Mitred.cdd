@@ -1,6 +1,6 @@
 {
   "FormatVersion": 2,
-  "SelectedDataSource": "Mitred.npy",
+  "SelectedDataSource": "Mitred Bench.npy",
   "SourceAliases": {},
   "Tabs": [
     {
@@ -49,7 +49,7 @@
           "SurfaceShowLegend": true,
           "Traces": [
             {
-              "SourcePath": "Mitred.npy",
+              "SourcePath": "Mitred Bench.npy",
               "Row": 0,
               "Col": 0,
               "MatrixType": "S",
@@ -120,7 +120,7 @@
               "SummaryColumn": null
             },
             {
-              "SourcePath": "Mitred.npy",
+              "SourcePath": "Mitred Bench.npy",
               "Row": 0,
               "Col": 0,
               "MatrixType": "S",
@@ -191,7 +191,7 @@
               "SummaryColumn": null
             },
             {
-              "SourcePath": "Mitred.npy",
+              "SourcePath": "Mitred Bench.npy",
               "Row": 0,
               "Col": 0,
               "MatrixType": "S",
@@ -253,6 +253,77 @@
                 "MarkerEnabled": false,
                 "MarkerSize": 3,
                 "MarkerColorIndex": 6,
+                "MarkerType": "Circle"
+              },
+              "Markers": [],
+              "ExcludeFromAutoscale": false,
+              "WsProbe": null,
+              "ContourTrace": null,
+              "SummaryColumn": null
+            },
+            {
+              "SourcePath": "Mitred Bench.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "PassivityWholeNetwork": true,
+              "PassiveExtraction": "ShuntThrough",
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "MatrixFormat": "MA",
+              "ColumnWidth": 115,
+              "XColumnWidth": 0,
+              "FamilyColumnWidths": {},
+              "FormatString": "F",
+              "MaximumFractionDigits": 3,
+              "CubeName": "Equations",
+              "CubeSlice": [
+                {
+                  "AxisName": "freq",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "i",
+                  "Role": "PinToIndex",
+                  "Index": 1,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "j",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "dB20",
+              "MirrorPatternAngle": false,
+              "PatternWholePlane": false,
+              "ReferenceInputPowerDbmOverride": null,
+              "Expression": null,
+              "XSpec": null,
+              "XSourcePath": null,
+              "Label": "Equations model",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 11,
+                "LineType": "Dashed",
+                "MarkerEnabled": false,
+                "MarkerSize": 3,
+                "MarkerColorIndex": 11,
                 "MarkerType": "Circle"
               },
               "Markers": [],
@@ -319,7 +390,7 @@
           "SurfaceShowLegend": true,
           "Traces": [
             {
-              "SourcePath": "Mitred.npy",
+              "SourcePath": "Mitred Bench.npy",
               "Row": 0,
               "Col": 0,
               "MatrixType": "S",
@@ -390,7 +461,7 @@
               "SummaryColumn": null
             },
             {
-              "SourcePath": "Mitred.npy",
+              "SourcePath": "Mitred Bench.npy",
               "Row": 0,
               "Col": 0,
               "MatrixType": "S",
@@ -461,7 +532,7 @@
               "SummaryColumn": null
             },
             {
-              "SourcePath": "Mitred.npy",
+              "SourcePath": "Mitred Bench.npy",
               "Row": 0,
               "Col": 0,
               "MatrixType": "S",
@@ -527,6 +598,77 @@
               },
               "Markers": [],
               "ExcludeFromAutoscale": false,
+              "WsProbe": null,
+              "ContourTrace": null,
+              "SummaryColumn": null
+            },
+            {
+              "SourcePath": "Mitred Bench.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 1,
+              "PassivityWholeNetwork": true,
+              "PassiveExtraction": "ShuntThrough",
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "MatrixFormat": "MA",
+              "ColumnWidth": 115,
+              "XColumnWidth": 0,
+              "FamilyColumnWidths": {},
+              "FormatString": "F",
+              "MaximumFractionDigits": 3,
+              "CubeName": "Equations",
+              "CubeSlice": [
+                {
+                  "AxisName": "freq",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "i",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "j",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "dB20",
+              "MirrorPatternAngle": false,
+              "PatternWholePlane": false,
+              "ReferenceInputPowerDbmOverride": null,
+              "Expression": null,
+              "XSpec": null,
+              "XSourcePath": null,
+              "Label": "Equations model",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 11,
+                "LineType": "Dashed",
+                "MarkerEnabled": false,
+                "MarkerSize": 3,
+                "MarkerColorIndex": 11,
+                "MarkerType": "Circle"
+              },
+              "Markers": [],
+              "ExcludeFromAutoscale": true,
               "WsProbe": null,
               "ContourTrace": null,
               "SummaryColumn": null
@@ -589,7 +731,7 @@
           "SurfaceShowLegend": true,
           "Traces": [
             {
-              "SourcePath": "Mitred.npy",
+              "SourcePath": "Mitred Bench.npy",
               "Row": 0,
               "Col": 0,
               "MatrixType": "S",
@@ -660,7 +802,7 @@
               "SummaryColumn": null
             },
             {
-              "SourcePath": "Mitred.npy",
+              "SourcePath": "Mitred Bench.npy",
               "Row": 0,
               "Col": 0,
               "MatrixType": "S",
@@ -731,7 +873,7 @@
               "SummaryColumn": null
             },
             {
-              "SourcePath": "Mitred.npy",
+              "SourcePath": "Mitred Bench.npy",
               "Row": 0,
               "Col": 0,
               "MatrixType": "S",
@@ -797,6 +939,77 @@
               },
               "Markers": [],
               "ExcludeFromAutoscale": false,
+              "WsProbe": null,
+              "ContourTrace": null,
+              "SummaryColumn": null
+            },
+            {
+              "SourcePath": "Mitred Bench.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 3,
+              "OutputPort": 2,
+              "PassivityWholeNetwork": true,
+              "PassiveExtraction": "ShuntThrough",
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "MatrixFormat": "MA",
+              "ColumnWidth": 115,
+              "XColumnWidth": 0,
+              "FamilyColumnWidths": {},
+              "FormatString": "F",
+              "MaximumFractionDigits": 3,
+              "CubeName": "Equations",
+              "CubeSlice": [
+                {
+                  "AxisName": "freq",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "i",
+                  "Role": "PinToIndex",
+                  "Index": 1,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "j",
+                  "Role": "PinToIndex",
+                  "Index": 2,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "dB20",
+              "MirrorPatternAngle": false,
+              "PatternWholePlane": false,
+              "ReferenceInputPowerDbmOverride": null,
+              "Expression": null,
+              "XSpec": null,
+              "XSourcePath": null,
+              "Label": "Equations model",
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 11,
+                "LineType": "Dashed",
+                "MarkerEnabled": false,
+                "MarkerSize": 3,
+                "MarkerColorIndex": 11,
+                "MarkerType": "Circle"
+              },
+              "Markers": [],
+              "ExcludeFromAutoscale": true,
               "WsProbe": null,
               "ContourTrace": null,
               "SummaryColumn": null

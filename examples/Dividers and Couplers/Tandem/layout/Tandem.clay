@@ -26,7 +26,9 @@
 		"TL3": {
 			"W": 0.000812586,
 			"L": 0.005
-		}
+		},
+		"R1": {},
+		"R2": {}
 	},
 	"GeneratedPlacements": {
 		"CLC1": {
@@ -43,25 +45,37 @@
 			"Text": "1"
 		},
 		"P2": {
-			"X": 1597678,
+			"X": 1599964,
 			"Y": 0,
 			"RotationDeg": 0,
 			"Mirror": false,
 			"Text": "2"
 		},
 		"P3": {
-			"X": 41033034,
+			"X": 41037606,
 			"Y": -3476458,
 			"RotationDeg": 180,
 			"Mirror": false,
 			"Text": "3"
 		},
 		"P4": {
-			"X": 39435356,
+			"X": 39437642,
 			"Y": 0,
 			"RotationDeg": 180,
 			"Mirror": false,
 			"Text": "4"
+		},
+		"R1": {
+			"X": 32406177,
+			"Y": 0,
+			"RotationDeg": 270,
+			"Mirror": false
+		},
+		"R2": {
+			"X": 8631429,
+			"Y": 0,
+			"RotationDeg": 270,
+			"Mirror": false
 		},
 		"TL1": {
 			"X": 0,
@@ -71,26 +85,26 @@
 			"ChainAnchor": true
 		},
 		"TL2": {
-			"X": 1597678,
+			"X": 1599964,
 			"Y": 0,
 			"RotationDeg": 0,
 			"Mirror": false
 		},
 		"TL3": {
-			"X": 36033034,
+			"X": 36037606,
 			"Y": -3476458,
 			"RotationDeg": 0,
 			"Mirror": false
 		},
 		"TL4": {
-			"X": 34435356,
+			"X": 34437642,
 			"Y": 0,
 			"RotationDeg": 0,
 			"Mirror": false
 		}
 	},
 	"PCellSnapshots": {
-		"MCLC_bc764d0e28d7": {
+		"MCLC_512b9eb98373": {
 			"GeneratorId": "MCLC",
 			"Parameters": {
 				"Coupling": 3,
@@ -106,6 +120,11 @@
 				"W": 0.000812586,
 				"L": 0.005
 			},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		},
+		"smt-1206@L_455a62fbc0d5": {
+			"GeneratorId": "smt:1206@L",
+			"Parameters": {},
 			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
 		}
 	},
@@ -132,7 +151,7 @@
 		},
 		{
 			"$type": "Label",
-			"X": 1597678,
+			"X": 1599964,
 			"Y": 0,
 			"Text": "2",
 			"Height": 406293,
@@ -152,7 +171,7 @@
 		},
 		{
 			"$type": "Label",
-			"X": 41033034,
+			"X": 41037606,
 			"Y": -3476458,
 			"Text": "3",
 			"Height": 406293,
@@ -172,7 +191,7 @@
 		},
 		{
 			"$type": "Label",
-			"X": 39435356,
+			"X": 39437642,
 			"Y": 0,
 			"Text": "4",
 			"Height": 406293,
@@ -193,10 +212,10 @@
 		{
 			"$type": "Poly",
 			"Xy": [
-				43573034, 6422751,
+				43577606, 6422751,
 				-2540000, 6422751,
 				-2540000, -6422751,
-				43573034, -6422751
+				43577606, -6422751
 			],
 			"Layer": {
 				"Layer": 2,
@@ -207,7 +226,7 @@
 	],
 	"Instances": [
 		{
-			"CellRef": "../../.generated-cells/MCLC_bc764d0e28d7",
+			"CellRef": "../../.generated-cells/MCLC_512b9eb98373",
 			"X": 5000000,
 			"Y": 3476458,
 			"Rot": "R0",
@@ -246,7 +265,7 @@
 		},
 		{
 			"CellRef": "../../.generated-cells/MLIN_8e7955e0c07a",
-			"X": 1597678,
+			"X": 1599964,
 			"Y": 0,
 			"Rot": "R0",
 			"MirrorX": false,
@@ -265,7 +284,7 @@
 		},
 		{
 			"CellRef": "../../.generated-cells/MLIN_8e7955e0c07a",
-			"X": 34435356,
+			"X": 34437642,
 			"Y": 0,
 			"Rot": "R0",
 			"MirrorX": false,
@@ -284,7 +303,7 @@
 		},
 		{
 			"CellRef": "../../.generated-cells/MLIN_8e7955e0c07a",
-			"X": 36033034,
+			"X": 36037606,
 			"Y": -3476458,
 			"Rot": "R0",
 			"MirrorX": false,
@@ -298,6 +317,44 @@
 				"SchematicDeg": 0,
 				"SchematicMirror": false,
 				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/smt-1206@L_455a62fbc0d5",
+			"X": 32406177,
+			"Y": 0,
+			"Rot": "R270",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "R1",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 270,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/smt-1206@L_455a62fbc0d5",
+			"X": 8631429,
+			"Y": 0,
+			"Rot": "R270",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "R2",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 270,
 				"LayoutMirror": false
 			}
 		}

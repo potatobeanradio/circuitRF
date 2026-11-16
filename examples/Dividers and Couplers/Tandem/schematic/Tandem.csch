@@ -381,8 +381,8 @@
       "ShowInstanceName": false
     },
     {
-      "InstanceName": "W1",
-      "Symbol": "Inductor",
+      "InstanceName": "R1",
+      "Symbol": "Resistor",
       "X": 1200,
       "Y": -100,
       "Rotation": "R0",
@@ -390,17 +390,24 @@
       "Disable": "None",
       "Parameters": [
         {
-          "Name": "L",
-          "Expression": "0.5",
-          "Unit": "nH",
+          "Name": "R",
+          "Expression": "0.001",
+          "Unit": "Ohm",
           "ShowOnSchematic": true,
-          "Dimension": "Inductance"
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Footprint",
+          "Expression": "smt:1206@L",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
         }
       ]
     },
     {
-      "InstanceName": "W2",
-      "Symbol": "Inductor",
+      "InstanceName": "R2",
+      "Symbol": "Resistor",
       "X": 800,
       "Y": 100,
       "Rotation": "R0",
@@ -408,11 +415,18 @@
       "Disable": "None",
       "Parameters": [
         {
-          "Name": "L",
-          "Expression": "0.5",
-          "Unit": "nH",
+          "Name": "R",
+          "Expression": "0.001",
+          "Unit": "Ohm",
           "ShowOnSchematic": true,
-          "Dimension": "Inductance"
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Footprint",
+          "Expression": "smt:1206@L",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
         }
       ]
     }

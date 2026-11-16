@@ -177,11 +177,11 @@
               "Properties": {
                 "LineEnabled": true,
                 "LineWidth": 2,
-                "LineColorIndex": 6,
+                "LineColorIndex": 11,
                 "LineType": "Dashed",
                 "MarkerEnabled": false,
                 "MarkerSize": 3,
-                "MarkerColorIndex": 6,
+                "MarkerColorIndex": 11,
                 "MarkerType": "Circle"
               },
               "Markers": [],
@@ -447,11 +447,11 @@
               "Properties": {
                 "LineEnabled": true,
                 "LineWidth": 2,
-                "LineColorIndex": 6,
+                "LineColorIndex": 11,
                 "LineType": "Dashed",
                 "MarkerEnabled": false,
                 "MarkerSize": 3,
-                "MarkerColorIndex": 6,
+                "MarkerColorIndex": 11,
                 "MarkerType": "Circle"
               },
               "Markers": [],
@@ -717,15 +717,15 @@
               "Properties": {
                 "LineEnabled": true,
                 "LineWidth": 2,
-                "LineColorIndex": 6,
+                "LineColorIndex": 11,
                 "LineType": "Dashed",
                 "MarkerEnabled": false,
                 "MarkerSize": 3,
-                "MarkerColorIndex": 6,
+                "MarkerColorIndex": 11,
                 "MarkerType": "Circle"
               },
               "Markers": [],
-              "ExcludeFromAutoscale": false,
+              "ExcludeFromAutoscale": true,
               "WsProbe": null,
               "ContourTrace": null,
               "SummaryColumn": null
@@ -955,11 +955,11 @@
               "Properties": {
                 "LineEnabled": true,
                 "LineWidth": 2,
-                "LineColorIndex": 6,
+                "LineColorIndex": 11,
                 "LineType": "Dashed",
                 "MarkerEnabled": false,
                 "MarkerSize": 3,
-                "MarkerColorIndex": 6,
+                "MarkerColorIndex": 11,
                 "MarkerType": "Circle"
               },
               "Markers": [],

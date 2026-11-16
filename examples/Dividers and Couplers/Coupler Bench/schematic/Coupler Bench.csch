@@ -1022,8 +1022,506 @@
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
+        },
+        {
+          "Name": "Equations",
+          "Expression": "SP1.S(17:20, 17:20)   ; the equations model: ideal lines of the closed-form impedances and lengths, and the feeds as ideal lines",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
         }
       ]
+    },
+    {
+      "InstanceName": "P20",
+      "Symbol": "Term",
+      "X": 3200,
+      "Y": 12200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "20",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "P19",
+      "Symbol": "Term",
+      "X": 2800,
+      "Y": 13400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "19",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "P18",
+      "Symbol": "Term",
+      "X": 6000,
+      "Y": 6300,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "18",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "P17",
+      "Symbol": "Term",
+      "X": 0,
+      "Y": 6300,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "17",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "ECL1",
+      "Symbol": "CLine",
+      "X": 3000,
+      "Y": 5900,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Ze",
+          "Expression": "69.3713",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Zo",
+          "Expression": "36.038",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "E",
+          "Expression": "90",
+          "Unit": "deg",
+          "ShowOnSchematic": true,
+          "Dimension": "Angle"
+        },
+        {
+          "Name": "F",
+          "Expression": "2.4",
+          "Unit": "GHz",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        }
+      ]
+    },
+    {
+      "InstanceName": "ETL2",
+      "Symbol": "Tline",
+      "X": 1800,
+      "Y": 5800,
+      "Rotation": "R180",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Z",
+          "Expression": "55.2795",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "E",
+          "Expression": "25.3259",
+          "Unit": "deg",
+          "ShowOnSchematic": true,
+          "Dimension": "Angle"
+        },
+        {
+          "Name": "F",
+          "Expression": "2.4",
+          "Unit": "GHz",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        }
+      ]
+    },
+    {
+      "InstanceName": "ETL3",
+      "Symbol": "Tline",
+      "X": 600,
+      "Y": 5800,
+      "Rotation": "R180",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Z",
+          "Expression": "55.2795",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "E",
+          "Expression": "24.2642",
+          "Unit": "deg",
+          "ShowOnSchematic": true,
+          "Dimension": "Angle"
+        },
+        {
+          "Name": "F",
+          "Expression": "2.4",
+          "Unit": "GHz",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        }
+      ]
+    },
+    {
+      "InstanceName": "ETL4",
+      "Symbol": "Tline",
+      "X": 4200,
+      "Y": 5800,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Z",
+          "Expression": "55.2795",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "E",
+          "Expression": "25.3259",
+          "Unit": "deg",
+          "ShowOnSchematic": true,
+          "Dimension": "Angle"
+        },
+        {
+          "Name": "F",
+          "Expression": "2.4",
+          "Unit": "GHz",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        }
+      ]
+    },
+    {
+      "InstanceName": "ETL5",
+      "Symbol": "Tline",
+      "X": 5400,
+      "Y": 5800,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Z",
+          "Expression": "55.2795",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "E",
+          "Expression": "24.2642",
+          "Unit": "deg",
+          "ShowOnSchematic": true,
+          "Dimension": "Angle"
+        },
+        {
+          "Name": "F",
+          "Expression": "2.4",
+          "Unit": "GHz",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        }
+      ]
+    },
+    {
+      "InstanceName": "ETL6",
+      "Symbol": "Tline",
+      "X": 2800,
+      "Y": 7400,
+      "Rotation": "R90",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Z",
+          "Expression": "55.2795",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "E",
+          "Expression": "25.3259",
+          "Unit": "deg",
+          "ShowOnSchematic": true,
+          "Dimension": "Angle"
+        },
+        {
+          "Name": "F",
+          "Expression": "2.4",
+          "Unit": "GHz",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          275,
+          -397
+        ]
+      ]
+    },
+    {
+      "InstanceName": "ETL7",
+      "Symbol": "Tline",
+      "X": 2800,
+      "Y": 8600,
+      "Rotation": "R90",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Z",
+          "Expression": "55.2795",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "E",
+          "Expression": "24.2642",
+          "Unit": "deg",
+          "ShowOnSchematic": true,
+          "Dimension": "Angle"
+        },
+        {
+          "Name": "F",
+          "Expression": "2.4",
+          "Unit": "GHz",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          275,
+          -397
+        ]
+      ]
+    },
+    {
+      "InstanceName": "ETL8",
+      "Symbol": "Tline",
+      "X": 3200,
+      "Y": 9800,
+      "Rotation": "R90",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Z",
+          "Expression": "55.2795",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "E",
+          "Expression": "25.3259",
+          "Unit": "deg",
+          "ShowOnSchematic": true,
+          "Dimension": "Angle"
+        },
+        {
+          "Name": "F",
+          "Expression": "2.4",
+          "Unit": "GHz",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          275,
+          -397
+        ]
+      ]
+    },
+    {
+      "InstanceName": "ETL9",
+      "Symbol": "Tline",
+      "X": 3200,
+      "Y": 11000,
+      "Rotation": "R90",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Z",
+          "Expression": "55.2795",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "E",
+          "Expression": "24.2642",
+          "Unit": "deg",
+          "ShowOnSchematic": true,
+          "Dimension": "Angle"
+        },
+        {
+          "Name": "F",
+          "Expression": "2.4",
+          "Unit": "GHz",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          275,
+          -397
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND17",
+      "Symbol": "Ground",
+      "X": 0,
+      "Y": 6500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND18",
+      "Symbol": "Ground",
+      "X": 6000,
+      "Y": 6500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND19",
+      "Symbol": "Ground",
+      "X": 3200,
+      "Y": 12400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND20",
+      "Symbol": "Ground",
+      "X": 2800,
+      "Y": 13600,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     }
   ],
   "Wires": [
@@ -1354,6 +1852,182 @@
           100
         ]
       ]
+    },
+    {
+      "Points": [
+        [
+          2000,
+          5800
+        ],
+        [
+          2800,
+          5800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          3200,
+          5800
+        ],
+        [
+          4000,
+          5800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2800,
+          6000
+        ],
+        [
+          2600,
+          6000
+        ],
+        [
+          2600,
+          7000
+        ],
+        [
+          2800,
+          7000
+        ],
+        [
+          2800,
+          7200
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          3200,
+          6000
+        ],
+        [
+          3600,
+          6000
+        ],
+        [
+          3600,
+          9400
+        ],
+        [
+          3200,
+          9400
+        ],
+        [
+          3200,
+          9600
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          400,
+          5800
+        ],
+        [
+          0,
+          5800
+        ],
+        [
+          0,
+          6100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          800,
+          5800
+        ],
+        [
+          1600,
+          5800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          5600,
+          5800
+        ],
+        [
+          6000,
+          5800
+        ],
+        [
+          6000,
+          6100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          4400,
+          5800
+        ],
+        [
+          5200,
+          5800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2800,
+          8800
+        ],
+        [
+          2800,
+          13200
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2800,
+          7600
+        ],
+        [
+          2800,
+          8400
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          3200,
+          11200
+        ],
+        [
+          3200,
+          12000
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          3200,
+          10000
+        ],
+        [
+          3200,
+          10800
+        ]
+      ]
     }
   ],
   "NetLabels": [
@@ -1488,6 +2162,126 @@
       "Y": 3400,
       "Name": "n4",
       "OwnerWireIndex": 5,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1200,
+      "Y": 5800,
+      "Name": "ep1_0",
+      "OwnerWireIndex": 27,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 200,
+      "Y": 5800,
+      "Name": "ep1",
+      "OwnerWireIndex": 26,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 2400,
+      "Y": 5800,
+      "Name": "ea",
+      "OwnerWireIndex": 22,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3600,
+      "Y": 5800,
+      "Name": "eb",
+      "OwnerWireIndex": 23,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 2700,
+      "Y": 6000,
+      "Name": "ec",
+      "OwnerWireIndex": 24,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3600,
+      "Y": 7700,
+      "Name": "ed",
+      "OwnerWireIndex": 25,
+      "SegmentIndex": 1,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 4800,
+      "Y": 5800,
+      "Name": "ep2_0",
+      "OwnerWireIndex": 29,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 5800,
+      "Y": 5800,
+      "Name": "ep2",
+      "OwnerWireIndex": 28,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 2800,
+      "Y": 8000,
+      "Name": "ep3_0",
+      "OwnerWireIndex": 31,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 2800,
+      "Y": 11000,
+      "Name": "ep3",
+      "OwnerWireIndex": 30,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3200,
+      "Y": 10400,
+      "Name": "ep4_0",
+      "OwnerWireIndex": 33,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3200,
+      "Y": 11600,
+      "Name": "ep4",
+      "OwnerWireIndex": 32,
       "SegmentIndex": 0,
       "AlongT": 0.5,
       "OffsetX": 0,
