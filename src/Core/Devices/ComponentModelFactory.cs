@@ -3095,13 +3095,16 @@ public static class ComponentModelFactory
                SubstrateOf(parameters), MicrostripInstanceName(parameters, BranchLineTypeName));
 
     // MRRC: the specs Z0 and F, how the ring turns (Corner) and the 3λ/4 arm's turns folded inside it (Meander, 0 for
-    // none); the plan derives the rest. Lumped: as MBLC's.
+    // none), or the arm a coupled section (Form = CoupledLine, of Coupling dB); the plan derives the rest. Lumped: as MBLC's,
+    // and before Form.
     private static MicrostripPlanModel CreateRatRaceModel(IReadOnlyDictionary<string, Value> parameters)
         => new(Lumped(parameters)
                 ? LumpedPlan.RatRace(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
                                      GetReal(parameters, "Gap", 1.35e-3), SubstrateOf(parameters)).Plan
                 : RatRacePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
-                                 EnumNamed(parameters, "Corner", PlanCorner.Curve), GetReal(parameters, "Meander", 0.0)).Plan,
+                                 EnumNamed(parameters, "Corner", PlanCorner.Curve), GetReal(parameters, "Meander", 0.0),
+                                 EnumNamed(parameters, "Form", RatRaceForm.Ring),
+                                 GetReal(parameters, "Coupling", RatRacePlan.DefaultSectionCoupling)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, RatRaceTypeName));
 
     /// <summary>The Gysel divider's engine token (pins 1, 2, 3, then R2 and R3, the isolation nodes for resistors to

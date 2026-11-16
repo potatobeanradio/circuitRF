@@ -116,6 +116,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _mwpd          = BuildMwpd();
     private static readonly Symbol _mblc          = BuildMblc();
     private static readonly Symbol _mrrc          = BuildMrrc();
+    private static readonly Symbol _mrrcCoupled   = BuildMrrcCoupled();
     private static readonly Symbol _mclc          = BuildMclc();
     private static readonly Symbol _midc          = BuildMidc();
     private static readonly Symbol _mcbl          = BuildMcbl();
@@ -297,7 +298,7 @@ public static class BuiltInSymbols
                 return n == 1 ? _mwpd : _mwpdCache.GetOrAdd(n, BuildMwpd);
             }
             case SymbolKind.Mblc:       return _mblc;
-            case SymbolKind.Mrrc:       return _mrrc;
+            case SymbolKind.Mrrc:       return portCount == 6 ? _mrrcCoupled : _mrrc;
             case SymbolKind.Mclc:       return portCount == 8 ? _mclcTandem : _mclc;
             case SymbolKind.Midc:
             {
@@ -2874,6 +2875,32 @@ public static class BuiltInSymbols
         PLine(-200, 0, -120, 0, -120, -80, -40, -80, -40, 80, 40, 80, 40, -80, 120, -80, 120, 0, 200, 0),
         Txt("θ", 0, -110, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
     ], SymbolKind.Mdly);
+
+    // MRRC with Form = CoupledLine — the square ring as it is drawn: three λ/4 sides, and along the bottom the coupled
+    // section in place of the 3λ/4 arm, strip A from tee 4 to its grounded far end G2 inside, strip B from its grounded
+    // near end G4 below to tee 2.
+    private static Symbol BuildMrrcCoupled() => Sym([
+        L(-200, -200, 200, -200),                    // 1 → 3 and 3 → 4 along the top
+        L( 200, -200, 200,  250),                    // 2 → 1 up the right side
+        L(-200, -200, -200, 200),                    // 3 → 4 down the left side
+        L(-200,  200, 100,  200),                    // strip A
+        L(-100,  250, 200,  250),                    // strip B
+        L( 100,  200, 100,  100),                    // G2
+        L(-100,  250, -100, 400),                    // G4
+        L( 200,  250, 200,  400),                    // 2
+        L(-400,  200, -200, 200),                    // 4
+        L( 200,    0, 400,    0),                    // 1
+        L(   0, -200,   0, -400),                    // 3
+        Circ(-200, 200, 10, filled: true), Circ(200, 250, 10, filled: true),
+        Circ( 200,   0, 10, filled: true), Circ(  0, -200, 10, filled: true),
+        Txt("180°", 0, -20, fontSize: 52),
+        Txt("1", 330, -40, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
+        Txt("2", 240, 340, fontSize: 40, align: SymbolTextAlign.Left),
+        Txt("3", 40, -320, fontSize: 40, align: SymbolTextAlign.Left),
+        Txt("4", -330, 160, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
+        Txt("G2", 130, 120, fontSize: 22, align: SymbolTextAlign.Left),
+        Txt("G4", -70, 360, fontSize: 22, align: SymbolTextAlign.Left),
+    ], SymbolKind.Mrrc, 6);
 
     // MCLC — MCLIN's plan view of the pair, with the quarter wave it is cut to and the coupling arrow from the input's
     // strip to the coupled port's, which runs back towards the input end (a backward-wave coupler).

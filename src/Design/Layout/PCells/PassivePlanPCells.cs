@@ -55,7 +55,9 @@ public static class PassivePlanPCells
             ? LumpedPlan.RatRace(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9), parameters.Real("Gap", 1.35e-3),
                 SubstrateOf(technology, layerSelection)).Plan
             : RatRacePlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
-            SubstrateOf(technology, layerSelection), CornerOf(parameters), parameters.Real("Meander", 0.0)).Plan, technology, layerSelection);
+            SubstrateOf(technology, layerSelection), CornerOf(parameters), parameters.Real("Meander", 0.0),
+            EnumOf(parameters, "Form", RatRaceForm.Ring),
+            parameters.Real("Coupling", RatRacePlan.DefaultSectionCoupling)).Plan, technology, layerSelection);
 
     /// <summary>The Gysel divider (MGPD): <see cref="GyselPlan"/>'s ring.</summary>
     public const string GyselId = ComponentModelFactory.GyselTypeName;

@@ -1664,9 +1664,10 @@ public static partial class SchematicLayoutPlanner
                 if (string.IsNullOrWhiteSpace(p.Expression)) continue;
             }
 
-            // A ring's Corner (MWPD, MRRC, MGPD, MBPD), a coupler's Compensation (MCLC) and a phase shifter's Reference
+            // A ring's Corner (MWPD, MRRC, MGPD, MBPD) and MRRC's Form, a coupler's Compensation (MCLC) and a phase shifter's Reference
             // (MSPS) are words for the generator, as are a delay line's Corner and Style (MDLY).
             if ((comp.Symbol is SymbolKind.Mwpd or SymbolKind.Mrrc or SymbolKind.Mgpd or SymbolKind.Mbpd && p.Name == "Corner")
+                || (comp.Symbol == SymbolKind.Mrrc && p.Name == "Form")
                 || (comp.Symbol == SymbolKind.Mclc && p.Name == "Compensation")
                 || (comp.Symbol == SymbolKind.Msps && p.Name == "Reference")
                 || (comp.Symbol == SymbolKind.Mdly && p.Name is "Corner" or "Style")

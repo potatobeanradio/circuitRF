@@ -1,0 +1,18 @@
+# The coupled-line rat-race (MRRC, Form = CoupledLine), a 75 ohm one, which 20 mil RO4350B builds: three quarter-wave
+# arms and the coupled section in a square, a via to ground on each of the section's grounded ends (G2 inside the
+# ring, G4 below port 4), and each port on its own pin.
+joinable g2
+joinable g4
+Info RRC1 added
+Info V1 added
+Info V2 added
+Info V1 placed beside RRC1 pin G2 and tied to its pad
+Info V2 placed beside RRC1 pin G4 and tied to its pad
+Info P1 port 1 placed at RRC1 pin 1
+Info P2 port 2 placed at RRC1 pin 2
+Info P3 port 3 placed at RRC1 pin 3
+Info P4 port 4 placed at RRC1 pin 4
+port P1 1
+port P2 2
+port P3 3
+port P4 4
