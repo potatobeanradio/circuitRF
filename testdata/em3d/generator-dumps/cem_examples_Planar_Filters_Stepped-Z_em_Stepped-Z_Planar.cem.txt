@@ -1,0 +1,30 @@
+refusal (none)
+note 8 shape(s) came from 3 placed instance(s), flattened into world coordinates for extraction.
+note 8 overlapping conductor shape(s) were merged into 1 — copper that overlaps on one level is one conductor, in 3D as in the planar model.
+note Port 1 ('1') at (0, 0 µm) was taken to be on the conductor's low-x (left) end (the port's own direction), driving current in the +x direction, at 50 Ω.
+note Port 2 ('2') at (49276, 0 µm) was taken to be on the conductor's high-x (right) end (the port's own direction), driving current in the −x direction, at 50 Ω.
+note Port 1 at its line's end is a vertical lumped sheet 1058 µm wide and 508 µm tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)': the nearest ground-reference plane with metal under the port.
+note Port 2 at its line's end is a vertical lumped sheet 1058 µm wide and 508 µm tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)': the nearest ground-reference plane with metal under the port.
+note The air box's floor is the underside of 'Bottom Copper (1 oz)' at 0 µm, as a PEC face: it is a drawn ground plane with no hole in it, under all the drawn metal, so nothing below it carries field. State the AirBox's ZMin to pad below it instead.
+solid RO4350 RO4350B Dielectric 1 box (-0.013411200000000002,-0.015312,3.5000000000000004E-05) (0.0626872,0.015312,0.0005430000000000001)
+solid air Air Air 2 box (-0.013411200000000002,-0.015312,0.0005430000000000001) (0.0626872,0.015312,0.0011560000000000001)
+solid Bottom Copper (1 oz)/1 Copper Conductor 3 extrude 0 3.5000000000000004E-05 [0.051816,0.00528 -0.00254,0.00528 -0.00254,-0.00528 0.051816,-0.00528]
+solid Top Copper (1 oz)/1 Copper Conductor 4 extrude 0.0005430000000000001 0.0005780000000000001 [0.007047,-5.7E-05 0.01583,-5.7E-05 0.01583,-0.0027400000000000002 0.02347,-0.0027400000000000002 0.02347,-5.7E-05 0.035468,-5.7E-05 0.035468,-0.0027400000000000002 0.041061,-0.0027400000000000002 0.041061,-5.7E-05 0.044276,-5.7E-05 0.044276,-0.0005290000000000001 0.049276,-0.0005290000000000001 0.049276,0.0005290000000000001 0.044276,0.0005290000000000001 0.044276,5.7E-05 0.041061,5.7E-05 0.041061,0.0027400000000000002 0.035468,0.0027400000000000002 0.035468,5.7E-05 0.02347,5.7E-05 0.02347,0.0027400000000000002 0.01583,0.0027400000000000002 0.01583,5.7E-05 0.007047,5.7E-05 0.007047,0.0027400000000000002 0.005,0.0027400000000000002 0.005,0.0005290000000000001 0,0.0005290000000000001 0,-0.0005290000000000001 0.005,-0.0005290000000000001 0.005,-0.0027400000000000002 0.007047,-0.0027400000000000002]
+material Copper 1 - 0 1 58000000
+material RO4350B 3.66 - 0.0037 1 0
+material Air 1 - 0 1 0
+port 1 port/1 Lumped Top Copper (1 oz)/1 Bottom Copper (1 oz)/1 (0,-0.0005290000000000001,3.5000000000000004E-05) (0,0.0005290000000000001,0.0005430000000000001) (0,0,1) 50 0 (0,0,0.00028900000000000003) (1,0,0) 0 - -
+port 2 port/2 Lumped Top Copper (1 oz)/1 Bottom Copper (1 oz)/1 (0.049276,-0.0005290000000000001,3.5000000000000004E-05) (0.049276,0.0005290000000000001,0.0005430000000000001) (0,0,1) 50 0 (0.049276,0,0.00028900000000000003) (-1,0,0) 0 - -
+box (-0.013411200000000002,-0.015312,0) (0.0626872,0.015312,0.0011560000000000001) Em3dFaces { XMin = Absorbing, XMax = Absorbing, YMin = Absorbing, YMax = Absorbing, ZMin = Pec, ZMax = Absorbing }
+freq 200000000 5000000000 25 Linear 20
+type Driven eigen 3 200000000
+ground 
+origin Bottom Copper (1 oz)/1 Conductor Bottom Copper (1 oz) LayerKey { Layer = 2, Datatype = 0 } -
+origin RO4350 Dielectric RO4350 - -
+origin Top Copper (1 oz)/1 Conductor Top Copper (1 oz) LayerKey { Layer = 1, Datatype = 0 } -
+origin air Air - - -
+material-source Air built in (free space)
+material-source Copper technology 'PCB 2-Layer RO4350B (20mil, 1oz)' Materials
+material-source RO4350B technology 'PCB 2-Layer RO4350B (20mil, 1oz)' Materials
+no-alpha 
+unknown-temperature 

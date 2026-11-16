@@ -424,9 +424,7 @@ src/Engine/Mom/InteriorStaticGreens.cs|The reference integrator would need more 
 src/Engine/Mom/LayeredMedium.cs|Every split fraction must be positive.
 src/Engine/Mom/LayeredMedium.cs|LayeredStaticGreens is referenced to the top half-space and needs z, z′ ≥ H = 
 src/Engine/Mom/LayeredMedium.cs|The top termination is {stack.Top}, a solid wall — there is no half-space above 
-src/Engine/Mom/ModalDecomposition.cs|MoM: modal matrix column {m} is degenerate — the modes are not independent.
 src/Engine/Mom/ModalDecomposition.cs|MoM: the RLGC model has no conductors.
-src/Engine/Mom/ModalDecomposition.cs|MoM: the lossless modal eigenproblem [C]v = λ[L]⁻¹v could not be solved. Both 
 src/Engine/Mom/ModalDecomposition.cs|The even/odd decomposition is defined for exactly two conductors; this model has 
 src/Engine/Mom/PlanarAdaptiveSweep.cs|at least one node
 src/Engine/Mom/PlanarAdaptiveSweep.cs|one value per node
@@ -497,7 +495,6 @@ src/Engine/Mom/PlanarSystem.cs|This geometry needs {n:N0} unknowns, which is pas
 src/Engine/Mom/PlanarSystem.cs|This system has been factored, and P7's factorisation runs IN PLACE — the matrix's 
 src/Engine/Mom/PlanarSystem.cs|This system was factored with P7's complex-symmetric LDLᵀ, which is not an LU and 
 src/Engine/Mom/QuasiStaticKernel.cs|{Name} cannot solve this problem. {ok.Reason}
-src/Engine/Mom/RlgcExtractor.cs|MoM: [C₀] is singular — the conductor set has no reference.
 src/Engine/Mom/RlgcToSparams.cs|At least one frequency point required.
 src/Engine/Mom/RlgcToSparams.cs|This cross-section has {rlgc.ConductorCount} signal conductor
 src/Engine/Mom/SingularExtraction.cs|These terms carry no radial derivative. Only the MIXED component has one, because it 
@@ -1926,3 +1923,14 @@ src/Engine/Array/ArrayPattern.Cuts.cs|A cut grid needs at least one plane.
 src/Engine/Array/ArrayPattern.Cuts.cs|{lattice.Count} elements and {elements.PatternOf.Count} pattern assignments.
 src/Engine/Array/ArrayPattern.Cuts.cs|{lattice.Count} elements and {weights.Count} weights.
 src/Engine/HarmonicBalance/HbLinearExtractor.cs|The DC interface could not be held: its held network is singular.
+src/Core/Devices/Microstrip/CoupledLineCouplerPlan.cs|tandem layout: a negative run
+src/Core/Devices/Microstrip/CoupledResonatorPlan.cs|A loop is fed on its opened side.
+src/Core/Devices/Microstrip/CoupledResonatorPlan.cs|Coupled strips overlap: gaps {string.Join(
+src/Core/Devices/Microstrip/CoupledResonatorPlan.cs|{Context}: the coupled runs do not lie side by side, {gap} m apart.
+src/Core/Devices/Microstrip/LumpedPlan.cs|{t.Part} {t.Label}: junction {j} has {dirs.Length} arm(s).
+src/Core/Devices/Microstrip/LumpedPlan.cs|{t.Part} {t.Label}: junctions {e.From} and {e.To} are not neighbours.
+src/Core/Devices/MicrostripPlanModel.cs|An open end is one strip's end (one node, no S) or a coupled pair's two ends (two nodes and S); {o.Nodes.Length} nodes given.
+src/RfCore/MulticonductorLine.cs|Modal matrix column {m} is degenerate — the modes are not independent.
+src/RfCore/MulticonductorLine.cs|The lossless modal eigenproblem [C]v = λ[L]⁻¹v could not be solved. Both matrices must be 
+src/RfCore/MulticonductorLine.cs|The multiconductor line has no conductors.
+src/RfCore/MulticonductorLine.cs|The per-unit-length matrix is singular — a conductor set with no reference, or two conductors solved as one.

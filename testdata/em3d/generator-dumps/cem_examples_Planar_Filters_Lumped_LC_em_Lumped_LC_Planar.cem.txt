@@ -1,0 +1,39 @@
+refusal (none)
+note This setup names component ports, so its problem is built in a 3D view of the layout, made in memory as New 3D View from Layout makes one; nothing is written.
+note U1: 26 shape(s) came from 6 placed instance(s), flattened into world coordinates for extraction.
+note U1: 12 overlapping conductor shape(s) were merged into 4 — copper that overlaps on one level is one conductor, in 3D as in the planar model.
+note U1: Robust meshing removed 10 of 54 outline points that lay within a fraction of a micrometre of the line through their neighbours; no outline moved by more than 0.0990465 µm.
+note U1: Via barrels in this EM problem are solid: 'Plated Through-Hole' (Fill Plated, 25 µm wall) is built solid. A hollow barrel's air core changes nothing an RF answer can see and meshes into inverted elements; a thermal problem keeps the wall.
+note U1: Placed in a 3D view, the layout draws no board outline, so its slabs are bounded by the box round its drawn geometry. Draw a board outline when the board's edge matters.
+note The air box's floor is the underside of the ground plane at the bottom of the geometry, as a PEC face: the plane has no hole with other metal over it and lies under everything, so nothing below it carries field. State the AirBox's ZMin to pad below it instead.
+solid U1/RO4350 RO4350B Dielectric 1 extrude 3.5000000000000004E-05 0.0005430000000000001 [-0.00254,-0.00432732 0.01841328,-0.00432732 0.01841328,0.00497792 -0.00254,0.00497792]
+solid U1/Bottom Copper (1 oz)/1 Copper Conductor 2 extrude 0 3.5000000000000004E-05 [0.01841328,0.00497792 -0.00254,0.00497792 -0.00254,-0.00432732 0.01841328,-0.00432732]
+solid U1/Top Copper (1 oz)/1 Copper Conductor 3 extrude 0.0005430000000000001 0.0005780000000000001 [0.008211640000000001,0.00140332 0.008241440000000001,0.00140332 0.008241440000000001,0.00243792 0.007631840000000001,0.00243792 0.007631840000000001,0.00140332 0.007661640000000001,0.00140332 0.007661640000000001,0.0011283200000000001 0.008211640000000001,0.0011283200000000001]
+solid U1/Top Copper (1 oz)/2 Copper Conductor 4 extrude 0.0005430000000000001 0.0005780000000000001 [0.006057760000000001,-0.0017872 0.006057760000000001,-0.0015333200000000001 0.006607760000000001,-0.0015333200000000001 0.006607760000000001,-0.00098332 0.006057760000000001,-0.00098332 0.006057760000000001,-0.00072944 0,-0.0007293200000000001 0,-0.00178732]
+solid U1/Top Copper (1 oz)/3 Copper Conductor 5 extrude 0.0005430000000000001 0.0005780000000000001 [0.008211640000000001,0.00087832 0.007661640000000001,0.00087832 0.007661640000000001,0.00032832 0.00740776,0.00032832 0.00740776,-0.00098332 0.00685776,-0.00098332 0.00685776,-0.0015333200000000001 0.00740776,-0.0015333200000000001 0.00740776,-0.0017872 0.00846552,-0.0017872 0.00846552,-0.0015333200000000001 0.00901552,-0.0015333200000000001 0.00901552,-0.00098332 0.00846552,-0.00098332 0.00846552,0.00032832 0.008211640000000001,0.00032832]
+solid U1/Top Copper (1 oz)/4 Copper Conductor 6 extrude 0.0005430000000000001 0.0005780000000000001 [0.01587328,-0.0007293200000000001 0.009815520000000001,-0.00072944 0.009815520000000001,-0.00098332 0.009265520000000001,-0.00098332 0.009265520000000001,-0.0015333200000000001 0.009815520000000001,-0.0015333200000000001 0.009815520000000001,-0.0017872 0.01587328,-0.00178732]
+solid U1/via/1 Copper Conductor 7 cylinder (0.00793664,0.00213312,0) (0.00793664,0.00213312,0.0005780000000000001) 0.00015240000000000002
+material Copper 1 - 0 1 58000000
+material RO4350B 3.66 - 0.0037 1 0
+material Air 1 - 0 1 0
+port 1 port/1 Lumped U1/Top Copper (1 oz)/2 U1/Bottom Copper (1 oz)/1 (0,-0.00178732,3.5E-05) (0,-0.00072932,0.000543) (0,0,1) 50 0 (0,-0.00125832,0.000289) (1,0,0) 0 - -
+port 2 port/2 Lumped U1/Top Copper (1 oz)/4 U1/Bottom Copper (1 oz)/1 (0.01587328,-0.00178732,3.5E-05) (0.01587328,-0.00072932,0.000543) (0,0,1) 50 0 (0.01587328,-0.00125832,0.000289) (-1,0,0) 0 - -
+port 3 port/3 Lumped U1/Top Copper (1 oz)/3 U1/Top Copper (1 oz)/2 (0.00660776,-0.00153332,0.0005605) (0.00685776,-0.00098332,0.0005605) (1,0,0) 50 0 (0.00673276,-0.0012583199999999998,0.0005605) (0,0,-1) 0 - -
+port 4 port/4 Lumped U1/Top Copper (1 oz)/3 U1/Top Copper (1 oz)/1 (0.00766164,0.00087832,0.0005605) (0.00821164,0.00112832,0.0005605) (-0,-1,-0) 50 0 (0.00793664,0.00100332,0.0005605) (0,0,-1) 0 - -
+port 5 port/5 Lumped U1/Top Copper (1 oz)/4 U1/Top Copper (1 oz)/3 (0.00901552,-0.00153332,0.0005605) (0.00926552,-0.00098332,0.0005605) (1,0,0) 50 0 (0.00914052,-0.0012583199999999998,0.0005605) (0,0,-1) 0 - -
+box (-0.013016640000000001,-0.014563084,0) (0.02888992,0.015213684,0.0011560000000000001) Em3dFaces { XMin = Absorbing, XMax = Absorbing, YMin = Absorbing, YMax = Absorbing, ZMin = Pec, ZMax = Absorbing }
+freq 200000000 5000000000 25 Linear 20
+type Driven eigen 3 200000000
+ground 
+origin U1/Bottom Copper (1 oz)/1 Conductor Bottom Copper (1 oz) LayerKey { Layer = 2, Datatype = 0 } -
+origin U1/RO4350 Dielectric RO4350 - -
+origin U1/Top Copper (1 oz)/1 Conductor Top Copper (1 oz) LayerKey { Layer = 1, Datatype = 0 } -
+origin U1/Top Copper (1 oz)/2 Conductor Top Copper (1 oz) LayerKey { Layer = 1, Datatype = 0 } -
+origin U1/Top Copper (1 oz)/3 Conductor Top Copper (1 oz) LayerKey { Layer = 1, Datatype = 0 } -
+origin U1/Top Copper (1 oz)/4 Conductor Top Copper (1 oz) LayerKey { Layer = 1, Datatype = 0 } -
+origin U1/via/1 Via Plated Through-Hole LayerKey { Layer = 7, Datatype = 0 } -
+material-source Air built in (free space)
+material-source Copper technology 'PCB 2-Layer RO4350B (20mil, 1oz)' Materials
+material-source RO4350B technology 'PCB 2-Layer RO4350B (20mil, 1oz)' Materials
+no-alpha 
+unknown-temperature 

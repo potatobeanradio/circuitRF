@@ -53,7 +53,7 @@ public static class MicrostripSubstrateInjection
                                                             or SymbolKind.Mlad or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mrpad;
 
     /// <summary>The planned passives whose site span is a stored length, <see cref="SiteSpanParameter"/>, that a
-    /// <c>Footprint</c> sets instead: MWPD's resistor pins, MCBL's balanced outputs, MLAD's series sites, the lumped realisations' series sites</summary>
+    /// <c>Footprint</c> sets instead: MWPD's resistor pins, MCBL's balanced outputs, MLAD's series sites, the lumped realisations' series sites
     /// (MBLC's and MRRC's only when lumped) and the resistive pad's.</summary>
     public static bool SetsSiteSpan(SymbolKind kind) => kind is SymbolKind.Mwpd or SymbolKind.Mcbl or SymbolKind.Mlad
                                                             or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mrpad;
