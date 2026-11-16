@@ -40,7 +40,7 @@ public enum ResonatorCoupling { Pairs, Full }
 
 /// <summary>
 /// The physical geometry of a coupled-resonator filter, as MCRC stores it: what a filter synthesis produces and the
-/// plan draws (docs/design/rf-passives.md §3.5). Lengths in metres. <see cref="W"/> and <see cref="L"/> hold one value
+/// plan draws (docs/design/rf-passives.md §3.15). Lengths in metres. <see cref="W"/> and <see cref="L"/> hold one value
 /// per resonator, index 0 for resonator 1. <see cref="S"/> holds the gaps by number: S_k is resonator k's gap to the
 /// resonator or feed before it (bandpass; S_(N+1) the output feed's), or to the through line (bandstop), or its slot
 /// (spurline). A tapped feed has no S1 or S_(N+1). A gap stated as no S_k of its own is the common S.

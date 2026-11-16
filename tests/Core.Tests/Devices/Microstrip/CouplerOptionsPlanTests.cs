@@ -6,7 +6,7 @@ using Xunit.Abstractions;
 namespace CircuitRF.Core.Tests.Devices.Microstrip;
 
 /// <summary>
-/// The coupled-line options' numbers against their closed forms (docs/design/rf-passives.md §3.5-§3.6): the
+/// The coupled-line options' numbers against their closed forms (docs/design/rf-passives.md §3.10-§3.11): the
 /// three-section equal-ripple coupler against the cubic minimax it reduces to, the tandem's coupling, Schiffman's ρ and
 /// reference length, the Lange's finger count and pins, the broadside pair's modes; each option off is the part it was,
 /// and a stack or a combination the part cannot build is a coded refusal.

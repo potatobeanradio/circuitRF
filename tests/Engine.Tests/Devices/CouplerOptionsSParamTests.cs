@@ -10,7 +10,7 @@ using Xunit.Abstractions;
 namespace CircuitRF.Engine.Tests.Devices;
 
 /// <summary>
-/// The coupled-line options through the engine (docs/design/rf-passives.md §3.5-§3.6): MCLC's Sections, Tandem,
+/// The coupled-line options through the engine (docs/design/rf-passives.md §3.10-§3.11): MCLC's Sections, Tandem,
 /// Compensation and Broadside, MIDC's Fingers, and the Schiffman phase shifter (MSPS). Each is its plan's sections and
 /// nothing else, so it matches the same network wired by hand to 1e-9; and each does what it is for — a flat coupling
 /// over the band, a broadband 3 dB tandem in quadrature, directivity restored, a 90° difference flat over the band.

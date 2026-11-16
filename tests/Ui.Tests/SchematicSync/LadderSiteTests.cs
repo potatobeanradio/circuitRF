@@ -7,7 +7,7 @@ using Xunit;
 namespace CircuitRF.Ui.Tests.SchematicSync;
 
 /// <summary>
-/// The ladder's lumped sites (MLAD, docs/design/rf-passives.md §3.11) in the schematic and the layout: a series site is a
+/// The ladder's lumped sites (MLAD, docs/design/rf-passives.md §3.16) in the schematic and the layout: a series site is a
 /// pair of G pins the copper stops a site span short between, which Update Layout lands the part across and LVS compares;
 /// the readout lists it, a <c>Footprint</c> sets its span, and Place Site Parts fills it.
 /// </summary>
