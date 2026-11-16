@@ -1671,6 +1671,13 @@ public static partial class SchematicLayoutPlanner
                 continue;
             }
 
+            // A ladder's Sections is its list, text for its generator.
+            if (comp.Symbol == SymbolKind.Mlad && p.Name == "Sections")
+            {
+                if (p.Expression.Trim() is { Length: > 0 } list) resolved[p.Name] = PCellValue.Text(list);
+                continue;
+            }
+
             // A TFR's film is a drawing layer's NAME for its generator, and empty states nothing, so a part stating no film
             // hashes to the cell it always did.
             if (comp.Symbol == SymbolKind.Tfr && p.Name == MmicPassiveInjection.FilmParam)

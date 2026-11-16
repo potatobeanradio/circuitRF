@@ -6,6 +6,7 @@ using CircuitRF.Core.Matching;
 using CircuitRF.Core.Systems;
 using CircuitRF.WBond;
 using PlanCorner = CircuitRF.Core.Devices.Microstrip.PlanCorner;
+using LadderPlan = CircuitRF.Core.Devices.Microstrip.LadderPlan;
 
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout.PCells;
@@ -860,6 +861,12 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MCBL", "Marchand", "Marchand balun", "balun", "coupled-line balun", "planar balun",
                           "balanced", "unbalanced", "differential", "180 degree", "quarter wave"]),
+        [SymbolKind.Mlad]         = new("MLAD", "LAD",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MLAD", "ladder", "microstrip ladder", "stepped impedance", "stepped-impedance filter",
+                          "hi-lo filter", "stub filter", "open stub", "shorted stub", "lowpass", "highpass", "bandpass",
+                          "bandstop", "elliptic", "end-coupled", "gap-coupled", "DC block", "stub matcher",
+                          "single stub", "double stub", "quarter-wave transformer", "Richards", "Kuroda"]),
         // The two vias (brief-via-component.md). Microstrip, because that is where they are used: a
         // line changing layers, and the return of a shunt part on a board. Not transmission lines.
         [SymbolKind.Via]          = new("VIA", "VIA",
@@ -1013,6 +1020,8 @@ public static class ComponentTypeRegistry
         // on — so the count follows the arrays selected out of the design it carries or links to,
         // and there is no fixed answer at all until one is chosen.
         SymbolKind.WBond                                     => "Arrays",
+        // A ladder's via pins G1… follow its list: one per shorted stub arm.
+        SymbolKind.Mlad                                      => "Sections",
         _                                                    => null,
     };
 
@@ -1140,6 +1149,11 @@ public static class ComponentTypeRegistry
         SymbolKind.Mcbl =>
             "Not interchangeable: terminal 1 is the unbalanced input, 2 and 3 the balanced outputs, in antiphase. G2 and "
           + "G3 are the grounded ends of the strips that carry 2 and 3: put a via to ground (VIAGND) on each.",
+
+        SymbolKind.Mlad =>
+            "Terminals 1 and 2 are the through line's ends, the first section at 1. G1, G2, … follow, one per shorted "
+          + "stub arm in the list's order (up before down): put a via to ground (VIAGND) on each. A list with no "
+          + "shorted stub has terminals 1 and 2 only.",
 
         SymbolKind.GsgPad =>
             "Not interchangeable: terminal 1 is where the probe's signal tip lands, the middle of the signal pad, "
@@ -1337,6 +1351,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Mclc          => ComponentModelFactory.CoupledLineCouplerTypeName,
         SymbolKind.Midc          => ComponentModelFactory.LangeTypeName,
         SymbolKind.Mcbl          => ComponentModelFactory.MarchandTypeName,
+        SymbolKind.Mlad          => ComponentModelFactory.LadderTypeName,
         SymbolKind.MimCap        => "MIMCAP",
         SymbolKind.Spiral        => "SPIRAL",
         SymbolKind.OctSpiral     => "OSPIRAL",
@@ -1508,7 +1523,7 @@ public static class ComponentTypeRegistry
         or SymbolKind.Via or SymbolKind.ViaGnd or SymbolKind.WBond or SymbolKind.Match
         or SymbolKind.MimCap or SymbolKind.Spiral or SymbolKind.OctSpiral or SymbolKind.Tfr or SymbolKind.Airbridge
         or SymbolKind.TestPad or SymbolKind.GsgPad or SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
-        or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl
+        or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Mlad
         or SymbolKind.Balun or SymbolKind.Circulator or SymbolKind.Switch or SymbolKind.Coupler
         or SymbolKind.Hybrid90 or SymbolKind.Hybrid180 or SymbolKind.Filter or SymbolKind.Atten or SymbolKind.Duplexer
         or SymbolKind.Combiner
@@ -1741,6 +1756,17 @@ public static class ComponentTypeRegistry
                                  + "1/√(1 + 2·ZL/Z0) matches it to Z0; low ZL needs tight coupling, which edge-coupled "
                                  + "microstrip may not reach.",
         (SymbolKind.Mcbl, "Gap") => "Length of the line joining the two sections, which the outputs 2 and 3 face across.",
+        (SymbolKind.Mlad, "Sections") => "The ladder, pin 1 to pin 2: sections separated by ';', each kind(field=value, …). "
+                                 + "line(W, L); gap(S), at the width there; taper(W1, W2, L); stub(W, L, end=open|short, "
+                                 + "side=up|down|both), L from the through line's edge. Lengths in metres or with mm, um, mil. "
+                                 + "Each shorted stub arm adds a pin G1, G2, … for a via to ground.",
+        (SymbolKind.Mlad, "Z0") => "The ports' impedance: the lines the ladder is fed by, whose width a gap or a stub at "
+                                 + "either end sits on. The readout states each section's impedance beside it.",
+        (SymbolKind.Mlad, "F") => "The frequency the readout states each section's impedance and electrical length at, and "
+                                + "the ports' lines' width is found at. The geometry is the list's.",
+        (SymbolKind.Mlad, "SignalLayer") => "The conductor the ladder is on. Empty: the technology's top conductor.",
+        (SymbolKind.Mlad, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below "
+                                 + "the signal layer.",
         (SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl, "SignalLayer") => "The conductor the strips are on. Empty: "
                                  + "the technology's top conductor.",
         (SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl, "GroundReference") => "The plane under it. Empty: the "
@@ -1839,6 +1865,11 @@ public static class ComponentTypeRegistry
             "Two MCLIN quarter-wave sections and the MLIN joining them, stamped together. The coupling matches ZL on "
           + "each output to Z0 for TEM lines; microstrip's unequal mode velocities leave the outputs about 16° short of "
           + "180° on 20 mil RO4350B. The grounds are the vias on G2 and G3, not the model.",
+        SymbolKind.Mlad =>
+            "MLIN, MGAP, MTAPER, MTEE and MCROSS, the pieces the layout draws, with each one's validity, stamped together "
+          + "and reduced to the pins; an open stub's end is Kirschning-Jansen-Koster's extension. The step between two "
+          + "widths is not modelled, nor the coupling between neighbouring stubs. MTEE's and MCROSS's closed forms are "
+          + "calibrated at er 9.9 and say so on any other board. The grounds are the vias on G1…, not the model.",
         SymbolKind.GsgPad =>
             "MLIN, twice: half the signal pad (PadW wide, PadL/2 long, from the tip to its edge), then the line, "
           + "cascaded, with MLIN's validity. The ground pads are ideal ground at the probe's reference plane; their "
@@ -4054,6 +4085,13 @@ public static class ComponentTypeRegistry
                         new("F",   "2.4",  "GHz", true, UnitDimension.Frequency),
                         .. SignalGroundLayerParams];
             // MCBL: 200 Ω on each output is the lightest load a 100 µm gap matches on 20 mil RO4350B (50 Ω is refused).
+            // MLAD: the list is the geometry (LadderPlan's grammar); Z0 the ports' lines, F the readout's. Placed as a
+            // stepped-impedance lowpass on 20 mil RO4350B, which has no shorted stub and so two pins.
+            case SymbolKind.Mlad:
+                return [new("Sections", LadderPlan.DefaultSections, "", false, UnitDimension.None),
+                        new("Z0",  "50",   "Ω",   true, UnitDimension.Resistance),
+                        new("F",   "2.4",  "GHz", true, UnitDimension.Frequency),
+                        .. SignalGroundLayerParams];
             case SymbolKind.Mcbl:
                 return [new("Z0",  "50",   "Ω",   true, UnitDimension.Resistance),
                         new("ZL",  "200",  "Ω",   true, UnitDimension.Resistance),
@@ -4245,6 +4283,8 @@ public static class ComponentTypeRegistry
             case "IDC":      kind = SymbolKind.Midc;         return true;
             case "MCBL":
             case "CBL":      kind = SymbolKind.Mcbl;         return true;
+            case "MLAD":
+            case "LAD":      kind = SymbolKind.Mlad;         return true;
             case "MIMCAP":   kind = SymbolKind.MimCap;       return true;
             case "SPIRAL":   kind = SymbolKind.Spiral;       return true;
             case "OSPIRAL":  kind = SymbolKind.OctSpiral;    return true;

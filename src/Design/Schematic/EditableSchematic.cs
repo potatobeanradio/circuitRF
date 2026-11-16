@@ -119,6 +119,17 @@ public static class SymbolPortDefs
             // the middle, where the two sections' coupled strips end.
             case SymbolKind.Mcbl:    return [("1", -600f, -100f), ("2", -100f, 200f), ("3", 100f, 200f),
                                              ("G2", -600f, 100f), ("G3", 600f, 100f)];
+            // MLAD: the through line's ends at the left and right, and its via pins G1… along the bottom 200 apart and
+            // centred, the ends moving out past them as they grow. VARIADIC on the PIN count (2 + the shorted stub arms,
+            // as PortCount answers), so any count below three, the one-argument overload's 2 included, is the two-pin
+            // ladder.
+            case SymbolKind.Mlad:
+            {
+                int g = Math.Max(0, portCount - 2);
+                float end = Math.Max(400f, 100f * (g + 2));
+                return [("1", -end, 0f), ("2", end, 0f),
+                        .. Enumerable.Range(1, g).Select(k => ($"G{k}", 100f * (2 * k - g - 1), 300f))];
+            }
             // The MMIC passives (AA-1): horizontal, on MLIN's left/right convention, because they sit
             // in a die's lines. MIMCAP 1 = top plate, 2 = bottom plate; SPIRAL 1 = outer end, 2 = inner
             // end; AIRBRIDGE 1/2 = the landings, and 3 (below) / 4 (above) the two ends of the line it crosses.
@@ -1192,6 +1203,11 @@ public sealed class EditableComponent
                 return sections is not null && int.TryParse(sections.Expression, out int ns) && ns is >= 1 and <= CircuitRF.Core.Devices.Microstrip.WilkinsonPlan.MaxSections
                     ? 3 + 2 * ns : 5;
             }
+
+            // A ladder draws a via pin per shorted stub arm in its list; a list that does not parse draws the two pins.
+            if (Symbol is SymbolKind.Mlad)
+                return 2 + CircuitRF.Core.Devices.Microstrip.LadderPlan.Grounds(
+                    Parameters.FirstOrDefault(q => q.Name == "Sections")?.Expression);
 
             // The Combiner's N is its number of PATHS; it draws N + 1 pins, the common port with them.
             if (Symbol is SymbolKind.Combiner)

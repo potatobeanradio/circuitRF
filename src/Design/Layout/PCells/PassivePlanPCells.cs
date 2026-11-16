@@ -87,6 +87,15 @@ public static class PassivePlanPCells
             parameters.Real("F", 2.4e9), parameters.Real("Gap", 1e-3), SubstrateOf(technology, layerSelection)).Plan,
             technology, layerSelection);
 
+    /// <summary>The microstrip ladder (MLAD): <see cref="LadderPlan"/>'s list of sections.</summary>
+    public const string LadderId = ComponentModelFactory.LadderTypeName;
+
+    public static PCellResult GenerateLadder(
+        IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
+        => DrawOrRefuse(() => LadderPlan.Build(parameters.Text("Sections") is { Length: > 0 } list ? list : LadderPlan.DefaultSections,
+            parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9), SubstrateOf(technology, layerSelection)).Plan,
+            technology, layerSelection);
+
     /// <summary>The plan drawn, or its refusal as the cell's one diagnostic.</summary>
     private static PCellResult DrawOrRefuse(Func<PassivePlan> plan, Technology? technology, PCellLayerSelection layerSelection)
     {

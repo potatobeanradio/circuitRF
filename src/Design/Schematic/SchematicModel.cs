@@ -724,6 +724,11 @@ public enum SymbolKind
     /// Gap between its two quarter-wave sections (MarchandBalunPlan). Pins 1 unbalanced, 2 and 3 balanced, G2 and G3 the
     /// strips' grounded ends — for ordinary vias to ground, not part of the part.</summary>
     Mcbl,
+    /// <summary>Microstrip ladder (engine "MLAD", docs/design/rf-passives.md): an ordered list of series lines, gaps and
+    /// tapers and shunt stubs (Sections, LadderPlan's grammar), stored as physical geometry, plus Z0 for the ports' lines
+    /// and F for the readout. Pins 1 and 2 the through line's ends, then G1… one per shorted stub arm, for ordinary vias to
+    /// ground — so the pin count follows the list.</summary>
+    Mlad,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

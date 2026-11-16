@@ -33,7 +33,7 @@ public static class MicrostripSubstrateInjection
     private static readonly HashSet<SymbolKind> MicrostripKinds =
         [SymbolKind.Mlin, SymbolKind.MCLine, SymbolKind.MBend, SymbolKind.MCurve, SymbolKind.MMiter, SymbolKind.MGap, SymbolKind.MTee, SymbolKind.MCross,
          SymbolKind.Mtaper, SymbolKind.Mklopf, SymbolKind.GsgPad, SymbolKind.Mwpd, SymbolKind.Mblc, SymbolKind.Mrrc,
-         SymbolKind.Mclc, SymbolKind.Midc, SymbolKind.Mcbl];
+         SymbolKind.Mclc, SymbolKind.Midc, SymbolKind.Mcbl, SymbolKind.Mlad];
 
     public static bool IsMicrostripKind(SymbolKind kind) => MicrostripKinds.Contains(kind);
 
@@ -335,9 +335,9 @@ public static class MicrostripSubstrateInjection
     {
         if (technology is null) return;   // registry mm defaults stand — nothing to resolve against
         // The planned passives' geometry is derived; their one stored length (MWPD's resistor span, MCBL's joining line)
-        // is a layout choice no substrate changes.
+        // is a layout choice no substrate changes. A ladder's list is its geometry as written, which no technology rewrites.
         if (kind is SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mclc or SymbolKind.Midc
-                 or SymbolKind.Mcbl) return;
+                 or SymbolKind.Mcbl or SymbolKind.Mlad) return;
         if (kind == SymbolKind.GsgPad) ApplyProbePadDefaults(parameters, technology);
         string targetUnit = SchematicLengthUnit(technology.DefaultDisplayUnit);
         double step = RoundStepFor(targetUnit);
