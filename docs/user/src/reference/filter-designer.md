@@ -31,6 +31,12 @@ The result is an ordinary part with its parameters filled in, plus an ordinary R
 [sites](components.html#sites). You can still edit it by hand, tune it, optimise it, lay it out and check it with LVS, like any
 part you placed yourself.
 
+<figure class="figure">
+<img src="../../images/filter-synthesis/designer.png" alt="The Filter Designer with a five-pole 0.1 dB Chebyshev bandpass at 2.4 GHz, 10 % wide, on a 20 mil RO4350B board: the specification on the left, the realisers below it with whether each can build the filter, the tapped hairpin selected, and on the right the ideal and the realised insertion and return loss overlaid." style="width:100%;height:auto">
+<figcaption>A five-pole 0.1 dB Chebyshev bandpass at 2.4 GHz, 10 % wide, on the board stack. The tapped hairpin
+(MCRC) is selected; its realised response is overlaid on the ideal one.</figcaption>
+</figure>
+
 ## Opening it {#open}
 
 Select an MLAD, MCRC or MCLA in a schematic and press **Synthesise…** in its Properties. The Designer opens with that part's
@@ -78,6 +84,13 @@ highpass, and over two bandwidths either side of a band.
 **Place** puts the part to the right of everything already in the schematic. It then puts a part on each of its sites, the
 way [Place Site Parts](components.html#sites) does: an R, L or C of the site's value with the part's `Footprint` (or the board's
 default land), and a via on each grounded end. It is one step: one **Undo** takes it all off again.
+
+<figure class="figure">
+<img src="../../images/filter-synthesis/placed-schematic.png" alt="The schematic after Place: the five-resonator hairpin MCRC between two 50 ohm ports, with its synthesised widths and gaps on the symbol." style="width:100%;height:auto">
+<img src="../../images/filter-synthesis/placed-layout.png" alt="The same filter after Update Layout from Schematic: five hairpin resonators, tapped at the outer ones, on the board's top copper." style="width:100%;height:auto">
+<figcaption>The same filter placed and wired between the bench's ports, and its copper from <b>Update Layout from
+Schematic</b>: five hairpins, fed by taps on the outer two.</figcaption>
+</figure>
 
 ## Running it headless {#headless}
 
