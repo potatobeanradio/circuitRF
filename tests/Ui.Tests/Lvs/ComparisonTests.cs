@@ -470,6 +470,34 @@ public sealed class ComparisonTests
         }
     }
 
+    /// <summary>The ladder (MLAD) as Update Layout places it compares clean, its via on G1, and its list changed on the
+    /// schematic afterwards is exactly one property mismatch naming Sections, compared as text.</summary>
+    [Fact]
+    public void ALadderComparesCleanAndASectionsMismatchIsAFinding()
+    {
+        string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-lad-" + Guid.NewGuid().ToString("N")[..12]);
+        try
+        {
+            var p = SchematicSync.SdlChecker.Prepare("F14-microstrip-ladder", scratch);
+            var layout = p.Applied(p.Plan());
+            Assert.Empty(SchematicSync.SdlChecker.Verify(p, layout));
+            Assert.DoesNotContain(LvsRun.Run(p.CellDir).Findings, f => f.Severity == DiagnosticSeverity.Error);
+
+            p.Model.Components.Single(c => c.InstanceName == "LAD1").Parameters.Single(q => q.Name == "Sections").Expression =
+                "line(W=1.1mm, L=5mm); stub(W=1.1mm, L=9mm, end=short); line(W=1.1mm, L=5mm)";
+            SchematicPersistence.SaveToFile(p.SchematicPath, p.Model, Path.GetFileNameWithoutExtension(p.SchematicPath));
+
+            var errors = LvsRun.Run(p.CellDir).Findings.Where(f => f.Severity == DiagnosticSeverity.Error).ToList();
+            var mismatch = Assert.Single(errors);
+            Assert.Equal("lvs.property.mismatch", mismatch.Id);
+            Assert.Equal("Sections", mismatch.Diagnostic.Arguments["name"]);
+        }
+        finally
+        {
+            try { Directory.Delete(scratch, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
     // ── hand-built netlists ───────────────────────────────────────────────────────────────────
 
     /// <summary>

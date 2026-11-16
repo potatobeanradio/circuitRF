@@ -1,0 +1,10 @@
+# The microstrip ladder as one part (MLAD): a line, a shorted stub and a line. A via to ground lands on the stub's end
+# (G1), and each port sits on its own pin.
+joinable g1
+Info LAD1 added
+Info V1 added
+Info V1 placed beside LAD1 pin G1 and tied to its pad
+Info P1 port 1 placed at LAD1 pin 1
+Info P2 port 2 placed at LAD1 pin 2
+port P1 1
+port P2 2
