@@ -205,6 +205,12 @@ public class HybridPlanTests
                                          Math.Sign(c.AngleDeg) * c.Radius * (1.0 - Math.Cos(c.AngleDeg * Math.PI / 180.0)))],
                 PlanBend b => [(0, 0), (b.Arm * (1.0 + Math.Cos(b.AngleDeg * Math.PI / 180.0)),
                                         b.Arm * Math.Sin(b.AngleDeg * Math.PI / 180.0))],
+                // Strip k's near and far ends, its centre below strip k − 1's by their half widths and the gap.
+                PlanCoupledStrips m => [.. Enumerable.Range(0, m.W.Count).SelectMany(k =>
+                {
+                    double y = -Enumerable.Range(1, k).Sum(i => (m.W[i - 1] + m.W[i]) / 2.0 + m.S[i - 1]);
+                    return new[] { (0.0, y), (m.L, y) };
+                })],
                 _ => throw new InvalidOperationException(),
             };
             double th = section.RotationDeg * Math.PI / 180.0;

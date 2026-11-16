@@ -67,6 +67,34 @@ public class PlanRouteTests
         Assert.Equal("device.route.runs-coupled", Assert.Single(r.Warnings).Id);
     }
 
+    /// <summary>Built coupled, a meander's legs are one N-line section over the same copper: every leg a strip, the turns
+    /// unchanged, the pieces joined, the run ending and spanning where the uncoupled one does, and no warning, since the
+    /// model now has the coupling.</summary>
+    [Theory]
+    [InlineData(PlanCorner.Curve, 3, 1, 0.0)]
+    [InlineData(PlanCorner.Miter, 2, -1, 90.0)]
+    public void ACoupledMeander_IsItsLegsAsOneNLineSection(PlanCorner corner, int turns, int side, double heading)
+    {
+        const double w = 1.1e-3, f = 2.4e9;
+        PlanRouteResult Route(bool coupled) => PlanRoute.Build(1e-3, -2e-3, heading, w, 2.0 * Math.PI, f, Ro4350b,
+            PlanRouteStyle.Meander, corner, turns, pitch: 2.0 * w, side: side, coupled: coupled);
+        var (apart, coupled) = (Route(false), Route(true));
+
+        var strips = Assert.Single(coupled.Sections.OfType<PlanCoupledStrips>());
+        var legs = apart.Sections.OfType<PlanLine>().Where(l => l.L == strips.L).ToList();
+        Assert.Equal(turns + 1, legs.Count);
+        Assert.Equal(turns + 1, strips.W.Count);
+        Assert.All(strips.S, s => Assert.Equal(w, s, 15));
+        Assert.Equal(apart.Sections.Count - legs.Count + 1, coupled.Sections.Count);
+        Assert.Equal(legs.SelectMany(l => l.Nodes).Order(), strips.Nodes.Order());
+        Assert.Equal((apart.EndX, apart.EndY, apart.EndRotationDeg, apart.NextNode), (coupled.EndX, coupled.EndY,
+            coupled.EndRotationDeg, coupled.NextNode));
+        Assert.Equal((apart.MinX, apart.MinY, apart.MaxX, apart.MaxY), (coupled.MinX, coupled.MinY, coupled.MaxX, coupled.MaxY));
+        HybridPlanTests.AssertJoined(new PassivePlan(["1", "2"], coupled.Sections, coupled.NextNode - 1));
+        Assert.Single(apart.Warnings);
+        Assert.Empty(coupled.Warnings);
+    }
+
     [Fact]
     public void TooManyTurnsForTheLength_IsACodedRefusal()
     {
