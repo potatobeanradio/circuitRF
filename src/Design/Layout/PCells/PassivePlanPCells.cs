@@ -57,6 +57,31 @@ public static class PassivePlanPCells
         => DrawOrRefuse(() => RatRacePlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
             SubstrateOf(technology, layerSelection), CornerOf(parameters)).Plan, technology, layerSelection);
 
+    /// <summary>The Gysel divider (MGPD): <see cref="GyselPlan"/>'s ring.</summary>
+    public const string GyselId = ComponentModelFactory.GyselTypeName;
+
+    /// <summary>The Bagley polygon divider (MBPD): <see cref="BagleyPlan"/>'s ring, its pins following N.</summary>
+    public const string BagleyId = ComponentModelFactory.BagleyTypeName;
+
+    /// <summary>The tee divider (MTPD): <see cref="TeeDividerPlan"/>'s one MTEE.</summary>
+    public const string TeeDividerId = ComponentModelFactory.TeeDividerTypeName;
+
+    public static PCellResult GenerateGysel(
+        IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
+        => DrawOrRefuse(() => GyselPlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
+            SubstrateOf(technology, layerSelection), CornerOf(parameters)).Plan, technology, layerSelection);
+
+    public static PCellResult GenerateBagley(
+        IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
+        => DrawOrRefuse(() => BagleyPlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
+            parameters.Real("N", 3.0), SubstrateOf(technology, layerSelection), CornerOf(parameters)).Plan,
+            technology, layerSelection);
+
+    public static PCellResult GenerateTeeDivider(
+        IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
+        => DrawOrRefuse(() => TeeDividerPlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
+            SubstrateOf(technology, layerSelection), parameters.Real("K", 1.0)).Plan, technology, layerSelection);
+
     /// <summary>A ring's <c>Corner</c>, a name; Curve when it is absent or not one of the names.</summary>
     private static PlanCorner CornerOf(IReadOnlyDictionary<string, PCellValue> parameters)
         => Enum.TryParse(parameters.Text("Corner"), ignoreCase: true, out PlanCorner c) && Enum.IsDefined(c) ? c : PlanCorner.Curve;

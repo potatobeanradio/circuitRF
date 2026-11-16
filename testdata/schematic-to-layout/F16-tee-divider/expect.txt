@@ -1,0 +1,8 @@
+# The tee divider as one part (MTPD): each port sits on its own pin.
+Info TPD1 added
+Info P1 port 1 placed at TPD1 pin 1
+Info P2 port 2 placed at TPD1 pin 2
+Info P3 port 3 placed at TPD1 pin 3
+port P1 1
+port P2 2
+port P3 3

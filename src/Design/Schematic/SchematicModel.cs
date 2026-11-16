@@ -724,6 +724,17 @@ public enum SymbolKind
     /// Gap between its two quarter-wave sections (MarchandBalunPlan). Pins 1 unbalanced, 2 and 3 balanced, G2 and G3 the
     /// strips' grounded ends — for ordinary vias to ground, not part of the part.</summary>
     Mcbl,
+    /// <summary>Gysel divider on microstrip (engine "MGPD", docs/design/rf-passives.md): specs Z0 and F, and how the ring
+    /// turns (Corner); the ring is derived (GyselPlan). Pins 1 the input, 2 and 3 the outputs, R2 and R3 the isolation
+    /// nodes beside them, each for an ordinary resistor of Z0 to ground — not part of the part.</summary>
+    Mgpd,
+    /// <summary>Bagley polygon divider on microstrip (engine "MBPD", docs/design/rf-passives.md): specs Z0, F and N, the odd
+    /// number of outputs, and Corner; the polygon is derived (BagleyPlan). N + 1 pins: 1 the input, 2 … N + 1 the outputs
+    /// in turn round the polygon. No resistors.</summary>
+    Mbpd,
+    /// <summary>Tee divider on microstrip (engine "MTPD", docs/design/rf-passives.md): specs Z0, F and the split K; an MTEE
+    /// whose through arms are quarter-wave transformers (TeeDividerPlan). Pins 1 the input, 2 and 3 the outputs.</summary>
+    Mtpd,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

@@ -118,6 +118,8 @@ public static class BuiltInSymbols
     private static readonly Symbol _mclc          = BuildMclc();
     private static readonly Symbol _midc          = BuildMidc();
     private static readonly Symbol _mcbl          = BuildMcbl();
+    private static readonly Symbol _mgpd          = BuildMgpd();
+    private static readonly Symbol _mtpd          = BuildMtpd();
     private static readonly Symbol _mimCap        = BuildMimCap();
     private static readonly Symbol _spiral        = BuildSpiral();
     private static readonly Symbol _octSpiral     = BuildOctSpiral();
@@ -166,6 +168,7 @@ public static class BuiltInSymbols
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _combinerCache = new();
     // MWPD per section count above one (one section is _mwpd), keyed by N; Primitives takes its PIN count.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mwpdCache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mbpdCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<PhasedArrayGlyph, Symbol> _phasedArrayCache = new();
     // Tuner-family cache key: (kind, showBias) — per-instance bias-branch variant.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(SymbolKind, bool), Symbol> _tunerCache = new();
@@ -275,6 +278,10 @@ public static class BuiltInSymbols
             case SymbolKind.Mclc:       return _mclc;
             case SymbolKind.Midc:       return _midc;
             case SymbolKind.Mcbl:       return _mcbl;
+            case SymbolKind.Mgpd:       return _mgpd;
+            case SymbolKind.Mbpd:
+                return _mbpdCache.GetOrAdd(CircuitRF.Core.Devices.Microstrip.BagleyPlan.WaysForPinCount(portCount), BuildMbpd);
+            case SymbolKind.Mtpd:       return _mtpd;
             case SymbolKind.MimCap:     return _mimCap;
             case SymbolKind.Spiral:     return _spiral;
             case SymbolKind.OctSpiral:  return _octSpiral;
@@ -2824,6 +2831,74 @@ public static class BuiltInSymbols
         Txt("2",  -140,  190, fontSize: MixerPortFontSize),
         Txt("3",   140,  190, fontSize: MixerPortFontSize),
     ], SymbolKind.Mcbl);
+
+    // MGPD — the Gysel ring: the input (1) at the left, the outputs 2 and 3 at the top and bottom, and the isolation nodes R2
+    // and R3 at the right, each where its own resistor to ground goes; each stretch of the ring marked with the spacing it
+    // has on the board (four λ/4 and the λ/2 between R2 and R3).
+    private static Symbol BuildMgpd() => Sym([
+        Circ(0, 0, 200),
+        L(-400,    0, -200,    0),
+        L(   0, -400,    0, -200),
+        L(   0,  400,    0,  200),
+        PLine(400, -300, 100, -300, 100, -173),
+        PLine(400,  300, 100,  300, 100,  173),
+        Circ(-200,    0, 10, filled: true),
+        Circ(   0, -200, 10, filled: true),
+        Circ(   0,  200, 10, filled: true),
+        Circ( 100, -173, 10, filled: true),
+        Circ( 100,  173, 10, filled: true),
+        Txt("1", -330, -40, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
+        Txt("2", 30, -330, fontSize: 40, align: SymbolTextAlign.Left),
+        Txt("3", 30,  330, fontSize: 40, align: SymbolTextAlign.Left),
+        Txt("R2", 330, -330, fontSize: 32, vAlign: SymbolTextVAlign.Bottom),
+        Txt("R3", 330,  330, fontSize: 32, vAlign: SymbolTextVAlign.Top),
+        Txt("λ/4", -150, -150, fontSize: 32, align: SymbolTextAlign.Right, vAlign: SymbolTextVAlign.Bottom),
+        Txt("λ/4", -150,  150, fontSize: 32, align: SymbolTextAlign.Right, vAlign: SymbolTextVAlign.Top),
+        Txt("λ/2",  230,    0, fontSize: 32, align: SymbolTextAlign.Left),
+    ], SymbolKind.Mgpd);
+
+    // MBPD — the Bagley polygon: the input (1) on the side that closes the polygon, a junction from which the two λ/4 input
+    // arms reach the first and last outputs; the outputs' corners down the right joined by the λ/2 sides, each corner's
+    // lead leaving to its pin, numbered in turn round the polygon. VARIADIC on N, cached per N.
+    private static Symbol BuildMbpd(int n)
+    {
+        double top = (1 - n) * 100.0, bottom = (n - 1) * 100.0;
+        var prims = new List<SymbolPrimitive>
+        {
+            L(-400, 0, -200, 0),
+            Circ(-200, 0, 10, filled: true),
+            L(-200, 0, 200, top),
+            L(-200, 0, 200, bottom),
+            L(200, top, 200, bottom),
+            Txt("λ/4", -20, top / 2 - 30, fontSize: 32, align: SymbolTextAlign.Right, vAlign: SymbolTextVAlign.Bottom),
+            Txt("λ/2", 230, n == 3 ? -100 : 0, fontSize: 32, align: SymbolTextAlign.Left),
+            Txt("1", -330, -40, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
+        };
+        for (int k = 1; k <= n; k++)
+        {
+            double y = (2 * k - n - 1) * 100.0;
+            prims.Add(Circ(200, y, 10, filled: true));
+            prims.Add(L(200, y, 400, y));
+            prims.Add(Txt($"{k + 1}", 330, y - 24, fontSize: SddPortLabelFontSize));
+        }
+        return Sym(prims, SymbolKind.Mbpd, n + 1);
+    }
+
+    // MTPD — the tee divider: the input meets the junction (dot), and each through arm, a λ/4 transformer, runs on to its
+    // output at the right's top or bottom.
+    private static Symbol BuildMtpd() => Sym([
+        L(-400, 0, -100, 0),
+        Circ(-100, 0, 10, filled: true),
+        PLine(-100, 0, -100, -200, 400, -200),
+        PLine(-100, 0, -100,  200, 400,  200),
+        RRect(150, -200, 200, 40, 8),
+        RRect(150,  200, 200, 40, 8),
+        Txt("λ/4", 150, -240, fontSize: 32, vAlign: SymbolTextVAlign.Bottom),
+        Txt("λ/4", 150,  240, fontSize: 32, vAlign: SymbolTextVAlign.Top),
+        Txt("1", -330, -40, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
+        Txt("2",  330, -240, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
+        Txt("3",  330,  240, fontSize: 40, vAlign: SymbolTextVAlign.Top),
+    ], SymbolKind.Mtpd);
 
     private static Symbol BuildTestPad()
     {

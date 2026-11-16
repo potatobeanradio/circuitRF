@@ -169,6 +169,9 @@ public static class DeviceTypes
             ["MWPD"]   = SymbolKind.Mwpd,
             ["MBLC"]   = SymbolKind.Mblc,
             ["MRRC"]   = SymbolKind.Mrrc,
+            ["MGPD"]   = SymbolKind.Mgpd,
+            ["MBPD"]   = SymbolKind.Mbpd,
+            ["MTPD"]   = SymbolKind.Mtpd,
             ["MCLC"]   = SymbolKind.Mclc,
             ["MIDC"]   = SymbolKind.Midc,
             ["MCBL"]   = SymbolKind.Mcbl,
@@ -302,7 +305,7 @@ public static class DeviceTypes
         // is the same line whichever model the schematic chose for it (AS-11 swaps between them).
         SymbolKind.Mlin or SymbolKind.MBend or SymbolKind.MCurve or SymbolKind.MMiter or SymbolKind.MGap or SymbolKind.MTee
             or SymbolKind.MCross or SymbolKind.Mtaper or SymbolKind.Mklopf or SymbolKind.GsgPad or SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
-            or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl
+            or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd
             or SymbolKind.Tline or SymbolKind.Cpwg or SymbolKind.Slin
             or SymbolKind.CLine or SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine
             => DeviceKind.TransmissionLine,

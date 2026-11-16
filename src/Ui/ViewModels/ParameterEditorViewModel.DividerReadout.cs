@@ -19,9 +19,11 @@ namespace CircuitRF.Ui.ViewModels;
 
 public partial class ParameterEditorViewModel
 {
-    /// <summary>True for a planned passive with a readout: MWPD, the hybrids and the coupled-line parts.</summary>
+    /// <summary>True for a planned passive with a readout: MWPD, the hybrids, the coupled-line parts and the other
+    /// dividers.</summary>
     public bool IsDividerReadoutTarget => _target?.Symbol is SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
-                                          or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl;
+                                          or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl
+                                          or SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd;
 
     /// <summary>The derived numbers, one per line, or empty.</summary>
     public string DividerReadoutText { get; private set; } = "";
@@ -38,6 +40,8 @@ public partial class ParameterEditorViewModel
             (text, note) = HybridReadout(_target.Symbol);
         else if (_target?.Symbol is SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl)
             (text, note) = CoupledLineReadout(_target.Symbol);
+        else if (_target?.Symbol is SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd)
+            (text, note) = SplitterReadout(_target.Symbol);
         else if (IsDividerReadoutTarget)
         {
             if (Spec("Z0") is not { } z0 || Spec("F") is not { } f || Spec("Gap") is not { } gap
