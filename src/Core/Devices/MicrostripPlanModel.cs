@@ -12,14 +12,15 @@ namespace CircuitRF.Core.Devices;
 /// <see cref="MarchandBalunPlan"/>). It has no line physics of its own: each section of the plan is the EXISTING
 /// part's model (<see cref="MicrostripTeeModel"/>, <see cref="MicrostripCurveModel"/>,
 /// <see cref="MicrostripLineModel"/>, <see cref="MicrostripCoupledLineModel"/>, <see cref="MicrostripMiterBendModel"/>,
-/// <see cref="MicrostripBendModel"/>), stamped into a
+/// <see cref="MicrostripBendModel"/>, <see cref="MicrostripGapModel"/>, <see cref="MicrostripTaperModel"/>; an open
+/// end <see cref="MicrostripOpenEnd"/>'s capacitance on MLIN's or MCLIN's own line), stamped into a
 /// <see cref="LocalAdmittanceBlock"/> on the plan's nodes, and the internal nodes are Kron-reduced away so the
 /// instance stamps one block on its pins — the way MTEE stamps the arms it draws (<see cref="JunctionArms"/>).
 /// The same network built from explicit instances of those parts is therefore the same matrix.
 ///
-/// <para>DC: every section is lossless there and joins the ends of each of its strips, so the pins fall into the
-/// plan's copper islands — each island's pins declared as shorts for the DC engines (<see cref="IDcShortedTerminals"/>),
-/// and tied as MTEE ties its own by an ω = 0 stamp. A Wilkinson is one island; a coupler's two strips are two.</para>
+/// <para>DC: every section is lossless there and joins the ends of each of its strips (a gap and an open end join
+/// nothing), so the pins fall into the plan's copper islands — each island's pins declared as shorts for the DC
+/// engines (<see cref="IDcShortedTerminals"/>), and tied as MTEE ties its own by an ω = 0 stamp. A Wilkinson is one island; a coupler's two strips are two.</para>
 /// </summary>
 public sealed class MicrostripPlanModel : ComponentModel, IReportsWarnings, IDcShortedTerminals
 {
@@ -46,9 +47,12 @@ public sealed class MicrostripPlanModel : ComponentModel, IReportsWarnings, IDcS
         foreach (var section in plan.Sections)
         {
             var n = section.Nodes;
-            var joins = section is PlanCoupledLine c
-                ? Enumerable.Range(0, c.Fingers).Select(k => (n[2 * k], n[2 * k + 1]))
-                : n.Skip(1).Select(x => (n[0], x));
+            IEnumerable<(int, int)> joins = section switch
+            {
+                PlanCoupledLine c => Enumerable.Range(0, c.Fingers).Select(k => (n[2 * k], n[2 * k + 1])),
+                PlanGap or PlanOpen => [],
+                _ => n.Skip(1).Select(x => (n[0], x)),
+            };
             foreach (var (a, b) in joins) root[Find(a)] = Find(b);
         }
         int pins = plan.Pins.Count;
@@ -75,6 +79,10 @@ public sealed class MicrostripPlanModel : ComponentModel, IReportsWarnings, IDcS
                     path, s.RoughnessMeters)
                 : new MicrostripBendModel(b.W, b.AngleDeg, MicrostripBendMiter.None, s.HMeters, s.TMeters, s.EpsR,
                     s.SigmaSPerM, s.TanD, path),
+            PlanGap g => new MicrostripGapModel(g.W, g.S, s.HMeters, s.EpsR, path),
+            PlanTaper t => new MicrostripTaperModel(t.W1, t.W2, t.L, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM, s.TanD,
+                path),
+            PlanOpen o => new MicrostripOpenEndModel(o, s, path),
             _ => throw new NotSupportedException(section.GetType().Name),
         };
         return (model, new ElaboratedComponent(model.GetType().Name, path, section.Nodes,
@@ -156,5 +164,68 @@ internal sealed class InterdigitatedLineModel : ComponentModel, IReportsWarnings
             CLineModel.StampModalPair(mna, n[2 * k], n[2 * k + 1], n[2 * b], n[2 * b + 1],
                 1.0 / yEven, ge * _l, 1.0 / yOdd, go * _l);
         }
+    }
+}
+
+/// <summary>
+/// An open end (<see cref="PlanOpen"/>): <see cref="MicrostripOpenEnd"/>'s end capacitance on the line's own Z0 and εeff
+/// at each frequency, MLIN's (<see cref="MicrostripLineModel.LineParameters"/>) for one strip's end and the MCLIN pair's
+/// modes (<see cref="MicrostripCoupledLineModel.ModesAt"/>) for a pair's two. Each mode of a pair takes the same Δl form
+/// at its own static εeff and its own capacitance Ce or Co: driven alike, each end sees Ce to ground; driven opposite,
+/// Ce plus twice the mutual. So each end stamps Ce to ground and the two (Co − Ce)/2 between them. An open at DC.
+/// </summary>
+internal sealed class MicrostripOpenEndModel : ComponentModel, IReportsWarnings
+{
+    private readonly MicrostripLineModel? _line;
+    private readonly MicrostripCoupledLineModel? _pair;
+    private readonly double _dlEven, _dlOdd;
+    private readonly MicrostripValidityReporter _reporter;
+
+    public override int PortCount => _pair is null ? 1 : 2;
+    public override ModelKind Kind => ModelKind.Linear;
+
+    public MicrostripOpenEndModel(PlanOpen o, MicrostripSubstrate s, string path)
+    {
+        _reporter = new MicrostripValidityReporter(path);
+        switch (o.Nodes.Length, o.S)
+        {
+            case (1, null):
+                _line = new MicrostripLineModel(o.W, 0.0, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM, s.TanD, path,
+                    s.RoughnessMeters);
+                _dlEven = MicrostripOpenEnd.Extension(o.W, s.HMeters, s.EpsR, _line.LineParameters(0.0).EeffStatic, _reporter);
+                break;
+            case (2, { } gap):
+                _pair = new MicrostripCoupledLineModel(o.W, gap, 0.0, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM, s.TanD,
+                    path, s.RoughnessMeters);
+                var m = _pair.ModesAt(0.0);
+                _dlEven = MicrostripOpenEnd.Extension(o.W, s.HMeters, s.EpsR, m.EeffE, _reporter);
+                _dlOdd = MicrostripOpenEnd.Extension(o.W, s.HMeters, s.EpsR, m.EeffO, _reporter);
+                break;
+            default:
+                throw new ArgumentException(
+                    $"An open end is one strip's end (one node, no S) or a coupled pair's two ends (two nodes and S); {o.Nodes.Length} nodes given.");
+        }
+    }
+
+    public IReadOnlyList<(string Key, string Message)> DrainWarnings()
+        => [.. _reporter.Drain(), .. _line?.DrainWarnings() ?? _pair!.DrainWarnings()];
+
+    public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
+    {
+        if (omega <= 0.0) return;
+        double f = omega / (2.0 * Math.PI);
+        var n = c.Nodes;
+        if (_line is not null)
+        {
+            var p = _line.LineParameters(f);
+            mna.AddAdmittance(n[0], 0, new Complex(0.0, omega * MicrostripOpenEnd.Capacitance(_dlEven, p.Eeff, p.Z0)));
+            return;
+        }
+        var m = _pair!.ModesAt(f);
+        double ce = MicrostripOpenEnd.Capacitance(_dlEven, m.EeffE, m.Ze);
+        double co = MicrostripOpenEnd.Capacitance(_dlOdd, m.EeffO, m.Zo);
+        mna.AddAdmittance(n[0], 0, new Complex(0.0, omega * ce));
+        mna.AddAdmittance(n[1], 0, new Complex(0.0, omega * ce));
+        mna.AddAdmittance(n[0], n[1], new Complex(0.0, omega * (co - ce) / 2.0));
     }
 }

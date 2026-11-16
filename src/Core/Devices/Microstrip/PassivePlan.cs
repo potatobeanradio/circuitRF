@@ -38,6 +38,28 @@ public sealed record PlanCurve(double W, double AngleDeg, double Radius,
 /// <summary>An MLIN: width and length, running along the part's +x from pin 1 to pin 2.</summary>
 public sealed record PlanLine(int[] Nodes, double X, double Y, double RotationDeg, double W, double L) : PlanSection(Nodes, X, Y, RotationDeg);
 
+/// <summary>An MGAP: the end-to-end gap <paramref name="S"/> between two line ends of width <paramref name="W"/>, pin 1
+/// at the pose and pin 2 S on along the part's +x (<see cref="MicrostripGapModel"/>, which refuses S ≤ 0 and warns
+/// outside its fit as MGAP does; <c>MGapPCell</c> draws no copper, only the two ends). No copper joins its nodes.</summary>
+public sealed record PlanGap(int[] Nodes, double X, double Y, double RotationDeg, double W, double S)
+    : PlanSection(Nodes, X, Y, RotationDeg);
+
+/// <summary>An MTAPER: width <paramref name="W1"/> at pin 1 to <paramref name="W2"/> at pin 2, linearly over
+/// <paramref name="L"/> along the part's +x (<see cref="MicrostripTaperModel"/>, <c>MTaperPCell</c>).</summary>
+public sealed record PlanTaper(int[] Nodes, double X, double Y, double RotationDeg, double W1, double W2, double L)
+    : PlanSection(Nodes, X, Y, RotationDeg);
+
+/// <summary>
+/// An open end: the field fringing past the end of a strip of width <paramref name="W"/> with nothing attached
+/// (<see cref="MicrostripOpenEnd"/>), stamped as its end capacitance to ground. One node: a line's end. Two nodes and
+/// the gap <paramref name="S"/>: the ends of a coupled pair's two strips at one end of a <see cref="PlanCoupledLine"/>
+/// (either strip first), each mode with its own end capacitance. It draws nothing; the pose only says where the end is.
+/// A quarter-wave stub's open end has a near-zero self admittance at resonance and <see cref="LocalAdmittanceBlock"/>
+/// does not pivot, so a plan numbers it first of its internal nodes, to be eliminated last (as MCBL numbers its own).
+/// </summary>
+public sealed record PlanOpen(int[] Nodes, double X, double Y, double RotationDeg, double W, double? S = null)
+    : PlanSection(Nodes, X, Y, RotationDeg);
+
 /// <summary>
 /// A corner: an MMITER of miter fraction <paramref name="M"/> (<see cref="MicrostripMiterBendModel"/>) or, with no M, an
 /// MBEND's square corner (<see cref="MicrostripBendModel"/>), turning <paramref name="AngleDeg"/> (counter-clockwise
