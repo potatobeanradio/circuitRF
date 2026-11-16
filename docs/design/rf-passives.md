@@ -2,7 +2,8 @@
 
 **Status:** six parts — MWPD, the Wilkinson divider, with its unequal-split (`K`) and multi-section (`N`) variants; MBLC
 and MRRC, the branch-line and rat-race hybrids; MCLC, MIDC and MCBL, the coupled-line coupler, interdigitated coupler
-and balun; MWPD's and MRRC's rings curved or cornered (`Corner`); the gap, taper and open-end sections (§1) · **Date:** 2026-11-16
+and balun; MWPD's and MRRC's rings curved or cornered (`Corner`); the gap, taper, cross and open-end sections (§1); MLAD, the
+microstrip ladder, an ordered list of sections (§3.5) · **Date:** 2026-11-16
 
 Dividers, couplers and baluns on microstrip, each one built-in part that is defined once and read the same way by the
 schematic, the layout, LVS and EM. Each part has its own subsection in §3.
@@ -20,7 +21,7 @@ one standard, generic design rather than six one-off parts. The rest of this sec
 takes the part's specs and the substrate and returns a `PassivePlan`: the part's pin names, and a list of sections. A
 section is an EXISTING microstrip part placed in the passive's frame — an MTEE (`PlanTee`), an MCURVE (`PlanCurve`),
 an MLIN (`PlanLine`), an MMITER or MBEND corner (`PlanBend`), an MCLIN or a set of interdigitated strips
-(`PlanCoupledLine`), an MGAP (`PlanGap`), an MTAPER (`PlanTaper`) — with the plan node each of its pins joins and a pose (where its pin 1 sits, a turn in quarters). Nothing in a plan is a new kind of line: it is the
+(`PlanCoupledLine`), an MGAP (`PlanGap`), an MTAPER (`PlanTaper`), an MCROSS (`PlanCross`) — with the plan node each of its pins joins and a pose (where its pin 1 sits, a turn in quarters; a cross's centre, its own origin). Nothing in a plan is a new kind of line: it is the
 vocabulary circuitRF already has, arranged. The one term that is not a part of its own is a line's open end
 (`PlanOpen`), below. Every dimension is held on a 2 nm grid
 (`PassivePlan.OnGrid`), so halves are whole database units and two pieces that meet in the plan meet to the last unit
@@ -28,13 +29,14 @@ in the artwork.
 
 **One model for every plan.** `MicrostripPlanModel` stamps each section through that part's own model
 (`MicrostripTeeModel`, `MicrostripCurveModel`, `MicrostripLineModel`, `MicrostripCoupledLineModel`,
-`MicrostripMiterBendModel`, `MicrostripBendModel`, `MicrostripGapModel`, `MicrostripTaperModel`, with their own validity
+`MicrostripMiterBendModel`, `MicrostripBendModel`, `MicrostripGapModel`, `MicrostripTaperModel`, `MicrostripCrossModel`, with their own validity
 warnings; an open end is `MicrostripOpenEnd`'s capacitance on MLIN's or MCLIN's own line) into a `LocalAdmittanceBlock` on the plan's nodes and Kron-reduces the internal nodes away — the way
 MTEE already stamps the arms it draws (`JunctionArms`).
 The block is shared with MTEE for that reason. A topology therefore writes no stamping code at all.
 
 **One drawing path from the same plan.** `PassivePlanPCells.Draw` draws each section through that part's own generator
-(`MTeePCell`, `MCurvePCell`, `MlinPCell`, `CoupledLinePCells`, `MMiterPCell`, `MBendPCell`, `MGapPCell`, `MTaperPCell`; an
+(`MTeePCell`, `MCurvePCell`, `MlinPCell`, `CoupledLinePCells`, `MMiterPCell`, `MBendPCell`, `MGapPCell`, `MTaperPCell`,
+`MCrossPCell`; an
 open end draws nothing), turned and moved to its pose, and takes the passive's
 pins from those parts' own pins. So the model and the layout are the same pieces by construction, not by two
 implementations agreeing.
@@ -334,13 +336,154 @@ against their quarter waves and joined (`WilkinsonPlanTests`, `HybridPlanTests`)
 and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`WilkinsonSParamTests`,
 `HybridSParamTests`), and `testdata/schematic-to-layout/F8d-wilkinson-mitred` through Update Layout and LVS.
 
+### 3.5 MLAD, the microstrip ladder
+
+MLAD is the first part that stores **geometry** rather than specs: one through line from pin 1 to pin 2 built from an
+ordered list of sections. A filter synthesis, written later, will produce exactly that list. The list alone covers the
+stepped-impedance and stub lowpass filters (the elliptic kind included), shorted-stub bandpass and highpass filters,
+quarter-wave stub bandstop filters, end-coupled bandpass filters, DC blocks, single- and double-stub matchers and
+multi-section quarter-wave transformers. `LadderPlan` is the whole of it in Core: the list, its text and the plan.
+
+| Parameter | Stored | Meaning |
+|---|---|---|
+| `Sections` | yes, text | The list (below). |
+| `Z0` | yes, Ω | The ports' lines: their width, Z0's at F, is the width a gap or a stub at either end sits on. |
+| `F` | yes, Hz | Where the readout states each section, and where the ports' lines' width is found. |
+| `SignalLayer`, `GroundReference` | yes | As for MWPD. |
+| each section's Z and θ at F; a gap's Cg and Cp | readout | `LadderPlan.Build(...).AtF`. |
+
+**The list, and why it is one text parameter.** circuitRF's list-valued parameters are indexed numbers: the Combiner's
+`IL[k]` and `Phase[k]`, a tone source's `Freq[k]`. They suit a list of numbers of one kind. A ladder's sections are of
+several kinds with different fields, a name among them (`end`, `side`), and inserting one in the middle would renumber
+every row after it. So `Sections` is one text parameter with a small grammar, parsed in Core (`LadderPlan.Parse`, and
+`LadderPlan.Format` writes it back):
+
+```
+Sections := item { ";" item }            empty items (a trailing ;) are skipped
+item     := kind "(" field { "," field } ")"
+field    := name "=" value                any order; names and words in any case; whitespace ignored
+line(W, L)   gap(S)   taper(W1, W2, L)   stub(W, L, end=open|short, side=up|down|both)
+```
+
+A length is a number in metres or a number with a length unit glued on (`mm`, `um`, `nm`, `cm`, `mil`, `in`); `m` alone
+is milli in circuitRF and is refused. `end` and `side` default to `open` and `up`. A wrong item is a coded refusal naming
+the section's number and text: `device.ladder.empty`, `.syntax`, `.unknown-kind`, `.unknown-field`, `.missing-field`,
+`.bad-value` and `.not-positive`, and for the part `.spec-not-positive` and `.width-unreachable`. The elaborator keeps
+`Sections` as text (as a ring's `Corner`), Update Layout hands it to the generator as text, the netlist extractor quotes
+it, and LVS compares it as a string, so a changed list is one `lvs.property.mismatch` naming `Sections`.
+
+**New kinds without breaking stored values.** A kind is a word and a field a name, so a kind added later reads no
+stored list differently: an unknown word is refused today and is a section tomorrow, and a field added with a default
+leaves every list that does not state it as it was. Radial and butterfly stubs and lumped sites are meant to arrive
+this way, as new kinds beside `stub`, each one model case and one drawer case.
+
+**The plan.** Every section is an existing part, with no new model or drawer code beyond one section kind:
+
+- `line` is a `PlanLine`, `gap` a `PlanGap` at the width there, and `taper` a `PlanTaper`. The width there starts as the
+  ports' lines' (W0) and is each line's W or each taper's W2 after it.
+- A one-sided `stub` is a `PlanTee` whose through arms end at the stub's edges (no line in them) and whose branch is the
+  whole stub, `L` past the wider through arm's edge: MTEE's own reference planes, so the junction is MTEE's and `L` is
+  the line beyond it. Its through arms take the widths either side. MTEE's branch leaves along its own −y, so an `up`
+  stub's tee is turned over.
+- A two-sided `stub` is a `PlanCross`, the new section: one case in `MicrostripPlanModel.Build`
+  (`MicrostripCrossModel`) and one in `PassivePlanPCells.Draw` (`MCrossPCell`), posed at its centre, MCROSS's own
+  origin. MCROSS reads a pair of arms ending at the other pair's edges as a straight line with pins on its sides, a rule
+  for a cross drawn alone, which would drop the junction. So the cross's through arms reach 1 µm past the stubs
+  (`LadderPlan.CrossThroughPast`): enough for the junction, and 0.01° at 10 GHz.
+- An open end is a `PlanOpen`. A shorted end is a pin, `G1`, `G2`, … in list order, up before down, for an ordinary
+  VIAGND, as MCBL's grounds are.
+- Nodes: the pins (1, 2, G…), then the open ends, numbered first of the internal nodes because a quarter-wave stub's end
+  has a near-zero self admittance at resonance and the local block does not pivot, then the rest in list order. The pins
+  sit exactly at the first section's start and the last one's end. No line is added, so a transformer or a matcher ends
+  on its own load. Every dimension is held on the 2 nm grid.
+
+**What it needed beyond the pattern.** Its pins follow the list: `EditableSchematic.PortCount` counts the shorted arms
+(`LadderPlan.Grounds`, 0 for a list that does not parse), and `SymbolPortDefs.For` and `BuiltInSymbols.Primitives` draw
+G1… along the bottom, 200 apart. Unlike MWPD's, the ladder's symbol differs at two and three pins, so the catalogue
+measures it as variadic: `ComponentTypeRegistry.PortCountParameter` names `Sections`, and the netlist reader does not
+infer `Sections` from a line's net count. A text parameter needed its path through the elaborator, Update Layout and
+the netlist extractor, as above.
+
+**What a synthesis must produce.** The list is physical, so a synthesis step's output is the list itself. Widths come
+from `LadderPlan.Width(Z, F, substrate)`, MLIN's impedance at F on the 2 nm grid. Lengths come from each line's own
+εeff at the design frequency. Series lines run between junction edges and stubs from the through line's edge, and an
+open stub is written short by its end extension (`MicrostripOpenEnd.Extension`). For each kind of design:
+
+- **Stepped impedance.** For each prototype value g: a shunt C as a low-Z line of βl = g·Zlow/R0, a series L as a high-Z
+  line of βl = g·R0/Zhigh, at the cutoff. The steps between them are not in the model.
+- **Richards and Kuroda.** Every element is λ/8 at the cutoff (Richards, Ω = tan βl). A shunt C becomes `stub(end=open)`
+  of Z = 1/C (normalised), and a shunt L `stub(end=short)` of Z = L. A series L is a series stub, which microstrip cannot
+  draw, so unit elements (`line`, also λ/8) are added at the ends and Kuroda's identities move them through: a unit
+  element Z1 then a series stub Z2 equals a shunt stub Z1(Z1 + Z2)/Z2 then a unit element Z1 + Z2. A low-impedance stub
+  may be split into two arms, `side=both`, each of twice the impedance.
+- **Elliptic kind.** Stepped impedance, with each shunt branch's zero as an open stub λ/4 at that zero, of the
+  impedance that gives the branch's admittance at the cutoff.
+- **Quarter-wave stub filters** (Matthaei). Stubs λ/4 at the centre joined by λ/4 lines: shorted for a bandpass, or
+  made wide for a highpass, and open for a bandstop.
+- **J-inverter gaps** (Cohn). Each inverter J gives a series susceptance b = J/(1 − J²) (normalised), and a `gap` whose
+  MGAP Cg is b/(ω0·Z0). MGAP's Cg falls monotonically with S, so a bisection finds S. Each resonator is
+  π − ½(atan 2bk + atan 2bk+1) long, less atan(ω0·Cp·Z0) for each end gap's Cp.
+- **Matchers and transformers.** Single and double stubs as `stub` and `line`, the load on pin 2 at the last section's
+  end, and λ/4 transformers as `line`s.
+
+The closed forms place each stub at a point, while the model includes each junction's reactance (MTEE, MCROSS). A
+synthesis that must land within a percent compensates for it, or optimises on the model.
+
+**What the tests hold** (each design from its closed form, on 20 mil RO4350B unless stated). `LadderPlanTests`: the
+list reads back what it writes, any case and spacing and length unit read, each refusal names its section, the pins
+follow the shorted stubs with the open ends first, and every section meets its neighbours with pin 2 at the ladder's
+length. `LadderSParamTests`:
+
+- every kind against its MLIN, MGAP, MTAPER, MTEE and MCROSS by hand, to 1e-9;
+- the stepped-impedance lowpass's −3 dB point at the g-values' cutoff, −4.6 %;
+- the Kuroda stub lowpass's, −2.1 %;
+- the elliptic kind's zero, +2.9 %;
+- the shorted-stub bandpass's centre (Matthaei), −1.7 %, and the highpass;
+- the bandstop's notch, +0.6 %;
+- the end-coupled bandpass's centre (Cohn, 25 mil alumina at 10 GHz), +0.04 %;
+- the DC block;
+- |S11| at F of −52 dB for the single-stub matcher, −39 dB for the double-stub matcher and −78 dB for the binomial
+  transformer.
+
+`LadderStackTests`: the same quarter-wave stub on the GaAs, Si and RO4350B stacks simulates and draws. Also
+`ALaddersPins_FollowItsShortedStubs`, `LadderReadoutTests`, `PlanSectionsPCellTests` (the cross is MCROSS's own
+artwork), and `testdata/schematic-to-layout/F14-microstrip-ladder` with its via on G1, LVS clean and a changed list
+one mismatch.
+
+**Limits.**
+
+- **The step between widths is not modelled.** There is no MSTEP: upstream left it out on purpose. A stepped-impedance
+  design is its lines cascaded, and the step capacitance is a known limit.
+- **The junctions are MTEE's and MCROSS's fits,** calibrated at εr 9.9. A stub wider than the line it stands on moves a
+  zero: +2.9 % for the elliptic example, by MTEE's negative branch inductance.
+- **Nothing checks the layout.** Coupling between neighbouring stubs is not in the model, and two stubs on one side
+  closer than their widths overlap without a refusal.
+- **The geometry is stored,** so a ladder moved to another stack keeps its widths. That is the point of a ladder, and
+  the readout shows what they come to there.
+
+**Possible enhancements.**
+
+1. **Expressions in the list.** A list holds numbers, so an optimiser cannot tune one section's length. Expressions in
+   fields, or one tunable per field, would let a synthesis hand its result to the optimiser for the last per cent the
+   junctions take.
+2. **A step section, if a step model is ever added.** It would be one model case and one drawer case, and the
+   stepped-impedance cutoff would include the steps.
+3. **Junction-aware lengths.** The closed forms place stubs at points. A helper that measured each junction's own phase,
+   as `PlanBend.LineLength` does for a corner, would let a synthesis correct its stubs exactly.
+4. **Coupled neighbours.** Stubs or lines closer than about three widths couple. A `PlanCoupledLine` between them would
+   put that in the model with no new model code.
+5. **A stub overlap refusal.** Two stubs on one side closer than their widths overlap; the plan could refuse that, as it
+   refuses a ring too small for its F.
+6. **Meandered stubs.** A low-frequency stub is long and straight; the route helper (S4) could fold it, at the cost of
+   the corner corrections it already carries.
+
 ## 4. What a new topology costs
 
 1. `src/Core/Devices/Microstrip/<X>Plan.cs` — the pure plan (and a section kind, with one case in
    `MicrostripPlanModel.Build` and one in `PassivePlanPCells.Draw`, if it needs a part the plans do not use yet).
    `PlanBend` (MMITER and MBEND, for `Corner`) cost exactly one model case and one drawer case; because MBEND stamps in
    branch (Z) form, the shared local block also learned to take branch rows, once, for any such part
-   (`LocalAdmittanceBlock`). `PlanGap` and `PlanTaper` cost the same, and `PlanOpen` that plus its closed form
+   (`LocalAdmittanceBlock`). `PlanGap`, `PlanTaper` and `PlanCross` cost the same, and `PlanOpen` that plus its closed form
    (`MicrostripOpenEnd`); a gap and an open end also join no copper, one line in the model's DC islands.
 2. `ComponentModelFactory` — the type name, `_parameterizedTypes` and one dispatch line to `MicrostripPlanModel`.
 3. `SchematicModel.SymbolKind`; `ComponentTypeRegistry` (entry, terminals text, `EngineReference`, parameter
@@ -348,7 +491,8 @@ and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`
    `BuiltInSymbols` (glyph); `MicrostripSubstrateInjection` (kind set); `SymbolArtworkGenerator`.
 4. `PassivePlanPCells.Generate<X>` and its `PCellRegistry` row; the generator row in `Lvs/DeviceType`; the generator
    in `GroundPourPlanner`'s line set. A part whose pins follow a parameter also needs its count in
-   `EditableSchematic.PortCount`, `SymbolPortDefs.For` and `BuiltInSymbols.Primitives` (§3.1).
+   `EditableSchematic.PortCount`, `SymbolPortDefs.For` and `BuiltInSymbols.Primitives` (§3.1), and, where two and three
+   pins draw differently, `ComponentTypeRegistry.PortCountParameter` (§3.5).
 5. Tests: the plan against its closed form, the composite against its parts by hand, a schematic-to-layout fixture; the
    records in `LibraryCatalogTests` and `PCellGeneratorVersioningTests`.
 6. Docs: a subsection under Dividers and couplers in `components.md`, and the example's README table.
