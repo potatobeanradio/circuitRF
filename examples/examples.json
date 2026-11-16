@@ -97,6 +97,11 @@
       "Summary": "A 50-to-100 ohm taper solved twice: once from the closed-form model, once by the planar EM engine. Run the EM setup and compare."
     },
     {
+      "Folder": "Dividers and Couplers",
+      "Title": "Dividers and Couplers",
+      "Summary": "Built-in dividers, hybrids, a coupler and a balun on 20 mil RO4350B at 2.4 GHz, each placed as one part from its specs and laid out by Update Layout. Run a cell's Planar MoM, EMerge and Palace setups, simulate its bench, and open its data display to see the circuit model against each solver."
+    },
+    {
       "Folder": "PCB Component Ports",
       "Title": "PCB Component Ports",
       "Summary": "A 50 ohm line with a three-part pi low-pass filter, solved once with each part as a component port, on Planar MoM, Palace and EMerge. A test bench puts the parts back and lays the three answers over the schematic alone; change a part value and no EM run is needed."
@@ -250,7 +255,7 @@
     { "Title": "Models", "Examples": ["Model Composer", "Symbolically Defined Device (SDD)"] },
     { "Title": "Layout and Interchange", "Examples": ["PDK PCells", "LVS", "Artwork to Schematic"] },
     { "Title": "Power Distribution Networks", "Examples": ["Power Rail"] },
-    { "Title": "Planar EM and Boards", "Examples": ["Klopfenstein Taper", "PCB Component Ports", "MMIC Component Ports", "Via Contact Resistor", "Passivated Pad"] },
+    { "Title": "Planar EM and Boards", "Examples": ["Klopfenstein Taper", "Dividers and Couplers", "PCB Component Ports", "MMIC Component Ports", "Via Contact Resistor", "Passivated Pad"] },
     { "Title": "3D EM", "Examples": ["3D EM", "3D Package", "3D Connector", "3D Wave Ports", "3D Eigenmode", "Capacitance Extraction", "Test Pad Capacitance"] },
     { "Title": "Antennas and Arrays", "Examples": ["Patch Antenna", "Antenna Co-Simulation", "Phased Array", "Loop Sensor"] },
     { "Title": "SAR", "Examples": ["SAR MRI Loop Coil", "SAR Phone Dipole"] },

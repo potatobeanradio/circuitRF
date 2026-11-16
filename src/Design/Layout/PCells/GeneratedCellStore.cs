@@ -140,7 +140,7 @@ public static class GeneratedCellStore
         // until now nothing checked it. A generator that disagrees produced a cell that silently could
         // not be compared, and the mismatch surfaced — if at all — as wrong connectivity much later.
         var terminals = TerminalMap.FromGeneratorPins(
-            [.. result.Pins.Select(p => p.Name)], SymbolPinNamesOf(generatorId), out string? refusal);
+            [.. result.Pins.Select(p => p.Name)], SymbolPinNamesOf(generatorId, result.Pins.Count), out string? refusal);
 
         if (refusal is not null)
             throw new InvalidOperationException(
@@ -387,9 +387,11 @@ public static class GeneratedCellStore
     /// brings its own. There is then nothing to disagree with, and the generator's own pin order is
     /// the port order.</para>
     /// </summary>
-    private static IReadOnlyList<string> SymbolPinNamesOf(string generatorId)
+    /// <summary>The registered symbol's pin names, asked at the generated cell's own pin count: a fixed symbol ignores
+    /// the count, and one whose pins follow a parameter (MWPD's N) answers for the variant that was generated.</summary>
+    private static IReadOnlyList<string> SymbolPinNamesOf(string generatorId, int pinCount)
         => Lvs.DeviceTypes.TryGetSymbolKind(generatorId, out var kind)
-            ? [.. SymbolPortDefs.For(kind).Select(p => p.Name)]
+            ? [.. SymbolPortDefs.For(kind, pinCount).Select(p => p.Name)]
             : [];
 
     /// <summary>

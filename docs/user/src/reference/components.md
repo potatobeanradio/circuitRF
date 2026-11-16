@@ -4,7 +4,7 @@ slug: reference/components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Components
 lede: Every component in the standard library — its symbol, what it does, and its parameters.
-keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox
+keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, Wilkinson, MWPD, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox
 ---
 
 Symbols are rendered from the live drawing engine, with their connection leads and their pins shown
@@ -1336,6 +1336,475 @@ most often left wrong — <code>IncludeCapacitance</code> and <code>er</code> �
 </div>
 
 {{table: components/WBond}}
+
+## Dividers and couplers {#dividers}
+
+Each part here is one RF topology, placed as one component and stated by what you specify rather than by its geometry:
+the port impedance and the centre frequency, and a coupler's coupling. There are six: the Wilkinson divider, the
+branch-line and rat-race hybrids, the coupled-line coupler, the interdigitated coupler and the coupled-line balun.
+circuitRF works out the lines on the workspace technology's substrate, the same way every time, and the layout draws
+exactly the pieces the circuit model simulates, so the schematic, the layout, LVS and EM all read the same few numbers.
+The parameters panel shows what the specs come out to — the widths, gaps and lengths, and a ring's radius — as values
+you read, not type. A lumped part the topology needs, such as a Wilkinson divider's
+isolation resistor, is not inside the component: it is an ordinary part on two of its pins, with its own land pattern,
+so it reaches the layout, LVS and the bill of materials as itself.
+
+### Wilkinson Divider (MWPD) {#mwpd}
+
+{{symbol: mwpd}}
+
+An in-phase two-way power divider on microstrip. Power into terminal 1 divides equally between terminals 2 and 3, which
+leave in phase, matched and isolated from each other at the centre frequency `F`; `K` makes the split unequal and `N` adds
+sections for a wider band ([below](#mwpd-unequal)). It works the other way
+round as a combiner. `R2` and `R3` are the ends of the two arms beside outputs 2 and 3: place a resistor of 2·`Z0` on
+them (dropped on the symbol's R2–R3 pins it needs no wire) and give it a land pattern. **Design ▸ Update Layout from
+Schematic** lays the resistor across the gap the ring closes on and puts each port on its own pin.
+
+**How it works.** The input meets two arms, each a line of √2·`Z0` a quarter of a wavelength long at `F`. A quarter-wave
+line turns the `Z0` load at its far end into (√2·`Z0`)²/`Z0` = 2·`Z0` at the input, and the two arms side by side are
+`Z0` again, so the input is matched. Driven from an output, the divider is easiest seen as two halves: with both outputs
+driven alike nothing flows through the resistor, and with them driven opposite the resistor's midpoint is a virtual
+ground, so each output sees half of it, `Z0`, through its arm — matched, and the power that would have crossed to the
+other output is spent in the resistor instead. At `F` the ideal divider has S11 = S22 = S33 = 0, S23 = 0 and
+|S21| = |S31| = 1/√2, −3.01 dB.
+
+**What circuitRF derives.** Every number below is recomputed from `Z0` and `F` on the technology's substrate, by the one
+function the model and the layout share:
+
+- the arm width, for √2·`Z0`, and the port line's width, for `Z0`, each from the microstrip line model's own impedance at
+  `F`;
+- the quarter wavelength, `c₀ / (4·F·√εeff)`, with εeff the arm's effective permittivity at `F`, including dispersion;
+- the ring. The arms leave an input tee, turn 180° and come back facing each other across `Gap`; each ends in an output tee
+  whose branch is terminal 2 or 3. A quarter wave is measured between the tees' reference planes: the straight run on the
+  input tee plus the bend's effective length, π·(R − 0.2·W), which fixes the bend's centre-line radius R;
+- the isolation resistance, 2·`Z0`, which the readout states. The resistor itself is yours.
+
+Each terminal is one port-line width of `Z0` line beyond its tee, so a port lands on a line rather than in a junction's
+fringing field.
+
+**The model** is the MTEE and MCURVE parts the layout draws, stamped together and reduced to the five terminals. It
+therefore has their limits, and says so in Messages: MTEE's junction formulas are calibrated on alumina (εr 9.9) and on
+W/h from 0.5 to 2, and MCURVE's length rule is stated for bend radii of 3 to 7 widths. A ring at low frequency is larger
+than that, where the bend's correction is a few per cent of a length that is right to first order. A specification the
+substrate cannot build is refused by name: an impedance no width reaches, or a quarter wave too short to make a ring
+(too high an `F`, or too wide a `Gap`).
+
+**The divider is narrowband.** Its match and isolation are exact at `F` only. On the example board (20 mil RO4350B,
+2.4 GHz) the circuit model keeps |S11| and |S23| below −20 dB from about 2.0 to 2.8 GHz.
+
+**In EM.** Name the resistor as a component port. The ring joins `R2` to `R3` the long way round, so the resistor's two
+pads lie on one piece of copper and its port closes a loop ([A part across a loop](em-setup.html#component-port-loop)).
+At RF that is an ordinary port, and closing it with the 100 Ω gives the isolation. The run warns that the port's 0 Hz row
+reads the ring's copper. The [Dividers and Couplers](../examples/dividers-and-couplers/index.html) example runs it on
+Planar MoM, EMerge and Palace.
+
+`Gap` is the span of the resistor's pins, 1.35 mm for an 0402 at nominal density. Change it with the land pattern.
+
+#### Unequal split: `K` {#mwpd-unequal}
+
+`K` sets how the power divides: port 3 takes K² times what port 2 takes. `K` = 1 is the equal split; `K` = 1.4142 sends
+twice the power to port 3, 3.01 dB more; a `K` below 1 favours port 2 the same way.
+
+**How it works.** The resistor must carry nothing when the divider is driven from terminal 1, so the two arms' far ends
+have to sit at the same voltage while delivering different powers. A power P into a resistance R is V²/R, so the two ends
+are made to look like different resistances: K·`Z0` at port 2's end and `Z0`/K at port 3's. With P3 = K²·P2 the two
+voltages are then equal. Each arm is a quarter wave that turns its end's resistance into what the input needs to divide
+in that ratio, which gives arms of `Z0`·√(K(1 + K²)) to port 2 and `Z0`·√((1 + K²)/K³) to port 3, and each output then
+needs a quarter-wave transformer of `Z0`·√K or `Z0`/√K to bring its end back to `Z0`. Driven from the outputs, the
+isolation resistor that matches them and spends the cross-coupled power is `Z0`·(K + 1/K), 2·`Z0` at K = 1.
+
+**What circuitRF derives** on top of the equal split: the two arms' impedances and widths, the two transformers', each
+line's quarter wave, and the resistor. The two arms have different effective permittivities, so their quarter waves are
+different lengths; both curve on one radius, so the input tee's two straight runs differ instead and the resistor's gap
+sits a little off the input's line. Each transformer is the branch of its output tee, and the terminal is at its end.
+
+**Limits.** Port 2's arm grows as K^1.5: on 20 mil RO4350B, `K` = 2 already asks for a 158 Ω line, and `K` = 4 for
+412 Ω, which no width reaches; a split the board cannot draw is refused (`device.wilkinson.split-unrealisable`), naming
+the line. The
+unequal split is one section only. At `K` = 1 the transformers would be `Z0` lines that change nothing, so the equal split
+leaves them out; a `K` just off 1 puts them in, so its outputs are a quarter wave further from the junction, 90° later.
+
+#### Broadband: `N` sections {#mwpd-sections}
+
+`N` = 2 or 3 cascades that many quarter-wave sections, each with its own isolation resistor, to divide over a band rather
+than at one frequency. `Band` is the band's upper edge over its lower, f2/f1, centred on `F` (2, an octave, by default).
+The part grows two terminals per section: resistor 1 goes on `R2`–`R3` at the outputs as before, and resistor k on
+`R2_k`–`R3_k`, counted from the outputs inward; the readout lists every section and every resistor's value. Dropped on
+the symbol's pins, each resistor needs no wire.
+
+**How it works.** Driven from terminal 1, both halves carry the same signal and no resistor carries current, so each half
+is simply a chain of quarter waves from 2·`Z0` (half of the input) down to `Z0` (an output). One quarter wave can match
+that at one frequency; N of them can keep the reflection small across a band. circuitRF makes it equal-ripple (Chebyshev)
+from f1 = 2F/(1 + Band) to f2 = 2F·Band/(1 + Band), with the section impedances symmetric about √2·`Z0`
+(z_k·z_(N+1−k) = 2·`Z0`²), so its reflection is exactly zero at N frequencies inside the band. Driven from the outputs
+in antiphase, the input junction is a virtual ground and each resistor's midpoint is ground too, so each half is a
+shorted chain of the same sections with half of each resistor across it at every junction. The resistors are solved so
+that this half is exactly matched at those same N frequencies (N equations, N resistors); there every port is matched
+and the outputs are isolated. The one-section divider is the N = 1 case of the same rule.
+
+For an octave, the sections and resistors, from the outputs inward, in units of `Z0`:
+
+| N | Sections | Resistors |
+|---|---|---|
+| 1 | 1.4142 | 2 |
+| 2 | 1.2196, 1.6399 | 4.8428, 1.9539 |
+| 3 | 1.1130, 1.4142, 1.7970 | 10.468, 3.9009, 1.9410 |
+
+**Layout.** The ring is the section next to the input. Each further section is a pair of straight lines run on from the
+ring's output tees, one each side of the gap's centre line, with a tee at every junction whose short branch reaches the
+gap's edge, so every resistor lands across the gap at its own junction as the first one does on the ring.
+
+**Limits.** The pair of lines run side by side about `Gap` apart, and the model treats them as separate lines: their
+coupling to each other is not in it. EM includes it; on the example board the EM isolation follows the model's to a few
+dB, so there it is small, but a narrow `Gap` on a thick substrate couples more. The tees at the junctions are MTEE's
+model, with its limits. `N` sets the number of terminals, so it must be a plain number, not an expression or a swept
+variable; above 3, a `Band` not above 1, or a `K` other than 1 with more than one section is refused by name.
+
+On the example board, the two-section divider keeps |S11| below −20 dB from 1.31 to 3.22 GHz and |S23| from 1.31 to
+3.36 GHz, a 2.5:1 band, where one section does from 1.98 to 2.85 GHz and from 1.92 to 2.77 GHz, 1.4:1. It pays for it with
+a quarter wave more line, 0.09 dB more loss at `F`, and a shallower null at `F` itself (|S11| −26 dB rather than −48).
+
+#### Corners: `Corner` {#mwpd-corner}
+
+`Corner` says how the ring turns. `Curve`, the default, is the 180° bends described above. `Miter` and `Square` draw
+the ring as a rectangle instead: each arm rises from the input tee, turns 90°, runs across, turns again and comes back
+to its output tee. A `Miter` corner is an [MMITER](#mmiter) at its usual chamfer, the Douville–James optimum for the
+arm's W/h; a `Square` corner is an [MBEND](#mbend) with no chamfer.
+
+**What circuitRF derives.** A corner has an electrical length of its own, and circuitRF takes it from the corner's own
+model at `F` on the substrate (its phase between two lines of the arm's impedance) and shortens the straight runs by it,
+so each arm is still a quarter wave at `F` between the tees' reference planes, corners included. On the example board
+at 2.4 GHz a mitred corner stands for 0.57 mm of the arm; left in, the two corners would make each arm 6 % long and lift
+|S11| at `F` from −52 dB to −30 dB. The rectangle is as tall as the curved ring, so its two arms stay a ring's width
+apart: the model does not include coupling between them, and a flatter rectangle would run them side by side. Both arms
+span one width between the tees; with `K` ≠ 1 the arm that needs more line takes up the difference in its rise and
+fall, so the gap stays on the input's line. Every `K` and `N` works with either corner,
+and the parameters panel shows each arm's runs and what one corner stands for.
+
+**When to choose it.** Choose a corner when the layout wants a rectilinear outline: to sit on a placement grid, to run
+lines alongside it, or to pack several parts close together. Prefer `Miter`: on the example board the mitred divider is
+matched and isolated at `F` as well as the curved one (|S11| −52 dB against −48, |S23| −36 dB for both), while square
+corners reflect, from the excess capacitance an unchamfered corner carries, and hold |S11| at −29 dB. Use `Square`
+where the board's rules or its fabrication call for edges on the grid alone.
+
+#### More than two ways {#mwpd-nway}
+
+Wilkinson's paper divides N ways at once: N quarter-wave arms of √N·`Z0` from the input, and a resistor of `Z0` from each
+arm's end to one common point. MWPD does not draw it, because for three ways or more it cannot be drawn on one layer.
+Every output's line has to leave the divider for its port, so count the board's edge as one more node: the input, the
+resistors' common point and the edge are each joined to every one of the outputs. With three outputs that is the
+three-by-three "utility" graph, which no drawing in a plane makes without a crossing; a real N-way divider needs an air
+bridge, a second layer or a resistor laid over a line. The two-way divider's version of that graph is planar, which is
+why its ring closes across one gap.
+
+The planar answer is a tree of two-way dividers: 4 ways is three MWPDs, and the
+[Dividers and Couplers](../examples/dividers-and-couplers/index.html) example draws one. Three equal ways is an
+unequal MWPD with `K` = 1.4142, which sends a third to port 2 and two thirds to port 3, followed by an equal MWPD on
+port 3, and on port 2 a line as long as that divider if the three outputs must be in phase.
+
+{{table: components/Mwpd}}
+
+**References**
+
+> E. J. Wilkinson, "An N-Way Hybrid Power Divider," *IRE Transactions on Microwave Theory and Techniques*, vol. 8,
+> no. 1, pp. 116–118, January 1960. DOI [10.1109/TMTT.1960.1124668](https://doi.org/10.1109/TMTT.1960.1124668).
+
+> D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012, §7.3. A book, with no DOI:
+> [the publisher's page](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553).
+
+> L. I. Parad and R. L. Moynihan, "Split-Tee Power Divider," *IEEE Transactions on Microwave Theory and Techniques*,
+> vol. 13, no. 1, pp. 91–95, January 1965. DOI [10.1109/TMTT.1965.1125934](https://doi.org/10.1109/TMTT.1965.1125934).
+> The unequal split.
+
+> S. B. Cohn, "A Class of Broadband Three-Port TEM-Mode Hybrids," *IEEE Transactions on Microwave Theory and
+> Techniques*, vol. 16, no. 2, pp. 110–116, February 1968.
+> DOI [10.1109/TMTT.1968.1126617](https://doi.org/10.1109/TMTT.1968.1126617). The multi-section divider.
+
+> R. J. P. Douville and D. S. James, "Experimental Study of Symmetric Microstrip Bends and Their Compensation," *IEEE
+> Transactions on Microwave Theory and Techniques*, vol. 26, no. 3, pp. 175–182, March 1978.
+> DOI [10.1109/TMTT.1978.1129340](https://doi.org/10.1109/TMTT.1978.1129340). The mitred corner's chamfer.
+
+> M. Kirschning, R. H. Jansen and N. H. L. Koster, "Measurement and Computer-Aided Modeling of Microstrip
+> Discontinuities by an Improved Resonator Method," *1983 IEEE MTT-S International Microwave Symposium Digest*,
+> pp. 495–497. DOI [10.1109/MWSYM.1983.1130959](https://doi.org/10.1109/MWSYM.1983.1130959). The square corner's model.
+
+> E. Hammerstad and Ø. Jensen, "Accurate Models for Microstrip Computer-Aided Design," *1980 IEEE MTT-S International
+> Microwave Symposium Digest*, pp. 407–409. DOI [10.1109/MWSYM.1980.1124303](https://doi.org/10.1109/MWSYM.1980.1124303).
+
+> M. Kirschning and R. H. Jansen, "Accurate model for effective dielectric constant of microstrip with validity up to
+> millimetre-wave frequencies," *Electronics Letters*, vol. 18, no. 6, pp. 272–273, 1982.
+> DOI [10.1049/el:19820186](https://doi.org/10.1049/el:19820186).
+
+### Branch-Line Hybrid (MBLC) {#mblc}
+
+{{symbol: mblc}}
+
+A 3 dB quadrature (90°) hybrid on microstrip, in one or two sections. Two through lines, 1–2 and 4–3, are joined by
+quarter-wave shunt arms. Power into terminal 1 divides equally between terminal 2 (through) and terminal 3 (coupled),
+which leave a quarter period apart, 3 behind 2; terminal 4 is isolated and every terminal is matched at the centre
+frequency `F`. The coupler is symmetric, so any terminal can be the input, with the other three taking the same roles
+around the ring.
+
+**How it works.** The coupler is a mirror image of itself across the line midway between the two through lines, so a
+drive at terminal 1 can be split into an even half (1 and 4 driven alike) and an odd half (driven opposite). In the even
+half the midline is an open circuit, in the odd half a short, and each shunt arm becomes an eighth-wave stub, open or
+shorted, on a single through line. Each half is then a two-port that can be solved on its own, and the four
+S-parameters are the halves' sums and differences: S11 and S41 come from the two reflections, S21 and S31 from the two
+transmissions. With one section — series arms of `Z0`/√2 and shunt arms of `Z0`, all a quarter wave long — both halves
+are matched at `F`, and they transmit with equal magnitude and a quarter period apart: S11 = S41 = 0, S21 = −j/√2 and
+S31 = −1/√2, so |S21| = |S31| = −3.01 dB with 3 lagging 2 by 90°.
+
+Two sections, three shunt arms, give a wider band. Normalise each arm's admittance to the ports' (t for the series arms,
+a for the two outer shunt arms, b for the middle one): the halves are matched and the fourth terminal isolated when
+b = 2·a·t² / (1 + a²), and the split is 3 dB when b / t² = 1/√2. circuitRF keeps the series arms at `Z0` (t = 1), which
+gives a = √2 − 1 and b = 1/√2: outer shunt arms of (1 + √2)·`Z0` and a middle one of √2·`Z0`, 120.7 Ω and 70.7 Ω in a
+50 Ω system. At `F` it is matched, isolated and split 3 dB, the through port now half a period behind the input and
+3 again a quarter period behind 2.
+
+**What circuitRF derives** from `Z0`, `F` and `N` on the technology's substrate, by the one function the model and the
+layout share:
+
+- each arm's width, from the microstrip line model's own impedance at `F`, and the ports' `Z0` width;
+- each arm's length, a quarter of a guide wavelength at `F`, `c₀ / (4·F·√εeff)` with εeff the arm's own effective
+  permittivity at `F`, including dispersion, measured between the reference planes of the two MTEEs it joins: a through
+  arm from half the branch's width, a shunt arm from half the wider through arm's;
+- with two sections, one span for all three shunt arms, since both through lines are straight: each shunt arm takes the
+  mean of the arms' quarter waves, about 1.5 % from its own on the example board.
+
+Each terminal is one port-line width of `Z0` line beyond its tee, in line with the through line, and each tee carries one
+port-line width of its shunt arm before the arm's own line begins, so the circuit model includes the junction. The
+parameters panel shows each arm's width, impedance and length.
+
+**The model** is the MTEE and MLIN parts the layout draws, stamped together and reduced to the four terminals, with their
+limits, which it reports in Messages: MTEE's junction formulas are calibrated on alumina (εr 9.9), on W/h from 0.5 to 2
+and on a branch of 25 to 100 Ω, and the two-section coupler's 120.7 Ω outer arms are outside the last. The junctions'
+own reactance moves the best match a little below `F`: 2.36 GHz for `F` = 2.4 GHz on the example board, where |S11| is
+still −30 dB at `F`. A specification the substrate cannot build is refused by name: an impedance no width reaches, an arm
+too short to leave each tee its stub (a high `F`), or `N` other than 1 or 2.
+
+**The coupler is narrowband.** On the example board (20 mil RO4350B, 2.4 GHz) the circuit model keeps |S11| and |S41|
+below −20 dB from 2.24 to 2.49 GHz with one section, and from 2.08 to 2.64 GHz with two. The
+[Dividers and Couplers](../examples/dividers-and-couplers/index.html) example runs the one-section coupler on Planar MoM,
+EMerge and Palace.
+
+{{table: components/Mblc}}
+
+**References**
+
+> D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012, §7.5, the quadrature (90°) hybrid. A book, with no DOI:
+> [the publisher's page](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553).
+
+> J. Reed and G. J. Wheeler, "A Method of Analysis of Symmetrical Four-Port Networks," *IRE Transactions on Microwave
+> Theory and Techniques*, vol. 4, no. 4, pp. 246–252, October 1956.
+> DOI [10.1109/TMTT.1956.1125071](https://doi.org/10.1109/TMTT.1956.1125071). The even- and odd-mode method.
+
+> R. Levy and L. F. Lind, "Synthesis of Symmetrical Branch-Guide Directional Couplers," *IEEE Transactions on Microwave
+> Theory and Techniques*, vol. 16, no. 2, pp. 80–89, February 1968.
+> DOI [10.1109/TMTT.1968.1126612](https://doi.org/10.1109/TMTT.1968.1126612).
+
+> M. Muraguchi, T. Yukitake and Y. Naito, "Optimum Design of 3-dB Branch-Line Couplers Using Microstrip Lines," *IEEE
+> Transactions on Microwave Theory and Techniques*, vol. 31, no. 8, pp. 674–678, August 1983.
+> DOI [10.1109/TMTT.1983.1131568](https://doi.org/10.1109/TMTT.1983.1131568).
+> These two are the synthesis of multi-section branch-line couplers that the two-section design follows. The arm
+> impedances used here, outer shunt arms of (1 + √2)·`Z0` and a middle one of √2·`Z0` with series arms of `Z0`, come from
+> the even/odd conditions under **How it works**, and the circuit model checks them: matched, isolated and split 3 dB at
+> `F`.
+
+> E. Hammerstad and Ø. Jensen, "Accurate Models for Microstrip Computer-Aided Design," *1980 IEEE MTT-S International
+> Microwave Symposium Digest*, pp. 407–409. DOI [10.1109/MWSYM.1980.1124303](https://doi.org/10.1109/MWSYM.1980.1124303).
+
+> M. Kirschning and R. H. Jansen, "Accurate model for effective dielectric constant of microstrip with validity up to
+> millimetre-wave frequencies," *Electronics Letters*, vol. 18, no. 6, pp. 272–273, 1982.
+> DOI [10.1049/el:19820186](https://doi.org/10.1049/el:19820186).
+
+### Rat-Race Hybrid (MRRC) {#mrrc}
+
+{{symbol: mrrc}}
+
+A 3 dB 180° hybrid on microstrip: a ring with four terminals on it. Terminal 1 is the sum (Σ) port and terminal 4 the
+difference (Δ) port; 2 and 3 are the outputs. Power into 1 divides equally between 2 and 3, in phase, and 4 is isolated;
+power into 4 divides equally between 2 and 3, half a period apart, and 1 is isolated. Driven at 2 and 3 together it
+works the other way round, delivering their sum at 1 and their difference at 4. 2 and 3 are isolated from each other.
+
+**How it works.** The ring is a line of √2·`Z0`, one and a half guide wavelengths round, with the terminals in the order
+2, 1, 3, 4 spaced a quarter, a quarter, a quarter and three quarters of a wavelength apart. Seen from terminal 1, each
+output is a quarter wave away one way round the ring and five quarters the other, so the two paths arrive in phase and
+add; terminal 4 is half a wave away one way and a whole wave the other, so they cancel. From terminal 4 the two outputs
+are a quarter wave and three quarters away by their shorter paths, so they leave half a period apart. Each quarter-wave
+path of √2·`Z0` turns a `Z0` load into 2·`Z0`, and two of them side by side are `Z0` again, so every terminal is matched.
+The same result follows from splitting the ring into even and odd halves about its line of symmetry, as for the
+branch-line hybrid. At `F` the ideal hybrid has S21 = S31 = −j/√2, S24 = −S34 = j/√2, and S11, S44, S41 and S23 zero.
+
+**What circuitRF derives** from `Z0` and `F` on the technology's substrate, by the one function the model and the layout
+share:
+
+- the ring's width, for √2·`Z0`, and the ports' `Z0` width, from the microstrip line model's own impedance at `F`;
+- the quarter wavelength, `c₀ / (4·F·√εeff)` with the ring's effective permittivity at `F`, and every spacing measured
+  between the reference planes of the MTEEs on the ring;
+- the ring's shape. Its pieces turn only in quarter turns, so the terminals cannot sit 60° apart on a circle: the ring is
+  two straight runs joined by two 180° bends, terminals 2, 1 and 3 on one run with their lines leaving the same way and
+  terminal 4 on the other. Closing it with one tee on one run against three on the other fixes the bends:
+  π·(R − 0.2·W) = λg/4 − W0, with W the ring's width, W0 the ports' and R the bends' centre-line radius.
+
+Each terminal is one port-line width of `Z0` line beyond its tee. The parameters panel shows the widths, the quarter
+wavelength and the bends' radius.
+
+**Corners.** `Corner` = `Miter` or `Square` turns each end of the ring on two 90° corners, an MMITER at its usual
+chamfer or an MBEND with none, with a straight side between them, so the ring is a rectangle
+([as the divider's](#mwpd-corner)). Each end is still λg/4 − W0 of line: the two corners at their own electrical length
+at `F`, taken from the corner's model, plus the side, which is that much shorter. On the example board |S11|, |S44|,
+|S41| and |S23| stay below −49 dB at `F` with mitred corners (−49 to −51 dB with the bends) and below −42 dB with
+square ones.
+Choose it for the same reasons as the divider's, `Miter` first.
+
+**The model** is the MTEE, MLIN and MCURVE parts the layout draws, stamped together and reduced to the four terminals,
+with their limits, which it reports in Messages: MTEE's junction formulas are calibrated on alumina (εr 9.9) and on W/h
+from 0.5 to 2, and MCURVE's length rule is stated for bend radii of 3 to 7 widths, a smaller ring than most. A
+specification the substrate cannot build is refused by name: an impedance no width reaches, or a quarter wave too short
+to leave the bends a radius of one ring width (too high an `F`).
+
+**The hybrid is narrowband.** On the example board (20 mil RO4350B, 2.4 GHz) the circuit model keeps |S11|, |S44|, |S41|
+and |S23| below −20 dB from 2.04 to 2.71 GHz. The [Dividers and Couplers](../examples/dividers-and-couplers/index.html)
+example runs it on Planar MoM, EMerge and Palace.
+
+{{table: components/Mrrc}}
+
+**References**
+
+> D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012, §7.8, the 180° hybrid and its ring form. A book, with no
+> DOI: [the publisher's page](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553).
+
+> J. Reed and G. J. Wheeler, "A Method of Analysis of Symmetrical Four-Port Networks," *IRE Transactions on Microwave
+> Theory and Techniques*, vol. 4, no. 4, pp. 246–252, October 1956.
+> DOI [10.1109/TMTT.1956.1125071](https://doi.org/10.1109/TMTT.1956.1125071).
+
+> E. Hammerstad and Ø. Jensen, "Accurate Models for Microstrip Computer-Aided Design," *1980 IEEE MTT-S International
+> Microwave Symposium Digest*, pp. 407–409. DOI [10.1109/MWSYM.1980.1124303](https://doi.org/10.1109/MWSYM.1980.1124303).
+
+> M. Kirschning and R. H. Jansen, "Accurate model for effective dielectric constant of microstrip with validity up to
+> millimetre-wave frequencies," *Electronics Letters*, vol. 18, no. 6, pp. 272–273, 1982.
+> DOI [10.1049/el:19820186](https://doi.org/10.1049/el:19820186).
+
+### Coupled-Line Coupler (MCLC) {#mclc}
+
+{{symbol: mclc}}
+
+A single-section backward-wave directional coupler on microstrip: two edge-coupled strips a quarter wavelength long at
+`F`. Power into terminal 1 goes on to the through port, terminal 2, and a fraction of it, `Coupling` dB down, appears at
+the coupled port, terminal 3, beside the input; the isolated port, terminal 4, ideally gets none. The coupled wave leaves
+90° ahead of the through wave. Its pins are MCLIN's, so the part is an MCLIN whose `W`, `S` and `L` are chosen for you.
+
+**How it works.** A symmetric pair carries two modes: the even mode, both strips at one voltage, and the odd mode, the
+strips at opposite voltages, each a line of its own impedance, Ze and Zo. With Ze·Zo = Z0² every port is matched at
+every frequency, and at the quarter wave the coupled voltage is c = (Ze − Zo)/(Ze + Zo). So a coupling of C dB, with
+c = 10^(−C/20), asks for Ze = Z0·√((1 + c)/(1 − c)) and Zo = Z0·√((1 − c)/(1 + c)).
+
+**What circuitRF derives.** The strip width and gap whose even and odd impedances at `F` are those two, found from the
+coupled-line model itself (the Kirschning–Jansen equations MCLIN uses), and the length, `c₀ / (4·F·√εeff)` with εeff
+the mean of the two modes' effective permittivities at `F`. The search covers the model's published range, W/h and S/h
+from 0.1 to 10: a coupling that would need a narrower gap, or a wider one, is refused by name.
+
+**Microstrip's limit is directivity.** The odd mode has more of its field in the air and travels faster than the even
+mode, so the strips cannot be a quarter wave for both. Coupling and match hold at `F`; the isolated port picks up the
+difference. On the example board (20 mil RO4350B, 2.4 GHz) the circuit model gives about 11 dB of directivity at 10 dB
+coupling and under 5 dB at 20 dB. Tight coupling needs narrow gaps there: 10 dB needs 115 µm, 8 dB 65 µm.
+
+**In EM** the coupling lives in that narrow gap, and the mesh has to resolve it: the
+[Dividers and Couplers](../examples/dividers-and-couplers/index.html) example runs the 10 dB coupler on Planar MoM with
+its edge mesh on (within 0.25 dB of the model at `F`) and on EMerge and Palace with refined meshes; their coarsest presets
+read the coupling several dB too strong.
+
+{{table: components/Mclc}}
+
+### Interdigitated Coupler (MIDC) {#midc}
+
+{{symbol: midc}}
+
+A four-finger interdigitated quadrature coupler on microstrip — the Lange coupler, unfolded. Four quarter-wave strips lie
+side by side; alternate strips are joined at both ends into two conductors, so each conductor couples to the other across
+three gaps instead of one and reaches couplings a single pair cannot. Terminals 1 to 4 are as MCLC's: 1 the input and
+2 the through port on the top finger, 3 the coupled port and 4 the isolated port on the bottom finger. `J1` to `J4` are
+the inner fingers' ends: **the joins are not part of the part**. Place a jumper from each terminal k to Jk — on a board,
+a bond wire across the finger between — so the layout, LVS and EM see it as the part it is.
+
+**How it works (Ou's equations).** With only neighbouring fingers coupled, every finger has a capacitance to ground and a
+mutual capacitance to each neighbour, and both can be read off one pair of adjacent fingers: an outer finger's ground
+share is the pair's even-mode admittance 1/Ze, the mutual is half the difference of the odd and even admittances, and a
+finger between two others keeps less of the ground share because its neighbours screen it. Adding the fingers of each
+conductor, with each conductor at one potential, gives the coupler's own modes:
+Ze,N = Ze(Ze + Zo)/(Ze + (N − 1)·Zo) and Zo,N = Zo(Ze + Zo)/(Zo + (N − 1)·Ze), with N = 4 here, and a coupling
+(N − 1)(R² − 1)/((N − 1)(R² + 1) + 2R) with R = Ze/Zo. circuitRF inverts that for `Coupling` and Ze,N·Zo,N = `Z0`²,
+then finds the adjacent pair's `W` and `S` exactly as MCLC does. The length is a quarter wave in the pair's mean εeff.
+
+**The model** is the pair's own modes, MCLIN's, put through Ou's equations, with each finger carrying its own share of
+each mode: an ideal jumper on each Jk gives Ou's two-conductor coupler exactly, a real jumper carries its finger's
+current, and a missing one is a different circuit, which still solves and couples less. Ou's equations are a TEM
+picture; the even and odd permittivities are the adjacent pair's, and fingers further apart than neighbours are not
+coupled.
+
+**What a board can build.** A 3 dB coupler needs tight gaps. On 20 mil RO4350B at 2.4 GHz it needs fingers 138 µm wide
+and 69 µm apart, under common board rules of 75 to 100 µm; 3.5 dB needs 86 µm and 4 dB 105 µm. The part opens at 4 dB
+for that reason, splitting about −2.4 dB and −4.2 dB in quadrature. A thinner laminate, or a process with finer gaps,
+reaches 3 dB.
+
+{{table: components/Midc}}
+
+### Coupled-Line Balun (MCBL) {#mcbl}
+
+{{symbol: mcbl}}
+
+A compensated coupled-line balun on microstrip — the Marchand balun in planar form. It turns the unbalanced signal on
+terminal 1 into two outputs of equal amplitude and opposite phase on terminals 2 and 3. Two quarter-wave coupled sections
+lie in a row: the input strip runs along both, across a line of length `Gap` between them, to an open end, and each
+section's other strip is a balanced output at the middle and grounded at its outer end. `G2` and `G3` are those outer
+ends: **the grounds are not part of the part**. Place a via to ground (VIAGND) on each.
+
+**How it works.** At the quarter wave a coupled section's open-circuit impedances reduce to two terms: between the ends
+of one strip, (Ze + Zo)/2, and between the far ends of the two strips, (Ze − Zo)/2. Solving the two sections with the
+open end and the grounds gives output voltages exactly equal and opposite whatever the loads, so long as they are alike,
+and an input impedance 2·(Ze·Zo)² / (ZL·(Ze − Zo)²) with `ZL` on each output. With lines of √(Ze·Zo) = `Z0`, matching
+that to `Z0` needs each section to couple c = 1/√(1 + 2·ZL/Z0); circuitRF finds the pair for it as MCLC does.
+
+**`ZL` is the load on each output**, half the balanced load. The match fixes the difference of the two mode admittances,
+1/Zo − 1/Ze = √(2/(ZL·Z0)), at whatever impedance level, and edge coupling at a buildable gap only reaches it for high
+loads. On 20 mil RO4350B at 2.4 GHz, 50 Ω on each output needs −4.8 dB sections, a gap under the model's 0.1·h, and is
+refused; 200 Ω on each output needs −9.5 dB and a 102 µm gap, which is what the part opens at.
+
+**Microstrip's limit is the phase.** The output voltages are exactly opposite only for TEM lines. In microstrip the odd
+mode runs faster than the even, neither section is a quarter wave for both, and on the example board the outputs come out
+about 16° short of 180°, with their amplitudes within 0.2 dB. A longer `Gap` moves the match off `F`.
+
+**In EM** the [Dividers and Couplers](../examples/dividers-and-couplers/index.html) example runs a balun with vias on
+`G2` and `G3` on EMerge and Palace. The Planar solver refuses it: its via-current kernel is validated to a tenth of a
+wavelength between vias, and the two grounds sit a balun's length apart.
+
+{{table: components/Mcbl}}
+
+**References** (for the three coupled-line parts)
+
+> M. Kirschning and R. H. Jansen, "Accurate Wide-Range Design Equations for the Frequency-Dependent Characteristic of
+> Parallel Coupled Microstrip Lines," *IEEE Transactions on Microwave Theory and Techniques*, vol. 32, no. 1, pp. 83–90,
+> January 1984. DOI [10.1109/TMTT.1984.1132616](https://doi.org/10.1109/TMTT.1984.1132616); corrections in vol. 33,
+> no. 3, p. 288, March 1985, DOI [10.1109/TMTT.1985.1133005](https://doi.org/10.1109/TMTT.1985.1133005). The coupled-line
+> model MCLIN and all three parts use.
+
+> D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012, §7.6 and §7.7, coupled-line directional couplers and the Lange
+> coupler. A book, with no DOI:
+> [the publisher's page](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553).
+
+> J. Lange, "Interdigitated Stripline Quadrature Hybrid," *IEEE Transactions on Microwave Theory and Techniques*,
+> vol. 17, no. 12, pp. 1150–1151, December 1969. DOI [10.1109/TMTT.1969.1127115](https://doi.org/10.1109/TMTT.1969.1127115).
+
+> W. P. Ou, "Design Equations for an Interdigitated Directional Coupler," *IEEE Transactions on Microwave Theory and
+> Techniques*, vol. 23, no. 2, pp. 253–255, February 1975.
+> DOI [10.1109/TMTT.1975.1128534](https://doi.org/10.1109/TMTT.1975.1128534).
+
+> N. Marchand, "Transmission-Line Conversion Transformers," *Electronics*, vol. 17, no. 12, pp. 142–145, December 1944.
+> A trade magazine, with no DOI: [a scan of the issue](https://www.worldradiohistory.com/Archive-Electronics/40s/Electronics-1944-12.pdf).
+
+> K. S. Ang and I. D. Robertson, "Analysis and Design of Impedance-Transforming Planar Marchand Baluns," *IEEE
+> Transactions on Microwave Theory and Techniques*, vol. 49, no. 2, pp. 402–406, February 2001.
+> DOI [10.1109/22.903108](https://doi.org/10.1109/22.903108).
 
 ## MMIC passives {#mmic}
 

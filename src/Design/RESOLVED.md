@@ -32363,3 +32363,134 @@ are ICF-6's thick die (`ThickDieCutPortTests`) and ICF-4's spiral (`ThickSilicon
   `Q1.C: Port 5 …` was refused and `Q1.E` became port 5. A refused pin's sentence already starts with its name, so the leading
   `Port n` is put as "the port" (`Port n's` as "its") rather than renumbered: `X1.A: the port on 'Metal3' finds no metal of
   'Metal1' …`. Gate: `ARefusedPin_IsNotNamedByTheNumberTheNextPinIsBuiltWith`.
+## RF passives — MWPD through the layout, LVS and EM (2026-11-15)
+
+- **`PassivePlanPCells.Draw` reuses the parts' own generators** (`MTeePCell`, `MCurvePCell`), turned by quarter turns
+  through `LayoutCoordinateWalk.Transform`, and takes the passive's pins from those parts' pins. A pin computed
+  from the plan instead would be a second rounding of where the copper ends. Consequence: **MWPD's artwork changes
+  whenever MTEE's or MCURVE's does**, so a version bump of either generator must bump MWPD's too
+  (`PCellGeneratorVersioningTests` records MWPD at 1).
+- **Update Layout closes the ring with the 0402 when `Gap` is its pin span.** R2 and R3 face each other across Gap,
+  the chain placer lays the resistor's two pins on them, and the F8 fixture joins 2 of 2 with LVS clean.
+- **The chain placer takes a curve's turn from its schematic symbol's facing**: an MCURVE drawn with its pin 2 down is
+  mirrored to turn down in the layout whatever its `Angle` sign says. In the example the upper output's MCURVE is
+  drawn R180 and mirrored so both outputs bend away from each other.
+- **A Wilkinson's resistor has its pads on one connected conductor**, since the ring joins R2 to R3 through about
+  38 mm of line. Both component-port builders used to refuse such a part, so the first EM runs left R1 out. They now
+  build it as a port that closes a loop (next section).
+- **Planar MoM refuses calibrated edge ports on the divider's own output pins**: they sit Gap + W0 apart (2.4 mm
+  centre to centre on 20 mil), inside the 5 substrate heights a calibrated feed needs from a neighbour with a port.
+  The example bends each output away (MCURVE + 5 mm MLIN) before its port, which is also what a board does.
+- **A line typed to the readout's rounded width leaves a DRC sliver** where it meets the divider's pin (1.058 against
+  1.05768 mm: a 0.16 µm step, flagged as a 7 µm-long min-width error). The readout prints widths to the plan's own
+  2 nm grid so they can be typed exactly.
+
+## Component ports across a loop (RF passives, 2026-11-16)
+
+- **The refusal was the only thing that told a loop from a short, and it told them apart badly.** Both builders refused
+  a part whose two pads land on one connected piece of copper. A short (copper across the part's gap) is already refused
+  by the scan that follows: on every scan line across the width, copper across the gap's middle is a refusal. A loop
+  (the copper joins the pads elsewhere, as a Wilkinson's ring joins its resistor's) is an ordinary internal port: a MoM
+  delta gap is a cut in continuous metal by definition, and `PlanarDcSolve` ties each lip of the cut to its own node, so
+  the 0 Hz row reads the loop's resistance. So both builders now build it, with the same construction.
+- **Planar's construction needed no other change.** Every check after the removed one reads the two pads' copper as
+  intervals on scan lines (pads facing, a shared width, nothing across the gap's middle, at least 2 DBU of air, no third
+  conductor on the strip, nothing against the strip at the cut), and on one region the two reads are the same. The test
+  holds the strip, the cut and its direction equal to the same part across two conductors.
+- **The refusals that stay are reworded for a loop.** Copper across the gap says the pads "lie on one piece of copper
+  that runs across the middle of their gap". Two pads on one net (the schematic's, else the copper's stamp) are refused
+  as before; a loop whose copper carries one stamped net is therefore still refused.
+- **3D: a lumped sheet cannot name one conductor as both of its ends.** `C3dPorts.Lumped` with both ends stated measures
+  each end's distance to each edge (`StatedPair`) and refuses when that cannot decide; one name for both ends is equally
+  close to both end edges, so it always refused. A loop port's ends are left to inference instead, which already accepts a
+  loop fed across its gap (`LoopPair`, brief-cxp-5: the low edge negative), and `Flip` puts + on the positive pad when that
+  pad is the low one. The test holds the resolved sheet and direction equal to the same port across two conductors.
+- **3D's net check reads the pads for a loop.** `Verify` compared the two conductors' nets, and one conductor always
+  shares its nets with itself; for a loop `Construct` compares the two pads' own nets instead, as Planar always did.
+- **One coded warning**, `em.component-port.across-loop` (`EmDiagnostics.ComponentPortAcrossLoop`), goes into each
+  build's warnings, so check (`check.cem.component-port-warning`, `check.c3d.component-port`), explain and the run's
+  warnings all carry it. The 3D port also records the conductor (`C3dComponentPort.Loop`), and its description reads
+  "both on '...' (a loop)" rather than naming one conductor twice.
+- **The cell-cut path is unchanged** (`EmCellCutout`: pins that "meet one piece of metal after the cut"). A cut pin is an
+  Uncalibrated Port against ground at its face, not one end of a gap, so there is no gap between two pins to check, and
+  the one-piece test cannot tell a loop elsewhere from a strap kept under the device. `PlanarCellCutoutTests`' gate 7
+  holds that strap as refused. Only a pin with a Reference (ICP-4) is a gap, and allowing it there would take the cut's
+  shared check, its ground fallback and `C3dCellCuts.GapSheet` (which states both ends) together.
+- **The Wilkinson example with R1 as a port**, each run's four-port with port 4 closed by 100 Ω, at 2.4 GHz: |S23|
+  −29.2 dB on Planar, −25.1 on EMerge, −18.6 on Palace, against the circuit model's −36.4. Away from the null (outside
+  2.0 to 2.8 GHz) all three follow the model within 2.0 to 3.4 dB; EMerge and Palace put the null at the 2.09 GHz point.
+  At 2.4 GHz |S21| moved from the runs without the resistor by 0.001 dB on Planar and at most 0.035 dB (Palace, whose
+  mesh changed), as symmetry says it should. The co-simulation netlist each run writes gives the same closed three-port
+  as closing port 4 by hand (Planar |S23| −29.21 dB both ways). EMerge's Draft four-port is not quite passive
+  (σ_max(S) up to 1.0037 at 4 of 11 points); its three-port run printed no such warning. The port's strip and sheet are new geometry, so each mesh changed under the same settings: Planar 2,944 cells
+  against 3,036, Palace 78,748 tetrahedra against 54,807.
+- **The 3D isolation null at 2.09 GHz is mostly the Draft mesh.** Re-run once at about twice the tetrahedra, 1.8 to
+  3.0 GHz in 7 points, the same setups otherwise (EMerge MaxElementWavelengths 0.0992 and EdgeRefinement 0.15: 21,643
+  tetrahedra against 11,053; Palace 0.0496 and 0.12: 160,976 against 78,748, still first-order Draft). |S23| at 2.2 and
+  2.4 GHz: EMerge −31.6 and −29.4 dB, Palace −24.7 and −21.7 dB, model −29.8 and −36.4; both |S11| nulls land on
+  2.4 GHz and EMerge's four-port turns passive. Neither null reaches the model's depth. A first pass that only lowered
+  MaxElementWavelengths gave 12,933 tetrahedra: the element size along conductor edges sets the count here. The
+  example keeps the committed Draft results, since the refined runs cover a different sweep.
+
+## RF passives — MWPD's pins follow N (2026-11-16)
+
+- **A generated cell's pins were checked against its symbol's DEFAULT pin list.** `GeneratedCellStore.SymbolPinNamesOf`
+  called `SymbolPortDefs.For(kind)`, the one-argument form, so a two-section MWPD's cell (seven pins) was refused with
+  "Generated pins the symbol does not declare: R2_2, R3_2", and Update Layout skipped the part. It now asks the symbol at
+  the generated cell's pin count; every fixed symbol ignores the count, so nothing else changes.
+- **MWPD is variadic on its PIN count (3 + 2·N), not on N.** The one-argument `SymbolPortDefs.For(kind)` passes 2, and the
+  Combiner reads that as its N; for MWPD any count that is not 7 or 9 is the five-pin divider, so every caller that does
+  not know about N keeps the stage-1 symbol. `PortCount` reads N only as a plain number.
+- **The catalogue lists MWPD at five terminals.** `ComponentCatalog.PortsOf` decides "variadic" by asking the symbol at
+  2 and 3 ports, both of which are the five-pin divider here; the terminals note says how N adds `R2_k`/`R3_k`.
+- **The ground pour did not count the planned passives**: the line set in `GroundPourPlanner` named the line generators
+  only, so in a tree of dividers the second stage's rings were off the plane. MWPD is in the set now (the hybrids branch
+  adds its own parts to the same line).
+- **`circuitrf new view3d --from-layout` in a workspace whose `.generated-cells` was never built sees only the pour**
+  ("This layout draws metal only on ground-reference conductors") and brings in no ports, where `check`, `lvs` and
+  `render` regenerate the cells. The example's 3D views were made in the Update Layout harness's workspace, which has the
+  cells, and copied. Not fixed here.
+- **Update Layout lands each resistor of a multi-section divider across the gap at its own junction**, a resistor dropped
+  on `R2_k`–`R3_k` with no wire included (pins at one point are one net), and LVS compares `K`, `N` and `Band` as it
+  compares `F`: a schematic that never stated `Band` gives the layout none to compare, so the fixture states it as a fresh
+  placement does.
+- **The unequal split's 0.2 mm arm sets the Planar grid for the whole board.** At the default 4 cells across, the shared
+  grid (`"LocalGrid": false`, the Wilkinson's setting) put a 2.4 mil cell everywhere: 51,952 unknowns and about 100 GB at
+  each frequency, refused. At 2 cells across (`MinCellsAcrossConductor`) it is 13,552 unknowns and 7.5 GB, and Planar
+  then agrees with the circuit model: P3/P2 3.15 dB against 3.04 (3.01 asked), |S21| within 0.01 dB at 2.4 GHz, both
+  nulls at 2.4 GHz. EMerge and Palace at the Wilkinson's Draft preset put 0.5 and 0.9 dB more into port 2 across the
+  band; the arm is 0.2 mm, little more than a third of the Wilkinson's 0.55 mm. EMerge at the Standard preset (22,608 tetrahedra against
+  13,349) moved only 0.09 dB (2.58 → 2.67 dB), so mesh density is not the whole cause; not pursued further.
+## RF passives — MBLC and MRRC through the layout, LVS and EM (2026-11-16)
+
+- **The ground pour did not count the planned passives.** `GroundPourPlanner.MicrostripGenerators` lists the generators
+  whose artwork returns through a plane, and MWPD, MBLC and MRRC were not in it, so the plane was sized from the lines
+  placed beside a passive plus the margin. The Wilkinson's ring sat inside its lines' extent; the rat-race's half-turns
+  reach past its port lines and were left over bare substrate. The three ids are in the set now. The Wilkinson example's
+  committed layout predates this; a re-run of Update Layout gives it a slightly larger plane.
+- **`PassivePlanPCells.Draw` takes `PlanLine` through `MlinPCell`**, so MBLC's and MRRC's artwork follows MLIN's
+  generator as well as MTEE's and MCURVE's: a version bump of any of the three must bump theirs.
+- **No line needs to bend away on the hybrids' benches.** The branch-line's ports are an arm's span apart and the
+  rat-race's three upper ports a quarter wave apart, well past the five substrate heights a calibrated Planar port needs
+  from its neighbours, so each pin has a straight 5 mm line to its port.
+- **Palace on the Draft mesh with no refinement is not converged on the branch-line.** It read |S21| 1.2 dB below the
+  model at F and put the deepest |S11| at 2.09 GHz for F = 2.4 GHz; with `AdaptiveMaxIterations` 2 (69,610 to 215,686
+  tetrahedra, 7 min, 5.9 GB on one compute node) it lands within 0.15 dB of EMerge's Draft run. The hybrids' example
+  setups refine twice.
+- **On the branch-line the 3D solvers and Planar disagree on the split by a few tenths of a dB.** At F, EMerge and the
+  refined Palace put 0.33-0.40 dB less into the through port than the model and up to 0.2 dB more into the coupled
+  port; Planar is within 0.22 dB of the model the other way. A series reactance at each port in the circuit model,
+  standing in for the 3D lumped sheets, moves the split the opposite way, so the lumped ports alone do not explain it.
+  Not pursued further.
+
+## RF passives — a ring's `Corner` through the layout and LVS (2026-11-16)
+
+- **A word on a built-in generator has to be passed as text.** Update Layout resolves every row of a built-in through the
+  numeric resolver, so `Corner = Miter` failed there and the part got no artwork. `SchematicLayoutPlanner` hands MWPD's
+  and MRRC's `Corner` to the generator as text, as a test pad's words are. `ResolveDefaultParameters` skips a row it
+  cannot evaluate, so the default artwork and the generator fingerprint stay the curved ring's.
+- **LVS compares `Corner` as a string.** The elaborator keeps it as text for MWPD and MRRC, as an enum name, and the
+  generated cell's snapshot carries it as text, so mitred artwork against a schematic asking for `Curve` is one
+  `lvs.property.mismatch` (`testdata/schematic-to-layout/F8d-wilkinson-mitred`).
+- **The ground pour covers a cornered ring.** It covers each passive instance's own extent, so the rectangle is under the
+  plane with the usual five-substrate-height margin, checked on the mitred divider and rat-race.

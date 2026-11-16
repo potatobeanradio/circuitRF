@@ -56,6 +56,8 @@ public static class InstanceNetContract
             or MicrostripCurveModel or MicrostripMiterBendModel or MicrostripGapModel or MicrostripTaperModel
             or MicrostripKlopfModel                                                           => 2,
         MicrostripTeeModel                                                                    => 3,
+        // A planned passive (MWPD, MBLC, MRRC): its plan's pins, each over the implicit reference.
+        MicrostripPlanModel plan                                                              => plan.PortCount,
         // A signal via is two terminals over the implicit reference, as MLIN is. A via to ground draws
         // one pin and binds two nets, like Term: the extractor appends "0".
         ViaModel or ViaGroundModel                                                            => 2,

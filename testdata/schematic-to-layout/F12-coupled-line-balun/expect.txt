@@ -1,0 +1,15 @@
+# The coupled-line balun as one part (MCBL): two coupled sections and their joining line; a via to ground lands on each
+# coupled strip's outer end (G2, G3), and each port sits on its own pin.
+joinable g2
+joinable g3
+Info CBL1 added
+Info V1 added
+Info V2 added
+Info V1 placed beside CBL1 pin G2 and tied to its pad
+Info V2 placed beside CBL1 pin G3 and tied to its pad
+Info P1 port 1 placed at CBL1 pin 1
+Info P2 port 2 placed at CBL1 pin 2
+Info P3 port 3 placed at CBL1 pin 3
+port P1 1
+port P2 2
+port P3 3

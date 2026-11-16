@@ -196,7 +196,9 @@ full description.
   Landings are part of the solved problem and are drawn in the 3D view as part of the copper they extend, so the
   view shows what is solved; the layout is not changed. Before anything is meshed, in `check` as in the run, each port is verified: no landing touches other
   copper (it would join two nets), each end of the sheet touches its own pad's copper and nothing else, its sides touch
-  nothing, no copper lies inside it, and its two pads are on different nets. A part that fails is left out of the run
+  nothing, no copper lies inside it, and its two pads are on different nets. Two pads on one conductor, joined by copper
+  elsewhere, make a port that closes a loop: it is built the same way, with a warning
+  ([A part across a loop](em-setup.html#component-port-loop)). A part that fails is left out of the run
   with a warning naming it and what was found, and the other parts' ports are built; the run refuses only when no port
   is left. Port numbers follow the 3D view's own ports, in list order, without a gap; an entry may state its own `Z0`,
   its `Reference` (one of the part's pins) to say which pad is the negative end, and its `WidthUm`, the port's width

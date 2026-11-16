@@ -5097,3 +5097,151 @@ resistances, an Rs diode); after the fix the ring agrees with the native engine 
 
 **Also:** the deck now `.save`s each IProbe's first net, which the native engine records so a probe's power is v·i at a
 recorded node; without it the ngspice result could not give `P` and `Vprobe`.
+## RF passives — the Wilkinson plan and the planned-passive model (2026-11-15)
+
+- **A plan is existing parts, placed.** `PassivePlan` is sections (`PlanTee`, `PlanCurve`) with node lists and poses;
+  `MicrostripPlanModel` stamps each through the part's own model into the shared `LocalAdmittanceBlock` and reduces it,
+  so the composite equals the same parts wired by hand to rounding (`WilkinsonSParamTests`, 1e-9). The block moved out
+  of `JunctionArms` for this; its `ReduceOnto` is the one copy of the reduce-and-stamp step.
+- **Every plan dimension is on a 2 nm grid** (`PassivePlan.OnGrid`). The generators round each part's own pins to the
+  1 nm database unit and take halves of widths (`MTeePCell`'s `w3 / 2` is integer division). Off-grid numbers left
+  two pieces that meet in the plan a unit apart in the artwork, which LVS reads as open. On the grid, every
+  abutment is exact.
+- **Widths and λg/4 are MLIN's at F**, from `PlanarLineSynthesis.SynthesizeWidth` over `MicrostripLineModel.LineParameters(F)`
+  (the dispersive Z0), and the quarter wave from the same model's εeff. The arm's λg/4 is measured between the
+  junctions' reference planes, which is where `MicrostripTeeModel` refers its star network; an output tee's through
+  arms are exactly W3/2 long, so the curve's end and R2/R3 ARE the junction's ports with no line.
+- **MWPD at 2.4 GHz on 20 mil RO4350B**: W 1.05768 mm, arms 0.548 mm, λg/4 18.903 mm (εeff 2.729), ring radius
+  5.743 mm (10.5 W, outside MCURVE's stated 3-7 W, which it reports). |S11| −47.7 dB, |S23| −36.4 dB,
+  |S21| = |S31| = −3.149 dB at F with the example's 5 mm feed lines and bends; |S11| and |S23| stay below −20 dB from
+  2.0 to 2.75 GHz.
+- **By symmetry the resistor never carries current for a drive at pin 1**: S11, S21 and S31 are bit-identical with
+  R = 100 Ω and with R removed. This is what lets the EM results, which cannot include the resistor today
+  (`src/Design/RESOLVED.md`), be compared on those three terms.
+
+## RF passives — the Wilkinson's split ratio and broadband sections (2026-11-16)
+
+- **K = 1, N = 1 is the equal split bit for bit.** The variant arithmetic was written so the symmetric case reduces to the
+  stage-1 expressions exactly: z0·√(K(1 + K²)) at K = 1 is z0·√2; the arms' length difference d is 0 − π·c·0 = +0.0;
+  the gap's offset is OnGrid(0/2) = 0, so the arms stay gap/2 + (w0/2 + w0/2) = gap/2 + w0 (halving and doubling are
+  exact). `WilkinsonPlanTests.TheEqualSplit_IsUnchangedBitForBit` fingerprints every double of the plan, taken on the
+  stage-1 code before the change.
+- **The transformers are left out at K = 1, not drawn as Z0 lines**: they would change nothing electrically but would move
+  the outputs a quarter wave and break the bit-exact plan. A K just off 1 therefore steps the outputs' phase by 90°.
+- **The multi-section design**: even mode an equal-ripple transformer 2 → 1 over f1..f2 centred on F, symmetric
+  (z_k·z_(N+1−k) = 2) so z_1 is the one unknown; Re Γ(θ1) changes sign once on (1, √2) for every band tried (1.2 to 10,
+  N = 2 and 3), so a bisection finds it. Odd mode: the resistors make the shorted half's admittance 1 at θ1 (two real
+  equations, the conjugate at π − θ1 following from the lines' symmetry) and, for N = 3, at π/2 (one more, real there).
+  Newton from all-ones conductances converges in 4 to 7 steps over the same range. For N = 2 the solve equals the closed
+  form R2 = 2·z1·z2/√((z1 + z2)(z2 − z1·cot²θ1)), R1 = 2·R2(z1 + z2)/(R2(z1 + z2) − 2·z2) to 1e-9; an octave gives
+  z 1.2196/1.6399 and R 4.8428/1.9539 (resistor 1 at the outputs). On ideal TLIN lines each N = 2, 3 design is matched
+  and isolated to |S| < 1e-9 at every zero.
+- **On the example board** (20 mil RO4350B, 2.4 GHz, the 5 mm feeds and bends): the two-section divider keeps |S11| below
+  −20 dB over 1.31–3.22 GHz and |S23| over 1.31–3.36 GHz, against 1.98–2.85 and 1.92–2.77 GHz for one section; at F its
+  |S21| is 0.09 dB lower and its |S11| null 26 dB rather than 48 dB deep (the junction tees and the ripple). K = 1.4142
+  gives P3/P2 = 3.04 dB at F against 3.01, every port below −31 dB and |S23| −37 dB.
+- **NetlistContractTests failed on the first MWPD** ("MWPD states no net count"); `InstanceNetContract` now states a
+  planned passive's plan pin count, so a short MWPD line is refused at elaboration.
+## RF passives — the branch-line and rat-race hybrids, MBLC and MRRC (2026-11-15)
+
+- **An MTEE whose branch ends at the through line's edge has no junction.** `L3 = max(W1, W2)/2` leaves the branch no line
+  past its reference plane, and `MicrostripTeeModel` then stamps the tee as two through lines meeting at pin 3 (its
+  straight-line case). `testdata/schematic-to-layout/C2-branch-line` draws all four tees that way, so its network carries no
+  junction at all. The hybrids' plans give each tee's branch one W0 of the arm's own line, so the junction is simulated; the
+  one-section plan laid out on C2's dimensions with no such stub is C2's network to 1e-9 (`HybridSParamTests`).
+- **Two-section shunt arms share one span.** The arms of (1 + √2)·Z0 and √2·Z0 have different εeff, but both through lines
+  are straight, so one span serves all three. Each arm takes the mean of their quarter waves: about ±1.5 % of λg/4 on 20 mil
+  RO4350B at 2.4 GHz, which alone limits the match to about −38 dB on ideal lines.
+- **The junctions move the centre a little.** With the arms λg/4 between reference planes, the tees' own reactance puts the
+  one-section coupler's best match at 2.36 GHz for F = 2.4 GHz; at F it is −30 dB with 90.1° between 2 and 3. No further
+  correction is applied.
+- **A rat-race ring of quarter-turn sections.** A plan section turns only in multiples of 90°, so the ports cannot sit 60°
+  apart on a circle. The ring is two straight runs and two 180° MCURVEs, tees 2, 1 and 3 on one run and tee 4 on the other.
+  Closing it with one tee against three fixes the half-turns: π·(R − 0.2·W) = λg/4 − W0, with W0 of line between the
+  right half-turn and tee 4 and λg/2 + W0 between tee 4 and the left half-turn.
+- **The planned passives state their net count.** `InstanceNetContract.Expected` had no case for `MicrostripPlanModel`, so
+  `NetlistContractTests` listed MWPD; it is the plan's pin count.
+- **Engine.Tests links nothing above the engine**, so the C2 comparison extracts the fixture's netlist with the CLI built beside
+  the tests, run as a process, as `MatchStampTests` runs `sparam`.
+
+## RF passives — the coupled-line coupler, the interdigitated coupler and the coupled-line balun (2026-11-15)
+
+MCLC, MIDC and MCBL are planned passives (`CoupledLineCouplerPlan`, `LangePlan`, `MarchandBalunPlan`) stamped by
+`MicrostripPlanModel` through MCLIN and MLIN; `CoupledLineSynthesis` inverts MCLIN's own Kirschning-Jansen modes at F.
+What would cost time to rediscover:
+
+- **What 20 mil RO4350B builds at 2.4 GHz** (`CoupledLinePlanTests.Realisability_OnTwentyMilRo4350b` prints it). A 3 dB
+  four-finger interdigitated coupler needs 138 µm fingers 69 µm apart, under a 75-100 µm board rule; 3.5 dB needs 86 µm and
+  4 dB 105 µm, so 4 dB is the example's design. An edge-coupled coupler reaches 10 dB at 115 µm and needs 65 µm for 8 dB.
+  A coupled-line balun matching 50 Ω to 50 Ω on each output needs −4.8 dB sections, below the coupled-line model's
+  S/h = 0.1 (51 µm), and is refused; 200 Ω on each output (−9.5 dB) needs 102 µm. The balun's match fixes the mutual
+  admittance 1/Zo − 1/Ze = √(2/(ZL·Z0)) whatever the impedance level, which is why a lower √(Ze·Zo) does not help.
+- **The balun is exact only as TEM lines.** The plan's Ze and Zo as CLIN pairs at 90° give |S11| below −100 dB and
+  S31 = −S21 exactly, which checks the match condition c = 1/√(1 + 2·ZL/Z0). In microstrip (εeff 2.97 even, 2.30 odd) the
+  outputs come out 164° apart with 0.2 dB amplitude balance and −20.5 dB match. Scaling both sections' length moves the
+  phase by under 5°; a section-1 about 5 % longer than section 2 crosses 180° (with ~0.4 dB amplitude imbalance), which
+  was not adopted: the plan stays the textbook symmetric pair and the limit is stated.
+- **Microstrip directivity of the single-section coupler** at 2.4 GHz on that board: 11 dB at 10 dB coupling, 7.6 dB at
+  15 dB, 4.6 dB at 20 dB. The leak to the isolated port stays about −21 to −25 dB while the coupling falls.
+- **The interdigitated section is Ou's model, split by finger.** Ou gives a two-conductor pair (Ze,N, Zo,N) assuming each
+  conductor's strips are at one potential. Stamped as such, the inner fingers' pins would have nothing on them. Instead
+  each conductor-A strip and its mirror strip in conductor B stamp that pair of strips' own share of the modal
+  admittances (an outer strip: the adjacent pair's Ye and Yo; an inner one: Ye²/(Ye + Ym) and that plus 2(Yo − Ye)).
+  With ideal jumpers the shares add back to Ou's pair to 1e-9 (`WithIdealJumpers_TheLangeIsOusEquivalentPair`); without
+  them the circuit is still solvable and couples less, and a real jumper carries its strip's current.
+- **A planned passive's DC islands.** MWPD's ω = 0 handling declared every pin one node; a coupler's two strips are not.
+  `MicrostripPlanModel` now unions each section's joined ends (a coupled section joins only each strip's two ends) and
+  declares a tree of shorts per island.
+- **A loop of DC shorts does not solve.** Ideal `Short` jumpers on the interdigitated coupler close a loop with the fingers'
+  DC shorts (pin 1 - finger - pin 2 - jumper - J2 - finger - J1 - jumper), and the DC solve fails to converge. Two ideal
+  lines in parallel are the same case. A jumper with any resistance (1 mΩ, or a bond wire) solves; S-parameter runs are
+  unaffected.
+- **Kron order in the balun.** `LocalAdmittanceBlock` eliminates without pivoting, last node first. The balun's open end
+  has a near-zero self admittance at F (a quarter-wave null), so it is numbered first among the internal nodes and is
+  eliminated after the joining line's ends, when its pivot is no longer that null.
+- **Jumper part.** circuitRF's jumpers are wBond (a bond-wire design, the board's real part), AIRBRIDGE (an MMIC crossing,
+  four terminals) and Short (ideal). The tests use Short.
+- **EM on coupled lines needs more mesh than the Wilkinson's recipe** (`examples/Dividers and Couplers`, cell Coupler,
+  10 dB, S = 0.115 mm on 20 mil). Planar with the edge mesh off read |S31| −11.96 dB against the model's −10.49; on,
+  −10.72. EMerge Draft read −7.2 dB and Palace Draft −5.8: a 3D Draft mesh does not resolve a gap a fifth of the substrate
+  height. Refining converges both towards the model: EMerge −8.0 (Standard) and −9.7 (Standard, 3 adaptive passes,
+  where its refinement stops); Palace −8.5 (second order on the Draft mesh, 20 min) and about −9.3 (Draft, 3
+  refinement passes, 14 min). The example's setups are the refined ones; the last 1 dB between 3D and the model and
+  Planar was not chased.
+- **Planar refuses the balun as built.** Its via-current kernel fit is validated to ρ/λ ≤ 0.1 between vias; the two
+  ground vias at the ends of the sections are 44.5 mm apart (0.71 λ at 4.8 GHz). `PlanarFillSettings.DirectVerticalKernel`
+  would lift it but no setup reaches it. The balun is compared on the 3D solvers only.
+- **The interdigitated coupler has no example cell.** Planar cannot model a jumper across a finger (a component port's
+  strip would short the finger between) and the 3D view would need its bond wires drawn by hand; its 163 µm fingers also
+  need tapered feeds before a calibrated port can sit on them.
+
+## RF passives — corners on the rings: `PlanBend` and the `Corner` of MWPD and MRRC (2026-11-16)
+
+- **MBEND could not sit in a plan.** `MicrostripBendModel` stamps its corner as a two-branch Z block at every frequency,
+  and `LocalAdmittanceBlock` held admittances only, so a square corner threw at its first stamp. The block now takes a
+  section that stamps in branch form (`LocalAdmittanceBlock`); nothing before allocated a branch, so MTEE's arms and every existing
+  plan reduce as they did. MMITER stamps in admittance form unless its series term nearly cancels, so the mitred corner
+  needed nothing.
+- **A corner's length is its insertion phase, not its image phase.** MBEND's unmitered series L per side,
+  220·h·(1 − 1.35·e^(−0.18·u^1.39)) nH, is negative below W/h ≈ 1.44, and a 70.7 Ω arm on the example board (20 mil, εr 3.66) is at
+  W/h ≈ 1.1, so its A = 1 − ω²LC exceeds 1 and acos(A) is imaginary although the corner does delay the wave. The plans use
+  −arg S21 between two lines of the arm's impedance, which is defined for either part, as a length of that line
+  (`PlanBend.LineLength`). A mitred corner there stands for 0.567 mm of arm at 2.4 GHz.
+- **Leaving the corners' length in the runs costs 10 to 20 dB at F.** Each arm is then 2 × 0.567 mm (6 % of λg/4) long:
+  the mitred divider's |S11| and |S23| at F go from −52 and −36 dB to −30 and −26 dB, and the rat-race's |S11|, |S44|
+  and |S23| from about −50 to about −30 dB. The S-parameter tests' limits sit between the two. A square corner stands
+  for only 0.18 mm (MBEND's negative series L), so its test cannot tell the two apart by much; the mitred one can.
+- **The divider's rectangle keeps the curved ring's height.** With equal arms the lowest rectangle needs no rise: the
+  arms run straight across from the input tee's ends, a little over Gap + 2·W0 apart, along most of their λg/4. The plan models
+  no coupling between its arms, so that result would overstate a real board's isolation. The arms now rise to the
+  half-turn's top from the curved plan of the same specs (5.3 mm here) and run across what is left, 6.0 mm, about
+  (π − 2)·R less the corners. MRRC's sides are already λg/4 apart, so it is unchanged.
+- **Square corners' reflections added up once the rectangle was tall.** In the flat rectangle an arm's two corners sat
+  about 0.9·λg/4 apart and their reflections nearly cancelled (|S11| −42 dB); at the ring's height they are 6 mm apart
+  and add, and the square divider's |S11| at F is −29 dB. The mitred corners reflect far less (−52 dB).
+- **A corner's pins are not on the 2 nm grid.** MMITER's pin offset at its default chamfer (M = 0.67 here) is 2·M·W − W/2,
+  not a multiple of 2 nm, and both corner generators round their pin to the 1 nm database unit. `PlanBend.Arm` rounds the
+  same way from the same function, so the next piece starts on the corner's own pin; positions are on 1 nm, lengths stay
+  on 2 nm (each run is a width less two arms).
+- **The curved plans are bit for bit.** The corners are a branch beside the curve code, which keeps its arithmetic and
+  section order; the variants' and the rat-race's fingerprints were taken before the change.

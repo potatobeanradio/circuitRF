@@ -208,4 +208,42 @@ public sealed class SnpPortLabelSymbolTests
         Assert.Contains("a-very-~", text);                                 // cut to 8, the cut marked
         Assert.DoesNotContain(text, t => t.Length > 8);
     }
+
+    // ── MWPD: the Wilkinson divider's pins follow its section count ──────────
+
+    /// <summary>
+    /// One section is the five pins it always had; N sections draw 3 + 2·N, the glyph's own pins the same list, each
+    /// resistor pair 400 apart so a resistor dropped on it lands on both. N written as an expression is the one-section
+    /// divider, as the plan cannot be asked for more pins than the symbol draws.
+    /// </summary>
+    [Fact]
+    public void AWilkinsonDividersPins_FollowItsSections()
+    {
+        var one = CircuitRF.Design.Schematic.SymbolPortDefs.For(SymbolKind.Mwpd);
+        Assert.Equal([("1", -400f, 0f), ("2", 400f, -400f), ("3", 400f, 400f), ("R2", 400f, -200f), ("R3", 400f, 200f)], one);
+
+        for (int n = 1; n <= 3; n++)
+        {
+            var component = new CircuitRF.Design.Schematic.EditableComponent { Symbol = SymbolKind.Mwpd };
+            component.Parameters.Add(new CircuitRF.Design.Schematic.EditableParameter { Name = "N", Expression = $"{n}" });
+            Assert.Equal(3 + 2 * n, component.PortCount);
+
+            var pins = CircuitRF.Design.Schematic.SymbolPortDefs.For(SymbolKind.Mwpd, component.PortCount);
+            Assert.Equal(CircuitRF.Core.Devices.Microstrip.WilkinsonPlan.PinsFor(n), pins.Select(p => p.Name));
+            var glyph = BuiltInSymbols.Primitives(SymbolKind.Mwpd, component.PortCount);
+            Assert.Equal(pins.Select(p => (p.Name, p.LocalX, p.LocalY)), glyph.Pins.Select(p => (p.Name, (float)p.LocalX, (float)p.LocalY)));
+            for (int k = 2; k <= n; k++)
+            {
+                var top = pins.Single(p => p.Name == $"R2_{k}");
+                var bottom = pins.Single(p => p.Name == $"R3_{k}");
+                Assert.Equal(top.LocalX, bottom.LocalX);
+                Assert.Equal(400f, bottom.LocalY - top.LocalY);
+            }
+        }
+        Assert.Same(BuiltInSymbols.Primitives(SymbolKind.Mwpd), BuiltInSymbols.Primitives(SymbolKind.Mwpd, 5));
+
+        var swept = new CircuitRF.Design.Schematic.EditableComponent { Symbol = SymbolKind.Mwpd };
+        swept.Parameters.Add(new CircuitRF.Design.Schematic.EditableParameter { Name = "N", Expression = "nsec" });
+        Assert.Equal(5, swept.PortCount);
+    }
 }

@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Dividers and Couplers</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Dividers and Couplers/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Dividers and Couplers</p>
+  </div>
+
+  <h1>Dividers and Couplers</h1>
+  <p class="lede">Built-in dividers, hybrids, a coupler and a balun on 20 mil RO4350B at 2.4 GHz, each placed as one part from its specs and laid out by Update Layout. Run a cell&#39;s Planar MoM, EMerge and Palace setups, simulate its bench, and open its data display to see the circuit model against each solver.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Dividers and Couplers</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>RF dividers and couplers placed as single parts, each stated by its specifications and drawn from the same plan its
+circuit model simulates. One cell per component, each at 2.4 GHz on a 20 mil RO4350B board, laid out by Update Layout
+from Schematic and solved on the Planar MoM solver, EMerge and Palace. The workspace holds the <strong>Wilkinson divider</strong> (an
+MWPD) with an <strong>unequal split</strong>, a <strong>two-section broadband divider</strong>, a <strong>four-way tree</strong> and <strong>mitred and square
+corners</strong>; the <strong>branch-line hybrid</strong>
+(an MBLC); the <strong>rat-race hybrid</strong> (an MRRC); the <strong>coupled-line coupler</strong> (an MCLC); and the <strong>coupled-line balun</strong> (an
+MCBL).</p>
+<p>Each EM cell has a test bench beside it, holding the cell's circuit and one SnP block per EM setup, which reads the
+Touchstone file that setup writes into <code>results/</code>. Simulate the bench and open the cell's <code>.cdd</code>: the circuit model is a
+line and each solver a set of markers. No results ship; the benches read what your own runs write.</p>
+<h2 id="the-cells">The cells</h2>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>Views</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Wilkinson</strong></td>
+<td>schematic, layout, EM setup, 3D view</td>
+<td>A 5 mm input line, the MWPD, a 100 Ω resistor with an 0402 land pattern on R2-R3, and each output bending away through a 90° MCURVE and a 5 mm line to its port</td>
+</tr>
+<tr>
+<td><strong>Unequal</strong></td>
+<td>schematic, layout, EM setup, 3D view</td>
+<td>The same board with <code>K</code> = 1.4142, so port 3 takes twice port 2's power, and a 106.07 Ω resistor</td>
+</tr>
+<tr>
+<td><strong>Broadband</strong></td>
+<td>schematic, layout, EM setup, 3D view</td>
+<td>The same board with <code>N</code> = 2 over an octave: two sections and two resistors, 242.14 Ω and 97.69 Ω</td>
+</tr>
+<tr>
+<td><strong>FourWay</strong></td>
+<td>schematic, layout</td>
+<td>Three equal-split MWPDs in a tree, ports 2 to 5 on the second stage's outputs</td>
+</tr>
+<tr>
+<td><strong>Mitred</strong></td>
+<td>schematic, layout</td>
+<td>The Wilkinson cell's circuit three times, its MWPD with <code>Corner</code> = <code>Curve</code>, <code>Miter</code> and <code>Square</code></td>
+</tr>
+<tr>
+<td><strong>Branch-Line</strong></td>
+<td>schematic, layout, EM setup, 3D view</td>
+<td>A one-section MBLC with a 5 mm line from each of its four pins to a port</td>
+</tr>
+<tr>
+<td><strong>Rat-Race</strong></td>
+<td>schematic, layout, EM setup, 3D view</td>
+<td>An MRRC with a 5 mm line from each of its four pins to a port</td>
+</tr>
+<tr>
+<td><strong>Coupler</strong></td>
+<td>schematic, layout, EM setup, 3D view</td>
+<td>A 10 dB MCLC, each of its four ports reached through a 90° MCURVE and a 5 mm line that bend away from the other strip</td>
+</tr>
+<tr>
+<td><strong>Balun</strong></td>
+<td>schematic, layout, EM setup, 3D view</td>
+<td>An MCBL from 50 Ω to 200 Ω on each output, a via to ground on each coupled strip</td>
+</tr>
+<tr>
+<td><strong>Wilkinson Bench</strong> … <strong>Balun Bench</strong></td>
+<td>schematic</td>
+<td>One per EM cell: the cell's circuit, and one SnP block per EM result with its ports closed</td>
+</tr>
+<tr>
+<td><code>Wilkinson.cdd</code> … <code>Mitred.cdd</code></td>
+<td>data display</td>
+<td>One per cell, at the top of the workspace</td>
+</tr>
+</tbody>
+</table>
+<h2 id="run-it">Run it</h2>
+<p>Run a cell's EM setups, then simulate its bench and open its <code>.cdd</code>. <strong>Planar</strong> is the setup in the cell's <code>em/</code> folder;
+<strong>EMerge</strong> and <strong>Palace</strong> are the two setups in its 3D view.</p>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>Planar MoM</th>
+<th>EMerge</th>
+<th>Palace</th>
+<th>Then</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Wilkinson</td>
+<td>4½ min</td>
+<td>1 min</td>
+<td>1½ min</td>
+<td>Simulate <strong>Wilkinson Bench</strong>, open <code>Wilkinson.cdd</code></td>
+</tr>
+<tr>
+<td>Unequal</td>
+<td>34½ min</td>
+<td>1 min</td>
+<td>3 min</td>
+<td>Simulate <strong>Unequal Bench</strong>, open <code>Unequal.cdd</code></td>
+</tr>
+<tr>
+<td>Broadband</td>
+<td>49 min</td>
+<td>1 min</td>
+<td>3 min</td>
+<td>Simulate <strong>Broadband Bench</strong>, open <code>Broadband.cdd</code></td>
+</tr>
+<tr>
+<td>Branch-Line</td>
+<td>1½ min</td>
+<td>1½ min</td>
+<td>7 min</td>
+<td>Simulate <strong>Branch-Line Bench</strong>, open <code>Branch-Line.cdd</code></td>
+</tr>
+<tr>
+<td>Rat-Race</td>
+<td>24½ min</td>
+<td>1½ min</td>
+<td>12½ min</td>
+<td>Simulate <strong>Rat-Race Bench</strong>, open <code>Rat-Race.cdd</code></td>
+</tr>
+<tr>
+<td>Coupler</td>
+<td>9½ min</td>
+<td>3 min</td>
+<td>12 min</td>
+<td>Simulate <strong>Coupler Bench</strong>, open <code>Coupler.cdd</code></td>
+</tr>
+<tr>
+<td>Balun</td>
+<td>refused</td>
+<td>2 min</td>
+<td>6½ min</td>
+<td>Simulate <strong>Balun Bench</strong>, open <code>Balun.cdd</code></td>
+</tr>
+<tr>
+<td>FourWay</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Simulate <strong>FourWay</strong>, open <code>FourWay.cdd</code></td>
+</tr>
+<tr>
+<td>Mitred</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Simulate <strong>Mitred</strong>, open <code>Mitred.cdd</code></td>
+</tr>
+</tbody>
+</table>
+<p>Times are from Linux machines, 8 threads for Planar and EMerge and 8 Palace processes; the first 3D run offers to
+install its solver. A bench simulates in under a second and reads every result its cell has, so run them all first.</p>
+<p><strong>A resistor on the board is a component port.</strong> The Wilkinson's ring joins the 0402's two pads the long way round, so
+the port across them closes a loop; at RF it is an ordinary port. The bench closes it with the cell's own resistor, as
+the co-simulation netlist each run writes does, and the tables below are those closed results.</p>
+<p><strong>A bench sweeps the eleven frequencies the EM setups solve</strong>, F·2^(k/5) from F/2 to 2F, so every marker is a solved
+point and the circuit line joins the model's values at the same eleven. Each cell's own schematic is a test bench too,
+swept finely: simulate it for a smooth circuit curve.</p>
+<h2 id="wilkinson">Wilkinson</h2>
+<p>An MWPD with <code>Z0</code> 50 Ω, <code>F</code> 2.4 GHz and <code>Gap</code> 1.35 mm, the 0402's pin span. Its outputs bend away from each other
+because a calibrated Planar port needs five substrate heights clear of other metal.</p>
+<p><img class="readme-picture" src="pictures/wilkinson-layout.png" alt="The board: port 1's line on the left, the divider's ring, the 0402 isolation resistor across the ring's gap, and the two output lines bending away to ports 2 and 3." width="700"></p>
+<p><img class="readme-picture" src="pictures/wilkinson-results.png" alt="Wilkinson.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the three EM solvers as markers." width="600"></p>
+<table>
+<thead>
+<tr>
+<th>At 2.4 GHz</th>
+<th>Circuit</th>
+<th>Planar MoM</th>
+<th>EMerge</th>
+<th>Palace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S11|</td>
+<td>−47.5 dB</td>
+<td>−28.2 dB</td>
+<td>−24.6 dB</td>
+<td>−23.5 dB</td>
+</tr>
+<tr>
+<td>|S21|</td>
+<td>−3.149 dB</td>
+<td>−3.113 dB</td>
+<td>−3.130 dB</td>
+<td>−3.163 dB</td>
+</tr>
+<tr>
+<td>|S23|</td>
+<td>−36.4 dB</td>
+<td>−29.2 dB</td>
+<td>−25.1 dB</td>
+<td>−18.6 dB</td>
+</tr>
+</tbody>
+</table>
+<p>All three put |S21| within 0.04 dB of the model. The nulls are shallower on every solver, and in 3D the isolation null
+sits at 2.09 GHz, mostly because of the Draft mesh.</p>
+<h2 id="unequal-split">Unequal split</h2>
+<p>The Wilkinson with <code>K</code> = 1.4142: 3.01 dB more into port 3, through a 103 Ω arm to port 2 and a 51.5 Ω arm to port 3,
+and <code>R1</code> = Z0·(K + 1/K) = 106.07 Ω.</p>
+<p><img class="readme-picture" src="pictures/unequal-layout.png" alt="The unequal split: a thin arm to port 2 over the top of the ring, a wide one to port 3 underneath, the 0402 across the gap, and each output's quarter-wave transformer before its bend." width="700"></p>
+<p><img class="readme-picture" src="pictures/unequal-results.png" alt="Unequal.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the three EM solvers as markers." width="600"></p>
+<table>
+<thead>
+<tr>
+<th>At 2.4 GHz</th>
+<th>Circuit</th>
+<th>Planar MoM</th>
+<th>EMerge</th>
+<th>Palace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S21|</td>
+<td>−4.993 dB</td>
+<td>−5.000 dB</td>
+<td>−4.666 dB</td>
+<td>−4.683 dB</td>
+</tr>
+<tr>
+<td>|S31|</td>
+<td>−1.958 dB</td>
+<td>−1.853 dB</td>
+<td>−2.084 dB</td>
+<td>−2.587 dB</td>
+</tr>
+<tr>
+<td>P3/P2, 3.01 dB asked for</td>
+<td>3.04 dB</td>
+<td>3.15 dB</td>
+<td>2.58 dB</td>
+<td>2.10 dB</td>
+</tr>
+<tr>
+<td>|S23|</td>
+<td>−37.2 dB</td>
+<td>−32.0 dB</td>
+<td>−21.7 dB</td>
+<td>−16.3 dB</td>
+</tr>
+</tbody>
+</table>
+<p>Planar divides as the model does, with its nulls at 2.4 GHz. Its setup meshes 2 cells across a conductor: at the
+default 4, the 0.2 mm arm would set a cell size that needs about 100 GB per frequency.</p>
+<h2 id="broadband-divider">Broadband divider</h2>
+<p>The Wilkinson with <code>N</code> = 2 and <code>Band</code> = 2: two sections over 1.6 to 3.2 GHz, <code>R1</code> (242.14 Ω) at the outputs and <code>R2</code>
+(97.69 Ω) where the ring meets section 1.</p>
+<p><img class="readme-picture" src="pictures/broadband-layout.png" alt="The two-section divider: the ring, the pair of section-1 lines running on to the outputs either side of the gap's centre line, an 0402 at each junction, and the output bends." width="700"></p>
+<p><img class="readme-picture" src="pictures/broadband-results.png" alt="Broadband.cdd: |S21|, |S11|, |S22| and |S23| against frequency, the circuit model as a line and the three EM solvers as markers." width="600"></p>
+<table>
+<thead>
+<tr>
+<th>At 2.4 GHz</th>
+<th>Circuit</th>
+<th>Planar MoM</th>
+<th>EMerge</th>
+<th>Palace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S11|</td>
+<td>−26.0 dB</td>
+<td>−24.6 dB</td>
+<td>−20.3 dB</td>
+<td>−13.1 dB</td>
+</tr>
+<tr>
+<td>|S21|</td>
+<td>−3.240 dB</td>
+<td>−3.166 dB</td>
+<td>−3.179 dB</td>
+<td>−3.470 dB</td>
+</tr>
+<tr>
+<td>|S23|</td>
+<td>−27.8 dB</td>
+<td>−25.1 dB</td>
+<td>−23.2 dB</td>
+<td>−17.8 dB</td>
+</tr>
+</tbody>
+</table>
+<p>The model keeps |S11| below −20 dB from 1.31 to 3.22 GHz, 2.5:1, against one section's 1.98 to 2.85 GHz. Planar and
+EMerge follow it across the band; Palace's Draft mesh reads the match 7 to 13 dB shallower below 2.8 GHz.</p>
+<h2 id="four-way-tree">Four-way tree</h2>
+<p>Three MWPDs, each with its own 100 Ω 0402: the planar way to four outputs, since a single N-way divider's resistors
+meet at one point that no one-layer drawing reaches. Circuit only: each divider is the Wilkinson cell's.</p>
+<p><img class="readme-picture" src="pictures/fourway-layout.png" alt="The four-way tree: the input divider on the left, its outputs bending up and down to two more dividers, each with its own 0402 across its ring's gap, and ports 2 to 5 on their outputs." width="700"></p>
+<p><img class="readme-picture" src="pictures/fourway-results.png" alt="FourWay.cdd: |S21|, |S11|, |S22| and the isolation between outputs against frequency, from the cell's own schematic." width="600"></p>
+<table>
+<thead>
+<tr>
+<th>At 2.4 GHz</th>
+<th>Circuit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S21| = |S31| = |S41| = |S51|</td>
+<td>−6.256 dB, all four in phase</td>
+</tr>
+<tr>
+<td>|S11|</td>
+<td>−42.0 dB</td>
+</tr>
+<tr>
+<td>|S23|, one divider's outputs</td>
+<td>−38.9 dB</td>
+</tr>
+<tr>
+<td>|S24|, two dividers' outputs</td>
+<td>−42.7 dB</td>
+</tr>
+</tbody>
+</table>
+<p>|S11| stays below −20 dB from 2.15 to 2.63 GHz, narrower than one divider's band: each stage sees the next one's
+mismatch through the line between them.</p>
+<h2 id="mitred-and-square-corners">Mitred and square corners</h2>
+<p>The Wilkinson's circuit three times on one bench, its MWPD drawn with curved arms (<code>Corner</code> = <code>Curve</code>, ports 1-3), mitred
+corners (<code>Miter</code>, ports 4-6) and square corners (<code>Square</code>, ports 7-9). With corners the ring is a rectangle as tall as
+the curved ring, so its arms stay as far apart, and each straight run is shortened by its corners' own electrical
+length at F, so every arm is still a quarter wave there.
+Circuit only, swept every 10 MHz.</p>
+<p><img class="readme-picture" src="pictures/mitred-layout.png" alt="The three dividers side by side: the curved ring, the mitred rectangle and the square one, each with its 0402 across the gap and its outputs bending away to their ports." width="700"></p>
+<p><img class="readme-picture" src="pictures/mitred-results.png" alt="Mitred.cdd: |S21|, |S11| and |S23| against frequency for the three dividers, from the cell's own schematic." width="600"></p>
+<table>
+<thead>
+<tr>
+<th>At 2.4 GHz</th>
+<th>Curve</th>
+<th>Miter</th>
+<th>Square</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S11|</td>
+<td>−47.5 dB</td>
+<td>−51.7 dB</td>
+<td>−28.7 dB</td>
+</tr>
+<tr>
+<td>|S21|</td>
+<td>−3.149 dB</td>
+<td>−3.152 dB</td>
+<td>−3.152 dB</td>
+</tr>
+<tr>
+<td>|S23|</td>
+<td>−36.4 dB</td>
+<td>−36.2 dB</td>
+<td>−34.5 dB</td>
+</tr>
+<tr>
+<td>∠S21</td>
+<td>−173.0°</td>
+<td>−173.0°</td>
+<td>−172.8°</td>
+</tr>
+</tbody>
+</table>
+<p>The mitred divider's |S21| is the curved one's to 0.01 dB across the band, and all three keep |S11| below −20 dB from
+about 2.0 to 2.8 GHz. Square corners reflect, from the excess capacitance an unchamfered corner carries: their match
+bottoms out at −29 dB, and their |S21| strays from the curved one's by up to 0.06 dB.</p>
+<h2 id="branch-line-hybrid">Branch-line hybrid</h2>
+<p>A one-section MBLC with <code>Z0</code> 50 Ω and <code>F</code> 2.4 GHz: 35.4 Ω series arms and 50 Ω shunt arms, each a quarter wave between
+the reference planes of its junctions.</p>
+<p><img class="readme-picture" src="pictures/branch-line-layout.png" alt="The branch-line board: the two through lines, the wider 35 Ω series arms between the junctions, the two 50 Ω shunt arms, and a 5 mm line from each corner to its port." width="700"></p>
+<p><img class="readme-picture" src="pictures/branch-line-results.png" alt="Branch-Line.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31, the circuit model as a line and the three EM solvers as markers." width="600"></p>
+<table>
+<thead>
+<tr>
+<th>At 2.4 GHz</th>
+<th>Circuit</th>
+<th>Planar MoM</th>
+<th>EMerge</th>
+<th>Palace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S11|</td>
+<td>−30.4 dB</td>
+<td>−27.2 dB</td>
+<td>−18.2 dB</td>
+<td>−18.0 dB</td>
+</tr>
+<tr>
+<td>|S21|, through</td>
+<td>−3.20 dB</td>
+<td>−2.98 dB</td>
+<td>−3.53 dB</td>
+<td>−3.60 dB</td>
+</tr>
+<tr>
+<td>|S31|, coupled</td>
+<td>−3.19 dB</td>
+<td>−3.35 dB</td>
+<td>−2.99 dB</td>
+<td>−3.14 dB</td>
+</tr>
+<tr>
+<td>∠S21 − ∠S31</td>
+<td>90.1°</td>
+<td>90.0°</td>
+<td>90.2°</td>
+<td>90.4°</td>
+</tr>
+</tbody>
+</table>
+<p>Planar is within 0.22 dB of the model, and every solver holds the 90° within 0.5°. The two 3D solvers agree with each
+other within 0.15 dB, and both read the through port low.</p>
+<h2 id="rat-race-hybrid">Rat-race hybrid</h2>
+<p>An MRRC with <code>Z0</code> 50 Ω and <code>F</code> 2.4 GHz, its 70.7 Ω ring drawn as two straight runs and two half-turns: ports 2, 1 and 3
+a quarter wave apart on the upper run, and port 4 on the lower.</p>
+<p><img class="readme-picture" src="pictures/rat-race-layout.png" alt="The rat-race board: the ring as two straight runs and two half-turns, ports 2, 1 and 3 leaving the upper run upward and port 4 the lower run downward, each through a 5 mm line." width="700"></p>
+<p><img class="readme-picture" src="pictures/rat-race-results.png" alt="Rat-Race.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31 for a drive at the sum port, the circuit model as a line and the three EM solvers as markers." width="600"></p>
+<table>
+<thead>
+<tr>
+<th>At 2.4 GHz</th>
+<th>Circuit</th>
+<th>Planar MoM</th>
+<th>EMerge</th>
+<th>Palace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S11|, Σ</td>
+<td>−51.0 dB</td>
+<td>−27.4 dB</td>
+<td>−21.1 dB</td>
+<td>−25.7 dB</td>
+</tr>
+<tr>
+<td>|S21|</td>
+<td>−3.21 dB</td>
+<td>−3.14 dB</td>
+<td>−3.18 dB</td>
+<td>−3.24 dB</td>
+</tr>
+<tr>
+<td>|S31|</td>
+<td>−3.16 dB</td>
+<td>−3.11 dB</td>
+<td>−3.16 dB</td>
+<td>−3.12 dB</td>
+</tr>
+<tr>
+<td>|S41|, Σ to Δ</td>
+<td>−50.3 dB</td>
+<td>−53.3 dB</td>
+<td>−41.8 dB</td>
+<td>−33.6 dB</td>
+</tr>
+<tr>
+<td>∠S21 − ∠S31</td>
+<td>0.0°</td>
+<td>0.1°</td>
+<td>−0.7°</td>
+<td>−2.2°</td>
+</tr>
+</tbody>
+</table>
+<p>Every split is within 0.1 dB of the model and the sum within 2.2° of in phase. Outside the band the ring's nulls move
+fast with frequency, so a small shift reads as several dB.</p>
+<h2 id="coupled-line-coupler">Coupled-line coupler</h2>
+<p>An MCLC with <code>Coupling</code> 10 dB, <code>Z0</code> 50 Ω and <code>F</code> 2.4 GHz: two 0.888 mm strips 0.115 mm apart and 19.2 mm long. The
+feeds are drawn at the strip width, so no step in the copper sits outside the model.</p>
+<p><img class="readme-picture" src="pictures/coupler-layout.png" alt="The coupler: the coupled pair upright in the middle, each of its four strip ends curving away to its own port." width="450"></p>
+<p><img class="readme-picture" src="pictures/coupler-results.png" alt="Coupler.cdd: |S31|, |S21|, |S41| and |S11| against frequency, the circuit model as a line and the three EM solvers as markers." width="600"></p>
+<table>
+<thead>
+<tr>
+<th>At 2.4 GHz</th>
+<th>Circuit</th>
+<th>Planar MoM</th>
+<th>EMerge</th>
+<th>Palace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S31|, coupled</td>
+<td>−10.49 dB</td>
+<td>−10.72 dB</td>
+<td>−9.67 dB</td>
+<td>−9.33 dB</td>
+</tr>
+<tr>
+<td>|S21|, through</td>
+<td>−0.64 dB</td>
+<td>−0.60 dB</td>
+<td>−0.72 dB</td>
+<td>−0.82 dB</td>
+</tr>
+<tr>
+<td>|S41|, isolated</td>
+<td>−23.4 dB</td>
+<td>−25.1 dB</td>
+<td>−21.9 dB</td>
+<td>−21.9 dB</td>
+</tr>
+<tr>
+<td>|S11|</td>
+<td>−19.7 dB</td>
+<td>−17.6 dB</td>
+<td>−18.1 dB</td>
+<td>−18.1 dB</td>
+</tr>
+</tbody>
+</table>
+<p>Planar lands within 0.23 dB of the model's coupling and the 3D solvers read about 1 dB more. The directivity, 12 to
+14 dB, is microstrip's limit: the odd mode outruns the even.</p>
+<h2 id="coupled-line-balun">Coupled-line balun</h2>
+<p>An MCBL from 50 Ω to 200 Ω on each output at 2.4 GHz, with <code>Gap</code> 4 mm between its sections. 50 Ω outputs would need a
+gap under a tenth of the substrate height, which the part refuses.</p>
+<p><img class="readme-picture" src="pictures/balun-layout.png" alt="The balun: the input strip running along both sections and across the gap between them to its open end, the coupled strips below grounded by a via at each outer end, and the two outputs turning down at the middle." width="700"></p>
+<p><img class="readme-picture" src="pictures/balun-results.png" alt="Balun.cdd: |S21|, |S31|, the phase of S31 against S21 and |S11| against frequency, the circuit model as a line and the two 3D solvers as markers." width="600"></p>
+<table>
+<thead>
+<tr>
+<th>At 2.4 GHz</th>
+<th>Circuit</th>
+<th>Planar MoM</th>
+<th>EMerge</th>
+<th>Palace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S21|</td>
+<td>−3.63 dB</td>
+<td>refused</td>
+<td>−4.15 dB</td>
+<td>−4.10 dB</td>
+</tr>
+<tr>
+<td>|S31|</td>
+<td>−3.96 dB</td>
+<td>refused</td>
+<td>−4.39 dB</td>
+<td>−4.24 dB</td>
+</tr>
+<tr>
+<td>∠S31 − ∠S21</td>
+<td>169.8°</td>
+<td>refused</td>
+<td>175.1°</td>
+<td>175.1°</td>
+</tr>
+<tr>
+<td>|S11|</td>
+<td>−10.6 dB</td>
+<td>refused</td>
+<td>−7.4 dB</td>
+<td>−9.0 dB</td>
+</tr>
+</tbody>
+</table>
+<p>Planar refuses the layout: its two ground vias are 0.71 λ apart at 4.8 GHz, past its via kernel's tenth of a wavelength.
+The match is narrow and sits below F, because the joining and output lines the board needs add to the sections' length.</p>
+<h2 id="open-points">Open points</h2>
+<ul>
+<li><strong>Branch-line:</strong> the 3D |S21| reads 0.33 to 0.40 dB low; a series reactance per lumped port does not explain it.</li>
+<li><strong>Unequal split:</strong> the 3D results send 0.5 to 0.9 dB too much to port 2; the cause is not established.</li>
+<li><strong>Balun:</strong> the outputs are about 170° apart, not 180°: microstrip's even and odd modes travel at different speeds.</li>
+<li><strong>Coupler:</strong> the 3D results read about 1 dB more coupling than the model and Planar.</li>
+<li><strong>Narrow gaps</strong> need Planar's edge mesh and finer 3D meshes, which the coupler's and the balun's setups have.</li>
+<li><strong>The interdigitated coupler (MIDC) has no cell yet.</strong> Its jumpers cross a finger, which Planar cannot model and the
+3D view needs drawn by hand, and its 163 µm fingers need tapered feeds before a calibrated port can sit on them.</li>
+</ul>
+<h2 id="things-to-try">Things to try</h2>
+<ul>
+<li><strong>Change <code>F</code> or <code>Z0</code></strong> on a part: it is re-planned, and Update Layout redraws the board for a new EM run.</li>
+<li><strong>Change a closing resistor on a bench</strong>, such as <code>R1_pl</code> on Wilkinson Bench, and watch |S23| move with no EM run.</li>
+<li><strong>Change <code>K</code> on Unequal</strong> and set <code>R1</code> to Z0·(K + 1/K); a <code>K</code> the board cannot draw is refused (4 asks for 412 Ω).</li>
+<li><strong>Set <code>N</code> to 3 on Broadband</strong>: the part grows <code>R2_3</code>/<code>R3_3</code>, and the readout gives the three resistors.</li>
+</ul>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

@@ -89,6 +89,36 @@ public static class SymbolPortDefs
             // GSGPAD: on MLIN's left/right convention — 1 the probe tip at the left, 2 the line's end at the right —
             // and a grid step shorter than MLIN, pin to pin 300 rather than 400.
             case SymbolKind.GsgPad:  return [("1", -200f, 0f), ("2", 100f, 0f)];
+            // MWPD: the input at the left, the outputs at the right's top and bottom corners, and R2/R3 between them
+            // 400 apart — a resistor's own pin span, so one dropped on R2-R3 lands on both with no wire. VARIADIC on the
+            // PIN count (3 + 2·N, as PortCount answers), so any other count, the one-argument overload's 2 included, is
+            // the one-section divider: each further section moves the outputs 300 right, and resistor k's pins R2_k/R3_k
+            // sit on the two arms, 400 apart, at the junction 300·(N − k) past where the ring meets the first.
+            case SymbolKind.Mwpd:
+            {
+                int n = CircuitRF.Core.Devices.Microstrip.WilkinsonPlan.SectionsForPinCount(portCount);
+                float x = 400f + 300f * (n - 1);
+                return [("1", -400f, 0f), ("2", x, -400f), ("3", x, 400f), ("R2", x, -200f), ("R3", x, 200f),
+                        .. Enumerable.Range(2, n - 1).SelectMany(k => new[]
+                        {
+                            ($"R2_{k}", 300f + 300f * (n - k), -200f), ($"R3_{k}", 300f + 300f * (n - k), 200f),
+                        })];
+            }
+            // MBLC: as the board has it — 1 and 2 the ends of the upper through line, 4 and 3 of the lower.
+            case SymbolKind.Mblc:    return [("1", -400f, -200f), ("2", 400f, -200f), ("3", 400f, 200f), ("4", -400f, 200f)];
+            // MRRC: the sum port at the top, the difference port at the bottom, the outputs either side.
+            case SymbolKind.Mrrc:    return [("1", 0f, -400f), ("2", -400f, 0f), ("3", 400f, 0f), ("4", 0f, 400f)];
+            // MCLC: MCLIN's pins exactly, so a placed MCLIN is swapped for the coupler without rewiring.
+            case SymbolKind.Mclc:    return [("1", -200f, -100f), ("2", 200f, -100f),
+                                             ("3", -200f,  100f), ("4", 200f,  100f)];
+            // MIDC: each pin on its own finger's row, top to bottom 1/J3/J1/3 at the left and 2/J4/J2/4 at the right,
+            // as the fingers lie on the board (1-2 and J1-J2 one conductor, J3-J4 and 3-4 the other).
+            case SymbolKind.Midc:    return [("1", -400f, -300f), ("2", 400f, -300f), ("3", -400f, 300f), ("4", 400f, 300f),
+                                             ("J1", -400f, 100f), ("J2", 400f, 100f), ("J3", -400f, -100f), ("J4", 400f, -100f)];
+            // MCBL: the input and G2 at the left, G3 at the right, and the balanced outputs 2 and 3 side by side below
+            // the middle, where the two sections' coupled strips end.
+            case SymbolKind.Mcbl:    return [("1", -600f, -100f), ("2", -100f, 200f), ("3", 100f, 200f),
+                                             ("G2", -600f, 100f), ("G3", 600f, 100f)];
             // The MMIC passives (AA-1): horizontal, on MLIN's left/right convention, because they sit
             // in a die's lines. MIMCAP 1 = top plate, 2 = bottom plate; SPIRAL 1 = outer end, 2 = inner
             // end; AIRBRIDGE 1/2 = the landings, and 3 (below) / 4 (above) the two ends of the line it crosses.
@@ -1183,6 +1213,14 @@ public sealed class EditableComponent
 
             // brief-pch-8 — a Propagation Channel's pins as SymbolPortDefs' code: an end naming an instance has none.
             if (Symbol is SymbolKind.PropagationChannel) return ChannelPinCode(Parameters);
+            // A Wilkinson divider's N is its number of sections; it draws 3 + 2·N pins. A plain number only — an expression
+            // is the one-section divider's five, as the plan cannot be asked for more pins than the symbol draws.
+            if (Symbol is SymbolKind.Mwpd)
+            {
+                var sections = Parameters.FirstOrDefault(q => q.Name == "N");
+                return sections is not null && int.TryParse(sections.Expression, out int ns) && ns is >= 1 and <= CircuitRF.Core.Devices.Microstrip.WilkinsonPlan.MaxSections
+                    ? 3 + 2 * ns : 5;
+            }
 
             // The Combiner's N is its number of PATHS; it draws N + 1 pins, the common port with them.
             if (Symbol is SymbolKind.Combiner)

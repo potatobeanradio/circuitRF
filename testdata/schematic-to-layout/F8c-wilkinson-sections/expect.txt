@@ -1,0 +1,16 @@
+# The two-section broadband Wilkinson (MWPD, N = 2, an octave about 2.4 GHz): seven pins. Resistor 1 (242 ohm) goes
+# on R2-R3 at the outputs, wired; resistor 2 (98 ohm) is dropped straight on R2_2-R3_2, where the ring meets the
+# second section. Each 0402 lands across the gap at its own junction with no line, and the ports sit on the
+# divider's own pins.
+joinable nr2
+joinable nr3
+Info WPD1 added
+Info R1 added
+Info R2 added
+Info P1 port 1 placed at WPD1 pin 1
+Info P2 port 2 placed at WPD1 pin 2
+Info P3 port 3 placed at WPD1 pin 3
+Info - Joined 4 of 4 connections; 0 left as ratsnest
+port P1 1
+port P2 2
+port P3 3

@@ -115,6 +115,12 @@ public static class BuiltInSymbols
     private static readonly Symbol _viaGnd        = BuildViaGnd();
     private static readonly Symbol _testPad       = BuildTestPad();
     private static readonly Symbol _gsgPad        = BuildGsgPad();
+    private static readonly Symbol _mwpd          = BuildMwpd();
+    private static readonly Symbol _mblc          = BuildMblc();
+    private static readonly Symbol _mrrc          = BuildMrrc();
+    private static readonly Symbol _mclc          = BuildMclc();
+    private static readonly Symbol _midc          = BuildMidc();
+    private static readonly Symbol _mcbl          = BuildMcbl();
     private static readonly Symbol _mimCap        = BuildMimCap();
     private static readonly Symbol _spiral        = BuildSpiral();
     private static readonly Symbol _octSpiral     = BuildOctSpiral();
@@ -161,6 +167,8 @@ public static class BuiltInSymbols
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, bool, SnpPinConfig, SnpPitch), Symbol> _snpCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _verilogACache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _combinerCache = new();
+    // MWPD per section count above one (one section is _mwpd), keyed by N; Primitives takes its PIN count.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mwpdCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<PhasedArrayGlyph, Symbol> _phasedArrayCache = new();
     // Tuner-family cache key: (kind, showBias) — per-instance bias-branch variant.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(SymbolKind, bool), Symbol> _tunerCache = new();
@@ -260,6 +268,16 @@ public static class BuiltInSymbols
             case SymbolKind.ViaGnd:     return _viaGnd;
             case SymbolKind.TestPad:    return _testPad;
             case SymbolKind.GsgPad:     return _gsgPad;
+            case SymbolKind.Mwpd:
+            {
+                int n = CircuitRF.Core.Devices.Microstrip.WilkinsonPlan.SectionsForPinCount(portCount);
+                return n == 1 ? _mwpd : _mwpdCache.GetOrAdd(n, BuildMwpd);
+            }
+            case SymbolKind.Mblc:       return _mblc;
+            case SymbolKind.Mrrc:       return _mrrc;
+            case SymbolKind.Mclc:       return _mclc;
+            case SymbolKind.Midc:       return _midc;
+            case SymbolKind.Mcbl:       return _mcbl;
             case SymbolKind.MimCap:     return _mimCap;
             case SymbolKind.Spiral:     return _spiral;
             case SymbolKind.OctSpiral:  return _octSpiral;
@@ -2759,6 +2777,170 @@ public static class BuiltInSymbols
         Circ(-110,  100, 12),
         L(  40,    0,  100,    0),
     ], SymbolKind.GsgPad);
+
+    // MWPD — the divider as it is drawn on the board: the input meets the ring, which splits into two quarter-wave arms
+    // that come back to the right; each arm's end is a junction (dot) with its output going on to the corner and its
+    // resistor end (R2/R3) straight out, so the 2·Z0 resistor sits on the right edge, between the outputs.
+    private static Symbol BuildMwpd() => Sym([
+        L(-400,    0, -260,    0),
+        Circ(-260, 0, 10, filled: true),
+        QC(-260,   0, -260, -200,  -40, -200),   // upper arm
+        L( -40, -200,  300, -200),
+        QC(-260,   0, -260,  200,  -40,  200),   // lower arm
+        L( -40,  200,  300,  200),
+        Circ(300, -200, 10, filled: true),
+        Circ(300,  200, 10, filled: true),
+        L( 300, -200,  400, -200),               // R2
+        L( 300,  200,  400,  200),               // R3
+        L( 300, -200,  300, -400),               // output 2
+        L( 300, -400,  400, -400),
+        L( 300,  200,  300,  400),               // output 3
+        L( 300,  400,  400,  400),
+        Txt("λ/4", 80, -240, fontSize: 11, vAlign: SymbolTextVAlign.Bottom),
+        Txt("λ/4", 80,  240, fontSize: 11, vAlign: SymbolTextVAlign.Top),
+    ], SymbolKind.Mwpd);
+
+    // MWPD with N sections: the ring as above, then the two arms running on to the right as a pair, a junction (dot) every
+    // 300 where resistor k's pins R2_k/R3_k sit on the arms 400 apart, and the outputs' junctions, R2/R3 and outputs at
+    // the right as the one-section divider has them. One λ/4 over each section.
+    private static Symbol BuildMwpd(int n)
+    {
+        float xd = 300 + 300 * (n - 1);
+        var prims = new List<SymbolPrimitive>
+        {
+            L(-400,    0, -260,    0),
+            Circ(-260, 0, 10, filled: true),
+            QC(-260,   0, -260, -200,  -40, -200),
+            L( -40, -200,   xd, -200),
+            QC(-260,   0, -260,  200,  -40,  200),
+            L( -40,  200,   xd,  200),
+            Txt("λ/4", 80, -240, fontSize: 11, vAlign: SymbolTextVAlign.Bottom),
+            Txt("λ/4", 80,  240, fontSize: 11, vAlign: SymbolTextVAlign.Top),
+        };
+        for (int k = n; k >= 1; k--)
+        {
+            float x = 300 + 300 * (n - k);
+            prims.Add(Circ(x, -200, 10, filled: true));
+            prims.Add(Circ(x,  200, 10, filled: true));
+            if (k == 1) break;
+            prims.Add(Txt("λ/4", x + 150, -240, fontSize: 11, vAlign: SymbolTextVAlign.Bottom));
+            prims.Add(Txt("λ/4", x + 150,  240, fontSize: 11, vAlign: SymbolTextVAlign.Top));
+        }
+        prims.AddRange([
+            L(xd, -200, xd + 100, -200),               // R2
+            L(xd,  200, xd + 100,  200),               // R3
+            L(xd, -200, xd, -400),                     // output 2
+            L(xd, -400, xd + 100, -400),
+            L(xd,  200, xd,  400),                     // output 3
+            L(xd,  400, xd + 100,  400),
+        ]);
+        return Sym(prims, SymbolKind.Mwpd, 3 + 2 * n);
+    }
+
+    // MBLC — the branch-line coupler as it is drawn on the board: two through lines joined by two shunt arms, a junction
+    // (dot) at each corner and the four feeds leaving in line with the through lines; numbered as the hybrids are.
+    private static Symbol BuildMblc() => Sym([
+        L(-400, -200,  400, -200),               // feed 1, the 1-2 through line, feed 2
+        L(-400,  200,  400,  200),               // feed 4, the 4-3 through line, feed 3
+        L(-200, -200, -200,  200),               // shunt arms
+        L( 200, -200,  200,  200),
+        Circ(-200, -200, 10, filled: true),
+        Circ( 200, -200, 10, filled: true),
+        Circ(-200,  200, 10, filled: true),
+        Circ( 200,  200, 10, filled: true),
+        Txt("λ/4", 0, -230, fontSize: MixerPortFontSize, vAlign: SymbolTextVAlign.Bottom),
+        Txt("90°", 0, 0, fontSize: 44),
+        Txt("1", -300, -230, fontSize: MixerPortFontSize, vAlign: SymbolTextVAlign.Bottom),
+        Txt("2",  300, -230, fontSize: MixerPortFontSize, vAlign: SymbolTextVAlign.Bottom),
+        Txt("3",  300,  230, fontSize: MixerPortFontSize, vAlign: SymbolTextVAlign.Top),
+        Txt("4", -300,  230, fontSize: MixerPortFontSize, vAlign: SymbolTextVAlign.Top),
+    ], SymbolKind.Mblc);
+
+    // MRRC — the rat-race ring: Σ (1) at the top and Δ (4) at the bottom, the outputs 2 and 3 either side, and each
+    // quarter of the ring marked with the spacing it has on the board (three λ/4 and the 3λ/4 that closes it).
+    private static Symbol BuildMrrc() => Sym([
+        Circ(0, 0, 200),
+        L(   0, -400,    0, -200),
+        L(-400,    0, -200,    0),
+        L( 200,    0,  400,    0),
+        L(   0,  200,    0,  400),
+        Circ(   0, -200, 10, filled: true),
+        Circ(-200,    0, 10, filled: true),
+        Circ( 200,    0, 10, filled: true),
+        Circ(   0,  200, 10, filled: true),
+        Txt("180°", 0, 0, fontSize: 52),
+        Txt("1 Σ", 30, -320, fontSize: 40, align: SymbolTextAlign.Left),
+        Txt("4 Δ", 30,  320, fontSize: 40, align: SymbolTextAlign.Left),
+        Txt("2", -330, -40, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
+        Txt("3",  330, -40, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
+        Txt("λ/4",  -200, -200, fontSize: 40, align: SymbolTextAlign.Right, vAlign: SymbolTextVAlign.Bottom),
+        Txt("λ/4",   200, -200, fontSize: 40, align: SymbolTextAlign.Left, vAlign: SymbolTextVAlign.Bottom),
+        Txt("λ/4",   200,  200, fontSize: 40, align: SymbolTextAlign.Left, vAlign: SymbolTextVAlign.Top),
+        Txt("3λ/4", -200,  200, fontSize: 40, align: SymbolTextAlign.Right, vAlign: SymbolTextVAlign.Top),
+    ], SymbolKind.Mrrc);
+
+    // MCLC — MCLIN's plan view of the pair, with the quarter wave it is cut to and the coupling arrow from the input's
+    // strip to the coupled port's, which runs back towards the input end (a backward-wave coupler).
+    private static Symbol BuildMclc() => Sym([
+        PLine(-200, -100,  -95, -100,  -95, -40),
+        PLine( 200, -100,   95, -100,   95, -40),
+        PLine(-200,  100,  -95,  100,  -95,  40),
+        PLine( 200,  100,   95,  100,   95,  40),
+        RRect(0, -25, 230, 30, 8),
+        RRect(0,  25, 230, 30, 8),
+        Txt("λ/4", 0, -50, fontSize: 11, vAlign: SymbolTextVAlign.Bottom),
+        Txt("1", -150, -125, fontSize: MixerPortFontSize),
+        Txt("2",  150, -125, fontSize: MixerPortFontSize),
+        Txt("3", -150,  130, fontSize: MixerPortFontSize),
+        Txt("4",  150,  130, fontSize: MixerPortFontSize),
+    ], SymbolKind.Mclc);
+
+    // MIDC — four fingers as they lie on the board, each pin on its own finger's row: the ports on the outer two, the
+    // jumper landings J1-J4 on the inner two. The outer leads turn in nearer the body than the inner ones, so no lead
+    // crosses another. The jumpers are not drawn: they are parts of their own on k-Jk.
+    private static Symbol BuildMidc()
+    {
+        var p = new List<SymbolPrimitive>();
+        double[] rows = [-300, -100, 100, 300];
+        double[] fy = [-90, -30, 30, 90];
+        for (int k = 0; k < 4; k++)
+        {
+            double jog = k is 0 or 3 ? 230 : 300;
+            p.Add(PLine(-400, rows[k], -jog, rows[k], -jog, fy[k], -200, fy[k]));
+            p.Add(PLine( 400, rows[k],  jog, rows[k],  jog, fy[k],  200, fy[k]));
+            p.Add(RRect(0, fy[k], 400, 24, 6));
+        }
+        p.Add(Txt("1",  -330, -320, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        p.Add(Txt("J3", -330, -120, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        p.Add(Txt("J1", -330,   80, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        p.Add(Txt("3",  -330,  280, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        p.Add(Txt("2",   330, -320, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        p.Add(Txt("J4",  330, -120, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        p.Add(Txt("J2",  330,   80, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        p.Add(Txt("4",   330,  280, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        return Sym([.. p], SymbolKind.Midc);
+    }
+
+    // MCBL — the two quarter-wave sections in a row: the input strip runs through both to an open end, and each coupled
+    // strip is grounded at its outer end (G2, G3) and leaves as a balanced output at the middle.
+    private static Symbol BuildMcbl() => Sym([
+        PLine(-600, -100, -455, -100, -455, -40),       // 1 into the input strip
+        PLine(-600,  100, -455,  100, -455,  40),       // G2
+        PLine( 600,  100,  455,  100,  455,  40),       // G3
+        PLine(-100,  200, -100,   40),                  // 2
+        PLine( 100,  200,  100,   40),                  // 3
+        RRect(-250, -25, 400, 30, 8),
+        RRect( 250, -25, 400, 30, 8),
+        RRect(-250,  25, 400, 30, 8),
+        RRect( 250,  25, 400, 30, 8),
+        Txt("λ/4", -250, -50, fontSize: 11, vAlign: SymbolTextVAlign.Bottom),
+        Txt("λ/4",  250, -50, fontSize: 11, vAlign: SymbolTextVAlign.Bottom),
+        Txt("1",  -560, -125, fontSize: MixerPortFontSize),
+        Txt("G2", -560,  135, fontSize: 22),
+        Txt("G3",  560,  135, fontSize: 22),
+        Txt("2",  -140,  190, fontSize: MixerPortFontSize),
+        Txt("3",   140,  190, fontSize: MixerPortFontSize),
+    ], SymbolKind.Mcbl);
 
     private static Symbol BuildTestPad()
     {

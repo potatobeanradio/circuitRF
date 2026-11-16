@@ -710,6 +710,32 @@ public enum SymbolKind
     /// [1] n (0,200), the switched pair; [2] ctrl+ (−300,−100), [3] ctrl− (−300,100), the control pair, which draws no current.
     /// A switch blade between two contacts, its control leads ending at an actuator linked to the blade by a dashed line.</summary>
     VSwitch,
+    /// <summary>Wilkinson divider on microstrip (engine "MWPD", docs/design/rf-passives.md): specs Z0 and F, the split
+    /// ratio K and the section count N (with its Band), and the resistor's pin span Gap; the arms, ring and junctions are
+    /// derived (WilkinsonPlan). 3 + 2·N pins: 1 the input, 2 and 3 the outputs, R2 and R3 the ends the isolation resistor
+    /// goes across (2·Z0 for the equal split) — an ordinary resistor, not part of the part — then R2_k/R3_k for each
+    /// further section's resistor. Appended so no existing kind's ordinal moves.</summary>
+    Mwpd,
+    /// <summary>3 dB branch-line (90°) hybrid on microstrip (engine "MBLC", docs/design/rf-passives.md): specs Z0, F and
+    /// N, one or two sections; the arms and junctions are derived (BranchLinePlan). Four pins: 1 and 2 one through line,
+    /// 4 and 3 the other; driven at 1, 2 is through, 3 coupled and 4 isolated.</summary>
+    Mblc,
+    /// <summary>Rat-race (180°) hybrid on microstrip (engine "MRRC", docs/design/rf-passives.md): specs Z0 and F; the ring
+    /// and junctions are derived (RatRacePlan). Four pins: 1 the sum port, 4 the difference port, 2 and 3 the
+    /// outputs.</summary>
+    Mrrc,
+    /// <summary>Single-section coupled-line directional coupler on microstrip (engine "MCLC"): specs Coupling (dB), Z0
+    /// and F; W, S and L are derived (CoupledLineCouplerPlan). Pins 1 input, 2 through, 3 coupled, 4 isolated, in
+    /// MCLIN's order.</summary>
+    Mclc,
+    /// <summary>Four-finger interdigitated coupler on microstrip (engine "MIDC"): specs Coupling (dB), Z0 and F
+    /// (LangePlan, Ou's equations). Pins 1-4 as MCLC's, then J1-J4, the inner fingers' ends: the jumpers joining
+    /// alternate fingers are ordinary parts from pin k to Jk, not part of the part.</summary>
+    Midc,
+    /// <summary>Coupled-line balun on microstrip (engine "MCBL"): specs Z0, ZL (each output's load) and F, and the layout
+    /// Gap between its two quarter-wave sections (MarchandBalunPlan). Pins 1 unbalanced, 2 and 3 balanced, G2 and G3 the
+    /// strips' grounded ends — for ordinary vias to ground, not part of the part.</summary>
+    Mcbl,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

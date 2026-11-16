@@ -1,0 +1,14 @@
+# The unequal-split Wilkinson (MWPD, K = 1.5): port 3 takes K^2 = 2.25 times port 2's power. The arms differ, so the
+# ring's gap sits off the input's axis, and each output leaves through its quarter-wave transformer; the resistor of
+# Z0 (K + 1/K) on R2-R3 still lands across the gap with no line.
+joinable nr2
+joinable nr3
+Info WPD1 added
+Info R1 added
+Info P1 port 1 placed at WPD1 pin 1
+Info P2 port 2 placed at WPD1 pin 2
+Info P3 port 3 placed at WPD1 pin 3
+Info - Joined 2 of 2 connections; 0 left as ratsnest
+port P1 1
+port P2 2
+port P3 3

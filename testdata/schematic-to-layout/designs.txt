@@ -28,3 +28,12 @@ F7b-snp-reference SDL-3
 F1b-port-on-pad SDL-5
 C3b-port-on-junction SDL-5
 C8-gap-coupled-filter SDL-9
+F8-wilkinson-divider RF-passives
+F8b-wilkinson-unequal RF-passives
+F8c-wilkinson-sections RF-passives
+F8d-wilkinson-mitred RF-passives
+F9-branch-line-hybrid RF-passives
+F10-rat-race-hybrid RF-passives
+F11-coupled-line-coupler RF-passives
+F12-coupled-line-balun RF-passives
+F13-interdigitated-coupler RF-passives

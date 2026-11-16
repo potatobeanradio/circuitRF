@@ -21,7 +21,9 @@
 // VERIFIED BEFORE MESHING (R-emb1-4), in check as well as the run: the landings change no conductor count (no net bridged),
 // each sheet's end edges touch exactly its two conductors and its side edges touch none, no copper lies inside the sheet
 // (sampled on a 2 µm grid), and the two conductors are different nets. A failure is a refusal naming the refdes, the edge
-// and the conductor found.
+// and the conductor found. Both pads on ONE conductor is a part across a loop (a Wilkinson's ring joins its resistor's pads):
+// built the same way when air lies between the pads, its two pads' own nets compared instead, and its sheet's ends inferred
+// as a loop's (C3dPorts' LoopPair), since naming one conductor twice cannot say which edge is which.
 //
 // GAP PORTS, NEVER GROUND-REFERENCED PAIRS (R-emb1-5). A two-terminal part is one gap port between its pads; a part with
 // more pads is one gap port per signal pad against the part's own ground pad. A part between two pad-to-plane ports carries
@@ -97,6 +99,10 @@ public sealed record C3dComponentPort(
 
     /// <summary>The nets of its two conductors, positive first, where the board states them.</summary>
     public (string? Positive, string? Negative) Nets { get; init; }
+
+    /// <summary>The one conductor both pads land on when the copper joins them elsewhere, so the port closes a loop through it;
+    /// null otherwise. Its sheet's ends are then inferred, not named (<see cref="C3dPort.Positive"/> is null).</summary>
+    public string? Loop { get; init; }
 
     /// <summary>brief-icp-3 — a cut instance's pin port: a sheet at the cut face (<see cref="C3dCellCuts"/>), its
     /// <see cref="Refdes"/> the instance's path, its <see cref="Pin"/> the pin, its port's name <c>path.pin</c>; no reference pin, no
@@ -343,8 +349,11 @@ public static class C3dComponentPorts
                     Size = new C3dPoint2((long)Math.Round((d.X1 - d.X0) / dbu), (long)Math.Round((d.Y1 - d.Y0) / dbu)),
                 },
                 Z0 = d.Z0 is { Length: > 0 } z ? z : "50",
-                Positive = d.Positive,
-                Negative = d.Negative,
+                // A loop's two ends are one conductor, so naming them cannot say which edge is which: they are inferred as a loop
+                // fed across its gap (C3dPorts' LoopPair, low edge negative), and Flip puts + on the positive pad when it is low.
+                Positive = d.Loop ? null : d.Positive,
+                Negative = d.Loop ? null : d.Negative,
+                Flip = d.Loop && d.PositiveLow,
             };
             final.Add(r with
             {
@@ -353,7 +362,10 @@ public static class C3dComponentPorts
                 Verdict = verdict ?? "verified",
                 Nets = (d.PosNet, d.NegNet),
                 Landings = verdict is null ? r.Landings : [],
+                Loop = d.Loop ? d.Positive : null,
             });
+            if (verdict is null && d.Loop)
+                warnings.Add(EmDiagnostics.ComponentPortAcrossLoop(d.Name, r.Pin ?? "", r.ReferencePin ?? "").Render());
         }
         foreach (var r in final.Where(p => p.Refusal is not null))
             warnings.Add($"{r.Refusal} {r.Refdes} is left out of this run; the other component ports are built.");
@@ -484,6 +496,12 @@ public static class C3dComponentPorts
         public bool Connector { get; init; }
         public string? PosNet { get; init; }
         public string? NegNet { get; init; }
+
+        /// <summary>Both ends on one conductor: the port closes a loop through it.</summary>
+        public bool Loop { get; init; }
+
+        /// <summary>The positive pad is the one at the smaller coordinate along the gap.</summary>
+        public bool PositiveLow { get; init; }
     }
 
     private static (bool AlongX, double W0, double W1)? Facing(Pad a, Pad b) => EmPartPads.Facing(a, b);
@@ -498,10 +516,14 @@ public static class C3dComponentPorts
     {
         why = null;
         string label = name == rd ? rd : $"{rd} (pad {pos.Pad.Pin})";
-        if (pos.Solid.Name == neg.Solid.Name)
+        // Both pads on one conductor: the copper joins them elsewhere (a ring), and the port closes that loop. It is built as any
+        // other, provided the pads face each other across a real gap (the scan below refuses copper across it). Its two ends are
+        // one conductor, so the conductors' nets say nothing; the pads' own nets, the schematic's, must still differ.
+        bool loop = pos.Solid.Name == neg.Solid.Name;
+        if (loop && pos.Pad.Net is { Length: > 0 } pn && string.Equals(pn, neg.Pad.Net, StringComparison.OrdinalIgnoreCase))
         {
-            why = $"{label}: pads {pos.Pad.Pin} and {neg.Pad.Pin} land on one conductor, '{pos.Solid.Name}', so the part is shorted by the copper " +
-                  "and a port across it measures nothing.";
+            why = $"{label}: pads {pos.Pad.Pin} and {neg.Pad.Pin} are both on net {pn}, so a port between them is across one " +
+                  "net.";
             return null;
         }
         if (Facing(pos.Pad, neg.Pad) is not { } face)
@@ -567,7 +589,11 @@ public static class C3dComponentPorts
         {
             if (lowIntervals[i].Any(t => t.A < mid && t.B > mid) || highIntervals[i].Any(t => t.A < mid && t.B > mid))
             {
-                why = $"{label}: copper of '{(lowIntervals[i].Any(t => t.A < mid && t.B > mid) ? low.Solid.Name : high.Solid.Name)}' runs across the " +
+                why = loop
+                    ? $"{label}: pads {pos.Pad.Pin} and {neg.Pad.Pin} land on one conductor, '{pos.Solid.Name}', whose copper runs across " +
+                      $"the middle of their gap at {Axis(!ax)} = {Mm(vs[i])} mm, so the part is shorted by the copper there and there is " +
+                      "no gap for a port."
+                    : $"{label}: copper of '{(lowIntervals[i].Any(t => t.A < mid && t.B > mid) ? low.Solid.Name : high.Solid.Name)}' runs across the " +
                       $"middle of the gap at {Axis(!ax)} = {Mm(vs[i])} mm, so the two pads have no gap between them there.";
                 return null;
             }
@@ -597,7 +623,10 @@ public static class C3dComponentPorts
         }
         double zMid = Math.Round((pp.ZBottom + pp.ZTop) / 2 / dbu, MidpointRounding.AwayFromZero) * dbu;
         var (x0, y0, x1, y1) = ax ? (lf.Value, w0, hf.Value, w1) : (w0, lf.Value, w1, hf.Value);
-        return new Draft(name, rd, pos.Pad.Pin, pos.Solid.Name, neg.Solid.Name, x0, y0, x1, y1, zMid, hf.Value - lf.Value, w1 - w0, ax, landings);
+        return new Draft(name, rd, pos.Pad.Pin, pos.Solid.Name, neg.Solid.Name, x0, y0, x1, y1, zMid, hf.Value - lf.Value, w1 - w0, ax, landings)
+        {
+            Loop = loop, PositiveLow = posLow,
+        };
 
         // One end: its face on the DBU grid, and a landing where the copper is not already that one straight face.
         // side −1: the low conductor (its face is its largest coordinate); +1: the high one.
@@ -815,8 +844,8 @@ public static class C3dComponentPorts
     private static string? Verify(Draft d, C3dElaboration e, C3dPortContext ctx, double dbu)
     {
         string who = d.Name;
-        // The two conductors are different nets.
-        if (e.ObjectNets.TryGetValue(d.Positive, out var pn) && e.ObjectNets.TryGetValue(d.Negative, out var nn) && pn.Overlaps(nn))
+        // The two conductors are different nets (a loop's are one conductor: Construct compared its pads' nets instead).
+        if (!d.Loop && e.ObjectNets.TryGetValue(d.Positive, out var pn) && e.ObjectNets.TryGetValue(d.Negative, out var nn) && pn.Overlaps(nn))
             return $"{who}: '{d.Positive}' and '{d.Negative}' are both on net {string.Join("/", pn.Intersect(nn))}, so the port is across one net.";
 
         // Each end edge touches exactly its own conductor within 1 DBU; each side edge touches none.
@@ -985,7 +1014,10 @@ public static class C3dComponentPorts
         string landings = p.Landings.Count == 0
             ? "no landing"
             : string.Join(", ", p.Landings.Select(l => $"landing {Um(l.DepthM)} × {Um(l.WidthM)} µm on '{l.Conductor}'"));
-        return $"{port.Name}: port {port.Number}, pad {p.Pin} on '{port.Positive}' to pad {p.ReferencePin} on '{port.Negative}', " +
+        string ends = p.Loop is { } loop
+            ? $"pad {p.Pin} to pad {p.ReferencePin}, both on '{loop}' (a loop)"
+            : $"pad {p.Pin} on '{port.Positive}' to pad {p.ReferencePin} on '{port.Negative}'";
+        return $"{port.Name}: port {port.Number}, {ends}, " +
                $"gap {Um(p.GapM)} µm along {Axis(p.AlongX)}, {Um(p.WidthM)} µm wide; {landings}{(p.Connector ? "; connector" : "")}; {p.Verdict}.";
     }
 }
