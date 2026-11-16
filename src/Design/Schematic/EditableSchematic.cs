@@ -64,8 +64,9 @@ public static class SymbolPortDefs
     /// </summary>
     public static (string Name, float LocalX, float LocalY)[] For(SymbolKind kind, int portCount)
     {
-        // A lumped realisation (MWPD, MBLC, MRRC, MCBL with Realization = Lumped) and every resistive pad: VARIADIC on the PIN
-        // count, each layout's own (LumpedPlan), which differs from the distributed part's; any other count of a pad is the π.
+        // A resistive pad: VARIADIC on the PIN count, its form's own layout (LumpedPlan.PadForPins). A lumped MWPD, MBLC, MRRC
+        // or MCBL is NOT answered here: its count does not name it (MWPD's T and six-section ring both have fifteen pins), so
+        // its pins come from the part itself, For(EditableComponent); a count alone is always the distributed part's.
         if (Lumped(kind, portCount) is { } lumped) return LumpedPins(lumped);
         switch (kind)
         {
@@ -580,13 +581,18 @@ public static class SymbolPortDefs
         return pins;
     }
 
-    /// <summary>The lumped layout <paramref name="kind"/> draws at <paramref name="portCount"/> pins, or null: a lumped
-    /// realisation's own count, and for a resistive pad any count (the π's unless it is another form's).</summary>
+    /// <summary>The lumped layout a pin count alone names: a resistive pad's, for any count; null for every other kind,
+    /// whose lumped layout only the part's own words name (<see cref="For(EditableComponent)"/>).</summary>
     public static CircuitRF.Core.Devices.Microstrip.LumpedTopology? Lumped(SymbolKind kind, int portCount)
-        => kind is SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mcbl or SymbolKind.Mrpad
-            ? CircuitRF.Core.Devices.Microstrip.LumpedPlan.ForPins(ComponentTypeRegistry.EngineReference(kind), portCount)
-              ?? (kind == SymbolKind.Mrpad ? CircuitRF.Core.Devices.Microstrip.LumpedPlan.PadPi : null)
-            : null;
+        => kind == SymbolKind.Mrpad ? CircuitRF.Core.Devices.Microstrip.LumpedPlan.PadForPins(portCount) : null;
+
+    /// <summary>
+    /// A placed part's pins: its lumped layout's (<see cref="EditableComponent.LumpedLayout"/>) when it is a lumped
+    /// realisation or a resistive pad, else <see cref="For(SymbolKind, int)"/> at its pin count. Every caller with the part
+    /// at hand asks this: the count alone cannot tell MWPD's lumped T from its six-section ring, both fifteen pins.
+    /// </summary>
+    public static (string Name, float LocalX, float LocalY)[] For(EditableComponent comp)
+        => comp.LumpedLayout() is { } lumped ? LumpedPins(lumped) : For(comp.Symbol, comp.PortCount);
 
     /// <summary>
     /// A lumped layout's pins on a box: each series site's two pins along the top, 400 apart (a resistor's own span, so a
@@ -1072,7 +1078,7 @@ public sealed class EditableComponent
     {
         var ports = IsSnpBox
             ? GetEffectiveSnpPortDefs()
-            : SymbolPortDefs.For(Symbol, PortCount);
+            : SymbolPortDefs.For(this);
         if ((uint)portIndex >= (uint)ports.Length)
             throw new ArgumentOutOfRangeException(nameof(portIndex));
         var (_, lx, ly) = ports[portIndex];
@@ -1214,6 +1220,9 @@ public sealed class EditableComponent
         // VerilogAModelIntrospection.CachedTerminalLabels for why this path may not describe a file
         // itself (it would put a worker launch inside a glyph rebuild). Geometry is identical either
         // way, so a component that has not been described yet is drawn exactly as it always was.
+        // A lumped realisation or a resistive pad: its layout's box, from its own words, never from its pin count alone.
+        SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mcbl or SymbolKind.Mrpad
+            when LumpedLayout() is { } lumped => BuiltInSymbols.PrimitivesForLumped(Symbol, lumped),
         SymbolKind.VerilogA   => BuiltInSymbols.PrimitivesForVerilogA(
             PortCount,
             VerilogAModelIntrospection.CachedTerminalLabels(
@@ -1301,25 +1310,10 @@ public sealed class EditableComponent
     /// <summary>The lumped layout this part draws, from its own rows: MWPD, MBLC, MRRC or MCBL with <c>Realization = Lumped</c>
     /// (MWPD's π or T by <c>Arm</c>), and a resistive pad by its <c>Form</c>; null for anything else.</summary>
     public CircuitRF.Core.Devices.Microstrip.LumpedTopology? LumpedLayout()
-    {
-        string? Word(string name) => Parameters.FirstOrDefault(q => q.Name == name)?.Expression?.Trim();
-        bool Is<T>(string name, T value) where T : struct, Enum
-            => Enum.TryParse(Word(name), ignoreCase: true, out T v) && v.Equals(value);
-        if (Symbol == SymbolKind.Mrpad)
-            return CircuitRF.Core.Devices.Microstrip.LumpedPlan.PadTopology(
-                Enum.TryParse(Word("Form"), ignoreCase: true, out CircuitRF.Core.Devices.Microstrip.ResistivePadForm form)
-                    && Enum.IsDefined(form) ? form : CircuitRF.Core.Devices.Microstrip.ResistivePadForm.Pi);
-        if (Symbol is not (SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mcbl)
-            || !Is("Realization", CircuitRF.Core.Devices.Microstrip.PlanRealization.Lumped)) return null;
-        return Symbol switch
-        {
-            SymbolKind.Mwpd => Is("Arm", CircuitRF.Core.Devices.Microstrip.LumpedArm.Tee)
-                ? CircuitRF.Core.Devices.Microstrip.LumpedPlan.WilkinsonTee : CircuitRF.Core.Devices.Microstrip.LumpedPlan.WilkinsonPi,
-            SymbolKind.Mblc => CircuitRF.Core.Devices.Microstrip.LumpedPlan.BranchLineLayout,
-            SymbolKind.Mrrc => CircuitRF.Core.Devices.Microstrip.LumpedPlan.RatRaceLayout,
-            _ => CircuitRF.Core.Devices.Microstrip.LumpedPlan.LatticeBalunLayout,
-        };
-    }
+        => Symbol is SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mcbl or SymbolKind.Mrpad
+            ? CircuitRF.Core.Devices.Microstrip.LumpedPlan.LayoutFor(ComponentTypeRegistry.EngineReference(Symbol),
+                name => Parameters.FirstOrDefault(q => q.Name == name)?.Expression)
+            : null;
 
     public int PortCount
     {
@@ -1543,7 +1537,7 @@ public sealed class EditableComponent
                     Name: pin.Name ?? $"P{pin.PortIndex + 1}",
                     LocalX: (float)pin.LocalX,
                     LocalY: (float)pin.LocalY)).ToArray()
-                : SymbolPortDefs.For(Symbol, PortCount);
+                : SymbolPortDefs.For(this);
             ports = portDefs.Select((p, i) =>
             {
                 PortConnectionState state;
@@ -2199,7 +2193,7 @@ public sealed class SchematicEditModel
             return snpResult;
         }
 
-        var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
+        var portDefs = SymbolPortDefs.For(comp);
         var result   = new (float LocalX, float LocalY, int PortIndex)[portDefs.Length];
         for (int i = 0; i < portDefs.Length; i++)
             result[i] = (portDefs[i].LocalX, portDefs[i].LocalY, i);

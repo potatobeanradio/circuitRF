@@ -3902,7 +3902,7 @@ public static class NetExtractor
 
         // Fallback for unresolvable cell-refs: use built-in placeholder geometry.
         // This keeps pre-fix behavior for models without SchematicDirectory set.
-        var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
+        var portDefs = SymbolPortDefs.For(comp);
         var result   = new (float LocalX, float LocalY, int PortIndex)[portDefs.Length];
         for (int i = 0; i < portDefs.Length; i++)
             result[i] = (portDefs[i].LocalX, portDefs[i].LocalY, i);

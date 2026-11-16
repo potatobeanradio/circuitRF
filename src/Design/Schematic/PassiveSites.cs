@@ -143,7 +143,7 @@ public static class PassiveSites
         IEnumerable<string>? taken = null)
     {
         var comp = passive.Component;
-        var defs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
+        var defs = SymbolPortDefs.For(comp);
         var pinPoints = defs.Select((_, i) => comp.GetPortWorldCoord(i)).ToList();
         (double X, double Y) At(string pin) => pinPoints[Array.FindIndex(defs, d => d.Name == pin)];
 

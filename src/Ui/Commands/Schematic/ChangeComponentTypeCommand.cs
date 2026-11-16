@@ -59,8 +59,8 @@ internal sealed class ChangeComponentTypeCommand : IUiCommand
     {
         var moves = new List<WireEndpointMoveSnapshot>();
 
-        var oldPorts = SymbolPortDefs.For(comp.Symbol,    comp.PortCount);
-        var newPorts = SymbolPortDefs.For(newComp.Symbol, newComp.PortCount);
+        var oldPorts = SymbolPortDefs.For(comp);
+        var newPorts = SymbolPortDefs.For(newComp);
 
         // World positions of old ports (component is still at its original kind here)
         var oldWorldPorts = new (double X, double Y)[oldPorts.Length];
