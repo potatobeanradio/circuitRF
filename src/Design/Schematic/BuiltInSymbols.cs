@@ -122,6 +122,9 @@ public static class BuiltInSymbols
     private static readonly Symbol _mgpd          = BuildMgpd();
     private static readonly Symbol _mtpd          = BuildMtpd();
     private static readonly Symbol _mcrc          = BuildMcrc();
+    private static readonly Symbol _mclcTandem    = BuildMclcTandem();
+    private static readonly Symbol _msps          = BuildMsps();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _midcCache = new();
     private static readonly Symbol _mimCap        = BuildMimCap();
     private static readonly Symbol _spiral        = BuildSpiral();
     private static readonly Symbol _octSpiral     = BuildOctSpiral();
@@ -284,8 +287,12 @@ public static class BuiltInSymbols
             }
             case SymbolKind.Mblc:       return _mblc;
             case SymbolKind.Mrrc:       return _mrrc;
-            case SymbolKind.Mclc:       return _mclc;
-            case SymbolKind.Midc:       return _midc;
+            case SymbolKind.Mclc:       return portCount == 8 ? _mclcTandem : _mclc;
+            case SymbolKind.Midc:
+            {
+                int n = CircuitRF.Core.Devices.Microstrip.LangePlan.FingersForPinCount(portCount);
+                return n == 4 ? _midc : _midcCache.GetOrAdd(n, BuildMidc);
+            }
             case SymbolKind.Mcbl:       return _mcbl;
             case SymbolKind.Mgpd:       return _mgpd;
             case SymbolKind.Mbpd:
@@ -293,6 +300,7 @@ public static class BuiltInSymbols
             case SymbolKind.Mtpd:       return _mtpd;
             case SymbolKind.Mcrc:       return _mcrc;
             case SymbolKind.Mlad:       return _mladCache.GetOrAdd(Math.Max(0, portCount - 2), BuildMlad);
+            case SymbolKind.Msps:       return _msps;
             case SymbolKind.MimCap:     return _mimCap;
             case SymbolKind.Spiral:     return _spiral;
             case SymbolKind.OctSpiral:  return _octSpiral;
@@ -2845,6 +2853,62 @@ public static class BuiltInSymbols
         p.Add(Txt("4",   330,  280, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
         return Sym([.. p], SymbolKind.Midc);
     }
+
+    // MIDC with six or eight fingers: as the four-finger glyph, a finger and its row per 200, ports on the outer two and
+    // each landing on its own finger's row (SymbolPortDefs). The jumpers are not drawn.
+    private static Symbol BuildMidc(int n)
+    {
+        var p = new List<SymbolPrimitive>();
+        var defs = SymbolPortDefs.For(SymbolKind.Midc, 2 * n);
+        for (int f = 0; f < n; f++)
+        {
+            double row = -100 * (n - 1) + 200 * f, fy = -30 * (n - 1) + 60 * f;
+            double jog = f == 0 || f == n - 1 ? 230 : 300;
+            p.Add(PLine(-400, row, -jog, row, -jog, fy, -200, fy));
+            p.Add(PLine( 400, row,  jog, row,  jog, fy,  200, fy));
+            p.Add(RRect(0, fy, 400, 24, 6));
+        }
+        foreach (var (name, x, y) in defs)
+            p.Add(Txt(name, x < 0 ? -330 : 330, y - 20, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        return Sym([.. p], SymbolKind.Midc, 2 * n);
+    }
+
+    // MCLC with Tandem — coupler I above coupler II, each a pair; I's far end runs around the right to II's and I's near
+    // end around the left to II's, each line broken where a port's lead crosses it: J1/J2 and J3/J4 are the breaks' ends.
+    private static Symbol BuildMclcTandem() => Sym([
+        RRect(0, -225, 300, 30, 8), RRect(0, -175, 300, 30, 8),       // coupler I
+        RRect(0,  175, 300, 30, 8), RRect(0,  225, 300, 30, 8),       // coupler II
+        PLine(-400, -300, -200, -300, -200, -225, -150, -225),       // 1 into I
+        PLine( 150, -225,  200, -225, 200, -300),                    // I's far end up to J1
+        PLine( 200,  100,  200,  175,  150,  175),                   // J2 down to II's far end
+        PLine( 150, -175,  400, -175, 400, -100),                    // 4 out of I, under the right crossover
+        PLine(-150,  225, -200,  225, -200, 300),                    // II's near end down to J3
+        PLine(-200, -100, -200, -175, -150, -175),                   // J4 to I's near end
+        PLine(-150,  175, -400,  175, -400, 100),                    // 2 out of II, under the left crossover
+        PLine( 150,  225,  200,  225,  200, 300, 400, 300),          // 3 out of II
+        Txt("1",  -330, -330, fontSize: MixerPortFontSize),
+        Txt("2",  -440,  100, fontSize: MixerPortFontSize),
+        Txt("3",   330,  330, fontSize: MixerPortFontSize),
+        Txt("4",   440, -100, fontSize: MixerPortFontSize),
+        Txt("J1",  240, -300, fontSize: 22), Txt("J2",  240,  100, fontSize: 22),
+        Txt("J3", -240,  300, fontSize: 22), Txt("J4", -240, -100, fontSize: 22),
+        Txt("tandem", 0, 0, fontSize: 30),
+    ], SymbolKind.Mclc, 8);
+
+    // MSPS — the C-section (a pair with its far ends joined) above the reference line, and the phase difference between.
+    private static Symbol BuildMsps() => Sym([
+        PLine(-400, -300, -150, -300, -150, -225),
+        PLine(-400, -100, -150, -100, -150, -175),
+        RRect(50, -225, 400, 30, 8),
+        RRect(50, -175, 400, 30, 8),
+        PLine(250, -225, 290, -225, 290, -175, 250, -175),           // the strap across the far ends
+        L(-400, 200, 400, 200),                                      // the reference line
+        Txt("Δφ", 0, 30, fontSize: 44),
+        Txt("1", -330, -330, fontSize: MixerPortFontSize),
+        Txt("2", -330, -130, fontSize: MixerPortFontSize),
+        Txt("3", -330,  170, fontSize: MixerPortFontSize),
+        Txt("4",  330,  170, fontSize: MixerPortFontSize),
+    ], SymbolKind.Msps);
 
     // MCBL — the two quarter-wave sections in a row: the input strip runs through both to an open end, and each coupled
     // strip is grounded at its outer end (G2, G3) and leaves as a balanced output at the middle.

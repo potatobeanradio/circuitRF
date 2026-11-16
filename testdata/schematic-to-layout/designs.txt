@@ -48,3 +48,9 @@ F21-coupled-resonator-hairpin RF-passives
 F22-coupled-resonator-open-loop RF-passives
 F23-coupled-resonator-ring RF-passives
 F24-microstrip-ladder RF-passives
+F11b-coupler-sections RF-passives
+F11c-coupler-tandem RF-passives
+F11d-coupler-wiggly RF-passives
+F11e-coupler-broadside RF-passives
+F13b-interdigitated-six RF-passives
+F25-schiffman-phase-shifter RF-passives

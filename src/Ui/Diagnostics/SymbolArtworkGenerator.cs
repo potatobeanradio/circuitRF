@@ -138,6 +138,7 @@ public static class SymbolArtworkGenerator
         (SymbolKind.Mtpd,            "mtpd",              3),
         (SymbolKind.Mcrc,            "mcrc",              2),
         (SymbolKind.Mlad,            "mlad",              2),
+        (SymbolKind.Msps,            "msps",              4),
         // The MMIC passives (brief-agent-authoring-overview AA-1).
         (SymbolKind.MimCap,          "mimcap",            2),
         (SymbolKind.Spiral,          "spiral",            2),

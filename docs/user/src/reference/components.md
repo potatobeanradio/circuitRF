@@ -1257,9 +1257,9 @@ most often left wrong — <code>IncludeCapacitance</code> and <code>er</code> �
 ## Dividers and couplers {#dividers}
 
 Each part here is one RF topology, placed as one component and stated by what you specify rather than by its geometry:
-the port impedance and the centre frequency, and a coupler's coupling. There are nine: the Wilkinson, Gysel, Bagley
-polygon and tee dividers, the branch-line and rat-race hybrids, the coupled-line coupler, the interdigitated coupler and
-the coupled-line balun.
+the port impedance and the centre frequency, and a coupler's coupling. There are ten: the Wilkinson, Gysel, Bagley
+polygon and tee dividers, the branch-line and rat-race hybrids, the coupled-line coupler, the interdigitated coupler,
+the coupled-line balun and the Schiffman phase shifter.
 circuitRF works out the lines on the workspace technology's substrate, the same way every time, and the layout draws
 exactly the pieces the circuit model simulates, so the schematic, the layout, LVS and EM all read the same few numbers.
 The parameters panel shows what the specs come out to — the widths, gaps and lengths, and a ring's radius — as values
@@ -1795,6 +1795,58 @@ coupling and under 5 dB at 20 dB. Tight coupling needs narrow gaps there: 10 dB 
 its edge mesh on (within 0.25 dB of the model at `F`) and on EMerge and Palace with refined meshes; their coarsest presets
 read the coupling several dB too strong.
 
+#### Options: sections, broadside, tandem, compensation {#mclc-options}
+
+Each option is off by default, and with all of them off the coupler is the single section above, to the last digit.
+They are one at a time: the coupler refuses two together by name.
+
+| Option | What it builds | Choose it for | Source |
+|---|---|---|---|
+| `Sections` = 3, 5, 7 or 9, with `Band` | That many quarter-wave pairs in a row, the middle one tightest, so the coupling ripples equally about `Coupling` over `Band` (f2/f1, centred on `F`) | A flat coupling over an octave or more | Cristal and Young, [10.1109/TMTT.1965.1126050](https://doi.org/10.1109/TMTT.1965.1126050) |
+| `Broadside` = 1 | One pair on two conductors, one over the other: BCLIN's stripline pair on a stack with a ground above and below, MBCLIN's otherwise | Tight coupling, 3 dB included, that no edge gap reaches | the models of [BCLIN](#bcline) and [MBCLIN](#mbcline) |
+| `Tandem` = 1 | Two identical couplers, each of the weaker coupling that adds up to `Coupling`, joined so their couplings add | A broadband 3 dB hybrid from two buildable couplers of 8.34 dB | Shelton, Wolfe and Van Wagoner, *Microwaves*, April 1965 (no DOI); Carpenter, [10.1109/GMTT.1971.1122878](https://doi.org/10.1109/GMTT.1971.1122878) |
+| `Compensation` = `Capacitive` | The pair re-synthesised so a capacitor across each coupled end equalises the two modes at `F`; the readout gives its value | Directivity, with a part on 1–3 and on 2–4 | Dydyk, [10.1109/MWSYM.1990.99647](https://doi.org/10.1109/MWSYM.1990.99647), [10.1109/22.769332](https://doi.org/10.1109/22.769332) |
+| `Compensation` = `Inductive` | A short narrow line in series at each of the four ends, and a pair a little shorter than a quarter wave | Directivity with no extra parts | Phromloungsri, Chongcheawchamnan and Robertson, [10.1109/TMTT.2006.881026](https://doi.org/10.1109/TMTT.2006.881026) |
+| `Compensation` = `Wiggly` | The facing edges drawn as a saw-tooth, so the odd mode's path is longer by the ratio of the two modes' speeds | Directivity with no extra parts or length | Podell, [10.1109/GMTT.1970.1122761](https://doi.org/10.1109/GMTT.1970.1122761) |
+
+**Sections.** With Ze·Zo = Z0² in every section, a coupler of TEM lines is matched and isolated at every frequency, and
+its coupled wave is the reflection of the chain of even-mode impedances. circuitRF designs that chain for an equal
+ripple of the coupling over the band, the optimum Cristal and Young tabulate, then finds each section's pair as for one
+section. The sections are drawn in a row about one gap centre line; where they meet, the strips step in width, and the
+step itself is not modelled. On 20 mil RO4350B a 15 dB coupler of three sections, designed for ±0.03 dB over 2:1,
+keeps its coupling within 0.23 dB from 1.6 to 3.2 GHz, where one section varies by 1.3 dB. The tightest section is the
+middle one, so a tight coupling over a wide band soon needs a gap the board cannot build.
+
+**Broadside.** The two strips are on the signal layer and the conductor directly below it, so the coupling no longer
+lives in a narrow gap: on a four-layer board with 2 mil between the top two copper layers, 3 dB needs the strips about
+0.12 mm apart sideways. The width and the sideways offset are found from the pair's own field solution, which costs a
+few seconds; terminals 3 and 4 are on the lower layer. A technology with no second signal layer next to the signal
+layer is refused by name, and so is a coupling tighter than the strips reach one over the other.
+
+**Tandem.** Two couplers of voltage coupling c1 in tandem couple 2·c1·√(1 − c1²): two of 8.34 dB make 3 dB. They are
+drawn one above the other, joined around both ends by lines of equal length, so the coupled wave arrives at the through
+port 2 and at the coupled port 3, here at the far end, in quadrature. Each joining line encloses one port's lead, which no
+flat layout avoids, so each is broken where that lead crosses it: **J1–J2 and J3–J4 are the crossovers**, and each takes
+a jumper — a bond wire, an air bridge or an underpass — placed as an ordinary part, as the interdigitated coupler's
+fingers are joined. Terminals 1 and 3 have straight leads as long, at `F`, as the bent leads of 2 and 4. On 20 mil
+RO4350B a 3 dB tandem splits within 1 dB of even from 1.7 to 2.8 GHz with its outputs 90° apart to within a degree.
+
+**Compensation.** Microstrip's odd mode is faster than its even mode, which is what limits a plain coupler's directivity
+(11 dB at 10 dB coupling on the example board). Each form makes the two modes equal electrical lengths at `F` again:
+
+- `Capacitive`: a capacitor C across the gap at each end loads only the odd mode. The pair is a quarter wave in the even
+  mode, and C = (cos θo − cos θe) / (2·ω·Zo·sin θo), with θ each mode's electrical length, makes the odd mode one too;
+  the pair is re-synthesised so that loaded mode still gives the coupling. Place a capacitor of the readout's value on
+  1–3 and on 2–4. On the example board, 0.17 pF lifts the directivity at 10 dB from 11 dB to over 45 dB.
+- `Inductive`: a series reactance X at each of the four ends adds more electrical length to the odd mode than to the
+  even one; X = Ze·cot θe = Zo·cot θo fixes a pair a little shorter than a quarter wave. Each X is a short line twice
+  Z0 in impedance, whose own shunt capacitance is what keeps this short of ideal: 24 dB of directivity on the example
+  board.
+- `Wiggly`: the facing edges are a saw-tooth about one strip width long per tooth, as deep as makes their path
+  √(εeff,e/εeff,o) times the length. **The circuit model is only approximate:** it is the pair's own modes with the
+  odd mode's length multiplied by that factor, the correction Podell describes; the teeth also change the odd mode's
+  capacitance, which it does not see, and it says so in Messages. EM is the judge of a wiggly coupler.
+
 {{table: components/Mclc}}
 
 ### Interdigitated Coupler (MIDC) {#midc}
@@ -1828,6 +1880,14 @@ coupled.
 and 69 µm apart, under common board rules of 75 to 100 µm; 3.5 dB needs 86 µm and 4 dB 105 µm. The part opens at 4 dB
 for that reason, splitting about −2.4 dB and −4.2 dB in quadrature. A thinner laminate, or a process with finer gaps,
 reaches 3 dB.
+
+**Six or eight fingers.** `Fingers` = 6 or 8 builds that many, with Ou's equations for that N
+([10.1109/TMTT.1975.1128534](https://doi.org/10.1109/TMTT.1975.1128534)): more fingers couple more
+across a wider gap. Each further pair of inner fingers adds four landings, so the part has 2·N terminals: J(4m + k)
+joins terminal k's conductor (k = 1 to 4), by a jumper from terminal k or from the landing beside it. The finger pair's
+own impedance rises with N, about N/2 times `Z0` at weak coupling, so on a board six or eight fingers suit a low `Z0` or
+a thin substrate: at 50 Ω their fingers are narrower than the coupled-line model's range on 20 mil RO4350B and are
+refused, while a 25 Ω six-finger coupler builds 3 dB there.
 
 {{table: components/Midc}}
 
@@ -1894,6 +1954,65 @@ wavelength between vias, and the two grounds sit a balun's length apart.
 > K. S. Ang and I. D. Robertson, "Analysis and Design of Impedance-Transforming Planar Marchand Baluns," *IEEE
 > Transactions on Microwave Theory and Techniques*, vol. 49, no. 2, pp. 402–406, February 2001.
 > DOI [10.1109/22.903108](https://doi.org/10.1109/22.903108).
+
+### Schiffman Phase Shifter (MSPS) {#msps}
+
+{{symbol: msps}}
+
+A differential phase shifter on microstrip: two separate paths whose phases differ by `Phase` at `F` and stay close to
+it over a band. Terminals 1 and 2 are the ends of a C-section, a coupled pair a quarter wave long whose far ends are
+joined by a short strap; terminals 3 and 4 are the ends of a reference line. Either end of each path can be its input.
+
+**How it works** (Schiffman). With Ze·Zo = `Z0`² the C-section is matched at every frequency, and its phase φ follows
+tan(φ/2) = tan θ/√ρ, with ρ = Ze/Zo and θ its electrical length: 180° at the quarter wave, changing fastest there. The
+reference line, k quarter waves long with k = (`Phase` + 180°)/90°, changes at a steady rate, so the difference
+kθ − φ is `Phase` at `F` and, for the right ρ, ripples equally about it over the band f2/f1 = `Band`. circuitRF finds
+that ρ, then the pair for it as for the coupled-line coupler; 90° over 1.5:1 needs ρ = 2.40 (a 7.7 dB pair, ±0.6°),
+over 2:1 ρ = 2.73 (±2.7°), and 90° needs ρ = 2.25 however narrow the band.
+
+**What circuitRF derives.** The pair's width, gap and length — the length is where the C-section's own model, strap
+included, is exactly 180° at `F`, so the difference is exactly `Phase` there on the board — and the reference line's
+width and length. `Reference` lays the reference line straight (`Straight`, terminal 4 at the far end) or folded back
+beneath itself so terminal 4 is beside terminal 3, on a 180° curve (`Curve`) or two corners (`Miter`, `Square`); every
+turn counts at its own electrical length. The parameters panel shows ρ, the pair, the reference line and the ripple.
+
+**Microstrip's limit.** Schiffman's design is for TEM lines. In microstrip the odd mode is faster, so the C-section is
+not a quarter wave in both modes and its match suffers: on 20 mil RO4350B at 2.4 GHz its return loss at `F` is about
+12 dB where TEM lines would be perfect, and the strap adds a little inductance. The phase difference holds to about a
+degree over 1.5:1 there. A tight ρ also needs a narrow gap: 90° needs at least 8.3 dB of coupling.
+
+{{table: components/Msps}}
+
+**References** (for the coupler's options and the phase shifter)
+
+> E. G. Cristal and L. Young, "Theory and Tables of Optimum Symmetrical TEM-Mode Coupled-Transmission-Line Directional
+> Couplers," *IEEE Transactions on Microwave Theory and Techniques*, vol. 13, no. 5, pp. 544–558, September 1965.
+> DOI [10.1109/TMTT.1965.1126050](https://doi.org/10.1109/TMTT.1965.1126050).
+
+> J. P. Shelton, J. Wolfe and R. C. Van Wagoner, "Tandem Couplers and Phase Shifters for Multi-Octave Bandwidth,"
+> *Microwaves*, April 1965. A trade magazine, with no DOI.
+
+> E. Carpenter, "The Virtues of Mixing Tandem and Cascade Coupler Connections," *1971 IEEE G-MTT International
+> Microwave Symposium Digest*, pp. 8–9. DOI [10.1109/GMTT.1971.1122878](https://doi.org/10.1109/GMTT.1971.1122878).
+
+> M. Dydyk, "Accurate Design of Microstrip Directional Couplers with Capacitive Compensation," *IEEE MTT-S
+> International Microwave Symposium Digest*, 1990, pp. 581–584.
+> DOI [10.1109/MWSYM.1990.99647](https://doi.org/10.1109/MWSYM.1990.99647).
+
+> M. Dydyk, "Microstrip Directional Couplers with Ideal Performance via Single-Element Compensation," *IEEE Transactions
+> on Microwave Theory and Techniques*, vol. 47, no. 6, pp. 956–964, June 1999.
+> DOI [10.1109/22.769332](https://doi.org/10.1109/22.769332).
+
+> R. Phromloungsri, M. Chongcheawchamnan and I. D. Robertson, "Inductively Compensated Parallel Coupled Microstrip Lines
+> and Their Applications," *IEEE Transactions on Microwave Theory and Techniques*, vol. 54, no. 9, pp. 3571–3582,
+> September 2006. DOI [10.1109/TMTT.2006.881026](https://doi.org/10.1109/TMTT.2006.881026).
+
+> A. Podell, "A High Directivity Microstrip Coupler Technique," *1970 G-MTT International Microwave Symposium*,
+> pp. 33–36. DOI [10.1109/GMTT.1970.1122761](https://doi.org/10.1109/GMTT.1970.1122761).
+
+> B. M. Schiffman, "A New Class of Broad-Band Microwave 90-Degree Phase Shifters," *IRE Transactions on Microwave Theory
+> and Techniques*, vol. 6, no. 2, pp. 232–237, April 1958.
+> DOI [10.1109/TMTT.1958.1124543](https://doi.org/10.1109/TMTT.1958.1124543).
 
 ## Planar filters {#planar-filters}
 

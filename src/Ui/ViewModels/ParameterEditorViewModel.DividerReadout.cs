@@ -24,7 +24,8 @@ public partial class ParameterEditorViewModel
     /// dividers.</summary>
     public bool IsDividerReadoutTarget => _target?.Symbol is SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
                                           or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl
-                                          or SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd or SymbolKind.Mlad;
+                                          or SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd or SymbolKind.Mlad
+                                          or SymbolKind.Msps;
 
     /// <summary>The derived numbers, one per line, or empty.</summary>
     public string DividerReadoutText { get; private set; } = "";
@@ -39,7 +40,7 @@ public partial class ParameterEditorViewModel
         string text = "", note = "";
         if (_target?.Symbol is SymbolKind.Mblc or SymbolKind.Mrrc)
             (text, note) = HybridReadout(_target.Symbol);
-        else if (_target?.Symbol is SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl)
+        else if (_target?.Symbol is SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Msps)
             (text, note) = CoupledLineReadout(_target.Symbol);
         else if (_target?.Symbol is SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd)
             (text, note) = SplitterReadout(_target.Symbol);

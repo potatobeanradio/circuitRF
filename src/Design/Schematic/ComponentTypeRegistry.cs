@@ -12,6 +12,8 @@ using ResonatorFeed = CircuitRF.Core.Devices.Microstrip.ResonatorFeed;
 using ResonatorForm = CircuitRF.Core.Devices.Microstrip.ResonatorForm;
 using LoopArrangement = CircuitRF.Core.Devices.Microstrip.LoopArrangement;
 using LadderPlan = CircuitRF.Core.Devices.Microstrip.LadderPlan;
+using CouplerCompensation = CircuitRF.Core.Devices.Microstrip.CouplerCompensation;
+using SchiffmanReference = CircuitRF.Core.Devices.Microstrip.SchiffmanReference;
 
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout.PCells;
@@ -903,6 +905,10 @@ public static class ComponentTypeRegistry
                           "hi-lo filter", "stub filter", "open stub", "shorted stub", "lowpass", "highpass", "bandpass",
                           "bandstop", "elliptic", "end-coupled", "gap-coupled", "DC block", "stub matcher",
                           "single stub", "double stub", "quarter-wave transformer", "Richards", "Kuroda"]),
+        [SymbolKind.Msps]         = new("MSPS", "SPS",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MSPS", "Schiffman", "phase shifter", "differential phase shifter", "C-section",
+                          "90 degree", "broadband phase", "quadrature", "reference line", "coupled line"]),
         // The two vias (brief-via-component.md). Microstrip, because that is where they are used: a
         // line changing layers, and the return of a shunt part on a board. Not transmission lines.
         [SymbolKind.Via]          = new("VIA", "VIA",
@@ -1199,12 +1205,16 @@ public static class ComponentTypeRegistry
 
         SymbolKind.Mclc =>
             "Not interchangeable: terminal 1 is the input, 2 the through port, 3 the coupled port (beside 1) and 4 the "
-          + "isolated port (beside 2). The coupler is symmetric, so any terminal can be the input with the others in turn.",
+          + "isolated port (beside 2). The coupler is symmetric, so any terminal can be the input with the others in turn. "
+          + "With Tandem = 1 it has eight: 3 is then the far coupled port, and J1-J2 and J3-J4 are the two crossovers' "
+          + "landings, a jumper (bond wire, airbridge or underpass) on each. With Compensation = Capacitive, put the "
+          + "readout's capacitor on 1-3 and on 2-4.",
 
         SymbolKind.Midc =>
             "Terminals 1-4 as MCLC's: 1 the input, 2 through, 3 coupled, 4 isolated. J1-J4 are the inner fingers' ends: "
           + "put a jumper (on a board, a bond wire) from each terminal k to Jk. Without them the fingers are not joined "
-          + "and the part does not couple as specified.",
+          + "and the part does not couple as specified. Six or eight fingers add J5-J8 and J9-J12: a jumper joins "
+          + "J(4m+k) to terminal k's conductor.",
 
         SymbolKind.Mcbl =>
             "Not interchangeable: terminal 1 is the unbalanced input, 2 and 3 the balanced outputs, in antiphase. G2 and "
@@ -1217,6 +1227,9 @@ public static class ComponentTypeRegistry
             "Terminals 1 and 2 are the through line's ends, the first section at 1. G1, G2, … follow, one per shorted "
           + "stub arm in the list's order (up before down): put a via to ground (VIAGND) on each. A list with no "
           + "shorted stub has terminals 1 and 2 only.",
+        SymbolKind.Msps =>
+            "Two separate two-ports: 1 and 2 are the C-section's ends (either can be the input), 3 and 4 the reference "
+          + "line's. Their transmission phases differ by Phase at F, nearly flat over Band.",
 
         SymbolKind.GsgPad =>
             "Not interchangeable: terminal 1 is where the probe's signal tip lands, the middle of the signal pad, "
@@ -1421,6 +1434,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Mcbl          => ComponentModelFactory.MarchandTypeName,
         SymbolKind.Mcrc          => ComponentModelFactory.CoupledResonatorTypeName,
         SymbolKind.Mlad          => ComponentModelFactory.LadderTypeName,
+        SymbolKind.Msps          => ComponentModelFactory.SchiffmanTypeName,
         SymbolKind.MimCap        => "MIMCAP",
         SymbolKind.Spiral        => "SPIRAL",
         SymbolKind.OctSpiral     => "OSPIRAL",
@@ -1596,6 +1610,7 @@ public static class ComponentTypeRegistry
         or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd
         or SymbolKind.Mcrc
         or SymbolKind.Mlad
+        or SymbolKind.Msps
         or SymbolKind.Balun or SymbolKind.Circulator or SymbolKind.Switch or SymbolKind.Coupler
         or SymbolKind.Hybrid90 or SymbolKind.Hybrid180 or SymbolKind.Filter or SymbolKind.Atten or SymbolKind.Duplexer
         or SymbolKind.Combiner
@@ -1844,6 +1859,34 @@ public static class ComponentTypeRegistry
                                  + "level. W and S are synthesised for it on the technology's substrate; too tight for the "
                                  + "board's coupled-line model (a gap under 0.1·H) is refused.",
         (SymbolKind.Mclc or SymbolKind.Midc, "Z0") => "The ports' impedance: the even and odd modes are chosen with Ze·Zo = Z0².",
+        (SymbolKind.Mclc, "Sections") => "Quarter-wave pairs in a row, an odd number up to 9: above 1 the coupling ripples "
+                                 + "equally about Coupling over Band (Cristal and Young's symmetric coupler). Sets the layout "
+                                 + "only; a plain number.",
+        (SymbolKind.Mclc, "Band") => "For Sections above 1: the band's upper edge over its lower, f2/f1, centred on F.",
+        (SymbolKind.Mclc, "Broadside") => "1: one pair on two conductors, one over the other (BCLIN on a stripline stack, "
+                                 + "MBCLIN otherwise), for tight couplings such as 3 dB. Refused on a stack with no second "
+                                 + "signal layer next to the signal layer.",
+        (SymbolKind.Mclc, "Tandem") => "1: two identical couplers in tandem, broadband, each of the weaker coupling that "
+                                 + "adds up to Coupling (two of 8.34 dB make 3 dB). Adds J1-J4 for the two crossover jumpers.",
+        (SymbolKind.Mclc, "Compensation") => "Equalises microstrip's two mode velocities for directivity. Capacitive: a "
+                                 + "capacitor across each coupled end (on 1-3 and 2-4, value in the readout). Inductive: a "
+                                 + "short narrow line in series at each end. Wiggly: saw-tooth facing edges, modelled only "
+                                 + "as a longer odd-mode path, so EM is the judge.",
+        (SymbolKind.Midc, "Fingers") => "4, 6 or 8 fingers. More fingers reach tighter coupling at a wider gap; each "
+                                 + "further pair adds four jumper landings. Sets the pin count, so it must be a plain number.",
+        (SymbolKind.Msps, "Z0") => "The ports' impedance: the reference line's, and the C-section's √(Ze·Zo).",
+        (SymbolKind.Msps, "F") => "Centre frequency: the C-section is a quarter wave long here, in its modes' mean "
+                                 + "permittivity, and the phase difference is exactly Phase.",
+        (SymbolKind.Msps, "Phase") => "The reference line's phase minus the C-section's, at F; between 0 and 180°. The "
+                                 + "reference line is (Phase + 180°) long at F.",
+        (SymbolKind.Msps, "Band") => "f2/f1 centred on F over which the phase difference ripples equally about Phase; a "
+                                 + "wider band needs tighter coupling (a larger Ze/Zo).",
+        (SymbolKind.Msps, "Reference") => "How the reference line is laid. Straight: along the C-section. Curve: folded back "
+                                 + "beneath itself on a 180° curve, so pin 4 is beside pin 3; Miter or Square: the same on "
+                                 + "two corners. Every turn counts at its own electrical length.",
+        (SymbolKind.Msps, "SignalLayer") => "The conductor the part is on. Empty: the technology's top conductor.",
+        (SymbolKind.Msps, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below the "
+                                 + "signal layer.",
         (SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl, "F") => "Centre frequency: the coupled strips are a quarter "
                                  + "wavelength long here, in the mean of their even- and odd-mode effective permittivities.",
         (SymbolKind.Mcbl, "Z0") => "The unbalanced input's impedance, and the coupled lines' √(Ze·Zo).",
@@ -2016,7 +2059,10 @@ public static class ComponentTypeRegistry
             "MCLIN, the pair the layout draws: Kirschning-Jansen even and odd modes (0.1 <= W/H, S/H <= 10, er <= 18), "
           + "each mode at its own velocity. W and S are synthesised for Coupling and Z0 at F, L is a quarter wave in the "
           + "modes' mean permittivity. Microstrip's odd mode is faster, so directivity is finite (about 11 dB at 10 dB "
-          + "coupling on 20 mil RO4350B).",
+          + "coupling on 20 mil RO4350B). Sections: one MCLIN per section, the width steps between them not modelled. "
+          + "Broadside: BCLIN or MBCLIN, their quasi-static solve. Tandem: two MCLINs and MLIN/MMITER leads. "
+          + "Compensation: the end capacitors or series MLIN sections are exact in the circuit; Wiggly's teeth are only "
+          + "a longer odd-mode path.",
         SymbolKind.Midc =>
             "Ou's interdigitated-coupler equations over MCLIN's modes for two adjacent fingers: nearest neighbours only, "
           + "each conductor's fingers at one potential, the pair's even and odd permittivities. Each finger carries its "
@@ -2027,6 +2073,10 @@ public static class ComponentTypeRegistry
           + "each free end's open-end capacitance. Each strip couples only to the neighbour it is placed against: a "
           + "hairpin's own arms, strips further over and the corners are uncoupled (an EM run of the artwork has them). "
           + "Kirschning-Jansen's range applies to every coupled pair; a width step has no step model.",
+        SymbolKind.Msps =>
+            "MCLIN for the C-section, an MLIN strap across its far ends, and the reference line's MLIN (with MCURVE or "
+          + "MMITER/MBEND corners when folded), stamped together. Schiffman's design is TEM; microstrip's faster odd mode "
+          + "leaves the C-section short of a quarter wave in one mode, so match and phase flatness depart from his curves.",
         SymbolKind.Mcbl =>
             "Two MCLIN quarter-wave sections and the MLIN joining them, stamped together. The coupling matches ZL on "
           + "each output to Z0 for TEM lines; microstrip's unequal mode velocities leave the outputs about 16° short of "
@@ -4288,11 +4338,31 @@ public static class ComponentTypeRegistry
                         .. SignalGroundLayerParams];
             // MCLC / MIDC: the coupling, the ports' impedance and F; W, S and L are derived and shown as a readout.
             // MIDC opens at 4 dB, the tightest four fingers reach with 100 µm gaps on 20 mil RO4350B (3 dB needs 69 µm).
+            // MCLC's options (Sections with its Band, Broadside, Tandem, Compensation) are off at their defaults, the
+            // single section; MIDC's Fingers sets its pins.
             case SymbolKind.Mclc:
-            case SymbolKind.Midc:
-                return [new("Coupling", kind == SymbolKind.Mclc ? "10" : "4", "dB", true, UnitDimension.None),
+                return [new("Coupling", "10", "dB", true, UnitDimension.None),
                         new("Z0",  "50",   "Ω",   true, UnitDimension.Resistance),
                         new("F",   "2.4",  "GHz", true, UnitDimension.Frequency),
+                        new("Sections", "1", "", false, UnitDimension.None),
+                        new("Band", "2", "", false, UnitDimension.None),
+                        new("Broadside", "0", "", false, UnitDimension.None),
+                        new("Tandem", "0", "", false, UnitDimension.None),
+                        new("Compensation", nameof(CouplerCompensation.None), "", false, UnitDimension.None),
+                        .. SignalGroundLayerParams];
+            case SymbolKind.Midc:
+                return [new("Coupling", "4", "dB", true, UnitDimension.None),
+                        new("Z0",  "50",   "Ω",   true, UnitDimension.Resistance),
+                        new("F",   "2.4",  "GHz", true, UnitDimension.Frequency),
+                        new("Fingers", "4", "", true, UnitDimension.None),
+                        .. SignalGroundLayerParams];
+            // MSPS: the specs, and how the reference line is laid; the pair and the line are a readout.
+            case SymbolKind.Msps:
+                return [new("Z0",    "50",  "Ω",   true, UnitDimension.Resistance),
+                        new("F",     "2.4", "GHz", true, UnitDimension.Frequency),
+                        new("Phase", "90",  "deg", true, UnitDimension.Angle),
+                        new("Band",  "1.4", "",    true, UnitDimension.None),
+                        new("Reference", nameof(SchiffmanReference.Straight), "", false, UnitDimension.None),
                         .. SignalGroundLayerParams];
             // MCBL: 200 Ω on each output is the lightest load a 100 µm gap matches on 20 mil RO4350B (50 Ω is refused).
             // MLAD: the list is the geometry (LadderPlan's grammar); Z0 the ports' lines, F the readout's. Placed as a
@@ -4527,6 +4597,8 @@ public static class ComponentTypeRegistry
             case "CRC":      kind = SymbolKind.Mcrc;         return true;
             case "MLAD":
             case "LAD":      kind = SymbolKind.Mlad;         return true;
+            case "MSPS":
+            case "SPS":      kind = SymbolKind.Msps;         return true;
             case "MIMCAP":   kind = SymbolKind.MimCap;       return true;
             case "SPIRAL":   kind = SymbolKind.Spiral;       return true;
             case "OSPIRAL":  kind = SymbolKind.OctSpiral;    return true;
@@ -4920,6 +4992,8 @@ public static class ComponentTypeRegistry
         (SymbolKind.Mcrc, "Feed")                                                        => Enum.GetNames<ResonatorFeed>(),
         (SymbolKind.Mcrc, "Form")                                                        => Enum.GetNames<ResonatorForm>(),
         (SymbolKind.Mcrc, "Arrangement")                                                 => Enum.GetNames<LoopArrangement>(),
+        (SymbolKind.Mclc, "Compensation") => Enum.GetNames<CouplerCompensation>(),
+        (SymbolKind.Msps, "Reference")    => Enum.GetNames<SchiffmanReference>(),
         // A composed FET's instance switches (brief-modelcomposer-21): yes or no. A switch bound to an expression keeps a
         // text box (ParameterRowViewModel), since a picker cannot hold one.
         (SymbolKind.ComposedFET, _) when ComposedSwitches.IsSwitch(paramName)                => ComposedSwitchOptions,

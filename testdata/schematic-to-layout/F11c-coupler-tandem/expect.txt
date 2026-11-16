@@ -1,0 +1,14 @@
+# Two couplers in tandem (MCLC, Tandem = 1): the joining lines broken where ports 4 and 2 cross them, J1/J2 and
+# J3/J4 for a jumper each. The jumpers are bond wires, stood in for by inductors with no artwork, as MIDC's are.
+lvs lvs.device.unmatched-schematic
+Info CLC1 added
+Info P1 port 1 placed at CLC1 pin 1
+Info P2 port 2 placed at CLC1 pin 2
+Info P3 port 3 placed at CLC1 pin 3
+Info P4 port 4 placed at CLC1 pin 4
+Warning W1 no layout view
+Warning W2 no layout view
+port P1 1
+port P2 2
+port P3 3
+port P4 4

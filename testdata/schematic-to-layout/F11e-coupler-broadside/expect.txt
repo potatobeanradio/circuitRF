@@ -1,0 +1,11 @@
+# The broadside coupler (MCLC, Broadside = 1) on this design's own four-layer board: one MBCLIN, strip A on the
+# top copper and strip B on the inner layer below it, ports 3 and 4 on the inner layer.
+Info CLC1 added
+Info P1 port 1 placed at CLC1 pin 1
+Info P2 port 2 placed at CLC1 pin 2
+Info P3 port 3 placed at CLC1 pin 3
+Info P4 port 4 placed at CLC1 pin 4
+port P1 1
+port P2 2
+port P3 3
+port P4 4

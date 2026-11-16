@@ -37,6 +37,20 @@ internal sealed class LocalAdmittanceBlock(int size) : IMnaContext
     {
         for (int k = _size - 1; k >= keep; k--)
         {
+            // Among the internal nodes, the one with the largest self-admittance goes next: the order changes only the
+            // rounding, and a node whose admittance all but vanishes at this frequency (a quarter-wave null) is left for
+            // last, when the others no longer leave it alone. Branch rows go first, in order, as before.
+            if (k < _nodes)
+            {
+                int best = k;
+                for (int i = keep; i < k; i++)
+                    if (_y[i, i].Magnitude > _y[best, best].Magnitude) best = i;
+                if (best != k)
+                {
+                    for (int j = 0; j <= k; j++) (_y[best, j], _y[k, j]) = (_y[k, j], _y[best, j]);
+                    for (int i = 0; i <= k; i++) (_y[i, best], _y[i, k]) = (_y[i, k], _y[i, best]);
+                }
+            }
             var pivot = _y[k, k];
             // ponytail: no pivoting. A branch with no impedance of its own (an ideal short or source) has a zero
             // here; refuse it rather than divide by it, and pivot if a model ever needs one.

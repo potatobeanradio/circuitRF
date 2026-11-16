@@ -567,6 +567,42 @@ public sealed class ComparisonTests
         }
     }
 
+    /// <summary>The coupler options and the phase shifter as Update Layout places them compare clean, and a spec changed
+    /// on the schematic afterwards is exactly one property mismatch naming it: MCLC's Band, Coupling (tandem and
+    /// broadside) and Compensation (a name), MIDC's Coupling at six fingers, MSPS's Phase. The jumpers of a tandem or a
+    /// Lange have no artwork here (inductors stand in for bond wires), so their unmatched-device findings are set aside.</summary>
+    [Theory]
+    [InlineData("F11b-coupler-sections", "CLC1", "Band", "3")]
+    [InlineData("F11c-coupler-tandem", "CLC1", "Coupling", "4")]
+    [InlineData("F11d-coupler-wiggly", "CLC1", "Compensation", "None")]
+    [InlineData("F11e-coupler-broadside", "CLC1", "Coupling", "4")]
+    [InlineData("F13b-interdigitated-six", "IDC1", "Coupling", "4")]
+    [InlineData("F25-schiffman-phase-shifter", "SPS1", "Phase", "60")]
+    public void ACouplerOptionComparesCleanAndASpecMismatchIsAFinding(string design, string instance, string spec, string changed)
+    {
+        string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-cpl-" + Guid.NewGuid().ToString("N")[..12]);
+        try
+        {
+            var p = SchematicSync.SdlChecker.Prepare(design, scratch);
+            var layout = p.Applied(p.Plan());
+            Assert.Empty(SchematicSync.SdlChecker.Verify(p, layout));
+            List<CircuitRF.Design.Layout.Lvs.LvsFinding> Errors() => [.. LvsRun.Run(p.CellDir).Findings
+                .Where(f => f.Severity == DiagnosticSeverity.Error && f.Id != "lvs.device.unmatched-schematic")];
+            Assert.Empty(Errors());
+
+            p.Model.Components.Single(c => c.InstanceName == instance).Parameters.Single(q => q.Name == spec).Expression = changed;
+            SchematicPersistence.SaveToFile(p.SchematicPath, p.Model, Path.GetFileNameWithoutExtension(p.SchematicPath));
+
+            var mismatch = Assert.Single(Errors());
+            Assert.Equal("lvs.property.mismatch", mismatch.Id);
+            Assert.Equal(spec, mismatch.Diagnostic.Arguments["name"]);
+        }
+        finally
+        {
+            try { Directory.Delete(scratch, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
     // ── hand-built netlists ───────────────────────────────────────────────────────────────────
 
     /// <summary>

@@ -179,6 +179,7 @@ public static class DeviceTypes
             ["MCBL"]   = SymbolKind.Mcbl,
             ["MCRC"]   = SymbolKind.Mcrc,
             ["MLAD"]   = SymbolKind.Mlad,
+            ["MSPS"]   = SymbolKind.Msps,
             // The MMIC passives (AA-1): each generator is keyed by its component's own token.
             ["MIMCAP"]    = SymbolKind.MimCap,
             ["SPIRAL"]    = SymbolKind.Spiral,
@@ -313,6 +314,7 @@ public static class DeviceTypes
             or SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd
             or SymbolKind.Mcrc
             or SymbolKind.Mlad
+            or SymbolKind.Msps
             or SymbolKind.Tline or SymbolKind.Cpwg or SymbolKind.Slin
             or SymbolKind.CLine or SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine or SymbolKind.MCLineN
             => DeviceKind.TransmissionLine,

@@ -95,7 +95,7 @@ public static class ComponentModelFactory
             BranchLineTypeName, RatRaceTypeName,
             GyselTypeName, BagleyTypeName, TeeDividerTypeName,
             // The coupled-line planned passives: MCLIN, MLIN and interdigitated sections, stamped the same way.
-            CoupledLineCouplerTypeName, LangeTypeName, MarchandTypeName,
+            CoupledLineCouplerTypeName, LangeTypeName, MarchandTypeName, SchiffmanTypeName,
             // The coupled-resonator filters: physical geometry in, every shape and form one plan of the same sections.
             CoupledResonatorTypeName,
             // The ladder: a list of MLIN, MGAP, MTAPER, MTEE and MCROSS sections, stamped the same way.
@@ -291,6 +291,8 @@ public static class ComponentModelFactory
             return CreateCoupledResonatorModel(parameters);
         if (typeName.Equals(LadderTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateLadderModel(parameters);
+        if (typeName.Equals(SchiffmanTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateSchiffmanModel(parameters);
         if (typeName.Equals("VIA", StringComparison.OrdinalIgnoreCase))
             return new ViaModel(ReadViaGeometry(parameters, grounded: false));
         if (typeName.Equals("VIAGND", StringComparison.OrdinalIgnoreCase))
@@ -3110,16 +3112,50 @@ public static class ComponentModelFactory
     /// <summary>The coupled-line balun's engine token (pins 1 unbalanced, 2 and 3 balanced, G2 and G3 to ground).</summary>
     public const string MarchandTypeName = "MCBL";
 
-    // MCLC / MIDC: the specs (Coupling in dB, Z0, F) are the parameters; the plan derives W, S and L.
+    // MCLC / MIDC: the specs (Coupling in dB, Z0, F) are the parameters; the plan derives W, S and L. MCLC's options
+    // (Sections and its Band, Tandem, Compensation, Broadside) each default to the single section; MIDC's Fingers to four.
     private static MicrostripPlanModel CreateCoupledLineCouplerModel(IReadOnlyDictionary<string, Value> parameters)
         => new(CoupledLineCouplerPlan.Build(GetReal(parameters, "Coupling", 10.0), GetReal(parameters, "Z0", 50.0),
-                                            GetReal(parameters, "F", 1e9), SubstrateOf(parameters)).Plan,
+                                            GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
+                                            GetReal(parameters, "Sections", 1.0),
+                                            GetReal(parameters, "Band", CoupledLineCouplerPlan.DefaultBand),
+                                            GetReal(parameters, "Tandem", 0.0),
+                                            EnumNamed(parameters, "Compensation", CouplerCompensation.None),
+                                            GetReal(parameters, "Broadside", 0.0), BroadsideStackOf(parameters)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, CoupledLineCouplerTypeName));
+
+    /// <summary>A broadside coupler's stack, as the extraction injects it for BCLIN (with Ha) or MBCLIN (without); null when
+    /// nothing was injected, which the plan refuses when Broadside is on.</summary>
+    private static BroadsideStack? BroadsideStackOf(IReadOnlyDictionary<string, Value> parameters)
+    {
+        if (!parameters.ContainsKey("Hs") || !parameters.ContainsKey("Hb")) return null;
+        double t = GetReal(parameters, "T", DefaultBroadsideTMeters);
+        return new BroadsideStack(GetReal(parameters, "Hs", 0.0), GetReal(parameters, "Hb", 0.0),
+            GetReal(parameters, "Ha", double.NaN), GetReal(parameters, "Hd", double.NaN),
+            GetReal(parameters, "Ta", t), GetReal(parameters, "Tb", t), GetReal(parameters, "Er", DefaultSubstrateEpsR),
+            GetReal(parameters, "Sigma", DefaultSubstrateSigmaSPerM), GetReal(parameters, "TanD", DefaultSubstrateTanD),
+            Stripline: parameters.ContainsKey("Ha"));
+    }
 
     private static MicrostripPlanModel CreateLangeModel(IReadOnlyDictionary<string, Value> parameters)
         => new(LangePlan.Build(GetReal(parameters, "Coupling", 4.0), GetReal(parameters, "Z0", 50.0),
-                               GetReal(parameters, "F", 1e9), SubstrateOf(parameters)).Plan,
+                               GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
+                               GetReal(parameters, "Fingers", LangePlan.Fingers)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, LangeTypeName));
+
+    /// <summary>The Schiffman phase shifter's engine token (pins 1, 2 the C-section, 3, 4 the reference line).</summary>
+    public const string SchiffmanTypeName = "MSPS";
+
+    // MSPS: Z0, F, the differential Phase and the Band it holds over; how the reference line is laid (Reference, a name).
+    // Phase arrives in RADIANS, as MCURVE's Angle does (an authored "90 deg" scaled by the elaborator), and the plan takes
+    // degrees; a bare "Phase=90" is 90 rad and refused.
+    private static MicrostripPlanModel CreateSchiffmanModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(SchiffmanPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
+                                   GetReal(parameters, "Phase", Math.PI / 2.0) * 180.0 / Math.PI,
+                                   GetReal(parameters, "Band", SchiffmanPlan.DefaultBand),
+                                   SubstrateOf(parameters),
+                                   EnumNamed(parameters, "Reference", SchiffmanReference.Straight)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, SchiffmanTypeName));
 
     // MCBL: the source and per-output load impedances (Z0, ZL) and F, plus the layout Gap between the two sections.
     private static MicrostripPlanModel CreateMarchandModel(IReadOnlyDictionary<string, Value> parameters)

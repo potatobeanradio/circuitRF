@@ -36,7 +36,7 @@ public static class MicrostripSubstrateInjection
          SymbolKind.Mtaper, SymbolKind.Mklopf, SymbolKind.GsgPad, SymbolKind.Mwpd, SymbolKind.Mblc, SymbolKind.Mrrc,
          SymbolKind.Mclc, SymbolKind.Midc, SymbolKind.Mcbl, SymbolKind.MRadial,
          SymbolKind.Mgpd, SymbolKind.Mbpd, SymbolKind.Mtpd,
-         SymbolKind.Mcrc, SymbolKind.Mlad];
+         SymbolKind.Mcrc, SymbolKind.Mlad, SymbolKind.Msps];
 
     public static bool IsMicrostripKind(SymbolKind kind) => MicrostripKinds.Contains(kind);
 
@@ -417,7 +417,7 @@ public static class MicrostripSubstrateInjection
         // is a layout choice no substrate changes. A ladder's list is its geometry as written, which no technology rewrites.
         if (kind is SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mclc or SymbolKind.Midc
                  or SymbolKind.Mcbl or SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd
-                 or SymbolKind.Mlad) return;
+                 or SymbolKind.Mlad or SymbolKind.Msps) return;
         // MCRC's geometry is one design, every number of it chosen with the others; widths and lengths carried to another
         // substrate are synthesis's to redo, not this rule's.
         if (kind == SymbolKind.Mcrc) return;
