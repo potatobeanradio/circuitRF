@@ -1080,8 +1080,7 @@ A new part: pins 1-2 a C-section, 3-4 a reference line, specs `Z0`, `F`, `Phase`
 reference is laid (`Reference`). The C-section is a `PlanCoupledLine` whose far ends are joined by a `PlanLine` strap
 one strip width wide across the gap; the reference is a `PlanLine`, or folded back beneath itself on a `PlanCurve`
 half-turn or two `PlanBend` corners (PlanCorner's `Miter` and `Square`), each turn counted at its own electrical
-length (`PlanBend.LineLength`, MCURVE's π·(R − 0.2·W)). `SchiffmanPlan.Reference` is the one function that turns the
-reference's length into sections, so the meandered route lands there as one more case.
+length (`PlanBend.LineLength`, MCURVE's π·(R − 0.2·W)), or meandered through `PlanRoute` (§3.14).
 
 **The design** (Schiffman). With Ze·Zo = Z0² the C-section is an all-pass of phase tan(φ/2) = tan θ/√ρ, ρ = Ze/Zo; the
 reference is kθ with k = 2(ΔΦ + π)/π, so Δφ = kθ − φ is ΔΦ at F and its deviation is odd about F. Over θ1 = π/(1 +
@@ -1102,19 +1101,64 @@ Registration: every row of §4, with a `Phase` that reaches the factory in radia
 `CouplerOptionsPlanTests`, `CouplerOptionsSParamTests`, `F25-schiffman-phase-shifter` (a mitred fold) through Update
 Layout and LVS with a `Phase` mismatch, the catalogue and the generator version.
 
-### 3.14 MRRC's coupled-line form: not built
+### 3.14 MRRC's coupled-line form
 
-The compact rat-race (S. March, 1968) replaces the 3λ/4 arm with a λ/4 coupled section whose diagonal far ends are
-grounded. Shorting ports 2 and 3 of a pair leaves Y11 = −j(Ye + Yo)/2·cot θ and Y14 = j(Ye − Yo)/2·csc θ, which at θ =
-π/2 is a 270° line of 2·Ze·Zo/(Ze − Zo); the open diagonal is a 90° line instead, so only the grounded form replaces
-the arm. The impedance fixes one condition; March's own choice, Ze·Zo = (√2·Z0)², is a 3 dB section, and a weaker one
-needs a lower Ze·Zo (10 dB at about 0.33·√2·Z0).
+`Form` = `CoupledLine` makes the compact rat-race of S. March
+([10.1109/TMTT.1968.1126693](https://doi.org/10.1109/TMTT.1968.1126693)): the 3λ/4 arm becomes a λ/4 coupled section
+with two diagonal far ends grounded. `Ring`, the default, is the ring of §3.2 and §3.16 to the last bit
+(`RatRaceCoupledLinePlanTests.TheRingOfLine_IsUnchanged`; the generator's fingerprint is unchanged), and with
+`Realization` = `Lumped` the lumped hybrid still wins, as before.
 
-The layout does not close. Three λ/4 arms and a λ/4 section make a ring about λ in perimeter, a square whose sides are each
-about λ/4, so the tees fall at its corners: a straight-through tee cannot sit there, and the λ/4 arm between two tees
-on one side is wider than the coupled section opposite it. Corner tees close it only with a jog to take up the strips'
-pitch, and either way each grounded end lies one gap from a tee, with no room for its via. So the part waits for the
-meander route helper, which shortens the arms' footprint; `Form` is not added until it can be drawn.
+**The section.** Shorting ports 2 and 3 of a pair leaves Y11 = −j(Ye + Yo)/2·cot θ and Y14 = j(Ye − Yo)/2·csc θ: at θ =
+π/2 a 270° line of 2·Ze·Zo/(Ze − Zo), with the 3λ/4 arm's sign (the open diagonal would be a 90° line, so only the
+grounded form replaces the arm). Setting that to √2·Z0 is one condition; the section's `Coupling` c (10 dB by default)
+is the other, √(Ze·Zo) = √2·Z0·c/√(1 − c²), March's own section being the 3 dB one. The pair is `CoupledLineSynthesis`'s,
+and its length is where its own model, grounded ends in place, has Y11 = 0 at F (a bisection about λg/4 at the modes'
+mean εeff). The tests hold the plan to both conditions to 1e-9, and the section as TEM lines to a 270° line of √2·Z0
+(`RatRaceCoupledLineTests.TheSection_AsTemLines_IsA270DegreeLine`).
+
+**What a board builds.** Whatever c is, 1/Zo − 1/Ze = 2/(√2·Z0): the coupling only trades a narrower gap for wider
+strips. Edge coupling at the coupled-line model's narrowest gap (S/h = 0.1, over W/h up to 10) reaches about 0.022 S on
+20 mil RO4350B, 0.028 S on 25 mil alumina and 0.033 S on 100 µm GaAs, against 0.028 S for a 50 Ω ring. So a 50 Ω ring
+builds on the GaAs process (a 10 dB section of 227 µm strips 11 µm apart at 10 GHz), and on the board from about 65 Ω
+(75 Ω: 1.6 mm strips 53 µm apart); elsewhere the part refuses with `device.ratrace.coupled-line-unbuildable`, naming
+the admittance it needs. A broadside section would reach 50 Ω on a board; see "Possible enhancements".
+
+**The layout** closes now that the arms are runs and corners rather than one straight line each. The section lies along
+the bottom, strip A on top. Tee 4 sits on strip A's near end, its port running on to the left and the ring rising from
+its branch; tee 2 on strip B's far end, its port leaving down from its branch and the ring running on to the right. So
+each grounded end faces away from the tee beside it: G2, strip A's far end, inside the ring with three port widths or
+more before its right side, and G4, strip B's near end, outside below port 4, each a pin for an ordinary via as MCBL's
+G2 and G3 are. Each tee's junction is the section's strip width high, so it keeps the coupler's gap from the grounded
+strip beside it; a tee wider than the strip plus two gaps is `device.ratrace.coupled-line-tight`. The three λg/4 arms go
+around the other three sides: 2 → 1 a run of 2·W0, a corner and a rise to tee 1 on the right side (port to the right);
+1 → 3 a rise, a corner and a run to tee 3 on the top (port up); 3 → 4 a run, a corner and a drop into tee 4. Each
+corner is an MCURVE quarter turn of 3W or an MMITER or MBEND corner by `Corner`, counted at its own electrical length
+at F (`PlanSection.LineLength`). The square closes on x (the left side lands on tee 4's branch) and on y (one top run
+for both sides); the right side is the taller by the pair's pitch and the junctions, which the top's split between
+1 → 3 and 3 → 4 takes up, so the rise in 1 → 3 is (λg/4 − corner − Lc − Wr/2 + pitch − W0 + junction)/2 whatever the
+run below. An arm left with less than one ring width of line is `device.ratrace.ring-too-small`. The pins follow `Form`:
+six with G2 and G4 (`EditableSchematic.PortCount`, `SymbolPortDefs.For`, `BuiltInSymbols`), as MWPD's follow `N`.
+
+**At F**, with ideal vias, on GaAs at 10 GHz: |S11| −52 dB, |S44| −40 dB, |S41| −49 dB, |S23| −41 dB; Σ splits to 2 and
+3 at −3.64 dB within 1.4° of in phase, Δ within 1.1° of 180° (the 3 µm gold costs 0.6 dB). The 75 Ω ring on the board:
+−44, −64, −43 and −46 dB, −3.22 dB, 0.4° and 179.7°.
+
+Tests: `RatRaceCoupledLinePlanTests` (the section's two conditions; each arm λg/4 at F counting its corner, the last to
+the grid; every node one place; the tees' gap and G2's room; the ring of line unchanged; the refusals),
+`RatRaceCoupledLineTests` (the ring against its MCLIN, MTEE, MLIN and corner sections by hand to 1e-9 on GaAs and the
+board, every corner kind; the rat-race at F), and `F35-rat-race-coupled-line` (75 Ω on the board, a via on each G pin)
+through Update Layout and LVS, where a changed `Coupling` is one `lvs.property.mismatch`.
+
+**MSPS `Reference` = `Meander`.** The reference goes through `PlanRoute`'s meander from pin 3 heading +x: one curved
+half-turn stacked downward, so it ends on pin 4 heading back to the left edge under pin 3, and all four pins sit in a
+column on the block's left. The pitch is set by bisection so each leg is the C-section's length, and the reference lies
+under the section as one block; when six widths' pitch already leaves shorter legs (a small `Phase`), six widths it is,
+clear of the route's coupling warning. The route holds θ through the turn, so at F the difference is still exactly
+`Phase`, and over 1.92 to 2.88 GHz on the example board it is the straight reference's to 0.001°
+(`CouplerOptionsSParamTests.TheMeanderedSchiffman_HoldsTheStraightOnesPhase`). Tests: the legs, the pins' column and
+every node (`RatRaceCoupledLinePlanTests`), the part against its sections by hand to 1e-9, and `F36-schiffman-meander`
+through Update Layout and LVS with a `Phase` mismatch.
 
 ### 3.15 Lumped realisations, and the resistive pad (MRPAD)
 
@@ -1475,26 +1519,25 @@ Layout and LVS with its vias and capacitors placed by Place Site Parts, and one 
 11. **Smooth circuit curves in the example's plots.** Each bench sweeps only the EM runs' frequencies, so every marker is
    a solved point and the circuit line is coarse; a `.cdd` that also reads the cell's own fine sweep would draw it
    smoothly.
-7. **Options together.** MCLC takes one option at a time. A tandem of compensated couplers, or of three-section ones,
+12. **Options together.** MCLC takes one option at a time. A tandem of compensated couplers, or of three-section ones,
    is a real design (the tandem's directivity is the microstrip couplers'), and the plan composes from the same
    builders; the cost is the tandem layout taking per-section widths.
-8. **MRRC's coupled-line form** (§3.14), once the meander route helper fits the λ/4 arms in the square, with corner tees
-   and the grounded ends' vias given room.
-9. **A meandered Schiffman reference.** The 3λ/4 reference is long; `SchiffmanPlan.Reference` is where the route
-   helper's meander goes, as one more `Reference` value.
-10. **A compensated Schiffman C-section.** The section's mismatch is the mode-velocity difference (§3.13); the
+13. **A compensated Schiffman C-section.** The section's mismatch is the mode-velocity difference (§3.13); the
     capacitive form's end capacitor, or a wiggly section, would restore it as for the coupler.
-11. **The step between coupler sections.** The multi-section coupler's width steps are not modelled, as MSTEP is not;
+14. **The step between coupler sections.** The multi-section coupler's width steps are not modelled, as MSTEP is not;
     a coupled-line step model would close it.
-12. **EM cells for the options.** A tandem's jumpers and a wiggly coupler are the ones whose circuit model is least
+15. **EM cells for the options.** A tandem's jumpers and a wiggly coupler are the ones whose circuit model is least
     exact; Planar MoM runs of each would check them as the example checks the plain coupler.
 
-12. **Bond wires and air bridges from Place Site Parts.** A jumper site (MIDC's) is left with a note, since a wire part
+16. **Bond wires and air bridges from Place Site Parts.** A jumper site (MIDC's) is left with a note, since a wire part
    needs its own design; placing one would fill the last kind of site by hand.
-13. **Die parts sized from the site's value.** On an MMIC or RFIC stack Place Site Parts puts an ideal R, L or C with no
+17. **Die parts sized from the site's value.** On an MMIC or RFIC stack Place Site Parts puts an ideal R, L or C with no
    land; a TFR or MIMCAP sized for the value from the process would make a die design complete in one step.
-14. **A `Footprint` path relative to the schematic in a `.cnl`.** A written netlist resolves a cell path against its own
+18. **A `Footprint` path relative to the schematic in a `.cnl`.** A written netlist resolves a cell path against its own
    folder; one written elsewhere keeps the span extraction resolved but warns, since its folder holds no such cell.
+19. **A broadside section for the coupled-line ring.** MRRC's coupled-line form needs 1/Zo − 1/Ze = √2/Z0 whatever
+   its coupling (§3.14), which edge coupling on a board reaches only from about 65 Ω; MCLC's broadside pair reaches it
+   at 50 Ω on a stack with two signal layers, and the section is one `PlanBroadsideLine` in place of the MCLIN.
 
 ## 7. References
 

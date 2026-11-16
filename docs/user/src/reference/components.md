@@ -1679,6 +1679,23 @@ in-phase and antiphase outputs and the isolation are the curved ring's to 0.001 
 separate lines in the model, uncoupled to each other and to the runs beside them; the turns are curves only, so `Corner`
 must be `Curve`. `Meander` = 0, the default, is the ring above, unchanged.
 
+<a id="mrrc-coupled-line"></a>**Coupled-line: `Form`.** `Form` = `CoupledLine` makes the compact rat-race of March
+([10.1109/TMTT.1968.1126693](https://doi.org/10.1109/TMTT.1968.1126693)). The three-quarter-wave arm becomes a coupled
+pair a quarter wave long with two diagonal far ends grounded: at `F` that is a 270° line of 2·Ze·Zo/(Ze − Zo), so with
+that set to √2·`Z0` it takes the long arm's place at a third of its length, and the ring is a square of the three
+quarter-wave arms and the section. `Coupling` (10 dB by default) sets the section's other degree of freedom, March's own
+being 3 dB. The section lies along the bottom: terminal 4's tee on one strip's near end, terminal 2's on the other's
+far end, and **the two grounded ends are terminals `G2` and `G4`**, G2 inside the ring beside terminal 2's tee and G4
+below terminal 4. Place a via to ground (VIAGND) on each, as on the [balun's](#mcbl). The arms go around the other three
+sides with a corner each, a quarter-turn curve or an MMITER or MBEND by `Corner`, counted at its own electrical length.
+
+**Not every board builds it.** Whatever the coupling, the section needs 1/Zo − 1/Ze = √2/`Z0`, 0.028 S at 50 Ω. At the
+narrowest gap the coupled-line model covers (S/h = 0.1) edge coupling reaches about 0.033 S on 100 µm GaAs, 0.028 S on
+25 mil alumina and 0.022 S on 20 mil RO4350B: so a 50 Ω ring builds on GaAs (a 10 dB section of 227 µm strips 11 µm apart
+at 10 GHz), and on that board from about 65 Ω up; otherwise the part says so by name, giving the admittance it needs.
+At `F` on GaAs, with ideal vias, the match is −52 dB at Σ and −40 dB at Δ, the isolation −49 and −41 dB, and the outputs
+within 1.5° of in phase and of 180°. `Meander` must be 0 with this form; `Realization` = `Lumped` takes precedence.
+
 **The model** is the MTEE, MLIN and MCURVE parts the layout draws, stamped together and reduced to the four terminals,
 with their limits, which it reports in Messages: MTEE's junction formulas are calibrated on alumina (εr 9.9) and on W/h
 from 0.5 to 2, and MCURVE's length rule is stated for bend radii of 3 to 7 widths, a smaller ring than most. A
@@ -1726,6 +1743,9 @@ resonate at `F`, an open circuit there, and are left out. `Corner` does not appl
 > J. He and B.-Z. Wang, "Compact rat-race ring coupler with meander high-impedance transmission line and port impedance
 > matching," *The Journal of Engineering*, vol. 2015, no. 8, pp. 252–254, August 2015.
 > DOI [10.1049/joe.2015.0102](https://doi.org/10.1049/joe.2015.0102). A rat-race with meandered arms.
+
+> S. March, "A Wideband Stripline Hybrid Ring," *IEEE Transactions on Microwave Theory and Techniques*, vol. 16, no. 6,
+> p. 361, June 1968. DOI [10.1109/TMTT.1968.1126693](https://doi.org/10.1109/TMTT.1968.1126693). The coupled-line ring.
 
 ### Gysel Divider (MGPD) {#mgpd}
 
@@ -2074,7 +2094,10 @@ over 2:1 ρ = 2.73 (±2.7°), and 90° needs ρ = 2.25 however narrow the band.
 included, is exactly 180° at `F`, so the difference is exactly `Phase` there on the board — and the reference line's
 width and length. `Reference` lays the reference line straight (`Straight`, terminal 4 at the far end) or folded back
 beneath itself so terminal 4 is beside terminal 3, on a 180° curve (`Curve`) or two corners (`Miter`, `Square`); every
-turn counts at its own electrical length. The parameters panel shows ρ, the pair, the reference line and the ripple.
+turn counts at its own electrical length. `Meander` folds it once as a [delay line's](#mdly) meander is laid, its pitch
+chosen so each leg is the C-section's length: the reference lies under the section as one block, all four terminals in a
+column on its left edge, and its phase holds through the turn (the difference is the straight reference's to 0.001° on
+the example board). The parameters panel shows ρ, the pair, the reference line and the ripple.
 
 **Microstrip's limit.** Schiffman's design is for TEM lines. In microstrip the odd mode is faster, so the C-section is
 not a quarter wave in both modes and its match suffers: on 20 mil RO4350B at 2.4 GHz its return loss at `F` is about
