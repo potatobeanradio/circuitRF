@@ -106,6 +106,14 @@ public static class PassivePlanPCells
         return Draw(plan, technology, layerSelection);
     }
 
+    /// <summary>The coupled array (MCLA): <see cref="CoupledArrayPlan"/>'s strips, taps, folds and end pins.</summary>
+    public const string CoupledArrayId = ComponentModelFactory.CoupledArrayTypeName;
+
+    public static PCellResult GenerateCoupledArray(
+        IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
+        => DrawOrRefuse(() => CoupledArrayPlan.Build(CoupledArraySpec.Of(parameters.Real, name => parameters.Text(name)),
+            SubstrateOf(technology, layerSelection)).Plan, technology, layerSelection);
+
     /// <summary>The plan drawn, or its refusal as the cell's one diagnostic.</summary>
     private static PCellResult DrawOrRefuse(Func<PassivePlan> plan, Technology? technology, PCellLayerSelection layerSelection)
     {

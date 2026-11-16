@@ -47,6 +47,46 @@ public partial class ParameterEditorViewModel
         }
     }
 
+    /// <summary>The coupled array (MCLA): its geometry is stored, so the readout is what the form makes of it — each
+    /// strip's width and ends, the gaps, the taps — and the sites, a via or a C on each end pin.</summary>
+    private (string Text, string Note) CoupledArrayReadout()
+    {
+        bool expression = false;
+        double Real(string name, double fallback)
+        {
+            if (Spec(name, fallback) is { } v) return v;
+            expression = true;
+            return fallback;
+        }
+        try
+        {
+            var spec = CoupledArraySpec.Of(Real, name => _target?.Parameters.FirstOrDefault(p => p.Name == name)?.Expression);
+            if (expression) return ("", "A dimension is an expression, so the array is known only at run time.");
+            var (h, t, er) = ResolveMlinSubstrate();
+            var d = CoupledArrayPlan.Build(spec, new MicrostripSubstrate(h, t, er, 0.0, 0.0));
+            int pin = 0;
+            string End(StripEnd e) => e switch
+            {
+                StripEnd.Short => $"short ({CoupledArrayPlan.EndPin(++pin)})",
+                StripEnd.Site => $"C site ({CoupledArrayPlan.EndPin(++pin)})",
+                StripEnd.Join => "joined",
+                StripEnd.Port => "port",
+                _ => "open",
+            };
+            return ($"{spec.N} strips, {spec.Form}, {spec.Feed} feed; L {Mm(spec.L)}\n"
+                  + string.Concat(d.Ends.Select((e, k) =>
+                        $"Strip {k + 1}: W {Mm(spec.W[k])}, near {End(e.Near)}, far {End(e.Far)}"
+                      + (k < spec.S.Count ? $"; gap below {Mm(spec.S[k])}" : "") + "\n"))
+                  + (spec.Feed == CoupledArrayFeed.Tapped
+                        ? $"Taps {Mm(spec.Tap)} from the outer strips' grounded ends, lines {Mm(spec.Wf)} wide" : "Ports on the outer strips' ends")
+                  + Sites(d.Plan), "");
+        }
+        catch (ParameterRefusalException ex)
+        {
+            return ("", ex.Message);
+        }
+    }
+
     private static string Geometry(double w, double gap, double l, KirschningJansenCoupled.Modes m)
         => $"W {Mm(w)}, S {Mm(gap)}, L {Mm(l)} (λg/4 at F, εeff {F3(m.EeffE)} even / {F3(m.EeffO)} odd)";
 

@@ -6,6 +6,8 @@ using CircuitRF.Core.Matching;
 using CircuitRF.Core.Systems;
 using CircuitRF.WBond;
 using PlanCorner = CircuitRF.Core.Devices.Microstrip.PlanCorner;
+using CoupledArrayForm = CircuitRF.Core.Devices.Microstrip.CoupledArrayForm;
+using CoupledArrayFeed = CircuitRF.Core.Devices.Microstrip.CoupledArrayFeed;
 
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout.PCells;
@@ -873,6 +875,12 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MCBL", "Marchand", "Marchand balun", "balun", "coupled-line balun", "planar balun",
                           "balanced", "unbalanced", "differential", "180 degree", "quarter wave"]),
+        // MCLA — the coupled array: every coupled-array filter as one part, its form the strips' end pattern.
+        [SymbolKind.Mcla]         = new("MCLA", "CLA",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MCLA", "coupled array", "interdigital", "interdigital filter", "combline", "comb-line",
+                          "combline filter", "pseudo-interdigital", "bandpass filter", "band-pass", "filter",
+                          "tapped", "coupled lines", "resonators"]),
         // The two vias (brief-via-component.md). Microstrip, because that is where they are used: a
         // line changing layers, and the return of a shunt part on a board. Not transmission lines.
         [SymbolKind.Via]          = new("VIA", "VIA",
@@ -1024,6 +1032,8 @@ public static class ComponentTypeRegistry
         SymbolKind.MCLineN                                   => "N",
         // brief-paa-3 — one pin per element in Elements mode: the product of two parameters, named as such.
         SymbolKind.PhasedArray                               => "Rows × Cols",
+        // The coupled array: 1, 2 and a pin on each shorted or loaded strip end, which four parameters set together.
+        SymbolKind.Mcla                                      => "N, Form, Feed and Ends",
         // A wBond's terminals are 2 per wire array it places, plus the reference pin when RefPin is
         // on — so the count follows the arrays selected out of the design it carries or links to,
         // and there is no fixed answer at all until one is chosen.
@@ -1163,6 +1173,11 @@ public static class ComponentTypeRegistry
         SymbolKind.Mcbl =>
             "Not interchangeable: terminal 1 is the unbalanced input, 2 and 3 the balanced outputs, in antiphase. G2 and "
           + "G3 are the grounded ends of the strips that carry 2 and 3: put a via to ground (VIAGND) on each.",
+
+        SymbolKind.Mcla =>
+            "Terminals 1 and 2 are the ports. E1, E2, … follow, one on each shorted or loaded strip end, strip by strip "
+          + "from the top, near end before far: put a via to ground (VIAGND) on a shorted end and a capacitor to ground "
+          + "of the strip's C on a loaded one. N, Form, Feed and Ends set how many there are.",
 
         SymbolKind.GsgPad =>
             "Not interchangeable: terminal 1 is where the probe's signal tip lands, the middle of the signal pad, "
@@ -1362,6 +1377,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Mclc          => ComponentModelFactory.CoupledLineCouplerTypeName,
         SymbolKind.Midc          => ComponentModelFactory.LangeTypeName,
         SymbolKind.Mcbl          => ComponentModelFactory.MarchandTypeName,
+        SymbolKind.Mcla          => ComponentModelFactory.CoupledArrayTypeName,
         SymbolKind.MimCap        => "MIMCAP",
         SymbolKind.Spiral        => "SPIRAL",
         SymbolKind.OctSpiral     => "OSPIRAL",
@@ -1534,7 +1550,7 @@ public static class ComponentTypeRegistry
         or SymbolKind.Via or SymbolKind.ViaGnd or SymbolKind.WBond or SymbolKind.Match
         or SymbolKind.MimCap or SymbolKind.Spiral or SymbolKind.OctSpiral or SymbolKind.Tfr or SymbolKind.Airbridge
         or SymbolKind.TestPad or SymbolKind.GsgPad or SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
-        or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl
+        or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Mcla
         or SymbolKind.Balun or SymbolKind.Circulator or SymbolKind.Switch or SymbolKind.Coupler
         or SymbolKind.Hybrid90 or SymbolKind.Hybrid180 or SymbolKind.Filter or SymbolKind.Atten or SymbolKind.Duplexer
         or SymbolKind.Combiner
@@ -1801,6 +1817,36 @@ public static class ComponentTypeRegistry
         (SymbolKind.MRadial, "SignalLayer") => "The conductor the stub is on. Empty: the technology's top conductor.",
         (SymbolKind.MRadial, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below "
                                                  + "the signal layer.",
+        (SymbolKind.Mcla, "N") => "Strips, the coupled feed's two terminating strips included. Strip 1 is the top one.",
+        (SymbolKind.Mcla, "W") => "Width of every strip that does not state its own W[k].",
+        (SymbolKind.Mcla, "S") => "Edge-to-edge gap between every two strips that do not state their own S[k].",
+        (SymbolKind.Mcla, var p) when p.StartsWith("W[", StringComparison.Ordinal) =>
+                                  "Strip k's own width; strip 1 is the top one.",
+        (SymbolKind.Mcla, var p) when p.StartsWith("S[", StringComparison.Ordinal) =>
+                                  "The gap below strip k, between strips k and k + 1.",
+        (SymbolKind.Mcla, "L") => "Every strip's length, the coupled length: about a quarter wave at the centre for an "
+                                + "interdigital array, shorter for a loaded combline.",
+        (SymbolKind.Mcla, "Form") => "The strips' end pattern. Interdigital: shorts on alternate ends, the rest open. Combline: "
+                                   + "shorts at the near ends, capacitor sites at the far ends. PseudoInterdigital: the "
+                                   + "strips in fours, two interleaved hairpins each, no vias. Custom: Ends.",
+        (SymbolKind.Mcla, "Ends") => "With Form = Custom only: a two-letter token per strip, near end then far, each O (open), "
+                                   + "S (short, a via pin), C (capacitor site), J (joined to the next joined end) or P "
+                                   + "(port, coupled feed). E.g. SO OS SO.",
+        (SymbolKind.Mcla, "Feed") => "Tapped: the ports tap onto the outer strips at Tap. Coupled: strips 1 and N are "
+                                   + "terminating lines whose free ends are the ports.",
+        (SymbolKind.Mcla, "Tap") => "Tapped feed: from each outer strip's shorted (else joined) end to the tap. Nearer the "
+                                  + "short is a weaker external coupling.",
+        (SymbolKind.Mcla, "Wf") => "Tapped feed: width of the line from each tap to its port, as long as it is wide. Placed: "
+                                 + "the 50 Ω width on the technology.",
+        (SymbolKind.Mcla, "C") => "Each capacitor site's value, unless the strip states its own C[k]. Place Site Parts puts "
+                                + "a capacitor of it on each.",
+        (SymbolKind.Mcla, var p) when p.StartsWith("C[", StringComparison.Ordinal) =>
+                                  "Strip k's own loading capacitance, on each capacitor site it has.",
+        (SymbolKind.Mcla, "G") => "A join past other strips: its wall's clearance from the ends it passes. Placed: the 50 Ω "
+                                + "width on the technology.",
+        (SymbolKind.Mcla, "SignalLayer") => "The conductor the strips are on. Empty: the technology's top conductor.",
+        (SymbolKind.Mcla, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below "
+                                              + "the signal layer.",
         (SymbolKind.Slin, "W") => "Strip width.",
         (SymbolKind.Slin, "L") => "Line length.",
         (SymbolKind.Slin, "SignalLayer") => "The conductor the strip is on. Its planes are the nearest ground-designated conductors "
@@ -1883,6 +1929,10 @@ public static class ComponentTypeRegistry
           + "each conductor's fingers at one potential, the pair's even and odd permittivities. Each finger carries its "
           + "own share, so the jumpers on J1-J4 are part of the circuit; ideal jumpers give Ou's pair exactly. "
           + "Kirschning-Jansen's range applies to W and S.",
+        SymbolKind.Mcla =>
+            "MCLINN's N-line section, cut at the taps, with MLIN taps and folds and MLIN's open end on each open or "
+          + "loaded end, one strip's form. Quasi-static: no dispersion, so the centre lands a few percent off a "
+          + "full-wave solve at the top of a board's range. The vias and capacitors are the parts on E1, E2, …, not the model.",
         SymbolKind.Mcbl =>
             "Two MCLIN quarter-wave sections and the MLIN joining them, stamped together. The coupling matches ZL on "
           + "each output to Z0 for TEM lines; microstrip's unequal mode velocities leave the outputs about 16° short of "
@@ -4134,6 +4184,20 @@ public static class ComponentTypeRegistry
                         new("F",   "2.4",  "GHz", true, UnitDimension.Frequency),
                         new("Gap", "1",    "mm",  true, UnitDimension.Length),
                         .. SignalGroundLayerParams];
+            // MCLA: stored geometry, as a synthesis fills it (CoupledArraySpec): three strips, interdigital and tapped.
+            // W, S, Wf and G start at the technology's 50 Ω width, L at a round length and Tap at a fifth of it.
+            case SymbolKind.Mcla:
+                return [new("N",    "3",   "",   true,  UnitDimension.None),
+                        new("W",    "2.9", "mm", true,  UnitDimension.Length),
+                        new("S",    "0.5", "mm", true,  UnitDimension.Length),
+                        new("L",    "10",  "mm", true,  UnitDimension.Length),
+                        new("Form", nameof(CoupledArrayForm.Interdigital), "", true, UnitDimension.None),
+                        new("Feed", nameof(CoupledArrayFeed.Tapped), "", false, UnitDimension.None),
+                        new("Tap",  "2",   "mm", false, UnitDimension.Length),
+                        new("Wf",   "2.9", "mm", false, UnitDimension.Length),
+                        new("C",    "1",   "pF", false, UnitDimension.Capacitance),
+                        new("G",    "0.5", "mm", false, UnitDimension.Length),
+                        .. SignalGroundLayerParams];
             case SymbolKind.GsgPad:
                 return [new("W",     "2.9", "mm", true, UnitDimension.Length),
                         new("L",     "100", "µm", true, UnitDimension.Length),
@@ -4321,6 +4385,8 @@ public static class ComponentTypeRegistry
             case "IDC":      kind = SymbolKind.Midc;         return true;
             case "MCBL":
             case "CBL":      kind = SymbolKind.Mcbl;         return true;
+            case "MCLA":
+            case "CLA":      kind = SymbolKind.Mcla;         return true;
             case "MIMCAP":   kind = SymbolKind.MimCap;       return true;
             case "SPIRAL":   kind = SymbolKind.Spiral;       return true;
             case "OSPIRAL":  kind = SymbolKind.OctSpiral;    return true;
@@ -4709,6 +4775,8 @@ public static class ComponentTypeRegistry
         (SymbolKind.TestPad, "Feed")                                                     => TestPadFeedOptions,
         (SymbolKind.TestPad, "Centre")                                                   => TestPadCentreOptions,
         (SymbolKind.Mwpd or SymbolKind.Mrrc, "Corner")                                   => PlanCornerOptions,
+        (SymbolKind.Mcla, "Form")                                                        => Enum.GetNames<CoupledArrayForm>(),
+        (SymbolKind.Mcla, "Feed")                                                        => Enum.GetNames<CoupledArrayFeed>(),
         // A composed FET's instance switches (brief-modelcomposer-21): yes or no. A switch bound to an expression keeps a
         // text box (ParameterRowViewModel), since a picker cannot hold one.
         (SymbolKind.ComposedFET, _) when ComposedSwitches.IsSwitch(paramName)                => ComposedSwitchOptions,

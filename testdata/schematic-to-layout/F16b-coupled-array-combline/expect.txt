@@ -1,0 +1,20 @@
+# The coupled array (MCLA) as a combline with the coupled feed: four strips shorted at their near ends, the two inner
+# ones loaded at their far ends by capacitors to ground (E3, E5) and the outer two the ports. Place Site Parts put a via
+# on each short and a capacitor of C on each loaded end; the capacitors' grounded pads return through the pour.
+Info CLA1 added
+Info VIAG1 added
+Info VIAG2 added
+Info C1 added
+Info VIAG3 added
+Info C2 added
+Info VIAG4 added
+Info - Net 0 left as ratsnest: the ground net returns through vias and the pour
+Info - Joined 2 of 3 connections; 1 left as ratsnest
+Info VIAG1 placed beside CLA1 pin E1 and tied to its pad
+Info VIAG2 placed beside CLA1 pin E2 and tied to its pad
+Info VIAG3 placed beside CLA1 pin E4 and tied to its pad
+Info VIAG4 placed beside CLA1 pin E6 and tied to its pad
+Info P1 port 1 placed at CLA1 pin 1
+Info P2 port 2 placed at CLA1 pin 2
+port P1 1
+port P2 2

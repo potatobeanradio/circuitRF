@@ -732,6 +732,11 @@ public enum SymbolKind
     /// matrices. 2·N pins: the near ends 1..N, top strip first, then the far ends N + 1..2N. The substrate as MCLIN's.
     /// Appended so no existing kind's ordinal moves.</summary>
     MCLineN,
+    /// <summary>Coupled array on microstrip (engine "MCLA", CoupledArrayPlan): N strips over one N-line section, each
+    /// end open, shorted, loaded by a capacitor, joined to its neighbour or a port — interdigital, combline,
+    /// pseudo-interdigital or a custom pattern, tapped or coupled-fed. Pins 1 and 2, then E1, E2, … on the shorted and
+    /// loaded ends, for ordinary vias and capacitors to ground. Appended so no existing kind's ordinal moves.</summary>
+    Mcla,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

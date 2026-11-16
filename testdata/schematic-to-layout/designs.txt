@@ -39,3 +39,7 @@ F12-coupled-line-balun RF-passives
 F13-interdigitated-coupler RF-passives
 F14-radial-stub RF-passives
 F15-coupled-lines RF-passives
+F16-coupled-array-interdigital RF-passives
+F16b-coupled-array-combline RF-passives
+F16c-coupled-array-pseudo RF-passives
+F16d-coupled-array-custom RF-passives

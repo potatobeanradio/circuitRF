@@ -22,7 +22,7 @@ public partial class ParameterEditorViewModel
 {
     /// <summary>True for a planned passive with a readout: MWPD, the hybrids and the coupled-line parts.</summary>
     public bool IsDividerReadoutTarget => _target?.Symbol is SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
-                                          or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl;
+                                          or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Mcla;
 
     /// <summary>The derived numbers, one per line, or empty.</summary>
     public string DividerReadoutText { get; private set; } = "";
@@ -39,6 +39,8 @@ public partial class ParameterEditorViewModel
             (text, note) = HybridReadout(_target.Symbol);
         else if (_target?.Symbol is SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl)
             (text, note) = CoupledLineReadout(_target.Symbol);
+        else if (_target?.Symbol is SymbolKind.Mcla)
+            (text, note) = CoupledArrayReadout();
         else if (IsDividerReadoutTarget)
         {
             if (Spec("Z0") is not { } z0 || Spec("F") is not { } f || SiteGap(ref note) is not { } gap

@@ -169,6 +169,21 @@ public static class SymbolPortDefs
                 return [.. Enumerable.Range(1, n).Select(k => ($"{k}", -200f, (2f * k - n - 1) * 100f)),
                         .. Enumerable.Range(1, n).Select(k => ($"{n + k}", 200f, (2f * k - n - 1) * 100f))];
             }
+            // MCLA: 1 at the left and 2 at the right; the shorted and loaded strip ends E1, E2, … alternately along the
+            // top and the bottom, 200 apart, each row at least as far from the middle as it is wide, so a shunt part on
+            // each stands straight out. VARIADIC on the PIN count (2 + the end pins, as PortCount answers); below two, the
+            // default array's. The names follow the count alone: each end pin's role is the plan's site there.
+            case SymbolKind.Mcla:
+            {
+                int ends = (portCount >= 2 ? portCount : CircuitRF.Core.Devices.Microstrip.CoupledArrayPlan.DefaultPinCount) - 2;
+                int top = (ends + 1) / 2, bottom = ends / 2;
+                float x = 100f * Math.Max(4, top + 2), y = 100f * Math.Max(4, top);
+                return [("1", -x, 0f), ("2", x, 0f),
+                        .. Enumerable.Range(0, ends).Select(e => (
+                            CircuitRF.Core.Devices.Microstrip.CoupledArrayPlan.EndPin(e + 1),
+                            100f * (2 * (e / 2) - ((e % 2 == 0 ? top : bottom) - 1)),
+                            e % 2 == 0 ? -y : y))];
+            }
             // MLIN: horizontal 2-port, matching TLIN's own left/right convention.
             case SymbolKind.Mlin:    return [("1", -200f, 0f), ("2", 200f, 0f)];
             case SymbolKind.Cpwg:    return [("1", -200f, 0f), ("2", 200f, 0f)];
@@ -1211,6 +1226,15 @@ public sealed class EditableComponent
                 var strips = Parameters.FirstOrDefault(q => q.Name == "N");
                 return 2 * (strips is not null && int.TryParse(strips.Expression, out int nl) && nl >= 2
                     ? nl : CircuitRF.Core.Devices.MicrostripMultiLineModel.DefaultStrips);
+            }
+
+            // A coupled array draws 1, 2 and a pin on each shorted or loaded end, which its N, Form, Feed and Ends set.
+            // Plain words and a plain N only — anything else is the default array's pins, as for MWPD.
+            if (Symbol is SymbolKind.Mcla)
+            {
+                string? Text(string name) => Parameters.FirstOrDefault(q => q.Name == name)?.Expression;
+                return CircuitRF.Core.Devices.Microstrip.CoupledArrayPlan.PinCountOf(Text("N"), Text("Form"), Text("Feed"),
+                           Text("Ends")) ?? CircuitRF.Core.Devices.Microstrip.CoupledArrayPlan.DefaultPinCount;
             }
 
             // The Combiner's N is its number of PATHS; it draws N + 1 pins, the common port with them.

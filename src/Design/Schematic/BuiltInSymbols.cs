@@ -168,6 +168,8 @@ public static class BuiltInSymbols
     // MWPD per section count above one (one section is _mwpd), keyed by N; Primitives takes its PIN count.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mwpdCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mclineNCache = new();
+    // MCLA per pin count (1, 2 and its end pins).
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mclaCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<PhasedArrayGlyph, Symbol> _phasedArrayCache = new();
     // Tuner-family cache key: (kind, showBias) — per-instance bias-branch variant.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(SymbolKind, bool), Symbol> _tunerCache = new();
@@ -254,6 +256,9 @@ public static class BuiltInSymbols
             case SymbolKind.MCLineN:
                 return _mclineNCache.GetOrAdd(CircuitRF.Core.Devices.MicrostripMultiLineModel.StripsForPinCount(portCount),
                                               BuildMCLineN);
+            case SymbolKind.Mcla:
+                return _mclaCache.GetOrAdd(portCount >= 2 ? portCount : CircuitRF.Core.Devices.Microstrip.CoupledArrayPlan.DefaultPinCount,
+                                           BuildMcla);
             case SymbolKind.Match:      return _match;
             case SymbolKind.Mlin:       return _mlin;
             case SymbolKind.Cpwg:       return _cpwg;
@@ -1767,6 +1772,30 @@ public static class BuiltInSymbols
             prims.Add(Txt($"{n + k}", 180, yp - 25, fontSize: MixerPortFontSize));
         }
         return Sym(prims, SymbolKind.MCLineN, 2 * n);
+    }
+
+    // MCLA — a box round three staggered strips, 1 and 2 leading in from the sides and each end pin (E1, E2, …) from the
+    // top or the bottom, where SymbolPortDefs puts them. VARIADIC on the pin count, cached per count.
+    private static Symbol BuildMcla(int pins)
+    {
+        var defs = SymbolPortDefs.For(SymbolKind.Mcla, pins);
+        float x = defs[1].LocalX, y = defs.Length > 2 ? -defs[2].LocalY : 400f;
+        var prims = new List<SymbolPrimitive>
+        {
+            RRect(0, 0, 2 * x - 200, 2 * y - 200, 12),
+            PLine(-x, 0, -x + 100, 0),
+            PLine( x, 0,  x - 100, 0),
+            Txt("1", -x + 40, -25, fontSize: MixerPortFontSize),
+            Txt("2",  x - 40, -25, fontSize: MixerPortFontSize),
+        };
+        for (int k = -1; k <= 1; k++) prims.Add(RRect(k * 40, k * 60, 240, 30, 8));
+        foreach (var (name, px, py) in defs.Skip(2))
+        {
+            float inward = py < 0 ? 100 : -100;
+            prims.Add(PLine(px, py, px, py + inward));
+            prims.Add(Txt(name, px + 30, py + inward / 2, fontSize: 18, align: SymbolTextAlign.Left));
+        }
+        return Sym(prims, SymbolKind.Mcla, pins);
     }
 
     // BCLIN — two strips on different layers, offset from each other, with a ground plane drawn above
