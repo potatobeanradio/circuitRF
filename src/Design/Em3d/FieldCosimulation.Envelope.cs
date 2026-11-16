@@ -51,7 +51,7 @@ public static partial class FieldCosimulation
 
     /// <summary>R-paa6b-1 — one envelope run of <paramref name="env"/> on <paramref name="nl"/> with the block recorded, and the fields analysis's cubes from it.</summary>
     private static DataSet FromEnvelope(FieldsAnalysis fa, ElaboratedNetlist nl, EnvelopeAnalysis env, FieldsHbContext ctx, List<string> notes,
-                                        RunControl? control, Action<IFieldMetrics>? metrics, string? sweepPoint)
+                                        RunControl? control, Action<IFieldMetrics>? metrics, string? sweepPoint, CutMemo? cutMemo = null)
     {
         string who = $"Fields '{fa.Name}'";
         int k = HarmonicOf(fa, nl, who);
@@ -276,6 +276,9 @@ public static partial class FieldCosimulation
             $"Fields '{fa.Name}': ActiveGamma({fa.Name}, n) reads each element's power-weighted average reflection over the record; array.GammaActive holds it at every step.",
         };
         if (pa is not null) lines.Add(pa.LevelNote);
+        // brief-paa-11 — the time-averaged pattern's fine cuts beside its overview
+        if (pa is not null) AddEnvelopeCuts(data, fa, pa, far, patternHz, a, t0, cutMemo, lines);
+        else if (CutsNotApplied(fa) is { } notCut) lines.Add(notCut);
         // D-6b-2 — a direction whose co-polar component is weak against the cross-polar one has metrics of the weaker component
         for (int d = 0; d < nn; d++)
         {

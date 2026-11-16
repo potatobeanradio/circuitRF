@@ -46,4 +46,29 @@ public class HbInterfaceShortTests(ITestOutputHelper output)
         Assert.Equal(dcA, At("a"), 1e-6);
         Assert.Equal(dcA, At("b"), 1e-6);
     }
+
+    /// <summary>
+    /// The same pair joined by a current probe, an IDEAL branch, as a loadpull joins a device's drain to its tuner's net (which it carries
+    /// as an interface node). Holding both nodes at known voltages is then a loop of ideal sources, so the held form is singular; Z_NN's
+    /// inverse models the probe as the near-short it is. Every point of the shipped Phased Array example's PA loadpull stopped at
+    /// "DC extraction singular" until the extraction fell back to it.
+    /// </summary>
+    [Fact]
+    public void TwoDeviceNodesJoinedByACurrentProbe_SolveAsOneNode()
+    {
+        string cnl = Grounded.Replace("L:L1 a b L=100 nH", "IProbe:P1 a b", StringComparison.Ordinal);
+        var (lib, tb) = new CnlReader().Read(cnl);
+        var netlist = new Elaborator(lib).Elaborate(tb);
+        var dc = NonlinearDcEngine.Run(netlist);
+        var p = HbEngine.Resolve(tb.Analyses.OfType<HarmonicBalanceAnalysis>().First(), netlist.ResolvedGlobals);
+        var hb = (DataSet)new HbEngine(netlist, tb).Run(p);
+        Assert.True(hb["Converged"].RealValues[0] > 0.5, "HB did not converge");
+        var v = hb["V"];
+        double At(string node) => ((Complex)v[Array.IndexOf(v.Axes[0].Labels!, node), 0]).Real;
+        var vdc = DcResultPacker.Pack(dc, netlist)["V"];
+        double dcA = vdc.RealValues[Array.IndexOf(vdc.Axes[0].Labels!, "a")];
+        output.WriteLine($"HB V(a) {At("a"):G9}, V(b) {At("b"):G9}; DC V(a) {dcA:G9}");
+        Assert.Equal(dcA, At("a"), 1e-6);
+        Assert.Equal(dcA, At("b"), 1e-6);
+    }
 }

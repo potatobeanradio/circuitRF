@@ -161,6 +161,10 @@ public sealed class FieldsAnalysis(string name) : Analysis(name)
     /// <c>peak</c> (the time-averaged pattern's maximum; the default) or <c>theta,phi</c> pairs in degrees separated by semicolons.</summary>
     public string DirsExpr { get; init; } = "";
 
+    /// <summary>brief-paa-11 R-paa11-1 — <c>cuts=</c>, on a Phased Antenna Array: the planes φc, in degrees and comma-separated, that the
+    /// fine pattern cuts (<c>farfield.CutU</c> and its companions) are formed in. Blank for the lattice's two principal planes, 0 and 90.</summary>
+    public string CutsExpr { get; init; } = "";
+
     /// <summary>Whether the waves come from a harmonic-balance solution rather than the linear solve.</summary>
     public bool FromHarmonicBalance => Waves.Trim().Length > 0;
 

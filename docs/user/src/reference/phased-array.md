@@ -141,8 +141,9 @@ and needs none of them.) At 30° this gives a 8.57° × 7.49° beam, a first sid
 `steerDelay()` points the same way at every frequency. The [Phase Shifter](components.html#phaseshifter) block delays by its
 `Phase`, the opposite sign to a weight's, so a channel that steers through one writes `Phase=-steer(…)`.
 
-**What a fields analysis on the array publishes.** The pattern (`farfield`), as for any [radiation pattern](cosimulation.html#pattern),
-and an `array` group over the element axis: `a`, `b`, `GammaActive`, `Pacc`, `w`, `wQuantised`, `row`, `col`, `x`, `y`. The
+**What a fields analysis on the array publishes.** The pattern (`farfield`), as for any [radiation pattern](cosimulation.html#pattern);
+its plane cuts, `farfield.CutU`, `CutEtheta` and `CutEphi`, over `freq`, `cut` (the plane's φ, degrees), `angle` and `port`; and
+an `array` group over the element axis: `a`, `b`, `GammaActive`, `Pacc`, `w`, `wQuantised`, `row`, `col`, `x`, `y`. The
 measurements:
 
 | Measurement | Value |
@@ -160,7 +161,18 @@ measurements:
 **Beamwidth and sidelobes are never read off the record's grid.** A 64 × 64 array's beam is 1.6° wide, so a 1° grid puts one
 sample across it and would read its sidelobe at −16.5 dB where it is −13.2. The cuts and these metrics are formed on a fine
 grid around the beam, the element pattern interpolated (it is one element's, smooth over a beamwidth) and the array factor
-summed exactly there. Only the overview — the `farfield` cubes the polar plots draw — is on the record's grid.
+summed exactly there. Only the overview — `farfield.U`, `Etheta` and `Ephi`, and the 3D view — is on the record's grid, and
+the run says so when that grid is coarser than a tenth of the beam.
+
+**Plot the cuts, not the overview.** `cuts=` names the planes (degrees, comma-separated; `0,90` by default, the lattice's two
+principal planes). Each cut runs through boresight from −90° to +90°: a positive angle t is the direction (θ = t, φ), a negative
+one (θ = −t, φ + 180°), so one trace on a polar plot is the whole plane and a family over `theta0` overlays on it. The step is a
+tenth of the array's beamwidth or finer (never finer than 0.05°, so at most 3,601 samples a plane) and the record's step divides
+by it, so every record direction in the plane is a sample; the run says the step it took. Pin `cut` and keep `angle` as X:
+
+```
+analysis F2 type=fields block=PA1 freq=5.9 freqUnit=GHz cuts=0,45,90
+```
 
 **A sweep and the measurements.** Each of these is one number per run. Under a parametric sweep they are refused with a sentence
 naming the cube to plot instead (`F1.farfield.RealizedGainDbi` over `theta0`, `F1.array.GammaActive` over `theta0`). The
@@ -233,7 +245,8 @@ amplifiers' PAE falls from 68 % to 37 % while the outer two fall to 44 % and 51 
 **Under a modulated signal.** `waves=` also takes an envelope analysis, and `dirs=` names up to 16 directions (`peak`, the
 time-averaged pattern's maximum, by default; `theta,phi` pairs in degrees, separated by `;`). Each direction's radiated
 envelope gets the spectrum, ACLR, EVM, PAPR and CCDF the [envelope analysis](simulations.html#envelope) gives a probe; each
-element's active reflection is a cloud over the record; `farfield.U` is the time-averaged pattern. Steered to 30° at 22 dBm,
+element's active reflection is a cloud over the record; `farfield.U` is the time-averaged pattern and `farfield.CutU` its
+cuts. Steered to 30° at 22 dBm,
 the example's beam reads ACPR1 −26.3 dBc and EVM 7.6 %, and the directions off the beam −20 dBc and 19 %: the distortion leaves
 each element with the phase its own compression gives it, not the steering, so it does not form the beam.
 
@@ -241,7 +254,8 @@ each element with the phase its own compression gives it, not the steering, so i
 
 {{ui: phased-array-transmit-display}}
 
-The 16 × 16 array's cut in the steering plane at each `theta0`, its realized gain at the peak against `theta0` (53.90 dBi at
+The 16 × 16 array's cut in the steering plane (`F2.farfield.CutU`, φ = 0, at a step of 0.556° against the record's 5°) at
+each `theta0`, its realized gain at the peak against `theta0` (53.90 dBi at
 boresight, 50.04 at 60°, counting the channels' 32 dB), and every element's active reflection at 0, 30 and 60°: the edge and
 corner elements differ from the interior, because their neighbours do. The worst element's active VSWR at 30° is 1.59.
 

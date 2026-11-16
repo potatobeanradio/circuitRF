@@ -184,6 +184,8 @@ public sealed partial class FieldsBodyViewModel : ObservableObject
     [ObservableProperty] private string _waves = "";
     [ObservableProperty] private string _harmonic = "";
     [ObservableProperty] private string _dirs = "";
+    // brief-paa-11 — an array's cut planes, carried through an edit of the directive (no field of its own)
+    [ObservableProperty] private string _cuts = "";
 
     public static FieldsBodyViewModel From(FieldsAnalysis fa)
     {
@@ -191,7 +193,7 @@ public sealed partial class FieldsBodyViewModel : ObservableObject
         {
             Block = fa.Block, Freq = fa.AtEveryFrequency ? AllFrequencies : fa.FreqExpr, FreqUnit = fa.FreqUnit,
             Norm = fa.PerAvailable ? FieldsAnalysis.NormAvailable : FieldsAnalysis.NormAccepted, Average = fa.Average,
-            Waves = fa.Waves, Harmonic = fa.HarmonicExpr, Dirs = fa.DirsExpr,
+            Waves = fa.Waves, Harmonic = fa.HarmonicExpr, Dirs = fa.DirsExpr, Cuts = fa.CutsExpr,
         };
         body.SetDrives(fa.DriveExpr, fa.WeightsExpr);
         return body;
@@ -207,6 +209,6 @@ public sealed partial class FieldsBodyViewModel : ObservableObject
         DriveExpr = string.Join(",", Drives.Select(ValueOf)),
         WeightsExpr = Drives.Any(r => r.Weight.Trim().Length > 0) ? string.Join(",", Drives.Select(r => r.Weight.Trim())) : "",
         Norm = Norm, AverageExpr = Average ? "yes" : "no",
-        Waves = Waves.Trim(), HarmonicExpr = Harmonic.Trim(), DirsExpr = Dirs.Trim(),
+        Waves = Waves.Trim(), HarmonicExpr = Harmonic.Trim(), DirsExpr = Dirs.Trim(), CutsExpr = Cuts.Trim(),
     };
 }

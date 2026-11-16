@@ -808,6 +808,14 @@ public static class TraceResolve
     {
         backComplex = null; backReal = null; backPhiDeg = double.NaN; error = null;
 
+        // brief-paa-11 R-paa11-3 — a plane cut's signed angle already runs through both halves of its plane
+        if (xDim >= 0 && xDim < cube.Rank && cube.Axes[xDim].Name == SeedSlice.CutAngleAxis)
+        {
+            error = "This trace is a plane cut: its angle runs from −90° to +90° through both halves of the plane already, so it draws the whole plane as it is. " +
+                    "Turn the whole-plane option off; it is for a cut of the overview, θ swept with φ pinned.";
+            return false;
+        }
+
         int phiDim = -1;
         for (int d = 0; d < cube.Rank; d++)
             if (d != xDim && cube.Axes[d].Name is "phi" or "az") { phiDim = d; break; }

@@ -85,13 +85,14 @@ public static partial class FieldCosimulation
     public static Func<Analysis, ElaboratedNetlist, CircuitRF.Engine.RunControl?, DataSet> SweepPoints(FieldsOutput output, FieldsHbContext? hb = null)
     {
         double? first = null;
+        var cuts = new CutMemo();   // brief-paa-11 — one cut grid for every point, so the cut cubes stack
         return (inner, nl, control) =>
         {
             var fa = (FieldsAnalysis)inner;
             string who = $"Fields '{fa.Name}'";
             // brief-paa-6 — a sweep around a fields analysis with waves= runs its HB analysis at each point
             if (fa.FromHarmonicBalance)
-                return HbSweepPoint(fa, nl, hb ?? throw new InvalidOperationException($"{who}: waves= needs the bench, which this run was not given."), control);
+                return HbSweepPoint(fa, nl, hb ?? throw new InvalidOperationException($"{who}: waves= needs the bench, which this run was not given."), control, cuts);
             if (!fa.AtEveryFrequency)
             {
                 double hz = Prepare(fa, nl, who).Hz;
@@ -101,7 +102,7 @@ public static partial class FieldCosimulation
                                                         "has one frequency axis. Use freq=all for every frequency the result holds.");
             }
             // The sweep engine's own text for this point, nested axes included: it is on the netlist for what a point reports.
-            return Run(fa, nl, [], control, null, output, null, null, nl.WireThermal?.Drive ?? "a sweep point");
+            return Run(fa, nl, [], control, null, output, null, null, nl.WireThermal?.Drive ?? "a sweep point", cuts);
         };
     }
 

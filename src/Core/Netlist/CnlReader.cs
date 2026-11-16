@@ -1233,6 +1233,7 @@ public sealed class CnlReader
             Waves       = kv.GetValueOrDefault("waves", ""),
             HarmonicExpr = kv.GetValueOrDefault("harmonic", ""),
             DirsExpr    = kv.GetValueOrDefault("dirs", ""),
+            CutsExpr    = kv.GetValueOrDefault("cuts", ""),
             Enabled     = ParseEnabledToken(tokens),
         };
         return true;

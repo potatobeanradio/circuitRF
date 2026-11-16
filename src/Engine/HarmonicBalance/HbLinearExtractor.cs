@@ -218,10 +218,14 @@ public sealed class HbLinearExtractor
             }
 
             var zr = RegularizePinned(zNN);
-            if (RankDeficientAt(zr) >= 0) _dcForcedEngaged = true;
-            else entry.YNN = InvertNN(zr, _N);
+            if (RankDeficientAt(zr) >= 0 && TryForcedDc() is { } forced)
+            {
+                _dcForcedEngaged = true;
+                return forced;
+            }
+            entry.YNN = InvertNN(zr, _N);
         }
-        if (_dcForcedEngaged) return ForcedDc();
+        if (_dcForcedEngaged) return TryForcedDc() ?? throw new SingularMatrixException("The DC interface could not be held: its held network is singular.");
 
         // V_oc with the bias sources active, against the SAME factorization.
         var bSrc = mna.BuildRhs();
@@ -300,7 +304,29 @@ public sealed class HbLinearExtractor
     /// source on node k carries I_k = −(Y·V + I_src)_k: all held at 0 V with the bias sources on gives −I_src; node j at
     /// 1 V and every source zeroed gives −Y[:, j].
     /// </summary>
-    private (Complex[,] YNN, Complex[] ISrc) ForcedDc()
+    /// <summary>
+    /// <see cref="ForcedDc"/> with ideal holds; when those are singular, held through <see cref="AnalysisSettings.InductanceRegR"/>.
+    /// Two interface nodes an IDEAL branch joins (a current probe from a device's drain to a loadpull tuner's net, which the loadpull
+    /// carries as an interface node) are one node at every frequency, and holding both at known voltages is a loop of ideal sources.
+    /// Each hold's series R breaks the loop and reads the pair as a link of 2·R, Y of order 1/(2R) = 5e5 S: the regularized choke's
+    /// scale, which the Newton is conditioned for. Every other node sees R against an admittance six or more decades smaller.
+    /// Null when even that is singular, and the caller inverts Z_NN as before PCH-12.
+    /// </summary>
+    private (Complex[,] YNN, Complex[] ISrc)? TryForcedDc()
+    {
+        if (!_dcHoldThroughR)
+        {
+            try { return ForcedDc(0); }
+            catch (SingularMatrixException) { _dcHoldThroughR = true; }
+        }
+        try { return ForcedDc(_settings.InductanceRegR); }
+        catch (SingularMatrixException) { return null; }
+    }
+
+    // Sticky once the ideal holds were found singular, so a sweep does not rediscover it at every point.
+    private bool _dcHoldThroughR;
+
+    private (Complex[,] YNN, Complex[] ISrc) ForcedDc(double holdR)
     {
         var held = new MnaSystem(_nonGroundCount);
         StampInto(held, 0.0, zeroDrive: false);
@@ -314,6 +340,7 @@ public sealed class HbLinearExtractor
             branch[k] = held.AddBranch();
             held.AddConstraint(branch[k], node, Complex.One);
             held.AddBranchCurrent(branch[k], node, 0);
+            if (holdR > 0) held.AddBranchConstraint(branch[k], branch[k], new Complex(-holdR, 0));
         }
         var sources = held.BuildRhs();
         var lu = held.Factorize(nodeNamer: _nodeNamer, branchNamer: _branchNamer);
@@ -494,7 +521,7 @@ public sealed class HbLinearExtractor
         // ── Step 1: Y_{N×N} via Z-column extraction ───────────────────────────
         // Only on a genuine miss, or when the entry was created by a path that did not need Y
         // (the back-solver, the control-sensitivity row) — never a refactorization either way.
-        entry.YNN ??= InvertNN(RegularizePinned(ZColumns(entry.Lu, entry.Size).ZNN), _N);
+        entry.YNN ??= InvertInterface(RegularizePinned(ZColumns(entry.Lu, entry.Size).ZNN));
 
         // ── Step 2: V_oc with sources active → I_src = −Y_{N×N}·V_oc ─────────
         var bSrc = mna.BuildRhs();
@@ -548,7 +575,7 @@ public sealed class HbLinearExtractor
     public LinearPartition LinearPartitionAt(double omega)
     {
         var entry = EnsureFactorization(omega, StampAt(omega));
-        entry.YNN ??= InvertNN(RegularizePinned(ZColumns(entry.Lu, entry.Size).ZNN), _N);
+        entry.YNN ??= InvertInterface(RegularizePinned(ZColumns(entry.Lu, entry.Size).ZNN));
         return new LinearPartition(entry.Lu, entry.Size, entry.YNN);
     }
 
@@ -1013,6 +1040,49 @@ public sealed class HbLinearExtractor
     }
 
     // ── Dense N×N matrix inversion (Gauss-Jordan with partial pivoting) ───────
+
+    /// <summary>
+    /// Y_NN(ω) = Z_NN(ω)⁻¹, or (Z_NN + R·I)⁻¹ with R = <see cref="AnalysisSettings.InductanceRegR"/> when Z_NN is rank-deficient. Two
+    /// interface nodes an IDEAL branch joins (a current probe from a device's drain to a loadpull tuner's net, which the loadpull carries
+    /// as an interface node) are one node at every harmonic, so their Z columns are equal. Inverting that divided by whatever rounding
+    /// left in the pivot: a very large conductance between the two at most loads, a zero row at a few (the pivot exactly zero), where
+    /// the Newton's Jacobian was singular — three loads of the Phased Array example's PA loadpull never converged. R·I is what holding
+    /// each node through R measures (ForcedDc's regularized hold, the DC twin of this): the pair is a link of 2·R, a regularized
+    /// choke's scale, added only at the nodes so joined. A Z_NN of full rank is inverted exactly as before.
+    /// </summary>
+    private Complex[,] InvertInterface(Complex[,] zNN)
+    {
+        var joined = JoinedNodes(zNN);
+        if (joined is null) return InvertNN(zNN, _N);
+        var z = (Complex[,])zNN.Clone();
+        foreach (int i in joined) z[i, i] += _settings.InductanceRegR;
+        return InvertNN(z, _N);
+    }
+
+    /// <summary>
+    /// The interface indices Z_NN makes one node — null when it is of full rank. Judged on Z_NN scaled by its diagonal (z_ij/√|z_ii·z_jj|),
+    /// so nodes of very different impedance are not mistaken for a deficiency: two nodes an ideal branch joins have equal columns, a
+    /// scaled off-diagonal of magnitude 1. Every node when the deficiency is not such a pair.
+    /// </summary>
+    internal static List<int>? JoinedNodes(Complex[,] zNN)
+    {
+        int n = zNN.GetLength(0);
+        var scale = new double[n];
+        for (int i = 0; i < n; i++) { double d = Complex.Abs(zNN[i, i]); scale[i] = d > 0 ? Math.Sqrt(d) : 1; }
+        var a = new Complex[n, n];
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++) a[i, j] = zNN[i, j] / (scale[i] * scale[j]);
+        if (RankDeficientAt(a) < 0) return null;
+        var joined = new List<int>();
+        for (int i = 0; i < n; i++)
+            for (int j = i + 1; j < n; j++)
+                if (Complex.Abs(a[i, j]) >= (1 - 1e-9) * Math.Sqrt(Complex.Abs(a[i, i]) * Complex.Abs(a[j, j])))
+                {
+                    if (!joined.Contains(i)) joined.Add(i);
+                    if (!joined.Contains(j)) joined.Add(j);
+                }
+        return joined.Count > 0 ? joined : [.. Enumerable.Range(0, n)];
+    }
 
     private static Complex[,] InvertNN(Complex[,] src, int n)
     {

@@ -400,7 +400,8 @@ public static class CnlWriter
                                          $"drive={fa.DriveExpr} {(fa.WeightsExpr.Length > 0 ? $"weights=\"{fa.WeightsExpr}\" " : "")}norm={fa.Norm} average={fa.AverageExpr}" +
                                          (fa.FromHarmonicBalance ? $" waves={fa.Waves.Trim()}" : "") +
                                          (fa.HarmonicExpr.Trim().Length > 0 ? $" harmonic=\"{fa.HarmonicExpr.Trim()}\"" : "") +
-                                         (fa.DirsExpr.Trim().Length > 0 ? $" dirs=\"{fa.DirsExpr.Trim()}\"" : ""),
+                                         (fa.DirsExpr.Trim().Length > 0 ? $" dirs=\"{fa.DirsExpr.Trim()}\"" : "") +
+                                         (fa.CutsExpr.Trim().Length > 0 ? $" cuts=\"{fa.CutsExpr.Trim()}\"" : ""),
         OscillatorAnalysis osc        => $"analysis {osc.Name} type=osc" +
                                          (osc.Probe.Length > 0 ? $" Probe={osc.Probe}" : "") +
                                          (osc.FguessExpr.Trim().Length > 0 ? $" Fguess=\"{osc.FguessExpr}\"" : "") +

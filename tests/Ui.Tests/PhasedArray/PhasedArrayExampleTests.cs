@@ -36,6 +36,21 @@ public class PhasedArrayExampleTests
         Assert.InRange(measures["SLL_dB"].RealValues[0], -26, -23);
     }
 
+    /// <summary>The PA loadpull the brute-force displays draw their contours from reaches 3 dB compression at every load of its grid. Its
+    /// tuners' nets are interface nodes the drain's current probe joins to the device, so Z_NN is singular at every harmonic: once the
+    /// DC extraction held both nodes with ideal sources (a loop, every load refused), and inverting it left a zero row at three loads.</summary>
+    [Fact]
+    public void ThePaLoadpull_ReachesCompressionAtEveryLoad()
+    {
+        var circuit = PreparedCircuit.FromSchematic(Bench("4 PA Loadpull"));
+        Assert.Null(circuit.ReadError);
+        var result = CircuitEvaluation.Execute(CircuitEvaluation.Plan(circuit, new CircuitEvaluationRequest()));
+        Assert.Empty(result.Errors);
+        var stop = result.GroupedResults!["LP1.StopCode"].RealValues;
+        Assert.Equal(48, stop.Length);
+        Assert.All(stop, code => Assert.Equal(1.0, code));   // 1: compression
+    }
+
     /// <summary><c>--set theta0=30</c> on <c>theta0 = 0 deg</c> is 30 degrees, as a tuning move is; a value with its own unit keeps it.</summary>
     [Fact]
     public void ASet_KeepsTheVariablesUnit_UnlessItStatesItsOwn()

@@ -4726,6 +4726,37 @@ The pattern pieces did not move, being the same code (Release; Debug in brackets
   the first pass does 64 rows instead of 512.
 - **`ArrayCut.Field`** carries the field a cut was read from, so a view splits it into co- and cross-polar without summing again.
 
+## brief-paa-11 — fine pattern cuts beside an array's overview (2026-11-16)
+
+- **`ArrayPattern.CutGrid` / `Cuts` / `CutBasis`** (`ArrayPattern.Cuts.cs`): plane cuts through boresight over a signed angle
+  −90…+90°. The step is the record's θ step divided by the smallest whole number that makes it no coarser than a tenth of
+  `ArrayBeam.EstimateBeamwidthDeg`, floored at 0.05° (`MaxCutSamples` 3,601). The angles are written as `i·record/n`, so a sample
+  on the record's grid is that grid value to the last bit.
+- **On a grid point the cut is the overview to 0 relative**, not to rounding, and three things had to agree for that:
+  `ElementPattern.AtDegrees` reads a stored sample when the point is ON the grid (the bilinear form rebuilt it from magnitude and
+  phase, one rounding off, and a near-null sum of 25 classes magnified that to 1.5e-12); the cut's directions are formed from the
+  same degrees as `ArrayDirections.OnGrid`'s, so the phase tables match bit for bit; and a class whose weights are rank one (a
+  steered separable taper, a one-element corner class) takes `Sum`'s separable form, since a row-by-row sum of the same class
+  rounds differently (5.6e-12 at a null).
+- **Cost.** Each class's factor is one pass over the elements per sample (one complex multiply-add each). The grid, its phase
+  tables and each class's sampled pattern are kept with the grid, and `FieldCosimulation` keeps the last six grids by geometry,
+  frequency, record step and planes, so a slider's drag or a sweep forms neither again. A sweep keeps its first point's grid
+  (`CutMemo`) so the cubes stack: `StackSweepAxis` refuses axes of different lengths, and a dx or frequency sweep moves the step.
+  Counters `CutsFormed`, `CutPatternEvaluations`, `CutTableEntries` are per thread.
+- **Measured** (scratch harness, Release, Apple silicon; medians; the machine was shared, load average 6 to 25, so an in-place
+  A/B of a whole evaluation moved by ±1.5 ms between runs and the cut's own time is the steadier number):
+  | | the cut pair alone (grid kept) | whole evaluation, Written against OnDemand |
+  |---|---|---|
+  | One fields evaluation, the example's 16 × 16 Transmit array (~8 ms) | 0.12–0.14 ms | within the noise |
+  | One fields evaluation, the same bench at 64 × 64 (~80 ms) | 3.3–3.5 ms | −0.6 to +12 ms (budget 20 ms) |
+  | The example's Transmit sweep, 7 points (~33 ms) | 7 × 0.14 ms, about 3 % | +1.1 % to +14 % across runs (budget 5 %) |
+  | Brute Force, 12 HB points (135–158 ms) | 0.006–0.008 ms a point | |
+  | Transmit result file, Simulate's `.npy` | | 1.394 MB against 1.149 MB, +0.245 MB (budget 1 MB) |
+  | Resolving the Transmit display's θ0 family on a polar plot | 0.15 ms, 2,275 points | the overview's two traces 0.06 ms |
+
+  Before the grid was kept and the per-class sums merged, the cut pair cost 0.84 ms at 16 × 16 and the sweep paid 24 % (a masked
+  sum, a pattern interpolation and a table build per class at every point).
+
 ## brief-pch-4 — the ideal Delay block is stepped as its delay in an envelope run (2026-11-15)
 
 **The Delay block was fitted, not delayed.** `DelayModel` is an ideal S-block, so an envelope run sent it through
@@ -5447,6 +5478,22 @@ Found building *Symbolically Defined Device (SDD)*'s bias-loop bench (an SDD tha
   singular; `ForcedDc` then takes Y_NN(0) and I_src(0) with every interface node held by an ideal source (Y ~1e6 S between
   the two). Used only when Z_NN(0) is still rank-deficient after regularization; every other circuit is untouched (1,007
   HB/DC/SDD/loadpull/hero tests unchanged). Gate: `HarmonicBalance/HbInterfaceShortTests` (both cases against DC).
+- **The held form refused every load of a loadpull whose drain probe reaches the tuner (2026-11-16, found by brief PAA-11).** A
+  loadpull carries its tuners' DUT nets as interface nodes (`ExtraInterfaceNodes`), and in the Phased Array example's PA the
+  drain's `IProbe` joins `d` to the load tuner's `out`: an IDEAL branch, so the two are one node at every harmonic and the
+  inductor's series R cannot cure it. `ForcedDc` held both with ideal sources around the probe, a loop of ideal sources, and its
+  own factorization threw: "DC extraction singular" at all 48 loads, so the Brute Force display lost its contours. Found by
+  bisect (the last good commit is this one's parent). Now `TryForcedDc` holds ideally first (the inductor case is bit for bit
+  as before) and, when that is singular, holds each node through `InductanceRegR` in series: the pair reads as a link of 2 R,
+  a regularized choke's 1e6 S scale. At RF, Z_NN(ω) of the same pair is exactly singular as well, and Gauss-Jordan divided by
+  whatever rounding left in the pivot: a huge conductance at most loads, a zero row at three (|Γ| = 0.1 at 135°, −165°, −135°),
+  where the Newton's Jacobian was singular from before the PCH-12 change. `InvertInterface` inverts Z_NN + R at the nodes
+  `JoinedNodes` finds (scaled by the diagonal, so nodes of very different impedance are not taken for a deficiency; a pair
+  joined by an ideal branch has a scaled off-diagonal of magnitude 1), and a full-rank Z_NN exactly as before. The loadpull now
+  compresses at all 48 loads, the three repaired ones between their neighbours (Pout 38.92, 38.55, 38.34, 38.32, 38.49,
+  38.83 dBm around the ring). Gates: `HbInterfaceShortTests.TwoDeviceNodesJoinedByACurrentProbe_SolveAsOneNode` (the
+  inversion alone left V(b) at 0 V against −2 V) and `PhasedArrayExampleTests.ThePaLoadpull_ReachesCompressionAtEveryLoad`;
+  602 HarmonicBalance/Loadpull/hero engine tests unchanged.
 - **DC left a weighted term's control-current derivative out of its Jacobian.** `NonlinearDcEngine` stamped a `w ≥ 2` term's
   value and voltage derivatives but not `JacCtrl` (∂I[p,w]/∂_cn), so the loop written on a low-pass weight (`H[2]` = 1 at DC)
   did not converge where the same loop on `w = 0` did. Gate: `SddWeightedControlDcTests`.
