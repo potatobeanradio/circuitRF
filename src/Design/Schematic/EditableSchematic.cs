@@ -64,6 +64,9 @@ public static class SymbolPortDefs
     /// </summary>
     public static (string Name, float LocalX, float LocalY)[] For(SymbolKind kind, int portCount)
     {
+        // A lumped realisation (MWPD, MBLC, MRRC, MCBL with Realization = Lumped) and every resistive pad: VARIADIC on the PIN
+        // count, each layout's own (LumpedPlan), which differs from the distributed part's; any other count of a pad is the π.
+        if (Lumped(kind, portCount) is { } lumped) return LumpedPins(lumped);
         switch (kind)
         {
             case SymbolKind.Var:     return [];
@@ -507,6 +510,53 @@ public static class SymbolPortDefs
             pins[i] = ((i + 1).ToString(), onLeft ? -200f : 200f, y);
         }
         return pins;
+    }
+
+    /// <summary>The lumped layout <paramref name="kind"/> draws at <paramref name="portCount"/> pins, or null: a lumped
+    /// realisation's own count, and for a resistive pad any count (the π's unless it is another form's).</summary>
+    public static CircuitRF.Core.Devices.Microstrip.LumpedTopology? Lumped(SymbolKind kind, int portCount)
+        => kind is SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mcbl or SymbolKind.Mrpad
+            ? CircuitRF.Core.Devices.Microstrip.LumpedPlan.ForPins(ComponentTypeRegistry.EngineReference(kind), portCount)
+              ?? (kind == SymbolKind.Mrpad ? CircuitRF.Core.Devices.Microstrip.LumpedPlan.PadPi : null)
+            : null;
+
+    /// <summary>
+    /// A lumped layout's pins on a box: each series site's two pins along the top, 400 apart (a resistor's own span, so a
+    /// part dropped on them lands on both with no wire) and 200 between sites; the pins to ground (G…) along the bottom;
+    /// the ports on the left (those leaving the layout west or north) and on the right. Every pin on the 100 grid, in the
+    /// layout's own terminal order. <see cref="BuiltInSymbols"/> draws the box from the same numbers (<see cref="LumpedBox"/>).
+    /// </summary>
+    public static (string Name, float LocalX, float LocalY)[] LumpedPins(CircuitRF.Core.Devices.Microstrip.LumpedTopology t)
+    {
+        var (bx, by, pairs, grounds, left, right) = LumpedBox(t);
+        var at = new Dictionary<string, (float, float)>(StringComparer.Ordinal);
+        for (int k = 0; k < pairs.Count; k++)
+        {
+            at[pairs[k].A] = (-(300f * pairs.Count - 100f) + 600f * k, -by - 100f);
+            at[pairs[k].B] = (-(300f * pairs.Count - 100f) + 600f * k + 400f, -by - 100f);
+        }
+        for (int k = 0; k < grounds.Count; k++) at[grounds[k]] = ((2f * k - grounds.Count + 1) * 100f, by + 100f);
+        for (int k = 0; k < left.Count; k++) at[left[k]] = (-bx - 100f, (2f * k - left.Count + 1) * 100f);
+        for (int k = 0; k < right.Count; k++) at[right[k]] = (bx + 100f, (2f * k - right.Count + 1) * 100f);
+        return [.. t.Pins.Select(p => (p, at[p].Item1, at[p].Item2))];
+    }
+
+    /// <summary>A lumped layout's box (half width, half height) and its pins by side: the series sites' pairs, in terminal
+    /// order; the pins to ground; the ports left and right.</summary>
+    public static (float Bx, float By, List<(string A, string B)> Pairs, List<string> Grounds, List<string> Left, List<string> Right)
+        LumpedBox(CircuitRF.Core.Devices.Microstrip.LumpedTopology t)
+    {
+        var order = t.Pins.ToList();
+        var pairs = t.Edges.Where(e => e.PinA is not null).Select(e => (A: e.PinA!, B: e.PinB!)).OrderBy(e => order.IndexOf(e.A)).ToList();
+        var outs = t.Junctions.SelectMany(j => j.Out).OrderBy(o => order.IndexOf(o.Pin)).ToList();
+        var grounds = outs.Where(o => o.Pin.StartsWith('G')).Select(o => o.Pin).ToList();
+        var ports = outs.Where(o => !o.Pin.StartsWith('G')).ToList();
+        var left = ports.Where(o => o.Dir is CircuitRF.Core.Devices.Microstrip.LumpedPlan.W or CircuitRF.Core.Devices.Microstrip.LumpedPlan.N)
+                        .Select(o => o.Pin).ToList();
+        var right = ports.Select(o => o.Pin).Except(left).ToList();
+        float bx = Math.Max(Math.Max(300f * pairs.Count - 100f, 100f * (grounds.Count - 1)), 100f) + 100f;
+        float by = Math.Max(100f * (Math.Max(left.Count, right.Count) - 1), 100f) + 100f;
+        return (bx, by, pairs, grounds, left, right);
     }
 
     public static (string Name, float LocalX, float LocalY)[] GenerateSnpPorts(
@@ -1180,6 +1230,29 @@ public sealed class EditableComponent
     /// mode, 4 × 4 when they are not whole numbers (brief-paa-5's default variant).</summary>
     public static int PhasedArrayPins(IEnumerable<EditableParameter> parameters) => PhasedArrayGlyph.Of(parameters, null).PinCount;
 
+    /// <summary>The lumped layout this part draws, from its own rows: MWPD, MBLC, MRRC or MCBL with <c>Realization = Lumped</c>
+    /// (MWPD's π or T by <c>Arm</c>), and a resistive pad by its <c>Form</c>; null for anything else.</summary>
+    public CircuitRF.Core.Devices.Microstrip.LumpedTopology? LumpedLayout()
+    {
+        string? Word(string name) => Parameters.FirstOrDefault(q => q.Name == name)?.Expression?.Trim();
+        bool Is<T>(string name, T value) where T : struct, Enum
+            => Enum.TryParse(Word(name), ignoreCase: true, out T v) && v.Equals(value);
+        if (Symbol == SymbolKind.Mrpad)
+            return CircuitRF.Core.Devices.Microstrip.LumpedPlan.PadTopology(
+                Enum.TryParse(Word("Form"), ignoreCase: true, out CircuitRF.Core.Devices.Microstrip.ResistivePadForm form)
+                    && Enum.IsDefined(form) ? form : CircuitRF.Core.Devices.Microstrip.ResistivePadForm.Pi);
+        if (Symbol is not (SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mcbl)
+            || !Is("Realization", CircuitRF.Core.Devices.Microstrip.PlanRealization.Lumped)) return null;
+        return Symbol switch
+        {
+            SymbolKind.Mwpd => Is("Arm", CircuitRF.Core.Devices.Microstrip.LumpedArm.Tee)
+                ? CircuitRF.Core.Devices.Microstrip.LumpedPlan.WilkinsonTee : CircuitRF.Core.Devices.Microstrip.LumpedPlan.WilkinsonPi,
+            SymbolKind.Mblc => CircuitRF.Core.Devices.Microstrip.LumpedPlan.BranchLineLayout,
+            SymbolKind.Mrrc => CircuitRF.Core.Devices.Microstrip.LumpedPlan.RatRaceLayout,
+            _ => CircuitRF.Core.Devices.Microstrip.LumpedPlan.LatticeBalunLayout,
+        };
+    }
+
     public int PortCount
     {
         get
@@ -1194,6 +1267,10 @@ public sealed class EditableComponent
 
             // A Phased Antenna Array in Elements mode draws one pin per element, Rows × Cols of them.
             if (Symbol is SymbolKind.PhasedArray) return ArrayGlyph().PinCount;
+
+            // A lumped realisation draws its layout's pins (LumpedPlan): MWPD's π or T by Arm, MBLC's, MRRC's, MCBL's lattice, and a
+            // resistive pad's form's. A plain word only, as N is a plain number.
+            if (LumpedLayout() is { } lumped) return lumped.Pins.Count;
 
             // A Wilkinson divider's N is its number of sections; it draws 3 + 2·N pins. A plain number only — an expression
             // is the one-section divider's five, as the plan cannot be asked for more pins than the symbol draws.

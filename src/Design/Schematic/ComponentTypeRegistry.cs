@@ -6,6 +6,9 @@ using CircuitRF.Core.Matching;
 using CircuitRF.Core.Systems;
 using CircuitRF.WBond;
 using PlanCorner = CircuitRF.Core.Devices.Microstrip.PlanCorner;
+using PlanRealization = CircuitRF.Core.Devices.Microstrip.PlanRealization;
+using LumpedArm = CircuitRF.Core.Devices.Microstrip.LumpedArm;
+using ResistivePadForm = CircuitRF.Core.Devices.Microstrip.ResistivePadForm;
 
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout.PCells;
@@ -852,15 +855,16 @@ public static class ComponentTypeRegistry
             SearchTerms: ["MWPD", "Wilkinson", "Wilkinson divider", "power divider", "power splitter", "splitter",
                           "combiner", "divider", "3 dB", "in-phase", "isolation resistor", "quarter wave", "ring",
                           "unequal split", "unequal divider", "split ratio", "multi-section", "broadband divider",
-                          "split-tee"]),
+                          "split-tee", "lumped Wilkinson", "lumped divider", "LC divider"]),
         [SymbolKind.Mblc]         = new("MBLC", "BLC",
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MBLC", "branch-line", "branch line", "branchline", "branch-line coupler", "quadrature hybrid",
-                          "90 degree hybrid", "hybrid", "coupler", "3 dB", "quadrature", "quarter wave"]),
+                          "90 degree hybrid", "hybrid", "coupler", "3 dB", "quadrature", "quarter wave", "lumped hybrid",
+                          "lumped coupler"]),
         [SymbolKind.Mrrc]         = new("MRRC", "RRC",
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MRRC", "rat-race", "rat race", "ratrace", "ring hybrid", "hybrid ring", "180 degree hybrid",
-                          "hybrid", "coupler", "sum", "difference", "magic tee", "3 dB", "ring"]),
+                          "hybrid", "coupler", "sum", "difference", "magic tee", "3 dB", "ring", "lumped rat-race"]),
         [SymbolKind.Mclc]         = new("MCLC", "CLC",
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MCLC", "coupled-line coupler", "directional coupler", "coupler", "backward-wave coupler",
@@ -872,7 +876,14 @@ public static class ComponentTypeRegistry
         [SymbolKind.Mcbl]         = new("MCBL", "CBL",
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MCBL", "Marchand", "Marchand balun", "balun", "coupled-line balun", "planar balun",
-                          "balanced", "unbalanced", "differential", "180 degree", "quarter wave"]),
+                          "balanced", "unbalanced", "differential", "180 degree", "quarter wave", "lattice balun",
+                          "LC balun", "lumped balun"]),
+        // The resistive attenuator and splitter: its resistors are sites on short interconnect (LumpedPlan.ResistivePad).
+        [SymbolKind.Mrpad]        = new("MRPAD", "RPD",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MRPAD", "attenuator", "resistive attenuator", "pad", "resistive pad", "pi attenuator",
+                          "T attenuator", "tee attenuator", "bridged-T", "bridged T", "resistive splitter",
+                          "resistive divider", "star splitter", "wye", "delta", "dB pad", "matched pad"]),
         // The two vias (brief-via-component.md). Microstrip, because that is where they are used: a
         // line changing layers, and the return of a shunt part on a board. Not transmission lines.
         [SymbolKind.Via]          = new("VIA", "VIA",
@@ -1141,16 +1152,21 @@ public static class ComponentTypeRegistry
           + "and R3 are the arms' ends beside outputs 2 and 3, the gap the isolation resistor goes across: put a "
           + "resistor of 2·Z0 (Z0·(K + 1/K) for an unequal split) on R2-R3. With N sections the terminals are 3 + 2·N: "
           + "R2_k and R3_k, k = 2 … N, are the ends of resistor k, counted from the outputs, and the Properties readout "
-          + "gives every resistor's value.",
+          + "gives every resistor's value. With Realization = Lumped the terminals are the lumped divider's: 1, 2 and 3, R2-R3 "
+          + "for the resistor, each arm's inductor across L1a-L1b and L2a-L2b (π) or L1a … L4b (T), and a capacitor to "
+          + "ground on each G pin.",
 
         SymbolKind.Mblc =>
             "Not interchangeable: 1 and 2 are the ends of one through line, 4 and 3 of the other. Driven at 1, 2 is the "
           + "through port, 3 the coupled port (90° behind 2) and 4 the isolated port; the coupler is symmetric, so any "
-          + "pin may be the input with its own three roles.",
+          + "pin may be the input with its own three roles. With Realization = Lumped: an inductor across each of L1a-L1b … "
+          + "L4a-L4b (the arms) and a capacitor to ground on each of G1-G4, as the readout lists them.",
 
         SymbolKind.Mrrc =>
             "Not interchangeable: 1 is the sum (Σ) port and 4 the difference (Δ) port; 2 and 3 are the outputs. Driven at "
-          + "1, 2 and 3 are in phase and 4 is isolated; driven at 4, 2 and 3 are 180° apart and 1 is isolated.",
+          + "1, 2 and 3 are in phase and 4 is isolated; driven at 4, 2 and 3 are 180° apart and 1 is isolated. With "
+          + "Realization = Lumped: an inductor across each of L1a-L1b … L3a-L3b, a capacitor across C1a-C1b and to ground on "
+          + "G1 and G3, as the readout lists them.",
         SymbolKind.Mclc =>
             "Not interchangeable: terminal 1 is the input, 2 the through port, 3 the coupled port (beside 1) and 4 the "
           + "isolated port (beside 2). The coupler is symmetric, so any terminal can be the input with the others in turn.",
@@ -1162,7 +1178,14 @@ public static class ComponentTypeRegistry
 
         SymbolKind.Mcbl =>
             "Not interchangeable: terminal 1 is the unbalanced input, 2 and 3 the balanced outputs, in antiphase. G2 and "
-          + "G3 are the grounded ends of the strips that carry 2 and 3: put a via to ground (VIAGND) on each.",
+          + "G3 are the grounded ends of the strips that carry 2 and 3: put a via to ground (VIAGND) on each. With "
+          + "Realization = Lumped, the lattice: an inductor across L1a-L1b (1 to 2), a capacitor across C1a-C1b (1 to 3), a "
+          + "capacitor to ground on G2 and an inductor to ground on G3.",
+
+        SymbolKind.Mrpad =>
+            "1 and 2 are the attenuator's ports; 3 is a splitter's third port, or the middle node a T's or bridged-T's "
+          + "shunt resistor goes to ground from. Put each series resistor across its R pins (R1a-R1b, …) and each shunt "
+          + "resistor from its terminal to ground: the π's on 1 and 2, the T's and bridged-T's on 3. The readout lists them.",
 
         SymbolKind.GsgPad =>
             "Not interchangeable: terminal 1 is where the probe's signal tip lands, the middle of the signal pad, "
@@ -1362,6 +1385,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Mclc          => ComponentModelFactory.CoupledLineCouplerTypeName,
         SymbolKind.Midc          => ComponentModelFactory.LangeTypeName,
         SymbolKind.Mcbl          => ComponentModelFactory.MarchandTypeName,
+        SymbolKind.Mrpad         => ComponentModelFactory.ResistivePadTypeName,
         SymbolKind.MimCap        => "MIMCAP",
         SymbolKind.Spiral        => "SPIRAL",
         SymbolKind.OctSpiral     => "OSPIRAL",
@@ -1534,7 +1558,7 @@ public static class ComponentTypeRegistry
         or SymbolKind.Via or SymbolKind.ViaGnd or SymbolKind.WBond or SymbolKind.Match
         or SymbolKind.MimCap or SymbolKind.Spiral or SymbolKind.OctSpiral or SymbolKind.Tfr or SymbolKind.Airbridge
         or SymbolKind.TestPad or SymbolKind.GsgPad or SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
-        or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl
+        or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Mrpad
         or SymbolKind.Balun or SymbolKind.Circulator or SymbolKind.Switch or SymbolKind.Coupler
         or SymbolKind.Hybrid90 or SymbolKind.Hybrid180 or SymbolKind.Filter or SymbolKind.Atten or SymbolKind.Duplexer
         or SymbolKind.Combiner
@@ -1774,6 +1798,24 @@ public static class ComponentTypeRegistry
                                  + "nearest ground-designated conductor below the signal layer.",
         (SymbolKind.Mwpd, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below the "
                                               + "signal layer.",
+        (SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mcbl, "Realization") => "Distributed: the "
+                                 + "quarter-wave lines. Lumped: an inductor, capacitor or resistor on a site for each element of "
+                                 + "the lines' lumped equivalent at F, joined by short lines of the Z0 width; the pins become the "
+                                 + "sites' and the readout lists each value.",
+        (SymbolKind.Mwpd, "Arm") => "With Realization = Lumped: what stands in for each quarter-wave arm, a π (a series L between "
+                                  + "two C to ground) or a T (two series L about one C to ground).",
+        (SymbolKind.Mblc or SymbolKind.Mrrc, "Gap") => "With Realization = Lumped: the span of each series site's pins, which "
+                                  + "the part lands across. 1.35 mm is an 0402's at nominal density. A Footprint on the part "
+                                  + "sets it to that land's span instead.",
+        (SymbolKind.Mrpad, "Form") => "Pi, T or BridgedT: a matched attenuator of Attenuation dB. Wye or Delta: a matched "
+                                    + "three-port splitter, 6.02 dB between any two ports, with no Attenuation of its own.",
+        (SymbolKind.Mrpad, "Z0") => "The ports' impedance, which every form matches.",
+        (SymbolKind.Mrpad, "Attenuation") => "The attenuator's loss from port 1 to port 2, in dB, above 0.",
+        (SymbolKind.Mrpad, "Gap") => "Span of each series resistor's pins, which the part lands across. 1.35 mm is an 0402's at "
+                                   + "nominal density. A Footprint on the pad sets it to that land's span instead.",
+        (SymbolKind.Mrpad, "SignalLayer") => "The conductor the interconnect is on. Empty: the technology's top conductor.",
+        (SymbolKind.Mrpad, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below the "
+                                               + "signal layer.",
         (SymbolKind.GsgPad, "W") => "Width of the line leaving the signal pad. Placed: the 50 Ω width on the technology.",
         (SymbolKind.GsgPad, "L") => "Length of the line, from the signal pad's edge to terminal 2.",
         (SymbolKind.GsgPad, "Pitch") => "Probe pitch: centre of the signal pad to the centre of each ground pad. The probe's, "
@@ -1886,7 +1928,12 @@ public static class ComponentTypeRegistry
         SymbolKind.Mcbl =>
             "Two MCLIN quarter-wave sections and the MLIN joining them, stamped together. The coupling matches ZL on "
           + "each output to Z0 for TEM lines; microstrip's unequal mode velocities leave the outputs about 16° short of "
-          + "180° on 20 mil RO4350B. The grounds are the vias on G2 and G3, not the model.",
+          + "180° on 20 mil RO4350B. The grounds are the vias on G2 and G3, not the model. Lumped: the lattice's "
+          + "interconnect alone (MTEE and MLIN); the inductors and capacitors are the parts on its sites.",
+        SymbolKind.Mrpad =>
+            "MTEE, MLIN and MBEND, the interconnect the layout draws, stamped together; the resistors are the parts on its "
+          + "sites. MTEE's closed forms are calibrated at εr 9.9 and say so on any other board. The site values are the "
+          + "matched pads' closed forms, exact with the interconnect left out.",
         SymbolKind.GsgPad =>
             "MLIN, twice: half the signal pad (PadW wide, PadL/2 long, from the tip to its edge), then the line, "
           + "cascaded, with MLIN's validity. The ground pads are ideal ground at the probe's reference plane; their "
@@ -4107,17 +4154,24 @@ public static class ComponentTypeRegistry
                         new("N",    "1",    "",    true,  UnitDimension.None),
                         new("Band", "2",    "",    false, UnitDimension.None),
                         new("Corner", nameof(PlanCorner.Curve), "", false, UnitDimension.None),
+                        new("Realization", nameof(PlanRealization.Distributed), "", false, UnitDimension.None),
+                        new("Arm", nameof(LumpedArm.Pi), "", false, UnitDimension.None),
                         .. SignalGroundLayerParams];
-            // MBLC and MRRC: the specs alone (BranchLinePlan, RatRacePlan); every width and length is a readout.
+            // MBLC and MRRC: the specs alone (BranchLinePlan, RatRacePlan); every width and length is a readout. Gap is the
+            // lumped realisation's site span (LumpedPlan).
             case SymbolKind.Mblc:
                 return [new("Z0", "50",  "Ω",   true, UnitDimension.Resistance),
                         new("F",  "2.4", "GHz", true, UnitDimension.Frequency),
                         new("N",  "1",   "",    true, UnitDimension.None),
+                        new("Realization", nameof(PlanRealization.Distributed), "", false, UnitDimension.None),
+                        new("Gap", "1.35", "mm", false, UnitDimension.Length),
                         .. SignalGroundLayerParams];
             case SymbolKind.Mrrc:
                 return [new("Z0", "50",  "Ω",   true, UnitDimension.Resistance),
                         new("F",  "2.4", "GHz", true, UnitDimension.Frequency),
                         new("Corner", nameof(PlanCorner.Curve), "", false, UnitDimension.None),
+                        new("Realization", nameof(PlanRealization.Distributed), "", false, UnitDimension.None),
+                        new("Gap", "1.35", "mm", false, UnitDimension.Length),
                         .. SignalGroundLayerParams];
             // MCLC / MIDC: the coupling, the ports' impedance and F; W, S and L are derived and shown as a readout.
             // MIDC opens at 4 dB, the tightest four fingers reach with 100 µm gaps on 20 mil RO4350B (3 dB needs 69 µm).
@@ -4133,6 +4187,14 @@ public static class ComponentTypeRegistry
                         new("ZL",  "200",  "Ω",   true, UnitDimension.Resistance),
                         new("F",   "2.4",  "GHz", true, UnitDimension.Frequency),
                         new("Gap", "1",    "mm",  true, UnitDimension.Length),
+                        new("Realization", nameof(PlanRealization.Distributed), "", false, UnitDimension.None),
+                        .. SignalGroundLayerParams];
+            // MRPAD: the form, Z0, the attenuator's loss and the series sites' span; the resistors are a readout.
+            case SymbolKind.Mrpad:
+                return [new("Form",        nameof(ResistivePadForm.Pi), "", true, UnitDimension.None),
+                        new("Z0",          "50",   "Ω",  true, UnitDimension.Resistance),
+                        new("Attenuation", "6",    "dB", true, UnitDimension.None),
+                        new("Gap",         "1.35", "mm", true, UnitDimension.Length),
                         .. SignalGroundLayerParams];
             case SymbolKind.GsgPad:
                 return [new("W",     "2.9", "mm", true, UnitDimension.Length),
@@ -4321,6 +4383,8 @@ public static class ComponentTypeRegistry
             case "IDC":      kind = SymbolKind.Midc;         return true;
             case "MCBL":
             case "CBL":      kind = SymbolKind.Mcbl;         return true;
+            case "MRPAD":
+            case "RPD":      kind = SymbolKind.Mrpad;        return true;
             case "MIMCAP":   kind = SymbolKind.MimCap;       return true;
             case "SPIRAL":   kind = SymbolKind.Spiral;       return true;
             case "OSPIRAL":  kind = SymbolKind.OctSpiral;    return true;
@@ -4709,6 +4773,9 @@ public static class ComponentTypeRegistry
         (SymbolKind.TestPad, "Feed")                                                     => TestPadFeedOptions,
         (SymbolKind.TestPad, "Centre")                                                   => TestPadCentreOptions,
         (SymbolKind.Mwpd or SymbolKind.Mrrc, "Corner")                                   => PlanCornerOptions,
+        (SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mcbl, "Realization") => Enum.GetNames<PlanRealization>(),
+        (SymbolKind.Mwpd, "Arm")                                                         => Enum.GetNames<LumpedArm>(),
+        (SymbolKind.Mrpad, "Form")                                                       => Enum.GetNames<ResistivePadForm>(),
         // A composed FET's instance switches (brief-modelcomposer-21): yes or no. A switch bound to an expression keeps a
         // text box (ParameterRowViewModel), since a picker cannot hold one.
         (SymbolKind.ComposedFET, _) when ComposedSwitches.IsSwitch(paramName)                => ComposedSwitchOptions,

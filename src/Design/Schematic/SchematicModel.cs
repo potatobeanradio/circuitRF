@@ -732,6 +732,11 @@ public enum SymbolKind
     /// matrices. 2·N pins: the near ends 1..N, top strip first, then the far ends N + 1..2N. The substrate as MCLIN's.
     /// Appended so no existing kind's ordinal moves.</summary>
     MCLineN,
+    /// <summary>Resistive attenuator and splitter (engine "MRPAD"): Form (Pi, T, BridgedT, Wye, Delta), Z0, Attenuation in
+    /// dB and Gap, the series sites' span. Its resistors are sites on its interconnect (LumpedPlan.ResistivePad): pins 1 and
+    /// 2, 3 for a T, bridged-T or splitter, then each series resistor's two ends. Appended so no existing kind's ordinal
+    /// moves.</summary>
+    Mrpad,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

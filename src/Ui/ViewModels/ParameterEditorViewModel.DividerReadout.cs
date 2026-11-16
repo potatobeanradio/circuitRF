@@ -22,7 +22,7 @@ public partial class ParameterEditorViewModel
 {
     /// <summary>True for a planned passive with a readout: MWPD, the hybrids and the coupled-line parts.</summary>
     public bool IsDividerReadoutTarget => _target?.Symbol is SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
-                                          or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl;
+                                          or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Mrpad;
 
     /// <summary>The derived numbers, one per line, or empty.</summary>
     public string DividerReadoutText { get; private set; } = "";
@@ -35,7 +35,9 @@ public partial class ParameterEditorViewModel
     private void RefreshDividerReadout()
     {
         string text = "", note = "";
-        if (_target?.Symbol is SymbolKind.Mblc or SymbolKind.Mrrc)
+        if (_target?.LumpedLayout() is not null)
+            (text, note) = LumpedReadout(_target.Symbol);
+        else if (_target?.Symbol is SymbolKind.Mblc or SymbolKind.Mrrc)
             (text, note) = HybridReadout(_target.Symbol);
         else if (_target?.Symbol is SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl)
             (text, note) = CoupledLineReadout(_target.Symbol);
@@ -136,9 +138,46 @@ public partial class ParameterEditorViewModel
             : null;
 
     /// <summary>A ring's <c>Corner</c>, a name; Curve when the row is absent or names none (the picker offers only the names).</summary>
-    private PlanCorner Corner()
-        => Enum.TryParse(_target?.Parameters.FirstOrDefault(p => p.Name == "Corner")?.Expression?.Trim(), ignoreCase: true,
-               out PlanCorner c) && Enum.IsDefined(c) ? c : PlanCorner.Curve;
+    private PlanCorner Corner() => Word("Corner", PlanCorner.Curve);
+
+    /// <summary>A word-valued row; <paramref name="fallback"/> when it is absent or names none.</summary>
+    private T Word<T>(string name, T fallback) where T : struct, Enum
+        => Enum.TryParse(_target?.Parameters.FirstOrDefault(p => p.Name == name)?.Expression?.Trim(), ignoreCase: true,
+               out T c) && Enum.IsDefined(c) ? c : fallback;
+
+    /// <summary>A lumped realisation's or a resistive pad's readout (<see cref="LumpedPlan"/>): what it is, its interconnect,
+    /// and each site's value from the closed forms at F, at the span its pins are apart.</summary>
+    private (string Text, string Note) LumpedReadout(SymbolKind kind)
+    {
+        string note = "";
+        double? f = kind == SymbolKind.Mrpad ? 0.0 : Spec("F"), db = kind == SymbolKind.Mrpad ? Spec("Attenuation", 6.0) : 0.0;
+        if (Spec("Z0") is not { } z0 || f is not { } fHz || db is not { } loss || SiteGap(ref note) is not { } gap
+            || Spec("K", 1.0) is not { } k || Spec("N", 1.0) is not { } n || (kind == SymbolKind.Mcbl ? Spec("ZL") : 0.0) is not { } zl)
+            return ("", "A spec is an expression, so the part's values are known only at run time.");
+        var (h, t, er) = ResolveMlinSubstrate();
+        var s = new MicrostripSubstrate(h, t, er, 0.0, 0.0);
+        try
+        {
+            var form = Word("Form", ResistivePadForm.Pi);
+            var d = kind switch
+            {
+                SymbolKind.Mrpad => LumpedPlan.ResistivePad(form, z0, loss, gap, s),
+                SymbolKind.Mwpd => LumpedPlan.Wilkinson(z0, fHz, gap, s, Word("Arm", LumpedArm.Pi), k, n),
+                SymbolKind.Mblc => LumpedPlan.BranchLine(z0, fHz, gap, s, n),
+                SymbolKind.Mrrc => LumpedPlan.RatRace(z0, fHz, gap, s),
+                _ => LumpedPlan.LatticeBalun(z0, zl, fHz, gap, s),
+            };
+            string what = kind != SymbolKind.Mrpad ? $"Lumped ({d.Topology.Label}), the values at F"
+                : form is ResistivePadForm.Wye or ResistivePadForm.Delta ? $"{form} splitter, 6.02 dB between any two ports"
+                : $"{form} attenuator, {loss.ToString("0.###", CultureInfo.InvariantCulture)} dB";
+            return ($"{what}\nInterconnect W {Mm(d.WMeters, "0.#####")} (Z0), each arm {Mm(d.ArmMeters, "0.#####")} from its junction"
+                  + Sites(d.Plan), note);
+        }
+        catch (ParameterRefusalException ex)
+        {
+            return ("", ex.Message);
+        }
+    }
 
     /// <summary>The ring's radius, or with corners each arm's straight runs: shortened by the corners' own length at F.</summary>
     private static string Ring(WilkinsonDesign d)

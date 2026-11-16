@@ -7,7 +7,7 @@ namespace CircuitRF.Design.Layout.PCells;
 /// The planned passives' artwork (docs/design/rf-passives.md). A generator builds its part's plan in Core —
 /// the plan its model stamps — and <see cref="Draw"/> draws every section through the EXISTING part's own
 /// generator (<see cref="MTeePCell"/>, <see cref="MCurvePCell"/>, <see cref="MlinPCell"/>,
-/// <see cref="CoupledLinePCells"/>, <see cref="MMiterPCell"/>, <see cref="MBendPCell"/>, <see cref="MGapPCell"/>,
+/// <see cref="CoupledLinePCells"/>, <see cref="MMiterPCell"/>, <see cref="MBendPCell"/>, <see cref="MGapPCell"/>, <see cref="MCrossPCell"/>,
 /// <see cref="MTaperPCell"/>, <see cref="MRadialPCell"/>; an interdigitated section's strips, and an N-line section's,
 /// each by <see cref="MlinPCell"/>; an open end draws nothing), turned and
 /// moved to the section's pose. The
@@ -26,28 +26,24 @@ public static class PassivePlanPCells
 
     public static PCellResult GenerateWilkinson(
         IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
-    {
-        WilkinsonDesign design;
-        try
-        {
-            design = WilkinsonPlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
+        => DrawOrRefuse(() => Lumped(parameters)
+            ? LumpedPlan.Wilkinson(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9), parameters.Real("Gap", 1.35e-3),
+                SubstrateOf(technology, layerSelection), Word(parameters, "Arm", LumpedArm.Pi), parameters.Real("K", 1.0),
+                parameters.Real("N", 1.0)).Plan
+            : WilkinsonPlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
                 parameters.Real("Gap", 1.35e-3), SubstrateOf(technology, layerSelection),
                 parameters.Real("K", 1.0), parameters.Real("N", 1.0), parameters.Real("Band", WilkinsonPlan.DefaultBand),
-                CornerOf(parameters));
-        }
-        catch (ParameterRefusalException ex)
-        {
-            return new PCellResult([], [], [ex.Message]);
-        }
-        return Draw(design.Plan, technology, layerSelection);
-    }
+                CornerOf(parameters)).Plan, technology, layerSelection);
 
     /// <summary>The 3 dB branch-line hybrid (MBLC): <see cref="BranchLinePlan"/>'s one or two sections.</summary>
     public const string BranchLineId = ComponentModelFactory.BranchLineTypeName;
 
     public static PCellResult GenerateBranchLine(
         IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
-        => DrawOrRefuse(() => BranchLinePlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
+        => DrawOrRefuse(() => Lumped(parameters)
+            ? LumpedPlan.BranchLine(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9), parameters.Real("Gap", 1.35e-3),
+                SubstrateOf(technology, layerSelection), parameters.Real("N", 1.0)).Plan
+            : BranchLinePlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
             parameters.Real("N", 1.0), SubstrateOf(technology, layerSelection)).Plan, technology, layerSelection);
 
     /// <summary>The rat-race hybrid (MRRC): <see cref="RatRacePlan"/>'s ring.</summary>
@@ -55,12 +51,22 @@ public static class PassivePlanPCells
 
     public static PCellResult GenerateRatRace(
         IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
-        => DrawOrRefuse(() => RatRacePlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
+        => DrawOrRefuse(() => Lumped(parameters)
+            ? LumpedPlan.RatRace(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9), parameters.Real("Gap", 1.35e-3),
+                SubstrateOf(technology, layerSelection)).Plan
+            : RatRacePlan.Build(parameters.Real("Z0", 50.0), parameters.Real("F", 2.4e9),
             SubstrateOf(technology, layerSelection), CornerOf(parameters)).Plan, technology, layerSelection);
 
     /// <summary>A ring's <c>Corner</c>, a name; Curve when it is absent or not one of the names.</summary>
-    private static PlanCorner CornerOf(IReadOnlyDictionary<string, PCellValue> parameters)
-        => Enum.TryParse(parameters.Text("Corner"), ignoreCase: true, out PlanCorner c) && Enum.IsDefined(c) ? c : PlanCorner.Curve;
+    private static PlanCorner CornerOf(IReadOnlyDictionary<string, PCellValue> parameters) => Word(parameters, "Corner", PlanCorner.Curve);
+
+    /// <summary>A word-valued parameter, <paramref name="fallback"/> when it is absent or not one of the names.</summary>
+    private static T Word<T>(IReadOnlyDictionary<string, PCellValue> parameters, string name, T fallback) where T : struct, Enum
+        => Enum.TryParse(parameters.Text(name), ignoreCase: true, out T c) && Enum.IsDefined(c) ? c : fallback;
+
+    /// <summary>A spec-driven passive's <c>Realization</c> is Lumped (<see cref="LumpedPlan"/>).</summary>
+    private static bool Lumped(IReadOnlyDictionary<string, PCellValue> parameters)
+        => Word(parameters, "Realization", PlanRealization.Distributed) == PlanRealization.Lumped;
 
     /// <summary>The coupled-line coupler (MCLC): <see cref="CoupledLineCouplerPlan"/>'s one MCLIN.</summary>
     public const string CoupledLineCouplerId = ComponentModelFactory.CoupledLineCouplerTypeName;
@@ -83,8 +89,20 @@ public static class PassivePlanPCells
 
     public static PCellResult GenerateMarchand(
         IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
-        => DrawOrRefuse(() => MarchandBalunPlan.Build(parameters.Real("Z0", 50.0), parameters.Real("ZL", 200.0),
+        => DrawOrRefuse(() => Lumped(parameters)
+            ? LumpedPlan.LatticeBalun(parameters.Real("Z0", 50.0), parameters.Real("ZL", 200.0), parameters.Real("F", 2.4e9),
+                parameters.Real("Gap", 1e-3), SubstrateOf(technology, layerSelection)).Plan
+            : MarchandBalunPlan.Build(parameters.Real("Z0", 50.0), parameters.Real("ZL", 200.0),
             parameters.Real("F", 2.4e9), parameters.Real("Gap", 1e-3), SubstrateOf(technology, layerSelection)).Plan,
+            technology, layerSelection);
+
+    /// <summary>The resistive attenuator and splitter (MRPAD): <see cref="LumpedPlan.ResistivePad"/>'s interconnect.</summary>
+    public const string ResistivePadId = ComponentModelFactory.ResistivePadTypeName;
+
+    public static PCellResult GenerateResistivePad(
+        IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology, PCellLayerSelection layerSelection)
+        => DrawOrRefuse(() => LumpedPlan.ResistivePad(Word(parameters, "Form", ResistivePadForm.Pi), parameters.Real("Z0", 50.0),
+            parameters.Real("Attenuation", 6.0), parameters.Real("Gap", 1.35e-3), SubstrateOf(technology, layerSelection)).Plan,
             technology, layerSelection);
 
     /// <summary>N coupled microstrip lines (MCLINN): one <see cref="PlanCoupledStrips"/> section, its pins the strips'
@@ -140,6 +158,10 @@ public static class PassivePlanPCells
                 PlanTee t => MTeePCell.Generate(new Dictionary<string, PCellValue>
                 {
                     ["W1"] = t.W1, ["W2"] = t.W2, ["W3"] = t.W3, ["L1"] = t.L1, ["L2"] = t.L2, ["L3"] = t.L3,
+                }, technology, layerSelection),
+                PlanCross x => MCrossPCell.Generate(new Dictionary<string, PCellValue>
+                {
+                    ["W1"] = x.W, ["W2"] = x.W, ["W3"] = x.W, ["W4"] = x.W, ["L1"] = x.L, ["L2"] = x.L, ["L3"] = x.L, ["L4"] = x.L,
                 }, technology, layerSelection),
                 PlanCurve c => MCurvePCell.Generate(new Dictionary<string, PCellValue>
                 {

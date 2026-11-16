@@ -168,6 +168,8 @@ public static class BuiltInSymbols
     // MWPD per section count above one (one section is _mwpd), keyed by N; Primitives takes its PIN count.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mwpdCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mclineNCache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<CircuitRF.Core.Devices.Microstrip.LumpedTopology, Symbol>
+        _lumpedCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<PhasedArrayGlyph, Symbol> _phasedArrayCache = new();
     // Tuner-family cache key: (kind, showBias) — per-instance bias-branch variant.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(SymbolKind, bool), Symbol> _tunerCache = new();
@@ -194,6 +196,9 @@ public static class BuiltInSymbols
     /// </summary>
     public static Symbol Primitives(SymbolKind kind, int portCount)
     {
+        // A lumped realisation or a resistive pad: its layout's box, cached per layout (SymbolPortDefs.Lumped).
+        if (SymbolPortDefs.Lumped(kind, portCount) is { } lumped)
+            return _lumpedCache.GetOrAdd(lumped, t => BuildLumped(kind, t));
         switch (kind)
         {
             case SymbolKind.ZPort:
@@ -2748,6 +2753,26 @@ public static class BuiltInSymbols
             L(xd,  400, xd + 100,  400),
         ]);
         return Sym(prims, SymbolKind.Mwpd, 3 + 2 * n);
+    }
+
+    // A lumped realisation or a resistive pad — a box: a lead from each pin in to it, each named, and the layout's word in
+    // the middle. The series sites' pin pairs are along the top, so each gap between a pair's two leads is where the part
+    // goes; the pins to ground are along the bottom, the ports at the sides (SymbolPortDefs.LumpedPins).
+    private static Symbol BuildLumped(SymbolKind kind, CircuitRF.Core.Devices.Microstrip.LumpedTopology t)
+    {
+        var (bx, by, _, _, _, _) = SymbolPortDefs.LumpedBox(t);
+        var prims = new List<SymbolPrimitive> { RRect(0, 0, 2 * bx, 2 * by, 8), Txt(t.Label, 0, 0, fontSize: 40) };
+        foreach (var (name, x, y) in SymbolPortDefs.LumpedPins(t))
+        {
+            // In from the pin to the box's edge, and the name inside the box beside the lead.
+            var (ex, ey) = y < -by ? (x, -by) : y > by ? (x, by) : (x < 0 ? -bx : bx, y);
+            prims.Add(L(x, y, ex, ey));
+            prims.Add(y < -by ? Txt(name, ex, ey + 15, fontSize: MixerPortFontSize, vAlign: SymbolTextVAlign.Top)
+                    : y > by ? Txt(name, ex, ey - 15, fontSize: MixerPortFontSize, vAlign: SymbolTextVAlign.Bottom)
+                    : Txt(name, ex + (x < 0 ? 15 : -15), ey, fontSize: MixerPortFontSize,
+                          align: x < 0 ? SymbolTextAlign.Left : SymbolTextAlign.Right));
+        }
+        return Sym(prims, kind, t.Pins.Count);
     }
 
     // MBLC — the branch-line coupler as it is drawn on the board: two through lines joined by two shunt arms, a junction

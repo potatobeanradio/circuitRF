@@ -1,0 +1,11 @@
+# The resistive pad as one part (MRPAD, Form = T, 6 dB): the two series resistors land across their sites' Gap with no
+# line, and the shunt resistor stands end-on on terminal 3, the middle node, its grounded pad away from the part.
+Info RPD1 added
+Info R1 added
+Info R2 added
+Info R3 added
+Info - Joined 5 of 5 connections; 0 left as ratsnest
+Info P1 port 1 placed at RPD1 pin 1
+Info P2 port 2 placed at RPD1 pin 2
+port P1 1
+port P2 2

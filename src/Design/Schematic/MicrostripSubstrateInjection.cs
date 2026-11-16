@@ -34,7 +34,7 @@ public static class MicrostripSubstrateInjection
     private static readonly HashSet<SymbolKind> MicrostripKinds =
         [SymbolKind.Mlin, SymbolKind.MCLine, SymbolKind.MCLineN, SymbolKind.MBend, SymbolKind.MCurve, SymbolKind.MMiter, SymbolKind.MGap, SymbolKind.MTee, SymbolKind.MCross,
          SymbolKind.Mtaper, SymbolKind.Mklopf, SymbolKind.GsgPad, SymbolKind.Mwpd, SymbolKind.Mblc, SymbolKind.Mrrc,
-         SymbolKind.Mclc, SymbolKind.Midc, SymbolKind.Mcbl, SymbolKind.MRadial];
+         SymbolKind.Mclc, SymbolKind.Midc, SymbolKind.Mcbl, SymbolKind.MRadial, SymbolKind.Mrpad];
 
     public static bool IsMicrostripKind(SymbolKind kind) => MicrostripKinds.Contains(kind);
 
@@ -46,8 +46,10 @@ public static class MicrostripSubstrateInjection
     // Update Layout's PCell parameters — reads the span the land pattern gives.
 
     /// <summary>The planned passives whose site span is a stored length, <see cref="SiteSpanParameter"/>, that a
-    /// <c>Footprint</c> can set instead: MWPD's resistor pins, MCBL's balanced outputs.</summary>
-    public static bool HasSiteFootprint(SymbolKind kind) => kind is SymbolKind.Mwpd or SymbolKind.Mcbl;
+    /// <c>Footprint</c> can set instead: MWPD's resistor pins, MCBL's balanced outputs, the lumped realisations' series
+    /// sites (MBLC's and MRRC's only when lumped) and the resistive pad's.</summary>
+    public static bool HasSiteFootprint(SymbolKind kind)
+        => kind is SymbolKind.Mwpd or SymbolKind.Mcbl or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mrpad;
 
     /// <summary>The length a site <c>Footprint</c> sets.</summary>
     public const string SiteSpanParameter = "Gap";
@@ -414,7 +416,7 @@ public static class MicrostripSubstrateInjection
         // The planned passives' geometry is derived; their one stored length (MWPD's resistor span, MCBL's joining line)
         // is a layout choice no substrate changes.
         if (kind is SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mclc or SymbolKind.Midc
-                 or SymbolKind.Mcbl) return;
+                 or SymbolKind.Mcbl or SymbolKind.Mrpad) return;
         if (kind == SymbolKind.GsgPad) ApplyProbePadDefaults(parameters, technology);
         string targetUnit = SchematicLengthUnit(technology.DefaultDisplayUnit);
         double step = RoundStepFor(targetUnit);

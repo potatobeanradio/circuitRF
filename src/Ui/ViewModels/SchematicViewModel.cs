@@ -5122,7 +5122,8 @@ public sealed partial class SchematicViewModel : ObservableObject
     }
 
     /// <summary>A planned passive with sites (MWPD, MIDC, MCBL): what Place Site Parts acts on.</summary>
-    public static bool HasSites(EditableComponent? comp) => comp?.Symbol is SymbolKind.Mwpd or SymbolKind.Midc or SymbolKind.Mcbl;
+    public static bool HasSites(EditableComponent? comp)
+        => comp?.Symbol is SymbolKind.Mwpd or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Mrpad || comp?.LumpedLayout() is not null;
 
     /// <summary>
     /// Place Site Parts (docs/design/rf-passives.md, "Sites"): an ordinary part on each empty site of the planned passive

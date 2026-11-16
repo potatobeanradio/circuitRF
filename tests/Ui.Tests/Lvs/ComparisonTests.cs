@@ -443,12 +443,15 @@ public sealed class ComparisonTests
 
     /// <summary>The hybrids (MBLC, MRRC) as Update Layout places them compare clean, and a spec changed on the
     /// schematic afterwards is exactly one property mismatch naming it. So does a radial stub (MRADIAL) on its angle,
-    /// and N coupled lines (MCLINN) on one strip's own width.</summary>
+    /// N coupled lines (MCLINN) on one strip's own width, a lumped Wilkinson divider on F, and a resistive pad on its
+    /// attenuation.</summary>
     [Theory]
     [InlineData("F9-branch-line-hybrid", "BLC1", "N", "1")]
     [InlineData("F10-rat-race-hybrid", "RRC1", "F", "2.5")]
     [InlineData("F14-radial-stub", "RS1", "Angle", "90")]
     [InlineData("F15-coupled-lines", "CLN1", "W[2]", "1.5")]
+    [InlineData("F16-wilkinson-lumped", "WPD1", "F", "2.5")]
+    [InlineData("F17-resistive-pad", "RPD1", "Attenuation", "10")]
     public void AHybridComparesCleanAndASpecMismatchIsAFinding(string design, string instance, string spec, string changed)
     {
         string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-hyb-" + Guid.NewGuid().ToString("N")[..12]);
