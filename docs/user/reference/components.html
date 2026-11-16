@@ -2349,6 +2349,23 @@ variable; above 3, a <code>Band</code> not above 1, or a <code>K</code> other th
 <p>On the example board, the two-section divider keeps |S11| below −20 dB from 1.31 to 3.22 GHz and |S23| from 1.31 to
 3.36 GHz, a 2.5:1 band, where one section does from 1.98 to 2.85 GHz and from 1.92 to 2.77 GHz, 1.4:1. It pays for it with
 a quarter wave more line, 0.09 dB more loss at <code>F</code>, and a shallower null at <code>F</code> itself (|S11| −26 dB rather than −48).</p>
+<h4 id="mwpd-corner">Corners: <code>Corner</code></h4>
+<p><code>Corner</code> says how the ring turns. <code>Curve</code>, the default, is the 180° bends described above. <code>Miter</code> and <code>Square</code> draw
+the ring as a rectangle instead: each arm rises from the input tee, turns 90°, runs across, turns again and comes back
+to its output tee. A <code>Miter</code> corner is an <a href="#mmiter">MMITER</a> at its usual chamfer, the Douville–James optimum for the
+arm's W/h; a <code>Square</code> corner is an <a href="#mbend">MBEND</a> with no chamfer.</p>
+<p><strong>What circuitRF derives.</strong> A corner has an electrical length of its own, and circuitRF takes it from the corner's own
+model at <code>F</code> on the substrate (its phase between two lines of the arm's impedance) and shortens the straight runs by it,
+so each arm is still a quarter wave at <code>F</code> between the tees' reference planes, corners included. On the example board
+at 2.4 GHz a mitred corner stands for 0.57 mm of the arm; left in, the two corners would make each arm 6 % long and lift
+|S11| at <code>F</code> from −48 dB to −30 dB. Both arms span one width between the tees; with <code>K</code> ≠ 1 the arm that needs more line
+takes up the difference in its rise and fall, so the gap stays on the input's line. Every <code>K</code> and <code>N</code> works with either corner,
+and the parameters panel shows each arm's runs and what one corner stands for.</p>
+<p><strong>When to choose it.</strong> Choose a corner when the layout wants a rectilinear outline: to sit on a placement grid, to run
+lines alongside it, or to pack several parts close together. Prefer <code>Miter</code>: on the example board the mitred divider is
+matched and isolated at <code>F</code> as the curved one is (|S11| −48 dB, |S23| −36 dB), and the square one a little less well
+(−42 and −37 dB), since an unchamfered corner carries more excess capacitance. Use <code>Square</code> where the board's rules or
+its fabrication call for edges on the grid alone.</p>
 <h4 id="mwpd-nway">More than two ways</h4>
 <p>Wilkinson's paper divides N ways at once: N quarter-wave arms of √N·<code>Z0</code> from the input, and a resistor of <code>Z0</code> from each
 arm's end to one common point. MWPD does not draw it, because for three ways or more it cannot be drawn on one layer.
@@ -2379,6 +2396,7 @@ port 3, and on port 2 a line as long as that divider if the three outputs must b
 <tr><td>K</td><td><code>1</code></td><td>&mdash;</td><td>shown</td><td>Split ratio: P3/P2 = K&#178;, so port 3 takes K&#178; times the power port 2 does. 1 is the equal split; any other value gives the unequal split&#39;s arms, a quarter-wave transformer at each output and Z0&#183;(K + 1/K) across R2-R3. Equal split only with N above 1.</td></tr>
 <tr><td>N</td><td><code>1</code></td><td>&mdash;</td><td>shown</td><td>Number of quarter-wave sections, 1 to 3 (a broadband multi-section divider above 1), each with its own isolation resistor. Sets the pin count, 3 + 2&#183;N, so it must be a plain number.</td></tr>
 <tr><td>Band</td><td><code>2</code></td><td>&mdash;</td><td>&mdash;</td><td>For N above 1: the design band&#39;s upper edge over its lower, f2/f1, centred on F. The sections are an equal-ripple transformer over it.</td></tr>
+<tr><td>Corner</td><td><code>Curve</code></td><td>&mdash;</td><td>&mdash;</td><td>How the ring turns. Curve: 180&#176; curves. Miter: a rectangle with four mitred 90&#176; corners (MMITER at its usual chamfer); Square: the same with square corners (MBEND). With corners the straight runs are shortened by the corners&#39; own electrical length, so every spacing is still λg/4 at F.</td></tr>
 <tr><td>SignalLayer</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The conductor the divider is on. Empty: the technology&#39;s top conductor.</td></tr>
 <tr><td>GroundReference</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The plane under it. Empty: the nearest ground-designated conductor below the signal layer.</td></tr>
 </tbody></table>
@@ -2423,6 +2441,28 @@ Techniques</em>, vol. 16, no. 2, pp. 110–116, February 1968.
 DOI <a href="https://doi.org/10.1109/TMTT.1968.1126617">10.1109/TMTT.1968.1126617</a>. The multi-section divider.</li>
 </ol>
 </li>
+</ol>
+</blockquote>
+<blockquote>
+<ol type="A" start="18">
+<li>
+<ol type="A" start="10">
+<li>
+<ol type="A" start="16">
+<li>Douville and D. S. James, &quot;Experimental Study of Symmetric Microstrip Bends and Their Compensation,&quot; <em>IEEE
+Transactions on Microwave Theory and Techniques</em>, vol. 26, no. 3, pp. 175–182, March 1978.
+DOI <a href="https://doi.org/10.1109/TMTT.1978.1129340">10.1109/TMTT.1978.1129340</a>. The mitred corner's chamfer.</li>
+</ol>
+</li>
+</ol>
+</li>
+</ol>
+</blockquote>
+<blockquote>
+<ol type="A" start="13">
+<li>Kirschning, R. H. Jansen and N. H. L. Koster, &quot;Measurement and Computer-Aided Modeling of Microstrip
+Discontinuities by an Improved Resonator Method,&quot; <em>1983 IEEE MTT-S International Microwave Symposium Digest</em>,
+pp. 495–497. DOI <a href="https://doi.org/10.1109/MWSYM.1983.1130959">10.1109/MWSYM.1983.1130959</a>. The square corner's model.</li>
 </ol>
 </blockquote>
 <blockquote>
@@ -2649,6 +2689,13 @@ terminal 4 on the other. Closing it with one tee on one run against three on the
 </ul>
 <p>Each terminal is one port-line width of <code>Z0</code> line beyond its tee. The parameters panel shows the widths, the quarter
 wavelength and the bends' radius.</p>
+<p><strong>Corners.</strong> <code>Corner</code> = <code>Miter</code> or <code>Square</code> turns each end of the ring on two 90° corners, an MMITER at its usual
+chamfer or an MBEND with none, with a straight side between them, so the ring is a rectangle
+(<a href="#mwpd-corner">as the divider's</a>). Each end is still λg/4 − W0 of line: the two corners at their own electrical length
+at <code>F</code>, taken from the corner's model, plus the side, which is that much shorter. On the example board |S11|, |S44|,
+|S41| and |S23| stay below −49 dB at <code>F</code> with mitred corners (−49 to −51 dB with the bends) and below −42 dB with
+square ones.
+Choose it for the same reasons as the divider's, <code>Miter</code> first.</p>
 <p><strong>The model</strong> is the MTEE, MLIN and MCURVE parts the layout draws, stamped together and reduced to the four terminals,
 with their limits, which it reports in Messages: MTEE's junction formulas are calibrated on alumina (εr 9.9) and on W/h
 from 0.5 to 2, and MCURVE's length rule is stated for bend radii of 3 to 7 widths, a smaller ring than most. A
@@ -2670,6 +2717,7 @@ example runs it on Planar MoM, EMerge and Palace.</p>
 <tbody>
 <tr><td>Z0</td><td><code>50</code></td><td>Ω</td><td>shown</td><td>The ports&#39; impedance. The ring is √2&#183;Z0; the widths are derived on the technology&#39;s substrate.</td></tr>
 <tr><td>F</td><td><code>2.4</code></td><td>GHz</td><td>shown</td><td>Centre frequency: the ring is 1.5 wavelengths round here, the pins λg/4, λg/4, λg/4 and 3λg/4 apart, in the line&#39;s own effective permittivity at F.</td></tr>
+<tr><td>Corner</td><td><code>Curve</code></td><td>&mdash;</td><td>&mdash;</td><td>How the ring turns. Curve: 180&#176; curves. Miter: a rectangle with four mitred 90&#176; corners (MMITER at its usual chamfer); Square: the same with square corners (MBEND). With corners the straight runs are shortened by the corners&#39; own electrical length, so every spacing is still λg/4 at F.</td></tr>
 <tr><td>SignalLayer</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The conductor the ring is on. Empty: the technology&#39;s top conductor.</td></tr>
 <tr><td>GroundReference</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The plane under it. Empty: the nearest ground-designated conductor below the signal layer.</td></tr>
 </tbody></table>

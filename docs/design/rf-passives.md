@@ -2,7 +2,7 @@
 
 **Status:** six parts — MWPD, the Wilkinson divider, with its unequal-split (`K`) and multi-section (`N`) variants; MBLC
 and MRRC, the branch-line and rat-race hybrids; MCLC, MIDC and MCBL, the coupled-line coupler, interdigitated coupler
-and balun · **Date:** 2026-11-16
+and balun; MWPD's and MRRC's rings curved or cornered (`Corner`) · **Date:** 2026-11-16
 
 Dividers, couplers and baluns on microstrip, each one built-in part that is defined once and read the same way by the
 schematic, the layout, LVS and EM. Each part has its own subsection in §3.
@@ -19,20 +19,20 @@ one standard, generic design rather than six one-off parts. The rest of this sec
 **A plan made of sections.** Each topology has one pure function in Core, `src/Core/Devices/Microstrip/<X>Plan.cs`, that
 takes the part's specs and the substrate and returns a `PassivePlan`: the part's pin names, and a list of sections. A
 section is an EXISTING microstrip part placed in the passive's frame — an MTEE (`PlanTee`), an MCURVE (`PlanCurve`),
-an MLIN (`PlanLine`), an MCLIN or a set of interdigitated strips (`PlanCoupledLine`) — with the plan node each of its
-pins joins and a pose (where its pin 1 sits, a turn in quarters). Nothing in a plan is a new kind of line: it is the
+an MLIN (`PlanLine`), an MMITER or MBEND corner (`PlanBend`), an MCLIN or a set of interdigitated strips
+(`PlanCoupledLine`) — with the plan node each of its pins joins and a pose (where its pin 1 sits, a turn in quarters). Nothing in a plan is a new kind of line: it is the
 vocabulary circuitRF already has, arranged. Every dimension is held on a 2 nm grid
 (`PassivePlan.OnGrid`), so halves are whole database units and two pieces that meet in the plan meet to the last unit
 in the artwork.
 
 **One model for every plan.** `MicrostripPlanModel` stamps each section through that part's own model
-(`MicrostripTeeModel`, `MicrostripCurveModel`, `MicrostripLineModel`, `MicrostripCoupledLineModel`, with their own
-validity warnings) into a `LocalAdmittanceBlock` on the plan's nodes and Kron-reduces the internal nodes away — the way
+(`MicrostripTeeModel`, `MicrostripCurveModel`, `MicrostripLineModel`, `MicrostripCoupledLineModel`,
+`MicrostripMiterBendModel`, `MicrostripBendModel`, with their own validity warnings) into a `LocalAdmittanceBlock` on the plan's nodes and Kron-reduces the internal nodes away — the way
 MTEE already stamps the arms it draws (`JunctionArms`).
 The block is shared with MTEE for that reason. A topology therefore writes no stamping code at all.
 
 **One drawing path from the same plan.** `PassivePlanPCells.Draw` draws each section through that part's own generator
-(`MTeePCell`, `MCurvePCell`, `MlinPCell`, `CoupledLinePCells`), turned and moved to its pose, and takes the passive's
+(`MTeePCell`, `MCurvePCell`, `MlinPCell`, `CoupledLinePCells`, `MMiterPCell`, `MBendPCell`), turned and moved to its pose, and takes the passive's
 pins from those parts' own pins. So the model and the layout are the same pieces by construction, not by two
 implementations agreeing.
 
@@ -83,6 +83,7 @@ which fixes the curve radius. Each port pin sits one 50 Ω width of line beyond 
 | `K` | yes, 1 | Split ratio, P3/P2 = K² (§3.1). |
 | `N` | yes, 1 | Sections, 1 to 3; the pins are 3 + 2·N (§3.1). |
 | `Band` | yes, 2 | f2/f1 of the multi-section design, centred on F. |
+| `Corner` | yes, a name | `Curve` (the default), or `Miter` / `Square`: the ring a rectangle of MMITER or MBEND corners (§3.4). |
 | W, arm W, L, ring radius, isolation R | readout | Derived by `WilkinsonPlan.Build` on the substrate; for a variant, every line and resistor. |
 
 Refusals: a non-positive spec, an impedance no width reaches on the substrate, and a quarter wave too short to make a
@@ -174,6 +175,7 @@ sit in ring order 2, 1, 3, 4, spaced λg/4, λg/4, λg/4 and 3λg/4 between refe
 | `Z0` | both | yes, Ω | Port impedance; the arms' impedances follow from it. |
 | `F` | both | yes, Hz | Centre frequency: every arm or spacing is λg/4 (or 3λg/4) here. |
 | `N` | MBLC | yes | Sections, 1 or 2. |
+| `Corner` | MRRC | yes | `Curve`, `Miter` or `Square`, as MWPD's (§3.4). |
 | `SignalLayer`, `GroundReference` | both | yes | As for MWPD. |
 | W and L of each arm; the ring's width, λg/4 and bend radius | — | readout | `BranchLinePlan.Build`, `RatRacePlan.Build`. |
 
@@ -262,10 +264,35 @@ stronger than the model; their Draft presets read 3 to 5 dB too strong). Planar 
 are 0.71 λ apart at the band top, past the via kernel's validated 0.1 λ. MIDC has no example cell yet: Planar cannot
 cross a finger with a jumper, and the 3D view needs its bond wires drawn by hand.
 
+### 3.4 Corners: MWPD and MRRC as rectangles
+
+`Corner` = `Miter` or `Square` replaces each 180° MCURVE of a ring with two 90° `PlanBend`s and a straight `PlanLine`
+between them: an MMITER at its own default chamfer (the Douville-James optimum for W/h, capped where its table ends) or
+an MBEND with no chamfer. Every spacing still counts every piece. A corner's electrical length is its insertion phase
+at F between two lines of the arm's impedance, from the corner's own model stamped as a one-section plan
+(`PlanBend.LineLength`), as a length of that line; the straight runs are shortened by it, so the plan stays a pure
+function of the specs and the substrate. MWPD: the input tee's line, 2·rise + across and two corners make λg/4; both
+arms span one width, and the arm needing more line rises and falls by half the difference, so the gap stays on the
+input's axis for any K. MRRC: each end's two corners and side make λg/4 − W0. Every K and N has this geometry, so no
+combination is refused; a ring with no straight run left is `ring-too-small`. A corner's pins are where its generator
+puts them (`PlanBend.Arm`, rounded to 1 nm as both generators round), so pieces meet to the unit.
+
+At `Curve` both plans are unchanged bit for bit (`WilkinsonPlanTests.TheVariants_AtCurvedCorners_AreUnchangedBitForBit`,
+`HybridPlanTests.TheRatRace_AtCurvedCorners_IsUnchangedBitForBit`, taken before the corners existed). `Corner` is a name,
+as a filter's `Response` is: the elaborator keeps it as text, Update Layout hands it to the generator as text, and LVS
+compares it as a string (a mismatch is one `lvs.property.mismatch`). On the example board at 2.4 GHz a mitred corner
+stands for 0.567 mm of the 70.7 Ω arm; with it taken out, the mitred divider's |S11| and |S23| at F are −48 and −36 dB
+(curved: −48, −36; square corners: −42, −37), and left in they would be −30 and −26 dB. Tests: the cornered plans
+against their quarter waves and joined (`WilkinsonPlanTests`, `HybridPlanTests`), each equal to its MMITER, MBEND, MLIN
+and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`WilkinsonSParamTests`,
+`HybridSParamTests`), and `testdata/schematic-to-layout/F8d-wilkinson-mitred` through Update Layout and LVS.
+
 ## 4. What a new topology costs
 
 1. `src/Core/Devices/Microstrip/<X>Plan.cs` — the pure plan (and a section kind, with one case in
    `MicrostripPlanModel.Build` and one in `PassivePlanPCells.Draw`, if it needs a part the plans do not use yet).
+   `PlanBend` (MMITER and MBEND, for `Corner`) cost exactly one model case and one drawer case; because MBEND stamps in
+   branch (Z) form, the shared local block also learned to take branch rows, once, for any such part (da0f3702e).
 2. `ComponentModelFactory` — the type name, `_parameterizedTypes` and one dispatch line to `MicrostripPlanModel`.
 3. `SchematicModel.SymbolKind`; `ComponentTypeRegistry` (entry, terminals text, `EngineReference`, parameter
    descriptions, `ModelValidity`, `HasNoiseSwitch`, `DefaultParameters`, token); `EditableSchematic.SymbolPortDefs`;
@@ -291,8 +318,9 @@ cross a finger with a jumper, and the 3D view needs its bond wires drawn by hand
   in EM and not in the circuit. On the example board Planar and EMerge follow the model's isolation to a few dB.
 - **`N` must be a plain number**, since it sets the pins. The catalogue (`circuitrf reference`) lists MWPD at its
   five terminals and says in the terminals note how `N` adds pairs.
-- **The MWPD generator's version follows MTEE's and MCURVE's.** It draws through them, so a change that bumps either
-  generator's version changes MWPD's artwork too and must bump MWPD's.
+- **The MWPD generator's version follows MTEE's and MCURVE's**, and with corners MMITER's, MBEND's and MLIN's (MRRC's
+  likewise). It draws through them, so a change that bumps one of those generators' versions changes the part's artwork
+  too and must bump the part's.
 
 ## 6. Questions for the maintainer
 
@@ -343,6 +371,14 @@ cross a finger with a jumper, and the 3D view needs its bond wires drawn by hand
 > S. B. Cohn, "A Class of Broadband Three-Port TEM-Mode Hybrids," *IEEE Transactions on Microwave Theory and
 > Techniques*, vol. 16, no. 2, pp. 110–116, February 1968.
 > DOI [10.1109/TMTT.1968.1126617](https://doi.org/10.1109/TMTT.1968.1126617). The multi-section divider.
+
+> R. J. P. Douville and D. S. James, "Experimental Study of Symmetric Microstrip Bends and Their Compensation," *IEEE
+> Transactions on Microwave Theory and Techniques*, vol. 26, no. 3, pp. 175–182, March 1978.
+> DOI [10.1109/TMTT.1978.1129340](https://doi.org/10.1109/TMTT.1978.1129340). The mitred corner's chamfer.
+
+> M. Kirschning, R. H. Jansen and N. H. L. Koster, "Measurement and Computer-Aided Modeling of Microstrip
+> Discontinuities by an Improved Resonator Method," *1983 IEEE MTT-S International Microwave Symposium Digest*,
+> pp. 495–497. DOI [10.1109/MWSYM.1983.1130959](https://doi.org/10.1109/MWSYM.1983.1130959). The square corner's model.
 
 > M. Kirschning and R. H. Jansen, "Accurate model for effective dielectric constant of microstrip with validity up to
 > millimetre-wave frequencies," *Electronics Letters*, vol. 18, no. 6, pp. 272–273, 1982.

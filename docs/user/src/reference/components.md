@@ -1290,6 +1290,27 @@ On the example board, the two-section divider keeps |S11| below −20 dB from 1.
 3.36 GHz, a 2.5:1 band, where one section does from 1.98 to 2.85 GHz and from 1.92 to 2.77 GHz, 1.4:1. It pays for it with
 a quarter wave more line, 0.09 dB more loss at `F`, and a shallower null at `F` itself (|S11| −26 dB rather than −48).
 
+#### Corners: `Corner` {#mwpd-corner}
+
+`Corner` says how the ring turns. `Curve`, the default, is the 180° bends described above. `Miter` and `Square` draw
+the ring as a rectangle instead: each arm rises from the input tee, turns 90°, runs across, turns again and comes back
+to its output tee. A `Miter` corner is an [MMITER](#mmiter) at its usual chamfer, the Douville–James optimum for the
+arm's W/h; a `Square` corner is an [MBEND](#mbend) with no chamfer.
+
+**What circuitRF derives.** A corner has an electrical length of its own, and circuitRF takes it from the corner's own
+model at `F` on the substrate (its phase between two lines of the arm's impedance) and shortens the straight runs by it,
+so each arm is still a quarter wave at `F` between the tees' reference planes, corners included. On the example board
+at 2.4 GHz a mitred corner stands for 0.57 mm of the arm; left in, the two corners would make each arm 6 % long and lift
+|S11| at `F` from −48 dB to −30 dB. Both arms span one width between the tees; with `K` ≠ 1 the arm that needs more line
+takes up the difference in its rise and fall, so the gap stays on the input's line. Every `K` and `N` works with either corner,
+and the parameters panel shows each arm's runs and what one corner stands for.
+
+**When to choose it.** Choose a corner when the layout wants a rectilinear outline: to sit on a placement grid, to run
+lines alongside it, or to pack several parts close together. Prefer `Miter`: on the example board the mitred divider is
+matched and isolated at `F` as the curved one is (|S11| −48 dB, |S23| −36 dB), and the square one a little less well
+(−42 and −37 dB), since an unchamfered corner carries more excess capacitance. Use `Square` where the board's rules or
+its fabrication call for edges on the grid alone.
+
 #### More than two ways {#mwpd-nway}
 
 Wilkinson's paper divides N ways at once: N quarter-wave arms of √N·`Z0` from the input, and a resistor of `Z0` from each
@@ -1322,6 +1343,14 @@ port 3, and on port 2 a line as long as that divider if the three outputs must b
 > S. B. Cohn, "A Class of Broadband Three-Port TEM-Mode Hybrids," *IEEE Transactions on Microwave Theory and
 > Techniques*, vol. 16, no. 2, pp. 110–116, February 1968.
 > DOI [10.1109/TMTT.1968.1126617](https://doi.org/10.1109/TMTT.1968.1126617). The multi-section divider.
+
+> R. J. P. Douville and D. S. James, "Experimental Study of Symmetric Microstrip Bends and Their Compensation," *IEEE
+> Transactions on Microwave Theory and Techniques*, vol. 26, no. 3, pp. 175–182, March 1978.
+> DOI [10.1109/TMTT.1978.1129340](https://doi.org/10.1109/TMTT.1978.1129340). The mitred corner's chamfer.
+
+> M. Kirschning, R. H. Jansen and N. H. L. Koster, "Measurement and Computer-Aided Modeling of Microstrip
+> Discontinuities by an Improved Resonator Method," *1983 IEEE MTT-S International Microwave Symposium Digest*,
+> pp. 495–497. DOI [10.1109/MWSYM.1983.1130959](https://doi.org/10.1109/MWSYM.1983.1130959). The square corner's model.
 
 > E. Hammerstad and Ø. Jensen, "Accurate Models for Microstrip Computer-Aided Design," *1980 IEEE MTT-S International
 > Microwave Symposium Digest*, pp. 407–409. DOI [10.1109/MWSYM.1980.1124303](https://doi.org/10.1109/MWSYM.1980.1124303).
@@ -1443,6 +1472,14 @@ share:
 
 Each terminal is one port-line width of `Z0` line beyond its tee. The parameters panel shows the widths, the quarter
 wavelength and the bends' radius.
+
+**Corners.** `Corner` = `Miter` or `Square` turns each end of the ring on two 90° corners, an MMITER at its usual
+chamfer or an MBEND with none, with a straight side between them, so the ring is a rectangle
+([as the divider's](#mwpd-corner)). Each end is still λg/4 − W0 of line: the two corners at their own electrical length
+at `F`, taken from the corner's model, plus the side, which is that much shorter. On the example board |S11|, |S44|,
+|S41| and |S23| stay below −49 dB at `F` with mitred corners (−49 to −51 dB with the bends) and below −42 dB with
+square ones.
+Choose it for the same reasons as the divider's, `Miter` first.
 
 **The model** is the MTEE, MLIN and MCURVE parts the layout draws, stamped together and reduced to the four terminals,
 with their limits, which it reports in Messages: MTEE's junction formulas are calibrated on alumina (εr 9.9) and on W/h
