@@ -1,0 +1,29 @@
+{
+  "FormatVersion": 1,
+  "Name": "Schiffman Planar",
+  "LayoutRef": "Schiffman/layout/Schiffman.clay",
+  "Frequency": {
+    "StartExpr": "1.2",
+    "StopExpr": "4.8",
+    "StepExpr": "",
+    "NumPoints": 11,
+    "Mode": "PointCount",
+    "Kind": "Log",
+    "StartUnit": "GHz",
+    "StopUnit": "GHz",
+    "StepUnit": "GHz"
+  },
+  "AnalysisKind": "Planar",
+  "PlanarMesh": {
+    "Auto": true,
+    "CellsPerWavelength": 20,
+    "EdgeMesh": true,
+    "EdgeCells": 3,
+    "LocalGrid": false,
+    "MinCellsAcrossConductor": 2
+  },
+  "ConductorThicknessCorrection": true,
+  "RobustMeshing": true,
+  "CreateSnpSchematic": false,
+  "ComponentPorts": []
+}

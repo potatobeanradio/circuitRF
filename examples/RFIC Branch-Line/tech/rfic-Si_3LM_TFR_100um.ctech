@@ -1,0 +1,858 @@
+{
+ "FormatVersion": 1,
+ "Name": "RFIC Si (3 Layer Metal + TFR, 100um, example)",
+ "DefaultDisplayUnit": "Um",
+ "DefaultSnapDbu": 5,
+ "DefaultFlattenTolDbu": 10,
+ "DefaultLabelHeightDbu": 5000,
+ "DefaultViaPadDbu": 10000,
+ "DefaultViaDrillDbu": 6000,
+ "Layers": [
+  {
+   "Key": {
+    "Layer": 1,
+    "Datatype": 0
+   },
+   "Name": "Metal1",
+   "Color": {
+    "r": 224,
+    "g": 176,
+    "b": 64,
+    "a": 255
+   },
+   "FillOpacity": 0.35,
+   "ZOrder": 2,
+   "Purpose": "drawing"
+  },
+  {
+   "Key": {
+    "Layer": 2,
+    "Datatype": 0
+   },
+   "Name": "Metal2",
+   "Color": {
+    "r": 192,
+    "g": 128,
+    "b": 32,
+    "a": 255
+   },
+   "FillOpacity": 0.35,
+   "ZOrder": 4,
+   "Purpose": "drawing"
+  },
+  {
+   "Key": {
+    "Layer": 3,
+    "Datatype": 0
+   },
+   "Name": "Metal3",
+   "Color": {
+    "r": 176,
+    "g": 96,
+    "b": 24,
+    "a": 255
+   },
+   "FillOpacity": 0.35,
+   "ZOrder": 8,
+   "Purpose": "drawing"
+  },
+  {
+   "Key": {
+    "Layer": 4,
+    "Datatype": 0
+   },
+   "Name": "Resistor",
+   "Color": {
+    "r": 96,
+    "g": 64,
+    "b": 176,
+    "a": 255
+   },
+   "FillOpacity": 0.35,
+   "ZOrder": 1,
+   "Purpose": "drawing"
+  },
+  {
+   "Key": {
+    "Layer": 7,
+    "Datatype": 0
+   },
+   "Name": "Resistor Hi",
+   "Color": {
+    "r": 160,
+    "g": 72,
+    "b": 144,
+    "a": 255
+   },
+   "FillOpacity": 0.35,
+   "ZOrder": 1,
+   "Purpose": "drawing"
+  },
+  {
+   "Key": {
+    "Layer": 11,
+    "Datatype": 0
+   },
+   "Name": "TFR Contact",
+   "Color": {
+    "r": 128,
+    "g": 128,
+    "b": 128,
+    "a": 255
+   },
+   "FillOpacity": 0.35,
+   "ZOrder": 3,
+   "Purpose": "drawing"
+  },
+  {
+   "Key": {
+    "Layer": 5,
+    "Datatype": 0
+   },
+   "Name": "Via12",
+   "Color": {
+    "r": 96,
+    "g": 96,
+    "b": 96,
+    "a": 255
+   },
+   "FillOpacity": 0.35,
+   "ZOrder": 3,
+   "Purpose": "drawing"
+  },
+  {
+   "Key": {
+    "Layer": 6,
+    "Datatype": 0
+   },
+   "Name": "Via23",
+   "Color": {
+    "r": 112,
+    "g": 112,
+    "b": 112,
+    "a": 255
+   },
+   "FillOpacity": 0.35,
+   "ZOrder": 5,
+   "Purpose": "drawing"
+  },
+  {
+   "Key": {
+    "Layer": 20,
+    "Datatype": 0
+   },
+   "Name": "Line Marker",
+   "Color": {
+    "r": 64,
+    "g": 160,
+    "b": 96,
+    "a": 255
+   },
+   "FillOpacity": 0.35,
+   "ZOrder": 0,
+   "Purpose": "drawing"
+  },
+  {
+   "Key": {
+    "Layer": 8,
+    "Datatype": 0
+   },
+   "Name": "Through-Silicon Via",
+   "Color": {
+    "r": 48,
+    "g": 32,
+    "b": 112,
+    "a": 255
+   },
+   "FillOpacity": 0.35,
+   "ZOrder": 6,
+   "Purpose": "drawing"
+  }
+ ],
+ "Stackup": {
+  "Top": "Open",
+  "Bottom": "Ground",
+  "Layers": [
+   {
+    "Kind": "Conductor",
+    "Name": "Metal3",
+    "ThicknessDbu": 3000,
+    "Material": "Aluminium",
+    "Epsr": 1,
+    "TanD": 0,
+    "Mur": 1,
+    "SigmaSm": 37700000,
+    "DrawingLayers": [
+     {
+      "Layer": 3,
+      "Datatype": 0
+     }
+    ],
+    "IsGroundReference": false
+   },
+   {
+    "Kind": "Dielectric",
+    "Name": "ILD3",
+    "ThicknessDbu": 1000,
+    "Epsr": 4.1,
+    "TanD": 0.001,
+    "Mur": 1,
+    "SigmaSm": 0,
+    "DrawingLayers": [],
+    "IsGroundReference": false
+   },
+   {
+    "Kind": "Conductor",
+    "Name": "Metal2",
+    "ThicknessDbu": 1000,
+    "Material": "Aluminium",
+    "Epsr": 1,
+    "TanD": 0,
+    "Mur": 1,
+    "SigmaSm": 37700000,
+    "DrawingLayers": [
+     {
+      "Layer": 2,
+      "Datatype": 0
+     }
+    ],
+    "IsGroundReference": false
+   },
+   {
+    "Kind": "Dielectric",
+    "Name": "ILD2 Upper",
+    "ThicknessDbu": 400,
+    "Epsr": 4.1,
+    "TanD": 0.001,
+    "Mur": 1,
+    "SigmaSm": 0,
+    "DrawingLayers": [],
+    "IsGroundReference": false
+   },
+   {
+    "Kind": "Conductor",
+    "Name": "TFR Level",
+    "ThicknessDbu": 50,
+    "DrawingLayers": [],
+    "Films": [
+     {
+      "Layer": {
+       "Layer": 4,
+       "Datatype": 0
+      },
+      "SheetResistanceOhmPerSq": 50
+     },
+     {
+      "Layer": {
+       "Layer": 7,
+       "Datatype": 0
+      },
+      "SheetResistanceOhmPerSq": 500
+     }
+    ]
+   },
+   {
+    "Kind": "Dielectric",
+    "Name": "ILD2 Lower",
+    "ThicknessDbu": 400,
+    "Epsr": 4.1,
+    "TanD": 0.001,
+    "Mur": 1,
+    "SigmaSm": 0,
+    "DrawingLayers": [],
+    "IsGroundReference": false
+   },
+   {
+    "Kind": "Conductor",
+    "Name": "Metal1",
+    "ThicknessDbu": 1000,
+    "Material": "Aluminium",
+    "Epsr": 1,
+    "TanD": 0,
+    "Mur": 1,
+    "SigmaSm": 37700000,
+    "DrawingLayers": [
+     {
+      "Layer": 1,
+      "Datatype": 0
+     }
+    ],
+    "IsGroundReference": false
+   },
+   {
+    "Kind": "Dielectric",
+    "Name": "ILD1",
+    "ThicknessDbu": 1000,
+    "Epsr": 4.1,
+    "TanD": 0.001,
+    "Mur": 1,
+    "SigmaSm": 0,
+    "DrawingLayers": [],
+    "IsGroundReference": false
+   },
+   {
+    "Kind": "Dielectric",
+    "Name": "Silicon",
+    "ThicknessDbu": 100000,
+    "Material": "Silicon, 10 kΩ·cm",
+    "Epsr": 11.9,
+    "TanD": 0,
+    "Mur": 1,
+    "SigmaSm": 0.01,
+    "DrawingLayers": [],
+    "IsGroundReference": false
+   },
+   {
+    "Kind": "Conductor",
+    "Name": "Backside Metal",
+    "ThicknessDbu": 3000,
+    "Material": "Gold",
+    "Epsr": 1,
+    "TanD": 0,
+    "Mur": 1,
+    "SigmaSm": 41000000,
+    "DrawingLayers": [],
+    "IsGroundReference": true
+   },
+   {
+    "Kind": "Via",
+    "Name": "Via12",
+    "ThicknessDbu": 0,
+    "Material": "Aluminium",
+    "Epsr": 1,
+    "TanD": 0,
+    "Mur": 1,
+    "SigmaSm": 37700000,
+    "DrawingLayers": [
+     {
+      "Layer": 5,
+      "Datatype": 0
+     }
+    ],
+    "IsGroundReference": false,
+    "Fill": "Solid",
+    "SpanFromLayer": "Metal1",
+    "SpanToLayer": "Metal2"
+   },
+   {
+    "Kind": "Via",
+    "Name": "Via23",
+    "ThicknessDbu": 0,
+    "Material": "Aluminium",
+    "Epsr": 1,
+    "TanD": 0,
+    "Mur": 1,
+    "SigmaSm": 37700000,
+    "DrawingLayers": [
+     {
+      "Layer": 6,
+      "Datatype": 0
+     }
+    ],
+    "IsGroundReference": false,
+    "Fill": "Solid",
+    "SpanFromLayer": "Metal2",
+    "SpanToLayer": "Metal3"
+   },
+   {
+    "Kind": "Via",
+    "Name": "TFR Contact",
+    "ThicknessDbu": 0,
+    "Material": "Aluminium",
+    "Epsr": 1,
+    "TanD": 0,
+    "Mur": 1,
+    "SigmaSm": 37700000,
+    "DrawingLayers": [
+     {
+      "Layer": 11,
+      "Datatype": 0
+     }
+    ],
+    "IsGroundReference": false,
+    "Fill": "Solid",
+    "SpanFromLayer": "Metal2",
+    "SpanToLayer": "TFR Level"
+   },
+   {
+    "Kind": "Via",
+    "Name": "Through-Silicon Via",
+    "ThicknessDbu": 0,
+    "Material": "Gold",
+    "Epsr": 1,
+    "TanD": 0,
+    "Mur": 1,
+    "SigmaSm": 41000000,
+    "DrawingLayers": [
+     {
+      "Layer": 8,
+      "Datatype": 0
+     }
+    ],
+    "IsGroundReference": false,
+    "Fill": "Plated",
+    "WallThicknessDbu": 3000,
+    "SpanFromLayer": "Metal3",
+    "SpanToLayer": "Backside Metal"
+   }
+  ]
+ },
+ "DrcRules": [
+  {
+   "Name": "Metal1 Min Width",
+   "Kind": "MinWidth",
+   "ValueDbu": 2000,
+   "Severity": "Error",
+   "Layer": {
+    "Layer": 1,
+    "Datatype": 0
+   }
+  },
+  {
+   "Name": "Metal1 Min Spacing",
+   "Kind": "MinSpacing",
+   "ValueDbu": 2000,
+   "Severity": "Error",
+   "Layer": {
+    "Layer": 1,
+    "Datatype": 0
+   }
+  },
+  {
+   "Name": "Metal2 Min Width",
+   "Kind": "MinWidth",
+   "ValueDbu": 2000,
+   "Severity": "Error",
+   "Layer": {
+    "Layer": 2,
+    "Datatype": 0
+   }
+  },
+  {
+   "Name": "Metal2 Min Spacing",
+   "Kind": "MinSpacing",
+   "ValueDbu": 2000,
+   "Severity": "Error",
+   "Layer": {
+    "Layer": 2,
+    "Datatype": 0
+   }
+  },
+  {
+   "Name": "Metal3 Min Width",
+   "Kind": "MinWidth",
+   "ValueDbu": 4000,
+   "Severity": "Error",
+   "Layer": {
+    "Layer": 3,
+    "Datatype": 0
+   }
+  },
+  {
+   "Name": "Metal3 Min Spacing",
+   "Kind": "MinSpacing",
+   "ValueDbu": 4000,
+   "Severity": "Error",
+   "Layer": {
+    "Layer": 3,
+    "Datatype": 0
+   }
+  },
+  {
+   "Name": "Resistor Min Width",
+   "Kind": "MinWidth",
+   "ValueDbu": 2000,
+   "Severity": "Error",
+   "Layer": {
+    "Layer": 4,
+    "Datatype": 0
+   }
+  },
+  {
+   "Name": "Resistor Hi Min Width",
+   "Kind": "MinWidth",
+   "ValueDbu": 2000,
+   "Severity": "Error",
+   "Layer": {
+    "Layer": 7,
+    "Datatype": 0
+   }
+  },
+  {
+   "Name": "TFR Contact Min Width",
+   "Kind": "MinWidth",
+   "ValueDbu": 1000,
+   "Severity": "Error",
+   "Layer": {
+    "Layer": 11,
+    "Datatype": 0
+   }
+  },
+  {
+   "Name": "TFR Contact in Resistor",
+   "Kind": "MinEnclosure",
+   "ValueDbu": 500,
+   "Severity": "Error",
+   "RegionA": "4/0",
+   "RegionB": "and(11/0, 4/0)",
+   "Layer": {
+    "Layer": 4,
+    "Datatype": 0
+   }
+  },
+  {
+   "Name": "TFR Contact in Resistor Hi",
+   "Kind": "MinEnclosure",
+   "ValueDbu": 500,
+   "Severity": "Error",
+   "RegionA": "7/0",
+   "RegionB": "and(11/0, 7/0)",
+   "Layer": {
+    "Layer": 7,
+    "Datatype": 0
+   }
+  },
+  {
+   "Name": "TFR Contact in Metal2",
+   "Kind": "MinEnclosure",
+   "ValueDbu": 500,
+   "Severity": "Error",
+   "RegionA": "2/0",
+   "RegionB": "11/0",
+   "Layer": {
+    "Layer": 2,
+    "Datatype": 0
+   }
+  },
+  {
+   "Name": "Via12 clear of films",
+   "Kind": "MustBeEmpty",
+   "ValueDbu": 0,
+   "Severity": "Error",
+   "RegionA": "and(5/0, or(4/0, 7/0))",
+   "Layer": {
+    "Layer": 5,
+    "Datatype": 0
+   }
+  }
+ ],
+ "DeviceRules": [
+  {
+   "Name": "Thin-film resistor",
+   "Kind": "Resistor",
+   "Body": "4/0",
+   "Terminals": [
+    "11/0"
+   ],
+   "Parameters": {
+    "R": "TfrSheetResistance * Length / Width"
+   }
+  },
+  {
+   "Name": "Thin-film resistor Hi",
+   "Kind": "Resistor",
+   "Body": "7/0",
+   "Terminals": [
+    "11/0"
+   ],
+   "Parameters": {
+    "R": "TfrSheetResistance * Length / Width"
+   }
+  },
+  {
+   "Name": "Microstrip line (Metal3)",
+   "Kind": "TransmissionLine",
+   "Body": "and(3/0, 20/0)",
+   "Terminals": [
+    "3/0"
+   ],
+   "Parameters": {
+    "L": "Length",
+    "W": "Width"
+   },
+   "CopperBody": true
+  }
+ ],
+ "MaterialLibraries": [
+  "generic-materials.cmat"
+ ],
+ "Materials": [
+  {
+   "Name": "Aluminium",
+   "Sigma20": 37700000,
+   "Alpha20": 0.0039,
+   "SigmaVsTemp": [
+    {
+     "TempC": 20,
+     "Value": 37700000
+    },
+    {
+     "TempC": 25.05,
+     "Value": 36867739
+    },
+    {
+     "TempC": 26.85,
+     "Value": 36579906
+    },
+    {
+     "TempC": 76.85,
+     "Value": 30259554
+    },
+    {
+     "TempC": 85,
+     "Value": 29430684
+    },
+    {
+     "TempC": 125,
+     "Value": 25942933
+    },
+    {
+     "TempC": 126.85,
+     "Value": 25801516
+    },
+    {
+     "TempC": 226.85,
+     "Value": 19917377
+    },
+    {
+     "TempC": 326.85,
+     "Value": 16332553
+    },
+    {
+     "TempC": 426.85,
+     "Value": 13656088
+    },
+    {
+     "TempC": 526.85,
+     "Value": 11608010
+    },
+    {
+     "TempC": 626.85,
+     "Value": 9994262
+    }
+   ],
+   "ThermalK": 236.798,
+   "ThermalKVsTemp": [
+    {
+     "TempC": 20,
+     "Value": 236.798
+    },
+    {
+     "TempC": 25.05,
+     "Value": 237
+    },
+    {
+     "TempC": 26.85,
+     "Value": 237
+    },
+    {
+     "TempC": 76.85,
+     "Value": 240
+    },
+    {
+     "TempC": 85,
+     "Value": 240
+    },
+    {
+     "TempC": 125,
+     "Value": 240
+    },
+    {
+     "TempC": 126.85,
+     "Value": 240
+    },
+    {
+     "TempC": 226.85,
+     "Value": 236
+    },
+    {
+     "TempC": 326.85,
+     "Value": 231
+    },
+    {
+     "TempC": 426.85,
+     "Value": 225
+    },
+    {
+     "TempC": 526.85,
+     "Value": 218
+    },
+    {
+     "TempC": 626.85,
+     "Value": 210
+    }
+   ],
+   "DensityKgM3": 2700,
+   "SpecificHeat": 897,
+   "Source": "Resistivity 2.65e-8 ohm-m at 20 C: CRC Handbook of Chemistry and Physics, electrical resistivity of pure metals. Temperature coefficient 0.0039 /K and density 2700 kg/m3: CRC Handbook of Chemistry and Physics. Thermal conductivity k(T) and the shape of conductivity against temperature from 20 C to 626.85 C, the last tabulated row below the melting point (660.323 C, ITS-90): the pure bulk metal's recommended values, rho(T) from Desai, James and Ho, Electrical resistivity of aluminum and manganese, J. Phys. Chem. Ref. Data 13, 1131 (1984); k(T) from Ho, Powell and Liley, Thermal conductivity of the elements: a comprehensive review, J. Phys. Chem. Ref. Data 3, Supplement 1 (1974). The conductivity table is that rho(T) with a constant 7.41e-12 ohm-m added (Matthiessen's rule: an impurity adds a temperature-independent resistivity) so that it equals Sigma20 at 20 C; the slope with temperature is the pure metal's. Specific heat at 25 C: CRC Handbook of Chemistry and Physics.",
+   "Color": "#A3A8AF",
+   "Appearance": {
+    "BaseColor": "#E4E7EA",
+    "Metallic": 1,
+    "Roughness": 0.4
+   }
+  },
+  {
+   "Name": "Gold",
+   "Sigma20": 41000000,
+   "Alpha20": 0.0034,
+   "SigmaVsTemp": [
+    {
+     "TempC": 20,
+     "Value": 41000000
+    },
+    {
+     "TempC": 25.05,
+     "Value": 40320210
+    },
+    {
+     "TempC": 26.85,
+     "Value": 40083326
+    },
+    {
+     "TempC": 76.85,
+     "Value": 34378403
+    },
+    {
+     "TempC": 85,
+     "Value": 33584219
+    },
+    {
+     "TempC": 125,
+     "Value": 30164193
+    },
+    {
+     "TempC": 126.85,
+     "Value": 30022791
+    },
+    {
+     "TempC": 226.85,
+     "Value": 23821985
+    },
+    {
+     "TempC": 326.85,
+     "Value": 19612446
+    },
+    {
+     "TempC": 426.85,
+     "Value": 16556832
+    },
+    {
+     "TempC": 526.85,
+     "Value": 14221104
+    },
+    {
+     "TempC": 626.85,
+     "Value": 12367356
+    },
+    {
+     "TempC": 726.85,
+     "Value": 10857996
+    },
+    {
+     "TempC": 826.85,
+     "Value": 9601718
+    },
+    {
+     "TempC": 926.85,
+     "Value": 8539853
+    },
+    {
+     "TempC": 1026.85,
+     "Value": 7646544
+    }
+   ],
+   "ThermalK": 318.202,
+   "ThermalKVsTemp": [
+    {
+     "TempC": 20,
+     "Value": 318.202
+    },
+    {
+     "TempC": 25.05,
+     "Value": 318
+    },
+    {
+     "TempC": 26.85,
+     "Value": 317
+    },
+    {
+     "TempC": 76.85,
+     "Value": 314
+    },
+    {
+     "TempC": 85,
+     "Value": 313.511
+    },
+    {
+     "TempC": 125,
+     "Value": 311.111
+    },
+    {
+     "TempC": 126.85,
+     "Value": 311
+    },
+    {
+     "TempC": 226.85,
+     "Value": 304
+    },
+    {
+     "TempC": 326.85,
+     "Value": 298
+    },
+    {
+     "TempC": 426.85,
+     "Value": 291
+    },
+    {
+     "TempC": 526.85,
+     "Value": 284
+    },
+    {
+     "TempC": 626.85,
+     "Value": 277
+    },
+    {
+     "TempC": 726.85,
+     "Value": 270
+    },
+    {
+     "TempC": 826.85,
+     "Value": 262
+    },
+    {
+     "TempC": 926.85,
+     "Value": 255
+    },
+    {
+     "TempC": 1026.85,
+     "Value": 247
+    }
+   ],
+   "DensityKgM3": 19300,
+   "SpecificHeat": 129,
+   "Source": "Resistivity 2.44e-8 ohm-m and temperature coefficient 0.0034 /K at 20 C, as tabulated in university physics texts (e.g. Serway, Physics for Scientists and Engineers, table of resistivities). Representative of deposited gold: the CRC Handbook of Chemistry and Physics gives bulk gold 2.21e-8 ohm-m (4.5e7 S/m). Density: CRC Handbook of Chemistry and Physics. Thermal conductivity k(T) and the shape of conductivity against temperature from 20 C to 1026.85 C, the last tabulated row below the melting point (1064.18 C, ITS-90): the pure bulk metal's recommended values, rho(T) from Matula, Electrical resistivity of copper, gold, palladium, and silver, J. Phys. Chem. Ref. Data 8, 1147 (1979); k(T) from Ho, Powell and Liley, Thermal conductivity of the elements: a comprehensive review, J. Phys. Chem. Ref. Data 3, Supplement 1 (1974). The conductivity table is that rho(T) with a constant 2.24e-09 ohm-m added (Matthiessen's rule: an impurity adds a temperature-independent resistivity) so that it equals Sigma20 at 20 C; the slope with temperature is the pure metal's. Specific heat at 25 C: CRC Handbook of Chemistry and Physics.",
+   "Appearance": {
+    "BaseColor": "#FFE39D",
+    "Metallic": 1,
+    "Roughness": 0.25
+   }
+  },
+  {
+   "Name": "Silicon, 10 kΩ·cm",
+   "Epsr": 11.9,
+   "TanD": 0,
+   "Mur": 1,
+   "ThermalK": 148,
+   "DensityKgM3": 2329,
+   "SpecificHeat": 712,
+   "Source": "Relative permittivity 11.9: Sze and Ng, Physics of Semiconductor Devices, properties of Si at 300 K. Conductivity 0.01 S/m is the reciprocal of a resistivity of 10 kohm-cm, a high-resistivity substrate. The loss tangent is 0 because the conductivity is the whole of the loss. Permittivity and conductivity are treated as constant from 1 GHz to 40 GHz. Thermal conductivity 148 W/(m K) at 300 K, density 2329 kg/m3 and specific heat 712 J/(kg K) at 25 C: CRC Handbook of Chemistry and Physics, for pure silicon.",
+   "Appearance": {
+    "BaseColor": "#3A3D42",
+    "Metallic": 0,
+    "Roughness": 0.15
+   },
+   "Sigma20": 0.01
+  }
+ ]
+}
