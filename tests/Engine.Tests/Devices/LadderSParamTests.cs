@@ -32,7 +32,7 @@ public class LadderSParamTests(ITestOutputHelper output)
 
     /// <summary>The length of a line of width <paramref name="w"/> that is <paramref name="theta"/> long at F.</summary>
     private static double Len(double w, double theta, double f, MicrostripSubstrate s)
-        => PlanarLineAngle.LengthMeters(At(w, f, s).Eeff, theta, f);
+        => PlanarLineAngle.LengthMeters(At(w, f, s), theta);
 
     /// <summary>An open stub's end extension (Kirschning, Jansen and Koster), which its drawn length leaves out.</summary>
     private static double OpenEnd(double w, MicrostripSubstrate s)

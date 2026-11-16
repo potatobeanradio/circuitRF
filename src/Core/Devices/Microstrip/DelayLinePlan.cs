@@ -6,7 +6,7 @@ namespace CircuitRF.Core.Devices.Microstrip;
 /// stamps and the PCell draws.</summary>
 /// <param name="WMeters">The line's width, MLIN's Z0 at F.</param>
 /// <param name="Eeff">MLIN's dispersive εeff at F.</param>
-/// <param name="LineMeters">θ at F as a length of the line: the straight run's length.</param>
+/// <param name="LineMeters">θ at F as a length of the line, by its phase constant there: the straight run's length.</param>
 /// <param name="PitchMeters">The meander's legs centre to centre, as built (Pitch, or 6·W when none is given); 0 for the
 /// other styles.</param>
 public sealed record DelayLineDesign(
@@ -53,12 +53,12 @@ public static class DelayLinePlan
                 "Delay line: a meander takes a whole number of turns, 1 or more, not {turns}.", ("turns", turns)));
 
         double w = PassivePlan.OnGrid(BranchLinePlan.Width(z0, fHz, s, "Delay line", "device.delayline.width-unreachable"));
-        double eeff = BranchLinePlan.Line(w, s).LineParameters(fHz).Eeff;
+        var line = BranchLinePlan.Line(w, s).LineParameters(fHz);
         // 6W unless given: a half-turn of 3W, where MCURVE's effective-radius fit starts, and legs 5W apart edge to edge.
         double p = style == PlanRouteStyle.Meander ? (pitch > 0.0 ? pitch : 6.0 * w) : 0.0;
         var route = PlanRoute.Build(0.0, 0.0, 0.0, w, thetaRad, fHz, s, style, corner, (int)turns, p, side < 0 ? -1 : 1,
             coupled: coupled);
-        return new DelayLineDesign(z0, fHz, thetaRad, w, eeff, PlanarLineAngle.LengthMeters(eeff, thetaRad, fHz), p, route,
+        return new DelayLineDesign(z0, fHz, thetaRad, w, line.Eeff, PlanarLineAngle.LengthMeters(line, thetaRad), p, route,
             new PassivePlan(Pins, route.Sections, route.NextNode - 1) { Warnings = route.Warnings });
     }
 }

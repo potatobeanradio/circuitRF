@@ -20,7 +20,8 @@ public sealed record PlanRouteResult(
 /// parallel legs joined by k 180° turns, stacked <c>Pitch</c> apart centre to centre towards <c>Side</c> (+1 left of the
 /// heading, −1 right), each turn back the other way, so k odd ends heading back the way it started.
 ///
-/// <para><b>The length.</b> The legs share what θ leaves after the corners: θ at F in MLIN's dispersive εeff, less each
+/// <para><b>The length.</b> The legs share what θ leaves after the corners: θ at F by MLIN's phase constant there (its
+/// dispersive εeff and its loss's causal phase, <see cref="PlanarLineAngle"/>), less each
 /// corner's own insertion phase at F as a length of the line (<see cref="PlanSection.LineLength"/>, as the cornered
 /// MWPD and MRRC rings count theirs). A Curve corner is an MCURVE (of <c>Radius</c>, 3W when none is given; a meander's
 /// half-turn has radius Pitch/2), a Miter or Square corner an MMITER or MBEND; a meander's Miter or Square turn is two
@@ -56,8 +57,8 @@ public static class PlanRoute
 
         var line = new MicrostripLineModel(w, 1.0, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM, s.TanD, "(route)",
             s.RoughnessMeters).LineParameters(fHz);
-        double total = PlanarLineAngle.LengthMeters(line.Eeff, thetaRad, fHz);
-        double quarter = PlanarLineAngle.LengthMeters(line.Eeff, Math.PI / 2.0, fHz);
+        double total = PlanarLineAngle.LengthMeters(line, thetaRad);
+        double quarter = PlanarLineAngle.LengthMeters(line, Math.PI / 2.0);
         var warnings = new List<Diagnostic>();
 
         // The run in its own frame: from the origin heading +x. Each piece is posed where the last one ended.

@@ -111,7 +111,7 @@ public class CouplerOptionsPlanTests(ITestOutputHelper output)
     {
         var d = SchiffmanPlan.Build(50.0, F0, 90.0, 1.5, Ro4350b);
         var line = new MicrostripLineModel(d.W0Meters, 1.0, 0.508e-3, 35e-6, 3.66, 5.8e7, 0.0037, "t").LineParameters(F0);
-        Assert.Equal(3.0 * 2.99792458e8 / (4.0 * F0 * Math.Sqrt(line.Eeff)), d.ReferenceMeters, 12);
+        Assert.Equal(3.0 * PlanarLineAngle.LengthMeters(line, Math.PI / 2.0), d.ReferenceMeters, 12);
         var reference = Assert.Single(d.Plan.Sections.OfType<PlanLine>(), l => l.Nodes.SequenceEqual([3, 4]));
         Assert.Equal(PassivePlan.OnGrid(d.ReferenceMeters), reference.L);
         Assert.Equal([1, 5, 2, 6], Assert.Single(d.Plan.Sections.OfType<PlanCoupledLine>()).Nodes);

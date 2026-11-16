@@ -127,12 +127,12 @@ public static class RacetrackRing
         return (sections, next - 1, new RingShape(corner, radius, side, cornerLength, onTop, onBottom));
     }
 
-    /// <summary>A quarter-wave line of impedance <paramref name="z"/>: MLIN's width at F and its λg/4, both on the 2 nm
-    /// grid, and its εeff; a Z0 no width reaches is refused with <paramref name="code"/>.</summary>
+    /// <summary>A quarter-wave line of impedance <paramref name="z"/>: MLIN's width at F and its λg/4 by MLIN's phase
+    /// constant at F, both on the 2 nm grid, and its εeff; a Z0 no width reaches is refused with <paramref name="code"/>.</summary>
     public static WilkinsonLine Quarter(string name, double z, double fHz, MicrostripSubstrate s, string part, string code)
     {
         double w = PassivePlan.OnGrid(BranchLinePlan.Width(z, fHz, s, part, code));
-        double eeff = BranchLinePlan.Line(w, s).LineParameters(fHz).Eeff;
-        return new WilkinsonLine(name, z, w, eeff, PassivePlan.OnGrid(PlanarLineAngle.LengthMeters(eeff, Math.PI / 2.0, fHz)));
+        var line = BranchLinePlan.Line(w, s).LineParameters(fHz);
+        return new WilkinsonLine(name, z, w, line.Eeff, PassivePlan.OnGrid(PlanarLineAngle.LengthMeters(line, Math.PI / 2.0)));
     }
 }

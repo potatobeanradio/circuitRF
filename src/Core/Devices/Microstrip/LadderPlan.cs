@@ -545,8 +545,8 @@ public static class LadderPlan
     {
         var p = BranchLinePlan.Line(w, s).LineParameters(fHz);
         double end = open ? MicrostripOpenEnd.Extension(w, s.HMeters, s.EpsR, p.EeffStatic) : 0.0;
-        return new LadderSectionAtF(p.Z0, p.Z0, Deg(PlanarLineAngle.AngleRad(p.Eeff, l, fHz)),
-            Deg(PlanarLineAngle.AngleRad(p.Eeff, end, fHz)), 0.0, 0.0, w);
+        return new LadderSectionAtF(p.Z0, p.Z0, Deg(PlanarLineAngle.AngleRad(p, l)), Deg(PlanarLineAngle.AngleRad(p, end)),
+            0.0, 0.0, w);
     }
 
     /// <summary>A radial end's input reactance at F, its sectors together; 0 where the readout's lossless substrate leaves
@@ -567,7 +567,7 @@ public static class LadderPlan
         double theta = Enumerable.Range(0, n).Sum(k =>
         {
             double wk = t.W1 + (t.W2 - t.W1) * (k + 0.5) / n;
-            return PlanarLineAngle.AngleRad(BranchLinePlan.Line(wk, s).LineParameters(fHz).Eeff, t.L / n, fHz);
+            return PlanarLineAngle.AngleRad(BranchLinePlan.Line(wk, s).LineParameters(fHz), t.L / n);
         });
         return new LadderSectionAtF(BranchLinePlan.Line(t.W1, s).LineParameters(fHz).Z0,
             BranchLinePlan.Line(t.W2, s).LineParameters(fHz).Z0, Deg(theta), 0.0, 0.0, 0.0, t.W1);

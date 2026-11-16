@@ -17,16 +17,15 @@ public class DividerPlanTests
     private static MicrostripLineParameters Line(double w, double f)
         => new MicrostripLineModel(w, 1.0, 0.508e-3, 35e-6, 3.66, 5.8e7, 0.0037, "test").LineParameters(f);
 
-    private static double Quarter(double eeff, double f) => 2.99792458e8 / (4.0 * f * Math.Sqrt(eeff));
-
-    /// <summary>Each line's impedance is MLIN's at its width, its λg/4 is MLIN's εeff's, on the 2 nm grid.</summary>
+    /// <summary>Each line's impedance is MLIN's at its width, its λg/4 by MLIN's phase constant at F, on the 2 nm grid.</summary>
     private static void AssertLines(IEnumerable<WilkinsonLine> lines, double f)
     {
         foreach (var l in lines)
         {
             Assert.Equal(l.Z, Line(l.WMeters, f).Z0, 2);
             Assert.Equal(Line(l.WMeters, f).Eeff, l.Eeff, 12);
-            Assert.True(Math.Abs(l.QuarterWaveMeters - Quarter(l.Eeff, f)) < 2e-9, $"{l.Name}: {l.QuarterWaveMeters}");
+            Assert.True(Math.Abs(l.QuarterWaveMeters - PlanarLineAngle.LengthMeters(Line(l.WMeters, f), Math.PI / 2.0)) < 2e-9,
+                $"{l.Name}: {l.QuarterWaveMeters}");
         }
     }
 

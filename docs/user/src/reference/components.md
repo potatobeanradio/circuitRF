@@ -1851,9 +1851,11 @@ and He and Wang's, who meandered them. The three quarter-wave arms make a C: 2 t
 turns between the top and bottom runs, laid by the same function as a [delay line's](#mdly), and a half-turn out to
 terminal 2's tee. Its half-turns' own electrical length at `F` comes out of the meander, so it is still three quarters
 of a wavelength, and every turn of it has the same radius, which puts its legs as far from one another as from the runs.
-The ring is no taller and about a quarter wave narrower: on the example board the copper, feeds included, is 29.89 ×
-13.57 mm with one turn, against 53.11 × 14.24 mm for the curved ring, 54 % of its area, and at `F` the match, the
-in-phase and antiphase outputs and the isolation are the curved ring's to 0.001 dB and 0.001°. The folded legs are
+The ring is no taller and about a quarter wave narrower: on the example board the copper, feeds included, is 29.87 ×
+13.57 mm with one turn, against 53.11 × 14.24 mm for the curved ring, 54 % of its area, and at `F` the outputs are the
+curved ring's to 0.002 dB, the match and the isolation below −49 dB in both, and the in-phase and antiphase outputs
+within 0.02° of 0° and 180°, about 0.2° closer than the curved ring's: the folded arm is sized by the line's causal phase
+at `F`, the curved ring by its effective permittivity alone. The folded legs are
 separate lines in the model, uncoupled to each other and to the runs beside them; the turns are curves only, so `Corner`
 must be `Curve`. `Meander` = 0, the default, is the ring above, unchanged.
 
@@ -2304,7 +2306,8 @@ reciprocal, so either may be the input.
 **What circuitRF derives** from `Z0`, `F` and `Theta` on the technology's substrate:
 
 - the width, for `Z0`, from the microstrip line model's own impedance at `F`;
-- `Theta` as a length of that line, `Theta`/360° · c₀ / (`F`·√εeff) with εeff at `F`;
+- `Theta` as a length of that line, by its phase constant at `F`: its effective permittivity's and the phase its loss
+  comes with, as the line model stamps it;
 - the layout, by `Style`:
   - `Straight`: one line of that length;
   - `Corner`: two equal legs and one 90° corner, a curve of three widths' radius (`Corner` = `Curve`), a mitred corner
@@ -2315,17 +2318,17 @@ reciprocal, so either may be the input.
     them. An odd number of turns ends heading back the way the run started.
 
 **The length holds through the corners.** Every corner or turn has its own phase at `F`, taken from its own model, and
-the legs are shortened by it, so S21 is −`Theta` at `F` in every style: on the example board within 0.03° for straight,
+the legs are shortened by it, so S21 is −`Theta` at `F` in every style: on the example board within 0.04° for straight,
 cornered and meandered runs of 90° to 360°. The parameters panel shows the width, `Theta` as a straight length, the
 copper's length along its centre line, its extent and each run in order.
 
 **Legs that couple.** Legs close together couple, which slows the run and moves its phase. With `Coupled` = 0, the
 default, they are separate lines in the model and the run says so in Messages when they are under three widths apart
 edge to edge. `Coupled` = 1 puts the legs into the model as one section of [N coupled lines](#mclinen), every leg coupled
-to every other, over the same copper. On the example board a 360° meander of three half-turns at 2.4 GHz is then 1.0° off
-−`Theta` with its legs ten widths apart, 2.7° at four and 5.5° at two; the 1° that remains far apart
-is the coupled-line section's static permittivity against the single line's dispersive one. The turns are never
-coupled to one another.
+to every other, over the same copper. On the example board a 360° meander of three half-turns at 2.4 GHz is then 1.3° off
+−`Theta` with its legs ten widths apart, 3.2° at four and 6.1° at two; the 1.3° that remains far apart is the
+coupled-line section's static permittivity against the single line's dispersive one, and the phase the single line's
+loss comes with, which the coupled-line section leaves out. The turns are never coupled to one another.
 
 **The model** is the MLIN, MCURVE, MMITER or MBEND parts the layout draws (and with `Coupled` the coupled-line section),
 stamped together and reduced to the two terminals, with their limits, which it reports in Messages: MCURVE's length rule
