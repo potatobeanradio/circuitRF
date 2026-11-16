@@ -1956,7 +1956,7 @@ public static class Em3dGenerator
                       $"zero (the content is flat there), so those faces take the default padding ({Fmt(defaults.For(a == 'z' ? "zmax" : "xmax", 0) * 1e3)} mm) instead.");
         var faces = new Em3dFaces(Kind(box.XMin), Kind(box.XMax), Kind(box.YMin), Kind(box.YMax),
                                   floorZ is not null ? Em3dBoundaryKind.Pec : Kind(box.ZMin), Kind(box.ZMax));
-        return new Em3dAirBox(boxMin, boxMax, faces);
+        return new Em3dAirBox(boxMin, boxMax, faces) { Scan = box.Scan };
     }
 
     /// <summary>

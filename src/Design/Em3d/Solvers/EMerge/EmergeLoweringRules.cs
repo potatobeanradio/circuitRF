@@ -194,7 +194,7 @@ internal static class EmergeLoweringRules
         if (p.Kind == Em3dPortKind.Wave && problem.Type == Em3dProblemType.Eigenmode)
             return $"Port {n} is a wave port, and circuitRF runs EMerge's eigenmode solve with lumped ports only: a wave port's " +
                    "condition is a driven problem's. Make the port lumped, or solve a driven problem.";
-        if (p.Kind == Em3dPortKind.Wave && !p.Hollow && FdtdWavePorts.IsHollow(problem, p))
+        if (p.Kind == Em3dPortKind.Wave && !p.Hollow && p.Floquet is null && FdtdWavePorts.IsHollow(problem, p))
             return $"Port {n} names one conductor at both ends, or two of the air box's faces, and the port reader did not find a hollow " +
                    "guide there: a hollow guide's port states neither end. Remove its Positive and Negative and let the reader decide.";
         return null;
@@ -243,6 +243,7 @@ internal static class EmergeLoweringRules
     private static string? PortRefusal(Em3dPort p)
     {
         int n = p.SourceNumber ?? p.Number;
+        if (p.Floquet is not null) return null;     // brief-hzn-16 — normalised to its modes, its own condition
         if (p.Kind == Em3dPortKind.Wave)
             return p.Z0.Imaginary != 0 || !(p.Z0.Real > 0)
                 ? $"Port {n}'s reference impedance is {Ohms(p.Z0)}. EMerge's wave port refers its S-parameters to the mode, and " +
@@ -528,6 +529,7 @@ internal static class EmergeLoweringRules
         Em3dBoundaryKind.Pec => "PEC (EMerge's default outer boundary)",
         Em3dBoundaryKind.Pmc => "PMC",
         Em3dBoundaryKind.Absorbing => "absorbing boundary (second order)",
+        Em3dBoundaryKind.Periodic => "periodic (EMerge's periodic cell, the scan's Floquet phase)",
         _ => kind.ToString(),
     };
 

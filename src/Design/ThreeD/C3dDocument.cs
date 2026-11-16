@@ -1075,6 +1075,21 @@ public sealed class C3dVoltagePath
 /// <see cref="Negative"/> say (both, or neither). A wave port's rectangle is a region of an air-box face of the setup
 /// being run. Every setup uses every port.
 /// </summary>
+/// <summary>brief-hzn-16 — a Floquet port's modes (<see cref="C3dPort.Floquet"/>).</summary>
+public sealed class C3dFloquet
+{
+    /// <summary>How many modes the port has in the result, 1 or more: 1 the TE wave of the (0, 0) harmonic, 2 also its TM wave.</summary>
+    public int Modes { get; set; } = 2;
+
+    /// <summary>The relative permittivity of the medium at the port; 1 when omitted.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double Er { get; set; }
+
+    /// <summary>The permittivity the run uses: <see cref="Er"/>, or 1.</summary>
+    [JsonIgnore]
+    public double EffectiveEr => Er > 0 ? Er : 1;
+}
+
 public sealed class C3dPort
 {
     public int    Number { get; set; }
@@ -1092,6 +1107,30 @@ public sealed class C3dPort
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public double Angle { get; set; }
+
+    /// <summary>
+    /// brief-hzn-15 — a lumped port whose sheet is this flat four-cornered polygon, world DBU, in order round it, instead of
+    /// <see cref="Rect"/> on <see cref="Plane"/> (which, with <see cref="Angle"/>, are then not read): a port in any plane, a tilted
+    /// one included. Opposite sides are parallel and equal and its corners square to within a part in a hundred (an exported model
+    /// joins two edges that are not exactly parallel, and the sheet keeps both exactly). Its two ends are inferred from what its edges
+    /// touch, as any port's are. Written only when set; a wave port, a ring and a gap on a cylinder never have corners.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<C3dPoint3>? Corners { get; set; }
+
+    /// <summary>
+    /// brief-hzn-16 — a Floquet port: a wave port over a whole z face of a periodic cell (the setup's air box periodic in x and
+    /// y), with <see cref="C3dFloquet.Modes"/> modes numbered <see cref="Number"/>, <see cref="Number"/> + 1, …: 1 the TE wave of the
+    /// (0, 0) harmonic, 2 its TM wave, more the grating harmonics by cutoff. Its S-parameters are normalised to the modes, so its
+    /// <see cref="Z0"/> is <c>"mode"</c>. Written only when set.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public C3dFloquet? Floquet { get; set; }
+
+    /// <summary>brief-hzn-15 — true when the port does not lie along its plane's axes: turned by <see cref="Angle"/>, or drawn as
+    /// <see cref="Corners"/>.</summary>
+    [JsonIgnore]
+    public bool Turned => Angle != 0 || Corners is not null;
 
     /// <summary>
     /// brief-sar-8b R-sar8b-1 — a lumped port whose gap is a patch of a cylinder instead of <see cref="Rect"/> on <see cref="Plane"/>

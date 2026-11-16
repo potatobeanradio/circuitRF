@@ -123,7 +123,7 @@ internal sealed partial class C3dToHznWriter
     // ── names ─────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>A variable's name in Hertzon: a project variable's reserved prefix comes off (our variables are the design's, D9).</summary>
-    private string HznName(string c3dName) => HznNames.HznProjectName(c3dName) ?? c3dName;
+    private string HznName(string c3dName) => HznNames.HznVariableName(c3dName);
 
     /// <summary>An object's name in Hertzon: <c>AirBox_hzn</c> is the <c>AirBox</c> a translation renamed ('airbox' is reserved here).</summary>
     private static string ObjectName(string c3dName) => HznNames.HznObjectName(c3dName);
@@ -161,7 +161,8 @@ internal sealed partial class C3dToHznWriter
                 continue;
             }
             seen[name] = n.Name;
-            if (n.Name != name) _notes.Add($"Variable '{n.Name}' is '{name}' in the design: a project variable's reserved prefix comes off, and our variables are the design's.");
+            if (n.Name != name && HznNames.HznProjectName(n.Name) is not null)
+                _notes.Add($"Variable '{n.Name}' is '{name}' in the design: a project variable's reserved prefix comes off, and our variables are the design's.");
             if (_x.Write(n.Expression, n.Unit, $"variable {n.Name}") is { } t) list.Add((name, t.Text));
         }
         return list;

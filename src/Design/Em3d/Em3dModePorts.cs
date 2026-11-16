@@ -60,6 +60,15 @@ public static class Em3dModePorts
     /// port and the solver; null when it does all of it.</summary>
     public static string? SolverRefusal(Em3dProblem problem, Em3dSolverId solver)
     {
+        // brief-hzn-16 — a periodic cell and its Floquet ports run on EMerge, the one solver circuitRF lowers them for
+        if (solver != EmergeSolver.Id)
+        {
+            var f = problem.Boundary.Faces;
+            if (problem.Ports.FirstOrDefault(p => p.Floquet is not null) is { } fp)
+                return $"Port {fp.FaceGroupLabel ?? Label(fp)} is a Floquet port, which circuitRF runs on EMerge only. Set the setup's solver to EMerge.";
+            if (f.XMin == Em3dBoundaryKind.Periodic || f.YMin == Em3dBoundaryKind.Periodic)
+                return "The air box's x or y faces are periodic, which circuitRF runs on EMerge only. Set the setup's solver to EMerge.";
+        }
         if (solver != OpenEmsSolver.Id) return null;
         if (problem.Ports.FirstOrDefault(p => p.Kind == Em3dPortKind.Wave && FdtdWavePorts.IsHollow(problem, p)) is { } hollow)
             return FdtdWavePorts.HollowRefusal(hollow);

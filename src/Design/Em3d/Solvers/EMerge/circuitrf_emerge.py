@@ -138,10 +138,23 @@ def main(argv):
     import time
     started = time.time()
     report(stage="geometry")
-    try:
-        sim, counts, model = build(problem, os.path.dirname(path), em, gmsh, GeoVolume, GeoSurface)
-    except Exception as e:  # EMerge's or Gmsh's own refusal, reported as the run's
-        fail(named(e))
+    # brief-hzn-15 -- with a turned port, a model the kernel cannot fragment exactly is built again, joining what lies within a tenth
+    # of a nanometre, then within a nanometre (a DBU): such a port meets its copper at whatever angle the model drew, and the exact
+    # intersection of two faces meeting at a few degrees along a shared edge splits that edge again on the kernel's second pass.
+    joins = [0.0] + ([1e-10, 1e-9] if any("corners" in p for p in problem["ports"]) else [])
+    for k, join in enumerate(joins):
+        try:
+            sim, counts, model = build(problem, os.path.dirname(path), em, gmsh, GeoVolume, GeoSurface, join)
+            if join > 0:
+                warnings.append("The geometry kernel could not fragment the model exactly, so it was built joining what lies within "
+                                "%g nm of itself." % (join * 1e9))
+            break
+        except GeometryNotFragmented as e:
+            if k == len(joins) - 1:
+                fail(named(e))
+            gmsh.clear()
+        except Exception as e:  # EMerge's or Gmsh's own refusal, reported as the run's
+            fail(named(e))
     if argv[2] == "mesh":
         if model["waves"]:
             counts["wavePorts"] = wave_conditions(sim, model["waves"])
@@ -581,9 +594,93 @@ def ring(gmsh, a):
     return [t for d, t in out if d == 2]
 
 
+# brief-hzn-15 -- the share of a turned port's gap each of its voltage lines stops short of both conductors: a point ON metal lies
+# outside the meshed space, where EMerge reads the field as zero (RING_LINE_INSET's reason).
+DRAWN_LINE_INSET = 0.01
+
+
+def drawn_port_lines(bc, ends):
+    """brief-hzn-15 -- a turned port's voltage lines, set here rather than left to EMerge: EMerge starts its lines at the sheet's nodes
+    whose projection on the direction is exactly the least, which on a sheet turned off the axes is one corner, and from a corner of
+    a sheet drawn as its corners its line left the gap (the Ex2 antenna's feed read as a short). Five lines run from the negative end to
+    the positive end, at a tenth, three tenths ... of the way along them, each stopping DRAWN_LINE_INSET of the gap inside both
+    conductors and scaled back to the whole gap (the lumped port's field is uniform along it)."""
+    import numpy as np
+    from emerge._emerge.coord import Line
+    (n0, n1), (p0, p1) = [[np.array(c, dtype=float) for c in e] for e in ends]
+    bc.voltage_integration_line = []
+    for s in (0.1, 0.3, 0.5, 0.7, 0.9):
+        a = n0 + s * (n1 - n0)
+        b = p0 + s * (p1 - p0)
+        line = Line.from_points(a + DRAWN_LINE_INSET * (b - a), b - DRAWN_LINE_INSET * (b - a), 21)
+        scale = 1 / (1 - 2 * DRAWN_LINE_INSET)
+        line.dx, line.dy, line.dz = line.dx * scale, line.dy * scale, line.dz * scale
+        bc.voltage_integration_line.append(line)
+    bc.v_integration = True
+
+
+def periodic_cell(problem, lo, hi):
+    """brief-hzn-16 -- EMerge's rectangular periodic cell for the air box. Its faces are found and paired in the geometry's own
+    units (model units: this driver builds in micrometres), while its Floquet phases and lattice are physics, in metres: the cell
+    is EMerge's RectCell with its width and height in metres, its face planes moved to the box's in model units, and the periodic
+    conditions it makes given their displacement in metres."""
+    from emerge._emerge.periodic import RectCell
+    from emerge._emerge.bc import Periodic
+    k = MODEL_SCALE
+    per = problem["periodic"]
+    w, h = hi[0] - lo[0], hi[1] - lo[1]
+    cx, cy, cz = (lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2
+
+    class BoxCell(RectCell):
+        """The faces are found and paired here in Gmsh's own model units, from the geometry kernel's centres: after its mesh,
+        EMerge reports a face's centre in metres while the kernel's stay in model units, and its own pairing mixed the two."""
+
+        def __init__(self):
+            super().__init__(w, h)      # metres: the Floquet port's lattice
+
+        def cell_data(self):
+            import gmsh
+            import numpy as np
+            from emerge._emerge.selection import FaceSelection
+            faces = [(t, np.array(gmsh.model.occ.getCenterOfMass(2, t)), gmsh.model.occ.getMass(2, t))
+                     for _, t in gmsh.model.getEntities(2)]
+            size = max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) * k
+            tol = 1e-9 * size
+            for axis, on in ((0, per["x"]), (1, per["y"])):
+                if not on:
+                    continue
+                low = [f for f in faces if abs(f[1][axis] - lo[axis] * k) <= tol and self._flat(f[0], axis)]
+                high = [f for f in faces if abs(f[1][axis] - hi[axis] * k) <= tol and self._flat(f[0], axis)]
+                shift = np.zeros(3)
+                shift[axis] = (hi[axis] - lo[axis]) * k
+                for t1, c1, a1 in low:
+                    for t2, c2, a2 in high:
+                        if np.linalg.norm(c1 + shift - c2) <= tol and abs(a1 - a2) <= 1e-9 * max(a1, a2):
+                            yield FaceSelection([t1]), FaceSelection([t2]), tuple(shift)
+
+        @staticmethod
+        def _flat(tag, axis):
+            import gmsh
+            lo_, hi_ = gmsh.model.getBoundingBox(2, tag)[:3], gmsh.model.getBoundingBox(2, tag)[3:]
+            return abs(hi_[axis] - lo_[axis]) <= 1e-9 * max(1.0, max(abs(v) for v in hi_))
+
+        def generate_bcs(self):
+            bcs = [Periodic(f1, f2, tuple(v / k for v in vec)) for f1, f2, vec in self.cell_data()]
+            if not bcs:
+                raise ValueError("the periodic cell's faces were not found on the air box's planes")
+            self._bcs = bcs
+            self._apply_scanangle()
+            return bcs
+
+    return BoxCell()
+
+
 def port_surface(gmsh, p):
     """A lumped port's sheet: its ring when it is coaxial, else its rectangle."""
-    return ring(gmsh, p["annulus"]) if "annulus" in p else rectangle(gmsh, p["origin"], p["u"], p["v"])
+    if "annulus" in p:
+        return ring(gmsh, p["annulus"])
+    # brief-hzn-15 -- a turned port is its corners as drawn, which a port drawn as its corners needs (it is a rectangle only to 1 %)
+    return planar(gmsh, [p["corners"]]) if "corners" in p else rectangle(gmsh, p["origin"], p["u"], p["v"])
 
 
 # brief-cxp-3 — the elements across a coaxial port's radial gap, as circuitRF's Gmsh lowering puts there for Palace
@@ -838,7 +935,7 @@ def impedance(element):
 
 # -- the model -----------------------------------------------------------------------------------------------------------
 
-def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
+def build(problem, folder, em, gmsh, GeoVolume, GeoSurface, join=0.0):
     from emerge._emerge.attributes import FiniteThickness
     sim = em.Simulation("circuitrf")
     sim.set_scale_factor(MODEL_SCALE)
@@ -894,9 +991,14 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
     # brief-emw-2: a wave port's region is a surface of its own on the air box's face, built as a lumped port's plate is;
     # commit_geometry fragments it into the face.
     regions = [(w, GeoSurface(rectangle(gmsh, w["origin"], w["u"], w["v"]), name=w["name"])) for w in problem["wavePorts"]]
-    for entry, g in sheets + ports + elements + regions:
+    # brief-hzn-16 -- each Floquet port's face, a region of the box's z face as a wave port's is
+    floquet = [(f, GeoSurface(rectangle(gmsh, f["origin"], f["u"], f["v"]), name=f["name"])) for f in problem.get("floquetPorts", [])]
+    regions_all = regions + floquet
+    for entry, g in sheets + ports + elements + regions_all:
         described.update({(2, t): "'%s'" % entry["name"] for t in g.tags})
 
+    # brief-hzn-15 -- the join main() asks for, in model units (0: the kernel's exact booleans, Gmsh's default)
+    gmsh.option.setNumber("Geometry.ToleranceBoolean", join * MODEL_SCALE)
     commit_whole(sim, gmsh, described)
 
     # Conductors are voids, as in Palace's mesh: EMerge has already fragmented the model and resolved every overlap by
@@ -930,7 +1032,12 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
     # brief-emw-2: a port region's fragments over a conductor's face bounded only metal and went with it (the Launch's square
     # over its housing), so the region is what is left: the part over meshed space.
     left = {t for _, t in gmsh.model.getEntities(2)}
-    for _, g in regions:
+    for _, g in regions_all:
+        g.tags = [t for t in g.tags if t in left]
+    # brief-hzn-15: and a sheet's (or a lumped element's) piece inside a conductor went with it too (a feed pad the feed pin passes
+    # through), so the sheet is the pieces left in meshed space; a boundary on a removed piece stopped the run on its unknown tag.
+    # A lumped port's sheet likewise: a port whose end lies on a conductor's face can keep a sliver of its sheet inside the conductor.
+    for _, g in sheets + elements + ports:
         g.tags = [t for t in g.tags if t in left]
     # commit_geometry has already cached every object's boundary faces and generated EMerge's default boundary conditions
     # from them: a removed conductor would keep a surface impedance on faces that no longer exist, and the solve stops on
@@ -939,6 +1046,12 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
     for g in sim.all_geos():
         g._cache_gmsh()
     sim.mw.reset()
+    # brief-hzn-16 -- a periodic cell, set after the conditions are cleared (which forgets one) and before the mesh, which pairs
+    # its faces' nodes
+    cell = None
+    if problem.get("periodic") is not None:
+        cell = periodic_cell(problem, lo, hi)
+        sim.set_periodic_cell(cell)
 
     sim.mw.set_basis_space(element_order=settings["elementOrder"])
     sim.mw.set_resolution(settings["resolution"])
@@ -984,7 +1097,7 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
               "zmin": (2, lo[2] * k), "zmax": (2, hi[2] * k)}
     faces = {key: [] for key in planes}
     # A port region's fragments are its port, never the face's boundary: a region left PEC is a short across the port.
-    in_region = {t for _, g in regions for t in g.tags}
+    in_region = {t for _, g in regions_all for t in g.tags}     # brief-hzn-16: and a Floquet port's face
     for _, tag in gmsh.model.getEntities(2):
         if tag in in_region:
             continue
@@ -1032,8 +1145,11 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
             # brief-cxp-3 — registered as EMerge registers its own conditions, so it is one of the simulation's ports
             lumped.append((p, sim.mw.bc._construct_bc(radial)(plate, numbers[p["number"]], p["annulus"], p["z0"])))
             continue
-        lumped.append((p, sim.mw.bc.LumpedPort(plate, numbers[p["number"]], width=p["widthM"], height=p["heightM"],
-                                               direction=tuple(p["direction"]), Z0=p["z0"])))
+        bc = sim.mw.bc.LumpedPort(plate, numbers[p["number"]], width=p["widthM"], height=p["heightM"],
+                                  direction=tuple(p["direction"]), Z0=p["z0"])
+        if "ends" in p:
+            drawn_port_lines(bc, p["ends"])
+        lumped.append((p, bc))
     for e, plate in elements:
         sim.mw.bc.LumpedElement(plate, impedance(e), width=e["widthM"], height=e["heightM"])
     waves = []
@@ -1074,7 +1190,14 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
                 for k, tags in sorted(plated.items())]
     surfaces += [{"kind": "Sheet", "name": sh["name"], "material": sh["material"], "thicknessM": sh["thicknessM"],
                   "tags": (lambda g=g: list(g.tags)), "normal": sh["normal"]} for sh, g in sheets]
-    model = {"names": names, "volumes": volumes, "ports": lumped + waves, "waves": waves, "absorbing": absorbing,
+    # brief-hzn-16 -- a Floquet port on the cell's face: its modes (TE00, TM00, then grating modes), its medium, the scan
+    floquets = []
+    for f, region in floquet:
+        fp = sim.mw.bc.floquet_port(region, numbers[f["number"]], number_of_modes=len(f["modes"]), er=f["er"])
+        floquets.append((f, fp))
+    if cell is not None:
+        cell.set_scanangle(problem["periodic"]["thetaDeg"], problem["periodic"]["phiDeg"])
+    model = {"names": names, "volumes": volumes, "ports": lumped + waves, "waves": waves, "absorbing": absorbing, "floquet": floquets,
              "surfaces": surfaces}
     if plane_wave is not None:
         model["scattered"] = scattered
@@ -1105,7 +1228,14 @@ def solve(problem, folder, sim, model, heard, warnings):
     if problem.get("planeWave") is not None:
         return scattered_run(problem, folder, sim, model, warnings)
 
-    if settings["adaptiveMesh"] > 0:
+    if settings["adaptiveMesh"] > 0 and problem.get("periodic") is not None:
+        # brief-hzn-16 -- EMerge's local refinement splits a periodic face's triangles without splitting its partner's the same
+        # way, and the periodic condition then cannot pair them (it stopped on an index out of bounds): a cell is solved on its
+        # initial mesh
+        warnings.append("EMerge's mesh refinement does not keep a periodic cell's paired faces meshed alike, so the cell was solved on "
+                        "its initial mesh with no refinement pass. Lower EMerge.MaxElementWavelengths or EMerge.EdgeRefinement for "
+                        "a finer one.")
+    elif settings["adaptiveMesh"] > 0:
         # Up to adaptiveMesh refinements: EMerge counts solve passes, the first on the initial mesh. Held (brief-sdl-8 D7),
         # every pass is made: no run of converged passes can be as long as the passes there are.
         if settings.get("holdMesh"):
@@ -1187,7 +1317,7 @@ def sweep(problem, folder, sim, model, heard, freqs, adaptive, groups, stalled):
     if adaptive:
         out["error"] = heard.error
         out["converged"] = heard.converged
-    if problem.get("fields") is not None and problem["fields"]["frequenciesHz"]:
+    if problem.get("fields") is not None and problem["fields"]["frequenciesHz"] and not model.get("floquet"):
         out.update(driven_fields(problem, folder, sim, model, [] if adaptive else list(data.field.iter())))
     return out
 
@@ -1409,8 +1539,9 @@ def entry_numbers(w):
 def emerge_numbers(problem):
     """Each EMerge port's number, by the circuitRF number of its entry: EMerge requires them to run 1, 2, ... K, and a
     terminal group is one EMerge port carrying several circuitRF numbers, so EMerge's are the entries' ranks. Without a
-    group they are circuitRF's own."""
-    entries = sorted([p["number"] for p in problem["ports"]] + [w["number"] for w in problem["wavePorts"]])
+    group they are circuitRF's own. (brief-hzn-16: a Floquet port is one entry too, its modes p.1, p.2, ...)"""
+    entries = sorted([p["number"] for p in problem["ports"]] + [w["number"] for w in problem["wavePorts"]]
+                     + [f["number"] for f in problem.get("floquetPorts", [])])
     return {n: k + 1 for k, n in enumerate(entries)}
 
 
@@ -1425,6 +1556,11 @@ def entry_keys(problem):
                 keys[t["number"]] = float("%d.%d" % (numbers[w["number"]], k + 1))
         else:
             keys[w["number"]] = numbers[w["number"]]
+    for f in problem.get("floquetPorts", []):
+        modes = f["modes"]
+        width = len(str(len(modes)))
+        for k, n in enumerate(modes):
+            keys[n] = numbers[f["number"]] if len(modes) == 1 else float("%d.%0*d" % (numbers[f["number"]], width, k + 1))
     return keys
 
 

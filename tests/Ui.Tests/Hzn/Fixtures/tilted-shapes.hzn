@@ -1,0 +1,379 @@
+{
+ "name": "TiltedShapes",
+ "variables": {},
+ "materials": [
+  {
+   "name": "steel_x",
+   "permittivity": "1",
+   "permeability": "1",
+   "conductivity": "1100000",
+   "loss_tangent": "0",
+   "magnetic_loss_tangent": "0",
+   "color": "#bebebe",
+   "pec": false,
+   "library": "Project",
+   "description": "",
+   "dispersion": "None",
+   "measured_frequency": "1GHz",
+   "eps_static": "4.6",
+   "eps_infinity": "4.2",
+   "relaxation_frequency": "1GHz",
+   "anisotropic": false,
+   "permittivity_tensor": "",
+   "permeability_tensor": "",
+   "loss_tangent_tensor": "",
+   "emsutil_key": ""
+  }
+ ],
+ "format": "hertzon-project",
+ "version": 2,
+ "designs": [
+  {
+   "name": "Tilted",
+   "units": "mm",
+   "settings": {
+    "SolutionType": "Terminal",
+    "AutoOpen": "Auto Open",
+    "AutoOpenBoundary": "Radiation",
+    "AutoOpenPadding": "10mm",
+    "RadiatingStructure": "False"
+   },
+   "variables": {},
+   "objects": [
+    {
+     "name": "Board",
+     "history": [
+      {
+       "kind": "CreatePolyline",
+       "props": {
+        "Points": "1.000000000,2.000000000,3.000000000;20.648176216,5.464503589,1.604870525;18.950027311,15.305424169,2.126955210;-0.698148905,11.840920581,3.522084685",
+        "SegmentTypes": "",
+        "Closed": "True",
+        "Covered": "True",
+        "Holes": ""
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "SweepAlongVector",
+       "props": {
+        "Vector": "0.217032030,0.091411925,-1.017123866"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "copper",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Trace",
+     "history": [
+      {
+       "kind": "CreatePolyline",
+       "props": {
+        "Points": "7.030151997,14.191091889,3.514339825;10.959787240,14.883992606,3.235313930;10.450342569,17.836268781,3.391939336;6.520707326,17.143368063,3.670965231",
+        "SegmentTypes": "",
+        "Closed": "True",
+        "Covered": "True",
+        "Holes": ""
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "PortSheet",
+     "history": [
+      {
+       "kind": "CreatePolyline",
+       "props": {
+        "Points": "7.030151997,14.191091889,3.514339825;10.959787240,14.883992606,3.235313930;11.104690966,13.932708364,2.483674921;7.145583459,13.234610891,2.764793510",
+        "SegmentTypes": "",
+        "Closed": "True",
+        "Covered": "True",
+        "Holes": ""
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Pin8",
+     "history": [
+      {
+       "kind": "CreateCylinder",
+       "props": {
+        "CenterPosition": "30mm,0,0",
+        "Axis": "Z",
+        "Radius": "0.5mm",
+        "Height": "2mm",
+        "NumberOfSegments": "8"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "copper",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Post7",
+     "history": [
+      {
+       "kind": "CreateCylinder",
+       "props": {
+        "CenterPosition": "30mm,5mm,0",
+        "Axis": "Y",
+        "Radius": "0.5mm",
+        "Height": "2mm",
+        "NumberOfSegments": "7"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "copper",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Slant",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "28mm,10mm,0",
+        "Axis": "Z",
+        "XSize": "2mm",
+        "YSize": "1mm"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "SweepAlongVector",
+       "props": {
+        "Vector": "1mm,0,2mm"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "copper",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Ant",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "0,-6mm,-5mm",
+        "Axis": "Z",
+        "XSize": "4mm",
+        "YSize": "1mm"
+       },
+       "suppressed": false
+      },
+      {
+       "kind": "Unite",
+       "props": {
+        "Tools": "AntA,AntB",
+        "KeepOriginals": "False"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "copper",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "AntA",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "3mm,-6mm,-5mm",
+        "Axis": "Z",
+        "XSize": "1mm",
+        "YSize": "3mm"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "copper",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "AntB",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "0,-6mm,-5mm",
+        "Axis": "Z",
+        "XSize": "1mm",
+        "YSize": "3mm"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "copper",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": "Ant",
+     "group": "",
+     "orientation": "Global"
+    }
+   ],
+   "boundaries": [
+    {
+     "name": "BoardSteel",
+     "kind": "Finite Conductivity",
+     "props": {
+      "UseMaterial": "True",
+      "Material": "steel_x",
+      "Conductivity": "58000000",
+      "Permeability": "1",
+      "Roughness": "0um",
+      "UseThickness": "False",
+      "Thickness": "35um",
+      "TwoSided": "True"
+     },
+     "faces": [],
+     "objects": [
+      "Board"
+     ],
+     "edges": [],
+     "enabled": true
+    },
+    {
+     "name": "TraceCu",
+     "kind": "Finite Conductivity",
+     "props": {
+      "UseMaterial": "True",
+      "Material": "copper",
+      "Conductivity": "58000000",
+      "Permeability": "1",
+      "Roughness": "0um",
+      "UseThickness": "True",
+      "Thickness": "35um",
+      "TwoSided": "True"
+     },
+     "faces": [],
+     "objects": [
+      "Trace"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "excitations": [
+    {
+     "name": "Port1",
+     "kind": "Lumped Port",
+     "props": {
+      "PortNumber": "1",
+      "Impedance": "50ohm",
+      "IntegrationLine": "8.994969619,14.537542247,3.374826878;9.110401080,13.581061249,2.625280563"
+     },
+     "faces": [],
+     "objects": [
+      "PortSheet"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "mesh_ops": [],
+   "setups": [
+    {
+     "name": "Setup1",
+     "props": {
+      "Enabled": "True",
+      "SolutionFrequencyMode": "Single",
+      "Frequency": "2GHz",
+      "MaximumPasses": "2"
+     },
+     "sweeps": [],
+     "eigen": false
+    }
+   ],
+   "spheres": [],
+   "reports": [],
+   "field_plots": [],
+   "coord_systems": [],
+   "optimetrics": [],
+   "parametrics": [],
+   "working_cs": "Global",
+   "notes": ""
+  }
+ ]
+}

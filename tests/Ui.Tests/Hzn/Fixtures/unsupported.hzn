@@ -137,7 +137,7 @@
         "Axis": "Z",
         "Radius": "1mm",
         "Height": "1mm",
-        "NumberOfSegments": "12"
+        "NumberOfSegments": "2"
        },
        "suppressed": false
       }

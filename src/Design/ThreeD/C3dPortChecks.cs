@@ -82,8 +82,8 @@ public static class C3dPortChecks
 
         var (uDir, vDir) = C3dTurnedPorts.Axes(port);
         int pair = Math.Abs(Geometry3.Dot(p.Direction, uDir)) >= 0.5 ? 0 : 1;
-        double M(long v) => C3dLowering.Metres(v, doc.DbuPerMicron);
-        double du = M(port.Rect.Size.U), dv = M(port.Rect.Size.V);
+        var pf = C3dTurnedPorts.Frame(port, doc.DbuPerMicron);
+        double du = pf.U1 - pf.U0, dv = pf.V1 - pf.V0;
         string axis = Along(p.Direction);
         yield return (GapId, DiagnosticSeverity.Info,
             $"{label} runs along {axis} across a {L(pair == 0 ? du : dv)} gap, {L(pair == 0 ? dv : du)} wide.");
@@ -129,7 +129,7 @@ public static class C3dPortChecks
         var bare = new C3dPort
         {
             Number = port.Number, Name = port.Name, Kind = port.Kind, Plane = port.Plane, Offset = port.Offset, Rect = port.Rect,
-            Angle = port.Angle, Cylinder = port.Cylinder, Z0 = port.Z0, Model = port.Model,
+            Angle = port.Angle, Corners = port.Corners, Cylinder = port.Cylinder, Z0 = port.Z0, Model = port.Model,
         };
         if (C3dPorts.Resolve(bare, dbuPerMicron, ctx).Resolved is not { } inferred) return null;
         int inferredPair = cylinder
@@ -159,12 +159,9 @@ public static class C3dPortChecks
     /// </summary>
     private static (int Pair, Near Low, Near High)? Facing(C3dPort port, int dbuPerMicron, C3dPortContext ctx)
     {
-        double M(long v) => C3dLowering.Metres(v, dbuPerMicron);
-        double u0 = M(port.Rect.Min.U), v0 = M(port.Rect.Min.V), u1 = u0 + M(port.Rect.Size.U), v1 = v0 + M(port.Rect.Size.V);
-        double h = M(port.Offset), um = (u0 + u1) / 2, vm = (v0 + v1) / 2;
-        Func<double, double, Point3> P = port.Angle != 0
-            ? C3dTurnedPorts.Map(port.Plane, port.Angle, u0, v0, u1, v1, h).P
-            : (a, b) => C3dLowering.OnPlane(port.Plane, a, b, h);
+        var pf = C3dTurnedPorts.Frame(port, dbuPerMicron);
+        double u0 = pf.U0, v0 = pf.V0, u1 = pf.U1, v1 = pf.V1, um = (u0 + u1) / 2, vm = (v0 + v1) / 2;
+        var P = pf.P;
         Point3[] mids = [P(u0, vm), P(u1, vm), P(um, v0), P(um, v1)];
         var nearest = mids.Select(m => TwoNearest(ctx, m)).ToArray();
         var best = new (double Score, Near Low, Near High)[2];

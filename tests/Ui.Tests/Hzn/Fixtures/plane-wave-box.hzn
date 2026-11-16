@@ -1,0 +1,270 @@
+{
+ "name": "PlaneWaveBox",
+ "variables": {},
+ "materials": [],
+ "format": "hertzon-project",
+ "version": 2,
+ "designs": [
+  {
+   "name": "Scatter",
+   "units": "mm",
+   "settings": {
+    "SolutionType": "Modal",
+    "AutoOpen": "Off",
+    "AutoOpenBoundary": "Auto",
+    "AutoOpenPadding": "",
+    "RadiatingStructure": "False"
+   },
+   "variables": {
+    "frequency": "3GHz",
+    "lamb0": "c0/frequency",
+    "Boxsize": "2*lamb0"
+   },
+   "objects": [
+    {
+     "name": "Box1",
+     "history": [
+      {
+       "kind": "CreateBox",
+       "props": {
+        "Position": "-Boxsize/2,-Boxsize/2,-Boxsize/2",
+        "XSize": "Boxsize",
+        "YSize": "Boxsize",
+        "ZSize": "Boxsize"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": true,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "PlotPlane",
+     "history": [
+      {
+       "kind": "CreateRectangle",
+       "props": {
+        "Position": "-99.931,0,99.931",
+        "Axis": "Y",
+        "ZSize": "-199.862",
+        "XSize": "199.8625"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": false,
+     "model": false,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "PlotLine",
+     "history": [
+      {
+       "kind": "CreatePolyline",
+       "props": {
+        "Points": "0,0,-lamb0;0,0,lamb0",
+        "SegmentTypes": "",
+        "Closed": "False",
+        "Covered": "False"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "vacuum",
+     "solve_inside": false,
+     "model": false,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    },
+    {
+     "name": "Ball",
+     "history": [
+      {
+       "kind": "CreateSphere",
+       "props": {
+        "CenterPosition": "0,0,0",
+        "Radius": "20mm",
+        "NumberOfSegments": "0"
+       },
+       "suppressed": false
+      }
+     ],
+     "material": "pec",
+     "solve_inside": false,
+     "model": true,
+     "color": "#808080",
+     "transparency": 0.0,
+     "wireframe": false,
+     "visible": true,
+     "consumed_by": null,
+     "group": "",
+     "orientation": "Global"
+    }
+   ],
+   "boundaries": [
+    {
+     "name": "Rad1",
+     "kind": "Radiation",
+     "props": {
+      "Order": "Second order",
+      "FarFieldReference": "True"
+     },
+     "faces": [
+      {
+       "obj": "Box1",
+       "face": 0,
+       "sig": [
+        -0.09993081933333334,
+        0.0,
+        0.0,
+        -1.0,
+        0.0,
+        0.0,
+        0.039944674610525234,
+        1.0
+       ]
+      },
+      {
+       "obj": "Box1",
+       "face": 1,
+       "sig": [
+        0.09993081933333334,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.039944674610525234,
+        1.0
+       ]
+      },
+      {
+       "obj": "Box1",
+       "face": 2,
+       "sig": [
+        0.0,
+        -0.09993081933333334,
+        0.0,
+        0.0,
+        -1.0,
+        0.0,
+        0.039944674610525234,
+        1.0
+       ]
+      },
+      {
+       "obj": "Box1",
+       "face": 3,
+       "sig": [
+        0.0,
+        0.09993081933333334,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.039944674610525234,
+        1.0
+       ]
+      },
+      {
+       "obj": "Box1",
+       "face": 4,
+       "sig": [
+        0.0,
+        0.0,
+        -0.09993081933333334,
+        0.0,
+        0.0,
+        -1.0,
+        0.039944674610525234,
+        1.0
+       ]
+      },
+      {
+       "obj": "Box1",
+       "face": 5,
+       "sig": [
+        0.0,
+        0.0,
+        0.09993081933333334,
+        0.0,
+        0.0,
+        1.0,
+        0.039944674610525234,
+        1.0
+       ]
+      }
+     ],
+     "objects": [],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "excitations": [
+    {
+     "name": "IncPWave1",
+     "kind": "Incident Plane Wave",
+     "props": {
+      "VectorInput": "Cartesian",
+      "E0Vector": "1,0,0",
+      "KVector": "0,0,1",
+      "Theta": "0deg",
+      "Phi": "0deg",
+      "Polarization": "0deg",
+      "ZeroPhasePosition": "0,0,0",
+      "EMagnitude": "1"
+     },
+     "faces": [],
+     "objects": [
+      "Ball"
+     ],
+     "edges": [],
+     "enabled": true
+    }
+   ],
+   "mesh_ops": [],
+   "setups": [
+    {
+     "name": "Setup1",
+     "props": {
+      "Enabled": "True",
+      "SolutionFrequencyMode": "Single",
+      "Frequency": "frequency",
+      "MaximumPasses": "2",
+      "BasisOrder": "Second Order"
+     },
+     "sweeps": [],
+     "eigen": false
+    }
+   ],
+   "spheres": [],
+   "reports": [],
+   "field_plots": [],
+   "coord_systems": [],
+   "optimetrics": [],
+   "parametrics": [],
+   "working_cs": "Global",
+   "notes": ""
+  }
+ ]
+}

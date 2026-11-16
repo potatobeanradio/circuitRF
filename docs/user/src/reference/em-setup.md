@@ -1868,6 +1868,34 @@ cross-section. openEMS runs a plane wave on its Cartesian grid only.
 A **faceted sphere** is a sphere with `FacetVertices` above 0 in the 3D view: the convex hull of that many points spread
 evenly over it, as Hertzon builds one. A Hertzon design's faceted sphere opens as one.
 
+### A periodic cell and Floquet ports {#periodic-cell}
+
+A frequency-selective surface, a reflectarray element or a metasurface is one cell of an infinite array. Solve one cell:
+make the setup's air box **Periodic** on both x faces and both y faces (a periodic face is half of a pair, so both faces of
+an axis are periodic or neither), flush with the cell. The field on one face of a pair is the field on the other, shifted in
+phase by the cell's **Scan** in the air box (θ from +z and φ from +x toward +y, in degrees). With no Scan the cell is
+illuminated broadside.
+
+A **Floquet port** is a wave port over the whole zmin or zmax face of the cell (`Floquet` on the port in the 3D view, with
+`Modes` and, for a medium other than vacuum, `Er`). Each mode is a port of the result, numbered from the port's own number:
+1 is the TE wave of the (0, 0) harmonic, 2 its TM wave, and more are the grating harmonics in order of cutoff. The
+S-parameters are normalised to the modes, so the Touchstone file states `R 1`. A cell with a ground on one side has one
+Floquet port, on the other side, and a PEC face where its ground is.
+
+Periodic cells and Floquet ports run on **EMerge** only; Palace and openEMS refuse them by name. EMerge's mesh refinement
+does not keep the two faces of a pair meshed alike, so a cell is solved on its first mesh (the run says so): make it finer
+with **Largest element** and **At metal**. On a crossed-dipole cell 15 mm square, against Hertzon's own run on its refined
+mesh, the cell's resonance fell at the same 10 GHz, and away from it each S-parameter came within 0.06 to 0.15; on a cell
+over a ground, the reflection phase came within 2° to 8°.
+
+### Ports drawn as their corners {#corner-ports}
+
+A lumped port can be drawn as its four corners (`Corners` on the port in the 3D view) in any plane, a tilted one included.
+It needs to be a rectangle only to a part in a hundred, which is what an exported model gives when it joins two edges that
+are not exactly parallel (a trace's edge and a board's side face, say): the port keeps both of its ends where they were drawn.
+Each end must lie on its conductor, and the run puts it exactly there. EMerge runs it, reading the voltage between the two
+ends itself; openEMS refuses it.
+
 ### Looking at a 3D mesh before solving {#mesh-3d}
 
 **Mesh** on a 3D setup's panel, the grid button beside **Run Analysis** on a 3D view's toolbar, and *Simulate ▸ Mesh Only*

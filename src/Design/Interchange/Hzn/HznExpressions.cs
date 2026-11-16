@@ -52,6 +52,29 @@ public sealed class HznNames
 
     public static string? HznProjectName(string c3dName) =>
         c3dName.StartsWith(ProjectPrefix, StringComparison.Ordinal) ? c3dName[ProjectPrefix.Length..] : null;
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> Usable = new(StringComparer.Ordinal);
+
+    private static bool IsUsable(string name) => Usable.GetOrAdd(name, n => CircuitRF.Design.ThreeD.C3dResolver.ValidateName(n) is null);
+
+    /// <summary>What a design variable is called in a <c>.c3d</c>: its own name, or that name with <see cref="RenamedSuffix"/> when circuitRF
+    /// has a built-in of that name (<c>frequency</c> is a function here) and the suffixed name is one it can use. The translator, the
+    /// writer and the patcher all name a variable through this and <see cref="HznVariableName"/>, so the rename is undone on save.</summary>
+    public static string C3dVariableName(string hznName) =>
+        IsUsable(hznName) || !IsUsable(hznName + RenamedSuffix) ? hznName : hznName + RenamedSuffix;
+
+    /// <summary>A <c>.c3d</c> variable's name in Hertzon: a project variable's reserved prefix comes off, and a design variable renamed by
+    /// <see cref="C3dVariableName"/> gets its own name back.</summary>
+    public static string HznVariableName(string c3dName)
+    {
+        if (HznProjectName(c3dName) is { } project) return project;
+        if (c3dName.EndsWith(RenamedSuffix, StringComparison.Ordinal))
+        {
+            string own = c3dName[..^RenamedSuffix.Length];
+            if (own.Length > 0 && !IsUsable(own)) return own;
+        }
+        return c3dName;
+    }
 }
 
 public sealed class HznExpressionTranslator
@@ -473,6 +496,7 @@ public sealed class HznExpressionTranslator
         bearing = Dims.None;
         if (!_projectScope && _names.Design.ContainsKey(name))
         {
+            outName = HznNames.C3dVariableName(name);
             bearing = Bearing(false, name);
             return Resolution.Variable;
         }

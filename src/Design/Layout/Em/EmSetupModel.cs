@@ -44,7 +44,12 @@ public sealed record EmAirBoxFace(double? PaddingUm, CircuitRF.Engine.Em3d.Em3dB
 public sealed record EmAirBox(
     EmAirBoxFace? XMin = null, EmAirBoxFace? XMax = null,
     EmAirBoxFace? YMin = null, EmAirBoxFace? YMax = null,
-    EmAirBoxFace? ZMin = null, EmAirBoxFace? ZMax = null);
+    EmAirBoxFace? ZMin = null, EmAirBoxFace? ZMax = null)
+{
+    /// <summary>brief-hzn-16 — the scan of a periodic cell (its x and y faces <see cref="CircuitRF.Engine.Em3d.Em3dBoundaryKind.Periodic"/>
+    /// pairs); null is broadside.</summary>
+    public CircuitRF.Engine.Em3d.Em3dScan? Scan { get; init; }
+}
 
 /// <summary>
 /// brief-em3d-22 R-em3d22-2a — one terminal of a static 3D solve, as the <c>.cem</c> states it.

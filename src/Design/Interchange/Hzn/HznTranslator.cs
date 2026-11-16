@@ -115,10 +115,21 @@ internal sealed partial class HznTranslator
     {
         foreach (var (name, source) in designVars)
         {
-            if (C3dResolver.ValidateName(name) is { } bad)
+            string c3dName = HznNames.C3dVariableName(name);
+            if (C3dResolver.ValidateName(c3dName) is { } bad)
             {
                 _r.Add(HznRefusalKind.Expression, $"variable name '{name}'", $"circuitRF cannot use it as a name: {bad}", DesignName);
                 continue;
+            }
+            if (c3dName != name)
+            {
+                if (designVars.ContainsKey(c3dName))
+                {
+                    _r.Add(HznRefusalKind.Expression, $"variable name '{name}'",
+                           $"circuitRF has a built-in of that name, and '{c3dName}', the name it would take here, is another variable of the design", DesignName);
+                    continue;
+                }
+                _notes.Add($"Variable '{name}' is '{c3dName}' here: circuitRF has a built-in of that name. Saving writes it back as '{name}'.");
             }
             if (name.StartsWith(HznNames.ProjectPrefix, StringComparison.Ordinal))
             {
@@ -129,8 +140,8 @@ internal sealed partial class HznTranslator
             var e = _expr.Translate(source, $"variable {name}");
             if (e is null) continue;
             UseProjectRefs(e);
-            _doc.Variables.Add(new C3dVariable { Name = name, Expression = e.Text });
-            _prov.Variables.Add(new HznVariableOrigin(name, name, Project: false));
+            _doc.Variables.Add(new C3dVariable { Name = c3dName, Expression = e.Text });
+            _prov.Variables.Add(new HznVariableOrigin(c3dName, name, Project: false));
         }
     }
 
@@ -342,6 +353,8 @@ internal sealed partial class HznTranslator
     private readonly Dictionary<string, Folded?> _folded = new(StringComparer.Ordinal);
     private readonly HashSet<string> _folding = new(StringComparer.Ordinal);
     private readonly HashSet<string> _keptTools = new(StringComparer.Ordinal);
+    /// <summary>brief-hzn-15 — tools a boolean names that the file does not record as consumed, by the object whose history names them.</summary>
+    private readonly Dictionary<string, string> _impliedConsumer = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HznObject> _regions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _c3dName = new(StringComparer.Ordinal);
     private readonly Dictionary<string, SheetGeom> _sheets = new(StringComparer.Ordinal);
@@ -351,7 +364,12 @@ internal sealed partial class HznTranslator
     /// <summary>A rectangle sheet that is an exact rectangle in an axis plane: what a port needs.</summary>
     /// <summary>A sheet a port or element can take: its rectangle on a plane, and (brief-hzn-14) the turn about the vertical through its
     /// centre when it stands in a vertical plane that is no axis plane, in degrees as a port's <c>Angle</c>.</summary>
-    internal sealed record SheetGeom(C3dPlane Plane, Dim Offset, Dim[] Min, Dim[] Size, bool Placed, double Angle = 0);
+    internal sealed record SheetGeom(C3dPlane Plane, Dim Offset, Dim[] Min, Dim[] Size, bool Placed, double Angle = 0)
+    {
+        /// <summary>brief-hzn-15 — a four-cornered sheet in a tilted plane that is a rectangle to a part in a hundred: its corners,
+        /// world DBU (a port's <c>Corners</c>); null for every other sheet.</summary>
+        public List<C3dPoint3>? Corners { get; init; }
+    }
 
     private sealed record Folded(C3dObject Tree, SheetGeom? Sheet, IReadOnlyList<string> Consumed, IReadOnlyList<HznStepOrigin> Steps);
 
@@ -376,13 +394,21 @@ internal sealed partial class HznTranslator
                 if (s.Suppressed != true && s.Kind is "Subtract" && IsTrue(s.Props["KeepOriginals"]))
                     foreach (string t in HznExpressionTranslator.SplitTopLevel(s.Props["Tools"] ?? "", ','))
                         if (t.Length > 0) _keptTools.Add(t);
+        // brief-hzn-15 R-hzn15-5 — a boolean that does not keep its tools consumes them, whether or not the file recorded it: a tool
+        // whose consumed_by is empty is taken as consumed by the one object whose history names it (not drawn a second time on its own)
+        foreach (var o in objects)
+            foreach (var s in o.History)
+                if (s.Suppressed != true && s.Kind is "Subtract" or "Unite" or "Intersect" && !IsTrue(s.Props["KeepOriginals"]) && o.Name is { } owner)
+                    foreach (string t in HznExpressionTranslator.SplitTopLevel(s.Props["Tools"] ?? "", ','))
+                        if (t.Length > 0 && _byName.TryGetValue(t, out var tool) && string.IsNullOrEmpty(tool.ConsumedBy) && !_keptTools.Contains(t))
+                            _impliedConsumer.TryAdd(t, owner);
 
         foreach (var o in objects)
         {
             string name = o.Name ?? "";
             if (name.Length == 0 || !ReferenceEquals(_byName.GetValueOrDefault(name), o)) continue;
             if (IsRegion(o)) { Region(o); continue; }
-            if (!string.IsNullOrEmpty(o.ConsumedBy) || _keptTools.Contains(name)) continue;
+            if (!string.IsNullOrEmpty(o.ConsumedBy) || _keptTools.Contains(name) || _impliedConsumer.ContainsKey(name)) continue;
             if (FoldObject(name) is { } f) EmitTop(o, f);
             else
             {
@@ -466,11 +492,12 @@ internal sealed partial class HznTranslator
         {
             tree.Group = string.IsNullOrEmpty(o.Group) ? null : o.Group;
             tree.Hidden = o.Visible == false;
-            tree.Model = o.Model != false;
+            tree.Model = o.Model != false || tree is C3dPolyline;   // a polyline is never solved; 'Model': false on one is noise
         }
         var carrier = tree;
         while (carrier is C3dOperation && C3dOperands.Inner(carrier) is { } inner) carrier = inner;
-        if (o.Material is { Length: > 0 } mat)
+        if (carrier is C3dPolyline) { }   // construction geometry has no material
+        else if (o.Material is { Length: > 0 } mat)
         {
             var (matName, role) = UseMaterial(mat, o.Name!, carrier is C3dSheet);
             carrier.Material = matName;
@@ -486,7 +513,7 @@ internal sealed partial class HznTranslator
 
     // ── folding one object's history ──────────────────────────────────────────────────────────────
 
-    private enum Pend { None, Rect, Circle, Poly, VPoly }
+    private enum Pend { None, Rect, Circle, Poly, VPoly, TPoly }
 
     private sealed class State
     {
@@ -501,6 +528,8 @@ internal sealed partial class HznTranslator
         /// made, so they do not make it Placed (a port can still take it).</summary>
         public double? OwnTurn;
         public C3dPoint3 OwnOrigin;
+        /// <summary>brief-hzn-15 — a tilted polyline's own rotations (its frame), with <see cref="OwnOrigin"/>; null otherwise.</summary>
+        public List<C3dRotation>? OwnRot;
         public bool Placed => Mirror || Rot.Count > 0 || (Origin is not null && Origin.Any(d => !d.IsZeroLiteral));
         public readonly List<string> Consumed = [];
         public readonly List<HznStepOrigin> Steps = [];
@@ -659,7 +688,18 @@ internal sealed partial class HznTranslator
     private bool CreateCylinder(State st, Dictionary<string, string> p, string user)
     {
         if (!NeedShape(st, user)) return false;
-        if (!Segments(p, user, "NumberOfSegments")) return false;
+        // brief-hzn-15 R-hzn15-4 — NumberOfSegments above 0 facets the cylinder: a prism of that many sides
+        int facets = 0;
+        if (p.TryGetValue("NumberOfSegments", out string? segText))
+        {
+            if (Plain(segText, user) is not { } seg) return false;
+            if (seg != 0 && (seg < 3 || seg != Math.Floor(seg) || seg > 1024))
+            {
+                _r.Add(HznRefusalKind.CreationStep, "CreateCylinder", $"NumberOfSegments {segText} is neither 0 (a true circle) nor a whole number of sides from 3 to 1024", user.Split(' ')[0]);
+                return false;
+            }
+            facets = (int)seg;
+        }
         var centre = Triple(p.GetValueOrDefault("CenterPosition"), user);
         var radius = Len(p.GetValueOrDefault("Radius"), user);
         var height = Len(p.GetValueOrDefault("Height"), user);
@@ -669,8 +709,40 @@ internal sealed partial class HznTranslator
             return false;
         }
         if (centre is null || radius is null || height is null) return false;
-        st.Root = Cylinder(centre, axis, radius, height);
+        st.Root = facets > 0 ? FacetedCylinder(centre, axis, radius, height, facets) : Cylinder(centre, axis, radius, height);
         return true;
+    }
+
+    /// <summary>
+    /// brief-hzn-15 R-hzn15-4 — a faceted cylinder as the prism it is. Established black-box from Hertzon's own mesh (12, 10 and 7 sides,
+    /// axes X, Y and Z): the <paramref name="sides"/> vertices lie ON the circle, the first along the next axis round from the cylinder's
+    /// (Z → +x, X → +y, Y → +z), the rest every 360°/N. Each vertex keeps the centre's and radius's expressions.
+    /// </summary>
+    private C3dPrism FacetedCylinder(Dim[] centre, C3dAxis axis, Dim radius, Dim height, int sides)
+    {
+        var (plane, ui, vi) = PlaneOf(axis);
+        int first = ((int)axis + 1) % 3;            // the world axis the first vertex lies along
+        double start = first == ui ? 0 : Math.PI / 2;
+        var outline = new List<Dim[]>(sides);
+        for (int k = 0; k < sides; k++)
+        {
+            double t = start + 2 * Math.PI * k / sides;
+            outline.Add([Add(centre[ui], Scaled(radius, Math.Cos(t))), Add(centre[vi], Scaled(radius, Math.Sin(t)))]);
+        }
+        var prism = new C3dPrism { Plane = plane };
+        PutOutline(prism, nameof(C3dPrism.Offset), nameof(C3dPrism.Outline), new PolyInfo(plane, axis, centre[(int)axis], outline));
+        Put(prism, nameof(C3dPrism.Height), 0, height);
+        return prism;
+    }
+
+    /// <summary>A length times a plain factor: a literal stays one (rounded to the DBU), an expression gains the factor.</summary>
+    private Dim Scaled(Dim d, double f)
+    {
+        if (Math.Abs(f) < 1e-15) return Dim.Zero;
+        if (d.IsLiteral) return new Dim(null, (long)Math.Round(d.Dbu * f, MidpointRounding.AwayFromZero), true);
+        if (Math.Abs(f - 1) < 1e-15) return d;
+        f = Math.Round(f, 14);
+        return new Dim($"({TextOf(AsBearing(d))})*{f.ToString("R", CultureInfo.InvariantCulture)}", 0, true);
     }
 
     private C3dCylinder Cylinder(Dim[] centre, C3dAxis axis, Dim radius, Dim height)
@@ -742,7 +814,22 @@ internal sealed partial class HznTranslator
     /// is when it is a rectangle.</summary>
     private sealed record VPolyInfo(C3dPlane Plane, double Degrees, C3dPoint3 Origin, List<Dim[]> Outline, SheetGeom? Rect);
 
+    /// <summary>brief-hzn-15 — a polyline in a tilted plane: a sheet on the axis plane nearest it (<paramref name="Plane"/>, offset 0), its
+    /// outline in that plane's (u, v) in DBU, carried onto the tilted plane by <paramref name="Rot"/> (the matrix <paramref name="R"/>) and
+    /// moved to <paramref name="Origin"/>. <paramref name="Rect"/> is the port sheet it is when it is a rectangle.</summary>
+    private sealed record TPolyInfo(C3dPlane Plane, int U, int V, int N, double[,] R, List<C3dRotation> Rot, C3dPoint3 Origin,
+                                    List<C3dPoint2> Outline, SheetGeom? Rect);
+
     private object? _pendingInfo;
+
+    /// <summary>brief-hzn-15 — a rectangle as the polygon of its four corners, counter-clockwise in its plane, each corner keeping its expressions.</summary>
+    private PolyInfo RectAsPoly(RectInfo r)
+    {
+        var (plane, _, _) = PlaneOf(r.Normal);
+        var (u0, v0) = (r.Min2[0], r.Min2[1]);
+        var (u1, v1) = (Add(r.Min2[0], r.Size2[0]), Add(r.Min2[1], r.Size2[1]));
+        return new PolyInfo(plane, r.Normal, r.Pos[(int)r.Normal], [[u0, v0], [u1, v0], [u1, v1], [u0, v1]]);
+    }
 
     private bool CreateRectangle(State st, Dictionary<string, string> p, string user)
     {
@@ -815,11 +902,9 @@ internal sealed partial class HznTranslator
         if (!NeedShape(st, user)) return false;
         string name = user.Split(' ')[0];
         bool ok = true;
-        if (!IsTrue(p.GetValueOrDefault("Closed")) || !IsTrue(p.GetValueOrDefault("Covered")))
-        {
-            _r.Add(HznRefusalKind.CreationStep, "CreatePolyline", "only a closed, covered polyline (a sheet) is translated", name);
-            ok = false;
-        }
+        // An open or uncovered polyline is a line, not a sheet: construction geometry (a field-plot path, a sweep's path), which a
+        // .c3d polyline is too.
+        bool line = !IsTrue(p.GetValueOrDefault("Closed")) || !IsTrue(p.GetValueOrDefault("Covered"));
         string segments = p.GetValueOrDefault("SegmentTypes") ?? "";
         if (segments.Length > 0 && HznExpressionTranslator.SplitTopLevel(segments, ',').Any(s => s != "Line"))
         {
@@ -853,6 +938,12 @@ internal sealed partial class HznTranslator
             pts.Add(m);
             dims.Add(d);
         }
+        if (line)
+        {
+            if (pts.Count < 2) { _r.Add(HznRefusalKind.CreationStep, "CreatePolyline", "it has fewer than two points", name); return false; }
+            st.Root = ConstructionLine(dims, IsTrue(p.GetValueOrDefault("Closed")));
+            return true;
+        }
         if (pts.Count < 3) { _r.Add(HznRefusalKind.CreationStep, "CreatePolyline", "it has fewer than three points", name); return false; }
         long Dbu(double metres) => (long)Math.Round(metres * 1e6 * HznToC3d.DbuPerMicron, MidpointRounding.AwayFromZero);
         var axes = new List<C3dAxis>();
@@ -866,8 +957,14 @@ internal sealed partial class HznTranslator
                 _pendingInfo = vertical;
                 return true;
             }
-            _r.Add(HznRefusalKind.CreationStep, "CreatePolyline outside an axis plane",
-                   "its points lie neither in one plane perpendicular to X, Y or Z nor in one upright plane", name);
+            if (TiltedPolyline(pts, dims, name) is { } tilted)
+            {
+                st.Pending = Pend.TPoly;
+                _pendingInfo = tilted;
+                return true;
+            }
+            _r.Add(HznRefusalKind.CreationStep, "CreatePolyline outside a plane",
+                   "its points do not lie in one plane", name);
             return false;
         }
         var normal = axes[0];
@@ -881,6 +978,18 @@ internal sealed partial class HznTranslator
         var outline2 = dims.Select(q => new[] { q[ui], q[vi] }).ToList();
         _pendingInfo = new PolyInfo(plane, normal, offset, outline2, AxisRect(plane, offset, outline2, pts.Select(q => (Dbu(q[ui]), Dbu(q[vi]))).ToList()));
         return true;
+    }
+
+    /// <summary>An open or uncovered polyline as a .c3d polyline (construction geometry, never solved), its vertices in 3D so each
+    /// component keeps its expression.</summary>
+    private C3dPolyline ConstructionLine(List<Dim[]> dims, bool closed)
+    {
+        var line = new C3dPolyline { Plane = C3dPlane.XY, Closed = closed, Points3 = [.. dims.Select(d => new C3dPoint3(d[0].Dbu, d[1].Dbu, d[2].Dbu))] };
+        var spec = C3dBindings.SpecOf(typeof(C3dPolyline), nameof(C3dPolyline.Points3))!;
+        for (int e = 0; e < dims.Count; e++)
+            for (int k = 0; k < 3; k++)
+                if (!dims[e][k].IsLiteral) C3dBindings.SetExpr(line, spec.ElementAt(e), k, new C3dExpr(dims[e][k].Text!, _siteUnit));
+        return line;
     }
 
     /// <summary>brief-hzn-14 — an axis-plane polyline that is a rectangle (four points on two u and two v values) as the sheet a port
@@ -974,6 +1083,61 @@ internal sealed partial class HznTranslator
         return new VPolyInfo(plane, degrees, origin, outline, rect);
     }
 
+    /// <summary>
+    /// brief-hzn-15 R-hzn15-1 — a polyline whose points lie in one plane that is neither an axis plane nor upright: the sheet it is on the
+    /// nearest axis plane, carried onto its own plane by the smallest rotation that does it (<see cref="C3dTilt"/>) and moved to its first
+    /// point. The points may stand off the fitted plane by two DBU or by a part in 10⁴ of their extent (an exported model's points carry
+    /// nine digits, not exact coplanarity), which is noted; the outline is the points projected onto it, as numbers (a rotation is not
+    /// linear in the points' coordinates), noted when they named variables. Null when the points do not span one plane.
+    /// </summary>
+    private TPolyInfo? TiltedPolyline(List<double[]> pts, List<Dim[]> dims, string name)
+    {
+        double scale = 1e6 * HznToC3d.DbuPerMicron;
+        var at = pts.Select(q => new[] { q[0] * scale, q[1] * scale, q[2] * scale }).ToList();
+        if (C3dTilt.FitPlane(at) is not var (normal, _, deviation)) return null;
+        double extent = Enumerable.Range(0, 3).Max(a => at.Max(q => q[a]) - at.Min(q => q[a]));
+        double allowed = Math.Max(2, 1e-4 * extent);
+        if (deviation > allowed) return null;
+        var (plane, ni, axis) = C3dTilt.NearestPlane(normal);
+        var r = C3dTilt.Between(axis, normal);
+        var rot = C3dTilt.Euler(r);
+        long Round(double v) => (long)Math.Round(v, MidpointRounding.AwayFromZero);
+        var origin = new C3dPoint3(Round(at[0][0]), Round(at[0][1]), Round(at[0][2]));
+        var (_, ui, vi) = PlaneOf((C3dAxis)ni);
+        // Local = inverse of (the rotations, then the move to the origin), applied as the lowering will apply it forward.
+        var inv = C3dTilt.Rotation(rot).Then(C3dTransform.Translation(origin)).Inverse();
+        double[] Local(double[] q) =>
+        [
+            inv.M00 * q[0] + inv.M01 * q[1] + inv.M02 * q[2] + inv.Tx,
+            inv.M10 * q[0] + inv.M11 * q[1] + inv.M12 * q[2] + inv.Ty,
+            inv.M20 * q[0] + inv.M21 * q[1] + inv.M22 * q[2] + inv.Tz,
+        ];
+        var local = at.Select(Local).ToList();
+        var outline = local.Select(l => new C3dPoint2(Round(l[ui]), Round(l[vi]))).ToList();
+        double tilt = Math.Acos(Math.Clamp(Math.Abs(normal[ni]), 0, 1)) * 180 / Math.PI;
+        _notes.Add($"{name}: it lies in a plane tilted {tilt.ToString("0.###", CultureInfo.InvariantCulture)}° from {plane}, so it is drawn on {plane} and turned onto that plane; " +
+                   "its points are numbers" + (dims.Any(d => d.Any(c => !c.IsLiteral)) ? " (they named variables)." : "."));
+        if (deviation > 2)
+            _notes.Add($"{name}: its points stand up to {deviation / HznToC3d.DbuPerMicron:0.###} µm off one plane; they are projected onto the plane that fits them best.");
+        return new TPolyInfo(plane, ui, vi, ni, r, rot, origin, outline, TiltedRect(at, normal, plane, ui, vi, ni));
+    }
+
+    /// <summary>
+    /// brief-hzn-15 R-hzn15-3 — four points in a tilted plane that make a rectangle to a part in a hundred (an exported model joins two
+    /// edges that are not exactly parallel): the port sheet it is, as its corners, so both of its ends stay exactly where they were
+    /// drawn; null otherwise.
+    /// </summary>
+    private static SheetGeom? TiltedRect(List<double[]> c, double[] normal, C3dPlane plane, int ui, int vi, int ni)
+    {
+        if (c.Count != 4) return null;
+        long R(double x) => (long)Math.Round(x, MidpointRounding.AwayFromZero);
+        var corners = c.Select(q => new C3dPoint3(R(q[0]), R(q[1]), R(q[2]))).ToList();
+        static CircuitRF.Engine.Em3d.Point3 W(C3dPoint3 p) => new(p.X, p.Y, p.Z);
+        var quad = new CircuitRF.Engine.Em3d.Em3dPortQuad(W(corners[0]), W(corners[1]), W(corners[2]), W(corners[3]));
+        if (quad.Problem(CircuitRF.Engine.Em3d.Em3dPortQuad.DrawnTolerance) is not null) return null;
+        return new SheetGeom(plane, Dim.Zero, [Dim.Zero, Dim.Zero], [Dim.Zero, Dim.Zero], Placed: false) { Corners = corners };
+    }
+
     /// <summary>A pending 2D shape that nothing swept becomes what it is: a rectangle, polyline, circle or ellipse a sheet.</summary>
     private bool FinalisePending(State st, string name)
     {
@@ -1013,6 +1177,16 @@ internal sealed partial class HznTranslator
                 st.Sheet = q.Rect;
                 break;
             }
+            case Pend.TPoly:
+            {
+                // brief-hzn-15 R-hzn15-1 — a sheet on the nearest axis plane, its frame the tilt and the first point
+                var q = (TPolyInfo)_pendingInfo!;
+                st.Root = new C3dSheet { Plane = q.Plane, Outline = q.Outline };
+                st.OwnRot = q.Rot;
+                st.OwnOrigin = q.Origin;
+                st.Sheet = q.Rect;
+                break;
+            }
             default:
             {
                 // brief-hzn-13 R-hzn13-2 — an unswept circle or ellipse is an Ellipse sheet, its centre and radii kept as expressions.
@@ -1048,19 +1222,56 @@ internal sealed partial class HznTranslator
         }
         var v = Triple(p.GetValueOrDefault("Vector"), user);
         if (v is null) return false;
+        if (st.Pending == Pend.TPoly)
+        {
+            // brief-hzn-15 R-hzn15-2 — a tilted polygon swept along any vector: a prism in the sheet's frame, its height the vector's
+            // part along the frame's normal and its shear the rest, as numbers (the frame turns the vector)
+            var q = (TPolyInfo)_pendingInfo!;
+            double[] w = [Metres(v[0]) * 1e6 * HznToC3d.DbuPerMicron, Metres(v[1]) * 1e6 * HznToC3d.DbuPerMicron, Metres(v[2]) * 1e6 * HznToC3d.DbuPerMicron];
+            if (w.Any(double.IsNaN)) return false;
+            var r = q.R;
+            double Along(int axis) => r[0, axis] * w[0] + r[1, axis] * w[1] + r[2, axis] * w[2];   // Rᵀ·w
+            long Round(double x) => (long)Math.Round(x, MidpointRounding.AwayFromZero);
+            if (v.Any(d => !d.IsLiteral))
+                _notes.Add($"{name}: the sweep vector '{p.GetValueOrDefault("Vector")}' is numbers in the prism (its frame is tilted).");
+            st.Root = new C3dPrism { Plane = q.Plane, Outline = q.Outline, Height = Round(Along(q.N)), Shear = new C3dPoint2(Round(Along(q.U)), Round(Along(q.V))) };
+            st.OwnRot = q.Rot;
+            st.OwnOrigin = q.Origin;
+            st.Pending = Pend.None;
+            _pendingInfo = null;
+            return true;
+        }
         C3dAxis normal = st.Pending switch
         {
             Pend.Rect => ((RectInfo)_pendingInfo!).Normal,
             Pend.Circle => ((CircleInfo)_pendingInfo!).Normal,
             _ => ((PolyInfo)_pendingInfo!).Normal,
         };
-        for (int i = 0; i < 3; i++)
-            if (i != (int)normal && !v[i].IsZeroLiteral)
+        var h = v[(int)normal];
+        bool offNormal = Enumerable.Range(0, 3).Any(i => i != (int)normal && !v[i].IsZeroLiteral);
+        if (offNormal)
+        {
+            // brief-hzn-15 R-hzn15-2 — off the normal: a rectangle or polygon is a prism whose top is sheared against its bottom by the
+            // vector's in-plane part; a circle would be an oblique cylinder, which .c3d has no primitive for
+            if (st.Pending == Pend.Circle)
             {
-                _r.Add(HznRefusalKind.Operation, "SweepAlongVector off the normal", $"the vector '{p.GetValueOrDefault("Vector")}' is not along the shape's normal", name);
+                _r.Add(HznRefusalKind.Operation, "SweepAlongVector of a circle off its normal", "an oblique cylinder has no .c3d primitive", name);
+                st.Pending = Pend.None;
+                _pendingInfo = null;
                 return false;
             }
-        var h = v[(int)normal];
+            var q = st.Pending == Pend.Rect ? RectAsPoly((RectInfo)_pendingInfo!) : (PolyInfo)_pendingInfo!;
+            var (_, ui, vi) = PlaneOf(normal);
+            var prism = new C3dPrism { Plane = q.Plane };
+            PutOutline(prism, nameof(C3dPrism.Offset), nameof(C3dPrism.Outline), q);
+            Put(prism, nameof(C3dPrism.Height), 0, h);
+            Put(prism, nameof(C3dPrism.Shear), 0, v[ui]);
+            Put(prism, nameof(C3dPrism.Shear), 1, v[vi]);
+            st.Root = prism;
+            st.Pending = Pend.None;
+            _pendingInfo = null;
+            return true;
+        }
         switch (st.Pending)
         {
             case Pend.Rect:
@@ -1146,7 +1357,9 @@ internal sealed partial class HznTranslator
                 ok = false;
                 continue;
             }
-            if (!keep && toolObj.ConsumedBy != name)
+            if (!keep && toolObj.ConsumedBy != name && _impliedConsumer.GetValueOrDefault(t) == name)
+                _notes.Add($"'{t}' is a tool of the {kind} in '{name}', which consumes it, though the file does not record it as consumed: it is drawn as part of '{name}' only.");
+            else if (!keep && toolObj.ConsumedBy != name)
             {
                 _r.Add(HznRefusalKind.Operation, kind, $"the tool '{t}' is not recorded as consumed by '{name}'", name);
                 ok = false;
@@ -1216,6 +1429,16 @@ internal sealed partial class HznTranslator
             if (own != 0) pl.Rotate.Add(new C3dRotation { Axis = C3dAxis.Z, Deg = own });
             var o = st.Origin ?? [Dim.Zero, Dim.Zero, Dim.Zero];
             st.Origin = [Add(o[0], new Dim(null, st.OwnOrigin.X, true)), Add(o[1], new Dim(null, st.OwnOrigin.Y, true)), o[2]];
+        }
+        if (st.OwnRot is { } ownRot)
+        {
+            // brief-hzn-15 — the tilted shape's frame: its rotations first, its origin added to any move; a rotation or mirror the
+            // history adds acts on the moved frame, which one placement cannot state
+            if (st.Mirror || st.Rot.Count > 0)
+                _r.Add(HznRefusalKind.Operation, "Rotate or Mirror of a tilted polyline", "its own tilt and a later rotation about the origin are not one placement", name);
+            pl.Rotate.AddRange(ownRot);
+            var o = st.Origin ?? [Dim.Zero, Dim.Zero, Dim.Zero];
+            st.Origin = [Add(o[0], new Dim(null, st.OwnOrigin.X, true)), Add(o[1], new Dim(null, st.OwnOrigin.Y, true)), Add(o[2], new Dim(null, st.OwnOrigin.Z, true))];
         }
         if (st.Origin is { } origin) PutAll(pl, nameof(C3dPlacement.Origin), origin);
         foreach (var (axis, ang) in st.Rot)

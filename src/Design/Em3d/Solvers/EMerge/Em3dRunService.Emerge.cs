@@ -248,7 +248,8 @@ public static partial class Em3dRunService
         // brief-emw-3 R-emw3-5 — with a terminal group, EMerge's S is MODAL on that face: every port goes through the conversion
         // (a one-entry face reduces to the renormalisation from its Z_PV), from S and the faces' own modes
         (WavePortModalSamples Samples, WavePortTerminalOutcome Outcome, EmergeModalArrays Arrays)? terminal = null;
-        if (Em3dPortMap.HasTerminals(ports))
+        // brief-hzn-16 — a Floquet port's modes share a face group but are not terminals: their S is modal as solved
+        if (ports.Any(p => p.FaceGroup is not null && p.Floquet is null))
         {
             var arrays = EmergeTerminalS.Read(dir, requested.Length, ports.Count, out string? arraysError);
             if (arrays is null) return Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(arraysError!));

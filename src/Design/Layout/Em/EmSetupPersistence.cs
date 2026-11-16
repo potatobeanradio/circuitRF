@@ -174,6 +174,17 @@ public sealed class CemAirBox
     public CemAirBoxFace? YMax { get; set; }
     public CemAirBoxFace? ZMin { get; set; }
     public CemAirBoxFace? ZMax { get; set; }
+
+    /// <summary>brief-hzn-16 — the direction a periodic cell is scanned to (its x and y faces Periodic pairs): the Floquet phase
+    /// between opposite faces is a plane wave's from θ (degrees from +z) and φ (degrees from +x toward +y). Omitted is broadside.</summary>
+    public CemScan? Scan { get; set; }
+}
+
+/// <summary>brief-hzn-16 — a periodic cell's scan, in degrees.</summary>
+public sealed class CemScan
+{
+    public double ThetaDeg { get; set; }
+    public double PhiDeg { get; set; }
 }
 
 /// <summary>brief-em3d-22 R-em3d22-2a — one terminal of a static 3D solve.</summary>
@@ -1937,12 +1948,14 @@ public static class EmSetupPersistence
         XMin = ToFace(box.XMin), XMax = ToFace(box.XMax),
         YMin = ToFace(box.YMin), YMax = ToFace(box.YMax),
         ZMin = ToFace(box.ZMin), ZMax = ToFace(box.ZMax),
+        Scan = box.Scan is { } s ? new CemScan { ThetaDeg = s.ThetaDeg, PhiDeg = s.PhiDeg } : null,
     };
 
     /// <summary>An air box as a file spells it, read; null for null.</summary>
     public static EmAirBox? FromCem(CemAirBox? box) => box is null ? null
         : new EmAirBox(FromFace(box.XMin), FromFace(box.XMax), FromFace(box.YMin),
-                       FromFace(box.YMax), FromFace(box.ZMin), FromFace(box.ZMax));
+                       FromFace(box.YMax), FromFace(box.ZMin), FromFace(box.ZMax))
+          { Scan = box.Scan is { } s ? new CircuitRF.Engine.Em3d.Em3dScan(s.ThetaDeg, s.PhiDeg) : null };
 
     private static CemAirBoxFace? ToFace(EmAirBoxFace? f)
         => f is null ? null : new CemAirBoxFace { PaddingUm = f.PaddingUm, Boundary = f.Boundary, PaddingPercent = f.PaddingPercent };

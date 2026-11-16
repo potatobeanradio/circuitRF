@@ -650,7 +650,7 @@ public static partial class Em3dSectionRenderer
         string kind = f.Kind switch
         {
             Em3dBoundaryKind.Pec => "PEC", Em3dBoundaryKind.Pmc => "PMC",
-            Em3dBoundaryKind.Symmetry => "symmetry", _ => "absorbing",
+            Em3dBoundaryKind.Symmetry => "symmetry", Em3dBoundaryKind.Periodic => "periodic", _ => "absorbing",
         };
         return f.BeyondM > 0
             ? $"{f.Face}: {kind}, {Em3dSectionScene.FormatLength(f.BeyondM)} beyond"

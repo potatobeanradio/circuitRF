@@ -1005,6 +1005,61 @@ listed as unused. A port facing x or z uses the same world order, which is assum
 - `Meta_Ex1`: a one-sided lossy sheet;
 - the PlaneWave designs: radiation boundaries inside the model.
 
+### HZN-15 — tilted geometry, corner-drawn ports, and the EMerge driver's turned-port fixes (2026-11-15)
+
+**Census** (local example set, 58 3D designs): 40 → 44 (`PlaneWave` ×2, the second smart-glasses antenna's run3 and run4). TRN-5's
+`frequency()` built-in had closed `PlaneWave` (a design variable of that name); it is `frequency_hzn` in the document and written back
+as `frequency` (`HznNames.C3dVariableName`/`HznVariableName`). Behind it, a non-model field-plot plane 0.6 µm past the radiation
+box moved the "outer extent" (`Content(modelOnly: true)` now), and an open polyline was refused (now a construction polyline).
+
+**Black box.** Faceted cylinder, from the nodes of Hertzon's own `mesh.npz` (12, 10, 7 sides on Z, X, Y): vertices ON the circle, the
+first along the next axis round (Z → +x, X → +y, Y → +z). Lumped ports in a Terminal design with no wave ports: the Touchstone is the
+Modal design's to every printed digit (ports by PortNumber, each referred to its Impedance), so they translate as modal ports.
+
+**The Ex2 port is a trapezoid.** It joins the trace's edge (exactly) to the board's side face (exactly, 0.2 nm), two edges 0.2° from
+parallel: sides 0.4017/0.4020 mm and 0.2458/0.2443 mm. No rectangle keeps both contacts, so `C3dPort.Corners` keeps the drawn corners
+(a rectangle to 1 %); the tilted-frame `Tilt` first built for it was replaced.
+
+**The flat short, and its cause.** The first solves read S11 = −0.967 at 180° at every frequency, with a lossy or a perfect trace,
+on 42k or 498k tetrahedra, and on a fixture whose trace touches nothing. It was EMerge's lumped-port voltage: EMerge starts its
+integration lines at the port nodes whose projection on the direction is EXACTLY the least (`dotprod == np.min(dotprod)`), which on a
+turned sheet is one corner, and from a corner of a trapezoid its line read no voltage. The driver now sets five lines of its own
+between the two ends (`drawn_port_lines`, inset 1 % and scaled back), and the fixture reads a capacitive open (0.94–0.97 at −14° to
+−19°) for port angles of 35°, 17° and 3°. Two other faults found on the way:
+- a sheet's, element's or port's piece inside a conductor went when the conductor's interior was removed, and the driver kept its tag
+  ("Unknown model face … a piece of 'FeedPad'", then of 'port/1'); it now keeps only pieces left, as it did for wave-port regions;
+- a port edge a nanometre off its copper (each rounded to the DBU in its own frame) left a sliver tetrahedron of quality 0; ends are
+  snapped onto their conductor (`C3dTurnedPorts.SnapEnds`: outline vertex, side, then surface).
+
+**Fragile fragmentation.** A port meeting its trace at 3° along a shared edge: the exact boolean, 1 nm and 10⁻⁵ nm fuzzy all fail the
+kernel's second pass on the full model ("could not fragment 'Ch5' and 'FeedPad' and 'GndTab' and 'TopTrace' and 'port/1' cleanly");
+0.1 nm passes. With a turned port the driver now builds again at 0.1 nm, then 1 nm, with a warning.
+
+**Open: Ex2 run4 against Hertzon's `A29.s1p`.** It resonates, but the low band sits at 2.2 GHz (−4.3 dB) against 2.45 (−8.2), the high
+band at 6.15 (−22.6) against 6.0 (−11.5), and the 7.25 GHz parasitic dip is missing. 363k tetrahedra (6 min) and a held 616k (33 min)
+give the same curve: the model differs, not the mesh. Not yet found; candidates are the Unite tools the file does not record as
+consumed (they include the 2.4 GHz arm and the parasitic's branches), the steel Finite Conductivity boundary now applied to a copper
+chassis part, and the 0-thickness lossy hinge sheet.
+
+### HZN-16 — a periodic cell and Floquet ports (2026-11-15)
+
+Census 44 → 46 (`CrossDipoleFSS`, `F_UnitCell_Periodic`). **EMerge's own periodic cell does not work under the driver's global
+scale**: its face planes are metres against a model built in micrometres, and after the mesh EMerge reports a face's centre in metres
+while the kernel's stay in micrometres, so its pairing compared the two ("Periodic Boundary conditions not generated"). The driver's
+cell finds and pairs faces itself in model units and gives the periodic conditions their displacement in metres. Setting the cell
+before `sim.mw.reset()` lost it ("Periodic cel must be defined"). EMerge's local refinement breaks the pairs (index out of bounds pairing
+triangles), so a cell is solved on its first mesh, with a warning.
+
+**Against Hertzon** (its own runs, 0.3.19, refined mesh; circuitRF unrefined): the FSS resonates at 10 GHz in both (|S11| 0.997 / 0.964);
+away from it |S11| and |S31| agree within 0.06–0.15 (8, 12, 14, 16 GHz) with phases within 4–20°. The backed cell's reflection phase
+agrees within 1.5–8° at 7, 9, 10, 11, 13 GHz. Hertzon's Floquet Touchstone states `R 376.73`; circuitRF's states `R 1` with the
+mode-normalised header line (HZN-11's rule).
+
+**Upstream examples** (checked against the Hertzon repository, 0.3.26, 2026-11-15): the reference files used here are unchanged; new
+are GroundedCPW, an LNA, a mixer, a VNA test set and the second glasses antenna's runs B and C — 99 3D designs, 49 open. Runs B and C
+(37 designs) are stopped by a polyline with holes and an axis-plane port sheet that is a rectangle only to ~0.3 %.
+
+
 ## A run estimated between 100 % and 150 % of memory could not choose to swap (2026-11-05)
 
 Only a Severe verdict (past 150 %) was asked about, and only answering it lifted the ceiling, so a run at 141 % started with its ceiling and was

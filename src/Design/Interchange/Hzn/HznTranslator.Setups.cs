@@ -159,6 +159,9 @@ internal sealed partial class HznTranslator
                 ["XMin"] = F(air.XMin!), ["XMax"] = F(air.XMax!), ["YMin"] = F(air.YMin!), ["YMax"] = F(air.YMax!),
                 ["ZMin"] = F(air.ZMin!), ["ZMax"] = F(air.ZMax!),
             };
+            // brief-hzn-16 — a periodic cell's scan
+            if (air.Scan is { } scan)
+                ((JsonObject)o["AirBox"]!)["Scan"] = new JsonObject { ["ThetaDeg"] = scan.ThetaDeg, ["PhiDeg"] = scan.PhiDeg };
         }
         _doc.Setups.Add(JsonSerializer.SerializeToElement(o));
         _prov.Setups[c3dName] = origin;

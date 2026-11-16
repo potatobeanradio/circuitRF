@@ -832,7 +832,7 @@ internal static class ExplainEm3d
     private static string Boundary(Em3dBoundaryKind k) => k switch
     {
         Em3dBoundaryKind.Pec => "PEC", Em3dBoundaryKind.Pmc => "PMC",
-        Em3dBoundaryKind.Symmetry => "symmetry", _ => "absorbing",
+        Em3dBoundaryKind.Symmetry => "symmetry", Em3dBoundaryKind.Periodic => "periodic", _ => "absorbing",
     };
 
     private static string Primitive(Em3dPrimitive p) => p switch

@@ -20,6 +20,7 @@ public sealed class Em3dBoundaryKindNameConverter : IValueConverter
         Em3dBoundaryKind.Pec      => "PEC",
         Em3dBoundaryKind.Pmc      => "PMC",
         Em3dBoundaryKind.Symmetry => "Symmetry",
+        Em3dBoundaryKind.Periodic => "Periodic",
         _                         => "Absorbing",
     };
 

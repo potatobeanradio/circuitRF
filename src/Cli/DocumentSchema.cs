@@ -1014,6 +1014,11 @@ internal static class DocumentSchema
             end's two corners, so the sheet meets it exactly (the copper moves by at most the
             tolerance; the layout is not changed). A wave port, a port in XZ or YZ and a gap on a
             cylinder are never turned; openEMS refuses a turned port.
+          * A lumped port may be DRAWN AS ITS CORNERS, in any plane, a tilted one included:
+            "Corners": [[x,y,z], [x,y,z], [x,y,z], [x,y,z]] world DBU in order round it, instead of Rect
+            and Angle. A rectangle to 1 % (opposite sides parallel and equal, corners square) and flat;
+            each end must lie on its conductor (within 4 DBU) and the run puts it there exactly.
+            EMerge runs it; openEMS refuses it.
           * A COAXIAL lumped port's sheet is a RING instead of its Rect: "Annulus" is the ring's centre
             in the port's Plane (u, v) and its two radii, DBU, each of which may be an expression:
 
@@ -1078,6 +1083,13 @@ internal static class DocumentSchema
             x-extent on each side; never both on one face. Palace finds a face's surfaces by its
             bounding box and counts them exactly: a neighbour's face lying in the same plane and
             overlapping it is refused, never merged. A curved face (a cylinder's side) is refused.
+          * A PERIODIC CELL (one cell of an infinite array): both x faces and both y faces of the
+            setup's AirBox are "Boundary": "Periodic", flush with the cell (PaddingUm 0), and the
+            AirBox's "Scan": {"ThetaDeg": 10, "PhiDeg": 0} sets the Floquet phase between opposite
+            faces (omitted: broadside). A FLOQUET port is a wave port over the WHOLE zmin or zmax face
+            with "Floquet": {"Modes": 2} ("Er" for a medium other than vacuum) and "Z0": "mode"; its
+            modes are the result's ports Number, Number+1, ... (1 TE00, 2 TM00, then grating modes).
+            EMerge only; the cell is solved on its first mesh (EMerge's refinement breaks the pairs).
           * OPERATIONS are built by OpenCASCADE, which ships with circuitRF (Settings ▸ Solvers says
             whether this installation has it). A Boolean is Op (Subtract,
             Unite, Intersect) of one Blank and one or more Tools, owned inline; a Fillet rounds named

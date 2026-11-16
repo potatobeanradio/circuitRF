@@ -137,13 +137,19 @@ internal sealed partial class C3dToHznWriter
                 _r.Add(HznRefusalKind.Excitation, "cylindrical port", "Hertzon's port is a rectangle sheet in an axis plane", name);
                 continue;
             }
+            // brief-hzn-16 — not written yet: a .hzn opened from Hertzon keeps its own Floquet ports when saved, unedited
+            if (port.Floquet is not null)
+            {
+                _r.Add(HznRefusalKind.Excitation, "Floquet port", "writing a Floquet port to a Hertzon design is not built yet", name);
+                continue;
+            }
             // brief-cxp-1 R-cxp1-5 — a coaxial port's sheet is its ring
             if (port.Annulus is not null)
             {
                 _r.Add(HznRefusalKind.Excitation, "coaxial port", "Hertzon's port is a rectangle sheet in an axis plane", name);
                 continue;
             }
-            bool turned = port.Angle != 0;   // brief-hzn-14 — written as its four corners, a polyline sheet
+            bool turned = port.Turned;   // brief-hzn-14 (brief-hzn-15: or tilted) — written as its four corners, a polyline sheet
             if (wave && port.VoltagePath is not null)
             {
                 _r.Add(HznRefusalKind.Excitation, "wave port with a stated voltage path", "a wave port's polarity is not written", name);
@@ -238,6 +244,7 @@ internal sealed partial class C3dToHznWriter
     /// <summary>A turned port's four corners, world DBU, in order round it; in an upright plane the first two are the lower edge.</summary>
     private static List<C3dPoint3> TurnedCorners(C3dPort port)
     {
+        if (port.Corners is { } drawn) return [.. drawn];          // brief-hzn-15
         double u0 = port.Rect.Min.U, v0 = port.Rect.Min.V, u1 = u0 + port.Rect.Size.U, v1 = v0 + port.Rect.Size.V;
         var map = C3dTurnedPorts.MapDbu(port.Plane, port.Angle, u0, v0, u1, v1, port.Offset);
         static long R(double d) => (long)Math.Round(d, MidpointRounding.AwayFromZero);
@@ -547,6 +554,8 @@ internal sealed partial class C3dToHznWriter
                 _r.Add(HznRefusalKind.Boundary, $"air box face boundary not stated ({BoxFaceNames[i]})", "state it in the setup", DesignName);
             else if (f.Boundary is Em3dBoundaryKind.Symmetry)
                 _r.Add(HznRefusalKind.Boundary, "symmetry on an air box face", "Hertzon's symmetry wall is a perfect E or a perfect H, which are the PEC and PMC faces", DesignName);
+            else if (f.Boundary is Em3dBoundaryKind.Periodic)
+                _r.Add(HznRefusalKind.Boundary, $"periodic air box face ({BoxFaceNames[i]})", "writing a periodic cell to a Hertzon design is not built yet", DesignName);
         }
         if (_r.Any) return;
 

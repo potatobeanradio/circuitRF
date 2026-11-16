@@ -289,6 +289,17 @@ Rules a reader must apply:
   axis turns, z stays), and each end is a horizontal edge that must lie on a flat sheet or on the top or bottom of extruded
   copper at its height, inside it or along its outline. An end along an outline gives that outline the port's two corners, so
   the two meet exactly. Palace and EMerge run a turned port; openEMS refuses it.
+- **`Floquet` makes a wave port a Floquet port** (brief-hzn-16): `{ "Modes": 2, "Er": 1 }` on a wave port whose `Rect` is the whole
+  zmin or zmax face of a periodic cell (the setup's `AirBox` with both x faces and both y faces `"Periodic"`, and a `Scan`
+  {`ThetaDeg`, `PhiDeg`} there for an oblique one). Its modes are ports of the result numbered from its `Number`: 1 the TE wave of
+  the (0, 0) harmonic, 2 its TM wave, more the grating harmonics by cutoff. Its `Z0` is `"mode"`. EMerge runs it; Palace and
+  openEMS refuse a periodic cell and a Floquet port.
+- **`Corners` draws a lumped port as its four corners** (brief-hzn-15): `[[x,y,z] ×4]` in world DBU, in order round it, instead
+  of `Rect` on `Plane` (which, with `Angle`, are then not read). It lies in any plane, a tilted one included. It is a rectangle to
+  a part in a hundred (opposite sides parallel and equal, corners square) and flat to a part in a hundred thousand: an exported
+  model joins two edges that are not exactly parallel, and the port keeps both exactly. Its conductors are inferred from what its
+  edges touch, as any port's; each end must lie on its conductor's surface (within 4 DBU), and the run puts it exactly there.
+  Never a wave port, a ring or on a cylinder. EMerge runs it, its voltage integrated between its two ends; openEMS refuses it.
 - **`Annulus` makes a coaxial lumped port** (brief-cxp-1): its sheet is a ring, `{ "Centre": [u, v], "Inner": dbu,
   "Outer": dbu }` on the port's `Plane` and `Offset`, instead of `Rect`. Each value may be an expression.
   - The conductor the inner circle lies on is positive and the one the outer circle lies on is negative. `Positive` and
@@ -429,10 +440,10 @@ instead of being folded into Euler angles.
 | Construct | Where |
 |---|---|
 | Multi-mode wave port | `Ports[]` gains `Modes` (int, default 1) |
-| Floquet port | `Ports[]` `Kind: "Floquet"` on an air-box face region, with `Modes` (`TE00`, `TM00`, …) |
+| Floquet port | **Built** (brief-hzn-16): a wave port with `Floquet` {`Modes`, `Er`} (§7), not a new `Kind`, so it shares the wave port's region, numbering and mode normalisation |
 | Incident plane wave | **Built** (brief-hzn-12): the view's `PlaneWaves` records (§7), stated as two vectors rather than the angles proposed here, since angle conventions differ between tools and one read in another's convention is a silent error |
 | Impedance surface | `FaceBoundaries[]` `Kind: "Impedance"` with `R` and `X` (Ω/sq) as expressions |
-| Periodic (primary/secondary) pair | A setup's `AirBox` faces gain `Boundary: "Periodic"` plus `Pair` (the opposite face) and `ScanThetaDeg`/`ScanPhiDeg` |
+| Periodic (primary/secondary) pair | **Built** (brief-hzn-16): a setup's `AirBox` faces take `Boundary: "Periodic"` (the pair is always the opposite face of the axis, so no `Pair` key) and the `AirBox` a `Scan` {`ThetaDeg`, `PhiDeg`} |
 | PML as distinct from a first-order absorber | A setup's `AirBox` face `Boundary: "Pml"` with `Layers` and `Thickness` |
 | Lumped RLC from a Touchstone file | `LumpedElements[]` gains `Touchstone` (a path beside the `.c3d`) and `Mount` (`Series`/`Shunt`) |
 | Mesh size on an object or a face | `MeshRegions[]` gains `Object` and `Faces` as alternatives to its box |
