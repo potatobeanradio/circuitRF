@@ -1371,8 +1371,11 @@ public static class SurfaceMesher
             // Leaving it reading "the highest frequency of the sweep" once MeshFrequencyHz exists
             // would produce a report claiming a mesh was sized at 20 GHz when it was sized at 10 —
             // the exact class of silently wrong statement this area keeps finding.
-            bool sizedAtSweepTop = !(s.MeshFrequencyHz is { } setF && setF > 0)
-                                   || meshFreqHz >= problem.MaxFrequencyHz;
+            // A STATED mesh frequency is the one used, above the sweep's top as well as below it (WaveCell), so only an unstated one is
+            // "the top of the sweep": a 22 GHz stated over a 16 GHz sweep was reported as the sweep's top, its top moving the mesh.
+            bool stated = s.MeshFrequencyHz is { } setF && setF > 0;
+            string baseBlock = $"λ_g/{s.CellsPerWavelength} = {fmt(hWave)} at {Eng(meshFreqHz)}Hz, " +
+                               (stated ? "as Mesh frequency states" : "the top of the sweep");
 
             // WHICH quantity actually set the cell size — BuildRefusal's own question, asked here too
             // (owner report, 2026-09-09). hx/hy are Math.Min(hWave, narrow/MinCells), so the cap binds
@@ -1398,7 +1401,7 @@ public static class SurfaceMesher
             notes.Add(capBinds
                 ? $"Cell size capped at λ_g/{s.CellsPerWavelength} = {fmt(hWave)} — λ_g = {fmt(lambdaG)} " +
                   $"in εᵣ = {problem.Slab.Material.EpsR:G4} at {Eng(meshFreqHz)}Hz, " +
-                  (sizedAtSweepTop
+                  (!stated
                       ? "the highest frequency of the sweep. Widening the sweep upward will change " +
                         "this, and with it the unknown count."
                       : "the frequency the mesh is sized at. Changing it changes the unknown count.")
@@ -1429,12 +1432,17 @@ public static class SurfaceMesher
                   // merely expensive is still sent round the two knobs this note has just called
                   // dead and never told which one is alive.
                   // brief-icf-1 R-icf1-5 — on the local grid the sentence below is false: its base block IS λ_g/N at the mesh
-                  // frequency, so both knobs move it, and on artwork smaller than a block they move the whole partition.
+                  // frequency, so both knobs move it. Since R-icf4-1, artwork at most two blocks across on both axes starts from one
+                  // block across it (BaseCuts), and there the two knobs set only how wide a block may grow: the note says which.
                   : local is not null
-                  ? $"The local grid's base block is λ_g/{s.CellsPerWavelength} = {fmt(hWave)} at {Eng(meshFreqHz)}Hz" +
-                    (sizedAtSweepTop ? ", the top of the sweep" : "") + ", so Cells per wavelength and Mesh frequency set it" +
-                    (sizedAtSweepTop ? " — and so does the sweep's top frequency" : "") + $"; the narrowest metal ({fmt(narrowest)}, " +
-                    $"{s.MinCellsAcrossConductor} across) sets the finest cells, {fmt(Math.Min(hx, hy))}, near the features."
+                  ? (PlanarLocalGrid.StartsFromArtwork(gx[^1] - gx[0], hWave) && PlanarLocalGrid.StartsFromArtwork(gy[^1] - gy[0], hWave)
+                        ? $"The local grid starts from one block across the artwork: it spans at most {PlanarLocalGrid.ArtworkBaseBlocks:G} " +
+                          $"base blocks of {baseBlock}, so Cells per wavelength and Mesh frequency set only how wide a block may grow, not " +
+                          "where its first cuts fall"
+                        : $"The local grid's base block is {baseBlock}, so Cells per wavelength and Mesh frequency set it" +
+                          (stated ? "" : " — and so does the sweep's top frequency")) +
+                    $"; the narrowest metal ({fmt(narrowest)}, {s.MinCellsAcrossConductor} across) sets the finest cells, " +
+                    $"{fmt(Math.Min(hx, hy))}, near the features."
                   : $"Cells per wavelength and Mesh frequency do NOT set this mesh. The λ_g/" +
                     $"{s.CellsPerWavelength} cap is {fmt(hWave)}; the narrowest metal ({fmt(narrowest)}, " +
                     $"{s.MinCellsAcrossConductor} across) forces {fmt(Math.Min(hx, hy))} — " +
@@ -1454,7 +1462,7 @@ public static class SurfaceMesher
             // while the cells were in fact 56 µm — λ_g/1120 — and told the user to raise the very
             // controls the refusal beside it had just said were inert. Same defect as the refusal's
             // own, in a note.
-            if (!sizedAtSweepTop && problem.MaxFrequencyHz > 0 && capBinds)
+            if (stated && meshFreqHz < problem.MaxFrequencyHz && problem.MaxFrequencyHz > 0 && capBinds)
             {
                 double effCellsPerLambda =
                     s.CellsPerWavelength * meshFreqHz / problem.MaxFrequencyHz;
