@@ -1,4 +1,5 @@
 using System.Globalization;
+using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Core.Expressions;
@@ -40,7 +41,7 @@ public partial class ParameterEditorViewModel
             (text, note) = CoupledLineReadout(_target.Symbol);
         else if (IsDividerReadoutTarget)
         {
-            if (Spec("Z0") is not { } z0 || Spec("F") is not { } f || Spec("Gap") is not { } gap
+            if (Spec("Z0") is not { } z0 || Spec("F") is not { } f || SiteGap(ref note) is not { } gap
                 || Spec("K", 1.0) is not { } k || Spec("N", 1.0) is not { } n || Spec("Band", WilkinsonPlan.DefaultBand) is not { } band)
                 note = "Z0, F, Gap, K, N or Band is an expression, so the divider's dimensions are known only at run time.";
             else
@@ -64,6 +65,7 @@ public partial class ParameterEditorViewModel
                              + Ring(d)
                              + string.Join("\n", d.Resistors.Select((r, i) =>
                                    $"R{(d.Sections > 1 ? (i + 1).ToString(CultureInfo.InvariantCulture) : "")} = {Ohm(r.Ohms)}, across {r.PinA}-{r.PinB}"));
+                    text += Sites(d.Plan);
                 }
                 catch (ParameterRefusalException ex)
                 {
@@ -74,10 +76,56 @@ public partial class ParameterEditorViewModel
         DividerReadoutText = text;
         DividerReadoutNote = note;
         OnPropertyChanged(nameof(IsDividerReadoutTarget));
+        OnPropertyChanged(nameof(HasSites));
         OnPropertyChanged(nameof(DividerReadoutText));
         OnPropertyChanged(nameof(DividerReadoutNote));
         OnPropertyChanged(nameof(HasDividerReadoutNote));
     }
+
+    /// <summary>A planned passive with sites, so the readout offers Place Site Parts.</summary>
+    public bool HasSites => SchematicViewModel.HasSites(_target);
+
+    /// <summary>Place Site Parts, the context menu's own command (<see cref="SchematicViewModel.PlaceSiteParts"/>).</summary>
+    [RelayCommand]
+    private void PlaceSiteParts()
+    {
+        if (_target is not null) _schematicVm?.PlaceSiteParts(_target.Id);
+    }
+
+    /// <summary>The site span the plan is built with, as the run and the layout resolve it: the Footprint's land span when
+    /// the part states one (<see cref="MicrostripSubstrateInjection.SiteSpanMeters"/>), else Gap. A footprint that does not
+    /// resolve leaves Gap and says why in <paramref name="note"/>.</summary>
+    private double? SiteGap(ref string note)
+    {
+        if (_target is null || PassiveSites.FootprintOf(_target) is not { } footprint) return Spec("Gap");
+        var model = _schematicVm?.EditModel;
+        if (MicrostripSubstrateInjection.SiteSpanMeters(footprint, model?.SchematicDirectory,
+                model is null ? null : SchematicTechnology.Of(model), out string? refusal) is { } span)
+            return span;
+        note = $"Footprint: {refusal}; Gap is used as stated.";
+        return Spec("Gap");
+    }
+
+    /// <summary>The plan's sites, a line each: what goes there, the value the design wants and, where the plan sets it,
+    /// the span between the pins (rf-passives.md, "Sites"). Place Site Parts fills the empty ones.</summary>
+    private static string Sites(PassivePlan plan)
+        => string.Concat(plan.Sites.Select(site =>
+            $"\nSite {site.Name}: " + (site.Role switch
+            {
+                PlanSiteRole.Via => "a via to ground",
+                PlanSiteRole.Jumper => "a jumper (bond wire or air bridge)",
+                PlanSiteRole.Load => "the load",
+                PlanSiteRole.L => "L",
+                PlanSiteRole.C => "C",
+                _ => "R",
+            })
+            + (site.Value is { } v ? " " + (site.Role switch
+            {
+                PlanSiteRole.L => (v * 1e9).ToString("0.###", CultureInfo.InvariantCulture) + " nH",
+                PlanSiteRole.C => (v * 1e12).ToString("0.###", CultureInfo.InvariantCulture) + " pF",
+                _ => Ohm(v),
+            }) : "")
+            + (site.SpanMeters is { } span ? $", span {Mm(span, "0.####")}" : "")));
 
     /// <summary>A spec row's SI value when it is a plain number; <paramref name="absent"/> when the part has no such row
     /// (a divider placed before the row existed).</summary>

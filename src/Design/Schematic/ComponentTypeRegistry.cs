@@ -1738,7 +1738,7 @@ public static class ComponentTypeRegistry
         (SymbolKind.Mwpd, "F") => "Centre frequency: each arm is a quarter wavelength long here, in the line's own effective "
                                 + "permittivity at F.",
         (SymbolKind.Mwpd, "Gap") => "Span of the isolation resistor's pins, R2 to R3: the gap the ring closes across. 1.35 mm "
-                                  + "is an 0402's at nominal density.",
+                                  + "is an 0402's at nominal density. A Footprint on the divider sets it to that land's span instead.",
         (SymbolKind.Mwpd, "SignalLayer") => "The conductor the divider is on. Empty: the technology's top conductor.",
         (SymbolKind.Mblc, "Z0") => "The ports' impedance. One section: series arms Z0/√2 and shunt arms Z0; two sections: "
                                  + "series arms Z0 and shunt arms (1 + √2)·Z0, √2·Z0, (1 + √2)·Z0. Widths are derived on "
@@ -1766,7 +1766,8 @@ public static class ComponentTypeRegistry
         (SymbolKind.Mcbl, "ZL") => "The load on EACH balanced output (half the balanced load). The sections' coupling "
                                  + "1/√(1 + 2·ZL/Z0) matches it to Z0; low ZL needs tight coupling, which edge-coupled "
                                  + "microstrip may not reach.",
-        (SymbolKind.Mcbl, "Gap") => "Length of the line joining the two sections, which the outputs 2 and 3 face across.",
+        (SymbolKind.Mcbl, "Gap") => "Length of the line joining the two sections, which the outputs 2 and 3 face across. A "
+                                  + "Footprint on the balun sets it to the span of the load's land instead.",
         (SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl, "SignalLayer") => "The conductor the strips are on. Empty: "
                                  + "the technology's top conductor.",
         (SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl, "GroundReference") => "The plane under it. Empty: the "

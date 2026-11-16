@@ -9,7 +9,7 @@ public sealed record WilkinsonLine(string Name, double Z, double WMeters, double
 
 /// <summary>One arm of a ring with corners, as the readout lists it: the line it rises from the input tee and falls to its
 /// output tee (each), the line across between its two corners, and the length of arm each corner stands for at F
-/// (<see cref="PlanBend.LineLength"/>).</summary>
+/// (<see cref="PlanSection.LineLength"/>).</summary>
 public sealed record RingArm(string Name, double RiseMeters, double AcrossMeters, double CornerMeters);
 
 /// <summary>One isolation resistor: the two pins it goes across, and its value.</summary>
@@ -86,7 +86,7 @@ public sealed record WilkinsonDesign(
 /// <para><b>Corners.</b> With <see cref="PlanCorner.Miter"/> or <see cref="PlanCorner.Square"/> each arm is a rectangle's
 /// half instead of a half-turn: it rises from the input tee, turns 90° (an MMITER at its usual chamfer, or MBEND's square
 /// corner), runs across, turns again and falls to its output tee. Its λg/4 still counts every piece: the input tee's
-/// line, the straight runs, and each corner's own electrical length at F, which <see cref="PlanBend.LineLength"/> takes
+/// line, the straight runs, and each corner's own electrical length at F, which <see cref="PlanSection.LineLength"/> takes
 /// from the corner's model on the substrate, so the plan stays a pure function of the specs and the substrate. The runs
 /// are that much shorter. The rectangle is as tall as the curved ring (the upper arm runs across at the half-turn's
 /// top), so the arms stay a ring's diameter apart: the plan models no coupling between them. Both arms span the one
@@ -306,7 +306,11 @@ public static class WilkinsonPlan
 
         var resistors = rs.Select((r, i) => new WilkinsonResistor(pins[3 + 2 * i], pins[4 + 2 * i], r)).ToList();
         return new WilkinsonDesign(z0, fHz, gap, w0, z2, wa2, arm2.Eeff, arm2.QuarterWaveMeters, radius, feed, rs[0],
-            new PassivePlan(pins, plan, NodeCount: next - 1))
+            new PassivePlan(pins, plan, NodeCount: next - 1)
+            {
+                // Every resistor's pins are Gap apart across the gap's centre line, so each site spans Gap.
+                Sites = [.. resistors.Select(r => new PlanSite(PlanSiteRole.R, PlanSiteKind.Series, r.PinA, r.PinB, gap, r.Ohms))],
+            })
         {
             K = k, Sections = sections, Band = band, Lines = lines, Resistors = resistors, Corner = corner,
             Arms = curved ? [] : unequal

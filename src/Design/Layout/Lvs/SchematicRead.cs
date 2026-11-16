@@ -128,6 +128,7 @@ public static class SchematicRead
             }
 
         IReadOnlyDictionary<string, Resolved> resolved;
+        Dictionary<string, CircuitRF.Core.Devices.Microstrip.PassivePlan> plans;
         try
         {
             // READ INSIDE THE using, not after it. An ElaboratedNetlist owns its device models, and
@@ -142,6 +143,7 @@ public static class SchematicRead
             foreach (var ec in elaborated.Components)
                 byPath.TryAdd(ec.InstancePath, new Resolved(ec.Model.TerminalNames, ValuesOf(ec)));
             resolved = byPath;
+            plans = PassiveSites.PlansOf(elaborated);
         }
         catch (Exception ex)
         {
@@ -213,6 +215,13 @@ public static class SchematicRead
                 Generator = comp is { CellRef: null or "" } ? comp.Symbol.ToString() : type.Generator ?? "",
             });
         }
+
+        // ── A planned passive's sites: a part on a site whose span the passive's Footprint sets must have that
+        // footprint, or its pads do not land where the copper's pins are (docs/design/rf-passives.md, "Sites"). Both
+        // footprints are the drawing's, so this is said whatever the layout holds.
+        foreach (var (passive, site, part) in PassiveSites.FootprintMisfits(PassiveSites.Of(tb, plans, components.Values)))
+            notes.Add(LvsDiagnostics.SiteFootprint(passive.Component.InstanceName, site.Plan.Name, part.InstanceName,
+                passive.Footprint!, part.Footprint));
 
         // ── The boundary: this cell's own ports, IN PORT ORDER ─────────────────────────────────
         var boundary = BoundaryOf(extracted.CellPorts, fixtures, nets);

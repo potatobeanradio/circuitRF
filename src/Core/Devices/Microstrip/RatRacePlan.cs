@@ -21,7 +21,7 @@ public sealed record RatRaceDesign(
     /// <summary>With corners, the straight run down each end of the ring between its two corners; 0 for half-turns.</summary>
     public double SideMeters { get; init; }
 
-    /// <summary>With corners, the length of ring each corner stands for at F (<see cref="PlanBend.LineLength"/>).</summary>
+    /// <summary>With corners, the length of ring each corner stands for at F (<see cref="PlanSection.LineLength"/>).</summary>
     public double CornerMeters { get; init; }
 }
 
@@ -44,7 +44,7 @@ public sealed record RatRaceDesign(
 ///
 /// <para><b>Corners.</b> With <see cref="PlanCorner.Miter"/> or <see cref="PlanCorner.Square"/> each half-turn is two 90°
 /// corners (an MMITER at its usual chamfer, or MBEND's square corner) with a straight side between them, so the ring is a
-/// rectangle. The spacings count each corner at its own electrical length at F, which <see cref="PlanBend.LineLength"/>
+/// rectangle. The spacings count each corner at its own electrical length at F, which <see cref="PlanSection.LineLength"/>
 /// takes from the corner's model on the substrate, so the plan stays a pure function of the specs and the substrate:
 /// 2·(corner) + side = λg/4 − W0, and the sides are that much shorter. At <see cref="PlanCorner.Curve"/> the plan is
 /// the half-turns' to the last bit.</para>

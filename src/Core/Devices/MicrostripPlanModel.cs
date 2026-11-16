@@ -28,6 +28,9 @@ public sealed class MicrostripPlanModel : ComponentModel, IReportsWarnings, IDcS
     private readonly PassivePlan _plan;
     private readonly (ComponentModel Model, ElaboratedComponent At)[] _sections;
 
+    /// <summary>The plan this model stamps, its sites included: what LVS and Place site parts read a placed part's sites from.</summary>
+    public PassivePlan Plan => _plan;
+
     public override int PortCount => _plan.Pins.Count;
     public override ModelKind Kind => ModelKind.Linear;
     public override string[] TerminalNames => [.. _plan.Pins];

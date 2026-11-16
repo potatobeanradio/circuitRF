@@ -786,6 +786,8 @@ public partial class SchematicView : UserControl
         // reason as its tooltip when the design refuses, the schematic is unsaved or there is no
         // workspace to write into: those are states the user has to act on, and a silently missing
         // item reads as a bug.
+        CtxPlaceSiteParts.IsVisible = SchematicViewModel.HasSites(comp);
+
         bool isMatch = comp?.Symbol == SymbolKind.Match;
         CtxFlattenMatch.IsVisible = isMatch;
         if (isMatch)
@@ -858,6 +860,14 @@ public partial class SchematicView : UserControl
         if (comp is null) return;
 
         OpenParameterEditorFor(comp);
+    }
+
+    /// <summary>Context menu ▸ Place Site Parts — the SAME operation as the Properties readout's button
+    /// (<see cref="SchematicViewModel.PlaceSiteParts"/>).</summary>
+    private void OnCtxPlaceSiteParts(object? sender, RoutedEventArgs e)
+    {
+        if (SchematicCanvasCtrl.ContextMenuTargetId is { } id) Vm?.PlaceSiteParts(id);
+        SchematicCanvasCtrl.InvalidateVisual();
     }
 
     /// <summary>
