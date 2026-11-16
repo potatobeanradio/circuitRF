@@ -30,6 +30,7 @@ public static class C3dOperands
                 break;
             case C3dFillet { Target: { } t }: yield return ("Target.", t); break;
             case C3dChamfer { Target: { } t }: yield return ("Target.", t); break;
+            case C3dSplit { Target: { } t }: yield return ("Target.", t); break;
         }
     }
 
@@ -47,6 +48,7 @@ public static class C3dOperands
         C3dBoolean b => b.Blank,
         C3dFillet f => f.Target,
         C3dChamfer c => c.Target,
+        C3dSplit sp => sp.Target,
         _ => null,
     };
 

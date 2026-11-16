@@ -168,6 +168,8 @@ internal sealed partial class HznTranslator
         }
     }
 
+    private bool _patternNoted;
+
     private void Emit(string c3dName, string origin, HznSetup s, (JsonObject First, List<JsonObject> More) plan, int order, int? passes, bool adaptiveSweep, HznSweep? sweep = null)
     {
         var emerge = new JsonObject { ["AdaptiveSweep"] = adaptiveSweep };
@@ -179,9 +181,25 @@ internal sealed partial class HznTranslator
             ["Solver3D"] = "Emerge", ["Problem3D"] = "Driven", ["Emerge"] = emerge,
         };
         if (plan.More.Count > 0) o["AdditionalFrequencies"] = new JsonArray([.. plan.More]);
+        // brief-hzn-21 — Hertzon computes a far field where the design has an Infinite Sphere; a plane wave's sphere is its RCS grid instead
+        if (_design.Json.GetArray("spheres")?.Items.Any() == true && !_doc.PlaneWaves.Any(w => w.Enabled))
+        {
+            o["RadiationPattern"] = true;
+            if (!_patternNoted)
+            {
+                _patternNoted = true;
+                _notes.Add("The design has an Infinite Sphere, so its setups compute the radiation pattern. circuitRF publishes it over the whole " +
+                           "sphere every 1° in the global axes, whatever the sphere's own range, step and coordinate system.");
+            }
+        }
         if (_airBox is { } air)
         {
-            JsonObject F(Layout.Em.CemAirBoxFace f) => new() { ["PaddingUm"] = f.PaddingUm, ["Boundary"] = f.Boundary?.ToString() };
+            JsonObject F(Layout.Em.CemAirBoxFace f)
+            {
+                var face = new JsonObject { ["PaddingUm"] = f.PaddingUm, ["Boundary"] = f.Boundary?.ToString() };
+                if (f.Symmetry) face["Symmetry"] = true;      // brief-hzn-21
+                return face;
+            }
             o["AirBox"] = new JsonObject
             {
                 ["XMin"] = F(air.XMin!), ["XMax"] = F(air.XMax!), ["YMin"] = F(air.YMin!), ["YMax"] = F(air.YMax!),

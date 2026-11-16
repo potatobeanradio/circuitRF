@@ -517,7 +517,7 @@ internal sealed partial class C3dToHznWriter
 
     private static readonly string[] BoxFaceNames = ["xmin", "xmax", "ymin", "ymax", "zmin", "zmax"];
 
-    private sealed record AirFace(double? PaddingUm, double? Percent, Em3dBoundaryKind? Boundary);
+    private sealed record AirFace(double? PaddingUm, double? Percent, Em3dBoundaryKind? Boundary, bool Symmetry = false);
 
     /// <summary>Hertzon has one region per design, so every setup's air box must be the same one.</summary>
     private AirFace[]? AirBoxFaces()
@@ -542,10 +542,10 @@ internal sealed partial class C3dToHznWriter
     }
 
     private static AirFace[] FacesOf(EmAirBox b) =>
-        [.. new[] { b.XMin, b.XMax, b.YMin, b.YMax, b.ZMin, b.ZMax }.Select(f => f is null ? new AirFace(null, null, null) : new AirFace(f.PaddingUm, f.PaddingPercent, f.Boundary))];
+        [.. new[] { b.XMin, b.XMax, b.YMin, b.YMax, b.ZMin, b.ZMax }.Select(f => f is null ? new AirFace(null, null, null) : new AirFace(f.PaddingUm, f.PaddingPercent, f.Boundary, f.Symmetry))];
 
     private static AirFace[] FacesOf(CircuitRF.Design.Layout.Em.CemAirBox b) =>
-        [.. new[] { b.XMin, b.XMax, b.YMin, b.YMax, b.ZMin, b.ZMax }.Select(f => f is null ? new AirFace(null, null, null) : new AirFace(f.PaddingUm, f.PaddingPercent, f.Boundary))];
+        [.. new[] { b.XMin, b.XMax, b.YMin, b.YMax, b.ZMin, b.ZMax }.Select(f => f is null ? new AirFace(null, null, null) : new AirFace(f.PaddingUm, f.PaddingPercent, f.Boundary, f.Symmetry))];
 
     private void AirBox()
     {
@@ -646,14 +646,20 @@ internal sealed partial class C3dToHznWriter
         };
         var pec = new HAssign { Name = UniqueBoundaryName("PerfE_AirBox"), Kind = "Perfect E", Props = P(("InfGroundPlane", "False")) };
         var pmc = new HAssign { Name = UniqueBoundaryName("Symmetry_PerfectH"), Kind = "Symmetry", Props = P(("Type", "Perfect H"), ("ImpedanceMultiplier", "1")) };
+        // brief-hzn-21 — an electric wall that is a mirror plane is Hertzon's Perfect E symmetry; one that is not stays Perfect E
+        var pecMirror = new HAssign { Name = UniqueBoundaryName("Symmetry_PerfectE"), Kind = "Symmetry", Props = P(("Type", "Perfect E"), ("ImpedanceMultiplier", "1")) };
         for (int i = 0; i < 6; i++)
         {
-            var target = faces[i].Boundary switch { Em3dBoundaryKind.Absorbing => radiation, Em3dBoundaryKind.Pmc => pmc, _ => pec };
+            var target = faces[i].Boundary switch
+            {
+                Em3dBoundaryKind.Absorbing => radiation, Em3dBoundaryKind.Pmc => pmc,
+                Em3dBoundaryKind.Pec when faces[i].Symmetry => pecMirror, _ => pec,
+            };
             target.Faces.Add((_region.Name, i, BoxSig(box, i, Metres)));
         }
         // All six walls perfect conductors is one boundary on the whole object, which needs no face found by signature.
         if (pec.Faces.Count == 6) { pec.Faces.Clear(); pec.Objects.Add(_region.Name); }
-        foreach (var a in new[] { radiation, pec, pmc })
+        foreach (var a in new[] { radiation, pec, pmc, pecMirror })
             if (a.Faces.Count > 0) _boundaries.Add(a);
     }
 }

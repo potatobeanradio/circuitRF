@@ -161,6 +161,12 @@ public sealed class CemAirBoxFace
 
     /// <summary>What this face does to the field.</summary>
     public CircuitRF.Engine.Em3d.Em3dBoundaryKind? Boundary { get; set; }
+
+    /// <summary>brief-hzn-21 — true on a Pec or Pmc face that is a mirror plane of the whole structure: the solvers lower the
+    /// wall as it is, and the radiation pattern is the whole structure's, mirrored across the face, with the accepted power
+    /// doubled. Written only when true.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Symmetry { get; set; }
 }
 
 /// <summary>A 3D setup's air box, one entry per face. An omitted face takes the default: a fraction
@@ -1958,10 +1964,10 @@ public static class EmSetupPersistence
           { Scan = box.Scan is { } s ? new CircuitRF.Engine.Em3d.Em3dScan(s.ThetaDeg, s.PhiDeg) : null };
 
     private static CemAirBoxFace? ToFace(EmAirBoxFace? f)
-        => f is null ? null : new CemAirBoxFace { PaddingUm = f.PaddingUm, Boundary = f.Boundary, PaddingPercent = f.PaddingPercent };
+        => f is null ? null : new CemAirBoxFace { PaddingUm = f.PaddingUm, Boundary = f.Boundary, PaddingPercent = f.PaddingPercent, Symmetry = f.Symmetry };
 
     private static EmAirBoxFace? FromFace(CemAirBoxFace? f)
-        => f is null ? null : new EmAirBoxFace(f.PaddingUm, f.Boundary, f.PaddingPercent);
+        => f is null ? null : new EmAirBoxFace(f.PaddingUm, f.Boundary, f.PaddingPercent, f.Symmetry);
 
     private static EmSetup FromFileModel(CemFile f) => new()
     {

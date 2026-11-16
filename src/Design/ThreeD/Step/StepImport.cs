@@ -910,6 +910,7 @@ public static class StepImport
                     break;
                 case C3dFillet { Target: { } ft }: Walk(ft, owner, prefix); break;
                 case C3dChamfer { Target: { } ct }: Walk(ct, owner, prefix); break;
+                case C3dSplit { Target: { } st }: Walk(st, owner, prefix); break;
             }
         }
         foreach (var top in doc.Objects) Walk(top, top.Name, "");

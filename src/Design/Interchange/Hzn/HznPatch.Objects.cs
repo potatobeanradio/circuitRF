@@ -74,6 +74,27 @@ internal sealed partial class HznPatch
             Note($"Object '{gone}' was removed with the operation that used it.");
             DropObjects([gone]);
         }
+        CoordSystemsFor(we, after.Keys);
+    }
+
+    /// <summary>brief-hzn-21 — every coordinate system the design's objects <paramref name="names"/> now name in their histories (a Split off
+    /// the origin is written in one) and the design lacks, copied from the writing <paramref name="we"/> that made them.</summary>
+    private void CoordSystemsFor(HznJsonObject we, IEnumerable<string> names)
+    {
+        var have = Array("coord_systems");
+        foreach (string name in names)
+        {
+            if (HznJsonOps.ByName(_o.GetArray("objects"), name) is not { } obj) continue;
+            foreach (var step in HznJsonOps.Objects(obj.GetArray("history")))
+            {
+                string? cs = step.GetObject("props")?.GetString("CoordinateSystem");
+                if (cs is null or "" or "Global" || HznJsonOps.ByName(have, cs) is not null) continue;
+                if (HznJsonOps.ByName(we.GetArray("coord_systems"), cs) is not { } made) continue;
+                have.Add(HznJsonOps.Clone(made));
+                _changed = true;
+                Note($"Coordinate system '{cs}' was added: the Split of '{name}' lies in it.");
+            }
+        }
     }
 
     private void AppendObject(HznJsonObject written, string who)
@@ -97,6 +118,7 @@ internal sealed partial class HznPatch
         foreach (string note in we.Notes.Where(n => n.Contains("construction geometry", StringComparison.Ordinal))) Note(note);
         foreach (var written in HznJsonOps.Objects(we.Json!.GetArray("objects"))) AppendObject(written, name);
         foreach (var boundary in HznJsonOps.Objects(we.Json.GetArray("boundaries"))) MergeBoundary(boundary);
+        CoordSystemsFor(we.Json, HznJsonOps.Objects(we.Json.GetArray("objects")).Select(o => o.GetString("name") ?? ""));
     }
 
     /// <summary>A boundary a new object brings (the metal of a sheet): joined to an existing boundary of the same kind and

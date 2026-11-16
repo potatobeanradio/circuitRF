@@ -232,11 +232,34 @@ internal sealed partial class C3dToHznWriter
             C3dBoolean { Blank: { } blank } bo => bo.Op == C3dBooleanOp.Unite
                 ? bo.Tools.Aggregate(AnalyticExtent(blank), (acc, t) => acc is null || AnalyticExtent(t) is null ? null : Union(acc, AnalyticExtent(t)))
                 : AnalyticExtent(blank),
+            // brief-hzn-21 — a Split's box is its target's, clipped at the plane on the side it keeps
+            C3dSplit { Target: { } target } sp when AnalyticExtent(target) is { } whole => Clipped(whole, sp),
             _ => null,
         };
         if (own is not { } box) return null;
         long[] d = [pl.Origin.X, pl.Origin.Y, pl.Origin.Z];
         return new Box3([box.Min[0] + d[0], box.Min[1] + d[1], box.Min[2] + d[2]], [box.Max[0] + d[0], box.Max[1] + d[1], box.Max[2] + d[2]]);
+    }
+
+    private static Box3 Clipped(Box3 whole, C3dSplit sp)
+    {
+        long[] min = [.. whole.Min], max = [.. whole.Max];
+        int a = sp.Axis;
+        long at = sp.At;
+        bool positive = sp.Keep == C3dSplitKeep.Positive;
+        if (sp.Plane == C3dSplitPlane.Custom)
+        {
+            // a Custom plane along an axis clips as a named one does; a slanted one leaves the target's own box, which still holds it
+            if (sp.UnitNormal is not { } n) return whole;
+            double[] v = [n.X, n.Y, n.Z];
+            a = System.Array.FindIndex(v, c => Math.Abs(Math.Abs(c) - 1) < 1e-12);
+            if (a < 0) return whole;
+            at = a switch { 0 => sp.Base.X, 1 => sp.Base.Y, _ => sp.Base.Z };
+            if (v[a] < 0) positive = !positive;
+        }
+        if (positive) min[a] = Math.Clamp(at, min[a], max[a]);
+        else max[a] = Math.Clamp(at, min[a], max[a]);
+        return new Box3(min, max);
     }
 
     private static Box3? TurnedSheetBox(C3dSheet s)

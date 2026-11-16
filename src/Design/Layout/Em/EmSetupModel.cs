@@ -33,8 +33,10 @@ namespace CircuitRF.Design.Layout.Em;
 /// <param name="PaddingPercent">3D editor round 1 — the padding as a percentage of the content's extent along
 /// this face's axis (10 on an x face pads a tenth of the x-extent). A face states this or
 /// <paramref name="PaddingUm"/>, never both.</param>
+/// <param name="Symmetry">brief-hzn-21 — the face (a <c>Pec</c> or <c>Pmc</c> one) is a mirror plane of the whole structure:
+/// the solvers lower it as the wall it is, and the radiation pattern is the whole structure's, mirrored across it.</param>
 public sealed record EmAirBoxFace(double? PaddingUm, CircuitRF.Engine.Em3d.Em3dBoundaryKind? Boundary,
-                                  double? PaddingPercent = null);
+                                  double? PaddingPercent = null, bool Symmetry = false);
 
 /// <summary>
 /// A 3D setup's air box, per face (R-em3d3-6). A null face is the generator's default for it

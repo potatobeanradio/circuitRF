@@ -37,6 +37,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using CircuitRF.Design.Layout;
+using CircuitRF.Engine.Em3d;
 
 namespace CircuitRF.Design.ThreeD.Occ;
 
@@ -69,7 +70,7 @@ public sealed class GeometryKernelTree
     /// <summary>The kinds a tree can hold. A sheet, a polyline and a wire are not solids the kernel builds, and neither is a Boolean of
     /// sheets (brief-hzn-10), which circuitRF combines itself: the worker is never asked for one.</summary>
     public static bool CanHold(C3dObject obj) => (obj is C3dBox or C3dCylinder or C3dSphere or C3dEllipsoid or C3dPrism or C3dPolyhedron
-                                                  or C3dBoolean or C3dFillet or C3dChamfer or C3dStep) && !C3dSheetBooleans.IsSheetBoolean(obj);
+                                                  or C3dBoolean or C3dFillet or C3dChamfer or C3dSplit or C3dStep) && !C3dSheetBooleans.IsSheetBoolean(obj);
 
     /// <summary>
     /// <paramref name="obj"/> — RESOLVED, its placement applied first and then <paramref name="worldUm"/> (the
@@ -203,7 +204,7 @@ public sealed class GeometryKernelTree
     {
         double U(long dbu) => Um(dbu, dbuPerMicron);
         w.Begin()
-         .Key("kind").Str(obj switch { C3dBoolean => "boolean", C3dFillet => "fillet", C3dChamfer => "chamfer", _ => "step" })
+         .Key("kind").Str(obj switch { C3dBoolean or C3dSplit => "boolean", C3dFillet => "fillet", C3dChamfer => "chamfer", _ => "step" })
          .Key("name").Str(obj.Name)
          .Key("transform").BeginArr();
         foreach (double v in (double[])[t.M00, t.M01, t.M02, t.Tx, t.M10, t.M11, t.M12, t.Ty, t.M20, t.M21, t.M22, t.Tz]) w.Num(v);
@@ -238,6 +239,63 @@ public sealed class GeometryKernelTree
                 w.Key("target");
                 Operand(c.Target ?? throw new ArgumentException($"The chamfer '{obj.Name}' has no Target.", nameof(obj)));
                 break;
+            case C3dSplit sp:
+            {
+                // brief-hzn-21 — a Split is an intersect with a box on the kept side of its plane, reaching past the target's own
+                // bounds, so the worker needs nothing new. The box is the tool "split": the face the plane made is split:<face>.
+                var target = sp.Target ?? throw new ArgumentException($"The split '{obj.Name}' has no Target.", nameof(obj));
+                var b = BoundsUm(target, dbuPerMicron)
+                        ?? throw new ArgumentException($"The split '{obj.Name}' cuts a shape whose extent circuitRF cannot bound.", nameof(obj));
+                double[] lo = [b.Lo.X, b.Lo.Y, b.Lo.Z], hi = [b.Hi.X, b.Hi.Y, b.Hi.Z];
+                var frame = C3dTransform.Identity;
+                if (sp.Plane == C3dSplitPlane.Custom)
+                {
+                    // A Custom plane: the box in a frame whose z is the plane's normal and whose origin is Base, reaching from the plane
+                    // past every point of the target's bounds on the kept side (Base's distance from their centre plus their half-diagonal).
+                    var (nx, ny, nz) = sp.UnitNormal ?? throw new ArgumentException($"The split '{obj.Name}' has no normal.", nameof(obj));
+                    double bx = U(sp.Base.X), by = U(sp.Base.Y), bz = U(sp.Base.Z);
+                    double cx = (lo[0] + hi[0]) / 2, cy = (lo[1] + hi[1]) / 2, cz = (lo[2] + hi[2]) / 2;
+                    double half = 0.5 * Math.Sqrt((hi[0] - lo[0]) * (hi[0] - lo[0]) + (hi[1] - lo[1]) * (hi[1] - lo[1]) + (hi[2] - lo[2]) * (hi[2] - lo[2]));
+                    double r = Math.Sqrt((cx - bx) * (cx - bx) + (cy - by) * (cy - by) + (cz - bz) * (cz - bz)) + half;
+                    r += Math.Max(1.0, 0.01 * r);
+                    // u: the normal crossed with the axis it leans on least; v = n × u
+                    (double X, double Y, double Z) e = Math.Abs(nx) <= Math.Abs(ny) && Math.Abs(nx) <= Math.Abs(nz) ? (1, 0, 0)
+                                                     : Math.Abs(ny) <= Math.Abs(nz) ? (0, 1, 0) : (0, 0, 1);
+                    double ux = ny * e.Z - nz * e.Y, uy = nz * e.X - nx * e.Z, uz = nx * e.Y - ny * e.X;
+                    double un = Math.Sqrt(ux * ux + uy * uy + uz * uz);
+                    (ux, uy, uz) = (ux / un, uy / un, uz / un);
+                    double vx = ny * uz - nz * uy, vy = nz * ux - nx * uz, vz = nx * uy - ny * ux;
+                    frame = Canonical(new C3dTransform(ux, vx, nx, uy, vy, ny, uz, vz, nz, bx, by, bz));
+                    (lo, hi) = ([-r, -r, sp.Keep == C3dSplitKeep.Positive ? 0 : -r], [r, r, sp.Keep == C3dSplitKeep.Positive ? r : 0]);
+                }
+                else
+                {
+                    for (int a = 0; a < 3; a++)
+                    {
+                        double margin = Math.Max(1.0, 0.01 * (hi[a] - lo[a]));
+                        (lo[a], hi[a]) = (lo[a] - margin, hi[a] + margin);
+                    }
+                    int axis = sp.Axis;
+                    double at = U(sp.At);
+                    if (sp.Keep == C3dSplitKeep.Positive) lo[axis] = at;
+                    else hi[axis] = at;
+                    if (hi[axis] <= lo[axis]) { if (sp.Keep == C3dSplitKeep.Positive) hi[axis] = at + 1; else lo[axis] = at - 1; }
+                }
+                w.Key("op").Str("intersect");
+                w.Key("blank");
+                Operand(target);
+                w.Key("tools").BeginArr();
+                w.Begin().Key("kind").Str("box").Key("name").Str(C3dSplit.ToolName).Key("faces").BeginArr();
+                foreach (string f in new C3dBox().FaceNames()) w.Str(f);
+                w.EndArr().Key("transform").BeginArr();
+                foreach (double v in (double[])[frame.M00, frame.M01, frame.M02, frame.Tx, frame.M10, frame.M11, frame.M12, frame.Ty, frame.M20, frame.M21, frame.M22, frame.Tz]) w.Num(v);
+                w.EndArr();
+                w.Key("min").Point(lo[0], lo[1], lo[2]);
+                w.Key("size").Point(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+                w.End();
+                w.EndArr();
+                break;
+            }
             case C3dStep st:
                 string file = documentDir is null ? st.File : Path.GetFullPath(Path.Combine(documentDir, st.File));
                 w.Key("file").Str(file).Key("hash").Str(st.Hash).Key("part").Str(st.Part);
@@ -245,6 +303,85 @@ public sealed class GeometryKernelTree
                 break;
         }
         w.End();
+    }
+
+    /// <summary>
+    /// brief-hzn-21 — a box holding <paramref name="obj"/> (RESOLVED) in its parent's frame, micrometres: its own extent carried by its
+    /// placement, an operation's from its operands'. Conservative (a rotated box's corners, a boolean's whole operands), never short.
+    /// Null for a kind whose extent only the worker knows (a Step part).
+    /// </summary>
+    public static (Point3 Lo, Point3 Hi)? BoundsUm(C3dObject obj, int dbuPerMicron)
+    {
+        double U(long dbu) => Um(dbu, dbuPerMicron);
+        if (obj is C3dSphere { FacetVertices: > 0 } faceted) obj = C3dFacetedSphere.Polyhedron(faceted);
+        var pts = new List<Point3>();
+        void Box(double x0, double y0, double z0, double x1, double y1, double z1)
+        {
+            foreach (double x in (double[])[x0, x1]) foreach (double y in (double[])[y0, y1]) foreach (double z in (double[])[z0, z1])
+                pts.Add(new Point3(x, y, z));
+        }
+        void Of((Point3 Lo, Point3 Hi)? b) { if (b is { } v) Box(v.Lo.X, v.Lo.Y, v.Lo.Z, v.Hi.X, v.Hi.Y, v.Hi.Z); }
+        switch (obj)
+        {
+            case C3dBox b:
+                Box(U(b.Min.X), U(b.Min.Y), U(b.Min.Z), U(b.Min.X + b.Size.X), U(b.Min.Y + b.Size.Y), U(b.Min.Z + b.Size.Z));
+                break;
+            case C3dCylinder c:
+            {
+                double r = U(c.Radius), l = U(c.Length);
+                double bx = U(c.Base.X), by = U(c.Base.Y), bz = U(c.Base.Z);
+                double ex = c.Axis == C3dAxis.X ? l : 0, ey = c.Axis == C3dAxis.Y ? l : 0, ez = c.Axis == C3dAxis.Z ? l : 0;
+                Box(Math.Min(bx, bx + ex) - r, Math.Min(by, by + ey) - r, Math.Min(bz, bz + ez) - r,
+                    Math.Max(bx, bx + ex) + r, Math.Max(by, by + ey) + r, Math.Max(bz, bz + ez) + r);
+                break;
+            }
+            case C3dSphere sp:
+                Box(U(sp.Centre.X) - U(sp.Radius), U(sp.Centre.Y) - U(sp.Radius), U(sp.Centre.Z) - U(sp.Radius),
+                    U(sp.Centre.X) + U(sp.Radius), U(sp.Centre.Y) + U(sp.Radius), U(sp.Centre.Z) + U(sp.Radius));
+                break;
+            case C3dEllipsoid el:
+                Box(U(el.Centre.X) - U(el.SemiAxes.X), U(el.Centre.Y) - U(el.SemiAxes.Y), U(el.Centre.Z) - U(el.SemiAxes.Z),
+                    U(el.Centre.X) + U(el.SemiAxes.X), U(el.Centre.Y) + U(el.SemiAxes.Y), U(el.Centre.Z) + U(el.SemiAxes.Z));
+                break;
+            case C3dPrism p:
+            {
+                double h = U(p.Offset);
+                var e = C3dLowering.OnPlane(p.Plane, U(p.Shear.U), U(p.Shear.V), U(p.Height));
+                foreach (var q in p.Outline)
+                {
+                    var pt = C3dLowering.OnPlane(p.Plane, U(q.U), U(q.V), h);
+                    pts.Add(pt);
+                    pts.Add(new Point3(pt.X + e.X, pt.Y + e.Y, pt.Z + e.Z));
+                }
+                break;
+            }
+            case C3dPolyhedron ph:
+                foreach (var v in ph.Vertices) pts.Add(new Point3(U(v.X), U(v.Y), U(v.Z)));
+                break;
+            case C3dBoolean bo:
+                if (bo.Blank is null || BoundsUm(bo.Blank, dbuPerMicron) is not { } bb) return null;
+                Of(bb);
+                // A Subtract or an Intersect lies inside its Blank; a Unite reaches its Tools too.
+                if (bo.Op == C3dBooleanOp.Unite || bo is { Enabled: false })
+                    foreach (var tool in bo.Tools)
+                    {
+                        if (BoundsUm(tool, dbuPerMicron) is not { } tb) return null;
+                        Of(tb);
+                    }
+                break;
+            case C3dOperation op when C3dOperands.Inner(op) is { } inner:
+                if (BoundsUm(inner, dbuPerMicron) is not { } ib) return null;
+                Of(ib);
+                break;
+            default:
+                return null;
+        }
+        if (pts.Count == 0) return null;
+        var placement = obj.Placement.ToTransform();
+        var t = placement with { Tx = U((long)placement.Tx), Ty = U((long)placement.Ty), Tz = U((long)placement.Tz) };
+        var moved = pts.Select(q => C3dLowering.Apply(t, q)).ToList();
+        return (new Point3(moved.Min(q => q.X), moved.Min(q => q.Y), moved.Min(q => q.Z)),
+                new Point3(moved.Max(q => q.X), moved.Max(q => q.Y), moved.Max(q => q.Z)));
     }
 
     /// <summary>DBU to micrometres, exactly: the decimal value, then the nearest double.</summary>

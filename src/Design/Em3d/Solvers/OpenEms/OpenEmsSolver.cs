@@ -90,6 +90,7 @@ public static class OpenEmsSolver
     private static Em3dSolverCheck Check(Em3dProblem problem, EmSetup setup, string? settingsPath)
     {
         var refusals = new List<string>();
+        if (CsxcadWriter.SymmetryPortRefusal(problem) is { } onThePlane) refusals.Add(onThePlane);     // brief-hzn-21
         if (setup.RadiationPattern && problem.Type == Em3dProblemType.Driven)
         {
             var gridSettings = CemOpenEms.ResolveGrid(setup.OpenEms, settingsPath);

@@ -302,13 +302,14 @@ public sealed partial class C3dEditorViewModel
     /// labelled in the detail, at any depth. Each row addresses its operand by path under the top-level object.</summary>
     private void AddOperands(C3dTreeItem parent, C3dObject o, int top, string path, string topName)
     {
-        if (o is not C3dBoolean) return;
+        if (o is not (C3dBoolean or C3dSplit)) return;
         foreach (var (prefix, operand) in C3dOperands.Of(o))
         {
-            bool blank = prefix == "Blank.";
+            // brief-hzn-21 — a split's target is listed as a boolean's Blank is: what the operation wraps and names
+            bool blank = prefix is "Blank." or "Target.";
             string? material = C3dValidation.EffectiveMaterial(operand);
             var child = new C3dTreeItem(this, blank ? C3dObject.KindOf(operand) : operand.Name, C3dObject.KindOf(operand),
-                                        (blank ? "Blank" : "Tool") + (material is { Length: > 0 } ? " · " + material : ""), top, -1, !operand.Hidden)
+                                        (prefix == "Target." ? "Target" : blank ? "Blank" : "Tool") + (material is { Length: > 0 } ? " · " + material : ""), top, -1, !operand.Hidden)
             {
                 OperandPath = path + prefix, TopName = topName, Icon = IconOf(operand),
                 IconOpacity = operand is C3dOperation { Enabled: false } ? 0.4 : 1,
@@ -339,6 +340,7 @@ public sealed partial class C3dEditorViewModel
         C3dBoolean => Material.Icons.MaterialIconKind.VectorIntersection,
         C3dFillet => Material.Icons.MaterialIconKind.RoundedCorner,
         C3dChamfer => Material.Icons.MaterialIconKind.AngleObtuse,
+        C3dSplit => Material.Icons.MaterialIconKind.ContentCut,
         _ => null,
     };
 

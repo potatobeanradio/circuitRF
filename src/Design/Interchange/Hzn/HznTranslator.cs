@@ -70,6 +70,7 @@ internal sealed partial class HznTranslator
         Ports();
         Holes();
         Outside();                  // brief-hzn-19 — after the holes, which fill their own part of the box
+        Overlaps();                 // brief-hzn-21 — Hertzon's overlap rule as construction order
         Boundaries();
         Setups();
         MaterialsToTechnology();
@@ -683,6 +684,7 @@ internal sealed partial class HznTranslator
             case "Move": return Move(st, p, user);
             case "Rotate": return Rotate(st, p, user);
             case "Mirror": return Mirror(st, p, user);
+            case "Split": return Split(st, p, user);
             case "Fillet" or "Chamfer":
                 _r.Add(HznRefusalKind.Operation, kind,
                        "its edges and vertices are named by index alone and the step records no signature to find them by; the index is never trusted", name);

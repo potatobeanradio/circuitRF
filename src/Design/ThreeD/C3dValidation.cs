@@ -298,6 +298,16 @@ public static class C3dValidation
                     found.Add(C3dDiagnostics.OperationShape(label, "Chamfer", "has a Distance that is not positive"));
                 if (c.Distance2 < 0) found.Add(C3dDiagnostics.OperationShape(label, "Chamfer", "has a Distance2 that is negative"));
                 break;
+            case C3dSplit sp:
+                if (sp.Target is null) found.Add(C3dDiagnostics.OperationShape(label, "Split", "has no Target"));
+                if (sp.Plane == C3dSplitPlane.Custom && sp.UnitNormal is null)
+                    found.Add(C3dDiagnostics.OperationShape(label, "Split", "has a Custom plane without a Normal of three numbers, not all zero"));
+                // brief-hzn-21 — the box that cuts it is sized from the target's own bounds, which a STEP part keeps in the worker alone
+                if (sp.Target is not null && C3dOperands.SelfAndDescendants(sp.Target).OfType<C3dStep>().FirstOrDefault() is { } part)
+                    found.Add(C3dDiagnostics.OperationShape(label, "Split",
+                        $"cuts a Step part ('{(part.Name.Length > 0 ? part.Name : label)}'), which is not built yet: a Split is sized from its " +
+                        "target's own bounds, and a Step part's are known only once the geometry worker has read the file"));
+                break;
             case C3dStep st:
                 Step(st, label, documentPath, found);
                 return;

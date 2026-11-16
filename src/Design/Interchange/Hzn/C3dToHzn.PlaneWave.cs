@@ -64,9 +64,14 @@ internal sealed partial class C3dToHznWriter
     private (double Theta, double Phi)? _sphere;
 
     /// <summary>The design's Infinite Sphere when it has a plane wave: the whole sphere at the wave's steps.</summary>
+    /// <summary>brief-hzn-21 — a setup asks for the radiation pattern: Hertzon computes far fields on an Infinite Sphere, so the design
+    /// needs one, over the whole sphere (circuitRF's pattern always covers it) every 2°, the step Hertzon's tutorial sets for a pattern.</summary>
+    private bool _radiationPattern;
+
     private HznJsonArray Spheres()
     {
         var a = new HznJsonArray();
+        if (_sphere is null && _radiationPattern) _sphere = (2, 2);
         if (_sphere is not { } s) return a;
         var o = new HznJsonObject();
         o.SetString("name", SphereName);

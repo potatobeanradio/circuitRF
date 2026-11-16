@@ -37,6 +37,11 @@ internal static class Em3dRadiation
     /// </summary>
     public const string PortsTerminatedCube = "__PortsTerminated";
 
+    /// <summary>brief-hzn-21 — metadata in the far-field group: the pattern is a half (quarter, eighth) model's mirrored into the whole
+    /// structure's, and the cube holds the number of copies (2ⁿ). Its patterns are the whole structure's while its S is the solved
+    /// part's, so a recombination against that S is refused.</summary>
+    public const string SymmetryCopiesCube = "__SymmetryCopies";
+
     public static FarFieldExternalTerms Terms(string solver, double acceptedW) => new(
         solver, acceptedW,
         "Front-to-back cannot be computed: the pattern's θ axis stops at 90° because the air box's floor is a " +

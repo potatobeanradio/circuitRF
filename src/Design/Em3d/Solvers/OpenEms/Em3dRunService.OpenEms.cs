@@ -477,8 +477,18 @@ public static partial class Em3dRunService
                 efficiencies?.Add((freqs[i], lowering.Ports[k], accepted > 0 ? pattern.RadiatedPowerW / accepted : double.NaN));
             }
         }
+        // brief-hzn-21 — a half model's pattern is made the whole structure's before anything is derived from it
+        IReadOnlyList<Em3dPatternPoint> whole = points;
+        if (surface.Symmetry is { } mirrorBox)
+        {
+            if (Em3dSymmetry.Mirror(points, mirrorBox, Em3dSymmetry.PhaseSign("openEMS"), out string? symmetryNote, out string? symmetryRefusal) is not { } mirrored)
+                return symmetryRefusal;
+            whole = mirrored;
+            Em3dSymmetry.Mark(data, mirrorBox);
+            if (symmetryNote is not null) notes.Add(symmetryNote);
+        }
         if (n > 1) data.AddToGroup(PlanarFarField.Group, Em3dRadiation.PortsTerminatedCube, DataCube.Scalar(1.0));
-        notes.AddRange(Em3dRadiation.Publish(data, "openEMS (FDTD)", grid, lowering.Ports, freqs, points,
+        notes.AddRange(Em3dRadiation.Publish(data, "openEMS (FDTD)", grid, lowering.Ports, freqs, whole,
                                              setup.ReferenceInputPowerDbm, surface.Hemisphere,
                                              origin: n > 1 ? "Each port's pattern adds up every port's run, so the waves the other ports sent back are out of it, as they are out of S." : null));
         notes.Add($"The radiation pattern's surface transform took {watch.Elapsed.TotalSeconds:F1} s for {points.Length} pattern(s). " +

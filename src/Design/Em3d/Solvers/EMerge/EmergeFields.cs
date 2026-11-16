@@ -111,11 +111,13 @@ public static class EmergeFields
     {
         var f = problem.Boundary.Faces;
         var kinds = new[] { ("xmin", f.XMin), ("xmax", f.XMax), ("ymin", f.YMin), ("ymax", f.YMax), ("zmin", f.ZMin), ("zmax", f.ZMax) };
-        if (kinds.FirstOrDefault(k => k.Item2 != Em3dBoundaryKind.Absorbing) is { Item1: not null } wall)
+        var mirrors = problem.Boundary.SymmetryPlanes.Select(p => p.Face).ToHashSet(StringComparer.Ordinal);
+        if (kinds.FirstOrDefault(k => k.Item2 != Em3dBoundaryKind.Absorbing && !mirrors.Contains(k.Item1)) is { Item1: not null } wall)
             return $"No radiation pattern from EMerge: the air box's {wall.Item1} face is {wall.Item2}, and EMerge's far-field " +
-                   "integral runs over absorbing faces that must enclose the whole problem — it applies no image, so a conducting " +
-                   "face leaves its surface open. FDTD 3D (openEMS) closes a conducting floor by its image and produces the " +
-                   "pattern; or set every AirBox face to Absorbing (drawing the ground plane, if there is one).";
+                   "integral runs over absorbing faces that must enclose the whole problem — a conducting face closes it only as a " +
+                   "symmetry plane, whose image the pattern adds (Symmetry true on the face). FDTD 3D (openEMS) closes a conducting " +
+                   "floor by its image as an infinite ground plane; or set every other AirBox face to Absorbing (drawing the ground " +
+                   "plane, if there is one).";
         return null;
     }
 
@@ -271,7 +273,7 @@ public static class EmergeFields
     /// (Palace's arithmetic on port-V.csv's waves, PalacePattern). Null on success; otherwise why there is no pattern.
     /// </summary>
     public static string? PublishPattern(string runDir, EmergeFieldFacts facts, IReadOnlyList<Em3dPort> ports, EmSetup setup,
-                                         DataSet data, ICollection<string> notes)
+                                         DataSet data, ICollection<string> notes, Em3dAirBox? box = null)
     {
         Complex[] e;
         int[] shape;
@@ -290,12 +292,18 @@ public static class EmergeFields
         var stated = StatedReflections(data, freqs, ports);
         var points = PatternPoints(e, shape, theta, phi, freqs, facts, ports, out var grid, out string? error, stated);
         if (points is null) return error;
+        string? symmetryNote = null;
+        IReadOnlyList<Em3dPatternPoint>? whole = points;
+        if (box is not null && (whole = Em3dSymmetry.Mirror(points, box, Em3dSymmetry.PhaseSign("EMerge"), out symmetryNote, out string? symmetryRefusal)) is null)
+            return symmetryRefusal;
+        Em3dSymmetry.Mark(data, box);
         if (stated is not null) data.AddToGroup(PlanarFarField.Group, Em3dRadiation.PortsTerminatedCube, DataCube.Scalar(1.0));
-        foreach (string n in Em3dRadiation.Publish(data, "EMerge (FEM)", grid, [.. ports.Select(p => p.Number)], freqs, points,
+        foreach (string n in Em3dRadiation.Publish(data, "EMerge (FEM)", grid, [.. ports.Select(p => p.Number)], freqs, whole,
                                              setup.ReferenceInputPowerDbm, hemisphere: false,
                                              frequencies: $"A pattern at each of the {freqs.Length} frequencies the fields were saved at " +
                                                           "(EMerge.SaveFieldsGHz; the sweep's centre when it names none)"))
             notes.Add(n);
+        if (symmetryNote is not null) notes.Add(symmetryNote);
         notes.Add("EMerge's far field is its own Stratton–Chu integral over the air box's absorbing faces, which are first order: " +
                   "the pattern is only as good as the field those faces leave unreflected, so a box close to the radiator reads " +
                   "its nulls and its back radiation high. Each frequency is a direct solve of its own after the sweep.");

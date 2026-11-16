@@ -44,18 +44,46 @@ public sealed partial class C3dThermalTextField : ObservableObject
 }
 
 /// <summary>3D editor round 1 — one face of the air box in the Inspector: its boundary, editable, and its padding now.</summary>
-public sealed partial class C3dAirBoxFaceRow(string face, Em3dBoundaryKind kind, string padding, Action<string, Em3dBoundaryKind> set)
+/// <summary>brief-hzn-21 — what an air box face can be, as the face picker lists it: a boundary kind, and for an electric or magnetic
+/// wall whether it is a symmetry plane (the radiation pattern mirrored across it).</summary>
+public sealed record C3dAirBoxChoice(Em3dBoundaryKind Kind, bool Symmetry, string Label, string? Tip = null)
+{
+    private const string MirrorTip = "A mirror plane of the whole structure: the model is the half on this side, and the radiation " +
+                                     "pattern, gain and efficiency are the whole structure's. ";
+
+    /// <summary>The picker's rows, in order. The face kind Symmetry, which names no wall and every solver refuses, is shown only on
+    /// a face that already has it.</summary>
+    public static IReadOnlyList<C3dAirBoxChoice> Menu { get; } =
+    [
+        new(Em3dBoundaryKind.Absorbing, false, "Absorbing"),
+        new(Em3dBoundaryKind.Pec, false, "PEC"),
+        new(Em3dBoundaryKind.Pmc, false, "PMC"),
+        new(Em3dBoundaryKind.Pmc, true, "PMC symmetry", MirrorTip + "The electric field lies in the plane (a PMC wall)."),
+        new(Em3dBoundaryKind.Pec, true, "PEC symmetry", MirrorTip + "The electric field crosses the plane at right angles (a PEC wall)."),
+        new(Em3dBoundaryKind.Periodic, false, "Periodic"),
+    ];
+
+    /// <summary>The row for a face that is <paramref name="kind"/>, flagged or not.</summary>
+    public static C3dAirBoxChoice Of(Em3dBoundaryKind kind, bool symmetry)
+        => Menu.FirstOrDefault(c => c.Kind == kind && c.Symmetry == (symmetry && kind is Em3dBoundaryKind.Pec or Em3dBoundaryKind.Pmc))
+           ?? new(kind, false, kind == Em3dBoundaryKind.Symmetry ? "Symmetry (no wall named)" : kind.ToString());
+}
+
+public sealed partial class C3dAirBoxFaceRow(string face, C3dAirBoxChoice kind, string padding, Action<string, C3dAirBoxChoice> set)
     : ObservableObject
 {
+    /// <summary>brief-hzn-21 — the rows this face's picker offers: the menu, and the face's own value when it is not on it.</summary>
+    public IReadOnlyList<C3dAirBoxChoice> Choices { get; } = C3dAirBoxChoice.Menu.Contains(kind) ? C3dAirBoxChoice.Menu : [.. C3dAirBoxChoice.Menu, kind];
+
     public string Face { get; } = face;
     /// <summary>brief-dfr34-2 R-dfr34-2-5 — the padding as a length and the rule that set it, in a few words.</summary>
     public string Padding { get; } = padding;
 
     /// <summary>The same, with the rule in full.</summary>
     public string Tip { get; init; } = padding;
-    [ObservableProperty] private Em3dBoundaryKind _kind = kind;
+    [ObservableProperty] private C3dAirBoxChoice _kind = kind;
 
-    partial void OnKindChanged(Em3dBoundaryKind value) => set(Face, value);
+    partial void OnKindChanged(C3dAirBoxChoice value) => set(Face, value);
 }
 
 /// <summary>
@@ -254,6 +282,21 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
 
     public bool BooleanKeepToolsEnabled => BooleanEditable && BooleanOperation == CircuitRF.Design.ThreeD.C3dBooleanOp.Subtract;
 
+    // ── a split (brief-hzn-21 R-hzn21-3) ────────────────────────────────────────────────────
+
+    [ObservableProperty] private bool _isSplit;
+    [ObservableProperty] private CircuitRF.Design.ThreeD.C3dSplitPlane _splitPlane;
+    [ObservableProperty] private CircuitRF.Design.ThreeD.C3dSplitKeep _splitKeep;
+    [ObservableProperty] private bool _splitEnabled;
+    /// <summary>A Custom plane's normal, "x, y, z"; committed when the box loses focus.</summary>
+    [ObservableProperty] private string _splitNormalText = "";
+    [ObservableProperty] private bool _splitIsCustom;
+    [ObservableProperty] private bool _splitEditable;
+    [ObservableProperty] private string? _splitTip;
+
+    public static IReadOnlyList<CircuitRF.Design.ThreeD.C3dSplitPlane> SplitPlanes { get; } = Enum.GetValues<CircuitRF.Design.ThreeD.C3dSplitPlane>();
+    public static IReadOnlyList<CircuitRF.Design.ThreeD.C3dSplitKeep> SplitKeeps { get; } = Enum.GetValues<CircuitRF.Design.ThreeD.C3dSplitKeep>();
+
     // ── a fillet or chamfer row (brief-em3d-67 R-em3d67-6b) ─────────────────────────────────
 
     [ObservableProperty] private bool _isFeature;
@@ -425,6 +468,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         IsGroup = false;
         RolePlaceholder = "";
         IsBoolean = false;
+        IsSplit = false;
         IsFeature = false;
         FeatureEdges.Clear();
         IsMaterialEditable = true;
@@ -729,6 +773,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             Rows.Add(new C3dPropertyRow("In", $"{(C3dBooleans.LastStep(path) < 0 ? "the Blank" : "a Tool")} of '{editor.Document.Objects[top].Name}'"));
         }
         if (obj is C3dBoolean b) { LoadBoolean(index, b); return; }
+        if (obj is C3dSplit sp) { LoadSplit(index, sp); return; }
         foreach (var row in Dimensions(obj)) Rows.Add(row);
         if (obj is C3dSheet { Rect: null, Ellipse: null } or C3dPrism or C3dPolyline) LoadOutlinePoints(obj);
         foreach (var f in editor.DimensionFields(obj).Where(f => obj is not C3dPhantom ph || PhantomUses(ph, f.Path))) Fields.Add(f);
@@ -991,6 +1036,65 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
                                                              && !f.Path.StartsWith("Tools[", StringComparison.Ordinal)))
             Fields.Add(f);
         foreach (var row in RowsOf(Fields)) FieldRows.Add(row);
+    }
+
+    /// <summary>brief-hzn-21 — a split: its plane, where along the plane's normal it lies (a dimension line, so an expression holds
+    /// it), which side it keeps and whether it is on. Each one undo entry. The material is the target's.</summary>
+    private void LoadSplit(int index, C3dSplit sp)
+    {
+        IsSplit = true;
+        IsMaterialEditable = false;
+        SplitTip = editor.KernelMissing("Split");
+        SplitEditable = SplitTip is null;
+        SplitPlane = sp.Plane;
+        SplitKeep = sp.Keep;
+        SplitEnabled = sp.Enabled;
+        SplitIsCustom = sp.Plane == C3dSplitPlane.Custom;
+        SplitNormalText = sp.Normal is { } n ? string.Join(", ", n.Select(v => v.ToString("G6", CultureInfo.InvariantCulture))) : "";
+        string? material = C3dValidation.EffectiveMaterial(sp);
+        Rows.Add(new C3dPropertyRow("Material", (material is { Length: > 0 } ? material : "none") + " — the target's: change it on the target"));
+        Rows.Add(new C3dPropertyRow("Cut face", sp.CutFace));
+        // a named plane lies at At along its axis; a Custom one passes through Base
+        string own = sp.Plane == C3dSplitPlane.Custom ? nameof(C3dSplit.Base) : nameof(C3dSplit.At);
+        foreach (var f in editor.DimensionFields(sp).Where(f => !f.Path.StartsWith("Target.", StringComparison.Ordinal)
+                                                             && (f.Path.StartsWith("Placement", StringComparison.Ordinal) || f.Path.StartsWith(own, StringComparison.Ordinal))))
+            Fields.Add(f);
+        foreach (var row in RowsOf(Fields)) FieldRows.Add(row);
+    }
+
+    partial void OnSplitPlaneChanged(C3dSplitPlane value)
+    {
+        if (_loading || !IsSplit || ObjectIndex < 0) return;
+        int i = ObjectIndex;
+        editor.ChangeObjects($"Split {editor.ObjectLabel(i)} at {(value == C3dSplitPlane.Custom ? "a custom plane" : $"the {value} plane")}", [i],
+                             o => { if (o is C3dSplit s) C3dSplits.SetPlane(s, value); });
+    }
+
+    partial void OnSplitNormalTextChanged(string value)
+    {
+        if (_loading || !IsSplit || ObjectIndex < 0) return;
+        var parts = value.Split(',', StringSplitOptions.TrimEntries);
+        var n = new double[3];
+        if (parts.Length != 3 || parts.Where((t, k) => !NumericText.TryParseDouble(t, out n[k]) || !double.IsFinite(n[k])).Any() || n.All(v => v == 0))
+        {
+            Error = $"'{value}' is not a normal: three numbers, not all zero, such as 1, 1, 0.";
+            return;
+        }
+        int i = ObjectIndex;
+        editor.ChangeObjects($"Normal of {editor.ObjectLabel(i)}", [i], o => { if (o is C3dSplit s) s.Normal = n; });
+    }
+
+    partial void OnSplitKeepChanged(C3dSplitKeep value)
+    {
+        if (_loading || !IsSplit || ObjectIndex < 0) return;
+        int i = ObjectIndex;
+        editor.ChangeObjects($"Keep the {value.ToString().ToLowerInvariant()} side of {editor.ObjectLabel(i)}", [i], o => { if (o is C3dSplit s) s.Keep = value; });
+    }
+
+    partial void OnSplitEnabledChanged(bool value)
+    {
+        if (_loading || !IsSplit) return;
+        editor.SetOperationEnabled(ObjectIndex, value);
     }
 
     partial void OnBooleanOperationChanged(C3dBooleanOp value)
@@ -1261,6 +1365,10 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         if (head == "Placement.Origin") return $"Placement origin {Xyz(k)}";
         switch (obj)
         {
+            case C3dSplit split:                                              // brief-hzn-21
+                if (head == nameof(C3dSplit.Base)) return $"Base {Xyz(k)}";
+                if (head == nameof(C3dSplit.At)) return $"At ({Xyz(split.Axis)})";
+                break;
             case C3dBox:
                 if (head == "Min") return $"Corner {Xyz(k)}";
                 if (head == "Size") return $"{Up(Xyz(k))} size";
@@ -1454,7 +1562,8 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
                 case "zmin": PadZMinTip = tip; break;
                 default:     PadZMaxTip = tip; break;
             }
-            AirBoxFaces.Add(new C3dAirBoxFaceRow(face, kind, pad, (fc, k) => editor.Post(() => Error = editor.SetAirBoxBoundary(fc, k) ?? ""))
+            AirBoxFaces.Add(new C3dAirBoxFaceRow(face, C3dAirBoxChoice.Of(kind, box.SymmetryPlanes.Any(p => p.Face == face)), pad,
+                                                 (fc, k) => editor.Post(() => Error = editor.SetAirBoxBoundary(fc, k.Kind, k.Symmetry) ?? ""))
                             { Tip = tip });
         }
         Rows.Add(new C3dPropertyRow("Size", $"{editor.Viewer.FormatLength(box.Max.X - box.Min.X)} × " +

@@ -95,11 +95,34 @@ internal sealed partial class HznTranslator
             C3dBoolean bo => BooleanBox(bo),
             C3dFillet { Target: { } t } => Bounds(t),
             C3dChamfer { Target: { } t } => Bounds(t),
+            C3dSplit { Target: { } t } sp => Bounds(t) is { } whole ? Clipped(whole, sp) : null,
             _ => null,
         };
         if (own is not { } box) return null;
         long[] d = [pl.Origin.X, pl.Origin.Y, pl.Origin.Z];
         return new Box3([box.Min[0] + d[0], box.Min[1] + d[1], box.Min[2] + d[2]], [box.Max[0] + d[0], box.Max[1] + d[1], box.Max[2] + d[2]]);
+    }
+
+    /// <summary>brief-hzn-21 — a Split's box: its target's, clipped at the plane on the side it keeps.</summary>
+    private static Box3 Clipped(Box3 whole, C3dSplit sp)
+    {
+        long[] min = [.. whole.Min], max = [.. whole.Max];
+        int a = sp.Axis;
+        long at = sp.At;
+        bool positive = sp.Keep == C3dSplitKeep.Positive;
+        if (sp.Plane == C3dSplitPlane.Custom)
+        {
+            // a Custom plane along an axis clips as a named one does; a slanted one leaves the target's own box, which still holds it
+            if (sp.UnitNormal is not { } n) return whole;
+            double[] v = [n.X, n.Y, n.Z];
+            a = System.Array.FindIndex(v, c => Math.Abs(Math.Abs(c) - 1) < 1e-12);
+            if (a < 0) return whole;
+            at = a switch { 0 => sp.Base.X, 1 => sp.Base.Y, _ => sp.Base.Z };
+            if (v[a] < 0) positive = !positive;
+        }
+        if (positive) min[a] = Math.Clamp(at, min[a], max[a]);
+        else max[a] = Math.Clamp(at, min[a], max[a]);
+        return new Box3(min, max);
     }
 
     private static Box3 CylinderBox(C3dCylinder c)
@@ -555,6 +578,8 @@ internal sealed partial class HznTranslator
 
     private readonly Em3dBoundaryKind?[] _air = new Em3dBoundaryKind?[6];
     private readonly string?[] _airBy = new string?[6];
+    /// <summary>brief-hzn-21 — the air box faces a Symmetry boundary made: mirror planes of the whole structure.</summary>
+    private readonly bool[] _airSymmetry = new bool[6];
 
     private void Boundaries()
     {
@@ -791,12 +816,18 @@ internal sealed partial class HznTranslator
             _r.Add(HznRefusalKind.Boundary, $"Symmetry of type '{type}'", "only Perfect H and Perfect E symmetry walls are translated", name);
             return;
         }
-        if (Plain(b.Props["ImpedanceMultiplier"] ?? "1", name) is not 1)
+        // brief-hzn-21 — Hertzon's documentation says its solver does not apply the multiplier either (the user states the port's
+        // impedance), so the S-parameters are as the file's port impedances state, as they are in Hertzon.
+        string multiplier = b.Props["ImpedanceMultiplier"] ?? "1";
+        if (Plain(multiplier, name) is not 1)
         {
-            _r.Add(HznRefusalKind.Boundary, "Symmetry with an impedance multiplier other than 1", "port impedances are not scaled", name);
-            return;
+            _prov.Unused.Add(new HznUnusedSetting($"boundary {name}", "ImpedanceMultiplier", multiplier));
+            _notes.Add($"Symmetry '{name}': its impedance multiplier {multiplier} is not applied, as Hertzon's own solver does not apply it: " +
+                       "the ports' impedances are the ones the file states.");
         }
         Air(b, name, kind.Value);
+        for (int slot = 0; slot < 6; slot++)
+            if (_airBy[slot] == name) _airSymmetry[slot] = true;
     }
 
     /// <summary>Boundaries that sit on the model's outer faces are the air box's: whole objects (every face) or faces by signature.</summary>
@@ -816,6 +847,9 @@ internal sealed partial class HznTranslator
 
     private void AirFace(string c3d, string face, Em3dBoundaryKind kind, string boundary)
     {
+        // brief-hzn-21 — the face a Split made on a box is the box's face on that side: the cutting box's own (split:xmax)
+        if (face.StartsWith(C3dSplit.ToolName + ":", StringComparison.Ordinal) && _top.GetValueOrDefault(c3d) is C3dSplit { Plane: not C3dSplitPlane.Custom })
+            face = face[(C3dSplit.ToolName.Length + 1)..];
         int slot = Array.IndexOf(BoxFaces, face);
         if (slot < 0)
         {
@@ -986,7 +1020,7 @@ internal sealed partial class HznTranslator
         {
             if (_autoOpen is { } auto) return new Layout.Em.CemAirBoxFace { PaddingUm = auto, Boundary = Em3dBoundaryKind.Absorbing };
             double pad = _regionPadding is { } p ? Metres(p[slot]) * 1e6 : 0;
-            return new Layout.Em.CemAirBoxFace { PaddingUm = pad, Boundary = _air[slot] ?? Em3dBoundaryKind.Pec };
+            return new Layout.Em.CemAirBoxFace { PaddingUm = pad, Boundary = _air[slot] ?? Em3dBoundaryKind.Pec, Symmetry = _airSymmetry[slot] };
         }
         _airBox = new Layout.Em.CemAirBox
         {

@@ -1483,6 +1483,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                     C3dBoolean b => $"Boolean {b.Op}",
                     C3dFillet f => $"Fillet of {string.Join(", ", f.Edges)}",
                     C3dChamfer c => $"Chamfer of {string.Join(", ", c.Edges)}",
+                    C3dSplit sp => $"Split at {(sp.Plane == C3dSplitPlane.Custom ? "a custom plane" : $"the {sp.Plane} plane")}, keeping the {sp.Keep.ToString().ToLowerInvariant()} side",
                     C3dStep st => $"Step part {st.Part}{(st.Solid is { } k ? $", solid {k}" : "")} of {st.File}{(st.Unit is { Length: > 0 } u ? $" (in {u})" : "")}",
                     _ => C3dObject.KindOf(o),
                 };

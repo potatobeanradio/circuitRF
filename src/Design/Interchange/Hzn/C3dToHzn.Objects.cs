@@ -108,6 +108,9 @@ internal sealed partial class C3dToHznWriter
             case C3dBoolean bo:
                 if (!BooleanSteps(bo, owner, steps)) return null;
                 break;
+            case C3dSplit sp:
+                if (!SplitSteps(sp, owner, steps)) return null;
+                break;
             case C3dFillet or C3dChamfer:
                 _r.Add(HznRefusalKind.Operation, o is C3dFillet ? "Fillet" : "Chamfer",
                        "Hertzon names the edges by index alone and circuitRF cannot read such a step back, so it is not written", label);
@@ -134,8 +137,63 @@ internal sealed partial class C3dToHznWriter
                 _r.Add(HznRefusalKind.CreationStep, C3dObject.KindOf(o), "no Hertzon equivalent", label);
                 return null;
         }
-        if (o is not C3dBoolean) steps.AddRange(Placement(o.Placement));
+        if (o is not C3dBoolean and not C3dSplit) steps.AddRange(Placement(o.Placement));
         return steps;
+    }
+
+    /// <summary>The coordinate systems the design needs: one per Split whose named plane lies off the Global origin.</summary>
+    private readonly List<HznJsonObject> _coordSystems = [];
+
+    /// <summary>brief-hzn-21 — a Split as Hertzon writes one: its target's steps, then the Split. A named plane passes through its
+    /// coordinate system's origin, so one off the Global origin is written in a Relative system of its own, with the global axes and
+    /// its origin on the plane (At, as an expression where it is one); a Custom plane is written with its Base and Normal.</summary>
+    private bool SplitSteps(C3dSplit sp, HObj owner, List<HStep> steps)
+    {
+        if (sp.Target is not { } target)
+        {
+            _r.Add(HznRefusalKind.Operation, "Split without a target", "there is nothing to cut", owner.Name);
+            return false;
+        }
+        var inner = Steps(target, owner);
+        if (inner is null) return false;
+        _user = owner.Name;
+        steps.AddRange(inner);
+        static string Num(double v) => v.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+        if (sp.Plane == C3dSplitPlane.Custom)
+        {
+            if (sp.UnitNormal is null)
+            {
+                _r.Add(HznRefusalKind.Operation, "Split on a Custom plane", "its Normal is not three numbers, not all zero", owner.Name);
+                return false;
+            }
+            steps.Add(new("Split", P(("Plane", "Custom"), ("Base", Dim3(sp, nameof(C3dSplit.Base), sp.Base)),
+                                     ("Normal", string.Join(",", sp.Normal!.Select(Num))), ("Keep", sp.Keep.ToString()), ("CoordinateSystem", "Global")),
+                          Suppressed: !sp.Enabled));
+        }
+        else
+        {
+            string plane = sp.Plane switch { C3dSplitPlane.YZ => "YZ", C3dSplitPlane.XZ => "XZ", _ => "XY" };
+            string normal = sp.Plane switch { C3dSplitPlane.YZ => "1,0,0", C3dSplitPlane.XZ => "0,1,0", _ => "0,0,1" };
+            string cs = "Global";
+            if (sp.At != 0 || C3dBindings.GetExpr(sp, nameof(C3dSplit.At), 0) is not null)
+            {
+                string[] origin = ["0", "0", "0"];
+                origin[sp.Axis] = Dim(sp, nameof(C3dSplit.At), 0, sp.At);
+                cs = $"CS_{owner.Name}_Split";
+                for (int k = 2; _coordSystems.Any(c => c.GetString("name") == cs); k++) cs = $"CS_{owner.Name}_Split_{k}";
+                var o = new HznJsonObject();
+                o.SetString("name", cs);
+                o.SetString("kind", "Relative");
+                o.SetString("reference", "Global");
+                o.Set("props", Strings([("Mode", "Axis/Position"), ("Origin", string.Join(",", origin)), ("XAxis", "1,0,0"), ("YPoint", "0,1,0"),
+                                        ("Phi", "0deg"), ("Theta", "0deg"), ("Psi", "0deg")]));
+                _coordSystems.Add(o);
+            }
+            steps.Add(new("Split", P(("Plane", plane), ("Base", "0,0,0"), ("Normal", normal), ("Keep", sp.Keep.ToString()), ("CoordinateSystem", cs)),
+                          Suppressed: !sp.Enabled));
+        }
+        steps.AddRange(Placement(sp.Placement));
+        return true;
     }
 
     // ── shapes ────────────────────────────────────────────────────────────────────────────────────

@@ -159,6 +159,8 @@ public static class C3dBindings
         new(typeof(C3dFillet), nameof(C3dFillet.Radius), 1, C3dFieldKind.Length),
         new(typeof(C3dChamfer), nameof(C3dChamfer.Distance), 1, C3dFieldKind.Length),
         new(typeof(C3dChamfer), nameof(C3dChamfer.Distance2), 1, C3dFieldKind.Length),
+        new(typeof(C3dSplit), nameof(C3dSplit.At), 1, C3dFieldKind.Length),
+        new(typeof(C3dSplit), nameof(C3dSplit.Base), 3, C3dFieldKind.Length),
         // brief-em3d-73 R-em3d73-4 — the thermal places' dimensions. A heat sheet's Rect is a C3dRect, already above.
         new(typeof(C3dHeatSheet), nameof(C3dHeatSheet.Offset), 1, C3dFieldKind.Length),
         new(typeof(C3dProbe), nameof(C3dProbe.Point), 3, C3dFieldKind.Length),

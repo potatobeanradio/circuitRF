@@ -57,6 +57,7 @@ internal sealed partial class C3dToHznWriter
                 continue;
             }
             if (SetupJson(setup) is { } json) list.Add(json);
+            _radiationPattern |= setup.RadiationPattern;
         }
         PlaneWaveExcitation();
         var dup = list.GroupBy(j => j.GetString("name")).FirstOrDefault(g => g.Count() > 1);
@@ -228,7 +229,7 @@ internal sealed partial class C3dToHznWriter
         d.Set("spheres", Spheres());
         d.Set("reports", new HznJsonArray());
         d.Set("field_plots", new HznJsonArray());
-        d.Set("coord_systems", new HznJsonArray());
+        d.Set("coord_systems", Array(_coordSystems.Select(c => (HznJsonValue)c)));
         d.Set("optimetrics", new HznJsonArray());
         d.Set("parametrics", new HznJsonArray());
         d.SetString("working_cs", "Global");

@@ -164,7 +164,7 @@ internal static class EmergeLoweringRules
                    "remove the face boundary.";
         if (FaceKinds(problem).FirstOrDefault(f => f.Kind == Em3dBoundaryKind.Symmetry) is { Key: not null } symmetric)
             return $"The air box's {symmetric.Key} face is a Symmetry face, which does not say whether the field's electric or " +
-                   "magnetic wall lies there. Set it to Pec (an electric wall) or Pmc (a magnetic one) in the setup's AirBox.";
+                   "magnetic wall lies there. Set it to Pec (an electric wall) or Pmc (a magnetic one) in the setup's AirBox, with Symmetry true to mirror the radiation pattern across it.";
         if (problem.Validate() is { Count: > 0 } invalid)
             return "The 3D problem cannot be lowered for EMerge: " + string.Join(" ", invalid);
         if (problem.Ports.Count == 0 && problem.Type == Em3dProblemType.Driven && problem.PlaneWave is null)

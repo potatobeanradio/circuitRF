@@ -131,6 +131,8 @@ public static partial class C3dBooleans
         C3dBoolean { Op: C3dBooleanOp.Intersect } b => $"{Quoted([name, .. b.Tools.Select(t => t.Name)])} share nothing: the intersection is empty.",
         C3dBoolean { Op: C3dBooleanOp.Subtract } b => $"Subtracting {Quoted(b.Tools.Select(t => t.Name).ToList())} from '{name}' removes all of it.",
         C3dBoolean when C3dSheetBooleans.IsSheetBoolean(obj) => $"'{name}' is empty: the operation leaves no sheet.",
+        C3dSplit sp => $"Splitting '{name}' at the {sp.Plane} plane ({"xyz"[sp.Axis]} = the Split's At) keeps nothing: all of it lies on the " +
+                       $"{(sp.Keep == C3dSplitKeep.Positive ? "negative" : "positive")} side. Move the plane, or keep the other side.",
         _ => $"'{name}' is empty: the operation leaves no solid.",
     };
 
@@ -250,7 +252,7 @@ public static partial class C3dBooleans
         if (Steps(path) is not { } steps) return null;
         C3dObject? o = top;
         foreach (int s in steps)
-            o = s == TargetStep ? (o is C3dFillet or C3dChamfer ? C3dOperands.Inner(o) : null)
+            o = s == TargetStep ? (o is C3dFillet or C3dChamfer or C3dSplit ? C3dOperands.Inner(o) : null)
               : o is C3dBoolean b ? (s < 0 ? b.Blank : s < b.Tools.Count ? b.Tools[s] : null) : null;
         return o;
     }
@@ -270,6 +272,7 @@ public static partial class C3dBooleans
         {
             case C3dFillet f when steps[^1] == TargetStep: f.Target = replacement; break;
             case C3dChamfer c when steps[^1] == TargetStep: c.Target = replacement; break;
+            case C3dSplit sp when steps[^1] == TargetStep: sp.Target = replacement; break;
             case C3dBoolean parent when steps[^1] < 0: parent.Blank = replacement; break;
             case C3dBoolean parent: parent.Tools[steps[^1]] = replacement; break;
         }
@@ -287,7 +290,7 @@ public static partial class C3dBooleans
         C3dObject? o = top;
         foreach (int s in steps)
         {
-            if (s == TargetStep && o is C3dFillet or C3dChamfer) { chain.Add(o); o = C3dOperands.Inner(o); continue; }
+            if (s == TargetStep && o is C3dFillet or C3dChamfer or C3dSplit) { chain.Add(o); o = C3dOperands.Inner(o); continue; }
             if (o is not C3dBoolean b) break;
             chain.Add(b);
             o = s < 0 ? b.Blank : s < b.Tools.Count ? b.Tools[s] : null;

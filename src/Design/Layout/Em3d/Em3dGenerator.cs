@@ -1920,10 +1920,10 @@ public static class Em3dGenerator
         var waveFaces = waves.Select(w => w.Face).ToHashSet(StringComparer.Ordinal);
         box = box with
         {
-            XMin = waveFaces.Contains("xmin") ? new EmAirBoxFace(0, box.XMin?.Boundary) : box.XMin,
-            XMax = waveFaces.Contains("xmax") ? new EmAirBoxFace(0, box.XMax?.Boundary) : box.XMax,
-            YMin = waveFaces.Contains("ymin") ? new EmAirBoxFace(0, box.YMin?.Boundary) : box.YMin,
-            YMax = waveFaces.Contains("ymax") ? new EmAirBoxFace(0, box.YMax?.Boundary) : box.YMax,
+            XMin = waveFaces.Contains("xmin") ? new EmAirBoxFace(0, box.XMin?.Boundary, null, box.XMin?.Symmetry ?? false) : box.XMin,
+            XMax = waveFaces.Contains("xmax") ? new EmAirBoxFace(0, box.XMax?.Boundary, null, box.XMax?.Symmetry ?? false) : box.XMax,
+            YMin = waveFaces.Contains("ymin") ? new EmAirBoxFace(0, box.YMin?.Boundary, null, box.YMin?.Symmetry ?? false) : box.YMin,
+            YMax = waveFaces.Contains("ymax") ? new EmAirBoxFace(0, box.YMax?.Boundary, null, box.YMax?.Symmetry ?? false) : box.YMax,
         };
         foreach (var (face, edgeAt, port) in waves)
         {
@@ -1977,8 +1977,32 @@ public static class Em3dGenerator
                       $"zero (the content is flat there), so those faces take the default padding ({Fmt(defaults.For(a == 'z' ? "zmax" : "xmax", 0) * 1e3)} mm) instead.");
         var faces = new Em3dFaces(Kind(box.XMin), Kind(box.XMax), Kind(box.YMin), Kind(box.YMax),
                                   floorZ is not null ? Em3dBoundaryKind.Pec : Kind(box.ZMin), Kind(box.ZMax));
-        return new Em3dAirBox(boxMin, boxMax, faces) { Scan = box.Scan };
+        // brief-hzn-21 — a face stated as a mirror plane of the whole structure: a PEC or PMC wall, at most one per axis.
+        var mirrors = new List<Em3dSymmetryPlane>();
+        var kinds = new[] { faces.XMin, faces.XMax, faces.YMin, faces.YMax, faces.ZMin, faces.ZMax };
+        var statedFaces = new[] { box.XMin, box.XMax, box.YMin, box.YMax, box.ZMin, box.ZMax };
+        string[] keys = ["xmin", "xmax", "ymin", "ymax", "zmin", "zmax"];
+        double[] lo = [boxMin.X, boxMin.Y, boxMin.Z], hi = [boxMax.X, boxMax.Y, boxMax.Z];
+        for (int k = 0; k < 6; k++)
+        {
+            if (statedFaces[k]?.Symmetry != true) continue;
+            if (SymmetryFaceRefusal(keys[k], kinds[k]) is { } why) { refusal = why; return null; }
+            if (k % 2 == 1 && statedFaces[k - 1]?.Symmetry == true)
+            {
+                refusal = $"The air box's {keys[k - 1]} and {keys[k]} faces are both symmetry planes. A model is cut at most once along " +
+                          $"each axis: keep the symmetry on one of them.";
+                return null;
+            }
+            mirrors.Add(new Em3dSymmetryPlane(k / 2, k % 2 == 0 ? lo[k / 2] : hi[k / 2], kinds[k]) { Face = keys[k] });
+        }
+        return new Em3dAirBox(boxMin, boxMax, faces) { Scan = box.Scan, SymmetryPlanes = mirrors };
     }
+
+    /// <summary>brief-hzn-21 — why <paramref name="face"/>, of kind <paramref name="kind"/>, cannot be a symmetry plane; null when it can.</summary>
+    public static string? SymmetryFaceRefusal(string face, Em3dBoundaryKind kind) => kind is Em3dBoundaryKind.Pec or Em3dBoundaryKind.Pmc
+        ? null
+        : $"The air box's {face} face is marked Symmetry, but it is {kind}: a symmetry plane is a wall the field is mirrored in, an " +
+          "electric one (Pec) or a magnetic one (Pmc). Set the face's Boundary to Pec or Pmc, or clear its Symmetry.";
 
     /// <summary>
     /// brief-dfr28-3 R-dfr28-3-3 — a lumped port's sheet lying IN an absorbing face of the box is moved off it: that face is
