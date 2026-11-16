@@ -1,0 +1,21 @@
+# Radial stubs on two tees (MRADIAL): RS1, one sector, hangs on MT1's branch; RS2, a butterfly, on the end of the line
+# off MT2's branch, its two wings parallel to the through line. Each stub's pin is its narrow end, nobody's ratsnest.
+Info TL1 added
+Info MT1 added
+Info TL2 added
+Info MT2 added
+Info TL3 added
+Info RS1 added
+Info ST2 added
+Info RS2 added
+Info P1 port 1 placed at TL1 pin 1
+Info P2 port 2 placed at TL3 pin 2
+Info - Joined 7 of 7 connections; 0 left as ratsnest
+joinable n2
+joinable n3
+joinable n4
+joinable n5
+joinable n6
+joinable n7
+port P1 1
+port P2 2

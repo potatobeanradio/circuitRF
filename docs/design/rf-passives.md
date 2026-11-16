@@ -334,6 +334,56 @@ against their quarter waves and joined (`WilkinsonPlanTests`, `HybridPlanTests`)
 and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`WilkinsonSParamTests`,
 `HybridSParamTests`), and `testdata/schematic-to-layout/F8d-wilkinson-mitred` through Update Layout and LVS.
 
+### 3.5 Radial stub (MRADIAL), an element and a section
+
+The ladder filters' radial and butterfly stubs and a bias tee's RF ground need a stub circuitRF did not have, so MRADIAL is
+a new element rather than a plan: a sector of angle α whose narrow end is the feed's width `W`, open at `Ro` from its
+apex, on one pin, the shunt node; `Sides` = 2 is a butterfly, two sectors back to back on that node. It is registered as
+MGAP is (factory, net contract, registry, symbol, `MRadialPCell`, LVS kind, ground pour), and `PlanRadialStub` is a
+section kind with one case in `MicrostripPlanModel.Build` (the element's model) and one in `PassivePlanPCells.Draw` (its
+generator), so a plan can hang it on a tee's branch.
+
+**The method.** Between the sector and the plane the dominant wave is cylindrical, and per unit radius the line's
+series impedance is jωμh/(α·r) and its shunt admittance jωε·α·r/h. Open at the arc, the input impedance at the
+narrow end's radius r_i = W/(2·sin(α/2)) is March's closed form,
+Z = j·(η·h/(α·r_i))·[J₀(k·r_i)·Y₁(k·r_o) − Y₀(k·r_i)·J₁(k·r_o)] / [J₁(k·r_i)·Y₁(k·r_o) − Y₁(k·r_i)·J₁(k·r_o)], which
+for a thin sector far from its apex is an open stub's −j·Z·cot(k·L). Fringing enters as an effective permittivity, MLIN's
+(dispersion included) for a line as wide as the chord at the mean radius, (r_i + r_o)·sin(α/2), as March takes it, and
+an effective radius, the arc moved out by that line's open-end length (Kirschning, Jansen and Koster). Loss is cheap: the
+radial line's conductor loss per unit length and its loss tangent do not depend on r, so they are constant fractions δc,
+δd of the series and shunt terms, and the equation keeps its Bessel form with k = β·√((1 − jδc)(1 − jδd)) and the level
+scaled by √((1 − jδc)/(1 − jδd)); δc and δd are the equivalent line's own attenuations over β/2. The Bessel functions
+are the Planar MoM engine's complex-argument ones, moved to RfCore so Core reaches the same code.
+
+**Its limits.** One radial wave: a feed at the middle excites the sector's next symmetric mode once the arc is about a
+guided wavelength, and the instance says so. MLIN's range is reported for the equivalent line. The impedance level is
+the sector's arc width, as March's is, with no fringing along the straight edges: on 20 mil RO4350B at W = 1.1 mm,
+Ro = 8 mm and 60° the equivalent line's own impedance is about a fifth below that level at the mean radius. That sets
+the stub's slope near resonance rather than where it falls. The feed junction is not modelled, and a butterfly's two
+sectors do not see each other.
+
+**Tests.** No numerical example of either paper is reproduced here; the closed form is held instead to its own
+equations, integrated by Runge-Kutta with loss, to 1e-7. The shunt stub's |S21| minimum falls at the closed form's zero
+(3.86 GHz on the board above, two thirds of a straight quarter wave past the narrow end); a butterfly is two stubs to
+1e-9; a `PlanRadialStub` on a `PlanTee` is MTEE and MRADIAL wired by hand to 1e-9 (`RadialStubTests`). The drawn
+outline's flattened area is the sector less the triangle behind its narrow end, and a plan's stub lands edge to edge on
+the tee's branch (`MRadialPCellTests`, which also places the defaults on the GaAs die). `F14-radial-stub` runs a sector
+and a butterfly through Update Layout and LVS, and an `Angle` changed on the schematic is one `lvs.property.mismatch`.
+
+**Possible enhancements.**
+
+1. **The straight edges' fringing as an apex shift.** A wide strip's fringing widens it by about a constant, so moving
+   the apex back by (W_eff − W_eq)/α, with W_eff the equivalent line's planar-waveguide width, carries it in the same
+   Bessel form. Why: the level sets the stub's admittance slope, which is a stub filter's bandwidth, and it reads about
+   20 % high on the board above.
+2. **The planar-circuit model as a reference.** Giannini, Sorrentino and Vrba's mode expansion carries the sector's
+   higher modes and its edges. Why: it would check wide angles and long arcs, where the single-mode closed form warns,
+   without an EM run.
+3. **An EM cell.** A coarse Planar MoM run of `F14-radial-stub`'s stubs. Why: the closed form is checked against its own
+   equations and the layout against LVS, but not yet against a field solve.
+4. **Grips for `Ro` and `Angle`.** Why: the other microstrip cells have them, and tuning a stub by dragging its arc is
+   the usual gesture; the cell draws none yet.
+
 ## 4. What a new topology costs
 
 1. `src/Core/Devices/Microstrip/<X>Plan.cs` — the pure plan (and a section kind, with one case in
@@ -463,6 +513,18 @@ and MTEE sections wired by hand to 1e-9 and divided, summed and isolated at F (`
 
 > N. Marchand, "Transmission-Line Conversion Transformers," *Electronics*, vol. 17, no. 12, pp. 142–145, December 1944.
 > A trade magazine, with no DOI: [a scan of the issue](https://www.worldradiohistory.com/Archive-Electronics/40s/Electronics-1944-12.pdf).
+
+> S. L. March, "Analyzing Lossy Radial-Line Stubs," *IEEE Transactions on Microwave Theory and Techniques*, vol. 33,
+> no. 3, pp. 269–271, March 1985. DOI [10.1109/TMTT.1985.1132997](https://doi.org/10.1109/TMTT.1985.1132997). The
+> radial stub's closed form.
+
+> F. Giannini, R. Sorrentino and J. Vrba, "Planar Circuit Analysis of Microstrip Radial Stub," *IEEE Transactions on
+> Microwave Theory and Techniques*, vol. 32, no. 12, pp. 1652–1655, December 1984.
+> DOI [10.1109/TMTT.1984.1132907](https://doi.org/10.1109/TMTT.1984.1132907).
+
+> M. Kirschning, R. H. Jansen and N. H. L. Koster, "Accurate model for open end effect of microstrip lines,"
+> *Electronics Letters*, vol. 17, no. 3, pp. 123–125, February 1981.
+> DOI [10.1049/el:19810088](https://doi.org/10.1049/el:19810088). The radial stub's effective radius.
 
 > K. S. Ang and I. D. Robertson, "Analysis and Design of Impedance-Transforming Planar Marchand Baluns," *IEEE
 > Transactions on Microwave Theory and Techniques*, vol. 49, no. 2, pp. 402–406, February 2001.

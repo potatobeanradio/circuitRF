@@ -29,6 +29,8 @@ public static class PCellRegistry
             { "MCROSS", MCrossPCell.Generate },
             { "MTAPER", MTaperPCell.Generate },
             { "MKLOPF", MKlopfPCell.Generate },
+            // The radial stub: one sector or a butterfly on its one pin.
+            { MRadialPCell.GeneratorId, MRadialPCell.Generate },
             // The planned passives (docs/design/rf-passives.md): the plan the model stamps, drawn by its parts' generators.
             { PassivePlanPCells.WilkinsonId, PassivePlanPCells.GenerateWilkinson },
             { PassivePlanPCells.BranchLineId, PassivePlanPCells.GenerateBranchLine },

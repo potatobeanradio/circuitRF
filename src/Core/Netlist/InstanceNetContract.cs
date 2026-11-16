@@ -56,6 +56,8 @@ public static class InstanceNetContract
             or MicrostripCurveModel or MicrostripMiterBendModel or MicrostripGapModel or MicrostripTaperModel
             or MicrostripKlopfModel                                                           => 2,
         MicrostripTeeModel                                                                    => 3,
+        // A radial stub, one sector or a butterfly: its shunt node alone, over the implicit reference.
+        MicrostripRadialStubModel                                                             => 1,
         // A planned passive (MWPD, MBLC, MRRC): its plan's pins, each over the implicit reference.
         MicrostripPlanModel plan                                                              => plan.PortCount,
         // A signal via is two terminals over the implicit reference, as MLIN is. A via to ground draws
@@ -348,6 +350,12 @@ public static class InstanceNetContract
             case "MGAP":
                 p["W"] = new Expressions.Value(1e-4);
                 p["S"] = new Expressions.Value(1e-4);
+                break;
+
+            // A radial stub refuses a zero width and a radius short of its feed; any drawable pair stands in.
+            case "MRADIAL":
+                p["W"]  = new Expressions.Value(1e-4);
+                p["Ro"] = new Expressions.Value(1e-3);
                 break;
 
             // The mutual element names two INDUCTORS rather than two nets, so these are the nets'

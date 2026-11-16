@@ -12,8 +12,9 @@ namespace CircuitRF.Core.Devices;
 /// <see cref="MarchandBalunPlan"/>). It has no line physics of its own: each section of the plan is the EXISTING
 /// part's model (<see cref="MicrostripTeeModel"/>, <see cref="MicrostripCurveModel"/>,
 /// <see cref="MicrostripLineModel"/>, <see cref="MicrostripCoupledLineModel"/>, <see cref="MicrostripMiterBendModel"/>,
-/// <see cref="MicrostripBendModel"/>, <see cref="MicrostripGapModel"/>, <see cref="MicrostripTaperModel"/>; an open
-/// end <see cref="MicrostripOpenEnd"/>'s capacitance on MLIN's or MCLIN's own line), stamped into a
+/// <see cref="MicrostripBendModel"/>, <see cref="MicrostripGapModel"/>, <see cref="MicrostripTaperModel"/>,
+/// <see cref="MicrostripRadialStubModel"/>; an open end <see cref="MicrostripOpenEnd"/>'s capacitance on MLIN's or
+/// MCLIN's own line), stamped into a
 /// <see cref="LocalAdmittanceBlock"/> on the plan's nodes, and the internal nodes are Kron-reduced away so the
 /// instance stamps one block on its pins — the way MTEE stamps the arms it draws (<see cref="JunctionArms"/>).
 /// The same network built from explicit instances of those parts is therefore the same matrix.
@@ -83,6 +84,7 @@ public sealed class MicrostripPlanModel : ComponentModel, IReportsWarnings, IDcS
             PlanTaper t => new MicrostripTaperModel(t.W1, t.W2, t.L, s.HMeters, s.TMeters, s.EpsR, s.SigmaSPerM, s.TanD,
                 path),
             PlanOpen o => new MicrostripOpenEndModel(o, s, path),
+            PlanRadialStub r => new MicrostripRadialStubModel(r.W, r.Ro, r.AngleDeg, r.Sides, s, path),
             _ => throw new NotSupportedException(section.GetType().Name),
         };
         return (model, new ElaboratedComponent(model.GetType().Name, path, section.Nodes,

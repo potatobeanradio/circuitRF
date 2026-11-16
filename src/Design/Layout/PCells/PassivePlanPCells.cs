@@ -8,8 +8,8 @@ namespace CircuitRF.Design.Layout.PCells;
 /// the plan its model stamps — and <see cref="Draw"/> draws every section through the EXISTING part's own
 /// generator (<see cref="MTeePCell"/>, <see cref="MCurvePCell"/>, <see cref="MlinPCell"/>,
 /// <see cref="CoupledLinePCells"/>, <see cref="MMiterPCell"/>, <see cref="MBendPCell"/>, <see cref="MGapPCell"/>,
-/// <see cref="MTaperPCell"/>; an interdigitated section's strips each by <see cref="MlinPCell"/>; an open end draws
-/// nothing), turned and
+/// <see cref="MTaperPCell"/>, <see cref="MRadialPCell"/>; an interdigitated section's strips each by
+/// <see cref="MlinPCell"/>; an open end draws nothing), turned and
 /// moved to the section's pose. The
 /// copper is therefore the copper those parts draw on their own, piece for piece, and the pins are those
 /// parts' own pins wherever a section ends on one of the passive's pins — never a second rounding of where
@@ -149,6 +149,10 @@ public static class PassivePlanPCells
                     ["W1"] = t.W1, ["W2"] = t.W2, ["L"] = t.L,
                 }, technology, layerSelection),
                 PlanOpen => new PCellResult([], []),
+                PlanRadialStub r => MRadialPCell.Generate(new Dictionary<string, PCellValue>
+                {
+                    ["W"] = r.W, ["Ro"] = r.Ro, ["Angle"] = r.AngleDeg, ["Sides"] = (double)r.Sides,
+                }, technology, layerSelection),
                 _ => throw new NotSupportedException(section.GetType().Name),
             };
 

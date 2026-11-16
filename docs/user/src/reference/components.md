@@ -1058,6 +1058,60 @@ either a length or a 3 dB corner frequency.
 
 {{table: components/Mklopf}}
 
+### Radial Stub (MRADIAL) {#mradial}
+
+{{symbol: mradial}}
+
+An open stub shaped as a fan: a sector of microstrip whose narrow end is as wide as the line it hangs from (`W`), whose
+open arc is `Ro` from the sector's apex, and which opens through `Angle`. With `Sides` = 2 it is a butterfly, a second
+sector back to back with the first on the same node. Use it where an open stub has to be a short over a band: the RF
+ground at the end of a bias line, or a shunt stub of a low-pass or band-stop filter. Its one terminal is the shunt node,
+the middle of the narrow end; hang it on a tee's branch or on the end of a line. It returns through the ground plane.
+
+**How it works.** Between the sector and the plane the wave spreads out from the apex as a cylindrical wave, so the
+stub is a line whose impedance falls as the sector widens. Open at the arc, its input impedance is the radial line's
+closed form, in Bessel functions of the wave across the sector. It is a short at its first resonance, and because it
+widens, that comes at a shorter length than a straight stub's quarter wave, with a broader null. On 20 mil RO4350B, a
+60° stub with `W` = 1.1 mm and `Ro` = 8 mm shorts at 3.86 GHz, where its length past the narrow end is two thirds of a
+straight line's quarter wave; shunted across a 50 Ω line it holds |S21| below −20 dB from 3.64 to 4.08 GHz.
+
+**What circuitRF computes**, at each frequency:
+
+- the radius at which the sector is as wide as its feed, r_i = `W` / (2·sin(`Angle`/2)). The copper starts there;
+- the effective permittivity: the microstrip line model's, dispersion included, for a line as wide as the sector's
+  chord at its mean radius;
+- the effective radius: the arc moved out by that line's open-end length, the fringing past an open end;
+- conductor and dielectric loss, that line's own, carried in the wave.
+
+A butterfly is its two sectors in parallel.
+
+**Limits.** The closed form carries one radial wave. Once the arc is about a guided wavelength long, a feed at the
+middle excites the sector's next mode, which it does not carry; the run says so. The microstrip line model's range
+applies to the equivalent line and is reported for it: a very wide or very short sector is outside it. The junction
+where the feed meets the narrow end is not modelled, and neither is the fringing along the sector's two straight edges:
+the impedance level is the sector's own arc width. That moves the stub's slope near its resonance more than where the
+resonance falls. A butterfly's two sectors do not see each other in the model.
+
+**In the layout** the stub is one outline: the narrow end on the pin, facing the feed, and the arc a true arc. A
+butterfly's pin is between its two sectors and faces across them, so on the end of a line its wings spread to either
+side of the line. `Angle` is in degrees, up to 180°; a `Ro` that does not reach past r_i is refused.
+
+{{table: components/MRadial}}
+
+**References**
+
+> S. L. March, "Analyzing Lossy Radial-Line Stubs," *IEEE Transactions on Microwave Theory and Techniques*, vol. 33,
+> no. 3, pp. 269–271, March 1985. DOI [10.1109/TMTT.1985.1132997](https://doi.org/10.1109/TMTT.1985.1132997). The
+> radial-line closed form and the equivalent line's width.
+
+> F. Giannini, R. Sorrentino and J. Vrba, "Planar Circuit Analysis of Microstrip Radial Stub," *IEEE Transactions on
+> Microwave Theory and Techniques*, vol. 32, no. 12, pp. 1652–1655, December 1984.
+> DOI [10.1109/TMTT.1984.1132907](https://doi.org/10.1109/TMTT.1984.1132907). The stub as a planar circuit.
+
+> M. Kirschning, R. H. Jansen and N. H. L. Koster, "Accurate model for open end effect of microstrip lines,"
+> *Electronics Letters*, vol. 17, no. 3, pp. 123–125, February 1981.
+> DOI [10.1049/el:19810088](https://doi.org/10.1049/el:19810088). The open-end length the arc is moved out by.
+
 ### Via (VIA) {#via}
 
 {{symbol: via}}

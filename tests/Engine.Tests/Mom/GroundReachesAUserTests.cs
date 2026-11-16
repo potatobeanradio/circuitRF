@@ -16,6 +16,7 @@
 //   R-cl7-5  Passivity and reciprocity with a DIRECTION check; loss may only increase.
 
 using System.Numerics;
+using RfCore.Numerics;
 using NumFlat;
 using CircuitRF.Engine.Mom;
 using CircuitRF.Engine.Tests.Mom.Support;

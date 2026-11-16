@@ -54,6 +54,7 @@
 // smallest cell and is reported (R-fil-5), not hidden.
 
 using System.Numerics;
+using RfCore.Numerics;
 
 namespace CircuitRF.Engine.Mom;
 
