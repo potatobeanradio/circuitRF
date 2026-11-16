@@ -1,0 +1,445 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mil",
+	"SnapDbu": 25400,
+	"AngleMode": "AnyAngle",
+	"SchematicPCellSnapshots": {
+		"TL1": {
+			"W": 0.001073502,
+			"L": 0.005
+		},
+		"CV1": {
+			"W": 0.001073502,
+			"Angle": 90,
+			"Radius": 0.0035
+		},
+		"CLC1": {
+			"Coupling": 15,
+			"Z0": 50,
+			"F": 2400000000,
+			"Sections": 3,
+			"Band": 2
+		},
+		"CV2": {
+			"W": 0.001073502,
+			"Angle": 90,
+			"Radius": 0.0035
+		},
+		"TL2": {
+			"W": 0.001073502,
+			"L": 0.005
+		},
+		"TL3": {
+			"W": 0.001073502,
+			"L": 0.005
+		},
+		"CV3": {
+			"W": 0.001073502,
+			"Angle": -90,
+			"Radius": 0.0035
+		},
+		"CV4": {
+			"W": 0.001073502,
+			"Angle": -90,
+			"Radius": 0.0035
+		},
+		"TL4": {
+			"W": 0.001073502,
+			"L": 0.005
+		}
+	},
+	"GeneratedPlacements": {
+		"CLC1": {
+			"X": 8500000,
+			"Y": -28040863,
+			"RotationDeg": 90,
+			"Mirror": false
+		},
+		"CV1": {
+			"X": 8500000,
+			"Y": -28040863,
+			"RotationDeg": 90,
+			"Mirror": true
+		},
+		"CV2": {
+			"X": 5000000,
+			"Y": 31540863,
+			"RotationDeg": 180,
+			"Mirror": true
+		},
+		"CV3": {
+			"X": 15075206,
+			"Y": -31540863,
+			"RotationDeg": 180,
+			"Mirror": false
+		},
+		"CV4": {
+			"X": 11575206,
+			"Y": 28040863,
+			"RotationDeg": 90,
+			"Mirror": false
+		},
+		"P1": {
+			"X": 0,
+			"Y": -31540863,
+			"RotationDeg": 0,
+			"Mirror": false,
+			"Text": "1"
+		},
+		"P2": {
+			"X": 0,
+			"Y": 31540863,
+			"RotationDeg": 0,
+			"Mirror": false,
+			"Text": "2"
+		},
+		"P3": {
+			"X": 20075206,
+			"Y": -31540863,
+			"RotationDeg": 180,
+			"Mirror": false,
+			"Text": "3"
+		},
+		"P4": {
+			"X": 20075206,
+			"Y": 31540863,
+			"RotationDeg": 180,
+			"Mirror": false,
+			"Text": "4"
+		},
+		"TL1": {
+			"X": 0,
+			"Y": -31540863,
+			"RotationDeg": 0,
+			"Mirror": false,
+			"ChainAnchor": true
+		},
+		"TL2": {
+			"X": 5000000,
+			"Y": 31540863,
+			"RotationDeg": 180,
+			"Mirror": false
+		},
+		"TL3": {
+			"X": 20075206,
+			"Y": -31540863,
+			"RotationDeg": 180,
+			"Mirror": false
+		},
+		"TL4": {
+			"X": 15075206,
+			"Y": 31540863,
+			"RotationDeg": 0,
+			"Mirror": false
+		}
+	},
+	"PCellSnapshots": {
+		"MLIN_77595812bb7d": {
+			"GeneratorId": "MLIN",
+			"Parameters": {
+				"W": 0.001073502,
+				"L": 0.005
+			},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		},
+		"MCURVE_dc4264c7cf3a": {
+			"GeneratorId": "MCURVE",
+			"Parameters": {
+				"W": 0.001073502,
+				"Angle": 90,
+				"Radius": 0.0035
+			},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		},
+		"MCLC_a6083b128e2c": {
+			"GeneratorId": "MCLC",
+			"Parameters": {
+				"Coupling": 15,
+				"Z0": 50,
+				"F": 2400000000,
+				"Sections": 3,
+				"Band": 2
+			},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		},
+		"MCURVE_3c45f220f348": {
+			"GeneratorId": "MCURVE",
+			"Parameters": {
+				"W": 0.001073502,
+				"Angle": -90,
+				"Radius": 0.0035
+			},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		}
+	},
+	"Shapes": [
+		{
+			"$type": "Label",
+			"X": 0,
+			"Y": -31540863,
+			"Text": "1",
+			"Height": 536751,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P1",
+			"PortDirection": "R0",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 0,
+			"Y": 31540863,
+			"Text": "2",
+			"Height": 536751,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P2",
+			"PortDirection": "R0",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 20075206,
+			"Y": -31540863,
+			"Text": "3",
+			"Height": 536751,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P3",
+			"PortDirection": "R180",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 20075206,
+			"Y": 31540863,
+			"Text": "4",
+			"Height": 536751,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P4",
+			"PortDirection": "R180",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Poly",
+			"Xy": [
+				22615206, 34617614,
+				-2540000, 34617614,
+				-2540000, -34617614,
+				22615206, -34617614
+			],
+			"Layer": {
+				"Layer": 2,
+				"Datatype": 0
+			},
+			"Generated": "ground-pour"
+		}
+	],
+	"Instances": [
+		{
+			"CellRef": "../../.generated-cells/MLIN_77595812bb7d",
+			"X": 0,
+			"Y": -31540863,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TL1",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MCURVE_dc4264c7cf3a",
+			"X": 8500000,
+			"Y": -28040863,
+			"Rot": "R90",
+			"MirrorX": true,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "CV1",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 90,
+				"LayoutMirror": true
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MCLC_a6083b128e2c",
+			"X": 8500000,
+			"Y": -28040863,
+			"Rot": "R90",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "CLC1",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 90,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MCURVE_dc4264c7cf3a",
+			"X": 5000000,
+			"Y": 31540863,
+			"Rot": "R180",
+			"MirrorX": true,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "CV2",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 180,
+				"LayoutMirror": true
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MLIN_77595812bb7d",
+			"X": 5000000,
+			"Y": 31540863,
+			"Rot": "R180",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TL2",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 180,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MLIN_77595812bb7d",
+			"X": 20075206,
+			"Y": -31540863,
+			"Rot": "R180",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TL3",
+			"OrientationLink": {
+				"SchematicDeg": 270,
+				"SchematicMirror": false,
+				"LayoutDeg": 180,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MCURVE_3c45f220f348",
+			"X": 15075206,
+			"Y": -31540863,
+			"Rot": "R180",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "CV3",
+			"OrientationLink": {
+				"SchematicDeg": 270,
+				"SchematicMirror": false,
+				"LayoutDeg": 180,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MCURVE_3c45f220f348",
+			"X": 11575206,
+			"Y": 28040863,
+			"Rot": "R90",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "CV4",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 90,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MLIN_77595812bb7d",
+			"X": 15075206,
+			"Y": 31540863,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TL4",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		}
+	]
+}

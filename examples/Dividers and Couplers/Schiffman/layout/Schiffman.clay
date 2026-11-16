@@ -1,0 +1,354 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mil",
+	"SnapDbu": 25400,
+	"AngleMode": "AnyAngle",
+	"SchematicPCellSnapshots": {
+		"SPS1": {
+			"Z0": 50,
+			"F": 2400000000,
+			"Phase": 90,
+			"Band": 1.4,
+			"Reference": "Curve"
+		},
+		"CV1": {
+			"W": 0.0007887640000000001,
+			"Angle": -90,
+			"Radius": 0.0035
+		},
+		"TL1": {
+			"W": 0.0007887640000000001,
+			"L": 0.005
+		},
+		"TL2": {
+			"W": 0.0007887640000000001,
+			"L": 0.005
+		},
+		"TL3": {
+			"W": 0.00105768,
+			"L": 0.008060000000000001
+		},
+		"TL4": {
+			"W": 0.00105768,
+			"L": 0.008060000000000001
+		}
+	},
+	"GeneratedPlacements": {
+		"CV1": {
+			"X": 8060000,
+			"Y": 1661254,
+			"RotationDeg": 180,
+			"Mirror": false
+		},
+		"P1": {
+			"X": 4560000,
+			"Y": 10161254,
+			"RotationDeg": 270,
+			"Mirror": false,
+			"Text": "1"
+		},
+		"P2": {
+			"X": 3060000,
+			"Y": 809928,
+			"RotationDeg": 0,
+			"Mirror": false,
+			"Text": "2"
+		},
+		"P3": {
+			"X": 0,
+			"Y": -3286334,
+			"RotationDeg": 0,
+			"Mirror": false,
+			"Text": "3"
+		},
+		"P4": {
+			"X": 0,
+			"Y": -9632414,
+			"RotationDeg": 0,
+			"Mirror": false,
+			"Text": "4"
+		},
+		"SPS1": {
+			"X": 8060000,
+			"Y": 1661254,
+			"RotationDeg": 0,
+			"Mirror": false
+		},
+		"TL1": {
+			"X": 4560000,
+			"Y": 10161254,
+			"RotationDeg": 270,
+			"Mirror": false,
+			"ChainAnchor": true
+		},
+		"TL2": {
+			"X": 3060000,
+			"Y": 809928,
+			"RotationDeg": 0,
+			"Mirror": false
+		},
+		"TL3": {
+			"X": 0,
+			"Y": -3286334,
+			"RotationDeg": 0,
+			"Mirror": false
+		},
+		"TL4": {
+			"X": 8060000,
+			"Y": -9632414,
+			"RotationDeg": 180,
+			"Mirror": false
+		}
+	},
+	"PCellSnapshots": {
+		"MSPS_d6db0d168f31": {
+			"GeneratorId": "MSPS",
+			"Parameters": {
+				"Z0": 50,
+				"F": 2400000000,
+				"Phase": 90,
+				"Band": 1.4,
+				"Reference": "Curve"
+			},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		},
+		"MCURVE_d7902bbf6779": {
+			"GeneratorId": "MCURVE",
+			"Parameters": {
+				"W": 0.0007887640000000001,
+				"Angle": -90,
+				"Radius": 0.0035
+			},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		},
+		"MLIN_17b23e1ce7b6": {
+			"GeneratorId": "MLIN",
+			"Parameters": {
+				"W": 0.0007887640000000001,
+				"L": 0.005
+			},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		},
+		"MLIN_c877c9e925b3": {
+			"GeneratorId": "MLIN",
+			"Parameters": {
+				"W": 0.00105768,
+				"L": 0.008060000000000001
+			},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		}
+	},
+	"Shapes": [
+		{
+			"$type": "Label",
+			"X": 4560000,
+			"Y": 10161254,
+			"Text": "1",
+			"Height": 394382,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P1",
+			"PortDirection": "R270",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 3060000,
+			"Y": 809928,
+			"Text": "2",
+			"Height": 394382,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P2",
+			"PortDirection": "R0",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 0,
+			"Y": -3286334,
+			"Text": "3",
+			"Height": 528840,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P3",
+			"PortDirection": "R0",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 0,
+			"Y": -9632414,
+			"Text": "4",
+			"Height": 528840,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P4",
+			"PortDirection": "R0",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Poly",
+			"Xy": [
+				36675618, 12701254,
+				-2540000, 12701254,
+				-2540000, -12701254,
+				36675618, -12701254
+			],
+			"Layer": {
+				"Layer": 2,
+				"Datatype": 0
+			},
+			"Generated": "ground-pour"
+		}
+	],
+	"Instances": [
+		{
+			"CellRef": "../../.generated-cells/MSPS_d6db0d168f31",
+			"X": 8060000,
+			"Y": 1661254,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "SPS1",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MCURVE_d7902bbf6779",
+			"X": 8060000,
+			"Y": 1661254,
+			"Rot": "R180",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "CV1",
+			"OrientationLink": {
+				"SchematicDeg": 180,
+				"SchematicMirror": false,
+				"LayoutDeg": 180,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MLIN_17b23e1ce7b6",
+			"X": 4560000,
+			"Y": 10161254,
+			"Rot": "R270",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TL1",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 270,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MLIN_17b23e1ce7b6",
+			"X": 3060000,
+			"Y": 809928,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TL2",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MLIN_c877c9e925b3",
+			"X": 0,
+			"Y": -3286334,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TL3",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MLIN_c877c9e925b3",
+			"X": 8060000,
+			"Y": -9632414,
+			"Rot": "R180",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TL4",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 180,
+				"LayoutMirror": false
+			}
+		}
+	]
+}

@@ -1,0 +1,612 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mil",
+	"SnapDbu": 25400,
+	"AngleMode": "AnyAngle",
+	"SchematicPCellSnapshots": {
+		"WPD1": {
+			"Z0": 50,
+			"F": 2400000000,
+			"Gap": 0.00135,
+			"Realization": "Lumped",
+			"Arm": "Pi"
+		},
+		"R1": {},
+		"L1": {},
+		"L2": {},
+		"C1": {},
+		"V1": {},
+		"C2": {},
+		"V2": {},
+		"C3": {},
+		"V3": {},
+		"TL1": {
+			"W": 0.00105768,
+			"L": 0.005
+		},
+		"CV2": {
+			"W": 0.00105768,
+			"Angle": 90,
+			"Radius": 0.0035
+		},
+		"CV3": {
+			"W": 0.00105768,
+			"Angle": -90,
+			"Radius": 0.0035
+		},
+		"TL2": {
+			"W": 0.00105768,
+			"L": 0.005
+		},
+		"TL3": {
+			"W": 0.00105768,
+			"L": 0.005
+		}
+	},
+	"GeneratedPlacements": {
+		"C1": {
+			"X": 4325000,
+			"Y": -1732680,
+			"RotationDeg": 180,
+			"Mirror": false
+		},
+		"C2": {
+			"X": 9523040,
+			"Y": 3465360,
+			"RotationDeg": 90,
+			"Mirror": false
+		},
+		"C3": {
+			"X": 9523040,
+			"Y": -3465360,
+			"RotationDeg": 270,
+			"Mirror": false
+		},
+		"CV2": {
+			"X": 10580720,
+			"Y": 1732680,
+			"RotationDeg": 0,
+			"Mirror": false
+		},
+		"CV3": {
+			"X": 10580720,
+			"Y": -1732680,
+			"RotationDeg": 0,
+			"Mirror": false
+		},
+		"L1": {
+			"X": 7790360,
+			"Y": 1732680,
+			"RotationDeg": 180,
+			"Mirror": false
+		},
+		"L2": {
+			"X": 7790360,
+			"Y": -1732680,
+			"RotationDeg": 180,
+			"Mirror": false
+		},
+		"P1": {
+			"X": 0,
+			"Y": 1732680,
+			"RotationDeg": 0,
+			"Mirror": false,
+			"Text": "1"
+		},
+		"P2": {
+			"X": 14080720,
+			"Y": 10232680,
+			"RotationDeg": 270,
+			"Mirror": false,
+			"Text": "2"
+		},
+		"P3": {
+			"X": 14080720,
+			"Y": -10232680,
+			"RotationDeg": 90,
+			"Mirror": false,
+			"Text": "3"
+		},
+		"R1": {
+			"X": 9523040,
+			"Y": 0,
+			"RotationDeg": 90,
+			"Mirror": false
+		},
+		"TL1": {
+			"X": 0,
+			"Y": 1732680,
+			"RotationDeg": 0,
+			"Mirror": false,
+			"ChainAnchor": true
+		},
+		"TL2": {
+			"X": 14080720,
+			"Y": 5232680,
+			"RotationDeg": 90,
+			"Mirror": false
+		},
+		"TL3": {
+			"X": 14080720,
+			"Y": -5232680,
+			"RotationDeg": 270,
+			"Mirror": false
+		},
+		"V1": {
+			"X": 3195200,
+			"Y": -1732680,
+			"RotationDeg": 0,
+			"Mirror": false
+		},
+		"V2": {
+			"X": 9523040,
+			"Y": 4595160,
+			"RotationDeg": 0,
+			"Mirror": false
+		},
+		"V3": {
+			"X": 9523040,
+			"Y": -4595160,
+			"RotationDeg": 0,
+			"Mirror": false
+		},
+		"WPD1": {
+			"X": 6057680,
+			"Y": 1732680,
+			"RotationDeg": 0,
+			"Mirror": false
+		}
+	},
+	"PCellSnapshots": {
+		"MWPD_b5a2e76e8993": {
+			"GeneratorId": "MWPD",
+			"Parameters": {
+				"Z0": 50,
+				"F": 2400000000,
+				"Gap": 0.00135,
+				"Realization": "Lumped",
+				"Arm": "Pi"
+			},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		},
+		"smt-0402@N_23d6a1a986ad": {
+			"GeneratorId": "smt:0402@N",
+			"Parameters": {},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		},
+		"VIAGND_d4e05b13643e": {
+			"GeneratorId": "VIAGND",
+			"Parameters": {},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		},
+		"MLIN_3079a10da41a": {
+			"GeneratorId": "MLIN",
+			"Parameters": {
+				"W": 0.00105768,
+				"L": 0.005
+			},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		},
+		"MCURVE_ab13df8e8b8a": {
+			"GeneratorId": "MCURVE",
+			"Parameters": {
+				"W": 0.00105768,
+				"Angle": 90,
+				"Radius": 0.0035
+			},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		},
+		"MCURVE_325ee3d10a39": {
+			"GeneratorId": "MCURVE",
+			"Parameters": {
+				"W": 0.00105768,
+				"Angle": -90,
+				"Radius": 0.0035
+			},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		}
+	},
+	"Shapes": [
+		{
+			"$type": "Path",
+			"Xy": [
+				3925000, -1732680,
+				2890400, -1732680
+			],
+			"Width": 609600,
+			"End": "Flush",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Path",
+			"Xy": [
+				9523040, 3865360,
+				9523040, 4899960
+			],
+			"Width": 609600,
+			"End": "Flush",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Path",
+			"Xy": [
+				9523040, -3865360,
+				9523040, -4899960
+			],
+			"Width": 609600,
+			"End": "Flush",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 0,
+			"Y": 1732680,
+			"Text": "1",
+			"Height": 528840,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P1",
+			"PortDirection": "R0",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 14080720,
+			"Y": 10232680,
+			"Text": "2",
+			"Height": 528840,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P2",
+			"PortDirection": "R270",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 14080720,
+			"Y": -10232680,
+			"Text": "3",
+			"Height": 528840,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P3",
+			"PortDirection": "R90",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Poly",
+			"Xy": [
+				17149560, 12772680,
+				-2540000, 12772680,
+				-2540000, -12772680,
+				17149560, -12772680
+			],
+			"Layer": {
+				"Layer": 2,
+				"Datatype": 0
+			},
+			"Generated": "ground-pour"
+		}
+	],
+	"Instances": [
+		{
+			"CellRef": "../../.generated-cells/MWPD_b5a2e76e8993",
+			"X": 6057680,
+			"Y": 1732680,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "WPD1",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/smt-0402@N_23d6a1a986ad",
+			"X": 9523040,
+			"Y": 0,
+			"Rot": "R90",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "R1",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 90,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/smt-0402@N_23d6a1a986ad",
+			"X": 7790360,
+			"Y": 1732680,
+			"Rot": "R180",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "L1",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 180,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/smt-0402@N_23d6a1a986ad",
+			"X": 7790360,
+			"Y": -1732680,
+			"Rot": "R180",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "L2",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 180,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/smt-0402@N_23d6a1a986ad",
+			"X": 4325000,
+			"Y": -1732680,
+			"Rot": "R180",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "C1",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 180,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/VIAGND_d4e05b13643e",
+			"X": 3195200,
+			"Y": -1732680,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "V1",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/smt-0402@N_23d6a1a986ad",
+			"X": 9523040,
+			"Y": 3465360,
+			"Rot": "R90",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "C2",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 90,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/VIAGND_d4e05b13643e",
+			"X": 9523040,
+			"Y": 4595160,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "V2",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/smt-0402@N_23d6a1a986ad",
+			"X": 9523040,
+			"Y": -3465360,
+			"Rot": "R270",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "C3",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 270,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/VIAGND_d4e05b13643e",
+			"X": 9523040,
+			"Y": -4595160,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "V3",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MLIN_3079a10da41a",
+			"X": 0,
+			"Y": 1732680,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TL1",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MCURVE_ab13df8e8b8a",
+			"X": 10580720,
+			"Y": 1732680,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "CV2",
+			"OrientationLink": {
+				"SchematicDeg": 180,
+				"SchematicMirror": true,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MCURVE_325ee3d10a39",
+			"X": 10580720,
+			"Y": -1732680,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "CV3",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MLIN_3079a10da41a",
+			"X": 14080720,
+			"Y": 5232680,
+			"Rot": "R90",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TL2",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 90,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MLIN_3079a10da41a",
+			"X": 14080720,
+			"Y": -5232680,
+			"Rot": "R270",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TL3",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 270,
+				"LayoutMirror": false
+			}
+		}
+	]
+}
