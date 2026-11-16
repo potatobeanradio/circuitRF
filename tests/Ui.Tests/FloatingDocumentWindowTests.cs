@@ -52,6 +52,29 @@ public sealed class FloatingDocumentWindowTests
         Assert.Same(b, shown.ActiveDockable);
     }
 
+    /// <summary>
+    /// A save that names a document (a Smith chart's first save, any Save As) renames its tab in place with no dock event, and a
+    /// torn-off window showing it kept the old name. A host window cannot be built headlessly (TearOffBackgroundTests), so this holds
+    /// the wiring: the one handler every document's Title change reaches re-titles the floating windows as well as the main one.
+    /// </summary>
+    [Fact]
+    public void ADocumentsTitleChange_ReTitlesTheTornOffWindows()
+    {
+        string src = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Ui", "ViewModels", "WorkspaceViewModel.DirtyTitle.cs"));
+        int at = src.IndexOf("private void OnWatchedDocumentPropertyChanged", StringComparison.Ordinal);
+        Assert.True(at >= 0);
+        string body = src[at..src.IndexOf('}', at)];
+        Assert.Contains("RefreshWindowTitle()", body);
+        Assert.Contains("PostRefreshFloatingTitles()", body);
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "circuitRF.slnx"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("repo root not found");
+    }
+
     [Fact]
     public void TheTitleNamesEveryDocument_UntilItWouldGrowTooLong()
     {

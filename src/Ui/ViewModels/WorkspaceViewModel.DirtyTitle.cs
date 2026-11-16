@@ -46,9 +46,17 @@ public partial class WorkspaceViewModel
         RefreshWindowTitle();
     }
 
+    /// <summary>
+    /// A document's title changed: the workspace window's mark, and the title of a torn-off window showing it. A save that names the
+    /// document (an untitled one's first save, a Save As) renames its tab in place, with no dock event, so a torn-off window kept the old
+    /// name — <see cref="RefreshFloatingTitles"/> ran only on dock changes. Every document type renames this way, so it is answered here,
+    /// once, rather than in each type's save.
+    /// </summary>
     private void OnWatchedDocumentPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(IDockable.Title)) RefreshWindowTitle();
+        if (e.PropertyName is not nameof(IDockable.Title)) return;
+        RefreshWindowTitle();
+        PostRefreshFloatingTitles();
     }
 
     /// <summary>Re-reads whether anything is unsaved and re-composes <see cref="WindowTitle"/>.</summary>
