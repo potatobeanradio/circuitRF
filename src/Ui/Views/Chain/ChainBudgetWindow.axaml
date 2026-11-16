@@ -277,7 +277,8 @@
                                 <!-- The link in front of the chain: a transmit antenna, the path, a receive antenna, and beneath
                                      them the model, the path loss, the margins and the link margin. -->
                                 <StackPanel Orientation="Horizontal" IsVisible="{Binding HasLink}">
-                                    <Border Classes="block" ToolTip.Tip="The link's propagation: the Link tab's Propagation section">
+                                    <Border Classes="block" Cursor="Hand" PointerPressed="OnPropagationPressed"
+                                            ToolTip.Tip="The link's propagation, from the Link tab's Propagation section. Click to open the Link bench Transfer to Schematic writes: the margins by Monte Carlo and the signal at two drops.">
                                         <StackPanel Spacing="1" MinWidth="104">
                                             <TextBlock Classes="small" Text="Propagation" FontWeight="SemiBold" FontSize="12"/>
                                             <Canvas Width="72" Height="30" HorizontalAlignment="Center" Margin="0,2">

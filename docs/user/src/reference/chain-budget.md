@@ -422,6 +422,7 @@ with more than one mixer gets most of them once per [conversion](#conversions):
 | `<chain> Canceller` | the canceller on its own: a wanted signal and an interference from MOD_Sources | envelope runs, swept | the depth against each error, the wanted signal's EVM, SNR and constellation with and without cancellation. See [The canceller](#canceller) |
 | `<chain> Demo` | a MOD_Source of NR 64-QAM and one of DBPSK per element; the LO with a phase-noise mask | envelope with `Noise=yes` and `EvmSplit=yes`, the input power swept | the constellation, the EVM against the input power, its noise and distortion parts. See [The demo](#demo) |
 | `<chain> TX` | a chain with a [link](#link): one transmit element's PA, an NR 64-QAM carrier from a MOD_Source, through its `Loss` | envelope, swept over the back-off from `Psat` | the output against the budget's Pout − Loss, the EVM and the adjacent-channel ratios. See [The TX bench](#tx) |
+| `<chain> Link` | a chain with a [link](#link) and no receive array: the TX bench's PA, a [Propagation Channel](components.html#propagationchannel) with the link's model, availability and fading, the receive chain, a modulated source | an S-parameter run swept over the drops; envelope with `Equalizer=pilot` at two of them | the outage at the budget's margin, the received power at the availability, the margin, the rain; EVM and BER at the median drop and at the outage drop. See [The Link bench](#link-bench) |
 
 The chain's parts are placed as written. Three things are the bench's and not the chain's:
 
@@ -457,6 +458,44 @@ output is 0.92 dB below `Psat` − 8 dB and the EVM 6.3 %, at 12 dB 0.41 dB and 
 ACPR the link needs, from this table. A memoryless PA's EVM and ACPR do not depend on the bandwidth, so the bench's NR
 carrier is the 15 kHz-spacing channel nearest the chain's bandwidth, 50 MHz at most; the subcarrier spacing changes
 neither the budget nor what a memoryless block does to a carrier's EVM.
+
+### The Link bench {#link-bench}
+
+The budget's received power and margins are closed forms; the Link bench simulates them. It is the TX bench's PA at the
+link's `Backoff`, its `Loss`, the path's `Attenuation` as an Attenuator, then a Propagation Channel `CH1` carrying the
+link's model with its distance, heights and every parameter of the Propagation section, its availability and its fading
+(`Fading`, `KFactor`, `m`), `f0` at the chain's frequency, `TxGain` = `AntennaGain` + 20·log10(`Elements`) and `RxGain`
+= `RxAntennaGain`. Then the receive chain as written and a 50 Ω Port. The source is the Demo bench's NR carrier at the
+link's `Modulation` (64-QAM when blank), or a single carrier filling the bandwidth on a satellite link and for BPSK or
+8PSK. Each drop is one realization of the channel: its shadowing, its fading (frozen, `fD=0`) and, with `Rain=drawn`,
+its rain.
+
+**The margins.** An S-parameter run is swept over `drop` from 1 to 100/(1 − p) drops at the availability p (10,000 at
+99 %, 100,000 at 99.9 %, at least 1,000 and at most 100,000), about a hundred of them below the margin. Each drop's
+received power is the PA's output at the antenna less the attenuation plus the channel's gain, its report's `Gain_dB`.
+The display sets beside the budget:
+
+| Row | Budget | Drops |
+|---|---|---|
+| outage at the margin | 1 − p | the fraction of drops below the budget's received power less its margins, with its exact 95 % interval |
+| received power at the availability | received power − margins | the drops' (1 − p) percentile |
+| margin | the margins taken | the budget's received power less that percentile |
+| rain at the availability (with `Rain`) | the rain margin | the drops' rain at the availability's percentile |
+
+and the drops' received power as a CDF, whole and around the margin. On a Rayleigh link at 99 % the outage at the
+20 dB margin reads 1 %, within its interval; on a geostationary link at 99.9 % with `Rain=drawn`, 0.1 % of the drops
+rain harder than the budget's rain margin. `Rain=drawn` is the bench's: the budget takes the rain at the availability,
+as `Rain=fixed` does, and the drop sweep draws the rain's time percentage for each drop.
+
+**The signal.** An envelope run with `Equalizer=pilot` at two drops picked from that sweep — its median and the drop at
+its (1 − p) percentile, ranked by received power — so EVM, counted BER and estimated BER are read where the budget says
+the link is typical and where it is about to fail. Beside each EVM, the EVM the budget's SNR gives at that drop's
+received power (noise alone, 1/√SNR); the difference is mostly the PA's distortion at its back-off, which the TX bench
+shows on its own. The transmit side is solved once and replayed into the second drop.
+
+A chain whose receive side is an array has no Link bench: a Propagation Channel reaches an array through a Phased
+Antenna Array end, which a bench does not emit. In the Blocks view, a click on the propagation card opens the Link bench
+once Transfer to Schematic has written it.
 
 ## More than one conversion {#conversions}
 

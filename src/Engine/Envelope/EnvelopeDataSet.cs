@@ -74,7 +74,8 @@ public static class EnvelopeDataSet
     public const int AmMinSamples = 16;
 
     /// <summary>A probe whose mean fundamental-band power is below this fraction of the available drive (−60 dB) carries
-    /// no RF: a supply or a bias probe. Its output rows are NaN.</summary>
+    /// no RF: a supply or a bias probe. Its output rows are NaN. Beyond a Propagation Channel the fraction is taken of the drive
+    /// less the path (<see cref="Build"/>'s <c>pathGain</c>), or a receiver 100 dB down the link would read as a supply.</summary>
     public const double NoRfFraction = 1e-6;
 
     /// <summary>The memory cloud keeps every m-th aligned sample, m the smallest that leaves at most this many.</summary>
@@ -91,8 +92,10 @@ public static class EnvelopeDataSet
     public const int MinimumSamples = 16;
 
     /// <param name="quiet">EvmSplit's second run, with every noise source and mask off (brief NZ-8); null without one.</param>
+    /// <param name="pathGain">brief-pch-11 — the power gain of the run's Propagation Channels at the carrier, at most 1 each and
+    /// multiplied: the no-RF test's drive is the drive less it.</param>
     public static DataSet Build(EnvelopeRunResult r, EnvelopeRunner.Plan plan, double skipS = 0, Action<string>? note = null,
-                                EnvelopeRunResult? quiet = null)
+                                EnvelopeRunResult? quiet = null, double pathGain = 1)
     {
         var ds = new DataSet();
         var pulse = EnvelopePulse.Of(r);
@@ -300,7 +303,7 @@ public static class EnvelopeDataSet
         {
             AddProbePower(ds, r, plan.SaveWaveforms, ks, branchAxis, pk, pf);
             // A probe carrying no RF is NaN in every output row, so the branch axis is the same at every sweep point.
-            var noRf = pf.Select(x => !(x >= NoRfFraction * pinW)).ToArray();
+            var noRf = pf.Select(x => !(x >= NoRfFraction * pinW * pathGain)).ToArray();
             static double Dbm(double w) => w > 0 ? 10 * Math.Log10(w * 1e3) : double.NaN;
 
             var psd = new List<double>(nb * 8192);

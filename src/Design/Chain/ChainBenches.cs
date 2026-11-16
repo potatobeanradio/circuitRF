@@ -17,6 +17,10 @@
 //                     two MOD_Sources, the depth against each error swept, and the EVM with and without cancellation.
 //   <chain> Demo      the chain demodulated end to end, NR 64-QAM and DBPSK, the LO with a phase-noise mask, over a
 //                     sweep of the input power: the constellation, the EVM and its noise and distortion parts.
+//   <chain> Link      a chain with a link and no receive array: the PA at its back-off, a Propagation Channel with the link's
+//                     model, availability and fading, the receive chain and a modulated source (ChainLinkBench). The margins
+//                     by a drop sweep of an S-parameter run, ≥ 100/(1 − p) drops, beside the budget's outage and margin; the
+//                     signal demodulated with the pilot equalizer at the sweep's median drop and at its outage drop.
 //   <chain> Steering  the elements and the combiner fed by a plane wave: one Port through a Combiner used as a
 //                     splitter whose path k has the wave's phase −(k − 1)·ψ_in, ψ = 360°·(d/λ)·sin θ. The phase
 //                     shifters steer from VAR theta_steer, a taper from VAR taper; a sweep of theta_in inside a sweep
@@ -54,7 +58,7 @@ using CircuitRF.Engine.HarmonicBalance;
 
 namespace CircuitRF.Design.Chain;
 
-public enum ChainBench { OneTone, TwoTone, Envelope, Steering, Combiners, Levels, Blockers, Canceller, Demo, Transmitter }
+public enum ChainBench { OneTone, TwoTone, Envelope, Steering, Combiners, Levels, Blockers, Canceller, Demo, Transmitter, Link }
 
 /// <summary>One bench: its cell name, its netlist, where each of its instances is drawn, and what it verifies: the chain
 /// named <paramref name="Chain"/>, the whole chain or one of its conversions (<see cref="ChainBenches.Conversions"/>),
@@ -82,6 +86,7 @@ public static class ChainBenches
         ChainBench.Blockers => chain + " Blockers",
         ChainBench.Demo    => chain + " Demo",
         ChainBench.Transmitter => chain + " TX",
+        ChainBench.Link    => chain + " Link",
         _                  => chain + " Canceller",
     };
 
@@ -135,7 +140,14 @@ public static class ChainBenches
         if (d.Blockers.Count > 0) b.Add(ChainBench.Blockers);
         if (d.Demo) b.Add(ChainBench.Demo);
         if (d.Stages.Any(s => s.Part == ChainParts.Canceller)) b.Add(ChainBench.Canceller);
-        if (d.Link is not null) b.Add(ChainBench.Transmitter);
+        if (d.Link is not null)
+        {
+            b.Add(ChainBench.Transmitter);
+            // A Propagation Channel reaches a receive array through a Phased Antenna Array end, which a bench does not emit.
+            if (d.Stages.All(s => s.Part != ChainParts.Combiner)) b.Add(ChainBench.Link);
+            else why?.Add("The receive chain is an array, which a Propagation Channel reaches through a Phased Antenna Array end, and a " +
+                          "bench does not emit one (phased-array.md §11): there is no Link bench.");
+        }
         int cmb = d.Stages.FindIndex(s => s.Part == ChainParts.Combiner);
         if (cmb < 0) return b;
         if (d.Stages.Take(cmb).Any(s => s.Part == ChainParts.Mixer))
@@ -228,8 +240,8 @@ public static class ChainBenches
                 notes?.AddRange(whole[b].Notes.Select(n => $"{whole[b].Text.CellName}: {n}."));
                 continue;
             }
-            // The TX bench is the transmitter's, not a conversion's: there is no per-conversion one to fall back on.
-            if (conv is null || b == ChainBench.Transmitter) { leftOut?.Add($"{CellName(chain, b)} is not written: {why}."); continue; }
+            // The TX and Link benches are the link's, not a conversion's: there is no per-conversion one to fall back on.
+            if (conv is null || b is ChainBench.Transmitter or ChainBench.Link) { leftOut?.Add($"{CellName(chain, b)} is not written: {why}."); continue; }
             var made = new List<string>();
             foreach (var c in conv)
             {
@@ -371,6 +383,15 @@ public static class ChainBenches
         var left = new List<string>();
         BenchesFor(d, left);
         return new(paths, [], [.. r.Notes, .. notes, .. left, .. planned]);
+    }
+
+    /// <summary>The schematic of the bench <paramref name="cell"/> a transfer wrote under <paramref name="workspaceDir"/>, or null
+    /// when it has not been written (or its schematic folder holds no single primary view).</summary>
+    public static string? WrittenSchematic(string workspaceDir, string cell)
+    {
+        string dir = Path.Combine(workspaceDir, cell);
+        var primary = CellFolder.ResolvePrimary(dir, ViewType.Schematic);
+        return primary.ResolvedName is { } name ? Path.Combine(CellFolder.SubFolderPath(dir, ViewType.Schematic), name) : null;
     }
 
     /// <summary>
@@ -602,6 +623,7 @@ public static class ChainBenches
             if (bench == ChainBench.Combiners) return EmitCombiners();
             if (bench == ChainBench.Canceller) return EmitCanceller();
             if (bench == ChainBench.Transmitter) return EmitTransmitter();
+            if (bench == ChainBench.Link) return EmitLink();
             int n = N, nb = Branch;
             bool array = n > 1;
             double frf = d.FrequencyHz;
@@ -1047,6 +1069,128 @@ public static class ChainBenches
             _meas.Add($"EVM_at = ENVT.EVM_pct[{k}, \"Iout\", 0]");
             _meas.Add($"ACPR_L_at = ENVT.ACLR[{k}, \"Iout\", 0, \"ACPR1L\"]");
             _meas.Add($"ACPR_U_at = ENVT.ACLR[{k}, \"Iout\", 0, \"ACPR1U\"]");
+            return Text();
+        }
+
+        /// <summary>
+        /// The Link bench (brief PCH-11): the TX bench's PA at the link's back-off, its Loss, the path's attenuation, a Propagation
+        /// Channel with the link's model, availability and fading (<see cref="ChainLinkBench.ChannelParameters"/>), the receive
+        /// chain and a 50 Ω Port, driven by a modulated source (<see cref="ChainLinkBench.Signal"/>). Two analyses: an S-parameter
+        /// run swept over the drops, each drop's received power the PA's output at the antenna less the attenuation plus the
+        /// channel's gain (its report's Gain_dB), set against the budget's outage and margin; and an envelope run with the pilot
+        /// equalizer at the sweep's median drop and at its outage-percentile drop, beside the EVM the budget's SNR gives there.
+        /// </summary>
+        private ChainBenchText EmitLink()
+        {
+            var link = d.Link!;
+            var lb = link.Budget(d.FrequencyHz);
+            if (lb.Propagation is not { } prop)
+            {
+                Refusal ??= "the link's propagation is refused";
+                return Text();
+            }
+            double psat = ChainValue.Or(link.GetTx("Psat"), 0), bo = ChainValue.Or(link.GetTx("Backoff"), 0);
+            double g = ChainValue.Or(link.GetTx("PaGain"), 0), loss = ChainValue.Or(link.GetTx("Loss"), 0);
+            double avail = prop.Margins.AvailabilityPct, margin = prop.Margins.AppliedDb, atm = prop.AttenuationDb;
+            int drops = ChainLinkBench.Drops(avail);
+            if (ChainLinkBench.Wanted(avail) > ChainLinkBench.MaxDrops)
+                Notes.Add($"an availability of {F(avail)} % asks for {G(ChainLinkBench.Wanted(avail))} drops to see a hundred below the margin; " +
+                          $"the drop sweep runs {ChainLinkBench.MaxDrops}, so its outage is read from fewer events and its interval is wider");
+            var sig = ChainLinkBench.Signal(d);
+            EnvelopeFits((d.FrequencyHz, sig.OccupiedHz));
+            string chParams = ChainLinkBench.ChannelParameters(d, lb, Notes);
+            ChainLinkBench.Picks picks;
+            try { picks = ChainLinkBench.Pick(chParams, drops, avail); }
+            catch (Exception ex) when (ex is CircuitRF.Core.Devices.ParameterRefusalException or CircuitRF.Core.Expressions.ExpressionException)
+            {
+                Refusal ??= $"its Propagation Channel is refused: {ex.Message}";
+                return Text();
+            }
+
+            _vars.AddRange([$"Frf = {G(d.FrequencyHz)}", $"Psat = {G(psat)}", $"PaGain = {G(g)}", $"Loss = {G(loss)}", $"BO = {G(bo)}",
+                            "Pin = Psat - BO - PaGain", "drop = 1"]);
+            Line($"MOD_Source:SRC  in  0  Fc=Frf  Pavg=Pin dBm  Z=50 Ohm  Carrier[1]=\"{sig.Carrier}\"  Record=0.0005");
+            Place("SRC", 0, 200);
+            Line($"Amp:PA  in  0  pa  0  Gain=PaGain dB  IP3=Psat+{G(TanhPsatBelowOip3Db)} dBm  IP3Ref=Output");
+            Place("PA", 800, 0);
+            Line("Atten:LOSS  pa  0  ant  0  Loss=Loss dB  Z0=50 Ohm");
+            Place("LOSS", 1600, 0);
+            _x = 1600 + 300 + Lead;
+            _y = 0;
+            string tx = "ant";
+            if (atm > 0)
+            {
+                // The path's own attenuation, which the channel's models do not carry: on the transmit side, where the noise of
+                // an attenuator at the ambient is the path's loss below the receiver's.
+                Line($"Atten:PATH  ant  0  path  0  Loss={G(atm)} dB  Z0=50 Ohm");
+                Inline("PATH", 300);
+                tx = "path";
+            }
+            Line($"PropagationChannel:{ChainLinkBench.Channel}  {tx}  rx  {chParams}");
+            Inline(ChainLinkBench.Channel, 400);
+            var v1 = new int[1 + Mixers]; v1[0] = 1;
+            var v3 = new int[1 + Mixers];
+            int lo = 1;
+            double f = d.FrequencyHz;
+            string cur = "rx";
+            for (int j = 0; j < d.Stages.Count; j++)
+            {
+                var s = d.Stages[j];
+                string net = j == d.Stages.Count - 1 ? "out" : $"n_{s.Name}";
+                _stage = j;
+                Stage(s, s.Name, cur, net, ref f, v1, v3, ref lo, 1, 1);
+                _stage = -1;
+                cur = net;
+            }
+            // The Port is the load the envelope reads through Iout, and the S-parameter run's one port.
+            Line("IProbe:Iout  out  load");
+            Line("Port:PO  load  0  Num=1  Z=50 Ohm");
+            Place("Iout", _x, _y - 100);
+            Place("PO", _x + 600, _y + 200);
+
+            // The margins: the received power over the drops, against the budget's.
+            double ptx = psat - bo - loss - atm, thr = lb.PrxDbm - margin;
+            double outage = Math.Round(1 - avail / 100, 12);
+            _analyses.Add($"analysis SPL type=sparam start=\"{G(d.FrequencyHz)}\" stop=\"{G(d.FrequencyHz)}\" npts=1");
+            _analyses.Add($"analysis MC type=parametric_sweep Var=drop Start=1 Stop={drops} Step=1 Inner=SPL");
+            _meas.Add($"Prx_sim = {G(ptx)} + SPL.link(\"{ChainLinkBench.Channel}\", \"Gain_dB\")");
+            _meas.Add($"Prx_calc = {G(lb.PrxDbm)}");
+            _meas.Add("PrxMedian_sim = median_over(Prx_sim, \"drop\")");
+            _meas.Add($"Outage_calc = {G(outage)}");
+            _meas.Add($"Outage_sim = outage_over(Prx_sim, {G(thr)}, \"drop\")");
+            _meas.Add("Outage_err = Outage_sim - Outage_calc");
+            _meas.Add($"PrxAvail_calc = {G(thr)}");
+            _meas.Add($"PrxAvail_sim = pctl_over(Prx_sim, {G(100 - avail)}, \"drop\")");
+            _meas.Add("PrxAvail_err = PrxAvail_sim - PrxAvail_calc");
+            _meas.Add($"Margin_calc = {G(margin)}");
+            _meas.Add("Margin_sim = Prx_calc - PrxAvail_sim");
+            _meas.Add("Margin_err = Margin_sim - Margin_calc");
+            _meas.Add("Prx_cdf = cdf(Prx_sim)");
+            if (ChainLinkBench.ReportsRain(d))
+            {
+                _meas.Add($"Rain_calc = {G(prop.Margins.RainDb)}");
+                _meas.Add($"Rain_sim = pctl_over(SPL.link(\"{ChainLinkBench.Channel}\", \"Rain_dB\"), {G(avail)}, \"drop\")");
+                _meas.Add("Rain_err = Rain_sim - Rain_calc");
+            }
+
+            // The signal at two drops: the median and the outage percentile.
+            long[] at = picks.MedianDrop == picks.OutageDrop ? [picks.MedianDrop] : [picks.MedianDrop, picks.OutageDrop];
+            if (!picks.Varies) Notes.Add("nothing is drawn from drop to drop (no fading, shadowing or drawn rain), so the envelope runs at drop 1 alone");
+            _analyses.Add($"analysis ENVL type=env Stop=0.5e-3 Step=auto Accuracy=draft MaxHarm=1 MaxMixOrder={Math.Max(2, 1 + 2 * Mixers)} " +
+                          "Segments=auto Warmup=auto Start=0 Tol=1e-6 SaveWaveforms=no Noise=yes Equalizer=pilot");
+            _analyses.Add($"analysis SWD type=parametric_sweep Var=drop Values={string.Join(",", at)} Inner=ENVL");
+            double floor = 10 * Math.Log10(ChainBudget.K * (d.TemperatureK + _t.TeK) * sig.NoiseBandwidthHz) + 30;
+            foreach (var (tag, drop, gain, k) in new[] { ("med", picks.MedianDrop, picks.MedianGainDb, 0), ("out", picks.OutageDrop, picks.OutageGainDb, at.Length - 1) })
+            {
+                _meas.Add($"Drop_{tag} = {drop}");
+                _meas.Add($"Prx_{tag} = {G(ptx + gain)}");
+                _meas.Add($"SNR_{tag}_calc = {G(ptx + gain - floor)}");
+                _meas.Add($"EVM_{tag}_calc = 100*10^(-SNR_{tag}_calc/20)");
+                _meas.Add($"EVM_{tag}_sim = ENVL.EVM_pct[{k}, \"Iout\", 0]");
+                _meas.Add($"EVM_{tag}_err = EVM_{tag}_sim - EVM_{tag}_calc");
+                _meas.Add($"BER_{tag}_sim = ENVL.BER[{k}, \"Iout\", 0]");
+                _meas.Add($"BERest_{tag}_sim = ENVL.BERest[{k}, \"Iout\", 0]");
+            }
             return Text();
         }
 

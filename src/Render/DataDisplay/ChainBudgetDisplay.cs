@@ -57,6 +57,7 @@ public static class ChainBudgetDisplay
             case ChainBench.Canceller: return Display(chain, bench, src, Canceller(src));
             case ChainBench.Demo: return Display(chain, bench, src, Demo(src, ChainBenches.DemoPowers(budget.Totals!)));
             case ChainBench.Transmitter: return Display(chain, bench, src, Transmitter(src));
+            case ChainBench.Link: return Display(chain, bench, src, Link(src, ChainLinkBench.ReportsRain(design), ChainLinkBench.Tail(design)));
         }
         double bocc = ChainBenches.Carrier(design.BandwidthHz).OccupiedHz / 1e6;
         var (rows, perStage) = bench switch
@@ -334,6 +335,54 @@ public static class ChainBudgetDisplay
                  [Over(src, "ACPR_L", bo, "lower", C(3), true), Over(src, "ACPR_U", bo, "upper", C(5), true)]),
             t,
         ];
+    }
+
+    /// <summary>The Link bench (brief PCH-11): the margins by Monte Carlo — the outage at the budget's margin with its interval,
+    /// the received power at the availability, the margin those drops need and, with rain, its term at the availability — each
+    /// budget, simulated and difference; the drops' received power as a CDF; and the signal at the median and the outage drop.</summary>
+    private static List<PlotContainerConfig> Link(string src, bool rain, (double Threshold, double Outage)? tail)
+    {
+        var rows = new List<PlotContainerConfig>
+        {
+            Table("Outage at the budget's margin", src,
+                  [("Outage_calc", "Outage at the margin: budget"), ("Outage_sim", "drops"), ("Outage_err", "difference"),
+                   ("Outage_sim:lo", "95 % low"), ("Outage_sim:hi", "95 % high")], first: 220),
+            Table("Received power at the availability", src,
+                  [("PrxAvail_calc", "Received at the availability: budget, dBm"), ("PrxAvail_sim", "drops"), ("PrxAvail_err", "difference")], first: 280),
+            Table("Margin", src, [("Margin_calc", "Margin: budget, dB"), ("Margin_sim", "drops"), ("Margin_err", "difference"),
+                                  ("Prx_calc", "budget Prx, dBm"), ("PrxMedian_sim", "median Prx, dBm")], first: 220),
+        };
+        if (rain)
+            rows.Add(Table("Rain at the availability", src, [("Rain_calc", "Rain at the availability: budget, dB"), ("Rain_sim", "drops"),
+                                                              ("Rain_err", "difference")], first: 280));
+        foreach (var (tag, what) in new[] { ("med", "At the median drop"), ("out", "At the outage drop") })
+            rows.Add(Table(what, src,
+                [($"EVM_{tag}_calc", $"{what}: EVM from the budget's SNR, %"), ($"EVM_{tag}_sim", "simulated"), ($"EVM_{tag}_err", "difference"),
+                 ($"BER_{tag}_sim", "BER counted"), ($"BERest_{tag}_sim", "BER estimated"), ($"Prx_{tag}", "received, dBm"), ($"Drop_{tag}", "drop")],
+                first: 330));
+        double y = 0;
+        foreach (var t in rows)
+        {
+            t.Top = y;
+            y += H + Gap;
+            // A BER of 1e-6 and a drop number read as what they are, not as 0.0000 and 446.0000.
+            foreach (var tr in t.Traces.Where(x => x.CubeName is { } c && (c.StartsWith("BER", System.StringComparison.Ordinal) || c.StartsWith("Drop_", System.StringComparison.Ordinal))))
+                tr.FormatString = PrecisionFormat.G;
+        }
+        TraceConfig Cdf() => new()
+        {
+            SourcePath = src, CubeName = "Prx_cdf", Label = "drops",
+            CubeSlice = [new AxisSliceConfig { AxisName = "value", Role = AxisRole.KeepAsX }],
+            Properties = new TracePropertiesConfig { LineWidth = 2, LineColorIndex = C(1), MarkerColorIndex = C(1) },
+        };
+        const string x = "received power per element, dBm", yl = "fraction of drops below";
+        rows.Add(Rect("The received power over the drops", x, yl, 0, y, 560, 360, [Cdf()]));
+        // The tail the margin is about, framed on it: the budget's outage is at its margin's received power, a fifth of the
+        // way up, so the drops' curve crosses there when the two agree.
+        if (tail is var (thr, q) && q > 0)
+            rows.Add(Rect($"The tail: {q:0.####} below {thr:0.#} dBm, by the budget", x, yl, 560 + Gap, y, 560, 360, [Cdf()],
+                          (0, 5 * q), (thr - 15, thr + 10)));
+        return rows;
     }
 
     /// <summary>A constellation as the signal-quality preset draws it: the received points over the ideal ones, Im

@@ -400,6 +400,26 @@ public sealed partial class Evaluator
             return new Value(ds.PortTrace(accessorName, pi, pj));
         }
 
+        // ── link("CH1", "Gain_dB") — a Propagation Channel's report cube link:<instance>:<quantity> (brief PCH-11), whose name
+        // holds colons no identifier can; a sweep's axes come with it ──
+        if (accessorName == "link" && cl.Args.Length == 2 && !ds.Contains(accessorName))
+        {
+            var inst = EvalExpr(cl.Args[0], scope);
+            var quantity = EvalExpr(cl.Args[1], scope);
+            if (inst.Kind != ValueKind.String || quantity.Kind != ValueKind.String)
+                throw new ExpressionException($"{cl.Name}(): the channel and the quantity are both quoted, e.g. {cl.Name}(\"CH1\", \"Gain_dB\").");
+            string name = $"link:{inst.AsString()}:{quantity.AsString()}";
+            if (!ds.Contains(name))
+            {
+                string prefix = $"link:{inst.AsString()}:";
+                var have = ds.Cubes.Keys.Where(n => n.StartsWith(prefix, StringComparison.Ordinal)).Select(n => n[prefix.Length..]).ToList();
+                throw new ExpressionException(have.Count == 0
+                    ? $"{cl.Name}(): '{analysisName}' reports no Propagation Channel '{inst.AsString()}'."
+                    : $"{cl.Name}(): '{analysisName}' reports no '{quantity.AsString()}' for '{inst.AsString()}'; it reports {string.Join(", ", have)}.");
+            }
+            return new Value(ds[name]);
+        }
+
         // ── P("probe"[, k]) / Pt("probe") — power through an IProbe (brief ENV-MEAS-2) ──
         // Taken when the first argument is a string and no cube is literally named P / Pt; a DataSet that
         // holds one keeps the generic positional path below (no analysis emits one).

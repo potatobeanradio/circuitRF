@@ -81,6 +81,7 @@ HB1.I("M1:d", 1, All)  device-port branch current, fundamental, swept
 DC1.I("Iout")          no sweep → a scalar
 HB1.P("Iout")          power through IProbe Iout, fundamental band, in W — see Power through an IProbe
 ENV1.Pt("Iout")        the same power at every envelope step (SaveWaveforms=yes)
+SP1.link("CH1", "Gain_dB")   a Propagation Channel's report cube link:CH1:Gain_dB, every sweep axis kept
 ```
 
 **Why use it:** it is order-independent — the engine locates each axis by name, so adding or

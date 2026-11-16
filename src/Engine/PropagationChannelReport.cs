@@ -38,9 +38,15 @@ public static class PropagationChannelReport
             string key = $"link:{ec.InstancePath}:";
             var terms = r.LargeScale.Terms;
             ds.Add(key + "PathLoss_dB", DataCube.Scalar(r.LargeScale.LossDb));
+            // brief-pch-11 — the drop's channel as the receive pin sees it: 20·log10|H| at the reference frequency and TimeOffset, the
+            // ends' antenna gains, the shadowing and the fading in it; and the rain term alone, which a drawn rain moves from drop to drop
+            if (!ch.HasInstanceEnd) ds.Add(key + "Gain_dB", new DataCube([], [20 * Math.Log10(ch.H(r.ReferenceHz).Magnitude)]) { Unit = "dB" });
+            if (terms.FirstOrDefault(t => t.Name.StartsWith("P.530 rain", StringComparison.Ordinal) || t.Name.StartsWith("P.618 rain", StringComparison.Ordinal)) is { } rain)
+                ds.Add(key + "Rain_dB", new DataCube([], [rain.Db]) { Unit = "dB" });
             if (terms.Count > 0)
                 ds.Add(key + "Loss_dB", new DataCube([new Axis("term", [.. Enumerable.Range(0, terms.Count).Select(i => (double)i)], "",
-                                                               [.. terms.Select(t => t.Name)])], [.. terms.Select(t => t.Db)]) { Unit = "dB" });
+                                                               [.. terms.Select(t => TermLabel(t.Name, r.Drop?.RainTimePercent is not null))])],
+                                     [.. terms.Select(t => t.Db)]) { Unit = "dB" });
             ds.Add(key + "Delay0_s", DataCube.Scalar(r.BulkDelayS));
             ds.Add(key + "Doppler0_Hz", DataCube.Scalar(r.CommonDopplerHz));
             ds.Add(key + "Reference_Hz", DataCube.Scalar(r.ReferenceHz));
@@ -59,6 +65,17 @@ public static class PropagationChannelReport
                     "leave the harmonic grid) and its fading frozen there; an envelope run carries both.");
         }
     }
+
+    /// <summary>
+    /// brief-pch-11 — a term's label on the Loss_dB axis: its name, but for a drawn rain, whose name carries the drop's own time
+    /// percentage. Stacked over a drop sweep, every drop's distinct label became a term of its own: 10,000 drops wrote a 10,000 ×
+    /// 10,001 cube (807 MB). The label is the same at every drop; the percentage is RainTime_pct.
+    /// </summary>
+    private static string TermLabel(string name, bool drawnRain)
+        => !drawnRain ? name
+         : name.StartsWith("P.530 rain", StringComparison.Ordinal) ? "P.530 rain (drawn)"
+         : name.StartsWith("P.618 rain", StringComparison.Ordinal) ? "P.618 rain (drawn), clouds and scintillation"
+         : name;
 
     /// <summary>
     /// brief-pch-10 R-pch10-1 — what the drop drew, so a sweep over Drop stacks each one's statistics: the shadowing (dB, added to the loss),

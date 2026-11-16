@@ -668,7 +668,8 @@ density in dBm/Hz.
 Every IProbe gets every row, so the branch axis is the same at every sweep point. A probe that carries
 no RF, such as a supply or bias probe, is blank in the output rows (`Gt_dB`, `DE_pct`, `NMSE_dB`,
 `ACLR`, `PAPR_dB`, `CCDF`, AM-AM, AM-PM and EVM): its fundamental-band power is below 10⁻⁶ of the available
-drive. Its `Pprobe_W` still reads its DC power.
+drive, or, past a Propagation Channel, of the drive less the channel's own power gain (each channel's |H|² at the
+carrier), so a receiver at the end of a long path is read. Its `Pprobe_W` still reads its DC power.
 
 A design with a [wBond](wbond.html) also gets `WireTemp` and `WireTempState` (axis `wire array`): each array's
 hottest wire under the record's average heat ([wBond ▸ In a circuit envelope run](wbond.html#wt-envelope)).

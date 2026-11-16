@@ -34,6 +34,7 @@ flowchart LR
     write --> canc["Canceller bench<br/>envelope, real signals"]
     write --> demo["Demo bench (asked for)<br/>demodulated end to end"]
     write --> tx["TX bench (a link)<br/>the PA against its back-off"]
+    write --> link["Link bench (a link, no array)<br/>drop sweep of the margins,<br/>envelope at two drops"]
     calc --> levels["ChainLevels<br/>every node"] --> table
     one --> cdd["one .cdd per bench<br/>(ChainBudgetDisplay):<br/>budget | simulated | difference"]
     two --> cdd
@@ -383,6 +384,25 @@ at MaxMixOrder 5; a per-conversion
 24.6 MHz) reflected 14 % at the IM3 frequencies, so the node before it read the IM3 1.1 dB low, and its skirt took
 0.08 dB off the output's IM3 (the first whole-chain 2-Tone's +0.038 dB); a 5th-order filter of 13.6 to 33.6 MHz keeps
 the Levels on the budget to 4×10⁻⁴ dB.
+
+**The Link bench: the margins by drops, the signal at two of them** (brief PCH-11; `ChainLinkBench`). The link becomes
+a Propagation Channel with the chain's own values (the budget's, read at the frequency), its fading frozen per drop, and
+the margins are checked by an S-parameter run swept over `drop`, about 100/(1 − p) drops: S-parameters are the cheapest
+analysis that carries the channel's report, about 0.3 ms a drop. A drop's received power is the PA's output at the
+antenna less the attenuation plus the channel's own 20·log10|H| (`link:CH1:Gain_dB`, which the report now writes for a
+pin-end channel), not S21 through the chain: a mixer converts nothing in an S-parameter run, so S21 to the output is no
+received power for a superhet. A measurement names that cube as `SPL.link("CH1", "Gain_dB")`, an accessor added to the
+expression engine because a `link:…` name holds colons no identifier can. The envelope's two drops are picked **when the
+bench is written**, not after the sweep runs: an analysis cannot take its sweep values from another's result. Each
+drop's channel is the one the run elaborates — the same parameters, instance path and draws — evaluated at f0 once per
+drop (about 25 µs, in parallel, cached by its arguments since every listing of the benches builds it), and the gate
+holds the picks to the run's own ranks. Three things it took: the budget refused `Rain=drawn` (a single evaluation has
+no drop to draw for), so the budget now takes it as `Rain=fixed`, which the drops then check; an envelope probe whose
+power was below 10⁻⁶ of the drive read as carrying no RF, which past a 100 dB path is every receiver, so that test now
+allows for each channel's |H|² at the carrier; and a receive array is left out, since a channel reaches one only through
+a Phased Antenna Array end, which a bench does not emit (`phased-array.md` §11). On a 2 GHz Rayleigh link at 99 % the
+10,000 drops read 1.05 % below the 19.98 dB margin (interval 0.86 to 1.27 %); at the median drop 7.8 % EVM, 6.7 points
+of it the PA's distortion at 8 dB of back-off, and at the outage drop 14.9 % with a BER of 4 %.
 
 ## 4. Verification
 

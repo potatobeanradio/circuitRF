@@ -5321,3 +5321,21 @@ absolute). Gates: Ui `ReceiveArrayFeedTests` — equality through rays and CDL-C
 reusing drop sweep into 32 × 32 replaces 1026 parts with the transmit pin solved once (64 × 64 does the same in 43 s, too long for the
 routine tier), and the couplings evaluate each pattern class once per ray (`PatternEvaluations`: 480 rays → 481, the extra one the line
 of sight the pin end's polarization is matched along; R-pch10b-2 was already so, the per-direction cache in `ArrayField.Toward`).
+## An envelope probe past a Propagation Channel read as carrying no RF (brief PCH-11, 2026-11-15)
+
+`EnvelopeDataSet` blanks every output row of a probe whose fundamental-band power is below `NoRfFraction` (10⁻⁶, −60 dB) of the
+available drive, meant for a supply or bias probe. A receiver at the end of a link sits 60 to 140 dB below the drive, so a Link
+bench drop in a 10 dB fade (−61 dBm out of a 2 dBm drive) came back with no EVM, BER, Gt or ACLR at all while the drop beside it,
+at −52 dBm, read 9 %; and a sweep over the two refused to stack (`SINR_dB` one element against 7 × 1272). `EnvelopeRunner.PathGain`
+now passes `Build` the product of each pin-end channel's |H|² at the carrier, at most 1 each, and the threshold is 10⁻⁶ of the drive
+times that. A circuit with no channel is unchanged to the bit.
+
+## A drawn rain's term label grew a drop sweep's result as N² (brief PCH-11, 2026-11-15)
+
+`AddedLosses` names a drawn rain's term with the drop's own time percentage ("P.618 rain at 0.0321 % of the time (drawn), …"),
+and `PropagationChannelReport` used term names as the `Loss_dB` cube's `term` labels. Stacked over a drop sweep, every drop's
+label was a term of its own: 10,000 drops of a geostationary link wrote `link:CH1:Loss_dB` as 10,000 × 10,001 (807 MB, 19 s);
+30,000 reached 5.7 GB before it was stopped. The report now labels a drawn rain `P.530 rain (drawn)` or `P.618 rain (drawn),
+clouds and scintillation` (`TermLabel`); the percentage is `RainTime_pct`. 10,000 drops: 6 MB, 2.3 s; the Link bench's own
+100,000: 64 MB, 14.6 s. The term's name in the model's notes is unchanged.
+

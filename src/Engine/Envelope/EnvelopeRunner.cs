@@ -506,14 +506,29 @@ public static class EnvelopeRunner
                     $"Envelope '{plan.Name}': EvmSplit=yes has nothing to split - the run has no Noise and no PhaseNoise mask - so it ran once.");
         }
         double skip = SettleSkip(prepared, merged);
-        var ds = EnvelopeDataSet.Build(merged, plan, skip, note, quiet);
+        double carrierHz = merged.Sources.Length > 0 ? merged.Sources[0].FcHz : merged.F0Hz;
+        var ds = EnvelopeDataSet.Build(merged, plan, skip, note, quiet, PathGain(nets[0], carrierHz));
         double[] productHz = merged.MixFreqHz ?? [.. Enumerable.Range(0, merged.MaxHarm + 1).Select(k => k * merged.F0Hz)];
         EnvelopeWireTemperature.Add(ds, nets[0], merged, productHz, skip);
-        PropagationChannelReport.Add(ds, nets[0], merged.Sources.Length > 0 ? merged.Sources[0].FcHz : merged.F0Hz, env: ChannelSpan(merged));
+        PropagationChannelReport.Add(ds, nets[0], carrierHz, env: ChannelSpan(merged));
         ds.Add("__EnvSegments", DataCube.Scalar(segs));
         ds.Add("__EnvWarmup_s", DataCube.Scalar(warm));
         ds.Add("__EnvSeamError", DataCube.Scalar(seam));
         return ds;
+    }
+
+    /// <summary>brief-pch-11 — the power gain |H|² of each pin-end Propagation Channel at the carrier, at most 1 each, multiplied: what
+    /// the no-RF test of a probe allows for, so a receiver past a long path is read rather than taken for a supply.</summary>
+    private static double PathGain(ElaboratedNetlist nl, double carrierHz)
+    {
+        double g = 1;
+        foreach (var ec in nl.Components)
+        {
+            if (ec.Model is not CircuitRF.Core.Devices.PropagationChannelModel ch || ch.HasInstanceEnd) continue;
+            try { double h = ch.H(ch.ReferenceHz(carrierHz)).Magnitude; g *= Math.Min(1, h * h); }
+            catch (CircuitRF.Core.Devices.ParameterRefusalException) { }   // the run itself said why
+        }
+        return g;
     }
 
     /// <summary>brief-pch-7 — the span a Propagation Channel's report reads its tap gains and H(f, t) over: the run's time axis, the

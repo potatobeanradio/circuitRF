@@ -417,6 +417,33 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
     }
 
     /// <summary>
+    /// The Blocks view's propagation card opens the chain's Link bench (brief PCH-11 R-pch11-4), once Transfer to Schematic has
+    /// written it beside the chain; before that, and for a chain that has no Link bench, the Messages panel says why.
+    /// </summary>
+    private void OnPropagationPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        if (Vm is not { } vm || sender is not Visual v || !e.GetCurrentPoint(v).Properties.IsLeftButtonPressed) return;
+        e.Handled = true;
+        var sink = Messages(_owner);
+        var design = vm.ToDesign();
+        var why = new List<string>();
+        if (!ChainBenches.BenchesFor(design, why).Contains(ChainBench.Link))
+        {
+            sink?.Info("Link bench: " + (why.FirstOrDefault(x => x.Contains("Link bench", StringComparison.Ordinal)) ?? "the chain has no link."));
+            return;
+        }
+        string? path = vm.FilePath is { } fp
+            ? ChainBenches.WrittenSchematic(Path.GetDirectoryName(fp)!, ChainBenches.CellName(Path.GetFileNameWithoutExtension(fp), ChainBench.Link))
+            : null;
+        if (path is null)
+        {
+            sink?.Info("Link bench: Transfer to Schematic writes it beside the chain, with its Data Display; then this opens it.");
+            return;
+        }
+        WorkspaceLocator.For(_owner)?.OpenDocumentByPath(path);
+    }
+
+    /// <summary>
     /// Transfer to Schematic: the chain is saved first, because the benches go beside it — into the folder the
     /// <c>.cchain</c> is in, named after it — and a display that reads results needs a workspace to find them in.
     /// </summary>

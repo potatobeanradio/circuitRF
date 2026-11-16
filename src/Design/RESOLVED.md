@@ -32089,3 +32089,36 @@ to the floor.
 - **Not done.** The 3D view panel's padding tooltip (`C3dProblemAssembly.DefaultPaddingBasis`/`ShortBasis`) reads the elaboration
   alone, which has no ports. It still names the H rule where the run uses the column; the run's note and `explain` are right.
   No panel control for Return: it is a `.cem` key, and the cut entry's other per-pin options are edited the same way.
+## brief-pch-11 — the Chain Budget's Link bench (2026-11-15)
+
+- **The received power is the channel's own gain, not S21 through the chain.** A Mixer converts nothing in an S-parameter run
+  (`MixerModel.Stamp` is empty), so S21 to a superhet's output is leakage, not received power. Each drop's received power is
+  the PA's output at the antenna less the path's attenuation plus `link:CH1:Gain_dB`, 20·log10|H(f0)| at TimeOffset, which
+  `PropagationChannelReport` now writes for a pin-end channel. The S-parameter run stays the drop sweep's inner analysis: it is
+  the cheapest analysis that carries the report (about 0.3 ms a drop; 10,000 drops in ~3 s).
+- **A measurement could not name a `link:…` cube.** The tokenizer's identifiers hold no colon, so `SP1.link:CH1:Gain_dB` is three
+  tokens. `Evaluator.EvalQualifiedAccessor` gains `A.link("CH1", "Gain_dB")`, taken only when no cube is literally named `link`,
+  refusing an unknown quantity by listing the ones the channel reports.
+- **The envelope's two drops are picked when the bench is written.** An analysis's sweep values cannot come from another
+  analysis's result, so `ChainLinkBench.Pick` elaborates the channel line once (as the bench elaborates it), rebuilds the model at
+  each drop with the same parameters and `InstancePath`, so the same draws, and ranks |H(f0)|. About 25 µs a drop in Release,
+  run in parallel and cached by its arguments, because every listing of a chain's benches (the window's levels refresh, the
+  display writer, `check`) builds the Link bench. The gate holds each pick's received power to the run's own drop to 1e-9 and
+  to the sweep's sorted ranks 5,000 and 100 (of 10,000).
+- **`Rain=drawn` refused the budget.** `AddedLosses.Atmosphere` refuses a drawn rain in a single evaluation, which a budget is.
+  `ChainPropagation.Evaluate` now hands the model `Rain=fixed` and notes it; the Link bench passes `drawn` through to the channel.
+- **The outage drop's rank is rounded before its floor** (`ChainLinkBench.OutageRank`): 1 − 99.9/100 is 0.000999999… in
+  binary, so (1 − p)·N floored to rank 99 of 100,000 where 99 % gives rank 100 of 10,000. Measured on a geostationary bench:
+  rank 99 was drop 100,000, which looked like an off-by-one in the draws and was not.
+- **`Fading=none` is refused by the channel** ("Fading=none is rayleigh, rician or nakagami"), where the chain writes `none`
+  for no fading: the bench leaves the key out.
+- **The chain's `Sigma` has no channel key** unless the model owns it; the channel draws the model's own σ, and Transfer says so
+  when the stated σ differs. `Los=auto` draws the line-of-sight state per drop where the budget takes the more probable one; also
+  said.
+- **A receive array has no Link bench**: `BenchesFor` leaves it out with the reason, since a channel reaches an array only through
+  a Phased Antenna Array end (phased-array.md §11). That also keeps every existing array test's bench count.
+- Numbers (gate 1): 2 GHz, 500 m free space, Rayleigh at 99 %: 1.05 % of 10,000 drops below the 19.98 dB margin, interval 0.86 to
+  1.27 %; median drop EVM 7.8 % against 1.1 % from its SNR (the PA at 8 dB of back-off), outage drop 14.9 % against 9.5 %, BER
+  0.040 counted, 0.042 estimated. Gate 2: 12 GHz geostationary at 99.9 %, P.618 rain 2.14 dB at 0.1 %: 6 of 10,000 drawn drops
+  above it (interval 0.022 to 0.131 %); with `Rain=fixed` every drop's term equals it to 1e-9 dB.
+
