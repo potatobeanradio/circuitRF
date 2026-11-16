@@ -42,7 +42,8 @@
 <p>RF dividers and couplers placed as single parts, each stated by its specifications and drawn from the same plan its
 circuit model simulates. One cell per component, each at 2.4 GHz on a 20 mil RO4350B board, laid out by Update Layout
 from Schematic and solved on the Planar MoM solver, EMerge and Palace. The workspace holds the <strong>Wilkinson divider</strong> (an
-MWPD) with an <strong>unequal split</strong>, a <strong>two-section broadband divider</strong> and a <strong>four-way tree</strong>; the <strong>branch-line hybrid</strong>
+MWPD) with an <strong>unequal split</strong>, a <strong>two-section broadband divider</strong>, a <strong>four-way tree</strong> and <strong>mitred and square
+corners</strong>; the <strong>branch-line hybrid</strong>
 (an MBLC); the <strong>rat-race hybrid</strong> (an MRRC); the <strong>coupled-line coupler</strong> (an MCLC); and the <strong>coupled-line balun</strong> (an
 MCBL).</p>
 <p>Each EM cell has a test bench beside it, holding the cell's circuit and one SnP block per EM setup, which reads the
@@ -79,6 +80,11 @@ line and each solver a set of markers. No results ship; the benches read what yo
 <td>Three equal-split MWPDs in a tree, ports 2 to 5 on the second stage's outputs</td>
 </tr>
 <tr>
+<td><strong>Mitred</strong></td>
+<td>schematic, layout</td>
+<td>The Wilkinson cell's circuit three times, its MWPD with <code>Corner</code> = <code>Curve</code>, <code>Miter</code> and <code>Square</code></td>
+</tr>
+<tr>
 <td><strong>Branch-Line</strong></td>
 <td>schematic, layout, EM setup, 3D view</td>
 <td>A one-section MBLC with a 5 mm line from each of its four pins to a port</td>
@@ -104,7 +110,7 @@ line and each solver a set of markers. No results ship; the benches read what yo
 <td>One per EM cell: the cell's circuit, and one SnP block per EM result with its ports closed</td>
 </tr>
 <tr>
-<td><code>Wilkinson.cdd</code> … <code>FourWay.cdd</code></td>
+<td><code>Wilkinson.cdd</code> … <code>Mitred.cdd</code></td>
 <td>data display</td>
 <td>One per cell, at the top of the workspace</td>
 </tr>
@@ -179,6 +185,13 @@ line and each solver a set of markers. No results ship; the benches read what yo
 <td>—</td>
 <td>—</td>
 <td>Simulate <strong>FourWay</strong>, open <code>FourWay.cdd</code></td>
+</tr>
+<tr>
+<td>Mitred</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Simulate <strong>Mitred</strong>, open <code>Mitred.cdd</code></td>
 </tr>
 </tbody>
 </table>
@@ -353,6 +366,52 @@ meet at one point that no one-layer drawing reaches. Circuit only: each divider 
 </table>
 <p>|S11| stays below −20 dB from 2.15 to 2.63 GHz, narrower than one divider's band: each stage sees the next one's
 mismatch through the line between them.</p>
+<h2 id="mitred-and-square-corners">Mitred and square corners</h2>
+<p>The Wilkinson's circuit three times on one bench, its MWPD drawn with curved arms (<code>Corner</code> = <code>Curve</code>, ports 1-3), mitred
+corners (<code>Miter</code>, ports 4-6) and square corners (<code>Square</code>, ports 7-9). With corners the ring is a rectangle, and each
+straight run is shortened by its corners' own electrical length at F, so every arm is still a quarter wave there.
+Circuit only, swept every 10 MHz.</p>
+<p><img class="readme-picture" src="pictures/mitred-layout.png" alt="The three dividers side by side: the curved ring, the mitred rectangle and the square one, each with its 0402 across the gap and its outputs bending away to their ports." width="700"></p>
+<p><img class="readme-picture" src="pictures/mitred-results.png" alt="Mitred.cdd: |S21|, |S11| and |S23| against frequency for the three dividers, from the cell's own schematic." width="600"></p>
+<table>
+<thead>
+<tr>
+<th>At 2.4 GHz</th>
+<th>Curve</th>
+<th>Miter</th>
+<th>Square</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S11|</td>
+<td>−47.5 dB</td>
+<td>−48.1 dB</td>
+<td>−41.8 dB</td>
+</tr>
+<tr>
+<td>|S21|</td>
+<td>−3.149 dB</td>
+<td>−3.152 dB</td>
+<td>−3.148 dB</td>
+</tr>
+<tr>
+<td>|S23|</td>
+<td>−36.4 dB</td>
+<td>−36.4 dB</td>
+<td>−36.8 dB</td>
+</tr>
+<tr>
+<td>∠S21</td>
+<td>−173.0°</td>
+<td>−173.0°</td>
+<td>−173.0°</td>
+</tr>
+</tbody>
+</table>
+<p>The mitred divider's |S21| is the curved one's to 0.01 dB across the band, and all three keep |S11| below −20 dB from
+about 2.0 to 2.8 GHz. The square corners' excess capacitance shows above 3 GHz: at 4.8 GHz their |S21| is 0.15 dB
+lower. The rectangle is as low as the input tee allows, so it is longer and flatter than the curved ring.</p>
 <h2 id="branch-line-hybrid">Branch-line hybrid</h2>
 <p>A one-section MBLC with <code>Z0</code> 50 Ω and <code>F</code> 2.4 GHz: 35.4 Ω series arms and 50 Ω shunt arms, each a quarter wave between
 the reference planes of its junctions.</p>
