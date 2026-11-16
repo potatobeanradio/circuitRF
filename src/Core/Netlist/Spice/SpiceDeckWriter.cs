@@ -282,7 +282,13 @@ public static class SpiceDeckWriter
         {
             var paths = new List<string>();
             if (req.Bench is not { } tb || req.Library is not { } lib) return paths;
-            void Walk(IEnumerable<Instance> instances, string prefix, Func<string, string> net, int depth)
+            // The scope chain the elaborator builds (globals; each cell's parameter defaults and variables in its own scope; an
+            // instance's overrides evaluated in its parent's), so a placed subcircuit's override reads the parameter bound where
+            // the instance sits: evaluated against the globals alone, `w=W` took a global W of the same name, silently.
+            var ev = new Evaluator();
+            var root = new Scope("spice-deck");
+            foreach (var (k, v) in _globals) { root.Bind(k, v.ToString()!); ev.InjectResolved("spice-deck", k, v); }
+            void Walk(IEnumerable<Instance> instances, string prefix, Func<string, string> net, Scope scope, int depth)
             {
                 if (depth > 64) return;
                 foreach (var inst in instances)
@@ -293,8 +299,24 @@ public static class SpiceDeckWriter
                     if (cell.SpiceSource is { } file)
                     {
                         paths.Add(path);
-                        Placed(path, cell, file, bound, inst);
+                        Placed(path, cell, file, bound, inst, ev, scope);
                         continue;
+                    }
+                    var child = new Scope("spice-deck:" + path, scope) { InstancePath = path };
+                    foreach (var pd in cell.Parameters) child.Bind(pd.Name, pd.DefaultExpression, pd.Unit);
+                    foreach (var v in cell.Variables) child.Bind(v.Name, v.Expression, v.Unit);
+                    foreach (var ov in inst.Overrides)
+                    {
+                        try
+                        {
+                            var value = ev.Eval(ov.Expression, scope, ov.Unit);
+                            child.Bind(ov.Name, "__resolved__");
+                            ev.InjectResolved(child.DebugName, ov.Name, value);
+                        }
+                        // one that cannot be read here (a frequency-dependent one) fails whatever reads it, never falls through
+                        // to a name further up
+                        catch (Exception ex) when (ex is ExpressionException or InvalidOperationException)
+                        { child.Bind(ov.Name, "__unresolvable_override__"); }
                     }
                     var ports = cell.Ports;
                     Walk(cell.Instances, path, n =>
@@ -302,14 +324,14 @@ public static class SpiceDeckWriter
                         int k = ports.IndexOf(n);
                         if (k >= 0 && k < bound.Count) return bound[k];
                         return n == "0" ? "0" : path + "." + n;
-                    }, depth + 1);
+                    }, child, depth + 1);
                 }
             }
-            Walk(tb.Instances, "", n => n, 0);
+            Walk(tb.Instances, "", n => n, root, 0);
             return paths;
         }
 
-        private void Placed(string path, Cell cell, string file, List<string> nets, Instance inst)
+        private void Placed(string path, Cell cell, string file, List<string> nets, Instance inst, Evaluator ev, Scope scope)
         {
             if (!File.Exists(file)) { Refuse(path, "SpiceModel", $"its file '{file}' was not found."); return; }
             if (nets.Count != cell.Ports.Count)
@@ -322,8 +344,10 @@ public static class SpiceDeckWriter
             {
                 try
                 {
-                    double v = Eval(o.Name, o.Expression, double.NaN);
-                    if (o.Unit is { Length: > 0 } u && Units.Scale(u) is double s) v *= s;
+                    // in the instance's own scope, its site unit applied by the evaluator's rule (a variable carrying its own
+                    // unit is not scaled again, which multiplying by the unit's scale afterwards did)
+                    var val = ev.Eval(o.Expression, scope, o.Unit is { Length: > 0 } u ? u : null);
+                    double v = val.Kind == ValueKind.Real ? val.AsReal() : val.Kind == ValueKind.Complex ? val.AsComplex().Real : double.NaN;
                     if (!double.IsFinite(v))
                     {
                         Refuse(path, "SpiceModel", $"its parameter {o.Name}={o.Expression} does not resolve to a finite number.");
@@ -908,6 +932,9 @@ public static class SpiceDeckWriter
                 double value = stated ? Real(ec, row.CircuitRf, row.CircuitRfDefault) : row.CircuitRfDefault;
                 if (double.IsNaN(value) && !stated && row.CircuitRf == "Vto")
                     value = ec.ComponentType.EndsWith("_P", StringComparison.OrdinalIgnoreCase) ? -1.0 : 1.0;
+                // Level 3 with no Tox (the only Tox that reaches here; a stated one is refused): circuitRF has no oxide, so ETA,
+                // DELTA and VMAX, which act through Cox, do nothing, and the card's TOX below switches them off in the dialect too
+                if (m.Level == 3 && row.CircuitRf is "Eta" or "Delta" or "Vmax") continue;
                 switch (row.Status)
                 {
                     case SpiceParameterStatus.NoEffect: continue;
@@ -932,6 +959,15 @@ public static class SpiceDeckWriter
                 (row.OnInstance ? inst : card).Add($"{row.Dialect}={N(value)}");
             }
             if (refused) return;
+            if (m.Level == 3)
+            {
+                // Measured on ngspice 47: a level-3 card with no TOX takes 100 nm, and with it Meyer's gate capacitance (2.3 pF
+                // on a 100 um x 100 um device in saturation) that circuitRF's card, stating no Tox, does not have. At 1e6 m that
+                // charge is 1e-13 of it and every Cox-dependent term is off, as circuitRF's are.
+                card.Add("TOX=1e6");
+                _el.Append("* ").Append(ec.InstancePath)
+                   .AppendLine(": TOX=1e6 — circuitRF's card states no oxide, so it has no gate charge; the dialect's level 3 would take 100 nm.");
+            }
             string type = m.CardType(ec.ComponentType);
             string cardName = _names.Model("m_", ec.InstancePath);
             string level = m.Level is int lv ? $" LEVEL={lv}" : "";

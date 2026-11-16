@@ -73,6 +73,9 @@ public sealed record TransientParams
     public int StoreHarm { get; init; } = 3;
     /// <summary>brief MTR-2 — where baseband measurements start (s); NaN: after the largest MOD_Source Ramp.</summary>
     public double MeasureFromS { get; init; } = double.NaN;
+    /// <summary>When the step falls below its floor: true stops the run there and keeps the output up to that time (note §4.3);
+    /// false refuses it, keeping nothing (the HB and oscillator seeds, for which a run cut short is no steady state).</summary>
+    internal bool KeepWhatWasDone { get; init; } = true;
     /// <summary>brief MTR-2 — handed every output point (time, the recorded values) as it is made.</summary>
     internal Action<double, double[]>? OutputSink { get; init; }
     /// <summary>brief MTR-2 — the output points go to <see cref="OutputSink"/> only: the result holds no waveform.</summary>
@@ -129,6 +132,10 @@ public sealed class TransientRunResult
     public IReadOnlyList<TransientFitReport> Fits { get; init; } = [];
     public IReadOnlyList<TransientLineReport> Lines { get; init; } = [];
     public double FitBandHz { get; init; }
+    /// <summary>When the step fell below its floor: the time the run stopped at (the output ends there), and why. Null when it
+    /// reached Stop.</summary>
+    public double? StoppedAtS { get; init; }
+    public string? StopReason { get; init; }
 }
 
 /// <summary>What a run would be, solved for nothing (<see cref="TransientEngine.Plan"/>).</summary>

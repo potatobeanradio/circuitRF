@@ -301,6 +301,9 @@ public sealed class TransientEngine
         double[]? prev2Snap = null;
         double prev2T = double.NaN;
         string lastFailure = "";
+        double? stoppedAt = null;
+        string? stopReason = null;
+        _errRow = -1;
         control?.BeginStage("Transient", 1000, "");
         long lastTick = 0;
         bool stopped = false;
@@ -373,13 +376,22 @@ public sealed class TransientEngine
             if (x is null || ratio > 1)
             {
                 rejected++;
-                lastFailure = failure;
+                // the last reason a step failed: a Newton failure is kept over a later rejection that had none of its own
+                if (failure.Length > 0) lastFailure = failure;
+                else if (x is null) lastFailure = "The solution was not finite.";
+                else lastFailure = "The local error stayed above the tolerance" + (_errRow >= 0 ? ", most at " + RowName(_errRow) : "") + ".";
                 int down = x is null ? 1 : Math.Max(1, RungsFor(ratio, order));
                 k0 = Math.Min(MinStepRungs + 1, (landing ? RungOf(h, maxStep) : k0) + down);
                 if (maxStep / Math.Pow(2, k0) < hMin * (1 - 1e-12))
-                    throw new TransientRefusedException(string.Format(CultureInfo.InvariantCulture,
-                        "{0}: the step fell below {1:G3} s at t = {2:G9} s and the run stopped. {3}",
-                        who, hMin, t, lastFailure.Length > 0 ? lastFailure : "The local error stayed above the tolerance."));
+                {
+                    string why = string.Format(CultureInfo.InvariantCulture,
+                        "{0}: the step fell below {1:G3} s at t = {2:G9} s and the run stopped there. {3}", who, hMin, t, lastFailure);
+                    // note §4.3: the run stops with what it has — the output up to t — rather than throwing every step away. A seed
+                    // (KeepWhatWasDone false), or a run with no output point yet, has nothing to keep and is refused as before.
+                    if (!p.KeepWhatWasDone || nextOut == 0) throw new TransientRefusedException(why);
+                    nOut = nextOut; stopped = true; stoppedAt = t; stopReason = why;
+                    break;
+                }
                 continue;
             }
 
@@ -465,6 +477,7 @@ public sealed class TransientEngine
             MaxStepS = maxStep, MaxStepReason = reason,
             NewtonPathUsed = _useInterface ? TransientNewtonPath.Interface : TransientNewtonPath.Full, InterfaceCount = _nIf,
             Fits = [.. _real?.Fits ?? []], Lines = [.. _real?.Lines ?? []], FitBandHz = _real?.FMaxHz ?? 0,
+            StoppedAtS = stoppedAt, StopReason = stopReason,
         };
         return r;
 
@@ -962,7 +975,7 @@ public sealed class TransientEngine
             for (int j = 0; j < need; j++) pred += wts[j] * ps[j][i];
             double err = scale * Math.Abs(phi[i] - pred);
             double tol = _p.RelTol * Math.Max(Math.Max(Math.Abs(phi[i]), Math.Abs(ps[0][i])), _phiPeak[i]) + absTol[i];
-            worst = Math.Max(worst, err / tol);
+            if (err / tol > worst) { worst = err / tol; _errRow = i; }
         }
         return worst;
     }
@@ -1028,7 +1041,7 @@ public sealed class TransientEngine
             if (absTol[i] == 0) continue;
             double err = 2 * Math.Abs(phiFull[i] - phi2[i]);
             double tol = _p.RelTol * Math.Max(Math.Max(Math.Abs(phiFull[i]), Math.Abs(phi0[i])), _phiPeak[i]) + absTol[i];
-            worst = Math.Max(worst, err / tol);
+            if (err / tol > worst) { worst = err / tol; _errRow = i; }
         }
         return worst;
     }
@@ -1109,7 +1122,9 @@ public sealed class TransientEngine
             _newton++;
             var x = new double[_n];
             stage.Lu.Solve((double[])rhs.Clone(), x);
-            return Finite(x) ? x : null;
+            if (Finite(x)) return x;
+            failure = "The solution was not finite.";
+            return null;
         }
         return _useInterface ? SolveInterface(stage, alpha, rhs, guess, out failure) : SolveFull(stage, alpha, rhs, guess, out failure);
     }
@@ -1282,6 +1297,18 @@ public sealed class TransientEngine
     }
 
     /// <summary>The sentence naming where Newton's last update was largest: the node, and the devices on it.</summary>
+    /// <summary>The row with the largest local error at the last step's estimate, or −1.</summary>
+    private int _errRow = -1;
+
+    /// <summary>A row by what it is: a net and the devices on it, or a branch unknown.</summary>
+    private string RowName(int row)
+    {
+        if (row >= _nNode) return string.Format(CultureInfo.InvariantCulture, "branch unknown #{0}", row - _nNode);
+        string net = _nl.Nodes.NameOf(row + 1);
+        var on = _devs.Where(d => d.Rp.Contains(row) || d.Rm.Contains(row)).Select(d => d.Ec.InstancePath).ToList();
+        return "net " + net + (on.Count > 0 ? " (" + string.Join(", ", on) + ")" : "");
+    }
+
     private string NotConverged(double[]? delta, Func<int, int> rowOf)
     {
         if (delta is null || delta.Length == 0) return "Newton did not converge.";

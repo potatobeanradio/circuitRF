@@ -886,7 +886,8 @@ public static class CircuitEvaluation
             {
                 var p = CircuitRF.Engine.Transient.TransientRunner.Resolve(tra, nl.ResolvedGlobals);
                 var ds = CircuitRF.Engine.Transient.TransientRunner.Run(p, nl, RunFiles(loadpullSettings ?? AnalysisSettings.Default, tb, baseDirectory), control);
-                converged = true;
+                // a run the step floor stopped short of Stop kept what it had; it did not finish (its warning says where and why)
+                converged = !ds.CubesIn(DataSet.DefaultGroup).ContainsKey(CircuitRF.Engine.Transient.TransientRunner.StoppedCube);
                 return ds;
             }
 

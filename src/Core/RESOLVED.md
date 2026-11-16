@@ -5285,3 +5285,27 @@ What would cost time to rediscover:
   S11 as the DC termination), and the nearest-record warning is said once per record frequency, not per swept point.
 - **Left as found:** a gain end with no stated polarization projects a fixed Cartesian vector on each ray, so off the line of
   sight it is dipole-like; SIR sums interferers' powers where HB sums their fields.
+
+## Deck writer: placed-subcircuit overrides in their own scope, and the level-3 oxide (2026-11-16)
+
+**Placed `.subckt` overrides.** These were evaluated against the globals alone, so `w=W` inside a cell whose parameter W
+is 5 took a global W of 1, silently. The override was also scaled by its unit after evaluation, which scaled a variable
+that carries its own unit a second time.
+- The writer's hierarchy walk now builds the elaborator's scope chain: globals, then each cell's parameter defaults and
+  variables in its own scope, then each instance's overrides evaluated in the parent's.
+- A placed override is evaluated in that scope, with its site unit applied by the evaluator's own rule.
+- An intermediate override that cannot be read there (a frequency-dependent one) fails whatever reads it, rather than
+  falling through to a name further up.
+- Gate: `SpiceDeckWriterTests.APlacedSubcircuitsOverride_ReadsTheCellsParameter_NotTheGlobal`.
+
+**MOS level 3 and its oxide.** Measured on ngspice 47, a level-3 card with no TOX takes 100 nm. That gives two differences
+from circuitRF's card, which states no Tox and so has Cox = 0:
+- a Meyer gate charge, 1.446e-5 A at 1 MHz into a 100 µm × 100 µm gate in saturation, about 2.3 pF;
+- with KP unstated, a KP of 2.07e-5 derived from UO·Cox, so the drain current is 3.6 % high.
+
+Level 1 has neither effect. The fix:
+- The card always states `KP` and states `TOX=1e6`. The gate charge is then 1.4e-16 A at 1 MHz (1e-13 of it), and the
+  drain current does not move.
+- `ETA`, `VMAX` and `DELTA` are not written, since circuitRF ignores them without an oxide and they act through Cox in
+  the dialect too.
+- Gate: `SpiceDeckWriterTests.AMos3Card_StatesKpAndAThickOxide`.

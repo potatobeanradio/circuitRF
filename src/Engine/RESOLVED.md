@@ -5583,3 +5583,18 @@ transient engine checks it every 256 accepted steps.
 - The Newton solve and the drive ramp are still not interrupted. `src/Engine/CLAUDE.md`'s "HbEngine … take no control"
   now means "checks it only inside its transient seed".
 - Gate: `TransientSeedTests.AStoppedRun_EndsTheSeed`.
+
+## The step floor keeps what the run did (2026-11-16)
+
+A step that fell below `MaxStep / 2^40` threw, and every accepted step went with it. Design note §4.3 always said the run
+stops at that time with what it has.
+- **What the run keeps now:** the output up to that time, plus `Tran.StoppedAt_s`.
+- **The warning** names the last failure. That is the Newton failure if there was one, kept over a later rejection that
+  had no failure of its own (the old code overwrote it with ""). Otherwise it is the net and devices with the largest
+  local error, now tracked by both error estimates, or "the solution was not finite" (the linear path used to report a NaN
+  as a tolerance problem).
+- **Convergence:** CircuitEvaluation reports such a run as not converged.
+- **Still refused:** a run with no output point yet, and the HB and oscillator seeds (`KeepWhatWasDone = false`), since a
+  seed cut short is no steady state.
+- **Gate:** `TransientEngineTests.AtTheStepFloor_TheRunStops_KeepingWhatItHad`. A drive that turns non-finite after 0.5 µs
+  stops the run at 5e-7 s with its output up to there.

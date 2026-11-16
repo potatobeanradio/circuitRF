@@ -105,7 +105,8 @@ internal static class TransientBaseband
         var run = engine.Run(tp, control);
         foreach (var note in run.Notes) nl.AddNoteOnce("tran:" + note, note);
         if (dc.Times.Count == 0)
-            throw new TransientRefusedException($"{who}: the run produced no envelope sample.");
+            throw new TransientRefusedException(run.StopReason ?? $"{who}: the run produced no envelope sample.");
+        if (run.StopReason is { } stopped) nl.AddWarning(stopped);
 
         // ── the envelope run result ──────────────────────────────────────────
         int nt = dc.Times.Count, k1 = K + 1;
@@ -158,6 +159,7 @@ internal static class TransientBaseband
         ds.Add("Tran.DeviceEvaluations", DataCube.Scalar(run.DeviceEvaluations));
         ds.Add("__TranMaxStep_s", DataCube.Scalar(run.MaxStepS));
         ds.Add(StoreCube, DataCube.Scalar(1));
+        if (run.StoppedAtS is double stoppedAt) ds.Add(TransientRunner.StoppedCube, DataCube.Scalar(stoppedAt));
         nl.AddNoteOnce("tran-baseband:" + p.Name, string.Format(CultureInfo.InvariantCulture,
             "{0}: stored at baseband — harmonics 0 to {1} of {2:G6} Hz at {3:G4} samples/s, {4:G4} s to {5:G4} s; measured from {6:G4} s. "
             + "Store=rf keeps the waveform.", who, K, fc, rEnv, time[0], time[^1], Math.Max(measureFrom, time[0])));
