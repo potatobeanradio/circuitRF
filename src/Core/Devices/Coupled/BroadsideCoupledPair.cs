@@ -191,8 +191,16 @@ public static class BroadsideCoupledPair
             reporter.ReportOnce($"{part}:asymmetric",
                 $"the two strips are not symmetric (C11 and C22 differ by {m.Asymmetry * 100:G3} %), so the pair has no exact " +
                 "even/odd modes; it is modelled by the symmetric-average convention (C11 and C22 replaced by their mean).");
-        double size = Math.Max(g.W + g.Offset, g.TopGround ?? (g.YaBottom + g.Ta));
-        double lambda = MicrostripLoss.SpeedOfLight / (freqHz * Math.Sqrt(g.EpsR));
+        ReportQuasiStatic(part, Math.Max(g.W + g.Offset, g.TopGround ?? (g.YaBottom + g.Ta)), g.EpsR, freqHz, reporter);
+    }
+
+    /// <summary>Reports a cross-section of <paramref name="size"/> (m) no longer small against the wavelength in
+    /// the dielectric at <paramref name="freqHz"/>: past a tenth of it, a quasi-static (TEM) solve is past its range.
+    /// Shared by every part whose line constants come from <see cref="QuasiStaticSolver2D"/>.</summary>
+    public static void ReportQuasiStatic(string part, double size, double epsR, double freqHz,
+                                         MicrostripValidityReporter reporter)
+    {
+        double lambda = MicrostripLoss.SpeedOfLight / (freqHz * Math.Sqrt(epsR));
         if (freqHz > 0 && size > lambda / 10.0)
             reporter.ReportOnce($"{part}:quasi-static",
                 $"the cross-section ({size * 1e3:G3} mm) exceeds a tenth of the wavelength in the dielectric at " +

@@ -442,10 +442,24 @@ public sealed class ComparisonTests
     }
 
     /// <summary>The hybrids (MBLC, MRRC) as Update Layout places them compare clean, and a spec changed on the
-    /// schematic afterwards is exactly one property mismatch naming it.</summary>
+    /// schematic afterwards is exactly one property mismatch naming it. So does a radial stub (MRADIAL) on its angle,
+    /// and N coupled lines (MCLINN) on one strip's own width; a delay line (MDLY) on its electrical length, and the
+    /// meandered rat-race beside it on its turns; and the coupled array (MCLA) on its tap,
+    /// its loading C and a custom end pattern's join moved to another strip's end; a lumped
+    /// Wilkinson divider on F, and a resistive pad on its attenuation.</summary>
     [Theory]
     [InlineData("F9-branch-line-hybrid", "BLC1", "N", "1")]
     [InlineData("F10-rat-race-hybrid", "RRC1", "F", "2.5")]
+    [InlineData("F14-radial-stub", "RS1", "Angle", "90")]
+    [InlineData("F15-coupled-lines", "CLN1", "W[2]", "1.5")]
+    [InlineData("F29-delay-line", "DLY1", "Theta", "180")]
+    [InlineData("F29-delay-line", "RRC1", "Meander", "3")]
+    [InlineData("F31-coupled-array-interdigital", "CLA1", "Tap", "3.5")]
+    [InlineData("F32-coupled-array-combline", "CLA1", "C", "1.6")]
+    [InlineData("F33-coupled-array-pseudo", "CLA1", "L", "17")]
+    [InlineData("F34-coupled-array-custom", "CLA1", "Ends", "SC JO JS")]
+    [InlineData("F26-wilkinson-lumped", "WPD1", "F", "2.5")]
+    [InlineData("F27-resistive-pad", "RPD1", "Attenuation", "10")]
     public void AHybridComparesCleanAndASpecMismatchIsAFinding(string design, string instance, string spec, string changed)
     {
         string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-hyb-" + Guid.NewGuid().ToString("N")[..12]);
@@ -461,6 +475,139 @@ public sealed class ComparisonTests
 
             var errors = LvsRun.Run(p.CellDir).Findings.Where(f => f.Severity == DiagnosticSeverity.Error).ToList();
             var mismatch = Assert.Single(errors);
+            Assert.Equal("lvs.property.mismatch", mismatch.Id);
+            Assert.Equal(spec, mismatch.Diagnostic.Arguments["name"]);
+        }
+        finally
+        {
+            try { Directory.Delete(scratch, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    /// <summary>The Gysel, Bagley and tee dividers (MGPD, MBPD, MTPD) as Update Layout places them compare clean, and a
+    /// spec changed on the schematic afterwards is exactly one property mismatch naming it: the Gysel's F, the Bagley's
+    /// Corner (a name: curved artwork against a schematic asking for mitred corners), and the tee's split K.</summary>
+    [Theory]
+    [InlineData("F16-gysel-divider", "GPD1", "F", "2.5")]
+    [InlineData("F17-bagley-divider", "BPD1", "Corner", "Miter")]
+    [InlineData("F18-tee-divider", "TPD1", "K", "1.4142")]
+    public void ADividerComparesCleanAndASpecMismatchIsAFinding(string design, string instance, string spec, string changed)
+    {
+        string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-div-" + Guid.NewGuid().ToString("N")[..12]);
+        try
+        {
+            var p = SchematicSync.SdlChecker.Prepare(design, scratch);
+            var layout = p.Applied(p.Plan());
+            Assert.Empty(SchematicSync.SdlChecker.Verify(p, layout));
+            Assert.DoesNotContain(LvsRun.Run(p.CellDir).Findings, f => f.Severity == DiagnosticSeverity.Error);
+
+            var part = p.Model.Components.Single(c => c.InstanceName == instance);
+            if (part.Parameters.SingleOrDefault(q => q.Name == spec) is { } row) row.Expression = changed;
+            else part.Parameters.Add(new EditableParameter { Name = spec, Expression = changed });
+            SchematicPersistence.SaveToFile(p.SchematicPath, p.Model, Path.GetFileNameWithoutExtension(p.SchematicPath));
+
+            var errors = LvsRun.Run(p.CellDir).Findings.Where(f => f.Severity == DiagnosticSeverity.Error).ToList();
+            var mismatch = Assert.Single(errors);
+            Assert.Equal("lvs.property.mismatch", mismatch.Id);
+            Assert.Equal(spec, mismatch.Diagnostic.Arguments["name"]);
+        }
+        finally
+        {
+            try { Directory.Delete(scratch, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    /// <summary>The coupled-resonator filter (MCRC), one fixture per shape and one for Coupling = Full, compares clean as
+    /// Update Layout places it, and one stored dimension or name changed on the schematic afterwards is exactly one
+    /// property mismatch naming it: the artwork is drawn from the geometry the part stores.</summary>
+    [Theory]
+    [InlineData("F19-coupled-resonator-straight", "S2", "0.6")]
+    [InlineData("F20-coupled-resonator-zigzag", "Tap", "7")]
+    [InlineData("F21-coupled-resonator-hairpin", "Uc", "0.35")]
+    [InlineData("F22-coupled-resonator-open-loop", "Arrangement", "Inline")]
+    [InlineData("F23-coupled-resonator-ring", "L", "70")]
+    [InlineData("F28-coupled-resonator-full", "Coupling", "Pairs")]
+    public void ACoupledResonatorFilterComparesCleanAndAGeometryMismatchIsAFinding(string design, string spec, string changed)
+    {
+        string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-crc-" + Guid.NewGuid().ToString("N")[..12]);
+        try
+        {
+            var p = SchematicSync.SdlChecker.Prepare(design, scratch);
+            var layout = p.Applied(p.Plan());
+            Assert.Empty(SchematicSync.SdlChecker.Verify(p, layout));
+            Assert.DoesNotContain(LvsRun.Run(p.CellDir).Findings, f => f.Severity == DiagnosticSeverity.Error);
+
+            p.Model.Components.Single(c => c.InstanceName == "CRC1").Parameters.Single(q => q.Name == spec).Expression = changed;
+            SchematicPersistence.SaveToFile(p.SchematicPath, p.Model, Path.GetFileNameWithoutExtension(p.SchematicPath));
+
+            var errors = LvsRun.Run(p.CellDir).Findings.Where(f => f.Severity == DiagnosticSeverity.Error).ToList();
+            var mismatch = Assert.Single(errors);
+            Assert.Equal("lvs.property.mismatch", mismatch.Id);
+            Assert.Equal(spec, mismatch.Diagnostic.Arguments["name"]);
+        }
+        finally
+        {
+            try { Directory.Delete(scratch, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    /// <summary>The ladder (MLAD) as Update Layout places it compares clean, its via on G1, and its list changed on the
+    /// schematic afterwards is exactly one property mismatch naming Sections, compared as text.</summary>
+    [Fact]
+    public void ALadderComparesCleanAndASectionsMismatchIsAFinding()
+    {
+        string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-lad-" + Guid.NewGuid().ToString("N")[..12]);
+        try
+        {
+            var p = SchematicSync.SdlChecker.Prepare("F24-microstrip-ladder", scratch);
+            var layout = p.Applied(p.Plan());
+            Assert.Empty(SchematicSync.SdlChecker.Verify(p, layout));
+            Assert.DoesNotContain(LvsRun.Run(p.CellDir).Findings, f => f.Severity == DiagnosticSeverity.Error);
+
+            p.Model.Components.Single(c => c.InstanceName == "LAD1").Parameters.Single(q => q.Name == "Sections").Expression =
+                "line(W=1.1mm, L=5mm); stub(W=1.1mm, L=9mm, end=short); line(W=1.1mm, L=5mm)";
+            SchematicPersistence.SaveToFile(p.SchematicPath, p.Model, Path.GetFileNameWithoutExtension(p.SchematicPath));
+
+            var errors = LvsRun.Run(p.CellDir).Findings.Where(f => f.Severity == DiagnosticSeverity.Error).ToList();
+            var mismatch = Assert.Single(errors);
+            Assert.Equal("lvs.property.mismatch", mismatch.Id);
+            Assert.Equal("Sections", mismatch.Diagnostic.Arguments["name"]);
+        }
+        finally
+        {
+            try { Directory.Delete(scratch, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    /// <summary>The coupler options and the phase shifter as Update Layout places them compare clean, and a spec changed
+    /// on the schematic afterwards is exactly one property mismatch naming it: MCLC's Band, Coupling (tandem and
+    /// broadside) and Compensation (a name), MIDC's Coupling at six fingers, MSPS's Phase. The jumpers of a tandem or a
+    /// Lange have no artwork here (inductors stand in for bond wires), so their unmatched-device findings are set aside.</summary>
+    [Theory]
+    [InlineData("F11b-coupler-sections", "CLC1", "Band", "3")]
+    [InlineData("F11c-coupler-tandem", "CLC1", "Coupling", "4")]
+    [InlineData("F11d-coupler-wiggly", "CLC1", "Compensation", "None")]
+    [InlineData("F11e-coupler-broadside", "CLC1", "Coupling", "4")]
+    [InlineData("F13b-interdigitated-six", "IDC1", "Coupling", "4")]
+    [InlineData("F25-schiffman-phase-shifter", "SPS1", "Phase", "60")]
+    [InlineData("F35-rat-race-coupled-line", "RRC1", "Coupling", "12")]
+    [InlineData("F36-schiffman-meander", "SPS1", "Phase", "60")]
+    public void ACouplerOptionComparesCleanAndASpecMismatchIsAFinding(string design, string instance, string spec, string changed)
+    {
+        string scratch = Path.Combine(Path.GetTempPath(), "crf-lvs-cpl-" + Guid.NewGuid().ToString("N")[..12]);
+        try
+        {
+            var p = SchematicSync.SdlChecker.Prepare(design, scratch);
+            var layout = p.Applied(p.Plan());
+            Assert.Empty(SchematicSync.SdlChecker.Verify(p, layout));
+            List<CircuitRF.Design.Layout.Lvs.LvsFinding> Errors() => [.. LvsRun.Run(p.CellDir).Findings
+                .Where(f => f.Severity == DiagnosticSeverity.Error && f.Id != "lvs.device.unmatched-schematic")];
+            Assert.Empty(Errors());
+
+            p.Model.Components.Single(c => c.InstanceName == instance).Parameters.Single(q => q.Name == spec).Expression = changed;
+            SchematicPersistence.SaveToFile(p.SchematicPath, p.Model, Path.GetFileNameWithoutExtension(p.SchematicPath));
+
+            var mismatch = Assert.Single(Errors());
             Assert.Equal("lvs.property.mismatch", mismatch.Id);
             Assert.Equal(spec, mismatch.Diagnostic.Arguments["name"]);
         }

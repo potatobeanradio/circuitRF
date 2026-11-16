@@ -1,0 +1,11 @@
+# The microstrip ladder with a lumped site (MLAD): a line, a series capacitor's site and a line. The copper stops Gap short,
+# an 0402's land, so the capacitor across G1-G2 lands on both lines' ends, and each port sits on its own pin.
+joinable g1
+joinable g2
+Info LAD1 added
+Info C1 added
+Info P1 port 1 placed at LAD1 pin 1
+Info P2 port 2 placed at LAD1 pin 2
+Info - Joined 2 of 2 connections; 0 left as ratsnest
+port P1 1
+port P2 2

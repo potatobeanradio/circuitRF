@@ -56,7 +56,9 @@ public static class InstanceNetContract
             or MicrostripCurveModel or MicrostripMiterBendModel or MicrostripGapModel or MicrostripTaperModel
             or MicrostripKlopfModel                                                           => 2,
         MicrostripTeeModel                                                                    => 3,
-        // A planned passive (MWPD, MBLC, MRRC): its plan's pins, each over the implicit reference.
+        // A radial stub, one sector or a butterfly: its shunt node alone, over the implicit reference.
+        MicrostripRadialStubModel                                                             => 1,
+        // A planned passive (docs/design/rf-passives.md): its plan's pins, each over the implicit reference.
         MicrostripPlanModel plan                                                              => plan.PortCount,
         // A signal via is two terminals over the implicit reference, as MLIN is. A via to ground draws
         // one pin and binds two nets, like Term: the extractor appends "0".
@@ -73,6 +75,8 @@ public static class InstanceNetContract
         // The coupled pairs: four signal terminals over the implicit reference, in CLIN's port order.
         CLineModel or MicrostripCoupledLineModel
             or StriplineBroadsideCoupledModel or MicrostripBroadsideCoupledModel              => 4,
+        // N coupled strips: each strip's two ends, near ends first, over the implicit reference.
+        MicrostripMultiLineModel lines                                                        => lines.PortCount,
 
         // The mutual-inductance element names two inductors by parameter, not two nets by position.
         MutualInductanceModel                                                                 => 0,
@@ -240,6 +244,7 @@ public static class InstanceNetContract
         "WBOND"    => "Arrays",
         "VERILOGA" => "Pins",
         "OPAMP"    => "Pins",
+        "MCLINN"   => "N",
         _          => null,
     };
 
@@ -349,6 +354,12 @@ public static class InstanceNetContract
             case "MGAP":
                 p["W"] = new Expressions.Value(1e-4);
                 p["S"] = new Expressions.Value(1e-4);
+                break;
+
+            // A radial stub refuses a zero width and a radius short of its feed; any drawable pair stands in.
+            case "MRADIAL":
+                p["W"]  = new Expressions.Value(1e-4);
+                p["Ro"] = new Expressions.Value(1e-3);
                 break;
 
             // The mutual element names two INDUCTORS rather than two nets, so these are the nets'

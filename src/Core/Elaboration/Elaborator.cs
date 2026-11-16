@@ -1638,9 +1638,41 @@ public sealed partial class Elaborator
                 result[ov.Name] = new Value(Unquote(ov.Expression));
                 continue;
             }
-            // A ring's Corner (MWPD, MRRC) is Curve, Miter or Square: an enum name, kept as one.
-            if (ov.Name == "Corner" && (inst.Reference.Equals("MWPD", StringComparison.OrdinalIgnoreCase)
-                                        || inst.Reference.Equals("MRRC", StringComparison.OrdinalIgnoreCase)))
+            // A ring's Corner (MWPD, MRRC, MGPD, MBPD) is Curve, Miter or Square, a coupler's Compensation (MCLC) None,
+            // Capacitive, Inductive or Wiggly, and a phase shifter's Reference (MSPS) Straight, Curve, Miter or Square:
+            // enum names, kept as such; so are a delay line's Corner and Style (MDLY).
+            if ((ov.Name == "Corner" && inst.Reference.ToUpperInvariant() is "MWPD" or "MRRC" or "MGPD" or "MBPD")
+                || (ov.Name == "Form" && inst.Reference.Equals("MRRC", StringComparison.OrdinalIgnoreCase))
+                || (ov.Name == "Compensation" && inst.Reference.Equals("MCLC", StringComparison.OrdinalIgnoreCase))
+                || (ov.Name == "Reference" && inst.Reference.Equals("MSPS", StringComparison.OrdinalIgnoreCase))
+                || (ov.Name is "Corner" or "Style" && inst.Reference.Equals("MDLY", StringComparison.OrdinalIgnoreCase)))
+            {
+                result[ov.Name] = new Value(Unquote(ov.Expression));
+                continue;
+            }
+            // A coupled-resonator filter's Shape, Profile, Feed, Form, Arrangement and Coupling are names, kept as names.
+            if (ov.Name is "Shape" or "Profile" or "Feed" or "Form" or "Arrangement" or "Coupling"
+                && inst.Reference.Equals("MCRC", StringComparison.OrdinalIgnoreCase))
+            {
+                result[ov.Name] = new Value(Unquote(ov.Expression));
+                continue;
+            }
+
+            // A ladder's Sections is its list of sections in LadderPlan's own grammar: text, kept verbatim.
+            if (ov.Name == "Sections" && inst.Reference.Equals("MLAD", StringComparison.OrdinalIgnoreCase))
+            {
+                result[ov.Name] = new Value(Unquote(ov.Expression));
+                continue;
+            }
+            // A coupled array's Form and Feed are names, and its Ends a pattern of letters: words, kept as written.
+            if (ov.Name is "Form" or "Feed" or "Ends" && inst.Reference.Equals("MCLA", StringComparison.OrdinalIgnoreCase))
+            {
+                result[ov.Name] = new Value(Unquote(ov.Expression));
+                continue;
+            }
+            // A ring's Corner (MWPD, MRRC) is Curve, Miter or Square, a spec-driven passive's Realization Distributed or
+            // Lumped, a lumped divider's Arm Pi or Tee, a resistive pad's Form its name: enum names, kept as such.
+            if (IsPlanWord(inst.Reference, ov.Name))
             {
                 result[ov.Name] = new Value(Unquote(ov.Expression));
                 continue;
@@ -3079,6 +3111,15 @@ public sealed partial class Elaborator
         || name.StartsWith("Material_", StringComparison.OrdinalIgnoreCase)
         || name.Equals("Arrays", StringComparison.OrdinalIgnoreCase)
         || name.Equals("Source", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A planned passive's word-valued parameter: <c>Corner</c> (MWPD, MRRC), <c>Realization</c> (MWPD, MBLC, MRRC,
+    /// MCBL), <c>Arm</c> (MWPD) and <c>Form</c> (MRPAD).</summary>
+    private static bool IsPlanWord(string reference, string name) => (reference.ToUpperInvariant(), name) switch
+    {
+        ("MWPD" or "MRRC", "Corner") or ("MWPD" or "MBLC" or "MRRC" or "MCBL", "Realization") or ("MWPD", "Arm")
+            or ("MRPAD", "Form") => true,
+        _ => false,
+    };
 
     private static string Unquote(string raw) =>
         raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"' ? raw[1..^1] : raw;

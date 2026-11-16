@@ -1,0 +1,716 @@
+{
+  "FormatVersion": 1,
+  "Name": "MMIC GaAs (2 Layer Metal + MIM, 100um)",
+  "DefaultDisplayUnit": "Um",
+  "DefaultSnapDbu": 5,
+  "DefaultFlattenTolDbu": 10,
+  "DefaultLabelHeightDbu": 5000,
+  "DefaultViaPadDbu": 80000,
+  "DefaultViaDrillDbu": 60000,
+  "Layers": [
+    {
+      "Key": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Name": "Metal1",
+      "Color": {
+        "r": 224,
+        "g": 176,
+        "b": 64,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 8,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "Name": "Metal2",
+      "Color": {
+        "r": 192,
+        "g": 128,
+        "b": 32,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 9,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 3,
+        "Datatype": 0
+      },
+      "Name": "Via",
+      "Color": {
+        "r": 144,
+        "g": 144,
+        "b": 144,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 7,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "Name": "Resistor",
+      "Color": {
+        "r": 96,
+        "g": 64,
+        "b": 160,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 6,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 5,
+        "Datatype": 0
+      },
+      "Name": "Cap Dielectric",
+      "Color": {
+        "r": 48,
+        "g": 144,
+        "b": 176,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 5,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 6,
+        "Datatype": 0
+      },
+      "Name": "Nitride",
+      "Color": {
+        "r": 64,
+        "g": 112,
+        "b": 64,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 4,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 7,
+        "Datatype": 0
+      },
+      "Name": "Substrate",
+      "Color": {
+        "r": 80,
+        "g": 80,
+        "b": 80,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 1,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 8,
+        "Datatype": 0
+      },
+      "Name": "Backside Via",
+      "Color": {
+        "r": 32,
+        "g": 32,
+        "b": 96,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 2,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 9,
+        "Datatype": 0
+      },
+      "Name": "MIM Metal",
+      "Color": {
+        "r": 208,
+        "g": 96,
+        "b": 112,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 10,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 10,
+        "Datatype": 0
+      },
+      "Name": "MIM Via",
+      "Color": {
+        "r": 112,
+        "g": 48,
+        "b": 56,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 3,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 20,
+        "Datatype": 0
+      },
+      "Name": "Line Marker",
+      "Color": {
+        "r": 0,
+        "g": 170,
+        "b": 170,
+        "a": 255
+      },
+      "FillOpacity": 0.12,
+      "ZOrder": 11,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 21,
+        "Datatype": 0
+      },
+      "Name": "Inductor Marker",
+      "Color": {
+        "r": 200,
+        "g": 120,
+        "b": 0,
+        "a": 255
+      },
+      "FillOpacity": 0.12,
+      "ZOrder": 12,
+      "Purpose": "drawing"
+    }
+  ],
+  "Stackup": {
+    "Top": "Open",
+    "Bottom": "Ground",
+    "Layers": [
+      {
+        "Kind": "Conductor",
+        "Name": "Metal2",
+        "ThicknessDbu": 3000,
+        "Material": "Gold",
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 41000000,
+        "DrawingLayers": [
+          {
+            "Layer": 2,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "Air",
+        "ThicknessDbu": 2550,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "MIM Metal",
+        "ThicknessDbu": 250,
+        "Material": "Gold",
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 41000000,
+        "DrawingLayers": [
+          {
+            "Layer": 9,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "MIM Dielectric",
+        "ThicknessDbu": 200,
+        "Epsr": 6.8,
+        "TanD": 0.001,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [],
+        "IsGroundReference": false,
+        "PresentWithLayer": "Nitride"
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "Metal1",
+        "ThicknessDbu": 3000,
+        "Material": "Gold",
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 41000000,
+        "DrawingLayers": [
+          {
+            "Layer": 1,
+            "Datatype": 0
+          }
+        ],
+        "Films": [
+          {
+            "Layer": {
+              "Layer": 4,
+              "Datatype": 0
+            },
+            "SheetResistanceOhmPerSq": 50,
+            "At": "Bottom"
+          }
+        ],
+        "IsGroundReference": false,
+        "SheetAt": "Top"
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "GaAs",
+        "ThicknessDbu": 100000,
+        "Epsr": 12.9,
+        "TanD": 0.0006,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [
+          {
+            "Layer": 7,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "Backside Metal",
+        "ThicknessDbu": 3000,
+        "Material": "Gold",
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 41000000,
+        "DrawingLayers": [],
+        "IsGroundReference": true
+      },
+      {
+        "Kind": "Via",
+        "Name": "Backside Via",
+        "ThicknessDbu": 0,
+        "Material": "Gold",
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 41000000,
+        "DrawingLayers": [
+          {
+            "Layer": 8,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false,
+        "Fill": "Plated",
+        "WallThicknessDbu": 3000,
+        "SpanFromLayer": "Metal1",
+        "SpanToLayer": "Backside Metal"
+      },
+      {
+        "Kind": "Via",
+        "Name": "Metal1-Metal2 Post",
+        "ThicknessDbu": 0,
+        "Material": "Gold",
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 41000000,
+        "DrawingLayers": [
+          {
+            "Layer": 3,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false,
+        "Fill": "Solid",
+        "SpanFromLayer": "Metal1",
+        "SpanToLayer": "Metal2"
+      },
+      {
+        "Kind": "Via",
+        "Name": "MIM Via",
+        "ThicknessDbu": 0,
+        "Material": "Gold",
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 41000000,
+        "DrawingLayers": [
+          {
+            "Layer": 10,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false,
+        "Fill": "Solid",
+        "SpanFromLayer": "MIM Metal",
+        "SpanToLayer": "Metal2"
+      }
+    ]
+  },
+  "DrcRules": [
+    {
+      "Name": "Metal1 Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "ValueDbu": 4000,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Metal1 Min Spacing",
+      "Kind": "MinSpacing",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "ValueDbu": 4000,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Metal2 Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "ValueDbu": 4000,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Metal2 Min Spacing",
+      "Kind": "MinSpacing",
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "ValueDbu": 4000,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Resistor Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "ValueDbu": 2000,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Resistor Min Spacing",
+      "Kind": "MinSpacing",
+      "Layer": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "ValueDbu": 2000,
+      "Severity": "Error"
+    }
+  ],
+  "DeviceRules": [
+    {
+      "Name": "Thin-film resistor",
+      "Kind": "Resistor",
+      "Body": "not(4/0, 1/0)",
+      "Terminals": [
+        "1/0"
+      ],
+      "Parameters": {
+        "R": "TfrSheetResistance * Length / Width"
+      }
+    },
+    {
+      "Name": "MIM capacitor",
+      "Kind": "Capacitor",
+      "Body": "and(and(9/0, 6/0), 1/0)",
+      "Terminals": [
+        "1/0",
+        "9/0"
+      ],
+      "Parameters": {
+        "C": "MimCapDensity * Area"
+      }
+    },
+    {
+      "Name": "Microstrip line (Metal1)",
+      "Kind": "TransmissionLine",
+      "Body": "and(1/0, 20/0)",
+      "Terminals": [
+        "1/0"
+      ],
+      "Parameters": {
+        "L": "Length",
+        "W": "Width"
+      },
+      "CopperBody": true
+    },
+    {
+      "Name": "Microstrip line (Metal2)",
+      "Kind": "TransmissionLine",
+      "Body": "and(2/0, 20/0)",
+      "Terminals": [
+        "2/0"
+      ],
+      "Parameters": {
+        "L": "Length",
+        "W": "Width"
+      },
+      "CopperBody": true
+    },
+    {
+      "Name": "Spiral inductor",
+      "Kind": "Inductor",
+      "Body": "and(or(or(1/0, 2/0), 3/0), 21/0)",
+      "Terminals": [
+        "or(1/0, 2/0)"
+      ],
+      "CopperBody": true
+    },
+    {
+      "Name": "Backside via to ground",
+      "Kind": "Via",
+      "Body": "8/0",
+      "Terminals": [
+        "1/0"
+      ],
+      "CopperBody": true,
+      "GroundTerminal": true
+    }
+  ],
+  "MaterialLibraries": [
+    "generic-materials.cmat"
+  ],
+  "Materials": [
+    {
+      "Name": "Gold",
+      "Sigma20": 41000000,
+      "Alpha20": 0.0034,
+      "SigmaVsTemp": [
+        { "TempC": 20, "Value": 41000000 },
+        { "TempC": 25.05, "Value": 40320210 },
+        { "TempC": 26.85, "Value": 40083326 },
+        { "TempC": 76.85, "Value": 34378403 },
+        { "TempC": 85, "Value": 33584219 },
+        { "TempC": 125, "Value": 30164193 },
+        { "TempC": 126.85, "Value": 30022791 },
+        { "TempC": 226.85, "Value": 23821985 },
+        { "TempC": 326.85, "Value": 19612446 },
+        { "TempC": 426.85, "Value": 16556832 },
+        { "TempC": 526.85, "Value": 14221104 },
+        { "TempC": 626.85, "Value": 12367356 },
+        { "TempC": 726.85, "Value": 10857996 },
+        { "TempC": 826.85, "Value": 9601718 },
+        { "TempC": 926.85, "Value": 8539853 },
+        { "TempC": 1026.85, "Value": 7646544 }
+      ],
+      "ThermalK": 318.202,
+      "ThermalKVsTemp": [
+        { "TempC": 20, "Value": 318.202 },
+        { "TempC": 25.05, "Value": 318 },
+        { "TempC": 26.85, "Value": 317 },
+        { "TempC": 76.85, "Value": 314 },
+        { "TempC": 85, "Value": 313.511 },
+        { "TempC": 125, "Value": 311.111 },
+        { "TempC": 126.85, "Value": 311 },
+        { "TempC": 226.85, "Value": 304 },
+        { "TempC": 326.85, "Value": 298 },
+        { "TempC": 426.85, "Value": 291 },
+        { "TempC": 526.85, "Value": 284 },
+        { "TempC": 626.85, "Value": 277 },
+        { "TempC": 726.85, "Value": 270 },
+        { "TempC": 826.85, "Value": 262 },
+        { "TempC": 926.85, "Value": 255 },
+        { "TempC": 1026.85, "Value": 247 }
+      ],
+      "DensityKgM3": 19300,
+      "SpecificHeat": 129,
+      "Appearance": { "BaseColor": "#FFE39D", "Metallic": 1, "Roughness": 0.25 }
+    },
+    {
+      "Name": "Aluminium",
+      "Sigma20": 37700000,
+      "Alpha20": 0.0039,
+      "SigmaVsTemp": [
+        { "TempC": 20, "Value": 37700000 },
+        { "TempC": 25.05, "Value": 36867739 },
+        { "TempC": 26.85, "Value": 36579906 },
+        { "TempC": 76.85, "Value": 30259554 },
+        { "TempC": 85, "Value": 29430684 },
+        { "TempC": 125, "Value": 25942933 },
+        { "TempC": 126.85, "Value": 25801516 },
+        { "TempC": 226.85, "Value": 19917377 },
+        { "TempC": 326.85, "Value": 16332553 },
+        { "TempC": 426.85, "Value": 13656088 },
+        { "TempC": 526.85, "Value": 11608010 },
+        { "TempC": 626.85, "Value": 9994262 }
+      ],
+      "ThermalK": 236.798,
+      "ThermalKVsTemp": [
+        { "TempC": 20, "Value": 236.798 },
+        { "TempC": 25.05, "Value": 237 },
+        { "TempC": 26.85, "Value": 237 },
+        { "TempC": 76.85, "Value": 240 },
+        { "TempC": 85, "Value": 240 },
+        { "TempC": 125, "Value": 240 },
+        { "TempC": 126.85, "Value": 240 },
+        { "TempC": 226.85, "Value": 236 },
+        { "TempC": 326.85, "Value": 231 },
+        { "TempC": 426.85, "Value": 225 },
+        { "TempC": 526.85, "Value": 218 },
+        { "TempC": 626.85, "Value": 210 }
+      ],
+      "DensityKgM3": 2700,
+      "SpecificHeat": 897,
+      "Color": "#A3A8AF",
+      "Appearance": { "BaseColor": "#E4E7EA", "Metallic": 1, "Roughness": 0.4 }
+    },
+    {
+      "Name": "Copper",
+      "Sigma20": 58000000,
+      "Alpha20": 0.0039,
+      "SigmaVsTemp": [
+        { "TempC": 20, "Value": 58000000 },
+        { "TempC": 25.05, "Value": 56881363 },
+        { "TempC": 26.85, "Value": 56493001 },
+        { "TempC": 76.85, "Value": 47435387 },
+        { "TempC": 85, "Value": 46223798 },
+        { "TempC": 125, "Value": 41074715 },
+        { "TempC": 126.85, "Value": 40864183 },
+        { "TempC": 226.85, "Value": 31896596 },
+        { "TempC": 326.85, "Value": 26061139 },
+        { "TempC": 426.85, "Value": 21934006 },
+        { "TempC": 526.85, "Value": 18842573 },
+        { "TempC": 626.85, "Value": 16430800 },
+        { "TempC": 726.85, "Value": 14486181 },
+        { "TempC": 826.85, "Value": 12883060 },
+        { "TempC": 926.85, "Value": 11532521 },
+        { "TempC": 1026.85, "Value": 10376532 },
+        { "TempC": 1084.45, "Value": 9788442 }
+      ],
+      "ThermalK": 401.404,
+      "ThermalKVsTemp": [
+        { "TempC": 20, "Value": 401.404 },
+        { "TempC": 25.05, "Value": 401 },
+        { "TempC": 26.85, "Value": 401 },
+        { "TempC": 76.85, "Value": 396 },
+        { "TempC": 85, "Value": 395.511 },
+        { "TempC": 125, "Value": 393.111 },
+        { "TempC": 126.85, "Value": 393 },
+        { "TempC": 226.85, "Value": 386 },
+        { "TempC": 326.85, "Value": 379 },
+        { "TempC": 426.85, "Value": 373 },
+        { "TempC": 526.85, "Value": 366 },
+        { "TempC": 626.85, "Value": 359 },
+        { "TempC": 726.85, "Value": 352 },
+        { "TempC": 826.85, "Value": 346 },
+        { "TempC": 926.85, "Value": 339 },
+        { "TempC": 1026.85, "Value": 332 },
+        { "TempC": 1084.45, "Value": 328 }
+      ],
+      "DensityKgM3": 8960,
+      "SpecificHeat": 385,
+      "Appearance": { "BaseColor": "#FAD1C2", "Metallic": 1, "Roughness": 0.35 }
+    },
+    {
+      "Name": "Silver",
+      "Sigma20": 63000000,
+      "Alpha20": 0.0038,
+      "SigmaVsTemp": [
+        { "TempC": 20, "Value": 63000000 },
+        { "TempC": 25.05, "Value": 61819920 },
+        { "TempC": 26.85, "Value": 61409913 },
+        { "TempC": 76.85, "Value": 51775871 },
+        { "TempC": 85, "Value": 50459978 },
+        { "TempC": 125, "Value": 44863800 },
+        { "TempC": 126.85, "Value": 44634855 },
+        { "TempC": 226.85, "Value": 34789850 },
+        { "TempC": 326.85, "Value": 28325389 },
+        { "TempC": 426.85, "Value": 23761991 },
+        { "TempC": 526.85, "Value": 20360787 },
+        { "TempC": 626.85, "Value": 17738669 },
+        { "TempC": 726.85, "Value": 15636235 },
+        { "TempC": 826.85, "Value": 13861164 },
+        { "TempC": 926.85, "Value": 12363382 }
+      ],
+      "ThermalK": 429,
+      "ThermalKVsTemp": [
+        { "TempC": 20, "Value": 429 },
+        { "TempC": 25.05, "Value": 429 },
+        { "TempC": 26.85, "Value": 429 },
+        { "TempC": 76.85, "Value": 427 },
+        { "TempC": 85, "Value": 426.674 },
+        { "TempC": 125, "Value": 425.074 },
+        { "TempC": 126.85, "Value": 425 },
+        { "TempC": 226.85, "Value": 419 },
+        { "TempC": 326.85, "Value": 412 },
+        { "TempC": 426.85, "Value": 404 },
+        { "TempC": 526.85, "Value": 396 },
+        { "TempC": 626.85, "Value": 388 },
+        { "TempC": 726.85, "Value": 379 },
+        { "TempC": 826.85, "Value": 370 },
+        { "TempC": 926.85, "Value": 361 }
+      ],
+      "DensityKgM3": 10490,
+      "SpecificHeat": 235,
+      "Color": "#C4C7CC",
+      "Appearance": { "BaseColor": "#FCFAF5", "Metallic": 1, "Roughness": 0.2 }
+    },
+    {
+      "Name": "GaAs",
+      "Epsr": 12.9,
+      "TanD": 0.0006,
+      "Mur": 1,
+      "ThermalK": 46,
+      "DensityKgM3": 5320,
+      "SpecificHeat": 350
+    },
+    {
+      "Name": "MIM Dielectric",
+      "Epsr": 6.8,
+      "TanD": 0.001,
+      "Mur": 1
+    },
+    {
+      "Name": "Air",
+      "Epsr": 1,
+      "TanD": 0,
+      "Mur": 1
+    }
+  ]
+}

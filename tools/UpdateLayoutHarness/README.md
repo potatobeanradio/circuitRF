@@ -27,6 +27,7 @@ in `<out-dir>/state` unless `CRF_STATE_DIR` is already set, so the run neither r
 | `run` | Update Layout from Schematic. |
 | `restore` | Layout ▸ Restore Removed Parts (a run that puts back parts deleted by hand). |
 | `resnap:A,B` | Layout ▸ Re-snap to Schematic on those parts. |
+| `sites:WPD1` | Place Site Parts on that passive, then saves the schematic to the scratch copy's own `.csch`. |
 | `set:R1.L=4` | A schematic parameter's expression (its unit is kept). A VAR block's variable is `set:VAR1.L90=5.6604`. |
 | `rot:TL3=90`, `mirror:TL3` | A schematic symbol's rotation (0/90/180/270) or mirror. Wires are not dragged with it, so its pins may leave their nets. |
 | `move:TL2=500,0` | A layout instance moved by hand, in µm. |

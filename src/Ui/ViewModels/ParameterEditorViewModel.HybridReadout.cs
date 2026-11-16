@@ -20,10 +20,29 @@ public partial class ParameterEditorViewModel
         {
             if (kind == SymbolKind.Mrrc)
             {
-                var r = RatRacePlan.Build(z0, f, s, Corner());
+                if (Spec("Meander", 0.0) is not { } meander)
+                    return ("", "Meander is an expression, so the ring's dimensions are known only at run time.");
+                var form = Enum.TryParse(_target?.Parameters.FirstOrDefault(p => p.Name == "Form")?.Expression?.Trim(),
+                    ignoreCase: true, out RatRaceForm rf) && Enum.IsDefined(rf) ? rf : RatRaceForm.Ring;
+                if (form == RatRaceForm.CoupledLine)
+                {
+                    if (Spec("Coupling", RatRacePlan.DefaultSectionCoupling) is not { } cdb)
+                        return ("", "Coupling is an expression, so the ring's dimensions are known only at run time.");
+                    var c = RatRacePlan.Build(z0, f, s, Corner(), 0, RatRaceForm.CoupledLine, cdb);
+                    return ($"W {Mm(c.W0Meters, "0.#####")} (Z0), ring {Mm(c.RingWMeters, "0.#####")} ({Ohm(c.RingZ0)}), "
+                          + $"L {Mm(c.QuarterWaveMeters)} (λg/4 at F, εeff {Eeff(c.RingEeff)})\n"
+                          + $"Section (the 3λg/4 arm): Ze {Ohm(c.SectionModes.Ze)}, Zo {Ohm(c.SectionModes.Zo)}, "
+                          + $"{cdb.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)} dB; W {Mm(c.Section.W, "0.#####")}, "
+                          + $"S {Mm(c.Section.S, "0.#####")}, L {Mm(c.Section.L)}\n"
+                          + $"Corners stand for {Mm(c.CornerMeters)} of ring each at F; a via to ground on G2 and on G4", "");
+                }
+                var r = RatRacePlan.Build(z0, f, s, Corner(), meander);
                 return ($"W {Mm(r.W0Meters, "0.#####")} (Z0), ring {Mm(r.RingWMeters, "0.#####")} ({Ohm(r.RingZ0)})\n"
                       + $"L {Mm(r.QuarterWaveMeters)} (λg/4 at F, εeff {Eeff(r.RingEeff)}); the ring is 6 of them\n"
-                      + (r.Corner == PlanCorner.Curve
+                      + (r.MeanderTurns > 0
+                          ? $"Half-turn radius {Mm(r.RadiusMeters)}; the 3λg/4 arm folded inside in {r.MeanderTurns} "
+                          + $"turns, legs {Mm(r.MeanderPitchMeters)} apart"
+                          : r.Corner == PlanCorner.Curve
                           ? $"Half-turn radius {Mm(r.RadiusMeters)}"
                           : $"Each end: a {Mm(r.SideMeters)} side between two {(r.Corner == PlanCorner.Miter ? "mitred" : "square")} "
                           + $"corners, each standing for {Mm(r.CornerMeters)} of ring at F"), "");
@@ -35,6 +54,10 @@ public partial class ParameterEditorViewModel
             var lines = new List<string> { $"W {Mm(d.W0Meters, "0.#####")} (Z0 feeds)", Arm("Series arms", d.Series[0]) };
             lines.Add(Arm(d.Sections == 1 ? "Shunt arms" : "Outer shunt arms", d.Shunts[0]));
             if (d.Sections == 2) lines.Add(Arm("Middle shunt arm", d.Shunts[1]));
+            // Three and four sections: each distinct shunt arm from the outside in, as the arms mirror about the middle.
+            for (int i = 1; d.Sections > 2 && i <= d.Sections / 2; i++)
+                lines.Add(Arm(i < d.Sections / 2 ? "Next shunt arms" : d.Sections % 2 == 0 ? "Middle shunt arm" : "Middle shunt arms",
+                    d.Shunts[i]));
             lines.Add("L: between the junctions' reference planes, λg/4 at F");
             return (string.Join("\n", lines), "");
         }

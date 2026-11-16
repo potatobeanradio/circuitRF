@@ -1,0 +1,7 @@
+# MCRC, Hairpin with a stepped-impedance profile (the miniature hairpin): each U's centre Wc wide over Uc
+# of its length, the hairpins staggered so their wide ends face; the feeds coupled.
+Info CRC1 added
+Info P1 port 1 placed at CRC1 pin 1
+Info P2 port 2 placed at CRC1 pin 2
+port P1 1
+port P2 2

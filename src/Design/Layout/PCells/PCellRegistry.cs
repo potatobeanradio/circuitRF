@@ -20,6 +20,8 @@ public static class PCellRegistry
             { CoupledLinePCells.McLinId,  CoupledLinePCells.GenerateMclin  },
             { CoupledLinePCells.BcLinId,  CoupledLinePCells.GenerateBclin  },
             { CoupledLinePCells.MbcLinId, CoupledLinePCells.GenerateMbclin },
+            // N coupled strips (MCLINN): one N-line section, each strip MLIN's.
+            { PassivePlanPCells.CoupledStripsId, PassivePlanPCells.GenerateCoupledStrips },
             { "MBEND",  MBendPCell.Generate  },
             { MCurvePCell.GeneratorId, MCurvePCell.Generate },
             { MMiterPCell.GeneratorId, MMiterPCell.Generate },
@@ -29,13 +31,25 @@ public static class PCellRegistry
             { "MCROSS", MCrossPCell.Generate },
             { "MTAPER", MTaperPCell.Generate },
             { "MKLOPF", MKlopfPCell.Generate },
+            // The radial stub: one sector or a butterfly on its one pin.
+            { MRadialPCell.GeneratorId, MRadialPCell.Generate },
             // The planned passives (docs/design/rf-passives.md): the plan the model stamps, drawn by its parts' generators.
             { PassivePlanPCells.WilkinsonId, PassivePlanPCells.GenerateWilkinson },
             { PassivePlanPCells.BranchLineId, PassivePlanPCells.GenerateBranchLine },
             { PassivePlanPCells.RatRaceId, PassivePlanPCells.GenerateRatRace },
+            { PassivePlanPCells.GyselId, PassivePlanPCells.GenerateGysel },
+            { PassivePlanPCells.BagleyId, PassivePlanPCells.GenerateBagley },
+            { PassivePlanPCells.TeeDividerId, PassivePlanPCells.GenerateTeeDivider },
             { PassivePlanPCells.CoupledLineCouplerId, PassivePlanPCells.GenerateCoupledLineCoupler },
             { PassivePlanPCells.LangeId, PassivePlanPCells.GenerateLange },
             { PassivePlanPCells.MarchandId, PassivePlanPCells.GenerateMarchand },
+            { PassivePlanPCells.CoupledResonatorId, PassivePlanPCells.GenerateCoupledResonator },
+            { PassivePlanPCells.LadderId, PassivePlanPCells.GenerateLadder },
+            { PassivePlanPCells.SchiffmanId, PassivePlanPCells.GenerateSchiffman },
+            { PassivePlanPCells.DelayLineId, PassivePlanPCells.GenerateDelayLine },
+            { PassivePlanPCells.CoupledArrayId, PassivePlanPCells.GenerateCoupledArray },
+            // The resistive attenuator and splitter: its sites' interconnect (LumpedPlan).
+            { PassivePlanPCells.ResistivePadId, PassivePlanPCells.GenerateResistivePad },
             // The recognised board's other two lines (designer report, round 16): a stripline is MLIN's strip on its
             // own layer, and a grounded coplanar line adds its side grounds.
             { CpwgPCell.GeneratorId, CpwgPCell.Generate },
@@ -294,6 +308,12 @@ public static class PCellRegistry
             // v2: N and Lc added, and a placed part opens as a three-segment serpentine. A cell drawn before
             // them states neither and reads as N = 1, the same straight film.
             { "TFR", 2 },
+            // v2: a planned passive's line sized to a phase at F follows MLIN's causal phase constant there
+            // (PlanarLineAngle.LengthMeters over MicrostripLineParameters), not its εeff alone: MDLY's run, MSPS's
+            // reference line, the ring dividers' quarter waves (MGPD, MBPD, MTPD), MRRC's meander and MCLC's tandem leads
+            // and inductive sections are resized (shorter where the conductor loss dominates), and a cell on disk carries
+            // the old lengths.
+            { "MDLY", 2 }, { "MSPS", 2 }, { "MGPD", 2 }, { "MBPD", 2 }, { "MTPD", 2 }, { "MRRC", 2 }, { "MCLC", 2 },
         };
 
     public static int GeneratorVersion(string generatorId)

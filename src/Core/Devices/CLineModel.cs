@@ -134,8 +134,9 @@ public sealed class CLineModel : ComponentModel, IDcShortedTerminals, ICoupledPa
     }
 
     /// <summary>One mode's 2-port admittance (diagonal, off-diagonal) for a line of impedance
-    /// <paramref name="z"/> and propagation <paramref name="gl"/> = γl over its length.</summary>
-    private static (Complex Diag, Complex Off) Modal(double z, Complex gl)
+    /// <paramref name="z"/> and propagation <paramref name="gl"/> = γl over its length. Shared with the N-line
+    /// model (<see cref="MicrostripMultiLineModel"/>), whose modes carry a complex impedance.</summary>
+    internal static (Complex Diag, Complex Off) Modal(Complex z, Complex gl)
     {
         Complex sh = Complex.Sinh(gl), ch = Complex.Cosh(gl);
         if (sh.Magnitude < SinhFloor)

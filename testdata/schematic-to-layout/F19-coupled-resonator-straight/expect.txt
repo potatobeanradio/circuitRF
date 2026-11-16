@@ -1,0 +1,7 @@
+# The coupled-resonator filter as one part (MCRC), Straight: Cohn's three-resonator edge-coupled design,
+# the feeds coupled, each port on its own feed strip's end.
+Info CRC1 added
+Info P1 port 1 placed at CRC1 pin 1
+Info P2 port 2 placed at CRC1 pin 2
+port P1 1
+port P2 2

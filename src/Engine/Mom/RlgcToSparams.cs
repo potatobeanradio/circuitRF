@@ -339,19 +339,8 @@ public static class RlgcToSparams
     /// one place a wrong <c>Ti</c> would show, so the test that exists to catch that must exercise
     /// this function rather than a restatement of it.</para>
     /// </summary>
-    public static Mat<Complex> ModalBlock(ModalDecomposition.GeneralModes modes, Complex[] x)
-    {
-        int n = modes.ModeCount;
-        var r = new Mat<Complex>(n, n);
-        for (int m = 0; m < n; m++)
-        {
-            var w = x[m] / modes.CurrentScale[m];
-            for (int i = 0; i < n; i++)
-            for (int j = 0; j < n; j++)
-                r[i, j] += w * (modes.Tv[i, m] * modes.Tv[j, m]);
-        }
-        return r;
-    }
+    public static Mat<Complex> ModalBlock(MulticonductorLine.GeneralModes modes, Complex[] x)
+        => MulticonductorLine.Block(modes.Tv, modes.CurrentScale, x);
 
     /// <summary>
     /// <b>R-gen-8's own open question, decided: keep <c>…Even</c>/<c>…Odd</c> as an ADDITIONAL alias
@@ -366,7 +355,7 @@ public static class RlgcToSparams
     /// is not unambiguous publishes no alias rather than a guessed one.</para>
     /// </summary>
     private static void AddEvenOddAliases(
-        DataSet ds, ModalDecomposition.GeneralModes modes, double[] freqsHz, int n,
+        DataSet ds, MulticonductorLine.GeneralModes modes, double[] freqsHz, int n,
         Complex[] zc, Complex[] gamma, double[] atten, double[] rpul, double[] gpul,
         double[] eeff, double[] lpul, double[] cpul)
     {
@@ -411,9 +400,5 @@ public static class RlgcToSparams
 
     /// <summary>√ on the branch with Re ≥ 0 — a propagation constant never has a negative
     /// attenuation, and Z_c of a passive line never has a negative resistance.</summary>
-    internal static Complex PrincipalSqrt(Complex v)
-    {
-        var r = Complex.Sqrt(v);
-        return r.Real < 0 ? -r : r;
-    }
+    internal static Complex PrincipalSqrt(Complex v) => MulticonductorLine.PrincipalSqrt(v);
 }

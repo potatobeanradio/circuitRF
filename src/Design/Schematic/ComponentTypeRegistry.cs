@@ -6,6 +6,22 @@ using CircuitRF.Core.Matching;
 using CircuitRF.Core.Systems;
 using CircuitRF.WBond;
 using PlanCorner = CircuitRF.Core.Devices.Microstrip.PlanCorner;
+using ResonatorShape = CircuitRF.Core.Devices.Microstrip.ResonatorShape;
+using ResonatorProfile = CircuitRF.Core.Devices.Microstrip.ResonatorProfile;
+using ResonatorFeed = CircuitRF.Core.Devices.Microstrip.ResonatorFeed;
+using ResonatorForm = CircuitRF.Core.Devices.Microstrip.ResonatorForm;
+using LoopArrangement = CircuitRF.Core.Devices.Microstrip.LoopArrangement;
+using ResonatorCoupling = CircuitRF.Core.Devices.Microstrip.ResonatorCoupling;
+using LadderPlan = CircuitRF.Core.Devices.Microstrip.LadderPlan;
+using CouplerCompensation = CircuitRF.Core.Devices.Microstrip.CouplerCompensation;
+using SchiffmanReference = CircuitRF.Core.Devices.Microstrip.SchiffmanReference;
+using RatRaceForm = CircuitRF.Core.Devices.Microstrip.RatRaceForm;
+using PlanRouteStyle = CircuitRF.Core.Devices.Microstrip.PlanRouteStyle;
+using CoupledArrayForm = CircuitRF.Core.Devices.Microstrip.CoupledArrayForm;
+using CoupledArrayFeed = CircuitRF.Core.Devices.Microstrip.CoupledArrayFeed;
+using PlanRealization = CircuitRF.Core.Devices.Microstrip.PlanRealization;
+using LumpedArm = CircuitRF.Core.Devices.Microstrip.LumpedArm;
+using ResistivePadForm = CircuitRF.Core.Devices.Microstrip.ResistivePadForm;
 
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout.PCells;
@@ -826,6 +842,13 @@ public static class ComponentTypeRegistry
             SearchTerms: ["MCLIN", "coupled microstrip", "edge coupled", "coupled lines", "coupled line",
                           "coupler", "directional coupler", "even mode", "odd mode", "Kirschning", "Jansen"],
             ExtraCategories: [ComponentCategory.TransmissionLine]),
+        // MCLINN — N coupled microstrip lines, every strip coupled to every other (the field-solved cross-section).
+        [SymbolKind.MCLineN]       = new("MCLINN", "MCLN",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MCLINN", "coupled microstrip", "coupled lines", "multiconductor", "multi-conductor",
+                          "N coupled lines", "three coupled lines", "interdigital", "combline", "coupled array",
+                          "field solver"],
+            ExtraCategories: [ComponentCategory.TransmissionLine]),
         // MBCLIN — broadside-coupled microstrip: one strip buried, one above it, a single ground.
         [SymbolKind.MBCLine]       = new("MBCLIN", "MBCL",
             Category: ComponentCategory.Microstrip,
@@ -860,21 +883,40 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MKLOPF", "klopfenstein", "klopfenstein taper", "taper", "impedance transformer"],
             ExtraCategories: [ComponentCategory.TransmissionLine]),
+        // The radial stub: one sector, or two back to back (a butterfly), on the shunt node it hangs from.
+        [SymbolKind.MRadial]      = new("MRADIAL", "MRD",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MRADIAL", "radial stub", "butterfly stub", "butterfly", "sector stub", "fan stub",
+                          "open stub", "shunt stub", "bias tee", "RF ground", "stub filter", "quarter wave"],
+            ExtraCategories: [ComponentCategory.TransmissionLine]),
         // The planned passives (docs/design/rf-passives.md): one part per topology, specs as parameters.
         [SymbolKind.Mwpd]         = new("MWPD", "WPD",
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MWPD", "Wilkinson", "Wilkinson divider", "power divider", "power splitter", "splitter",
                           "combiner", "divider", "3 dB", "in-phase", "isolation resistor", "quarter wave", "ring",
                           "unequal split", "unequal divider", "split ratio", "multi-section", "broadband divider",
-                          "split-tee"]),
+                          "split-tee", "lumped Wilkinson", "lumped divider", "LC divider"]),
         [SymbolKind.Mblc]         = new("MBLC", "BLC",
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MBLC", "branch-line", "branch line", "branchline", "branch-line coupler", "quadrature hybrid",
-                          "90 degree hybrid", "hybrid", "coupler", "3 dB", "quadrature", "quarter wave"]),
+                          "90 degree hybrid", "hybrid", "coupler", "3 dB", "quadrature", "quarter wave", "lumped hybrid",
+                          "lumped coupler"]),
         [SymbolKind.Mrrc]         = new("MRRC", "RRC",
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MRRC", "rat-race", "rat race", "ratrace", "ring hybrid", "hybrid ring", "180 degree hybrid",
-                          "hybrid", "coupler", "sum", "difference", "magic tee", "3 dB", "ring"]),
+                          "hybrid", "coupler", "sum", "difference", "magic tee", "3 dB", "ring", "lumped rat-race"]),
+        [SymbolKind.Mgpd]         = new("MGPD", "GPD",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MGPD", "Gysel", "Gysel divider", "power divider", "power splitter", "splitter", "combiner",
+                          "high power", "grounded resistor", "isolation resistor", "divider", "3 dB", "in-phase", "ring"]),
+        [SymbolKind.Mbpd]         = new("MBPD", "BPD",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MBPD", "Bagley", "Bagley polygon", "polygon divider", "three-way", "3-way", "N-way",
+                          "power divider", "power splitter", "splitter", "divider", "lossless divider", "ring"]),
+        [SymbolKind.Mtpd]         = new("MTPD", "TPD",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MTPD", "tee divider", "T-junction divider", "T-junction", "lossless divider", "power divider",
+                          "power splitter", "splitter", "divider", "unequal split", "quarter-wave transformer"]),
         [SymbolKind.Mclc]         = new("MCLC", "CLC",
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MCLC", "coupled-line coupler", "directional coupler", "coupler", "backward-wave coupler",
@@ -883,10 +925,45 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MIDC", "Lange", "Lange coupler", "interdigitated coupler", "interdigital coupler",
                           "quadrature hybrid", "90 degree hybrid", "3 dB coupler", "coupler", "bond wire", "jumper"]),
+        // A delay or phase line: θ at F laid straight, round a corner or meandered (DelayLinePlan, PlanRoute).
+        [SymbolKind.Mdly]         = new("MDLY", "DLY",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MDLY", "delay line", "phase line", "meander", "meander line", "serpentine", "folded line",
+                          "phase shifter reference", "quarter wave", "electrical length", "length matching", "trombone"],
+            ExtraCategories: [ComponentCategory.TransmissionLine]),
         [SymbolKind.Mcbl]         = new("MCBL", "CBL",
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MCBL", "Marchand", "Marchand balun", "balun", "coupled-line balun", "planar balun",
-                          "balanced", "unbalanced", "differential", "180 degree", "quarter wave"]),
+                          "balanced", "unbalanced", "differential", "180 degree", "quarter wave", "lattice balun",
+                          "LC balun", "lumped balun"]),
+        [SymbolKind.Mcrc]         = new("MCRC", "CRC",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MCRC", "coupled-resonator filter", "bandpass filter", "edge-coupled filter", "parallel-coupled",
+                          "zig-zag filter", "hairpin filter", "SIR", "stepped-impedance resonator", "miniature hairpin",
+                          "open-loop filter", "cross-coupled", "quasi-elliptic", "ring resonator", "bandstop filter",
+                          "notch", "spurline", "tapped", "half wave"]),
+        [SymbolKind.Mlad]         = new("MLAD", "LAD",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MLAD", "ladder", "microstrip ladder", "stepped impedance", "stepped-impedance filter",
+                          "hi-lo filter", "stub filter", "open stub", "shorted stub", "lowpass", "highpass", "bandpass",
+                          "bandstop", "elliptic", "end-coupled", "gap-coupled", "DC block", "stub matcher",
+                          "single stub", "double stub", "quarter-wave transformer", "Richards", "Kuroda"]),
+        [SymbolKind.Msps]         = new("MSPS", "SPS",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MSPS", "Schiffman", "phase shifter", "differential phase shifter", "C-section",
+                          "90 degree", "broadband phase", "quadrature", "reference line", "coupled line"]),
+        // MCLA — the coupled array: every coupled-array filter as one part, its form the strips' end pattern.
+        [SymbolKind.Mcla]         = new("MCLA", "CLA",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MCLA", "coupled array", "interdigital", "interdigital filter", "combline", "comb-line",
+                          "combline filter", "pseudo-interdigital", "bandpass filter", "band-pass", "filter",
+                          "tapped", "coupled lines", "resonators"]),
+        // The resistive attenuator and splitter: its resistors are sites on short interconnect (LumpedPlan.ResistivePad).
+        [SymbolKind.Mrpad]        = new("MRPAD", "RPD",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MRPAD", "attenuator", "resistive attenuator", "pad", "resistive pad", "pi attenuator",
+                          "T attenuator", "tee attenuator", "bridged-T", "bridged T", "resistive splitter",
+                          "resistive divider", "star splitter", "wye", "delta", "dB pad", "matched pad"]),
         // The two vias (brief-via-component.md). Microstrip, because that is where they are used: a
         // line changing layers, and the return of a shunt part on a board. Not transmission lines.
         [SymbolKind.Via]          = new("VIA", "VIA",
@@ -1034,14 +1111,20 @@ public static class ComponentTypeRegistry
         SymbolKind.Switch or SymbolKind.SwitchD              => "Throws",
         // N paths and the common port: N + 1 pins, generated from N as the boxes' are from NumPorts.
         SymbolKind.Combiner                                  => "N",
+        // N coupled strips: each strip's two ends, 2·N pins generated from N.
+        SymbolKind.MCLineN                                   => "N",
         // brief-paa-3 — one pin per element in Elements mode: the product of two parameters, named as such.
         SymbolKind.PhasedArray                               => "Rows × Cols",
+        // The coupled array: 1, 2 and a pin on each shorted or loaded strip end, which four parameters set together.
+        SymbolKind.Mcla                                      => "N, Form, Feed and Ends",
         // brief-pch-8 — a pin per end that does not name an instance: none, one or both
         SymbolKind.PropagationChannel                        => "Tx and Rx",
         // A wBond's terminals are 2 per wire array it places, plus the reference pin when RefPin is
         // on — so the count follows the arrays selected out of the design it carries or links to,
         // and there is no fixed answer at all until one is chosen.
         SymbolKind.WBond                                     => "Arrays",
+        // A ladder's via pins G1… follow its list: one per shorted stub arm.
+        SymbolKind.Mlad                                      => "Sections",
         _                                                    => null,
     };
 
@@ -1083,6 +1166,10 @@ public static class ComponentTypeRegistry
             "Terminals 1 and 2 are the two ends of one line, 3 and 4 the two ends of the other; 3 sits "
           + "beside 1 and 4 beside 2. Driving 1 of a matched pair, 2 is the through port, 3 the "
           + "coupled port and 4 the isolated port.",
+
+        SymbolKind.MCLineN =>
+            "Terminals 1 to N are the strips' near ends, top strip first, and N + 1 to 2N their far ends, so strip k "
+          + "runs from terminal k to terminal N + k and N sets how many there are.",
 
         SymbolKind.Atten or SymbolKind.Filter or SymbolKind.Delay or SymbolKind.PhaseShifter =>
             "The two terminals are interchangeable — this block is symmetric, and its parameters "
@@ -1142,33 +1229,89 @@ public static class ComponentTypeRegistry
         SymbolKind.ViaGnd =>
             "One terminal, A, on FromLayer. The far end is ground: the via lands on GroundLayer.",
 
+        SymbolKind.MRadial =>
+            "One terminal, the shunt node: the middle of the sector's narrow end, where the feed line of width W meets it. "
+          + "The stub is open at its arc and returns through the ground plane.",
+
         SymbolKind.Mwpd =>
             "Not interchangeable: terminal 1 is the input and 2 and 3 the two outputs, alike by symmetry when K = 1. R2 "
           + "and R3 are the arms' ends beside outputs 2 and 3, the gap the isolation resistor goes across: put a "
           + "resistor of 2·Z0 (Z0·(K + 1/K) for an unequal split) on R2-R3. With N sections the terminals are 3 + 2·N: "
           + "R2_k and R3_k, k = 2 … N, are the ends of resistor k, counted from the outputs, and the Properties readout "
-          + "gives every resistor's value.",
+          + "gives every resistor's value. With Realization = Lumped the terminals are the lumped divider's: 1, 2 and 3, R2-R3 "
+          + "for the resistor, each arm's inductor across L1a-L1b and L2a-L2b (π) or L1a … L4b (T), and a capacitor to "
+          + "ground on each G pin.",
 
         SymbolKind.Mblc =>
             "Not interchangeable: 1 and 2 are the ends of one through line, 4 and 3 of the other. Driven at 1, 2 is the "
           + "through port, 3 the coupled port (90° behind 2) and 4 the isolated port; the coupler is symmetric, so any "
-          + "pin may be the input with its own three roles.",
+          + "pin may be the input with its own three roles. With Realization = Lumped: an inductor across each of L1a-L1b … "
+          + "L4a-L4b (the arms) and a capacitor to ground on each of G1-G4, as the readout lists them.",
 
         SymbolKind.Mrrc =>
             "Not interchangeable: 1 is the sum (Σ) port and 4 the difference (Δ) port; 2 and 3 are the outputs. Driven at "
-          + "1, 2 and 3 are in phase and 4 is isolated; driven at 4, 2 and 3 are 180° apart and 1 is isolated.",
+          + "1, 2 and 3 are in phase and 4 is isolated; driven at 4, 2 and 3 are 180° apart and 1 is isolated. With "
+          + "Realization = Lumped: an inductor across each of L1a-L1b … L3a-L3b, a capacitor across C1a-C1b and to ground on "
+          + "G1 and G3, as the readout lists them. With Form = CoupledLine: G2 and G4 are the coupled section's grounded "
+          + "ends, beside ports 2 and 4; put a via to ground (VIAGND) on each.",
+        SymbolKind.Mgpd =>
+            "Not interchangeable: terminal 1 is the input and 2 and 3 the two outputs, alike by symmetry. R2 and R3 are the "
+          + "isolation nodes beside outputs 2 and 3: put a resistor of Z0 from each to ground (a VIAGND, or a "
+          + "termination off the board). The resistors are not part of the part.",
+
+        SymbolKind.Mbpd =>
+            "Not interchangeable: terminal 1 is the input; 2 … N + 1 are the outputs in turn round the polygon, the pin "
+          + "count following N. The outputs alternate in phase: 2, 4, 6 … leave a quarter period behind the input and "
+          + "3, 5 … half a period from them. Only terminal 1 is matched.",
+
+        SymbolKind.Mtpd =>
+            "Not interchangeable: terminal 1 is the input on the junction's branch, 2 and 3 the ends of the two "
+          + "quarter-wave transformers, in phase. Port 3 takes K² times the power port 2 does. Only terminal 1 is matched.",
+
         SymbolKind.Mclc =>
             "Not interchangeable: terminal 1 is the input, 2 the through port, 3 the coupled port (beside 1) and 4 the "
-          + "isolated port (beside 2). The coupler is symmetric, so any terminal can be the input with the others in turn.",
+          + "isolated port (beside 2). The coupler is symmetric, so any terminal can be the input with the others in turn. "
+          + "With Tandem = 1 it has eight: 3 is then the far coupled port, and J1-J2 and J3-J4 are the two crossovers' "
+          + "landings, a jumper (bond wire, airbridge or underpass) on each. With Compensation = Capacitive, put the "
+          + "readout's capacitor on 1-3 and on 2-4.",
 
         SymbolKind.Midc =>
             "Terminals 1-4 as MCLC's: 1 the input, 2 through, 3 coupled, 4 isolated. J1-J4 are the inner fingers' ends: "
           + "put a jumper (on a board, a bond wire) from each terminal k to Jk. Without them the fingers are not joined "
-          + "and the part does not couple as specified.",
+          + "and the part does not couple as specified. Six or eight fingers add J5-J8 and J9-J12: a jumper joins "
+          + "J(4m+k) to terminal k's conductor.",
+
+        SymbolKind.Mdly =>
+            "Terminal 1 is where the run starts and 2 where it ends; the line is reciprocal, so either may be the input. "
+          + "The run leaves terminal 1 heading right; a meander stacks its legs to the left of that heading (Side 1) or "
+          + "to the right (Side −1).",
 
         SymbolKind.Mcbl =>
             "Not interchangeable: terminal 1 is the unbalanced input, 2 and 3 the balanced outputs, in antiphase. G2 and "
-          + "G3 are the grounded ends of the strips that carry 2 and 3: put a via to ground (VIAGND) on each.",
+          + "G3 are the grounded ends of the strips that carry 2 and 3: put a via to ground (VIAGND) on each. With "
+          + "Realization = Lumped, the lattice: an inductor across L1a-L1b (1 to 2), a capacitor across C1a-C1b (1 to 3), a "
+          + "capacitor to ground on G2 and an inductor to ground on G3.",
+
+        SymbolKind.Mrpad =>
+            "1 and 2 are the attenuator's ports; 3 is a splitter's third port, or the middle node a T's or bridged-T's "
+          + "shunt resistor goes to ground from. Put each series resistor across its R pins (R1a-R1b, …) and each shunt "
+          + "resistor from its terminal to ground: the π's on 1 and 2, the T's and bridged-T's on 3. The readout lists them.",
+
+        SymbolKind.Mcrc =>
+            "Terminal 1 is the input feed (or the through line's start), 2 the output. A symmetric design is the same "
+          + "either way round.",
+        SymbolKind.Mlad =>
+            "Terminals 1 and 2 are the through line's ends, the first section at 1. G1, G2, … follow in the list's "
+          + "order: one per shorted stub arm (up before down), for a via to ground (VIAGND); one per shunt site, for its "
+          + "part to ground; and two per series site, for the part across them. A list with neither has terminals 1 "
+          + "and 2 only.",
+        SymbolKind.Msps =>
+            "Two separate two-ports: 1 and 2 are the C-section's ends (either can be the input), 3 and 4 the reference "
+          + "line's. Their transmission phases differ by Phase at F, nearly flat over Band.",
+        SymbolKind.Mcla =>
+            "Terminals 1 and 2 are the ports. E1, E2, … follow, one on each shorted or loaded strip end, strip by strip "
+          + "from the top, near end before far: put a via to ground (VIAGND) on a shorted end and a capacitor to ground "
+          + "of the strip's C on a loaded one. N, Form, Feed and Ends set how many there are.",
 
         SymbolKind.GsgPad =>
             "Not interchangeable: terminal 1 is where the probe's signal tip lands, the middle of the signal pad, "
@@ -1362,6 +1505,7 @@ public static class ComponentTypeRegistry
         SymbolKind.MCLine        => "MCLIN",
         SymbolKind.BCLine        => "BCLIN",
         SymbolKind.MBCLine       => "MBCLIN",
+        SymbolKind.MCLineN       => MicrostripMultiLineModel.TypeName,
         SymbolKind.Match         => "Match",
         // All three tuner tiles place the identical engine component.
         SymbolKind.Tuner         => "Tuner",
@@ -1378,6 +1522,7 @@ public static class ComponentTypeRegistry
         SymbolKind.MCross        => "MCROSS",
         SymbolKind.Mtaper        => "MTAPER",
         SymbolKind.Mklopf        => "MKLOPF",
+        SymbolKind.MRadial       => ComponentModelFactory.RadialStubTypeName,
         SymbolKind.Via           => "VIA",
         SymbolKind.ViaGnd        => "VIAGND",
         SymbolKind.TestPad       => "TESTPAD",
@@ -1385,9 +1530,18 @@ public static class ComponentTypeRegistry
         SymbolKind.Mwpd          => ComponentModelFactory.WilkinsonTypeName,
         SymbolKind.Mblc          => ComponentModelFactory.BranchLineTypeName,
         SymbolKind.Mrrc          => ComponentModelFactory.RatRaceTypeName,
+        SymbolKind.Mgpd          => ComponentModelFactory.GyselTypeName,
+        SymbolKind.Mbpd          => ComponentModelFactory.BagleyTypeName,
+        SymbolKind.Mtpd          => ComponentModelFactory.TeeDividerTypeName,
         SymbolKind.Mclc          => ComponentModelFactory.CoupledLineCouplerTypeName,
         SymbolKind.Midc          => ComponentModelFactory.LangeTypeName,
         SymbolKind.Mcbl          => ComponentModelFactory.MarchandTypeName,
+        SymbolKind.Mcrc          => ComponentModelFactory.CoupledResonatorTypeName,
+        SymbolKind.Mlad          => ComponentModelFactory.LadderTypeName,
+        SymbolKind.Msps          => ComponentModelFactory.SchiffmanTypeName,
+        SymbolKind.Mdly          => ComponentModelFactory.DelayLineTypeName,
+        SymbolKind.Mcla          => ComponentModelFactory.CoupledArrayTypeName,
+        SymbolKind.Mrpad         => ComponentModelFactory.ResistivePadTypeName,
         SymbolKind.MimCap        => "MIMCAP",
         SymbolKind.Spiral        => "SPIRAL",
         SymbolKind.OctSpiral     => "OSPIRAL",
@@ -1556,11 +1710,18 @@ public static class ComponentTypeRegistry
         or SymbolKind.ZPort or SymbolKind.Snp or SymbolKind.EmFieldData or SymbolKind.VerilogA
         or SymbolKind.Tline or SymbolKind.Mlin or SymbolKind.MBend or SymbolKind.MCurve or SymbolKind.MTee or SymbolKind.MCross
         or SymbolKind.Mtaper or SymbolKind.Mklopf or SymbolKind.MMiter or SymbolKind.MGap or SymbolKind.Cpwg or SymbolKind.Slin
-        or SymbolKind.CLine or SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine
+        or SymbolKind.MRadial
+        or SymbolKind.CLine or SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine or SymbolKind.MCLineN
         or SymbolKind.Via or SymbolKind.ViaGnd or SymbolKind.WBond or SymbolKind.Match
         or SymbolKind.MimCap or SymbolKind.Spiral or SymbolKind.OctSpiral or SymbolKind.Tfr or SymbolKind.Airbridge
         or SymbolKind.TestPad or SymbolKind.GsgPad or SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
-        or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl
+        or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd
+        or SymbolKind.Mcrc
+        or SymbolKind.Mlad
+        or SymbolKind.Msps
+        or SymbolKind.Mdly
+        or SymbolKind.Mcla
+        or SymbolKind.Mrpad
         or SymbolKind.Balun or SymbolKind.Circulator or SymbolKind.Switch or SymbolKind.Coupler
         or SymbolKind.Hybrid90 or SymbolKind.Hybrid180 or SymbolKind.Filter or SymbolKind.Atten or SymbolKind.Duplexer
         or SymbolKind.Combiner
@@ -1761,11 +1922,11 @@ public static class ComponentTypeRegistry
         (SymbolKind.Mwpd, "K") => "Split ratio: P3/P2 = K², so port 3 takes K² times the power port 2 does. 1 is the equal split; "
                                 + "any other value gives the unequal split's arms, a quarter-wave transformer at each output and "
                                 + "Z0·(K + 1/K) across R2-R3. Equal split only with N above 1.",
-        (SymbolKind.Mwpd, "N") => "Number of quarter-wave sections, 1 to 3 (a broadband multi-section divider above 1), each with its own "
+        (SymbolKind.Mwpd, "N") => "Number of quarter-wave sections, 1 to 7 (a broadband multi-section divider above 1), each with its own "
                                 + "isolation resistor. Sets the pin count, 3 + 2·N, so it must be a plain number.",
         (SymbolKind.Mwpd, "Band") => "For N above 1: the design band's upper edge over its lower, f2/f1, centred on F. The sections "
                                    + "are an equal-ripple transformer over it.",
-        (SymbolKind.Mwpd or SymbolKind.Mrrc, "Corner") => "How the ring turns. Curve: 180° curves. Miter: a rectangle with four "
+        (SymbolKind.Mwpd or SymbolKind.Mrrc or SymbolKind.Mgpd or SymbolKind.Mbpd, "Corner") => "How the ring turns. Curve: 180° curves. Miter: a rectangle with four "
                                    + "mitred 90° corners (MMITER at its usual chamfer); Square: the same with square corners "
                                    + "(MBEND). With corners the straight runs are shortened by the corners' own electrical length, "
                                    + "so every spacing is still λg/4 at F.",
@@ -1774,14 +1935,16 @@ public static class ComponentTypeRegistry
         (SymbolKind.Mwpd, "F") => "Centre frequency: each arm is a quarter wavelength long here, in the line's own effective "
                                 + "permittivity at F.",
         (SymbolKind.Mwpd, "Gap") => "Span of the isolation resistor's pins, R2 to R3: the gap the ring closes across. 1.35 mm "
-                                  + "is an 0402's at nominal density.",
+                                  + "is an 0402's at nominal density. A Footprint on the divider sets it to that land's span instead.",
         (SymbolKind.Mwpd, "SignalLayer") => "The conductor the divider is on. Empty: the technology's top conductor.",
         (SymbolKind.Mblc, "Z0") => "The ports' impedance. One section: series arms Z0/√2 and shunt arms Z0; two sections: "
-                                 + "series arms Z0 and shunt arms (1 + √2)·Z0, √2·Z0, (1 + √2)·Z0. Widths are derived on "
-                                 + "the technology's substrate.",
+                                 + "series arms Z0 and shunt arms (1 + √2)·Z0, √2·Z0, (1 + √2)·Z0; three and four keep the "
+                                 + "series arms at Z0, with shunt arms of 4.26·Z0 and 1.85·Z0 (three) or 7.40·Z0, 2.55·Z0 and "
+                                 + "1.99·Z0 (four) from the outside in. Widths are derived on the technology's substrate.",
         (SymbolKind.Mblc, "F") => "Centre frequency: each arm is a quarter wavelength long here, between the junctions' "
                                 + "reference planes, in the line's own effective permittivity at F.",
-        (SymbolKind.Mblc, "N") => "Sections, 1 or 2. Two sections widen the band and need a high-impedance outer arm.",
+        (SymbolKind.Mblc, "N") => "Sections, 1 to 4. More sections widen the band and need higher-impedance outer arms: "
+                                + "three need 4.26·Z0, which few boards reach, and four 7.40·Z0, which microstrip does not.",
         (SymbolKind.Mblc, "SignalLayer") => "The conductor the coupler is on. Empty: the technology's top conductor.",
         (SymbolKind.Mblc, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below the "
                                               + "signal layer.",
@@ -1792,23 +1955,168 @@ public static class ComponentTypeRegistry
         (SymbolKind.Mrrc, "SignalLayer") => "The conductor the ring is on. Empty: the technology's top conductor.",
         (SymbolKind.Mrrc, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below the "
                                               + "signal layer.",
+        (SymbolKind.Mgpd, "Z0") => "The ports' impedance. The input arms are √2·Z0, the isolation arms Z0 and the half-wave "
+                                 + "line Z0/√2; the resistor from each of R2 and R3 to ground is Z0. Widths are derived on the "
+                                 + "technology's substrate.",
+        (SymbolKind.Mgpd, "F") => "Centre frequency: the arms are a quarter wavelength and the line between R2 and R3 a half "
+                                + "wavelength long here, between the junctions' reference planes, in each line's own effective "
+                                + "permittivity at F.",
+        (SymbolKind.Mbpd, "Z0") => "The ports' impedance. The two input arms are 2·Z0/√N and the polygon's sides Z0; the widths are "
+                                 + "derived on the technology's substrate.",
+        (SymbolKind.Mbpd, "F") => "Centre frequency: the input arms are a quarter wavelength and each side a half wavelength long "
+                                + "here, between the junctions' reference planes, in each line's own effective permittivity at F.",
+        (SymbolKind.Mbpd, "N") => "Number of outputs: odd, 3 to 9. Sets the pin count, N + 1, so it must be a plain number.",
+        (SymbolKind.Mtpd, "Z0") => "The ports' impedance. Each transformer turns an output's Z0 into its share at the junction; "
+                                 + "the widths are derived on the technology's substrate.",
+        (SymbolKind.Mtpd, "F") => "Centre frequency: each transformer is a quarter wavelength long here, from the junction's "
+                                + "reference plane, in the line's own effective permittivity at F.",
+        (SymbolKind.Mtpd, "K") => "Split ratio: P3/P2 = K². 1 is the equal split, √2·Z0 transformers; otherwise Z0·√(1 + K²) "
+                                + "to port 2 and Z0·√(1 + K²)/K to port 3.",
+        (SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd, "SignalLayer") => "The conductor the divider is on. Empty: the "
+                                 + "technology's top conductor.",
+        (SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd, "GroundReference") => "The plane under it. Empty: the nearest "
+                                 + "ground-designated conductor below the signal layer.",
         (SymbolKind.Mclc or SymbolKind.Midc, "Coupling") => "Coupling at F, in dB below the input: the coupled port's "
                                  + "level. W and S are synthesised for it on the technology's substrate; too tight for the "
                                  + "board's coupled-line model (a gap under 0.1·H) is refused.",
         (SymbolKind.Mclc or SymbolKind.Midc, "Z0") => "The ports' impedance: the even and odd modes are chosen with Ze·Zo = Z0².",
+        (SymbolKind.Mclc, "Sections") => "Quarter-wave pairs in a row, an odd number up to 9: above 1 the coupling ripples "
+                                 + "equally about Coupling over Band (Cristal and Young's symmetric coupler). Sets the layout "
+                                 + "only; a plain number.",
+        (SymbolKind.Mclc, "Band") => "For Sections above 1: the band's upper edge over its lower, f2/f1, centred on F.",
+        (SymbolKind.Mclc, "Broadside") => "1: one pair on two conductors, one over the other (BCLIN on a stripline stack, "
+                                 + "MBCLIN otherwise), for tight couplings such as 3 dB. Refused on a stack with no second "
+                                 + "signal layer next to the signal layer.",
+        (SymbolKind.Mclc, "Tandem") => "1: two identical couplers in tandem, broadband, each of the weaker coupling that "
+                                 + "adds up to Coupling (two of 8.34 dB make 3 dB). Adds J1-J4 for the two crossover jumpers.",
+        (SymbolKind.Mclc, "Compensation") => "Equalises microstrip's two mode velocities for directivity. Capacitive: a "
+                                 + "capacitor across each coupled end (on 1-3 and 2-4, value in the readout). Inductive: a "
+                                 + "short narrow line in series at each end. Wiggly: saw-tooth facing edges, modelled only "
+                                 + "as a longer odd-mode path, so EM is the judge.",
+        (SymbolKind.Midc, "Fingers") => "4, 6 or 8 fingers. More fingers reach tighter coupling at a wider gap; each "
+                                 + "further pair adds four jumper landings. Sets the pin count, so it must be a plain number.",
+        (SymbolKind.Msps, "Z0") => "The ports' impedance: the reference line's, and the C-section's √(Ze·Zo).",
+        (SymbolKind.Msps, "F") => "Centre frequency: the C-section is a quarter wave long here, in its modes' mean "
+                                 + "permittivity, and the phase difference is exactly Phase.",
+        (SymbolKind.Msps, "Phase") => "The reference line's phase minus the C-section's, at F; between 0 and 180°. The "
+                                 + "reference line is (Phase + 180°) long at F.",
+        (SymbolKind.Msps, "Band") => "f2/f1 centred on F over which the phase difference ripples equally about Phase; a "
+                                 + "wider band needs tighter coupling (a larger Ze/Zo).",
+        (SymbolKind.Msps, "Reference") => "How the reference line is laid. Straight: along the C-section. Curve: folded back "
+                                 + "beneath itself on a 180° curve, so pin 4 is beside pin 3; Miter or Square: the same on "
+                                 + "two corners. Every turn counts at its own electrical length.",
+        (SymbolKind.Msps, "SignalLayer") => "The conductor the part is on. Empty: the technology's top conductor.",
+        (SymbolKind.Msps, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below the "
+                                 + "signal layer.",
         (SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl, "F") => "Centre frequency: the coupled strips are a quarter "
                                  + "wavelength long here, in the mean of their even- and odd-mode effective permittivities.",
         (SymbolKind.Mcbl, "Z0") => "The unbalanced input's impedance, and the coupled lines' √(Ze·Zo).",
         (SymbolKind.Mcbl, "ZL") => "The load on EACH balanced output (half the balanced load). The sections' coupling "
                                  + "1/√(1 + 2·ZL/Z0) matches it to Z0; low ZL needs tight coupling, which edge-coupled "
                                  + "microstrip may not reach.",
-        (SymbolKind.Mcbl, "Gap") => "Length of the line joining the two sections, which the outputs 2 and 3 face across.",
-        (SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl, "SignalLayer") => "The conductor the strips are on. Empty: "
-                                 + "the technology's top conductor.",
-        (SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl, "GroundReference") => "The plane under it. Empty: the "
-                                 + "nearest ground-designated conductor below the signal layer.",
+        (SymbolKind.Mcbl, "Gap") => "Length of the line joining the two sections, which the outputs 2 and 3 face across. A "
+                                  + "Footprint on the balun sets it to the span of the load's land instead.",
+        (SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Mcrc, "SignalLayer") => "The conductor the "
+                                 + "strips are on. Empty: the technology's top conductor.",
+        (SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Mcrc, "GroundReference") => "The plane under "
+                                 + "it. Empty: the nearest ground-designated conductor below the signal layer.",
+        (SymbolKind.Mcrc, "N") => "Number of resonators. A Ring is one; the cross-coupled open loops are four.",
+        (SymbolKind.Mcrc, "W") => "Width of every resonator and of the feed strip beside the first and last; W1, W2, ... give "
+                                + "one resonator its own. Neighbours coupled side by side take one width.",
+        (SymbolKind.Mcrc, "L") => "Each resonator's centre-line length, open end to open end, corners counted along the "
+                                + "centre line: about half a guided wavelength. A loop's is its perimeter less Gap, a "
+                                + "ring's its circumference. L1, L2, ... give one resonator its own.",
+        (SymbolKind.Mcrc, "S") => "Every coupling gap not given one of its own: an S_k the filter needs and the part does "
+                                + "not state is S, as W_k falls back to W and L_k to L. Switching to four cross-coupled loops, "
+                                + "say, takes S5 from it.",
+        (SymbolKind.Mcrc, var s) when s.Length > 1 && s[0] == 'S' && char.IsDigit(s[1]) => "Coupling gap S_k: resonator "
+                                + "k's gap to the resonator or feed before it (S1 the input feed's, S(N+1) the output's; a "
+                                + "tapped feed has neither); a bandstop's gap to the through line; a spurline's slot.",
+        (SymbolKind.Mcrc, "Shape") => "Straight: the edge-coupled filter. ZigZag: each resonator folded 90° at its middle, "
+                                + "alternately. Hairpin: folded into a U. OpenLoop: square loops opened by Gap. Ring: one "
+                                + "ring fed across S1 and S2.",
+        (SymbolKind.Mcrc, "Profile") => "Uniform, or SIR: a stepped-impedance resonator whose centre is Wc wide over Uc of "
+                                + "its length (Straight, ZigZag, Hairpin). A SIR hairpin is the miniature hairpin.",
+        (SymbolKind.Mcrc, "Feed") => "Coupled: a strip beside the first and last resonator, S1 and S(N+1) off. Tapped: a "
+                                + "line joined to each, Tap from the resonator's midpoint.",
+        (SymbolKind.Mcrc, "Form") => "Bandpass; Bandstop: each resonator's first half (ZigZag) or arm (Hairpin) beside a "
+                                + "through line; Spurline: each resonator a spur cut into a through line 2·W + S wide.",
+        (SymbolKind.Mcrc, "Arrangement") => "For open loops: Inline, a row opened alternately top and bottom; Cross, four "
+                                + "in a square with loops 1 and 4 cross-coupled across Sx.",
+        (SymbolKind.Mcrc, "Sa") => "Hairpin: the gap between a hairpin's two arms.",
+        (SymbolKind.Mcrc, "Gap") => "OpenLoop: the opening in each loop, in the middle of one side.",
+        (SymbolKind.Mcrc, "Tap") => "Tapped feed: how far along the first and last resonator from its midpoint the line "
+                                + "joins it; further out is stronger coupling.",
+        (SymbolKind.Mcrc, "Wc") => "SIR: the width of each resonator's centre section.",
+        (SymbolKind.Mcrc, "Uc") => "SIR: the centre section's share of each resonator's length, between 0 and 1.",
+        (SymbolKind.Mcrc, "Sx") => "Cross-coupled open loops: the gap between loops 1 and 4.",
+        (SymbolKind.Mcrc, "Coupling") => "Pairs: each strip coupled to the neighbour it lies against, an MCLIN pair of one "
+                                + "width. Full: every coupled region as one N-line section (MCLINN's model): the pairs with "
+                                + "a width each, so neighbours may differ, and for hairpins every arm side by side, a "
+                                + "resonator's own two arms included.",
+        (SymbolKind.Mlad, "Sections") => "The ladder, pin 1 to pin 2: sections separated by ';', each kind(field=value, …). "
+                                 + "line(W, L); gap(S), at the width there; taper(W1, W2, L); stub(W, L, end=open|short, "
+                                 + "side=up|down|both), L from the through line's edge, or end=radial|butterfly with Ro and angle; "
+                                 + "site(role=R|L|C, value, type=series|shunt) for a lumped part. Lengths in metres or with mm, "
+                                 + "um, mil. Each shorted stub arm and shunt site adds a pin, each series site two: G1, G2, ….",
+        (SymbolKind.Mlad, "Gap") => "The span of every series site: where the copper stops for the part across it. 1.35 mm "
+                                 + "is an 0402 at nominal density. A Footprint sets it from its land instead.",
+        (SymbolKind.Mlad, "Z0") => "The ports' impedance: the lines the ladder is fed by, whose width a gap or a stub at "
+                                 + "either end sits on. The readout states each section's impedance beside it.",
+        (SymbolKind.Mlad, "F") => "The frequency the readout states each section's impedance and electrical length at, and "
+                                + "the ports' lines' width is found at. The geometry is the list's.",
+        (SymbolKind.Mlad, "SignalLayer") => "The conductor the ladder is on. Empty: the technology's top conductor.",
+        (SymbolKind.Mlad, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below "
+                                 + "the signal layer.",
         (SymbolKind.Mwpd, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below the "
                                               + "signal layer.",
+        (SymbolKind.Mrrc, "Form") => "Ring: the 3λ/4 arm is line. CoupledLine: it is a quarter-wave coupled section with two "
+                                   + "diagonal far ends grounded (March), a 270° line at F, so the ring is a square of three "
+                                   + "λ/4 arms and the section, with pins G2 and G4 for its vias.",
+        (SymbolKind.Mrrc, "Coupling") => "With Form = CoupledLine: the section's coupling, dB. Any value gives the 270° arm; "
+                                   + "3 dB is March's own section, and a weaker one is a wider, lower-impedance pair that edge "
+                                   + "coupling builds (10 dB on a 20 mil board).",
+        (SymbolKind.Mrrc, "Meander") => "0: the plain ring. An odd number k: the 3λ/4 arm folded inside the ring with k turns, "
+                                      + "the three λ/4 arms round it, so the ring is about a quarter wave narrower. Curved "
+                                      + "corners only.",
+        (SymbolKind.Mdly, "Z0") => "The line's impedance; its width is derived from it on the technology's substrate.",
+        (SymbolKind.Mdly, "F") => "The frequency Theta is stated at, in the line's own effective permittivity there.",
+        (SymbolKind.Mdly, "Theta") => "Electrical length at F, every corner and turn counted at its own phase: 90° is a "
+                                    + "quarter wave, 360° a whole one.",
+        (SymbolKind.Mdly, "Style") => "Straight: one line. Corner: two equal legs and one 90° corner. Meander: Turns + 1 "
+                                    + "equal parallel legs joined by Turns 180° turns.",
+        (SymbolKind.Mdly, "Corner") => "How each corner or turn is made. Curve: an MCURVE (a meander's turn a half-turn of "
+                                     + "radius Pitch/2). Miter: MMITER at its usual chamfer; Square: MBEND, a turn being "
+                                     + "two of them and the line between.",
+        (SymbolKind.Mdly, "Turns") => "A meander's turns, 1 or more; an odd number ends heading back the way it started.",
+        (SymbolKind.Mdly, "Pitch") => "A meander's legs, centre to centre. 0: six line widths, so a half-turn's radius is "
+                                    + "3W, where MCURVE's fit starts, and the legs are 5W apart edge to edge.",
+        (SymbolKind.Mdly, "Side") => "1: a meander stacks its legs to the left of the run's heading from terminal 1; −1: to "
+                                   + "the right.",
+        (SymbolKind.Mdly, "Coupled") => "0: a meander's legs are separate lines, and the run warns when they are under 3W "
+                                      + "apart edge to edge. 1: they are one N-line coupled section, so the coupling "
+                                      + "between them is in the model.",
+        (SymbolKind.Mdly, "SignalLayer") => "The conductor the line is on. Empty: the technology's top conductor.",
+        (SymbolKind.Mdly, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below "
+                                              + "the signal layer.",
+        (SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mcbl, "Realization") => "Distributed: the "
+                                 + "quarter-wave lines. Lumped: an inductor, capacitor or resistor on a site for each element of "
+                                 + "the lines' lumped equivalent at F, joined by short lines of the Z0 width; the pins become the "
+                                 + "sites' and the readout lists each value.",
+        (SymbolKind.Mwpd, "Arm") => "With Realization = Lumped: what stands in for each quarter-wave arm, a π (a series L between "
+                                  + "two C to ground) or a T (two series L about one C to ground).",
+        (SymbolKind.Mblc or SymbolKind.Mrrc, "Gap") => "With Realization = Lumped: the span of each series site's pins, which "
+                                  + "the part lands across. 1.35 mm is an 0402's at nominal density. A Footprint on the part "
+                                  + "sets it to that land's span instead.",
+        (SymbolKind.Mrpad, "Form") => "Pi, T or BridgedT: a matched attenuator of Attenuation dB. Wye or Delta: a matched "
+                                    + "three-port splitter, 6.02 dB between any two ports, with no Attenuation of its own.",
+        (SymbolKind.Mrpad, "Z0") => "The ports' impedance, which every form matches.",
+        (SymbolKind.Mrpad, "Attenuation") => "The attenuator's loss from port 1 to port 2, in dB, above 0.",
+        (SymbolKind.Mrpad, "Gap") => "Span of each series resistor's pins, which the part lands across. 1.35 mm is an 0402's at "
+                                   + "nominal density. A Footprint on the pad sets it to that land's span instead.",
+        (SymbolKind.Mrpad, "SignalLayer") => "The conductor the interconnect is on. Empty: the technology's top conductor.",
+        (SymbolKind.Mrpad, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below the "
+                                               + "signal layer.",
         (SymbolKind.GsgPad, "W") => "Width of the line leaving the signal pad. Placed: the 50 Ω width on the technology.",
         (SymbolKind.GsgPad, "L") => "Length of the line, from the signal pad's edge to terminal 2.",
         (SymbolKind.GsgPad, "Pitch") => "Probe pitch: centre of the signal pad to the centre of each ground pad. The probe's, "
@@ -1826,6 +2134,46 @@ public static class ComponentTypeRegistry
         (SymbolKind.MGap, "SignalLayer") => "The conductor the two lines are on. Empty: the technology's top conductor.",
         (SymbolKind.MGap, "GroundReference") => "The plane under the lines. Empty: the nearest ground-designated conductor "
                                               + "below the signal layer.",
+        (SymbolKind.MRadial, "W") => "Width of the feed line the stub hangs from: the sector's narrow end is this wide.",
+        (SymbolKind.MRadial, "Ro") => "Radius of the open arc, measured from the sector's apex (behind the narrow end). "
+                                    + "About a quarter wavelength past the narrow end puts the stub's short circuit at the "
+                                    + "frequency of interest.",
+        (SymbolKind.MRadial, "Angle") => "The sector's angle, up to 180°. Wider is a lower impedance and a broader null.",
+        (SymbolKind.MRadial, "Sides") => "1: one sector. 2: a butterfly, a second sector back to back with the first on the "
+                                       + "same node, two stubs in parallel.",
+        (SymbolKind.MRadial, "SignalLayer") => "The conductor the stub is on. Empty: the technology's top conductor.",
+        (SymbolKind.MRadial, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below "
+                                                 + "the signal layer.",
+        (SymbolKind.Mcla, "N") => "Strips, the coupled feed's two terminating strips included. Strip 1 is the top one.",
+        (SymbolKind.Mcla, "W") => "Width of every strip that does not state its own W[k].",
+        (SymbolKind.Mcla, "S") => "Edge-to-edge gap between every two strips that do not state their own S[k].",
+        (SymbolKind.Mcla, var p) when p.StartsWith("W[", StringComparison.Ordinal) =>
+                                  "Strip k's own width; strip 1 is the top one.",
+        (SymbolKind.Mcla, var p) when p.StartsWith("S[", StringComparison.Ordinal) =>
+                                  "The gap below strip k, between strips k and k + 1.",
+        (SymbolKind.Mcla, "L") => "Every strip's length, the coupled length: about a quarter wave at the centre for an "
+                                + "interdigital array, shorter for a loaded combline.",
+        (SymbolKind.Mcla, "Form") => "The strips' end pattern. Interdigital: shorts on alternate ends, the rest open. Combline: "
+                                   + "shorts at the near ends, capacitor sites at the far ends. PseudoInterdigital: the "
+                                   + "strips in fours, two interleaved hairpins each, no vias. Custom: Ends.",
+        (SymbolKind.Mcla, "Ends") => "With Form = Custom only: a two-letter token per strip, near end then far, each O (open), "
+                                   + "S (short, a via pin), C (capacitor site), J (joined to the next joined end) or P "
+                                   + "(port, coupled feed). E.g. SO OS SO.",
+        (SymbolKind.Mcla, "Feed") => "Tapped: the ports tap onto the outer strips at Tap. Coupled: strips 1 and N are "
+                                   + "terminating lines whose free ends are the ports.",
+        (SymbolKind.Mcla, "Tap") => "Tapped feed: from each outer strip's shorted (else joined) end to the tap. Nearer the "
+                                  + "short is a weaker external coupling.",
+        (SymbolKind.Mcla, "Wf") => "Tapped feed: width of the line from each tap to its port, as long as it is wide. Placed: "
+                                 + "the 50 Ω width on the technology.",
+        (SymbolKind.Mcla, "C") => "Each capacitor site's value, unless the strip states its own C[k]. Place Site Parts puts "
+                                + "a capacitor of it on each.",
+        (SymbolKind.Mcla, var p) when p.StartsWith("C[", StringComparison.Ordinal) =>
+                                  "Strip k's own loading capacitance, on each capacitor site it has.",
+        (SymbolKind.Mcla, "G") => "A join past other strips: its wall's clearance from the ends it passes. Placed: the 50 Ω "
+                                + "width on the technology.",
+        (SymbolKind.Mcla, "SignalLayer") => "The conductor the strips are on. Empty: the technology's top conductor.",
+        (SymbolKind.Mcla, "GroundReference") => "The plane under it. Empty: the nearest ground-designated conductor below "
+                                              + "the signal layer.",
         (SymbolKind.Slin, "W") => "Strip width.",
         (SymbolKind.Slin, "L") => "Line length.",
         (SymbolKind.Slin, "SignalLayer") => "The conductor the strip is on. Its planes are the nearest ground-designated conductors "
@@ -1867,6 +2215,12 @@ public static class ComponentTypeRegistry
           + "fits of the even- and odd-mode end capacitances, stated over 0.5 <= W/h <= 2, 0.1 <= S/W <= 1 and "
           + "2.5 <= er <= 15. Lossless and frequency-independent. The layout draws no copper: the lines either side "
           + "are the metal, and the gap between their ends is exactly S.",
+        SymbolKind.MRadial =>
+            "The radial-line closed form (Bessel functions of the sector's cylindrical wave), open at the arc, with the "
+          + "permittivity of MLIN at the sector's mean chord and the arc moved out by that line's open-end length; "
+          + "conductor and dielectric loss in the wavenumber. MLIN's range applies to that chord. One mode: past an arc of "
+          + "a guided wavelength the run says so. The feed junction and the side edges' fringing are not modelled. A "
+          + "butterfly is two sectors in parallel.",
         SymbolKind.Mwpd =>
             "MTEE and MCURVE, the pieces the layout draws: an input tee, two 180° curves of √2·Z0 and two output tees, "
           + "stamped together and reduced to the five pins. Each arm is λg/4 at F between the junctions' reference planes. "
@@ -1878,29 +2232,87 @@ public static class ComponentTypeRegistry
         SymbolKind.Mblc =>
             "MTEE and MLIN, the pieces the layout draws: a tee at each junction, a line for each arm and a Z0 feed to each "
           + "pin, stamped together and reduced to the four pins. Each arm is λg/4 at F between the junctions' reference "
-          + "planes; two sections' shunt arms share one span, each the mean of their quarter waves. MTEE's closed forms "
-          + "are calibrated at εr 9.9 and say so on any other board; the junctions move the best match a few percent "
-          + "below F.",
+          + "planes; with more than one section the shunt arms share one span, each the mean of their quarter waves. "
+          + "MTEE's closed forms are calibrated at εr 9.9 and say so on any other board; the junctions move the best "
+          + "match a few percent below F.",
         SymbolKind.Mrrc =>
             "MTEE, MLIN and MCURVE, the pieces the layout draws: four tees on a ring of two straight runs and two 180° "
           + "curves, stamped together and reduced to the four pins. Every spacing is measured between the junctions' "
           + "reference planes at F. MTEE's closed forms are calibrated at εr 9.9 and say so on any other board; "
           + "MCURVE's effective radius is stated for 3W to 7W. With Corner = Miter or Square each curve is two MMITER or "
-          + "MBEND corners and an MLIN side, with those parts' validity.",
+          + "MBEND corners and an MLIN side, with those parts' validity. Form = CoupledLine: the section is an MCLIN, "
+          + "its grounded ends the vias on G2 and G4 (not the model), sized so its Y11 is zero at F; microstrip's "
+          + "unequal mode speeds leave it a 270° line at F only, as March's TEM section is over a band.",
+        SymbolKind.MCLineN =>
+            "Quasi-static: the cross-section's C and C0 from circuitRF's 2D field solver (within about 0.5 % for strips "
+          + "with thickness), L from C0, and the line's modes from L·C, each at its own velocity; every strip couples to "
+          + "every other. Solved once per geometry, with no dispersion, so past a cross-section of a tenth of the "
+          + "wavelength it says so. Conductor loss is MLIN's per strip, dielectric loss its filling-factor form.",
+        SymbolKind.Mgpd =>
+            "MTEE, MLIN and MCURVE, the pieces the layout draws: five tees on a ring of two straight runs and two 180° curves, "
+          + "stamped together and reduced to the five pins. Every spacing is measured between the junctions' reference "
+          + "planes at F. MTEE's closed forms are calibrated at εr 9.9 and say so on any other board; MCURVE's effective "
+          + "radius is stated for 3W to 7W. With Corner = Miter or Square each curve is two MMITER or MBEND corners and an "
+          + "MLIN side, with those parts' validity. The resistors to ground are not in the model: they are the parts on R2 "
+          + "and R3.",
+        SymbolKind.Mbpd =>
+            "MTEE, MLIN and MCURVE, the pieces the layout draws: N + 1 tees on a ring of two straight runs and two 180° "
+          + "curves, stamped together and reduced to the pins. Every spacing is measured between the junctions' reference "
+          + "planes at F. Only the input is matched at F; the outputs see each other. MTEE's closed forms are calibrated "
+          + "at εr 9.9 and say so on any other board; MCURVE's effective radius is stated for 3W to 7W. With Corner = Miter "
+          + "or Square the curves are MMITER or MBEND corners and MLIN sides.",
+        SymbolKind.Mtpd =>
+            "One MTEE whose through arms are the two quarter-wave transformers, as the layout draws it. MTEE's closed forms "
+          + "are calibrated at εr 9.9 and say so on any other board. Only the input is matched; the outputs are not "
+          + "isolated.",
         SymbolKind.Mclc =>
             "MCLIN, the pair the layout draws: Kirschning-Jansen even and odd modes (0.1 <= W/H, S/H <= 10, er <= 18), "
           + "each mode at its own velocity. W and S are synthesised for Coupling and Z0 at F, L is a quarter wave in the "
           + "modes' mean permittivity. Microstrip's odd mode is faster, so directivity is finite (about 11 dB at 10 dB "
-          + "coupling on 20 mil RO4350B).",
+          + "coupling on 20 mil RO4350B). Sections: one MCLIN per section, the width steps between them not modelled. "
+          + "Broadside: BCLIN or MBCLIN, their quasi-static solve. Tandem: two MCLINs and MLIN/MMITER leads. "
+          + "Compensation: the end capacitors or series MLIN sections are exact in the circuit; Wiggly's teeth are only "
+          + "a longer odd-mode path.",
         SymbolKind.Midc =>
             "Ou's interdigitated-coupler equations over MCLIN's modes for two adjacent fingers: nearest neighbours only, "
           + "each conductor's fingers at one potential, the pair's even and odd permittivities. Each finger carries its "
           + "own share, so the jumpers on J1-J4 are part of the circuit; ideal jumpers give Ou's pair exactly. "
           + "Kirschning-Jansen's range applies to W and S.",
+        SymbolKind.Mcrc =>
+            "The plan's MCLIN pairs, MLIN lines, MMITER corners, MCURVEs, MTEE taps and MGAPs stamped together, with "
+          + "each free end's open-end capacitance. Each strip couples only to the neighbour it is placed against: a "
+          + "hairpin's own arms, strips further over and the corners are uncoupled (an EM run of the artwork has them). "
+          + "Kirschning-Jansen's range applies to every coupled pair; a width step has no step model. Coupling = Full "
+          + "stamps each coupled region through the N-line model instead (quasi-static, no dispersion): pairs of any "
+          + "widths, and a hairpin's arms all coupled to one another.",
+        SymbolKind.Msps =>
+            "MCLIN for the C-section, an MLIN strap across its far ends, and the reference line's MLIN (with MCURVE or "
+          + "MMITER/MBEND corners when folded), stamped together. Schiffman's design is TEM; microstrip's faster odd mode "
+          + "leaves the C-section short of a quarter wave in one mode, so match and phase flatness depart from his curves.",
+        SymbolKind.Mdly =>
+            "MLIN, and MCURVE, MMITER or MBEND, the pieces the layout draws, stamped together and reduced to the two "
+          + "pins. Each corner's own phase at F comes out of the legs, so the run is Theta at F; elsewhere each piece "
+          + "follows its own model. A meander's legs are separate lines unless Coupled, when they are MCLINN's "
+          + "quasi-static N-line section (no dispersion). Turns never couple to one another.",
+        SymbolKind.Mcla =>
+            "MCLINN's N-line section, cut at the taps, with MLIN taps and folds and MLIN's open end on each open or "
+          + "loaded end, one strip's form. Quasi-static: no dispersion, so the centre lands a few percent off a "
+          + "full-wave solve at the top of a board's range. The vias and capacitors are the parts on E1, E2, …, not the model.",
         SymbolKind.Mcbl =>
             "Two MCLIN quarter-wave sections and the MLIN joining them, stamped together. The coupling matches ZL on "
           + "each output to Z0 for TEM lines; microstrip's unequal mode velocities leave the outputs about 16° short of "
-          + "180° on 20 mil RO4350B. The grounds are the vias on G2 and G3, not the model.",
+          + "180° on 20 mil RO4350B. The grounds are the vias on G2 and G3, not the model. Lumped: the lattice's "
+          + "interconnect alone (MTEE and MLIN); the inductors and capacitors are the parts on its sites.",
+        SymbolKind.Mlad =>
+            "MLIN, MGAP, MTAPER, MTEE and MCROSS, the pieces the layout draws, with each one's validity, stamped together "
+          + "and reduced to the pins; an open stub's end is Kirschning-Jansen-Koster's extension. The step between two "
+          + "widths is not modelled, nor the coupling between neighbouring stubs. MTEE's and MCROSS's closed forms are "
+          + "calibrated at er 9.9 and say so on any other board. A radial or butterfly end is MRADIAL. A site is open in "
+          + "the model: its part, a via or an R, L or C on the G pins, is an ordinary one.",
+        SymbolKind.Mrpad =>
+            "MTEE, MLIN and MBEND, the interconnect the layout draws, stamped together; the resistors are the parts on its "
+          + "sites. MTEE's closed forms are calibrated at εr 9.9 and say so on any other board. The site values are the "
+          + "matched pads' closed forms, exact with the interconnect left out.",
         SymbolKind.GsgPad =>
             "MLIN, twice: half the signal pad (PadW wide, PadL/2 long, from the tip to its edge), then the line, "
           + "cascaded, with MLIN's validity. The ground pads are ideal ground at the probe's reference plane; their "
@@ -2060,6 +2472,15 @@ public static class ComponentTypeRegistry
                                       + "published model covers S/H from 0.1 to 10.",
             (SymbolKind.MCLine, "L") => "Length of the coupled section. Coupling peaks where it is a quarter "
                                       + "wavelength, between the even and odd modes' own.",
+            (SymbolKind.MCLineN, "N") => "Strips, two or more. The pins follow it: the near ends 1 to N, then the far "
+                                      + "ends N + 1 to 2N.",
+            (SymbolKind.MCLineN, "W") => "Width of every strip that does not state its own W[k].",
+            (SymbolKind.MCLineN, "S") => "Edge-to-edge gap between every two strips that do not state their own S[k].",
+            (SymbolKind.MCLineN, "L") => "Length of the coupled section, every strip's.",
+            (SymbolKind.MCLineN, var p) when p.StartsWith("W[", StringComparison.Ordinal) =>
+                                         "Strip k's own width; strip 1 is the top one, at pins 1 and N + 1.",
+            (SymbolKind.MCLineN, var p) when p.StartsWith("S[", StringComparison.Ordinal) =>
+                                         "The gap below strip k, between strips k and k + 1.",
             (SymbolKind.BCLine or SymbolKind.MBCLine, "W") => "Width of each strip (both the same).",
             (SymbolKind.BCLine or SymbolKind.MBCLine, "O") => "Lateral offset between the strips' centres. 0 puts "
                                       + "one directly over the other (tightest coupling); the coupling falls as it grows.",
@@ -4087,6 +4508,14 @@ public static class ComponentTypeRegistry
             // from the technology at extraction, never a declared parameter. 2.9 mm / 0.5 mm is the
             // FR-4 baseline; MicrostripSubstrateInjection rewrites W to the technology's 50-ohm width and
             // S to the same at placement.
+            // MCLINN: N strips, every one W wide and every gap S unless it states its own W[k] or S[k] (added as rows,
+            // as the Combiner's IL[k] are), and L; the substrate and the placement widths as MCLIN's.
+            case SymbolKind.MCLineN:
+                return [new("N", "3",   "",   true, UnitDimension.None),
+                        new("W", "2.9", "mm", true, UnitDimension.Length),
+                        new("S", "0.5", "mm", true, UnitDimension.Length),
+                        new("L", "10",  "mm", true, UnitDimension.Length),
+                        .. SignalGroundLayerParams];
             case SymbolKind.MCLine:
                 return [new("W", "2.9", "mm", true, UnitDimension.Length),
                         new("S", "0.5", "mm", true, UnitDimension.Length),
@@ -4123,6 +4552,15 @@ public static class ComponentTypeRegistry
                 return [new("W",     "2.9", "mm",  true, UnitDimension.Length),
                         new("Angle", "90",  "deg", true, UnitDimension.Angle),
                         new("M",     "0.5", "",    true, UnitDimension.None),
+                        .. SignalGroundLayerParams];
+
+            // MRadial: W is the feed's 50 ohm width (2.9 mm on the FR-4 baseline) and Ro ten of them from the apex;
+            // MicrostripSubstrateInjection rewrites both on the technology at placement. 60 deg, one sector.
+            case SymbolKind.MRadial:
+                return [new("W",     "2.9", "mm",  true, UnitDimension.Length),
+                        new("Ro",    "29",  "mm",  true, UnitDimension.Length),
+                        new("Angle", "60",  "deg", true, UnitDimension.Angle),
+                        new("Sides", "1",   "",    true, UnitDimension.None),
                         .. SignalGroundLayerParams];
 
             // MGap: end-to-end gap — W (both lines), S (the gap). 2.9 mm is the FR-4 baseline's 50-ohm line and
@@ -4244,32 +4682,147 @@ public static class ComponentTypeRegistry
                         new("N",    "1",    "",    true,  UnitDimension.None),
                         new("Band", "2",    "",    false, UnitDimension.None),
                         new("Corner", nameof(PlanCorner.Curve), "", false, UnitDimension.None),
+                        new("Realization", nameof(PlanRealization.Distributed), "", false, UnitDimension.None),
+                        new("Arm", nameof(LumpedArm.Pi), "", false, UnitDimension.None),
                         .. SignalGroundLayerParams];
-            // MBLC and MRRC: the specs alone (BranchLinePlan, RatRacePlan); every width and length is a readout.
+            // MBLC and MRRC: the specs alone (BranchLinePlan, RatRacePlan); every width and length is a readout. Gap is the
+            // lumped realisation's site span (LumpedPlan).
             case SymbolKind.Mblc:
                 return [new("Z0", "50",  "Ω",   true, UnitDimension.Resistance),
                         new("F",  "2.4", "GHz", true, UnitDimension.Frequency),
                         new("N",  "1",   "",    true, UnitDimension.None),
+                        new("Realization", nameof(PlanRealization.Distributed), "", false, UnitDimension.None),
+                        new("Gap", "1.35", "mm", false, UnitDimension.Length),
                         .. SignalGroundLayerParams];
             case SymbolKind.Mrrc:
                 return [new("Z0", "50",  "Ω",   true, UnitDimension.Resistance),
                         new("F",  "2.4", "GHz", true, UnitDimension.Frequency),
                         new("Corner", nameof(PlanCorner.Curve), "", false, UnitDimension.None),
+                        new("Meander", "0", "", false, UnitDimension.None),
+                        new("Form", nameof(RatRaceForm.Ring), "", false, UnitDimension.None),
+                        new("Coupling", "10", "dB", false, UnitDimension.None),
+                        new("Realization", nameof(PlanRealization.Distributed), "", false, UnitDimension.None),
+                        new("Gap", "1.35", "mm", false, UnitDimension.Length),
+                        .. SignalGroundLayerParams];
+            // MDLY: the specs (Z0, F, Theta) and how the run is laid; W and every length are a readout (DelayLinePlan). Two
+            // turns end in line with the start, and leave a whole wave room for its 3W half-turns even on 1.6 mm FR-4.
+            case SymbolKind.Mdly:
+                return [new("Z0",      "50",   "Ω",   true,  UnitDimension.Resistance),
+                        new("F",       "2.4",  "GHz", true,  UnitDimension.Frequency),
+                        new("Theta",   "360",  "deg", true,  UnitDimension.Angle),
+                        new("Style",   nameof(PlanRouteStyle.Meander), "", true, UnitDimension.None),
+                        new("Corner",  nameof(PlanCorner.Curve), "", false, UnitDimension.None),
+                        new("Turns",   "2",    "",    false, UnitDimension.None),
+                        new("Pitch",   "0",    "mm",  false, UnitDimension.Length),
+                        new("Side",    "1",    "",    false, UnitDimension.None),
+                        new("Coupled", "0",    "",    false, UnitDimension.None),
+                        .. SignalGroundLayerParams];
+            // MGPD, MBPD, MTPD: the specs alone (GyselPlan, BagleyPlan, TeeDividerPlan); MBPD's N sets its pins, the
+            // rings turn as Corner says, and the tee's K is its split.
+            case SymbolKind.Mgpd:
+                return [new("Z0", "50",  "Ω",   true, UnitDimension.Resistance),
+                        new("F",  "2.4", "GHz", true, UnitDimension.Frequency),
+                        new("Corner", nameof(PlanCorner.Curve), "", false, UnitDimension.None),
+                        .. SignalGroundLayerParams];
+            case SymbolKind.Mbpd:
+                return [new("Z0", "50",  "Ω",   true, UnitDimension.Resistance),
+                        new("F",  "2.4", "GHz", true, UnitDimension.Frequency),
+                        new("N",  "3",   "",    true, UnitDimension.None),
+                        new("Corner", nameof(PlanCorner.Curve), "", false, UnitDimension.None),
+                        .. SignalGroundLayerParams];
+            case SymbolKind.Mtpd:
+                return [new("Z0", "50",  "Ω",   true, UnitDimension.Resistance),
+                        new("F",  "2.4", "GHz", true, UnitDimension.Frequency),
+                        new("K",  "1",   "",    true, UnitDimension.None),
                         .. SignalGroundLayerParams];
             // MCLC / MIDC: the coupling, the ports' impedance and F; W, S and L are derived and shown as a readout.
             // MIDC opens at 4 dB, the tightest four fingers reach with 100 µm gaps on 20 mil RO4350B (3 dB needs 69 µm).
+            // MCLC's options (Sections with its Band, Broadside, Tandem, Compensation) are off at their defaults, the
+            // single section; MIDC's Fingers sets its pins.
             case SymbolKind.Mclc:
-            case SymbolKind.Midc:
-                return [new("Coupling", kind == SymbolKind.Mclc ? "10" : "4", "dB", true, UnitDimension.None),
+                return [new("Coupling", "10", "dB", true, UnitDimension.None),
                         new("Z0",  "50",   "Ω",   true, UnitDimension.Resistance),
                         new("F",   "2.4",  "GHz", true, UnitDimension.Frequency),
+                        new("Sections", "1", "", false, UnitDimension.None),
+                        new("Band", "2", "", false, UnitDimension.None),
+                        new("Broadside", "0", "", false, UnitDimension.None),
+                        new("Tandem", "0", "", false, UnitDimension.None),
+                        new("Compensation", nameof(CouplerCompensation.None), "", false, UnitDimension.None),
+                        .. SignalGroundLayerParams];
+            case SymbolKind.Midc:
+                return [new("Coupling", "4", "dB", true, UnitDimension.None),
+                        new("Z0",  "50",   "Ω",   true, UnitDimension.Resistance),
+                        new("F",   "2.4",  "GHz", true, UnitDimension.Frequency),
+                        new("Fingers", "4", "", true, UnitDimension.None),
+                        .. SignalGroundLayerParams];
+            // MSPS: the specs, and how the reference line is laid; the pair and the line are a readout.
+            case SymbolKind.Msps:
+                return [new("Z0",    "50",  "Ω",   true, UnitDimension.Resistance),
+                        new("F",     "2.4", "GHz", true, UnitDimension.Frequency),
+                        new("Phase", "90",  "deg", true, UnitDimension.Angle),
+                        new("Band",  "1.4", "",    true, UnitDimension.None),
+                        new("Reference", nameof(SchiffmanReference.Straight), "", false, UnitDimension.None),
                         .. SignalGroundLayerParams];
             // MCBL: 200 Ω on each output is the lightest load a 100 µm gap matches on 20 mil RO4350B (50 Ω is refused).
+            // MLAD: the list is the geometry (LadderPlan's grammar); Z0 the ports' lines, F the readout's, Gap the series
+            // sites' span. Placed as a stepped-impedance lowpass on 20 mil RO4350B, which has no G pins and so two pins.
+            case SymbolKind.Mlad:
+                return [new("Sections", LadderPlan.DefaultSections, "", false, UnitDimension.None),
+                        new("Z0",  "50",   "Ω",   true, UnitDimension.Resistance),
+                        new("F",   "2.4",  "GHz", true, UnitDimension.Frequency),
+                        new("Gap", "1.35", "mm",  false, UnitDimension.Length),
+                        .. SignalGroundLayerParams];
             case SymbolKind.Mcbl:
                 return [new("Z0",  "50",   "Ω",   true, UnitDimension.Resistance),
                         new("ZL",  "200",  "Ω",   true, UnitDimension.Resistance),
                         new("F",   "2.4",  "GHz", true, UnitDimension.Frequency),
                         new("Gap", "1",    "mm",  true, UnitDimension.Length),
+                        new("Realization", nameof(PlanRealization.Distributed), "", false, UnitDimension.None),
+                        .. SignalGroundLayerParams];
+            // MRPAD: the form, Z0, the attenuator's loss and the series sites' span; the resistors are a readout.
+            case SymbolKind.Mrpad:
+                return [new("Form",        nameof(ResistivePadForm.Pi), "", true, UnitDimension.None),
+                        new("Z0",          "50",   "Ω",  true, UnitDimension.Resistance),
+                        new("Attenuation", "6",    "dB", true, UnitDimension.None),
+                        new("Gap",         "1.35", "mm", true, UnitDimension.Length),
+                        .. SignalGroundLayerParams];
+            // MCRC: physical geometry, a three-resonator 2.4 GHz edge-coupled design on 20 mil RO4350B (Cohn's, 10 %
+            // wide, 0.5 dB ripple), and every shape's own dimensions so a change of Shape has something to draw.
+            case SymbolKind.Mcrc:
+                return [new("N",  "3",     "",   true, UnitDimension.None),
+                        new("W",  "1.058", "mm", true, UnitDimension.Length),
+                        new("L",  "37.17", "mm", true, UnitDimension.Length),
+                        new("S",  "0.574", "mm", false, UnitDimension.Length),
+                        new("S1", "0.126", "mm", true, UnitDimension.Length),
+                        new("S2", "0.574", "mm", true, UnitDimension.Length),
+                        new("S3", "0.574", "mm", true, UnitDimension.Length),
+                        new("S4", "0.126", "mm", true, UnitDimension.Length),
+                        new("Shape", nameof(ResonatorShape.Straight), "", true, UnitDimension.None),
+                        new("Profile", nameof(ResonatorProfile.Uniform), "", false, UnitDimension.None),
+                        new("Feed", nameof(ResonatorFeed.Coupled), "", false, UnitDimension.None),
+                        new("Form", nameof(ResonatorForm.Bandpass), "", true, UnitDimension.None),
+                        new("Arrangement", nameof(LoopArrangement.Inline), "", false, UnitDimension.None),
+                        new("Sa",  "2.2", "mm", false, UnitDimension.Length),
+                        new("Gap", "1",   "mm", false, UnitDimension.Length),
+                        new("Tap", "6",   "mm", false, UnitDimension.Length),
+                        new("Wc",  "0.4", "mm", false, UnitDimension.Length),
+                        new("Uc",  "0.3", "",   false, UnitDimension.None),
+                        new("Sx",  "0.5", "mm", false, UnitDimension.Length),
+                        new("Coupling", nameof(ResonatorCoupling.Pairs), "", false, UnitDimension.None),
+                        .. SignalGroundLayerParams];
+            // MCLA: stored geometry, as a synthesis fills it (CoupledArraySpec): three strips, interdigital and tapped.
+            // W, S, Wf and G start at the technology's 50 Ω width, L at a round length and Tap at a fifth of it.
+            case SymbolKind.Mcla:
+                return [new("N",    "3",   "",   true,  UnitDimension.None),
+                        new("W",    "2.9", "mm", true,  UnitDimension.Length),
+                        new("S",    "0.5", "mm", true,  UnitDimension.Length),
+                        new("L",    "10",  "mm", true,  UnitDimension.Length),
+                        new("Form", nameof(CoupledArrayForm.Interdigital), "", true, UnitDimension.None),
+                        new("Feed", nameof(CoupledArrayFeed.Tapped), "", false, UnitDimension.None),
+                        new("Tap",  "2",   "mm", false, UnitDimension.Length),
+                        new("Wf",   "2.9", "mm", false, UnitDimension.Length),
+                        new("C",    "1",   "pF", false, UnitDimension.Capacitance),
+                        new("G",    "0.5", "mm", false, UnitDimension.Length),
                         .. SignalGroundLayerParams];
             case SymbolKind.GsgPad:
                 return [new("W",     "2.9", "mm", true, UnitDimension.Length),
@@ -4428,6 +4981,8 @@ public static class ComponentTypeRegistry
             case "BCL":    kind = SymbolKind.BCLine;       return true;
             case "MBCLIN":
             case "MBCL":   kind = SymbolKind.MBCLine;      return true;
+            case "MCLINN":
+            case "MCLN":   kind = SymbolKind.MCLineN;      return true;
             case "MATCH":
             case "MN":     kind = SymbolKind.Match;        return true;
             case "TUNER":  kind = SymbolKind.Tuner;         return true;
@@ -4451,11 +5006,29 @@ public static class ComponentTypeRegistry
             case "BLC":      kind = SymbolKind.Mblc;         return true;
             case "MRRC":
             case "RRC":      kind = SymbolKind.Mrrc;         return true;
+            case "MGPD":
+            case "GPD":      kind = SymbolKind.Mgpd;         return true;
+            case "MBPD":
+            case "BPD":      kind = SymbolKind.Mbpd;         return true;
+            case "MTPD":
+            case "TPD":      kind = SymbolKind.Mtpd;         return true;
             case "MCLC":
             case "CLC":      kind = SymbolKind.Mclc;         return true;
             case "MIDC":     kind = SymbolKind.Midc;         return true;   // "IDC" is the DC current source (Idc)
             case "MCBL":
             case "CBL":      kind = SymbolKind.Mcbl;         return true;
+            case "MCRC":
+            case "CRC":      kind = SymbolKind.Mcrc;         return true;
+            case "MLAD":
+            case "LAD":      kind = SymbolKind.Mlad;         return true;
+            case "MSPS":
+            case "SPS":      kind = SymbolKind.Msps;         return true;
+            case "MDLY":
+            case "DLY":      kind = SymbolKind.Mdly;         return true;
+            case "MCLA":
+            case "CLA":      kind = SymbolKind.Mcla;         return true;
+            case "MRPAD":
+            case "RPD":      kind = SymbolKind.Mrpad;        return true;
             case "MIMCAP":   kind = SymbolKind.MimCap;       return true;
             case "SPIRAL":   kind = SymbolKind.Spiral;       return true;
             case "OSPIRAL":  kind = SymbolKind.OctSpiral;    return true;
@@ -4477,6 +5050,8 @@ public static class ComponentTypeRegistry
             case "MTP":      kind = SymbolKind.Mtaper;       return true;
             case "MKLOPF":
             case "MKF":      kind = SymbolKind.Mklopf;       return true;
+            case "MRADIAL":
+            case "MRD":      kind = SymbolKind.MRadial;      return true;
             // "FET"/"FETSDD" are deliberately NOT mapped here (R-hk-19: the library FET was hard-
             // removed with no compatibility alias) — they fall through to Enum.TryParse below,
             // which fails since "FetSdd" no longer exists, so a typed "FET" correctly does not parse.
@@ -4782,9 +5357,13 @@ public static class ComponentTypeRegistry
 
     /// <summary>brief-trn-2 — a PWL source's Repeat.</summary>
     private static readonly string[] PwlRepeatOptions = ["no", "yes"];
-    /// <summary>A ring's corners (MWPD, MRRC): the names the plans parse.</summary>
+    /// <summary>A ring's corners (MWPD, MRRC, MGPD, MBPD): the names the plans parse.</summary>
     private static readonly string[] PlanCornerOptions =
         [nameof(PlanCorner.Curve), nameof(PlanCorner.Miter), nameof(PlanCorner.Square)];
+
+    /// <summary>A delay line's style (MDLY): the names its plan parses.</summary>
+    private static readonly string[] PlanRouteStyleOptions =
+        [nameof(PlanRouteStyle.Straight), nameof(PlanRouteStyle.Corner), nameof(PlanRouteStyle.Meander)];
 
     /// <summary>
     /// The closed set of NAMES a parameter accepts, for a parameter whose value is an enum name
@@ -4844,7 +5423,22 @@ public static class ComponentTypeRegistry
         // A test pad's feed side and what its centre is (brief-dfr26-7): closed sets of words the generator reads.
         (SymbolKind.TestPad, "Feed")                                                     => TestPadFeedOptions,
         (SymbolKind.TestPad, "Centre")                                                   => TestPadCentreOptions,
-        (SymbolKind.Mwpd or SymbolKind.Mrrc, "Corner")                                   => PlanCornerOptions,
+        (SymbolKind.Mwpd or SymbolKind.Mrrc or SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mdly, "Corner") => PlanCornerOptions,
+        (SymbolKind.Mcrc, "Shape")                                                       => Enum.GetNames<ResonatorShape>(),
+        (SymbolKind.Mcrc, "Profile")                                                     => ["Uniform", "SIR"],
+        (SymbolKind.Mcrc, "Feed")                                                        => Enum.GetNames<ResonatorFeed>(),
+        (SymbolKind.Mcrc, "Form")                                                        => Enum.GetNames<ResonatorForm>(),
+        (SymbolKind.Mcrc, "Arrangement")                                                 => Enum.GetNames<LoopArrangement>(),
+        (SymbolKind.Mclc, "Compensation") => Enum.GetNames<CouplerCompensation>(),
+        (SymbolKind.Mrrc, "Form")         => Enum.GetNames<RatRaceForm>(),
+        (SymbolKind.Msps, "Reference")    => Enum.GetNames<SchiffmanReference>(),
+        (SymbolKind.Mdly, "Style")                                                       => PlanRouteStyleOptions,
+        (SymbolKind.Mcrc, "Coupling")                                                    => Enum.GetNames<ResonatorCoupling>(),
+        (SymbolKind.Mcla, "Form")                                                        => Enum.GetNames<CoupledArrayForm>(),
+        (SymbolKind.Mcla, "Feed")                                                        => Enum.GetNames<CoupledArrayFeed>(),
+        (SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mcbl, "Realization") => Enum.GetNames<PlanRealization>(),
+        (SymbolKind.Mwpd, "Arm")                                                         => Enum.GetNames<LumpedArm>(),
+        (SymbolKind.Mrpad, "Form")                                                       => Enum.GetNames<ResistivePadForm>(),
         // A composed FET's instance switches (brief-modelcomposer-21): yes or no. A switch bound to an expression keeps a
         // text box (ParameterRowViewModel), since a picker cannot hold one.
         (SymbolKind.ComposedFET, _) when ComposedSwitches.IsSwitch(paramName)                => ComposedSwitchOptions,

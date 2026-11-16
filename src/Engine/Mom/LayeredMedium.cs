@@ -1,4 +1,5 @@
 using System.Numerics;
+using RfCore.Numerics;
 
 namespace CircuitRF.Engine.Mom;
 

@@ -70,7 +70,16 @@ public static class MarchandBalunPlan
             new PlanLine([7, 8], l, 0.0, 0.0, w, join),
             new PlanCoupledLine([8, 6, 3, 5], l + join, 0.0, 0.0, w, gap, l),
         };
+        // A via to ground on each grounded end, and the balanced load across the outputs, which face each other across Gap.
         return new MarchandBalunDesign(z0, zl, fHz, join, c, ze, zo, w, gap, l,
-            CoupledLineCouplerPlan.Modes(w, gap, l, fHz, s), new PassivePlan(Pins, sections, NodeCount: 8));
+            CoupledLineCouplerPlan.Modes(w, gap, l, fHz, s), new PassivePlan(Pins, sections, NodeCount: 8)
+            {
+                Sites =
+                [
+                    new(PlanSiteRole.Via, PlanSiteKind.Shunt, "G2", null, null, null),
+                    new(PlanSiteRole.Via, PlanSiteKind.Shunt, "G3", null, null, null),
+                    new(PlanSiteRole.Load, PlanSiteKind.Series, "2", "3", join, 2.0 * zl),
+                ],
+            });
     }
 }

@@ -9,7 +9,7 @@ public sealed record WilkinsonLine(string Name, double Z, double WMeters, double
 
 /// <summary>One arm of a ring with corners, as the readout lists it: the line it rises from the input tee and falls to its
 /// output tee (each), the line across between its two corners, and the length of arm each corner stands for at F
-/// (<see cref="PlanBend.LineLength"/>).</summary>
+/// (<see cref="PlanSection.LineLength"/>).</summary>
 public sealed record RingArm(string Name, double RiseMeters, double AcrossMeters, double CornerMeters);
 
 /// <summary>One isolation resistor: the two pins it goes across, and its value.</summary>
@@ -86,7 +86,7 @@ public sealed record WilkinsonDesign(
 /// <para><b>Corners.</b> With <see cref="PlanCorner.Miter"/> or <see cref="PlanCorner.Square"/> each arm is a rectangle's
 /// half instead of a half-turn: it rises from the input tee, turns 90° (an MMITER at its usual chamfer, or MBEND's square
 /// corner), runs across, turns again and falls to its output tee. Its λg/4 still counts every piece: the input tee's
-/// line, the straight runs, and each corner's own electrical length at F, which <see cref="PlanBend.LineLength"/> takes
+/// line, the straight runs, and each corner's own electrical length at F, which <see cref="PlanSection.LineLength"/> takes
 /// from the corner's model on the substrate, so the plan stays a pure function of the specs and the substrate. The runs
 /// are that much shorter. The rectangle is as tall as the curved ring (the upper arm runs across at the half-turn's
 /// top), so the arms stay a ring's diameter apart: the plan models no coupling between them. Both arms span the one
@@ -94,7 +94,7 @@ public sealed record WilkinsonDesign(
 /// on the input's axis even for K ≠ 1. The output tees, transformers and further
 /// sections are the half-turns' own. At <see cref="PlanCorner.Curve"/> the plan is the half-turns' to the last bit.</para>
 ///
-/// <para><b>Multi-section, N = 2 or 3.</b> The ring is the section next to the input; each further section is a
+/// <para><b>Multi-section, N = 2 to 7.</b> The ring is the section next to the input; each further section is a
 /// straight pair running on from the ring's output tees, the two lines parallel either side of the gap's centre
 /// line, with a tee and a resistor's pin pair at every junction. Sections and resistors are numbered from the
 /// outputs, as the 1968 paper numbers them: resistor 1 on R2-R3, resistor k on R2_k-R3_k. <see cref="BroadbandSections"/> gives the
@@ -102,8 +102,11 @@ public sealed record WilkinsonDesign(
 /// </summary>
 public static class WilkinsonPlan
 {
-    /// <summary>The most sections the plan builds.</summary>
-    public const int MaxSections = 3;
+    /// <summary>The most sections the plan builds: as many as Cohn's 1968 tables go to.</summary>
+    public const int MaxSections = 7;
+
+    /// <summary>The narrowest f2/f1 <see cref="ChebyshevSections"/> solves.</summary>
+    public const double MinChebyshevBand = 1.1;
 
     /// <summary>f2/f1 when none is stated: an octave.</summary>
     public const double DefaultBand = 2.0;
@@ -132,7 +135,7 @@ public static class WilkinsonPlan
                     ("name", name), ("value", value)));
         if (!(n >= 1 && n <= MaxSections && n == Math.Round(n)))
             throw new ParameterRefusalException(Diagnostic.Create("device.wilkinson.sections-unsupported",
-                DiagnosticSeverity.Error, "Wilkinson divider: N = {n} sections; the plan builds 1, 2 or {max}.",
+                DiagnosticSeverity.Error, "Wilkinson divider: N = {n} sections; the plan builds 1 to {max}.",
                 ("n", n), ("max", MaxSections)));
         int sections = (int)n;
         if (sections > 1 && k != 1.0)
@@ -306,7 +309,11 @@ public static class WilkinsonPlan
 
         var resistors = rs.Select((r, i) => new WilkinsonResistor(pins[3 + 2 * i], pins[4 + 2 * i], r)).ToList();
         return new WilkinsonDesign(z0, fHz, gap, w0, z2, wa2, arm2.Eeff, arm2.QuarterWaveMeters, radius, feed, rs[0],
-            new PassivePlan(pins, plan, NodeCount: next - 1))
+            new PassivePlan(pins, plan, NodeCount: next - 1)
+            {
+                // Every resistor's pins are Gap apart across the gap's centre line, so each site spans Gap.
+                Sites = [.. resistors.Select(r => new PlanSite(PlanSiteRole.R, PlanSiteKind.Series, r.PinA, r.PinB, gap, r.Ohms))],
+            })
         {
             K = k, Sections = sections, Band = band, Lines = lines, Resistors = resistors, Corner = corner,
             Arms = curved ? [] : unequal
@@ -316,8 +323,10 @@ public static class WilkinsonPlan
     }
 
     /// <summary>
-    /// The broadband divider of <paramref name="sections"/> = 2 or 3 sections (S. B. Cohn, IEEE Trans. MTT, 1968),
-    /// normalised to Z0 = 1: the impedances and the resistors, both from the outputs inward.
+    /// The broadband divider of <paramref name="sections"/> = 2 to 7 sections (S. B. Cohn, IEEE Trans. MTT, 1968),
+    /// normalised to Z0 = 1: the impedances and the resistors, both from the outputs inward. Above 3 it is
+    /// <see cref="ChebyshevSections"/>, the same two conditions solved for any N; 2 and 3 keep the bisection they were
+    /// first planned with, so their numbers stay bit for bit.
     ///
     /// <para><b>Even mode</b> (both outputs driven alike; no current in any resistor): each half is a cascade of quarter
     /// waves from the input's half, 2, to an output, 1. It is made an equal-ripple (Chebyshev) transformer over the band
@@ -334,6 +343,7 @@ public static class WilkinsonPlan
     /// </summary>
     public static (double[] Z, double[] R) BroadbandSections(int sections, double band)
     {
+        if (sections > 3) return ChebyshevSections(sections, band);
         double thetaM = Math.PI / (1.0 + band);
         double theta1 = Math.Acos(Math.Cos(thetaM) * (sections == 2 ? Math.Sqrt(0.5) : Math.Sqrt(3.0) / 2.0));
         double[] Even(double z1) => sections == 2 ? [z1, 2.0 / z1] : [z1, Math.Sqrt(2.0), 2.0 / z1];
@@ -371,6 +381,104 @@ public static class WilkinsonPlan
         return (z, [.. gs.Select(g => 2.0 / g)]);
     }
 
+    /// <summary>
+    /// The same divider for any N ≥ 2, by the same two conditions as <see cref="BroadbandSections"/>. Even mode: the
+    /// ⌊N/2⌋ impedances next to the output (the rest follow from z_k·z_(N+1−k) = 2, and an odd N's middle one is √2) by
+    /// Gauss–Newton on the reflection at the ⌊N/2⌋ Chebyshev zeros below π/2, cos θ_j = cos θm · cos((2j − 1)π/(2N));
+    /// with the symmetry a zero there is one real condition, and the reflection then has every zero of the N-th
+    /// Chebyshev polynomial, so the transformer is equal-ripple over the band. Odd mode: the N conductances by Newton's
+    /// method, the half's admittance exactly 1 at those zeros (and at π/2 for an odd N).
+    ///
+    /// <para>Both are continued from f2/f1 = 10, where they converge from a plain start (impedances evenly spaced in
+    /// log, every resistor 4), to the band asked for in steps of 5 %, each step starting from the last one's answer: a
+    /// direct start fails for N ≥ 4 in narrow bands, where the zeros crowd together near π/2. Below f2/f1 = 1.1 the
+    /// odd mode's equations become dependent (seven sections lose the solution at 1.05), so a narrower band is refused,
+    /// as is any the solve does not reach or that would need a resistor that is not positive.</para>
+    /// </summary>
+    public static (double[] Z, double[] R) ChebyshevSections(int sections, double band)
+    {
+        if (!(band >= MinChebyshevBand))
+            throw new ParameterRefusalException(Diagnostic.Create("device.wilkinson.sections-unsolved",
+                DiagnosticSeverity.Error,
+                "Wilkinson divider: Band = {band} is narrower than {n} sections are solved for (f2/f1 of {min} and up). "
+              + "Widen Band, or use fewer sections.", ("band", band), ("n", sections), ("min", MinChebyshevBand)));
+        int half = sections / 2;
+        double[] u = [.. Enumerable.Range(0, half).Select(k => Math.Log(2.0) * (k + 0.5) / sections)];
+        double[] g = [.. Enumerable.Repeat(0.5, sections)];
+        int steps = Math.Max(1, (int)Math.Ceiling(Math.Abs(Math.Log(band / 10.0)) / 0.05));
+        double residual = double.NaN;
+        double[] z = [];
+        for (int step = 0; step <= steps; step++)
+        {
+            double at = step == 0 ? 10.0 : 10.0 * Math.Pow(band / 10.0, (double)step / steps);
+            double thetaM = Math.PI / (1.0 + at);
+            double[] zeros = [.. Enumerable.Range(1, half)
+                .Select(j => Math.Acos(Math.Cos(thetaM) * Math.Cos((2 * j - 1) * Math.PI / (2.0 * sections))))];
+            double[] Even(double[] v) => [.. v.Select(Math.Exp), .. sections % 2 == 1 ? new[] { Math.Sqrt(2.0) } : [],
+                                          .. v.Reverse().Select(x => 2.0 / Math.Exp(x))];
+            double[] Mismatch(double[] v) => [.. zeros.SelectMany(t =>
+            {
+                var zin = InputImpedance(Even(v), t);
+                var r = (zin - 2.0) / (zin + 2.0);
+                return new[] { r.Real, r.Imaginary };
+            })];
+            u = GaussNewton(Mismatch, u);
+            z = Even(u);
+            var zf = z;
+            double[] Odd(double[] c) => [.. zeros.SelectMany(t =>
+            {
+                var y = OddAdmittance(zf, c, t) - 1.0;
+                return new[] { y.Real, y.Imaginary };
+            }), .. sections % 2 == 1 ? new[] { (OddAdmittance(zf, c, Math.PI / 2.0) - 1.0).Real } : []];
+            g = GaussNewton(Odd, g);
+            residual = Math.Max(Mismatch(u).Max(Math.Abs), Odd(g).Max(Math.Abs));
+        }
+        if (!(residual < 1e-9) || g.Any(x => !(x > 0.0)))
+            throw new ParameterRefusalException(Diagnostic.Create("device.wilkinson.sections-unsolved",
+                DiagnosticSeverity.Error,
+                "Wilkinson divider: {n} sections over Band = {band} have no solution with positive resistors. Widen Band, "
+              + "or use fewer sections.", ("n", sections), ("band", band)));
+        return (z, [.. g.Select(x => 2.0 / x)]);
+    }
+
+    /// <summary>Newton's method from <paramref name="x"/> on <paramref name="f"/>'s residuals, with a forward-difference
+    /// Jacobian; Gauss–Newton when there are more residuals than unknowns and they are consistent.</summary>
+    private static double[] GaussNewton(Func<double[], double[]> f, double[] x)
+    {
+        x = [.. x];
+        int n = x.Length;
+        for (int iteration = 0; iteration < 50; iteration++)
+        {
+            var r = f(x);
+            var jac = new double[r.Length, n];
+            for (int j = 0; j < n; j++)
+            {
+                double[] step = [.. x];
+                step[j] += 1e-7;
+                var rj = f(step);
+                for (int i = 0; i < r.Length; i++) jac[i, j] = (rj[i] - r[i]) / 1e-7;
+            }
+            double[] dx;
+            if (r.Length == n) dx = Solve(jac, [.. r.Select(v => -v)]);
+            else
+            {
+                // The normal equations: only for the even mode's few unknowns, whose condition squaring them can take.
+                var normal = new double[n, n];
+                var rhs = new double[n];
+                for (int a = 0; a < n; a++)
+                {
+                    for (int b = 0; b < n; b++)
+                        for (int i = 0; i < r.Length; i++) normal[a, b] += jac[i, a] * jac[i, b];
+                    for (int i = 0; i < r.Length; i++) rhs[a] -= jac[i, a] * r[i];
+                }
+                dx = Solve(normal, rhs);
+            }
+            for (int i = 0; i < n; i++) x[i] += dx[i];
+            if (dx.Max(Math.Abs) < 1e-13) break;
+        }
+        return x;
+    }
+
     /// <summary>The impedance at the input end of quarter-wave-at-F sections listed from the load (1) inward, each
     /// θ long.</summary>
     private static Complex InputImpedance(double[] fromLoad, double theta)
@@ -398,7 +506,7 @@ public static class WilkinsonPlan
         return y!.Value;
     }
 
-    /// <summary>Gaussian elimination with partial pivoting, for the 2×2 and 3×3 Newton steps.</summary>
+    /// <summary>Gaussian elimination with partial pivoting, for the Newton steps (up to 7×7).</summary>
     private static double[] Solve(double[,] a, double[] rhs)
     {
         int n = rhs.Length;

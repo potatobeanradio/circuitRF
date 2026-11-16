@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — RFIC Branch-Line</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/RFIC Branch-Line/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › RFIC Branch-Line</p>
+  </div>
+
+  <h1>RFIC Branch-Line</h1>
+  <p class="lede">A branch-line hybrid at 60 GHz on the top metal of a silicon back-end, referenced to Metal1 so its field stays out of the silicon, laid out by Update Layout, its circuit model set beside an equations model of ideal lines.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ RFIC Branch-Line</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>The branch-line hybrid of the Dividers and Couplers example on a silicon back-end: an MBLC at 60 GHz on the top metal of
+the shipped three-metal stack, over Metal1 as its ground, a thin-film microstrip. It is laid out by Update Layout from
+Schematic, and a test bench sets its circuit model beside an equations model. The workspace's default technology is the
+die's, <code>tech/rfic-Si_3LM_TFR_100um.ctech</code>.</p>
+<h2 id="the-cells">The cells</h2>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>Views</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Branch-Line</strong></td>
+<td>schematic, layout</td>
+<td>A one-section MBLC with a 0.1 mm line from each of its four pins to a port, all on Metal3 over Metal1</td>
+</tr>
+<tr>
+<td><strong>Branch-Line Bench</strong></td>
+<td>schematic</td>
+<td>The cell's circuit, and its equations model: ideal lines of the closed-form impedances and lengths, and each feed an ideal line of its own impedance and length at F</td>
+</tr>
+<tr>
+<td><code>Branch-Line.cdd</code></td>
+<td>data display</td>
+<td>|S21|, |S31|, |S11| and the phase of S21 against S31, the circuit model as a line and the equations model dashed</td>
+</tr>
+</tbody>
+</table>
+<h2 id="run-it">Run it</h2>
+<p>Simulate <strong>Branch-Line Bench</strong> and open <code>Branch-Line.cdd</code>. No results ship.</p>
+<h2 id="branch-line-hybrid">Branch-line hybrid</h2>
+<p>An MBLC with <code>Z0</code> 50 Ω and <code>F</code> 60 GHz: 35.4 Ω series arms and 50 Ω shunt arms, each a quarter wave between the
+reference planes of its junctions. Every line has <code>SignalLayer</code> Metal3 and <code>GroundReference</code> Metal1, so its field stays
+in the 1.8 µm of oxide between them, out of the conducting silicon below, and 50 Ω is 1.8 µm wide. Update Layout draws
+the Metal1 ground under the lines, and LVS finds no error.</p>
+<p><img class="readme-picture" src="pictures/branch-line-layout.png" alt="The die: the two through lines, the 35 Ω series arms between the junctions, the two 50 Ω shunt arms and a 0.1 mm line from each corner to its port, over the Metal1 ground." width="700"></p>
+<p><img class="readme-picture" src="pictures/branch-line-results.png" alt="Branch-Line.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31, the circuit model as a line and the equations model dashed." width="600"></p>
+<table>
+<thead>
+<tr>
+<th>At 60 GHz</th>
+<th>Equations</th>
+<th>Circuit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>|S11|</td>
+<td>−92.6 dB</td>
+<td>−11.8 dB</td>
+</tr>
+<tr>
+<td>|S21|, through</td>
+<td>−3.01 dB</td>
+<td>−10.6 dB</td>
+</tr>
+<tr>
+<td>|S31|, coupled</td>
+<td>−3.01 dB</td>
+<td>−14.4 dB</td>
+</tr>
+<tr>
+<td>∠S21 − ∠S31</td>
+<td>90.0°</td>
+<td>90.0°</td>
+</tr>
+</tbody>
+</table>
+<p>The quadrature holds. The 9 dB lost is the thin-film microstrip's conductor loss on 1.8 µm of oxide at 60 GHz, not a
+fault of the model. Referenced to the backside instead, the lines would sit on the conducting silicon, whose loss their
+closed form leaves out.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

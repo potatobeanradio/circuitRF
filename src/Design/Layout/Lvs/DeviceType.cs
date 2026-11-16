@@ -150,6 +150,7 @@ public static class DeviceTypes
         {
             ["MLIN"]   = SymbolKind.Mlin,
             ["MCLIN"]  = SymbolKind.MCLine,
+            ["MCLINN"] = SymbolKind.MCLineN,
             ["BCLIN"]  = SymbolKind.BCLine,
             ["MBCLIN"] = SymbolKind.MBCLine,
             ["MBEND"]  = SymbolKind.MBend,
@@ -160,6 +161,7 @@ public static class DeviceTypes
             ["MCROSS"] = SymbolKind.MCross,
             ["MTAPER"] = SymbolKind.Mtaper,
             ["MKLOPF"] = SymbolKind.Mklopf,
+            ["MRADIAL"] = SymbolKind.MRadial,
             ["CPWG"]   = SymbolKind.Cpwg,
             ["SLIN"]   = SymbolKind.Slin,
             ["VIA"]    = SymbolKind.Via,
@@ -169,9 +171,18 @@ public static class DeviceTypes
             ["MWPD"]   = SymbolKind.Mwpd,
             ["MBLC"]   = SymbolKind.Mblc,
             ["MRRC"]   = SymbolKind.Mrrc,
+            ["MGPD"]   = SymbolKind.Mgpd,
+            ["MBPD"]   = SymbolKind.Mbpd,
+            ["MTPD"]   = SymbolKind.Mtpd,
             ["MCLC"]   = SymbolKind.Mclc,
             ["MIDC"]   = SymbolKind.Midc,
             ["MCBL"]   = SymbolKind.Mcbl,
+            ["MCRC"]   = SymbolKind.Mcrc,
+            ["MLAD"]   = SymbolKind.Mlad,
+            ["MSPS"]   = SymbolKind.Msps,
+            ["MDLY"]   = SymbolKind.Mdly,
+            ["MCLA"]   = SymbolKind.Mcla,
+            ["MRPAD"]  = SymbolKind.Mrpad,
             // The MMIC passives (AA-1): each generator is keyed by its component's own token.
             ["MIMCAP"]    = SymbolKind.MimCap,
             ["SPIRAL"]    = SymbolKind.Spiral,
@@ -302,9 +313,16 @@ public static class DeviceTypes
         // is the same line whichever model the schematic chose for it (AS-11 swaps between them).
         SymbolKind.Mlin or SymbolKind.MBend or SymbolKind.MCurve or SymbolKind.MMiter or SymbolKind.MGap or SymbolKind.MTee
             or SymbolKind.MCross or SymbolKind.Mtaper or SymbolKind.Mklopf or SymbolKind.GsgPad or SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
-            or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl
+            or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.MRadial
+            or SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd
+            or SymbolKind.Mcrc
+            or SymbolKind.Mlad
+            or SymbolKind.Msps
+            or SymbolKind.Mdly
+            or SymbolKind.Mcla
+            or SymbolKind.Mrpad
             or SymbolKind.Tline or SymbolKind.Cpwg or SymbolKind.Slin
-            or SymbolKind.CLine or SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine
+            or SymbolKind.CLine or SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine or SymbolKind.MCLineN
             => DeviceKind.TransmissionLine,
 
         SymbolKind.Airbridge => DeviceKind.Crossover,

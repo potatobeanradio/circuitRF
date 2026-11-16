@@ -1,11 +1,14 @@
+using System;
 using System.Numerics;
 
-namespace CircuitRF.Engine.Mom;
+namespace RfCore.Numerics;
 
 /// <summary>
 /// Bessel and Hankel functions of the first and second kind, orders 0 and 1, for <b>complex</b>
 /// argument. Kernel B needs J₀ for every Sommerfeld/Hankel transform and H₀⁽²⁾ for the closed-form
 /// surface-wave term; kernel A needed neither, and nothing else in this repository provides them.
+/// They live here, below Core and the Planar MoM engine both, so the microstrip radial stub's radial-line closed form
+/// (<c>MicrostripRadialStub</c>) evaluates the same functions rather than a second copy.
 ///
 /// <para><b>Written, not depended on — and this was a decision to surface (brief §2, §8.3).</b> The
 /// root <c>CLAUDE.md</c> reserves dependency additions to the owner, so no package was added. It is
@@ -37,7 +40,7 @@ namespace CircuitRF.Engine.Mom;
 ///
 /// <para><b>Large |Im z| is bounded by the caller, deliberately.</b> J₀(z) grows like
 /// e^{|Im z|}/√|z|, so an integration contour deformed far off the real axis makes an O(1) integral
-/// out of enormous cancelling terms. The Sommerfeld contour in <see cref="SommerfeldIntegral"/>
+/// out of enormous cancelling terms. The Sommerfeld contour in <c>SommerfeldIntegral</c>
 /// therefore stays on the real k_ρ axis; the only complex arguments reaching here have modest
 /// imaginary parts.</para>
 /// </summary>
@@ -75,7 +78,7 @@ public static class Bessel
     /// <summary>
     /// H₀⁽²⁾(z) = J₀(z) − j·Y₀(z) — the outgoing-wave Hankel function under the e^{jωt} convention
     /// this repository uses throughout. It is what the extracted surface-wave pole inverts to in
-    /// closed form (<see cref="Dcim"/>), so it is the one Hankel function kernel B actually needs.
+    /// closed form (<c>Dcim</c>), so it is the one Hankel function kernel B actually needs.
     /// Evaluated from its <i>own</i> asymptotic series for large |z| rather than as J₀ − jY₀, which
     /// would cancel two O(1) numbers to produce an exponentially small one when Im z &lt; 0.
     /// </summary>

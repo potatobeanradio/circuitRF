@@ -23,8 +23,9 @@ namespace CircuitRF.Ui.Tests.SchematicSync;
 ///   fragment&gt;</c> lines, no extra and none missing. A run-level line's id is <c>-</c>; a component with no
 ///   layout view (the plan's <c>NoLayoutWarnings</c>) reads as a <c>Warning</c> under its own id.</item>
 /// </list>
-/// The design is copied into a scratch workspace first, with <c>microstrip-0508.ctech</c> as its technology, so
-/// the generated cells and the written layout never land in the repository.
+/// The design is copied into a scratch workspace first, with <c>microstrip-0508.ctech</c> as its technology (or the
+/// design's own <c>.ctech</c>, when its folder has one), so the generated cells and the written layout never land in
+/// the repository.
 /// </summary>
 internal static class SdlChecker
 {
@@ -67,7 +68,10 @@ internal static class SdlChecker
         string ws = Path.Combine(scratchRoot, "ws");
         string techPath = Path.Combine(ws, "tech", "microstrip-0508.ctech");
         Directory.CreateDirectory(Path.GetDirectoryName(techPath)!);
-        File.Copy(Path.Combine(DesignsRoot, "microstrip-0508.ctech"), techPath, overwrite: true);
+        // A design that needs another board (a broadside pair's second signal layer) carries its own .ctech.
+        string techSource = Directory.GetFiles(source, "*.ctech").FirstOrDefault()
+                         ?? Path.Combine(DesignsRoot, "microstrip-0508.ctech");
+        File.Copy(techSource, techPath, overwrite: true);
         WorkspacePersistence.SaveToFile(Path.Combine(ws, ".cws"), new CwsFile { DefaultTechRef = "tech/microstrip-0508.ctech" });
 
         string cellDir = Path.Combine(ws, design);

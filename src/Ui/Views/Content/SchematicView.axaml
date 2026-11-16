@@ -602,6 +602,19 @@
                             </MenuItem.Icon>
                         </MenuItem>
 
+                        <!-- Place Site Parts — a planned passive with sites only (MWPD, MIDC, MCBL; rf-passives.md
+                             "Sites"): an ordinary part on each empty site, of the readout's value. Hidden for every other
+                             component, as Flatten to Cell is. -->
+                        <MenuItem x:Name="CtxPlaceSiteParts"
+                                  Header="Place Site Parts"
+                                  IsVisible="False"
+                                  Click="OnCtxPlaceSiteParts"
+                                  ToolTip.Tip="Put an ordinary part on each empty site, of the value the readout states and with the part's Footprint">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="ResistorNodes" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
                         <Separator x:Name="CtxSep1"/>
 
                         <MenuItem Header="Rotate 90°"

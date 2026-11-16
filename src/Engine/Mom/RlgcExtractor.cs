@@ -331,39 +331,5 @@ public static class RlgcExtractor
     }
 
     /// <summary>Gauss-Jordan with partial pivoting. M is the conductor count — 1 today.</summary>
-    internal static Mat<double> Invert(Mat<double> a)
-    {
-        int n = a.RowCount;
-        var w = new double[n, 2 * n];
-        for (int i = 0; i < n; i++)
-        {
-            for (int j = 0; j < n; j++) w[i, j] = a[i, j];
-            w[i, n + i] = 1.0;
-        }
-        for (int col = 0; col < n; col++)
-        {
-            int piv = col;
-            for (int r = col + 1; r < n; r++)
-                if (Math.Abs(w[r, col]) > Math.Abs(w[piv, col])) piv = r;
-            if (Math.Abs(w[piv, col]) < 1e-300)
-                throw new InvalidOperationException("MoM: [C₀] is singular — the conductor set has no reference.");
-            if (piv != col)
-                for (int j = 0; j < 2 * n; j++) (w[col, j], w[piv, j]) = (w[piv, j], w[col, j]);
-
-            double d = w[col, col];
-            for (int j = 0; j < 2 * n; j++) w[col, j] /= d;
-            for (int r = 0; r < n; r++)
-            {
-                if (r == col) continue;
-                double f = w[r, col];
-                if (f == 0) continue;
-                for (int j = 0; j < 2 * n; j++) w[r, j] -= f * w[col, j];
-            }
-        }
-        var inv = new Mat<double>(n, n);
-        for (int i = 0; i < n; i++)
-        for (int j = 0; j < n; j++)
-            inv[i, j] = w[i, n + j];
-        return inv;
-    }
+    internal static Mat<double> Invert(Mat<double> a) => RfCore.MulticonductorLine.Invert(a);
 }

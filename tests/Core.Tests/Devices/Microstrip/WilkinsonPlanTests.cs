@@ -1,3 +1,4 @@
+using System.Numerics;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Devices.Microstrip;
 using Xunit;
@@ -179,7 +180,7 @@ public class WilkinsonPlanTests
     [Theory]
     [InlineData(0.0, 1.0, 2.0, "device.wilkinson.spec-not-positive")]
     [InlineData(4.0, 1.0, 2.0, "device.wilkinson.split-unrealisable")]    // the arm to port 2 would be 412 Ω
-    [InlineData(1.0, 4.0, 2.0, "device.wilkinson.sections-unsupported")]
+    [InlineData(1.0, 8.0, 2.0, "device.wilkinson.sections-unsupported")]
     [InlineData(1.0, 1.5, 2.0, "device.wilkinson.sections-unsupported")]
     [InlineData(2.0, 2.0, 2.0, "device.wilkinson.unequal-multisection")]
     [InlineData(1.0, 2.0, 1.0, "device.wilkinson.band-not-above-one")]
@@ -338,5 +339,86 @@ public class WilkinsonPlanTests
             double expected = i + 1 < straights.Count ? d.Lines[n - 3 - i].QuarterWaveMeters : d.FeedMeters;
             Assert.True(Math.Abs(outgoing - expected) < 2e-9, $"junction {i}: {outgoing} vs {expected}");
         }
+    }
+
+    // ══ MWPD up to seven sections (Cohn 1968) ═══════════════════════════════════════════════════
+
+    /// <summary>The general solve gives the two- and three-section numbers the bisection gives, so the one rule is the
+    /// same for every N.</summary>
+    [Theory]
+    [InlineData(2, 2.0)]
+    [InlineData(2, 4.0)]
+    [InlineData(3, 2.0)]
+    [InlineData(3, 1.5)]
+    public void TheGeneralSolve_IsTheBisectionsForTwoAndThree(int n, double band)
+    {
+        var (z, r) = WilkinsonPlan.BroadbandSections(n, band);
+        var (zg, rg) = WilkinsonPlan.ChebyshevSections(n, band);
+        for (int i = 0; i < n; i++)
+        {
+            Assert.Equal(z[i], zg[i], 11);
+            Assert.Equal(r[i], rg[i], 9);
+        }
+    }
+
+    /// <summary>
+    /// N = 4 to 7: the even mode's transformer from 2 to 1 is symmetric (z_k·z_(N+1−k) = 2) and has zero reflection at
+    /// every zero of the N-th Chebyshev polynomial mapped into the band, so it is the equal-ripple one; every resistor is
+    /// positive. (That the odd mode is matched there too is checked on ideal lines in the engine's tests.)
+    /// </summary>
+    [Theory]
+    [InlineData(4, 2.0)]
+    [InlineData(5, 1.5)]
+    [InlineData(6, 3.0)]
+    [InlineData(7, 2.0)]
+    [InlineData(7, 1.2)]
+    [InlineData(7, 10.0)]
+    public void MoreSections_AreTheEqualRippleTransformer(int n, double band)
+    {
+        var (z, r) = WilkinsonPlan.BroadbandSections(n, band);
+        Assert.Equal(n, z.Length);
+        for (int k = 0; k < n; k++) Assert.Equal(2.0, z[k] * z[n - 1 - k], 12);
+        Assert.All(r, x => Assert.True(x > 0.0));
+        double thetaM = Math.PI / (1 + band);
+        for (int j = 1; j <= n; j++)
+        {
+            double theta = Math.Acos(Math.Cos(thetaM) * Math.Cos((2 * j - 1) * Math.PI / (2.0 * n)));
+            Complex zl = 1.0;
+            foreach (double zk in z) zl = zk * (zl + Complex.ImaginaryOne * zk * Math.Tan(theta)) / (zk + Complex.ImaginaryOne * zl * Math.Tan(theta));
+            Assert.True(((zl - 2.0) / (zl + 2.0)).Magnitude < 1e-12, $"zero {j}: {zl}");
+        }
+    }
+
+    /// <summary>The octave's numbers for four and seven sections, to four places, as components.md tabulates them.</summary>
+    [Fact]
+    public void AnOctave_GivesTheTabulatedNumbers_UpToSeven()
+    {
+        var (z4, r4) = WilkinsonPlan.BroadbandSections(4, 2.0);
+        Assert.Equal([1.0591, 1.2572, 1.5908, 1.8883], z4.Select(v => Math.Round(v, 4)));
+        Assert.Equal([21.3804, 6.5989, 3.6670, 1.9667], r4.Select(v => Math.Round(v, 4)));
+        var (z7, r7) = WilkinsonPlan.BroadbandSections(7, 2.0);
+        Assert.Equal([1.0089, 1.0568, 1.1863, 1.4142, 1.6859, 1.8924, 1.9823], z7.Select(v => Math.Round(v, 4)));
+        Assert.Equal([161.4511, 29.9643, 11.6766, 7.0555, 5.2838, 3.8258, 2.0029], r7.Select(v => Math.Round(v, 4)));
+    }
+
+    /// <summary>A seven-section divider plans: 17 pins, a resistor pair per section Gap apart, every piece joined.</summary>
+    [Fact]
+    public void SevenSections_Plan()
+    {
+        var d = WilkinsonPlan.Build(50.0, 2.4e9, 1.35e-3, Ro4350b, 1.0, 7, 3.0);
+        Assert.Equal(17, d.Plan.Pins.Count);
+        Assert.Equal(7, WilkinsonPlan.SectionsForPinCount(17));
+        Assert.Equal(7, d.Resistors.Count);
+        HybridPlanTests.AssertJoined(d.Plan);
+    }
+
+    /// <summary>Four or more sections over a band narrower than 1.1 is refused: the odd mode's equations there are
+    /// nearly dependent, and seven sections lose the solution at 1.05.</summary>
+    [Fact]
+    public void ABandTooNarrowForTheSections_IsACodedRefusal()
+    {
+        var ex = Assert.Throws<ParameterRefusalException>(() => WilkinsonPlan.Build(50.0, 2.4e9, 1.35e-3, Ro4350b, 1.0, 7, 1.05));
+        Assert.Equal("device.wilkinson.sections-unsolved", ex.Diagnostic?.Id);
+        Assert.Equal(3, WilkinsonPlan.Build(50.0, 2.4e9, 1.35e-3, Ro4350b, 1.0, 3, 1.05).Sections);
     }
 }

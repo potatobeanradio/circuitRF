@@ -1,0 +1,13 @@
+# The coupled array as one part (MCLA), interdigital and tapped: three strips shorted at alternate ends, the ports tapped
+# onto the outer strips. A via to ground lands beside each shorted end (E1-E3), placed there by Place Site Parts.
+Info CLA1 added
+Info VIAG1 added
+Info VIAG2 added
+Info VIAG3 added
+Info VIAG1 placed beside CLA1 pin E1 and tied to its pad
+Info VIAG2 placed beside CLA1 pin E2 and tied to its pad
+Info VIAG3 placed beside CLA1 pin E3 and tied to its pad
+Info P1 port 1 placed at CLA1 pin 1
+Info P2 port 2 placed at CLA1 pin 2
+port P1 1
+port P2 2

@@ -33,4 +33,16 @@ public static class PlanarLineAngle
     /// <summary><see cref="AngleRad(IPlanarLineModel, double, double)"/> for an εeff already read at F.</summary>
     public static double AngleRad(double eeff, double lengthMeters, double fHz)
         => 2.0 * Math.PI * fHz * lengthMeters * Math.Sqrt(eeff) / MicrostripLoss.SpeedOfLight;
+
+    /// <summary>
+    /// The length whose phase at the frequency <paramref name="line"/> was read at is <paramref name="eRad"/>, by the phase
+    /// constant MLIN stamps there (<see cref="MicrostripLineParameters.PhaseRadPerM"/>): the lossless β of its dispersive
+    /// εeff and the causal phase its loss comes with (<see cref="Planar.CausalLoss"/>). What a planned passive that
+    /// promises θ at F sizes its lines by, so the line it draws is θ in the run that simulates it.
+    /// </summary>
+    public static double LengthMeters(in MicrostripLineParameters line, double eRad) => eRad / line.PhaseRadPerM;
+
+    /// <summary>The phase of <paramref name="lengthMeters"/> of the line at the frequency <paramref name="line"/> was read
+    /// at, by the phase constant MLIN stamps (<see cref="LengthMeters(in MicrostripLineParameters, double)"/>).</summary>
+    public static double AngleRad(in MicrostripLineParameters line, double lengthMeters) => line.PhaseRadPerM * lengthMeters;
 }

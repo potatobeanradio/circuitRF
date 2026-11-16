@@ -3625,6 +3625,9 @@ public static class NetExtractor
                 // A Phased Antenna Array's Record is a path, and its Off a list that may hold spaces: both quoted, as an SnP's File is.
                 if (comp.Symbol == SymbolKind.PhasedArray && p.Name is "Record" or "Off" && !p.Expression.TrimStart().StartsWith('"'))
                     return new ParameterAssignment(p.Name, "\"" + p.Expression.Trim() + "\"", null);
+                // A ladder's Sections is its list, with spaces and commas in it: quoted likewise.
+                if (comp.Symbol == SymbolKind.Mlad && p.Name == "Sections" && !p.Expression.TrimStart().StartsWith('"'))
+                    return new ParameterAssignment(p.Name, "\"" + p.Expression.Trim() + "\"", null);
                 // The mask is a list with spaces and commas in it; unquoted, its words would read as nets.
                 string expr = p.Name == "PhaseNoise" && !p.Expression.TrimStart().StartsWith('"')
                     ? "\"" + p.Expression.Trim() + "\"" : p.Expression;
@@ -3772,6 +3775,27 @@ public static class NetExtractor
                 : substrateOverrides);
             if (warning is not null)
                 warningsOut?.Add($"{comp.InstanceName}: {warning}");
+
+            // A planned passive's Footprint sets its site span (Gap), here with the substrate, so the run, LVS and a
+            // netlist written from this read the span the land pattern gives.
+            MicrostripSubstrateInjection.ApplySiteFootprint(overrides2, comp.Symbol, model.SchematicDirectory, microstripTech,
+                out var siteWarning);
+            if (siteWarning is not null)
+                warningsOut?.Add($"{comp.InstanceName}: {siteWarning}");
+        }
+
+        // A broadside coupler (MCLC with Broadside on) is on two conductors: the pair's cross-section, resolved as BCLIN's
+        // or MBCLIN's, is appended after the microstrip substrate, so its Er, TanD and Sigma are the ones the model reads.
+        // A stack with no second signal layer appends nothing, and the plan refuses the part with a coded message.
+        if (comp.Symbol == SymbolKind.Mclc
+            && double.TryParse(comp.Parameters.FirstOrDefault(p => p.Name == "Broadside")?.Expression,
+                   System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double bs)
+            && bs != 0.0)
+        {
+            var (stack, reason) = CircuitRF.Design.Layout.PCells.SubstrateResolver.ResolveBroadsideStack(microstripTech,
+                NonEmptyOrNull(comp.Parameters.FirstOrDefault(p => p.Name == "SignalLayer")?.Expression));
+            if (stack is null) warningsOut?.Add($"{comp.InstanceName}: Broadside: {reason}");
+            else overrides2.AddRange(BroadsideSubstrateInjection.Overrides(stack));
         }
 
         // brief-artsch-1: CPWG and SLIN, by PlanarLineSubstrateInjection's rule. A SLIN the technology cannot
@@ -3878,7 +3902,7 @@ public static class NetExtractor
 
         // Fallback for unresolvable cell-refs: use built-in placeholder geometry.
         // This keeps pre-fix behavior for models without SchematicDirectory set.
-        var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
+        var portDefs = SymbolPortDefs.For(comp);
         var result   = new (float LocalX, float LocalY, int PortIndex)[portDefs.Length];
         for (int i = 0; i < portDefs.Length; i++)
             result[i] = (portDefs[i].LocalX, portDefs[i].LocalY, i);

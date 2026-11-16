@@ -99,7 +99,17 @@
     {
       "Folder": "Dividers and Couplers",
       "Title": "Dividers and Couplers",
-      "Summary": "Built-in dividers, hybrids, a coupler and a balun on 20 mil RO4350B at 2.4 GHz, each placed as one part from its specs and laid out by Update Layout. Run a cell's Planar MoM, EMerge and Palace setups, simulate its bench, and open its data display to see the circuit model against each solver."
+      "Summary": "Built-in dividers, hybrids, couplers, a balun, a phase shifter, a delay line and a resistive pad on 20 mil RO4350B at 2.4 GHz, each placed as one part from its specs and laid out by Update Layout, the lumped ones with their parts placed by Place Site Parts. Run a cell's EM setups, simulate its bench, and open its data display to see the circuit model against each solver and an equations model of ideal lines."
+    },
+    {
+      "Folder": "MMIC Wilkinson",
+      "Title": "MMIC Wilkinson",
+      "Summary": "A Wilkinson divider at 20 GHz on a 100 µm GaAs die, its isolation resistor a thin-film resistor across the ring's gap, laid out by Update Layout, its circuit model set beside an equations model of ideal lines."
+    },
+    {
+      "Folder": "RFIC Branch-Line",
+      "Title": "RFIC Branch-Line",
+      "Summary": "A branch-line hybrid at 60 GHz on the top metal of a silicon back-end, referenced to Metal1 so its field stays out of the silicon, laid out by Update Layout, its circuit model set beside an equations model of ideal lines."
     },
     {
       "Folder": "PCB Component Ports",
@@ -120,6 +130,11 @@
       "Folder": "Passivated Pad",
       "Title": "Passivated Pad",
       "Summary": "Two dielectrics over the top metal of a GaAs process, entered as the process states them: a line with and without them, a probe pad seen through an opening in both, in 3D and planar, and a through-silicon via that passes through the oxide and the silicon as one via."
+    },
+    {
+      "Folder": "Planar Filters",
+      "Title": "Planar Filters",
+      "Summary": "Microstrip filters on 20 mil RO4350B, one cell per form: edge-coupled, hairpin, cross-coupled open-loop, end-coupled, interdigital and combline bandpass filters at 2.4 GHz, and stepped-impedance, stub and lumped LC lowpass filters near 2 GHz. Each is one built-in part holding its geometry, laid out by Update Layout. Simulate a cell's bench and open its data display to see the circuit model against the ideal prototype it was designed from, and against Planar MoM where the cell has a setup."
     },
     {
       "Folder": "3D EM",
@@ -255,7 +270,7 @@
     { "Title": "Models", "Examples": ["Model Composer", "Symbolically Defined Device (SDD)"] },
     { "Title": "Layout and Interchange", "Examples": ["PDK PCells", "LVS", "Artwork to Schematic"] },
     { "Title": "Power Distribution Networks", "Examples": ["Power Rail"] },
-    { "Title": "Planar EM and Boards", "Examples": ["Klopfenstein Taper", "Dividers and Couplers", "PCB Component Ports", "MMIC Component Ports", "Via Contact Resistor", "Passivated Pad"] },
+    { "Title": "Planar EM and Boards", "Examples": ["Klopfenstein Taper", "Dividers and Couplers", "Planar Filters", "MMIC Wilkinson", "RFIC Branch-Line", "PCB Component Ports", "MMIC Component Ports", "Via Contact Resistor", "Passivated Pad"] },
     { "Title": "3D EM", "Examples": ["3D EM", "3D Package", "3D Connector", "3D Wave Ports", "3D Eigenmode", "Capacitance Extraction", "Test Pad Capacitance"] },
     { "Title": "Antennas and Arrays", "Examples": ["Patch Antenna", "Antenna Co-Simulation", "Phased Array", "Loop Sensor"] },
     { "Title": "SAR", "Examples": ["SAR MRI Loop Coil", "SAR Phone Dipole"] },

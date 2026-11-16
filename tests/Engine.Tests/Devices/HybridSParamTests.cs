@@ -15,7 +15,7 @@ namespace CircuitRF.Engine.Tests.Devices;
 /// branch-line on the C2 fixture's dimensions is the C2 fixture. At F they split 3 dB in quadrature or in and
 /// out of phase.
 /// </summary>
-public class HybridSParamTests
+public class HybridSParamTests(Xunit.Abstractions.ITestOutputHelper output)
 {
     private const string Sub = "H=0.508e-3 T=35e-6 Er=3.66 Sigma=5.8e7 TanD=0.0037";
     private static readonly MicrostripSubstrate Ro4350b = new(0.508e-3, 35e-6, 3.66, 5.8e7, 0.0037);
@@ -32,8 +32,13 @@ public class HybridSParamTests
     {
         "MBLC1" => $"MBLC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz N=1 {Sub}",
         "MBLC2" => $"MBLC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz N=2 {Sub}",
+        "MBLC3" => $"MBLC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz N=3 {Sub}",
+        "MBLC3-PTFE" => $"MBLC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz N=3 {Ptfe}",
+        "MBLC4-PTFE" => $"MBLC:H1 p1 p2 p3 p4 Z0=35 Ohm F=2.4 GHz N=4 {Ptfe}",
         "MRRC-Miter" => $"MRRC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz Corner=Miter {Sub}",
         "MRRC-Square" => $"MRRC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz Corner=Square {Sub}",
+        "MRRC-Meander" => $"MRRC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz Meander=1 {Sub}",
+        "MRRC-Meander3" => $"MRRC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz Meander=3 {Sub}",
         _ => $"MRRC:H1 p1 p2 p3 p4 Z0=50 Ohm F=2.4 GHz {Sub}",
     };
 
@@ -41,10 +46,17 @@ public class HybridSParamTests
     {
         "MBLC1" => BranchLinePlan.Build(50.0, 2.4e9, 1, Ro4350b).Plan,
         "MBLC2" => BranchLinePlan.Build(50.0, 2.4e9, 2, Ro4350b).Plan,
+        "MBLC3" => BranchLinePlan.Build(50.0, 2.4e9, 3, Ro4350b).Plan,
         "MRRC-Miter" => RatRacePlan.Build(50.0, 2.4e9, Ro4350b, PlanCorner.Miter).Plan,
         "MRRC-Square" => RatRacePlan.Build(50.0, 2.4e9, Ro4350b, PlanCorner.Square).Plan,
+        "MRRC-Meander" => RatRacePlan.Build(50.0, 2.4e9, Ro4350b, meander: 1).Plan,
+        "MRRC-Meander3" => RatRacePlan.Build(50.0, 2.4e9, Ro4350b, meander: 3).Plan,
         _ => RatRacePlan.Build(50.0, 2.4e9, Ro4350b).Plan,
     };
+
+    /// <summary>60 mil PTFE: thick and low εr, where the branch-line's high-impedance outer arms are wide enough not to
+    /// spend the split in conductor loss (on 20 mil RO4350B the three-section coupler's 213 Ω arms are 17 µm wide).</summary>
+    private const string Ptfe = "H=1.524e-3 T=35e-6 Er=2.2 Sigma=5.8e7 TanD=0.0009";
 
     private static ElaboratedNetlist Elaborate(string cnl)
     {
@@ -109,6 +121,8 @@ public class HybridSParamTests
     [InlineData("MBLC2", 1.2e9)]
     [InlineData("MBLC2", 2.4e9)]
     [InlineData("MBLC2", 4.8e9)]
+    [InlineData("MBLC3", 1.2e9)]
+    [InlineData("MBLC3", 2.4e9)]
     [InlineData("MRRC", 1.2e9)]
     [InlineData("MRRC", 2.4e9)]
     [InlineData("MRRC", 4.8e9)]
@@ -116,6 +130,10 @@ public class HybridSParamTests
     [InlineData("MRRC-Miter", 2.4e9)]
     [InlineData("MRRC-Square", 2.4e9)]
     [InlineData("MRRC-Square", 4.8e9)]
+    [InlineData("MRRC-Meander", 1.2e9)]
+    [InlineData("MRRC-Meander", 2.4e9)]
+    [InlineData("MRRC-Meander", 4.8e9)]
+    [InlineData("MRRC-Meander3", 2.4e9)]
     public void TheHybrid_IsItsSectionsWiredByHand(string kind, double f)
         => AssertSame(SAt(Elaborate($"{Ports}\n{Part(kind)}"), f), SAt(Elaborate(ByHand(Plan(kind))), f), f);
 
@@ -133,6 +151,25 @@ public class HybridSParamTests
         Assert.InRange(PhaseDeg(s[1, 0], s[2, 0]), 87.0, 93.0);      // 3 lags 2 by a quarter period
     }
 
+    /// <summary>Three and four sections split 3 dB in quadrature at F, 3 behind 2, matched and isolated — on 60 mil PTFE,
+    /// where the outer arms (213 Ω for three in 50 Ω, 259 Ω for four in 35 Ω) are wide enough to carry it. On this board
+    /// three sections are matched and isolated to −43 dB; four to −21 dB, their 259 Ω arms far outside MTEE's
+    /// calibration.</summary>
+    [Theory]
+    [InlineData("MBLC3-PTFE", -40.0)]
+    [InlineData("MBLC4-PTFE", -20.0)]
+    public void MoreBranchLineSections_SplitInQuadratureAtF(string kind, double limitDb)
+    {
+        string ports = kind == "MBLC4-PTFE" ? Ports.Replace("Z=50 Ohm", "Z=35 Ohm") : Ports;
+        var s = SAt(Elaborate($"{ports}\n{Part(kind)}"), 2.4e9);
+        Assert.True(Db(s[0, 0]) < limitDb, $"|S11| {Db(s[0, 0]):F2} dB");
+        Assert.True(Db(s[3, 0]) < limitDb, $"|S41| {Db(s[3, 0]):F2} dB");
+        Assert.InRange(Db(s[1, 0]), -3.4, -3.0);
+        Assert.InRange(Db(s[2, 0]), -3.4, -3.0);
+        Assert.InRange(PhaseDeg(s[1, 0], s[2, 0]), 88.0, 92.0);
+    }
+
+
     /// <summary>With corners too: the corners' own electrical length comes out of the sides, so every spacing is still
     /// λg/4 or 3λg/4 at F. The cornered limit is set to catch it if it were not: on this board the mitred ring's |S11|,
     /// |S44|, |S41| and |S23| are −49 to −51 dB at F, as the curved ring's are, the square ring's −43 to −59 dB, and with
@@ -141,6 +178,8 @@ public class HybridSParamTests
     [InlineData("MRRC", -20.0)]
     [InlineData("MRRC-Miter", -40.0)]
     [InlineData("MRRC-Square", -40.0)]
+    [InlineData("MRRC-Meander", -20.0)]
+    [InlineData("MRRC-Meander3", -20.0)]
     public void TheRatRace_SumsAndDifferencesAtF(string kind, double limitDb)
     {
         var s = SAt(Elaborate($"{Ports}\n{Part(kind)}"), 2.4e9);
@@ -151,6 +190,32 @@ public class HybridSParamTests
             Assert.InRange(Db(s[i, j]), -3.4, -3.0);
         Assert.InRange(PhaseDeg(s[1, 0], s[2, 0]), -3.0, 3.0);       // Σ: in phase
         Assert.InRange(Math.Abs(PhaseDeg(s[1, 3], s[2, 3])), 177.0, 180.0);   // Δ: out of phase
+    }
+
+    /// <summary>The meandered ring at F against the curved one: the match, the in-phase (Σ, driven at 1) and antiphase
+    /// (Δ, driven at 4) outputs and the isolation. The folded arm's turns and the legs beside the runs are separate lines
+    /// in the model, so this is the ring the model sees; EM would add their coupling.</summary>
+    [Theory]
+    [InlineData("MRRC-Meander")]
+    [InlineData("MRRC-Meander3")]
+    public void TheMeanderedRatRace_IsTheCurvedOnesHybridAtF(string kind)
+    {
+        var (c, m) = (SAt(Elaborate($"{Ports}\n{Part("MRRC")}"), 2.4e9), SAt(Elaborate($"{Ports}\n{Part(kind)}"), 2.4e9));
+        string Row(Complex[,] s) => string.Join(", ", new[] { (0, 0), (3, 3), (1, 0), (2, 0), (1, 3), (2, 3), (3, 0), (2, 1) }
+            .Select(p => $"S{p.Item1 + 1}{p.Item2 + 1} {Db(s[p.Item1, p.Item2]):F3} dB"))
+            + $"; Σ {PhaseDeg(s[1, 0], s[2, 0]):F3}°, Δ {PhaseDeg(s[1, 3], s[2, 3]):F3}°";
+        output.WriteLine($"curved:   {Row(c)}\n{kind}: {Row(m)}");
+
+        foreach (var (i, j) in new[] { (1, 0), (2, 0), (1, 3), (2, 3) })
+            Assert.True(Math.Abs(Db(m[i, j]) - Db(c[i, j])) < 0.01, $"|S{i + 1}{j + 1}| {Db(m[i, j]):F3} vs {Db(c[i, j]):F3} dB");
+        foreach (var (i, j) in new[] { (0, 0), (3, 3), (3, 0), (2, 1) })
+            Assert.True(Db(m[i, j]) < -45.0, $"|S{i + 1}{j + 1}| {Db(m[i, j]):F2} dB");
+        // The folded arm is sized by MLIN's causal phase at F (PlanRoute), the curved ring's arms by its εeff alone, which
+        // leaves them about 0.2° apart on this board: the meandered ring's Σ and Δ are the closer to 0° and 180°.
+        Assert.True(Math.Abs(PhaseDeg(m[1, 0], m[2, 0])) < 0.1);
+        Assert.True(Math.Abs(Math.Abs(PhaseDeg(m[1, 3], m[2, 3])) - 180.0) < 0.1);
+        Assert.True(Math.Abs(PhaseDeg(m[1, 0], m[2, 0]) - PhaseDeg(c[1, 0], c[2, 0])) < 0.3);
+        Assert.True(Math.Abs(Math.Abs(PhaseDeg(m[1, 3], m[2, 3])) - Math.Abs(PhaseDeg(c[1, 3], c[2, 3]))) < 0.3);
     }
 
     /// <summary>testdata/schematic-to-layout/C2-branch-line, the hand-drawn one-section coupler: four MTEEs, four

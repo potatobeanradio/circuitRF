@@ -327,7 +327,11 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     /// still holds for everything else).
     /// </summary>
     public bool ShowFootprintRow => IsNotEmptyState && !IsWBond
-        && (_target is null || FootprintDefaults.IsOffered(_target.Symbol));
+        && (_target is null || FootprintDefaults.IsOffered(_target.Symbol) || IsSiteFootprintTarget);
+
+    /// <summary>A planned passive whose <c>Footprint</c> names the part on its sites and sets their span
+    /// (<see cref="MicrostripSubstrateInjection.HasSiteFootprint"/>): the row offers two-pad lands, and None keeps Gap.</summary>
+    private bool IsSiteFootprintTarget => _target is not null && MicrostripSubstrateInjection.HasSiteFootprint(_target.Symbol);
 
     /// <summary>The <b>None</b> row — index 0, always.</summary>
     public const string FootprintNoneRow = "None";
@@ -512,7 +516,9 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         if (_target is null) return;
         OnPropertyChanged(nameof(ShowFootprintRow));   // a type change can move a part into or out of the line kinds
 
-        string? stored = _target.Footprint;
+        // A planned passive's own Footprint is its sites' part's, so it is read from the row (the accessor answers null for
+        // a line kind, which draws its own geometry) and offered the lands of a two-pad part.
+        string? stored = IsSiteFootprintTarget ? PassiveSites.FootprintOf(_target) : _target.Footprint;
         _footprintStored = stored;
 
         bool wasRefreshing = _isRefreshing;
@@ -525,7 +531,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         var catalog = FootprintCatalog.Build(
             _schematicVm?.KitWorkspaceRoot,
             _schematicVm?.EditModel.SchematicDirectory,
-            _target.EffectivePortCount);
+            IsSiteFootprintTarget ? 2 : _target.EffectivePortCount);
 
         FootprintOptions.Clear();
         _footprintRows.Clear();

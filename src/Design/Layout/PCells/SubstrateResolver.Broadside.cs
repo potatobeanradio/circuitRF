@@ -1,3 +1,6 @@
+using CircuitRF.Core.Devices;
+using CircuitRF.Core.Devices.Microstrip;
+
 namespace CircuitRF.Design.Layout.PCells;
 
 /// <summary>
@@ -171,5 +174,22 @@ public static partial class SubstrateResolver
         double hd = hb + tb + hs + (topDielectric < ia ? ta + Span(topDielectric - 1, ia) : 0.0);
         double sigma = (a.SigmaSm + b.SigmaSm) / 2.0;
         return (new ResolvedBroadsidePair(a, b, upper, lower, hs, ha, hb, hd, ta, tb, er, tWeighted / eDbu, sigma), null, warn);
+    }
+
+    /// <summary>
+    /// The stack a broadside coupler (MCLC with Broadside on) is built on: BCLIN's when the stackup has a ground above
+    /// and below the pair, MBCLIN's otherwise, strip A on <paramref name="signalLayer"/> (null: the stackup's default
+    /// pair). Null, with the reasons, when it has no second signal conductor next to the first.
+    /// </summary>
+    public static (BroadsideStack? Stack, string? Reason) ResolveBroadsideStack(Technology? technology, string? signalLayer)
+    {
+        var (pair, failure, _) = ResolveBroadsidePair(technology, signalLayer, null, stripline: true);
+        bool stripline = pair is not null;
+        if (pair is null) (pair, failure, _) = ResolveBroadsidePair(technology, signalLayer, null, stripline: false);
+        if (pair is null) return (null, failure?.Reason ?? "no stackup resolved");
+        double hd = !stripline && pair.Hd > pair.Hb + pair.Tb + pair.Hs * (1 + 1e-9) ? pair.Hd : double.NaN;
+        return (new BroadsideStack(pair.Hs, pair.Hb, stripline ? pair.Ha : double.NaN, hd, pair.Ta, pair.Tb, pair.EpsR,
+            pair.Sigma > 0 ? pair.Sigma : ComponentModelFactory.DefaultSubstrateSigmaSPerM, pair.TanD, stripline,
+            pair.A.Name, pair.B.Name), null);
     }
 }

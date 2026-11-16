@@ -53,9 +53,16 @@ public sealed class EditableParameter
 /// </summary>
 public static class SymbolPortDefs
 {
-    /// <summary>Convenience overload; uses portCount=2 for variadic types.</summary>
+    /// <summary>Convenience overload; uses <see cref="DefaultPortCount"/> for variadic types.</summary>
     public static (string Name, float LocalX, float LocalY)[] For(SymbolKind kind)
-        => For(kind, portCount: 2);
+        => For(kind, DefaultPortCount(kind));
+
+    /// <summary>The pin count a kind is asked at when no count is given: 2, which every variadic kind but one reads as
+    /// its default; MCLA's default array's (interdigital, tapped, three strips: 1, 2, E1-E3), since a count of 2 is a real
+    /// array of its own (a via-less pseudo-interdigital one), so the default part, its catalogue symbol and its
+    /// generator's default artwork agree.</summary>
+    public static int DefaultPortCount(SymbolKind kind)
+        => kind == SymbolKind.Mcla ? CircuitRF.Core.Devices.Microstrip.CoupledArrayPlan.DefaultPinCount : 2;
 
     /// <summary>
     /// Returns port definitions for the given kind and (for variadic types) port count.
@@ -64,6 +71,10 @@ public static class SymbolPortDefs
     /// </summary>
     public static (string Name, float LocalX, float LocalY)[] For(SymbolKind kind, int portCount)
     {
+        // A resistive pad: VARIADIC on the PIN count, its form's own layout (LumpedPlan.PadForPins). A lumped MWPD, MBLC, MRRC
+        // or MCBL is NOT answered here: its count does not name it (MWPD's T and six-section ring both have fifteen pins), so
+        // its pins come from the part itself, For(EditableComponent); a count alone is always the distributed part's.
+        if (Lumped(kind, portCount) is { } lumped) return LumpedPins(lumped);
         switch (kind)
         {
             case SymbolKind.Var:     return [];
@@ -107,18 +118,77 @@ public static class SymbolPortDefs
             // MBLC: as the board has it — 1 and 2 the ends of the upper through line, 4 and 3 of the lower.
             case SymbolKind.Mblc:    return [("1", -400f, -200f), ("2", 400f, -200f), ("3", 400f, 200f), ("4", -400f, 200f)];
             // MRRC: the sum port at the top, the difference port at the bottom, the outputs either side.
-            case SymbolKind.Mrrc:    return [("1", 0f, -400f), ("2", -400f, 0f), ("3", 400f, 0f), ("4", 0f, 400f)];
-            // MCLC: MCLIN's pins exactly, so a placed MCLIN is swapped for the coupler without rewiring.
-            case SymbolKind.Mclc:    return [("1", -200f, -100f), ("2", 200f, -100f),
-                                             ("3", -200f,  100f), ("4", 200f,  100f)];
+            // A coupled-line ring (six pins) as its board has it: 3 at the top, 1 at the right, 4 at the lower left and 2 below
+            // the lower right, the section along the bottom with G2 (strip A's far end) inside and G4 (strip B's near end)
+            // below.
+            case SymbolKind.Mrrc:
+                return portCount == 6
+                    ? [("1", 400f, 0f), ("2", 200f, 400f), ("3", 0f, -400f), ("4", -400f, 200f), ("G2", 100f, 100f), ("G4", -100f, 400f)]
+                    : [("1", 0f, -400f), ("2", -400f, 0f), ("3", 400f, 0f), ("4", 0f, 400f)];
+            // MGPD: round the ring as the board has it — the input at the left, the outputs at the top and bottom, and the
+            // isolation nodes R2/R3 at the right, 600 apart so no resistor dropped there spans both: each takes its own
+            // resistor to ground.
+            case SymbolKind.Mgpd:    return [("1", -400f, 0f), ("2", 0f, -400f), ("3", 0f, 400f),
+                                             ("R2", 400f, -300f), ("R3", 400f, 300f)];
+            // MBPD: the input at the left and the N outputs down the right, 200 apart in turn round the polygon. VARIADIC on
+            // the PIN count (N + 1, as PortCount answers); any other count, the one-argument overload's 2 included, is the
+            // three-way divider.
+            case SymbolKind.Mbpd:
+            {
+                int n = CircuitRF.Core.Devices.Microstrip.BagleyPlan.WaysForPinCount(portCount);
+                return [("1", -400f, 0f), .. Enumerable.Range(1, n).Select(k => ($"{k + 1}", 400f, (2f * k - n - 1) * 100f))];
+            }
+            // MTPD: the input at the left, the outputs at the right's top and bottom.
+            case SymbolKind.Mtpd:    return [("1", -400f, 0f), ("2", 400f, -200f), ("3", 400f, 200f)];
+            // MCLC: MCLIN's pins exactly, so a placed MCLIN is swapped for the coupler without rewiring. A tandem (eight pins)
+            // as its board has it: coupler I above coupler II, 1 at the top left and 3 at the bottom right, 2 and 4 the
+            // leads out of the two crossovers on the left and right, and each crossover's landings J1/J2 (right) and
+            // J3/J4 (left) one above the other beside it.
+            case SymbolKind.Mclc:
+                return portCount == 8
+                    ? [("1", -400f, -300f), ("2", -400f, 100f), ("3", 400f, 300f), ("4", 400f, -100f),
+                       ("J1", 200f, -300f), ("J2", 200f, 100f), ("J3", -200f, 300f), ("J4", -200f, -100f)]
+                    : [("1", -200f, -100f), ("2", 200f, -100f), ("3", -200f,  100f), ("4", 200f,  100f)];
             // MIDC: each pin on its own finger's row, top to bottom 1/J3/J1/3 at the left and 2/J4/J2/4 at the right,
-            // as the fingers lie on the board (1-2 and J1-J2 one conductor, J3-J4 and 3-4 the other).
-            case SymbolKind.Midc:    return [("1", -400f, -300f), ("2", 400f, -300f), ("3", -400f, 300f), ("4", 400f, 300f),
-                                             ("J1", -400f, 100f), ("J2", 400f, 100f), ("J3", -400f, -100f), ("J4", 400f, -100f)];
+            // as the fingers lie on the board (1-2 and J1-J2 one conductor, J3-J4 and 3-4 the other). VARIADIC on the pin
+            // count, 2·N for N fingers: rows 200 apart, each finger's landings on its row (LangePlan.PinsFor's order).
+            case SymbolKind.Midc:
+            {
+                int n = CircuitRF.Core.Devices.Microstrip.LangePlan.FingersForPinCount(portCount);
+                float Row(int f) => -100f * (n - 1) + 200f * f;
+                var pins = new List<(string, float, float)>
+                {
+                    ("1", -400f, Row(0)), ("2", 400f, Row(0)), ("3", -400f, Row(n - 1)), ("4", 400f, Row(n - 1)),
+                };
+                for (int k = 1; k <= 2 * (n - 2); k++)
+                {
+                    int m = (k - 1) / 4, j = (k - 1) % 4;                 // J(4m+1..4m+4): A finger 2m+2, B finger 2m+1
+                    int f = j < 2 ? 2 * m + 2 : 2 * m + 1;
+                    pins.Add(($"J{k}", j % 2 == 0 ? -400f : 400f, Row(f)));
+                }
+                return [.. pins];
+            }
             // MCBL: the input and G2 at the left, G3 at the right, and the balanced outputs 2 and 3 side by side below
             // the middle, where the two sections' coupled strips end.
+            // MCRC: in at the left on the first feed's row, out at the right on the last's, as the glyph's strips step.
+            case SymbolKind.Mcrc:    return [("1", -400f, -100f), ("2", 400f, 100f)];
+            // MDLY: a line, on MLIN's left/right pins.
+            case SymbolKind.Mdly:    return [("1", -200f, 0f), ("2", 200f, 0f)];
             case SymbolKind.Mcbl:    return [("1", -600f, -100f), ("2", -100f, 200f), ("3", 100f, 200f),
                                              ("G2", -600f, 100f), ("G3", 600f, 100f)];
+            // MLAD: the through line's ends at the left and right, and its G pins (vias and sites' parts) along the bottom
+            // 200 apart and centred, the ends moving out past them as they grow. VARIADIC on the PIN count (2 + the G
+            // pins, as PortCount answers), so any count below three, the one-argument overload's 2 included, is the
+            // two-pin ladder.
+            case SymbolKind.Mlad:
+            {
+                int g = Math.Max(0, portCount - 2);
+                float end = Math.Max(400f, 100f * (g + 2));
+                return [("1", -end, 0f), ("2", end, 0f),
+                        .. Enumerable.Range(1, g).Select(k => ($"G{k}", 100f * (2 * k - g - 1), 300f))];
+            }
+            // MSPS: the C-section's two ends at the left, top, and the reference line's ends below it, left and right.
+            case SymbolKind.Msps:    return [("1", -400f, -300f), ("2", -400f, -100f), ("3", -400f, 200f), ("4", 400f, 200f)];
             // The MMIC passives (AA-1): horizontal, on MLIN's left/right convention, because they sit
             // in a die's lines. MIMCAP 1 = top plate, 2 = bottom plate; SPIRAL 1 = outer end, 2 = inner
             // end; AIRBRIDGE 1/2 = the landings, and 3 (below) / 4 (above) the two ends of the line it crosses.
@@ -160,6 +230,30 @@ public static class SymbolPortDefs
             case SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine:
                                      return [("1", -200f, -100f), ("2", 200f, -100f),
                                              ("3", -200f,  100f), ("4", 200f,  100f)];
+            // MCLINN: the strips' near ends 1..N down the left and their far ends N + 1..2N down the right, strip k on the
+            // row (2k − N − 1)·100, so every pin is on the grid and two strips sit on MCLIN's corners. VARIADIC on the PIN
+            // count (2·N, as PortCount answers); any other count, the one-argument overload's 2 included, is three strips.
+            case SymbolKind.MCLineN:
+            {
+                int n = CircuitRF.Core.Devices.MicrostripMultiLineModel.StripsForPinCount(portCount);
+                return [.. Enumerable.Range(1, n).Select(k => ($"{k}", -200f, (2f * k - n - 1) * 100f)),
+                        .. Enumerable.Range(1, n).Select(k => ($"{n + k}", 200f, (2f * k - n - 1) * 100f))];
+            }
+            // MCLA: 1 at the left and 2 at the right; the shorted and loaded strip ends E1, E2, … alternately along the
+            // top and the bottom, 200 apart, each row at least as far from the middle as it is wide, so a shunt part on
+            // each stands straight out. VARIADIC on the PIN count (2 + the end pins, as PortCount answers); below two, the
+            // default array's. The names follow the count alone: each end pin's role is the plan's site there.
+            case SymbolKind.Mcla:
+            {
+                int ends = (portCount >= 2 ? portCount : CircuitRF.Core.Devices.Microstrip.CoupledArrayPlan.DefaultPinCount) - 2;
+                int top = (ends + 1) / 2, bottom = ends / 2;
+                float x = 100f * Math.Max(4, top + 2), y = 100f * Math.Max(4, top);
+                return [("1", -x, 0f), ("2", x, 0f),
+                        .. Enumerable.Range(0, ends).Select(e => (
+                            CircuitRF.Core.Devices.Microstrip.CoupledArrayPlan.EndPin(e + 1),
+                            100f * (2 * (e / 2) - ((e % 2 == 0 ? top : bottom) - 1)),
+                            e % 2 == 0 ? -y : y))];
+            }
             // MLIN: horizontal 2-port, matching TLIN's own left/right convention.
             case SymbolKind.Mlin:    return [("1", -200f, 0f), ("2", 200f, 0f)];
             case SymbolKind.Cpwg:    return [("1", -200f, 0f), ("2", 200f, 0f)];
@@ -178,6 +272,8 @@ public static class SymbolPortDefs
             case SymbolKind.MMiter:  return [("1", -200f, 0f), ("2", 0f, 200f)];
             // MGap: MLIN's left/right pins — a gap sits in a line, so it wires the way a line does.
             case SymbolKind.MGap:    return [("1", -200f, 0f), ("2", 200f, 0f)];
+            // MRadial: MLIN's left pin, the sector fanning out to the right; turned, it hangs off a tee's branch.
+            case SymbolKind.MRadial: return [("1", -200f, 0f)];
             // MTee: through line left/right (pins 1/2), branch on the bottom (pin 3) — R-pc-3's own
             // "pin 1 origin, through +X to pin 2, branch +Y to pin 3" convention, mapped onto the
             // schematic canvas with the branch drawn downward (+Y is down in this codebase).
@@ -512,6 +608,58 @@ public static class SymbolPortDefs
             pins[i] = ((i + 1).ToString(), onLeft ? -200f : 200f, y);
         }
         return pins;
+    }
+
+    /// <summary>The lumped layout a pin count alone names: a resistive pad's, for any count; null for every other kind,
+    /// whose lumped layout only the part's own words name (<see cref="For(EditableComponent)"/>).</summary>
+    public static CircuitRF.Core.Devices.Microstrip.LumpedTopology? Lumped(SymbolKind kind, int portCount)
+        => kind == SymbolKind.Mrpad ? CircuitRF.Core.Devices.Microstrip.LumpedPlan.PadForPins(portCount) : null;
+
+    /// <summary>
+    /// A placed part's pins: its lumped layout's (<see cref="EditableComponent.LumpedLayout"/>) when it is a lumped
+    /// realisation or a resistive pad, else <see cref="For(SymbolKind, int)"/> at its pin count. Every caller with the part
+    /// at hand asks this: the count alone cannot tell MWPD's lumped T from its six-section ring, both fifteen pins.
+    /// </summary>
+    public static (string Name, float LocalX, float LocalY)[] For(EditableComponent comp)
+        => comp.LumpedLayout() is { } lumped ? LumpedPins(lumped) : For(comp.Symbol, comp.PortCount);
+
+    /// <summary>
+    /// A lumped layout's pins on a box: each series site's two pins along the top, 400 apart (a resistor's own span, so a
+    /// part dropped on them lands on both with no wire) and 200 between sites; the pins to ground (G…) along the bottom;
+    /// the ports on the left (those leaving the layout west or north) and on the right. Every pin on the 100 grid, in the
+    /// layout's own terminal order. <see cref="BuiltInSymbols"/> draws the box from the same numbers (<see cref="LumpedBox"/>).
+    /// </summary>
+    public static (string Name, float LocalX, float LocalY)[] LumpedPins(CircuitRF.Core.Devices.Microstrip.LumpedTopology t)
+    {
+        var (bx, by, pairs, grounds, left, right) = LumpedBox(t);
+        var at = new Dictionary<string, (float, float)>(StringComparer.Ordinal);
+        for (int k = 0; k < pairs.Count; k++)
+        {
+            at[pairs[k].A] = (-(300f * pairs.Count - 100f) + 600f * k, -by - 100f);
+            at[pairs[k].B] = (-(300f * pairs.Count - 100f) + 600f * k + 400f, -by - 100f);
+        }
+        for (int k = 0; k < grounds.Count; k++) at[grounds[k]] = ((2f * k - grounds.Count + 1) * 100f, by + 100f);
+        for (int k = 0; k < left.Count; k++) at[left[k]] = (-bx - 100f, (2f * k - left.Count + 1) * 100f);
+        for (int k = 0; k < right.Count; k++) at[right[k]] = (bx + 100f, (2f * k - right.Count + 1) * 100f);
+        return [.. t.Pins.Select(p => (p, at[p].Item1, at[p].Item2))];
+    }
+
+    /// <summary>A lumped layout's box (half width, half height) and its pins by side: the series sites' pairs, in terminal
+    /// order; the pins to ground; the ports left and right.</summary>
+    public static (float Bx, float By, List<(string A, string B)> Pairs, List<string> Grounds, List<string> Left, List<string> Right)
+        LumpedBox(CircuitRF.Core.Devices.Microstrip.LumpedTopology t)
+    {
+        var order = t.Pins.ToList();
+        var pairs = t.Edges.Where(e => e.PinA is not null).Select(e => (A: e.PinA!, B: e.PinB!)).OrderBy(e => order.IndexOf(e.A)).ToList();
+        var outs = t.Junctions.SelectMany(j => j.Out).OrderBy(o => order.IndexOf(o.Pin)).ToList();
+        var grounds = outs.Where(o => o.Pin.StartsWith('G')).Select(o => o.Pin).ToList();
+        var ports = outs.Where(o => !o.Pin.StartsWith('G')).ToList();
+        var left = ports.Where(o => o.Dir is CircuitRF.Core.Devices.Microstrip.LumpedPlan.W or CircuitRF.Core.Devices.Microstrip.LumpedPlan.N)
+                        .Select(o => o.Pin).ToList();
+        var right = ports.Select(o => o.Pin).Except(left).ToList();
+        float bx = Math.Max(Math.Max(300f * pairs.Count - 100f, 100f * (grounds.Count - 1)), 100f) + 100f;
+        float by = Math.Max(100f * (Math.Max(left.Count, right.Count) - 1), 100f) + 100f;
+        return (bx, by, pairs, grounds, left, right);
     }
 
     public static (string Name, float LocalX, float LocalY)[] GenerateSnpPorts(
@@ -959,7 +1107,7 @@ public sealed class EditableComponent
     {
         var ports = IsSnpBox
             ? GetEffectiveSnpPortDefs()
-            : SymbolPortDefs.For(Symbol, PortCount);
+            : SymbolPortDefs.For(this);
         if ((uint)portIndex >= (uint)ports.Length)
             throw new ArgumentOutOfRangeException(nameof(portIndex));
         var (_, lx, ly) = ports[portIndex];
@@ -1103,6 +1251,9 @@ public sealed class EditableComponent
         // VerilogAModelIntrospection.CachedTerminalLabels for why this path may not describe a file
         // itself (it would put a worker launch inside a glyph rebuild). Geometry is identical either
         // way, so a component that has not been described yet is drawn exactly as it always was.
+        // A lumped realisation or a resistive pad: its layout's box, from its own words, never from its pin count alone.
+        SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mcbl or SymbolKind.Mrpad
+            when LumpedLayout() is { } lumped => BuiltInSymbols.PrimitivesForLumped(Symbol, lumped),
         SymbolKind.VerilogA   => BuiltInSymbols.PrimitivesForVerilogA(
             PortCount,
             VerilogAModelIntrospection.CachedTerminalLabels(
@@ -1187,6 +1338,14 @@ public sealed class EditableComponent
     /// mode, 4 × 4 when they are not whole numbers (brief-paa-5's default variant).</summary>
     public static int PhasedArrayPins(IEnumerable<EditableParameter> parameters) => PhasedArrayGlyph.Of(parameters, null).PinCount;
 
+    /// <summary>The lumped layout this part draws, from its own rows: MWPD, MBLC, MRRC or MCBL with <c>Realization = Lumped</c>
+    /// (MWPD's π or T by <c>Arm</c>), and a resistive pad by its <c>Form</c>; null for anything else.</summary>
+    public CircuitRF.Core.Devices.Microstrip.LumpedTopology? LumpedLayout()
+        => Symbol is SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mcbl or SymbolKind.Mrpad
+            ? CircuitRF.Core.Devices.Microstrip.LumpedPlan.LayoutFor(ComponentTypeRegistry.EngineReference(Symbol),
+                name => Parameters.FirstOrDefault(q => q.Name == name)?.Expression)
+            : null;
+
     /// <summary>brief-pch-8 — SymbolPortDefs' pin code for a Propagation Channel: 2 both pins, 1 the receive pin alone (Tx= names an
     /// instance), 3 the transmit pin alone (Rx= does), 0 none.</summary>
     public static int ChannelPinCode(IEnumerable<EditableParameter> parameters)
@@ -1211,8 +1370,18 @@ public sealed class EditableComponent
             // A Phased Antenna Array in Elements mode draws one pin per element, Rows × Cols of them.
             if (Symbol is SymbolKind.PhasedArray) return ArrayGlyph().PinCount;
 
+            // A lumped realisation draws its layout's pins (LumpedPlan): MWPD's π or T by Arm, MBLC's, MRRC's, MCBL's lattice, and a
+            // resistive pad's form's. A plain word only, as N is a plain number.
+            if (LumpedLayout() is { } lumped) return lumped.Pins.Count;
+
             // brief-pch-8 — a Propagation Channel's pins as SymbolPortDefs' code: an end naming an instance has none.
             if (Symbol is SymbolKind.PropagationChannel) return ChannelPinCode(Parameters);
+
+            // A rat-race's coupled-line form adds G2 and G4, its section's grounded ends. A plain word only.
+            if (Symbol is SymbolKind.Mrrc)
+                return Enum.TryParse(Parameters.FirstOrDefault(q => q.Name == "Form")?.Expression?.Trim(), ignoreCase: true,
+                           out CircuitRF.Core.Devices.Microstrip.RatRaceForm form) && form == CircuitRF.Core.Devices.Microstrip.RatRaceForm.CoupledLine
+                    ? 6 : 4;
             // A Wilkinson divider's N is its number of sections; it draws 3 + 2·N pins. A plain number only — an expression
             // is the one-section divider's five, as the plan cannot be asked for more pins than the symbol draws.
             if (Symbol is SymbolKind.Mwpd)
@@ -1220,6 +1389,50 @@ public sealed class EditableComponent
                 var sections = Parameters.FirstOrDefault(q => q.Name == "N");
                 return sections is not null && int.TryParse(sections.Expression, out int ns) && ns is >= 1 and <= CircuitRF.Core.Devices.Microstrip.WilkinsonPlan.MaxSections
                     ? 3 + 2 * ns : 5;
+            }
+
+            // N coupled strips draw 2·N pins, each strip's two ends. A plain number only — an expression is the default
+            // three strips, as the model cannot be asked for more pins than the symbol draws.
+            if (Symbol is SymbolKind.MCLineN)
+            {
+                var strips = Parameters.FirstOrDefault(q => q.Name == "N");
+                return 2 * (strips is not null && int.TryParse(strips.Expression, out int nl) && nl >= 2
+                    ? nl : CircuitRF.Core.Devices.MicrostripMultiLineModel.DefaultStrips);
+            }
+
+            // A Bagley divider's N is its number of outputs, odd; it draws N + 1 pins. A plain number only, as MWPD's N.
+            if (Symbol is SymbolKind.Mbpd)
+            {
+                var ways = Parameters.FirstOrDefault(q => q.Name == "N");
+                return ways is not null && int.TryParse(ways.Expression, out int nb)
+                       && nb is >= 3 and <= CircuitRF.Core.Devices.Microstrip.BagleyPlan.MaxWays && nb % 2 == 1 ? nb + 1 : 4;
+            }
+
+            // A ladder draws a G pin per shorted stub arm and shunt site in its list and two per series site; a list that
+            // does not parse draws the two pins.
+            if (Symbol is SymbolKind.Mlad)
+                return 2 + CircuitRF.Core.Devices.Microstrip.LadderPlan.Grounds(
+                    Parameters.FirstOrDefault(q => q.Name == "Sections")?.Expression);
+
+            // A coupler's Tandem adds its crossovers' four landings; an interdigitated coupler's Fingers sets 2·N pins. Plain
+            // numbers only, as MWPD's N.
+            if (Symbol is SymbolKind.Mclc)
+                return double.TryParse(Parameters.FirstOrDefault(q => q.Name == "Tandem")?.Expression,
+                           System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double tv)
+                       && tv != 0 ? 8 : 4;
+            if (Symbol is SymbolKind.Midc)
+            {
+                var fingers = Parameters.FirstOrDefault(q => q.Name == "Fingers");
+                return fingers is not null && int.TryParse(fingers.Expression, out int nf) && nf is 4 or 6 or 8 ? 2 * nf : 8;
+            }
+
+            // A coupled array draws 1, 2 and a pin on each shorted or loaded end, which its N, Form, Feed and Ends set.
+            // Plain words and a plain N only — anything else is the default array's pins, as for MWPD.
+            if (Symbol is SymbolKind.Mcla)
+            {
+                string? Text(string name) => Parameters.FirstOrDefault(q => q.Name == name)?.Expression;
+                return CircuitRF.Core.Devices.Microstrip.CoupledArrayPlan.PinCountOf(Text("N"), Text("Form"), Text("Feed"),
+                           Text("Ends")) ?? CircuitRF.Core.Devices.Microstrip.CoupledArrayPlan.DefaultPinCount;
             }
 
             // The Combiner's N is its number of PATHS; it draws N + 1 pins, the common port with them.
@@ -1372,7 +1585,7 @@ public sealed class EditableComponent
                     Name: pin.Name ?? $"P{pin.PortIndex + 1}",
                     LocalX: (float)pin.LocalX,
                     LocalY: (float)pin.LocalY)).ToArray()
-                : SymbolPortDefs.For(Symbol, PortCount);
+                : SymbolPortDefs.For(this);
             ports = portDefs.Select((p, i) =>
             {
                 PortConnectionState state;
@@ -2028,7 +2241,7 @@ public sealed class SchematicEditModel
             return snpResult;
         }
 
-        var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
+        var portDefs = SymbolPortDefs.For(comp);
         var result   = new (float LocalX, float LocalY, int PortIndex)[portDefs.Length];
         for (int i = 0; i < portDefs.Length; i++)
             result[i] = (portDefs[i].LocalX, portDefs[i].LocalY, i);

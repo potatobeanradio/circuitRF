@@ -93,12 +93,25 @@ public static class ComponentModelFactory
             // The JFET pair. Two types over one law, like the BJT's polarities: a channel type is a
             // sign, and a sign the symbol has to show.
             "JFET_N", "JFET_P",
-            "TLIN", "CLIN", "MLIN", "MCLIN", "BCLIN", "MBCLIN", "MBEND", "MCURVE", "MMITER", "MGAP", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
+            "TLIN", "CLIN", "MLIN", "MCLIN", MicrostripMultiLineModel.TypeName, "BCLIN", "MBCLIN", "MBEND", "MCURVE", "MMITER", "MGAP", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
+            // The radial stub, one sector or a butterfly, on one terminal (MicrostripRadialStub).
+            RadialStubTypeName,
             // The planned passives (docs/design/rf-passives.md): specs in, MTEE, MCURVE and MLIN sections stamped as one block.
             WilkinsonTypeName,
             BranchLineTypeName, RatRaceTypeName,
+            GyselTypeName, BagleyTypeName, TeeDividerTypeName,
+            // A delay or phase line, laid straight, round a corner or meandered (PlanRoute).
+            DelayLineTypeName,
             // The coupled-line planned passives: MCLIN, MLIN and interdigitated sections, stamped the same way.
-            CoupledLineCouplerTypeName, LangeTypeName, MarchandTypeName,
+            CoupledLineCouplerTypeName, LangeTypeName, MarchandTypeName, SchiffmanTypeName,
+            // The coupled-resonator filters: physical geometry in, every shape and form one plan of the same sections.
+            CoupledResonatorTypeName,
+            // The ladder: a list of MLIN, MGAP, MTAPER, MTEE and MCROSS sections, stamped the same way.
+            LadderTypeName,
+            // The coupled array: N strips over one N-line section, its ends open, shorted, loaded, joined or ports.
+            CoupledArrayTypeName,
+            // The resistive attenuator and splitter: sites for its resistors on short interconnect (LumpedPlan).
+            ResistivePadTypeName,
             // Grounded coplanar waveguide and stripline (brief-artsch-1), bound to the stackup as MLIN is.
             "CPWG", "SLIN",
             // The two vias (brief-via-component.md): a signal via changing layers, and a via to ground.
@@ -249,6 +262,8 @@ public static class ComponentModelFactory
             return CreateStriplineModel(parameters);
         if (typeName.Equals("MCLIN", StringComparison.OrdinalIgnoreCase))
             return CreateMicrostripCoupledLineModel(parameters);
+        if (typeName.Equals(MicrostripMultiLineModel.TypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateMicrostripMultiLineModel(parameters);
         if (typeName.Equals("BCLIN", StringComparison.OrdinalIgnoreCase))
             return CreateStriplineBroadsideCoupledModel(parameters);
         if (typeName.Equals("MBCLIN", StringComparison.OrdinalIgnoreCase))
@@ -263,6 +278,8 @@ public static class ComponentModelFactory
             return CreateMicrostripGapModel(parameters);
         if (typeName.Equals("MTEE", StringComparison.OrdinalIgnoreCase))
             return CreateMicrostripTeeModel(parameters);
+        if (typeName.Equals(RadialStubTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateRadialStubModel(parameters);
         if (typeName.Equals("MCROSS", StringComparison.OrdinalIgnoreCase))
             return CreateMicrostripCrossModel(parameters);
         if (typeName.Equals("MTAPER", StringComparison.OrdinalIgnoreCase))
@@ -275,12 +292,30 @@ public static class ComponentModelFactory
             return CreateBranchLineModel(parameters);
         if (typeName.Equals(RatRaceTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateRatRaceModel(parameters);
+        if (typeName.Equals(GyselTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateGyselModel(parameters);
+        if (typeName.Equals(BagleyTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateBagleyModel(parameters);
+        if (typeName.Equals(TeeDividerTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateTeeDividerModel(parameters);
+        if (typeName.Equals(DelayLineTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateDelayLineModel(parameters);
         if (typeName.Equals(CoupledLineCouplerTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateCoupledLineCouplerModel(parameters);
         if (typeName.Equals(LangeTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateLangeModel(parameters);
         if (typeName.Equals(MarchandTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateMarchandModel(parameters);
+        if (typeName.Equals(CoupledResonatorTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateCoupledResonatorModel(parameters);
+        if (typeName.Equals(LadderTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateLadderModel(parameters);
+        if (typeName.Equals(SchiffmanTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateSchiffmanModel(parameters);
+        if (typeName.Equals(CoupledArrayTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateCoupledArrayModel(parameters);
+        if (typeName.Equals(ResistivePadTypeName, StringComparison.OrdinalIgnoreCase))
+            return CreateResistivePadModel(parameters);
         if (typeName.Equals("VIA", StringComparison.OrdinalIgnoreCase))
             return new ViaModel(ReadViaGeometry(parameters, grounded: false));
         if (typeName.Equals("VIAGND", StringComparison.OrdinalIgnoreCase))
@@ -2592,6 +2627,7 @@ public static class ComponentModelFactory
     // MBCLIN (broadside microstrip). Lengths SI metres. Port order is CLIN's. A bare .cnl instance falls
     // back to these defaults: MCLIN a 2.9 mm pair 0.5 mm apart on the FR-4 every microstrip falls back to;
     // the broadside pair the 0.4 mm strips of a thin laminate stack, on the same FR-4 permittivity.
+    public const double DefaultCoupledWidthMeters = 2.9e-3;
     public const double DefaultCoupledGapMeters = 0.5e-3;
     public const double DefaultBroadsideWidthMeters = 0.4e-3;
     public const double DefaultBroadsideHsMeters = 76e-6;
@@ -2603,7 +2639,7 @@ public static class ComponentModelFactory
 
     private static MicrostripCoupledLineModel CreateMicrostripCoupledLineModel(IReadOnlyDictionary<string, Value> parameters)
     {
-        double w = GetReal(parameters, "W", 2.9e-3);
+        double w = GetReal(parameters, "W", DefaultCoupledWidthMeters);
         double gap = GetReal(parameters, "S", DefaultCoupledGapMeters);
         double l = GetReal(parameters, "L", 10e-3);
         double h = GetReal(parameters, "H", DefaultSubstrateHMeters);
@@ -2614,6 +2650,15 @@ public static class ComponentModelFactory
         double roughness = GetReal(parameters, "Roughness", 0.0);
         return new MicrostripCoupledLineModel(w, gap, l, h, t, er, sigma, tanD,
             MicrostripInstanceName(parameters, "MCLIN"), roughness);
+    }
+
+    // MCLINN: N strips, every one W wide and every gap S unless it states its own W[k] or S[k]; the substrate as MCLIN's.
+    private static MicrostripMultiLineModel CreateMicrostripMultiLineModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        var (w, s) = MicrostripMultiLineModel.StripsOf((int)Math.Round(GetReal(parameters, "N", 3.0)),
+            (name, fallback) => GetReal(parameters, name, fallback), DefaultCoupledWidthMeters, DefaultCoupledGapMeters);
+        return new MicrostripMultiLineModel(w, s, GetReal(parameters, "L", 10e-3), SubstrateOf(parameters),
+            MicrostripInstanceName(parameters, MicrostripMultiLineModel.TypeName));
     }
 
     // BCLIN: one T for both strips, or Ta/Tb each (absent = T).
@@ -2946,6 +2991,17 @@ public static class ComponentModelFactory
                GetReal(parameters, "H", DefaultSubstrateHMeters), GetReal(parameters, "Er", DefaultSubstrateEpsR),
                MicrostripInstanceName(parameters, "MGAP"));
 
+    /// <summary>The radial stub's engine token (one terminal, the shunt node).</summary>
+    public const string RadialStubTypeName = "MRADIAL";
+
+    // MRADIAL: W (the feed's width), Ro (the arc's radius from the apex) and Sides in SI; Angle arrives in RADIANS, as
+    // MCURVE's does, and is converted back once. W and Ro have no default: an absent one reads as 0, which is refused.
+    private static MicrostripRadialStubModel CreateRadialStubModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(GetReal(parameters, "W", 0.0), GetReal(parameters, "Ro", 0.0),
+               GetReal(parameters, "Angle", Math.PI / 3.0) * 180.0 / Math.PI,
+               (int)Math.Round(GetReal(parameters, "Sides", 1.0)), SubstrateOf(parameters),
+               MicrostripInstanceName(parameters, RadialStubTypeName));
+
     private static MicrostripTeeModel CreateMicrostripTeeModel(IReadOnlyDictionary<string, Value> parameters)
     {
         double w1 = GetReal(parameters, "W1", 0.0);
@@ -3015,13 +3071,23 @@ public static class ComponentModelFactory
 
     // MWPD: the specs (Z0, F, the split K, the sections N and their band), the resistor's pin span (Gap) and how the ring
     // turns (Corner, a name) are the parameters; the plan derives the rest, and its pins follow N.
+    // Realization = Lumped: the lumped divider's sites and interconnect (LumpedPlan), its arms π or T (Arm).
     private static MicrostripPlanModel CreateWilkinsonModel(IReadOnlyDictionary<string, Value> parameters)
-        => new(WilkinsonPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
+        => new(Lumped(parameters)
+                ? LumpedPlan.Wilkinson(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
+                                       GetReal(parameters, "Gap", 1.35e-3), SubstrateOf(parameters),
+                                       EnumNamed(parameters, "Arm", LumpedArm.Pi), GetReal(parameters, "K", 1.0),
+                                       GetReal(parameters, "N", 1.0)).Plan
+                : WilkinsonPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
                                    GetReal(parameters, "Gap", 1.35e-3), SubstrateOf(parameters),
                                    GetReal(parameters, "K", 1.0), GetReal(parameters, "N", 1.0),
                                    GetReal(parameters, "Band", WilkinsonPlan.DefaultBand),
                                    EnumNamed(parameters, "Corner", PlanCorner.Curve)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, WilkinsonTypeName));
+
+    /// <summary>A spec-driven passive's <c>Realization</c>: Lumped, or (absent or any other word) Distributed.</summary>
+    private static bool Lumped(IReadOnlyDictionary<string, Value> parameters)
+        => EnumNamed(parameters, "Realization", PlanRealization.Distributed) == PlanRealization.Lumped;
 
     /// <summary>The 3 dB branch-line hybrid's engine token (pins 1, 2, 3, 4).</summary>
     public const string BranchLineTypeName = "MBLC";
@@ -3029,17 +3095,70 @@ public static class ComponentModelFactory
     /// <summary>The rat-race hybrid's engine token (pins 1 = sum, 2, 3, 4 = difference).</summary>
     public const string RatRaceTypeName = "MRRC";
 
-    // MBLC: the specs Z0, F and N (sections); the plan derives the rest.
+    // MBLC: the specs Z0, F and N (sections); the plan derives the rest. Lumped: its sites, Gap across, on interconnect.
     private static MicrostripPlanModel CreateBranchLineModel(IReadOnlyDictionary<string, Value> parameters)
-        => new(BranchLinePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
+        => new(Lumped(parameters)
+                ? LumpedPlan.BranchLine(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
+                                        GetReal(parameters, "Gap", 1.35e-3), SubstrateOf(parameters),
+                                        GetReal(parameters, "N", 1.0)).Plan
+                : BranchLinePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
                                     GetReal(parameters, "N", 1.0), SubstrateOf(parameters)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, BranchLineTypeName));
 
-    // MRRC: the specs Z0 and F, and how the ring turns (Corner); the plan derives the rest.
+    // MRRC: the specs Z0 and F, how the ring turns (Corner) and the 3λ/4 arm's turns folded inside it (Meander, 0 for
+    // none), or the arm a coupled section (Form = CoupledLine, of Coupling dB); the plan derives the rest. Lumped: as MBLC's,
+    // and before Form.
     private static MicrostripPlanModel CreateRatRaceModel(IReadOnlyDictionary<string, Value> parameters)
-        => new(RatRacePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
-                                 EnumNamed(parameters, "Corner", PlanCorner.Curve)).Plan,
+        => new(Lumped(parameters)
+                ? LumpedPlan.RatRace(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
+                                     GetReal(parameters, "Gap", 1.35e-3), SubstrateOf(parameters)).Plan
+                : RatRacePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
+                                 EnumNamed(parameters, "Corner", PlanCorner.Curve), GetReal(parameters, "Meander", 0.0),
+                                 EnumNamed(parameters, "Form", RatRaceForm.Ring),
+                                 GetReal(parameters, "Coupling", RatRacePlan.DefaultSectionCoupling)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, RatRaceTypeName));
+
+    /// <summary>The Gysel divider's engine token (pins 1, 2, 3, then R2 and R3, the isolation nodes for resistors to
+    /// ground).</summary>
+    public const string GyselTypeName = "MGPD";
+
+    /// <summary>The Bagley polygon divider's engine token (pins 1, the input, then 2 … N + 1, the outputs).</summary>
+    public const string BagleyTypeName = "MBPD";
+
+    /// <summary>The tee divider's engine token (pins 1, the input, then 2 and 3).</summary>
+    public const string TeeDividerTypeName = "MTPD";
+
+    // MGPD: the specs Z0 and F, and how the ring turns (Corner); the plan derives the rest.
+    private static MicrostripPlanModel CreateGyselModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(GyselPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
+                               EnumNamed(parameters, "Corner", PlanCorner.Curve)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, GyselTypeName));
+
+    // MBPD: the specs Z0, F and N (the outputs, which the pins follow), and Corner.
+    private static MicrostripPlanModel CreateBagleyModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(BagleyPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), GetReal(parameters, "N", 3.0),
+                                SubstrateOf(parameters), EnumNamed(parameters, "Corner", PlanCorner.Curve)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, BagleyTypeName));
+
+    // MTPD: the specs Z0, F and the split K.
+    private static MicrostripPlanModel CreateTeeDividerModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(TeeDividerPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
+                                    GetReal(parameters, "K", 1.0)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, TeeDividerTypeName));
+
+    /// <summary>The delay line's engine token (pins 1, 2).</summary>
+    public const string DelayLineTypeName = "MDLY";
+
+    // MDLY: the specs Z0, F and Theta (radians here), how the run is laid (Style, Corner, Turns, Pitch, Side) and whether
+    // a meander's legs are modelled coupled (Coupled, 0 or 1); the plan derives the rest.
+    private static MicrostripPlanModel CreateDelayLineModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(DelayLinePlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
+                                   GetReal(parameters, "Theta", 2.0 * Math.PI), SubstrateOf(parameters),
+                                   EnumNamed(parameters, "Style", PlanRouteStyle.Meander),
+                                   EnumNamed(parameters, "Corner", PlanCorner.Curve), GetReal(parameters, "Turns", 2.0),
+                                   GetReal(parameters, "Pitch", 0.0), GetReal(parameters, "Side", 1.0),
+                                   GetReal(parameters, "Coupled", 0.0) != 0.0).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, DelayLineTypeName));
 
     /// <summary>The coupled-line coupler's engine token (pins 1 input, 2 through, 3 coupled, 4 isolated).</summary>
     public const string CoupledLineCouplerTypeName = "MCLC";
@@ -3051,23 +3170,107 @@ public static class ComponentModelFactory
     /// <summary>The coupled-line balun's engine token (pins 1 unbalanced, 2 and 3 balanced, G2 and G3 to ground).</summary>
     public const string MarchandTypeName = "MCBL";
 
-    // MCLC / MIDC: the specs (Coupling in dB, Z0, F) are the parameters; the plan derives W, S and L.
+    // MCLC / MIDC: the specs (Coupling in dB, Z0, F) are the parameters; the plan derives W, S and L. MCLC's options
+    // (Sections and its Band, Tandem, Compensation, Broadside) each default to the single section; MIDC's Fingers to four.
     private static MicrostripPlanModel CreateCoupledLineCouplerModel(IReadOnlyDictionary<string, Value> parameters)
         => new(CoupledLineCouplerPlan.Build(GetReal(parameters, "Coupling", 10.0), GetReal(parameters, "Z0", 50.0),
-                                            GetReal(parameters, "F", 1e9), SubstrateOf(parameters)).Plan,
+                                            GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
+                                            GetReal(parameters, "Sections", 1.0),
+                                            GetReal(parameters, "Band", CoupledLineCouplerPlan.DefaultBand),
+                                            GetReal(parameters, "Tandem", 0.0),
+                                            EnumNamed(parameters, "Compensation", CouplerCompensation.None),
+                                            GetReal(parameters, "Broadside", 0.0), BroadsideStackOf(parameters)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, CoupledLineCouplerTypeName));
+
+    /// <summary>A broadside coupler's stack, as the extraction injects it for BCLIN (with Ha) or MBCLIN (without); null when
+    /// nothing was injected, which the plan refuses when Broadside is on.</summary>
+    private static BroadsideStack? BroadsideStackOf(IReadOnlyDictionary<string, Value> parameters)
+    {
+        if (!parameters.ContainsKey("Hs") || !parameters.ContainsKey("Hb")) return null;
+        double t = GetReal(parameters, "T", DefaultBroadsideTMeters);
+        return new BroadsideStack(GetReal(parameters, "Hs", 0.0), GetReal(parameters, "Hb", 0.0),
+            GetReal(parameters, "Ha", double.NaN), GetReal(parameters, "Hd", double.NaN),
+            GetReal(parameters, "Ta", t), GetReal(parameters, "Tb", t), GetReal(parameters, "Er", DefaultSubstrateEpsR),
+            GetReal(parameters, "Sigma", DefaultSubstrateSigmaSPerM), GetReal(parameters, "TanD", DefaultSubstrateTanD),
+            Stripline: parameters.ContainsKey("Ha"));
+    }
 
     private static MicrostripPlanModel CreateLangeModel(IReadOnlyDictionary<string, Value> parameters)
         => new(LangePlan.Build(GetReal(parameters, "Coupling", 4.0), GetReal(parameters, "Z0", 50.0),
-                               GetReal(parameters, "F", 1e9), SubstrateOf(parameters)).Plan,
+                               GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
+                               GetReal(parameters, "Fingers", LangePlan.Fingers)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, LangeTypeName));
+
+    /// <summary>The Schiffman phase shifter's engine token (pins 1, 2 the C-section, 3, 4 the reference line).</summary>
+    public const string SchiffmanTypeName = "MSPS";
+
+    // MSPS: Z0, F, the differential Phase and the Band it holds over; how the reference line is laid (Reference, a name).
+    // Phase arrives in RADIANS, as MCURVE's Angle does (an authored "90 deg" scaled by the elaborator), and the plan takes
+    // degrees; a bare "Phase=90" is 90 rad and refused.
+    private static MicrostripPlanModel CreateSchiffmanModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(SchiffmanPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9),
+                                   GetReal(parameters, "Phase", Math.PI / 2.0) * 180.0 / Math.PI,
+                                   GetReal(parameters, "Band", SchiffmanPlan.DefaultBand),
+                                   SubstrateOf(parameters),
+                                   EnumNamed(parameters, "Reference", SchiffmanReference.Straight)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, SchiffmanTypeName));
 
     // MCBL: the source and per-output load impedances (Z0, ZL) and F, plus the layout Gap between the two sections.
     private static MicrostripPlanModel CreateMarchandModel(IReadOnlyDictionary<string, Value> parameters)
-        => new(MarchandBalunPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "ZL", 200.0),
+        => new(Lumped(parameters)
+                ? LumpedPlan.LatticeBalun(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "ZL", 200.0),
+                                          GetReal(parameters, "F", 1e9), GetReal(parameters, "Gap", 1e-3),
+                                          SubstrateOf(parameters)).Plan
+                : MarchandBalunPlan.Build(GetReal(parameters, "Z0", 50.0), GetReal(parameters, "ZL", 200.0),
                                        GetReal(parameters, "F", 1e9), GetReal(parameters, "Gap", 1e-3),
                                        SubstrateOf(parameters)).Plan,
                SubstrateOf(parameters), MicrostripInstanceName(parameters, MarchandTypeName));
+
+    /// <summary>The coupled-resonator filter's engine token (pins 1 in, 2 out).</summary>
+    public const string CoupledResonatorTypeName = "MCRC";
+
+    // MCRC: physical geometry (N, W, L and the gaps S1, S2, ..., with W_k and L_k per resonator) and the names Shape,
+    // Profile, Feed, Form and Arrangement; CoupledResonatorSpec reads them, the plan builds the filter.
+    private static MicrostripPlanModel CreateCoupledResonatorModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(CoupledResonatorPlan.Build(CoupledResonatorSpec.Read(
+                   key => parameters.TryGetValue(key, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : null,
+                   key => parameters.TryGetValue(key, out var v) && v.Kind == ValueKind.String ? v.AsString() : null),
+                   SubstrateOf(parameters)),
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, CoupledResonatorTypeName));
+
+    /// <summary>The microstrip ladder's engine token (pins 1 and 2, then G1… for each shorted stub arm).</summary>
+    public const string LadderTypeName = "MLAD";
+
+    // MLAD: the section list (Sections, text, LadderPlan's grammar) is the geometry; Z0 sets the ports' lines, F where
+    // their width is found, Gap the series sites' span. The pins follow the list's shorted stubs and sites.
+    private static MicrostripPlanModel CreateLadderModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(LadderPlan.Build(
+                   parameters.TryGetValue("Sections", out var v) && v.Kind == ValueKind.String ? v.AsString() : LadderPlan.DefaultSections,
+                   GetReal(parameters, "Z0", 50.0), GetReal(parameters, "F", 1e9), SubstrateOf(parameters),
+                   GetReal(parameters, "Gap", LadderPlan.DefaultGap)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, LadderTypeName));
+
+    /// <summary>The coupled array's engine token (pins 1 and 2, then E1, E2, … on its shorted and loaded strip ends).</summary>
+    public const string CoupledArrayTypeName = "MCLA";
+
+    // MCLA: stored geometry, as a synthesis fills it (CoupledArraySpec): N, W/S and their rows, L, the ends' Form (a
+    // name) or Ends, the Feed (a name) with Tap and Wf, and each site's C.
+    private static MicrostripPlanModel CreateCoupledArrayModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(CoupledArrayPlan.Build(CoupledArraySpec.Of((name, fallback) => GetReal(parameters, name, fallback),
+                   name => parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.String ? v.AsString() : null),
+                   SubstrateOf(parameters)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, CoupledArrayTypeName));
+
+    /// <summary>The resistive attenuator and splitter's engine token (pins 1, 2, then 3 for a T, bridged-T or splitter, then
+    /// each series resistor's two ends; LumpedPlan.ResistivePad).</summary>
+    public const string ResistivePadTypeName = "MRPAD";
+
+    // MRPAD: the form, Z0, the attenuation in dB (an attenuator's) and the series sites' span, Gap.
+    private static MicrostripPlanModel CreateResistivePadModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(LumpedPlan.ResistivePad(EnumNamed(parameters, "Form", ResistivePadForm.Pi), GetReal(parameters, "Z0", 50.0),
+                                       GetReal(parameters, "Attenuation", 6.0), GetReal(parameters, "Gap", 1.35e-3),
+                                       SubstrateOf(parameters)).Plan,
+               SubstrateOf(parameters), MicrostripInstanceName(parameters, ResistivePadTypeName));
 
     private static MicrostripKlopfModel CreateMicrostripKlopfModel(IReadOnlyDictionary<string, Value> parameters)
     {

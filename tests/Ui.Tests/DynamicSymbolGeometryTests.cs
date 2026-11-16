@@ -246,4 +246,29 @@ public sealed class SnpPortLabelSymbolTests
         swept.Parameters.Add(new CircuitRF.Design.Schematic.EditableParameter { Name = "N", Expression = "nsec" });
         Assert.Equal(5, swept.PortCount);
     }
+
+    /// <summary>
+    /// A ladder (MLAD) draws a via pin per shorted stub arm in its list, G1… along the bottom, 200 apart and centred; the
+    /// glyph's pins are those. A list with none, the placed default or one that does not parse, is the two-pin ladder.
+    /// </summary>
+    [Theory]
+    [InlineData("line(W=1mm, L=5mm)", 0)]
+    [InlineData("line(W=1mm, L=5mm); stub(W=1mm, L=8mm, end=short)", 1)]
+    [InlineData("stub(W=1mm, L=8mm, end=short, side=both); stub(W=1mm, L=8mm); stub(W=1mm, L=8mm, end=short, side=down)", 3)]
+    [InlineData("not a list", 0)]
+    public void ALaddersPins_FollowItsShortedStubs(string sections, int grounds)
+    {
+        var component = new CircuitRF.Design.Schematic.EditableComponent { Symbol = SymbolKind.Mlad };
+        component.Parameters.Add(new CircuitRF.Design.Schematic.EditableParameter { Name = "Sections", Expression = sections });
+        Assert.Equal(2 + grounds, component.PortCount);
+
+        var pins = CircuitRF.Design.Schematic.SymbolPortDefs.For(SymbolKind.Mlad, component.PortCount);
+        Assert.Equal(CircuitRF.Core.Devices.Microstrip.LadderPlan.PinsFor(grounds), pins.Select(p => p.Name));
+        var glyph = BuiltInSymbols.Primitives(SymbolKind.Mlad, component.PortCount);
+        Assert.Equal(pins.Select(p => (p.Name, p.LocalX, p.LocalY)), glyph.Pins.Select(p => (p.Name, (float)p.LocalX, (float)p.LocalY)));
+        var g = pins.Skip(2).ToArray();
+        Assert.All(g, p => Assert.Equal(300f, p.LocalY));
+        Assert.Equal(0f, g.Sum(p => p.LocalX));
+        for (int k = 1; k < g.Length; k++) Assert.Equal(200f, g[k].LocalX - g[k - 1].LocalX);
+    }
 }

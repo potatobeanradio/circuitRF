@@ -54,13 +54,21 @@ public static class GroundPourPlanner
     /// <summary>The generators whose artwork is a microstrip line returning through a ground plane.</summary>
     public static readonly IReadOnlySet<string> MicrostripGenerators = new HashSet<string>(StringComparer.Ordinal)
     {
-        MlinPCell.GeneratorId, CoupledLinePCells.McLinId, MBendPCell.GeneratorId, MCurvePCell.GeneratorId,
+        MlinPCell.GeneratorId, CoupledLinePCells.McLinId, PassivePlanPCells.CoupledStripsId, MBendPCell.GeneratorId,
+        MCurvePCell.GeneratorId,
         MMiterPCell.GeneratorId, MTeePCell.GeneratorId,
-        MCrossPCell.GeneratorId, MTaperPCell.GeneratorId, MKlopfPCell.GeneratorId,
+        MCrossPCell.GeneratorId, MTaperPCell.GeneratorId, MKlopfPCell.GeneratorId, MRadialPCell.GeneratorId,
         // The planned passives (docs/design/rf-passives.md) are microstrip too: without them a ring reaching past its
         // lines, as the rat-race's half-turns do, was left off the plane.
         PassivePlanPCells.WilkinsonId, PassivePlanPCells.BranchLineId, PassivePlanPCells.RatRaceId,
+        PassivePlanPCells.GyselId, PassivePlanPCells.BagleyId, PassivePlanPCells.TeeDividerId,
         PassivePlanPCells.CoupledLineCouplerId, PassivePlanPCells.LangeId, PassivePlanPCells.MarchandId,
+        PassivePlanPCells.CoupledResonatorId,
+        PassivePlanPCells.LadderId,
+        PassivePlanPCells.SchiffmanId,
+        PassivePlanPCells.DelayLineId,
+        PassivePlanPCells.CoupledArrayId,
+        PassivePlanPCells.ResistivePadId,
     };
 
     /// <summary>The clearance ring around a via's pad where it passes through the plane, µm. A default: no

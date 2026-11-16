@@ -5121,6 +5121,39 @@ public sealed partial class SchematicViewModel : ObservableObject
         return plan.Region;
     }
 
+    /// <summary>A planned passive with sites (MWPD, MIDC, MCBL, MCLA, MRPAD, a lumped realisation, and a ladder whose list has G pins): what Place Site Parts
+    /// acts on.</summary>
+    public static bool HasSites(EditableComponent? comp)
+        => comp?.Symbol is SymbolKind.Mwpd or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Mcla or SymbolKind.Mrpad
+        || comp?.LumpedLayout() is not null
+        || comp?.Symbol is SymbolKind.Mlad && CircuitRF.Core.Devices.Microstrip.LadderPlan.Grounds(
+               comp.Parameters.FirstOrDefault(p => p.Name == "Sections")?.Expression) > 0;
+
+    /// <summary>
+    /// Place Site Parts (docs/design/rf-passives.md, "Sites"): an ordinary part on each empty site of the planned passive
+    /// <paramref name="id"/>, of the value its readout states and with its Footprint (<see cref="PassiveSites.PlaceParts"/>),
+    /// as one undoable step. What it placed, and every site it left, is said in Messages.
+    /// </summary>
+    public void PlaceSiteParts(string id)
+    {
+        if (EditModel.FindComponent(id) is not { } comp || !HasSites(comp)) return;
+        var passive = PassiveSites.Read(EditModel, out string? refusal).FirstOrDefault(p => ReferenceEquals(p.Component, comp));
+        if (passive is null)
+        {
+            _messageSink?.Warning($"{comp.InstanceName}: its sites cannot be read{(refusal is null ? "" : $" — {refusal}")}.");
+            return;
+        }
+        var placement = PassiveSites.PlaceParts(EditModel, passive, SchematicTechnology.Of(EditModel), TakenInstanceNames());
+        if (placement.Parts.Count > 0)
+        {
+            Execute(new PlaceSitePartsCommand(EditModel, placement));
+            _messageSink?.Success($"{comp.InstanceName}: placed {string.Join(", ", placement.Parts.Where(p => p.Symbol != SymbolKind.Ground).Select(p => p.InstanceName))}.");
+        }
+        else if (placement.Notes.Count == 0)
+            _messageSink?.Info($"{comp.InstanceName}: every site already has its part.");
+        foreach (string note in placement.Notes) _messageSink?.Info(note);
+    }
+
     public void RotateSelection(bool clockwise = false)
     {
         var ids = Selection.Ids.ToList();

@@ -1,0 +1,11 @@
+# The wiggly coupler (MCLC, Compensation = Wiggly): one pair whose facing edges are a saw-tooth, drawn as two
+# polygons with MCLIN's pins.
+Info CLC1 added
+Info P1 port 1 placed at CLC1 pin 1
+Info P2 port 2 placed at CLC1 pin 2
+Info P3 port 3 placed at CLC1 pin 3
+Info P4 port 4 placed at CLC1 pin 4
+port P1 1
+port P2 2
+port P3 3
+port P4 4

@@ -1,0 +1,15 @@
+# N coupled microstrip lines as one part (MCLINN): three strips, the middle one of its own width (W[2]), each port on
+# its own strip end, near ends 1-3 and far ends 4-6.
+Info CLN1 added
+Info P1 port 1 placed at CLN1 pin 1
+Info P2 port 2 placed at CLN1 pin 2
+Info P3 port 3 placed at CLN1 pin 3
+Info P4 port 4 placed at CLN1 pin 4
+Info P5 port 5 placed at CLN1 pin 5
+Info P6 port 6 placed at CLN1 pin 6
+port P1 1
+port P2 2
+port P3 3
+port P4 4
+port P5 5
+port P6 6

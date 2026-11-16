@@ -717,25 +717,72 @@ public enum SymbolKind
     /// further section's resistor. Appended so no existing kind's ordinal moves.</summary>
     Mwpd,
     /// <summary>3 dB branch-line (90°) hybrid on microstrip (engine "MBLC", docs/design/rf-passives.md): specs Z0, F and
-    /// N, one or two sections; the arms and junctions are derived (BranchLinePlan). Four pins: 1 and 2 one through line,
+    /// N, one to four sections; the arms and junctions are derived (BranchLinePlan). Four pins: 1 and 2 one through line,
     /// 4 and 3 the other; driven at 1, 2 is through, 3 coupled and 4 isolated.</summary>
     Mblc,
     /// <summary>Rat-race (180°) hybrid on microstrip (engine "MRRC", docs/design/rf-passives.md): specs Z0 and F; the ring
     /// and junctions are derived (RatRacePlan). Four pins: 1 the sum port, 4 the difference port, 2 and 3 the
     /// outputs.</summary>
     Mrrc,
-    /// <summary>Single-section coupled-line directional coupler on microstrip (engine "MCLC"): specs Coupling (dB), Z0
-    /// and F; W, S and L are derived (CoupledLineCouplerPlan). Pins 1 input, 2 through, 3 coupled, 4 isolated, in
-    /// MCLIN's order.</summary>
+    /// <summary>Coupled-line directional coupler on microstrip (engine "MCLC"): specs Coupling (dB), Z0 and F, and the
+    /// options Sections (with Band), Broadside, Tandem and Compensation; W, S and L are derived (CoupledLineCouplerPlan).
+    /// Pins 1 input, 2 through, 3 coupled, 4 isolated, in MCLIN's order; a tandem adds J1-J4, its crossovers'
+    /// landings.</summary>
     Mclc,
-    /// <summary>Four-finger interdigitated coupler on microstrip (engine "MIDC"): specs Coupling (dB), Z0 and F
-    /// (LangePlan, Ou's equations). Pins 1-4 as MCLC's, then J1-J4, the inner fingers' ends: the jumpers joining
-    /// alternate fingers are ordinary parts from pin k to Jk, not part of the part.</summary>
+    /// <summary>Interdigitated coupler on microstrip (engine "MIDC"): specs Coupling (dB), Z0, F and Fingers (4, 6 or 8)
+    /// (LangePlan, Ou's equations). Pins 1-4 as MCLC's, then J1-J4 (and on to J12 for eight fingers), the inner fingers'
+    /// ends: the jumpers joining alternate fingers are ordinary parts, not part of the part.</summary>
     Midc,
     /// <summary>Coupled-line balun on microstrip (engine "MCBL"): specs Z0, ZL (each output's load) and F, and the layout
     /// Gap between its two quarter-wave sections (MarchandBalunPlan). Pins 1 unbalanced, 2 and 3 balanced, G2 and G3 the
     /// strips' grounded ends — for ordinary vias to ground, not part of the part.</summary>
     Mcbl,
+    /// <summary>Microstrip radial stub (engine "MRADIAL"): W (the feed's width), Ro (the arc's radius from the sector's
+    /// apex), Angle and Sides (1, or 2 for a butterfly). One pin, the shunt node at the sector's narrow end.</summary>
+    MRadial,
+    /// <summary>N coupled microstrip lines (engine "MCLINN"): N strips with a width W (or W[k]) each and a gap S (or S[k])
+    /// between each two, all of length L, every strip coupled to every other through the cross-section's own C and L
+    /// matrices. 2·N pins: the near ends 1..N, top strip first, then the far ends N + 1..2N. The substrate as MCLIN's.
+    /// Appended so no existing kind's ordinal moves.</summary>
+    MCLineN,
+    /// <summary>Gysel divider on microstrip (engine "MGPD", docs/design/rf-passives.md): specs Z0 and F, and how the ring
+    /// turns (Corner); the ring is derived (GyselPlan). Pins 1 the input, 2 and 3 the outputs, R2 and R3 the isolation
+    /// nodes beside them, each for an ordinary resistor of Z0 to ground — not part of the part.</summary>
+    Mgpd,
+    /// <summary>Bagley polygon divider on microstrip (engine "MBPD", docs/design/rf-passives.md): specs Z0, F and N, the odd
+    /// number of outputs, and Corner; the polygon is derived (BagleyPlan). N + 1 pins: 1 the input, 2 … N + 1 the outputs
+    /// in turn round the polygon. No resistors.</summary>
+    Mbpd,
+    /// <summary>Tee divider on microstrip (engine "MTPD", docs/design/rf-passives.md): specs Z0, F and the split K; an MTEE
+    /// whose through arms are quarter-wave transformers (TeeDividerPlan). Pins 1 the input, 2 and 3 the outputs.</summary>
+    Mtpd,
+    /// <summary>Coupled-resonator filter on microstrip (engine "MCRC", CoupledResonatorPlan): physical geometry, N
+    /// resonators of W and L and the gaps S1, S2, ..., in one of five shapes and three forms. Pins 1 in, 2 out.</summary>
+    Mcrc,
+    /// <summary>Microstrip ladder (engine "MLAD", docs/design/rf-passives.md): an ordered list of series lines, gaps and
+    /// tapers and shunt stubs (Sections, LadderPlan's grammar), stored as physical geometry, plus Z0 for the ports' lines
+    /// and F for the readout. Pins 1 and 2 the through line's ends, then G1… one per shorted stub arm, for ordinary vias to
+    /// ground — so the pin count follows the list.</summary>
+    Mlad,
+    /// <summary>Schiffman differential phase shifter on microstrip (engine "MSPS"): specs Z0, F, Phase and Band, and how
+    /// the reference line is laid (Reference); the C-section and the line are derived (SchiffmanPlan). Pins 1 and 2 the
+    /// C-section's ends, 3 and 4 the reference line's.</summary>
+    Msps,
+    /// <summary>A delay or phase line on microstrip (engine "MDLY", docs/design/rf-passives.md): specs Z0, F and Theta, the
+    /// electrical length at F, and how it is laid (Style: straight, round one Corner, or a meander of Turns legs Pitch
+    /// apart on one Side; Coupled models a meander's legs as coupled lines). The width and every length are derived
+    /// (DelayLinePlan). Two pins, 1 the start and 2 the end. Appended so no existing kind's ordinal moves.</summary>
+    Mdly,
+    /// <summary>Coupled array on microstrip (engine "MCLA", CoupledArrayPlan): N strips over one N-line section, each
+    /// end open, shorted, loaded by a capacitor, joined to its neighbour or a port — interdigital, combline,
+    /// pseudo-interdigital or a custom pattern, tapped or coupled-fed. Pins 1 and 2, then E1, E2, … on the shorted and
+    /// loaded ends, for ordinary vias and capacitors to ground. Appended so no existing kind's ordinal moves.</summary>
+    Mcla,
+    /// <summary>Resistive attenuator and splitter (engine "MRPAD"): Form (Pi, T, BridgedT, Wye, Delta), Z0, Attenuation in
+    /// dB and Gap, the series sites' span. Its resistors are sites on its interconnect (LumpedPlan.ResistivePad): pins 1 and
+    /// 2, 3 for a T, bridged-T or splitter, then each series resistor's two ends. Appended so no existing kind's ordinal
+    /// moves.</summary>
+    Mrpad,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

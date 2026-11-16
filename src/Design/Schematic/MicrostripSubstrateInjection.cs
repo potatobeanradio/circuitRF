@@ -7,6 +7,7 @@ using CircuitRF.Core.Design;
 using CircuitRF.Design.Layout.PCells;
 
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Footprints;
 using CircuitRF.Design.Workspace;
 namespace CircuitRF.Design.Schematic;
 
@@ -31,11 +32,97 @@ namespace CircuitRF.Design.Schematic;
 public static class MicrostripSubstrateInjection
 {
     private static readonly HashSet<SymbolKind> MicrostripKinds =
-        [SymbolKind.Mlin, SymbolKind.MCLine, SymbolKind.MBend, SymbolKind.MCurve, SymbolKind.MMiter, SymbolKind.MGap, SymbolKind.MTee, SymbolKind.MCross,
+        [SymbolKind.Mlin, SymbolKind.MCLine, SymbolKind.MCLineN, SymbolKind.MBend, SymbolKind.MCurve, SymbolKind.MMiter, SymbolKind.MGap, SymbolKind.MTee, SymbolKind.MCross,
          SymbolKind.Mtaper, SymbolKind.Mklopf, SymbolKind.GsgPad, SymbolKind.Mwpd, SymbolKind.Mblc, SymbolKind.Mrrc,
-         SymbolKind.Mclc, SymbolKind.Midc, SymbolKind.Mcbl];
+         SymbolKind.Mclc, SymbolKind.Midc, SymbolKind.Mcbl, SymbolKind.MRadial,
+         SymbolKind.Mgpd, SymbolKind.Mbpd, SymbolKind.Mtpd,
+         SymbolKind.Mcrc, SymbolKind.Mlad, SymbolKind.Msps, SymbolKind.Mdly, SymbolKind.Mcla, SymbolKind.Mrpad];
 
     public static bool IsMicrostripKind(SymbolKind kind) => MicrostripKinds.Contains(kind);
+
+    // ── A planned passive's site span from a Footprint (docs/design/rf-passives.md, "Sites") ──────────
+    //
+    // Gap is a length and stays the default. A Footprint names the part that goes on the site instead, and the span is
+    // then that part's: resolved HERE, where the substrate is, so every Core plan still takes a plain length and every
+    // consumer that reads Gap — the extracted netlist (simulation, LVS, a .cnl run through CnlTechnologyBinding) and
+    // Update Layout's PCell parameters — reads the span the land pattern gives.
+
+    /// <summary>The planned passives that take a <c>Footprint</c> for the parts on their sites: MWPD and MCBL, whose site
+    /// span it also sets (<see cref="SetsSiteSpan"/>), and MCLA, whose capacitor sites are shunt and have no span.</summary>
+    public static bool HasSiteFootprint(SymbolKind kind) => kind is SymbolKind.Mwpd or SymbolKind.Mcbl or SymbolKind.Mcla
+                                                            or SymbolKind.Mlad or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mrpad;
+
+    /// <summary>The planned passives whose site span is a stored length, <see cref="SiteSpanParameter"/>, that a
+    /// <c>Footprint</c> sets instead: MWPD's resistor pins, MCBL's balanced outputs, MLAD's series sites, the lumped realisations' series sites</summary>
+    /// (MBLC's and MRRC's only when lumped) and the resistive pad's.</summary>
+    public static bool SetsSiteSpan(SymbolKind kind) => kind is SymbolKind.Mwpd or SymbolKind.Mcbl or SymbolKind.Mlad
+                                                            or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mrpad;
+
+    /// <summary>The length a site <c>Footprint</c> sets.</summary>
+    public const string SiteSpanParameter = "Gap";
+
+    /// <summary>
+    /// The span a two-pad part of <paramref name="footprint"/> lands on: from where a line meets one pad's outer edge to
+    /// where it meets the other's (<see cref="PadJoint"/>). A built-in <c>smt:&lt;case&gt;[@density]</c> is its land
+    /// pattern's outer span as <see cref="ChipLandPatternGenerator"/> draws it (IPC's Z); a cell path, relative to
+    /// <paramref name="baseDirectory"/> as a part's own Footprint is, is its two pins' joints. Null with no refusal for an
+    /// empty footprint (Gap stands); null with a refusal for one that does not resolve or has not two pins.
+    /// </summary>
+    public static double? SiteSpanMeters(string? footprint, string? baseDirectory, Technology? technology, out string? refusal)
+    {
+        refusal = null;
+        if (string.IsNullOrWhiteSpace(footprint)) return null;
+        footprint = footprint.Trim();
+        if (FootprintRef.IsBuiltInReference(footprint))
+        {
+            if (!FootprintRef.TryParse(footprint, out var reference, out refusal)) return null;
+            int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
+            var pattern = LandPattern.For(reference!.Case, reference.Density, dbuPerMicron);
+            // Pad centres ±pitch/2, each pad ±width/2 about its centre, in whole DBU as the generator draws them.
+            return (2 * (pattern.PadPitchDbu / 2) + 2 * (pattern.PadWidthDbu / 2)) / (dbuPerMicron * 1e6);
+        }
+
+        if (!Layout.SchematicSync.SchematicLayoutPlanner.ResolveFootprintPath(footprint, baseDirectory ?? "", out string cellDir,
+                out refusal))
+            return null;
+        if (CellLayoutResolver.Resolve(cellDir, baseDirectory ?? "") is not { State: CellLayoutState.Resolved, View: { } view })
+        {
+            refusal = $"footprint '{footprint}' has no layout view";
+            return null;
+        }
+        var joints = Layout.SchematicSync.PadJoint.Of(view, technology).Points;
+        if (joints.Count != 2)
+        {
+            refusal = $"footprint '{footprint}' has {joints.Count} pins; a site's part has two";
+            return null;
+        }
+        var (a, b) = (joints[0].Joint, joints[1].Joint);
+        return Math.Sqrt((double)(a.X - b.X) * (a.X - b.X) + (double)(a.Y - b.Y) * (a.Y - b.Y)) / (view.DbuPerMicron * 1e6);
+    }
+
+    /// <summary>
+    /// <paramref name="overrides"/> with a planned passive's <c>Footprint</c> applied: <see cref="SiteSpanParameter"/>
+    /// replaced by the footprint's span, and the <c>Footprint</c> row consumed, as a layer choice is, so the line carries
+    /// the span alone and is not resolved a second time against another folder (a written netlist runs the same anywhere).
+    /// A footprint that does not resolve leaves Gap as stated and says why in <paramref name="warning"/>. Every other kind,
+    /// and a part stating no footprint, is left exactly as it is.
+    /// </summary>
+    public static void ApplySiteFootprint(List<ParameterAssignment> overrides, SymbolKind kind, string? baseDirectory,
+        Technology? technology, out string? warning)
+    {
+        warning = null;
+        if (!HasSiteFootprint(kind)) return;
+        string? footprint = overrides.LastOrDefault(o => ArtworkParameters.IsArtworkOnly(o.Name))?.Expression?.Trim('"', ' ');
+        overrides.RemoveAll(o => ArtworkParameters.IsArtworkOnly(o.Name));
+        if (!SetsSiteSpan(kind)) return;
+        if (SiteSpanMeters(footprint, baseDirectory, technology, out string? refusal) is { } span)
+        {
+            overrides.RemoveAll(o => o.Name == SiteSpanParameter);
+            overrides.Add(new ParameterAssignment(SiteSpanParameter, Fmt(span)));
+        }
+        else if (refusal is not null)
+            warning = $"{refusal}; Gap is used as stated.";
+    }
 
     /// <summary>
     /// R-pc-8/§5A.2: resolves the DOCUMENT's own workspace default technology — walks up from
@@ -335,9 +422,13 @@ public static class MicrostripSubstrateInjection
     {
         if (technology is null) return;   // registry mm defaults stand — nothing to resolve against
         // The planned passives' geometry is derived; their one stored length (MWPD's resistor span, MCBL's joining line)
-        // is a layout choice no substrate changes.
+        // is a layout choice no substrate changes. A ladder's list is its geometry as written, which no technology rewrites.
         if (kind is SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mclc or SymbolKind.Midc
-                 or SymbolKind.Mcbl) return;
+                 or SymbolKind.Mcbl or SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd
+                 or SymbolKind.Mlad or SymbolKind.Msps or SymbolKind.Mdly or SymbolKind.Mrpad) return;
+        // MCRC's geometry is one design, every number of it chosen with the others; widths and lengths carried to another
+        // substrate are synthesis's to redo, not this rule's.
+        if (kind == SymbolKind.Mcrc) return;
         if (kind == SymbolKind.GsgPad) ApplyProbePadDefaults(parameters, technology);
         string targetUnit = SchematicLengthUnit(technology.DefaultDisplayUnit);
         double step = RoundStepFor(targetUnit);
@@ -387,7 +478,8 @@ public static class MicrostripSubstrateInjection
                 bool narrowEnd = kind == SymbolKind.Mtaper && p.Name == "W2";
                 value = ConvertMmTo(targetUnit, narrowEnd ? w100Mm!.Value : w50Mm.Value);
             }
-            else if (kind == SymbolKind.MCLine && p.Name == "S" && w50Mm is not null)
+            else if ((kind is SymbolKind.MCLine or SymbolKind.MCLineN && p.Name == "S"
+                      || kind == SymbolKind.Mcla && p.Name is "S" or "Wf" or "G") && w50Mm is not null)
             {
                 // The gap starts at the strip's own width (S = W) on THIS technology: a loose, ordinary
                 // starting coupling rather than a millimetre baseline that is absurd on a thin substrate.
@@ -399,12 +491,23 @@ public static class MicrostripSubstrateInjection
                 // where a millimetre baseline carried over would be a gap wider than the line on a thin board.
                 value = ConvertMmTo(targetUnit, w50Mm.Value / 2.0);
             }
+            else if (kind == SymbolKind.MRadial && p.Name == "Ro" && w50Mm is not null)
+            {
+                // Ten feed widths from the apex on THIS technology: a stub a few times longer than it is wide at its
+                // narrow end, where a millimetre baseline carried over would be a stub longer than a die.
+                value = ConvertMmTo(targetUnit, 10.0 * w50Mm.Value);
+            }
             else if (kind == SymbolKind.MCurve && p.Name == "Radius" && w50Mm is not null)
             {
                 // 3W, the low end of the effective-radius rule's published 3W-7W range: the tightest
                 // curve whose model is still inside its claim (MicrostripCurve), on THIS technology's
                 // own 50-ohm width rather than a radius carried over from the millimetre baseline.
                 value = ConvertMmTo(targetUnit, 3.0 * w50Mm.Value);
+            }
+            else if (kind == SymbolKind.Mcla && p.Name == "Tap" && NiceLengthFor(targetUnit, kind) is { } line)
+            {
+                // A fifth of the strips' own round length from the short: a moderate external coupling to start from.
+                value = line / 5.0;
             }
             else if (p.Name == "L" && NiceLengthFor(targetUnit, kind) is { } nice)
             {

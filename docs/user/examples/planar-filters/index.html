@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Planar Filters</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Planar Filters/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Planar Filters</p>
+  </div>
+
+  <h1>Planar Filters</h1>
+  <p class="lede">Microstrip filters on 20 mil RO4350B, one cell per form: edge-coupled, hairpin, cross-coupled open-loop, end-coupled, interdigital and combline bandpass filters at 2.4 GHz, and stepped-impedance, stub and lumped LC lowpass filters near 2 GHz. Each is one built-in part holding its geometry, laid out by Update Layout. Simulate a cell&#39;s bench and open its data display to see the circuit model against the ideal prototype it was designed from, and against Planar MoM where the cell has a setup.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Planar Filters</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>Microstrip filters placed as single parts, one cell per form, on a 20 mil RO4350B board. Unlike the dividers, these parts
+store <strong>geometry</strong>: each one's widths, lengths and gaps are a design, worked out here from the same textbook closed forms
+the parts' own tests use, and the part draws and simulates exactly those numbers. Three families hold them all: the
+coupled-resonator filter (MCRC), the ladder (MLAD) and the coupled array (MCLA). Each cell is laid out by Update Layout
+from Schematic and is LVS clean.</p>
+<p>Each cell has a test bench beside it. The bench holds the cell's circuit and the <strong>ideal prototype</strong> the design came
+from: circuitRF's Filter block at the design's response, order, ripple and band, the equations the closed forms start
+from. Six cells also have a coarse Planar MoM setup in their <code>em/</code> folder, and their bench adds an SnP block that reads the
+Touchstone file the setup writes into <code>results/</code>. Simulate a bench and open the cell's <code>.cdd</code>: the circuit model is a
+red line, the prototype a dashed green one, and the solve a set of markers. No results ship; the benches read what
+your own runs write.</p>
+<h2 id="the-cells">The cells</h2>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>Part</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Edge-Coupled</strong></td>
+<td>MCRC, <code>Straight</code></td>
+<td>Cohn's three-resonator 0.5 dB Chebyshev filter, 10 % wide at 2.4 GHz</td>
+</tr>
+<tr>
+<td><strong>Hairpin</strong></td>
+<td>MCRC, <code>Hairpin</code>, tapped</td>
+<td>The same resonators folded into hairpins and fed by taps</td>
+</tr>
+<tr>
+<td><strong>Open-Loop</strong></td>
+<td>MCRC, <code>OpenLoop</code>, <code>Cross</code></td>
+<td>Four square open loops with loops 1 and 4 cross-coupled: a zero either side of the band</td>
+</tr>
+<tr>
+<td><strong>Stepped-Z</strong></td>
+<td>MLAD</td>
+<td>A six-section Butterworth lowpass at 2 GHz of 15 Ω and 120 Ω lines</td>
+</tr>
+<tr>
+<td><strong>Stub Lowpass</strong></td>
+<td>MLAD</td>
+<td>Richards and Kuroda's three-element Butterworth lowpass at 2 GHz: open stubs λ/8 long</td>
+</tr>
+<tr>
+<td><strong>End-Coupled</strong></td>
+<td>MLAD and two 0402 capacitors</td>
+<td>Cohn's three-resonator end-coupled Butterworth filter, 2 % wide at 2.4 GHz</td>
+</tr>
+<tr>
+<td><strong>Lumped LC</strong></td>
+<td>MLAD sites and three 0402 parts</td>
+<td>A third-order Butterworth LC lowpass at 2 GHz, sites alone</td>
+</tr>
+<tr>
+<td><strong>Interdigital</strong></td>
+<td>MCLA, <code>Interdigital</code></td>
+<td>Matthaei's three-resonator 0.1 dB Chebyshev filter, 20 % wide at 2.4 GHz</td>
+</tr>
+<tr>
+<td><strong>Combline</strong></td>
+<td>MCLA, <code>Combline</code>, tapped</td>
+<td>Three resonators 45° long, loaded by 0402 capacitors, tuned to an 8 % Chebyshev band</td>
+</tr>
+<tr>
+<td><strong>Edge-Coupled Bench</strong> … <strong>Combline Bench</strong></td>
+<td>schematic</td>
+<td>One per cell: the cell's circuit, the ideal prototype, and its Planar result where it has a setup</td>
+</tr>
+<tr>
+<td><code>Edge-Coupled.cdd</code> … <code>Combline.cdd</code></td>
+<td>data display</td>
+<td>One per cell, at the top of the workspace</td>
+</tr>
+</tbody>
+</table>
+<h2 id="run-it">Run it</h2>
+<p>Simulate a cell's bench and open its <code>.cdd</code>. Where the cell has a <strong>Planar</strong> setup (its <code>em/</code> folder), run that first.</p>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>Planar MoM</th>
+<th>Then</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Edge-Coupled</td>
+<td>1½ min</td>
+<td>Simulate <strong>Edge-Coupled Bench</strong>, open <code>Edge-Coupled.cdd</code></td>
+</tr>
+<tr>
+<td>Hairpin</td>
+<td>4 min</td>
+<td>Simulate <strong>Hairpin Bench</strong>, open <code>Hairpin.cdd</code></td>
+</tr>
+<tr>
+<td>Stepped-Z</td>
+<td>6 min</td>
+<td>Simulate <strong>Stepped-Z Bench</strong>, open <code>Stepped-Z.cdd</code></td>
+</tr>
+<tr>
+<td>Interdigital</td>
+<td>25½ min</td>
+<td>Simulate <strong>Interdigital Bench</strong>, open <code>Interdigital.cdd</code></td>
+</tr>
+<tr>
+<td>Stub Lowpass</td>
+<td>5 min</td>
+<td>Simulate <strong>Stub Lowpass Bench</strong>, open <code>Stub Lowpass.cdd</code></td>
+</tr>
+<tr>
+<td>Lumped LC</td>
+<td>8 min</td>
+<td>Simulate <strong>Lumped LC Bench</strong>, open <code>Lumped LC.cdd</code></td>
+</tr>
+<tr>
+<td>Open-Loop, End-Coupled, Combline</td>
+<td>—</td>
+<td>Simulate the bench, open the cell's <code>.cdd</code></td>
+</tr>
+</tbody>
+</table>
+<p>Times are from a Linux machine with 8 threads. Every setup is a Draft mesh: 2 cells across the narrowest conductor, the
+edge mesh off; the interdigital's is coarser still (below). A bench with a Planar block sweeps the frequencies the setup
+solves, so every marker is one of its points (the interdigital's seven make its lines coarse; its own schematic sweeps
+finely, and the tables use that); the other benches sweep finely. A bench simulates in under a second.</p>
+<p><strong>A part on the board is a component port.</strong> The LC lowpass's three parts are each a port across their own pads in the
+Planar run, and the bench closes each with the cell's own part, as the co-simulation netlist each run writes does.</p>
+<p><strong>LVS</strong> finds no error in any cell. A resonator that touches no pin (all but the ends of the coupled filters) is copper in
+no net, which LVS reports as a warning: that is what it is.</p>
+<p><strong>The tables</strong> give each filter at its key points. A bandpass: the centre (the middle of the edges 3 dB below its best
+point), its least loss, the spread of |S21| over the prototype's band (its ripple; a Butterworth's band edges are its
+3 dB points) and |S21| one bandwidth either side of the centre. A lowpass: the −3 dB point, and |S21| at 1 and 3 GHz.
+The prototype is lossless; the board is not.</p>
+<h2 id="edge-coupled-filter">Edge-coupled filter</h2>
+<p>Cohn's parallel-coupled filter (S. B. Cohn, <a href="https://doi.org/10.1109/TMTT.1958.1124542">10.1109/TMTT.1958.1124542</a>):
+three half-wave resonators 1.058 mm wide and 37.169 mm long, the couplings' J-inverters as gaps of 0.126 mm at the ends and
+0.574 mm between resonators, each section λg/4 in its modes' mean εeff less the open ends. The prototype is the
+Chebyshev bandpass of order 3 with 0.5 dB ripple over 2.283–2.523 GHz.</p>
+<p><img class="readme-picture" src="pictures/edge-coupled-layout.png" alt="The edge-coupled board: port 1's line at the left, the four coupled sections stepping down to the right, and port 2's line." width="700"></p>
+<p><img class="readme-picture" src="pictures/edge-coupled-results.png" alt="Edge-Coupled.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers." width="600"></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Prototype</th>
+<th>Circuit</th>
+<th>Planar MoM</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Centre</td>
+<td>2.404 GHz</td>
+<td>2.389 GHz</td>
+<td>2.371 GHz</td>
+</tr>
+<tr>
+<td>Least loss</td>
+<td>0 dB</td>
+<td>2.00 dB</td>
+<td>2.00 dB</td>
+</tr>
+<tr>
+<td>Spread over 2.283–2.523 GHz</td>
+<td>0.50 dB</td>
+<td>2.10 dB</td>
+<td>12.0 dB</td>
+</tr>
+<tr>
+<td>|S21| at 2.16 / 2.64 GHz</td>
+<td>−20.8 / −17.8 dB</td>
+<td>−21.0 / −20.1 dB</td>
+<td>−27.4 / −31.2 dB</td>
+</tr>
+</tbody>
+</table>
+<p>The model is 0.6 % below the prototype, its ripple the loss's slope across the band. On the Draft mesh Planar's band
+is 0.8 % lower again and 19 % narrower, so its spread over the prototype's band takes in its own skirts.</p>
+<h2 id="hairpin-filter">Hairpin filter</h2>
+<p>The edge-coupled design folded: each resonator a U whose arms are <code>Sa</code> = 2.116 mm apart, its length grown by its two
+corners, and the feeds tapped at <code>Tap</code> = 3.86 mm from the end resonators' midpoints, where one tapped hairpin has the
+design's external Q, g0·g1/FBW (J.-S. Hong and M. J. Lancaster, <a href="https://doi.org/10.1002/0471221619">10.1002/0471221619</a>).
+The prototype is the edge-coupled one.</p>
+<p><img class="readme-picture" src="pictures/hairpin-layout.png" alt="The hairpin board: three U-shaped resonators, the outer two inverted, port 1's and port 2's lines tapped onto their outer arms." width="700"></p>
+<p><img class="readme-picture" src="pictures/hairpin-results.png" alt="Hairpin.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers." width="600"></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Prototype</th>
+<th>Circuit</th>
+<th>Planar MoM</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Centre</td>
+<td>2.404 GHz</td>
+<td>2.396 GHz</td>
+<td>2.358 GHz</td>
+</tr>
+<tr>
+<td>Least loss</td>
+<td>0 dB</td>
+<td>2.15 dB</td>
+<td>1.52 dB</td>
+</tr>
+<tr>
+<td>Spread over 2.283–2.523 GHz</td>
+<td>0.50 dB</td>
+<td>1.64 dB</td>
+<td>20.9 dB</td>
+</tr>
+<tr>
+<td>|S21| at 2.16 / 2.64 GHz</td>
+<td>−20.8 / −17.8 dB</td>
+<td>−18.5 / −27.0 dB</td>
+<td>−21.4 / −44.2 dB</td>
+</tr>
+</tbody>
+</table>
+<p>The model holds the prototype's centre within 0.4 %. Planar's band is 1.6 % lower and 37 % narrower; <code>Coupling</code> = <code>Full</code>,
+which couples each hairpin's own two arms, narrows the model's by only 9 %, so most of that is something else.</p>
+<h2 id="cross-coupled-open-loops">Cross-coupled open loops</h2>
+<p>Four square loops 1.058 mm wide in Hong and Lancaster's square
+(<a href="https://doi.org/10.1109/22.543968">10.1109/22.543968</a>): loops 1 and 4 cross-coupled across their openings, 2 and 3 back
+to back, tapped feeds. The part's own test sizes them from a three-pole design's coupling coefficients, which in the
+square ripple by 4 dB; from there circuitRF's Optimizer moved six numbers (two loop lengths, three gaps, the tap) until
+the model met |S11| below −15 dB over 2.36–2.44 GHz and |S21| below −25 dB either side, in a few seconds. The prototype
+is those goals' elliptic bandpass: order 4, 0.14 dB ripple (15 dB return loss), 2.36–2.44 GHz, 25 dB stopband.</p>
+<p><img class="readme-picture" src="pictures/open-loop-layout.png" alt="The open-loop board: four square loops in two rows, the top two opened towards each other, the bottom two away, port 1's and port 2's lines tapped onto the top loops' outer sides." width="700"></p>
+<p><img class="readme-picture" src="pictures/open-loop-results.png" alt="Open-Loop.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines." width="600"></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Prototype</th>
+<th>Circuit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Centre</td>
+<td>2.400 GHz</td>
+<td>2.400 GHz</td>
+</tr>
+<tr>
+<td>Least loss</td>
+<td>0 dB</td>
+<td>4.03 dB</td>
+</tr>
+<tr>
+<td>Spread over 2.36–2.44 GHz</td>
+<td>0.14 dB</td>
+<td>0.85 dB</td>
+</tr>
+<tr>
+<td>|S21| at 2.32 / 2.48 GHz</td>
+<td>−27.0 / −26.3 dB</td>
+<td>−12.5 / −13.6 dB</td>
+</tr>
+</tbody>
+</table>
+<p>The model has one zero each side, at 2.20 and 2.55 GHz; the prototype has two, at 2.28 and 2.34 and at 2.46 and
+2.52 GHz, so its skirts are far steeper one bandwidth out. The 4 dB is four loops' loss over a 3.3 % band.</p>
+<h2 id="stepped-impedance-lowpass">Stepped-impedance lowpass</h2>
+<p>A six-section Butterworth lowpass at 2 GHz from its g-values: each shunt capacitor a 15 Ω line of βl = g·15/50 and each
+series inductor a 120 Ω line of βl = g·50/120 at the cutoff (D. M. Pozar, <em>Microwave Engineering</em>, 4th ed., §8.6, a
+book with no DOI: <a href="https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553">the publisher's page</a>).
+The prototype is the order-6 Butterworth lowpass at 2 GHz.</p>
+<p><img class="readme-picture" src="pictures/stepped-z-layout.png" alt="The stepped-impedance board: three wide 15 Ω sections joined by thin 120 Ω lines between the two port lines." width="700"></p>
+<p><img class="readme-picture" src="pictures/stepped-z-results.png" alt="Stepped-Z.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers." width="600"></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Prototype</th>
+<th>Circuit</th>
+<th>Planar MoM</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>−3 dB</td>
+<td>1.999 GHz</td>
+<td>1.889 GHz</td>
+<td>1.795 GHz</td>
+</tr>
+<tr>
+<td>|S21| at 1 GHz</td>
+<td>0.00 dB</td>
+<td>−0.28 dB</td>
+<td>−0.13 dB</td>
+</tr>
+<tr>
+<td>|S21| at 3 GHz</td>
+<td>−21.2 dB</td>
+<td>−19.7 dB</td>
+<td>−23.3 dB</td>
+</tr>
+</tbody>
+</table>
+<p>Short lines only approximate the elements: the model cuts off 5.5 % below the prototype. Planar is 5 % lower again,
+from the steps between widths, which the model leaves out.</p>
+<h2 id="stub-lowpass">Stub lowpass</h2>
+<p>Richards and Kuroda's form of the three-element Butterworth at 2 GHz (P. I. Richards,
+<a href="https://doi.org/10.1109/JRPROC.1948.233274">10.1109/JRPROC.1948.233274</a>; Kuroda's identities are textbook, with no
+DOI): open stubs of 100 Ω, 25 Ω (drawn as two 50 Ω arms) and 100 Ω, joined by 100 Ω lines, every section λ/8 at the
+cutoff and each open stub drawn short by its end extension. The prototype is the order-3 Butterworth lowpass at 2 GHz.</p>
+<p><img class="readme-picture" src="pictures/stub-lowpass-layout.png" alt="The stub lowpass board: a thin 100 Ω line with a thin open stub up at each end and a wide stub up and down in the middle." width="700"></p>
+<p><img class="readme-picture" src="pictures/stub-lowpass-results.png" alt="Stub Lowpass.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers." width="600"></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Prototype</th>
+<th>Circuit</th>
+<th>Planar MoM</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>−3 dB</td>
+<td>1.998 GHz</td>
+<td>1.944 GHz</td>
+<td>1.964 GHz</td>
+</tr>
+<tr>
+<td>|S21| at 1 GHz</td>
+<td>−0.07 dB</td>
+<td>−0.20 dB</td>
+<td>−0.09 dB</td>
+</tr>
+<tr>
+<td>|S21| at 3 GHz</td>
+<td>−10.9 dB</td>
+<td>−22.8 dB</td>
+<td>−21.7 dB</td>
+</tr>
+</tbody>
+</table>
+<p>Richards' transformation compresses the response into tan βl, so the stubs fall far faster past the cutoff than the
+lumped prototype and null at 4 GHz, where every stub is a quarter wave. Planar lands within 1 % of the model's cutoff.</p>
+<h2 id="end-coupled-filter">End-coupled filter</h2>
+<p>Cohn's end-coupled filter (S. B. Cohn, <a href="https://doi.org/10.1109/JRPROC.1957.278389">10.1109/JRPROC.1957.278389</a>), a
+three-resonator Butterworth 2 % wide at 2.4 GHz: each J-inverter a series capacitance, each resonator a 50 Ω line
+π − ½(atan 2bk + atan 2bk+1) long less its gaps' end capacitance. The two inner inverters are 0.075 mm gaps; the outer
+two need 0.243 pF, which no gap on this board reaches (MGAP gives 0.05 pF at 20 µm), so they are capacitor sites that
+Place Site Parts filled with 0402 parts. The prototype is the order-3 Butterworth bandpass over 2.376–2.424 GHz.</p>
+<p><img class="readme-picture" src="pictures/end-coupled-layout.png" alt="The end-coupled board: one long 50 Ω line cut by two gaps into three half-wave resonators, an 0402 capacitor at each end between the resonators and the port lines." width="700"></p>
+<p><img class="readme-picture" src="pictures/end-coupled-results.png" alt="End-Coupled.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines." width="600"></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Prototype</th>
+<th>Circuit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Centre</td>
+<td>2.400 GHz</td>
+<td>2.400 GHz</td>
+</tr>
+<tr>
+<td>Least loss</td>
+<td>0 dB</td>
+<td>7.34 dB</td>
+</tr>
+<tr>
+<td>Spread over 2.376–2.424 GHz</td>
+<td>3.01 dB</td>
+<td>3.39 dB</td>
+</tr>
+<tr>
+<td>|S21| at 2.352 / 2.448 GHz</td>
+<td>−18.4 / −17.9 dB</td>
+<td>−21.2 / −20.3 dB</td>
+</tr>
+</tbody>
+</table>
+<p>The closed form lands on the centre. A 2 % band is all the inner gaps allow on this board (3 % needs 0.029 mm), and its
+resonators' loss is the 7.3 dB.</p>
+<h2 id="lumped-lc-lowpass">Lumped LC lowpass</h2>
+<p>A third-order Butterworth at 2 GHz, L = g·R0/ωc and C = g/(R0·ωc) (Pozar §8.3): <code>site(role=L, value=3.979nH); site(role=C, value=3.183pF, type=shunt); site(role=L, value=3.979nH)</code>, the ladder's <code>Footprint</code> <code>smt:0402</code>. The
+ladder draws only pads; Place Site Parts put an 0402 inductor across each series site and an 0402 capacitor from the
+shunt site to a via, and Update Layout landed each on its pads. The prototype is the same Butterworth, ideal.</p>
+<p><img class="readme-picture" src="pictures/lumped-lc-layout.png" alt="The LC board: the two port lines, an 0402 inductor across each gap between pads, and the 0402 capacitor standing up from the middle pad to its ground via." width="700"></p>
+<p><img class="readme-picture" src="pictures/lumped-lc-results.png" alt="Lumped LC.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers." width="600"></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Prototype</th>
+<th>Circuit</th>
+<th>Planar MoM</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>−3 dB</td>
+<td>1.998 GHz</td>
+<td>1.794 GHz</td>
+<td>1.409 GHz</td>
+</tr>
+<tr>
+<td>|S21| at 1 GHz</td>
+<td>−0.07 dB</td>
+<td>−0.17 dB</td>
+<td>−0.35 dB</td>
+</tr>
+<tr>
+<td>|S21| at 3 GHz</td>
+<td>−10.9 dB</td>
+<td>−14.9 dB</td>
+<td>−28.3 dB</td>
+</tr>
+</tbody>
+</table>
+<p>The pads put the model's cutoff 10 % below the prototype's. Planar's is 21 % lower again, with a null near 2.6 GHz: C1's
+land and ground via, which the schematic's ideal ground leaves out; with 1.2 nH there the schematic cuts off at 1.406 GHz.</p>
+<h2 id="interdigital-filter">Interdigital filter</h2>
+<p>Matthaei's interdigital filter (<a href="https://doi.org/10.1109/TMTT.1962.1125556">10.1109/TMTT.1962.1125556</a>): three
+resonators, 0.1 dB Chebyshev, 20 % wide at 2.4 GHz, between two terminating strips, each line's admittance to ground and
+each pair's mutual one realised as the widths (0.732, 0.873, 1.014, 0.873, 0.732 mm) and gaps (0.09, 0.438, 0.438,
+0.09 mm) whose field-solved cross-section has them, the strips 19.148 mm long. Place Site Parts put a via on each
+shorted end. The port lines leave the terminating strips through a 90° bend at the strip's own width, away from the
+neighbouring strip's via. The prototype is the order-3 0.1 dB Chebyshev bandpass over 2.172–2.652 GHz.</p>
+<p><img class="readme-picture" src="pictures/interdigital-layout.png" alt="The interdigital board: five upright strips shorted at alternate ends by vias, the outer two fed from the top through bends that turn away from the array." width="550"></p>
+<p><img class="readme-picture" src="pictures/interdigital-results.png" alt="Interdigital.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers." width="600"></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Prototype</th>
+<th>Circuit</th>
+<th>Planar MoM, 7 points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Centre</td>
+<td>2.423 GHz</td>
+<td>2.312 GHz</td>
+<td>about 2.10 GHz</td>
+</tr>
+<tr>
+<td>Least loss</td>
+<td>0 dB</td>
+<td>0.97 dB</td>
+<td>1.41 dB</td>
+</tr>
+<tr>
+<td>Spread over 2.172–2.652 GHz</td>
+<td>0.10 dB</td>
+<td>4.68 dB</td>
+<td>24.0 dB</td>
+</tr>
+<tr>
+<td>|S21| at 1.92 / 2.88 GHz</td>
+<td>−15.6 / −9.8 dB</td>
+<td>−7.7 / −26.4 dB</td>
+<td>−4.3 / −38.6 dB</td>
+</tr>
+</tbody>
+</table>
+<p>The model sits 4.6 % below the prototype: 2.8 % is microstrip's unequal mode speeds, which the TEM design leaves out,
+and 1.8 % the vias, which its shorts leave out. Planar, at seven points, puts the band lower still, near 2.1 GHz.</p>
+<h2 id="combline-filter">Combline filter</h2>
+<p>Three 1 mm strips 9.192 mm long, 45° at 2.4 GHz, shorted at one end and loaded at the other. The part's own test loads
+them by C = Y·cot θ0/ω0, with Y and θ0 each strip's own with its neighbours grounded (Matthaei, <em>Microwave J.</em> 1963,
+no DOI; the same design is in Matthaei, Young and Jones, chapter 10:
+<a href="https://archive.org/details/microwavefilters0000matt">the book at the Internet Archive</a>), which sets the centre but not
+the band. From there the Optimizer moved the gap, the tap and the two capacitances until the model met |S11| below
+−15 dB over 2.3–2.5 GHz: 1.021 mm gaps, the taps 2.457 mm up from the shorts, 1.234, 1.186 and 1.234 pF. Place Site
+Parts put a via on each short and an 0402 capacitor on each loaded end. The prototype is the order-3 Chebyshev bandpass
+with 0.14 dB ripple (15 dB return loss) over 2.3–2.5 GHz.</p>
+<p><img class="readme-picture" src="pictures/combline-layout.png" alt="The combline board: three upright strips, vias at their bottom ends, an 0402 capacitor and its ground via at each top end, and the port lines tapped onto the outer strips." width="700"></p>
+<p><img class="readme-picture" src="pictures/combline-results.png" alt="Combline.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines." width="600"></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Prototype</th>
+<th>Circuit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Centre</td>
+<td>2.402 GHz</td>
+<td>2.408 GHz</td>
+</tr>
+<tr>
+<td>Least loss</td>
+<td>0 dB</td>
+<td>1.07 dB</td>
+</tr>
+<tr>
+<td>Spread over 2.3–2.5 GHz</td>
+<td>0.14 dB</td>
+<td>0.43 dB</td>
+</tr>
+<tr>
+<td>|S21| at 2.198 / 2.598 GHz</td>
+<td>−14.9 / −12.5 dB</td>
+<td>−10.5 / −10.4 dB</td>
+</tr>
+</tbody>
+</table>
+<p>The model holds the band; its skirts are shallower close in, and it has a zero at 2.81 GHz that the prototype does
+not.</p>
+<h2 id="open-points">Open points</h2>
+<ul>
+<li><strong>The hairpin:</strong> Planar's band is 37 % narrower than the model's, and the arms' own coupling (<code>Coupling</code> = <code>Full</code>)
+accounts for only 9 % of it.</li>
+<li><strong>The interdigital's vias</strong> are 21.8 mm apart, past the 0.1 λ at the band top that Planar's fitted vertical kernel is
+validated to, so its setup turns on the direct kernel, which is accurate at any distance and slow: about seven minutes
+a point on the Draft mesh. The setup is coarser still for that (10 cells per wavelength) and solves seven points, which
+place its band near 2.1 GHz, well below the model's; a finer run would say whether that is the mesh.</li>
+<li><strong>No radial-stub lowpass yet.</strong> MLAD draws radial ends (<code>stub(end=radial, …)</code>), but no closed form here sizes <code>Ro</code>
+and the angle for a given stub admittance, so the stub lowpass keeps straight stubs.</li>
+</ul>
+<h2 id="things-to-try">Things to try</h2>
+<ul>
+<li><strong>Set <code>Coupling</code> = <code>Full</code> on Hairpin</strong>: the circuit couples each hairpin's own arms, and its band moves 1.5 % up.</li>
+<li><strong>Change a part on Lumped LC Bench</strong>, such as <code>C1_pl</code>, and watch the Planar markers move with no EM run.</li>
+<li><strong>Edit <code>Sections</code> on Stepped-Z</strong>: a section added or changed is redrawn by Update Layout for a new EM run.</li>
+<li><strong>Change the prototype on a bench</strong>: the <code>IDEAL</code> block's order, ripple and band are ordinary parameters.</li>
+</ul>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

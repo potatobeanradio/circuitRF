@@ -1664,10 +1664,38 @@ public static partial class SchematicLayoutPlanner
                 if (string.IsNullOrWhiteSpace(p.Expression)) continue;
             }
 
-            // A ring's Corner (MWPD, MRRC) is a word for its generator: Curve, Miter or Square.
-            if (comp.Symbol is SymbolKind.Mwpd or SymbolKind.Mrrc && p.Name == "Corner")
+            // A ring's Corner (MWPD, MRRC, MGPD, MBPD) and MRRC's Form, a coupler's Compensation (MCLC) and a phase shifter's Reference
+            // (MSPS) are words for the generator, as are a delay line's Corner and Style (MDLY).
+            if ((comp.Symbol is SymbolKind.Mwpd or SymbolKind.Mrrc or SymbolKind.Mgpd or SymbolKind.Mbpd && p.Name == "Corner")
+                || (comp.Symbol == SymbolKind.Mrrc && p.Name == "Form")
+                || (comp.Symbol == SymbolKind.Mclc && p.Name == "Compensation")
+                || (comp.Symbol == SymbolKind.Msps && p.Name == "Reference")
+                || (comp.Symbol == SymbolKind.Mdly && p.Name is "Corner" or "Style")
+                || (comp.Symbol, p.Name) is (SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mcbl, "Realization")
+                    or (SymbolKind.Mwpd, "Arm") or (SymbolKind.Mrpad, "Form"))
             {
-                if (p.Expression.Trim() is { Length: > 0 } corner) resolved[p.Name] = PCellValue.Text(corner);
+                if (p.Expression.Trim() is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
+                continue;
+            }
+
+            // A coupled-resonator filter's Shape, Profile, Feed, Form, Arrangement and Coupling are words for its generator.
+            if (comp.Symbol == SymbolKind.Mcrc && p.Name is "Shape" or "Profile" or "Feed" or "Form" or "Arrangement" or "Coupling")
+            {
+                if (p.Expression.Trim() is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
+                continue;
+            }
+            // A ladder's Sections is its list, text for its generator.
+            if (comp.Symbol == SymbolKind.Mlad && p.Name == "Sections")
+            {
+                if (p.Expression.Trim() is { Length: > 0 } list) resolved[p.Name] = PCellValue.Text(list);
+                continue;
+            }
+            // A coupled array's Form and Feed are names and its Ends a pattern of letters: words for its generator, Ends
+            // without its spaces, as the netlist writes it, so LVS reads the same word on both sides.
+            if (comp.Symbol == SymbolKind.Mcla && p.Name is "Form" or "Feed" or "Ends")
+            {
+                if (string.Concat(p.Expression.Where(c => !char.IsWhiteSpace(c))) is { Length: > 0 } word)
+                    resolved[p.Name] = PCellValue.Text(word);
                 continue;
             }
 
@@ -1761,6 +1789,18 @@ public static partial class SchematicLayoutPlanner
                 resolved["L"] = lengthM;
             resolved.Remove("E");
             resolved.Remove("F");
+        }
+
+        // A planned passive's Footprint sets its site span (Gap) here exactly as extraction sets it for the run
+        // (MicrostripSubstrateInjection.ApplySiteFootprint), so the copper's gap is the land pattern's span and LVS compares
+        // equal Gaps on both sides.
+        if (MicrostripSubstrateInjection.SetsSiteSpan(comp.Symbol))
+        {
+            string? siteFootprint = comp.Parameters.FirstOrDefault(p => ArtworkParameters.IsArtworkOnly(p.Name))?.Expression;
+            if (MicrostripSubstrateInjection.SiteSpanMeters(siteFootprint, schematicDir, technology, out string? siteRefusal) is { } span)
+                resolved[MicrostripSubstrateInjection.SiteSpanParameter] = span;
+            else if (siteRefusal is not null)
+                (paramNotes ??= []).Add($"Footprint: {siteRefusal}; Gap is used as stated");
         }
 
         string cellDir;
@@ -1944,7 +1984,7 @@ public static partial class SchematicLayoutPlanner
     /// primary instead would put different artwork on the board than the one the user pointed at,
     /// which is precisely the silent substitution the density suffix exists to make visible.</para>
     /// </summary>
-    private static bool ResolveFootprintPath(
+    internal static bool ResolveFootprintPath(
         string footprint, string schematicDir, out string cellAbsDir, out string? refusal)
     {
         cellAbsDir = "";

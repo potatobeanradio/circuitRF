@@ -1039,6 +1039,12 @@
                     <TextBlock Text="{Binding DividerReadoutNote}" IsVisible="{Binding HasDividerReadoutNote}"
                                FontSize="11" TextWrapping="Wrap" Margin="4,2,0,0"
                                Foreground="{DynamicResource CrfWarningBrush}"/>
+                    <Button Content="Place Site Parts"
+                            HorizontalAlignment="Right"
+                            FontSize="11" Padding="8,3" Margin="0,2,0,0"
+                            IsVisible="{Binding HasSites}"
+                            Command="{Binding PlaceSitePartsCommand}"
+                            ToolTip.Tip="Put an ordinary part on each empty site, of the value listed above and with this part's Footprint"/>
                 </StackPanel>
 
                 <!-- SpiceModel custom panel: which FILE, which DEFINITION in it, and — for a

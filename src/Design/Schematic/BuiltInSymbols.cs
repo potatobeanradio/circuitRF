@@ -107,6 +107,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _mcurve        = BuildMCurve();
     private static readonly Symbol _mmiter        = BuildMMiter();
     private static readonly Symbol _mgap          = BuildMGap();
+    private static readonly Symbol _mradial       = BuildMRadial();
     private static readonly Symbol _mtee          = BuildMTee();
     private static readonly Symbol _mcross        = BuildMCross();
     private static readonly Symbol _mtaper        = BuildMtaper();
@@ -118,9 +119,17 @@ public static class BuiltInSymbols
     private static readonly Symbol _mwpd          = BuildMwpd();
     private static readonly Symbol _mblc          = BuildMblc();
     private static readonly Symbol _mrrc          = BuildMrrc();
+    private static readonly Symbol _mrrcCoupled   = BuildMrrcCoupled();
     private static readonly Symbol _mclc          = BuildMclc();
     private static readonly Symbol _midc          = BuildMidc();
     private static readonly Symbol _mcbl          = BuildMcbl();
+    private static readonly Symbol _mgpd          = BuildMgpd();
+    private static readonly Symbol _mtpd          = BuildMtpd();
+    private static readonly Symbol _mcrc          = BuildMcrc();
+    private static readonly Symbol _mclcTandem    = BuildMclcTandem();
+    private static readonly Symbol _msps          = BuildMsps();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _midcCache = new();
+    private static readonly Symbol _mdly          = BuildMdly();
     private static readonly Symbol _mimCap        = BuildMimCap();
     private static readonly Symbol _spiral        = BuildSpiral();
     private static readonly Symbol _octSpiral     = BuildOctSpiral();
@@ -169,6 +178,14 @@ public static class BuiltInSymbols
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _combinerCache = new();
     // MWPD per section count above one (one section is _mwpd), keyed by N; Primitives takes its PIN count.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mwpdCache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mclineNCache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mbpdCache = new();
+    // MLAD per via-pin count, keyed by that count; Primitives takes its PIN count (2 + the shorted stub arms).
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mladCache = new();
+    // MCLA per pin count (1, 2 and its end pins).
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mclaCache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<CircuitRF.Core.Devices.Microstrip.LumpedTopology, Symbol>
+        _lumpedCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<PhasedArrayGlyph, Symbol> _phasedArrayCache = new();
     // Tuner-family cache key: (kind, showBias) — per-instance bias-branch variant.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(SymbolKind, bool), Symbol> _tunerCache = new();
@@ -186,7 +203,7 @@ public static class BuiltInSymbols
     /// Returns the primitive list for a built-in symbol kind.
     /// For SDD/ZPort: uses the default portCount=2. Prefer the portCount overload.
     /// </summary>
-    public static Symbol Primitives(SymbolKind kind) => Primitives(kind, 2);
+    public static Symbol Primitives(SymbolKind kind) => Primitives(kind, SymbolPortDefs.DefaultPortCount(kind));
 
     /// <summary>
     /// Returns the primitive list for a built-in symbol kind.
@@ -195,6 +212,9 @@ public static class BuiltInSymbols
     /// </summary>
     public static Symbol Primitives(SymbolKind kind, int portCount)
     {
+        // A resistive pad: its form's box by its pin count (SymbolPortDefs.Lumped). A lumped MWPD, MBLC, MRRC or MCBL is
+        // drawn per instance (EditableComponent.InstanceGlyph), since its count alone does not name it.
+        if (SymbolPortDefs.Lumped(kind, portCount) is { } lumped) return PrimitivesForLumped(kind, lumped);
         switch (kind)
         {
             case SymbolKind.ZPort:
@@ -252,6 +272,12 @@ public static class BuiltInSymbols
             case SymbolKind.MCLine:     return _mcline;
             case SymbolKind.BCLine:     return _bcline;
             case SymbolKind.MBCLine:    return _mbcline;
+            case SymbolKind.MCLineN:
+                return _mclineNCache.GetOrAdd(CircuitRF.Core.Devices.MicrostripMultiLineModel.StripsForPinCount(portCount),
+                                              BuildMCLineN);
+            case SymbolKind.Mcla:
+                return _mclaCache.GetOrAdd(portCount >= 2 ? portCount : CircuitRF.Core.Devices.Microstrip.CoupledArrayPlan.DefaultPinCount,
+                                           BuildMcla);
             case SymbolKind.Match:      return _match;
             case SymbolKind.Mlin:       return _mlin;
             case SymbolKind.Cpwg:       return _cpwg;
@@ -260,6 +286,7 @@ public static class BuiltInSymbols
             case SymbolKind.MCurve:     return _mcurve;
             case SymbolKind.MMiter:     return _mmiter;
             case SymbolKind.MGap:       return _mgap;
+            case SymbolKind.MRadial:    return _mradial;
             case SymbolKind.MTee:       return _mtee;
             case SymbolKind.MCross:     return _mcross;
             case SymbolKind.Mtaper:     return _mtaper;
@@ -274,10 +301,22 @@ public static class BuiltInSymbols
                 return n == 1 ? _mwpd : _mwpdCache.GetOrAdd(n, BuildMwpd);
             }
             case SymbolKind.Mblc:       return _mblc;
-            case SymbolKind.Mrrc:       return _mrrc;
-            case SymbolKind.Mclc:       return _mclc;
-            case SymbolKind.Midc:       return _midc;
+            case SymbolKind.Mrrc:       return portCount == 6 ? _mrrcCoupled : _mrrc;
+            case SymbolKind.Mclc:       return portCount == 8 ? _mclcTandem : _mclc;
+            case SymbolKind.Midc:
+            {
+                int n = CircuitRF.Core.Devices.Microstrip.LangePlan.FingersForPinCount(portCount);
+                return n == 4 ? _midc : _midcCache.GetOrAdd(n, BuildMidc);
+            }
             case SymbolKind.Mcbl:       return _mcbl;
+            case SymbolKind.Mgpd:       return _mgpd;
+            case SymbolKind.Mbpd:
+                return _mbpdCache.GetOrAdd(CircuitRF.Core.Devices.Microstrip.BagleyPlan.WaysForPinCount(portCount), BuildMbpd);
+            case SymbolKind.Mtpd:       return _mtpd;
+            case SymbolKind.Mcrc:       return _mcrc;
+            case SymbolKind.Mlad:       return _mladCache.GetOrAdd(Math.Max(0, portCount - 2), BuildMlad);
+            case SymbolKind.Msps:       return _msps;
+            case SymbolKind.Mdly:       return _mdly;
             case SymbolKind.MimCap:     return _mimCap;
             case SymbolKind.Spiral:     return _spiral;
             case SymbolKind.OctSpiral:  return _octSpiral;
@@ -474,11 +513,13 @@ public static class BuiltInSymbols
 
     // ── Sym helper ────────────────────────────────────────────────────────────
 
-    private static Symbol Sym(IReadOnlyList<SymbolPrimitive> prims, SymbolKind kind, int portCount = 0)
+    private static Symbol Sym(IReadOnlyList<SymbolPrimitive> prims, SymbolKind kind, int portCount = 0,
+                              (string Name, float LocalX, float LocalY)[]? defs = null)
     {
-        var portDefs = portCount > 0
-            ? SymbolPortDefs.For(kind, portCount)
-            : SymbolPortDefs.For(kind);
+        var portDefs = defs
+            ?? (portCount > 0
+                ? SymbolPortDefs.For(kind, portCount)
+                : SymbolPortDefs.For(kind));
         var pins = portDefs
             .Select((d, i) => new SymbolPin(d.LocalX, d.LocalY, i, d.Name))
             .ToList();
@@ -1847,6 +1888,47 @@ public static class BuiltInSymbols
         Txt("4",  150,  130, fontSize: MixerPortFontSize),
     ], SymbolKind.MCLine);
 
+    // MCLINN — N strips side by side at MCLIN's pitch, each lead fanning in from its pin to its strip's end: near ends
+    // 1..N at the left, far ends N + 1..2N at the right. VARIADIC on N, cached per N.
+    private static Symbol BuildMCLineN(int n)
+    {
+        var prims = new List<SymbolPrimitive>();
+        for (int k = 1; k <= n; k++)
+        {
+            float yp = (2 * k - n - 1) * 100, ys = (2 * k - n - 1) * 25;
+            prims.Add(PLine(-200, yp, -160, yp, -115, ys));
+            prims.Add(PLine( 200, yp,  160, yp,  115, ys));
+            prims.Add(RRect(0, ys, 230, 30, 8));
+            prims.Add(Txt($"{k}", -180, yp - 25, fontSize: MixerPortFontSize));
+            prims.Add(Txt($"{n + k}", 180, yp - 25, fontSize: MixerPortFontSize));
+        }
+        return Sym(prims, SymbolKind.MCLineN, 2 * n);
+    }
+
+    // MCLA — a box round three staggered strips, 1 and 2 leading in from the sides and each end pin (E1, E2, …) from the
+    // top or the bottom, where SymbolPortDefs puts them. VARIADIC on the pin count, cached per count.
+    private static Symbol BuildMcla(int pins)
+    {
+        var defs = SymbolPortDefs.For(SymbolKind.Mcla, pins);
+        float x = defs[1].LocalX, y = defs.Length > 2 ? -defs[2].LocalY : 400f;
+        var prims = new List<SymbolPrimitive>
+        {
+            RRect(0, 0, 2 * x - 200, 2 * y - 200, 12),
+            PLine(-x, 0, -x + 100, 0),
+            PLine( x, 0,  x - 100, 0),
+            Txt("1", -x + 40, -25, fontSize: MixerPortFontSize),
+            Txt("2",  x - 40, -25, fontSize: MixerPortFontSize),
+        };
+        for (int k = -1; k <= 1; k++) prims.Add(RRect(k * 40, k * 60, 240, 30, 8));
+        foreach (var (name, px, py) in defs.Skip(2))
+        {
+            float inward = py < 0 ? 100 : -100;
+            prims.Add(PLine(px, py, px, py + inward));
+            prims.Add(Txt(name, px + 30, py + inward / 2, fontSize: 18, align: SymbolTextAlign.Left));
+        }
+        return Sym(prims, SymbolKind.Mcla, pins);
+    }
+
     // BCLIN — two strips on different layers, offset from each other, with a ground plane drawn above
     // and below them: the broadside stripline pair.
     private static Symbol BuildBCLine() => Sym([
@@ -2627,6 +2709,13 @@ public static class BuiltInSymbols
         L( 150,   0,  200,   0),
     ], SymbolKind.MGap);
 
+    // MRadial — a 60° sector fanning out to the right from a lead on MLIN's left pin, its narrow end the lead's width and
+    // its arc drawn as five points: the glyph says "radial stub" whatever the instance's Angle and Sides.
+    private static Symbol BuildMRadial() => Sym([
+        L(-200,   0, -150,   0),
+        Poly(false, -150,-25,  118,-180,  154,-93,  167,0,  154,93,  118,180,  -150,25),
+    ], SymbolKind.MRadial);
+
     // Through line (pins 1/2, left/right) + branch (pin 3, DOWN — +Y is down in this codebase) —
     // R-pc-3's own "pin 1 origin, through +X to pin 2, branch +Y to pin 3" convention. The body is
     // ONE unfilled outline polygon (the union of the through-line and branch arms) — no overlapping
@@ -2837,6 +2926,31 @@ public static class BuiltInSymbols
         return Sym(prims, SymbolKind.Mwpd, 3 + 2 * n);
     }
 
+    // A lumped realisation or a resistive pad — a box: a lead from each pin in to it, each named, and the layout's word in
+    // the middle. The series sites' pin pairs are along the top, so each gap between a pair's two leads is where the part
+    // goes; the pins to ground are along the bottom, the ports at the sides (SymbolPortDefs.LumpedPins).
+    /// <summary>A lumped layout's box for <paramref name="kind"/>, cached per layout; its pins are the layout's own
+    /// (<see cref="SymbolPortDefs.LumpedPins"/>), never a pin count's.</summary>
+    public static Symbol PrimitivesForLumped(SymbolKind kind, CircuitRF.Core.Devices.Microstrip.LumpedTopology t)
+        => _lumpedCache.GetOrAdd(t, x => BuildLumped(kind, x));
+
+    private static Symbol BuildLumped(SymbolKind kind, CircuitRF.Core.Devices.Microstrip.LumpedTopology t)
+    {
+        var (bx, by, _, _, _, _) = SymbolPortDefs.LumpedBox(t);
+        var prims = new List<SymbolPrimitive> { RRect(0, 0, 2 * bx, 2 * by, 8), Txt(t.Label, 0, 0, fontSize: 40) };
+        foreach (var (name, x, y) in SymbolPortDefs.LumpedPins(t))
+        {
+            // In from the pin to the box's edge, and the name inside the box beside the lead.
+            var (ex, ey) = y < -by ? (x, -by) : y > by ? (x, by) : (x < 0 ? -bx : bx, y);
+            prims.Add(L(x, y, ex, ey));
+            prims.Add(y < -by ? Txt(name, ex, ey + 15, fontSize: MixerPortFontSize, vAlign: SymbolTextVAlign.Top)
+                    : y > by ? Txt(name, ex, ey - 15, fontSize: MixerPortFontSize, vAlign: SymbolTextVAlign.Bottom)
+                    : Txt(name, ex + (x < 0 ? 15 : -15), ey, fontSize: MixerPortFontSize,
+                          align: x < 0 ? SymbolTextAlign.Left : SymbolTextAlign.Right));
+        }
+        return Sym(prims, kind, defs: SymbolPortDefs.LumpedPins(t));
+    }
+
     // MBLC — the branch-line coupler as it is drawn on the board: two through lines joined by two shunt arms, a junction
     // (dot) at each corner and the four feeds leaving in line with the through lines; numbered as the hybrids are.
     private static Symbol BuildMblc() => Sym([
@@ -2878,6 +2992,39 @@ public static class BuiltInSymbols
         Txt("λ/4",   200,  200, fontSize: 40, align: SymbolTextAlign.Left, vAlign: SymbolTextVAlign.Top),
         Txt("3λ/4", -200,  200, fontSize: 40, align: SymbolTextAlign.Right, vAlign: SymbolTextVAlign.Top),
     ], SymbolKind.Mrrc);
+
+    // MDLY — MLIN's pins with a meander between them, three turns, and the electrical length it holds: the glyph says
+    // "a line folded to a length" whatever the instance's Style.
+    private static Symbol BuildMdly() => Sym([
+        PLine(-200, 0, -120, 0, -120, -80, -40, -80, -40, 80, 40, 80, 40, -80, 120, -80, 120, 0, 200, 0),
+        Txt("θ", 0, -110, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
+    ], SymbolKind.Mdly);
+
+    // MRRC with Form = CoupledLine — the square ring as it is drawn: three λ/4 sides, and along the bottom the coupled
+    // section in place of the 3λ/4 arm, strip A from tee 4 to its grounded far end G2 inside, strip B from its grounded
+    // near end G4 below to tee 2.
+    private static Symbol BuildMrrcCoupled() => Sym([
+        L(-200, -200, 200, -200),                    // 1 → 3 and 3 → 4 along the top
+        L( 200, -200, 200,  250),                    // 2 → 1 up the right side
+        L(-200, -200, -200, 200),                    // 3 → 4 down the left side
+        L(-200,  200, 100,  200),                    // strip A
+        L(-100,  250, 200,  250),                    // strip B
+        L( 100,  200, 100,  100),                    // G2
+        L(-100,  250, -100, 400),                    // G4
+        L( 200,  250, 200,  400),                    // 2
+        L(-400,  200, -200, 200),                    // 4
+        L( 200,    0, 400,    0),                    // 1
+        L(   0, -200,   0, -400),                    // 3
+        Circ(-200, 200, 10, filled: true), Circ(200, 250, 10, filled: true),
+        Circ( 200,   0, 10, filled: true), Circ(  0, -200, 10, filled: true),
+        Txt("180°", 0, -20, fontSize: 52),
+        Txt("1", 330, -40, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
+        Txt("2", 240, 340, fontSize: 40, align: SymbolTextAlign.Left),
+        Txt("3", 40, -320, fontSize: 40, align: SymbolTextAlign.Left),
+        Txt("4", -330, 160, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
+        Txt("G2", 130, 120, fontSize: 22, align: SymbolTextAlign.Left),
+        Txt("G4", -70, 360, fontSize: 22, align: SymbolTextAlign.Left),
+    ], SymbolKind.Mrrc, 6);
 
     // MCLC — MCLIN's plan view of the pair, with the quarter wave it is cut to and the coupling arrow from the input's
     // strip to the coupled port's, which runs back towards the input end (a backward-wave coupler).
@@ -2921,6 +3068,62 @@ public static class BuiltInSymbols
         return Sym([.. p], SymbolKind.Midc);
     }
 
+    // MIDC with six or eight fingers: as the four-finger glyph, a finger and its row per 200, ports on the outer two and
+    // each landing on its own finger's row (SymbolPortDefs). The jumpers are not drawn.
+    private static Symbol BuildMidc(int n)
+    {
+        var p = new List<SymbolPrimitive>();
+        var defs = SymbolPortDefs.For(SymbolKind.Midc, 2 * n);
+        for (int f = 0; f < n; f++)
+        {
+            double row = -100 * (n - 1) + 200 * f, fy = -30 * (n - 1) + 60 * f;
+            double jog = f == 0 || f == n - 1 ? 230 : 300;
+            p.Add(PLine(-400, row, -jog, row, -jog, fy, -200, fy));
+            p.Add(PLine( 400, row,  jog, row,  jog, fy,  200, fy));
+            p.Add(RRect(0, fy, 400, 24, 6));
+        }
+        foreach (var (name, x, y) in defs)
+            p.Add(Txt(name, x < 0 ? -330 : 330, y - 20, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        return Sym([.. p], SymbolKind.Midc, 2 * n);
+    }
+
+    // MCLC with Tandem — coupler I above coupler II, each a pair; I's far end runs around the right to II's and I's near
+    // end around the left to II's, each line broken where a port's lead crosses it: J1/J2 and J3/J4 are the breaks' ends.
+    private static Symbol BuildMclcTandem() => Sym([
+        RRect(0, -225, 300, 30, 8), RRect(0, -175, 300, 30, 8),       // coupler I
+        RRect(0,  175, 300, 30, 8), RRect(0,  225, 300, 30, 8),       // coupler II
+        PLine(-400, -300, -200, -300, -200, -225, -150, -225),       // 1 into I
+        PLine( 150, -225,  200, -225, 200, -300),                    // I's far end up to J1
+        PLine( 200,  100,  200,  175,  150,  175),                   // J2 down to II's far end
+        PLine( 150, -175,  400, -175, 400, -100),                    // 4 out of I, under the right crossover
+        PLine(-150,  225, -200,  225, -200, 300),                    // II's near end down to J3
+        PLine(-200, -100, -200, -175, -150, -175),                   // J4 to I's near end
+        PLine(-150,  175, -400,  175, -400, 100),                    // 2 out of II, under the left crossover
+        PLine( 150,  225,  200,  225,  200, 300, 400, 300),          // 3 out of II
+        Txt("1",  -330, -330, fontSize: MixerPortFontSize),
+        Txt("2",  -440,  100, fontSize: MixerPortFontSize),
+        Txt("3",   330,  330, fontSize: MixerPortFontSize),
+        Txt("4",   440, -100, fontSize: MixerPortFontSize),
+        Txt("J1",  240, -300, fontSize: 22), Txt("J2",  240,  100, fontSize: 22),
+        Txt("J3", -240,  300, fontSize: 22), Txt("J4", -240, -100, fontSize: 22),
+        Txt("tandem", 0, 0, fontSize: 30),
+    ], SymbolKind.Mclc, 8);
+
+    // MSPS — the C-section (a pair with its far ends joined) above the reference line, and the phase difference between.
+    private static Symbol BuildMsps() => Sym([
+        PLine(-400, -300, -150, -300, -150, -225),
+        PLine(-400, -100, -150, -100, -150, -175),
+        RRect(50, -225, 400, 30, 8),
+        RRect(50, -175, 400, 30, 8),
+        PLine(250, -225, 290, -225, 290, -175, 250, -175),           // the strap across the far ends
+        L(-400, 200, 400, 200),                                      // the reference line
+        Txt("Δφ", 0, 30, fontSize: 44),
+        Txt("1", -330, -330, fontSize: MixerPortFontSize),
+        Txt("2", -330, -130, fontSize: MixerPortFontSize),
+        Txt("3", -330,  170, fontSize: MixerPortFontSize),
+        Txt("4",  330,  170, fontSize: MixerPortFontSize),
+    ], SymbolKind.Msps);
+
     // MCBL — the two quarter-wave sections in a row: the input strip runs through both to an open end, and each coupled
     // strip is grounded at its outer end (G2, G3) and leaves as a balanced output at the middle.
     private static Symbol BuildMcbl() => Sym([
@@ -2941,6 +3144,114 @@ public static class BuiltInSymbols
         Txt("2",  -140,  190, fontSize: MixerPortFontSize),
         Txt("3",   140,  190, fontSize: MixerPortFontSize),
     ], SymbolKind.Mcbl);
+
+    // MGPD — the Gysel ring: the input (1) at the left, the outputs 2 and 3 at the top and bottom, and the isolation nodes R2
+    // and R3 at the right, each where its own resistor to ground goes; each stretch of the ring marked with the spacing it
+    // has on the board (four λ/4 and the λ/2 between R2 and R3).
+    private static Symbol BuildMgpd() => Sym([
+        Circ(0, 0, 200),
+        L(-400,    0, -200,    0),
+        L(   0, -400,    0, -200),
+        L(   0,  400,    0,  200),
+        PLine(400, -300, 100, -300, 100, -173),
+        PLine(400,  300, 100,  300, 100,  173),
+        Circ(-200,    0, 10, filled: true),
+        Circ(   0, -200, 10, filled: true),
+        Circ(   0,  200, 10, filled: true),
+        Circ( 100, -173, 10, filled: true),
+        Circ( 100,  173, 10, filled: true),
+        Txt("1", -330, -40, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
+        Txt("2", 30, -330, fontSize: 40, align: SymbolTextAlign.Left),
+        Txt("3", 30,  330, fontSize: 40, align: SymbolTextAlign.Left),
+        Txt("R2", 330, -330, fontSize: 32, vAlign: SymbolTextVAlign.Bottom),
+        Txt("R3", 330,  330, fontSize: 32, vAlign: SymbolTextVAlign.Top),
+        Txt("λ/4", -150, -150, fontSize: 32, align: SymbolTextAlign.Right, vAlign: SymbolTextVAlign.Bottom),
+        Txt("λ/4", -150,  150, fontSize: 32, align: SymbolTextAlign.Right, vAlign: SymbolTextVAlign.Top),
+        Txt("λ/2",  230,    0, fontSize: 32, align: SymbolTextAlign.Left),
+    ], SymbolKind.Mgpd);
+
+    // MBPD — the Bagley polygon: the input (1) on the side that closes the polygon, a junction from which the two λ/4 input
+    // arms reach the first and last outputs; the outputs' corners down the right joined by the λ/2 sides, each corner's
+    // lead leaving to its pin, numbered in turn round the polygon. VARIADIC on N, cached per N.
+    private static Symbol BuildMbpd(int n)
+    {
+        double top = (1 - n) * 100.0, bottom = (n - 1) * 100.0;
+        var prims = new List<SymbolPrimitive>
+        {
+            L(-400, 0, -200, 0),
+            Circ(-200, 0, 10, filled: true),
+            L(-200, 0, 200, top),
+            L(-200, 0, 200, bottom),
+            L(200, top, 200, bottom),
+            Txt("λ/4", -20, top / 2 - 30, fontSize: 32, align: SymbolTextAlign.Right, vAlign: SymbolTextVAlign.Bottom),
+            Txt("λ/2", 230, n == 3 ? -100 : 0, fontSize: 32, align: SymbolTextAlign.Left),
+            Txt("1", -330, -40, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
+        };
+        for (int k = 1; k <= n; k++)
+        {
+            double y = (2 * k - n - 1) * 100.0;
+            prims.Add(Circ(200, y, 10, filled: true));
+            prims.Add(L(200, y, 400, y));
+            prims.Add(Txt($"{k + 1}", 330, y - 24, fontSize: SddPortLabelFontSize));
+        }
+        return Sym(prims, SymbolKind.Mbpd, n + 1);
+    }
+
+    // MTPD — the tee divider: the input meets the junction (dot), and each through arm, a λ/4 transformer, runs on to its
+    // output at the right's top or bottom.
+    private static Symbol BuildMtpd() => Sym([
+        L(-400, 0, -100, 0),
+        Circ(-100, 0, 10, filled: true),
+        PLine(-100, 0, -100, -200, 400, -200),
+        PLine(-100, 0, -100,  200, 400,  200),
+        RRect(150, -200, 200, 40, 8),
+        RRect(150,  200, 200, 40, 8),
+        Txt("λ/4", 150, -240, fontSize: 32, vAlign: SymbolTextVAlign.Bottom),
+        Txt("λ/4", 150,  240, fontSize: 32, vAlign: SymbolTextVAlign.Top),
+        Txt("1", -330, -40, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
+        Txt("2",  330, -240, fontSize: 40, vAlign: SymbolTextVAlign.Bottom),
+        Txt("3",  330,  240, fontSize: 40, vAlign: SymbolTextVAlign.Top),
+    ], SymbolKind.Mtpd);
+
+    // MCRC — the edge-coupled filter as it lies on the board: the input feed, three half-wave resonators each coupled to
+    // the next over half its length, and the output feed, stepping down from 1 to 2. Every shape and form is this part.
+    private static Symbol BuildMcrc() => Sym([
+        PLine(-400, -100, -300, -100),
+        PLine( 300,  100,  400,  100),
+        RRect(-225, -100, 150, 24, 6),
+        RRect(-150,  -50, 300, 24, 6),
+        RRect(   0,    0, 300, 24, 6),
+        RRect( 150,   50, 300, 24, 6),
+        RRect( 225,  100, 150, 24, 6),
+        Txt("λ/2", 0, -30, fontSize: 11, vAlign: SymbolTextVAlign.Bottom),
+        Txt("1", -350, -125, fontSize: MixerPortFontSize),
+        Txt("2",  350,  130, fontSize: MixerPortFontSize),
+    ], SymbolKind.Mcrc);
+
+    // MLAD — a ladder as a filter on the board: a narrow, a wide and a narrow line in a row with an open stub up from the
+    // wide one, and a line down to each via pin G1… along the bottom (SymbolPortDefs.For), the ends moving out past them.
+    private static Symbol BuildMlad(int grounds)
+    {
+        double end = Math.Max(400, 100 * (grounds + 2));
+        var prims = new List<SymbolPrimitive>
+        {
+            L(-end, 0, -240, 0),
+            RRect(-160, 0, 160, 24, 4),
+            RRect(   0, 0, 160, 90, 6),
+            RRect( 160, 0, 160, 24, 4),
+            L( 240, 0,  end, 0),
+            RRect(0, -125, 24, 160, 4),
+            Txt("1", -end + 60, -30, fontSize: MixerPortFontSize, vAlign: SymbolTextVAlign.Bottom),
+            Txt("2",  end - 60, -30, fontSize: MixerPortFontSize, vAlign: SymbolTextVAlign.Bottom),
+        };
+        for (int k = 1; k <= grounds; k++)
+        {
+            double x = 100 * (2 * k - grounds - 1);
+            prims.Add(L(x, 45, x, 300));
+            prims.Add(Txt($"G{k}", x + 20, 250, fontSize: 22, align: SymbolTextAlign.Left));
+        }
+        return Sym(prims, SymbolKind.Mlad, 2 + grounds);
+    }
 
     private static Symbol BuildTestPad()
     {

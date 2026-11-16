@@ -36,7 +36,7 @@ internal sealed class DisconnectCommand : IUiCommand
         foreach (var (comp, _) in _snapshots)
         {
             comp.DetachedPorts.Clear();
-            int nPins = SymbolPortDefs.For(comp.Symbol, comp.PortCount).Length;
+            int nPins = SymbolPortDefs.For(comp).Length;
             for (int i = 0; i < nPins; i++)
                 comp.DetachedPorts.Add(i);
         }

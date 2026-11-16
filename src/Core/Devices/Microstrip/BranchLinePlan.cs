@@ -1,3 +1,4 @@
+using System.Numerics;
 using CircuitRF.Diagnostics;
 
 namespace CircuitRF.Core.Devices.Microstrip;
@@ -20,7 +21,7 @@ public sealed record BranchLineDesign(
     IReadOnlyList<BranchLineArm> Series, IReadOnlyList<BranchLineArm> Shunts, PassivePlan Plan);
 
 /// <summary>
-/// The 3 dB branch-line (90°) hybrid planned in microstrip, in one or two sections. Pure: specs and a substrate
+/// The 3 dB branch-line (90°) hybrid planned in microstrip, in one to four sections. Pure: specs and a substrate
 /// in, <see cref="BranchLineDesign"/> out; <see cref="MicrostripPlanModel"/> stamps the plan and the PCell draws
 /// it.
 ///
@@ -33,7 +34,9 @@ public sealed record BranchLineDesign(
 /// line. One section: series arms of Z0/√2 and shunt arms of Z0. Two sections: series arms of Z0 and shunt arms of
 /// (1 + √2)·Z0, √2·Z0, (1 + √2)·Z0, the equal-split two-section design (the synthesis method is R. Levy and
 /// L. F. Lind, IEEE Trans. MTT, 1968, and M. Muraguchi, T. Yukitake and Y. Naito, IEEE Trans. MTT, 1983; these values
-/// solve its even/odd conditions); matched, isolated and split 3 dB at F, as the model checks. Widths are MLIN's at F;
+/// solve its even/odd conditions); matched, isolated and split 3 dB at F, as the model checks. Three and four sections
+/// keep the series arms at Z0 and solve the shunt arms from the same conditions (<see cref="ShuntAdmittances"/>). Widths
+/// are MLIN's at F;
 /// each arm is λg/4 in MLIN's own dispersive εeff, measured between the reference planes of the two MTEEs it
 /// joins (the through arms' at the branch's half width, the branch's at the wider through arm's half width).
 /// The shunt arms share one span between the two lines, so arms of different εeff (two sections) each take the
@@ -49,7 +52,10 @@ public static class BranchLinePlan
     /// <summary>The part's pins, in terminal order.</summary>
     public static readonly IReadOnlyList<string> Pins = ["1", "2", "3", "4"];
 
-    /// <param name="sections">N, 1 or 2.</param>
+    /// <summary>The most sections the plan builds.</summary>
+    public const int MaxSections = 4;
+
+    /// <param name="sections">N, 1 to 4.</param>
     public static BranchLineDesign Build(double z0, double fHz, double sections, MicrostripSubstrate s)
     {
         foreach (var (name, value) in new[] { ("Z0", z0), ("F", fHz) })
@@ -57,15 +63,16 @@ public static class BranchLinePlan
                 throw new ParameterRefusalException(Diagnostic.Create("device.branchline.spec-not-positive",
                     DiagnosticSeverity.Error, "Branch-line coupler: {name} = {value} must be positive.",
                     ("name", name), ("value", value)));
-        if (sections is not (1.0 or 2.0))
+        if (!(sections >= 1 && sections <= MaxSections && sections == Math.Round(sections)))
             throw new ParameterRefusalException(Diagnostic.Create("device.branchline.sections",
-                DiagnosticSeverity.Error, "Branch-line coupler: N = {n}; one or two sections are planned.",
-                ("n", sections)));
+                DiagnosticSeverity.Error, "Branch-line coupler: N = {n}; 1 to {max} sections are planned.",
+                ("n", sections), ("max", MaxSections)));
 
         int n = (int)sections;
         double r2 = Math.Sqrt(2.0);
-        double[] seriesZ = n == 1 ? [z0 / r2] : [z0, z0];
-        double[] shuntZ = n == 1 ? [z0, z0] : [(1.0 + r2) * z0, r2 * z0, (1.0 + r2) * z0];
+        double[] seriesZ = n == 1 ? [z0 / r2] : n == 2 ? [z0, z0] : [.. Enumerable.Repeat(z0, n)];
+        double[] shuntZ = n == 1 ? [z0, z0] : n == 2 ? [(1.0 + r2) * z0, r2 * z0, (1.0 + r2) * z0]
+                        : [.. ShuntAdmittances(n).Select(y => z0 / y)];
 
         double w0 = PassivePlan.OnGrid(Width(z0, fHz, s, "Branch-line coupler", "device.branchline.width-unreachable"));
         BranchLineArm Arm(double z)
@@ -145,6 +152,67 @@ public static class BranchLinePlan
         sections.Add(new PlanLine([right[1, n], 3], xEnd, -span, 0.0, w0, feed));
         sections.Add(new PlanLine([4, left[1, 0]], 0.0, -span, 0.0, w0, feed));
         return new PassivePlan(Pins, sections, next);
+    }
+
+    /// <summary>
+    /// The shunt arms' admittances, in units of 1/Z0 from the 1-4 end on, of a coupler of <paramref name="sections"/> = 3
+    /// or 4 with every series arm Z0. At F each half of the even/odd analysis is a chain of quarter waves with an
+    /// eighth-wave open stub of j·y at every junction; it is matched when its B and C are equal, and the split is 3 dB
+    /// in quadrature when |B| = 1/√2 (R. Levy and L. F. Lind, IEEE Trans. MTT, 1968, for the method).
+    ///
+    /// <para>Three sections, y1 y2 y2 y1: B = j(y2² − 1) gives y2 = √(1 − 1/√2), and B = C then
+    /// y1 = √2·y2·(√(1 + 1/√2) − 1). Four sections, y1 y2 y3 y2 y1: B = j·y2·(2 − y2·y3) = j/√2 gives
+    /// y2 = (1 − √(1 − y3/√2))/y3, and B = C a quadratic in u = 1 − y1·y2; that leaves y3, which is set where the
+    /// even half's reflection is flat at F as well as zero (its ρ = Γ/(jT), real on the real axis, has ρ' = 0 there),
+    /// by bisection on a central difference. Both keep port 3 a quarter period behind port 2, as one and two sections
+    /// do.</para>
+    /// </summary>
+    public static double[] ShuntAdmittances(int sections)
+    {
+        double s = Math.Sqrt(0.5);
+        if (sections == 3)
+        {
+            double y2 = Math.Sqrt(1.0 - s), y1 = Math.Sqrt(2.0) * y2 * (Math.Sqrt(1.0 + s) - 1.0);
+            return [y1, y2, y2, y1];
+        }
+        double[] Arms(double y3)
+        {
+            double y2 = (1.0 - Math.Sqrt(1.0 - y3 * s)) / y3;
+            double a = y3 - 2.0 / y2, b = 2.0 / y2;
+            double u = (-b - Math.Sqrt(b * b + 4.0 * a * s)) / (2.0 * a);
+            return [(1.0 - u) / y2, y2, y3, y2, (1.0 - u) / y2];
+        }
+        double Slope(double y3)
+        {
+            var y = Arms(y3);
+            const double h = 1e-5;
+            return (Rho(y, Math.PI / 2.0 + h) - Rho(y, Math.PI / 2.0 - h)) / (2.0 * h);
+        }
+        double lo = 0.3, hi = 0.7;               // the slope falls through zero once between them
+        for (int i = 0; i < 200; i++)
+        {
+            double mid = 0.5 * (lo + hi);
+            if (Slope(mid) > 0.0) lo = mid; else hi = mid;
+        }
+        return Arms(0.5 * (lo + hi));
+    }
+
+    /// <summary>The even half's ρ = Γ/(jT) = (A + B − C − D)/(2j) at θ (a series arm's electrical length), its series arms
+    /// Z0 and an eighth-wave open stub of j·y·tan(θ/2) at each junction: real for real θ, zero where the half is
+    /// matched.</summary>
+    public static double Rho(IReadOnlyList<double> shunts, double theta)
+    {
+        Complex a = 1.0, b = 0.0, c = 0.0, d = 1.0, j = Complex.ImaginaryOne;
+        double cs = Math.Cos(theta), sn = Math.Sin(theta);
+        for (int k = 0; k < shunts.Count; k++)
+        {
+            Complex y = j * shunts[k] * Math.Tan(theta / 2.0);
+            a += b * y;
+            c += d * y;
+            if (k == shunts.Count - 1) break;
+            (a, b, c, d) = (a * cs + b * j * sn, a * j * sn + b * cs, c * cs + d * j * sn, c * j * sn + d * cs);
+        }
+        return ((a + b - c - d) / (2.0 * j)).Real;
     }
 
     /// <summary>Junction <paramref name="k"/>'s branch reference plane from its centre: half its wider through arm.</summary>

@@ -454,6 +454,18 @@ public static class LvsDiagnostics
             ("schematic", schematic), ("layout", layout), ("tolerance", tolerance));
 
     /// <summary>
+    /// A part on a planned passive's site whose span the passive's <c>Footprint</c> sets, with another footprint or none
+    /// (docs/design/rf-passives.md, "Sites"): the copper's pins are that footprint's span apart, so this part's pads do not
+    /// land on them. Names the site and both footprints, so either can be changed to match.
+    /// </summary>
+    public static Diagnostic SiteFootprint(string passive, string site, string part, string wants, string? has)
+        => Diagnostic.Create(
+            "lvs.property.site-footprint", DiagnosticSeverity.Error,
+            "{passive} site {site}: {part} has footprint {has}, but {passive} states Footprint {wants}, which sets the "
+            + "site's span. Give {part} footprint {wants}, or change {passive}'s.",
+            ("passive", passive), ("site", site), ("part", part), ("wants", wants), ("has", has ?? "None"));
+
+    /// <summary>
     /// R-lvs10-4b. The layout's generator DERIVED this value from the artwork it drew, so it
     /// cannot disagree with the artwork — only with what the schematic asked for.
     /// </summary>

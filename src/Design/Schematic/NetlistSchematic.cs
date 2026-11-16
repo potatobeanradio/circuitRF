@@ -813,7 +813,7 @@ public static class NetlistSchematic
     }
 
     private static (float X, float Y)[] LocalPins(EditableComponent comp)
-        => [.. (comp.IsSnpBox ? comp.GetEffectiveSnpPortDefs() : SymbolPortDefs.For(comp.Symbol, comp.PortCount))
+        => [.. (comp.IsSnpBox ? comp.GetEffectiveSnpPortDefs() : SymbolPortDefs.For(comp))
                .Select(p => (p.LocalX, p.LocalY))];
 
     /// <summary>
@@ -829,7 +829,8 @@ public static class NetlistSchematic
         // A variadic box whose line left its width to be inferred from the nets: state it, because
         // the symbol has no other way to know how many pins to draw.
         if (ComponentTypeRegistry.PortCountParameter(kind) is { } countParam
-            && kind is not (SymbolKind.Switch or SymbolKind.SwitchD or SymbolKind.WBond or SymbolKind.PhasedArray or SymbolKind.PropagationChannel)
+            && kind is not (SymbolKind.Switch or SymbolKind.SwitchD or SymbolKind.WBond or SymbolKind.PhasedArray or SymbolKind.Mlad
+                            or SymbolKind.Mcla or SymbolKind.PropagationChannel)
             && !comp.Parameters.Any(p => p.Name == countParam))
         {
             int n = kind is SymbolKind.Sdd or SymbolKind.ZPort ? nets.Count / 2

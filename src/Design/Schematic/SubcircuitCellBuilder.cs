@@ -318,7 +318,7 @@ public static class SubcircuitCellBuilder
             // width the two-port default — four pins for a device the netlist binds six nets to,
             // which is a wiring failure and not a drawing one.
             foreach (var q in element.Parameters) comp.Parameters.Add(q);
-            ports = [.. SymbolPortDefs.For(comp.Symbol, comp.PortCount).Select(p => (p.LocalX, p.LocalY))];
+            ports = [.. SymbolPortDefs.For(comp).Select(p => (p.LocalX, p.LocalY))];
             return Finish();
         }
 

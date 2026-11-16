@@ -1,0 +1,11 @@
+# The Schiffman phase shifter with its reference meandered (MSPS, Reference = Meander): one half-turn whose legs are
+# the C-section's length, so all four pins sit on the block's left edge.
+Info SPS1 added
+Info P1 port 1 placed at SPS1 pin 1
+Info P2 port 2 placed at SPS1 pin 2
+Info P3 port 3 placed at SPS1 pin 3
+Info P4 port 4 placed at SPS1 pin 4
+port P1 1
+port P2 2
+port P3 3
+port P4 4

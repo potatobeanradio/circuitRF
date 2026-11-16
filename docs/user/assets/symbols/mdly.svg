@@ -1,0 +1,9 @@
+<!-- GENERATED FILE - do not edit. Regenerate every component symbol with:
+     dotnet run ––project src/Ui –– ––generate-symbols docs/user/assets/symbols
+     (the flags above are ordinary double hyphens; XML comments cannot contain them.)
+     Source: src/Ui/Diagnostics/SymbolArtworkGenerator.cs -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M27.69 75L64.62 75L64.62 38.08L101.54 38.08L101.54 111.92L138.46 111.92L138.46 38.08L175.39 38.08L175.39 75L212.31 75" /><text fill="#2D14C3" transform="translate(120 12.23)" font-size="18.46" font-family="IBM Plex Sans" x="-5" y="6.92">
+			θ
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="24" y="71.31" width="7.38" height="7.38" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="208.62" y="71.31" width="7.38" height="7.38" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="100.5, 112.5, 122.5, 130.5" y="172.32">
+			MDLY
+	</text></svg>

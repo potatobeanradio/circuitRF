@@ -164,10 +164,50 @@ public class HybridPlanTests
         AssertJoined(d.Plan);
     }
 
+    /// <summary>Meandered, the three λg/4 arms make a C and the 3λg/4 arm folds inside it: every piece meets the next, the
+    /// runs are λg/4, the folded arm's two half-turns and its meander together hold 3λg/4 at F, and the ring is as tall
+    /// as the curved one and narrower.</summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    public void TheRatRace_Meandered_KeepsItsSpacingsInsideASmallerRing(int turns)
+    {
+        var curved = RatRacePlan.Build(50.0, 2.4e9, Ro4350b);
+        var d = RatRacePlan.Build(50.0, 2.4e9, Ro4350b, meander: turns);
+        AssertJoined(d.Plan);
+        Assert.Equal(turns, d.MeanderTurns);
+        Assert.Equal(2, d.Plan.Sections.OfType<PlanLine>().Count(l => l.L == d.QuarterWaveMeters));
+        var curves = d.Plan.Sections.OfType<PlanCurve>().ToList();
+        Assert.Equal(1 + turns + 2, curves.Count);
+        Assert.Single(curves, c => c.Radius == d.RadiusMeters);
+        Assert.All(curves.Where(c => c.Radius != d.RadiusMeters), c => Assert.Equal(d.MeanderPitchMeters / 2.0, c.Radius));
+        Assert.True(d.RadiusMeters <= curved.RadiusMeters, $"{d.RadiusMeters} vs {curved.RadiusMeters}");
+
+        // The folded arm, tee 4's free end (node 12) to tee 2's (node 5), alone between lines of the ring's impedance:
+        // its two half-turns (12-13, 14-5) and the meander between (13-14, its own nodes after the U-turn's 15 and 16).
+        var arm = d.Plan.Sections.Where(x => x.Nodes.All(n => n is 5 or 12 or 13 or 14 || n >= 17)).ToList();
+        int[] inner = [.. arm.SelectMany(x => x.Nodes).Where(n => n is not (5 or 12)).Distinct()];
+        var alone = new PassivePlan(["a", "b"],
+            [.. arm.Select(x => x with { Nodes = [.. x.Nodes.Select(n => n == 12 ? 1 : n == 5 ? 2 : 3 + Array.IndexOf(inner, n))] })],
+            2 + inner.Length);
+        double phase = alone.S21(Ro4350b, 2.4e9, d.RingZ0).Phase * 180.0 / Math.PI;
+        Assert.True(Math.Abs(phase - 90.0) < 0.5, $"3λg/4 arm S21 phase {phase}° (want −270 ≡ 90)");
+    }
+
+    [Theory]
+    [InlineData(2.0, PlanCorner.Curve)]
+    [InlineData(1.5, PlanCorner.Curve)]
+    [InlineData(1.0, PlanCorner.Miter)]
+    public void ARatRaceMeanderThatCannotBeBuilt_IsACodedRefusal(double meander, PlanCorner corner)
+    {
+        var ex = Assert.Throws<ParameterRefusalException>(() => RatRacePlan.Build(50.0, 2.4e9, Ro4350b, corner, meander));
+        Assert.Equal("device.ratrace.meander", ex.Diagnostic?.Id);
+    }
+
     [Theory]
     [InlineData(0.0, 2.4e9, 1.0, "device.branchline.spec-not-positive")]
     [InlineData(50.0, -1.0, 1.0, "device.branchline.spec-not-positive")]
-    [InlineData(50.0, 2.4e9, 3.0, "device.branchline.sections")]
+    [InlineData(50.0, 2.4e9, 5.0, "device.branchline.sections")]
     [InlineData(50.0, 2.4e9, 1.5, "device.branchline.sections")]
     [InlineData(50.0, 30e9, 1.0, "device.branchline.arm-too-short")]
     [InlineData(200.0, 2.4e9, 2.0, "device.branchline.width-unreachable")]
@@ -205,6 +245,12 @@ public class HybridPlanTests
                                          Math.Sign(c.AngleDeg) * c.Radius * (1.0 - Math.Cos(c.AngleDeg * Math.PI / 180.0)))],
                 PlanBend b => [(0, 0), (b.Arm * (1.0 + Math.Cos(b.AngleDeg * Math.PI / 180.0)),
                                         b.Arm * Math.Sin(b.AngleDeg * Math.PI / 180.0))],
+                // Strip k's near and far ends, its centre below strip k − 1's by their half widths and the gap.
+                PlanCoupledStrips m => [.. Enumerable.Range(0, m.W.Count).SelectMany(k =>
+                {
+                    double y = -Enumerable.Range(1, k).Sum(i => (m.W[i - 1] + m.W[i]) / 2.0 + m.S[i - 1]);
+                    return new[] { (0.0, y), (m.L, y) };
+                })],
                 _ => throw new InvalidOperationException(),
             };
             double th = section.RotationDeg * Math.PI / 180.0;
@@ -222,5 +268,43 @@ public class HybridPlanTests
         // An internal node joins two pieces; a pin ends one.
         foreach (int node in at.Keys)
             Assert.Equal(node <= plan.Pins.Count ? 1 : 2, plan.Sections.Count(s => s.Nodes.Contains(node)));
+    }
+
+    // ══ MBLC up to four sections (Levy and Lind 1968) ═══════════════════════════════════════════
+
+    /// <summary>Three sections: series arms Z0 and the closed form y2 = √(1 − 1/√2), y1 = √2·y2·(√(1 + 1/√2) − 1). Four:
+    /// the even half matched (ρ = 0) and flat (ρ' = 0) at F; both 3 dB (|B| = 1/√2) — the conditions the plan solves.</summary>
+    [Theory]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void MoreBranchLineSections_AreTheEvenOddConditions(int n)
+    {
+        var y = BranchLinePlan.ShuntAdmittances(n);
+        Assert.Equal(n + 1, y.Length);
+        Assert.Equal(y.Reverse(), y);
+        if (n == 3)
+        {
+            Assert.Equal(Math.Sqrt(1 - Math.Sqrt(0.5)), y[1], 14);
+            Assert.Equal(Math.Sqrt(2) * y[1] * (Math.Sqrt(1 + Math.Sqrt(0.5)) - 1), y[0], 14);
+        }
+        else
+        {
+            Assert.Equal(Math.Sqrt(0.5), y[1] * (2 - y[1] * y[2]), 12);
+            double h = 1e-4;
+            Assert.True(Math.Abs((BranchLinePlan.Rho(y, Math.PI / 2 + h) - BranchLinePlan.Rho(y, Math.PI / 2 - h)) / (2 * h)) < 1e-7);
+        }
+        Assert.True(Math.Abs(BranchLinePlan.Rho(y, Math.PI / 2)) < 1e-14);
+
+        // The outer arms are 4.26·Z0 (three) and 7.40·Z0 (four): on 20 mil RO4350B a 50 Ω coupler of three builds and one
+        // of four is refused (370 Ω), and on a 60 mil PTFE board a 35 Ω one of four builds (259 Ω). The plan lays them out.
+        var ptfe = new MicrostripSubstrate(1.524e-3, 35e-6, 2.2, 5.8e7, 0.0009);
+        double z0 = n == 3 ? 50.0 : 35.0;
+        var d = BranchLinePlan.Build(z0, 2.4e9, n, n == 3 ? Ro4350b : ptfe);
+        Assert.Equal(y.Select(v => z0 / v), d.Shunts.Select(a => a.Z));
+        Assert.All(d.Series, a => Assert.Equal(z0, a.Z));
+        HybridPlanTests.AssertJoined(d.Plan);
+        if (n == 4)
+            Assert.Equal("device.branchline.width-unreachable",
+                Assert.Throws<ParameterRefusalException>(() => BranchLinePlan.Build(50.0, 2.4e9, 4, Ro4350b)).Diagnostic?.Id);
     }
 }

@@ -1,0 +1,23 @@
+<!-- GENERATED FILE - do not edit. Regenerate every component symbol with:
+     dotnet run ––project src/Ui –– ––generate-symbols docs/user/assets/symbols
+     (the flags above are ordinary double hyphens; XML comments cannot contain them.)
+     Source: src/Ui/Diagnostics/SymbolArtworkGenerator.cs -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><ellipse fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" cx="120" cy="75" rx="25" ry="25" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M70 75L95 75" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 25L120 50" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 125L120 100" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M170 37.5L132.5 37.5L132.5 53.38" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M170 112.5L132.5 112.5L132.5 96.63" /><ellipse fill="#9684FA" cx="95" cy="75" rx="1.25" ry="1.25" /><ellipse fill="#9684FA" cx="120" cy="50" rx="1.25" ry="1.25" /><ellipse fill="#9684FA" cx="120" cy="100" rx="1.25" ry="1.25" /><ellipse fill="#9684FA" cx="132.5" cy="53.38" rx="1.25" ry="1.25" /><ellipse fill="#9684FA" cx="132.5" cy="96.63" rx="1.25" ry="1.25" /><text fill="#9684FA" transform="translate(78.75 66.75)" font-size="5" font-family="IBM Plex Sans" x="-1.5" y="1.88">
+			1
+	</text><text fill="#9684FA" transform="translate(125.25 33.75)" font-size="5" font-family="IBM Plex Sans" x="-1.5" y="1.88">
+			2
+	</text><text fill="#9684FA" transform="translate(125.25 116.25)" font-size="5" font-family="IBM Plex Sans" x="-1.5" y="1.88">
+			3
+	</text><text fill="#9684FA" transform="translate(161.25 31.15)" font-size="4" font-family="IBM Plex Sans" x="-2.5, 0.5" y="1.5">
+			R2
+	</text><text fill="#9684FA" transform="translate(161.25 118.85)" font-size="4" font-family="IBM Plex Sans" x="-2.5, 0.5" y="1.5">
+			R3
+	</text><text fill="#9684FA" transform="translate(98.25 53.65)" font-size="4" font-family="IBM Plex Sans" x="-3, -1, 1" y="1.5">
+			λ/4
+	</text><text fill="#9684FA" transform="translate(98.25 96.35)" font-size="4" font-family="IBM Plex Sans" x="-3, -1, 1" y="1.5">
+			λ/4
+	</text><text fill="#9684FA" transform="translate(151.75 75)" font-size="4" font-family="IBM Plex Sans" x="-3, -1, 1" y="1.5">
+			λ/2
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="67" y="72" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="117" y="22" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="117" y="122" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="167" y="34.5" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="167" y="109.5" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="98.5, 110.5, 121.5, 131.5" y="172.32">
+			MGPD
+	</text></svg>

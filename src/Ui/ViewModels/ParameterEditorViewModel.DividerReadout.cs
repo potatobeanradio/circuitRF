@@ -1,4 +1,5 @@
 using System.Globalization;
+using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Core.Expressions;
@@ -19,9 +20,12 @@ namespace CircuitRF.Ui.ViewModels;
 
 public partial class ParameterEditorViewModel
 {
-    /// <summary>True for a planned passive with a readout: MWPD, the hybrids and the coupled-line parts.</summary>
+    /// <summary>True for a planned passive with a readout: MWPD, the hybrids, the coupled-line parts and the other
+    /// dividers.</summary>
     public bool IsDividerReadoutTarget => _target?.Symbol is SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
-                                          or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl;
+                                          or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl
+                                          or SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd or SymbolKind.Mlad
+                                          or SymbolKind.Msps or SymbolKind.Mdly or SymbolKind.Mcla or SymbolKind.Mrpad;
 
     /// <summary>The derived numbers, one per line, or empty.</summary>
     public string DividerReadoutText { get; private set; } = "";
@@ -34,13 +38,23 @@ public partial class ParameterEditorViewModel
     private void RefreshDividerReadout()
     {
         string text = "", note = "";
-        if (_target?.Symbol is SymbolKind.Mblc or SymbolKind.Mrrc)
+        if (_target?.LumpedLayout() is not null)
+            (text, note) = LumpedReadout(_target.Symbol);
+        else if (_target?.Symbol is SymbolKind.Mblc or SymbolKind.Mrrc)
             (text, note) = HybridReadout(_target.Symbol);
-        else if (_target?.Symbol is SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl)
+        else if (_target?.Symbol is SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.Msps)
             (text, note) = CoupledLineReadout(_target.Symbol);
+        else if (_target?.Symbol is SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd)
+            (text, note) = SplitterReadout(_target.Symbol);
+        else if (_target?.Symbol is SymbolKind.Mlad)
+            (text, note) = LadderReadout();
+        else if (_target?.Symbol is SymbolKind.Mdly)
+            (text, note) = DelayLineReadout();
+        else if (_target?.Symbol is SymbolKind.Mcla)
+            (text, note) = CoupledArrayReadout();
         else if (IsDividerReadoutTarget)
         {
-            if (Spec("Z0") is not { } z0 || Spec("F") is not { } f || Spec("Gap") is not { } gap
+            if (Spec("Z0") is not { } z0 || Spec("F") is not { } f || SiteGap(ref note) is not { } gap
                 || Spec("K", 1.0) is not { } k || Spec("N", 1.0) is not { } n || Spec("Band", WilkinsonPlan.DefaultBand) is not { } band)
                 note = "Z0, F, Gap, K, N or Band is an expression, so the divider's dimensions are known only at run time.";
             else
@@ -64,6 +78,7 @@ public partial class ParameterEditorViewModel
                              + Ring(d)
                              + string.Join("\n", d.Resistors.Select((r, i) =>
                                    $"R{(d.Sections > 1 ? (i + 1).ToString(CultureInfo.InvariantCulture) : "")} = {Ohm(r.Ohms)}, across {r.PinA}-{r.PinB}"));
+                    text += Sites(d.Plan);
                 }
                 catch (ParameterRefusalException ex)
                 {
@@ -74,10 +89,59 @@ public partial class ParameterEditorViewModel
         DividerReadoutText = text;
         DividerReadoutNote = note;
         OnPropertyChanged(nameof(IsDividerReadoutTarget));
+        OnPropertyChanged(nameof(HasSites));
         OnPropertyChanged(nameof(DividerReadoutText));
         OnPropertyChanged(nameof(DividerReadoutNote));
         OnPropertyChanged(nameof(HasDividerReadoutNote));
     }
+
+    /// <summary>A planned passive with sites, so the readout offers Place Site Parts.</summary>
+    public bool HasSites => SchematicViewModel.HasSites(_target);
+
+    /// <summary>Place Site Parts, the context menu's own command (<see cref="SchematicViewModel.PlaceSiteParts"/>).</summary>
+    [RelayCommand]
+    private void PlaceSiteParts()
+    {
+        if (_target is not null) _schematicVm?.PlaceSiteParts(_target.Id);
+    }
+
+    /// <summary>The site span the plan is built with, as the run and the layout resolve it: the Footprint's land span when
+    /// the part states one (<see cref="MicrostripSubstrateInjection.SiteSpanMeters"/>), else Gap. A footprint that does not
+    /// resolve leaves Gap and says why in <paramref name="note"/>.</summary>
+    private double? SiteGap(ref string note)
+    {
+        if (_target is null || PassiveSites.FootprintOf(_target) is not { } footprint) return Spec("Gap");
+        var model = _schematicVm?.EditModel;
+        if (MicrostripSubstrateInjection.SiteSpanMeters(footprint, model?.SchematicDirectory,
+                model is null ? null : SchematicTechnology.Of(model), out string? refusal) is { } span)
+            return span;
+        note = $"Footprint: {refusal}; Gap is used as stated.";
+        return Spec("Gap");
+    }
+
+    /// <summary>The plan's sites, a line each: what goes there, the value the design wants and, where the plan sets it,
+    /// the span between the pins (rf-passives.md, "Sites"). Place Site Parts fills the empty ones.</summary>
+    private static string Sites(PassivePlan plan)
+        => string.Concat(plan.Sites.Select(site =>
+            $"\nSite {site.Name}: " + (site.Role switch
+            {
+                PlanSiteRole.Via => "a via to ground",
+                PlanSiteRole.Jumper => "a jumper (bond wire or air bridge)",
+                PlanSiteRole.Load => "the load",
+                PlanSiteRole.L => "L",
+                PlanSiteRole.C => "C",
+                _ => "R",
+            })
+            + (site.Value is { } v ? " " + SiteValue(site.Role, v) : "")
+            + (site.SpanMeters is { } span ? $", span {Mm(span, "0.####")}" : "")));
+
+    /// <summary>A site's value in the unit its part states: nH, pF or Ω.</summary>
+    private static string SiteValue(PlanSiteRole role, double v) => role switch
+    {
+        PlanSiteRole.L => (v * 1e9).ToString("0.###", CultureInfo.InvariantCulture) + " nH",
+        PlanSiteRole.C => (v * 1e12).ToString("0.###", CultureInfo.InvariantCulture) + " pF",
+        _ => Ohm(v),
+    };
 
     /// <summary>A spec row's SI value when it is a plain number; <paramref name="absent"/> when the part has no such row
     /// (a divider placed before the row existed).</summary>
@@ -88,9 +152,46 @@ public partial class ParameterEditorViewModel
             : null;
 
     /// <summary>A ring's <c>Corner</c>, a name; Curve when the row is absent or names none (the picker offers only the names).</summary>
-    private PlanCorner Corner()
-        => Enum.TryParse(_target?.Parameters.FirstOrDefault(p => p.Name == "Corner")?.Expression?.Trim(), ignoreCase: true,
-               out PlanCorner c) && Enum.IsDefined(c) ? c : PlanCorner.Curve;
+    private PlanCorner Corner() => Word("Corner", PlanCorner.Curve);
+
+    /// <summary>A word-valued row; <paramref name="fallback"/> when it is absent or names none.</summary>
+    private T Word<T>(string name, T fallback) where T : struct, Enum
+        => Enum.TryParse(_target?.Parameters.FirstOrDefault(p => p.Name == name)?.Expression?.Trim(), ignoreCase: true,
+               out T c) && Enum.IsDefined(c) ? c : fallback;
+
+    /// <summary>A lumped realisation's or a resistive pad's readout (<see cref="LumpedPlan"/>): what it is, its interconnect,
+    /// and each site's value from the closed forms at F, at the span its pins are apart.</summary>
+    private (string Text, string Note) LumpedReadout(SymbolKind kind)
+    {
+        string note = "";
+        double? f = kind == SymbolKind.Mrpad ? 0.0 : Spec("F"), db = kind == SymbolKind.Mrpad ? Spec("Attenuation", 6.0) : 0.0;
+        if (Spec("Z0") is not { } z0 || f is not { } fHz || db is not { } loss || SiteGap(ref note) is not { } gap
+            || Spec("K", 1.0) is not { } k || Spec("N", 1.0) is not { } n || (kind == SymbolKind.Mcbl ? Spec("ZL") : 0.0) is not { } zl)
+            return ("", "A spec is an expression, so the part's values are known only at run time.");
+        var (h, t, er) = ResolveMlinSubstrate();
+        var s = new MicrostripSubstrate(h, t, er, 0.0, 0.0);
+        try
+        {
+            var form = Word("Form", ResistivePadForm.Pi);
+            var d = kind switch
+            {
+                SymbolKind.Mrpad => LumpedPlan.ResistivePad(form, z0, loss, gap, s),
+                SymbolKind.Mwpd => LumpedPlan.Wilkinson(z0, fHz, gap, s, Word("Arm", LumpedArm.Pi), k, n),
+                SymbolKind.Mblc => LumpedPlan.BranchLine(z0, fHz, gap, s, n),
+                SymbolKind.Mrrc => LumpedPlan.RatRace(z0, fHz, gap, s),
+                _ => LumpedPlan.LatticeBalun(z0, zl, fHz, gap, s),
+            };
+            string what = kind != SymbolKind.Mrpad ? $"Lumped ({d.Topology.Label}), the values at F"
+                : form is ResistivePadForm.Wye or ResistivePadForm.Delta ? $"{form} splitter, 6.02 dB between any two ports"
+                : $"{form} attenuator, {loss.ToString("0.###", CultureInfo.InvariantCulture)} dB";
+            return ($"{what}\nInterconnect W {Mm(d.WMeters, "0.#####")} (Z0), each arm {Mm(d.ArmMeters, "0.#####")} from its junction"
+                  + Sites(d.Plan), note);
+        }
+        catch (ParameterRefusalException ex)
+        {
+            return ("", ex.Message);
+        }
+    }
 
     /// <summary>The ring's radius, or with corners each arm's straight runs: shortened by the corners' own length at F.</summary>
     private static string Ring(WilkinsonDesign d)
