@@ -630,7 +630,8 @@
                         <ComboBox Grid.Column="0" Width="162" Padding="6,3"
                                   ItemsSource="{Binding ViewModel.AvailableDataSources}"
                                   SelectedItem="{Binding ViewModel.SelectedDataSourceItem, Mode=TwoWay}"
-                                  ToolTip.Tip="{Binding ViewModel.SelectedDataSourceAbs}">
+                                  PlaceholderText="Overlay source"
+                                  ToolTip.Tip="{Binding ViewModel.SourceComboTip}">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate x:DataType="ddv:DataSourceItem">
                                     <TextBlock Text="{Binding DisplayName}"/>

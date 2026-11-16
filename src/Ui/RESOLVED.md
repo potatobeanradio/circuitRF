@@ -42378,3 +42378,12 @@ Findings:
 - **The Phased Array tool's Channel tab labelled `Drop=drop` as drop 1.** The written drop came from parsing the override's text,
   which a variable does not parse as; it is the elaborated channel's Drop now, so the slider and the status line name the drop
   whose rays the tab shows.
+
+## A torn-off window kept a renamed document's old name (2026-11-16)
+
+Reported on a `.csmith` saved in a torn-off window; every document type had it. A torn-off window's title is composed by
+`RefreshFloatingTitles`, which ran only on dock events (dock, move, close, active change) and a 3D view's solve status. A save that
+NAMES a document — an untitled one's first save, any Save As — renames its tab in place (`_baseTitle` + `Title`) with no dock event,
+so the window kept the old name. A plain Save of a named file looked fine because the floating title drops the unsaved mark. The one
+handler every document's `Title` change already reaches (`OnWatchedDocumentPropertyChanged`, which marks the main window) now posts a
+floating-title refresh too. A `CrfHostWindow` cannot be built headlessly, so `FloatingDocumentWindowTests` holds the wiring by source.

@@ -358,6 +358,33 @@ the tab wherever you prefer either way.</p>
 chart's own top strip — Undo and Redo on the keys you already use, tear-off and
 floating, and it is restored when you reopen the workspace. It also needs no workspace at all — a
 scratch chart opens with nothing else loaded, and <strong>Save As</strong> gives it a home later.</p>
+<h3 id="top-strip">The chart's top strip</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>The source combo</strong> (left)</td>
+<td>Chooses the <strong>data the next overlay is drawn from</strong>. Overlays put reference data under your matching network — a transistor's measured S11 or S22, an antenna's measured impedance, a simulated result, a stability circle — so you can see whether the network actually reaches it. <strong>Choosing an entry draws nothing by itself</strong>: the overlay appears when you right-click the chart › <strong>Plot Properties…</strong> › <strong>Add</strong>. What the list holds, and how to get a file into it, is in <a href="#overlays">Overlays and markers</a>.</td>
+</tr>
+<tr>
+<td><strong>Copy</strong></td>
+<td>Puts the chart on the clipboard as PDF, SVG and a bitmap at once.</td>
+</tr>
+<tr>
+<td><strong>Save</strong>, <strong>Save As…</strong></td>
+<td>Write the <code>.csmith</code>.</td>
+</tr>
+<tr>
+<td><strong>Constant Q</strong></td>
+<td>Draws the pair of constant-Q arcs; drag either arc to change Q. See <a href="#q">Constant Q and the swept band</a>.</td>
+</tr>
+</tbody>
+</table>
 <div class="callout note">
 <span class="label">This tool and the Match Designer answer different questions</span>
 <p>Reaching for the wrong one wastes an afternoon, so it is worth being blunt about which is which.</p>
@@ -1393,12 +1420,40 @@ Smith chart on a Data Display</strong>:</p>
 <li>right-click the chart › <strong>Plot Properties…</strong>;</li>
 <li>press <strong>Add</strong>, and edit the trace card that appears.</li>
 </ol>
-<p>The two sources circuitRF already has are both offered:</p>
+<p>The combo only chooses <strong>what the next Add draws</strong>. An overlay already on the chart keeps its own file, so
+changing the combo afterwards moves nothing; pick another source and press <strong>Add</strong> again for a second overlay.</p>
+<p><strong>What the combo lists.</strong> It is the same list a Data Display's source combo shows:</p>
+<table>
+<thead>
+<tr>
+<th>Listed</th>
+<th>Comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Simulation results</strong></td>
+<td>Every run result (<code>.npy</code>) in the workspace's <code>results</code> folder, newest first — an S-parameter, harmonic-balance or EM run, whatever wrote it — and the Monte Carlo, yield, corner and DOE results beside the schematics. With no workspace open, the results of runs in this session.</td>
+</tr>
+<tr>
+<td><strong>Touchstone files</strong></td>
+<td>The <code>.sNp</code> files in the workspace's <strong>Known Files</strong> — drop a file onto the <strong>Project</strong> panel to add one — and any Touchstone this chart has already loaded. A Touchstone that a run wrote is listed only once it is a Known File; the run's own <code>.npy</code> result is listed regardless.</td>
+</tr>
+<tr>
+<td><strong>Loadpull files</strong></td>
+<td>The <code>.spl</code> and <code>.lpcwave</code> files in the workspace's Known Files.</td>
+</tr>
+</tbody>
+</table>
+<p>To use a Touchstone file that is not in the list, without adding it to the workspace, load it from the trace
+card instead: press <strong>Add</strong>, then pick <strong>Add from file…</strong> at the bottom of the <strong>trace card's own source
+list</strong>. That works with no workspace open at all, which is what makes a scratch <code>.csmith</code> a real document,
+and the file joins the combo's list from then on.</p>
+<p>Either way, an overlay is one of the two sources circuitRF already has:</p>
 <ul>
-<li><strong>a Touchstone file</strong>. The combo's <strong>Add from file…</strong> loads one with no workspace open at all,
-which is what makes a scratch <code>.csmith</code> a real document. It is <strong>referenced, never copied into the
-file</strong>, by a path relative to the document — so the pair survives a moved or archived workspace;</li>
-<li><strong>a cube in an open data set</strong>, referenced the way a Data Display trace card references one.</li>
+<li><strong>a Touchstone file</strong>, <strong>referenced, never copied into the <code>.csmith</code></strong>, by a path relative to the document
+— so the pair survives a moved or archived workspace;</li>
+<li><strong>a cube in a data set</strong>, referenced the way a Data Display trace card references one.</li>
 </ul>
 <p>Because it is the ordinary trace card, everything on it is yours: the matrix element, a virtual Z or Y,
 a derived quantity — of which <strong>SourceStabilityCircle</strong> and <strong>LoadStabilityCircle</strong> are drawn as
