@@ -32,6 +32,12 @@ public enum ResonatorForm { Bandpass, Bandstop, Spurline }
 /// <summary>How open loops sit: in a row, or four in a square with resonators 1 and 4 cross-coupled.</summary>
 public enum LoopArrangement { Inline, Cross }
 
+/// <summary>What the circuit couples. <see cref="Pairs"/>: each strip to the one neighbour it is placed against, as an
+/// MCLIN pair of one width. <see cref="Full"/>: every coupled region as one N-line section
+/// (<see cref="PlanCoupledStrips"/>): the pairs with a width per strip, and for hairpins every arm side by side over the
+/// same stretch, a resonator's own two arms included.</summary>
+public enum ResonatorCoupling { Pairs, Full }
+
 /// <summary>
 /// The physical geometry of a coupled-resonator filter, as MCRC stores it: what a filter synthesis produces and the
 /// plan draws (docs/design/rf-passives.md §3.5). Lengths in metres. <see cref="W"/> and <see cref="L"/> hold one value
@@ -42,7 +48,7 @@ public enum LoopArrangement { Inline, Cross }
 public sealed record CoupledResonatorSpec(
     int N, IReadOnlyList<double> W, IReadOnlyList<double> L, IReadOnlyDictionary<int, double> S,
     ResonatorShape Shape, ResonatorProfile Profile, ResonatorFeed Feed, ResonatorForm Form, LoopArrangement Arrangement,
-    double Sa, double Gap, double Tap, double Wc, double Uc, double Sx)
+    double Sa, double Gap, double Tap, double Wc, double Uc, double Sx, ResonatorCoupling Coupling = ResonatorCoupling.Pairs)
 {
     /// <summary>The most resonators a chain takes.</summary>
     public const int MaxN = 20;
@@ -83,7 +89,8 @@ public sealed record CoupledResonatorSpec(
             Named(text("Feed"), ResonatorFeed.Coupled), Named(text("Form"), ResonatorForm.Bandpass),
             Named(text("Arrangement"), LoopArrangement.Inline),
             real("Sa") ?? DefaultSa, real("Gap") ?? DefaultGap, real("Tap") ?? DefaultTap,
-            real("Wc") ?? DefaultWc, real("Uc") ?? DefaultUc, real("Sx") ?? DefaultSx);
+            real("Wc") ?? DefaultWc, real("Uc") ?? DefaultUc, real("Sx") ?? DefaultSx,
+            Named(text("Coupling"), ResonatorCoupling.Pairs));
         spec.Check();
         return spec;
     }
@@ -167,8 +174,10 @@ public sealed record CoupledResonatorSpec(
 /// and Lancaster's coupling coefficients) design with. Left out: a hairpin's own two arms; strips further than the
 /// next one (a resonator two over, the diagonal of the cross-coupled square); the part of a longer neighbour that
 /// runs past the shorter one, which is a plain line; and the corners, which couple to nothing. All of it is in an EM
-/// run of the same artwork. <see cref="Builder.Couple"/> is the one place pairs are made, for the N-strip section to
-/// replace.</para>
+/// run of the same artwork. <see cref="Builder.Couple"/> is the one place pairs are made. With
+/// <see cref="ResonatorCoupling.Full"/> each pair is an N-line section (<see cref="PlanCoupledStrips"/>) of its own two
+/// widths, and a hairpin's arms side by side are one section each stretch (<c>Builder.Group</c>), its own arms
+/// included.</para>
 ///
 /// <para><b>Lengths.</b> L is each resonator's centre-line length from open end to open end, its corners counted along
 /// the centre line (2·arm each, <see cref="PlanBend.Arm"/>); a loop's L is its square's perimeter less Gap, a ring's its
@@ -182,7 +191,8 @@ public static class CoupledResonatorPlan
 
     public static PassivePlan Build(CoupledResonatorSpec spec, MicrostripSubstrate s)
     {
-        var b = new Builder(s);
+        bool full = spec.Coupling == ResonatorCoupling.Full;
+        var b = new Builder(s) { Full = full, Pool = full && spec.Shape == ResonatorShape.Hairpin ? [] : null };
         switch (spec.Form, spec.Shape)
         {
             case (ResonatorForm.Bandstop, _): Bandstop(b, spec); break;
@@ -262,7 +272,7 @@ public static class CoupledResonatorPlan
             if (k == 1 && tapped) pen = b.Tapped(pen, end[1], l[0] / 2.0 - G(p.Tap), feedSide, 1);
             else
             {
-                pen = b.Line(pen, over);
+                pen = b.Strip(pen, over);
                 (pen, first) = b.Run(pen, Coupled(k));
             }
 
@@ -278,7 +288,7 @@ public static class CoupledResonatorPlan
                 case ResonatorShape.Hairpin:
                     double arm = (centre[k - 1] - Fold(k - 1)) / 2.0, across = wk + G(p.Sa) - 2.0 * b.Arm(wc);
                     b.NotShort(across, "U-turn across Sa");
-                    mid = b.Line(b.Corner(b.Line(b.Corner(b.Line(mid, arm), turn), across), turn), arm);
+                    mid = b.Strip(b.Corner(b.Line(b.Corner(b.Strip(mid, arm), turn), across), turn), arm);
                     break;
                 default:
                     mid = b.Line(mid, centre[k - 1]);
@@ -292,7 +302,7 @@ public static class CoupledResonatorPlan
             else
             {
                 (pen, second) = b.Run(pen, Coupled(k + 1));
-                pen = b.Line(pen, end[k] - Coupled(k + 1));
+                pen = b.Strip(pen, end[k] - Coupled(k + 1));
             }
             b.End(pen);
 
@@ -583,7 +593,7 @@ public static class CoupledResonatorPlan
             if (p.Shape == ResonatorShape.Hairpin)
             {
                 b.NotShort(across, "U-turn across Sa");
-                pen = b.Line(b.Corner(b.Line(pen, across), up), coupled);
+                pen = b.Strip(b.Corner(b.Line(pen, across), up), coupled);
             }
             else pen = b.Line(pen, lk - coupled - 2.0 * arm);
             b.End(pen);
@@ -649,6 +659,11 @@ public static class CoupledResonatorPlan
         private int _next = 3;
         public string Context = "";
         public Pen Pin1;
+        /// <summary>Coupling = Full: pairs as N-line sections, unequal widths allowed.</summary>
+        public bool Full;
+        /// <summary>Coupling = Full on hairpins: every straight stretch along the arms, grouped side by side at the end
+        /// (<see cref="Group"/>) rather than paired as it is walked.</summary>
+        public List<Stretch>? Pool;
 
         public int Node() => _next++;
 
@@ -685,6 +700,14 @@ public static class CoupledResonatorPlan
             return Ahead(p, l) with { Node = n };
         }
 
+        /// <summary>A straight stretch along a resonator's coupled direction (an arm, an end, a feed): a line, or with
+        /// <see cref="Pool"/> a stretch held for <see cref="Group"/>.</summary>
+        public Pen Strip(Pen p, double l)
+        {
+            if (Pool is null || l <= 1e-12) return Line(p, l);
+            return Run(p, l).End;
+        }
+
         public Pen Corner(Pen p, int turn)
         {
             int n = Node();
@@ -699,7 +722,9 @@ public static class CoupledResonatorPlan
                 throw CoupledResonatorSpec.Refusal("too-short", "{where} has no length left to couple ({l} m).",
                     ("where", Context), ("l", l));
             int n = endNode ?? Node();
-            return (Ahead(p, l) with { Node = n }, new Stretch(p.Node, n, p.X, p.Y, p.Q, p.W, l));
+            var run = new Stretch(p.Node, n, p.X, p.Y, p.Q, p.W, l);
+            Pool?.Add(run);
+            return (Ahead(p, l) with { Node = n }, run);
         }
 
         /// <summary>A free stretch of <paramref name="len"/> with an MTEE at <paramref name="t"/> along it, its branch
@@ -713,7 +738,7 @@ public static class CoupledResonatorPlan
                   + "couples to nothing; Tap must put it half a width clear of both ends.", ("where", Context), ("t", t),
                     ("len", len));
             double before = t - w / 2.0;
-            p = Line(p, before);
+            p = Strip(p, before);
             int n = Node();
             var far = Ahead(p, w);
             // MTEE's branch leaves to the right of its through line; turned half round, to the left.
@@ -721,7 +746,7 @@ public static class CoupledResonatorPlan
                 ? new PlanTee(w, w, w, w / 2.0, w / 2.0, w, [p.Node, n, pin], p.X, p.Y, 90.0 * p.Q)
                 : new PlanTee(w, w, w, w / 2.0, w / 2.0, w, [n, p.Node, pin], far.X, far.Y, 90.0 * ((p.Q + 2) & 3)));
             if (pin == 1) Pin1 = Aside(Ahead(p, w / 2.0), side, w);
-            return Line(far with { Node = n }, Math.Max(0.0, len - before - w));
+            return Strip(far with { Node = n }, Math.Max(0.0, len - before - w));
         }
 
         /// <summary>An open end where the pen stands.</summary>
@@ -741,17 +766,19 @@ public static class CoupledResonatorPlan
         }
 
         /// <summary>
-        /// Two runs side by side as one MCLIN pair (<see cref="PlanCoupledLine"/>): the run with the other on its right is
-        /// the pair's first strip, the other's end level with its start the second strip's near end. Equal widths and
-        /// lengths, by construction.
+        /// Two runs side by side as one coupled section: the run with the other on its right is its first strip, the
+        /// other's end level with its start the second strip's near end. Pairs: an MCLIN pair (<see cref="PlanCoupledLine"/>),
+        /// so the two take one width. Full: an N-line section of the two (<see cref="PlanCoupledStrips"/>), each strip its
+        /// own width. With <see cref="Pool"/> (Full hairpins) nothing here: <see cref="Group"/> places every stretch.
         ///
-        /// <para>ponytail: the one place pairs are made, and only neighbours are. The N-strip coupled section (a W per
-        /// strip, an S per gap) replaces this: unequal neighbours stop being refused, and the strips beside a pair (a
-        /// hairpin's own other arm, the resonator two over) can join it as one section.</para>
+        /// <para>ponytail: only neighbours. Full adds a hairpin's own arms; strips further over in a straight or zig-zag
+        /// chain, a loop's other neighbours (the cross square's diagonal) and the bandstop's resonators across the through
+        /// line stay out, as listed in docs/design/rf-passives.md.</para>
         /// </summary>
         public void Couple(Stretch a, Stretch b, double gap)
         {
-            if (Math.Abs(a.W - b.W) > 1e-12)
+            if (Pool is not null) return;
+            if (!Full && Math.Abs(a.W - b.W) > 1e-12)
                 throw CoupledResonatorSpec.Refusal("unequal-pair", "two neighbours {wa} m and {wb} m wide are coupled side by "
                   + "side; a pair of unequal strips needs the N-strip coupled section, so give neighbours one W.",
                     ("wa", a.W), ("wb", b.W));
@@ -761,11 +788,65 @@ public static class CoupledResonatorPlan
             bool same = a.Q == b.Q;
             var (nx, ny) = same ? (b.X, b.Y) : (b.X + Dir(b.Q).X * b.L, b.Y + Dir(b.Q).Y * b.L);
             double along = (nx - a.X) * ux + (ny - a.Y) * uy;
-            if (((a.Q - b.Q) & 1) != 0 || Math.Abs(Left(a, b) + a.W + gap) > 2e-9 || Math.Abs(along) > 2e-9
+            if (((a.Q - b.Q) & 1) != 0 || Math.Abs(Left(a, b) + (a.W + b.W) / 2.0 + gap) > 2e-9 || Math.Abs(along) > 2e-9
                 || Math.Abs(a.L - b.L) > 2e-9)
                 throw new InvalidOperationException($"{Context}: the coupled runs do not lie side by side, {gap} m apart.");
-            Sections.Add(new PlanCoupledLine([a.Start, a.End, same ? b.Start : b.End, same ? b.End : b.Start],
-                a.X, a.Y, 90.0 * a.Q, a.W, gap, a.L));
+            int[] nodes = [a.Start, a.End, same ? b.Start : b.End, same ? b.End : b.Start];
+            Sections.Add(Full
+                ? new PlanCoupledStrips(nodes, a.X, a.Y, 90.0 * a.Q, [a.W, b.W], [gap], a.L)
+                : new PlanCoupledLine(nodes, a.X, a.Y, 90.0 * a.Q, a.W, gap, a.L));
+        }
+
+        /// <summary>
+        /// Full coupling for hairpins: every pooled stretch is cut wherever a parallel one starts or ends, and the pieces
+        /// that span the same stretch of the axis are one N-line section, side by side in order across it, the gaps the
+        /// spaces between them; a piece alone is a line. Aligned hairpins come out as one section of every arm (feeds
+        /// included); staggered stepped-impedance ones as a section of every wide end and one of each row's narrow
+        /// arms; a tap's tee cuts the arms beside it, and couples to nothing.
+        /// </summary>
+        private void Group()
+        {
+            static long Nm(double v) => (long)Math.Round(v * 1e9);
+            foreach (int axis in new[] { 0, 1 })
+            {
+                double A(double x, double y) => axis == 0 ? x : y;
+                double C(double x, double y) => axis == 0 ? y : x;
+                var along = Pool!.Where(t => (t.Q & 1) == axis).ToList();
+                var cuts = along.SelectMany(t => new[] { A(t.X, t.Y), A(t.X, t.Y) + (t.Q < 2 ? t.L : -t.L) })
+                    .DistinctBy(Nm).Order().ToList();
+                var pieces = new List<(double Lo, double Hi, double C, double W, int Near, int Far)>();
+                foreach (var t in along)
+                {
+                    bool forward = t.Q < 2;   // heading +x or +y
+                    double lo = forward ? A(t.X, t.Y) : A(t.X, t.Y) - t.L, hi = lo + t.L;
+                    var at = cuts.Where(c => c > lo + 1e-12 && c < hi - 1e-12).ToList();
+                    var points = new List<double> { lo };
+                    points.AddRange(at);
+                    points.Add(hi);
+                    var nodes = new List<int> { forward ? t.Start : t.End };
+                    nodes.AddRange(at.Select(_ => Node()));
+                    nodes.Add(forward ? t.End : t.Start);
+                    for (int i = 0; i + 1 < points.Count; i++)
+                        pieces.Add((points[i], points[i + 1], C(t.X, t.Y), t.W, nodes[i], nodes[i + 1]));
+                }
+                // Strips stack to the right of the section's heading: +x heads with the top strip first, +y with the left.
+                foreach (var g in pieces.GroupBy(x => (Nm(x.Lo), Nm(x.Hi))))
+                {
+                    var row = (axis == 0 ? g.OrderByDescending(x => x.C) : g.OrderBy(x => x.C)).ToList();
+                    var first = row[0];
+                    double px = axis == 0 ? first.Lo : first.C, py = axis == 0 ? first.C : first.Lo, rot = 90.0 * axis;
+                    if (row.Count == 1)
+                    {
+                        Sections.Add(new PlanLine([first.Near, first.Far], px, py, rot, first.W, first.Hi - first.Lo));
+                        continue;
+                    }
+                    var gaps = row.Zip(row.Skip(1), (u, v) => Math.Abs(v.C - u.C) - (u.W + v.W) / 2.0).ToList();
+                    if (gaps.Any(x => x <= 1e-12))
+                        throw new InvalidOperationException($"Coupled strips overlap: gaps {string.Join(", ", gaps)} m.");
+                    Sections.Add(new PlanCoupledStrips([.. row.SelectMany(x => new[] { x.Near, x.Far })], px, py, rot,
+                        [.. row.Select(x => x.W)], gaps, first.Hi - first.Lo));
+                }
+            }
         }
 
         /// <summary>The plan, its open ends numbered first of the internal nodes (eliminated last: a resonator's end has a
@@ -773,6 +854,7 @@ public static class CoupledResonatorPlan
         /// origin.</summary>
         public PassivePlan Plan()
         {
+            if (Pool is not null) Group();
             var map = new int[_next];
             map[1] = 1;
             map[2] = 2;

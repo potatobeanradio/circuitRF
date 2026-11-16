@@ -1671,8 +1671,8 @@ public static partial class SchematicLayoutPlanner
                 continue;
             }
 
-            // A coupled-resonator filter's Shape, Profile, Feed, Form and Arrangement are words for its generator.
-            if (comp.Symbol == SymbolKind.Mcrc && p.Name is "Shape" or "Profile" or "Feed" or "Form" or "Arrangement")
+            // A coupled-resonator filter's Shape, Profile, Feed, Form, Arrangement and Coupling are words for its generator.
+            if (comp.Symbol == SymbolKind.Mcrc && p.Name is "Shape" or "Profile" or "Feed" or "Form" or "Arrangement" or "Coupling")
             {
                 if (p.Expression.Trim() is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
                 continue;

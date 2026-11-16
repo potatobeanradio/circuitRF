@@ -396,8 +396,8 @@ public class CoupledResonatorSParamTests(ITestOutputHelper output)
 
     // ══ The composite is its sections ════════════════════════════════════════════════════════════════════════════
 
-    /// <summary>The plan's own sections as ordinary instances at <paramref name="f"/>: MLIN, MCLIN, MMITER, MCURVE, MTEE
-    /// and MGAP, and an open end as its capacitance there.</summary>
+    /// <summary>The plan's own sections as ordinary instances at <paramref name="f"/>: MLIN, MCLIN, MCLINN, MMITER, MCURVE,
+    /// MTEE and MGAP, and an open end as its capacitance there.</summary>
     private static ElaboratedNetlist ByHand(PassivePlan plan, double f)
     {
         string Node(int n) => n <= 2 ? $"p{n}" : $"i{n}";
@@ -411,6 +411,9 @@ public class CoupledResonatorSParamTests(ITestOutputHelper output)
                 PlanTee t => $"MTEE:T{++k} {nodes} W1={F(t.W1)} W2={F(t.W2)} W3={F(t.W3)} L1={F(t.L1)} L2={F(t.L2)} L3={F(t.L3)} {Sub}",
                 PlanLine l => $"MLIN:L{++k} {nodes} W={F(l.W)} L={F(l.L)} {Sub}",
                 PlanCoupledLine c => $"MCLIN:M{++k} {nodes} W={F(c.W)} S={F(c.S)} L={F(c.L)} {Sub}",
+                PlanCoupledStrips m => $"MCLINN:K{++k} {string.Join(" ", m.ModelNodes.Select(Node))} N={m.W.Count} " +
+                    string.Join(" ", m.W.Select((x, j) => $"W[{j + 1}]={F(x)}")) + " " +
+                    string.Join(" ", m.S.Select((x, j) => $"S[{j + 1}]={F(x)}")) + $" L={F(m.L)} {Sub}",
                 PlanCurve c => $"MCURVE:C{++k} {nodes} W={F(c.W)} Angle={F(c.AngleDeg)} deg Radius={F(c.Radius)} {Sub}",
                 PlanBend { M: { } m } bend => $"MMITER:B{++k} {nodes} W={F(bend.W)} Angle={F(bend.AngleDeg)} deg M={F(m)} {Sub}",
                 PlanGap g => $"MGAP:G{++k} {nodes} W={F(g.W)} S={F(g.S)} {Sub}",
@@ -467,5 +470,91 @@ public class CoupledResonatorSParamTests(ITestOutputHelper output)
                 for (int j = 0; j < 2; j++)
                     Assert.True((a[i, j] - b[i, j]).Magnitude < 1e-9, $"S{i + 1}{j + 1} at {f / 1e9} GHz: {a[i, j]} vs {b[i, j]}");
         }
+    }
+
+    // ══ Coupling = Full: every coupled region one N-line section ═══════════════════════════════════════════════════
+
+    /// <summary>Coupling = Full, each placed as N-line sections (MCLINN) and the rest as before, is those sections wired by
+    /// hand: a hairpin's arms all in one, a stepped-impedance tapped hairpin's ends and narrow arms in several, a
+    /// straight chain's unequal pair, a hairpin bandstop's line and two arms.</summary>
+    [Theory]
+    [InlineData("Hairpin")]
+    [InlineData("HairpinSirTapped")]
+    [InlineData("StraightUnequal")]
+    [InlineData("BandstopHairpin")]
+    public void FullCoupling_IsItsSectionsWiredByHand(string which)
+    {
+        var plan = CoupledResonatorPlan.Build(FullSample(which), Board);
+        Assert.NotEmpty(plan.Sections.OfType<PlanCoupledStrips>());
+        foreach (double f in new[] { 1.3e9, 2.25e9, 3.7e9 })
+        {
+            var (a, b) = (SAt(AsPart(plan), f), SAt(ByHand(plan, f), f));
+            for (int i = 0; i < 2; i++)
+                for (int j = 0; j < 2; j++)
+                    Assert.True((a[i, j] - b[i, j]).Magnitude < 1e-9, $"S{i + 1}{j + 1} at {f / 1e9} GHz: {a[i, j]} vs {b[i, j]}");
+        }
+    }
+
+    private static CoupledResonatorSpec FullSample(string which)
+    {
+        var (w, l, s) = Cohn(3, 0.5, 0.1);
+        (string, object)[] common = [("N", 3.0), ("W", w), ("L", l), ("Sa", 2.0 * w), ("Coupling", "Full"), .. Gaps(s, 1, 4)];
+        return which switch
+        {
+            "Hairpin" => Spec([.. common, ("Shape", "Hairpin")]),
+            "HairpinSirTapped" => Spec([.. common, ("Shape", "Hairpin"), ("Profile", "SIR"), ("Wc", 0.5e-3), ("Uc", 0.4),
+                ("Feed", "Tapped"), ("Tap", 9e-3)]),
+            "StraightUnequal" => Spec([.. common, ("Profile", "SIR"), ("Wc", 0.5e-3), ("Uc", 0.3), ("W2", 0.8e-3)]),
+            _ => Spec([.. common, ("Shape", "Hairpin"), ("Form", "Bandstop")]),
+        };
+    }
+
+    /// <summary>
+    /// Full against Pairs on Cohn's hairpin design: with the arms Sa = 4·W apart a hairpin's own arms barely couple, and
+    /// the two land together (the N-line model is quasi-static and MCLIN dispersive, which with the arms' weak coupling
+    /// is what is left between them); with the arms Sa = W/2 apart, as tight as the U's corners allow, the arms' own
+    /// coupling, which Pairs leaves out, moves the band. Both differences are reported.
+    /// </summary>
+    [Fact]
+    public void FullCoupling_AgreesWithPairsForWideArms_AndDepartsForTightOnes()
+    {
+        const int n = 3;
+        const double ripple = 0.5, fbw = 0.1;
+        var (w, l, s) = Cohn(n, ripple, fbw);
+        l = PassivePlan.OnGrid(l + 2.0 * CornerExcess(w));
+        (double Centre, double Bw) Band(double sa, string coupling)
+        {
+            var plan = CoupledResonatorPlan.Build(Spec([("N", (double)n), ("W", w), ("L", l), ("Shape", "Hairpin"), ("Sa", sa),
+                ("Coupling", coupling), .. Gaps(s, 1, n + 1)]), Board);
+            var (f1, f2) = RippleEdges(plan, 3.0, 0.75 * F0, 1.25 * F0);
+            return ((f1 + f2) / 2.0, f2 - f1);
+        }
+        var diffs = new Dictionary<string, (double Centre, double Bw)>();
+        foreach (var (name, sa) in new[] { ("wide", PassivePlan.OnGrid(4.0 * w)), ("tight", PassivePlan.OnGrid(w / 2.0)) })
+        {
+            var (pc, pb) = Band(sa, "Pairs");
+            var (fc, fb) = Band(sa, "Full");
+            diffs[name] = (fc / pc - 1.0, fb / pb - 1.0);
+            output.WriteLine($"{name} arms (Sa {sa * 1e3:F3} mm): 3 dB band Pairs {pc / 1e9:F4} GHz / {pb / 1e6:F1} MHz, " +
+                             $"Full {fc / 1e9:F4} GHz / {fb / 1e6:F1} MHz: centre {diffs[name].Centre:P2}, bandwidth {diffs[name].Bw:P1}");
+        }
+        Assert.InRange(Math.Abs(diffs["wide"].Centre), 0.0, 0.01);
+        Assert.InRange(Math.Abs(diffs["wide"].Bw), 0.0, 0.10);
+        Assert.True(Math.Abs(diffs["tight"].Centre) + Math.Abs(diffs["tight"].Bw) > Math.Abs(diffs["wide"].Centre) + Math.Abs(diffs["wide"].Bw),
+            "tight arms should depart further from Pairs than wide ones");
+    }
+
+    /// <summary>A stepped-impedance straight chain whose middle resonator is narrower than its neighbours, refused as
+    /// MCLIN pairs, builds under Full and passes near its design's band.</summary>
+    [Fact]
+    public void AnUnequalWidthChain_RunsUnderFullCoupling()
+    {
+        var plan = CoupledResonatorPlan.Build(FullSample("StraightUnequal"), Board);
+        var nl = AsPart(plan);
+        var f = Enumerable.Range(0, 201).Select(i => F0 * (0.7 + 0.6 * i / 200.0)).ToArray();
+        var db = S21Db(nl, f);
+        output.WriteLine($"unequal SIR chain: |S21| peaks {db.Max():F2} dB at {f[Array.IndexOf(db, db.Max())] / 1e9:F4} GHz");
+        Assert.All(db, x => Assert.True(double.IsFinite(x)));
+        Assert.True(db.Max() > -3.0, $"|S21| peaks at {db.Max()} dB");
     }
 }

@@ -11,6 +11,7 @@ using ResonatorProfile = CircuitRF.Core.Devices.Microstrip.ResonatorProfile;
 using ResonatorFeed = CircuitRF.Core.Devices.Microstrip.ResonatorFeed;
 using ResonatorForm = CircuitRF.Core.Devices.Microstrip.ResonatorForm;
 using LoopArrangement = CircuitRF.Core.Devices.Microstrip.LoopArrangement;
+using ResonatorCoupling = CircuitRF.Core.Devices.Microstrip.ResonatorCoupling;
 using LadderPlan = CircuitRF.Core.Devices.Microstrip.LadderPlan;
 
 using CircuitRF.Design.Cells;
@@ -1883,6 +1884,10 @@ public static class ComponentTypeRegistry
         (SymbolKind.Mcrc, "Wc") => "SIR: the width of each resonator's centre section.",
         (SymbolKind.Mcrc, "Uc") => "SIR: the centre section's share of each resonator's length, between 0 and 1.",
         (SymbolKind.Mcrc, "Sx") => "Cross-coupled open loops: the gap between loops 1 and 4.",
+        (SymbolKind.Mcrc, "Coupling") => "Pairs: each strip coupled to the neighbour it lies against, an MCLIN pair of one "
+                                + "width. Full: every coupled region as one N-line section (MCLINN's model): the pairs with "
+                                + "a width each, so neighbours may differ, and for hairpins every arm side by side, a "
+                                + "resonator's own two arms included.",
         (SymbolKind.Mlad, "Sections") => "The ladder, pin 1 to pin 2: sections separated by ';', each kind(field=value, …). "
                                  + "line(W, L); gap(S), at the width there; taper(W1, W2, L); stub(W, L, end=open|short, "
                                  + "side=up|down|both), L from the through line's edge. Lengths in metres or with mm, um, mil. "
@@ -2026,7 +2031,9 @@ public static class ComponentTypeRegistry
             "The plan's MCLIN pairs, MLIN lines, MMITER corners, MCURVEs, MTEE taps and MGAPs stamped together, with "
           + "each free end's open-end capacitance. Each strip couples only to the neighbour it is placed against: a "
           + "hairpin's own arms, strips further over and the corners are uncoupled (an EM run of the artwork has them). "
-          + "Kirschning-Jansen's range applies to every coupled pair; a width step has no step model.",
+          + "Kirschning-Jansen's range applies to every coupled pair; a width step has no step model. Coupling = Full "
+          + "stamps each coupled region through the N-line model instead (quasi-static, no dispersion): pairs of any "
+          + "widths, and a hairpin's arms all coupled to one another.",
         SymbolKind.Mcbl =>
             "Two MCLIN quarter-wave sections and the MLIN joining them, stamped together. The coupling matches ZL on "
           + "each output to Z0 for TEM lines; microstrip's unequal mode velocities leave the outputs about 16° short of "
@@ -4329,6 +4336,7 @@ public static class ComponentTypeRegistry
                         new("Wc",  "0.4", "mm", false, UnitDimension.Length),
                         new("Uc",  "0.3", "",   false, UnitDimension.None),
                         new("Sx",  "0.5", "mm", false, UnitDimension.Length),
+                        new("Coupling", nameof(ResonatorCoupling.Pairs), "", false, UnitDimension.None),
                         .. SignalGroundLayerParams];
             case SymbolKind.GsgPad:
                 return [new("W",     "2.9", "mm", true, UnitDimension.Length),
@@ -4920,6 +4928,7 @@ public static class ComponentTypeRegistry
         (SymbolKind.Mcrc, "Feed")                                                        => Enum.GetNames<ResonatorFeed>(),
         (SymbolKind.Mcrc, "Form")                                                        => Enum.GetNames<ResonatorForm>(),
         (SymbolKind.Mcrc, "Arrangement")                                                 => Enum.GetNames<LoopArrangement>(),
+        (SymbolKind.Mcrc, "Coupling")                                                    => Enum.GetNames<ResonatorCoupling>(),
         // A composed FET's instance switches (brief-modelcomposer-21): yes or no. A switch bound to an expression keeps a
         // text box (ParameterRowViewModel), since a picker cannot hold one.
         (SymbolKind.ComposedFET, _) when ComposedSwitches.IsSwitch(paramName)                => ComposedSwitchOptions,
