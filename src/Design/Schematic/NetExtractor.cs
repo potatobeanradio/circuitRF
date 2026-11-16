@@ -3772,6 +3772,13 @@ public static class NetExtractor
                 : substrateOverrides);
             if (warning is not null)
                 warningsOut?.Add($"{comp.InstanceName}: {warning}");
+
+            // A planned passive's Footprint sets its site span (Gap), here with the substrate, so the run, LVS and a
+            // netlist written from this read the span the land pattern gives.
+            MicrostripSubstrateInjection.ApplySiteFootprint(overrides2, comp.Symbol, model.SchematicDirectory, microstripTech,
+                out var siteWarning);
+            if (siteWarning is not null)
+                warningsOut?.Add($"{comp.InstanceName}: {siteWarning}");
         }
 
         // brief-artsch-1: CPWG and SLIN, by PlanarLineSubstrateInjection's rule. A SLIN the technology cannot

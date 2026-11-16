@@ -196,6 +196,7 @@ public static class LvsFindingIds
         // drawing never said were several — and grouping it with the merge lines is where a reader
         // chasing a device count will look for it.
         "lvs.property.mismatch",
+        "lvs.property.site-footprint",
         "lvs.property.derived-differs",
         "lvs.property.unread-differs",
         "lvs.property.layout-silent",

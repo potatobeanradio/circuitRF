@@ -17,8 +17,9 @@ public partial class ParameterEditorViewModel
     private (string Text, string Note) CoupledLineReadout(SymbolKind kind)
     {
         double? spec = kind == SymbolKind.Mcbl ? Spec("ZL") : Spec("Coupling");
+        string note = "";
         if (spec is not { } c || Spec("Z0") is not { } z0 || Spec("F") is not { } f
-            || (kind == SymbolKind.Mcbl ? Spec("Gap") : 0.0) is not { } gap)
+            || (kind == SymbolKind.Mcbl ? SiteGap(ref note) : 0.0) is not { } gap)
             return ("", "A spec is an expression, so the part's dimensions are known only at run time.");
         var (h, t, er) = ResolveMlinSubstrate();
         var s = new MicrostripSubstrate(h, t, er, 0.0, 0.0);
@@ -32,13 +33,13 @@ public partial class ParameterEditorViewModel
                 SymbolKind.Midc => LangePlan.Build(c, z0, f, s) is var d
                     ? $"{d.Fingers} fingers: " + Geometry(d.WMeters, d.SMeters, d.LengthMeters, d.Modes) + "\n"
                     + "Adjacent pair " + Modes(d.Modes.Ze, d.Modes.Zo) + "\n"
-                    + "Coupler (Ou) " + Modes(d.Ze, d.Zo) + "\nA jumper from each pin k to Jk joins the fingers"
+                    + "Coupler (Ou) " + Modes(d.Ze, d.Zo) + Sites(d.Plan)
                     : "",
                 _ => MarchandBalunPlan.Build(z0, c, f, gap, s) is var d
                     ? "Each section: " + Geometry(d.WMeters, d.SMeters, d.LengthMeters, d.Modes) + "\n"
-                    + Modes(d.Modes.Ze, d.Modes.Zo) + "\nA via to ground on G2 and on G3"
+                    + Modes(d.Modes.Ze, d.Modes.Zo) + Sites(d.Plan)
                     : "",
-            }, "");
+            }, note);
         }
         catch (ParameterRefusalException ex)
         {

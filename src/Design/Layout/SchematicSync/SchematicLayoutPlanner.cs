@@ -1763,6 +1763,18 @@ public static partial class SchematicLayoutPlanner
             resolved.Remove("F");
         }
 
+        // A planned passive's Footprint sets its site span (Gap) here exactly as extraction sets it for the run
+        // (MicrostripSubstrateInjection.ApplySiteFootprint), so the copper's gap is the land pattern's span and LVS compares
+        // equal Gaps on both sides.
+        if (MicrostripSubstrateInjection.HasSiteFootprint(comp.Symbol))
+        {
+            string? siteFootprint = comp.Parameters.FirstOrDefault(p => ArtworkParameters.IsArtworkOnly(p.Name))?.Expression;
+            if (MicrostripSubstrateInjection.SiteSpanMeters(siteFootprint, schematicDir, technology, out string? siteRefusal) is { } span)
+                resolved[MicrostripSubstrateInjection.SiteSpanParameter] = span;
+            else if (siteRefusal is not null)
+                (paramNotes ??= []).Add($"Footprint: {siteRefusal}; Gap is used as stated");
+        }
+
         string cellDir;
         try
         {
@@ -1944,7 +1956,7 @@ public static partial class SchematicLayoutPlanner
     /// primary instead would put different artwork on the board than the one the user pointed at,
     /// which is precisely the silent substitution the density suffix exists to make visible.</para>
     /// </summary>
-    private static bool ResolveFootprintPath(
+    internal static bool ResolveFootprintPath(
         string footprint, string schematicDir, out string cellAbsDir, out string? refusal)
     {
         cellAbsDir = "";

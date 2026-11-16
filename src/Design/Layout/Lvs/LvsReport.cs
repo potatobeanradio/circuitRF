@@ -328,6 +328,17 @@ internal static class LvsReport
                     return LvsMarker.Of(diagnostic, objects, BoundsOfDevice(device));
                 }
 
+                // A site part with another footprint than its passive's: both parts, and the site part's pads where the
+                // comparison placed it.
+                case "lvs.property.site-footprint":
+                {
+                    int part = Schematic(Text(diagnostic, "part"));
+                    var objects = new List<string>(Group(schematic, Schematic(Text(diagnostic, "passive"))));
+                    objects.AddRange(Group(schematic, part));
+                    var box = part >= 0 && _layoutOfSchematic.TryGetValue(part, out int placed) ? BoundsOfDevice(placed) : Bbox.Empty;
+                    return LvsMarker.Of(diagnostic, objects, box);
+                }
+
                 // R-lvs9-3b. The CONTACT itself, at the coordinate the extraction measured — not
                 // the module's pads, which are the one part of it that is declared and correct.
                 // The box is the contact's own extent where it has one, and a small square where

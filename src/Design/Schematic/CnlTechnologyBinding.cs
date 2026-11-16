@@ -88,8 +88,25 @@ public static class CnlTechnologyBinding
     private static void BindAll(List<Instance> instances, Context context)
     {
         for (int i = 0; i < instances.Count; i++)
-            if (BindOne(instances[i], context) is { } bound)
+        {
+            var spanned = SiteSpan(instances[i], context);
+            if ((BindOne(spanned ?? instances[i], context) ?? spanned) is { } bound)
                 instances[i] = bound;
+        }
+    }
+
+    /// <summary>A planned passive's <c>Footprint</c> sets its site span (Gap), as a schematic's extraction sets it
+    /// (<see cref="MicrostripSubstrateInjection.ApplySiteFootprint"/>), against this netlist's folder and technology; null
+    /// for every other instance and for one stating no footprint.</summary>
+    private static Instance? SiteSpan(Instance inst, Context context)
+    {
+        if (context.CellNames.Contains(inst.Reference) || !ComponentTypeRegistry.TryParseCode(inst.Reference, out var kind, out _)
+            || !MicrostripSubstrateInjection.HasSiteFootprint(kind) || !inst.Overrides.Any(o => ArtworkParameters.IsArtworkOnly(o.Name)))
+            return null;
+        var overrides = inst.Overrides.ToList();
+        MicrostripSubstrateInjection.ApplySiteFootprint(overrides, kind, context.Directory, context.Technology, out var warning);
+        if (warning is not null) context.Tb.ReadWarnings.Add($"{inst.Reference}:{inst.InstanceName}: {warning}");
+        return Rebuilt(inst, overrides);
     }
 
     /// <summary>The instance with its substrate bound, or null when it is not one this applies to or
@@ -344,8 +361,9 @@ public static class CnlTechnologyBinding
 
         public HashSet<string> CellNames { get; } = cellNames;
         public TestBench Tb { get; } = tb;
+        public string? Directory { get; } = directory;
 
-        public SchematicTechResolution Resolution => _resolution ??= SchematicTechnology.Resolve(directory, Tb.Technology);
+        public SchematicTechResolution Resolution => _resolution ??= SchematicTechnology.Resolve(Directory, Tb.Technology);
 
         public Technology? Technology => Resolution.Technology;
 
