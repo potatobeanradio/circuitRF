@@ -4,15 +4,16 @@ namespace CircuitRF.Core.Devices.Microstrip;
 
 /// <summary>
 /// A dense nodal admittance block on local nodes 1..N (0 is ground, dropped as the engine's own matrix
-/// drops it). Only the admittance groups are meaningful here: nothing assembled into it allocates a
-/// branch. Shared by a junction's arms (<see cref="JunctionArms"/>) and the planned passives
+/// drops it). A section whose model stamps in branch form (MBEND's Z block) gets each branch as a row and
+/// column after the nodes, eliminated first with the internal nodes; sources mean nothing here. Shared by a junction's arms (<see cref="JunctionArms"/>) and the planned passives
 /// (<see cref="MicrostripPlanModel"/>): each assembles its sections here, eliminates the internal nodes
 /// and stamps the pins' block alone.
 /// </summary>
 internal sealed class LocalAdmittanceBlock(int size) : IMnaContext
 {
-    private readonly Complex[,] _y = new Complex[size, size];
+    private Complex[,] _y = new Complex[size, size];
     private int _size = size;
+    private readonly int _nodes = size;
 
     public Complex this[int r, int c] => _y[r, c];
 
@@ -37,6 +38,10 @@ internal sealed class LocalAdmittanceBlock(int size) : IMnaContext
         for (int k = _size - 1; k >= keep; k--)
         {
             var pivot = _y[k, k];
+            // ponytail: no pivoting. A branch with no impedance of its own (an ideal short or source) has a zero
+            // here; refuse it rather than divide by it, and pivot if a model ever needs one.
+            if (k >= _nodes && pivot == Complex.Zero)
+                throw new NotSupportedException("A branch with no impedance of its own cannot be reduced in a local block.");
             for (int i = 0; i < k; i++)
             {
                 if (_y[i, k] == Complex.Zero) continue;
@@ -59,14 +64,29 @@ internal sealed class LocalAdmittanceBlock(int size) : IMnaContext
                 mna.AddBlockAdmittance(pins[r], pins[c], _y[r, c]);
     }
 
-    public int AddBranch() => throw Unsupported();
-    public void AddBranchCurrent(int branch, int nodeFrom, int nodeTo) => throw Unsupported();
-    public void AddConstraint(int branch, int node, Complex coeff) => throw Unsupported();
-    public void AddNodeBranchCoupling(int node, int branch, Complex coeff) => throw Unsupported();
-    public void AddBranchConstraint(int branch, int otherBranch, Complex coeff) => throw Unsupported();
+    /// <summary>Grows the block by one row and column; the returned index is that row's, after the nodes'.</summary>
+    public int AddBranch()
+    {
+        var grown = new Complex[_size + 1, _size + 1];
+        for (int r = 0; r < _size; r++)
+            for (int c = 0; c < _size; c++)
+                grown[r, c] = _y[r, c];
+        _y = grown;
+        return _size++;
+    }
+
+    public void AddBranchCurrent(int branch, int nodeFrom, int nodeTo)
+    {
+        if (nodeFrom > 0) _y[nodeFrom - 1, branch] += 1;
+        if (nodeTo > 0) _y[nodeTo - 1, branch] -= 1;
+    }
+
+    public void AddConstraint(int branch, int node, Complex coeff) { if (node > 0) _y[branch, node - 1] += coeff; }
+    public void AddNodeBranchCoupling(int node, int branch, Complex coeff) { if (node > 0) _y[node - 1, branch] += coeff; }
+    public void AddBranchConstraint(int branch, int otherBranch, Complex coeff) => _y[branch, otherBranch] += coeff;
     public void AddCurrentInjection(int node, Complex j) => throw Unsupported();
     public void AddSourceValue(int branch, Complex value) => throw Unsupported();
 
     private static NotSupportedException Unsupported()
-        => new("A local admittance block holds admittances only.");
+        => new("A local admittance block holds no sources.");
 }
