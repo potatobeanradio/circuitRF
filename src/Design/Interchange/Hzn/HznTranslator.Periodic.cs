@@ -28,7 +28,7 @@ internal sealed partial class HznTranslator
         foreach (string hz in b.Objects)
         {
             string c3d = _c3dName.GetValueOrDefault(hz, hz);
-            if (_sheets.TryGetValue(hz, out var geom) && !geom.Placed && geom.Angle == 0 && geom.Corners is null)
+            if (_sheets.TryGetValue(hz, out var geom) && !geom.Placed && geom.Angle == 0 && geom.Corners is null && !geom.Disc)
             {
                 if (SheetFace(c3d, geom) is not { } face)
                 {
@@ -155,7 +155,7 @@ internal sealed partial class HznTranslator
 
         string? face = null;
         string? sheetObject = null;
-        if (x.Objects.Count == 1 && x.Faces.Count == 0 && _sheets.TryGetValue(x.Objects[0], out var geom) && !geom.Placed && geom.Angle == 0 && geom.Corners is null)
+        if (x.Objects.Count == 1 && x.Faces.Count == 0 && _sheets.TryGetValue(x.Objects[0], out var geom) && !geom.Placed && geom.Angle == 0 && geom.Corners is null && !geom.Disc)
         {
             sheetObject = x.Objects[0];
             face = SheetFace(_c3dName.GetValueOrDefault(sheetObject, sheetObject), geom);

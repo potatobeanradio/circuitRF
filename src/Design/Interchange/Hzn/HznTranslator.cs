@@ -69,6 +69,7 @@ internal sealed partial class HznTranslator
         Resolve();
         Ports();
         Holes();
+        Outside();                  // brief-hzn-19 — after the holes, which fill their own part of the box
         Boundaries();
         Setups();
         MaterialsToTechnology();
@@ -379,6 +380,10 @@ internal sealed partial class HznTranslator
 
         /// <summary>brief-hzn-17 — the points <see cref="Corners"/> came from named variables, which the corners (numbers) do not keep.</summary>
         public bool CornersNamedVariables { get; init; }
+
+        /// <summary>brief-hzn-19 — the sheet is a disc (a circle), and <see cref="Min"/>/<see cref="Size"/> are its bounding square: a wave
+        /// port on a coaxial line's end cap takes it, nothing else does.</summary>
+        public bool Disc { get; init; }
     }
 
     private sealed record Folded(C3dObject Tree, SheetGeom? Sheet, IReadOnlyList<string> Consumed, IReadOnlyList<HznStepOrigin> Steps);
@@ -466,6 +471,72 @@ internal sealed partial class HznTranslator
                            "space, whose walls are perfect conductors: it is kept as a perfect-conductor solid in its place.");
             }
         }
+    }
+
+    /// <summary>The name of the perfect-conductor solid <see cref="Outside"/> adds.</summary>
+    internal const string OutsideName = "hzn_outside";
+
+    /// <summary>
+    /// brief-hzn-19 — in a closed design, what no object fills inside the box round the model is outside Hertzon's solved space, whose
+    /// walls are perfect conductors; circuitRF's air box fills it with air instead. Where the solids do not fill their box (a coaxial
+    /// line's cylinder, whose box has four corners outside it), that space is kept as one perfect-conductor solid: the box less every
+    /// modelled solid. It is hidden, so the model stays in view, and its box is numbers at the variables' values. Solids that tile
+    /// their box (every closed design that opened before this: a waveguide, stacked substrate and air boxes) add nothing.
+    /// </summary>
+    private void Outside()
+    {
+        if (!_closedDomain || _regionName is not null || _autoOpen is not null || _r.Any) return;
+        var solids = _doc.Objects.Where(o => o.Model && o is not C3dPolyline && !C3dSheetBooleans.IsSheet(o)).ToList();
+        // a non-model object (a field-plot plane) never moves the outer extent (brief-hzn-15)
+        if (solids.Count == 0 || Content(modelOnly: true) is not { } all) return;
+        if (Tiles(solids, all)) return;
+        if (_doc.Objects.Any(o => o.Name == OutsideName)) { _r.Add(HznRefusalKind.Setting, $"object name '{OutsideName}'", "circuitRF names the conductor outside a closed design so", DesignName); return; }
+        var (pec, pecRole) = UseMaterial("pec", OutsideName, sheet: false);
+        var box = new C3dBox
+        {
+            Min = new C3dPoint3(all.Min[0], all.Min[1], all.Min[2]),
+            Size = new C3dPoint3(all.Max[0] - all.Min[0], all.Max[1] - all.Min[1], all.Max[2] - all.Min[2]),
+            Material = pec, Role = pecRole,
+        };
+        var tools = solids.Select(o =>
+        {
+            var copy = C3dPersistence.DeserializeObject(C3dPersistence.SerializeObject(o));
+            // an operation's operands are unnamed (the result takes the name), so only a named one is renamed
+            foreach (var d in C3dOperands.SelfAndDescendants(copy).Where(d => !string.IsNullOrEmpty(d.Name))) d.Name = $"{OutsideName}_{d.Name}";
+            // a Subtract that keeps its tools draws its blank AND its tools (a coaxial line's dielectric and its pin): as a cutting tool
+            // it is their union, or the kept tools would be drawn a second time as conductors of their own
+            foreach (var b in C3dOperands.SelfAndDescendants(copy).OfType<C3dBoolean>().Where(b => b.Op == C3dBooleanOp.Subtract && b.KeepTools))
+                (b.Op, b.KeepTools) = (C3dBooleanOp.Unite, false);
+            return copy;
+        }).ToList();
+        _doc.Objects.Add(new C3dBoolean { Name = OutsideName, Op = C3dBooleanOp.Subtract, Blank = box, Tools = tools, Hidden = true });
+        _notes.Add($"This closed design's solids do not fill the box round them, and what they leave is outside Hertzon's solved space, whose walls " +
+                   $"are perfect conductors: it is '{OutsideName}', a hidden perfect-conductor solid (the box less {string.Join(", ", solids.Select(o => $"'{o.Name}'"))}), " +
+                   "its box numbers at the variables' values.");
+    }
+
+    /// <summary>brief-hzn-19 — true when the axis-aligned boxes among <paramref name="solids"/> (a box, or a Subtract from one, whose outer
+    /// shape is that box) cover <paramref name="all"/> exactly, measured on the grid their faces make.</summary>
+    private bool Tiles(IReadOnlyList<C3dObject> solids, Box3 all)
+    {
+        var boxes = new List<Box3>();
+        foreach (var o in solids)
+        {
+            var shape = o;
+            while (shape is C3dBoolean { Op: C3dBooleanOp.Subtract, Blank: { } b }) shape = b;
+            if (shape is C3dBox && Bounds(o) is { } bb) boxes.Add(bb);
+        }
+        if (boxes.Count == 0) return false;
+        var cuts = Enumerable.Range(0, 3).Select(a => boxes.SelectMany(b => new[] { Math.Clamp(b.Min[a], all.Min[a], all.Max[a]), Math.Clamp(b.Max[a], all.Min[a], all.Max[a]) })
+                                                       .Append(all.Min[a]).Append(all.Max[a]).Distinct().Order().ToArray()).ToArray();
+        for (int i = 0; i + 1 < cuts[0].Length; i++)
+            for (int j = 0; j + 1 < cuts[1].Length; j++)
+                for (int k = 0; k + 1 < cuts[2].Length; k++)
+                {
+                    long[] c = [(cuts[0][i] + cuts[0][i + 1]) / 2, (cuts[1][j] + cuts[1][j + 1]) / 2, (cuts[2][k] + cuts[2][k + 1]) / 2];
+                    if (!boxes.Any(b => Enumerable.Range(0, 3).All(a => b.Min[a] <= c[a] && c[a] <= b.Max[a]))) return false;
+                }
+        return true;
     }
 
     /// <summary>Objects whose history could not be folded: assignments on them are skipped, not refused a second time.</summary>
@@ -1298,6 +1369,10 @@ internal sealed partial class HznTranslator
                 PutAll(sheet.Ellipse, nameof(C3dEllipse.Centre), [c.Centre[u], c.Centre[v]]);
                 PutAll(sheet.Ellipse, nameof(C3dEllipse.Radii), [c.Radius, c.RadiusV ?? c.Radius]);
                 st.Root = sheet;
+                // brief-hzn-19 — a circle's bounding square, for a wave port on a coaxial end cap
+                if (c.RadiusV is null)
+                    st.Sheet = new SheetGeom(plane, c.Centre[(int)c.Normal], [Add(c.Centre[u], Neg(c.Radius)), Add(c.Centre[v], Neg(c.Radius))],
+                                             [Scaled(c.Radius, 2), Scaled(c.Radius, 2)], Placed: false) { Disc = true };
                 break;
             }
         }

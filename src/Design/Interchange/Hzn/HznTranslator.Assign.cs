@@ -373,9 +373,19 @@ internal sealed partial class HznTranslator
                        "a port is a rectangle sheet, drawn and not moved or rotated afterwards", name);
                 return;
             }
+            // brief-hzn-19 — a disc is a wave port's sheet only on a coaxial line's end cap in a closed design
+            if (geom.Disc && (!wave || DiscRefusal(geom, hz) is { } notCoax))
+            {
+                _r.Add(HznRefusalKind.Excitation, $"{x.Kind} on '{hz}'",
+                       wave ? DiscRefusal(geom, hz)! : "its sheet is a circle; a lumped port is a rectangle sheet", name);
+                return;
+            }
             sheetObject = hz;
             port.Plane = geom.Plane;
             port.Offset = Dbu(geom.Offset);
+            if (geom.Disc)
+                _notes.Add($"Port '{name}' is the end cap of a coaxial line ('{hz}', a disc); its rectangle is the disc's square, whose corners lie on " +
+                           "the perfect conductor outside the line, so the port is the line's opening.");
             if (geom.Corners is { } drawn)
             {
                 // brief-hzn-15 R-hzn15-3 — a rectangle in a tilted plane: a lumped port drawn as its corners
@@ -441,6 +451,33 @@ internal sealed partial class HznTranslator
             if (k is not ("PortNumber" or "Impedance" or "Renormalize" or "NumberOfModes" or "Deembed" or "DeembedDistance" or "ModeType")
                 && !(k == "RenormImpedance" && z0 != C3dPorts.ModeZ0) && !(terminalPort && k == "ReferenceConductor"))
                 _prov.Unused.Add(new HznUnusedSetting($"port {name}", k, v));
+    }
+
+    /// <summary>
+    /// brief-hzn-19 — why the disc <paramref name="geom"/> (sheet <paramref name="hz"/>) cannot be a wave port, or null when it can: it
+    /// must be in a closed design, lie on the model's outer extent (an air-box face), and be an end cap of a top-level cylinder (or of a
+    /// boolean whose blank is one) of the same axis, centre and radius. The port's rectangle is then the disc's square, and the square's
+    /// corners are outside the cylinder, which in a closed design is perfect conductor (<see cref="Outside"/>), so the region a run keeps
+    /// is the line's opening.
+    /// </summary>
+    private string? DiscRefusal(SheetGeom geom, string hz)
+    {
+        if (!_closedDomain) return "a disc is a wave port only on a coaxial line's end in a closed design (Auto Open off, no region)";
+        var (u, v, n) = Axes(geom.Plane);
+        long r = Dbu(geom.Size[0]) / 2, cu = Dbu(geom.Min[0]) + r, cv = Dbu(geom.Min[1]) + r, at = Dbu(geom.Offset);
+        string self = _c3dName.GetValueOrDefault(hz, hz);
+        if (Content() is not { } all || (at != all.Min[n] && at != all.Max[n]))
+            return "a disc is a wave port only where it lies on the model's outer extent, an air-box face";
+        foreach (var o in _doc.Objects.Where(o => o.Model && o.Name != self))
+        {
+            var shape = o;
+            while (shape is C3dBoolean { Op: C3dBooleanOp.Subtract, Blank: { } b }) shape = b;
+            if (shape is not C3dCylinder c || (int)c.Axis != n || o.Placement.Rotate.Count > 0 || o.Placement.MirrorX || shape.Placement.Rotate.Count > 0) continue;
+            long[] bas = [c.Base.X + o.Placement.Origin.X, c.Base.Y + o.Placement.Origin.Y, c.Base.Z + o.Placement.Origin.Z];
+            if (shape != o) { bas[0] += shape.Placement.Origin.X; bas[1] += shape.Placement.Origin.Y; bas[2] += shape.Placement.Origin.Z; }
+            if (c.Radius == r && bas[u] == cu && bas[v] == cv && (bas[n] == at || bas[n] + c.Length == at)) return null;
+        }
+        return "a disc is a wave port only as the end cap of a cylinder of the same axis, centre and radius (a coaxial line's opening)";
     }
 
     private long Dbu(Dim d) => d.IsLiteral ? d.Dbu : (long)Math.Round(Metres(d) * 1e6 * HznToC3d.DbuPerMicron);
@@ -930,7 +967,7 @@ internal sealed partial class HznTranslator
             _r.Add(HznRefusalKind.Boundary, "Lumped element from a Touchstone file", "a mount from data is not translated", name);
             return;
         }
-        if (b.Objects.Count != 1 || b.Faces.Count != 0 || !_sheets.TryGetValue(b.Objects[0], out var geom) || geom.Placed || geom.Angle != 0)
+        if (b.Objects.Count != 1 || b.Faces.Count != 0 || !_sheets.TryGetValue(b.Objects[0], out var geom) || geom.Placed || geom.Angle != 0 || geom.Disc)
         {
             _r.Add(HznRefusalKind.Boundary, "Lumped RLC not on one drawn sheet", "the element's gap is the rectangle of a sheet", name);
             return;

@@ -1112,6 +1112,26 @@ Census **84 → 88 of 99**: glasses Ex1 and Ex2 run2 (one-sided sheets), `Ex2_Be
 - **Thicken Sheet** is the sweep along the sheet's normal, with Hertzon's documented direction (positive along the main axis,
   Reverse flips it). `BothSides` is refused, because whether its thickness is per side or in total is not established.
 
+### HZN-19 — what lies outside a closed design, and a wave port on a coaxial end cap (2026-11-16)
+
+Census **88 → 89 of 99** (`Coax50`).
+
+- **A closed design's flush air box was right only when boxes fill it.** circuitRF solved what no object fills as air, but Hertzon
+  solves only inside its objects, and the surface of what it solves is perfect conductor. Round a coaxial line's cylinder the box has
+  four corners outside it, which would have been solved as air, making the square box the outer conductor. All 13 closed designs that
+  opened before are filled by boxes, so no earlier result was wrong. `Outside()` now adds a hidden perfect-conductor
+  `hzn_outside` (the box less every modelled solid) when the solids do not tile their box. Tiling is decided exactly, on the grid the
+  boxes' faces make.
+- **A Subtract that keeps its tools has to cut as their union.** The first cut copied the line's dielectric with its kept pin, so
+  the copy drew the pin a second time and the port met three conductors.
+- **Measure the box from modelled objects only** (HZN-15's rule). PlaneWave's field-plot plane lies 0.6 µm outside its box, which
+  briefly gave it an outside and refused it.
+- **A disc wave port is its bounding square.** The EMerge driver already keeps only the part of a port region over meshed space,
+  so the square's corners on `hzn_outside` go with the conductor and the port is the coaxial opening. It resolves as the pin against
+  `hzn_outside`, not as a hollow guide.
+- **Against the analytic line**: |S21| 0.997–0.999 (tan δ predicts 0.997 at 10 GHz), |S11| ≤ 0.046, ∠S21 within 0.9 % of −βL
+  over 1–10 GHz (εeff 2.138 against 2.1, a faceted circle in a first-order mesh). EMerge only; not run on Palace.
+
 ## A run estimated between 100 % and 150 % of memory could not choose to swap (2026-11-05)
 
 Only a Severe verdict (past 150 %) was asked about, and only answering it lifted the ceiling, so a run at 141 % started with its ceiling and was
