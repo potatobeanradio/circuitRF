@@ -613,8 +613,8 @@ public static class FigureCatalog
 
         new("antenna-efficiency-sweep", DocAntennaFixtures.EfficiencySweep, 800, 480,
             WindowFrame.Titled("circuitRF - Data Display"),
-            "Radiation efficiency in decibels across the example's 5.3-6.3 GHz sweep: 22.6 % at the "
-          + "bottom of the band, 69.3 % at its best, and 62.6 % at the 5.85 GHz the worked example "
+            "Radiation efficiency in decibels across the example's 5.3-6.3 GHz sweep: 55.0 % at the "
+          + "bottom of the band, 69.1 % at its best, and 68.4 % at the 5.85 GHz the worked example "
           + "quotes. The two points off the 50 MHz grid are the resonances the resonance search "
           + "added, and the peak is at the upper one of them - the parallel resonance, not the "
           + "series resonance the feed is matched at.",

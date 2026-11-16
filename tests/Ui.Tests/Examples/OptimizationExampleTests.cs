@@ -41,8 +41,12 @@ public sealed class OptimizationExampleTests
         if (cell != "BandpassFilter") return;
         var (model, _, _) = SchematicPersistence.LoadFromFile(Csch(cell));
         var preset = model.Tuning!.Presets.Single(p => p.Name == "Equiripple");
+        // Each value to 12 significant digits with its unit: the optimizer's last digits follow the platform's maths library.
         foreach (var v in r["variables"]!.AsArray())
-            Assert.Equal(v!["best"]!.GetValue<string>(), preset.Values[v["key"]!.GetValue<string>()]);
+            Assert.Equal(Digits12(preset.Values[v!["key"]!.GetValue<string>()]), Digits12(v["best"]!.GetValue<string>()));
+
+        static string Digits12(string t) => System.Text.RegularExpressions.Regex.Replace(t, @"-?\d+\.\d+(?:[eE][-+]?\d+)?", m =>
+            double.Parse(m.Value, System.Globalization.CultureInfo.InvariantCulture).ToString("G12", System.Globalization.CultureInfo.InvariantCulture));
     }
 
     /// <summary>The amplifier as shipped: Rstab rails at the top of its range and the goals are unmet

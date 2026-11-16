@@ -76,7 +76,9 @@ public partial class WorkspaceViewModel
         var items = new ObservableCollection<Control>();
         foreach (var (title, examples) in ExampleWorkspaces.Grouped(Examples))
         {
-            var topic = new MenuItem { Header = title };
+            // The rows go in as a plain list (ItemsSource), not by Items.Add: adding to a MenuItem's own collection subscribes a
+            // change listener, which Avalonia allows only on its dispatcher's thread, and a static list needs no listener.
+            var rows = new List<Control>(examples.Count);
             foreach (var e in examples)
             {
                 var item = new MenuItem
@@ -86,9 +88,9 @@ public partial class WorkspaceViewModel
                     CommandParameter = e.Folder,
                 };
                 ToolTip.SetTip(item, e.Summary);
-                topic.Items.Add(item);
+                rows.Add(item);
             }
-            items.Add(topic);
+            items.Add(new MenuItem { Header = title, ItemsSource = rows });
         }
         return items;
     }

@@ -42363,3 +42363,12 @@ Findings:
   again. Nothing else in a circuit run sets a counted stage, so every other run's row is as it was.
 - UiSnapshot: `--pa-tab channel`, and `--pa-tab channel-busy` for the tab mid-scoring (the immediate host finishes a scoring before any
   frame is captured).
+
+## Two Linux-only defects found by the container run (2026-11-16)
+
+- `MarkdownDocument.FindWorkspaceReadme`: `Directory.EnumerateFiles(dir, "*.md")` matches case-sensitively on Linux, so a
+  `readme.MD` was never listed; now enumerated with `MatchCasing.CaseInsensitive`. Other `"*.ext"` enumerations in `src`
+  have the same property and were left as they are.
+- `WorkspaceViewModel.BuildExampleMenuItems`: `MenuItem.Items.Add` subscribes a change listener, which Avalonia allows only on
+  the dispatcher's thread; each topic's rows now go in as a plain list (`ItemsSource`). The test failed or passed by which
+  thread had touched the dispatcher first.

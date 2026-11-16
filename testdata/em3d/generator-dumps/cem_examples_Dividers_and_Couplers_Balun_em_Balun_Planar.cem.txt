@@ -1,4 +1,43 @@
-refusal Port 1 ('1') at (0, 68.3359 mil) is not on any conductor of this EM setup's signal layers. Move it onto the metal, or check that the artwork it names is on a layer bound to a signal conductor in the technology's stackup.
-note 8 placed instance(s) could not be resolved and contributed no geometry to the EM problem. A cell that does not resolve is invisible to the solver even though its placeholder is drawn in the layout — check the cell reference, or flatten the instance.
+refusal (none)
+note 16 shape(s) came from 8 placed instance(s), flattened into world coordinates for extraction.
+note 17 overlapping conductor shape(s) were merged into 4 — copper that overlaps on one level is one conductor, in 3D as in the planar model.
+note Port 1 ('1') at (0, 68.3359 mil) was taken to be on the conductor's low-x (left) end (the port's own direction), driving current in the +x direction, at 50 Ω.
+note Port 2 ('2') at (971.5862, -85.4524 mil) was taken to be on the conductor's low-y (bottom) end (the port's own direction), driving current in the +y direction, at 50 Ω.
+note Port 3 ('3') at (1094.8333, -85.4524 mil) was taken to be on the conductor's low-y (bottom) end (the port's own direction), driving current in the +y direction, at 50 Ω.
+note Port 1 at its line's end is a vertical lumped sheet 869.522 µm (34.2331 mil) wide and 508 µm (20 mil) tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)': the nearest ground-reference plane with metal under the port.
+note Port 2 at its line's end is a vertical lumped sheet 869.522 µm (34.2331 mil) wide and 508 µm (20 mil) tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)': the nearest ground-reference plane with metal under the port.
+note Port 3 at its line's end is a vertical lumped sheet 869.522 µm (34.2331 mil) wide and 508 µm (20 mil) tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)': the nearest ground-reference plane with metal under the port.
+note Robust meshing removed 6 of 36 outline points that lay within a fraction of a micrometre of the line through their neighbours; no outline moved by more than 9.54098E-12 µm.
+note Via barrels in this EM problem are solid: 'Plated Through-Hole' (Fill Plated, 25 µm wall) is built solid. A hollow barrel's air core changes nothing an RF answer can see and meshes into inverted elements; a thermal problem keeps the wall.
+note The air box's floor is the underside of 'Bottom Copper (1 oz)' at 0 µm, as a PEC face: it is a drawn ground plane with no hole in it, under all the drawn metal, so nothing below it carries field. State the AirBox's ZMin to pad below it instead.
+solid RO4350 RO4350B Dielectric 1 box (-0.013292283400000002,-0.015073574400000001,3.5000000000000004E-05) (0.061973700400000005,0.015073574400000001,0.0005430000000000001)
+solid air Air Air 2 box (-0.013292283400000002,-0.015073574400000001,0.0005430000000000001) (0.061973700400000005,0.015073574400000001,0.0011560000000000001)
+solid Bottom Copper (1 oz)/1 Copper Conductor 3 extrude 0 3.5000000000000004E-05 [0.051221417000000005,0.004710492 -0.00254,0.004710492 -0.00254,-0.004710492 0.051221417000000005,-0.004710492]
+solid Top Copper (1 oz)/1 Copper Conductor 4 extrude 0.0005430000000000001 0.0005780000000000001 [0.024243528,0.00119903 0.005,0.00119903 0.005,0.001069069 0.0038056390000000004,0.001069069 0.0038056390000000004,0.000459469 0.005,0.000459469 0.005,0.000329508 0.024243528,0.000329508 0.024243528,-0.002170492 0.02511305,-0.002170492 0.02511305,0.000329508]
+solid Top Copper (1 oz)/2 Copper Conductor 5 extrude 0.0005430000000000001 0.0005780000000000001 [0.047487056,0.000459469 0.048681417000000005,0.000459469 0.048681417000000005,0.001069069 0.047487056,0.001069069 0.047487056,0.00119903 0.028243528,0.00119903 0.027374006000000003,0.000329508 0.027374006000000003,-0.002170492 0.028243528,-0.002170492 0.028243528,0.000329508 0.047487056,0.000329508]
+solid Top Copper (1 oz)/3 Copper Conductor 6 extrude 0.0005430000000000001 0.0005780000000000001 [0.047487056,0.00130097 0.047487056,0.002170492 0,0.002170492 0,0.00130097]
+solid via/1 Copper Conductor 7 cylinder (0.0041104390000000005,0.000764269,0) (0.0041104390000000005,0.000764269,0.0005780000000000001) 0.00015240000000000002
+solid via/2 Copper Conductor 8 cylinder (0.048376617000000004,0.000764269,0) (0.048376617000000004,0.000764269,0.0005780000000000001) 0.00015240000000000002
+material Copper 1 - 0 1 58000000
+material RO4350B 3.66 - 0.0037 1 0
+material Air 1 - 0 1 0
+port 1 port/1 Lumped Top Copper (1 oz)/3 Bottom Copper (1 oz)/1 (0,0.00130097,3.5000000000000004E-05) (0,0.002170492,0.0005430000000000001) (0,0,1) 50 0 (0,0.001735731,0.00028900000000000003) (1,0,0) 0 - -
+port 2 port/2 Lumped Top Copper (1 oz)/1 Bottom Copper (1 oz)/1 (0.024243528,-0.002170492,3.5000000000000004E-05) (0.02511305,-0.002170492,0.0005430000000000001) (0,0,1) 50 0 (0.024678289,-0.002170492,0.00028900000000000003) (0,1,0) 0 - -
+port 3 port/3 Lumped Top Copper (1 oz)/2 Bottom Copper (1 oz)/1 (0.027374006000000003,-0.002170492,3.5000000000000004E-05) (0.028243528,-0.002170492,0.0005430000000000001) (0,0,1) 50 0 (0.027808767,-0.002170492,0.00028900000000000003) (0,1,0) 0 - -
+box (-0.013292283400000002,-0.015073574400000001,0) (0.061973700400000005,0.015073574400000001,0.0011560000000000001) Em3dFaces { XMin = Absorbing, XMax = Absorbing, YMin = Absorbing, YMax = Absorbing, ZMin = Pec, ZMax = Absorbing }
+freq 1200000000 4800000000 11 Log 20
+type Driven eigen 3 1200000000
+ground 
+origin Bottom Copper (1 oz)/1 Conductor Bottom Copper (1 oz) LayerKey { Layer = 2, Datatype = 0 } -
+origin RO4350 Dielectric RO4350 - -
+origin Top Copper (1 oz)/1 Conductor Top Copper (1 oz) LayerKey { Layer = 1, Datatype = 0 } -
+origin Top Copper (1 oz)/2 Conductor Top Copper (1 oz) LayerKey { Layer = 1, Datatype = 0 } -
+origin Top Copper (1 oz)/3 Conductor Top Copper (1 oz) LayerKey { Layer = 1, Datatype = 0 } -
+origin air Air - - -
+origin via/1 Via Plated Through-Hole LayerKey { Layer = 7, Datatype = 0 } -
+origin via/2 Via Plated Through-Hole LayerKey { Layer = 7, Datatype = 0 } -
+material-source Air built in (free space)
+material-source Copper technology 'PCB 2-Layer RO4350B (20mil, 1oz)' Materials
+material-source RO4350B technology 'PCB 2-Layer RO4350B (20mil, 1oz)' Materials
 no-alpha 
 unknown-temperature 

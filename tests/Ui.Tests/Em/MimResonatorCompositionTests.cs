@@ -262,6 +262,7 @@ public sealed class MimResonatorCompositionTests(ITestOutputHelper output) : IDi
         // The PLATE level joins the run. That is the whole difference from the recipe above, and it
         // is what puts the 0.2 µm film in the medium.
         setup.AnalysisLevelNames = ["Metal1", "MIM Metal", "Metal2"];
+        ExampleGeneratedCells.Ensure(Path.Combine(ExampleRoot(), "SpiralResonator", "layout", "SpiralResonator.clay"));
 
         var resolved = EmSetupResolver.Resolve(
             Path.Combine(ExampleRoot(), "SpiralResonator", "em", "SpiralResonator.cem"),

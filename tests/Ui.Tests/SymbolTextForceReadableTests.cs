@@ -21,8 +21,9 @@ namespace CircuitRF.Ui.Tests;
 public class SymbolTextForceReadableTests : IDisposable
 {
     public SymbolTextForceReadableTests()
-        // Assets/Fonts needs a live Avalonia host; SKTypeface.Default is the documented headless seam.
-        => SkiaFonts.TestOverrideTypeface = SKTypeface.Default;
+        // The renderer's own embedded faces (src/Render reads them as resources, with no host): SKTypeface.Default is
+        // whatever the machine supplies, which on a bare Linux image is a font with nothing to measure.
+        => SkiaFonts.TestOverrideTypeface = null;
 
     public void Dispose() => SkiaFonts.TestOverrideTypeface = null;
 
@@ -130,11 +131,10 @@ public class SymbolTextForceReadableTests : IDisposable
 
         var rigidLabels = labels.Cast<TextPrimitive>().Select(Clear).Cast<SymbolPrimitive>().ToList();
 
-        var readable = Centroid(labels,      SymbolRotation.R180);
-        var rigid    = Centroid(rigidLabels, SymbolRotation.R180);
-
-        Assert.True(Distance(readable, rigid) > 2.0,
-            $"The SnP's port labels rotate rigidly: readable {readable} vs rigid {rigid}.");
+        // The pictures, not their centroids: a label turned upside down about its own box keeps nearly the same centroid,
+        // and how nearly depends on the font's glyph shapes.
+        double differ = InkDifference(Ink(labels, SymbolRotation.R180), Ink(rigidLabels, SymbolRotation.R180));
+        Assert.True(differ > 0.3, $"The SnP's port labels rotate rigidly: only {differ:P0} of the ink differs between the two renders.");
     }
 
     // ── T4: a label still belongs to ITS OWN pin, at every orientation ────────
@@ -273,9 +273,8 @@ public class SymbolTextForceReadableTests : IDisposable
     private const int Side   = 1200;
     private const double Origin = (Side - 1) / 2.0;
 
-    /// <summary>Alpha-weighted ink centroid, in pixels relative to the component origin.</summary>
-    private static (double X, double Y) Centroid(
-        IReadOnlyList<SymbolPrimitive> prims, SymbolRotation rotation, bool mirrorX = false)
+    /// <summary>The ink's alpha, one byte per pixel, the component origin at the grid's centre.</summary>
+    private static byte[] Ink(IReadOnlyList<SymbolPrimitive> prims, SymbolRotation rotation, bool mirrorX = false)
     {
         var theme = SchematicRenderTheme.FromTheme(ColorTheme.BuiltIn, ColorVariant.Dark);
         var info  = new SKImageInfo(Side, Side, SKColorType.Rgba8888, SKAlphaType.Premul);
@@ -295,16 +294,38 @@ public class SymbolTextForceReadableTests : IDisposable
         using var bitmap = SKBitmap.FromImage(image);
 
         var px = bitmap.GetPixelSpan();          // Rgba8888: alpha is the 4th byte of each pixel
+        var alpha = new byte[Side * Side];
+        for (int k = 0; k < alpha.Length; k++) alpha[k] = px[4 * k + 3];
+        Assert.Contains(alpha, a => a > 8);      // else nothing was drawn — the render harness is broken, not the flag
+        return alpha;
+    }
+
+    /// <summary>Alpha-weighted ink centroid, in pixels relative to the component origin.</summary>
+    private static (double X, double Y) Centroid(
+        IReadOnlyList<SymbolPrimitive> prims, SymbolRotation rotation, bool mirrorX = false)
+    {
+        var alpha = Ink(prims, rotation, mirrorX);
         double sum = 0, sx = 0, sy = 0;
-        for (int y = 0, i = 3; y < Side; y++)
-        for (int x = 0; x < Side; x++, i += 4)
+        for (int y = 0, i = 0; y < Side; y++)
+        for (int x = 0; x < Side; x++, i++)
         {
-            double a = px[i];
+            double a = alpha[i];
             if (a <= 8) continue;
             sum += a; sx += a * x; sy += a * y;
         }
-
-        Assert.True(sum > 0, "Nothing was drawn — the render harness is broken, not the flag.");
         return (sx / sum - Origin, sy / sum - Origin);
+    }
+
+    /// <summary>The share of two renders' ink that is not where the other has it: 0 for identical pictures, near 1 for
+    /// pictures whose ink does not overlap.</summary>
+    private static double InkDifference(byte[] a, byte[] b)
+    {
+        double diff = 0, total = 0;
+        for (int i = 0; i < a.Length; i++)
+        {
+            diff  += Math.Abs(a[i] - b[i]);
+            total += Math.Max(a[i], b[i]);
+        }
+        return diff / total;
     }
 }

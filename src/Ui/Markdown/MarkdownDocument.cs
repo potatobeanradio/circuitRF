@@ -123,7 +123,9 @@ public sealed class MarkdownDocument : Document, IFileBackedDocument
 
         try
         {
-            foreach (string path in Directory.EnumerateFiles(workspaceDir, "*.md"))
+            // The pattern matches case-sensitively on Linux unless told not to: readme.MD would never be listed there.
+            foreach (string path in Directory.EnumerateFiles(workspaceDir, "*.md",
+                                                             new EnumerationOptions { MatchCasing = MatchCasing.CaseInsensitive }))
                 if (string.Equals(Path.GetFileName(path), WorkspaceReadmeFileName,
                                   StringComparison.OrdinalIgnoreCase))
                     return path;

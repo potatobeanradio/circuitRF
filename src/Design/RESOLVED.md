@@ -32494,3 +32494,14 @@ are ICF-6's thick die (`ThickDieCutPortTests`) and ICF-4's spiral (`ThickSilicon
   `lvs.property.mismatch` (`testdata/schematic-to-layout/F8d-wilkinson-mitred`).
 - **The ground pour covers a cornered ring.** It covers each passive instance's own extent, so the rectangle is under the
   plane with the usual five-substrate-height margin, checked on the mitred divider and rat-race.
+
+## Tests that read an example's generated cells (2026-11-16)
+
+`.generated-cells/` is git-ignored, so on a fresh clone a layout's placed PCells resolve to nothing until something rebuilds
+them. Six tests (`Em3dGeneratorDumpTests` for the PDK PCells, PCB and MMIC Component Ports and Dividers and Couplers setups,
+`CellPortCliTests` ×2, `MimResonatorCompositionTests.MIM14`) passed only where an earlier session had left the folder, and
+three committed dumps had recorded the cells-missing refusal as their expected output. The PDK PCells layouts also reference
+cell names from an older content key (the kit or circuitRF's PCell package changed since they were saved), which a run
+redirects to the rebuilt cell only for as long as the run lives. `tests/Ui.Tests/Support/ExampleGeneratedCells` now builds
+them (Disk, the example's own kit trusted) and keeps each run alive for the test process; a CLI-process test passes
+`--trust-kit` for that kit.

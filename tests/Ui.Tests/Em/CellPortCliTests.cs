@@ -119,6 +119,7 @@ public sealed class CellPortCliTests(CellPinReferenceTests.Fixture fx, ITestOutp
     public void TheFilterBoard_ExplainsAsItDid()
     {
         string cem = Path.Combine(Repo, "examples", "PCB Component Ports", "Filter Board", "em", "Filter Board Planar.cem");
+        ExampleGeneratedCells.EnsureForCem(cem);
         var (setup, source) = Load(cem);
         setup.ComponentPorts = [new EmComponentPort(EmSetup.AllComponents)];
         var expected = EmPlanarComponentPorts.Build(setup, source)!.Ports.Select(p => EmPlanarComponentPorts.Describe(p, source)).ToList();
@@ -134,11 +135,13 @@ public sealed class CellPortCliTests(CellPinReferenceTests.Fixture fx, ITestOutp
     public void TheSpiralResonator_NamesItsPCells_AndCutsTheMimCapOut()
     {
         string cem = Path.Combine(Repo, "examples", "PDK PCells", "SpiralResonator", "em", "SpiralResonator.cem");
-        var (_, star, starErr) = CliProcess.Run(Repo, [], "explain", cem, "--component-ports", "*");
+        // The example's own kit, trusted for these runs: the CLI is another process, and its cells are rebuilt there.
+        string kit = Path.Combine(Repo, "examples", "PDK PCells", "pcell-kit");
+        var (_, star, starErr) = CliProcess.Run(Repo, [], "explain", cem, "--component-ports", "*", "--trust-kit", kit);
         output.WriteLine(star + starErr);
         Assert.Contains("no part placed on this layout is a two-pad part or a device; @0 (KIT_SPIRAL), @1 (KIT_MIMCAP) are copper", star, StringComparison.Ordinal);
 
-        var walks = Json("explain", cem, "--component-ports", "@1")["result"]!["explain"]!["walks"]!.AsArray()
+        var walks = Json("explain", cem, "--component-ports", "@1", "--trust-kit", kit)["result"]!["explain"]!["walks"]!.AsArray()
             .Select(w => (Step: w!["step"]!.GetValue<string>(), Text: w["resolved"]!.GetValue<string>())).ToList();
         Assert.Contains(walks, w => w.Step == EmCutReport.InstanceStep && w.Text.StartsWith("@1 (KIT_MIMCAP), selected by name", StringComparison.Ordinal));
         Assert.Contains(walks, w => w.Step == EmCutReport.PinStep && w.Text.StartsWith("@1.2: routed", StringComparison.Ordinal) && w.Text.Contains("port 3 '@1.2'", StringComparison.Ordinal));

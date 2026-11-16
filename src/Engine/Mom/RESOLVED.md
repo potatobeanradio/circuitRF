@@ -14660,3 +14660,13 @@ sweep's top frequency". Two causes in `SurfaceMesher`'s note:
   grid starts from one block across the artwork: it spans at most 2 base blocks of λ_g/20 = 197.5 µm at 22 GHz, as Mesh
   frequency states, …". Gate: `LocalGridBaseTests.TheMeshNote_NamesTheFrequencyUsed_AndThatThePartitionStartsFromTheArtwork`;
   `RunNoteTests`' GaAs line (2 mm, one axis from the artwork) reads as before.
+
+## The Patch Antenna page's radiation figures (2026-11-16)
+
+`AntennaExampleTests.TheExampleRunsHeadless_AndItsMetricsMatchTheUserPage` (Benchmark tier) had been failing since
+2026-10-15: gain 5.05 dBi against the page's 4.66, efficiency 68.4 % against 62.6 %. Bisected with a one-point run at
+5.85 GHz (14 s a step): the first commit reading 68.35 % is d6f720fc0 (PR #11), which made the grounded edge port and
+conductor loss the defaults. The budget's shape changed with it — conductor 0 → 1.9 %, the dielectric-plus-ground residual
+31 % → 22 % — and the page and the test were never re-measured because the test is opt-in. The local grid (PMS-7, 1,981 →
+1,473 unknowns) is NOT a cause: the tensor grid gives the same figures to the digits quoted. Page, test constants and the
+efficiency-sweep figure re-measured from one full run.

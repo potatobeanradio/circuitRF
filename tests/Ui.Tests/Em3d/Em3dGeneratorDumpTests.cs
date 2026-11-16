@@ -61,6 +61,7 @@ public sealed class Em3dGeneratorDumpTests
             string rel = Path.GetRelativePath(root, cem).Replace('\\', '/');
             yield return ("cem " + rel, box =>
             {
+                ExampleGeneratedCells.EnsureForCem(cem);   // a placed generated cell is on disk where the application would put it
                 var setup = EmSetupPersistence.LoadFromFile(cem);
                 if (!setup.Is3D) setup.Solver3D = Em3dSolverId.Palace;
                 setup.AirBox = GoldenAirBoxes.Merge(setup.AirBox, box);

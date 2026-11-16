@@ -37,18 +37,20 @@ public sealed class AntennaExampleTests(ITestOutputHelper output)
     // physics, and narrow enough to fail if something does. The resonance band is the tightest because
     // it is the one compared against an INDEPENDENT oracle (the cavity model, 5.796 GHz) — the page
     // quotes the agreement, so the agreement is what is gated.
-    private const double ResonanceGHz   = 5.8131, ResonanceTolGHz  = 0.010;
+    private const double ResonanceGHz   = 5.8089, ResonanceTolGHz  = 0.010;
     private const double CavityModelGHz = 5.7968, CavityAgreementPc = 0.50;
     /// <summary>The requested grid point nearest the resonance — the one the page's table is about.</summary>
     private const double PageFreqGHz    = 5.85;
-    private const double DirectivityDbi = 6.697, DirectivityTolDb = 0.15;
-    private const double GainDbi        = 4.664, GainTolDb        = 0.15;
-    private const double Efficiency     = 0.626, EfficiencyTol    = 0.030;
-    private const double BeamwidthDeg   = 146.1, BeamwidthTolDeg  = 3.0;
+    private const double DirectivityDbi = 6.703, DirectivityTolDb = 0.15;
+    private const double GainDbi        = 5.051, GainTolDb        = 0.15;
+    private const double Efficiency     = 0.684, EfficiencyTol    = 0.030;
+    private const double BeamwidthDeg   = 145.5, BeamwidthTolDeg  = 3.0;
     /// <summary>Brief PM-1: 1,611 → 1,981. The inset feed is its own rectangle in the artwork and is now merged
     /// with the patch it touches, which made its top edge the bottom of the inset notch; the four notch corners are
-    /// re-entrant and now carry graded fans (R-pm1-3). S11 moved by at most 7.2×10⁻⁵ — src/Engine/Mom/RESOLVED.md §PM-1.</summary>
-    private const int    UnknownCount   = 1981,  UnknownTol       = 60;
+    /// re-entrant and now carry graded fans (R-pm1-3). S11 moved by at most 7.2×10⁻⁵ — src/Engine/Mom/RESOLVED.md §PM-1.
+    /// PMS-7: 1,981 → 1,473, the local grid being the default mesh; the radiation figures are unchanged by it to the digits
+    /// quoted. They moved when the grounded edge port and conductor loss became the defaults (PR #11, 2026-10-15).</summary>
+    private const int    UnknownCount   = 1473,  UnknownTol       = 60;
 
     private static string RepoRoot()
     {

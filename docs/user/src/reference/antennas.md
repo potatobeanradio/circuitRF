@@ -293,15 +293,15 @@ does include mismatch — is `RadiationEfficiencyDb + 10·log10(1 − |S11|²)`,
 
 {{ui: antenna-efficiency-sweep}}
 
-Radiation efficiency varies strongly across the band: 22.6 % at 5.3 GHz, 69.3 % at its maximum, and
-62.6 % at the 5.85 GHz the [worked example](#example) quotes. **Quote it with the frequency it was
+Radiation efficiency varies across the band: 55.0 % at 5.3 GHz, 69.1 % at its maximum, and
+68.4 % at the 5.85 GHz the [worked example](#example) quotes. **Quote it with the frequency it was
 read at.**
 
 The maximum is at **5.94 GHz — the parallel resonance, not the 5.81 GHz series resonance the feed is
 matched at.** The two are 130 MHz apart on this patch and only the lower one is matched, so the
 best-radiating frequency and the best-matched frequency are not the same. The three gains split along
-that line: `GainDbi` follows the efficiency and peaks at 5.94 GHz (5.14 dBi), while `RealizedGainDbi`
-carries the mismatch and peaks at 5.85 GHz (4.50 dBi). Which one you quote decides which of the two
+that line: `GainDbi` follows the efficiency and peaks near 5.94 GHz (5.13 dBi), while `RealizedGainDbi`
+carries the mismatch and peaks at the 5.81 GHz series resonance (4.95 dBi). Which one you quote decides which of the two
 frequencies looks best.
 
 **The mismatch factor is 1 − |S<sub>11</sub>|², read from the same published, de-embedded
@@ -466,37 +466,37 @@ circuitrf em <workspace>/patch/em/patch-5p8GHz.cem
 | Feed | 1.68 mm microstrip (50 Ω), inset 4.0 mm into a notch with 1.0 mm gaps |
 | Ground pour | 40 × 40 mm, drawn on the bottom copper so the run can report its size |
 | Port | one edge port on the feed's end face, 50 Ω, de-embedded |
-| Mesh | radiating sheet, staircase cells, shipped defaults → **N = 1,981** |
+| Mesh | radiating sheet, staircase cells, shipped defaults → **N = 1,473** |
 | Sweep | 5.3–6.3 GHz, 21 points, adaptive sampling + resonance search |
-| Run | **4.9 minutes** on 10 cores, with a pattern at every one of the 21 points |
+| Run | **about 6 minutes** on 10 cores, with a pattern at every one of the 21 points |
 
 ### What it finds
 
-**The resonance search reports f₀ = 5.8131 GHz**, series, Q = 35.1 at R = 38.9 Ω — |S₁₁| = −18.1 dB
-there, with a −10 dB bandwidth of **91 MHz (1.6 %)**. It also finds the parallel resonance at
-5.9425 GHz, where |S₁₁| only reaches −3.7 dB: *the resonance is real; it is the match that is not
+**The resonance search reports f₀ = 5.8089 GHz**, series, Q = 30.9 at R = 41.4 Ω — |S₁₁| = −20.5 dB
+there, with a −10 dB bandwidth of **100 MHz (1.7 %)**. It also finds the parallel resonance at
+5.9373 GHz, where |S₁₁| only reaches −4.0 dB: *the resonance is real; it is the match that is not
 there.* Both are points the 50 MHz sweep grid could not have shown.
 
 **The cavity model puts it at 5.7968 GHz** — f = c / (2(L + 2ΔL)√ε<sub>eff</sub>) with
 ε<sub>eff</sub> = 3.402 and ΔL = 0.361 mm — so the solver and an independent analytic reference agree
-to **+0.28 %**. That is the comparison to judge the tool by; nothing in it is a circuitRF number
+to **+0.21 %**. That is the comparison to judge the tool by; nothing in it is a circuitRF number
 checked against another circuitRF number.
 
 At 5.85 GHz, the requested grid point nearest resonance:
 
 | | |
 |---|---|
-| S₁₁ | −14.3 dB, Z<sub>in</sub> = 58.6 + j19.4 Ω |
-| Directivity | 6.70 dBi, peak at θ = 0° (broadside) |
-| Gain | 4.66 dBi — efficiency only |
-| Realized gain | 4.50 dBi — `GainDbi` + 10·log₁₀(1 − \|S₁₁\|²), which is what `RealizedGainDbi` publishes |
-| Radiation efficiency | 62.6 % |
-| E-plane 3 dB beamwidth | 146° — and see the [infinite-ground caveat](#numbers) before quoting it |
+| S₁₁ | −13.5 dB, Z<sub>in</sub> = 64.1 + j20.1 Ω |
+| Directivity | 6.70 dBi, peak at θ = 1° (broadside) |
+| Gain | 5.05 dBi — efficiency only |
+| Realized gain | 4.85 dBi — `GainDbi` + 10·log₁₀(1 − \|S₁₁\|²), which is what `RealizedGainDbi` publishes |
+| Radiation efficiency | 68.4 % |
+| E-plane 3 dB beamwidth | 145° — and see the [infinite-ground caveat](#numbers) before quoting it |
 | Ground plane | 0.71 λ₀ across at 5.3 GHz rising to 0.84 λ₀ at 6.3, with 0.15–0.18 λ₀ beyond the metal |
 
-The power budget at that point, in the run's own words: **27.50 µW accepted = 17.22 µW radiated
-(62.6 %) + 1.93 µW surface wave (7.0 %) + 8.35 µW dielectric + ground plane (30.4 %) + 0 conductor.**
-Dielectric loss is the term to attack, and the explicit zero is the perfect metal.
+The power budget at that point, in the run's own words: **7.160 mW accepted = 4.894 mW radiated
+(68.4 %) + 548 µW surface wave (7.7 %) + 1.584 mW dielectric + ground plane (22.1 %) + 134 µW conductor
+(1.9 %).** Dielectric loss is the term to attack; the conductor term is the patch's own copper.
 
 ### The mesh is not what limits this example — the frequency grid is
 
@@ -504,7 +504,7 @@ The example runs on the **shipped default mesh**, not a cut-down one. Re-meshed 
 (N = 1,983 against 1,611) the radiation efficiency moves 0.2 pp, Z<sub>in</sub> moves 2 %, and f₀
 moves about 2.5 MHz — 0.04 %. So one convergence check is worth doing and the default passes it.
 
-**What is coarse is the sweep.** 21 points across 1 GHz is a 50 MHz step against a 91 MHz bandwidth,
+**What is coarse is the sweep.** 21 points across 1 GHz is a 50 MHz step against a 100 MHz bandwidth,
 which is why the example leans on the resonance search. For design work, narrow the band once you know
 where f₀ is — 5.70–5.95 GHz at 5 MHz is 51 points and resolves the notch from the grid alone, at about
 four times the solve time.
