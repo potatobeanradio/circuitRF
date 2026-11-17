@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Systems;
+using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Design.Matching;
 using CircuitRF.Design.Statistics;
 using CircuitRF.Design.VendorLibraries;
@@ -147,9 +148,9 @@ public static class FilterValues
                     .OrderBy(p => p.Value)
                     .ToList();
                 if (parts.Count == 0) return;
+                // Series name only — the library is already chosen by which series list this is in.
                 string stem = Path.GetFileNameWithoutExtension(file.Replace('\\', '/').Split('/').Last());
-                found.Add(new FilterLibrarySeries(
-                    library, file, $"{library} / {stem}", inductors, parts));
+                found.Add(new FilterLibrarySeries(library, file, stem, inductors, parts));
             }
         }
         return found;
@@ -169,29 +170,72 @@ public static class FilterValues
             FilterSeriesKind.E96 => "1%",
             _ => null,
         };
-        return tol is null
-            ? ""
-            : ToleranceText.Format(StatDistribution.Gauss, new StatSpread { Tol = tol, Sigmas = ToleranceText.DefaultSigmas });
+        return FormatTolerancePercent(tol);
     }
 
     /// <summary>
-    /// The tolerance a vendor part's header states — the same reading Yield uses when a Description
-    /// field carries <c>±5%</c>, <c>5%</c> or an EIA letter (J/K/M/…). Empty when none is stated.
+    /// The tolerance a vendor part states. Order: a <c>Tolerance</c>/<c>Tol</c> header field; then
+    /// each Description slash-field (a bare EIA letter J/K/M/… or a <c>±N%</c> token); then
+    /// <see cref="BomFile.ParseDescription"/> on the whole Description. Empty when none is stated.
     /// </summary>
     public static string ToleranceOf(VendorLibraryHeader header)
     {
+        if (!string.IsNullOrWhiteSpace(header.Tolerance)
+            && TryToleranceShown(header.Tolerance, out string fromTol))
+            return fromTol;
+
         foreach (string field in header.DescriptionFields)
         {
-            if (TryReadToleranceToken(field, out string shown)) return shown;
+            if (TryToleranceShown(field, out string shown)) return shown;
         }
+
         if (header.Description is { } d)
         {
+            double? pct = BomFile.ParseDescription(d).TolerancePercent;
+            if (pct is { } p && p > 0)
+                return FormatTolerancePercent(p.ToString("0.###", CultureInfo.InvariantCulture) + "%");
+
             foreach (Match m in PercentTol.Matches(d))
             {
-                if (TryReadToleranceToken(m.Value, out string shown)) return shown;
+                if (TryToleranceShown(m.Value, out string shown)) return shown;
             }
         }
         return "";
+    }
+
+    private static readonly Regex PercentTol =
+        new(@"[±+\-/]*\s*\d+(?:\.\d+)?\s*%", RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    /// <summary>
+    /// A single Description field or Tolerance value: EIA letter alone, or a percent token.
+    /// EIA letters are only accepted when the whole field is that letter — the same silent-guess
+    /// ban BomFile applies inside free text does not apply to a dedicated slash field.
+    /// </summary>
+    private static bool TryToleranceShown(string raw, out string shown)
+    {
+        shown = "";
+        string t = raw.Trim().Trim(',', ';');
+        if (t.Length == 0) return false;
+
+        double? eia = t.ToUpperInvariant() switch
+        {
+            "B" => 0.1, "C" => 0.25, "D" => 0.5, "F" => 1, "G" => 2,
+            "H" => 3, "J" => 5, "K" => 10, "M" => 20, "N" => 30,
+            _ => null,
+        };
+        if (eia is { } pctLetter)
+        {
+            shown = FormatTolerancePercent(pctLetter.ToString("0.###", CultureInfo.InvariantCulture) + "%");
+            return true;
+        }
+
+        double? pct = BomFile.ParseDescription(t).TolerancePercent;
+        if (pct is { } p && p > 0)
+        {
+            shown = FormatTolerancePercent(p.ToString("0.###", CultureInfo.InvariantCulture) + "%");
+            return true;
+        }
+        return false;
     }
 
     /// <summary>Parts of <paramref name="series"/> whose value matches <paramref name="target"/> (ratio).</summary>
@@ -206,34 +250,9 @@ public static class FilterValues
         return Nearest(target, series.Parts) is { } one ? [one] : [];
     }
 
-    private static readonly Regex PercentTol =
-        new(@"[±+\-/]*\s*\d+(?:\.\d+)?\s*%", RegexOptions.CultureInvariant | RegexOptions.Compiled);
-
-    private static bool TryReadToleranceToken(string raw, out string shown)
-    {
-        shown = "";
-        string t = raw.Trim().Trim(',', ';');
-        if (t.Length == 0) return false;
-
-        // EIA letter codes commonly sitting alone in a Description field.
-        double? eia = t.ToUpperInvariant() switch
-        {
-            "B" => 0.1, "C" => 0.25, "D" => 0.5, "F" => 1, "G" => 2,
-            "H" => 3, "J" => 5, "K" => 10, "M" => 20, "N" => 30,
-            _ => null,
-        };
-        if (eia is { } pctLetter)
-        {
-            shown = ToleranceText.Format(StatDistribution.Gauss,
-                new StatSpread { Tol = pctLetter.ToString("0.###", CultureInfo.InvariantCulture) + "%",
-                                 Sigmas = ToleranceText.DefaultSigmas });
-            return true;
-        }
-
-        var m = Regex.Match(t, @"^[±+\-/]*\s*(\d+(?:\.\d+)?)\s*%\s*$", RegexOptions.CultureInvariant);
-        if (!m.Success) return false;
-        shown = ToleranceText.Format(StatDistribution.Gauss,
-            new StatSpread { Tol = m.Groups[1].Value + "%", Sigmas = ToleranceText.DefaultSigmas });
-        return true;
-    }
+    private static string FormatTolerancePercent(string? tol) =>
+        string.IsNullOrEmpty(tol)
+            ? ""
+            : ToleranceText.Format(StatDistribution.Gauss,
+                new StatSpread { Tol = tol, Sigmas = ToleranceText.DefaultSigmas });
 }

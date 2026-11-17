@@ -53,6 +53,9 @@ public sealed record VendorLibraryHeader
     /// <summary>The DC-bias line as text, its field name included (e.g. <c>DC Bias Voltage = 0V</c>), or null.</summary>
     public string? Bias { get; init; }
 
+    /// <summary>A stated tolerance line as text (e.g. <c>±5%</c>, <c>10%</c>), or null.</summary>
+    public string? Tolerance { get; init; }
+
     /// <summary>
     /// A case size stated in both systems — a Description field reading <c>&lt;digits&gt;M(&lt;digits&gt;)</c>,
     /// metric first — with both codes exactly as written. Null when no field has that shape.
@@ -107,7 +110,8 @@ public sealed record VendorLibraryHeader
     public static VendorLibraryHeader Parse(IEnumerable<string> commentLines, out int unparsed)
     {
         unparsed = 0;
-        string? description = null, property = null, range = null, temperature = null, bias = null;
+        string? description = null, property = null, range = null, temperature = null, bias = null,
+                tolerance = null;
 
         foreach (string raw in commentLines)
         {
@@ -119,6 +123,8 @@ public sealed record VendorLibraryHeader
                 case "property":        property    = value; break;
                 case "frequency range": range       = value; break;
                 case "temperature":     temperature = value; break;
+                case "tolerance":
+                case "tol":             tolerance   = value; break;
                 default:
                     if (name.StartsWith("dc bias", StringComparison.Ordinal))
                         bias = $"{FieldName(raw)} = {value}";
@@ -175,6 +181,7 @@ public sealed record VendorLibraryHeader
             FrequencyHighHz   = high,
             Temperature       = temperature,
             Bias              = bias,
+            Tolerance         = tolerance,
             CaseMetric        = metric,
             CaseImperial      = imperial,
         };

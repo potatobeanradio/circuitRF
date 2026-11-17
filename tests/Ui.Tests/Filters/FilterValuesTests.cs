@@ -1,5 +1,6 @@
 using CircuitRF.Design.Filters;
 using CircuitRF.Design.Matching;
+using CircuitRF.Design.VendorLibraries;
 using Xunit;
 
 namespace CircuitRF.Ui.Tests.Filters;
@@ -36,5 +37,32 @@ public class FilterValuesTests
         Assert.Equal("b", chosen!.Name);
         // And the IEC ladder the snap uses is the one PreferredValues publishes.
         Assert.Contains(1.2, PreferredValues.E12);
+    }
+
+    [Fact]
+    public void ToleranceOf_ReadsTolHeaderPercentAndEiaSlashField()
+    {
+        var fromTol = VendorLibraryHeader.Parse(
+            ["* Property : C = 10[pF]", "* Tolerance : ±5%"], out _);
+        Assert.Contains("5", FilterValues.ToleranceOf(fromTol));
+
+        var fromEia = VendorLibraryHeader.Parse(
+            ["* Description : 1005M(0402)/C0G/10[pF]/J/50[V]", "* Property : C = 10[pF]"], out _);
+        Assert.Contains("5", FilterValues.ToleranceOf(fromEia));
+
+        var fromDesc = VendorLibraryHeader.Parse(
+            ["* Description : 0402/X7R/10nF/±10%/16V", "* Property : C = 10[nF]"], out _);
+        Assert.Contains("10", FilterValues.ToleranceOf(fromDesc));
+
+        var none = VendorLibraryHeader.Parse(
+            ["* Description : 1005M(0402)/C0G/10[pF]/50[V]", "* Property : C = 10[pF]"], out _);
+        Assert.Equal("", FilterValues.ToleranceOf(none));
+    }
+
+    [Fact]
+    public void IecSeriesTolerance_IsTheConventionalPercent()
+    {
+        Assert.Contains("10", FilterValues.ToleranceOf(FilterSeriesKind.E12));
+        Assert.Equal("", FilterValues.ToleranceOf(FilterSeriesKind.Exact));
     }
 }

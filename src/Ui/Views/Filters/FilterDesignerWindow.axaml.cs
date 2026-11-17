@@ -95,11 +95,11 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
         BindNumericBox(
             "PlotFminBox",
             () => Vm.PlotFminText,
-            t => { Vm.PlotFminText = t.Trim(); Vm.Design(); });
+            t => { Vm.PlotFminText = t.Trim(); Vm.UpdatePlots(); });
         BindNumericBox(
             "PlotFmaxBox",
             () => Vm.PlotFmaxText,
-            t => { Vm.PlotFmaxText = t.Trim(); Vm.Design(); });
+            t => { Vm.PlotFmaxText = t.Trim(); Vm.UpdatePlots(); });
 
         void Bind(PlotControl? plot, PlotContainerViewModel container)
         {

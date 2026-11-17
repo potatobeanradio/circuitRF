@@ -196,6 +196,13 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
     /// <summary>True while Design rebuilds rows — suppresses per-row redesign loops.</summary>
     private bool _fillingRows;
+
+    /// <summary>Last successful design — plot-range edits re-simulate over a new grid without
+    /// re-synthesising the ladder.</summary>
+    private Spec? _lastSpec;
+    private FilterNetwork? _lastIdeal;
+    private double _lastRs;
+    private double _lastRl;
     /// <summary>Ap — passband attenuation used for the order mask.</summary>
     public string TipAp { get; } = "Passband attenuation, in dB. Used with As and the edges to size the order.";
 
@@ -260,7 +267,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         PlotRangeIsManual = value == FilterPlotRangeMode.Manual;
         var match = PlotRangeChoices.First(c => c.Value == value);
         if (!Equals(PlotRangeChoice, match)) PlotRangeChoice = match;
-        Design();
+        UpdatePlots();
     }
 
     partial void OnPlotRangeChoiceChanged(FilterPlotRangeChoice? value)
@@ -317,6 +324,8 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         Elements.Clear();
         Cnl = "";
         Ladder = MatchLadderLayout.Empty;
+        _lastSpec = null;
+        _lastIdeal = null;
         if (!TrySpec(out var spec, out string? error))
         {
             Status = error ?? "";
@@ -341,8 +350,10 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         var built = FilterLadder.Synthesize(spec.Response, spec.Form, spec.Order,
                                              spec.FcHz, spec.F1Hz, spec.F2Hz, spec.RippleDb,
                                              spec.SourceOhms, spec.First, spec.AsDb);
+        double rs = spec.SourceOhms;
+        double rl = built.Realization?.LoadOhms ?? spec.LoadOhms;
         var freqs = Frequencies(spec);
-        var idealSnp = IdealSnp(ideal, freqs, spec.SourceOhms, built.Realization?.LoadOhms ?? spec.LoadOhms);
+        var idealSnp = IdealSnp(ideal, freqs, rs, rl);
 
         SNP? ladderSnp = null;
         string note = "";
@@ -350,6 +361,8 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         {
             var used = ApplyValues(real, spec);
             Cnl = FilterLadder.ToCnl(used, real.SourceOhms, real.LoadOhms);
+            rs = real.SourceOhms;
+            rl = real.LoadOhms;
             try
             {
                 ladderSnp = Run(Cnl, freqs, real.SourceOhms);
@@ -369,6 +382,11 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         {
             note = built.Refusal?.Message ?? "";
         }
+
+        _lastSpec = spec;
+        _lastIdeal = ideal;
+        _lastRs = rs;
+        _lastRl = rl;
 
         double minIl = MinimumInsertionLoss(ladderSnp ?? idealSnp, freqs, spec);
         DesignInfo = $"Order: {spec.Order}" +
@@ -443,8 +461,8 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Commits the ± band / points / manual range boxes (Return or focus loss). Always rebuilds
-    /// the frequency grid and re-runs the response — the plots show the whole computed span.
+    /// Commits the ± band / points boxes (Return or focus loss). Rebuilds only the frequency grid
+    /// and the plots — the ladder, table and order stay as Design left them.
     /// </summary>
     public void CommitPlotWindow(double? bandPercent, int? points)
     {
@@ -452,7 +470,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
             PlotBandPercentText = p.ToString("0.#", CultureInfo.InvariantCulture);
         if (points is { } n && n >= 2)
             PlotPointsText = Math.Min(n, 20001).ToString(CultureInfo.InvariantCulture);
-        Design();
+        UpdatePlots();
     }
 
     /// <summary>Formats an L/C value the way the Exact / Used columns do.</summary>
@@ -467,6 +485,32 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         else
             _partOverrides.Remove(row.Name);
         Design();
+    }
+
+    /// <summary>
+    /// Re-runs the ideal and ladder response on a new frequency grid and redraws both plots.
+    /// Does not touch the realization, the table or the order.
+    /// </summary>
+    public void UpdatePlots()
+    {
+        if (_lastSpec is not { } spec || _lastIdeal is null)
+        {
+            Design();
+            return;
+        }
+
+        var freqs = Frequencies(spec);
+        var idealSnp = IdealSnp(_lastIdeal, freqs, _lastRs, _lastRl);
+        SNP? ladderSnp = null;
+        if (!string.IsNullOrEmpty(Cnl))
+        {
+            try { ladderSnp = Run(Cnl, freqs, _lastRs); }
+            catch (Exception e) when (e is InvalidOperationException or ArgumentException or FormatException)
+            {
+                Status = e.Message;
+            }
+        }
+        BuildPlots(idealSnp, ladderSnp, spec);
     }
 
     /// <summary>Parses the "± band" box ("10%", "10", "0.1 %").</summary>
