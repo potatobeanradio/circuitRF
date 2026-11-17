@@ -74,12 +74,18 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          0,
+          -1200
+        ]
       ]
     },
     {
       "InstanceName": "TL1",
       "Symbol": "Mlin",
-      "X": -600,
+      "X": -1000,
       "Y": -300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -118,7 +124,7 @@
     {
       "InstanceName": "P1",
       "Symbol": "Term",
-      "X": -1000,
+      "X": -1600,
       "Y": -100,
       "Rotation": "R0",
       "MirrorX": false,
@@ -143,7 +149,7 @@
     {
       "InstanceName": "GND1",
       "Symbol": "Ground",
-      "X": -1000,
+      "X": -1600,
       "Y": 100,
       "Rotation": "R0",
       "MirrorX": false,
@@ -155,7 +161,7 @@
     {
       "InstanceName": "TL2",
       "Symbol": "Mlin",
-      "X": -200,
+      "X": 200,
       "Y": 100,
       "Rotation": "R0",
       "MirrorX": false,
@@ -194,7 +200,7 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": -600,
+      "X": -400,
       "Y": 300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -219,7 +225,7 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": -600,
+      "X": -400,
       "Y": 500,
       "Rotation": "R0",
       "MirrorX": false,
@@ -231,7 +237,7 @@
     {
       "InstanceName": "TL4",
       "Symbol": "Mlin",
-      "X": 2400,
+      "X": 2800,
       "Y": -100,
       "Rotation": "R0",
       "MirrorX": false,
@@ -270,7 +276,7 @@
     {
       "InstanceName": "P4",
       "Symbol": "Term",
-      "X": 3000,
+      "X": 3400,
       "Y": 100,
       "Rotation": "R0",
       "MirrorX": false,
@@ -295,7 +301,7 @@
     {
       "InstanceName": "GND3",
       "Symbol": "Ground",
-      "X": 3000,
+      "X": 3400,
       "Y": 300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -307,7 +313,7 @@
     {
       "InstanceName": "TL3",
       "Symbol": "Mlin",
-      "X": 2000,
+      "X": 1800,
       "Y": 300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -346,7 +352,7 @@
     {
       "InstanceName": "P3",
       "Symbol": "Term",
-      "X": 2600,
+      "X": 2400,
       "Y": 500,
       "Rotation": "R0",
       "MirrorX": false,
@@ -371,7 +377,7 @@
     {
       "InstanceName": "GND4",
       "Symbol": "Ground",
-      "X": 2600,
+      "X": 2400,
       "Y": 700,
       "Rotation": "R0",
       "MirrorX": false,
@@ -403,6 +409,12 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          300,
+          -700
+        ]
       ]
     },
     {
@@ -428,6 +440,12 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          50,
+          100
+        ]
       ]
     }
   ],
@@ -435,11 +453,11 @@
     {
       "Points": [
         [
-          -400,
+          -1600,
           -300
         ],
         [
-          600,
+          -1200,
           -300
         ]
       ]
@@ -451,7 +469,7 @@
           -300
         ],
         [
-          -1000,
+          600,
           -300
         ]
       ]
@@ -459,7 +477,19 @@
     {
       "Points": [
         [
+          -400,
+          100
+        ],
+        [
           0,
+          100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          400,
           100
         ],
         [
@@ -471,36 +501,24 @@
     {
       "Points": [
         [
-          -400,
-          100
-        ],
-        [
-          -600,
-          100
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
           1400,
           -100
         ],
         [
-          2200,
+          2600,
           -100
         ]
       ]
     },
     {
       "Points": [
-        [
-          2600,
-          -100
-        ],
         [
           3000,
           -100
+        ],
+        [
+          3400,
+          -100
         ]
       ]
     },
@@ -511,7 +529,7 @@
           300
         ],
         [
-          1800,
+          1600,
           300
         ]
       ]
@@ -519,11 +537,11 @@
     {
       "Points": [
         [
-          2200,
+          2000,
           300
         ],
         [
-          2600,
+          2400,
           300
         ]
       ]

@@ -123,13 +123,19 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          0,
+          1100
+        ]
       ]
     },
     {
       "InstanceName": "P1",
       "Symbol": "Term",
-      "X": -200,
-      "Y": 200,
+      "X": -800,
+      "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -153,8 +159,8 @@
     {
       "InstanceName": "GND1",
       "Symbol": "Ground",
-      "X": -200,
-      "Y": 400,
+      "X": -800,
+      "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -165,7 +171,7 @@
     {
       "InstanceName": "TL1",
       "Symbol": "Mlin",
-      "X": 200,
+      "X": -400,
       "Y": -200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -204,7 +210,7 @@
     {
       "InstanceName": "CV1",
       "Symbol": "MCurve",
-      "X": 600,
+      "X": 200,
       "Y": -200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -250,7 +256,7 @@
     {
       "InstanceName": "CV2",
       "Symbol": "MCurve",
-      "X": 1800,
+      "X": 2000,
       "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
@@ -296,7 +302,7 @@
     {
       "InstanceName": "TL2",
       "Symbol": "Mlin",
-      "X": 2200,
+      "X": 2600,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -335,7 +341,7 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": 2700,
+      "X": 3200,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -360,7 +366,7 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": 2700,
+      "X": 3200,
       "Y": 600,
       "Rotation": "R0",
       "MirrorX": false,
@@ -372,8 +378,8 @@
     {
       "InstanceName": "VIAG1",
       "Symbol": "ViaGnd",
-      "X": 900,
-      "Y": -600,
+      "X": 500,
+      "Y": -1000,
       "Rotation": "R180",
       "MirrorX": false,
       "Disable": "None",
@@ -434,13 +440,15 @@
           "ShowOnSchematic": false,
           "Dimension": "Capacitance"
         }
-      ]
+      ],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     },
     {
       "InstanceName": "VIAG2",
       "Symbol": "ViaGnd",
-      "X": 1000,
-      "Y": 600,
+      "X": 700,
+      "Y": 1000,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -501,13 +509,15 @@
           "ShowOnSchematic": false,
           "Dimension": "Capacitance"
         }
-      ]
+      ],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     },
     {
       "InstanceName": "VIAG3",
       "Symbol": "ViaGnd",
       "X": 1100,
-      "Y": -600,
+      "Y": -1000,
       "Rotation": "R180",
       "MirrorX": false,
       "Disable": "None",
@@ -568,13 +578,15 @@
           "ShowOnSchematic": false,
           "Dimension": "Capacitance"
         }
-      ]
+      ],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     },
     {
       "InstanceName": "VIAG4",
       "Symbol": "ViaGnd",
-      "X": 1200,
-      "Y": 600,
+      "X": 1500,
+      "Y": 1000,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -635,13 +647,15 @@
           "ShowOnSchematic": false,
           "Dimension": "Capacitance"
         }
-      ]
+      ],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     },
     {
       "InstanceName": "VIAG5",
       "Symbol": "ViaGnd",
-      "X": 1300,
-      "Y": -600,
+      "X": 1700,
+      "Y": -1000,
       "Rotation": "R180",
       "MirrorX": false,
       "Disable": "None",
@@ -702,16 +716,26 @@
           "ShowOnSchematic": false,
           "Dimension": "Capacitance"
         }
-      ]
+      ],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     }
   ],
   "Wires": [
     {
       "Points": [
         [
-          -200,
-          0
+          -800,
+          -200
         ],
+        [
+          -600,
+          -200
+        ]
+      ]
+    },
+    {
+      "Points": [
         [
           -200,
           -200
@@ -725,11 +749,35 @@
     {
       "Points": [
         [
+          200,
+          0
+        ],
+        [
+          600,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1600,
+          0
+        ],
+        [
           1800,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2000,
           200
         ],
         [
-          2000,
+          2400,
           200
         ]
       ]
@@ -737,12 +785,108 @@
     {
       "Points": [
         [
-          2400,
+          2800,
           200
         ],
         [
-          2700,
+          3200,
           200
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          900,
+          -400
+        ],
+        [
+          900,
+          -600
+        ],
+        [
+          500,
+          -600
+        ],
+        [
+          500,
+          -800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1100,
+          -400
+        ],
+        [
+          1100,
+          -600
+        ],
+        [
+          1100,
+          -800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1300,
+          -400
+        ],
+        [
+          1300,
+          -600
+        ],
+        [
+          1700,
+          -600
+        ],
+        [
+          1700,
+          -800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1000,
+          400
+        ],
+        [
+          1000,
+          600
+        ],
+        [
+          700,
+          600
+        ],
+        [
+          700,
+          800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1200,
+          400
+        ],
+        [
+          1200,
+          600
+        ],
+        [
+          1500,
+          600
+        ],
+        [
+          1500,
+          800
         ]
       ]
     }

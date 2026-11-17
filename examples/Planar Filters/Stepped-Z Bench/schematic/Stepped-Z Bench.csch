@@ -112,7 +112,7 @@
           "Name": "Sections",
           "Expression": "line(W=5.48mm, L=2.047mm); line(W=0.114mm, L=8.783mm); line(W=5.48mm, L=7.64mm); line(W=0.114mm, L=11.998mm); line(W=5.48mm, L=5.593mm); line(W=0.114mm, L=3.215mm)",
           "Unit": "",
-          "ShowOnSchematic": true,
+          "ShowOnSchematic": false,
           "Dimension": "None"
         },
         {
@@ -187,7 +187,7 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": 2300,
+      "X": 2500,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -212,7 +212,7 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": 2300,
+      "X": 2500,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -224,7 +224,7 @@
     {
       "InstanceName": "IDEAL",
       "Symbol": "Filter",
-      "X": 4100,
+      "X": 4300,
       "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
@@ -263,7 +263,7 @@
     {
       "InstanceName": "P3",
       "Symbol": "Term",
-      "X": 3500,
+      "X": 3700,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -288,7 +288,7 @@
     {
       "InstanceName": "GND3",
       "Symbol": "Ground",
-      "X": 3500,
+      "X": 3700,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -300,7 +300,7 @@
     {
       "InstanceName": "P4",
       "Symbol": "Term",
-      "X": 4700,
+      "X": 4900,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -325,7 +325,7 @@
     {
       "InstanceName": "GND4",
       "Symbol": "Ground",
-      "X": 4700,
+      "X": 4900,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -337,7 +337,7 @@
     {
       "InstanceName": "PLANAR",
       "Symbol": "Snp",
-      "X": 7300,
+      "X": 7500,
       "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
@@ -362,7 +362,7 @@
     {
       "InstanceName": "P5",
       "Symbol": "Term",
-      "X": 6700,
+      "X": 6600,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -387,7 +387,7 @@
     {
       "InstanceName": "GND5",
       "Symbol": "Ground",
-      "X": 6700,
+      "X": 6600,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -399,7 +399,7 @@
     {
       "InstanceName": "P6",
       "Symbol": "Term",
-      "X": 7900,
+      "X": 8400,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -424,7 +424,7 @@
     {
       "InstanceName": "GND6",
       "Symbol": "Ground",
-      "X": 7900,
+      "X": 8400,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -514,7 +514,7 @@
           0
         ],
         [
-          2300,
+          2500,
           0
         ]
       ]
@@ -522,11 +522,11 @@
     {
       "Points": [
         [
-          3900,
+          4100,
           0
         ],
         [
-          3500,
+          3700,
           0
         ]
       ]
@@ -534,11 +534,11 @@
     {
       "Points": [
         [
-          4300,
+          4500,
           0
         ],
         [
-          4700,
+          4900,
           0
         ]
       ]
@@ -546,11 +546,11 @@
     {
       "Points": [
         [
-          7100,
+          7300,
           0
         ],
         [
-          6700,
+          6600,
           0
         ]
       ]
@@ -558,11 +558,11 @@
     {
       "Points": [
         [
-          7500,
+          7700,
           0
         ],
         [
-          7900,
+          8400,
           0
         ]
       ]

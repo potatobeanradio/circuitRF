@@ -27,7 +27,7 @@
       "InstanceName": "P1",
       "Symbol": "Term",
       "X": -200,
-      "Y": 400,
+      "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -52,7 +52,7 @@
       "InstanceName": "GND1",
       "Symbol": "Ground",
       "X": -200,
-      "Y": 600,
+      "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -178,15 +178,15 @@
       ],
       "LabelOffsets": [
         [
-          -1050,
-          -150
+          200,
+          -500
         ]
       ]
     },
     {
       "InstanceName": "CV2",
       "Symbol": "MCurve",
-      "X": 1900,
+      "X": 2500,
       "Y": -400,
       "Rotation": "R180",
       "MirrorX": true,
@@ -238,7 +238,7 @@
     {
       "InstanceName": "TL2",
       "Symbol": "Mlin",
-      "X": 2300,
+      "X": 2900,
       "Y": -1000,
       "Rotation": "R0",
       "MirrorX": false,
@@ -277,7 +277,7 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": 2800,
+      "X": 3400,
       "Y": -800,
       "Rotation": "R0",
       "MirrorX": false,
@@ -302,7 +302,7 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": 2800,
+      "X": 3400,
       "Y": -600,
       "Rotation": "R0",
       "MirrorX": false,
@@ -314,7 +314,7 @@
     {
       "InstanceName": "CV3",
       "Symbol": "MCurve",
-      "X": 1900,
+      "X": 2500,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -366,7 +366,7 @@
     {
       "InstanceName": "TL3",
       "Symbol": "Mlin",
-      "X": 2300,
+      "X": 2900,
       "Y": 1000,
       "Rotation": "R0",
       "MirrorX": false,
@@ -405,7 +405,7 @@
     {
       "InstanceName": "P3",
       "Symbol": "Term",
-      "X": 2800,
+      "X": 3400,
       "Y": 1200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -430,7 +430,7 @@
     {
       "InstanceName": "GND3",
       "Symbol": "Ground",
-      "X": 2800,
+      "X": 3400,
       "Y": 1400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -443,10 +443,6 @@
   "Wires": [
     {
       "Points": [
-        [
-          -200,
-          200
-        ],
         [
           -200,
           0
@@ -500,7 +496,7 @@
           -400
         ],
         [
-          1700,
+          2300,
           -400
         ]
       ]
@@ -512,7 +508,7 @@
           400
         ],
         [
-          1700,
+          2300,
           400
         ]
       ]
@@ -520,15 +516,27 @@
     {
       "Points": [
         [
-          1900,
+          2500,
           -600
         ],
         [
-          1900,
+          2500,
           -1000
         ],
         [
-          2100,
+          2700,
+          -1000
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          3100,
+          -1000
+        ],
+        [
+          3400,
           -1000
         ]
       ]
@@ -537,26 +545,14 @@
       "Points": [
         [
           2500,
-          -1000
-        ],
-        [
-          2800,
-          -1000
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          1900,
           600
         ],
         [
-          1900,
+          2500,
           1000
         ],
         [
-          2100,
+          2700,
           1000
         ]
       ]
@@ -564,11 +560,11 @@
     {
       "Points": [
         [
-          2500,
+          3100,
           1000
         ],
         [
-          2800,
+          3400,
           1000
         ]
       ]
@@ -606,22 +602,22 @@
       "OffsetY": 0
     },
     {
-      "X": 1550,
+      "X": 2000,
       "Y": -400,
       "Name": "o2",
       "OwnerWireIndex": 4,
       "SegmentIndex": 0,
-      "AlongT": 0.5,
+      "AlongT": 0.6666666666666666,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 1550,
+      "X": 2000,
       "Y": 400,
       "Name": "o3",
       "OwnerWireIndex": 5,
       "SegmentIndex": 0,
-      "AlongT": 0.5,
+      "AlongT": 0.6666666666666666,
       "OffsetX": 0,
       "OffsetY": 0
     }

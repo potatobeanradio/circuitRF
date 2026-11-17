@@ -264,7 +264,7 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": 2300,
+      "X": 2500,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -289,7 +289,7 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": 2300,
+      "X": 2500,
       "Y": 600,
       "Rotation": "R0",
       "MirrorX": false,
@@ -301,7 +301,7 @@
     {
       "InstanceName": "IDEAL",
       "Symbol": "Filter",
-      "X": 4100,
+      "X": 4300,
       "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
@@ -361,7 +361,7 @@
     {
       "InstanceName": "P3",
       "Symbol": "Term",
-      "X": 3500,
+      "X": 3700,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -386,7 +386,7 @@
     {
       "InstanceName": "GND3",
       "Symbol": "Ground",
-      "X": 3500,
+      "X": 3700,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -398,7 +398,7 @@
     {
       "InstanceName": "P4",
       "Symbol": "Term",
-      "X": 4700,
+      "X": 4900,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -423,7 +423,7 @@
     {
       "InstanceName": "GND4",
       "Symbol": "Ground",
-      "X": 4700,
+      "X": 4900,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -506,7 +506,7 @@
           200
         ],
         [
-          2300,
+          2500,
           200
         ]
       ]
@@ -514,11 +514,11 @@
     {
       "Points": [
         [
-          3900,
+          4100,
           0
         ],
         [
-          3500,
+          3700,
           0
         ]
       ]
@@ -526,11 +526,11 @@
     {
       "Points": [
         [
-          4300,
+          4500,
           0
         ],
         [
-          4700,
+          4900,
           0
         ]
       ]

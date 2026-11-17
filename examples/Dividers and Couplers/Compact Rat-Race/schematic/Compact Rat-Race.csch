@@ -9,7 +9,7 @@
       "InstanceName": "VAR1",
       "Symbol": "Var",
       "X": -600,
-      "Y": -900,
+      "Y": -1400,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -65,7 +65,7 @@
       "InstanceName": "TL1",
       "Symbol": "Mlin",
       "X": 1000,
-      "Y": -800,
+      "Y": -1000,
       "Rotation": "R90",
       "MirrorX": false,
       "Disable": "None",
@@ -98,12 +98,18 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          275,
+          -397
+        ]
       ]
     },
     {
       "InstanceName": "TL2",
       "Symbol": "Mlin",
-      "X": 200,
+      "X": 0,
       "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
@@ -142,7 +148,7 @@
     {
       "InstanceName": "TL3",
       "Symbol": "Mlin",
-      "X": 1800,
+      "X": 2000,
       "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
@@ -182,7 +188,7 @@
       "InstanceName": "TL4",
       "Symbol": "Mlin",
       "X": 1000,
-      "Y": 800,
+      "Y": 1000,
       "Rotation": "R90",
       "MirrorX": false,
       "Disable": "None",
@@ -215,13 +221,19 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          275,
+          -397
+        ]
       ]
     },
     {
       "InstanceName": "P1",
       "Symbol": "Term",
-      "X": 1400,
-      "Y": -1000,
+      "X": 2000,
+      "Y": -1400,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -245,8 +257,8 @@
     {
       "InstanceName": "GND1",
       "Symbol": "Ground",
-      "X": 1400,
-      "Y": -800,
+      "X": 2000,
+      "Y": -1200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -257,7 +269,7 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": -200,
+      "X": -600,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -282,7 +294,7 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": -200,
+      "X": -600,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -294,7 +306,7 @@
     {
       "InstanceName": "P3",
       "Symbol": "Term",
-      "X": 2200,
+      "X": 2600,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -319,7 +331,7 @@
     {
       "InstanceName": "GND3",
       "Symbol": "Ground",
-      "X": 2200,
+      "X": 2600,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -331,8 +343,8 @@
     {
       "InstanceName": "P4",
       "Symbol": "Term",
-      "X": 1400,
-      "Y": 1400,
+      "X": 2000,
+      "Y": 1600,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -356,8 +368,8 @@
     {
       "InstanceName": "GND4",
       "Symbol": "Ground",
-      "X": 1400,
-      "Y": 1600,
+      "X": 2000,
+      "Y": 1800,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -371,35 +383,27 @@
       "Points": [
         [
           1000,
-          -600
+          -400
         ],
         [
           1000,
-          -400
+          -800
         ]
       ]
     },
     {
       "Points": [
         [
-          400,
-          0
+          1000,
+          -1200
         ],
         [
-          600,
-          0
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          1400,
-          0
+          1000,
+          -1600
         ],
         [
-          1600,
-          0
+          2000,
+          -1600
         ]
       ]
     },
@@ -411,7 +415,7 @@
         ],
         [
           1000,
-          600
+          800
         ]
       ]
     },
@@ -419,55 +423,63 @@
       "Points": [
         [
           1000,
-          -1000
+          1200
         ],
         [
           1000,
-          -1200
+          1400
         ],
         [
-          1400,
-          -1200
+          2000,
+          1400
         ]
       ]
     },
     {
       "Points": [
         [
-          0,
+          600,
           0
         ],
+        [
+          200,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
         [
           -200,
           0
+        ],
+        [
+          -600,
+          0
         ]
       ]
     },
     {
       "Points": [
         [
-          2000,
+          1400,
           0
         ],
+        [
+          1800,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
         [
           2200,
           0
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          1000,
-          1000
         ],
         [
-          1000,
-          1200
-        ],
-        [
-          1400,
-          1200
+          2600,
+          0
         ]
       ]
     }
@@ -475,7 +487,7 @@
   "NetLabels": [
     {
       "X": 1000,
-      "Y": -500,
+      "Y": -600,
       "Name": "n1",
       "OwnerWireIndex": 0,
       "SegmentIndex": 0,
@@ -484,20 +496,20 @@
       "OffsetY": 0
     },
     {
-      "X": 500,
+      "X": 400,
       "Y": 0,
       "Name": "n2",
-      "OwnerWireIndex": 1,
+      "OwnerWireIndex": 4,
       "SegmentIndex": 0,
       "AlongT": 0.5,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 1500,
+      "X": 1600,
       "Y": 0,
       "Name": "n3",
-      "OwnerWireIndex": 2,
+      "OwnerWireIndex": 6,
       "SegmentIndex": 0,
       "AlongT": 0.5,
       "OffsetX": 0,
@@ -505,9 +517,9 @@
     },
     {
       "X": 1000,
-      "Y": 500,
+      "Y": 600,
       "Name": "n4",
-      "OwnerWireIndex": 3,
+      "OwnerWireIndex": 2,
       "SegmentIndex": 0,
       "AlongT": 0.5,
       "OffsetX": 0,

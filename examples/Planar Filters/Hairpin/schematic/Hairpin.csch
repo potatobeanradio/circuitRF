@@ -27,7 +27,7 @@
       "InstanceName": "P1",
       "Symbol": "Term",
       "X": -200,
-      "Y": 400,
+      "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -52,7 +52,7 @@
       "InstanceName": "GND1",
       "Symbol": "Ground",
       "X": -200,
-      "Y": 600,
+      "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -281,10 +281,6 @@
   "Wires": [
     {
       "Points": [
-        [
-          -200,
-          200
-        ],
         [
           -200,
           0

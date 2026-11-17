@@ -435,7 +435,7 @@
     {
       "InstanceName": "PLANAR",
       "Symbol": "Snp",
-      "X": 4600,
+      "X": 5200,
       "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
@@ -497,7 +497,7 @@
     {
       "InstanceName": "P5",
       "Symbol": "Term",
-      "X": 4000,
+      "X": 4300,
       "Y": 300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -522,7 +522,7 @@
     {
       "InstanceName": "GND5",
       "Symbol": "Ground",
-      "X": 4000,
+      "X": 4300,
       "Y": 500,
       "Rotation": "R0",
       "MirrorX": false,
@@ -534,7 +534,7 @@
     {
       "InstanceName": "R1_pl",
       "Symbol": "Resistor",
-      "X": 5600,
+      "X": 6800,
       "Y": 100,
       "Rotation": "R0",
       "MirrorX": false,
@@ -552,7 +552,7 @@
     {
       "InstanceName": "GND6",
       "Symbol": "Ground",
-      "X": 5600,
+      "X": 7400,
       "Y": 300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -564,7 +564,7 @@
     {
       "InstanceName": "P6",
       "Symbol": "Term",
-      "X": 5200,
+      "X": 6100,
       "Y": 300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -589,7 +589,7 @@
     {
       "InstanceName": "GND7",
       "Symbol": "Ground",
-      "X": 5200,
+      "X": 6100,
       "Y": 500,
       "Rotation": "R0",
       "MirrorX": false,
@@ -601,7 +601,7 @@
     {
       "InstanceName": "EMERGE",
       "Symbol": "Snp",
-      "X": 7800,
+      "X": 9000,
       "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
@@ -626,7 +626,7 @@
     {
       "InstanceName": "P7",
       "Symbol": "Term",
-      "X": 6800,
+      "X": 7400,
       "Y": 100,
       "Rotation": "R0",
       "MirrorX": false,
@@ -663,7 +663,7 @@
     {
       "InstanceName": "P8",
       "Symbol": "Term",
-      "X": 7200,
+      "X": 8100,
       "Y": 300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -688,7 +688,7 @@
     {
       "InstanceName": "GND9",
       "Symbol": "Ground",
-      "X": 7200,
+      "X": 8100,
       "Y": 500,
       "Rotation": "R0",
       "MirrorX": false,
@@ -700,7 +700,7 @@
     {
       "InstanceName": "R1_em",
       "Symbol": "Resistor",
-      "X": 8800,
+      "X": 10600,
       "Y": 100,
       "Rotation": "R0",
       "MirrorX": false,
@@ -718,7 +718,7 @@
     {
       "InstanceName": "GND10",
       "Symbol": "Ground",
-      "X": 8800,
+      "X": 10600,
       "Y": 300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -730,7 +730,7 @@
     {
       "InstanceName": "P9",
       "Symbol": "Term",
-      "X": 8400,
+      "X": 9900,
       "Y": 300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -755,7 +755,7 @@
     {
       "InstanceName": "GND11",
       "Symbol": "Ground",
-      "X": 8400,
+      "X": 9900,
       "Y": 500,
       "Rotation": "R0",
       "MirrorX": false,
@@ -767,7 +767,7 @@
     {
       "InstanceName": "PALACE",
       "Symbol": "Snp",
-      "X": 11000,
+      "X": 12800,
       "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
@@ -792,7 +792,7 @@
     {
       "InstanceName": "P10",
       "Symbol": "Term",
-      "X": 10000,
+      "X": 11200,
       "Y": 100,
       "Rotation": "R0",
       "MirrorX": false,
@@ -817,7 +817,7 @@
     {
       "InstanceName": "GND12",
       "Symbol": "Ground",
-      "X": 10000,
+      "X": 11200,
       "Y": 300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -829,7 +829,7 @@
     {
       "InstanceName": "P11",
       "Symbol": "Term",
-      "X": 10400,
+      "X": 11900,
       "Y": 300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -854,7 +854,7 @@
     {
       "InstanceName": "GND13",
       "Symbol": "Ground",
-      "X": 10400,
+      "X": 11900,
       "Y": 500,
       "Rotation": "R0",
       "MirrorX": false,
@@ -866,7 +866,7 @@
     {
       "InstanceName": "R1_pa",
       "Symbol": "Resistor",
-      "X": 12000,
+      "X": 14400,
       "Y": 100,
       "Rotation": "R0",
       "MirrorX": false,
@@ -884,7 +884,7 @@
     {
       "InstanceName": "GND14",
       "Symbol": "Ground",
-      "X": 12000,
+      "X": 14400,
       "Y": 300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -896,7 +896,7 @@
     {
       "InstanceName": "P12",
       "Symbol": "Term",
-      "X": 11600,
+      "X": 13700,
       "Y": 300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -921,7 +921,7 @@
     {
       "InstanceName": "GND15",
       "Symbol": "Ground",
-      "X": 11600,
+      "X": 13700,
       "Y": 500,
       "Rotation": "R0",
       "MirrorX": false,
@@ -979,8 +979,8 @@
     {
       "InstanceName": "P15",
       "Symbol": "Term",
-      "X": 600,
-      "Y": 8200,
+      "X": 4400,
+      "Y": 5200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -999,19 +999,13 @@
           "ShowOnSchematic": true,
           "Dimension": "Resistance"
         }
-      ],
-      "LabelOffsets": [
-        [
-          285,
-          -361
-        ]
       ]
     },
     {
       "InstanceName": "P14",
       "Symbol": "Term",
-      "X": 4200,
-      "Y": 3500,
+      "X": 4400,
+      "Y": 3200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1030,19 +1024,13 @@
           "ShowOnSchematic": true,
           "Dimension": "Resistance"
         }
-      ],
-      "LabelOffsets": [
-        [
-          285,
-          -361
-        ]
       ]
     },
     {
       "InstanceName": "P13",
       "Symbol": "Term",
-      "X": -600,
-      "Y": 3500,
+      "X": -1600,
+      "Y": 4200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1061,18 +1049,12 @@
           "ShowOnSchematic": true,
           "Dimension": "Resistance"
         }
-      ],
-      "LabelOffsets": [
-        [
-          285,
-          -361
-        ]
       ]
     },
     {
       "InstanceName": "ETL1",
       "Symbol": "Tline",
-      "X": 1200,
+      "X": 800,
       "Y": 3000,
       "Rotation": "R0",
       "MirrorX": false,
@@ -1104,9 +1086,9 @@
     {
       "InstanceName": "ETL2",
       "Symbol": "Tline",
-      "X": 600,
-      "Y": 4600,
-      "Rotation": "R90",
+      "X": 800,
+      "Y": 5000,
+      "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
@@ -1131,19 +1113,13 @@
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         }
-      ],
-      "LabelOffsets": [
-        [
-          275,
-          -397
-        ]
       ]
     },
     {
       "InstanceName": "ER3",
       "Symbol": "Resistor",
-      "X": 2000,
-      "Y": 5200,
+      "X": 1600,
+      "Y": 4000,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1166,8 +1142,8 @@
     {
       "InstanceName": "ETL4",
       "Symbol": "Tline",
-      "X": 0,
-      "Y": 3000,
+      "X": -800,
+      "Y": 4000,
       "Rotation": "R180",
       "MirrorX": false,
       "Disable": "None",
@@ -1262,9 +1238,9 @@
     {
       "InstanceName": "ETL7",
       "Symbol": "Tline",
-      "X": 600,
-      "Y": 5800,
-      "Rotation": "R90",
+      "X": 2400,
+      "Y": 5000,
+      "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
@@ -1289,20 +1265,14 @@
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         }
-      ],
-      "LabelOffsets": [
-        [
-          275,
-          -397
-        ]
       ]
     },
     {
       "InstanceName": "ETL8",
       "Symbol": "Tline",
-      "X": 600,
-      "Y": 7000,
-      "Rotation": "R90",
+      "X": 3600,
+      "Y": 5000,
+      "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
@@ -1327,19 +1297,13 @@
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         }
-      ],
-      "LabelOffsets": [
-        [
-          275,
-          -397
-        ]
       ]
     },
     {
       "InstanceName": "GND16",
       "Symbol": "Ground",
-      "X": -600,
-      "Y": 3700,
+      "X": -1600,
+      "Y": 4400,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1350,8 +1314,8 @@
     {
       "InstanceName": "GND17",
       "Symbol": "Ground",
-      "X": 4200,
-      "Y": 3700,
+      "X": 4400,
+      "Y": 3400,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1362,8 +1326,8 @@
     {
       "InstanceName": "GND18",
       "Symbol": "Ground",
-      "X": 600,
-      "Y": 8400,
+      "X": 4400,
+      "Y": 5400,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1508,7 +1472,19 @@
     {
       "Points": [
         [
-          4400,
+          5000,
+          100
+        ],
+        [
+          4300,
+          100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          5000,
           -100
         ],
         [
@@ -1520,11 +1496,11 @@
     {
       "Points": [
         [
-          4400,
+          5400,
           100
         ],
         [
-          4000,
+          6100,
           100
         ]
       ]
@@ -1532,31 +1508,7 @@
     {
       "Points": [
         [
-          4800,
-          -100
-        ],
-        [
-          5600,
-          -100
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          4800,
-          100
-        ],
-        [
-          5200,
-          100
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          7600,
+          5400,
           -100
         ],
         [
@@ -1568,47 +1520,23 @@
     {
       "Points": [
         [
-          7600,
+          8800,
           100
         ],
         [
-          7200,
+          8100,
           100
         ]
       ]
     },
     {
       "Points": [
-        [
-          8000,
-          -100
-        ],
         [
           8800,
           -100
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          8000,
-          100
         ],
         [
-          8400,
-          100
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          10800,
-          -100
-        ],
-        [
-          10000,
+          7400,
           -100
         ]
       ]
@@ -1616,23 +1544,71 @@
     {
       "Points": [
         [
-          10800,
+          9200,
           100
         ],
         [
-          10400,
+          9900,
           100
         ]
       ]
     },
     {
       "Points": [
+        [
+          9200,
+          -100
+        ],
+        [
+          10600,
+          -100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          12600,
+          100
+        ],
+        [
+          11900,
+          100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          12600,
+          -100
+        ],
         [
           11200,
           -100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          13000,
+          100
         ],
         [
-          12000,
+          13700,
+          100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          13000,
+          -100
+        ],
+        [
+          14400,
           -100
         ]
       ]
@@ -1640,44 +1616,120 @@
     {
       "Points": [
         [
-          11200,
-          100
+          -1600,
+          4000
         ],
         [
-          11600,
-          100
+          -1000,
+          4000
         ]
       ]
     },
     {
       "Points": [
         [
-          -200,
-          3000
+          -600,
+          4000
         ],
         [
-          -600,
-          3000
-        ],
-        [
-          -600,
-          3300
+          0,
+          4000
         ]
       ]
     },
     {
       "Points": [
         [
-          3800,
+          0,
           3000
         ],
         [
-          4200,
+          0,
+          5000
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          0,
           3000
         ],
         [
-          4200,
-          3300
+          600,
+          3000
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          0,
+          5000
+        ],
+        [
+          600,
+          5000
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1000,
+          3000
+        ],
+        [
+          1600,
+          3000
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1000,
+          5000
+        ],
+        [
+          1600,
+          5000
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1600,
+          3000
+        ],
+        [
+          1600,
+          3800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1600,
+          4200
+        ],
+        [
+          1600,
+          5000
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1600,
+          3000
+        ],
+        [
+          2200,
+          3000
         ]
       ]
     },
@@ -1696,35 +1748,11 @@
     {
       "Points": [
         [
-          600,
-          7200
-        ],
-        [
-          600,
-          8000
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          600,
-          6000
-        ],
-        [
-          600,
-          6800
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          200,
+          3800,
           3000
         ],
         [
-          1000,
+          4400,
           3000
         ]
       ]
@@ -1732,35 +1760,11 @@
     {
       "Points": [
         [
-          600,
-          3000
-        ],
-        [
-          600,
-          4400
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          1400,
-          3000
+          1600,
+          5000
         ],
         [
           2200,
-          3000
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          2000,
-          3000
-        ],
-        [
-          2000,
           5000
         ]
       ]
@@ -1768,36 +1772,24 @@
     {
       "Points": [
         [
-          600,
-          4800
+          2600,
+          5000
         ],
         [
-          600,
-          5600
+          3400,
+          5000
         ]
       ]
     },
     {
       "Points": [
         [
-          600,
-          5400
+          3800,
+          5000
         ],
         [
-          1800,
-          5400
-        ],
-        [
-          1800,
-          5600
-        ],
-        [
-          2000,
-          5600
-        ],
-        [
-          2000,
-          5400
+          4400,
+          5000
         ]
       ]
     }
@@ -1854,18 +1846,18 @@
       "OffsetY": 0
     },
     {
-      "X": 600,
-      "Y": 3000,
+      "X": -300,
+      "Y": 4000,
       "Name": "ea",
-      "OwnerWireIndex": 27,
+      "OwnerWireIndex": 23,
       "SegmentIndex": 0,
       "AlongT": 0.5,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": -400,
-      "Y": 3000,
+      "X": -1300,
+      "Y": 4000,
       "Name": "ep1",
       "OwnerWireIndex": 22,
       "SegmentIndex": 0,
@@ -1874,10 +1866,20 @@
       "OffsetY": 0
     },
     {
-      "X": 2000,
-      "Y": 4000,
+      "X": 1900,
+      "Y": 3000,
       "Name": "eb",
-      "OwnerWireIndex": 30,
+      "OwnerWireIndex": 31,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1900,
+      "Y": 5000,
+      "Name": "ec",
+      "OwnerWireIndex": 34,
       "SegmentIndex": 0,
       "AlongT": 0.5,
       "OffsetX": 0,
@@ -1887,26 +1889,6 @@
       "X": 3000,
       "Y": 3000,
       "Name": "ep2_0",
-      "OwnerWireIndex": 24,
-      "SegmentIndex": 0,
-      "AlongT": 0.5,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 4000,
-      "Y": 3000,
-      "Name": "ep2",
-      "OwnerWireIndex": 23,
-      "SegmentIndex": 0,
-      "AlongT": 0.5,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 1200,
-      "Y": 5400,
-      "Name": "ec",
       "OwnerWireIndex": 32,
       "SegmentIndex": 0,
       "AlongT": 0.5,
@@ -1914,20 +1896,30 @@
       "OffsetY": 0
     },
     {
-      "X": 600,
-      "Y": 6400,
-      "Name": "ep3_0",
-      "OwnerWireIndex": 26,
+      "X": 4100,
+      "Y": 3000,
+      "Name": "ep2",
+      "OwnerWireIndex": 33,
       "SegmentIndex": 0,
       "AlongT": 0.5,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 600,
-      "Y": 7600,
+      "X": 3000,
+      "Y": 5000,
+      "Name": "ep3_0",
+      "OwnerWireIndex": 35,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 4100,
+      "Y": 5000,
       "Name": "ep3",
-      "OwnerWireIndex": 25,
+      "OwnerWireIndex": 36,
       "SegmentIndex": 0,
       "AlongT": 0.5,
       "OffsetX": 0,

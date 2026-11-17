@@ -67,6 +67,12 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          250,
+          0
+        ]
       ]
     },
     {
@@ -148,8 +154,8 @@
     {
       "InstanceName": "TL2",
       "Symbol": "Mlin",
-      "X": 1400,
-      "Y": -800,
+      "X": 2200,
+      "Y": -1000,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -187,8 +193,8 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": 2000,
-      "Y": -600,
+      "X": 2800,
+      "Y": -800,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -212,8 +218,8 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": 2000,
-      "Y": -400,
+      "X": 2800,
+      "Y": -600,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -224,8 +230,8 @@
     {
       "InstanceName": "TL3",
       "Symbol": "Mlin",
-      "X": 1400,
-      "Y": 1200,
+      "X": 2200,
+      "Y": 1000,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -263,8 +269,8 @@
     {
       "InstanceName": "P3",
       "Symbol": "Term",
-      "X": 2000,
-      "Y": 1400,
+      "X": 2800,
+      "Y": 1200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -288,8 +294,8 @@
     {
       "InstanceName": "GND3",
       "Symbol": "Ground",
-      "X": 2000,
-      "Y": 1600,
+      "X": 2800,
+      "Y": 1400,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -301,8 +307,8 @@
       "InstanceName": "R1",
       "Symbol": "Resistor",
       "X": 1800,
-      "Y": -100,
-      "Rotation": "R0",
+      "Y": -300,
+      "Rotation": "R270",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
@@ -320,24 +326,32 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          500,
+          -350
+        ]
       ]
     },
     {
       "InstanceName": "V1",
       "Symbol": "ViaGnd",
-      "X": 1800,
-      "Y": 300,
+      "X": 2000,
+      "Y": -100,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
-      "Parameters": []
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     },
     {
       "InstanceName": "R2",
       "Symbol": "Resistor",
-      "X": 2600,
-      "Y": 500,
-      "Rotation": "R0",
+      "X": 1800,
+      "Y": 300,
+      "Rotation": "R270",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
@@ -355,20 +369,40 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          500,
+          -350
+        ]
       ]
     },
     {
       "InstanceName": "V2",
       "Symbol": "ViaGnd",
-      "X": 2600,
-      "Y": 900,
+      "X": 2000,
+      "Y": 500,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
-      "Parameters": []
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     }
   ],
   "Wires": [
+    {
+      "Points": [
+        [
+          -200,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ]
+    },
     {
       "Points": [
         [
@@ -384,40 +418,28 @@
     {
       "Points": [
         [
-          0,
-          0
-        ],
-        [
-          -200,
-          0
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
           1000,
           -400
         ],
         [
           1000,
-          -800
+          -1000
         ],
         [
-          1200,
-          -800
+          2000,
+          -1000
         ]
       ]
     },
     {
       "Points": [
         [
-          1600,
-          -800
+          2400,
+          -1000
         ],
         [
-          2000,
-          -800
+          2800,
+          -1000
         ]
       ]
     },
@@ -429,23 +451,23 @@
         ],
         [
           1000,
-          1200
+          1000
         ],
         [
-          1200,
-          1200
+          2000,
+          1000
         ]
       ]
     },
     {
       "Points": [
         [
-          1600,
-          1200
+          2400,
+          1000
         ],
         [
-          2000,
-          1200
+          2800,
+          1000
         ]
       ]
     },
@@ -456,7 +478,15 @@
           -300
         ],
         [
-          1800,
+          1600,
+          -300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2000,
           -300
         ]
       ]
@@ -468,7 +498,15 @@
           300
         ],
         [
-          2600,
+          1600,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2000,
           300
         ]
       ]

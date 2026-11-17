@@ -112,7 +112,7 @@
           "Name": "Sections",
           "Expression": "site(role=L, value=3.979nH); site(role=C, value=3.183pF, type=shunt); site(role=L, value=3.979nH)",
           "Unit": "",
-          "ShowOnSchematic": true,
+          "ShowOnSchematic": false,
           "Dimension": "None"
         },
         {
@@ -150,6 +150,12 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          0,
+          -1000
+        ]
       ]
     },
     {
@@ -194,7 +200,7 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": 2900,
+      "X": 3100,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -219,7 +225,7 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": 2900,
+      "X": 3100,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -231,8 +237,8 @@
     {
       "InstanceName": "L1",
       "Symbol": "Inductor",
-      "X": 1000,
-      "Y": 500,
+      "X": 800,
+      "Y": 900,
       "Rotation": "R90",
       "MirrorX": false,
       "Disable": "None",
@@ -257,7 +263,7 @@
       "InstanceName": "C1",
       "Symbol": "Capacitor",
       "X": 1300,
-      "Y": 500,
+      "Y": 700,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -282,7 +288,7 @@
       "InstanceName": "GND3",
       "Symbol": "Ground",
       "X": 1300,
-      "Y": 700,
+      "Y": 900,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -293,8 +299,8 @@
     {
       "InstanceName": "L2",
       "Symbol": "Inductor",
-      "X": 1600,
-      "Y": 700,
+      "X": 1800,
+      "Y": 900,
       "Rotation": "R90",
       "MirrorX": false,
       "Disable": "None",
@@ -364,7 +370,7 @@
           0
         ],
         [
-          2900,
+          3100,
           0
         ]
       ]
@@ -377,11 +383,15 @@
         ],
         [
           900,
-          500
+          450
         ],
         [
-          800,
-          500
+          600,
+          450
+        ],
+        [
+          600,
+          900
         ]
       ]
     },
@@ -393,10 +403,26 @@
         ],
         [
           1100,
-          500
+          600
         ],
         [
-          1200,
+          1000,
+          600
+        ],
+        [
+          1000,
+          900
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1300,
+          300
+        ],
+        [
+          1300,
           500
         ]
       ]
@@ -409,11 +435,15 @@
         ],
         [
           1500,
-          700
+          600
         ],
         [
-          1400,
-          700
+          1600,
+          600
+        ],
+        [
+          1600,
+          900
         ]
       ]
     },
@@ -425,11 +455,15 @@
         ],
         [
           1700,
-          700
+          450
         ],
         [
-          1800,
-          700
+          2000,
+          450
+        ],
+        [
+          2000,
+          900
         ]
       ]
     }

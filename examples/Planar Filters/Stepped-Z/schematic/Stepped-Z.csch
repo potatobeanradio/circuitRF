@@ -112,7 +112,7 @@
           "Name": "Sections",
           "Expression": "line(W=5.48mm, L=2.047mm); line(W=0.114mm, L=8.783mm); line(W=5.48mm, L=7.64mm); line(W=0.114mm, L=11.998mm); line(W=5.48mm, L=5.593mm); line(W=0.114mm, L=3.215mm)",
           "Unit": "",
-          "ShowOnSchematic": true,
+          "ShowOnSchematic": false,
           "Dimension": "None"
         },
         {
@@ -187,7 +187,7 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": 2300,
+      "X": 2500,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -212,7 +212,7 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": 2300,
+      "X": 2500,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -270,7 +270,7 @@
           0
         ],
         [
-          2300,
+          2500,
           0
         ]
       ]

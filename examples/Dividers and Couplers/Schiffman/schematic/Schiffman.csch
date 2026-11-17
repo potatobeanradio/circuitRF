@@ -8,8 +8,8 @@
     {
       "InstanceName": "VAR1",
       "Symbol": "Var",
-      "X": -600,
-      "Y": -900,
+      "X": -1600,
+      "Y": -1700,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -134,13 +134,19 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          450,
+          -650
+        ]
       ]
     },
     {
       "InstanceName": "TL1",
       "Symbol": "Mlin",
       "X": 400,
-      "Y": -700,
+      "Y": -900,
       "Rotation": "R90",
       "MirrorX": false,
       "Disable": "None",
@@ -173,13 +179,19 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          275,
+          -397
+        ]
       ]
     },
     {
       "InstanceName": "P1",
       "Symbol": "Term",
-      "X": 0,
-      "Y": -700,
+      "X": -200,
+      "Y": -1100,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -203,8 +215,8 @@
     {
       "InstanceName": "GND1",
       "Symbol": "Ground",
-      "X": 0,
-      "Y": -500,
+      "X": -200,
+      "Y": -900,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -215,7 +227,7 @@
     {
       "InstanceName": "TL2",
       "Symbol": "Mlin",
-      "X": 0,
+      "X": -200,
       "Y": -100,
       "Rotation": "R0",
       "MirrorX": false,
@@ -254,7 +266,7 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": -400,
+      "X": -800,
       "Y": 100,
       "Rotation": "R0",
       "MirrorX": false,
@@ -279,7 +291,7 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": -400,
+      "X": -800,
       "Y": 300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -291,8 +303,8 @@
     {
       "InstanceName": "TL3",
       "Symbol": "Mlin",
-      "X": -400,
-      "Y": 200,
+      "X": -200,
+      "Y": 1000,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -331,7 +343,7 @@
       "InstanceName": "P3",
       "Symbol": "Term",
       "X": -800,
-      "Y": 400,
+      "Y": 1200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -356,7 +368,7 @@
       "InstanceName": "GND3",
       "Symbol": "Ground",
       "X": -800,
-      "Y": 600,
+      "Y": 1400,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -367,8 +379,8 @@
     {
       "InstanceName": "TL4",
       "Symbol": "Mlin",
-      "X": 2000,
-      "Y": 200,
+      "X": 2200,
+      "Y": 1000,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -406,8 +418,8 @@
     {
       "InstanceName": "P4",
       "Symbol": "Term",
-      "X": 2600,
-      "Y": 400,
+      "X": 2800,
+      "Y": 1200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -431,8 +443,8 @@
     {
       "InstanceName": "GND4",
       "Symbol": "Ground",
-      "X": 2600,
-      "Y": 600,
+      "X": 2800,
+      "Y": 1400,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -446,30 +458,34 @@
       "Points": [
         [
           400,
-          -900
+          -500
         ],
         [
-          0,
-          -900
+          400,
+          -700
         ]
       ]
     },
     {
       "Points": [
         [
-          200,
-          -100
+          400,
+          -1100
         ],
         [
-          600,
-          -100
-        ]
-      ]
-    },
-    {
-      "Points": [
+          400,
+          -1300
+        ],
         [
           -200,
+          -1300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -800,
           -100
         ],
         [
@@ -481,24 +497,44 @@
     {
       "Points": [
         [
-          -200,
-          200
+          0,
+          -100
         ],
         [
           600,
-          200
+          -100
         ]
       ]
     },
     {
       "Points": [
         [
-          -600,
+          600,
           200
         ],
         [
-          -800,
+          400,
           200
+        ],
+        [
+          400,
+          1000
+        ],
+        [
+          0,
+          1000
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -400,
+          1000
+        ],
+        [
+          -800,
+          1000
         ]
       ]
     },
@@ -509,20 +545,28 @@
           200
         ],
         [
-          1800,
+          1600,
           200
+        ],
+        [
+          1600,
+          1000
+        ],
+        [
+          2000,
+          1000
         ]
       ]
     },
     {
       "Points": [
         [
-          2200,
-          200
+          2400,
+          1000
         ],
         [
-          2600,
-          200
+          2800,
+          1000
         ]
       ]
     }

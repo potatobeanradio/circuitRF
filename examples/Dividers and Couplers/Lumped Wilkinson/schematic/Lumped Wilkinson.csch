@@ -88,6 +88,12 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          -390,
+          1324
+        ]
       ]
     },
     {
@@ -113,6 +119,12 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          0,
+          -650
+        ]
       ]
     },
     {
@@ -138,6 +150,12 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          0,
+          -650
+        ]
       ]
     },
     {
@@ -163,13 +181,19 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          0,
+          -650
+        ]
       ]
     },
     {
       "InstanceName": "C1",
       "Symbol": "Capacitor",
-      "X": 800,
-      "Y": 500,
+      "X": 200,
+      "Y": 900,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -188,23 +212,31 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          360,
+          -540
+        ]
       ]
     },
     {
       "InstanceName": "V1",
       "Symbol": "ViaGnd",
-      "X": 800,
-      "Y": 900,
+      "X": 200,
+      "Y": 1300,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
-      "Parameters": []
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     },
     {
       "InstanceName": "C2",
       "Symbol": "Capacitor",
       "X": 1000,
-      "Y": 500,
+      "Y": 900,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -223,23 +255,31 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          360,
+          -540
+        ]
       ]
     },
     {
       "InstanceName": "V2",
       "Symbol": "ViaGnd",
       "X": 1000,
-      "Y": 900,
+      "Y": 1300,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
-      "Parameters": []
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     },
     {
       "InstanceName": "C3",
       "Symbol": "Capacitor",
-      "X": 1200,
-      "Y": 500,
+      "X": 1800,
+      "Y": 900,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -258,17 +298,25 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          360,
+          -540
+        ]
       ]
     },
     {
       "InstanceName": "V3",
       "Symbol": "ViaGnd",
-      "X": 1200,
-      "Y": 900,
+      "X": 1800,
+      "Y": 1300,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
-      "Parameters": []
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     },
     {
       "InstanceName": "TL1",
@@ -349,7 +397,7 @@
     {
       "InstanceName": "CV2",
       "Symbol": "MCurve",
-      "X": 2500,
+      "X": 2900,
       "Y": -400,
       "Rotation": "R180",
       "MirrorX": true,
@@ -390,12 +438,18 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          310,
+          -180
+        ]
       ]
     },
     {
       "InstanceName": "CV3",
       "Symbol": "MCurve",
-      "X": 2500,
+      "X": 2900,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -436,12 +490,18 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          310,
+          -450
+        ]
       ]
     },
     {
       "InstanceName": "TL2",
       "Symbol": "Mlin",
-      "X": 2900,
+      "X": 3300,
       "Y": -1000,
       "Rotation": "R0",
       "MirrorX": false,
@@ -480,7 +540,7 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": 3400,
+      "X": 3800,
       "Y": -800,
       "Rotation": "R0",
       "MirrorX": false,
@@ -505,7 +565,7 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": 3400,
+      "X": 3800,
       "Y": -600,
       "Rotation": "R0",
       "MirrorX": false,
@@ -517,7 +577,7 @@
     {
       "InstanceName": "TL3",
       "Symbol": "Mlin",
-      "X": 2900,
+      "X": 3300,
       "Y": 1000,
       "Rotation": "R0",
       "MirrorX": false,
@@ -556,7 +616,7 @@
     {
       "InstanceName": "P3",
       "Symbol": "Term",
-      "X": 3400,
+      "X": 3800,
       "Y": 1200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -581,7 +641,7 @@
     {
       "InstanceName": "GND3",
       "Symbol": "Ground",
-      "X": 3400,
+      "X": 3800,
       "Y": 1400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -592,6 +652,82 @@
     }
   ],
   "Wires": [
+    {
+      "Points": [
+        [
+          800,
+          300
+        ],
+        [
+          800,
+          500
+        ],
+        [
+          200,
+          500
+        ],
+        [
+          200,
+          700
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1000,
+          300
+        ],
+        [
+          1000,
+          700
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1200,
+          300
+        ],
+        [
+          1200,
+          500
+        ],
+        [
+          1800,
+          500
+        ],
+        [
+          1800,
+          700
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          200,
+          1100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1000,
+          1100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1800,
+          1100
+        ]
+      ]
+    },
     {
       "Points": [
         [
@@ -627,7 +763,7 @@
           -400
         ],
         [
-          2300,
+          2700,
           -400
         ]
       ]
@@ -643,7 +779,7 @@
           400
         ],
         [
-          2300,
+          2700,
           400
         ]
       ]
@@ -651,27 +787,27 @@
     {
       "Points": [
         [
-          2500,
+          2900,
           -600
         ],
         [
-          2500,
+          2900,
           -1000
         ],
-        [
-          2700,
-          -1000
-        ]
-      ]
-    },
-    {
-      "Points": [
         [
           3100,
           -1000
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          3500,
+          -1000
         ],
         [
-          3400,
+          3800,
           -1000
         ]
       ]
@@ -679,15 +815,15 @@
     {
       "Points": [
         [
-          2500,
+          2900,
           600
         ],
         [
-          2500,
+          2900,
           1000
         ],
         [
-          2700,
+          3100,
           1000
         ]
       ]
@@ -695,11 +831,11 @@
     {
       "Points": [
         [
-          3100,
+          3500,
           1000
         ],
         [
-          3400,
+          3800,
           1000
         ]
       ]

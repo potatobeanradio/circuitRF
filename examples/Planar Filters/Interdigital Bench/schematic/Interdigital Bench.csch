@@ -123,13 +123,19 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          0,
+          1100
+        ]
       ]
     },
     {
       "InstanceName": "P1",
       "Symbol": "Term",
-      "X": -200,
-      "Y": 200,
+      "X": -800,
+      "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -153,8 +159,8 @@
     {
       "InstanceName": "GND1",
       "Symbol": "Ground",
-      "X": -200,
-      "Y": 400,
+      "X": -800,
+      "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -165,7 +171,7 @@
     {
       "InstanceName": "TL1",
       "Symbol": "Mlin",
-      "X": 200,
+      "X": -400,
       "Y": -200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -204,7 +210,7 @@
     {
       "InstanceName": "CV1",
       "Symbol": "MCurve",
-      "X": 600,
+      "X": 200,
       "Y": -200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -250,7 +256,7 @@
     {
       "InstanceName": "CV2",
       "Symbol": "MCurve",
-      "X": 1800,
+      "X": 2000,
       "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
@@ -296,7 +302,7 @@
     {
       "InstanceName": "TL2",
       "Symbol": "Mlin",
-      "X": 2200,
+      "X": 2600,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -335,7 +341,7 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": 2700,
+      "X": 3200,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -360,7 +366,7 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": 2700,
+      "X": 3200,
       "Y": 600,
       "Rotation": "R0",
       "MirrorX": false,
@@ -372,8 +378,8 @@
     {
       "InstanceName": "VIAG1",
       "Symbol": "ViaGnd",
-      "X": 900,
-      "Y": -600,
+      "X": 500,
+      "Y": -1000,
       "Rotation": "R180",
       "MirrorX": false,
       "Disable": "None",
@@ -434,13 +440,15 @@
           "ShowOnSchematic": false,
           "Dimension": "Capacitance"
         }
-      ]
+      ],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     },
     {
       "InstanceName": "VIAG2",
       "Symbol": "ViaGnd",
-      "X": 1000,
-      "Y": 600,
+      "X": 700,
+      "Y": 1000,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -501,13 +509,15 @@
           "ShowOnSchematic": false,
           "Dimension": "Capacitance"
         }
-      ]
+      ],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     },
     {
       "InstanceName": "VIAG3",
       "Symbol": "ViaGnd",
       "X": 1100,
-      "Y": -600,
+      "Y": -1000,
       "Rotation": "R180",
       "MirrorX": false,
       "Disable": "None",
@@ -568,13 +578,15 @@
           "ShowOnSchematic": false,
           "Dimension": "Capacitance"
         }
-      ]
+      ],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     },
     {
       "InstanceName": "VIAG4",
       "Symbol": "ViaGnd",
-      "X": 1200,
-      "Y": 600,
+      "X": 1500,
+      "Y": 1000,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -635,13 +647,15 @@
           "ShowOnSchematic": false,
           "Dimension": "Capacitance"
         }
-      ]
+      ],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     },
     {
       "InstanceName": "VIAG5",
       "Symbol": "ViaGnd",
-      "X": 1300,
-      "Y": -600,
+      "X": 1700,
+      "Y": -1000,
       "Rotation": "R180",
       "MirrorX": false,
       "Disable": "None",
@@ -702,12 +716,14 @@
           "ShowOnSchematic": false,
           "Dimension": "Capacitance"
         }
-      ]
+      ],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     },
     {
       "InstanceName": "IDEAL",
       "Symbol": "Filter",
-      "X": 4500,
+      "X": 5300,
       "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
@@ -760,7 +776,7 @@
     {
       "InstanceName": "P3",
       "Symbol": "Term",
-      "X": 3900,
+      "X": 4700,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -785,7 +801,7 @@
     {
       "InstanceName": "GND3",
       "Symbol": "Ground",
-      "X": 3900,
+      "X": 4700,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -797,7 +813,7 @@
     {
       "InstanceName": "P4",
       "Symbol": "Term",
-      "X": 5100,
+      "X": 5900,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -822,7 +838,7 @@
     {
       "InstanceName": "GND4",
       "Symbol": "Ground",
-      "X": 5100,
+      "X": 5900,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -834,7 +850,7 @@
     {
       "InstanceName": "PLANAR",
       "Symbol": "Snp",
-      "X": 7700,
+      "X": 8500,
       "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
@@ -859,7 +875,7 @@
     {
       "InstanceName": "P5",
       "Symbol": "Term",
-      "X": 7100,
+      "X": 7900,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -884,7 +900,7 @@
     {
       "InstanceName": "GND5",
       "Symbol": "Ground",
-      "X": 7100,
+      "X": 7900,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -896,7 +912,7 @@
     {
       "InstanceName": "P6",
       "Symbol": "Term",
-      "X": 8300,
+      "X": 9100,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -921,7 +937,7 @@
     {
       "InstanceName": "GND6",
       "Symbol": "Ground",
-      "X": 8300,
+      "X": 9100,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -933,7 +949,7 @@
     {
       "InstanceName": "MEAS1",
       "Symbol": "Meas",
-      "X": 4500,
+      "X": 5300,
       "Y": -2300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -967,9 +983,17 @@
     {
       "Points": [
         [
-          -200,
-          0
+          -800,
+          -200
         ],
+        [
+          -600,
+          -200
+        ]
+      ]
+    },
+    {
+      "Points": [
         [
           -200,
           -200
@@ -983,23 +1007,47 @@
     {
       "Points": [
         [
-          1800,
-          200
+          200,
+          0
         ],
+        [
+          600,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1600,
+          0
+        ],
+        [
+          1800,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
         [
           2000,
           200
-        ]
-      ]
-    },
-    {
-      "Points": [
+        ],
         [
           2400,
           200
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2800,
+          200
         ],
         [
-          2700,
+          3200,
           200
         ]
       ]
@@ -1007,47 +1055,143 @@
     {
       "Points": [
         [
-          4300,
-          0
+          900,
+          -400
         ],
         [
-          3900,
-          0
+          900,
+          -600
+        ],
+        [
+          500,
+          -600
+        ],
+        [
+          500,
+          -800
         ]
       ]
     },
     {
       "Points": [
         [
-          4700,
-          0
+          1100,
+          -400
         ],
+        [
+          1100,
+          -600
+        ],
+        [
+          1100,
+          -800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1300,
+          -400
+        ],
+        [
+          1300,
+          -600
+        ],
+        [
+          1700,
+          -600
+        ],
+        [
+          1700,
+          -800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1000,
+          400
+        ],
+        [
+          1000,
+          600
+        ],
+        [
+          700,
+          600
+        ],
+        [
+          700,
+          800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1200,
+          400
+        ],
+        [
+          1200,
+          600
+        ],
+        [
+          1500,
+          600
+        ],
+        [
+          1500,
+          800
+        ]
+      ]
+    },
+    {
+      "Points": [
         [
           5100,
           0
+        ],
+        [
+          4700,
+          0
         ]
       ]
     },
     {
       "Points": [
         [
-          7500,
+          5500,
           0
         ],
         [
-          7100,
+          5900,
           0
         ]
       ]
     },
     {
       "Points": [
+        [
+          8300,
+          0
+        ],
         [
           7900,
           0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          8700,
+          0
         ],
         [
-          8300,
+          9100,
           0
         ]
       ]

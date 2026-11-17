@@ -26,8 +26,8 @@
     {
       "InstanceName": "P1",
       "Symbol": "Term",
-      "X": -200,
-      "Y": 400,
+      "X": -800,
+      "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -51,8 +51,8 @@
     {
       "InstanceName": "GND1",
       "Symbol": "Ground",
-      "X": -200,
-      "Y": 600,
+      "X": -800,
+      "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -63,7 +63,7 @@
     {
       "InstanceName": "TL1",
       "Symbol": "Mlin",
-      "X": 200,
+      "X": -400,
       "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
@@ -206,12 +206,18 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          0,
+          1100
+        ]
       ]
     },
     {
       "InstanceName": "TL2",
       "Symbol": "Mlin",
-      "X": 2000,
+      "X": 2800,
       "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
@@ -250,7 +256,7 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": 2500,
+      "X": 3300,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -275,7 +281,7 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": 2500,
+      "X": 3300,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -287,8 +293,8 @@
     {
       "InstanceName": "VIAG1",
       "Symbol": "ViaGnd",
-      "X": 900,
-      "Y": -600,
+      "X": 500,
+      "Y": -1000,
       "Rotation": "R180",
       "MirrorX": false,
       "Disable": "None",
@@ -349,13 +355,15 @@
           "ShowOnSchematic": false,
           "Dimension": "Capacitance"
         }
-      ]
+      ],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     },
     {
       "InstanceName": "C1",
       "Symbol": "Capacitor",
-      "X": 900,
-      "Y": 600,
+      "X": 300,
+      "Y": 1000,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -379,8 +387,8 @@
     {
       "InstanceName": "GND3",
       "Symbol": "Ground",
-      "X": 900,
-      "Y": 800,
+      "X": 300,
+      "Y": 1200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -392,7 +400,7 @@
       "InstanceName": "VIAG2",
       "Symbol": "ViaGnd",
       "X": 1100,
-      "Y": -600,
+      "Y": -1000,
       "Rotation": "R180",
       "MirrorX": false,
       "Disable": "None",
@@ -453,13 +461,15 @@
           "ShowOnSchematic": false,
           "Dimension": "Capacitance"
         }
-      ]
+      ],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     },
     {
       "InstanceName": "C2",
       "Symbol": "Capacitor",
       "X": 1100,
-      "Y": 600,
+      "Y": 1000,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -484,7 +494,7 @@
       "InstanceName": "GND4",
       "Symbol": "Ground",
       "X": 1100,
-      "Y": 800,
+      "Y": 1200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -495,8 +505,8 @@
     {
       "InstanceName": "VIAG3",
       "Symbol": "ViaGnd",
-      "X": 1300,
-      "Y": -600,
+      "X": 1700,
+      "Y": -1000,
       "Rotation": "R180",
       "MirrorX": false,
       "Disable": "None",
@@ -557,13 +567,15 @@
           "ShowOnSchematic": false,
           "Dimension": "Capacitance"
         }
-      ]
+      ],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     },
     {
       "InstanceName": "C3",
       "Symbol": "Capacitor",
-      "X": 1300,
-      "Y": 600,
+      "X": 1900,
+      "Y": 1000,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -587,8 +599,8 @@
     {
       "InstanceName": "GND5",
       "Symbol": "Ground",
-      "X": 1300,
-      "Y": 800,
+      "X": 1900,
+      "Y": 1200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -601,15 +613,11 @@
     {
       "Points": [
         [
-          -200,
-          200
-        ],
-        [
-          -200,
+          -800,
           0
         ],
         [
-          0,
+          -600,
           0
         ]
       ]
@@ -617,7 +625,7 @@
     {
       "Points": [
         [
-          400,
+          -200,
           0
         ],
         [
@@ -633,7 +641,7 @@
           0
         ],
         [
-          1800,
+          2600,
           0
         ]
       ]
@@ -641,12 +649,124 @@
     {
       "Points": [
         [
-          2200,
+          3000,
           0
         ],
         [
-          2500,
+          3300,
           0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          900,
+          -400
+        ],
+        [
+          900,
+          -600
+        ],
+        [
+          500,
+          -600
+        ],
+        [
+          500,
+          -800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1100,
+          -400
+        ],
+        [
+          1100,
+          -600
+        ],
+        [
+          1100,
+          -800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1300,
+          -400
+        ],
+        [
+          1300,
+          -600
+        ],
+        [
+          1700,
+          -600
+        ],
+        [
+          1700,
+          -800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          900,
+          400
+        ],
+        [
+          900,
+          600
+        ],
+        [
+          300,
+          600
+        ],
+        [
+          300,
+          800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1100,
+          400
+        ],
+        [
+          1100,
+          600
+        ],
+        [
+          1100,
+          800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1300,
+          400
+        ],
+        [
+          1300,
+          600
+        ],
+        [
+          1900,
+          600
+        ],
+        [
+          1900,
+          800
         ]
       ]
     }

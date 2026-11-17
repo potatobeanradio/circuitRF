@@ -264,7 +264,7 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": 2300,
+      "X": 2500,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -289,7 +289,7 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": 2300,
+      "X": 2500,
       "Y": 600,
       "Rotation": "R0",
       "MirrorX": false,
@@ -347,7 +347,7 @@
           200
         ],
         [
-          2300,
+          2500,
           200
         ]
       ]

@@ -112,7 +112,7 @@
           "Name": "Sections",
           "Expression": "stub(W=0.223mm, L=11.45mm); line(W=0.223mm, L=11.594mm); stub(W=1.058mm, L=10.864mm, side=both); line(W=0.223mm, L=11.594mm); stub(W=0.223mm, L=11.45mm)",
           "Unit": "",
-          "ShowOnSchematic": true,
+          "ShowOnSchematic": false,
           "Dimension": "None"
         },
         {
@@ -187,7 +187,7 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": 2300,
+      "X": 2500,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -212,7 +212,7 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": 2300,
+      "X": 2500,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -270,7 +270,7 @@
           0
         ],
         [
-          2300,
+          2500,
           0
         ]
       ]

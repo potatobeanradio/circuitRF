@@ -112,7 +112,7 @@
           "Name": "Sections",
           "Expression": "site(role=L, value=3.979nH); site(role=C, value=3.183pF, type=shunt); site(role=L, value=3.979nH)",
           "Unit": "",
-          "ShowOnSchematic": true,
+          "ShowOnSchematic": false,
           "Dimension": "None"
         },
         {
@@ -150,6 +150,12 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          0,
+          -1000
+        ]
       ]
     },
     {
@@ -194,7 +200,7 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": 2900,
+      "X": 3100,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -219,7 +225,7 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": 2900,
+      "X": 3100,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -231,8 +237,8 @@
     {
       "InstanceName": "L1",
       "Symbol": "Inductor",
-      "X": 1000,
-      "Y": 500,
+      "X": 800,
+      "Y": 900,
       "Rotation": "R90",
       "MirrorX": false,
       "Disable": "None",
@@ -257,7 +263,7 @@
       "InstanceName": "C1",
       "Symbol": "Capacitor",
       "X": 1300,
-      "Y": 500,
+      "Y": 700,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -282,7 +288,7 @@
       "InstanceName": "GND3",
       "Symbol": "Ground",
       "X": 1300,
-      "Y": 700,
+      "Y": 900,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -293,8 +299,8 @@
     {
       "InstanceName": "L2",
       "Symbol": "Inductor",
-      "X": 1600,
-      "Y": 700,
+      "X": 1800,
+      "Y": 900,
       "Rotation": "R90",
       "MirrorX": false,
       "Disable": "None",
@@ -318,7 +324,7 @@
     {
       "InstanceName": "IDEAL",
       "Symbol": "Filter",
-      "X": 4700,
+      "X": 4900,
       "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
@@ -357,7 +363,7 @@
     {
       "InstanceName": "P3",
       "Symbol": "Term",
-      "X": 4100,
+      "X": 4300,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -382,7 +388,7 @@
     {
       "InstanceName": "GND4",
       "Symbol": "Ground",
-      "X": 4100,
+      "X": 4300,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -394,7 +400,7 @@
     {
       "InstanceName": "P4",
       "Symbol": "Term",
-      "X": 5300,
+      "X": 5500,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -419,7 +425,7 @@
     {
       "InstanceName": "GND5",
       "Symbol": "Ground",
-      "X": 5300,
+      "X": 5500,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -431,7 +437,7 @@
     {
       "InstanceName": "PLANAR",
       "Symbol": "Snp",
-      "X": 7900,
+      "X": 9100,
       "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
@@ -456,7 +462,7 @@
     {
       "InstanceName": "P5",
       "Symbol": "Term",
-      "X": 6500,
+      "X": 6800,
       "Y": 0,
       "Rotation": "R0",
       "MirrorX": false,
@@ -481,7 +487,7 @@
     {
       "InstanceName": "GND6",
       "Symbol": "Ground",
-      "X": 6500,
+      "X": 6800,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -493,7 +499,7 @@
     {
       "InstanceName": "P6",
       "Symbol": "Term",
-      "X": 6900,
+      "X": 7500,
       "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
@@ -518,7 +524,7 @@
     {
       "InstanceName": "GND7",
       "Symbol": "Ground",
-      "X": 6900,
+      "X": 7500,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -530,7 +536,7 @@
     {
       "InstanceName": "L1_pl",
       "Symbol": "Inductor",
-      "X": 7300,
+      "X": 8200,
       "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -548,7 +554,7 @@
     {
       "InstanceName": "GND8",
       "Symbol": "Ground",
-      "X": 7300,
+      "X": 8200,
       "Y": 600,
       "Rotation": "R0",
       "MirrorX": false,
@@ -560,7 +566,7 @@
     {
       "InstanceName": "L2_pl",
       "Symbol": "Inductor",
-      "X": 8900,
+      "X": 10700,
       "Y": 100,
       "Rotation": "R0",
       "MirrorX": false,
@@ -578,7 +584,7 @@
     {
       "InstanceName": "GND9",
       "Symbol": "Ground",
-      "X": 8900,
+      "X": 10700,
       "Y": 300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -590,7 +596,7 @@
     {
       "InstanceName": "C1_pl",
       "Symbol": "Capacitor",
-      "X": 8500,
+      "X": 10000,
       "Y": 300,
       "Rotation": "R0",
       "MirrorX": false,
@@ -608,7 +614,7 @@
     {
       "InstanceName": "GND10",
       "Symbol": "Ground",
-      "X": 8500,
+      "X": 10000,
       "Y": 500,
       "Rotation": "R0",
       "MirrorX": false,
@@ -698,7 +704,7 @@
           0
         ],
         [
-          2900,
+          3100,
           0
         ]
       ]
@@ -711,11 +717,15 @@
         ],
         [
           900,
-          500
+          450
         ],
         [
-          800,
-          500
+          600,
+          450
+        ],
+        [
+          600,
+          900
         ]
       ]
     },
@@ -727,10 +737,26 @@
         ],
         [
           1100,
-          500
+          600
         ],
         [
-          1200,
+          1000,
+          600
+        ],
+        [
+          1000,
+          900
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1300,
+          300
+        ],
+        [
+          1300,
           500
         ]
       ]
@@ -743,11 +769,15 @@
         ],
         [
           1500,
-          700
+          600
         ],
         [
-          1400,
-          700
+          1600,
+          600
+        ],
+        [
+          1600,
+          900
         ]
       ]
     },
@@ -759,34 +789,26 @@
         ],
         [
           1700,
-          700
+          450
         ],
         [
-          1800,
-          700
+          2000,
+          450
+        ],
+        [
+          2000,
+          900
         ]
       ]
     },
     {
       "Points": [
         [
-          4500,
+          4700,
           0
         ],
         [
-          4100,
-          0
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          4900,
-          0
-        ],
-        [
-          5300,
+          4300,
           0
         ]
       ]
@@ -794,60 +816,72 @@
     {
       "Points": [
         [
-          7700,
-          -200
-        ],
-        [
-          6500,
-          -200
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          7700,
+          5100,
           0
         ],
         [
-          6900,
+          5500,
           0
         ]
       ]
     },
     {
       "Points": [
-        [
-          7700,
-          200
-        ],
-        [
-          7300,
-          200
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          8100,
-          -100
-        ],
         [
           8900,
-          -100
+          200
+        ],
+        [
+          8200,
+          200
         ]
       ]
     },
     {
       "Points": [
         [
-          8100,
+          8900,
+          0
+        ],
+        [
+          7500,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          8900,
+          -200
+        ],
+        [
+          6800,
+          -200
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          9300,
           100
         ],
         [
-          8500,
+          10000,
           100
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          9300,
+          -100
+        ],
+        [
+          10700,
+          -100
         ]
       ]
     }
