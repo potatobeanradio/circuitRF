@@ -24,7 +24,7 @@ electromagnetic solver** over the layout's own substrate stackup. **3D editor** 
 
 **📖 [Read the user documentation online](https://potatobeanradio.github.io/circuitRF/)**
 
-circuitRF is for RF practitioners or researchers who can't justify the cost of traditional tools (or find those tools too heavy for a quick investigation): **power-amplifier, LNA, and mixer designers; RF EDA and device-modeling engineers; academic researchers; and capable hobbyists.** It was built largely **AI-assisted** (see
+circuitRF is for RF practitioners or researchers who can't justify the cost of traditional tools (or find those tools too heavy for a quick investigation): **power-amplifier, LNA, and mixer designers; RF EDA and device-modeling engineers; antenna systems designers; academic researchers; and capable hobbyists.** It was built largely **AI-assisted** (see
 [AI-assisted development](#ai-assisted-development)).
 
 ## Features
@@ -40,12 +40,12 @@ circuitRF is for RF practitioners or researchers who can't justify the cost of t
 - 2.5D MoM
 - 3D FEM and FDTD (using [Palace](https://github.com/awslabs/palace), [EMerge](https://github.com/FennisRobert/EMerge) and [openEMS](https://github.com/thliebig/openEMS))
 - 3D FEM thermal solver
+- phased array antenna design and analysis
+- RF systems design and analysis (RF chain, link budget, etc.)
 - command line and MCP server ([use it from an AI agent](#use-circuitrf-from-an-ai-agent))
 - customizable plug-in architecture (add your own tools in Python or C#)
-- [ngspice](https://ngspice.sourceforge.io/) support
+- [ngspice](https://ngspice.sourceforge.io/) integration (as optional transient solver)
 - Documentation with examples
-
-[What circuitRF doesn't do yet](#what-circuitrf-doesnt-do-yet)
 
 ---
 
@@ -111,9 +111,7 @@ tar xzf circuitRF-1.9.0-linux-x64.tar.gz
 ```
 
 **Linux AppImage**: download it, make it executable (`chmod +x circuitRF-1.9.0-linux-x64.AppImage`)
-and run it. Nothing is installed, so keep it wherever you like. It does not update itself: when a new
-version is out, its line in the Messages panel has a **Download** button that saves the new AppImage
-next to the one you are running. AppImageUpdate can update it too. Use the tarball if you want updates
+and run it. AppImageUpdate can update it too. Use the tarball if you want updates
 installed automatically.
 
 **Installing for everyone on the machine?** The Windows `.msi` files without `-user`, and the `.deb`
@@ -121,8 +119,7 @@ files, are on the [releases page](https://github.com/potatobeanradio/circuitRF/r
 administrator rights, so they cannot update themselves — they tell you when a new version is out
 instead.
 
-Automatic updates can be turned off in **Settings ▸ Security & Permissions**. Building the installers
-yourself: [BUILDING.md](BUILDING.md).
+Building the installers yourself: [BUILDING.md](BUILDING.md).
 
 ---
 
@@ -349,14 +346,6 @@ var (lib, testbench) = CnlReader.ReadFile("mycircuit.cnl");
 var netlist          = new Elaborator(lib).Elaborate(testbench);
 var dataset          = SParameterEngine.Run(netlist, freqsHz);   // → a DataSet of DataCubes
 ```
-
----
-
-## What circuitRF doesn't do yet
-
-- **Transient noise, and digital or mixed-signal elements** — a transient analysis runs analog circuits only, without noise.
-
-If you want to contribute to any of the above, please contact me.
 
 ---
 
