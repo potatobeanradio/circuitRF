@@ -1,5 +1,9 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
+using CircuitRF.Core.Design;
 using CircuitRF.Core.Systems;
 using CircuitRF.Design.Matching;
+using CircuitRF.Design.Statistics;
 using CircuitRF.Design.VendorLibraries;
 using CircuitRF.Design.Workspace;
 
@@ -20,8 +24,12 @@ public enum FilterSeriesKind
     E96,
 }
 
-/// <summary>One part a library series offers, in base SI.</summary>
-public sealed record FilterPart(string Name, double Value);
+/// <summary>One part a library series offers, in base SI, with its stated tolerance when known.</summary>
+public sealed record FilterPart(string Name, double Value, string Tolerance = "")
+{
+    /// <inheritdoc/>
+    public override string ToString() => Name;
+}
 
 /// <summary>
 /// One series of a vendor library: the parts of one file that are inductors, or the parts that are
@@ -32,7 +40,11 @@ public sealed record FilterLibrarySeries(
     string File,
     string Label,
     bool Inductors,
-    IReadOnlyList<FilterPart> Parts);
+    IReadOnlyList<FilterPart> Parts)
+{
+    /// <inheritdoc/>
+    public override string ToString() => Label;
+}
 
 /// <summary>
 /// The three value columns. Exact is the ladder. An E-series is <see cref="PreferredValues"/>, the
@@ -131,7 +143,7 @@ public static class FilterValues
             {
                 var parts = entries
                     .Where(e => e.Header.Quantity == quantity && e.Header.Value is > 0)
-                    .Select(e => new FilterPart(e.Part, e.Header.Value!.Value))
+                    .Select(e => new FilterPart(e.Part, e.Header.Value!.Value, ToleranceOf(e.Header)))
                     .OrderBy(p => p.Value)
                     .ToList();
                 if (parts.Count == 0) return;
@@ -141,5 +153,87 @@ public static class FilterValues
             }
         }
         return found;
+    }
+
+    /// <summary>
+    /// The IEC series' conventional tolerance, as Yield's compact editor spells it
+    /// (<see cref="ToleranceText.Format"/>). Empty for Exact.
+    /// </summary>
+    public static string ToleranceOf(FilterSeriesKind kind)
+    {
+        string? tol = kind switch
+        {
+            FilterSeriesKind.E6  => "20%",
+            FilterSeriesKind.E12 => "10%",
+            FilterSeriesKind.E24 => "5%",
+            FilterSeriesKind.E96 => "1%",
+            _ => null,
+        };
+        return tol is null
+            ? ""
+            : ToleranceText.Format(StatDistribution.Gauss, new StatSpread { Tol = tol, Sigmas = ToleranceText.DefaultSigmas });
+    }
+
+    /// <summary>
+    /// The tolerance a vendor part's header states — the same reading Yield uses when a Description
+    /// field carries <c>±5%</c>, <c>5%</c> or an EIA letter (J/K/M/…). Empty when none is stated.
+    /// </summary>
+    public static string ToleranceOf(VendorLibraryHeader header)
+    {
+        foreach (string field in header.DescriptionFields)
+        {
+            if (TryReadToleranceToken(field, out string shown)) return shown;
+        }
+        if (header.Description is { } d)
+        {
+            foreach (Match m in PercentTol.Matches(d))
+            {
+                if (TryReadToleranceToken(m.Value, out string shown)) return shown;
+            }
+        }
+        return "";
+    }
+
+    /// <summary>Parts of <paramref name="series"/> whose value matches <paramref name="target"/> (ratio).</summary>
+    public static IReadOnlyList<FilterPart> PartsAtValue(FilterLibrarySeries series, double target, double ratioTol = 0.02)
+    {
+        if (!(target > 0)) return series.Parts;
+        double lim = Math.Abs(Math.Log(1.0 + Math.Max(0.001, ratioTol)));
+        var hit = series.Parts
+            .Where(p => p.Value > 0 && Math.Abs(Math.Log(p.Value / target)) <= lim)
+            .ToList();
+        if (hit.Count > 0) return hit;
+        return Nearest(target, series.Parts) is { } one ? [one] : [];
+    }
+
+    private static readonly Regex PercentTol =
+        new(@"[±+\-/]*\s*\d+(?:\.\d+)?\s*%", RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static bool TryReadToleranceToken(string raw, out string shown)
+    {
+        shown = "";
+        string t = raw.Trim().Trim(',', ';');
+        if (t.Length == 0) return false;
+
+        // EIA letter codes commonly sitting alone in a Description field.
+        double? eia = t.ToUpperInvariant() switch
+        {
+            "B" => 0.1, "C" => 0.25, "D" => 0.5, "F" => 1, "G" => 2,
+            "H" => 3, "J" => 5, "K" => 10, "M" => 20, "N" => 30,
+            _ => null,
+        };
+        if (eia is { } pctLetter)
+        {
+            shown = ToleranceText.Format(StatDistribution.Gauss,
+                new StatSpread { Tol = pctLetter.ToString("0.###", CultureInfo.InvariantCulture) + "%",
+                                 Sigmas = ToleranceText.DefaultSigmas });
+            return true;
+        }
+
+        var m = Regex.Match(t, @"^[±+\-/]*\s*(\d+(?:\.\d+)?)\s*%\s*$", RegexOptions.CultureInvariant);
+        if (!m.Success) return false;
+        shown = ToleranceText.Format(StatDistribution.Gauss,
+            new StatSpread { Tol = m.Groups[1].Value + "%", Sigmas = ToleranceText.DefaultSigmas });
+        return true;
     }
 }

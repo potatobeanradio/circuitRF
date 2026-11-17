@@ -20,23 +20,6 @@ using SkiaSharp;
 
 namespace CircuitRF.Ui.Filters;
 
-/// <summary>One row of the realization table.</summary>
-public sealed class FilterElementRow
-{
-    /// <summary>The element name in the netlist.</summary>
-    public string Name { get; init; } = "";
-    /// <summary>Series or shunt, and L or C.</summary>
-    public string Kind { get; init; } = "";
-    /// <summary>The theoretical value.</summary>
-    public string Exact { get; init; } = "";
-    /// <summary>The value actually written: exact, an IEC rung, or a library part.</summary>
-    public string Used { get; init; } = "";
-    /// <summary>The library part, when one was chosen.</summary>
-    public string Part { get; init; } = "";
-    /// <summary>Row fill for the chain-budget zebra (#FFFFFF / #F0F0F0).</summary>
-    public string RowBackground { get; init; } = "#FFFFFF";
-}
-
 /// <summary>A response family as the specification names it. <see cref="Value"/> is what the Filter block stores.</summary>
 public sealed record FilterResponseChoice(FilterResponse Value, string Label)
 {
@@ -52,6 +35,23 @@ public enum FilterOrderMode
 
     /// <summary>The order in the Order box.</summary>
     Specify,
+}
+
+/// <summary>How the response plots pick their frequency span.</summary>
+public enum FilterPlotRangeMode
+{
+    /// <summary>Outer mask edges widened by ± band percent — Match Designer's rule.</summary>
+    BandPercent,
+
+    /// <summary>Explicit Fmin / Fmax in the current frequency unit.</summary>
+    Manual,
+}
+
+/// <summary>One row of the Plot range mode ComboBox.</summary>
+public sealed record FilterPlotRangeChoice(FilterPlotRangeMode Value, string Label)
+{
+    /// <inheritdoc/>
+    public override string ToString() => Label;
 }
 
 /// <summary>
@@ -87,9 +87,18 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     public IReadOnlyList<FilterOrderMode> OrderModes { get; } =
         [FilterOrderMode.Minimum, FilterOrderMode.Specify];
 
+    /// <summary>± band around the mask, or a typed Fmin / Fmax.</summary>
+    public IReadOnlyList<FilterPlotRangeChoice> PlotRangeChoices { get; } =
+    [
+        new(FilterPlotRangeMode.BandPercent, "± band"),
+        new(FilterPlotRangeMode.Manual, "Manual"),
+    ];
+
     /// <summary>The frequency unit the four edge boxes are typed in.</summary>
     public IReadOnlyList<string> Units { get; } = ["Hz", "kHz", "MHz", "GHz"];
 
+    /// <summary>Per-element library picks the table's Series / Part dropdowns wrote.</summary>
+    private readonly Dictionary<string, (FilterLibrarySeries Series, FilterPart Part)> _partOverrides = new(StringComparer.Ordinal);
     /// <summary>The Data Display the two plots are hosted on. Markers, colours and the clipboard
     /// are its own.</summary>
     public DataDisplayViewModel PlotHost { get; } = new(new DataSourceLibraryViewModel(),
@@ -168,9 +177,25 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     /// <summary>How many frequency points the plots run at.</summary>
     [ObservableProperty] private string _plotPointsText = "401";
 
+    /// <summary>± band around the mask edges, or an explicit Fmin / Fmax.</summary>
+    [ObservableProperty] private FilterPlotRangeMode _plotRangeMode = FilterPlotRangeMode.BandPercent;
+
+    /// <summary>The ComboBox selection for <see cref="PlotRangeMode"/>.</summary>
+    [ObservableProperty] private FilterPlotRangeChoice? _plotRangeChoice;
+
+    /// <summary>True when the Fmin / Fmax boxes are the plot span.</summary>
+    [ObservableProperty] private bool _plotRangeIsManual;
+    /// <summary>Manual plot start, in the current frequency unit.</summary>
+    [ObservableProperty] private string _plotFminText = "0.4";
+
+    /// <summary>Manual plot stop, in the current frequency unit.</summary>
+    [ObservableProperty] private string _plotFmaxText = "2.8";
+
     /// <summary>The unit the edge boxes were last shown in — used to rescale when the unit changes.</summary>
     private string _unitForEdges = "GHz";
 
+    /// <summary>True while Design rebuilds rows — suppresses per-row redesign loops.</summary>
+    private bool _fillingRows;
     /// <summary>Ap — passband attenuation used for the order mask.</summary>
     public string TipAp { get; } = "Passband attenuation, in dB. Used with As and the edges to size the order.";
 
@@ -192,7 +217,9 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     public FilterDesignerViewModel()
     {
         ResponseChoice = ResponseChoices[0];
+        PlotRangeChoice = PlotRangeChoices[0];
         OrderEditable = false;
+        PlotRangeIsManual = false;
         MagnitudeContainer = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, 0, 0, 640, 280);
         PhaseContainer = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, 0, 280, 640, 220);
         MagnitudePlot.Axes.LockedPanning = true;
@@ -222,8 +249,23 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     partial void OnUnitChanged(string value)
     {
         ConvertEdgeTexts(_unitForEdges, value);
+        PlotFminText = ConvertEdge(PlotFminText, ScaleOf(_unitForEdges), ScaleOf(value));
+        PlotFmaxText = ConvertEdge(PlotFmaxText, ScaleOf(_unitForEdges), ScaleOf(value));
         _unitForEdges = value;
         Design();
+    }
+
+    partial void OnPlotRangeModeChanged(FilterPlotRangeMode value)
+    {
+        PlotRangeIsManual = value == FilterPlotRangeMode.Manual;
+        var match = PlotRangeChoices.First(c => c.Value == value);
+        if (!Equals(PlotRangeChoice, match)) PlotRangeChoice = match;
+        Design();
+    }
+
+    partial void OnPlotRangeChoiceChanged(FilterPlotRangeChoice? value)
+    {
+        if (value is not null && value.Value != PlotRangeMode) PlotRangeMode = value.Value;
     }
     partial void OnOrderModeChanged(FilterOrderMode value)
     {
@@ -401,7 +443,8 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Commits the ± band / points boxes (Return or focus loss), Match Designer style.
+    /// Commits the ± band / points / manual range boxes (Return or focus loss). Always rebuilds
+    /// the frequency grid and re-runs the response — the plots show the whole computed span.
     /// </summary>
     public void CommitPlotWindow(double? bandPercent, int? points)
     {
@@ -409,6 +452,20 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
             PlotBandPercentText = p.ToString("0.#", CultureInfo.InvariantCulture);
         if (points is { } n && n >= 2)
             PlotPointsText = Math.Min(n, 20001).ToString(CultureInfo.InvariantCulture);
+        Design();
+    }
+
+    /// <summary>Formats an L/C value the way the Exact / Used columns do.</summary>
+    public string FormatElementValue(bool inductor, double v) => Eng(inductor, v);
+
+    /// <summary>A Series / Part dropdown changed — keep the override and redesign.</summary>
+    internal void OnRowPartChanged(FilterElementRow row)
+    {
+        if (_fillingRows) return;
+        if (row.SelectedSeries is { } s && row.SelectedPart is { } p)
+            _partOverrides[row.Name] = (s, p);
+        else
+            _partOverrides.Remove(row.Name);
         Design();
     }
 
@@ -536,28 +593,52 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     {
         var used = new List<FilterElement>(real.Elements.Count);
         int row = 0;
-        foreach (var e in real.Elements)
+        _fillingRows = true;
+        try
         {
-            double value = FilterValues.Snap(e.Inductor, e.Value, Series);
-            string part = "";
-            var series = e.Inductor ? InductorChoice : CapacitorChoice;
-            if (series is not null && FilterValues.Nearest(e.Value, series.Parts) is { } chosen)
+            foreach (var e in real.Elements)
             {
-                value = chosen.Value;
-                part = chosen.Name;
+                double value = FilterValues.Snap(e.Inductor, e.Value, Series);
+                string partName = "";
+                string seriesName = Series == FilterSeriesKind.Exact ? "" : Series.ToString();
+                string tolerance = FilterValues.ToleranceOf(Series);
+                FilterLibrarySeries? series = e.Inductor ? InductorChoice : CapacitorChoice;
+                FilterPart? chosen = null;
+                bool library = LibraryAvailable && (InductorSeries.Count > 0 || CapacitorSeries.Count > 0);
+
+                if (_partOverrides.TryGetValue(e.Name, out var ov) && ov.Series.Inductors == e.Inductor)
+                {
+                    series = ov.Series;
+                    chosen = ov.Part;
+                    value = chosen.Value;
+                    partName = chosen.Name;
+                    seriesName = series.Label;
+                    tolerance = chosen.Tolerance;
+                }
+                else if (series is not null && FilterValues.Nearest(e.Value, series.Parts) is { } near)
+                {
+                    chosen = near;
+                    value = near.Value;
+                    partName = near.Name;
+                    seriesName = series.Label;
+                    tolerance = near.Tolerance;
+                }
+
+                used.Add(e with { Value = value });
+                var choices = e.Inductor ? InductorSeries : CapacitorSeries;
+                Elements.Add(new FilterElementRow(
+                    this, e.Name,
+                    (e.Shunt ? "shunt " : "series ") + (e.Inductor ? "L" : "C"),
+                    Eng(e.Inductor, e.Value), e.Value, e.Inductor,
+                    Eng(e.Inductor, value), seriesName, partName, tolerance,
+                    (row++ & 1) == 0 ? "#FFFFFF" : "#F0F0F0",
+                    library && choices.Count > 0,
+                    series, chosen, choices));
             }
-            used.Add(e with { Value = value });
-            // Chain-budget zebra: white / #F0F0F0, painted on the row itself (Avalonia's
-            // :nth-child on ListBoxItem does not reliably reach the ContentPresenter).
-            Elements.Add(new FilterElementRow
-            {
-                Name = e.Name,
-                Kind = (e.Shunt ? "shunt " : "series ") + (e.Inductor ? "L" : "C"),
-                Exact = Eng(e.Inductor, e.Value),
-                Used = Eng(e.Inductor, value),
-                Part = part,
-                RowBackground = (row++ & 1) == 0 ? "#FFFFFF" : "#F0F0F0",
-            });
+        }
+        finally
+        {
+            _fillingRows = false;
         }
         return used;
     }
@@ -586,49 +667,60 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
     private double[] Frequencies(Spec spec)
     {
-        // Outer edges of the typed mask, then ± PlotBandFraction like the Match Designer.
-        var edges = new List<double>(4);
-        void Add(double hz) { if (hz > 0 && double.IsFinite(hz)) edges.Add(hz); }
-        Add(spec.EdgeAHz);
-        Add(spec.EdgeBHz);
-        if (spec.Form is NetworkForm.Bandpass or NetworkForm.Bandstop)
-        {
-            Add(spec.EdgeCHz);
-            Add(spec.EdgeDHz);
-        }
-
-        double lo, hi;
-        if (edges.Count >= 2)
-        {
-            lo = edges.Min();
-            hi = edges.Max();
-        }
-        else if (spec.Form == NetworkForm.Lowpass)
-        {
-            lo = Math.Max(spec.FcHz / 50, 1e3);
-            hi = spec.FcHz * 20;
-        }
-        else if (spec.Form == NetworkForm.Highpass)
-        {
-            lo = Math.Max(spec.FcHz / 20, 1e3);
-            hi = spec.FcHz * 50;
-        }
-        else
-        {
-            lo = Math.Max(spec.F1Hz / 5, 1e3);
-            hi = spec.F2Hz * 5;
-        }
-
-        double fraction = 0.10;
-        if (ParseBandPercent(PlotBandPercentText) is { } pct) fraction = pct / 100.0;
         int n = 401;
         if (ParsePlotPoints(PlotPointsText) is { } pts) n = Math.Clamp(pts, 2, 20001);
 
-        double span = hi - lo;
-        if (!(span > 0)) span = Math.Max(hi, 1.0);
-        double pad = span * Math.Max(0.0, fraction);
-        lo = Math.Max(lo - pad, span * 1e-6);
-        hi = hi + pad;
+        double lo, hi;
+        if (PlotRangeMode == FilterPlotRangeMode.Manual
+            && Hz(PlotFminText, UnitScale(), out double manLo)
+            && Hz(PlotFmaxText, UnitScale(), out double manHi)
+            && manHi > manLo)
+        {
+            lo = manLo;
+            hi = manHi;
+        }
+        else
+        {
+            // Outer edges of the typed mask, then ± PlotBandFraction like the Match Designer.
+            var edges = new List<double>(4);
+            void Add(double hz) { if (hz > 0 && double.IsFinite(hz)) edges.Add(hz); }
+            Add(spec.EdgeAHz);
+            Add(spec.EdgeBHz);
+            if (spec.Form is NetworkForm.Bandpass or NetworkForm.Bandstop)
+            {
+                Add(spec.EdgeCHz);
+                Add(spec.EdgeDHz);
+            }
+
+            if (edges.Count >= 2)
+            {
+                lo = edges.Min();
+                hi = edges.Max();
+            }
+            else if (spec.Form == NetworkForm.Lowpass)
+            {
+                lo = Math.Max(spec.FcHz / 50, 1e3);
+                hi = spec.FcHz * 20;
+            }
+            else if (spec.Form == NetworkForm.Highpass)
+            {
+                lo = Math.Max(spec.FcHz / 20, 1e3);
+                hi = spec.FcHz * 50;
+            }
+            else
+            {
+                lo = Math.Max(spec.F1Hz / 5, 1e3);
+                hi = spec.F2Hz * 5;
+            }
+
+            double fraction = 0.10;
+            if (ParseBandPercent(PlotBandPercentText) is { } pct) fraction = pct / 100.0;
+            double span = hi - lo;
+            if (!(span > 0)) span = Math.Max(hi, 1.0);
+            double pad = span * Math.Max(0.0, fraction);
+            lo = Math.Max(lo - pad, span * 1e-6);
+            hi = hi + pad;
+        }
 
         var f = new double[n];
         for (int i = 0; i < n; i++)

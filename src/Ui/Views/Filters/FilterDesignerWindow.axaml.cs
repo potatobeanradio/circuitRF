@@ -92,6 +92,14 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
             "PlotPointsBox",
             () => Vm.PlotPointsText,
             t => Vm.CommitPlotWindow(null, FilterDesignerViewModel.ParsePlotPoints(t)));
+        BindNumericBox(
+            "PlotFminBox",
+            () => Vm.PlotFminText,
+            t => { Vm.PlotFminText = t.Trim(); Vm.Design(); });
+        BindNumericBox(
+            "PlotFmaxBox",
+            () => Vm.PlotFmaxText,
+            t => { Vm.PlotFmaxText = t.Trim(); Vm.Design(); });
 
         void Bind(PlotControl? plot, PlotContainerViewModel container)
         {

@@ -227,9 +227,35 @@
                     </Border>
 
                     <Border Classes="card">
+                        <StackPanel Spacing="3">
+                            <TextBlock Classes="cardhdr" Text="Plot range"/>
+                            <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="3">
+                                <TextBlock Classes="lbl" Text="Mode"
+                                           ToolTip.Tip="± band widens the mask edges. Manual sets Fmin and Fmax in the unit above."/>
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding PlotRangeChoices}"
+                                          SelectedItem="{Binding PlotRangeChoice}"/>
+                                <TextBlock Grid.Row="1" Classes="lbl" Text="± band"
+                                           IsVisible="{Binding !PlotRangeIsManual}"/>
+                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Name="BandFractionBox"
+                                         IsVisible="{Binding !PlotRangeIsManual}"
+                                         ToolTip.Tip="Percent of the outer mask span. Recomputes the response over the whole widened range."/>
+                                <TextBlock Grid.Row="2" Classes="lbl" Text="Fmin"
+                                           IsVisible="{Binding PlotRangeIsManual}"/>
+                                <TextBox Grid.Row="2" Grid.Column="1" Classes="num" Name="PlotFminBox"
+                                         IsVisible="{Binding PlotRangeIsManual}"/>
+                                <TextBlock Grid.Row="3" Classes="lbl" Text="Fmax"
+                                           IsVisible="{Binding PlotRangeIsManual}"/>
+                                <TextBox Grid.Row="3" Grid.Column="1" Classes="num" Name="PlotFmaxBox"
+                                         IsVisible="{Binding PlotRangeIsManual}"/>
+                                <TextBlock Grid.Row="4" Classes="lbl" Text="points"/>
+                                <TextBox Grid.Row="4" Grid.Column="1" Classes="num" Name="PlotPointsBox"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card">
                         <StackPanel Spacing="2">
-                            <TextBlock Classes="cardhdr" Text="Design information"/>
-                            <TextBlock Classes="note" Text="{Binding DesignInfo}"/>
+                            <TextBlock Classes="cardhdr" Text="Design information"/>                            <TextBlock Classes="note" Text="{Binding DesignInfo}"/>
                             <TextBlock Classes="warn" Text="{Binding Status}"
                                        IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                         </StackPanel>
@@ -266,7 +292,7 @@
                     <Grid RowDefinitions="Auto,*">
                         <Border Background="#F0F0F0" BorderBrush="#D0D0D0" BorderThickness="0,0,0,1"
                                 Padding="0,6">
-                            <Grid ColumnDefinitions="1.2*,1.2*,*,*,*">
+                            <Grid ColumnDefinitions="0.9*,1*,0.9*,0.9*,1.4*,1.2*,1.1*">
                                 <TextBlock Classes="tblhdr" Text="Instance"/>
                                 <Border Grid.Column="1" BorderBrush="#D0D0D0" BorderThickness="1,0,0,0">
                                     <TextBlock Classes="tblhdr" Text="Type"/>
@@ -278,11 +304,17 @@
                                     <TextBlock Classes="tblhdr" Text="Value"/>
                                 </Border>
                                 <Border Grid.Column="4" BorderBrush="#D0D0D0" BorderThickness="1,0,0,0">
+                                    <TextBlock Classes="tblhdr" Text="Series"/>
+                                </Border>
+                                <Border Grid.Column="5" BorderBrush="#D0D0D0" BorderThickness="1,0,0,0">
                                     <TextBlock Classes="tblhdr" Text="Part"/>
+                                </Border>
+                                <Border Grid.Column="6" BorderBrush="#D0D0D0" BorderThickness="1,0,0,0">
+                                    <TextBlock Classes="tblhdr" Text="Tolerance"/>
                                 </Border>
                             </Grid>
                         </Border>
-                        <ListBox Grid.Row="1" ItemsSource="{Binding Elements}" MaxHeight="160"
+                        <ListBox Grid.Row="1" ItemsSource="{Binding Elements}" MaxHeight="180"
                                  BorderThickness="0" Background="Transparent"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                             <ListBox.Styles>
@@ -292,7 +324,6 @@
                                     <Setter Property="MinHeight" Value="0"/>
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                                 </Style>
-                                <!-- Transparent so the row Border's zebra fill is what you see. -->
                                 <Style Selector="ListBoxItem /template/ ContentPresenter">
                                     <Setter Property="Background" Value="Transparent"/>
                                     <Setter Property="Padding" Value="0"/>
@@ -303,17 +334,40 @@
                                 <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
                                     <Setter Property="Background" Value="Transparent"/>
                                 </Style>
+                                <Style Selector="ComboBox.tblcombo">
+                                    <Setter Property="FontSize" Value="11"/>
+                                    <Setter Property="Padding" Value="4,1"/>
+                                    <Setter Property="MinHeight" Value="22"/>
+                                    <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                                    <Setter Property="Margin" Value="4,0"/>
+                                </Style>
                             </ListBox.Styles>
                             <ListBox.ItemTemplate>
                                 <DataTemplate x:DataType="flt:FilterElementRow">
-                                    <Border Background="{Binding RowBackground}" Padding="0,5"
+                                    <Border Background="{Binding RowBackground}" Padding="0,3"
                                             BorderBrush="#E8E8E8" BorderThickness="0,0,0,1">
-                                        <Grid ColumnDefinitions="1.2*,1.2*,*,*,*">
+                                        <Grid ColumnDefinitions="0.9*,1*,0.9*,0.9*,1.4*,1.2*,1.1*">
                                             <TextBlock Classes="tblcell" Text="{Binding Name}"/>
                                             <TextBlock Grid.Column="1" Classes="tblcell" Text="{Binding Kind}"/>
                                             <TextBlock Grid.Column="2" Classes="tblcell" Text="{Binding Exact}"/>
                                             <TextBlock Grid.Column="3" Classes="tblcell" Text="{Binding Used}"/>
-                                            <TextBlock Grid.Column="4" Classes="tblcell" Text="{Binding Part}"/>
+                                            <Panel Grid.Column="4">
+                                                <TextBlock Classes="tblcell" Text="{Binding SeriesName}"
+                                                           IsVisible="{Binding !LibraryEditable}"/>
+                                                <ComboBox Classes="tblcombo"
+                                                          ItemsSource="{Binding SeriesChoices}"
+                                                          SelectedItem="{Binding SelectedSeries}"
+                                                          IsVisible="{Binding LibraryEditable}"/>
+                                            </Panel>
+                                            <Panel Grid.Column="5">
+                                                <TextBlock Classes="tblcell" Text="{Binding Part}"
+                                                           IsVisible="{Binding !LibraryEditable}"/>
+                                                <ComboBox Classes="tblcombo"
+                                                          ItemsSource="{Binding PartChoices}"
+                                                          SelectedItem="{Binding SelectedPart}"
+                                                          IsVisible="{Binding LibraryEditable}"/>
+                                            </Panel>
+                                            <TextBlock Grid.Column="6" Classes="tblcell" Text="{Binding Tolerance}"/>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
@@ -326,7 +380,7 @@
 
         <!-- ── Response plots, side by side ──────────────────────────────── -->
         <Border Grid.Column="1" Classes="pane">
-            <Grid RowDefinitions="*,Auto" ColumnDefinitions="*,*">
+            <Grid ColumnDefinitions="*,*">
                 <ddc:PlotControl Name="MagnitudePlotControl"
                                  Plot="{Binding MagnitudePlot}"
                                  Library="{Binding PlotHost.Library}"
@@ -335,12 +389,6 @@
                                  Plot="{Binding PhasePlot}"
                                  Library="{Binding PlotHost.Library}"
                                  CanDeletePlot="False" CanEditPlotProperties="False"/>
-                <Grid Grid.Row="1" Grid.ColumnSpan="2" ColumnDefinitions="Auto,*,Auto,*" Margin="0,6,0,0">
-                    <TextBlock Classes="detailLabel" Text="± band "/>
-                    <TextBox Grid.Column="1" Classes="num" Name="BandFractionBox" MinWidth="64"/>
-                    <TextBlock Grid.Column="2" Classes="detailLabel" Text=" points "/>
-                    <TextBox Grid.Column="3" Classes="num" Name="PlotPointsBox" MinWidth="64"/>
-                </Grid>
             </Grid>
         </Border>
     </Grid>
