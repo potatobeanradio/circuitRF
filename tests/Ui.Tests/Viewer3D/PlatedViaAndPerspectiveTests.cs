@@ -120,6 +120,33 @@ public sealed class PlatedViaAndPerspectiveTests
         Assert.DoesNotContain(carved.Vertices, v => Math.Abs(Math.Sqrt(v.X * v.X + v.Y * v.Y) - 0.4 * Mm) < 1e-12);
     }
 
+    /// <summary>A plated barrel exactly tangent to the board's side wall is drawn with a flat lying IN that wall, a face the
+    /// metal-over-dielectric tie always wins: drawn with only a vertex on the wall, its facets either side leaned back into the
+    /// board by a sagitta and came and went with the camera (owner report, 2026-11-17). One a micrometre inside stays round.</summary>
+    [Theory]
+    [InlineData(0.0, true)]
+    [InlineData(1e-6, false)]
+    public void ABarrelTangentToTheBoardEdge_HasAFlatInTheSideWall(double inside, bool flat)
+    {
+        var pec = Em3dBoundaryKind.Pec;
+        var slab = new Em3dSolid("sub", "fr4", Em3dRole.Dielectric, new Em3dBox(new(-2 * Mm, -2 * Mm, 0), new(2 * Mm, 2 * Mm, 0.5 * Mm)), 1);
+        double y = -2 * Mm + 0.5 * Mm + inside;   // the barrel's outside reaches y = −2 mm, the slab's y-min wall
+        var barrel = new Em3dSolid("via/1", "cu", Em3dRole.Conductor, new Em3dCylinder(new(0, y, 0), new(0, y, 0.5 * Mm), 0.5 * Mm), 2);
+        var bore = new Em3dSolid("via/1/fill", "air", Em3dRole.Air, new Em3dCylinder(new(0, y, 0), new(0, y, 0.5 * Mm), 0.4 * Mm), 3);
+        var problem = new Em3dProblem([slab, barrel, bore], [], [new Em3dMaterial("air", 1, null, 0, 1, 0), new Em3dMaterial("fr4", 4.4, null, 0.02, 1, 0),
+                                                               new Em3dMaterial("cu", 1, null, 0, 1, 5.8e7)], [],
+                                      new Em3dAirBox(new(-3 * Mm, -3 * Mm, -1 * Mm), new(3 * Mm, 3 * Mm, 1 * Mm), new Em3dFaces(pec, pec, pec, pec, pec, pec)),
+                                      new Em3dFrequency(1e9, 10e9, 10, Em3dSweepKind.Linear), 20);
+
+        var tube = Scene3DBores.Of(problem)!.Carved(barrel)!.Value.Make();
+        bool OnWall(int v) => Math.Abs(tube.Vertices[v].Y + 2 * Mm) < 1e-12;
+        var inWall = tube.Triangles.Where(t => t.Face == 2 && OnWall(t.A) && OnWall(t.B) && OnWall(t.C)).ToList();
+        Assert.Equal(flat, inWall.Count == 2);
+        // Nothing of it leaves the board, and the bore is untouched.
+        Assert.DoesNotContain(tube.Vertices, v => v.Y < -2 * Mm - 1e-12);
+        Assert.Contains(tube.Vertices, v => Math.Abs(Math.Sqrt(v.X * v.X + (v.Y - y) * (v.Y - y)) - 0.4 * Mm) < 1e-12);
+    }
+
     private static bool Covers(Em3dTriangleMesh m, Em3dTriangle t, double x, double y)
     {
         var (a, b, c) = (m.Vertices[t.A], m.Vertices[t.B], m.Vertices[t.C]);

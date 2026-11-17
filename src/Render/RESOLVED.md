@@ -5942,3 +5942,24 @@ triangulations, the block's fan round its reservoir hole and the slab's two boar
 - **The symbol font has no vertical ellipsis**: `⋮` and `…` rendered as boxes, so the cut corner's ellipses are three drawn dots.
 - **The palette places Feed mode at 4 × 4**, the variant its tile draws (a tile is drawn with no instance, from the default
   parameters' pin count), so what is dragged out is what the tile shows.
+
+## A via barrel exactly tangent to the board edge came and went on the board's side (2026-11-17)
+
+**Symptom.** On a board whose edge vias' barrels just reach the outline (centre 0.44958 mm in from the edge, outer radius
+0.44958 mm — the same double), the realistic view showed a thin copper line on the board's side at each via that vanished
+and reappeared, solid at some angles and dashed at others, as the camera orbited.
+
+**Cause.** The barrel is drawn as a 32-facet prism; with the contact on an axis, one ring vertex lies exactly in the side
+wall and the two facets either side lean back into the board by the sagitta, r(1 − cos 11.25°) — 8.6 µm here — over a
+facet's width. Those facets end on the slab's wall, which is drawn with `Scene3DDepthTie.Behind`'s polygon offset, so
+each won the pixels within the offset of the wall and lost the rest, and how many depended on the wall's slope to the
+view. The only metal genuinely on the wall was a line of no width, which no rasteriser draws steadily.
+
+**Fix (view only).** `Scene3DBores.Carved` gives a vertical metal cylinder that stands exactly tangent (`Tol`) to a
+dielectric's outline edge a FLAT in place of the ring vertex nearest the contact: two points on the wall's line, half a
+facet's chord either side, so one face of the barrel lies IN the wall and wins it by the metal-over-dielectric tie at every
+angle. Every other vertex stays where `Em3dTessellation` puts it, so pads and slabs carved at the ring still meet it; the
+flat's ends lie on the wall, inside the board. The rule is the owner's: metal exactly on a dielectric face is shown, metal
+slightly inside it is not — a barrel 1 µm clear of the wall keeps its round outside, and in the view tested (the same
+board with the barrels shrunk by 1 µm and 0.2 µm, four yaws) none of it came through the wall. Gate:
+`PlatedViaAndPerspectiveTests.ABarrelTangentToTheBoardEdge_HasAFlatInTheSideWall`.

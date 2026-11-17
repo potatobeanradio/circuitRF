@@ -32,6 +32,15 @@
 // barrel outline is a SHAPED bore: it carves the conductors and slabs it passes right through as a round barrel's outside
 // does, so the flat face is the only surface on that plane. A slab needs it as well as Scene3DWalls' cut: the wall is
 // cut, but a slab's caps ran on under the flat face, and with the slab hovered their edges came through it as a line.
+//
+// A metal cylinder standing exactly TANGENT to a slab's outline (a via whose barrel just reaches the board's edge, 2026-11-17,
+// owner report) touches the side wall along a line, and drawn with a vertex on that line its two facets either side of it
+// lean back into the board by a sagitta — 8.6 µm on a 0.9 mm barrel — over a facet's width. Against the wall's polygon offset
+// they won some pixels and lost others, so the strip of copper on the board's side came and went as the camera orbited. Metal
+// exactly on a dielectric's face is shown, and metal slightly inside it is not; a line can do neither steadily. So the vertex
+// on the wall is drawn as a flat one facet wide lying IN the wall, a face the metal-over-dielectric tie always wins. Its ends
+// lie on the wall's line, inside the board; only exact tangency (Tol) takes it — a barrel a micrometre clear of the wall keeps
+// its round outside and stays behind the wall.
 
 using Clipper2Lib;
 using CircuitRF.Engine.Em3d;
@@ -56,12 +65,17 @@ internal sealed class Scene3DBores
     private readonly Em3dPrecedence _precedence;
     /// <summary>The largest radius a polygon is carved at: how far outside its own x-range a bore's centre can lie and still cut it.</summary>
     private readonly double _reach;
+    /// <summary>Every dielectric's outline edge, with the heights it spans: what a metal cylinder can stand tangent to.</summary>
+    private readonly SideWall[] _walls;
 
-    private Scene3DBores(Bore[] bores, Em3dPrecedence precedence)
+    private readonly record struct SideWall(Point2 A, Point2 B, double Z0, double Z1);
+
+    private Scene3DBores(Bore[] bores, Em3dPrecedence precedence, SideWall[] walls)
     {
         _bores = bores;
         _precedence = precedence;
         _reach = bores.Max(b => b.Outer);
+        _walls = walls;
     }
 
     /// <summary>The problem's bores, or null when it has none (the ordinary problem, which then costs nothing).
@@ -122,7 +136,21 @@ internal sealed class Scene3DBores
             }
         if (bores.Count == 0) return null;
         bores.Sort((a, b) => a.X.CompareTo(b.X));
-        return new Scene3DBores([.. bores], precedence!);
+        var walls = new List<SideWall>();
+        foreach (var s in problem.Solids)
+        {
+            if (s.Role != Em3dRole.Dielectric) continue;
+            var (rings, z0, z1) = s.Primitive switch
+            {
+                Em3dExtrudedPolygon e => ((IReadOnlyList<IReadOnlyList<Point2>>?)[e.Outline, .. e.Holes], e.ZBottom, e.ZTop),
+                Em3dBox b => ([[new(b.Min.X, b.Min.Y), new(b.Max.X, b.Min.Y), new(b.Max.X, b.Max.Y), new(b.Min.X, b.Max.Y)]], b.Min.Z, b.Max.Z),
+                _ => ((IReadOnlyList<IReadOnlyList<Point2>>?)null, 0.0, 0.0),
+            };
+            if (rings is null) continue;
+            foreach (var ring in rings)
+                for (int i = 0; i < ring.Count; i++) walls.Add(new SideWall(ring[i], ring[(i + 1) % ring.Count], z0, z1));
+        }
+        return new Scene3DBores([.. bores], precedence!, [.. walls]);
     }
 
     /// <summary>
@@ -138,13 +166,18 @@ internal sealed class Scene3DBores
             case Em3dCylinder c when Vertical(c):
             {
                 double z0 = Math.Min(c.AxisStart.Z, c.AxisEnd.Z), z1 = Math.Max(c.AxisStart.Z, c.AxisEnd.Z);
+                double bore = 0;
                 foreach (var b in Near(c.AxisStart.X - Tol, c.AxisStart.X + Tol))
                     if (b.Priority > priority && Math.Abs(b.Y - c.AxisStart.Y) <= Tol && b.R < c.Radius - Tol && Spans(b, z0, z1))
                     {
-                        string name = s.Name;
-                        return (new TubeKey(c, b.R), () => Em3dTessellation.OfTube(name, c, b.R));
+                        bore = b.R;
+                        break;
                     }
-                return null;
+                string name = s.Name;
+                if (s.Role == Em3dRole.Conductor && Flats(c, z0, z1) is { Count: > 0 } flats)
+                    return (new FlatKey(c, bore, string.Join(";", flats.Select(f => FormattableString.Invariant($"{f.K},{f.Lo.X:R},{f.Lo.Y:R},{f.Hi.X:R},{f.Hi.Y:R}")))),
+                            () => FlattenedCylinder(name, c, bore, flats));
+                return bore > 0 ? (new TubeKey(c, bore), () => Em3dTessellation.OfTube(name, c, bore)) : null;
             }
             case Em3dBox box when s.Role == Em3dRole.Dielectric:
             {
@@ -317,6 +350,107 @@ internal sealed class Scene3DBores
         && !e.Holes.Any(h => Inside(h, centre) || Clearance(h, centre) < r - Tol);
 
     private sealed record TubeKey(Em3dCylinder Cylinder, double Bore);
+
+    private sealed record FlatKey(Em3dCylinder Cylinder, double Bore, string Flats);
+
+    /// <summary>Where a vertical cylinder stands exactly tangent to a dielectric's side wall it shares heights with: the ring vertex
+    /// <c>K</c> nearest the point of contact, and the flat drawn in its place — the wall's line, half a facet's chord either side of the
+    /// contact (<c>Lo</c> before <c>Hi</c> counter-clockwise). Only a contact a whole flat inside the wall's ends is one.</summary>
+    private List<(int K, Point2 Lo, Point2 Hi)>? Flats(Em3dCylinder c, double z0, double z1)
+    {
+        List<(int K, Point2 Lo, Point2 Hi)>? flats = null;
+        double cx = c.AxisStart.X, cy = c.AxisStart.Y, r = c.Radius;
+        int n = Em3dTessellation.CylinderSegments;
+        double half = r * Math.Sin(Math.PI / n);
+        foreach (var w in _walls)
+        {
+            if (Math.Min(z1, w.Z1) - Math.Max(z0, w.Z0) <= Tol) continue;
+            double dx = w.B.X - w.A.X, dy = w.B.Y - w.A.Y, len = Math.Sqrt(dx * dx + dy * dy);
+            if (len <= Tol) continue;
+            double ux = dx / len, uy = dy / len;
+            double t = (cx - w.A.X) * ux + (cy - w.A.Y) * uy;
+            var foot = new Point2(w.A.X + ux * t, w.A.Y + uy * t);
+            double d = Math.Sqrt((foot.X - cx) * (foot.X - cx) + (foot.Y - cy) * (foot.Y - cy));
+            if (Math.Abs(d - r) > Tol || t - half < -Tol || t + half > len + Tol) continue;
+            double angle = Math.Atan2(foot.Y - cy, foot.X - cx);
+            int k = ((int)Math.Round(angle * n / (2 * Math.PI)) % n + n) % n;
+            if (flats?.Any(f => f.K == k) == true) continue;
+            // counter-clockwise about the axis: the tangent direction at the contact is (−sin, cos) of its angle
+            double sx = -Math.Sin(angle), sy = Math.Cos(angle);
+            var (lo, hi) = ux * sx + uy * sy > 0
+                ? (new Point2(foot.X - ux * half, foot.Y - uy * half), new Point2(foot.X + ux * half, foot.Y + uy * half))
+                : (new Point2(foot.X + ux * half, foot.Y + uy * half), new Point2(foot.X - ux * half, foot.Y - uy * half));
+            (flats ??= []).Add((k, lo, hi));
+        }
+        return flats;
+    }
+
+    /// <summary>A vertical cylinder — a tube when <paramref name="bore"/> is positive — drawn with each flat in place of its ring vertex,
+    /// and every other vertex where <see cref="Em3dTessellation"/> puts it, so pads and slabs carved at its ring still meet it. Faces as
+    /// the cylinder's: bottom 0, top 1, outside 2; the bore's wall −1.</summary>
+    private static Em3dTriangleMesh FlattenedCylinder(string name, Em3dCylinder c, double bore, List<(int K, Point2 Lo, Point2 Hi)> flats)
+    {
+        double cx = c.AxisStart.X, cy = c.AxisStart.Y, r = c.Radius;
+        double z0 = Math.Min(c.AxisStart.Z, c.AxisEnd.Z), z1 = Math.Max(c.AxisStart.Z, c.AxisEnd.Z);
+        int n = Em3dTessellation.CylinderSegments;
+        var outer = new List<Point2>(n + flats.Count);
+        var innerOf = new List<int>(n + flats.Count);   // the inner ring vertex each outer one pairs with
+        for (int k = 0; k < n; k++)
+        {
+            double t = 2 * Math.PI * k / n;
+            int at = flats.FindIndex(f => f.K == k);
+            if (at >= 0)
+            {
+                outer.Add(flats[at].Lo); innerOf.Add(k);
+                outer.Add(flats[at].Hi); innerOf.Add(k);
+            }
+            else
+            {
+                outer.Add(new Point2(cx + r * Math.Cos(t), cy + r * Math.Sin(t)));
+                innerOf.Add(k);
+            }
+        }
+        var vertices = new List<Point3>();
+        var triangles = new List<Em3dTriangle>();
+        int face = -1;
+        void T(int a, int b, int d) { if (a != b && b != d && a != d) triangles.Add(new Em3dTriangle(a, b, d, name, face)); }
+        void Quad(int a, int b, int d, int e) { T(a, b, d); T(a, d, e); }
+        int m = outer.Count;
+        int ob = vertices.Count; foreach (var p in outer) vertices.Add(new Point3(p.X, p.Y, z0));
+        int ot = vertices.Count; foreach (var p in outer) vertices.Add(new Point3(p.X, p.Y, z1));
+        int ib = -1, it = -1;
+        if (bore > 0)
+        {
+            ib = vertices.Count;
+            for (int k = 0; k < n; k++) vertices.Add(new Point3(cx + bore * Math.Cos(2 * Math.PI * k / n), cy + bore * Math.Sin(2 * Math.PI * k / n), z0));
+            it = vertices.Count;
+            for (int k = 0; k < n; k++) vertices.Add(new Point3(cx + bore * Math.Cos(2 * Math.PI * k / n), cy + bore * Math.Sin(2 * Math.PI * k / n), z1));
+        }
+        int cb = -1, ct = -1;
+        if (bore <= 0)
+        {
+            cb = vertices.Count; vertices.Add(new Point3(cx, cy, z0));
+            ct = vertices.Count; vertices.Add(new Point3(cx, cy, z1));
+        }
+        for (int i = 0; i < m; i++)
+        {
+            int j = (i + 1) % m;
+            face = 2; Quad(ob + i, ob + j, ot + j, ot + i);   // outside, outward
+            if (bore > 0)
+            {
+                int ki = innerOf[i], kj = innerOf[j];
+                face = -1; if (ki != kj) Quad(ib + ki, it + ki, it + kj, ib + kj);   // the bore's wall, facing the axis
+                face = 1; Quad(it + ki, ot + i, ot + j, it + kj);                     // top annulus
+                face = 0; Quad(ib + ki, ib + kj, ob + j, ob + i);                     // bottom annulus
+            }
+            else
+            {
+                face = 1; T(ct, ot + i, ot + j);
+                face = 0; T(cb, ob + j, ob + i);
+            }
+        }
+        return new Em3dTriangleMesh(vertices, triangles);
+    }
 
     private sealed record BoredKey(Em3dExtrudedPolygon Primitive, bool Box, string Bores);
 
