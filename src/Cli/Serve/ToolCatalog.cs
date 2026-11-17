@@ -944,7 +944,7 @@ internal static class ToolCatalog
 
         new("create",
             "Create a correct initial document — a workspace, a cell folder with its view files, a 3D view of a cell's layout, "
-          + "a copy of a shipped example workspace to run and change, "
+          + "a copy of a shipped example workspace to run and change, a filter synthesised from its specification as a netlist, "
           + "or a model in a model library exported from a cell or a Model Composer model (Export to Library).",
             "what",
             "What to create.",
@@ -974,6 +974,30 @@ internal static class ToolCatalog
                     [],
                     "A copy of a shipped example workspace, to run and change: its README says what each bench shows "
                   + "and the order to run them. An existing folder is refused, never overwritten."),
+                // The Filter Designer, headless (filter-synthesis.md §6). A mode of `create`: what it makes is a netlist.
+                new("filter", ["filter"],
+                    [],
+                    [
+                        new("response",    "--response",     OptKind.Str,     "Butterworth or Chebyshev (default), or a response a realiser adds."),
+                        new("band",        "--band",         OptKind.Str,     "lowpass, highpass, bandpass or bandstop. Required."),
+                        new("order",       "--order",        OptKind.Integer, "The prototype's order. Required."),
+                        new("f1",          "--f1",           OptKind.Str,     "The cutoff, or a band's lower edge, with its unit (2.2GHz). Required."),
+                        new("f2",          "--f2",           OptKind.Str,     "A band's upper edge, with its unit."),
+                        new("ripple",      "--ripple",       OptKind.Number,  "Passband ripple, dB (0.1)."),
+                        new("stop",        "--stop",         OptKind.Number,  "Stopband attenuation, dB (40)."),
+                        new("z0",          "--z0",           OptKind.Str,     "The terminations, ohms (50)."),
+                        new("zeros",       "--zeros",        OptKind.StrList, "Finite transmission zeros, each with its unit."),
+                        new("technology",  "--tech",         OptKind.PathOrName, "The stack the filter is built on: a .ctech, a folder in a workspace, or a shipped technology id. Default: the workspace output is written in."),
+                        new("signal",      "--signal",       OptKind.Str,     "The signal layer, by name. Default: the technology's."),
+                        new("ground",      "--ground",       OptKind.Str,     "The ground reference layer, by name. Default: the technology's."),
+                        new("realiser",    "--realiser",     OptKind.Str,     "Realise with this one (its name, or a part of it that names one). Without it, every realiser is listed with whether it can build the filter, and why not."),
+                        new("output",      "-o",             OptKind.Path,    "With realiser: the .cnl written. Required then."),
+                        new("toSchematic", "--to-schematic", OptKind.Flag,    "Also draw the .cnl as a .csch beside it."),
+                        new("points",      "--points",       OptKind.Integer, "Points of the bench's S-parameter sweep (401)."),
+                    ],
+                    "A filter from its specification: the realisers that can build it, or, with realiser, one realised as a .cnl: "
+                  + "the part with its parameters on the technology's substrate, an R, L, C or via on each of its sites, two ports "
+                  + "and an S-parameter sweep across the band, ready for run analysis=sparam."),
                 // brief-emb-1 R-emb1-1 — Design ▸ New 3D View from Layout.
                 new("view3d", ["new", "view3d"],
                     [new("cell", true, "The cell folder whose layout the 3D view places.")],

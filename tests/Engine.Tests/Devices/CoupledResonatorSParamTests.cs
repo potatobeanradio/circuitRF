@@ -5,17 +5,19 @@ using CircuitRF.Core.Devices;
 using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Netlist;
+using CircuitRF.Core.Synthesis.Filters;
+using CircuitRF.Core.Systems;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace CircuitRF.Engine.Tests.Devices;
 
 /// <summary>
-/// MCRC, the coupled-resonator filter, through the engine. Each shape is built from a textbook design computed here (the
-/// part stores geometry; synthesis is not the part's), and its response lands on the design: Cohn's J-inverter
-/// parallel-coupled filter as Straight, folded as ZigZag and as Hairpin (Cristal and Frankel's hairpin, without the
-/// arms' own coupling), Hong and Lancaster's coupling coefficients for the open loops, and the ring at one guided
-/// wavelength. The bandstop and spurline notch where their closed forms put them, and the composite is its sections
+/// MCRC, the coupled-resonator filter, through the engine. Each shape is built from a textbook design the synthesis
+/// computes (<see cref="CoupledResonatorDesign"/>; the part stores geometry), and its response lands on the design:
+/// Cohn's J-inverter parallel-coupled filter as Straight, folded as ZigZag and as Hairpin (Cristal and Frankel's
+/// hairpin, without the arms' own coupling), Hong and Lancaster's coupling coefficients for the open loops, and the ring
+/// at one guided wavelength. The bandstop and spurline notch where their closed forms put them, and the composite is its sections
 /// wired by hand.
 /// </summary>
 public class CoupledResonatorSParamTests(ITestOutputHelper output)
@@ -31,90 +33,21 @@ public class CoupledResonatorSParamTests(ITestOutputHelper output)
 
     private static string F(double v) => v.ToString("R", CultureInfo.InvariantCulture);
 
-    // ══ The textbook designs ════════════════════════════════════════════════════════════════════════════════════════
-
-    /// <summary>Chebyshev lowpass prototype g0..g(n+1) for <paramref name="rippleDb"/> (G. L. Matthaei, L. Young and
-    /// E. M. T. Jones' closed form).</summary>
-    internal static double[] Chebyshev(int n, double rippleDb)
-    {
-        double beta = Math.Log(1.0 / Math.Tanh(rippleDb / 17.37)), gamma = Math.Sinh(beta / (2.0 * n));
-        var g = new double[n + 2];
-        g[0] = 1.0;
-        double a(int k) => Math.Sin((2 * k - 1) * Math.PI / (2.0 * n));
-        double b(int k) => gamma * gamma + Math.Pow(Math.Sin(k * Math.PI / n), 2);
-        g[1] = 2.0 * a(1) / gamma;
-        for (int k = 2; k <= n; k++) g[k] = 4.0 * a(k - 1) * a(k) / (b(k - 1) * g[k - 1]);
-        g[n + 1] = n % 2 == 1 ? 1.0 : Math.Pow(1.0 / Math.Tanh(beta / 4.0), 2);
-        return g;
-    }
+    // ══ The textbook designs, from the synthesis (CoupledResonatorDesign) ══════════════════════════════════════════
 
     private static readonly MicrostripValidityReporter Quiet = new("(test design)");
 
-    private static KirschningJansenCoupled.Modes Modes(double w, double s)
-        => KirschningJansenCoupled.Compute(F0, w, s, Board.HMeters, Board.TMeters, Board.EpsR, Quiet);
-
-    /// <summary>The gap at which a pair of width <paramref name="w"/> has voltage coupling <paramref name="c"/> at F0,
-    /// (Ze − Zo)/(Ze + Zo), by bisection over MCLIN's own modes.</summary>
-    internal static double GapFor(double w, double c)
-    {
-        double lo = Math.Log(0.1 * Board.HMeters), hi = Math.Log(10.0 * Board.HMeters);
-        for (int i = 0; i < 60; i++)
-        {
-            double mid = 0.5 * (lo + hi);
-            var m = Modes(w, Math.Exp(mid));
-            if ((m.Ze - m.Zo) / (m.Ze + m.Zo) > c) lo = mid; else hi = mid;
-        }
-        return PassivePlan.OnGrid(Math.Exp(0.5 * (lo + hi)));
-    }
-
-    internal static double W50 => PassivePlan.OnGrid(HammerstadJensen.SynthesizeWidth(Z0, Board.HMeters, Board.TMeters, Board.EpsR, Quiet));
-
-    private static double LineEeff(double w)
-        => new MicrostripLineModel(w, 0.0, Board.HMeters, Board.TMeters, Board.EpsR, Board.SigmaSPerM, Board.TanD, "t")
-            .LineParameters(F0).Eeff;
-
-    private static double OpenEnd(double w)
-        => MicrostripOpenEnd.Extension(w, Board.HMeters, Board.EpsR,
-            new MicrostripLineModel(w, 0.0, Board.HMeters, Board.TMeters, Board.EpsR, Board.SigmaSPerM, Board.TanD, "t")
-                .LineParameters(0.0).EeffStatic);
-
-    /// <summary>
-    /// Cohn's parallel-coupled half-wave filter (S. B. Cohn, IRE Trans. MTT 6(2), 1958): each coupled section an
-    /// admittance inverter, J01·Z0 = √(π·FBW/(2·g0·g1)), J(k,k+1)·Z0 = π·FBW/(2√(g_k·g_(k+1))), Ze = Z0(1 + JZ0 + (JZ0)²),
-    /// Zo = Z0(1 − JZ0 + (JZ0)²). On one strip width, each section's gap is the one whose (Ze − Zo)/(Ze + Zo) is Cohn's,
-    /// JZ0/(1 + (JZ0)²); each section is λg/4 in its modes' mean εeff, and each resonator its two sections less an open end
-    /// at each end. The resonators take their mean length.
-    /// </summary>
+    /// <summary>Cohn's parallel-coupled filter on one strip width (<see cref="CoupledResonatorDesign.Cohn"/>).</summary>
     internal static (double W, double L, double[] S) Cohn(int n, double rippleDb, double fbw)
-    {
-        var g = Chebyshev(n, rippleDb);
-        double w = W50;
-        var s = new double[n + 2];
-        var quarter = new double[n + 2];
-        for (int j = 1; j <= n + 1; j++)
-        {
-            double x = j == 1 ? Math.Sqrt(Math.PI * fbw / (2.0 * g[0] * g[1]))
-                     : j == n + 1 ? Math.Sqrt(Math.PI * fbw / (2.0 * g[n] * g[n + 1]))
-                     : Math.PI * fbw / (2.0 * Math.Sqrt(g[j - 1] * g[j]));
-            s[j] = GapFor(w, x / (1.0 + x * x));
-            var m = Modes(w, s[j]);
-            quarter[j] = 299_792_458.0 / (4.0 * F0 * Math.Sqrt((m.EeffE + m.EeffO) / 2.0));
-        }
-        double l = Enumerable.Range(1, n).Average(k => quarter[k] + quarter[k + 1]) - 2.0 * OpenEnd(w);
-        return (w, PassivePlan.OnGrid(l), s);
-    }
+        => CoupledResonatorDesign.Cohn(LowpassPrototype.GValues(FilterResponse.Chebyshev, n, rippleDb), fbw, F0, Z0, Board);
 
-    /// <summary>What one mitred corner of width <paramref name="w"/> adds to a resonator's centre-line length beyond its
-    /// electrical length: its two arms, less its own phase as a length of the line (<see cref="PlanBend.LineLength"/>).</summary>
-    internal static double CornerExcess(double w)
-    {
-        var bend = new PlanBend([1, 2], 0, 0, 0, w, 90.0, PlanBend.MiterFor(PlanCorner.Miter, w, Board));
-        double eeff = LineEeff(w);
-        double z = new MicrostripLineModel(w, 0.0, Board.HMeters, Board.TMeters, Board.EpsR, Board.SigmaSPerM, Board.TanD, "t")
-            .LineParameters(F0).Z0;
-        double quarter = 299_792_458.0 / (4.0 * F0 * Math.Sqrt(eeff));
-        return 2.0 * bend.Arm - bend.LineLength(Board, F0, z, quarter);
-    }
+    internal static double W50 => CoupledResonatorDesign.Width(Z0, F0, Board);
+
+    private static double LineEeff(double w) => CoupledResonatorDesign.LineEeff(w, F0, Board);
+
+    private static double OpenEnd(double w) => CoupledResonatorDesign.OpenEnd(w, Board);
+
+    internal static double CornerExcess(double w) => CoupledResonatorDesign.CornerExcess(w, F0, Board);
 
     /// <summary>A spec as the factory reads one, from named values.</summary>
     internal static CoupledResonatorSpec Spec(params (string Key, object Value)[] values)
@@ -217,75 +150,20 @@ public class CoupledResonatorSParamTests(ITestOutputHelper output)
         var tops = Enumerable.Range(1, f.Length - 2).Where(i => db[i] >= db[i - 1] && db[i] >= db[i + 1])
             .OrderByDescending(i => db[i]).Take(count).Order().ToList();
         Assert.Equal(count, tops.Count);
-        return [.. tops.Select(i => Golden(x => S21Db(nl, [x])[0], f[i - 1], f[i + 1]))];
-    }
-
-    /// <summary>The maximum of <paramref name="y"/> over [a, b], by golden section.</summary>
-    private static double Golden(Func<double, double> y, double a, double b)
-    {
-        double r = (Math.Sqrt(5.0) - 1.0) / 2.0, x1 = b - r * (b - a), x2 = a + r * (b - a), y1 = y(x1), y2 = y(x2);
-        while (b - a > 1e3)
-        {
-            if (y1 > y2) { b = x2; x2 = x1; y2 = y1; x1 = b - r * (b - a); y1 = y(x1); }
-            else { a = x1; x1 = x2; y1 = y2; x2 = a + r * (b - a); y2 = y(x2); }
-        }
-        return 0.5 * (a + b);
+        return [.. tops.Select(i => CoupledResonatorDesign.Golden(x => S21Db(nl, [x])[0], f[i - 1], f[i + 1]))];
     }
 
     private static (string, object)[] Loop(double w, double l, double gap, string arrangement = "Inline")
         => [("W", w), ("L", PassivePlan.OnGrid(l)), ("Shape", "OpenLoop"), ("Gap", gap), ("Arrangement", arrangement)];
 
-    /// <summary>Bisection of a decreasing <paramref name="y"/> for <paramref name="target"/> over [lo, hi] (log space).</summary>
-    private static double Solve(Func<double, double> y, double target, double lo, double hi)
+    /// <summary>Hong and Lancaster's coupling coefficients and external Q for the inline open loops, solved on the model
+    /// itself by the synthesis (<see cref="CoupledResonatorDesign.FromCouplings"/>), 1 mm openings, tapped.</summary>
+    internal static CoupledResonatorSpec OpenLoopDesign(int n, double rippleDb, double fbw)
     {
-        double a = Math.Log(lo), b = Math.Log(hi);
-        for (int i = 0; i < 30; i++)
-        {
-            double m = 0.5 * (a + b);
-            if (y(Math.Exp(m)) > target) a = m; else b = m;
-        }
-        return PassivePlan.OnGrid(Math.Exp(0.5 * (a + b)));
-    }
-
-    /// <summary>
-    /// Hong and Lancaster's method (IEEE Trans. MTT 44(11), 1996), on the model itself: the lowpass prototype's coupling
-    /// coefficients M(k,k+1) = FBW/√(g_k·g_(k+1)) and external Q, Qe = g0·g1/FBW. Each gap is the one whose two loops,
-    /// lightly fed, split into f1 and f2 with (f2² − f1²)/(f2² + f1²) = M; the tap the one at which one loop, tapped at
-    /// both ends, has a 3 dB bandwidth of 2·f0/Qe. Each loop is then sized for f0 where it sits: a coupled side lowers a
-    /// loop's own resonance by the shift of the pair's mean, √(f1·f2), from the lone loop's, and a tap by its own shift,
-    /// so the middle loops, with two coupled sides, come out smaller than the end ones.
-    /// </summary>
-    internal static (double W, double[] L, double Gap, double[] S, double Tap) OpenLoopDesign(int n, double rippleDb, double fbw)
-    {
-        var g = Chebyshev(n, rippleDb);
-        double w = W50, gap = 1e-3, light = 1e-3;
-        double l = 299_792_458.0 / (2.0 * F0 * Math.Sqrt(LineEeff(w))) + 4.0 * CornerExcess(w);
-        double Lone(double tap) => Peaks(CoupledResonatorPlan.Build(Spec([("N", 1.0), .. Loop(w, l, gap), ("Feed", "Tapped"),
-            ("Tap", tap)]), Board), 1, 0.8 * F0, 1.2 * F0)[0];
-        for (int i = 0; i < 4; i++) l *= Lone(light) / F0;
-        double[] Pair(double s) => Peaks(CoupledResonatorPlan.Build(Spec([("N", 2.0), .. Loop(w, l, gap), ("Feed", "Tapped"),
-            ("Tap", light), ("S2", s)]), Board), 2, 0.85 * F0, 1.15 * F0);
-        double Split(double s) { var f = Pair(s); return (f[1] * f[1] - f[0] * f[0]) / (f[1] * f[1] + f[0] * f[0]); }
-        var gaps = new double[n + 2];
-        for (int k = 1; k < n; k++) gaps[k + 1] = Solve(Split, fbw / Math.Sqrt(g[k] * g[k + 1]), 0.1 * Board.HMeters, 4.0 * Board.HMeters);
-        double Qe(double tap)
-        {
-            var one = CoupledResonatorPlan.Build(Spec([("N", 1.0), .. Loop(w, l, gap), ("Feed", "Tapped"), ("Tap", tap)]), Board);
-            var (f1, f2) = RippleEdges(one, 3.0, 0.7 * F0, 1.3 * F0);
-            return 2.0 * (f1 + f2) / 2.0 / (f2 - f1);
-        }
-        double tapAt = Solve(Qe, g[0] * g[1] / fbw, w, (l + gap) / 4.0 - w);
-
-        double lone = Lone(light), byTap = Lone(tapAt) - lone;
-        var lengths = new double[n];
-        for (int k = 1; k <= n; k++)
-        {
-            double f = lone + (k == 1 || k == n ? byTap : 0.0);
-            foreach (int j in new[] { k, k + 1 })   // gaps S_k and S_(k+1), where there is a loop beyond
-                if (j >= 2 && j <= n) { var pair = Pair(gaps[j]); f += Math.Sqrt(pair[0] * pair[1]) - lone; }
-            lengths[k - 1] = PassivePlan.OnGrid(l * f / F0);
-        }
-        return (w, lengths, gap, gaps, tapAt);
+        var g = LowpassPrototype.GValues(FilterResponse.Chebyshev, n, rippleDb);
+        return CoupledResonatorDesign.Spec(CoupledResonatorDesign.FromCouplings(
+            new Dictionary<string, object> { ["W"] = W50, ["Shape"] = "OpenLoop", ["Feed"] = "Tapped", ["Gap"] = 1e-3 },
+            CoupledResonatorDesign.Couplings(g, fbw), CoupledResonatorDesign.ExternalQ(g, fbw), F0, Board));
     }
 
     [Fact]
@@ -293,19 +171,16 @@ public class CoupledResonatorSParamTests(ITestOutputHelper output)
     {
         const int n = 3;
         const double ripple = 0.5, fbw = 0.05;
-        var (w, l, gap, s, tap) = OpenLoopDesign(n, ripple, fbw);
-        var plan = CoupledResonatorPlan.Build(Spec([("N", (double)n), .. Loop(w, l[0], gap), .. Lengths(l), ("Feed", "Tapped"),
-            ("Tap", tap), .. Gaps(s, 2, n)]), Board);
+        var d = OpenLoopDesign(n, ripple, fbw);
+        var plan = CoupledResonatorPlan.Build(d, Board);
         var (f1, f2) = RippleEdges(plan, ripple, 0.85 * F0, 1.15 * F0);
         double centre = (f1 + f2) / 2.0, bw = f2 - f1;
-        output.WriteLine($"OpenLoop: W {w * 1e3:F4} L {string.Join(" ", l.Select(x => (x * 1e3).ToString("F4")))} Gap {gap * 1e3} " +
-                         $"S {s[2] * 1e3:F4} {s[3] * 1e3:F4} Tap {tap * 1e3:F4} mm; " +
+        output.WriteLine($"OpenLoop: W {d.W[0] * 1e3:F4} L {string.Join(" ", d.L.Select(x => (x * 1e3).ToString("F4")))} Gap {d.Gap * 1e3} " +
+                         $"S {d.S[2] * 1e3:F4} {d.S[3] * 1e3:F4} Tap {d.Tap * 1e3:F4} mm; " +
                          $"band {f1 / 1e9:F4}-{f2 / 1e9:F4} GHz, centre {centre / F0 - 1:P2} off, bandwidth {bw / (fbw * F0) - 1:P1} off");
         Assert.InRange(centre / F0, 0.98, 1.02);
         Assert.InRange(bw / (fbw * F0), 0.85, 1.15);
     }
-
-    private static (string, object)[] Lengths(double[] l) => [.. l.Select((x, k) => ($"L{k + 1}", (object)x))];
 
     /// <summary>The four loops in Hong and Lancaster's square: 1 and 4 cross-coupled across their openings, 2 and 3 back
     /// to back. The cross coupling against the main path puts a transmission zero either side of the passband, where an
@@ -313,10 +188,11 @@ public class CoupledResonatorSParamTests(ITestOutputHelper output)
     [Fact]
     public void TheCrossCoupledLoops_HaveAZeroEitherSide()
     {
-        var (w, l, gap, s, tap) = OpenLoopDesign(3, 0.5, 0.05);
+        var d = OpenLoopDesign(3, 0.5, 0.05);
         // Loops 1 and 4 as the inline design's end loops, 2 and 3 as its middle one; the cross coupling weaker.
-        var plan = CoupledResonatorPlan.Build(Spec([("N", 4.0), .. Loop(w, l[0], gap, "Cross"), ("L2", l[1]), ("L3", l[1]),
-            ("Feed", "Tapped"), ("Tap", tap), ("S2", s[2]), ("S3", s[2]), ("S4", s[2]), ("Sx", 3.0 * s[2])]), Board);
+        var plan = CoupledResonatorPlan.Build(Spec([("N", 4.0), .. Loop(d.W[0], d.L[0], d.Gap, "Cross"), ("L2", d.L[1]),
+            ("L3", d.L[1]), ("Feed", "Tapped"), ("Tap", d.Tap), ("S2", d.S[2]), ("S3", d.S[2]), ("S4", d.S[2]),
+            ("Sx", 3.0 * d.S[2])]), Board);
         var nl = AsPart(plan);
         var f = Enumerable.Range(0, 801).Select(i => F0 * (0.8 + 0.4 * i / 800.0)).ToArray();
         var db = S21Db(nl, f);
@@ -351,7 +227,7 @@ public class CoupledResonatorSParamTests(ITestOutputHelper output)
         var f = Enumerable.Range(0, 401).Select(i => lo + (hi - lo) * i / 400.0).ToArray();
         var db = S21Db(nl, f);
         int i = Array.IndexOf(db, db.Min());
-        return Golden(x => -S21Db(nl, [x])[0], f[Math.Max(0, i - 1)], f[Math.Min(f.Length - 1, i + 1)]);
+        return CoupledResonatorDesign.Golden(x => -S21Db(nl, [x])[0], f[Math.Max(0, i - 1)], f[Math.Min(f.Length - 1, i + 1)]);
     }
 
     /// <summary>A bandstop resonator, half a guided wavelength at F0 less its two open ends and with its corners' excess

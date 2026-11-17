@@ -105,7 +105,7 @@ the same documents.
 | `run` | `sparam`, `dc`, `hb`, [`env`](cli.html#env), [`fields`](cli.html#fields), `lp`, `lpp`, `em`, `opt` or a `yield` run (Monte Carlo, yield, corners, centering, DOE, sensitivity), chosen by `analysis` |
 | `check` | `check` |
 | `explain` | `explain`, including `--cells`, `--layers`, `--extents` and `--footprints` |
-| `create` | `new workspace` or `new cell` |
+| `create` | `new workspace` or `new cell`; [`filter`](cli.html#filter) (`what=filter`) — a filter from its specification, as a netlist |
 | `import` | `import part` — a component, as a cell; `import schematic` (`what=schematic`) — a schematic design, as a cell |
 | `convert` | `convert` — artwork between formats, in either direction, so exporting a layout is a `convert` |
 | `render` | `render` — one tool over every document kind, as the verb is |

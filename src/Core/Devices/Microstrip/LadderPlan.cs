@@ -31,9 +31,12 @@ public enum LadderStubEnd { Open, Short, Radial, Butterfly }
 
 /// <summary>A place for one lumped part (a <see cref="PlanSite"/>): an R, L or C of <paramref name="Value"/> (Ω, H, F),
 /// series (across the through line, which stops a site span short of the part's two pins) or shunt (from a pin at the
-/// end of a pad off the line, on <paramref name="Side"/>, to ground). The part is an ordinary one on the ladder's pins.</summary>
+/// end of a pad off the line, on <paramref name="Side"/>, to ground). The part is an ordinary one on the ladder's pins.
+/// A <paramref name="Parallel"/> site is one more part on the pins of the site before it, in parallel with that site's
+/// part (a tank in the line, or a resonator to ground), with no copper or pins of its own; its kind and side are the
+/// site's.</summary>
 public sealed record LadderSite(PlanSiteRole Role, double Value, PlanSiteKind Kind = PlanSiteKind.Series,
-    LadderStubSide Side = LadderStubSide.Up) : LadderSection;
+    LadderStubSide Side = LadderStubSide.Up, bool Parallel = false) : LadderSection;
 
 /// <summary>Which side of the through line a stub leaves on: +y (<see cref="Up"/>), −y, or both.</summary>
 public enum LadderStubSide { Up, Down, Both }
@@ -72,6 +75,7 @@ public sealed record LadderDesign(double Z0, double FreqHz, double W0Meters, IRe
 ///   stub(W=, L=, end=open|short, side=up|down|both)   a shunt stub; end open and side up unless stated
 ///   stub(W=, L=, end=radial|butterfly, Ro=, angle=, side=…)   a shunt stub ending on a radial stub (angle 60 unless stated)
 ///   site(role=R|L|C, value=, type=series|shunt, side=up|down)   a lumped part's place; series unless stated
+///   site(role=R|L|C, value=, type=parallel)       one more part on the site before it, in parallel
 /// </code>
 /// <para>A new kind is a new word, so a stored list never changes meaning when one is added. The width "there" starts as
 /// Z0's on the substrate at F (<see cref="LadderDesign.W0Meters"/>): the ports' own lines, which a gap or a stub at an
@@ -225,11 +229,12 @@ public static class LadderPlan
                 if (!(value > 0.0) || !double.IsFinite(value))
                     throw Refuse("device.ladder.not-positive", "Ladder: section {n} ({item}): value = {value} must be positive.",
                         ("n", n), ("item", item), ("value", v));
-                var type = Word("type", PlanSiteKind.Series);
+                bool parallel = fields.TryGetValue("type", out string? ty) && ty.Equals("parallel", StringComparison.OrdinalIgnoreCase);
+                var type = parallel ? PlanSiteKind.Series : Word("type", PlanSiteKind.Series);
                 if (type == PlanSiteKind.Series && fields.ContainsKey("side")) throw NotFor("side", "a shunt site");
                 var side = Word("side", LadderStubSide.Up);
                 if (side == LadderStubSide.Both) throw NotFor("side=both", "a stub; a shunt site is on one side");
-                return new LadderSite(role, value, type, side);
+                return new LadderSite(role, value, type, side, parallel);
             }
             default:
             {
@@ -307,6 +312,7 @@ public static class LadderPlan
                           + $"side={b.Side.ToString().ToLowerInvariant()}"
                           + (b.End is LadderStubEnd.Radial or LadderStubEnd.Butterfly
                               ? $", Ro={Mm(b.Ro)}, angle={b.AngleDeg.ToString("0.######", CultureInfo.InvariantCulture)}" : "") + ")",
+            LadderSite { Parallel: true } t => $"site(role={t.Role}, value={Value(t)}, type=parallel)",
             LadderSite t => $"site(role={t.Role}, value={Value(t)}, type={t.Kind.ToString().ToLowerInvariant()}"
                           + (t.Kind == PlanSiteKind.Shunt ? $", side={t.Side.ToString().ToLowerInvariant()}" : "") + ")",
             _ => throw new NotSupportedException(s.GetType().Name),
@@ -342,6 +348,7 @@ public static class LadderPlan
     private static int GPinsOf(LadderSection s) => s switch
     {
         LadderStub { End: LadderStubEnd.Short } b => Arms(b),
+        LadderSite { Parallel: true } => 0,
         LadderSite { Kind: PlanSiteKind.Series } => 2,
         LadderSite => 1,
         _ => 0,
@@ -377,7 +384,19 @@ public static class LadderPlan
             LadderSite t => t,
             _ => throw new NotSupportedException(sec.GetType().Name),
         };
-        var list = sections.Select(OnGrid).ToArray();
+        var all = sections.Select(OnGrid).ToArray();
+        // A parallel site is one more part on the pins of the site before it, with no copper or pins of its own: the walk
+        // below skips it, and declares it with that site.
+        var kept = new List<LadderSection>();
+        var beside = new List<List<LadderSite>>();
+        for (int k = 0; k < all.Length; k++)
+        {
+            if (all[k] is not LadderSite { Parallel: true } p) { kept.Add(all[k]); beside.Add([]); }
+            else if (kept.Count > 0 && kept[^1] is LadderSite) beside[^1].Add(p);
+            else throw Refuse("device.ladder.parallel-alone",
+                "Ladder: section {n} is a parallel site with no site before it to share its pins.", ("n", k + 1));
+        }
+        var list = kept.ToArray();
         int n = list.Length;
         double w0 = Width(z0, fHz, s), span = PassivePlan.OnGrid(gapMeters);
 
@@ -404,6 +423,14 @@ public static class LadderPlan
         {
             plan.Add(new PlanLine([cur, to], x, 0.0, 0.0, w, w));
             (x, cur, copper) = (x + w, to, true);
+        }
+        void Parallels(int i)
+        {
+            foreach (var p in beside[i])
+            {
+                sites.Add(sites[^1] with { Role = p.Role, Value = p.Value });
+                atF.Add(atF[^1]);
+            }
         }
         double After(int i) => i == n - 1 ? w0 : list[i + 1] switch
         {
@@ -504,6 +531,7 @@ public static class LadderPlan
                     plan.Add(Tee(cur, to, w, after, w, Math.Max(w, after) / 2.0 + w, up, pin, x));
                     sites.Add(new PlanSite(t.Role, PlanSiteKind.Shunt, pins[pin - 1], null, null, t.Value));
                     atF.Add(new LadderSectionAtF(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, w));
+                    Parallels(i);
                     (x, w, cur, copper) = (x + w, after, to, true);
                     break;
                 }
@@ -514,6 +542,7 @@ public static class LadderPlan
                     if (!copper) Pad(a);
                     sites.Add(new PlanSite(t.Role, PlanSiteKind.Series, pins[a - 1], pins[b - 1], span, t.Value));
                     atF.Add(new LadderSectionAtF(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, w));
+                    Parallels(i);
                     (x, cur, copper) = (x + span, b, false);
                     if (i == n - 1) Pad(2);
                     else if (list[i + 1] is LadderGap) Pad(++next);
@@ -522,7 +551,7 @@ public static class LadderPlan
                 }
             }
         }
-        return new LadderDesign(z0, fHz, w0, list, atF, new PassivePlan(pins, plan, next) { Sites = sites });
+        return new LadderDesign(z0, fHz, w0, all, atF, new PassivePlan(pins, plan, next) { Sites = sites });
 
     }
 

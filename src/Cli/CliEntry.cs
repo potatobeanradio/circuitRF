@@ -276,6 +276,9 @@ return JsonRun.Finish(exit);
     // The RF Chain Budget window, with no display. It owns no arithmetic: the budget, the benches and the display are
     // src/Design/Chain's and src/Render's, the calls the window's Transfer to Schematic makes.
     "chain"  => CircuitRF.Cli.Chain.Run,
+    // The Filter Designer, headless (filter-synthesis.md §6). It owns no synthesis: the realisers are Core's and the bench
+    // src/Design/Filters' FilterSynthesisService, the calls the window's Place makes.
+    "filter" => CircuitRF.Cli.FilterVerb.Run,
     // A plugin with no display (brief-plg-5): ONE verb with nouns. It owns no plugin logic — the run is
     // src/Design/Plugins' PluginHeadless, the process host and the placement the panel calls.
     "plugin" => CircuitRF.Cli.Plugin.Run,
@@ -3081,6 +3084,7 @@ static int PrintHelp()
     Console.WriteLine("           (the Model Composer: a FET model or a passive cell from data; exit 3 = a check failed)");
     Console.WriteLine("  rail   <file.crail> (railRF: the DC drop, the ranked breakdown, the vias)");
     Console.WriteLine("  smith  <file.csmith> (the matching cascade: the reading, and the walk node by node)");
+    Console.WriteLine("  filter --band b --order n --f1 f [--f2 f] [--realiser r -o x.cnl]  (filter synthesis: the realisers, or one realised)");
     Console.WriteLine("  snp    <file.sNp>    (the S-Parameter Viewer: what the file states, and its Smith, dB and phase plots)");
     Console.WriteLine("  elab   <file.cnl|.csch>   (dump elaborated netlist)");
     Console.WriteLine("  netlist <path.csch> [-o out.cnl]  (the extraction Simulate performs)");
