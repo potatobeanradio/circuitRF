@@ -16,10 +16,18 @@ namespace CircuitRF.Ui.Schematic;
 /// GEOMETRICALLY instead, here and nowhere else: exactly two pins landing on ONE straight segment
 /// of wire, and any other pins off it (brief DFR26-5: an MTEE dropped along a wire cuts between pins
 /// 1 and 2, its branch left for the user; an MCROSS cuts between the two pins on the wire). A part whose pins are not collinear with the run — a vertical R dropped on a
-/// horizontal wire, an MBEND, whose two pins are at right angles — cannot satisfy it and never
-/// triggers, so the gesture itself is the opt-in. R, L, C, NonlinearC, SRLC, a diode, a TLIN, a
-/// 2-port SnP, a two-pin cell of the user's own and both series probes all reach it by the same
-/// route.</para>
+/// horizontal wire, an MBEND, whose two pins are at right angles — cannot satisfy it as dropped. R, L,
+/// C, NonlinearC, SRLC, a diode, a TLIN, a 2-port SnP, a two-pin cell of the user's own and both series
+/// probes all reach it by the same route.</para>
+///
+/// <para><b>A part dropped ACROSS a run is turned to lie along it</b> (<see cref="TurnAlongRun"/>). The
+/// lumped primitives draw vertically and an SnP or a TLIN horizontally, so each fitted only one of the
+/// two directions a run can take: an S2P dropped on a vertical wire landed straddling it, its pins either
+/// side, connected to nothing. A part placed so is in no circuit at all, so there was no gesture to
+/// protect. It is turned a quarter turn only when it touches no wire as dropped (a part with a pin on a
+/// wire is a shunt, or a deliberate connection, and is left as placed), when the turn lands exactly two
+/// of its pins on one run, and when that cut passes every test below. An MBEND, whose pins are at right
+/// angles, cannot pass at either orientation and is never turned.</para>
 ///
 /// <para><b>A shorted part is worse than it looks</b>, which is why this is not cosmetic. A probe
 /// that is shorted reports nothing — an IProbe reads no current, and a WSProbe's whole output is the
@@ -138,6 +146,47 @@ public static class SeriesPartInsertion
         }
 
         return SpanIsClear(model, found, moving) ? found : [];
+    }
+
+    /// <summary>
+    /// The quarter turn that puts <paramref name="part"/>, dropped ACROSS a straight run of wire, along
+    /// it in series — or null when it is already along one, touches any wire as dropped, or no turn
+    /// lands exactly two of its pins on one run with a clear span between them. Of the two turns that
+    /// fit, the one putting the lower-numbered of the pair at the run's left or top end, so a turned S2P
+    /// reads port 1 to port 2 the way it reads left to right. <paramref name="part"/> is left at the
+    /// rotation it came with; the caller applies the answer.
+    /// </summary>
+    public static SymbolRotation? TurnAlongRun(SchematicEditModel model, EditableComponent part)
+    {
+        const double tol = SchematicEditModel.ConnectTolerance;
+        var pins = model.PortDefsOf(part).Select(d => model.PortWorldOf(part, d)).ToList();
+        if (pins.Count < 2 || FindShortedSpans(model, part).Count > 0) return null;
+        // touching a wire as dropped is a connection somebody made: not ours to turn away from
+        foreach (var (x, y) in pins)
+            foreach (var w in model.Wires)
+                if (OnWire(w, x, y, tol)) return null;
+
+        var original = part.Rotation;
+        try
+        {
+            SymbolRotation? best = null;
+            double bestLead = double.MaxValue;
+            foreach (int quarters in (int[])[1, 3])
+            {
+                part.Rotation = (SymbolRotation)(((int)original + 90 * quarters) % 360);   // the enum's values are degrees
+                var cuts = FindShortedSpans(model, part);
+                if (cuts.Count == 0) continue;
+                // which of the pair comes first along the run: the lower-numbered pin should
+                var turned = model.PortDefsOf(part).Select(d => model.PortWorldOf(part, d)).ToList();
+                int first = Enumerable.Range(0, turned.Count).First(k =>
+                    SchematicGeometry.CoincidentPoints(turned[k].X, turned[k].Y, cuts[0].First.X, cuts[0].First.Y, tol)
+                    || SchematicGeometry.CoincidentPoints(turned[k].X, turned[k].Y, cuts[0].Second.X, cuts[0].Second.Y, tol));
+                double lead = turned[first].X + turned[first].Y;   // smaller: further left, or further up
+                if (lead < bestLead) { bestLead = lead; best = part.Rotation; }
+            }
+            return best;
+        }
+        finally { part.Rotation = original; }
     }
 
     private static bool OnWire(EditableWire w, double x, double y, double tol)

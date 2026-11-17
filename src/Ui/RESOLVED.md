@@ -1,5 +1,65 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## A two-pin part dropped across a wire is turned into it; SnP labels larger (2026-11-17)
+
+**Turned on drop.** `SeriesPartInsertion` cut a run only when two pins landed ON it as dropped, and its remarks called a part
+dropped across a run "the opt-in" for doing nothing. In practice that made the affordance depend on which way a symbol is
+drawn: R, L and C draw vertically and fitted only vertical runs; an SnP, TLIN or a SPICE-model box draws horizontally and
+fitted only horizontal ones. An S2P dropped on a vertical wire straddled it with a pin either side, connected to nothing.
+`SeriesPartInsertion.TurnAlongRun` now turns a NEW placement a quarter turn when (1) it is not already along a run, (2) no
+pin of it touches any wire as dropped (a pin on a wire is a shunt, or a connection somebody made, and it is placed as
+dropped), and (3) the turn lands exactly two pins on one run that `FindShortedSpans` would cut. Of the two turns, the one
+putting the lower-numbered pin left or top. Only the four placement commits pass `turnAcross`; a paste, a duplicate or a
+drag keeps its orientation. An MBEND can never pass. The rotation is about the placement origin, so a part whose origin is
+not between its two pins (the IProbe's) never gets a turn that fits, which is the safe outcome. The ghost still previews
+the unturned part. Gates: `SeriesPartPlacementClearsWireTests` (the former `ATwoTerminalPartDroppedAcrossTheWire_NeverCutsIt`
+is now two turned-and-cut cases plus the MBEND and shunt cases).
+
+**SnP label size.** `BuiltInSymbols.SnpPortLabelFontSize` = 1.25 × `SddPortLabelFontSize`, used by the SnP box and the EM
+Field Data and Deembed blocks built on it; the named-label width rule scales with it. SDD, ZPort, SPICE-model boxes and the
+auto-generated cell symbol keep the shared size.
+
+## A schematic's Data Display showed another run, or nothing; HB plots; marker units (2026-11-17)
+
+A field test of transient and harmonic-balance rectifier benches. Every symptom was the display, never the simulator: each
+results file held the right numbers.
+
+1. **"Open … plots" saved an absolute path.** `OpenTransientAsync`, `OpenNoiseCirclesAsync` and `OpenSignalQualityAsync`
+   selected their source before `WireDataDisplayLibraryEvents`, so `ResultsRootProvider` was null, `ComputeSourceKey`
+   returned the absolute path and the `.cdd` saved it. A copy of the workspace then went on reading the ORIGINAL's
+   results file (the archive rewrote it to `../external/<name>.npy`), so a run in the copy never reached its display.
+   Wire first; every opener does now, `OpenHbAsync` included.
+2. **Presets pinned their traces to one file.** Every trace Add Trace makes follows the display's selection
+   (`DataSourceRef.Selected`, spelled `run.npy` in a `.cdd`); the four presets in `DataDisplayViewModel` wrote the file's
+   own key. A display saved under another schematic's name, or copied with its cell, kept drawing the old run whatever
+   the source list said. They write `PresetSourceRef` (the sentinel) now. Saved displays from before keep their pins.
+3. **The schematic's display kept its old source.** `PointDisplayAtRunAsync` re-points the display a run reopens when it
+   was showing a different `.npy`, and says so. A Touchstone or other non-run selection is a chosen comparison and is
+   left alone.
+4. **A display drawing nothing said nothing** (the bench switched from TRAN to HB, or a pinned net was renamed: every trace
+   `<invalid>`, the run a success). `DisplayWindowViewModel.ShowsNothingOfItsSource` reads `InvalidSpecText` across every
+   tab, ignoring annotations and owner data; the post-run code posts one line with **Add plots of this run**
+   (`DataDisplayViewModel.AddRunPlotsAsync`: the run's presets, else Add Trace's seed in a new plot). It never edits or
+   deletes a trace. It replaces the Transient message for that run rather than adding a second line. The check runs after
+   the re-point and is synchronous: `OnSelectedDataSourceChanged` is `async void` but awaits nothing before it rebuilds.
+5. **HB had no preset.** `HbPreset` (Render) mirrors `TransientPreset` and shares its output pick, slice tokens and
+   measures table (now `TransientPreset.MeasuresTable`), so the two presets cannot drift. The waveforms come from the new
+   expression function `waveform(x[, f0])` (Core, `Evaluator.Waveform.cs`), `fft`'s exact inverse. Labelled nets come
+   from `__LabeledNodes`: an HB `V` holds every node, internal ones included. On a `mixIndex` axis the spectrum plot takes
+   its `FreqUnit` from the highest product; left at GHz, a 1 kHz axis read "1µ".
+6. **`waveform`'s common period.** Found as f_min/d for the first d whose multiples fit, with the tolerance ABSOLUTE in
+   cycles (1e-6). A relative tolerance (1e-7·m) accepted 3363/2378 as √2. The sample budget is 65,536 per period at 16
+   per cycle of the highest product, so a 50 Hz rectifier tone beside an 869 MHz carrier is refused (1.4e9 samples) and
+   the preset draws the spectrum only. It is in `AxisFunctions`, not `TimeDomainFunctions`: that set's contract, and
+   `check`'s refusal, is a first argument with a `time` axis.
+7. **Marker readouts printed bare numbers.** A DC stem at 19.67 dBV read `V(Vout_rect)=19.67` beside a 9.6 V waveform,
+   which looked like a factor of two. `Trace.ValueUnit` (`Trace.ValueUnit.cs`) is the one inference; the value rows, the
+   stem row and the multi-marker rows append it. Delta rows do not, because a difference of two dBV values is dB. The
+   stem baseline stays at y = 0 on every spectrum.
+
+Gates: `Transient/TransientPresetFollowsSourceTests`, `DataDisplay/RunDisplayHbPresetTests`,
+`Core.Tests/Expressions/WaveformFunctionTests`.
+
 ## A kit's PCell library written for another layout tool now runs unmodified (2026-11-08)
 
 Measured on one open PDK's library of 38 device generators, through the default entry circuitRF writes

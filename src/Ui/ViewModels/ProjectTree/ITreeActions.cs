@@ -99,6 +99,10 @@ public interface ITreeActions
     /// output spectrum and measures.</summary>
     void OpenTransient(ProjectTreeNodeViewModel node) { }
 
+    /// <summary>R-rdh-2 — Open Harmonic Balance Plots on a result file: a new Data Display holding its HB run's waveforms,
+    /// output spectrum and measures.</summary>
+    void OpenHb(ProjectTreeNodeViewModel node) { }
+
     /// <summary>brief-dfr32-3 — whether a <c>.c3d</c>'s or <c>.cem</c>'s runs hold saved fields now.</summary>
     bool HasSavedFields(ProjectTreeNodeViewModel node) => false;
 

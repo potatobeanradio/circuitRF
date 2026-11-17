@@ -210,6 +210,13 @@
                     <mi:MaterialIcon Kind="SineWave" Width="16" Height="16"/>
                 </Button>
 
+                <Button Command="{Binding ViewModel.Window.AddHbCommand}"
+                        ToolTip.Tip="Add Harmonic Balance: the labelled nets' voltages over one period, the output's spectrum and the measures as a table. Needs a harmonic-balance result as the source"
+                        ToolTip.ShowOnDisabled="True"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="Waveform" Width="16" Height="16"/>
+                </Button>
+
                 <Button Command="{Binding ViewModel.Window.AddStatisticsTableCommand}"
                         ToolTip.Tip="{Binding ViewModel.Window.AddStatisticsTableTip}"
                         ToolTip.ShowOnDisabled="True"

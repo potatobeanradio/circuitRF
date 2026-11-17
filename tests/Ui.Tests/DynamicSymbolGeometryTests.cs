@@ -167,8 +167,10 @@ public sealed class DynamicSymbolGeometryTests
         Assert.All(texts, t => Assert.Equal(BuiltInSymbols.SddPortLabelFontSize, t.FontSize, 3));
     }
 
+    /// <summary>SnP's labels are a quarter larger than the shared size (read zoomed out), and still sit inside the body at
+    /// Tight pitch, the tightest layout.</summary>
     [Fact]
-    public void SnpLabels_UseTheSharedSize_AndStayInsideTheBody()
+    public void SnpLabels_UseTheSnpSize_AndStayInsideTheBody()
     {
         var sym = BuiltInSymbols.PrimitivesForSnp(4, refNode: true, SnpPinConfig.Standard, SnpPitch.Tight);
         var (w, halfH) = SymbolPortDefs.SnpBodyRect(4, SnpPinConfig.Standard, SnpPitch.Tight);
@@ -176,7 +178,8 @@ public sealed class DynamicSymbolGeometryTests
 
         var texts = sym.Primitives.OfType<TextPrimitive>().ToList();
         Assert.NotEmpty(texts);
-        Assert.All(texts, t => Assert.Equal(BuiltInSymbols.SddPortLabelFontSize, t.FontSize, 3));
+        Assert.All(texts, t => Assert.Equal(BuiltInSymbols.SnpPortLabelFontSize, t.FontSize, 3));
+        Assert.Equal(1.25 * BuiltInSymbols.SddPortLabelFontSize, BuiltInSymbols.SnpPortLabelFontSize, 6);
 
         foreach (var t in texts)
         {

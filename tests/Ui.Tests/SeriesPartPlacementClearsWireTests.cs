@@ -412,21 +412,72 @@ public class SeriesPartPlacementClearsWireTests
     }
 
     /// <summary>
-    /// A two-terminal part whose pins are not collinear with the run is left alone — the gesture
-    /// itself is the opt-in, so a part dropped ACROSS a wire rather than along it does nothing. An
-    /// MBEND is the permanent case: its two pins are at right angles and can never be collinear.
+    /// A two-pin part dropped ACROSS a run, connected to nothing, is turned a quarter turn to lie along it
+    /// and cut in: an S2P (drawn horizontally) on a vertical wire, port 1 at the top; a resistor (drawn
+    /// vertically) on a horizontal wire, pin 1 at the left. Each used to land straddling the run.
     /// </summary>
     [Fact]
-    public void ATwoTerminalPartDroppedAcrossTheWire_NeverCutsIt()
+    public void AnS2PDroppedAcrossAVerticalWire_IsTurnedAlongItAndCutIn()
+    {
+        var (model, vm) = MakeVm();
+        AddWire(model, (0, 0), (0, 900));
+
+        vm.CommitPlacement(SymbolKind.Snp, 2, SymbolRotation.R0, 0, 500);   // pins would be (±200, 500)
+
+        var part = Assert.Single(model.Components);
+        var pins = model.PortDefsOf(part).Select(d => model.PortWorldOf(part, d)).ToList();
+        Assert.Equal((0.0, 300.0), pins[0]);   // port 1 at the top
+        Assert.Equal((0.0, 700.0), pins[1]);
+        Assert.Equal(2, model.Wires.Count);
+        Assert.Equal([(0.0, 0.0), (0.0, 300.0)],   Pts(model.Wires[0]));
+        Assert.Equal([(0.0, 700.0), (0.0, 900.0)], Pts(model.Wires[1]));
+    }
+
+    [Fact]
+    public void AResistorDroppedAcrossAHorizontalWire_IsTurnedAlongItAndCutIn()
     {
         var (model, vm) = MakeVm();
         AddWire(model, (0, 0), (900, 0));
 
-        vm.CommitPlacement(SymbolKind.Resistor, 2, SymbolRotation.R0, 500, 0);   // pins at (500,±200)
-        vm.CommitPlacement(SymbolKind.MBend,    2, SymbolRotation.R0, 700, 0);   // pins at (500,0)/(700,200)
+        vm.CommitPlacement(SymbolKind.Resistor, 2, SymbolRotation.R0, 500, 0);   // pins would be (500, ±200)
 
+        var part = Assert.Single(model.Components);
+        var pins = model.PortDefsOf(part).Select(d => model.PortWorldOf(part, d)).ToList();
+        Assert.Equal((300.0, 0.0), pins[0]);   // pin 1 at the left
+        Assert.Equal((700.0, 0.0), pins[1]);
+        Assert.Equal([(0.0, 0.0), (300.0, 0.0)],   Pts(model.Wires[0]));
+        Assert.Equal([(700.0, 0.0), (900.0, 0.0)], Pts(model.Wires[1]));
+    }
+
+    /// <summary>An MBEND's two pins are at right angles, so no turn lands both on one run: it is never turned
+    /// and never cuts.</summary>
+    [Fact]
+    public void AnMBendDroppedOnAWire_NeverCutsIt()
+    {
+        var (model, vm) = MakeVm();
+        AddWire(model, (0, 0), (900, 0));
+
+        vm.CommitPlacement(SymbolKind.MBend, 2, SymbolRotation.R0, 700, 0);   // pins at (500,0)/(700,200)
+
+        Assert.Equal(SymbolRotation.R0, Assert.Single(model.Components).Rotation);
         Assert.Single(model.Wires);
         Assert.Equal([(0.0, 0.0), (900.0, 0.0)], Pts(model.Wires[0]));
+    }
+
+    /// <summary>A part with a pin already on a wire is a connection somebody made, a shunt to the run: it is
+    /// placed as dropped, never turned into series.</summary>
+    [Fact]
+    public void APartWithAPinOnAWire_IsNotTurned()
+    {
+        var (model, vm) = MakeVm();
+        AddWire(model, (0, 0), (900, 0));       // the resistor's pin 1 lands here: a shunt from this run
+        AddWire(model, (0, 200), (900, 200));   // runs through its centre: a turn would put it in series here
+
+        vm.CommitPlacement(SymbolKind.Resistor, 2, SymbolRotation.R0, 500, 200);   // pins (500,0) and (500,400)
+
+        Assert.Equal(SymbolRotation.R0, Assert.Single(model.Components).Rotation);
+        Assert.Equal(2, model.Wires.Count);
+        Assert.Equal([(0.0, 200.0), (900.0, 200.0)], Pts(model.Wires[1]));
     }
 
     // ── Scope: placement only ─────────────────────────────────────────────────

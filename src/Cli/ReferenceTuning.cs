@@ -617,7 +617,9 @@ internal static partial class Reference
             "rms(...) time-weighted; value_at(x, t) reads one instant. fft(x, f0[, periods, \"none\"|\"hann\"]) is the last whole " +
             "periods' spectrum at f0 and its harmonics, shaped and scaled as a harmonic-balance spectrum (a harmonic axis, up to " +
             "16), fft_power(v, i, f0, ...) the power per harmonic as HB's Pprobe_W, thd(x, f0[, n]) the distortion of the last " +
-            "period in % (harmonics 2 to n, 10). So: measure tr = rise(TR1.V(\"out\")), " +
+            "period in % (harmonics 2 to n, 10). waveform(x[, f0]) runs the other way: a harmonic-balance (or fft) spectrum as " +
+            "its waveform over one period, a time axis in place of the harmonic or mixIndex axis — f0 is needed on a harmonic " +
+            "axis, a mixIndex axis uses the tones' common period. So: measure tr = rise(TR1.V(\"out\")), " +
             "measure Pout_dBm = dBm(fft_power(TR1.Vprobe(\"Iout\"), TR1.I(\"Iout\"), 1GHz)).", 96))
             sb.AppendLine("  " + line);
         sb.AppendLine();

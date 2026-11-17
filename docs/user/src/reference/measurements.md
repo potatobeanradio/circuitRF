@@ -372,6 +372,7 @@ sweep point. The waveform argument is a real cube, such as `TR1.V("out")` or `TR
 | `fft(x, f0, periods=1, window="none")` | The spectrum of the last whole `periods` of `x` at `f0` and its harmonics, shaped like a harmonic-balance result: a `harmonic` axis, full-amplitude phasors with the record's own time origin. `"hann"` windows it |
 | `fft_power(v, i, f0, periods=1)` | The power per harmonic from a voltage and a current, V₀I₀ at DC and ½Re(VₖIₖ*) above it (W), as harmonic balance's `Pprobe_W` |
 | `thd(x, f0, n=10)` | Total harmonic distortion of the last period, harmonics 2 to `n` against the fundamental (%) |
+| `waveform(x, f0)` | The other way round: a spectrum as its waveform over one period, a `time` axis in place of the `harmonic` or `mixIndex` axis. `x` is a complex spectrum, a harmonic-balance result's `HB1.V("out")` or an `fft`. On a `harmonic` axis `f0` is the fundamental; on a multi-tone `mixIndex` axis it may be left out, and the period is the tones' common one |
 
 ```text
 measure  Trise     = rise(TR1.V("out"))
@@ -384,6 +385,11 @@ is shaped like a harmonic-balance spectrum, a trace written for one plots the ot
 `HB1.V("out")` on one bench and `fft(TR1.V("out"), 1GHz)` on another unchanged. A waveform with no edge of the kind
 asked for gives a missing value rather than an error, so one sweep point without one does not fail the rest. A
 waveform with no `time` axis is refused, naming the function, and `circuitrf check` finds it before a run.
+
+`waveform` and `fft` undo each other: `fft(waveform(HB1.V("out"), 1GHz), 1GHz)` is `HB1.V("out")`, so a time-domain
+function reads a harmonic-balance result through it, as in `measure Vpk = max_over(waveform(HB1.V("out"), 1GHz), "time")`.
+Two tones at 1 GHz and 1.01 GHz repeat every 100 ns, 100 periods of the carrier. Tones whose common period would take
+more than 65,536 samples to draw, or that share none, are refused with the period they would need.
 
 ## Spec checks: the worst value over a band {#spec}
 

@@ -786,15 +786,23 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
+    /// What a preset's traces read: the display's SELECTED source, as every trace Add Trace makes does — never the file that
+    /// happened to be selected when the preset was added. Pinned to that file, a display copied with its cell or saved under
+    /// another schematic's name went on drawing the old result after the combo was changed, and the next run of its own
+    /// schematic did not reach it.
+    /// </summary>
+    private const string PresetSourceRef = DataSourceRef.Selected;
+
+    /// <summary>
     /// Adds the statistics table (brief-yield-8 R-ya8-5) of the selected source — a Monte Carlo result's
     /// <c>statistics</c> group as a Table plot, one column per statistic and one row per goal and measure — placed as
     /// Add Plot places one, as one undo step. Null, and nothing added, when the selected source has no table.
     /// </summary>
     public async Task<PlotContainerViewModel?> AddStatisticsTableAsync()
     {
-        if (Library?.SelectedEntry is not { FilePath: { } path } entry || !StatisticsTablePreset.Available(entry.Data))
+        if (Library?.SelectedEntry is not { FilePath: not null } entry || !StatisticsTablePreset.Available(entry.Data))
             return null;
-        var pc = StatisticsTablePreset.Build(entry.Data!, ComputeSourceKey(path, Library));
+        var pc = StatisticsTablePreset.Build(entry.Data!, PresetSourceRef);
         if (pc is null) return null;
         (pc.Left, pc.Top) = ComputeNewPlotPosition(pc.Width, pc.Height);
 
@@ -813,9 +821,9 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// </summary>
     public async Task<PlotContainerViewModel?> AddNoiseCirclesAsync()
     {
-        if (Library?.SelectedEntry is not { FilePath: { } path } entry || !NoiseCirclesPreset.Available(entry.Data))
+        if (Library?.SelectedEntry is not { FilePath: not null } entry || !NoiseCirclesPreset.Available(entry.Data))
             return null;
-        var pc = NoiseCirclesPreset.Build(entry.Data!, ComputeSourceKey(path, Library));
+        var pc = NoiseCirclesPreset.Build(entry.Data!, PresetSourceRef);
         if (pc is null) return null;
         if (Plots.Count == 1 && Plots[0].Inspector.Traces.Count == 0) InternalRemoveContainer(Plots[0]);
         return await AddPresetPlotAsync(pc);
@@ -828,9 +836,9 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// </summary>
     public async Task<IReadOnlyList<PlotContainerViewModel>> AddSignalQualityAsync()
     {
-        if (Library?.SelectedEntry is not { FilePath: { } path } entry || !SignalQualityPreset.Available(entry.Data))
+        if (Library?.SelectedEntry is not { FilePath: not null } entry || !SignalQualityPreset.Available(entry.Data))
             return [];
-        return await AddPresetGroupAsync(SignalQualityPreset.Build(entry.Data!, ComputeSourceKey(path, Library)), SignalQualityPreset.Gap);
+        return await AddPresetGroupAsync(SignalQualityPreset.Build(entry.Data!, PresetSourceRef), SignalQualityPreset.Gap);
     }
 
     /// <summary>
@@ -840,9 +848,50 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// </summary>
     public async Task<IReadOnlyList<PlotContainerViewModel>> AddTransientAsync()
     {
-        if (Library?.SelectedEntry is not { FilePath: { } path } entry || !TransientPreset.Available(entry.Data))
+        if (Library?.SelectedEntry is not { FilePath: not null } entry || !TransientPreset.Available(entry.Data))
             return [];
-        return await AddPresetGroupAsync(TransientPreset.Build(entry.Data!, ComputeSourceKey(path, Library)), TransientPreset.Gap);
+        return await AddPresetGroupAsync(TransientPreset.Build(entry.Data!, PresetSourceRef), TransientPreset.Gap);
+    }
+
+    /// <summary>
+    /// R-rdh-2 — the <see cref="HbPreset"/> plots of the selected source's harmonic-balance result: the labelled nets over one
+    /// period, the output's spectrum as stems and the measures, placed together as <see cref="AddTransientAsync"/> places its
+    /// plots. <paramref name="includeMeasures"/> false leaves the table out, for a run whose Transient plots already hold
+    /// it. Empty, and nothing added, when the source has no HB result.
+    /// </summary>
+    public async Task<IReadOnlyList<PlotContainerViewModel>> AddHbAsync(bool includeMeasures = true)
+    {
+        if (Library?.SelectedEntry is not { FilePath: not null } entry || !HbPreset.Available(entry.Data))
+            return [];
+        return await AddPresetGroupAsync(HbPreset.Build(entry.Data!, PresetSourceRef, includeMeasures), HbPreset.Gap);
+    }
+
+    /// <summary>
+    /// R-rdh-1/2 — every preset the selected source's run has, transient first: what a new display of a run holds, and what
+    /// the run message's action adds. The measures table is added once, with the first preset. Empty when the source has
+    /// neither a transient nor a harmonic-balance result.
+    /// </summary>
+    public async Task<IReadOnlyList<PlotContainerViewModel>> AddRunPresetsAsync()
+    {
+        var added = new List<PlotContainerViewModel>(await AddTransientAsync());
+        added.AddRange(await AddHbAsync(includeMeasures: added.Count == 0));
+        return added;
+    }
+
+    /// <summary>
+    /// R-rdh-1 — the plots of the selected source's run: its presets (<see cref="AddRunPresetsAsync"/>), or, for a run with
+    /// none, one Rect plot holding the trace Add Trace seeds. Existing plots and traces are not touched. Empty when the
+    /// source has nothing to plot.
+    /// </summary>
+    public async Task<IReadOnlyList<PlotContainerViewModel>> AddRunPlotsAsync()
+    {
+        var added = await AddRunPresetsAsync();
+        if (added.Count > 0 || Library?.SelectedEntry is not { } entry
+            || !PlotInspectorViewModel.HasPlottableData(entry, allowScalars: false))
+            return added;
+        var plot = AddPlot(PlotType.Rect);
+        if (plot.Inspector.AddTraceCommand.CanExecute(null)) plot.Inspector.AddTraceCommand.Execute(null);
+        return [plot];
     }
 
     /// <summary>A preset's plots, laid out together from (0, 0), added as Add Plot places a plot their combined size, each one

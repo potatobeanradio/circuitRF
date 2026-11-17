@@ -155,10 +155,13 @@ The [time-domain functions](measurements.html#time-domain) read them in `measure
 `undershoot`, `settle`, `period`, `frequency`, `value_at`, `tmin`, `tmax`, `avg`, `rms`, `fft`, `fft_power` and `thd`.
 `fft` of the last period is shaped like a harmonic-balance spectrum, so a trace written for one plots the other.
 
-When a run ends, the Messages panel offers **Open Transient plots**, and a Data Display's **Add Transient** button (the
-sine-wave icon) does the same for its source: the recorded voltages against time, the output's spectrum over its last
-period (the power through the IProbe whose name says "out", or the output net's voltage), and the bench's measures as a
-table. Every trace is an ordinary trace to re-point afterwards.
+The first run of a schematic opens its Data Display holding the Transient plots: the recorded voltages against time, the
+output's spectrum over its last period (the power through the IProbe whose name says "out", or the output net's voltage),
+and the bench's measures as a table. Every later run offers **Add Transient plots** in the Messages panel, which adds them
+to that display, and a Data Display's **Add Transient** button (the sine-wave icon) does the same for its source. The
+traces read the display's selected source, so choosing another result in the source list redraws them from it. The
+same bench run in harmonic balance gets the same three plots from its spectrum, read through
+[`waveform`](measurements.html#time-domain) (see [the Data Display](data-display.html)), with the same output.
 
 {{ui: transient-filter-step}}
 

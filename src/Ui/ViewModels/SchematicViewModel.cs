@@ -4088,7 +4088,7 @@ public sealed partial class SchematicViewModel : ObservableObject
                                 double worldX, double worldY, bool mirrorX = false)
     {
         var comp = BuildPlacedComponent(kind, portCount, rotation, worldX, worldY, mirrorX);
-        Execute(WithSeriesWireCuts(new PlaceComponentCommand(EditModel, comp), comp));
+        Execute(WithSeriesWireCuts(new PlaceComponentCommand(EditModel, comp), comp, turnAcross: true));
         SelectPlacedPart(comp.Id);
         ComponentPlaced?.Invoke(kind);
     }
@@ -4127,7 +4127,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             comp.Parameters.Add(new EditableParameter
                 { Name = ArtworkParameters.FootprintName, Expression = footprint, ShowOnSchematic = false });
 
-        Execute(WithSeriesWireCuts(new PlaceComponentCommand(EditModel, comp), comp));
+        Execute(WithSeriesWireCuts(new PlaceComponentCommand(EditModel, comp), comp, turnAcross: true));
         SelectPlacedPart(comp.Id);
         VendorPartPlaced?.Invoke(part);
     }
@@ -4182,7 +4182,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             comp.Parameters.Add(new EditableParameter
                 { Name = ArtworkParameters.FootprintName, Expression = footprint, ShowOnSchematic = false });
 
-        Execute(WithSeriesWireCuts(new PlaceComponentCommand(EditModel, comp), comp));
+        Execute(WithSeriesWireCuts(new PlaceComponentCommand(EditModel, comp), comp, turnAcross: true));
         SelectPlacedPart(comp.Id);
         VendorPartPlaced?.Invoke(part);
     }
@@ -4441,8 +4441,13 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// the user dropped onto.</para>
     /// </summary>
     private IUiCommand WithSeriesWireCuts(IUiCommand place, EditableComponent comp,
-                                          EditableComponent? moving = null)
+                                          EditableComponent? moving = null, bool turnAcross = false)
     {
+        // A NEW part dropped across a run, connected to nothing, is turned to lie along it
+        // (SeriesPartInsertion.TurnAlongRun): an S2P on a vertical wire, an R on a horizontal one. Before
+        // the place command runs, so the part arrives turned and the cut and the placement stay one undo.
+        if (turnAcross && moving is null && SeriesPartInsertion.TurnAlongRun(EditModel, comp) is { } turned)
+            comp.Rotation = turned;
         var cuts = SeriesPartInsertion.FindShortedSpans(EditModel, comp, moving);
         for (int i = cuts.Count - 1; i >= 0; i--)
             place = new CompositeCommand(new CutWireSpanCommand(EditModel, cuts[i]), place);
@@ -4746,7 +4751,7 @@ public sealed partial class SchematicViewModel : ObservableObject
 
         // A two-pin cell or kit part dropped onto a wire is shorted by it exactly as a built-in R
         // is, and the gesture is the same one — so it gets the same cut, through the same helper.
-        Execute(WithSeriesWireCuts(new PlaceComponentCommand(EditModel, comp), comp));
+        Execute(WithSeriesWireCuts(new PlaceComponentCommand(EditModel, comp), comp, turnAcross: true));
         SelectPlacedPart(comp.Id);
     }
 

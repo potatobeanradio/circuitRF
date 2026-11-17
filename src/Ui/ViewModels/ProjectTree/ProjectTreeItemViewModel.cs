@@ -650,6 +650,8 @@ public sealed partial class ProjectTreeNodeViewModel : ObservableObject
     public IRelayCommand OpenSignalQualityCommand { get; }
     /// <summary>brief TRN-5 — the transient run's waveforms, output spectrum and measures in a new Data Display.</summary>
     public IRelayCommand OpenTransientCommand { get; }
+    /// <summary>R-rdh-2 — the harmonic-balance run's waveforms, output spectrum and measures in a new Data Display.</summary>
+    public IRelayCommand OpenHbCommand { get; }
     /// <summary>brief-dfr32-3 R-dfr32-3-2 — moves the saved field files of this 3D view's or EM setup's runs to the Trash.</summary>
     public IRelayCommand DeleteSavedFieldsCommand { get; }
 
@@ -1008,6 +1010,10 @@ public sealed partial class ProjectTreeNodeViewModel : ObservableObject
 
         OpenTransientCommand = new RelayCommand(
             () => _actions?.OpenTransient(this),
+            () => _actions is not null && IsResultFile);
+
+        OpenHbCommand = new RelayCommand(
+            () => _actions?.OpenHb(this),
             () => _actions is not null && IsResultFile);
 
         DeleteSavedFieldsCommand = new RelayCommand(() => _actions?.DeleteSavedFields(this), () => _actions is not null);

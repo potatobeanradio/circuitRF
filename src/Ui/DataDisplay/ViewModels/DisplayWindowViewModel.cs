@@ -458,6 +458,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
             AddNoiseCirclesCommand.NotifyCanExecuteChanged();
             AddSignalQualityCommand.NotifyCanExecuteChanged();
             AddTransientCommand.NotifyCanExecuteChanged();
+            AddHbCommand.NotifyCanExecuteChanged();
             RaiseDirtyChanged();
         };
         // A run finishing reloads the selected file in place — it may only now carry its statistics.
@@ -468,6 +469,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
             AddNoiseCirclesCommand.NotifyCanExecuteChanged();
             AddSignalQualityCommand.NotifyCanExecuteChanged();
             AddTransientCommand.NotifyCanExecuteChanged();
+            AddHbCommand.NotifyCanExecuteChanged();
         };
 
         UpdateThemeFromSystem();
@@ -632,6 +634,37 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
 
     /// <summary>Whether the selected source holds a transient result.</summary>
     public bool CanAddTransient => TransientPreset.Available(DataSourceLibrary.SelectedEntry?.Data);
+
+    /// <summary>R-rdh-2 — the waveforms, output spectrum and measures of the selected harmonic-balance result. Disabled, with
+    /// its tooltip saying what it needs, while the selected source has no HB result.</summary>
+    [RelayCommand(CanExecute = nameof(CanAddHb))]
+    private async Task AddHb()
+    {
+        if (DataDisplay is { } d) await d.AddHbAsync();
+    }
+
+    /// <summary>Whether the selected source holds a harmonic-balance result.</summary>
+    public bool CanAddHb => HbPreset.Available(DataSourceLibrary.SelectedEntry?.Data);
+
+    /// <summary>
+    /// R-rdh-1 — true when this display holds traces and not one of them draws anything: every trace that reads a source is
+    /// <c>&lt;invalid&gt;</c>, on every tab. The run's analysis changed (a transient bench now run in harmonic balance) or a
+    /// net its traces pin was renamed, and the plot is empty with the run a success. Annotations and owner-data traces read
+    /// no source and are not counted; a display with none of the rest is not "showing nothing" of a run, it is empty.
+    /// </summary>
+    public bool ShowsNothingOfItsSource()
+    {
+        int reading = 0;
+        foreach (var tab in Tabs)
+            foreach (var c in tab.DataDisplay.Plots)
+                foreach (var t in c.PlotVM.Plot.Traces)
+                {
+                    if (t.IsAnnotation || t.IsOwnerData) continue;
+                    if (t.InvalidSpecText is null) return false;
+                    reading++;
+                }
+        return reading > 0;
+    }
 
     /// <summary>Whether the selected source is an envelope result that measured EVM.</summary>
     public bool CanAddSignalQuality => SignalQualityPreset.Available(DataSourceLibrary.SelectedEntry?.Data);

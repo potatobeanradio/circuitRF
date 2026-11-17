@@ -332,6 +332,7 @@ public sealed partial class Evaluator
             "outage_over" => EvalOutageOver(cl, scope),   // brief-pch-10 R-pch10-5
             "unwrap"    => EvalUnwrap(cl, scope),
             "deriv"     => EvalDeriv(cl, scope),
+            "waveform"  => EvalWaveform(cl, scope),
             "cpk"       => EvalCpk(cl, scope),
             "sigma_to"  => EvalSigmaTo(cl, scope),
             "histogram" => EvalHistogram(cl, scope),

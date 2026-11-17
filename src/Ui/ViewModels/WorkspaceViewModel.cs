@@ -4263,15 +4263,33 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     Messages,
                     activeDoc.ViewModel.EditModel.ResultsFileName);
                 await RefreshOpenDataDisplaysAsync(written);
+                DataDisplayDocument? runDisplay = null;
+                bool createdDisplay = false;
                 if (written.Count > 0)
-                    await AutoOpenOrCreateDataDisplayAsync(baseDir, schematicKey, written[0]);
-                // brief TRN-5 R-trn5-4 — a transient run offers its preset: waveforms, the output's spectrum, the measures.
-                if (written.Count > 0 && result.Results.FirstOrDefault(ar => ar.Data.Contains("Tran.AcceptedSteps")) is { } tran)
+                    (runDisplay, createdDisplay) = await AutoOpenOrCreateDataDisplayAsync(baseDir, schematicKey, written[0]);
+                // R-rdh-1 — the schematic's display drew nothing of this run (its analysis changed, or a net its traces pin was
+                // renamed): say so, and offer the plots this run has, added to that display. Nothing is added without the click.
+                if (written.Count > 0 && !createdDisplay && runDisplay is not null
+                    && runDisplay.ViewModel.Window.ShowsNothingOfItsSource())
+                {
+                    string resultPath = written[0];
+                    string analyses = string.Join(", ", result.Results.Select(ar => ar.Name).Distinct(StringComparer.Ordinal));
+                    Messages.PostAction(MessageLevel.Warning,
+                        $"Nothing in {runDisplay.Title} reads what this run wrote ({analyses}), so its plots are empty.",
+                        "Add plots of this run",
+                        () => AddRunPlotsToDisplayAsync(runDisplay, resultPath, transientOnly: false, baseDir, schematicKey), resultPath);
+                }
+                // brief TRN-5 R-trn5-4 — a transient run offers its preset: waveforms, the output's spectrum, the measures. A
+                // display created by this run already holds them; an existing one gets them added to it, not to a new
+                // untitled display beside it.
+                else if (written.Count > 0 && !createdDisplay
+                    && result.Results.FirstOrDefault(ar => ar.Data.Contains("Tran.AcceptedSteps")) is { } tran)
                 {
                     string resultPath = written[0];
                     Messages.PostAction(MessageLevel.Info,
                         $"Transient '{tran.Name}': the waveforms, the output's spectrum over its last period and the measures, as plots.",
-                        "Open Transient plots", () => OpenTransientAsync(resultPath), resultPath);
+                        "Add Transient plots",
+                        () => AddRunPlotsToDisplayAsync(runDisplay, resultPath, transientOnly: true, baseDir, schematicKey), resultPath);
                 }
                 break;
         }
@@ -10847,6 +10865,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
         var vm  = new DataDisplayDocumentViewModel();
         vm.Window.GetResultsRootAction = GetResultsRoot;
+        // Wired BEFORE the source is selected: without the results root the key below is the absolute path, which the
+        // display saves, and a copy of the workspace then went on reading the original's results file.
+        WireDataDisplayLibraryEvents(vm);
         var lib = vm.Window.DataSourceLibrary;
         lib.RefreshAvailableDataSources();
         await lib.SelectDataSourceAsync(CircuitRF.Ui.DataDisplay.ViewModels.DataDisplayViewModel.ComputeSourceKey(path, lib));
@@ -10860,7 +10881,6 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var doc = new DataDisplayDocument(NextDataDisplayTitle(), vm);
         _scratchDataDisplays.Add(doc);
         vm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
-        WireDataDisplayLibraryEvents(vm);
         WireDataDisplayTreeDirty(doc);
         _factory.OpenDocument(doc);
         if (vm.Window.DataDisplay is { } dd) await dd.AddNoiseCirclesAsync();
@@ -10880,6 +10900,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
         var vm  = new DataDisplayDocumentViewModel();
         vm.Window.GetResultsRootAction = GetResultsRoot;
+        // Wired BEFORE the source is selected: without the results root the key below is the absolute path, which the
+        // display saves, and a copy of the workspace then went on reading the original's results file.
+        WireDataDisplayLibraryEvents(vm);
         var lib = vm.Window.DataSourceLibrary;
         lib.RefreshAvailableDataSources();
         await lib.SelectDataSourceAsync(CircuitRF.Ui.DataDisplay.ViewModels.DataDisplayViewModel.ComputeSourceKey(path, lib));
@@ -10893,7 +10916,6 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var doc = new DataDisplayDocument(NextDataDisplayTitle(), vm);
         _scratchDataDisplays.Add(doc);
         vm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
-        WireDataDisplayLibraryEvents(vm);
         WireDataDisplayTreeDirty(doc);
         _factory.OpenDocument(doc);
         if (vm.Window.DataDisplay is { } dd) await dd.AddSignalQualityAsync();
@@ -10913,6 +10935,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
         var vm  = new DataDisplayDocumentViewModel();
         vm.Window.GetResultsRootAction = GetResultsRoot;
+        // Wired BEFORE the source is selected: without the results root the key below is the absolute path, which the
+        // display saves, and a copy of the workspace then went on reading the original's results file.
+        WireDataDisplayLibraryEvents(vm);
         var lib = vm.Window.DataSourceLibrary;
         lib.RefreshAvailableDataSources();
         await lib.SelectDataSourceAsync(CircuitRF.Ui.DataDisplay.ViewModels.DataDisplayViewModel.ComputeSourceKey(path, lib));
@@ -10925,10 +10950,67 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var doc = new DataDisplayDocument(NextDataDisplayTitle(), vm);
         _scratchDataDisplays.Add(doc);
         vm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
-        WireDataDisplayLibraryEvents(vm);
         WireDataDisplayTreeDirty(doc);
         _factory.OpenDocument(doc);
         if (vm.Window.DataDisplay is { } dd) await dd.AddTransientAsync();
+    }
+
+    /// <summary>
+    /// A run message's action: the Transient plots (<paramref name="transientOnly"/>), or every plot the run has (R-rdh-1),
+    /// added to the schematic's own display, pointed at the run first — the display is opened again when it was closed since.
+    /// </summary>
+    private async Task AddRunPlotsToDisplayAsync(DataDisplayDocument? display, string resultPath, bool transientOnly,
+                                                 string baseDir, string schematicKey)
+    {
+        bool stillOpen = display is not null
+            && (_scratchDataDisplays.Contains(display) || _openDocsByPath.Values.Contains(display));
+        if (!stillOpen)
+        {
+            // closed since the run: open the schematic's display again; one created now already holds the run's plots
+            var (reopened, created) = await AutoOpenOrCreateDataDisplayAsync(baseDir, schematicKey, resultPath);
+            if (created || reopened is null) return;
+            display = reopened;
+        }
+        if (display!.ViewModel.Window.DataDisplay is not { } dd) return;
+        ActivateOpenDocument(display);
+        await PointDisplayAtRunAsync(display, resultPath);
+        var added = transientOnly ? await dd.AddTransientAsync() : await dd.AddRunPlotsAsync();
+        if (added.Count == 0)
+            Messages.Warning(transientOnly
+                ? $"{Path.GetFileName(resultPath)} holds no transient run, so there are no waveforms to draw."
+                : $"{Path.GetFileName(resultPath)} holds nothing to plot.", resultPath);
+    }
+
+    /// <summary>
+    /// R-rdh-2 — a new Data Display on the result <paramref name="path"/>, holding its harmonic-balance run's waveforms, the
+    /// output's spectrum and the measures: one action from the result's context menu. A result with no HB run is refused by
+    /// name and opens nothing.
+    /// </summary>
+    public async Task OpenHbAsync(string path)
+    {
+        if (!File.Exists(path))
+        {
+            Messages.Error($"'{path}' is no longer there.");
+            return;
+        }
+        var vm  = new DataDisplayDocumentViewModel();
+        vm.Window.GetResultsRootAction = GetResultsRoot;
+        WireDataDisplayLibraryEvents(vm);
+        var lib = vm.Window.DataSourceLibrary;
+        lib.RefreshAvailableDataSources();
+        await lib.SelectDataSourceAsync(CircuitRF.Ui.DataDisplay.ViewModels.DataDisplayViewModel.ComputeSourceKey(path, lib));
+        if (!HbPreset.Available(lib.SelectedEntry?.Data))
+        {
+            Messages.Warning($"{Path.GetFileName(path)} holds no harmonic-balance run, so there is no spectrum to draw.", path);
+            return;
+        }
+
+        var doc = new DataDisplayDocument(NextDataDisplayTitle(), vm);
+        _scratchDataDisplays.Add(doc);
+        vm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
+        WireDataDisplayTreeDirty(doc);
+        _factory.OpenDocument(doc);
+        if (vm.Window.DataDisplay is { } dd) await dd.AddHbAsync();
     }
 
     /// <summary>Opens a <c>.cdd</c> as a Data Display tab, as double-clicking it in the Workspace does — the S-Parameter
@@ -16912,7 +16994,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// saves it, and opens it — also unprompted. This is a deliberate behavior change from the original "starts empty"
     /// Data Display decision: the whole point of the command is that a run "just works."
     /// </summary>
-    private async Task AutoOpenOrCreateDataDisplayAsync(string baseDir, string schematicKey, string npyPath)
+    private async Task<(DataDisplayDocument? Display, bool Created)> AutoOpenOrCreateDataDisplayAsync(
+        string baseDir, string schematicKey, string npyPath)
     {
         var resultsDir = Path.GetDirectoryName(npyPath) ?? Path.Combine(baseDir, "results");
 
@@ -16929,12 +17012,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             if (_openDocsByPath.TryGetValue(candidate, out var existingDoc))
             {
                 ActivateOpenDocument(existingDoc);
-                return;
+                var open = existingDoc as DataDisplayDocument;
+                if (open is not null) await PointDisplayAtRunAsync(open, npyPath);
+                return (open, false);
             }
             if (File.Exists(candidate))
             {
-                OpenOrActivateDataDisplay(candidate);
-                return;
+                var abs = Path.GetFullPath(candidate);
+                try { await OpenOrActivateDataDisplayCoreAsync(abs, stream: null); }
+                catch (Exception ex)
+                {
+                    Messages.Error($"Cannot open Data Display: {ex.Message}", candidate);
+                    return (null, false);
+                }
+                var opened = _openDocsByPath.GetValueOrDefault(abs) as DataDisplayDocument;
+                if (opened is not null) await PointDisplayAtRunAsync(opened, npyPath);
+                return (opened, false);
             }
         }
 
@@ -16968,6 +17061,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             if (entry.Data is { } loadpullDs && LoadpullRecognition.IsLoadpull(loadpullDs))
             {
                 populated = PopulateLoadpullContourPlots(newVm, loadpullDs);
+            }
+            // A transient or harmonic-balance run: its waveforms, the output's spectrum and the measures (R-rdh-2), transient
+            // first when it has both — rather than one trace on the first recorded net, which a renamed net leaves pointing
+            // at nothing.
+            else if ((TransientPreset.Available(entry.Data) || HbPreset.Available(entry.Data))
+                     && newVm.Window.DataDisplay is { } presetDisplay)
+            {
+                populated = (await presetDisplay.AddRunPresetsAsync()).Count > 0;
             }
             else
             {
@@ -17018,6 +17119,30 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             Messages.Warning($"Auto-created Data Display could not be saved: {ex.Message}", cddPath);
         }
+        return (newDoc, true);
+    }
+
+    /// <summary>
+    /// The schematic's own display, opened after a run of that schematic, shows THAT run: when its selected source is another
+    /// simulation result — a display copied with its cell, or saved from a display on another schematic's run — it is
+    /// re-pointed at the file the run just wrote, and the Messages panel says so. Every trace that follows the selection
+    /// follows it; a trace pinned to a named file keeps reading that file. A Touchstone or any other non-run source is left
+    /// alone: that is a comparison somebody chose.
+    /// </summary>
+    private async Task PointDisplayAtRunAsync(DataDisplayDocument display, string npyPath)
+    {
+        var lib = display.ViewModel.Window.DataSourceLibrary;
+        string run = Path.GetFullPath(npyPath);
+        if (lib.SelectedDataSourceAbs is { } selected && string.Equals(Path.GetFullPath(selected), run, StringComparison.OrdinalIgnoreCase))
+            return;
+        string? previous = lib.SelectedDataSourceRef;
+        if (previous is { Length: > 0 } && !previous.EndsWith(".npy", StringComparison.OrdinalIgnoreCase))
+            return;
+        lib.RefreshAvailableDataSources();
+        await lib.SelectDataSourceAsync(CircuitRF.Ui.DataDisplay.ViewModels.DataDisplayViewModel.ComputeSourceKey(run, lib));
+        if (previous is { Length: > 0 })
+            Messages.Info($"{display.Title} was showing {Path.GetFileName(previous)}; it now shows this run, {Path.GetFileName(run)}.",
+                          display.FilePath ?? run);
     }
 
     /// <summary>

@@ -3,8 +3,8 @@
 Two circuits driven by a fast step, each simulated twice: once by circuitRF's own transient engine and once by
 ngspice. The pairs are drawn identically; the only difference is the analysis card's **Solver**.
 
-Run any bench with **Simulate**. When a run ends, the Messages panel offers **Open Transient plots**: the voltages
-against time, the output's spectrum over its last period and the measures as a table.
+Run any bench with **Simulate**. Its Data Display opens on the Transient plots: the voltages against time, the output's
+spectrum over its last period and the measures as a table.
 
 ## Filter_Native and Filter_ngspice
 

@@ -142,32 +142,36 @@ public static class TransientPreset
         }
 
         // ── the bench's measures, the ones that are one number, as a table ──
-        if (ds.ContainsGroup(DataSet.MeasurementsGroup))
-        {
-            var table = new List<TraceConfig>();
-            foreach (var (name, cube) in ds.CubesIn(DataSet.MeasurementsGroup))
-            {
-                if (cube.Rank != 0 || name.StartsWith("__", StringComparison.Ordinal) || name.Contains(':')) continue;
-                int color = TraceProperties.LineColorOrder[table.Count % TraceProperties.LineColorOrder.Length];
-                table.Add(new TraceConfig
-                {
-                    SourcePath = sourceRef, CubeName = name, Label = name,
-                    FormatString = PrecisionFormat.G, MaximumFractionDigits = 4, ColumnWidth = 110,
-                    Properties = new TracePropertiesConfig { LineColorIndex = color, MarkerColorIndex = color },
-                });
-            }
-            if (table.Count > 0)
-                plots.Add(new PlotContainerConfig
-                {
-                    PlotType = PlotType.Table, Width = Math.Max(240, table.Sum(t => t.ColumnWidth) + 8), Height = 90,
-                    Left = 0, Top = wavePlot.Height + Gap,
-                    CustomTitle = "Measures", CustomTitleOn = true, Traces = table,
-                });
-        }
+        if (MeasuresTable(ds, sourceRef, wavePlot.Height + Gap) is { } table) plots.Add(table);
         return plots;
     }
 
-    private static int IndexOf(DataCube c, string axis)
+    /// <summary>The bench's measures that are one number, as a table placed at (0, <paramref name="top"/>); null when there
+    /// are none. Shared with <see cref="HbPreset"/>, so the two presets' tables are one table.</summary>
+    internal static PlotContainerConfig? MeasuresTable(DataSet ds, string sourceRef, double top)
+    {
+        if (!ds.ContainsGroup(DataSet.MeasurementsGroup)) return null;
+        var table = new List<TraceConfig>();
+        foreach (var (name, cube) in ds.CubesIn(DataSet.MeasurementsGroup))
+        {
+            if (cube.Rank != 0 || name.StartsWith("__", StringComparison.Ordinal) || name.Contains(':')) continue;
+            int color = TraceProperties.LineColorOrder[table.Count % TraceProperties.LineColorOrder.Length];
+            table.Add(new TraceConfig
+            {
+                SourcePath = sourceRef, CubeName = name, Label = name,
+                FormatString = PrecisionFormat.G, MaximumFractionDigits = 4, ColumnWidth = 110,
+                Properties = new TracePropertiesConfig { LineColorIndex = color, MarkerColorIndex = color },
+            });
+        }
+        if (table.Count == 0) return null;
+        return new PlotContainerConfig
+        {
+            PlotType = PlotType.Table, Width = Math.Max(240, table.Sum(t => t.ColumnWidth) + 8), Height = 90,
+            Left = 0, Top = top, CustomTitle = "Measures", CustomTitleOn = true, Traces = table,
+        };
+    }
+
+    internal static int IndexOf(DataCube c, string axis)
     {
         for (int d = 0; d < c.Rank; d++) if (c.Axes[d].Name == axis) return d;
         return -1;
@@ -175,11 +179,11 @@ public static class TransientPreset
 
     /// <summary>A bracket slice of <paramref name="c"/>: <paramref name="keep"/> whole, <paramref name="pin"/> at its index, every
     /// other axis (a sweep's) at its first point — <c>[0, :, 2]</c>.</summary>
-    private static string Tokens(DataCube c, string keep, (string Axis, int Index) pin)
+    internal static string Tokens(DataCube c, string keep, (string Axis, int Index) pin)
         => "[" + string.Join(", ", c.Axes.Select(a => a.Name == keep ? ":" : a.Name == pin.Axis
                ? pin.Index.ToString(CultureInfo.InvariantCulture) : "0")) + "]";
 
-    private static string Hz(double f) => f switch
+    internal static string Hz(double f) => f switch
     {
         >= 1e9 => (f / 1e9).ToString("G4", CultureInfo.InvariantCulture) + " GHz",
         >= 1e6 => (f / 1e6).ToString("G4", CultureInfo.InvariantCulture) + " MHz",

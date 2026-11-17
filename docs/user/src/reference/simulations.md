@@ -334,6 +334,12 @@ compression and IM3, and passive intermodulation on the blocks that carry it. Tw
     <caption>Multi-tone analysis adds the extra tones and a mixing order (≥ 5 at two tones, to capture close-in IM products; lower it as tones are added).</caption>
   </table>
 
+**Plots.** A schematic's first harmonic-balance run opens its Data Display holding the labelled nets' voltages over one
+period, the output's spectrum as stems and the measures that are one number, the same plots a transient run gets. A
+drive or bias sweep around the analysis is drawn at its first point. The waveforms are the
+spectrum read through [`waveform`](measurements.html#time-domain); with several tones they cover the tones' common
+period, and tones with none short enough to draw get the spectrum and measures only.
+
 ### Starting from a transient run {#hb-transient-start}
 
 Harmonic balance starts from the DC point and steps the drive up. Some circuits are a long way from there: a switching PA

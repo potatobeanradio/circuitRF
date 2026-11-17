@@ -3543,7 +3543,7 @@ namespace CircuitRF.Render.DataDisplay
                 ? FormatFamilyCellForMarker(curve, xIdx, m)
                 : FormatCubeCellForMarker(xIdx, m, onBackBranch);
             if (string.IsNullOrEmpty(val)) val = "NaN";
-            lines.Add((DbFloor.Label(desc, val), false));
+            lines.Add((DbFloor.Label(desc, WithValueUnit(val)), false));
 
             if (MarkerShowsImpedance(m))
                 lines.Add((GetMarkerImpedanceString(m), false));
@@ -3625,7 +3625,7 @@ namespace CircuitRF.Render.DataDisplay
                 ? other.FormatCubeCell(xIdx, m.FormatString, m.MaximumFractionDigits, back)
                 : "NaN";
             if (string.IsNullOrEmpty(val)) val = "NaN";
-            return DbFloor.Label(other.ReadoutDescription(false), val);
+            return DbFloor.Label(other.ReadoutDescription(false), other.WithValueUnit(val));
         }
 
         private Vector2 StemPointFor(Marker m)
@@ -3693,7 +3693,7 @@ namespace CircuitRF.Render.DataDisplay
             if (CubeXValues is null || CubeXValues.Count == 0 || Points.Count == 0) return $"{desc}=NaN";
             int    idx = FindStemIndex(m);
             string val = FormatCubeCell(idx, m.FormatString, m.MaximumFractionDigits);
-            return DbFloor.Label(desc, val);
+            return DbFloor.Label(desc, WithValueUnit(val));
         }
 
         /// <summary>
@@ -3749,7 +3749,7 @@ namespace CircuitRF.Render.DataDisplay
                     ? FormatFamilyCellForMarker(CubeMarkerCurveIndex(m), xIdx, m)
                     : FormatCubeCellForMarker(xIdx, m, back);
                 if (string.IsNullOrEmpty(val)) val = "NaN";
-                return DbFloor.Label(desc, val);
+                return DbFloor.Label(desc, WithValueUnit(val));
             }
             return GetMarkerValString(m, showFilePrefix);
         }
@@ -4019,10 +4019,10 @@ namespace CircuitRF.Render.DataDisplay
             string desc   = ReadoutDescription(showFilePrefix);
 
             if (YAxisIsComplexValue)
-                return DbFloor.Label($"{desc}{suffix}", m.FormatComplex(GetMarkerDataPoint(m)));
+                return DbFloor.Label($"{desc}{suffix}", WithValueUnit(m.FormatComplex(GetMarkerDataPoint(m))));
 
             double scalar = DataPointScalar(m.Freq);
-            return DbFloor.Label(desc, FormatScalarValue(scalar, m));
+            return DbFloor.Label(desc, WithValueUnit(FormatScalarValue(scalar, m)));
         }
 
         public string GetMultiMarkerLine(Marker m, Trace other)
@@ -4046,11 +4046,11 @@ namespace CircuitRF.Render.DataDisplay
             {
                 var    dp     = other.GetMarkerDataPoint(m);
                 string valStr = double.IsNaN(dp.Real) ? "NaN" : m.FormatComplex(dp);
-                return DbFloor.Label(other.ReadoutDescription(false), valStr);
+                return DbFloor.Label(other.ReadoutDescription(false), other.WithValueUnit(valStr));
             }
 
             double scalar = other.DataPointScalar(m.Freq);
-            return DbFloor.Label(other.ReadoutDescription(false), other.FormatScalarValue(scalar, m));
+            return DbFloor.Label(other.ReadoutDescription(false), other.WithValueUnit(other.FormatScalarValue(scalar, m)));
         }
 
         public string MuString(Marker m)

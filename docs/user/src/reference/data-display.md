@@ -350,6 +350,11 @@ Marker** menu is already selected, so the arrows move it straight away.
 **To read every trace at one x**, turn on **Multi** in the marker's properties. The marker becomes a
 vertical line across the plot, and its info box lists each trace's value at that x.
 
+**A marker's value carries its unit** when the trace says what it plots: `V(Vout)=19.67 dBV` on the spectrum of a
+voltage, `P(Iout)=12.3 dBm`, `dB(S(2,1))=-0.42 dB`, `V(Vin)=1.98 V` on a waveform. The unit comes from the quantity a
+result names (`V` is volts, `I` amperes, a power watts, an S-parameter a ratio) and the dB function or transform applied
+to it. A trace whose unit is not known, such as arithmetic on two quantities, shows the bare number.
+
 ## Monte Carlo statistics {#statistics}
 
 A Monte Carlo or yield run writes `<design>.yield.npy` beside the design, with every trial on a `trial`
@@ -395,6 +400,25 @@ de-chirped CSS error, with the distortion and noise split and the SNR when the r
 frequency offset, SER, BER and estimated BER); and the output spectrum, all at the probe carrying the signal. When the
 run had an `Equalizer`, the received points are its output, and the trace says which. **Open Signal Quality** on a result file's menu opens them in a new Data Display. See
 [Signal quality](simulations.html#envelope-evm).
+
+**Transient and harmonic balance.** The sine-wave toolbar button adds the selected transient result's waveforms, the
+output's spectrum over its last period and the measures ([Transient](transient.html)). The waveform button beside it adds
+the same three plots from a harmonic-balance result: the labelled nets' voltages over one period, rebuilt from the
+spectrum by [`waveform`](measurements.html#time-domain); the output's spectrum as stems (the power through the IProbe
+whose name says "out" in dBm, else that net's voltage in dBV); and the measures that are one number, as a table. A sweep
+around the analysis is drawn at its first point. Both pick the same output on the same
+bench. With two or more tones the waveform covers the tones' common period; tones that share none short enough to draw
+get the spectrum and the measures only. **Open Harmonic Balance Plots** on a result file's menu opens them in a new Data
+Display.
+
+A preset's traces read the display's selected source, as every trace does, so choosing another result in the source list
+redraws them from it.
+
+**After a run.** A schematic's first run opens its Data Display holding its run's plots: the Transient plots, the Harmonic
+Balance plots, or both. A later run reopens that display and shows the run just written. When nothing in it draws (the
+bench's analysis changed, say from transient to harmonic balance, or a net its traces read was renamed), the Messages
+panel says so and offers **Add plots of this run**, which adds that run's plots beside the existing ones. The existing
+traces are left as they are: a trace that reads a renamed net says `<invalid>`, and re-pointing it is a choice to make.
 
 **Draw style.** Any trace on a rectangular plot can be drawn as a line, as bars or as a step; bars stand on
 zero and a family of them stands side by side within each bin.

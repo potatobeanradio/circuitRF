@@ -33,6 +33,7 @@ public sealed partial class Evaluator
         "max_over", "min_over", "mean_over", "std_over", "median_over", "pctl_over", "skew_over", "kurt_over",
         "yield_over", "cpk", "sigma_to", "histogram", "cdf", "normq", "yield_sens", "unwrap", "deriv",
         "value_at", "outage_over",
+        "waveform",   // a spectrum along its harmonic/mixIndex axis, as a waveform (Evaluator.Waveform.cs)
     };
 
     /// <summary>Whether <paramref name="expression"/> calls one of <see cref="AxisFunctions"/> — a name followed by

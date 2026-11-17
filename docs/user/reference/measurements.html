@@ -373,6 +373,10 @@ sweep point. The waveform argument is a real cube, such as <code>TR1.V(&quot;out
 <td><code>thd(x, f0, n=10)</code></td>
 <td>Total harmonic distortion of the last period, harmonics 2 to <code>n</code> against the fundamental (%)</td>
 </tr>
+<tr>
+<td><code>waveform(x, f0)</code></td>
+<td>The other way round: a spectrum as its waveform over one period, a <code>time</code> axis in place of the <code>harmonic</code> or <code>mixIndex</code> axis. <code>x</code> is a complex spectrum, a harmonic-balance result's <code>HB1.V(&quot;out&quot;)</code> or an <code>fft</code>. On a <code>harmonic</code> axis <code>f0</code> is the fundamental; on a multi-tone <code>mixIndex</code> axis it may be left out, and the period is the tones' common one</td>
+</tr>
 </tbody>
 </table>
 <pre><code class="language-text">measure  Trise     = rise(TR1.V(&quot;out&quot;))
@@ -384,6 +388,10 @@ is shaped like a harmonic-balance spectrum, a trace written for one plots the ot
 <code>HB1.V(&quot;out&quot;)</code> on one bench and <code>fft(TR1.V(&quot;out&quot;), 1GHz)</code> on another unchanged. A waveform with no edge of the kind
 asked for gives a missing value rather than an error, so one sweep point without one does not fail the rest. A
 waveform with no <code>time</code> axis is refused, naming the function, and <code>circuitrf check</code> finds it before a run.</p>
+<p><code>waveform</code> and <code>fft</code> undo each other: <code>fft(waveform(HB1.V(&quot;out&quot;), 1GHz), 1GHz)</code> is <code>HB1.V(&quot;out&quot;)</code>, so a time-domain
+function reads a harmonic-balance result through it, as in <code>measure Vpk = max_over(waveform(HB1.V(&quot;out&quot;), 1GHz), &quot;time&quot;)</code>.
+Two tones at 1 GHz and 1.01 GHz repeat every 100 ns, 100 periods of the carrier. Tones whose common period would take
+more than 65,536 samples to draw, or that share none, are refused with the period they would need.</p>
 <h2 id="spec">Spec checks: the worst value over a band</h2>
 <p>A specification line asks for the <strong>worst</strong> value of a quantity over a frequency band: &quot;insertion
 loss ≤ 1 dB from 0.1 to 3 GHz&quot;, &quot;rejection ≥ 20 dB from 6 to 12 GHz&quot;. <code>max_over</code> and <code>min_over</code>

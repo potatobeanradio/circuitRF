@@ -41,6 +41,12 @@ public static class BuiltInSymbols
     /// </summary>
     public const double SddPortLabelFontSize = 18.0;
     /// <summary>
+    /// Font size for the port labels inside an SnP box (and the EM Field Data and Deembed blocks built on it): a quarter
+    /// larger than <see cref="SddPortLabelFontSize"/>, because a Touchstone block's numbers were the ones still too small to
+    /// read zoomed out. The one place to change it. At Tight pitch the pins are 100 apart, so up to ~40 still clears.
+    /// </summary>
+    public const double SnpPortLabelFontSize = SddPortLabelFontSize * 1.25;
+    /// <summary>
     /// Font size for the mixer's RF/LO/IF port names. Larger than
     /// <see cref="SddPortLabelFontSize"/> because these sit OUTSIDE the body, on the leads, where
     /// there is room — and because they carry more weight than a port number does: the mixer's
@@ -1667,7 +1673,8 @@ public static class BuiltInSymbols
                                          IReadOnlyList<string?>? portLabels = null)
     {
         var ports = SymbolPortDefs.GenerateSnpPorts(n, refNode, cfg, pitch);
-        if (portLabels is null) return BuildPortBox(ports, n, cfg, pitch, SymbolPortDefs.SnpBodyRect(n, cfg, pitch).W);
+        if (portLabels is null)
+            return BuildPortBox(ports, n, cfg, pitch, SymbolPortDefs.SnpBodyRect(n, cfg, pitch).W, fontSize: SnpPortLabelFontSize);
 
         // The text beside each lead: the port's own name in place of its number, kept short (a longer one is cut, ~
         // marking the cut), and the number where the file names none.
@@ -1681,9 +1688,11 @@ public static class BuiltInSymbols
                 : number;
         }
         // NamedPortBox's width rule: room for the longest text, inside the ±200 pins.
+        // the per-character width scales with the font, which is larger here than in NamedPortBox
         int longest = text.Max(t => t.Length);
-        double halfW = Math.Clamp(60 + longest * 9.0, SymbolPortDefs.SnpBodyRect(n, cfg, pitch).W * 0.5, 170);
-        return BuildPortBox(ports, n, cfg, pitch, halfW * 2, text);
+        double perChar = 9.0 * SnpPortLabelFontSize / SddPortLabelFontSize;
+        double halfW = Math.Clamp(60 + longest * perChar, SymbolPortDefs.SnpBodyRect(n, cfg, pitch).W * 0.5, 170);
+        return BuildPortBox(ports, n, cfg, pitch, halfW * 2, text, SnpPortLabelFontSize);
 
         static string Minimal(string? name)
         {
@@ -1754,7 +1763,8 @@ public static class BuiltInSymbols
     /// </summary>
     private static Symbol BuildPortBox(
         (string Name, float LocalX, float LocalY)[] ports,
-        int n, SnpPinConfig cfg, SnpPitch pitch, double w, IReadOnlyList<string>? labelText = null)
+        int n, SnpPinConfig cfg, SnpPitch pitch, double w, IReadOnlyList<string>? labelText = null,
+        double fontSize = SddPortLabelFontSize)
     {
         float halfH = SymbolPortDefs.SnpBodyRect(n, cfg, pitch).HalfH;
         float cy = SymbolPortDefs.SnpBodyCenterYPublic(n, cfg, pitch);
@@ -1778,15 +1788,15 @@ public static class BuiltInSymbols
             // Label inside the body; Ref gets "Ref" text, signal pins get port number.
             if (lx < 0 || (lx == 0 && n == 1))
                 prims.Add(Txt(name, bodyLeft + 20, ClampInsideBody(ly, bodyTop, bodyBot),
-                    SddPortLabelFontSize, SymbolTextAlign.Left, SymbolTextVAlign.Middle));
+                    fontSize, SymbolTextAlign.Left, SymbolTextVAlign.Middle));
             else if (lx > 0)
                 prims.Add(Txt(name, bodyRight - 20, ClampInsideBody(ly, bodyTop, bodyBot),
-                    SddPortLabelFontSize, SymbolTextAlign.Right, SymbolTextVAlign.Middle));
+                    fontSize, SymbolTextAlign.Right, SymbolTextVAlign.Middle));
             else if (pinName == "Ref")
-                prims.Add(Txt("Ref", 0, bodyBot - 22, SddPortLabelFontSize,
+                prims.Add(Txt("Ref", 0, bodyBot - 22, fontSize,
                     SymbolTextAlign.Center, SymbolTextVAlign.Middle));
             else   // top-center pin (3-port port 3)
-                prims.Add(Txt(name, 0, bodyTop + 22, SddPortLabelFontSize,
+                prims.Add(Txt(name, 0, bodyTop + 22, fontSize,
                     SymbolTextAlign.Center, SymbolTextVAlign.Middle));
         }
 
