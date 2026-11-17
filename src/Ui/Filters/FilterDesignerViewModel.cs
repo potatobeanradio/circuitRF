@@ -146,44 +146,100 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         static bool TryPositive(string t, out double v) => double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out v) && v > 0;
     }
 
-    /// <summary>The ideal response and the selected realiser's, run through the engine and plotted.</summary>
+    /// <summary>True while the responses compute off the UI thread; the window shows a bar beside "Realisers" once this has stayed
+    /// true for <see cref="Controls.DelayedBar.Delay"/>.</summary>
+    [ObservableProperty] private bool _working;
+
+    /// <summary>The latest request's computation and its plotting: done once what it computed is shown, or once a newer request
+    /// has replaced it. A test awaits it; the window never does.</summary>
+    public Task Realising { get; private set; } = Task.CompletedTask;
+
+    private int _generation;
+    private readonly object _computeGate = new();
+
+    /// <summary>What one request computed, ready to show.</summary>
+    private sealed record Outcome(SNP? Ideal, SNP? Realised, FilterRealisation? Realisation, string Parameters, string Status);
+
+    /// <summary>
+    /// The ideal response and the selected realiser's, run through the engine on a worker and plotted when they arrive. The first
+    /// realisation of a family is the slow one (the engine and the realiser warm up), and it used to hold the window still. The
+    /// realisation Place would put down is dropped at once, so Place never writes a part the specification no longer describes; the
+    /// plot and the parameters stay until the new ones replace them, so nothing flashes. Only the latest request is shown: an older
+    /// one still waiting is skipped, one already running is discarded when it ends.
+    /// </summary>
     private void Realise()
     {
+        int generation = ++_generation;
         _realisation = null;
-        ParametersText = "";
-        SNP? ideal = null, realised = null;
-        if (_spec is { } spec)
+        OnPropertyChanged(nameof(Realisation));
+        PlaceCommand.NotifyCanExecuteChanged();
+        if (_spec is not { } spec)
         {
+            Working = false;
+            ParametersText = "";
+            BuildPlot(null, null);
+            Realising = Task.CompletedTask;
+            return;
+        }
+        var row = Selected is { Supported: true } r ? r : null;
+        int rows = Realisers.Count;
+        Working = true;
+        Realising = RealiseAsync(generation, spec, row, rows);
+    }
+
+    private async Task RealiseAsync(int generation, FilterSpec spec, FilterRealiserRow? row, int rows)
+    {
+        Outcome? outcome;
+        try { outcome = await Task.Run(() => Compute(generation, spec, row, rows)); }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            outcome = new Outcome(null, null, null, "", $"The response could not be computed: {ex.Message}");
+        }
+        // back on the UI thread (the await resumes on the context it started on)
+        if (generation != _generation || outcome is null) return;
+        Working = false;
+        _realisation = outcome.Realisation;
+        ParametersText = outcome.Parameters;
+        Status = outcome.Status;
+        BuildPlot(outcome.Ideal, outcome.Realised);
+        OnPropertyChanged(nameof(Realisation));
+        PlaceCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>On a worker, one request at a time (a realiser is one shared instance): null when a newer request has come in.</summary>
+    private Outcome? Compute(int generation, FilterSpec spec, FilterRealiserRow? row, int rows)
+    {
+        lock (_computeGate)
+        {
+            if (generation != Volatile.Read(ref _generation)) return null;
             var f = FilterSynthesisService.Frequencies(spec, Points);
+            SNP? ideal = null;
             string idealNote = "";
             try { ideal = FilterSynthesisService.Response(FilterSynthesisService.Ideal(spec, Points), f, spec.Z0); }
             catch (Exception ex) when (ex is not OutOfMemoryException) { idealNote = $" No ideal response: {ex.Message}"; }
 
-            if (Selected is { Supported: true } row)
+            if (row is null)
+                return new Outcome(ideal, null, null, "",
+                    (rows == 0 ? "No realiser of this family." : "No realiser can build this; each says why.") + idealNote);
+            if (generation != Volatile.Read(ref _generation)) return null;
+            try
             {
-                try
-                {
-                    var realisation = row.Realiser.Realise(spec, _substrate);
-                    var notes = new List<string>(realisation.Notes);
-                    realised = FilterSynthesisService.Response(
-                        FilterSynthesisService.Cnl(spec, realisation, row.Name, _substrate, _technology, Points, notes), f, spec.Z0);
-                    _realisation = realisation;
-                    ParametersText = string.Join("\n",
-                        realisation.Parameters.Select(p => $"{p.Key} = {p.Value}")
-                            .Concat(realisation.Sites.Select(s => $"site {s.PinA}{(s.PinB is null ? "" : "-" + s.PinB)}: {s.Role} {s.Value:G4}"))
-                            .Concat(notes));
-                    Status = $"{row.Name}: {realisation.PartType} with {realisation.Sites.Count} site part(s).{idealNote}";
-                }
-                catch (Exception ex) when (ex is not OutOfMemoryException)
-                {
-                    Status = $"{row.Name} cannot build it: {ex.Message}{idealNote}";
-                }
+                var realisation = row.Realiser.Realise(spec, _substrate);
+                var notes = new List<string>(realisation.Notes);
+                var realised = FilterSynthesisService.Response(
+                    FilterSynthesisService.Cnl(spec, realisation, row.Name, _substrate, _technology, Points, notes), f, spec.Z0);
+                string parameters = string.Join("\n",
+                    realisation.Parameters.Select(p => $"{p.Key} = {p.Value}")
+                        .Concat(realisation.Sites.Select(s => $"site {s.PinA}{(s.PinB is null ? "" : "-" + s.PinB)}: {s.Role} {s.Value:G4}"))
+                        .Concat(notes));
+                return new Outcome(ideal, realised, realisation, parameters,
+                    $"{row.Name}: {realisation.PartType} with {realisation.Sites.Count} site part(s).{idealNote}");
             }
-            else Status = (Realisers.Count == 0 ? "No realiser of this family." : "No realiser can build this; each says why.") + idealNote;
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                return new Outcome(ideal, null, null, "", $"{row.Name} cannot build it: {ex.Message}{idealNote}");
+            }
         }
-        BuildPlot(ideal, realised);
-        OnPropertyChanged(nameof(Realisation));
-        PlaceCommand.NotifyCanExecuteChanged();
     }
 
     private void BuildPlot(SNP? ideal, SNP? realised)

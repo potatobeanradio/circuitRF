@@ -149,27 +149,35 @@ public sealed class FilterDesignerTests : IDisposable
     }
 
     /// <summary>The Designer preselects the ladder's family and a lowpass, lists the realiser as able to build it, plots the
-    /// ideal and the realised response; Place adds the part and a part on each site as one step that one Undo takes off.</summary>
+    /// ideal and the realised response; Place adds the part and a part on each site as one step that one Undo takes off. The
+    /// responses compute off the UI thread, and the realisation Place would put down goes the moment the specification changes.</summary>
     [Fact]
-    public void TheDesigner_ListsTheRealiser_AndPlacesItAsOneUndoStep()
+    public async Task TheDesigner_ListsTheRealiser_AndPlacesItAsOneUndoStep()
     {
         var model = new SchematicEditModel();
         var schematic = new ViewModels.SchematicViewModel(model);
         var vm = new FilterDesignerViewModel(schematic, SymbolKind.Mlad, Realisers);
+        await vm.Realising;
+        Assert.False(vm.Working);
 
         Assert.Equal(("MLAD", FilterBand.Lowpass), (vm.Family, vm.Band));
         var row = Assert.Single(vm.Realisers);
         Assert.True(row.Supported);
         Assert.Same(row, vm.Selected);
-        Assert.NotNull(vm.Realisation);
+        Assert.True(vm.Realisation is not null, vm.Status);
         Assert.Equal(4, vm.Plot.Traces.Count);                     // S21 and S11, ideal and realised
 
         vm.Band = FilterBand.Highpass;
         Assert.Equal("only a lowpass.", Assert.Single(vm.Realisers).Reason);
         Assert.Null(vm.Realisation);
         Assert.False(vm.PlaceCommand.CanExecute(null));
+        await vm.Realising;
+        Assert.Equal(2, vm.Plot.Traces.Count);                     // the ideal alone
 
         vm.Band = FilterBand.Lowpass;
+        Assert.True(vm.Working);
+        Assert.False(vm.PlaceCommand.CanExecute(null));            // nothing to place until the new realisation arrives
+        await vm.Realising;
         vm.PlaceCommand.Execute(null);
         var ladder = Assert.Single(model.Components, c => c.Symbol == SymbolKind.Mlad);
         Assert.Equal(2, model.Components.Count(c => c.Symbol == SymbolKind.Inductor));

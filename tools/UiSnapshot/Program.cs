@@ -214,6 +214,7 @@ string? pluginAction = null;   // brief-plg-4
 string? settingsPlugins = null; bool pluginAddressDialog = false, pluginInstallProgress = false;   // brief-plg-6
 string? analysisBody = null;   // LP-1: lp | lpp
 string? phasedArray = null, paBlock = null, paColor = "amplitude", paTab = "beam";   // brief-paa-9
+string? filterDesigner = null; bool fdBusy = false; double? fdLeft = null, fdBottom = null;
 int paDrag = 0;
 double paTo = 30;
 string? pluginImage = null; (double, double)? pluginClick = null;
@@ -340,6 +341,10 @@ for (int i = 0; i < args.Length; i++)
         case "--settings-plugins" when i + 1 < args.Length: settingsPlugins = args[++i]; break;
         case "--analysis-body" when i + 1 < args.Length: analysisBody = args[++i]; break;
         case "--phased-array" when i + 1 < args.Length: phasedArray = Path.GetFullPath(args[++i]); break;
+        case "--filter-designer" when i + 1 < args.Length: filterDesigner = args[++i].ToLowerInvariant(); break;
+        case "--fd-busy": fdBusy = true; break;
+        case "--fd-left" when i + 1 < args.Length: fdLeft = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture); break;
+        case "--fd-bottom" when i + 1 < args.Length: fdBottom = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture); break;
         case "--block" when i + 1 < args.Length: paBlock = args[++i]; break;
         case "--pa-color" when i + 1 < args.Length: paColor = args[++i].ToLowerInvariant(); break;
         case "--pa-tab" when i + 1 < args.Length: paTab = args[++i].ToLowerInvariant(); break;
@@ -613,6 +618,14 @@ if (pluginImage is not null && output is not null)
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     if (dark && Application.Current is { } imgApp) imgApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
     return PluginPanelSnapshot.RunImage(pluginImage, sizeGiven ? width : null, sizeGiven ? height : null, output, pluginClick);
+}
+// The Filter Designer window (--filter-designer any|mlad|mcrc|mcla [--fd-busy] [--fd-left px] [--fd-bottom px]).
+if (filterDesigner is not null && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    if (dark && Application.Current is { } fdApp) fdApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+    return FilterDesignerSnapshot.Run(filterDesigner, fdBusy, fdLeft, fdBottom, output, sizeGiven ? width : 1100, sizeGiven ? height : 780);
 }
 // brief-paa-9 — the Phased Array tool window on one array of a .cnl bench (--phased-array bench.cnl).
 if (phasedArray is not null && output is not null)

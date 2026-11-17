@@ -9,6 +9,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Threading;
 using CircuitRF.Design.Circuit;
 using CircuitRF.Design.Schematic;
+using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.PhasedArray;
 using CircuitRF.Ui.ViewModels;
 
@@ -91,9 +92,6 @@ public partial class PhasedArrayWindow : Window, ICrfMenuWindow
         if (e.PropertyName == nameof(PhasedArrayToolViewModel.HasChannel) && !vm.HasChannel && vm.Page == ArrayPage.Channel) vm.Page = ArrayPage.Beam;
     }
 
-    /// <summary>How long work must run before its bar appears: quick work never shows one.</summary>
-    internal static readonly TimeSpan WorkBarDelay = TimeSpan.FromSeconds(0.1);
-
     private DelayedBar? _workBar, _scanBar;
 
     /// <summary>The two bars: the window's, for evaluations, failure trials and the frequency study; the Scan maps page's, beside its run
@@ -119,67 +117,6 @@ public partial class PhasedArrayWindow : Window, ICrfMenuWindow
     private static bool ScanWanted(PhasedArrayToolViewModel vm)
         => vm.Frame is not null && !vm.Dragging && !vm.ScanRunning
            && (vm.ScanPoints is null || vm.ScanStatus.StartsWith("Cancelled", StringComparison.Ordinal));
-
-    /// <summary>
-    /// A progress bar that appears only once its work has run for <see cref="WorkBarDelay"/>, and goes the moment the work ends. It FADES
-    /// — its place in the layout is always kept — so nothing beside it moves either way. Hidden, it is not indeterminate: an indeterminate
-    /// bar animates, and an animation nobody can see still redraws the window every frame.
-    /// <para><b>The delay is measured, not only timed.</b> A first version waited on a <c>DispatcherTimer</c> alone, at its default
-    /// Background priority — below every post the work makes, and a scan posts its progress once per direction — so the tick could be
-    /// starved for the whole run and the bar never appeared. Now each progress update checks the clock itself, and the timer (at Normal
-    /// priority) is only the fallback for work that reports nothing while it runs.</para>
-    /// </summary>
-    private sealed class DelayedBar(Control shown, ProgressBar bar)
-    {
-        private DispatcherTimer? _timer;
-        private bool _working;
-        private double _progress = double.NaN;
-        private readonly System.Diagnostics.Stopwatch _since = new();
-
-        public void Sync(bool working, double progress)
-        {
-            _progress = progress;
-            if (!working)
-            {
-                _working = false;
-                _since.Reset();
-                Stop();
-                shown.Opacity = 0;
-                bar.IsIndeterminate = false;
-                return;
-            }
-            if (!_working) { _working = true; _since.Restart(); }
-            if (shown.Opacity > 0) { Show(); return; }
-            if (_since.Elapsed >= WorkBarDelay) { Elapsed(); return; }
-            if (_timer is not null) return;
-            _timer = new DispatcherTimer(DispatcherPriority.Normal) { Interval = WorkBarDelay - _since.Elapsed };
-            _timer.Tick += (_, _) => Elapsed();
-            _timer.Start();
-        }
-
-        /// <summary>The delay has passed: shown, if the work still runs. (A headless capture calls this itself: the headless platform
-        /// never fires a dispatcher timer.)</summary>
-        public void Elapsed()
-        {
-            Stop();
-            if (!_working) return;
-            shown.Opacity = 1;
-            Show();
-        }
-
-        public void Stop()
-        {
-            _timer?.Stop();
-            _timer = null;
-        }
-
-        private void Show()
-        {
-            bool known = double.IsFinite(_progress);
-            bar.IsIndeterminate = !known;
-            if (known) bar.Value = _progress;
-        }
-    }
 
     /// <summary>A page button: that page shown. A click on the page already shown leaves it shown.</summary>
     private void OnPageClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

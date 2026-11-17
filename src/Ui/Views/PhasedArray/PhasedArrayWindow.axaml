@@ -83,8 +83,8 @@
     </Window.Styles>
 
     <DockPanel>
-        <!-- the status line, and at its right the work in progress: shown only once a job has run for a while (the window's
-             WorkBarDelay), so quick work never flashes a bar. Its place is always kept; it fades, so nothing on the line moves. -->
+        <!-- the status line, and at its right the work in progress: shown only once a job has run for a while (DelayedBar.Delay,
+             src/Ui/Controls/DelayedBar.cs), so quick work never flashes a bar. Its place is always kept; it fades, so nothing on the line moves. -->
         <Border DockPanel.Dock="Bottom" Padding="10,4" Background="{DynamicResource SystemChromeMediumLowColor}">
             <Grid ColumnDefinitions="*,Auto">
                 <TextBlock Text="{Binding Status}" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>

@@ -42405,7 +42405,7 @@ floating-title refresh too. A `CrfHostWindow` cannot be built headlessly, so `Fl
   the rest did not. The canvases now follow the rule the app's other canvases already kept: `Prepare` reads everything (the view
   model and the control's own properties) on the UI thread and returns a drawing that touches nothing live; a drawing that still
   fails paints the background rather than aborting the frame.
-- **A progress bar shows only after `PhasedArrayWindow.WorkBarDelay` (0.1 s) of continuous work** — the window's, at the bottom right,
+- **A progress bar shows only after `DelayedBar.Delay` (0.1 s, `src/Ui/Controls/DelayedBar.cs`) of continuous work** — the window's, at the bottom right,
   for evaluations, failure trials and the frequency study; the Scan maps page's, right of its status, for the scan. Hidden, a bar is
   never indeterminate (an invisible indeterminate bar still animates, and redraws the window every frame). **The delay is MEASURED on
   each progress update, not only timed:** the first version waited on a `DispatcherTimer` at its default Background priority, below
@@ -42416,3 +42416,19 @@ floating-title refresh too. A `CrfHostWindow` cannot be built headlessly, so `Fl
   work must follow the page however the window was made, and UiSnapshot and DocGen build it without `ShowFor`.
 - **A tool opened from Component Parameters is owned by the dialog's OWNER.** `ShowFor` closes the tool with its owner, and the
   dialog is transient.
+
+## Filter Designer: responses off the UI thread, resizable panes (2026-11-16)
+
+- **The ideal and realised responses compute on a worker** (`FilterDesignerViewModel.Realise`). The first realisation of a family
+  (the realiser and the engine warming up) held the window still for a visible moment on a click. The realisation Place would put down
+  is dropped at once, so Place never writes a part the specification no longer describes; the plot and the parameters stay until the
+  new ones arrive, so nothing flashes. **Newest request wins**: requests are numbered, one computes at a time under a lock (a realiser
+  is one shared instance from `FilterRealisers.All`), a queued older one is skipped, a running older one is discarded when it ends.
+  `Realising` is the latest request's task — tests await it; the window never does.
+- **The bar beside "Realisers" is the Phased Array tool's `DelayedBar`**, moved to `src/Ui/Controls/DelayedBar.cs` so both windows
+  share one class: shown only after 0.1 s of work, faded (its place kept) otherwise.
+- **A headless capture must PUMP the dispatcher, never block on `Realising`**: the await resumes on the UI thread, so
+  `GetAwaiter().GetResult()` on that thread deadlocks (UiSnapshot `--filter-designer` hung that way first).
+- **The panes resize by their gaps**, the Phased Array tool's arrangement: Specification, Realisers and What Place writes stacked on
+  the left, each its own pane scrolling on its own (selecting a realiser never scrolls the specification), the response right, a 4 px transparent `GridSplitter` in an Auto column/row between them. Each pane clips
+  (`ClipToBounds`) and has a minimum the splitters stop at; the left panes scroll vertically and wrap horizontally.

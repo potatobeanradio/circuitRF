@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.DataDisplay.Controls;
 using CircuitRF.Ui.Filters;
 
@@ -21,7 +22,31 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
         }
         DataContextChanged += (_, _) => Theme();
         ActualThemeVariantChanged += (_, _) => Theme();
+        DataContextChanged += (_, _) => Watch();
+        Closed += (_, _) => { Watch(null); _realiseBar?.Stop(); };
     }
+
+    private FilterDesignerViewModel? _watched;
+    private DelayedBar? _realiseBar;
+
+    /// <summary>The bar beside "Realisers" follows the view model's work, shown only once it has run for a while.</summary>
+    private void Watch() => Watch(DataContext as FilterDesignerViewModel);
+
+    private void Watch(FilterDesignerViewModel? vm)
+    {
+        if (_watched is not null) _watched.PropertyChanged -= OnVmPropertyChanged;
+        _watched = vm;
+        if (vm is not null) vm.PropertyChanged += OnVmPropertyChanged;
+        SyncBar();
+    }
+
+    private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(FilterDesignerViewModel.Working)) SyncBar();
+    }
+
+    private void SyncBar()
+        => (_realiseBar ??= new DelayedBar(RealiseProgressBar, RealiseProgressBar)).Sync(_watched?.Working ?? false);
 
     /// <summary>The Designer over <paramref name="schematicVm"/> (Place's target; none when null), the family of
     /// <paramref name="family"/> preselected.</summary>

@@ -1244,6 +1244,8 @@ public sealed class EditableComponent
         SymbolKind.Filter     => BuiltInSymbols.PrimitivesForFilter(FilterGlyphForm()),
         // brief-paa-5 — the aperture, the beam and the pins, from the resolved lattice, Off and steering.
         SymbolKind.PhasedArray => BuiltInSymbols.PrimitivesForPhasedArray(ArrayGlyph()),
+        // the sector at the instance's Angle, one or two of them by Sides; the pin never moves
+        SymbolKind.MRadial => BuiltInSymbols.PrimitivesForRadialStub(RadialStubGlyph.Of(Parameters, Nominal)),
         // brief-pch-8 — only the pins the channel has
         SymbolKind.PropagationChannel => BuiltInSymbols.PrimitivesForPropagationChannel(PortCount),
         // The model's own terminal names where the file has been read, numbers otherwise. The
@@ -1299,7 +1301,7 @@ public sealed class EditableComponent
     /// other types it delegates to SymbolPortDefs.
     /// </summary>
     /// <summary>brief-paa-5 — the VARs this component's expressions resolve against at the nominal point, for a symbol drawn from its
-    /// resolved parameters (a Phased Antenna Array's). Set by the render and the extraction, per frame; null resolves literals only.</summary>
+    /// resolved parameters (a Phased Antenna Array's, an MRADIAL's). Set by the render and the extraction, per frame; null resolves literals only.</summary>
     public SchematicNominal? Nominal { get; set; }
 
     /// <summary>brief-paa-5 — this Phased Antenna Array's symbol variant, from its parameters resolved in <see cref="Nominal"/>.</summary>
@@ -2052,10 +2054,11 @@ public sealed class SchematicEditModel
         bool IsEndpointConnected(EditableWire _, double wx, double wy) => endpointTest(wx, wy);
 
         // brief-paa-5 — the VARs a Phased Antenna Array's symbol resolves its lattice and steering against, once per render.
-        SchematicNominal? nominal = Components.Any(c => c.Symbol == SymbolKind.PhasedArray) ? SchematicNominal.Of(Components) : null;
+        // An MRADIAL's sector follows its Angle, which may name a VAR, the same way.
+        SchematicNominal? nominal = Components.Any(c => c.Symbol is SymbolKind.PhasedArray or SymbolKind.MRadial) ? SchematicNominal.Of(Components) : null;
         var comps = Components.Select(c =>
         {
-            if (c.Symbol == SymbolKind.PhasedArray) c.Nominal = nominal;
+            if (c.Symbol is SymbolKind.PhasedArray or SymbolKind.MRadial) c.Nominal = nominal;
             // An SnP's port names, from its file's header (a stat per render; the header is read when the file changes).
             if (c.Symbol is SymbolKind.Snp or SymbolKind.Deembed)
                 c.SnpPortLabels = RfCore.TouchstonePortNames.FromFile(

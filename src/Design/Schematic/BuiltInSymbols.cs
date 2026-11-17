@@ -107,7 +107,6 @@ public static class BuiltInSymbols
     private static readonly Symbol _mcurve        = BuildMCurve();
     private static readonly Symbol _mmiter        = BuildMMiter();
     private static readonly Symbol _mgap          = BuildMGap();
-    private static readonly Symbol _mradial       = BuildMRadial();
     private static readonly Symbol _mtee          = BuildMTee();
     private static readonly Symbol _mcross        = BuildMCross();
     private static readonly Symbol _mtaper        = BuildMtaper();
@@ -187,6 +186,7 @@ public static class BuiltInSymbols
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<CircuitRF.Core.Devices.Microstrip.LumpedTopology, Symbol>
         _lumpedCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<PhasedArrayGlyph, Symbol> _phasedArrayCache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<RadialStubGlyph, Symbol> _radialStubCache = new();
     // Tuner-family cache key: (kind, showBias) — per-instance bias-branch variant.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(SymbolKind, bool), Symbol> _tunerCache = new();
     // Match cache key: (form, bandCount) — per-instance glyph variant (match.md §8.4).
@@ -286,7 +286,7 @@ public static class BuiltInSymbols
             case SymbolKind.MCurve:     return _mcurve;
             case SymbolKind.MMiter:     return _mmiter;
             case SymbolKind.MGap:       return _mgap;
-            case SymbolKind.MRadial:    return _mradial;
+            case SymbolKind.MRadial:    return PrimitivesForRadialStub(RadialStubGlyph.Default);
             case SymbolKind.MTee:       return _mtee;
             case SymbolKind.MCross:     return _mcross;
             case SymbolKind.Mtaper:     return _mtaper;
@@ -2709,12 +2709,52 @@ public static class BuiltInSymbols
         L( 150,   0,  200,   0),
     ], SymbolKind.MGap);
 
-    // MRadial — a 60° sector fanning out to the right from a lead on MLIN's left pin, its narrow end the lead's width and
-    // its arc drawn as five points: the glyph says "radial stub" whatever the instance's Angle and Sides.
-    private static Symbol BuildMRadial() => Sym([
-        L(-200,   0, -150,   0),
-        Poly(false, -150,-25,  118,-180,  154,-93,  167,0,  154,93,  118,180,  -150,25),
-    ], SymbolKind.MRadial);
+    // MRadial — a sector drawn at the instance's own Angle, its far edge a true arc (ArcPrimitive), on MLIN's left pin, which never
+    // moves. One sector (Sides = 1): a lead to x = -150, the sector's narrow end there 50 wide, fanning out to the right, its arc
+    // centred on the sector's apex (behind the narrow end, where the two edges meet) and 300 beyond the narrow end along the axis. A
+    // butterfly (Sides = 2): the layout's two sectors back to back, turned so they fan up and down from a waist at the origin and the
+    // lead comes in along their shared narrow end, as a butterfly hangs off a line; 160 each way. Each arc is drawn as two halves, so
+    // neither reaches half a circle and SymbolGeometry.ComputeBb bounds it by the arc itself, not its whole circle. VARIANT on
+    // RadialStubGlyph, cached per variant.
+
+    /// <summary>The MRADIAL symbol of one variant, cached per variant.</summary>
+    public static Symbol PrimitivesForRadialStub(RadialStubGlyph glyph) => _radialStubCache.GetOrAdd(glyph, BuildMRadial);
+
+    private static Symbol BuildMRadial(RadialStubGlyph g)
+    {
+        const double hw = 25;                                   // half the narrow end
+        double half = g.AngleDeg * Math.PI / 360.0;
+        double back = g.AngleDeg >= 180 ? 0 : hw / Math.Tan(half);   // the apex, this far behind the narrow end
+        var prims = new List<SymbolPrimitive>();
+
+        // One sector about axis angle `axisDeg` (degrees clockwise from +x, y down), its narrow end centred on (nx, ny).
+        void Sector(double nx, double ny, double axisDeg, double length, bool narrowEnd)
+        {
+            double ax = Math.Cos(axisDeg * Math.PI / 180), ay = Math.Sin(axisDeg * Math.PI / 180);
+            double cx = nx - ax * back, cy = ny - ay * back, r = back + length;
+            double a1 = axisDeg * Math.PI / 180 - half, a2 = axisDeg * Math.PI / 180 + half;
+            // the narrow end's two corners, across the axis
+            double c1x = nx + ay * hw, c1y = ny - ax * hw, c2x = nx - ay * hw, c2y = ny + ax * hw;
+            prims.Add(PLine(c1x, c1y, cx + r * Math.Cos(a1), cy + r * Math.Sin(a1)));
+            prims.Add(PLine(c2x, c2y, cx + r * Math.Cos(a2), cy + r * Math.Sin(a2)));
+            if (narrowEnd) prims.Add(L(c1x, c1y, c2x, c2y));
+            prims.Add(A(cx, cy, r, axisDeg - g.AngleDeg / 2.0, g.AngleDeg / 2.0));
+            prims.Add(A(cx, cy, r, axisDeg, g.AngleDeg / 2.0));
+        }
+
+        if (g.Butterfly)
+        {
+            prims.Add(L(-200, 0, -hw, 0));
+            Sector(0, 0, -90, 160, narrowEnd: false);           // up
+            Sector(0, 0, 90, 160, narrowEnd: false);            // down
+        }
+        else
+        {
+            prims.Add(L(-200, 0, -150, 0));
+            Sector(-150, 0, 0, 300, narrowEnd: true);
+        }
+        return Sym(prims, SymbolKind.MRadial);
+    }
 
     // Through line (pins 1/2, left/right) + branch (pin 3, DOWN — +Y is down in this codebase) —
     // R-pc-3's own "pin 1 origin, through +X to pin 2, branch +Y to pin 3" convention. The body is

@@ -32585,3 +32585,17 @@ now refused only for its Impedance boundary and its TE mode type.
   unit-bearing one is bare, and its value is Frf's Hz.
 - **`ChainBudgetExampleTests` compares a shipped bench with Transfer's by the netlist it runs as** (`SchematicCircuit.CnlTextOf`),
   not by its file, so the examples' drawings can be tidied by hand; the displays are still compared as files.
+
+## MRADIAL's dynamic symbol, and arc bounds (2026-11-16)
+
+- **MRADIAL draws its sector at the instance's Angle, its far edge an `ArcPrimitive`; Sides = 2 draws the butterfly.** The variant is
+  `RadialStubGlyph` (angle rounded to 1°, butterfly or not), cached per variant in `BuiltInSymbols` as `PhasedArrayGlyph` is, and
+  resolved against the schematic's VARs (`EditableComponent.Nominal`, set in `BuildRenderModel` for MRADIAL too). Angle resolves in
+  radians (a unit-bearing `60 deg` is π/3), which is how `ComponentModelFactory` reads it. The pin stays at (-200, 0) for every
+  variant. The butterfly is the layout's two back-to-back sectors turned so they fan up and down with the lead along their shared
+  narrow end, as a butterfly hangs off a line.
+- **`SymbolGeometry.ComputeBb` bounds an arc of LESS than half a circle by the arc itself** (its ends and any of the circle's four
+  extremes it passes). The full-circle box it used for every arc made a sector's box several times the glyph: a 10° sector's arc is
+  centred ~240 units left of the pin. Arcs of 180° or more keep the full-circle box — the inductor coils (exactly 180°) and the
+  circulator arrow, whose saved label offsets were measured against it. MRADIAL splits each arc into two halves so neither reaches
+  180°. The only existing glyph the change touches is the Propagation Channel's wave arcs, by about 5 units on its left.

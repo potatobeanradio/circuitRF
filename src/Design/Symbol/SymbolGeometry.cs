@@ -783,8 +783,22 @@ public static class SymbolGeometry
                     ExpandRect(e.Cx, e.Cy, e.Rx, e.Ry);
                     break;
 
+                case ArcPrimitive a when Math.Abs(a.SweepDeg) < 180.0:
+                {
+                    // Less than half a circle: bounded by the arc itself — its two ends and any of the circle's four extremes it
+                    // passes through. A sector stub's arc (MRADIAL) is centred far behind the glyph, and its whole circle would
+                    // be a box several times the symbol's size.
+                    double s0 = a.SweepDeg >= 0 ? a.StartDeg : a.StartDeg + a.SweepDeg, sw = Math.Abs(a.SweepDeg);
+                    void At(double deg) => Expand(a.Cx + a.R * Math.Cos(deg * Math.PI / 180.0), a.Cy + a.R * Math.Sin(deg * Math.PI / 180.0));
+                    At(s0);
+                    At(s0 + sw);
+                    for (double q = Math.Ceiling(s0 / 90.0) * 90.0; q < s0 + sw; q += 90.0) At(q);
+                    break;
+                }
+
                 case ArcPrimitive a:
-                    // Conservative: full circle bounding box.
+                    // Half a circle or more (an inductor's coil, a circulator's arrow): the full circle's box, as every saved
+                    // label offset against these glyphs was measured from.
                     ExpandRect(a.Cx, a.Cy, a.R, a.R);
                     break;
 
