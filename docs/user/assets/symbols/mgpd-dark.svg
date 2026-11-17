@@ -8,16 +8,16 @@
 			2
 	</text><text fill="#9684FA" transform="translate(125.25 116.25)" font-size="5" font-family="IBM Plex Sans" x="-1.5" y="1.88">
 			3
-	</text><text fill="#9684FA" transform="translate(161.25 31.15)" font-size="4" font-family="IBM Plex Sans" x="-2.5, 0.5" y="1.5">
+	</text><text fill="#9684FA" transform="translate(161.25 31.15)" font-size="4" font-family="IBM Plex Sans" x="-2.48, 0.08" y="1.5">
 			R2
-	</text><text fill="#9684FA" transform="translate(161.25 118.85)" font-size="4" font-family="IBM Plex Sans" x="-2.5, 0.5" y="1.5">
+	</text><text fill="#9684FA" transform="translate(161.25 118.85)" font-size="4" font-family="IBM Plex Sans" x="-2.48, 0.08" y="1.5">
 			R3
-	</text><text fill="#9684FA" transform="translate(98.25 53.65)" font-size="4" font-family="IBM Plex Sans" x="-3, -1, 1" y="1.5">
+	</text><text fill="#9684FA" transform="translate(98.27 53.65)" font-size="4" font-family="IBM Plex Sans" x="-2.98, -0.948, 0.584" y="1.5">
 			λ/4
-	</text><text fill="#9684FA" transform="translate(98.25 96.35)" font-size="4" font-family="IBM Plex Sans" x="-3, -1, 1" y="1.5">
+	</text><text fill="#9684FA" transform="translate(98.27 96.35)" font-size="4" font-family="IBM Plex Sans" x="-2.98, -0.948, 0.584" y="1.5">
 			λ/4
-	</text><text fill="#9684FA" transform="translate(151.75 75)" font-size="4" font-family="IBM Plex Sans" x="-3, -1, 1" y="1.5">
+	</text><text fill="#9684FA" transform="translate(151.73 75)" font-size="4" font-family="IBM Plex Sans" x="-2.98, -0.948, 0.584" y="1.5">
 			λ/2
-	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="67" y="72" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="117" y="22" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="117" y="122" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="167" y="34.5" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="167" y="109.5" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="98.5, 110.5, 121.5, 131.5" y="172.32">
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="67" y="72" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="117" y="22" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="117" y="122" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="167" y="34.5" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="167" y="109.5" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="98.56, 110.81, 121.49, 131.11" y="172.32">
 			MGPD
 	</text></svg>

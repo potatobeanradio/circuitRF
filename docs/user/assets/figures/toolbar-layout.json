@@ -115,7 +115,7 @@
       "Index": 12,
       "Slot": 12,
       "Id": "",
-      "Tooltip": "Port \u2014 click a conductor end to place an EM port (auto-numbered)",
+      "Tooltip": "Port (P) \u2014 click a conductor end to place an EM port (auto-numbered)",
       "Icon": "TargetVariant",
       "Command": "RelayCommand\u00601",
       "Kind": "button"
@@ -295,8 +295,8 @@
       "Index": 29,
       "Slot": 40,
       "Id": "",
-      "Tooltip": "Impedance Analysis \u2014 every trace against a target Z0 and its return path, in the Impedance panel",
-      "Icon": "none",
+      "Tooltip": "Review Layout \u2014 the places a reviewer would want to look at, in the Review panel",
+      "Icon": "ClipboardTickOutline",
       "Command": null,
       "Kind": "button"
     },
@@ -304,7 +304,7 @@
       "Index": 30,
       "Slot": 41,
       "Id": "",
-      "Tooltip": "EM Setup for this layout \u2014 opens it, creating it the first time",
+      "Tooltip": "Impedance Analysis \u2014 every trace against a target Z0 and its return path, in the Impedance panel",
       "Icon": "none",
       "Command": null,
       "Kind": "button"
@@ -313,14 +313,23 @@
       "Index": 31,
       "Slot": 42,
       "Id": "",
+      "Tooltip": "EM Setup for this layout \u2014 opens it, creating it the first time",
+      "Icon": "none",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 32,
+      "Slot": 43,
+      "Id": "",
       "Tooltip": "Show EM cross-section mesh",
       "Icon": "GridLarge",
       "Command": null,
       "Kind": "toggle"
     },
     {
-      "Index": 32,
-      "Slot": 43,
+      "Index": 33,
+      "Slot": 44,
       "Id": "",
       "Tooltip": "Show full-wave surface mesh",
       "Icon": "Grid",
@@ -328,44 +337,26 @@
       "Kind": "toggle"
     },
     {
-      "Index": 0,
-      "Slot": 44,
-      "Id": "",
-      "Tooltip": "",
-      "Icon": "separator",
-      "Command": null,
-      "Kind": "separator"
-    },
-    {
-      "Index": 33,
+      "Index": 34,
       "Slot": 45,
       "Id": "",
-      "Tooltip": "Export GDSII\u2026",
-      "Icon": "IosShare",
+      "Tooltip": "Show the solver\u0027s geometry: what the open EM setup\u0027s run hands the solver, over the layout dimmed",
+      "Icon": "LayersTriple",
       "Command": null,
-      "Kind": "button"
-    },
-    {
-      "Index": 34,
-      "Slot": 46,
-      "Id": "",
-      "Tooltip": "Export DXF\u2026",
-      "Icon": "FileExportOutline",
-      "Command": null,
-      "Kind": "button"
+      "Kind": "toggle"
     },
     {
       "Index": 35,
-      "Slot": 47,
+      "Slot": 46,
       "Id": "",
-      "Tooltip": "Export Gerber\u2026",
-      "Icon": "FileChartOutline",
+      "Tooltip": "New 3D View from Layout: a 3D view (.c3d) in this cell holding one instance of this layout, with a copy of every 3D setup naming it",
+      "Icon": "ViewInAugmentedReality",
       "Command": null,
       "Kind": "button"
     },
     {
       "Index": 0,
-      "Slot": 48,
+      "Slot": 47,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -374,7 +365,43 @@
     },
     {
       "Index": 36,
+      "Slot": 48,
+      "Id": "",
+      "Tooltip": "Export GDSII\u2026",
+      "Icon": "IosShare",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 37,
       "Slot": 49,
+      "Id": "",
+      "Tooltip": "Export DXF\u2026",
+      "Icon": "FileExportOutline",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 38,
+      "Slot": 50,
+      "Id": "",
+      "Tooltip": "Export Gerber\u2026",
+      "Icon": "FileChartOutline",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 51,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 39,
+      "Slot": 52,
       "Id": "",
       "Tooltip": "Layer:",
       "Icon": "text",
@@ -383,7 +410,7 @@
     },
     {
       "Index": 0,
-      "Slot": 50,
+      "Slot": 53,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",

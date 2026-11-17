@@ -96,11 +96,11 @@
 												⟶
 										</text></g><use xlink:href="#chain-budget-dark_d14" fill="#171717" transform="translate(387 198)" /><use xlink:href="#chain-budget-dark_d14" fill="none" stroke="#0078D7" stroke-width="2" stroke-miterlimit="10" transform="translate(387 198)" /><clipPath id="chain-budget-dark_cl_83"><rect x="452" y="203" width="28" height="15" /></clipPath><g clip-path="url(#chain-budget-dark_cl_83)"><text fill="white" transform="translate(452.16 203)" font-size="12" font-weight="600" font-family="Inter" x="0, 8.92, 19.8" y="11.63">
 												CMB
-										</text></g><clipPath id="chain-budget-dark_cl_84"><rect x="432" y="219" width="66" height="53" /></clipPath><g clip-path="url(#chain-budget-dark_cl_84)"><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(433 219)" d="M22.27 33.62L22.27 6.38Q22.27 6.28 22.29 6.19Q22.31 6.1 22.35 6.01Q22.38 5.92 22.44 5.84Q22.49 5.76 22.56 5.69Q22.62 5.63 22.7 5.57Q22.78 5.52 22.87 5.48Q22.96 5.45 23.06 5.43Q23.15 5.41 23.24 5.41L40.76 5.41Q40.85 5.41 40.95 5.43Q41.04 5.45 41.13 5.48Q41.22 5.52 41.3 5.57Q41.38 5.63 41.44 5.69Q41.51 5.76 41.56 5.84Q41.62 5.92 41.65 6.01Q41.69 6.1 41.71 6.19Q41.73 6.28 41.73 6.38L41.73 33.62Q41.73 33.72 41.71 33.81Q41.69 33.9 41.65 33.99Q41.62 34.08 41.56 34.16Q41.51 34.24 41.44 34.31Q41.38 34.37 41.3 34.43Q41.22 34.48 41.13 34.52Q41.04 34.55 40.95 34.57Q40.85 34.59 40.76 34.59L23.24 34.59Q23.15 34.59 23.06 34.57Q22.96 34.55 22.87 34.52Q22.78 34.48 22.7 34.43Q22.62 34.37 22.56 34.31Q22.49 34.24 22.44 34.16Q22.38 34.08 22.35 33.99Q22.31 33.9 22.29 33.81Q22.27 33.72 22.27 33.62Z" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(433 219)" d="M36.86 20L56.32 20" /><ellipse fill="#C8C8C8" transform="translate(433 219)" cx="36.86" cy="20" rx="0.8107" ry="0.8107" /><text fill="#C8C8C8" transform="translate(483.65 237.05)" font-size="1.46" font-family="IBM Plex Sans" x="-0.5" y="0.5472">
+										</text></g><clipPath id="chain-budget-dark_cl_84"><rect x="432" y="219" width="66" height="53" /></clipPath><g clip-path="url(#chain-budget-dark_cl_84)"><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(433 219)" d="M22.27 33.62L22.27 6.38Q22.27 6.28 22.29 6.19Q22.31 6.1 22.35 6.01Q22.38 5.92 22.44 5.84Q22.49 5.76 22.56 5.69Q22.62 5.63 22.7 5.57Q22.78 5.52 22.87 5.48Q22.96 5.45 23.06 5.43Q23.15 5.41 23.24 5.41L40.76 5.41Q40.85 5.41 40.95 5.43Q41.04 5.45 41.13 5.48Q41.22 5.52 41.3 5.57Q41.38 5.63 41.44 5.69Q41.51 5.76 41.56 5.84Q41.62 5.92 41.65 6.01Q41.69 6.1 41.71 6.19Q41.73 6.28 41.73 6.38L41.73 33.62Q41.73 33.72 41.71 33.81Q41.69 33.9 41.65 33.99Q41.62 34.08 41.56 34.16Q41.51 34.24 41.44 34.31Q41.38 34.37 41.3 34.43Q41.22 34.48 41.13 34.52Q41.04 34.55 40.95 34.57Q40.85 34.59 40.76 34.59L23.24 34.59Q23.15 34.59 23.06 34.57Q22.96 34.55 22.87 34.52Q22.78 34.48 22.7 34.43Q22.62 34.37 22.56 34.31Q22.49 34.24 22.44 34.16Q22.38 34.08 22.35 33.99Q22.31 33.9 22.29 33.81Q22.27 33.72 22.27 33.62Z" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(433 219)" d="M36.86 20L56.32 20" /><ellipse fill="#C8C8C8" transform="translate(433 219)" cx="36.86" cy="20" rx="0.8107" ry="0.8107" /><text fill="#C8C8C8" transform="translate(483.65 237.05)" font-size="1.46" font-family="IBM Plex Sans" x="-0.4239" y="0.5472">
 												S
-										</text><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(433 219)" d="M7.68 11.89L22.27 11.89" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(433 219)" d="M22.27 11.89L36.86 20" /><text fill="#C8C8C8" transform="translate(446.36 228.95)" font-size="1.46" font-family="IBM Plex Sans" x="-0.5" y="0.5472">
+										</text><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(433 219)" d="M7.68 11.89L22.27 11.89" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(433 219)" d="M22.27 11.89L36.86 20" /><text fill="#C8C8C8" transform="translate(446.36 228.95)" font-size="1.46" font-family="IBM Plex Sans" x="-0.4378" y="0.5472">
 												1
-										</text><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(433 219)" d="M7.68 28.11L22.27 28.11" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(433 219)" d="M22.27 28.11L36.86 20" /><text fill="#C8C8C8" transform="translate(446.36 245.16)" font-size="1.46" font-family="IBM Plex Sans" x="-0.5" y="0.5472">
+										</text><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(433 219)" d="M7.68 28.11L22.27 28.11" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(433 219)" d="M22.27 28.11L36.86 20" /><text fill="#C8C8C8" transform="translate(446.36 245.16)" font-size="1.46" font-family="IBM Plex Sans" x="-0.4378" y="0.5472">
 												2
 										</text><clipPath id="chain-budget-dark_cl_85"><rect x="457" y="259" width="15" height="13" /></clipPath><g clip-path="url(#chain-budget-dark_cl_85)"><text fill="white" transform="translate(457.24 259)" font-size="10.5" font-family="Inter" x="0, 6.74, 9.63" y="10.17">
 													4:1
@@ -138,11 +138,11 @@
 												⟶
 										</text></g><use xlink:href="#chain-budget-dark_d24" fill="#171717" transform="translate(739 198)" /><use xlink:href="#chain-budget-dark_d24" fill="none" stroke="gray" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.3333" transform="translate(739 198)" /><clipPath id="chain-budget-dark_cl_95"><rect x="792" y="203" width="23" height="15" /></clipPath><g clip-path="url(#chain-budget-dark_cl_95)"><text fill="white" transform="translate(792.27 203)" font-size="12" font-weight="600" font-family="Inter" x="0, 10.88, 14.17" y="11.63">
 												MIX
-										</text></g><clipPath id="chain-budget-dark_cl_96"><rect x="771" y="219" width="66" height="40" /></clipPath><g clip-path="url(#chain-budget-dark_cl_96)"><ellipse fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(772 219)" cx="32" cy="13.49" rx="8.69" ry="8.69" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(772 219)" d="M25.85 7.33L38.15 19.64" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(772 219)" d="M25.85 19.64L38.15 7.33" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(772 219)" d="M10.29 13.49L23.31 13.49" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(772 219)" d="M40.69 13.49L53.71 13.49" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(772 219)" d="M32 35.2L32 22.17" /><text fill="#C8C8C8" transform="translate(788.44 228.51)" font-size="2.17" font-family="IBM Plex Sans" x="-1, 0" y="0.8143">
+										</text></g><clipPath id="chain-budget-dark_cl_96"><rect x="771" y="219" width="66" height="40" /></clipPath><g clip-path="url(#chain-budget-dark_cl_96)"><ellipse fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(772 219)" cx="32" cy="13.49" rx="8.69" ry="8.69" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(772 219)" d="M25.85 7.33L38.15 19.64" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(772 219)" d="M25.85 19.64L38.15 7.33" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(772 219)" d="M10.29 13.49L23.31 13.49" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(772 219)" d="M40.69 13.49L53.71 13.49" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(772 219)" d="M32 35.2L32 22.17" /><text fill="#C8C8C8" transform="translate(788.44 228.51)" font-size="2.17" font-family="IBM Plex Sans" x="-1.3, 0.08794" y="0.8143">
 												RF
-										</text><text fill="#C8C8C8" transform="translate(819.56 228.51)" font-size="2.17" font-family="IBM Plex Sans" x="-1, 0" y="0.8143">
+										</text><text fill="#C8C8C8" transform="translate(819.56 228.51)" font-size="2.17" font-family="IBM Plex Sans" x="-1.04, -0.1726" y="0.8143">
 												IF
-										</text><text fill="#C8C8C8" transform="translate(809.43 249.5)" font-size="2.17" font-family="IBM Plex Sans" x="-1, 0" y="0.8143">
+										</text><text fill="#C8C8C8" transform="translate(809.43 249.5)" font-size="2.17" font-family="IBM Plex Sans" x="-1.31, -0.2247" y="0.8143">
 												LO
 										</text></g><clipPath id="chain-budget-dark_cl_97"><rect x="770" y="260" width="67" height="13" /></clipPath><g clip-path="url(#chain-budget-dark_cl_97)"><text fill="white" fill-opacity="0.8" transform="translate(770.17 260)" font-size="10.5" font-family="Inter" x="0, 5.61, 13.6, 16.56, 22.91, 27.79, 34.35, 40.91, 43.86, 53.2, 60.97" y="10.17">
 												LO 2100 MHz
@@ -338,220 +338,220 @@
 									Levels
 							</text></g></g><clipPath id="chain-budget-dark_cl_246"><rect x="132" y="628" width="37" height="28" /></clipPath><g clip-path="url(#chain-budget-dark_cl_246)"><clipPath id="chain-budget-dark_cl_247"><rect x="138" y="634" width="25" height="16" /></clipPath><g clip-path="url(#chain-budget-dark_cl_247)"><text fill="white" fill-opacity="0.6" transform="translate(138 634)" font-size="13" font-weight="300" font-family="Inter" x="0, 7.31, 10.33, 17.86" y="12.59">
 									Link
-							</text></g></g><clipPath id="chain-budget-dark_cl_248"><rect x="15" y="658" width="1270" height="220" /></clipPath><g clip-path="url(#chain-budget-dark_cl_248)"><clipPath id="chain-budget-dark_cl_249"><rect x="15" y="662" width="1270" height="216" /></clipPath><g clip-path="url(#chain-budget-dark_cl_249)"><rect fill="#1E1E1E" transform="translate(15 662)" width="1270" height="216" /><rect fill="#D2D2D2" fill-opacity="0.06667" transform="translate(15 662)" y="38.6" width="1259" height="16.2" /><rect fill="#D2D2D2" fill-opacity="0.06667" transform="translate(15 662)" y="71" width="1259" height="16.2" /><rect fill="#D2D2D2" fill-opacity="0.06667" transform="translate(15 662)" y="103.4" width="1259" height="16.2" /><rect fill="#D2D2D2" fill-opacity="0.06667" transform="translate(15 662)" y="135.8" width="1259" height="16.2" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M115 0L115 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M219 0L219 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M323 0L323 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M427 0L427 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M531 0L531 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M635 0L635 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M739 0L739 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M843 0L843 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M947 0L947 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M1051 0L1051 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M1155 0L1155 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M1259 0L1259 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M0 22.4L1259 22.4" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M0 38.6L1259 38.6" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M0 54.8L1259 54.8" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M0 71L1259 71" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M0 87.2L1259 87.2" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M0 103.4L1259 103.4" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M0 119.6L1259 119.6" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M0 135.8L1259 135.8" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M0 152L1259 152" /><rect fill="#D2D2D2" fill-opacity="0.1176" transform="translate(15 662)" width="1259" height="20.4" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.6" transform="translate(15 662)" d="M0 20.4L1259 20.4" /><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="5, 11, 16, 23, 30" y="15.3">
+							</text></g></g><clipPath id="chain-budget-dark_cl_248"><rect x="15" y="658" width="1270" height="220" /></clipPath><g clip-path="url(#chain-budget-dark_cl_248)"><clipPath id="chain-budget-dark_cl_249"><rect x="15" y="662" width="1270" height="216" /></clipPath><g clip-path="url(#chain-budget-dark_cl_249)"><rect fill="#1E1E1E" transform="translate(15 662)" width="1270" height="216" /><rect fill="#D2D2D2" fill-opacity="0.06667" transform="translate(15 662)" y="38.6" width="1259" height="16.2" /><rect fill="#D2D2D2" fill-opacity="0.06667" transform="translate(15 662)" y="71" width="1259" height="16.2" /><rect fill="#D2D2D2" fill-opacity="0.06667" transform="translate(15 662)" y="103.4" width="1259" height="16.2" /><rect fill="#D2D2D2" fill-opacity="0.06667" transform="translate(15 662)" y="135.8" width="1259" height="16.2" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M115 0L115 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M219 0L219 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M323 0L323 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M427 0L427 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M531 0L531 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M635 0L635 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M739 0L739 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M843 0L843 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M947 0L947 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M1051 0L1051 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M1155 0L1155 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M1259 0L1259 216" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M0 22.4L1259 22.4" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M0 38.6L1259 38.6" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M0 54.8L1259 54.8" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M0 71L1259 71" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M0 87.2L1259 87.2" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M0 103.4L1259 103.4" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M0 119.6L1259 119.6" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M0 135.8L1259 135.8" /><path fill="none" stroke="#646464" stroke-width="0.5" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(15 662)" d="M0 152L1259 152" /><rect fill="#D2D2D2" fill-opacity="0.1176" transform="translate(15 662)" width="1259" height="20.4" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.6" transform="translate(15 662)" d="M0 20.4L1259 20.4" /><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="5, 11.05, 15.64, 22.47, 29.1" y="15.3">
 											stage
-									</text><path fill="#D2D2D2" transform="translate(15 662)" d="M45.1 6.6L41.5 13.8L48.7 13.8L45.1 6.6Z" /><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="120, 129, 133, 136, 143" y="15.3">
+									</text><path fill="#D2D2D2" transform="translate(15 662)" d="M43.69 6.6L40.09 13.8L47.29 13.8L43.69 6.6Z" /><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="120, 128.63, 132.35, 135.18, 142.48" y="15.3">
 											G, dB
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="224, 233, 240, 244, 247, 254" y="15.3">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="224, 232.69, 239.71, 243.43, 246.26, 253.56" y="15.3">
 											NF, dB
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="328, 333, 338, 346, 353, 357, 360, 367, 375" y="15.3">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="328, 333.18, 338.37, 346.24, 353.44, 357.16, 359.99, 367.29, 375.29" y="15.3">
 											IIP3, dBm
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="432, 441, 446, 454, 461, 465, 468, 475, 483" y="15.3">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="432, 440.57, 445.75, 453.62, 460.82, 464.54, 467.38, 474.67, 482.68" y="15.3">
 											OIP3, dBm
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="536, 541, 549, 556, 563, 571, 575, 578, 585, 593" y="15.3">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="536, 541.18, 549.06, 556.26, 563.55, 571.56, 575.28, 578.11, 585.4, 593.41" y="15.3">
 											IP1dB, dBm
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="640, 649, 657, 664, 671, 679, 683, 686, 693, 701" y="15.3">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="640, 648.57, 656.44, 663.64, 670.94, 678.94, 682.66, 685.49, 692.79, 700.79" y="15.3">
 											OP1dB, dBm
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="744, 752, 759, 766, 771, 775, 778, 785, 793" y="15.3">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="744, 751.87, 758.64, 765.79, 770.39, 774.11, 776.94, 784.24, 792.24" y="15.3">
 											Pout, dBm
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="848, 855, 864, 872, 876, 879, 886" y="15.3">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="848, 855.49, 864.18, 872.26, 875.98, 878.82, 886.11" y="15.3">
 											SNR, dB
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="952, 959, 966, 973, 976, 982, 989, 996, 1001, 1008, 1012, 1015" y="15.3">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="952, 959.02, 966.22, 973.42, 976.25, 982.3, 989.45, 996.28, 1001.13, 1007.87, 1011.59, 1014.42" y="15.3">
 											F−1 share, %
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="1056, 1065, 1072, 1075, 1079, 1086, 1090, 1095, 1099, 1102, 1109" y="15.3">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="1056, 1064.69, 1071.71, 1074.54, 1078.18, 1084.92, 1089.25, 1093.85, 1097.57, 1100.4, 1107.7" y="15.3">
 											NF left, dB
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="1160, 1168, 1175, 1182, 1190, 1193, 1199, 1206, 1213, 1218, 1225, 1229, 1232" y="15.3">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-weight="600" font-family="IBM Plex Sans" x="1160, 1167.87, 1175.07, 1182.37, 1190.37, 1193.2, 1199.25, 1206.4, 1213.23, 1218.08, 1224.82, 1228.54, 1231.38" y="15.3">
 											P1dB share, %
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="5, 11, 19" y="35.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="5, 11.01, 19.5" y="35.36">
 											LNA
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="120, 127, 134, 137, 144" y="35.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="120, 127.2, 134.4, 137.66, 144.86" y="35.36">
 											18.00
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="224, 231, 234, 241" y="35.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="224, 231.2, 234.46, 241.66" y="35.36">
 											1.20
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="328, 333, 340, 343, 350" y="35.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="328, 332.79, 339.99, 343.25, 350.45" y="35.36">
 											-8.00
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="432, 439, 446, 449, 456" y="35.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="432, 439.2, 446.4, 449.66, 456.86" y="35.36">
 											10.00
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="536, 541, 548, 555, 558, 565" y="35.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="536, 540.79, 547.99, 555.19, 558.45, 565.65" y="35.36">
 											-16.96
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="640, 647, 650, 657" y="35.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="640, 647.2, 650.46, 657.66" y="35.36">
 											0.04
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="744, 749, 756, 763, 766, 773" y="35.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="744, 748.79, 755.99, 763.19, 766.45, 773.65" y="35.36">
 											-62.00
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="848, 855, 862, 865, 872" y="35.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="848, 855.2, 862.4, 865.66, 872.86" y="35.36">
 											26.24
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="952, 959, 966, 969, 976" y="35.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="952, 959.2, 966.4, 969.66, 976.86" y="35.36">
 											20.32
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1056, 1063, 1070, 1073, 1080" y="35.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1056, 1063.2, 1070.4, 1073.66, 1080.86" y="35.36">
 											13.53
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1160, 1167, 1174, 1177, 1184" y="35.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1160, 1167.2, 1174.4, 1177.66, 1184.86" y="35.36">
 											39.77
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="5, 12" y="51.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="5, 12.27" y="51.56">
 											PS
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="120, 127, 134, 137, 144" y="51.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="120, 127.2, 134.4, 137.66, 144.86" y="51.56">
 											13.00
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="224, 231, 234, 241" y="51.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="224, 231.2, 234.46, 241.66" y="51.56">
 											1.31
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="328, 333, 340, 343, 350" y="51.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="328, 332.79, 339.99, 343.25, 350.45" y="51.56">
 											-9.19
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="432, 439, 442, 449" y="51.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="432, 439.2, 442.46, 449.66" y="51.56">
 											3.81
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="536, 541, 548, 555, 558, 565" y="51.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="536, 540.79, 547.99, 555.19, 558.45, 565.65" y="51.56">
 											-18.16
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="640, 645, 652, 655, 662" y="51.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="640, 644.79, 651.99, 655.25, 662.45" y="51.56">
 											-6.16
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="744, 749, 756, 763, 766, 773" y="51.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="744, 748.79, 755.99, 763.19, 766.45, 773.65" y="51.56">
 											-67.00
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="848, 855, 862, 865, 872" y="51.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="848, 855.2, 862.4, 865.66, 872.86" y="51.56">
 											26.13
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="952, 959, 962, 969" y="51.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="952, 959.2, 962.46, 969.66" y="51.56">
 											2.19
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1056, 1063, 1066, 1073" y="51.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1056, 1063.2, 1066.46, 1073.66" y="51.56">
 											9.02
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1160, 1167, 1174, 1177, 1184" y="51.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1160, 1167.2, 1174.4, 1177.66, 1184.86" y="51.56">
 											12.58
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="5, 12, 22" y="67.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="5, 12.45, 22.2" y="67.76">
 											CMB
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="120, 127, 134, 137, 144" y="67.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="120, 127.2, 134.4, 137.66, 144.86" y="67.76">
 											18.52
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="224, 231, 234, 241" y="67.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="224, 231.2, 234.46, 241.66" y="67.76">
 											1.33
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="328, 333, 340, 343, 350" y="67.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="328, 332.79, 339.99, 343.25, 350.45" y="67.76">
 											-9.19
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="432, 439, 442, 449" y="67.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="432, 439.2, 442.46, 449.66" y="67.76">
 											9.33
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="536, 541, 548, 555, 558, 565" y="67.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="536, 540.79, 547.99, 555.19, 558.45, 565.65" y="67.76">
 											-18.16
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="640, 645, 652, 655, 662" y="67.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="640, 644.79, 651.99, 655.25, 662.45" y="67.76">
 											-0.64
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="744, 749, 756, 763, 766, 773" y="67.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="744, 748.79, 755.99, 763.19, 766.45, 773.65" y="67.76">
 											-61.48
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="848, 855, 862, 865, 872" y="67.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="848, 855.2, 862.4, 865.66, 872.86" y="67.76">
 											32.13
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="952, 959, 962, 969" y="67.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="952, 959.2, 962.46, 969.66" y="67.76">
 											0.39
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1056, 1063, 1066, 1073" y="67.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1056, 1063.2, 1066.46, 1073.66" y="67.76">
 											8.61
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1160, 1167, 1170, 1177" y="67.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1160, 1167.2, 1170.46, 1177.66" y="67.76">
 											0.00
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="5, 13, 20, 28, 35" y="83.96">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="5, 12.68, 19.39, 27.22, 34.5" y="83.96">
 											RFBPF
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="120, 127, 134, 137, 144" y="83.96">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="120, 127.2, 134.4, 137.66, 144.86" y="83.96">
 											17.02
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="224, 231, 234, 241" y="83.96">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="224, 231.2, 234.46, 241.66" y="83.96">
 											1.40
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="328, 333, 340, 343, 350" y="83.96">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="328, 332.79, 339.99, 343.25, 350.45" y="83.96">
 											-9.19
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="432, 439, 442, 449" y="83.96">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="432, 439.2, 442.46, 449.66" y="83.96">
 											7.83
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="536, 541, 548, 555, 558, 565" y="83.96">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="536, 540.79, 547.99, 555.19, 558.45, 565.65" y="83.96">
 											-18.16
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="640, 645, 652, 655, 662" y="83.96">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="640, 644.79, 651.99, 655.25, 662.45" y="83.96">
 											-2.14
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="744, 749, 756, 763, 766, 773" y="83.96">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="744, 748.79, 755.99, 763.19, 766.45, 773.65" y="83.96">
 											-62.98
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="848, 855, 862, 865, 872" y="83.96">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="848, 855.2, 862.4, 865.66, 872.86" y="83.96">
 											32.06
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="952, 959, 962, 969" y="83.96">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="952, 959.2, 962.46, 969.66" y="83.96">
 											1.48
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1056, 1063, 1066, 1073" y="83.96">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1056, 1063.2, 1066.46, 1073.66" y="83.96">
 											7.41
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1160, 1167, 1170, 1177" y="83.96">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1160, 1167.2, 1170.46, 1177.66" y="83.96">
 											0.00
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="5, 15, 20" y="100.16">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="5, 14.74, 19.54" y="100.16">
 											MIX
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="120, 127, 134, 137, 144" y="100.16">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="120, 127.2, 134.4, 137.66, 144.86" y="100.16">
 											10.02
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="224, 231, 234, 241" y="100.16">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="224, 231.2, 234.46, 241.66" y="100.16">
 											2.31
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="328, 333, 340, 347, 350, 357" y="100.16">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="328, 332.79, 339.99, 347.19, 350.45, 357.65" y="100.16">
 											-11.25
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="432, 437, 444, 447, 454" y="100.16">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="432, 436.79, 443.99, 447.25, 454.45" y="100.16">
 											-1.23
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="536, 541, 548, 555, 558, 565" y="100.16">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="536, 540.79, 547.99, 555.19, 558.45, 565.65" y="100.16">
 											-20.21
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="640, 645, 652, 659, 662, 669" y="100.16">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="640, 644.79, 651.99, 659.19, 662.45, 669.65" y="100.16">
 											-11.19
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="744, 749, 756, 763, 766, 773" y="100.16">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="744, 748.79, 755.99, 763.19, 766.45, 773.65" y="100.16">
 											-69.98
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="848, 855, 862, 865, 872" y="100.16">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="848, 855.2, 862.4, 865.66, 872.86" y="100.16">
 											31.16
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="952, 959, 966, 969, 976" y="100.16">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="952, 959.2, 966.4, 969.66, 976.86" y="100.16">
 											20.35
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1056, 1063, 1066, 1073" y="100.16">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1056, 1063.2, 1066.46, 1073.66" y="100.16">
 											3.23
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1160, 1167, 1174, 1177, 1184" y="100.16">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1160, 1167.2, 1174.4, 1177.66, 1184.86" y="100.16">
 											31.74
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="5, 10, 17, 25, 32" y="116.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="5, 9.8, 16.51, 24.34, 31.62" y="116.36">
 											IFBPF
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="120, 127, 130, 137" y="116.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="120, 127.2, 130.46, 137.66" y="116.36">
 											9.02
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="224, 231, 234, 241" y="116.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="224, 231.2, 234.46, 241.66" y="116.36">
 											2.56
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="328, 333, 340, 347, 350, 357" y="116.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="328, 332.79, 339.99, 347.19, 350.45, 357.65" y="116.36">
 											-11.25
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="432, 437, 444, 447, 454" y="116.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="432, 436.79, 443.99, 447.25, 454.45" y="116.36">
 											-2.23
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="536, 541, 548, 555, 558, 565" y="116.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="536, 540.79, 547.99, 555.19, 558.45, 565.65" y="116.36">
 											-20.21
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="640, 645, 652, 659, 662, 669" y="116.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="640, 644.79, 651.99, 659.19, 662.45, 669.65" y="116.36">
 											-12.19
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="744, 749, 756, 763, 766, 773" y="116.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="744, 748.79, 755.99, 763.19, 766.45, 773.65" y="116.36">
 											-70.98
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="848, 855, 862, 865, 872" y="116.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="848, 855.2, 862.4, 865.66, 872.86" y="116.36">
 											30.90
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="952, 959, 962, 969" y="116.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="952, 959.2, 962.46, 969.66" y="116.36">
 											6.58
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1056, 1063, 1066, 1073" y="116.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1056, 1063.2, 1066.46, 1073.66" y="116.36">
 											2.86
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1160, 1167, 1170, 1177" y="116.36">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1160, 1167.2, 1170.46, 1177.66" y="116.36">
 											0.00
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="5, 10, 17" y="132.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="5, 9.8, 16.51" y="132.56">
 											IFA
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="120, 127, 134, 137, 144" y="132.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="120, 127.2, 134.4, 137.66, 144.86" y="132.56">
 											29.02
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="224, 231, 234, 241" y="132.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="224, 231.2, 234.46, 241.66" y="132.56">
 											4.08
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="328, 333, 340, 347, 350, 357" y="132.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="328, 332.79, 339.99, 347.19, 350.45, 357.65" y="132.56">
 											-12.00
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="432, 439, 446, 449, 456" y="132.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="432, 439.2, 446.4, 449.66, 456.86" y="132.56">
 											17.02
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="536, 541, 548, 555, 558, 565" y="132.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="536, 540.79, 547.99, 555.19, 558.45, 565.65" y="132.56">
 											-20.97
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="640, 647, 650, 657" y="132.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="640, 647.2, 650.46, 657.66" y="132.56">
 											7.05
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="744, 749, 756, 763, 766, 773" y="132.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="744, 748.79, 755.99, 763.19, 766.45, 773.65" y="132.56">
 											-50.98
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="848, 855, 862, 865, 872" y="132.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="848, 855.2, 862.4, 865.66, 872.86" y="132.56">
 											29.38
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="952, 959, 966, 969, 976" y="132.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="952, 959.2, 966.4, 969.66, 976.86" y="132.56">
 											48.38
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1056, 1063, 1070, 1073, 1080" y="132.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1056, 1063.2, 1070.4, 1073.66, 1080.86" y="132.56">
 											21.25
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1160, 1167, 1174, 1177, 1184" y="132.56">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1160, 1167.2, 1174.4, 1177.66, 1184.86" y="132.56">
 											15.91
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="5, 13, 20" y="148.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="5, 12.69, 19.56" y="148.76">
 											ATT
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="120, 127, 134, 137, 144" y="148.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="120, 127.2, 134.4, 137.66, 144.86" y="148.76">
 											26.02
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="224, 231, 234, 241" y="148.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="224, 231.2, 234.46, 241.66" y="148.76">
 											4.09
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="328, 333, 340, 347, 350, 357" y="148.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="328, 332.79, 339.99, 347.19, 350.45, 357.65" y="148.76">
 											-12.00
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="432, 439, 446, 449, 456" y="148.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="432, 439.2, 446.4, 449.66, 456.86" y="148.76">
 											14.02
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="536, 541, 548, 555, 558, 565" y="148.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="536, 540.79, 547.99, 555.19, 558.45, 565.65" y="148.76">
 											-20.97
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="640, 647, 650, 657" y="148.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="640, 647.2, 650.46, 657.66" y="148.76">
 											4.05
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="744, 749, 756, 763, 766, 773" y="148.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="744, 748.79, 755.99, 763.19, 766.45, 773.65" y="148.76">
 											-53.98
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="848, 855, 862, 865, 872" y="148.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="848, 855.2, 862.4, 865.66, 872.86" y="148.76">
 											29.37
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="952, 959, 962, 969" y="148.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="952, 959.2, 962.46, 969.66" y="148.76">
 											0.32
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1056, 1064, 1070" y="148.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1056, 1064.48, 1070.89" y="148.76">
 											NaN
-									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1160, 1167, 1170, 1177" y="148.76">
+									</text><text fill="#D2D2D2" transform="translate(15 662)" font-size="12" font-family="IBM Plex Sans" x="1160, 1167.2, 1170.46, 1177.66" y="148.76">
 											0.00
 									</text><path fill="none" stroke="#D2D2D2" stroke-width="1.5" stroke-miterlimit="4" stroke-opacity="0.298" transform="translate(15 662)" d="M115 3.06L115 17.34" /><path fill="none" stroke="#D2D2D2" stroke-width="1.5" stroke-miterlimit="4" stroke-opacity="0.298" transform="translate(15 662)" d="M219 3.06L219 17.34" /><path fill="none" stroke="#D2D2D2" stroke-width="1.5" stroke-miterlimit="4" stroke-opacity="0.298" transform="translate(15 662)" d="M323 3.06L323 17.34" /><path fill="none" stroke="#D2D2D2" stroke-width="1.5" stroke-miterlimit="4" stroke-opacity="0.298" transform="translate(15 662)" d="M427 3.06L427 17.34" /><path fill="none" stroke="#D2D2D2" stroke-width="1.5" stroke-miterlimit="4" stroke-opacity="0.298" transform="translate(15 662)" d="M531 3.06L531 17.34" /><path fill="none" stroke="#D2D2D2" stroke-width="1.5" stroke-miterlimit="4" stroke-opacity="0.298" transform="translate(15 662)" d="M635 3.06L635 17.34" /><path fill="none" stroke="#D2D2D2" stroke-width="1.5" stroke-miterlimit="4" stroke-opacity="0.298" transform="translate(15 662)" d="M739 3.06L739 17.34" /><path fill="none" stroke="#D2D2D2" stroke-width="1.5" stroke-miterlimit="4" stroke-opacity="0.298" transform="translate(15 662)" d="M843 3.06L843 17.34" /><path fill="none" stroke="#D2D2D2" stroke-width="1.5" stroke-miterlimit="4" stroke-opacity="0.298" transform="translate(15 662)" d="M947 3.06L947 17.34" /><path fill="none" stroke="#D2D2D2" stroke-width="1.5" stroke-miterlimit="4" stroke-opacity="0.298" transform="translate(15 662)" d="M1051 3.06L1051 17.34" /><path fill="none" stroke="#D2D2D2" stroke-width="1.5" stroke-miterlimit="4" stroke-opacity="0.298" transform="translate(15 662)" d="M1155 3.06L1155 17.34" /><path fill="none" stroke="#D2D2D2" stroke-width="1.5" stroke-miterlimit="4" stroke-opacity="0.298" transform="translate(15 662)" d="M1259 3.06L1259 17.34" /></g></g></g></g></svg>

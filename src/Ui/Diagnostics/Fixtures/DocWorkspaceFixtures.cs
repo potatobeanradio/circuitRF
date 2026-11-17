@@ -97,7 +97,7 @@ public static class DocWorkspaceFixtures
 
         ShowInWindowMenuBar(content);
 
-        vm.OpenWorkspacePath(cws);
+        OpenWorkspace(vm, cws);
         Pump();
 
         // Two tabs, so the figure shows that a workspace holds more than one kind of document — and
@@ -198,7 +198,15 @@ public static class DocWorkspaceFixtures
         switch (view)
         {
             case ViewType.Schematic: vm.OpenCellSchematic(cell); break;
-            case ViewType.Layout:    vm.OpenCellLayout(cell);    break;
+            // The layout open is asynchronous (it reads the file off the UI thread), so it is awaited here: left to finish
+            // on its own it lands AFTER the schematic opened next, and the wrong tab ends up in front. Same primary as the
+            // tree's double-click resolves.
+            case ViewType.Layout:
+                var primary = CellFolder.ResolvePrimary(cell.AbsolutePath, ViewType.Layout);
+                RunToCompletion(vm.OpenOrActivateLayoutAsync(
+                    Path.Combine(CellFolder.SubFolderPath(cell.AbsolutePath, ViewType.Layout), primary.ResolvedName!)),
+                    $"opening the layout of '{cellName}'");
+                break;
             // No 3D arm: nothing opens a 3D view before brief 43, so no documentation figure asks for one.
             default:                 vm.OpenCellSymbol(cell);    break;
         }
@@ -258,6 +266,31 @@ public static class DocWorkspaceFixtures
     private static void Pump()
     {
         for (int i = 0; i < 12; i++) Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+    }
+
+    /// <summary>
+    /// Open the workspace and wait for the open to FINISH. <see cref="WorkspaceViewModel.OpenWorkspacePath"/> returns at
+    /// once: the open first asks, off the UI thread, whether the folder answers (an unreachable share must not hold the
+    /// window), so a fixed number of dispatcher passes can run out before the tree is filled, and the figure then finds
+    /// no cells. Bounded, so a stuck open fails the run rather than hanging it.
+    /// </summary>
+    private static void OpenWorkspace(WorkspaceViewModel vm, string cws)
+        => RunToCompletion(vm.OpenWorkspacePathAsync(cws), $"opening the docs workspace '{cws}'");
+
+    /// <summary>Run the dispatcher until <paramref name="work"/> has finished, then settle; at most 30 s, so a stuck
+    /// open fails the documentation run instead of hanging it.</summary>
+    private static void RunToCompletion(Task work, string what)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (!work.IsCompleted)
+        {
+            if (clock.Elapsed > TimeSpan.FromSeconds(30))
+                throw new TimeoutException($"{what} did not finish within 30 s.");
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            Thread.Sleep(5);
+        }
+        work.GetAwaiter().GetResult();
+        Pump();
     }
 
     // ── The editable-reference mark on a document tab (RC-2 R-rc2-5) ──────────
@@ -324,7 +357,7 @@ public static class DocWorkspaceFixtures
         window.Content = null;
         content.DataContext = vm;
 
-        vm.OpenWorkspacePath(cws);
+        OpenWorkspace(vm, cws);
         Pump();
 
         // The referenced cell first, then the local one, so the marked tab is the one BEHIND.

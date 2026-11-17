@@ -2,76 +2,88 @@
      dotnet run ––project tools/DocGen –– ––out docs/user
      (the flags above are ordinary double hyphens; XML comments cannot contain them.)
      Source: src/Ui/Diagnostics/UiArtworkGenerator.cs + tools/DocGen. -->
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="960" height="396" viewBox="0 0 960 396"><rect fill="#010101" width="960" height="396" /><rect fill="#15222D" width="960" height="396" /><clipPath id="stackup-mmic-dark_cl_0"><path d="M0 0L960 0L960 388.66L0 388.66L0 0ZM360.09 165.76L370.09 165.76L370.09 347.76L360.09 347.76L360.09 165.76Z" clip-rule="evenodd" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_0)"><rect fill="#C08020" x="24" y="36.9" width="501.6" height="36" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="36.9" width="501.6" height="36" /><rect fill="#96A0AF" fill-opacity="0.2353" x="24" y="72.9" width="501.6" height="56.86" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="72.9" width="501.6" height="56.86" /><rect fill="#D06070" x="24" y="129.76" width="501.6" height="16" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="129.76" width="501.6" height="16" /><rect fill="#96A0AF" fill-opacity="0.2353" x="24" y="145.76" width="501.6" height="20" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="145.76" width="501.6" height="20" /><rect fill="#E0B040" x="24" y="165.76" width="501.6" height="36" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="165.76" width="501.6" height="36" /><rect fill="#96A0AF" fill-opacity="0.2353" x="24" y="201.76" width="501.6" height="110" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="201.76" width="501.6" height="110" /><rect fill="#BE965A" x="24" y="311.76" width="501.6" height="36" /><rect fill="none" stroke="#5AB4FF" stroke-width="2.5" stroke-miterlimit="4" x="24" y="311.76" width="501.6" height="36" /></g><rect fill="#202060" x="354.09" y="165.76" width="6" height="182" /><rect fill="#202060" x="370.09" y="165.76" width="6" height="182" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="354.09" y="165.76" width="22" height="182" /><rect fill="#909090" x="214.03" y="36.9" width="22" height="164.86" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="214.03" y="36.9" width="22" height="164.86" /><rect fill="#703038" x="134.02" y="36.9" width="22" height="108.86" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="134.02" y="36.9" width="22" height="108.86" /><text fill="#19191E" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="31.5, 42.12, 49.38, 54.24, 61.5, 65.33" y="59.77">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="960" height="396" viewBox="0 0 960 396"><rect fill="#010101" width="960" height="396" /><rect fill="#15222D" width="960" height="396" /><clipPath id="stackup-mmic-dark_cl_0"><path d="M0 0L960 0L960 388.66L0 388.66L0 0ZM360.09 165.76L370.09 165.76L370.09 347.76L360.09 347.76L360.09 165.76Z" clip-rule="evenodd" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_0)"><rect fill="#C08020" x="24" y="36.9" width="501.6" height="36" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="36.9" width="501.6" height="36" /><rect fill="#96A0AF" fill-opacity="0.2353" x="24" y="72.9" width="501.6" height="56.86" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="72.9" width="501.6" height="56.86" /><rect fill="#D06070" x="24" y="129.76" width="501.6" height="16" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="129.76" width="501.6" height="16" /><rect fill="#96A0AF" fill-opacity="0.2353" x="24" y="145.76" width="501.6" height="20" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="145.76" width="501.6" height="20" /><rect fill="#E0B040" x="24" y="165.76" width="501.6" height="36" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="165.76" width="501.6" height="36" /><rect fill="#96A0AF" fill-opacity="0.2353" x="24" y="201.76" width="501.6" height="110" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="201.76" width="501.6" height="110" /><rect fill="#BE965A" x="24" y="311.76" width="501.6" height="36" /><rect fill="none" stroke="#5AB4FF" stroke-width="2.5" stroke-miterlimit="4" x="24" y="311.76" width="501.6" height="36" /><rect fill="#6040A0" x="24" y="195.76" width="501.6" height="6" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="24" y="195.76" width="501.6" height="6" /></g><rect fill="#202060" x="354.09" y="165.76" width="6" height="182" /><rect fill="#202060" x="370.09" y="165.76" width="6" height="182" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="354.09" y="165.76" width="22" height="182" /><rect fill="#909090" x="214.03" y="36.9" width="22" height="164.86" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="214.03" y="36.9" width="22" height="164.86" /><rect fill="#703038" x="134.02" y="36.9" width="22" height="108.86" /><rect fill="none" stroke="#AAAAB9" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.4314" x="134.02" y="36.9" width="22" height="108.86" /><text fill="#19191E" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="31.5, 42.12, 49.38, 54.24, 61.5, 65.33" y="59.77">
 					Metal2
 			</text><text fill="#19191E" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="31.5, 40.24, 43.81" y="106.21">
 					Air
 			</text><text fill="#19191E" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="31.5, 42.12, 47.62, 58.24, 61.31, 70.27, 73.84, 81.1, 84.92, 92.17, 98.84, 103.7, 108.81, 112.39" y="160.64">
 					MIM Dielectric
-			</text><text fill="#19191E" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="31.5, 42.12, 49.38, 54.24, 61.5, 65.33" y="188.64">
+			</text><text fill="#19191E" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="31.5, 42.12, 49.38, 54.24, 61.5, 65.33" y="185.64">
 					Metal1
 			</text><text fill="#19191E" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="31.5, 40.76, 48.02, 56.76" y="261.64">
 					GaAs
 			</text><text fill="#19191E" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="31.5, 40.12, 47.39, 54.06, 61.36, 67.85, 71.42, 79.22, 86.48, 89.54, 100.17, 107.42, 112.28, 119.55" y="334.64">
 					Backside Metal
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1" y="59.21">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1" y="49.74">
 					3
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="557, 563.59" y="59.21">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="557, 563.59" y="49.74">
 					µm
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="582.63, 589.33, 592.05" y="59.21">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="582.63, 589.33, 592.05" y="49.74">
 					σ =
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="603.95, 610.85, 613.98, 620.88, 627.19, 634.09" y="59.21">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="603.95, 610.85, 613.98, 620.88, 627.19, 634.09" y="49.74">
 					4.1e+7
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="645.99, 652.67, 657.08" y="59.21">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="645.99, 652.67, 657.08" y="49.74">
 					S/m
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 552, 555.13, 562.03" y="105.49">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 552, 555.13, 562.03" y="96.17">
 					2.55
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="573.93, 580.52" y="105.49">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="573.93, 580.52" y="96.17">
 					µm
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="599.56, 605.51, 609.73, 612.45" y="105.49">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="599.56, 605.51, 609.73, 612.45" y="96.17">
 					εr =
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="624.35" y="105.49">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="624.35" y="96.17">
 					1
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="640.25, 644.29, 650.43, 656.96, 663.4, 666.11" y="105.49">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="640.25, 644.29, 650.43, 656.96, 663.4, 666.11" y="96.17">
 					tanδ =
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="678.01" y="105.49">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="678.01" y="96.17">
 					0
-			</text><text fill="#D4D4D8" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 555.72, 561.22, 571.84, 574.91, 585.53, 592.78, 597.65, 604.91" y="144.93">
+			</text><text fill="#D4D4D8" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 555.72, 561.22, 571.84, 574.91, 585.53, 592.78, 597.65, 604.91" y="142.16">
 					MIM Metal
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="617.73, 624.64, 627.76, 634.66" y="144.93">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="617.73, 624.64, 627.76, 634.66" y="142.16">
 					0.25
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="646.56, 653.15" y="144.93">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="646.56, 653.15" y="142.16">
 					µm
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="672.19, 678.9, 681.61" y="144.93">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="672.19, 678.9, 681.61" y="142.16">
 					σ =
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="693.51, 700.41, 703.54, 710.44, 716.75, 723.65" y="144.93">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="693.51, 700.41, 703.54, 710.44, 716.75, 723.65" y="142.16">
 					4.1e+7
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="735.55, 742.23, 746.64" y="144.93">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="735.55, 742.23, 746.64" y="142.16">
 					S/m
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 552, 555.13" y="164.29">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 552, 555.13" y="161.53">
 					0.2
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="567.03, 573.62" y="164.29">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="567.03, 573.62" y="161.53">
 					µm
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="592.66, 598.61, 602.83, 605.55" y="164.29">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="592.66, 598.61, 602.83, 605.55" y="161.53">
 					εr =
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="617.45, 624.35, 627.48" y="164.29">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="617.45, 624.35, 627.48" y="161.53">
 					6.8
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="643.38, 647.41, 653.55, 660.09, 666.53, 669.24" y="164.29">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="643.38, 647.41, 653.55, 660.09, 666.53, 669.24" y="161.53">
 					tanδ =
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="681.14, 688.04, 691.17, 698.07, 704.97" y="164.29">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="681.14, 688.04, 691.17, 698.07, 704.97" y="161.53">
 					0.001
-			</text><text fill="#5AB4FF" font-size="11.5" font-family="IBM Plex Sans" x="720.87, 727.54, 733.68, 737.72, 741.75, 748.07, 752.29, 758.82, 765.13, 771.8, 775.16, 777.87, 786, 788.88, 792.92, 797.14, 800.01, 806.68" y="164.29">
+			</text><text fill="#5AB4FF" font-size="11.5" font-family="IBM Plex Sans" x="720.87, 727.54, 733.68, 737.72, 741.75, 748.07, 752.29, 758.82, 765.13, 771.8, 775.16, 777.87, 786, 788.88, 792.92, 797.14, 800.01, 806.68" y="161.53">
 					patterned: Nitride
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1" y="188.08">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1" y="186.1">
 					3
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="557, 563.59" y="188.08">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="557, 563.59" y="186.1">
 					µm
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="582.63, 589.33, 592.05" y="188.08">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="582.63, 589.33, 592.05" y="186.1">
 					σ =
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="603.95, 610.85, 613.98, 620.88, 627.19, 634.09" y="188.08">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="603.95, 610.85, 613.98, 620.88, 627.19, 634.09" y="186.1">
 					4.1e+7
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="645.99, 652.67, 657.08" y="188.08">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="645.99, 652.67, 657.08" y="186.1">
 					S/m
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 552.46, 558.77, 564.37, 567.25, 572.85, 576.89, 583.33" y="205.05">
+					Resistor
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="592.55" y="205.05">
+					·
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="601.3, 608.2" y="205.05">
+					50
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="620.1, 628.33, 632.73, 638.33" y="205.05">
+					Ω/sq
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="650" y="205.05">
+					·
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="658.75, 665.42, 671.86, 675.9, 679.94, 686.38" y="205.05">
+					bottom
 			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 552, 558.9" y="251.6">
 					100
 			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="570.8, 577.39" y="251.6">
@@ -112,23 +124,23 @@
 					µm
 			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="242.53, 251.86, 258.18, 262.21, 268.35, 271.48, 278.38, 282.97, 292.31, 298.62, 302.66, 308.8, 311.93, 318.83, 321.54, 328.51, 334.95, 340.55" y="105.64">
 					Metal1-Metal2 Post
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 554.44, 560.75, 564.79, 570.93, 574.06" y="124.44">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 554.44, 560.75, 564.79, 570.93, 574.06" y="115.12">
 					Metal1
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="585.96" y="124.44">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="585.96" y="115.12">
 					→
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="600.39, 609.72, 616.04, 620.07, 626.22, 629.34" y="124.44">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="600.39, 609.72, 616.04, 620.07, 626.22, 629.34" y="115.12">
 					Metal2
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="645.24, 650.84, 657.28, 660.41, 663.29" y="124.44">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="645.24, 650.84, 657.28, 660.41, 663.29" y="115.12">
 					solid
 			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="162.52, 171.85, 176.45, 185.79, 188.51, 195.51, 198.38" y="105.64">
 					MIM Via
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 554.44, 559.04, 568.38, 571.09, 580.43, 586.74, 590.78, 596.92" y="86.54">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="545.1, 554.44, 559.04, 568.38, 571.09, 580.43, 586.74, 590.78, 596.92" y="68.69">
 					MIM Metal
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="605.05" y="86.54">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="605.05" y="68.69">
 					→
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="619.48, 628.82, 635.13, 639.16, 645.31, 648.43" y="86.54">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="619.48, 628.82, 635.13, 639.16, 645.31, 648.43" y="68.69">
 					Metal2
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="664.33, 669.93, 676.37, 679.5, 682.38" y="86.54">
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="664.33, 669.93, 676.37, 679.5, 682.38" y="68.69">
 					solid
 			</text><text fill="#D4D4D8" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="25.5, 33.04, 40.36, 48.16, 52.31, 55.37, 64.63, 72.43, 79.68" y="24.32">
 					Top: Open

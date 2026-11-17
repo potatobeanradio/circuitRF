@@ -4,7 +4,7 @@ slug: reference/cli.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > The command line
 lede: circuitRF runs without the GUI — not just its engines, but authoring, validation, resolution and drawing too. One executable, fifteen verbs — S-parameters, DC, harmonic balance, loadpull, loadpull pursuit, electromagnetic extraction, layout interchange, creating a workspace or a cell, importing a part, rendering a document as a picture, checking a design, explaining what it resolved to, reading a result back, an elaborated-netlist dump, and an MCP server. Every one of them answers --json. This chapter is the operational reference for all of them, including a worked EM run and a worked render, each from an empty folder.
-keywords: CLI, command line, command-line, terminal, shell, console, headless, batch, script, scripting, automation, verbs, exit code, stdout, circuitrf, integration, render, image, SVG, PNG, PDF, export, picture, screenshot, plot, viewport, layers, extents, thumbnail, sensitivity
+keywords: CLI, CL, command line, command-line, terminal, shell, console, headless, batch, script, scripting, automation, verbs, exit code, stdout, circuitrf, integration, render, image, SVG, PNG, PDF, export, picture, screenshot, plot, viewport, layers, extents, thumbnail, sensitivity
 ---
 
 <nav class="toc">

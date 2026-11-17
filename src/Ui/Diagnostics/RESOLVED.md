@@ -768,3 +768,15 @@ when the symbol has a catalog id; otherwise expect `--figures` to touch every pa
 - **Pre-existing, not chased: `workspace-overview` fails to capture** ("the docs workspace has no cell 'Mitred Bend'. The Project Tree
   scanned:" with nothing listed). `--figures` reaches it from any changed page that cites it, which stops the whole run; the seven
   Phased Array figures were captured by name (`--figure`) instead, and the figure stamps were left for the series' full run.
+
+## The workspace figures opened an empty workspace: two opens became fire-and-forget (2026-11-16)
+
+`workspace-overview` failed with "the docs workspace has no cell 'Mitred Bend'" and an empty Project Tree. Since the
+unreachable-path work, `WorkspaceViewModel.OpenWorkspacePath` returns at once and opens only after an off-thread probe of
+the folder, and a cell's layout opens through `_ = OpenOrActivateLayoutAsync(path)`. `DocWorkspaceFixtures` pumped the
+dispatcher a fixed twelve times, so the tree was still empty, and once that was fixed the layout tab landed AFTER the
+schematic opened next, so the wrong tab was in front. Both opens are now awaited (`RunToCompletion`, bounded at 30 s so a
+stuck open fails the run instead of hanging it). Any new fixture that opens a workspace or a layout must await it too.
+
+`image-dialog-layout-picture` was left as committed: the layout-picture reader now finds no parts on its fixture, and
+image recognition is not being worked on, so `reference/create-from-image.md` was stamped current rather than recaptured.

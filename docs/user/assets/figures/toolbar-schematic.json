@@ -245,6 +245,24 @@
       "Icon": "ArrowTop",
       "Command": null,
       "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 27,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 21,
+      "Slot": 28,
+      "Id": "ExportToLibraryBtn",
+      "Tooltip": "Export to Library\u2026 \u2014 Export to Library needs an open workspace.",
+      "Icon": "BoxVariantClosedPlus",
+      "Command": null,
+      "Kind": "button"
     }
   ]
 }
