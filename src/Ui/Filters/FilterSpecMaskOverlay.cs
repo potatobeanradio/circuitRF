@@ -5,19 +5,20 @@ using SkiaSharp;
 
 namespace CircuitRF.Ui.Filters;
 
+/// <summary>One coloured mask line on the magnitude plot.</summary>
+internal readonly record struct FilterMaskLine(double Value, SKColor Color, bool Vertical);
+
 /// <summary>
 /// Dashed mask lines on the Filter Designer's magnitude plot: vertical edges (Fp/Fs) and horizontal
-/// floors (−Ap / −As). Drawn as overlay chrome so Autoscale stays on the real S21 traces.
+/// floors (−Ap / −As). Colours match the legend strokes next to the Edges / Ap / As labels.
+/// Drawn as overlay chrome so Autoscale stays on the real S21 traces.
 /// </summary>
 internal sealed class FilterSpecMaskOverlay : IPlotOverlay
 {
     private readonly Plot _plot;
 
-    /// <summary>Band / stop edges in Hz.</summary>
-    public IReadOnlyList<double> EdgeHz { get; set; } = [];
-
-    /// <summary>Horizontal levels in dB (negative numbers, e.g. −Ap and −As).</summary>
-    public IReadOnlyList<double> LevelDb { get; set; } = [];
+    /// <summary>Mask lines to draw this frame.</summary>
+    public IReadOnlyList<FilterMaskLine> Lines { get; set; } = [];
 
     public FilterSpecMaskOverlay(Plot plot) => _plot = plot;
 
@@ -30,15 +31,6 @@ internal sealed class FilterSpecMaskOverlay : IPlotOverlay
         double yLo = Math.Min(win.Top, win.Bottom);
         double yHi = Math.Max(win.Top, win.Bottom);
 
-        using var paint = new SKPaint
-        {
-            IsAntialias = true,
-            Style = SKPaintStyle.Stroke,
-            StrokeWidth = 1.2f,
-            Color = new SKColor(120, 120, 120, 180),
-            PathEffect = SKPathEffect.CreateDash([5f, 4f], 0),
-        };
-
         double toX(double hz) => _plot.FreqUnits switch
         {
             FreqUnit.Hz  => hz,
@@ -47,23 +39,33 @@ internal sealed class FilterSpecMaskOverlay : IPlotOverlay
             _            => hz / 1e9,
         };
 
-        foreach (double hz in EdgeHz)
+        foreach (var line in Lines)
         {
-            if (!(hz > 0) || !double.IsFinite(hz)) continue;
-            double x = toX(hz);
-            if (x < win.Left || x > win.Right) continue;
-            var top = tf.PrimaryToCanvas(x, win.Top);
-            var bot = tf.PrimaryToCanvas(x, win.Bottom);
-            canvas.DrawLine(top, bot, paint);
-        }
+            using var paint = new SKPaint
+            {
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = 1.4f,
+                Color = line.Color,
+                PathEffect = SKPathEffect.CreateDash([5f, 4f], 0),
+            };
 
-        foreach (double db in LevelDb)
-        {
-            if (!double.IsFinite(db)) continue;
-            if (db < yLo || db > yHi) continue;
-            var left = tf.PrimaryToCanvas(win.Left, db);
-            var right = tf.PrimaryToCanvas(win.Right, db);
-            canvas.DrawLine(left, right, paint);
+            if (line.Vertical)
+            {
+                if (!(line.Value > 0) || !double.IsFinite(line.Value)) continue;
+                double x = toX(line.Value);
+                if (x < win.Left || x > win.Right) continue;
+                canvas.DrawLine(tf.PrimaryToCanvas(x, win.Top), tf.PrimaryToCanvas(x, win.Bottom), paint);
+            }
+            else
+            {
+                if (!double.IsFinite(line.Value)) continue;
+                if (line.Value < yLo || line.Value > yHi) continue;
+                canvas.DrawLine(
+                    tf.PrimaryToCanvas(win.Left, line.Value),
+                    tf.PrimaryToCanvas(win.Right, line.Value),
+                    paint);
+            }
         }
     }
 
@@ -78,4 +80,22 @@ internal sealed class FilterSpecMaskOverlay : IPlotOverlay
 
     /// <inheritdoc/>
     public void DragEnd(bool cancelled) { }
+}
+
+/// <summary>Stable colours shared by the Edges legends and the plot mask lines.</summary>
+internal static class FilterMaskColors
+{
+    public static readonly SKColor EdgeA = new(230, 126, 34);   // orange  — Fs1 / first edge
+    public static readonly SKColor EdgeB = new(41, 128, 185);   // blue    — Fp1 / second
+    public static readonly SKColor EdgeC = new(39, 174, 96);    // green   — Fp2 / third
+    public static readonly SKColor EdgeD = new(142, 68, 173);   // purple  — Fs2 / fourth
+    public static readonly SKColor Ap    = new(192, 57, 43);    // red     — −Ap
+    public static readonly SKColor As    = new(127, 140, 141);  // grey    — −As
+
+    public const string EdgeABrush = "#E67E22";
+    public const string EdgeBBrush = "#2980B9";
+    public const string EdgeCBrush = "#27AE60";
+    public const string EdgeDBrush = "#8E44AD";
+    public const string ApBrush    = "#C0392B";
+    public const string AsBrush    = "#7F8C8D";
 }

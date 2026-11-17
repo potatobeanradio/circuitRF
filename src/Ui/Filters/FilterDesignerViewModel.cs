@@ -16,6 +16,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NumFlat;
 using RfCore;
+using SkiaSharp;
 
 namespace CircuitRF.Ui.Filters;
 
@@ -32,6 +33,8 @@ public sealed class FilterElementRow
     public string Used { get; init; } = "";
     /// <summary>The library part, when one was chosen.</summary>
     public string Part { get; init; } = "";
+    /// <summary>Row fill for the chain-budget zebra (#FFFFFF / #F0F0F0).</summary>
+    public string RowBackground { get; init; } = "#FFFFFF";
 }
 
 /// <summary>A response family as the specification names it. <see cref="Value"/> is what the Filter block stores.</summary>
@@ -532,6 +535,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     private List<FilterElement> ApplyValues(FilterRealization real, Spec spec)
     {
         var used = new List<FilterElement>(real.Elements.Count);
+        int row = 0;
         foreach (var e in real.Elements)
         {
             double value = FilterValues.Snap(e.Inductor, e.Value, Series);
@@ -543,6 +547,8 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
                 part = chosen.Name;
             }
             used.Add(e with { Value = value });
+            // Chain-budget zebra: white / #F0F0F0, painted on the row itself (Avalonia's
+            // :nth-child on ListBoxItem does not reliably reach the ContentPresenter).
             Elements.Add(new FilterElementRow
             {
                 Name = e.Name,
@@ -550,6 +556,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
                 Exact = Eng(e.Inductor, e.Value),
                 Used = Eng(e.Inductor, value),
                 Part = part,
+                RowBackground = (row++ & 1) == 0 ? "#FFFFFF" : "#F0F0F0",
             });
         }
         return used;
@@ -740,8 +747,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
                 PhasePlot.Traces.Add(delay);
         }
 
-        MagnitudeMask.EdgeHz = MaskEdges(spec);
-        MagnitudeMask.LevelDb = [-spec.ApDb, -spec.AsDb];
+        MagnitudeMask.Lines = MaskLines(spec);
 
         MagnitudePlot.CustomTitleOn = true;
         MagnitudePlot.CustomTitle = "Insertion loss";
@@ -752,17 +758,24 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         Announce();
     }
 
-    private static double[] MaskEdges(Spec spec)
+    private static FilterMaskLine[] MaskLines(Spec spec)
     {
-        var list = new List<double>(4);
-        void Add(double hz) { if (hz > 0 && double.IsFinite(hz)) list.Add(hz); }
-        Add(spec.EdgeAHz);
-        Add(spec.EdgeBHz);
+        var list = new List<FilterMaskLine>(6);
+        void Edge(double hz, SKColor color)
+        {
+            if (hz > 0 && double.IsFinite(hz)) list.Add(new FilterMaskLine(hz, color, Vertical: true));
+        }
+        Edge(spec.EdgeAHz, FilterMaskColors.EdgeA);
+        Edge(spec.EdgeBHz, FilterMaskColors.EdgeB);
         if (spec.Form is NetworkForm.Bandpass or NetworkForm.Bandstop)
         {
-            Add(spec.EdgeCHz);
-            Add(spec.EdgeDHz);
+            Edge(spec.EdgeCHz, FilterMaskColors.EdgeC);
+            Edge(spec.EdgeDHz, FilterMaskColors.EdgeD);
         }
+        if (double.IsFinite(spec.ApDb))
+            list.Add(new FilterMaskLine(-spec.ApDb, FilterMaskColors.Ap, Vertical: false));
+        if (double.IsFinite(spec.AsDb))
+            list.Add(new FilterMaskLine(-spec.AsDb, FilterMaskColors.As, Vertical: false));
         return list.ToArray();
     }
 
@@ -770,8 +783,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     {
         MagnitudePlot.Traces.Clear();
         PhasePlot.Traces.Clear();
-        MagnitudeMask.EdgeHz = [];
-        MagnitudeMask.LevelDb = [];
+        MagnitudeMask.Lines = [];
         Announce();
     }
 
