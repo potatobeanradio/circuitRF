@@ -144,7 +144,8 @@ public static class FilterValues
             {
                 var parts = entries
                     .Where(e => e.Header.Quantity == quantity && e.Header.Value is > 0)
-                    .Select(e => new FilterPart(e.Part, e.Header.Value!.Value, ToleranceOf(e.Header)))
+                    .Select(e => new FilterPart(e.Part, e.Header.Value!.Value,
+                                                ToleranceOf(e.Header, e.Part)))
                     .OrderBy(p => p.Value)
                     .ToList();
                 if (parts.Count == 0) return;
@@ -176,9 +177,11 @@ public static class FilterValues
     /// <summary>
     /// The tolerance a vendor part states. Order: a <c>Tolerance</c>/<c>Tol</c> header field; then
     /// each Description slash-field (a bare EIA letter J/K/M/… or a <c>±N%</c> token); then
-    /// <see cref="BomFile.ParseDescription"/> on the whole Description. Empty when none is stated.
+    /// <see cref="BomFile.ParseDescription"/> on the whole Description; then the EIA letter that
+    /// follows the part's value code in its name (static SPICE editions rarely put ±% in the
+    /// header). Empty when none is stated.
     /// </summary>
-    public static string ToleranceOf(VendorLibraryHeader header)
+    public static string ToleranceOf(VendorLibraryHeader header, string? partName = null)
     {
         if (!string.IsNullOrWhiteSpace(header.Tolerance)
             && TryToleranceShown(header.Tolerance, out string fromTol))
@@ -200,6 +203,11 @@ public static class FilterValues
                 if (TryToleranceShown(m.Value, out string shown)) return shown;
             }
         }
+
+        if (partName is not null && header.Value is { } v
+            && TryToleranceFromPartName(partName, v, header.Quantity, out string fromPn))
+            return fromPn;
+
         return "";
     }
 
@@ -217,17 +225,9 @@ public static class FilterValues
         string t = raw.Trim().Trim(',', ';');
         if (t.Length == 0) return false;
 
-        double? eia = t.ToUpperInvariant() switch
-        {
-            "B" => 0.1, "C" => 0.25, "D" => 0.5, "F" => 1, "G" => 2,
-            "H" => 3, "J" => 5, "K" => 10, "M" => 20, "N" => 30,
-            _ => null,
-        };
-        if (eia is { } pctLetter)
-        {
-            shown = FormatTolerancePercent(pctLetter.ToString("0.###", CultureInfo.InvariantCulture) + "%");
+        if (t.Length == 1 && TryEiaLetter(t[0], valueSi: null, quantity: VendorPartQuantity.None,
+                                          out shown))
             return true;
-        }
 
         double? pct = BomFile.ParseDescription(t).TolerancePercent;
         if (pct is { } p && p > 0)
@@ -236,6 +236,120 @@ public static class FilterValues
             return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// The EIA letter that follows an engineering-notation value code in <paramref name="part"/>
+    /// (e.g. <c>3R0J</c>, <c>4N3D</c>). The code must match <paramref name="valueSi"/> so a letter
+    /// elsewhere in the name is not treated as a tolerance.
+    /// </summary>
+    private static bool TryToleranceFromPartName(
+        string part, double valueSi, VendorPartQuantity quantity, out string shown)
+    {
+        shown = "";
+        string u = part.ToUpperInvariant();
+        foreach (string enc in ValueEncodings(valueSi, quantity))
+        {
+            int i = 0;
+            while ((i = u.IndexOf(enc, i, StringComparison.Ordinal)) >= 0)
+            {
+                int j = i + enc.Length;
+                if (j < u.Length && TryEiaLetter(u[j], valueSi, quantity, out shown))
+                    return true;
+                i++;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>Engineering spellings of <paramref name="si"/> that chip part numbers use
+    /// (<c>3R0</c>, <c>4N3</c>, <c>100</c> for 10 pF).</summary>
+    private static IEnumerable<string> ValueEncodings(double si, VendorPartQuantity quantity)
+    {
+        if (!(si > 0) || !double.IsFinite(si)) yield break;
+
+        (double Scale, char Dot)[] steps = quantity switch
+        {
+            VendorPartQuantity.Capacitance =>
+                [(1e12, 'R'), (1e9, 'N'), (1e6, 'U')],
+            VendorPartQuantity.Inductance =>
+                [(1e9, 'N'), (1e6, 'U'), (1e3, 'R')],
+            _ =>
+                [(1e12, 'R'), (1e9, 'N'), (1e6, 'U')],
+        };
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (scale, dot) in steps)
+        {
+            double v = si * scale;
+            if (v < 0.05 || v >= 100000) continue;
+
+            // One-decimal engineering: 3.0 → 3R0, 4.3 → 4N3.
+            string one = v.ToString("0.0", CultureInfo.InvariantCulture);
+            int dotAt = one.IndexOf('.');
+            if (dotAt > 0)
+            {
+                string eng = one[..dotAt] + dot + one[(dotAt + 1)..];
+                if (seen.Add(eng)) yield return eng;
+            }
+
+            // EIA two-significant-digit code: 10 → 100, 4.7 → 475 (×10^n). Only for ≥ 1.
+            if (v >= 1)
+            {
+                int exp = (int)Math.Floor(Math.Log10(v)) - 1;
+                if (exp < 0) exp = 0;
+                int mant = (int)Math.Round(v / Math.Pow(10, exp));
+                if (mant >= 10 && mant <= 99)
+                {
+                    string eia = mant.ToString(CultureInfo.InvariantCulture)
+                                 + exp.ToString(CultureInfo.InvariantCulture);
+                    if (seen.Add(eia)) yield return eia;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// EIA tolerance letter → Yield spelling. B/C/D are absolute on small L/C (pF / nH); the rest
+    /// are percent. Without a value, every letter is read as percent (slash-field case).
+    /// </summary>
+    private static bool TryEiaLetter(
+        char letter, double? valueSi, VendorPartQuantity quantity, out string shown)
+    {
+        shown = "";
+        char L = char.ToUpperInvariant(letter);
+        bool absolute = valueSi is { } v && quantity switch
+        {
+            VendorPartQuantity.Capacitance => v <= 10e-12 && L is 'B' or 'C' or 'D' or 'W',
+            VendorPartQuantity.Inductance  => v <= 10e-9  && L is 'B' or 'C' or 'D' or 'W',
+            _ => false,
+        };
+
+        if (absolute)
+        {
+            string? abs = L switch
+            {
+                'B' => quantity == VendorPartQuantity.Inductance ? "0.1nH" : "0.1pF",
+                'C' => quantity == VendorPartQuantity.Inductance ? "0.2nH" : "0.25pF",
+                'D' => quantity == VendorPartQuantity.Inductance ? "0.5nH" : "0.5pF",
+                'W' => quantity == VendorPartQuantity.Inductance ? "0.05nH" : "0.05pF",
+                _ => null,
+            };
+            if (abs is null) return false;
+            shown = FormatTolerancePercent(abs);
+            return shown.Length > 0;
+        }
+
+        double? pct = L switch
+        {
+            'B' => 0.1, 'C' => 0.25, 'D' => 0.5, 'F' => 1, 'G' => 2,
+            'H' => 3, 'J' => 5, 'K' => 10, 'M' => 20, 'N' => 30,
+            'W' => 0.05,
+            _ => null,
+        };
+        if (pct is not { } p) return false;
+        shown = FormatTolerancePercent(p.ToString("0.###", CultureInfo.InvariantCulture) + "%");
+        return shown.Length > 0;
     }
 
     /// <summary>Parts of <paramref name="series"/> whose value matches <paramref name="target"/> (ratio).</summary>

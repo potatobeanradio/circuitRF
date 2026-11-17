@@ -60,6 +60,28 @@ public class FilterValuesTests
     }
 
     [Fact]
+    public void ToleranceOf_ReadsEiaLetterAfterValueCodeInPartName()
+    {
+        // Static SPICE editions put no ±% in the header; the EIA letter sits after the value code.
+        var cap = VendorLibraryHeader.Parse(
+            ["* Description : 0402M(01005)/C0G/3.00e-06[uF]/16[V]",
+             "* Property : C = 3.00e-06[uF]"], out _);
+        string capTol = FilterValues.ToleranceOf(cap, "TSTCxx3R0B01");
+        Assert.Contains("0.1", capTol);
+        Assert.Contains("pF", capTol);
+
+        var ind = VendorLibraryHeader.Parse(
+            ["* Property : L = 4.3[nH]"], out _);
+        string indTol = FilterValues.ToleranceOf(ind, "TSTLxx4N3D00");
+        Assert.Contains("0.5", indTol);
+        Assert.Contains("nH", indTol);
+
+        var pct = VendorLibraryHeader.Parse(
+            ["* Property : C = 100[pF]"], out _);
+        Assert.Contains("5", FilterValues.ToleranceOf(pct, "TSTCxx101JA01"));
+    }
+
+    [Fact]
     public void IecSeriesTolerance_IsTheConventionalPercent()
     {
         Assert.Contains("10", FilterValues.ToleranceOf(FilterSeriesKind.E12));
