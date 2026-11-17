@@ -782,6 +782,7 @@ public partial class WorkspaceWindow : Window
     /// </summary>
     // What the native Window menu was last built from. See RebuildNativeWindowMenu.
     private (string Header, Window Target, bool Separator)[]? _nativeWindowMenuBuiltFrom;
+    private bool[]? _nativeTileMenuBuiltFrom;
 
     private void RebuildNativeWindowMenu()
     {
@@ -796,15 +797,30 @@ public partial class WorkspaceWindow : Window
         // does not usually open or close a window, so the common case is an identical list, and the
         // common case should cost nothing.
         var entries  = _vm.EnumerateWindowEntries();
+        var tiles    = _vm.EnumerateTileEntries();
         var builtFrom = entries.Select(e => (e.Header, e.Target, e.SeparatorBefore)).ToArray();
+        var tileState = tiles.Select(t => t.Enabled).ToArray();
         if (_nativeWindowMenuBuiltFrom is { } previous
             && previous.Length == builtFrom.Length
-            && previous.SequenceEqual(builtFrom))
+            && previous.SequenceEqual(builtFrom)
+            && _nativeTileMenuBuiltFrom is { } previousTiles
+            && previousTiles.SequenceEqual(tileState))
             return;
 
         _nativeWindowMenuBuiltFrom = builtFrom;
+        _nativeTileMenuBuiltFrom   = tileState;
 
         target.Items.Clear();
+        foreach (var tile in tiles)
+        {
+            var item = new NativeMenuItem(tile.Header) { IsEnabled = tile.Enabled };
+            if (tile.Gesture is { } g) item.Gesture = Avalonia.Input.KeyGesture.Parse(g.Replace("Ctrl+", "Meta+"));
+            var arrangement = tile.Arrangement;
+            item.Click += (_, _) => _vm?.TileDocuments(arrangement);
+            target.Items.Add(item);
+        }
+        target.Items.Add(new NativeMenuItemSeparator());
+
         foreach (var entry in entries)
         {
             if (entry.SeparatorBefore)

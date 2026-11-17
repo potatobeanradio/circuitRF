@@ -106,7 +106,10 @@ public sealed class EmptyDocumentAreaTests
     [Fact]
     public void EveryDocumentDockTheFactoryBuilds_SetsEmptyContent()
     {
-        var src = ReadRepo("src", "Ui", "ViewModels", "Dock", "CircuitRfDockFactory.cs");
+        // Every partial of the factory, not just the main file — Window ▸ Tile builds its panes in one.
+        var src = string.Concat(
+            Directory.GetFiles(Path.Combine(RepoRoot(), "src", "Ui", "ViewModels", "Dock"), "CircuitRfDockFactory*.cs")
+                     .Select(File.ReadAllText));
 
         int created = Regex.Matches(src, @"new DocumentDock\b").Count;
         int cleared = Regex.Matches(src, @"EmptyContent\s*=\s*null").Count;

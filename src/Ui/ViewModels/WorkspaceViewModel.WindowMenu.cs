@@ -58,6 +58,18 @@ public partial class WorkspaceViewModel
     {
         WindowMenuItems.Clear();
 
+        // The Tile commands come first, above a rule: they act on this window's document area, and
+        // the list below them is the windows themselves. Same entries as the native menu.
+        foreach (var tile in EnumerateTileEntries())
+        {
+            var item = new MenuItem { Header = tile.Header, IsEnabled = tile.Enabled };
+            if (tile.Gesture is { } g) item.InputGesture = Avalonia.Input.KeyGesture.Parse(g);
+            var arrangement = tile.Arrangement;
+            item.Click += (_, _) => TileDocuments(arrangement);
+            WindowMenuItems.Add(item);
+        }
+        WindowMenuItems.Add(new Separator());
+
         foreach (var entry in EnumerateWindowEntries())
         {
             if (entry.SeparatorBefore)
@@ -80,6 +92,25 @@ public partial class WorkspaceViewModel
             WindowMenuItems.Add(new MenuItem { Header = "(No Windows)", IsEnabled = false });
 
         WindowMenuChanged?.Invoke();
+    }
+
+    /// <summary>One Tile command as either menu surface shows it. <see cref="Gesture"/> is the
+    /// cross-platform spelling (<c>Ctrl+…</c>); the macOS menu swaps in <c>Meta</c>.</summary>
+    public sealed record TileMenuEntry(string Header, Docking.TileArrangement Arrangement, bool Enabled, string? Gesture);
+
+    /// <summary>The Tile commands at the top of the Window menu, in order, with whether each can act
+    /// right now. One list for both menu surfaces.</summary>
+    public IReadOnlyList<TileMenuEntry> EnumerateTileEntries()
+    {
+        bool canTile   = CanTileDocuments;
+        bool canMerge = CanMergeAllDocuments;
+        return
+        [
+            new("Tile Side by Side", Docking.TileArrangement.SideBySide, canTile,   "Ctrl+OemPipe"),
+            new("Tile Stacked",      Docking.TileArrangement.Stacked,    canTile,   null),
+            new("Tile Grid",         Docking.TileArrangement.Grid,       canTile,   null),
+            new("Merge All Documents", Docking.TileArrangement.MergeAll,     canMerge, "Ctrl+Shift+OemPipe"),
+        ];
     }
 
     /// <summary>

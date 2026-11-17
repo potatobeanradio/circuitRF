@@ -42432,3 +42432,31 @@ floating-title refresh too. A `CrfHostWindow` cannot be built headlessly, so `Fl
 - **The panes resize by their gaps**, the Phased Array tool's arrangement: Specification, Realisers and What Place writes stacked on
   the left, each its own pane scrolling on its own (selecting a realiser never scrolls the specification), the response right, a 4 px transparent `GridSplitter` in an Auto column/row between them. Each pane clips
   (`ClipToBounds`) and has a minimum the splitters stop at; the left panes scroll vertically and wrap horizontally.
+
+## Window ▸ Tile and Merge All Documents (2026-11-17)
+
+**Asked for:** Tile commands on the Window menu so a schematic and the display of its results sit side by
+side, plus a way to gather a scattered arrangement back into one tab strip.
+
+**What shipped:** Tile Side by Side (<kbd>Ctrl/⌘+\</kbd>), Tile Stacked, Tile Grid and Merge All Documents
+(<kbd>Ctrl/⌘+Shift+\</kbd>) at the top of the Window menu, on both menu surfaces from one list
+(`WorkspaceViewModel.EnumerateTileEntries`). Placement is `Docking/DocumentTiling` (pure): kind first —
+schematic, symbol, cell parameters, layout, 3D, technology, Data Display — then cell, with a Data Display
+counted as the cell whose results it plots (`ResultsWriter.SchematicKey` names results `<cell>` or
+`<cell>.<view>`, so the stem before the first dot is the cell). At most three panes in a row or column and
+six (3×2) in a grid; past that, same-kind documents share a pane. `CircuitRfDockFactory.ArrangeDocuments`
+carries a plan out through `MoveDockable` (the drag path), so the result is an ordinary split region that
+`.cws` captures. Tile touches docked documents only; Merge also brings floating DOCUMENTS home and closes
+the windows that empties; floating tool panels are left alone. No Cascade: inside a docked area panes
+cannot overlap, so there is nothing for it to do. Gate: `tests/Ui.Tests/DocumentTilingTests.cs`.
+
+**Trap — `CollapsedProportion`.** A dockable has TWO share fields, `Proportion` and `CollapsedProportion`,
+and Dock's proportional panel restores from the second. The primary strip carries the
+`CollapsedProportion` it had in the document column (0.8) into a new split, so side by side rendered
+55 % / 23 % / 23 % (0.8 ÷ (0.8 + ⅓ + ⅓)) while every `Proportion` in the model read ⅓ right up to the
+first layout pass — a model-only test cannot see it. Anything that re-parents a dock in code must set both
+(`SetShare`); after a layout pass Dock holds them equal itself. Found with a headless `DockControl` render,
+not a test.
+
+**Also:** a `MoveDockable` into an empty strip does not preserve the order the documents were moved in
+(two moved as A, B landed B, A), so `ArrangeDocuments` reorders each pane afterwards with same-dock moves.

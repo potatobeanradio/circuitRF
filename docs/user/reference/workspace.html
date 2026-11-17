@@ -1026,6 +1026,28 @@ copies the folder that holds it.</p>
 against an edge of the document area to split the area in two, or drag it clear of the window to
 give it a window of its own. A detached document is still part of the workspace — it saves, runs and
 undoes exactly as it did while docked — and where you left it is recorded in the <code>.cwsuser</code>.</p>
+<h3 id="tiling">Tiling documents</h3>
+<p>The top of the <strong>Window</strong> menu arranges every docked document in one step, which is the quick way
+to have a schematic open beside the display of its results: edit, press <strong>Run</strong>, and read the
+outcome without changing tabs.</p>
+<table class="param-table">
+<thead><tr><th>Command</th><th>Arranges the documents</th></tr></thead>
+<tbody>
+<tr><td class="nowrap"><b>Tile Side by Side</b> <kbd>Ctrl/⌘+\</kbd></td><td>In a row of up to three panes, each the full height of the document area.</td></tr>
+<tr><td class="nowrap"><b>Tile Stacked</b></td><td>In up to three panes one above another, each the full width.</td></tr>
+<tr><td class="nowrap"><b>Tile Grid</b></td><td>In columns of two: three documents make two on the left and one full-height on the right, four make a 2×2, and five or six make three columns.</td></tr>
+<tr><td class="nowrap"><b>Merge All Documents</b> <kbd>Ctrl/⌘+Shift+\</kbd></td><td>Every document back into the main window's one tab strip — including documents you detached into windows of their own, whose emptied windows close. The quick way to tidy up a scattered arrangement.</td></tr>
+</tbody>
+</table>
+<p>Placement follows how a design is worked on: <strong>schematics on the left, then symbols, layouts, 3D
+views and technologies, and data displays on the right</strong> (top to bottom for Tile Stacked). A data
+display counts as part of the cell whose results it shows, so in a grid each cell's schematic and its
+display share a row. With more documents than panes, documents of the same kind share a pane as tabs.
+The document you were working in keeps the focus.</p>
+<p>The three Tile commands arrange the documents docked in the main window only. A detached document
+stays where you put it — your operating system's own window tiling arranges those — until
+<strong>Merge All Documents</strong> brings it back. Floating tool panels are not documents and stay where they
+are; <strong>View ▸ Reset Layout</strong> is their clean-up.</p>
 <h2 id="panels">The tool panels</h2>
 <p>Nine panels can be on screen; <strong>View ▸ Panels</strong> lists all of them, and the four used most often have
 toolbar buttons of their own.</p>

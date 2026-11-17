@@ -38,7 +38,7 @@ namespace CircuitRF.Ui.ViewModels.Dock;
 /// Messages is aligned with the document area only (not spanning the left panel).
 /// The left column spans the full window height so both left panels share the height.
 /// </summary>
-public class CircuitRfDockFactory : Factory
+public partial class CircuitRfDockFactory : Factory
 {
     // Expose the document dock so WorkspaceViewModel can add/remove tabs.
     private IDocumentDock? _documentDock;

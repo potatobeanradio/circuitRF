@@ -710,6 +710,12 @@
              being taken: H is completely unused app-wide. -->
         <KeyBinding Gesture="Ctrl+Shift+H"  Command="{Binding HideShowDockersCommand}"/>
         <KeyBinding Gesture="Meta+Shift+H"  Command="{Binding HideShowDockersCommand}"/>
+        <!-- Window ▸ Tile Side by Side / Merge All Documents. Backslash is the "split editor" key most code
+             editors use; neither gesture was bound anywhere in the app before. -->
+        <KeyBinding Gesture="Ctrl+OemPipe"        Command="{Binding TileSideBySideCommand}"/>
+        <KeyBinding Gesture="Meta+OemPipe"        Command="{Binding TileSideBySideCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+OemPipe"  Command="{Binding MergeAllDocumentsCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+OemPipe"  Command="{Binding MergeAllDocumentsCommand}"/>
         <KeyBinding Gesture="Ctrl+R"        Command="{Binding RunAnalysisCommand}"/>
         <KeyBinding Gesture="Meta+R"        Command="{Binding RunAnalysisCommand}"/>
         <KeyBinding Gesture="Ctrl+U"        Command="{Binding UpdateLayoutFromSchematicCommand}"/>
