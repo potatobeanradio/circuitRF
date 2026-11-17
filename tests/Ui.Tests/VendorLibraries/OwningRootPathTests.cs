@@ -135,6 +135,13 @@ public sealed class OwningRootPathTests : IDisposable
             ["ResolveComposedParameters"]  = [("ComposedCore", "File")],
             ["ResolveWBondParameters"]     = [("wBond", "File"), ("wBond", "MaterialLibrary")],
             ["ResolveModSourceParameters"] = [("MOD_Source", "Carrier[1]")],
+            // TRN-2 — a waveform source's File= (a PWL's table of points).
+            ["ResolveWaveformParameters"]  = [("V_PWL", "File"), ("I_PWL", "File")],
+            // PAA — a phased array's Record (the saved EM run its elements read).
+            ["ResolvePhasedArrayParameters"] = [(CircuitRF.Core.Devices.PhasedArrayModel.TypeName, "Record")],
+            // PCH — a propagation channel's rays/terrain File, antenna patterns and codebook.
+            ["ResolvePropagationChannelParameters"] = [("PropagationChannel", "File"), ("PropagationChannel", "TxPattern"),
+                ("PropagationChannel", "RxPattern"), ("PropagationChannel", "Terrain"), ("PropagationChannel", "Codebook")],
             ["TunableCatalog"]             = [("SnP", "File")],
             // A fixture file a TRL analysis writes is the string a Deembed's File takes, resolved by that rule.
             ["TrlRun"]                     = [("Deembed", "File")],

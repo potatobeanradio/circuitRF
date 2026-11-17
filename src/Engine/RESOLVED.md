@@ -5650,3 +5650,10 @@ stops at that time with what it has.
   seed cut short is no steady state.
 - **Gate:** `TransientEngineTests.AtTheStepFloor_TheRunStops_KeepingWhatItHad`. A drive that turns non-finite after 0.5 µs
   stops the run at 5e-7 s with its output up to there.
+
+## `Em3dAirBox` compared its symmetry planes by reference (2026-11-16)
+
+HZN-21 added `SymmetryPlanes` (a list) to the `Em3dAirBox` record, and a record compares a list member by REFERENCE: two
+boxes with the same planes in two lists compared unequal, so an edit that changed nothing read as one that did (five
+3D-editor tests failed on exactly that). The record now has value equality over the list's contents. A list added to any
+record here needs the same.

@@ -982,6 +982,25 @@ public sealed class NdfTests(ITestOutputHelper output)
         ["DuplexerModel"]         = Activity.Passive,
         ["DelayModel"]            = Activity.Passive,   // |e^(−jωT)| = 1 and matched
         ["CombinerModel"]         = Activity.Passive,   // σ_max = 10^(−IL/20) ≤ 1 at IL ≥ 0
+        ["PhaseShifterModel"]     = Activity.Passive,
+        ["PropagationChannelModel"] = Activity.Passive,
+
+        // The planned passives and the lines they are drawn from (RF passives, parts 1 and 2).
+        ["MicrostripPlanModel"]   = Activity.Passive,
+        ["MicrostripMultiLineModel"] = Activity.Passive,
+        ["MicrostripOpenEndModel"] = Activity.Passive,
+        ["MicrostripRadialStubModel"] = Activity.Passive,
+        ["InterdigitatedLineModel"] = Activity.Passive,
+        ["WigglyLineModel"]       = Activity.Passive,
+
+        // Sources added since (transient waveforms, Idc, the array's incident wave): off in this assembly.
+        ["WaveformSourceModel"]   = Activity.Passive,
+        ["IdcModel"]              = Activity.Passive,
+        ["ArrayIncidentWaveModel"] = Activity.Passive,
+
+        // The phased array: a black box by type; its feed only when its gain exceeds 1 (σ > 1), which the type cannot know.
+        ["PhasedArrayModel"]      = Activity.BlackBox,
+        ["PhasedArrayFeedModel"]  = Activity.BlackBox,
 
         // Two-terminal nonlinearities: a linearised C(V) or I(V) is a passive element at any bias.
         ["DiodeModel"]            = Activity.Passive,
@@ -990,6 +1009,7 @@ public sealed class NdfTests(ITestOutputHelper output)
 
         // Exact — circuitRF wrote the dependent source and zeroes it itself.
         ["ResistorModel"]         = Activity.ActiveExact,   // R → |R| (a negative R is active)
+        ["VSwitchModel"]          = Activity.ActiveExact,   // the control's transconductance → 0, g kept
         ["ZPortModel"]            = Activity.ActiveExact,   // Re Z → |Re Z| on the diagonal
         ["VccsModel"]             = Activity.ActiveExact,   // G → 0
         ["VcvsModel"]             = Activity.ActiveExact,   // E → 0 (the branch stays: a short)

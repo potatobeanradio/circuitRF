@@ -27,7 +27,7 @@ public sealed class CoupledStripsPartTests
         var four = SymbolPortDefs.For(kind, component.PortCount);
         Assert.Equal(["1", "2", "3", "4", "5", "6", "7", "8"], four.Select(p => p.Name));
         Assert.All(Enumerable.Range(0, 4), k => Assert.Equal(four[k].LocalY, four[4 + k].LocalY));
-        Assert.Equal(four.Select(p => (p.Name, p.LocalX, p.LocalY)),
+        Assert.Equal(four.Select(p => ((string?)p.Name, p.LocalX, p.LocalY)),
                      BuiltInSymbols.Primitives(kind, 8).Pins.Select(p => (p.Name, (float)p.LocalX, (float)p.LocalY)));
         Assert.Equal(6, SymbolPortDefs.For(kind).Length);      // the one-argument default: three strips
     }

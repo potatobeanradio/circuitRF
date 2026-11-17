@@ -48,7 +48,7 @@ public sealed class CoupledArrayPartTests(ITestOutputHelper output) : IDisposabl
         Assert.Equal(8, component.PortCount);                                    // four shorts and two sites
         var pins = SymbolPortDefs.For(kind, component.PortCount);
         Assert.Equal(["1", "2", "E1", "E2", "E3", "E4", "E5", "E6"], pins.Select(p => p.Name));
-        Assert.Equal(pins.Select(p => (p.Name, p.LocalX, p.LocalY)),
+        Assert.Equal(pins.Select(p => ((string?)p.Name, p.LocalX, p.LocalY)),
                      BuiltInSymbols.Primitives(kind, 8).Pins.Select(p => (p.Name, (float)p.LocalX, (float)p.LocalY)));
         // Each end pin at least as far from the middle across as along, so a shunt part on it stands straight out.
         Assert.All(pins.Skip(2), p => Assert.True(Math.Abs(p.LocalY) >= Math.Abs(p.LocalX)));

@@ -122,6 +122,14 @@ public sealed class VSwitchModel : ComponentModel, ITransientDevice, IReportsWar
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega) { }
 
+    /// <summary>Linearised, the branch current depends on the control pair (<c>∂I/∂v_c = (dg/dv_c)·v_sw</c>, entry (0, 1)):
+    /// a dependent source, zeroed for the stability probe's passive reference (docs/design/stability-wsprobe.md §11). The
+    /// branch's own conductance g is kept, as a junction's is.</summary>
+    public override Activity Activity => Activity.ActiveExact;
+
+    /// <inheritdoc/>
+    public override IReadOnlyList<(int P, int Q)> ControlledConductances => [(0, 1)];
+
     public override NonlinearResult Evaluate(in PortVoltages v)
     {
         double vsw = v[0], vc = v[1];

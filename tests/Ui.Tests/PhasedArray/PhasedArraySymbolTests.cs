@@ -85,7 +85,7 @@ public sealed class PhasedArraySymbolTests
 
         var lost = Array(("Mode", "feed"), ("Rows", "nr"), ("Cols", "32"), ("Phase", "steer(theta0, 0, f0)"));
         Assert.Equal(PhasedArrayGlyph.Default, lost.ArrayGlyph());          // no VARs: 4 × 4, boresight, no text
-        Assert.Equal(1, BuiltInSymbols.Primitives(SymbolKind.PhasedArray, 1).Pins.Count);
+        Assert.Single(BuiltInSymbols.Primitives(SymbolKind.PhasedArray, 1).Pins);
         // What the palette places is the variant its tile draws: Feed mode, one pin.
         var placed = ComponentTypeRegistry.DefaultParameters(SymbolKind.PhasedArray, 1)
                                           .Select(d => new EditableParameter { Name = d.Name, Expression = d.Expression });

@@ -604,7 +604,7 @@ internal sealed partial class HznTranslator
         public Pend Pending;
         public Dictionary<string, string> Props = [];
         public Dim[]? Origin;
-        public readonly List<(C3dAxis Axis, Ang Angle)> Rot = [];
+        public readonly List<(C3dAxis Axis, Ang Angle)> Turns = [];
         public bool Mirror;
         /// <summary>brief-hzn-14 — an upright polyline's own turn about z and its origin: the sheet's frame, not a move the history
         /// made, so they do not make it Placed (a port can still take it).</summary>
@@ -612,7 +612,7 @@ internal sealed partial class HznTranslator
         public C3dPoint3 OwnOrigin;
         /// <summary>brief-hzn-15 — a tilted polyline's own rotations (its frame), with <see cref="OwnOrigin"/>; null otherwise.</summary>
         public List<C3dRotation>? OwnRot;
-        public bool Placed => Mirror || Rot.Count > 0 || (Origin is not null && Origin.Any(d => !d.IsZeroLiteral));
+        public bool Placed => Mirror || Turns.Count > 0 || (Origin is not null && Origin.Any(d => !d.IsZeroLiteral));
         public readonly List<string> Consumed = [];
         public readonly List<HznStepOrigin> Steps = [];
     }
@@ -900,9 +900,9 @@ internal sealed partial class HznTranslator
     private sealed record VPolyInfo(C3dPlane Plane, double Degrees, C3dPoint3 Origin, List<Dim[]> Outline, SheetGeom? Rect);
 
     /// <summary>brief-hzn-15 — a polyline in a tilted plane: a sheet on the axis plane nearest it (<paramref name="Plane"/>, offset 0), its
-    /// outline in that plane's (u, v) in DBU, carried onto the tilted plane by <paramref name="Rot"/> (the matrix <paramref name="R"/>) and
+    /// outline in that plane's (u, v) in DBU, carried onto the tilted plane by <paramref name="Turns"/> (the matrix <paramref name="R"/>) and
     /// moved to <paramref name="Origin"/>. <paramref name="Rect"/> is the port sheet it is when it is a rectangle.</summary>
-    private sealed record TPolyInfo(C3dPlane Plane, int U, int V, int N, double[,] R, List<C3dRotation> Rot, C3dPoint3 Origin,
+    private sealed record TPolyInfo(C3dPlane Plane, int U, int V, int N, double[,] R, List<C3dRotation> Turns, C3dPoint3 Origin,
                                     List<C3dPoint2> Outline, SheetGeom? Rect);
 
     private object? _pendingInfo;
@@ -1356,7 +1356,7 @@ internal sealed partial class HznTranslator
                 // brief-hzn-15 R-hzn15-1 — a sheet on the nearest axis plane, its frame the tilt and the first point
                 var q = (TPolyInfo)_pendingInfo!;
                 st.Root = new C3dSheet { Plane = q.Plane, Outline = q.Outline };
-                st.OwnRot = q.Rot;
+                st.OwnRot = q.Turns;
                 st.OwnOrigin = q.Origin;
                 st.Sheet = q.Rect;
                 break;
@@ -1450,7 +1450,7 @@ internal sealed partial class HznTranslator
             if (v.Any(d => !d.IsLiteral))
                 _notes.Add($"{name}: the sweep vector '{p.GetValueOrDefault("Vector")}' is numbers in the prism (its frame is tilted).");
             st.Root = new C3dPrism { Plane = q.Plane, Outline = q.Outline, Height = Round(Along(q.N)), Shear = new C3dPoint2(Round(Along(q.U)), Round(Along(q.V))) };
-            st.OwnRot = q.Rot;
+            st.OwnRot = q.Turns;
             st.OwnOrigin = q.Origin;
             st.Pending = Pend.None;
             _pendingInfo = null;
@@ -1639,7 +1639,7 @@ internal sealed partial class HznTranslator
         {
             // brief-hzn-14 — the upright sheet's frame: its turn first, its origin added to any move. A rotation or mirror the history
             // adds would act on the moved frame, which one placement cannot state.
-            if (st.Mirror || st.Rot.Count > 0)
+            if (st.Mirror || st.Turns.Count > 0)
                 _r.Add(HznRefusalKind.Operation, "Rotate or Mirror of an upright polyline", "its own turn and a later rotation about the origin are not one placement", name);
             if (own != 0) pl.Rotate.Add(new C3dRotation { Axis = C3dAxis.Z, Deg = own });
             var o = st.Origin ?? [Dim.Zero, Dim.Zero, Dim.Zero];
@@ -1649,14 +1649,14 @@ internal sealed partial class HznTranslator
         {
             // brief-hzn-15 — the tilted shape's frame: its rotations first, its origin added to any move; a rotation or mirror the
             // history adds acts on the moved frame, which one placement cannot state
-            if (st.Mirror || st.Rot.Count > 0)
+            if (st.Mirror || st.Turns.Count > 0)
                 _r.Add(HznRefusalKind.Operation, "Rotate or Mirror of a tilted polyline", "its own tilt and a later rotation about the origin are not one placement", name);
             pl.Rotate.AddRange(ownRot);
             var o = st.Origin ?? [Dim.Zero, Dim.Zero, Dim.Zero];
             st.Origin = [Add(o[0], new Dim(null, st.OwnOrigin.X, true)), Add(o[1], new Dim(null, st.OwnOrigin.Y, true)), Add(o[2], new Dim(null, st.OwnOrigin.Z, true))];
         }
         if (st.Origin is { } origin) PutAll(pl, nameof(C3dPlacement.Origin), origin);
-        foreach (var (axis, ang) in st.Rot)
+        foreach (var (axis, ang) in st.Turns)
         {
             var rot = new C3dRotation { Axis = axis };
             if (ang.Text is null) rot.Deg = ang.Deg;
@@ -1665,7 +1665,7 @@ internal sealed partial class HznTranslator
         }
         if (st.Sheet is { } sh && placed) st.Sheet = sh with { Placed = true };
         st.Origin = null;
-        st.Rot.Clear();
+        st.Turns.Clear();
         st.Mirror = false;
     }
 
@@ -1702,11 +1702,11 @@ internal sealed partial class HznTranslator
             _r.Add(HznRefusalKind.Operation, "Rotate after Move", "a placement is rotated first and moved last, so a rotation after a move needs the move rotated too; that is not stated exactly", name);
             return false;
         }
-        st.Rot.Add((axis, ang));
+        st.Turns.Add((axis, ang));
         if (centre.Any(d => !d.IsZeroLiteral))
         {
             // p' = R(p - c) + c = R p + (c - R c): the move that follows the rotation.
-            if (st.Rot.Count > 1)
+            if (st.Turns.Count > 1)
             {
                 _r.Add(HznRefusalKind.Operation, "Rotate about a centre after another rotation", "the centre's own move would have to be rotated by the earlier rotation", name);
                 return false;
@@ -1756,8 +1756,8 @@ internal sealed partial class HznTranslator
         origin[axis] = twice;
         st.Origin = origin;
         // MirrorX negates x; a half turn about Y or Z then turns the mirror into one across y or z.
-        if (axis == 1) st.Rot.Add((C3dAxis.Z, new Ang(null, 180)));
-        if (axis == 2) st.Rot.Add((C3dAxis.Y, new Ang(null, 180)));
+        if (axis == 1) st.Turns.Add((C3dAxis.Z, new Ang(null, 180)));
+        if (axis == 2) st.Turns.Add((C3dAxis.Y, new Ang(null, 180)));
         return true;
     }
 

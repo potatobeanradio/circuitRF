@@ -231,7 +231,7 @@ public sealed class SnpPortLabelSymbolTests
             var pins = CircuitRF.Design.Schematic.SymbolPortDefs.For(SymbolKind.Mwpd, component.PortCount);
             Assert.Equal(CircuitRF.Core.Devices.Microstrip.WilkinsonPlan.PinsFor(n), pins.Select(p => p.Name));
             var glyph = BuiltInSymbols.Primitives(SymbolKind.Mwpd, component.PortCount);
-            Assert.Equal(pins.Select(p => (p.Name, p.LocalX, p.LocalY)), glyph.Pins.Select(p => (p.Name, (float)p.LocalX, (float)p.LocalY)));
+            Assert.Equal(pins.Select(p => ((string?)p.Name, p.LocalX, p.LocalY)), glyph.Pins.Select(p => (p.Name, (float)p.LocalX, (float)p.LocalY)));
             for (int k = 2; k <= n; k++)
             {
                 var top = pins.Single(p => p.Name == $"R2_{k}");
@@ -265,7 +265,7 @@ public sealed class SnpPortLabelSymbolTests
         var pins = CircuitRF.Design.Schematic.SymbolPortDefs.For(SymbolKind.Mlad, component.PortCount);
         Assert.Equal(CircuitRF.Core.Devices.Microstrip.LadderPlan.PinsFor(grounds), pins.Select(p => p.Name));
         var glyph = BuiltInSymbols.Primitives(SymbolKind.Mlad, component.PortCount);
-        Assert.Equal(pins.Select(p => (p.Name, p.LocalX, p.LocalY)), glyph.Pins.Select(p => (p.Name, (float)p.LocalX, (float)p.LocalY)));
+        Assert.Equal(pins.Select(p => ((string?)p.Name, p.LocalX, p.LocalY)), glyph.Pins.Select(p => (p.Name, (float)p.LocalX, (float)p.LocalY)));
         var g = pins.Skip(2).ToArray();
         Assert.All(g, p => Assert.Equal(300f, p.LocalY));
         Assert.Equal(0f, g.Sum(p => p.LocalX));

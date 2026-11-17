@@ -248,7 +248,7 @@ public sealed class EmCellPartsTests(ITestOutputHelper output) : IDisposable
         output.WriteLine(cnl);
         Assert.Contains("Dev:Q1  p3  p4  0", cnl, StringComparison.Ordinal);
         string mim = cnl.Split('\n').Single(l => l.StartsWith("MIMCAP:C2", StringComparison.Ordinal));
-        Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(mim, @"\bEr=").Count);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(mim, @"\bEr="));
     }
 
     // ── The fixture ─────────────────────────────────────────────────────────────────────────────────────────────────

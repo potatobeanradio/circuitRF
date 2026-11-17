@@ -1212,9 +1212,14 @@ branch at all.
 | `C`, `L`, `SRLC`, `PRLC`, `SRL`, `SRC`, `SLC`, `PRL`, `PRC`, `PLC`, `Bead`, `Mutual`, `Transformer`, `TLIN`, `CLIN`, `MCLIN`, `BCLIN`, `MBCLIN`, the microstrips, `CPWG`, `SLIN`, `VIA`, `VIAGND`, `TESTPAD`, `GSGPAD`, the MMIC passives (`MIMCAP`, `TFR`, `SPIRAL`, `AIRBRIDGE`), `Short`, `IProbe`, `WSProbe`, `OscProbe` (idle outside the oscillator analysis: a short in series, an open in shunt), `Port`, `Term`, `wBond`, `Match` | Passive | as-is — the ordinary stamp already IS the passive stamp |
 | `Vdc`, `V_1Tone`/`V_nTone`, `I_1Tone`/`I_nTone`, `P1Tone`, `PnTone`, `Tuner` | Passive | sources are off in this assembly already; `P1Tone` and `Tuner` stamp their impedances |
 | `Atten`, `Switch`, `Circulator`, `Coupler`, `Combiner`, `Balun`, `Filter`, `Duplexer`, `Delay` | Passive | as-is. **The circulator is non-reciprocal and passive** — Platzker zeroes dependent sources, not non-reciprocity, and a `σ_max` of 1 can no more hold a right-half-plane pole than a length of line can |
+| `MWPD`, `MBLC`, `MRRC`, `MCLC`, `MIDC`, `MCBL` and the other planned passives, `MCLINN`, `MRADIAL` | Passive | as-is — lines, gaps and open ends; a planned passive is its sections' ordinary stamps |
+| `PhaseShifter`, `PropagationChannel` (system) | Passive | as-is, like the other system blocks |
+| `V_Pulse` … `I_Expr`, `Idc`, the phased array's incident wave | Passive | sources are off in this assembly already |
+| `PhasedArray` | BlackBox | its feed and element models are data it has not read at type level; its feed reports Passive itself when its gain is at most 1 |
 | `Diode`, `NonlinearC`, `SemiC` | Passive | a two-terminal nonlinearity linearises to a positive conductance or capacitance at any bias |
 | `R` | ActiveExact | `R → \|R\|` (§8 p. 111's "negative resistances … rendered passive"). The TYPE-level answer is unconditional and the EFFECT is not: for a positive resistor the two stamps are identical entry for entry and it contributes no column at all |
 | `Z_Port` | ActiveExact | `Re Z → \|Re Z\|` on the diagonal, where a driving-point negative resistance lives; the off-diagonal transfer terms are the block's own reciprocity and are untouched |
+| `VSwitch` | ActiveExact | the control pair's transconductance `∂I/∂v_c → 0`; the switch's own conductance `g` stays at bias, as a junction's does |
 | `VCCS` | ActiveExact | `G → 0` — no stamp, and it allocates no branch, so the numbering is unchanged |
 | `VCVS` | ActiveExact | `E → 0`; **the branch and its constraint row stay** (a zero-gain controlled voltage source is a short) |
 | `Amp` (system) | ActiveExact | forward gain → 0. What is left is what the other three entries already say — matched terminations and the reverse isolation, kept. With compression on it is nonlinear and the same term is `∂I_out/∂V_in` |

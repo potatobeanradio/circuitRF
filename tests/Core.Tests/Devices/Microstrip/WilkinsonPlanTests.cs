@@ -62,19 +62,21 @@ public class WilkinsonPlanTests
     }
 
     /// <summary>The equal split's plan, every number of it, fingerprinted as it was before the split ratio and section
-    /// count existed: K = 1 and N = 1 must give the same doubles, bit for bit, so no placed divider moves.</summary>
+    /// count existed: K = 1 and N = 1 must give the same doubles, to twelve digits, so no placed divider moves.</summary>
     [Theory]
-    [InlineData(50.0, 2.4e9, 1.35e-3, "5E0B0760C8247930")]
-    [InlineData(50.0, 5.8e9, 1.35e-3, "EDA90C548615DF20")]
-    [InlineData(35.0, 1.0e9, 2.0e-3, "73DB42B48E0BAF65")]
-    public void TheEqualSplit_IsUnchangedBitForBit(double z0, double f, double gap, string fingerprint)
+    [InlineData(50.0, 2.4e9, 1.35e-3, "ED7036A9CF10A830")]
+    [InlineData(50.0, 5.8e9, 1.35e-3, "0BF72F3B9DC49CBC")]
+    [InlineData(35.0, 1.0e9, 2.0e-3, "43F35C5FECF85FE0")]
+    public void TheEqualSplit_IsUnchanged(double z0, double f, double gap, string fingerprint)
         => Assert.Equal(fingerprint, Fingerprint(WilkinsonPlan.Build(z0, f, gap, Ro4350b)));
 
     private static string Fingerprint(WilkinsonDesign d)
         => Fingerprint(d.Plan, [d.W0Meters, d.ArmZ0, d.ArmWMeters, d.ArmEeff, d.QuarterWaveMeters,
                                 d.RingRadiusMeters, d.FeedMeters, d.IsolationOhms]);
 
-    /// <summary>Every double of a plan, after <paramref name="head"/>, hashed: a change to any of them changes it.</summary>
+    /// <summary>Every double of a plan, after <paramref name="head"/>, hashed to twelve significant digits: a change to any
+    /// of them changes it. Not to the bit: the platforms' maths libraries may differ in a result's last bit (one variant's
+    /// fingerprint differed on macOS alone), and .NET's own formatting rounds the same way everywhere.</summary>
     internal static string Fingerprint(PassivePlan plan, IEnumerable<double> head)
     {
         var bits = new List<double>(head);
@@ -89,18 +91,20 @@ public class WilkinsonPlanTests
                 _ => throw new InvalidOperationException(),
             });
         }
-        var bytes = bits.SelectMany(BitConverter.GetBytes).ToArray();
+        static double Twelve(double x) => double.Parse(x.ToString("G12", System.Globalization.CultureInfo.InvariantCulture),
+                                                       System.Globalization.CultureInfo.InvariantCulture);
+        var bytes = bits.Select(Twelve).SelectMany(BitConverter.GetBytes).ToArray();
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))[..16];
     }
 
     /// <summary>The variants at <c>Corner = Curve</c>, fingerprinted before the corners existed: every number of their
-    /// plans and every line and resistor, bit for bit.</summary>
+    /// plans and every line and resistor, to twelve digits.</summary>
     [Theory]
-    [InlineData(1.5, 1, 2.0, "9F27EA18D959577A")]
-    [InlineData(0.6, 1, 2.0, "4312E3E826DFAE05")]
-    [InlineData(1.0, 2, 2.0, "24F13F8689C487BA")]
-    [InlineData(1.0, 3, 3.0, "387DC2EB25DDA04C")]
-    public void TheVariants_AtCurvedCorners_AreUnchangedBitForBit(double k, int n, double band, string fingerprint)
+    [InlineData(1.5, 1, 2.0, "ACF36B5E671DD163")]
+    [InlineData(0.6, 1, 2.0, "F8E1E528482E0D64")]
+    [InlineData(1.0, 2, 2.0, "D72266F921E6A813")]
+    [InlineData(1.0, 3, 3.0, "369DC502B41DA5AB")]
+    public void TheVariants_AtCurvedCorners_AreUnchanged(double k, int n, double band, string fingerprint)
     {
         var d = WilkinsonPlan.Build(50.0, 2.4e9, 1.35e-3, Ro4350b, k, n, band);
         Assert.Equal(fingerprint, Fingerprint(d.Plan,

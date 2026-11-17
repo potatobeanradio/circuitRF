@@ -93,7 +93,7 @@ public sealed class HznUprightPortsAndTerminalsTests : IDisposable
             var back = Translate(path, design);
             if (design == "Upright")
             {
-                Assert.Equal("CreatePolyline", hzn.Objects.First(o => o.Name.StartsWith("1", StringComparison.Ordinal)).History[0].Kind);
+                Assert.Equal("CreatePolyline", hzn.Objects.First(o => o.Name?.StartsWith("1", StringComparison.Ordinal) == true).History[0].Kind);
                 Assert.Equal(30.0, Math.Round(back.Ports.Single(p => p.Number == 1).Angle, 2));
             }
             else

@@ -5313,3 +5313,20 @@ Level 1 has neither effect. The fix:
 - `ETA`, `VMAX` and `DELTA` are not written, since circuitRF ignores them without an oxide and they act through Cox in
   the dialect too.
 - Gate: `SpiceDeckWriterTests.AMos3Card_StatesKpAndAThickOxide`.
+
+## File references the extractor did not rebase; a switch's dependent source; plan fingerprints across platforms (2026-11-16)
+
+- **`FileReferences` missed two families.** A waveform source's `File=` (V_PWL/I_PWL, TRN-2) and a propagation channel's
+  `File`, `TxPattern`, `RxPattern`, `Terrain` and `Codebook` (PCH) are resolved by the elaborator like every other path,
+  but the predicate the extractor rebases with did not know them, so a relative file in a sub-cell would resolve against
+  the wrong folder. Both are listed now; `OwningRootPathTests` is the gate (it reports only the FIRST unlisted site per
+  run, so list every site at once).
+- **`VSwitchModel` is `ActiveExact`.** Linearised, the branch current depends on the control pair (entry (0, 1),
+  `(dg/dv_c)·v_sw`), a dependent source the stability probe's passive reference must zero; it inherited `Passive`. Its
+  `ControlledConductances` is `[(0, 1)]`; the switch's own `g` stays. Recorded in docs/design/stability-wsprobe.md §11.
+- **Plan fingerprints are to twelve digits, not to the bit.** One Wilkinson variant's SHA of raw doubles differed on macOS
+  alone (Linux matched): a platform maths library's last bit. `WilkinsonPlanTests.Fingerprint` now rounds each double
+  through .NET's own `G12` formatting, which is identical everywhere; the seven Wilkinson and three rat-race fingerprints
+  were recomputed.
+- **Net-count stand-ins for the transient sources.** `V_Exp`/`I_Exp` need `Tau1`, `V_PWL`/`I_PWL` a point and
+  `V_Expr`/`I_Expr` an expression before a model can be built to count its nets (`InstanceNetContract.MinimalParameters`).

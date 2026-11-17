@@ -170,7 +170,6 @@ public static class MulticonductorLine
     public static GeneralModes Decompose(Mat<Complex> cComplex, Mat<double> c0, Mat<double> l,
                                          double asymmetryResidual = 0.0)
     {
-        ArgumentNullException.ThrowIfNull(cComplex);
 
         int n = cComplex.RowCount;
         if (n < 1) throw new InvalidOperationException("The multiconductor line has no conductors.");

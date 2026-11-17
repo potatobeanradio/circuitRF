@@ -816,6 +816,16 @@ public sealed record Em3dAirBox(Point3 Min, Point3 Max, Em3dFaces Faces)
     /// only end on a <see cref="Em3dBoundaryKind.Pec"/> face: that is the one kind that is a
     /// conductor.
     /// </summary>
+    /// <summary>Value equality, the list included: a record compares a list member by REFERENCE, so two boxes with the
+    /// same symmetry planes held in two lists (HZN-21) compared unequal, and an edit that changed nothing looked like
+    /// one that did.</summary>
+    public bool Equals(Em3dAirBox? other)
+        => other is not null && Min == other.Min && Max == other.Max && Faces == other.Faces
+           && SymmetryPlanes.SequenceEqual(other.SymmetryPlanes) && Equals(Scan, other.Scan) && Material == other.Material;
+
+    /// <inheritdoc/>
+    public override int GetHashCode() => HashCode.Combine(Min, Max, Faces, SymmetryPlanes.Count, Scan, Material);
+
     public static string FaceName(string face) => "airbox/" + face;
 
     /// <summary>The face a <see cref="FaceName"/> names, or null for a name that is not a face.</summary>

@@ -190,10 +190,10 @@ public class FileMenuRestructureTests
     // Examples joined LAST, after a separator (field feedback round 1, 2026-10-15) — moved here from
     // Tools; its rows are filled in at run time from what is on disk. A separator reads as "".
     private static readonly string[] ExpectedNewSubmenuInWindow =
-        ["New _Cell…", "New _Schematic", "New S_ymbol", "New _Layout", "New _3D Design…", "New _Data Display",
+        ["New _Cell…", "New _Schematic", "New S_ymbol", "New _Layout", "New _3D Design…", "New Phased _Array…", "New _Data Display",
          "New Data Display from Te_mplate", "New _Technology…", "New _EM Setup…", "", "_Examples"];
     private static readonly string[] ExpectedNewSubmenuNative =
-        ["New Cell…", "New Schematic", "New Symbol", "New Layout", "New 3D Design…", "New Data Display",
+        ["New Cell…", "New Schematic", "New Symbol", "New Layout", "New 3D Design…", "New Phased Array…", "New Data Display",
          "New Data Display from Template", "New Technology…", "New EM Setup…", "", "Examples"];
 
     [Fact]

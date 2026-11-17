@@ -680,6 +680,19 @@ public sealed class ThreeDViewDocumentTests : IDisposable
 			}
 		},
 		{
+			"$type": "Split",
+			"Name": "half",
+			"Plane": "YZ",
+			"At": 5250,
+			"Keep": "Negative",
+			"Target": {
+				"$type": "Box",
+				"Material": "Gold",
+				"Min": [5000, 0, 0],
+				"Size": [500, 500, 500]
+			}
+		},
+		{
 			"$type": "Step",
 			"Name": "shell",
 			"Material": "Lid alloy",

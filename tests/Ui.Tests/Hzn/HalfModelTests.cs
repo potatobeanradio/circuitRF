@@ -116,7 +116,7 @@ public sealed class HalfModelTests : IDisposable
         Assert.True(t.Ok, Why(t));
         var arm = (C3dSplit)t.Document!.Objects.Single(o => o.Name == "ArmTop");
         Assert.Equal(C3dSplitPlane.Custom, arm.Plane);
-        Assert.Equal([2.0, 0.0, 0.0], arm.Normal);
+        Assert.Equal([2.0, 0.0, 0.0], arm.Normal!);
         Assert.Equal(("r/3", "g"), (C3dBindings.GetExpr(arm, nameof(C3dSplit.Base), 0)!.Expr, C3dBindings.GetExpr(arm, nameof(C3dSplit.Base), 2)!.Expr));
 
         var written = C3dToHzn.Write(t.Document, new HznExportOptions { DesignName = "Half", Technology = t.Technology });

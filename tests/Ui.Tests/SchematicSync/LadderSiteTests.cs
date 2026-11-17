@@ -34,7 +34,7 @@ public sealed class LadderSiteTests : IDisposable
             "line(W=1.1mm, L=5mm); site(role=C, value=12pF); line(W=1.1mm, L=5mm)";
         SchematicPersistence.SaveToFile(p.SchematicPath, p.Model, Path.GetFileNameWithoutExtension(p.SchematicPath));
 
-        var mismatch = Assert.Single(LvsRun.Run(p.CellDir).Findings.Where(f => f.Severity == DiagnosticSeverity.Error));
+        var mismatch = Assert.Single(LvsRun.Run(p.CellDir).Findings, f => f.Severity == DiagnosticSeverity.Error);
         Assert.Equal("lvs.property.mismatch", mismatch.Id);
         Assert.Equal("Sections", mismatch.Diagnostic.Arguments["name"]);
     }

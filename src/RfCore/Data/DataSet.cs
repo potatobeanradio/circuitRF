@@ -86,6 +86,16 @@ namespace RfCore.Data
             GetOrCreateGroup(group)[name] = cube;
         }
 
+        /// <summary>Copy <paramref name="group"/> from <paramref name="source"/> as it stands — every cube under its own
+        /// name, the cubes shared, not cloned — creating the group here if needed. For carrying a group another run
+        /// already assembled (a run's evaluated measurements into an export), never for assembling one.</summary>
+        public void CopyGroupFrom(DataSet source, string group)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            var target = GetOrCreateGroup(group);
+            foreach (var (name, cube) in source.CubesIn(group)) target[name] = cube;
+        }
+
         /// <summary>Remove a cube from a group (default group when omitted). Returns true if removed.
         /// Used by post-processing/normalization passes that rename cubes (add-new then drop-old).</summary>
         public bool RemoveFromGroup(string group, string name)

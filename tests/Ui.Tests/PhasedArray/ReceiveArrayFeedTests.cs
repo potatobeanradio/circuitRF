@@ -87,8 +87,9 @@ public sealed class ReceiveArrayFeedTests(ITestOutputHelper output) : IDisposabl
                     peak = Math.Max(peak, Math.Abs(u[i])); diff = Math.Max(diff, Math.Abs(u[i] - v[i]));
                 }
             }
-            // a phase in degrees that is zero to round-off (a CW's AM-PM, 8e-10°) is held to 1e-9° absolute, not to its own peak
-            if (key is "AMPM" || key.EndsWith("_deg", StringComparison.Ordinal)) peak = Math.Max(peak, 1);
+            // a phase in degrees that is zero to round-off (a CW's AM-PM, 8e-10°, and its AMPM_max) is held to 1e-9° absolute,
+            // not to its own peak
+            if (key.StartsWith("AMPM", StringComparison.Ordinal) || key.EndsWith("_deg", StringComparison.Ordinal)) peak = Math.Max(peak, 1);
             double rel = peak > 0 ? diff / peak : diff;
             if (rel > worst) { worst = rel; name = key; }
         }

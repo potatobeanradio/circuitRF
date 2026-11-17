@@ -356,6 +356,15 @@ public static class InstanceNetContract
                 p["S"] = new Expressions.Value(1e-4);
                 break;
 
+            // The waveform sources (TRN-2) whose shape has no default: an exponential needs a time constant, a PWL a point,
+            // an Expr an expression. Any valid one stands in; the nets are the source's two terminals whatever the shape.
+            case "V_EXP":
+            case "I_EXP":  p["Tau1"]   = new Expressions.Value(1e-9); break;
+            case "V_PWL":
+            case "I_PWL":  p["Points"] = new Expressions.Value("0 0"); break;
+            case "V_EXPR":
+            case "I_EXPR": p["Expr"]   = new Expressions.Value("0"); break;
+
             // A radial stub refuses a zero width and a radius short of its feed; any drawable pair stands in.
             case "MRADIAL":
                 p["W"]  = new Expressions.Value(1e-4);

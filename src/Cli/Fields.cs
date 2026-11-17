@@ -125,10 +125,9 @@ internal static class Fields
             Console.WriteLine();
             Console.WriteLine("Measurements:");
             foreach (var (name, cube) in measures.OrderBy(kv => kv.Key, StringComparer.Ordinal))
-            {
                 CliEntry.PrintCube($"  {name}", cube, 24, false);
-                grouped.AddToGroup(DataSet.MeasurementsGroup, name, cube);
-            }
+            // Carried as the run evaluated it: the group is assembled once, by CircuitEvaluation, not here.
+            grouped.CopyGroupFrom(runGroups, DataSet.MeasurementsGroup);
         }
         // A measure line the run could not evaluate (e.g. a pattern metric under a sweep, which says to plot the cube instead).
         foreach (string e in result.Errors.Where(e => e.StartsWith("measurements:", StringComparison.Ordinal)))

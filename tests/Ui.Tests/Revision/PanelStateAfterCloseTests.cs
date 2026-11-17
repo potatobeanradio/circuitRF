@@ -358,7 +358,9 @@ public class PanelStateAfterCloseTests
     {
         string source = Strip(File.ReadAllText(SourcePath("ViewModels/WorkspaceViewModel.cs")));
 
-        var sites = Regex.Matches(source, @"CurrentWorkspacePath\s*=\s*(?!null)\S");
+        // An ASSIGNMENT: `=` not followed by a second `=` (a comparison such as the autosave's `CurrentWorkspacePath ==
+        // cws` opens nothing).
+        var sites = Regex.Matches(source, @"CurrentWorkspacePath\s*=(?!=)\s*(?!null)\S");
         Assert.True(sites.Count >= 3,
             "A route that opens a workspace has gone; this gate must follow the assignment.");
 

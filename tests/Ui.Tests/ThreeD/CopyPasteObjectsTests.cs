@@ -56,8 +56,8 @@ public sealed class CopyPasteObjectsTests : IDisposable
         Assert.StartsWith("Pasted 1 object; renamed a → a_2", vm.StatusMessage);
         // The copy lies on its original, so its row's menu moves it: the canvas's operations, the row's own Duplicate once.
         var headers = vm.TreeMenuItems(Row(vm, "a_2")).Select(i => i.Header).ToList();
-        Assert.Equal(["Move", "Move Along", "Rotate", "Rotate 90°", "Mirror", "Duplicate", "Array…", "Align", "Order"],
-                     headers.SkipWhile(h => h != "Move").Take(9));
+        Assert.Equal(["Move", "Move Along", "Rotate", "Rotate 90°", "Mirror", "Duplicate", "Array…", "Split at Plane", "Align", "Order"],
+                     headers.SkipWhile(h => h != "Move").Take(10));
         Assert.Single(headers, h => h == "Duplicate");
 
         vm.UndoRedo.Undo();

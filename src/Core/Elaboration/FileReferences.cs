@@ -44,12 +44,21 @@ public static class FileReferences
 
         if (Is("SnP") || Is(ComponentModelFactory.DeembedTypeName) || Is(EmFieldDataRecord.TypeName) || Is(ComponentModelFactory.ComposedFetTypeName) || Is(ComponentModelFactory.ComposedCoreTypeName))
             return Named("File") ? FileValueKind.Path : FileValueKind.None;
+        // A propagation channel's files (PCH): its rays or terrain, its two antennas' patterns (a path, then "#pattern")
+        // and its beam codebook, each resolved by ResolvePropagationChannelParameters like every other path.
+        if (Is(PropagationChannelModel.TypeName))
+            return Named("File") || Named("TxPattern") || Named("RxPattern") || Named("Terrain") || Named("Codebook")
+                ? FileValueKind.Path : FileValueKind.None;
         if (Is(PhasedArrayModel.TypeName))
             return Named("Record") ? FileValueKind.Path : FileValueKind.None;
         if (Is("VerilogA"))
             return Named(ComponentModelFactory.VerilogAFileParam) ? FileValueKind.Path : FileValueKind.None;
         if (Is("wBond"))
             return Named("File") || Named("MaterialLibrary") ? FileValueKind.Path : FileValueKind.None;
+        // A waveform source's File= (a PWL's table of points, TRN-2), resolved by ResolveWaveformParameters like every
+        // other path, so a sub-cell's relative file is rebased with it.
+        if (WaveformSourceModel.IsTypeName(reference))
+            return Named("File") ? FileValueKind.Path : FileValueKind.None;
         if (Is("MOD_Source"))
             return RxCarrier.IsMatch(parameterName) ? FileValueKind.CarrierSpec : FileValueKind.None;
         return FileValueKind.None;
