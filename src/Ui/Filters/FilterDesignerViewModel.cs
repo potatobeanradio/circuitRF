@@ -134,6 +134,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     [ObservableProperty] private string _unit = "GHz";
     [ObservableProperty] private string _orderText = "5";
     [ObservableProperty] private string _apText = "3";
+    [ObservableProperty] private string _rippleText = "0.1";
     [ObservableProperty] private string _asText = "20";
     [ObservableProperty] private string _sourceText = "50";
     [ObservableProperty] private string _loadText = "50";
@@ -158,14 +159,29 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     [ObservableProperty] private FilterLibrarySeries? _capacitorChoice;
     [ObservableProperty] private bool _libraryAvailable;
 
-    /// <summary>Ap — passband attenuation (ripple for Chebyshev and elliptic).</summary>
-    public string TipAp { get; } = "Passband attenuation, in dB.";
+    /// <summary>How far outside the mask the plots run, as a percent of the outer span (Match's ± band).</summary>
+    [ObservableProperty] private string _plotBandPercentText = "10";
+
+    /// <summary>How many frequency points the plots run at.</summary>
+    [ObservableProperty] private string _plotPointsText = "401";
+
+    /// <summary>The unit the edge boxes were last shown in — used to rescale when the unit changes.</summary>
+    private string _unitForEdges = "GHz";
+
+    /// <summary>Ap — passband attenuation used for the order mask.</summary>
+    public string TipAp { get; } = "Passband attenuation, in dB. Used with As and the edges to size the order.";
+
+    /// <summary>Ripple — Chebyshev / elliptic prototype ripple.</summary>
+    public string TipRipple { get; } = "Passband ripple for Chebyshev and elliptic prototypes, in dB.";
 
     /// <summary>As — stopband attenuation floor.</summary>
     public string TipAs { get; } = "Stopband attenuation, in dB.";
 
     /// <summary>The ladder as the Match Designer's own schematic canvas draws it.</summary>
     [ObservableProperty] private MatchLadderLayout _ladder = MatchLadderLayout.Empty;
+
+    /// <summary>Dashed Ap/As and Fp/Fs lines on the magnitude plot.</summary>
+    internal FilterSpecMaskOverlay MagnitudeMask { get; private set; } = null!;
 
     /// <summary>True when a placed Filter can take Apply.</summary>
     public bool CanApply => Target is { Symbol: SymbolKind.Filter } && Schematic is not null;
@@ -178,6 +194,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         PhaseContainer = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, 0, 280, 640, 220);
         MagnitudePlot.Axes.LockedPanning = true;
         PhasePlot.Axes.LockedPanning = true;
+        MagnitudeMask = new FilterSpecMaskOverlay(MagnitudePlot);
         PlotHost.SelectOnly((PlotContainerViewModel?)null);
         ApplyLabels();
     }
@@ -199,7 +216,12 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
     partial void OnFirstChanged(FilterFirstElement value) => Design();
     partial void OnSeriesChanged(FilterSeriesKind value) => Design();
-    partial void OnUnitChanged(string value) => Design();
+    partial void OnUnitChanged(string value)
+    {
+        ConvertEdgeTexts(_unitForEdges, value);
+        _unitForEdges = value;
+        Design();
+    }
     partial void OnOrderModeChanged(FilterOrderMode value)
     {
         OrderEditable = value == FilterOrderMode.Specify
@@ -309,7 +331,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
                      $"\nMinimum insertion loss: {minIl:0.0000} dB" +
                      (built.Realization is { } r ? $"\nLoad: {r.LoadOhms:0.###} Ω" : "");
         Status = note;
-        BuildPlots(idealSnp, ladderSnp);
+        BuildPlots(idealSnp, ladderSnp, spec);
     }
 
     /// <summary>Indexes the workspace's vendor libraries into inductor and capacitor series.</summary>
@@ -360,16 +382,47 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
                 return fallback;
             return v;
         }
-        FaText = GhzOf(Form is NetworkForm.Lowpass or NetworkForm.Highpass ? "Fc" : "F1", 1).ToString("0.####", CultureInfo.InvariantCulture);
-        FbText = GhzOf("F2", 2).ToString("0.####", CultureInfo.InvariantCulture);
-        if (double.TryParse(Expr("Ripple"), NumberStyles.Float, CultureInfo.InvariantCulture, out double ap))
-            ApText = ap.ToString("0.####", CultureInfo.InvariantCulture);
+        FaText = FormatEdge(GhzOf(Form is NetworkForm.Lowpass or NetworkForm.Highpass ? "Fc" : "F1", 1));
+        FbText = FormatEdge(GhzOf("F2", 2));
+        if (double.TryParse(Expr("Ripple"), NumberStyles.Float, CultureInfo.InvariantCulture, out double ripple))
+        {
+            RippleText = ripple.ToString("0.####", CultureInfo.InvariantCulture);
+            ApText = RippleText;
+        }
         if (double.TryParse(Expr("Astop"), NumberStyles.Float, CultureInfo.InvariantCulture, out double ast))
             AsText = ast.ToString("0.####", CultureInfo.InvariantCulture);
         SourceText = Ohms("Zin", 50).ToString("0.####", CultureInfo.InvariantCulture);
         LoadText = Ohms("Zout", 50).ToString("0.####", CultureInfo.InvariantCulture);
+        _unitForEdges = Unit;
         ApplyLabels();
     }
+
+    /// <summary>
+    /// Commits the ± band / points boxes (Return or focus loss), Match Designer style.
+    /// </summary>
+    public void CommitPlotWindow(double? bandPercent, int? points)
+    {
+        if (bandPercent is { } p && double.IsFinite(p) && p >= 0)
+            PlotBandPercentText = p.ToString("0.#", CultureInfo.InvariantCulture);
+        if (points is { } n && n >= 2)
+            PlotPointsText = Math.Min(n, 20001).ToString(CultureInfo.InvariantCulture);
+        Design();
+    }
+
+    /// <summary>Parses the "± band" box ("10%", "10", "0.1 %").</summary>
+    public static double? ParseBandPercent(string? text)
+    {
+        string t = (text ?? "").Trim().TrimEnd('%').Trim();
+        return double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) && v >= 0
+            ? v
+            : null;
+    }
+
+    /// <summary>Parses the "points" box.</summary>
+    public static int? ParsePlotPoints(string? text) =>
+        int.TryParse((text ?? "").Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int v)
+            ? v
+            : null;
 
     private void ApplyLabelsWithoutDesign() { }
 
@@ -378,12 +431,14 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         FilterFirstElement First,
         double FcHz, double F1Hz, double F2Hz, double RippleDb, double AsDb,
         double SourceOhms, double LoadOhms,
-        double PassLoHz, double PassHiHz, bool PassIsOutside);
+        double PassLoHz, double PassHiHz, bool PassIsOutside,
+        double ApDb, double EdgeAHz, double EdgeBHz, double EdgeCHz, double EdgeDHz);
 
     private bool TrySpec(out Spec spec, out string? error)
     {
         spec = new Spec(FilterResponse.Butterworth, NetworkForm.Lowpass, 1, false,
-                        FilterFirstElement.Series, 1, 0, 0, 0.1, 20, 50, 50, 0, 1, false);
+                        FilterFirstElement.Series, 1, 0, 0, 0.1, 20, 50, 50, 0, 1, false,
+                        3, 0, 0, 0, 0);
         error = null;
         if (!double.TryParse(ApText, NumberStyles.Float, CultureInfo.InvariantCulture, out double ap) || ap < 0)
         { error = "Ap is a number of dB, zero or more."; return false; }
@@ -451,12 +506,15 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
             { error = "Order is a whole number, 1 or more."; return false; }
         }
 
-        // Chebyshev and elliptic read Ap as the ripple. The other families ignore it, and a 0 would
-        // be refused by the prototype, so a maximally-flat Ap of 0 stays 0 and is not passed.
+        // Synthesis ripple is its own box. Order still uses Ap with As and the edges.
+        if (!double.TryParse(RippleText, NumberStyles.Float, CultureInfo.InvariantCulture, out double rippleIn)
+            || rippleIn < 0)
+        { error = "Ripple is a number of dB, zero or more."; return false; }
         double ripple = Response is FilterResponse.Chebyshev or FilterResponse.Elliptic
-            ? (ap > 0 ? ap : 0.1) : 0.1;
+            ? (rippleIn > 0 ? rippleIn : 0.1)
+            : 0.1;
         spec = new Spec(Response, Form, order, fromMin, First, fc, f1, f2, ripple, astop, rs, rl,
-                        passLo, passHi, outside);
+                        passLo, passHi, outside, ap, a, b, c, d);
         return true;
     }
 
@@ -469,13 +527,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         return true;
     }
 
-    private double UnitScale() => Unit switch
-    {
-        "kHz" => 1e3,
-        "MHz" => 1e6,
-        "GHz" => 1e9,
-        _ => 1,
-    };
+    private double UnitScale() => ScaleOf(Unit);
 
     private List<FilterElement> ApplyValues(FilterRealization real, Spec spec)
     {
@@ -525,10 +577,26 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         _ = used;
     }
 
-    private static double[] Frequencies(Spec spec)
+    private double[] Frequencies(Spec spec)
     {
+        // Outer edges of the typed mask, then ± PlotBandFraction like the Match Designer.
+        var edges = new List<double>(4);
+        void Add(double hz) { if (hz > 0 && double.IsFinite(hz)) edges.Add(hz); }
+        Add(spec.EdgeAHz);
+        Add(spec.EdgeBHz);
+        if (spec.Form is NetworkForm.Bandpass or NetworkForm.Bandstop)
+        {
+            Add(spec.EdgeCHz);
+            Add(spec.EdgeDHz);
+        }
+
         double lo, hi;
-        if (spec.Form == NetworkForm.Lowpass)
+        if (edges.Count >= 2)
+        {
+            lo = edges.Min();
+            hi = edges.Max();
+        }
+        else if (spec.Form == NetworkForm.Lowpass)
         {
             lo = Math.Max(spec.FcHz / 50, 1e3);
             hi = spec.FcHz * 20;
@@ -543,11 +611,53 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
             lo = Math.Max(spec.F1Hz / 5, 1e3);
             hi = spec.F2Hz * 5;
         }
-        var f = new double[201];
-        for (int i = 0; i < f.Length; i++)
-            f[i] = lo * Math.Pow(hi / lo, i / (f.Length - 1.0));
+
+        double fraction = 0.10;
+        if (ParseBandPercent(PlotBandPercentText) is { } pct) fraction = pct / 100.0;
+        int n = 401;
+        if (ParsePlotPoints(PlotPointsText) is { } pts) n = Math.Clamp(pts, 2, 20001);
+
+        double span = hi - lo;
+        if (!(span > 0)) span = Math.Max(hi, 1.0);
+        double pad = span * Math.Max(0.0, fraction);
+        lo = Math.Max(lo - pad, span * 1e-6);
+        hi = hi + pad;
+
+        var f = new double[n];
+        for (int i = 0; i < n; i++)
+            f[i] = lo + (hi - lo) * i / (n - 1.0);
         return f;
     }
+
+    private void ConvertEdgeTexts(string fromUnit, string toUnit)
+    {
+        if (string.Equals(fromUnit, toUnit, StringComparison.Ordinal)) return;
+        double from = ScaleOf(fromUnit);
+        double to = ScaleOf(toUnit);
+        if (!(from > 0) || !(to > 0)) return;
+        FaText = ConvertEdge(FaText, from, to);
+        FbText = ConvertEdge(FbText, from, to);
+        FcText = ConvertEdge(FcText, from, to);
+        FdText = ConvertEdge(FdText, from, to);
+    }
+
+    private static string ConvertEdge(string text, double fromScale, double toScale)
+    {
+        if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
+            return text;
+        return FormatEdge(v * fromScale / toScale);
+    }
+
+    private static string FormatEdge(double v) =>
+        v.ToString("0.########", CultureInfo.InvariantCulture);
+
+    private static double ScaleOf(string unit) => unit switch
+    {
+        "kHz" => 1e3,
+        "MHz" => 1e6,
+        "GHz" => 1e9,
+        _ => 1,
+    };
 
     private static SNP IdealSnp(FilterNetwork ideal, double[] freqs, double rs, double rl)
     {
@@ -600,7 +710,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         return double.IsPositiveInfinity(best) ? 0 : Math.Max(0, best);
     }
 
-    private void BuildPlots(SNP ideal, SNP? ladder)
+    private void BuildPlots(SNP ideal, SNP? ladder, Spec spec)
     {
         MagnitudePlot.Traces.Clear();
         PhasePlot.Traces.Clear();
@@ -630,6 +740,9 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
                 PhasePlot.Traces.Add(delay);
         }
 
+        MagnitudeMask.EdgeHz = MaskEdges(spec);
+        MagnitudeMask.LevelDb = [-spec.ApDb, -spec.AsDb];
+
         MagnitudePlot.CustomTitleOn = true;
         MagnitudePlot.CustomTitle = "Insertion loss";
         MagnitudePlot.Autoscale(force: true);
@@ -639,10 +752,26 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         Announce();
     }
 
+    private static double[] MaskEdges(Spec spec)
+    {
+        var list = new List<double>(4);
+        void Add(double hz) { if (hz > 0 && double.IsFinite(hz)) list.Add(hz); }
+        Add(spec.EdgeAHz);
+        Add(spec.EdgeBHz);
+        if (spec.Form is NetworkForm.Bandpass or NetworkForm.Bandstop)
+        {
+            Add(spec.EdgeCHz);
+            Add(spec.EdgeDHz);
+        }
+        return list.ToArray();
+    }
+
     private void ClearPlots()
     {
         MagnitudePlot.Traces.Clear();
         PhasePlot.Traces.Clear();
+        MagnitudeMask.EdgeHz = [];
+        MagnitudeMask.LevelDb = [];
         Announce();
     }
 

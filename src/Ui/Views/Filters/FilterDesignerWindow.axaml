@@ -55,18 +55,31 @@
             <Setter Property="Margin"       Value="0,2,0,0"/>
             <Setter Property="Foreground"   Value="{DynamicResource CrfWarningBrush}"/>
         </Style>
-        <Style Selector="Button.gridhdr">
-            <Setter Property="FontSize"                   Value="10"/>
-            <Setter Property="FontWeight"                 Value="SemiBold"/>
-            <Setter Property="Padding"                    Value="0,2"/>
-            <Setter Property="BorderThickness"            Value="0"/>
-            <Setter Property="Background"                 Value="Transparent"/>
-            <Setter Property="HorizontalAlignment"        Value="Stretch"/>
-            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Style Selector="TextBlock.detailLabel">
+            <Setter Property="FontSize"          Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
+        <!-- Side-panel value column: every TextBox and ComboBox shares one width. -->
         <Style Selector="TextBox.num">
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="Padding"  Value="4,2"/>
+            <Setter Property="FontSize"             Value="11"/>
+            <Setter Property="Padding"              Value="4,2"/>
+            <Setter Property="MinWidth"             Value="140"/>
+            <Setter Property="HorizontalAlignment"  Value="Stretch"/>
+        </Style>
+        <Style Selector="Border.card ComboBox">
+            <Setter Property="MinWidth"            Value="140"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
+        <Style Selector="TextBlock.tblhdr">
+            <Setter Property="FontSize"          Value="11"/>
+            <Setter Property="FontWeight"        Value="SemiBold"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin"            Value="8,0"/>
+        </Style>
+        <Style Selector="TextBlock.tblcell">
+            <Setter Property="FontSize"          Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin"            Value="8,0"/>
         </Style>
     </Window.Styles>
 
@@ -120,12 +133,15 @@
                                 <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding Forms}"
                                           SelectedItem="{Binding Form}"/>
                             </Grid>
-                            <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto" RowSpacing="3" Margin="0,3,0,0">
+                            <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="3" Margin="0,3,0,0">
                                 <TextBlock Classes="lbl" Text="Ap, dB" ToolTip.Tip="{Binding TipAp}"/>
                                 <TextBox Grid.Column="1" Classes="num" Text="{Binding ApText}"
                                          ToolTip.Tip="{Binding TipAp}"/>
-                                <TextBlock Grid.Row="1" Classes="lbl" Text="As, dB" ToolTip.Tip="{Binding TipAs}"/>
-                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding AsText}"
+                                <TextBlock Grid.Row="1" Classes="lbl" Text="Ripple, dB" ToolTip.Tip="{Binding TipRipple}"/>
+                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding RippleText}"
+                                         ToolTip.Tip="{Binding TipRipple}"/>
+                                <TextBlock Grid.Row="2" Classes="lbl" Text="As, dB" ToolTip.Tip="{Binding TipAs}"/>
+                                <TextBox Grid.Row="2" Grid.Column="1" Classes="num" Text="{Binding AsText}"
                                          ToolTip.Tip="{Binding TipAs}"/>
                             </Grid>
                         </StackPanel>
@@ -136,7 +152,7 @@
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Classes="cardhdr" Text="Edges"/>
                                 <ComboBox Grid.Column="1" ItemsSource="{Binding Units}" SelectedItem="{Binding Unit}"
-                                          MinWidth="72"/>
+                                          MinWidth="72" HorizontalAlignment="Right"/>
                             </Grid>
                             <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="3">
                                 <TextBlock Classes="lbl" Text="{Binding LabelA}" ToolTip.Tip="{Binding TipA}"/>
@@ -206,7 +222,7 @@
 
         <!-- ── The ladder, drawn ─────────────────────────────────────────── -->
         <Border Grid.Row="1" Grid.Column="1" Classes="pane">
-            <Grid RowDefinitions="Auto,*,Auto,Auto">
+            <Grid RowDefinitions="Auto,*,Auto">
                 <TextBlock Classes="panelhdr" Text="Filter network"/>
                 <Border Grid.Row="1" BorderThickness="1" CornerRadius="4" ClipToBounds="True"
                         BorderBrush="{DynamicResource CrfTileBorderBrush}">
@@ -220,33 +236,60 @@
                     </Panel>
                 </Border>
 
-                <Grid Grid.Row="2" ColumnDefinitions="1.2*,1.2*,*,*" Margin="0,8,0,0">
-                    <TextBlock Classes="lbl" FontWeight="SemiBold" Text="Instance"/>
-                    <TextBlock Grid.Column="1" Classes="lbl" FontWeight="SemiBold" Text="Type"/>
-                    <TextBlock Grid.Column="2" Classes="lbl" FontWeight="SemiBold" Text="Exact"/>
-                    <TextBlock Grid.Column="3" Classes="lbl" FontWeight="SemiBold" Text="Value"/>
-                </Grid>
-                <ScrollViewer Grid.Row="3" MaxHeight="160" Margin="0,2,0,0"
-                              VerticalScrollBarVisibility="Auto">
-                    <ItemsControl ItemsSource="{Binding Elements}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="flt:FilterElementRow">
-                                <Grid ColumnDefinitions="1.2*,1.2*,*,*" Margin="0,1">
-                                    <TextBlock Text="{Binding Name}" FontSize="11"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding Kind}" FontSize="11"/>
-                                    <TextBlock Grid.Column="2" Text="{Binding Exact}" FontSize="11"/>
-                                    <TextBlock Grid.Column="3" Text="{Binding Used}" FontSize="11"/>
-                                </Grid>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+                <!-- Realization table — header + zebra rows, chain-budget style. -->
+                <Border Grid.Row="2" Margin="0,8,0,0" BorderBrush="#D0D0D0" BorderThickness="1"
+                        CornerRadius="2" ClipToBounds="True">
+                    <Grid RowDefinitions="Auto,*">
+                        <Border Background="#F0F0F0" BorderBrush="#D0D0D0" BorderThickness="0,0,0,1"
+                                Padding="0,6">
+                            <Grid ColumnDefinitions="1.2*,1.2*,*,*,*">
+                                <TextBlock Classes="tblhdr" Text="Instance"/>
+                                <Border Grid.Column="1" BorderBrush="#D0D0D0" BorderThickness="1,0,0,0">
+                                    <TextBlock Classes="tblhdr" Text="Type"/>
+                                </Border>
+                                <Border Grid.Column="2" BorderBrush="#D0D0D0" BorderThickness="1,0,0,0">
+                                    <TextBlock Classes="tblhdr" Text="Exact"/>
+                                </Border>
+                                <Border Grid.Column="3" BorderBrush="#D0D0D0" BorderThickness="1,0,0,0">
+                                    <TextBlock Classes="tblhdr" Text="Value"/>
+                                </Border>
+                                <Border Grid.Column="4" BorderBrush="#D0D0D0" BorderThickness="1,0,0,0">
+                                    <TextBlock Classes="tblhdr" Text="Part"/>
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <ListBox Grid.Row="1" ItemsSource="{Binding Elements}" MaxHeight="160"
+                                 BorderThickness="0" Background="Transparent"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.Styles>
+                                <Style Selector="ListBoxItem">
+                                    <Setter Property="Padding" Value="0,4"/>
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                </Style>
+                                <Style Selector="ListBoxItem:nth-child(2n):not(:selected):not(:pointerover) /template/ ContentPresenter">
+                                    <Setter Property="Background" Value="#F0F0F0"/>
+                                </Style>
+                            </ListBox.Styles>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="flt:FilterElementRow">
+                                    <Grid ColumnDefinitions="1.2*,1.2*,*,*,*">
+                                        <TextBlock Classes="tblcell" Text="{Binding Name}"/>
+                                        <TextBlock Grid.Column="1" Classes="tblcell" Text="{Binding Kind}"/>
+                                        <TextBlock Grid.Column="2" Classes="tblcell" Text="{Binding Exact}"/>
+                                        <TextBlock Grid.Column="3" Classes="tblcell" Text="{Binding Used}"/>
+                                        <TextBlock Grid.Column="4" Classes="tblcell" Text="{Binding Part}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Grid>
+                </Border>
             </Grid>
         </Border>
 
         <!-- ── Response plots, side by side ──────────────────────────────── -->
         <Border Grid.Column="1" Classes="pane">
-            <Grid ColumnDefinitions="*,*">
+            <Grid RowDefinitions="*,Auto" ColumnDefinitions="*,*">
                 <ddc:PlotControl Name="MagnitudePlotControl"
                                  Plot="{Binding MagnitudePlot}"
                                  Library="{Binding PlotHost.Library}"
@@ -255,6 +298,12 @@
                                  Plot="{Binding PhasePlot}"
                                  Library="{Binding PlotHost.Library}"
                                  CanDeletePlot="False" CanEditPlotProperties="False"/>
+                <Grid Grid.Row="1" Grid.ColumnSpan="2" ColumnDefinitions="Auto,*,Auto,*" Margin="0,6,0,0">
+                    <TextBlock Classes="detailLabel" Text="± band "/>
+                    <TextBox Grid.Column="1" Classes="num" Name="BandFractionBox" MinWidth="64"/>
+                    <TextBlock Grid.Column="2" Classes="detailLabel" Text=" points "/>
+                    <TextBox Grid.Column="3" Classes="num" Name="PlotPointsBox" MinWidth="64"/>
+                </Grid>
             </Grid>
         </Border>
     </Grid>

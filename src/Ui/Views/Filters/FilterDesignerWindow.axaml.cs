@@ -1,6 +1,9 @@
+using System.Globalization;
 using Avalonia.Controls;
-using CircuitRF.Core.Matching;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using CircuitRF.Core.Matching;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.DataDisplay.Controls;
@@ -17,6 +20,8 @@ namespace CircuitRF.Ui.Views.Filters;
 /// </summary>
 public partial class FilterDesignerWindow : Window, ICrfMenuWindow
 {
+    private bool _wired;
+
     public FilterDesignerWindow()
     {
         InitializeComponent();
@@ -64,13 +69,29 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
 
     private void WirePlots()
     {
-        if (Vm is null) return;
+        if (Vm is null || _wired) return;
+        _wired = true;
         var magnitude = this.FindControl<PlotControl>("MagnitudePlotControl");
         var phase = this.FindControl<PlotControl>("PhasePlotControl");
         Bind(magnitude, Vm.MagnitudeContainer);
         Bind(phase, Vm.PhaseContainer);
+        if (magnitude is not null)
+            magnitude.Overlay = Vm.MagnitudeMask;
         SyncTheme();
         ActualThemeVariantChanged += (_, _) => SyncTheme();
+
+        BindNumericBox(
+            "BandFractionBox",
+            () =>
+            {
+                string t = Vm.PlotBandPercentText.Trim().TrimEnd('%').Trim();
+                return t + "%";
+            },
+            t => Vm.CommitPlotWindow(FilterDesignerViewModel.ParseBandPercent(t), null));
+        BindNumericBox(
+            "PlotPointsBox",
+            () => Vm.PlotPointsText,
+            t => Vm.CommitPlotWindow(null, FilterDesignerViewModel.ParsePlotPoints(t)));
 
         void Bind(PlotControl? plot, PlotContainerViewModel container)
         {
@@ -85,6 +106,27 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
             plot.MarkerAdded += container.OnMarkerAdded;
             container.PlotNeedsRedraw += (_, _) => plot.InvalidateVisual();
         }
+    }
+
+    /// <summary>
+    /// Match Designer's commit-on-Return-and-focus-loss for the ± band / points boxes.
+    /// </summary>
+    private void BindNumericBox(string name, Func<string> read, Action<string> write)
+    {
+        if (this.FindControl<TextBox>(name) is not { } box) return;
+        box.Text = read();
+        box.LostFocus += (_, _) =>
+        {
+            write(box.Text ?? "");
+            box.Text = read();
+        };
+        box.KeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Return && e.Key != Key.Enter) return;
+            write(box.Text ?? "");
+            box.Text = read();
+            e.Handled = true;
+        };
     }
 
     private void SyncTheme()
@@ -129,7 +171,7 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
         Set("Response", Vm.Response.ToString());
         Set("Form", Vm.Form.ToString());
         Set("Order", Vm.OrderText.Trim());
-        Set("Ripple", Vm.ApText.Trim());
+        Set("Ripple", Vm.RippleText.Trim());
         Set("Astop", Vm.AsText.Trim());
         Set("Zin", Vm.SourceText.Trim());
         Set("Zout", Vm.LoadText.Trim());
