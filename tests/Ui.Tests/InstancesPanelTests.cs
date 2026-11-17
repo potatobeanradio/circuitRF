@@ -246,6 +246,18 @@ public class InstancesPanelTests
         Assert.Equal(2, src.Split("FindInstanceCommand.NotifyCanExecuteChanged()").Length - 1);
     }
 
+    /// <summary>Tools ▸ Phased Array is greyed unless a schematic is the active document, and is re-asked from both fan-outs — with a
+    /// README in focus it was offered and then did nothing.</summary>
+    [Fact]
+    public void PhasedArrayTool_IsGatedOnAnActiveSchematic_FromBothFanOuts()
+    {
+        var gate = RepoFile("src/Ui/ViewModels/WorkspaceViewModel.PhasedArray.cs");
+        Assert.Contains("[RelayCommand(CanExecute = nameof(IsSchematicDocumentActive))]\n    private async Task OpenPhasedArrayTool()",
+                        gate.ReplaceLineEndings("\n"));
+        var src = RepoFile("src/Ui/ViewModels/WorkspaceViewModel.cs");
+        Assert.Equal(2, src.Split("OpenPhasedArrayToolCommand.NotifyCanExecuteChanged()").Length - 1);
+    }
+
     // ── R-fi-2/R-fi-3: following the focused document ───────────────────────
 
     [Fact]

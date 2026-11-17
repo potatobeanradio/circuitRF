@@ -28,8 +28,10 @@ public partial class WorkspaceViewModel
     /// <summary>
     /// Tools ▸ Phased Array: the tool on the selected Phased Antenna Array of the active schematic — the one selected, else the only one in
     /// the schematic, else the user picks which.
+    /// <para>Greyed unless a schematic is the active document, as the Design menu's schematic items are; enablement is raised in both of
+    /// the workspace's fan-outs (the shell's own tab changes, and a torn-off window taking focus).</para>
     /// </summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(IsSchematicDocumentActive))]
     private async Task OpenPhasedArrayTool()
     {
         var owner = ResolveOwner(null);

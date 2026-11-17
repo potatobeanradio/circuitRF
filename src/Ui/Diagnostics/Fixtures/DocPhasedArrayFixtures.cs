@@ -39,20 +39,20 @@ public static class DocPhasedArrayFixtures
     private const string ExampleFolder = "Phased Array";
     private const string Transmit = "1 Transmit";
 
-    /// <summary>The Beam tab on the Transmit bench: the aperture by amplitude (the Taylor taper), the beam at 30° in (u,v), the cuts.</summary>
-    public static FigureScene ToolBeam() => Tool(Transmit, ApertureQuantity.Amplitude, tab: 0);
+    /// <summary>The Beam page on the Transmit bench: the aperture by amplitude (the Taylor taper), the beam at 30° in (u,v), the cuts.</summary>
+    public static FigureScene ToolBeam() => Tool(Transmit, ApertureQuantity.Amplitude, ArrayPage.Beam);
 
     /// <summary>The same, the aperture coloured by each element's active reflection.</summary>
-    public static FigureScene ToolGamma() => Tool(Transmit, ApertureQuantity.GammaActive, tab: 0);
+    public static FigureScene ToolGamma() => Tool(Transmit, ApertureQuantity.GammaActive, ArrayPage.Beam);
 
-    /// <summary>The Scan maps tab: realized gain and worst |Γ_act| over every scan direction.</summary>
-    public static FigureScene ToolScan() => Tool(Transmit, ApertureQuantity.Amplitude, tab: 1);
+    /// <summary>The Scan maps page: realized gain and worst |Γ_act| over every scan direction.</summary>
+    public static FigureScene ToolScan() => Tool(Transmit, ApertureQuantity.Amplitude, ArrayPage.ScanMaps);
 
-    /// <summary>The Tapers and bits tab.</summary>
-    public static FigureScene ToolTapers() => Tool(Transmit, ApertureQuantity.Amplitude, tab: 2);
+    /// <summary>The Tapers and bits page.</summary>
+    public static FigureScene ToolTapers() => Tool(Transmit, ApertureQuantity.Amplitude, ArrayPage.TapersAndBits);
 
-    /// <summary>The Frequency tab: where the beam points against frequency, phase shifters against delays.</summary>
-    public static FigureScene ToolFrequency() => Tool(Transmit, ApertureQuantity.Amplitude, tab: 4);
+    /// <summary>The Frequency page: where the beam points against frequency, phase shifters against delays.</summary>
+    public static FigureScene ToolFrequency() => Tool(Transmit, ApertureQuantity.Amplitude, ArrayPage.Frequency);
 
     /// <summary>The Transmit bench's display after Simulate: cuts against <c>theta0</c>, realized gain, |Γ_act| per element.</summary>
     public static FigureScene TransmitDisplay() => Display(Transmit, Transmit);
@@ -62,7 +62,7 @@ public static class DocPhasedArrayFixtures
 
     // ── the tool ─────────────────────────────────────────────────────────────
 
-    private static FigureScene Tool(string cell, ApertureQuantity quantity, int tab)
+    private static FigureScene Tool(string cell, ApertureQuantity quantity, ArrayPage page)
     {
         string path = SchematicOf(cell);
         var (model, _, _) = SchematicPersistence.LoadFromFile(path);
@@ -73,8 +73,9 @@ public static class DocPhasedArrayFixtures
         if (vm.Frame is null)
             throw new InvalidOperationException($"The Phased Array tool did not evaluate '{cell}': {vm.Status}");
         vm.Quantity = quantity;
-        if (tab == 1) vm.StartScan();
-        if (tab == 4) vm.RunFrequency();
+        if (page == ArrayPage.ScanMaps) vm.StartScan();
+        if (page == ArrayPage.Frequency) vm.RunFrequency();
+        vm.Page = page;
 
         var window = new PhasedArrayWindow { DataContext = vm };
         var content = window.Content as Control
@@ -89,13 +90,7 @@ public static class DocPhasedArrayFixtures
 
         return new FigureScene(content)
         {
-            AfterLayout = root =>
-            {
-                var tabs = root.GetLogicalDescendants().OfType<TabControl>().FirstOrDefault()
-                    ?? throw new InvalidOperationException("The Phased Array tool's content holds no TabControl.");
-                tabs.SelectedIndex = tab;
-                UiArtworkGenerator.Pump();
-            },
+            AfterLayout = _ => UiArtworkGenerator.Pump(),
             Cleanup = vm.Dispose,
         };
     }

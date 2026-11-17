@@ -52,5 +52,18 @@ public partial class ParameterEditorViewModel
     {
         OnPropertyChanged(nameof(IsModSource));
         OnPropertyChanged(nameof(ModSourceSummary));
+        OnPropertyChanged(nameof(CanOpenPhasedArrayTool));
+    }
+
+    /// <summary>True for a Phased Antenna Array in a schematic its workspace can netlist: the inspector shows the Phased Array button.</summary>
+    public bool CanOpenPhasedArrayTool => _target?.Symbol == SymbolKind.PhasedArray && SchematicVm?.PreparePhasedArrayCircuit is not null;
+
+    /// <summary>Raised by <see cref="OpenPhasedArrayToolCommand"/>; the view opens the window (it knows the owner).</summary>
+    public event Action<EditableComponent>? OpenPhasedArrayToolRequested;
+
+    [RelayCommand]
+    private void OpenPhasedArrayTool()
+    {
+        if (_target is { Symbol: SymbolKind.PhasedArray }) OpenPhasedArrayToolRequested?.Invoke(_target);
     }
 }

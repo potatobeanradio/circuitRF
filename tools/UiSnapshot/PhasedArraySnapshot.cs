@@ -19,7 +19,7 @@ using SkiaSharp;
 /// netlists that drawing, as the application would; a bench that defines cells (a channel, an amplifier) cannot be drawn, so the tool sees
 /// the array instance and the VARs and evaluates the bench's own netlist.
 /// <para><c>--pa-color</c> amplitude|phase|gamma|power|pout|pae|nf colours the aperture; <c>--pa-tab</c> beam|channel|channel-busy|scan|tapers|failures|frequency
-/// picks the tab (its work done first); <c>--pa-drag N</c> drags the beam from boresight to <c>--pa-to</c> θ (default 30°) in N steps and
+/// picks the page (its work done first); <c>--pa-drag N</c> drags the beam from boresight to <c>--pa-to</c> θ (default 30°) in N steps and
 /// prints each frame's evaluation, forming and drawing — R-paa9-7's measurement.</para>
 /// </summary>
 static class PhasedArraySnapshot
@@ -67,8 +67,11 @@ static class PhasedArraySnapshot
             for (int k = 0; k < 8; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); window.UpdateLayout(); }
         }
         Settle();
-        var tabs = window.FindControl<TabControl>("Tabs")!;
-        tabs.SelectedIndex = tab switch { "channel" or "channel-busy" => 1, "scan" => 2, "tapers" => 3, "failures" => 4, "frequency" => 5, _ => 0 };
+        vm.Page = tab switch
+        {
+            "channel" or "channel-busy" => ArrayPage.Channel, "scan" => ArrayPage.ScanMaps, "tapers" => ArrayPage.TapersAndBits,
+            "failures" => ArrayPage.Failures, "frequency" => ArrayPage.Frequency, _ => ArrayPage.Beam,
+        };
         if (tab == "channel") Console.WriteLine(vm.ChannelStatus);
         // brief-pch-9 — the tab as it looks while a scoring runs (the immediate host finishes it before any frame): the bar and the stage line
         if (tab == "channel-busy")

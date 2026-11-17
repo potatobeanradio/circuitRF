@@ -42387,3 +42387,32 @@ NAMES a document — an untitled one's first save, any Save As — renames its t
 so the window kept the old name. A plain Save of a named file looked fine because the floating title drops the unsaved mark. The one
 handler every document's `Title` change already reaches (`OnWatchedDocumentPropertyChanged`, which marks the main window) now posts a
 floating-title refresh too. A `CrfHostWindow` cannot be built headlessly, so `FloatingDocumentWindowTests` holds the wiring by source.
+
+## Phased Array tool: pages on a toolbar, not a TabControl (2026-11-16)
+
+- **The doc figures had been capturing the wrong tabs.** `DocPhasedArrayFixtures` selected TabControl indices 1, 2 and 4 for
+  "Scan maps", "Tapers and bits" and "Frequency", but index 1 was the Channel tab (hidden unless the array ends a Propagation
+  Channel), so each figure showed the tab one place to the left of the one its name says. The fixtures now set
+  `PhasedArrayToolViewModel.Page`, an `ArrayPage` enum, so a page is named rather than counted.
+- **Each page is built once and shown or hidden** (`PageIs` on `IsVisible`), never re-templated as a TabControl swaps content.
+- **The Scan maps / Failures / Frequency flicker was the RENDER THREAD reading a styled property.** A canvas's `ICustomDrawOperation`
+  runs on the render thread, and `ScanMapCanvas` read `Gamma`, `ArrayChartCanvas` `Kind`, inside the drawing. Avalonia refuses an
+  `AvaloniaObject` property read off the UI thread, so those canvases threw on every frame and the window presented older frames
+  between newer ones: the page buttons were seen flashing between the old page and the new, under tabs and under buttons alike. It
+  affected exactly the three pages that host those two canvases. **Headless rendering never shows it** — it renders on the UI thread,
+  where the read is legal — which is why snapshots with an immediate host and with real worker threads both looked right. What found it
+  was calling each canvas's drawing from `Task.Run` in UiSnapshot: those four threw "the calling thread cannot access this object",
+  the rest did not. The canvases now follow the rule the app's other canvases already kept: `Prepare` reads everything (the view
+  model and the control's own properties) on the UI thread and returns a drawing that touches nothing live; a drawing that still
+  fails paints the background rather than aborting the frame.
+- **A progress bar shows only after `PhasedArrayWindow.WorkBarDelay` (0.1 s) of continuous work** — the window's, at the bottom right,
+  for evaluations, failure trials and the frequency study; the Scan maps page's, right of its status, for the scan. Hidden, a bar is
+  never indeterminate (an invisible indeterminate bar still animates, and redraws the window every frame). **The delay is MEASURED on
+  each progress update, not only timed:** the first version waited on a `DispatcherTimer` at its default Background priority, below
+  the scan's once-per-direction progress posts, and the bar never appeared during a long scan. The timer remains, at Normal priority,
+  for work that reports nothing while it runs. The headless platform never fires a `DispatcherTimer` at all, so a snapshot of a shown
+  bar either lets the delay pass and sends an update, or calls `DelayedBar.Elapsed` itself.
+- **The window subscribes to its view model itself** (`DataContextChanged`), not in `ShowFor`: the page buttons and each page's
+  work must follow the page however the window was made, and UiSnapshot and DocGen build it without `ShowFor`.
+- **A tool opened from Component Parameters is owned by the dialog's OWNER.** `ShowFor` closes the tool with its owner, and the
+  dialog is transient.

@@ -246,6 +246,13 @@
                             ToolTip.Tip="Carriers (LTE / NR / CW / I/Q file), presets, spectrum and CCDF preview"/>
                 </StackPanel>
 
+                <!-- Phased Antenna Array: the Phased Array tool on this instance, as Design signal… opens the Signal Designer on a MOD_Source -->
+                <StackPanel IsVisible="{Binding CanOpenPhasedArrayTool}" Margin="6,4" Spacing="4">
+                    <Button Content="Open Phased Array tool…" HorizontalAlignment="Right" FontSize="11" Padding="8,3"
+                            Command="{Binding OpenPhasedArrayToolCommand}"
+                            ToolTip.Tip="The aperture, the beam in (u, v), the cuts and readouts, scan maps, tapers and bits, failures and frequency — every edit lands on this instance"/>
+                </StackPanel>
+
                 <StackPanel IsVisible="{Binding IsWBond}"
                             Margin="6,4"
                             Spacing="8">

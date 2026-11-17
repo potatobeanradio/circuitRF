@@ -122,6 +122,49 @@ public sealed class PhasedArrayToolTests(ITestOutputHelper output) : IDisposable
         Assert.True(tool.Frame!.State.Lattice.IsOn(9));
     }
 
+    /// <summary>Q switches the selected elements off, and on again once every one of them is off — each one undo step, as Q disables a
+    /// component in the schematic; with nothing selected it switches the element under the pointer.</summary>
+    [Fact]
+    public void Q_TogglesTheSelection_ElseTheHoveredElement_OneUndoStepEach()
+    {
+        var vm = Drawn(Bench(4));
+        using var tool = Open(vm, FromSchematic);
+        int undo = vm.UndoRedo.Entries.Count();
+        tool.Selected.Add(2);
+        tool.Selected.Add(5);
+
+        Assert.True(tool.ToggleSelectedOrHovered());
+        Assert.Equal([2, 5], tool.OffSet());
+        Assert.True(tool.ToggleSelectedOrHovered());
+        Assert.Empty(tool.OffSet());
+        Assert.Equal(undo + 2, vm.UndoRedo.Entries.Count());
+
+        Assert.True(tool.ClearSelection());
+        Assert.False(tool.ToggleSelectedOrHovered());   // nothing selected, nothing hovered
+        tool.HoverElement(7);
+        Assert.True(tool.ToggleSelectedOrHovered());
+        Assert.Equal([7], tool.OffSet());
+    }
+
+    /// <summary>The window is bound before the first frame arrives from a worker, so "Colour by" must already list what it shows: a
+    /// selection with no item to match opened the picker blank.</summary>
+    [Fact]
+    public void ColourBy_ListsItsSelection_BeforeTheFirstFrame()
+    {
+        var vm = Drawn(Bench(4));
+        var instance = vm.EditModel.Components.Single(c => c.Symbol == SymbolKind.PhasedArray);
+        using var tool = new PhasedArrayToolViewModel(vm, instance, FromSchematic, new NeverRunsHost());
+        Assert.Null(tool.Frame);
+        Assert.Contains(tool.Quantities, c => c.Value == tool.Quantity);
+    }
+
+    /// <summary>A host that never gets round to the work: the moment between the window being bound and the first frame.</summary>
+    private sealed class NeverRunsHost : IPhasedArrayHost
+    {
+        public void Post(Action action) { }
+        public void Run(Action work) { }
+    }
+
     /// <summary>Gate 4 — File ▸ New ▸ Phased Array creates a cell that check passes and that simulates.</summary>
     [Fact]
     public void Gate4_ANewPhasedArrayCell_Checks_AndSimulates()

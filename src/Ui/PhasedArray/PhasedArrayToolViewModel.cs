@@ -41,6 +41,9 @@ public sealed class ImmediatePhasedArrayHost : IPhasedArrayHost
 /// <summary>R-paa9-2 — what the aperture is coloured by.</summary>
 public enum ApertureQuantity { Amplitude, Phase, GammaActive, DeliveredPower, PaPout, PaPae, ChannelNf }
 
+/// <summary>The tool's pages, one toolbar button each. Channel is offered only when the array ends a Propagation Channel.</summary>
+public enum ArrayPage { Beam, Channel, ScanMaps, TapersAndBits, Failures, Frequency }
+
 /// <summary>One readout row.</summary>
 public sealed record ReadoutRow(string Label, string Value);
 
@@ -73,6 +76,7 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
         _prepare = prepare;
         _host = host;
         schematic.EditModel.Changed += OnSchematicChanged;
+        foreach (var c in BaseQuantities) Quantities.Add(c);   // listed before any frame: the picker is bound before the first one arrives
         ReadTaper();
         Rebuild();
     }
@@ -90,6 +94,9 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
 
     /// <summary>The steering: draggable or not, and why not.</summary>
     [ObservableProperty] private PhasedArraySteering _steering = new("", "", null, null, PhasedArraySteering.NotSteered);
+
+    /// <summary>The page shown.</summary>
+    [ObservableProperty] private ArrayPage _page = ArrayPage.Beam;
 
     [ObservableProperty] private ApertureQuantity _quantity = ApertureQuantity.Amplitude;
     [ObservableProperty] private string _hover = "";
@@ -140,6 +147,45 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
 
     /// <summary>True while the beam is being dragged.</summary>
     public bool Dragging => _dragging;
+
+    // ── work in progress, for the window's progress bar ─────────────────────────────────────────────────────
+
+    private int _jobs;
+
+    /// <summary>True while any of the tool's work runs: an evaluation, the scan maps, the failure trials, the frequency study. The window
+    /// shows its bar only once this has stayed true for a while, so quick work never flashes one.</summary>
+    [ObservableProperty] private bool _working;
+
+    /// <summary>How far the work is, 0-1, or NaN when it cannot say (the bar is then indeterminate).</summary>
+    [ObservableProperty] private double _workProgress = double.NaN;
+
+    /// <summary>What is running, beside the bar.</summary>
+    [ObservableProperty] private string _workLabel = "";
+
+    /// <summary>True while the scan maps compute. Their bar is beside the Scan maps page's status, not the window's: the window's bar is
+    /// for the rest of the work.</summary>
+    [ObservableProperty] private bool _scanWorking;
+
+    /// <summary>How far the scan maps are, 0-1.</summary>
+    [ObservableProperty] private double _scanProgress;
+
+    /// <summary>On the UI thread: a job starts.</summary>
+    private void BeginJob(string label)
+    {
+        _jobs++;
+        WorkLabel = label;
+        WorkProgress = double.NaN;
+        Working = true;
+    }
+
+    /// <summary>On the UI thread: a job ended, finished or cancelled.</summary>
+    private void EndJob()
+    {
+        if (--_jobs > 0) return;
+        _jobs = 0;
+        Working = false;
+        WorkProgress = double.NaN;
+    }
 
     /// <summary>Raised whenever anything the canvases draw has changed.</summary>
     public event EventHandler? Redraw;
@@ -207,6 +253,7 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
             if (_busy) { _pending = (tunables, interactive, steer); return; }
             _busy = true;
         }
+        BeginJob("Evaluating");
         var session = _session;
         _host.Run(() => Work(session, tunables, interactive, steer));
     }
@@ -223,7 +270,7 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
             _host.Post(() => Show(result));
             lock (_gate)
             {
-                if (_pending is not { } next) { _busy = false; return; }
+                if (_pending is not { } next) { _busy = false; _host.Post(EndJob); return; }
                 _pending = null;
                 (tunables, interactive, steer) = next;
                 session = _session;
@@ -333,6 +380,40 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
         WriteOff(set, $"Switch {Selected.Count} elements {(off ? "off" : "on")}");
     }
 
+    /// <summary>
+    /// Q, as Q disables a component in the schematic: the selected elements switched off, or on again when every one of them is
+    /// already off; with nothing selected, the element under the pointer. One undo step. False when there was nothing to switch.
+    /// </summary>
+    public bool ToggleSelectedOrHovered()
+    {
+        if (Selected.Count > 0)
+        {
+            var off = OffSet();
+            SetSelected(!Selected.All(off.Contains));
+            return true;
+        }
+        if (_hoverElement < 1) return false;
+        ToggleElement(_hoverElement);
+        return true;
+    }
+
+    private int _hoverElement;
+
+    /// <summary>Esc: no element selected. False when none was.</summary>
+    public bool ClearSelection()
+    {
+        if (Selected.Count == 0) return false;
+        Selected.Clear();
+        Redraw?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    /// <summary>An export's outcome, on the status line until the next frame replaces it.</summary>
+    public void ReportExport(string text) => Status = text;
+
+    /// <summary>The readouts as tab-separated lines, for the clipboard.</summary>
+    public string ReadoutsText() => string.Join(Environment.NewLine, Readouts.Select(r => $"{r.Label}\t{r.Value}"));
+
     private void WriteOff(SortedSet<int> off, string description)
         => Schematic.Execute(new NamedCommand(description, Write("Off", string.Join(",", off))));
 
@@ -381,24 +462,37 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
         return null;
     }
 
+    /// <summary>What every array can be coloured by, whatever its bench measures.</summary>
+    private static readonly Choice<ApertureQuantity>[] BaseQuantities =
+    [
+        new(ApertureQuantity.Amplitude, "Amplitude"), new(ApertureQuantity.Phase, "Phase (quantised)"),
+        new(ApertureQuantity.GammaActive, "|Γ active|"), new(ApertureQuantity.DeliveredPower, "Delivered power"),
+    ];
+
+    /// <summary>
+    /// The picker's list for this frame: the base four, then a per-element measurement the bench makes. Changed IN PLACE and never
+    /// cleared — the four are listed from the constructor and stay — and the selection is raised again after any change, because the
+    /// picker resolves its selection only against the items it holds when the selection arrives (src/Ui/CLAUDE.md): a selection pushed
+    /// before its item, or an item list rebuilt under it, leaves the picker blank with no error anywhere.
+    /// </summary>
     private void RefreshQuantities()
     {
-        var want = new List<Choice<ApertureQuantity>>
-        {
-            new(ApertureQuantity.Amplitude, "Amplitude"), new(ApertureQuantity.Phase, "Phase (quantised)"),
-            new(ApertureQuantity.GammaActive, "|Γ active|"), new(ApertureQuantity.DeliveredPower, "Delivered power"),
-        };
+        var want = BaseQuantities.ToList();
         foreach (var (q, label) in new[] { (ApertureQuantity.PaPout, "PA Pout"), (ApertureQuantity.PaPae, "PA PAE"), (ApertureQuantity.ChannelNf, "Channel NF") })
             if (Frame is { } f && f.Measurements.Keys.Any(k => MeasurementPattern(q).Pattern.IsMatch(k))) want.Add(new(q, label));
         if (want.Select(c => c.Value).SequenceEqual(Quantities.Select(c => c.Value))) return;
-        Quantities.Clear();
-        foreach (var c in want) Quantities.Add(c);
+        for (int i = Quantities.Count - 1; i >= 0; i--)
+            if (!want.Any(c => c.Value == Quantities[i].Value)) Quantities.RemoveAt(i);
+        for (int i = 0; i < want.Count; i++)
+            if (i >= Quantities.Count || Quantities[i].Value != want[i].Value) Quantities.Insert(i, want[i]);
         if (!want.Any(c => c.Value == Quantity)) Quantity = ApertureQuantity.Amplitude;
+        else OnPropertyChanged(nameof(Quantity));
     }
 
     /// <summary>Hover over element <paramref name="n"/> (1-based; 0 clears): its number, row, column, position and the coloured value.</summary>
     public void HoverElement(int n)
     {
+        _hoverElement = n;
         if (Frame is not { } f || n < 1 || n > f.State.Lattice.Count) { Hover = ""; return; }
         var lattice = f.State.Lattice;
         var (row, col) = lattice.RowCol(n);
@@ -407,6 +501,19 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
         string v = !lattice.IsOn(n - 1) ? "off" : double.IsNaN(values[n - 1]) ? "—" : $"{values[n - 1]:0.###} {unit}";
         Hover = $"n {n} · row {row}, col {col} · x {x * 1e3:0.##} mm, y {y * 1e3:0.##} mm · {v}";
     }
+
+    /// <summary>The shown page's name, beside the page buttons.</summary>
+    public string PageTitle => Page switch
+    {
+        ArrayPage.Channel => "Channel",
+        ArrayPage.ScanMaps => "Scan maps",
+        ArrayPage.TapersAndBits => "Tapers and bits",
+        ArrayPage.Failures => "Failures",
+        ArrayPage.Frequency => "Frequency",
+        _ => "Beam",
+    };
+
+    partial void OnPageChanged(ArrayPage value) => OnPropertyChanged(nameof(PageTitle));
 
     partial void OnQuantityChanged(ApertureQuantity value) => Redraw?.Invoke(this, EventArgs.Empty);
     partial void OnCutsPolarChanged(bool value) => Redraw?.Invoke(this, EventArgs.Empty);
@@ -453,15 +560,25 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
         ScanStatus = "Scanning…";
         var partial = new List<ScanPoint>();
         double limit = ScanLimitDeg;
+        // the directions the map steps through, as ScanMap counts them: one at boresight, then a ring of 360/15 per θ0
+        int total = 1 + (int)Math.Floor(limit / 5 + 1e-9) * 24;
+        ScanProgress = 0;
+        ScanWorking = true;
         var steering = Steering;
         var parameters = Instance.Parameters.Select(p => p.Clone()).ToList();
         string name = Instance.InstanceName;
         _host.Run(() =>
         {
             var (points, refusal) = session.ScanMap(frame, (t, p) => steering.Tunables(name, parameters, t, p), limit, 5, 15,
-                                                    p => { lock (partial) partial.Add(p); }, cts.Token);
+                                                    p =>
+                                                    {
+                                                        int done;
+                                                        lock (partial) { partial.Add(p); done = partial.Count; }
+                                                        _host.Post(() => { if (!cts.IsCancellationRequested) ScanProgress = Math.Min(1, done / (double)total); });
+                                                    }, cts.Token);
             _host.Post(() =>
             {
+                if (ReferenceEquals(_scan, cts) || _scan is null) ScanWorking = false;   // a newer scan keeps its own bar
                 if (cts.IsCancellationRequested) return;
                 if (ReferenceEquals(_scan, cts)) _scan = null;
                 ScanPoints = points;
@@ -474,7 +591,7 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
     /// <summary>Cancels a running scan map; any edit does.</summary>
     public void CancelScan()
     {
-        if (_scan is { } s) { s.Cancel(); _scan = null; ScanStatus = "Cancelled by an edit."; }
+        if (_scan is { } s) { s.Cancel(); _scan = null; ScanStatus = "Cancelled by an edit."; ScanWorking = false; }
     }
 
     // ── R-paa9-6: tapers, bits, failures, frequency ───────────────────────────────────────────────────────────
@@ -528,11 +645,13 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
         double fraction = FailureFraction;
         int trials = Math.Clamp(FailureTrialCount, 1, 500);
         FailureSummary = "Running…";
+        BeginJob("Failure trials");
         _host.Run(() =>
         {
             var result = PhasedArraySession.Failures(frame, fraction, trials, seed: 1);
             _host.Post(() =>
             {
+                EndJob();
                 Failures = result;
                 var g = result.GainChangeDb;
                 var s = result.SidelobeDb.Where(double.IsFinite).ToArray();
@@ -548,10 +667,11 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
     public void RunFrequency()
     {
         if (Frame is not { } frame) return;
+        BeginJob("Frequency study");
         _host.Run(() =>
         {
             var result = PhasedArraySession.Frequency(frame);
-            _host.Post(() => { Frequency = result; Redraw?.Invoke(this, EventArgs.Empty); });
+            _host.Post(() => { EndJob(); Frequency = result; Redraw?.Invoke(this, EventArgs.Empty); });
         });
     }
 

@@ -4728,6 +4728,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.Tolerance                    = ToleranceSurface;
         vm.Optimize                     = OptimizeSurface;
         vm.UpdateWBondLayout            = UpdateLayoutForWBond;
+        vm.PreparePhasedArrayCircuit    = PreparePhasedArrayCircuit;
         vm.NewWBondMaterial             = NewWBondMaterial;
         vm.DocumentName                 = title;   // no file yet; the tab's title is what it is called
         // filePath = null → scratch; IsScratch = true, IsDirty = false (starts clean), Title = "<title>"
@@ -12860,6 +12861,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.Tolerance                    = ToleranceSurface;
         vm.Optimize                     = OptimizeSurface;
         vm.UpdateWBondLayout            = UpdateLayoutForWBond;
+        vm.PreparePhasedArrayCircuit    = PreparePhasedArrayCircuit;
         vm.NewWBondMaterial             = NewWBondMaterial;
         vm.OpenSiblingLayoutDesignators = OpenLayoutDesignatorsFor;
         return vm;
@@ -17545,6 +17547,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         PasteImageAsLayoutCommand.NotifyCanExecuteChanged();
         // Design ▸ Find Instance… — a schematic or a layout; both fan-outs, per the gotcha above.
         FindInstanceCommand.NotifyCanExecuteChanged();
+        // Tools ▸ Phased Array — the tool on an array in the active schematic; both fan-outs.
+        OpenPhasedArrayToolCommand.NotifyCanExecuteChanged();
         // brief-em3d-43 — the 3D menu: every item needs an active 3D document; both fan-outs.
         RaiseThreeDMenuChanged();
 
@@ -17878,6 +17882,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         PasteImageAsLayoutCommand.NotifyCanExecuteChanged();
         // Design ▸ Find Instance… — a schematic or a layout; both fan-outs, per the gotcha above.
         FindInstanceCommand.NotifyCanExecuteChanged();
+        // Tools ▸ Phased Array — the tool on an array in the active schematic; both fan-outs.
+        OpenPhasedArrayToolCommand.NotifyCanExecuteChanged();
         // brief-em3d-43 — the 3D menu: every item needs an active 3D document; both fan-outs.
         RaiseThreeDMenuChanged();
     }

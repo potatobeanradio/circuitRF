@@ -84,7 +84,7 @@
             <Setter Property="BorderThickness" Value="2"/>
             <Setter Property="Padding"         Value="7,5"/>
         </Style>
-        <Style Selector="TextBlock.bignum">
+        <Style Selector="TextBlock.bignum, SelectableTextBlock.bignum">
             <Setter Property="FontSize"   Value="26"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
@@ -108,7 +108,14 @@
     </Window.Styles>
 
     <Grid RowDefinitions="*,Auto" Margin="4">
-        <Grid ColumnDefinitions="640,*">
+        <!-- the two panes resize by the gap between them: an Auto column holding a 4 px transparent GridSplitter, the
+             arrangement the Match Designer, railRF and the Phased Array tool share -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="640" MinWidth="420"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*" MinWidth="320"/>
+            </Grid.ColumnDefinitions>
             <!-- ── left: signal definition ─────────────────────────────────────── -->
             <Border Grid.Column="0" Classes="pane">
                 <!-- The header stays put above the scrolling cards: inside the ScrollViewer, a focus that scrolled a
@@ -493,8 +500,10 @@
                 </DockPanel>
             </Border>
 
+            <GridSplitter Grid.Column="1" Width="4" ResizeDirection="Columns" Background="Transparent"/>
+
             <!-- ── right: preview ───────────────────────────────────────────────── -->
-            <Border Grid.Column="1" Classes="pane">
+            <Border Grid.Column="2" Classes="pane">
                 <Grid RowDefinitions="Auto,*">
                     <TextBlock Classes="panelhdr" Text="Preview"/>
                     <TabControl Grid.Row="1" SelectedIndex="{Binding PreviewTab}" Padding="0,4,0,0">
@@ -577,7 +586,7 @@
                                     <Border Classes="card" Margin="0,0,6,6">
                                         <StackPanel Spacing="2">
                                             <TextBlock Classes="caption" Text="EVM (rms)"/>
-                                            <TextBlock Classes="bignum" Text="{Binding SelectedEvm.RmsText, FallbackValue='-'}"/>
+                                            <SelectableTextBlock Classes="bignum" Text="{Binding SelectedEvm.RmsText, FallbackValue='-'}"/>
                                             <TextBlock Classes="caption" IsVisible="{Binding HasEvm}">
                                                 <Run Text="{Binding SelectedEvm.DbText, FallbackValue=''}"/>
                                                 <Run Text="   ·   peak"/>
@@ -589,7 +598,7 @@
                                     <Border Grid.Column="1" Classes="card" Margin="0,0,0,6">
                                         <StackPanel Spacing="2">
                                             <TextBlock Classes="caption" Text="Peak - average"/>
-                                            <TextBlock Classes="bignum" Text="{Binding PaprText}"/>
+                                            <SelectableTextBlock Classes="bignum" Text="{Binding PaprText}"/>
                                             <TextBlock Classes="caption" Text="gap between the two lines below"/>
                                         </StackPanel>
                                     </Border>

@@ -181,6 +181,7 @@ public partial class ParameterEditorView : UserControl
             _boundVm.WBondLayoutUpdated -= OnWBondLayoutUpdated;
             _boundVm.OpenMatchDesignerRequested -= OnOpenMatchDesigner;
             _boundVm.OpenSignalDesignerRequested -= OnOpenSignalDesigner;
+            _boundVm.OpenPhasedArrayToolRequested -= OnOpenPhasedArrayTool;
             _boundVm.OpenSnpViewerRequested -= OnOpenSnpViewer;
         }
         _boundVm = DataContext as ParameterEditorViewModel;
@@ -190,6 +191,7 @@ public partial class ParameterEditorView : UserControl
             _boundVm.WBondLayoutUpdated += OnWBondLayoutUpdated;
             _boundVm.OpenMatchDesignerRequested += OnOpenMatchDesigner;
             _boundVm.OpenSignalDesignerRequested += OnOpenSignalDesigner;
+            _boundVm.OpenPhasedArrayToolRequested += OnOpenPhasedArrayTool;
             _boundVm.OpenSnpViewerRequested += OnOpenSnpViewer;
         }
 
@@ -228,6 +230,17 @@ public partial class ParameterEditorView : UserControl
     {
         if (Vm?.SchematicVm is not { } schematicVm) return;
         Views.Signals.SignalDesignerWindow.Show(schematicVm, comp, TopLevel.GetTopLevel(this) as Window);
+    }
+
+    /// <summary>Opens the Phased Array tool on the selected Phased Antenna Array — the window already open on it, when there is one.</summary>
+    private void OnOpenPhasedArrayTool(CircuitRF.Design.Schematic.EditableComponent comp)
+    {
+        if (Vm?.SchematicVm is not { PreparePhasedArrayCircuit: { } prepare } schematicVm) return;
+        // The tool closes with the window that owns it, so a Component Parameters dialog hands it the window IT belongs to:
+        // closing the dialog must not close the tool it opened.
+        var top = TopLevel.GetTopLevel(this) as Window;
+        var owner = top is Views.Dialogs.ParameterEditorDialog { Owner: Window behind } ? behind : top;
+        Views.PhasedArray.PhasedArrayWindow.ShowFor(schematicVm, comp, prepare, owner);
     }
 
     /// <summary>Opens the S-Parameter Viewer on the selected SnP component's Touchstone file.</summary>
