@@ -284,13 +284,34 @@ public static class FilterValues
             double v = si * scale;
             if (v < 0.05 || v >= 100000) continue;
 
-            // One-decimal engineering: 3.0 → 3R0, 4.3 → 4N3.
+            // Engineering: 3.0 → 3R0 and 3R; 4.3 → 4N3; 15 → 15N0 and 15N;
+            // below 1 → R80 / R8 for 0.80 (leading letter, no integer digit).
+            if (v < 1)
+            {
+                int tenths = (int)Math.Round(v * 10);
+                if (tenths is >= 1 and <= 9)
+                {
+                    if (seen.Add(dot + tenths.ToString(CultureInfo.InvariantCulture) + "0"))
+                        yield return dot + tenths.ToString(CultureInfo.InvariantCulture) + "0";
+                    if (seen.Add(dot + tenths.ToString(CultureInfo.InvariantCulture)))
+                        yield return dot + tenths.ToString(CultureInfo.InvariantCulture);
+                }
+                int hundredths = (int)Math.Round(v * 100);
+                if (hundredths is >= 10 and <= 99
+                    && seen.Add(dot + hundredths.ToString(CultureInfo.InvariantCulture)))
+                    yield return dot + hundredths.ToString(CultureInfo.InvariantCulture);
+                continue;
+            }
+
             string one = v.ToString("0.0", CultureInfo.InvariantCulture);
             int dotAt = one.IndexOf('.');
             if (dotAt > 0)
             {
                 string eng = one[..dotAt] + dot + one[(dotAt + 1)..];
                 if (seen.Add(eng)) yield return eng;
+                if (one.EndsWith(".0", StringComparison.Ordinal)
+                    && seen.Add(one[..dotAt] + dot))
+                    yield return one[..dotAt] + dot;
             }
 
             // EIA two-significant-digit code: 10 → 100, 4.7 → 475 (×10^n). Only for ≥ 1.

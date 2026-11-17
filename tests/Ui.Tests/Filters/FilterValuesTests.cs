@@ -79,6 +79,13 @@ public class FilterValuesTests
         var pct = VendorLibraryHeader.Parse(
             ["* Property : C = 100[pF]"], out _);
         Assert.Contains("5", FilterValues.ToleranceOf(pct, "TSTCxx101JA01"));
+
+        // Integer nH uses 15N (not only 15N0); sub-pF uses leading R80.
+        var ind15 = VendorLibraryHeader.Parse(["* Property : L = 15[nH]"], out _);
+        Assert.Contains("5", FilterValues.ToleranceOf(ind15, "TSTLxx15NJ1Z"));
+
+        var capSub = VendorLibraryHeader.Parse(["* Property : C = 0.8[pF]"], out _);
+        Assert.Contains("0.1", FilterValues.ToleranceOf(capSub, "TSTCxxR80BB01"));
     }
 
     [Fact]
