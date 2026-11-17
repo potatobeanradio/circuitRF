@@ -5963,3 +5963,20 @@ flat's ends lie on the wall, inside the board. The rule is the owner's: metal ex
 slightly inside it is not — a barrel 1 µm clear of the wall keeps its round outside, and in the view tested (the same
 board with the barrels shrunk by 1 µm and 0.2 µm, four yaws) none of it came through the wall. Gate:
 `PlatedViaAndPerspectiveTests.ABarrelTangentToTheBoardEdge_HasAFlatInTheSideWall`.
+
+## A pad a micrometre narrower than its barrel striped the via's top (2026-11-17)
+
+**Symptom.** On an imported board, many vias showed a broken copper-and-dark ring round the top of the barrel in the default
+view (and in the realistic view while selected), flickering as the camera moved.
+
+**Cause.** The Gerber's pads were 0.5985 mm round polygons on 0.5995 mm barrels — every pad a fraction of a micrometre inside
+its barrel's outside. `Scene3DBores` carved a pad at the barrel's outside only when the hole FITTED, and otherwise fell back
+to a hole at the bore; so each pad's top was an annulus lying exactly on the tube's end ring, and the two fought on the via
+tie's constant alone. Notching at the barrel's outside instead fixed the ring but left a second artefact: the ring it cuts with
+is the circle's inscribed 32-gon, whose chords run 1.4 µm inside the circle, so between ring vertices the pad poked past each
+chord, and those slivers' side walls striped the barrel's top band.
+
+**Fix.** A plated barrel always carves the metal it passes through at its outside: a hole when it fits, else a Clipper
+notch, which leaves what genuinely lies beyond the barrel (a square pad's corners). In `Notched`, a piece lying wholly inside
+a round bore's TRUE circle is an artefact of the inscribed ring and draws nothing; it keeps its vertices, and a solid with no
+piece left keeps its own, so its bounds stay the pad's. Gate: `PlatedViaAndPerspectiveTests.APlatedBarrel_IsDrawnAsATube_ThroughAHoleInItsPad`.

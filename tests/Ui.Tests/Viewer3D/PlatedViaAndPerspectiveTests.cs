@@ -50,11 +50,22 @@ public sealed class PlatedViaAndPerspectiveTests
         // tube's inner wall and its top on the tube's end ring, and the two speckled at an angle (owner report, 2026-10-25).
         Assert.Contains(pad.Vertices, v => Math.Abs(Math.Sqrt(v.X * v.X + v.Y * v.Y) - 0.15 * Mm) < 1e-12);
         Assert.DoesNotContain(pad.Vertices, v => Math.Sqrt(v.X * v.X + v.Y * v.Y) < 0.149 * Mm);
-        // A pad too narrow for the barrel's outside keeps the bore's hole rather than being drawn over it.
+        // A pad too narrow for the barrel's outside is cut at that outside too, leaving only what lies beyond it (a square's
+        // corners): holed at the bore, its top lay on the tube's end ring and the two fought (owner report, 2026-11-17).
         Point2[] narrow = [new(-0.14 * Mm, -0.14 * Mm), new(0.14 * Mm, -0.14 * Mm), new(0.14 * Mm, 0.14 * Mm), new(-0.14 * Mm, 0.14 * Mm)];
         var small = problem.Solids[0] with { Primitive = new Em3dExtrudedPolygon(narrow, [], 0.5 * Mm, 0.535 * Mm) };
         var smallPad = Scene3DBores.Of(problem with { Solids = [small, .. problem.Solids.Skip(1)] })!.Carved(small)!.Value.Make();
-        Assert.Contains(smallPad.Vertices, v => Math.Abs(Math.Sqrt(v.X * v.X + v.Y * v.Y) - 0.125 * Mm) < 1e-12);
+        Assert.DoesNotContain(smallPad.Vertices, v => Math.Sqrt(v.X * v.X + v.Y * v.Y) < 0.149 * Mm);
+        Assert.Contains(smallPad.Triangles.Where(t => t.Face == 1), t => Covers(smallPad, t, 0.138 * Mm, 0.138 * Mm));
+        Assert.DoesNotContain(smallPad.Triangles.Where(t => t.Face == 1), t => Covers(smallPad, t, 0, 0.14 * Mm));
+        // A round pad a micrometre inside the barrel's outside lies wholly under it: what is left past the ring's chords is
+        // there only because the ring is the circle's inscribed polygon, and its walls striped the barrel's top band. It draws
+        // nothing and keeps its vertices, so its bounds are the pad's.
+        var round = Enumerable.Range(0, 40).Select(k => new Point2(0.149 * Mm * Math.Cos(2 * Math.PI * k / 40), 0.149 * Mm * Math.Sin(2 * Math.PI * k / 40))).ToArray();
+        var inside = problem.Solids[0] with { Primitive = new Em3dExtrudedPolygon(round, [], 0.5 * Mm, 0.535 * Mm) };
+        var hidden = Scene3DBores.Of(problem with { Solids = [inside, .. problem.Solids.Skip(1)] })!.Carved(inside)!.Value.Make();
+        Assert.Empty(hidden.Triangles);
+        Assert.NotEmpty(hidden.Vertices);
         // A via on the board's edge: the pad's edge runs through the bore's centre, so no hole fits and the barrel's circle is
         // cut out of the pad as a notch — its top no longer lies on the tube's end ring (owner report, 2026-10-25).
         Point2[] edge = [new(-1 * Mm, -1 * Mm), new(1 * Mm, -1 * Mm), new(1 * Mm, 0), new(-1 * Mm, 0)];

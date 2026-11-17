@@ -23,7 +23,9 @@
 // hole wall lay on the tube's inner wall and its caps on the tube's end rings, nine layers of coincident faces per via kept
 // apart only by the via's constant depth bias — which an orthographic view at an angle defeats, so the pads speckled through
 // the bore and round its end rings. At the barrel's outside the bore shows the plating alone and the rings meet the pads
-// edge to edge. A bare hole through metal (no barrel) is still carved at the bore.
+// edge to edge. A bare hole through metal (no barrel) is still carved at the bore. A pad NARROWER than the barrel's outside
+// (a Gerber pad a micrometre inside its drill's plating) is notched at it rather than holed at the bore (2026-11-17): holed at
+// the bore, its top lay on the tube's end ring and the two fought round the via's top in both views.
 //
 // A via the board's edge cuts through (DFR28-1) is no cylinder: its barrel is the drill's disc clipped to the board, an
 // extruded polygon whose flat face lies in the board's side. The pads it passes through are drawn whole, so on every
@@ -208,7 +210,8 @@ internal sealed class Scene3DBores
         {
             // Carved at the barrel's outside, metal and dielectric alike: at the bore, a pad's hole wall would be the tube's inner
             // wall drawn a second time and its cap would lie on the tube's end ring, two coincident faces apart only by a depth bias.
-            // A pad too narrow for the barrel's outside is still carved at the bore, as it was, rather than drawn over it.
+            // A pad too narrow for the barrel's outside is cut at it as a notch (Notched): holed at the bore instead, as it was, its
+            // top was an annulus lying on the tube's end ring and the two fought round every such via (2026-11-17, owner report).
             if ((bore.Priority <= priority && !(bore.Metal && s.Role == Em3dRole.Conductor)) || !Spans(bore, e.ZBottom, e.ZTop)) continue;
             var centre = new Point2(bore.X, bore.Y);
             if (bore.Shape is not null)
@@ -216,11 +219,12 @@ internal sealed class Scene3DBores
                 if (Touches(e, centre, bore.Outer)) (crossing ??= []).Add(bore);
                 continue;
             }
-            var b = Fits(e, centre, bore.Outer) ? bore with { R = bore.Outer } : bore;
+            var b = bore with { R = bore.Outer };
             if (Fits(e, centre, b.R) && taken?.Any(o => Math.Sqrt((o.X - b.X) * (o.X - b.X) + (o.Y - b.Y) * (o.Y - b.Y)) < o.R + b.R) != true)
                 (taken ??= []).Add(b);
-            // A bore across the polygon's edge (a via on the board's edge) or into one of its holes is cut out of it as a notch.
-            else if (Touches(e, centre, bore.Outer)) (crossing ??= []).Add(bore with { R = bore.Outer });
+            // A bore across the polygon's edge (a via on the board's edge), into one of its holes, or wider than the whole pad is
+            // cut out of it as a notch.
+            else if (Touches(e, centre, b.R)) (crossing ??= []).Add(b);
         }
         if (taken is null && crossing is null) return null;
         if (crossing is not null) return Notched(s, e, [.. taken ?? [], .. crossing], face);
@@ -318,6 +322,12 @@ internal sealed class Scene3DBores
                 var walls = new Dictionary<int, int>();
                 int at = vertices.Count;
                 vertices.AddRange(mesh.Vertices);
+                // A piece lying wholly inside a round bore's true circle is there only because the ring it was cut with is the
+                // circle's inscribed polygon: between two ring vertices a pad a micrometre inside the barrel's outside poked past
+                // the chord, and its slivers' walls striped the barrel's top band (2026-11-17). The barrel covers it; it keeps its
+                // vertices, so the solid's bounds are unchanged, and draws nothing.
+                if (bores.Any(b => b.Shape is null && piece.Outline.All(q => (q.X - b.X) * (q.X - b.X) + (q.Y - b.Y) * (q.Y - b.Y) <= (b.R + Tol) * (b.R + Tol))))
+                    continue;
                 foreach (var t in mesh.Triangles)
                 {
                     int f = t.Face;
@@ -326,6 +336,8 @@ internal sealed class Scene3DBores
                     triangles.Add(t with { A = t.A + at, B = t.B + at, C = t.C + at, Face = f });
                 }
             }
+            // Wholly under the bores (a pad inside the barrel's ring), nothing is left to draw; its own vertices keep its bounds.
+            if (vertices.Count == 0) vertices.AddRange(Em3dTessellation.Of(s with { Primitive = e }).Vertices);
             return new Em3dTriangleMesh(vertices, triangles);
         });
     }
