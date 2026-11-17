@@ -5,6 +5,7 @@
         xmlns:flt="using:CircuitRF.Ui.Filters"
         xmlns:df="using:CircuitRF.Design.Filters"
         xmlns:mv="using:CircuitRF.Ui.Views.Match"
+        xmlns:fv="using:CircuitRF.Ui.Views.Filters"
         xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
         xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="CircuitRF.Ui.Views.Filters.FilterDesignerWindow"
@@ -92,6 +93,19 @@
             <Setter Property="VerticalAlignment"    Value="Center"/>
             <Setter Property="HorizontalAlignment"  Value="Stretch"/>
             <Setter Property="Margin"               Value="0,0,4,0"/>
+        </Style>
+        <!-- Plot chooser — same chrome as the S-parameter viewer. -->
+        <Style Selector="ToggleButton.plotpick">
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource SystemBaseMediumLowColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="3"/>
+            <Setter Property="Padding"         Value="7,3"/>
+            <Setter Property="Margin"          Value="0,0,4,0"/>
+        </Style>
+        <Style Selector="ToggleButton.plotpick:checked /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
+            <Setter Property="Foreground" Value="White"/>
         </Style>
     </Window.Styles>
 
@@ -378,17 +392,35 @@
             </Grid>
         </Border>
 
-        <!-- ── Response plots, side by side ──────────────────────────────── -->
-        <Border Grid.Column="1" Classes="pane">
-            <Grid ColumnDefinitions="*,*">
-                <ddc:PlotControl Name="MagnitudePlotControl"
-                                 Plot="{Binding MagnitudePlot}"
-                                 Library="{Binding PlotHost.Library}"
-                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
-                <ddc:PlotControl Grid.Column="1" Name="PhasePlotControl" Margin="6,0,0,0"
-                                 Plot="{Binding PhasePlot}"
-                                 Library="{Binding PlotHost.Library}"
-                                 CanDeletePlot="False" CanEditPlotProperties="False"/>
+        <!-- ── Response plots: toggles like the S-parameter viewer (mag + phase only) ─ -->
+        <Border Grid.Column="1" Classes="pane" ClipToBounds="True">
+            <Grid RowDefinitions="Auto,*">
+                <StackPanel Orientation="Horizontal" Margin="2,0,0,4">
+                    <ToggleButton Classes="plotpick" IsChecked="{Binding ShowMagnitude, Mode=TwoWay}"
+                                  ToolTip.Tip="Insertion loss, dB against frequency">
+                        <mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/>
+                    </ToggleButton>
+                    <ToggleButton Classes="plotpick" IsChecked="{Binding ShowPhase, Mode=TwoWay}"
+                                  ToolTip.Tip="Phase and group delay against frequency">
+                        <mi:MaterialIcon Kind="SineWave" Width="16" Height="16"/>
+                    </ToggleButton>
+                </StackPanel>
+                <fv:FilterPlotLayout Grid.Row="1" ClipToBounds="True"
+                                     ShowMagnitude="{Binding ShowMagnitude}"
+                                     ShowPhase="{Binding ShowPhase}">
+                    <Grid Name="MagnitudeHost" ClipToBounds="True" IsVisible="{Binding ShowMagnitude}">
+                        <ddc:PlotControl Name="MagnitudePlotControl"
+                                         Plot="{Binding MagnitudePlot}"
+                                         Library="{Binding PlotHost.Library}"
+                                         CanDeletePlot="False" CanEditPlotProperties="False"/>
+                    </Grid>
+                    <Grid Name="PhaseHost" ClipToBounds="True" IsVisible="{Binding ShowPhase}">
+                        <ddc:PlotControl Name="PhasePlotControl"
+                                         Plot="{Binding PhasePlot}"
+                                         Library="{Binding PlotHost.Library}"
+                                         CanDeletePlot="False" CanEditPlotProperties="False"/>
+                    </Grid>
+                </fv:FilterPlotLayout>
             </Grid>
         </Border>
     </Grid>

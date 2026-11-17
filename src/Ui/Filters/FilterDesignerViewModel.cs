@@ -116,6 +116,12 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     /// <summary>Phase and group delay of the ladder.</summary>
     public Plot PhasePlot => PhaseContainer.PlotVM.Plot;
 
+    /// <summary>Insertion-loss plot is on. The phase plot takes the whole pane when this is off.</summary>
+    [ObservableProperty] private bool _showMagnitude = true;
+
+    /// <summary>Phase / group-delay plot is on. The magnitude plot takes the whole pane when this is off.</summary>
+    [ObservableProperty] private bool _showPhase = true;
+
     /// <summary>The realization, one row per element.</summary>
     public ObservableCollection<FilterElementRow> Elements { get; } = [];
 
