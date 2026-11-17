@@ -1934,3 +1934,6 @@ src/RfCore/MulticonductorLine.cs|Modal matrix column {m} is degenerate — the m
 src/RfCore/MulticonductorLine.cs|The lossless modal eigenproblem [C]v = λ[L]⁻¹v could not be solved. Both matrices must be 
 src/RfCore/MulticonductorLine.cs|The multiconductor line has no conductors.
 src/RfCore/MulticonductorLine.cs|The per-unit-length matrix is singular — a conductor set with no reference, or two conductors solved as one.
+src/Core/Synthesis/Filters/CouplingCurves.cs|a bench of one or two resonators
+src/Core/Synthesis/Filters/FilterSynthesis.cs|No closed-form prototype for {response} yet.
+src/Design/Filters/FilterSynthesisService.cs|'{realisation.PartType}' is not a part type.
