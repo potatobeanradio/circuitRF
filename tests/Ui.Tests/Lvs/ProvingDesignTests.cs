@@ -65,13 +65,15 @@ public sealed class ProvingDesignTests
         Assert.Equal(0, exit);
 
         // The warnings that ARE expected are named, so a new one is a failure rather than noise:
-        // three cells declaring no analysis (they are cells, not benches) and the two boards'
-        // designator labels, which carry no manufacturable area.
+        // three cells declaring no analysis (they are cells, not benches). The two boards'
+        // designator labels, which carry no manufacturable area, are notes: DRC skipping them is
+        // information about what it checked, not a finding.
         var warnings = all.Split('\n').Where(l => l.StartsWith("warning:", StringComparison.Ordinal)).ToList();
-        Assert.Equal(5, warnings.Count);
+        Assert.Equal(3, warnings.Count);
         Assert.Equal(3, warnings.Count(w => w.Contains("no analysis will dispatch", StringComparison.Ordinal)));
         Assert.DoesNotContain(warnings, w => w.Contains("Attenuator bench", StringComparison.Ordinal));
-        Assert.Equal(2, warnings.Count(w => w.Contains("no manufacturable area", StringComparison.Ordinal)));
+        Assert.Equal(2, all.Split('\n').Count(l => l.StartsWith("note:", StringComparison.Ordinal)
+                                                   && l.Contains("no manufacturable area", StringComparison.Ordinal)));
     }
 
     // ══ 2 — every cell says which layout pin is which port, and none of them guessed ════════════

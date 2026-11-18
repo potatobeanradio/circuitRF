@@ -462,6 +462,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.cmc.warning",
         "check.cmodel.refused",
         "check.cmodel.summary",
+        "check.drc.info",
         "check.drc.note",
         "check.elaboration.failed",
         "check.elaboration.note",

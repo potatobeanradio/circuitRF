@@ -1676,6 +1676,11 @@ public sealed class CemFile
     /// <summary>brief-isc-1 — null means off, written only when on (<see cref="CreateSnpSchematic"/>'s rule).</summary>
     public bool?   IncludeSchematicComponents { get; set; }
 
+    /// <summary>The setup panel's Notes and Component ports sections, open or closed. Null takes the panel's default and is not
+    /// written, so a file from before them re-serialises byte-identically. No run reads either.</summary>
+    public bool?   NotesExpanded          { get; set; }
+    public bool?   ComponentPortsExpanded { get; set; }
+
     /// <summary>
     /// D7 — <b>null means the cross-section analysis</b>, which is what every <c>.cem</c> written
     /// before L8b means. Nullable + <c>WhenWritingNull</c> so such a file loads AND re-serialises
@@ -1875,6 +1880,8 @@ public static class EmSetupPersistence
         SnpOutputPathOverride = s.SnpOutputPathOverride is { Length: > 0 } p ? p : null,
         CreateSnpSchematic    = s.CreateSnpSchematic ? true : null,
         IncludeSchematicComponents = s.IncludeSchematicComponents ? true : null,
+        NotesExpanded          = s.NotesExpanded,
+        ComponentPortsExpanded = s.ComponentPortsExpanded,
         AnalysisKind          = s.AnalysisKind == EmAnalysisKind.Auto ? null : s.AnalysisKind,
         SolveRegion           = s.SolveRegion is { } r
             ? new CemSolveRegion { XMinUm = r.XMinUm, YMinUm = r.YMinUm, XMaxUm = r.XMaxUm, YMaxUm = r.YMaxUm }
@@ -2009,6 +2016,8 @@ public static class EmSetupPersistence
         SnpOutputPathOverride = f.SnpOutputPathOverride ?? "",
         CreateSnpSchematic    = f.CreateSnpSchematic ?? false,
         IncludeSchematicComponents = f.IncludeSchematicComponents ?? false,
+        NotesExpanded          = f.NotesExpanded,
+        ComponentPortsExpanded = f.ComponentPortsExpanded,
         AnalysisKind          = f.AnalysisKind ?? EmAnalysisKind.Auto,
         // Normalised on the way in, so a hand-edited file with its corners swapped means the box it
         // plainly describes rather than an inside-out one that clips everything away.

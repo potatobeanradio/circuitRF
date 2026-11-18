@@ -151,7 +151,7 @@ public sealed class LayoutComponentPort3DTests : IClassFixture<PlanarComponentPo
         Assert.True(c1.Ok, c1.Refusal);
         Assert.NotNull(c1.Loop);
         output.WriteLine(C3dComponentPorts.Describe(c1));
-        Assert.Contains(EmDiagnostics.ComponentPortAcrossLoop("C1", "1", "2").Render(), looped.ComponentPorts.Warnings);
+        Assert.Contains(EmDiagnostics.ComponentPortAcrossLoop("C1", "1", "2", sweepHasDc: false).Render(), looped.ComponentPorts.Notes);
         Assert.Null(Assert.Single(plain.ComponentPorts!.Ports, p => p.Refdes == "C1").Loop);
 
         Em3dPort Port(Em3dGenerationResult g) => g.Problem!.Ports.Single(p => p.Number == 3);

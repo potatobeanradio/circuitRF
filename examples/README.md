@@ -22,14 +22,27 @@ picks and opens it there. The user's copy is theirs; nothing writes back into th
    into a package) is a cell of its own. Analyses live on a **test bench** cell's schematic — never
    in a bare `.cnl`, which the user cannot open as a drawing. An example is read as the way to
    build a design, so a document in a plain folder teaches the wrong thing.
-4. Write a `README.md` beside the `.cws` saying what the example teaches. **It is what the user
+4. **Name a Data Display after the bench whose run it reads, and put it beside the `.cws`.** Simulating
+   a bench cell writes `results/<bench>.npy` and then opens `<bench>.cdd` from the workspace root, or
+   creates `results/<bench>.cdd` when there is none. A display named after anything else is never
+   opened by its run, and one named after another cell opens on that cell's run and draws nothing.
+   Its traces name the result as `<bench>.npy`, relative to `results/`. An EM setup writes its
+   Touchstone into `results/` under the setup's Output name, and a bench's SnP block reads it as
+   `results/<name>.sNp`, relative to the workspace root. A display of an EM result is opened by hand
+   and can take any name.
+5. **Ship it with no warnings, as far as you can.** This is strongly preferred, not absolutely required: an example is what
+   a new user opens first, and orange text there reads as something wrong with circuitRF. Run `circuitrf check` on the
+   workspace and on each EM setup (`.cem` and `.c3d`, which checking the workspace does not mesh), and `circuitrf lvs`
+   on each cell with a layout. Fix what they report in the design or its setup. A warning that has to stay is explained
+   in the README, beside the cell it belongs to.
+6. Write a `README.md` beside the `.cws` saying what the example teaches. **It is what the user
    sees first**: a workspace whose open restores no documents of its own opens on its README,
    read-only, instead of the Welcome tab. Headings, bold, italics, bullets, fenced code blocks
    and two-column tables all render, and so does a picture on a line of its own
    (`![what it shows](pictures/name.png)`, relative to the README, PNG, JPEG, GIF, BMP or WebP);
    anything else degrades to plain text (`src/Ui/Markdown/`). A picture inside a sentence, or one
    that does not resolve, shows its alt text, so write the alt text as a sentence.
-5. Add its abstract to the user documentation's **Example Workspaces** page,
+7. Add its abstract to the user documentation's **Example Workspaces** page,
    `docs/user/src/examples/index.md`, under its topic's `##` section: a `###` heading with the menu title and an `{#ex-<folder>}` anchor, 100–250
    words on what it builds and shows, and a `*Folder:*` line naming the folder. Each heading is its own search result,
    which is how a user finds an example by subject. DocGen also renders this README, with its pictures, as
@@ -38,7 +51,7 @@ picks and opens it there. The user's copy is theirs; nothing writes back into th
 `tests/Ui.Tests/Examples/ExampleWorkspacesTests.cs` holds the rest shut: the index and the disk
 agree both ways, every example has its abstract on the documentation's Example Workspaces page, every design
 document is a view of a cell, every schematic still extracts with
-its device in it, nothing names anybody's home directory, and the tree reaches the build output.
+its device in it, every display that reads a run is named after it, nothing names anybody's home directory, and the tree reaches the build output.
 
 ## What is deliberately not here
 

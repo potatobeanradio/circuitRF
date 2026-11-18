@@ -24,5 +24,6 @@
   "ConductorThicknessCorrection": true,
   "RobustMeshing": true,
   "CreateSnpSchematic": false,
-  "ComponentPorts": []
+  "ComponentPorts": [],
+  "DirectVerticalKernel": true
 }

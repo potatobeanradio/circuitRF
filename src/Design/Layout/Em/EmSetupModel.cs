@@ -928,6 +928,14 @@ public sealed class EmSetup
     /// changes no answer, so it enters no provenance hash.</summary>
     public bool IncludeSchematicComponents { get; set; }
 
+    /// <summary>The setup panel's Notes section, open or closed; null is open. Panel state the document keeps so it is not set
+    /// again each time the panel opens. No run reads it, so it enters no provenance hash and no run identity.</summary>
+    public bool? NotesExpanded { get; set; }
+
+    /// <summary>The setup panel's Component ports section, open or closed; null is open when the setup names a component port
+    /// and closed when it names none. Panel state, as <see cref="NotesExpanded"/> is.</summary>
+    public bool? ComponentPortsExpanded { get; set; }
+
     /// <summary>
     /// <b>The part of the layout this setup solves — null solves all of it</b>, which is what every
     /// <c>.cem</c> written before the region existed means. Applied by
@@ -1182,6 +1190,8 @@ public sealed class EmSetup
         SnpOutputPathOverride  = SnpOutputPathOverride,
         CreateSnpSchematic     = CreateSnpSchematic,
         IncludeSchematicComponents = IncludeSchematicComponents,
+        NotesExpanded          = NotesExpanded,
+        ComponentPortsExpanded = ComponentPortsExpanded,
         SolveRegion            = SolveRegion,    // record, immutable
         Solver3D               = Solver3D,
         OperatingTempC         = OperatingTempC,

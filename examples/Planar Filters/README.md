@@ -9,7 +9,7 @@ from Schematic and is LVS clean.
 Each cell has a test bench beside it. The bench holds the cell's circuit and the **ideal prototype** the design came
 from: circuitRF's Filter block at the design's response, order, ripple and band, the equations the closed forms start
 from. Six cells also have a coarse Planar MoM setup in their `em/` folder, and their bench adds an SnP block that reads the
-Touchstone file the setup writes into `results/`. Simulate a bench and open the cell's `.cdd`: the circuit model is a
+Touchstone file the setup writes into `results/`. Simulate a bench and its `.cdd` opens: the circuit model is a
 red line, the prototype a dashed green one, and the solve a set of markers. No results ship; the benches read what
 your own runs write.
 
@@ -27,21 +27,21 @@ your own runs write.
 | **Interdigital** | MCLA, `Interdigital` | Matthaei's three-resonator 0.1 dB Chebyshev filter, 20 % wide at 2.4 GHz |
 | **Combline** | MCLA, `Combline`, tapped | Three resonators 45° long, loaded by 0402 capacitors, tuned to an 8 % Chebyshev band |
 | **Edge-Coupled Bench** … **Combline Bench** | schematic | One per cell: the cell's circuit, the ideal prototype, and its Planar result where it has a setup |
-| `Edge-Coupled.cdd` … `Combline.cdd` | data display | One per cell, at the top of the workspace |
+| `Edge-Coupled Bench.cdd` … `Combline Bench.cdd` | data display | One per bench, at the top of the workspace |
 
 ## Run it
 
-Simulate a cell's bench and open its `.cdd`. Where the cell has a **Planar** setup (its `em/` folder), run that first.
+Simulate a cell's bench, which opens its `.cdd`. Where the cell has a **Planar** setup (its `em/` folder), run that first.
 
 | Cell | Planar MoM | Then |
 |---|---|---|
-| Edge-Coupled | 1½ min | Simulate **Edge-Coupled Bench**, open `Edge-Coupled.cdd` |
-| Hairpin | 4 min | Simulate **Hairpin Bench**, open `Hairpin.cdd` |
-| Stepped-Z | 6 min | Simulate **Stepped-Z Bench**, open `Stepped-Z.cdd` |
-| Interdigital | 25½ min | Simulate **Interdigital Bench**, open `Interdigital.cdd` |
-| Stub Lowpass | 5 min | Simulate **Stub Lowpass Bench**, open `Stub Lowpass.cdd` |
-| Lumped LC | 8 min | Simulate **Lumped LC Bench**, open `Lumped LC.cdd` |
-| Open-Loop, End-Coupled, Combline | — | Simulate the bench, open the cell's `.cdd` |
+| Edge-Coupled | 1½ min | Simulate **Edge-Coupled Bench** |
+| Hairpin | 4 min | Simulate **Hairpin Bench** |
+| Stepped-Z | 6 min | Simulate **Stepped-Z Bench** |
+| Interdigital | 25½ min | Simulate **Interdigital Bench** |
+| Stub Lowpass | 5 min | Simulate **Stub Lowpass Bench** |
+| Lumped LC | 8 min | Simulate **Lumped LC Bench** |
+| Open-Loop, End-Coupled, Combline | — | Simulate the bench |
 
 Times are from a Linux machine with 8 threads. Every setup is a Draft mesh: 2 cells across the narrowest conductor, the
 edge mesh off; the interdigital's is coarser still (below). A bench with a Planar block sweeps the frequencies the setup
@@ -68,7 +68,7 @@ Chebyshev bandpass of order 3 with 0.5 dB ripple over 2.283–2.523 GHz.
 
 ![The edge-coupled board: port 1's line at the left, the four coupled sections stepping down to the right, and port 2's line.](pictures/edge-coupled-layout.png)
 
-![Edge-Coupled.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers.](pictures/edge-coupled-results.png)
+![Edge-Coupled Bench.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers.](pictures/edge-coupled-results.png)
 
 | | Prototype | Circuit | Planar MoM |
 |---|---|---|---|
@@ -89,7 +89,7 @@ The prototype is the edge-coupled one.
 
 ![The hairpin board: three U-shaped resonators, the outer two inverted, port 1's and port 2's lines tapped onto their outer arms.](pictures/hairpin-layout.png)
 
-![Hairpin.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers.](pictures/hairpin-results.png)
+![Hairpin Bench.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers.](pictures/hairpin-results.png)
 
 | | Prototype | Circuit | Planar MoM |
 |---|---|---|---|
@@ -112,7 +112,7 @@ is those goals' elliptic bandpass: order 4, 0.14 dB ripple (15 dB return loss), 
 
 ![The open-loop board: four square loops in two rows, the top two opened towards each other, the bottom two away, port 1's and port 2's lines tapped onto the top loops' outer sides.](pictures/open-loop-layout.png)
 
-![Open-Loop.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines.](pictures/open-loop-results.png)
+![Open-Loop Bench.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines.](pictures/open-loop-results.png)
 
 | | Prototype | Circuit |
 |---|---|---|
@@ -133,7 +133,7 @@ The prototype is the order-6 Butterworth lowpass at 2 GHz.
 
 ![The stepped-impedance board: three wide 15 Ω sections joined by thin 120 Ω lines between the two port lines.](pictures/stepped-z-layout.png)
 
-![Stepped-Z.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers.](pictures/stepped-z-results.png)
+![Stepped-Z Bench.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers.](pictures/stepped-z-results.png)
 
 | | Prototype | Circuit | Planar MoM |
 |---|---|---|---|
@@ -153,7 +153,7 @@ cutoff and each open stub drawn short by its end extension. The prototype is the
 
 ![The stub lowpass board: a thin 100 Ω line with a thin open stub up at each end and a wide stub up and down in the middle.](pictures/stub-lowpass-layout.png)
 
-![Stub Lowpass.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers.](pictures/stub-lowpass-results.png)
+![Stub Lowpass Bench.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers.](pictures/stub-lowpass-results.png)
 
 | | Prototype | Circuit | Planar MoM |
 |---|---|---|---|
@@ -174,7 +174,7 @@ Place Site Parts filled with 0402 parts. The prototype is the order-3 Butterwort
 
 ![The end-coupled board: one long 50 Ω line cut by two gaps into three half-wave resonators, an 0402 capacitor at each end between the resonators and the port lines.](pictures/end-coupled-layout.png)
 
-![End-Coupled.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines.](pictures/end-coupled-results.png)
+![End-Coupled Bench.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines.](pictures/end-coupled-results.png)
 
 | | Prototype | Circuit |
 |---|---|---|
@@ -195,7 +195,7 @@ shunt site to a via, and Update Layout landed each on its pads. The prototype is
 
 ![The LC board: the two port lines, an 0402 inductor across each gap between pads, and the 0402 capacitor standing up from the middle pad to its ground via.](pictures/lumped-lc-layout.png)
 
-![Lumped LC.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers.](pictures/lumped-lc-results.png)
+![Lumped LC Bench.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers.](pictures/lumped-lc-results.png)
 
 | | Prototype | Circuit | Planar MoM |
 |---|---|---|---|
@@ -217,7 +217,7 @@ neighbouring strip's via. The prototype is the order-3 0.1 dB Chebyshev bandpass
 
 ![The interdigital board: five upright strips shorted at alternate ends by vias, the outer two fed from the top through bends that turn away from the array.](pictures/interdigital-layout.png)
 
-![Interdigital.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers.](pictures/interdigital-results.png)
+![Interdigital Bench.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers.](pictures/interdigital-results.png)
 
 | | Prototype | Circuit | Planar MoM, 7 points |
 |---|---|---|---|
@@ -242,7 +242,7 @@ with 0.14 dB ripple (15 dB return loss) over 2.3–2.5 GHz.
 
 ![The combline board: three upright strips, vias at their bottom ends, an 0402 capacitor and its ground via at each top end, and the port lines tapped onto the outer strips.](pictures/combline-layout.png)
 
-![Combline.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines.](pictures/combline-results.png)
+![Combline Bench.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines.](pictures/combline-results.png)
 
 | | Prototype | Circuit |
 |---|---|---|

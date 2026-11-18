@@ -9,6 +9,52 @@ Two CLI defects found the same way are recorded where the code lives, not here:
 its own folder.
 
 
+## Dividers and Couplers: layouts placed against generators that have since changed (2026-11-17)
+
+Eleven layouts placed generated cells (MBPD, MGPD, MTPD, MDLY, MWPD, MSPS, MCLC, MRRC) whose generators have changed
+since. On open each cell is rebuilt from today's generator, its pins move by 0.02 to 4.6 mil, and the feed lines placed
+against the old pins stop short. DRC read the gaps as spacing errors, and LVS as opens: Bagley 4, Gysel 5, Tee 2,
+Mitred 2, Delay 1. Re-snapping the drifted feed lines (`tools/UpdateLayoutHarness`, which now takes `--workspace` and an
+`open` step) closes every one; LVS finds no error in any cell. Gysel's hand-placed resistors were moved 0.55 µm to keep
+their pads on the divider's stubs.
+
+**Update Layout turned Gysel's R1 and R2 from R0 to R90 even with them locked first.** They were rotated by hand in the
+layout; the schematic draws them vertical. The rotation was restored by hand here. Not investigated further.
+
+The three coupled-line gaps narrower than the board's 6 mil spacing rule (Balun 4.01, Coupler 4.54, Tandem 2.82 mil) are
+what the couplings need, so they carry DRC waivers stating that. The thickness correction is off in Bagley, Gysel and Pad,
+which the correction could not be applied to anyway; Bagley's S-parameters are byte-identical either way. The edge mesh is
+on in Bagley, Tee, Sections, Delay, Pad and Compact Rat-Race, at 3 to 4 times the unknowns. Balun's Planar setup sets
+`DirectVerticalKernel`, because its vias are 0.71 λ apart, past the fitted kernel.
+
+**Still to re-measure:** those setups' README run times and Planar results, and Gysel's, Schiffman's and Compact
+Rat-Race's for their re-snapped or rebuilt layouts. The long runs were not made here. LVS still warns once per cell, on
+the bottom ground pour, which carries no pin; on a technology whose bottom copper draws, LVS does not take it as ground.
+
+## A display named after the cell, not the bench, was never opened by its run (2026-11-17)
+
+Reported from the Dividers and Couplers workspace: after simulating a schematic, the Data Display opened with
+every plot empty. The workspace shipped one display per cell, `Bagley.cdd`, laid out for the bench's result
+(`Bagley Bench.npy`, its `Circuit`/`Equations`/`Planar` measurements). A run opens `<run key>.cdd` from the
+workspace root (`ResultsWriter.AuthoredDisplayPath`), and the run key of `Bagley Bench/schematic/Bagley
+Bench.csch` is `Bagley Bench`. So both runs went wrong:
+
+- **Simulating the cell** (`Bagley`, which carries its own S-parameter analysis) found `Bagley.cdd` and opened it.
+  Its traces read a file and measurements that run never writes, so every plot was empty. The run's Messages line
+  "Nothing in Bagley reads what this run wrote" did fire, with **Add plots of this run**. Measured headlessly:
+  `ShowsNothingOfItsSource` is true for that display against `Bagley.npy`.
+- **Simulating the bench** found no `Bagley Bench.cdd` and auto-created `results/Bagley Bench.cdd` with one
+  default trace. The authored display was only ever reached by opening it by hand, which the README said to do.
+
+Dividers and Couplers, Planar Filters, MMIC Wilkinson and RFIC Branch-Line all used this naming. Their 31
+displays are renamed `<cell> Bench.cdd`, unchanged inside, and the READMEs no longer tell the user to open
+them. The display shows the bench's run when the bench is simulated, and a cell's own run gets a display of its
+own. `ExampleWorkspacesTests.ADisplayReadingARunIsNamedAfterThatRun` holds this. A top-level `.cdd` whose selected
+source is some schematic's `<key>.npy` must be that schematic's `AuthoredDisplayPath`. Displays of an EM result
+(Capacitance Extraction's `Pad and Line.cdd`) are opened by hand and are not affected. The rule is step 4 of
+`examples/README.md`'s "Adding an example".
+
+
 ## Every design is a cell, and no example drives a run from a bare netlist (2026-09-29)
 
 The owner found that Thermal Output Wires drove its `FromHB` setup from `Amplifier/Amplifier.cnl` —

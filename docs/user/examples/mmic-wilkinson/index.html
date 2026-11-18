@@ -64,21 +64,21 @@ die's, <code>tech/mmic-GaAs_2LM_100um.ctech</code>.</p>
 <td>The cell's circuit, and its equations model: ideal lines of the closed-form impedances and lengths, an ideal 100 Ω resistor, and each feed an ideal line of its own impedance and length at F</td>
 </tr>
 <tr>
-<td><code>Wilkinson.cdd</code></td>
+<td><code>Wilkinson Bench.cdd</code></td>
 <td>data display</td>
 <td>|S21|, |S31|, |S11| and |S23|, the circuit model as a line and the equations model dashed</td>
 </tr>
 </tbody>
 </table>
 <h2 id="run-it">Run it</h2>
-<p>Simulate <strong>Wilkinson Bench</strong> and open <code>Wilkinson.cdd</code>. No results ship.</p>
+<p>Simulate <strong>Wilkinson Bench</strong>; <code>Wilkinson Bench.cdd</code> opens. No results ship.</p>
 <h2 id="wilkinson">Wilkinson</h2>
 <p>An MWPD with <code>Z0</code> 50 Ω, <code>F</code> 20 GHz and <code>Gap</code> 56 µm: the TFR's pin span, its 40 µm film and a contact at each end, so
 Update Layout lays it straight across the ring's gap. The TFR is two 20 µm squares of the 50 Ω/sq film, 100 Ω. Every
 line is on Metal1, the film's own metal, through <code>SignalLayer</code>; left empty it would be the top metal, Metal2. LVS matches
 the layout to the schematic.</p>
 <p><img class="readme-picture" src="pictures/wilkinson-layout.png" alt="The die: the input line on the left, the divider's ring, the thin-film resistor across the ring's gap, and the two outputs bending away to their ports." width="700"></p>
-<p><img class="readme-picture" src="pictures/wilkinson-results.png" alt="Wilkinson.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the equations model dashed." width="600"></p>
+<p><img class="readme-picture" src="pictures/wilkinson-results.png" alt="Wilkinson Bench.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the equations model dashed." width="600"></p>
 <table>
 <thead>
 <tr>

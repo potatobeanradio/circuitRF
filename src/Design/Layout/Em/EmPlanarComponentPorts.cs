@@ -270,6 +270,8 @@ public static class EmPlanarComponentPorts
                                                              (c.Return is null ? "" : $"\u001freturn={c.Return}")))
            + (setup.CutGroundFallbacks.Count == 0 ? "" : "|fallback\u001f" + string.Join("\u001f", setup.CutGroundFallbacks.Keys.Order(StringComparer.Ordinal)))
            + "#" + string.Join(",", setup.AnalysisLevelNames) + "#" + setup.SolveRegion?.Describe() + (setup.Is3D ? "#3d" : "")
+           // Whether the sweep solves 0 Hz decides a loop port's sentence (warning or note), so it is part of what the build read.
+           + (EmDiagnostics.SweepHasDc(setup.Frequency) ? "#dc" : "")
            + "#" + (source is null ? "" : source.View.Shapes.Count + "/" + source.View.Instances.Count + "/" + source.View.EditCount + "/" + source.DbuPerMicron);
 
     private sealed record Region(int Index, LayerKey Layer, Em3dExtrudedPolygon Poly, Paths64 Dbu);
@@ -314,7 +316,10 @@ public static class EmPlanarComponentPorts
         // brief-icp-2 R-icp2-1 — the cut, in the order the cut instances' ports are numbered (R-icp2-5): by the entry that took each,
         // in list order, then in the hierarchy's walk order.
         var cuts = selection.Instances.Select((c, i) => (c, i)).OrderBy(t => EntryRank(setup, t.c.Instance)).ThenBy(t => t.i).Select(t => t.c).ToList();
-        var cut = cuts.Count > 0 ? EmCellCutout.Apply(setup, source, cuts, instances) : null;
+        // The footprint parts given a port: their gap ports are built after the cut, which needs their pads to judge what copper reaches.
+        var footprintPads = selection.Wanted.Select(e => parts.GetValueOrDefault(e.Refdes)).Where(p => p is { Why: null })
+                                     .SelectMany(p => p!.Pads).ToList();
+        var cut = cuts.Count > 0 ? EmCellCutout.Apply(setup, source, cuts, instances, footprintPads) : null;
 
         // ── The copper, one region per connected piece on each layer a pad is on ──────────────────────
         var flat = cut?.Shapes ?? EmGeometry.Flatten(view, source.AbsolutePath, source.Technology).Shapes;
@@ -365,7 +370,7 @@ public static class EmPlanarComponentPorts
             {
                 var again = setup.Clone();
                 again.CutGroundFallbacks = fell;
-                cut = EmCellCutout.Apply(again, source, cuts, instances);
+                cut = EmCellCutout.Apply(again, source, cuts, instances, footprintPads);
             }
         }
 
@@ -445,7 +450,8 @@ public static class EmPlanarComponentPorts
                     ClayPath = source.AbsolutePath, Connector = connector,
                 });
                 if (ReferenceEquals(pos.Region, neg.Region))
-                    warnings.Add(EmDiagnostics.ComponentPortAcrossLoop(name, pos.Pad.Pin, neg.Pad.Pin).Render());
+                    (EmDiagnostics.SweepHasDc(setup.Frequency) ? warnings : notes)
+                        .Add(EmDiagnostics.ComponentPortAcrossLoop(name, pos.Pad.Pin, neg.Pad.Pin, EmDiagnostics.SweepHasDc(setup.Frequency)).Render());
                 anyBuilt = true;
             }
             if (anyBuilt && part.HasModel == false && !connector) noModel.Add(rd);

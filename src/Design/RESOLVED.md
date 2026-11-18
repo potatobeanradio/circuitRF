@@ -30352,6 +30352,47 @@ run that first (`TrlRun.WriterOf`, appended in `CircuitEvaluation`'s per-analysi
 `FailureMessage`). It reads the workspace's schematics only on that failure, and only those whose text holds a `"trl"`
 analysis. Gate: `TrlExampleTests.DeembedDut_RunBeforeTheCalibration_NamesTheBenchToRunFirst`.
 
+## Four findings that made a clean example read as broken (2026-11-17)
+
+Found while bringing the Dividers and Couplers workspace to zero warnings.
+
+- **A cut pin wired only to a footprint part's pad read as "not connected".** `EmCellCutout.Dangling` judged a cut pin's
+  copper against drawn port labels and other cut pins. A footprint part's gap port is built after the cut, though, so the
+  Gysel divider's ground vias (VIAGND cells, cut) wired to an 0402's pad (a footprint port) were both reported as driving
+  isolated metal. `Apply` now takes the pads of the footprint parts given a port (`EmPlanarComponentPorts` passes them
+  on both calls), and each pad counts as a port on the piece it lands on. Gate: `CutPinToFootprintPadTests`.
+- **A component port across a loop is a warning only when the sweep solves 0 Hz.** The loop decides only the 0 Hz row,
+  and a Wilkinson's resistor is meant to sit across one. `EmDiagnostics.ComponentPortAcrossLoop` takes `sweepHasDc`, and
+  `SweepHasDc` is true when the start is 0 or is an expression it cannot read. Both builders file the sentence by it, and
+  the planar build's cache key carries it, since the cached build holds the sentence.
+- **`check` on a `.cem` dropped the component-port build's notes.** It printed each port's line and the cut verdicts,
+  then held every build note back from the preflight as already said. The loop note was in neither, so it was never
+  printed. It now prints the build's remaining notes; the 3D section prints the loop note the same way.
+- **DRC's "labels were not checked" is information, not a warning.** Every layout with a designator carried it.
+  `DrcEngine.IsInformational` marks that one sentence: `check` reports it as `check.drc.info` at Info, and the GUI's DRC
+  report posts it as Info. Every other DRC remark keeps its warning.
+
+## A missing Touchstone file names what writes it, and offers to open it (2026-11-17)
+
+Simulating a Dividers and Couplers bench before its EM setups had run stopped at "Touchstone file not found" and said
+nothing more. brief-de-5's TRL lookup grew into `MissingFileWriters.Explain`. The per-analysis failure in
+`CircuitEvaluation` calls it, and so do the CLI run verbs' `FailureMessage`. It runs only on a missing file.
+
+- **Nothing is matched by name.** Each `.cem` and each `.c3d` embedded setup (as `C3dSetups.ForRun` names it) is asked
+  for its stem through the function its own run writes with: `EmRunService.ResolveSnpBasePath` for a planar setup,
+  `Em3dRunService.SnpBasePath`/`BothSnpBasePath` per solver for a 3D one. The results root is the one both run paths
+  use: `results/` of the nearest `.cws` above the document.
+- **The `.sNp` is compared apart from the stem**, because only the geometry knows a result's port count. A file of
+  the same stem and another port count in `results/` is named ("wrote X.s3p, a 3-port result, and this block reads
+  X.s4p"), not reported as a run still to make.
+- **A Touchstone file nothing writes says so** (`NoWriter`), including one whose name only resembles a result. A file
+  that is not Touchstone gets nothing added, because the scan knows nothing else that writes files.
+- `RunResult.FileWriters` carries each writer's document. `RunMessages.Post` puts an **Open** button on that analysis's
+  error row, through `OpenDocumentByPath`. A run where every analysis failed reports its errors on its own row, which
+  takes no button, so each writer gets an Info row of its own with the button.
+
+Gate: `tests/Ui.Tests/Examples/MissingFileWritersTests.cs`, on a copy of the Dividers and Couplers workspace.
+
 ## A 3D `.cem` with component ports now solves its Solve Region (designer feedback, 2026-11-08)
 
 A designer drew a solve region on a 3D `.cem` that already had `ComponentPorts: "*"`, and Mesh stopped with R-lcp5-3's

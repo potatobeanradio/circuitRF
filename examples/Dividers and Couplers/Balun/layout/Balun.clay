@@ -415,5 +415,17 @@
 				"LayoutMirror": false
 			}
 		}
+	],
+	"DrcWaivers": [
+		{
+			"Key": "MinSpacing|Top Copper Min Spacing|1/0|4928418,1224770,24325552,1275230",
+			"Reason": "The coupled strips' gap, 4.01 mil, is what the balun's coupling needs. It is below this board's 6 mil spacing rule, so it is built where that gap can be etched.",
+			"RuleName": "Top Copper Min Spacing"
+		},
+		{
+			"Key": "MinSpacing|Top Copper Min Spacing|1/0|28161504,1224770,47543538,1275230",
+			"Reason": "The coupled strips' gap, 4.01 mil, is what the balun's coupling needs. It is below this board's 6 mil spacing rule, so it is built where that gap can be etched.",
+			"RuleName": "Top Copper Min Spacing"
+		}
 	]
 }

@@ -692,8 +692,16 @@ public sealed partial class C3dEditorViewModel
     /// <summary>The active setup's air box as the current scene drew it, or null.</summary>
     public Em3dAirBox? ShownAirBox => _recordsView?.Box;
 
-    /// <summary>The setup the scene draws with: the active one's full .cem spelling, for the build's snapshot.</summary>
-    private string? SceneSetupJson() => ActiveSetup is { } s ? EmSetupPersistence.Serialize(s) : null;
+    /// <summary>The setup the scene draws with: the active one's full .cem spelling, for the build's snapshot. The panel's open and
+    /// closed sections are left out, so toggling one does not rebuild the scene.</summary>
+    private string? SceneSetupJson()
+    {
+        if (ActiveSetup is not { } s) return null;
+        if (s.NotesExpanded is null && s.ComponentPortsExpanded is null) return EmSetupPersistence.Serialize(s);
+        var drawn = s.Clone();
+        drawn.NotesExpanded = drawn.ComponentPortsExpanded = null;
+        return EmSetupPersistence.Serialize(drawn);
+    }
 
     /// <summary>brief-dfr35-1 R-dfr35-1-10 — what the box was last sized from with no setup active.</summary>
     public C3dNoSetupBasis? NoSetupBasis { get; private set; }

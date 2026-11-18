@@ -64,21 +64,21 @@ die's, <code>tech/rfic-Si_3LM_TFR_100um.ctech</code>.</p>
 <td>The cell's circuit, and its equations model: ideal lines of the closed-form impedances and lengths, and each feed an ideal line of its own impedance and length at F</td>
 </tr>
 <tr>
-<td><code>Branch-Line.cdd</code></td>
+<td><code>Branch-Line Bench.cdd</code></td>
 <td>data display</td>
 <td>|S21|, |S31|, |S11| and the phase of S21 against S31, the circuit model as a line and the equations model dashed</td>
 </tr>
 </tbody>
 </table>
 <h2 id="run-it">Run it</h2>
-<p>Simulate <strong>Branch-Line Bench</strong> and open <code>Branch-Line.cdd</code>. No results ship.</p>
+<p>Simulate <strong>Branch-Line Bench</strong>; <code>Branch-Line Bench.cdd</code> opens. No results ship.</p>
 <h2 id="branch-line-hybrid">Branch-line hybrid</h2>
 <p>An MBLC with <code>Z0</code> 50 Ω and <code>F</code> 60 GHz: 35.4 Ω series arms and 50 Ω shunt arms, each a quarter wave between the
 reference planes of its junctions. Every line has <code>SignalLayer</code> Metal3 and <code>GroundReference</code> Metal1, so its field stays
 in the 1.8 µm of oxide between them, out of the conducting silicon below, and 50 Ω is 1.8 µm wide. Update Layout draws
 the Metal1 ground under the lines, and LVS finds no error.</p>
 <p><img class="readme-picture" src="pictures/branch-line-layout.png" alt="The die: the two through lines, the 35 Ω series arms between the junctions, the two 50 Ω shunt arms and a 0.1 mm line from each corner to its port, over the Metal1 ground." width="700"></p>
-<p><img class="readme-picture" src="pictures/branch-line-results.png" alt="Branch-Line.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31, the circuit model as a line and the equations model dashed." width="600"></p>
+<p><img class="readme-picture" src="pictures/branch-line-results.png" alt="Branch-Line Bench.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31, the circuit model as a line and the equations model dashed." width="600"></p>
 <table>
 <thead>
 <tr>

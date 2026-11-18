@@ -22,7 +22,7 @@ using CircuitRF.Ui.ViewModels;
 // menu item runs it (WorkspaceViewModel.RunLayoutUpdate, the user's preferences, the layout opened as a document);
 // every message it posts is printed. See README.md for the steps.
 
-string? designArg = null, outArg = null, techArg = null;
+string? designArg = null, outArg = null, techArg = null, workspaceArg = null;
 bool noConnect = false, emSetup = false;
 var steps = new List<string>();
 for (int a = 0; a < args.Length; a++)
@@ -31,10 +31,11 @@ for (int a = 0; a < args.Length; a++)
     {
         case "-o": outArg = args[++a]; break;
         case "--tech": techArg = args[++a]; break;
+        case "--workspace": workspaceArg = args[++a]; break;
         case "--no-connect": noConnect = true; break;
         case "--em-setup": emSetup = true; break;
         default:
-            if (designArg is null && !args[a].Contains(':') && args[a] is not ("run" or "restore" or "dump" or "undo" or "redo"))
+            if (designArg is null && !args[a].Contains(':') && args[a] is not ("run" or "open" or "restore" or "dump" or "undo" or "redo"))
                 designArg = args[a];
             else steps.Add(args[a]);
             break;
@@ -42,7 +43,7 @@ for (int a = 0; a < args.Length; a++)
 }
 if (designArg is null || outArg is null)
 {
-    Console.Error.WriteLine("usage: UpdateLayoutHarness <design> -o <out-dir> [--tech <file.ctech>] [--no-connect] [--em-setup] [steps…]");
+    Console.Error.WriteLine("usage: UpdateLayoutHarness <design> -o <out-dir> [--tech <file.ctech> | --workspace <dir>] [--no-connect] [--em-setup] [steps…]");
     return 2;
 }
 
@@ -62,6 +63,9 @@ AppPreferencesIo.Update(p =>
 });
 
 string designsRoot = Path.Combine(repo, "testdata", "schematic-to-layout");
+// --workspace: the design is a cell of that workspace, and the whole workspace is copied, so its own technology, variables and
+// other cells are what the run sees.
+if (workspaceArg is not null) designArg = Path.Combine(Path.GetFullPath(workspaceArg), designArg);
 string src = Directory.Exists(designArg) ? Path.GetFullPath(designArg) : Path.Combine(designsRoot, designArg);
 if (!Directory.Exists(CellFolder.SubFolderPath(src, ViewType.Schematic)))
 {
@@ -73,16 +77,21 @@ string design = Path.GetFileName(Path.TrimEndingDirectorySeparator(src));
 
 string ws = Path.Combine(outDir, "ws");
 if (Directory.Exists(ws)) Directory.Delete(ws, recursive: true);
+string cws = Path.Combine(ws, ".cws");
+string cellDir = Path.Combine(ws, design);
+if (workspaceArg is not null)
+    CopyTree(Path.GetFullPath(workspaceArg), ws);
+else
+{
 string techPath = Path.Combine(ws, "tech", Path.GetFileName(techSource));
 Directory.CreateDirectory(Path.GetDirectoryName(techPath)!);
 File.Copy(techSource, techPath);
 // A technology names its material libraries relative to itself, and without them it does not load.
 foreach (string lib in Directory.EnumerateFiles(Path.GetDirectoryName(Path.GetFullPath(techSource))!, "*.cmat"))
     File.Copy(lib, Path.Combine(Path.GetDirectoryName(techPath)!, Path.GetFileName(lib)), true);
-string cws = Path.Combine(ws, ".cws");
 WorkspacePersistence.SaveToFile(cws, new CwsFile { DefaultTechRef = "tech/" + Path.GetFileName(techSource) });
-string cellDir = Path.Combine(ws, design);
 CopyTree(src, cellDir);
+}
 string csch = Directory.GetFiles(CellFolder.SubFolderPath(cellDir, ViewType.Schematic), "*.csch").OrderBy(f => f, StringComparer.Ordinal).First();
 string clay = Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), Path.GetFileNameWithoutExtension(csch) + ".clay");
 
@@ -121,6 +130,15 @@ foreach (string step in steps)
         {
             case "run":
                 runLayoutUpdate.Invoke(vm, [doc, null, null, false]);
+                break;
+            case "open":      // the cell's layout as a document, without an update, so the steps that edit it can come first
+                if (!vm.OpenDocumentByPath(clay)) throw new InvalidOperationException($"could not open {clay}");
+                // a layout opens asynchronously: wait for its document
+                for (int k = 0; k < 4000 && vm.FindOpenDocument(Path.GetFullPath(clay)) is not LayoutDocument; k++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    Thread.Sleep(5);
+                }
                 break;
             case "restore":   // Layout ▸ Restore Removed Parts
                 runLayoutUpdate.Invoke(vm, [doc, null, null, true]);

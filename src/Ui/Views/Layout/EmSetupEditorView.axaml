@@ -101,6 +101,31 @@
             <Setter Property="Margin" Value="0,0,0,6"/>
         </Style>
 
+        <!-- A section that opens and closes: a triangle beside its heading and no button chrome, in every state (the theme
+             fills a checked ToggleButton with the accent colour, which would read as a selected option). -->
+        <Style Selector="ToggleButton.disclosure">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+        </Style>
+        <Style Selector="ToggleButton.disclosure /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource ToggleButtonForeground}"/>
+        </Style>
+        <Style Selector="ToggleButton.disclosure:checked /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource ToggleButtonForeground}"/>
+        </Style>
+        <Style Selector="ToggleButton.disclosure:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="ToggleButton.disclosure:checked:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource ToggleButtonForeground}"/>
+        </Style>
+
         <!-- Owner request, 2026-08-11: the two "…" pickers in the header (Change Layout, and the
              output file) must be the SAME size. One style rather than two hand-matched sets of
              Width/Height/Padding, so they cannot drift apart the next time one is touched. -->
@@ -1178,11 +1203,22 @@
                     <StackPanel Name="ComponentPortsSection" Margin="0,10,0,0" Spacing="4"
                                 IsVisible="{Binding ViewModel.ShowComponentPorts}"
                                 ToolTip.Tip="{Binding ViewModel.ComponentPortsTip}">
+                        <!-- Opens and closes, and the setup keeps which: closed unless the setup names a component port. -->
                         <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Text="Component ports" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <ToggleButton Name="ComponentPortsToggle" Classes="disclosure" VerticalAlignment="Center"
+                                          IsChecked="{Binding ViewModel.ComponentPortsExpanded, Mode=TwoWay}">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <mi:MaterialIcon Kind="MenuRight" Width="16" Height="16"
+                                                     IsVisible="{Binding !ViewModel.ComponentPortsExpanded}"/>
+                                    <mi:MaterialIcon Kind="MenuDown" Width="16" Height="16"
+                                                     IsVisible="{Binding ViewModel.ComponentPortsExpanded}"/>
+                                    <TextBlock Text="Component ports" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </ToggleButton>
                             <Button Grid.Column="1" Content="Check" Padding="10,2"
                                     Command="{Binding ViewModel.CheckComponentPortsCommand}"/>
                         </Grid>
+                        <StackPanel Name="ComponentPortsBody" Spacing="4" IsVisible="{Binding ViewModel.ComponentPortsExpanded}">
                         <!-- brief-icp-7 R-icp7-1 — "*" keeps its row; its tooltip says what it takes and what it passes over. -->
                         <CheckBox Name="AllComponentPartsCheck" Content="Every part and device (*)"
                                   IsChecked="{Binding ViewModel.AllComponentParts}"
@@ -1305,6 +1341,7 @@
                         </StackPanel>
                         <!-- R-lcp3-7: always laid out, so a status appearing or clearing moves nothing below it. -->
                         <TextBlock Text="{Binding ViewModel.ComponentPortsStatus}" FontSize="11" Opacity="0.7" MinHeight="15"/>
+                        </StackPanel>
                     </StackPanel>
                   </StackPanel>
                 </Border>
@@ -1594,13 +1631,23 @@
                      nothing to show, so the group heading never stands over an empty box. -->
                 <Border Classes="group" IsVisible="{Binding ViewModel.ShowNotesGroup}">
                   <StackPanel Spacing="2">
-                <TextBlock Classes="grouphdr" Text="Notes"/>
+                <!-- Opens and closes, and the setup keeps which: open by default. Closed, the warnings still show; only the
+                     notes and the cross-section readback fold away. -->
+                <ToggleButton Name="NotesToggle" Classes="disclosure" Margin="0,0,0,6"
+                              IsChecked="{Binding ViewModel.NotesExpanded, Mode=TwoWay}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <mi:MaterialIcon Kind="MenuRight" Width="16" Height="16" IsVisible="{Binding !ViewModel.NotesExpanded}"/>
+                        <mi:MaterialIcon Kind="MenuDown" Width="16" Height="16" IsVisible="{Binding ViewModel.NotesExpanded}"/>
+                        <TextBlock Classes="grouphdr" Text="Notes" Margin="0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </ToggleButton>
                     <!-- ── Cross-section readback (R-em-8: rendered, never recomputed) ──
                          The WHOLE block is gated on Readback, header included. Readback is the
                          cross-section kernel's own product and is null for a full-wave setup, so
                          without the gate a planar setup showed a "Cross-section" heading with
                          nothing whatsoever under it (owner report, 2026-08-11). A heading with
                          no content reads as a rendering failure, not as an empty section. -->
+                    <StackPanel Spacing="2" IsVisible="{Binding ViewModel.NotesExpanded}">
                     <StackPanel Spacing="2"
                                 IsVisible="{Binding ViewModel.Readback, Converter={x:Static ObjectConverters.IsNotNull}}">
                         <TextBlock Classes="colhdr" FontWeight="SemiBold" Text="Cross-section"/>
@@ -1615,6 +1662,7 @@
                             <TextBlock Grid.Row="2" Grid.Column="0" Classes="colhdr" Text="Ground reference"/>
                             <TextBlock Grid.Row="2" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.Readback.GroundLayerName}"/>
                         </Grid>
+                    </StackPanel>
                     </StackPanel>
 
                     <!-- The extraction notes — what geometry was seen, what was ignored and why,
@@ -1642,7 +1690,7 @@
                         <!-- ONE block, not an ItemsControl of them — an ItemsControl selects one
                              LINE at a time and copying a report out means dragging each note
                              separately (owner instruction, 2026-09-09). -->
-                        <SelectableTextBlock Text="{Binding ViewModel.NotesText}"
+                        <SelectableTextBlock Text="{Binding ViewModel.NotesText}" IsVisible="{Binding ViewModel.NotesExpanded}"
                                              TextWrapping="Wrap" FontSize="10" Opacity="0.75"/>
                     </StackPanel>
                   </StackPanel>

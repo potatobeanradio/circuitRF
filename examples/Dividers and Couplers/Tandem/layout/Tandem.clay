@@ -358,5 +358,17 @@
 				"LayoutMirror": false
 			}
 		}
+	],
+	"DrcWaivers": [
+		{
+			"Key": "MinSpacing|Top Copper Min Spacing|1/0|9079872,2993965,30332562,3074649",
+			"Reason": "The coupled lines' gap, 2.82 mil, is what each section of the 3 dB tandem needs. It is below this board's 6 mil spacing rule, so it is built where that gap can be etched.",
+			"RuleName": "Top Copper Min Spacing"
+		},
+		{
+			"Key": "MinSpacing|Top Copper Min Spacing|1/0|10705044,-3074649,31957734,-2993965",
+			"Reason": "The coupled lines' gap, 2.82 mil, is what each section of the 3 dB tandem needs. It is below this board's 6 mil spacing rule, so it is built where that gap can be etched.",
+			"RuleName": "Top Copper Min Spacing"
+		}
 	]
 }

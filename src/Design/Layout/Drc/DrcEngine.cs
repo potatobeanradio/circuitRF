@@ -145,7 +145,7 @@ public static class DrcEngine
 
         int skipped = shapes.Count - checkable.Count;
         if (skipped > 0)
-            diagnostics.Add($"{skipped:N0} label/reference-image shape(s) carry no manufacturable area and were not checked.");
+            diagnostics.Add(SkippedAnnotation(skipped));
 
         // ── How finely each layer's curves must be flattened, BEFORE any is flattened ────────────
         // A curve has to be polygonised finely enough that the approximation cannot be mistaken for
@@ -998,4 +998,13 @@ public static class DrcEngine
         c = a.Marker.MaxX.CompareTo(b.Marker.MaxX);              if (c != 0) return c;
         return a.Marker.MaxY.CompareTo(b.Marker.MaxY);
     }
+
+    private const string SkippedAnnotationTail = " label/reference-image shape(s) carry no manufacturable area and were not checked.";
+
+    /// <summary>What a run says about the labels and reference images it skips: information about what was checked, never a
+    /// finding, since every layout with a designator carries some.</summary>
+    public static string SkippedAnnotation(int count) => count.ToString("N0", System.Globalization.CultureInfo.CurrentCulture) + SkippedAnnotationTail;
+
+    /// <summary>Whether a run's diagnostic is information (<see cref="SkippedAnnotation"/>) rather than something to look at.</summary>
+    public static bool IsInformational(string diagnostic) => diagnostic.EndsWith(SkippedAnnotationTail, StringComparison.Ordinal);
 }

@@ -25,7 +25,9 @@ public static class DrcRunReport
 
         // Diagnostics FIRST and the verdict last: the verdict is the answer, and an answer that
         // scrolls above its own footnotes reads as belonging to the run before it.
-        foreach (var d in result.Diagnostics) messages.Warning($"DRC — {d}");
+        foreach (var d in result.Diagnostics)
+            if (DrcEngine.IsInformational(d)) messages.Info($"DRC — {d}");
+            else                              messages.Warning($"DRC — {d}");
 
         string tech = result.TechnologyName is { Length: > 0 } n ? $" against \"{n}\"" : "";
 

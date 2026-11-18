@@ -18,13 +18,15 @@ dotnet run --project tools/UpdateLayoutHarness --no-build -- <design> -o <out-di
 that has a `schematic/` folder. It is copied into `<out-dir>/ws`, a fresh workspace whose default technology is
 `--tech` (default `testdata/schematic-to-layout/microstrip-0508.ctech`); the source is never written. Preferences live
 in `<out-dir>/state` unless `CRF_STATE_DIR` is already set, so the run neither reads nor writes your own.
-`--no-connect` turns off Settings ▸ Connect parts on Update Layout; `--em-setup` turns on Create or update EM setup.
+`--workspace <dir>` takes `<design>` as a cell of that workspace and copies the whole workspace instead, so its own technology,
+variables and other cells are what the run sees. `--no-connect` turns off Settings ▸ Connect parts on Update Layout; `--em-setup` turns on Create or update EM setup.
 
 ## Steps, in the order given
 
 | Step | Does |
 |---|---|
 | `run` | Update Layout from Schematic. |
+| `open` | Opens the cell's existing layout as a document without updating it, so `lock:` or `move:` can come before the first `run`. |
 | `restore` | Layout ▸ Restore Removed Parts (a run that puts back parts deleted by hand). |
 | `resnap:A,B` | Layout ▸ Re-snap to Schematic on those parts. |
 | `sites:WPD1` | Place Site Parts on that passive, then saves the schematic to the scratch copy's own `.csch`. |

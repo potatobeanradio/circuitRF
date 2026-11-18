@@ -47,7 +47,7 @@ from Schematic and is LVS clean.</p>
 <p>Each cell has a test bench beside it. The bench holds the cell's circuit and the <strong>ideal prototype</strong> the design came
 from: circuitRF's Filter block at the design's response, order, ripple and band, the equations the closed forms start
 from. Six cells also have a coarse Planar MoM setup in their <code>em/</code> folder, and their bench adds an SnP block that reads the
-Touchstone file the setup writes into <code>results/</code>. Simulate a bench and open the cell's <code>.cdd</code>: the circuit model is a
+Touchstone file the setup writes into <code>results/</code>. Simulate a bench and its <code>.cdd</code> opens: the circuit model is a
 red line, the prototype a dashed green one, and the solve a set of markers. No results ship; the benches read what
 your own runs write.</p>
 <h2 id="the-cells">The cells</h2>
@@ -111,14 +111,14 @@ your own runs write.</p>
 <td>One per cell: the cell's circuit, the ideal prototype, and its Planar result where it has a setup</td>
 </tr>
 <tr>
-<td><code>Edge-Coupled.cdd</code> … <code>Combline.cdd</code></td>
+<td><code>Edge-Coupled Bench.cdd</code> … <code>Combline Bench.cdd</code></td>
 <td>data display</td>
-<td>One per cell, at the top of the workspace</td>
+<td>One per bench, at the top of the workspace</td>
 </tr>
 </tbody>
 </table>
 <h2 id="run-it">Run it</h2>
-<p>Simulate a cell's bench and open its <code>.cdd</code>. Where the cell has a <strong>Planar</strong> setup (its <code>em/</code> folder), run that first.</p>
+<p>Simulate a cell's bench, which opens its <code>.cdd</code>. Where the cell has a <strong>Planar</strong> setup (its <code>em/</code> folder), run that first.</p>
 <table>
 <thead>
 <tr>
@@ -131,37 +131,37 @@ your own runs write.</p>
 <tr>
 <td>Edge-Coupled</td>
 <td>1½ min</td>
-<td>Simulate <strong>Edge-Coupled Bench</strong>, open <code>Edge-Coupled.cdd</code></td>
+<td>Simulate <strong>Edge-Coupled Bench</strong></td>
 </tr>
 <tr>
 <td>Hairpin</td>
 <td>4 min</td>
-<td>Simulate <strong>Hairpin Bench</strong>, open <code>Hairpin.cdd</code></td>
+<td>Simulate <strong>Hairpin Bench</strong></td>
 </tr>
 <tr>
 <td>Stepped-Z</td>
 <td>6 min</td>
-<td>Simulate <strong>Stepped-Z Bench</strong>, open <code>Stepped-Z.cdd</code></td>
+<td>Simulate <strong>Stepped-Z Bench</strong></td>
 </tr>
 <tr>
 <td>Interdigital</td>
 <td>25½ min</td>
-<td>Simulate <strong>Interdigital Bench</strong>, open <code>Interdigital.cdd</code></td>
+<td>Simulate <strong>Interdigital Bench</strong></td>
 </tr>
 <tr>
 <td>Stub Lowpass</td>
 <td>5 min</td>
-<td>Simulate <strong>Stub Lowpass Bench</strong>, open <code>Stub Lowpass.cdd</code></td>
+<td>Simulate <strong>Stub Lowpass Bench</strong></td>
 </tr>
 <tr>
 <td>Lumped LC</td>
 <td>8 min</td>
-<td>Simulate <strong>Lumped LC Bench</strong>, open <code>Lumped LC.cdd</code></td>
+<td>Simulate <strong>Lumped LC Bench</strong></td>
 </tr>
 <tr>
 <td>Open-Loop, End-Coupled, Combline</td>
 <td>—</td>
-<td>Simulate the bench, open the cell's <code>.cdd</code></td>
+<td>Simulate the bench</td>
 </tr>
 </tbody>
 </table>
@@ -183,7 +183,7 @@ three half-wave resonators 1.058 mm wide and 37.169 mm long, the couplings' J-in
 0.574 mm between resonators, each section λg/4 in its modes' mean εeff less the open ends. The prototype is the
 Chebyshev bandpass of order 3 with 0.5 dB ripple over 2.283–2.523 GHz.</p>
 <p><img class="readme-picture" src="pictures/edge-coupled-layout.png" alt="The edge-coupled board: port 1's line at the left, the four coupled sections stepping down to the right, and port 2's line." width="700"></p>
-<p><img class="readme-picture" src="pictures/edge-coupled-results.png" alt="Edge-Coupled.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/edge-coupled-results.png" alt="Edge-Coupled Bench.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -228,7 +228,7 @@ corners, and the feeds tapped at <code>Tap</code> = 3.86 mm from the end resonat
 design's external Q, g0·g1/FBW (J.-S. Hong and M. J. Lancaster, <a href="https://doi.org/10.1002/0471221619">10.1002/0471221619</a>).
 The prototype is the edge-coupled one.</p>
 <p><img class="readme-picture" src="pictures/hairpin-layout.png" alt="The hairpin board: three U-shaped resonators, the outer two inverted, port 1's and port 2's lines tapped onto their outer arms." width="700"></p>
-<p><img class="readme-picture" src="pictures/hairpin-results.png" alt="Hairpin.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/hairpin-results.png" alt="Hairpin Bench.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -275,7 +275,7 @@ square ripple by 4 dB; from there circuitRF's Optimizer moved six numbers (two l
 the model met |S11| below −15 dB over 2.36–2.44 GHz and |S21| below −25 dB either side, in a few seconds. The prototype
 is those goals' elliptic bandpass: order 4, 0.14 dB ripple (15 dB return loss), 2.36–2.44 GHz, 25 dB stopband.</p>
 <p><img class="readme-picture" src="pictures/open-loop-layout.png" alt="The open-loop board: four square loops in two rows, the top two opened towards each other, the bottom two away, port 1's and port 2's lines tapped onto the top loops' outer sides." width="700"></p>
-<p><img class="readme-picture" src="pictures/open-loop-results.png" alt="Open-Loop.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines." width="600"></p>
+<p><img class="readme-picture" src="pictures/open-loop-results.png" alt="Open-Loop Bench.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -315,7 +315,7 @@ series inductor a 120 Ω line of βl = g·50/120 at the cutoff (D. M. Pozar, <em
 book with no DOI: <a href="https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553">the publisher's page</a>).
 The prototype is the order-6 Butterworth lowpass at 2 GHz.</p>
 <p><img class="readme-picture" src="pictures/stepped-z-layout.png" alt="The stepped-impedance board: three wide 15 Ω sections joined by thin 120 Ω lines between the two port lines." width="700"></p>
-<p><img class="readme-picture" src="pictures/stepped-z-results.png" alt="Stepped-Z.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/stepped-z-results.png" alt="Stepped-Z Bench.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -354,7 +354,7 @@ from the steps between widths, which the model leaves out.</p>
 DOI): open stubs of 100 Ω, 25 Ω (drawn as two 50 Ω arms) and 100 Ω, joined by 100 Ω lines, every section λ/8 at the
 cutoff and each open stub drawn short by its end extension. The prototype is the order-3 Butterworth lowpass at 2 GHz.</p>
 <p><img class="readme-picture" src="pictures/stub-lowpass-layout.png" alt="The stub lowpass board: a thin 100 Ω line with a thin open stub up at each end and a wide stub up and down in the middle." width="700"></p>
-<p><img class="readme-picture" src="pictures/stub-lowpass-results.png" alt="Stub Lowpass.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/stub-lowpass-results.png" alt="Stub Lowpass Bench.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -394,7 +394,7 @@ three-resonator Butterworth 2 % wide at 2.4 GHz: each J-inverter a series capaci
 two need 0.243 pF, which no gap on this board reaches (MGAP gives 0.05 pF at 20 µm), so they are capacitor sites that
 Place Site Parts filled with 0402 parts. The prototype is the order-3 Butterworth bandpass over 2.376–2.424 GHz.</p>
 <p><img class="readme-picture" src="pictures/end-coupled-layout.png" alt="The end-coupled board: one long 50 Ω line cut by two gaps into three half-wave resonators, an 0402 capacitor at each end between the resonators and the port lines." width="700"></p>
-<p><img class="readme-picture" src="pictures/end-coupled-results.png" alt="End-Coupled.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines." width="600"></p>
+<p><img class="readme-picture" src="pictures/end-coupled-results.png" alt="End-Coupled Bench.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -433,7 +433,7 @@ resonators' loss is the 7.3 dB.</p>
 ladder draws only pads; Place Site Parts put an 0402 inductor across each series site and an 0402 capacitor from the
 shunt site to a via, and Update Layout landed each on its pads. The prototype is the same Butterworth, ideal.</p>
 <p><img class="readme-picture" src="pictures/lumped-lc-layout.png" alt="The LC board: the two port lines, an 0402 inductor across each gap between pads, and the 0402 capacitor standing up from the middle pad to its ground via." width="700"></p>
-<p><img class="readme-picture" src="pictures/lumped-lc-results.png" alt="Lumped LC.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/lumped-lc-results.png" alt="Lumped LC Bench.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -474,7 +474,7 @@ each pair's mutual one realised as the widths (0.732, 0.873, 1.014, 0.873, 0.732
 shorted end. The port lines leave the terminating strips through a 90° bend at the strip's own width, away from the
 neighbouring strip's via. The prototype is the order-3 0.1 dB Chebyshev bandpass over 2.172–2.652 GHz.</p>
 <p><img class="readme-picture" src="pictures/interdigital-layout.png" alt="The interdigital board: five upright strips shorted at alternate ends by vias, the outer two fed from the top through bends that turn away from the array." width="550"></p>
-<p><img class="readme-picture" src="pictures/interdigital-results.png" alt="Interdigital.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/interdigital-results.png" alt="Interdigital Bench.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines and the Planar MoM solve as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -523,7 +523,7 @@ the band. From there the Optimizer moved the gap, the tap and the two capacitanc
 Parts put a via on each short and an 0402 capacitor on each loaded end. The prototype is the order-3 Chebyshev bandpass
 with 0.14 dB ripple (15 dB return loss) over 2.3–2.5 GHz.</p>
 <p><img class="readme-picture" src="pictures/combline-layout.png" alt="The combline board: three upright strips, vias at their bottom ends, an 0402 capacitor and its ground via at each top end, and the port lines tapped onto the outer strips." width="700"></p>
-<p><img class="readme-picture" src="pictures/combline-results.png" alt="Combline.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines." width="600"></p>
+<p><img class="readme-picture" src="pictures/combline-results.png" alt="Combline Bench.cdd: |S21|, |S11|, |S21| in the passband and |S22| against frequency, the circuit model and the ideal prototype as lines." width="600"></p>
 <table>
 <thead>
 <tr>

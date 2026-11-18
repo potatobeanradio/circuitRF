@@ -3343,14 +3343,14 @@ static int PrintHelp()
 }
 
 
-    /// <summary>A run's failure, with the bench to run first when the missing file is a fixture a TRL analysis in the
-    /// workspace writes (brief-de-5) — as Simulate reports it.</summary>
+    /// <summary>A run's failure, with what in the workspace writes the file it did not find, or that nothing does
+    /// (<c>MissingFileWriters</c>) — as Simulate reports it.</summary>
     private static string FailureMessage(Exception ex, string input)
     {
         for (var e = ex; e is not null; e = e.InnerException)
             if (e is FileNotFoundException { FileName: { Length: > 0 } missing } && !File.Exists(missing)
-                && CircuitRF.Design.Circuit.TrlRun.WriterOf(missing, CircuitSource.ReferenceBaseOf(input)) is { } writer)
-                return ex.Message + " " + writer;
+                && CircuitRF.Design.Circuit.MissingFileWriters.Explain(missing, CircuitSource.ReferenceBaseOf(input)) is { } writer)
+                return ex.Message + " " + writer.Sentence;
         return ex.Message;
     }
 }

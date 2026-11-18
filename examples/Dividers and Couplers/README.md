@@ -12,7 +12,7 @@ Wilkinson** and a **resistive pad** (MRPAD) are solved on Planar MoM, on a coars
 is also compared with an equations model, the same topology on ideal lines or parts.
 
 Every cell has a test bench beside it, holding the cell's circuit, its equations model and one SnP block per EM setup,
-which reads the Touchstone file that setup writes into `results/`. Simulate the bench and open the cell's `.cdd`: the
+which reads the Touchstone file that setup writes into `results/`. Simulate the bench and its `.cdd` opens: the
 circuit model is a line, the equations model a dashed line and each solver a set of markers. No results ship; the
 benches read what your own runs write.
 
@@ -40,34 +40,34 @@ benches read what your own runs write.
 | **Lumped Wilkinson** | schematic, layout | An MWPD with `Realization` = `Lumped`, its six 0402s placed by Place Site Parts, each capacitor to a via |
 | **Pad** | schematic, layout, EM setup | A 6 dB π MRPAD, its three 0402s placed by Place Site Parts, each shunt one to a via |
 | **Wilkinson Bench** … **Pad Bench** | schematic | One per cell: the cell's circuit, its equations model, and one SnP block per EM result with its ports closed |
-| `Wilkinson.cdd` … `Pad.cdd` | data display | One per cell, at the top of the workspace |
+| `Wilkinson Bench.cdd` … `Pad Bench.cdd` | data display | One per bench, at the top of the workspace |
 
 ## Run it
 
-Run a cell's EM setups, then simulate its bench and open its `.cdd`. **Planar** is the setup in the cell's `em/` folder;
+Run a cell's EM setups, then simulate its bench, which opens its `.cdd`. **Planar** is the setup in the cell's `em/` folder;
 **EMerge** and **Palace** are the two setups in its 3D view.
 
 | Cell | Planar MoM | EMerge | Palace | Then |
 |---|---|---|---|---|
-| Wilkinson | 4½ min | 1 min | 1½ min | Simulate **Wilkinson Bench**, open `Wilkinson.cdd` |
-| Unequal | 34½ min | 1 min | 3 min | Simulate **Unequal Bench**, open `Unequal.cdd` |
-| Broadband | 49 min | 1 min | 3 min | Simulate **Broadband Bench**, open `Broadband.cdd` |
-| Branch-Line | 1½ min | 1½ min | 7 min | Simulate **Branch-Line Bench**, open `Branch-Line.cdd` |
-| Rat-Race | 24½ min | 1½ min | 12½ min | Simulate **Rat-Race Bench**, open `Rat-Race.cdd` |
-| Coupler | 9½ min | 3 min | 12 min | Simulate **Coupler Bench**, open `Coupler.cdd` |
-| Balun | refused | 2 min | 6½ min | Simulate **Balun Bench**, open `Balun.cdd` |
-| FourWay | — | — | — | Simulate **FourWay Bench**, open `FourWay.cdd` |
-| Mitred | — | — | — | Simulate **Mitred Bench**, open `Mitred.cdd` |
-| Gysel | 2½ min | — | — | Simulate **Gysel Bench**, open `Gysel.cdd` |
-| Bagley | 17 s | — | — | Simulate **Bagley Bench**, open `Bagley.cdd` |
-| Tee | 16 s | — | — | Simulate **Tee Bench**, open `Tee.cdd` |
-| Schiffman | 3 min | — | — | Simulate **Schiffman Bench**, open `Schiffman.cdd` |
-| Delay | 9 s | — | — | Simulate **Delay Bench**, open `Delay.cdd` |
-| Compact Rat-Race | 3 min | — | — | Simulate **Compact Rat-Race Bench**, open `Compact Rat-Race.cdd` |
-| Sections | 1 min | — | — | Simulate **Sections Bench**, open `Sections.cdd` |
-| Tandem | — | — | — | Simulate **Tandem Bench**, open `Tandem.cdd` |
-| Lumped Wilkinson | — | — | — | Simulate **Lumped Wilkinson Bench**, open `Lumped Wilkinson.cdd` |
-| Pad | 4½ min | — | — | Simulate **Pad Bench**, open `Pad.cdd` |
+| Wilkinson | 4½ min | 1 min | 1½ min | Simulate **Wilkinson Bench** |
+| Unequal | 34½ min | 1 min | 3 min | Simulate **Unequal Bench** |
+| Broadband | 49 min | 1 min | 3 min | Simulate **Broadband Bench** |
+| Branch-Line | 1½ min | 1½ min | 7 min | Simulate **Branch-Line Bench** |
+| Rat-Race | 24½ min | 1½ min | 12½ min | Simulate **Rat-Race Bench** |
+| Coupler | 9½ min | 3 min | 12 min | Simulate **Coupler Bench** |
+| Balun | long | 2 min | 6½ min | Simulate **Balun Bench** |
+| FourWay | — | — | — | Simulate **FourWay Bench** |
+| Mitred | — | — | — | Simulate **Mitred Bench** |
+| Gysel | 2½ min | — | — | Simulate **Gysel Bench** |
+| Bagley | 17 s | — | — | Simulate **Bagley Bench** |
+| Tee | 16 s | — | — | Simulate **Tee Bench** |
+| Schiffman | 3 min | — | — | Simulate **Schiffman Bench** |
+| Delay | 9 s | — | — | Simulate **Delay Bench** |
+| Compact Rat-Race | 3 min | — | — | Simulate **Compact Rat-Race Bench** |
+| Sections | 1 min | — | — | Simulate **Sections Bench** |
+| Tandem | — | — | — | Simulate **Tandem Bench** |
+| Lumped Wilkinson | — | — | — | Simulate **Lumped Wilkinson Bench** |
+| Pad | 4½ min | — | — | Simulate **Pad Bench** |
 
 Times are from Linux machines, 8 threads for Planar and EMerge and 8 Palace processes; the first 3D run offers to
 install its solver. A bench simulates in under a second and reads every result its cell has, so run them all first.
@@ -92,7 +92,7 @@ because a calibrated Planar port needs five substrate heights clear of other met
 
 ![The board: port 1's line on the left, the divider's ring, the 0402 isolation resistor across the ring's gap, and the two output lines bending away to ports 2 and 3.](pictures/wilkinson-layout.png)
 
-![Wilkinson.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the three EM solvers as markers.](pictures/wilkinson-results.png)
+![Wilkinson Bench.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the three EM solvers as markers.](pictures/wilkinson-results.png)
 
 | At 2.4 GHz | Circuit | Planar MoM | EMerge | Palace |
 |---|---|---|---|---|
@@ -111,7 +111,7 @@ and `R1` = Z0·(K + 1/K) = 106.07 Ω.
 
 ![The unequal split: a thin arm to port 2 over the top of the ring, a wide one to port 3 underneath, the 0402 across the gap, and each output's quarter-wave transformer before its bend.](pictures/unequal-layout.png)
 
-![Unequal.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the three EM solvers as markers.](pictures/unequal-results.png)
+![Unequal Bench.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the three EM solvers as markers.](pictures/unequal-results.png)
 
 | At 2.4 GHz | Circuit | Planar MoM | EMerge | Palace |
 |---|---|---|---|---|
@@ -131,7 +131,7 @@ The Wilkinson with `N` = 2 and `Band` = 2: two sections over 1.6 to 3.2 GHz, `R1
 
 ![The two-section divider: the ring, the pair of section-1 lines running on to the outputs either side of the gap's centre line, an 0402 at each junction, and the output bends.](pictures/broadband-layout.png)
 
-![Broadband.cdd: |S21|, |S11|, |S22| and |S23| against frequency, the circuit model as a line and the three EM solvers as markers.](pictures/broadband-results.png)
+![Broadband Bench.cdd: |S21|, |S11|, |S22| and |S23| against frequency, the circuit model as a line and the three EM solvers as markers.](pictures/broadband-results.png)
 
 | At 2.4 GHz | Circuit | Planar MoM | EMerge | Palace |
 |---|---|---|---|---|
@@ -150,7 +150,7 @@ meet at one point that no one-layer drawing reaches. Circuit only: each divider 
 
 ![The four-way tree: the input divider on the left, its outputs bending up and down to two more dividers, each with its own 0402 across its ring's gap, and ports 2 to 5 on their outputs.](pictures/fourway-layout.png)
 
-![FourWay.cdd: |S21|, |S11|, |S22| and the isolation between outputs against frequency, from the cell's own schematic.](pictures/fourway-results.png)
+![FourWay Bench.cdd: |S21|, |S11|, |S22| and the isolation between outputs against frequency, from the cell's own schematic.](pictures/fourway-results.png)
 
 | At 2.4 GHz | Circuit |
 |---|---|
@@ -172,7 +172,7 @@ Circuit only, swept every 10 MHz.
 
 ![The three dividers side by side: the curved ring, the mitred rectangle and the square one, each with its 0402 across the gap and its outputs bending away to their ports.](pictures/mitred-layout.png)
 
-![Mitred.cdd: |S21|, |S11| and |S23| against frequency for the three dividers, from the cell's own schematic.](pictures/mitred-results.png)
+![Mitred Bench.cdd: |S21|, |S11| and |S23| against frequency for the three dividers, from the cell's own schematic.](pictures/mitred-results.png)
 
 | At 2.4 GHz | Curve | Miter | Square |
 |---|---|---|---|
@@ -193,7 +193,7 @@ the reference planes of its junctions.
 
 ![The branch-line board: the two through lines, the wider 35 Ω series arms between the junctions, the two 50 Ω shunt arms, and a 5 mm line from each corner to its port.](pictures/branch-line-layout.png)
 
-![Branch-Line.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31, the circuit model as a line and the three EM solvers as markers.](pictures/branch-line-results.png)
+![Branch-Line Bench.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31, the circuit model as a line and the three EM solvers as markers.](pictures/branch-line-results.png)
 
 | At 2.4 GHz | Circuit | Planar MoM | EMerge | Palace |
 |---|---|---|---|---|
@@ -213,7 +213,7 @@ a quarter wave apart on the upper run, and port 4 on the lower.
 
 ![The rat-race board: the ring as two straight runs and two half-turns, ports 2, 1 and 3 leaving the upper run upward and port 4 the lower run downward, each through a 5 mm line.](pictures/rat-race-layout.png)
 
-![Rat-Race.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31 for a drive at the sum port, the circuit model as a line and the three EM solvers as markers.](pictures/rat-race-results.png)
+![Rat-Race Bench.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31 for a drive at the sum port, the circuit model as a line and the three EM solvers as markers.](pictures/rat-race-results.png)
 
 | At 2.4 GHz | Circuit | Planar MoM | EMerge | Palace |
 |---|---|---|---|---|
@@ -234,7 +234,7 @@ feeds are drawn at the strip width, so no step in the copper sits outside the mo
 
 ![The coupler: the coupled pair upright in the middle, each of its four strip ends curving away to its own port.](pictures/coupler-layout.png)
 
-![Coupler.cdd: |S31|, |S21|, |S41| and |S11| against frequency, the circuit model as a line and the three EM solvers as markers.](pictures/coupler-results.png)
+![Coupler Bench.cdd: |S31|, |S21|, |S41| and |S11| against frequency, the circuit model as a line and the three EM solvers as markers.](pictures/coupler-results.png)
 
 | At 2.4 GHz | Circuit | Planar MoM | EMerge | Palace |
 |---|---|---|---|---|
@@ -254,16 +254,18 @@ gap under a tenth of the substrate height, which the part refuses.
 
 ![The balun: the input strip running along both sections and across the gap between them to its open end, the coupled strips below grounded by a via at each outer end, and the two outputs turning down at the middle.](pictures/balun-layout.png)
 
-![Balun.cdd: |S21|, |S31|, the phase of S31 against S21 and |S11| against frequency, the circuit model as a line and the two 3D solvers as markers.](pictures/balun-results.png)
+![Balun Bench.cdd: |S21|, |S31|, the phase of S31 against S21 and |S11| against frequency, the circuit model as a line and the two 3D solvers as markers.](pictures/balun-results.png)
 
 | At 2.4 GHz | Circuit | Planar MoM | EMerge | Palace |
 |---|---|---|---|---|
-| \|S21\| | −3.63 dB | refused | −4.15 dB | −4.10 dB |
-| \|S31\| | −3.96 dB | refused | −4.39 dB | −4.24 dB |
-| ∠S31 − ∠S21 | 169.8° | refused | 175.1° | 175.1° |
-| \|S11\| | −10.6 dB | refused | −7.4 dB | −9.0 dB |
+| \|S21\| | −3.63 dB | — | −4.15 dB | −4.10 dB |
+| \|S31\| | −3.96 dB | — | −4.39 dB | −4.24 dB |
+| ∠S31 − ∠S21 | 169.8° | — | 175.1° | 175.1° |
+| \|S11\| | −10.6 dB | — | −7.4 dB | −9.0 dB |
 
-Planar refuses the layout: its two ground vias are 0.71 λ apart at 4.8 GHz, past its via kernel's tenth of a wavelength.
+Its two ground vias are 0.71 λ apart at 4.8 GHz, past the tenth of a wavelength Planar's fitted via kernel covers, so the
+setup sets `DirectVerticalKernel`: the via coupling is integrated directly, which holds at any separation and takes much
+longer. No Planar result is given here.
 The match is narrow and sits below F, because the joining and output lines the board needs add to the sections' length.
 On TEM lines with the same 4 mm join the outputs are 175.7° apart: the join takes 4.3° and the mode speeds 5.8°.
 
@@ -274,7 +276,7 @@ isolation node, and the half wave between the nodes, each node to a ground via t
 
 ![The Gysel board: the input and both outputs leaving the ring's left-hand run to their ports, and on the right-hand run an 0402 at each isolation node with its ground via beside the far pad.](pictures/gysel-layout.png)
 
-![Gysel.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers.](pictures/gysel-results.png)
+![Gysel Bench.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers.](pictures/gysel-results.png)
 
 | At 2.4 GHz | Equations | Circuit | Planar MoM |
 |---|---|---|---|
@@ -292,7 +294,7 @@ quarter wave from the first and last corners. Only the input is matched.
 
 ![The Bagley board: the polygon as a racetrack, the input and outputs 2 and 4 leaving its left-hand run, output 3 its right-hand run.](pictures/bagley-layout.png)
 
-![Bagley.cdd: |S21|, |S31|, |S11| and the phase of S31 against S21, the circuit model as a line, the equations model dashed and Planar MoM as markers.](pictures/bagley-results.png)
+![Bagley Bench.cdd: |S21|, |S31|, |S11| and the phase of S31 against S21, the circuit model as a line, the equations model dashed and Planar MoM as markers.](pictures/bagley-results.png)
 
 | At 2.4 GHz | Equations | Circuit | Planar MoM |
 |---|---|---|---|
@@ -310,7 +312,7 @@ twice port 2's power. There is no resistor, so the outputs are not isolated.
 
 ![The tee board: the input from the left into one tee, a thin transformer up to port 2 and a wider one down to port 3.](pictures/tee-layout.png)
 
-![Tee.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers.](pictures/tee-results.png)
+![Tee Bench.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers.](pictures/tee-results.png)
 
 | At 2.4 GHz | Equations | Circuit | Planar MoM |
 |---|---|---|---|
@@ -329,7 +331,7 @@ brings the bench's difference in phase to the part's 90° at F.
 
 ![The Schiffman board: the C-section's two strips, 63 µm apart, at the top with port 1 turning up and port 2 straight on, and the reference line folded on a half-turn below.](pictures/schiffman-layout.png)
 
-![Schiffman.cdd: |S21|, |S43|, |S11| and the phase of S43 against S21, the circuit model as a line, the equations model dashed and Planar MoM as markers.](pictures/schiffman-results.png)
+![Schiffman Bench.cdd: |S21|, |S43|, |S11| and the phase of S43 against S21, the circuit model as a line, the equations model dashed and Planar MoM as markers.](pictures/schiffman-results.png)
 
 | At 2.4 GHz | Equations | Circuit | Planar MoM |
 |---|---|---|---|
@@ -347,7 +349,7 @@ An MDLY of 360° at 2.4 GHz meandered in two half-turns, each pin on a 5 mm line
 
 ![The delay line: three legs joined by two half-turns, port 1 at the bottom left and port 2 at the top right.](pictures/delay-layout.png)
 
-![Delay.cdd: |S21|, |S11|, |S22| and the phase of S21 against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers.](pictures/delay-results.png)
+![Delay Bench.cdd: |S21|, |S11|, |S22| and the phase of S21 against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers.](pictures/delay-results.png)
 
 | At 2.4 GHz | Equations | Circuit | Planar MoM |
 |---|---|---|---|
@@ -364,7 +366,7 @@ ring's area.
 
 ![The compact rat-race: the upper run with ports 2 and 1, a U-turn down to the lower run with ports 4 and 3, and the long arm folded back inside the ring between them.](pictures/compact-rat-race-layout.png)
 
-![Compact Rat-Race.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31 for a drive at the sum port, the circuit model as a line, the equations model dashed and Planar MoM as markers.](pictures/compact-rat-race-results.png)
+![Compact Rat-Race Bench.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31 for a drive at the sum port, the circuit model as a line, the equations model dashed and Planar MoM as markers.](pictures/compact-rat-race-results.png)
 
 | At 2.4 GHz | Equations | Circuit | Planar MoM |
 |---|---|---|---|
@@ -384,7 +386,7 @@ tightest. The feeds are drawn at the end sections' strip width.
 
 ![The three-section coupler: the end sections' strips 2 mm apart, the middle section's close together, and each strip end curving away to its own port.](pictures/sections-layout.png)
 
-![Sections.cdd: |S31|, |S21|, |S41| and |S11| against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers.](pictures/sections-results.png)
+![Sections Bench.cdd: |S31|, |S21|, |S41| and |S11| against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers.](pictures/sections-results.png)
 
 | At 2.4 GHz | Equations | Circuit | Planar MoM |
 |---|---|---|---|
@@ -406,7 +408,7 @@ lands are 0.5 and 0.7 mm apart inside, and the 0.81 mm lead between them would s
 
 ![The tandem: the two couplers one above the other, the joining lines around both ends with a break where the leads of ports 2 and 4 pass, a 1206 jumper across each break, and every line at the strips' width.](pictures/tandem-layout.png)
 
-![Tandem.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31, the circuit model as a line and the equations model dashed.](pictures/tandem-results.png)
+![Tandem Bench.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31, the circuit model as a line and the equations model dashed.](pictures/tandem-results.png)
 
 | At 2.4 GHz | Equations | Circuit |
 |---|---|---|
@@ -426,7 +428,7 @@ all 0402s. Each capacitor's ground pad goes to a via.
 
 ![The lumped divider: four junctions on a square, the resistor and the two inductors across their gaps, a capacitor standing off each of three junctions to its via, and the outputs bending away to their ports.](pictures/lumped-wilkinson-layout.png)
 
-![Lumped Wilkinson.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the equations model dashed.](pictures/lumped-wilkinson-results.png)
+![Lumped Wilkinson Bench.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the equations model dashed.](pictures/lumped-wilkinson-results.png)
 
 | At 2.4 GHz | Equations | Circuit |
 |---|---|---|
@@ -445,7 +447,7 @@ the three 0402s placed by Place Site Parts.
 
 ![The pad: the through line with the series resistor across its gap, and a shunt resistor standing up from each side to its via.](pictures/pad-layout.png)
 
-![Pad.cdd: |S21|, |S11|, |S22| and the phase of S21 against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers.](pictures/pad-results.png)
+![Pad Bench.cdd: |S21|, |S11|, |S22| and the phase of S21 against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers.](pictures/pad-results.png)
 
 | At 2.4 GHz | Equations | Circuit | Planar MoM |
 |---|---|---|---|

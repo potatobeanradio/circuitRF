@@ -271,6 +271,7 @@ public static class EmCellCache
         c.SnpOutputPathOverride = "";
         c.CreateSnpSchematic = false;
         c.IncludeSchematicComponents = false;
+        c.NotesExpanded = c.ComponentPortsExpanded = null;
         c.SchematicPortZ0s = [];
         return EmSetupPersistence.Serialize(c);
     }

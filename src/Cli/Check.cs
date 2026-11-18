@@ -1032,6 +1032,9 @@ internal static class Check
                 f.Add(CliDiagnostics.CheckThreeDPort(path, at + C3dComponentPorts.Describe(p)));
             foreach (string v in CutVerdicts(build)) f.Add(CliDiagnostics.CheckThreeDPort(path, at + v));
             foreach (string w in build.Warnings) f.Add(CliDiagnostics.CheckThreeDComponentPortWarning(path, at + w));
+            // The build's other notes (a port across a loop on a sweep with no 0 Hz row), which nothing else here says.
+            foreach (string n in build.Notes.Where(n => n.Contains("closes a loop", StringComparison.Ordinal)))
+                f.Add(CliDiagnostics.CheckThreeDPort(path, at + n));
         }
     }
 
@@ -1091,7 +1094,8 @@ internal static class Check
         try { result = DrcEngine.Run(flat.Shapes, tech, view.DrcWaivers); }
         catch (Exception ex) { f.Add(CliDiagnostics.CheckDrcNote(path, ex.Message)); return; }
 
-        foreach (var d in result.Diagnostics) f.Add(CliDiagnostics.CheckDrcNote(path, d));
+        foreach (var d in result.Diagnostics)
+            f.Add(DrcEngine.IsInformational(d) ? CliDiagnostics.CheckDrcInfo(path, d) : CliDiagnostics.CheckDrcNote(path, d));
 
         foreach (var v in result.Violations)
             f.Add(DrcViolationDiagnostic(path, view, tech, v));
@@ -1309,11 +1313,20 @@ internal static class Check
         var parts = EmPlanarComponentPorts.Build(setup, resolution.Source);
         if (parts is not null)
         {
+            var described = new HashSet<string>(StringComparer.Ordinal);
             foreach (var p in parts.Ports.Where(p => p.Ok))
-                f.Add(CliDiagnostics.CheckCemComponentPort(path, EmPlanarComponentPorts.Describe(p, resolution.Source)));
+            {
+                string line = EmPlanarComponentPorts.Describe(p, resolution.Source);
+                described.Add(line);
+                f.Add(CliDiagnostics.CheckCemComponentPort(path, line));
+            }
             // brief-icp-6 R-icp6-3 — each cut instance, and each pin that takes no port by design (abutting, grounded, a return).
             foreach (string v in CutVerdicts(EmCutReport.Cuts(parts.Ports.Select(p => (p.Refdes, p.CutPart))), EmCutReport.PortsOf(parts), resolution.Source.Technology))
                 f.Add(CliDiagnostics.CheckCemComponentPort(path, v));
+            // The build's other notes (a port across a loop on a sweep with no 0 Hz row): the preflight's copies are held back below as
+            // already said, so they are said here.
+            foreach (string n in parts.Notes.Where(n => !described.Contains(n) && !n.Contains(": component port ", StringComparison.Ordinal)))
+                f.Add(CliDiagnostics.CheckCemComponentPort(path, n));
             foreach (string w in parts.Warnings) f.Add(CliDiagnostics.CheckCemComponentPortWarning(path, w));
             if (parts.Refusal is { } refusedParts) f.Add(CliDiagnostics.CheckCemComponentPortRefused(path, refusedParts));
         }

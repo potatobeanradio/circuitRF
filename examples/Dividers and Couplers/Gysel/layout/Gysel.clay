@@ -35,22 +35,22 @@
 			"Mirror": true
 		},
 		"P1": {
-			"X": 254763,
-			"Y": 0,
+			"X": 255315,
+			"Y": 57840,
 			"RotationDeg": 0,
 			"Mirror": false,
 			"Text": "1"
 		},
 		"P2": {
-			"X": 0,
+			"X": 552,
 			"Y": 19960438,
 			"RotationDeg": 0,
 			"Mirror": false,
 			"Text": "2"
 		},
 		"P3": {
-			"X": 0,
-			"Y": -19960438,
+			"X": 552,
+			"Y": -19844758,
 			"RotationDeg": 0,
 			"Mirror": false,
 			"Text": "3"
@@ -58,31 +58,31 @@
 		"R1": {
 			"X": 20522072,
 			"Y": 18579056,
-			"RotationDeg": 0,
+			"RotationDeg": 90,
 			"Mirror": false
 		},
 		"R2": {
 			"X": 20522072,
 			"Y": -18579056,
-			"RotationDeg": 0,
+			"RotationDeg": 90,
 			"Mirror": false
 		},
 		"TL1": {
-			"X": 254763,
-			"Y": 0,
+			"X": 255315,
+			"Y": 57840,
 			"RotationDeg": 0,
 			"Mirror": false,
 			"ChainAnchor": true
 		},
 		"TL2": {
-			"X": 5000000,
+			"X": 5000552,
 			"Y": 19960438,
 			"RotationDeg": 180,
 			"Mirror": false
 		},
 		"TL3": {
-			"X": 5000000,
-			"Y": -19960438,
+			"X": 5000552,
+			"Y": -19844758,
 			"RotationDeg": 180,
 			"Mirror": false
 		},
@@ -100,7 +100,7 @@
 		}
 	},
 	"PCellSnapshots": {
-		"MGPD_44861cbba05e": {
+		"MGPD_d18eac5c0f7b": {
 			"GeneratorId": "MGPD",
 			"Parameters": {
 				"Z0": 50,
@@ -157,8 +157,8 @@
 		},
 		{
 			"$type": "Label",
-			"X": 254763,
-			"Y": 0,
+			"X": 255315,
+			"Y": 57840,
 			"Text": "1",
 			"Height": 528840,
 			"Rotation": "R0",
@@ -177,7 +177,7 @@
 		},
 		{
 			"$type": "Label",
-			"X": 0,
+			"X": 552,
 			"Y": 19960438,
 			"Text": "2",
 			"Height": 528840,
@@ -197,8 +197,8 @@
 		},
 		{
 			"$type": "Label",
-			"X": 0,
-			"Y": -19960438,
+			"X": 552,
+			"Y": -19844758,
 			"Text": "3",
 			"Height": 528840,
 			"Rotation": "R0",
@@ -218,10 +218,10 @@
 		{
 			"$type": "Poly",
 			"Xy": [
-				24496672, 29205994,
-				-2540000, 29205994,
-				-2540000, -29205994,
-				24496672, -29205994
+				24496672, 29205442,
+				-2539448, 29205442,
+				-2539448, -29089762,
+				24496672, -29089762
 			],
 			"Layer": {
 				"Layer": 2,
@@ -232,7 +232,7 @@
 	],
 	"Instances": [
 		{
-			"CellRef": "../../.generated-cells/MGPD_44861cbba05e",
+			"CellRef": "../../.generated-cells/MGPD_d18eac5c0f7b",
 			"X": 12234396,
 			"Y": 20489278,
 			"Rot": "R90",
@@ -252,8 +252,8 @@
 		},
 		{
 			"CellRef": "../../.generated-cells/MLIN_3079a10da41a",
-			"X": 254763,
-			"Y": 0,
+			"X": 255315,
+			"Y": 57840,
 			"Rot": "R0",
 			"MirrorX": false,
 			"Mag": 1,
@@ -271,7 +271,7 @@
 		},
 		{
 			"CellRef": "../../.generated-cells/MLIN_3079a10da41a",
-			"X": 5000000,
+			"X": 5000552,
 			"Y": 19960438,
 			"Rot": "R180",
 			"MirrorX": false,
@@ -290,8 +290,8 @@
 		},
 		{
 			"CellRef": "../../.generated-cells/MLIN_3079a10da41a",
-			"X": 5000000,
-			"Y": -19960438,
+			"X": 5000552,
+			"Y": -19844758,
 			"Rot": "R180",
 			"MirrorX": false,
 			"Mag": 1,
@@ -309,7 +309,7 @@
 		},
 		{
 			"CellRef": "../../.generated-cells/smt-0402@N_23d6a1a986ad",
-			"X": 20522072,
+			"X": 20521520,
 			"Y": 18579056,
 			"Rot": "R0",
 			"MirrorX": false,
@@ -320,9 +320,9 @@
 			"PitchY": 0,
 			"SchematicId": "R1",
 			"OrientationLink": {
-				"SchematicDeg": 0,
+				"SchematicDeg": 270,
 				"SchematicMirror": false,
-				"LayoutDeg": 0,
+				"LayoutDeg": 90,
 				"LayoutMirror": false
 			}
 		},
@@ -347,7 +347,7 @@
 		},
 		{
 			"CellRef": "../../.generated-cells/smt-0402@N_23d6a1a986ad",
-			"X": 20522072,
+			"X": 20521520,
 			"Y": -18579056,
 			"Rot": "R0",
 			"MirrorX": false,
@@ -358,9 +358,9 @@
 			"PitchY": 0,
 			"SchematicId": "R2",
 			"OrientationLink": {
-				"SchematicDeg": 0,
+				"SchematicDeg": 270,
 				"SchematicMirror": false,
-				"LayoutDeg": 0,
+				"LayoutDeg": 90,
 				"LayoutMirror": false
 			}
 		},

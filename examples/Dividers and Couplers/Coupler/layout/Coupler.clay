@@ -438,5 +438,12 @@
 				"LayoutMirror": false
 			}
 		}
+	],
+	"DrcWaivers": [
+		{
+			"Key": "MinSpacing|Top Copper Min Spacing|1/0|8983211,-9977522,9020245,9977522",
+			"Reason": "The coupled lines' gap, 4.54 mil, is what the 10 dB coupling needs. It is below this board's 6 mil spacing rule, so it is built where that gap can be etched.",
+			"RuleName": "Top Copper Min Spacing"
+		}
 	]
 }

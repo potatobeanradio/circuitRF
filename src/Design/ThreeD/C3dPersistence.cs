@@ -249,13 +249,15 @@ public static class C3dPersistence
     }
 
     /// <summary>An embedded setup less the keys that change what happens after a run and never its answer.</summary>
+    /// <summary>A setup's keys no run reads: what happens after a run, and the setup panel's own open and closed sections.</summary>
+    private static readonly string[] RunInertSetupKeys =
+        ["CreateSnpSchematic", "IncludeSchematicComponents", "NotesExpanded", "ComponentPortsExpanded"];
+
     private static JsonElement WithoutRunInertKeys(JsonElement setup)
     {
-        if (setup.ValueKind != JsonValueKind.Object ||
-            !setup.TryGetProperty("CreateSnpSchematic", out _) && !setup.TryGetProperty("IncludeSchematicComponents", out _)) return setup;
+        if (setup.ValueKind != JsonValueKind.Object || !RunInertSetupKeys.Any(k => setup.TryGetProperty(k, out _))) return setup;
         var node = System.Text.Json.Nodes.JsonNode.Parse(setup.GetRawText())!.AsObject();
-        node.Remove("CreateSnpSchematic");
-        node.Remove("IncludeSchematicComponents");
+        foreach (string k in RunInertSetupKeys) node.Remove(k);
         return JsonSerializer.SerializeToElement(node);
     }
 

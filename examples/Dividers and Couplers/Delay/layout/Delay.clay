@@ -37,7 +37,7 @@
 			"Text": "1"
 		},
 		"P2": {
-			"X": 28410968,
+			"X": 28363866,
 			"Y": 6346080,
 			"RotationDeg": 180,
 			"Mirror": false,
@@ -51,14 +51,14 @@
 			"ChainAnchor": true
 		},
 		"TL2": {
-			"X": 23410968,
+			"X": 23363866,
 			"Y": 6346080,
 			"RotationDeg": 0,
 			"Mirror": false
 		}
 	},
 	"PCellSnapshots": {
-		"MDLY_ea751d878357": {
+		"MDLY_d408340ef1fd": {
 			"GeneratorId": "MDLY",
 			"Parameters": {
 				"Z0": 50,
@@ -102,7 +102,7 @@
 		},
 		{
 			"$type": "Label",
-			"X": 28410968,
+			"X": 28363866,
 			"Y": 6346080,
 			"Text": "2",
 			"Height": 528840,
@@ -123,10 +123,10 @@
 		{
 			"$type": "Poly",
 			"Xy": [
-				30950968, 9414920,
+				30903866, 9414920,
 				-2540000, 9414920,
 				-2540000, -9414920,
-				30950968, -9414920
+				30903866, -9414920
 			],
 			"Layer": {
 				"Layer": 2,
@@ -137,7 +137,7 @@
 	],
 	"Instances": [
 		{
-			"CellRef": "../../.generated-cells/MDLY_ea751d878357",
+			"CellRef": "../../.generated-cells/MDLY_d408340ef1fd",
 			"X": 5000000,
 			"Y": -6346080,
 			"Rot": "R0",
@@ -176,7 +176,7 @@
 		},
 		{
 			"CellRef": "../../.generated-cells/MLIN_3079a10da41a",
-			"X": 23410968,
+			"X": 23363866,
 			"Y": 6346080,
 			"Rot": "R0",
 			"MirrorX": false,

@@ -365,7 +365,8 @@ public static class C3dComponentPorts
                 Loop = d.Loop ? d.Positive : null,
             });
             if (verdict is null && d.Loop)
-                warnings.Add(EmDiagnostics.ComponentPortAcrossLoop(d.Name, r.Pin ?? "", r.ReferencePin ?? "").Render());
+                (EmDiagnostics.SweepHasDc(setup.Frequency) ? warnings : notes)
+                    .Add(EmDiagnostics.ComponentPortAcrossLoop(d.Name, r.Pin ?? "", r.ReferencePin ?? "", EmDiagnostics.SweepHasDc(setup.Frequency)).Render());
         }
         foreach (var r in final.Where(p => p.Refusal is not null))
             warnings.Add($"{r.Refusal} {r.Refdes} is left out of this run; the other component ports are built.");

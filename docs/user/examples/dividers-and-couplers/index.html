@@ -50,7 +50,7 @@ MCBL). The <strong>Gysel</strong>, <strong>Bagley</strong> and <strong>tee</stro
 Wilkinson</strong> and a <strong>resistive pad</strong> (MRPAD) are solved on Planar MoM, on a coarse mesh, where it was run. Every cell
 is also compared with an equations model, the same topology on ideal lines or parts.</p>
 <p>Every cell has a test bench beside it, holding the cell's circuit, its equations model and one SnP block per EM setup,
-which reads the Touchstone file that setup writes into <code>results/</code>. Simulate the bench and open the cell's <code>.cdd</code>: the
+which reads the Touchstone file that setup writes into <code>results/</code>. Simulate the bench and its <code>.cdd</code> opens: the
 circuit model is a line, the equations model a dashed line and each solver a set of markers. No results ship; the
 benches read what your own runs write.</p>
 <h2 id="the-cells">The cells</h2>
@@ -164,14 +164,14 @@ benches read what your own runs write.</p>
 <td>One per cell: the cell's circuit, its equations model, and one SnP block per EM result with its ports closed</td>
 </tr>
 <tr>
-<td><code>Wilkinson.cdd</code> … <code>Pad.cdd</code></td>
+<td><code>Wilkinson Bench.cdd</code> … <code>Pad Bench.cdd</code></td>
 <td>data display</td>
-<td>One per cell, at the top of the workspace</td>
+<td>One per bench, at the top of the workspace</td>
 </tr>
 </tbody>
 </table>
 <h2 id="run-it">Run it</h2>
-<p>Run a cell's EM setups, then simulate its bench and open its <code>.cdd</code>. <strong>Planar</strong> is the setup in the cell's <code>em/</code> folder;
+<p>Run a cell's EM setups, then simulate its bench, which opens its <code>.cdd</code>. <strong>Planar</strong> is the setup in the cell's <code>em/</code> folder;
 <strong>EMerge</strong> and <strong>Palace</strong> are the two setups in its 3D view.</p>
 <table>
 <thead>
@@ -189,133 +189,133 @@ benches read what your own runs write.</p>
 <td>4½ min</td>
 <td>1 min</td>
 <td>1½ min</td>
-<td>Simulate <strong>Wilkinson Bench</strong>, open <code>Wilkinson.cdd</code></td>
+<td>Simulate <strong>Wilkinson Bench</strong></td>
 </tr>
 <tr>
 <td>Unequal</td>
 <td>34½ min</td>
 <td>1 min</td>
 <td>3 min</td>
-<td>Simulate <strong>Unequal Bench</strong>, open <code>Unequal.cdd</code></td>
+<td>Simulate <strong>Unequal Bench</strong></td>
 </tr>
 <tr>
 <td>Broadband</td>
 <td>49 min</td>
 <td>1 min</td>
 <td>3 min</td>
-<td>Simulate <strong>Broadband Bench</strong>, open <code>Broadband.cdd</code></td>
+<td>Simulate <strong>Broadband Bench</strong></td>
 </tr>
 <tr>
 <td>Branch-Line</td>
 <td>1½ min</td>
 <td>1½ min</td>
 <td>7 min</td>
-<td>Simulate <strong>Branch-Line Bench</strong>, open <code>Branch-Line.cdd</code></td>
+<td>Simulate <strong>Branch-Line Bench</strong></td>
 </tr>
 <tr>
 <td>Rat-Race</td>
 <td>24½ min</td>
 <td>1½ min</td>
 <td>12½ min</td>
-<td>Simulate <strong>Rat-Race Bench</strong>, open <code>Rat-Race.cdd</code></td>
+<td>Simulate <strong>Rat-Race Bench</strong></td>
 </tr>
 <tr>
 <td>Coupler</td>
 <td>9½ min</td>
 <td>3 min</td>
 <td>12 min</td>
-<td>Simulate <strong>Coupler Bench</strong>, open <code>Coupler.cdd</code></td>
+<td>Simulate <strong>Coupler Bench</strong></td>
 </tr>
 <tr>
 <td>Balun</td>
-<td>refused</td>
+<td>long</td>
 <td>2 min</td>
 <td>6½ min</td>
-<td>Simulate <strong>Balun Bench</strong>, open <code>Balun.cdd</code></td>
+<td>Simulate <strong>Balun Bench</strong></td>
 </tr>
 <tr>
 <td>FourWay</td>
 <td>—</td>
 <td>—</td>
 <td>—</td>
-<td>Simulate <strong>FourWay Bench</strong>, open <code>FourWay.cdd</code></td>
+<td>Simulate <strong>FourWay Bench</strong></td>
 </tr>
 <tr>
 <td>Mitred</td>
 <td>—</td>
 <td>—</td>
 <td>—</td>
-<td>Simulate <strong>Mitred Bench</strong>, open <code>Mitred.cdd</code></td>
+<td>Simulate <strong>Mitred Bench</strong></td>
 </tr>
 <tr>
 <td>Gysel</td>
 <td>2½ min</td>
 <td>—</td>
 <td>—</td>
-<td>Simulate <strong>Gysel Bench</strong>, open <code>Gysel.cdd</code></td>
+<td>Simulate <strong>Gysel Bench</strong></td>
 </tr>
 <tr>
 <td>Bagley</td>
 <td>17 s</td>
 <td>—</td>
 <td>—</td>
-<td>Simulate <strong>Bagley Bench</strong>, open <code>Bagley.cdd</code></td>
+<td>Simulate <strong>Bagley Bench</strong></td>
 </tr>
 <tr>
 <td>Tee</td>
 <td>16 s</td>
 <td>—</td>
 <td>—</td>
-<td>Simulate <strong>Tee Bench</strong>, open <code>Tee.cdd</code></td>
+<td>Simulate <strong>Tee Bench</strong></td>
 </tr>
 <tr>
 <td>Schiffman</td>
 <td>3 min</td>
 <td>—</td>
 <td>—</td>
-<td>Simulate <strong>Schiffman Bench</strong>, open <code>Schiffman.cdd</code></td>
+<td>Simulate <strong>Schiffman Bench</strong></td>
 </tr>
 <tr>
 <td>Delay</td>
 <td>9 s</td>
 <td>—</td>
 <td>—</td>
-<td>Simulate <strong>Delay Bench</strong>, open <code>Delay.cdd</code></td>
+<td>Simulate <strong>Delay Bench</strong></td>
 </tr>
 <tr>
 <td>Compact Rat-Race</td>
 <td>3 min</td>
 <td>—</td>
 <td>—</td>
-<td>Simulate <strong>Compact Rat-Race Bench</strong>, open <code>Compact Rat-Race.cdd</code></td>
+<td>Simulate <strong>Compact Rat-Race Bench</strong></td>
 </tr>
 <tr>
 <td>Sections</td>
 <td>1 min</td>
 <td>—</td>
 <td>—</td>
-<td>Simulate <strong>Sections Bench</strong>, open <code>Sections.cdd</code></td>
+<td>Simulate <strong>Sections Bench</strong></td>
 </tr>
 <tr>
 <td>Tandem</td>
 <td>—</td>
 <td>—</td>
 <td>—</td>
-<td>Simulate <strong>Tandem Bench</strong>, open <code>Tandem.cdd</code></td>
+<td>Simulate <strong>Tandem Bench</strong></td>
 </tr>
 <tr>
 <td>Lumped Wilkinson</td>
 <td>—</td>
 <td>—</td>
 <td>—</td>
-<td>Simulate <strong>Lumped Wilkinson Bench</strong>, open <code>Lumped Wilkinson.cdd</code></td>
+<td>Simulate <strong>Lumped Wilkinson Bench</strong></td>
 </tr>
 <tr>
 <td>Pad</td>
 <td>4½ min</td>
 <td>—</td>
 <td>—</td>
-<td>Simulate <strong>Pad Bench</strong>, open <code>Pad.cdd</code></td>
+<td>Simulate <strong>Pad Bench</strong></td>
 </tr>
 </tbody>
 </table>
@@ -335,7 +335,7 @@ microstrip models and the board add.</p>
 <p>An MWPD with <code>Z0</code> 50 Ω, <code>F</code> 2.4 GHz and <code>Gap</code> 1.35 mm, the 0402's pin span. Its outputs bend away from each other
 because a calibrated Planar port needs five substrate heights clear of other metal.</p>
 <p><img class="readme-picture" src="pictures/wilkinson-layout.png" alt="The board: port 1's line on the left, the divider's ring, the 0402 isolation resistor across the ring's gap, and the two output lines bending away to ports 2 and 3." width="700"></p>
-<p><img class="readme-picture" src="pictures/wilkinson-results.png" alt="Wilkinson.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the three EM solvers as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/wilkinson-results.png" alt="Wilkinson Bench.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the three EM solvers as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -377,7 +377,7 @@ sits at 2.09 GHz, mostly because of the Draft mesh.</p>
 <p>The Wilkinson with <code>K</code> = 1.4142: 3.01 dB more into port 3, through a 103 Ω arm to port 2 and a 51.5 Ω arm to port 3,
 and <code>R1</code> = Z0·(K + 1/K) = 106.07 Ω.</p>
 <p><img class="readme-picture" src="pictures/unequal-layout.png" alt="The unequal split: a thin arm to port 2 over the top of the ring, a wide one to port 3 underneath, the 0402 across the gap, and each output's quarter-wave transformer before its bend." width="700"></p>
-<p><img class="readme-picture" src="pictures/unequal-results.png" alt="Unequal.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the three EM solvers as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/unequal-results.png" alt="Unequal Bench.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the three EM solvers as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -426,7 +426,7 @@ default 4, the 0.2 mm arm would set a cell size that needs about 100 GB per freq
 <p>The Wilkinson with <code>N</code> = 2 and <code>Band</code> = 2: two sections over 1.6 to 3.2 GHz, <code>R1</code> (242.14 Ω) at the outputs and <code>R2</code>
 (97.69 Ω) where the ring meets section 1.</p>
 <p><img class="readme-picture" src="pictures/broadband-layout.png" alt="The two-section divider: the ring, the pair of section-1 lines running on to the outputs either side of the gap's centre line, an 0402 at each junction, and the output bends." width="700"></p>
-<p><img class="readme-picture" src="pictures/broadband-results.png" alt="Broadband.cdd: |S21|, |S11|, |S22| and |S23| against frequency, the circuit model as a line and the three EM solvers as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/broadband-results.png" alt="Broadband Bench.cdd: |S21|, |S11|, |S22| and |S23| against frequency, the circuit model as a line and the three EM solvers as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -468,7 +468,7 @@ EMerge follow it across the band; Palace's Draft mesh reads the match 7 to 13 dB
 <p>Three MWPDs, each with its own 100 Ω 0402: the planar way to four outputs, since a single N-way divider's resistors
 meet at one point that no one-layer drawing reaches. Circuit only: each divider is the Wilkinson cell's.</p>
 <p><img class="readme-picture" src="pictures/fourway-layout.png" alt="The four-way tree: the input divider on the left, its outputs bending up and down to two more dividers, each with its own 0402 across its ring's gap, and ports 2 to 5 on their outputs." width="700"></p>
-<p><img class="readme-picture" src="pictures/fourway-results.png" alt="FourWay.cdd: |S21|, |S11|, |S22| and the isolation between outputs against frequency, from the cell's own schematic." width="600"></p>
+<p><img class="readme-picture" src="pictures/fourway-results.png" alt="FourWay Bench.cdd: |S21|, |S11|, |S22| and the isolation between outputs against frequency, from the cell's own schematic." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -504,7 +504,7 @@ the curved ring, so its arms stay as far apart, and each straight run is shorten
 length at F, so every arm is still a quarter wave there.
 Circuit only, swept every 10 MHz.</p>
 <p><img class="readme-picture" src="pictures/mitred-layout.png" alt="The three dividers side by side: the curved ring, the mitred rectangle and the square one, each with its 0402 across the gap and its outputs bending away to their ports." width="700"></p>
-<p><img class="readme-picture" src="pictures/mitred-results.png" alt="Mitred.cdd: |S21|, |S11| and |S23| against frequency for the three dividers, from the cell's own schematic." width="600"></p>
+<p><img class="readme-picture" src="pictures/mitred-results.png" alt="Mitred Bench.cdd: |S21|, |S11| and |S23| against frequency for the three dividers, from the cell's own schematic." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -549,7 +549,7 @@ divider, gives −3.01 dB, 0.14 dB above all three.</p>
 <p>A one-section MBLC with <code>Z0</code> 50 Ω and <code>F</code> 2.4 GHz: 35.4 Ω series arms and 50 Ω shunt arms, each a quarter wave between
 the reference planes of its junctions.</p>
 <p><img class="readme-picture" src="pictures/branch-line-layout.png" alt="The branch-line board: the two through lines, the wider 35 Ω series arms between the junctions, the two 50 Ω shunt arms, and a 5 mm line from each corner to its port." width="700"></p>
-<p><img class="readme-picture" src="pictures/branch-line-results.png" alt="Branch-Line.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31, the circuit model as a line and the three EM solvers as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/branch-line-results.png" alt="Branch-Line Bench.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31, the circuit model as a line and the three EM solvers as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -598,7 +598,7 @@ other within 0.15 dB, and both read the through port low.</p>
 <p>An MRRC with <code>Z0</code> 50 Ω and <code>F</code> 2.4 GHz, its 70.7 Ω ring drawn as two straight runs and two half-turns: ports 2, 1 and 3
 a quarter wave apart on the upper run, and port 4 on the lower.</p>
 <p><img class="readme-picture" src="pictures/rat-race-layout.png" alt="The rat-race board: the ring as two straight runs and two half-turns, ports 2, 1 and 3 leaving the upper run upward and port 4 the lower run downward, each through a 5 mm line." width="700"></p>
-<p><img class="readme-picture" src="pictures/rat-race-results.png" alt="Rat-Race.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31 for a drive at the sum port, the circuit model as a line and the three EM solvers as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/rat-race-results.png" alt="Rat-Race Bench.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31 for a drive at the sum port, the circuit model as a line and the three EM solvers as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -654,7 +654,7 @@ fast with frequency, so a small shift reads as several dB.</p>
 <p>An MCLC with <code>Coupling</code> 10 dB, <code>Z0</code> 50 Ω and <code>F</code> 2.4 GHz: two 0.888 mm strips 0.115 mm apart and 19.2 mm long. The
 feeds are drawn at the strip width, so no step in the copper sits outside the model.</p>
 <p><img class="readme-picture" src="pictures/coupler-layout.png" alt="The coupler: the coupled pair upright in the middle, each of its four strip ends curving away to its own port." width="450"></p>
-<p><img class="readme-picture" src="pictures/coupler-results.png" alt="Coupler.cdd: |S31|, |S21|, |S41| and |S11| against frequency, the circuit model as a line and the three EM solvers as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/coupler-results.png" alt="Coupler Bench.cdd: |S31|, |S21|, |S41| and |S11| against frequency, the circuit model as a line and the three EM solvers as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -703,7 +703,7 @@ feeds isolate port 4 to −26.9 dB: microstrip's unequal mode speeds cost 3.4 dB
 <p>An MCBL from 50 Ω to 200 Ω on each output at 2.4 GHz, with <code>Gap</code> 4 mm between its sections. 50 Ω outputs would need a
 gap under a tenth of the substrate height, which the part refuses.</p>
 <p><img class="readme-picture" src="pictures/balun-layout.png" alt="The balun: the input strip running along both sections and across the gap between them to its open end, the coupled strips below grounded by a via at each outer end, and the two outputs turning down at the middle." width="700"></p>
-<p><img class="readme-picture" src="pictures/balun-results.png" alt="Balun.cdd: |S21|, |S31|, the phase of S31 against S21 and |S11| against frequency, the circuit model as a line and the two 3D solvers as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/balun-results.png" alt="Balun Bench.cdd: |S21|, |S31|, the phase of S31 against S21 and |S11| against frequency, the circuit model as a line and the two 3D solvers as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -718,41 +718,43 @@ gap under a tenth of the substrate height, which the part refuses.</p>
 <tr>
 <td>|S21|</td>
 <td>−3.63 dB</td>
-<td>refused</td>
+<td>—</td>
 <td>−4.15 dB</td>
 <td>−4.10 dB</td>
 </tr>
 <tr>
 <td>|S31|</td>
 <td>−3.96 dB</td>
-<td>refused</td>
+<td>—</td>
 <td>−4.39 dB</td>
 <td>−4.24 dB</td>
 </tr>
 <tr>
 <td>∠S31 − ∠S21</td>
 <td>169.8°</td>
-<td>refused</td>
+<td>—</td>
 <td>175.1°</td>
 <td>175.1°</td>
 </tr>
 <tr>
 <td>|S11|</td>
 <td>−10.6 dB</td>
-<td>refused</td>
+<td>—</td>
 <td>−7.4 dB</td>
 <td>−9.0 dB</td>
 </tr>
 </tbody>
 </table>
-<p>Planar refuses the layout: its two ground vias are 0.71 λ apart at 4.8 GHz, past its via kernel's tenth of a wavelength.
+<p>Its two ground vias are 0.71 λ apart at 4.8 GHz, past the tenth of a wavelength Planar's fitted via kernel covers, so the
+setup sets <code>DirectVerticalKernel</code>: the via coupling is integrated directly, which holds at any separation and takes much
+longer. No Planar result is given here.
 The match is narrow and sits below F, because the joining and output lines the board needs add to the sections' length.
 On TEM lines with the same 4 mm join the outputs are 175.7° apart: the join takes 4.3° and the mode speeds 5.8°.</p>
 <h2 id="gysel-divider">Gysel divider</h2>
 <p>An MGPD with <code>Z0</code> 50 Ω and <code>F</code> 2.4 GHz: the ring's quarter waves of 70.7 Ω to each output and of 50 Ω to each
 isolation node, and the half wave between the nodes, each node to a ground via through a 50 Ω 0402.</p>
 <p><img class="readme-picture" src="pictures/gysel-layout.png" alt="The Gysel board: the input and both outputs leaving the ring's left-hand run to their ports, and on the right-hand run an 0402 at each isolation node with its ground via beside the far pad." width="400"></p>
-<p><img class="readme-picture" src="pictures/gysel-results.png" alt="Gysel.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/gysel-results.png" alt="Gysel Bench.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -789,7 +791,7 @@ its own and the bench closes it with the via's model, as it closes each resistor
 <p>A three-way MBPD with <code>Z0</code> 50 Ω and <code>F</code> 2.4 GHz: the outputs on the corners of a polygon of half waves, the input a
 quarter wave from the first and last corners. Only the input is matched.</p>
 <p><img class="readme-picture" src="pictures/bagley-layout.png" alt="The Bagley board: the polygon as a racetrack, the input and outputs 2 and 4 leaving its left-hand run, output 3 its right-hand run." width="400"></p>
-<p><img class="readme-picture" src="pictures/bagley-results.png" alt="Bagley.cdd: |S21|, |S31|, |S11| and the phase of S31 against S21, the circuit model as a line, the equations model dashed and Planar MoM as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/bagley-results.png" alt="Bagley Bench.cdd: |S21|, |S31|, |S11| and the phase of S31 against S21, the circuit model as a line, the equations model dashed and Planar MoM as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -831,7 +833,7 @@ quarter wave from the first and last corners. Only the input is matched.</p>
 <p>An MTPD with <code>K</code> = 1.4142: one tee whose arms are quarter-wave transformers to 86.6 Ω and 61.2 Ω, so port 3 takes
 twice port 2's power. There is no resistor, so the outputs are not isolated.</p>
 <p><img class="readme-picture" src="pictures/tee-layout.png" alt="The tee board: the input from the left into one tee, a thin transformer up to port 2 and a wider one down to port 3." width="300"></p>
-<p><img class="readme-picture" src="pictures/tee-results.png" alt="Tee.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/tee-results.png" alt="Tee Bench.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -874,7 +876,7 @@ twice port 2's power. There is no resistor, so the outputs are not isolated.</p>
 ports 3-4. Ports 1 and 2 leave the C-section's strips at their own width, and the reference's feeds are 8.06 mm, which
 brings the bench's difference in phase to the part's 90° at F.</p>
 <p><img class="readme-picture" src="pictures/schiffman-layout.png" alt="The Schiffman board: the C-section's two strips, 63 µm apart, at the top with port 1 turning up and port 2 straight on, and the reference line folded on a half-turn below." width="700"></p>
-<p><img class="readme-picture" src="pictures/schiffman-results.png" alt="Schiffman.cdd: |S21|, |S43|, |S11| and the phase of S43 against S21, the circuit model as a line, the equations model dashed and Planar MoM as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/schiffman-results.png" alt="Schiffman Bench.cdd: |S21|, |S43|, |S11| and the phase of S43 against S21, the circuit model as a line, the equations model dashed and Planar MoM as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -916,7 +918,7 @@ no length fixes, and the model's match is −8 dB.</p>
 <h2 id="delay-line">Delay line</h2>
 <p>An MDLY of 360° at 2.4 GHz meandered in two half-turns, each pin on a 5 mm line to its port.</p>
 <p><img class="readme-picture" src="pictures/delay-layout.png" alt="The delay line: three legs joined by two half-turns, port 1 at the bottom left and port 2 at the top right." width="700"></p>
-<p><img class="readme-picture" src="pictures/delay-results.png" alt="Delay.cdd: |S21|, |S11|, |S22| and the phase of S21 against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/delay-results.png" alt="Delay Bench.cdd: |S21|, |S11|, |S22| and the phase of S21 against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -952,7 +954,7 @@ no length fixes, and the model's match is −8 dB.</p>
 <p>The Rat-Race cell with <code>Meander</code> = 1: the ring's 3λ/4 arm folded inside it, so the copper takes 54 % of the curved
 ring's area.</p>
 <p><img class="readme-picture" src="pictures/compact-rat-race-layout.png" alt="The compact rat-race: the upper run with ports 2 and 1, a U-turn down to the lower run with ports 4 and 3, and the long arm folded back inside the ring between them." width="700"></p>
-<p><img class="readme-picture" src="pictures/compact-rat-race-results.png" alt="Compact Rat-Race.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31 for a drive at the sum port, the circuit model as a line, the equations model dashed and Planar MoM as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/compact-rat-race-results.png" alt="Compact Rat-Race Bench.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31 for a drive at the sum port, the circuit model as a line, the equations model dashed and Planar MoM as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -1001,7 +1003,7 @@ full ring.</p>
 <p>The Coupler cell's board with <code>Sections</code> = 3 at 15 dB over 2:1: three quarter-wave pairs in a row, the middle one the
 tightest. The feeds are drawn at the end sections' strip width.</p>
 <p><img class="readme-picture" src="pictures/sections-layout.png" alt="The three-section coupler: the end sections' strips 2 mm apart, the middle section's close together, and each strip end curving away to its own port." width="350"></p>
-<p><img class="readme-picture" src="pictures/sections-results.png" alt="Sections.cdd: |S31|, |S21|, |S41| and |S11| against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/sections-results.png" alt="Sections Bench.cdd: |S31|, |S21|, |S41| and |S11| against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -1047,7 +1049,7 @@ lead, as a board does it; each is 1 mΩ in the circuit, since R = 0 leaves the m
 are left by Place Site Parts, so they are placed as plain resistors. LVS is clean. An 0603 or 0805 cannot do it: their
 lands are 0.5 and 0.7 mm apart inside, and the 0.81 mm lead between them would short to both pads. Circuit only.</p>
 <p><img class="readme-picture" src="pictures/tandem-layout.png" alt="The tandem: the two couplers one above the other, the joining lines around both ends with a break where the leads of ports 2 and 4 pass, a 1206 jumper across each break, and every line at the strips' width." width="700"></p>
-<p><img class="readme-picture" src="pictures/tandem-results.png" alt="Tandem.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31, the circuit model as a line and the equations model dashed." width="600"></p>
+<p><img class="readme-picture" src="pictures/tandem-results.png" alt="Tandem Bench.cdd: |S21|, |S31|, |S11| and the phase of S21 against S31, the circuit model as a line and the equations model dashed." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -1086,7 +1088,7 @@ lands are 0.5 and 0.7 mm apart inside, and the 0.81 mm lead between them would s
 sites the parts Place Site Parts put there, 100 Ω on R2-R3, 4.69 nH on each arm and 1.88, 0.94 and 0.94 pF to ground,
 all 0402s. Each capacitor's ground pad goes to a via.</p>
 <p><img class="readme-picture" src="pictures/lumped-wilkinson-layout.png" alt="The lumped divider: four junctions on a square, the resistor and the two inductors across their gaps, a capacitor standing off each of three junctions to its via, and the outputs bending away to their ports." width="500"></p>
-<p><img class="readme-picture" src="pictures/lumped-wilkinson-results.png" alt="Lumped Wilkinson.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the equations model dashed." width="600"></p>
+<p><img class="readme-picture" src="pictures/lumped-wilkinson-results.png" alt="Lumped Wilkinson Bench.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the equations model dashed." width="600"></p>
 <table>
 <thead>
 <tr>
@@ -1124,7 +1126,7 @@ detune the divider: its match bottoms out at −17.2 dB at 2.10 GHz. Circuit onl
 <p>An MRPAD with <code>Form</code> = <code>Pi</code> and <code>Attenuation</code> 6 dB: 37.35 Ω in series and 150.48 Ω from each port to a ground via,
 the three 0402s placed by Place Site Parts.</p>
 <p><img class="readme-picture" src="pictures/pad-layout.png" alt="The pad: the through line with the series resistor across its gap, and a shunt resistor standing up from each side to its via." width="700"></p>
-<p><img class="readme-picture" src="pictures/pad-results.png" alt="Pad.cdd: |S21|, |S11|, |S22| and the phase of S21 against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers." width="600"></p>
+<p><img class="readme-picture" src="pictures/pad-results.png" alt="Pad Bench.cdd: |S21|, |S11|, |S22| and the phase of S21 against frequency, the circuit model as a line, the equations model dashed and Planar MoM as markers." width="600"></p>
 <table>
 <thead>
 <tr>

@@ -152,7 +152,7 @@
 			},
 			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
 		},
-		"MCLC_a6083b128e2c": {
+		"MCLC_2629601811e9": {
 			"GeneratorId": "MCLC",
 			"Parameters": {
 				"Coupling": 15,
@@ -309,7 +309,7 @@
 			}
 		},
 		{
-			"CellRef": "../../.generated-cells/MCLC_a6083b128e2c",
+			"CellRef": "../../.generated-cells/MCLC_2629601811e9",
 			"X": 8500000,
 			"Y": -28040863,
 			"Rot": "R90",
@@ -340,7 +340,7 @@
 			"PitchY": 0,
 			"SchematicId": "CV2",
 			"OrientationLink": {
-				"SchematicDeg": 90,
+				"SchematicDeg": 180,
 				"SchematicMirror": false,
 				"LayoutDeg": 180,
 				"LayoutMirror": true

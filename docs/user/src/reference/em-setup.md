@@ -141,6 +141,10 @@ The notes themselves collect everything the extraction had to say that is not an
 generator-produced instance that was flattened, an inferred port direction. Notes are not warnings, but
 they are the first place to look when a result surprises you.
 
+The triangle beside **Notes** closes the group to the warnings alone, and **Component ports** opens and closes the same
+way. The setup keeps which, so a saved `.cem` or 3D view opens them as you left them (`"NotesExpanded"`,
+`"ComponentPortsExpanded"`). Notes is open by default; Component ports is open only when the setup names a part.
+
 ## Conductors {#conductors}
 
 **Signal conductor** names which stackup conductor layer the cross-section analysis is about. Leave it at

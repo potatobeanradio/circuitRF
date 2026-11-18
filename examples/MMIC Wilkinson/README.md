@@ -11,11 +11,11 @@ die's, `tech/mmic-GaAs_2LM_100um.ctech`.
 |---|---|---|
 | **Wilkinson** | schematic, layout | A 0.5 mm input line, the MWPD, a TFR across R2-R3, and each output bending away through a 90° MCURVE of 0.35 mm radius and a 0.5 mm line to its port, all on Metal1 |
 | **Wilkinson Bench** | schematic | The cell's circuit, and its equations model: ideal lines of the closed-form impedances and lengths, an ideal 100 Ω resistor, and each feed an ideal line of its own impedance and length at F |
-| `Wilkinson.cdd` | data display | \|S21\|, \|S31\|, \|S11\| and \|S23\|, the circuit model as a line and the equations model dashed |
+| `Wilkinson Bench.cdd` | data display | \|S21\|, \|S31\|, \|S11\| and \|S23\|, the circuit model as a line and the equations model dashed |
 
 ## Run it
 
-Simulate **Wilkinson Bench** and open `Wilkinson.cdd`. No results ship.
+Simulate **Wilkinson Bench**; `Wilkinson Bench.cdd` opens. No results ship.
 
 ## Wilkinson
 
@@ -26,7 +26,7 @@ the layout to the schematic.
 
 ![The die: the input line on the left, the divider's ring, the thin-film resistor across the ring's gap, and the two outputs bending away to their ports.](pictures/wilkinson-layout.png)
 
-![Wilkinson.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the equations model dashed.](pictures/wilkinson-results.png)
+![Wilkinson Bench.cdd: |S21|, |S31|, |S11| and |S23| against frequency, the circuit model as a line and the equations model dashed.](pictures/wilkinson-results.png)
 
 | At 20 GHz | Equations | Circuit |
 |---|---|---|

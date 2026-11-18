@@ -22,7 +22,7 @@
     "LocalGrid": false,
     "MinCellsAcrossConductor": 2
   },
-  "ConductorThicknessCorrection": true,
+  "ConductorThicknessCorrection": false,
   "RobustMeshing": true,
   "CreateSnpSchematic": false,
   "ComponentPorts": [

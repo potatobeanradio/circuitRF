@@ -2875,6 +2875,12 @@ circuit and interpolated onto the analysis sweep.
   `auto` ties a file whose S(i,j) and S(j,i) agree (every passive file does) and unties one that does
   not (an amplifier).
 
+**A missing file.** When a run cannot find the file, it says what in the workspace writes it: an EM setup (a `.cem`),
+a 3D view's setup and its solver, or a TRL bench. The Messages row has an **Open** button for that document; run it,
+then simulate again. When that document wrote the file with another port count, the run names that file instead. A
+Touchstone file nothing in the workspace writes, such as a measured or vendor file, is reported as one, so look for it
+where the `File` path says.
+
 **Transient.** In a transient analysis the file is replaced by a rational fit of its S-parameters from DC
 to the run's highest frequency, half the inverse of the largest step. Data that starts above DC is
 extrapolated to DC from its two lowest points, and data that stops short of that frequency is held at its

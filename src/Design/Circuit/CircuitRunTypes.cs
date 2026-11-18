@@ -56,6 +56,10 @@ public enum FieldsOutput
 /// <summary>A fields analysis's block that is a plain SnP: the instance and its Touchstone.</summary>
 public sealed record PlainSnpFieldsBlock(string Block, string SnpPath);
 
+/// <summary>A failed analysis whose missing file a document in the workspace writes: the error as the run reports it, the
+/// sentence naming the writer, and the document, for a window to offer opening (<see cref="MissingFileWriters"/>).</summary>
+public sealed record RunFileWriter(string Error, string Sentence, string DocumentPath);
+
 public sealed class RunResult(
     RunStatus                        status,
     string                           statusMessage,
@@ -70,6 +74,9 @@ public sealed class RunResult(
     /// <summary>brief-cosim-pattern-2 R-cp2-8 — each plain SnP a fields analysis was refused on, so a window can offer the change beside
     /// the sentence the run already reports.</summary>
     public IReadOnlyList<PlainSnpFieldsBlock> PlainSnpFieldsBlocks { get; init; } = [];
+
+    /// <summary>Each failed analysis whose missing file a document in the workspace writes, with that document.</summary>
+    public IReadOnlyList<RunFileWriter> FileWriters { get; init; } = [];
 
     /// <summary>The analyses that failed in a run where others finished, one sentence each. Such a run is still
     /// <see cref="RunStatus.Success"/>, since it has results to publish; <see cref="StatusMessage"/> carries these too.</summary>
@@ -124,7 +131,7 @@ public sealed class RunResult(
     /// <summary>This result with <paramref name="leading"/> ahead of its own notes.</summary>
     public RunResult WithLeadingNotes(IReadOnlyList<string> leading)
         => new(Status, StatusMessage, Results, Warnings, GroupedResults, [.. leading, .. Notes],
-               Convergence, Expressions, Fields) { Errors = Errors, Summary = Summary, PlainSnpFieldsBlocks = PlainSnpFieldsBlocks, ArrayStates = ArrayStates };
+               Convergence, Expressions, Fields) { Errors = Errors, Summary = Summary, PlainSnpFieldsBlocks = PlainSnpFieldsBlocks, FileWriters = FileWriters, ArrayStates = ArrayStates };
 
     // Convenience: callers that only need the DataSets (unchanged from Phase 6e).
     public IReadOnlyList<DataSet> DataSets => Results.Select(r => r.Data).ToList();

@@ -2078,6 +2078,11 @@ internal static class CliDiagnostics
         "check.drc.note", DiagnosticSeverity.Warning,
         "{path}: {text}", ("path", path), ("text", text));
 
+    /// <summary>What the design-rule check says about what it checked (the labels it skips), which is not a finding.</summary>
+    public static Diagnostic CheckDrcInfo(string path, string text) => Diagnostic.Create(
+        "check.drc.info", DiagnosticSeverity.Info,
+        "{path}: {text}", ("path", path), ("text", text));
+
     /// <summary>A `.cws` entry — a library, a bookmarked file, the default technology — that names
     /// nothing. The GUI shows these as warning nodes in the project tree; this is the same finding.</summary>
     /// <summary>A referenced vendor library that is missing, or holds nothing readable (brief vendorlib-3 R-vl3-4c).</summary>

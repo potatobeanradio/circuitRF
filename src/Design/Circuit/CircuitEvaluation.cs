@@ -453,6 +453,7 @@ public static class CircuitEvaluation
         var errors      = new List<string>();
         var convergence = new List<AnalysisConvergence>();
         var plainSnps   = new List<PlainSnpFieldsBlock>();
+        var fileWriters = new List<RunFileWriter>();
         CircuitRF.Design.Em3d.EmFieldBlocks.NoteSetupChanges(nl);
 
         foreach (var pa in plan.Analyses)
@@ -505,11 +506,18 @@ public static class CircuitEvaluation
                 if (ex is CircuitRF.Design.Em3d.PlainSnpFieldsBlockException plain) plainSnps.Add(new PlainSnpFieldsBlock(plain.Block, plain.SnpPath));
                 // A fields refusal already opens by naming its analysis.
                 string message = ex.Message;
-                // A Deembed whose fixture a TRL bench in this workspace writes, run before that bench (brief-de-5).
+                // A file the run reads and did not find: the bench, EM setup or 3D view's setup in this workspace that writes it,
+                // or that nothing does (brief-de-5 for a TRL fixture; MissingFileWriters for the rest).
+                MissingFileWriter? writer = null;
                 if (FirstOf<FileNotFoundException>(ex) is { FileName: { Length: > 0 } missing } && !File.Exists(missing)
-                    && TrlRun.WriterOf(missing, plan.BaseDirectory) is { } writer)
-                    message += " " + writer;
-                errors.Add(message.StartsWith($"Fields '{pa.ResultName}'", StringComparison.Ordinal) ? message : $"'{pa.ResultName}': {message}");
+                    && MissingFileWriters.Explain(missing, plan.BaseDirectory) is { } found)
+                {
+                    writer = found;
+                    message += " " + found.Sentence;
+                }
+                string error = message.StartsWith($"Fields '{pa.ResultName}'", StringComparison.Ordinal) ? message : $"'{pa.ResultName}': {message}";
+                errors.Add(error);
+                if (writer?.DocumentPath is { } document) fileWriters.Add(new RunFileWriter(error, writer.Sentence, document));
                 convergence.Add(new AnalysisConvergence(pa.ResultName, false, ex.Message));
             }
         }
@@ -549,7 +557,8 @@ public static class CircuitEvaluation
 
         if (errors.Count > 0 && results.Count == 0)
             return new RunResult(RunStatus.EngineError,
-                string.Join("; ", errors), warnings: nlWarnings, notes: nlNotes, convergence: convergence) { PlainSnpFieldsBlocks = plainSnps };
+                string.Join("; ", errors), warnings: nlWarnings, notes: nlNotes, convergence: convergence)
+                { PlainSnpFieldsBlocks = plainSnps, FileWriters = fileWriters };
 
         if (results.Count == 0)
             return new RunResult(RunStatus.NoAnalysis,
@@ -567,6 +576,7 @@ public static class CircuitEvaluation
                              convergence, outcomes, fields)
         {
             PlainSnpFieldsBlocks = plainSnps,
+            FileWriters = fileWriters,
             ArrayStates = fieldsRun.Metrics.Where(kv => kv.Value is CircuitRF.Design.Em3d.IArrayFieldStateSource)
                                    .ToDictionary(kv => kv.Key, kv => ((CircuitRF.Design.Em3d.IArrayFieldStateSource)kv.Value).State, StringComparer.OrdinalIgnoreCase),
             Errors = errors,

@@ -32,6 +32,7 @@
 
 using System.Text.Json;
 using CircuitRF.Core.Elaboration;
+using CircuitRF.Design.Results;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Design.Layout.PCells;
@@ -830,6 +831,41 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
         string codeBehind = File.ReadAllText(RepoFile("src", "Ui", "Views", "WorkspaceWindow.axaml.cs"));
         Assert.Contains("RebuildNativeExamplesMenu();", codeBehind, StringComparison.Ordinal);
         Assert.Contains("WorkspaceViewModel.Examples", codeBehind, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A display that reads a schematic's run is the one that run opens: it is named
+    /// <c>&lt;run key&gt;.cdd</c> at the workspace root, the path the run looks up
+    /// (<c>ResultsWriter.AuthoredDisplayPath</c>). Four workspaces named each bench's display after
+    /// the CELL instead (<c>Bagley.cdd</c> reading <c>Bagley Bench.npy</c>), so a bench run never
+    /// opened it, and a run of the cell opened it and drew nothing.
+    /// </summary>
+    [Fact]
+    public void ADisplayReadingARunIsNamedAfterThatRun()
+    {
+        var wrong = new List<string>();
+        foreach (var example in ExampleWorkspaces.All(SourceExamplesRoot()))
+        {
+            var runKeys = Directory.EnumerateFiles(example.Directory, "*.csch", SearchOption.AllDirectories)
+                .Where(p => !p.Contains($"{Path.DirectorySeparatorChar}results{Path.DirectorySeparatorChar}"))
+                .Select(ResultsWriter.SchematicKey)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var cdd in Directory.EnumerateFiles(example.Directory, "*.cdd", SearchOption.TopDirectoryOnly))
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(cdd));
+                if (!doc.RootElement.TryGetProperty("SelectedDataSource", out var src)
+                    || src.GetString() is not { Length: > 0 } selected)
+                    continue;
+                string key = Path.GetFileNameWithoutExtension(selected);
+                if (!selected.EndsWith(".npy", StringComparison.OrdinalIgnoreCase) || !runKeys.Contains(key))
+                    continue;   // an EM result or a file no schematic writes: a display opened by hand
+                if (!string.Equals(Path.GetFullPath(cdd), ResultsWriter.AuthoredDisplayPath(example.Directory, key),
+                                   StringComparison.Ordinal))
+                    wrong.Add($"{example.Folder}/{Path.GetFileName(cdd)} reads {selected}; name it '{key}.cdd'");
+            }
+        }
+        Assert.True(wrong.Count == 0, string.Join("\n", wrong));
     }
 
     private static string RepoFile(params string[] parts)

@@ -114,13 +114,27 @@ public static class EmDiagnostics
     /// A component port built across a part whose two pads are on one connected piece of copper: the copper joins them
     /// elsewhere (a Wilkinson's ring, a balun's), so the port closes a loop. At RF it is an ordinary internal port; at 0 Hz
     /// it reads the loop's short. Said by both builders (Planar and 3D), so check, explain and the run all carry it.
+    /// A warning only when the sweep has a 0 Hz row (<see cref="SweepHasDc"/>), the one row the loop decides; otherwise a note,
+    /// since a Wilkinson's resistor is meant to sit exactly there.
     /// </summary>
-    public static Diagnostic ComponentPortAcrossLoop(string port, string pin, string referencePin) => Diagnostic.Create(
-        "em.component-port.across-loop",
-        DiagnosticSeverity.Warning,
-        "{port}: pads {pin} and {referencePin} are joined by copper elsewhere, so the port across them closes a loop. At RF " +
-        "that is an ordinary port; its 0 Hz row reads the loop's copper, close to a short, whatever the part is.",
-        ("port", port), ("pin", pin), ("referencePin", referencePin));
+    public static Diagnostic ComponentPortAcrossLoop(string port, string pin, string referencePin, bool sweepHasDc = true) => sweepHasDc
+        ? Diagnostic.Create(
+            "em.component-port.across-loop",
+            DiagnosticSeverity.Warning,
+            "{port}: pads {pin} and {referencePin} are joined by copper elsewhere, so the port across them closes a loop. At RF " +
+            "that is an ordinary port; its 0 Hz row reads the loop's copper, close to a short, whatever the part is.",
+            ("port", port), ("pin", pin), ("referencePin", referencePin))
+        : Diagnostic.Create(
+            "em.component-port.across-loop",
+            DiagnosticSeverity.Info,
+            "{port}: pads {pin} and {referencePin} are joined by copper elsewhere, so the port across them closes a loop. At RF " +
+            "that is an ordinary port; only a 0 Hz row would read the loop's copper, and this sweep has none.",
+            ("port", port), ("pin", pin), ("referencePin", referencePin));
+
+    /// <summary>Whether a sweep may solve 0 Hz: its start is 0, or an expression this cannot read as a number.</summary>
+    public static bool SweepHasDc(CircuitRF.Core.Design.FrequencySpec f)
+        => !double.TryParse(f.StartExpr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture,
+                            out double start) || start == 0;
 
     /// <summary>
     /// brief-em3d-3 — a 3D setup handed to a path that only knows the planar solvers: the planar

@@ -92,7 +92,10 @@ public static class TrlRun
     /// Deembed duplicated from a bench whose fixtures were never made. Reads the workspace's schematics only on that failure.
     /// Null when no TRL analysis there writes <paramref name="missingFile"/>.
     /// </summary>
-    public static string? WriterOf(string missingFile, string? workspaceRoot)
+    public static string? WriterOf(string missingFile, string? workspaceRoot) => FindWriter(missingFile, workspaceRoot)?.Sentence;
+
+    /// <summary><see cref="WriterOf"/>'s sentence and the bench schematic whose TRL analysis writes the file.</summary>
+    public static (string Sentence, string Bench)? FindWriter(string missingFile, string? workspaceRoot)
     {
         if (string.IsNullOrEmpty(workspaceRoot) || !Directory.Exists(workspaceRoot)) return null;
         string want = Path.GetFullPath(missingFile);
@@ -104,7 +107,7 @@ public static class TrlRun
                 foreach (var t in CircuitRF.Design.Schematic.SchematicPersistence.LoadFromFile(csch).Item1.Analyses.OfType<TrlAnalysis>())
                     foreach (string f in new[] { t.FixtureAPath, t.FixtureBPath })
                         if (string.Equals(Path.GetFullPath(Elaborator.ResolveFileReference(f, workspaceRoot)), want, StringComparison.Ordinal))
-                            return $"It is a fixture file TRL '{t.Name}' writes, on {Path.GetFileNameWithoutExtension(csch)}: run that first.";
+                            return ($"{Path.GetFileName(want)} is a fixture file TRL '{t.Name}' writes, on {Path.GetFileNameWithoutExtension(csch)}: run that first.", csch);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
         }

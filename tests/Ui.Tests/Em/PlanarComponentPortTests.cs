@@ -157,10 +157,16 @@ public sealed class PlanarComponentPortTests(PlanarComponentPortTests.Board boar
         Assert.True(b.Ok, b.Refusal);
         Assert.Equal((a.Strip!.X1, a.Strip.Y1, a.Strip.X2, a.Strip.Y2), (b.Strip!.X1, b.Strip.Y1, b.Strip.X2, b.Strip.Y2));
         Assert.Equal((a.Gap!.X, a.Gap.Y, a.Gap.PortDirection, a.Number), (b.Gap!.X, b.Gap.Y, b.Gap.PortDirection, b.Number));
-        string said = EmDiagnostics.ComponentPortAcrossLoop("C1", "1", "2").Render();
+        // A note on a sweep with no 0 Hz row, the one row the loop decides; a warning on one that solves 0 Hz.
+        string said = EmDiagnostics.ComponentPortAcrossLoop("C1", "1", "2", sweepHasDc: false).Render();
         output.WriteLine(said);
-        Assert.Contains(said, looped.Warnings);
-        Assert.DoesNotContain(plain.Warnings, w => w.Contains("closes a loop", StringComparison.Ordinal));
+        Assert.Contains(said, looped.Notes);
+        Assert.DoesNotContain(looped.Warnings, w => w.Contains("closes a loop", StringComparison.Ordinal));
+        Assert.DoesNotContain(plain.Notes, w => w.Contains("closes a loop", StringComparison.Ordinal));
+        var fromDc = Setup(["C1", "C2"]);
+        fromDc.Frequency = new FrequencySpec("0", "3", 2, SweepKind.Linear, "MHz", "MHz");
+        Assert.Contains(EmDiagnostics.ComponentPortAcrossLoop("C1", "1", "2").Render(),
+                        EmPlanarComponentPorts.Build(fromDc, board.Source(extra: Detour()))!.Warnings);
         Assert.True(Assert.Single(looped.Ports, p => p.Refdes == "C2").Ok);
 
         string Refusal(EmLayoutSource source)

@@ -2247,6 +2247,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         ConductorThicknessCorrection = Working.ConductorThicknessCorrection;
         RobustMeshing        = Working.RobustMeshing;
         ThinMetalCorrection  = Working.ThinMetalCorrection;
+        ShowSections();
         GroundedEdgePorts    = Working.EdgePortReturn == PlanarEdgePortReturn.Ground;
         DeembedOutsideCalibrationValidity = Working.DeembedOutsideCalibrationValidity;
         RadiationPattern     = Working.RadiationPattern;

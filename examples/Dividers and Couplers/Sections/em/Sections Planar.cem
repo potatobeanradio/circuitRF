@@ -17,7 +17,7 @@
   "PlanarMesh": {
     "Auto": true,
     "CellsPerWavelength": 20,
-    "EdgeMesh": false,
+    "EdgeMesh": true,
     "EdgeCells": 3,
     "LocalGrid": false,
     "MinCellsAcrossConductor": 2

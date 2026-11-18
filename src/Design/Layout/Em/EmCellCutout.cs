@@ -128,8 +128,10 @@ public static class EmCellCutout
     /// their ports are numbered; <paramref name="instances"/> is the projection they came from. Reads the layout's cells; writes
     /// nothing.
     /// </summary>
+    /// <param name="footprintPads">The pads of the footprint parts this build also gives a port. Their ports are built after the cut,
+    /// so the cut is told where they are: copper that reaches one is not left dangling.</param>
     public static EmCellCutoutResult Apply(EmSetup setup, EmLayoutSource source, IReadOnlyList<EmCellSelection> cuts,
-                                           EmCellInstanceSet instances)
+                                           EmCellInstanceSet instances, IReadOnlyList<PartPad>? footprintPads = null)
     {
         ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(source);
@@ -561,7 +563,8 @@ public static class EmCellCutout
         // A routed pin whose conductor, followed through the vias, reaches no other port and no ground: its port drives an isolated
         // piece of metal (a via stack that misses the metal above it is the usual case) and reads an open, which "routed" hides.
         if (pins.Any(p => p.HasPort))
-            foreach (int i in Dangling(pins, shapes, levels, stack, tech))
+            foreach (int i in Dangling(pins, shapes, levels, stack, tech,
+                                       (footprintPads ?? []).Select(p => (p.Layer, new Point64((long)Math.Round(p.Cx / per), (long)Math.Round(p.Cy / per))))))
                 pins[i] = pins[i] with { Unconnected = true };
 
         return new EmCellCutoutResult(shapes, pins, excluded, notes, flat.GeneratorIds) { Regions = regions };
@@ -569,12 +572,12 @@ public static class EmCellCutout
 
     /// <summary>
     /// The indices of <paramref name="pins"/> whose port's conductor, followed through the vias between this setup's analysis levels,
-    /// reaches no other port (a drawn port label, another cut pin's port) and no ground-reference conductor.
+    /// reaches no other port (a drawn port label, another cut pin's port, a pad of a footprint part given a port) and no
+    /// ground-reference conductor. A footprint part's port is built after the cut, so its pads come in as <paramref name="pads"/>: the
+    /// Gysel divider's ground vias are cut cells wired only to a resistor's pad, and read as dangling without them.
     /// </summary>
-    // ponytail: a footprint part's gap port is built after the cut and is not seen here, so a cut pin wired only to such a part's pad
-    // would read as reaching nothing; hand those ports in if a layout ever mixes the two.
     private static HashSet<int> Dangling(IReadOnlyList<EmCutPin> pins, IReadOnlyList<LayoutShape> shapes, List<StackupLayer> levels,
-                                         IReadOnlyList<StackupLayer> stack, Technology? tech)
+                                         IReadOnlyList<StackupLayer> stack, Technology? tech, IEnumerable<(LayerKey? Layer, Point64 At)> pads)
     {
         var metal = shapes.Where(s => s is not LabelShape and not BitmapShape).ToList();
         var pieces = levels.Select(l => Pieces(metal.Where(s => l.DrawingLayers.Contains(s.Layer)))).ToList();
@@ -605,14 +608,15 @@ public static class EmCellCutout
             }
         }
 
-        int? PieceOf(LabelShape l)
+        int? PieceAt(LayerKey? layer, Point64 pt)
         {
-            var pt = new Point64(l.X, l.Y);
-            int k = EmPinConductor.Of(tech, l.PortLayer ?? l.Layer) is { } on ? levels.IndexOf(on) : -1;
+            int k = layer is { } lk && EmPinConductor.Of(tech, lk) is { } on ? levels.IndexOf(on) : -1;
             return (k >= 0 ? At(k, pt) : Enumerable.Range(0, levels.Count).SelectMany(j => At(j, pt))).Select(x => (int?)Find(x)).FirstOrDefault();
         }
+        int? PieceOf(LabelShape l) => PieceAt(l.PortLayer ?? l.Layer, new Point64(l.X, l.Y));
         var own = pins.Select(p => p.HasPort ? PieceOf(p.Label!) : null).ToList();
-        var ports = shapes.OfType<LabelShape>().Where(l => l.IsPort).Select(PieceOf).Concat(own).OfType<int>()
+        var ports = shapes.OfType<LabelShape>().Where(l => l.IsPort).Select(PieceOf).Concat(own)
+                          .Concat(pads.Select(p => PieceAt(p.Layer, p.At))).OfType<int>()
                           .GroupBy(x => x).ToDictionary(g => g.Key, g => g.Count());
         var dangling = new HashSet<int>();
         for (int i = 0; i < pins.Count; i++)

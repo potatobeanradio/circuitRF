@@ -4211,7 +4211,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // purely for its timestamp: the live row's own timestamp is when the run STARTED.
         // Notes first, warnings after: what the run WORKED OUT reads before what it is unhappy
         // about, and the two are separable at a glance rather than one undifferentiated block.
-        RunMessages.Post(Messages, result, () => ResolveOwner(null));
+        RunMessages.Post(Messages, result, () => ResolveOwner(null), OpenDocumentByPath);
 
         // brief-cosim-pattern-2 R-cp2-8 — a fields analysis refused on a plain SnP: the change, one click, when the result can have a record.
         foreach (var plain in result.PlainSnpFieldsBlocks)
