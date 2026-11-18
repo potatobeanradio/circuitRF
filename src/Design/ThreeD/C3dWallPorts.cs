@@ -126,6 +126,13 @@ public static class C3dWallPorts
         return c;
     }
 
+    /// <summary>R-pwl3-15 / PWL-5 — the solvers a wall port runs on: Palace and EMerge; openEMS refused by name until its brief.</summary>
+    public static string? SolverRefusal(IEnumerable<Em3dSolverId> solvers, string subject)
+        => solvers.Any(s => s == Em3dSolverId.OpenEms)
+            ? $"{subject} has wall ports, which run on Palace and EMerge in this version; openEMS follows. Choose Palace or EMerge for this " +
+              "setup, or make the ports wave or lumped ports to run it on openEMS."
+            : null;
+
     /// <summary>
     /// The faces the document's modelled wall ports stand on, and a refusal when one of them also carries a wave port
     /// (R-pwl3-5: a face is one kind or the other). Empty when the document has no wall port.

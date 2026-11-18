@@ -1026,14 +1026,9 @@ public static partial class Em3dRunService
                             $"phase, renormalised here to {R(p.Z0.Real)} Ohm with the mode's voltage along the port's path " +
                             $"taken as real; reference plane {R(p.ReferencePlane.ShiftM * 1e6)} um " +
                             "into the structure from the port face"
-                          : p.Wall is { } w
-                              // PWL-3 R-pwl3-12 — a wall port says what its numbers are: calibrated at the wall, or the raw gap.
-                              ? (setup.CalibrateWallPorts
-                                  ? $"wall port on the {w.Face} face, {R(p.Z0.Real)} Ohm: calibrated by line standards, reference plane " +
-                                    $"{R(p.ReferencePlane.ShiftM * 1e6)} um into the structure from the wall"
-                                  : $"wall port on the {w.Face} face, {R(p.Z0.Real)} Ohm: UNCALIBRATED, the raw S across its " +
-                                    $"{R(w.GapM * 1e6)} um gap")
-                              : $"lumped, {R(p.Z0.Real)} Ohm"));
+                          // PWL-3 R-pwl3-12 — a wall port says what its numbers are: calibrated at the wall, or the raw gap.
+                          : p.Wall is not null ? Em3dWallCalibration.SnpPortWords(p, setup.CalibrateWallPorts)
+                          : $"lumped, {R(p.Z0.Real)} Ohm"));
         lines.AddRange(wallLines ?? []);
         if (Em3dModePorts.SnpLine(problem.Ports) is { } modeLine) lines.Add(modeLine);     // brief-hzn-11 R-hzn11-4
         lines.AddRange(Em3dPortMap.HeaderLines(problem.Ports, data));

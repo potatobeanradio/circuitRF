@@ -312,7 +312,25 @@ public static partial class Em3dRunService
             }
         }
 
+        // PWL-5 — a wall standard hands its raw S to the calibration; the structure's own is calibrated before anything is written,
+        // as on Palace.
+        run.CaptureRaw?.Invoke(sweep.FrequenciesHz, sweep.S);
+        Complex[][,]? wallRaw = null;
+        if (run.Wall is { } wallCalibration)
+        {
+            var wallNotes = new List<string>();
+            wallRaw = sweep.S;
+            sweep = sweep with { S = wallCalibration.Apply(sweep.FrequenciesHz, sweep.S, ports, wallNotes) };
+            log.Notes.AddRange(wallNotes);
+        }
+
         var data = EmergeResults.BuildDataSet(sweep, ports, facts);
+        if (wallRaw is not null)
+        {
+            data.AddToGroup(EmergeResults.Group, Em3dWallCalibration.RawCube, Em3dWallCalibration.RawCubeOf(sweep.FrequenciesHz, wallRaw, ports));
+            foreach (var (name, cube) in run.Wall!.DiagnosticCubes(sweep.FrequenciesHz, ports)) data.AddToGroup(EmergeResults.Group, name, cube);
+        }
+        IReadOnlyList<string> wallLines = run.Wall?.HeaderLines() ?? [];
         if (terminal is { } t)
         {
             WavePortTerminalS.AddDiagnostics(data, EmergeResults.Group, t.Samples, t.Outcome, ports);
@@ -338,7 +356,7 @@ public static partial class Em3dRunService
         var published = PublishDriven(run, Me, problem, data, version, facts.Device?.ToString().ToLowerInvariant(),
                                       new EmResultMesh(facts.Tetrahedra, "tetrahedra", facts.Unknowns),
                                       (stagedBase, stamp) => EmergeResults.WriteSnp(data, stagedBase, setup, problem, lowering, settings, facts, version,
-                                                                                    wall.Elapsed, peak, DateTimeOffset.Now, dcLines, stamp));
+                                                                                    wall.Elapsed, peak, DateTimeOffset.Now, dcLines, stamp, wallLines));
 
         // R-emi5-4c — the one line a user reads first of what the run cost, the last thing the run says.
         log.Notes.Add(EmergeCompletionSummary(version, tier, facts, peak, setup, wall.Elapsed, eigenmode: false, EmergeFields.Bytes(dir)));

@@ -1804,7 +1804,12 @@ face. It needs no mode solve, so it does not depend on a face's mode being found
   wall-port face without being a port's line, since the wall shorts it there. `explain` (and `run dryRun=true`) lists each
   wall port and where its kind came from, each group and its standards, which standards are cached, and what the ones to
   solve cost beside the structure.
-- **Palace only, in this version.** EMerge and openEMS refuse a wall port by name.
+- **Palace and EMerge, in this version.** openEMS refuses a wall port by name. On EMerge the gap is an ordinary lumped port
+  touching the PEC face, and the standards are EMerge runs. **Give EMerge a finer mesh than its Standard preset for wall ports**:
+  on the 50 Ω stripline, Standard (about 3,000 tetrahedra) left the calibrated port at VSWR 1.02 against the exact line with
+  ε_eff 2.3 % high, while elements of 0.05 λ with an edge refinement of 0.1 (`"Emerge": { "MaxElementWavelengths": 0.05,
+  "EdgeRefinement": 0.1 }`, about 39,000 tetrahedra, 30 s) gave VSWR 1.002 and ε_eff 0.25 % high. The error is the mesh's
+  phase velocity in the line and its standards, not the port.
 
 In a `.c3d`:
 
@@ -1814,7 +1819,7 @@ In a `.c3d`:
 ```
 
 On a 50 Ω stripline, calibrated this way on Palace at Standard quality, the port's VSWR against the exact line
-is 1.001–1.005 from 1 to 10 GHz.
+is 1.001–1.005 from 1 to 10 GHz; on EMerge with the finer mesh above, 1.0003–1.0017.
 
 ### Coaxial ports {#coaxial-ports}
 

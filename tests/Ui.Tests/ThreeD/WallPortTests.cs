@@ -153,7 +153,13 @@ public sealed class WallPortTests : IDisposable
         var (code, _, err) = RunCli("em", path, "--setup", "Palace", "-o", snp);
         Assert.True(code == 0, err);
         Assert.Contains("wall standard(s) solved", err);
-        var s = TouchstoneIO.ReadFile(snp);
+        AssertGate3(TouchstoneIO.ReadFile(snp));
+    }
+
+    /// <summary>Gate 3's checks on a published stripline 2-port: VSWR ≤ 1.01 against the exact 50 Ω line, |ΔS21| ≤ 3e-2, ε_eff
+    /// within 1 % of 2.1.</summary>
+    internal static void AssertGate3(SNP s)
+    {
         const double C0 = 2.99792458e8;
         for (int k = 0; k < s.Frequencies.Length; k++)
         {
@@ -199,7 +205,7 @@ public sealed class WallPortTests : IDisposable
     }
 
     /// <summary>Gate 4's three checks on a published 4-port (ports: a near, b near, a far, b far) and the run's notes.</summary>
-    internal static void AssertGate4(SNP s, string notes)
+    internal static void AssertGate4(SNP s, string notes, double eeffBound = 0.035, Action<string>? log = null)
     {
         const double C0 = 2.99792458e8, H = 508e-6, Er = 2.2, W = 1200e-6, Gap = 300e-6, L = 0.02;
         // Kernel A on the pair's cross-section (1 µm strips: its mesh needs a thickness), [C] symmetrised, the modes of L·C.
@@ -237,6 +243,8 @@ public sealed class WallPortTests : IDisposable
             }
             var reference = RFNetwork.ZToS(z, Enumerable.Repeat(new Complex(50, 0), 4).ToArray());
             var sk = s.Matrices[k];
+            double worst = Enumerable.Range(0, 4).Max(i => RfHelpers.VswrFromGamma(reference[i, i], sk[i, i]));
+            log?.Invoke($"{f / 1e9} GHz: worst VSWR {worst:F4}");
             for (int i = 0; i < 4; i++)
             {
                 double vswr = RfHelpers.VswrFromGamma(reference[i, i], sk[i, i]);
@@ -254,13 +262,64 @@ public sealed class WallPortTests : IDisposable
                 double eeff = Math.Pow(bl / L * C0 / w, 2), want = lam[md] * C0 * C0;
                 // Brief 3 restates 3 %. Palace's own microstrip phase velocity already exceeds it on the even mode: PWL-2's spike read
                 // 1.985–2.003 against kernel A's 1.9387, the product 2.006 at 1 GHz (+3.3 %). The owner set the bound at 3.5 %.
-                Assert.True(Math.Abs(eeff / want - 1) <= 0.035, $"mode {(md == 0 ? "even" : "odd")} ε_eff {eeff:F4} against {want:F4} at 1 GHz");
+                log?.Invoke($"mode {(md == 0 ? "even" : "odd")} ε_eff {eeff:F4} against {want:F4} ({(eeff / want - 1) * 100:+0.00;-0.00} %)");
+                Assert.True(Math.Abs(eeff / want - 1) <= eeffBound, $"mode {(md == 0 ? "even" : "odd")} ε_eff {eeff:F4} against {want:F4} at 1 GHz");
             }
         }
         var agreed = System.Text.RegularExpressions.Regex.Matches(notes, @"the standards agreed to ([0-9.eE+-]+)");
         Assert.NotEmpty(agreed);
         foreach (System.Text.RegularExpressions.Match a in agreed)
             Assert.True(double.Parse(a.Groups[1].Value.TrimEnd('.'), System.Globalization.CultureInfo.InvariantCulture) <= 1.5e-2, a.Value);
+    }
+
+    /// <summary>The fixture's setup run on EMerge at a mesh fine enough for the gates (EMerge's Standard preset is not: see
+    /// RESOLVED §PWL-5).</summary>
+    private static void OnEmerge(JsonObject d)
+    {
+        var setup = d["Setups"]![0]!.AsObject();
+        setup["Name"] = "EMerge";
+        setup["Solver3D"] = "Emerge";
+        setup.Remove("Palace");
+        setup["Emerge"] = new JsonObject { ["MaxElementWavelengths"] = 0.05, ["EdgeRefinement"] = 0.1 };
+    }
+
+    /// <summary>PWL-5 gate 1 — overview gate 3 on EMerge: the stripline (about 30 s with its three standards).</summary>
+    [DcRowFact(Em3dSolverId.Emerge)]
+    [Trait("Category", "Benchmark")]
+    public void Gate3_OnEmerge_TheCalibratedStriplineIsTheExactLine()
+    {
+        var (_, path) = Stripline(OnEmerge);
+        string snp = Path.Combine(_root, "line_emerge.s2p");
+        var (code, _, err) = RunCli("em", path, "--setup", "EMerge", "-o", snp);
+        Assert.True(code == 0, err);
+        Assert.Contains("wall standard(s) solved by EMerge", err);
+        AssertGate3(TouchstoneIO.ReadFile(snp));
+    }
+
+    /// <summary>PWL-5 gate 1 — overview gate 4 on EMerge: the coupled pair (about 100 s and 7.5 GB with its three 4-port standards).
+    /// Both modes' ε_eff here are within 0.6 % of kernel A's, so the brief's own 3 % holds.</summary>
+    [DcRowFact(Em3dSolverId.Emerge)]
+    [Trait("Category", "Benchmark")]
+    public void Gate4_OnEmerge_TheCalibratedPairIsKernelAsCoupledLine()
+    {
+        string dir = FixturePaths.Require("testdata/pwl");
+        var doc = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, "coupled_line_L20000um.c3d")))!.AsObject();
+        foreach (var o in doc["Objects"]!.AsArray())
+            if (((string?)o!["Name"])!.StartsWith("strip", StringComparison.Ordinal)) { o["Rect"]!["Min"]![0] = 0; o["Rect"]!["Size"]![0] = Len; }
+        JsonObject Port(int n, long at, long y) => new()
+        {
+            ["Number"] = n, ["Name"] = $"P{n}", ["Kind"] = "Wall", ["Plane"] = "YZ", ["Offset"] = at, ["Z0"] = "50",
+            ["Rect"] = new JsonObject { ["Min"] = new JsonArray(y, 0), ["Size"] = new JsonArray(1200000, 1000000) },
+        };
+        doc["Ports"] = new JsonArray(Port(1, 0, -1350000), Port(2, 0, 150000), Port(3, Len, -1350000), Port(4, Len, 150000));
+        OnEmerge(doc);
+        File.Copy(Path.Combine(dir, "pwl.ctech"), Path.Combine(_root, "pwl.ctech"), overwrite: true);
+        string path = Path.Combine(_root, "pair_emerge.c3d");
+        File.WriteAllText(path, doc.ToJsonString());
+        string snp = Path.Combine(_root, "pair_emerge.s4p");
+        var (code, _, err) = RunCli("em", path, "--setup", "EMerge", "-o", snp);
+        Assert.True(code == 0, err);
+        AssertGate4(TouchstoneIO.ReadFile(snp), err, eeffBound: 0.03);
     }
 
     private static (int Code, string Out, string Err) RunCli(params string[] args)
@@ -458,6 +517,28 @@ public sealed class WallPortTests : IDisposable
         Assert.DoesNotContain("'strip'", line);
     }
 
+    /// <summary>PWL-5 gate 2 — on EMerge a wall port is written as the ordinary lumped port it lowers to: its sheet from the PEC face
+    /// (x = 0) the gap's length into the structure, across the strip's width, its direction along the line. No solver runs.</summary>
+    [Fact]
+    public void OnEmerge_AWallPortsGapIsWrittenAsALumpedPortFromTheWall()
+    {
+        var (doc, path) = Stripline(OnEmerge);
+        var embedded = C3dSetups.Read(doc).Single(s => s.Name == "EMerge").Setup!;
+        var built = C3dProblemAssembly.Assemble(C3dSetups.ForRun(embedded, path), doc, path, null);
+        Assert.True(built.Ok, built.Refusal);
+        var lowered = CircuitRF.Design.Em3d.EmergeScriptWriter.Write(built.Problem!, EmergeSettings.Resolve(embedded.Emerge));
+        Assert.True(lowered.Ok, lowered.Refusal);
+        var ports = JsonNode.Parse(lowered.ProblemJson!)!["ports"]!.AsArray();
+        Assert.Equal(2, ports.Count);
+        var p1 = ports.Single(p => (int)p!["number"]! == 1)!;
+        Assert.Equal(0.0, (double)p1["origin"]![0]!, 12);                      // on the wall
+        Assert.Equal(1.0, (double)p1["direction"]![0]!);                       // into the structure, along the line
+        double[] lengths = [(double)p1["widthM"]!, (double)p1["heightM"]!];
+        Assert.Contains(lengths, l => Math.Abs(l - 200e-6) < 1e-9);            // the gap, min(w, h)/5
+        Assert.Contains(lengths, l => Math.Abs(l - W * 1e-9) < 1e-9);          // across the strip
+        Assert.Empty(JsonNode.Parse(lowered.ProblemJson!)!["wavePorts"]!.AsArray());
+    }
+
     [Fact]
     public void AWallPortOffTheFaces_IsRefusedNamingTheFace()
     {
@@ -483,12 +564,12 @@ public sealed class WallPortTests : IDisposable
     }
 
     [Fact]
-    public void AWallPortOnASolverOtherThanPalace_IsRefusedNamingPalace()
+    public void AWallPortOnOpenEms_IsRefusedNamingPalaceAndEMerge()
     {
-        var (doc, path) = Stripline(d => d["Setups"]![0]!["Solver3D"] = "Emerge");
+        var (doc, path) = Stripline(d => d["Setups"]![0]!["Solver3D"] = "OpenEms");
         var built = Assemble(doc, path);
         Assert.False(built.Ok);
-        Assert.Contains("run on Palace in this version", built.Refusal);
+        Assert.Contains("run on Palace and EMerge in this version; openEMS follows", built.Refusal);
     }
 
     [Fact]

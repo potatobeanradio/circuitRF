@@ -141,7 +141,7 @@ public sealed partial class EmSetupEditorViewModel
         "box's face, measured in the line's own field — no series parasitic, but the line must run to the layout's " +
         "edge. Both solvers build one, except that openEMS cannot feed a hollow waveguide and Palace cannot give a " +
         "port with several terminals. Wall: the line is fed across a small gap from the air box's face, made a PEC wall, " +
-        "and line standards solved first calibrate the gap and the wall out (Palace in this version). One face carries " +
+        "and line standards solved first calibrate the gap and the wall out (Palace and EMerge in this version). One face carries " +
         "wave ports or wall ports, so a face's rows switch together; lumped ports mix with either.";
 
     private void RaiseEigenVisibility()

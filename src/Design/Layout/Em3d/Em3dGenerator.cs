@@ -347,9 +347,8 @@ public static class Em3dGenerator
         // turned into the wall port it stands for in the solved problem (C3dWallPorts.FromWavePorts).
         var walls = setup.Ports3D.Where(q => q.Kind == Em3dPortKind.Wall).Select(q => q.Port).ToHashSet();
         if (walls.Count == 0) return new Run(setup, source, tech, wires, displaySlabs, portsOptional, padsOptional, portsEach).Go();
-        if (setup.Problem3D == Em3dProblemType.Driven && setup.Solver3D.Solvers.Any(x => x != Em3dSolverId.Palace))
-            return new Em3dGenerationResult(null, "This setup has wall ports, which run on Palace in this version; EMerge and openEMS follow. " +
-                                                  "Choose Palace for this setup, or make the ports wave or lumped ports.", []);
+        if (setup.Problem3D == Em3dProblemType.Driven && CircuitRF.Design.ThreeD.C3dWallPorts.SolverRefusal(setup.Solver3D.Solvers, "This setup") is { } notYet)
+            return new Em3dGenerationResult(null, notYet, []);
         var asWave = setup.Clone();
         asWave.Ports3D = [.. setup.Ports3D.Select(q => q.Kind == Em3dPortKind.Wall ? q with { Kind = Em3dPortKind.Wave } : q)];
         var built = new Run(asWave, source, tech, wires, displaySlabs, portsOptional, padsOptional, portsEach).Go();

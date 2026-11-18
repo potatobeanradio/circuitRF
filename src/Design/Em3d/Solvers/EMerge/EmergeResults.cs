@@ -275,7 +275,8 @@ public static class EmergeResults
     /// </summary>
     public static string? WriteSnp(DataSet data, string snpBase, EmSetup setup, Em3dProblem problem, EmergeLowering lowering,
                                    EmergeSettings settings, EmergeRunFacts facts, string solverVersion, TimeSpan wall, long? peakBytes,
-                                   DateTimeOffset when, IReadOnlyList<string>? dcLines = null, string? stamp = null)
+                                   DateTimeOffset when, IReadOnlyList<string>? dcLines = null, string? stamp = null,
+                                   IReadOnlyList<string>? wallLines = null)
     {
         string? group = data.Groups.FirstOrDefault(g => data.CubesIn(g).ContainsKey("S"));
         if (group is null) return "the solved DataSet carries no S cube";
@@ -294,7 +295,10 @@ public static class EmergeResults
             lines.Add(p.Hollow || p.ModeNormalised
                 ? $"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' {Em3dModePorts.PortWords(p, Ascii)}"
                 : $"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' from '{Ascii(p.NegativeObject)}' " +
-                  $"to '{Ascii(p.PositiveObject)}', lumped, {R(p.Z0.Real)} Ohm");
+                  $"to '{Ascii(p.PositiveObject)}', " +
+                  // PWL-5 — a wall port says what its numbers are, as Palace's header does
+                  (p.Wall is not null ? Em3dWallCalibration.SnpPortWords(p, setup.CalibrateWallPorts) : $"lumped, {R(p.Z0.Real)} Ohm"));
+        lines.AddRange(wallLines ?? []);
         if (Em3dModePorts.SnpLine(problem.Ports) is { } modeLine) lines.Add(modeLine);     // brief-hzn-11 R-hzn11-4
         lines.AddRange(Em3dPortMap.HeaderLines(problem.Ports, data));
         lines.AddRange(Em3dPortMap.Lines(problem.Ports));

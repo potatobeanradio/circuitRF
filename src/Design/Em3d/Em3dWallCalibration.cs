@@ -477,6 +477,18 @@ public sealed class Em3dWallCalibration
         ];
     }
 
+    /// <summary>R-pwl3-12 — a wall port's own words in a Touchstone header's port line (ASCII): calibrated at the wall and where its
+    /// reference plane is, or the raw S across its gap. Every solver's header says it the same way.</summary>
+    public static string SnpPortWords(Em3dPort p, bool calibrated)
+    {
+        static string R(double v) => v.ToString("R", CultureInfo.InvariantCulture);
+        var w = p.Wall!;
+        return calibrated
+            ? $"wall port on the {w.Face} face, {R(p.Z0.Real)} Ohm: calibrated by line standards, reference plane " +
+              $"{R(p.ReferencePlane.ShiftM * 1e6)} um into the structure from the wall"
+            : $"wall port on the {w.Face} face, {R(p.Z0.Real)} Ohm: UNCALIBRATED, the raw S across its {R(w.GapM * 1e6)} um gap";
+    }
+
     /// <summary>R-pwl3-12 — the Touchstone header's lines for the wall groups: which ports, how many standards of what length,
     /// scalar or modal, and the C′ source. ASCII, as the header is.</summary>
     public IReadOnlyList<string> HeaderLines()

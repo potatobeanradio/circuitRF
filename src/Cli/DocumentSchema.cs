@@ -413,7 +413,7 @@ internal static class DocumentSchema
             Wave, or Wall — a WALL port: the air box's face at the port becomes a PEC wall, the line
             stops one small gap short of it and is fed across that gap, and line standards the run
             solves first calibrate the gap and the wall out, to the reference plane at the wall
-            (OffsetUm moves it in). Palace only in this version. "CalibrateWallPorts": false
+            (OffsetUm moves it in). Palace and EMerge in this version. "CalibrateWallPorts": false
             publishes the raw S at the gaps instead. `explain` lists each wall, its group and its
             standards, cached or to solve.
           * ComponentPorts puts a port across a placed part with none drawn: ["C1", "L2"], "*" for
@@ -1056,7 +1056,7 @@ internal static class DocumentSchema
             on one face within five line heights of each other are calibrated as one group of at
             most three (their coupled modes); a face carries wall ports or wave ports, not both; the
             line must run straight and unchanged for three line heights from the wall. Solved
-            standards are kept in results/wall-standards and reused. Palace only in this version.
+            standards are kept in results/wall-standards and reused. Palace and EMerge in this version.
             A setup's Ports3D ([{"Port": 1, "Kind": "Wall"}]) runs a port drawn on an air-box face as
             Wave or Wall for that setup only; the document is not changed. "CalibrateWallPorts":
             false publishes the raw S at the gaps.

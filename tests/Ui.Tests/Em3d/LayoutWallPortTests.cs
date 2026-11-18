@@ -78,14 +78,21 @@ public sealed class LayoutWallPortTests
     }
 
     [Fact]
-    public void ALayoutsWallPortOnEMerge_IsRefusedNamingPalace()
+    public void ALayoutsWallPort_RunsOnEMerge_AndIsRefusedOnOpenEms()
     {
-        var g = Generate(s =>
+        var onEmerge = Generate(s =>
         {
             s.Solver3D = Em3dSolverId.Emerge;
             s.Ports3D = [new EmPort3D(1, Em3dPortKind.Wall), new EmPort3D(2, Em3dPortKind.Wall)];
         });
-        Assert.False(g.Ok);
-        Assert.Contains("run on Palace in this version", g.Refusal);
+        Assert.True(onEmerge.Ok, onEmerge.Refusal);
+        Assert.All(onEmerge.Problem!.Ports, p => Assert.NotNull(p.Wall));
+        var onOpenEms = Generate(s =>
+        {
+            s.Solver3D = Em3dSolverId.OpenEms;
+            s.Ports3D = [new EmPort3D(1, Em3dPortKind.Wall), new EmPort3D(2, Em3dPortKind.Wall)];
+        });
+        Assert.False(onOpenEms.Ok);
+        Assert.Contains("run on Palace and EMerge in this version; openEMS follows", onOpenEms.Refusal);
     }
 }

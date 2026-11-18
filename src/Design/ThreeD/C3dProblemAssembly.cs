@@ -541,11 +541,8 @@ public static class C3dProblemAssembly
         if (mixedFace is not null) return No(mixedFace, e.Warnings);
         if (wallFaces.Count > 0 && setup.Problem3D == Em3dProblemType.Driven)
         {
-            // R-pwl3-15 — Palace first; EMerge and openEMS follow in their own briefs.
-            var notPalace = setup.Solver3D.Solvers.Where(s => s != Em3dSolverId.Palace).ToList();
-            if (notPalace.Count > 0)
-                return No($"This view has wall ports, which run on Palace in this version; EMerge and openEMS follow. Choose Palace for this " +
-                          $"setup, or make the ports wave or lumped ports to run it on {(notPalace[0] == Em3dSolverId.Emerge ? "EMerge" : "openEMS")}.", e.Warnings);
+            // R-pwl3-15 / PWL-5 — Palace and EMerge; openEMS follows in its own brief.
+            if (C3dWallPorts.SolverRefusal(setup.Solver3D.Solvers, "This view") is { } notYet) return No(notYet, e.Warnings);
             if (C3dWallPorts.ForceFaces(setup, wallFaces) is { } forced) notes.Add(forced);
         }
 

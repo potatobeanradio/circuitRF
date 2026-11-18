@@ -268,3 +268,43 @@ This section supersedes two lines above: a face is no longer one group, and a `.
   classes, 4,443 tests) pass except nine `Em3dGeneratorDumpTests.Gate2` cases on `examples/Dividers and Couplers`, whose
   layouts and `.cem`s changed in a 2026-11-17 commit after their dumps were last written (2026-11-16); nothing here touches
   them. The reference text (`reference em-setup`, `3d-view`) and `docs/user/src/reference/em-setup.md` describe all of it.
+
+## PWL-5 — the wall port on EMerge (2026-11-18)
+
+`docs/briefs/brief-pwl-5-emerge-wall-port.md`. No new physics and no change to `circuitrf_emerge.py`: a wall port lowers to the
+ordinary lumped port its gap is, and EMerge accepts a lumped sheet whose edge lies on a PEC face of the box (R-pwl5-1, checked on
+one frequency: the raw stripline at 5 GHz, |S11| 0.12, S21 a few degrees past the exact line, as Palace's raw gap reads).
+
+- **The leg calibrates as Palace's does**: `CaptureRaw`, then `run.Wall.Apply`, before `BuildDataSet`; the `WallPort*` cubes into
+  EMerge's group, the group lines into its Touchstone header. The port line's wall wording moved to
+  `Em3dWallCalibration.SnpPortWords`, which both headers call. The standards are EMerge runs from `SolveWallStandards`, cached
+  under EMerge's key (the solver is in it).
+- **The refusal is one function now** (`C3dWallPorts.SolverRefusal`): openEMS only, for a `.c3d` and a layout `.cem` alike.
+- **R-pwl5-2 — independent meshing, measured.** EMerge meshes each standard and the structure on its own, as Palace does. On
+  fixture S (the 20 mm stripline), against the exact line:
+
+| EMerge mesh | tetrahedra (structure) | VSWR 1 / 5 / 10 GHz | \|ΔS21\| worst | ε_eff |
+|---|---|---|---|---|
+| Standard preset | 2,955 | 1.0071 / 1.0201 / 1.0191 | 6.9e-2 | +2.0 … +2.3 % |
+| Accurate preset (adaptive mesh) | 15,818 | 1.0081 / 1.0025 / 1.0046 | 8.7e-3 | +0.29 % |
+| 0.05 λ, edge refinement 0.1 | 38,717 | 1.0003 / 1.0005 / 1.0017 | 7.3e-3 | +0.25 % |
+| *Palace, Standard (PWL-3)* | | *1.0026 / 1.0014 / 1.0046* | *2.4e-2* | *+0.8 %* |
+
+  On fixture C (the coupled pair), against kernel A's quasi-static coupled line, worst VSWR at 1 / 5 / 10 GHz and each mode's
+  ε_eff at 1 GHz:
+
+| EMerge mesh | VSWR | even ε_eff | odd ε_eff |
+|---|---|---|---|
+| Standard preset (5,658 tetrahedra) | 1.0105 / 1.0166 / 1.0162 | +0.58 % | +2.06 % |
+| 0.05 λ, edge refinement 0.1 (98 s, 7.5 GB peak) | 1.0047 / 1.0119 / 1.0118 | −0.13 % | +0.55 % |
+| *Palace, Standard (PWL-3)* | *1.0174 / 1.0046 / 1.0062* | *+3.3 %* | *within 3 %* |
+
+  **Standard fails gate 3** (VSWR 1.02, |ΔS21| 6.9e-2, ε_eff +2.3 %) and the finer mesh passes it with margin: the error is the
+  mesh's phase velocity in the line and its standards, not the port — the same port at 0.05 λ beats Palace's own numbers.
+  Gate 4 passes even at Standard. So it ships with independent meshing, the gates are held at the finer mesh
+  (`WallPortTests.Gate3_OnEmerge_…` 41 s and `Gate4_OnEmerge_…` 3 m 41 s under load, `Category=Benchmark`; gate 4 at the
+  brief's own 3 %), and the user docs tell a wall-port user to give EMerge that mesh. Not done: raising EMerge's mesh for a
+  wall port automatically — the setup's mesh stays the user's.
+- **Routine gate**: `OnEmerge_AWallPortsGapIsWrittenAsALumpedPortFromTheWall` (the script's port: origin on the wall, direction
+  along the line, the 200 µm gap by the strip's width, no wave port). The script writer is untouched; the 146 routine EMerge
+  tests are unchanged. `LayoutWallPortTests` now runs a layout's wall ports on EMerge and refuses them on openEMS.

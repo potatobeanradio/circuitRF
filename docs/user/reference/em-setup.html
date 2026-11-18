@@ -2755,14 +2755,18 @@ where its wave port would be, then fed and calibrated as a wall port.</li>
 wall-port face without being a port's line, since the wall shorts it there. <code>explain</code> (and <code>run dryRun=true</code>) lists each
 wall port and where its kind came from, each group and its standards, which standards are cached, and what the ones to
 solve cost beside the structure.</li>
-<li><strong>Palace only, in this version.</strong> EMerge and openEMS refuse a wall port by name.</li>
+<li><strong>Palace and EMerge, in this version.</strong> openEMS refuses a wall port by name. On EMerge the gap is an ordinary lumped port
+touching the PEC face, and the standards are EMerge runs. <strong>Give EMerge a finer mesh than its Standard preset for wall ports</strong>:
+on the 50 Ω stripline, Standard (about 3,000 tetrahedra) left the calibrated port at VSWR 1.02 against the exact line with
+ε_eff 2.3 % high, while elements of 0.05 λ with an edge refinement of 0.1 (<code>&quot;Emerge&quot;: { &quot;MaxElementWavelengths&quot;: 0.05, &quot;EdgeRefinement&quot;: 0.1 }</code>, about 39,000 tetrahedra, 30 s) gave VSWR 1.002 and ε_eff 0.25 % high. The error is the mesh's
+phase velocity in the line and its standards, not the port.</li>
 </ul>
 <p>In a <code>.c3d</code>:</p>
 <pre><code>{ &quot;Number&quot;: 1, &quot;Name&quot;: &quot;P1&quot;, &quot;Kind&quot;: &quot;Wall&quot;, &quot;Plane&quot;: &quot;YZ&quot;, &quot;Offset&quot;: 0,
   &quot;Rect&quot;: { &quot;Min&quot;: [-1717866, -1000000], &quot;Size&quot;: [3435732, 2000000] }, &quot;Z0&quot;: &quot;50&quot; }
 </code></pre>
 <p>On a 50 Ω stripline, calibrated this way on Palace at Standard quality, the port's VSWR against the exact line
-is 1.001–1.005 from 1 to 10 GHz.</p>
+is 1.001–1.005 from 1 to 10 GHz; on EMerge with the finer mesh above, 1.0003–1.0017.</p>
 <h3 id="coaxial-ports">Coaxial ports</h3>
 <p>A <strong>coaxial port</strong> is a lumped port whose sheet is a <strong>ring</strong>: the flat annulus of a coax's cross-section between its pin
 (radius <em>a</em>) and its outer conductor (radius <em>b</em>). Where a rectangular lumped port imposes a field of one direction across
