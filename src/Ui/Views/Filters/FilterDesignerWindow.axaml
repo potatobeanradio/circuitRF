@@ -71,6 +71,11 @@
             <Setter Property="MinWidth"            Value="140"/>
             <Setter Property="HorizontalAlignment" Value="Stretch"/>
         </Style>
+        <!-- Unit picker on the Edges header stays compact; it is not a value-column control. -->
+        <Style Selector="Border.card ComboBox.unitpick">
+            <Setter Property="MinWidth"            Value="72"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+        </Style>
         <Style Selector="TextBlock.tblhdr">
             <Setter Property="FontSize"          Value="11"/>
             <Setter Property="FontWeight"        Value="SemiBold"/>
@@ -121,13 +126,18 @@
         <!-- ── Specification ─────────────────────────────────────────────── -->
         <Border Grid.RowSpan="2" Classes="pane">
             <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-                <StackPanel>
+                <!-- SharedSizeGroup keeps every card's label column and value column the same width. -->
+                <StackPanel Grid.IsSharedSizeScope="True">
                     <TextBlock Classes="panelhdr" Text="Specification"/>
 
                     <Border Classes="card">
                         <StackPanel Spacing="3">
                             <TextBlock Classes="cardhdr" Text="Impedances"/>
-                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" RowSpacing="3">
+                            <Grid RowDefinitions="Auto,Auto" RowSpacing="3">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="FltLbl"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
                                 <StackPanel Classes="lblrow"><TextBlock Classes="lbl" Text="Source"/></StackPanel>
                                 <TextBox Grid.Column="1" Classes="num" Text="{Binding SourceText}"/>
                                 <StackPanel Grid.Row="1" Classes="lblrow"><TextBlock Classes="lbl" Text="Load"/></StackPanel>
@@ -139,7 +149,11 @@
                     <Border Classes="card">
                         <StackPanel Spacing="3">
                             <TextBlock Classes="cardhdr" Text="Topology"/>
-                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="3">
+                            <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="3">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="FltLbl"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
                                 <StackPanel Classes="lblrow"><TextBlock Classes="lbl" Text="First"/></StackPanel>
                                 <ComboBox Grid.Column="1" ItemsSource="{Binding FirstElements}"
                                           SelectedItem="{Binding First}"/>
@@ -158,31 +172,33 @@
                     <Border Classes="card">
                         <StackPanel Spacing="3">
                             <TextBlock Classes="cardhdr" Text="Shape"/>
-                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" RowSpacing="3">
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="3">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="FltLbl"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
                                 <StackPanel Classes="lblrow"><TextBlock Classes="lbl" Text="Response"/></StackPanel>
                                 <ComboBox Grid.Column="1" ItemsSource="{Binding ResponseChoices}"
                                           SelectedItem="{Binding ResponseChoice}"/>
                                 <StackPanel Grid.Row="1" Classes="lblrow"><TextBlock Classes="lbl" Text="Form"/></StackPanel>
                                 <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding Forms}"
                                           SelectedItem="{Binding Form}"/>
-                            </Grid>
-                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="3" Margin="0,3,0,0">
-                                <StackPanel Classes="lblrow" ToolTip.Tip="{Binding TipAp}">
+                                <StackPanel Grid.Row="2" Classes="lblrow" ToolTip.Tip="{Binding TipAp}">
                                     <TextBlock Classes="lbl" Text="Ap, dB"/>
                                     <Line Classes="maskleg" Stroke="#C0392B"/>
                                 </StackPanel>
-                                <TextBox Grid.Column="1" Classes="num" Text="{Binding ApText}"
+                                <TextBox Grid.Row="2" Grid.Column="1" Classes="num" Text="{Binding ApText}"
                                          ToolTip.Tip="{Binding TipAp}"/>
-                                <StackPanel Grid.Row="1" Classes="lblrow" ToolTip.Tip="{Binding TipRipple}">
+                                <StackPanel Grid.Row="3" Classes="lblrow" ToolTip.Tip="{Binding TipRipple}">
                                     <TextBlock Classes="lbl" Text="Ripple, dB"/>
                                 </StackPanel>
-                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding RippleText}"
+                                <TextBox Grid.Row="3" Grid.Column="1" Classes="num" Text="{Binding RippleText}"
                                          ToolTip.Tip="{Binding TipRipple}"/>
-                                <StackPanel Grid.Row="2" Classes="lblrow" ToolTip.Tip="{Binding TipAs}">
+                                <StackPanel Grid.Row="4" Classes="lblrow" ToolTip.Tip="{Binding TipAs}">
                                     <TextBlock Classes="lbl" Text="As, dB"/>
                                     <Line Classes="maskleg" Stroke="#7F8C8D"/>
                                 </StackPanel>
-                                <TextBox Grid.Row="2" Grid.Column="1" Classes="num" Text="{Binding AsText}"
+                                <TextBox Grid.Row="4" Grid.Column="1" Classes="num" Text="{Binding AsText}"
                                          ToolTip.Tip="{Binding TipAs}"/>
                             </Grid>
                         </StackPanel>
@@ -193,9 +209,14 @@
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Classes="cardhdr" Text="Edges"/>
                                 <ComboBox Grid.Column="1" ItemsSource="{Binding Units}" SelectedItem="{Binding Unit}"
-                                          MinWidth="72" HorizontalAlignment="Right"/>
+                                          MinWidth="72" HorizontalAlignment="Right"
+                                          Classes="unitpick"/>
                             </Grid>
-                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="3">
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="3">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="FltLbl"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
                                 <StackPanel Classes="lblrow" ToolTip.Tip="{Binding TipA}">
                                     <TextBlock Classes="lbl" Text="{Binding LabelA}"/>
                                     <Line Classes="maskleg" Stroke="#E67E22"/>
@@ -258,7 +279,11 @@
                     <Border Classes="card">
                         <StackPanel Spacing="3">
                             <TextBlock Classes="cardhdr" Text="Plot range"/>
-                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="3">
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="3">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="FltLbl"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
                                 <StackPanel Classes="lblrow">
                                     <TextBlock Classes="lbl" Text="Mode"
                                                ToolTip.Tip="± band widens the mask edges. Manual sets Fmin and Fmax in the unit above."/>
