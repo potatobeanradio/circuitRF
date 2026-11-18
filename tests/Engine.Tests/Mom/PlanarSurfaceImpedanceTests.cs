@@ -2,6 +2,7 @@ using System.Numerics;
 using CircuitRF.Engine.Mom;
 using CircuitRF.Engine.Tests.Mom.Support;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
@@ -649,7 +650,7 @@ public class PlanarSurfaceImpedanceTests(ITestOutputHelper output)
             var sb = new PlanarSolveContext(b.Mesh, b.Ports, settings).RawScatteringAt(kernel, fHz);
             double expect = 2.0 * Math.PI * Math.Sqrt(eeff) * fHz * (b.LengthM - a.LengthM)
                           / EmConstants.C0;
-            var g = PlanarCalibration.Gamma(sa, sb, b.LengthM - a.LengthM, expect);
+            var g = LineCalibration.Gamma(sa, sb, b.LengthM - a.LengthM, expect);
             probe?.Invoke($"    ℓ = {a.LengthM * 1e3:F3}/{b.LengthM * 1e3:F3} mm, " +
                           $"βΔℓ = {g.ElectricalDegrees:F2}°, usable {g.Usable}, " +
                           $"γ = {g.Gamma.Real:E4} + j{g.Gamma.Imaginary:E4}, " +

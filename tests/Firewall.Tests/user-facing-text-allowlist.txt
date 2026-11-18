@@ -442,7 +442,8 @@ src/Engine/Mom/PlanarBasisFunctions.cs|A vertical (via) basis has no in-plane ra
 src/Engine/Mom/PlanarBasisFunctions.cs|A vertical (via) basis has no shared EDGE — its unit current crosses the shared 
 src/Engine/Mom/PlanarBasisFunctions.cs|A vertical (via) basis spans two cells at the same (x, y) on DIFFERENT levels, so 
 src/Engine/Mom/PlanarBasisFunctions.cs|Only a vertical (via) basis has a shared footprint.
-src/Engine/Mom/PlanarCalibration.cs|Each long standard needs its own Δℓ.
+src/Engine/Calibration/LineCalibration.cs|Each long standard needs its own Δℓ.
+src/Engine/Calibration/LineCalibrator.cs|A calibration needs at least one separation.
 src/Engine/Mom/PlanarCalibration.cs|Port {port.Number} has no cross-section, so it is not a conductor-referenced 
 src/Engine/Mom/PlanarCalibration.cs|Port {port.Number} has no widened profile, so BuildLine is what builds its 
 src/Engine/Mom/PlanarCalibration.cs|Port {port.Number}'s feed is only {port.LongitudinalRunM.Count} cell(s) long, and the 
@@ -451,7 +452,7 @@ src/Engine/Mom/PlanarDeembed.cs|The mode potential has {potential.Count} entries
 src/Engine/Mom/PlanarDeembed.cs|The two calibration standards have the same length.
 src/Engine/Mom/PlanarDeembed.cs|This calibration standard's static capacitance solve (D7's reference impedance) 
 src/Engine/Mom/PlanarDeembed.cs|This calibration standard's static capacitance solve (D7's reference impedance) needs 
-src/Engine/Mom/PlanarDeembed.cs|{p} ports need {p} error boxes, not {boxes.Count}.
+src/Engine/Calibration/LineDeembed.cs|{p} ports need {p} error boxes, not {boxes.Count}.
 src/Engine/Mom/PlanarExcitation.cs|A solve needs at least one port.
 src/Engine/Mom/PlanarFarField.cs|The far field and the matrix fill disagree about which spectral kernel this problem 
 src/Engine/Mom/PlanarFarField.cs|The solution has {column.Count} unknowns and the mesh has {mesh.Bases.Count} 
@@ -913,11 +914,11 @@ src/Engine/SParameterEngine.cs|{NdfPassivation.CannotPassivateKey}: this design 
 # are refusals carried on PlanarFeedClearanceRefusedException and surfaced through
 # em.refused.port-clearance, which is the Diagnostic this gate is asking for.
 src/Engine/Mom/PlanarCalibration.cs|Port {port.Number} is not in a calibration group, so BuildLine is what builds 
-src/Engine/Mom/PlanarDeembed.cs|Port index {r} is out of range or covered by two error boxes.
-src/Engine/Mom/PlanarDeembed.cs|Port {i} has no error box.
+src/Engine/Calibration/LineDeembed.cs|Port index {r} is out of range or covered by two error boxes.
+src/Engine/Calibration/LineDeembed.cs|Port {i} has no error box.
 src/Engine/Mom/PlanarDeembed.cs|The conductor map has {conductorOfCell.Count} entries for a mesh of 
-src/Engine/Mom/PlanarModalCalibration.cs|A {n}-conductor calibration group's standards are {2 * n}-ports, not 
-src/Engine/Mom/PlanarModalCalibration.cs|MoM: a modal calibration matrix is singular — the calibration group's 
+src/Engine/Calibration/ModalLineCalibration.cs|A {n}-conductor calibration group's standards are {2 * n}-ports, not 
+src/Engine/Calibration/ModalLineCalibration.cs|Calibration: a modal calibration matrix is singular — the calibration group's 
 src/Engine/Mom/PlanarModalMedium.cs|A calibration group's standard must carry its per-cell conductor map.
 # QSC — an INTERNAL INVARIANT with no user remedy: the two standards differ only in the bulk
 # cells between their reference planes, so a non-positive differenced capacitance means the

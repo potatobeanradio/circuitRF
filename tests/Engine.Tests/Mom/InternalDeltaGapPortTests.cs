@@ -12,6 +12,7 @@ using System.Numerics;
 using CircuitRF.Engine.Mom;
 using CircuitRF.Engine.Tests.Mom.Support;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
@@ -215,7 +216,7 @@ public class InternalDeltaGapPortTests(ITestOutputHelper output)
         // is the raw answer. Driving the same problem both ways is the direct test of it.
         //
         // The comparison is tolerant rather than an equality because the ON path still passes through
-        // PlanarDeembed.Apply's LU — of the identity matrix, so the residual is round-off and nothing
+        // LineDeembed.Apply's LU — of the identity matrix, so the residual is round-off and nothing
         // else. Asserting bit-identity would be asserting a property of NumFlat's LU rather than of
         // this code.
         var problem = PlanarLineFixtures.Fr4Line(8e-3, 2e9);

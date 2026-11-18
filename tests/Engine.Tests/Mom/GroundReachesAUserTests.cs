@@ -21,6 +21,7 @@ using NumFlat;
 using CircuitRF.Engine.Mom;
 using CircuitRF.Engine.Tests.Mom.Support;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
@@ -307,7 +308,7 @@ public sealed class GroundReachesAUserTests(ITestOutputHelper output)
         var pecFill = PlanarFillSettings.Default with { PerfectConductor = true };
 
         double cross = PlanarCalibration.QuasiStaticCrossoverHz(slab);
-        var plan = new PlanarCalibration.PlanarSeparationPlan(
+        var plan = new LineSeparationPlan(
             PlanarCalibration.SuggestDeltas(slab, fLo, fHi), -1, cross);
         var set = PlanarCalibration.BuildSet(
             ports[0], slab, plan, PlanarCalibration.SuggestLengths(slab, fLo, fHi).Short);
@@ -411,7 +412,7 @@ public sealed class GroundReachesAUserTests(ITestOutputHelper output)
                                             EdgeMesh: edge > 0, EdgeCells: Math.Max(edge, 1));
             var (_, ports) = PlanarLineFixtures.MeshAndPorts(problem, ms);
             var pecFill = PlanarFillSettings.Default with { PerfectConductor = true };
-            var plan = new PlanarCalibration.PlanarSeparationPlan(
+            var plan = new LineSeparationPlan(
                 PlanarCalibration.SuggestDeltas(slab, fLo, fHi), -1,
                 PlanarCalibration.QuasiStaticCrossoverHz(slab));
             var set = PlanarCalibration.BuildSet(
@@ -577,7 +578,7 @@ public sealed class GroundReachesAUserTests(ITestOutputHelper output)
                 var sa = new PlanarSolveContext(a.Mesh, a.Ports, settings, levels).RawScatteringAt(kernel, fHz);
                 var sb = new PlanarSolveContext(b.Mesh, b.Ports, settings, levels).RawScatteringAt(kernel, fHz);
                 double expect = 2 * Math.PI * Math.Sqrt(eeff) * fHz * (b.LengthM - a.LengthM) / EmConstants.C0;
-                return PlanarCalibration.Gamma(sa, sb, b.LengthM - a.LengthM, expect).Gamma.Real;
+                return LineCalibration.Gamma(sa, sb, b.LengthM - a.LengthM, expect).Gamma.Real;
             }
 
             return (Alpha(PlanarFillSettings.Default with { PerfectConductor = true }),

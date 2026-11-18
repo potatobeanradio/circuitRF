@@ -28,6 +28,7 @@ using CircuitRF.Engine.Mom;
 using CircuitRF.Engine.Tests.Mom.Support;
 using Xunit;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
@@ -296,7 +297,7 @@ public sealed class ConductorLossDefaultTests(ITestOutputHelper output)
         // The MEASURED ladder at every frequency, on both sides, so α_c is a difference of two
         // answers taken the same way — never one quasi-static reading against one measured one.
         double cross = PlanarCalibration.QuasiStaticCrossoverHz(slab);
-        var plan = new PlanarCalibration.PlanarSeparationPlan(
+        var plan = new LineSeparationPlan(
             PlanarCalibration.SuggestDeltas(slab, fLo, fHi), -1, cross);
         var set = PlanarCalibration.BuildSet(
             ports[0], slab, plan, PlanarCalibration.SuggestLengths(slab, fLo, fHi).Short);
@@ -445,8 +446,8 @@ public sealed class ConductorLossDefaultTests(ITestOutputHelper output)
         foreach (double f in new[] { 2e9, 10e9, 20e9 })
         {
             double r = lossy.ResistancePerMetreAt(f);
-            Complex zp = PlanarDeembed.CharacteristicImpedance(pec.GammaAt(f), pec.CPerMetre, f);
-            Complex zl = PlanarDeembed.CharacteristicImpedance(lossy.GammaAt(f), lossy.CPerMetre, f);
+            Complex zp = LineDeembed.CharacteristicImpedance(pec.GammaAt(f), pec.CPerMetre, f);
+            Complex zl = LineDeembed.CharacteristicImpedance(lossy.GammaAt(f), lossy.CPerMetre, f);
             output.WriteLine($"{f / 1e9,7:0.#}G {r,10:F2} {pec.GammaAt(f).Real,12:E3} " +
                              $"{lossy.GammaAt(f).Real,12:E3} {zp.Magnitude,10:F3} " +
                              $"{zl.Magnitude,11:F3} {zp.Phase * 180 / Math.PI,11:F3} " +

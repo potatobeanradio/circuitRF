@@ -13,6 +13,7 @@ using System.Numerics;
 using CircuitRF.Engine.Mom;
 using CircuitRF.Engine.Tests.Mom.Support;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
@@ -266,7 +267,7 @@ public class InternalPortTests(ITestOutputHelper output)
     {
         // The same claim PlanarSolve.IdentityBox makes for the delta gap, asked of the kind whose
         // cut is not even in the plane. Tolerant rather than exact because the ON path still passes
-        // through PlanarDeembed.Apply's LU — of the identity matrix.
+        // through LineDeembed.Apply's LU — of the identity matrix.
         var problem = LineWithGroundVia(8e-3, 2e9);
         var (x0, y0, x1, y1) = problem.Bounds();
 

@@ -447,7 +447,7 @@ but wrong numbers.
 > QUALITY MEASURE BELOW IT.**
 >
 > The two-line calibration is exact algebra, and at the bottom of a band it still publishes a number
-> that is 59 dB wrong. The reason is in `PlanarDeembed.Apply`, not in the calibration: the peel forms
+> that is 59 dB wrong. The reason is in `LineDeembed.Apply`, not in the calibration: the peel forms
 >
 > ```
 > Y = (S_meas − a₁₁) / a₂₁²
@@ -746,7 +746,7 @@ but wrong numbers.
 >   port's own declared Z₀.
 > - **It takes an IDENTITY error box** (a₁₁ = 0, a₂₂ = 0, a₂₁ = 1) and `Z_c = Z₀`, so the two kinds
 >   share one de-embedding path and one s-matrix without either pretending to be the other. That is
->   arithmetic which provably changes nothing — `PlanarDeembed.Apply` divides the mixed terms by
+>   arithmetic which provably changes nothing — `LineDeembed.Apply` divides the mixed terms by
 >   a₂₁(i)·a₂₁(j), so a unit a₂₁ also leaves a de-embedded NEIGHBOUR's terms untouched. Gated directly:
 >   the same problem solved with de-embedding on and off agrees to < 1e-12 on an internal port.
 > - **No automatic feed lead is grown for it** (R-fed-1 is about a calibration that does not happen

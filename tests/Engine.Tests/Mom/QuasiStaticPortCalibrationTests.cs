@@ -7,7 +7,7 @@
 // 3.8 mm DUT, 79,055 unknowns against a 12,000 ceiling, and the run refuses.
 //
 // The hole in the obvious fix, and this file exists partly to keep it shut: SUPPLYING γ DOES NOT BY
-// ITSELF REMOVE THE LONG STANDARDS. γ is already an input to PlanarDeembed.SolveErrorBox, and the
+// ITSELF REMOVE THE LONG STANDARDS. γ is already an input to LineDeembed.SolveErrorBox, and the
 // error box still needs two lines — one line gives two complex equations for three complex unknowns.
 // What a known γ buys is that Δℓ need not be ELECTRICALLY long, because the usable interval protects
 // the EXTRACTION of γ and nothing else. So Δℓ is sized from the substrate and the mesh instead, both
@@ -33,6 +33,7 @@ using CircuitRF.Engine.Tests.Mom.Support;
 using NumFlat;
 using Xunit;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
@@ -300,7 +301,7 @@ public sealed class QuasiStaticPortCalibrationTests(ITestOutputHelper output)
     private static List<Point> Deembed(
         PlanarProblem problem, PlanarMesh mesh, IReadOnlyList<PlanarPortResolution> ports,
         double fLo, double fHi, IReadOnlyList<double> freqs,
-        PlanarCalibration.PlanarSeparationPlan? plan, bool perfectConductor = false)
+        LineSeparationPlan? plan, bool perfectConductor = false)
     {
         var slab = problem.Slab;
         var eff  = plan ?? PlanarCalibration.SeparationPlan(slab, fLo, fHi, ports[0]);
@@ -326,8 +327,8 @@ public sealed class QuasiStaticPortCalibrationTests(ITestOutputHelper output)
             var c = cal.At(kernel, f, ports[0].Number);
 
             var raw = dut.RawScatteringAt(kernel, f);
-            var s   = PlanarDeembed.Renormalise(
-                PlanarDeembed.Apply(raw, [c.Box, c.Box]), [c.Zc, c.Zc], [50.0, 50.0]);
+            var s   = LineDeembed.Renormalise(
+                LineDeembed.Apply(raw, [c.Box, c.Box]), [c.Zc, c.Zc], [50.0, 50.0]);
 
             result.Add(new Point(f, c.Gamma.Gamma, c.Zc, c.Gamma.ElectricalDegrees,
                                  c.Box.ConsistencyResidual, c.Box.RejectedResidual, s,
@@ -382,7 +383,7 @@ public sealed class QuasiStaticPortCalibrationTests(ITestOutputHelper output)
         Assert.All(freqs, f => Assert.True(f <= cross, "every comparison point is below the crossover"));
 
         var measured = Deembed(problem, mesh, ports, fLo, fHi, freqs,
-            new PlanarCalibration.PlanarSeparationPlan(
+            new LineSeparationPlan(
                 PlanarCalibration.SuggestDeltas(slab, fLo, fHi), -1, cross));
         var quasi = Deembed(problem, mesh, ports, fLo, fHi, freqs, null);
 
@@ -390,7 +391,7 @@ public sealed class QuasiStaticPortCalibrationTests(ITestOutputHelper output)
         // the suite where the two calibration paths meet on one geometry, and therefore the only
         // thing that would ever notice an α that steps at the crossover.
         var measuredPec = Deembed(problem, mesh, ports, fLo, fHi, freqs,
-            new PlanarCalibration.PlanarSeparationPlan(
+            new LineSeparationPlan(
                 PlanarCalibration.SuggestDeltas(slab, fLo, fHi), -1, cross), perfectConductor: true);
         var quasiPec = Deembed(problem, mesh, ports, fLo, fHi, freqs, null, perfectConductor: true);
 
@@ -462,7 +463,7 @@ public sealed class QuasiStaticPortCalibrationTests(ITestOutputHelper output)
 
     /// <summary>
     /// <b>The one failure mode that does NOT degrade smoothly with Δℓ.</b>
-    /// <see cref="PlanarDeembed.SolveErrorBox"/> picks a₂₂'s sign by the redundant M₁₁ equation and
+    /// <see cref="LineDeembed.SolveErrorBox"/> picks a₂₂'s sign by the redundant M₁₁ equation and
     /// reports the rejected sign's residual; a ratio near 1 means the sign was decided by noise, and
     /// a wrong a₂₂ is a smooth, plausible, wrong answer.
     ///
@@ -499,7 +500,7 @@ public sealed class QuasiStaticPortCalibrationTests(ITestOutputHelper output)
         {
             double dl = heights * slab.HeightM;
             var pts = Deembed(problem, mesh, ports, 500e6, 6e9, freqs,
-                              new PlanarCalibration.PlanarSeparationPlan([dl], 0, cross));
+                              new LineSeparationPlan([dl], 0, cross));
 
             foreach (var p in pts)
             {

@@ -20,10 +20,11 @@ using CircuitRF.Engine.Mom;
 using NumFlat;
 using Xunit;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
-public sealed class PlanarModalCalibrationTests(ITestOutputHelper output)
+public sealed class ModalLineCalibrationTests(ITestOutputHelper output)
 {
     // ── the construction ──────────────────────────────────────────────────────────────────────
 
@@ -145,12 +146,12 @@ public sealed class PlanarModalCalibrationTests(ITestOutputHelper output)
         var a21 = Gen(rnd, n, 0.4);
         for (int i = 0; i < n; i++) a21[i, i] += 0.8;          // a feed is diagonally dominant
 
-        var tx = PlanarModalCalibration.SToT(Block(a11, Transpose(a21), a21, a22), n);
-        var f  = PlanarModalCalibration.Flip(n);
+        var tx = ModalLineCalibration.SToT(Block(a11, Transpose(a21), a21, a22), n);
+        var f  = ModalLineCalibration.Flip(n);
         var ty = f * Inv(tx) * f;
 
-        Mat<Complex> Std(double len) => PlanarModalCalibration.TToS(
-            tx * PlanarModalCalibration.SToT(Block(new Mat<Complex>(n, n), P(len), P(len),
+        Mat<Complex> Std(double len) => ModalLineCalibration.TToS(
+            tx * ModalLineCalibration.SToT(Block(new Mat<Complex>(n, n), P(len), P(len),
                                                    new Mat<Complex>(n, n)), n) * ty, n);
 
         return new Case(n, l1, l2, gamma, psi, a11, a21, a22, tx, ty, Std(l1), Std(l2));
@@ -190,7 +191,7 @@ public sealed class PlanarModalCalibrationTests(ITestOutputHelper output)
     public void TheMirrorErrorBoxIsTheFlippedInverse(int n)
     {
         var c = Build(n, 1);
-        var sy = PlanarModalCalibration.TToS(c.Ty, n);
+        var sy = ModalLineCalibration.TToS(c.Ty, n);
         double err = Diff(sy, Block(c.A22, c.A21, Transpose(c.A21), c.A11));
         output.WriteLine($"N={n}  |S_Y − mirror(S_X)| = {err:E2}");
         Assert.True(err < 1e-12, $"the mirror identity failed at {err:E2}");
@@ -205,12 +206,12 @@ public sealed class PlanarModalCalibrationTests(ITestOutputHelper output)
     public void TheBlockCascadeRoundTrips_AndAtOneConductorIsTheTwoPortOne(int n)
     {
         var c = Build(n, 2);
-        double trip = Diff(PlanarModalCalibration.TToS(PlanarModalCalibration.SToT(c.SShort, n), n), c.SShort);
+        double trip = Diff(ModalLineCalibration.TToS(ModalLineCalibration.SToT(c.SShort, n), n), c.SShort);
         Assert.True(trip < 1e-12, $"S→T→S drifted by {trip:E2}");
 
         if (n != 1) return;
         var rf = RfCore.RFNetwork.SToT2Port(c.SShort);
-        double same = Diff(PlanarModalCalibration.SToT(c.SShort, 1), rf);
+        double same = Diff(ModalLineCalibration.SToT(c.SShort, 1), rf);
         output.WriteLine($"block T vs RFNetwork.SToT2Port: {same:E2}");
         Assert.True(same < 1e-12, $"the block form is a different convention ({same:E2})");
     }
@@ -226,13 +227,13 @@ public sealed class PlanarModalCalibrationTests(ITestOutputHelper output)
     public void AtOneConductorTheReducedPolynomialIsHalfTheTrace()
     {
         var c = Build(1, 3);
-        var t1 = PlanarModalCalibration.SToT(c.SShort, 1);
-        var t2 = PlanarModalCalibration.SToT(c.SLong, 1);
+        var t1 = ModalLineCalibration.SToT(c.SShort, 1);
+        var t2 = ModalLineCalibration.SToT(c.SLong, 1);
         var m  = t2 * Inv(t1);
 
-        var tail = PlanarModalCalibration.ReducedPolynomial(
-            PlanarModalCalibration.CharacteristicPolynomial(m), 1);
-        Complex s = PlanarModalCalibration.Roots(tail)[0];
+        var tail = ModalLineCalibration.ReducedPolynomial(
+            ModalLineCalibration.CharacteristicPolynomial(m), 1);
+        Complex s = ModalLineCalibration.Roots(tail)[0];
         Complex trace = m[0, 0] + m[1, 1];
 
         output.WriteLine($"s = {s}, tr(M) = {trace}");
@@ -250,7 +251,7 @@ public sealed class PlanarModalCalibrationTests(ITestOutputHelper output)
     public void EveryModesPropagationConstantIsRecovered(int n, int seed)
     {
         var c = Build(n, seed);
-        var box = PlanarModalCalibration.Solve(c.SShort, c.SLong, c.L1, c.L2, Expect(c), Identity(n));
+        var box = ModalLineCalibration.Solve(c.SShort, c.SLong, c.L1, c.L2, Expect(c), Identity(n));
 
         double worst = 0;
         for (int m = 0; m < n; m++)
@@ -278,7 +279,7 @@ public sealed class PlanarModalCalibrationTests(ITestOutputHelper output)
     public void TheExternalReflectionIsRecoveredExactly(int n)
     {
         var c = Build(n, 4);
-        var box = PlanarModalCalibration.Solve(c.SShort, c.SLong, c.L1, c.L2, Expect(c), Identity(n));
+        var box = ModalLineCalibration.Solve(c.SShort, c.SLong, c.L1, c.L2, Expect(c), Identity(n));
         double err = Diff(box.A11, c.A11) / MaxAbs(c.A11);
         output.WriteLine($"N={n}  |ΔA11|/|A11| = {err:E2}");
         Assert.True(err < 1e-10, $"A11 is out by {err:E2}");
@@ -295,7 +296,7 @@ public sealed class PlanarModalCalibrationTests(ITestOutputHelper output)
     public void EveryReportedResidualVanishesOnExactData(int n, int seed)
     {
         var c = Build(n, seed);
-        var box = PlanarModalCalibration.Solve(c.SShort, c.SLong, c.L1, c.L2, Expect(c), Identity(n));
+        var box = ModalLineCalibration.Solve(c.SShort, c.SLong, c.L1, c.L2, Expect(c), Identity(n));
 
         output.WriteLine($"N={n} seed={seed}: palindrome {box.PalindromeResidual:E2}, " +
                          $"cascade {box.CascadeResidual:E2}, pair {box.ReciprocalPairResidual:E2}, " +
@@ -314,7 +315,7 @@ public sealed class PlanarModalCalibrationTests(ITestOutputHelper output)
     public void TheModalBoxIsReciprocal(int n)
     {
         var c = Build(n, 5);
-        var box = PlanarModalCalibration.Solve(c.SShort, c.SLong, c.L1, c.L2, Expect(c), Identity(n));
+        var box = ModalLineCalibration.Solve(c.SShort, c.SLong, c.L1, c.L2, Expect(c), Identity(n));
         double err = Diff(box.A12, Transpose(box.A21)) / MaxAbs(box.A21);
         output.WriteLine($"N={n}  |A12 − A21ᵀ|/|A21| = {err:E2}");
         Assert.True(err < 1e-10, $"the modal box is not reciprocal ({err:E2})");
@@ -341,13 +342,13 @@ public sealed class PlanarModalCalibrationTests(ITestOutputHelper output)
         var dutC = Sym(rnd, n, 0.6);
         var sDut = Block(dutA, Transpose(dutB), dutB, dutC);
 
-        var tMeas = c.Tx * PlanarModalCalibration.SToT(sDut, n) * c.Ty;
+        var tMeas = c.Tx * ModalLineCalibration.SToT(sDut, n) * c.Ty;
 
-        var box = PlanarModalCalibration.Solve(c.SShort, c.SLong, c.L1, c.L2, Expect(c), Identity(n));
-        var xs  = PlanarModalCalibration.SToT(Block(box.A11, box.A12, box.A21, box.A22), n);
-        var f   = PlanarModalCalibration.Flip(n);
+        var box = ModalLineCalibration.Solve(c.SShort, c.SLong, c.L1, c.L2, Expect(c), Identity(n));
+        var xs  = ModalLineCalibration.SToT(Block(box.A11, box.A12, box.A21, box.A22), n);
+        var f   = ModalLineCalibration.Flip(n);
         var ys  = f * Inv(xs) * f;
-        var rec = PlanarModalCalibration.TToS(Inv(xs) * tMeas * Inv(ys), n);
+        var rec = ModalLineCalibration.TToS(Inv(xs) * tMeas * Inv(ys), n);
 
         // modal → terminal is blkdiag(Ψ,Ψ)·S·blkdiag(Ψ,Ψ)⁻¹, up to one sign per mode
         double best = double.PositiveInfinity;
@@ -376,22 +377,22 @@ public sealed class PlanarModalCalibrationTests(ITestOutputHelper output)
         var rnd = new Random(97);
         const int p = 4;
         var raw = Sym(rnd, p, 0.9);
-        var boxes = new PlanarErrorBox[p];
+        var boxes = new LineErrorBox[p];
         for (int i = 0; i < p; i++)
-            boxes[i] = new PlanarErrorBox(
+            boxes[i] = new LineErrorBox(
                 new Complex(0.05 * i - 0.1, 0.03), new Complex(-0.2 + 0.04 * i, 0.05),
                 new Complex(0.8 - 0.05 * i, 0.1), 0, 0);
 
-        var scalar = PlanarDeembed.Apply(raw, boxes);
+        var scalar = LineDeembed.Apply(raw, boxes);
 
-        var blocks = new List<PlanarDeembed.PlanarBlockBox>();
+        var blocks = new List<LineBlockBox>();
         for (int i = 0; i < p; i++)
         {
             Mat<Complex> M(Complex v) { var m = new Mat<Complex>(1, 1); m[0, 0] = v; return m; }
-            blocks.Add(new PlanarDeembed.PlanarBlockBox([i], M(boxes[i].A11), M(boxes[i].A21),
+            blocks.Add(new LineBlockBox([i], M(boxes[i].A11), M(boxes[i].A21),
                                                         M(boxes[i].A21), M(boxes[i].A22)));
         }
-        var block = PlanarDeembed.ApplyBlocks(raw, blocks);
+        var block = LineDeembed.ApplyBlocks(raw, blocks);
 
         double err = Diff(scalar, block) / MaxAbs(scalar);
         output.WriteLine($"|Apply − ApplyBlocks|/|S| = {err:E2}");

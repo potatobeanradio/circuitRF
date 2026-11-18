@@ -3,7 +3,7 @@
 //
 // The geometry is the series' own coupled pair, driven at both ends of both conductors — the case
 // PCAL1 measured at 22 dB out in S₂₁ at 1 GHz and PCAL2 turned into a refusal. What is gated here is
-// the DECISION and the CONSTRUCTION; the algebra is `PlanarModalCalibrationTests`, on synthetic data
+// the DECISION and the CONSTRUCTION; the algebra is `ModalLineCalibrationTests`, on synthetic data
 // where the answer is known, and the accuracy measurement against the cross-section oracle lives in
 // `src/Engine/Mom/RESOLVED.md` because it needs seven frequencies of two kernels and costs minutes.
 
@@ -11,6 +11,7 @@ using CircuitRF.Engine.Mom;
 using CircuitRF.Engine.Tests.Mom.Support;
 using Xunit;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 

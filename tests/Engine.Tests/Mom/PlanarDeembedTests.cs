@@ -11,6 +11,7 @@ using CircuitRF.Engine.Mom;
 using CircuitRF.Engine.Tests.Mom.Support;
 using NumFlat;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
@@ -42,7 +43,7 @@ public class PlanarDeembedTests(ITestOutputHelper output)
         var third = PlanarCalibration.BuildLine(prt[0], cal.Standards[0].LengthM * 1.63, k);
         var sRaw  = new PlanarSolveContext(third.Mesh, third.Ports).RawScatteringAt(kernel, f);
 
-        var s = PlanarDeembed.Apply(sRaw, [c.Box, c.Box]);
+        var s = LineDeembed.Apply(sRaw, [c.Box, c.Box]);
 
         Complex expected = Complex.Exp(-c.Gamma.Gamma * third.LengthM);
         double phaseErr  = Math.Abs(s[1, 0].Phase - expected.Phase);
@@ -88,9 +89,9 @@ public class PlanarDeembedTests(ITestOutputHelper output)
         double lengthOne = one.LengthM;
         var two = PlanarCalibration.BuildLine(prt[0], 2 * lengthOne, k);
 
-        var s1 = PlanarDeembed.Apply(
+        var s1 = LineDeembed.Apply(
             new PlanarSolveContext(one.Mesh, one.Ports).RawScatteringAt(kernel, f), [c.Box, c.Box]);
-        var s2 = PlanarDeembed.Apply(
+        var s2 = LineDeembed.Apply(
             new PlanarSolveContext(two.Mesh, two.Ports).RawScatteringAt(kernel, f), [c.Box, c.Box]);
 
         // §10.9's own list: "a uniform line of length 2L must equal two cascaded lines of length L".
@@ -148,7 +149,7 @@ public class PlanarDeembedTests(ITestOutputHelper output)
             {
                 var st  = PlanarCalibration.BuildLine(prt[0], cal.Standards[0].LengthM * mult, k);
                 var raw = new PlanarSolveContext(st.Mesh, st.Ports).RawScatteringAt(kernel, f);
-                var s   = PlanarDeembed.Apply(raw, [c.Box, c.Box]);
+                var s   = LineDeembed.Apply(raw, [c.Box, c.Box]);
                 if (double.IsNaN(atOne)) atOne = s[0, 0].Magnitude;
 
                 _out.WriteLine($"    ℓ = {st.LengthM * 1e3,7:F3} mm ({st.LengthM / slab.HeightM,5:F1} h, " +
@@ -169,16 +170,16 @@ public class PlanarDeembedTests(ITestOutputHelper output)
     [Fact]
     public void T4_3_TheA21SignCancelsForIdenticalPorts_AndDoesNotForUnequalOnes()
     {
-        // Synthetic boxes: this is an algebraic claim about PlanarDeembed.Apply, so it is tested as
+        // Synthetic boxes: this is an algebraic claim about LineDeembed.Apply, so it is tested as
         // one rather than through a solve that could hide it.
         var s = new Mat<Complex>(2, 2);
         s[0, 0] = new Complex(0.31, -0.42);
         s[1, 1] = new Complex(-0.17, 0.55);
         s[0, 1] = s[1, 0] = new Complex(0.22, 0.38);
 
-        var a = new PlanarErrorBox(new Complex(0.11, -0.07), new Complex(-0.29, 0.13),
+        var a = new LineErrorBox(new Complex(0.11, -0.07), new Complex(-0.29, 0.13),
                                    new Complex(0.61, 0.24), 0, 0);
-        var b = new PlanarErrorBox(new Complex(-0.05, 0.19), new Complex(0.41, -0.08),
+        var b = new LineErrorBox(new Complex(-0.05, 0.19), new Complex(0.41, -0.08),
                                    new Complex(0.33, -0.52), 0, 0);
 
         var flipA = a with { A21 = -a.A21 };
@@ -186,8 +187,8 @@ public class PlanarDeembedTests(ITestOutputHelper output)
 
         // IDENTICAL ports: flipping BOTH is invisible, because Apply divides by a₂₁(i)·a₂₁(j) and an
         // identical pair contributes a₂₁², which the square root never resolved.
-        var same     = PlanarDeembed.Apply(s, [a, a]);
-        var sameFlip = PlanarDeembed.Apply(s, [flipA, flipA]);
+        var same     = LineDeembed.Apply(s, [a, a]);
+        var sameFlip = LineDeembed.Apply(s, [flipA, flipA]);
         for (int i = 0; i < 2; i++)
             for (int j = 0; j < 2; j++)
                 Assert.Equal(same[i, j].Real, sameFlip[i, j].Real, 14);
@@ -195,8 +196,8 @@ public class PlanarDeembedTests(ITestOutputHelper output)
 
         // UNEQUAL ports: flipping ONE is a hard π in S₂₁ and leaves S₁₁/S₂₂ alone — invisible in a
         // magnitude plot, which is exactly why the branch is carried across frequency instead.
-        var mixed     = PlanarDeembed.Apply(s, [a, b]);
-        var mixedFlip = PlanarDeembed.Apply(s, [a, flipB]);
+        var mixed     = LineDeembed.Apply(s, [a, b]);
+        var mixedFlip = LineDeembed.Apply(s, [a, flipB]);
         _out.WriteLine($"unequal ports: S₂₁ = {mixed[1, 0]:F6} → {mixedFlip[1, 0]:F6} on one flip");
 
         Assert.Equal(-mixed[1, 0].Real, mixedFlip[1, 0].Real, 12);
@@ -217,10 +218,10 @@ public class PlanarDeembedTests(ITestOutputHelper output)
         s[1, 1] = new Complex(-0.17, 0.55);
         s[0, 1] = s[1, 0] = new Complex(0.22, 0.38);
 
-        var a = new PlanarErrorBox(new Complex(0.11, -0.07), new Complex(-0.29, 0.13),
+        var a = new LineErrorBox(new Complex(0.11, -0.07), new Complex(-0.29, 0.13),
                                    new Complex(0.61, 0.24), 0, 0);
 
-        var mine = PlanarDeembed.Apply(s, [a, a]);
+        var mine = LineDeembed.Apply(s, [a, a]);
 
         // The same boxes as explicit 2-ports: A on the way in (external, internal) and its MIRROR on
         // the way out (internal, external).
@@ -413,7 +414,7 @@ public class PlanarDeembedTests(ITestOutputHelper output)
         var c   = cal.At(kernel, f);
 
         var raw = new PlanarSolveContext(mesh, ports).RawScatteringAt(kernel, f);
-        return (PlanarDeembed.Apply(raw, [c.Box, c.Box]), feed, c);
+        return (LineDeembed.Apply(raw, [c.Box, c.Box]), feed, c);
     }
 
     private static double KernelACPerMetre(GroundedSlab slab, double widthM)

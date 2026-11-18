@@ -45,6 +45,7 @@ using CircuitRF.Engine.Mom;
 using NumFlat;
 using Xunit;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
@@ -270,7 +271,7 @@ public sealed class Mim14DeembeddedFilmTests(ITestOutputHelper output)
         foreach (var pt in lineRun.Points)
         {
             var zc = new[] { pt.Calibrations[0].Zc, pt.Calibrations[^1].Zc };
-            var atZc = PlanarDeembed.Renormalise(pt.S, [50.0, 50.0], zc);
+            var atZc = LineDeembed.Renormalise(pt.S, [50.0, 50.0], zc);
             double sigma = RfCore.RFNetwork.Passivity(pt.S);
             _out.WriteLine($"through line at {pt.FrequencyHz / 1e9:F0} GHz: Zc = {zc[0]:F2} ohm, " +
                            $"|S11| in its own reference = {atZc[0, 0].Magnitude:E3}, " +

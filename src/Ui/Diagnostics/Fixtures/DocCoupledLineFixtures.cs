@@ -5,6 +5,7 @@ using CircuitRF.Design.Layout.Em;
 using CircuitRF.Ui.DataDisplay.ViewModels;
 using CircuitRF.Ui.Layout.Em;
 using CircuitRF.Ui.Views.DataDisplay;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Ui.Diagnostics.Fixtures;
 

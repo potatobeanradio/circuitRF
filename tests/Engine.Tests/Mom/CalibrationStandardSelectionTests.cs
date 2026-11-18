@@ -4,7 +4,7 @@
 // and the reason is not that a standard is expensive per se — it is that EVERY standard was filled at
 // EVERY frequency while exactly two of them were ever read.
 //
-// PlanarCalibration.GammaBest reads sShort and sLong[pick]. `pick` comes from SelectSeparation, which
+// LineCalibration.GammaBest reads sShort and sLong[pick]. `pick` comes from SelectSeparation, which
 // is a function of the Δℓ set and the PREDICTED β alone — no solved matrix enters it, deliberately
 // (an aliased separation reports a wrapped electrical length that can score well by accident, so the
 // choice is made on the prediction). Both inputs are known before any fill. So the driver can fill
@@ -25,6 +25,7 @@ using CircuitRF.Engine.Mom;
 using CircuitRF.Engine.Tests.Mom.Support;
 using NumFlat;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
@@ -93,9 +94,9 @@ public class CalibrationStandardSelectionTests(ITestOutputHelper output)
                 : prevBeta * (f / prevF);
 
             var raw  = ctxs.Select(c => c.RawScatteringAt(kernel, f)).ToArray();
-            var full = PlanarCalibration.GammaBest(raw[0], raw[1..], delta, expect, out int pick);
-            var box  = PlanarDeembed.SolveErrorBox(raw[0], raw[pick + 1], set[0].LengthM,
-                                                   set[0].LengthM + delta[pick], full.Gamma, prevA21);
+            var full = LineCalibration.GammaBest(raw[0], raw[1..], delta, expect, out int pick);
+            var box  = LineDeembed.SolveErrorBox(raw[0], raw[pick + 1], set[0].LengthM,
+                                                 set[0].LengthM + delta[pick], full.Gamma, prevA21);
 
             Assert.Equal(full.Gamma.Real,      got.Gamma.Gamma.Real);
             Assert.Equal(full.Gamma.Imaginary, got.Gamma.Gamma.Imaginary);
@@ -150,7 +151,7 @@ public class CalibrationStandardSelectionTests(ITestOutputHelper output)
 
         var picked = new HashSet<int>();
         foreach (double f in Grid(FLo, FHi, 9))
-            picked.Add(PlanarCalibration.SelectSeparation(
+            picked.Add(LineCalibration.SelectSeparation(
                 delta, PlanarCalibration.EstimateBeta(p.Slab, f)));
 
         Assert.True(picked.Count > 1,

@@ -17,6 +17,7 @@ using System.Globalization;
 using System.Numerics;
 using NumFlat;
 using RfCore;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Mom;
 
@@ -400,7 +401,7 @@ public sealed class PlanarSolveContext
 /// Z_c, and the transformation back to the terminal ports the user asked for.
 /// </summary>
 /// <param name="Box">The N×N error box, in the modal basis whose gauge
-/// <see cref="PlanarModalCalibration"/> fixed and whose SIGNS it agreed with <paramref name="Tv"/>
+/// <see cref="ModalLineCalibration"/> fixed and whose SIGNS it agreed with <paramref name="Tv"/>
 /// about.</param>
 /// <param name="Zc">Z_c,m per mode — D7's γ/(jωC) with a modal C.</param>
 /// <param name="Tv">The voltage modal matrix: column m is mode m's terminal voltage pattern.</param>
@@ -409,7 +410,7 @@ public sealed class PlanarSolveContext
 /// frequency — one mode outside it makes the whole group's box unusable, because the box is
 /// solved from all of them at once.</param>
 public sealed record PlanarGroupCalibration(
-    PlanarModalErrorBox    Box,
+    ModalErrorBox    Box,
     IReadOnlyList<Complex> Zc,
     Mat<double>            Tv,
     IReadOnlyList<double>  ReportedZcScale,
@@ -433,13 +434,15 @@ public sealed class PlanarPortCalibrator
 
     private readonly InteriorStaticModel? _interiorModel;
     private double   _cPerMetre = double.NaN;   // quasi-static: computed once, reused (D7)
-    private double   _prevBeta  = double.NaN;
-    private Complex? _prevA21;
+
+    // PWL-1 — the branch state (β prediction, a₂₁'s sign, each mode's γ) lives in the shared calibrator; this class keeps
+    // what is planar: the standards' meshes and solves, the quasi-static path and the conducting substrate's estimates.
+    private readonly LineCalibrator _line;
 
     // ── QSC — which separations are measured, which one is the short quasi-static one, and the
     //    crossover they were drawn at. Built once in the constructor from the port and the band;
     //    `_plan.IsQuasiStaticAt(f)` is the ONE place a frequency's path is decided. ─────────────
-    private readonly PlanarCalibration.PlanarSeparationPlan _plan;
+    private readonly LineSeparationPlan _plan;
     private PlanarQuasiStaticLine? _qsLine;
 
     // ── SI-SIG — a conducting substrate's capacitance depends on frequency, so what is built once
@@ -587,7 +590,7 @@ public sealed class PlanarPortCalibrator
                                 double standardLevelZ = double.NaN,
                                 IReadOnlyList<PlanarStandard>? standards = null,
                                 LayerStack? mediumStack = null,
-                                PlanarCalibration.PlanarSeparationPlan? separations = null,
+                                LineSeparationPlan? separations = null,
                                 string standardLayerName = PlanarCalibration.DefaultLayerName,
                                 PlanarSubstrateReturn? substrateReturn = null)
     {
@@ -637,6 +640,12 @@ public sealed class PlanarPortCalibrator
         _deltas      = new double[set.Length - 1];
         for (int i = 1; i < set.Length; i++) _deltas[i - 1] = set[i].LengthM - set[0].LengthM;
 
+        // SI-LOW — a stack with a substrate return predicts every point from its own estimate; β does not scale with
+        // frequency there. Every other port predicts from the previous point, seeded from (εᵣ+1)/2.
+        _line = new LineCalibrator(_shortLength, _deltas,
+                                   _substrate is { } sub ? sub.EstimatedBetaAt : f => PlanarCalibration.EstimateBeta(_slab, f),
+                                   predictFromHistory: _substrate is null);
+
         // PCAL3 — a widened standard's neighbour spans the standard's WHOLE meshed length, open at
         // both ends, so its own half-wave resonances are at βL = nπ. The span is a property of the
         // mesh and is taken once here; whether a frequency is near one is asked per frequency, from
@@ -661,7 +670,6 @@ public sealed class PlanarPortCalibrator
     //    exists on a run that passes today. ──────────────────────────────────────────────────────
     private readonly IReadOnlyList<int>? _groupPorts;
     private PlanarModalMedium?           _medium;
-    private Complex[]?                   _prevGamma;
 
     /// <summary>PCAL4 — does this calibrator own a multi-conductor group's standard set?</summary>
     public bool IsGroup => _groupPorts is not null;
@@ -689,7 +697,7 @@ public sealed class PlanarPortCalibrator
     /// <b>PCAL4/R-pcal4-6 — the group's mode separation at one frequency, from the ELECTROSTATICS,
     /// before any Green's-function fit.</b> The smallest |β_i − β_j|·Δℓ over mode pairs, in degrees,
     /// over the separation that frequency would select. It is the quantity the measured
-    /// <see cref="PlanarModalErrorBox.ModeSeparationDegrees"/> reports, asked of the quasi-static
+    /// <see cref="ModalErrorBox.ModeSeparationDegrees"/> reports, asked of the quasi-static
     /// modes instead — available at setup, so a group that cannot be calibrated is refused before
     /// the sweep is paid for rather than in the middle of it.
     /// </summary>
@@ -739,36 +747,14 @@ public sealed class PlanarPortCalibrator
 
         var medium = Medium();
         int n = medium.ModeCount;
-        double dl = _deltas[pick];
 
-        // The prediction: the previous frequency's own β per mode scaled by frequency, or the
-        // electrostatic estimate at the first point. It is the ONLY thing that assigns a measured
-        // mode to a mode of the cross-section, so it is per mode and never an average.
-        var expect = new double[n];
-        for (int m = 0; m < n; m++)
-            expect[m] = (_prevGamma is null ? medium.Beta(fHz, m)
-                                            : _prevGamma[m].Imaginary * (fHz / _prevF)) * dl;
-
-        var box = PlanarModalCalibration.Solve(sShort, sLong, _shortLength, _shortLength + dl,
-                                               expect, medium.Tv);
-
-        _prevGamma = [.. box.Gamma];
-        _prevF     = fHz;
-
-        // SelectSeparation and the branch prediction below both need ONE β for the group; the mean
-        // over modes is what they get, and it only has to be right to ~20% for either.
-        double mean = 0;
-        for (int m = 0; m < n; m++) mean += box.Gamma[m].Imaginary;
-        _prevBeta = mean / n;
+        // The prediction per mode (the previous frequency's own β scaled by frequency, or the electrostatic estimate at
+        // the first point) and the mean that becomes the scalar prediction are the shared calibrator's.
+        var box = _line.ModalAt(fHz, sShort, sLong, pick, m => medium.Beta(fHz, m), medium.Tv);
 
         var zc = new Complex[n];
-        bool usable = true;
-        for (int m = 0; m < n; m++)
-        {
-            zc[m] = medium.Zc(box.Gamma[m], fHz, m);
-            usable &= box.ElectricalDegrees[m] >= PlanarCalibrationSettings.UsableLoDegrees
-                   && box.ElectricalDegrees[m] <= PlanarCalibrationSettings.UsableHiDegrees;
-        }
+        for (int m = 0; m < n; m++) zc[m] = medium.Zc(box.Gamma[m], fHz, m);
+        bool usable = LineCalibrator.Usable(box);
 
         return new PlanarGroupCalibration(box, zc, medium.Tv,
                                           medium.ReportedZcScale, medium.ModeCouplingResidual, usable);
@@ -855,7 +841,6 @@ public sealed class PlanarPortCalibrator
             work.Commit();
         }
 
-        double expect = ExpectedBeta(fHz);
         int    pick   = SelectedIndexAt(fHz);
 
         var slots  = _rawCache[fHz];
@@ -875,7 +860,7 @@ public sealed class PlanarPortCalibrator
         // array that is null everywhere except at `pick`. Same rule, same arithmetic, asked once.
         var g = quasi
             ? QuasiStaticLineAt(fHz).ResultAt(fHz, _deltas[pick])
-            : PlanarCalibration.Gamma(sShort, sLong, _deltas[pick], expect * _deltas[pick]);
+            : _line.MeasureGamma(sShort, sLong, pick, fHz);
 
         // The branch continuation is stepped on BOTH paths. It is what the first measured point
         // above the crossover predicts from, and the quasi-static β is a better prediction than
@@ -889,10 +874,7 @@ public sealed class PlanarPortCalibrator
         // SI-LOW — a stack with a substrate return predicts from ExpectedBeta's history-free estimate, so
         // what is stored here is not read and no sweep's answer depends on the point before it.
         if (!quasi || fHz < _skinOnsetHz)
-        {
-            _prevBeta = g.Beta;
-            _prevF    = fHz;
-        }
+            _line.StepBranch(g.Beta, fHz);
 
 
         // ── P2/M3 — the two standards' cores are already built; do not build them a second time ──
@@ -931,31 +913,29 @@ public sealed class PlanarPortCalibrator
         {
             Complex cStar = ComplexCapacitanceAt(fHz, quasi);
             cPerMetre = cStar.Real;
-            zc = PlanarDeembed.CharacteristicImpedance(g.Gamma, cStar, fHz);
+            zc = LineDeembed.CharacteristicImpedance(g.Gamma, cStar, fHz);
         }
         else
         {
-            zc = PlanarDeembed.CharacteristicImpedance(g.Gamma, _cPerMetre, fHz);
+            zc = LineDeembed.CharacteristicImpedance(g.Gamma, _cPerMetre, fHz);
         }
 
         // LFE — a GROUNDED edge port's box is nearly transparent, so on the quasi-static path's short
         // standards the general solve's a₂₂ is noise; it is solved as the lumped section it is
-        // (PlanarDeembed.SolveLumpedErrorBox says why). C_pul is therefore needed FIRST, which is why
+        // (LineDeembed.SolveLumpedErrorBox says why). C_pul is therefore needed FIRST, which is why
         // the block above moved ahead of the box — it never depended on the box.
         var stdPort = _standards[0].Ports[0];
-        PlanarErrorBox box;
+        LineErrorBox box;
         if (quasi && _standards[0].Settings.EdgePortGroundedAt(fHz) && PlanarGroundedEdgePort.Applies(stdPort))
         {
-            box = PlanarDeembed.SolveLumpedErrorBox(sShort, sLong, _shortLength, _shortLength + _deltas[pick],
-                                                    g.Gamma, zc, stdPort.Z0);
+            box = LineDeembed.SolveLumpedErrorBox(sShort, sLong, _shortLength, _shortLength + _deltas[pick],
+                                                  g.Gamma, zc, stdPort.Z0);
         }
         else
         {
-            box = PlanarDeembed.SolveErrorBox(sShort, sLong, _shortLength,
-                                              _shortLength + _deltas[pick], g.Gamma, _prevA21);
             // The branch continuation belongs to the GENERAL box: a lumped box's a₂₁ is fixed by
             // its own physics and must not seed or reset it.
-            _prevA21 = box.A21;
+            box = _line.SolveBox(sShort, sLong, pick, g.Gamma);
         }
 
         return new PlanarPortCalibration(
@@ -963,8 +943,6 @@ public sealed class PlanarPortCalibrator
             NeighbourResonanceDegrees(g.Beta, pick),
             quasi ? PlanarCalibrationSource.QuasiStatic : PlanarCalibrationSource.Measured);
     }
-
-    private double _prevF;
 
     /// <summary>
     /// <b>M2/R-emp-9 — the independent RAW solves this calibrator owes at one frequency, handed back
@@ -1016,7 +994,7 @@ public sealed class PlanarPortCalibrator
     /// prediction selects.</b> Never all of them.
     ///
     /// <para><b>This is the whole of the calibration saving, and it is a pure bookkeeping change: the
-    /// matrices no longer solved were never read.</b> <see cref="PlanarCalibration.GammaBest"/> reads
+    /// matrices no longer solved were never read.</b> <see cref="LineCalibration.GammaBest"/> reads
     /// <c>sShort</c> and <c>sLong[pick]</c> and nothing else, and <c>pick</c> is a function of the Δℓ
     /// set and the PREDICTED β alone — both known before any fill. Solving the rest and discarding
     /// them was the single largest avoidable cost in a de-embedded sweep: the separations are sized
@@ -1080,12 +1058,12 @@ public sealed class PlanarPortCalibrator
         var measured = n == _deltas.Length ? _deltas : _deltas[..n];
 
         if (_groupPorts is null)
-            return PlanarCalibration.SelectSeparation(measured, ExpectedBeta(fHz));
+            return LineCalibration.SelectSeparation(measured, ExpectedBeta(fHz));
 
         var medium = Medium();
         double mean = 0;
         for (int m = 0; m < medium.ModeCount; m++) mean += medium.Beta(fHz, m);
-        return PlanarCalibration.SelectSeparation(measured, mean / medium.ModeCount);
+        return LineCalibration.SelectSeparation(measured, mean / medium.ModeCount);
     }
 
     /// <summary>
@@ -1217,10 +1195,7 @@ public sealed class PlanarPortCalibrator
     /// previous point's measured β scaled by frequency, or the pre-solve estimate at the first.
     /// <para>SI-LOW — on a stack with a substrate return, that estimate at every point. β does not scale with
     /// frequency there: scaling it overshot enough at 40 GHz on 1 Ω·cm to pick the wrong 2π branch.</para></summary>
-    private double ExpectedBeta(double fHz) =>
-        _substrate is { } s ? s.EstimatedBetaAt(fHz)
-        : double.IsNaN(_prevBeta) ? PlanarCalibration.EstimateBeta(_slab, fHz)
-                                  : _prevBeta * (fHz / _prevF);
+    private double ExpectedBeta(double fHz) => _line.ExpectedBeta(fHz);
 
     /// <summary>
     /// L9e/M1 — the standards' RAW scattering per frequency, <b>one slot per standard, null where it
@@ -1257,10 +1232,7 @@ public sealed class PlanarPortCalibrator
     /// </summary>
     public void RestartBranchContinuation()
     {
-        _prevBeta  = double.NaN;
-        _prevF     = 0;
-        _prevA21   = null;
-        _prevGamma = null;
+        _line.Restart();
     }
 
     /// <summary>
@@ -1835,7 +1807,7 @@ public static class PlanarSolve
     // Measured, in |ΔS|, against the uniform-line control — the only oracle here that smuggles in no
     // second model, because a de-embedded S₁₁ on a plain line must be exactly 0. Across three
     // stacks, four mesh densities, five separations and three decades of frequency the realised
-    // error came out at 0.73-1.06 times PlanarErrorBox.DeembedErrorFloor, so a threshold ON the
+    // error came out at 0.73-1.06 times LineErrorBox.DeembedErrorFloor, so a threshold ON the
     // floor IS a threshold on |ΔS| (src/Engine/Mom/RESOLVED.md §PEEL).
     //
     // BOTH NUMBERS ARE ANCHORED ON WHAT A PERFECT MATCH GETS PUBLISHED AS, which is the defect that
@@ -1880,7 +1852,7 @@ public static class PlanarSolve
         double WorstFloor, double WorstHz, double BudgetMetAboveHz);
 
     /// <summary>
-    /// <b>PEEL — the worst <see cref="PlanarErrorBox.DeembedErrorFloor"/> over a point's ports</b>,
+    /// <b>PEEL — the worst <see cref="LineErrorBox.DeembedErrorFloor"/> over a point's ports</b>,
     /// and 0 on a point that carries no calibration at all (the 0 Hz row and LF2's substituted ones,
     /// which are not de-embedded and must never be dropped for a de-embedding diagnostic).
     /// </summary>
@@ -1888,7 +1860,7 @@ public static class PlanarSolve
 
     /// <summary>
     /// <b>LFP — the worst floor over a point's ports, WITH the term that set it.</b> The two terms
-    /// <see cref="PlanarErrorBox.DeembedErrorFloor"/> takes the larger of obey different frequency
+    /// <see cref="LineErrorBox.DeembedErrorFloor"/> takes the larger of obey different frequency
     /// laws — the standards' share falls as 1/f and the DUT's as 1/f² — so the band edge the remedy
     /// sentence offers cannot be extrapolated without knowing which one is binding here.
     /// </summary>
@@ -1963,7 +1935,7 @@ public static class PlanarSolve
     /// version of this note was eight sentences of mechanism — a₂₁ ∝ ω, the peel's division, why
     /// <c>DeembedResidual</c> is anti-correlated — and a designer would not have read any of it.
     /// None of that is lost; it lives in this file's own comments, in
-    /// <see cref="PlanarErrorBox.DeembedErrorFloor"/> and in <c>RESOLVED.md</c> §PEEL, which are
+    /// <see cref="LineErrorBox.DeembedErrorFloor"/> and in <c>RESOLVED.md</c> §PEEL, which are
     /// where someone asking "why" will look. The run's notes are for someone asking "what do I
     /// do".</para>
     ///
@@ -2005,12 +1977,12 @@ public static class PlanarSolve
 
     /// <summary>
     /// <b>The error box of a port that has no error box</b> — a₁₁ = 0, a₂₂ = 0, a₂₁ = 1, i.e. a
-    /// through. An internal delta gap takes this, which makes <see cref="PlanarDeembed.Apply"/>'s
+    /// through. An internal delta gap takes this, which makes <see cref="LineDeembed.Apply"/>'s
     /// algebra the identity on that port's row and column while every de-embedded port beside it is
     /// peeled exactly as before. The residuals are zero because nothing was fitted: no standard was
     /// solved, no sign was chosen, and there is nothing for a consistency check to be about.
     /// </summary>
-    private static readonly PlanarErrorBox IdentityBox =
+    private static readonly LineErrorBox IdentityBox =
         new(Complex.Zero, Complex.Zero, Complex.One, 0, 0);
 
     /// <summary>
@@ -3493,14 +3465,14 @@ public static class PlanarSolve
                     return (res, cals, sw.Elapsed.TotalMilliseconds);
                 }
 
-                var boxes = new PlanarErrorBox[ports.Count];
+                var boxes = new LineErrorBox[ports.Count];
                 var zc    = new Complex[ports.Count];
                 var gam   = new Complex[ports.Count];
                 for (int i = 0; i < ports.Count; i++)
                 {
                     // ── AN INTERNAL DELTA GAP PASSES THROUGH, EXACTLY ───────────────────────────
                     //
-                    // The identity error box (a₁₁ = 0, a₂₂ = 0, a₂₁ = 1) makes PlanarDeembed.Apply's
+                    // The identity error box (a₁₁ = 0, a₂₂ = 0, a₂₁ = 1) makes LineDeembed.Apply's
                     // algebra the identity on this port's row and column — y[i,j] divides by
                     // a₂₁(i)·a₂₁(j), so a unit a₂₁ leaves the mixed terms of a de-embedded neighbour
                     // untouched too, which is what lets the two kinds share one s-matrix. Zc = the
@@ -3530,7 +3502,7 @@ public static class PlanarSolve
 
                 // R-fed-2 — the lead comes off BEFORE renormalisation: "matched" means matched in
                 // Z_c, which is the reference Apply hands back and the one the section is uniform in.
-                var atZc = PlanarFeedExtension.Peel(PlanarDeembed.Apply(raw, boxes), peelM, gam);
+                var atZc = PlanarFeedExtension.Peel(LineDeembed.Apply(raw, boxes), peelM, gam);
                 // LFE — the box solves state S in the line's own PSEUDO-wave reference (a matched
                 // line reads [[0, x], [x, 0]]), so the grounded path renormalises in that convention.
                 // The series path keeps its pre-LFE arithmetic bit for bit; PlanarDeembed's own note
@@ -3540,8 +3512,8 @@ public static class PlanarSolve
                 // with γ and Z_c both right). No material states σ on any run that takes the old path.
                 s = fillSt.EdgePortReturn == PlanarEdgePortReturn.Ground
                     || problem.EffectiveStack.Conducts
-                    ? PlanarDeembed.RenormalisePseudoWave(atZc, zc, z0)
-                    : PlanarDeembed.Renormalise(atZc, zc, z0);
+                    ? LineDeembed.RenormalisePseudoWave(atZc, zc, z0)
+                    : LineDeembed.Renormalise(atZc, zc, z0);
             }
             return (s, cals, sw.Elapsed.TotalMilliseconds);
         }
@@ -3549,7 +3521,7 @@ public static class PlanarSolve
         /// <summary>
         /// <b>PCAL4 — the peel when at least one calibration group is present.</b> The group's rows
         /// and columns of the de-embedded matrix are MODAL ports at their own Z_c,m; every other
-        /// port's are what they always were. <see cref="PlanarDeembed.ModalToTerminal"/> turns the
+        /// port's are what they always were. <see cref="LineDeembed.ModalToTerminal"/> turns the
         /// first back into the terminal ports the user asked for and renormalises the lot in one
         /// step, through Z, because the modal-to-terminal half is a change of port VARIABLES and has
         /// no meaning as a renormalisation.
@@ -3560,7 +3532,7 @@ public static class PlanarSolve
                                      List<PlanarPortCalibration> cals)
         {
             int p = ports.Count;
-            var blocks    = new List<PlanarDeembed.PlanarBlockBox>(p);
+            var blocks    = new List<LineBlockBox>(p);
             var zModal    = new Complex[p];
             var gam       = new Complex[p];
             var transform = new Mat<Complex>(p, p);
@@ -3581,7 +3553,7 @@ public static class PlanarSolve
                             $"Calibration group port {g.PortNumbers[k]} is not in the run's port list.");
                 }
 
-                blocks.Add(new PlanarDeembed.PlanarBlockBox(slot, gc.Box.A11, gc.Box.A12,
+                blocks.Add(new LineBlockBox(slot, gc.Box.A11, gc.Box.A12,
                                                             gc.Box.A21, gc.Box.A22));
                 for (int k = 0; k < g.ConductorCount; k++)
                 {
@@ -3626,13 +3598,13 @@ public static class PlanarSolve
                     && !flaggedResonance.Contains(f)) flaggedResonance.Add(f);
             }
 
-            var atZc = PlanarFeedExtension.Peel(PlanarDeembed.ApplyBlocks(raw, blocks), peelM, gam);
-            return PlanarDeembed.ModalToTerminal(atZc, transform, zModal, z0);
+            var atZc = PlanarFeedExtension.Peel(LineDeembed.ApplyBlocks(raw, blocks), peelM, gam);
+            return LineDeembed.ModalToTerminal(atZc, transform, zModal, z0);
 
-            static PlanarDeembed.PlanarBlockBox One(int index, PlanarErrorBox b)
+            static LineBlockBox One(int index, LineErrorBox b)
             {
                 Mat<Complex> M(Complex v) { var m = new Mat<Complex>(1, 1); m[0, 0] = v; return m; }
-                return new PlanarDeembed.PlanarBlockBox([index], M(b.A11), M(b.A21), M(b.A21), M(b.A22));
+                return new LineBlockBox([index], M(b.A11), M(b.A21), M(b.A21), M(b.A22));
             }
         }
 
@@ -4977,7 +4949,7 @@ public static class PlanarSolve
     /// drift; one function producing one string that both surfaces can carry is not.</para>
     /// </summary>
     /// <param name="excess">The worst σ_max − 1 over the sweep: how much gain has to be explained.</param>
-    /// <param name="peelErrorFloor">The worst <see cref="PlanarErrorBox.DeembedErrorFloor"/> over the
+    /// <param name="peelErrorFloor">The worst <see cref="LineErrorBox.DeembedErrorFloor"/> over the
     /// sweep — the peel's own estimate of its own error, in |S|, and therefore the one number that
     /// can say whether the de-embedding is even capable of accounting for the excess.</param>
     /// <param name="pair">The worst adjacent level pair, when the mesh has one.</param>

@@ -27,6 +27,7 @@ using CircuitRF.Engine.Tests.Mom.Support;
 using NumFlat;
 using Xunit;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
@@ -173,8 +174,8 @@ public sealed class GroundedEdgePortTests(ITestOutputHelper output)
         }
 
         var sShort = Standard(l1);
-        var box = PlanarDeembed.SolveLumpedErrorBox(sShort, Standard(l2), l1, l2, gamma, zc, z0);
-        var bare = PlanarDeembed.Apply(sShort, [box, box]);
+        var box = LineDeembed.SolveLumpedErrorBox(sShort, Standard(l2), l1, l2, gamma, zc, z0);
+        var bare = LineDeembed.Apply(sShort, [box, box]);
         Complex x = Complex.Exp(-gamma * l1);
 
         output.WriteLine($"{fHz / 1e9:g} GHz: a11 {box.A11:e3}  a21 {box.A21}  residual×|a11| " +
@@ -262,8 +263,8 @@ public sealed class GroundedEdgePortTests(ITestOutputHelper output)
         {
             var kernel = PlanarLineFixtures.Kernel(slab, f);
             var c = cals.Select((cal, i) => cal.At(kernel, f, i + 1)).ToArray();
-            var atZc = PlanarDeembed.Apply(dut.RawScatteringAt(kernel, f), [c[0].Box, c[1].Box]);
-            var s = PlanarDeembed.RenormalisePseudoWave(atZc, [c[0].Zc, c[1].Zc], [50.0, 50.0]);
+            var atZc = LineDeembed.Apply(dut.RawScatteringAt(kernel, f), [c[0].Box, c[1].Box]);
+            var s = LineDeembed.RenormalisePseudoWave(atZc, [c[0].Zc, c[1].Zc], [50.0, 50.0]);
             outv.Add(Line(s, lengthM, f));
         }
         return [.. outv];

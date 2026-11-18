@@ -10,6 +10,7 @@
 
 using System.Numerics;
 using RfCore.Data;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Mom;
 
@@ -32,13 +33,13 @@ public readonly record struct PlanarPortBox(Complex A11, Complex A21, Complex A2
     {
         double root = Math.Sqrt(z0);
         Complex v = root * (a + b), i = (a - b) / root;
-        // The line's own reference, as PlanarDeembed.Renormalise or RenormalisePseudoWave put it there.
+        // The line's own reference, as LineDeembed.Renormalise or RenormalisePseudoWave put it there.
         Complex scale = pseudoWave ? Complex.Sqrt(Zc) : new Complex(Math.Sqrt(Zc.Real), 0);
         Complex back = pseudoWave ? Zc : Complex.Conjugate(Zc);
         Complex aPlane = (v + Zc * i) / (2 * scale), bPlane = (v - back * i) / (2 * scale);
         // PlanarFeedExtension.Peel took e^{+θ} off each way, so a wave into the block left the box e^{+θ} ago and one out of it arrives there e^{−θ} later.
         Complex aInner = aPlane * Complex.Exp(Peel), bInner = bPlane * Complex.Exp(-Peel);
-        // PlanarDeembed.Apply's bookkeeping: a_i = a21·a_e + a22·b_i and b_e = a11·a_e + a21·b_i.
+        // LineDeembed.Apply's bookkeeping: a_i = a21·a_e + a22·b_i and b_e = a11·a_e + a21·b_i.
         Complex aGap = (aInner - A22 * bInner) / A21;
         return (aGap, A11 * aGap + A21 * bInner);
     }

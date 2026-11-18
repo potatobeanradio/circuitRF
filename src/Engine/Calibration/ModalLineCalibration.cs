@@ -1,5 +1,8 @@
 // PCAL4 — D5 AND D6 WHEN THE PORT REGION CARRIES MORE THAN ONE MODE.
 //
+// PWL-1 moved this file out of `Mom/` unchanged in arithmetic (it was `PlanarModalCalibration`), so the planar solver
+// and the 3D solvers share it. The medium it is handed — Tv, and each mode's quasi-static β — is the caller's.
+//
 // `docs/sonnet-briefs/brief-portcal-4-modal-error-box.md`. Two ports on conductors that are coupled
 // at the reference plane support TWO modes there, with different γ and different Z_c, and no
 // assignment of scalars to those two ports can represent that — which is D6's wall, stated in the
@@ -117,7 +120,7 @@
 using System.Numerics;
 using NumFlat;
 
-namespace CircuitRF.Engine.Mom;
+namespace CircuitRF.Engine.Calibration;
 
 /// <summary>
 /// One calibration GROUP's error box at one frequency: everything between the group's N delta-gap
@@ -162,7 +165,7 @@ namespace CircuitRF.Engine.Mom;
 /// which they disagree by 15 % has a perfectly good de-embedding and a reference impedance that is
 /// 15 % out, and the two should never be read as one figure of merit.
 /// </param>
-public sealed record PlanarModalErrorBox(
+public sealed record ModalErrorBox(
     Mat<Complex> A11,
     Mat<Complex> A12,
     Mat<Complex> A21,
@@ -187,7 +190,7 @@ public sealed record PlanarModalErrorBox(
 /// for the one structural fact (mirror-image error boxes) that makes it a closed form rather than a
 /// multiline-TRL optimisation.
 /// </summary>
-public static class PlanarModalCalibration
+public static class ModalLineCalibration
 {
     // ══════════════════════════════════════════════════════════════════════════════════════════
     // The 2N-port wave cascade. [b_L; a_L] = T·[a_R; b_R] — the BLOCK form of
@@ -380,7 +383,7 @@ public static class PlanarModalCalibration
     /// derived from it) and the per-mode SIGN, which no bilinear condition can supply. It does not
     /// enter γ, the error box, or any residual.
     /// </param>
-    public static PlanarModalErrorBox Solve(
+    public static ModalErrorBox Solve(
         Mat<Complex> sShort, Mat<Complex> sLong, double lShortM, double lLongM,
         IReadOnlyList<double> expectedBetaDeltaL, Mat<double> tv)
     {
@@ -422,14 +425,14 @@ public static class PlanarModalCalibration
         var preLong  = symLong;
         Mat<Complex>? xHat = null;
 
-        var crude = new PlanarErrorBox[n];
+        var crude = new LineErrorBox[n];
         bool usable = true;
         for (int q = 0; q < n && usable; q++)
         {
             var a = Pair(symShort, q, n);
             var c2 = Pair(symLong,  q, n);
-            var g = PlanarCalibration.Gamma(a, c2, dl);
-            var box = PlanarDeembed.SolveErrorBox(a, c2, lShortM, lLongM, g.Gamma);
+            var g = LineCalibration.Gamma(a, c2, dl);
+            var box = LineDeembed.SolveErrorBox(a, c2, lShortM, lLongM, g.Gamma);
             crude[q] = box;
             usable = double.IsFinite(box.A11.Magnitude) && double.IsFinite(box.A22.Magnitude)
                   && box.A21.Magnitude > 0 && double.IsFinite(box.A21.Magnitude);
@@ -437,10 +440,10 @@ public static class PlanarModalCalibration
 
         if (usable)
         {
-            var both = new PlanarErrorBox[2 * n];
+            var both = new LineErrorBox[2 * n];
             for (int q = 0; q < n; q++) { both[q] = crude[q]; both[n + q] = crude[q]; }
-            var ps = PlanarDeembed.Apply(symShort, both);
-            var pl = PlanarDeembed.Apply(symLong,  both);
+            var ps = LineDeembed.Apply(symShort, both);
+            var pl = LineDeembed.Apply(symLong,  both);
             if (IsFinite(ps) && IsFinite(pl))
             {
                 preShort = ps;
@@ -543,7 +546,7 @@ public static class PlanarModalCalibration
                     Math.Abs(gamma[mode].Imaginary * dl - predicted) / predicted);
         }
 
-        return new PlanarModalErrorBox(
+        return new ModalErrorBox(
             Block(xs, 0, 0, n), Block(xs, 0, n, n), Block(xs, n, 0, n), Block(xs, n, n, n),
             gamma, degrees, separation, gap, palindrome, cascade, pair, gauge, margin, betaErr);
     }
@@ -559,7 +562,7 @@ public static class PlanarModalCalibration
     /// <para><b>It is a binary choice with a reported margin, not a fit.</b> Ψ and Tv differ by
     /// Z_c^{−½}·(scale), which cannot reverse a dominant component of a passive cross-section, so
     /// the comparison is robust wherever the modes are separable at all — and where they are not,
-    /// <see cref="PlanarModalErrorBox.ModeSeparationDegrees"/> has already said so.</para>
+    /// <see cref="ModalErrorBox.ModeSeparationDegrees"/> has already said so.</para>
     /// </summary>
     public static Mat<Complex> Orient(Mat<Complex> a21Modal, Mat<double> tv, out double margin)
     {
@@ -754,7 +757,7 @@ public static class PlanarModalCalibration
         return r;
     }
 
-    /// <summary>Gauss–Jordan with partial pivoting — <see cref="RlgcExtractor.Invert"/>'s own
+    /// <summary>Gauss–Jordan with partial pivoting — kernel A's <c>RlgcExtractor.Invert</c>'s own
     /// routine, over complex, for matrices of order at most 8.</summary>
     internal static Mat<Complex> Invert(Mat<Complex> a)
     {
@@ -772,7 +775,7 @@ public static class PlanarModalCalibration
                 if (w[row, col].Magnitude > w[piv, col].Magnitude) piv = row;
             if (w[piv, col].Magnitude < 1e-300)
                 throw new InvalidOperationException(
-                    "MoM: a modal calibration matrix is singular — the calibration group's " +
+                    "Calibration: a modal calibration matrix is singular — the calibration group's " +
                     "conductors are not independent at the reference plane.");
             if (piv != col)
                 for (int j = 0; j < 2 * n; j++) (w[col, j], w[piv, j]) = (w[piv, j], w[col, j]);

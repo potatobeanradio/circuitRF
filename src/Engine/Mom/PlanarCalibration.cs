@@ -47,6 +47,7 @@
 using System.Numerics;
 using NumFlat;
 using RfCore;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Mom;
 
@@ -179,7 +180,7 @@ namespace CircuitRF.Engine.Mom;
 /// <para><b>6, and it is measured rather than chosen for roundness</b> — see
 /// <c>src/Engine/Mom/RESOLVED.md</c> §QSC. What degrades as Δℓ shrinks is the error box's own
 /// conditioning, smoothly, as 1/Δℓ; what does NOT degrade smoothly is the a₂₂ SIGN selection, whose
-/// margin (<see cref="PlanarErrorBox.RejectedResidual"/>) is the quantity M3 swept and the reason
+/// margin (<see cref="LineErrorBox.RejectedResidual"/>) is the quantity M3 swept and the reason
 /// the floor is not lower still.</para>
 /// </param>
 /// <param name="QuasiStaticSeparationMinBulkCells">
@@ -208,8 +209,8 @@ public sealed record PlanarCalibrationSettings(
 
     /// <summary>TRL's own usable interval, and the interval where D6's denominator is well away
     /// from its zero at βΔℓ = nπ. R-prt-6 flags every frequency outside it.</summary>
-    public const double UsableLoDegrees = 20.0;
-    public const double UsableHiDegrees = 160.0;
+    public const double UsableLoDegrees = LineCalibration.UsableLoDegrees;
+    public const double UsableHiDegrees = LineCalibration.UsableHiDegrees;
 
     /// <summary>
     /// The band ratio ONE line separation can cover — 160/20 = 8, straight off the usable interval.
@@ -221,7 +222,7 @@ public sealed record PlanarCalibrationSettings(
     /// while the other two are 2.5e-4 and 7.8e-4. The number of separations is therefore DERIVED from
     /// the band rather than fixed, and the answer for 2–20 GHz is two of them (three standards).</para>
     /// </summary>
-    public const double BandRatioPerSeparation = UsableHiDegrees / UsableLoDegrees;
+    public const double BandRatioPerSeparation = LineCalibration.BandRatioPerSeparation;
 
     /// <summary>
     /// What the separation COUNT is actually derived from — half the theoretical 8:1, and the halving
@@ -230,7 +231,7 @@ public sealed record PlanarCalibrationSettings(
     /// full 8:1 leaves no room for that and puts the top of a 5:1 band at 157°, one point from the
     /// edge. Designing to 4:1 costs one extra standard mesh and puts the same band at 105°.
     /// </summary>
-    public const double DesignBandRatioPerSeparation = 4.0;
+    public const double DesignBandRatioPerSeparation = LineCalibration.DesignBandRatioPerSeparation;
 
     /// <summary>
     /// <b>QSC — where the MEASURED calibration stops being worth its cost, as a normalised
@@ -306,7 +307,7 @@ public sealed record PlanarCalibrationSettings(
 /// <param name="GroupPorts">
 /// <b>PCAL4 — the 2N ports of a calibration GROUP's standard</b>, conductors 1..N at the low end
 /// followed by the same conductors at the high end, and null on every one-conductor standard. The
-/// block split <see cref="PlanarModalCalibration.SToT"/> takes is exactly that ordering, so the
+/// block split <see cref="ModalLineCalibration.SToT"/> takes is exactly that ordering, so the
 /// first N ports ARE one side of the 2N-port by construction rather than by a convention someone
 /// has to remember.
 /// </param>
@@ -652,7 +653,7 @@ public static class PlanarCalibration
     /// region exactly — and the region is now N conductors that are all DRIVEN. That is the one
     /// thing separating this from <see cref="BuildNeighbourLine"/>, whose extra conductor has no
     /// port because it has none in the DUT: here every conductor has one, so the standard is a
-    /// 2N-port, the error box is <see cref="PlanarModalCalibration"/>'s N×N blocks, and the
+    /// 2N-port, the error box is <see cref="ModalLineCalibration"/>'s N×N blocks, and the
     /// electrostatics is a capacitance MATRIX rather than one number with a floating constraint.</para>
     ///
     /// <para><b>Port order is conductors 1..N at the low end, then the same conductors at the high
@@ -804,21 +805,7 @@ public static class PlanarCalibration
                                          Func<double, double>? betaAt = null)
     {
         var s = settings ?? PlanarCalibrationSettings.Default;
-        double lo = Math.Max(Math.Min(fLoHz, fHiHz), 1.0);
-        double hi = Math.Max(Math.Max(fLoHz, fHiHz), 1.0);
-
-        double ratio = hi / lo;
-        int n = Math.Max(1, (int)Math.Ceiling(Math.Log(ratio) /
-                                              Math.Log(PlanarCalibrationSettings.DesignBandRatioPerSeparation)));
-
-        var deltas = new double[n];
-        for (int k = 0; k < n; k++)
-        {
-            // Each separation is centred on its own sub-band's geometric mean.
-            double f = lo * Math.Pow(ratio, (k + 0.5) / n);
-            deltas[k] = DeltaAt(slab, f, s, betaAt);
-        }
-        return deltas;
+        return LineCalibration.SuggestDeltas(fLoHz, fHiHz, f => DeltaAt(slab, f, s, betaAt));
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
@@ -917,26 +904,6 @@ public static class PlanarCalibration
     }
 
     /// <summary>
-    /// <b>QSC — the separations a band actually builds, and which of them is the quasi-static one.</b>
-    /// </summary>
-    /// <param name="DeltaLM">The separations, measured ladder first and the quasi-static one (if any)
-    /// LAST — so a band entirely above the crossover is <see cref="SuggestDeltas"/>'s own array,
-    /// index for index, and every such run is bit-identical to the one that shipped.</param>
-    /// <param name="QuasiStaticIndex">Which entry is the short, frequency-independent one, or −1 when
-    /// the whole band sits above the crossover and there is none.</param>
-    /// <param name="CrossoverHz">The crossover this plan was drawn at, carried so a caller reporting
-    /// which path a point took does not recompute it.</param>
-    public readonly record struct PlanarSeparationPlan(
-        double[] DeltaLM, int QuasiStaticIndex, double CrossoverHz)
-    {
-        /// <summary>Whether <paramref name="fHz"/> is calibrated quasi-statically under this plan.
-        /// <b>The one place the question is asked</b> — <see cref="PlanarPortCalibrator"/>'s own
-        /// separation choice, its γ source and the run's diagnostics all read it, and a second
-        /// spelling would let a run solve one standard and calibrate against another.</summary>
-        public bool IsQuasiStaticAt(double fHz) => QuasiStaticIndex >= 0 && fHz < CrossoverHz;
-    }
-
-    /// <summary>
     /// <b>The plan for a band: the measured ladder over the part of it ABOVE the crossover, plus one
     /// short separation for the part below.</b>
     ///
@@ -952,7 +919,7 @@ public static class PlanarCalibration
     /// ladder at all; a band spanning it gets both.</para>
     /// </summary>
     /// <param name="betaAt">SI-LOW — see <see cref="SuggestDeltas"/>.</param>
-    public static PlanarSeparationPlan SeparationPlan(
+    public static LineSeparationPlan SeparationPlan(
         GroundedSlab slab, double fLoHz, double fHiHz, PlanarPortResolution? port = null,
         PlanarCalibrationSettings? settings = null, Func<double, double>? betaAt = null)
     {
@@ -966,7 +933,7 @@ public static class PlanarCalibration
         // `IsQuasiStaticAt` false everywhere as well, so the switch is one comparison and not a
         // second branch each caller has to remember.
         if (!st.QuasiStaticBelowCrossover)
-            return new PlanarSeparationPlan(SuggestDeltas(slab, lo, hi, settings, betaAt), -1, cross);
+            return new LineSeparationPlan(SuggestDeltas(slab, lo, hi, settings, betaAt), -1, cross);
 
         // ── A CALIBRATION GROUP STAYS ON THE MEASURED LADDER, AND THAT IS A DECLINE BY NAME ──
         //
@@ -980,20 +947,20 @@ public static class PlanarCalibration
         // computes them — but it is a different error box and a different measurement, and it is
         // not this brief's.
         if (port?.Group is not null)
-            return new PlanarSeparationPlan(SuggestDeltas(slab, lo, hi, settings), -1, cross);
+            return new LineSeparationPlan(SuggestDeltas(slab, lo, hi, settings), -1, cross);
 
         if (lo >= cross)
-            return new PlanarSeparationPlan(SuggestDeltas(slab, lo, hi, settings, betaAt), -1, cross);
+            return new LineSeparationPlan(SuggestDeltas(slab, lo, hi, settings, betaAt), -1, cross);
 
         double qs = QuasiStaticSeparationM(slab, port, settings, betaAt);
 
-        if (hi <= cross) return new PlanarSeparationPlan([qs], 0, cross);
+        if (hi <= cross) return new LineSeparationPlan([qs], 0, cross);
 
         var measured = SuggestDeltas(slab, cross, hi, settings, betaAt);
         var all = new double[measured.Length + 1];
         Array.Copy(measured, all, measured.Length);
         all[^1] = qs;
-        return new PlanarSeparationPlan(all, measured.Length, cross);
+        return new LineSeparationPlan(all, measured.Length, cross);
     }
 
     /// <summary>
@@ -1092,14 +1059,16 @@ public static class PlanarCalibration
     {
         // SI-LOW — a conducting substrate's slow wave is not in εᵣ, and on 0.1 Ω·cm the crude estimate below
         // sat 3× low: a 60° target read past 180° and the extraction aliased onto −α.
-        if (betaAt is not null) return s.TargetElectricalDegrees * Math.PI / 180.0 / betaAt(fHz);
+        if (betaAt is not null) return LineCalibration.SeparationAt(fHz, betaAt, s.TargetElectricalDegrees);
 
         // ε_eff is not known before a solve; (εᵣ+1)/2 is the standard crude microstrip estimate, and
         // it only has to be right to a factor for βΔℓ to land inside an 8:1-wide usable interval.
-        double epsEst = 0.5 * (slab.Material.EpsR + 1.0);
-        double lambda = EmConstants.C0 / (fHz * Math.Sqrt(epsEst));
-        return lambda * (s.TargetElectricalDegrees / 360.0);
+        return LineCalibration.SeparationAt(fHz, EpsEffEstimate(slab), s.TargetElectricalDegrees);
     }
+
+    /// <summary>ε_eff before any solve: (εᵣ+1)/2, the standard crude microstrip estimate. What
+    /// <see cref="EstimateBeta"/> and the separation plan are seeded from.</summary>
+    public static double EpsEffEstimate(GroundedSlab slab) => 0.5 * (slab.Material.EpsR + 1.0);
 
     /// <summary>
     /// The full standard set for a port and a band: element 0 is the short line, and each further
@@ -1139,7 +1108,7 @@ public static class PlanarCalibration
     /// band overload above for why a standard's metal is resolved by name and what the placeholder
     /// costs on a multi-level problem.</param>
     public static PlanarStandard[] BuildSet(
-        PlanarPortResolution port, GroundedSlab slab, PlanarSeparationPlan plan,
+        PlanarPortResolution port, GroundedSlab slab, LineSeparationPlan plan,
         double shortTargetM, PlanarCalibrationSettings? settings = null,
         string layerName = DefaultLayerName)
     {
@@ -1154,160 +1123,11 @@ public static class PlanarCalibration
         return set;
     }
 
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // D5 — γ from the two standards
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-
-    /// <summary>What the two-line step produced, plus what R-prt-6 has to report about it.</summary>
-    /// <param name="ElectricalDegrees">βΔℓ in degrees — the number that decides whether this
-    /// frequency is inside TRL's usable interval.</param>
-    /// <param name="Unwrapped">How many 2π were added to the principal branch. Non-zero is fine;
-    /// non-zero at the FIRST frequency of a sweep means Δℓ is already too long.</param>
-    public sealed record GammaResult(Complex Gamma, double ElectricalDegrees, int Unwrapped, bool Usable)
-    {
-        public double Alpha => Gamma.Real;
-        public double Beta  => Gamma.Imaginary;
-
-        public double EffectivePermittivity(double fHz)
-        {
-            double b = Beta / (2.0 * Math.PI * fHz / EmConstants.C0);
-            return b * b;
-        }
-    }
-
-    /// <summary>
-    /// γ from the two standards' raw s-parameters. <paramref name="expectedBetaDeltaL"/> is the
-    /// previous frequency's βΔℓ scaled by frequency; pass NaN at the first point, where the branch is
-    /// anchored on βΔℓ &lt; π instead.
-    /// </summary>
-    public static GammaResult Gamma(Mat<Complex> sShort, Mat<Complex> sLong, double deltaLM,
-                                    double expectedBetaDeltaL = double.NaN)
-    {
-        if (!(deltaLM > 0)) throw new ArgumentOutOfRangeException(nameof(deltaLM));
-
-        var m = RFNetwork.SToT2Port(sLong) * Inverse2(RFNetwork.SToT2Port(sShort));
-        Complex w = 0.5 * (m[0, 0] + m[1, 1]);          // det M = 1, so this IS cosh(γΔℓ)
-
-        // cosh is EVEN and 2πj-periodic, so the solutions are ±g₀ + 2πjk. Both families have to be
-        // considered together.
-        //
-        // MEASURED, AND IT WAS A REAL BUG: the obvious rule — "negate g₀ if Re g₀ < 0, because a
-        // passive line has α ≥ 0" — is WRONG, because negating flips β as well. On the FR-4 fixture
-        // at 20 GHz the principal value came back as (−0.061, +2.2005) with a true αΔℓ of only
-        // +0.016: α is two orders of magnitude smaller than β here, so its extracted SIGN is noise,
-        // and flipping on it turned a correct β = 804 into 1492. β is the well-determined half, so
-        // β is what selects the branch; Re is used only to break a tie when there is no prediction
-        // to select against.
-        Complex g0 = Acosh(w);
-
-        Complex best = default;
-        double  bestErr = double.PositiveInfinity;
-        int     k = 0;
-
-        foreach (double sign in new[] { +1.0, -1.0 })
-        {
-            Complex c  = sign * g0;
-            int     kk = double.IsNaN(expectedBetaDeltaL)
-                ? (c.Imaginary < 0 ? 1 : 0)                       // anchor βΔℓ into (0, 2π)
-                : (int)Math.Round((expectedBetaDeltaL - c.Imaginary) / (2 * Math.PI));
-
-            Complex cc = c + new Complex(0, 2 * Math.PI * kk);
-            if (cc.Imaginary <= 0) continue;                       // β > 0 on a forward-travelling wave
-
-            double err = double.IsNaN(expectedBetaDeltaL)
-                ? (cc.Real >= 0 ? 0.0 : 1.0)                       // no prediction: fall back on α ≥ 0
-                : Math.Abs(cc.Imaginary - expectedBetaDeltaL);
-
-            if (err < bestErr) { bestErr = err; best = cc; k = kk; }
-        }
-
-        Complex g = best;
-        double deg = g.Imaginary * 180.0 / Math.PI;
-        bool usable = deg >= PlanarCalibrationSettings.UsableLoDegrees
-                   && deg <= PlanarCalibrationSettings.UsableHiDegrees;
-
-        return new GammaResult(g / deltaLM, deg, k, usable);
-    }
-
-    /// <summary>
-    /// γ from a short standard and SEVERAL long ones, choosing per frequency the separation whose
-    /// realised βΔℓ sits closest to the middle of the usable interval. This is multiline TRL's own
-    /// idea reduced to what a simulator needs: every standard is solved at every frequency anyway,
-    /// so the selection costs nothing beyond the extra fill and can be made on the MEASURED
-    /// electrical length rather than on the pre-solve estimate.
-    /// </summary>
-    /// <param name="expectedBetaPerMetre">The running β estimate — the previous frequency's measured
-    /// β scaled by frequency, or <see cref="EstimateBeta"/> at the first point. <b>The choice is made
-    /// on the PREDICTION, never on the extracted value, and that is not a stylistic preference:</b> an
-    /// aliased separation (βΔℓ past π) reports a wrapped electrical length that can land inside the
-    /// usable interval by accident and score better than the correct one.</param>
-    /// <param name="index">Which separation was chosen — reported, because "which standard produced
-    /// this number" is exactly what someone debugging a bad point needs to know.</param>
-    public static GammaResult GammaBest(Mat<Complex> sShort, IReadOnlyList<Mat<Complex>> sLong,
-                                        IReadOnlyList<double> deltaLM, double expectedBetaPerMetre,
-                                        out int index)
-    {
-        if (sLong.Count == 0 || sLong.Count != deltaLM.Count)
-            throw new ArgumentException("Each long standard needs its own Δℓ.", nameof(sLong));
-
-        index = SelectSeparation(deltaLM, expectedBetaPerMetre);
-        return Gamma(sShort, sLong[index], deltaLM[index], expectedBetaPerMetre * deltaLM[index]);
-    }
-
-    /// <summary>
-    /// Which separation <see cref="GammaBest"/> will choose — <b>a pure function of the Δℓ set and
-    /// the PREDICTED β, so it can be asked BEFORE any standard has been solved.</b>
-    ///
-    /// <para>That is the whole point of it being extracted rather than inlined. <see cref="GammaBest"/>
-    /// reads exactly two of the standards' raw matrices at any one frequency — the short line and the
-    /// one long line named here — so a driver that knows the answer in advance can solve two meshes
-    /// instead of all of them. <c>GammaBest</c>'s own doc comment used to say the selection "costs
-    /// nothing beyond the extra fill"; the extra fill turned out to be most of the run, and this is
-    /// what lets the sentence become true rather than remain a caveat.</para>
-    ///
-    /// <para>The scoring is unchanged and deliberately still keyed on the PREDICTION, never on an
-    /// extracted electrical length — see <see cref="GammaBest"/>'s own parameter note for the aliasing
-    /// reason. Moving it here changes no arithmetic; it changes only who may ask.</para>
-    /// </summary>
-    public static int SelectSeparation(IReadOnlyList<double> deltaLM, double expectedBetaPerMetre)
-    {
-        ArgumentNullException.ThrowIfNull(deltaLM);
-        if (deltaLM.Count == 0) throw new ArgumentException("No separations.", nameof(deltaLM));
-
-        double centre = Math.Sqrt(PlanarCalibrationSettings.UsableLoDegrees *
-                                  PlanarCalibrationSettings.UsableHiDegrees) * Math.PI / 180.0;
-
-        int index = 0;
-        double bestScore = double.PositiveInfinity;
-        for (int i = 0; i < deltaLM.Count; i++)
-        {
-            double predicted = Math.Max(expectedBetaPerMetre * deltaLM[i], 1e-12);
-            double score = Math.Abs(Math.Log(predicted / centre));
-            if (score < bestScore) { bestScore = score; index = i; }
-        }
-        return index;
-    }
-
     /// <summary>
     /// β before any solve, from ε_eff ≈ (εᵣ+1)/2. Only used to seed the first frequency's branch and
-    /// separation choice, and it only has to be right to ~20% for either.
+    /// separation choice, and it only has to be right to ~20% for either. γ itself, the separation choice
+    /// and the cascade are <see cref="LineCalibration"/>'s (PWL-1).
     /// </summary>
     public static double EstimateBeta(GroundedSlab slab, double fHz) =>
-        2.0 * Math.PI * fHz * Math.Sqrt(0.5 * (slab.Material.EpsR + 1.0)) / EmConstants.C0;
-
-    /// <summary>acosh, principal branch — written here rather than depended on, as L8a's Bessel
-    /// functions and Legendre nodes were, and for the same recorded reason.</summary>
-    public static Complex Acosh(Complex w) => Complex.Log(w + Complex.Sqrt(w * w - Complex.One));
-
-    /// <summary>The 2×2 inverse, in closed form. A general solver here would be silly.</summary>
-    internal static Mat<Complex> Inverse2(Mat<Complex> a)
-    {
-        Complex det = a[0, 0] * a[1, 1] - a[0, 1] * a[1, 0];
-        var r = new Mat<Complex>(2, 2);
-        r[0, 0] =  a[1, 1] / det;
-        r[0, 1] = -a[0, 1] / det;
-        r[1, 0] = -a[1, 0] / det;
-        r[1, 1] =  a[0, 0] / det;
-        return r;
-    }
+        LineCalibration.EstimateBeta(EpsEffEstimate(slab), fHz);
 }

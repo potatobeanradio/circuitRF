@@ -36,6 +36,7 @@ using CircuitRF.Engine.Tests.Mom.Support;
 using NumFlat;
 using Xunit;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
@@ -78,7 +79,7 @@ public sealed class PeelConditioningTests(ITestOutputHelper output)
         {
             var kernel = PlanarLineFixtures.Kernel(slab, f);
             var c = cal.At(kernel, f, 1);
-            var s = PlanarDeembed.Apply(dut.RawScatteringAt(kernel, f), [c.Box, c.Box]);
+            var s = LineDeembed.Apply(dut.RawScatteringAt(kernel, f), [c.Box, c.Box]);
             result.Add(new Control(f, Math.Max(s[0, 0].Magnitude, s[1, 1].Magnitude),
                                    c.Box.DeembedErrorFloor, c.Box.ConsistencyResidual,
                                    (c.Box.A21 * c.Box.A21).Magnitude, c.Gamma.ElectricalDegrees));
@@ -102,7 +103,7 @@ public sealed class PeelConditioningTests(ITestOutputHelper output)
     /// floor is above a TENTH of the guard's budget</b> — i.e. over the whole range in which the
     /// guard ever acts, and no further. Below that the realised error is dominated by things the
     /// floor cannot see (the DUT's own meshing, radiation), which is exactly what the doc comment on
-    /// <see cref="PlanarErrorBox.DeembedErrorFloor"/> says it is blind to; the 1 GHz row of the 4×
+    /// <see cref="LineErrorBox.DeembedErrorFloor"/> says it is blind to; the 1 GHz row of the 4×
     /// board reads a ratio of 0.48 at a floor of 2.9e-3 and that is the floor being conservative
     /// rather than the law failing.</para>
     /// </summary>
@@ -205,8 +206,8 @@ public sealed class PeelConditioningTests(ITestOutputHelper output)
             output.WriteLine($"  f = {f / 1e6:0.##} MHz");
             for (int j = 1; j < L.Length; j++)
             {
-                var box = PlanarDeembed.SolveErrorBox(m[0], m[j], L[0], L[j], g);
-                var s = PlanarDeembed.Apply(raw, [box, box]);
+                var box = LineDeembed.SolveErrorBox(m[0], m[j], L[0], L[j], g);
+                var s = LineDeembed.Apply(raw, [box, box]);
                 double err = Math.Max(s[0, 0].Magnitude, s[1, 1].Magnitude);
                 errors.Add(err);
                 output.WriteLine($"    dl = {(L[j] - L[0]) * 1e3,8:0.##} mm  " +

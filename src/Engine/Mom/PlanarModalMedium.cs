@@ -11,14 +11,14 @@
 // with Tv the voltage modal matrix and, critically, **Ti = (Tvᵀ)⁻¹** — the STRICT biorthogonal
 // normalisation and not R-gen-3a's reporting one. Under it, and only under it, the map from modal
 // wave amplitudes to terminal wave amplitudes at [Z_c] is complex-ORTHOGONAL, which is the condition
-// PlanarModalCalibration's gauge step (5) rests on. Both normalisations are correct and they are for
+// ModalLineCalibration's gauge step (5) rests on. Both normalisations are correct and they are for
 // different purposes; the eigenproblem underneath them is ONE, and is
 // `ModalDecomposition.VoltageModalMatrix`.
 //
 // **Tv's column LENGTHS do not matter and nothing here normalises them.** Scaling column m by c
 // scales C_m by c² and Z_c,m by 1/c², and the modal wave amplitude — (ṽ + Z_c,m·ĩ)/(2√Z_c,m), with
 // ṽ = Tv⁻¹v and ĩ = Tvᵀi — is invariant. Column SIGNS do matter, and are the one thing
-// PlanarModalCalibration has to agree with this file about; `Orient` is where that is settled.
+// ModalLineCalibration has to agree with this file about; `Orient` is where that is settled.
 //
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // WHY [L] COMES FROM AN AIR-FILLED SOLVE AND NOT FROM KERNEL A (R-pcal4-5)
@@ -38,6 +38,7 @@
 
 using System.Numerics;
 using NumFlat;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Mom;
 
@@ -196,7 +197,7 @@ public sealed record PlanarModalMedium(
         int n = a.RowCount;
         var c = new Mat<Complex>(n, n);
         for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) c[i, j] = a[i, j];
-        var inv = PlanarModalCalibration.Invert(c);
+        var inv = ModalLineCalibration.Invert(c);
         var r = new Mat<double>(n, n);
         for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) r[i, j] = inv[i, j].Real;
         return r;

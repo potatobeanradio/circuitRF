@@ -4,6 +4,7 @@ using CircuitRF.Engine.Tests.Mom.Support;
 using NumFlat;
 using Xunit;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
@@ -83,7 +84,7 @@ public sealed class InteriorDeembedGateTests
         var pt = RunLine(f, len, w);
 
         var zc = new[] { pt.Calibrations[0].Zc, pt.Calibrations[1].Zc };
-        var atZc = PlanarDeembed.Renormalise(pt.S, [50.0, 50.0], zc);
+        var atZc = LineDeembed.Renormalise(pt.S, [50.0, 50.0], zc);
 
         var g = pt.Calibrations[0].Gamma;
         Complex expected = Complex.Exp(-g.Gamma * len);
@@ -142,7 +143,7 @@ public sealed class InteriorDeembedGateTests
         var one  = PlanarCalibration.BuildLine(ports[0], cal.Standards[0].LengthM, k);
         var two  = PlanarCalibration.BuildLine(ports[0], 2 * one.LengthM, k);
 
-        Mat<Complex> Deembed(PlanarStandard std) => PlanarDeembed.Apply(
+        Mat<Complex> Deembed(PlanarStandard std) => LineDeembed.Apply(
             new PlanarSolveContext(std.Mesh, std.Ports, null, levels, problem.Slab.HeightM)
                 .RawScatteringAt(kernel, f), [c.Box, c.Box]);
 

@@ -3,6 +3,7 @@ using System.Numerics;
 using CircuitRF.Engine.Mom;
 using CircuitRF.Engine.Tests.Mom.Support;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
@@ -428,7 +429,7 @@ public sealed class PlanarLossyGroundTests(ITestOutputHelper output)
                 var sa = new PlanarSolveContext(a.Mesh, a.Ports, settings, levels).RawScatteringAt(kernel, fHz);
                 var sb = new PlanarSolveContext(b.Mesh, b.Ports, settings, levels).RawScatteringAt(kernel, fHz);
                 double expect = 2 * Math.PI * Math.Sqrt(eeff) * fHz * (b.LengthM - a.LengthM) / EmConstants.C0;
-                return PlanarCalibration.Gamma(sa, sb, b.LengthM - a.LengthM, expect).Gamma.Real;
+                return LineCalibration.Gamma(sa, sb, b.LengthM - a.LengthM, expect).Gamma.Real;
             }
 
             return (Alpha(PlanarFillSettings.Default with { PerfectConductor = true }),

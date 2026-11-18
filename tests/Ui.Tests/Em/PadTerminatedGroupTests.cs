@@ -34,6 +34,7 @@
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Ui.Layout.Em;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Ui.Tests.Em;
 

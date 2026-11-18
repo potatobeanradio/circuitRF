@@ -26,6 +26,7 @@ using System.Numerics;
 using CircuitRF.Engine.Mom;
 using CircuitRF.Engine.Tests.Mom.Support;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
@@ -205,7 +206,7 @@ public class CoplanarDeembedTests(ITestOutputHelper output)
                          std.Port1.Negative!.ReferencePlaneM - std.Port1.ReferencePlaneM);
 
             var raw = new PlanarSolveContext(std.Mesh, std.Ports).RawScatteringAt(kernel, f);
-            double s11 = PlanarDeembed.Apply(raw, [c.Box, c.Box])[0, 0].Magnitude;
+            double s11 = LineDeembed.Apply(raw, [c.Box, c.Box])[0, 0].Magnitude;
             worst = Math.Max(worst, s11);
 
             _out.WriteLine($"  ℓ = {std.LengthM * 1e3,8:F4} mm, N = {std.Mesh.Bases.Count,4}, " +
@@ -587,7 +588,7 @@ public class CoplanarDeembedTests(ITestOutputHelper output)
     /// coplanar standard.</b>
     ///
     /// <para>A calibration standard is mirror-symmetric by construction, so its raw S₁₁ and S₂₂ must
-    /// be equal; where they are not, <see cref="PlanarDeembed.SolveErrorBox"/> averages them (which
+    /// be equal; where they are not, <see cref="LineDeembed.SolveErrorBox"/> averages them (which
     /// is the right use of a known symmetry) and the difference comes back as exactly the de-embedded
     /// |S₁₁| — the two numbers track each other one for one across every fixture measured.</para>
     ///
@@ -687,12 +688,12 @@ public class CoplanarDeembedTests(ITestOutputHelper output)
             {
                 var st  = PlanarCalibration.BuildLine(ports[0], cal.Standards[0].LengthM * mult, k);
                 var raw = new PlanarSolveContext(st.Mesh, st.Ports).RawScatteringAt(kernel, f);
-                var sd  = PlanarDeembed.Apply(raw, [c.Box, c.Box]);
+                var sd  = LineDeembed.Apply(raw, [c.Box, c.Box]);
                 if (double.IsNaN(atOne)) atOne = sd[0, 0].Magnitude;
 
                 var mst  = PlanarCalibration.BuildLine(msPorts[0], msCal.Standards[0].LengthM * mult, msK);
                 var mraw = new PlanarSolveContext(mst.Mesh, mst.Ports).RawScatteringAt(kernel, f);
-                var msd  = PlanarDeembed.Apply(mraw, [msC.Box, msC.Box]);
+                var msd  = LineDeembed.Apply(mraw, [msC.Box, msC.Box]);
 
                 _out.WriteLine($"    ℓ = {st.LengthM * 1e3,7:F3} mm (βℓ = {c.Gamma.Beta * st.LengthM,6:F2} rad): " +
                                $"|S₁₁| = {sd[0, 0].Magnitude:E3}   |   " +

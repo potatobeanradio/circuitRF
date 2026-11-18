@@ -12,13 +12,13 @@
 // refused. `RESOLVED.md` §RAW1 §6.
 //
 // **Supplying γ does NOT by itself remove the long standards, and that is the trap this file's brief
-// was written to close.** γ is ALREADY an input to `PlanarDeembed.SolveErrorBox`; the error box still
+// was written to close.** γ is ALREADY an input to `LineDeembed.SolveErrorBox`; the error box still
 // needs TWO lines, because one line gives two complex equations (M₁₁, M₂₁) for three complex unknowns
 // (a₁₁, a₂₁², a₂₂) and no reciprocity or symmetry argument closes that gap.
 //
 // **What a known γ buys is that Δℓ no longer has to be ELECTRICALLY long.** The [20°, 160°] interval
 // protects the γ EXTRACTION, where `Acosh`'s branch structure makes βΔℓ = nπ a genuine singularity
-// and where (per `PlanarCalibration.Gamma`'s own header) α is two orders below β and its extracted
+// and where (per `LineCalibration.Gamma`'s own header) α is two orders below β and its extracted
 // sign is noise. The error box's own conditioning degrades as 1/Δℓ — ordinary conditioning, not a
 // denominator zero — so Δℓ can be sized from the SUBSTRATE and the mesh instead of from the
 // wavelength, and both standards become small and frequency-independent.
@@ -161,6 +161,8 @@
 
 using System.Numerics;
 
+using CircuitRF.Engine.Calibration;
+
 namespace CircuitRF.Engine.Mom;
 
 /// <summary>
@@ -204,7 +206,7 @@ public sealed record PlanarQuasiStaticLine(Complex CComplexPerMetre, double C0Pe
     /// </summary>
     public bool GroundTermSupplied => Ground is not null;
 
-    /// <summary>C′ — F/m, the real part, which is what <see cref="PlanarDeembed.CharacteristicImpedance"/>
+    /// <summary>C′ — F/m, the real part, which is what <see cref="LineDeembed.CharacteristicImpedance"/>
     /// takes and what the <c>Cpul</c> diagnostic cube publishes.</summary>
     public double CPerMetre => CComplexPerMetre.Real;
 
@@ -255,25 +257,25 @@ public sealed record PlanarQuasiStaticLine(Complex CComplexPerMetre, double C0Pe
         Conductor?.ResistancePerMetreAt(2.0 * Math.PI * fHz) ?? 0.0;
 
     /// <summary>
-    /// <b>The same reading as <see cref="PlanarCalibration.Gamma"/> returns</b>, so the two paths
+    /// <b>The same reading as <see cref="LineCalibration.Gamma"/> returns</b>, so the two paths
     /// hand the sweep one type and every diagnostic downstream reads one field.
     ///
-    /// <para><b><see cref="PlanarCalibration.GammaResult.Usable"/> is TRUE here whatever βΔℓ comes
+    /// <para><b><see cref="LineCalibration.GammaResult.Usable"/> is TRUE here whatever βΔℓ comes
     /// out at, and that is the finding rather than a relaxation.</b> The [20°, 160°] interval is
     /// drawn around D5/D6's shared denominator zero at βΔℓ = nπ — it exists to protect the
     /// EXTRACTION of γ from `½·tr(M)`, which is not performed on this path at all. The error box's
     /// own conditioning is a different and far gentler thing, and it is gated separately on the a₂₂
-    /// sign margin (<see cref="PlanarErrorBox.RejectedResidual"/>) rather than on an angle.
+    /// sign margin (<see cref="LineErrorBox.RejectedResidual"/>) rather than on an angle.
     /// Reporting the realised angle anyway is deliberate: it is the number that says how short the
     /// standards actually are.</para>
     ///
-    /// <para><see cref="PlanarCalibration.GammaResult.Unwrapped"/> is 0 by construction — there is
+    /// <para><see cref="LineCalibration.GammaResult.Unwrapped"/> is 0 by construction — there is
     /// no principal branch to add 2π to.</para>
     /// </summary>
-    public PlanarCalibration.GammaResult ResultAt(double fHz, double deltaLM)
+    public LineCalibration.GammaResult ResultAt(double fHz, double deltaLM)
     {
         Complex g = GammaAt(fHz);
-        return new PlanarCalibration.GammaResult(
+        return new LineCalibration.GammaResult(
             g, g.Imaginary * deltaLM * 180.0 / Math.PI, 0, true);
     }
 

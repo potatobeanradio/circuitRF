@@ -13,6 +13,7 @@
 
 using CircuitRF.Engine.Mom;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
@@ -97,7 +98,7 @@ public class CalibrationStandardCostTests(ITestOutputHelper output)
             {
                 var set   = calSets[pi];
                 var delta = set.Skip(1).Select(s => s.LengthM - set[0].LengthM).ToArray();
-                int pick  = PlanarCalibration.SelectSeparation(
+                int pick  = LineCalibration.SelectSeparation(
                                 delta, PlanarCalibration.EstimateBeta(Ro4350, f));
 
                 for (int i = 0; i < set.Length; i++)

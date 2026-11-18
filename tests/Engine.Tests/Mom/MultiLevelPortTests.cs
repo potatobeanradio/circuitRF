@@ -5,6 +5,7 @@ using CircuitRF.Engine.Tests.Mom.Support;
 using NumFlat;
 using Xunit;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
@@ -104,8 +105,8 @@ public sealed class MultiLevelPortTests
             var raw = PlanarExcitation.RawScattering(dut.SolveAt(kernel, f).Y, z0);
             var c1 = cal.At(kernel, f);
             var c2 = ReferenceEquals(cal, cal2) ? c1 : cal2.At(kernel, f);
-            var s = PlanarDeembed.Renormalise(
-                PlanarDeembed.Apply(raw, [c1.Box, c2.Box]), [c1.Zc, c2.Zc], z0);
+            var s = LineDeembed.Renormalise(
+                LineDeembed.Apply(raw, [c1.Box, c2.Box]), [c1.Zc, c2.Zc], z0);
 
             for (int a = 0; a < 2; a++)
             for (int b = 0; b < 2; b++)

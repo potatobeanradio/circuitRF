@@ -55,6 +55,7 @@
 
 using System.Numerics;
 using NumFlat;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Mom;
 
@@ -711,7 +712,7 @@ public static class PlanarFeedExtension
     /// <summary>
     /// <b>PCAL5 — the single length a calibration group's automatic feed leads may be peeled by.</b>
     ///
-    /// <para>A group's error box is MODAL: after <c>PlanarDeembed.ApplyBlocks</c> each of its rows is
+    /// <para>A group's error box is MODAL: after <c>LineDeembed.ApplyBlocks</c> each of its rows is
     /// a MODE, and a mode runs on every conductor of the group at once. So "how far along has this
     /// travelled" has one answer for the group or none, and <see cref="Peel"/> — which is index-wise
     /// — can only express the one. Where the members' leads differ, the longer one is also beside no
@@ -781,7 +782,7 @@ public static class PlanarFeedExtension
     /// <param name="gamma">Per matrix index, the propagation constant its calibration measured.
     ///
     /// <para><b>On a CALIBRATION GROUP's rows the index is a MODE, not a port</b> (PCAL4 —
-    /// <c>PlanarDeembed.ApplyBlocks</c> hands back the group's rows in its modal basis, and this is
+    /// <c>LineDeembed.ApplyBlocks</c> hands back the group's rows in its modal basis, and this is
     /// called before <c>ModalToTerminal</c>). So the entry is that mode's γ_m, and <b>every member of
     /// one group must carry the same length</b>: a mode is a combination of the group's conductors,
     /// so "how far along has this mode travelled" has one answer for the group or none. That is

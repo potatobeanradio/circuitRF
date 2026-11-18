@@ -1,7 +1,7 @@
 // PCAL4 — "two ports on coupled conductors need a modal error box".
 // `docs/sonnet-briefs/brief-portcal-4-modal-error-box.md`, gates 1-6.
 //
-// The algebra is `Engine.Tests/Mom/PlanarModalCalibrationTests.cs`, on synthetic data where the
+// The algebra is `Engine.Tests/Mom/ModalLineCalibrationTests.cs`, on synthetic data where the
 // answer is CHOSEN rather than compared; the group formation and the standard's construction are
 // `Engine.Tests/Mom/PlanarCalibrationGroupTests.cs`. What lives here is what neither can see: the
 // committed fixtures, resolved exactly as the Simulate button resolves them, running END TO END
@@ -18,6 +18,7 @@ using CircuitRF.Design.Layout.Em;
 using CircuitRF.Engine.Mom;
 using CircuitRF.Ui.Layout.Em;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Ui.Tests.Em;
 

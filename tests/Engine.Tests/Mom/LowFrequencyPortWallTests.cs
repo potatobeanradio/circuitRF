@@ -9,7 +9,7 @@
 // therefore a per-point guard that stayed silent on exactly the rows it exists for.
 //
 // EVERY NUMBER BELOW IS MEASURED AND NONE OF IT IS SOLVED HERE. The floor is a pure function of
-// three scalars already on `PlanarErrorBox`, so the DECISIONS — which term binds, what the floor
+// three scalars already on `LineErrorBox`, so the DECISIONS — which term binds, what the floor
 // then reads, which threshold it crosses, which band edge the remedy sentence can offer — are
 // arithmetic and belong in the routine tier at zero cost. The spiral's own literals come from
 // `src/Engine/Mom/RESOLVED.md` §LFP §4; `LowFrequencyPortWallPhysicsTests` is what re-solves them.
@@ -18,6 +18,7 @@ using System.Numerics;
 using CircuitRF.Engine.Mom;
 using NumFlat;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
@@ -30,7 +31,7 @@ public sealed class LowFrequencyPortWallTests(ITestOutputHelper output)
     /// else pinned. <c>PeelAmplification</c> is <c>|a₁₁|/|a₂₁|²</c>, so a₁₁ = 1 and a₂₁ = 1/√amp
     /// gives it exactly — the two scalars the floor is made of, with no solve behind them.
     /// </summary>
-    private static PlanarErrorBox Box(double residual, double amplification) =>
+    private static LineErrorBox Box(double residual, double amplification) =>
         new(Complex.One, Complex.One, new Complex(1.0 / Math.Sqrt(amplification), 0), residual, 0);
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
@@ -40,7 +41,7 @@ public sealed class LowFrequencyPortWallTests(ITestOutputHelper output)
     /// <summary>
     /// <b>The floor is the LARGER of the two shares, times the one amplifier.</b> The peel divides
     /// by a₂₁², so an absolute error anywhere in the raw s-parameters it consumes reaches the answer
-    /// multiplied by <see cref="PlanarErrorBox.PeelAmplification"/> — whether it is the standards
+    /// multiplied by <see cref="LineErrorBox.PeelAmplification"/> — whether it is the standards
     /// disagreeing with each other or the DUT's own raw solve being what it is.
     /// </summary>
     [Theory]
@@ -62,7 +63,7 @@ public sealed class LowFrequencyPortWallTests(ITestOutputHelper output)
         // The amplifier is read off the box rather than off the InlineData, because Box() gets it
         // there through a square root: the claim under test is about the floor's two TERMS, not
         // about that round trip.
-        Assert.Equal(Math.Max(residual, PlanarErrorBox.DutRawErrorFloor) * b.PeelAmplification,
+        Assert.Equal(Math.Max(residual, LineErrorBox.DutRawErrorFloor) * b.PeelAmplification,
                      b.DeembedErrorFloor);
 
         // and the half that must not move: where the standards' share is the larger, the floor is
@@ -148,7 +149,7 @@ public sealed class LowFrequencyPortWallTests(ITestOutputHelper output)
     {
         var b = Box(residual, 1.0 / a21Squared);
         Assert.False(b.FloorIsDutBound,
-            $"a residual of {residual:0.00e+00} is above {PlanarErrorBox.DutRawErrorFloor:0.0e+00}, " +
+            $"a residual of {residual:0.00e+00} is above {LineErrorBox.DutRawErrorFloor:0.0e+00}, " +
             "so the standards' share must still be what sets this fixture's floor");
         Assert.Equal(residual * b.PeelAmplification, b.DeembedErrorFloor);
         Assert.Equal(recorded, b.DeembedErrorFloor, recorded * 0.06);
@@ -157,7 +158,7 @@ public sealed class LowFrequencyPortWallTests(ITestOutputHelper output)
     /// <summary>
     /// <b>The one PEEL fixture the new term reaches, and it reaches it by 10 %.</b> GaAs 0.1 mm at
     /// the coarse mesh and 10 MHz is the smallest residual in that whole table — 1.82e-8, just
-    /// under <see cref="PlanarErrorBox.DutRawErrorFloor"/> — so its floor moves from 4.22e-2 to
+    /// under <see cref="LineErrorBox.DutRawErrorFloor"/> — so its floor moves from 4.22e-2 to
     /// 4.63e-2.
     ///
     /// <para><b>It changes no verdict and no published s-parameter.</b> Both readings are over the
@@ -186,9 +187,9 @@ public sealed class LowFrequencyPortWallTests(ITestOutputHelper output)
     // The band edge the remedy sentence offers
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
-    private static PlanarFrequencyPoint Point(double fHz, PlanarErrorBox box) =>
+    private static PlanarFrequencyPoint Point(double fHz, LineErrorBox box) =>
         new(fHz, new Mat<Complex>(1, 1), new Mat<Complex>(1, 1),
-            [new PlanarPortCalibration(1, new PlanarCalibration.GammaResult(0, 0, 0, true),
+            [new PlanarPortCalibration(1, new LineCalibration.GammaResult(0, 0, 0, true),
                                        box, 50, 0)], 0, 0, 0);
 
     /// <summary>

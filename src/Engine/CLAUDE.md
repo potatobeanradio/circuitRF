@@ -378,7 +378,7 @@ findings live there; do not re-derive or duplicate that detail here. Ordered rou
   effective cells/λ rather than hertz when the mesh frequency sits below the sweep top.
 - **Calibration standards — fill only the two that are read.** A de-embedded point always solved
   every calibration standard and used only two per frequency (`GammaBest`'s own selection is
-  computable before any fill); `PlanarCalibration.SelectSeparation` now gates that computation
+  computable before any fill); `LineCalibration.SelectSeparation` now gates that computation
   up front. The standard *set* is unchanged — every separation is still built.
 - **M1/M2 — parallelism.** One shared `PlanarSolveSettings.MaxDegreeOfParallelism` (null =
   automatic) spends a single `PlanarParallelBudget`, replacing what would otherwise be two caps a

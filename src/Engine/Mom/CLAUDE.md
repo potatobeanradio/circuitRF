@@ -386,9 +386,13 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
 
 - `PlanarPort` (type, resolution, refusals) · `PlanarExcitation` (`B`, multi-RHS,
   `Y = BᵀZ⁻¹B`, raw S, line current) · `PlanarCalibration` (`BuildLine`, `SuggestDeltas`,
-  `SuggestLengths`, `SameCrossSection`; γ from ½·tr(M)) · `PlanarDeembed` (error box, branch
-  resolutions, P-port peel, `C_pul`, `Z_c`) · `PlanarSolve` (per-frequency kernel cache,
-  `PlanarPortCalibrator`, sweep driver, `VerticalRangeVerdict`).
+  `SuggestLengths`, `SameCrossSection`) · `PlanarDeembed` (`C_pul` from the planar statics) ·
+  `PlanarSolve` (per-frequency kernel cache, `PlanarPortCalibrator`, sweep driver, `VerticalRangeVerdict`).
+- **The calibration ALGEBRA is solver-independent and lives in `src/Engine/Calibration/`** (PWL-1):
+  `LineCalibration` (γ from ½·tr(M), separation choice and plan), `LineDeembed` (error box, P-port peel,
+  block peel, modal→terminal, `Z_c`, renormalisation), `ModalLineCalibration` (the N-conductor group) and
+  `LineCalibrator` (the branch state `PlanarPortCalibrator` drives). Nothing there may name a planar type —
+  `LineCalibrationTests` scans for it — because the 3D wall port calls the same code.
 - **Port cut**: reference plane = the shared edge of the two outermost cells, **one cell in** from
   the drawn metal; the half-cell beyond is error box. **Nothing user-positionable.** Ground reference
   is always the slab's ground plane. `PlanarPort.LayerIndex` is `int?` — null infers **one** candidate
@@ -910,11 +914,11 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   re-meshed; reusing a plain-line calibration on a stepped DUT moved the answer 1.8e-1.
 - **PCAL4 — TWO PORTS ON CONDUCTORS COUPLED AT ONE REFERENCE PLANE ARE ONE CALIBRATION GROUP**
   (`PlanarPorts.TryFormCalibrationGroup`, `PlanarCalibration.BuildGroupLine`,
-  `PlanarModalCalibration`, `PlanarModalMedium`, `PlanarDeembed.ApplyBlocks`/`ModalToTerminal`).
+  `ModalLineCalibration`, `PlanarModalMedium`, `LineDeembed.ApplyBlocks`/`ModalToTerminal`).
   N coupled conductors support N modes there, so the GROUP is the unit of calibration: one
   N-conductor 2N-port standard built from the DUT's own gridlines, one MODAL error box of N×N blocks,
   one γ and one Z_c per mode. **The scalar path is untouched and a run with no group is byte-identical**
-  — `PlanarDeembed.Apply` still ships, `ApplyBlocks` is a separate method, and the grouping is
+  — `LineDeembed.Apply` still ships, `ApplyBlocks` is a separate method, and the grouping is
   attempted only on a DRIVEN breach, which since PCAL2 is a refusal.
   - **It rests on `Y = F X⁻¹ F`**, the two error boxes of a standard being exact mirror images (D4).
     That is what makes it a closed form instead of multiline TRL's optimisation: no reflect standard.
@@ -1415,7 +1419,7 @@ for the two ladders, the conformal check and the calibration-standard limit that
   > against an LU of 40 s at N = 4,836) because the LU is native and this is not — see §8's own
   > paragraph. `HISTORY.md` §P7.
 - **A de-embedded point fills only the TWO calibration standards `GammaBest` actually reads**
-  (`PlanarCalibration.SelectSeparation`, computable before any fill), not every standard built for the
+  (`LineCalibration.SelectSeparation`, computable before any fill), not every standard built for the
   band — 1.23–1.80× faster across a band, smallest saving at the band's bottom (structural: the
   longest standard is always the one selected there). The standard *set* is unchanged; only what gets
   filled is. `StandardSolveCount` counts distinct frequencies; a replay may legitimately need one more

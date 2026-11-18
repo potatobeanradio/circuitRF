@@ -14670,3 +14670,57 @@ conductor loss the defaults. The budget's shape changed with it — conductor 0 
 31 % → 22 % — and the page and the test were never re-measured because the test is opt-in. The local grid (PMS-7, 1,981 →
 1,473 unknowns) is NOT a cause: the tensor grid gives the same figures to the digits quoted. Page, test constants and the
 efficiency-sweep figure re-measured from one full run.
+
+## PWL-1 — the line-standard calibration moved out of `Mom/`, solver-independent (2026-11-18)
+
+`docs/briefs/brief-pwl-1-shared-line-calibration.md`. The 3D wall port needs the planar calibration's ALGEBRA and none of
+its meshes, so the algebra now lives in `src/Engine/Calibration/` (namespace `CircuitRF.Engine.Calibration`) and takes only
+matrices, lengths and frequencies. **One implementation; every planar answer byte-identical.**
+
+### What moved, and to where
+
+| Was | Is |
+|---|---|
+| `PlanarCalibration.Gamma`, `GammaBest`, `SelectSeparation`, `GammaResult`, `Acosh`, `Inverse2` | `LineCalibration.*` |
+| the ladder inside `PlanarCalibration.SuggestDeltas`, and `DeltaAt`'s two formulas | `LineCalibration.SuggestDeltas(lo, hi, separationAt)`, `SeparationAt(f, εeff, deg)` / `SeparationAt(f, βAt, deg)` |
+| `PlanarCalibration.EstimateBeta`'s formula | `LineCalibration.EstimateBeta(εeff, f)`; the planar wrapper passes `PlanarCalibration.EpsEffEstimate(slab)` = (εᵣ+1)/2 |
+| `PlanarCalibration.PlanarSeparationPlan` | `LineSeparationPlan` (top-level record struct) |
+| `PlanarCalibrationSettings.UsableLo/HiDegrees`, `BandRatioPerSeparation`, `DesignBandRatioPerSeparation` | constants on `LineCalibration`; the settings' constants now alias them |
+| `PlanarErrorBox`, `PlanarDeembed.PlanarBlockBox` | `LineErrorBox`, `LineBlockBox` |
+| `PlanarDeembed.SolveErrorBox`, `SolveLumpedErrorBox`, `LumpedBox`, `Apply`, `ApplyBlocks`, `ModalToTerminal`, `CharacteristicImpedance` (both), `Renormalise`, `RenormalisePseudoWave` | `LineDeembed.*` |
+| `PlanarModalCalibration` (whole file), `PlanarModalErrorBox` | `ModalLineCalibration`, `ModalErrorBox` (`git mv`, unchanged in arithmetic) |
+| `PlanarPortCalibrator`'s branch state (`_prevBeta`, `_prevF`, `_prevA21`, `_prevGamma`) and the per-mode prediction in `ModalAt` | `LineCalibrator` (`ExpectedBeta`, `SelectedIndexAt`, `MeasureGamma`, `StepBranch`, `SolveBox`, `At`, `ModalAt`, `Usable`, `Separable`, `Restart`) |
+
+### What stayed in `Mom/`, and why
+
+Everything that depends on how a standard was SOLVED or BUILT: the standards' meshes (`BuildLine`, `BuildSet`, …), the
+raw-S cache and the solve scheduling (`PrepareAt`), the quasi-static path (QSC crossover, `PlanarQuasiStaticLine`), the
+conducting substrate's estimates (SI-SIG, SI-LOW), the lumped-box choice (LFE), D7's planar C_pul (`PlanarDeembed`'s static
+solves), `PlanarModalMedium`, and `PlanarPortCalibration` / `PlanarGroupCalibration`. `PlanarPortCalibrator` is now the planar
+caller of `LineCalibrator`: it decides which path a point takes and when the branch steps (it still does not step on a
+quasi-static point above the skin onset), and hands the shared driver the matrices.
+
+### Gates
+
+- **Byte identity, measured as bytes.** A temporary probe (not committed) recorded every published S entry as raw IEEE bits
+  before the move and after it, on five fixtures that between them take every calibration path: a 5 mm laminate line over
+  0.5–12 GHz (crossing the quasi-static crossover) with the series gap and with the grounded edge port (LFE's lumped box), a
+  driven coupled pair (PCAL4 groups), the same pair undriven (PCAL3), and a line on oxide over 10 S/m silicon (SI-SIG).
+  17 rows, identical to the last bit; the probe was also run twice before the move to confirm the run is deterministic.
+- **The existing classes**, 241 tests across the 25 calibration classes in `Engine.Tests/Mom` plus three in `Ui.Tests/Em`,
+  and `Firewall.Tests`: all pass.
+- **R-pwl1-2** — `LineCalibrationTests.TheSharedCalibrationNamesNoPlanarType`: a comment-stripped scan of
+  `src/Engine/Calibration` for any `Planar*` type, `GroundedSlab`, `LayerStack`, `EmConstants` or the `Mom` namespace, and
+  `LineCalibration.C0 == EmConstants.C0` to the bit (the one value the shared code restates).
+- **R-pwl1-4** — two synthetic gates with no solver: a two-port (a 0.25 nH / 0.08 pF box, a distortionless 42 Ω line,
+  standards of 5 and 15 mm, a DUT of line + 12 Ω + line) and an asymmetric coupled four-port (2×2 series-L and shunt-C
+  boxes, two modes of εeff 2.0 and 2.6 at 38 and 61 Ω, a DUT of coupled line + shunt conductances), both at 2/3/4 GHz,
+  recovered through `LineCalibrator` alone: γ to < 1e-10 (two-port) / < 1e-9 (four-port), the box to < 1e-9, the DUT to
+  < 1e-9 / < 1e-8 in |ΔS|.
+
+### Small changes that are not moves
+
+- The singular-matrix exception in the modal calibration said "MoM:"; it says "Calibration:" now, since a 3D run can
+  raise it. The Firewall allow-list follows the six moved messages and gains `LineCalibrator`'s one new argument check.
+- `tests/Engine.Tests/Mom/PlanarModalCalibrationTests.cs` is `ModalLineCalibrationTests.cs`, after its class.
+- `src/Engine/Mom/CLAUDE.md` §3.4/§3.5/§8 and `src/Engine/CLAUDE.md` name the new homes, at the owner's request.

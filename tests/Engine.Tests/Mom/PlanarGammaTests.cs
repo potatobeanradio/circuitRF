@@ -15,6 +15,7 @@ using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Engine.Mom;
 using CircuitRF.Engine.Tests.Mom.Support;
 using Xunit.Abstractions;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Tests.Mom;
 
@@ -164,7 +165,7 @@ public class PlanarGammaTests(ITestOutputHelper output)
             double expect = double.IsNaN(prevBetaDl)
                 ? PlanarCalibration.EstimateBeta(slab, f)
                 : prevBetaDl * (f / prevF);
-            var g2 = PlanarCalibration.GammaBest(sShort, sLong, deltas, expect, out int pick);
+            var g2 = LineCalibration.GammaBest(sShort, sLong, deltas, expect, out int pick);
 
             var sol  = new PlanarSolveContext(mesh, prt).SolveAt(kernel, f);
             var wave = CurrentWaveOracle.Extract(mesh, sol.Currents[0], prt[0]);
@@ -245,7 +246,7 @@ public class PlanarGammaTests(ITestOutputHelper output)
 
     // ── Support ───────────────────────────────────────────────────────────────────────────────
 
-    private static PlanarCalibration.GammaResult TwoLine(
+    private static LineCalibration.GammaResult TwoLine(
         PlanarProblem problem, PlanarPortResolution port, PlanarKernelPair kernel, double f,
         double l1, double l2, out double deltaL, out double degrees,
         double expectedBetaDeltaL = double.NaN)
@@ -258,7 +259,7 @@ public class PlanarGammaTests(ITestOutputHelper output)
         var sb = new PlanarSolveContext(b.Mesh, b.Ports).RawScatteringAt(kernel, f);
 
         deltaL = b.LengthM - a.LengthM;
-        var g = PlanarCalibration.Gamma(sa, sb, deltaL, expectedBetaDeltaL);
+        var g = LineCalibration.Gamma(sa, sb, deltaL, expectedBetaDeltaL);
         degrees = g.ElectricalDegrees;
         return g;
     }

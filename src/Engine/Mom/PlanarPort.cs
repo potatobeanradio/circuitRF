@@ -69,6 +69,7 @@
 // mesh.Bases and never iterated, so nothing on this path depends on hash order.
 
 using System.Numerics;
+using CircuitRF.Engine.Calibration;
 
 namespace CircuitRF.Engine.Mom;
 
@@ -487,7 +488,7 @@ public sealed record PlanarPortNeighbourhood(
 /// <para>R-pcal4-1. Two ports on conductors that are coupled at the plane support TWO modes there,
 /// and no assignment of scalars to those two ports can represent that — so the GROUP, not the port,
 /// becomes the unit of calibration: one shared standard carrying every conductor, one modal error
-/// box, and <see cref="PlanarModalCalibration"/>'s N×N blocks in place of D6's three scalars. <b>A
+/// box, and <see cref="ModalLineCalibration"/>'s N×N blocks in place of D6's three scalars. <b>A
 /// group of one is today's case and takes today's code path</b>, unchanged and bit for bit: this
 /// record is null on every port that is not in a multi-conductor group.</para>
 ///
@@ -577,7 +578,7 @@ public enum PlanarNeighbourClass
 /// de-embeds.</b> A pass/fail with no distance is how a threshold change becomes invisible.
 ///
 /// <para><b>The margin is in SUBSTRATE HEIGHTS and there is deliberately no error bound.</b> PCAL1
-/// looked for one and the negative result is structural: <c>PlanarDeembed.SolveErrorBox</c>'s
+/// looked for one and the negative result is structural: <c>LineDeembed.SolveErrorBox</c>'s
 /// arguments are the two calibration standards and not the DUT, so its consistency and rejected
 /// residuals are bit-for-bit identical between a run that is 22 dB wrong and one at the floor. σ_max
 /// detects the failure well and estimates it not at all — it is non-monotonic in the error, with the
