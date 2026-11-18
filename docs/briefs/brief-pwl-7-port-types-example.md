@@ -45,15 +45,27 @@ In this order:
    once, then copy it.
 3. **One section per cell**: what the structure is, its closed form stated with its numbers, how each port was set up
    (and for the wall port, that it was one right-click), then the **benchmark table**: *Port*, *Solver*, worst |ΔS11|,
-   worst |ΔS21|, worst ∠S21 error (degrees), ε_eff at the band's centre against the closed form, unknowns, solve time
-   (with the standards' time shown separately for wall ports), all against the cell's reference. Under it, two small
+   worst |ΔS21|, worst ∠S21 error (degrees), **worst VSWR of S11 and S22 against the reference's**, ε_eff at the band's
+   centre against the closed form, unknowns, solve time (with the standards' time shown separately for wall ports), all
+   against the cell's reference. The VSWR column is `RfCore.RfHelpers.VswrFromGamma(reference, answer)`, the function the
+   loadpull VSWR circles use: s = (z₂ − z₁)/(z₂ + z₁*), so it reads exactly 1 when the two reflections are the same
+   impedance (never the conjugate-match form, which reads 1 for a conjugate pair), both reflections in one real reference.
+   It is the port-match figure and |ΔS| is dominated by S21's phase, so the two are reported side by side and neither
+   stands in for the other. No VSWR is formed from a transmission term (S21, S31).
+
+   **Then the agreement matrix, which is the table a reader should look at first**: every (port, solver) result of the
+   cell against every other, each entry the worst VSWR between the two results' S11 and S22 over the band (the same
+   function, one result as z₁ and the other as z₂; the order does not matter, the magnitude is symmetric). The diagonal
+   is empty; the reference, where the cell has one, is one more row and column. It answers "how different are these
+   solutions from each other" at a glance, and on **Line over Silicon**, which has no reference, it is the whole
+   comparison. A second matrix of worst |ΔS21| beside it shows the transmission side, which VSWR does not. Under it, two small
    PNGs made with `circuitrf plot`: the ∠S21 error over frequency for every port in the cell, and S11 on a Smith chart.
    Times are stated with the machine and build they were measured on, and are not held by any test.
 4. **What the numbers say**, per cell, in a few sentences: which port was closest, by how much, and why, in terms a
    designer can use. Only what the runs show.
 
-**Line over Silicon** has no reference, so its section shows ε_eff and Z_c over 1–40 GHz from each port and says
-whether any of them moves between neighbouring frequencies. It states plainly that nothing there is an accuracy
+**Line over Silicon** has no reference, so its section leads with the agreement matrix, then shows ε_eff and Z_c over
+1–40 GHz from each port and says whether any of them moves between neighbouring frequencies. It states plainly that nothing there is an accuracy
 figure.
 
 ## Choosing a port: the draft text
@@ -81,8 +93,8 @@ Start from this, change it where the runs disagree, and keep every claim one the
 
 - **R-pwl7-1 — The workspace** as tabled above, with a row in `examples/examples.json` directly after 3D Wave Ports, and
   the index gate (`ExampleWorkspacesTests`) passing.
-- **R-pwl7-2 — The numbers are held.** `expected-numbers.json` holds every accuracy figure in the README tables (not the
-  times), and `PortTypesExampleTests` (`Category=Benchmark`) re-runs the setups and holds them, as the 3D Wave Ports
+- **R-pwl7-2 — The numbers are held.** `expected-numbers.json` holds every accuracy figure in the README tables,
+  the agreement matrices included (not the times), and `PortTypesExampleTests` (`Category=Benchmark`) re-runs the setups and holds them, as the 3D Wave Ports
   example's are held. A row is in the README only if a run produced it.
 - **R-pwl7-3 — One guide, two places.** The *Choosing a port* table is identical in the README and in the user docs; a
   routine test compares the two tables cell by cell (whitespace-normalised) and fails on any difference.

@@ -548,6 +548,17 @@ independently of circuitRF, then committed as fixed data — with the **identica
 on both sides**, so HB comparisons test our math, not a different transistor. CI runs the
 suite on Windows, macOS, and Linux.
 
+**Benchmarking reflections or impedances: report the complex VSWR between the two answers, not only |ΔS|.**
+Whenever two results are compared — a solver against a reference, two solvers, two port types, a model against a
+measurement, two loadpull impedances — compare each port's reflection (S11, S22, …, or the impedances themselves) as
+the VSWR between them with `RfCore.RfHelpers.VswrFromGamma` / `VswrFromZ`: s = (z₂ − z₁)/(z₂ + z₁*), VSWR =
+(1+|s|)/(1−|s|). It reads exactly 1 when the two impedances are equal; never use the conjugate-match form
+(Z_L − Z_S*)/(Z_L + Z_S), which reads 1 for a conjugate pair. Why: RF circuit performance, and model-to-measurement
+agreement, follow VSWR rather than |ΔS|, and VSWR does not depend on the reference impedance, so it means the same for
+a 2 Ω device terminal as for a 500 Ω one, where a |ΔS| at 50 Ω would overstate or hide the difference. Keep |ΔS|
+beside it (it is what sees a transmission term — VSWR is never formed from S21 or S31), and for comparing several
+results to each other give the pairwise matrix, not just each one against the reference.
+
 UI changes require visual verification.  Use tools/UiSnapshot/Program.cs to create scratch visuals for your inspection.
 
 ## Ask before

@@ -1,0 +1,35 @@
+{
+ "FormatVersion": 1,
+ "Name": "PWL wall-port fixtures: materials",
+ "DefaultDisplayUnit": "Um",
+ "Layers": [],
+ "Stackup": {
+  "Top": "Open",
+  "Bottom": "Ground",
+  "Layers": []
+ },
+ "Materials": [
+  {
+   "Name": "Perfect",
+   "Sigma20": 100000000000000.0
+  },
+  {
+   "Name": "PTFE",
+   "Epsr": 2.1,
+   "TanD": 0,
+   "Mur": 1
+  },
+  {
+   "Name": "Laminate",
+   "Epsr": 2.2,
+   "TanD": 0,
+   "Mur": 1
+  },
+  {
+   "Name": "Air",
+   "Epsr": 1,
+   "TanD": 0,
+   "Mur": 1
+  }
+ ]
+}

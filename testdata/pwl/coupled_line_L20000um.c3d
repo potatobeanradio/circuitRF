@@ -1,0 +1,217 @@
+{
+ "FormatVersion": 1,
+ "DbuPerMicron": 1000,
+ "DisplayUnit": "Um",
+ "SnapDbu": 1,
+ "TechRef": "pwl.ctech",
+ "Objects": [
+  {
+   "$type": "Box",
+   "Name": "substrate",
+   "Material": "Laminate",
+   "Min": [
+    0,
+    -6430000,
+    0
+   ],
+   "Size": [
+    20000000,
+    12860000,
+    508000
+   ]
+  },
+  {
+   "$type": "Sheet",
+   "Name": "strip_a",
+   "Material": "Perfect",
+   "Plane": "XY",
+   "Offset": 508000,
+   "Rect": {
+    "Min": [
+     100000,
+     -1350000
+    ],
+    "Size": [
+     19800000,
+     1200000
+    ]
+   }
+  },
+  {
+   "$type": "Sheet",
+   "Name": "strip_b",
+   "Material": "Perfect",
+   "Plane": "XY",
+   "Offset": 508000,
+   "Rect": {
+    "Min": [
+     100000,
+     150000
+    ],
+    "Size": [
+     19800000,
+     1200000
+    ]
+   }
+  }
+ ],
+ "Ports": [
+  {
+   "Number": 1,
+   "Name": "P1",
+   "Kind": "Lumped",
+   "Plane": "XY",
+   "Offset": 508000,
+   "Rect": {
+    "Min": [
+     0,
+     -1350000
+    ],
+    "Size": [
+     100000,
+     1200000
+    ]
+   },
+   "Positive": "strip_a",
+   "Negative": "airbox/xmin",
+   "Z0": "50"
+  },
+  {
+   "Number": 2,
+   "Name": "P2",
+   "Kind": "Lumped",
+   "Plane": "XY",
+   "Offset": 508000,
+   "Rect": {
+    "Min": [
+     0,
+     150000
+    ],
+    "Size": [
+     100000,
+     1200000
+    ]
+   },
+   "Positive": "strip_b",
+   "Negative": "airbox/xmin",
+   "Z0": "50"
+  },
+  {
+   "Number": 3,
+   "Name": "P3",
+   "Kind": "Lumped",
+   "Plane": "XY",
+   "Offset": 508000,
+   "Rect": {
+    "Min": [
+     19900000,
+     -1350000
+    ],
+    "Size": [
+     100000,
+     1200000
+    ]
+   },
+   "Positive": "strip_a",
+   "Negative": "airbox/xmax",
+   "Z0": "50"
+  },
+  {
+   "Number": 4,
+   "Name": "P4",
+   "Kind": "Lumped",
+   "Plane": "XY",
+   "Offset": 508000,
+   "Rect": {
+    "Min": [
+     19900000,
+     150000
+    ],
+    "Size": [
+     100000,
+     1200000
+    ]
+   },
+   "Positive": "strip_b",
+   "Negative": "airbox/xmax",
+   "Z0": "50"
+  }
+ ],
+ "Setups": [
+  {
+   "FormatVersion": 1,
+   "Name": "Palace",
+   "Frequency": {
+    "StartExpr": "1",
+    "StopExpr": "1",
+    "StepExpr": "",
+    "NumPoints": 1,
+    "Mode": "PointCount",
+    "Kind": "Linear",
+    "StartUnit": "GHz",
+    "StopUnit": "GHz",
+    "StepUnit": "GHz"
+   },
+   "AdditionalFrequencies": [
+    {
+     "StartExpr": "5",
+     "StopExpr": "5",
+     "StepExpr": "",
+     "NumPoints": 1,
+     "Mode": "PointCount",
+     "Kind": "Linear",
+     "StartUnit": "GHz",
+     "StopUnit": "GHz",
+     "StepUnit": "GHz"
+    },
+    {
+     "StartExpr": "10",
+     "StopExpr": "10",
+     "StepExpr": "",
+     "NumPoints": 1,
+     "Mode": "PointCount",
+     "Kind": "Linear",
+     "StartUnit": "GHz",
+     "StopUnit": "GHz",
+     "StepUnit": "GHz"
+    }
+   ],
+   "Port1Z0Real": 50,
+   "Port1Z0Imag": 0,
+   "Port2Z0Real": 50,
+   "Port2Z0Imag": 0,
+   "Solver3D": "Palace",
+   "AirBox": {
+    "XMin": {
+     "PaddingUm": 0,
+     "Boundary": "Pec"
+    },
+    "XMax": {
+     "PaddingUm": 0,
+     "Boundary": "Pec"
+    },
+    "YMin": {
+     "PaddingUm": 0,
+     "Boundary": "Absorbing"
+    },
+    "YMax": {
+     "PaddingUm": 0,
+     "Boundary": "Absorbing"
+    },
+    "ZMin": {
+     "PaddingUm": 0,
+     "Boundary": "Pec"
+    },
+    "ZMax": {
+     "PaddingUm": 5080.0,
+     "Boundary": "Absorbing"
+    }
+   },
+   "Palace": {
+    "Quality": "Standard",
+    "AdaptiveMaxIterations": 0,
+    "SaveFieldsGHz": []
+   }
+  }
+ ]
+}

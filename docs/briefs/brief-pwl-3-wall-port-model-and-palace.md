@@ -4,13 +4,28 @@ Series overview: `brief-pwl-0-overview.md`. Needs brief 1 (`LineCalibrator`) and
 
 ## Decisions from brief 2
 
-Fill these in from `src/Design/Em3d/RESOLVED.md` §PWL-2 before starting, and keep them here:
+Measured in `src/Design/Em3d/RESOLVED.md` §PWL-2 (2026-11-18):
 
-- Default gap `g`, and the floor below which the run refuses: ______
-- Port-region mesh: independent / extruded block / extruded prisms: ______
-- Source of C′: ______
-- Default end run, in substrate heights: ______
-- Tolerances for overview gates 3 and 4: ______
+- **Gap:** `g = min(w, h)/5`, w the line's width at its end and h its height above its return. The calibrated answer is
+  flat from w/40 to w/5 (pairwise VSWR ≤ 1.009); smaller gaps only cost time and memory. Never a user setting. No floor
+  refusal is needed on Palace; openEMS rounds it up to one cell (brief 6).
+- **Port-region mesh:** independent meshing of the structure and each standard, with the same mesh settings. Third-line
+  residuals ≤ 8e-3 without forcing an identical port region; no extruded block is built.
+- **C′:** kernel A on the wall's 2D cross-section, for every solver alike. Grounded metal other than the floor (a second
+  plane, a lid, a side wall) is a grounded conductor, and C′ is the Maxwell matrix's diagonal block for the group's
+  conductors. The cross-section mesh is sized for its WIDEST grounded conductor (the single-strip default reads −3.5 %
+  on a stripline's top plane, 96 cells across reads +0.2 %). A group's [C] is symmetrised before the modal step. A
+  conducting layer enters as εr − jσ/(ωε₀), C* per frequency, and β is then predicted history-free from kernel A's
+  quasi-static γ at every point.
+- **End run:** 3 substrate heights per wall; the short standard at least 6 h. 1 h biases γ by 1.1 %; 5 h and 7.9 h agree to
+  VSWR 1.0035.
+- **Tolerances** (Standard quality, no refinement), every comparison as VSWR and |ΔS|:
+  - **Gate 3, stripline:** calibrated VSWR against the exact line ≤ 1.01, third-line residual ≤ 3e-3, ε_eff within 1 %,
+    |ΔS| ≤ 3e-2 at 10 GHz.
+  - **Gate 4, coupled pair:** calibrated VSWR against kernel A's quasi-static coupled line ≤ 1.025, modal third-line
+    residual ≤ 1.5e-2, both modes' ε_eff within 3 % of kernel A's, separation ≥ 0.5°.
+  - The |ΔS| figures are Palace's own phase-velocity error over 20 mm, not the port's. Brief 2's stop rule (1e-2 at
+    10 GHz) was met as written for that reason, and the owner chose these restated gates (§PWL-2).
 
 ## What a user writes
 
