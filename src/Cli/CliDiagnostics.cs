@@ -1543,6 +1543,10 @@ internal static class CliDiagnostics
     public static Diagnostic CheckThreeDPortRefused(string path, string text) => Diagnostic.Create(
         "check.c3d.port-refused", DiagnosticSeverity.Error, "{path}: {text}", ("path", path), ("text", text));
 
+    /// <summary>PWL-3 R-pwl3-6 — a conductor a wall-port face shorts to ground, named.</summary>
+    public static Diagnostic CheckThreeDWallGrounds(string path, string text) => Diagnostic.Create(
+        "check.c3d.wall-grounds", DiagnosticSeverity.Warning, "{path}: {text}", ("path", path), ("text", text));
+
     /// <summary>brief-emb-1 R-emb1-4/7 — a component port's own warning: a part with no model on the board's schematic.</summary>
     public static Diagnostic CheckThreeDComponentPortWarning(string path, string text) => Diagnostic.Create(
         "check.c3d.component-port", DiagnosticSeverity.Warning, "{path}: {text}", ("path", path), ("text", text));

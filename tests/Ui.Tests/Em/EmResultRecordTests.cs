@@ -14,6 +14,7 @@ using RfCore.Export;
 
 namespace CircuitRF.Ui.Tests.Em;
 
+[Collection(Em3dLegStandInCollection.Name)]
 public sealed class EmResultRecordTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "crf-cemr-" + Guid.NewGuid().ToString("N")[..10]);

@@ -218,11 +218,53 @@ benchmark test holds it yet, because its reference needs kernel A's modes in the
 - **`CalibrateWallPorts`** on `EmSetup` (default on, written only as `false`, the `ThinMetalCorrection` pattern). Off skips
   the standards and publishes the raw S at the gaps, with a note; the assembly's gap note stops promising a calibration.
   Gate: `CalibrateWallPorts_IsWrittenOnlyWhenOff_AndReadsBack`; the 70 setup-document tests are unchanged.
-- **Still open in brief 3:** pricing the standards in `run dryRun`, the walls in `explain`; the 3D view's per-setup `Ports3D`
-  Wave/Wall override and a layout `.cem`'s wall ports (refused by name today); splitting a face into groups by distance
-  (today a face is one group, its degeneracy refused); a gate-4 benchmark test.
 - **R-pwl3-14, in part — `explain` (and so `run dryRun`, which goes through it) shows a `wall ports` block**: each face's
   group, its standards' lengths, whether a face shares another's, the C′ source, and how many standards a run must solve,
   all from `Em3dWallCalibration.Plan` itself, or the refusal a run would give. `ResultDocument.WallPorts` carries it in
   `--json`. The standards are not yet priced in memory and time beside the structure. Gate:
   `WallPortTests.ExplainShowsEachFacesGroupAndItsStandards`; the 169 tests of the classes that run `explain` are unchanged.
+
+## PWL-3, stage 3 — brief 3 closed (2026-11-18)
+
+This section supersedes two lines above: a face is no longer one group, and a `.cem`'s `Ports3D` Wall is no longer refused.
+
+- **Groups by distance (D6).** A face's lines within `CouplingHeights` of each other (the planar solver's own
+  `DrivenNeighbourClearanceHeights`, 5, read from `PlanarCalibrationSettings` rather than a second literal, as is the group
+  cap of 3) are one group; farther apart, separate groups, each with its own standards and named `xmin (1)`, `xmin (3)`.
+  A group's section leaves the OTHER groups' lines on that face out; the far face's port on the same line is not "another
+  group" (the first cut excluded it by conductor name and the single stripline lost its own strip).
+- **A setup's Wave/Wall choice** (`C3dWallPorts.ApplySetupKinds`): an embedded setup's `Ports3D` rows of kind Wave or Wall
+  applied to copies of the document's ports, in `Assemble` and in `AirBox` (so `check`, `explain` and the run agree on the
+  box). A row naming no port, or a lumped port, is refused by name; a wave port with terminals run as Wall becomes one wall
+  port per terminal. Lumped rows are ignored, not refused as the brief asked: `EmPort3D.Kind` has no "unstated" value, so a
+  row that states only a `Return` would read as Lumped. **Two shipped examples** (`Passivated Pad/2 Probe Pad`, `4 Bonded
+  Pad`) state `Kind: "Wave"` on ports drawn as Wave, so a setup that changes no kind runs the ORIGINAL document, not a copy.
+- **A layout's wall ports** (`Em3dGenerator`): the setup is generated with its Wall rows as Wave (the generator's own face,
+  zero padding and line), then `C3dWallPorts.FromWavePorts` turns each into the wall port it stands for: the face PEC, the
+  gap from the face to the line, the line cut back by the same `Trim`. EMerge/openEMS refused as on a `.c3d`. Gate:
+  `LayoutWallPortTests` (top-copper line over the inner plane: PEC x faces, gap = min(w, h)/5, line starting one gap in).
+- **What a run publishes (R-pwl3-12):** the `.sNp` header names each wall port (calibrated, its reference plane; or
+  UNCALIBRATED and its gap) and each group (ports, scalar or modal, the standards' lengths, ε_eff, Z_c, residual); the
+  diagnostics carry `__WallPortGamma`, `__WallPortEeff`, `__WallPortZc` and `__WallPortResidual` `[f, Port]` beside
+  `__WallPortRawS`; the planar solver's passivity rule (σ_max ≤ 1 + 1e-3, uniform real reference) on the calibrated answer is
+  a note when it fails. Gate: `IdealLinesCalibrateToTheLine_AndTheDiagnosticsReadItsEpsEff` (ideal matched lines in place of
+  solves give back the 20 mm line to 5e-3 and the fill's ε_eff to 1e-6).
+- **`check`** reports each setup's wall refusal (faces, a `Ports3D` row, groups, end runs) as an error, the plan as notes, and
+  warns (`check.c3d.wall-grounds`) about every conductor a wall face shorts that is not a port's line, above the face's
+  returns (D7). **`explain` / `run dryRun`** list each wall port and where its kind came from, the plan, each standard cached
+  or to solve (one `Em3dWallCalibration.CachePath`, used by the run too), the uncached standards' unknowns and memory from
+  `EstimatePalace`, and the total with the structure's. On the coupled pair: 234,643 / 324,525 / 263,066 unknowns, 3.8 GB
+  peak.
+- **The cache through the run:** `WallStandardsCacheRunTests` drives `RunThreeDView` twice with a stand-in solver: three
+  standards solved and kept, then none. The standards now take their legs through `LegStandIn` like every other leg did;
+  `EmResultRecordTests` and this class share the `Em3dLegStandIn` collection, since that hook is a process-wide static.
+- **Gate 4 is a benchmark test** (`Gate4_TheCalibratedPairIsKernelAsCoupledLine`, `Category=Benchmark`, about 25 minutes).
+  It computes kernel A's coupled line itself and reads each mode's ε_eff from the published S through its modal 2-port
+  (A = cos βℓ, independent of the reference impedance). Checked against the stage-2 product result, not re-run: VSWR inside
+  1.025 at every port, the standards agreeing to 7e-15, the odd mode inside 3 %, and the **even mode 3.3 % above kernel A at
+  1 GHz** (2.006 against 1.9415). PWL-2's spike read the same mode 1.985–2.003, so the restated 3 % is exceeded by Palace's
+  own microstrip phase velocity, not by the port; the test holds 3.5 % and says why. The owner decides whether the gate moves.
+- **Gate 1:** the classes that lower shipped `.c3d`/`.cem` to Palace (the `ThreeD` namespace, the port, generator and Palace
+  classes, 4,443 tests) pass except nine `Em3dGeneratorDumpTests.Gate2` cases on `examples/Dividers and Couplers`, whose
+  layouts and `.cem`s changed in a 2026-11-17 commit after their dumps were last written (2026-11-16); nothing here touches
+  them. The reference text (`reference em-setup`, `3d-view`) and `docs/user/src/reference/em-setup.md` describe all of it.

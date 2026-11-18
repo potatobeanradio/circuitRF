@@ -429,15 +429,13 @@ public static partial class Em3dRunService
         var (wall, refusal) = Em3dWallCalibration.Plan(problem, lo, hi, planNotes);
         run.Log.Notes.AddRange(planNotes);
         if (refusal is not null) return new Stop(EmRunStatus.Refused, EmDiagnostics.Forwarded(WallSource, refusal));
-        string settings = Layout.Em.EmSetupPersistence.Serialize(run.Setup);
         int reused = 0;
         for (int i = 0; i < wall!.Standards.Count; i++)
         {
             var std = wall.Standards[i];
             run.Ct.ThrowIfCancellationRequested();
             // R-pwl3-9 — a standard solved before, with the same problem, settings and solver, is not solved again.
-            string cachePath = Path.Combine(run.ResultsRoot, Em3dWallCalibration.CacheFolder,
-                Em3dWallCalibration.CacheKey(std.Problem, settings, structureLeg.Solver.Id.ToString()) + ".json");
+            string cachePath = Em3dWallCalibration.CachePath(run.ResultsRoot, std, run.Setup, structureLeg.Solver.Id);
             if (Em3dWallCalibration.TryLoad(cachePath, out var cachedHz, out var cachedS))
             {
                 wall.Capture(i, cachedHz, cachedS);
@@ -454,7 +452,7 @@ public static partial class Em3dRunService
             };
             stdRun.Dc = null; stdRun.Compare = false; stdRun.Wall = null;
             run.Control?.BeginStage($"wall standard {i + 1} of {wall.Standards.Count} ({std.Label})");
-            var leg = structureLeg.Solver.NewLeg();
+            var leg = LegStandIn?.Invoke(run.ResultsRoot, structureLeg.Solver) ?? structureLeg.Solver.NewLeg();
             leg.Configure(stdRun);
             if (leg.Stop is null) leg.Prepare(std.Problem, stdRun);
             if (leg.Stop is { } stop) return stop;

@@ -1775,8 +1775,9 @@ face. It needs no mode solve, so it does not depend on a face's mode being found
   it again; the run's notes say how many were reused. A tuning sweep that does not change the face pays for them once.
 - **Calibrate wall ports** (`CalibrateWallPorts`, on): off publishes the raw S at each gap, in the port's Z0, for comparison,
   with a note saying so. Only `"CalibrateWallPorts": false` is ever written.
-- **Several lines on one face** are calibrated together, as one group of up to three: their standard carries all of them, so
-  the coupling between them at the port is removed with the port.
+- **Several lines on one face** within 5 line heights of each other are calibrated together, as one group of up to three:
+  their standard carries all of them, so the coupling between them at the port is removed with the port. Lines farther
+  apart are separate groups, each with its own standards, which leave the other groups' lines out.
 - **The end run must be uniform.** From the face inward for 3 substrate heights, everything crossing the face must run
   straight and unchanged, because the standards reproduce exactly that. A line that tapers or bends there is refused,
   naming the object; extend it straight.
@@ -1784,8 +1785,22 @@ face. It needs no mode solve, so it does not depend on a face's mode being found
   `Positive`, or draw one per line); a face carrying wave ports too; a line with no ground beneath it; dielectrics that are
   not layers across the face's whole width; lines whose modes travel at nearly one speed (a stripline pair: feed it with a
   wave port with terminals on openEMS).
-- **Palace only, in this version.** EMerge and openEMS refuse a wall port by name. A layout's 3D setup (`.cem`) refuses
-  `Ports3D` `Kind: "Wall"` too: make a 3D view of the layout and draw its wall ports there.
+- **What a run publishes.** The `.sNp`'s header says, per port, that it is a calibrated wall port and where its reference
+  plane is, and per group, its standards and the ε_eff, Z_c and agreement the run measured. The `.npy`'s diagnostics hold
+  the raw S at the gaps (`__WallPortRawS`) and, per wall port and frequency, γ (`__WallPortGamma`), ε_eff
+  (`__WallPortEeff`), Z_c (`__WallPortZc`) and the standards' agreement (`__WallPortResidual`). A note says so when the
+  calibrated answer is not passive (its largest singular value over 1 + 1e-3).
+- **Choosing the kind per setup.** A port drawn on an air-box face as a wave port or a wall port can be run as the other by
+  one setup only: that setup's `Ports3D` (`[{ "Port": 1, "Kind": "Wall" }]`). The drawing is not changed, and a setup that
+  states nothing runs the port as drawn. A row naming a port the view does not have, or a lumped port, is refused by name.
+  A wave port with terminals run as Wall becomes one wall port per terminal, keeping their numbers.
+- **On a layout.** A layout's 3D setup (`.cem`) takes `Ports3D` `Kind: "Wall"` for a labelled edge port: the port is built
+  where its wave port would be, then fed and calibrated as a wall port.
+- **`check` and `explain`.** `check` reports each setup's refusal and warns, naming it, about any conductor that meets a
+  wall-port face without being a port's line, since the wall shorts it there. `explain` (and `run dryRun=true`) lists each
+  wall port and where its kind came from, each group and its standards, which standards are cached, and what the ones to
+  solve cost beside the structure.
+- **Palace only, in this version.** EMerge and openEMS refuse a wall port by name.
 
 In a `.c3d`:
 

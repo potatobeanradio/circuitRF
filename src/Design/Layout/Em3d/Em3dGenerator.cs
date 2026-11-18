@@ -343,13 +343,22 @@ public static class Em3dGenerator
         // have names: CircuitRF.Design.ThreeD.Em3dSetupProblem.Of is the door, and nothing reaches here with them.
         if (setup.ComponentPorts.Count > 0)
             throw new ArgumentException("A setup naming component ports is built by Em3dSetupProblem.Of, not the generator.", nameof(setup));
-        // PWL-3 — a layout's wall ports are not built yet: refused by name rather than run as the ordinary lumped port the
-        // generator would otherwise make of them.
-        if (setup.Ports3D.FirstOrDefault(q => q.Kind == Em3dPortKind.Wall) is { } wall)
-            return new Em3dGenerationResult(null,
-                $"Port {wall.Port} is a wall port, and a layout's 3D setup does not build wall ports in this version. Make a 3D view of the " +
-                "layout (Design ▸ New 3D View from Layout) and make its ports wall ports there, or set this port to Lumped or Wave.", []);
-        return new Run(setup, source, tech, wires, displaySlabs, portsOptional, padsOptional, portsEach).Go();
+        // PWL-3 — a layout's wall ports: built as the wave ports they are drawn as (the face, its zero padding, the line), then each
+        // turned into the wall port it stands for in the solved problem (C3dWallPorts.FromWavePorts).
+        var walls = setup.Ports3D.Where(q => q.Kind == Em3dPortKind.Wall).Select(q => q.Port).ToHashSet();
+        if (walls.Count == 0) return new Run(setup, source, tech, wires, displaySlabs, portsOptional, padsOptional, portsEach).Go();
+        if (setup.Problem3D == Em3dProblemType.Driven && setup.Solver3D.Solvers.Any(x => x != Em3dSolverId.Palace))
+            return new Em3dGenerationResult(null, "This setup has wall ports, which run on Palace in this version; EMerge and openEMS follow. " +
+                                                  "Choose Palace for this setup, or make the ports wave or lumped ports.", []);
+        var asWave = setup.Clone();
+        asWave.Ports3D = [.. setup.Ports3D.Select(q => q.Kind == Em3dPortKind.Wall ? q with { Kind = Em3dPortKind.Wave } : q)];
+        var built = new Run(asWave, source, tech, wires, displaySlabs, portsOptional, padsOptional, portsEach).Go();
+        if (!built.Ok || setup.Problem3D != Em3dProblemType.Driven) return built;
+        var notes = built.Notes.ToList();
+        var converted = CircuitRF.Design.ThreeD.C3dWallPorts.FromWavePorts(built.Problem!, walls, notes, out string? refusal);
+        if (converted is null) return new Em3dGenerationResult(null, refusal, notes) { Warnings = built.Warnings };
+        if (!setup.CalibrateWallPorts) notes[^1] = CircuitRF.Design.ThreeD.C3dWallPorts.GapNote(converted.Ports, calibrated: false);
+        return built with { Problem = converted, Notes = notes };
     }
 
     /// <summary>

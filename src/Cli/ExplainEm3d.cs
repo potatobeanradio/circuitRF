@@ -211,7 +211,7 @@ internal static class ExplainEm3d
             Static = Static(p, setup),
             OpenEmsWavePorts = setup.Solver3D.Runs(OpenEmsSolver.Id) ? WavePortLines(p, grid.Grid) : null,
             PalaceTerminalPorts = setup.Solver3D.Runs(PalaceSolver.Id) ? PalaceTerminalLines(p, setup.Solver3D) : null,
-            WallPorts = WallPortLines(p, setup),
+            WallPorts = WallPortLines(p, setup, src.Path),
             Emerge = setup.Solver3D.Runs(EmergeSolver.Id) ? Emerge(p, setup) : null,
             Eigenmode = p.Type != Em3dProblemType.Eigenmode ? null
                 : new Em3dEigenmodeJson(p.EigenmodeCount, setup.Eigenmode?.Count is null ? "default" : "field",
@@ -264,16 +264,53 @@ internal static class ExplainEm3d
     /// PWL-3 R-pwl3-14 — what a run would do with the problem's wall ports: each face's group, its standards and the C′ source
     /// (the calibration's own plan, so explain and the run cannot disagree), or why it would refuse. Nothing is solved.
     /// </summary>
-    private static IReadOnlyList<string>? WallPortLines(Em3dProblem p, EmSetup setup)
+    private static IReadOnlyList<string>? WallPortLines(Em3dProblem p, EmSetup setup, string path)
     {
-        if (!p.Ports.Any(q => q.Wall is not null)) return null;
-        if (!setup.CalibrateWallPorts) return ["Calibrate wall ports is off: a run publishes the raw S at each gap."];
-        var notes = new List<string>();
-        var (cal, refusal) = Em3dWallCalibration.Plan(p, p.Frequency.StartHz, p.Frequency.StopHz, notes);
-        if (refusal is not null) return [$"a run would refuse: {refusal}"];
-        notes.Add($"{cal!.Standards.Count} standard(s) to solve before the structure, each with this setup's solver and settings " +
-                  $"(reused from results/{Em3dWallCalibration.CacheFolder} where an earlier run solved the same one).");
-        return notes;
+        var walls = p.Ports.Where(q => q.Wall is not null).ToList();
+        if (walls.Count == 0) return null;
+        var lines = new List<string>();
+        static string G(double v) => v.ToString("G4", CultureInfo.InvariantCulture);
+        // Each port's kind, and whether it came from the drawing or from this setup's Ports3D.
+        bool fromCem = !path.EndsWith(".c3d", StringComparison.OrdinalIgnoreCase);
+        foreach (var q in walls)
+        {
+            var w = q.Wall!;
+            string from = fromCem ? "from the setup's Ports3D"
+                        : setup.Ports3D.Any(r => r.Port == q.Number && r.Kind == Em3dPortKind.Wall) ? "chosen by this setup's Ports3D"
+                        : "as the port is drawn";
+            lines.Add($"port {q.Number}: wall port on the {w.Face} face ({from}), line '{w.Conductor}' {G(w.WidthM * 1e6)} µm wide " +
+                      $"{G(w.HeightM * 1e6)} µm above its return, gap {G(w.GapM * 1e6)} µm.");
+        }
+        foreach (var r in setup.Ports3D.Where(r => r.Kind == Em3dPortKind.Wave && !fromCem))
+            lines.Add($"port {r.Port}: run as a wave port, chosen by this setup's Ports3D.");
+        if (!setup.CalibrateWallPorts) { lines.Add("Calibrate wall ports is off: a run publishes the raw S at each gap."); return lines; }
+        var (cal, refusal) = Em3dWallCalibration.Plan(p, p.Frequency.StartHz, p.Frequency.StopHz, lines);
+        if (refusal is not null) { lines.Add($"a run would refuse: {refusal}"); return lines; }
+
+        // R-pwl3-14 — each standard, cached or to solve, and what the uncached ones cost beside the structure (solved one after
+        // another, so the peak memory is the largest of them).
+        string root = CircuitRF.Cli.ResultsRoot.For(path, CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(
+            System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path))!));
+        var solverId = Em3dSolvers.Of(setup.Solver3D).FirstOrDefault()?.Id ?? Em3dSolverId.Palace;
+        var palace = PalaceSettings.Resolve(setup.Palace);
+        var structure = Em3dRunService.EstimatePalace(p, palace);
+        long unknowns = structure?.Unknowns ?? 0, peak = structure?.MemoryBytes ?? 0;
+        int toSolve = 0;
+        foreach (var std in cal!.Standards)
+        {
+            if (File.Exists(Em3dWallCalibration.CachePath(root, std, setup, solverId))) { lines.Add($"standard '{std.Label}': cached, reused."); continue; }
+            toSolve++;
+            var est = Em3dRunService.EstimatePalace(std.Problem, palace);
+            if (est is null) { lines.Add($"standard '{std.Label}': to solve."); continue; }
+            unknowns += est.Unknowns; peak = Math.Max(peak, est.MemoryBytes ?? 0);
+            lines.Add($"standard '{std.Label}': to solve, about {est.Unknowns:N0} unknowns" +
+                      (est.MemoryBytes is { } b ? $", about {b / 1e9:0.#} GB" : "") + ".");
+        }
+        lines.Add(toSolve == 0
+            ? $"All {cal.Standards.Count} standard(s) are cached: the run solves only the structure."
+            : $"{toSolve} of {cal.Standards.Count} standard(s) to solve before the structure, with this setup's solver and settings: about " +
+              $"{unknowns:N0} unknowns in all, the structure's included" + (peak > 0 ? $", the largest about {peak / 1e9:0.#} GB, since they run one after another." : "."));
+        return lines;
     }
 
     /// <summary>

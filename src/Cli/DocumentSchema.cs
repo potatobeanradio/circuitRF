@@ -389,7 +389,7 @@ internal static class DocumentSchema
             circuitrf check ws
             circuitrf em    ws/thru/em/thru.cem
 
-        Eight things that are not obvious from the field list:
+        Ten things that are not obvious from the field list:
 
           * LayoutRef names the geometry document: a .clay or a .c3d. It is relative to the
             WORKSPACE folder (the one holding .cws), not to the .cem. The technology is the
@@ -409,6 +409,13 @@ internal static class DocumentSchema
             which in the run's notes.
           * DispersionCorrection: a new setup made in the GUI writes true, but a file that OMITS it
             reads false. Write it. Every other omitted flag reads as the GUI's default.
+          * Ports3D on a 3D setup of a .clay gives each labelled port its Kind: Lumped (the default),
+            Wave, or Wall — a WALL port: the air box's face at the port becomes a PEC wall, the line
+            stops one small gap short of it and is fed across that gap, and line standards the run
+            solves first calibrate the gap and the wall out, to the reference plane at the wall
+            (OffsetUm moves it in). Palace only in this version. "CalibrateWallPorts": false
+            publishes the raw S at the gaps instead. `explain` lists each wall, its group and its
+            standards, cached or to solve.
           * ComponentPorts puts a port across a placed part with none drawn: ["C1", "L2"], "*" for
             every placed two-terminal part, or {"Refdes", "Z0", "Reference", "WidthUm"} entries. On a
             planar setup each is a strip joining the part's two pads across the width they share, cut
@@ -988,7 +995,7 @@ internal static class DocumentSchema
           * Ports belong to the document, and every setup uses all of them (choosing a subset per
             setup is a later build). A placed cell's ports are never used: only the parent says where
             a signal enters. A port is a Rect on a drawing Plane at an Offset, with a Number, a Name,
-            a Kind (Lumped or Wave) and a Z0 ("50", or a complex "25+j10"):
+            a Kind (Lumped, Wave or Wall) and a Z0 ("50", or a complex "25+j10"):
 
                 { "Number": 1, "Name": "P1", "Kind": "Lumped", "Plane": "XZ", "Offset": 0,
                   "Rect": { "Min": [2000000, 0], "Size": [1100000, 508000] }, "Z0": "50" }
@@ -1039,6 +1046,20 @@ internal static class DocumentSchema
             is each setup's own, so this is checked per setup. Its two conductors are the ones that
             meet the region, and its voltage path runs across the gap between them at the positive
             one's centre; VoltagePath ({"From": [u, v], "To": [u, v]}) states it instead.
+          * A WALL port states what a wave port states — Plane, Offset, a Rect round the line's end on
+            an air-box face — with "Kind": "Wall". For every setup that runs it, that face becomes a
+            PEC wall with no padding, the line is cut back by a gap of min(width, height)/5 in the
+            solved problem only, and a lumped source fills the gap from the wall (negative) to the
+            line (positive). Before the structure, the run solves line standards made of the face's
+            own cross-section between two PEC walls and calibrates the gap and the wall out; the
+            answer is referred to the wall (OffsetUm moves the reference plane in) and to Z0. Lines
+            on one face within five line heights of each other are calibrated as one group of at
+            most three (their coupled modes); a face carries wall ports or wave ports, not both; the
+            line must run straight and unchanged for three line heights from the wall. Solved
+            standards are kept in results/wall-standards and reused. Palace only in this version.
+            A setup's Ports3D ([{"Port": 1, "Kind": "Wall"}]) runs a port drawn on an air-box face as
+            Wave or Wall for that setup only; the document is not changed. "CalibrateWallPorts":
+            false publishes the raw S at the gaps.
           * A wave port whose region is met by SEVERAL signal conductors and one reference (a ground,
             a shield) is one port with Terminals — each terminal is its own numbered port of the result,
             with its own Z0 (terminal S-parameters, not modal ones). The port states no Number, Z0,

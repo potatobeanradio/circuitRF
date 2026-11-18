@@ -33,8 +33,12 @@ public sealed class Em3dWallCalibration
     /// <summary>The short standard, wall to wall, in the same heights (PWL-2 Q4: 6 h or more).</summary>
     public const double ShortStandardHeights = 6.0;
 
+    /// <summary>D6 — lines on one face nearer than this many of their heights are calibrated as one group: the planar solver's own
+    /// driven-neighbour clearance (PCAL1/PCAL2 measured the coupling falling to the A-vs-B floor by 4–5.5 heights).</summary>
+    public static readonly double CouplingHeights = new CircuitRF.Engine.Mom.PlanarCalibrationSettings().DrivenNeighbourClearanceHeights;
+
     /// <summary>How many conductors one group may hold — the planar solver's own cost gate.</summary>
-    public const int MaxGroupSize = 3;
+    public static readonly int MaxGroupSize = new CircuitRF.Engine.Mom.PlanarCalibrationSettings().MaxCalibrationGroupSize;
 
     /// <summary>How far apart two modes must be in electrical length over the separation read — the planar solver's floor.</summary>
     public const double ModeSeparationFloorDegrees = 0.5;
@@ -63,6 +67,11 @@ public sealed class Em3dWallCalibration
     private readonly List<Standard> _standards = [];
     private readonly Dictionary<int, (double[] F, Complex[][,] S)> _raw = [];
 
+    // R-pwl3-12 — what the last Apply measured, per frequency (in the structure's order) and per port: γ, Z_c and the group's
+    // residual at that frequency. NaN where a port is not a wall port.
+    private Complex[][] _gamma = [], _zc = [];
+    private double[][] _residual = [];
+
     /// <summary>The standards the run must solve before the structure.</summary>
     public IReadOnlyList<Standard> Standards => _standards;
 
@@ -81,19 +90,39 @@ public sealed class Em3dWallCalibration
         var walls = problem.Ports.Where(p => p.Wall is not null).ToList();
         if (walls.Count == 0) return (null, null);
         var cal = new Em3dWallCalibration();
+        // D6 — a face's lines group by distance: within CouplingHeights of their own heights, they are calibrated together.
+        var groups = new List<List<Em3dPort>>();
         foreach (var byFace in walls.GroupBy(p => p.Wall!.Face))
         {
-            var ports = byFace.OrderBy(p => p.Wall!.LineLoM).ToList();
+            var onFace = byFace.OrderBy(p => p.Wall!.LineLoM).ToList();
+            var current = new List<Em3dPort> { onFace[0] };
+            for (int i = 1; i < onFace.Count; i++)
+            {
+                var prev = current[^1].Wall!; var next = onFace[i].Wall!;
+                double clearance = CouplingHeights * Math.Max(prev.HeightM, next.HeightM);
+                if (next.LineLoM - current.Max(q => q.Wall!.LineHiM) < clearance) current.Add(onFace[i]);
+                else { groups.Add(current); current = [onFace[i]]; }
+            }
+            groups.Add(current);
+        }
+        foreach (var ports in groups)
+        {
             var w0 = ports[0].Wall!;
+            var own = ports.Select(p => p.Wall!.Conductor).ToHashSet(StringComparer.Ordinal);
+            var others = walls.Where(p => p.Wall!.Face == w0.Face && !ports.Contains(p)).Select(p => p.Wall!.Conductor)
+                              .Where(c => !own.Contains(c)).ToHashSet(StringComparer.Ordinal);
             if (ports.Count > MaxGroupSize)
-                return (null, $"The {w0.Face} face carries {ports.Count} wall ports, and one face is calibrated as one group of at most " +
-                              $"{MaxGroupSize} lines in this version. Feed the others another way, or split them across faces.");
+                return (null, $"Wall ports {string.Join(", ", ports.Select(p => p.Number))} on the {w0.Face} face are within " +
+                              $"{CouplingHeights:0.#} line heights of one another, so they are calibrated as one group, and a group holds at most " +
+                              $"{MaxGroupSize} lines in this version. Space them further apart, feed some another way, or split them across faces.");
             if (ports.Select(p => p.ReferencePlane.ShiftM).Distinct().Count() > 1)
-                return (null, $"The wall ports on the {w0.Face} face move their reference planes by different distances; the ports of one " +
-                              "face are calibrated together, so they share one reference plane. Give them the same DeembedUm.");
+                return (null, $"Wall ports {string.Join(", ", ports.Select(p => p.Number))} on the {w0.Face} face move their reference planes " +
+                              "by different distances; lines this close are calibrated together, so they share one reference plane. Give them the same DeembedUm.");
             double h = ports.Max(p => p.Wall!.HeightM), gap = ports.Max(p => p.Wall!.GapM);
             double endRun = EndRunHeights * h;
-            var section = Section.Take(problem, w0.Face, w0.Axis, w0.FaceAtM, w0.Inward, gap, endRun, ports)!;
+            var section = Section.Take(problem, w0.Face, w0.Axis, w0.FaceAtM, w0.Inward, gap, endRun, ports, others)!;
+            section.Label = groups.Count(x => x[0].Wall!.Face == w0.Face) > 1
+                ? $"{w0.Face} ({string.Join(", ", ports.Select(p => p.Number))})" : w0.Face;
             if (section.Refusal is { } why) return (null, why);
             var g = new Group
             {
@@ -146,7 +175,7 @@ public sealed class Em3dWallCalibration
             for (int k = 0; k < lengths.Length; k++)
             {
                 g.StandardIndex[k] = cal._standards.Count;
-                cal._standards.Add(new Standard($"wall {g.Face} {Mm(lengths[k])} mm", g.Section.Build(problem, lengths[k]), lengths[k]));
+                cal._standards.Add(new Standard($"wall {g.Section.Label} {Mm(lengths[k])} mm", g.Section.Build(problem, lengths[k]), lengths[k]));
             }
         g.Calibrator = new LineCalibrator(g.ShortM, g.Deltas,
             conducts ? BetaAt : f => LineCalibration.EstimateBeta(eeff, f), predictFromHistory: !conducts);
@@ -154,7 +183,7 @@ public sealed class Em3dWallCalibration
         notes.Add($"Wall ports on the {g.Face} face ({string.Join(", ", g.Ports.Select(p => p.Number))}): calibrated with " +
                   $"{lengths.Length} line standard(s) of {string.Join(", ", lengths.Select(Mm))} mm, wall to wall, " +
                   (sharedWith is not null
-                      ? $"the {sharedWith.Face} face's own, since the two faces have one cross-section; "
+                      ? $"the {sharedWith.Section.Label} face's own, since the two have one cross-section; "
                       : $"built from the face's cross-section over its first {Mm(EndRunHeights * g.Height)} mm; ") +
                   "C′ from the cross-section's electrostatics.");
         return null;
@@ -201,6 +230,11 @@ public sealed class Em3dWallCalibration
         var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(t.ToString()));
         return Convert.ToHexString(hash)[..24].ToLowerInvariant();
     }
+
+    /// <summary>Where standard <paramref name="std"/>'s answer is kept for <paramref name="setup"/> on <paramref name="solver"/>: the
+    /// one spelling the run and <c>explain</c> both use, so what explain calls cached is what the run reuses.</summary>
+    public static string CachePath(string resultsRoot, Standard std, Layout.Em.EmSetup setup, Layout.Em.Em3dSolverId solver)
+        => Path.Combine(resultsRoot, CacheFolder, CacheKey(std.Problem, Layout.Em.EmSetupPersistence.Serialize(setup), solver.ToString()) + ".json");
 
     /// <summary>A cached standard's raw S, or false when there is none (or it cannot be read).</summary>
     public static bool TryLoad(string path, out double[] frequenciesHz, out Complex[][,] s)
@@ -276,6 +310,7 @@ public sealed class Em3dWallCalibration
         var order = Enumerable.Range(0, frequenciesHz.Length).OrderBy(k => frequenciesHz[k]).ToArray();
         var output = new Complex[frequenciesHz.Length][,];
         foreach (var g in _groups) g.Calibrator!.Restart();
+        _gamma = new Complex[frequenciesHz.Length][]; _zc = new Complex[frequenciesHz.Length][]; _residual = new double[frequenciesHz.Length][];
         foreach (int k in order)
         {
             double f = frequenciesHz[k], w = 2 * Math.PI * f;
@@ -285,6 +320,8 @@ public sealed class Em3dWallCalibration
             var gamma = new Complex[np];
             var shift = new double[np];
             var covered = new bool[np];
+            var resid = new double[np];
+            Array.Fill(resid, double.NaN);
             foreach (var g in _groups)
             {
                 var idx = g.Ports.Select(p => IndexOf(ports, p.Number)).ToArray();
@@ -295,12 +332,13 @@ public sealed class Em3dWallCalibration
                 int n = idx.Length;
                 Mat<Complex> a11, a12, a21, a22;
                 Complex[] gm, zc;
+                double residual;
                 if (n == 1)
                 {
                     var p = g.Calibrator.At(f, sShort, sLong, pick, gg => gg / (Complex.ImaginaryOne * w * m.CMode[0]));
                     a11 = One(p.Box.A11); a12 = One(p.Box.A21); a21 = One(p.Box.A21); a22 = One(p.Box.A22);
                     gm = [p.Gamma.Gamma]; zc = [p.Zc];
-                    g.Residual = Math.Max(g.Residual, p.Box.ConsistencyResidual);
+                    residual = p.Box.ConsistencyResidual;
                     if (!p.Gamma.Usable) g.Unusable.Add(Ghz(f));
                 }
                 else
@@ -309,12 +347,14 @@ public sealed class Em3dWallCalibration
                     a11 = box.A11; a12 = box.A12; a21 = box.A21; a22 = box.A22;
                     gm = [.. box.Gamma];
                     zc = [.. Enumerable.Range(0, n).Select(md => box.Gamma[md] / (Complex.ImaginaryOne * w * m.CMode[md]))];
-                    g.Residual = Math.Max(g.Residual, box.CascadeResidual);
+                    residual = box.CascadeResidual;
                     if (!LineCalibrator.Usable(box) || !LineCalibrator.Separable(box, ModeSeparationFloorDegrees)) g.Unusable.Add(Ghz(f));
                 }
                 blocks.Add(new LineBlockBox(idx, a11, a12, a21, a22));
+                g.Residual = Math.Max(g.Residual, residual);
                 for (int a = 0; a < n; a++)
                 {
+                    resid[idx[a]] = residual;
                     covered[idx[a]] = true;
                     zModal[idx[a]] = zc[a];
                     gamma[idx[a]] = gm[a];
@@ -333,6 +373,9 @@ public sealed class Em3dWallCalibration
                 zModal[i] = ports[i].Z0;
             }
 
+            _gamma[k] = [.. Enumerable.Range(0, np).Select(i => covered[i] ? gamma[i] : new Complex(double.NaN, double.NaN))];
+            _zc[k] = [.. Enumerable.Range(0, np).Select(i => covered[i] ? zModal[i] : new Complex(double.NaN, double.NaN))];
+            _residual[k] = resid;
             var raw = new Mat<Complex>(np, np);
             for (int i = 0; i < np; i++) for (int j = 0; j < np; j++) raw[i, j] = s[k][i, j];
             var atZc = LineDeembed.ApplyBlocks(raw, blocks);
@@ -348,16 +391,79 @@ public sealed class Em3dWallCalibration
 
         foreach (var g in _groups)
         {
-            notes.Add($"Wall ports on the {g.Face} face: calibrated at the wall{(g.Shift != 0 ? $", the reference plane moved {Mm(g.Shift)} mm in" : "")}; " +
+            notes.Add($"Wall ports on the {g.Section.Label} face: calibrated at the wall{(g.Shift != 0 ? $", the reference plane moved {Mm(g.Shift)} mm in" : "")}; " +
                       $"ε_eff {Fmt(g.EeffLo)}–{Fmt(g.EeffHi)}, Z_c {Fmt(g.ZcLo)}–{Fmt(g.ZcHi)} Ω" +
                       (g.Ports.Count > 1 ? " over its modes" : "") + $"; the standards agreed to {g.Residual:0.#e+0}.");
             if (g.Unusable.Count > 0)
-                notes.Add($"Wall ports on the {g.Face} face: at {string.Join(", ", g.Unusable)} GHz the separation read is outside the usable " +
+                notes.Add($"Wall ports on the {g.Section.Label} face: at {string.Join(", ", g.Unusable)} GHz the separation read is outside the usable " +
                           "interval (20°–160°) for a mode, so the calibration there is weaker. Narrow the sweep, or add points so the band is " +
                           "covered by the standards' own separations.");
         }
+        if (PassivityNote(frequenciesHz, output, ports) is { } passivity) notes.Add(passivity);
         return output;
     }
+
+    /// <summary>R-pwl3-12 — the planar solver's passivity check on the published answer: σ_max(S) ≤ 1 + 1e-3, in a uniform real
+    /// reference (the ports' own when they share one, 50 Ω otherwise). A note naming the frequencies over it, or null.</summary>
+    private static string? PassivityNote(double[] frequenciesHz, Complex[][,] s, IReadOnlyList<Em3dPort> ports)
+    {
+        const double Tolerance = 1e-3;
+        var z0 = ports.Select(p => p.Z0).ToArray();
+        bool uniform = z0.All(z => z.Imaginary == 0 && z == z0[0]);
+        var common = Enumerable.Repeat(new Complex(50, 0), z0.Length).ToArray();
+        var over = new List<(double F, double Sigma)>();
+        for (int k = 0; k < s.Length; k++)
+        {
+            int n = z0.Length;
+            var m = new Mat<Complex>(n, n);
+            for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) m[i, j] = s[k][i, j];
+            double sigma;
+            try { sigma = RFNetwork.Passivity(uniform ? m : RFNetwork.SToS(m, z0, common)); }
+            catch (Exception) { continue; }    // a singular renormalisation says nothing about passivity
+            if (sigma > 1 + Tolerance) over.Add((frequenciesHz[k], sigma));
+        }
+        if (over.Count == 0) return null;
+        var worst = over.MaxBy(x => x.Sigma);
+        return $"The calibrated answer is not passive at {over.Count} of {s.Length} frequencies (largest singular value of S " +
+               $"{worst.Sigma:0.####} at {Ghz(worst.F)} GHz, over 1 + 1e-3). The standards or the structure are under-resolved there: " +
+               "a finer mesh, or a quality one step up, is the usual remedy.";
+    }
+
+    /// <summary>R-pwl3-12 — per wall port and frequency, what the last <see cref="Apply"/> measured, as <c>__</c> cubes for the
+    /// diagnostics group: γ (1/m), ε_eff (from β), Z_c (Ω) and the residual of the group's standards (dimensionless).</summary>
+    public IReadOnlyList<(string Name, RfCore.Data.DataCube Cube)> DiagnosticCubes(double[] frequenciesHz, IReadOnlyList<Em3dPort> ports)
+    {
+        var cols = Enumerable.Range(0, ports.Count).Where(i => ports[i].Wall is not null).ToArray();
+        if (cols.Length == 0 || _gamma.Length != frequenciesHz.Length) return [];
+        int nf = frequenciesHz.Length, nc = cols.Length;
+        RfCore.Data.Axis[] axes = [new("f", frequenciesHz, "Hz"), new("Port", [.. cols.Select(i => (double)ports[i].Number)], "")];
+        var gamma = new Complex[nf * nc]; var zc = new Complex[nf * nc]; var eeff = new double[nf * nc]; var res = new double[nf * nc];
+        for (int k = 0; k < nf; k++)
+            for (int c = 0; c < nc; c++)
+            {
+                int x = k * nc + c, i = cols[c];
+                gamma[x] = _gamma[k][i]; zc[x] = _zc[k][i]; res[x] = _residual[k][i];
+                eeff[x] = Math.Pow(_gamma[k][i].Imaginary / (2 * Math.PI * frequenciesHz[k]) * LineCalibration.C0, 2);
+            }
+        return
+        [
+            ("__WallPortGamma", new RfCore.Data.DataCube(axes, gamma) { Unit = "1/m" }),
+            ("__WallPortEeff", new RfCore.Data.DataCube(axes, eeff)),
+            ("__WallPortZc", new RfCore.Data.DataCube(axes, zc) { Unit = "Ohm" }),
+            ("__WallPortResidual", new RfCore.Data.DataCube(axes, res)),
+        ];
+    }
+
+    /// <summary>R-pwl3-12 — the Touchstone header's lines for the wall groups: which ports, how many standards of what length,
+    /// scalar or modal, and the C′ source. ASCII, as the header is.</summary>
+    public IReadOnlyList<string> HeaderLines()
+        => [.. _groups.Select(g =>
+            $"circuitRF-EM 3D wall group {g.Section.Label}: ports {string.Join(", ", g.Ports.Select(p => p.Number))}, " +
+            $"{(g.Ports.Count > 1 ? $"modal ({g.Ports.Count} modes)" : "scalar")} line-standard calibration with " +
+            $"{g.StandardIndex.Length} standards of {string.Join(", ", new[] { g.ShortM }.Concat(g.Deltas.Select(d => g.ShortM + d)).Select(Mm))} mm, " +
+            $"C' from the cross-section's electrostatics; reference plane at the wall" +
+            (g.Shift != 0 ? $" moved {Mm(g.Shift)} mm in" : "") +
+            (g.EeffLo <= g.EeffHi ? $"; eps_eff {Fmt(g.EeffLo)}-{Fmt(g.EeffHi)}, Z_c {Fmt(g.ZcLo)}-{Fmt(g.ZcHi)} Ohm, residual {g.Residual:0.#e+0}" : ""))];
 
     private Mat<Complex> Raw(int index, double f)
     {
@@ -415,8 +521,12 @@ public sealed class Em3dWallCalibration
 
         private Em3dMaterial? Mat(string name) => Materials.FirstOrDefault(m => m.Name == name);
 
+        /// <summary>How the standards and notes name this group: its face, and its ports when the face has several groups.</summary>
+        public string Label { get; set; } = "";
+
+        /// <param name="otherLines">Other groups' lines on this face: left out of this group's section (and so its standards).</param>
         public static Section? Take(Em3dProblem problem, string face, int axis, double at, int inward, double gap, double endRun,
-                                    IReadOnlyList<Em3dPort> ports)
+                                    IReadOnlyList<Em3dPort> ports, IReadOnlySet<string>? otherLines = null)
         {
             Section No(string why) => new()
             {
@@ -451,6 +561,7 @@ public sealed class Em3dWallCalibration
 
             foreach (var s in problem.Solids)
             {
+                if (otherLines?.Contains(s.Name) == true) continue;
                 var (bx0, by0, bz0, bx1, by1, bz1) = Em3dProblem.Bounds(s.Primitive);
                 double a0 = axis == 0 ? bx0 : by0, a1 = axis == 0 ? bx1 : by1;
                 if (a1 <= slabLo + tol || a0 >= slabHi - tol) continue;          // not in the end run
@@ -475,6 +586,7 @@ public sealed class Em3dWallCalibration
             }
             foreach (var sh in problem.Sheets)
             {
+                if (otherLines?.Contains(sh.Name) == true) continue;
                 var (bx0, by0, _, bx1, by1, _) = sh.WorldBounds();
                 double a0 = axis == 0 ? bx0 : by0, a1 = axis == 0 ? bx1 : by1;
                 if (a1 <= slabLo + tol || a0 >= slabHi - tol) continue;

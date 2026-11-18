@@ -534,7 +534,12 @@ public static partial class Em3dRunService
         // ── The DataSet: S and Z0 in the house convention, plus Palace's own record ─────────────
         var data = BuildDataSet(s, ports, facts);
         // PWL-3 R-pwl3-12 — the raw S at the wall ports' gaps, before calibration, in the diagnostics (a `__` cube: not a signal).
-        if (wallRaw is not null) data.AddToGroup(PalaceGroup, Em3dWallCalibration.RawCube, Em3dWallCalibration.RawCubeOf(s.FrequenciesHz, wallRaw, ports));
+        if (wallRaw is not null)
+        {
+            data.AddToGroup(PalaceGroup, Em3dWallCalibration.RawCube, Em3dWallCalibration.RawCubeOf(s.FrequenciesHz, wallRaw, ports));
+            foreach (var (name, cube) in run.Wall!.DiagnosticCubes(s.FrequenciesHz, ports)) data.AddToGroup(PalaceGroup, name, cube);
+        }
+        IReadOnlyList<string> wallLines = run.Wall?.HeaderLines() ?? [];
         if (terminal is { } t) PalaceTerminalS.AddDiagnostics(data, PalaceGroup, t.Samples, t.Outcome, ports);
         if (plan.FarField && PalacePattern(post, s, ports, setup, data, log.Notes, problem.Boundary) is { } patternError) return Failed(patternError);
         if (modeZ is not null)
@@ -554,7 +559,7 @@ public static partial class Em3dRunService
         var published = PublishDriven(run, Me, problem, data, palace.DescribeVersion(), plan.Device == PalaceDevice.Gpu ? "gpu" : "cpu",
                                       new EmResultMesh(facts.FinalElements, "elements", facts.DegreesOfFreedom),
                                       (stagedBase, stamp) => WriteSnp(data, stagedBase, setup, problem, lowering, settings, palace, facts, summary,
-                                                                      quality, wall.Elapsed, dcLines, stamp));
+                                                                      quality, wall.Elapsed, dcLines, stamp, wallLines));
         BringFields(published.Snp ?? published.Npy);
 
         // R-em3d21-5a — the one line that says what the run cost, the last thing the run says.
@@ -990,7 +995,7 @@ public static partial class Em3dRunService
     private static string? WriteSnp(DataSet data, string snpBase, EmSetup setup, Em3dProblem problem,
                                  GmshLowering lowering, PalaceSettings settings, SolverInstallation palace,
                                  PalaceRunFacts facts, PalaceRunSummary summary, PalaceQuality quality, TimeSpan wall,
-                                 IReadOnlyList<string> dcLines, string? stamp = null)
+                                 IReadOnlyList<string> dcLines, string? stamp = null, IReadOnlyList<string>? wallLines = null)
     {
         string? group = data.Groups.FirstOrDefault(g => data.CubesIn(g).ContainsKey("S"));
         if (group is null) return "the solved DataSet carries no S cube";
@@ -1021,7 +1026,15 @@ public static partial class Em3dRunService
                             $"phase, renormalised here to {R(p.Z0.Real)} Ohm with the mode's voltage along the port's path " +
                             $"taken as real; reference plane {R(p.ReferencePlane.ShiftM * 1e6)} um " +
                             "into the structure from the port face"
-                          : $"lumped, {R(p.Z0.Real)} Ohm"));
+                          : p.Wall is { } w
+                              // PWL-3 R-pwl3-12 — a wall port says what its numbers are: calibrated at the wall, or the raw gap.
+                              ? (setup.CalibrateWallPorts
+                                  ? $"wall port on the {w.Face} face, {R(p.Z0.Real)} Ohm: calibrated by line standards, reference plane " +
+                                    $"{R(p.ReferencePlane.ShiftM * 1e6)} um into the structure from the wall"
+                                  : $"wall port on the {w.Face} face, {R(p.Z0.Real)} Ohm: UNCALIBRATED, the raw S across its " +
+                                    $"{R(w.GapM * 1e6)} um gap")
+                              : $"lumped, {R(p.Z0.Real)} Ohm"));
+        lines.AddRange(wallLines ?? []);
         if (Em3dModePorts.SnpLine(problem.Ports) is { } modeLine) lines.Add(modeLine);     // brief-hzn-11 R-hzn11-4
         lines.AddRange(Em3dPortMap.HeaderLines(problem.Ports, data));
         lines.AddRange(Em3dPortMap.Lines(problem.Ports));     // brief-em3d-93 — which document port each is, when one was off

@@ -898,6 +898,7 @@ internal static class Check
             f.Add(!port.Refused ? CliDiagnostics.CheckThreeDPort(path, port.Text) : CliDiagnostics.CheckThreeDPortRefused(path, port.Text));
         CheckPortDirections(path, doc, e, f);
         CheckComponentPorts(path, doc, f);
+        CheckWallPorts(path, doc, f);
         // brief-em3d-93 R-em3d93-5 — what is not modelled (info), and what refers to it: a wire on its pad, every port off under
         // a driven setup, a field plot's face (warning), and the refusals it raised itself (warnings: no run refuses for them).
         foreach (var d in C3dModelled.Findings(doc, e)) f.Add(CliDiagnostics.CheckThreeDFinding(path, d));
@@ -1035,6 +1036,40 @@ internal static class Check
             // The build's other notes (a port across a loop on a sweep with no 0 Hz row), which nothing else here says.
             foreach (string n in build.Notes.Where(n => n.Contains("closes a loop", StringComparison.Ordinal)))
                 f.Add(CliDiagnostics.CheckThreeDPort(path, at + n));
+        }
+    }
+
+    /// <summary>
+    /// PWL-3 R-pwl3-1…6, R-pwl3-14 — for every embedded EM setup that runs a wall port (drawn as one, or chosen by the setup's
+    /// <c>Ports3D</c>): the refusal its run would give (the faces, a <c>Ports3D</c> row, the groups and their end runs, from
+    /// <see cref="C3dProblemAssembly.Assemble"/> and the calibration's own plan), or what it would calibrate (info), and every
+    /// conductor its wall faces short (warning). No solve.
+    /// </summary>
+    private static void CheckWallPorts(string path, C3dDocument doc, Findings f)
+    {
+        string full = Path.GetFullPath(path);
+        foreach (var embedded in C3dSetups.Read(doc))
+        {
+            if (embedded is not { Refusal: null, Setup: { Is3D: true, IsThermal: false } s }) continue;
+            bool asked = doc.Ports.Any(p => p.Kind == CircuitRF.Engine.Em3d.Em3dPortKind.Wall)
+                         || s.Ports3D.Any(r => r.Kind is CircuitRF.Engine.Em3d.Em3dPortKind.Wall or CircuitRF.Engine.Em3d.Em3dPortKind.Wave);
+            if (!asked) continue;
+            RunHost.Control?.ThrowIfCancellationRequested();
+            var run = C3dSetups.ForRun(s, full);
+            string at = $"setup '{embedded.Name}': ";
+            var assembled = C3dProblemAssembly.Assemble(run, doc, full, DocumentKinds.AncestorCws(full));
+            if (assembled.Problem is not { } problem)
+            {
+                if (assembled.Refusal is { } why) f.Add(CliDiagnostics.CheckThreeDPortRefused(path, at + why));
+                continue;
+            }
+            if (!problem.Ports.Any(p => p.Wall is not null)) continue;
+            foreach (string grounded in C3dWallPorts.GroundedByTheWall(problem)) f.Add(CliDiagnostics.CheckThreeDWallGrounds(path, at + grounded));
+            if (!run.CalibrateWallPorts || problem.Type != CircuitRF.Engine.Em3d.Em3dProblemType.Driven) continue;
+            var notes = new List<string>();
+            var (_, refused) = CircuitRF.Design.Em3d.Em3dWallCalibration.Plan(problem, problem.Frequency.StartHz, problem.Frequency.StopHz, notes);
+            if (refused is not null) f.Add(CliDiagnostics.CheckThreeDPortRefused(path, at + refused));
+            else foreach (string n in notes) f.Add(CliDiagnostics.CheckThreeDPort(path, at + n));
         }
     }
 

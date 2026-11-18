@@ -224,6 +224,7 @@ public static class C3dProblemAssembly
     {
         refusal = null;
         if (e.ModelledExtent() is not { } extent) return null;     // brief-em3d-93 — the run's box: modelled content only
+        if (document is not null) document = C3dWallPorts.ApplySetupKinds(document, setup, out _);
         if (document is not null && document.Ports.Any(p => p.Model && p.Kind == Em3dPortKind.Wall))
         {
             var (faces, _) = C3dWallPorts.Faces(document, (extent.X0, extent.Y0, extent.Z0, extent.X1, extent.Y1, extent.Z1));
@@ -526,6 +527,9 @@ public static class C3dProblemAssembly
                 portDocument = WithComponentPorts(document, components);
             }
         }
+        // PWL-3 — the setup's own Wave/Wall choice for the ports on the air box's faces, on copies of them.
+        portDocument = C3dWallPorts.ApplySetupKinds(portDocument, setup, out string? kindRefusal);
+        if (kindRefusal is not null) return No(kindRefusal, e.Warnings);
         if (sar is not null && SarDispersiveRefusal(sar, e) is { } twoFrequencies) return No(twoFrequencies, e.Warnings);
         if (e.Extent() is not { } extent)
             return No(drawn.Extent() is not null ? EverythingOff : NothingToSolve(e), e.Warnings);
@@ -958,7 +962,8 @@ public static class C3dPortReports
             var es = Of(s.Setup);
             var box = C3dProblemAssembly.AirBox(s.Setup!, es, out _, doc);
             var ctx = C3dProblemAssembly.PortContext(s.Setup, doc, es, box);
-            foreach (var resolved in C3dPorts.Resolve(doc, ctx))
+            var kinds = C3dWallPorts.ApplySetupKinds(doc, s.Setup, out _);
+            foreach (var resolved in C3dPorts.Resolve(kinds, ctx))
             {
                 var r = RingNote(resolved, es);
                 if (seen.Add(r.Refusal ?? Describe(r))) reports.Add(new C3dPortReport(setups.Count == 1 ? null : s.Name, r));

@@ -41,6 +41,62 @@ public static class C3dWallPorts
     }
 
     /// <summary>
+    /// PWL-3 — a 3D view's setup choosing Wave or Wall for its ports on the air box's faces, for that setup only: the setup's
+    /// <c>Ports3D</c> rows of kind Wave or Wall applied to COPIES of the document's ports (the document is never changed). A wave
+    /// port with terminals run as Wall becomes one wall port per terminal, keeping their numbers; a face's ports must end up one
+    /// kind, which <see cref="Faces"/> asks. Lumped rows are a <c>.cem</c>'s spelling and state nothing here. Returns the document
+    /// unchanged when the setup states no such row, and a refusal naming the port and the setup when a row cannot apply.
+    /// </summary>
+    public static C3dDocument ApplySetupKinds(C3dDocument doc, EmSetup? setup, out string? refusal)
+    {
+        refusal = null;
+        var rows = setup?.Ports3D.Where(r => r.Kind is Em3dPortKind.Wave or Em3dPortKind.Wall).ToList() ?? [];
+        if (rows.Count == 0) return doc;
+        string who = setup!.Name is { Length: > 0 } n ? $"Setup '{n}'" : "This setup";
+        var ports = doc.Ports.Select(Copy).ToList();
+        bool changed = false;
+        foreach (var row in rows)
+        {
+            int at = ports.FindIndex(p => C3dPorts.Numbers(p).Contains(row.Port));
+            if (at < 0) { refusal = $"{who} runs port {row.Port} as a {row.Kind} port, and this view has no port {row.Port}."; return doc; }
+            var p = ports[at];
+            if (p.Kind == Em3dPortKind.Lumped)
+            {
+                refusal = $"{who} runs {C3dPorts.Label(p)} as a {row.Kind} port, and {C3dPorts.Label(p)} is a lumped sheet between two " +
+                          "conductors. A setup chooses between Wave and Wall only for a port drawn on a face of the air box.";
+                return doc;
+            }
+            if (p.Kind == row.Kind) continue;
+            changed = true;
+            if (row.Kind == Em3dPortKind.Wall && p.Terminals is { Count: > 0 } terminals)
+            {
+                // one wall port per terminal, on the same face's rectangle, each naming its line
+                ports.RemoveAt(at);
+                ports.InsertRange(at, terminals.Select(t =>
+                {
+                    var w = Copy(p);
+                    w.Kind = Em3dPortKind.Wall; w.Terminals = null; w.Number = t.Number; w.Name = t.Name;
+                    w.Z0 = t.Z0; w.Positive = t.Conductor; w.Negative = null; w.Flip = t.Flip; w.VoltagePath = null;
+                    return w;
+                }));
+                continue;
+            }
+            p.Kind = row.Kind;
+            if (row.Kind == Em3dPortKind.Wall) { p.Negative = null; p.VoltagePath = null; }   // the wall is a wall port's other end
+        }
+        // A setup that only restates what is drawn (shipped examples state Wave on wave ports) runs the document itself.
+        return changed ? new C3dDocument { DbuPerMicron = doc.DbuPerMicron, Ports = ports } : doc;
+
+        static C3dPort Copy(C3dPort p)
+        {
+            var c = new C3dPort();
+            foreach (var prop in typeof(C3dPort).GetProperties().Where(x => x.CanRead && x.CanWrite && x.GetIndexParameters().Length == 0))
+                prop.SetValue(c, prop.GetValue(p));
+            return c;
+        }
+    }
+
+    /// <summary>
     /// The faces the document's modelled wall ports stand on, and a refusal when one of them also carries a wave port
     /// (R-pwl3-5: a face is one kind or the other). Empty when the document has no wall port.
     /// </summary>
@@ -197,6 +253,110 @@ public static class C3dWallPorts
         string reason = $"a wall port on the {face} face: '{line.Name}' ({Um(width)} µm wide, {Um(height)} µm above '{returnName}') is cut " +
                         $"back {Um(gap)} µm from the face, and the gap is the port, from the wall (−) to the line (+)";
         return new C3dPortResult(port, resolved, null, [("face", [wallName]), ("line", [line.Name])], reason);
+    }
+
+    /// <summary>
+    /// PWL-3 — a layout's wall ports: the generator builds them as the wave ports they are drawn as (its face, its zero padding,
+    /// its line), and each named here is turned into the wall port it stands for, in the solved problem: the face PEC, the wave
+    /// region replaced by the gap from the face to the line, the line cut back. Null with the converted problem, or a refusal.
+    /// </summary>
+    public static Em3dProblem? FromWavePorts(Em3dProblem problem, IReadOnlySet<int> numbers, List<string> notes, out string? refusal)
+    {
+        refusal = null;
+        var box = problem.Boundary;
+        var faces = box.Faces;
+        var ports = problem.Ports.ToList();
+        var solids = problem.Solids.ToList();
+        var sheets = problem.Sheets.ToList();
+        foreach (int number in numbers.Order())
+        {
+            int at = ports.FindIndex(p => p.Number == number);
+            if (at < 0) { refusal = $"Port {number} is not in the problem."; return null; }
+            var p = ports[at];
+            string label = $"Port {number}";
+            if (p.Kind != Em3dPortKind.Wave || p.FaceGroup is not null)
+            { refusal = $"{label} could not be made a wall port: it is not a plain wave port on a face of the air box."; return null; }
+            int axis = Math.Abs(p.Min.X - p.Max.X) < 1e-12 ? 0 : Math.Abs(p.Min.Y - p.Max.Y) < 1e-12 ? 1 : 2;
+            if (axis == 2) { refusal = $"{label} is on the floor or the lid; a wall port stands on an x or y face in this version."; return null; }
+            double faceAt = axis == 0 ? p.Min.X : p.Min.Y;
+            double lo = axis == 0 ? box.Min.X : box.Min.Y, hi = axis == 0 ? box.Max.X : box.Max.Y;
+            int inward = Math.Abs(faceAt - lo) < 1e-9 ? 1 : Math.Abs(faceAt - hi) < 1e-9 ? -1 : 0;
+            if (inward == 0) { refusal = $"{label} does not lie on a face of the air box."; return null; }
+            string face = FaceKeys[2 * axis + (inward > 0 ? 0 : 1)];
+            double probe = faceAt + inward * 1e-8;
+            int lat = 1 - axis;
+            double pLo = lat == 0 ? p.Min.X : p.Min.Y, pHi = lat == 0 ? p.Max.X : p.Max.Y;
+            (double Lo, double Hi)? Pick(List<(double Lo, double Hi)> iv) => iv.Where(i => i.Hi > pLo && i.Lo < pHi).Cast<(double, double)?>().FirstOrDefault();
+            (double Lo, double Hi)? end; double z;
+            if (sheets.FirstOrDefault(x => x.Name == p.PositiveObject && x.Frame is null) is { } sh) { end = Pick(Slice(sh.Outline, sh.Holes, axis, probe)); z = sh.Z; }
+            else if (solids.FirstOrDefault(x => x.Name == p.PositiveObject) is { Primitive: Em3dExtrudedPolygon pr }) { end = Pick(Slice(pr.Outline, pr.Holes, axis, probe)); z = pr.ZBottom; }
+            else if (solids.FirstOrDefault(x => x.Name == p.PositiveObject) is { Primitive: Em3dBox bx }) { end = (lat == 0 ? bx.Min.X : bx.Min.Y, lat == 0 ? bx.Max.X : bx.Max.Y); z = bx.Min.Z; }
+            else { refusal = $"{label}'s line '{p.PositiveObject}' is not a sheet, an extruded outline or a box, which a wall port feeds."; return null; }
+            if (end is not { } w) { refusal = $"{label}'s line '{p.PositiveObject}' does not reach the {face} face inside the port."; return null; }
+            double top;
+            if (p.NegativeObject == Em3dAirBox.FaceName("zmin")) top = box.Min.Z;
+            else if (sheets.FirstOrDefault(x => x.Name == p.NegativeObject) is { } gs) top = gs.Z;
+            else if (solids.FirstOrDefault(x => x.Name == p.NegativeObject) is { } gso) top = Em3dProblem.Bounds(gso.Primitive).Z1;
+            else { refusal = $"{label}'s return '{p.NegativeObject}' is not below its line; a wall port's line returns through a plane beneath it."; return null; }
+            double height = z - top, width = w.Hi - w.Lo, gap = GapFraction * Math.Min(width, height);
+            if (!(height > 0)) { refusal = $"{label}'s line lies on its return; a wall port needs height above it."; return null; }
+            double gEnd = faceAt + inward * gap;
+            Point3 Pt(double along, double across) => axis == 0 ? new Point3(along, across, z) : new Point3(across, along, z);
+            var dir = axis == 0 ? new Point3(inward, 0, 0) : new Point3(0, inward, 0);
+            ports[at] = p with
+            {
+                Kind = Em3dPortKind.Lumped, NegativeObject = Em3dAirBox.FaceName(face), VoltagePath = null,
+                Min = Pt(Math.Min(faceAt, gEnd), w.Lo), Max = Pt(Math.Max(faceAt, gEnd), w.Hi), Direction = dir,
+                ReferencePlane = new Em3dReferencePlane(Pt(faceAt, 0.5 * (w.Lo + w.Hi)), dir, p.ReferencePlane.ShiftM),
+                Wall = new Em3dWallPort(face, axis, faceAt, inward, gap, w.Lo, w.Hi, z, height, p.PositiveObject),
+            };
+            faces = face switch
+            {
+                "xmin" => faces with { XMin = Em3dBoundaryKind.Pec }, "xmax" => faces with { XMax = Em3dBoundaryKind.Pec },
+                "ymin" => faces with { YMin = Em3dBoundaryKind.Pec }, _ => faces with { YMax = Em3dBoundaryKind.Pec },
+            };
+        }
+        if (ports.Where(q => q.Kind == Em3dPortKind.Wave).Any(q => ports.Any(wq => wq.Wall is { } ww &&
+                (ww.Axis == 0 ? Math.Abs(q.Min.X - q.Max.X) < 1e-12 && Math.Abs(q.Min.X - ww.FaceAtM) < 1e-9
+                              : Math.Abs(q.Min.Y - q.Max.Y) < 1e-12 && Math.Abs(q.Min.Y - ww.FaceAtM) < 1e-9))))
+        { refusal = "A face of the air box carries both wave ports and wall ports; a face is fed by one kind. Make them one kind."; return null; }
+        if (Trim(solids, sheets, ports, 1e-9) is { } why) { refusal = why; return null; }
+        notes.Add(GapNote(ports));
+        return problem with { Ports = ports, Solids = solids, Sheets = sheets, Boundary = box with { Faces = faces } };
+    }
+
+    /// <summary>
+    /// D7 / R-pwl3-6 — conductors that meet a wall-port face and are not a wall port's line: the PEC wall shorts each of them to
+    /// ground there, in the structure and in every standard. Planes at or below the face's returns are left out (they are the
+    /// grounds the wall is meant to meet). One sentence per face, naming each; empty when there is none.
+    /// </summary>
+    public static IReadOnlyList<string> GroundedByTheWall(Em3dProblem problem)
+    {
+        var said = new List<string>();
+        const double Tol = 1e-9;
+        var lines = problem.Ports.Where(p => p.Wall is not null).Select(p => p.Wall!.Conductor).ToHashSet(StringComparer.Ordinal);
+        foreach (var face in problem.Ports.Where(p => p.Wall is not null).GroupBy(p => p.Wall!.Face))
+        {
+            var w = face.First().Wall!;
+            double returns = face.Max(p => p.Wall!.ZM - p.Wall!.HeightM);
+            bool Meets(double a0, double a1) => Math.Abs((w.Inward > 0 ? a0 : a1) - w.FaceAtM) < Tol;
+            var names = new List<string>();
+            foreach (var x in problem.Solids.Where(x => x.Role == Em3dRole.Conductor && !lines.Contains(x.Name)))
+            {
+                var (x0, y0, _, x1, y1, z1) = Em3dProblem.Bounds(x.Primitive);
+                if (z1 > returns + Tol && (w.Axis == 0 ? Meets(x0, x1) : Meets(y0, y1))) names.Add(x.Name);
+            }
+            foreach (var x in problem.Sheets.Where(x => !lines.Contains(x.Name)))
+            {
+                var (x0, y0, z0, x1, y1, z1) = x.WorldBounds();
+                if (Math.Max(z0, z1) > returns + Tol && (w.Axis == 0 ? Meets(x0, x1) : Meets(y0, y1))) names.Add(x.Name);
+            }
+            if (names.Count > 0)
+                said.Add($"{string.Join(", ", names.Distinct().Select(n => $"'{n}'"))} meet{(names.Distinct().Count() == 1 ? "s" : "")} the " +
+                         $"{face.Key} face, which wall ports make a PEC wall, and {(names.Distinct().Count() == 1 ? "is" : "are")} shorted to it " +
+                         "there, in the structure and in every standard. If that is not a ground, end it short of the face or give it a port.");
+        }
+        return said;
     }
 
     /// <summary>A conductor's cross-section just inside a face: the intervals it covers along the face's lateral axis, and the plane
