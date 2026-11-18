@@ -22,7 +22,7 @@ public sealed class FilterPlotLayout : Panel
         AvaloniaProperty.Register<FilterPlotLayout, bool>(nameof(ShowMagnitude), defaultValue: true);
 
     public static readonly StyledProperty<bool> ShowPhaseProperty =
-        AvaloniaProperty.Register<FilterPlotLayout, bool>(nameof(ShowPhase), defaultValue: true);
+        AvaloniaProperty.Register<FilterPlotLayout, bool>(nameof(ShowPhase), defaultValue: false);
 
     static FilterPlotLayout()
     {

@@ -82,17 +82,24 @@
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="Margin"            Value="8,0"/>
         </Style>
-        <!-- Dashed colour swatch matching the plot mask line for that edge / Ap / As. -->
+        <!-- Dashed colour swatch sitting just right of its label (Ap / As / edges). -->
         <Style Selector="Line.maskleg">
-            <Setter Property="StartPoint"           Value="2,0"/>
-            <Setter Property="EndPoint"             Value="24,0"/>
+            <Setter Property="StartPoint"           Value="0,0"/>
+            <Setter Property="EndPoint"             Value="18,0"/>
+            <Setter Property="Width"                Value="18"/>
             <Setter Property="StrokeThickness"      Value="2"/>
             <Setter Property="StrokeDashArray"      Value="4,3"/>
             <Setter Property="Stretch"              Value="Fill"/>
             <Setter Property="Height"               Value="10"/>
             <Setter Property="VerticalAlignment"    Value="Center"/>
-            <Setter Property="HorizontalAlignment"  Value="Stretch"/>
-            <Setter Property="Margin"               Value="0,0,4,0"/>
+            <Setter Property="Margin"               Value="4,0,0,0"/>
+        </Style>
+        <!-- Label column shared by every side-panel row so the value controls line up. -->
+        <Style Selector="StackPanel.lblrow">
+            <Setter Property="Orientation"        Value="Horizontal"/>
+            <Setter Property="Spacing"            Value="0"/>
+            <Setter Property="VerticalAlignment"  Value="Center"/>
+            <Setter Property="MinWidth"           Value="86"/>
         </Style>
         <!-- Plot chooser — same chrome as the S-parameter viewer. -->
         <Style Selector="ToggleButton.plotpick">
@@ -120,10 +127,10 @@
                     <Border Classes="card">
                         <StackPanel Spacing="3">
                             <TextBlock Classes="cardhdr" Text="Impedances"/>
-                            <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto" RowSpacing="3">
-                                <TextBlock Classes="lbl" Text="Source"/>
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" RowSpacing="3">
+                                <StackPanel Classes="lblrow"><TextBlock Classes="lbl" Text="Source"/></StackPanel>
                                 <TextBox Grid.Column="1" Classes="num" Text="{Binding SourceText}"/>
-                                <TextBlock Grid.Row="1" Classes="lbl" Text="Load"/>
+                                <StackPanel Grid.Row="1" Classes="lblrow"><TextBlock Classes="lbl" Text="Load"/></StackPanel>
                                 <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding LoadText}"/>
                             </Grid>
                         </StackPanel>
@@ -132,15 +139,15 @@
                     <Border Classes="card">
                         <StackPanel Spacing="3">
                             <TextBlock Classes="cardhdr" Text="Topology"/>
-                            <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="3">
-                                <TextBlock Classes="lbl" Text="First"/>
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="3">
+                                <StackPanel Classes="lblrow"><TextBlock Classes="lbl" Text="First"/></StackPanel>
                                 <ComboBox Grid.Column="1" ItemsSource="{Binding FirstElements}"
                                           SelectedItem="{Binding First}"/>
-                                <TextBlock Grid.Row="1" Classes="lbl" Text="Order"/>
+                                <StackPanel Grid.Row="1" Classes="lblrow"><TextBlock Classes="lbl" Text="Order"/></StackPanel>
                                 <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding OrderModes}"
                                           SelectedItem="{Binding OrderMode}"
                                           ToolTip.Tip="Minimum is the smallest prototype order that meets Ap, As and the mask edges. Specify overrides it."/>
-                                <TextBlock Grid.Row="2" Classes="lbl" Text="N"/>
+                                <StackPanel Grid.Row="2" Classes="lblrow"><TextBlock Classes="lbl" Text="N"/></StackPanel>
                                 <TextBox Grid.Row="2" Grid.Column="1" Classes="num" Text="{Binding OrderText}"
                                          IsEnabled="{Binding OrderEditable}"
                                          ToolTip.Tip="Prototype order. A bandpass or bandstop replaces each element by a resonator. An even-order inverse Chebyshev or elliptic has no ladder."/>
@@ -151,27 +158,31 @@
                     <Border Classes="card">
                         <StackPanel Spacing="3">
                             <TextBlock Classes="cardhdr" Text="Shape"/>
-                            <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto" RowSpacing="3">
-                                <TextBlock Classes="lbl" Text="Response"/>
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" RowSpacing="3">
+                                <StackPanel Classes="lblrow"><TextBlock Classes="lbl" Text="Response"/></StackPanel>
                                 <ComboBox Grid.Column="1" ItemsSource="{Binding ResponseChoices}"
                                           SelectedItem="{Binding ResponseChoice}"/>
-                                <TextBlock Grid.Row="1" Classes="lbl" Text="Form"/>
+                                <StackPanel Grid.Row="1" Classes="lblrow"><TextBlock Classes="lbl" Text="Form"/></StackPanel>
                                 <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding Forms}"
                                           SelectedItem="{Binding Form}"/>
                             </Grid>
-                            <Grid ColumnDefinitions="70,28,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="3" Margin="0,3,0,0">
-                                <TextBlock Classes="lbl" Text="Ap, dB" ToolTip.Tip="{Binding TipAp}"/>
-                                <Line Grid.Column="1" Classes="maskleg" Stroke="#C0392B"
-                                      ToolTip.Tip="{Binding TipAp}"/>
-                                <TextBox Grid.Column="2" Classes="num" Text="{Binding ApText}"
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="3" Margin="0,3,0,0">
+                                <StackPanel Classes="lblrow" ToolTip.Tip="{Binding TipAp}">
+                                    <TextBlock Classes="lbl" Text="Ap, dB"/>
+                                    <Line Classes="maskleg" Stroke="#C0392B"/>
+                                </StackPanel>
+                                <TextBox Grid.Column="1" Classes="num" Text="{Binding ApText}"
                                          ToolTip.Tip="{Binding TipAp}"/>
-                                <TextBlock Grid.Row="1" Classes="lbl" Text="Ripple, dB" ToolTip.Tip="{Binding TipRipple}"/>
-                                <TextBox Grid.Row="1" Grid.Column="2" Classes="num" Text="{Binding RippleText}"
+                                <StackPanel Grid.Row="1" Classes="lblrow" ToolTip.Tip="{Binding TipRipple}">
+                                    <TextBlock Classes="lbl" Text="Ripple, dB"/>
+                                </StackPanel>
+                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding RippleText}"
                                          ToolTip.Tip="{Binding TipRipple}"/>
-                                <TextBlock Grid.Row="2" Classes="lbl" Text="As, dB" ToolTip.Tip="{Binding TipAs}"/>
-                                <Line Grid.Row="2" Grid.Column="1" Classes="maskleg" Stroke="#7F8C8D"
-                                      ToolTip.Tip="{Binding TipAs}"/>
-                                <TextBox Grid.Row="2" Grid.Column="2" Classes="num" Text="{Binding AsText}"
+                                <StackPanel Grid.Row="2" Classes="lblrow" ToolTip.Tip="{Binding TipAs}">
+                                    <TextBlock Classes="lbl" Text="As, dB"/>
+                                    <Line Classes="maskleg" Stroke="#7F8C8D"/>
+                                </StackPanel>
+                                <TextBox Grid.Row="2" Grid.Column="1" Classes="num" Text="{Binding AsText}"
                                          ToolTip.Tip="{Binding TipAs}"/>
                             </Grid>
                         </StackPanel>
@@ -184,28 +195,32 @@
                                 <ComboBox Grid.Column="1" ItemsSource="{Binding Units}" SelectedItem="{Binding Unit}"
                                           MinWidth="72" HorizontalAlignment="Right"/>
                             </Grid>
-                            <Grid ColumnDefinitions="70,28,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="3">
-                                <TextBlock Classes="lbl" Text="{Binding LabelA}" ToolTip.Tip="{Binding TipA}"/>
-                                <Line Grid.Column="1" Classes="maskleg" Stroke="#E67E22"
-                                      ToolTip.Tip="{Binding TipA}"/>
-                                <TextBox Grid.Column="2" Classes="num" Text="{Binding FaText}"
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="3">
+                                <StackPanel Classes="lblrow" ToolTip.Tip="{Binding TipA}">
+                                    <TextBlock Classes="lbl" Text="{Binding LabelA}"/>
+                                    <Line Classes="maskleg" Stroke="#E67E22"/>
+                                </StackPanel>
+                                <TextBox Grid.Column="1" Classes="num" Text="{Binding FaText}"
                                          ToolTip.Tip="{Binding TipA}"/>
-                                <TextBlock Grid.Row="1" Classes="lbl" Text="{Binding LabelB}" ToolTip.Tip="{Binding TipB}"/>
-                                <Line Grid.Row="1" Grid.Column="1" Classes="maskleg" Stroke="#2980B9"
-                                      ToolTip.Tip="{Binding TipB}"/>
-                                <TextBox Grid.Row="1" Grid.Column="2" Classes="num" Text="{Binding FbText}"
+                                <StackPanel Grid.Row="1" Classes="lblrow" ToolTip.Tip="{Binding TipB}">
+                                    <TextBlock Classes="lbl" Text="{Binding LabelB}"/>
+                                    <Line Classes="maskleg" Stroke="#2980B9"/>
+                                </StackPanel>
+                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding FbText}"
                                          ToolTip.Tip="{Binding TipB}"/>
-                                <TextBlock Grid.Row="2" Classes="lbl" Text="{Binding LabelC}" IsVisible="{Binding ShowC}"
-                                           ToolTip.Tip="{Binding TipC}"/>
-                                <Line Grid.Row="2" Grid.Column="1" Classes="maskleg" Stroke="#27AE60"
-                                      IsVisible="{Binding ShowC}" ToolTip.Tip="{Binding TipC}"/>
-                                <TextBox Grid.Row="2" Grid.Column="2" Classes="num" Text="{Binding FcText}"
+                                <StackPanel Grid.Row="2" Classes="lblrow" IsVisible="{Binding ShowC}"
+                                            ToolTip.Tip="{Binding TipC}">
+                                    <TextBlock Classes="lbl" Text="{Binding LabelC}"/>
+                                    <Line Classes="maskleg" Stroke="#27AE60"/>
+                                </StackPanel>
+                                <TextBox Grid.Row="2" Grid.Column="1" Classes="num" Text="{Binding FcText}"
                                          IsVisible="{Binding ShowC}" ToolTip.Tip="{Binding TipC}"/>
-                                <TextBlock Grid.Row="3" Classes="lbl" Text="{Binding LabelD}" IsVisible="{Binding ShowD}"
-                                           ToolTip.Tip="{Binding TipD}"/>
-                                <Line Grid.Row="3" Grid.Column="1" Classes="maskleg" Stroke="#8E44AD"
-                                      IsVisible="{Binding ShowD}" ToolTip.Tip="{Binding TipD}"/>
-                                <TextBox Grid.Row="3" Grid.Column="2" Classes="num" Text="{Binding FdText}"
+                                <StackPanel Grid.Row="3" Classes="lblrow" IsVisible="{Binding ShowD}"
+                                            ToolTip.Tip="{Binding TipD}">
+                                    <TextBlock Classes="lbl" Text="{Binding LabelD}"/>
+                                    <Line Classes="maskleg" Stroke="#8E44AD"/>
+                                </StackPanel>
+                                <TextBox Grid.Row="3" Grid.Column="1" Classes="num" Text="{Binding FdText}"
                                          IsVisible="{Binding ShowD}" ToolTip.Tip="{Binding TipD}"/>
                             </Grid>
                         </StackPanel>
@@ -243,25 +258,30 @@
                     <Border Classes="card">
                         <StackPanel Spacing="3">
                             <TextBlock Classes="cardhdr" Text="Plot range"/>
-                            <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="3">
-                                <TextBlock Classes="lbl" Text="Mode"
-                                           ToolTip.Tip="± band widens the mask edges. Manual sets Fmin and Fmax in the unit above."/>
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="3">
+                                <StackPanel Classes="lblrow">
+                                    <TextBlock Classes="lbl" Text="Mode"
+                                               ToolTip.Tip="± band widens the mask edges. Manual sets Fmin and Fmax in the unit above."/>
+                                </StackPanel>
                                 <ComboBox Grid.Column="1" ItemsSource="{Binding PlotRangeChoices}"
                                           SelectedItem="{Binding PlotRangeChoice}"/>
-                                <TextBlock Grid.Row="1" Classes="lbl" Text="± band"
-                                           IsVisible="{Binding !PlotRangeIsManual}"/>
+                                <StackPanel Grid.Row="1" Classes="lblrow" IsVisible="{Binding !PlotRangeIsManual}">
+                                    <TextBlock Classes="lbl" Text="± band"/>
+                                </StackPanel>
                                 <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Name="BandFractionBox"
                                          IsVisible="{Binding !PlotRangeIsManual}"
                                          ToolTip.Tip="Percent of the outer mask span. Recomputes the response over the whole widened range."/>
-                                <TextBlock Grid.Row="2" Classes="lbl" Text="Fmin"
-                                           IsVisible="{Binding PlotRangeIsManual}"/>
+                                <StackPanel Grid.Row="2" Classes="lblrow" IsVisible="{Binding PlotRangeIsManual}">
+                                    <TextBlock Classes="lbl" Text="Fmin"/>
+                                </StackPanel>
                                 <TextBox Grid.Row="2" Grid.Column="1" Classes="num" Name="PlotFminBox"
                                          IsVisible="{Binding PlotRangeIsManual}"/>
-                                <TextBlock Grid.Row="3" Classes="lbl" Text="Fmax"
-                                           IsVisible="{Binding PlotRangeIsManual}"/>
+                                <StackPanel Grid.Row="3" Classes="lblrow" IsVisible="{Binding PlotRangeIsManual}">
+                                    <TextBlock Classes="lbl" Text="Fmax"/>
+                                </StackPanel>
                                 <TextBox Grid.Row="3" Grid.Column="1" Classes="num" Name="PlotFmaxBox"
                                          IsVisible="{Binding PlotRangeIsManual}"/>
-                                <TextBlock Grid.Row="4" Classes="lbl" Text="points"/>
+                                <StackPanel Grid.Row="4" Classes="lblrow"><TextBlock Classes="lbl" Text="points"/></StackPanel>
                                 <TextBox Grid.Row="4" Grid.Column="1" Classes="num" Name="PlotPointsBox"/>
                             </Grid>
                         </StackPanel>
@@ -397,12 +417,16 @@
             <Grid RowDefinitions="Auto,*">
                 <StackPanel Orientation="Horizontal" Margin="2,0,0,4">
                     <ToggleButton Classes="plotpick" IsChecked="{Binding ShowMagnitude, Mode=TwoWay}"
-                                  ToolTip.Tip="Insertion loss, dB against frequency">
+                                  ToolTip.Tip="Filter response, dB against frequency">
                         <mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/>
                     </ToggleButton>
                     <ToggleButton Classes="plotpick" IsChecked="{Binding ShowPhase, Mode=TwoWay}"
                                   ToolTip.Tip="Phase and group delay against frequency">
                         <mi:MaterialIcon Kind="SineWave" Width="16" Height="16"/>
+                    </ToggleButton>
+                    <ToggleButton Classes="plotpick" IsChecked="{Binding ShowMaskLabels, Mode=TwoWay}"
+                                  ToolTip.Tip="Show Fs / Fp / Ap / As names beside the mask lines">
+                        <mi:MaterialIcon Kind="FormatText" Width="16" Height="16"/>
                     </ToggleButton>
                 </StackPanel>
                 <fv:FilterPlotLayout Grid.Row="1" ClipToBounds="True"

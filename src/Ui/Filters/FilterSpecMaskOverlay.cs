@@ -1,12 +1,13 @@
 using System.Numerics;
+using CircuitRF.Render;
 using CircuitRF.Render.DataDisplay;
 using CircuitRF.Ui.DataDisplay.Controls;
 using SkiaSharp;
 
 namespace CircuitRF.Ui.Filters;
 
-/// <summary>One coloured mask line on the magnitude plot.</summary>
-internal readonly record struct FilterMaskLine(double Value, SKColor Color, bool Vertical);
+/// <summary>One coloured mask line on the magnitude plot, with an optional name drawn beside it.</summary>
+internal readonly record struct FilterMaskLine(double Value, SKColor Color, bool Vertical, string Label = "");
 
 /// <summary>
 /// Dashed mask lines on the Filter Designer's magnitude plot: vertical edges (Fp/Fs) and horizontal
@@ -19,6 +20,9 @@ internal sealed class FilterSpecMaskOverlay : IPlotOverlay
 
     /// <summary>Mask lines to draw this frame.</summary>
     public IReadOnlyList<FilterMaskLine> Lines { get; set; } = [];
+
+    /// <summary>When true, each line's <see cref="FilterMaskLine.Label"/> is drawn beside it.</summary>
+    public bool ShowLabels { get; set; } = true;
 
     public FilterSpecMaskOverlay(Plot plot) => _plot = plot;
 
@@ -39,6 +43,9 @@ internal sealed class FilterSpecMaskOverlay : IPlotOverlay
             _            => hz / 1e9,
         };
 
+        using var font = new SKFont(SkiaFonts.PlexRegular, 10f);
+        using var textPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill };
+
         foreach (var line in Lines)
         {
             using var paint = new SKPaint
@@ -55,16 +62,31 @@ internal sealed class FilterSpecMaskOverlay : IPlotOverlay
                 if (!(line.Value > 0) || !double.IsFinite(line.Value)) continue;
                 double x = toX(line.Value);
                 if (x < win.Left || x > win.Right) continue;
-                canvas.DrawLine(tf.PrimaryToCanvas(x, win.Top), tf.PrimaryToCanvas(x, win.Bottom), paint);
+                var a = tf.PrimaryToCanvas(x, win.Top);
+                var b = tf.PrimaryToCanvas(x, win.Bottom);
+                canvas.DrawLine(a, b, paint);
+                if (ShowLabels && line.Label.Length > 0)
+                {
+                    textPaint.Color = line.Color;
+                    float tx = Math.Min(a.X, b.X) + 3f;
+                    float ty = Math.Min(a.Y, b.Y) + font.Size + 2f;
+                    canvas.DrawText(line.Label, tx, ty, SKTextAlign.Left, font, textPaint);
+                }
             }
             else
             {
                 if (!double.IsFinite(line.Value)) continue;
                 if (line.Value < yLo || line.Value > yHi) continue;
-                canvas.DrawLine(
-                    tf.PrimaryToCanvas(win.Left, line.Value),
-                    tf.PrimaryToCanvas(win.Right, line.Value),
-                    paint);
+                var a = tf.PrimaryToCanvas(win.Left, line.Value);
+                var b = tf.PrimaryToCanvas(win.Right, line.Value);
+                canvas.DrawLine(a, b, paint);
+                if (ShowLabels && line.Label.Length > 0)
+                {
+                    textPaint.Color = line.Color;
+                    float tx = Math.Min(a.X, b.X) + 4f;
+                    float ty = Math.Min(a.Y, b.Y) - 3f;
+                    canvas.DrawText(line.Label, tx, ty, SKTextAlign.Left, font, textPaint);
+                }
             }
         }
     }

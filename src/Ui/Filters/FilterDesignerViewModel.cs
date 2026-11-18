@@ -116,11 +116,14 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     /// <summary>Phase and group delay of the ladder.</summary>
     public Plot PhasePlot => PhaseContainer.PlotVM.Plot;
 
-    /// <summary>Insertion-loss plot is on. The phase plot takes the whole pane when this is off.</summary>
+    /// <summary>Filter-response plot is on. The phase plot takes the whole pane when this is off.</summary>
     [ObservableProperty] private bool _showMagnitude = true;
 
-    /// <summary>Phase / group-delay plot is on. The magnitude plot takes the whole pane when this is off.</summary>
-    [ObservableProperty] private bool _showPhase = true;
+    /// <summary>Phase / group-delay plot is on. Off at startup — the response plot fills the pane alone.</summary>
+    [ObservableProperty] private bool _showPhase;
+
+    /// <summary>Fs/Fp/Ap/As names drawn beside the mask lines on the response plot.</summary>
+    [ObservableProperty] private bool _showMaskLabels = true;
 
     /// <summary>The realization, one row per element.</summary>
     public ObservableCollection<FilterElementRow> Elements { get; } = [];
@@ -889,10 +892,11 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
                 PhasePlot.Traces.Add(delay);
         }
 
+        MagnitudeMask.ShowLabels = ShowMaskLabels;
         MagnitudeMask.Lines = MaskLines(spec);
 
         MagnitudePlot.CustomTitleOn = true;
-        MagnitudePlot.CustomTitle = "Insertion loss";
+        MagnitudePlot.CustomTitle = "Filter response";
         MagnitudePlot.Autoscale(force: true);
         PhasePlot.CustomTitleOn = true;
         PhasePlot.CustomTitle = "Phase and group delay";
@@ -900,24 +904,31 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         Announce();
     }
 
-    private static FilterMaskLine[] MaskLines(Spec spec)
+    partial void OnShowMaskLabelsChanged(bool value)
+    {
+        MagnitudeMask.ShowLabels = value;
+        Announce();
+    }
+
+    private FilterMaskLine[] MaskLines(Spec spec)
     {
         var list = new List<FilterMaskLine>(6);
-        void Edge(double hz, SKColor color)
+        void Edge(double hz, SKColor color, string label)
         {
-            if (hz > 0 && double.IsFinite(hz)) list.Add(new FilterMaskLine(hz, color, Vertical: true));
+            if (hz > 0 && double.IsFinite(hz))
+                list.Add(new FilterMaskLine(hz, color, Vertical: true, label));
         }
-        Edge(spec.EdgeAHz, FilterMaskColors.EdgeA);
-        Edge(spec.EdgeBHz, FilterMaskColors.EdgeB);
+        Edge(spec.EdgeAHz, FilterMaskColors.EdgeA, LabelA);
+        Edge(spec.EdgeBHz, FilterMaskColors.EdgeB, LabelB);
         if (spec.Form is NetworkForm.Bandpass or NetworkForm.Bandstop)
         {
-            Edge(spec.EdgeCHz, FilterMaskColors.EdgeC);
-            Edge(spec.EdgeDHz, FilterMaskColors.EdgeD);
+            Edge(spec.EdgeCHz, FilterMaskColors.EdgeC, LabelC);
+            Edge(spec.EdgeDHz, FilterMaskColors.EdgeD, LabelD);
         }
         if (double.IsFinite(spec.ApDb))
-            list.Add(new FilterMaskLine(-spec.ApDb, FilterMaskColors.Ap, Vertical: false));
+            list.Add(new FilterMaskLine(-spec.ApDb, FilterMaskColors.Ap, Vertical: false, "Ap"));
         if (double.IsFinite(spec.AsDb))
-            list.Add(new FilterMaskLine(-spec.AsDb, FilterMaskColors.As, Vertical: false));
+            list.Add(new FilterMaskLine(-spec.AsDb, FilterMaskColors.As, Vertical: false, "As"));
         return list.ToArray();
     }
 
