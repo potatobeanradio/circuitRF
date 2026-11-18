@@ -158,8 +158,9 @@ public static class MatchSchematicModel
         }
         else if (e.Y < MatchLadderLayout.SpineY - 1.0)
         {
-            // Above the body: glyph half-height (~65) plus a little air, then 18 per line.
-            offsets = labels.Select((_, i) => (0.0, -95.0 - 18.0 * i)).ToList();
+            // Beside the body — stacked L∥C rails both need clear text, and "above" on the lower
+            // rail lands inside the upper glyph (Filter Designer's bridged elliptic arm).
+            offsets = labels.Select((_, i) => (110.0, -20.0 - 18.0 * i)).ToList();
         }
         else
             offsets = [];

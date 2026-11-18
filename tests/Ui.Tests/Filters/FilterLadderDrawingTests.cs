@@ -47,8 +47,8 @@ public class FilterLadderDrawingTests
         {
             var onSpine = tank.Single(e => e.Y == MatchLadderLayout.SpineY);
             var above = tank.Single(e => e.Y < MatchLadderLayout.SpineY);
-            Assert.Equal(ElementType.L, onSpine.Type);
-            Assert.Equal(ElementType.C, above.Type);
+            Assert.Equal(ElementType.C, onSpine.Type);
+            Assert.Equal(ElementType.L, above.Type);
         }
         Assert.Equal(tanks.Count, layout.ParallelArms.Count);
         Assert.All(layout.ParallelArms, a => Assert.True(a.Y < MatchLadderLayout.SpineY));
@@ -70,19 +70,23 @@ public class FilterLadderDrawingTests
         Assert.Equal(8, layout.Elements.Count);
         Assert.NotEmpty(layout.ParallelArms);
 
-        // Parallel tank: both parts on one rail above the spine, side by side (not stacked).
+        // Parallel tank: both parts share mid-X on stacked rails (true L∥C), not side-by-side
+        // on one rail (that drew two series-LC legs).
         var above = layout.Elements.Where(e => !e.IsShunt && e.Y < MatchLadderLayout.SpineY).ToList();
         Assert.Equal(2, above.Count);
-        Assert.Equal(above[0].Y, above[1].Y);
-        Assert.NotEqual(above[0].X, above[1].X);
+        Assert.Equal(above[0].X, above[1].X);
+        Assert.NotEqual(above[0].Y, above[1].Y);
+        Assert.Contains(above, e => e.Type == ElementType.L);
+        Assert.Contains(above, e => e.Type == ElementType.C);
 
         var spineSeries = layout.Elements
             .Where(e => !e.IsShunt && e.Y == MatchLadderLayout.SpineY).ToList();
         Assert.Equal(2, spineSeries.Count);
         Assert.NotEqual(spineSeries[0].X, spineSeries[1].X);
 
-        // One ParallelArm for the whole bridged column (not one rail per tank part).
-        Assert.Single(layout.ParallelArms);
+        // One rail per parallel-tank part, both above the spine.
+        Assert.Equal(2, layout.ParallelArms.Count);
+        Assert.All(layout.ParallelArms, a => Assert.True(a.Y < MatchLadderLayout.SpineY));
 
         // No two series symbols share the same (X, Y) — that was the overlapping drawing.
         Assert.Equal(

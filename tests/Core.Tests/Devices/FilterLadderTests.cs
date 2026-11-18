@@ -175,6 +175,16 @@ public class FilterLadderTests
     }
 
     [Fact]
+    public void EllipticOrderNineAtTightRippleStillBuilds()
+    {
+        var built = FilterLadder.Synthesize(
+            FilterResponse.Elliptic, NetworkForm.Lowpass, 9,
+            1e9, 0, 0, 0.1, 50, FilterFirstElement.Series, 40);
+        Assert.True(built.Ok, built.Refusal?.Message);
+        Assert.True(built.Realization!.Elements.Count >= 9);
+    }
+
+    [Fact]
     public void AnEvenEllipticIsRefusedBecauseTheFloorDoesNotReachZero()
     {
         var built = FilterLadder.Synthesize(

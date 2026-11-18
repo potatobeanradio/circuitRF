@@ -114,9 +114,10 @@ internal static class FilterLadderDrawing
     }
 
     /// <summary>
-    /// Series resonator on the spine and parallel resonator above it, both between the same outer
-    /// nodes — one column wide. Series L–C sit left/right on the spine; parallel L∥C sit left/right
-    /// on a single rail above (not stacked at the mid-point, which overlapped every label).
+    /// Series resonator on the spine and parallel resonator above it, same outer nodes.
+    /// Series L–C sit left/right on the spine. The parallel tank is a short L∥C rectangle —
+    /// both parts share the mid-X and span the full arm on their own rails. Side-by-side on one
+    /// rail wired them in series and drew the tall “two series-LC legs” box.
     /// </summary>
     private static void PlaceBridged(
         List<MatchLadderElement> placed, List<MatchParallelArm> arms,
@@ -125,6 +126,8 @@ internal static class FilterLadderDrawing
     {
         double xL = x0 - PairHalf;
         double xR = x0 + PairHalf;
+        double left = xL - Lead;
+        double right = xR + Lead;
         // Prefer L then C on the spine when both are present.
         var series = chain.OrderBy(p => p.Inductor ? 0 : 1).ToList();
         if (series.Count >= 2)
@@ -135,27 +138,32 @@ internal static class FilterLadderDrawing
         else
             PlaceOne(placed, series[0], x0, valueText);
 
-        double y = MatchLadderLayout.SpineY - ParallelStep;
         var tankL = tank.FirstOrDefault(t => t.Inductor) ?? tank[0];
         var tankC = tank.FirstOrDefault(t => !t.Inductor) ?? tank[^1];
-        placed.Add(El(tankL.Name, tankL.Inductor ? ElementType.L : ElementType.C, false, tankL.Value,
-                      xL, y, valueText(tankL.Inductor, tankL.Value)));
-        placed.Add(El(tankC.Name, tankC.Inductor ? ElementType.L : ElementType.C, false, tankC.Value,
-                      xR, y, valueText(tankC.Inductor, tankC.Value)));
-        arms.Add(new MatchParallelArm(xL - Lead, xR + Lead, y));
+        // Compact parallel rectangle above the spine: L on the upper rail, C just under it —
+        // both centred so each glyph bridges left↔right (true parallel, not a series pair).
+        double yL = MatchLadderLayout.SpineY - ParallelStep;
+        double yC = MatchLadderLayout.SpineY - ParallelStep * 0.55;
+        placed.Add(El(tankL.Name, ElementType.L, false, tankL.Value,
+                      x0, yL, valueText(true, tankL.Value)));
+        placed.Add(El(tankC.Name, ElementType.C, false, tankC.Value,
+                      x0, yC, valueText(false, tankC.Value)));
+        arms.Add(new MatchParallelArm(left, right, yL));
+        arms.Add(new MatchParallelArm(left, right, yC));
     }
 
     /// <summary>
-    /// L∥C in the through path: L on the spine, C on one rail above — a single compact column.
+    /// L∥C in the through path as a short rectangle: C on the spine, L on one rail above —
+    /// the usual compact series-arm tank (not a tall bridge).
     /// </summary>
     private static void PlaceParallelTank(
         List<MatchLadderElement> placed, List<MatchParallelArm> arms,
         FilterElement L, FilterElement C, double x, Func<bool, double, string> valueText)
     {
-        placed.Add(El(L.Name, ElementType.L, false, L.Value, x, MatchLadderLayout.SpineY,
-                      valueText(true, L.Value)));
+        placed.Add(El(C.Name, ElementType.C, false, C.Value, x, MatchLadderLayout.SpineY,
+                      valueText(false, C.Value)));
         double y = MatchLadderLayout.SpineY - ParallelStep;
-        placed.Add(El(C.Name, ElementType.C, false, C.Value, x, y, valueText(false, C.Value)));
+        placed.Add(El(L.Name, ElementType.L, false, L.Value, x, y, valueText(true, L.Value)));
         arms.Add(new MatchParallelArm(x - Lead, x + Lead, y));
     }
 

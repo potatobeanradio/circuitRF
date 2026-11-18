@@ -4196,12 +4196,10 @@ Each one was invisible on the kits circuitRF had been tried against and silent w
   degrees and aborted around order 8. `ExtractCore` now forces the expected remainder length;
   Bessel reaches 9 and Gaussian 10. Past that, `BuildBessel` / `BuildGaussian` themselves lose the
   Feldtkeller `F` degree in double — a Create problem, not the continued fraction.
-- **Elliptic / InvCheby still stop around odd order 7 at tight ripple** (0.1 dB / 40 dB). Create
-  succeeds past that; the zero-removal search finishes a short AllPositive ladder whose Zin is wrong.
-  Looser `Divides` / `zinCap` help at the edge of that wall; a true arbitrary-order elliptic needs a
-  higher-precision reactance extraction.
-- **Elliptic series tanks drew as tall multi-tier boxes (and bandpass ones overlapped).**
-  `PlaceParallelTank` keeps L on the spine and C on one short rail above (`ParallelStep = 2·Lead`).
-  `PlaceBridged` puts series L–C side-by-side on the spine and the parallel tank side-by-side on one
-  rail — one `MatchParallelArm`, no stacked mid-point glyphs. Labels for elevated series parts sit
-  above the body (`MatchSchematicModel`).
+- **Elliptic order 9 at 0.1/40 dB now builds** via an exhaustive Cauer search fallback when the
+  first AllPositive finish fails Zin (that first finish was a short wrong ladder). InvCheby and
+  elliptic ≤ 7 stay on the fast first-success path. Order 11+ at tight ripple still fails in double.
+- **Bandpass elliptic series arms drew as two series-LC legs in a tall box.** Side-by-side L and C
+  on one elevated rail wired them in series. `PlaceBridged` now stacks a true L∥C rectangle (both at
+  mid-X, two rails). `PlaceParallelTank` is C on the spine with L on one short rail above. Elevated
+  labels sit beside the glyph so stacked rails do not cover each other.
