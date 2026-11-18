@@ -3439,6 +3439,10 @@ namespace RfCore.Export
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public IReadOnlyList<string>? PalaceTerminalPorts { get; init; }
 
+        /// <summary>PWL-3 R-pwl3-14 — each face's wall ports: its group, its line standards and where C′ comes from, or the refusal a run
+        /// would give. Null when the problem has no wall port.</summary>
+        public IReadOnlyList<string>? WallPorts { get; init; }
+
         /// <summary>brief-em3d-23 R-em3d23-4a — an eigenmode problem's mode count and target; null otherwise.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public Em3dEigenmodeJson? Eigenmode { get; init; }

@@ -183,6 +183,56 @@ public sealed class WallPortTests : IDisposable
         return (proc.ExitCode, o.GetAwaiter().GetResult(), e.GetAwaiter().GetResult());
     }
 
+    /// <summary>R-pwl3-9 — a standard's cache key is stable for the same solve and moves with what changes the answer (its length,
+    /// the setup's settings, the solver); its raw S round-trips exactly.</summary>
+    [Fact]
+    public void AStandardsCacheKeyFollowsItsSolve_AndItsAnswerRoundTrips()
+    {
+        var (doc, path) = Stripline();
+        var problem = Assemble(doc, path).Problem!;
+        var (cal, _) = CircuitRF.Design.Em3d.Em3dWallCalibration.Plan(problem, 1e9, 10e9, []);
+        var a = cal!.Standards[0].Problem; var b = cal.Standards[1].Problem;
+        string k = CircuitRF.Design.Em3d.Em3dWallCalibration.CacheKey(a, "settings", "Palace");
+        Assert.Equal(k, CircuitRF.Design.Em3d.Em3dWallCalibration.CacheKey(a, "settings", "Palace"));
+        Assert.NotEqual(k, CircuitRF.Design.Em3d.Em3dWallCalibration.CacheKey(b, "settings", "Palace"));
+        Assert.NotEqual(k, CircuitRF.Design.Em3d.Em3dWallCalibration.CacheKey(a, "other settings", "Palace"));
+        Assert.NotEqual(k, CircuitRF.Design.Em3d.Em3dWallCalibration.CacheKey(a, "settings", "Emerge"));
+
+        var sIn = new[] { new Complex[,] { { new(0.1, -0.2), new(0.9, 0.3) }, { new(0.9, 0.3), new(-0.05, 0.4) } } };
+        cal.Capture(0, [5e9], sIn);
+        string file = Path.Combine(_root, "cache", k + ".json");
+        cal.Save(0, file);
+        Assert.True(CircuitRF.Design.Em3d.Em3dWallCalibration.TryLoad(file, out var f, out var sOut));
+        Assert.Equal([5e9], f);
+        Assert.Equal(sIn[0], sOut[0]);
+        Assert.False(CircuitRF.Design.Em3d.Em3dWallCalibration.TryLoad(Path.Combine(_root, "none.json"), out _, out _));
+    }
+
+    /// <summary>R-pwl3 — <c>CalibrateWallPorts</c> is written only when off, reads back, and its absence means on.</summary>
+    [Fact]
+    public void CalibrateWallPorts_IsWrittenOnlyWhenOff_AndReadsBack()
+    {
+        string on = EmSetupPersistence.Serialize(new EmSetup { Name = "a" });
+        Assert.DoesNotContain("CalibrateWallPorts", on);
+        Assert.True(EmSetupPersistence.Deserialize(on).CalibrateWallPorts);
+        string off = EmSetupPersistence.Serialize(new EmSetup { Name = "a", CalibrateWallPorts = false });
+        Assert.Contains("\"CalibrateWallPorts\": false", off);
+        Assert.False(EmSetupPersistence.Deserialize(off).CalibrateWallPorts);
+    }
+
+    /// <summary>R-pwl3-14 — `explain` says what a run would do with the wall ports, from the calibration's own plan.</summary>
+    [Fact]
+    public void ExplainShowsEachFacesGroupAndItsStandards()
+    {
+        var (_, path) = Stripline();
+        var (code, output, err) = RunCli("explain", path, "--setup", "Palace");
+        Assert.True(code == 0, err);
+        Assert.Contains("wall ports", output);
+        Assert.Contains("Wall ports on the xmin face (1)", output);
+        Assert.Contains("the xmin face's own", output);
+        Assert.Contains("3 standard(s) to solve before the structure", output);
+    }
+
     [Fact]
     public void AWallPortOffTheFaces_IsRefusedNamingTheFace()
     {

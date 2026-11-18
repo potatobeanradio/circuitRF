@@ -205,3 +205,24 @@ One group per face, the xmax face sharing the xmin face's three standards (3.048
 pair: VSWR ≤ 1.0046, |ΔS31| ≤ 1.9e-3. Against kernel A's quasi-static coupled line: VSWR 1.0174 / 1.0046 / 1.0062 at
 1 / 5 / 10 GHz, inside the restated 1.025. A run took 25 minutes on a shared machine (the 4-port standards dominate); no
 benchmark test holds it yet, because its reference needs kernel A's modes in the test, which is the next step's.
+
+## PWL-3, stage 3 (part) — the standards cache and the switch (2026-11-18)
+
+- **R-pwl3-9 — the cache.** `Em3dWallCalibration.CacheKey` hashes (SHA-256, 24 hex) everything that decides a standard's
+  solve: its solids' and sheets' geometry and materials, its ports, its box, the materials' values, the frequencies, the
+  temperature, the solver, and the SETUP serialized (`EmSetupPersistence.Serialize`). That is conservative on purpose: renaming
+  the setup misses the cache. The raw S lands in `results/wall-standards/<key>.json` (written through a `.tmp` and a move; a
+  failed write costs only the next run its reuse). `SolveWallStandards` loads a hit instead of solving and says how many it
+  reused. Gate: `WallPortTests.AStandardsCacheKeyFollowsItsSolve_AndItsAnswerRoundTrips` (stable for one solve, different for
+  another length, other settings, another solver; S round-trips bit for bit).
+- **`CalibrateWallPorts`** on `EmSetup` (default on, written only as `false`, the `ThinMetalCorrection` pattern). Off skips
+  the standards and publishes the raw S at the gaps, with a note; the assembly's gap note stops promising a calibration.
+  Gate: `CalibrateWallPorts_IsWrittenOnlyWhenOff_AndReadsBack`; the 70 setup-document tests are unchanged.
+- **Still open in brief 3:** pricing the standards in `run dryRun`, the walls in `explain`; the 3D view's per-setup `Ports3D`
+  Wave/Wall override and a layout `.cem`'s wall ports (refused by name today); splitting a face into groups by distance
+  (today a face is one group, its degeneracy refused); a gate-4 benchmark test.
+- **R-pwl3-14, in part — `explain` (and so `run dryRun`, which goes through it) shows a `wall ports` block**: each face's
+  group, its standards' lengths, whether a face shares another's, the C′ source, and how many standards a run must solve,
+  all from `Em3dWallCalibration.Plan` itself, or the refusal a run would give. `ResultDocument.WallPorts` carries it in
+  `--json`. The standards are not yet priced in memory and time beside the structure. Gate:
+  `WallPortTests.ExplainShowsEachFacesGroupAndItsStandards`; the 169 tests of the classes that run `explain` are unchanged.

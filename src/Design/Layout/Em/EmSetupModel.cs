@@ -834,6 +834,10 @@ public sealed class EmSetup
     /// has that thickness on its faces on Palace and EMerge, so its resistance levels off at the DC value. On unless a setup says otherwise.</summary>
     public bool ThinMetalCorrection { get; set; } = true;
 
+    /// <summary>PWL-3 — whether a 3D run calibrates its wall ports with line standards (on), or publishes the raw S at each gap in
+    /// the port's Z0 (off, for comparison). <c>CalibrateWallPorts</c>, written only when off.</summary>
+    public bool CalibrateWallPorts { get; set; } = true;
+
     /// <summary>
     /// EM-TFR — what a 3D setup makes of every conductor band: <see cref="Em3dConductorMode.Auto"/> takes the
     /// sheet rule, <see cref="Em3dConductorMode.Sheets"/> is the planar model's own idealisation and
@@ -1185,6 +1189,7 @@ public sealed class EmSetup
         MeshFrequencyGHz       = MeshFrequencyGHz,
         RobustMeshing          = RobustMeshing,
         ThinMetalCorrection    = ThinMetalCorrection,
+        CalibrateWallPorts     = CalibrateWallPorts,
         Conductors             = Conductors,
         ReferenceInputPowerDbm = ReferenceInputPowerDbm,
         SnpOutputPathOverride  = SnpOutputPathOverride,

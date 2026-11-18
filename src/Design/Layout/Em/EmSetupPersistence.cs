@@ -1726,6 +1726,9 @@ public sealed class CemFile
     /// <summary>brief-em3d-139 — <see cref="EmSetup.ThinMetalCorrection"/>. <b>Null means ON</b>, so only <c>false</c> is ever written.</summary>
     public bool? ThinMetalCorrection { get; set; }
 
+    /// <summary>PWL-3 — <see cref="EmSetup.CalibrateWallPorts"/>. <b>Null means ON</b>, so only <c>false</c> is ever written.</summary>
+    public bool? CalibrateWallPorts { get; set; }
+
     /// <summary>EM-TFR — <see cref="EmSetup.Conductors"/>. Omitted at Auto, which is what every setup written before it means.</summary>
     public Em3dConductorMode? Conductors { get; set; }
 
@@ -1926,6 +1929,7 @@ public static class EmSetupPersistence
         AirBox         = ToCem(s.AirBox),
         RobustMeshing  = s.RobustMeshing ? null : false,
         ThinMetalCorrection = s.ThinMetalCorrection ? null : false,
+        CalibrateWallPorts = s.CalibrateWallPorts ? null : false,
         Conductors     = s.Conductors == Em3dConductorMode.Auto ? null : s.Conductors,
         Palace         = s.Palace,
         OpenEms        = s.OpenEms,
@@ -2043,6 +2047,7 @@ public static class EmSetupPersistence
         AirBox                = FromCem(f.AirBox),
         RobustMeshing         = f.RobustMeshing ?? true,
         ThinMetalCorrection   = f.ThinMetalCorrection ?? true,
+        CalibrateWallPorts    = f.CalibrateWallPorts ?? true,
         Conductors            = f.Conductors ?? Em3dConductorMode.Auto,
         Palace                = f.Palace,
         OpenEms               = f.OpenEms,

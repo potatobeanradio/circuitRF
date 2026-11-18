@@ -336,12 +336,12 @@ public static class C3dWallPorts
     }
 
     /// <summary>What a run with wall ports says of their gaps.</summary>
-    public static string GapNote(IEnumerable<Em3dPort> ports)
+    public static string GapNote(IEnumerable<Em3dPort> ports, bool calibrated = true)
     {
         var walls = ports.Where(p => p.Wall is not null).ToList();
         return $"{walls.Count} wall port(s) ({string.Join(", ", walls.Select(p => $"{p.Number} on {p.Wall!.Face}"))}): each line is cut back " +
-               $"by its gap ({string.Join(", ", walls.Select(p => Um(p.Wall!.GapM) + " µm").Distinct())}) and fed across it, and the gap is " +
-               "calibrated out by line standards the run solves before the structure.";
+               $"by its gap ({string.Join(", ", walls.Select(p => Um(p.Wall!.GapM) + " µm").Distinct())}) and fed across it" +
+               (calibrated ? ", and the gap is calibrated out by line standards the run solves before the structure." : ".");
     }
 
     private static string Um(double m) => (m * 1e6).ToString("0.###", CultureInfo.InvariantCulture);

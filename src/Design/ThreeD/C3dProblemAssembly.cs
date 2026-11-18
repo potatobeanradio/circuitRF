@@ -663,7 +663,7 @@ public static class C3dProblemAssembly
             {
                 if (C3dWallPorts.Trim(solids, sheets, ports, 2 * context.Dbu + context.OutlineMoveM) is { } trimRefusal)
                     return No(trimRefusal, e.Warnings);
-                notes.Add(C3dWallPorts.GapNote(ports));
+                notes.Add(C3dWallPorts.GapNote(ports, setup.CalibrateWallPorts));
             }
         }
 

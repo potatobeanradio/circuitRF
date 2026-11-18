@@ -1770,6 +1770,11 @@ face. It needs no mode solve, so it does not depend on a face's mode being found
   answer. The S-parameters are at the **wall** (the line's drawn end), or moved into the structure by `DeembedUm`, in each
   port's Z0. Z_c comes from a 2D electrostatic solve of the cross-section. Two faces with the same cross-section share their
   standards, so a line's two ends cost three standards over 1–10 GHz, not six.
+- **Standards are kept.** Each solved standard's answer is stored under `results/wall-standards/`, keyed by its cross-section,
+  length, frequencies, solver and the setup's settings, and a later run that needs the same one reuses it instead of solving
+  it again; the run's notes say how many were reused. A tuning sweep that does not change the face pays for them once.
+- **Calibrate wall ports** (`CalibrateWallPorts`, on): off publishes the raw S at each gap, in the port's Z0, for comparison,
+  with a note saying so. Only `"CalibrateWallPorts": false` is ever written.
 - **Several lines on one face** are calibrated together, as one group of up to three: their standard carries all of them, so
   the coupling between them at the port is removed with the port.
 - **The end run must be uniform.** From the face inward for 3 substrate heights, everything crossing the face must run

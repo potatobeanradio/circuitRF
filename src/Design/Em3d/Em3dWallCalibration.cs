@@ -164,6 +164,91 @@ public sealed class Em3dWallCalibration
     // The standards' answers, and the calibrated structure
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    // R-pwl3-9 — the cache: a standard's raw S, keyed by everything that decides its solve
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>The folder under a run's results root that holds solved standards.</summary>
+    public const string CacheFolder = "wall-standards";
+
+    /// <summary>
+    /// The key of one standard's solve: its problem (every solid's and sheet's geometry and material, the ports, the box, the
+    /// materials' values, the frequencies, the temperature) with the setup's own settings (<paramref name="settings"/>, the
+    /// setup serialized) and the solver. A different answer needs a different key; the same key always the same answer.
+    /// </summary>
+    public static string CacheKey(Em3dProblem standard, string settings, string solver)
+    {
+        var t = new System.Text.StringBuilder();
+        string R(double v) => v.ToString("R", CultureInfo.InvariantCulture);
+        string P(Point3 q) => $"{R(q.X)},{R(q.Y)},{R(q.Z)}";
+        t.Append(solver).Append('\n').Append(settings).Append('\n');
+        t.Append($"type {standard.Type} temp {R(standard.OperatingTempC)} thin {standard.ThinMetalCorrection}\n");
+        var fq = standard.Frequency;
+        t.Append($"f {R(fq.StartHz)} {R(fq.StopHz)} {fq.Points} {fq.Kind} {string.Join(",", (fq.ListHz ?? []).Select(R))}\n");
+        foreach (var m in standard.Materials)
+            t.Append($"m {m.Name} {R(m.Epsr)} {R(m.TanD)} {R(m.Mur)} {R(m.SigmaSm)} {string.Join(",", (m.EpsrTensor ?? []).Select(R))}\n");
+        foreach (var x in standard.Solids)
+        {
+            var (a0, b0, c0, a1, b1, c1) = Em3dProblem.Bounds(x.Primitive);
+            t.Append($"s {x.Name} {x.Material} {x.Role} {x.Order} {x.Primitive.GetType().Name} {R(a0)} {R(b0)} {R(c0)} {R(a1)} {R(b1)} {R(c1)}\n");
+        }
+        foreach (var x in standard.Sheets)
+            t.Append($"h {x.Name} {x.Material} {R(x.Z)} {R(x.ThicknessM)} {x.Order} {string.Join(";", x.Outline.Select(q => $"{R(q.X)},{R(q.Y)}"))}\n");
+        foreach (var p in standard.Ports)
+            t.Append($"p {p.Number} {p.PositiveObject} {p.NegativeObject} {P(p.Min)} {P(p.Max)} {P(p.Direction)} {R(p.Z0.Real)},{R(p.Z0.Imaginary)}\n");
+        var b = standard.Boundary;
+        t.Append($"b {P(b.Min)} {P(b.Max)} {b.Faces} {b.Material}\n");
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(t.ToString()));
+        return Convert.ToHexString(hash)[..24].ToLowerInvariant();
+    }
+
+    /// <summary>A cached standard's raw S, or false when there is none (or it cannot be read).</summary>
+    public static bool TryLoad(string path, out double[] frequenciesHz, out Complex[][,] s)
+    {
+        frequenciesHz = []; s = [];
+        try
+        {
+            if (!File.Exists(path)) return false;
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+            var root = doc.RootElement;
+            frequenciesHz = [.. root.GetProperty("f").EnumerateArray().Select(e => e.GetDouble())];
+            int n = root.GetProperty("n").GetInt32();
+            var re = root.GetProperty("re").EnumerateArray().Select(e => e.GetDouble()).ToArray();
+            var im = root.GetProperty("im").EnumerateArray().Select(e => e.GetDouble()).ToArray();
+            if (re.Length != frequenciesHz.Length * n * n || im.Length != re.Length) return false;
+            s = new Complex[frequenciesHz.Length][,];
+            for (int k = 0; k < frequenciesHz.Length; k++)
+            {
+                s[k] = new Complex[n, n];
+                for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) { int x = (k * n + i) * n + j; s[k][i, j] = new Complex(re[x], im[x]); }
+            }
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+                                     or InvalidOperationException or KeyNotFoundException or FormatException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Standard <paramref name="index"/>'s captured raw S written to <paramref name="path"/>. A write that fails costs only the
+    /// next run its reuse, so it is not an error.</summary>
+    public void Save(int index, string path)
+    {
+        if (!_raw.TryGetValue(index, out var r)) return;
+        try
+        {
+            int n = r.S[0].GetLength(0);
+            var re = new List<double>(); var im = new List<double>();
+            foreach (var m in r.S) for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) { re.Add(m[i, j].Real); im.Add(m[i, j].Imaginary); }
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            string tmp = path + ".tmp";
+            File.WriteAllText(tmp, System.Text.Json.JsonSerializer.Serialize(new { f = r.F, n, re, im }));
+            File.Move(tmp, path, overwrite: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
+
     /// <summary>The diagnostics cube holding the structure's raw S at its wall ports' gaps, before calibration.</summary>
     public const string RawCube = "__WallPortRawS";
 

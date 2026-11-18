@@ -389,9 +389,14 @@ public static partial class Em3dRunService
             return compare ? CompareRefused(legs, log) : log.Result(refused.Status, refused.Diagnostic);
 
         // ── PWL-3 — wall ports: their line standards, solved before the structure by the same solver and settings ───────────
-        if (!meshOnly && problem.Type == Em3dProblemType.Driven && problem.Ports.Any(p => p.Wall is not null)
-            && SolveWallStandards(problem, legs[0], run) is { } wallStop)
-            return log.Result(wallStop.Status, wallStop.Diagnostic);
+        if (!meshOnly && problem.Type == Em3dProblemType.Driven && problem.Ports.Any(p => p.Wall is not null))
+        {
+            if (!setup.CalibrateWallPorts)
+                log.Notes.Add("Calibrate wall ports is off: the S-parameters are the RAW ones at each wall port's gap, in the port's Z0, with " +
+                              "the gap and the wall's own field still in them.");
+            else if (SolveWallStandards(problem, legs[0], run) is { } wallStop)
+                return log.Result(wallStop.Status, wallStop.Diagnostic);
+        }
 
         // ── brief-emdc-2 R-emdc2-2 — the 0 Hz row: ONE conduction solve, before any leg executes, which every leg splices ───
         if (generated.WantsDc && !meshOnly) run.Dc = SolveDc(problem, setup, resultsRoot, run);
@@ -424,10 +429,21 @@ public static partial class Em3dRunService
         var (wall, refusal) = Em3dWallCalibration.Plan(problem, lo, hi, planNotes);
         run.Log.Notes.AddRange(planNotes);
         if (refusal is not null) return new Stop(EmRunStatus.Refused, EmDiagnostics.Forwarded(WallSource, refusal));
+        string settings = Layout.Em.EmSetupPersistence.Serialize(run.Setup);
+        int reused = 0;
         for (int i = 0; i < wall!.Standards.Count; i++)
         {
             var std = wall.Standards[i];
             run.Ct.ThrowIfCancellationRequested();
+            // R-pwl3-9 — a standard solved before, with the same problem, settings and solver, is not solved again.
+            string cachePath = Path.Combine(run.ResultsRoot, Em3dWallCalibration.CacheFolder,
+                Em3dWallCalibration.CacheKey(std.Problem, settings, structureLeg.Solver.Id.ToString()) + ".json");
+            if (Em3dWallCalibration.TryLoad(cachePath, out var cachedHz, out var cachedS))
+            {
+                wall.Capture(i, cachedHz, cachedS);
+                reused++;
+                continue;
+            }
             var stdSetup = run.Setup.Clone();
             stdSetup.Name = $"{(run.Setup.Name is { Length: > 0 } n ? n : "setup")} {std.Label}";
             int index = i;
@@ -446,8 +462,12 @@ public static partial class Em3dRunService
             if (!result.Ok)
                 return new Stop(result.Status, result.Stop ?? EmDiagnostics.Forwarded(WallSource, $"The wall standard {std.Label} did not solve."));
             run.Log.Warnings.AddRange(stdRun.Log.Warnings.Select(w => $"Wall standard {std.Label}: {w}"));
+            wall.Save(i, cachePath);
         }
-        run.Log.Notes.Add($"{wall.Standards.Count} wall standard(s) solved by {structureLeg.Solver.DisplayName} before the structure.");
+        run.Log.Notes.Add(reused == wall.Standards.Count
+            ? $"{reused} wall standard(s) reused from an earlier run with the same cross-section, settings and frequencies; none solved."
+            : $"{wall.Standards.Count - reused} wall standard(s) solved by {structureLeg.Solver.DisplayName} before the structure" +
+              (reused > 0 ? $", {reused} reused from an earlier run." : "."));
         run.Wall = wall;
         return null;
     }

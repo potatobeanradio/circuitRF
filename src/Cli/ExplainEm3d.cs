@@ -211,6 +211,7 @@ internal static class ExplainEm3d
             Static = Static(p, setup),
             OpenEmsWavePorts = setup.Solver3D.Runs(OpenEmsSolver.Id) ? WavePortLines(p, grid.Grid) : null,
             PalaceTerminalPorts = setup.Solver3D.Runs(PalaceSolver.Id) ? PalaceTerminalLines(p, setup.Solver3D) : null,
+            WallPorts = WallPortLines(p, setup),
             Emerge = setup.Solver3D.Runs(EmergeSolver.Id) ? Emerge(p, setup) : null,
             Eigenmode = p.Type != Em3dProblemType.Eigenmode ? null
                 : new Em3dEigenmodeJson(p.EigenmodeCount, setup.Eigenmode?.Count is null ? "default" : "field",
@@ -257,6 +258,22 @@ internal static class ExplainEm3d
                                   low is { Ok: true } ? low.EdgeSizeM : null, low is { Ok: true } ? low.LargestSizeM : null,
                                   [.. (low?.Objects ?? []).Select(o => new Em3dEmergeObjectJson(o.Name, o.Kind, o.Mapping))],
                                   low is null ? string.Join(" ", s.Problems()) : low.Refusal);
+    }
+
+    /// <summary>
+    /// PWL-3 R-pwl3-14 — what a run would do with the problem's wall ports: each face's group, its standards and the C′ source
+    /// (the calibration's own plan, so explain and the run cannot disagree), or why it would refuse. Nothing is solved.
+    /// </summary>
+    private static IReadOnlyList<string>? WallPortLines(Em3dProblem p, EmSetup setup)
+    {
+        if (!p.Ports.Any(q => q.Wall is not null)) return null;
+        if (!setup.CalibrateWallPorts) return ["Calibrate wall ports is off: a run publishes the raw S at each gap."];
+        var notes = new List<string>();
+        var (cal, refusal) = Em3dWallCalibration.Plan(p, p.Frequency.StartHz, p.Frequency.StopHz, notes);
+        if (refusal is not null) return [$"a run would refuse: {refusal}"];
+        notes.Add($"{cal!.Standards.Count} standard(s) to solve before the structure, each with this setup's solver and settings " +
+                  $"(reused from results/{Em3dWallCalibration.CacheFolder} where an earlier run solved the same one).");
+        return notes;
     }
 
     /// <summary>
@@ -732,6 +749,11 @@ internal static class ExplainEm3d
         {
             Console.WriteLine("  Palace terminal ports");
             foreach (string l in palaceLines) Console.WriteLine($"    {l}");
+        }
+        if (r.WallPorts is { Count: > 0 } wallLines)
+        {
+            Console.WriteLine("  wall ports");
+            foreach (string l in wallLines) Console.WriteLine($"    {l}");
         }
         if (r.Emerge is { } em) PrintEmerge(em);
         if (r.Eigenmode is { } eig)
