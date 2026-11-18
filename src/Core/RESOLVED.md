@@ -4198,8 +4198,16 @@ Each one was invisible on the kits circuitRF had been tried against and silent w
   Feldtkeller `F` degree in double — a Create problem, not the continued fraction.
 - **Elliptic order 9 at 0.1/40 dB now builds** via an exhaustive Cauer search fallback when the
   first AllPositive finish fails Zin (that first finish was a short wrong ladder). InvCheby and
-  elliptic ≤ 7 stay on the fast first-success path. Order 11+ at tight ripple still fails in double.
+  elliptic ≤ 7 stay on the fast first-success path.
+- **Elliptic order 11 at 0.1/40 and order 13 at 1 dB now build** (2026-11-18 follow-up). Tight-ripple
+  high order parks finite zeros on ω≈1.001…; a frequency-scaled Cauer plane (geometric mean of the
+  zeros mapped to a modest stretch) plus an order-scaled Zin budget and a wall-clock stop make
+  order 11 finish in well under a second. Order 13 at 0.5 dB ripple still fails in double — the
+  zeros are too degenerate for synthetic division. Hard `ForceDegree` on every `Divides` broke
+  InvCheby order 7; degree-gated / noise-only forcing is what keeps both paths green.
 - **Bandpass elliptic series arms drew as two series-LC legs in a tall box.** Side-by-side L and C
-  on one elevated rail wired them in series. `PlaceBridged` now stacks a true L∥C rectangle (both at
-  mid-X, two rails). `PlaceParallelTank` is C on the spine with L on one short rail above. Elevated
-  labels sit beside the glyph so stacked rails do not cover each other.
+  on one elevated rail wired them in series. `PlaceBridged` stacks a true L∥C rectangle (both at
+  mid-X, two rails) with `ParallelStep = 0.8·Lead` so the cell stays short. Spine labels under a
+  parallel arm go below the spine; the top rail's labels sit above the glyph and the lower tank
+  rail's labels sit to the right of the arm box — otherwise L and C text pile on top of each other
+  between the rails.

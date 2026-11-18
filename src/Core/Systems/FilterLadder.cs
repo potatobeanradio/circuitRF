@@ -516,23 +516,71 @@ public static class FilterLadder
             if (TryExtractFirst(n, d, zeros, out var got)) Consider(got);
         }
 
-        double zinCap = Math.Max(1e-2, 3e-3 * proto.Order);
-        // High-order elliptic: the first finish is often a short wrong ladder. Exhaust every
-        // AllPositive completion (and a frequency-scaled plane) so a full-order path can score.
-        if ((tight is null || best > zinCap) && zeros.Length > 0 && proto.Order >= 9)
-        {
-            foreach (var (n, d) in Reactances(proto.E, f))
-                TryExtractAll(n, d, zeros, proto.Order, Consider);
+        // High-order elliptic zeros crowd the passband edge (ω≈1); double Cauer residuals grow
+        // with order, so the Zin budget and the Divides tolerance both scale with it.
+        double zinCap = Math.Max(2e-2, 1e-2 * proto.Order);
+        var deadline = DateTime.UtcNow.AddSeconds(Math.Clamp(3.0 * proto.Order, 15, 60));
+        bool GoodEnough() => tight is not null && best <= zinCap
+                             && tight.Count >= proto.Order - 1;
+        bool Stop() => GoodEnough() || DateTime.UtcNow >= deadline;
 
-            double wScale = Math.Exp(zeros.Average(z => Math.Log(z)));
-            if (wScale > 0 && double.IsFinite(wScale) && Math.Abs(wScale - 1.0) > 1e-6)
+        double geo = zeros.Length > 0 ? Math.Exp(zeros.Average(z => Math.Log(z))) : 1.0;
+        bool clustered = zeros.Length > 0 && zeros[0] < 1.15;
+
+        // Scaled fast path: same first-finish extract, but in planes that pull edge zeros apart.
+        // Modest stretch first (order 13 landed there); larger stretch covers order 11 at 0.1 dB.
+        if (!GoodEnough() && zeros.Length > 0 && proto.Order >= 9)
+        {
+            foreach (double target in (double[])[2.0, 3.0, 5.0, 8.0, 12.0])
             {
+                double wScale = geo / target;
+                if (!(wScale > 0) || !double.IsFinite(wScale) || Math.Abs(wScale - 1.0) < 1e-6)
+                    continue;
+                var zerosS = zeros.Select(z => z / wScale).ToArray();
+                foreach (var (n, d) in Reactances(proto.E, f))
+                {
+                    if (TryExtractFirst(ScaleFreq(n, wScale), ScaleFreq(d, wScale), zerosS, out var got))
+                        Consider(UnscaleArms(got, wScale));
+                }
+                if (GoodEnough()) break;
+            }
+        }
+
+        // Exhaustive AllPositive search across scaled planes. Native / modest stretch first —
+        // order 13 at 1 dB finished there; large stretch is the fallback for tighter ripple.
+        if (!Stop() && zeros.Length > 0 && proto.Order >= 9)
+        {
+            double[] targets = clustered
+                ? [1.0, 2.0, 3.0, 5.0, 8.0, 12.0, 0.5]
+                : [1.0, 2.0, 3.0, 5.0, 8.0];
+
+            void SearchPlane(double wScale)
+            {
+                if (Stop()) return;
+                if (Math.Abs(wScale - 1.0) < 1e-6)
+                {
+                    foreach (var (n, d) in Reactances(proto.E, f))
+                    {
+                        TryExtractAll(n, d, zeros, proto.Order, Consider, Stop);
+                        if (Stop()) return;
+                    }
+                    return;
+                }
                 var zerosS = zeros.Select(z => z / wScale).ToArray();
                 foreach (var (n, d) in Reactances(proto.E, f))
                 {
                     TryExtractAll(ScaleFreq(n, wScale), ScaleFreq(d, wScale), zerosS, proto.Order,
-                                  got => Consider(UnscaleArms(got, wScale)));
+                                  got => Consider(UnscaleArms(got, wScale)), Stop);
+                    if (Stop()) return;
                 }
+            }
+
+            foreach (double target in targets)
+            {
+                if (Stop()) break;
+                double wScale = geo / target;
+                if (!(wScale > 0) || !double.IsFinite(wScale)) continue;
+                SearchPlane(wScale);
             }
         }
 
@@ -540,7 +588,7 @@ public static class FilterLadder
         // tightest one, which is the other end of the same ladder.
         List<NormArm>? arms = fit is not null && bestFit <= Math.Max(1e-4, best * 50) ? fit : tight;
         // High-order elliptic / inverse-Chebyshev leave a slightly larger Zin residual in double;
-        // accept anything that still carries the zeros and stays under a few percent.
+        // accept anything that still carries the zeros and stays under the order-scaled budget.
         if (arms is not null && Math.Min(best, bestFit) > zinCap) arms = null;
         if (arms is null)
             return Refuse((proto.Order & 1) == 0
@@ -649,20 +697,70 @@ public static class FilterLadder
     }
 
     /// <summary>
-    /// Exhaustive Cauer search (both zero orders). Every AllPositive finish is handed to
-    /// <paramref name="onFound"/> so ZinError can pick among them.
+    /// Exhaustive Cauer search over several zero orders. Every AllPositive finish is handed to
+    /// <paramref name="onFound"/> so ZinError can pick among them. <paramref name="stop"/> aborts
+    /// further branching once a comfortable ladder is already in hand.
     /// </summary>
     private static void TryExtractAll(
-        double[] n0, double[] d0, double[] zeros, int order, Action<List<NormArm>> onFound)
+        double[] n0, double[] d0, double[] zeros, int order, Action<List<NormArm>> onFound,
+        Func<bool>? stop = null)
     {
         int minEmit = Math.Max(1, order - 1);
-        foreach (var ordered in new[]
-                 {
-                     zeros.ToList(),
-                     zeros.OrderByDescending(z => z).ToList(),
-                 })
+        foreach (var ordered in ZeroOrders(zeros))
         {
-            RecurSearch(n0, d0, ordered, [], 0, minEmit, onFound);
+            if (stop?.Invoke() == true) return;
+            RecurSearch(n0, d0, ordered, [], 0, minEmit, onFound, stop);
+        }
+    }
+
+    /// <summary>
+    /// Ascending, descending, and a few interlaced orders. Full permutations only while the zero
+    /// count stays small — five zeros is 120 leaves, six is already past what a UI click can wait.
+    /// </summary>
+    private static IEnumerable<List<double>> ZeroOrders(double[] zeros)
+    {
+        yield return zeros.ToList();
+        yield return zeros.OrderByDescending(z => z).ToList();
+
+        // Outside-in: largest, then smallest, then next-largest, …
+        var desc = zeros.OrderByDescending(z => z).ToList();
+        var asc = zeros.OrderBy(z => z).ToList();
+        var outsideIn = new List<double>(zeros.Length);
+        for (int i = 0, j = 0, k = 0; i < zeros.Length; i++)
+            outsideIn.Add((i & 1) == 0 ? desc[j++] : asc[k++]);
+        yield return outsideIn;
+
+        // Odds then evens in ascending index — breaks adjacent near-degenerate pairs.
+        var oddEven = new List<double>();
+        for (int i = 0; i < zeros.Length; i += 2) oddEven.Add(asc[i]);
+        for (int i = 1; i < zeros.Length; i += 2) oddEven.Add(asc[i]);
+        yield return oddEven;
+
+        if (zeros.Length <= 4)
+        {
+            foreach (var p in Permute(zeros))
+            {
+                if (p.SequenceEqual(zeros)) continue;
+                if (p.SequenceEqual(desc)) continue;
+                yield return p;
+            }
+        }
+    }
+
+    private static IEnumerable<List<double>> Permute(double[] items)
+    {
+        var a = items.ToList();
+        foreach (var p in PermuteRange(a, 0)) yield return p;
+    }
+
+    private static IEnumerable<List<double>> PermuteRange(List<double> a, int i)
+    {
+        if (i >= a.Count) { yield return [.. a]; yield break; }
+        for (int j = i; j < a.Count; j++)
+        {
+            (a[i], a[j]) = (a[j], a[i]);
+            foreach (var p in PermuteRange(a, i + 1)) yield return p;
+            (a[i], a[j]) = (a[j], a[i]);
         }
     }
 
@@ -713,16 +811,18 @@ public static class FilterLadder
                 double l = n[0] / d[0];
                 if (!(l > 0) || !double.IsFinite(l)) return false;
                 arms.Add(new NormArm(NormKind.SeriesL, l, 0));
-                return RecurFirst(MatchPoly.Sub(n, Scale(MulByS(d), l)), d, left, arms, depth + 1)
-                       || Pop(arms);
+                var rem = DropLeadingNoise(
+                    MatchPoly.Sub(n, Scale(MulByS(d), l)), Math.Max(1, dn - 1));
+                return RecurFirst(rem, d, left, arms, depth + 1) || Pop(arms);
             }
             if (dd == dn + 1)
             {
                 double c = d[0] / n[0];
                 if (!(c > 0) || !double.IsFinite(c)) return false;
                 arms.Add(new NormArm(NormKind.ShuntC, 0, c));
-                return RecurFirst(n, MatchPoly.Sub(d, Scale(MulByS(n), c)), left, arms, depth + 1)
-                       || Pop(arms);
+                var rem = DropLeadingNoise(
+                    MatchPoly.Sub(d, Scale(MulByS(n), c)), Math.Max(1, dd - 1));
+                return RecurFirst(n, rem, left, arms, depth + 1) || Pop(arms);
             }
             return false;
         }
@@ -769,9 +869,9 @@ public static class FilterLadder
     /// </summary>
     private static void RecurSearch(
         double[] n, double[] d, List<double> left, List<NormArm> arms, int depth, int minEmit,
-        Action<List<NormArm>> onFound)
+        Action<List<NormArm>> onFound, Func<bool>? stop = null)
     {
-        if (depth > 48) return;
+        if (depth > 48 || stop?.Invoke() == true) return;
         Normalise(ref n, ref d);
         n = MatchPoly.Trim(n);
         d = MatchPoly.Trim(d);
@@ -784,12 +884,13 @@ public static class FilterLadder
 
         for (int i = 0; i < left.Count; i++)
         {
+            if (stop?.Invoke() == true) return;
             double w = left[i], wz2 = w * w;
             if (Divides(d, wz2, out var q) && Tank(n, q, w) is { } series)
             {
                 var removed = MatchPoly.Sub(n, Scale(MulByS(q), 1.0 / series.C));
                 if (Divides(removed, wz2, out var n2))
-                    TryArm(n2, q, left, i, series, arms, depth, minEmit, onFound);
+                    TryArm(n2, q, left, i, series, arms, depth, minEmit, onFound, stop);
             }
             if (Divides(n, wz2, out q) && Tank(d, q, w) is { } asSeriesForm)
             {
@@ -799,7 +900,7 @@ public static class FilterLadder
                 var removed = MatchPoly.Sub(d, Scale(MulByS(q), k));
                 var shunt = new NormArm(NormKind.ShuntSeries, asSeriesForm.C, asSeriesForm.L);
                 if (Divides(removed, wz2, out var d2))
-                    TryArm(q, d2, left, i, shunt, arms, depth, minEmit, onFound);
+                    TryArm(q, d2, left, i, shunt, arms, depth, minEmit, onFound, stop);
             }
         }
 
@@ -812,7 +913,9 @@ public static class FilterLadder
                 if (l > 0 && double.IsFinite(l))
                 {
                     arms.Add(new NormArm(NormKind.SeriesL, l, 0));
-                    RecurSearch(MatchPoly.Sub(n, Scale(MulByS(d), l)), d, left, arms, depth + 1, minEmit, onFound);
+                    var rem = DropLeadingNoise(
+                        MatchPoly.Sub(n, Scale(MulByS(d), l)), Math.Max(1, dn - 1));
+                    RecurSearch(rem, d, left, arms, depth + 1, minEmit, onFound, stop);
                     arms.RemoveAt(arms.Count - 1);
                 }
             }
@@ -822,7 +925,9 @@ public static class FilterLadder
                 if (c > 0 && double.IsFinite(c))
                 {
                     arms.Add(new NormArm(NormKind.ShuntC, 0, c));
-                    RecurSearch(n, MatchPoly.Sub(d, Scale(MulByS(n), c)), left, arms, depth + 1, minEmit, onFound);
+                    var rem = DropLeadingNoise(
+                        MatchPoly.Sub(d, Scale(MulByS(n), c)), Math.Max(1, dd - 1));
+                    RecurSearch(n, rem, left, arms, depth + 1, minEmit, onFound, stop);
                     arms.RemoveAt(arms.Count - 1);
                 }
             }
@@ -834,9 +939,10 @@ public static class FilterLadder
         {
             for (int i = 0; i < left.Count; i++)
             {
+                if (stop?.Invoke() == true) return;
                 if (Partial(n, d, left[i]) is not { } l || !(l > 1e-9) || l >= lFull * 0.999) continue;
                 arms.Add(new NormArm(NormKind.SeriesL, l, 0));
-                RecurSearch(MatchPoly.Sub(n, Scale(MulByS(d), l)), d, left, arms, depth + 1, minEmit, onFound);
+                RecurSearch(MatchPoly.Sub(n, Scale(MulByS(d), l)), d, left, arms, depth + 1, minEmit, onFound, stop);
                 arms.RemoveAt(arms.Count - 1);
             }
         }
@@ -844,12 +950,13 @@ public static class FilterLadder
         {
             for (int i = 0; i < left.Count; i++)
             {
+                if (stop?.Invoke() == true) return;
                 var y = AdmittanceAt(n, d, left[i]);
                 if (y is null) continue;
                 double c = y.Value.Imaginary / left[i];
                 if (!(c > 1e-9) || c >= cFull * 0.999) continue;
                 arms.Add(new NormArm(NormKind.ShuntC, 0, c));
-                RecurSearch(n, MatchPoly.Sub(d, Scale(MulByS(n), c)), left, arms, depth + 1, minEmit, onFound);
+                RecurSearch(n, MatchPoly.Sub(d, Scale(MulByS(n), c)), left, arms, depth + 1, minEmit, onFound, stop);
                 arms.RemoveAt(arms.Count - 1);
             }
         }
@@ -857,12 +964,13 @@ public static class FilterLadder
 
     private static void TryArm(
         double[] n, double[] d, List<double> left, int index, NormArm arm,
-        List<NormArm> arms, int depth, int minEmit, Action<List<NormArm>> onFound)
+        List<NormArm> arms, int depth, int minEmit, Action<List<NormArm>> onFound,
+        Func<bool>? stop = null)
     {
         var next = new List<double>(left);
         next.RemoveAt(index);
         arms.Add(arm);
-        RecurSearch(n, d, next, arms, depth + 1, minEmit, onFound);
+        RecurSearch(n, d, next, arms, depth + 1, minEmit, onFound, stop);
         arms.RemoveAt(arms.Count - 1);
     }
 
@@ -908,7 +1016,7 @@ public static class FilterLadder
         var denom = new Complex(0, w) * qj;
         if (denom.Magnitude < 1e-14) return null;
         var k = nj / denom;
-        if (Math.Abs(k.Imaginary) > 1e-4 * (1.0 + Math.Abs(k.Real))) return null;
+        if (Math.Abs(k.Imaginary) > 5e-4 * (1.0 + Math.Abs(k.Real))) return null;
         if (!(k.Real > 0) || !double.IsFinite(k.Real)) return null;
         double c = 1.0 / k.Real;
         double l = 1.0 / (w * w * c);
@@ -989,7 +1097,7 @@ public static class FilterLadder
         if (got.Count != zeros.Length) return false;
         got.Sort();
         for (int i = 0; i < got.Count; i++)
-            if (Math.Abs(got[i] - zeros[i]) > 1e-3 * zeros[i]) return false;
+            if (Math.Abs(got[i] - zeros[i]) > 5e-3 * zeros[i]) return false;
         return true;
     }
 
@@ -1000,23 +1108,65 @@ public static class FilterLadder
 
     private static bool Divides(double[] poly, double wz2, out double[] quot)
     {
-        var (q, r) = Div(MatchPoly.Trim(poly), [1.0, 0.0, wz2]);
+        poly = MatchPoly.Trim(poly);
+        var (q, r) = Div(poly, [1.0, 0.0, wz2]);
+        // (s²+ω²) drops two degrees. Cancellation can leave a ~1e−9 leading term that Trim keeps;
+        // drop it only when it is clearly noise relative to the rest of the quotient. Forcing on
+        // every call broke InvCheby order 7 (a previously green first-finish path).
+        int expectLen = Math.Max(1, Degree(poly) - 1); // degree-2 ⇒ length = (deg−2)+1 = deg−1
+        double qScale = 0;
+        foreach (double c in q) qScale = Math.Max(qScale, Math.Abs(c));
+        // High degree: always drop the algebraically-known surplus (Bessel/elliptic wall).
+        // Low degree: only when the leading term is clearly noise — hard forcing broke InvCheby 7.
+        int degPoly = Degree(poly);
+        if (q.Length > expectLen && (degPoly >= 10
+                || (qScale > 0 && Math.Abs(q[0]) < 1e-7 * qScale)))
+            q = ForceDegree(q, expectLen);
         quot = q;
         double scale = 0;
         foreach (double c in poly) scale = Math.Max(scale, Math.Abs(c));
         // High-order characteristic polynomials leave larger synthetic-division residuals in double;
-        // accept a zero that still evaluates small on the axis.
-        double limit = 1e-3 * Math.Max(1.0, scale);
+        // accept a zero that still evaluates small on the axis. Residuals grow roughly with degree.
+        int deg = Math.Max(Degree(poly), 0);
+        double limit = (1e-3 + 2e-4 * deg) * Math.Max(1.0, scale);
         foreach (double c in r)
             if (Math.Abs(c) > limit)
             {
                 double w = Math.Sqrt(wz2);
                 var at = MatchPoly.Eval(poly, new Complex(0, w));
-                int deg = Math.Max(Degree(poly), 0);
                 double term = Math.Max(1.0, scale) * Math.Pow(Math.Max(w, 1.0), deg);
-                return q.Length > 0 && at.Magnitude < 1e-4 * term;
+                double evalCap = (1e-4 + 5e-6 * deg) * term;
+                return quot.Length > 0 && at.Magnitude < evalCap;
             }
-        return q.Length > 0;
+        return quot.Length > 0;
+    }
+
+    /// <summary>
+    /// Drops leading noise until <paramref name="len"/> long — the elliptic analogue of
+    /// <c>MatchPrototypes</c>' ForceDegree after an all-pole Cauer step.
+    /// </summary>
+    private static double[] ForceDegree(double[] p, int len)
+    {
+        p = MatchPoly.Trim(p);
+        if (len <= 0) return [0.0];
+        if (p.Length <= len) return p.Length == 0 ? [0.0] : p;
+        return p[(p.Length - len)..];
+    }
+
+    /// <summary>
+    /// Like <see cref="ForceDegree"/>, but soft at low degree — hard forcing broke InvCheby 7.
+    /// At degree ≥ 10 the surplus leading term is always treated as cancellation noise.
+    /// </summary>
+    private static double[] DropLeadingNoise(double[] p, int len)
+    {
+        p = MatchPoly.Trim(p);
+        if (p.Length <= len) return p.Length == 0 ? [0.0] : p;
+        double scale = 0;
+        foreach (double c in p) scale = Math.Max(scale, Math.Abs(c));
+        int deg = Degree(p);
+        if (deg >= 10 || (scale > 0 && Math.Abs(p[0]) < 1e-7 * scale))
+            return ForceDegree(p, len);
+        return p;
     }
 
     private static (double[] Quot, double[] Rem) Div(double[] num, double[] den)
