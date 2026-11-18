@@ -1754,6 +1754,44 @@ What an EMerge run says about the conversion:
   there; refine the mesh at the port face. The same voltages tell whether **a terminal reads another port face's modes**.
   An adaptive sweep solves no requested frequency directly, so a note says these two checks were not made.
 
+### Wall ports {#wall-ports}
+
+A **wall port** feeds a line where it meets a **PEC face of the air box**, and calibrates the port out. It is the port for a
+line that ends at a wall: a shielded circuit, a line over a conducting substrate, or several lines ending together on one
+face. It needs no mode solve, so it does not depend on a face's mode being found.
+
+- **What it is.** The line runs to the air box's face. In the solved problem it is cut back by a short gap, and the gap is
+  the port: from the wall (−) to the line (+), across the line's width, in the plane of its face toward its return. The gap
+  is min(width, height above the return)/5, and is never a setting. The face is made **PEC with no padding** for the run,
+  whatever the setup states, and the run's notes say so.
+- **How it is calibrated.** The run builds **line standards** from the face's own cross-section (its first 3 substrate
+  heights), each the cross-section extruded between two PEC walls at a length the band needs (the shortest 6 heights),
+  solves them with the same solver and settings before the structure, and removes the gap and the wall's field from the
+  answer. The S-parameters are at the **wall** (the line's drawn end), or moved into the structure by `DeembedUm`, in each
+  port's Z0. Z_c comes from a 2D electrostatic solve of the cross-section. Two faces with the same cross-section share their
+  standards, so a line's two ends cost three standards over 1–10 GHz, not six.
+- **Several lines on one face** are calibrated together, as one group of up to three: their standard carries all of them, so
+  the coupling between them at the port is removed with the port.
+- **The end run must be uniform.** From the face inward for 3 substrate heights, everything crossing the face must run
+  straight and unchanged, because the standards reproduce exactly that. A line that tapers or bends there is refused,
+  naming the object; extend it straight.
+- **Refused by name:** a port off the faces of the air box; one on the floor or the lid; a rectangle over two lines (state
+  `Positive`, or draw one per line); a face carrying wave ports too; a line with no ground beneath it; dielectrics that are
+  not layers across the face's whole width; lines whose modes travel at nearly one speed (a stripline pair: feed it with a
+  wave port with terminals on openEMS).
+- **Palace only, in this version.** EMerge and openEMS refuse a wall port by name. A layout's 3D setup (`.cem`) refuses
+  `Ports3D` `Kind: "Wall"` too: make a 3D view of the layout and draw its wall ports there.
+
+In a `.c3d`:
+
+```
+{ "Number": 1, "Name": "P1", "Kind": "Wall", "Plane": "YZ", "Offset": 0,
+  "Rect": { "Min": [-1717866, -1000000], "Size": [3435732, 2000000] }, "Z0": "50" }
+```
+
+On a 50 Ω stripline, calibrated this way on Palace at Standard quality, the port's VSWR against the exact line
+is 1.001–1.005 from 1 to 10 GHz.
+
 ### Coaxial ports {#coaxial-ports}
 
 A **coaxial port** is a lumped port whose sheet is a **ring**: the flat annulus of a coax's cross-section between its pin

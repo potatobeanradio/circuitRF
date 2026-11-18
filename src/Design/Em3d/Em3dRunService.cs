@@ -388,6 +388,11 @@ public static partial class Em3dRunService
         if (legs.FirstOrDefault(l => l.Stop is not null)?.Stop is { } refused)
             return compare ? CompareRefused(legs, log) : log.Result(refused.Status, refused.Diagnostic);
 
+        // ── PWL-3 — wall ports: their line standards, solved before the structure by the same solver and settings ───────────
+        if (!meshOnly && problem.Type == Em3dProblemType.Driven && problem.Ports.Any(p => p.Wall is not null)
+            && SolveWallStandards(problem, legs[0], run) is { } wallStop)
+            return log.Result(wallStop.Status, wallStop.Diagnostic);
+
         // ── brief-emdc-2 R-emdc2-2 — the 0 Hz row: ONE conduction solve, before any leg executes, which every leg splices ───
         if (generated.WantsDc && !meshOnly) run.Dc = SolveDc(problem, setup, resultsRoot, run);
 
@@ -406,6 +411,49 @@ public static partial class Em3dRunService
         }
         return RunCompare(legs, choice.Reference, problem, setup, resultsRoot, run, keepRecord);
     }
+
+    /// <summary>
+    /// PWL-3 R-pwl3-10 — the wall ports' line standards (<see cref="Em3dWallCalibration"/>), each solved by a fresh leg of the
+    /// structure's own solver under the same settings, into its own result folder, its raw S captured for the calibration; then
+    /// <see cref="RunContext.Wall"/> is set so the structure's leg calibrates before it writes. Null when every standard solved.
+    /// </summary>
+    private static Stop? SolveWallStandards(Em3dProblem problem, SolverLeg structureLeg, RunContext run)
+    {
+        double lo = problem.Frequency.StartHz, hi = problem.Frequency.StopHz;     // a frequency list's lowest and highest too
+        var planNotes = new List<string>();
+        var (wall, refusal) = Em3dWallCalibration.Plan(problem, lo, hi, planNotes);
+        run.Log.Notes.AddRange(planNotes);
+        if (refusal is not null) return new Stop(EmRunStatus.Refused, EmDiagnostics.Forwarded(WallSource, refusal));
+        for (int i = 0; i < wall!.Standards.Count; i++)
+        {
+            var std = wall.Standards[i];
+            run.Ct.ThrowIfCancellationRequested();
+            var stdSetup = run.Setup.Clone();
+            stdSetup.Name = $"{(run.Setup.Name is { Length: > 0 } n ? n : "setup")} {std.Label}";
+            int index = i;
+            var stdRun = run with
+            {
+                Setup = stdSetup, Log = new RunLog(), Target = null,
+                CaptureRaw = (f, s) => wall.Capture(index, f, s),
+            };
+            stdRun.Dc = null; stdRun.Compare = false; stdRun.Wall = null;
+            run.Control?.BeginStage($"wall standard {i + 1} of {wall.Standards.Count} ({std.Label})");
+            var leg = structureLeg.Solver.NewLeg();
+            leg.Configure(stdRun);
+            if (leg.Stop is null) leg.Prepare(std.Problem, stdRun);
+            if (leg.Stop is { } stop) return stop;
+            var result = leg.Execute(std.Problem, stdRun.Paths(leg.Solver.Id).SnpBase, stdRun);
+            if (!result.Ok)
+                return new Stop(result.Status, result.Stop ?? EmDiagnostics.Forwarded(WallSource, $"The wall standard {std.Label} did not solve."));
+            run.Log.Warnings.AddRange(stdRun.Log.Warnings.Select(w => $"Wall standard {std.Label}: {w}"));
+        }
+        run.Log.Notes.Add($"{wall.Standards.Count} wall standard(s) solved by {structureLeg.Solver.DisplayName} before the structure.");
+        run.Wall = wall;
+        return null;
+    }
+
+    /// <summary>The diagnostic source of a wall-port calibration's refusal.</summary>
+    public const string WallSource = "em3d-wall";
 
     /// <summary>brief-emdc-2 — test seam: discovery's answer for the DC row's Gmsh, in place of the real one.</summary>
     internal static Func<SolverReadiness>? DcGmsh;
@@ -729,6 +777,13 @@ public static partial class Em3dRunService
 
         /// <summary>This run compares solvers, so each one's result has its token after the name.</summary>
         public bool Compare { get; set; }
+
+        /// <summary>PWL-3 — the wall-port calibration the structure's raw S passes through before anything is written; null on a run
+        /// with no wall port (or one that publishes the raw answer).</summary>
+        public Em3dWallCalibration? Wall { get; set; }
+
+        /// <summary>PWL-3 — a wall standard's run hands its raw S here, at the requested frequencies, before anything else reads it.</summary>
+        public Action<double[], System.Numerics.Complex[][,]>? CaptureRaw { get; init; }
 
         /// <summary>Where <paramref name="solver"/>'s result files land.</summary>
         public EmResultPaths Paths(Em3dSolverId solver)

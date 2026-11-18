@@ -37,7 +37,7 @@ public static class C3dPortChecks
         var setups = C3dSetups.Read(doc).Where(s => s.Setup is { IsThermal: false }).ToList();
         List<(string? Setup, C3dPortContext Ctx)> contexts = setups.Count == 0
             ? [(null, C3dProblemAssembly.PortContext(null, doc, e, null))]
-            : [.. setups.Select(s => ((string?)s.Name, C3dProblemAssembly.PortContext(s.Setup, doc, e, C3dProblemAssembly.AirBox(s.Setup!, e, out _))))];
+            : [.. setups.Select(s => ((string?)s.Name, C3dProblemAssembly.PortContext(s.Setup, doc, e, C3dProblemAssembly.AirBox(s.Setup!, e, out _, doc))))];
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (setup, ctx) in contexts)
             foreach (var r in C3dPorts.Resolve(doc, ctx))

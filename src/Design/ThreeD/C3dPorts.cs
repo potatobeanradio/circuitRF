@@ -398,7 +398,7 @@ public static class C3dPorts
         if (port.DeembedUm == 0) return null;
         string label = Label(port);
         if (!double.IsFinite(port.DeembedUm)) return $"{label}'s DeembedUm is {port.DeembedUm}; it is a number of micrometres.";
-        if (port.Kind != Em3dPortKind.Wave)
+        if (port.Kind == Em3dPortKind.Lumped)
             return $"{label} is a lumped port with DeembedUm {Fmt(port.DeembedUm * 1e-6)}. A lumped port's S-parameters are referred to its sheet, " +
                    "and only a wave port's reference plane moves along its guide. Remove DeembedUm, or make it a wave port.";
         if (port.Floquet is not null)
@@ -445,6 +445,8 @@ public static class C3dPorts
             if (!(z0.Real > 0))
                 return Refuse(port, $"{label}'s Z0 is {port.Z0} Ω; a port's reference impedance has a positive real part.");
         }
+        // PWL-3 — a wall port: the gap from a PEC face of the air box to the line that ends there.
+        if (port.Kind == Em3dPortKind.Wall) return C3dWallPorts.Resolve(port, label, z0, context, dbuPerMicron);
         if (port.Annulus is { } ring)
         {
             // brief-cxp-1 R-cxp1-1 — a ring is a lumped port's sheet, and nothing else's

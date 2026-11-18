@@ -1938,3 +1938,6 @@ src/RfCore/MulticonductorLine.cs|The per-unit-length matrix is singular — a co
 src/Core/Synthesis/Filters/CouplingCurves.cs|a bench of one or two resonators
 src/Core/Synthesis/Filters/FilterSynthesis.cs|No closed-form prototype for {response} yet.
 src/Design/Filters/FilterSynthesisService.cs|'{realisation.PartType}' is not a part type.
+src/Design/Em3d/Em3dWallCalibration.cs|Wall port {number} is not among the structure's ports.
+src/Design/Em3d/Em3dWallCalibration.cs|Wall standard {index} has no answer; it is solved before the structure.
+src/Design/Em3d/Em3dWallCalibration.cs|Wall standard {index} was not solved at {Ghz(f)} GHz.

@@ -218,10 +218,17 @@ public static class C3dProblemAssembly
     /// The air box <paramref name="setup"/> puts around <paramref name="e"/> — the one a run of it solves in, which is also
     /// the one the editor draws (R-em3d49-3a) and a wave port must lie on. Null when there is no content.
     /// </summary>
-    public static Em3dAirBox? AirBox(EmSetup setup, C3dElaboration e, out string? refusal)
+    /// <param name="document">PWL-3 — the view, when its wall ports' faces should be the PEC, unpadded faces a run makes them
+    /// (R-pwl3-1); null takes the setup's faces as stated.</param>
+    public static Em3dAirBox? AirBox(EmSetup setup, C3dElaboration e, out string? refusal, C3dDocument? document = null)
     {
         refusal = null;
         if (e.ModelledExtent() is not { } extent) return null;     // brief-em3d-93 — the run's box: modelled content only
+        if (document is not null && document.Ports.Any(p => p.Model && p.Kind == Em3dPortKind.Wall))
+        {
+            var (faces, _) = C3dWallPorts.Faces(document, (extent.X0, extent.Y0, extent.Z0, extent.X1, extent.Y1, extent.Z1));
+            if (faces.Count > 0) { setup = setup.Clone(); C3dWallPorts.ForceFaces(setup, faces); }
+        }
         double fMin;
         try { fMin = setup.ExpandFrequencies().Where(f => f > 0).DefaultIfEmpty(1e9).Min(); }
         catch (Exception) { fMin = 1e9; }
@@ -524,6 +531,19 @@ public static class C3dProblemAssembly
             return No(drawn.Extent() is not null ? EverythingOff : NothingToSolve(e), e.Warnings);
         if (NotModelledBoundary(document, drawn) is { } offBoundary) return No(offBoundary, e.Warnings);
 
+        // ── PWL-3 — a wall port's face is PEC with no padding (R-pwl3-1); a face is wall ports or wave ports (R-pwl3-5) ──
+        var (wallFaces, mixedFace) = C3dWallPorts.Faces(portDocument, (extent.X0, extent.Y0, extent.Z0, extent.X1, extent.Y1, extent.Z1));
+        if (mixedFace is not null) return No(mixedFace, e.Warnings);
+        if (wallFaces.Count > 0 && setup.Problem3D == Em3dProblemType.Driven)
+        {
+            // R-pwl3-15 — Palace first; EMerge and openEMS follow in their own briefs.
+            var notPalace = setup.Solver3D.Solvers.Where(s => s != Em3dSolverId.Palace).ToList();
+            if (notPalace.Count > 0)
+                return No($"This view has wall ports, which run on Palace in this version; EMerge and openEMS follow. Choose Palace for this " +
+                          $"setup, or make the ports wave or lumped ports to run it on {(notPalace[0] == Em3dSolverId.Emerge ? "EMerge" : "openEMS")}.", e.Warnings);
+            if (C3dWallPorts.ForceFaces(setup, wallFaces) is { } forced) notes.Add(forced);
+        }
+
         // ── The air box, padded by the generator's own rule ─────────────────────────────────────
         double? paddingH = PaddingHeight(e);
         double? paddingHBelow = PaddingHeightBelow(e);
@@ -638,6 +658,13 @@ public static class C3dProblemAssembly
             if (sources is not null && portDocument.Ports.Count > ports.Count)
                 notes.Add($"{portDocument.Ports.Count - ports.Count} port(s) drive no terminal and are not in the magnetostatic problem.");
             if (EdgePortSheet.SheetClash(ports) is { } oneSheet) return No(oneSheet, e.Warnings);
+            // PWL-3 R-pwl3-2 — each wall port's line is cut back by its gap, in the solved problem only.
+            if (ports.Any(p => p.Wall is not null))
+            {
+                if (C3dWallPorts.Trim(solids, sheets, ports, 2 * context.Dbu + context.OutlineMoveM) is { } trimRefusal)
+                    return No(trimRefusal, e.Warnings);
+                notes.Add(C3dWallPorts.GapNote(ports));
+            }
         }
 
         // ── brief-sar-3 R-sar3-3 — lumped elements: a port's gap, by the port's own rules, carrying R, L and C ──────
@@ -929,7 +956,7 @@ public static class C3dPortReports
         foreach (var s in setups)
         {
             var es = Of(s.Setup);
-            var box = C3dProblemAssembly.AirBox(s.Setup!, es, out _);
+            var box = C3dProblemAssembly.AirBox(s.Setup!, es, out _, doc);
             var ctx = C3dProblemAssembly.PortContext(s.Setup, doc, es, box);
             foreach (var resolved in C3dPorts.Resolve(doc, ctx))
             {

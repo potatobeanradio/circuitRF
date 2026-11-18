@@ -124,3 +124,84 @@ than a finer-mesh reference first.** The gates, from these numbers with margin:
   10 GHz, ε_eff within 1 %.
 - **Gate 4, coupled pair:** calibrated VSWR against kernel A's quasi-static coupled line ≤ 1.025, modal third-line
   residual ≤ 1.5e-2, both modes' ε_eff within 3 % of kernel A's, mode separation ≥ 0.5°.
+
+## PWL-3, first half — a wall port resolves, its face is forced and its line is cut back (2026-11-18)
+
+`docs/briefs/brief-pwl-3-wall-port-model-and-palace.md`, R-pwl3-1, -2, -5 and -15. The calibration (R-pwl3-7…12) is the
+second half; until it lands, a wall-port run publishes the RAW answer at each gap and its notes say so.
+
+- **`Em3dPortKind.Wall` is a DOCUMENT kind.** A `.c3d` port with `"Kind": "Wall"` (plane, offset and a rectangle round the
+  line's end, as a wave port states) resolves through `C3dWallPorts.Resolve` to an ordinary **lumped** `Em3dPort` carrying an
+  `Em3dWallPort` record (face, axis, gap, the line's end and height, the line). No solver lowers a third kind. The Palace
+  geometry of a wall-port run was checked by eye: on testdata/pwl's stripline the strip runs 200…19,800 µm and port 1 fills
+  0…200 µm against the PEC face.
+- **The gap is `min(w, h)/5`** (`C3dWallPorts.GapFraction`): w is the line's width just inside the face, h its height above
+  the highest ground conductor beneath its end (a PEC floor counts).
+- **The face is forced in ONE place.** `C3dProblemAssembly.AirBox` takes the document and forces its wall-port faces PEC
+  with no padding on a clone of the setup. `check`, `explain`, the editor's box and the run therefore all agree on the box.
+  Without that, `check` resolved the port against the setup's stated 500 µm padding and refused it as off the face, while
+  the run accepted it. `Assemble` does the same before padding and adds the note.
+- **The line is cut back in the solved problem** (`C3dWallPorts.Trim`): a sheet's or extruded outline's rings are clipped at
+  the gap's inner edge (one Sutherland–Hodgman edge), and a box is shortened. A line with other metal in the gap beside the
+  port's end is refused rather than cut there.
+- **Refused by name:** a wall port off the faces; one on the floor or lid (this version); a rectangle over two lines (state
+  Positive, or one port per line); a face with both wall and wave ports; a line with no ground beneath; a setup on EMerge or
+  openEMS (R-pwl3-15, lifted by briefs 5 and 6); and a `.cem` `Ports3D` row of kind Wall. That last one is refused rather
+  than silently run as the generator's ordinary lumped port; a layout's wall ports come with the per-setup override.
+- **`DeembedUm` is allowed on a wall port** (it moves the reference plane into the structure, as on a wave port); only a
+  plain lumped port refuses it.
+- Gate: `tests/Ui.Tests/ThreeD/WallPortTests.cs` (5 tests, the run's own assembly, no solver). The existing 3D port classes
+  (135 tests) and `Firewall.Tests` are unchanged.
+
+## PWL-3, second half — the calibration, end to end on Palace (2026-11-18)
+
+R-pwl3-7 … R-pwl3-12. `Em3dWallCalibration` (`src/Design/Em3d`) plans, builds the standards and de-embeds; `Em3dRunService`
+solves the standards first and the Palace leg calibrates the structure's S before anything is written.
+
+- **One group per face.** Every wall port on a face is one calibration group (scalar at one line, modal at two or three);
+  more than three is refused by name. Distance-based splitting of a face into several groups (overview D6) is NOT built: a
+  face whose lines are far apart is one group, and if its modes then travel at nearly one speed, the setup check refuses it
+  (R-pwl3-3, asked from kernel A's modes at the band's ends and centre over the separation each frequency reads).
+- **The standards are the structure's own section.** The face's end run (3 h) is sliced at three stations; every box,
+  extruded outline and horizontal sheet crossing it must give the same intervals at all three, or the run refuses, naming
+  the object. Each standard is those pieces extruded between two PEC walls (lines keeping their gap at both ends), every
+  other face as the structure's, the near ports the structure's and the far ones mirrored. Short standard
+  `max(6 h, 8 g)`; separations from `LineCalibration.SuggestDeltas` at kernel A's ε_eff (or, where a layer conducts,
+  history-free from kernel A's per-frequency β).
+- **Two faces with one cross-section share their standards** (R-pwl3-8): `Section.Signature` (every piece across the face,
+  the gap, the ports' count and Z0 — not where the face stands). The two ends of a line cost three standards over 1–10 GHz,
+  not six. The first end-to-end stripline run, before this, took 24 minutes for six.
+- **C′ and the modes from kernel A** on the section, everything that is not a line grounded (it touches the walls), a PEC
+  lid and PEC side faces as grounded conductors, the mesh sized for the widest grounded metal against the narrowest line,
+  and **never below 48 cells for a group**: the first coupled run took kernel A's default 6 (the face has no wide metal
+  besides the floor) and published an answer up to VSWR 1.036 from the spike's. `[C]` is symmetrised, [L] = μ₀ε₀[C₀]⁻¹
+  over the lines, the modes from `MulticonductorLine.VoltageModalMatrix`, **Tv's columns normalised to unit length** so a
+  mode's C′ (and the Z_c the notes print) reads in ohms. The first coupled run printed 2e8 Ω; the published S did not
+  move, since a column's scale cancels between the box and modal → terminal.
+- **The de-embedding is the shared algebra.** `LineCalibrator.At` (one line) or `ModalAt` (a group), `LineDeembed.ApplyBlocks`
+  with every other port an identity block, a reference plane moved by `DeembedUm` peeled with the mode's own γ, then
+  `ModalToTerminal` to each port's Z0 (the pseudo-wave renormalisation for a group of one).
+- **Published:** the calibrated S in the ordinary `.sNp`/`.npy`; the raw S at the gaps as `__WallPortRawS` `[f, i, j]` in the
+  Palace diagnostics group; per face a note of ε_eff, Z_c and the standards' agreement, and a note of any frequency whose
+  separation fell outside 20–160°. Each standard's own result files land in `results/` under the setup's name and the
+  standard's label.
+
+### Gate 3, on the product (testdata/pwl stripline, Kind Wall, gap 200 µm, Palace Standard)
+
+| f | VSWR vs exact | \|ΔS21\| | ε_eff |
+|---|---|---|---|
+| 1 GHz | 1.0026 | 2.4e-3 | 2.1168 |
+| 5 GHz | 1.0014 | 1.2e-2 | 2.1166 |
+| 10 GHz | 1.0046 | 2.4e-2 | 2.1167 |
+
+Z_c 50.11 Ω (kernel A's +0.2 %), the standards agreeing to 3e-5…4e-4. Inside every restated bound. Held by
+`WallPortTests.Gate3_TheCalibratedStriplineIsTheExactLine` (`Category=Benchmark`, launches the built CLI, skips without
+Palace and Gmsh).
+
+### Gate 4, on the product (testdata/pwl coupled pair, Kind Wall, two ports a face, Palace Standard)
+
+One group per face, the xmax face sharing the xmin face's three standards (3.048, 9.624 and 23.842 mm). Modes ε_eff
+1.753–2.005, Z_c 48.35 / 69.8 Ω, the standards' cascade agreeing to 7e-15. Against PWL-2's spike calibration of the same
+pair: VSWR ≤ 1.0046, |ΔS31| ≤ 1.9e-3. Against kernel A's quasi-static coupled line: VSWR 1.0174 / 1.0046 / 1.0062 at
+1 / 5 / 10 GHz, inside the restated 1.025. A run took 25 minutes on a shared machine (the 4-port standards dominate); no
+benchmark test holds it yet, because its reference needs kernel A's modes in the test, which is the next step's.

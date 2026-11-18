@@ -514,6 +514,16 @@ public static partial class Em3dRunService
             }
         }
         s = AtRequestedFrequencies(s, requestedHz);
+        // PWL-3 — a wall standard hands its raw S to the calibration; the structure's own is calibrated before anything is written.
+        run.CaptureRaw?.Invoke(s.FrequenciesHz, s.S);
+        Complex[][,]? wallRaw = null;
+        if (run.Wall is { } wallCalibration)
+        {
+            var wallNotes = new List<string>();
+            wallRaw = s.S;
+            s = s with { S = wallCalibration.Apply(s.FrequenciesHz, s.S, ports, wallNotes) };
+            foreach (var note in wallNotes) log.Notes.Add(note);
+        }
         var facts = PalaceRun.ReadFacts(post);
         log.Notes.Add($"Palace solved {s.FrequenciesHz.Length} frequencies on {Count(facts.FinalElements)} elements " +
                       $"({Count(facts.InitialElements)} initially, {facts.AdaptiveIterations ?? 0} adaptive pass(es)), " +
@@ -523,6 +533,8 @@ public static partial class Em3dRunService
 
         // ── The DataSet: S and Z0 in the house convention, plus Palace's own record ─────────────
         var data = BuildDataSet(s, ports, facts);
+        // PWL-3 R-pwl3-12 — the raw S at the wall ports' gaps, before calibration, in the diagnostics (a `__` cube: not a signal).
+        if (wallRaw is not null) data.AddToGroup(PalaceGroup, Em3dWallCalibration.RawCube, Em3dWallCalibration.RawCubeOf(s.FrequenciesHz, wallRaw, ports));
         if (terminal is { } t) PalaceTerminalS.AddDiagnostics(data, PalaceGroup, t.Samples, t.Outcome, ports);
         if (plan.FarField && PalacePattern(post, s, ports, setup, data, log.Notes, problem.Boundary) is { } patternError) return Failed(patternError);
         if (modeZ is not null)

@@ -343,6 +343,12 @@ public static class Em3dGenerator
         // have names: CircuitRF.Design.ThreeD.Em3dSetupProblem.Of is the door, and nothing reaches here with them.
         if (setup.ComponentPorts.Count > 0)
             throw new ArgumentException("A setup naming component ports is built by Em3dSetupProblem.Of, not the generator.", nameof(setup));
+        // PWL-3 — a layout's wall ports are not built yet: refused by name rather than run as the ordinary lumped port the
+        // generator would otherwise make of them.
+        if (setup.Ports3D.FirstOrDefault(q => q.Kind == Em3dPortKind.Wall) is { } wall)
+            return new Em3dGenerationResult(null,
+                $"Port {wall.Port} is a wall port, and a layout's 3D setup does not build wall ports in this version. Make a 3D view of the " +
+                "layout (Design ▸ New 3D View from Layout) and make its ports wall ports there, or set this port to Lumped or Wave.", []);
         return new Run(setup, source, tech, wires, displaySlabs, portsOptional, padsOptional, portsEach).Go();
     }
 

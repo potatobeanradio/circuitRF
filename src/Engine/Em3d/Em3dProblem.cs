@@ -75,7 +75,37 @@ public enum Em3dProblemType { Driven, Electrostatic, Magnetostatic, Eigenmode, T
 /// with a resistance across it; <see cref="Wave"/> is a region of an air-box face, excited and measured by
 /// the line's own first 2D mode.
 /// </summary>
-public enum Em3dPortKind { Lumped, Wave }
+/// <summary>
+/// What a port is. <see cref="Wall"/> (PWL-3) is a DOCUMENT kind only: a wall port lowers to a <see cref="Lumped"/> port in the
+/// solved problem, a gap from a PEC face of the air box to the line's end, carrying its <see cref="Em3dPort.Wall"/> record —
+/// so no solver lowers a third kind, and the calibration that makes it a wall port happens after the solves.
+/// </summary>
+public enum Em3dPortKind { Lumped, Wave, Wall }
+
+/// <summary>
+/// PWL-3 — what a lumped port is when it is a WALL port: the face it stands on, the gap it fills and the line it feeds, so
+/// the run can build the line standards and calibrate the port (overview <c>docs/briefs/brief-pwl-0-overview.md</c>).
+/// </summary>
+/// <param name="Face">The air box's face, <c>xmin</c>…<c>ymax</c>.</param>
+/// <param name="Axis">The face's normal axis, 0 x or 1 y.</param>
+/// <param name="FaceAtM">The face's coordinate along <paramref name="Axis"/>, metres — the reference plane before any offset.</param>
+/// <param name="Inward">+1 when the structure lies on the positive side of the face, −1 otherwise.</param>
+/// <param name="GapM">The gap the port fills: the line is cut back this far from the face in the solved problem.</param>
+/// <param name="LineLoM">The line's end, low edge along the face's lateral axis, metres.</param>
+/// <param name="LineHiM">The line's end, high edge along the face's lateral axis, metres.</param>
+/// <param name="ZM">The plane of the line's face toward its return — the port's plane.</param>
+/// <param name="HeightM">The line's height above its return, metres.</param>
+/// <param name="Conductor">The line.</param>
+public sealed record Em3dWallPort(string Face, int Axis, double FaceAtM, int Inward, double GapM, double LineLoM, double LineHiM,
+                                  double ZM, double HeightM, string Conductor)
+{
+    /// <summary>The line's width at its end.</summary>
+    public double WidthM => LineHiM - LineLoM;
+
+    /// <summary>The calibration group this port belongs to (ports on one face that are calibrated together), or null when it is
+    /// calibrated on its own.</summary>
+    public int? Group { get; init; }
+}
 
 /// <summary>A straight path between two points, metres.</summary>
 public readonly record struct Em3dSegment(Point3 From, Point3 To);
@@ -491,6 +521,9 @@ public sealed record Em3dPort(
     /// distance is <see cref="Em3dReferencePlane.ShiftM"/>.
     /// </summary>
     public Em3dPortKind Kind { get; init; } = Em3dPortKind.Lumped;
+
+    /// <summary>PWL-3 — set on the lumped port a wall port lowers to: its face, gap and line. Null on every other port.</summary>
+    public Em3dWallPort? Wall { get; init; }
 
     /// <summary>
     /// A wave port's voltage path, across its face from the negative object to the positive one — the

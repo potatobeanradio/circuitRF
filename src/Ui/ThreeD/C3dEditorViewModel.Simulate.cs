@@ -735,7 +735,7 @@ public sealed partial class C3dEditorViewModel
         // 3D editor round 5 — the box is sized from what DID elaborate, refusals or not: a wire whose end a boolean took the
         // pad from is the wire's refusal, and gating the box on a clean elaboration took the box — and, with no setup, its
         // tree row — away with it. The ports and face boundaries below still wait for a clean elaboration.
-        var box = boxSetup is not null ? C3dProblemAssembly.AirBox(boxSetup, e, out _) : null;
+        var box = boxSetup is not null ? C3dProblemAssembly.AirBox(boxSetup, e, out _, doc) : null;
         var ctx = C3dProblemAssembly.PortContext(setup, doc, e, box);
         var ports = e.Ok ? C3dPorts.Resolve(doc, ctx) : [];
         var boundaries = e.Ok ? C3dProblemAssembly.FaceBoundaryPreview(doc, e) : [];
