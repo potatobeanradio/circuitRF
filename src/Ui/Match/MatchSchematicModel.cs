@@ -146,12 +146,23 @@ public static class MatchSchematicModel
         // A shunt arm's labels go beside it, or — when the text is wider than the gap to the next
         // column — underneath its own ground. The decision is MatchShuntLabels', so the flattened
         // cell makes it the same way (owner, 2026-08-20).
-        var offsets = e.IsShunt
-            ? Enumerable.Repeat(
-                  MatchShuntLabels.Offsets(labels, MatchLadderLayout.Pitch,
-                                           MatchSchematicGeometry.LeadHalf),
-                  labels.Count).ToList()
-            : [];
+        // A through-path element above the spine (Filter Designer's parallel tank) puts its labels
+        // above the glyph so they do not sit on the pink rail wires.
+        List<(double Dx, double Dy)> offsets;
+        if (e.IsShunt)
+        {
+            offsets = Enumerable.Repeat(
+                MatchShuntLabels.Offsets(labels, MatchLadderLayout.Pitch,
+                                         MatchSchematicGeometry.LeadHalf),
+                labels.Count).ToList();
+        }
+        else if (e.Y < MatchLadderLayout.SpineY - 1.0)
+        {
+            // Above the body: glyph half-height (~65) plus a little air, then 18 per line.
+            offsets = labels.Select((_, i) => (0.0, -95.0 - 18.0 * i)).ToList();
+        }
+        else
+            offsets = [];
 
         return Compose(
             e.Name, kind, e.X, e.Y, rot, labels, offsets,

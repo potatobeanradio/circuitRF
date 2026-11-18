@@ -70,16 +70,19 @@ public class FilterLadderDrawingTests
         Assert.Equal(8, layout.Elements.Count);
         Assert.NotEmpty(layout.ParallelArms);
 
-        // The parallel tank sits above the spine, not on top of the series chain.
+        // Parallel tank: both parts on one rail above the spine, side by side (not stacked).
         var above = layout.Elements.Where(e => !e.IsShunt && e.Y < MatchLadderLayout.SpineY).ToList();
         Assert.Equal(2, above.Count);
-        Assert.Equal(above[0].X, above[1].X);
-        Assert.True(above[0].Y != above[1].Y);
+        Assert.Equal(above[0].Y, above[1].Y);
+        Assert.NotEqual(above[0].X, above[1].X);
 
         var spineSeries = layout.Elements
             .Where(e => !e.IsShunt && e.Y == MatchLadderLayout.SpineY).ToList();
         Assert.Equal(2, spineSeries.Count);
         Assert.NotEqual(spineSeries[0].X, spineSeries[1].X);
+
+        // One ParallelArm for the whole bridged column (not one rail per tank part).
+        Assert.Single(layout.ParallelArms);
 
         // No two series symbols share the same (X, Y) — that was the overlapping drawing.
         Assert.Equal(

@@ -4183,3 +4183,25 @@ Each one was invisible on the kits circuitRF had been tried against and silent w
   S, so the threshold only decides which of two correct forms a well-conditioned block keeps, and no golden moved.
   Gate: `SnpStampTests.SeriesMeasuredFile_OnAndBetweenItsOwnSamples_IsTheSeriesElement`, which fails with the old
   stamp at the exact sample (S21 0 + 0.566j against 0.701 + 0.458j).
+
+## Filter Designer — high-order ladders and compact elliptic tanks (2026-11-18)
+
+- **Butterworth / Chebyshev have no order ceiling in the ladder path.** `FilterPrototype.Create`
+  overflows its spectral factorisation around order 10; the ladder never needed that polynomial.
+  `FilterLadder.ClosedFormG` / `ButterworthG` / `ChebyshevG` feed `BuildFromG` directly, so N=80 is a
+  routine result. The ideal transfer plot can still refuse at high N — the Designer keeps the ladder
+  and plots it alone (`FilterDesignerViewModel.Design`).
+- **Bessel / Gaussian Cauer leftover degree.** After `a − g·s·b` the algebraic degree drops by two,
+  but a ~1e−9 leading residual kept `MatchPoly.Trim` from dropping it, so the next step saw equal
+  degrees and aborted around order 8. `ExtractCore` now forces the expected remainder length;
+  Bessel reaches 9 and Gaussian 10. Past that, `BuildBessel` / `BuildGaussian` themselves lose the
+  Feldtkeller `F` degree in double — a Create problem, not the continued fraction.
+- **Elliptic / InvCheby still stop around odd order 7 at tight ripple** (0.1 dB / 40 dB). Create
+  succeeds past that; the zero-removal search finishes a short AllPositive ladder whose Zin is wrong.
+  Looser `Divides` / `zinCap` help at the edge of that wall; a true arbitrary-order elliptic needs a
+  higher-precision reactance extraction.
+- **Elliptic series tanks drew as tall multi-tier boxes (and bandpass ones overlapped).**
+  `PlaceParallelTank` keeps L on the spine and C on one short rail above (`ParallelStep = 2·Lead`).
+  `PlaceBridged` puts series L–C side-by-side on the spine and the parallel tank side-by-side on one
+  rail — one `MatchParallelArm`, no stacked mid-point glyphs. Labels for elevated series parts sit
+  above the body (`MatchSchematicModel`).

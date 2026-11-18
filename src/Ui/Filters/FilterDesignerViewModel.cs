@@ -343,7 +343,10 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
             return;
         }
 
-        FilterNetwork ideal;
+        // The ideal transfer can fail to factor at very high order in double while the ladder still
+        // has closed-form g-values (Butterworth / Chebyshev). Prefer the ladder over a blank window.
+        FilterNetwork? ideal = null;
+        string idealNote = "";
         try
         {
             ideal = FilterNetwork.Create(spec.Response, spec.Form, spec.Order,
@@ -351,18 +354,22 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         }
         catch (Exception e) when (e is ArgumentOutOfRangeException or InvalidOperationException)
         {
-            Status = e.Message;
-            ClearPlots();
-            return;
+            idealNote = e.Message;
         }
 
         var built = FilterLadder.Synthesize(spec.Response, spec.Form, spec.Order,
                                              spec.FcHz, spec.F1Hz, spec.F2Hz, spec.RippleDb,
                                              spec.SourceOhms, spec.First, spec.AsDb);
+        if (ideal is null && !built.Ok)
+        {
+            Status = idealNote.Length > 0 ? idealNote : (built.Refusal?.Message ?? "No ladder.");
+            ClearPlots();
+            return;
+        }
         double rs = spec.SourceOhms;
         double rl = built.Realization?.LoadOhms ?? spec.LoadOhms;
         var freqs = Frequencies(spec);
-        var idealSnp = IdealSnp(ideal, freqs, rs, rl);
+        SNP? idealSnp = ideal is null ? null : IdealSnp(ideal, freqs, rs, rl);
 
         SNP? ladderSnp = null;
         string note = "";
@@ -397,12 +404,13 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         _lastRs = rs;
         _lastRl = rl;
 
-        double minIl = MinimumInsertionLoss(ladderSnp ?? idealSnp, freqs, spec);
+        SNP? response = ladderSnp ?? idealSnp;
+        double minIl = response is null ? 0 : MinimumInsertionLoss(response, freqs, spec);
         DesignInfo = $"Order: {spec.Order}" +
                      (spec.OrderFromMinimum ? " (minimum for the mask)" : "") +
                      $"\nMinimum insertion loss: {minIl:0.0000} dB" +
                      (built.Realization is { } r ? $"\nLoad: {r.LoadOhms:0.###} Ω" : "");
-        Status = note;
+        Status = note.Length > 0 ? note : idealNote;
         BuildPlots(idealSnp, ladderSnp, spec);
     }
 
@@ -502,14 +510,14 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     /// </summary>
     public void UpdatePlots()
     {
-        if (_lastSpec is not { } spec || _lastIdeal is null)
+        if (_lastSpec is not { } spec)
         {
             Design();
             return;
         }
 
         var freqs = Frequencies(spec);
-        var idealSnp = IdealSnp(_lastIdeal, freqs, _lastRs, _lastRl);
+        SNP? idealSnp = _lastIdeal is null ? null : IdealSnp(_lastIdeal, freqs, _lastRs, _lastRl);
         SNP? ladderSnp = null;
         if (!string.IsNullOrEmpty(Cnl))
         {
@@ -862,7 +870,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         return double.IsPositiveInfinity(best) ? 0 : Math.Max(0, best);
     }
 
-    private void BuildPlots(SNP ideal, SNP? ladder, Spec spec)
+    private void BuildPlots(SNP? ideal, SNP? ladder, Spec spec)
     {
         MagnitudePlot.Traces.Clear();
         PhasePlot.Traces.Clear();
@@ -871,9 +879,12 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
         // CubeName must stay null. A non-null name marks the trace cube-bound, and BuildPath
         // then ignores the SNP (Trace.IsCubeBound). These are matrix traces.
-        var idealTrace = new Trace(ideal, MatrixType.S, 1, 0, DependentVarFormat.Db, false, Style(0));
-        idealTrace.BuildPath(PlotType.Rect, MagnitudePlot.FreqUnits);
-        MagnitudePlot.Traces.Add(idealTrace);
+        if (ideal is not null)
+        {
+            var idealTrace = new Trace(ideal, MatrixType.S, 1, 0, DependentVarFormat.Db, false, Style(0));
+            idealTrace.BuildPath(PlotType.Rect, MagnitudePlot.FreqUnits);
+            MagnitudePlot.Traces.Add(idealTrace);
+        }
 
         if (ladder is not null)
         {

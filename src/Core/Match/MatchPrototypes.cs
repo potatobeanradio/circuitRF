@@ -417,24 +417,63 @@ public static class MatchPrototypes
     /// Cauer (continued-fraction) extraction of n reactive elements plus the terminating ratio.
     /// <b>A non-positive extracted element is the decisive realizability test</b>, not a warning.
     /// </summary>
-    public static double[]? Extract(double[] num, double[] den, int n)
+    public static double[]? Extract(double[] num, double[] den, int n) =>
+        ExtractCore(num, den, n, scaleEachStep: false);
+
+    /// <summary>
+    /// Same continued fraction as <see cref="Extract"/>, but renormalises the pair after every
+    /// removal. Bessel and Gaussian prototypes have coefficient ranges that otherwise flip a
+    /// leading ratio's sign around order 7–8; scaling does not change the g-values.
+    /// </summary>
+    public static double[]? ExtractScaled(double[] num, double[] den, int n) =>
+        ExtractCore(num, den, n, scaleEachStep: true);
+
+    private static double[]? ExtractCore(double[] num, double[] den, int n, bool scaleEachStep)
     {
         var g = new List<double>(n + 2) { 1.0 };
         double[] a = MatchPoly.Trim(num), b = MatchPoly.Trim(den);
         for (int k = 0; k < n; k++)
         {
+            if (scaleEachStep) RenormPair(ref a, ref b);
             if (b.Length == 0 || a.Length != b.Length + 1) return null;
             double gk = a[0] / b[0];
             if (!double.IsFinite(gk) || gk <= 0.0) return null;
-            double[] rem = MatchPoly.Trim(MatchPoly.Sub(a, MatchPoly.Mul([gk, 0.0], b)));
+            // a − g·s·b must drop two degrees. Cancellation leaves a ~1e−9 leading term that
+            // Trim-by-relative-scale keeps, so the next step sees equal degrees and aborts —
+            // Bessel / Gaussian hit that wall around order 8. Force the expected length.
+            double[] raw = MatchPoly.Sub(a, MatchPoly.Mul([gk, 0.0], b));
+            int expectLen = Math.Max(1, a.Length - 2);
+            double[] rem = ForceDegree(raw, expectLen);
             (a, b) = (b, rem);
             g.Add(gk);
         }
+        if (scaleEachStep) RenormPair(ref a, ref b);
         if (a.Length != 1 || b.Length != 1 || b[0] == 0.0) return null;
         double last = a[0] / b[0];
         if (!double.IsFinite(last) || last <= 0.0) return null;
         g.Add(last);
         return [.. g];
+    }
+
+    /// <summary>
+    /// Drops leading coefficients until <paramref name="len"/> long. Used after a Cauer removal
+    /// whose algebraically-known degree is lower than what floating-point cancellation leaves.
+    /// </summary>
+    private static double[] ForceDegree(double[] p, int len)
+    {
+        p = MatchPoly.Trim(p);
+        if (p.Length <= len) return p.Length == 0 ? [0.0] : p;
+        return p[(p.Length - len)..];
+    }
+
+    private static void RenormPair(ref double[] a, ref double[] b)
+    {
+        double m = 0;
+        foreach (double c in a) m = Math.Max(m, Math.Abs(c));
+        foreach (double c in b) m = Math.Max(m, Math.Abs(c));
+        if (!(m > 0) || Math.Abs(m - 1.0) < 1e-15) return;
+        for (int i = 0; i < a.Length; i++) a[i] /= m;
+        for (int i = 0; i < b.Length; i++) b[i] /= m;
     }
 
     /// <summary>

@@ -128,6 +128,40 @@ public class FilterLadderTests
         Assert.False(built.Realization.Elements[0].Inductor);
     }
 
+    [Theory]
+    [InlineData(10)] [InlineData(20)] [InlineData(40)] [InlineData(60)]
+    public void ButterworthClosedFormSurvivesHighOrder(int n)
+    {
+        var built = FilterLadder.Synthesize(
+            FilterResponse.Butterworth, NetworkForm.Lowpass, n,
+            1e9, 0, 0, 0.1, 50, FilterFirstElement.Series);
+        Assert.True(built.Ok, built.Refusal?.Message);
+        Assert.Equal(n, built.Realization!.Elements.Count);
+        Assert.Equal(n + 2, built.Realization.G.Count);
+    }
+
+    [Theory]
+    [InlineData(12)] [InlineData(24)] [InlineData(48)]
+    public void ChebyshevClosedFormSurvivesHighOrder(int n)
+    {
+        var built = FilterLadder.Synthesize(
+            FilterResponse.Chebyshev, NetworkForm.Lowpass, n,
+            1e9, 0, 0, 0.1, 50, FilterFirstElement.Series);
+        Assert.True(built.Ok, built.Refusal?.Message);
+        Assert.Equal(n, built.Realization!.Elements.Count);
+    }
+
+    [Theory]
+    [InlineData(7)] [InlineData(8)] [InlineData(9)]
+    public void BesselSurvivesPastTheOldCauerWall(int n)
+    {
+        var built = FilterLadder.Synthesize(
+            FilterResponse.Bessel, NetworkForm.Lowpass, n,
+            1e9, 0, 0, 0, 50, FilterFirstElement.Series);
+        Assert.True(built.Ok, built.Refusal?.Message);
+        Assert.Equal(n, built.Realization!.Elements.Count);
+    }
+
     [Fact]
     public void AnOddEllipticLowpassIsALadderOfTanks()
     {

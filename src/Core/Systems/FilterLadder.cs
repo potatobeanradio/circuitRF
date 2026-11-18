@@ -114,6 +114,12 @@ public static class FilterLadder
         if (!(sourceOhms > 0) || !double.IsFinite(sourceOhms))
             return Refuse($"The source resistance must be a positive number of ohms; got {sourceOhms:G6}.");
 
+        // Butterworth / Chebyshev ladders use handbook g-values and never need the prototype
+        // polynomials — Create's spectral factorisation overflows long before the sine / Chebyshev
+        // recurrence does, so the closed form is the only path that stays open at high order.
+        if (ClosedFormG(response, order, rippleDb) is { } closed)
+            return BuildFromG(closed, response, form, order, fcHz, f1Hz, f2Hz, sourceOhms, first);
+
         FilterPrototype proto;
         try
         {
@@ -131,7 +137,14 @@ public static class FilterLadder
         if (g is null)
             return Refuse(
                 $"{response} order {order} did not produce a ladder with positive elements.");
+        return BuildFromG(g, response, form, order, fcHz, f1Hz, f2Hz, sourceOhms, first);
+    }
 
+    /// <summary>Denormalises a g-vector into the requested form and terminations.</summary>
+    private static FilterLadderResult BuildFromG(
+        double[] g, FilterResponse response, NetworkForm form, int order,
+        double fcHz, double f1Hz, double f2Hz, double sourceOhms, FilterFirstElement first)
+    {
         // Extract's last entry is a resistance ratio after an even number of removals and a
         // conductance ratio after an odd number — each removal swaps impedance for admittance.
         // Reading an odd ladder as a resistance inverts the load.
@@ -150,7 +163,6 @@ public static class FilterLadder
         bool shuntFirst = first == FilterFirstElement.Parallel;
         double rs = sourceOhms;
         double rl = loadNorm * sourceOhms;
-        IReadOnlyList<double> used = g;
 
         var elements = new List<FilterElement>();
         string node = "p1";
@@ -158,13 +170,12 @@ public static class FilterLadder
         for (int k = 1; k <= order; k++)
         {
             bool shunt = shuntFirst ? k % 2 == 1 : k % 2 == 0;
-            double gk = used[k];
+            double gk = g[k];
             if (!(gk > 0) || !double.IsFinite(gk))
                 return Refuse($"{response} order {order} produced a non-positive element.");
             node = AddArm(elements, form, gk, shunt, rs, wEdge, w0, bw, node, ref ids);
         }
 
-        string cnl = ToCnl(elements, rs, rl);
         return new FilterLadderResult
         {
             Realization = new FilterRealization
@@ -173,10 +184,64 @@ public static class FilterLadder
                 SourceOhms = rs,
                 LoadOhms = rl,
                 Elements = elements,
-                G = used,
-                Cnl = cnl,
+                G = g,
+                Cnl = ToCnl(elements, rs, rl),
             },
         };
+    }
+
+    /// <summary>
+    /// Handbook g-values for families that have them. Null when the family needs the continued
+    /// fraction of the prototype (Bessel, Gaussian) or has transmission zeros.
+    /// </summary>
+    public static double[]? ClosedFormG(FilterResponse response, int order, double rippleDb)
+    {
+        if (order < 1) return null;
+        return response switch
+        {
+            FilterResponse.Butterworth => ButterworthG(order),
+            FilterResponse.Chebyshev   => ChebyshevG(order, rippleDb > 0 ? rippleDb : 0.1),
+            _                          => null,
+        };
+    }
+
+    /// <summary><c>g_k = 2 sin((2k−1)π / 2n)</c>, unit terminations.</summary>
+    public static double[] ButterworthG(int n)
+    {
+        var g = new double[n + 2];
+        g[0] = 1.0;
+        for (int k = 1; k <= n; k++)
+            g[k] = 2.0 * Math.Sin((2.0 * k - 1.0) * Math.PI / (2.0 * n));
+        g[n + 1] = 1.0;
+        return g;
+    }
+
+    /// <summary>
+    /// Equal-ripple doubly-terminated Chebyshev g-values (same recurrence as
+    /// <see cref="MatchSynthesis.RippleG"/>, without that method's match-order ceiling).
+    /// </summary>
+    public static double[] ChebyshevG(int n, double rippleDb)
+    {
+        double lar = rippleDb > 0 ? rippleDb : 0.1;
+        double bb = Math.Log(1.0 / Math.Tanh(lar / 17.37));
+        double gamma = Math.Sinh(bb / (2 * n));
+        double th = Math.PI / (2 * n);
+
+        var a = new double[n + 1];
+        var b = new double[n + 1];
+        for (int k = 1; k <= n; k++)
+        {
+            a[k] = Math.Sin((2 * k - 1) * th);
+            b[k] = gamma * gamma + Math.Sin(k * Math.PI / n) * Math.Sin(k * Math.PI / n);
+        }
+
+        var g = new double[n + 2];
+        g[0] = 1.0;
+        g[1] = 2.0 * a[1] / gamma;
+        for (int k = 2; k <= n; k++) g[k] = 4.0 * a[k - 1] * a[k] / (b[k - 1] * g[k - 1]);
+        double coth = 1.0 / Math.Tanh(bb / 4.0);
+        g[n + 1] = n % 2 == 0 ? coth * coth : 1.0;
+        return g;
     }
 
     /// <summary>
@@ -188,6 +253,11 @@ public static class FilterLadder
         ArgumentNullException.ThrowIfNull(proto);
         if (proto.P.Length != 1) return null;
 
+        // Prefer the closed form when the family has one — same numbers the design doc checks
+        // Butterworth against, and stable past the double-precision Cauer wall.
+        if (ClosedFormG(proto.Response, proto.Order, RippleDbOf(proto)) is { } closed)
+            return closed;
+
         double[] f = Scale(proto.F, proto.Alpha);
         foreach (double sign in (double[])[1.0, -1.0])
         {
@@ -198,10 +268,25 @@ public static class FilterLadder
             else if (b.Length == a.Length + 1) { top = b; bot = a; }
             else continue;
 
-            double[]? g = MatchPrototypes.Extract(top, bot, proto.Order);
+            // Renormalise before each removal so Bessel / Gaussian coefficient sprawl does not
+            // flip a leading-ratio sign mid-ladder. Double-double is the next fallback when even
+            // that loses the leading ratio around order 8+.
+            double[]? g = MatchPrototypes.ExtractScaled(top, bot, proto.Order)
+                       ?? FilterLadderHighPrecision.Extract(top, bot, proto.Order);
             if (g is not null) return g;
         }
         return null;
+    }
+
+    /// <summary>
+    /// Passband ripple in dB recovered from the prototype's α/β for Chebyshev; unused otherwise.
+    /// </summary>
+    private static double RippleDbOf(FilterPrototype proto)
+    {
+        if (proto.Response is not FilterResponse.Chebyshev || !(proto.Beta > 0)) return 0.1;
+        double eps = Math.Abs(proto.Alpha / proto.Beta);
+        if (!(eps > 0) || !double.IsFinite(eps)) return 0.1;
+        return 10.0 * Math.Log10(1.0 + eps * eps);
     }
 
     private static bool Cutoff(NetworkForm form, double fcHz, double f1Hz, double f2Hz,
@@ -423,7 +508,10 @@ public static class FilterLadder
         // The end the user asked for, when that extraction is the same impedance. Otherwise the
         // tightest one, which is the other end of the same ladder.
         List<NormArm>? arms = fit is not null && bestFit <= Math.Max(1e-4, best * 50) ? fit : tight;
-        if (arms is not null && Math.Min(best, bestFit) > 1e-2) arms = null;
+        // High-order elliptic / inverse-Chebyshev leave a slightly larger Zin residual in double;
+        // accept anything that still carries the zeros and stays under a few percent.
+        double zinCap = Math.Max(1e-2, 3e-3 * proto.Order);
+        if (arms is not null && Math.Min(best, bestFit) > zinCap) arms = null;
         if (arms is null)
             return Refuse((proto.Order & 1) == 0
                 ? $"{proto.Response} of even order keeps a finite floor at infinite frequency, and a " +
@@ -747,7 +835,9 @@ public static class FilterLadder
         quot = q;
         double scale = 0;
         foreach (double c in poly) scale = Math.Max(scale, Math.Abs(c));
-        double limit = 1e-4 * Math.Max(1.0, scale);
+        // High-order characteristic polynomials leave larger synthetic-division residuals in double;
+        // accept a zero that still evaluates small on the axis.
+        double limit = 1e-3 * Math.Max(1.0, scale);
         foreach (double c in r)
             if (Math.Abs(c) > limit)
             {
@@ -755,7 +845,7 @@ public static class FilterLadder
                 var at = MatchPoly.Eval(poly, new Complex(0, w));
                 int deg = Math.Max(Degree(poly), 0);
                 double term = Math.Max(1.0, scale) * Math.Pow(Math.Max(w, 1.0), deg);
-                return q.Length > 0 && at.Magnitude < 1e-5 * term;
+                return q.Length > 0 && at.Magnitude < 1e-4 * term;
             }
         return q.Length > 0;
     }
