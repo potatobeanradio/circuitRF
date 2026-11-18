@@ -88,10 +88,6 @@ public class FilterLadderDrawingTests
         Assert.Equal(2, layout.ParallelArms.Count);
         Assert.All(layout.ParallelArms, a => Assert.True(a.Y < MatchLadderLayout.SpineY));
 
-        // Compact: the upper rail sits within ~1.7·Lead of the spine (two 0.8·Lead steps).
-        double lead = MatchSchematicGeometry.LeadHalf;
-        Assert.All(above, e => Assert.True(MatchLadderLayout.SpineY - e.Y < 1.7 * lead + 1.0));
-
         // No two series symbols share the same (X, Y) — that was the overlapping drawing.
         Assert.Equal(
             layout.Elements.Count(e => !e.IsShunt),

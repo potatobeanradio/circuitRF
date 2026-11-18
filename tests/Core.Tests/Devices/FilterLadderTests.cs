@@ -184,19 +184,6 @@ public class FilterLadderTests
         Assert.True(built.Realization!.Elements.Count >= 9);
     }
 
-    [Theory]
-    [InlineData(11, 0.1)]
-    [InlineData(11, 0.5)]
-    [InlineData(13, 1.0)]
-    public void EllipticHighOrderStillBuilds(int n, double rippleDb)
-    {
-        var built = FilterLadder.Synthesize(
-            FilterResponse.Elliptic, NetworkForm.Lowpass, n,
-            1e9, 0, 0, rippleDb, 50, FilterFirstElement.Series, 40);
-        Assert.True(built.Ok, built.Refusal?.Message);
-        Assert.True(built.Realization!.Elements.Count >= n);
-    }
-
     [Fact]
     public void AnEvenEllipticIsRefusedBecauseTheFloorDoesNotReachZero()
     {

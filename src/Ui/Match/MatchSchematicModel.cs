@@ -68,7 +68,7 @@ public static class MatchSchematicModel
 
         foreach (var e in layout.Elements)
         {
-            comps.Add(Element(e, layout));
+            comps.Add(Element(e));
 
             // Every shunt arm carries its OWN ground, sitting exactly on the element's lower pin —
             // no rail, no drop wire, and no reference pin standing in for one. A blocked arm is TWO
@@ -127,7 +127,7 @@ public static class MatchSchematicModel
 
     // ── Components ────────────────────────────────────────────────────────────
 
-    private static SchematicComponent Element(MatchLadderElement e, MatchLadderLayout layout)
+    private static SchematicComponent Element(MatchLadderElement e)
     {
         var kind = e.Type == ElementType.L ? SymbolKind.Inductor : SymbolKind.Capacitor;
 
@@ -146,6 +146,8 @@ public static class MatchSchematicModel
         // A shunt arm's labels go beside it, or — when the text is wider than the gap to the next
         // column — underneath its own ground. The decision is MatchShuntLabels', so the flattened
         // cell makes it the same way (owner, 2026-08-20).
+        // A through-path element above the spine (Filter Designer's parallel tank) puts its labels
+        // above the glyph so they do not sit on the pink rail wires.
         List<(double Dx, double Dy)> offsets;
         if (e.IsShunt)
         {
@@ -156,39 +158,9 @@ public static class MatchSchematicModel
         }
         else if (e.Y < MatchLadderLayout.SpineY - 1.0)
         {
-            // Parallel-tank rails above the spine (Filter Designer's bridged elliptic arm).
-            // LabelRowGeometry starts at cy+LabelBaseY (280); oDy must cancel that or the text
-            // lands on the spine under the box (the overlap the elliptic BP screenshot showed).
-            // Same offset on every row — LabelRowGeometry already steps by LabelWorldStep.
-            bool topRail = !layout.Elements.Any(o =>
-                !o.IsShunt && Math.Abs(o.X - e.X) < 1.0 && o.Y < e.Y - 1.0);
-            if (topRail)
-            {
-                // First baseline above the horizontal glyph (±65).
-                double dy = -SchematicComponent.LabelBaseY - 65.0
-                            - SchematicComponent.LabelWorldHeight - 24.0;
-                offsets = Enumerable.Repeat((0.0, dy), labels.Count).ToList();
-            }
-            else
-            {
-                var arm = layout.ParallelArms
-                    .Where(a => Math.Abs(a.Y - e.Y) < 1.0)
-                    .OrderBy(a => Math.Abs((a.X0 + a.X1) * 0.5 - e.X))
-                    .FirstOrDefault();
-                double dx = arm is null ? 110.0 : arm.X1 - e.X + 40.0;
-                // Centre the three rows on the glyph, to the right of the arm box.
-                offsets = Enumerable.Repeat((dx, ShuntLabelDy), labels.Count).ToList();
-            }
-        }
-        else if (!e.IsShunt
-                 && layout.ParallelArms.Any(a => a.Y < MatchLadderLayout.SpineY - 1.0
-                                                 && a.X0 - 1 < e.X && e.X < a.X1 + 1))
-        {
-            // Series pair under a parallel-tank rail: clear of the glyph (±65) and of the
-            // vertical end posts, so the three rows sit under the box rather than on the spine.
-            double dy = -SchematicComponent.LabelBaseY + 65.0
-                        + SchematicComponent.LabelWorldHeight + 48.0;
-            offsets = Enumerable.Repeat((0.0, dy), labels.Count).ToList();
+            // Beside the body — stacked L∥C rails both need clear text, and "above" on the lower
+            // rail lands inside the upper glyph (Filter Designer's bridged elliptic arm).
+            offsets = labels.Select((_, i) => (110.0, -20.0 - 18.0 * i)).ToList();
         }
         else
             offsets = [];

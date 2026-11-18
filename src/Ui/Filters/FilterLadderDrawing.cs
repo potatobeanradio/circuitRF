@@ -6,30 +6,28 @@ using CircuitRF.Ui.Matching;
 namespace CircuitRF.Ui.Filters;
 
 /// <summary>
-/// Turns a synthesised ladder into the Match Designer's layout.
-///
-/// <para>Series LC stubs share a column. A lowpass / highpass parallel tank in the through path is
-/// a short rectangle: C on the spine, L on one rail above. A bandpass series-parallel arm
-/// (series resonator ∥ parallel resonator) keeps the series L–C on the spine with leads abutting
-/// (no gap wire through the box) and the parallel L∥C as one tight rectangle above — not a tall
-/// multi-rail bridge with labels piled on the spine.</para>
+/// Turns a synthesised ladder into the Match Designer's layout. Series LC stubs share a column
+/// (the capacitor sits under the inductor, the same stack Match uses for a DC block). Parallel LC
+/// in the through path sits above the spine on vertical drops at both pins — consecutive series
+/// columns would put a wire between them and draw a series pair instead. A bandpass series-parallel
+/// arm (series resonator ∥ parallel resonator) is one compact column: series LC on the spine,
+/// parallel LC side-by-side on a single rail above — not a stretched multi-tier box.
 /// </summary>
 internal static class FilterLadderDrawing
 {
     private const double Lead = MatchSchematicGeometry.LeadHalf;
     /// <summary>
-    /// Vertical pitch between stacked horizontal glyphs. The series body is ±65, so ~0.8·Lead
-    /// clears it with a small margin — tight enough that a bridged arm reads as one short tank
-    /// cell rather than a tall three-rail box.
+    /// Vertical gap from spine centre to the parallel-tank rail. One lead-length of clear wire
+    /// between the horizontal glyph bodies (each ±65 around its centre) — a short rectangle, not
+    /// a tall bridge.
     /// </summary>
-    private const double ParallelStep = 0.8 * Lead;
+    private const double ParallelStep = 2.0 * Lead;
     /// <summary>
-    /// Centres of two series glyphs that share one arm. Exactly 2·Lead makes the leads abut, so
-    /// AddWiring draws no spine segment between them (that segment was the “third wire” through
-    /// the bridged box).
+    /// Half-spacing of two series glyphs that share one arm. Centres must be ≥ 2·Lead apart or
+    /// the ±Lead bodies overlap; a little air keeps the pin dots from merging.
     /// </summary>
-    private const double PairHalf = Lead;
-    /// <summary>Width of a bridged series-parallel arm.</summary>
+    private const double PairHalf = Lead * 1.05;
+    /// <summary>Column width for a bridged series-parallel arm (two glyphs side by side).</summary>
     private const double BridgedSpan = 2.0 * PairHalf + 2.0 * Lead;
 
     /// <summary>The Match layout for <paramref name="elements"/>, terminated in <paramref name="rs"/> / <paramref name="rl"/>.</summary>
@@ -116,9 +114,10 @@ internal static class FilterLadderDrawing
     }
 
     /// <summary>
-    /// Series resonator on the spine, parallel resonator as one short rectangle above it.
-    /// Series L–C leads abut (no spine gap wire). Parallel L and C share mid-X on two rails
-    /// spaced just over one glyph body — a compact tank cell, not a tall multi-rail bridge.
+    /// Series resonator on the spine and parallel resonator above it, same outer nodes.
+    /// Series L–C sit left/right on the spine. The parallel tank is a short L∥C rectangle —
+    /// both parts share the mid-X and span the full arm on their own rails. Side-by-side on one
+    /// rail wired them in series and drew the tall “two series-LC legs” box.
     /// </summary>
     private static void PlaceBridged(
         List<MatchLadderElement> placed, List<MatchParallelArm> arms,
@@ -129,7 +128,7 @@ internal static class FilterLadderDrawing
         double xR = x0 + PairHalf;
         double left = xL - Lead;
         double right = xR + Lead;
-
+        // Prefer L then C on the spine when both are present.
         var series = chain.OrderBy(p => p.Inductor ? 0 : 1).ToList();
         if (series.Count >= 2)
         {
@@ -141,19 +140,21 @@ internal static class FilterLadderDrawing
 
         var tankL = tank.FirstOrDefault(t => t.Inductor) ?? tank[0];
         var tankC = tank.FirstOrDefault(t => !t.Inductor) ?? tank[^1];
-        // Compact L∥C above the series pair: C nearest the spine, L one step further up.
-        double yC = MatchLadderLayout.SpineY - ParallelStep;
-        double yL = yC - ParallelStep;
-        placed.Add(El(tankC.Name, ElementType.C, false, tankC.Value,
-                      x0, yC, valueText(false, tankC.Value)));
+        // Compact parallel rectangle above the spine: L on the upper rail, C just under it —
+        // both centred so each glyph bridges left↔right (true parallel, not a series pair).
+        double yL = MatchLadderLayout.SpineY - ParallelStep;
+        double yC = MatchLadderLayout.SpineY - ParallelStep * 0.55;
         placed.Add(El(tankL.Name, ElementType.L, false, tankL.Value,
                       x0, yL, valueText(true, tankL.Value)));
-        arms.Add(new MatchParallelArm(left, right, yC));
+        placed.Add(El(tankC.Name, ElementType.C, false, tankC.Value,
+                      x0, yC, valueText(false, tankC.Value)));
         arms.Add(new MatchParallelArm(left, right, yL));
+        arms.Add(new MatchParallelArm(left, right, yC));
     }
 
     /// <summary>
-    /// L∥C in the through path as a short rectangle: C on the spine, L on one rail above.
+    /// L∥C in the through path as a short rectangle: C on the spine, L on one rail above —
+    /// the usual compact series-arm tank (not a tall bridge).
     /// </summary>
     private static void PlaceParallelTank(
         List<MatchLadderElement> placed, List<MatchParallelArm> arms,
@@ -181,6 +182,7 @@ internal static class FilterLadderDrawing
             var p = parts[k];
             bool last = k == parts.Count - 1;
             var role = k == 0 ? MatchElementRole.Normal : MatchElementRole.DcBlock;
+            // DcBlockEnd ≠ 0: no second spine tap. GroundYFor still grounds the lowest in the column.
             placed.Add(El(p.Name, p.Inductor ? ElementType.L : ElementType.C, true, p.Value,
                           x, y, valueText(p.Inductor, p.Value), role)
                        with { DcBlockEnd = last ? 0 : 1 });
@@ -188,6 +190,10 @@ internal static class FilterLadderDrawing
         }
     }
 
+    /// <summary>
+    /// Walks a shunt-marked chain that ends at ground: either L→C→0, or L→C→(L∥C→0) for a
+    /// bandpass-transformed series-LC stub.
+    /// </summary>
     private static bool TryStub(
         IReadOnlyList<FilterElement> elements, bool[] consumed, int start,
         out List<FilterElement> parts)
@@ -238,6 +244,9 @@ internal static class FilterLadderDrawing
         return false;
     }
 
+    /// <summary>
+    /// Series LC (a→mid→b) in parallel with L∥C (a→b). The mid node is private to the chain.
+    /// </summary>
     private static bool TryBridged(
         IReadOnlyList<FilterElement> elements, bool[] consumed, int start,
         out List<FilterElement> chain, out List<FilterElement> tank)
@@ -247,6 +256,7 @@ internal static class FilterLadderDrawing
         var e = elements[start];
         if (e.Shunt || e.NodeB is "0" or null) return false;
 
+        // Find the unique continuation mid → b (exactly one unused series element leaving NodeB).
         FilterElement? next = null;
         for (int j = 0; j < elements.Count; j++)
         {
@@ -270,6 +280,7 @@ internal static class FilterLadderDrawing
         string b = next.NodeA == e.NodeB ? next.NodeB : next.NodeA;
         if (b is "0" || b == a) return false;
 
+        // Tank: unused series L and C both directly between a and b.
         FilterElement? tankL = null, tankC = null;
         for (int j = 0; j < elements.Count; j++)
         {
