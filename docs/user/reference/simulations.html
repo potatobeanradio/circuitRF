@@ -400,7 +400,8 @@ compression and IM3, and passive intermodulation on the blocks that carry it. Tw
       <tr><td>ToneUnit</td><td>Unit for the tone value when it doesn't carry its own (a unit on the referenced variable wins).</td><td>GHz</td></tr>
       <tr><td>MaxHarm</td><td>Highest harmonic order retained (5 → DC plus 5 harmonics). Higher captures sharper nonlinearity at more cost.</td><td>5–7</td></tr>
       <tr><td>FFTOverSample</td><td>Oversampling factor for the time grid used by the nonlinear FFT. Raise to reduce aliasing on stiff devices.</td><td>1–2</td></tr>
-      <tr><td>Tol</td><td>Newton convergence tolerance on the HB residual.</td><td>1e-6</td></tr>
+      <tr><td>Tol</td><td>Newton convergence tolerance on the HB residual, in amperes. A solve also has to pass <code>VRelTol</code>.</td><td>1e-6</td></tr>
+      <tr><td>VRelTol</td><td>The second convergence test: the last Newton update at every node must be under this times that node's largest phasor, plus 1&nbsp;µV. It catches a node whose level is set by currents far below <code>Tol</code>, such as an unloaded rectifier's reservoir held by leakage. Blank uses the default; <code>0</code> turns the test off.</td><td>1e-3</td></tr>
       <tr><td>DriveStepping</td><td>Power/source continuation: <code>IfNecessary</code> (ramp only when a direct solve stalls), or always/never.</td><td>IfNecessary</td></tr>
       <tr><td>GuardHarmonic</td><td>Extra guard harmonic(s) beyond <code>MaxHarm</code> for anti-alias safety.</td><td>0</td></tr>
       <tr><td>Lambda</td><td>Newton damping factor (1 = full step; lower damps an unstable solve).</td><td>1</td></tr>
@@ -1991,6 +1992,11 @@ tones</strong>. On a single-FET PA, six tones at order 3 solves in a few seconds
     does in a multi-tone analysis: set it below the largest ratio to solve the tones as independent instead. Closely
     spaced carriers, like the ones above, are always solved as independent tones. A sweep across a tone frequency can
     land on an exact ratio at some points; those points show the phase-locked result.</p>
+    <p>Tones that are whole multiples of the lowest one but beyond MaxHarm of it, such as 50&nbsp;Hz and 1&nbsp;kHz
+    (harmonic 20), are solved as independent tones, and the run warns. Their relative phase then has no effect, and a
+    waveform that one tone describes needs many more products on the lattice. If they come from one source, run one tone
+    at the lowest frequency with MaxHarm at least the highest multiple. <code>explain --analysis</code> gives the same
+    warning before a run.</p>
   </div>
 <table class="param-table">
     <thead><tr><th>(k₁, k₂)</th><th>Order</th><th>Frequency</th><th>What it is</th><th>At f₁=1.99, f₂=2.01 GHz</th></tr></thead>

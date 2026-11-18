@@ -5737,3 +5737,41 @@ driven by a `MOD_Source` instead (6.3 V open-circuit peak), that put the island 
 - **Not changed:** 50 Hz and 1 kHz from one source are phase-locked, but `HbEngine.Commensurate` collapses tones onto
   their common fundamental only when retained products coincide and every tone is within MaxHarm of it; 1 kHz is
   harmonic 20, so the run stays an independent two-tone solve. Whether to widen that rule is an open decision.
+
+## HB convergence judges the voltage update as well as the residual; harmonically related tones are flagged (2026-11-18, brief R-hbv)
+
+- **The test** (`HbUpdateCheck`, in all three Newton loops): a solve is converged when ‖F‖ < `Tol` AND the last accepted
+  update satisfies max_k |λ·ΔV[n,k]| ≤ `VRelTol` · max_k |V[n,k]| + 1 µV at every interface node. Default `VRelTol` 1e-3,
+  the loosest value that brings the bridge rectifier of the section above within 1 mV of its settled 13.177 V
+  (0 → 13.033 V, 1e-2 → 13.107, 3e-3 → 13.175, 1e-3 and tighter → 13.177). `VRelTol=0` turns it off.
+- **Where it is on.** `HbEngine.SolveSettings` applies it to every solve the engine makes — hb, sweeps, loadpull, pursuit,
+  osc — from the directive's `VRelTol`, else the caller's `AnalysisSettings.HbVRelTol`, else the default. Null settings
+  are OFF inside the loops, so harmonicaRF (`HarmonicaContext.DefaultSettings`) and the envelope engines solve exactly as
+  before. `LoadpullEngine`'s two settings copies now carry the values across.
+- **A step taken only for the test accepts the full Newton step while the residual still meets `Tol`**
+  (`HbNewton.Backtrack`'s `stillConverged`). Without it Hero 2's extra step, from a residual at its 1e-9 A floor, failed
+  the sufficient-decrease test and backtracked 8 times: 12 device evaluations instead of 4. Off, nothing changes: a solve
+  under `Tol` returns before stepping.
+- **The settings copies were dropping fields.** `HbEngine` built three hand-written copies for a directive's `MaxIter`;
+  each dropped some of `HbConsoleDiagnostics`, the run's `Control` (Stop and progress) and anything newer, for any analysis
+  whose `MaxIter` differed from 100. All three are now `AnalysisSettings.WithMaxIter`, a clone.
+- **Cost at the default** (single-threaded, warm, check off → on): Hero 2/4/5 (and 5's 3-, 6-tone, unequal) and
+  `hero2_convergence` no extra iterations; Hero 3 loadpull 1,800 → 1,901 device evaluations, 294 → 302 ms; the Loadpull
+  example 5,939 → 6,321, 493 → 496 ms; the LoadpullPursuit example (3-point sweep) 48,645 → 49,271, 3.27 → 3.50 s; the
+  VCO phase-noise sweep unchanged; the rectifier 15 → 19 iterations. At 1e-6 instead: one extra iteration on most hero
+  solves and +25 % evaluations on Hero 3. Every hero, loadpull, sweep and oscillator test passes unchanged (648), and the
+  harmonicaRF cost tests (`HarmonicaDragCostTests`, `HarmonicaGridDragCostTests`, `InverseSolveCostTests`) pass with no
+  bound edited. Largest result movement: Hero 3 Gt 4e-6 relative, the Loadpull example V 3.4e-6; a pursuit's adaptive
+  search lands on different points when one solve shifts, so its cubes do not compare point for point.
+- **The key is `VRelTol`, not `VTol`** as the brief had it: transient's `VTol` is an absolute voltage, and one name with two
+  meanings would mislead.
+- **The non-convergence warning names the update when it is what held the solve:** "the residual met Tol, but the last
+  update at out (DC) was 0.0309 V against a bound of 0.00974 V: raise MaxIter, or loosen VRelTol".
+- **Harmonically related tones** (`HbEngine.HarmonicMultiples`, `ToneNote`, code `hb.tones.harmonically-related`): every
+  tone a whole multiple of the lowest, and the run not already on the common fundamental — warned once per run, and by
+  `explain --analysis` under the HB card. Silent on 2.00/2.01 GHz and on 100/300 MHz (which the commensurate path
+  announces). No bench in `examples/` or `testdata/` warns.
+- **Envelope not measured:** its engines keep the check off, and it needs a `MOD_Source`, which the rectifier has none of.
+- Gates: `HbVoltageCheckTests` (a single-diode peak detector at K = 10 — the four-arm bridge is the same physics at a
+  minute per solve in a Debug build: 9.6713 V on the residual alone, 9.7613 V with the test, 9.7614 V at Tol 1e-13),
+  `HarmonicaVoltageCheckOffTests`, `NetlistContractTests.HbVRelTol_RoundTrips_AndIsAbsentWhenUnstated`.

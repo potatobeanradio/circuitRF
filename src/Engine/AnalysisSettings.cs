@@ -215,7 +215,51 @@ public sealed class AnalysisSettings
     /// build an AnalysisSettings with this value. The settings default here matches that directive
     /// default so engine-direct callers (tests, CLI) also get 100 iterations.
     /// </summary>
-    public int HbMaxIter { get; init; } = 100;
+    public int HbMaxIter { get => _hbMaxIter; init => _hbMaxIter = value; }
+    private int _hbMaxIter = 100;
+
+    /// <summary>
+    /// These settings with a different <see cref="HbMaxIter"/> — a <see cref="object.MemberwiseClone"/>, so every other field
+    /// comes along. The HB engine's three copies for a directive's <c>MaxIter=</c> were written out field by field and each
+    /// dropped some: <c>--diag</c>, the run's <see cref="Control"/> (Stop and progress) and the voltage-update check all
+    /// went missing for an analysis whose <c>MaxIter</c> differed from 100.
+    /// </summary>
+    public AnalysisSettings WithMaxIter(int maxIter)
+    {
+        if (maxIter == _hbMaxIter) return this;
+        var copy = (AnalysisSettings)MemberwiseClone();
+        copy._hbMaxIter = maxIter;
+        return copy;
+    }
+
+    /// <summary>
+    /// The HB Newton loops' second convergence test (brief R-hbv): a solve is converged when ‖F‖ is under its tolerance AND
+    /// the last update it applied is small at every interface node — max over harmonics of |λ·ΔV[n,k]| ≤
+    /// <see cref="HbVRelTol"/> · max over harmonics of |V[n,k]| + <see cref="HbVAbsTol"/>.
+    ///
+    /// <para><b>Why a second test.</b> ‖F‖ is an absolute residual in amperes. A node whose level is set by currents far
+    /// below it (an unloaded peak detector's reservoir, balanced by nA of leakage) passes while it is still 0.15 V from
+    /// the answer, and tightening the residual instead makes a PA whose residual floors near 1e-9 A never converge.</para>
+    ///
+    /// <para><b>Null is OFF inside the loops</b>, and OFF is the solve as it was, bit for bit. <c>HbEngine</c> fills in its
+    /// own default (<c>HbEngine.DefaultVRelTol</c>); a caller that calls the loops directly with settings of its own —
+    /// harmonicaRF, the envelope engines — gets no check unless it asks.</para>
+    /// </summary>
+    public double? HbVRelTol => _hbVRelTol;
+    private double? _hbVRelTol;
+
+    /// <summary>The absolute floor of the voltage-update check, volts; see <see cref="HbVRelTol"/>.</summary>
+    public double? HbVAbsTol => _hbVAbsTol;
+    private double? _hbVAbsTol;
+
+    /// <summary>These settings with the voltage-update check's two tolerances; 0 for both turns it off.</summary>
+    public AnalysisSettings WithVoltageCheck(double? relTol, double? absTol)
+    {
+        var copy = (AnalysisSettings)MemberwiseClone();
+        copy._hbVRelTol = relTol;
+        copy._hbVAbsTol = absTol;
+        return copy;
+    }
 
     /// <summary>
     /// When true, the HB engine prints per-solve diagnostics to stderr: the auto-regularization notice

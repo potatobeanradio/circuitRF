@@ -2490,7 +2490,11 @@ namespace RfCore.Export
         /// <summary>brief TRN-8 R-trn8-6 — an hb or osc analysis that starts from a transient seed: the seed's settings, its step and
         /// estimated length, and the chokes and blocks fast bias would scale; or the sentence refusing it. Null otherwise.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<string>? Seed = null);
+        IReadOnlyList<string>? Seed = null,
+        /// <summary>brief R-hbv-3 — a multi-tone hb whose tones are whole multiples of the lowest and still run as independent
+        /// tones: the run's own warning, said before the run. Null otherwise.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Tones = null);
 
     /// <summary>brief-paa-3 — <c>explain --analysis</c>'s lines for a Phased Antenna Array: the level sentence, the coupling range, and each
     /// pattern the array takes with the elements (1-based, row-major) that take it — or the sentence the run refuses with.</summary>

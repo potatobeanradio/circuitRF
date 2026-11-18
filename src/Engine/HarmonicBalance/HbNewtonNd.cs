@@ -115,7 +115,8 @@ public static class HbNewtonNd
     public record SolveResult(bool Converged, int Iterations,
         IReadOnlyList<HbConvergenceTrace.IterRecord> IterTrace,
         Complex[,] INl,   // total nonlinear injection [node, mixIdx] at the returned point
-        PortTermTimesNd[]? PortTerms = null);
+        PortTermTimesNd[]? PortTerms = null,
+        HbUpdateExcess? UpdateHeld = null);   // brief R-hbv-1, as HbNewton.SolveResult's
 
     // ── Newton loop ──────────────────────────────────────────────────────────────
 
@@ -162,10 +163,12 @@ public static class HbNewtonNd
         double fN = HbNewton.L2(F);
 
         var watch = HbSolveWatch.For(settings);   // designer round 38: Stop and progress, once per iteration
+        var vcheck = HbUpdateCheck.For(settings);   // brief R-hbv-1, as in HbNewton.SolveJudged
+        HbUpdateExcess? held = null;
         for (int iter = 0; iter < maxIter; iter++)
         {
             watch?.Iteration(iter, fN);
-            if (fN < tol)
+            if (fN < tol && held is null)
             {
                 trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));
                 return new SolveResult(true, iter + 1, trace,
@@ -196,17 +199,18 @@ public static class HbNewtonNd
                 (iNl, qNl, dg, dc, buckets) = EvaluateNonlinearNd(V, apft, N, netlist, interfaceNodes, portITime);
                 F = BuildFNd(V, yNN, iSrc, iNl, qNl, lattice, N, toneFreqsHz, buckets);
                 return norm.Of(F);
-            });
+            }, fEntry < tol ? () => HbNewton.L2(F) < tol : null);   // R-hbv-1: a step taken only for the update test
             if (w is not null) step = step with { Residual = HbNewton.L2(F) };
             iNlLast = iNl;
             fN      = step.Residual;
+            held    = vcheck?.Excess(V, V0);
             trace.Add(new HbConvergenceTrace.IterRecord(
                 iter, fEntry, step.Lambda, step.Backtracks, step.Stalled));
         }
 
         trace.Add(new HbConvergenceTrace.IterRecord(maxIter, fN));
         return new SolveResult(false, maxIter, trace,
-            TotalInjectionNd(iNl, qNl, lattice, N, toneFreqsHz, buckets), portITime);
+            TotalInjectionNd(iNl, qNl, lattice, N, toneFreqsHz, buckets), portITime, fN < tol ? held : null);
     }
 
     /// <summary>

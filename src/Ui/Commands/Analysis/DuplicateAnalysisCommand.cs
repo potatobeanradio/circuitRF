@@ -136,6 +136,7 @@ internal sealed class DuplicateAnalysisCommand : IUiCommand
                 GuardHarmonicExpr = hb.GuardHarmonicExpr,
                 LambdaExpr        = hb.LambdaExpr,
                 MaxIterExpr       = hb.MaxIterExpr,
+                VRelTolExpr       = hb.VRelTolExpr,
                 MarginThresholdExpr = hb.MarginThresholdExpr,
                 InitialGuess      = hb.InitialGuess,
                 SeedTolExpr       = hb.SeedTolExpr,

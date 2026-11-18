@@ -365,6 +365,18 @@
                         </StackPanel>
                     </Grid>
 
+                    <!-- Row 4 (brief R-hbv-1): the Newton voltage-update test beside Tolerance -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Voltage tolerance"
+                                       FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding VRelTolExpr, Mode=TwoWay}"
+                                     Watermark="default"
+                                     FontSize="11"
+                                     ToolTip.Tip="Relative. A solve converges when its residual is under Tolerance and its last update is under this times each node's largest phasor. Blank: the default; 0: off."/>
+                        </StackPanel>
+                    </Grid>
+
                 </StackPanel>
             </Expander>
 

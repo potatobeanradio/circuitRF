@@ -24,7 +24,9 @@ static class AnalysisBodySnapshot
             return Tran(kind == "tran-ngspice-found", output, width, height);
         if (kind.StartsWith("tran-store-", StringComparison.Ordinal))
             return TranStore(kind == "tran-store-rf", output, width, height);
-        Control view = kind == "lpp"
+        Control view = kind == "hb"   // brief R-hbv-1: the Advanced section's Voltage tolerance row
+            ? new HbBodyView { DataContext = HbBodyViewModel.FromAnalysis(new HarmonicBalanceAnalysis("HB1") { ToneExpr = "2", ToneUnit = "GHz" }, model) }
+            : kind == "lpp"
             ? new LppBodyView { DataContext = LppBodyViewModel.FromAnalysis(new LoadpullPursuitAnalysis("LPP1") { WorkersExpr = "4" }, model) }
             : new LpBodyView { DataContext = LpBodyViewModel.FromAnalysis(new LoadpullAnalysis("LP1") { GridPath = "load_grid.gam", WorkersExpr = "4" }, model) };
         var window = new Window { Width = width, Height = height, Title = "Analysis", Content = view };

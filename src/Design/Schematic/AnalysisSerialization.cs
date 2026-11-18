@@ -84,6 +84,8 @@ public sealed class CschAnalysis
     public string?   GuardHarmonicExpr { get; set; }
     public string?   LambdaExpr        { get; set; }
     public string?   MaxIterExpr       { get; set; }
+    /// <summary>brief R-hbv-1 — hb's VRelTol. Null / absent → the engine's default.</summary>
+    public string?   VRelTolExpr       { get; set; }
     /// <summary>The WSProbe stability-margin report threshold in dB, or "none" (WSP-9). Null /
     /// absent → the default, so a file written before this key existed reads unchanged.</summary>
     public string?   MarginThresholdExpr { get; set; }
@@ -521,6 +523,7 @@ public static class AnalysisSerialization
             GuardHarmonicExpr = hb.GuardHarmonicExpr,
             LambdaExpr        = hb.LambdaExpr,
             MaxIterExpr       = hb.MaxIterExpr,
+            VRelTolExpr       = NullIfBlank(hb.VRelTolExpr),
             MarginThresholdExpr = hb.MarginThresholdExpr != Analysis.MarginThresholdDefault
                 ? hb.MarginThresholdExpr : null,
             SeedInitialGuess  = Analysis.IsDcStart(hb.InitialGuess) ? null : hb.InitialGuess.Trim(),
@@ -767,6 +770,7 @@ public static class AnalysisSerialization
             GuardHarmonicExpr = dto.GuardHarmonicExpr ?? "0",
             LambdaExpr        = dto.LambdaExpr        ?? "1",
             MaxIterExpr       = dto.MaxIterExpr        ?? "100",
+            VRelTolExpr       = dto.VRelTolExpr        ?? "",
             MarginThresholdExpr = dto.MarginThresholdExpr ?? Analysis.MarginThresholdDefault,
             InitialGuess      = dto.SeedInitialGuess  ?? Analysis.InitialGuessDc,
             SeedTolExpr       = dto.SeedTol           ?? Analysis.SeedTolDefault,

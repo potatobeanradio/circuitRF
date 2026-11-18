@@ -480,6 +480,8 @@ public static class CnlWriter
         sb.Append($" GuardHarmonic={hb.GuardHarmonicExpr}");
         sb.Append($" Lambda={hb.LambdaExpr}");
         sb.Append($" MaxIter={hb.MaxIterExpr}");
+        // brief R-hbv-1: only when stated, so a line without it round-trips to the bytes it always did
+        if (hb.VRelTolExpr.Trim().Length > 0) sb.Append($" VRelTol={hb.VRelTolExpr.Trim()}");
         if (hb.MarginThresholdExpr != Analysis.MarginThresholdDefault)
             sb.Append($" MarginThreshold={hb.MarginThresholdExpr}");
 

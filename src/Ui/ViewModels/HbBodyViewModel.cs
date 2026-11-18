@@ -227,6 +227,8 @@ public sealed partial class HbBodyViewModel : ObservableObject
     [ObservableProperty] private string _lambdaPreview       = "";
     [ObservableProperty] private string _maxIterExpr         = "100";
     [ObservableProperty] private string _maxIterPreview      = "";
+    /// <summary>brief R-hbv-1 — <c>VRelTol=</c>; blank is the engine's default and writes no key.</summary>
+    [ObservableProperty] private string _vRelTolExpr         = "";
 
     // ── Noise on the small-signal sweep (brief NZ-5) ──────────────────────────
     //
@@ -514,6 +516,7 @@ public sealed partial class HbBodyViewModel : ObservableObject
                 GuardHarmonicExpr = GuardHarmonicExpr,
                 LambdaExpr        = LambdaExpr,
                 MaxIterExpr       = MaxIterExpr,
+                VRelTolExpr       = VRelTolExpr.Trim(),
                 SsStartExpr       = SsStartExpr,
                 SsStopExpr        = SsStopExpr,
                 SsStepExpr        = SsStepExpr,
@@ -543,6 +546,7 @@ public sealed partial class HbBodyViewModel : ObservableObject
                 GuardHarmonicExpr = GuardHarmonicExpr,
                 LambdaExpr        = LambdaExpr,
                 MaxIterExpr       = MaxIterExpr,
+                VRelTolExpr       = VRelTolExpr.Trim(),
                 SsStartExpr       = SsStartExpr,
                 SsStopExpr        = SsStopExpr,
                 SsStepExpr        = SsStepExpr,
@@ -623,6 +627,8 @@ public sealed partial class HbBodyViewModel : ObservableObject
         vm.GuardHarmonicExpr = hb.GuardHarmonicExpr;
         vm.LambdaExpr        = hb.LambdaExpr;
         vm.MaxIterExpr       = hb.MaxIterExpr;
+        vm.VRelTolExpr       = hb.VRelTolExpr;
+        vm.AdvancedExpanded  = vm.AdvancedExpanded || hb.VRelTolExpr.Trim().Length > 0;
         vm.InitialGuess      = Analysis.IsDcStart(hb.InitialGuess) ? Analysis.InitialGuessDc : hb.InitialGuess.Trim().ToLowerInvariant();
         vm.SeedTolExpr       = hb.SeedTolExpr;
         vm.SeedPeriodsExpr   = hb.SeedPeriodsExpr;

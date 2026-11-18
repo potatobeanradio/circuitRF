@@ -186,7 +186,10 @@ public static class HbNewton
         /// worker round trip on an external device (LP-0). <see cref="Solve"/> sets it on every return; the multi-tone loops
         /// have result types of their own.
         /// </summary>
-        Complex[,]? Conduction = null);
+        Complex[,]? Conduction = null,
+        /// <summary>brief R-hbv-1 — set on a non-converged return whose residual met the tolerance but whose last update did
+        /// not: where, and by how much. Null otherwise.</summary>
+        HbUpdateExcess? UpdateHeld = null);
 
     /// <summary>
     /// The size of the RF excitation this solve is driven by: ‖iSrc[k]‖₂ over the signal harmonics
@@ -345,11 +348,15 @@ public static class HbNewton
         double fN = L2(F);
 
         var watch = HbSolveWatch.For(settings);   // designer round 38: Stop and progress, once per iteration
+        // brief R-hbv-1: converged needs the last accepted update small as well as ‖F‖ < tol. Null = off (the solve as it was);
+        // `held` is where the last update exceeded its bound, null when it did not or before any step was taken.
+        var vcheck = HbUpdateCheck.For(settings);
+        HbUpdateExcess? held = null;
         for (int iter = 0; iter < maxIter; iter++)
         {
             watch?.Iteration(iter, fN);
             // ── 1. Convergence test on ‖F‖ (absolute, in amperes — design §12.2) ──
-            if (fN < tol)
+            if (fN < tol && held is null)
             {
                 // Passing at the ENTRY state means no step has been taken toward THIS excitation:
                 // what is about to be returned is the seed, spectrum and all. That is a real answer
@@ -403,10 +410,11 @@ public static class HbNewton
                                       portITime);
                 F = BuildF(V, yNN, iSrc, iNl, qNl, N, K, omega0, higherBuckets);
                 return norm.Of(F);
-            });
+            }, fEntry < tol ? () => L2(F) < tol : null);   // R-hbv-1: a step taken only for the update test
             if (w is not null) step = step with { Residual = L2(F) };
             iNlLast = iNl;
             fN      = step.Residual;
+            held    = vcheck?.Excess(V, V0);
             int moved = LargestStep(dV, N, K, step.Lambda, out double stepSize);
             trace.Add(new HbConvergenceTrace.IterRecord(
                 iter, fEntry, step.Lambda, step.Backtracks, step.Stalled,
@@ -429,7 +437,7 @@ public static class HbNewton
             WorstNode: last, WorstShare: lastShare));
         return new SolveResult(false, settings.HbMaxIter, trace,
             TotalInjection(iNl, qNl, higherBuckets, N, K, omega0), portITime,
-            G, C, higherBuckets, Conduction: iNl);
+            G, C, higherBuckets, Conduction: iNl, UpdateHeld: fN < tol ? held : null);
     }
 
     // ── Backtracking line search (HB-P3 M1) ──────────────────────────────────
@@ -481,7 +489,13 @@ public static class HbNewton
     /// unchanged: λ &lt; 1 still damps every step, it is now the STARTING point of the search
     /// instead of the only value.
     /// </param>
-    public static LineSearchStep Backtrack(double f0, double lambdaStart, Func<double, double> trialAt)
+    /// <param name="stillConverged">brief R-hbv-1 — set only for a step taken because the residual already met its
+    /// tolerance and the voltage-update test did not: true when the trial just evaluated still meets the tolerance, which
+    /// accepts it. A residual at its noise floor cannot satisfy the sufficient-decrease test, and backtracking it 8 times
+    /// cost Hero 2 nine device evaluations for the one step that only had to confirm the update was small. Null: Armijo
+    /// alone, as before.</param>
+    public static LineSearchStep Backtrack(double f0, double lambdaStart, Func<double, double> trialAt,
+                                           Func<bool>? stillConverged = null)
     {
         ArgumentNullException.ThrowIfNull(trialAt);
 
@@ -489,7 +503,7 @@ public static class HbNewton
         for (int rejected = 0; ; rejected++)
         {
             double fT = trialAt(lam);
-            if (fT <= (1.0 - ArmijoC * lam) * f0)
+            if (fT <= (1.0 - ArmijoC * lam) * f0 || stillConverged?.Invoke() == true)
                 return new LineSearchStep(fT, lam, rejected, false);
             if (rejected == MaxBacktracks)
                 return new LineSearchStep(fT, lam, rejected, true);

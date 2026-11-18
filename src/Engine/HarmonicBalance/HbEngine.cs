@@ -55,7 +55,10 @@ public sealed record HbAnalysisParams(
     /// <c>MarginThreshold=none</c> (WSP-9 R-wsp9-3, applied per operating point).</summary>
     double?  MarginThresholdDb = -15.0,
     /// <summary>Brief NZ-5: the noise request of <c>Noise=yes</c>, or null — and a null run is the one from before.</summary>
-    HbNoiseRequest? Noise = null)
+    HbNoiseRequest? Noise = null,
+    /// <summary>brief R-hbv-1 — the directive's <c>VRelTol=</c>: the voltage-update check's relative tolerance, 0 for off.
+    /// Null takes the caller's settings, else <see cref="HbEngine.DefaultVRelTol"/>.</summary>
+    double?  VRelTol = null)
 {
     /// <summary>Convenience: fundamental frequency for single-tone runs.</summary>
     public double ToneHz      => ToneFreqsHz[0];
@@ -356,6 +359,7 @@ public sealed partial class HbEngine
         int    guard   = (int)Num(hba.GuardHarmonicExpr, 0);
         double lambda  = Math.Clamp(Num(hba.LambdaExpr, 1.0), 1e-4, 1.0);  // B2
         int    maxIter = Math.Max(1, (int)Num(hba.MaxIterExpr, 100));
+        double? vRelTol = hba.VRelTolExpr.Trim().Length > 0 ? Math.Max(0, Num(hba.VRelTolExpr, DefaultVRelTol)) : null;
 
         // ── Tone frequencies: single-tone (scalar Tone=) or multi-tone (Tone[1..N]) ──
         int numFreqs = Math.Max(1, (int)Num(hba.NumFreqsExpr, 1));
@@ -423,7 +427,8 @@ public sealed partial class HbEngine
             MaxIter: maxIter, Lambda: lambda,
             SsFreqsHz: ssGrid, SsMaxHarm: ssMaxHarm,
             MarginThresholdDb: Analysis.ParseMarginThresholdDb(hba.MarginThresholdExpr),
-            Noise: NoiseRequest(hba, toneFreqsHz.Length, ssGrid is not null, Num))
+            Noise: NoiseRequest(hba, toneFreqsHz.Length, ssGrid is not null, Num),
+            VRelTol: vRelTol)
         {
             // brief TRN-8: where the Newton starts, refused by name when a key is malformed
             Seed = HbSeedSettings.Resolve($"HB '{hba.Name}'", hba.InitialGuess, hba.SeedTolExpr, hba.SeedPeriodsExpr,
@@ -487,6 +492,10 @@ public sealed partial class HbEngine
         // either multi-tone path, and say so (issue 65; HbEngine.Commensurate.cs).
         if (p.ToneFreqsHz.Length >= 2 && Commensurate(p, _settings.HbMaxMixProducts) is { } commensurate)
             return RunCommensurate(p, commensurate, warmStart);
+        if (HarmonicMultiples(p.ToneFreqsHz) is { } multiples)   // brief R-hbv-3: said once per run, however many points
+            _netlist.AddWarningOnce(
+                $"hb-harmonic-tones:{string.Join(",", p.ToneFreqsHz.Select(x => x.ToString("R", CultureInfo.InvariantCulture)))}",
+                HbCommensurateDiagnostics.HarmonicallyRelated(p.ToneFreqsHz, multiples).Render());
         // brief TRN-8 R-trn8-3: tones with no common period have no transient period to seed from
         if (p.ToneFreqsHz.Length >= 2 && p.Seed.Seeds)
         {
@@ -662,20 +671,7 @@ public sealed partial class HbEngine
         }
 
         // ── Newton solve ──────────────────────────────────────────────────────
-        var effectiveSettings = p.MaxIter != _settings.HbMaxIter
-            ? new AnalysisSettings
-              {
-                  HbMaxIter              = p.MaxIter,
-                  Gmin                   = _settings.Gmin,
-                  ConductanceRegularization = _settings.ConductanceRegularization,
-                  InductanceRegularization  = _settings.InductanceRegularization,
-                  InductanceRegR            = _settings.InductanceRegR,
-                  Gmax                      = _settings.Gmax,
-                  DcBiasStepping            = _settings.DcBiasStepping,
-                  DriveStepping             = _settings.DriveStepping,
-                  NonlinearAbsTol           = _settings.NonlinearAbsTol,
-              }
-            : _settings;
+        var effectiveSettings = SolveSettings(_settings, p);
         // A cold solve first unless the directive says to ramp unconditionally (DriveStepping=Always). A seeded start never ramps:
         // the seed is already at full drive.
         HbNewton.SolveResult? solveResult = null;
@@ -790,6 +786,7 @@ public sealed partial class HbEngine
             _netlist.AddWarning(
                 $"HB did not converge (‖F‖={res:E3} after {solveResult.Iterations} iterations" +
                 (last is { WorstNode: >= 0 } ? $"; {trace.NameOf(last.WorstNode)} carries {last.WorstShare * 100:F0} % of it" : "") +
+                UpdateHeldClause(solveResult.UpdateHeld, nodeNames, k => k == 0 ? "DC" : $"harmonic {k}") +
                 "); stored best-available result.");
             Console.Error.WriteLine(
                 $"[HB] Non-convergence: ‖F‖={res:E3} after {solveResult.Iterations} iterations.");
@@ -1204,7 +1201,9 @@ public sealed partial class HbEngine
         {
             double res2d = solveResult.IterTrace.LastOrDefault()?.ResidualNorm ?? 0.0;
             _netlist.AddWarning(
-                $"HB (two-tone) did not converge (‖F‖={res2d:E3} after {solveResult.Iterations} iters); " +
+                $"HB (two-tone) did not converge (‖F‖={res2d:E3} after {solveResult.Iterations} iters" +
+                UpdateHeldClause(solveResult.UpdateHeld, nodeNames, m => { var (k1, k2) = grid.ToneOf(m); return MixingLattice.Label([k1, k2]); }) +
+                "); " +
                 $"stored best-available result.");
             Console.Error.WriteLine(
                 $"[HB2D] Non-convergence: ‖F‖={res2d:E3} after {solveResult.Iterations} iters.");
@@ -1518,7 +1517,9 @@ public sealed partial class HbEngine
         {
             double resNd = solveResult.IterTrace.LastOrDefault()?.ResidualNorm ?? 0.0;
             _netlist.AddWarning(
-                $"HB ({T}-tone) did not converge (‖F‖={resNd:E3} after {solveResult.Iterations} iters); " +
+                $"HB ({T}-tone) did not converge (‖F‖={resNd:E3} after {solveResult.Iterations} iters" +
+                UpdateHeldClause(solveResult.UpdateHeld, nodeNames, lattice.Label) +
+                "); " +
                 $"stored best-available result.");
             Console.Error.WriteLine(
                 $"[HBnD] Non-convergence: ‖F‖={resNd:E3} after {solveResult.Iterations} iters.");
@@ -1800,33 +1801,34 @@ public sealed partial class HbEngine
         }
     }
 
+    /// <summary>brief R-hbv-1 — the clause a non-convergence warning adds when the residual met Tol but the last update did not
+    /// pass the voltage test: which node and which column, and by how much, so the remedy is plain. Empty otherwise.</summary>
+    internal static string UpdateHeldClause(HbUpdateExcess? held, string[] nodeNames, Func<int, string> column) =>
+        held is null ? "" : string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"; the residual met Tol, but the last update at {(held.Node < nodeNames.Length ? nodeNames[held.Node] : $"if[{held.Node}]")} " +
+            $"({column(held.Column)}) was {held.Size:G3} V against a bound of {held.Bound:G3} V: raise MaxIter, or loosen VRelTol");
+
+    /// <summary>The settings this engine's solves of <paramref name="p"/> run under (<see cref="SolveSettings"/>).</summary>
+    private AnalysisSettings EffectiveSettings(HbAnalysisParams p) => SolveSettings(_settings, p);
+
+    /// <summary>brief R-hbv-1 — the voltage-update check's relative tolerance when neither the directive (<c>VRelTol=</c>) nor
+    /// the caller's settings name one. Chosen by measurement; see <c>src/Engine/RESOLVED.md</c>.</summary>
+    internal const double DefaultVRelTol = 1e-3;
+
+    /// <summary>brief R-hbv-1 — the check's absolute floor, volts, when the caller's settings name none.</summary>
+    internal const double DefaultVAbsTol = 1e-6;
+
     /// <summary>
-    /// Effective settings with HbMaxIter overridden from the directive's MaxIter.
-    ///
-    /// <para><b>This is a hand-written copy, so every field must be listed — an omission is
-    /// SILENT.</b> It used to drop <c>HbConsoleDiagnostics</c>, which meant `--diag` went quiet
-    /// for any analysis whose <c>MaxIter=</c> differed from the settings default: the flag
-    /// appeared to work on some netlists and not others, with nothing to indicate why. Anything
-    /// added to <see cref="AnalysisSettings"/> that the HB engine reads belongs here too.</para>
+    /// The settings a solve of <paramref name="p"/> runs under: <paramref name="s"/> with the directive's <c>MaxIter</c> and the
+    /// voltage-update check (R-hbv-1) — the directive's <c>VRelTol</c>, else the caller's, else <see cref="DefaultVRelTol"/>;
+    /// <c>VRelTol=0</c> turns the check off. A clone, never a hand-written copy: three of those used to drop fields.
     /// </summary>
-    private AnalysisSettings EffectiveSettings(HbAnalysisParams p)
-        => p.MaxIter == _settings.HbMaxIter ? _settings : new AnalysisSettings
-        {
-            HbMaxIter                 = p.MaxIter,
-            Gmin                      = _settings.Gmin,
-            ConductanceRegularization = _settings.ConductanceRegularization,
-            InductanceRegularization  = _settings.InductanceRegularization,
-            InductanceRegR            = _settings.InductanceRegR,
-            Gmax                      = _settings.Gmax,
-            DcBiasStepping            = _settings.DcBiasStepping,
-            DriveStepping             = _settings.DriveStepping,
-            NonlinearAbsTol           = _settings.NonlinearAbsTol,
-            HbConsoleDiagnostics      = _settings.HbConsoleDiagnostics,
-            HbSweepWarmStart          = _settings.HbSweepWarmStart,
-            HbMaxTones                = _settings.HbMaxTones,
-            HbMaxMixProducts          = _settings.HbMaxMixProducts,
-            HbApftOversample          = _settings.HbApftOversample,
-        };
+    internal static AnalysisSettings SolveSettings(AnalysisSettings s, HbAnalysisParams p)
+    {
+        double rel = p.VRelTol ?? s.HbVRelTol ?? DefaultVRelTol;
+        double abs = rel > 0 ? s.HbVAbsTol ?? DefaultVAbsTol : 0;
+        return s.WithMaxIter(p.MaxIter).WithVoltageCheck(rel, abs);
+    }
 
     private static Complex[,] ConjugateMatrix(Complex[,] a)
     {
@@ -2048,21 +2050,8 @@ public sealed partial class HbEngine
         int    gridN  = HbFft.GridSize(K, p.FFTOverSample);
         double omega0 = 2.0 * Math.PI * f0;
 
-        var settings = settingsOverride ?? _settings;
-        // Honour the directive's MaxIter.
-        if (p.MaxIter != settings.HbMaxIter)
-            settings = new AnalysisSettings
-            {
-                HbMaxIter                 = p.MaxIter,
-                Gmin                      = settings.Gmin,
-                ConductanceRegularization = settings.ConductanceRegularization,
-                InductanceRegularization  = settings.InductanceRegularization,
-                InductanceRegR            = settings.InductanceRegR,
-                Gmax                      = settings.Gmax,
-                DcBiasStepping            = settings.DcBiasStepping,
-                DriveStepping             = settings.DriveStepping,
-                NonlinearAbsTol           = settings.NonlinearAbsTol,
-            };
+        // The directive's MaxIter and the voltage-update check, on whichever settings this point runs under.
+        var settings = SolveSettings(settingsOverride ?? _settings, p);
 
         var extractor = GetExtractor(settings);
         int N         = extractor.InterfaceCount;

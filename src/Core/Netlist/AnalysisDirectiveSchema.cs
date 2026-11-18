@@ -195,6 +195,7 @@ public static partial class AnalysisDirectiveSchema
             new("GuardHarmonic", Default: "0",Summary: "Extra harmonics carried above MaxHarm as an aliasing guard."),
             new("Lambda",     Default: "1",   Summary: "Newton damping factor."),
             new("MaxIter",    Default: "100", Summary: "Newton iteration cap."),
+            new("VRelTol",    Default: "1e-3", Summary: "Relative tolerance of the Newton voltage-update test: a solve is converged when its residual is under Tol AND its last update is under VRelTol times each node's largest phasor plus 1 uV. 0 turns the test off, leaving Tol alone."),
             new("Sweep",                      Summary: "DEPRECATED and ignored by the engine. Wrap the analysis in a parametric_sweep instead."),
             new("MarginThreshold", Default: "-15", Summary: "WSProbe stability margin, in dB, below which the run reports a probe as worth looking at. 'none' disables the report. Read over the small-signal sweep of a probed HB run."),
             new("SSStart",                    Summary: "First probe (tickle) frequency of the small-signal sweep around the converged HB operating point. Absent means no small-signal solve at all."),

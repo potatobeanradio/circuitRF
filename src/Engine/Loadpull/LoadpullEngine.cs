@@ -123,7 +123,7 @@ public sealed class LoadpullEngine
             // swept or not (issue 65). HB's own cap is the directive's MaxIter, per solve, below.
             NonlinearMaxIter          = base_.NonlinearMaxIter,
             HbConsoleDiagnostics      = base_.HbConsoleDiagnostics,
-        };
+        }.WithVoltageCheck(base_.HbVRelTol, base_.HbVAbsTol);   // brief R-hbv-1: null takes HbEngine's default
         _hbEngine = new HbEngine(netlist, tb, _lpSettings);
     }
 
@@ -433,7 +433,7 @@ public sealed class LoadpullEngine
             NonlinearAbsTol           = _lpSettings.NonlinearAbsTol,
             NonlinearMaxIter          = _lpSettings.NonlinearMaxIter,
             HbConsoleDiagnostics      = _lpSettings.HbConsoleDiagnostics,
-        };
+        }.WithVoltageCheck(_lpSettings.HbVRelTol, _lpSettings.HbVAbsTol);   // brief R-hbv-1
 
         var sweptModel = p.SweepLoad ? loadModel : srcModel;
         return new PursuitContext(loadModel, srcModel, sweptModel,

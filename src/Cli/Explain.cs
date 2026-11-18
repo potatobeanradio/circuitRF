@@ -1538,6 +1538,27 @@ internal static class Explain
             catch (Exception) { /* reported by check; nothing to explain here */ }
         }
 
+        // brief R-hbv-3: tones that are whole multiples of the lowest, still solved as independent tones — the run's warning,
+        // resolved as the run resolves the directive.
+        var hbTones = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (tb.Analyses.OfType<HarmonicBalanceAnalysis>().Any(h => h.ToneExprs.Length >= 2))
+        {
+            try
+            {
+                using var nl = Check.ElaborateReadOnly(lib, tb, sourcePath);
+                foreach (var hba in tb.Analyses.OfType<HarmonicBalanceAnalysis>().Where(h => h.ToneExprs.Length >= 2))
+                {
+                    try
+                    {
+                        var hp = CircuitRF.Engine.HarmonicBalance.HbEngine.Resolve(hba, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
+                        if (CircuitRF.Engine.HarmonicBalance.HbEngine.ToneNote(hp) is { } note) hbTones[hba.Name] = note;
+                    }
+                    catch (Exception) { /* an unresolvable directive is check's to report */ }
+                }
+            }
+            catch (Exception) { /* reported by check; nothing to explain here */ }
+        }
+
         // Brief NZ-6: a loadpull's noise ports and the frequency NF is read at, resolved as the run resolves them.
         var lpNoise = new Dictionary<string, ExplainLoadpullNoiseJson>(StringComparer.Ordinal);
         if (tb.Analyses.Any(a => a is ILoadpullNoiseKeys { Noise: true }))
@@ -1726,7 +1747,8 @@ internal static class Explain
                 Array: arrays.GetValueOrDefault(a.Name),
                 Channels: channels.Count > 0 ? ChannelLines(channels, a, tb) : null,
                 Transient: transients.GetValueOrDefault(a.Name),
-                Seed: seeds.GetValueOrDefault(a.Name)));
+                Seed: seeds.GetValueOrDefault(a.Name),
+                Tones: hbTones.GetValueOrDefault(a.Name)));
         }
 
         return (rows, exit);
@@ -2715,6 +2737,8 @@ internal static class Explain
                             Console.WriteLine($"      source impedance thermal: {n}");
                     if (rec.Evm is { } evmLine) Console.WriteLine($"      {evmLine}");
                 }
+
+                if (a.Tones is { } tonesNote) Console.WriteLine($"      warning: {tonesNote}");   // brief R-hbv-3
 
                 // R-wsp9-4: the effective margin threshold beside the probe list. The default is
                 // not written in the document, so it is reported rather than left to be assumed.

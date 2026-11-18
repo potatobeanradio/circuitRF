@@ -207,3 +207,29 @@ Read each run's TRX for failures rather than re-running. Run the full suite only
 
 Record them in `src/Engine/RESOLVED.md`, under a section after "HB answers Stop once per Newton iteration", never in
 a `CLAUDE.md`.
+
+## Completion note (2026-11-18)
+
+- **Done as written, with three departures**, each recorded in `src/Engine/RESOLVED.md` under "HB convergence judges the
+  voltage update":
+  - **The key is `VRelTol`, not `VTol`.** Transient's `VTol` is an absolute voltage, and one key meaning two things would
+    mislead.
+  - **The gate bench is a single-diode peak detector at K = 10**, not the four-arm bridge. The bridge is the same physics
+    at about a minute per solve in a Debug build, far past the routine tier.
+  - **A step taken only for the update test accepts the full Newton step while the residual still meets `Tol`.**
+    Without this, a residual already at its floor backtracked 8 times per check.
+- **Default `VRelTol` = 1e-3 with a 1 µV floor.** It is the loosest value that brings the bridge within 1 mV of 13.177 V.
+  - The HB heroes take no extra iterations.
+  - Device evaluations rise by 6 % on Hero 3 and the Loadpull example, and by 1.3 % on the pursuit example.
+  - Wall time rises by under 10 % everywhere.
+- **Also fixed:** `HbEngine`'s three hand-written `MaxIter` copies of its settings dropped fields, including the run's
+  Stop control. They are now `AnalysisSettings.WithMaxIter`.
+- **No bench in `examples/` or `testdata/` gives the harmonically-related-tones warning.** 33 multi-tone benches were
+  checked with `explain --analysis`.
+- **Gates:**
+  - `HbVoltageCheckTests` (9), `HarmonicaVoltageCheckOffTests` (1), and `NetlistContractTests` (one new test);
+  - Engine.Tests filtered to HB, Hero, Loadpull, ParametricSweep and Osc: 648 passed;
+  - Harmonica.Tests: 275 passed;
+  - the three harmonicaRF cost tests: passed with no bound edited;
+  - Ui.Tests classes covering the HB card, analysis serialization, Duplicate and harmonicaRF: 924 passed;
+  - UiSnapshot `--analysis-body hb` was looked at.

@@ -105,6 +105,40 @@ public sealed partial class HbEngine
         }
     }
 
+    /// <summary>
+    /// brief R-hbv-3 — each tone's whole multiple of the lowest one, when every tone is one (within <see cref="CoincidenceHz"/>,
+    /// at most <see cref="MaxCommensurateHarmonic"/>); null otherwise. 50 Hz and 1 kHz are 1 and 20: one periodic signal at
+    /// 50 Hz when they come from one generator, which the mixing lattice solves as two independent tones. The caller warns
+    /// only when <see cref="Commensurate"/> did not already move the run onto the common fundamental. Closely spaced tones
+    /// (2.00/2.01 GHz) are not multiples of the lowest and say nothing.
+    /// </summary>
+    internal static int[]? HarmonicMultiples(double[] f)
+    {
+        if (f.Length < 2) return null;
+        double fMin = f.Min();
+        if (fMin < CoincidenceHz) return null;
+        var n = new int[f.Length];
+        for (int t = 0; t < f.Length; t++)
+        {
+            int m = (int)Math.Round(f[t] / fMin);
+            if (m < 1 || m > MaxCommensurateHarmonic || Math.Abs(f[t] - m * fMin) > CoincidenceHz) return null;
+            n[t] = m;
+        }
+        return n;
+    }
+
+    /// <summary>
+    /// brief R-hbv-3 — the warning a run of <paramref name="p"/> gives because its tones are whole multiples of the lowest one
+    /// and still run as independent tones, or null. The run's own rule (<see cref="Run"/>): no warning when the run moves onto
+    /// the common fundamental instead. Public so <c>explain --analysis</c> says it before a run.
+    /// </summary>
+    public static string? ToneNote(HbAnalysisParams p, AnalysisSettings? settings = null)
+    {
+        if (p.ToneFreqsHz.Length < 2) return null;
+        if (Commensurate(p, (settings ?? AnalysisSettings.Default).HbMaxMixProducts) is not null) return null;
+        return HarmonicMultiples(p.ToneFreqsHz) is { } m ? HbCommensurateDiagnostics.HarmonicallyRelated(p.ToneFreqsHz, m).Render() : null;
+    }
+
     private HbRunResult RunCommensurate(HbAnalysisParams p, (double F0, int K, MixingLattice Lattice, int A, int B) c,
                                         Complex[,]? warmStart = null)
     {
@@ -236,6 +270,23 @@ public static class HbCommensurateDiagnostics
         "products on one frequency read that frequency's one value.{dropped}",
         ("tones", Tones(tones)), ("order", order), ("a", a), ("b", b), ("sharedMhz", Mhz(sharedHz)), ("f0Mhz", Mhz(f0)),
         ("k", k), ("dropped", dropped ? " The small-signal sweep and noise were not run." : ""));
+
+    /// <summary>brief R-hbv-3 — the tones are whole multiples of the lowest one but run as independent tones on the lattice.</summary>
+    public static Diagnostic HarmonicallyRelated(double[] tones, int[] multiples) => Diagnostic.Create(
+        "hb.tones.harmonically-related", DiagnosticSeverity.Warning,
+        "HB: the tones {tones} are harmonics {multiples} of {f0}. They are solved as independent tones, so their relative " +
+        "phase has no effect. If they come from one source, run one tone at {f0} with MaxHarm at least {highest}, and more " +
+        "for a waveform with sharp features.",
+        ("tones", string.Join(" and ", tones.Select(Hz))), ("multiples", string.Join(" and ", multiples)),
+        ("f0", Hz(tones.Min())), ("highest", multiples.Max()));
+
+    private static string Hz(double hz) => hz switch
+    {
+        >= 1e9 => (hz / 1e9).ToString("0.######", CultureInfo.InvariantCulture) + " GHz",
+        >= 1e6 => (hz / 1e6).ToString("0.######", CultureInfo.InvariantCulture) + " MHz",
+        >= 1e3 => (hz / 1e3).ToString("0.######", CultureInfo.InvariantCulture) + " kHz",
+        _      => hz.ToString("0.######", CultureInfo.InvariantCulture) + " Hz",
+    };
 
     /// <summary>The tones coincide but share no fundamental a single-tone run can reach.</summary>
     public static Diagnostic NoCommonFundamental(double[] tones, int order, string a, string b, double sharedHz, double f0,

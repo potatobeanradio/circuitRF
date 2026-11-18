@@ -212,7 +212,7 @@ bool pluginShiftCheck = false;
 int? pluginTab = null; double? pluginDragMarker = null, pluginDragHandle = null;   // brief-plg-3
 string? pluginAction = null;   // brief-plg-4
 string? settingsPlugins = null; bool pluginAddressDialog = false, pluginInstallProgress = false;   // brief-plg-6
-string? analysisBody = null;   // LP-1: lp | lpp
+string? analysisBody = null;   // LP-1: lp | lpp; R-hbv-1: hb
 string? phasedArray = null, paBlock = null, paColor = "amplitude", paTab = "beam";   // brief-paa-9
 string? filterDesigner = null; bool fdBusy = false; double? fdLeft = null, fdBottom = null;
 int paDrag = 0;

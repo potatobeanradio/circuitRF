@@ -583,6 +583,9 @@ public sealed class HarmonicBalanceAnalysis(string name) : Analysis(name)
     public string LambdaExpr        { get; init; } = "1";
     /// <summary>Max Newton iterations per HB solve before continuation backoff. Default 100.</summary>
     public string MaxIterExpr       { get; init; } = "100";
+    /// <summary>brief R-hbv-1 — <c>VRelTol=</c>: the relative tolerance of the Newton voltage-update test, which a solve must
+    /// pass beside <see cref="TolExpr"/>. Blank takes the engine's default; 0 turns the test off.</summary>
+    public string VRelTolExpr       { get; init; } = "";
 
     // ── brief TRN-8: transient-assisted harmonic balance (docs/design/transient.md §10) ─────────
 

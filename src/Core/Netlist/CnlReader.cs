@@ -2007,6 +2007,7 @@ public sealed class CnlReader
             GuardHarmonicExpr = kv.GetValueOrDefault("GuardHarmonic",   "0"),
             LambdaExpr        = kv.GetValueOrDefault("Lambda",          "1"),
             MaxIterExpr       = kv.GetValueOrDefault("MaxIter",         "100"),
+            VRelTolExpr       = kv.GetValueOrDefault("VRelTol",         ""),   // brief R-hbv-1
             MarginThresholdExpr = kv.GetValueOrDefault(
                 "MarginThreshold", CircuitRF.Core.Design.Analysis.MarginThresholdDefault),
             // The small-signal (probe-tickle) sweep — WSP-5 R-wsp5-1. Every default is EMPTY, so a

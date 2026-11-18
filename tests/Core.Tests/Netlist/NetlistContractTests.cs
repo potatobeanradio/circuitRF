@@ -431,6 +431,18 @@ public class NetlistContractTests
         }
     }
 
+    /// <summary>brief R-hbv-1: <c>VRelTol</c> is declared, read and written back; absent, the line round-trips without it.</summary>
+    [Fact]
+    public void HbVRelTol_RoundTrips_AndIsAbsentWhenUnstated()
+    {
+        var (lib, tb) = Read("analysis A1 type=hb Tone=2e9 VRelTol=1e-4\n");
+        Assert.Equal("1e-4", tb.Analyses.OfType<HarmonicBalanceAnalysis>().Single().VRelTolExpr);
+        Assert.Contains(" VRelTol=1e-4", CnlWriter.Write(tb, lib, header: null));
+
+        var (lib2, tb2) = Read("analysis A1 type=hb Tone=2e9\n");
+        Assert.DoesNotContain("VRelTol", CnlWriter.Write(tb2, lib2, header: null));
+    }
+
     /// <summary>Every declared type reads <c>enabled=false</c>: the envelope's parser did not, so a card switched off in the
     /// schematic still ran, and warned (designer round 38).</summary>
     [Fact]
