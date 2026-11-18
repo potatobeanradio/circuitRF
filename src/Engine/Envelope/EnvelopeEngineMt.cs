@@ -300,7 +300,6 @@ public sealed class EnvelopeEngineMt
 
         var probes = EnvelopeEngine.RecordedNodes(_nl, p.Probes, srcEcs);
         int P = probes.Length;
-        var probeIf = EnvelopeEngine.DeviceOnlyInterfaceIndexOf(_nl, probes, ifNodes);   // a device-only node is read from V (issue 66)
         var (iprobes, iprobeRows, iprobeNodes) = EnvelopeEngine.IProbesOf(_nl);
         var (wbonds, wbondRows) = EnvelopeWireTemperature.Rows(_nl);
         var wOut = new Complex[wbonds.Length > 0 ? nSteps + 1 : 0][][];
@@ -323,10 +322,10 @@ public sealed class EnvelopeEngineMt
             for (int pi = 0; pi < P; pi++)
             {
                 pr[pi] = new Complex[M];
-                int row = probes[pi].node - 1, j = probeIf[pi];
+                int row = probes[pi].node - 1;
                 for (int m = 0; m < M; m++)
                 {
-                    var v = j >= 0 ? V[j, m] : row >= 0 ? prods[m].Xm1[row] : Complex.Zero;
+                    var v = row >= 0 ? prods[m].Xm1[row] : Complex.Zero;
                     pr[pi][m] = prods[m].Neg ? Complex.Conjugate(v) : v;
                 }
                 pr[pi][0] = new Complex(pr[pi][0].Real, 0);
@@ -433,6 +432,8 @@ public sealed class EnvelopeEngineMt
             if (accepted is null) { qNow = null!; return null; }
             qNow = accepted.Q;
 
+            // The total the residual balances, from the linear side at the accepted V (EnvelopeEngine.Run's Advance says why).
+            var lin = HbEngine.LinearSideInjection(V, yEff, iSrc);
             for (int m = 0; m < M; m++)
             {
                 var pr = prods[m];
@@ -440,7 +441,7 @@ public sealed class EnvelopeEngineMt
                 var x = xoc[m];
                 for (int j = 0; j < N; j++)
                 {
-                    Complex tot = accepted.Inj[j, m] + (m > 0 ? new Complex(0, wMix[m]) * qNow[j, m] : Complex.Zero);
+                    Complex tot = lin[j, m];
                     if (m == 0) tot = new Complex(tot.Real, 0);
                     if (pr.Neg) tot = Complex.Conjugate(tot);
                     var z = zc[j];
@@ -611,10 +612,11 @@ public sealed class EnvelopeEngineMt
             }
             if (sol is null || !sol.Converged) throw new InvalidOperationException("envelope: the multi-tone harmonic-balance start point did not converge");
             var X = new Complex[M][];
+            var inlLin = HbEngine.LinearSideInjection(V, yNN, iSrc);   // not sol.INl (EnvelopeEngine.SteadyStart says why)
             for (int m = 0; m < M; m++)
             {
                 var inl = new Complex[N];
-                for (int a = 0; a < N; a++) inl[a] = wMix[m] < 0 ? Complex.Conjugate(sol.INl[a, m]) : sol.INl[a, m];
+                for (int a = 0; a < N; a++) inl[a] = wMix[m] < 0 ? Complex.Conjugate(inlLin[a, m]) : inlLin[a, m];
                 baseband.Holding = m == 0;
                 X[m] = ex.SolveFullNetwork(m == 0 ? 0.0 : Math.Abs(wMix[m]), inl, bSrc[m]);  // canonical |w| state
                 baseband.Holding = false;

@@ -7,10 +7,11 @@ using Xunit;
 
 namespace CircuitRF.Engine.Tests.Envelope;
 
-/// <summary>Issue 66 §3: a labelled net that only nonlinear devices touch is recorded from the step's accepted Newton
-/// unknown, so the seam check reads the circuit and not Newton's residual through a huge driving-point impedance. Here
-/// the net between two amplifiers' outputs and a third's input read EnvSeamError 20.6 and a "segments disagree" note,
-/// against 0.0025 unlabelled, every output identical.</summary>
+/// <summary>Issue 66 §3: a labelled net that only nonlinear devices touch must read the circuit, not Newton's residual
+/// through a huge driving-point impedance. Here the net between two amplifiers' outputs and a third's input read
+/// EnvSeamError 20.6 and a "segments disagree" note, against 0.0025 unlabelled, every output identical. The linear state
+/// is now rebuilt from the linear side's own current at the accepted V (brief ENV-FI), so it reproduces V at every
+/// interface node and the net is recorded from the state like any other.</summary>
 public sealed class EnvelopeDeviceOnlyNetTests
 {
     private static string Bench(string labelled) => $"""

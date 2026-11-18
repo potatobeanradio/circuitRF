@@ -471,7 +471,6 @@ public sealed class EnvelopeEngine
         var supplyV = supplies.Select(c => c.Parameters.TryGetValue("Vdc", out var v) && v.Kind == Core.Expressions.ValueKind.Real ? v.AsReal() : 0.0).ToArray();
         var (iprobes, iprobeRows, iprobeNodes) = IProbesOf(_nl, p.Blocks);
         var (wbonds, wbondRows) = EnvelopeWireTemperature.Rows(_nl);
-        var probeIf = DeviceOnlyInterfaceIndexOf(_nl, probeNodes, ifNodes);
 
         int total = nWarm + nSteps + 1;
         var tOut = new double[nSteps + 1];
@@ -492,8 +491,8 @@ public sealed class EnvelopeEngine
             for (int pi = 0; pi < probeNodes.Length; pi++)
             {
                 pr[pi] = new Complex[K + 1];
-                int row = probeNodes[pi].node - 1, j = probeIf[pi];
-                for (int k = 0; k <= K; k++) pr[pi][k] = j >= 0 ? V[j, k] : row >= 0 ? products[k].Xm1[row] : Complex.Zero;
+                int row = probeNodes[pi].node - 1;
+                for (int k = 0; k <= K; k++) pr[pi][k] = row >= 0 ? products[k].Xm1[row] : Complex.Zero;
                 pr[pi][0] = new Complex(pr[pi][0].Real, 0);
             }
             pOut[o] = pr;
@@ -610,14 +609,17 @@ public sealed class EnvelopeEngine
             qNow = accepted.Q;
 
             if (prof) swU.Start();
-            // update linear state: x = x_oc - sum_j Zcol_j * (total device injection)_j
+            // update linear state: x = x_oc - sum_j Zcol_j * (total device injection)_j. The total is the one the residual
+            // balances, taken from the linear side at the accepted V, -(iSrc + yEff*V): the devices' own sum differs from it
+            // by the residual, and a part of the network held only by gmin multiplied that into kilovolts on every step.
+            var lin = HbEngine.LinearSideInjection(V, yEff, iSrc);
             for (int k = 0; k <= K; k++)
             {
                 var zc = stageOf(k).Zcol;
                 var x = xoc[k];
                 for (int j = 0; j < N; j++)
                 {
-                    Complex inj = accepted.Inj[j, k] + (k > 0 ? new Complex(0, k * omega0) * qNow[j, k] : Complex.Zero);
+                    Complex inj = lin[j, k];
                     if (k == 0) inj = new Complex(inj.Real, 0);
                     var z = zc[j];
                     for (int r = 0; r < x.Length; r++) x[r] -= z[r] * inj;
@@ -721,22 +723,6 @@ public sealed class EnvelopeEngine
     }
 
     // ── helpers ──────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// For each recorded node that only nonlinear devices touch, its index among the interface nodes; −1 for every other
-    /// node. Such a node is recorded from the step's accepted Newton unknown <c>V</c>, not from the linear state: with no
-    /// linear element on it, the state's update multiplies the injection's residual (within Tol, in amps) by a very large
-    /// driving-point impedance, and the seam check compared that error between segments (issue 66: EnvSeamError 20.6 on
-    /// the net between two amplifiers' outputs and a third's input, 0.0025 without it, every output identical). A node a
-    /// linear element also holds keeps the linear state, as its IProbe voltage does, so the two never disagree (they
-    /// differ there by about 1e-5 relative) and every such run is unchanged bit for bit.
-    /// </summary>
-    internal static int[] DeviceOnlyInterfaceIndexOf(ElaboratedNetlist nl, (string name, int node)[] probes, int[] ifNodes)
-    {
-        var nonlinear = new HashSet<int>(nl.NonlinearComponents);
-        var linear = new HashSet<int>(nl.Components.Where((c, i) => !nonlinear.Contains(i)).SelectMany(c => c.Nodes));
-        return [.. probes.Select(p => linear.Contains(p.node) ? -1 : Array.IndexOf(ifNodes, p.node))];
-    }
 
     /// <summary>
     /// The node voltages a run records (brief ENV-MEAS-3): every labeled net (<see cref="NodeMap.LabeledNames"/>, the set
@@ -998,10 +984,13 @@ public sealed class EnvelopeEngine
             }
             if (sol is null) throw new InvalidOperationException("envelope: the harmonic-balance start point did not converge");
             var X = new Complex[K + 1][];
+            // The linear side's own current at the solved V, not sol.INl: the two differ by the Newton residual, which a
+            // part of the network held only by gmin multiplies into kilovolts (HbEngine.LinearSideInjection).
+            var inlLin = HbEngine.LinearSideInjection(V, yNN, iSrc);
             for (int k = 0; k <= K; k++)
             {
                 var inl = new Complex[N];
-                for (int a = 0; a < N; a++) inl[a] = sol.INl[a, k];
+                for (int a = 0; a < N; a++) inl[a] = inlLin[a, k];
                 baseband.Holding = k == 0;
                 X[k] = ex.SolveFullNetwork(k == 0 ? 0.0 : k * w0, inl, bSrc[k]);
                 baseband.Holding = false;

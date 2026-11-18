@@ -5675,10 +5675,33 @@ subcircuits, showed ±340 kV on the source and bead nodes in HB while the transi
 - **Why not correct with `Y_NN·(V − x)`:** at DC a node pinned by an ideal choke is regularized in the Newton's `Y`
   (1 µΩ) but not in the back-solve's matrix, and that correction re-adds the whole supply current there. `−F` is
   bounded by the residual everywhere.
-- **Not done:** the envelope engines' HB start point (`EnvelopeEngine`, `EnvelopeEngineMt`) still back-solves with
-  `INl`, and their marching steps inject device currents too; a floating island there is untested.
+- **The envelope engines** had the same defect at their start point and on every step; fixed separately, see the next
+  section.
 - **`LinearBackSolveTests.BackSolver_TighterHbTol_ImprovesCubeAgreement` is replaced** by
   `BackSolver_ReproducesCube_EvenAtLooseTolerance`: its claim (the cube-vs-back-solve gap shrinks with Tol) no longer
   holds because there is no gap — 2.3e-16 at Tol=1e-4 and at 1e-10 alike. `HarmonicBalance/CLAUDE.md` §C1 still
   names the old test.
 - Gate: `HbFloatingIslandBackSolveTests`.
+
+## Envelope: the same floating island, on every step (2026-11-18, brief ENV-FI)
+
+Both envelope engines rebuilt the linear state from the devices' own currents: once at the HB start point
+(`SolveFullNetwork(…, sol.INl, …)`) and on every step (`x = x_oc − Σ Zcol·(Inj + jkω·q)`). On the HB section's bench,
+driven by a `MOD_Source` instead (6.3 V open-circuit peak), that put the island at **63.7 kV at the start point** of
+`EnvelopeEngine` and **27 kV at the start and 63 kV at the last step** of `EnvelopeEngineMt`.
+- **A gap check could not see it.** The diode nodes are read from the same state (a bead touches them), so the source
+  node and the diode node it feeds drifted together and read identical to 17 digits. The gate bounds the island's
+  |V| per harmonic against the drive instead.
+- **Fix:** both sites in both engines inject `HbEngine.LinearSideInjection` — at the start from the extraction's
+  `yNN`/`iSrc`, on each step from the step's own `yEff`/`iSrc` (the stage's `Y`, α·C included), conjugated for a
+  negative product as before. The island now reads 3.16 V (one fundamental) and 1.87 V (lattice), and `out` matches a
+  single-tone HB of the same bench (4.848 V). The lattice bench's run fell from 24 s to 0.2 s.
+- **What it moved elsewhere:** the state carries Gear history, so every later step shifts by a residual-sized amount.
+  On `examples/Envelope`: NR20_ACPR EVM by ≤1.3e-6 dB, ACLR ≤7.6e-6 dB, Gt 7.7e-7 dB; NR20_2C_400MHz_single EVM
+  ≤1.8e-4 dB, ACLR ≤1.2e-3 dB, Pavg 3e-6 dB. Only spectral-floor bins (PSD floor, AMAM_min) move more. No test bound
+  changed.
+- **Issue 66's special case is retired.** `DeviceOnlyInterfaceIndexOf` recorded a node that only devices touch from
+  `V` rather than the state, because the state multiplied the residual there. With the state now reproducing `V`, the
+  two differ by 1.6e-17 V on `EnvelopeDeviceOnlyNetTests`' bench, and EVM and EnvSeamError are bit-identical either
+  way; the helper and its two call sites are gone and every node is recorded from the state.
+- Gate: `EnvelopeFloatingIslandTests` (one test per engine).
