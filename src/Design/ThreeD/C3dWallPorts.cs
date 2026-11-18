@@ -47,12 +47,39 @@ public static class C3dWallPorts
     /// kind, which <see cref="Faces"/> asks. Lumped rows are a <c>.cem</c>'s spelling and state nothing here. Returns the document
     /// unchanged when the setup states no such row, and a refusal naming the port and the setup when a row cannot apply.
     /// </summary>
-    public static C3dDocument ApplySetupKinds(C3dDocument doc, EmSetup? setup, out string? refusal)
+    /// <param name="contextFor">The port context for a set of ports (the run's, or the scene's). Given, each face is rebuilt as
+    /// the editor's own switch rebuilds it (<see cref="SwitchFace"/>): wall ports become one wave port over the face, with a terminal
+    /// per line where there are several, and a wave port becomes a wall port per line with Make Port ▸ Wall's rectangles. Without
+    /// one, only the kinds change: enough for which faces carry wall ports (the air box), not for resolving the ports.</param>
+    public static C3dDocument ApplySetupKinds(C3dDocument doc, EmSetup? setup, out string? refusal,
+                                              Func<C3dDocument, C3dPortContext>? contextFor = null)
     {
         refusal = null;
         var rows = setup?.Ports3D.Where(r => r.Kind is Em3dPortKind.Wave or Em3dPortKind.Wall).ToList() ?? [];
         if (rows.Count == 0) return doc;
         string who = setup!.Name is { Length: > 0 } n ? $"Setup '{n}'" : "This setup";
+        if (contextFor is not null)
+        {
+            var work = new C3dDocument { DbuPerMicron = doc.DbuPerMicron, Ports = [.. doc.Ports.Select(CopyPort)] };
+            bool switched = false;
+            foreach (var row in rows)
+            {
+                var p = work.Ports.FirstOrDefault(q => C3dPorts.Numbers(q).Contains(row.Port));
+                if (p is null) { refusal = $"{who} runs port {row.Port} as a {row.Kind} port, and this view has no port {row.Port}."; return doc; }
+                if (p.Kind == Em3dPortKind.Lumped)
+                {
+                    refusal = $"{who} runs {C3dPorts.Label(p)} as a {row.Kind} port, and {C3dPorts.Label(p)} is a lumped sheet between two " +
+                              "conductors. A setup chooses between Wave and Wall only for a port drawn on a face of the air box.";
+                    return doc;
+                }
+                if (p.Kind == row.Kind) continue;
+                var (rebuilt, _, why) = SwitchFace(work, p, row.Kind, contextFor);
+                if (why is not null) { refusal = $"{who} runs {C3dPorts.Label(p)} as a {row.Kind} port, and it cannot be one: {why}"; return doc; }
+                work.Ports = rebuilt;
+                switched = true;
+            }
+            return switched ? work : doc;
+        }
         var ports = doc.Ports.Select(Copy).ToList();
         bool changed = false;
         foreach (var row in rows)
@@ -87,13 +114,16 @@ public static class C3dWallPorts
         // A setup that only restates what is drawn (shipped examples state Wave on wave ports) runs the document itself.
         return changed ? new C3dDocument { DbuPerMicron = doc.DbuPerMicron, Ports = ports } : doc;
 
-        static C3dPort Copy(C3dPort p)
-        {
-            var c = new C3dPort();
-            foreach (var prop in typeof(C3dPort).GetProperties().Where(x => x.CanRead && x.CanWrite && x.GetIndexParameters().Length == 0))
-                prop.SetValue(c, prop.GetValue(p));
-            return c;
-        }
+        static C3dPort Copy(C3dPort p) => CopyPort(p);
+    }
+
+    /// <summary>A shallow copy of a port: every settable property.</summary>
+    private static C3dPort CopyPort(C3dPort p)
+    {
+        var c = new C3dPort();
+        foreach (var prop in typeof(C3dPort).GetProperties().Where(x => x.CanRead && x.CanWrite && x.GetIndexParameters().Length == 0))
+            prop.SetValue(c, prop.GetValue(p));
+        return c;
     }
 
     /// <summary>
@@ -141,6 +171,172 @@ public static class C3dWallPorts
         return changed.Count == 0 ? null
             : $"The air box's {string.Join(" and ", changed)} face{(changed.Count == 1 ? " is" : "s are")} PEC with no padding for this run, " +
               "whatever the setup states: a wall port's face is the port's ground.";
+    }
+
+    /// <summary>
+    /// PWL-4 R-pwl4-1 — what *Make Port ▸ Wall* adds on the air box's face at <paramref name="atM"/> on <paramref name="axis"/>
+    /// (0 = an x face, 1 = a y face): one wall port per piece of line that reaches the face, ordered by its centre along the face
+    /// (the order Make Port ▸ Wave gives terminals), each a rectangle round the line's end from its return to as far above, and
+    /// each accepted by <see cref="Resolve"/>. Lines named in <paramref name="skip"/> (they have a port on this face already) are
+    /// left out and listed. Unnumbered (Number 0). Empty with the first refusal when the face cannot take them.
+    /// </summary>
+    public static (List<C3dPort> Ports, List<string> Skipped, string? Refusal) Propose(C3dPortContext ctx, int dbuPerMicron, int axis,
+                                                                                      double atM, IReadOnlySet<string>? skip = null)
+    {
+        var none = new List<C3dPort>();
+        var skipped = new List<string>();
+        if (axis is not (0 or 1)) return (none, skipped, "A wall port stands on an x or y face of the air box; the floor and the lid take none.");
+        if (ctx.Box is not { } box) return (none, skipped, "No setup gives this view an air box, and a wall port stands on one of its faces.");
+        double tol = 2 * ctx.Dbu + ctx.OutlineMoveM;
+        double lo = C3dPortContext.Get(box.Min, axis), hi = C3dPortContext.Get(box.Max, axis);
+        int inward = Math.Abs(atM - lo) <= tol ? 1 : Math.Abs(atM - hi) <= tol ? -1 : 0;
+        if (inward == 0) return (none, skipped, "That is not a face of the air box: a wall port is made on the face where the lines end.");
+        double at = inward > 0 ? lo : hi;
+        string face = FaceKeys[2 * axis + (inward > 0 ? 0 : 1)];
+        double probe = at + inward * Math.Max(4 * tol, 1e-9);
+        var pieces = new List<(string Line, double WLo, double WHi, double Z)>();
+        foreach (var c in ctx.Conductors.Where(c => c.Axis < 0 && !ctx.Ground.Contains(c.Name)))
+        {
+            var (x0, y0, _, x1, y1, _) = c.Box;
+            double cLo = axis == 0 ? x0 : y0, cHi = axis == 0 ? x1 : y1;
+            if (!(inward > 0 ? Math.Abs(cLo - at) <= tol : Math.Abs(cHi - at) <= tol)) continue;
+            if (EndSection(c, axis, probe) is not { } end) continue;
+            if (skip?.Contains(c.Name) == true) { skipped.Add(c.Name); continue; }
+            pieces.AddRange(end.Intervals.Select(i => (c.Name, i.Lo, i.Hi, end.Z)));
+        }
+        if (pieces.Count == 0)
+            return (none, skipped, skipped.Count > 0
+                ? $"Every line reaching the {face} face has a port there already."
+                : $"No line reaches the {face} face. A wall port feeds a line that runs to the face of the air box.");
+        double per = C3dLowering.Metres(1, dbuPerMicron);
+        long D(double m) => (long)Math.Round(m / per, MidpointRounding.AwayFromZero);
+        var plane = axis == 0 ? C3dPlane.YZ : C3dPlane.XZ;
+        var ports = new List<C3dPort>();
+        bool several = pieces.GroupBy(x => x.Line).Any(g => g.Count() > 1);
+        foreach (var (line, wLo, wHi, z) in pieces.OrderBy(x => x.WLo + x.WHi).ThenBy(x => x.Line, StringComparer.Ordinal))
+        {
+            // From the return (the highest ground under the line, found by the resolver itself) to as far above the line again:
+            // a first rectangle from the floor of the box to the line, then the resolver's own height sets it.
+            double floor = box.Min.Z;
+            var port = new C3dPort
+            {
+                Kind = Em3dPortKind.Wall, Plane = plane, Offset = D(at), Z0 = "50",
+                Rect = new C3dRect { Min = new C3dPoint2(D(wLo), D(floor)), Size = new C3dPoint2(D(wHi) - D(wLo), D(z) - D(floor) + D(z - floor)) },
+                Positive = several ? line : null,
+            };
+            var r = Resolve(port, $"The port on '{line}'", new Complex(50, 0), ctx, dbuPerMicron);
+            if (r.Resolved is not { Wall: { } w }) return (none, skipped, r.Refusal);
+            port.Rect = new C3dRect { Min = new C3dPoint2(D(wLo), D(z - w.HeightM)), Size = new C3dPoint2(D(wHi) - D(wLo), D(z + w.HeightM) - D(z - w.HeightM)) };
+            ports.Add(port);
+        }
+        return (ports, skipped, null);
+    }
+
+    /// <summary>
+    /// PWL-4 R-pwl4-3 — the ports on <paramref name="clicked"/>'s air-box face switched to <paramref name="to"/> (Wave or Wall)
+    /// together, since a face carries one kind. Each kind is rebuilt exactly as its own *Make Port* writes it, so a round trip
+    /// gives back the ports it started from: to Wall, one wall port per line (a wave port's terminals each keep their number,
+    /// name and Z0), each with <see cref="Propose"/>'s rectangle; to Wave, one wave port over the whole face (one wall port keeps
+    /// its number, name and Z0; several become one port named for the face with a terminal each, its reference inferred as Make
+    /// Port ▸ Wave infers it). <c>DeembedUm</c> and <c>Model</c> carry over. Every new port must resolve in the document it
+    /// makes (<paramref name="contextFor"/> is the scene's port context for a document). Returns the document's whole new port
+    /// list, the labels of the ports that switched, or a refusal; the document is not changed.
+    /// </summary>
+    public static (List<C3dPort> Ports, List<string> Switched, string? Refusal) SwitchFace(
+        C3dDocument doc, C3dPort clicked, Em3dPortKind to, Func<C3dDocument, C3dPortContext> contextFor)
+    {
+        List<C3dPort> Keep() => [.. doc.Ports];
+        if (to is not (Em3dPortKind.Wave or Em3dPortKind.Wall))
+            return (Keep(), [], "A port on a face of the air box is a wave port or a wall port.");
+        bool OnFace(C3dPort p) => p.Kind is Em3dPortKind.Wave or Em3dPortKind.Wall && p.Plane == clicked.Plane && p.Offset == clicked.Offset
+                                  && p.Corners is null && p.Cylinder is null && p.Annulus is null && p.Floquet is null && p.Angle == 0;
+        if (!OnFace(clicked)) return (Keep(), [], $"{C3dPorts.Label(clicked)} is not a wave or wall port on a face of the air box.");
+        var face = doc.Ports.Where(OnFace).ToList();
+        if (face.All(p => p.Kind == to)) return (Keep(), [], null);
+        int axis = clicked.Plane switch { C3dPlane.YZ => 0, C3dPlane.XZ => 1, _ => 2 };
+        if (axis == 2) return (Keep(), [], "A wall port stands on an x or y face of the air box; the floor and the lid take none.");
+        int dbu = doc.DbuPerMicron;
+        var ctx = contextFor(doc);
+        if (ctx.Box is not { } box) return (Keep(), [], "No setup gives this view an air box.");
+        double atM = C3dLowering.Metres(clicked.Offset, dbu);
+        var made = new List<C3dPort>();
+
+        // Each line on the face: its port's number, name, Z0, and the line it feeds.
+        var lines = new List<(int Number, string Name, string Z0, string Line, C3dPort From)>();
+        foreach (var p in face)
+        {
+            if (p.Terminals is { Count: > 0 } ts) { lines.AddRange(ts.Select(t => (t.Number, t.Name, t.Z0, t.Conductor, p))); continue; }
+            if (C3dPorts.Resolve(p, dbu, ctx) is not { Resolved: { } r } res)
+                return (Keep(), [], C3dPorts.Resolve(p, dbu, ctx).Refusal ?? $"{C3dPorts.Label(p)} does not resolve.");
+            lines.Add((p.Number, p.Name, p.Z0, r.PositiveObject, p));
+        }
+        double deembed = face[0].DeembedUm;
+        bool model = face.All(p => p.Model);
+
+        if (to == Em3dPortKind.Wall)
+        {
+            var (proposed, _, why) = Propose(ctx, dbu, axis, atM);
+            if (why is not null) return (Keep(), [], why);
+            foreach (var (number, name, z0, line, _) in lines)
+            {
+                var rect = proposed.FirstOrDefault(q => (q.Positive ?? LineOf(q)) == line);
+                if (rect is null) return (Keep(), [], $"Port {number}'s line '{line}' cannot be fed from the wall: Make Port ▸ Wall finds no end of it on the face.");
+                made.Add(new C3dPort
+                {
+                    Number = number, Name = name, Kind = Em3dPortKind.Wall, Plane = clicked.Plane, Offset = clicked.Offset,
+                    Rect = rect.Rect, Positive = rect.Positive, Z0 = z0, DeembedUm = deembed, Model = model,
+                });
+            }
+            string? LineOf(C3dPort q) => Resolve(q, "", new Complex(50, 0), ctx, dbu).Resolved?.PositiveObject;
+        }
+        else
+        {
+            int lat = 1 - axis;
+            double per = C3dLowering.Metres(1, dbu);
+            long D(double m) => (long)Math.Round(m / per, MidpointRounding.AwayFromZero);
+            var region = new C3dRect
+            {
+                Min = new C3dPoint2(D(C3dPortContext.Get(box.Min, lat)), D(box.Min.Z)),
+                Size = new C3dPoint2(D(C3dPortContext.Get(box.Max, lat)) - D(C3dPortContext.Get(box.Min, lat)), D(box.Max.Z) - D(box.Min.Z)),
+            };
+            if (lines.Count == 1)
+            {
+                var (number, name, z0, _, _) = lines[0];
+                made.Add(new C3dPort { Number = number, Name = name, Kind = Em3dPortKind.Wave, Plane = clicked.Plane, Offset = clicked.Offset,
+                                       Rect = region, Z0 = z0, DeembedUm = deembed, Model = model });
+            }
+            else
+            {
+                var draft = new C3dPort { Kind = Em3dPortKind.Wave, Plane = clicked.Plane, Offset = clicked.Offset, Rect = region };
+                if (C3dPorts.TerminalsFor(draft, dbu, ctx, out string? tie) is not var (reference, _, conductors))
+                    return (Keep(), [], tie ?? $"The lines on this face do not make one wave port with a terminal each.");
+                var byLine = lines.ToDictionary(l => l.Line, StringComparer.Ordinal);
+                if (conductors.Any(c => !byLine.ContainsKey(c)))
+                    return (Keep(), [], $"A wave port here would also feed {string.Join(", ", conductors.Where(c => !byLine.ContainsKey(c)).Select(c => $"'{c}'"))}, " +
+                                        "which has no wall port: give it one first, or keep the face as wall ports.");
+                string faceKey = FaceKeys[2 * axis + (Math.Abs(atM - C3dPortContext.Get(box.Min, axis)) <= Math.Abs(atM - C3dPortContext.Get(box.Max, axis)) ? 0 : 1)];
+                var taken = doc.Ports.Except(face).Select(p => p.Name).Concat(doc.Ports.Except(face).SelectMany(p => p.Terminals ?? []).Select(t => t.Name))
+                               .ToHashSet(StringComparer.Ordinal);
+                string portName = faceKey;
+                for (int k = 2; taken.Contains(portName); k++) portName = $"{faceKey} {k}";
+                made.Add(new C3dPort
+                {
+                    Name = portName, Kind = Em3dPortKind.Wave, Plane = clicked.Plane, Offset = clicked.Offset, Rect = region, Reference = reference,
+                    Terminals = [.. conductors.Select(c => new C3dTerminal { Number = byLine[c].Number, Name = byLine[c].Name, Conductor = c, Z0 = byLine[c].Z0 })],
+                    DeembedUm = deembed, Model = model,
+                });
+            }
+        }
+
+        // In the document's order: the new ports where the face's first port stood.
+        int at = doc.Ports.FindIndex(OnFace);
+        var ports = doc.Ports.Where(p => !OnFace(p)).ToList();
+        ports.InsertRange(Math.Min(at, ports.Count), made);
+        var after = new C3dDocument { DbuPerMicron = dbu, Ports = ports };
+        var check = contextFor(after);
+        foreach (var p in made)
+            if (C3dPorts.Resolve(p, dbu, check).Refusal is { } refused) return (Keep(), [], refused);
+        return (ports, [.. made.SelectMany(p => p.Terminals is { } ts ? ts.Select(t => C3dPorts.TerminalLabel(p, t)) : [C3dPorts.Label(p)])], null);
     }
 
     /// <summary>

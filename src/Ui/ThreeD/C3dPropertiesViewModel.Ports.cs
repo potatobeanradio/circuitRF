@@ -68,6 +68,15 @@ public sealed partial class C3dPropertiesViewModel
     [ObservableProperty] private string _portVLabel = "y";
     [ObservableProperty] private string _portAtLabel = "z";
 
+    /// <summary>PWL-4 R-pwl4-3 — a port's kind. One stable list (a ComboBox resolves its selection against its items): a port on a
+    /// face of the air box is Wave or Wall, and the whole face switches together; any other port shows Lumped, disabled.</summary>
+    public static IReadOnlyList<string> PortKinds { get; } = [nameof(Em3dPortKind.Lumped), nameof(Em3dPortKind.Wave), nameof(Em3dPortKind.Wall)];
+    [ObservableProperty] private string _portKind = nameof(Em3dPortKind.Lumped);
+    [ObservableProperty] private bool _portKindEnabled;
+    [ObservableProperty] private string _portKindTip = "";
+    /// <summary>R-pwl4-6c — the active setup runs this port as the other kind: said under the combobox (empty otherwise, the line kept).</summary>
+    [ObservableProperty] private string _portKindNote = "";
+
     private C3dPort? _shownPort;
 
     private void ClearPortPages()
@@ -94,10 +103,66 @@ public sealed partial class C3dPropertiesViewModel
         PortPlaceEditable = port.Cylinder is null && port.Annulus is null && !C3dPorts.HasTerminals(port);
         PortName = port.Name;
         PortNumber = port.Number.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        ShowPortKind(port);
         ShowPortReference(port);
         ShowPortModes(port);
         ShowPortPlace(port);
         if (port.Annulus is not null) LoadRing(port);
+        LoadWallRows(port);
+    }
+
+    /// <summary>PWL-4 — the Kind combobox, its tip (why the other kind cannot be chosen, where it cannot), and the active setup's
+    /// own kind for this port when it differs.</summary>
+    private void ShowPortKind(C3dPort port)
+    {
+        bool was = _loading;
+        _loading = true;
+        try
+        {
+            bool face = editor.IsFacePort(port);
+            PortKind = port.Kind.ToString();
+            PortKindEnabled = face;
+            if (!face)
+                PortKindTip = port.Kind == Em3dPortKind.Lumped
+                    ? "A lumped port bridges two conductors; it cannot be a wave or a wall port, which are drawn on a face of the air box."
+                    : "Wave and Wall are a port's two kinds on an x or y face of the air box.";
+            else
+            {
+                var other = port.Kind == Em3dPortKind.Wall ? Em3dPortKind.Wave : Em3dPortKind.Wall;
+                PortKindTip = "Every port on this face switches together: one face carries wave ports or wall ports." +
+                              (editor.FaceSwitch(port, other).Refusal is { } why ? $" {other}: {why}" : "");
+            }
+            PortKindNote = editor.ActiveSetup is { } setup && setup.Ports3D.FirstOrDefault(r => r.Port == port.Number && r.Kind is Em3dPortKind.Wave or Em3dPortKind.Wall) is { } row
+                           && row.Kind != port.Kind
+                ? $"Runs as {row.Kind} in setup '{editor.ActiveSetupName}'."
+                : "";
+        }
+        finally { _loading = was; }
+    }
+
+    /// <summary>Another kind: the whole face switches, one undo entry; a refusal is shown and the combobox put back.</summary>
+    partial void OnPortKindChanged(string value)
+    {
+        if (_loading || _shownPort is not { } port || !Enum.TryParse<Em3dPortKind>(value, out var kind) || kind == port.Kind) return;
+        Error = kind == Em3dPortKind.Lumped
+            ? "A port on a face of the air box is a wave port or a wall port; a lumped port is drawn between two conductors."
+            : editor.SetFaceKind(port, kind) ?? "";
+        if (Error.Length > 0) ShowPortKind(port);
+    }
+
+    /// <summary>PWL-4 R-pwl4-3 — a wall port's calibration group, its gap and its end run, read-only, as the run will use them.</summary>
+    private void LoadWallRows(C3dPort port)
+    {
+        if (editor.PortResults.FirstOrDefault(r => r.Port.Number == port.Number && r.Port.Name == port.Name)?.Resolved is not { Wall: { } w } me) return;
+        var groups = CircuitRF.Design.Em3d.Em3dWallCalibration.Groups(editor.PortResults.Select(r => r.Resolved).OfType<Em3dPort>());
+        var onFace = groups.Where(g => g[0].Wall!.Face == w.Face).ToList();
+        int k = onFace.FindIndex(g => g.Any(q => q.Number == me.Number));
+        if (k >= 0)
+            Rows.Add(new C3dPropertyRow("Group", $"Wall {w.Face} · group {k + 1} of {onFace.Count}: " +
+                                                 string.Join(", ", onFace[k].Select(q => editor.PortLabelOf(q.Number)))));
+        Rows.Add(new C3dPropertyRow("Gap", $"{Length(w.GapM)} from the wall to '{w.Conductor}', the port in the solved problem"));
+        Rows.Add(new C3dPropertyRow("End run", $"{Length(CircuitRF.Design.Em3d.Em3dWallCalibration.EndRunHeights * w.HeightM)} from the wall, " +
+                                               "which the line must run straight and unchanged"));
     }
 
     /// <summary>brief-cxp-2 R-cxp2-3 — a ring's plane and conductors as rows, its centre and radii as fields, and the ring's own
@@ -172,7 +237,7 @@ public sealed partial class C3dPropertiesViewModel
                           : hollow ? "TE10"
                           : port.Modes > 1 ? "not read: " + (r?.Refusal ?? "the port is not resolved")
                           : "";
-            PortDeembedEnabled = wave;
+            PortDeembedEnabled = wave || port.Kind == Em3dPortKind.Wall;
             PortDeembed = port.DeembedUm == 0 ? "" : Spell((long)Math.Round(port.DeembedUm * editor.Document.DbuPerMicron));
         }
         finally { _loading = was; }

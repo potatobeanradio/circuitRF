@@ -181,7 +181,7 @@ solves the standards first and the Palace leg calibrates the structure's S befor
 - **The de-embedding is the shared algebra.** `LineCalibrator.At` (one line) or `ModalAt` (a group), `LineDeembed.ApplyBlocks`
   with every other port an identity block, a reference plane moved by `DeembedUm` peeled with the mode's own γ, then
   `ModalToTerminal` to each port's Z0 (the pseudo-wave renormalisation for a group of one).
-- **Published:** the calibrated S in the ordinary `.sNp`/`.npy`; the raw S at the gaps as `__WallPortRawS` `[f, i, j]` in the
+- **Published:** the calibrated S in the ordinary `.sNp`/`.npy`; the raw S at the gaps as `WallPortRawS` `[f, i, j]` in the
   Palace diagnostics group; per face a note of ε_eff, Z_c and the standards' agreement, and a note of any frequency whose
   separation fell outside 20–160°. Each standard's own result files land in `results/` under the setup's name and the
   standard's label.
@@ -245,8 +245,8 @@ This section supersedes two lines above: a face is no longer one group, and a `.
   `LayoutWallPortTests` (top-copper line over the inner plane: PEC x faces, gap = min(w, h)/5, line starting one gap in).
 - **What a run publishes (R-pwl3-12):** the `.sNp` header names each wall port (calibrated, its reference plane; or
   UNCALIBRATED and its gap) and each group (ports, scalar or modal, the standards' lengths, ε_eff, Z_c, residual); the
-  diagnostics carry `__WallPortGamma`, `__WallPortEeff`, `__WallPortZc` and `__WallPortResidual` `[f, Port]` beside
-  `__WallPortRawS`; the planar solver's passivity rule (σ_max ≤ 1 + 1e-3, uniform real reference) on the calibrated answer is
+  diagnostics carry `WallPortGamma`, `WallPortEeff`, `WallPortZc` and `WallPortResidual` `[f, Port]` beside
+  `WallPortRawS`; the planar solver's passivity rule (σ_max ≤ 1 + 1e-3, uniform real reference) on the calibrated answer is
   a note when it fails. Gate: `IdealLinesCalibrateToTheLine_AndTheDiagnosticsReadItsEpsEff` (ideal matched lines in place of
   solves give back the 20 mm line to 5e-3 and the fill's ε_eff to 1e-6).
 - **`check`** reports each setup's wall refusal (faces, a `Ports3D` row, groups, end runs) as an error, the plan as notes, and
@@ -263,7 +263,7 @@ This section supersedes two lines above: a face is no longer one group, and a `.
   (A = cos βℓ, independent of the reference impedance). Checked against the stage-2 product result, not re-run: VSWR inside
   1.025 at every port, the standards agreeing to 7e-15, the odd mode inside 3 %, and the **even mode 3.3 % above kernel A at
   1 GHz** (2.006 against 1.9415). PWL-2's spike read the same mode 1.985–2.003, so the restated 3 % is exceeded by Palace's
-  own microstrip phase velocity, not by the port; the test holds 3.5 % and says why. The owner decides whether the gate moves.
+  own microstrip phase velocity, not by the port; the owner moved the even-mode bound to 3.5 %, which the test holds.
 - **Gate 1:** the classes that lower shipped `.c3d`/`.cem` to Palace (the `ThreeD` namespace, the port, generator and Palace
   classes, 4,443 tests) pass except nine `Em3dGeneratorDumpTests.Gate2` cases on `examples/Dividers and Couplers`, whose
   layouts and `.cem`s changed in a 2026-11-17 commit after their dumps were last written (2026-11-16); nothing here touches

@@ -354,7 +354,7 @@
                  it, one undo entry. -->
             <StackPanel Name="PortPage" Spacing="4" IsVisible="{Binding IsPortPage}" Grid.IsSharedSizeScope="True">
                 <!-- The label column is shared with the Plane row's grid, so the boxes and the Plane picker start at one edge. -->
-                <Grid RowDefinitions="Auto,4,Auto,4,Auto,4,Auto,4,Auto,4,Auto">
+                <Grid RowDefinitions="Auto,4,Auto">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" SharedSizeGroup="PortLabel"/>
                         <ColumnDefinition Width="8"/>
@@ -366,6 +366,32 @@
                     <TextBox Name="PortNameBox" Grid.Row="0" Grid.Column="2" Text="{Binding PortName}" KeyDown="OnPortKey" LostFocus="OnPortLostFocus"/>
                     <TextBlock Grid.Row="2" Text="Number" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
                     <TextBox Grid.Row="2" Grid.Column="2" Text="{Binding PortNumber}" KeyDown="OnPortKey" LostFocus="OnPortLostFocus"/>
+                </Grid>
+                <!-- PWL-4 R-pwl4-3 — the port's kind: Wave or Wall on a face of the air box (the face switches together), Lumped
+                     disabled elsewhere. The note line under it is kept when empty, so the rows below never move. -->
+                <Grid RowDefinitions="Auto,2,Auto">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="PortLabel"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="4"/>
+                        <ColumnDefinition Width="28"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Row="0" Text="Kind" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Row="0" Grid.Column="2" ItemsSource="{x:Static t3:C3dPropertiesViewModel.PortKinds}"
+                              SelectedItem="{Binding PortKind}" IsEnabled="{Binding PortKindEnabled}" HorizontalAlignment="Stretch"
+                              ToolTip.Tip="{Binding PortKindTip}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding PortKindNote}" FontSize="11" Opacity="0.7" MinHeight="14"
+                               TextWrapping="Wrap"/>
+                </Grid>
+                <Grid RowDefinitions="0,0,0,0,Auto,4,Auto,4,Auto,4,Auto">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="PortLabel"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="4"/>
+                        <ColumnDefinition Width="28"/>
+                    </Grid.ColumnDefinitions>
                     <!-- brief-hzn-11 R-hzn11-1 — a wave port's S referred to an impedance or to its own mode: a picker, never typed text.
                          Shown disabled on a port that cannot be normalised to its mode, so the rows below never move. -->
                     <TextBlock Grid.Row="4" Text="Reference" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
@@ -390,7 +416,7 @@
                     <TextBlock Grid.Row="10" Text="De-embed" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
                     <TextBox Grid.Row="10" Grid.Column="2" Text="{Binding PortDeembed}" KeyDown="OnPortKey" LostFocus="OnPortLostFocus"
                              IsEnabled="{Binding PortDeembedEnabled}" PlaceholderText="at the port's face"
-                             ToolTip.Tip="Moves a wave port's reference plane this far into the structure: each mode's S-parameters are multiplied by its own e^(γd), so a positive length removes that much guide. A lumped port's reference is its sheet."/>
+                             ToolTip.Tip="Moves a wave or wall port's reference plane this far into the structure: each mode's S-parameters are multiplied by its own e^(γd), so a positive length removes that much line. A lumped port's reference is its sheet."/>
                     <TextBlock Grid.Row="10" Grid.Column="4" Text="{Binding LengthUnit}" FontSize="11" VerticalAlignment="Center"/>
                 </Grid>
                 <StackPanel Spacing="4" IsVisible="{Binding PortPlaceEditable}">

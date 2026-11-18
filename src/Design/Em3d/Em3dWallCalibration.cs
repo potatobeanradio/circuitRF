@@ -37,6 +37,29 @@ public sealed class Em3dWallCalibration
     /// driven-neighbour clearance (PCAL1/PCAL2 measured the coupling falling to the A-vs-B floor by 4–5.5 heights).</summary>
     public static readonly double CouplingHeights = new CircuitRF.Engine.Mom.PlanarCalibrationSettings().DrivenNeighbourClearanceHeights;
 
+    /// <summary>
+    /// D6 — the wall ports' calibration groups: per face, lines within <see cref="CouplingHeights"/> of their own heights of each
+    /// other are calibrated together; each group in lateral order. The run's plan and the editor's Properties both ask this.
+    /// </summary>
+    public static List<List<Em3dPort>> Groups(IEnumerable<Em3dPort> ports)
+    {
+        var groups = new List<List<Em3dPort>>();
+        foreach (var byFace in ports.Where(p => p.Wall is not null).GroupBy(p => p.Wall!.Face))
+        {
+            var onFace = byFace.OrderBy(p => p.Wall!.LineLoM).ToList();
+            var current = new List<Em3dPort> { onFace[0] };
+            for (int i = 1; i < onFace.Count; i++)
+            {
+                var prev = current[^1].Wall!; var next = onFace[i].Wall!;
+                double clearance = CouplingHeights * Math.Max(prev.HeightM, next.HeightM);
+                if (next.LineLoM - current.Max(q => q.Wall!.LineHiM) < clearance) current.Add(onFace[i]);
+                else { groups.Add(current); current = [onFace[i]]; }
+            }
+            groups.Add(current);
+        }
+        return groups;
+    }
+
     /// <summary>How many conductors one group may hold — the planar solver's own cost gate.</summary>
     public static readonly int MaxGroupSize = new CircuitRF.Engine.Mom.PlanarCalibrationSettings().MaxCalibrationGroupSize;
 
@@ -71,6 +94,7 @@ public sealed class Em3dWallCalibration
     // residual at that frequency. NaN where a port is not a wall port.
     private Complex[][] _gamma = [], _zc = [];
     private double[][] _residual = [];
+    private string[] _modeLabels = [];
 
     /// <summary>The standards the run must solve before the structure.</summary>
     public IReadOnlyList<Standard> Standards => _standards;
@@ -90,21 +114,7 @@ public sealed class Em3dWallCalibration
         var walls = problem.Ports.Where(p => p.Wall is not null).ToList();
         if (walls.Count == 0) return (null, null);
         var cal = new Em3dWallCalibration();
-        // D6 — a face's lines group by distance: within CouplingHeights of their own heights, they are calibrated together.
-        var groups = new List<List<Em3dPort>>();
-        foreach (var byFace in walls.GroupBy(p => p.Wall!.Face))
-        {
-            var onFace = byFace.OrderBy(p => p.Wall!.LineLoM).ToList();
-            var current = new List<Em3dPort> { onFace[0] };
-            for (int i = 1; i < onFace.Count; i++)
-            {
-                var prev = current[^1].Wall!; var next = onFace[i].Wall!;
-                double clearance = CouplingHeights * Math.Max(prev.HeightM, next.HeightM);
-                if (next.LineLoM - current.Max(q => q.Wall!.LineHiM) < clearance) current.Add(onFace[i]);
-                else { groups.Add(current); current = [onFace[i]]; }
-            }
-            groups.Add(current);
-        }
+        var groups = Groups(walls);
         foreach (var ports in groups)
         {
             var w0 = ports[0].Wall!;
@@ -284,7 +294,7 @@ public sealed class Em3dWallCalibration
     }
 
     /// <summary>The diagnostics cube holding the structure's raw S at its wall ports' gaps, before calibration.</summary>
-    public const string RawCube = "__WallPortRawS";
+    public const string RawCube = "WallPortRawS";
 
     /// <summary>The raw S as a <c>[f, i, j]</c> cube, ports by number.</summary>
     public static RfCore.Data.DataCube RawCubeOf(double[] frequenciesHz, Complex[][,] s, IReadOnlyList<Em3dPort> ports)
@@ -311,6 +321,16 @@ public sealed class Em3dWallCalibration
         var output = new Complex[frequenciesHz.Length][,];
         foreach (var g in _groups) g.Calibrator!.Restart();
         _gamma = new Complex[frequenciesHz.Length][]; _zc = new Complex[frequenciesHz.Length][]; _residual = new double[frequenciesHz.Length][];
+        _modeLabels = new string[np];
+        for (int gi = 0; gi < _groups.Count; gi++)
+        {
+            var g = _groups[gi];
+            int onFace = _groups.Count(o => o.Face == g.Face), index = _groups.Where(o => o.Face == g.Face).ToList().IndexOf(g) + 1;
+            for (int a = 0; a < g.Ports.Count; a++)
+                if (IndexOf(ports, g.Ports[a].Number) is var at and >= 0)
+                    _modeLabels[at] = $"Wall {g.Face} · group {index} of {onFace} · " +
+                                      (g.Ports.Count > 1 ? $"mode {a + 1} ({g.Ports[a].SourceLabel ?? g.Ports[a].Name})" : g.Ports[a].SourceLabel ?? g.Ports[a].Name);
+        }
         foreach (int k in order)
         {
             double f = frequenciesHz[k], w = 2 * Math.PI * f;
@@ -429,14 +449,17 @@ public sealed class Em3dWallCalibration
                "a finer mesh, or a quality one step up, is the usual remedy.";
     }
 
-    /// <summary>R-pwl3-12 — per wall port and frequency, what the last <see cref="Apply"/> measured, as <c>__</c> cubes for the
-    /// diagnostics group: γ (1/m), ε_eff (from β), Z_c (Ω) and the residual of the group's standards (dimensionless).</summary>
+    /// <summary>R-pwl3-12 / PWL-4 R-pwl4-8 — per wall port and frequency, what the last <see cref="Apply"/> measured, as cubes of the
+    /// diagnostics group, pickable in the Data Display: γ (1/m), ε_eff (from β), Z_c (Ω) and the residual of the group's standards.
+    /// The Port axis is labelled for a reader: <c>Wall xmin · group 1 of 2 · mode 1 (P1)</c>; for a group of lines a column is a
+    /// MODE, not a line.</summary>
     public IReadOnlyList<(string Name, RfCore.Data.DataCube Cube)> DiagnosticCubes(double[] frequenciesHz, IReadOnlyList<Em3dPort> ports)
     {
         var cols = Enumerable.Range(0, ports.Count).Where(i => ports[i].Wall is not null).ToArray();
         if (cols.Length == 0 || _gamma.Length != frequenciesHz.Length) return [];
         int nf = frequenciesHz.Length, nc = cols.Length;
-        RfCore.Data.Axis[] axes = [new("f", frequenciesHz, "Hz"), new("Port", [.. cols.Select(i => (double)ports[i].Number)], "")];
+        RfCore.Data.Axis[] axes = [new("f", frequenciesHz, "Hz"), new("Port", [.. cols.Select(i => (double)ports[i].Number)], "",
+                                                                          [.. cols.Select(i => _modeLabels.Length > i && _modeLabels[i] is { } l ? l : ports[i].Name)])];
         var gamma = new Complex[nf * nc]; var zc = new Complex[nf * nc]; var eeff = new double[nf * nc]; var res = new double[nf * nc];
         for (int k = 0; k < nf; k++)
             for (int c = 0; c < nc; c++)
@@ -447,10 +470,10 @@ public sealed class Em3dWallCalibration
             }
         return
         [
-            ("__WallPortGamma", new RfCore.Data.DataCube(axes, gamma) { Unit = "1/m" }),
-            ("__WallPortEeff", new RfCore.Data.DataCube(axes, eeff)),
-            ("__WallPortZc", new RfCore.Data.DataCube(axes, zc) { Unit = "Ohm" }),
-            ("__WallPortResidual", new RfCore.Data.DataCube(axes, res)),
+            ("WallPortGamma", new RfCore.Data.DataCube(axes, gamma) { Unit = "1/m" }),
+            ("WallPortEeff", new RfCore.Data.DataCube(axes, eeff)),
+            ("WallPortZc", new RfCore.Data.DataCube(axes, zc) { Unit = "Ohm" }),
+            ("WallPortResidual", new RfCore.Data.DataCube(axes, res)),
         ];
     }
 

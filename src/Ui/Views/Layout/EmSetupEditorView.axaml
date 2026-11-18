@@ -760,7 +760,7 @@
                                         <!-- brief-dfr28-4 R-dfr28-4-5: a lumped port's return, Automatic or a stated
                                              layer. A wave port's cell is empty: its return is the air box's face. -->
                                         <ComboBox Grid.Column="3" Classes="cell" HorizontalAlignment="Stretch"
-                                                  IsVisible="{Binding !IsWave}"
+                                                  IsVisible="{Binding !IsWaveOrWall}"
                                                   ItemsSource="{Binding ReturnChoices}"
                                                   SelectedItem="{Binding ReturnChoice}"
                                                   ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.Port3DReturnTip}">
@@ -776,9 +776,9 @@
                                         <TextBox Grid.Column="5" Classes="cell" Tag="Ports3D" Text="{Binding Height}" IsEnabled="{Binding IsWave}"
                                                  PlaceholderText="rule" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                                  ToolTip.Tip="The wave port's height in multiples of the line's height above its return. Blank: 8."/>
-                                        <TextBox Grid.Column="6" Classes="cell" Tag="Ports3D" Text="{Binding OffsetUm}" IsEnabled="{Binding IsWave}"
+                                        <TextBox Grid.Column="6" Classes="cell" Tag="Ports3D" Text="{Binding OffsetUm}" IsEnabled="{Binding IsWaveOrWall}"
                                                  PlaceholderText="0" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
-                                                 ToolTip.Tip="How far into the structure the wave port's reference plane lies: both solvers measure there, so the line between is de-embedded."/>
+                                                 ToolTip.Tip="How far into the structure a wave or wall port's reference plane lies: the solvers measure there, so the line between is de-embedded."/>
                                         <!-- Only a leftover row can go: a port the layout labels is
                                              configured, never removed, here. -->
                                         <Button Grid.Column="7" Content="✕" Padding="6,0"
@@ -796,6 +796,44 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+                        <!-- PWL-4 R-pwl4-6 — what a kind change did to the rest of its face; the line is kept when empty. -->
+                        <TextBlock Classes="colhdr" Text="{Binding ViewModel.Port3DKindNote}" MinHeight="14" TextWrapping="Wrap"/>
+                        <!-- PWL-4 R-pwl4-7 — always present under the table, greyed with no wall port, so nothing moves. -->
+                        <CheckBox Content="Calibrate wall ports" IsChecked="{Binding ViewModel.CalibrateWallPorts}"
+                                  IsEnabled="{Binding ViewModel.HasWallPorts}" ToolTip.Tip="{Binding ViewModel.CalibrateWallPortsTip}"
+                                  ToolTip.ShowOnDisabled="True"/>
+                    </StackPanel>
+                    <!-- PWL-4 R-pwl4-6b — a 3D view's own setup: its ports on the air box's faces, run as drawn or as wave or wall ports
+                         for this setup only (its Ports3D). Z0 and the offset are the port's own, read-only here. -->
+                    <StackPanel IsVisible="{Binding ViewModel.IsFacePortSetup}" Spacing="2" Margin="0,6,0,0" ClipToBounds="True">
+                        <Grid ColumnSpacing="6" ColumnDefinitions="40,*,150,70,80">
+                            <TextBlock Grid.Column="0" Classes="colhdr" Text="Port"/>
+                            <TextBlock Grid.Column="1" Classes="colhdr" Text="Name"/>
+                            <TextBlock Grid.Column="2" Classes="colhdr" Text="Kind" ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.FacePortTableTip}"/>
+                            <TextBlock Grid.Column="3" Classes="colhdr" Text="Z₀ (Ω)" ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.FacePortValueTip}"/>
+                            <TextBlock Grid.Column="4" Classes="colhdr" Text="Offset" ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.FacePortValueTip}"/>
+                        </Grid>
+                        <TextBlock Classes="colhdr" Opacity="0.5" Text="No ports on the air box's faces" IsVisible="{Binding !ViewModel.HasFacePorts}"/>
+                        <ItemsControl ItemsSource="{Binding ViewModel.FacePortRows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="em:EmFacePortRow">
+                                    <Grid ColumnSpacing="6" ColumnDefinitions="40,*,150,70,80" Margin="0,1">
+                                        <TextBlock Grid.Column="0" Text="{Binding Number}" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                        <ComboBox Grid.Column="2" Classes="cell" HorizontalAlignment="Stretch" ItemsSource="{Binding Choices}"
+                                                  SelectedItem="{Binding Choice}" ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.FacePortTableTip}"/>
+                                        <TextBlock Grid.Column="3" Text="{Binding Z0}" VerticalAlignment="Center" Opacity="0.7"
+                                                   ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.FacePortValueTip}"/>
+                                        <TextBlock Grid.Column="4" Text="{Binding Offset}" VerticalAlignment="Center" Opacity="0.7"
+                                                   ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.FacePortValueTip}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Classes="colhdr" Text="{Binding ViewModel.Port3DKindNote}" MinHeight="14" TextWrapping="Wrap"/>
+                        <CheckBox Content="Calibrate wall ports" IsChecked="{Binding ViewModel.CalibrateWallPorts}"
+                                  IsEnabled="{Binding ViewModel.HasWallPorts}" ToolTip.Tip="{Binding ViewModel.CalibrateWallPortsTip}"
+                                  ToolTip.ShowOnDisabled="True"/>
                     </StackPanel>
                     <!-- brief-hzn-12: the 3D view's enabled plane wave drives a Driven setup; it is edited there, so this only says so. -->
                     <StackPanel IsVisible="{Binding ViewModel.IsPlaneWaveSetup}" Spacing="2" Margin="0,6,0,0">

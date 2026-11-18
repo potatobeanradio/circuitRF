@@ -2706,6 +2706,63 @@ the face's modes give, as a note per port. <strong>A difference over 1 %</strong
 there; refine the mesh at the port face. The same voltages tell whether <strong>a terminal reads another port face's modes</strong>.
 An adaptive sweep solves no requested frequency directly, so a note says these two checks were not made.</li>
 </ul>
+<h3 id="wall-ports">Wall ports</h3>
+<p>A <strong>wall port</strong> feeds a line where it meets a <strong>PEC face of the air box</strong>, and calibrates the port out. It is the port for a
+line that ends at a wall: a shielded circuit, a line over a conducting substrate, or several lines ending together on one
+face. It needs no mode solve, so it does not depend on a face's mode being found.</p>
+<ul>
+<li><strong>What it is.</strong> The line runs to the air box's face. In the solved problem it is cut back by a short gap, and the gap is
+the port: from the wall (−) to the line (+), across the line's width, in the plane of its face toward its return. The gap
+is min(width, height above the return)/5, and is never a setting. The face is made <strong>PEC with no padding</strong> for the run,
+whatever the setup states, and the run's notes say so.</li>
+<li><strong>How it is calibrated.</strong> The run builds <strong>line standards</strong> from the face's own cross-section (its first 3 substrate
+heights), each the cross-section extruded between two PEC walls at a length the band needs (the shortest 6 heights),
+solves them with the same solver and settings before the structure, and removes the gap and the wall's field from the
+answer. The S-parameters are at the <strong>wall</strong> (the line's drawn end), or moved into the structure by <code>DeembedUm</code>, in each
+port's Z0. Z_c comes from a 2D electrostatic solve of the cross-section. Two faces with the same cross-section share their
+standards, so a line's two ends cost three standards over 1–10 GHz, not six.</li>
+<li><strong>Standards are kept.</strong> Each solved standard's answer is stored under <code>results/wall-standards/</code>, keyed by its cross-section,
+length, frequencies, solver and the setup's settings, and a later run that needs the same one reuses it instead of solving
+it again; the run's notes say how many were reused. A tuning sweep that does not change the face pays for them once.</li>
+<li><strong>Calibrate wall ports</strong> (<code>CalibrateWallPorts</code>, on; the checkbox under the port table): off publishes the raw S at each gap, in the port's Z0, for comparison,
+with a note saying so. Only <code>&quot;CalibrateWallPorts&quot;: false</code> is ever written.</li>
+<li><strong>Several lines on one face</strong> within 5 line heights of each other are calibrated together, as one group of up to three:
+their standard carries all of them, so the coupling between them at the port is removed with the port. Lines farther
+apart are separate groups, each with its own standards, which leave the other groups' lines out.</li>
+<li><strong>The end run must be uniform.</strong> From the face inward for 3 substrate heights, everything crossing the face must run
+straight and unchanged, because the standards reproduce exactly that. A line that tapers or bends there is refused,
+naming the object; extend it straight.</li>
+<li><strong>Refused by name:</strong> a port off the faces of the air box; one on the floor or the lid; a rectangle over two lines (state
+<code>Positive</code>, or draw one per line); a face carrying wave ports too; a line with no ground beneath it; dielectrics that are
+not layers across the face's whole width; lines whose modes travel at nearly one speed (a stripline pair: feed it with a
+wave port with terminals on openEMS).</li>
+<li><strong>What a run publishes.</strong> The <code>.sNp</code>'s header says, per port, that it is a calibrated wall port and where its reference
+plane is, and per group, its standards and the ε_eff, Z_c and agreement the run measured. The <code>.npy</code>'s diagnostics hold
+the raw S at the gaps (<code>WallPortRawS</code>) and, per wall port and frequency, γ (<code>WallPortGamma</code>), ε_eff
+(<code>WallPortEeff</code>), Z_c (<code>WallPortZc</code>) and the standards' agreement (<code>WallPortResidual</code>). A note says so when the
+calibrated answer is not passive (its largest singular value over 1 + 1e-3).</li>
+<li><strong>Making one.</strong> In a 3D view, right-click the face of the air box where the lines end and choose <em>Make Port ▸ Wall</em>
+(<a href="drawing-in-3d.html#wall-port">Drawing in 3D ▸ A wall port</a>). On a layout's 3D setup, pick <strong>Wall</strong> in the port's
+row of the port table; the other rows on the same face follow.</li>
+<li><strong>Choosing the kind per setup.</strong> A port drawn on an air-box face as a wave port or a wall port can be run as the other by
+one setup only: that setup's <code>Ports3D</code> (<code>[{ &quot;Port&quot;: 1, &quot;Kind&quot;: &quot;Wall&quot; }]</code>), set in <em>Simulate ▸ Setup Analyses…</em>'s port
+table (<em>As drawn</em>, <em>Wave</em> or <em>Wall</em>). The drawing is not changed, and a setup that
+states nothing runs the port as drawn. A row naming a port the view does not have, or a lumped port, is refused by name.
+A wave port with terminals run as Wall becomes one wall port per terminal, keeping their numbers.</li>
+<li><strong>On a layout.</strong> A layout's 3D setup (<code>.cem</code>) takes <code>Ports3D</code> <code>Kind: &quot;Wall&quot;</code> for a labelled edge port: the port is built
+where its wave port would be, then fed and calibrated as a wall port.</li>
+<li><strong><code>check</code> and <code>explain</code>.</strong> <code>check</code> reports each setup's refusal and warns, naming it, about any conductor that meets a
+wall-port face without being a port's line, since the wall shorts it there. <code>explain</code> (and <code>run dryRun=true</code>) lists each
+wall port and where its kind came from, each group and its standards, which standards are cached, and what the ones to
+solve cost beside the structure.</li>
+<li><strong>Palace only, in this version.</strong> EMerge and openEMS refuse a wall port by name.</li>
+</ul>
+<p>In a <code>.c3d</code>:</p>
+<pre><code>{ &quot;Number&quot;: 1, &quot;Name&quot;: &quot;P1&quot;, &quot;Kind&quot;: &quot;Wall&quot;, &quot;Plane&quot;: &quot;YZ&quot;, &quot;Offset&quot;: 0,
+  &quot;Rect&quot;: { &quot;Min&quot;: [-1717866, -1000000], &quot;Size&quot;: [3435732, 2000000] }, &quot;Z0&quot;: &quot;50&quot; }
+</code></pre>
+<p>On a 50 Ω stripline, calibrated this way on Palace at Standard quality, the port's VSWR against the exact line
+is 1.001–1.005 from 1 to 10 GHz.</p>
 <h3 id="coaxial-ports">Coaxial ports</h3>
 <p>A <strong>coaxial port</strong> is a lumped port whose sheet is a <strong>ring</strong>: the flat annulus of a coax's cross-section between its pin
 (radius <em>a</em>) and its outer conductor (radius <em>b</em>). Where a rectangular lumped port imposes a field of one direction across

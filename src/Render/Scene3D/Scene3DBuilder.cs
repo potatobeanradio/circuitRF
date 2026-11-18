@@ -563,7 +563,11 @@ public static class Scene3DBuilder
             if (p.Kind == Em3dPortKind.Lumped && p.Annulus is null && Checkerboard(p, pinFill, checkFill, checkArrow) is { } board)
             {
                 var (sv, st) = PortSheet(p);
-                b.Object(obj, board.Mesh, Outline(p).Select(q => (q, pinLine)), vertexRgba: board.Rgba,
+                // PWL-4 R-pwl4-4 — a wall port is its gap's checkerboard, plus its reference plane dashed across the line and, on the
+                // first port of a group, the bracket along the face joining the group's lines
+                var lines = Outline(p);
+                if (p.Wall is not null) lines.AddRange(WallPortLines(p, problem.Ports));
+                b.Object(obj, board.Mesh, lines.Select(q => (q, pinLine)), vertexRgba: board.Rgba,
                          features: Snaps(new Em3dTriangleMesh(sv, st)));
                 continue;
             }
@@ -1138,6 +1142,35 @@ public static class Scene3DBuilder
                 lines.Add(Em3dAnnulus.At(centre, normal, r, 2 * Math.PI * k / AnnulusSegments));
                 lines.Add(Em3dAnnulus.At(centre, normal, r, 2 * Math.PI * (k + 1) / AnnulusSegments));
             }
+        return lines;
+    }
+
+    /// <summary>
+    /// PWL-4 R-pwl4-4 — a wall port's extra lines, as pairs of points: its reference plane, dashed across its line at the wall (or
+    /// moved in by the port's de-embedding), a little above the line; and, when it is the first port of its calibration group, a
+    /// bracket on the face under the group's lines from the first to the last, with a tick at each end.
+    /// </summary>
+    private static List<Point3> WallPortLines(Em3dPort p, IReadOnlyList<Em3dPort> ports)
+    {
+        var w = p.Wall!;
+        var lines = new List<Point3>();
+        Point3 At(double along, double across, double z) => w.Axis == 0 ? new Point3(along, across, z) : new Point3(across, along, z);
+        double plane = w.FaceAtM + w.Inward * p.ReferencePlane.ShiftM, lift = 0.05 * w.HeightM, z = w.ZM + lift;
+        int dashes = 5;
+        double step = (w.LineHiM - w.LineLoM) / (2 * dashes - 1);
+        for (int k = 0; k < dashes; k++)
+        {
+            double a0 = w.LineLoM + 2 * k * step;
+            lines.Add(At(plane, a0, z)); lines.Add(At(plane, a0 + step, z));
+        }
+        var group = CircuitRF.Design.Em3d.Em3dWallCalibration.Groups(ports).FirstOrDefault(g => g.Contains(p));
+        if (group is { Count: > 1 } && group[0] == p)
+        {
+            double lo = group.Min(q => q.Wall!.LineLoM), hi = group.Max(q => q.Wall!.LineHiM), zb = w.ZM - 0.5 * w.HeightM, tick = 0.2 * w.HeightM;
+            lines.Add(At(w.FaceAtM, lo, zb)); lines.Add(At(w.FaceAtM, hi, zb));
+            lines.Add(At(w.FaceAtM, lo, zb)); lines.Add(At(w.FaceAtM, lo, zb + tick));
+            lines.Add(At(w.FaceAtM, hi, zb)); lines.Add(At(w.FaceAtM, hi, zb + tick));
+        }
         return lines;
     }
 

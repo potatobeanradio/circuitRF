@@ -528,7 +528,8 @@ public static class C3dProblemAssembly
             }
         }
         // PWL-3 — the setup's own Wave/Wall choice for the ports on the air box's faces, on copies of them.
-        portDocument = C3dWallPorts.ApplySetupKinds(portDocument, setup, out string? kindRefusal);
+        portDocument = C3dWallPorts.ApplySetupKinds(portDocument, setup, out string? kindRefusal,
+                                                    d => PortContext(setup, d, e, AirBox(setup, e, out _, d)));
         if (kindRefusal is not null) return No(kindRefusal, e.Warnings);
         if (sar is not null && SarDispersiveRefusal(sar, e) is { } twoFrequencies) return No(twoFrequencies, e.Warnings);
         if (e.Extent() is not { } extent)
@@ -962,7 +963,7 @@ public static class C3dPortReports
             var es = Of(s.Setup);
             var box = C3dProblemAssembly.AirBox(s.Setup!, es, out _, doc);
             var ctx = C3dProblemAssembly.PortContext(s.Setup, doc, es, box);
-            var kinds = C3dWallPorts.ApplySetupKinds(doc, s.Setup, out _);
+            var kinds = C3dWallPorts.ApplySetupKinds(doc, s.Setup, out _, d => C3dProblemAssembly.PortContext(s.Setup, d, es, C3dProblemAssembly.AirBox(s.Setup!, es, out _, d)));
             foreach (var resolved in C3dPorts.Resolve(kinds, ctx))
             {
                 var r = RingNote(resolved, es);

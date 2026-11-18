@@ -215,6 +215,7 @@ public sealed partial class C3dEditorViewModel
         DocumentChanged();
         RebuildSetupItems();
         ReloadSetupEditor();
+        SetupEditor?.ViewModel?.RefreshFacePorts();     // PWL-4 R-pwl4-6b — the panel's face ports follow the view's
         RefreshFieldsStale();
         // brief-em3d-75 — the thermal rows follow at once (the scene's tints follow its rebuild).
         RebuildThermalTree();
@@ -406,6 +407,7 @@ public sealed partial class C3dEditorViewModel
         {
             string name = item.Name;
             vm.EmbeddedCommit = (_, after, description) => CommitSetupFromPanel(name, after, description);
+            vm.FacePortsHost = FacePortsForSetupPanel;        // PWL-4 R-pwl4-6b
         }
         vm.EmbeddedSave = () => _ = SaveDocument();
         vm.RunRequested = _ => RunRequested?.Invoke(this, item.IsExternal ? null : item.Name) ?? Task.CompletedTask;
@@ -737,7 +739,9 @@ public sealed partial class C3dEditorViewModel
         // tree row — away with it. The ports and face boundaries below still wait for a clean elaboration.
         var box = boxSetup is not null ? C3dProblemAssembly.AirBox(boxSetup, e, out _, doc) : null;
         var ctx = C3dProblemAssembly.PortContext(setup, doc, e, box);
-        var ports = e.Ok ? C3dPorts.Resolve(doc, ctx) : [];
+        // PWL-4 R-pwl4-6c — the ports as the active setup runs them: its Ports3D may run a face's ports as the other kind
+        var ports = e.Ok ? C3dPorts.Resolve(C3dWallPorts.ApplySetupKinds(doc, setup, out _,
+                               d => C3dProblemAssembly.PortContext(setup, d, e, boxSetup is not null ? C3dProblemAssembly.AirBox(boxSetup, e, out _, d) : null)), ctx) : [];
         var boundaries = e.Ok ? C3dProblemAssembly.FaceBoundaryPreview(doc, e) : [];
         var lumped = e.Ok ? doc.LumpedElements.Select(l => C3dLumpedElements.Resolve(l, doc.DbuPerMicron, ctx, e.Resolution)).ToList() : [];
         return new RecordsView(box, ports, boundaries, ctx)
@@ -855,6 +859,7 @@ public sealed partial class C3dEditorViewModel
         _recordsView = view;
         RebuildRecordsTree();
         ApplyAirBoxShown();
+        SetupEditor?.ViewModel?.RefreshFacePorts();     // PWL-4 R-pwl4-6b — the faces are named once the box is known
     }
 
     // ── ports (R-em3d49-2) ───────────────────────────────────────────────────────────────────
@@ -1010,8 +1015,8 @@ public sealed partial class C3dEditorViewModel
     {
         if (um == port.DeembedUm) return null;
         if (!double.IsFinite(um)) return "A de-embedding distance is a length.";
-        if (port.Kind != Em3dPortKind.Wave || port.Floquet is not null)
-            return $"{C3dPorts.Label(port)} is not a wave port; only a wave port's reference plane moves along its guide.";
+        if (port.Kind is not (Em3dPortKind.Wave or Em3dPortKind.Wall) || port.Floquet is not null)
+            return $"{C3dPorts.Label(port)} is not a wave or wall port; only those ports' reference planes move along their lines.";
         int index = Document.Ports.IndexOf(port);
         ChangeRecords($"De-embed {C3dPorts.Label(port)}", d => d.Ports[index].DeembedUm = um);
         return null;
@@ -1577,8 +1582,9 @@ public sealed partial class C3dEditorViewModel
             yield return new Viewer3DMenuItem("Port Kind", Children:
             [
                 new Viewer3DMenuItem("Lumped", () => SetPortKind(ports, Em3dPortKind.Lumped)),
-                new Viewer3DMenuItem("Wave", () => SetPortKind(ports, Em3dPortKind.Wave),
-                                     Tip: "A wave port lies on a face of the active setup's air box."),
+                // PWL-4 R-pwl4-3 — on a face of the air box, Wave and Wall switch the whole face together
+                FaceKindItem(ports, Em3dPortKind.Wave),
+                FaceKindItem(ports, Em3dPortKind.Wall),
             ]);
             yield return PortModelItem(ports);                  // brief-em3d-93
             if (ports.Count == 1)
@@ -1591,7 +1597,8 @@ public sealed partial class C3dEditorViewModel
             Viewer.Scene.Object(sel[0].Object) is { } sheetObj && SheetReplacedBy(sheetObj) >= 0)
         {
             var surface = sel[0] with { Face = 0 };
-            yield return new Viewer3DMenuItem("Make Port", Children: [MakePortItem(surface, Em3dPortKind.Lumped), MakePortItem(surface, Em3dPortKind.Wave)]);
+            yield return new Viewer3DMenuItem("Make Port", Children: [MakePortItem(surface, Em3dPortKind.Lumped), MakePortItem(surface, Em3dPortKind.Wave),
+                                                                      .. MakeWallPortItemOnFace(surface) is { } sheetWall ? new[] { sheetWall } : []]);
             var drawn = (C3dSheet)Document.Objects[SheetReplacedBy(sheetObj)];
             foreach (var m in EdgeMenuItems(SheetEdgeTarget(drawn, out string? sheetWhy), sheetWhy)) yield return m;
             yield return Viewer3DMenuItem.Separator;
@@ -1615,6 +1622,8 @@ public sealed partial class C3dEditorViewModel
             yield return new Viewer3DMenuItem("Padding…", () => TextRequested?.Invoke($"Air box {boxFace} padding",
                 $"Distance from the geometry to the {boxFace} face ({LayoutUnits.Suffix(Document.DisplayUnit)}):", AirBoxPaddingText(boxFace),
                 text => SetAirBoxPadding(boxFace, text)), Tip: tip);
+            // PWL-4 R-pwl4-1 — the face where the lines end: one wall port per line, nothing asked
+            if (MakeWallPortItemOnBoxFace(boxFace) is { } wall) yield return new Viewer3DMenuItem("Make Port", Children: [wall]);
             yield return Viewer3DMenuItem.Separator;
             yield break;
         }
@@ -1639,6 +1648,7 @@ public sealed partial class C3dEditorViewModel
             ]);
         }
         yield return new Viewer3DMenuItem("Make Port", Children: [MakePortItem(item, Em3dPortKind.Lumped), MakePortItem(item, Em3dPortKind.Wave),
+                                                                  .. MakeWallPortItemOnFace(item) is { } wallItem ? new[] { wallItem } : [],
                                                                   .. MakeCoaxialPortItem(item) is { } coaxial ? new[] { coaxial } : []]);
         if (SheetReplacedBy(o) is var drawnIndex and >= 0)
             foreach (var m in EdgeMenuItems(SheetEdgeTarget((C3dSheet)Document.Objects[drawnIndex], out string? faceWhy), faceWhy)) yield return m;
@@ -1923,9 +1933,21 @@ public sealed partial class C3dEditorViewModel
             foreach (var old in g.Items.Where(i => i.Kind == "Port").ToList()) g.Items.Remove(old);
             if (g.Items.Count == 0) { DetachExpansion([g]); Tree.Remove(g); }
         }
+        // PWL-4 R-pwl4-5/6c — a wall port's row names its calibration group, and a port the active setup runs as the other kind says so
+        var wallGroups = CircuitRF.Design.Em3d.Em3dWallCalibration.Groups(PortResults.Select(r => r.Resolved).OfType<Em3dPort>());
+        string WallWords(Em3dPort p)
+        {
+            var onFace = wallGroups.Where(g => g[0].Wall!.Face == p.Wall!.Face).ToList();
+            int k = onFace.FindIndex(g => g.Contains(p));
+            return $"wall (Wall {p.Wall!.Face} · group {k + 1} of {onFace.Count}: {string.Join(", ", onFace[Math.Max(k, 0)].Select(q => PortLabelOf(q.Number)))})";
+        }
+        string RunsAs(C3dPort port)
+            => ActiveSetup?.Ports3D.FirstOrDefault(x => x.Port == port.Number && x.Kind is Em3dPortKind.Wave or Em3dPortKind.Wall) is { } row
+               && Document.Ports.FirstOrDefault(d => d.Number == port.Number) is { } drawn && drawn.Kind != row.Kind
+                ? $" — drawn as {drawn.Kind}, runs as {row.Kind} in setup '{ActiveSetupName}'" : "";
         var rows = PortResults.Select(r => (Off: !r.Port.Model, Row: C3dPorts.HasTerminals(r.Port) ? TerminalPortRow(r) : new C3dTreeItem(this, C3dPorts.ProblemName(r.Port.Number), "Port",
-            r.Resolved is { } p ? $"{C3dPorts.Label(r.Port)} {(p.Kind == Em3dPortKind.Wave ? "wave" : "lumped")}: {p.NegativeObject} → {p.PositiveObject}" +
-                                  (r.Port.Model ? "" : C3dModelled.Suffix)
+            r.Resolved is { } p ? $"{C3dPorts.Label(r.Port)} {(p.Wall is not null ? WallWords(p) : p.Kind == Em3dPortKind.Wave ? "wave" : "lumped")}: {p.NegativeObject} → {p.PositiveObject}" +
+                                  RunsAs(r.Port) + (r.Port.Model ? "" : C3dModelled.Suffix)
                                 : $"{C3dPorts.Label(r.Port)}: {(r.Port.Model ? "refused" : "not modelled")}", -1, -1,
                                   IsPortShown(C3dPorts.ProblemName(r.Port.Number)))
             { IsReadOnly = true, IsModelled = r.Port.Model })).ToList();

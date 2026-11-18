@@ -52,6 +52,16 @@ public sealed partial class Em3dPortRow : ObservableObject
 
     public bool IsWave => Kind == Em3dPortKind.Wave;
 
+    /// <summary>PWL-4 R-pwl4-6 — a wave or wall port: no Return (the box's face is its other end), and an Offset moving its
+    /// reference plane in.</summary>
+    public bool IsWaveOrWall => Kind is Em3dPortKind.Wave or Em3dPortKind.Wall;
+
+    /// <summary>Which end of its line the layout's label sits at (the box face a wave or wall port stands on), or null.</summary>
+    public CircuitRF.Engine.Mom.PlanarPortSide? Side { get; init; }
+
+    /// <summary>The kind before the last change: a face switches together only between Wave and Wall.</summary>
+    internal Em3dPortKind PreviousKind { get; private set; } = Em3dPortKind.Lumped;
+
     /// <summary>brief-dfr28-4 R-dfr28-4-5 — the Return column's rows: Automatic, then the technology's conductor layers.
     /// The view model's one list, shared by every row.</summary>
     public IReadOnlyList<EmReturnPlaneChoice> ReturnChoices { get; init; } = [];
@@ -65,9 +75,12 @@ public sealed partial class Em3dPortRow : ObservableObject
 
     partial void OnReturnChoiceChanged(EmReturnPlaneChoice? value) => KindChanged?.Invoke();
 
+    partial void OnKindChanging(Em3dPortKind value) => PreviousKind = Kind;
+
     partial void OnKindChanged(Em3dPortKind value)
     {
         OnPropertyChanged(nameof(IsWave));
+        OnPropertyChanged(nameof(IsWaveOrWall));
         KindChanged?.Invoke();
     }
 }
@@ -91,7 +104,10 @@ public sealed partial class EmSetupEditorViewModel
     public ObservableCollection<EmReturnPlaneChoice> Port3DReturnChoices { get; } = [new("", AutomaticPortReturn)];
 
     /// <summary>The kinds a 3D port can be.</summary>
-    public static IReadOnlyList<Em3dPortKind> Port3DKindChoices { get; } = [Em3dPortKind.Lumped, Em3dPortKind.Wave];
+    public static IReadOnlyList<Em3dPortKind> Port3DKindChoices { get; } = [Em3dPortKind.Lumped, Em3dPortKind.Wave, Em3dPortKind.Wall];
+
+    /// <summary>PWL-4 R-pwl4-6 — what the last kind change did to the rest of its face, under the table (kept when empty).</summary>
+    [ObservableProperty] private string _port3DKindNote = "";
 
     /// <summary>The port-kind table's rows.</summary>
     public ObservableCollection<Em3dPortRow> Port3DRows { get; } = [];
@@ -124,11 +140,14 @@ public sealed partial class EmSetupEditorViewModel
         "Lumped: a sheet between the line and its return with the port's Z0 across it. Wave: a region of the air " +
         "box's face, measured in the line's own field — no series parasitic, but the line must run to the layout's " +
         "edge. Both solvers build one, except that openEMS cannot feed a hollow waveguide and Palace cannot give a " +
-        "port with several terminals. Kinds may be mixed.";
+        "port with several terminals. Wall: the line is fed across a small gap from the air box's face, made a PEC wall, " +
+        "and line standards solved first calibrate the gap and the wall out (Palace in this version). One face carries " +
+        "wave ports or wall ports, so a face's rows switch together; lumped ports mix with either.";
 
     private void RaiseEigenVisibility()
     {
         OnPropertyChanged(nameof(IsPortKindSetup));
+        OnPropertyChanged(nameof(IsFacePortSetup));
         OnPropertyChanged(nameof(IsEigenmodeSetup));
         OnPropertyChanged(nameof(IsSarSetup));
         RaisePlaneWaveVisibility();
@@ -165,6 +184,7 @@ public sealed partial class EmSetupEditorViewModel
             var saved  = Working.Ports3D.LastOrDefault(p => p.Port == n) ?? new EmPort3D(n);
             Port3DRows.Add(Row(saved, layout is not null || _labelledPortNumbers.Contains(n), layout?.Problem));
         }
+        RebuildFacePortRows();      // PWL-4 R-pwl4-6b — the embedded table follows the same snapshot
     }
 
     private Em3dPortRow Row(EmPort3D p, bool inLayout, string? problem) => new()
@@ -179,8 +199,35 @@ public sealed partial class EmSetupEditorViewModel
         OffsetUm = p.OffsetUm?.ToString("R", CultureInfo.InvariantCulture) ?? "",
         ReturnChoices = Port3DReturnChoices,
         ReturnChoice = Port3DReturnChoices.FirstOrDefault(c => c.Name == (p.Return ?? "")) ?? Port3DReturnChoices[0],
-        KindChanged = () => CommitPorts3D(),
+        Side = _lastPlanarPortRows?.FirstOrDefault(r => r.Number == p.Port)?.Port?.Side,
+        KindChanged = () => Port3DKindChanged(p.Port),
     };
+
+    /// <summary>PWL-4 R-pwl4-6 — a row made Wave or Wall takes every other wave or wall row at the same end of its line with it (one
+    /// box face carries one kind), in one undo entry; the note under the table names each row that switched.</summary>
+    private void Port3DKindChanged(int number)
+    {
+        if (_suppressCommit) return;
+        var row = Port3DRows.FirstOrDefault(r => r.Port == number.ToString(CultureInfo.InvariantCulture));
+        var switched = new List<string>();
+        if (row is { IsWaveOrWall: true, Side: { } side } && row.PreviousKind is Em3dPortKind.Wave or Em3dPortKind.Wall)
+        {
+            _suppressCommit = true;
+            try
+            {
+                foreach (var other in Port3DRows.Where(r => r != row && r.Side == side && r.IsWaveOrWall && r.Kind != row.Kind))
+                {
+                    other.Kind = row.Kind;
+                    switched.Add(other.Port);
+                }
+            }
+            finally { _suppressCommit = false; }
+        }
+        RaiseWallSwitch();
+        Port3DKindNote = switched.Count == 0 ? ""
+            : $"Port{(switched.Count == 1 ? "" : "s")} {string.Join(", ", switched)} switched to {row!.Kind} with port {number}: one face carries one kind.";
+        CommitPorts3D();
+    }
 
     /// <summary>brief-dfr28-4 R-dfr28-4-5 — the Return column's rows from <paramref name="tech"/>, in place, then every
     /// row's selection again: a combo whose items were replaced has dropped it.</summary>
@@ -215,7 +262,7 @@ public sealed partial class EmSetupEditorViewModel
                 EigenFieldError = $"Port {n}'s width, height and offset must be numbers, or blank for the default.";
                 return;
             }
-            var entry = new EmPort3D(n, r.Kind, width, height, offset, r.IsWave ? null : r.ReturnName);
+            var entry = new EmPort3D(n, r.Kind, width, height, offset, r.IsWaveOrWall ? null : r.ReturnName);
             if (!entry.IsDefault) list.Add(entry);
         }
         EigenFieldError = null;

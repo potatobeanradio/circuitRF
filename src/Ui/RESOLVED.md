@@ -42520,3 +42520,60 @@ not a test.
 
 **Also:** a `MoveDockable` into an empty strip does not preserve the order the documents were moved in
 (two moved as A, B landed B, A), so `ArrangeDocuments` reorders each pane afterwards with same-dock moves.
+
+## PWL-4 — the wall port in the editors (2026-11-18)
+
+`docs/briefs/brief-pwl-4-wall-port-editor.md`. Every gesture calls one `src/Design` function, so what the editor offers is what
+the run accepts: `C3dWallPorts.Propose` (what *Make Port ▸ Wall* adds on a face) and `C3dWallPorts.SwitchFace` (a face's ports
+rebuilt as the other kind, each exactly as its own *Make Port* writes it).
+
+- **R-pwl4-1** — *Make Port ▸ Wall* on an air-box x/y face (and on a drawn face or sheet lying on one): a wall port per piece of
+  line reaching the face, ordered by centre along the face (the order *Make Port ▸ Wave* gives terminals), the next free numbers,
+  one undo entry; a line with a port on that face already is skipped and named. Rectangle: the line's end across its width,
+  from its return to as far above the line. Greyed with the resolver's refusal where it would not resolve (the Launch example's
+  bore end face meets the housing, which has no ground beneath it, so `CoaxialPortEditorTests` now expects Wall there,
+  greyed: UPDATED for the new item, not loosened). On a DRAWN face no line ends on, the item is left out, as Coaxial is on a
+  face that is not round; on the box's own face it is always shown.
+- **R-pwl4-2** — the shown box already forces a wall-port face PEC (`AirBox` takes the document); the air box page's face row
+  says why ("0 — the wall ports' wall", the ports named in its tip).
+- **R-pwl4-3** — Properties: a **Kind** combobox (one stable list Lumped/Wave/Wall; enabled on a face port, Lumped elsewhere
+  greyed), its tip naming the other kind's refusal; a note line under it (kept when empty) for R-pwl4-6c; read-only Group
+  (`Wall xmin · group 1 of 1: P1, P2`), Gap and End run rows; De-embed enabled on a wall port (`SetPortDeembed` takes Wave or
+  Wall). *Port Kind ▸ Wave / Wall* on the menu goes through the same `SetFaceKind`. **The round trip is byte-identical both
+  ways** (`WallPortEditingTests`, `WallPortEditorTests`): Wall → Wave → Wall always; Wave → Wall → Wave for a wave port over
+  the whole face, which is what the switch writes (a wave port's region is not otherwise recoverable from wall ports). A face
+  that cannot be a wave port is not switched: a full-face wave port on the stripline meets only the strip, and says so.
+- **R-pwl4-4** — a wall port draws as the lumped port it lowers to (the gap's checkerboard, arrow from wall to line), plus its
+  reference plane dashed across the line and, on a group's first port, a bracket on the face under the group's lines
+  (`Scene3DBuilder.WallPortLines`). The bracket carries no text label: the scene has no 3D text, and Properties and the tree name
+  the group.
+- **R-pwl4-5 / 6c** — the tree row names the group and, when the active setup runs a port as the other kind, "drawn as Wall,
+  runs as Wave in setup '…'"; the scene resolves the ports AS THE ACTIVE SETUP RUNS THEM.
+- **`ApplySetupKinds` had to learn to rebuild a face.** Flipping only the kind left a setup's Wall → Wave a wave port over one
+  line's end, which meets one conductor and is refused: the view showed nothing on the face, and a run would have refused.
+  Given a context (the run, `check`, the scene), it now rebuilds each face with `SwitchFace`; without one (`AirBox`, which needs
+  only which faces carry wall ports) it still flips kinds.
+- **R-pwl4-6** — the `.cem` port table offers Wall; a Wall row hides Return, keeps Offset, greys Width and Height; a row made Wave
+  or Wall takes the other wave/wall rows at the same end of their lines (`PlanarPort.Side`) with it, one undo entry, a note
+  under the table. Stored Width/Height/Offset values are kept whatever the kind (dropping them would erase what a file holds).
+  Not built: a per-row wall-port refusal under a `.cem` row (the layout's own extraction problems still show there; a wall
+  refusal comes from the run and `check`).
+- **R-pwl4-6b** — a 3D view's setup panel lists the view's wave and wall ports on x/y planes (a terminal its own row), Kind
+  *As drawn (…)* / Wave / Wall writing the setup's `Ports3D`, Z0 and Offset read-only with the tip "Set in the port's
+  Properties." The list does not wait for the scene's box (a wave or wall port on an x/y plane is on a face by definition) and
+  is refreshed when the scene's records are adopted: the first cut listed nothing when the panel opened before the scene.
+- **R-pwl4-7** — *Calibrate wall ports* under both tables, greyed with "No wall ports in this setup." when there are none.
+- **R-pwl4-8** — the wall diagnostics were `__`-prefixed and so neither pickable nor WRITTEN (`BinaryDatasetWriter` skips `__`
+  names as metadata). They are now `WallPortRawS`, `WallPortGamma`, `WallPortEeff`, `WallPortZc`, `WallPortResidual`, their
+  Port axis labelled `Wall xmin · group 1 of 2 · mode 1 (P1)` (a column of a group is a MODE, not a line).
+
+Pictures (UiSnapshot, looked at): the pair after *Make Port ▸ Wall* on both faces, whole and zoomed on the xmax face (two gaps,
+arrows inward, the group bracket); Properties of a wall port (Kind, group P1, P2, gap 101.6 µm, end run 1524 µm); Properties
+under a setup that runs it as Wave (the note); the 3D view's Analysis Setup with its face-port table (P1/P2 Wave, P3/P4 as
+drawn) and the switch; a layout `.cem`'s table with a Wall row and the switch; the view with that setup active (xmin a
+full-face wave port, xmax wall gaps). Not pictured: the canvas's context menus and an open combobox popup, which UiSnapshot
+cannot draw headless — the menu's items, states and tips are asserted by `WallPortEditingTests` and `CoaxialPortEditorTests`.
+
+Gates: `WallPortEditingTests` (6), `WallPortEditorTests` (4, the editor driven headless: R-pwl4-1, -3, -6b, -6c, -7 on the
+written bytes), and the classes the change reaches (the `ThreeD` namespace, port table, return walk, `check`/`explain`, 1,080
+tests) unchanged.

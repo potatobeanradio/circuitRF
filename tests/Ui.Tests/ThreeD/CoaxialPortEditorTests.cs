@@ -54,8 +54,11 @@ public sealed class CoaxialPortEditorTests(ITestOutputHelper output) : IDisposab
         // out in the air over the line with nothing round it, does not
         var makePort = MakePortMenu(vm, bore, face);
         output.WriteLine(string.Join(" | ", makePort.Select(i => $"{i.Header}{(i.Enabled ? "" : " (disabled)")}: {i.Tip}")));
-        Assert.Equal(["Lumped", "Wave", "Coaxial"], makePort.Select(i => i.Header));
-        Assert.True(makePort[2].Enabled, makePort[2].Tip);
+        // PWL-4 R-pwl4-1 — the face lies on the air box's xmin face, so Wall is offered too, greyed with the resolver's reason
+        Assert.Equal(["Lumped", "Wave", "Wall", "Coaxial"], makePort.Select(i => i.Header));
+        Assert.False(makePort[2].Enabled);
+        Assert.Contains("wall port", makePort[2].Tip, StringComparison.OrdinalIgnoreCase);
+        Assert.True(makePort[3].Enabled, makePort[3].Tip);
         Assert.True(MakePortMenu(vm, pin, Face(pin, "bottom")).Single(i => i.Header == "Coaxial").Enabled);
         Assert.DoesNotContain(MakePortMenu(vm, pin, Face(pin, "top")), i => i.Header == "Coaxial");
         vm.Viewer.SetSelection([]);

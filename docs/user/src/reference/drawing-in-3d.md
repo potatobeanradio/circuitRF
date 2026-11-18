@@ -4,7 +4,7 @@ slug: reference/drawing-in-3d.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > The 3D editor
 lede: Drawing a cell in three dimensions — boxes, cylinders, faces, booleans, fillets, STEP parts, placed cells, bond wires and ports — in circuitRF's own 3D editor, which needs no solver to draw anything. Taught through two examples, an MMIC in a lidded package and a coaxial connector launching onto a board.
-keywords: 3D editor, boolean, subtract, unite, intersect, keep tools, fillet, chamfer, edge mode, STEP, STEP import, STEP export, connector, connector launch, coaxial, OpenCASCADE, 3D view, c3d, drawing in 3D, solid model, CAD, box, cylinder, sphere, sheet, polygon, extrude, push pull, move along normal, face, vertex, snap, drawing plane, grid, typed dimensions, expressions, parameters, variables, array, align, gizmo, hierarchy, place cell, die attach, swap view, push in, flatten, group into cell, bond wire, wire, ball bond, wedge bond, loop height, port, lumped port, wave port, coaxial port, annular port, air box, boundary, package, lid, cavity, cavity resonance, eigenmode, MMIC, Palace, openEMS, no solver needed
+keywords: 3D editor, boolean, subtract, unite, intersect, keep tools, fillet, chamfer, edge mode, STEP, STEP import, STEP export, connector, connector launch, coaxial, OpenCASCADE, 3D view, c3d, drawing in 3D, solid model, CAD, box, cylinder, sphere, sheet, polygon, extrude, push pull, move along normal, face, vertex, snap, drawing plane, grid, typed dimensions, expressions, parameters, variables, array, align, gizmo, hierarchy, place cell, die attach, swap view, push in, flatten, group into cell, bond wire, wire, ball bond, wedge bond, loop height, port, lumped port, wave port, wall port, coaxial port, annular port, air box, boundary, package, lid, cavity, cavity resonance, eigenmode, MMIC, Palace, openEMS, no solver needed
 ---
 
 The **3D editor** is where a cell's **3D view** is drawn: solids, sheets, bond wires and ports in three
@@ -1334,6 +1334,19 @@ of radial and round cells over exactly its annulus, with four arrows from − to
 inner and outer radius (each may hold an expression) and the ring's own impedance as a coax. It runs on Palace and EMerge
 anywhere, and on openEMS inside the model (not on a face of the box): [EM Setup ▸ Coaxial ports](em-setup.html#coaxial-ports).
 The **Loop Sensor** example feeds a real-size SMA this way.
+
+<a id="wall-port"></a>**A wall port.** A line that ends on a face of the air box can be fed from the face itself: right-click the
+air box's x or y face where the lines end (or a line's end face, or a sheet, lying on it) and choose *Make Port ▸ Wall*. Nothing
+is asked: one wall port is written per line ending on that face, numbered left to right with the next free numbers, in one undo
+entry; a line that already has a port on that face is skipped, and the status line says so. The face becomes a PEC wall for every
+setup that runs the ports (the air box's page says why), and the run solves line standards first to calibrate the small gap at
+each line's end and the wall itself out, so the S-parameters are at the wall. Each port is drawn over exactly its gap, its arrow
+from the wall to the line, with its reference plane dashed across the line; a bracket on the face joins lines close enough to be
+calibrated together. A port on a face of the air box switches between **Wave** and **Wall** with the **Kind** box in its
+Properties, or *Port Kind* on its menu: the face's ports switch together, since one face carries one kind, and an item that
+would not resolve is greyed with the reason as its tip. A setup can also run a face as the other kind without changing the
+drawing, in *Simulate ▸ Setup Analyses…*'s port table, and Properties says when the active setup does:
+[EM Setup ▸ Wall ports](em-setup.html#wall-ports).
 
 <a id="expand-edges"></a>**Expand Edges and Contract Edges.** A sheet or lumped port need not be drawn exactly. Right-click a drawn
 rectangular sheet or a lumped port, in the view or on its Object Tree row, and choose *Expand Edges* or *Contract Edges*: *All*, one

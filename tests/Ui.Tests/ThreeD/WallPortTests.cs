@@ -172,7 +172,7 @@ public sealed class WallPortTests : IDisposable
     /// Overview gate 4 on the product (restated by brief 2): testdata/pwl's edge-coupled microstrip pair with a Kind Wall port on each
     /// line at each end, run by the CLI on Palace at Standard (about 25 minutes, most of it the three 4-port standards). Against kernel
     /// A's quasi-static coupled line, computed here on the pair's own cross-section: every port's VSWR ≤ 1.025, each mode's ε_eff at
-    /// 1 GHz within 3.5 % (the reference is quasi-static, and see the check for why not the brief's 3 %), and the standards
+    /// 1 GHz within 3.5 % (the reference is quasi-static; the owner moved the brief's 3 %, see the check), and the standards
     /// agreeing to 1.5e-2. RESOLVED §PWL-3 measured VSWR 1.0174 / 1.0046 / 1.0062 at 1 / 5 / 10 GHz.
     /// </summary>
     [DcRowFact(Em3dSolverId.Palace)]
@@ -253,7 +253,7 @@ public sealed class WallPortTests : IDisposable
                 double bl = Math.Acos(Math.Clamp((z11 / z21).Real, -1, 1));
                 double eeff = Math.Pow(bl / L * C0 / w, 2), want = lam[md] * C0 * C0;
                 // Brief 3 restates 3 %. Palace's own microstrip phase velocity already exceeds it on the even mode: PWL-2's spike read
-                // 1.985–2.003 against kernel A's 1.9387, the product 2.006 at 1 GHz (+3.3 %). Held at 3.5 % until the gate is settled.
+                // 1.985–2.003 against kernel A's 1.9387, the product 2.006 at 1 GHz (+3.3 %). The owner set the bound at 3.5 %.
                 Assert.True(Math.Abs(eeff / want - 1) <= 0.035, $"mode {(md == 0 ? "even" : "odd")} ε_eff {eeff:F4} against {want:F4} at 1 GHz");
             }
         }
@@ -437,8 +437,9 @@ public sealed class WallPortTests : IDisposable
         }
         Assert.DoesNotContain(notes, n => n.Contains("not passive", StringComparison.Ordinal));
         var cubes = cal.DiagnosticCubes(f, problem.Ports).ToDictionary(c => c.Name, c => c.Cube);
-        Assert.Equal(["__WallPortEeff", "__WallPortGamma", "__WallPortResidual", "__WallPortZc"], cubes.Keys.Order());
-        Assert.All(cubes["__WallPortEeff"].RealValues, e => Assert.Equal(eps, e, 6));
+        Assert.Equal(["WallPortEeff", "WallPortGamma", "WallPortResidual", "WallPortZc"], cubes.Keys.Order());
+        Assert.All(cubes["WallPortEeff"].RealValues, e => Assert.Equal(eps, e, 6));
+        Assert.Equal("Wall xmin · group 1 of 1 · P1", cubes["WallPortEeff"].Axes[1].Labels![0]);     // R-pwl4-8 — named for a reader
         Assert.Contains(cal.HeaderLines(), l => l.StartsWith("circuitRF-EM 3D wall group xmin: ports 1, scalar", StringComparison.Ordinal));
     }
 

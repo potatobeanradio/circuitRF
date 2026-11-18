@@ -1520,6 +1520,9 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         _padLoaded["zmin"] = PadZMinPercent = Pct("zmin", stated?.ZMin);
         _padLoaded["zmax"] = PadZMaxPercent = Pct("zmax", stated?.ZMax);
         var f = box.Faces;
+        var wallPortsOn = editor.PortResults.Where(r => r.Resolved?.Wall is not null)
+                                .GroupBy(r => r.Resolved!.Wall!.Face).ToDictionary(g => g.Key, g => g.Select(r => C3dPorts.Label(r.Port)).Distinct().ToList());
+        var wallFaces = wallPortsOn.Keys.ToHashSet();
         string DefaultBasis(string face) => editor.Elaboration is { } elab && C3dProblemAssembly.DefaultPaddingBasis(setup, elab, face) is { } basis
             ? $"default: {basis}" : "default";
         string DefaultShort(string face) => editor.Elaboration is { } elab && C3dProblemAssembly.DefaultPaddingShortBasis(setup, elab, face) is { } brief
@@ -1552,6 +1555,13 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
                 pad = "0 — floor on the bottom plane";
                 tip = "0 — on the underside of the ground plane at the bottom, with nothing of another net in its holes: nothing below it carries " +
                       "field. Type a padding to put air below it instead.";
+            }
+            // PWL-4 R-pwl4-2 — a face that carries wall ports is their wall: PEC with no padding for every setup that runs them
+            if (wallFaces.Contains(face))
+            {
+                pad = "0 — the wall ports' wall";
+                tip = $"PEC with no padding for every setup that runs the wall ports on it ({string.Join(", ", wallPortsOn[face])}): a wall " +
+                      "port's face is its ground. Make them wave ports to choose this face's boundary again.";
             }
             switch (face)
             {

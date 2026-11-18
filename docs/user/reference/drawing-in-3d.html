@@ -1923,6 +1923,18 @@ of radial and round cells over exactly its annulus, with four arrows from − to
 inner and outer radius (each may hold an expression) and the ring's own impedance as a coax. It runs on Palace and EMerge
 anywhere, and on openEMS inside the model (not on a face of the box): <a href="em-setup.html#coaxial-ports">EM Setup ▸ Coaxial ports</a>.
 The <strong>Loop Sensor</strong> example feeds a real-size SMA this way.</p>
+<p><a id="wall-port"></a><strong>A wall port.</strong> A line that ends on a face of the air box can be fed from the face itself: right-click the
+air box's x or y face where the lines end (or a line's end face, or a sheet, lying on it) and choose <em>Make Port ▸ Wall</em>. Nothing
+is asked: one wall port is written per line ending on that face, numbered left to right with the next free numbers, in one undo
+entry; a line that already has a port on that face is skipped, and the status line says so. The face becomes a PEC wall for every
+setup that runs the ports (the air box's page says why), and the run solves line standards first to calibrate the small gap at
+each line's end and the wall itself out, so the S-parameters are at the wall. Each port is drawn over exactly its gap, its arrow
+from the wall to the line, with its reference plane dashed across the line; a bracket on the face joins lines close enough to be
+calibrated together. A port on a face of the air box switches between <strong>Wave</strong> and <strong>Wall</strong> with the <strong>Kind</strong> box in its
+Properties, or <em>Port Kind</em> on its menu: the face's ports switch together, since one face carries one kind, and an item that
+would not resolve is greyed with the reason as its tip. A setup can also run a face as the other kind without changing the
+drawing, in <em>Simulate ▸ Setup Analyses…</em>'s port table, and Properties says when the active setup does:
+<a href="em-setup.html#wall-ports">EM Setup ▸ Wall ports</a>.</p>
 <p><a id="expand-edges"></a><strong>Expand Edges and Contract Edges.</strong> A sheet or lumped port need not be drawn exactly. Right-click a drawn
 rectangular sheet or a lumped port, in the view or on its Object Tree row, and choose <em>Expand Edges</em> or <em>Contract Edges</em>: <em>All</em>, one
 edge (<em>-X Only</em>, <em>+X Only</em>) or both edges of an axis (<em>X</em>), for the two axes of its plane. A refused port has no sheet in the view, so
