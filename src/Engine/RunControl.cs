@@ -47,14 +47,13 @@ public sealed record RunNote(bool Warning, string Text, string? File = null, str
 /// Cancellation and progress for an engine run — the ONE object every engine takes, so a caller
 /// wires both concerns once rather than threading two parameters through every signature.
 ///
-/// <para><b>Cancellation is at a POINT BOUNDARY, never inside a solve.</b> Every engine here checks
-/// the token between the units it iterates over — a parametric-sweep point, an s-parameter
-/// frequency, a loadpull grid termination — and none of them checks inside a single matrix
-/// factorisation or a Newton loop. So Stop is answered within one point, not instantly: a sweep of
-/// 20,301 points stops in the time one point takes, while a lone HB solve runs to completion. That
-/// is the honest granularity and it is what makes cancellation cheap enough to be always-on; a
-/// finer one would mean a token check in the inner numerical loops, which is exactly where this
-/// engine cannot afford one.</para>
+/// <para><b>Cancellation is at a POINT BOUNDARY, never inside a factorisation.</b> Every engine here
+/// checks the token between the units it iterates over — a parametric-sweep point, an s-parameter
+/// frequency, a loadpull grid termination. So Stop is answered within one point, not instantly: a
+/// sweep of 20,301 points stops in the time one point takes. The one finer boundary is the
+/// harmonic-balance Newton iteration (<c>HbSolveWatch</c>, designer round 38): a lone HB solve can
+/// run for minutes, each iteration is a whole dense factorisation, and one token read beside it
+/// costs nothing.</para>
 ///
 /// <para><b>Cancelling abandons the run — it does not produce a partial result.</b> A sweep's
 /// per-point DataSets are stacked along a new axis, so a half-finished sweep has no shape to be
@@ -139,7 +138,15 @@ public sealed class RunControl
     public string Stage
     {
         get => _stage;
-        set { _stage = value ?? ""; ReportNow(); }
+        set
+        {
+            value ??= "";
+            // A new analysis does not inherit the last one's live figure (an HB solve's "Newton iteration 31" would otherwise
+            // sit beside the next analysis until something replaced it).
+            if (value != _stage) _stageDetail = "";
+            _stage = value;
+            ReportNow();
+        }
     }
 
     /// <summary>Units finished so far, across every analysis in the run.</summary>

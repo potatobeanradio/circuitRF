@@ -4321,8 +4321,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                         100.0 * p.StageCompleted / p.StageTotal);
         else if (p.Total > 0)
             live.Update($"Running '{benchName}'",
-                        FormatCounter(p.Completed, p.Total),
+                        FormatCounter(p.Completed, p.Total) + RunDetail(p),
                         100.0 * p.Completed / p.Total);
+        else if (p.StageDetail.Length > 0)
+            live.Update($"Running '{benchName}'…", RunDetail(p).TrimStart(' ', '·'), indeterminate: true);
         else
             live.Update($"Running '{benchName}'…", indeterminate: true);
 
@@ -4334,9 +4336,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _lastRunBreadcrumb.Restart();
             Diagnostics.CrashReporter.Note(
                 $"run: '{benchName}' at {p.Completed} / {p.Total}"
-                + (string.IsNullOrEmpty(p.Stage) ? "" : $" (stage '{p.Stage}')"));
+                + (string.IsNullOrEmpty(p.Stage) ? "" : $" (stage '{p.Stage}')") + RunDetail(p));
         }
     }
+
+    /// <summary>
+    /// The live figure an analysis reports while one long solve runs — a harmonic-balance Newton loop past its first second says
+    /// "HB1: Newton iteration 12, residual 3.4E-04 A" (designer round 38: a long HB run gave no sign it was still working). It
+    /// rides the counter, after the bar, so the bar does not move as it changes; empty when the stage reports none.
+    /// </summary>
+    internal static string RunDetail(RunProgress p) =>
+        string.IsNullOrEmpty(p.StageDetail) ? ""
+        : " · " + (string.IsNullOrEmpty(p.Stage) ? p.StageDetail : $"{p.Stage}: {p.StageDetail}");
 
     /// <summary>Throttle for the run-progress breadcrumb above. Static because the breadcrumb is a
     /// per-process diagnostic, not per-workspace state.</summary>
@@ -4382,10 +4393,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         StopAnalysisCommand.NotifyCanExecuteChanged();
 
         // Says what actually happens rather than implying an instant halt: the engines check the token
-        // at point boundaries (a sweep point, a frequency, a loadpull termination), never inside a
-        // factorization or a Newton loop — so a sweep stops within one point while a lone HB solve
-        // still has to finish. That granularity is what makes cancellation cheap enough to be always
-        // on; checking inside the inner numerical loops is exactly what this engine cannot afford.
+        // at point boundaries (a sweep point, a frequency, a loadpull termination) and, for harmonic
+        // balance, once per Newton iteration — never inside a factorization. So a sweep stops within
+        // one point and a long HB solve within one iteration.
         Messages.Info("Stopping — the run ends after the point in progress; no results will be written.");
     }
 

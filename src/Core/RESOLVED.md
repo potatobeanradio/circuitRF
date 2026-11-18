@@ -5330,3 +5330,10 @@ Level 1 has neither effect. The fix:
   were recomputed.
 - **Net-count stand-ins for the transient sources.** `V_Exp`/`I_Exp` need `Tau1`, `V_PWL`/`I_PWL` a point and
   `V_Expr`/`I_Expr` an expression before a model can be built to count its nets (`InstanceNetContract.MinimalParameters`).
+
+## The envelope directive ignored `enabled=false` (2026-11-18, designer round 38)
+
+- `TryParseEnvDirective` built its `EnvelopeAnalysis` without `ParseEnabledToken`, the one directive parser that did
+  not read it. A card switched off in the schematic was written `enabled=false`, read back enabled, planned, run, and
+  warned. Gate: `NetlistContractTests.EveryDeclaredTypeTokenReadsEnabledFalse`, over every type the schema declares,
+  so the next parser that forgets fails there.

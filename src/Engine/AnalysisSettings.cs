@@ -470,4 +470,21 @@ public sealed class AnalysisSettings
         copy._noiseContrib = contrib;
         return copy;
     }
+
+    /// <summary>
+    /// The run a harmonic-balance Newton loop belongs to: its Stop, and where the loop says which iteration it is on.
+    /// The loops take settings and no control, and every copy the engine derives (<c>MaxIter=</c>, drive stepping) is a
+    /// <see cref="object.MemberwiseClone"/> of the engine's own, so carrying it here reaches all of them. Null (the
+    /// default, and every engine that is not handed a control): nothing is checked and nothing is reported.
+    /// </summary>
+    public RunControl? Control => _control;
+    private RunControl? _control;
+
+    /// <summary>These settings carrying <paramref name="control"/> — a copy, never the shared <see cref="Default"/>.</summary>
+    public AnalysisSettings WithControl(RunControl? control)
+    {
+        var copy = (AnalysisSettings)MemberwiseClone();
+        copy._control = control;
+        return copy;
+    }
 }

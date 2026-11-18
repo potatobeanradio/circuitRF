@@ -393,7 +393,7 @@ for (int i = 0; i < args.Length; i++)
         case "--csym" when i + 1 < args.Length: csym = Path.GetFullPath(args[++i]); break;
         case "--pick" when i + 1 < args.Length: csymPick = args[++i]; break;
         case "--dark": dark = true; break;
-        case "--messages" or "--film-prompt": break;
+        case "--messages" or "--film-prompt" or "--run-progress": break;
         case "--run-messages" when i + 1 < args.Length: i++; break;
         case "--category" when i + 1 < args.Length: paletteCategory = args[++i]; break;
         case "--search" when i + 1 < args.Length: paletteSearch = args[++i]; break;
@@ -484,6 +484,13 @@ if (args.SkipWhile(a => a != "--run-messages").Skip(1).FirstOrDefault() is { } r
     AppBuilder.Configure<SnapshotApp>().UseSkia()
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     return ShowRunMessages(Path.GetFullPath(runMessagesCsch), output, sizeGiven ? width : 900, sizeGiven ? height : 320);
+}
+if (args.Contains("--run-progress") && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    if (dark && Application.Current is { } darkApp) darkApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+    return ShowRunProgress(output, sizeGiven ? width : 700, sizeGiven ? height : 160);
 }
 if (args.Contains("--messages") && output is not null)
 {
@@ -2832,6 +2839,27 @@ static int ShowRunMessages(string csch, string path, double w, double h)
         for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }
         dialog.CaptureRenderedFrame()!.Save(path + ".details.png");
     }
+    return 0;
+}
+
+// --run-progress: the live "Running" row mid-HB, as WorkspaceViewModel.ReportRunProgress writes it from a Newton loop's report
+// (designer round 38), beside a row with no live figure. Reached by reflection: the formatter is internal to the Ui assembly.
+static int ShowRunProgress(string path, double w, double h)
+{
+    var tool = new MessagesTool();
+    tool.Post(MessageLevel.Info, "HB 'HB1': f0=5E-08 GHz, K=10");
+    var report = typeof(CircuitRF.Ui.ViewModels.WorkspaceViewModel).GetMethod("ReportRunProgress",
+        System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public)!;
+    var quiet = tool.BeginProgress("Running 'quiet.csch'");
+    report.Invoke(null, [quiet, "quiet.csch", new CircuitRF.Engine.RunProgress("TRAN1", 0, 3)]);
+    var live = tool.BeginProgress("Running '15VAC_to_5VDC.csch'");
+    report.Invoke(null, [live, "15VAC_to_5VDC.csch",
+        new CircuitRF.Engine.RunProgress("HB1", 1, 3, StageDetail: "Newton iteration 12, residual 3.4E-04 A")]);
+    var window = new Window { Width = w, Height = h, Content = new CircuitRF.Ui.Views.Messages.MessagesView { DataContext = tool } };
+    window.Show();
+    for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); window.UpdateLayout(); }
+    window.CaptureRenderedFrame()!.Save(path);
+    Console.WriteLine($"wrote {path}");
     return 0;
 }
 

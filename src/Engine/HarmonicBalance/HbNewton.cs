@@ -344,8 +344,10 @@ public static class HbNewton
         var    F  = BuildF(V, yNN, iSrc, iNl, qNl, N, K, omega0, higherBuckets);
         double fN = L2(F);
 
+        var watch = HbSolveWatch.For(settings);   // designer round 38: Stop and progress, once per iteration
         for (int iter = 0; iter < maxIter; iter++)
         {
+            watch?.Iteration(iter, fN);
             // ── 1. Convergence test on ‖F‖ (absolute, in amperes — design §12.2) ──
             if (fN < tol)
             {

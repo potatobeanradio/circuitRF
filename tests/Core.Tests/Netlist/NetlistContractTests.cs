@@ -431,6 +431,19 @@ public class NetlistContractTests
         }
     }
 
+    /// <summary>Every declared type reads <c>enabled=false</c>: the envelope's parser did not, so a card switched off in the
+    /// schematic still ran, and warned (designer round 38).</summary>
+    [Fact]
+    public void EveryDeclaredTypeTokenReadsEnabledFalse()
+    {
+        foreach (var spec in AnalysisDirectiveSchema.Specs)
+        {
+            var line = MinimalDirectiveFor(spec).TrimEnd('\n') + " enabled=false\n";
+            var (_, tb) = Read(line);
+            Assert.False(tb.Analyses.Single(a => a.Name == "A1").Enabled, $"type={spec.Type} ignored enabled=false in: {line}");
+        }
+    }
+
     /// <summary>
     /// Canonicalisation must be the identity on the schema's own key names, or an alias could collide
     /// with a real key. A key added later that ends in Expr/Name/Path — or starts with Lp/Lpp/Psa —

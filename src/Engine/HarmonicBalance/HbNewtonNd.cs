@@ -161,8 +161,10 @@ public static class HbNewtonNd
         var    F  = BuildFNd(V, yNN, iSrc, iNl, qNl, lattice, N, toneFreqsHz, buckets);
         double fN = HbNewton.L2(F);
 
+        var watch = HbSolveWatch.For(settings);   // designer round 38: Stop and progress, once per iteration
         for (int iter = 0; iter < maxIter; iter++)
         {
+            watch?.Iteration(iter, fN);
             if (fN < tol)
             {
                 trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));

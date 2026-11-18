@@ -144,8 +144,10 @@ public static class HbNewton2D
         var    F  = BuildF2D(V, yNN, iSrc, iNl, qNl, grid, N, f1, f2, buckets);
         double fN = HbNewton.L2(F);
 
+        var watch = HbSolveWatch.For(settings);   // designer round 38: Stop and progress, once per iteration
         for (int iter = 0; iter < maxIter; iter++)
         {
+            watch?.Iteration(iter, fN);
             if (fN < tol)
             {
                 trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));

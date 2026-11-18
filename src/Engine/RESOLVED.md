@@ -5705,3 +5705,35 @@ driven by a `MOD_Source` instead (6.3 V open-circuit peak), that put the island 
   two differ by 1.6e-17 V on `EnvelopeDeviceOnlyNetTests`' bench, and EVM and EnvSeamError are bit-identical either
   way; the helper and its two call sites are gone and every node is recorded from the state.
 - Gate: `EnvelopeFloatingIslandTests` (one test per engine).
+
+## HB answers Stop once per Newton iteration; a rectifier's transient and HB disagree for a reason (2026-11-18, designer round 38)
+
+- **Report:** on a no-load bridge rectifier (330 uF, small-signal switching diodes, a 50 Hz + 1 kHz `PnTone` source) HB put
+  `Vout` about 0.8 V below the transient; raising MaxHarm and MaxMixOrder "stalled" the HB; Stop did not end it, and
+  the next Run was refused as already running.
+- **The "stall" was a long solve, not a hang.** Two tones at MaxMixOrder 10 is M = 111 products, ~2,400 real unknowns,
+  dense: 31 Newton iterations, 47 backtracks, ~2 min here (MaxMixOrder 5: 0.8 s; 7: 3.5 s). It converges (Vout 13.07 V).
+- **Stop could not reach it.** No HB Newton loop read the token — a single solve was declared to have no boundary. Each
+  loop now calls `HbSolveWatch` once per iteration: it throws on a cancelled token and, after the solve's first second,
+  reports "Newton iteration n, residual r A" as `RunControl.StageDetail`. The control rides
+  `AnalysisSettings.Control` (set by `HbEngine`'s constructor; the loops take settings, not a control, and every
+  derived copy is a `MemberwiseClone`). Measured on the MaxMixOrder-10 bench: a Stop 10 s in returned 4.5 s later (one
+  iteration). `RunControl.Stage` now clears the detail when the stage changes, or the next analysis inherited
+  "Newton iteration 31". Gate: `HbStopTests`.
+- **The 0.8 V is three things, and one of them is HB's.** The settled answer is 13.18 V: a 3.3 nF version of the bench
+  (settles in seconds, same DC level) reads 13.173 V native and 13.174 V on ngspice (the `PnTone` replaced by 50 Ohm and two
+  `V_1Tone`s), insensitive to a 50 or 10 us step, and single-tone HB at 50 Hz (1 kHz is harmonic 20) reads 13.177 V once
+  its tolerance is tight — on the 330 uF bench as well.
+  1. *The transient never reaches steady state* (+0.49 V). It starts from the operating point at t = 0, where the
+     `PnTone` (cosine phase) sits at its peak, 11.25 + 2.52 V into 50 Ohm; C1 charges there and can only discharge
+     through nA of leakage. `explain --analysis` says so: the slowest time constant at `Vout` is ~5e4 s.
+  2. *HB stopped short, and called it converged* (-0.15 V). `Tol` is an absolute residual in amperes, default 1e-6; the
+     DC level of an unloaded peak detector is set by nA leakage, so a solve that met 1e-6 A had not resolved it. Single
+     tone, K = 40: 13.033 V at 1e-6, 13.176 V at 1e-9, 13.177 V at 1e-12. K = 20…160 all agree at each tolerance, so
+     it is the tolerance, not truncation. Not changed here; a voltage-update criterion beside the current one is the
+     candidate fix and needs a brief.
+  3. *Two-tone truncation* (-0.16 V). The two tones as independent axes at MaxMixOrder 5 read 13.022 V at Tol 1e-12;
+     a narrow conduction pulse needs more products than that.
+- **Not changed:** 50 Hz and 1 kHz from one source are phase-locked, but `HbEngine.Commensurate` collapses tones onto
+  their common fundamental only when retained products coincide and every tone is within MaxHarm of it; 1 kHz is
+  harmonic 20, so the run stays an independent two-tone solve. Whether to widen that rule is an open decision.

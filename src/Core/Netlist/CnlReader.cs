@@ -1904,6 +1904,9 @@ public sealed class CnlReader
         if (!kv.TryGetValue("type", out var t) || !t.Equals("env", StringComparison.OrdinalIgnoreCase)) return false;
         result = new CircuitRF.Core.Design.EnvelopeAnalysis(tokens[0])
         {
+            // Every other directive reads it; this one did not, so a disabled envelope card ran anyway and its warnings
+            // reached a run that never asked for it (designer round 38).
+            Enabled = ParseEnabledToken(tokens),
             StopExpr = kv.GetValueOrDefault("Stop", "100e-6"),
             StepExpr = kv.GetValueOrDefault("Step", "auto"),
             Accuracy = kv.GetValueOrDefault("Accuracy", "standard"),
