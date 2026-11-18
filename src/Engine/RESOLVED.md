@@ -5657,3 +5657,28 @@ HZN-21 added `SymmetryPlanes` (a list) to the `Em3dAirBox` record, and a record 
 boxes with the same planes in two lists compared unequal, so an edit that changed nothing read as one that did (five
 3D-editor tests failed on exactly that). The record now has value equality over the list's contents. A list added to any
 record here needs the same.
+
+## HB back-solve: a floating island behind the nonlinear devices read hundreds of kilovolts (2026-11-18)
+
+A designer's bridge rectifier, fed by a floating two-tone source (50 Hz / 1 kHz) through four ferrite-bead
+subcircuits, showed ±340 kV on the source and bead nodes in HB while the transient of the same circuit was correct.
+- **Cause:** with the diodes removed, the source and the bead internals reach ground only through gmin, so that island's
+  common mode is ~1e11 Ω. Every non-interface node is recovered by a full-network back-solve, which injected the
+  solve's own device currents `INl`. Those differ from what the linear partition carries at the converged interface
+  voltages by the Newton residual `F` (~1e-7 A here, inside tolerance), and the island multiplied it into kilovolts.
+  The diode nodes come from the Newton solution directly, so they looked right. Without the beads the source nodes
+  ARE diode nodes and nothing is back-solved there, which is why only the ferrite version showed it.
+- **Fix:** every HB back-solve (single-tone, two-tone, T-tone, the loadpull single point) injects
+  `HbEngine.LinearSideInjection = −(I_src + Y_NN·V)` instead. It differs from `INl` by exactly `F`, so an ordinary
+  circuit is unchanged at the tolerance level, and the back-solve now reproduces the interface voltages the solve
+  returned. A node behind a bead follows the node it feeds.
+- **Why not correct with `Y_NN·(V − x)`:** at DC a node pinned by an ideal choke is regularized in the Newton's `Y`
+  (1 µΩ) but not in the back-solve's matrix, and that correction re-adds the whole supply current there. `−F` is
+  bounded by the residual everywhere.
+- **Not done:** the envelope engines' HB start point (`EnvelopeEngine`, `EnvelopeEngineMt`) still back-solves with
+  `INl`, and their marching steps inject device currents too; a floating island there is untested.
+- **`LinearBackSolveTests.BackSolver_TighterHbTol_ImprovesCubeAgreement` is replaced** by
+  `BackSolver_ReproducesCube_EvenAtLooseTolerance`: its claim (the cube-vs-back-solve gap shrinks with Tol) no longer
+  holds because there is no gap — 2.3e-16 at Tol=1e-4 and at 1e-10 alike. `HarmonicBalance/CLAUDE.md` §C1 still
+  names the old test.
+- Gate: `HbFloatingIslandBackSolveTests`.

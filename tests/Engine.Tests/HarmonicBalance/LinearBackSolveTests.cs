@@ -110,72 +110,34 @@ public class LinearBackSolveTests(ITestOutputHelper output)
     }
 
     /// <summary>
-    /// Proves that the 2e-5/4e-6 tolerance in <see cref="BackSolver_InterfaceNodeVoltages_MatchVCube"/>
-    /// is bounded by HB Newton convergence quality, not by back-solve accuracy.
-    ///
-    /// Method: run the same sweep twice — once with the default Tol (~1e-6) and once with a
-    /// tight Tol (1e-10).  The cube↔back-solve disagreement at n_drain (the nonlinear-injection
-    /// node) should decrease proportionally.  If tightening the HB convergence does NOT tighten
-    /// the agreement, the residual is not the cause and the looser tolerance would be masking a
-    /// real bug.
+    /// The back-solve reproduces the interface voltages the solve returned to round-off, at ANY Newton
+    /// tolerance. It injects the linear side's own current at those voltages, <c>−(I_src + Y_NN·V)</c>,
+    /// rather than the device current, which differs from it by the Newton residual; injecting the device
+    /// current made the disagreement track the tolerance (6.94e-4 at Tol=1e-4 on this fixture), and on a
+    /// floating island behind the devices it reached kilovolts (<see cref="HbFloatingIslandBackSolveTests"/>).
+    /// Tol=1e-4 is pinned because it stops this fixture's quadratic Newton one iterate early (‖F‖ = 2.2e-5).
     /// </summary>
     [Fact]
-    public void BackSolver_TighterHbTol_ImprovesCubeAgreement()
+    public void BackSolver_ReproducesCube_EvenAtLooseTolerance()
     {
-        var dir = Hero2Dir();
+        var (lib, tb) = CnlReader.ReadFile(Path.Combine(Hero2Dir(), "hero2.cnl"));
+        var netlist   = new Elaborator(lib).Elaborate(tb);
+        var hba       = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
+        var p         = HbEngine.Resolve(hba, netlist.ResolvedGlobals) with { Tol = 1e-4 };
+        var result    = new HbEngine(netlist, tb).Run(p);
+        var bs        = result.BackSolver!;
 
-        // ── Run helper ───────────────────────────────────────────────────────────
-        // Returns max |V_back − V_cube| / |V_cube| for k=1 fundamental at the single operating point.
-        static double MaxFundRelErr(HbRunResult result, ILinearBackSolver bs)
+        string[] nodeLabels = result["V"].Axes[0].Labels!;
+        double maxErr = 0.0;
+        for (int ni = 0; ni < nodeLabels.Length; ni++)
         {
-            string[] nodeLabels = result["V"].Axes[0].Labels!;
-            double maxErr = 0.0;
-            for (int ni = 0; ni < nodeLabels.Length; ni++)
-            {
-                if (!bs.TryGetNodeNumber(nodeLabels[ni], out int cn)) continue;
-                Complex vC = (Complex)result["V"][ni, 1]; // k=1 fundamental, single point
-                if (vC.Magnitude < 1e-9) continue;
-                Complex vB  = bs.GetNodeVoltage(cn, 1, 0);
-                double  rel = (vB - vC).Magnitude / vC.Magnitude;
-                maxErr = Math.Max(maxErr, rel);
-            }
-            return maxErr;
+            if (!bs.TryGetNodeNumber(nodeLabels[ni], out int cn)) continue;
+            Complex vC = (Complex)result["V"][ni, 1];
+            if (vC.Magnitude < 1e-9) continue;
+            maxErr = Math.Max(maxErr, (bs.GetNodeVoltage(cn, 1, 0) - vC).Magnitude / vC.Magnitude);
         }
-
-        // ── Loose convergence (Tol=1e-4) ─────────────────────────────────────────
-        // The loose end is PINNED rather than left at the fixture's default, because Newton on this
-        // fixture is quadratic and its last two iterates are ‖F‖ = 2.20e-5 and 1.24e-9 — there is no
-        // iterate in between for a tolerance to stop at. Anything from 1e-4 up stops at the first,
-        // anything from 1e-5 down reaches the second, so the default 1e-6 and the 1e-10 below are the
-        // SAME solve and their errors differ only in the last digits (both ~1.9e-11; measured
-        // 2026-08-30). That used to be masked by where the undamped loop happened to stop; HB-P3's
-        // line search changed the trajectory and exposed it. 1e-4 vs 1e-10 spans the real step:
-        // 6.94e-4 → 1.94e-11, a factor of 3.6e7 against the 100× the assertion asks for.
-        var (lib1, tb1) = CnlReader.ReadFile(Path.Combine(dir, "hero2.cnl"));
-        var netlist1    = new Elaborator(lib1).Elaborate(tb1);
-        var hba1        = tb1.Analyses.OfType<HarmonicBalanceAnalysis>().First();
-        var pLoose      = HbEngine.Resolve(hba1, netlist1.ResolvedGlobals) with { Tol = 1e-4 };
-        var rLoose      = new HbEngine(netlist1, tb1).Run(pLoose);
-        double errLoose = MaxFundRelErr(rLoose, rLoose.BackSolver!);
-        output.WriteLine($"Default Tol ({pLoose.Tol:E1}): max fund relErr = {errLoose:E3}");
-
-        // ── Tight convergence (Tol=1e-10) ────────────────────────────────────────
-        var (lib2, tb2) = CnlReader.ReadFile(Path.Combine(dir, "hero2.cnl"));
-        var netlist2    = new Elaborator(lib2).Elaborate(tb2);
-        var hba2        = tb2.Analyses.OfType<HarmonicBalanceAnalysis>().First();
-        var pTight      = HbEngine.Resolve(hba2, netlist2.ResolvedGlobals) with { Tol = 1e-10 };
-        var rTight      = new HbEngine(netlist2, tb2).Run(pTight);
-        double errTight = MaxFundRelErr(rTight, rTight.BackSolver!);
-        output.WriteLine($"Tight   Tol ({pTight.Tol:E1}): max fund relErr = {errTight:E3}");
-
-        double improvement = errLoose / errTight;
-        output.WriteLine($"Improvement factor: {improvement:F0}× (must be ≥ 100×)");
-
-        // The error must decrease by at least 100× when the HB residual is tightened by ~1e4×.
-        // This directly proves the 2e-5/4e-6 tolerance tracks Newton convergence, not sloppiness.
-        Assert.True(improvement >= 100.0,
-            $"Expected ≥100× improvement when HB Tol tightened from {pLoose.Tol:E1} to {pTight.Tol:E1}, " +
-            $"but only got {improvement:F1}×.  The back-solve error may not be bounded by Newton residual.");
+        output.WriteLine($"Tol {p.Tol:E1}: max fund relErr = {maxErr:E3}");
+        Assert.True(maxErr < 1e-12, $"back-solve vs cube relErr {maxErr:E3} at Tol {p.Tol:E1}");
     }
 
     /// <summary>

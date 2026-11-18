@@ -821,7 +821,7 @@ public sealed partial class HbEngine
 
         // C1: Lazy linear back-solver — recovers linear-interior node voltages on demand.
         var backSolver = new HbLinearBackSolver(
-            extractor, f0, K, [solveResult.INl], [bSrcThisPoint], _netlist);
+            extractor, f0, K, [LinearSideInjection(V, yNN, iSrc)], [bSrcThisPoint], _netlist);
 
         // Expand V/INl to all user-facing non-ground nodes (brief hb-linear-nodes-in-cube).
         // Interface nodes use the converged Newton solution directly; linear-only nodes
@@ -1237,10 +1237,11 @@ public sealed partial class HbEngine
         // The per-product frequency ω_m = k1·w1 + k2·w2 can be NEGATIVE; for ω<0 we solve at |ω| with
         // the conjugated excitation and conjugate the result (Y(−ω)=conj(Y(ω))), reusing the LU that
         // ExtractMix already cached at |ω| — the same extract-at-|ω| convention the engine uses.
+        var iNlBack = LinearSideInjection(V, yNN, iSrc);
         Complex[] SolveMixFull(int m)
         {
             var iNlM = new Complex[N];
-            for (int n = 0; n < N; n++) iNlM[n] = solveResult.INl[n, m];
+            for (int n = 0; n < N; n++) iNlM[n] = iNlBack[n, m];
             double omega = grid.OmegaOf(m, w1, w2);
             Complex[] Rhs(double w) { var r = extractor.BuildSourceRhs(w); if (!drives[m]) Array.Clear(r); return r; }
             if (omega >= 0)
@@ -1546,10 +1547,11 @@ public sealed partial class HbEngine
         // ── Recover the FULL result: linear-interior node voltages + IProbe branch currents ──
         // Identical to the two-tone back-solve, including the ω<0 conjugate handling, so a
         // measurement naming a node behind an N-port resolves at T tones exactly as at two.
+        var iNlBack = LinearSideInjection(V, yNN, iSrc);
         Complex[] SolveMixFull(int m)
         {
             var iNlM = new Complex[N];
-            for (int n = 0; n < N; n++) iNlM[n] = solveResult.INl[n, m];
+            for (int n = 0; n < N; n++) iNlM[n] = iNlBack[n, m];
             double omega = lattice.OmegaOf(m, omegas);
             Complex[] Rhs(double w) { var r = extractor.BuildSourceRhs(w); if (!drives[m]) Array.Clear(r); return r; }
             if (omega >= 0)
@@ -2118,13 +2120,46 @@ public sealed partial class HbEngine
         var bSrcThisPoint = new Complex[K + 1][];
         for (int k = 0; k <= K; k++)
             bSrcThisPoint[k] = extractor.BuildSourceRhs(k == 0 ? 0.0 : k * omega0);
-        var backSolver = new HbLinearBackSolver(extractor, f0, K, [sr.INl], [bSrcThisPoint], _netlist);
+        var backSolver = new HbLinearBackSolver(
+            extractor, f0, K, [LinearSideInjection(V, yNN, iSrc)], [bSrcThisPoint], _netlist);
 
         return new SinglePointResult(V, sr.INl, sr.Converged, sr.Iterations, failReason, sr.IterTrace, backSolver)
         {
             ToleranceVacuous = !sr.Converged && double.IsFinite(sr.VacuousToleranceScale),
             Linearization    = sr.Converged ? new SinglePointLinearization(sr, extractor, yNN[0], N, K, gridN, omega0) : null,
         };
+    }
+
+    // ── Back-solve injection ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// The current the linear partition carries into each interface node AT THE RETURNED interface
+    /// voltages, <c>−(I_src + Y_NN·V)</c> per harmonic or mixing product — what every linear back-solve
+    /// injects. It differs from the solve's own <c>INl</c> by exactly the Newton residual
+    /// <c>F = I_src + Y_NN·V + INl</c>, so on an ordinary circuit the two are interchangeable.
+    /// <para>They are not when part of the linear partition reaches ground only through the nonlinear
+    /// devices — a floating source feeding a bridge rectifier through ferrite beads, say. With the
+    /// devices removed that island is held by gmin alone (~1e11 Ω common mode), so injecting
+    /// <c>INl</c> amplified a converged residual of ~1e-7 A into hundreds of kilovolts at every node
+    /// behind the beads, while the interface nodes (taken from the Newton solution) looked right.
+    /// Injecting the linear side's own current reproduces the interface voltages instead, and the
+    /// nodes behind them follow through the finite impedance that actually joins them.</para>
+    /// </summary>
+    internal static Complex[,] LinearSideInjection(Complex[,] V, Complex[][,] yNN, Complex[][] iSrc)
+    {
+        int N = V.GetLength(0), M = V.GetLength(1);
+        var inj = new Complex[N, M];
+        for (int m = 0; m < M; m++)
+        {
+            var y = yNN[m];
+            for (int n = 0; n < N; n++)
+            {
+                Complex f = iSrc[m][n];
+                for (int j = 0; j < N; j++) f += y[n, j] * V[j, m];
+                inj[n, m] = -f;
+            }
+        }
+        return inj;
     }
 
     // ── Initial guess ────────────────────────────────────────────────────────
