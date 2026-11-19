@@ -61,7 +61,7 @@ internal sealed class CosimPatternMetrics(FieldsAnalysis fa, PortFarFieldSet far
             catch (InvalidOperationException e) { throw new ExpressionException(e.Message); }
             Interlocked.Increment(ref _sums);
         }
-        return _context = Em3dRadiation.Context(far.Solver, point, far.ReferenceInputPowerDbm, far.Planar);
+        return _context = Em3dRadiation.Context(far.Solver, point, FieldCosimulation.ReferenceDbm(far, waves), far.Planar);
     }
 
     /// <summary>The grid index of a direction in degrees; φ wraps, so −90 and 270 are one direction.</summary>

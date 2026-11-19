@@ -310,6 +310,15 @@ public static partial class FieldCosimulation
         return data;
     }
 
+    /// <summary>
+    /// The input power the far field's dBm scalars (TrpDbm, PeakEirpDbm, and ReferenceInputPowerDbm itself) are stated at for
+    /// <paramref name="w"/>. A harmonic-balance solution's waves are HB's own watts and its pattern the field at HB's own drive (R-paa6-1),
+    /// so its reference is the power incident on the block, Σ|A|², which is what its realized gain is per watt of: TRP is then the watts
+    /// radiated and EIRP the gain times the watts accepted. Every other run keeps the record's reference (brief-paa-12).
+    /// </summary>
+    internal static double ReferenceDbm(PortFarFieldSet far, CosimWaves w)
+        => w.ReferenceVoltage is not null && w.AvailableW > 0 ? 10 * Math.Log10(w.AvailableW * 1e3) : far.ReferenceInputPowerDbm;
+
     /// <summary>What a run from HB's waves says: per sweep, not per point, when a sweep wraps it.</summary>
     private static void Report(FieldsAnalysis fa, ElaboratedNetlist nl, List<string> notes, List<string> lines, List<string> warnings, string? sweepPoint, HbWaveSource source)
     {

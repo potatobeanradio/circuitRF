@@ -219,8 +219,8 @@ public sealed partial class PhasedArrayToolViewModel
                 double th = Math.Round(beam.ThetaDeg, 2), ph = Math.Round(beam.PhiDeg, 2);
                 foreach (var (row, expr, unit) in steering.VarWrites(model.Components, th, ph))
                     cmd = AndThen(cmd, new EditParameterCommand(model, row, expr, unit));
-                if (steering.Theta is { IsVar: false } || steering.Phi is { IsVar: false })
-                    cmd = AndThen(cmd, WriteOn(comp, steering.Field, steering.Rewritten(comp.Parameters, th, ph)));
+                foreach (var (target, field, text) in steering.FieldWrites(comp, model.Components, th, ph))
+                    cmd = AndThen(cmd, WriteOn(target, field, text));
             }
         cmd = AndThen(cmd, WriteOn(ch, "BeamSelect", "manual"));
         foreach (string key in new[] { "TxBeam", "RxBeam", "BeamRank" }) cmd = AndThen(cmd, RemoveOn(ch, key));
@@ -245,8 +245,8 @@ public sealed partial class PhasedArrayToolViewModel
             double th = Math.Round(beam.ThetaDeg, 2), ph = Math.Round(beam.PhiDeg, 2);
             foreach (var (row, expr, unit) in steering.VarWrites(model.Components, th, ph))
                 cmd = AndThen(cmd, new EditParameterCommand(model, row, expr, unit));
-            if (steering.Theta is { IsVar: false } || steering.Phi is { IsVar: false })
-                cmd = AndThen(cmd, WriteOn(comp, steering.Field, steering.Rewritten(comp.Parameters, th, ph)));
+            foreach (var (target, field, text) in steering.FieldWrites(comp, model.Components, th, ph))
+                cmd = AndThen(cmd, WriteOn(target, field, text));
         }
         cmd = AndThen(cmd, WriteOn(ch, "BeamSelect", "manual"));
         foreach (string key in new[] { "TxBeam", "RxBeam", "BeamRank" }) cmd = AndThen(cmd, RemoveOn(ch, key));

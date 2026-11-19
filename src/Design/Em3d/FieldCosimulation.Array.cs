@@ -109,7 +109,7 @@ public static partial class FieldCosimulation
         var data = new DataSet();
         var lines = new List<string>();
         var published = new DataSet();
-        var sentences = Em3dRadiation.Publish(published, far.Solver, far.Grid, [drives[0].Port], freqs, points, far.ReferenceInputPowerDbm, far.Hemisphere,
+        var sentences = Em3dRadiation.Publish(published, far.Solver, far.Grid, [drives[0].Port], freqs, points, ReferenceDbm(far, waves[0]), far.Hemisphere,
                                               origin: $"The pattern is the array's, formed from '{name}' at level {pa.Level.ToString().ToLowerInvariant()}.",
                                               planarSum: far.Planar);
         foreach (string group in published.Groups)

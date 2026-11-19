@@ -75,6 +75,14 @@ public sealed record PhasedArrayFrame(
 
     /// <summary>The run's warnings, as it reported them.</summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
+
+    /// <summary>brief-paa-12 R-paa12-2 — "one point of sweep(s) …: var = value" when the tool collapsed the sweeps wrapping the waves
+    /// source to evaluate this frame; null otherwise.</summary>
+    public string? SweepPoint { get; init; }
+
+    /// <summary>False for a drag's step, which evaluates no measurements: its empty <see cref="Measurements"/> say nothing about what the
+    /// bench measures, so the colour-by list keeps what the last settled frame offered (brief-paa-12).</summary>
+    public bool Measured { get; init; } = true;
 }
 
 /// <summary>R-paa9-3 — the map's cells per lattice geometry and frequency: which FFT point each visible cell reads its array factor from, and

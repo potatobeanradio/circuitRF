@@ -290,7 +290,8 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
         var st = result.Frame.State;
         // The frame time measures the machine, so a documentation capture leaves it out (src/Ui/Diagnostics/CLAUDE.md).
         string time = CircuitRF.Ui.Diagnostics.UiArtworkGenerator.HeadlessCapture ? "" : $" · {result.Frame.EvaluationMs + result.Frame.FormingMs:0} ms";
-        Status = $"{st.Lattice.Rows} × {st.Lattice.Cols} at {st.Hz / 1e9:0.###} GHz{time}" + (st.Estimated ? " · estimated" : "");
+        Status = $"{st.Lattice.Rows} × {st.Lattice.Cols} at {st.Hz / 1e9:0.###} GHz{time}" + (st.Estimated ? " · estimated" : "")
+                 + (result.Frame.SweepPoint is { } point ? " · " + point : "");
         RefreshQuantities();
         RefreshReadouts();
         if (!_dragging) RefreshChannel();   // brief-pch-9 — the channel this array ends, scored again for the bench as it now stands
@@ -340,8 +341,8 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
         IUiCommand? cmd = null;
         foreach (var (row, expr, unit) in Steering.VarWrites(model.Components, _dragAt.Theta, _dragAt.Phi))
             cmd = Then(cmd, new EditParameterCommand(model, row, expr, unit));
-        if (Steering.Theta is { IsVar: false } || Steering.Phi is { IsVar: false })
-            cmd = Then(cmd, Write(Steering.Field, Steering.Rewritten(Instance.Parameters, _dragAt.Theta, _dragAt.Phi)));
+        foreach (var (comp, field, text) in Steering.FieldWrites(Instance, model.Components, _dragAt.Theta, _dragAt.Phi))
+            cmd = Then(cmd, WriteOn(comp, field, text));
         // brief PCH-13 — on an end of a channel that picks the beams (BeamSelect auto or index), the run steers the array to the channel's
         // choice whatever its steer() says, so a drag moved the beam and the release's solve put it back. The drag is the user steering by
         // hand: the channel is set to manual and the other end keeps the beam it has, as Apply to array writes them.
@@ -484,6 +485,8 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
     /// </summary>
     private void RefreshQuantities()
     {
+        // a drag's step measures nothing, and dropping PA PAE for it would put the picker back on Amplitude for good (brief-paa-12)
+        if (Frame is { Measured: false }) return;
         var want = BaseQuantities.ToList();
         foreach (var (q, label) in new[] { (ApertureQuantity.PaPout, "PA Pout"), (ApertureQuantity.PaPae, "PA PAE"), (ApertureQuantity.ChannelNf, "Channel NF") })
             if (Frame is { } f && f.Measurements.Keys.Any(k => MeasurementPattern(q).Pattern.IsMatch(k))) want.Add(new(q, label));

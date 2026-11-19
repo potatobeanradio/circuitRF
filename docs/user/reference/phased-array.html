@@ -449,7 +449,8 @@ analysis F1 type=fields block=ARR waves=HB1
 </code></pre>
 <p><code>waves=HB1</code> forms the pattern from the harmonic-balance solution rather than from a linear solve, so each amplifier's
 compression shows in the beam; <code>harmonic=k</code> takes the k-th harmonic instead, when the record holds that frequency. A sweep
-around HB1 gives a pattern at every point. The <code>array</code> group adds <code>Pdel</code>, the watts delivered into each element.</p>
+around HB1 gives a pattern at every point. The <code>array</code> group adds <code>Pdel</code>, the watts delivered into each element, and <code>TrpDbm</code> and
+<code>PeakEirpDbm</code> are at the amplifiers' own drive: the watts radiated, and the gain times the watts delivered.</p>
 <p><strong>The active reflections over the loadpull contours.</strong> Plot <code>F1.array.GammaActive</code> on a Smith chart with <code>element</code> as the family
 and <code>theta0</code> along the trace: one locus per element. Add the same trace to a plot of the amplifier's loadpull contours, and the
 picture says which elements leave the high-efficiency region at which angle. In the example, at 22 dBm and 45°, the two inner

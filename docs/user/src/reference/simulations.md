@@ -1098,7 +1098,8 @@ names an EM Field Data block or a [Phased Antenna Array](phased-array.html). The
 Elements-mode array, the block's terminal voltages are read from the harmonic-balance solution at harmonic `harmonic=` and the
 currents formed from the block's own S, so each amplifier's compression, and the load its neighbours put on it, shows in the
 pattern. A parametric sweep around HB1 gives a pattern at every point, and the result adds each element's active reflection and
-delivered power. `freq=` is not used: the frequency is the harmonic times HB1's fundamental. Refused: a multi-tone HB, a harmonic
+delivered power. `TrpDbm` and `PeakEirpDbm` are at HB1's own drive, not at a reference power: the watts radiated, and the gain
+times the watts delivered. `freq=` is not used: the frequency is the harmonic times HB1's fundamental. Refused: a multi-tone HB, a harmonic
 above HB1's `MaxHarm` or one the record does not hold (naming the nearest it does), and a Feed-mode array.
 
 **`waves=ENV1` puts a modulated signal in the beam.** Each named direction gets its radiated envelope over time and every metric

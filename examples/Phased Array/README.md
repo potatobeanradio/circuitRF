@@ -137,7 +137,8 @@ the inner two fall to 37 % and the outer two to 44 and 51 %, because each one's 
 **5 Brute Force.cdd** draws each element's Γ_act against `theta0` on a Smith chart, the same loci over the Pout and PAE contours
 of *4 PA Loadpull* (which elements leave the high-efficiency region at which angle), the φ = 0 cut (`F1.farfield.CutU`) at each `theta0`, the peak realized
 gain, and each amplifier's Pout and PAE against `theta0`. In the Phased Array tool, colour the aperture by PA PAE: the tool reads
-the measures named `PAE1` … `PAE4`.
+the measures named `PAE1` … `PAE4`. The tool shows one point of the two sweeps, at the VAR block's `theta0` and `Pin`, and its
+status line names it: set `Pin` to 22 for the efficiencies above, and drag the beam to write `theta0` into the VAR block.
 
 ## 6 Envelope
 

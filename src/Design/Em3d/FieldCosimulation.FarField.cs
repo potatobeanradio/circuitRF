@@ -72,7 +72,7 @@ public static partial class FieldCosimulation
         }
 
         var published = new DataSet();
-        var sentences = Em3dRadiation.Publish(published, far.Solver, far.Grid, [drives[0].Port], freqs, points, far.ReferenceInputPowerDbm, far.Hemisphere, planarSum: far.Planar);
+        var sentences = Em3dRadiation.Publish(published, far.Solver, far.Grid, [drives[0].Port], freqs, points, ReferenceDbm(far, waves[0]), far.Hemisphere, planarSum: far.Planar);
         foreach (string group in published.Groups)
             foreach (var (name, cube) in published.CubesIn(group))
                 data.Add($"{group}.{name}", cube);

@@ -235,7 +235,8 @@ analysis F1 type=fields block=ARR waves=HB1
 
 `waves=HB1` forms the pattern from the harmonic-balance solution rather than from a linear solve, so each amplifier's
 compression shows in the beam; `harmonic=k` takes the k-th harmonic instead, when the record holds that frequency. A sweep
-around HB1 gives a pattern at every point. The `array` group adds `Pdel`, the watts delivered into each element.
+around HB1 gives a pattern at every point. The `array` group adds `Pdel`, the watts delivered into each element, and `TrpDbm` and
+`PeakEirpDbm` are at the amplifiers' own drive: the watts radiated, and the gain times the watts delivered.
 
 **The active reflections over the loadpull contours.** Plot `F1.array.GammaActive` on a Smith chart with `element` as the family
 and `theta0` along the trace: one locus per element. Add the same trace to a plot of the amplifier's loadpull contours, and the

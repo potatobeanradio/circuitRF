@@ -42656,3 +42656,31 @@ a run of the classes together failed deterministically ("0 parts replaced", 0 of
   `steer()`. Gate: `BeamSelectionTests.ADragOnAChannelEnd_SteersByHand_AndTheBeamStaysWhereItWasDragged`. Picture: UiSnapshot
   `--phased-array <copy of Array Link.csch> --block PT --pa-drag 3 --pa-to 30` — the beam settles at 29.7° (it returned to 14.4°).
   The harness's `--phased-array` takes a `.csch` for this: a bench that defines cells is otherwise drawn without its channel.
+
+## Phased Array tool on a swept harmonic-balance bench (brief PAA-12, 2026-11-19)
+
+- **A `waves=` source a sweep wraps is collapsed for the tool, on a copy.** *5 Brute Force*'s `F1` takes `HB1`'s waves, and
+  `SW_theta` over `SW_Pin` wraps `HB1`, so `F1` ran a pattern at each of 12 points and left no one array state: the tool opened on
+  "Fields 'F1' gave no pattern." (it never worked). `PhasedArraySession` now builds, once per session, a `PreparedCircuit.FromBench`
+  copy whose bench has each enabled sweep wrapping the source disabled (`AnalysisChain`: the inner runs in its place) and evaluates
+  every frame and scan point on it. The bench the schematic reads, its own Run and every other caller keep the sweeps (gate:
+  `SweptWavesToolTests.Gate2_TheBenchsOwnRun_StillSweeps`, 12 points). The status line names the sweeps and the values used
+  (`one point of sweeps 'SW_theta', 'SW_Pin': theta0 = 0°, Pin = 22 dBm`); a VAR with no unit takes the unit of the parameter it is
+  written into alone (`Pavl=Pin dBm`).
+- **An Elements-mode array is steered by its drives.** Its own fields hold no `steer()`, so the drag was refused. When they hold none,
+  `PhasedArraySteering.Of` reads the calls in the drawing's other components (not a VAR, another array or a disabled part); they must
+  write each angle alike (the same VAR, or the same literal), else a refusal naming them. A VAR is written as before; a literal is
+  rewritten at every call (`FieldWrites`, which `EndDrag`, `SteerByHand` and Apply to array now share), and a literal the drag did
+  not move keeps its spelling — the four Phase Shifters' φ0 `0` stayed `0`, where it had become `0deg`.
+- **A drag no longer resets Colour by.** A drag's frames evaluate no measurements, and `RefreshQuantities` read their empty set as
+  "PA PAE is gone" and put the picker back on Amplitude for good. A frame now says whether it was measured; an unmeasured one leaves
+  the list alone, and the aperture reads the measured quantity again on the release's settled frame.
+- **EIRP on a harmonic-balance array is gain × the watts HB delivers.** The tool's EIRP is realized gain + the run's drive level
+  (PeakEirpDbm − RealizedGainDbi), and a run from HB's waves stated its dBm scalars at the record's 0 dBm, so it read 9.39 dBm for
+  four 40 dBm amplifiers. Fixed in the run, not the tool (src/Design/RESOLVED.md, same date): 55.81 dBm at boresight, 22 dBm.
+- **Pictures** (UiSnapshot `--phased-array <copy of 5 Brute Force.csch with Pin 22> --pa-color pae [--pa-drag 9 --pa-to 45]`,
+  looked at): boresight inner 68.4 % / outer 62.8 %; after the drag to 45° inner 37 %, outer 44 and 51 % — the README's.
+- **README promises are a gate.** `ExampleReadmeToolPromisesTests` reads every example README paragraph naming the Phased Array tool,
+  resolves its bench (the section's cell, else the example's one bench with an array) and arrays (backticked, else all), opens the
+  tool as the application does on a copy, and checks each "colour the aperture by …" quantity is offered. Verified to fail with the
+  collapse reverted ("Fields 'F1' gave no pattern.") and with the mmWave Array Link's `FT`/`FR` removed.

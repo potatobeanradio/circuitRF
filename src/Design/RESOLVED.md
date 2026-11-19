@@ -32640,3 +32640,20 @@ now refused only for its Impedance boundary and its TE mode type.
   centred ~240 units left of the pin. Arcs of 180° or more keep the full-circle box — the inductor coils (exactly 180°) and the
   circulator arrow, whose saved label offsets were measured against it. MRADIAL splits each arc into two halves so neither reaches
   180°. The only existing glyph the change touches is the Propagation Channel's wave arcs, by about 5 units on its left.
+
+## TRP and EIRP of a fields run from HB's waves are at HB's own drive (brief PAA-12 follow-up, 2026-11-19)
+
+- **The dBm scalars were at the record's reference while everything else was HB's.** A `waves=` run's pattern is the field at HB's
+  own drive and its accepted power HB's watts (R-paa6-1), but `TrpDbm`, `PeakEirpDbm` and `ReferenceInputPowerDbm` were formed
+  with the record's `ReferenceInputPowerDbm` (0 dBm), so on *5 Brute Force* PeakEirpDbm read 9.32 dBm at −20 dBm drive and 9.36 dBm
+  at 22 dBm, while `PowerAccepted` beside it read 40 W. An envelope run already stated them in its own watts. A measure
+  `PeakEirpDbm(F1)` or the optimizer's Peak EIRP goal on an HB bench was therefore a number that did not move with drive.
+- **`FieldCosimulation.ReferenceDbm(far, waves)`** is now the reference every far-field publish (`RunArray`, `PublishFarField`)
+  and `CosimPatternMetrics` take: the power incident on the block, Σ|A|² (`CosimWaves.AvailableW`, what the realized gain is per
+  watt of), for HB's waves (`ReferenceVoltage` set); the record's own for every other run, unchanged. Gain, realized gain,
+  directivity and the per-direction cubes do not move.
+- **The identity to test is against `Pdel`, not `PowerAccepted`.** On a planar record the budget's accepted power replaces the
+  block's share with what the stored structure takes (R-ant-5), 0.7 % above HB's delivered watts at small signal on *5 Brute
+  Force*. So EIRP = GainDbi + 10·log₁₀(ΣPdel) and TRP = 10·log₁₀(ΣPdel) + η_rad hold to 1e-6 at every sweep point, while
+  10·log₁₀(PowerRadiated) is 0.03 dB from TRP there. Gate: `SweptWavesToolTests.TheRunsTrpAndEirp_AreAtHbsOwnDrive` (fails with
+  the record's reference restored).

@@ -9,6 +9,12 @@
 // FAILURES (R-paa9-6) switch elements off IN MEMORY: the run's waves with the chosen elements at zero, summed again through the array
 // engine. Nothing is written and the circuit is not solved again; each trial is the pattern of the remaining elements as the circuit drove
 // them. FREQUENCY sums the run's weights at other frequencies (a delay turned at each, a phase held) for the beam's pointing.
+//
+// A SWEPT SOURCE (brief-paa-12 R-paa12-1). When the fields analysis's waves= names an analysis a parametric sweep wraps, a run of it
+// forms a pattern at every sweep point and leaves no single array state for a frame. The tool shows one steering at a time and a drag
+// writes the steering VAR, so its evaluations collapse those sweeps (a disabled sweep's inner runs in its place, AnalysisChain) on a copy
+// of the bench made once per session: the schematic, the bench's own Run and every other caller still see the sweeps. The frame names
+// the sweeps it collapsed and the values it used (R-paa12-2), so nobody reads it as the sweep's.
 
 using System.Diagnostics;
 using System.Numerics;
@@ -69,9 +75,17 @@ public sealed class PhasedArraySession
         Circuit = circuit;
         Block = block;
         Fields = circuit.Tb is { } tb ? FieldsAnalysisFor(tb, block) : null;
+        (Evaluated, CollapsedSweeps) = Collapse(circuit, Fields);
     }
 
     public PreparedCircuit Circuit { get; }
+
+    /// <summary>What the tool's frames evaluate: <see cref="Circuit"/>, or a copy of it with <see cref="CollapsedSweeps"/> disabled.</summary>
+    private PreparedCircuit Evaluated { get; }
+
+    /// <summary>R-paa12-1 — the enabled sweeps wrapping the fields analysis's waves source, outermost first, that the tool's frames run
+    /// without: the bench at its own values. Empty when nothing wraps it.</summary>
+    public IReadOnlyList<ParametricSweepAnalysis> CollapsedSweeps { get; }
 
     /// <summary>The array instance.</summary>
     public string Block { get; }
@@ -109,7 +123,7 @@ public sealed class PhasedArraySession
             Control = new RunControl { Token = cancel, Progress = progress, MinReportIntervalMs = 100 },
         };
         RunResult run;
-        try { run = CircuitEvaluation.Evaluate(Circuit, request); }
+        try { run = CircuitEvaluation.Evaluate(Evaluated, request); }
         catch (OperationCanceledException) { return new(null, "Cancelled."); }
         if (cancel.IsCancellationRequested) return new(null, "Cancelled.");
         double evalMs = sw.Elapsed.TotalMilliseconds;
@@ -133,7 +147,7 @@ public sealed class PhasedArraySession
         }
         sw.Restart();
         var frame = PhasedArrayFrames.Build(state, steer, run.GroupedResults, measurements, goverT, _layouts)
-                    with { EvaluationMs = evalMs, Warnings = run.Warnings };
+                    with { EvaluationMs = evalMs, Warnings = run.Warnings, SweepPoint = SweepPointText(tunables), Measured = !interactive };
         return new(frame with { FormingMs = sw.Elapsed.TotalMilliseconds }, null);
     }
 
@@ -167,6 +181,64 @@ public sealed class PhasedArraySession
     }
 
     /// <summary>
+    /// R-paa12-1 — the circuit the tool evaluates: <paramref name="circuit"/> itself, or, when an enabled sweep wraps the analysis the
+    /// fields analysis takes its waves from, a copy whose bench has each such sweep disabled (the copy shares every other analysis,
+    /// instance and measurement; nothing of the original is changed).
+    /// </summary>
+    private static (PreparedCircuit Evaluated, IReadOnlyList<ParametricSweepAnalysis> Collapsed) Collapse(PreparedCircuit circuit, FieldsAnalysis? fields)
+    {
+        if (circuit is not { Tb: { } tb, Lib: { } lib } || fields is not { FromHarmonicBalance: true }) return (circuit, []);
+        string source = fields.Waves.Trim();
+        var wrapping = new List<ParametricSweepAnalysis>();
+        // the runnable chain that holds the source, walked from its top down to it: every enabled sweep on the way wraps it
+        var top = AnalysisChain.RunnableTops(tb).FirstOrDefault(t => t is ParametricSweepAnalysis && AnalysisChain.ChainContains(t, source, tb));
+        for (Analysis? a = top; a is ParametricSweepAnalysis ps && wrapping.Count < 64; a = AnalysisChain.ResolveEffectiveInner(ps.InnerAnalysisName, tb))
+            wrapping.Add(ps);
+        if (wrapping.Count == 0) return (circuit, []);
+
+        var copy = new TestBench(tb.Name) { Technology = tb.Technology, Tuning = tb.Tuning, StatisticalDraws = tb.StatisticalDraws };
+        copy.Instances.AddRange(tb.Instances);
+        copy.GlobalVariables.AddRange(tb.GlobalVariables);
+        copy.Functions.AddRange(tb.Functions);
+        copy.Measurements.AddRange(tb.Measurements);
+        copy.RawDirectives.AddRange(tb.RawDirectives);
+        copy.ReadWarnings.AddRange(tb.ReadWarnings);
+        copy.ReadNotes.AddRange(tb.ReadNotes);
+        copy.LabeledNets.UnionWith(tb.LabeledNets);
+        foreach (var a in tb.Analyses)
+            copy.Analyses.Add(a is ParametricSweepAnalysis ps && wrapping.Contains(ps)
+                ? new ParametricSweepAnalysis(ps.Name, ps.SweepVarName, ps.SweepValues, ps.InnerAnalysisName) { Enabled = false, Model = ps.Model, EmSetup = ps.EmSetup }
+                : a);
+        var evaluated = PreparedCircuit.FromBench(lib, copy, circuit.BaseDirectory, circuit.PartTunables);
+        evaluated.SourcePath = circuit.SourcePath;
+        return (evaluated, wrapping);
+    }
+
+    /// <summary>
+    /// R-paa12-2 — "one point of sweep(s) …: var = value, …" for a frame of a bench whose sweeps the tool collapsed, with each swept
+    /// variable as this evaluation has it (a drag's tunable, else the bench's own definition); null when nothing was collapsed.
+    /// </summary>
+    public string? SweepPointText(IReadOnlyDictionary<string, string> tunables)
+    {
+        if (CollapsedSweeps.Count == 0 || Circuit.Tb is not { } tb) return null;
+        var values = new List<string>();
+        foreach (var ps in CollapsedSweeps)
+        {
+            string name = ps.SweepVarName;
+            var v = tb.GlobalVariables.FirstOrDefault(g => g.Name == name);
+            string text = tunables.TryGetValue(name, out var t) ? t.Trim() : (v?.Expression.Trim() ?? "?");
+            // a VAR with no unit column is read with the unit of the parameter it is written into (Pavl=Pin dBm), when one names it alone
+            string unit = v?.Unit?.Trim() is { Length: > 0 } u ? u
+                : tb.Instances.SelectMany(i => i.Overrides).FirstOrDefault(o => o.Expression.Trim() == name && !string.IsNullOrWhiteSpace(o.Unit))?.Unit?.Trim() ?? "";
+            if (text.EndsWith(" deg", StringComparison.Ordinal)) { text = text[..^4].TrimEnd(); unit = "deg"; }
+            else if (!double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _)) unit = "";
+            values.Add(unit is "deg" or "°" ? $"{name} = {text}°" : unit.Length > 0 ? $"{name} = {text} {unit}" : $"{name} = {text}");
+        }
+        string sweeps = string.Join(", ", CollapsedSweeps.Select(s => $"'{s.Name}'"));
+        return $"one point of {(CollapsedSweeps.Count == 1 ? "sweep" : "sweeps")} {sweeps}: {string.Join(", ", values)}";
+    }
+
+    /// <summary>
     /// R-paa9-5 — the scan map over θ₀ ∈ [0, <paramref name="limitDeg"/>] and φ₀ ∈ [0°, 360°), each point a re-weighed evaluation with
     /// <paramref name="tunablesAt"/>'s values. Refused (null, and the reason) when the array does not close on the fast path. Cancelled
     /// points stop the map and are counted once.
@@ -193,7 +265,7 @@ public sealed class PhasedArraySession
             {
                 if (cancel.IsCancellationRequested) { Interlocked.Increment(ref _scansCancelled); return (null, "Cancelled."); }
                 double p = j * phiStepDeg;
-                var run = CircuitEvaluation.Evaluate(Circuit, new CircuitEvaluationRequest
+                var run = CircuitEvaluation.Evaluate(Evaluated, new CircuitEvaluationRequest
                 {
                     Tunables = tunablesAt(t, p),
                     Analyses = [Fields!.Name],
