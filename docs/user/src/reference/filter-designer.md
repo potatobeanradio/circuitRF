@@ -85,11 +85,20 @@ realiser.
 
 ## The response {#response}
 
-The plot shows |S21| and |S11| in dB, in two pairs:
+The plot shows |S21| and |S11| in dB:
 - **ideal**: the lowpass prototype's own ladder, transformed to the band and run by the engine. For an even-order
   Chebyshev, port 2 is the prototype's own load, so the ripple you see is the response's and not a mismatch;
+- **ideal S21 at Qu**, for a bandpass on a substrate: the same prototype with every resonator at the board's unloaded Q.
+  That Q is a resonator line's conductor and dielectric loss at the centre frequency: a Z0 line of the substrate, as the
+  line models compute its loss. Radiation is left out, so a real resonator does a little worse. Untick **Ideal at Qu** to
+  hide this curve;
 - **realised**: the selected realisation's test bench, run by the engine. That is the part with each site filled, on the
-  substrate, between two ports of Z0.
+  substrate, between two ports of Z0. The bench has the board's loss.
+
+Above the plot, a line reads the loss out. It gives the unloaded Q, the loss the ideal at that Q has at the centre
+frequency, and the realised part's own loss there, with how much of it is dissipated rather than reflected. For example,
+the five-pole hairpin's 3 dB or so at 2.4 GHz is nearly all dissipation, close to what the ideal at Qu loses, and not a
+design error.
 
 The sweep runs from near DC to three times the cutoff for a lowpass, from a third of the cutoff to three times it for a
 highpass, and over two bandwidths either side of a band.

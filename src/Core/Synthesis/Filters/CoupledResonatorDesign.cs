@@ -30,6 +30,15 @@ public static class CoupledResonatorDesign
     public static double Width(double z0, double fHz, MicrostripSubstrate s)
         => PassivePlan.OnGrid(BranchLinePlan.Width(z0, fHz, s, "Coupled-resonator synthesis", "synthesis.mcrc.width-unreachable"));
 
+    /// <summary>The unloaded Q of a resonator of a <paramref name="z0"/> line at <paramref name="fHz"/>: β/(2α), with α
+    /// MLIN's own conductor and dielectric loss. Radiation and the open ends are left out, so a real resonator's Q is
+    /// somewhat lower.</summary>
+    public static double UnloadedQ(double z0, double fHz, MicrostripSubstrate s)
+    {
+        var p = BranchLinePlan.Line(Width(z0, fHz, s), s).LineParameters(fHz);
+        return p.BetaRadPerM / (2.0 * p.AlphaNpPerM);
+    }
+
     /// <summary>A line's εeff at <paramref name="fHz"/>.</summary>
     public static double LineEeff(double w, double fHz, MicrostripSubstrate s) => BranchLinePlan.Line(w, s).LineParameters(fHz).Eeff;
 

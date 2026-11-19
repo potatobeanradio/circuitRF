@@ -241,7 +241,10 @@ public sealed class FilterDesignerTests(ITestOutputHelper output) : IDisposable
         Assert.All(vm.Realisers.Where(r => r.Supported), r => Assert.True(r.Realised, r.Name));
         Assert.StartsWith("refuses: ", vm.Realisers.Single(r => r.Name.StartsWith("Hairpin bandpass, coupled", StringComparison.Ordinal)).Status);
         foreach (var row in vm.Realisers.Where(r => r.Supported).ToList())
+        {
             await Time($"select {row.Name}", () => vm.Selected = row);
+            if (row.Name.StartsWith("Hairpin bandpass, tapped", StringComparison.Ordinal)) lines.Add(vm.LossText);
+        }
         await Time("edit ripple", () => vm.Ripple = "0.2");
         await Time("open again", () => vm = new FilterDesignerViewModel(null, technology: tech));
 
@@ -266,6 +269,33 @@ public sealed class FilterDesignerTests(ITestOutputHelper output) : IDisposable
         }
         output.WriteLine(string.Join("\n", lines));
         Assert.True(sync < 1000 && drawn < 1000, string.Join("\n", lines));
+    }
+
+    /// <summary>
+    /// The ideal at the board's unloaded Q: at f0 a Butterworth bandpass loses 4.343·Σg/(FBW·Qu) dB, the first-order
+    /// estimate as Hong and Lancaster give it (<see href="https://doi.org/10.1002/0471221619">10.1002/0471221619</see>),
+    /// and nothing with no loss. In the Designer, on the shipped board, the edge-coupled
+    /// filter's plot has the lossy ideal beside the lossless one (a toggle takes it off), and the readout gives the Q,
+    /// the loss it costs and the realised part's own loss at f0.
+    /// </summary>
+    [Fact]
+    public async Task TheLossyIdeal_LosesCohnsMidBandLoss_AndTheDesignerReadsItOut()
+    {
+        var spec = new FilterSpec(FilterResponse.Butterworth, FilterBand.Bandpass, 3, 2.28e9, 2.52e9);
+        double LossAtF0(double qu) => -20.0 * Math.Log10(FilterSynthesisService.LossyIdeal(spec, [spec.CentreHz], qu).Matrices[0][1, 0].Magnitude);
+        Assert.Equal(0.0, LossAtF0(double.PositiveInfinity), 9);
+        Assert.Equal(4.343 * 4.0 / (spec.FractionalBandwidth * 200.0), LossAtF0(200.0), 0.01);
+
+        var tech = CircuitRF.Design.Layout.ShippedTechnologies.Load(CircuitRF.Design.Layout.ShippedTechnologies.DefaultId);
+        var vm = new FilterDesignerViewModel(null, realisers: [new EdgeCoupledRealiser()], technology: tech)
+            { F1 = "2.28 GHz", F2 = "2.52 GHz" };
+        await vm.Realising;
+        Assert.True(vm.Realisation is not null, vm.Status);
+        Assert.True(vm.HasLoss);
+        Assert.Equal(5, vm.Plot.Traces.Count);                     // ideal S21, S11, the ideal at Qu, realised S21, S11
+        Assert.Matches(@"^Unloaded Q \d+, .* the ideal with that Q loses \d+\.\d\d dB; the realised part loses \d+\.\d\d dB, ", vm.LossText);
+        vm.ShowLoss = false;
+        Assert.Equal(4, vm.Plot.Traces.Count);
     }
 
     /// <summary>A realiser that runs until it is cancelled, and says when it was.</summary>

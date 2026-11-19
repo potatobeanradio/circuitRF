@@ -132,14 +132,23 @@
 
             <GridSplitter Grid.Row="0" Grid.RowSpan="5" Grid.Column="1" Width="4" ResizeDirection="Columns" Background="Transparent"/>
 
-            <!-- the response -->
+            <!-- the response, under the loss readout: the board's unloaded Q, what it costs the ideal at f0 and what the
+                 realised part loses there, with the toggle for the ideal drawn at that Q -->
             <Border Classes="pane" Grid.Row="0" Grid.RowSpan="5" Grid.Column="2">
-                <ctl:AspectRatioPanel>
-                    <ddc:PlotControl Name="ResponsePlotControl"
-                                     Plot="{Binding Plot}"
-                                     Library="{Binding PlotHost.Library}"
-                                     CanDeletePlot="False" CanEditPlotProperties="False"/>
-                </ctl:AspectRatioPanel>
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6" IsVisible="{Binding HasLoss}">
+                        <CheckBox DockPanel.Dock="Right" Content="Ideal at Qu" IsChecked="{Binding ShowLoss}" Margin="8,0,0,0"
+                                  VerticalAlignment="Top"
+                                  ToolTip.Tip="Also draw the ideal |S21| with every resonator at the board's unloaded Q"/>
+                        <TextBlock Classes="note" Text="{Binding LossText}"/>
+                    </DockPanel>
+                    <ctl:AspectRatioPanel>
+                        <ddc:PlotControl Name="ResponsePlotControl"
+                                         Plot="{Binding Plot}"
+                                         Library="{Binding PlotHost.Library}"
+                                         CanDeletePlot="False" CanEditPlotProperties="False"/>
+                    </ctl:AspectRatioPanel>
+                </DockPanel>
             </Border>
         </Grid>
 

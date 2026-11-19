@@ -271,8 +271,9 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         _check++;
     }
 
-    /// <summary>The ideal response of one specification on its sweep.</summary>
-    private sealed record Ideals(FilterSpec Spec, double[] F, SNP? Lossless, string Note);
+    /// <summary>The ideal responses of one specification on its sweep: lossless, and for a bandpass on a substrate with
+    /// every resonator at the board's unloaded Q (<see cref="CoupledResonatorDesign.UnloadedQ"/>).</summary>
+    private sealed record Ideals(FilterSpec Spec, double[] F, SNP? Lossless, SNP? Lossy, double? Qu, string Note);
 
     /// <summary>The last ideals computed, reused while their specification stands (a new selection).</summary>
     private Ideals? _ideals;
@@ -391,11 +392,19 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     private Ideals IdealsOf(FilterSpec spec)
     {
         var f = FilterSynthesisService.Frequencies(spec, Points);
-        SNP? lossless = null;
+        SNP? lossless = null, lossy = null;
+        double? qu = null;
         string note = "";
         try { lossless = FilterSynthesisService.Response(FilterSynthesisService.Ideal(spec, Points), f, spec.Z0); }
         catch (Exception ex) when (ex is not OutOfMemoryException) { note = $" No ideal response: {ex.Message}"; }
-        return new Ideals(spec, f, lossless, note);
+        if (spec.Band == FilterBand.Bandpass && _substrate is { } s)
+            try
+            {
+                double q = CoupledResonatorDesign.UnloadedQ(spec.Z0, spec.CentreHz, s);
+                if (double.IsFinite(q)) (qu, lossy) = (q, FilterSynthesisService.LossyIdeal(spec, f, q));
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { /* no Z0 line on this board, or no prototype: no lossy ideal */ }
+        return new Ideals(spec, f, lossless, lossy, qu, note);
     }
 
     /// <summary>On a worker: the realisation's bench run through the engine, and what Place writes.</summary>
@@ -412,9 +421,52 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
             $"{name}: {realisation.PartType} with {realisation.Sites.Count} site part(s).{ideals.Note}");
     }
 
-    private void Show(Ideals? ideals, SNP? realised) => BuildPlot(ideals?.Lossless, realised);
+    // ══ The plot and the loss readout ═════════════════════════════════════════════════════════════════════════════
 
-    private void BuildPlot(SNP? ideal, SNP? realised)
+    /// <summary>Draw the ideal with every resonator at the board's unloaded Q too.</summary>
+    [ObservableProperty] private bool _showLoss = true;
+
+    /// <summary>The board's unloaded Q, what it costs the ideal at f0, and what the realised part loses there; empty when
+    /// there is no lossy ideal (not a bandpass, or no substrate).</summary>
+    [ObservableProperty] private string _lossText = "";
+
+    /// <summary>True when the specification has a lossy ideal to draw.</summary>
+    public bool HasLoss => _shown.Ideals?.Lossy is not null;
+
+    private (Ideals? Ideals, SNP? Realised) _shown;
+
+    partial void OnShowLossChanged(bool value) => Show(_shown.Ideals, _shown.Realised);
+
+    private void Show(Ideals? ideals, SNP? realised)
+    {
+        _shown = (ideals, realised);
+        LossText = LossReadout(ideals, realised);
+        OnPropertyChanged(nameof(HasLoss));
+        BuildPlot(ideals?.Lossless, ShowLoss ? ideals?.Lossy : null, realised);
+    }
+
+    /// <summary>
+    /// "Unloaded Q 112, a 50 Ω line's conductor and dielectric loss at 2.4 GHz. At f0 the ideal with that Q loses 2.6 dB;
+    /// the realised part loses 2.9 dB, 2.8 dB of it dissipated." Dissipated is the insertion loss less the mismatch's,
+    /// −10·log(|S21|²/(1 − |S11|²)): what a lossless filter cannot lose, whatever its match.
+    /// </summary>
+    private static string LossReadout(Ideals? ideals, SNP? realised)
+    {
+        if (ideals is not { Qu: { } qu, Lossy: { } lossy } i) return "";
+        int at = Array.FindIndex(i.F, f => f >= i.Spec.CentreHz);
+        if (at > 0 && i.Spec.CentreHz - i.F[at - 1] < i.F[at] - i.Spec.CentreHz) at--;
+        static double Loss(SNP snp, int k) => -20.0 * Math.Log10(snp.Matrices[k][1, 0].Magnitude);
+        string text = string.Create(CultureInfo.InvariantCulture,
+            $"Unloaded Q {qu:0}, a {i.Spec.Z0:0.##} Ω line's conductor and dielectric loss at {i.Spec.CentreHz / 1e9:0.###} GHz. "
+            + $"At f0 the ideal with that Q loses {Loss(lossy, at):0.00} dB");
+        if (realised is null) return text + ".";
+        var m = realised.Matrices[at];
+        double s21 = m[1, 0].Magnitude, s11 = m[0, 0].Magnitude;
+        return text + string.Create(CultureInfo.InvariantCulture,
+            $"; the realised part loses {Loss(realised, at):0.00} dB, {-10.0 * Math.Log10(s21 * s21 / (1.0 - s11 * s11)):0.00} dB of it dissipated.");
+    }
+
+    private void BuildPlot(SNP? ideal, SNP? lossy, SNP? realised)
     {
         Plot.Traces.Clear();
         void Add(SNP? snp, int row, int colour, string label)
@@ -429,6 +481,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         }
         Add(ideal, 1, 0, "ideal S21");
         Add(ideal, 0, 1, "ideal S11");
+        Add(lossy, 1, 4, "ideal S21 at Qu");
         Add(realised, 1, 2, "realised S21");
         Add(realised, 0, 3, "realised S11");
         Plot.CustomTitleOn = true;

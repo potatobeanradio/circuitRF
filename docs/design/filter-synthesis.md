@@ -543,6 +543,18 @@ Designer is.
   (below). Below them, "What Place writes": the parameters and site values.
 - On the right: one Data Display plot, as the Match Designer hosts its own. It shows |S21| and |S11| of the ideal ladder
   and of the selected realisation's bench, both run by the engine on every edit.
+- **The ideal at Qu**, for a bandpass on a substrate: |S21| of the same prototype with every resonator at the board's
+  unloaded Q, through `CouplingMatrix.Response` with δ = 1/(Qu·FBW) on the inline matrix `CouplingMatrix.AllPole` builds
+  from the g-values (`FilterSynthesisService.LossyIdeal`). With no loss it is the ideal ladder's own response.
+  - Qu is `CoupledResonatorDesign.UnloadedQ`: β/(2α) of a Z0 line on the substrate at f0, with α MLIN's own conductor
+    (Wheeler, with roughness) and dielectric loss. Radiation and the open ends are left out. On the shipped RO4350B
+    board at 2.4 GHz, Qu is about 110.
+  - A line above the plot reads the loss out: Qu, the ideal at Qu's loss at f0, and the realised bench's loss at f0 with
+    the part of it that is dissipated, −10·log(|S21|²/(1 − |S11|²)). On the 5-pole 0.1 dB, 10 % bandpass, the tapped
+    hairpin's loss of about 3 dB is nearly all dissipation and close to the ideal at Qu's: the board's loss, not a
+    design error. A toggle hides the curve.
+  - A test checks the ideal at Qu against the first-order estimate 4.343·Σg/(FBW·Qu) dB at f0, as Hong and Lancaster
+    give it ([10.1002/0471221619](https://doi.org/10.1002/0471221619)). They agree to 0.001 dB at Qu = 200.
 - **Tools ▸ Filter Designer…** (both menu surfaces) opens it on no part: the default specification, every family. Place
   targets the schematic active when it opened, and its technology gives the substrate, else the workspace's default.
   With no schematic, Place is greyed and its tooltip says why. **Filter Designer…** on a schematic's empty-canvas menu
@@ -615,6 +627,8 @@ Chebyshev lowpass written as MLAD sites.
 - The timing harness above. It asserts that the UI thread's share of each path, and the ideal's drawing, stay under a
   second, and that the checked list is truthful: every row its check let through is realised, and the coupled-feed
   hairpin says "refuses:".
+- The ideal at Qu matches the first-order estimate. On the shipped board the Designer draws it with the edge-coupled
+  filter, the readout states Qu and both losses, and the toggle hides the curve.
 - A realiser that runs until cancelled: the ideal is drawn with "realising…" while it runs, a newer ripple cancels it,
   and the new realisation fills in.
 
@@ -756,9 +770,11 @@ edge-coupled or zig-zag chain, which has no k or Qe to measure), `out-of-curve`.
   alone leaves out.
 - **MCLA: centring the combline's band.** Why: its skirts are not symmetric, so the 3 dB band sits about 1 % below a
   centre its resonators are tuned to. A small shift of the tuning frequency, found from the band edges, would centre it.
-- **Designer: the ideal with loss.** A second ideal pair whose L and C carry the unloaded Q of a resonator on the board
-  (its conductor and dielectric loss), or an unloaded-Q field. Why: the realised bench has the board's loss and the ideal
-  has none, so the passband comparison mixes loss with design error.
+- **Designer: the ideal at Qu for the other bands.** A lowpass, highpass or bandstop prototype with lossy elements.
+  Why: only a bandpass's resonators map onto `CouplingMatrix.Response`'s single δ, so the other bands show no ideal at
+  Qu and no readout.
+- **Designer: the resonator's own Qu.** Radiation and the open ends in the unloaded Q, from the realised part's own
+  resonator. Why: the line's β/2α leaves both out, so a hairpin loses somewhat more than the ideal at Qu.
 - **MCLA: the fit coarse, then fine.** Its steps on the field solver at half the resolution until within the 0.3 %, then
   at full resolution to finish. Why: the fit's solves are nearly all of an MCLA realisation, and a coarse solve costs about
   a tenth of a fine one.
