@@ -3683,3 +3683,13 @@ names). Gate: `tests/Ui.Tests/Cli/EnvelopeExportCliTests.TheMeasureLines_AreEval
 transient examples' READMEs quote was invisible headlessly. The loop now prints each cube of the measurements group in the
 TestBench's order. Gate: the examples' own headless runs (`tests/Ui.Tests/Examples/TransientExamplesTests.cs` runs the same
 benches in process; the printed form was checked by hand).
+
+## `lvs` read no imported kit part on the schematic side
+
+`lvs` on a schematic of an imported kit's parts reported "Cell instance 'X1' (cell 'pdk://<kit>/<part>') has no primary
+schematic; skipped" for each of them and "schematic 0 device(s)", while `netlist` on the same schematic wrote every part.
+A kit part resolves through `PdkKitRegistry`, which a headless run fills only through the loader `WorkspaceKits.EnsureLoadedFor`
+installs; every verb that reads a schematic through `CircuitSource` installs it, and `lvs`, which reads through
+`LvsRun.Run`, did not. Headless only: the application loads every referenced kit when it opens a workspace, so its LVS panel
+had the parts. The verb now installs the loader for each cell it compares. Gate:
+`tests/Ui.Tests/Cli/KitsLoadedOnDemandTests.cs` (`Lvs_ReadsAKitPart_LoadingItsKit`).
