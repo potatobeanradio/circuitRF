@@ -23,7 +23,6 @@ namespace CircuitRF.Core.Synthesis.Filters;
 public static class CoupledResonatorDesign
 {
     private const double C0 = 299_792_458.0;
-    private static readonly MicrostripValidityReporter Quiet = new("(coupled-resonator synthesis, not reported)");
 
     // ══ Lines and their ends ═════════════════════════════════════════════════════════════════════════════════════
 
@@ -49,7 +48,8 @@ public static class CoupledResonatorDesign
     }
 
     private static KirschningJansenCoupled.Modes Modes(double fHz, double w, double gap, MicrostripSubstrate s)
-        => KirschningJansenCoupled.Compute(fHz, w, gap, s.HMeters, s.TMeters, s.EpsR, Quiet);
+        => KirschningJansenCoupled.Compute(fHz, w, gap, s.HMeters, s.TMeters, s.EpsR,
+            new MicrostripValidityReporter("(coupled-resonator synthesis, not reported)"));   // one each: realisers run side by side
 
     // ══ Cohn's parallel-coupled filter ════════════════════════════════════════════════════════════════════════════
 
@@ -326,13 +326,14 @@ public static class CoupledResonatorDesign
     }
 
     /// <summary>Where a decreasing <paramref name="y"/> meets <paramref name="target"/> in [lo, hi], by bisection
-    /// (in log space with <paramref name="log"/>); refused when the answer sits at an end, <paramref name="what"/> out of
-    /// the range's reach.</summary>
+    /// (in log space with <paramref name="log"/>) until the bracket is under half the plan's grid
+    /// (<see cref="PassivePlan.OnGrid"/>) and 1e-7 of the range, each halving one circuit solve; refused when the answer sits
+    /// at an end, <paramref name="what"/> out of the range's reach.</summary>
     private static double Solve(Func<double, double> y, double target, double lo, double hi, bool log, string what)
     {
         double a = log ? Math.Log(lo) : lo, b = log ? Math.Log(hi) : hi;
         double X(double t) => log ? Math.Exp(t) : t;
-        for (int i = 0; i < 30; i++)
+        for (int i = 0; i < 30 && X(b) - X(a) > Math.Min(1e-9, 1e-7 * hi); i++)
         {
             double m = 0.5 * (a + b);
             if (y(X(m)) > target) a = m; else b = m;

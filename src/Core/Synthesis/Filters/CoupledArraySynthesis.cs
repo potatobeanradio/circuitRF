@@ -104,7 +104,9 @@ public static class CoupledArraySynthesis
     /// <paramref name="mutualOf"/> reads off the widths and the section, by default the matrix's off-diagonal. For a
     /// homogeneous dielectric that is v·C, the design's own TEM form. A secant walk in the logarithms from strips 2H wide
     /// and 0.6H apart, each unknown on its own measure (a width on its strip's diagonal, which a gap barely moves; a gap on
-    /// its pair's mutual), each step one field solve; refused when it does not settle to 0.3 %.
+    /// its pair's mutual), each step one field solve; refused when it does not settle to 0.3 %. Each step is on the plan's
+    /// grid (<see cref="PassivePlan.OnGrid"/>), as the part draws and solves its strips, so a run of the realised part finds
+    /// the last solve in <see cref="MicrostripMultiLineModel.Solve"/>'s cache.
     /// </summary>
     public static (double[] W, double[] S, MultiLineSection Section) Fit(double[] ground, double[] mutual, double z0,
         MicrostripSubstrate sub, Func<double[], MultiLineSection, double[]>? mutualOf = null)
@@ -121,6 +123,7 @@ public static class CoupledArraySynthesis
         double[]? lastX = null, lastOwn = null;
         for (int it = 0; it < 30; it++)
         {
+            x = [.. x.Select(PassivePlan.OnGrid)];
             var section = MicrostripMultiLineModel.Solve(x[..n], x[n..], sub);
             var yc = Admittance(section);
             double[] own = [.. Enumerable.Range(0, n).Select(k => yc[k, k]), .. mutualOf(x[..n], section)];
