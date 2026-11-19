@@ -1647,7 +1647,8 @@ transferred), **1** on a refusal.
 ## `filter` — a filter from its specification {#filter}
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter --band &lt;b&gt; --order &lt;n&gt; --f1 &lt;f&gt; [--f2 &lt;f&gt;] [--response butterworth|chebyshev] [--ripple dB] [--stop dB] [--z0 Ω] [--zeros f,f]
-                 [--tech &lt;id|.ctech|folder&gt;] [--signal &lt;layer&gt;] [--ground &lt;layer&gt;] [--realiser &lt;name&gt; -o &lt;file.cnl&gt; [--to-schematic] [--em]] [--points n]</code></pre>
+                 [--tech &lt;id|.ctech|folder&gt;] [--signal &lt;layer&gt;] [--ground &lt;layer&gt;] [--realiser &lt;name&gt; -o &lt;file.cnl&gt; [--to-schematic] [--em]] [--points n]
+<span class="prompt">$ </span>circuitrf filter --extract &lt;file.s2p&gt; --band bandpass --order &lt;n&gt; --f1 &lt;f&gt; --f2 &lt;f&gt; [--response …] [--ripple dB] [--z0 Ω] [--zeros f,f]</code></pre>
 
 `filter` is the [Filter Designer](filter-designer.html) with no window. It takes the specification as flags: the band
 (`lowpass`, `highpass`, `bandpass` or `bandstop`), the order, the cutoff or the lower edge `--f1` and, for a band, the upper
@@ -1677,6 +1678,41 @@ are on the part's pins 1 and 2, and each site gets a port of its own, closed wit
 line: the EM band centre (a lowpass's or highpass's edge) and the worst in-band |S11|, each beside the circuit
 model's. Progress goes to stderr. A site no port can close (a jumper, a pin the drawing lacks) is a `filter.em.sites`
 error; no substrate, or a solve that fails, is `filter.em.refused`.
+
+For a bandpass, `--em` then prints the extracted metrics (below) of the EM run and of the circuit model side by side.
+The circuit column is read on the bench's own sweep. The fit needs 2(2N + Z + 1) samples within three normalised
+bandwidths of the centre, for N poles and Z zeros, and 11 points are too few for that. With too few, the EM column reads
+`-` and the extraction's `synthesis.extract.samples` refusal says how many it needs. `--points 41` is enough for order 5.
+
+**With `--extract`** it reads any two-port Touchstone file (a circuit run, an EM run, a measurement) and prints what
+its samples say the filter is, beside the specification:
+- **Checked rows**, each with `pass` or `fail`:
+  - the centre and the bandwidth at the ripple level (3 dB for a Butterworth), the ripple, and the worst in-band
+    return loss;
+  - for a specification without zeros, the fitted coupling matrix's resonant frequencies f(i), couplings k(i,j) and
+    external Q against the prototype's.
+- **Plain rows:** the insertion loss at the centre, the unloaded Q, and any transmission zeros.
+
+A sample row passes within 2 % of the specification; the centre passes within 2 % of half the bandwidth. A matrix
+entry passes within 0.02 in M. The extraction reads a bandpass only: any other band, or too few samples near the band,
+is the extraction's own `synthesis.extract.*` refusal. A file the reader cannot read, or one that is not a two-port's
+S-parameters, is `filter.extract.unreadable`. With `--json`, each checked row is a `filter.extract.metric` diagnostic
+carrying `column`, `name`, `value`, `target` and `pass`.
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter --extract ideal.s2p --band bandpass --order 5 --f1 2.28GHz --f2 2.52GHz
+<span class="output">Filter: Chebyshev bandpass, order 5, 2.28 to 2.52 GHz, 0.1 dB ripple, Z0 50 Ohm; ideal.s2p
+                 ideal.s2p             spec
+  Centre         2.397 GHz pass        2.397 GHz
+  Bandwidth      0.24 GHz pass         0.24 GHz
+  Ripple         0.1 dB pass           0.1 dB
+  Return loss    16.43 dB pass         16.43 dB
+  Qe(S)          11.4538 pass          11.4538
+  f(1)           2.397 GHz pass        2.397 GHz
+  k(1,2)         0.0798 pass           0.0798
+  …
+  Qe(L)          11.4538 pass          11.4538
+  Insertion loss 0 dB
+  Unloaded Q     lossless</span></code></pre>
 
 Over MCP, this is the `create` tool's `filter` mode. Its arguments have the flags' names, except `technology` for `--tech`.
 
