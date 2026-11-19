@@ -42577,3 +42577,14 @@ cannot draw headless — the menu's items, states and tips are asserted by `Wall
 Gates: `WallPortEditingTests` (6), `WallPortEditorTests` (4, the editor driven headless: R-pwl4-1, -3, -6b, -6c, -7 on the
 written bytes), and the classes the change reaches (the `ThreeD` namespace, port table, return walk, `check`/`explain`, 1,080
 tests) unchanged.
+
+## Manage Libraries ▸ Remove closed the application (issue 76, 2026-11-19)
+
+**Avalonia 12 builds an item template once more with a NULL item when a list shrinks.** Assigning a shorter
+`ItemsSource` recycles each removed row's container, and clearing its content re-runs `ContentPresenter.UpdateChild` with
+the container's `ContentTemplate` still set — so the template's function is called with `null`. Confirmed in a scratch
+headless repro (a two-row `ListBox` cut to one builds the template twice with `null`). `ManagePdksDialog.RowTemplate`
+read `row.Kind` unguarded; the throw is on the UI thread, unhandled, and Remove (any library, PDK or vendor) ended the
+process — after the reference had already been removed and saved. `GdsfactoryKitDialog` already guarded its template.
+**Every code-built `FuncDataTemplate` must tolerate a null item**; `ItemTemplateNullItemTests` scans `src/Ui` for them
+(and was confirmed to fail with the guard removed).

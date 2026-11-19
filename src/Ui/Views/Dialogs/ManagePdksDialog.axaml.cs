@@ -125,8 +125,14 @@ public partial class ManagePdksDialog : Window
     private void OnIndexBuilt(string root) => Dispatcher.UIThread.Post(() => Refresh());
 
     /// <summary>Kind · name and path · state/parts · (vendor rows) Use in new workspaces.</summary>
+    /// <remarks>
+    /// Must tolerate a null row: when Remove shrinks the list, Avalonia recycles the removed row's
+    /// container and builds this template once more with NO item while clearing it. An unguarded
+    /// <c>row.Kind</c> there was an unhandled exception on the UI thread — Remove closed the app.
+    /// </remarks>
     private static FuncDataTemplate<LibraryRow> RowTemplate() => new((row, _) =>
     {
+        if (row is null) return new TextBlock();
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("110,*,Auto,Auto") };
         grid.Children.Add(new TextBlock
         {
