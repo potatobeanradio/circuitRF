@@ -633,6 +633,97 @@ edge-coupled or zig-zag chain, which has no k or Qe to measure), `out-of-curve`.
 **Tests.** `tests/Core.Tests/Synthesis/CouplingCurveTests.cs`: from synthetic S-parameters on the 21-point grid, a Q =
 300 pair's k to 1e-4, and Qe = 15 behind 30 ps of line to 1 %, and the curve read backwards and refused outside.
 
+### 6c. Extraction and polish
+
+**What it does.** Two pieces run the synthesis backwards:
+- `FilterExtraction.Extract(spec, f, S11, S21, target, tolerance)` (`src/Core/Synthesis/Filters/FilterExtraction.cs`)
+  reads a bandpass filter's prototype back from any two-port's S-parameters: a circuit run, an EM run or a measured
+  file. It is a pure function in Core, next to the `CouplingMatrix` it feeds.
+- `FilterPolish.Run(spec, realisation, substrate, passes)` (`src/Design/Filters/FilterPolish.cs`) uses it to correct a
+  realised MCRC until the matrix its bench extracts to is the synthesised one. It sits beside `FilterSynthesisService`,
+  whose bench it runs.
+
+**Off the samples.** These need no model:
+- the band, where |S21| is within the ripple of its peak (3 dB for a response without a ripple), each edge interpolated
+  linearly in dB; its centre √(f1·f2) and its width f2 − f1;
+- the ripple, |S21|'s peak less its lowest across the spec's band;
+- the worst return loss across the spec's band;
+- the insertion loss at the spec's centre.
+
+**The fit.** The samples within ω = ±3 of the band (`Window`), with ω = (f/f0 − f0/f)/FBW. S11 = F/E and S21 = P/E
+share E, monic of degree N; F is of degree N, and P of the spec's count of transmission zeros. They are fitted over
+x = ω/max|ω| by `CouplingCurves.Rational`: Levy's linearised least squares, reweighted by 1/|E| as Sanathanan and
+Koerner do. It is §6b's pole fit, generalised to several responses over one denominator; `CouplingCurves.Poles` now
+calls it. This is the rational-model route to the coupling matrix (García-Lampérez et al.,
+[10.1109/TMTT.2003.822021](https://doi.org/10.1109/TMTT.2003.822021)). `VectorFit` (Engine) was the other choice. It
+fits real systems in Hz, with poles in conjugate pairs, and the lowpass poles of an asymmetric response are not; it also
+cannot hold P to the zeros' count.
+
+**Loss.** A uniform loss δ = 1/(Qu·FBW) on every resonator is the lossless response at s + δ (§2's `Response`), so every
+fitted pole and zero sits δ to the left of its lossless place (Macchiarella,
+[10.1109/LMWC.2010.2047455](https://doi.org/10.1109/LMWC.2010.2047455)). δ is the shift back that restores
+|S11|² + |S21|² = 1 on the samples, found by ternary search between 0 and the nearest fitted pole's distance from the
+axis. Then Qu = 1/(δ·FBW).
+
+**The matrix.** The fitted zeros of F and P, each moved δ back, are the lossless reflection and transmission zeros.
+- The transmission zeros are put on the axis, as `FilterSpec` holds real zeros only.
+- The reflection zeros stay where they are: a mistuned filter's leave the axis, so its F is complex in ω.
+- ε is 1/|P's leading coefficient|. εR is 1 unless all N zeros are finite, and ε/√(ε² − 1) then, as in §2.
+- E comes from |E|² = |F/εR|² + |P/ε|² on the axis: the roots of that degree-2N polynomial above it.
+
+These polynomials go through §2's `Transversal` and `Folded` as a synthesised set does. `Transversal` now adds F's
+imaginary part in ω to Im Q, which a synthesised F does not have. The folded matrix's main line is made positive by
+flipping whole rows and columns (`Signed`), so two matrices of one response compare entry by entry. For an all-pole
+response the folded form is the inline chain. `ToPhysical` gives its Qe, k_ij and resonant frequencies, except for a
+fully canonical matrix, whose source–load coupling no external Q carries.
+
+**Checks.** Each is a `FilterCheck`: the value, its target, the delta and pass or fail.
+- Against the spec: the centre within `tolerance` of half the band; the width at least (1 − `tolerance`) of the spec's;
+  the ripple at most (1 + `tolerance`) of it; the return loss at least (1 − `tolerance`) of the prototype's at its edge.
+- Against a target matrix: every entry non-zero in either, named in band-pass terms (`f(i)`, `Qe(S)`, `Qe(L)`,
+  `k(i,j)`, else `M(S,j)`), passing when it is within `tolerance` in M. The default, 0.02, is about 1 % of the band in
+  a resonator's frequency and 4 % in an end's Qe.
+
+**Polish.** It takes the realisers that solve k and Qe on the circuit model: hairpins and open loops in a row (§4). Each
+pass does three things:
+1. It runs the bench the Filter Designer runs (`FilterSynthesisService.Cnl`, then `Response`): the part through the
+   engine, on the substrate with its loss.
+2. It extracts that bench against the all-pole target, `CouplingMatrix.AllPole(g)`.
+3. It moves what `FromCouplings` is solved for. Each k(i,i+1) and the Qe are scaled by the ratio the extraction missed
+   them by. `FromCouplings` then solves the gaps and the tap on its own curves. Each resonator's length is then scaled
+   by its own extracted frequency over f0, as a resonator that sits low is too long.
+
+The curves stand in for the filter, corrected at their output: output space mapping (Bandler et al.,
+[10.1109/TMTT.2003.820904](https://doi.org/10.1109/TMTT.2003.820904)). `Run` returns every pass, the first being the
+realisation as given, and the realisation of the pass with the best worst return loss, with a note saying how far it
+got.
+
+**How far it gets.** The Filter Designer's tapped hairpin for a 0.1 dB Chebyshev of order 5, 2.2 to 2.6 GHz, on the
+shipped 20 mil RO4350B with its loss. Its worst return loss across the band is 8.6 dB as realised and 15.5 dB after
+three passes, against the lossless prototype's 16.4 dB; the passes give 14.2, 15.2 and 15.5 dB.
+- As realised, the end couplings are 3 to 7 % strong, Qe is 31 % high at the source and 22 % at the load, and
+  resonators 2 and 4 sit 1.1 % and 0.6 % high.
+- After three passes every k is within 0.4 % and every resonator within 0.15 % of f0. Qe is 5 % high at the source and
+  5 % low at the load: MCRC has one tap for both ends, and the polish corrects their geometric mean.
+- The extracted Qu is 114 to 121 throughout, the board's loss.
+
+The three passes take about 25 s, most of it in `FromCouplings`.
+
+**Refusals.** `synthesis.extract.*`: `band` (not a bandpass), `lengths` (the sample counts differ), `target` (a target
+not N+2 square), `samples` (too few samples within the window, or under two in the band). `synthesis.polish.form`: not
+an MCRC of hairpins or open loops in a row. Cohn's chains have no k or Qe to re-solve, the cross square realises only
+|k14|, and MCLA is closed form (§7).
+
+**Tests.**
+- `tests/Core.Tests/Synthesis/FilterExtractionTests.cs`:
+  - Round trip, from 401 samples of the matrix's own response over ω = ±4. Cameron's 4–2 at Qu = 500, and a mistuned
+    0.1 dB order-5 chain (three resonators off tune, the source 10 % heavy) at Qu = 200: M back to 3e-13 and 6e-14, Qu
+    within 0.001 and the zeros within 1 Hz.
+  - An ideal 0.1 dB Chebyshev of order 5, 10 % wide: the centre to 1e-5, the width to 1e-3, the ripple 0.1 dB and the
+    return loss 16.43 dB, every spec check passing.
+- `tests/Ui.Tests/Synthesis/FilterPolishTests.cs`: the tapped hairpin above, its worst return loss across the band at
+  least 3 dB better once polished, and the realisation returned the best pass's.
+
 ## 7. Possible enhancements
 
 1. **Even-order elliptic and inverse Chebyshev ladders.** The modified response, which moves the highest zero to
@@ -767,6 +858,19 @@ edge-coupled or zig-zag chain, which has no k or Qe to measure), `out-of-curve`.
   model, and gaps and lengths alone leave its pass goal 4.5 dB short.
 - **Stop goals over a range** (§6a). Why: the stop goals are points at the edges, which holds an all-pole skirt but not
   an elliptic's stopband ripple past them.
+- **Phase loading in the extraction** (§6c). A linear phase in ω on each port, fitted out of S11 and S22 before the
+  rational fit. Why: a measured or EM filter has line between each port and its first resonator, whose phase no
+  rational of degree N holds, so its fit and matrix suffer. The circuit model's taps sit on the resonators, which is
+  why the polish does without.
+- **Polish for Cohn's chains and MCLA** (§6c). A Broyden step on the stored gaps and lengths, its first Jacobian by
+  finite differences on the bench. Why: their geometry comes from closed forms, not from k and Qe curves, so output
+  space mapping has nothing to re-solve, and an edge-coupled chain's 1.6 dB ripple (§6a) is the case that most needs it.
+- **Extraction in the Designer, the verb and the MCP tool** (§6c). The extracted matrix and checks beside the plot, a
+  `filter --extract` mode on a Touchstone file, and a Polish button. Why: `Extract` and `Run` exist only as calls today;
+  a measured board is the commonest thing to hold against its synthesis.
+- **Complex and asymmetric zeros in the extraction** (§6c). Keep the transmission zeros' imaginary parts, and polish
+  the cross square with its k14's sign. Why: the extraction puts every zero on the axis as `FilterSpec` holds them, and
+  the polish refuses the square, so neither group-delay zeros (item 10) nor the cross-coupled loops are corrected.
 
 ## 8. References
 
@@ -827,3 +931,13 @@ edge-coupled or zig-zag chain, which has no k or Qe to measure), `out-of-curve`.
   shorted array's susceptance (§5).
 - C. Sanathanan and J. Koerner, "Transfer function synthesis as a ratio of two complex polynomials," IEEE Trans. AC
   8(1), 1963: [10.1109/TAC.1963.1105517](https://doi.org/10.1109/TAC.1963.1105517) (§6b).
+- A. García-Lampérez, S. Llorente-Romano, M. Salazar-Palma and T. K. Sarkar, "Efficient electromagnetic optimization
+  of microwave filters and multiplexers using rational models," IEEE Trans. MTT 52(2), 2004:
+  [10.1109/TMTT.2003.822021](https://doi.org/10.1109/TMTT.2003.822021). S11 and S21 as rationals over one denominator,
+  then the coupling matrix (§6c).
+- G. Macchiarella, "Extraction of unloaded Q and coupling matrix from measurements on filters with large losses," IEEE
+  Microwave and Wireless Components Letters 20(6), 2010: [10.1109/LMWC.2010.2047455](https://doi.org/10.1109/LMWC.2010.2047455).
+  A uniform loss as one shift of every pole and zero, and Qu from it (§6c).
+- J. W. Bandler, Q. S. Cheng, S. A. Dakroury, A. S. Mohamed, M. H. Bakr, K. Madsen and J. Søndergaard, "Space mapping:
+  the state of the art," IEEE Trans. MTT 52(1), 2004: [10.1109/TMTT.2003.820904](https://doi.org/10.1109/TMTT.2003.820904).
+  Output space mapping, the polish (§6c).

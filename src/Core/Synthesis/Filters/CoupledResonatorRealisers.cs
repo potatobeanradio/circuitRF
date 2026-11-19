@@ -82,7 +82,7 @@ public abstract class CoupledResonatorRealiser(string name, ResonatorShape shape
     }
 
     /// <summary>The stored values as a placed part holds them: lengths in mm, N and Uc as numbers, names as text.</summary>
-    internal static Dictionary<string, string> Stored(IReadOnlyDictionary<string, object> v)
+    public static Dictionary<string, string> Stored(IReadOnlyDictionary<string, object> v)
         => v.ToDictionary(e => e.Key, e => e.Value switch
         {
             string text => text,
