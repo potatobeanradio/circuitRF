@@ -431,7 +431,8 @@ static int RunSparam(string[] args)
         if (emScope is null) return emExit;
         ElaboratedNetlist nl;
         using (freqExplicit ? null : em.BaseElaboration())   // a dispatched sweep solves at its own points only (D5)
-            nl = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
+            nl = ParametricSweepEngine.ElaborateForRun(lib, tb, refBase, () => freqExplicit ? null
+                : ChainSelector.Select(tb, null, a => a is SParameterAnalysis, "S-parameter", "").Selected);
         var shown = PrintWarnings(nl);
 
         // A parametric_sweep wrapping the S-parameter analysis is dispatched at the SWEEP, as `hb`, `lp`
@@ -647,7 +648,8 @@ static int RunDc(string[] args)
         if (emScope is null) return emExit;
         ElaboratedNetlist nl;
         using (em.BaseElaboration())   // a dispatched sweep solves at its own points only (D5)
-            nl = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
+            nl = ParametricSweepEngine.ElaborateForRun(lib, tb, refBase,
+                () => ChainSelector.Select(tb, null, a => a is DcAnalysis, "DC", "").Selected);
         var shown = PrintWarnings(nl);
 
         // A parametric_sweep wrapping the DC analysis is dispatched at the SWEEP, as `sparam`, `hb`,
@@ -906,7 +908,8 @@ static int RunHb(string[] args)
         if (emScope is null) return emExit;
         ElaboratedNetlist nl;
         using (em.BaseElaboration())   // a dispatched sweep solves at its own points only (D5)
-            nl = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
+            nl = ParametricSweepEngine.ElaborateForRun(lib, tb, refBase,
+                () => ChainSelector.Select(tb, analysisName, a => a is HarmonicBalanceAnalysis, "harmonic-balance", "").Selected);
         var shown = PrintWarnings(nl);
 
         // Pick what to run: the named analysis, else the outermost runnable chain that bottoms out
@@ -1128,7 +1131,8 @@ static int RunLoadpull(string[] args, bool pursuit)
         if (emScope is null) return emExit;
         ElaboratedNetlist nl;
         using (em.BaseElaboration())   // a dispatched sweep solves at its own points only (D5)
-            nl = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
+            nl = ParametricSweepEngine.ElaborateForRun(lib, tb, refBase,
+                () => ChainSelector.Select(tb, analysisName, pursuit ? a => a is LoadpullPursuitAnalysis : a => a is LoadpullAnalysis, kind, "").Selected);
         var shown = PrintWarnings(nl);
 
         var top = SelectTop(

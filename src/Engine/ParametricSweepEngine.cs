@@ -123,6 +123,82 @@ public static class ParametricSweepEngine
             : [.. sweep.SweepValues.Select(v => v * inherited)];
     }
 
+    /// <summary>
+    /// The netlist a run elaborates before it dispatches: at the bench's own values, as ever — unless a parameter is refused there
+    /// and the run's top (<paramref name="top"/>, asked only then) is a sweep. A swept variable's own value is never run, so a
+    /// nominal outside a model's range (a VAR <c>dist = 1</c> under a 5–30 m sweep of a P.1238 channel valid from 4 m) must not
+    /// refuse the run: it is set up at the first of the sweep's own points that elaborates instead, and says so. Each swept
+    /// variable is tried alone first, the others at their own values, then the points in sweep order, at most 256 in all. When
+    /// none elaborates, the bench's own refusal stands.
+    /// </summary>
+    public static ElaboratedNetlist ElaborateForRun(Library lib, TestBench tb, string? baseDirectory, Func<Analysis?> top)
+        => ElaborateForRun(lib, tb, baseDirectory, () => top() is { } t ? [t] : []);
+
+    /// <summary>
+    /// <see cref="ElaborateForRun(Library, TestBench, string?, Func{Analysis?})"/> for a run that dispatches several tops from one
+    /// netlist: the stand-in is taken only when EVERY top is a sweep, since any other runs at the bench's own values.
+    /// </summary>
+    public static ElaboratedNetlist ElaborateForRun(Library lib, TestBench tb, string? baseDirectory, Func<IReadOnlyList<Analysis>> tops)
+    {
+        ElaboratedNetlist Elab() => new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
+        try { return Elab(); }
+        catch (CircuitRF.Core.Devices.ParameterRefusalException nominal)
+        {
+            var dispatched = tops();
+            if (dispatched.Count == 0 || dispatched.Any(t => t is not ParametricSweepAnalysis)) throw;
+            var sweep = (ParametricSweepAnalysis)dispatched[0];
+            var levels = new List<(ParametricSweepAnalysis Sweep, double[] Values, string EffUnit, string BaseUnit)>();
+            for (Analysis? a = sweep; a is ParametricSweepAnalysis ps && levels.Count < 16; a = AnalysisChain.ResolveEffectiveInner(ps.InnerAnalysisName, tb))
+                levels.Add((ps, PointValues(ps, tb, out var eu, out var bu), eu, bu));
+
+            IEnumerable<(int Level, double Value)[]> Candidates()
+            {
+                for (int l = 0; l < levels.Count; l++)
+                    foreach (double v in levels[l].Values) yield return [(l, v)];
+                var idx = new int[levels.Count];
+                while (levels.All(x => x.Values.Length > 0))
+                {
+                    yield return [.. idx.Select((i, l) => (l, levels[l].Values[i]))];
+                    int k = levels.Count - 1;
+                    while (k >= 0 && ++idx[k] == levels[k].Values.Length) idx[k--] = 0;
+                    if (k < 0) yield break;
+                }
+            }
+
+            int attempts = 0;
+            foreach (var point in Candidates())
+            {
+                if (++attempts > 256) break;
+                var saved = new List<(int Index, Variable? Was)>();
+                try
+                {
+                    foreach (var (l, v) in point)
+                    {
+                        var lv = levels[l];
+                        int i = tb.GlobalVariables.FindIndex(x => x.Name == lv.Sweep.SweepVarName);
+                        var injected = PointVariable(lv.Sweep, v, lv.BaseUnit);
+                        if (i >= 0) { saved.Add((i, tb.GlobalVariables[i])); tb.GlobalVariables[i] = injected; }
+                        else { tb.GlobalVariables.Add(injected); saved.Add((tb.GlobalVariables.Count - 1, null)); }
+                    }
+                    var nl = Elab();
+                    string at = string.Join(", ", point.Select(pv => DriveText(levels[pv.Level].Sweep.SweepVarName, pv.Value,
+                                                                                levels[pv.Level].EffUnit, levels[pv.Level].BaseUnit, null)));
+                    nl.AddWarning($"At the bench's own values, {nominal.Message} Sweep '{sweep.Name}' never runs them, so the run was set up at " +
+                                  $"{at}; every point the sweep refuses is NaN, and the others are kept.");
+                    return nl;
+                }
+                catch (CircuitRF.Core.Devices.ParameterRefusalException) { }
+                finally
+                {
+                    for (int j = saved.Count - 1; j >= 0; j--)
+                        if (saved[j].Was is { } was) tb.GlobalVariables[saved[j].Index] = was;
+                        else tb.GlobalVariables.RemoveAt(saved[j].Index);
+                }
+            }
+            throw;
+        }
+    }
+
     /// <summary>The variable a sweep point injects: <paramref name="value"/> in base SI, marked with the base unit so the
     /// use site's own unit is not applied a second time (var-unit-wins).</summary>
     public static Variable PointVariable(ParametricSweepAnalysis sweep, double value, string baseUnit) =>
@@ -194,6 +270,7 @@ public static class ParametricSweepEngine
         string? outerDrive = diagnosticsInto?.WireThermal?.Drive;
 
         var failedPoints = new List<string>();
+        int refusedPoints = 0;
         if (inner is EnvelopeAnalysis env)
             RunEnvelopePoints(env, sweep, lib, tb, settings, baseDirectory, sweepValues, effUnit, baseUnit, outerDrive,
                               control, countsLeaves, diagnosticsInto, datasets, failedPoints);
@@ -261,8 +338,12 @@ public static class ParametricSweepEngine
                         $"Sweep '{sweep.Name}' at {at}: {ex.Summary} The point failed; the worker was restarted and the point run again.");
                     seed = null;
                 }
-                catch (Exception ex) when ((runOtherInner is not null || inner is OscillatorAnalysis) && !IsCancellation(ex))
+                catch (Exception ex) when ((runOtherInner is not null || inner is OscillatorAnalysis
+                                            // a point whose own values the design refuses (a model outside its range there) is
+                                            // the sweep's invalid portion: NaN, and the valid points are kept
+                                            || ex is CircuitRF.Core.Devices.ParameterRefusalException) && !IsCancellation(ex))
                 {
+                    if (ex is CircuitRF.Core.Devices.ParameterRefusalException) refusedPoints++;
                     // R-cp5-3 — the envelope's rule for a failed point: NaN, a warning naming its value, the others kept.
                     // An oscillator's too: a tuning curve with one point that does not start (or leaves its search span)
                     // is the rest of the curve and a gap, not no curve at all.
@@ -293,8 +374,14 @@ public static class ParametricSweepEngine
         if (failedPoints.Count > 0)
         {
             if (failedPoints.Count == datasets.Count)
+            {
+                // Every point refused by the design is itself a refusal, so a sweep around this one takes this whole slice as NaN.
+                if (refusedPoints == failedPoints.Count)
+                    throw new CircuitRF.Core.Devices.ParameterRefusalException(
+                        $"{(inner is EnvelopeAnalysis ? "envelope " : "")}'{inner.Name}': no point of sweep '{sweep.Name}' completed — {string.Join("; ", failedPoints)}");
                 throw new InvalidOperationException(
                     $"{(inner is EnvelopeAnalysis ? "envelope " : "")}'{inner.Name}': no point of sweep '{sweep.Name}' completed — {string.Join("; ", failedPoints)}");
+            }
             var template = datasets.First(d => d is not null);
             for (int i = 0; i < datasets.Count; i++) datasets[i] ??= NaNLike(template);
         }

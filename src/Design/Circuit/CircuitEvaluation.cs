@@ -215,8 +215,9 @@ public static class CircuitEvaluation
             circuit.CountElaboration();
             // In COUNTING mode (brief-sdl-6 D5): an instance already set to EM is recorded, not solved, here — the
             // planning elaboration describes the run, and a solve must not start before the run's count has been taken.
+            // A sweep never runs its variable's own value, so a refusal there sets the run up at one of the sweep's points.
             using (EmEvaluationScope.Begin(countOnly: true))
-                nl = new Elaborator(lib) { BaseDirectory = circuit.BaseDirectory }.Elaborate(tb);
+                nl = ParametricSweepEngine.ElaborateForRun(lib, tb, circuit.BaseDirectory, () => DispatchedTops(request, tb));
         }
         catch (Exception ex)
         {
@@ -415,6 +416,16 @@ public static class CircuitEvaluation
             nl.Dispose();
         }
     }
+
+    /// <summary>The tops a run dispatches — the named cards promoted to the sweeps wrapping them, else every runnable chain — as the
+    /// plan resolves them, for <see cref="ParametricSweepEngine.ElaborateForRun(Library, TestBench, string?, Func{IReadOnlyList{Analysis}})"/>.
+    /// A name that does not resolve contributes nothing; the plan reports it.</summary>
+    private static IReadOnlyList<Analysis> DispatchedTops(CircuitEvaluationRequest request, TestBench tb)
+        => request.Analyses is { } names
+            ? [.. names.Select(n => tb.Analyses.FirstOrDefault(a => string.Equals(a.Name, n, StringComparison.OrdinalIgnoreCase)))
+                       .Where(a => a is not null && a.Enabled && AnalysisChain.IsChainRunnable(a, tb))
+                       .Select(a => AnalysisChain.PromoteToRunnableTop(a!, tb)).Distinct()]
+            : AnalysisChain.RunnableTops(tb);
 
     private static T? FirstOf<T>(Exception? ex) where T : Exception
     {

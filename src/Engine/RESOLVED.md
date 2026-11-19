@@ -5775,3 +5775,24 @@ driven by a `MOD_Source` instead (6.3 V open-circuit peak), that put the island 
 - Gates: `HbVoltageCheckTests` (a single-diode peak detector at K = 10 — the four-arm bridge is the same physics at a
   minute per solve in a Debug build: 9.6713 V on the residual alone, 9.7613 V with the test, 9.7614 V at Tol 1e-13),
   `HarmonicaVoltageCheckOffTests`, `NetlistContractTests.HbVRelTol_RoundTrips_AndIsAbsentWhenUnstated`.
+
+## A sweep runs the valid portion of its range (discussion 75, 2026-11-19)
+
+Sweeping a P.1238 office channel's distance from 1 m failed the whole run, twice over: the run elaborates the bench at the VARs'
+own values before it dispatches (GUI `CircuitEvaluation` and the four CLI run verbs alike), so `dist = 1` was refused before any
+point ran; and inside the sweep, one refused point threw for every other. Now:
+
+- **A point whose own values the design refuses** (`ParameterRefusalException`, from elaboration or from the solve) is NaN in every
+  cube at a finished point's shape, with one warning naming its value; the other points are kept. It is the rule envelope, fields
+  and oscillator inners already had. A nested sweep whose every point was refused rethrows a REFUSAL, so the sweep around it takes
+  that whole slice as NaN; if no point anywhere elaborates, the run is refused with each reason. A solver failure is not a refusal
+  and still throws.
+- **`ParametricSweepEngine.ElaborateForRun`** replaces the nominal elaboration at those five sites. On a refusal, and only when every
+  top the run dispatches is a sweep (anything else runs at the bench's own values), it sets the run up at the first sweep point that
+  elaborates — each swept variable alone first, then the points in sweep order, at most 256 — and says so as a warning. Product order
+  alone would try every drop at the first distance before the next distance.
+- Plotting needs nothing: the Data Display skips non-finite points (a refused distance is a gap in the curve, and its family member
+  is not drawn), and `median_over`/`outage_over` give NaN where a whole slice is NaN.
+
+Gate: `SweepRefusedPointsTests` (refused at elaboration and at the solve; a non-sweep top is still refused). Headless check on the
+Indoor IoT Link example: `dist` 1..40 m step 3 from a VAR of 1 runs, NaN at 1, 31, 34, 37 and 40 m, the 28 m median −93.9 dBm.
