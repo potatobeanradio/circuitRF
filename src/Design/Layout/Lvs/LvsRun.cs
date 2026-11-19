@@ -280,6 +280,14 @@ public static class LvsRun
         // not whatever the same path holds on disk — for the turned-part reader and nothing else.
         var schematicParts = PdnSchematicNets.Of(schematic, cschPath);
 
+        // The drawing's library cells a generator draws, whose placements are read by the cell's own terminal map.
+        var drawnCells = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var c in schematic.Components)
+            if (c is { InstanceName.Length: > 0, CellRef.Length: > 0 } && !PdkKitRegistry.IsKitRef(c.CellRef)
+                && CircuitRF.Design.Workspace.ExternalCellRef.ResolveCellDir(c.CellRef, schematic.SchematicDirectory) is { } dir
+                && CellFolder.LayoutGeneratorOf(dir) is not null)
+                drawnCells.TryAdd(c.InstanceName, dir);
+
         var layoutNetlist = LayoutRead.Read(
             layout, clayPath, cellDir, tech, out var geometry, out var turned,
             (techRef, subLayoutDir) => TechnologyResolver.ResolveForDocument(
@@ -287,7 +295,8 @@ public static class LvsRun
             schematicNetlist.Devices.Select(d => d.Path).ToHashSet(StringComparer.Ordinal),
             level, wbonds, schematicParts,
             schematic.Components.Where(c => c.Disable == DisableState.Open && c.InstanceName is { Length: > 0 })
-                                .Select(c => c.InstanceName!).ToHashSet(StringComparer.Ordinal));
+                                .Select(c => c.InstanceName!).ToHashSet(StringComparer.Ordinal),
+            drawnCells);
         control?.ThrowIfCancellationRequested();
 
         control?.BeginStage("Reducing");

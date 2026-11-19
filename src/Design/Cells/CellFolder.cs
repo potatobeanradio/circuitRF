@@ -121,6 +121,24 @@ public static class CellFolder
     public static string SubFolderPath(string cellFolder, ViewType type)
         => Path.Combine(cellFolder, SubFolderName(type));
 
+    /// <summary><paramref name="cellDir"/>'s <c>.ccell</c>, or null when it has none or the file cannot be read (whoever
+    /// walks the cell reports that).</summary>
+    public static CcellFile? ReadCcell(string? cellDir)
+    {
+        if (cellDir is not { Length: > 0 }) return null;
+        try
+        {
+            string path = Path.Combine(cellDir, CcellFileName);
+            return File.Exists(path) ? CellPersistence.LoadFromFile(path) : null;
+        }
+        catch (Exception) { return null; }
+    }
+
+    /// <summary>The generator <paramref name="cellDir"/>'s <c>.ccell</c> names in <see cref="CcellFile.LayoutGenerator"/>,
+    /// or null. The one reader, so Update Layout, LVS, EM and <c>check</c> agree about which cells a generator draws.</summary>
+    public static string? LayoutGeneratorOf(string? cellDir)
+        => ReadCcell(cellDir)?.LayoutGenerator is { Length: > 0 } g ? g : null;
+
     /// <summary>
     /// Where the <paramref name="other"/> view of the view file at <paramref name="viewPath"/> lives:
     /// in a cell folder, that view's own sub-folder; for a document sitting LOOSE — at a workspace's

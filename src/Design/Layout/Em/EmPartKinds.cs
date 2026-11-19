@@ -52,6 +52,8 @@ public static class EmPartKinds
         if (c.CellRef is { Length: > 0 } cellRef)
         {
             if (cellRef.StartsWith("pdk://", StringComparison.OrdinalIgnoreCase)) return EmPartKind.Part;
+            // A library cell a generator draws (LayoutGenerator) is placed as that generator's cell, as a kit part is.
+            if (DrawnByGenerator(cellRef, schematicDir)) return EmPartKind.Part;
             cellDir = LayoutCellDir(cellRef, schematicDir);
             return cellDir is not null ? EmPartKind.Copper : EmPartKind.NoLayout;
         }
@@ -118,6 +120,13 @@ public static class EmPartKinds
 
     private static readonly Dictionary<string, bool> _models = new(StringComparer.Ordinal);
     private static readonly Lock _gate = new();
+
+    private static bool DrawnByGenerator(string cellRef, string? schematicDir)
+    {
+        if (CircuitRF.Design.VendorLibraries.ModelLibrary.VendorModelRefs.IsRef(cellRef) || schematicDir is not { Length: > 0 }) return false;
+        try { return CircuitRF.Design.Cells.CellFolder.LayoutGeneratorOf(CircuitRF.Design.Workspace.ExternalCellRef.ResolveCellDir(cellRef, schematicDir)) is not null; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { return false; }
+    }
 
     /// <summary>The cell folder <paramref name="cellRef"/> names when it has a layout view, else null.</summary>
     private static string? LayoutCellDir(string cellRef, string? schematicDir)

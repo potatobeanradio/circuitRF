@@ -139,6 +139,7 @@ public static class LvsFindingIds
         // terminals and pins
         "lvs.terminal.wrong-net",
         "lvs.terminal.split-across-nets",
+        "lvs.terminal.not-drawn",
         "lvs.pin.no-copper",
 
         // nets

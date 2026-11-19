@@ -270,6 +270,13 @@ public static class DeviceTypes
             ? CircuitRF.Design.Workspace.ExternalCellRef.ResolveCellDir(cellRef, schematicDir)
             : null;
 
+        // A library cell its .ccell says a generator draws is that generator's part, as a kit part is: Update Layout places
+        // the generated cell, never the library folder. A built-in generator is its kind, as OfLayout reads the cell it drew.
+        if (CircuitRF.Design.Cells.CellFolder.LayoutGeneratorOf(cellDir) is { } drawnBy)
+            return TryGetSymbolKind(drawnBy, out var builtIn)
+                ? new DeviceType(Of(builtIn), null, drawnBy)
+                : new DeviceType(Of(comp.Symbol) is var k && k != DeviceKind.Unknown ? k : DeviceKind.Cell, null, drawnBy) { Generator = drawnBy };
+
         string? name = cellDir is { Length: > 0 } dir
             ? new System.IO.DirectoryInfo(dir).Name
             : comp.CellRef is { Length: > 0 } r ? r.Split('/', '\\').LastOrDefault()

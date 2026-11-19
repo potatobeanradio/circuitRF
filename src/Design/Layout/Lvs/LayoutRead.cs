@@ -106,6 +106,12 @@ public static class LayoutRead
     /// The drawing's parts, as railRF reads them — handed to the turned-part reader and to NOTHING
     /// else (see the file header). Null skips that reading, which is every caller that is not a run.
     /// </param>
+    /// <param name="drawnCells">
+    /// The schematic's library cells a generator draws (<c>LayoutGenerator</c>), by instance name → cell folder. A
+    /// placement linked to one takes that cell's declared terminal map — its ports by the generator's pin names — in place
+    /// of the generated cell's own, so its terminals are numbered as the schematic's are. Null reads every placement by its
+    /// own cell, as before.
+    /// </param>
     /// <remarks>
     /// <b>Internal because two of what it takes are</b> — the hierarchy context a caller outside
     /// this assembly cannot have, and brief 13's already-resolved wBond wires. The public reading is
@@ -120,7 +126,8 @@ public static class LayoutRead
         LvsHierarchyContext? hierarchy = null,
         IReadOnlyList<AssemblyWBond>? wbonds = null,
         Pdn.PdnSchematicNets? schematicParts = null,
-        IReadOnlySet<string>? notFitted = null)
+        IReadOnlySet<string>? notFitted = null,
+        IReadOnlyDictionary<string, string>? drawnCells = null)
     {
         ArgumentNullException.ThrowIfNull(view);
         geometry = LvsGeometry.None;
@@ -311,6 +318,20 @@ public static class LayoutRead
             var map = resolvedDir is { Length: > 0 } cellFolder
                 ? TerminalMap.ResolveCell(cellFolder)
                 : new TerminalMapResult([], TerminalMapOrigin.None, ["The placement's cell does not resolve."]);
+
+            // A library cell a generator draws: its own declared map names the generator's pins, so this placement's terminals
+            // are the cell's ports, numbered as the schematic numbers them. A port with no layout pin is one the generator does
+            // not draw (a bulk terminal); it is left out, as a kit part's extra symbol pin is, and said once per cell. A cell
+            // that declares no map is read by the generated cell's own, as a kit part is.
+            if (inst.SchematicId is { Length: > 0 } linked && drawnCells?.GetValueOrDefault(linked) is { } library
+                && TerminalMap.ResolveCell(library) is { Origin: TerminalMapOrigin.Declared } declared)
+            {
+                foreach (var t in declared.Terminals.Where(t => t.LayoutPins.Count == 0))
+                    if (saidOnce.Add($"not-drawn:{library}:{t.Port}"))
+                        notes.Add(LvsDiagnostics.TerminalNotDrawn(
+                            new DirectoryInfo(library).Name, t.Port, t.Name, CellFolder.LayoutGeneratorOf(library) ?? ""));
+                map = declared with { Terminals = [.. declared.Terminals.Where(t => t.LayoutPins.Count > 0)] };
+            }
 
             // R-lvs3-5a. Origin None makes the device UNMATCHABLE — emitted with no terminals,
             // reported, and never dropped: a device the comparison cannot handle must still appear

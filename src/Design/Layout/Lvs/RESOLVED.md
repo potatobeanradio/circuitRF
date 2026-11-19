@@ -474,3 +474,22 @@ foundry's figure; a user with a real process edits the `.ctech`.
 `Constants` entry for either would be a second copy that an edit to the layer or film leaves behind.
 `DeviceRecognition.ConstantsOf` binds both from `MmicStackResolver` — the resolver the models use —
 in an outer scope; a `Constants` entry of the same name still overrides, for a measured density.
+
+## A library cell drawn by a generator (`LayoutGenerator`)
+
+**How a kit part's extra symbol pin is compared.** A kit part's schematic device has one terminal per symbol pin;
+the generated cell's device has one per generated pin, from the generated cell's own terminal map. The comparison
+joins the two port by port NUMBER (`LvsCompare.Joined`), so a fourth symbol pin against a three-pin cell is simply
+never joined: it is not compared and nothing says so, and the first three are joined by position whatever their
+names. A cell that names its generator reads its placement through ITS OWN declared map instead (`LayoutRead`,
+handed the schematic's generator-drawn instances by `LvsRun`), so its ports reach the generator's pins by name; a
+row with no `LayoutPin` is left out exactly as the kit part's extra pin is, and `lvs.terminal.not-drawn` says so
+once per cell and port.
+
+**A count declared Int arrived as a Real.** `ResolveComponentLayout` passed every resolved number as a Real, so an
+instance's `turns = 3` reached a kit generator as `3.0` and hashed to a different generated cell from the palette's
+`Int 3`. A declared Int or Bool now arrives as one (a non-whole value is rounded and the instance's report says so).
+
+**EM read a schematic-only cell as having no layout.** `EmPartKinds` classifies by the reference, and a cell with
+no layout view of its own was `NoLayout`, so `"*"` skipped it and a circuit-model EM run refused it, although
+Update Layout places its generator. A generator-drawn cell is a `Part`, as a `pdk://` part is.

@@ -22,6 +22,22 @@ public static class TerminalDiagnostics
         "{path}: terminal for port {port} names layout pin '{pin}', which the primary layout does not have.",
         ("path", path), ("port", port), ("pin", pin));
 
+    /// <summary>A <c>LayoutGenerator</c> nothing here offers. <b>A warning</b>: a kit's generators are registered only
+    /// where the kit is loaded (headlessly, none is), so this may be a kit not loaded rather than a wrong name.</summary>
+    public static Diagnostic GeneratorNotRegistered(string path, string generator) => Diagnostic.Create(
+        "check.terminals.generator-not-registered", DiagnosticSeverity.Warning,
+        "{path}: LayoutGenerator '{generator}' is not built in, and no kit loaded here offers it. Update Layout skips "
+        + "this cell's instances until the kit that provides it is imported or allowed to run.",
+        ("path", path), ("generator", generator));
+
+    /// <summary>A <c>LayoutPin</c> of a generator-drawn cell that the generator does not draw.</summary>
+    public static Diagnostic GeneratorPinUnknown(string path, int port, string pin, string generator, IReadOnlyList<string> pins)
+        => Diagnostic.Create(
+            "check.terminals.generator-pin-unknown", DiagnosticSeverity.Error,
+            "{path}: terminal for port {port} names layout pin '{pin}', which its LayoutGenerator '{generator}' does not "
+            + "draw. Its pins are {pins}.",
+            ("path", path), ("port", port), ("pin", pin), ("generator", generator), ("pins", string.Join(", ", pins)));
+
     /// <summary>A <c>Port</c> outside <c>1..NumPorts</c>.</summary>
     public static Diagnostic PortOutOfRange(string path, int port, int numPorts) => Diagnostic.Create(
         "check.terminals.port-out-of-range", DiagnosticSeverity.Error,
