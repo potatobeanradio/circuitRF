@@ -172,8 +172,9 @@ internal sealed class LayoutReadBodies
             {
                 if (!byKey.TryGetValue(key, out int i)) continue;
 
-                int net = own.PieceAt(pins[i].X, pins[i].Y, pins[i].Layer);
-                if (net < 0) continue;
+                int index = LayoutRead.IndexAtPin(own, pins[i].X, pins[i].Y, pins[i].Layer, tech);
+                if (index < 0) continue;
+                int net = own.NetOfPiece(index);
 
                 if (portOfNet.TryGetValue(net, out int port) && port != terminal.Port) return true;
                 portOfNet[net] = terminal.Port;
@@ -227,7 +228,7 @@ internal sealed class LayoutReadBodies
         foreach (int p in mine)
         {
             if (hierarchy is not null) hierarchy.Counters.PinQueries++;
-            int piece = pieces.IndexAt(pads[p].X, pads[p].Y, origins[p].Layer);
+            int piece = LayoutRead.IndexAtPin(pieces, pads[p].X, pads[p].Y, origins[p].Layer, _tech);
             _pieceOfPad[p] = piece;
 
             int root = Root(p);
@@ -259,22 +260,59 @@ internal sealed class LayoutReadBodies
             int at = -1;
             for (int i = 0; i < pins.Count && at < 0; i++)
                 if (string.Equals(PlacedPins.PinKeyOf(pins, i), origins[p].PinKey, StringComparison.OrdinalIgnoreCase)) at = i;
-            if (at < 0 || pins[at].WidthDbu <= 0) yield break;
+            if (at < 0) yield break;
 
             var pin = pins[at];
+            var inst = _view.Instances[origins[p].Instance];
+            foreach (int met in AreaContacts(cell, pin, inst, origins[p].Row, origins[p].Col, pieces))
+                if (met != under) yield return met;
+            if (pin.WidthDbu <= 0) yield break;
+
             var (nx, ny) = LayoutAngle.CosSin(pin.OutwardDeg + 90.0);
             double half = pin.WidthDbu / 2.0;
-            var inst = _view.Instances[origins[p].Instance];
             foreach (int sign in new[] { 1, -1 })
             {
                 var (wx, wy) = LayoutInstanceTransform.TransformPoint(
                     pin.X + (long)Math.Round(sign * nx * half), pin.Y + (long)Math.Round(sign * ny * half),
                     inst, origins[p].Row, origins[p].Col);
-                int corner = pieces.IndexAt(wx, wy, origins[p].Layer);
+                int corner = LayoutRead.IndexAtPin(pieces, wx, wy, origins[p].Layer, _tech);
                 if (corner >= 0 && corner != under) yield return corner;
             }
         }
     }
+
+    /// <summary>
+    /// The parent's pieces that meet an AREA pin's own metal. A kit marks a pin with a box and states its middle
+    /// (brief-icp-10), so the point is not on its metal's edge: a probe just past it, the way it faces, is still in the
+    /// pin's own metal. The terminal is then that whole piece of metal, and the parent's copper meeting it anywhere joins
+    /// it — a trace landing on a transistor's emitter finger beside the pin's middle. An edge pin (a line's end, whose
+    /// probe leaves its metal) yields nothing here and is read at its point, as before.
+    /// </summary>
+    private IEnumerable<int> AreaContacts(LayoutView cell, LayoutPin pin, LayoutInstance inst, int row, int col, CopperPieces pieces)
+    {
+        if (_tech is null) yield break;
+        if (!_own.TryGetValue(cell, out var own)) _own[cell] = own = CopperPieces.Build(cell.Shapes, _tech);
+        int region = LayoutRead.IndexAtPin(own, pin.X, pin.Y, pin.Layer, _tech);
+        if (region < 0) yield break;
+        var (ox, oy) = LayoutAngle.CosSin(pin.OutwardDeg);
+        if (LayoutRead.IndexAtPin(own, pin.X + (long)Math.Round(ox * Coincident), pin.Y + (long)Math.Round(oy * Coincident),
+                                  pin.Layer, _tech) != region) yield break;
+
+        // Metal that also holds another terminal's pin is not this terminal's alone, and reading it whole would join the
+        // two: a transistor's base and collector fingers are 0.2 µm apart, and the partition reads copper that close as
+        // one piece. Such a pin is read at its point, as an edge pin is.
+        foreach (var other in CellPins.Resolve(cell, _tech))
+            if (!string.Equals(other.Name, pin.Name, StringComparison.OrdinalIgnoreCase)
+                && LayoutRead.IndexAtPin(own, other.X, other.Y, other.Layer, _tech) == region) yield break;
+
+        var drawn = own.LayerOfPiece(region);
+        var layers = (Em.EmPinConductor.Of(_tech, drawn)?.DrawingLayers ?? [drawn]).ToHashSet();
+        foreach (int met in pieces.PiecesMeeting(own, region, (x, y) => LayoutInstanceTransform.TransformPoint(x, y, inst, row, col),
+                                                 layers, Coincident))
+            yield return met;
+    }
+
+    private readonly Dictionary<LayoutView, CopperPieces> _own = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>
     /// The net a body pin is on, and the partition piece under it (-1 where it met only other

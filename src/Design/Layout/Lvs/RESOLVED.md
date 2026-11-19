@@ -507,3 +507,28 @@ exactly as before. Gate: `tests/Ui.Tests/Lvs/WorkspaceCornerTests.cs`.
 
 `PinNetwork.Read` still extracts without corners, deliberately: its VAR block is the network's global
 variables, so binding a kit's corner section would turn every corner constant into a fit variable.
+
+## A kit's generated device shorted its own terminals
+
+A kit's generator marks its pins on a conductor's PIN purpose ("Metal1.pin") and draws the copper on its drawing
+layer. `LayoutReadBodies` asked "which piece is under this pin" on the pin's own layer, where no copper is ever
+drawn, so no pin of a generated transistor or coil found its own metal: `OwnCopperJoinsTerminals` answered false,
+the cell was not a body, and its metal (diffusion, contacts, a spiral from end to end) stayed in the partition and
+joined every terminal — every net through a transistor reported as a short, and a lone transistor read as one net.
+`ResolveTerminal` already fell back to the conductor a pin-purpose layer belongs to (`EmPinConductor`, brief-icp-10);
+the body test, the body pins' reading against the parent and the root cell's boundary pins did not. All four now go
+through `LayoutRead.IndexAtPin`. Gate: `LayoutNetlistTests.ALineWhosePinsAreOnAPinPurposeLayer_IsStillABody`.
+
+**Then the emitter came out open.** A body's terminal was read at its pin's point and the corners of its end edge — right
+for a line, whose pin is its end. A kit states the MIDDLE of a pin box, and the design's trace met the emitter's finger at
+its edge, 0.9 µm from the point. An AREA pin (a probe just past its point, the way it faces, is still in its own metal —
+`EmCellCutout.AreaFace`'s test) is now met anywhere along its own metal: the parent's pieces that overlap or touch that one
+piece of the cell's own copper join the terminal (`CopperPieces.PiecesMeeting`, in Extraction because it is geometry). An
+edge pin is read as before. Gate: `LayoutNetlistTests.AnAreaPinIsMetAnywhereAlongItsOwnMetal`.
+
+**And then base and collector were one net.** The partition reads copper on one layer closer than
+`LayerRegions.HairlineGapDbu` (1 µm) as one piece — a Gerber's rounding gap. A transistor's base, emitter and
+collector Metal1 fingers are 0.2 µm apart, so in the device's own reading they are ONE piece, and reading the base's
+pin by its whole piece put the collector's trace on it too. An area pin whose piece holds another terminal's pin is
+read at its point. Gate: `LayoutNetlistTests.AreaPinsSharingOnePieceOfMetal_AreReadAtTheirPoints`. The 1 µm close itself
+is left as it is; on a sub-micron process it also joins two parent traces drawn closer than 1 µm.

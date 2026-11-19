@@ -578,12 +578,7 @@ public static class LayoutRead
                 // net of whatever sits under it on the bottom.
                 // R-lvs9-5a: ONE query per pin, and here it is.
                 if (hierarchy is not null) hierarchy.Counters.PinQueries++;
-                int index = pieces.IndexAt(pads[p].X, pads[p].Y, origins[p].Layer);
-                // A pin on a PIN-purpose layer ("Metal1.pin", as a kit marks its pins) is on the conductor that layer is a purpose of —
-                // the mapping the EM cut reads pins by (EmPinConductor) — and no copper is drawn on the purpose layer itself.
-                if (index < 0 && Em.EmPinConductor.Of(tech, origins[p].Layer) is { } conductor && !conductor.DrawingLayers.Contains(origins[p].Layer))
-                    foreach (var drawn in conductor.DrawingLayers)
-                        if ((index = pieces.IndexAt(pads[p].X, pads[p].Y, drawn)) >= 0) break;
+                int index = IndexAtPin(pieces, pads[p].X, pads[p].Y, origins[p].Layer, tech);
                 int piece = index < 0 ? -1 : pieces.NetOfPiece(index);
 
                 // Recorded EITHER WAY, including where it landed on nothing: a pad on no copper is
@@ -647,12 +642,28 @@ public static class LayoutRead
             {
                 if (!byKey.TryGetValue(pinKey, out int i)) continue;
                 if (hierarchy is not null) hierarchy.Counters.PinQueries++;
-                int piece = pieces.PieceAt(pins[i].X, pins[i].Y, pins[i].Layer);
-                if (piece >= 0) { net = nets.Of(piece); break; }
+                int index = IndexAtPin(pieces, pins[i].X, pins[i].Y, pins[i].Layer, tech);
+                if (index >= 0) { net = nets.Of(pieces.NetOfPiece(index)); break; }
             }
             boundary.Add(net >= 0 ? net : nets.Open());
         }
         return boundary;
+    }
+
+    /// <summary>
+    /// The piece a pin lands on: on the pin's own layer, else, for a pin on a PIN-purpose layer ("Metal1.pin", as a kit marks
+    /// its pins), on the drawing layers of the conductor that layer is a purpose of (<see cref="Em.EmPinConductor"/>, the
+    /// mapping the EM cut reads pins by), since no copper is drawn on the purpose layer itself. <b>Every pin lookup in the
+    /// layout read goes through here</b>: a lookup on the purpose layer finds nothing, which put a generated device's pins on
+    /// no copper of its own and left its metal in the partition, shorting its terminals.
+    /// </summary>
+    internal static int IndexAtPin(CopperPieces pieces, long x, long y, LayerKey layer, Technology? tech)
+    {
+        int index = pieces.IndexAt(x, y, layer);
+        if (index < 0 && Em.EmPinConductor.Of(tech, layer) is { } conductor && !conductor.DrawingLayers.Contains(layer))
+            foreach (var drawn in conductor.DrawingLayers)
+                if ((index = pieces.IndexAt(x, y, drawn)) >= 0) break;
+        return index;
     }
 
     // ── Which instances are devices (R-lvs3-3a) ──────────────────────────────────────────────
