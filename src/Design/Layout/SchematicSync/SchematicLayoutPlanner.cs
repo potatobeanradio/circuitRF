@@ -1550,6 +1550,7 @@ public static partial class SchematicLayoutPlanner
         // generator, and that is a different sentence with a different answer.
         string? kitGeneratorId = null;
         List<CcellParameter>? cellParameters = null;   // a generator-drawn library cell's own interface
+        string? generatorCellDir = null;               // and its folder
         if (comp.CellRef is { } kitRef && PdkKitRegistry.IsKitRef(kitRef))
         {
             if (!PdkKitRegistry.TryParse(kitRef, out string kitName, out string partId))
@@ -1609,6 +1610,7 @@ public static partial class SchematicLayoutPlanner
                 }
                 kitGeneratorId = cellGenerator;
                 cellParameters = ccell.Parameters;
+                generatorCellDir = cellAbsDir;
             }
             else
             {
@@ -1653,31 +1655,48 @@ public static partial class SchematicLayoutPlanner
 
         List<string>? paramNotes = null;
 
-        // A generator-drawn library cell: what the instance leaves unstated takes the cell's own default, ahead of the
-        // generator's declared one seeded above. A default is evaluated as the elaborator evaluates it, in the cell's scope,
-        // where its other parameters are bound (the instance's own values resolved in the parent's scope).
+        // The generator hand-off (a kit part, or a library cell its generator draws): a row with no value is UNSTATED, not an
+        // error. A placed cell carries each of its schematic's variables as an empty row the instance may fill, and refusing
+        // one ("no value set") skipped the whole part. An unstated value takes the cell's own: its .ccell default, else its
+        // schematic's variable of that name, evaluated as the cell's model evaluates it — in the cell's scope, where its other
+        // parameters and variables are bound (the instance's own values resolved in the parent's scope). Else the generator's
+        // declared default seeded above, else nothing, and the generator uses its own.
         IEnumerable<EditableParameter> parameters = comp.Parameters;
         var cellScope = scope;
         HashSet<string>? fromCell = null;
-        if (cellParameters is { Count: > 0 })
+        if (kitGeneratorId is not null)
         {
             var stated = new Dictionary<string, EditableParameter>(StringComparer.Ordinal);
             foreach (var p in comp.Parameters.Where(p => !string.IsNullOrWhiteSpace(p.Expression))) stated.TryAdd(p.Name, p);
-            cellScope = new Scope(comp.InstanceName, scope);
-            fromCell = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var d in cellParameters)
+            parameters = [.. comp.Parameters.Where(p => !string.IsNullOrWhiteSpace(p.Expression))];
+
+            if (generatorCellDir is not null)
             {
-                if (!stated.TryGetValue(d.Name, out var own))
+                // A cell variable is handed over when the generator declares it or the instance carries a row for it; a
+                // declared cell parameter always is, as an instance's own row is.
+                var wanted = new HashSet<string>(comp.Parameters.Select(p => p.Name), StringComparer.Ordinal);
+                if (declared is not null) wanted.UnionWith(declared.Keys);
+                cellScope = new Scope(comp.InstanceName, scope);
+                fromCell = new HashSet<string>(StringComparer.Ordinal);
+                var bound = new HashSet<string>(StringComparer.Ordinal);
+                var own = new List<EditableParameter>();
+                foreach (var (name, expression, unit, isParameter) in
+                         (cellParameters ?? []).Select(d => (d.Name, d.DefaultExpression, d.Unit, true))
+                         .Concat(CellVariables.Of(generatorCellDir).Select(v => (v.Name, v.Expression, v.Unit, false))))
                 {
-                    cellScope.Bind(d.Name, d.DefaultExpression, NonEmptyOrNull(UnitNormalizer.ToEngineUnit(d.Unit)));
-                    fromCell.Add(d.Name);
+                    if (!bound.Add(name)) continue;   // a declared parameter before a variable of the same name
+                    if (stated.TryGetValue(name, out var mine))
+                    {
+                        if (TryEval(mine) is { } v) cellScope.Bind(name, v.ToString("R", CultureInfo.InvariantCulture));
+                        continue;
+                    }
+                    cellScope.Bind(name, expression, NonEmptyOrNull(UnitNormalizer.ToEngineUnit(unit)));
+                    if (string.IsNullOrWhiteSpace(expression) || !(isParameter || wanted.Contains(name))) continue;
+                    fromCell.Add(name);
+                    own.Add(new EditableParameter { Name = name, Expression = expression, Unit = unit });
                 }
-                else if (TryEval(own) is { } v)
-                    cellScope.Bind(d.Name, v.ToString("R", CultureInfo.InvariantCulture));
+                parameters = [.. parameters, .. own];
             }
-            parameters = [.. comp.Parameters.Where(p => !fromCell.Contains(p.Name)),
-                          .. cellParameters.Where(d => fromCell.Contains(d.Name) && !string.IsNullOrWhiteSpace(d.DefaultExpression))
-                                           .Select(d => new EditableParameter { Name = d.Name, Expression = d.DefaultExpression, Unit = d.Unit })];
 
             double? TryEval(EditableParameter p)
             {

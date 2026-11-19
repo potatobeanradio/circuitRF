@@ -82,9 +82,11 @@ one field in its `.ccell`, `LayoutGenerator`: a generator id exactly as the Libr
 Wherever the cell is placed, that generator draws it, with **the instance's own values**, handed over the
 way an imported kit part's are: only the parameters the generator declares, text where it declares text,
 a count where it declares a count, and every number resolved where the instance sits, so `W = 2*w` reads
-your schematic's `w`. A value the instance leaves unstated takes the **cell's own default**, and one the
-cell does not declare either takes the **generator's**. The parameter names are the generator's own:
-name the cell's parameters after them.
+your schematic's `w`. A value the instance leaves unstated &mdash; an empty row counts as unstated &mdash;
+takes the **cell's own value**: its declared default, else the variable of that name in the cell's own
+schematic, worked out as the cell's model works it out. One the cell has neither of takes the
+**generator's** default. The parameter names are the generator's own: name the cell's parameters and
+variables after them. An imported kit part's empty row likewise takes the kit's default.
 
 **What wins.** A `Footprint` stated on the instance is still consulted first. After it, `LayoutGenerator`
 wins over the cell's own layout view: that view stays the cell's own document, which you open, edit and

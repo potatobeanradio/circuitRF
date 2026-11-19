@@ -198,6 +198,46 @@ public sealed class CellLayoutGeneratorTests : IDisposable
         finally { PCellRegistry.RemoveResolver(resolver); }
     }
 
+    /// <summary>A placed cell carries its schematic's variables as empty rows the instance may fill. An empty row is unstated,
+    /// not "no value set": it takes the cell's own variable of that name, evaluated where the cell's other variables are
+    /// bound (gap = 2*g0), else the generator's default (w), and the part is placed. A cell variable the generator does not
+    /// declare and the instance has no row for is not handed over.</summary>
+    [Fact]
+    public void AnEmptyRow_IsUnstated_AndTakesTheCellsVariable()
+    {
+        var seen = new List<IReadOnlyDictionary<string, PCellValue>>();
+        var resolver = new CoilResolver(seen);
+        PCellRegistry.AddResolver(resolver);
+        try
+        {
+            string ws = Path.Combine(_scratch, "rows");
+            Directory.CreateDirectory(ws);
+            LibraryCell(ws, "Dev", KitGenerator,
+                """[ { "Port": 1, "Name": "la", "LayoutPin": "LA" }, { "Port": 2, "Name": "lb", "LayoutPin": "LB" } ]""",
+                [], [("la", -200f, 0f), ("lb", 200f, 0f)],
+                vars: [("turns", "5"), ("g0", "1.5e-6"), ("gap", "2*g0"), ("extra", "7")]);
+            string here = Path.Combine(ws, "Top", "schematic");
+            Directory.CreateDirectory(here);
+
+            var model = new SchematicEditModel { SchematicDirectory = here };
+            var x1 = new EditableComponent { InstanceName = "X1", Symbol = SymbolKind.Generic, CellRef = "../../Dev" };
+            foreach (string row in new[] { "turns", "gap", "w" }) x1.Parameters.Add(new EditableParameter { Name = row, Expression = "" });
+            model.Components.Add(x1);
+
+            var plan = SchematicLayoutPlanner.Plan(model, new LayoutView(), here, ws, Path.Combine(ws, "Top", "layout"), null, null,
+                                                   DiskCellResolver.Instance);
+
+            Assert.Empty(plan.NoLayoutWarnings);
+            var passed = Assert.Single(seen);
+            Assert.Equal(PCellValue.Int(5), passed["turns"]);
+            Assert.Equal(3e-6, passed["gap"].AsReal(), 15);
+            Assert.Equal(PCellValue.Real(4e-6), passed["w"]);
+            Assert.False(passed.ContainsKey("g0"));
+            Assert.False(passed.ContainsKey("extra"));
+        }
+        finally { PCellRegistry.RemoveResolver(resolver); }
+    }
+
     /// <summary>A kit generator declaring a count (turns, Int), a width and a gap, and drawing two pins, LA and LB.</summary>
     private sealed class CoilResolver(List<IReadOnlyDictionary<string, PCellValue>> seen) : IPCellGeneratorResolver
     {
@@ -278,7 +318,7 @@ public sealed class CellLayoutGeneratorTests : IDisposable
     /// between the first two and a capacitor from the second to the third, when there are three), and a <c>.ccell</c> written as
     /// JSON so the terminal map is read exactly as a hand-written file is.</summary>
     private static string LibraryCell(string ws, string name, string? generator, string terminals, List<CcellParameter> parameters,
-                                      (string Name, float X, float Y)[] pins)
+                                      (string Name, float X, float Y)[] pins, (string Name, string Expression)[]? vars = null)
     {
         string dir = CellFolder.CreateCellFolder(ws, name);
         var ccell = new CcellFile { NumPorts = pins.Length, Parameters = parameters, LayoutGenerator = generator };
@@ -317,6 +357,12 @@ public sealed class CellLayoutGeneratorTests : IDisposable
             sch.Components.Add(Part("R1", SymbolKind.Resistor, 0, 0, "R", "1", "Ohm"));
             sch.Wires.Add(Wire((0, -400), (0, -200)));
             sch.Wires.Add(Wire((0, 200), (0, 400)));
+        }
+        if (vars is { Length: > 0 })
+        {
+            var block = new EditableComponent { InstanceName = "VAR1", Symbol = SymbolKind.Var, X = 2000, Y = 0 };
+            foreach (var (n, e) in vars) block.Parameters.Add(new EditableParameter { Name = n, Expression = e });
+            sch.Components.Add(block);
         }
         string schematicDir = CellFolder.SubFolderPath(dir, ViewType.Schematic);
         Directory.CreateDirectory(schematicDir);
