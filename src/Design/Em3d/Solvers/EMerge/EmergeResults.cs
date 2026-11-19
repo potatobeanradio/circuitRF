@@ -38,7 +38,21 @@ public sealed record EmergeRunFacts(string? Version, string? SparseSolver, long?
     /// <summary>brief-emw-2 R-emw2-3a — each wave port's face asked for two modes at the sweep's top; empty when the run has no
     /// wave port or did not say.</summary>
     public IReadOnlyList<EmergeSecondMode> SecondModes { get; init; } = [];
+
+    /// <summary>brief-emi-12 — EMerge's iterative solver (CORVID) solved the run: run.json's <c>sparseSolver</c>, the solver
+    /// EMerge's own log says it called.</summary>
+    public bool Iterative => SparseSolver == IterativeSolverName;
+
+    /// <summary>How run.json and EMerge's log name the iterative solver.</summary>
+    public const string IterativeSolverName = "CORVID";
+
+    /// <summary>brief-emi-12 — CORVID's iterations: right-hand sides solved, the most any took and their mean; null when the run
+    /// did not solve iteratively.</summary>
+    public EmergeIterations? Iterations { get; init; }
 }
+
+/// <summary>brief-emi-12 — what CORVID's iterations came to over a run, as the driver counted them from EMerge's log.</summary>
+public sealed record EmergeIterations(int Solves, int Most, double Mean);
 
 /// <summary>brief-emw-3 — a stalled GPU sweep: its frequencies, its best estimated error, and the frequency count it reached it at.
 /// <paramref name="Unusable"/>: it was stopped because a solve could not be trusted, not for a stall. <paramref name="Residual"/>:
@@ -153,6 +167,11 @@ public static class EmergeResults
                        Num("error"), Bool("converged"), (int?)Long("modes"), Num("meshSeconds"), Num("solveSeconds"), warnings)
                    {
                        Device = Str("device") is "gpu" ? EmergeDevice.Gpu : Str("device") is "cpu" ? EmergeDevice.Cpu : null, SecondModes = second,
+                       Iterations = r.TryGetProperty("iterations", out var it) && it.ValueKind == JsonValueKind.Object &&
+                                    it.TryGetProperty("solves", out var its) && its.TryGetInt32(out int solves) &&
+                                    it.TryGetProperty("most", out var itm) && itm.TryGetInt32(out int most) &&
+                                    it.TryGetProperty("mean", out var ita) && ita.ValueKind == JsonValueKind.Number
+                           ? new EmergeIterations(solves, most, ita.GetDouble()) : null,
                        GpuStalled = r.TryGetProperty("gpuStalled", out var g) && g.ValueKind == JsonValueKind.Object
                            ? new EmergeGpuStall(g.TryGetProperty("samples", out var gs) && gs.ValueKind == JsonValueKind.Number ? gs.GetInt32() : 0,
                                                 g.TryGetProperty("bestError", out var ge) && ge.ValueKind == JsonValueKind.Number ? ge.GetDouble() : null,
@@ -311,7 +330,11 @@ public static class EmergeResults
             $"{N(facts.Unknowns)} unknowns",
             facts.Adaptive
                 ? $"adaptive sweep, {N(facts.Samples)} frequency sample(s), estimated error {(facts.Error is { } e ? e.ToString("G3", CultureInfo.InvariantCulture) : "unreported")}"
-                : $"{N(facts.Samples)} frequency sample(s)"));
+                : $"{N(facts.Samples)} frequency sample(s)") +
+            // brief-emi-12 R-emi12-3 — only a run that solved iteratively: its tolerance can move an answer, a direct solve has none
+            (facts.Iterative
+                ? $"; iterative solver CORVID to a relative residual of {EmergeSettings.IterativeTolerance.ToString("0.#e0", CultureInfo.InvariantCulture)}"
+                : ""));
         lines.Add(Em3dRunService.CostProvenancePrefix + $"wall {wall.TotalSeconds.ToString("0", CultureInfo.InvariantCulture)} s; EMerge peak memory " +
                   (peakBytes is { } m ? Ascii(MachineMemory.Format(m)) : "unreported"));
         lines.AddRange(dcLines ?? []);                        // brief-emdc-2 R-emdc2-4

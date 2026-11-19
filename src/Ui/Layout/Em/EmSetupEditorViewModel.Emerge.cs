@@ -66,6 +66,32 @@ public sealed partial class EmSetupEditorViewModel
         CommitEmergeSection(section, "Change EMerge preset");
     }
 
+    // ── brief-emi-12: the linear solver ──────────────────────────────────────────────────────
+
+    /// <summary>Direct first: it is EMerge's default, where Palace's is Iterative.</summary>
+    public static IReadOnlyList<PalaceLinearSolverChoice> EmergeLinearSolverChoices { get; } =
+    [
+        new(PalaceLinearSolver.Direct,    "Direct"),
+        new(PalaceLinearSolver.Iterative, "Iterative"),
+    ];
+
+    public const string EmergeLinearSolverTip =
+        "How EMerge solves each linear system of a driven run. Direct (the default) factorises it with SPARTA, EMerge's own " +
+        "pick. Iterative uses CORVID, which factorises only the first-order part and iterates on the rest: about a third less " +
+        "memory, S within about 1e-7 of Direct, and usually a little slower where Direct fits (the Coupled Microstrip, " +
+        "337,980 unknowns: 14 s and 3.9 GB against 11 s and 5.0 GB). An eigenmode run always solves directly.";
+
+    [ObservableProperty] private PalaceLinearSolverChoice _emergeLinearSolverChoice = EmergeLinearSolverChoices[0];
+
+    partial void OnEmergeLinearSolverChoiceChanged(PalaceLinearSolverChoice value)
+    {
+        if (_suppressCommit) return;
+        var section = Working.Emerge?.Clone() ?? new CemEmerge();
+        // Direct is written as no field at all.
+        section.LinearSolver = value.Value == PalaceLinearSolver.Direct ? null : value.Value;
+        CommitEmergeSection(section, "Change EMerge linear solver");
+    }
+
     partial void OnEmergeAdaptiveSweepChanged(bool value)
     {
         if (_suppressCommit) return;
@@ -151,6 +177,7 @@ public sealed partial class EmSetupEditorViewModel
     {
         var e = Working.Emerge;
         EmergeQualityChoice = PalaceQualityChoices.First(c => c.Value == (e?.Quality ?? PalaceQuality.Standard));
+        EmergeLinearSolverChoice = EmergeLinearSolverChoices.First(c => c.Value == (e?.LinearSolver ?? PalaceLinearSolver.Direct));
         EmergeMaxElementWavelengthsText = G(e?.MaxElementWavelengths);
         EmergeEdgeRefinementText        = G(e?.EdgeRefinement);
         EmergeElementOrderText          = e?.ElementOrder?.ToString(CultureInfo.InvariantCulture) ?? "";

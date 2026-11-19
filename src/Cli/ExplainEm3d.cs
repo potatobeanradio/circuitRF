@@ -257,7 +257,7 @@ internal static class ExplainEm3d
                                   s.InitialSamples, s.MaxSamples, s.AdaptiveMesh,
                                   low is { Ok: true } ? low.EdgeSizeM : null, low is { Ok: true } ? low.LargestSizeM : null,
                                   [.. (low?.Objects ?? []).Select(o => new Em3dEmergeObjectJson(o.Name, o.Kind, o.Mapping))],
-                                  low is null ? string.Join(" ", s.Problems()) : low.Refusal);
+                                  low is null ? string.Join(" ", s.Problems()) : low.Refusal, s.LinearSolver.ToString());
     }
 
     /// <summary>
@@ -531,19 +531,44 @@ internal static class ExplainEm3d
                 (GmshGeoWriter.BuildTimeNote(GmshGeoWriter.Write(p, settings)) is { } buildTime ? " " + buildTime : ""));
         }
         return setup.Solver3D.Runs(EmergeSolver.Id)
-            ? [palace, OpenEmsSize(grid, p?.Ports.Count ?? 0), EmergeSize(p)]
+            ? [palace, OpenEmsSize(grid, p?.Ports.Count ?? 0), EmergeSize(p, setup)]
             : [palace, OpenEmsSize(grid, p?.Ports.Count ?? 0)];
     }
 
-    /// <summary>brief-emi-4 R-emi4-4 — EMerge's size is not estimated: Palace's volume-and-shell estimate read 6 to 15 times
-    /// EMerge's real count on the Cavity, because EMerge refines round the EDGES of each conductor face rather than over it
-    /// (src/Design/RESOLVED.md, EMI-4). The row says so rather than print a number that far off.</summary>
-    private static Em3dSizeJson EmergeSize(Em3dProblem? p)
-        => new("emerge", "unavailable", null, null, null, null, p is null
-            ? "there is no 3D problem to size."
-            : "no estimate: EMerge refines round the edges of each conductor and sheet face, which circuitRF does not price " +
-              "yet. A run reports its mesh, and EMerge checks its own memory figure (0.25 MB per element) against free " +
-              "memory before it solves.");
+    /// <summary>brief-emi-4 R-emi4-4 — EMerge's element count is not estimated: Palace's volume-and-shell estimate read 6 to 15
+    /// times EMerge's real count on the Cavity, because EMerge refines round the EDGES of each conductor face rather than over it
+    /// (src/Design/RESOLVED.md, EMI-4). brief-emi-12 R-emi12-3 — what IS known before meshing is the memory each solver needs
+    /// per unknown, so the row prices both linear solvers (EMergeMemory's measured lines) at a reference size, the setup's own
+    /// first, and says the run checks its mesh against them before it solves.</summary>
+    internal static Em3dSizeJson EmergeSize(Em3dProblem? p, EmSetup setup)
+    {
+        if (p is null) return new("emerge", "unavailable", null, null, null, null, "there is no 3D problem to size.");
+        var s = EmergeSettings.Resolve(setup.Emerge);
+        if (p.Type == Em3dProblemType.Eigenmode)
+            return new("emerge", "per-unknown", null, null, null, null,
+                $"no element count before meshing (EMerge refines round the edges of each conductor and sheet face). An eigenmode " +
+                $"run factorises with SuperLU whatever is installed: {EmergeMemoryLine(EmergeLinearSolve.SuperLuEigenmode)}. A run checks " +
+                "its mesh against this machine's memory before it solves.");
+        bool iterative = s.Iterative && p.PlaneWave is null;
+        var mine = iterative ? EmergeLinearSolve.Corvid : EmergeLinearSolve.Sparta;
+        var other = iterative ? EmergeLinearSolve.Sparta : EmergeLinearSolve.Corvid;
+        return new("emerge", "per-unknown", null, null, null, null,
+            "no element count before meshing (EMerge refines round the edges of each conductor and sheet face). Memory by " +
+            $"linear solver: {(iterative ? "Iterative" : "Direct")} (this setup's), {EmergeMemoryLine(mine)}" +
+            (p.PlaneWave is null ? $"; {(iterative ? "Direct" : "Iterative")}, {EmergeMemoryLine(other)}" : "") +
+            ". A run checks its mesh against this machine's memory before it solves" +
+            (!iterative && p.PlaneWave is null ? ", and offers the iterative solver when the direct one does not fit." : "."));
+    }
+
+    /// <summary>"SPARTA, about 0.31 GB + 14 kB per unknown (1.7 GB at 100,000 unknowns)".</summary>
+    private static string EmergeMemoryLine(EmergeLinearSolve solve)
+    {
+        var (fixedBytes, perUnknown) = EmergeMemory.Line(solve);
+        string name = solve switch { EmergeLinearSolve.Corvid => "CORVID", EmergeLinearSolve.SuperLu or EmergeLinearSolve.SuperLuEigenmode => "SuperLU", _ => "SPARTA" };
+        return $"{name}, about {MachineMemory.Format(fixedBytes)} + {(perUnknown / 1e3).ToString("0.#", CultureInfo.InvariantCulture)} kB " +
+               $"per unknown ({MachineMemory.Format(EmergeMemory.PeakBytes(100_000, solve))} at 100,000 unknowns, " +
+               $"{MachineMemory.Format(EmergeMemory.PeakBytes(500_000, solve))} at 500,000)";
+    }
 
     /// <summary>
     /// The openEMS grid for the problem, through the generator a run uses, with the section's grid
@@ -718,7 +743,8 @@ internal static class ExplainEm3d
                           (e.LargestSizeM is { } big ? $", largest {L(big)}" : "") + "; " +
                           (e.AdaptiveSweep ? $"adaptive sweep to {G(e.Tolerance)} on |S| from {e.InitialSamples} samples, at most {e.MaxSamples}"
                                            : "every frequency solved") +
-                          $"; {e.AdaptiveMesh} mesh refinement pass(es)");
+                          $"; {e.AdaptiveMesh} mesh refinement pass(es); linear solver {e.LinearSolver}" +
+                          (e.LinearSolver == "Iterative" ? $" (CORVID, relative residual {EmergeSettings.IterativeTolerance.ToString("0.#e0", CultureInfo.InvariantCulture)})" : ""));
         if (e.Refusal is { } no) Console.WriteLine($"  {"",-12} a run would stop here: {no}");
         foreach (var o in e.Objects) Console.WriteLine($"    {o.Name,-28} {o.Kind,-14} {o.Mapping}");
 

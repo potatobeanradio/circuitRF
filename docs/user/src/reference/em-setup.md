@@ -1372,6 +1372,7 @@ filled in overrides the preset for that setting only:
 | Sweep tolerance | `Tolerance` | The adaptive sweep's tolerance on \|S\|. *By preset.* |
 | Most sweep solves | `MaxSamples` | The most frequencies the adaptive sweep solves; at least 5, default 100. |
 | Save fields at (GHz) | `SaveFieldsGHz` | The frequencies whose fields the run saves for the 3D view, as Palace's box: see [Fields for the 3D view](#palace-fields). |
+| Linear solver | `LinearSolver` | *Direct* (the default) or *Iterative*: see [the iterative solver](#emerge-iterative) below. Not part of any preset. |
 
 | Preset | Largest element (λ) | At metal | Refinement passes | Sweep tolerance |
 |---|---|---|---|---|
@@ -1395,7 +1396,41 @@ converged**: its result is still written, with a warning, and the 3D view marks 
 
 Before solving, the run checks the mesh's size against this computer's memory, as Palace's run does: a
 warning past three quarters of it, and a question (or `--force`) past one and a half times it. A refused run
-stops before the solve.
+stops before the solve. The estimate is for the solver the run will use
+([EM Solvers ▸ EMerge's memory](em-solvers.html#emerge-memory) has the figures), and EMerge waits while it is asked.
+
+<a id="emerge-iterative"></a>**The iterative solver** (`"LinearSolver": "Iterative"`). By default EMerge factorises each
+system with its direct solver, SPARTA. *Iterative* uses CORVID instead: it factorises only the first-order part of the
+system, about a fifth of the unknowns, and solves the rest iteratively to a relative residual of 1e-6 (EMerge's own
+default, which circuitRF states so that the answer cannot move if EMerge's default does). It needs about a third less
+memory and agrees with the direct solve to about 1e-7; where the direct solve fits, it is usually a little slower, and on
+the largest model measured it was faster. On an Apple M4 (10 cores, 16 GB), the same mesh, each run's solve time and peak
+memory:
+
+| Model | Unknowns | Sweep | Direct (SPARTA) | Iterative (CORVID) | Largest \|ΔS\| |
+|---|---|---|---|---|---|
+| 3D Wave Ports Launch | 151,670 | 5 points | 4.3 s, 3.1 GB | 6.5 s, 2.1 GB | 4.8e-8 |
+| | | adaptive, 12 solves | 9.0 s, 3.1 GB | 9.2 s, 2.1 GB | 2.5e-7 |
+| 3D Wave Ports Coupled Microstrip | 337,980 | 5 points | 11.1 s, 5.0 GB | 14.4 s, 3.9 GB | 1.4e-7 |
+| | | adaptive, 10 solves | 24.1 s, 5.0 GB | 30.3 s, 4.1 GB | 1.4e-7 |
+| A 5 µm line drawn as a 1 µm lossy sheet | 75,602 | 5 points | 2.0 s, 1.8 GB | 5.0 s, 1.1 GB | 1.6e-8 |
+| | | adaptive, 7 solves | 2.4 s, 1.8 GB | 4.6 s, 1.1 GB | 1.4e-8 |
+| 3D Eigenmode Cavity, driven, fine mesh | 493,846 | 3 points | 11.4 s, 6.7 GB | 7.6 s, 4.7 GB | 1.1e-7 |
+| | | adaptive, 10 solves | 23.0 s, 6.9 GB | 12.2 s, 5.1 GB | 3.1e-6 |
+
+The adaptive sweeps took the same frequencies on both solvers; the Cavity's 3.1e-6 is its fit between them, near a
+resonance, from samples that agree to 1.1e-7. CORVID converged on every one of these, in 7 iterations or fewer on the
+Cavity and the Coupled Microstrip and in up to 48 on the sheet line.
+An eigenmode run always solves directly, whatever the setting (EMerge's eigensolver does not use CORVID), and so
+does a run lit by a plane wave. A run that solved iteratively says so in its cost line and its Notes, with how many
+iterations its solves took, and its `.sNp` header carries the tolerance. If CORVID does not converge, the run is
+refused and writes no result, naming the direct solver: EMerge would otherwise solve the system again directly, which is
+the solve the setting was chosen to avoid.
+
+**When the direct solve does not fit and the iterative one would**, the question before the run offers it first, as
+**Use the Iterative Solver**, with its estimate. The run then solves with CORVID on the mesh it has already made, says
+so in its Notes with the estimate it was started on, and the setup still says Direct. On the command line `--force`
+starts the run as the setup stands, on the direct solver; set `"LinearSolver": "Iterative"` to solve iteratively.
 
 The result lands beside the other solvers' results: `results/<name>.emerge.sNp` and `<name>.emerge_em.npy`, or
 `<name>.emerge_eig.npy` for an eigenmode run. `results/<name>.emerge/` keeps the input (`problem.json` and the

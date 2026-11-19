@@ -55,6 +55,15 @@ public sealed class CemEmerge
     /// </summary>
     public List<double>? SaveFieldsGHz { get; set; }
 
+    /// <summary>
+    /// brief-emi-12 R-emi12-3 — how a driven run solves each linear system, under the key and words Palace's section uses:
+    /// Direct (omitted: EMerge's own sparse direct solver, SPARTA where it is installed) or Iterative (EMerge's CORVID, which
+    /// factorises only the first-order part of the system and solves the rest iteratively). Iterative needs far less memory on a
+    /// large model and agrees with the direct solve to about 1e-6 in S; when a model fits, the direct solve is usually faster. An
+    /// eigenmode or scattering run always solves directly.
+    /// </summary>
+    public PalaceLinearSolver? LinearSolver { get; set; }
+
     /// <summary>A copy, so an editor can change one without touching a setup that shares it.</summary>
     public CemEmerge Clone()
     {
@@ -69,7 +78,7 @@ public sealed class CemEmerge
     public bool IsEmpty =>
         Quality is null && MaxElementWavelengths is null && EdgeRefinement is null && ElementOrder is null &&
         AdaptiveSweep is null && Tolerance is null && MaxSamples is null && AdaptiveMesh is null && SaveFieldsGHz is null &&
-        HoldMeshPasses is null;
+        HoldMeshPasses is null && LinearSolver is null;
 }
 
 /// <summary>
@@ -93,6 +102,20 @@ public sealed record EmergeSettings(
 
     /// <summary>brief-sdl-8 D7 — <see cref="CemEmerge.HoldMeshPasses"/>, resolved.</summary>
     public bool HoldMeshPasses { get; init; }
+
+    /// <summary>brief-emi-12 R-emi12-3 — <see cref="CemEmerge.LinearSolver"/>, resolved: Direct unless the section says
+    /// Iterative. Not part of a preset.</summary>
+    public PalaceLinearSolver LinearSolver { get; init; } = PalaceLinearSolver.Direct;
+
+    /// <summary>Whether a driven run of these settings solves with EMerge's iterative solver.</summary>
+    public bool Iterative => LinearSolver == PalaceLinearSolver.Iterative;
+
+    /// <summary>
+    /// brief-emi-12 R-emi12-3 — the relative residual CORVID solves each system to. It is EMerge's own default (its
+    /// <c>SolverCorvid.rtol</c>, 1e-6 on 3.0.10), STATED by circuitRF so a change of EMerge's default cannot move an answer
+    /// without the run saying so; the .sNp's provenance carries it on a run that solved iteratively. Not a setting.
+    /// </summary>
+    public const double IterativeTolerance = 1e-6;
 
     /// <summary>
     /// A preset's values. Second order everywhere (EMerge's default; its first-order elements are for checks, not answers).
@@ -123,7 +146,11 @@ public sealed record EmergeSettings(
             section.AdaptiveSweep         ?? p.AdaptiveSweep,
             section.Tolerance             ?? p.Tolerance,
             section.MaxSamples            ?? p.MaxSamples,
-            section.AdaptiveMesh          ?? p.AdaptiveMesh) { HoldMeshPasses = section.HoldMeshPasses == true };
+            section.AdaptiveMesh          ?? p.AdaptiveMesh)
+        {
+            HoldMeshPasses = section.HoldMeshPasses == true,
+            LinearSolver   = section.LinearSolver ?? PalaceLinearSolver.Direct,
+        };
     }
 
     /// <summary>Every value that cannot be run, as sentences naming the field — empty when all can.</summary>

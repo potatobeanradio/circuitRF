@@ -88,6 +88,10 @@ public sealed record ProcessWatch(Action<string>? OnLine, long PhysicalBytes)
     /// <summary>Every process this watch's loop starts, as it starts.</summary>
     public Action<System.Diagnostics.Process>? OnStarted { get; init; }
 
+    /// <summary>brief-emi-12 — the process's standard input stays open for <see cref="OnStarted"/>'s receiver to answer on (the
+    /// EMerge driver waits for one line after its mesh); otherwise it is closed at once, so the process reads end-of-file.</summary>
+    public bool KeepInput { get; init; }
+
     /// <summary>Test seam: the tree's memory for a root pid, in place of the operating system's (a reader per run).</summary>
     internal Func<int, Func<TreeMemory?>>? ReadMemory { get; init; }
 
@@ -1398,7 +1402,7 @@ public static class PalaceRun
             {
                 ProcessStarted?.Invoke(p);
                 watch?.OnStarted?.Invoke(p);
-                if (psi.RedirectStandardInput) p.StandardInput.Close();
+                if (psi.RedirectStandardInput && watch?.KeepInput != true) p.StandardInput.Close();
                 p.OutputDataReceived += (_, e) => Line(e.Data);
                 p.ErrorDataReceived  += (_, e) => Line(e.Data);
                 p.BeginOutputReadLine();

@@ -311,19 +311,23 @@ public sealed class EmergeRunTests(ITestOutputHelper output) : IDisposable
     {
         Assert.Equal(109566, EmergeMemory.Unknowns(21817, 32966, 2));
         Assert.Equal(21817, EmergeMemory.Unknowns(21817, 32966, 1));
-        // The Cavity on the fast solver peaked at 2.59 GB: the estimate is above that, and not wildly so.
-        long fast = EmergeMemory.PeakBytes(109566, EmergeSpeedTier.Fast, eigenmode: false);
-        Assert.InRange(fast, 2_590_000_000, 3_200_000_000);
-        Assert.True(EmergeMemory.PeakBytes(109566, EmergeSpeedTier.Baseline, false) > fast);
-        Assert.Equal(EmergeMemory.PeakBytes(109566, EmergeSpeedTier.Baseline, false), EmergeMemory.PeakBytes(109566, EmergeSpeedTier.Fast, true));
-        Assert.Equal(EmergeMemory.PeakBytes(109566, EmergeSpeedTier.Baseline, false), EmergeMemory.PeakBytes(109566, EmergeSpeedTier.Unknown, false));
+        // brief-emi-12 — the solver the run will use decides the line: eigenmode is SuperLU's whatever is set, iterative CORVID's,
+        // a GPU-sized driven run SPARTA-on-the-GPU's, and an unreported tier errs high on SuperLU's.
+        Assert.Equal(EmergeLinearSolve.SuperLuEigenmode, EmergeMemory.SolverFor(109566, EmergeSpeedTier.Fast, eigenmode: true, iterative: true));
+        Assert.Equal(EmergeLinearSolve.Corvid, EmergeMemory.SolverFor(109566, EmergeSpeedTier.Fast, false, iterative: true, gpuFromUnknowns: 0));
+        Assert.Equal(EmergeLinearSolve.Sparta, EmergeMemory.SolverFor(109566, EmergeSpeedTier.Fast, false, iterative: true, scattering: true));
+        Assert.Equal(EmergeLinearSolve.SpartaGpu, EmergeMemory.SolverFor(109566, EmergeSpeedTier.Fast, false, false, gpuFromUnknowns: 100000));
+        Assert.Equal(EmergeLinearSolve.Sparta, EmergeMemory.SolverFor(109566, EmergeSpeedTier.Fast, false, false, gpuFromUnknowns: 200000));
+        Assert.Equal(EmergeLinearSolve.SuperLu, EmergeMemory.SolverFor(109566, EmergeSpeedTier.Unknown, false, false));
+        Assert.True(EmergeMemory.PeakBytes(109566, EmergeLinearSolve.Corvid) < EmergeMemory.PeakBytes(109566, EmergeLinearSolve.Sparta));
 
         var mesh = new EmergeMeshCounts(15124, 21817, 32966);
-        Assert.Equal(Em3dMemoryLevel.Fits, EmergeMemory.Verdict(mesh, EmergeSettings.Default, EmergeSpeedTier.Fast, false, 16L << 30).Level);
-        var severe = EmergeMemory.Verdict(mesh, EmergeSettings.Default, EmergeSpeedTier.Fast, false, 1L << 30);
+        Assert.Equal(Em3dMemoryLevel.Fits, EmergeMemory.Verdict(mesh, EmergeSettings.Default, EmergeLinearSolve.Sparta, 16L << 30).Level);
+        var severe = EmergeMemory.Verdict(mesh, EmergeSettings.Default, EmergeLinearSolve.Sparta, 1L << 30);
         Assert.Equal(Em3dMemoryLevel.Severe, severe.Level);
-        Assert.StartsWith("EMerge made 15,124 tetrahedra, 109,566 unknowns. EMerge may need about", severe.Text);
+        Assert.StartsWith("EMerge made 15,124 tetrahedra, 109,566 unknowns, for its direct solver (SPARTA). EMerge may need about", severe.Text);
         Assert.Contains("EMerge.ElementOrder: 1", severe.Text);
+        Assert.DoesNotContain("CORVID", severe.Text);       // not installed: not offered
     }
 
     // ── 6. With EMerge installed ───────────────────────────────────────────────────────────────

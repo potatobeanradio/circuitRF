@@ -42,6 +42,10 @@ public sealed record EmergeProbe(
     /// for the GPU (<see cref="EmergeDevicePolicy"/>); on the CPU SPARTA is EMerge's own first choice since 3.0.8.</summary>
     public bool Gpu => SparseSolvers.Contains(GpuSolverFlag, StringComparer.Ordinal);
 
+    /// <summary>brief-emi-12 — whether EMerge's iterative solver (CORVID, its <c>corvid</c> extra, which circuitRF's recipes
+    /// install) can run here; null when the probe did not say (one older than EMI-12, asked again once its source changed).</summary>
+    public bool? Iterative { get; init; }
+
     public EmergeSpeedTier Tier => DirectSolver switch
     {
         null                => EmergeSpeedTier.Unknown,
@@ -100,7 +104,11 @@ public sealed record EmergeProbe(
                 : [];
             int? cores = root.TryGetProperty("cores", out var c) && c.ValueKind == JsonValueKind.Number && c.TryGetInt32(out int n) ? n : null;
             return new EmergeProbe(version, Text(root, "python"), Text(root, "platform"), Text(root, "machine"), cores,
-                                   Text(root, "gmsh"), solvers, Text(root, "directSolver"));
+                                   Text(root, "gmsh"), solvers, Text(root, "directSolver"))
+            {
+                Iterative = root.TryGetProperty("iterativeSolver", out var it) && it.ValueKind is JsonValueKind.True or JsonValueKind.False
+                    ? it.GetBoolean() : null,
+            };
         }
         catch (JsonException)
         {

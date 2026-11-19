@@ -1145,6 +1145,12 @@
                                       ItemsSource="{x:Static em:EmSetupEditorViewModel.PalaceQualityChoices}"
                                       SelectedItem="{Binding ViewModel.EmergeQualityChoice}"
                                       ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.EmergeQualityTip}"/>
+                            <!-- brief-emi-12: the linear solver, Palace's key and words. Not a preset's field. -->
+                            <TextBlock Classes="colhdr" Text="Linear solver" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                            <ComboBox Classes="cell" MinWidth="100"
+                                      ItemsSource="{x:Static em:EmSetupEditorViewModel.EmergeLinearSolverChoices}"
+                                      SelectedItem="{Binding ViewModel.EmergeLinearSolverChoice}"
+                                      ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.EmergeLinearSolverTip}"/>
                         </StackPanel>
                         <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
                               ColumnSpacing="8" RowSpacing="2" HorizontalAlignment="Left" Margin="0,4,0,0">

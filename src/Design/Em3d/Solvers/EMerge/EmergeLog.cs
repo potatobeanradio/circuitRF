@@ -208,6 +208,10 @@ public static class EmergeLog
     /// (<c>NON_FINITE</c> in <c>circuitrf_emerge.py</c>).</summary>
     public const string NonFiniteSolveCause = "non-finite-solve";
 
+    /// <summary>brief-emi-12 — the cause on the line of a refused iterative solve: CORVID did not converge, or EMerge would have
+    /// put its direct solver in CORVID's place.</summary>
+    public const string IterativeSolveCause = "iterative-solve";
+
     private static long Long(Group g) => long.Parse(g.Value, CultureInfo.InvariantCulture);
     private static double Num(Group g) => double.Parse(g.Value, NumberStyles.Float, CultureInfo.InvariantCulture);
 }
@@ -247,6 +251,18 @@ public sealed class EmergeStageTracker(RunControl? control, bool eigenmode)
     /// <see cref="OperationCanceledException"/> stops the run (the memory gate's refusal).</summary>
     public Action<EmergeMeshCounts>? OnMeshed { get; init; }
 
+    /// <summary>
+    /// brief-emi-12 R-emi12-2 — the driver's standard input, when it was started to ask (<see cref="EmergeRun.AskArgument"/>):
+    /// after its mesh it waits for one line, and nothing is solved until it comes. <see cref="Line"/> answers it once
+    /// <see cref="OnMeshed"/> returns — "solve", or "iterative" and the tolerance when <see cref="Iterative"/> was set — and
+    /// "stop" when it throws, which also stops the process tree.
+    /// </summary>
+    public TextWriter? Input { get; set; }
+
+    /// <summary>brief-emi-12 — set by <see cref="OnMeshed"/> to solve this run with EMerge's iterative solver (the memory check's
+    /// remedy): the answer carries the tolerance.</summary>
+    public double? Iterative { get; set; }
+
     private int _jobs, _batchDone;
     private bool _solving, _adaptive, _meshing;
     private IReadOnlyList<string> _batch = [];
@@ -256,6 +272,21 @@ public sealed class EmergeStageTracker(RunControl? control, bool eigenmode)
         => $"{SolvingLabel}: {(_batchDone > 0 ? $"frequency {_batchDone} of {_batch.Count} in " : "")}{string.Join(", ", _batch)}{ErrorText()}";
 
     public void Begin() => control?.BeginStage(StartingLabel);
+
+    /// <summary>The one line the waiting driver reads, then its input closed. A driver that has already gone (a refusal it
+    /// raised itself) leaves the pipe broken, which is no error here.</summary>
+    private void Answer(string line)
+    {
+        if (Input is not { } input) return;
+        Input = null;
+        try
+        {
+            input.Write(line + "\n");
+            input.Flush();
+            input.Close();
+        }
+        catch (Exception e) when (e is IOException or ObjectDisposedException) { }
+    }
 
     public void Line(string line)
     {
@@ -278,7 +309,13 @@ public sealed class EmergeStageTracker(RunControl? control, bool eigenmode)
             case EmergeMeshCounts c:
                 Counts = c;
                 Tetrahedra = c.Tetrahedra;
-                OnMeshed?.Invoke(c);
+                string answer = EmergeRun.StopAnswer;
+                try
+                {
+                    OnMeshed?.Invoke(c);
+                    answer = Iterative is { } tol ? EmergeRun.IterativeAnswer(tol) : EmergeRun.SolveAnswer;
+                }
+                finally { Answer(answer); }
                 break;
             case EmergeGpuStalled g:
                 // brief-emw-3 — the sweep starts again, on the CPU: what the user sees while it does

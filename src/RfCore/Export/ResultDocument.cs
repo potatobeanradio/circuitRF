@@ -3364,7 +3364,9 @@ namespace RfCore.Export
         double? LargestSizeM,
         IReadOnlyList<Em3dEmergeObjectJson> Objects,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string? Refusal);
+        string? Refusal,
+        // brief-emi-12 R-emi12-3 — "Direct" or "Iterative", the section's EMerge.LinearSolver resolved
+        string LinearSolver = "Direct");
 
     /// <summary>brief-emi-6 R-emi6-5 — a comparison: the solver every other one is compared against, and each solver it runs.</summary>
     public sealed record Em3dCompareJson(string Reference, IReadOnlyList<Em3dCompareSolverJson> Solvers);

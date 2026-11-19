@@ -120,6 +120,9 @@ public static partial class EmergeScriptWriter
          .Key("adaptiveMesh").Int(settings.AdaptiveMesh);
         // brief-sdl-8 D7 — written only when held, so every other run's problem.json is the bytes it was.
         if (settings.HoldMeshPasses) e.Key("holdMesh").Bool(true);
+        // brief-emi-12 R-emi12-3 — likewise only on an iterative run, which is the only kind the tolerance can move.
+        if (settings.Iterative && problem.Type != Em3dProblemType.Eigenmode && problem.PlaneWave is null)
+            e.Key("linearSolver").Str("iterative").Key("iterativeTolerance").Number(EmergeSettings.IterativeTolerance);
         e.EndObject();
 
         if (fields is not null)

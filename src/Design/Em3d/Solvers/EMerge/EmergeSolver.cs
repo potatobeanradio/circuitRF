@@ -136,6 +136,10 @@ public static class EmergeSolver
         except Exception:
             out["sparseSolvers"] = []
         try:
+            out["iterativeSolver"] = bool(s.SolverCorvid.available)
+        except Exception:
+            out["iterativeSolver"] = False
+        try:
             import scipy.sparse as sp
             out["directSolver"] = type(AutomaticRoutine().pick_solver(sp.csc_matrix((20000, 20000), dtype=complex), None, s.MatrixType.COMPLEX_SYMMETRIC)).__name__
         except Exception:

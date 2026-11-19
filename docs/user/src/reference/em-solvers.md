@@ -223,7 +223,7 @@ lossy substrate these are the largest expected differences between the two solve
 | Frequency | One frequency per solve; adaptive sampling | Frequency domain; adaptive sweep | Frequency domain; adaptive sweep | Time domain: one pulse covers the band |
 | Geometry it fits | Planar metal and vias in a layered stack | Anything: curved, slanted, small metal in a large volume | The same as Palace | Manhattan metal; curves are staircased |
 | What sets the cost | The metal area, and how finely it is cut | The volume, the highest frequency, and how much refinement the small features need | The volume, the highest frequency, and the element size along metal edges | The number of cells × the number of time steps; the smallest cell sets the time step |
-| Memory | 84 MB at 2,000 unknowns, growing as N² | The largest: gigabytes | Gigabytes: 1.6 GB at 54,000 unknowns, about 24 kB more per unknown | Small: tens to hundreds of megabytes |
+| Memory | 84 MB at 2,000 unknowns, growing as N² | The largest: gigabytes | Gigabytes: about 1 GB at 54,000 unknowns and 15 to 18 kB more per unknown on its direct solver, a third less on its iterative one | Small: tens to hundreds of megabytes |
 | Open space, radiation | Exact, with no box | An air box with first-order absorbing faces, kept well away | The same as Palace | An air box with PML, which can stay close |
 | Enclosures, lids, cavities | Not representable | Yes, and eigenmodes find their resonances | Yes, and eigenmodes find their resonances | Yes, but a high-Q cavity rings for a long time |
 | Capacitance and inductance matrices | No | Yes (electrostatic, magnetostatic) | No | No |
@@ -337,12 +337,37 @@ full solve of its own at that frequency.
 the mesh to 60,503 tetrahedra, and on the 3D Connector's launch they passed 7 GB and the run was stopped by its
 memory limit. Standard solves the starting mesh only.
 
-**Memory** grows with the unknowns: about 134 MB plus 24 kB per unknown with a multi-threaded solver,
-and 440 MB plus 34 kB per unknown with the single-threaded default. At element order 2 a mesh has about
-7.2 unknowns per tetrahedron. circuitRF checks the mesh EMerge made against this computer's memory
-before it solves; it cannot estimate the size before meshing, because EMerge sizes its mesh along the
-edges of every metal face. Element order 1 has about a fifth of the unknowns, but it put the cavity's
-notch 25–30 MHz low, which is why every preset uses order 2.
+### EMerge's memory {#emerge-memory}
+
+**Memory grows with the unknowns, and the solver sets how fast.** At element order 2 a mesh has about 7.2 unknowns per
+tetrahedron. circuitRF checks the mesh EMerge made against this computer's memory before it solves, for the solver the
+run will use, and EMerge waits for the answer; it cannot estimate the size before meshing, because EMerge sizes its mesh
+along the edges of every metal face (`explain` and `em --dry-run` print each solver's figure per unknown instead). The
+estimates, all of a run's processes together:
+
+| Solver | Used by | Estimate | At 100,000 unknowns | At 500,000 |
+|---|---|---|---|---|
+| SPARTA, direct | every driven run, by default | 420 MB + 18.2 kB per unknown | 2.2 GB | 9.5 GB |
+| SPARTA on the GPU | Device GPU | 360 MB + 17.4 kB per unknown | 2.1 GB | 9.1 GB |
+| CORVID, iterative | `"LinearSolver": "Iterative"`, or the remedy below | 300 MB + 12.0 kB per unknown | 1.5 GB | 6.3 GB |
+| SuperLU, in the eigensolver | every eigenmode run | 300 MB + 19.6 kB per unknown | 2.3 GB | 10.1 GB |
+| SuperLU, direct | a driven run with no faster solver installed | 24.4 kB per unknown | 2.4 GB | 12.2 GB |
+
+Measured on an Apple M4 (16 GB), EMerge 3.0.10, on the 3D Eigenmode Cavity and the 3D Wave Ports Launch and Coupled
+Microstrip meshed at several sizes from 54,000 to 494,000 unknowns, each run at least twice, point and adaptive sweeps. The
+figure is each run's whole footprint, its compressed and swapped memory included: that is what the run's memory limit
+holds, and it barely moves from run to run, where the memory resident at one moment moved by up to 40 %. On the GPU, whose
+memory on Apple silicon is the computer's, it read within 10 % of the CPU's. **The estimates err high, by up to 1.4 times:**
+the Launch and a thin sheet line need 20 to 40 % more per unknown on a direct solver than the Cavity does, and nothing in
+the mesh's counts tells them apart before the solve, so one figure covers both. A run holds one frequency's matrices at a
+time, so its memory does not grow with the number of frequencies.
+
+**When the direct solve does not fit and the iterative one would**, the question before the run offers
+**Use the Iterative Solver** first, with its estimate. The run then solves with CORVID on the mesh it already has, with
+the same answer to about 1e-7 ([the iterative solver](em-setup.html#emerge-iterative) has the measured trade), and
+says so in its Notes; the setup is not changed. `--force` on the command line runs the direct solve as the setup stands.
+Element order 1 has about a fifth of the unknowns, but it put the cavity's notch 25–30 MHz low, which is why every preset
+uses order 2.
 
 ### EMerge on a GPU {#emerge-gpu}
 

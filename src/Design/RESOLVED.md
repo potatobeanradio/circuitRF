@@ -32747,3 +32747,94 @@ recipe's lines: the Windows-specific risk of this re-pin, SPARTA's hash, holds. 
 CPU path on 3.0.10, M4, driven: the Cavity (54,090 unknowns) 2.7 s CPU against 2.9 s GPU, the Launch (151,670) 6.9 against 5.9, the
 Coupled Microstrip (337,980) 24.0 and 24.7 against 36.9 and 38.1 (interleaved, the machine loaded by Spotlight), S within 1e-6. Auto never
 hands a run to the GPU now (`EmergeDevicePolicy.GpuFromUnknowns`); Device GPU still does, with its stall watch and its checks.
+
+## EMI-12 — CORVID as a remedy and a setting; EMerge's memory lines on 3.0.10 (2026-11-19)
+
+**The memory check's lines were re-measured on EMerge 3.0.10, one per solver a run can use** (`EmergeMemory`, which carries
+every measurement as data and a routine test holds the lines to them). M4, 16 GB, every core, order 2, three frequencies
+(an eigenmode run Count 3), no fields, each problem at least twice, measured by a scratch watchdog that reads what
+`ProcessTreeMemory` reads on macOS: the sum over the driver's tree of each process's `ri_phys_footprint`, every 100 ms.
+
+| Solver | Line | Most it reads over a problem's larger run |
+|---|---|---|
+| SPARTA (CPU) | 420 MB + 18.2 kB per unknown | 1.39× (the Cavity at 54,090) |
+| SPARTA (GPU) | 360 MB + 17.4 kB | 1.37× |
+| CORVID | 300 MB + 12.0 kB | 1.29× |
+| SuperLU in the eigensolver | 300 MB + 19.6 kB | 1.28× |
+| SuperLU, driven | 24.4 kB | 1.48× |
+
+Measured peaks (footprint, GB, every run): SPARTA — Cavity 54,090: 1.00/1.01; sheet line 75,602: 1.76/1.80; Launch Draft
+92,108: 1.79/1.74; Cavity 108,668: 1.69/1.72; Launch 151,670: 2.89/3.08/3.08/3.06; Cavity 255,076: 3.68/3.61; Coupled
+Microstrip 337,980: 4.85/4.80/4.97/4.96; Cavity 361,012: 5.36/4.81; Coupled 363,540: 5.41/5.41; Cavity 493,846:
+6.65/6.53/6.68/6.93. CORVID, same problems: 0.73/0.74, 1.08/1.07, 1.30/1.30, 1.28/1.29, 1.91/2.00/2.11/2.11, 2.67/2.51,
+3.66/3.56/3.94/4.09, 3.66/3.65, 4.02/3.96, 4.71/4.74/4.73/5.05. GPU: Cavity 54,090 0.95/0.95, Launch 92,108 1.80/1.82,
+Launch 151,670 2.86/2.99, Cavity 255,076 3.51/3.40, Coupled 337,980 4.89/4.59, Cavity 493,846 6.31/6.58. Eigenmode (Cavity):
+55,324 1.08/1.09, 109,924 2.11/2.11, 205,224 3.47/3.84. SuperLU driven (one frequency): Cavity 54,090 0.98/0.99, Launch
+92,000 1.96/1.81/2.04/2.04/1.81, Cavity 107,778 1.78/1.67, Launch 150,966 3.49/3.49/3.45/3.68/3.28. The four-run rows end
+with R-emi12-4's 5-point and adaptive sweeps. The old check read the Coupled Microstrip at 8.28 GB; it peaks at 4.97.
+
+- **The footprint is the figure, not the resident size.** Under memory pressure macOS compresses a factorisation's pages: one
+  run read 2.4 GB resident and 4.0 GB footprint, and two runs of one problem differed by up to 40 % resident while their
+  footprints agreed within 6 % (CORVID) and 10 % (SPARTA, whose parallel factorisation holds a different set of fronts at
+  once from run to run). That is the brief's 2.5-against-3.4 GB spread. On the GPU the Metal buffers are charged to the
+  allocating process's footprint, so the GPU's figure is everything the run takes from the machine; it read within 10 % of
+  the CPU's.
+- **The brief's 1.3× is met by CORVID and the eigensolver only.** The Launch and the thin sheet line need 20–40 % more per
+  unknown on SPARTA and SuperLU than the Cavity or the Coupled Microstrip, reproducibly (the Launch five runs on the first
+  driver), and the excess grows with the mesh; tetrahedra per unknown are the same on all of them (0.138 against 0.142), so
+  nothing in the meshed line separates them. One line that holds the Launch reads the Cavity 1.39× high: the lines are the
+  minimax over the larger run of each problem, and `EmergeMemory.Ceiling` records what each achieves. CORVID factorises only
+  the Whitney part and stays within 1.29×. The eigensolver was measured on the Cavity alone (300 MB + 17.3 kB holds within
+  1.16×); its slope was raised to 19.6 kB (1.28× there) to leave room for the excess no other geometry's eigenmode run measured.
+- **How the check knows the solver before the solve** (`EmergeMemory.SolverFor`): eigenmode → SuperLU (3.0.10's `eigen.py`
+  still shift-inverts with SciPy's `splu`, and `_get_eig_solver` never returns CORVID, so an eigenmode run is never offered
+  it); driven and iterative (the setting or the question's answer), not a scattering run → CORVID; Device handing this many
+  unknowns to the GPU → SPARTA GPU; otherwise the probe's tier (fast → SPARTA's line, baseline or unreported → SuperLU's).
+
+**Fixed on the way: a sweep held every frequency's matrices at once.** EMerge's `run_sweep`/`run_adaptive_sweep` assemble
+every frequency of a batch before solving (`frequency_groups=-1`), so the Launch peaked 3.52 GB on five frequencies against
+3.0–3.3 on three, and a point sweep of the Cavity's 801 would have held 801 matrices. The driver passes
+`frequency_groups=1` (`FREQUENCY_GROUP`) to every sweep, field solve and scattering run: the Launch read 3.08 GB at three
+and at five, and the measured peaks fell 5–10 %. An adaptive sweep still peaks up to 7 % above a point sweep on one mesh.
+
+**CORVID as the remedy, chosen through the driver's standard input** (`EmergeRun.AskArgument`). The check runs on the
+`meshed` line, in the driver's process, so the answer must reach the running driver. Started with `ask`, the driver reads
+one line after `meshed`: `solve`, `iterative <tolerance>` or `stop` (exit 3). Chosen over starting the driver again because
+that meshes twice, and the mesh priced would only be the mesh solved if Gmsh is deterministic; it also fixes what was there
+before: a run the panel was asking about went on solving under the open question. The process loop keeps the input open
+only for such a run (`ProcessWatch.KeepInput`, everything else still reads end-of-file at once — the serve-pipe rule), and
+the tracker answers `stop` if the check throws. The remedy is `Em3dMemoryRemedy { Iterative = true }`, so the panel's
+existing **Use the Iterative Solver** button offers it whenever it fits; `--force` runs the direct solve as the setup says
+(Palace's precedent). A run that took it says so in its Notes with both estimates; run.json's `sparseSolver` is `CORVID`,
+read back from EMerge's own "Calling CORVID solver" log line, never assumed.
+
+**CORVID as a setting**: `EMerge.LinearSolver`, Palace's key and words, Direct by default, written only when Iterative.
+problem.json gets `linearSolver`/`iterativeTolerance` only on an iterative run, so every golden's bytes are unchanged.
+`set_solver(em.solvers.Corvid)` switches EMerge to its iterative assembly by itself; threads follow Cores through
+`set_nthreads` (and `RAYON_NUM_THREADS`, which CORVID reads). **The tolerance can move an answer**: EMerge's default
+`rtol` is 1e-6 on 3.0.10, and circuitRF STATES it (`EmergeSettings.IterativeTolerance`) so an upstream change cannot move S
+silently; the .sNp's run line carries it on an iterative run only. The probe now reports `iterativeSolver`, so the remedy is
+offered only where CORVID loads; an iterative setting on an EMerge without it is refused before meshing.
+
+**EMerge's silent fallback is refused.** On non-convergence, or a system it cannot have mesh data for (a periodic boundary),
+3.0.10 logs a warning and solves again with a direct solver — the very solve a remedy run is avoiding. The driver's log sink
+raises a refusal (`cause: iterative-solve`, source `emerge-iterative`) naming the direct solver. Forced with a 1e-30
+tolerance on the Cavity, CORVID stopped at 27 iterations and the run was refused with no result.
+
+**R-emi12-4, CORVID against SPARTA on one mesh**, M4, nothing else running (solve time, peak footprint):
+
+| Model | Unknowns | Sweep | SPARTA | CORVID | max \|ΔS\| |
+|---|---|---|---|---|---|
+| Launch (lumped + coax wave port) | 151,670 | 5 points | 4.3 s, 3.08 GB | 6.5 s, 2.11 GB | 4.8e-8 |
+| | | adaptive, 12 solves | 9.0 s, 3.06 GB | 9.2 s, 2.11 GB | 2.5e-7 |
+| Coupled Microstrip (terminal groups) | 337,980 | 5 points | 11.1 s, 4.97 GB | 14.4 s, 3.94 GB | 1.4e-7 |
+| | | adaptive, 10 solves | 24.1 s, 4.96 GB | 30.3 s, 4.09 GB | 1.4e-7 |
+| EM3D-139's line as a 1 µm lossy sheet | 75,602 | 5 points | 2.0 s, 1.76 GB | 5.0 s, 1.08 GB | 1.6e-8 |
+| | | adaptive, 7 solves | 2.4 s, 1.79 GB | 4.6 s, 1.07 GB | 1.4e-8 |
+| Cavity, the largest SPARTA run here | 493,846 | 3 points | 11.4 s, 6.68 GB | 7.6 s, 4.73 GB | 1.1e-7 |
+| | | adaptive, 10 solves | 23.0 s, 6.93 GB | 12.2 s, 5.05 GB | 3.1e-6 |
+
+CORVID converged everywhere: at most 7 iterations on the Cavity and the Coupled Microstrip, 27 on the Launch, 48 on the sheet.
+Both solvers' adaptive sweeps took the same sample count and error; the Cavity's 3.1e-6 is the rational fit between samples
+near its resonances, from samples within 1.1e-7. The gate (`EmergeIterativeTests`, benchmark) runs the Launch and the
+Coupled Microstrip end to end through the setting: 4.8e-8 and 1.1e-7.

@@ -15,11 +15,23 @@ while it is built and meshed (MODEL_SCALE).
 builds the model and meshes it, and prints one line of JSON: the counts, and any warning. Exit 0 on success; 2 with an
 "error" line when the input or EMerge refuses it.
 
-    python -I circuitrf_emerge.py <problem.json> solve [gpu-from=<unknowns>]
+    python -I circuitrf_emerge.py <problem.json> solve [gpu-from=<unknowns>] [ask]
 
 (brief-emi-9) gpu-from: a driven problem of at least that many unknowns is factorised by EMerge's GPU sparse solver, with
 its iterative refinement on; absent, or an eigenmode problem, it never is. It is an argument and not part of problem.json:
 where a problem is solved is the machine's, and problem.json is what the run's provenance hashes.
+
+(brief-emi-12) ask: once the mesh is made and its "meshed" line printed, the driver reads ONE line from its standard input
+before it solves: "solve" goes on as problem.json says, "iterative <tolerance>" solves this run with EMerge's iterative solver
+(CORVID) to that relative residual whatever problem.json's settings say, "stop" (or end of input) exits with code 3 and solves
+nothing. circuitRF
+checks the run's memory on the mesh's counts in between, so a run it asks about waits for the answer instead of solving.
+
+(brief-emi-12) settings.linearSolver "iterative" (with settings.iterativeTolerance; both absent on a direct run) solves a driven problem with CORVID (model.set_solver(em.solvers.Corvid)):
+it factorises only the first-order part of the system and solves the rest iteratively, to settings.iterativeTolerance (a
+relative residual), on RAYON_NUM_THREADS threads. EMerge falls back to its direct solver, silently but for a log line, when
+CORVID does not converge or cannot have the mesh data it needs; the driver refuses both instead, since the direct solve is
+the one the run was asked not to make. An eigenmode or scattering problem always solves directly.
 
 (brief-emi-5) builds, meshes and solves it, and writes PLAIN ARRAYS beside problem.json -- circuitRF builds the DataSet,
 the Touchstone and their provenance from them, so EMerge's own Touchstone writer is never used:
@@ -76,7 +88,7 @@ import os
 import re
 import sys
 
-DRIVER_VERSION = 11
+DRIVER_VERSION = 12
 FORMAT = "circuitRF EMerge problem"
 FORMAT_VERSION = 2
 C0 = 299792458
@@ -84,7 +96,15 @@ C0 = 299792458
 # before the mesh does. circuitRF assigns its conditions after meshing, so the driver states that size itself (brief-emw-2).
 PORT_TRIANGLES = 50
 MODES = ("mesh", "solve")
+ASK = "ask"
+ANSWERS = ("solve", "iterative", "stop")      # "iterative" is followed by the tolerance
+STOPPED = 3            # the exit code of a run told to stop at the question
 RUN_FILE = "run.json"
+# brief-emi-12 -- the frequencies whose matrices EMerge assembles before it solves them. Its default is every frequency of the
+# sweep at once (an adaptive sweep's every batch), so a run's peak grew with its frequency count: the Launch at 151,670 unknowns
+# peaked 0.2 GB higher solving five frequencies than three, and an 801-point sweep would hold 801 matrices. One at a time holds
+# one, whatever the count, and costs nothing: the solves were one after another already.
+FREQUENCY_GROUP = 1
 
 
 def report(**fields):
@@ -109,15 +129,22 @@ class Refused(Exception):
 
 def main(argv):
     gpu_from = None
-    if len(argv) == 4 and argv[2] == "solve" and argv[3].startswith("gpu-from="):
-        try:
-            gpu_from = int(argv[3][len("gpu-from="):])
-        except ValueError:
-            gpu_from = -1
-        if gpu_from < 0:
-            fail("gpu-from takes a whole number of unknowns, not '%s'" % argv[3])
-    elif len(argv) != 3 or argv[2] not in MODES:
-        fail("usage: circuitrf_emerge.py <problem.json> " + "|".join(MODES) + " [gpu-from=<unknowns>]")
+    ask = False
+    usage = "usage: circuitrf_emerge.py <problem.json> " + "|".join(MODES) + " [gpu-from=<unknowns>] [ask]"
+    if len(argv) < 3 or argv[2] not in MODES or (argv[2] == "mesh" and len(argv) > 3):
+        fail(usage)
+    for arg in argv[3:]:
+        if arg.startswith("gpu-from=") and gpu_from is None:
+            try:
+                gpu_from = int(arg[len("gpu-from="):])
+            except ValueError:
+                gpu_from = -1
+            if gpu_from < 0:
+                fail("gpu-from takes a whole number of unknowns, not '%s'" % arg)
+        elif arg == ASK and not ask:
+            ask = True
+        else:
+            fail(usage)
     path = os.path.abspath(argv[1])
     with open(path, encoding="utf-8") as f:
         problem = json.load(f)
@@ -166,10 +193,24 @@ def main(argv):
     meshed = time.time()
     # The mesh's size, before any solve: circuitRF checks the run's memory on it and stops the run when it is refused.
     report(stage="meshed", tets=counts["tets"], edges=counts["edges"], triangles=counts["triangles"])
+    settings = problem["settings"]
+    tolerance = settings.get("iterativeTolerance") if settings.get("linearSolver") == "iterative" else None
+    if ask:
+        # brief-emi-12 -- circuitRF's answer to its memory check on the counts above: nothing is solved until it comes.
+        answer = sys.stdin.readline().split()
+        if not answer or answer[0] not in ANSWERS or answer[0] == "stop":
+            sys.exit(STOPPED)
+        if answer[0] == "iterative":
+            try:
+                tolerance = float(answer[1])
+            except (IndexError, ValueError):
+                fail("the answer 'iterative' takes the tolerance, not '%s'" % " ".join(answer))
+    iterative = tolerance is not None
     keep_x64_solver_off()
     # A CPU run is EMerge's own pick: SPARTA's CPU path where it is installed, since EMerge 3.0.8 its first choice, and the faster
-    # here by about two (src/Design/RESOLVED.md, "EMerge 3.0.10").
-    on_gpu = use_gpu(problem, counts, gpu_from, sim, em, warnings)
+    # here by about two (src/Design/RESOLVED.md, "EMerge 3.0.10"). An iterative run is CORVID's, on the CPU.
+    iterative = iterative and problem["problem"] == "driven" and problem.get("planeWave") is None
+    on_gpu = False if iterative else use_gpu(problem, counts, gpu_from, sim, em, warnings)
     # After the build: creating the Simulation reconfigures EMerge's logger, which would drop a handler added before it.
     # Not caught: the stall watch stops a GPU sweep by raising from the sink (GpuStalled).
     heard = Heard(on_gpu)
@@ -178,6 +219,9 @@ def main(argv):
     if (unguarded := guard_solves(sim, model, heard)) is not None:
         warnings.append(unguarded)
     try:
+        if iterative:
+            heard.iterative = float(tolerance)
+            use_iterative(sim, heard.iterative)
         outcome = solve(problem, os.path.dirname(path), sim, model, heard, warnings)
     except Refused as e:
         report(error=str(e), refused=True, **({"cause": e.cause} if e.cause else {}))
@@ -189,6 +233,9 @@ def main(argv):
     device = None if heard.solver is None else ("gpu" if on_gpu and heard.solver == GPU_SOLVER_NAME else "cpu")
     run = dict(emerge=version, warnings=warnings, sparseSolver=heard.solver, device=device, gpuFrom=gpu_from,
                meshSeconds=round(meshed - started, 3), solveSeconds=round(time.time() - meshed, 3), **counts)
+    if heard.iterations:
+        run["iterations"] = {"solves": len(heard.iterations), "most": max(heard.iterations),
+                             "mean": round(sum(heard.iterations) / len(heard.iterations), 1)}
     run.update(outcome)
     run["tets"] = int(sim.mesh.n_tets)          # after any adaptive refinement
     mw = sim.mw
@@ -240,6 +287,37 @@ def gpu_solver_class():
     # GPU on a Linux machine with no GPU at all (src/Design/RESOLVED.md, "EMerge 3.0.10")
     from emerge._emerge.solvers import SolverSparta
     return SolverSparta, bool(SolverSparta.available and SolverSparta.gpu and sys.platform == "darwin")
+
+
+# -- the iterative solver (brief-emi-12) ---------------------------------------------------------------------------------
+
+ITERATIVE_SOLVER_NAME = "CORVID"     # how EMerge 3.0.10's log names it: "Calling CORVID solver (cocg, 8 threads)."
+# What EMerge logs when it takes CORVID's place with a direct solver: a solve that did not converge, and a system CORVID cannot
+# have its mesh data for (a periodic boundary). The driver refuses both: the direct solve is the one the run was asked not to make.
+ITERATIVE_NOT_CONVERGED = "did not converge. Solving again with a direct solver."
+ITERATIVE_NO_MESH_DATA = "needs mesh data that is not available for this system"
+
+
+def use_iterative(sim, tolerance):
+    """Every driven solve of this run by CORVID, to the tolerance circuitRF states, on the run's Cores. Refused when this EMerge
+    has no CORVID (its corvid extra is not installed)."""
+    try:
+        from emerge._emerge.solvers import SolverCorvid
+    except ImportError:
+        SolverCorvid = None
+    if SolverCorvid is None or not SolverCorvid.available:
+        raise Refused("EMerge's iterative solver (CORVID) is not installed in this EMerge, so the run cannot solve iteratively. "
+                      "Install EMerge again from circuitRF's recipe, which installs it, or set EMerge.LinearSolver to Direct.",
+                      ITERATIVE_CAUSE)
+    solver = sim.set_solver(SolverCorvid)
+    solver.set_options(rtol=tolerance)
+    threads = os.environ.get("RAYON_NUM_THREADS")
+    if threads and threads.isdigit() and int(threads) > 0:
+        solver.set_nthreads(int(threads))
+
+
+# The refusal's cause, on its JSON line: circuitRF forwards it as the iterative solver's refusal.
+ITERATIVE_CAUSE = "iterative-solve"
 
 
 # What EMerge 3.0 can run on arm64, by its names in em.solvers. Everything else there needs an x64 library.
@@ -340,6 +418,8 @@ class Heard:
         self.unusable = 0
         self.residual = None
         self.stalled = None
+        self.iterative = None      # the tolerance of a run solved by CORVID
+        self.iterations = []
 
     def sink(self, message):
         import re
@@ -351,6 +431,22 @@ class Heard:
         m = re.search(r"Calling (\S+(?: \S+)?) Solver", text)
         if m:
             self.solver = m.group(1)
+        if text.find("Calling " + ITERATIVE_SOLVER_NAME + " solver") >= 0:
+            self.solver = ITERATIVE_SOLVER_NAME
+        m = re.search(ITERATIVE_SOLVER_NAME + r" \w+: iterations \[([0-9, ]+)\]", text)
+        if m:
+            self.iterations.extend(int(n) for n in m.group(1).split(",") if n.strip())
+        if self.iterative is not None and ITERATIVE_NOT_CONVERGED in text:
+            raise Refused("EMerge's iterative solver (CORVID) did not converge to its tolerance (a relative residual of %s) on "
+                          "this problem, so no S-parameters were written; EMerge would have solved it again with its direct "
+                          "solver, which is the solve this run was asked not to make. Set EMerge.LinearSolver to Direct "
+                          "(EMerge's direct solver, SPARTA where it is installed, which needs more memory)."
+                          % ("%g" % self.iterative), ITERATIVE_CAUSE)
+        if self.iterative is not None and ITERATIVE_NO_MESH_DATA in text:
+            raise Refused("EMerge's iterative solver (CORVID) cannot solve this problem: EMerge has no mesh data for it here "
+                          "(a periodic boundary is the case it names), and would have solved it with its direct solver "
+                          "instead, which is the solve this run was asked not to make. Set EMerge.LinearSolver to Direct.",
+                          ITERATIVE_CAUSE)
         m = re.search(r"estimated error ([0-9.eE+-]+)", text)
         if m:
             self.error = float(m.group(1))
@@ -1190,9 +1286,9 @@ def sweep(problem, folder, sim, model, heard, freqs, adaptive, groups, stalled):
     settings = problem["settings"]
     if adaptive:
         data = sim.mw.run_adaptive_sweep(n_initial=settings["initialSamples"], tol=settings["tolerance"],
-                                         max_samples=settings["maxSamples"])
+                                         max_samples=settings["maxSamples"], frequency_groups=FREQUENCY_GROUP)
     else:
-        data = sim.mw.run_sweep()
+        data = sim.mw.run_sweep(frequency_groups=FREQUENCY_GROUP)
     grid = data.scalar.grid
     keys = entry_keys(problem)
     every = sorted(keys)
@@ -1340,7 +1436,7 @@ def scattered_run(problem, folder, sim, model, warnings):
     faces = model["rcsFaces"]
     if not faces:
         raise Refused("The radar cross-section's integration box has no faces in the mesh, so no far field can be read.")
-    data = sim.mw.run_scattered()
+    data = sim.mw.run_scattered(frequency_groups=FREQUENCY_GROUP)
     entries = list(data.field)
     if len(entries) != len(freqs):
         raise ValueError("EMerge solved %d frequencies where %d were asked for" % (len(entries), len(freqs)))
@@ -1964,7 +2060,7 @@ def driven_fields(problem, folder, sim, model, solved):
     if missing:
         # A direct solve at each: the adaptive sweep fitted S between its own samples, and has no field anywhere else.
         sim.mw.set_frequency(list(missing))
-        for e in sim.mw.run_sweep().field.iter():
+        for e in sim.mw.run_sweep(frequency_groups=FREQUENCY_GROUP).field.iter():
             for f in missing:
                 if near(float(np.real(e.freq)), f):
                     have[f] = e

@@ -2402,6 +2402,11 @@ filled in overrides the preset for that setting only:</p>
 <td><code>SaveFieldsGHz</code></td>
 <td>The frequencies whose fields the run saves for the 3D view, as Palace's box: see <a href="#palace-fields">Fields for the 3D view</a>.</td>
 </tr>
+<tr>
+<td>Linear solver</td>
+<td><code>LinearSolver</code></td>
+<td><em>Direct</em> (the default) or <em>Iterative</em>: see <a href="#emerge-iterative">the iterative solver</a> below. Not part of any preset.</td>
+</tr>
 </tbody>
 </table>
 <table>
@@ -2452,7 +2457,105 @@ progress line shows that error against the tolerance. <strong>A sweep that reach
 converged</strong>: its result is still written, with a warning, and the 3D view marks it not converged.</p>
 <p>Before solving, the run checks the mesh's size against this computer's memory, as Palace's run does: a
 warning past three quarters of it, and a question (or <code>--force</code>) past one and a half times it. A refused run
-stops before the solve.</p>
+stops before the solve. The estimate is for the solver the run will use
+(<a href="em-solvers.html#emerge-memory">EM Solvers ▸ EMerge's memory</a> has the figures), and EMerge waits while it is asked.</p>
+<p><a id="emerge-iterative"></a><strong>The iterative solver</strong> (<code>&quot;LinearSolver&quot;: &quot;Iterative&quot;</code>). By default EMerge factorises each
+system with its direct solver, SPARTA. <em>Iterative</em> uses CORVID instead: it factorises only the first-order part of the
+system, about a fifth of the unknowns, and solves the rest iteratively to a relative residual of 1e-6 (EMerge's own
+default, which circuitRF states so that the answer cannot move if EMerge's default does). It needs about a third less
+memory and agrees with the direct solve to about 1e-7; where the direct solve fits, it is usually a little slower, and on
+the largest model measured it was faster. On an Apple M4 (10 cores, 16 GB), the same mesh, each run's solve time and peak
+memory:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Unknowns</th>
+<th>Sweep</th>
+<th>Direct (SPARTA)</th>
+<th>Iterative (CORVID)</th>
+<th>Largest |ΔS|</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>3D Wave Ports Launch</td>
+<td>151,670</td>
+<td>5 points</td>
+<td>4.3 s, 3.1 GB</td>
+<td>6.5 s, 2.1 GB</td>
+<td>4.8e-8</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>adaptive, 12 solves</td>
+<td>9.0 s, 3.1 GB</td>
+<td>9.2 s, 2.1 GB</td>
+<td>2.5e-7</td>
+</tr>
+<tr>
+<td>3D Wave Ports Coupled Microstrip</td>
+<td>337,980</td>
+<td>5 points</td>
+<td>11.1 s, 5.0 GB</td>
+<td>14.4 s, 3.9 GB</td>
+<td>1.4e-7</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>adaptive, 10 solves</td>
+<td>24.1 s, 5.0 GB</td>
+<td>30.3 s, 4.1 GB</td>
+<td>1.4e-7</td>
+</tr>
+<tr>
+<td>A 5 µm line drawn as a 1 µm lossy sheet</td>
+<td>75,602</td>
+<td>5 points</td>
+<td>2.0 s, 1.8 GB</td>
+<td>5.0 s, 1.1 GB</td>
+<td>1.6e-8</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>adaptive, 7 solves</td>
+<td>2.4 s, 1.8 GB</td>
+<td>4.6 s, 1.1 GB</td>
+<td>1.4e-8</td>
+</tr>
+<tr>
+<td>3D Eigenmode Cavity, driven, fine mesh</td>
+<td>493,846</td>
+<td>3 points</td>
+<td>11.4 s, 6.7 GB</td>
+<td>7.6 s, 4.7 GB</td>
+<td>1.1e-7</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>adaptive, 10 solves</td>
+<td>23.0 s, 6.9 GB</td>
+<td>12.2 s, 5.1 GB</td>
+<td>3.1e-6</td>
+</tr>
+</tbody>
+</table>
+<p>The adaptive sweeps took the same frequencies on both solvers; the Cavity's 3.1e-6 is its fit between them, near a
+resonance, from samples that agree to 1.1e-7. CORVID converged on every one of these, in 7 iterations or fewer on the
+Cavity and the Coupled Microstrip and in up to 48 on the sheet line.
+An eigenmode run always solves directly, whatever the setting (EMerge's eigensolver does not use CORVID), and so
+does a run lit by a plane wave. A run that solved iteratively says so in its cost line and its Notes, with how many
+iterations its solves took, and its <code>.sNp</code> header carries the tolerance. If CORVID does not converge, the run is
+refused and writes no result, naming the direct solver: EMerge would otherwise solve the system again directly, which is
+the solve the setting was chosen to avoid.</p>
+<p><strong>When the direct solve does not fit and the iterative one would</strong>, the question before the run offers it first, as
+<strong>Use the Iterative Solver</strong>, with its estimate. The run then solves with CORVID on the mesh it has already made, says
+so in its Notes with the estimate it was started on, and the setup still says Direct. On the command line <code>--force</code>
+starts the run as the setup stands, on the direct solver; set <code>&quot;LinearSolver&quot;: &quot;Iterative&quot;</code> to solve iteratively.</p>
 <p>The result lands beside the other solvers' results: <code>results/&lt;name&gt;.emerge.sNp</code> and <code>&lt;name&gt;.emerge_em.npy</code>, or
 <code>&lt;name&gt;.emerge_eig.npy</code> for an eigenmode run. <code>results/&lt;name&gt;.emerge/</code> keeps the input (<code>problem.json</code> and the
 driver that reads it), EMerge's log (<code>emerge.log</code>) and the arrays it wrote, so a run can be repeated by hand.</p>

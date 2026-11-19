@@ -20,6 +20,10 @@ public static partial class Em3dRunService
     /// <summary>brief-dfr28-3 — the source of the driver's refusal of a solve that is not finite (a degenerate mesh element).</summary>
     public const string EmergeSolveRefusalSource = "emerge-solve";
 
+    /// <summary>brief-emi-12 R-emi12-4 — the source of the driver's refusal of an iterative solve (CORVID did not converge, or EMerge
+    /// would have solved directly in its place).</summary>
+    public const string EmergeIterativeRefusalSource = "emerge-iterative";
+
     internal sealed class EmergeLeg : SolverLeg
     {
         private EmergeSettings? _settings;
@@ -49,6 +53,11 @@ public static partial class Em3dRunService
                 log.Warnings.Add("Device GPU was asked for, but EMerge's GPU sparse solver is not installed here, so this run solves on " +
                                  "the CPU. " + (EmergeAccelerator.GpuSentence(_emerge) ?? ""));
             _settings = EmergeSettings.Resolve(setup.Emerge);
+            // brief-emi-12 R-emi12-3 — the setting names a solver the run will not use: say so rather than leave it unexplained.
+            if (_settings.Iterative && setup.Problem3D == Em3dProblemType.Eigenmode)
+                log.Notes.Add(IterativeEigenmodeNote);
+            else if (_settings.Iterative && _emerge.Emerge?.Iterative == false)
+                Stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded(EmergeIterativeRefusalSource, IterativeMissingSentence));
             if (_settings.Problems().Concat(EmergeFields.Problems(setup.Emerge)).ToList() is { Count: > 0 } bad)
                 Stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("emerge-settings", string.Join(" ", bad)));
         }
@@ -56,6 +65,8 @@ public static partial class Em3dRunService
         public override void Prepare(Em3dProblem problem, RunContext run)
         {
             if (Stop is not null) return;
+            if (problem.PlaneWave is not null && _settings!.Iterative)
+                run.Log.Notes.Add("A scattering run on EMerge solves directly, so EMerge.LinearSolver: Iterative is not read.");
             _fields = problem.PlaneWave is null ? EmergeFields.Request(run.Setup, problem) : null;
             // brief-hzn-12 — a scattering run saves no field files in this version: its result is the cross-section.
             if (problem.PlaneWave is not null && run.Setup.Emerge?.SaveFieldsGHz is { Count: > 0 })
@@ -77,6 +88,17 @@ public static partial class Em3dRunService
     /// <see cref="EmergeDevicePolicy.RerunOnCpu"/> says so: an Auto run on the GPU whose adaptive sweep stopped at its cap. Returns
     /// the attempt that is kept and, after a re-run, the Note that names both sample counts. At most one re-run.
     /// </summary>
+    /// <summary>brief-emi-12 — EMerge's eigensolver factorises with SuperLU whatever the setting says (checked on 3.0.10: its
+    /// shift-and-invert eigensolver calls SciPy's own factorisation, and the iterative solver is never asked).</summary>
+    internal const string IterativeEigenmodeNote =
+        "EMerge.LinearSolver is Iterative, but EMerge's eigensolver factorises directly whatever is set, so this eigenmode run " +
+        "solved directly.";
+
+    /// <summary>brief-emi-12 — an iterative run on an EMerge whose iterative solver is not installed.</summary>
+    internal const string IterativeMissingSentence =
+        "EMerge.LinearSolver is Iterative, but EMerge's iterative solver (CORVID, its corvid extra) is not installed in this " +
+        "EMerge. Install EMerge again from Settings ▸ Solvers, whose recipe installs it, or set EMerge.LinearSolver to Direct.";
+
     internal static (T Result, string? Note) WithCpuFallback<T>(EmergeDevice preference, long? gpuFrom,
                                                                Func<long?, (T Result, EmergeRunFacts? Facts)> attempt)
     {
@@ -127,6 +149,8 @@ public static partial class Em3dRunService
 
         string dir = RunDirectory(run.ResultsRoot, setup, Me);
         var tier = emerge.Emerge?.Tier ?? EmergeSpeedTier.Unknown;
+        bool scattering = problem.PlaneWave is not null;
+        string? tookIterative = null;
         long? peak = null;
 
         // One run of the driver: a failed leg, or what its run.json says. brief-emi-9 — run twice at most (WithCpuFallback).
@@ -151,19 +175,25 @@ public static partial class Em3dRunService
             }
 
             // R-emi5-3 — the memory check on the mesh, the moment the driver has made it: a refusal stops the process tree.
+            // brief-emi-12 R-emi12-2 — priced for the solver the run will use; the driver waits for the answer before it solves, and
+            // the answer can be EMerge's iterative solver, the remedy the question offers first.
             string? tooBig = null;
-            var tracker = new EmergeStageTracker(control, eigen)
+            EmergeStageTracker tracker = null!;
+            var check = new EmergeMeshCheck(run.Memory, log, settings, tier, eigen, scattering, from, emerge.Emerge?.Iterative == true, physical);
+            tracker = new EmergeStageTracker(control, eigen)
             {
                 OnMeshed = mesh =>
                 {
-                    if (run.Memory.Admit(EmergeMemory.Verdict(mesh, settings, tier, eigen, physical), log) is not { } refusal) return;
-                    tooBig = refusal;
-                    throw new OperationCanceledException();
+                    check.Admit(mesh, tracker);
+                    tooBig = check.Refusal;
+                    tookIterative ??= check.TookIterative;
+                    if (tooBig is not null) throw new OperationCanceledException();
                 },
             };
             bool meshOnly = control?.MeshOnly == true;
             var psi = EmergeRun.StartInfo(emerge.Path, dir,
-                                          EmergeThreads.Environment(run.MaxCores, PhysicalCores.Count, Environment.ProcessorCount), from, meshOnly);
+                                          EmergeThreads.Environment(run.MaxCores, PhysicalCores.Count, Environment.ProcessorCount), from, meshOnly,
+                                          ask: true);
             PalaceRun.ProcessRun ran;
             // brief-emi-10 — meshing is EMerge's own until it reports its mesh, and it is the stage a runaway happens in.
             var limits = run.Limits(physical);
@@ -183,8 +213,12 @@ public static partial class Em3dRunService
             // brief-emw-3 R-emw3-4 — a terminal face whose modes cannot be converted is refused by name, as before the solve
             // brief-dfr28-3 R-dfr28-3-1 — and a solve whose matrix or solution is not finite, at the first frequency, by its element
             if (ran.ExitCode != 0 && EmergeLog.DriverRefusal(ran.Tail, out string? cause) is { } refusal)
-                return (Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(
-                    cause == EmergeLog.NonFiniteSolveCause ? EmergeSolveRefusalSource : TerminalPortsSource, refusal)), null);
+                return (Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(cause switch
+                {
+                    EmergeLog.NonFiniteSolveCause => EmergeSolveRefusalSource,
+                    EmergeLog.IterativeSolveCause => EmergeIterativeRefusalSource,
+                    _                             => TerminalPortsSource,
+                }, refusal)), null);
             if (ran.ExitCode != 0)
                 return (Failed((tracker.LeftTheGpuUnusable ? LeftTheGpuSentence : "") + (EmergeLog.DriverError(ran.Tail) is { } said
                     ? $"EMerge stopped: {said} Its log is {logPath}."
@@ -211,6 +245,9 @@ public static partial class Em3dRunService
         var facts = read!;
         if (rerun is not null) log.Notes.Add(rerun);
         log.Warnings.AddRange(facts.Warnings);
+        // brief-emi-12 R-emi12-2 — the remedy the run took, with the estimate it was started on, and what CORVID's solves came to
+        if (tookIterative is not null) log.Notes.Add(tookIterative);
+        if (IterativeNote(facts) is { } iterations) log.Notes.Add(iterations);
         control?.BeginStage(ReadingLabel);
         string version = facts.Version ?? emerge.Release ?? "(version unreported)";
         if (problem.PlaneWave is not null)
@@ -220,6 +257,53 @@ public static partial class Em3dRunService
             : FinishEmergeDriven(problem, setup, run, dir, settings, lowering, facts, tier, version,
                                  peak, wall, log, run.Dc);
     }
+
+    /// <summary>
+    /// R-emi5-3, brief-emi-12 R-emi12-2 — the memory check on the driver's mesh: priced for the solver the run will use
+    /// (<see cref="EmergeMemory.SolverFor"/>), through the run's gate, which may ask; when the answer chose EMerge's iterative
+    /// solver, the tracker answers the waiting driver with it and <see cref="TookIterative"/> is the Note that says so.
+    /// </summary>
+    internal sealed class EmergeMeshCheck(MemoryGate memory, RunLog log, EmergeSettings settings, EmergeSpeedTier tier, bool eigenmode,
+                                          bool scattering, long? gpuFrom, bool iterativeAvailable, long physicalBytes)
+    {
+        /// <summary>The gate's refusal, when it refused: the run stops.</summary>
+        public string? Refusal { get; private set; }
+
+        /// <summary>The Note of a run started on the iterative solver by the question's answer.</summary>
+        public string? TookIterative { get; private set; }
+
+        /// <summary>The verdict the mesh was given.</summary>
+        public Em3dMemoryVerdict? Verdict { get; private set; }
+
+        public void Admit(EmergeMeshCounts mesh, EmergeStageTracker tracker)
+        {
+            long unknowns = EmergeMemory.Unknowns(mesh.Edges, mesh.Triangles, settings.ElementOrder);
+            var solve = EmergeMemory.SolverFor(unknowns, tier, eigenmode, settings.Iterative || memory.UseIterative, gpuFrom, scattering);
+            Verdict = EmergeMemory.Verdict(mesh, settings, solve, physicalBytes, iterativeAvailable, eigenmode, scattering);
+            Refusal = memory.Admit(Verdict, log);
+            if (Refusal is not null || solve == EmergeLinearSolve.Corvid || !memory.UseIterative || eigenmode || scattering) return;
+            tracker.Iterative = EmergeSettings.IterativeTolerance;
+            TookIterative = IterativeRemedyNote(Verdict, solve);
+        }
+    }
+
+    /// <summary>brief-emi-12 R-emi12-2 — the Note of a run started on EMerge's iterative solver because its memory check's answer
+    /// chose it: the estimate it was started on, against the direct solve's.</summary>
+    internal static string IterativeRemedyNote(Em3dMemoryVerdict verdict, EmergeLinearSolve direct)
+        => "EMerge solved this run with its iterative solver (CORVID), as chosen when its memory check asked: about " +
+           $"{MachineMemory.Format(verdict.Remedies.FirstOrDefault(r => r.Iterative)?.EstimateBytes ?? 0)}, where " +
+           $"{EmergeMemory.Describe(direct)} would have needed about {MachineMemory.Format(verdict.EstimateBytes ?? 0)}. The setup still " +
+           "says Direct; set EMerge.LinearSolver to Iterative to start there.";
+
+    /// <summary>brief-emi-12 — what CORVID's iterations came to, on a run that solved iteratively; null otherwise.</summary>
+    internal static string? IterativeNote(EmergeRunFacts facts)
+        => !facts.Iterative ? null
+         : $"EMerge's iterative solver (CORVID) solved every system to a relative residual of " +
+           $"{PalaceStageTracker.Sci(EmergeSettings.IterativeTolerance)}" +
+           (facts.Iterations is { } it
+               ? $", in at most {it.Most} iteration{(it.Most == 1 ? "" : "s")} ({it.Mean.ToString("0.#", CultureInfo.InvariantCulture)} on average over " +
+                 $"{it.Solves.ToString("N0", CultureInfo.InvariantCulture)} right-hand side{(it.Solves == 1 ? "" : "s")})."
+               : ".");
 
     private static Leg FinishEmergeDriven(Em3dProblem problem, EmSetup setup, RunContext run, string dir,
                                           EmergeSettings settings, EmergeLowering lowering, EmergeRunFacts facts, EmergeSpeedTier tier,
@@ -534,6 +618,7 @@ public static partial class Em3dRunService
         if (eigenmode) parts.Add("eigenmode solve on one core");
         // brief-emi-9 — the device the run USED, as its run.json reports it
         else if (facts.Device == EmergeDevice.Gpu) parts.Add("GPU sparse solver");
+        else if (facts.Iterative) parts.Add("iterative solver (CORVID)");
         else if (tier == EmergeSpeedTier.Fast) parts.Add("fast sparse solver");
         else if (tier == EmergeSpeedTier.Baseline) parts.Add("baseline sparse solver, one core");
         if (facts.Tetrahedra is { } t) parts.Add($"{t.ToString("N0", CultureInfo.InvariantCulture)} tetrahedra");
