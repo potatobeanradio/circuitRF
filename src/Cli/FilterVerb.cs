@@ -147,7 +147,7 @@ internal static class FilterVerb
 
         if (toSchematic && NetlistToSchematic.Run(path, DocumentKind.Netlist, Path.ChangeExtension(path, ".csch")) is var drawn and not 0)
             return drawn;
-        return em ? Em(spec, realisation, substrate, cnl, path, points is null ? 11 : np, np) : 0;
+        return em ? Em(spec, realisation, substrate, cnl, path, points is null ? 8 * spec.Order + 4 * (spec.TransmissionZerosHz?.Count ?? 0) + 1 : np, np) : 0;
     }
 
     /// <summary><c>--em</c>: the realisation on Planar MoM at <paramref name="points"/> frequencies across the bench's sweep,

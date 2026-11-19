@@ -2447,14 +2447,14 @@ beside it, through the same path as <code>netlist --to-schematic</code>. A reali
 <code>filter.realiser.refused</code> error with its own reason.</p>
 <p><strong>With <code>--em</code></strong> it also solves the realised part on Planar MoM, as its layout draws it, on a coarse mesh. Ports 1 and 2
 are on the part's pins 1 and 2, and each site gets a port of its own, closed with the site's value. The sweep is
-<code>--points</code> frequencies across the bench's band, 11 without it. It writes <code>&lt;name&gt;.em.s2p</code> beside the <code>.cnl</code> and prints one
+<code>--points</code> frequencies across the bench's band; without it, 8N + 4Z + 1 for N poles and Z zeros (41 for order 5). It writes <code>&lt;name&gt;.em.s2p</code> beside the <code>.cnl</code> and prints one
 line: the EM band centre (a lowpass's or highpass's edge) and the worst in-band |S11|, each beside the circuit
 model's. Progress goes to stderr. A site no port can close (a jumper, a pin the drawing lacks) is a <code>filter.em.sites</code>
 error; no substrate, or a solve that fails, is <code>filter.em.refused</code>.</p>
 <p>For a bandpass, <code>--em</code> then prints the extracted metrics (below) of the EM run and of the circuit model side by side.
 The circuit column is read on the bench's own sweep. The fit needs 2(2N + Z + 1) samples within three normalised
-bandwidths of the centre, for N poles and Z zeros, and 11 points are too few for that. With too few, the EM column reads
-<code>-</code> and the extraction's <code>synthesis.extract.samples</code> refusal says how many it needs. <code>--points 41</code> is enough for order 5.</p>
+bandwidths of the centre, for N poles and Z zeros, which the default sweep gives. With too few <code>--points</code>, the EM column
+reads <code>-</code> and the extraction's <code>synthesis.extract.samples</code> refusal says how many it needs.</p>
 <p><strong>With <code>--extract</code></strong> it reads any two-port Touchstone file (a circuit run, an EM run, a measurement) and prints what
 its samples say the filter is, beside the specification:</p>
 <ul>

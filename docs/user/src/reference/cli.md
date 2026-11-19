@@ -1674,15 +1674,15 @@ beside it, through the same path as `netlist --to-schematic`. A realiser that ca
 
 **With `--em`** it also solves the realised part on Planar MoM, as its layout draws it, on a coarse mesh. Ports 1 and 2
 are on the part's pins 1 and 2, and each site gets a port of its own, closed with the site's value. The sweep is
-`--points` frequencies across the bench's band, 11 without it. It writes `<name>.em.s2p` beside the `.cnl` and prints one
+`--points` frequencies across the bench's band; without it, 8N + 4Z + 1 for N poles and Z zeros (41 for order 5). It writes `<name>.em.s2p` beside the `.cnl` and prints one
 line: the EM band centre (a lowpass's or highpass's edge) and the worst in-band |S11|, each beside the circuit
 model's. Progress goes to stderr. A site no port can close (a jumper, a pin the drawing lacks) is a `filter.em.sites`
 error; no substrate, or a solve that fails, is `filter.em.refused`.
 
 For a bandpass, `--em` then prints the extracted metrics (below) of the EM run and of the circuit model side by side.
 The circuit column is read on the bench's own sweep. The fit needs 2(2N + Z + 1) samples within three normalised
-bandwidths of the centre, for N poles and Z zeros, and 11 points are too few for that. With too few, the EM column reads
-`-` and the extraction's `synthesis.extract.samples` refusal says how many it needs. `--points 41` is enough for order 5.
+bandwidths of the centre, for N poles and Z zeros, which the default sweep gives. With too few `--points`, the EM column
+reads `-` and the extraction's `synthesis.extract.samples` refusal says how many it needs.
 
 **With `--extract`** it reads any two-port Touchstone file (a circuit run, an EM run, a measurement) and prints what
 its samples say the filter is, beside the specification:
