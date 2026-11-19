@@ -343,8 +343,8 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
     }
 
     /// <summary>brief-emw-2 §7 test 5 — the driver builds the wave-port Launch: its region is EMerge's full wave-port condition
-    /// (<c>WavePort</c>, before EMerge 3.0 <c>WavePortIH</c>) with its mode solved at every frequency though one material (PTFE) meets it, and no PEC claims any of its faces, although
-    /// the region lies on the xmin face, which is PEC.</summary>
+    /// (<c>WavePort</c>), and no PEC claims any of its faces, although the region lies on the xmin face, which is PEC. Whether its
+    /// mode is scaled or solved at each frequency is EMerge's own decision since 3.0.8, made at the sweep.</summary>
     [EmergeFact]
     public void TheDriver_BuildsTheWavePortLaunch_ItsRegionAWavePort_WithNoPec()
     {
@@ -357,7 +357,6 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(1, wave.GetProperty("number").GetInt32());
         Assert.StartsWith("WavePort", wave.GetProperty("condition").GetString());
         Assert.False(wave.GetProperty("mixed").GetBoolean());
-        Assert.True(wave.GetProperty("modePerFrequency").GetBoolean());
         Assert.True(wave.GetProperty("regionFaces").GetInt32() > 0);
         Assert.Equal(0, wave.GetProperty("pecFaces").GetInt32());
     }

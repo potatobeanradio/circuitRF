@@ -102,7 +102,7 @@ the pin and *Fillet* on its tip; then **Make Port ▸ Coaxial** on the ring face
 ## The numbers, and where they come from
 
 Every time and size below was **measured once**, on an Apple M4 with 10 cores and 16 GB, running macOS 27.2, Palace
-0.18.1 on 10 processes, Gmsh 4.15.2, EMerge 3.0.0 and openEMS 0.37.0. A time is the wall clock for the whole run; a size
+0.18.1 on 10 processes, Gmsh 4.15.2, EMerge 3.0.10 and openEMS 0.37.0. A time is the wall clock for the whole run; a size
 is the run's own tetrahedron count, or openEMS's grid cells. Each board's sweep is 0.4–1.6 GHz, the paper's plotted range,
 in 1 MHz steps — 1201 points, built by Palace's and EMerge's adaptive sweeps from a handful of full solves — so a dip is
 placed to the MHz.
@@ -110,10 +110,10 @@ placed to the MHz.
 | Cell | Setup | Time | Size | Dip | \|S11\| at the dip |
 |---|---|---|---|---|---|
 | Ideal Port | Palace | 1 min 18 s | 135,752 tetrahedra | 873 MHz | −23.61 dB |
-| Ideal Port | EMerge | 19 s | 134,392 tetrahedra | 879 MHz | −22.81 dB |
+| Ideal Port | EMerge | 23 s | 134,392 tetrahedra | 879 MHz | −23.02 dB |
 | Ideal Port | openEMS | 4 min 11 s | 1,022,970 cells | 829 MHz | −17.04 dB |
 | With Connector | Palace | 1 min 40 s | 180,485 tetrahedra | 875 MHz | −22.40 dB |
-| With Connector | EMerge | 20 s | 142,030 tetrahedra | 885 MHz | −22.36 dB |
+| With Connector | EMerge | 22 s | 142,030 tetrahedra | 885 MHz | −22.36 dB |
 | Gap Fed | Palace | 1 min 34 s | 175,574 tetrahedra | 880 MHz | −22.99 dB |
 | SMA | Palace | 8 s | 23,423 tetrahedra | — | — |
 

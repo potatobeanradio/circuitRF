@@ -27,9 +27,10 @@ public sealed class EmergeGpuTests(ITestOutputHelper output) : IDisposable
     public void TheDevice_IsAPureFunctionOfTheProblemItsSizeWhatIsInstalledAndThePreference()
     {
         const Em3dProblemType D = Em3dProblemType.Driven, E = Em3dProblemType.Eigenmode;
-        long from = EmergeDevicePolicy.AutoGpuFromUnknowns;
-        Assert.Equal(EmergeDevice.Gpu, EmergeDevicePolicy.Choose(D, from, true, EmergeDevice.Auto));
-        Assert.Equal(EmergeDevice.Cpu, EmergeDevicePolicy.Choose(D, from - 1, true, EmergeDevice.Auto));
+        // Auto stays on the CPU at any size: on EMerge 3.0.10 SPARTA's CPU path is as fast as the GPU or faster
+        const long from = 40_000;
+        Assert.Equal(EmergeDevice.Cpu, EmergeDevicePolicy.Choose(D, 100 * from, true, EmergeDevice.Auto));
+        Assert.Null(EmergeDevicePolicy.GpuFromUnknowns(D, true, EmergeDevice.Auto));
         Assert.Equal(EmergeDevice.Gpu, EmergeDevicePolicy.Choose(D, 1, true, EmergeDevice.Gpu));
         Assert.Equal(EmergeDevice.Cpu, EmergeDevicePolicy.Choose(D, 10 * from, true, EmergeDevice.Cpu));
         Assert.Equal(EmergeDevice.Cpu, EmergeDevicePolicy.Choose(D, 10 * from, false, EmergeDevice.Gpu));

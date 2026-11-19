@@ -65,7 +65,8 @@ public sealed class EmergeInstallTests : IDisposable
     public void AnOlderOwnInstall_IsOfferedTheUpdate_OnEveryPlatform_AndNothingElseIs()
     {
         var discovery = SolverDiscovery.Emerge;
-        string newest = discovery.ValidatedVersions[^1].Release, older = discovery.ValidatedVersions[^2].Release;
+        // Only the newest EMerge is on the tested list (since 3.0.10); an older own install is one an earlier recipe put there.
+        string newest = discovery.ValidatedVersions[^1].Release, older = "3.0.0";
         SolverInstallation Own(string v, SolverHowFound how = SolverHowFound.Installed)
             => new(SolverTool.Emerge, "/x/bin/python", v, null, "EMerge " + v, how, "found", v);
 
@@ -145,7 +146,7 @@ public sealed class EmergeInstallTests : IDisposable
         Assert.True(readiness.Proceeds, readiness.Refusal);
         Assert.False(readiness.Installation!.Validated);
         Assert.Contains("3.0.1", readiness.Warning);
-        Assert.Contains("tested: 3.0.0b2", readiness.Warning);
+        Assert.Contains("tested: " + SolverDiscovery.Emerge.ValidatedVersions[0].Release, readiness.Warning);
         Assert.EndsWith(readiness.Warning!, d.DescribeForSettings(readiness.Installation, []));
     }
 

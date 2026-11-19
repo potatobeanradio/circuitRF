@@ -893,9 +893,8 @@ names, resolves the stackup, meshes, solves the frequency plan, de-embeds, and w
 <p><strong>It needs no other arguments.</strong> Everything else it needs is already recorded in the files.</p>
 <p><code>--device auto|cpu|gpu</code> chooses where a 3D run solves. A Palace run solves on the CPU unless <code>--device gpu</code> says
 otherwise; that needs a GPU build of Palace, and <a href="em-setup.html#palace-gpu">Palace on a GPU</a> has the details. An
-EMerge run is <code>auto</code> unless <code>--device</code> says otherwise, whatever <strong>Settings ▸ Solvers</strong> holds: the GPU sparse solver
-for a driven problem large enough to be faster on it (<a href="em-solvers.html#emerge-gpu">EMerge on a GPU</a>), the CPU
-otherwise.
+EMerge run is <code>auto</code> unless <code>--device</code> says otherwise, whatever <strong>Settings ▸ Solvers</strong> holds, and <code>auto</code> solves on the
+CPU, which is as fast as the GPU or faster (<a href="em-solvers.html#emerge-gpu">EMerge on a GPU</a>); <code>--device gpu</code> uses the GPU.
 <code>--device gpu</code> is refused on a run that uses neither Palace nor EMerge.</p>
 <p><code>--cores &lt;n&gt;</code> is Settings ▸ Solvers ▸ Cores for this run: how many Palace processes or solver threads it may use. A run that
 does not say uses one process per physical core, and <a href="#solver"><code>solver list</code></a> says how many this machine has. Each Palace
@@ -1250,8 +1249,8 @@ costs a one-element solve. Read-only: it installs and builds nothing.</li>
 <code>--json</code>). <code>solver install emerge --yes</code> installs it beside the older one, and new runs use it.</li>
 <li><strong><code>install &lt;tool&gt;</code></strong> prints what it would fetch, from where, where it would go and what it cost when measured,
 and exits <strong>1</strong> having fetched nothing. <strong><code>--yes</code></strong> agrees and installs. <code>circuitrf solver install emerge --yes</code>
-installs EMerge into a Python of its own; <strong><code>--gpu</code></strong> also fetches a temporary Rust toolchain into EMerge's folder to build
-its GPU sparse solver, and deletes the toolchain after. See
+installs EMerge into a Python of its own, with its sparse solvers. <strong><code>--gpu</code></strong> adds nothing to the install, since EMerge's GPU
+sparse solver comes with it, and says at the end whether this computer solves on a GPU. See
 <a href="em-solvers.html#emerge-speed">Getting the most speed from EMerge</a>.</li>
 <li><strong><code>remove &lt;tool&gt;</code></strong> removes a copy circuitRF installed, after printing the space it frees; <code>--all</code> removes every
 one. Again nothing happens without <code>--yes</code>. A program circuitRF did not install is never removed.</li>

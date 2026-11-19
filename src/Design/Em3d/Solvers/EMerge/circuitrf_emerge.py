@@ -32,8 +32,7 @@ and run.json (versions, the sparse solver EMerge called, tets, samples, the swee
 prints last is run.json's content.
 
 (brief-emw-3) A wave-port entry with "terminals" is a TERMINAL GROUP: one ModalPort carrying one mode per terminal (EMerge
-numbers them <number>.1 ... <number>.N, terminal order), never a WavePortIH (it carries one mode) and never align_modes (for
-terminals it picks one mode twice). A face of one material has its modes solved once, before the sweep, around its
+numbers them <number>.1 ... <number>.N, terminal order), never align_modes (for terminals it picks one mode twice). A face of one material has its modes solved once, before the sweep, around its
 presolveNeff (EMerge's own shift there sits on the TEM eigenvalue and misses the second TEM mode); a face carrying more or
 fewer modes of one speed than terminals is refused, naming the cause. A face of several materials is EMerge's own
 per-frequency solve, each frequency's modes checked to be the terminal count and TEM-classified. When the problem has a
@@ -77,7 +76,7 @@ import os
 import re
 import sys
 
-DRIVER_VERSION = 10
+DRIVER_VERSION = 11
 FORMAT = "circuitRF EMerge problem"
 FORMAT_VERSION = 2
 C0 = 299792458
@@ -139,8 +138,6 @@ def main(argv):
         warnings.append("EMerge %s is not a version circuitRF has tested (%s); it is run as it is."
                         % (version, ", ".join(problem["testedEmerge"])))
 
-    install_guard(warnings)
-    install_thin_conductor_split(warnings)
     import time
     started = time.time()
     report(stage="geometry")
@@ -170,9 +167,9 @@ def main(argv):
     # The mesh's size, before any solve: circuitRF checks the run's memory on it and stops the run when it is refused.
     report(stage="meshed", tets=counts["tets"], edges=counts["edges"], triangles=counts["triangles"])
     keep_x64_solver_off()
+    # A CPU run is EMerge's own pick: SPARTA's CPU path where it is installed, since EMerge 3.0.8 its first choice, and the faster
+    # here by about two (src/Design/RESOLVED.md, "EMerge 3.0.10").
     on_gpu = use_gpu(problem, counts, gpu_from, sim, em, warnings)
-    if not on_gpu:
-        keep_gpu_solver_off()
     # After the build: creating the Simulation reconfigures EMerge's logger, which would drop a handler added before it.
     # Not caught: the stall watch stops a GPU sweep by raising from the sink (GpuStalled).
     heard = Heard(on_gpu)
@@ -188,7 +185,8 @@ def main(argv):
     except Exception as e:
         fail(named(e))
     # The device the solves USED, read back from the solver EMerge's log says it called, never assumed from what was asked.
-    device = None if heard.solver is None else ("gpu" if heard.solver == GPU_SOLVER_NAME else "cpu")
+    # SPARTA is the CPU's solver too since EMerge 3.0.8, so its name alone does not say GPU: only a run handed to the GPU is one.
+    device = None if heard.solver is None else ("gpu" if on_gpu and heard.solver == GPU_SOLVER_NAME else "cpu")
     run = dict(emerge=version, warnings=warnings, sparseSolver=heard.solver, device=device, gpuFrom=gpu_from,
                meshSeconds=round(meshed - started, 3), solveSeconds=round(time.time() - meshed, 3), **counts)
     run.update(outcome)
@@ -200,64 +198,6 @@ def main(argv):
     with open(os.path.join(os.path.dirname(path), RUN_FILE), "w", encoding="utf-8") as f:
         json.dump(run, f, sort_keys=True)
     report(**run)
-
-
-# -- the duplicate-mode guard (brief-emw-2) -------------------------------------------------------------------------------
-
-def install_guard(warnings):
-    """EMerge 3.0.0b2 APPENDS a re-solved frequency's modes to those already stored for it (a sweep solves its mean frequency
-    twice, and an adaptive sweep every sample), so a face's stored list can hold one mode twice (src/Design/RESOLVED.md,
-    EMW-1, R-emw1-6). Before EMerge solves a port's modes at a frequency, the guard forgets that frequency's stored ones.
-    Harmless if a later EMerge stops duplicating, so it is always installed; a run whose EMerge has moved the method or the
-    attribute is told so and runs."""
-    try:
-        from emerge._emerge.physics.microwave.microwave_3d import Microwave3D
-        solve_modes = Microwave3D.modal_analysis
-    except (ImportError, AttributeError):
-        warnings.append("circuitRF could not install its guard against EMerge storing a port's modes twice (this EMerge has "
-                        "no Microwave3D.modal_analysis where circuitRF looks for it); the run goes on without it.")
-        return
-
-    warned = []
-
-    def modal_analysis(self, port, *a, freq=None, **k):
-        f = self.frequencies[0] if freq is None else freq
-        stored = getattr(port, "available_modes", None)
-        if stored is None:
-            if not warned:
-                warnings.append("circuitRF's guard against EMerge storing a port's modes twice found no available_modes on the "
-                                "port (a later EMerge renamed it); the run goes on without it.")
-                warned.append(True)
-        else:
-            stored.pop(2 * 3.141592653589793 * f / C0, None)     # EMerge's own k0 expression
-        return solve_modes(self, port, *a, freq=freq, **k)
-
-    Microwave3D.modal_analysis = modal_analysis
-
-
-# -- the thin-conductor split on a refined mesh ----------------------------------------------------------------------------
-
-def install_thin_conductor_split(warnings):
-    """EMerge 3.0.0b2 splits a lossy sheet's degrees of freedom in its one-time boundary setup, but a mesh refinement builds a new
-    basis, which then has no split: its second pass stops with "'NoneType' object is not subscriptable". 3.0.0b3 splits each new
-    basis, and this does the same on b2; on b3 the basis is already split and nothing happens. A run whose EMerge has moved the
-    method is told so and runs."""
-    try:
-        from emerge._emerge.physics.microwave.microwave_3d import Microwave3D, ThinConductor
-        initialize = Microwave3D._initialize_bc_data
-    except (ImportError, AttributeError):
-        warnings.append("circuitRF could not install its repair of a lossy sheet on a refined mesh (this EMerge has no "
-                        "Microwave3D._initialize_bc_data where circuitRF looks for it); the run goes on without it.")
-        return
-
-    def initialize_bc_data(self):
-        initialize(self)
-        sheets = self.bc.oftype(ThinConductor)
-        if len(sheets) > 0 and not self.basis._partitioned:
-            self.basis.partition_dof([x.tags for x in sheets])
-            self.basis._partitioned = True
-
-    Microwave3D._initialize_bc_data = initialize_bc_data
 
 
 # -- the GPU (brief-emi-9) -------------------------------------------------------------------------------------------------
@@ -296,13 +236,10 @@ def use_gpu(problem, counts, gpu_from, sim, em, warnings):
 def gpu_solver_class():
     """The GPU sparse solver as this EMerge's solve routine keys it, and whether it can run: (None, False) when there is none.
     EMerge 3.0 made the solvers classes in a package; before it they were an enum's members, with one flag for each."""
-    try:
-        from emerge._emerge.solvers import SolverSparta
-        return SolverSparta, bool(SolverSparta.available and SolverSparta.gpu)
-    except ImportError:
-        from emerge._emerge import solver as s
-        members = s.EMSolver
-        return getattr(members, "SPARTA", None), bool(getattr(s, "_SPARTA_AVAILABLE", None))
+    # A Metal GPU only, the one circuitRF has tested: elsewhere SPARTA finds Vulkan, and Mesa's llvmpipe, a CPU rasteriser, answers as a
+    # GPU on a Linux machine with no GPU at all (src/Design/RESOLVED.md, "EMerge 3.0.10")
+    from emerge._emerge.solvers import SolverSparta
+    return SolverSparta, bool(SolverSparta.available and SolverSparta.gpu and sys.platform == "darwin")
 
 
 # What EMerge 3.0 can run on arm64, by its names in em.solvers. Everything else there needs an x64 library.
@@ -323,18 +260,6 @@ def keep_x64_solver_off():
     for name, kind in PUBLIC_SOLVERS.items():
         if name not in ARM64_SOLVERS:
             kind.available = False
-
-
-def keep_gpu_solver_off():
-    """EMerge 3.0's own pick is the GPU solver's CPU path whenever it is installed, ahead of the macOS sparse solver, which is
-    faster on the same answer (src/Design/RESOLVED.md, "EMerge 3.0.0"), and a run's device is read from the solver's name, so it
-    would also say GPU. Its picker reads the class's flag and then goes on down its list; SolveRoutine.disable would instead land
-    on the single-threaded default. Before 3.0 EMerge never picked it."""
-    try:
-        from emerge._emerge.solvers import SolverSparta
-        SolverSparta.available = False
-    except ImportError:
-        pass
 
 
 # brief-emw-3 — an adaptive sweep on the GPU whose estimated error has not reached a new low in this many samples has
@@ -367,9 +292,7 @@ def leave_gpu(sim, heard):
     report(stage="gpu-stalled", **stalled)
     routine = sim.mw.solveroutine
     routine.forced_solver = []
-    if hasattr(routine, "set_device"):
-        routine.set_device("CPU")
-    keep_gpu_solver_off()
+    routine.set_device("CPU")      # SPARTA, if EMerge picks it, then runs its double-precision CPU path
     routine.reset()
     heard.on_gpu = False
     return stalled
@@ -459,10 +382,7 @@ def guard_solves(sim, model, heard):
     there. A run whose EMerge has moved it is told so and runs, with the -I check circuitRF makes on its result."""
     import numpy as np
     try:
-        try:
-            from emerge._emerge.solveroutine import SolveRoutine   # EMerge 3.0
-        except ImportError:
-            from emerge._emerge.solver import SolveRoutine
+        from emerge._emerge.solveroutine import SolveRoutine
         solve_ = SolveRoutine.solve
     except (ImportError, AttributeError):
         return "circuitRF could not install its check on EMerge's solves (this EMerge has no SolveRoutine.solve where " \
@@ -987,8 +907,8 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface, join=0.0):
         g = GeoSurface(planar(gmsh, sh["rings"]), name=sh["name"])
         g.set_material(mats[sh["material"]])
         if not problem["materials"][sh["material"]]["pec"]:
-            # EMerge 3.0.0b2's GeoSurface.assign_thickness calls a _store it does not have; the property it stores is
-            # FiniteThickness, which EMerge's own PCB builder adds this way and its boundary conditions read.
+            # FiniteThickness is how EMerge's own PCB builder gives a sheet its thickness, and what its boundary conditions read
+            # (GeoSurface.assign_thickness is gone since 3.0.5).
             g.properties += FiniteThickness(sh["thicknessM"])
         sheets.append((sh, g))
     ports = [(p, GeoSurface(port_surface(gmsh, p), name=p["name"])) for p in problem["ports"]]
@@ -1170,26 +1090,20 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface, join=0.0):
         if "terminals" in w:
             waves.append((w, terminal_port(sim, w, region, numbers[w["number"]])))
             continue
-        # EMerge 3.0 has WavePort, with modetype="TEM" what its deprecated WavePortIH is; before it there is only WavePortIH.
-        conditions = sim.mw.bc
-        wave = getattr(conditions, "WavePort", None)
         if w.get("hollow"):
             # brief-hzn-11 R-hzn11-3 — a hollow guide carries no TEM mode: its lowest, of any type (TE10 in an empty rectangle;
             # a loaded face's lowest is a hybrid one). EMerge's WavePort fixes the mode with the largest beta at the sweep's top.
-            if wave is None:
-                raise Refused("Port '%s' is a hollow guide, and this EMerge has no WavePort to solve one; circuitRF's EMerge "
-                              "3.0.0 has it." % w["name"])
             # brief-hzn-20 — a guide of several modes: one wave port carrying them all
-            bc = wave(region, numbers[w["number"]], modetype=None, number_of_modes=len(w.get("hollowModes", [None])))
+            bc = sim.mw.bc.WavePort(region, numbers[w["number"]], modetype=None, number_of_modes=len(w.get("hollowModes", [None])))
         else:
-            bc = wave(region, numbers[w["number"]], modetype="TEM") if wave is not None else conditions.WavePortIH(region, numbers[w["number"]])
+            bc = sim.mw.bc.WavePort(region, numbers[w["number"]], modetype="TEM")
         # R-emw2-2a — the one line that decides a wave port's polarity: EMerge turns the mode so its integral along this line
         # is positive, and circuitRF's path runs from the negative object to the positive one, the sense a lumped port's
         # direction has. Proved on a thru with a wave port at one end and a lumped port at the other (RESOLVED, EMW-2).
         bc.set_integration_line(tuple(w["path"]["from"]), tuple(w["path"]["to"]), 101)
-        # Either keeps mixed_materials True, and it must: its dense block and its excitation are built from the stored
-        # mode's own fields and beta (get_modepf_kappa), never rescaled to k0, so the mode is solved at every frequency.
-        # Overriding it on a face of one material gave S right only at the sweep's centre (src/Design/RESOLVED.md, EMW-2).
+        # EMerge fixes the port's modes at the sweep's top and scales them (a face of one material) or follows them by solving
+        # (several), one procedure for every port since 3.0.8; whichever, every frequency's dense block and excitation are built
+        # from that frequency's own modes.
         waves.append((w, bc))
 
     mesh = sim.mesh
@@ -1464,10 +1378,9 @@ def scattered_run(problem, folder, sim, model, warnings):
 def wave_modes(sim, waves, freqs, adaptive):
     """Each wave port's mode impedance Z0 (EMerge's own, on circuitRF's voltage path: Z_PV, R-emw1-5) and propagation
     constant alpha + j beta at every requested frequency, [f, wave port]. Never read from the result's port properties, which
-    repeat mode 1's for every mode (R-emw1-1). A point sweep solved every port's mode at every frequency. An adaptive sweep's
-    requested frequencies had no mode solve of their own: a face of several materials is solved at each here, after it (the
-    guard keeps each solve fresh); a face of one material needs none, its impedance being constant and beta scaling with k0
-    for a TEM mode (EMerge's get_beta), so the nearest stored mode serves."""
+    repeat mode 1's for every mode (R-emw1-1). Each frequency's modes come from EMerge's own procedure (_port_modes), as the
+    sweep's did: a point sweep's are already there, and an adaptive sweep's requested frequencies, which had no solve of their
+    own, are scaled from the fixed modes (a face of one material) or followed to by solving (several), with their phase kept."""
     import numpy as np
     z = np.zeros((len(freqs), len(waves)), dtype=np.complex128)
     g = np.zeros((len(freqs), len(waves)), dtype=np.complex128)
@@ -1477,14 +1390,13 @@ def wave_modes(sim, waves, freqs, adaptive):
             if w.get("hollow"):
                 # brief-hzn-11 — the mode at f, scaled or tracked from the sweep's top as EMerge's own solve took it; EMerge computes
                 # Z0 for a TEM mode only, so Z_PV is |V|^2 / 2 on the polarity line (the mode carries 1 W)
-                sim.mw._wave_port_modes(bc, float(f))
+                sim.mw._port_modes(bc, float(f))
                 mode = bc.get_modes(k0)[0]
                 v = bc.voltage_integration_line[0].line_integral(mode.E_function)
                 z[i, j] = abs(complex(v)) ** 2 / 2
                 g[i, j] = 1j * complex(bc.get_beta(k0))
                 continue
-            if w["mixed"] and adaptive:
-                sim.mw.modal_analysis(bc, 1, direct=False, TEM=True, freq=float(f))
+            sim.mw._port_modes(bc, float(f))
             z[i, j] = complex(bc.get_modes(k0)[0].Z0)
             # fields go as exp(-j beta z), so a lossy mode's beta is beta' - j alpha and j beta = alpha + j beta'
             g[i, j] = 1j * complex(bc.get_beta(k0))
@@ -1549,7 +1461,7 @@ def hollow_mode_data(sim, w, bc, freqs):
     g = np.zeros((len(freqs), len(lines)), dtype=np.complex128)
     for i, f in enumerate(freqs):
         k0 = 2 * np.pi * f / C0
-        sim.mw._wave_port_modes(bc, float(f))
+        sim.mw._port_modes(bc, float(f))
         modes = bc.get_modes(k0)
         for k, line in enumerate(lines):
             z[i, k] = abs(complex(line.line_integral(modes[k].E_function))) ** 2 / 2
@@ -1567,7 +1479,7 @@ def second_modes(sim, waves, top):
     for w, bc in waves:
         own = len(w.get("terminals", w.get("hollowModes", [None])))
         saved = bc.available_modes.pop(k0, None)
-        state = (bc.forced_modetype, bc._last_k0, bc._first_k0, bc.initialized)
+        state = (bc.forced_modetype, bc._last_k0, bc.initialized, bc._tracks, bc._k0_ref, bc._scalable, bc._track_quality)
         try:
             bc.forced_modetype = None
             # brief-emw-3: a terminal face asks for its own modes and the next; a face of one material around its presolve shift
@@ -1578,7 +1490,7 @@ def second_modes(sim, waves, top):
             out.append({"port": w["number"], "frequencyHz": top, "error": "%s: %s" % (type(e).__name__, e)})
             continue
         finally:
-            bc.forced_modetype, bc._last_k0, bc._first_k0, bc.initialized = state
+            bc.forced_modetype, bc._last_k0, bc.initialized, bc._tracks, bc._k0_ref, bc._scalable, bc._track_quality = state
             bc.available_modes.pop(k0, None)
             if saved is not None:
                 bc.available_modes[k0] = saved
@@ -1601,8 +1513,7 @@ def wave_conditions(sim, waves):
         if type(bc).__name__ == "PEC":
             pec.update(bc.tags)
     return [{"number": w["number"], "condition": type(bc).__name__, "regionFaces": len(bc.tags),
-             "pecFaces": len([t for t in bc.tags if t in pec]), "mixed": w["mixed"],
-             "modePerFrequency": bool(bc.mixed_materials)} for w, bc in waves]
+             "pecFaces": len([t for t in bc.tags if t in pec]), "mixed": w["mixed"]} for w, bc in waves]
 
 
 # -- terminal groups (brief-emw-3) ----------------------------------------------------------------------------------------
@@ -1653,8 +1564,7 @@ def terminal_port(sim, w, region, number):
     """A terminal group's ModalPort: one mode per terminal. A face of one material is made TEM-only, its modes solved once
     before the sweep (presolve), and not re-solved by it; a face of several materials is solved by EMerge at every frequency."""
     n = len(w["terminals"])
-    bc = sim.mw.bc.ModalPort(region, number, number_of_modes=n, mixed_materials=bool(w["mixed"]),
-                             modetype=None if w["mixed"] else "TEM")
+    bc = sim.mw.bc.ModalPort(region, number, number_of_modes=n, modetype=None if w["mixed"] else "TEM")
     # Terminal 1's path: it sets the modes' signs (the conversion does not care which) and EMerge's own Z0's line.
     t = w["terminals"][0]["path"]
     bc.set_integration_line(tuple(t["from"]), tuple(t["to"]), 101)
@@ -1737,9 +1647,8 @@ def path_integral(func, path):
 def terminal_arrays(sim, waves, every, freqs, adaptive):
     """R-emw3-4 — TV, W, Gp [f, n, n] block-diagonal over every wave-port entry and gammaEntries [f, n] (j beta of each
     entry's own mode), n the circuitRF port order. Read from the port's own modes (port.get_modes, port_mode_3d_global), never
-    from the result's port properties, which repeat mode 1's for every mode (R-emw1-1). An adaptive sweep's requested
-    frequencies had no mode solve: a face of several materials is solved at each here (the guard keeps it fresh); a face of
-    one material keeps its one solve, its TEM modes' shapes not changing with frequency and beta scaling with k0."""
+    from the result's port properties, which repeat mode 1's for every mode (R-emw1-1). Each frequency's modes are EMerge's own
+    procedure's (_port_modes), as in wave_modes."""
     import numpy as np
     n = len(every)
     TV = np.zeros((len(freqs), n, n), dtype=np.complex128)
@@ -1752,14 +1661,8 @@ def terminal_arrays(sim, waves, every, freqs, adaptive):
         xq, wq = face_quadrature(sim, bc)
         for i, f in enumerate(freqs):
             k0 = 2 * np.pi * f / C0
-            if "terminals" in w:
-                if w["mixed"] and adaptive:
-                    sim.mw.modal_analysis(bc, len(rows), direct=False, TEM=False, freq=float(f))
-                modes = checked_modes(w, bc, float(f))
-            else:
-                if w["mixed"] and adaptive:
-                    sim.mw.modal_analysis(bc, 1, direct=False, TEM=True, freq=float(f))
-                modes = bc.get_modes(k0)[:1]
+            sim.mw._port_modes(bc, float(f))
+            modes = checked_modes(w, bc, float(f)) if "terminals" in w else bc.get_modes(k0)[:1]
             normal = np.asarray(bc.cs.zax.np, float)
             e = [bc.port_mode_3d_global(xq[0], xq[1], xq[2], k0, which="E", mode_nr=m + 1) for m in range(len(rows))]
             h = [bc.port_mode_3d_global(xq[0], xq[1], xq[2], k0, which="H", mode_nr=m + 1) for m in range(len(rows))]

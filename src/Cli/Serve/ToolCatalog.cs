@@ -798,9 +798,9 @@ internal static class ToolCatalog
                      new("device", "--device", OptKind.Str,
                          "Where Palace and EMerge solve: auto (default), cpu or gpu. For Palace, auto is the CPU; gpu needs a "
                        + "Palace built with GPU support and runs one process per GPU it finds, and one that cannot is refused "
-                       + "before meshing ('solver' with capability=gpu asks first). For EMerge, auto uses its GPU sparse solver "
-                       + "for a driven problem large enough to be faster on it and solves a sweep again on the CPU if the GPU's "
-                       + "does not converge; eigenmode runs always solve on the CPU. 'solver' says whether EMerge's GPU solving "
+                       + "before meshing ('solver' with capability=gpu asks first). For EMerge, auto solves on the CPU, which is "
+                       + "as fast as its GPU sparse solver or faster; gpu uses the GPU for a driven run and solves a sweep again on the "
+                       + "CPU if the GPU's stalls; eigenmode runs always solve on the CPU. 'solver' says whether EMerge's GPU solving "
                        + "is enabled."),
                      // brief-emi-10 R-emi10-4 — `em --memory-limit`, through the CLI's own parsing and refusals.
                      new("memoryLimitGB", "--memory-limit", OptKind.Number,

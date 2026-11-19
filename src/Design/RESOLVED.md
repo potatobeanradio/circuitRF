@@ -32657,3 +32657,93 @@ now refused only for its Impedance boundary and its TE mode type.
   Force*. So EIRP = GainDbi + 10·log₁₀(ΣPdel) and TRP = 10·log₁₀(ΣPdel) + η_rad hold to 1e-6 at every sweep point, while
   10·log₁₀(PowerRadiated) is 0.03 dB from TRP there. Gate: `SweptWavesToolTests.TheRunsTrpAndEirp_AreAtHbsOwnDrive` (fails with
   the record's reference restored).
+
+## EMerge 3.0.10 (2026-11-19)
+
+**Re-pinned every EMerge recipe to 3.0.10, and it is the only version on the tested list** (the owner's call: only the newest is
+supported). An older install still runs, with the untested warning, and Settings offers **Update to EMerge 3.0.10…**: an own
+install's version is no longer on the list, so it sits below the recipe's. 3.0.10 is on PyPI (its latest); only GitHub's Releases
+page skipped it, and the tag exists. Ten versions came after 3.0.0; the upstream CHANGELOG's 3.0.1–3.0.10 entries are the source for
+everything below that says what moved in EMerge.
+
+**The recipes.** `tools/EmergeLock/make_locks.py` now locks `emerge[corvid]==3.0.10`. SPARTA (0.3.9) is a dependency of EMerge since 3.0.8
+and CORVID (0.5.3) its `corvid` extra, both wheels on every platform, so the macOS arm64 recipe lost its Rust bootstrap, its command line
+tools and its SPARTA source build: no recipe builds anything but Linux arm64's Gmsh. `rslab` left the locks: SPARTA is EMerge's first
+choice wherever it is installed, so nothing picked it. Both are AGPL-3.0-or-later; every recipe's consent says so.
+
+- **A Windows lock left SPARTA out, and a real Windows install would have refused.** EMerge's marker is `platform_machine == 'AMD64'`, which
+  is what Windows reports, but uv's `--python-platform x86_64-pc-windows-msvc` evaluates `platform_machine` as `x86_64`, so the compile
+  dropped it. The Windows recipe installs without `--no-deps`, so uv on a real machine would have wanted SPARTA and found no hash for it.
+  `make_locks.py` names it for Windows (`EXTRA`).
+
+**The driver** (`circuitrf_emerge.py`, driver 11) was ported, not re-pinned: 3.0.8 put ModalPort and WavePort through ONE mode procedure
+(`Microwave3D._port_modes`: fix the modes at a reference frequency, then scale them on a homogeneous face or follow them by solving, with the
+phase kept), and dropped what the driver leaned on.
+- `ModalPort(mixed_materials=…)` and `WavePort._first_k0` are gone; `_wave_port_modes` is `_port_modes`. Every per-frequency mode refresh
+  (wave_modes, terminal_arrays, hollow_mode_data) now calls `_port_modes`, not a raw `modal_analysis`, which would have stored unordered
+  candidates without the tracking and phase alignment. `second_modes` saves and restores the port's tracks around its probe solve.
+- The duplicate-mode guard and the thin-conductor split on a refined mesh are gone: EMerge does both itself. The mesh mode's
+  `modePerFrequency` is gone with `mixed_materials` (whether a face is scaled is EMerge's decision at the sweep since 3.0.8).
+- **SPARTA now takes CPU runs**, reversing 3.0.0's finding. On 3.0.10 its CPU path against EMerge's macOS sparse solver, same mesh, M4:
+  the Wave Ports Launch (151,670 unknowns) 3.9 s against 8.9 s, the Coupled Microstrip (337,980) 22.5 s against 42.1 s, |ΔS| 1e-13 and 1.5e-11,
+  peak 3.4 against 2.9 GB and 5.1 against 3.5 GB. `EmergeMemory`'s fast line still errs high (3.8 and 8.3 GB). Since SPARTA's name no longer
+  means the GPU, run.json's `device` is `gpu` only for a run handed to the GPU, and the probe lists SPARTA as the GPU solver only where
+  `SolverSparta.gpu` (its wheel installs on Linux and Windows, CPU only; there EMerge's GPU is cuDSS, which circuitRF does not install).
+- `solver install emerge --gpu` is accepted with nothing to build (`EmergeAccelerator.TakesGpuOption`): it says at the end whether this
+  machine solves on a GPU. Settings' **Enable GPU solving…** never shows, as nothing is pending.
+
+**What it did to answers, measured.** Same mesh, 3.0.0 (HEAD's driver) against 3.0.10, CPU:
+- Cavity, driven: |ΔS| 1.4e-10. Real-Z0 lumped ports and no sheet, so nothing below applies.
+- Wave Ports Launch and Connector Launch (port 1 lumped, port 2 wave): everything driven from or measured at port 1 bit-identical; S21 and
+  S22 moved by up to 0.016 and 0.019 at 18 GHz, and **reciprocity improved fourfold**: |S21 − S12| 5.5e-4 against 2.5e-3 at 2 GHz,
+  5.5e-3 against 2.2e-2 at 18 GHz; |S22| at 18 GHz 0.010 against 0.024. 3.0.6's #98 (the complete basis's port-face DoFs pinned, ports
+  conserving power) is the change that fits.
+- Coupled Microstrip (terminal group, mixed face): reflections by up to |ΔS| 4.2e-3 (VSWR between the answers 1.009), transmissions 1e-3.
+  It still meets Palace's run (`EmergeTerminalPortTests`, benchmark).
+- **Lumped ports EMerge draws its own voltage lines for moved by 3.0.9's width weighting**: the Loop Sensor's Ideal Port dip went from
+  −22.81 to −23.02 dB at 879 MHz (Palace −23.61 at 873), 44 points past the 0.1 dB regression tolerance, at most 0.43 dB. With Connector,
+  fed through circuitRF's coaxial port (`RadialLumpedPort`, which sets its own lines), did not move at all. The example's EMerge rows were
+  re-recorded on 3.0.10.
+- **Sheets now read as Palace's do** (3.0.2: `ThinConductor` was twice as conductive as its film below a few skin depths; each side now
+  carries Zs·coth(γt/2)). EM3D-139's line drawn as a 1 µm sheet, R' over the 2D reference at 0.1/0.45/2/8.9/40 GHz: 5 µm 1.00, 1.00, 1.00,
+  1.03, 1.05 (3.0.0: 0.90, 0.90, 0.91, 0.99, 1.57); 50 µm 1.01, 1.12, 1.18, 1.10, 0.91; 500 µm 1.12, 1.43, 1.48, 1.32, 0.81 (3.0.0: 1.00, 1.00,
+  0.99, 1.00, 1.09; Palace 1.12, 1.42, 1.46, 1.34, 0.82). So a narrow sheet is right and a wide thin one reads high on both solvers now: the
+  face model's own limit, and the "sheets differ by solver" note in "Metal thin against the skin depth" no longer holds. `SurfaceImpedance`
+  kept coth(γt), so the volume-wall `thickness = h/2` stays right (`ThinMetalRunTests` reads the 5 µm solid within 3 %).
+
+**Held.** The routine EMerge tests (90), the install, probe and discovery tests, and every benchmark EMerge validation: the Eigenmode example
+and the Connector Launch against Palace, the Coupled Microstrip against Palace and adaptive against point, wave-port polarity, the fields
+runs, the wall ports' gates 3 and 4 (PWL-5: 30 s and 1 min 57 s, 6.4 GB peak), and the Loop Sensor once re-recorded.
+`EmergeWavePortTests.TheLaunch_OnEMergeAtDraft_MeetsPalacesDraftRun` still fails on the coax's Z_PV, 50.62 Ω against 50.02 (1.2 %), as it did
+on 3.0.0 at the same value (EMW-2: the owner accepted the miss); Draft now reads what Standard does.
+
+**SPARTA calls Mesa's llvmpipe a GPU.** In a Linux container with Mesa and no GPU at all, `sparta.gpu_available()` is True and
+`gpu_status()` says "Vulkan on llvmpipe", a CPU rasteriser: EMerge's own `SolverSparta.gpu` takes it at its word, so circuitRF said "GPU
+sparse solver installed" and Device Auto would have sent every large driven run there. Without Mesa it reads False. The probe lists
+SPARTA as the GPU solver, and the driver hands a run to it, only on macOS, the one GPU (Metal) circuitRF has measured it on; SPARTA's
+Vulkan on a real Linux or Windows GPU is unmeasured.
+
+**The probe's cached answer outlived a change to the probe.** `solver-capabilities.json` keyed EMerge's probe on the interpreter's stamp
+alone, so the answer of the probe before this change (SPARTA listed wherever it loaded) kept being read. The key now carries a hash of
+`EmergeSolver.ProbeSource`, and a changed probe asks once more.
+
+**The other platforms, in containers on an M4** (Docker on the external drive), the published CLI running the real recipe, then the
+Cavity's EMerge driven sweep:
+
+| Target | Install | Cavity |
+|---|---|---|
+| Linux x64 (Ubuntu 24.04, emulated) | passes, 196 s, 2.2 GB | 12 s, 7,438 tetrahedra, 11 solves |
+| Linux arm64 (Ubuntu 24.04, native) | passes, 376 s with Gmsh's build, 1.1 GB | 5 s, 7,416 tetrahedra; Device Auto stays on the CPU with Mesa present |
+| Windows x64 (Wine 10, emulated) | steps 1–6 pass when run directly (uv's checksum, Python 3.13.16, the environment, the lock, and uv's `--require-hashes` install of the whole lock with SPARTA and CORVID); `import emerge` not reached | not reached |
+
+**Nothing about Windows' .NET side can be learned here.** Under Docker's Rosetta, .NET's `HttpClient` dies ("rosetta error: invalid gdt
+selector index 5", as on 3.0.0); under QEMU with `DOTNET_EnableHWIntrinsic=0`, the CLI ran steps 1–5 with every `${home}` and
+`${recipeId}` unexpanded (its compiled regex matched nothing: the same code expands correctly on macOS and on emulated Linux x64) and then
+died on an illegal instruction. Wine 11 aborts at `wineboot` under QEMU (`anon_mmap_fixed`), and a later Wine 10 prefix would not load
+kernel32. So step 6 was run by hand from the files steps 1–5 left, uv unpacked from step 1's checksum-checked zip, the lock from the
+recipe's lines: the Windows-specific risk of this re-pin, SPARTA's hash, holds. A real Windows machine is still owed the full recipe.
+
+**Device Auto stays on the CPU.** It used the GPU from 40,000 unknowns, measured against the macOS sparse solver (EMI-9). Against SPARTA's
+CPU path on 3.0.10, M4, driven: the Cavity (54,090 unknowns) 2.7 s CPU against 2.9 s GPU, the Launch (151,670) 6.9 against 5.9, the
+Coupled Microstrip (337,980) 24.0 and 24.7 against 36.9 and 38.1 (interleaved, the machine loaded by Spotlight), S within 1e-6. Auto never
+hands a run to the GPU now (`EmergeDevicePolicy.GpuFromUnknowns`); Device GPU still does, with its stall watch and its checks.

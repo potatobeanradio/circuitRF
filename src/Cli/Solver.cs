@@ -208,8 +208,9 @@ internal static class Solver
         if (name is null) return JsonRun.Fail(CliDiagnostics.SolverToolRequired());
         if (SolverHomes.ToolFromId(name) is not { } tool) return JsonRun.Fail(CliDiagnostics.SolverUnknownTool(name));
         // brief-emi-9 R-emi9-2b — --gpu is Settings' Enable GPU solving…, for a machine with no dialog: an option of a tool
-        // whose recipes build a GPU sparse solver, asked of the recipes so no tool is named here.
-        if (gpu && !EmergeAccelerator.HasGpuGroup(tool)) return JsonRun.Fail(CliDiagnostics.SolverUnknownOption($"install {name}", "--gpu"));
+        // that has a GPU sparse solver, asked of EmergeAccelerator so no tool is named here.
+        if (gpu && !EmergeAccelerator.TakesGpuOption(tool))
+            return JsonRun.Fail(CliDiagnostics.SolverUnknownOption($"install {name}", "--gpu"));
 
         string display = SolverDiscovery.For(tool).Name;
         // brief-em3d-26 — on Windows, Palace's plan is the Linux recipe inside a subsystem distribution, and a

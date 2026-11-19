@@ -26,11 +26,17 @@ import json, os, re, subprocess, sys, tempfile
 MARKED = {"emerge-aasds": ("0.4.0", 'platform_release >= "24"')}
 DROPPED = {"linux-arm64": ["gmsh"], "macos-arm64": list(MARKED), "macos-x64": list(MARKED)}
 
-# brief-emi-3 R-emi3-2c -- the wheel-only multi-threaded sparse solver, where it was measured to beat EMerge's
-# single-threaded default and nothing faster comes without a compiler. 0.38.0 is the last release whose API EMerge
-# 3.0.0 calls (1.0 renamed the factorisation settings, and EMerge's call then raises). On macOS arm64 it is what a Mac older
-# than macOS 15 runs on; from macOS 15 EMerge picks its macOS sparse solver first.
-EXTRA = {"macos-arm64": ["rslab==0.38.0"], "linux-arm64": ["rslab==0.38.0"]}
+# brief-emi-3 R-emi3-2c's wheel-only multi-threaded solver (rslab) went in EMerge 3.0.10's re-pin: SPARTA has wheels for every
+# platform and is EMerge's first choice since 3.0.8, so nothing picked rslab any more.
+EXTRA = {
+         # EMerge 3.0.8+ takes SPARTA on Windows where platform_machine == "AMD64", which is what Windows reports; uv's
+         # --python-platform x86_64-pc-windows-msvc evaluates platform_machine as "x86_64", so the compile leaves it out and a
+         # --require-hashes install on a real Windows machine then refuses a dependency the lock has no hash for. Named here.
+         "windows-x64": ["sparta-solver==0.3.9"]}
+
+# brief EMerge 3.0.10 — the CORVID iterative solver comes as EMerge's own extra: a direct solve's memory is what stops a large model, and
+# CORVID factors only the first-order part of the system (a fifth of the unknowns) and iterates the rest.
+EXTRAS = "[corvid]"
 
 PLATFORMS = {
     # recipe platform: (uv --python-platform, platform-tag test)
@@ -68,7 +74,7 @@ def main(uv, emerge, python, out):
     with tempfile.TemporaryDirectory() as tmp:
         for name, (target, plat_re) in PLATFORMS.items():
             req = os.path.join(tmp, name + "-in.txt")
-            open(req, "w").write("".join(f"{r}\n" for r in [f"emerge=={emerge}"] + EXTRA.get(name, [])))
+            open(req, "w").write("".join(f"{r}\n" for r in [f"emerge{EXTRAS}=={emerge}"] + EXTRA.get(name, [])))
             lock = os.path.join(tmp, name + ".txt")
             overrides = os.path.join(tmp, name + "-overrides.txt")
             open(overrides, "w").write("".join(f'{p} ; sys_platform == "never"\n' for p in DROPPED.get(name, [])))

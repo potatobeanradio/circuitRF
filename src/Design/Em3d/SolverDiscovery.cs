@@ -307,13 +307,10 @@ public sealed partial class SolverDiscovery
             // TESTED versions, oldest first. An untested EMerge RUNS, with a warning naming these (the owner's call,
             // 2026-10-21, as Gmsh's brief-em3d-135): a user may install any version of their own. circuitRF's own recipe
             // installs the newest one listed here.
-            // 3.0.0b3 changes no solver code against 3.0.0b2 (a thin-conductor fix after adaptive refinement, and a
-            // refusal of adaptive refinement on a periodic model); src/Design/RESOLVED.md, "EMerge 3.0.0b3", has its check.
-            // 3.0.0 moves the solvers and the wave ports: src/Design/RESOLVED.md, "EMerge 3.0.0".
+            // Only the newest is supported (the owner's call, 2026-11-19): an older install runs with the untested warning and
+            // Settings offers the update. 3.0.10: src/Design/RESOLVED.md, "EMerge 3.0.10".
             validated: [
-                new SolverValidatedVersion("3.0.0b2", "3.0.0b2", null),
-                new SolverValidatedVersion("3.0.0b3", "3.0.0b3", null),
-                new SolverValidatedVersion("3.0.0", "3.0.0", null),
+                new SolverValidatedVersion("3.0.10", "3.0.10", null),
             ],
             extraDirectories: [], untestedRuns: true, installedOnly: true),
 
@@ -693,8 +690,11 @@ public sealed partial class SolverDiscovery
         return true;
     }
 
-    /// <summary>The cache entry's capability column for EMerge's probe answer.</summary>
-    private const string EmergeProbeKey = "EmergeProbe";
+    /// <summary>The cache entry's capability column for EMerge's probe answer, with the probe's own text hashed into it: the
+    /// entry is keyed on the interpreter's stamp, so without it a circuitRF whose probe now reports something else (EMerge 3.0.10:
+    /// SPARTA as a GPU solver only on a Mac) would keep reading the old probe's answer until EMerge itself changed.</summary>
+    private static readonly string EmergeProbeKey = "EmergeProbe:" + Convert.ToHexString(
+        System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(EmergeSolver.ProbeSource)))[..12];
 
     // ── the answer a run, Settings and explain share ─────────────────────────────────────────
 

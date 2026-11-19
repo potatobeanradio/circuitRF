@@ -644,8 +644,9 @@ public partial class Em3dSolverSettingsView : UserControl
 
     /// <summary>brief-emi-9 R-emi9-4 — stores where EMerge factorises; Automatic is stored as nothing.</summary>
     private const string DeviceTip =
-        "Automatic uses EMerge's GPU sparse solver, when it is installed, for a driven problem large enough to be faster on it, " +
-        "and solves a sweep again on the CPU if the GPU's does not converge. Eigenmode problems always solve on the CPU.";
+        "Automatic solves on the CPU, which is as fast as EMerge's GPU sparse solver or faster. GPU uses the GPU sparse solver for " +
+        "every driven problem when it is installed, and solves a sweep again on the CPU if the GPU's stalls. Eigenmode problems " +
+        "always solve on the CPU.";
 
     private const string NoEmergeDeviceTip = "Where EMerge solves. Install EMerge, or name one above, to choose.";
 

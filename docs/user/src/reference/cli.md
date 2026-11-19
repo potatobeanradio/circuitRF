@@ -592,9 +592,8 @@ names, resolves the stackup, meshes, solves the frequency plan, de-embeds, and w
 
 `--device auto|cpu|gpu` chooses where a 3D run solves. A Palace run solves on the CPU unless `--device gpu` says
 otherwise; that needs a GPU build of Palace, and [Palace on a GPU](em-setup.html#palace-gpu) has the details. An
-EMerge run is `auto` unless `--device` says otherwise, whatever **Settings ▸ Solvers** holds: the GPU sparse solver
-for a driven problem large enough to be faster on it ([EMerge on a GPU](em-solvers.html#emerge-gpu)), the CPU
-otherwise.
+EMerge run is `auto` unless `--device` says otherwise, whatever **Settings ▸ Solvers** holds, and `auto` solves on the
+CPU, which is as fast as the GPU or faster ([EMerge on a GPU](em-solvers.html#emerge-gpu)); `--device gpu` uses the GPU.
 `--device gpu` is refused on a run that uses neither Palace nor EMerge.
 
 `--cores <n>` is Settings ▸ Solvers ▸ Cores for this run: how many Palace processes or solver threads it may use. A run that
@@ -912,8 +911,8 @@ same removal. A build machine installs a solver this way.
   `--json`). `solver install emerge --yes` installs it beside the older one, and new runs use it.
 - **`install <tool>`** prints what it would fetch, from where, where it would go and what it cost when measured,
   and exits **1** having fetched nothing. **`--yes`** agrees and installs. `circuitrf solver install emerge --yes`
-  installs EMerge into a Python of its own; **`--gpu`** also fetches a temporary Rust toolchain into EMerge's folder to build
-  its GPU sparse solver, and deletes the toolchain after. See
+  installs EMerge into a Python of its own, with its sparse solvers. **`--gpu`** adds nothing to the install, since EMerge's GPU
+  sparse solver comes with it, and says at the end whether this computer solves on a GPU. See
   [Getting the most speed from EMerge](em-solvers.html#emerge-speed).
 - **`remove <tool>`** removes a copy circuitRF installed, after printing the space it frees; `--all` removes every
   one. Again nothing happens without `--yes`. A program circuitRF did not install is never removed.

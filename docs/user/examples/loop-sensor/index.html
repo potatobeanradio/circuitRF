@@ -196,7 +196,7 @@ the pin and <em>Fillet</em> on its tip; then <strong>Make Port ▸ Coaxial</stro
 <code>pin_d/2</code> and <code>bore_d/2</code>. <em>With Connector</em> places <em>SMA</em> with its axis on the pin's arm at <code>axis_z</code>.</p>
 <h2 id="the-numbers-and-where-they-come-from">The numbers, and where they come from</h2>
 <p>Every time and size below was <strong>measured once</strong>, on an Apple M4 with 10 cores and 16 GB, running macOS 27.2, Palace
-0.18.1 on 10 processes, Gmsh 4.15.2, EMerge 3.0.0 and openEMS 0.37.0. A time is the wall clock for the whole run; a size
+0.18.1 on 10 processes, Gmsh 4.15.2, EMerge 3.0.10 and openEMS 0.37.0. A time is the wall clock for the whole run; a size
 is the run's own tetrahedron count, or openEMS's grid cells. Each board's sweep is 0.4–1.6 GHz, the paper's plotted range,
 in 1 MHz steps — 1201 points, built by Palace's and EMerge's adaptive sweeps from a handful of full solves — so a dip is
 placed to the MHz.</p>
@@ -223,10 +223,10 @@ placed to the MHz.</p>
 <tr>
 <td>Ideal Port</td>
 <td>EMerge</td>
-<td>19 s</td>
+<td>23 s</td>
 <td>134,392 tetrahedra</td>
 <td>879 MHz</td>
-<td>−22.81 dB</td>
+<td>−23.02 dB</td>
 </tr>
 <tr>
 <td>Ideal Port</td>
@@ -247,7 +247,7 @@ placed to the MHz.</p>
 <tr>
 <td>With Connector</td>
 <td>EMerge</td>
-<td>20 s</td>
+<td>22 s</td>
 <td>142,030 tetrahedra</td>
 <td>885 MHz</td>
 <td>−22.36 dB</td>

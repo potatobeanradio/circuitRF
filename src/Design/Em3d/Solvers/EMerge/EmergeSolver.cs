@@ -108,7 +108,7 @@ public static class EmergeSolver
     /// makes the answer a refusal.</para>
     /// </summary>
     public const string ProbeSource = """
-        import json, os, platform, re, sys
+        import json, os, platform, sys
         out = {"probe": 1, "python": platform.python_version(), "platform": sys.platform, "machine": platform.machine(), "cores": os.cpu_count()}
         try:
             import emerge
@@ -129,20 +129,14 @@ public static class EmergeSolver
                     if n not in ("SuperLU", "UMFPACK", "MUMPS", "AASDS", "CHOLMOD", "RSLab", "Sparta", "BiCGSTAB", "CG", "Corvid", "LAPACK", "ARPACK"):
                         c.available = False
             standard = {"SuperLU", "BiCGSTAB", "CG", "Corvid", "LAPACK", "ARPACK"}
-            out["sparseSolvers"] = sorted(n.lower() for n, c in s.PUBLIC_SOLVERS.items() if c.available and n not in standard)
-            kind = s.SolverSparta
+            # SPARTA is listed as the GPU sparse solver only on a Mac with a Metal GPU, the one GPU circuitRF has tested it on: elsewhere
+            # its wheel finds Vulkan, and Mesa's llvmpipe, a CPU rasteriser, answers as a GPU on any Linux machine with Mesa
+            out["sparseSolvers"] = sorted(n.lower() for n, c in s.PUBLIC_SOLVERS.items()
+                                          if c.available and n not in standard and (n != "Sparta" or (c.gpu and sys.platform == "darwin")))
         except Exception:
-            try:
-                from emerge._emerge import solver as s
-                AutomaticRoutine = s.AutomaticRoutine
-                out["sparseSolvers"] = sorted(m.group(1).lower() for n in dir(s) if (m := re.fullmatch(r"_([A-Z0-9]+)_AVAILABLE", n)) and getattr(s, n) is True)
-                kind = None
-            except Exception:
-                out["sparseSolvers"] = []
+            out["sparseSolvers"] = []
         try:
             import scipy.sparse as sp
-            if kind is not None:
-                kind.available = False
             out["directSolver"] = type(AutomaticRoutine().pick_solver(sp.csc_matrix((20000, 20000), dtype=complex), None, s.MatrixType.COMPLEX_SYMMETRIC)).__name__
         except Exception:
             out["directSolver"] = None

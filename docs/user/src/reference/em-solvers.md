@@ -295,35 +295,29 @@ So the honest summary is:
 ## Getting the most speed from EMerge {#emerge-speed}
 
 Almost all of an EMerge run's time is spent factorising sparse matrices, so **the sparse solver it uses
-decides its speed**. circuitRF's install gives every computer the fastest one it can have, and adds a
-faster one by itself when your computer gains what that one needs. Nothing about the answer changes:
-on the same mesh, every solver below gave the same S-parameters to within 1e-10 dB.
+decides its speed**. circuitRF's install brings EMerge's fastest, SPARTA, on every computer, and there is
+nothing to add. Nothing about the answer depends on the solver: on the same mesh the two below gave the same
+S-parameters to within 1e-10.
 
-**What the install gives you, and what makes it faster:**
+| Computer | What EMerge solves with |
+|---|---|
+| macOS, arm64 | SPARTA on the CPU, and on the GPU for a large driven problem ([below](#emerge-gpu)) |
+| macOS, x64; Linux; Windows | SPARTA on the CPU. Not yet measured on these computers |
 
-| Computer | What the install gives | What makes it faster |
+Measured on an Apple M4 (10 cores, 16 GB), every core in use, the time to solve and the peak memory of the
+whole run, against EMerge's macOS sparse solver, the fastest before SPARTA:
+
+| Problem | macOS sparse solver | SPARTA |
 |---|---|---|
-| macOS 15 or later, arm64 | EMerge's macOS sparse solver, the fastest on the CPU | For the GPU: **the command line tools** (`xcode-select --install`) and a Rust toolchain. circuitRF then builds the GPU solver itself ([below](#emerge-gpu)) |
-| macOS 13 or 14, arm64 | A multi-threaded sparse solver | **macOS 15**: EMerge's macOS sparse solver comes only for macOS 15 or later. Reinstall EMerge after updating. The GPU solver is available as above |
-| macOS, x64; Linux, x64; Windows | A multi-threaded sparse solver that EMerge's own dependencies bring | Nothing to add. Not yet measured on these computers |
-| Linux, arm64 | The same no-compiler multi-threaded solver as an arm64 Mac | Nothing to add. Expected from the arm64 Mac's measurement; not yet measured on Linux |
-
-Measured on an Apple M4 (10 cores, 16 GB) with the 3D Eigenmode example's cavity, driven, an adaptive
-sweep over 8–12 GHz, every core in use:
-
-| Sparse solver | 9,835 tetrahedra | 19,426 tetrahedra | Peak memory at 9,835 |
-|---|---|---|---|
-| EMerge's single-threaded default, used when nothing faster is installed | 48.6 s | 235.6 s | 2.87 GB |
-| The multi-threaded solver of macOS 13 and 14 | 4.0 s | 11.2 s | 2.18 GB |
-| EMerge's macOS sparse solver | **3.0 s** | **9.2 s** | 1.85 GB |
+| 3D Wave Ports Launch, 151,670 unknowns, five frequencies | 8.9 s, 2.9 GB | **3.9 s**, 3.4 GB |
+| 3D Wave Ports Coupled Microstrip, 337,980 unknowns, adaptive sweep | 42.1 s, 3.5 GB | **22.5 s**, 5.1 GB |
 
 **Which one you have** is in **Settings ▸ Solvers**: the EMerge row says *Fast sparse solver*, or
 *Baseline sparse solver, one core* with what to install, and *GPU sparse solver installed* when there
 is one. `circuitrf solver list` prints the same. Each run's cost line names the solver it used.
 
 **Cores.** EMerge's sparse solver uses the setup's *Cores* setting as its thread count, and every
-physical core when that is *Automatic*. On one core the run above took 2.0× (EMerge's macOS solver) to 4.1×
-(the other multi-threaded solver) as long as on ten. circuitRF does not split a sweep across several EMerge processes: on
+physical core when that is *Automatic*. circuitRF does not split a sweep across several EMerge processes: on
 the cavity, two processes of five threads took 13.2 s against one of ten's 10.0 s, and each process
 holds its own copy of the matrices.
 
@@ -352,26 +346,21 @@ notch 25–30 MHz low, which is why every preset uses order 2.
 
 ### EMerge on a GPU {#emerge-gpu}
 
-On an arm64 macOS computer, EMerge can factorise its matrices on the GPU (see
-[Settings ▸ Solvers](settings.html#em3d) for how it is installed). **circuitRF uses it automatically
-when it is faster**: for a driven problem of 40,000 unknowns or more. Below that the CPU's fast sparse
-solver is as quick or quicker. Measured on the shipped Cavity, driven, with an adaptive sweep:
+On an arm64 macOS computer, EMerge can also factorise its matrices on the GPU. **Device Automatic keeps it
+on the CPU**, because SPARTA on the CPU is as fast or faster at every size measured. On an Apple M4, driven,
+SPARTA on both:
 
-| Unknowns | CPU (fast sparse solver) | GPU |
-|---|---|---|
-| 29,726 | 0.8 s | 0.8 s |
-| 67,106 | 2.3 s | 1.7 s |
-| 142,612 | 6.1 s | 3.7 s |
-| 303,888 | 17.0 s | 9.2 s |
+| Problem | Unknowns | CPU | GPU |
+|---|---|---|---|
+| 3D Eigenmode Cavity | 54,090 | 2.7 s | 2.9 s |
+| 3D Wave Ports Launch | 151,670 | 6.9 s | 5.9 s |
+| 3D Wave Ports Coupled Microstrip | 337,980 | 24.0 s | 36.9 s |
 
-Both converged in the same number of full solves, and their S-parameters agreed to within 2e-6. The GPU
-works in single precision, and circuitRF turns on the GPU solver's own double-precision correction; without
-it, the same sweeps either needed more solves or never converged. **A sweep on the GPU is watched**: when its
-estimated error has not reached a new low in 8 solves, circuitRF stops it and solves the sweep again on the CPU,
-on the same mesh, and says so in the run's Notes. The 3D Wave Ports *Coupled Microstrip* (336,748 unknowns) is
-such a case: on the GPU its sweep was no better after 22 solves than after 14, and on the CPU it converged in 9,
-at 1.9 s per solve against the GPU's 7.6 s. A sweep on the GPU that stops at its limit without converging is
-also solved again on the CPU.
+Their S-parameters agreed to within 1e-6. Set **Device** to **GPU** to use it anyway. The GPU works in single
+precision, and circuitRF turns on the GPU solver's own double-precision correction; without it, sweeps needed
+more solves or never converged. **A sweep on the GPU is watched**: when its estimated error has not reached a
+new low in 8 solves, circuitRF stops it and solves the sweep again on the CPU, on the same mesh, and says so in
+the run's Notes.
 
 **Every solve on the GPU is checked**, whatever the sweep's length and whether Device is Automatic or GPU: when the
 GPU solver reports its factorisation unusable, or its answer misses the equations by more than 1e-3 (‖Ax − b‖/‖b‖), the

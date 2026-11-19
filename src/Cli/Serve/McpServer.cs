@@ -277,7 +277,7 @@ internal sealed class McpServer
                 "EMerge (EMerge searches either side of TargetGHz: put it at the band's centre), static " +
                 "problems on Palace only; 'solver' says what is installed here and what each build can do. device=gpu runs Palace on the GPUs of a GPU build " +
                 "('solver capability=gpu' says whether this one can), and EMerge on its GPU sparse solver ('solver' says whether " +
-                "GPU solving is enabled); device=auto, the default, picks for EMerge by the problem's size.\n" +
+                "GPU solving is enabled); device=auto, the default, solves EMerge on the CPU, its fastest.\n" +
                 // EMB-5 R-emb5-1/2: the cost before committing, and a long run that does not hold the session.
                 // brief-sdl-6/7/8: a schematic simulated by EM of its own layout, at its variables' values.
                 "EM cells: an analysis line with model=em runs a schematic by EM of the layout Update Layout from Schematic made " +

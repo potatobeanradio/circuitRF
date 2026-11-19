@@ -33,25 +33,19 @@ public static class EmergeDevices
 }
 
 /// <summary>
-/// brief-emi-9 R-emi9-3 — when a run uses the GPU. <b>Measured</b> (src/Design/RESOLVED.md, EMI-9) on the Cavity, driven,
-/// adaptive sweep, on an M4: with refinement on, the GPU converged in the CPU's own sample count at every mesh and matched its
-/// S to 1.5e-6; it tied the CPU at 30k unknowns and was 1.3×, 1.65× and 1.84× faster at 67k, 143k and 304k.
+/// brief-emi-9 R-emi9-3 — when a run uses the GPU. <see cref="EmergeDevice.Auto"/> used it from 40,000 unknowns, where it beat the
+/// macOS sparse solver (EMI-9: 1.84× at 304k). Since EMerge 3.0.10 the CPU runs SPARTA, and on an M4 the GPU was no faster at
+/// any size measured: 2.9 s against 2.7 at 54k unknowns, 5.9 against 6.9 at 152k, 37 against 24 at 338k (src/Design/RESOLVED.md,
+/// "EMerge 3.0.10"). So Auto stays on the CPU, and the GPU is <see cref="EmergeDevice.Gpu"/>'s.
 /// </summary>
 public static class EmergeDevicePolicy
 {
-    /// <summary>The unknowns from which <see cref="EmergeDevice.Auto"/> uses the GPU: above the measured tie at ~30,000, where
-    /// it starts to win.</summary>
-    public const long AutoGpuFromUnknowns = 40_000;
-
     /// <summary>
     /// The unknowns from which the run uses the GPU, or null when it never does: a driven problem only (EMerge's eigensolver
-    /// does not use it), only when the GPU solver is installed, never for <see cref="EmergeDevice.Cpu"/>, from any size for
-    /// <see cref="EmergeDevice.Gpu"/>, and from <see cref="AutoGpuFromUnknowns"/> for <see cref="EmergeDevice.Auto"/>.
+    /// does not use it), only when the GPU solver is installed, and only for <see cref="EmergeDevice.Gpu"/>, from any size.
     /// </summary>
     public static long? GpuFromUnknowns(Em3dProblemType problem, bool gpuInstalled, EmergeDevice preference)
-        => problem != Em3dProblemType.Driven || !gpuInstalled || preference == EmergeDevice.Cpu ? null
-         : preference == EmergeDevice.Gpu ? 0
-         : AutoGpuFromUnknowns;
+        => problem == Em3dProblemType.Driven && gpuInstalled && preference == EmergeDevice.Gpu ? 0 : null;
 
     /// <summary>The device a problem of <paramref name="unknowns"/> is solved on: <see cref="EmergeDevice.Cpu"/> or
     /// <see cref="EmergeDevice.Gpu"/>. The driver makes the same comparison on the threshold it is handed.</summary>

@@ -64,8 +64,7 @@ public static class EmergeAccelerator
         if (found?.Emerge is { Gpu: true }) return null;
         var record = RecordOf(found);
         if (RecipeOf(record) is not { } recipe || GpuGroupOf(recipe) is not { } group)
-            return "circuitRF builds EMerge's GPU sparse solver in its own EMerge install on macOS arm64; elsewhere, and in an EMerge " +
-                   "installed some other way, there is none.";
+            return "EMerge solves on the GPU on an arm64 Mac, where its GPU sparse solver comes with it; elsewhere it solves on the CPU.";
         var entry = record!.Optional?.FirstOrDefault(e => e.When == group.When.Name);
         if (entry is { Status: OptionalStepsStatus.Failed })
             return $"circuitRF could not build it ({entry.Detail}).";
@@ -80,6 +79,11 @@ public static class EmergeAccelerator
     /// <summary>Whether any of <paramref name="tool"/>'s recipes, on any platform, builds a GPU sparse solver: what decides that
     /// <c>solver install &lt;tool&gt; --gpu</c> is an option at all, so the CLI names no tool.</summary>
     public static bool HasGpuGroup(SolverTool tool) => SolverRecipes.All.Any(r => r.Tool == tool && GpuGroupOf(r) is not null);
+
+    /// <summary>Whether <c>solver install &lt;tool&gt; --gpu</c> means anything: a tool whose recipe builds a GPU sparse solver, or
+    /// EMerge, whose GPU sparse solver comes with it since 3.0.8 (its --gpu builds nothing, and the check after the install says
+    /// whether this machine solves on a GPU).</summary>
+    public static bool TakesGpuOption(SolverTool tool) => tool == SolverTool.Emerge || HasGpuGroup(tool);
 
     /// <summary>
     /// brief-emi-9 R-emi9-2b — what Settings' <i>Enable GPU solving…</i> acts on: circuitRF's own EMerge install whose recipe can

@@ -38,8 +38,8 @@ public sealed record EmergeProbe(
     /// <summary>brief-emi-9 — EMerge's flag for its GPU sparse solver, as the probe lists it.</summary>
     internal const string GpuSolverFlag = "sparta";
 
-    /// <summary>brief-emi-9 — EMerge can load its GPU sparse solver. EMerge never picks it itself; a run asks for it
-    /// (<see cref="EmergeDevicePolicy"/>).</summary>
+    /// <summary>brief-emi-9 — EMerge can load its GPU sparse solver and it has a GPU (the probe lists SPARTA only then). A run asks
+    /// for the GPU (<see cref="EmergeDevicePolicy"/>); on the CPU SPARTA is EMerge's own first choice since 3.0.8.</summary>
     public bool Gpu => SparseSolvers.Contains(GpuSolverFlag, StringComparer.Ordinal);
 
     public EmergeSpeedTier Tier => DirectSolver switch

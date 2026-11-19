@@ -615,36 +615,27 @@ which before downloading anything and gives you the command that installs them. 
 on an x64 computer, EMerge's own dependencies also include a vendor's multi-threaded sparse-solver
 library under that vendor's licence. The install says so before anything is downloaded.
 
-**The install also uses the fastest sparse solver your computer can have**, without asking again. On
-macOS 15 or later that is EMerge's macOS sparse solver, which comes with it; on macOS 13 and 14, EMerge
-runs and gives the same answers with another multi-threaded solver. What each solver is worth,
-measured, and what each other kind of computer gets, is in
+**EMerge's fastest sparse solver comes with it**: SPARTA, which EMerge uses on every computer, and on an
+arm64 macOS computer also on the GPU. So does CORVID, an iterative solver for a model too large for a
+direct solve's memory. Nothing is built on your computer. What each is worth, measured, is in
 [EM Solvers ▸ Getting the most speed from EMerge](em-solvers.html#emerge-speed).
 
 **When circuitRF has tested a newer EMerge than the one you installed**, **Update to EMerge …** takes the
 place of the Install button. It works as an install does, and shows what it will download first. The new
 version goes in beside the one you have, so if it fails nothing changes; when it succeeds, new runs use it,
 and **Remove older EMerge …** removes the old one when you no longer want to compare against it. A Python
-you named yourself is left alone and is not offered this. On an arm64 macOS computer, GPU solving comes back
-by itself if a Rust toolchain is installed, and otherwise from **Enable GPU solving…**.
+you named yourself is left alone and is not offered this.
 
 **Uninstall …** on the EMerge row removes the whole folder: its Python, EMerge, and every solver built
 into it. The install puts nothing of EMerge's anywhere else.
 
-**On an arm64 macOS computer it also builds EMerge's GPU sparse solver**, when a Rust toolchain is
-installed as well as the command line tools. If those tools are missing, **Install the command line
-tools…** beside the status line starts their installer. The status line then says *GPU sparse solver installed*.
-Without Rust it says *GPU solving is available after installing a Rust toolchain*, and **Enable GPU
-solving…** beside it fetches Rust's minimal toolchain into EMerge's own folder, builds the GPU solver with
-it, and deletes the toolchain. It shows what it will fetch first: about 100 MB and half a minute. Your
-shell, your `PATH` and any Rust you install yourself are not touched. If you would rather install Rust
-yourself, circuitRF builds the GPU solver by itself the next time this tab is shown or an EMerge run
-starts. The GPU solver is free software under the GNU Affero GPL; circuitRF builds it on your computer
-and distributes nothing. Headless, `circuitrf solver install emerge --gpu --yes` does the same as the button.
+**On an arm64 macOS computer EMerge also solves on the GPU**, and the status line says *GPU sparse solver
+installed*. On Linux and Windows it solves on the CPU. SPARTA and CORVID are free software under the GNU Affero
+GPL; EMerge runs them in its own process, and circuitRF distributes nothing.
 
-**Device** (EMerge) says where EMerge factorises. **Automatic**, the default, uses the GPU sparse solver
-for a driven problem large enough to be faster on it, and the CPU otherwise. **CPU** never uses it, and
-**GPU** always does when it is installed. It belongs to this computer, not to a setup. With no EMerge found it is
+**Device** (EMerge) says where EMerge factorises. **Automatic**, the default, and **CPU** solve on the CPU,
+which is as fast as the GPU or faster; **GPU** uses the GPU sparse solver for every driven problem when it is
+installed. It belongs to this computer, not to a setup. With no EMerge found it is
 greyed out, and the choice it holds applies again once one is. See
 [Solvers ▸ EMerge on a GPU](em-solvers.html#emerge-gpu).
 
