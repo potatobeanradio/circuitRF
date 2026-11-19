@@ -293,7 +293,7 @@ convention behind both.</p>
 <td><code>filter</code></td>
 <td><strong>nothing</strong> — a specification in flags</td>
 <td>The <a href="filter-designer.html">Filter Designer</a>'s realisers, and one of them</td>
-<td>Each realiser and whether it can build the filter, to stdout; with <code>--realiser</code>, the test bench as a <code>.cnl</code> (<code>-o</code>), and a <code>.csch</code> with <code>--to-schematic</code></td>
+<td>Each realiser and whether it can build the filter, to stdout; with <code>--realiser</code>, the test bench as a <code>.cnl</code> (<code>-o</code>), a <code>.csch</code> with <code>--to-schematic</code>, and a Planar EM <code>.em.s2p</code> with <code>--em</code></td>
 </tr>
 <tr>
 <td><code>smith</code></td>
@@ -2424,7 +2424,8 @@ bench is refused. Exit <strong>0</strong> when it budgeted (and
 transferred), <strong>1</strong> on a refusal.</p>
 <h2 id="filter"><code>filter</code> — a filter from its specification</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter --band &lt;b&gt; --order &lt;n&gt; --f1 &lt;f&gt; [--f2 &lt;f&gt;] [--response butterworth|chebyshev] [--ripple dB] [--stop dB] [--z0 Ω] [--zeros f,f]
-                 [--tech &lt;id|.ctech|folder&gt;] [--signal &lt;layer&gt;] [--ground &lt;layer&gt;] [--realiser &lt;name&gt; -o &lt;file.cnl&gt; [--to-schematic]] [--points n]</code></pre>
+                 [--tech &lt;id|.ctech|folder&gt;] [--signal &lt;layer&gt;] [--ground &lt;layer&gt;] [--realiser &lt;name&gt; -o &lt;file.cnl&gt; [--to-schematic] [--em]] [--points n]
+<span class="prompt">$ </span>circuitrf filter --extract &lt;file.s2p&gt; --band bandpass --order &lt;n&gt; --f1 &lt;f&gt; --f2 &lt;f&gt; [--response …] [--ripple dB] [--z0 Ω] [--zeros f,f]</code></pre>
 <p><code>filter</code> is the <a href="filter-designer.html">Filter Designer</a> with no window. It takes the specification as flags: the band
 (<code>lowpass</code>, <code>highpass</code>, <code>bandpass</code> or <code>bandstop</code>), the order, the cutoff or the lower edge <code>--f1</code> and, for a band, the upper
 edge <code>--f2</code>, each with its unit. The response is Chebyshev unless <code>--response</code> says otherwise, with 0.1 dB of ripple, a
@@ -2444,6 +2445,48 @@ the layers; the technology's own defaults apply otherwise.</p>
 <p>The bench runs anywhere: <code>circuitrf sparam</code> on it gives the realised response. <code>--to-schematic</code> also draws it as a <code>.csch</code>
 beside it, through the same path as <code>netlist --to-schematic</code>. A realiser that cannot build the filter is a
 <code>filter.realiser.refused</code> error with its own reason.</p>
+<p><strong>With <code>--em</code></strong> it also solves the realised part on Planar MoM, as its layout draws it, on a coarse mesh. Ports 1 and 2
+are on the part's pins 1 and 2, and each site gets a port of its own, closed with the site's value. The sweep is
+<code>--points</code> frequencies across the bench's band; without it, 8N + 4Z + 1 for N poles and Z zeros (41 for order 5). It writes <code>&lt;name&gt;.em.s2p</code> beside the <code>.cnl</code> and prints one
+line: the EM band centre (a lowpass's or highpass's edge) and the worst in-band |S11|, each beside the circuit
+model's. Progress goes to stderr. A site no port can close (a jumper, a pin the drawing lacks) is a <code>filter.em.sites</code>
+error; no substrate, or a solve that fails, is <code>filter.em.refused</code>.</p>
+<p>For a bandpass, <code>--em</code> then prints the extracted metrics (below) of the EM run and of the circuit model side by side.
+The circuit column is read on the bench's own sweep. The fit needs 2(2N + Z + 1) samples within three normalised
+bandwidths of the centre, for N poles and Z zeros, which the default sweep gives. With too few <code>--points</code>, the EM column
+reads <code>-</code> and the extraction's <code>synthesis.extract.samples</code> refusal says how many it needs.</p>
+<p><strong>With <code>--extract</code></strong> it reads any two-port Touchstone file (a circuit run, an EM run, a measurement) and prints what
+its samples say the filter is, beside the specification:</p>
+<ul>
+<li><strong>Checked rows</strong>, each with <code>pass</code> or <code>fail</code>:
+<ul>
+<li>the centre and the bandwidth at the ripple level (3 dB for a Butterworth), the ripple, and the worst in-band
+return loss;</li>
+<li>for a specification without zeros, the fitted coupling matrix's resonant frequencies f(i), couplings k(i,j) and
+external Q against the prototype's.</li>
+</ul>
+</li>
+<li><strong>Plain rows:</strong> the insertion loss at the centre, the unloaded Q, and any transmission zeros.</li>
+</ul>
+<p>A sample row passes within 2 % of the specification; the centre passes within 2 % of half the bandwidth. A matrix
+entry passes within 0.02 in M. The extraction reads a bandpass only: any other band, or too few samples near the band,
+is the extraction's own <code>synthesis.extract.*</code> refusal. A file the reader cannot read, or one that is not a two-port's
+S-parameters, is <code>filter.extract.unreadable</code>. With <code>--json</code>, each checked row is a <code>filter.extract.metric</code> diagnostic
+carrying <code>column</code>, <code>name</code>, <code>value</code>, <code>target</code> and <code>pass</code>.</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter --extract ideal.s2p --band bandpass --order 5 --f1 2.28GHz --f2 2.52GHz
+<span class="output">Filter: Chebyshev bandpass, order 5, 2.28 to 2.52 GHz, 0.1 dB ripple, Z0 50 Ohm; ideal.s2p
+                 ideal.s2p             spec
+  Centre         2.397 GHz pass        2.397 GHz
+  Bandwidth      0.24 GHz pass         0.24 GHz
+  Ripple         0.1 dB pass           0.1 dB
+  Return loss    16.43 dB pass         16.43 dB
+  Qe(S)          11.4538 pass          11.4538
+  f(1)           2.397 GHz pass        2.397 GHz
+  k(1,2)         0.0798 pass           0.0798
+  …
+  Qe(L)          11.4538 pass          11.4538
+  Insertion loss 0 dB
+  Unloaded Q     lossless</span></code></pre>
 <p>Over MCP, this is the <code>create</code> tool's <code>filter</code> mode. Its arguments have the flags' names, except <code>technology</code> for <code>--tech</code>.</p>
 <h2 id="smith"><code>smith</code> — a matching network, headless</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf smith &lt;match.csmith&gt; [--at &lt;freq&gt;] [-o out.{s1p,svg,pdf,png}]</code></pre>
