@@ -875,6 +875,11 @@ share. The spec gives the ports' Z0 and the bench the part is read from.
   the first and last crossings of |S21| 3 dB under its peak (for a lowpass or highpass, its first crossing, the edge).
   Progress goes to stderr. A fuller set of figures is a later wiring.
 
+**From the designer** (§6). Run Planar EM calls `Run` at `EmFrequencies`, 31 points across ω = ±3, so the extraction
+gets every point. `Refusal(spec, realisation, substrate)` makes `Run`'s own checks (the drawing, pins 1 and 2, each
+site's port) and returns the reason, so the window greys the button before anything is meshed. On the three-pole tapped
+hairpin, 2.2 to 2.6 GHz on the shipped board, the first point took about 20 s in a Debug build on a shared machine.
+
 **What it leaves out.** The site parts' own lands and bodies: the strip and the grown via stand for the part. A shunt
 part's via is in the EM answer, while the circuit bench grounds the part ideally. Pins with no site stay open, as the
 bench leaves them.
@@ -1027,6 +1032,11 @@ default is 11 points.
   rational fit. Why: a measured or EM filter has line between each port and its first resonator, whose phase no
   rational of degree N holds, so its fit and matrix suffer. The circuit model's taps sit on the resonators, which is
   why the polish does without.
+- **Run Planar EM measured on the five-pole hairpin** (§6, §6d). Its time, and its extraction against the circuit
+  bench's, phase loading included. Why: the run was stopped before it finished, so the 31-point cost and the EM matrix
+  are not yet known.
+- **The Designer's EM screenshot** (§6). `UiSnapshot --filter-designer mcrc --fd-em` captures the five-pole hairpin
+  after Run Planar EM, for the user page. Why: the EM run behind it was not run to the end.
 - **Polish for Cohn's chains and MCLA** (§6c). A Broyden step on the stored gaps and lengths, its first Jacobian by
   finite differences on the bench. Why: their geometry comes from closed forms, not from k and Qe curves, so output
   space mapping has nothing to re-solve, and an edge-coupled chain's 1.6 dB ripple (§6a) is the case that most needs it.

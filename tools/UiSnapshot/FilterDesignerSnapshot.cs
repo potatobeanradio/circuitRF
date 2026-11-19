@@ -10,16 +10,37 @@ using CircuitRF.Ui.Views.Filters;
 /// The Filter Designer window over an empty schematic (<c>--filter-designer any|mlad|mcrc|mcla</c>), its responses computed before the
 /// capture; <c>--size</c>, <c>--fd-left</c> and <c>--fd-bottom</c> show how the panes clip when small. <c>--fd-busy</c> captures it as it looks while a realisation computes:
 /// the bar beside "Realisers" shown (the headless platform never fires the bar's delay timer, so it is elapsed here by hand).
+/// <c>--fd-em</c> captures the five-pole tapped hairpin after Run Planar EM: the EM overlay and the metrics read from it.
 /// </summary>
 static class FilterDesignerSnapshot
 {
-    public static int Run(string family, bool busy, double? left, double? bottom, string output, double width, double height)
+    public static int Run(string family, bool busy, bool em, double? left, double? bottom, string output, double width, double height)
     {
         SymbolKind? kind = family switch { "mlad" => SymbolKind.Mlad, "mcrc" => SymbolKind.Mcrc, "mcla" => SymbolKind.Mcla, _ => null };
-        var vm = new FilterDesignerViewModel(new CircuitRF.Ui.ViewModels.SchematicViewModel(new SchematicEditModel()), kind);
+        // the shipped board's stack, as Tools ▸ Filter Designer… in a workspace on it gives the substrate
+        var vm = new FilterDesignerViewModel(new CircuitRF.Ui.ViewModels.SchematicViewModel(new SchematicEditModel()), kind,
+            technology: CircuitRF.Design.Layout.ShippedTechnologies.Load(CircuitRF.Design.Layout.ShippedTechnologies.DefaultId));
         // the responses come back through the dispatcher (the await resumes on the UI thread): pumped, never blocked on
         void Drain() { while (!vm.Realising.IsCompleted) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(5); } Dispatcher.UIThread.RunJobs(); }
         Drain();
+        if (em)
+        {
+            vm.Order = "5";
+            Drain();
+            vm.Selected = vm.Realisers.First(r => r.Name.StartsWith("Hairpin bandpass, tapped", StringComparison.Ordinal));
+            Drain();
+            vm.RunEm();
+            while (!vm.Work.IsCompleted) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(20); }
+            Dispatcher.UIThread.RunJobs();
+            Console.WriteLine(vm.Status);
+            // the metrics the picture shows, the bench's first and then the EM run's, which the capture keeps
+            foreach (bool onEm in new[] { false, true })
+            {
+                vm.ShowEm = onEm;
+                Console.WriteLine(vm.MetricsNote);
+                foreach (var r in vm.SpecRows.Concat(vm.MatrixRows)) Console.WriteLine($"  {r.Name}: {r.Value} ({r.Target}) {r.Verdict}");
+            }
+        }
         var window = new FilterDesignerWindow { DataContext = vm, Width = width, Height = height };
         window.Show();
         void Settle()

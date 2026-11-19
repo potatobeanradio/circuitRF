@@ -3,8 +3,8 @@ title: Filter Designer
 slug: reference/filter-designer.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Filter Designer
-lede: A filter from its specification - the realisers that can build it, the ideal response beside the realised one, and the part placed with a part on each of its sites.
-keywords: filter, filter synthesis, Filter Designer, Tools menu, lowpass, highpass, bandpass, bandstop, Butterworth, Chebyshev, ripple, realiser, MLAD, MCRC, MCLA, sites, Synthesise, filter verb
+lede: A filter from its specification - the realisers that can build it, the ideal response beside the realised one, its prototype read back from the circuit or a Planar EM run, and the part placed with a part on each of its sites.
+keywords: filter, filter synthesis, Filter Designer, Tools menu, lowpass, highpass, bandpass, bandstop, Butterworth, Chebyshev, ripple, realiser, MLAD, MCRC, MCLA, sites, Synthesise, filter verb, coupling matrix, extraction, external Q, Planar EM, polish, calibrate
 ---
 
 <nav class="toc">
@@ -15,6 +15,7 @@ keywords: filter, filter synthesis, Filter Designer, Tools menu, lowpass, highpa
 <li><a href="#spec">The specification</a></li>
 <li><a href="#realisers">The realisers</a></li>
 <li><a href="#response">The response</a></li>
+<li><a href="#metrics">The metrics, Planar EM and Polish</a></li>
 <li><a href="#place">Place</a></li>
 <li><a href="#headless">Running it headless</a></li>
 </ol>
@@ -108,6 +109,34 @@ joins them when that realiser has been designed. That takes under a tenth of a s
 hairpins and open loops take a few seconds, because their couplings are solved on the part's circuit model, and a coupled
 array up to about ten, because its cross-section is fitted with a field solver. A bar beside **Realisers** shows while the
 window waits. The window stays responsive throughout, and closing it stops the work.
+
+## The metrics, Planar EM and Polish {#metrics}
+
+Under the plot, **Metrics** reads the selected realisation's response back to the filter it describes, for a bandpass:
+- on the left, the band's **centre** and **bandwidth**, the **ripple** and the worst **return loss** across the band, each
+  against the specification with **pass** or **fail**, then the **insertion loss** at the centre and the **unloaded Q**
+  beside the board's;
+- on the right, the filter's coupling matrix in band-pass terms: each end's **external Q** (`Qe(S)`, `Qe(L)`), each
+  **coupling** `k(i,j)` and each resonator's own frequency `f(i)`, against the synthesised values.
+
+The centre passes within 2 % of half the band, the bandwidth when it is at least 98 % of the one asked, the ripple when
+it is at most 2 % over the one asked, and the return loss when it is at most 2 % under the prototype's. A matrix entry
+passes within 0.02 in the normalised matrix: about 1 % of the band in a resonator's frequency and 4 % in an end's external
+Q. The line above the tables says whose response
+they read and how many checks fail. The metrics come with the realised response, so they never hold the window up. A
+lowpass, highpass or bandstop has no coupling matrix, and the line says so.
+
+**Run Planar EM** solves the realisation's layout, as Place would draw it, on Planar MoM: a coarse mesh, 31 frequencies
+across the band and about one bandwidth either side. A bar shows how far it is, and **Cancel** stops it. When it finishes, the EM |S21| and |S11| join
+the plot and the metrics read from the EM response. Untick **From Planar EM** to read the circuit bench's again. A run is
+kept for as long as the application runs, so going back to the realisation shows it at once. The button is greyed for a
+realisation the solver cannot take, such as a site with no value to close its port with, and its tooltip says why.
+
+**Polish** corrects a hairpin or open-loop filter in a row: three passes, each reading the bench's coupling matrix and
+moving the gaps, the tap and the resonator lengths by what it missed. It takes about half a minute. The polished part
+replaces the realisation, so the plot, the metrics, **What Place writes** and **Place** all use it, and the status line
+gives the worst return loss before and after. **Calibrate from EM**, once the realisation has an EM run, does one such pass
+against the EM response instead of the bench's, then solves the corrected part on EM. Each click is one more pass.
 
 ## Place {#place}
 
