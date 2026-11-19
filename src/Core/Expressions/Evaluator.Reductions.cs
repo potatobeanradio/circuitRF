@@ -309,18 +309,83 @@ public sealed partial class Evaluator
         return new Value(new DataCube([axis], counts) { Unit = percent ? "%" : "" });
     }
 
-    /// <summary><c>cdf(x)</c> — the empirical CDF: the present values sorted, as a <c>value</c> axis, against the
-    /// fraction of values at or below each (i/n).</summary>
+    /// <summary>The most points a <c>cdf</c> over several axes evaluates each curve at: every value present when there are
+    /// no more than this, otherwise this many evenly spaced from the smallest to the largest.</summary>
+    internal const int CdfGridPoints = 1024;
+
+    /// <summary><c>cdf(x [, "axis"])</c> — the empirical CDF: the present values sorted, as a <c>value</c> axis, against the
+    /// fraction of values at or below each (i/n).
+    /// <para>Over several axes the trials are one of them — the named one, else the last (the innermost sweep, which is
+    /// where a drop or trial sweep sits) — and the result is one CDF per point of the others, every curve evaluated on one
+    /// shared <c>value</c> axis (<see cref="CdfGridPoints"/>): a family a plot draws with value along x. A distance swept
+    /// around a drop sweep gives one coverage curve per distance instead of an error.</para></summary>
     private Value EvalCdf(CallExpr cl, Scope scope)
     {
-        if (cl.Args.Length != 1) throw new ArityException("cdf", 1, cl.Args.Length);
-        var x = OneAxis(EvalExpr(cl.Args[0], scope), "cdf");
+        if (cl.Args.Length is < 1 or > 2) throw new ArityException("cdf", 1, cl.Args.Length);
+        var v = EvalExpr(cl.Args[0], scope);
+        string? named = null;
+        if (cl.Args.Length == 2)
+        {
+            var a = EvalExpr(cl.Args[1], scope);
+            named = a.Kind == ValueKind.String ? a.AsString()
+                : throw new ExpressionException("cdf(): the second argument names the trials' axis, e.g. cdf(x, \"drop\").");
+        }
+        if (v.Kind == ValueKind.Cube && v.AsCube() is { Rank: > 1 } many)
+            return CdfAlong(many, named ?? many.Axes[^1].Name);
+        var x = OneAxis(v, "cdf");
+        if (named is not null && x.Axes[0].Name != named)
+            throw new ExpressionException($"cdf(): this value's only axis is '{x.Axes[0].Name}', not '{named}'.");
         var sorted = SampleStatistics.Present(x.RealValues);
         Array.Sort(sorted);
         if (sorted.Length == 0) throw new ExpressionException("cdf(): the value has no points that are numbers.");
         var fraction = new double[sorted.Length];
         for (int i = 0; i < sorted.Length; i++) fraction[i] = (i + 1.0) / sorted.Length;
         return new Value(new DataCube([new Axis("value", sorted, x.Unit)], fraction));
+    }
+
+    /// <summary>One empirical CDF along <paramref name="trials"/> per point of the cube's other axes, on a shared value axis.</summary>
+    private static Value CdfAlong(DataCube cube, string trials)
+    {
+        if (cube.DataKind != DataKind.Real)
+            throw new ExpressionException("cdf(): the values are complex. Take a real quantity: dB(…), mag(…) or real(…) of it.");
+        if (!cube.Axes.Any(a => a.Name == trials))
+            throw new ExpressionException($"cdf(): this value has the axes {string.Join(", ", cube.Axes.Select(a => a.Name))}; there is no '{trials}'.");
+        int n = cube.Axis(trials).Length;
+        var columns = new double[n][];
+        IReadOnlyList<Axis> rest = [];
+        for (int i = 0; i < n; i++)
+        {
+            var slice = cube.At(trials, i);
+            columns[i] = slice.RealValues;
+            if (i == 0) rest = slice.Axes;
+        }
+        int curves = columns[0].Length;
+
+        var all = SampleStatistics.Present([.. columns.SelectMany(c => c)]);
+        if (all.Length == 0) throw new ExpressionException("cdf(): the value has no points that are numbers.");
+        Array.Sort(all);
+        var distinct = all.Distinct().ToArray();
+        double[] grid = distinct.Length <= CdfGridPoints
+            ? distinct
+            : [.. Enumerable.Range(0, CdfGridPoints).Select(g => all[0] + (all[^1] - all[0]) * g / (CdfGridPoints - 1.0))];
+
+        var data = new double[curves * grid.Length];
+        var sample = new double[n];
+        for (int e = 0; e < curves; e++)
+        {
+            for (int i = 0; i < n; i++) sample[i] = columns[i][e];
+            var present = SampleStatistics.Present(sample);
+            Array.Sort(present);
+            int below = 0;
+            for (int g = 0; g < grid.Length; g++)
+            {
+                // A curve whose trials were all refused (NaN) is NaN, as the reductions leave such a slice.
+                if (present.Length == 0) { data[e * grid.Length + g] = double.NaN; continue; }
+                while (below < present.Length && present[below] <= grid[g]) below++;
+                data[e * grid.Length + g] = (double)below / present.Length;
+            }
+        }
+        return new Value(new DataCube([.. rest, new Axis("value", grid, cube.Unit)], data));
     }
 
     /// <summary><c>normq(x)</c> — the normal probability plot: the present values sorted, as a <c>value</c> axis,

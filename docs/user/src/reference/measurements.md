@@ -444,7 +444,7 @@ Four build a new axis from a value over the trials:
 | Function | Gives |
 |---|---|
 | `histogram(x, bins)`, `histogram(x, bins, lo, hi)` | counts over a `bin` axis of bin centres; add `"percent"` as the last argument for each bin's percent of the trials |
-| `cdf(x)` | the values sorted, against the fraction of trials at or below each |
+| `cdf(x)`, `cdf(x, "axis")` | the values sorted, against the fraction of trials at or below each. Over several axes (a sweep around the trials), one curve per point of the others, all on one `value` axis: the trials are the last axis, the innermost sweep, unless named |
 | `normq(x)` | the values sorted, against the normal quantile of each one's rank — a straight line when the spread is Gaussian |
 | `yield_sens(pass, x, bins)` | per bin of `x`, the fraction of trials that pass |
 

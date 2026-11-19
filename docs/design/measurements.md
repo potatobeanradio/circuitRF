@@ -254,7 +254,7 @@ not reference the numeric layer).
 **Four build a new axis** from a rank-1 operand (anything else is refused, naming its axes):
 `histogram(x, bins[, lo, hi][, "count"|"percent"])` — counts over a `bin` axis of centres (equal widths over
 [lo, hi] or the values' extent; a bin holds its lower edge, the last its upper), or with `"percent"` each bin's share
-of every present value in percent (unit `%`); `cdf(x)` — a `value` axis of the sorted present values against i/n;
+of every present value in percent (unit `%`); `cdf(x)` — a `value` axis of the sorted present values against i/n (over several axes, one curve per point of the others along the named or last axis, on one shared `value` axis of at most 1,024 points);
 `normq(x)` — the normal probability plot: the same `value` axis against Φ⁻¹ of Blom's plotting position
 (i − 3/8)/(n + 1/4), so a Gaussian sample is a straight line; `yield_sens(pass, x, bins)` — per bin of x, the fraction
 of trials with a non-zero pass (NaN for an empty bin), counting only trials where both are present. Φ⁻¹ is

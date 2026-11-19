@@ -170,7 +170,7 @@ internal static partial class Reference
             "mean_over, std_over, median_over, pctl_over(x, p), skew_over, kurt_over, " +
             "yield_over(condition), outage_over(x, threshold) (lo, hi beside it), cpk(x, lo, hi) (either limit \"none\"), sigma_to(x, limit) — min_over and " +
             "max_over take the same default axis but keep a missing value missing; and these build an " +
-            "axis: histogram(x, bins[, lo, hi][, \"percent\"]), cdf(x), normq(x), yield_sens(pass, x, bins). They work in measure lines " +
+            "axis: histogram(x, bins[, lo, hi][, \"percent\"]), cdf(x[, \"axis\"]), normq(x), yield_sens(pass, x, bins). They work in measure lines " +
             "and goals. A goal written over the trials' spread (std_over of a trial-stacked " +
             "quantity) is legal, but scoring it takes a whole Monte Carlo run per evaluation.", 96))
             sb.AppendLine("  " + line);

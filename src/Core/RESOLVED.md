@@ -5337,3 +5337,12 @@ Level 1 has neither effect. The fix:
   not read it. A card switched off in the schematic was written `enabled=false`, read back enabled, planned, run, and
   warned. Gate: `NetlistContractTests.EveryDeclaredTypeTokenReadsEnabledFalse`, over every type the schema declares,
   so the next parser that forgets fails there.
+
+## `cdf()` over several axes (discussion 75, 2026-11-19)
+
+`cdf(x)` took one axis only, so the Indoor IoT Link example's `Prx_cdf = cdf(Prx_dBm)` failed as soon as a distance sweep was
+wrapped around its drop sweep. Each slice sorts to different values, so the single-axis form (the sorted values AS the axis)
+cannot hold a family; over several axes it is now one empirical CDF per point of the other axes, along the last axis (the
+innermost sweep, where the trials sit) or the one named by `cdf(x, "axis")`, every curve evaluated on one shared `value` axis:
+every value present, or 1,024 evenly spaced points when there are more. A plot draws it as a family with value along x; a curve
+whose trials were all refused is NaN. Gate: `StatisticsFunctionTests.Cdf_OverTwoAxes_IsOneCurvePerDistance_OnASharedValueAxis`.

@@ -478,8 +478,8 @@ and give <code>lo, hi</code> before it to take part of the axis):</p>
 <td>counts over a <code>bin</code> axis of bin centres; add <code>&quot;percent&quot;</code> as the last argument for each bin's percent of the trials</td>
 </tr>
 <tr>
-<td><code>cdf(x)</code></td>
-<td>the values sorted, against the fraction of trials at or below each</td>
+<td><code>cdf(x)</code>, <code>cdf(x, &quot;axis&quot;)</code></td>
+<td>the values sorted, against the fraction of trials at or below each. Over several axes (a sweep around the trials), one curve per point of the others, all on one <code>value</code> axis: the trials are the last axis, the innermost sweep, unless named</td>
 </tr>
 <tr>
 <td><code>normq(x)</code></td>

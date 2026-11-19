@@ -25,6 +25,8 @@ public sealed class StatisticsFunctionTests
         ds.Add("x", Trials(X));
         ds.Add("xn", Trials([.. X, double.NaN]));
         ds.Add("pass", Trials([1, 1, 0, 1, 0, 1, 1, 0]));
+        // A distance swept around the trials: dist 10 has trials 1, 2, 3; dist 20 has 2, a refused trial, 4.
+        ds.Add("g", new DataCube([new Axis("dist", [10.0, 20]), new Axis("trial", [1.0, 2, 3])], [1, 2, 3, 2, double.NaN, 4]) { Unit = "V" });
         scope = new Scope("t");
         return new Evaluator(new MeasurementContext(new Dictionary<string, DataSet> { ["MC"] = ds }));
     }
@@ -70,6 +72,26 @@ public sealed class StatisticsFunctionTests
         var c = Evaluator(out var s).Eval("cdf(MC.xn)", s).AsCube();
         Assert.Equal([2.0, 4, 4, 4, 5, 5, 7, 9], c.Axes[0].Values);
         Assert.Equal([.. Enumerable.Range(1, 8).Select(i => i / 8.0)], c.RealValues);
+    }
+
+    /// <summary>Over two axes a CDF used to be an error. It is one curve per point of the other axes, along the last (the innermost
+    /// sweep) unless named, every curve on one shared value axis so a plot draws them as a family.</summary>
+    [Fact]
+    public void Cdf_OverTwoAxes_IsOneCurvePerDistance_OnASharedValueAxis()
+    {
+        var c = Evaluator(out var s).Eval("cdf(MC.g)", s).AsCube();
+        Assert.Equal(["dist", "value"], c.Axes.Select(a => a.Name));
+        Assert.Equal([1.0, 2, 3, 4], c.Axes[1].Values);
+        Assert.Equal([1 / 3.0, 2 / 3.0, 1, 1,   0, 0.5, 0.5, 1], c.RealValues, new ToleranceComparer(1e-12));
+
+        var byDist = Evaluator(out var s2).Eval("cdf(MC.g, \"dist\")", s2).AsCube();
+        Assert.Equal(["trial", "value"], byDist.Axes.Select(a => a.Name));
+    }
+
+    private sealed class ToleranceComparer(double tol) : IEqualityComparer<double>
+    {
+        public bool Equals(double a, double b) => Math.Abs(a - b) <= tol;
+        public int GetHashCode(double d) => 0;
     }
 
     [Fact]
