@@ -96,13 +96,13 @@ they act only on SAR and B1:</p>
 </tr>
 <tr>
 <td><code>drive</code></td>
-<td>the circuit port that drives, by number or by instance name; every other circuit port is terminated in its Z0</td>
+<td>the circuit port that drives, by number or by instance name, or a MOD_Source by instance name (a wave in from its Z); every other circuit port is terminated in its Z0</td>
 <td>required</td>
 </tr>
 <tr>
 <td><code>weights</code></td>
 <td>with several drives, each one's relative complex amplitude, with no units (<a href="#multichannel">multi-channel</a>)</td>
-<td>1 each, or a P1Tone's Pavl and Phase</td>
+<td>1 each, or a P1Tone's Pavl and Phase, a MOD_Source's Pavg</td>
 </tr>
 <tr>
 <td><code>norm</code></td>

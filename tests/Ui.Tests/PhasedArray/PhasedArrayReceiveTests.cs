@@ -72,6 +72,30 @@ public sealed class PhasedArrayReceiveTests(ITestOutputHelper output) : IDisposa
         Assert.True(rel <= 1e-9, $"relative {rel:E2}");
     }
 
+    /// <summary>
+    /// Brief PCH-13 gate 2 — a receiving array's fields pattern is its receive pattern: each element's transfer to the port. On a reciprocal
+    /// array it is the transmit pattern, to 1e-9 dB; behind one-way LNAs, where a wave sent in from the port reaches no element, it is the
+    /// passive array's raised by the LNAs' 20 dB, at boresight and in a sidelobe direction.
+    /// </summary>
+    [Fact]
+    public void TheReceivePattern_IsTheTransmitOne_OnAReciprocalArray_AndBehindLnasIsRaisedByTheirGain()
+    {
+        string array = $"{E1} Rows=4 Cols=4 Amp=taylor(-20,3)";
+        const string wave = " RxTheta[1]=0 RxPhi[1]=0 RxPd[1]=-60 RxFreq[1]=5.9 GHz RxPol[1]=theta";
+        string[] at = ["RealizedGainDbi(F1, 0, 0)", "RealizedGainDbi(F1, 30, 0)"];
+        double[] Gains(string extra) => [.. Enumerable.Range(0, at.Length).Select(k => Value(
+            Run(Lna + "\nPort:P1 f 0 Num=1 Z=50 Ohm\n" + $"PhasedArray:PA1 f {array}{extra} Mode=feed\n" + Fields, at), k))];
+        var transmit = Gains("");
+        var receive = Gains(wave);
+        var behindLnas = Gains(" Channel=lna" + wave);
+        for (int k = 0; k < at.Length; k++)
+        {
+            output.WriteLine($"{at[k]}: transmit {transmit[k]:F9}, receive {receive[k]:F9}, behind LNAs {behindLnas[k]:F9} dBi");
+            Assert.True(Math.Abs(receive[k] - transmit[k]) <= 1e-9, $"{at[k]}: receive {receive[k]} vs transmit {transmit[k]}");
+            Assert.True(Math.Abs(behindLnas[k] - (receive[k] + 20)) <= 0.05, $"{at[k]}: behind LNAs {behindLnas[k]} vs {receive[k] + 20}");
+        }
+    }
+
     /// <summary>A receive channel: an amplifier from the element (its second port) towards the beamformer (its first).</summary>
     private const string Lna = """
         define lna ( bf el )

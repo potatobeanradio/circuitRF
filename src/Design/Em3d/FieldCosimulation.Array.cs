@@ -73,8 +73,15 @@ public static partial class FieldCosimulation
 
         // brief-paa-8 R-paa8-2 — a Feed-mode array whose channel is identical closes without solving the whole circuit; R-paa8-4 — where it
         // cannot, a slider's drag (FieldsOutput.Local) shows the last full solve with the new weights, and the release solves.
+        // brief PCH-13 R-pch13-2 — a receiving array's pattern is its receive pattern: each element's transfer to the driven port, the
+        // direction its LNAs conduct (Received). The fast path closes the transmit direction, so a receiving array solves.
+        var blockEc = nl.Components.First(c => c.InstancePath == fa.Block);
+        int[] sourceNodes = [.. Enumerable.Range(0, n).Select(k => PhasedArrayModel.SourceNode(blockEc, k, n))];
+        bool receiving = sourceNodes.All(s => s > 0)
+                         && (pa.IncidentWaves.Count > 0
+                             || nl.Components.Any(c => c.Model is PropagationChannelModel ch && ch.RxArray?.Ec.InstancePath == fa.Block));
         PhasedArrayFastPath.Solved? quick = null;
-        if (hb is null && pa.Feed is not null)
+        if (hb is null && pa.Feed is not null && !receiving)
         {
             control?.ThrowIfCancellationRequested();
             quick = PhasedArrayFastPath.TryWaves(nl, fa.Block, freqs, drives);
@@ -86,14 +93,18 @@ public static partial class FieldCosimulation
             control?.ThrowIfCancellationRequested();
             if (hb is null) solved[f] = quick?.Waves[f] ?? SParameterEngine.BlockWaves(nl, freqs[f], fa.Block, drives);
             // brief-paa-6 — a harmonic-balance solution's waves at its one frequency, in place of the linear solve's
-            waves[f] = SwitchedOff(pa, hb?.Waves ?? Weigh(fa, z0, solved[f]));
+            var w = hb?.Waves ?? Weigh(fa, z0, solved[f]);
+            if (receiving && hb is null) w = Received(pa, nl, freqs[f], drives, sourceNodes, w);
+            waves[f] = SwitchedOff(pa, w);
             elements[f] = Elements(pa, far, freqs[f]);
             points[f] = ArrayPointOf(fa, pa, far, at[f], waves[f], elements[f]);
         }
         string where = at.Length == 1 ? MaterialDispersion.Hz(freqs[0]) : $"{at.Length} frequencies, {MaterialDispersion.Hz(freqs[0])} to {MaterialDispersion.Hz(freqs[^1])}";
         double firstHz = freqs[0];
         if (hb is null)
-            WarnIfNothingReachesTheBlock(fa, nl, waves, where, d => Weigh(fa, z0, SParameterEngine.BlockWaves(nl, firstHz, fa.Block, d)));
+            WarnIfNothingReachesTheBlock(fa, nl, waves, where, d => receiving
+                ? Received(pa, nl, firstHz, d, sourceNodes, Weigh(fa, z0, SParameterEngine.BlockWaves(nl, firstHz, fa.Block, d)))
+                : Weigh(fa, z0, SParameterEngine.BlockWaves(nl, firstHz, fa.Block, d)));
 
         var data = new DataSet();
         var lines = new List<string>();
@@ -149,8 +160,9 @@ public static partial class FieldCosimulation
 
         var first = waves[0];
         lines.Add($"Fields '{fa.Name}' at {where}: the pattern of the {n}-element array '{fa.Block}' with this circuit around it, " +
-                  $"{(first.Multi ? $"driven from circuit ports {string.Join(", ", first.Drive.Drives.Select(d => d.Port))} together" : $"driven from circuit port {drives[0].Port}")} " +
-                  $"({Pct(first.Accepts)} of the available power accepted) and referred to 1 V at port {drives[0].Port}. Gain is per watt accepted and realized gain includes mismatch.");
+                  $"{(first.Multi ? $"driven from {string.Join(", ", first.Drive.Drives.Select(d => DrivenName(nl, d.Port)))} together" : $"driven from {DrivenName(nl, drives[0].Port)}")} " +
+                  $"({Pct(first.Accepts)} of the available power accepted) and referred to 1 V there. Gain is per watt accepted and realized gain includes mismatch." +
+                  (receiving ? $" It is the receive pattern: each element's transfer to {DrivenName(nl, drives[0].Port)}, the direction its channel conducts." : ""));
         lines.Add(pa.LevelNote);
         if (pa.CouplingNote is { } coupling) lines.Add(coupling);
         var solvePath = pa.Feed is not null ? quick?.Path ?? PhasedArrayFastPath.Decide(nl, fa.Block) : null;
@@ -178,6 +190,36 @@ public static partial class FieldCosimulation
     }
 
     /// <summary>The waves with every element switched off at zero: terminated inside, its pin open, it neither radiates nor accepts.</summary>
+    /// <summary>
+    /// brief PCH-13 R-pch13-2 — a receiving array's waves: element k's a is the wave its emission reaches each driven port with, per unit
+    /// emitted (<see cref="SParameterEngine.PortReceiveWeights"/> on the element's source node, whose row reads b − S·a = V_src), weighted by
+    /// the drive and scaled as <see cref="Weigh"/> scales the transmit waves; b is the array's own scattering of them, S·a. A reciprocal
+    /// network gives the transmit waves back; behind one-way LNAs the transmit waves are zero and these are the receive pattern's. The
+    /// port's reflection and accepted power stay the forward drive's.
+    /// </summary>
+    private static CosimWaves Received(PhasedArrayModel pa, ElaboratedNetlist nl, double hz, IReadOnlyList<(int Port, Complex Amplitude)> drives,
+                                       int[] sourceNodes, CosimWaves forward)
+    {
+        int n = sourceNodes.Length;
+        double incident = forward.Drive.Drives.Sum(d => d.Incident.Magnitude * d.Incident.Magnitude);
+        double root = Math.Sqrt(PalaceDrive.IncidentPowerW / incident);
+        var a = new Complex[n];
+        foreach (var (port, amplitude) in drives)
+        {
+            var t = SParameterEngine.PortReceiveWeights(nl, hz, port, sourceNodes);
+            for (int k = 0; k < n; k++) a[k] += amplitude * t[k] * root;
+        }
+        var s = pa.SAt(hz);
+        var b = new Complex[n];
+        for (int k = 0; k < n; k++)
+        {
+            Complex sum = 0;
+            for (int q = 0; q < n; q++) sum += s[k, q] * a[q];
+            b[k] = sum;
+        }
+        return forward with { A = a, B = b };
+    }
+
     private static CosimWaves SwitchedOff(PhasedArrayModel pa, CosimWaves w)
     {
         if (pa.Lattice.Off.Count == 0) return w;
@@ -433,7 +475,7 @@ public static partial class FieldCosimulation
             }
             for (int c = 0; c < n; c++) a -= ts[c].Real * ts[c].Real + ts[c].Imaginary * ts[c].Imaginary;
             if (!(a > 0))
-                throw new ExpressionException($"Fields '{fa.Name}': nothing the elements of '{fa.Block}' receive reaches circuit port {drives[0].Port}, so the array has no " +
+                throw new ExpressionException($"Fields '{fa.Name}': nothing the elements of '{fa.Block}' receive reaches {DrivenName(nl, drives[0].Port)}, so the array has no " +
                                               "antenna temperature, system temperature or G/T there.");
             ArrayBeamMetrics Beam()
             {
@@ -495,7 +537,7 @@ public static partial class FieldCosimulation
             }
             double s2 = st.Magnitude * st.Magnitude + sp.Magnitude * sp.Magnitude;
             if (!(s2 > 0))
-                throw new ExpressionException($"BeamNfDb({fa.Name}): nothing from circuit port {drives[0].Port} reaches the beam's peak, so it has no noise figure.");
+                throw new ExpressionException($"BeamNfDb({fa.Name}): nothing from {DrivenName(nl, drives[0].Port)} reaches the beam's peak, so it has no noise figure.");
             return 10 * Math.Log10(1 + (noise[0] + noise[1]) / (RfCore.Data.NoiseMetrics.KT0 * s2));
         }
 

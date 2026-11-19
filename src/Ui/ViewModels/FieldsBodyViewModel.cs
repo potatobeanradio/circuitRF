@@ -163,6 +163,10 @@ public sealed partial class FieldsBodyViewModel : ObservableObject
 
     internal bool HasPavl(FieldDriveRowViewModel row) => DriverOf(row.Driver) is { HasPavl: true };
 
+    /// <summary>The power a row's amplitude comes from when none is stated: a MOD_Source's Pavg, a P1Tone's Pavl and Phase.</summary>
+    internal string PowerWord(FieldDriveRowViewModel row) => DriverOf(row.Driver)?.Label.EndsWith("(MOD_Source)", StringComparison.Ordinal) == true
+        ? "Pavg" : "Pavl";
+
     private bool TakesPavl(FieldDriveRowViewModel row) => HasPavl(row) && row.Weight.Trim().Length == 0;
 
     /// <summary>What a run would refuse about a row: a source that is not a port, a port driven twice, a Pavl with nothing to compare it with, or a number no port has. An
@@ -172,7 +176,7 @@ public sealed partial class FieldsBodyViewModel : ObservableObject
         if (DriverOf(row.Driver) is { Problem: { } refused }) return refused;
         int at = Drives.IndexOf(row);
         if (Drives.Take(Math.Max(at, 0)).Any(r => ValueOf(r) == ValueOf(row))) return "This port is already driven above.";
-        if (TakesPavl(row) && !Drives.All(TakesPavl)) return "Pavl can't be compared with the others. Set every amplitude.";
+        if (TakesPavl(row) && !Drives.All(TakesPavl)) return $"{PowerWord(row)} can't be compared with the others. Set every amplitude.";
         return DriverOf(row.Driver) is null && _drivers.Any(d => d.Problem is null)
                && int.TryParse(row.Driver.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int port)
             ? $"This schematic has no port {port}." : null;

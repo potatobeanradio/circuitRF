@@ -144,14 +144,25 @@ public static partial class SParameterEngine
         if (!p.AllPortsResistive)
             throw new InvalidOperationException("A port's waves need every circuit port terminated in a resistive Z0 (Re Z0 > 0); " +
                                                 "one port's Z0 has none.");
-        var driven = new List<int>();
+        // brief PCH-13 R-pch13-1 — a MOD_Source the fields analysis drives is the port it then is, numbered after the circuit's own
+        // (SourcePorts): its source impedance is already stamped from its node to its reference, so it is driven exactly as a port
+        // of Z0 = its Z is, and terminated by nothing more.
+        var sources = SourcePorts(netlist);
+        var driven = new List<PortEntry>();
         foreach (var (port, _) in drives)
         {
             int j = p.Ports.FindIndex(x => x.PortNum == port);
-            if (j < 0)
-                throw new InvalidOperationException($"The circuit has no port number {port} at its top level to drive " +
-                                                    $"(ports: {string.Join(", ", p.Ports.Select(x => x.PortNum))}).");
-            driven.Add(j);
+            if (j >= 0) { driven.Add(p.Ports[j]); continue; }
+            if (sources.FirstOrDefault(sp => sp.Port == port).Instance is { } source
+                && netlist.Components.First(c => c.InstancePath == source) is { Model: ModSourceModel msrc } ec)
+            {
+                if (!(msrc.Z.Real > 1e-12))
+                    throw new InvalidOperationException($"'{source}' has no resistive Z ({msrc.Z}), so no wave can be sent in from it.");
+                driven.Add(new PortEntry(port, msrc.Z, -1, ec.Nodes[0], ec.Nodes.Length > 1 ? ec.Nodes[1] : 0));
+                continue;
+            }
+            throw new InvalidOperationException($"The circuit has no port number {port} at its top level to drive " +
+                                                $"(ports: {string.Join(", ", p.Ports.Select(x => x.PortNum))}).");
         }
         var block = netlist.Components.FirstOrDefault(c => string.Equals(c.InstancePath, instancePath, StringComparison.Ordinal));
         // brief-paa-3 — a Phased Antenna Array's pins are read as an EM Field Data block's are: one branch per pin, into the block.
@@ -188,7 +199,7 @@ public static partial class SParameterEngine
         var inject = new Complex[driven.Count];
         for (int d = 0; d < driven.Count; d++)
         {
-            var port = p.Ports[driven[d]];
+            var port = driven[d];
             inject[d] = drives[d].Amplitude * 2.0 * Math.Sqrt(port.Z0.Real) / port.Z0;
             if (port.Node0 > 0) b[port.Node0 - 1] += inject[d];
             if (port.Node1 > 0) b[port.Node1 - 1] -= inject[d];
@@ -198,7 +209,7 @@ public static partial class SParameterEngine
         var waves = new DrivenWave[driven.Count];
         for (int d = 0; d < driven.Count; d++)
         {
-            var port = p.Ports[driven[d]];
+            var port = driven[d];
             Complex vj = GetPortVoltage(x, port);
             Complex ij = inject[d] - vj / port.Z0;
             waves[d] = new DrivenWave(port.PortNum, port.Z0, drives[d].Amplitude,
@@ -1231,6 +1242,18 @@ public static partial class SParameterEngine
     /// <summary>
     /// <summary>Returns true for models that act as s-param ports (Port, Term, or P1Tone).</summary>
     private static bool IsSParamPort(ComponentModel m) => m is PortModel or TermModel or P1ToneModel;
+
+    /// <summary>
+    /// brief PCH-13 R-pch13-1 — the top-level MOD_Sources a fields analysis may drive, each with the port number it is driven as:
+    /// after the circuit's own ports, in the netlist's order. Only <see cref="BlockWaves(ElaboratedNetlist, double, string,
+    /// IReadOnlyList{ValueTuple{int, Complex}}, AnalysisSettings?)"/> reads them; every other analysis sees the source it always was.
+    /// </summary>
+    public static IReadOnlyList<(int Port, string Instance)> SourcePorts(ElaboratedNetlist netlist)
+    {
+        int next = CircuitPorts(netlist).Select(p => p.Port).DefaultIfEmpty(0).Max() + 1;
+        return [.. netlist.Components.Where(c => c.Model is ModSourceModel && !c.InstancePath.Contains('.'))
+                                     .Select((c, i) => (next + i, c.InstancePath))];
+    }
 
     /// <summary>The circuit's ports, by number, with the instance that is each: the top-level Term, TermG and P1Tone.</summary>
     public static IReadOnlyList<(int Port, string Instance)> CircuitPorts(ElaboratedNetlist netlist) =>

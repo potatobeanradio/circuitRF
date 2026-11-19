@@ -350,6 +350,24 @@ public sealed partial class FarFieldCosimTests : IDisposable
         Assert.Null(body.FreqProblem);
     }
 
+    /// <summary>Brief PCH-13 gate 1 — a MOD_Source drives a fields analysis as the port it then is: the same block waves as a P1Tone of the
+    /// same Z and available power at the same node, named by instance. Its modulation plays no part.</summary>
+    [Fact]
+    public void AModSource_DrivesAsAP1ToneOfTheSamePowerAndZ()
+    {
+        WriteResult(2);
+        // a circuit port elsewhere, so the S-parameter solve has one of its own whichever source drives
+        const string Rest = "R:R2 b 0 R=75\nPort:PX x 0 Num=1 Z=50 Ohm\nR:RX x 0 R=50\n";
+        string Fields(string drive) => $"analysis F1 type=fields block=EM1 freq=1 freqUnit=GHz drive={drive}\n";
+        double Delivered(string source) =>
+            Run(source + Rest + Block("a", "b") + Fields("S1")).Results.Single().Data.Cubes[FieldCosimulation.DeliveredCube].RealValues[0];
+
+        double tone = Delivered("P1Tone:S1 a 0 Num=2 Z=50 Ohm Pavl=3 dBm Freq=1 GHz\n");
+        double mod = Delivered("MOD_Source:S1 a 0 Fc=1 GHz Pavg=3 dBm Z=50 Ohm Carrier[1]=\"NR;BW=20MHz;SCS=60kHz;Mod=64QAM;Off=0;P=0\"\n");
+        Assert.True(tone > 0);
+        Assert.True(Math.Abs(mod - tone) <= 1e-9 * tone, $"MOD_Source {mod} vs P1Tone {tone}");
+    }
+
     /// <summary>What may drive: a P1Tone is a port like a Term, named by number or instance alike, and a source that is not a port is
     /// refused by what it is. The editor lists them all, flags the refused ones, and writes the number back for a port.</summary>
     [Fact]

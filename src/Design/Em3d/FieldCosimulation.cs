@@ -528,7 +528,10 @@ public static partial class FieldCosimulation
                 // The name of the instance is as good as its number, and a source that is not a port is refused by what it is.
                 string name = ports[i];
                 var isPort = SParameterEngine.CircuitPorts(nl).Where(p => p.Instance == name).ToList();
+                // brief PCH-13 R-pch13-1 — a MOD_Source is driven as the port it then is, numbered after the circuit's own
+                var isSource = SParameterEngine.SourcePorts(nl).Where(p => p.Instance == name).ToList();
                 if (isPort.Count == 1) port = isPort[0].Port;
+                else if (isSource.Count == 1) port = isSource[0].Port;
                 else if (nl.Components.FirstOrDefault(c => c.InstancePath == name) is { } component && FieldDrivers.Refusal(name, component.Model) is { } refused)
                     throw new InvalidOperationException($"{who}: {refused}");
                 else throw new InvalidOperationException($"{who}: drive='{name}' is not a port number ({e.Message}).");
@@ -546,23 +549,35 @@ public static partial class FieldCosimulation
             list.Add((port, weight));
         }
 
-        var named = SParameterEngine.CircuitPorts(nl);
+        var named = SParameterEngine.CircuitPorts(nl).Concat(SParameterEngine.SourcePorts(nl)).ToList();
         string InstanceOf(int port) => named.FirstOrDefault(p => p.Port == port).Instance ?? port.ToString(CultureInfo.InvariantCulture);
-        P1ToneModel? ToneOf(int port) => nl.Components.FirstOrDefault(c => c.InstancePath == InstanceOf(port))?.Model as P1ToneModel;
-        var tones = unstated.Where(i => ToneOf(list[i].Item1) is not null).ToList();
+        CircuitRF.Core.ComponentModel? ModelOf(int port) => nl.Components.FirstOrDefault(c => c.InstancePath == InstanceOf(port))?.Model;
+        // A P1Tone's amplitude is √Pavl at its Phase and a MOD_Source's √Pavg, in √W: both are available powers, so they compare with each
+        // other and not with a unit drive. A MOD_Source's modulation plays no part in a frequency-domain pattern.
+        Complex? PowerOf(int port) => ModelOf(port) switch
+        {
+            P1ToneModel tone => Complex.FromPolarCoordinates(Math.Pow(10, (tone.PavlDbm - 30) / 20), tone.PhaseRad),
+            ModSourceModel src => Math.Pow(10, (src.PavgDbm - 30) / 20),
+            _ => null,
+        };
+        string PowerWord(int port) => ModelOf(port) is ModSourceModel ? "Pavg" : "Pavl";
+        var tones = unstated.Where(i => PowerOf(list[i].Item1) is not null).ToList();
         if (tones.Count > 0 && tones.Count < list.Count)
         {
             int other = Enumerable.Range(0, list.Count).First(i => !tones.Contains(i));
-            throw new InvalidOperationException($"{who}: '{InstanceOf(list[tones[0]].Item1)}' takes its amplitude from its Pavl, in watts, which '{InstanceOf(list[other].Item1)}' " +
+            throw new InvalidOperationException($"{who}: '{InstanceOf(list[tones[0]].Item1)}' takes its amplitude from its {PowerWord(list[tones[0]].Item1)}, in watts, which '{InstanceOf(list[other].Item1)}' " +
                                                 "cannot be compared with. Give every drive a relative amplitude.");
         }
-        foreach (int i in tones)
-        {
-            var tone = ToneOf(list[i].Item1)!;
-            list[i] = (list[i].Item1, Complex.FromPolarCoordinates(Math.Pow(10, (tone.PavlDbm - 30) / 20), tone.PhaseRad));
-        }
+        foreach (int i in tones) list[i] = (list[i].Item1, PowerOf(list[i].Item1)!.Value);
         return list;
     }
+
+    /// <summary>What a run calls a driven port: "circuit port 1", or the MOD_Source it is ("'GNB' (MOD_Source)"), whose number the
+    /// user never wrote (brief PCH-13 R-pch13-1).</summary>
+    internal static string DrivenName(ElaboratedNetlist nl, int port)
+        => SParameterEngine.SourcePorts(nl).FirstOrDefault(p => p.Port == port).Instance is { } source
+            ? $"'{source}' (MOD_Source)"
+            : $"circuit port {port.ToString(CultureInfo.InvariantCulture)}";
 
     /// <summary>A comma-separated list, split only at bracket depth zero, so <c>polar(1,-90)</c> stays one item.</summary>
     public static List<string> SplitList(string text, bool keepEmpty = false)

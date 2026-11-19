@@ -447,7 +447,7 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
         return (values, unit);
     }
 
-    private static (Regex Pattern, string Unit) MeasurementPattern(ApertureQuantity q) => q switch
+    internal static (Regex Pattern, string Unit) MeasurementPattern(ApertureQuantity q) => q switch
     {
         ApertureQuantity.PaPout => (new Regex(@"^Pout_?(\d+)(_dBm)?$", RegexOptions.IgnoreCase), "dBm"),
         ApertureQuantity.PaPae => (new Regex(@"^PAE_?(\d+)$", RegexOptions.IgnoreCase), "%"),

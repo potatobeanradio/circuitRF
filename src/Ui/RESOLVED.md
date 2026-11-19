@@ -42636,3 +42636,15 @@ own controls. Pictures at 230 and 360 px (UiSnapshot's new `--inspector-width`).
 `LastInstanceCost`; `ReceiveArrayFeedTests` (its own "ReceiveCollapse" collection) and `DropReuseArrayTests` (none) ran beside it, so
 a run of the classes together failed deterministically ("0 parts replaced", 0 of 16 collapsed). Both now share
 `FieldCosimulationRunsCollection` with the rest of the phased-array classes.
+
+## Phased Array tool on the mmWave Array Link (brief PCH-13, 2026-11-19)
+
+- **An empty pattern is said, not drawn.** A drive that reaches none of the elements gave a Success with gain −∞, which the tool drew
+  as a pattern 300 dB down. `PhasedArraySession.Evaluate` now refuses a frame whose element waves are below the run's own threshold
+  (Σ|a|² < 1e-24 of the available power) with the run's "results are empty" sentence.
+- **The settled frame runs what it shows.** It ran every analysis any measure named, and naming the envelope a link's MER reads
+  promotes the run to the drop sweep around it: 177 s per frame on the example. `SettledAnalyses` now takes only the analyses behind
+  measures the tool displays (per-element Pout/PAE/NF, G/T); a frame is about a second.
+- **The example carries `FT` (PT, driven from `GNB`) and `FR` (PR, receive pattern at `UE`).** Pictures (UiSnapshot `--phased-array
+  … --block PT|PR [--pa-tab channel]`, looked at): PT 91.0 dBi at 14.4° and PR 39.3 dBi at 20.2°, each the drop's chosen pair; the
+  Channel tab's rank 1 is the run's own pair at drop 1. The bench's own run still reproduces the README's MER/EVM/outage table.

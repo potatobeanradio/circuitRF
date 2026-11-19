@@ -1276,7 +1276,6 @@ src/Design/Em3d/FieldCosimulation.cs|Fields '{fa.Name}': every drive's weight is
 src/Design/Em3d/FieldCosimulation.cs|{who}: '{fa.Block}' has {snp.PortCount} ports and its field set {set.PortCount}.
 src/Design/Em3d/FieldCosimulation.cs|{who}: drive='{fa.DriveExpr}' names {ports.Count} port{(ports.Count == 1 ? 
 src/Design/Em3d/FieldCosimulation.cs|{who}: drive='{name}' is not a port number ({e.Message}).
-src/Design/Em3d/FieldCosimulation.cs|{who}: '{InstanceOf(list[tones[0]].Item1)}' takes its amplitude from its Pavl, in watts, which '{InstanceOf(list[other].Item1)}' 
 src/Design/Em3d/FieldCosimulation.cs|{who}: freq='{fa.FreqExpr}' could not be resolved ({e.Message}).
 src/Design/Em3d/FieldCosimulation.cs|{who}: the circuit has no instance '{fa.Block}'.
 src/Design/Em3d/FieldCosimulation.cs|{who}: weight '{weights[i]}' of port {port} is not a number ({e.Message}).
@@ -1298,6 +1297,7 @@ src/Engine/SParameterEngine.cs|A circuit port is driven twice ({string.Join(
 src/Engine/SParameterEngine.cs|A port's waves need every circuit port terminated in a resistive Z0 (Re Z0 > 0); 
 src/Engine/SParameterEngine.cs|No circuit port is driven.
 src/Engine/SParameterEngine.cs|The circuit has no port number {port} at its top level to drive 
+src/Engine/SParameterEngine.cs|'{source}' has no resistive Z ({msrc.Z}), so no wave can be sent in from it.
 
 # ── Model Composer MC-1 … MC-4 (2026-10-19) ─────────────────────────────────────────
 # The ComposedFET's elaboration refusals are worded and routed exactly as the SnP ones above
@@ -1710,7 +1710,6 @@ src/Core/Expressions/Evaluator.Array.cs|taylor(sll, nbar): sll is the sidelobe l
 src/Core/Expressions/Evaluator.Array.cs|{cl.Name}() is a taper over an array's rows and columns, so it is valid only in a Phased Antenna Array's Amp 
 src/Core/Expressions/Evaluator.Array.cs|{cl.Name}(): {what} is a real number, not {v}.
 src/Core/Expressions/Evaluator.Array.cs|{cl.Name}({args}) takes the element's position x, y only in a Phased Antenna Array's Amp, Phase or Delay 
-src/Design/Em3d/FieldCosimulation.Array.cs|BeamNfDb({fa.Name}): nothing from circuit port {drives[0].Port} reaches the beam's peak, so it has no noise figure.
 src/Engine/SParameterEngine.Beam.cs|'{instancePath}' is a {block.ComponentType}, not an S-parameter block.
 src/Engine/SParameterEngine.Beam.cs|The circuit has no instance '{instancePath}'.
 src/Engine/SParameterEngine.Beam.cs|The noise radiated by an array needs every circuit port terminated in a resistive Z0 (Re Z0 > 0); one port's Z0 has none.
@@ -1739,6 +1738,7 @@ src/Design/Em3d/FieldCosimulation.Hb.cs|{who}: harmonic {k} of '{hbName}' is {Ma
 src/Design/Em3d/FieldCosimulation.Sweep.cs|ActiveGamma({fa.Name}, {element}) is one number, and fields analysis '{fa.Name}' has one per point of the sweep over {sweep.SweepVarName}. 
 src/Design/Em3d/FieldCosimulation.Sweep.cs|{FieldMetricFunctions.NameOf(metric)}({fa.Name}) is one number, and fields analysis '{fa.Name}' has one per point of the sweep over 
 src/Design/Em3d/FieldCosimulation.cs|{who}: waves='{fa.Waves.Trim()}' forms the pattern from a harmonic-balance analysis, which this run has no bench to run. 
+src/Design/Em3d/FieldCosimulation.cs|{who}: '{InstanceOf(list[tones[0]].Item1)}' takes its amplitude from its {PowerWord(list[tones[0]].Item1)}, in watts, which '{InstanceOf(list[other].Item1)}' 
 # brief-paa-6b — a fields analysis whose waves come from an envelope analysis (dirs=, the radiated envelope): refusals of the same family.
 src/Design/Em3d/FieldCosimulation.Envelope.cs|'{FieldMetricFunctions.NameOf(metric)}' reads a field set, and fields analysis '{fa.Name}' forms radiated envelopes from an envelope analysis.
 src/Design/Em3d/FieldCosimulation.Envelope.cs|'{FieldMetricFunctions.NameOf(metric)}' reads one beam, and fields analysis '{fa.Name}' has one per envelope step. Read its radiated group.
@@ -1791,11 +1791,12 @@ src/Core/Expressions/Evaluator.Fields.cs|{function}(): '{nf}''s noise is swept (
 src/Core/Expressions/FieldMetrics.cs|'{FieldMetricFunctions.NameOf(metric)}' reads a Phased Antenna Array as a receiver, and this fields analysis's block is not one.
 src/Design/Em3d/ArrayRadiationSource.cs|'{far.Name}' lists {pa.Record.PortCount} ports and its far field holds {far.PortCount}. Run its EM setup again.
 src/Design/Em3d/FieldCosimulation.Array.cs|'{metric}' is not a receive measurement.
-src/Design/Em3d/FieldCosimulation.Array.cs|Fields '{fa.Name}': nothing the elements of '{fa.Block}' receive reaches circuit port {drives[0].Port}, so the array has no 
 src/Design/Em3d/FieldCosimulation.Array.cs|SnrDb({fa.Name}, …, {wave}, …): '{fa.Block}' has no incident wave {wave}
 src/Design/Em3d/FieldCosimulation.Array.cs|SnrDb({fa.Name}, …, {wave}, …): incident wave {wave} is at {MaterialDispersion.Hz(inc.Hz)} and fields analysis '{fa.Name}' at 
 src/Design/Em3d/FieldCosimulation.Array.cs|{name}({fa.Name}, NF): NF names a noise analysis.
 src/Design/Em3d/FieldCosimulation.Array.cs|{name}({fa.Name}, …) receives at the fields analysis's driven port, and fields analysis '{fa.Name}' forms its pattern 
+src/Design/Em3d/FieldCosimulation.Array.cs|BeamNfDb({fa.Name}): nothing from {DrivenName(nl, drives[0].Port)} reaches the beam's peak, so it has no noise figure.
+src/Design/Em3d/FieldCosimulation.Array.cs|Fields '{fa.Name}': nothing the elements of '{fa.Block}' receive reaches {DrivenName(nl, drives[0].Port)}, so the array has no 
 src/Engine/SParameterEngine.Beam.cs|The circuit has no port number {portNumber} at its top level.
 src/Engine/SParameterEngine.Beam.cs|The receive weights need every circuit port terminated in a resistive Z0 (Re Z0 > 0); one port's Z0 has none.
 src/RfCore/Propagation/PropagationModels.cs|{_model.Name} reads the parameter '{name}', which its registry entry does not name.
@@ -1848,6 +1849,9 @@ src/Core/Devices/VSwitchModel.cs|VSwitch: Von and Voff must differ — the switc
 src/Core/Devices/VSwitchModel.cs|VSwitch: {key} is not a finite number.
 src/Core/Devices/VSwitchModel.cs|VSwitch: {key} must be a number.
 src/Core/Expressions/Evaluator.Reductions.cs|outage_over(): the threshold must be a number, e.g. outage_over(x, -95).
+src/Core/Expressions/Evaluator.Reductions.cs|cdf(): the second argument names the trials' axis, e.g. cdf(x, \"drop\").
+src/Core/Expressions/Evaluator.Reductions.cs|cdf(): this value has the axes {string.Join(
+src/Core/Expressions/Evaluator.Reductions.cs|cdf(): this value's only axis is '{x.Axes[0].Name}', not '{named}'.
 src/Core/Expressions/Evaluator.cs|{cl.Name}(): the channel and the quantity are both quoted, e.g. {cl.Name}(\"CH1\", \"Gain_dB\").
 
 # ── brief TRN-7: ngspice as a transient solver (2026-11-15) ─────────────────────────────────

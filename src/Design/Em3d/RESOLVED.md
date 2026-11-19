@@ -399,3 +399,27 @@ A review of the finished series found four defects; each is fixed and has a rout
   face of the air box". One predicate decides both now (`C3dWallPorts.ForcesFaces`: driven, eigenmode or magnetostatic, not
   scattering); those runs load the gap uncalibrated and their gap note no longer claims a calibration.
   `WallPortTests.AnEigenmodeSetup_ForcesTheWallFaceAsTheEditorDraws_AnElectrostaticOneDoesNot`.
+
+## A MOD_Source drives a fields analysis; a receiving array's pattern is its receive pattern (brief PCH-13, 2026-11-19)
+
+**A MOD_Source is a drive.** `drive=` may name one by instance. It stands in the S-parameter solve as its source impedance from its
+node to its reference (its drive value lives on the MNA's own right-hand side, which `BlockWaves` does not use), so it is driven
+exactly as a port of Z0 = its Z: `SParameterEngine.SourcePorts` numbers the top-level MOD_Sources after the circuit's own ports and
+`BlockWaves` resolves those numbers itself, so no caller carries a mapping. Unweighted, its amplitude is √Pavg, as a P1Tone's is
+√Pavl, and the two compare only with each other. Notes name it (`DrivenName`: "'GNB' (MOD_Source)", not a port number nobody wrote).
+
+**A receiving array** (incident waves, or a Propagation Channel's `Rx` end) **takes its waves from the receive weights.** Driven from
+its feed, a Feed-mode array behind one-way LNAs has a = 0 at every element, so its pattern was empty — on the mmWave Array Link's `PR`
+and on the *Phased Array* example's *2 Receive* alike (that example's G/T and SNR were never affected: they read the incident-wave
+model). The element's row reads b − S·a = V_src on a source node held by 1 S, so `PortReceiveWeights` on those nodes is each
+element's emitted-wave transfer to the port; a = Σ drive·T·(Weigh's scale), b = S·a, the port's reflection and accepted power the
+forward drive's. Checked: on a reciprocal array it equals the transmit pattern to 1e-9 dB; behind 20 dB LNAs it is that plus 20 dB.
+
+**The trap: do not solve the adjoint (Mᵀ) and read its node voltages and branch currents as waves.** It looks right — a reciprocal
+network's matrix is "its own transpose" — but the wave-form stamps (an S-block's and the channel's scaled branch rows) are not
+symmetric even for reciprocal parts, so the adjoint's x is not the physical solution of anything. Tried: `PR` passive read 31.6 dBi
+against 19.9 the forward way; *2 Receive* read 42.1 dBi against 29.8. Read the transposed solve only where its meaning is derived,
+as `PortReceiveWeights` does on a source node.
+
+Gates: `FarFieldCosimTests.AModSource_DrivesAsAP1ToneOfTheSamePowerAndZ`,
+`PhasedArrayReceiveTests.TheReceivePattern_IsTheTransmitOne_OnAReciprocalArray_AndBehindLnasIsRaisedByTheirGain`.

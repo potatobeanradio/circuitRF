@@ -87,8 +87,8 @@ public static partial class FieldCosimulation
         }
         var first = waves[0];
         string drivenBy = first.Multi
-            ? $"driven from circuit ports {string.Join(", ", first.Drive.Drives.Select(d => d.Port))} together ({Pct(first.Accepts)} of their available power accepted) and referred to 1 V at port {drives[0].Port}"
-            : $"driven from circuit port {drives[0].Port} (|Γ| {Db(first.Reflection.Magnitude)} dB, {Pct(first.Accepts)} of the available power accepted) and referred to 1 V there";
+            ? $"driven from {string.Join(", ", first.Drive.Drives.Select(d => DrivenName(nl, d.Port)))} together ({Pct(first.Accepts)} of their available power accepted) and referred to 1 V at the first"
+            : $"driven from {DrivenName(nl, drives[0].Port)} (|Γ| {Db(first.Reflection.Magnitude)} dB, {Pct(first.Accepts)} of the available power accepted) and referred to 1 V there";
         headline = at.Count > 1 ? $"Fields '{fa.Name}' at {where}: pattern recombined"
                  : first.Multi  ? $"Fields '{fa.Name}' at {where}: {Pct(first.Accepts)} of the available power accepted"
                  :                $"Fields '{fa.Name}' at {where}: |Γ| {Db(first.Reflection.Magnitude)} dB, {Pct(first.Accepts)} of the available power accepted";

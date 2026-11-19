@@ -29,7 +29,7 @@ public sealed partial class FieldDriveRowViewModel : ObservableObject
     partial void OnWeightChanged(string value) => _owner.DrivesChanged();
 
     /// <summary>What an empty amplitude means on this row.</summary>
-    public string AmplitudeHint => _owner.HasPavl(this) ? "from Pavl and Phase" : "relative amplitude: 1";
+    public string AmplitudeHint => _owner.HasPavl(this) ? (_owner.PowerWord(this) == "Pavg" ? "from Pavg" : "from Pavl and Phase") : "relative amplitude: 1";
 
     /// <summary>What a run would refuse about this row; null when it would run.</summary>
     public string? Problem => _owner.ProblemOf(this);

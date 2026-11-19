@@ -12,12 +12,13 @@ namespace CircuitRF.Design.Em3d;
 /// <param name="Value">What <c>drive=</c> says for it: the port number, or the instance name of a source with none.</param>
 /// <param name="Instance">The instance, which <c>drive=</c> also takes.</param>
 /// <param name="Problem">Why a run would refuse it; null for a port.</param>
-/// <param name="HasPavl">A P1Tone, whose Pavl and Phase are its amplitude when none is stated.</param>
+/// <param name="HasPavl">A P1Tone or a MOD_Source, whose available power (Pavl, Pavg) is its amplitude when none is stated.</param>
 public sealed record FieldDriver(string Label, string Value, string Instance, string? Problem, bool HasPavl = false);
 
 /// <summary>
 /// What can be named as a Fields analysis's drive. A fields analysis sends a wave in from a circuit port's Z0 at the frequency it
-/// recombines, so the drivers are the components the S-parameter engine makes ports of: Term, TermG and P1Tone, at the top level. The
+/// recombines, so the drivers are the components the S-parameter engine makes ports of: Term, TermG and P1Tone, at the top level — and a
+/// MOD_Source, which stands in that solve as its source impedance and is driven as the port it then is (brief PCH-13 R-pch13-1). The
 /// other RF sources are listed too, since a user looking for their source should find it and be told why not, rather than not find it.
 /// </summary>
 public static class FieldDrivers
@@ -37,6 +38,8 @@ public static class FieldDrivers
                 ports.Add(num.Length > 0 ? new FieldDriver($"{c.InstanceName} (port {num})", num, c.InstanceName, null, hasPavl)
                                          : new FieldDriver(c.InstanceName, c.InstanceName, c.InstanceName, null, hasPavl));
             }
+            else if (c.Symbol == SymbolKind.ModSource)
+                others.Insert(others.Count(o => o.Problem is null), new FieldDriver($"{c.InstanceName} (MOD_Source)", c.InstanceName, c.InstanceName, null, HasPavl: true));
             else if (SourceName(c.Symbol) is { } kind)
                 others.Add(new FieldDriver($"{c.InstanceName} ({kind})", c.InstanceName, c.InstanceName, $"A {kind} is not a circuit port. Use a Term, TermG or P1Tone."));
         }
@@ -54,7 +57,6 @@ public static class FieldDrivers
         SymbolKind.ToneSource => "VTone",
         SymbolKind.CurrentToneSource => "ITone",
         SymbolKind.PnTone => "PnTone",
-        SymbolKind.ModSource => "MOD_Source",
         _ => null,
     };
 
@@ -63,7 +65,6 @@ public static class FieldDrivers
         ToneSourceModel => "VTone",
         CurrentToneSourceModel => "ITone",
         PnToneModel => "PnTone",
-        ModSourceModel => "MOD_Source",
         _ => null,
     };
 }

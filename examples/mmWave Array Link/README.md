@@ -17,7 +17,8 @@ transmitter's EVM, and the transmit array `PT` (Feed mode, half a wavelength, ea
 carries it, `Tx=PT Rx=PR`, to the receive array `PR`, whose feed is the probe `Irx`. Both arrays' phases are
 `steer(0,0,f0)`, so the channel picks their beams (`BeamSelect` unstated is `auto`) from a grid of candidates one beamwidth
 apart, through each array's own `steer()`. `ENV1` is four OFDM symbols with `Noise=yes` and `Equalizer=pilot`; `DROPS`
-sweeps it over drops 1 to 20.
+sweeps it over drops 1 to 20. `FT` and `FR` are the arrays' patterns at `f0`: `PT`'s driven from `GNB`, `PR`'s its receive
+pattern at the port `UE`.
 
 ## The path
 
@@ -38,7 +39,10 @@ power through the chosen pair, `Beam_dB`, runs from −95.6 to −123.8 dB, the 
 interference together. `BoundLoss_dB` is what the codebook costs against the best any phase-only weights could do through
 the same rays: 2.3 to 9.0 dB, because a grid of single beams points at one cluster while the bound collects several.
 
-**Open the bench in the Phased Array tool** (*Tools ▸ Phased Array*, with `PT` or `PR` selected) and its **Channel** tab
+**Open the bench in the Phased Array tool** (*Tools ▸ Phased Array*, with `PT` or `PR` selected): its **Beam** tab draws the
+array's pattern from `FT` or `FR`, steered to the drop's chosen pair — `PT` at 14.4°, a 6.5° beam of 91.0 dBi realized gain (the
+array's 29.0 dBi with the pre-driver's 30 dB and `TxChannel`'s 32 dB), `PR` at 20.2°, a 13.7° beam of 39.3 dBi (22.9 dBi with
+`RxChannel`'s 17 dB) — and a settled frame takes about a second. Its **Channel** tab
 draws the drop's rays on the (u, v) map with the candidate beams, and lists the ranked pairs. Click another pair to use it
 (it writes `BeamSelect=index`), or the check button to write it into the arrays' `steer()`; move the drop slider to see
 another realization.

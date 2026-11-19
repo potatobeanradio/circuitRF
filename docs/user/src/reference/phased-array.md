@@ -209,7 +209,9 @@ With a fields analysis `F1` driven from the receive port and an S-parameter anal
 | `NullDepthDb(F1, theta, phi)` | The receive pattern in a direction, below its peak, dB |
 
 All of them work through channels that pass signal one way only (an LNA), because they use the array's receive weights, not
-its transmit pattern. The example's 8 × 8 receiver at boresight: 98.6 K, 242.2 K, −2.70 dB/K and 9.02 dB in 1 MHz. Steered to
+its transmit pattern. So does the fields analysis's own pattern on a receiving array (one given incident waves, or a Propagation
+Channel's `Rx` end): it is the receive pattern, each element's transfer to the drive port, which on a reciprocal array is the
+transmit pattern and behind LNAs is the beam they deliver, gain included. The example's 8 × 8 receiver at boresight: 98.6 K, 242.2 K, −2.70 dB/K and 9.02 dB in 1 MHz. Steered to
 60° its G/T is −5.26 dB/K: the system temperature hardly moves, the gain does.
 
 **An interferer reaches every channel through the element's pattern, not the array's.** The channels sit between the elements

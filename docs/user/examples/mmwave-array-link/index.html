@@ -74,7 +74,8 @@ transmitter's EVM, and the transmit array <code>PT</code> (Feed mode, half a wav
 carries it, <code>Tx=PT Rx=PR</code>, to the receive array <code>PR</code>, whose feed is the probe <code>Irx</code>. Both arrays' phases are
 <code>steer(0,0,f0)</code>, so the channel picks their beams (<code>BeamSelect</code> unstated is <code>auto</code>) from a grid of candidates one beamwidth
 apart, through each array's own <code>steer()</code>. <code>ENV1</code> is four OFDM symbols with <code>Noise=yes</code> and <code>Equalizer=pilot</code>; <code>DROPS</code>
-sweeps it over drops 1 to 20.</p>
+sweeps it over drops 1 to 20. <code>FT</code> and <code>FR</code> are the arrays' patterns at <code>f0</code>: <code>PT</code>'s driven from <code>GNB</code>, <code>PR</code>'s its receive
+pattern at the port <code>UE</code>.</p>
 <h2 id="the-path">The path</h2>
 <table>
 <thead>
@@ -106,7 +107,10 @@ six: the clusters are the same in every drop, their phases are not, and which pa
 power through the chosen pair, <code>Beam_dB</code>, runs from −95.6 to −123.8 dB, the shadowing's spread and the clusters'
 interference together. <code>BoundLoss_dB</code> is what the codebook costs against the best any phase-only weights could do through
 the same rays: 2.3 to 9.0 dB, because a grid of single beams points at one cluster while the bound collects several.</p>
-<p><strong>Open the bench in the Phased Array tool</strong> (<em>Tools ▸ Phased Array</em>, with <code>PT</code> or <code>PR</code> selected) and its <strong>Channel</strong> tab
+<p><strong>Open the bench in the Phased Array tool</strong> (<em>Tools ▸ Phased Array</em>, with <code>PT</code> or <code>PR</code> selected): its <strong>Beam</strong> tab draws the
+array's pattern from <code>FT</code> or <code>FR</code>, steered to the drop's chosen pair — <code>PT</code> at 14.4°, a 6.5° beam of 91.0 dBi realized gain (the
+array's 29.0 dBi with the pre-driver's 30 dB and <code>TxChannel</code>'s 32 dB), <code>PR</code> at 20.2°, a 13.7° beam of 39.3 dBi (22.9 dBi with
+<code>RxChannel</code>'s 17 dB) — and a settled frame takes about a second. Its <strong>Channel</strong> tab
 draws the drop's rays on the (u, v) map with the candidate beams, and lists the ranked pairs. Click another pair to use it
 (it writes <code>BeamSelect=index</code>), or the check button to write it into the arrays' <code>steer()</code>; move the drop slider to see
 another realization.</p>

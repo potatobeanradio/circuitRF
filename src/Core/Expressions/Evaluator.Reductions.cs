@@ -346,8 +346,7 @@ public sealed partial class Evaluator
     /// <summary>One empirical CDF along <paramref name="trials"/> per point of the cube's other axes, on a shared value axis.</summary>
     private static Value CdfAlong(DataCube cube, string trials)
     {
-        if (cube.DataKind != DataKind.Real)
-            throw new ExpressionException("cdf(): the values are complex. Take a real quantity: dB(…), mag(…) or real(…) of it.");
+        RequireReal(cube, "cdf");
         if (!cube.Axes.Any(a => a.Name == trials))
             throw new ExpressionException($"cdf(): this value has the axes {string.Join(", ", cube.Axes.Select(a => a.Name))}; there is no '{trials}'.");
         int n = cube.Axis(trials).Length;
@@ -668,14 +667,17 @@ public sealed partial class Evaluator
     {
         if (v.Kind != ValueKind.Cube)
             throw new ExpressionException($"{name}(): this value is a single number; it needs a cube over one axis (the trials).");
-        var cube = v.AsCube();
-        if (cube.DataKind != DataKind.Real)
-            throw new ExpressionException($"{name}(): the values are complex. Take a real quantity: dB(…), mag(…) or real(…) of it.");
+        var cube = RequireReal(v.AsCube(), name);
         if (cube.Rank != 1)
             throw new ExpressionException(
                 $"{name}(): this value has the axes {string.Join(", ", cube.Axes.Select(a => a.Name))}; reduce it to one first, e.g. max_over(x, \"freq\").");
         return cube;
     }
+
+    /// <summary>The cube, when its values are real — what a statistic over the trials needs.</summary>
+    private static DataCube RequireReal(DataCube cube, string name)
+        => cube.DataKind == DataKind.Real ? cube
+            : throw new ExpressionException($"{name}(): the values are complex. Take a real quantity: dB(…), mag(…) or real(…) of it.");
 
     private static int Bins(Value v, string name)
     {

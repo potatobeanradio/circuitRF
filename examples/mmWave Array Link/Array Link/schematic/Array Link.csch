@@ -630,6 +630,28 @@
       "PsaStop": 20,
       "PsaStepOrCount": 1,
       "PsaKind": "Linear"
+    },
+    {
+      "Type": "fields",
+      "Name": "FT",
+      "Enabled": true,
+      "FieldsBlock": "PT",
+      "FieldsFreqExpr": "f0",
+      "FieldsFreqUnit": "GHz",
+      "FieldsDriveExpr": "GNB",
+      "FieldsNorm": "accepted",
+      "FieldsAverageExpr": "yes"
+    },
+    {
+      "Type": "fields",
+      "Name": "FR",
+      "Enabled": true,
+      "FieldsBlock": "PR",
+      "FieldsFreqExpr": "f0",
+      "FieldsFreqUnit": "GHz",
+      "FieldsDriveExpr": "UE",
+      "FieldsNorm": "accepted",
+      "FieldsAverageExpr": "yes"
     }
   ]
 }

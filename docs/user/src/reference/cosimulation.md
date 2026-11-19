@@ -55,8 +55,8 @@ they act only on SAR and B1:
 |---|---|---|
 | `block` | the EM Field Data block's instance name (`X1.EM1` inside a cell) | required |
 | `freq`, `freqUnit` | a frequency the record stores, or `all` for every frequency of its far field | required |
-| `drive` | the circuit port that drives, by number or by instance name; every other circuit port is terminated in its Z0 | required |
-| `weights` | with several drives, each one's relative complex amplitude, with no units ([multi-channel](#multichannel)) | 1 each, or a P1Tone's Pavl and Phase |
+| `drive` | the circuit port that drives, by number or by instance name, or a MOD_Source by instance name (a wave in from its Z); every other circuit port is terminated in its Z0 | required |
+| `weights` | with several drives, each one's relative complex amplitude, with no units ([multi-channel](#multichannel)) | 1 each, or a P1Tone's Pavl and Phase, a MOD_Source's Pavg |
 | `norm` | per watt **accepted** at the drive, or per watt **available** from it | accepted |
 | `average` | `no` skips the cube-averaged SAR, the step that costs the most | yes |
 

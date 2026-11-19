@@ -115,6 +115,12 @@ public sealed class PhasedArraySession
         double evalMs = sw.Elapsed.TotalMilliseconds;
         if (!run.ArrayStates.TryGetValue(Fields!.Name, out var state))
             return new(null, run.Status == RunStatus.Success && run.Errors.Count == 0 ? $"Fields '{Fields.Name}' gave no pattern." : string.Join(" ", run.Errors.DefaultIfEmpty(run.StatusMessage)));
+        // brief PCH-13 R-pch13-3 — nothing reaching the elements is a pattern hundreds of dB down that looks like a result: say why instead
+        // (the run's own threshold, FieldCosimulation's "below -240 dB of incident power is numerical zero").
+        if (state.A.Sum(x => x.Magnitude * x.Magnitude) < 1e-24 * state.AvailableW)
+            return new(null, run.Warnings.FirstOrDefault(w => w.StartsWith($"Fields '{Fields.Name}'", StringComparison.Ordinal)
+                                                              && w.Contains("results are empty", StringComparison.Ordinal))
+                             ?? $"Fields '{Fields.Name}': nothing the drive sends reaches '{Block}', so it has no pattern.");
 
         var measurements = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
         double? goverT = null;
@@ -131,14 +137,23 @@ public sealed class PhasedArraySession
         return new(frame with { FormingMs = sw.Elapsed.TotalMilliseconds }, null);
     }
 
-    /// <summary>The fields analysis, the harmonic balance its waves come from, and every analysis a measurement names.</summary>
+    /// <summary>
+    /// The fields analysis, the harmonic balance its waves come from, and every analysis a measurement the tool SHOWS names: a per-element
+    /// Pout, PAE or NF it colours the aperture by, or G/T. Any other measure's analyses are the bench's business, not the frame's: an
+    /// envelope a link's MER reads is promoted to the drop sweep around it, which made a settled frame on the mmWave Array Link run all
+    /// 20 drops (brief PCH-13 R-pch13-4).
+    /// </summary>
     private List<string> SettledAnalyses()
     {
         var tb = Circuit.Tb!;
         var names = new List<string> { Fields!.Name };
         if (Fields.FromHarmonicBalance) names.Add(Fields.Waves.Trim());
         var analyses = tb.Analyses.Where(a => a.Enabled).Select(a => a.Name).ToHashSet(StringComparer.Ordinal);
-        foreach (var m in tb.Measurements)
+        static bool Shown(Measurement m)
+            => m.Expression.Contains("GoverTDbK(", StringComparison.Ordinal)
+               || new[] { ApertureQuantity.PaPout, ApertureQuantity.PaPae, ApertureQuantity.ChannelNf }
+                      .Any(q => PhasedArrayToolViewModel.MeasurementPattern(q).Pattern.IsMatch(m.Name));
+        foreach (var m in tb.Measurements.Where(Shown))
         {
             Token[] tokens;
             try { tokens = new Tokenizer(m.Expression).Tokenize(); }
