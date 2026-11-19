@@ -442,6 +442,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.c3d.port",
         "check.c3d.port-refused",
         "check.c3d.setup",
+        "check.c3d.wall-grounds",
         "check.cdd.empty",
         "check.cdd.source-not-run",
         "check.cdd.summary",

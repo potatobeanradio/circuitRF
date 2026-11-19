@@ -15,7 +15,10 @@ using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests.PhasedArray;
 
-[Collection("ReceiveCollapse")]   // ReplaceReceiveArrays is process-wide
+// ReplaceReceiveArrays, CollapseEnabled and the envelope channel's counters are process-wide, so this shares the collection every
+// class that toggles or reads them runs in: a collection of its own ran beside ChannelArrayEndTests, whose collapse switch then
+// turned this class's replacement off mid-run ("0 parts replaced").
+[Collection(Sar.FieldCosimulationRunsCollection.Name)]
 public sealed class ReceiveArrayFeedTests(ITestOutputHelper output) : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("crf-pch10b-").FullName;

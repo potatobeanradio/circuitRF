@@ -8,6 +8,7 @@
         Width="420"
         MinWidth="320"
         MinHeight="200"
+        MaxHeight="760"
         SizeToContent="Height"
         CanResize="True"
         WindowStartupLocation="CenterOwner"

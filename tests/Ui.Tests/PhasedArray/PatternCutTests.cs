@@ -158,7 +158,8 @@ public sealed class PatternCutTests(ITestOutputHelper output) : IDisposable
     }
 
     /// <summary>Gate 4 — the Brute Force bench at −60 dBm, steered to 30°: the cut from harmonic-balance waves is the linear fields analysis's cut on
-    /// the same bench, to the brute-force gates' tolerance (1e-9 of the peak, after the one complex factor between their references).</summary>
+    /// the same bench, to 2e-9 of the peak after the one complex factor between their references: the amplifier's own nonlinearity at -60 dBm
+    /// (7e-10) and HB's round-off floor relative to so small a signal (PhasedArrayHbTests' Gate 1 measures both; 1.18e-9 here).</summary>
     [Fact]
     public void FromHarmonicBalanceWaves_TheCutIsTheLinearOne()
     {
@@ -182,7 +183,7 @@ public sealed class PatternCutTests(ITestOutputHelper output) : IDisposable
         double peak = x.Max(c => c.Magnitude), worst = 0;
         for (int i = 0; i < x.Length; i++) worst = Math.Max(worst, (x[i] - r * y[i]).Magnitude);
         output.WriteLine($"{x.Length / 2} samples, worst difference {worst / peak:E2} of the peak");
-        Assert.True(worst / peak <= 1e-9, $"the HB cut differs from the linear one by {worst / peak:E2}");
+        Assert.True(worst / peak <= 2e-9, $"the HB cut differs from the linear one by {worst / peak:E2}");
     }
 
     /// <summary>Gate 5 — by counting, no clock: two cuts of a 64 × 64 array of four pattern classes on a 1° record. Each class's pattern is evaluated

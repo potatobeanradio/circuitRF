@@ -76,7 +76,11 @@ public sealed class PhasedArrayHbTests(ITestOutputHelper output) : IDisposable
     /// <summary>Gate 1 — far below compression the PAs are linear, so the pattern from HB's waves is the linear fields analysis's on the same bench, and each
     /// element's active reflection is equation (3) from the record's S and the linear analysis's waves. Steered to 30°, so the elements differ.
     /// <para>At -60 dBm, 80 dB below compression. The amplifier is biased near pinch-off and its gain moves with drive, so the difference is its own
-    /// nonlinearity and falls as the drive squared: 1.1e-5 of the pattern's peak at -18 dBm (40 dB below compression), 7e-10 at -60.</para></summary>
+    /// nonlinearity and falls as the drive squared: 1.1e-5 of the pattern's peak at -18 dBm (40 dB below compression), 7e-10 at -60.</para>
+    /// <para>Beside it sits a floor that RISES as the drive falls: HB's back-solve injects the linear side's own current, which carries the
+    /// Newton residual left at round-off (an absolute ~1e-14 A that no tighter Tol removes), so relative to the signal it grows as the signal
+    /// shrinks. Measured: 1.97e-9 at -70 dBm, 1.10e-9 at -60, 7.09e-9 at -50, where the nonlinearity takes over. -60 is near the
+    /// minimum of the two, and the gate allows both (2e-9).</para></summary>
     [Fact]
     public void SmallSignal_HbWavesPatternAndActiveReflection_AreTheLinearOnes()
     {
@@ -99,8 +103,8 @@ public sealed class PhasedArrayHbTests(ITestOutputHelper output) : IDisposable
             output.WriteLine($"element {n + 1}: HB {gamma[n].Magnitude:F6}∠{gamma[n].Phase * 180 / Math.PI:F3}°, (3) {eq3.Magnitude:F6}∠{eq3.Phase * 180 / Math.PI:F3}°");
         }
         output.WriteLine($"active reflection: worst difference {worstGamma:E2}");
-        Assert.True(pattern <= 1e-9, $"pattern differs by {pattern:E2}");
-        Assert.True(worstGamma <= 1e-9, $"active reflection differs by {worstGamma:E2}");
+        Assert.True(pattern <= 2e-9, $"pattern differs by {pattern:E2}");
+        Assert.True(worstGamma <= 2e-9, $"active reflection differs by {worstGamma:E2}");
     }
 
     /// <summary>A node's or a branch's spectrum at one harmonic, from an HB result's V or I cube, by its label.</summary>

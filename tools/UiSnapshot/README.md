@@ -364,7 +364,7 @@ throwaway folder, and waits for the read and the preview; nothing is imported.
 
 Each first indexes the workspace's referenced vendor libraries, as a workspace open starts them, so captions, counts
 and lists are filled in. `--palette` is the Library palette with a placement service (so a row arms), and prints the
-focus and the armed row after every step. `--schematic` is the schematic view beside the Parameter Editor on
+focus and the armed row after every step. `--schematic` is the schematic view beside the Parameter Editor (its column `--inspector-width N` wide, default 360) on
 `--select`'s instance, the session given Tuning, Yield and Optimizer panels as the shell gives every session (so
 the Inspector shows its Tune, Tolerance and Optimize toggles); `--type VendorPartBox=<text>` types into the Part
 field, and a vendor part's two toggle states print after every step. `--manage-libraries` and

@@ -5796,3 +5796,13 @@ point ran; and inside the sweep, one refused point threw for every other. Now:
 
 Gate: `SweepRefusedPointsTests` (refused at elaboration and at the solve; a non-sweep top is still refused). Headless check on the
 Indoor IoT Link example: `dist` 1..40 m step 3 from a VAR of 1 runs, NaN at 1, 31, 34, 37 and 40 m, the 28 m median −93.9 dBm.
+
+## HB small-signal against linear: the round-off floor since the linear-side back-solve (2026-11-19)
+
+`028b6cdfa` made every HB back-solve inject `−(I_src + Y_NN·V)`, which carries the Newton residual left at round-off into the
+interior nodes. On the phased-array benches at −60 dBm the HB-vs-linear pattern moved from 7.4e-10 to 1.1e-9 of the peak (bisected to
+that commit). It is a floor, not a defect: a tighter `Tol` does not move it (the residual is already at round-off) and compensated
+summation of the injection does not either; it rises as the drive falls (1.97e-9 at −70 dBm) while the amplifier's own nonlinearity
+rises with drive (7.09e-9 at −50). `PhasedArrayHbTests` Gate 1 and `PatternCutTests`' HB cut now allow 2e-9. The same change moved
+the PowerAmplifier example's run by at most 9.5e-7 of each cube's peak and Loadpull's by 4.5e-6 (their parity hashes recaptured)
+and Hero2's `hb` golden by round-off on nodes that are zero at those harmonics.

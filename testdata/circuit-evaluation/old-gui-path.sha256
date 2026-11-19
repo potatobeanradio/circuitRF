@@ -2,9 +2,12 @@
 # src/Design/Circuit/CircuitEvaluation.cs. One line per platform the capture was made on:
 # <rid> <example cell> <bytes> <sha256>. Read by CircuitEvaluationParityTests.
 osx-arm64 Amplifier 42639 72431cfe77b2b90523e5bc3aab255d244a4e5ceee96e4edfb3b5a8c219e2e581
-osx-arm64 Loadpull 1570220 73e01364aa6a1432ef698c5e0cf732b4df9d3bd24bd6cac9d1dcbf6995411877
+osx-arm64 Loadpull 1570220 62dd3b39caf8d9d9605be309b52c205bec844010769edf79538f6e63f18e4a4e
 # PowerAmplifier recaptured 2026-10-29: its run gained the IProbe power cubes (Pprobe_W, Pprobe_fund_W,
 # __ProbeBranches) of briefs ENV-MEAS-1..3.
 # Loadpull recaptured 2026-11-04: against the 2026-10-29 build, 24 values moved, all at the -50 dBm step, by at most
 # 9e-5 relative, and a load and its conjugate now agree there; every other value is unchanged.
-osx-arm64 PowerAmplifier 96690 cb2fec495c7d9ea73d92ab2e70808a1983d7b0fe13dbad32aee081b17d299b1c
+# PowerAmplifier and Loadpull recaptured 2026-11-19, after HB's back-solve took the linear side's own current and its convergence
+# test began judging the voltage update (2026-11-18): against the build before, PowerAmplifier's values moved by at most 9.5e-7 of
+# each cube's peak and Loadpull's by 4.5e-6; Residual differs throughout, as a different stopping rule leaves it.
+osx-arm64 PowerAmplifier 96690 3f687250857e451518fdad8a3cad5935924f7e853d07f4534fbd4d5b29178cdd

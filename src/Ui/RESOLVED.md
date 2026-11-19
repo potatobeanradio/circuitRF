@@ -42614,3 +42614,25 @@ The nine channel parameters whose absence is one fixed value (`PropagationChanne
 ScanLimit, Doppler, DopplerComp, Shadowing, States, RayFrame) now arrive stating it; the model reads its fallbacks from the same
 table. One whose blank means "work it out" (Velocity, f0, an end's Az, Fading…) or whose presence alone changes the run (BeamRank)
 still starts blank and draws once given a value. Gate: `PropagationChannelAddParameterTests.AnAddedSeed_StatesItsValue_SoDisplayingItDrawsIt`.
+
+## The Parameter dialog stops at 760 px and scrolls its rows (2026-11-19)
+
+`ParameterEditorDialog` sized to its content with no maximum, so a component with many rows (a channel given dozens through "+")
+ran off the screen with its buttons. It now caps at 760 px, lowered on open to 85 % of the screen's working height (device pixels
+over the screen's scaling, as `CrfHostWindow` does). The view already held the rows in a ScrollViewer between an Auto header and an
+Auto footer; it only engages once the window's height is bounded, which the docked inspector always was. Picture (UiSnapshot):
+the example's channel with 64 rows — header and +/Help/Close fixed, rows scrolling.
+
+## A narrow inspector clipped the Footprint picker's sides (2026-11-19)
+
+Fluent sizes a ComboBox to at least `ComboBoxThemeMinWidth` (64) INSIDE its template, so a `MinWidth` on the control does nothing
+(tried, no change). The value column's own minimum is 50, so below ~280 px of inspector the Footprint picker (and an enum or
+layer-choice parameter's) was wider than its cell and clipped on both sides. `ParameterEditorView` sets the resource to 0 for its
+own controls. Pictures at 230 and 360 px (UiSnapshot's new `--inspector-width`).
+
+## Process-wide channel statics and xUnit collections (2026-11-19)
+
+`ChannelArrayEndTests` toggles `PropagationChannelModel.CollapseEnabled` and asserts `EnvelopeChannel.CollapsedElements` /
+`LastInstanceCost`; `ReceiveArrayFeedTests` (its own "ReceiveCollapse" collection) and `DropReuseArrayTests` (none) ran beside it, so
+a run of the classes together failed deterministically ("0 parts replaced", 0 of 16 collapsed). Both now share
+`FieldCosimulationRunsCollection` with the rest of the phased-array classes.

@@ -13,6 +13,9 @@ using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests.PhasedArray;
 
+// Its envelope runs set the channel's process-wide counters (EnvelopeChannel.CollapsedElements, LastInstanceCost), which other
+// classes in this collection assert on.
+[Collection(Sar.FieldCosimulationRunsCollection.Name)]
 public sealed class DropReuseArrayTests(ITestOutputHelper output) : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("crf-pch10-").FullName;

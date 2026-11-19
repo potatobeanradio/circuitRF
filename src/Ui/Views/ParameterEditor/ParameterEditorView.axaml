@@ -16,6 +16,13 @@
         </Style>
     </UserControl.Styles>
 
+    <!-- The theme sizes every ComboBox to at least ComboBoxThemeMinWidth (64) inside its TEMPLATE, so a MinWidth on the control does
+         not lift it. The value column's own minimum is 50: in a narrow inspector a picker there (Footprint, an enum or layer-choice
+         parameter) came out wider than its cell and was clipped on both sides, losing its vertical edges. Here it fits the column. -->
+    <UserControl.Resources>
+        <x:Double x:Key="ComboBoxThemeMinWidth">0</x:Double>
+    </UserControl.Resources>
+
     <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
 
         <!-- Empty-state overlay: spans all rows, shown when IsEmptyState -->

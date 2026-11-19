@@ -198,6 +198,7 @@ bool digitise = false, makeSchematic = false, stripGeometry = false;
 string? imageScalePoints = null;
 int cmcMarkers = 0;
 string? palette = null, paletteCategory = null, paletteSearch = null, schematic = null, select = null;
+double inspectorWidth = 360;   // --inspector-width: the Parameter Editor column beside --schematic
 bool parameterDialog = false;
 string? analysisDialog = null, emSolvesDialog = null;   // brief-sdl-6
 string? cellExistsDialog = null;                       // brief-isc-1
@@ -399,6 +400,7 @@ for (int i = 0; i < args.Length; i++)
         case "--search" when i + 1 < args.Length: paletteSearch = args[++i]; break;
         case "--schematic" when i + 1 < args.Length: schematic = Path.GetFullPath(args[++i]); break;
         case "--select" when i + 1 < args.Length: select = args[++i]; break;
+        case "--inspector-width" when i + 1 < args.Length: inspectorWidth = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture); break;
         case "--dialog": parameterDialog = true; break;
         case "--archive" when i + 1 < args.Length: archive = Path.GetFullPath(args[++i]); break;
         case "--place-instance-3d" when i + 1 < args.Length: placeInstance3d = Path.GetFullPath(args[++i]); break;
@@ -2006,7 +2008,7 @@ Window VendorView()
             return new CircuitRF.Ui.Views.Dialogs.ParameterEditorDialog { DataContext = editor };
         var doc = new CircuitRF.Ui.Schematic.SchematicDocument(Path.GetFileNameWithoutExtension(schematic), vm, schematic)
             { Hierarchy = new SnapshotHierarchy() };
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,360") };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions($"*,{inspectorWidth.ToString(System.Globalization.CultureInfo.InvariantCulture)}") };
         grid.Children.Add(new CircuitRF.Ui.Views.Content.SchematicView { DataContext = doc });
         var pe = new CircuitRF.Ui.Views.ParameterEditor.ParameterEditorView { DataContext = editor };
         Grid.SetColumn(pe, 1);
