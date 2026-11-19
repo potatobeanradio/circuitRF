@@ -106,10 +106,11 @@ public static class CoupledArraySynthesis
     /// and 0.6H apart, each unknown on its own measure (a width on its strip's diagonal, which a gap barely moves; a gap on
     /// its pair's mutual), each step one field solve; refused when it does not settle to 0.3 %. Each step is on the plan's
     /// grid (<see cref="PassivePlan.OnGrid"/>), as the part draws and solves its strips, so a run of the realised part finds
-    /// the last solve in <see cref="MicrostripMultiLineModel.Solve"/>'s cache.
+    /// the last solve in <see cref="MicrostripMultiLineModel.Solve"/>'s cache. <paramref name="cancel"/> stops it between
+    /// solves.
     /// </summary>
     public static (double[] W, double[] S, MultiLineSection Section) Fit(double[] ground, double[] mutual, double z0,
-        MicrostripSubstrate sub, Func<double[], MultiLineSection, double[]>? mutualOf = null)
+        MicrostripSubstrate sub, Func<double[], MultiLineSection, double[]>? mutualOf = null, CancellationToken cancel = default)
     {
         int n = ground.Length;
         mutualOf ??= (_, section) => { var y = Admittance(section); return [.. Enumerable.Range(0, n - 1).Select(k => -y[k, k + 1])]; };
@@ -123,6 +124,7 @@ public static class CoupledArraySynthesis
         double[]? lastX = null, lastOwn = null;
         for (int it = 0; it < 30; it++)
         {
+            cancel.ThrowIfCancellationRequested();
             x = [.. x.Select(PassivePlan.OnGrid)];
             var section = MicrostripMultiLineModel.Solve(x[..n], x[n..], sub);
             var yc = Admittance(section);
@@ -259,7 +261,9 @@ public sealed class CoupledArrayInterdigitalRealiser : IFilterRealiser
             ("w", w.ToString("P0", CultureInfo.InvariantCulture)), ("max", MaxBandwidth.ToString("P0", CultureInfo.InvariantCulture)));
     }
 
-    public FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate)
+    public FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate) => Realise(spec, substrate, default);
+
+    public FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate, CancellationToken cancel)
     {
         if (Refusal(spec) is { } d) throw new ParameterRefusalException(d);
         var sub = substrate ?? throw CoupledArraySynthesis.Refuse("substrate", "An MCLA is sized on a substrate; none was given.");
@@ -268,7 +272,7 @@ public sealed class CoupledArrayInterdigitalRealiser : IFilterRealiser
         if (ground.Concat(mutual).Any(y => !(y > 0)))
             throw CoupledArraySynthesis.Refuse("scale", "Matthaei's h = {h} leaves a strip with no admittance to ground; a "
                 + "smaller h gives the terminating strips room.", ("h", H));
-        var (ws, gaps, section) = CoupledArraySynthesis.Fit(ground, mutual, spec.Z0, sub);
+        var (ws, gaps, section) = CoupledArraySynthesis.Fit(ground, mutual, spec.Z0, sub, cancel: cancel);
         int mid = ws.Length / 2;
         double l = CoupledArraySynthesis.C0 / Math.Sqrt(section.Modes.Eeff.Average()) / (4 * f0) - CoupledArraySynthesis.Extension(ws[mid], sub);
         var a = new CoupledArraySpec(ws, gaps, l, CoupledArrayForm.Interdigital, CoupledArrayFeed.Coupled, null, 0, 0,
@@ -329,7 +333,9 @@ public sealed class CoupledArrayComblineRealiser : IFilterRealiser
     /// <summary>sin²θt for the tap: b·sin²θ0/(Y0·Qe), <paramref name="b"/> in units of Y0.</summary>
     private static double TapSin2(FilterSpec spec, double b, double theta0) => b * Math.Pow(Math.Sin(theta0), 2) / Qe(spec);
 
-    public FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate)
+    public FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate) => Realise(spec, substrate, default);
+
+    public FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate, CancellationToken cancel)
     {
         if (Refusal(spec) is { } d) throw new ParameterRefusalException(d);
         var sub = substrate ?? throw CoupledArraySynthesis.Refuse("substrate", "An MCLA is sized on a substrate; none was given.");
@@ -347,7 +353,7 @@ public sealed class CoupledArrayComblineRealiser : IFilterRealiser
             var b = CoupledArraySynthesis.ShortedSusceptance(x, CoupledArraySynthesis.ComblineLength(x, wk, theta0, omega, sub), omega);
             return [.. Enumerable.Range(0, wk.Length - 1).Select(k => b[k, k + 1] * Math.Tan(theta0))];
         }
-        var (ws, gaps, section) = CoupledArraySynthesis.Fit(ground, mutual, spec.Z0, sub, Inverters);
+        var (ws, gaps, section) = CoupledArraySynthesis.Fit(ground, mutual, spec.Z0, sub, Inverters, cancel);
         int n = ws.Length;
         var (l, c, slope) = CoupledArraySynthesis.ComblineLoading(section, ws, theta0, f0, sub);
 

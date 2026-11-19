@@ -64,8 +64,9 @@ The substrate comes from the schematic's technology: its default signal layer ov
 schematic, it comes from the workspace's default technology. The line under the form says which one it is. With no
 technology, a realiser that needs a substrate refuses, and says so.
 
-A choice from a list takes effect at once. A typed field waits until you pause typing for a quarter of a second, so the
-realisers do not run on every keystroke.
+A choice from a list takes effect at once. The ideal response follows every keystroke. The realisers wait until you pause
+typing for a quarter of a second, so they do not run on every keystroke, and a newer specification stops the designs
+still running for an older one.
 
 ## The realisers {#realisers}
 
@@ -93,10 +94,11 @@ The plot shows |S21| and |S11| in dB, in two pairs:
 The sweep runs from near DC to three times the cutoff for a lowpass, from a third of the cutoff to three times it for a
 highpass, and over two bandwidths either side of a band.
 
-The ideal pair appears at once. The realised pair joins it when the selected realiser has been designed. That takes under
-a tenth of a second for the closed-form designs. The hairpins and open loops take a few seconds, because their couplings
-are solved on the part's circuit model, and a coupled array up to about ten, because its cross-section is fitted with a
-field solver. A bar beside **Realisers** shows while the window waits.
+The ideal curves appear at once, and the status line says the selected realiser is **realising…**. The realised pair
+joins them when that realiser has been designed. That takes under a tenth of a second for the closed-form designs. The
+hairpins and open loops take a few seconds, because their couplings are solved on the part's circuit model, and a coupled
+array up to about ten, because its cross-section is fitted with a field solver. A bar beside **Realisers** shows while the
+window waits. The window stays responsive throughout, and closing it stops the work.
 
 ## Place {#place}
 

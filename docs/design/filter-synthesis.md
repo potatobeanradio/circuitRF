@@ -555,18 +555,19 @@ Designer is.
   so one Undo takes them all off.
 
 **Speed.** Measured by `TheDesigner_PathsOnATypicalSpec_AreTimed` on a 5-pole 0.1 dB Chebyshev bandpass, 2.28 to
-2.52 GHz, every shipped realiser, the shipped RO4350B board, a Debug build on one machine. "Shown" is until the realised
-response is on the plot.
+2.52 GHz, every shipped realiser, the shipped RO4350B board, a Debug build on one shared machine (other builds ran
+beside it, so the seconds vary by about 20 % between runs). Before, nothing was on the plot until the realised response
+was; after, the ideal is drawn first and the realised response fills in.
 
 | Path | Before | After |
 |---|---|---|
-| Open, the window's default spec | 5.7 s | 3.1 s; the ideal at once. 0.3 s on the UI thread the first time (JIT), 1 ms after |
-| Fill the realiser list (16 `Supports`) | 0.2 ms | 0.4 ms; then each row realised in the background, 26 s for all 11 |
-| Select a realiser | 0.05 to 20.7 s (interdigital 20.7, open loop 4.8, tapped hairpin 3.1) | 0.05 to 0.19 s once its row is checked |
-| Edit a field (the ripple) | 9.1 s | 4.1 s, including the 0.25 s pause |
-| Combline, realise + bench, cold | 9.2 + 1.7 s | 2.9 + 0.06 s |
-| Interdigital, realise + bench, cold | 18.3 + 2.5 s | 9.4 + 0.07 s |
-| Open loop / tapped hairpin, realise, cold | 4.8 / 3.1 s | 3.7 / 2.4 s |
+| Open, the window's default spec | 5.7 s | Ideal drawn in 0.44 s the first time in a session, of which 0.36 s is on the UI thread: 0.28 s of it is the Data Display's first plot (start-up and JIT), which any plot window pays once. 10 ms after that. Realised in 3.1 s |
+| Fill the realiser list (16 `Supports`) | 0.2 ms | 0.4 ms; then each row realised in the background, 26 to 30 s for all 11 |
+| Select a realiser | 0.05 to 20.7 s (interdigital 20.7, open loop 4.8, tapped hairpin 3.1) | 0.05 to 0.21 s once its row is checked |
+| Edit a field (the ripple) | 9.1 s, the window waiting | Ideal drawn in 8 ms, 1 ms on the UI thread. Realised in 3.9 to 4.8 s, after the 0.25 s pause |
+| Combline, realise + bench, cold | 9.2 + 1.7 s | 2.9 to 3.9 + 0.06 s |
+| Interdigital, realise + bench, cold | 18.3 + 2.5 s | 8.4 to 9.1 + 0.06 s |
+| Open loop / tapped hairpin, realise, cold | 4.8 / 3.1 s | 3.7 to 4.1 / 2.4 to 3.3 s |
 
 Where the time went. `Supports` designs nothing (the list was 0.2 ms), and only the selected realiser was simulated, so
 neither was the cause. The ideal is 4 to 18 ms and a bench at most 0.2 s.
@@ -578,13 +579,19 @@ neither was the cause. The ideal is 4 to 18 ms and a bench at most 0.2 s.
 - Nothing was kept: selecting a realiser again realised it again, and every keystroke started a realisation.
 
 What changed.
-- **The window** shows the ideal first, then realises and runs the selected realiser alone. Realisations are kept for
-  the process by specification, substrate and realiser (a running one is joined, not started twice; cleared whole at
-  256). Every listed realiser its check lets through is then realised in the background, one at a time, and its row
-  changes in place to "builds it" or "refuses: why": a check is cheap but not the last word (on this spec the
+- **The window** draws the ideal first, on a worker and without waiting for the typing to pause, and says "realising…".
+  It then realises and runs the selected realiser alone, and the realised pair fills in when it arrives. Realisations
+  are kept for the process by specification, substrate and realiser (a running one is joined, not started twice; cleared
+  whole at 256). Every listed realiser its check lets through is then realised in the background, one at a time, and its
+  row changes in place to "builds it" or "refuses: why": a check is cheap but not the last word (on this spec the
   coupled-feed and stepped-impedance hairpins pass it and then cannot reach Qe). If the list's own first choice refuses,
-  the next is selected. A stale step is dropped when it ends; a running `Realise` cannot be interrupted. Typed fields
-  wait for 0.25 s without a keystroke; a choice runs at once. The bar beside "Realisers" shows after 0.1 s.
+  the next is selected. Typed fields wait for 0.25 s without a keystroke before anything is realised; a choice runs at
+  once. The bar beside "Realisers" shows after 0.1 s.
+- **Cancelling.** `IFilterRealiser.Realise` has an overload with a `CancellationToken`; a realiser that solves nothing at
+  length takes the interface's default, which ignores it. MCRC's and MCLA's realisers stop between circuit or field
+  solves: each bisection halving and resonator sizing step of `FromCouplings`, each step of the cross-section fit. A new
+  specification, or closing the window, cancels the older one's runs. A cancelled run is no result: the cache replaces
+  it, and another window that had joined it starts it again under its own token.
 - **The N-line solver** (`MicrostripMultiLineModel`) solves C and C₀ side by side. The results are bit-identical.
 - **The MCLA fit** steps on the plan's 2 nm grid, so its last solve is the bench's, from the cache. The stored widths and
   gaps move by 1 nm at most.
@@ -605,8 +612,11 @@ Chebyshev lowpass written as MLAD sites.
 - The Designer preselects the family and lists the realiser, plots four traces, and refuses Place on a band the realiser
   cannot build. Its Place adds the ladder, two inductors and a capacitor, and one Undo takes them all off.
 - Opened with no schematic, it lists every family and realises the filter, and Place is greyed with its reason.
-- The timing harness above. It asserts that the UI thread's share of each path stays under a second and that the
-  checked list is truthful: every row its check let through is realised, and the coupled-feed hairpin says "refuses:".
+- The timing harness above. It asserts that the UI thread's share of each path, and the ideal's drawing, stay under a
+  second, and that the checked list is truthful: every row its check let through is realised, and the coupled-feed
+  hairpin says "refuses:".
+- A realiser that runs until cancelled: the ideal is drawn with "realising…" while it runs, a newer ripple cancels it,
+  and the new realisation fills in.
 
 ## 6a. Tuning a synthesised filter
 
@@ -749,8 +759,6 @@ edge-coupled or zig-zag chain, which has no k or Qe to measure), `out-of-curve`.
 - **Designer: the ideal with loss.** A second ideal pair whose L and C carry the unloaded Q of a resonator on the board
   (its conductor and dielectric loss), or an unloaded-Q field. Why: the realised bench has the board's loss and the ideal
   has none, so the passband comparison mixes loss with design error.
-- **Designer: a cancellation token through `IFilterRealiser.Realise`.** Why: a stale realisation runs to its end (9 s for
-  the 5-pole interdigital) and holds a core the new one wants.
 - **MCLA: the fit coarse, then fine.** Its steps on the field solver at half the resolution until within the 0.3 %, then
   at full resolution to finish. Why: the fit's solves are nearly all of an MCLA realisation, and a coarse solve costs about
   a tenth of a fine one.

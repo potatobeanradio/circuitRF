@@ -25,7 +25,9 @@ public sealed class CrossCoupledLoopRealiser : IFilterRealiser
         return why is null;
     }
 
-    public FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate)
+    public FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate) => Realise(spec, substrate, default);
+
+    public FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate, CancellationToken cancel)
     {
         if (Check(spec, out double wz) is { } refusal) throw refusal;
         var s = substrate ?? throw Refusal("substrate", "an MCRC is microstrip and needs its substrate.");
@@ -42,7 +44,7 @@ public sealed class CrossCoupledLoopRealiser : IFilterRealiser
             ["Arrangement"] = nameof(LoopArrangement.Cross), ["Profile"] = nameof(ResonatorProfile.Uniform),
             ["Form"] = nameof(ResonatorForm.Bandpass), ["Coupling"] = nameof(ResonatorCoupling.Pairs),
         };
-        var v = CoupledResonatorDesign.FromCouplings(form, k, p.QeSource, f0, s);
+        var v = CoupledResonatorDesign.FromCouplings(form, k, p.QeSource, f0, s, cancel: cancel);
         double half = wz * fbw / 2.0, root = Math.Sqrt(1.0 + half * half);
         string G3(double x) => x.ToString("G3", CultureInfo.InvariantCulture);
         string note = $"Folded 4–2 matrix at {G3(returnLoss)} dB return loss, zeros at ω = ±{G3(wz)} ({G3(f0 * (root - half) / 1e9)} "

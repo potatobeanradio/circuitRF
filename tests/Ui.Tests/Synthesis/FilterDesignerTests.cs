@@ -217,7 +217,7 @@ public sealed class FilterDesignerTests(ITestOutputHelper output) : IDisposable
         var tech = CircuitRF.Design.Layout.ShippedTechnologies.Load(CircuitRF.Design.Layout.ShippedTechnologies.DefaultId);
         var lines = new List<string>();
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        double sync = 0.0;
+        double sync = 0.0, drawn = 0.0;
         FilterDesignerViewModel? vm = null;
         async Task Time(string what, Action act)
         {
@@ -225,10 +225,13 @@ public sealed class FilterDesignerTests(ITestOutputHelper output) : IDisposable
             act();
             sync = Math.Max(sync, clock.Elapsed.TotalMilliseconds);
             string ui = $"{clock.Elapsed.TotalMilliseconds:0.0} ms on the UI thread";
-            await vm!.Realising;
+            await vm!.Drawn;
+            drawn = Math.Max(drawn, clock.Elapsed.TotalMilliseconds);
+            string ideal = $"ideal {clock.Elapsed.TotalMilliseconds:0} ms";
+            await vm.Realising;
             string shown = $"{clock.Elapsed.TotalMilliseconds:0} ms";
             await vm.Checking;
-            lines.Add($"{what}: shown {shown}, list checked {clock.Elapsed.TotalMilliseconds:0} ms ({ui})"
+            lines.Add($"{what}: {ideal}, realised {shown}, list checked {clock.Elapsed.TotalMilliseconds:0} ms ({ui})"
                       + (vm.Realisation is null ? $"; {vm.Status}" : ""));
         }
         await Time("open", () => vm = new FilterDesignerViewModel(null, technology: tech));
@@ -240,9 +243,7 @@ public sealed class FilterDesignerTests(ITestOutputHelper output) : IDisposable
         foreach (var row in vm.Realisers.Where(r => r.Supported).ToList())
             await Time($"select {row.Name}", () => vm.Selected = row);
         await Time("edit ripple", () => vm.Ripple = "0.2");
-        clock.Restart();
-        _ = new FilterDesignerViewModel(null, technology: tech);
-        lines.Add($"open again: {clock.Elapsed.TotalMilliseconds:0.0} ms on the UI thread");
+        await Time("open again", () => vm = new FilterDesignerViewModel(null, technology: tech));
 
         // Cold: a ripple the window has not seen, so no cross-section of it is in the N-line solver's cache.
         var spec = new FilterSpec(FilterResponse.Chebyshev, FilterBand.Bandpass, 5, 2.28e9, 2.52e9, 0.15);
@@ -264,6 +265,42 @@ public sealed class FilterDesignerTests(ITestOutputHelper output) : IDisposable
             catch (CircuitRF.Core.Devices.ParameterRefusalException) { lines.Add($"cold {r.Name}: refuses in {clock.Elapsed.TotalMilliseconds:0} ms"); }
         }
         output.WriteLine(string.Join("\n", lines));
-        Assert.True(sync < 1000, string.Join("\n", lines));
+        Assert.True(sync < 1000 && drawn < 1000, string.Join("\n", lines));
+    }
+
+    /// <summary>A realiser that runs until it is cancelled, and says when it was.</summary>
+    private sealed class Endless : IFilterRealiser
+    {
+        public readonly TaskCompletionSource<bool> Stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public string Name => "Endless lowpass (MLAD)";
+        public bool Supports(FilterSpec spec, out string? why) { why = null; return true; }
+        public FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate) => Realise(spec, substrate, default);
+        public FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate, CancellationToken cancel)
+        {
+            if (spec.RippleDb == 0.2) return new LumpedLadder().Realise(spec, substrate);
+            cancel.WaitHandle.WaitOne(TimeSpan.FromSeconds(30));
+            Stopped.TrySetResult(cancel.IsCancellationRequested);
+            cancel.ThrowIfCancellationRequested();
+            throw new TimeoutException("never cancelled");
+        }
+    }
+
+    /// <summary>The ideal is drawn while the realisation still runs, with "realising…"; a newer specification cancels the
+    /// older one's realisation, and its own fills in.</summary>
+    [Fact]
+    public async Task ANewerEdit_CancelsTheOlderRealisation()
+    {
+        var endless = new Endless();
+        var vm = new FilterDesignerViewModel(null, realisers: [endless]) { Band = FilterBand.Lowpass, F1 = "1 GHz" };
+        await vm.Drawn;
+        Assert.Equal(2, vm.Plot.Traces.Count);
+        Assert.EndsWith("realising…", vm.Status);
+        Assert.True(vm.Working);
+
+        vm.Ripple = "0.2";
+        Assert.True(await endless.Stopped.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+        await vm.Realising;
+        Assert.True(vm.Realisation is not null, vm.Status);
+        Assert.Equal(4, vm.Plot.Traces.Count);
     }
 }

@@ -159,22 +159,29 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     {
         if (!_ready) return;
         OnPropertyChanged(nameof(IsBand));
+        var previous = _spec;
         _spec = Spec(out string? why);
+        if (_spec != previous)
+        {
+            _cancel.Cancel();   // a newer specification: every run of the older one stops at its next solve
+            _cancel = new CancellationTokenSource();
+        }
         _ready = false;
         Realisers.Clear();
         if (_spec is { } spec)
             foreach (var r in _all.Where(r => Family == AnyFamily || r.Name.Contains(Family, StringComparison.OrdinalIgnoreCase)))
             {
                 var row = new FilterRealiserRow(r, r.Supports(spec, out string? reason), reason ?? "");
-                if (row.Supported && Realisations.TryGetValue((spec, _substrate, r), out var known) && known.IsCompletedSuccessfully)
-                    row.Took(known.Result);
+                if (row.Supported && Realisations.TryGetValue((spec, _substrate, r), out var known)
+                    && known.IsCompletedSuccessfully && known.Result is { } result)
+                    row.Took(result);
                 Realisers.Add(row);
             }
         _ready = true;
         _selected = Realisers.FirstOrDefault(r => r.Supported);
         OnPropertyChanged(nameof(Selected));
         int check = ++_check;
-        Checking = _spec is { } s ? CheckAsync(check, s, debounce) : Task.CompletedTask;
+        Checking = _spec is { } s ? CheckAsync(check, s, debounce, _cancel.Token) : Task.CompletedTask;
         Realise(debounce, auto: true);
         if (why is not null) Status = why;
     }
@@ -200,33 +207,48 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     /// <summary>
     /// Every realisation started in this process, by specification, substrate and realiser, which is all a realisation
     /// depends on: a realiser selected again, a specification typed back or a second window on the same one takes it from
-    /// here, and one still running is joined rather than started twice. A refusal is a result like any other. Realising is
-    /// the slow part (an MCLA's cross-section fit, an MCRC's k and Qe bisections: seconds each); simulating the bench is
-    /// a tenth of a second at most, so only realisations are kept.
+    /// here, and one still running is joined rather than started twice. A refusal is a result like any other; a run
+    /// cancelled because its specification was left (null) is none, and the next to ask starts it again. Realising is the
+    /// slow part (an MCLA's cross-section fit, an MCRC's k and Qe bisections: seconds each); simulating the bench is a
+    /// tenth of a second at most, so only realisations are kept.
     /// </summary>
     // ponytail: cleared whole at RealisationLimit, as the N-line solver's cache is; least-recently-used if a session
     // is found to thrash it.
-    private static readonly ConcurrentDictionary<(FilterSpec, MicrostripSubstrate?, IFilterRealiser), Task<FilterRealised>> Realisations = new();
+    private static readonly ConcurrentDictionary<(FilterSpec, MicrostripSubstrate?, IFilterRealiser), Task<FilterRealised?>> Realisations = new();
     private const int RealisationLimit = 256;
 
     /// <summary>The realisation of <paramref name="realiser"/> on <paramref name="spec"/>: kept, running, or started on a
-    /// worker now.</summary>
-    private Task<FilterRealised> RealisationOf(FilterSpec spec, IFilterRealiser realiser)
+    /// worker now, stopped by <paramref name="cancel"/>. Null when the run was cancelled.</summary>
+    private Task<FilterRealised?> RealisationOf(FilterSpec spec, IFilterRealiser realiser, CancellationToken cancel)
     {
         var key = (spec, _substrate, realiser);
-        if (Realisations.TryGetValue(key, out var known)) return known;
+        if (Realisations.TryGetValue(key, out var known) && !(known.IsCompletedSuccessfully && known.Result is null)) return known;
         if (Realisations.Count >= RealisationLimit) Realisations.Clear();
         var substrate = _substrate;
-        return Realisations.GetOrAdd(key, _ => Task.Run(() =>
+        return Realisations[key] = Task.Run<FilterRealised?>(() =>
         {
-            try { return new FilterRealised(realiser.Realise(spec, substrate), null); }
+            try { return new FilterRealised(realiser.Realise(spec, substrate, cancel), null); }
+            catch (OperationCanceledException) { return null; }
             catch (Exception ex) when (ex is not OutOfMemoryException) { return new FilterRealised(null, ex.Message); }
-        }));
+        });
+    }
+
+    /// <summary>The realisation, waited for: started again under <paramref name="cancel"/> when the run it joined was
+    /// another window's and was cancelled; null once <paramref name="cancel"/> is.</summary>
+    private async Task<FilterRealised?> RealisedAsync(FilterSpec spec, IFilterRealiser realiser, CancellationToken cancel)
+    {
+        while (!cancel.IsCancellationRequested)
+            if (await RealisationOf(spec, realiser, cancel) is { } result) return result;
+        return null;
     }
 
     /// <summary>True while the selected realiser's response computes off the UI thread; the window shows a bar beside
     /// "Realisers" once this has stayed true for <see cref="Controls.DelayedBar.Delay"/>.</summary>
     [ObservableProperty] private bool _working;
+
+    /// <summary>The latest request's ideal on the plot: done in milliseconds, before any realisation. A test awaits it;
+    /// the window never does.</summary>
+    public Task Drawn { get; private set; } = Task.CompletedTask;
 
     /// <summary>The latest request's response and its plotting: done once it is shown, or once a newer request has replaced
     /// it. A test awaits it; the window never does.</summary>
@@ -238,16 +260,34 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
     private int _generation, _check;
 
+    /// <summary>The current specification's runs: cancelled when it changes, and when the window closes.</summary>
+    private CancellationTokenSource _cancel = new();
+
+    /// <summary>Stops everything this Designer has running; the window calls it as it closes.</summary>
+    public void Cancel()
+    {
+        _cancel.Cancel();
+        _generation++;
+        _check++;
+    }
+
+    /// <summary>The ideal response of one specification on its sweep.</summary>
+    private sealed record Ideals(FilterSpec Spec, double[] F, SNP? Lossless, string Note);
+
+    /// <summary>The last ideals computed, reused while their specification stands (a new selection).</summary>
+    private Ideals? _ideals;
+
     /// <summary>What one request computed, ready to show.</summary>
-    private sealed record Outcome(SNP? Ideal, SNP? Realised, FilterRealisation? Realisation, string Parameters, string Status);
+    private sealed record Outcome(Ideals? Ideals, SNP? Realised, FilterRealisation? Realisation, string Parameters, string Status);
 
     /// <summary>
-    /// The ideal response and the selected realiser's: the ideal first (milliseconds), plotted alone while a realisation is
-    /// still running, then the realisation (<see cref="RealisationOf"/>) and its bench run through the engine, each on a
-    /// worker. The realisation Place would put down is dropped at once, so Place never writes a part the specification no
-    /// longer describes. Only the latest request is shown: an older one is discarded when its step ends. With
-    /// <paramref name="auto"/> (the list's own first choice, not the user's) a realiser that refuses once it designs hands
-    /// the selection to the next one that still can.
+    /// The ideal response and the selected realiser's. The ideal is computed on a worker in milliseconds and plotted at once,
+    /// without waiting for the typing to pause, with "realising…" while the selected realisation is still to come. That
+    /// realisation (<see cref="RealisedAsync"/>) and its bench then run on workers, after the pause, and fill in when they
+    /// arrive. The realisation Place would put down is dropped at once, so Place never writes a part the specification no
+    /// longer describes. Only the latest request is shown; a newer specification cancels an older one's realisations at
+    /// their next solve. With <paramref name="auto"/> (the list's own first choice, not the user's) a realiser that refuses
+    /// once it designs hands the selection to the next one that still can.
     /// </summary>
     private void Realise(bool debounce, bool auto)
     {
@@ -259,45 +299,62 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         {
             Working = false;
             ParametersText = "";
-            BuildPlot(null, null);
-            Realising = Task.CompletedTask;
+            Show(null, null);
+            Drawn = Realising = Task.CompletedTask;
             return;
         }
         Working = true;
-        Realising = RealiseAsync(generation, spec, Selected is { Supported: true } r ? r : null, debounce, auto);
+        var row = Selected is { Supported: true } r ? r : null;
+        var drawn = DrawAsync(generation, spec, row);
+        Drawn = drawn;
+        Realising = RealiseAsync(generation, spec, row, debounce, auto, drawn, _cancel.Token);
     }
 
-    private async Task RealiseAsync(int generation, FilterSpec spec, FilterRealiserRow? row, bool debounce, bool auto)
+    /// <summary>The ideals on the plot, alone while the selected realisation is still to come.</summary>
+    private async Task<Ideals?> DrawAsync(int generation, FilterSpec spec, FilterRealiserRow? row)
     {
-        if (debounce) await Task.Delay(EditDelay);
-        if (generation != _generation) return;
+        var ideals = _ideals is { } known && known.Spec == spec ? known : await Task.Run(() => IdealsOf(spec));
+        if (generation != _generation) return null;
+        _ideals = ideals;
+        bool ready = row is not null && Realisations.TryGetValue((spec, _substrate, row.Realiser), out var run)
+                     && run.IsCompletedSuccessfully && run.Result is not null;
+        if (!ready)
+        {
+            Show(ideals, null);
+            if (row is not null) Status = $"{row.Name}: realising…";
+        }
+        return ideals;
+    }
+
+    private async Task RealiseAsync(int generation, FilterSpec spec, FilterRealiserRow? row, bool debounce, bool auto,
+        Task<Ideals?> drawn, CancellationToken cancel)
+    {
         Outcome outcome;
         try
         {
-            var f = FilterSynthesisService.Frequencies(spec, Points);
-            var (ideal, idealNote) = await Task.Run(() => Ideal(spec, f));
-            if (generation != _generation) return;
-            outcome = new Outcome(ideal, null, null, "",
-                (Realisers.Count == 0 ? "No realiser of this family." : "No realiser can build this; each says why.") + idealNote);
+            if (debounce) await Task.Delay(EditDelay, cancel);
+            if (await drawn is not { } ideals || generation != _generation) return;
+            outcome = new Outcome(ideals, null, null, "",
+                (Realisers.Count == 0 ? "No realiser of this family." : "No realiser can build this; each says why.") + ideals.Note);
             while (row is not null)
             {
-                var pending = RealisationOf(spec, row.Realiser);
-                if (!pending.IsCompleted) BuildPlot(ideal, null);   // the ideal at once; the realised joins it
-                var result = await pending;
-                if (generation != _generation) return;
+                var result = await RealisedAsync(spec, row.Realiser, cancel);
+                if (result is null || generation != _generation) return;
                 row.Took(result);
                 if (result.Realisation is { } realisation)
                 {
                     var chosen = row;
-                    outcome = await Task.Run(() => Bench(spec, chosen.Name, realisation, f, ideal, idealNote));
+                    outcome = await Task.Run(() => Bench(spec, chosen.Name, realisation, ideals));
                     break;
                 }
-                outcome = new Outcome(ideal, null, null, "", $"{row.Name} cannot build it: {result.Refusal}{idealNote}");
+                outcome = new Outcome(ideals, null, null, "", $"{row.Name} cannot build it: {result.Refusal}{ideals.Note}");
                 if (!auto || Realisers.FirstOrDefault(r => r.Supported) is not { } next) break;
                 row = _selected = next;
                 OnPropertyChanged(nameof(Selected));
+                Status = $"{row.Name}: realising…";
             }
         }
+        catch (OperationCanceledException) { return; }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             outcome = new Outcome(null, null, null, "", $"The response could not be computed: {ex.Message}");
@@ -308,47 +365,54 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         _realisation = outcome.Realisation;
         ParametersText = outcome.Parameters;
         Status = outcome.Status;
-        BuildPlot(outcome.Ideal, outcome.Realised);
+        Show(outcome.Ideals, outcome.Realised);
         OnPropertyChanged(nameof(Realisation));
         PlaceCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>Every listed realiser that says it can build <paramref name="spec"/>, realised one at a time in list order
     /// (the selected one is realised by <see cref="RealiseAsync"/>, and joined here), each row updated as it arrives.</summary>
-    private async Task CheckAsync(int check, FilterSpec spec, bool debounce)
+    private async Task CheckAsync(int check, FilterSpec spec, bool debounce, CancellationToken cancel)
     {
         var rows = Realisers.ToList();
-        if (debounce) await Task.Delay(EditDelay);
+        try { if (debounce) await Task.Delay(EditDelay, cancel); }
+        catch (OperationCanceledException) { return; }
         foreach (var row in rows)
         {
             if (check != _check) return;
             if (!row.Supported || row.Realised) continue;
-            var result = await RealisationOf(spec, row.Realiser);
-            if (check != _check) return;
+            var result = await RealisedAsync(spec, row.Realiser, cancel);
+            if (result is null || check != _check) return;
             row.Took(result);
         }
     }
 
-    /// <summary>On a worker: the ideal response, or a note saying why there is none.</summary>
-    private static (SNP? Ideal, string Note) Ideal(FilterSpec spec, double[] f)
+    /// <summary>On a worker: the ideals, or a note saying why there is none.</summary>
+    private Ideals IdealsOf(FilterSpec spec)
     {
-        try { return (FilterSynthesisService.Response(FilterSynthesisService.Ideal(spec, Points), f, spec.Z0), ""); }
-        catch (Exception ex) when (ex is not OutOfMemoryException) { return (null, $" No ideal response: {ex.Message}"); }
+        var f = FilterSynthesisService.Frequencies(spec, Points);
+        SNP? lossless = null;
+        string note = "";
+        try { lossless = FilterSynthesisService.Response(FilterSynthesisService.Ideal(spec, Points), f, spec.Z0); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { note = $" No ideal response: {ex.Message}"; }
+        return new Ideals(spec, f, lossless, note);
     }
 
     /// <summary>On a worker: the realisation's bench run through the engine, and what Place writes.</summary>
-    private Outcome Bench(FilterSpec spec, string name, FilterRealisation realisation, double[] f, SNP? ideal, string idealNote)
+    private Outcome Bench(FilterSpec spec, string name, FilterRealisation realisation, Ideals ideals)
     {
         var notes = new List<string>(realisation.Notes);
         var realised = FilterSynthesisService.Response(
-            FilterSynthesisService.Cnl(spec, realisation, name, _substrate, _technology, Points, notes), f, spec.Z0);
+            FilterSynthesisService.Cnl(spec, realisation, name, _substrate, _technology, Points, notes), ideals.F, spec.Z0);
         string parameters = string.Join("\n",
             realisation.Parameters.Select(p => $"{p.Key} = {p.Value}")
                 .Concat(realisation.Sites.Select(s => $"site {s.PinA}{(s.PinB is null ? "" : "-" + s.PinB)}: {s.Role} {s.Value:G4}"))
                 .Concat(notes));
-        return new Outcome(ideal, realised, realisation, parameters,
-            $"{name}: {realisation.PartType} with {realisation.Sites.Count} site part(s).{idealNote}");
+        return new Outcome(ideals, realised, realisation, parameters,
+            $"{name}: {realisation.PartType} with {realisation.Sites.Count} site part(s).{ideals.Note}");
     }
+
+    private void Show(Ideals? ideals, SNP? realised) => BuildPlot(ideals?.Lossless, realised);
 
     private void BuildPlot(SNP? ideal, SNP? realised)
     {

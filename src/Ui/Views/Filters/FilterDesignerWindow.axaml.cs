@@ -23,7 +23,8 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
         DataContextChanged += (_, _) => Theme();
         ActualThemeVariantChanged += (_, _) => Theme();
         DataContextChanged += (_, _) => Watch();
-        Closed += (_, _) => { Watch(null); _realiseBar?.Stop(); };
+        // closing stops the Designer's background realisations at their next solve
+        Closed += (_, _) => { (DataContext as FilterDesignerViewModel)?.Cancel(); Watch(null); _realiseBar?.Stop(); };
     }
 
     private FilterDesignerViewModel? _watched;
