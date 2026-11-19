@@ -4,7 +4,7 @@ slug: reference/filter-designer.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Filter Designer
 lede: A filter from its specification - the realisers that can build it, the ideal response beside the realised one, and the part placed with a part on each of its sites.
-keywords: filter, filter synthesis, Filter Designer, lowpass, highpass, bandpass, bandstop, Butterworth, Chebyshev, ripple, realiser, MLAD, MCRC, MCLA, sites, Synthesise, filter verb
+keywords: filter, filter synthesis, Filter Designer, Tools menu, lowpass, highpass, bandpass, bandstop, Butterworth, Chebyshev, ripple, realiser, MLAD, MCRC, MCLA, sites, Synthesise, filter verb
 ---
 
 <nav class="toc">
@@ -39,8 +39,12 @@ part you placed yourself.
 
 ## Opening it {#open}
 
-Select an MLAD, MCRC or MCLA in a schematic and press **Synthesise…** in its Properties. The Designer opens with that part's
-family preselected, and **Place** puts the filter into that schematic.
+There are three ways in:
+- **Tools ▸ Filter Designer…** opens it on its default specification with every family listed. **Place** puts the filter into
+  the schematic that was active when you opened it. With no schematic open, **Place** is greyed, and its tooltip says why.
+- **Filter Designer…** on a schematic's right-click menu, on an empty spot of the canvas, does the same for that schematic.
+- Select an MLAD, MCRC or MCLA in a schematic and press **Synthesise…** in its Properties. The Designer opens with that
+  part's family preselected, and **Place** puts the filter into that schematic.
 
 ## The specification {#spec}
 
@@ -56,8 +60,8 @@ family preselected, and **Place** puts the filter into that schematic.
 | Z0, Ω | The source and load. |
 | Family | Show only the realisers of one family, or of any. |
 
-The substrate comes from the schematic's technology: its default signal layer over its ground. The line under the form
-says which one it is. With no technology, a realiser that needs a substrate refuses, and says so.
+The substrate comes from the schematic's technology: its default signal layer over its ground. Opened from Tools with no
+schematic, it comes from the workspace's default technology. The line under the form says which one it is. With no technology, a realiser that needs a substrate refuses, and says so.
 
 ## The realisers {#realisers}
 

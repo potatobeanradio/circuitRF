@@ -187,4 +187,17 @@ public sealed class FilterDesignerTests : IDisposable
         schematic.UndoRedo.Undo();
         Assert.Empty(model.Components);
     }
+
+    /// <summary>Opened from Tools ▸ Filter Designer… with no schematic open: every family listed, the filter realised and
+    /// plotted, and Place greyed with why.</summary>
+    [Fact]
+    public async Task WithNoSchematic_ItRealises_AndPlaceIsGreyedWithWhy()
+    {
+        var vm = new FilterDesignerViewModel(null, realisers: Realisers) { Band = FilterBand.Lowpass };
+        await vm.Realising;
+        Assert.Equal(FilterDesignerViewModel.AnyFamily, vm.Family);
+        Assert.True(vm.Realisation is not null, vm.Status);
+        Assert.False(vm.PlaceCommand.CanExecute(null));
+        Assert.Contains("No schematic", vm.PlaceTip);
+    }
 }

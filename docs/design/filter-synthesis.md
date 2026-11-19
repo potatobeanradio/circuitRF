@@ -543,11 +543,16 @@ Designer is.
   values.
 - On the right: one Data Display plot, as the Match Designer hosts its own. It shows |S21| and |S11| of the ideal ladder
   and of the selected realisation's bench, both run by the engine on every edit.
+- **Tools ▸ Filter Designer…** (both menu surfaces) opens it on no part: the default specification, every family. Place
+  targets the schematic active when it opened, and its technology gives the substrate, else the workspace's default.
+  With no schematic, Place is greyed and its tooltip says why. **Filter Designer…** on a schematic's empty-canvas menu
+  does the same for that schematic. The app has no command palette to add it to.
 - **Synthesise…** in the Properties of an MLAD, MCRC or MCLA opens it with that family preselected. A family is matched
   against the realiser's name, which by the contract's convention ends in the part type, e.g. "(MCRC)".
-- **Place** puts the part to the right of the drawing. It reads the part's sites the way Place Site Parts reads them,
-  from the part's own plan (`PassiveSites.Read`, with the part in the schematic for that one read), and fills them with
-  `PassiveSites.PlaceParts`. Part, site parts and wires go in one `PlaceSitePartsCommand`, so one Undo takes them all off.
+- **Place** puts the part to the right of the drawing, or at the origin of an empty one. It reads the part's sites the
+  way Place Site Parts reads them, from the part's own plan (`PassiveSites.Read`, with the part in the schematic for that
+  one read), and fills them with `PassiveSites.PlaceParts`. Part, site parts and wires go in one `PlaceSitePartsCommand`,
+  so one Undo takes them all off.
 
 **Tests** (`tests/Ui.Tests/Synthesis/FilterDesignerTests.cs`) use a realiser of their own: a lumped Butterworth or
 Chebyshev lowpass written as MLAD sites.
@@ -559,6 +564,7 @@ Chebyshev lowpass written as MLAD sites.
   and writes the netlist.
 - The Designer preselects the family and lists the realiser, plots four traces, and refuses Place on a band the realiser
   cannot build. Its Place adds the ladder, two inductors and a capacitor, and one Undo takes them all off.
+- Opened with no schematic, it lists every family and realises the filter, and Place is greyed with its reason.
 
 ## 6a. Tuning a synthesised filter
 

@@ -456,6 +456,15 @@
                                 <mi:MaterialIcon Kind="ArrowUp" Width="14" Height="14"/>
                             </MenuItem.Icon>
                         </MenuItem>
+                        <!-- The canvas menu's other row: the Filter Designer on no part, Place into this schematic. -->
+                        <MenuItem x:Name="CtxFilterDesigner"
+                                  Header="Filter Designer…"
+                                  IsVisible="False"
+                                  Click="OnCtxFilterDesigner">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="Waveform" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
 
                         <!-- brief-img-6 R-im6-3: a canvas right-click that landed on a placed picture.
                              Shown only on a bitmap whose picture resolves; each row is a new cell. -->

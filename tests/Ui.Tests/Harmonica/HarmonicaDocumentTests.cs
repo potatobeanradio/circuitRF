@@ -84,12 +84,13 @@ public sealed class HarmonicaDocumentTests(ITestOutputHelper output)
         // File ▸ New ▸ Examples (field feedback round 1), where FileMenuRestructureTests holds it.
         // "Model Composer…" joined with MC-14 (2026-10-19), before Digitise Plot on both surfaces.
         // "Signal Designer" joined on 2026-10-25, after Match Designer, and needs no workspace either.
+        // "Filter Designer…" joined after Match Designer: the Designer on no part, Place into the active schematic.
         // "S-Parameter Viewer" joined after Smith Chart: one Touchstone file in a window of its own, no workspace needed.
         // "RF Chain Budget" joined after it (docs/design/chain-budget.md): a .cchain in a window of its own; its Transfer
         // asks for a folder only when it writes. "Phased Array" joined after it (brief-paa-9): the tool on the array selected in the active
         // schematic. "Plugins" joined last (brief-plg-1): its own rows are the installed
         // plugins, filled in at run time, so only the entry itself is here.
-        Assert.Equal(["harmonicaRF", "Match Designer", "Signal Designer", "railRF", "Smith Chart", "S-Parameter Viewer",
+        Assert.Equal(["harmonicaRF", "Match Designer", "Filter Designer…", "Signal Designer", "railRF", "Smith Chart", "S-Parameter Viewer",
                       "RF Chain Budget", "Phased Array", "Model Composer…", "Digitise Image…", "Plugins"],
                      nativeEntries);
         Assert.Contains(native[0].Descendants(),
@@ -116,7 +117,7 @@ public sealed class HarmonicaDocumentTests(ITestOutputHelper output)
                      && e.Ancestors().TakeWhile(a => a != inWindow[0]).All(a => (string?)a.Attribute("Header") != "_Plugins"))
             .Select(e => (string?)e.Attribute("Header"))
             .ToList();
-        Assert.Equal(["_harmonicaRF", "_Match Designer", "Si_gnal Designer", "_railRF", "_Smith Chart", "S-_Parameter Viewer", "RF Chain _Budget", "P_hased Array", "Model _Composer…", "_Digitise Image…", "_Plugins"],
+        Assert.Equal(["_harmonicaRF", "_Match Designer", "_Filter Designer…", "Si_gnal Designer", "_railRF", "_Smith Chart", "S-_Parameter Viewer", "RF Chain _Budget", "P_hased Array", "Model _Composer…", "_Digitise Image…", "_Plugins"],
                      inWindowEntries);
         Assert.Contains(inWindow[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewHarmonicaCommand") == true);

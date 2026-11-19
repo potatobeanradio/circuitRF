@@ -147,7 +147,7 @@
             <TextBlock Classes="note" Text="{Binding Status}" VerticalAlignment="Center"/>
             <Button Grid.Column="1" Content="Help" Margin="4,0" Click="OnHelp"/>
             <Button Grid.Column="2" Content="Place" Margin="4,0" Command="{Binding PlaceCommand}"
-                    ToolTip.Tip="Put the part and a part on each of its sites into the schematic, as one undo step"/>
+                    ToolTip.Tip="{Binding PlaceTip}" ToolTip.ShowOnDisabled="True"/>
             <Button Grid.Column="3" Content="Close" Margin="4,0" Click="OnClose"/>
         </Grid>
     </Grid>

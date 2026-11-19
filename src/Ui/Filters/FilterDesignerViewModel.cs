@@ -43,15 +43,17 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     private bool _ready;
 
     /// <param name="schematic">The schematic Place puts the filter in, and whose technology gives the substrate; null for
-    /// none.</param>
+    /// none, and Place is then greyed.</param>
     /// <param name="family">The part whose Properties opened the Designer: its family is preselected.</param>
     /// <param name="realisers">The realisers to offer; <see cref="FilterRealisers.All"/> when null.</param>
+    /// <param name="technology">The technology with no schematic (Tools ▸ Filter Designer… takes the workspace's); a
+    /// schematic's own wins.</param>
     public FilterDesignerViewModel(SchematicViewModel? schematic, SymbolKind? family = null,
-        IReadOnlyList<IFilterRealiser>? realisers = null)
+        IReadOnlyList<IFilterRealiser>? realisers = null, Technology? technology = null)
     {
         _schematic = schematic;
         _all = realisers ?? FilterRealisers.All;
-        _technology = schematic is null ? null : SchematicTechnology.Of(schematic.EditModel);
+        _technology = schematic is null ? technology : SchematicTechnology.Of(schematic.EditModel) ?? technology;
         _substrate = FilterSynthesisService.Substrate(_technology, null, null, out _);
         _container = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, left: 0, top: 0, width: 640, height: 400);
         Family = family switch { SymbolKind.Mlad => "MLAD", SymbolKind.Mcrc => "MCRC", SymbolKind.Mcla => "MCLA", _ => AnyFamily };
@@ -62,6 +64,11 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     }
 
     public string Title => "Filter Designer" + (_schematic is null ? "" : " — " + _schematic.DocumentName);
+
+    /// <summary>What Place does, or why it cannot.</summary>
+    public string PlaceTip => _schematic is null
+        ? "No schematic was open when the Designer started: open one, then start the Designer from it to place the filter."
+        : "Put the part and a part on each of its sites into the schematic, as one undo step";
 
     /// <summary>What the stack gives the realisers, or that there is none.</summary>
     public string SubstrateText => _substrate is { } s
