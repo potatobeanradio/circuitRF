@@ -207,6 +207,24 @@ public static class FilterSynthesisService
         return new SNP(frequencies, mats, MatrixType.S, MatrixFormat.RI, new Complex(z0, 0.0));
     }
 
+    /// <summary>The N+2 matrix a bandpass is checked against: the all-pole prototype's inline chain
+    /// (<see cref="CouplingMatrix.AllPole"/>), or with transmission zeros the folded generalised Chebyshev
+    /// (<see cref="CouplingMatrix.Synthesise"/>) at the ripple's return loss.</summary>
+    public static double[,] Target(FilterSpec spec)
+    {
+        if (spec.TransmissionZerosHz is not { Count: > 0 } zeros)
+            return CouplingMatrix.AllPole(LowpassPrototype.GValues(spec.Response, spec.Order, spec.RippleDb));
+        double f0 = spec.CentreHz, fbw = spec.FractionalBandwidth;
+        return CouplingMatrix.Synthesise(spec.Order, -10.0 * Math.Log10(1.0 - Math.Pow(10.0, -spec.RippleDb / 10.0)),
+            [.. zeros.Select(f => (f / f0 - f0 / f) / fbw)]);
+    }
+
+    /// <summary>A two-port's prototype back from its S (<see cref="FilterExtraction"/>), checked against the spec and
+    /// <see cref="Target"/>: what the Designer's metrics and the polish read.</summary>
+    public static ExtractedFilter Extract(FilterSpec spec, SNP s)
+        => FilterExtraction.Extract(spec, s.Frequencies, [.. s.Matrices.Select(m => m[0, 0])], [.. s.Matrices.Select(m => m[1, 0])],
+            Target(spec));
+
     /// <summary>"Chebyshev bandpass, order 3, 2.2 to 2.6 GHz, 0.1 dB ripple, Z0 50 Ω".</summary>
     public static string Describe(FilterSpec s)
         => $"{s.Response} {s.Band.ToString().ToLowerInvariant()}, order {s.Order}, "

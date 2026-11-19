@@ -1,7 +1,8 @@
 <!-- The Filter Designer (docs/design/filter-synthesis.md §6), laid out as the Match Designer is: the specification and the
      realisers on the left, the response on the right — the ideal (the prototype's ladder through the engine) with the
-     selected realisation's bench overlaid, a Data Display PlotControl as the Match Designer hosts its own. Place puts the
-     part and its site parts into the schematic as one undo step. The panes resize by their gaps, as the Phased Array tool's do. -->
+     selected realisation's bench overlaid, a Data Display PlotControl as the Match Designer hosts its own — and under it
+     the response's prototype read back (§6c), from the bench or a Planar EM run (§6d). Place puts the part and its site
+     parts into the schematic as one undo step. The panes resize by their gaps, as the Phased Array tool's do. -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:CircuitRF.Ui.Filters"
@@ -34,6 +35,10 @@
             <Setter Property="FontSize"          Value="12"/>
             <Setter Property="Opacity"           Value="0.8"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.fail">
+            <Setter Property="Foreground" Value="{DynamicResource SystemErrorTextColor}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
         <Style Selector=":is(TextBlock).note">
             <Setter Property="FontSize"     Value="11"/>
@@ -142,6 +147,59 @@
                                   ToolTip.Tip="Also draw the ideal |S21| with every resonator at the board's unloaded Q"/>
                         <TextBlock Classes="note" Text="{Binding LossText}"/>
                     </DockPanel>
+                    <!-- the metrics: the realisation's prototype read back from its bench, or from its Planar EM run, each
+                         check against the spec or the synthesis; the EM run, Polish and Calibrate from EM beside them -->
+                    <StackPanel DockPanel.Dock="Bottom" Spacing="4" Margin="0,6,0,0">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
+                                <ProgressBar Width="90" Height="4" MinHeight="4" MinWidth="0" Minimum="0" Maximum="1"
+                                             VerticalAlignment="Center" IsVisible="{Binding Busy}"
+                                             Value="{Binding BusyProgress}" IsIndeterminate="{Binding BusyIndeterminate}"/>
+                                <Button Content="Cancel" Command="{Binding CancelWorkCommand}" IsVisible="{Binding Busy}"/>
+                                <Button Content="Run Planar EM" Command="{Binding RunEmCommand}"
+                                        ToolTip.Tip="{Binding EmTip}" ToolTip.ShowOnDisabled="True"/>
+                                <Button Content="Polish" Command="{Binding PolishCommand}"
+                                        ToolTip.Tip="{Binding PolishTip}" ToolTip.ShowOnDisabled="True"/>
+                                <Button Content="Calibrate from EM" Command="{Binding CalibrateCommand}"
+                                        ToolTip.Tip="{Binding CalibrateTip}" ToolTip.ShowOnDisabled="True"/>
+                            </StackPanel>
+                            <TextBlock Classes="panelhdr" Text="Metrics" Margin="0" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <DockPanel>
+                            <CheckBox DockPanel.Dock="Right" Content="From Planar EM" IsChecked="{Binding ShowEm}"
+                                      IsEnabled="{Binding HasEm}" Margin="8,0,0,0"
+                                      ToolTip.Tip="Read the metrics from the Planar EM run rather than the circuit bench"/>
+                            <TextBlock Classes="note" Text="{Binding MetricsNote}" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <ScrollViewer MaxHeight="150" HorizontalScrollBarVisibility="Disabled">
+                            <Grid ColumnDefinitions="*,16,*">
+                                <ItemsControl ItemsSource="{Binding SpecRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:FilterMetricRow">
+                                            <Grid ColumnDefinitions="100,90,90,*">
+                                                <TextBlock Classes="note" Text="{Binding Name}"/>
+                                                <TextBlock Classes="note" Grid.Column="1" Text="{Binding Value}"/>
+                                                <TextBlock Classes="note" Grid.Column="2" Text="{Binding Target}"/>
+                                                <TextBlock Classes="note" Grid.Column="3" Text="{Binding Verdict}" Classes.fail="{Binding Fail}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <ItemsControl Grid.Column="2" ItemsSource="{Binding MatrixRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:FilterMetricRow">
+                                            <Grid ColumnDefinitions="60,90,90,*">
+                                                <TextBlock Classes="note" Text="{Binding Name}"/>
+                                                <TextBlock Classes="note" Grid.Column="1" Text="{Binding Value}"/>
+                                                <TextBlock Classes="note" Grid.Column="2" Text="{Binding Target}"/>
+                                                <TextBlock Classes="note" Grid.Column="3" Text="{Binding Verdict}" Classes.fail="{Binding Fail}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Grid>
+                        </ScrollViewer>
+                    </StackPanel>
                     <ctl:AspectRatioPanel>
                         <ddc:PlotControl Name="ResponsePlotControl"
                                          Plot="{Binding Plot}"

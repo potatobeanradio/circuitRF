@@ -36,6 +36,30 @@ public static class FilterEmService
     public static Result Run(FilterSpec spec, FilterRealisation realisation, MicrostripSubstrate substrate,
         IReadOnlyList<double> fHz, IProgress<RunProgress>? progress = null, CancellationToken token = default, int threads = 8)
     {
+        var (shapes, ports, sites) = Prepare(spec, realisation, substrate);
+        double[] f = [.. fHz.Order()];
+        var raw = new CouplingCurvePlanarSolver(Threads: Math.Clamp(threads, 1, 8)).Solve(shapes, ports, substrate, f,
+            new RunControl { Token = token, Progress = progress, Total = f.Length });
+        double[] solved = f[..raw.Length];
+        var z0 = new Complex(spec.Z0, 0.0);
+        var closed = raw.Select((s, i) => Close(s, [.. sites.Select(x => Gamma(x, solved[i], spec.Z0))])).ToArray();
+        return new Result(new SNP(solved, closed, MatrixType.S, MatrixFormat.RI, z0),
+            sites.Count == 0 ? null : new SNP(solved, [.. raw.Select(s => ToMat(s, ports.Count))], MatrixType.S, MatrixFormat.RI, z0),
+            [.. sites.Select(x => Named(x.Key))]);
+    }
+
+    /// <summary>Why <see cref="Run"/> would refuse <paramref name="realisation"/>, found as it would find it before
+    /// anything is meshed (the drawing, its pins and its sites' ports); null when it would solve it.</summary>
+    public static string? Refusal(FilterSpec spec, FilterRealisation realisation, MicrostripSubstrate substrate)
+    {
+        try { Prepare(spec, realisation, substrate); return null; }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { return ex.Message; }
+    }
+
+    /// <summary>The drawn copper, its ports (1 and 2, then one per site pin pair) and the sites by pin pair.</summary>
+    private static (List<LayoutShape> Shapes, List<PlanarPort> Ports, List<IGrouping<(string PinA, string? PinB), SiteValue>> Sites)
+        Prepare(FilterSpec spec, FilterRealisation realisation, MicrostripSubstrate substrate)
+    {
         var plan = Plan(spec, realisation, substrate);
         var cell = PassivePlanPCells.Draw(plan, null, PCellLayerSelection.Default);
         const double m = CouplingCurvePlanarSolver.MetresPerDbu;
@@ -77,16 +101,7 @@ public static class FilterEmService
             ports.Add(new PlanarPort(n, new EmPoint(0.5 * (a.X + b.X) * m, 0.5 * (a.Y + b.Y) * m),
                 alongX ? PlanarPortSide.MinX : PlanarPortSide.MinY, spec.Z0, Kind: PlanarPortKind.InternalDeltaGap));
         }
-
-        double[] f = [.. fHz.Order()];
-        var raw = new CouplingCurvePlanarSolver(Threads: Math.Clamp(threads, 1, 8)).Solve(shapes, ports, substrate, f,
-            new RunControl { Token = token, Progress = progress, Total = f.Length });
-        double[] solved = f[..raw.Length];
-        var z0 = new Complex(spec.Z0, 0.0);
-        var closed = raw.Select((s, i) => Close(s, [.. sites.Select(x => Gamma(x, solved[i], spec.Z0))])).ToArray();
-        return new Result(new SNP(solved, closed, MatrixType.S, MatrixFormat.RI, z0),
-            sites.Count == 0 ? null : new SNP(solved, [.. raw.Select(s => ToMat(s, ports.Count))], MatrixType.S, MatrixFormat.RI, z0),
-            [.. sites.Select(x => Named(x.Key))]);
+        return (shapes, ports, sites);
     }
 
     private static string Named((string PinA, string? PinB) site) => site.PinB is { } b ? $"{site.PinA}-{b}" : site.PinA;

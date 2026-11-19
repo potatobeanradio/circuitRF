@@ -1,10 +1,12 @@
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Core.Synthesis.Filters;
 using CircuitRF.Core.Systems;
 using CircuitRF.Design.Filters;
+using CircuitRF.Engine;
 using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.DataDisplay.ViewModels;
 using CircuitRF.Ui.ViewModels;
@@ -16,6 +18,15 @@ namespace CircuitRF.Ui.Filters;
 
 /// <summary>What realising one realiser on one specification found: the realisation, or why it refused.</summary>
 internal sealed record FilterRealised(FilterRealisation? Realisation, string? Refusal);
+
+/// <summary>One row of the Designer's metrics: an extracted quantity, what the spec or the synthesis asks of it, and
+/// "pass" or "fail" (blank for a quantity the spec asks nothing of).</summary>
+public sealed record FilterMetricRow(string Name, string Value, string Target, string Verdict)
+{
+    public bool Fail => Verdict == "fail";
+
+    internal static FilterMetricRow Of(FilterCheck c) => new(c.Name, c.Format(c.Value), c.Format(c.Target), c.Pass ? "pass" : "fail");
+}
 
 /// <summary>
 /// One realiser in the Designer's list. Its own check answers at once (<see cref="IFilterRealiser.Supports"/>, which designs
@@ -51,12 +62,27 @@ public sealed partial class FilterRealiserRow(IFilterRealiser realiser, bool sup
 /// left, then every realiser with whether it can build it and why not; on the right the ideal response, the prototype's
 /// ladder run by the engine, with the selected realisation's own bench overlaid. Place puts the part and a part on each of
 /// its sites into the schematic as one undo step. Every number comes from <see cref="FilterSynthesisService"/>, which the
-/// <c>filter</c> verb calls too.
+/// <c>filter</c> verb calls too. Under the plot, the response's prototype read back (§6c): the circuit bench's, or once
+/// Run Planar EM has solved the layout (§6d), the EM response's; Polish and Calibrate from EM correct the realisation.
 /// </summary>
 public sealed partial class FilterDesignerViewModel : ObservableObject
 {
     public const string AnyFamily = "Any";
     private const int Points = 401;
+
+    /// <summary>Run Planar EM's frequencies: enough for a bandpass of order 7 to be extracted.</summary>
+    public const int EmPoints = 31;
+
+    /// <summary>Where Run Planar EM solves: a bandpass across the extraction's window (ω within
+    /// ±<see cref="FilterExtraction.Window"/>), where every point counts towards its metrics; any other band across the
+    /// plot's sweep.</summary>
+    public static double[] EmFrequencies(FilterSpec spec)
+    {
+        if (spec.Band != FilterBand.Bandpass) return FilterSynthesisService.Frequencies(spec, EmPoints);
+        double f0 = spec.CentreHz, x = FilterExtraction.Window * spec.FractionalBandwidth / 2.0;
+        double lo = f0 * (Math.Sqrt(x * x + 1.0) - x), hi = f0 * (Math.Sqrt(x * x + 1.0) + x);
+        return [.. Enumerable.Range(0, EmPoints).Select(i => lo + (hi - lo) * i / (EmPoints - 1))];
+    }
 
     /// <summary>How long a typed field waits for the next keystroke before the realisers run on it.</summary>
     internal static readonly TimeSpan EditDelay = TimeSpan.FromMilliseconds(250);
@@ -85,6 +111,11 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         _technology = schematic is null ? technology : SchematicTechnology.Of(schematic.EditModel) ?? technology;
         _substrate = FilterSynthesisService.Substrate(_technology, null, null, out _);
         _container = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, left: 0, top: 0, width: 640, height: 400);
+        _progress = new Progress<RunProgress>(p =>
+        {
+            BusyIndeterminate = p.Total <= 0;
+            BusyProgress = p.Total > 0 ? (double)p.Completed / p.Total : 0.0;
+        });
         Family = family switch { SymbolKind.Mlad => "MLAD", SymbolKind.Mcrc => "MCRC", SymbolKind.Mcla => "MCLA", _ => AnyFamily };
         // A ladder is most often a lowpass; the coupled families are bandpass filters.
         if (family == SymbolKind.Mlad) { Band = FilterBand.Lowpass; F1 = "1 GHz"; }
@@ -267,6 +298,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     public void Cancel()
     {
         _cancel.Cancel();
+        _work.Cancel();
         _generation++;
         _check++;
     }
@@ -279,7 +311,8 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     private Ideals? _ideals;
 
     /// <summary>What one request computed, ready to show.</summary>
-    private sealed record Outcome(Ideals? Ideals, SNP? Realised, FilterRealisation? Realisation, string Parameters, string Status);
+    private sealed record Outcome(Ideals? Ideals, SNP? Realised, FilterRealisation? Realisation, string Parameters, string Status,
+        Metrics? Circuit = null, string? EmRefusal = null);
 
     /// <summary>
     /// The ideal response and the selected realiser's. The ideal is computed on a worker in milliseconds and plotted at once,
@@ -294,8 +327,10 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     {
         int generation = ++_generation;
         _realisation = null;
+        (_circuit, _emRefusal) = (null, null);
         OnPropertyChanged(nameof(Realisation));
         PlaceCommand.NotifyCanExecuteChanged();
+        NotifyWork();
         if (_spec is not { } spec)
         {
             Working = false;
@@ -364,6 +399,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         if (generation != _generation) return;
         Working = false;
         _realisation = outcome.Realisation;
+        (_circuit, _emRefusal) = (outcome.Circuit, outcome.EmRefusal);
         ParametersText = outcome.Parameters;
         Status = outcome.Status;
         Show(outcome.Ideals, outcome.Realised);
@@ -418,7 +454,8 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
                 .Concat(realisation.Sites.Select(s => $"site {s.PinA}{(s.PinB is null ? "" : "-" + s.PinB)}: {s.Role} {s.Value:G4}"))
                 .Concat(notes));
         return new Outcome(ideals, realised, realisation, parameters,
-            $"{name}: {realisation.PartType} with {realisation.Sites.Count} site part(s).{ideals.Note}");
+            $"{name}: {realisation.PartType} with {realisation.Sites.Count} site part(s).{ideals.Note}", MetricsOf(spec, realised),
+            _substrate is { } s ? FilterEmService.Refusal(spec, realisation, s) : null);
     }
 
     // ══ The plot and the loss readout ═════════════════════════════════════════════════════════════════════════════
@@ -442,7 +479,8 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         _shown = (ideals, realised);
         LossText = LossReadout(ideals, realised);
         OnPropertyChanged(nameof(HasLoss));
-        BuildPlot(ideals?.Lossless, ShowLoss ? ideals?.Lossy : null, realised);
+        BuildPlot(ideals?.Lossless, ShowLoss ? ideals?.Lossy : null, realised, Em?.S);
+        ShowMetrics();
     }
 
     /// <summary>
@@ -466,7 +504,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
             $"; the realised part loses {Loss(realised, at):0.00} dB, {-10.0 * Math.Log10(s21 * s21 / (1.0 - s11 * s11)):0.00} dB of it dissipated.");
     }
 
-    private void BuildPlot(SNP? ideal, SNP? lossy, SNP? realised)
+    private void BuildPlot(SNP? ideal, SNP? lossy, SNP? realised, SNP? em)
     {
         Plot.Traces.Clear();
         void Add(SNP? snp, int row, int colour, string label)
@@ -484,12 +522,223 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         Add(lossy, 1, 4, "ideal S21 at Qu");
         Add(realised, 1, 2, "realised S21");
         Add(realised, 0, 3, "realised S11");
+        Add(em, 1, 5, "EM S21");
+        Add(em, 0, 6, "EM S11");
         Plot.CustomTitleOn = true;
         Plot.CustomTitle = "Insertion and return loss";
         if (Plot.Traces.Count > 0) Plot.Autoscale(force: true);
         _container.OnPlotChanged(this, EventArgs.Empty);
         OnPropertyChanged(nameof(Plot));
         _container.RequestPlotRedraw();
+    }
+
+    // ══ The metrics, Planar EM, Polish and Calibrate from EM ══════════════════════════════════════════════════════
+
+    /// <summary>A response's prototype read back (<see cref="FilterSynthesisService.Extract"/>), or why there is none.</summary>
+    private sealed record Metrics(ExtractedFilter? Filter, string? Why);
+
+    /// <summary>A Planar EM run of a realisation and its metrics.</summary>
+    private sealed record EmRun(SNP S, Metrics Metrics, double Seconds);
+
+    /// <summary>On a worker: <paramref name="s"/>'s metrics, or the extraction's refusal (not a bandpass, too few points).</summary>
+    private static Metrics MetricsOf(FilterSpec spec, SNP s)
+    {
+        try { return new Metrics(FilterSynthesisService.Extract(spec, s), null); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { return new Metrics(null, ex.Message); }
+    }
+
+    /// <summary>
+    /// Every Planar EM run in this process, by the stored values of the part it solved. A realisation's values are a
+    /// dictionary of its own (a polish makes new ones), and its sites, spec and substrate come with it, so they name the
+    /// run; weakly held, they go when the realisation does.
+    /// </summary>
+    private static readonly ConditionalWeakTable<IReadOnlyDictionary<string, string>, EmRun> EmRuns = new();
+
+    /// <summary>What each polished part's values were solved for, so a further polish or calibration goes on from there.</summary>
+    private static readonly ConditionalWeakTable<IReadOnlyDictionary<string, string>, PolishAim> Aims = new();
+
+    private Metrics? _circuit;
+    private string? _emRefusal;
+
+    /// <summary>The shown realisation's Planar EM run, if it has one.</summary>
+    private EmRun? Em => _realisation is { } r && EmRuns.TryGetValue(r.Parameters, out var run) ? run : null;
+
+    public bool HasEm => Em is not null;
+
+    /// <summary>The spec's rows: centre, bandwidth, ripple, return loss and any zeros, each against the spec, then the
+    /// insertion loss at f0 and the unloaded Q.</summary>
+    [ObservableProperty] private IReadOnlyList<FilterMetricRow> _specRows = [];
+
+    /// <summary>The matrix's rows: each external Q, coupling and resonator frequency against the synthesis's.</summary>
+    [ObservableProperty] private IReadOnlyList<FilterMetricRow> _matrixRows = [];
+
+    /// <summary>Whose response the metrics read, and how many checks fail; or why there are none.</summary>
+    [ObservableProperty] private string _metricsNote = "";
+
+    /// <summary>Read the metrics, and draw the overlay, from the Planar EM run when there is one; else the bench's.</summary>
+    [ObservableProperty] private bool _showEm;
+
+    partial void OnShowEmChanged(bool value) => ShowMetrics();
+
+    private void ShowMetrics()
+    {
+        var em = Em;
+        bool onEm = ShowEm && em is not null;
+        var metrics = onEm ? em!.Metrics : _circuit;
+        if (metrics?.Filter is { } x)
+        {
+            SpecRows = [.. x.Checks.Where(c => !c.Name.Contains('(')).Select(FilterMetricRow.Of),
+                new("Insertion loss", string.Create(CultureInfo.InvariantCulture, $"{x.InsertionLossDb:0.00} dB"), "", ""),
+                new("Unloaded Q", string.Create(CultureInfo.InvariantCulture, $"{x.UnloadedQ:0}"),
+                    _shown.Ideals?.Qu is { } qu ? string.Create(CultureInfo.InvariantCulture, $"board {qu:0}") : "", "")];
+            MatrixRows = [.. x.Checks.Where(c => c.Name.Contains('(')).Select(FilterMetricRow.Of)];
+            int fail = x.Checks.Count(c => !c.Pass);
+            MetricsNote = (onEm ? $"Planar EM, {em!.S.FrequencyCount} points" : "Circuit bench")
+                          + (fail == 0 ? ": every check passes." : $": {fail} of {x.Checks.Count} checks fail.");
+        }
+        else
+        {
+            SpecRows = MatrixRows = [];
+            MetricsNote = metrics?.Why ?? "";
+        }
+        OnPropertyChanged(nameof(HasEm));
+        NotifyWork();
+    }
+
+    /// <summary>True while Planar EM, Polish or Calibrate from EM runs; one at a time.</summary>
+    [ObservableProperty] private bool _busy;
+
+    /// <summary>How far the running EM solve is, 0 to 1.</summary>
+    [ObservableProperty] private double _busyProgress;
+
+    /// <summary>True when the running work cannot say how far it is (a polish, or the EM solve before its first point).</summary>
+    [ObservableProperty] private bool _busyIndeterminate;
+
+    partial void OnBusyChanged(bool value) => NotifyWork();
+
+    /// <summary>The latest Planar EM, Polish or Calibrate from EM: done once it is shown, cancelled or failed. A test awaits
+    /// it; the window never does.</summary>
+    public Task Work { get; private set; } = Task.CompletedTask;
+
+    private CancellationTokenSource _work = new();
+
+    public string EmTip => _substrate is null ? "No technology substrate: Planar EM needs one."
+        : _realisation is null ? "Planar EM solves the selected realisation, once it is realised."
+        : _emRefusal ?? $"Solve the realisation's layout on Planar MoM, coarse mesh, at {EmPoints} frequencies across the band. "
+          + "Its |S21| and |S11| join the plot, and the metrics read from it.";
+
+    public string PolishTip => _substrate is null ? "No technology substrate: Polish runs the bench on one."
+        : _realisation is null ? "Polish corrects the selected realisation, once it is realised."
+        : FilterPolish.Refusal(_realisation)?.Message ?? "Correct the gaps, the tap and the lengths until the bench extracts to "
+          + "the synthesised matrix, in three passes. The polished part replaces this realisation, and Place puts it down.";
+
+    public string CalibrateTip => _realisation is not null && _substrate is not null && FilterPolish.Refusal(_realisation) is null
+        && Em is null ? "Run Planar EM first: this corrects the part against its EM response."
+        : _realisation is not null && _substrate is not null && FilterPolish.Refusal(_realisation) is null
+            ? "One Polish pass against the Planar EM response in place of the bench's, and one more EM run. The corrected part "
+              + "replaces this realisation."
+            : PolishTip;
+
+    private bool CanRunEm() => !Busy && _realisation is not null && _substrate is not null && _emRefusal is null;
+    private bool CanPolish() => !Busy && _realisation is not null && _substrate is not null && FilterPolish.Refusal(_realisation) is null;
+    private bool CanCalibrate() => CanPolish() && Em is not null;
+    private bool CanCancelWork() => Busy;
+
+    private void NotifyWork()
+    {
+        OnPropertyChanged(nameof(EmTip));
+        OnPropertyChanged(nameof(PolishTip));
+        OnPropertyChanged(nameof(CalibrateTip));
+        RunEmCommand.NotifyCanExecuteChanged();
+        PolishCommand.NotifyCanExecuteChanged();
+        CalibrateCommand.NotifyCanExecuteChanged();
+        CancelWorkCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>The selected realisation's layout on Planar MoM (<see cref="FilterEmService"/>), on a worker: its |S21| and
+    /// |S11| overlaid, and the metrics switched to it. A run is kept, so asking again shows it at once.</summary>
+    [RelayCommand(CanExecute = nameof(CanRunEm))]
+    public void RunEm()
+    {
+        if (_spec is not { } spec || _realisation is not { } realisation || _substrate is not { } substrate) return;
+        Work = RunWork("Planar EM", async token =>
+        {
+            var run = await Task.Run(() => EmOf(spec, realisation, substrate, token), token);
+            if (ReferenceEquals(_realisation, realisation))
+            {
+                ShowEm = true;
+                Show(_shown.Ideals, _shown.Realised);
+            }
+            return string.Create(CultureInfo.InvariantCulture, $"Planar EM: {run.S.FrequencyCount} points in {run.Seconds:0.0} s. ")
+                   + (run.Metrics.Filter is { } x ? string.Create(CultureInfo.InvariantCulture,
+                       $"Centre {x.CentreHz / 1e9:0.0000} GHz, bandwidth {x.BandwidthHz / 1e6:0.0} MHz, worst return loss {x.ReturnLossDb:0.0} dB.")
+                       : run.Metrics.Why);
+        });
+    }
+
+    /// <summary>Polish (<see cref="FilterPolish"/>, three passes on the bench), on a worker: the polished part replaces the
+    /// selected realisation, and the status gives its worst return loss before and after.</summary>
+    [RelayCommand(CanExecute = nameof(CanPolish))]
+    public void Polish() => Correct(fromEm: false);
+
+    /// <summary>One Polish pass with the Planar EM response in place of the bench's, and the corrected part solved on EM.</summary>
+    [RelayCommand(CanExecute = nameof(CanCalibrate))]
+    public void Calibrate() => Correct(fromEm: true);
+
+    [RelayCommand(CanExecute = nameof(CanCancelWork))]
+    public void CancelWork() => _work.Cancel();
+
+    private void Correct(bool fromEm)
+    {
+        if (_spec is not { } spec || _realisation is not { } realisation || _substrate is not { } substrate || Selected is not { } row) return;
+        string what = fromEm ? "Calibrate from EM" : "Polish";
+        Work = RunWork(what, async token =>
+        {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            Func<FilterRealisation, SNP>? response = fromEm ? part => EmOf(spec, part, substrate, token).S : null;
+            var aim = Aims.TryGetValue(realisation.Parameters, out var known) ? known : null;
+            var (polished, history) = await Task.Run(() => FilterPolish.Run(spec, realisation, substrate, fromEm ? 1 : 3, response, aim, token), token);
+            var kept = history.First(h => ReferenceEquals(h.Parameters, polished.Parameters));
+            Aims.AddOrUpdate(polished.Parameters, kept.Aim);
+            // The polished part is the realiser's realisation of this spec from now on: selected again, it is this one.
+            Realisations[(spec, substrate, row.Realiser)] = Task.FromResult<FilterRealised?>(new FilterRealised(polished, null));
+            if (ReferenceEquals(_realisation, realisation))
+            {
+                Realise(debounce: false, auto: false);
+                await Realising;
+            }
+            string on = fromEm ? " on Planar EM" : "";
+            return string.Create(CultureInfo.InvariantCulture, $"{what}: worst return loss across the band "
+                + $"{history[0].Extraction.ReturnLossDb:0.0} dB before, {kept.Extraction.ReturnLossDb:0.0} dB after{on} "
+                + $"({clock.Elapsed.TotalSeconds:0} s).");
+        });
+    }
+
+    /// <summary>On a worker: <paramref name="realisation"/>'s Planar EM run, kept by its values; the bar follows its points.</summary>
+    private EmRun EmOf(FilterSpec spec, FilterRealisation realisation, MicrostripSubstrate substrate, CancellationToken token)
+    {
+        if (EmRuns.TryGetValue(realisation.Parameters, out var known)) return known;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var s = FilterEmService.Run(spec, realisation, substrate, EmFrequencies(spec), _progress, token).S;
+        var run = new EmRun(s, MetricsOf(spec, s), clock.Elapsed.TotalSeconds);
+        EmRuns.AddOrUpdate(realisation.Parameters, run);
+        return run;
+    }
+
+    /// <summary>The EM solve's progress, posted to the thread the Designer was made on (the constructor makes it).</summary>
+    private readonly IProgress<RunProgress> _progress;
+
+    /// <summary><paramref name="work"/> with the bar and Cancel; its own line in the status when it ends, or why not.</summary>
+    private async Task RunWork(string what, Func<CancellationToken, Task<string>> work)
+    {
+        _work = new CancellationTokenSource();
+        Busy = true;
+        (BusyProgress, BusyIndeterminate) = (0.0, true);
+        Status = $"{what}…";
+        try { Status = await work(_work.Token); }
+        catch (OperationCanceledException) { Status = $"{what} cancelled."; }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { Status = $"{what} failed: {ex.Message}"; }
+        finally { Busy = false; }
     }
 
     private bool CanPlace() => _realisation is not null && _schematic is not null;

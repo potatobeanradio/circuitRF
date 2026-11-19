@@ -12,6 +12,21 @@ public sealed record FilterCheck(string Name, double Value, double Target, bool 
 {
     /// <summary>Value − Target.</summary>
     public double Delta => Value - Target;
+
+    /// <summary><paramref name="v"/> in this check's unit: a frequency in GHz (the bandwidth in MHz), a level in dB, a
+    /// k to four places, else four figures.</summary>
+    public string Format(double v) => Name switch
+    {
+        "Bandwidth" => Text(v / 1e6, "0.0") + " MHz",
+        "Centre" => Text(v / 1e9, "0.0000") + " GHz",
+        "Ripple" or "Return loss" => Text(v, "0.00") + " dB",
+        _ when Name.StartsWith("Zero", StringComparison.Ordinal) || Name.StartsWith("f(", StringComparison.Ordinal)
+            => Text(v / 1e9, "0.0000") + " GHz",
+        _ when Name.StartsWith("k(", StringComparison.Ordinal) => Text(v, "0.0000"),
+        _ => Text(v, "G4"),
+    };
+
+    private static string Text(double v, string format) => v.ToString(format, CultureInfo.InvariantCulture);
 }
 
 /// <summary>
@@ -21,7 +36,7 @@ public sealed record FilterCheck(string Name, double Value, double Target, bool 
 /// fit: the unloaded Q, the finite transmission zeros, and the folded N+2 matrix, its main line made positive
 /// (<see cref="FilterExtraction.Signed"/>), with its Qe, k_ij and resonant frequencies (null for a fully canonical
 /// matrix, whose source–load coupling no external Q carries). <see cref="Checks"/> holds each sample metric against the
-/// spec, then each matrix entry against the target's.
+/// spec, then each transmission zero against the spec's, then each matrix entry against the target's.
 /// </summary>
 public sealed record ExtractedFilter(
     double CentreHz, double BandwidthHz, double RippleDb, double ReturnLossDb, double InsertionLossDb,
@@ -143,6 +158,12 @@ public static class FilterExtraction
             new("Ripple", ripple, level, ripple <= (1.0 + tolerance) * level),
             new("Return loss", rl, rlSpec, rl >= (1.0 - tolerance) * rlSpec),
         };
+        double[] zeros = [.. tz.Select(w => { double x = w * fbw / 2.0; return f0 * (Math.Sqrt(x * x + 1.0) + x); })];
+        for (int i = 0; i < nfz; i++)
+        {
+            double want = spec.TransmissionZerosHz!.Order().ElementAt(i);
+            checks.Add(new FilterCheck($"Zero {i + 1}", zeros[i], want, Math.Abs(zeros[i] - want) <= tolerance * bw / 2.0));
+        }
         if (target is not null)
         {
             double[,] t = Signed(target);
@@ -155,7 +176,7 @@ public static class FilterExtraction
                     }
         }
         return new ExtractedFilter(centre, f2 - f1, ripple, rl, il, delta > 0.0 ? 1.0 / (delta * fbw) : double.PositiveInfinity,
-            n, [.. tz.Select(w => { double x = w * fbw / 2.0; return f0 * (Math.Sqrt(x * x + 1.0) + x); })], m,
+            n, zeros, m,
             nfz < n ? CouplingMatrix.ToPhysical(m, f0, fbw) : null, checks);
 
         // An entry in band-pass terms (CouplingMatrix.ToPhysical): a resonator's own frequency, an external Q, a k.

@@ -555,6 +555,36 @@ Designer is.
     design error. A toggle hides the curve.
   - A test checks the ideal at Qu against the first-order estimate 4.343·Σg/(FBW·Qu) dB at f0, as Hong and Lancaster
     give it ([10.1002/0471221619](https://doi.org/10.1002/0471221619)). They agree to 0.001 dB at Qu = 200.
+- **The metrics**, under the plot: the selected realisation's bench read back to its prototype (§6c), in the same
+  background task as the bench, by `FilterSynthesisService.Extract` against `Target(spec)` (the all-pole chain, or with
+  zeros the folded generalised Chebyshev). Two compact tables, each row a `FilterCheck` with its value, its target and
+  pass or fail:
+  - the spec's: centre, bandwidth, ripple, return loss and each zero, then the insertion loss at f0 and the unloaded Q
+    beside the board's, which the spec asks nothing of;
+  - the matrix's: each Qe, k and resonator frequency against the synthesis's (`ToPhysical`'s terms).
+
+  A line above says whose response it is and how many checks fail. A response the extraction refuses (not a bandpass,
+  too few points) shows the refusal instead. The extraction is milliseconds beside the bench.
+- **Run Planar EM** runs `FilterEmService` (§6d) on the selected realisation on a worker, at `EmPoints` = 31 frequencies
+  across the extraction's window, ω = ±3 (`EmFrequencies`; a band other than a bandpass across the plot's sweep). Every
+  point then counts towards the fit, which needs 2·(2N + 1) of them, so 31 reach order 7. A bar follows the solved points
+  and **Cancel** stops the solve at its next point or stage.
+  - The EM |S21| and |S11| join the plot, and the metrics switch to the EM response. **From Planar EM** switches them
+    back to the bench's.
+  - A run is kept for the process, keyed by the part's stored values: a `ConditionalWeakTable` on the realisation's
+    `Parameters` dictionary, which a polish replaces and nothing else shares. Selecting the realisation again shows it
+    at once.
+  - The button is greyed, its tooltip giving the reason, where `FilterEmService.Refusal` refuses: the bench's background
+    task runs the service's own checks before anything is meshed (the drawing, its pins, each site's port). With no
+    substrate the tooltip says so.
+- **Polish** runs `FilterPolish.Run` (§6c, three passes on the bench) on a worker. It is enabled where
+  `FilterPolish.Refusal` passes: hairpins and open loops in a row.
+  - The polished part replaces the realiser's entry in the kept realisations. The plot, the metrics, What Place writes
+    and Place all take it, and selecting the realiser again gives it.
+  - The status line gives the worst return loss across the band before and after.
+- **Calibrate from EM**, once the realisation has an EM run: one polish pass with the EM response in place of the
+  bench's (`Run`'s `response`), so the curves are corrected at the EM output, then the corrected part on EM. It starts
+  from the `PolishAim` the part was solved for, so it builds on a polish rather than undoing it. One pass per click.
 - **Tools ▸ Filter Designer…** (both menu surfaces) opens it on no part: the default specification, every family. Place
   targets the schematic active when it opened, and its technology gives the substrate, else the workspace's default.
   With no schematic, Place is greyed and its tooltip says why. **Filter Designer…** on a schematic's empty-canvas menu
@@ -631,6 +661,13 @@ Chebyshev lowpass written as MLAD sites.
   filter, the readout states Qu and both losses, and the toggle hides the curve.
 - A realiser that runs until cancelled: the ideal is drawn with "realising…" while it runs, a newer ripple cancels it,
   and the new realisation fills in.
+- The metrics, on the tapped hairpin on the shipped board: none while the window opens (under a second on the UI
+  thread), then the spec's six rows and the matrix's k and Qe once the bench is shown, with Run Planar EM and Polish
+  enabled and Calibrate from EM not.
+- Polish replaces the realisation, its note and the status give the worst return loss before and after, and Place puts
+  the polished tap down.
+- Run Planar EM, cancelled after its first point: "Planar EM cancelled.", no EM result kept, and the button enabled again.
+- A lumped ladder with a jumper site: Run Planar EM greyed with the service's refusal, and Polish greyed with its own.
 
 ## 6a. Tuning a synthesised filter
 
@@ -751,10 +788,15 @@ fully canonical matrix, whose source–load coupling no external Q carries.
 
 **Checks.** Each is a `FilterCheck`: the value, its target, the delta and pass or fail.
 - Against the spec: the centre within `tolerance` of half the band; the width at least (1 − `tolerance`) of the spec's;
-  the ripple at most (1 + `tolerance`) of it; the return loss at least (1 − `tolerance`) of the prototype's at its edge.
+  the ripple at most (1 + `tolerance`) of it; the return loss at least (1 − `tolerance`) of the prototype's at its edge;
+  each transmission zero, in order, within `tolerance` of half the band of the spec's.
 - Against a target matrix: every entry non-zero in either, named in band-pass terms (`f(i)`, `Qe(S)`, `Qe(L)`,
   `k(i,j)`, else `M(S,j)`), passing when it is within `tolerance` in M. The default, 0.02, is about 1 % of the band in
   a resonator's frequency and 4 % in an end's Qe.
+
+`FilterCheck.Format` gives a value in its own unit (GHz, MHz for the bandwidth, dB, k to four places), and
+`FilterSynthesisService.Extract(spec, snp)` reads a two-port against `Target(spec)`: what the Designer's metrics (§6) and
+the polish call.
 
 **Polish.** It takes the realisers that solve k and Qe on the circuit model: hairpins and open loops in a row (§4). Each
 pass does three things:
@@ -769,6 +811,13 @@ The curves stand in for the filter, corrected at their output: output space mapp
 [10.1109/TMTT.2003.820904](https://doi.org/10.1109/TMTT.2003.820904)). `Run` returns every pass, the first being the
 realisation as given, and the realisation of the pass with the best worst return loss, with a note saying how far it
 got.
+- **Another response.** `Run`'s `response` stands in for the bench in step 1: the Designer's Calibrate from EM passes
+  the Planar EM run (§6d), so the curves are corrected at the EM output. Nothing else changes.
+- **Where it starts.** Each `PolishStep` carries the `PolishAim` its part was solved for: the targets k and Qe and each
+  resonator's length factor. `Run` takes one back as `aim`, so a later polish or calibration multiplies its ratios onto
+  the earlier ones'. Started from the synthesis's own targets, it would undo them.
+- **Whether it can.** `Refusal(realisation)` is the form check `Run` makes first, for a caller that greys a button.
+- `cancel` stops it between passes and inside `FromCouplings`.
 
 **How far it gets.** The Filter Designer's tapped hairpin for a 0.1 dB Chebyshev of order 5, 2.2 to 2.6 GHz, on the
 shipped 20 mil RO4350B with its loss. Its worst return loss across the band is 8.6 dB as realised and 15.5 dB after
@@ -981,9 +1030,9 @@ default is 11 points.
 - **Polish for Cohn's chains and MCLA** (§6c). A Broyden step on the stored gaps and lengths, its first Jacobian by
   finite differences on the bench. Why: their geometry comes from closed forms, not from k and Qe curves, so output
   space mapping has nothing to re-solve, and an edge-coupled chain's 1.6 dB ripple (§6a) is the case that most needs it.
-- **Extraction in the Designer, the verb and the MCP tool** (§6c). The extracted matrix and checks beside the plot, a
-  `filter --extract` mode on a Touchstone file, and a Polish button. Why: `Extract` and `Run` exist only as calls today;
-  a measured board is the commonest thing to hold against its synthesis.
+- **Extraction in the verb and the MCP tool** (§6c). A `filter --extract` mode on a Touchstone file, and the same over
+  MCP. Why: the Designer reads its own responses back (§6), but a measured board is the commonest thing to hold against
+  its synthesis, and an agent has no window.
 - **Complex and asymmetric zeros in the extraction** (§6c). Keep the transmission zeros' imaginary parts, and polish
   the cross square with its k14's sign. Why: the extraction puts every zero on the axis as `FilterSpec` holds them, and
   the polish refuses the square, so neither group-delay zeros (item 10) nor the cross-coupled loops are corrected.

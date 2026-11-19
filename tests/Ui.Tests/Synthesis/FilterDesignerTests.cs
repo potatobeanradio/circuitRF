@@ -298,6 +298,109 @@ public sealed class FilterDesignerTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(4, vm.Plot.Traces.Count);
     }
 
+    /// <summary>The Designer's default bandpass, 2.2 to 2.6 GHz, three poles, as the tapped hairpin builds it on the shipped
+    /// board: realised once per process, as the window keeps it.</summary>
+    private static FilterDesignerViewModel Hairpin(ViewModels.SchematicViewModel? schematic = null)
+        => new(schematic, realisers: [new TappedHairpinRealiser()],
+            technology: CircuitRF.Design.Layout.ShippedTechnologies.Load(CircuitRF.Design.Layout.ShippedTechnologies.DefaultId));
+
+    /// <summary>The metrics under the plot (docs/design/filter-synthesis.md §6c) come with the realisation, off the UI
+    /// thread: nothing is extracted while the window opens, and once the bench is shown its prototype is read back, each
+    /// row against the spec or the synthesis, with pass or fail.</summary>
+    [Fact]
+    public async Task TheMetrics_FillInTheBackground()
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var vm = Hairpin();
+        Assert.True(clock.Elapsed.TotalSeconds < 1.0, $"{clock.Elapsed.TotalSeconds:0.00} s on the UI thread");
+        Assert.Empty(vm.SpecRows);
+        await vm.Realising;
+        Assert.True(vm.Realisation is not null, vm.Status);
+        Assert.Equal(["Centre", "Bandwidth", "Ripple", "Return loss", "Insertion loss", "Unloaded Q"], vm.SpecRows.Select(r => r.Name));
+        Assert.All(vm.SpecRows.Take(4), r => Assert.Contains(r.Verdict, new[] { "pass", "fail" }));
+        Assert.Contains(vm.MatrixRows, r => r.Name == "k(1,2)");
+        Assert.Contains(vm.MatrixRows, r => r.Name == "Qe(S)");
+        Assert.StartsWith("Circuit bench", vm.MetricsNote);
+        Assert.True(vm.RunEmCommand.CanExecute(null), vm.EmTip);
+        Assert.True(vm.PolishCommand.CanExecute(null), vm.PolishTip);
+        Assert.False(vm.CalibrateCommand.CanExecute(null));          // no EM run yet
+        output.WriteLine(string.Join("\n", vm.SpecRows.Concat(vm.MatrixRows)));
+    }
+
+    /// <summary>Polish replaces the selected realisation with the polished one, says how far the worst return loss moved,
+    /// and Place puts the polished part down.</summary>
+    [Fact]
+    public async Task Polish_ReplacesTheRealisation_AndPlacePutsItDown()
+    {
+        var model = new SchematicEditModel();
+        var vm = Hairpin(new ViewModels.SchematicViewModel(model));
+        await vm.Realising;
+        var realised = vm.Realisation!;
+        vm.Polish();
+        Assert.True(vm.Busy);
+        await vm.Work;
+        output.WriteLine(vm.Status);
+        var polished = vm.Realisation!;
+        Assert.NotSame(realised, polished);
+        Assert.Contains("Polished in 3 passes", polished.Notes[^1]);
+        var m = System.Text.RegularExpressions.Regex.Match(vm.Status, @"^Polish: worst return loss across the band (\S+) dB before, (\S+) dB after");
+        Assert.True(m.Success, vm.Status);
+        Assert.True(double.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture) >= double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture));
+
+        vm.PlaceCommand.Execute(null);
+        var part = Assert.Single(model.Components, c => c.Symbol == SymbolKind.Mcrc);
+        Assert.Equal(polished.Parameters["Tap"], part.Parameters.Single(p => p.Name == "Tap").Expression);
+    }
+
+    /// <summary>Run Planar EM solves in the background with a bar and Cancel; cancelled, it leaves no EM result and the
+    /// Designer free for the next run.</summary>
+    [Fact]
+    public async Task RunPlanarEm_IsCancelled()
+    {
+        var vm = Hairpin();
+        await vm.Realising;
+        vm.RunEm();
+        Assert.True(vm.Busy);
+        Assert.False(vm.RunEmCommand.CanExecute(null));
+        Assert.True(vm.CancelWorkCommand.CanExecute(null));
+        for (var clock = System.Diagnostics.Stopwatch.StartNew(); !(vm.BusyProgress > 0) && clock.Elapsed.TotalSeconds < 60;)
+            await Task.Delay(50);
+        output.WriteLine($"cancelled at {vm.BusyProgress:P0}");
+        vm.CancelWork();
+        await vm.Work.WaitAsync(TimeSpan.FromSeconds(60));
+        Assert.Equal("Planar EM cancelled.", vm.Status);
+        Assert.False(vm.HasEm);
+        Assert.False(vm.Busy);
+        Assert.True(vm.RunEmCommand.CanExecute(null));
+    }
+
+    /// <summary>A realisation Planar EM refuses (a jumper site has no value to close its port with) greys Run Planar EM,
+    /// its tooltip saying why; and a ladder is no MCRC to polish.</summary>
+    [Fact]
+    public async Task RunPlanarEm_IsGreyedWithWhy_WhereTheServiceRefuses()
+    {
+        var tech = CircuitRF.Design.Layout.ShippedTechnologies.Load(CircuitRF.Design.Layout.ShippedTechnologies.DefaultId);
+        var vm = new FilterDesignerViewModel(null, realisers: [new Jumpered()], technology: tech) { Band = FilterBand.Lowpass, F1 = "1 GHz" };
+        await vm.Realising;
+        Assert.True(vm.Realisation is not null, vm.Status);
+        Assert.False(vm.RunEmCommand.CanExecute(null));
+        Assert.Contains("Jumper", vm.EmTip);
+        Assert.False(vm.PolishCommand.CanExecute(null));
+        Assert.Contains("not hairpins or open loops", vm.PolishTip);
+    }
+
+    /// <summary>The lumped ladder with its first site a jumper.</summary>
+    private sealed class Jumpered : IFilterRealiser
+    {
+        public string Name => "Jumpered lowpass (MLAD)";
+        public bool Supports(FilterSpec spec, out string? why) => new LumpedLadder().Supports(spec, out why);
+        public FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate)
+        {
+            var r = new LumpedLadder().Realise(spec, substrate);
+            return r with { Sites = [r.Sites[0] with { Role = "Jumper" }, .. r.Sites.Skip(1)] };
+        }
+    }
+
     /// <summary>A realiser that runs until it is cancelled, and says when it was.</summary>
     private sealed class Endless : IFilterRealiser
     {
