@@ -286,7 +286,22 @@ public sealed class Em3dWallCalibration
     /// <summary>Where standard <paramref name="std"/>'s answer is kept for <paramref name="setup"/> on <paramref name="solver"/>: the
     /// one spelling the run and <c>explain</c> both use, so what explain calls cached is what the run reuses.</summary>
     public static string CachePath(string resultsRoot, Standard std, Layout.Em.EmSetup setup, Layout.Em.Em3dSolverId solver)
-        => Path.Combine(resultsRoot, CacheFolder, CacheKey(std.Problem, Layout.Em.EmSetupPersistence.Serialize(setup), solver.ToString()) + ".json");
+        => Path.Combine(resultsRoot, CacheFolder, CacheKey(std.Problem, CacheSettings(setup), solver.ToString()) + ".json");
+
+    /// <summary>
+    /// The setup as it decides a standard's solve: the setup serialized with what only names it, says where its own result
+    /// goes, or picks its own ports left out — its name, its layout reference, its Touchstone path and schematic options, its
+    /// panel state, its <c>Ports3D</c> and its <c>CalibrateWallPorts</c> (a standard's geometry, ports and frequencies are in
+    /// the key on their own account). So a renamed setup, or a second setup with the same settings, reuses the standards.
+    /// Everything else stays in: an unknown field that changes the solve must change the key.
+    /// </summary>
+    public static string CacheSettings(Layout.Em.EmSetup setup)
+    {
+        var s = setup.Clone();
+        s.Name = ""; s.LayoutRef = ""; s.SnpOutputPathOverride = ""; s.CreateSnpSchematic = false; s.IncludeSchematicComponents = false;
+        s.NotesExpanded = null; s.ComponentPortsExpanded = null; s.Ports3D = []; s.CalibrateWallPorts = true;
+        return Layout.Em.EmSetupPersistence.Serialize(s);
+    }
 
     /// <summary>A cached standard's raw S, or false when there is none (or it cannot be read).</summary>
     public static bool TryLoad(string path, out double[] frequenciesHz, out Complex[][,] s)
@@ -592,7 +607,7 @@ public sealed class Em3dWallCalibration
         /// face stands along its axis is not in it. Rounded to 0.1 nm, below any DBU.</summary>
         public string Signature => string.Join(";", Pieces.Select(p =>
             $"{p.Name}|{p.Material}|{p.Role}|{R(p.Lo)}|{R(p.Hi)}|{R(p.Z0)}|{R(p.Z1)}|{p.IsSheet}|{R(p.SheetThickness)}|{p.Line}"))
-            + $"|axis{Axis}|gap{R(Gap)}|n{Ports.Count}|" + string.Join(",", Ports.Select(p => p.Z0.ToString()));
+            + $"|axis{Axis}|gap{R(Gap)}|n{Ports.Count}|" + string.Join(",", Ports.Select(p => $"{p.Z0}@{R(p.Wall!.GapM)}"));
 
         private static string R(double m) => Math.Round(m * 1e10).ToString(CultureInfo.InvariantCulture);
 
@@ -710,7 +725,9 @@ public sealed class Em3dWallCalibration
             {
                 string name = Pieces.Count(q => q.Name == p.Name) > 1 ? $"{p.Name}#{k++}" : p.Name;
                 double s0 = a0, s1 = a1;
-                if (p.Line >= 0) { s0 = a0 + Gap; s1 = a1 - Gap; }
+                // each line keeps ITS OWN gap at both ends, as the structure's was cut: a group's lines of different widths or heights
+                // have different gaps, and a port sheet one gap long must meet its line's end
+                if (p.Line >= 0) { double g = Ports[p.Line].Wall!.GapM; s0 = a0 + g; s1 = a1 - g; }
                 if (p.IsSheet)
                 {
                     var c0 = P(s0, p.Lo, 0); var c1 = P(s1, p.Hi, 0);

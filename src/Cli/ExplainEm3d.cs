@@ -284,46 +284,60 @@ internal static class ExplainEm3d
         foreach (var r in setup.Ports3D.Where(r => r.Kind == Em3dPortKind.Wave && !fromCem))
             lines.Add($"port {r.Port}: run as a wave port, chosen by this setup's Ports3D.");
         if (!setup.CalibrateWallPorts) { lines.Add("Calibrate wall ports is off: a run publishes the raw S at each gap."); return lines; }
-        var (cal, refusal) = Em3dWallCalibration.Plan(p, p.Frequency.StartHz, p.Frequency.StopHz, lines);
+        // A comparison solves each solver's own standards (its structure is calibrated with them), so each is listed. On openEMS the
+        // run first widens each gap to whole grid cells (R-pwl6-2), and the standards are built from that problem.
+        var solvers = Em3dSolvers.Of(setup.Solver3D).Select(x => x.Id).DefaultIfEmpty(Em3dSolverId.Palace).ToList();
+        string root = CircuitRF.Cli.ResultsRoot.For(path, CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(
+            System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path))!));
+        var problem = p;
+        if (solvers.Contains(Em3dSolverId.OpenEms))
+        {
+            var (onGrid, gapNote, gapRefusal) = CircuitRF.Design.ThreeD.C3dWallPorts.GapsOnGrid(p, q => Em3dRunService.OpenEmsLinesOf(q, setup));
+            if (gapRefusal is not null) { lines.Add($"a run would refuse: {gapRefusal}"); return lines; }
+            if (gapNote is not null) lines.Add(gapNote);
+            problem = onGrid;
+        }
+        var (cal, refusal) = Em3dWallCalibration.Plan(problem, problem.Frequency.StartHz, problem.Frequency.StopHz, lines);
         if (refusal is not null) { lines.Add($"a run would refuse: {refusal}"); return lines; }
 
         // R-pwl3-14 — each standard, cached or to solve, and what the uncached ones cost beside the structure (solved one after
         // another, so the peak memory is the largest of them).
-        string root = CircuitRF.Cli.ResultsRoot.For(path, CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(
-            System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path))!));
-        var solverId = Em3dSolvers.Of(setup.Solver3D).FirstOrDefault()?.Id ?? Em3dSolverId.Palace;
-        // Each standard as the run solves it (its own setup: on openEMS the structure's grid round its ports), priced the way the
-        // structure is on that solver: Palace's element estimate, openEMS's cells and time; EMerge prices nothing ahead.
-        var structureLines = solverId == Em3dSolverId.OpenEms ? Em3dRunService.OpenEmsLinesOf(p, setup) : null;
         var palace = PalaceSettings.Resolve(setup.Palace);
-        (long Unknowns, long Bytes, string Words)? Price(Em3dProblem q, EmSetup s)
+        foreach (var solverId in solvers)
         {
-            if (solverId == Em3dSolverId.OpenEms)
+            string who = solvers.Count > 1 ? $"{Em3dSolvers.Get(solverId).DisplayName} " : "";
+            // Each standard as the run solves it (its own setup: on openEMS the structure's grid round its ports), priced the way the
+            // structure is on that solver: Palace's element estimate, openEMS's cells and time; EMerge prices nothing ahead.
+            var structureLines = solverId == Em3dSolverId.OpenEms ? Em3dRunService.OpenEmsLinesOf(problem, setup) : null;
+            (long Unknowns, long Bytes, string Words)? Price(Em3dProblem q, EmSetup s)
             {
-                var g = FdtdGrid.Build(q, CemOpenEms.ResolveGrid(s.OpenEms), long.MaxValue);
-                double sec = OpenEmsTimeEstimate.Seconds(g, q.Ports.Count, OpenEmsTimeEstimate.Cores(null));
-                return (g.Cells, g.MemoryBytes, $"{g.Cells:N0} cells, about {OpenEmsTimeEstimate.Format(sec)}");
+                if (solverId == Em3dSolverId.OpenEms)
+                {
+                    var g = FdtdGrid.Build(q, CemOpenEms.ResolveGrid(s.OpenEms), long.MaxValue);
+                    double sec = OpenEmsTimeEstimate.Seconds(g, q.Ports.Count, OpenEmsTimeEstimate.Cores(null));
+                    return (g.Cells, g.MemoryBytes, $"{g.Cells:N0} cells, about {OpenEmsTimeEstimate.Format(sec)}");
+                }
+                if (solverId == Em3dSolverId.Emerge) return null;
+                return Em3dRunService.EstimatePalace(q, palace) is { } e ? (e.Unknowns, e.MemoryBytes ?? 0, $"about {e.Unknowns:N0} unknowns") : null;
             }
-            if (solverId == Em3dSolverId.Emerge) return null;
-            return Em3dRunService.EstimatePalace(q, palace) is { } e ? (e.Unknowns, e.MemoryBytes ?? 0, $"about {e.Unknowns:N0} unknowns") : null;
+            var structure = Price(problem, setup);
+            long unknowns = structure?.Unknowns ?? 0, peak = structure?.Bytes ?? 0;
+            int toSolve = 0;
+            string unit = solverId == Em3dSolverId.OpenEms ? "cells" : "unknowns";
+            foreach (var std in cal!.Standards)
+            {
+                var stdSetup = Em3dRunService.WallStandardSetup(setup, std, structureLines);
+                if (File.Exists(Em3dWallCalibration.CachePath(root, std, stdSetup, solverId))) { lines.Add($"{who}standard '{std.Label}': cached, reused."); continue; }
+                toSolve++;
+                if (Price(std.Problem, stdSetup) is not { } est) { lines.Add($"{who}standard '{std.Label}': to solve."); continue; }
+                unknowns += est.Unknowns; peak = Math.Max(peak, est.Bytes);
+                lines.Add($"{who}standard '{std.Label}': to solve, {est.Words}" + (est.Bytes > 0 ? $", about {MachineMemory.Format(est.Bytes)}" : "") + ".");
+            }
+            lines.Add(toSolve == 0
+                ? $"All {cal.Standards.Count} {who}standard(s) are cached: the run solves only the structure."
+                : $"{toSolve} of {cal.Standards.Count} {who}standard(s) to solve before the structure, with this setup's solver and settings" +
+                  (unknowns > 0 ? $": about {unknowns:N0} {unit} in all, the structure's included" + (peak > 0 ? $", the largest about {MachineMemory.Format(peak)}, since they run one after another." : ".") : "."));
         }
-        var structure = Price(p, setup);
-        long unknowns = structure?.Unknowns ?? 0, peak = structure?.Bytes ?? 0;
-        int toSolve = 0;
-        string unit = solverId == Em3dSolverId.OpenEms ? "cells" : "unknowns";
-        foreach (var std in cal!.Standards)
-        {
-            var stdSetup = Em3dRunService.WallStandardSetup(setup, std, structureLines);
-            if (File.Exists(Em3dWallCalibration.CachePath(root, std, stdSetup, solverId))) { lines.Add($"standard '{std.Label}': cached, reused."); continue; }
-            toSolve++;
-            if (Price(std.Problem, stdSetup) is not { } est) { lines.Add($"standard '{std.Label}': to solve."); continue; }
-            unknowns += est.Unknowns; peak = Math.Max(peak, est.Bytes);
-            lines.Add($"standard '{std.Label}': to solve, {est.Words}" + (est.Bytes > 0 ? $", about {MachineMemory.Format(est.Bytes)}" : "") + ".");
-        }
-        lines.Add(toSolve == 0
-            ? $"All {cal.Standards.Count} standard(s) are cached: the run solves only the structure."
-            : $"{toSolve} of {cal.Standards.Count} standard(s) to solve before the structure, with this setup's solver and settings" +
-              (unknowns > 0 ? $": about {unknowns:N0} {unit} in all, the structure's included" + (peak > 0 ? $", the largest about {MachineMemory.Format(peak)}, since they run one after another." : ".") : "."));
         return lines;
     }
 

@@ -225,7 +225,7 @@ public static class C3dProblemAssembly
         refusal = null;
         if (e.ModelledExtent() is not { } extent) return null;     // brief-em3d-93 — the run's box: modelled content only
         if (document is not null) document = C3dWallPorts.ApplySetupKinds(document, setup, out _);
-        if (document is not null && document.Ports.Any(p => p.Model && p.Kind == Em3dPortKind.Wall))
+        if (document is not null && C3dWallPorts.ForcesFaces(setup) && document.Ports.Any(p => p.Model && p.Kind == Em3dPortKind.Wall))
         {
             var (faces, _) = C3dWallPorts.Faces(document, (extent.X0, extent.Y0, extent.Z0, extent.X1, extent.Y1, extent.Z1));
             if (faces.Count > 0) { setup = setup.Clone(); C3dWallPorts.ForceFaces(setup, faces); }
@@ -539,7 +539,7 @@ public static class C3dProblemAssembly
         // ── PWL-3 — a wall port's face is PEC with no padding (R-pwl3-1); a face is wall ports or wave ports (R-pwl3-5) ──
         var (wallFaces, mixedFace) = C3dWallPorts.Faces(portDocument, (extent.X0, extent.Y0, extent.Z0, extent.X1, extent.Y1, extent.Z1));
         if (mixedFace is not null) return No(mixedFace, e.Warnings);
-        if (wallFaces.Count > 0 && setup.Problem3D == Em3dProblemType.Driven)
+        if (wallFaces.Count > 0 && C3dWallPorts.ForcesFaces(setup))
         {
             if (C3dWallPorts.ForceFaces(setup, wallFaces) is { } forced) notes.Add(forced);
         }
@@ -663,7 +663,8 @@ public static class C3dProblemAssembly
             {
                 if (C3dWallPorts.Trim(solids, sheets, ports, 2 * context.Dbu + context.OutlineMoveM) is { } trimRefusal)
                     return No(trimRefusal, e.Warnings);
-                notes.Add(C3dWallPorts.GapNote(ports, setup.CalibrateWallPorts));
+                // only a driven run solves standards: an eigenmode or magnetostatic one loads the gap as it is
+                notes.Add(C3dWallPorts.GapNote(ports, setup.CalibrateWallPorts && setup.Problem3D == Em3dProblemType.Driven));
             }
         }
 

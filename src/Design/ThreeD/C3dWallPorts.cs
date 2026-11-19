@@ -58,6 +58,21 @@ public static class C3dWallPorts
         var rows = setup?.Ports3D.Where(r => r.Kind is Em3dPortKind.Wave or Em3dPortKind.Wall).ToList() ?? [];
         if (rows.Count == 0) return doc;
         string who = setup!.Name is { Length: > 0 } n ? $"Setup '{n}'" : "This setup";
+        // R-pwl3-5 — a face's rows must agree: the face switches as one, so rows asking two kinds of one face would leave whichever
+        // came last, silently.
+        var askedOnFace = new Dictionary<(C3dPlane, long), (int Port, Em3dPortKind Kind)>();
+        foreach (var row in rows)
+        {
+            if (doc.Ports.FirstOrDefault(q => C3dPorts.Numbers(q).Contains(row.Port)) is not { Kind: not Em3dPortKind.Lumped } on) continue;
+            var key = (on.Plane, on.Offset);
+            if (askedOnFace.TryGetValue(key, out var first) && first.Kind != row.Kind)
+            {
+                refusal = $"{who} runs port {first.Port} as a {first.Kind} port and port {row.Port} as a {row.Kind} port, and the two are on " +
+                          "one face of the air box. A face is fed by wave ports or by wall ports, not both: give its ports one kind.";
+                return doc;
+            }
+            askedOnFace.TryAdd(key, (row.Port, row.Kind));
+        }
         if (contextFor is not null)
         {
             var work = new C3dDocument { DbuPerMicron = doc.DbuPerMicron, Ports = [.. doc.Ports.Select(CopyPort)] };
@@ -226,6 +241,14 @@ public static class C3dWallPorts
             }
         return (faces, null);
     }
+
+    /// <summary>
+    /// R-pwl3-1 — whether <paramref name="setup"/>'s problem carries the view's ports, and so makes its wall ports' faces PEC with no
+    /// padding: a driven, eigenmode or magnetostatic one. An electrostatic, thermal or scattering problem has no ports, and its box
+    /// is as the setup states it. The editor's box and the run's both ask this, so what is drawn is what is solved.
+    /// </summary>
+    public static bool ForcesFaces(EmSetup setup)
+        => (setup.Problem3D is Em3dProblemType.Driven or Em3dProblemType.Eigenmode or Em3dProblemType.Magnetostatic) && !setup.IsScattering3D;
 
     /// <summary>
     /// R-pwl3-1 — the setup with each of <paramref name="faces"/> a PEC face with no padding, and the note that says so; the

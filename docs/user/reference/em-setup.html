@@ -2813,7 +2813,8 @@ face. It needs no mode solve, so it does not depend on a face's mode being found
 <li><strong>What it is.</strong> The line runs to the air box's face. In the solved problem it is cut back by a short gap, and the gap is
 the port: from the wall (−) to the line (+), across the line's width, in the plane of its face toward its return. The gap
 is min(width, height above the return)/5, and is never a setting. The face is made <strong>PEC with no padding</strong> for the run,
-whatever the setup states, and the run's notes say so.</li>
+whatever the setup states, and the run's notes say so. An eigenmode or magnetostatic setup does the same, and loads the gap
+as it is (only a driven run calibrates); an electrostatic, thermal or scattering setup has no ports, and keeps its faces.</li>
 <li><strong>How it is calibrated.</strong> The run builds <strong>line standards</strong> from the face's own cross-section (its first 3 substrate
 heights), each the cross-section extruded between two PEC walls at a length the band needs (the shortest 6 heights),
 solves them with the same solver and settings before the structure, and removes the gap and the wall's field from the
@@ -2821,8 +2822,9 @@ answer. The S-parameters are at the <strong>wall</strong> (the line's drawn end)
 port's Z0. Z_c comes from a 2D electrostatic solve of the cross-section. Two faces with the same cross-section share their
 standards, so a line's two ends cost three standards over 1–10 GHz, not six.</li>
 <li><strong>Standards are kept.</strong> Each solved standard's answer is stored under <code>results/wall-standards/</code>, keyed by its cross-section,
-length, frequencies, solver and the setup's settings, and a later run that needs the same one reuses it instead of solving
-it again; the run's notes say how many were reused. A tuning sweep that does not change the face pays for them once.</li>
+length, frequencies, solver and the setup's settings (not its name or its own ports), and a later run that needs the same one reuses it instead of solving
+it again; the run's notes say how many were reused. A tuning sweep that does not change the face pays for them once.
+A setup that compares solvers solves each solver's own standards and calibrates each solver's answer with them.</li>
 <li><strong>Calibrate wall ports</strong> (<code>CalibrateWallPorts</code>, on; the checkbox under the port table): off publishes the raw S at each gap, in the port's Z0, for comparison,
 with a note saying so. Only <code>&quot;CalibrateWallPorts&quot;: false</code> is ever written.</li>
 <li><strong>Several lines on one face</strong> within 5 line heights of each other are calibrated together, as one group of up to three:
@@ -2832,7 +2834,8 @@ apart are separate groups, each with its own standards, which leave the other gr
 straight and unchanged, because the standards reproduce exactly that. A line that tapers or bends there is refused,
 naming the object; extend it straight.</li>
 <li><strong>Refused by name:</strong> a port off the faces of the air box; one on the floor or the lid; a rectangle over two lines (state
-<code>Positive</code>, or draw one per line); a face carrying wave ports too; a line with no ground beneath it; dielectrics that are
+<code>Positive</code>, or draw one per line); a face carrying wave ports too, or a setup's <code>Ports3D</code> asking Wave of one port and Wall
+of another on one face; a line with no ground beneath it; dielectrics that are
 not layers across the face's whole width; lines whose modes travel at nearly one speed (a stripline pair: feed it with a
 wave port with terminals on openEMS).</li>
 <li><strong>What a run publishes.</strong> The <code>.sNp</code>'s header says, per port, that it is a calibrated wall port and where its reference

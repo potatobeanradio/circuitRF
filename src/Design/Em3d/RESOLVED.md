@@ -367,3 +367,35 @@ it ("ends inside end run"). A line drawn as an extruded path never met this, whi
 the near end of the allowed range in by one gap, toward the inward side and only for a line the port owns. Other conductors in
 the section must still reach the face. The Port Types example's Microstrip, Coupled Pair and Line over Silicon draw their lines
 as boxes, and `check` is clean on all three.
+
+## PWL series review (2026-11-18)
+
+A review of the finished series found four defects; each is fixed and has a routine test.
+
+- **A group's lines of different widths had port sheets that did not reach their lines in the standards.** `Section.Build`
+  cut every line back by the GROUP's gap (the largest of its ports'), while each standard's ports kept their own, shorter
+  gap sheet: a 400 µm line beside a 1200 µm one (gaps 80 and 101.6 µm) stood 21.6 µm clear of its port, so the narrow
+  line's standard was an open circuit and its error box meaningless. Each line now keeps its own gap at both walls, and the
+  section's signature (which decides when two faces share standards) carries each port's gap.
+  `WallPortTests.AGroupsLinesOfDifferentWidths_EachKeepItsOwnGapInTheStandards`.
+- **A comparison calibrated every solver with the first solver's standards.** The standards were solved once, by
+  `legs[0]`, and `RunContext.Wall` was shared by every leg, so an EMerge structure was de-embedded with Palace's error box —
+  which removes Palace's gap discretisation, not EMerge's. Each leg now solves its own standards (`RunContext.WallBySolver`,
+  set into `Wall` before each leg runs; the cache already keyed by solver). `WallStandardsCacheRunTests.AComparison_SolvesEachSolversOwnStandards`.
+- **`explain` priced and looked up openEMS standards on the un-widened problem.** The run widens each gap to whole grid
+  cells (`GapsOnGrid`) BEFORE planning, so its standards differ from those of the problem `explain` was handed: explain
+  called a cached standard "to solve" and priced the wrong geometry. It now applies the same widening first, and lists
+  each compared solver's standards.
+- **A setup's `Ports3D` asking Wave of one port and Wall of another on the same face was resolved silently.** The run's
+  path switches a whole face per row, so the last row won. It is refused now, naming both ports (R-pwl3-5).
+  `WallPortTests.ASetupAskingTwoKindsOfOneFace_IsRefusedNamingBothPorts`.
+- **The standards' cache key held the whole setup, its name included.** Renaming a setup, or a second setup with the same
+  settings, solved every standard again. The key now serializes the setup without what only names it or places its output
+  (`Em3dWallCalibration.CacheSettings`: name, layout reference, Touchstone path, schematic options, panel state, `Ports3D`,
+  `CalibrateWallPorts`); everything else stays in, so an unlisted field that changes the solve still changes the key.
+  Cache files written before this change are not found again, and their standards are solved once more.
+- **The editor forced a wall port's face for every setup; the run only for a driven one.** An eigenmode or magnetostatic
+  setup carries the ports too, so its run padded the face the editor drew flush, and then refused the wall port as "not a
+  face of the air box". One predicate decides both now (`C3dWallPorts.ForcesFaces`: driven, eigenmode or magnetostatic, not
+  scattering); those runs load the gap uncalibrated and their gap note no longer claims a calibration.
+  `WallPortTests.AnEigenmodeSetup_ForcesTheWallFaceAsTheEditorDraws_AnElectrostaticOneDoesNot`.

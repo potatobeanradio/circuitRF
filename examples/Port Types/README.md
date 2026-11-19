@@ -300,4 +300,4 @@ and worst |ΔS| of the transmission terms between them:
 
 ## Measured on
 
-An Apple M4 (10 cores, 16 GB), macOS 27.2, circuitRF's Release build; Palace 0.18.1 on 10 processes, EMerge 3.0.0, openEMS 0.37.0. A time is the run's wall clock, standards included for a wall port; no test holds a time.
+circuitRF's Release build; Palace 0.18.1 on 10 processes, EMerge 3.0.0, openEMS 0.37.0. A time is the run's wall clock, standards included for a wall port; no test holds a time.

@@ -404,8 +404,19 @@ public static partial class Em3dRunService
             if (!setup.CalibrateWallPorts)
                 log.Notes.Add("Calibrate wall ports is off: the S-parameters are the RAW ones at each wall port's gap, in the port's Z0, with " +
                               "the gap and the wall's own field still in them.");
-            else if (SolveWallStandards(problem, legs[0], run) is { } wallStop)
-                return log.Result(wallStop.Status, wallStop.Diagnostic);
+            else
+            {
+                // A comparison calibrates each solver's structure with standards that solver solved: the gap's discretisation is
+                // what the error box removes, and it is each solver's own.
+                var walls = new Dictionary<Em3dSolverId, Em3dWallCalibration>();
+                for (int k = 0; k < (compare ? legs.Count : 1); k++)
+                {
+                    if (SolveWallStandards(problem, legs[k], run, planNotes: k == 0, inCompare: compare) is { } wallStop)
+                        return log.Result(wallStop.Status, wallStop.Diagnostic);
+                    walls[legs[k].Solver.Id] = run.Wall!;
+                }
+                run.WallBySolver = walls;
+            }
         }
 
         // ── brief-emdc-2 R-emdc2-2 — the 0 Hz row: ONE conduction solve, before any leg executes, which every leg splices ───
@@ -432,12 +443,13 @@ public static partial class Em3dRunService
     /// structure's own solver under the same settings, into its own result folder, its raw S captured for the calibration; then
     /// <see cref="RunContext.Wall"/> is set so the structure's leg calibrates before it writes. Null when every standard solved.
     /// </summary>
-    private static Stop? SolveWallStandards(Em3dProblem problem, SolverLeg structureLeg, RunContext run)
+    private static Stop? SolveWallStandards(Em3dProblem problem, SolverLeg structureLeg, RunContext run, bool planNotes = true,
+                                            bool inCompare = false)
     {
         double lo = problem.Frequency.StartHz, hi = problem.Frequency.StopHz;     // a frequency list's lowest and highest too
-        var planNotes = new List<string>();
-        var (wall, refusal) = Em3dWallCalibration.Plan(problem, lo, hi, planNotes);
-        run.Log.Notes.AddRange(planNotes);
+        var said = new List<string>();
+        var (wall, refusal) = Em3dWallCalibration.Plan(problem, lo, hi, said);
+        if (planNotes) run.Log.Notes.AddRange(said);
         if (refusal is not null) return new Stop(EmRunStatus.Refused, EmDiagnostics.Forwarded(WallSource, refusal));
         int reused = 0;
         // PWL-6 R-pwl6-3 — on openEMS each standard's grid is the structure's round its ports
@@ -462,7 +474,7 @@ public static partial class Em3dRunService
                 CaptureRaw = (f, s) => wall.Capture(index, f, s),
             };
             stdRun.Dc = null; stdRun.Compare = false; stdRun.Wall = null;
-            run.Control?.BeginStage($"wall standard {i + 1} of {wall.Standards.Count} ({std.Label})");
+            run.Control?.BeginStage($"{(inCompare ? structureLeg.Solver.DisplayName + ", " : "")}wall standard {i + 1} of {wall.Standards.Count} ({std.Label})");
             var leg = LegStandIn?.Invoke(run.ResultsRoot, structureLeg.Solver) ?? structureLeg.Solver.NewLeg();
             leg.Configure(stdRun);
             if (leg.Stop is null) leg.Prepare(std.Problem, stdRun);
@@ -474,7 +486,7 @@ public static partial class Em3dRunService
             wall.Save(i, cachePath);
         }
         run.Log.Notes.Add(reused == wall.Standards.Count
-            ? $"{reused} wall standard(s) reused from an earlier run with the same cross-section, settings and frequencies; none solved."
+            ? $"{reused} wall standard(s) reused from an earlier {(inCompare ? structureLeg.Solver.DisplayName + " " : "")}run with the same cross-section, settings and frequencies; none solved."
             : $"{wall.Standards.Count - reused} wall standard(s) solved by {structureLeg.Solver.DisplayName} before the structure" +
               (reused > 0 ? $", {reused} reused from an earlier run." : "."));
         run.Wall = wall;
@@ -633,6 +645,7 @@ public static partial class Em3dRunService
         {
             var leg = legs[k];
             control?.BeginStage($"{leg.Solver.DisplayName}, the {Ordinal(k)} of {SolverCount(legs.Count)} solvers");
+            if (run.WallBySolver?.TryGetValue(leg.Solver.Id, out var ownWall) == true) run.Wall = ownWall;
             var ran = Recorded(setup, resultsRoot, leg.Solver.Id, keepRecord, () =>
                 leg.Execute(problem, run.Paths(leg.Solver.Id).SnpBase, run));
             if (ran.SnpPath is not null || ran.NpyPath is not null) ClearComparison();
@@ -838,6 +851,10 @@ public static partial class Em3dRunService
         /// <summary>PWL-3 — the wall-port calibration the structure's raw S passes through before anything is written; null on a run
         /// with no wall port (or one that publishes the raw answer).</summary>
         public Em3dWallCalibration? Wall { get; set; }
+
+        /// <summary>PWL-3 — in a comparison, each solver's own wall calibration (its standards solved by that solver); the comparison
+        /// sets <see cref="Wall"/> from it before each leg runs.</summary>
+        public Dictionary<Em3dSolverId, Em3dWallCalibration>? WallBySolver { get; set; }
 
         /// <summary>PWL-3 — a wall standard's run hands its raw S here, at the requested frequencies, before anything else reads it.</summary>
         public Action<double[], System.Numerics.Complex[][,]>? CaptureRaw { get; init; }

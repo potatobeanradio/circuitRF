@@ -509,6 +509,93 @@ public sealed class WallPortTests : IDisposable
             Assert.DoesNotContain(std.Problem.Sheets, sh => sh.Name.StartsWith("far", StringComparison.Ordinal));
     }
 
+    /// <summary>R-pwl3-7 — a group's lines of different widths have different gaps, and each keeps its OWN in the standards: every
+    /// line in a standard starts where its port's gap sheet ends, at both walls.</summary>
+    [Fact]
+    public void AGroupsLinesOfDifferentWidths_EachKeepItsOwnGapInTheStandards()
+    {
+        string dir = FixturePaths.Require("testdata/pwl");
+        var doc = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, "coupled_line_L20000um.c3d")))!.AsObject();
+        foreach (var o in doc["Objects"]!.AsArray())
+        {
+            string name = ((string?)o!["Name"])!;
+            if (!name.StartsWith("strip", StringComparison.Ordinal)) continue;
+            o["Rect"]!["Min"]![0] = 0; o["Rect"]!["Size"]![0] = Len;
+            if (name == "strip_b") o["Rect"]!["Size"]![1] = 400000;        // 400 µm under h = 508 µm: g = 80 µm, beside a's 101.6 µm
+        }
+        JsonObject Port(int n, long at, long y) => new()
+        {
+            ["Number"] = n, ["Name"] = $"P{n}", ["Kind"] = "Wall", ["Plane"] = "YZ", ["Offset"] = at, ["Z0"] = "50",
+            ["Rect"] = new JsonObject { ["Min"] = new JsonArray(y, 0), ["Size"] = new JsonArray(1200000, 1000000) },
+        };
+        doc["Ports"] = new JsonArray(Port(1, 0, -1350000), Port(2, 0, 150000), Port(3, Len, -1350000), Port(4, Len, 150000));
+        File.Copy(Path.Combine(dir, "pwl.ctech"), Path.Combine(_root, "pwl.ctech"), overwrite: true);
+        string path = Path.Combine(_root, "unequal.c3d");
+        File.WriteAllText(path, doc.ToJsonString());
+        var built = Assemble(C3dPersistence.LoadFromFile(path), path);
+        Assert.True(built.Ok, built.Refusal);
+        var gaps = built.Problem!.Ports.Where(p => p.Number <= 2).Select(p => p.Wall!.GapM).ToList();
+        Assert.NotEqual(gaps[0], gaps[1], 9);
+
+        var (cal, refusal) = CircuitRF.Design.Em3d.Em3dWallCalibration.Plan(built.Problem!, 1e9, 10e9, []);
+        Assert.Null(refusal);
+        foreach (var std in cal!.Standards)
+            foreach (var port in std.Problem.Ports)
+            {
+                var line = std.Problem.Sheets.Single(x => x.Name == port.PositiveObject);
+                double end = port.Direction.X > 0 ? line.Outline.Min(q => q.X) : line.Outline.Max(q => q.X);
+                Assert.Equal(port.Direction.X > 0 ? port.Max.X : port.Min.X, end, 12);
+            }
+    }
+
+    /// <summary>R-pwl3-5 — a setup whose Ports3D asks Wave of one port and Wall of another on the same face is refused, naming both,
+    /// rather than left to whichever row came last.</summary>
+    [Fact]
+    public void ASetupAskingTwoKindsOfOneFace_IsRefusedNamingBothPorts()
+    {
+        const long Far = 8000000;
+        var (doc, path) = Stripline(d =>
+        {
+            d["Objects"]!.AsArray().Add(new JsonObject
+            {
+                ["$type"] = "Sheet", ["Name"] = "far", ["Material"] = "Perfect", ["Plane"] = "XY", ["Offset"] = 0,
+                ["Rect"] = new JsonObject { ["Min"] = new JsonArray(0, Far - W / 2), ["Size"] = new JsonArray(Len, W) },
+            });
+            d["Ports"]!.AsArray().Add(WallPort(3, 0, Far - W, 2 * W));
+            d["Ports"]!.AsArray().Add(WallPort(4, Len, Far - W, 2 * W));
+            d["Setups"]![0]!["Ports3D"] = new JsonArray(new JsonObject { ["Port"] = 1, ["Kind"] = "Wave" },
+                                                        new JsonObject { ["Port"] = 3, ["Kind"] = "Wall" });
+        });
+        var refused = Assemble(doc, path);
+        Assert.False(refused.Ok);
+        Assert.Contains("port 1 as a Wave port and port 3 as a Wall port", refused.Refusal);
+    }
+
+    /// <summary>R-pwl3-1 — every problem that carries the ports makes a wall port's face PEC and flush, and the editor's box is the
+    /// run's: an eigenmode setup does (its wall ports load the cavity at the wall, uncalibrated), an electrostatic one, which has no
+    /// ports, keeps the face it states.</summary>
+    [Fact]
+    public void AnEigenmodeSetup_ForcesTheWallFaceAsTheEditorDraws_AnElectrostaticOneDoesNot()
+    {
+        var (doc, path) = Stripline(d => d["Setups"]![0]!["Problem3D"] = "Eigenmode");
+        var e = new C3dElaborator().Elaborate(doc, path, null);
+        var setup = C3dSetups.Read(doc).Single(s => s.Name == "Palace").Setup!;
+        var built = Assemble(doc, path);
+        Assert.True(built.Ok, built.Refusal);
+        Assert.Equal(Em3dBoundaryKind.Pec, built.Problem!.Boundary.Faces.XMin);
+        Assert.Equal(0, built.Problem.Boundary.Min.X, 12);
+        Assert.All(built.Problem.Ports, p => Assert.NotNull(p.Wall));
+        Assert.DoesNotContain(built.Notes, n => n.Contains("calibrated out by line standards", StringComparison.Ordinal));
+        var drawn = C3dProblemAssembly.AirBox(setup, e, out _, doc)!;
+        Assert.Equal(Em3dBoundaryKind.Pec, drawn.Faces.XMin);
+        Assert.Equal(built.Problem.Boundary.Min.X, drawn.Min.X, 12);
+
+        setup.Problem3D = Em3dProblemType.Electrostatic;
+        var stated = C3dProblemAssembly.AirBox(setup, e, out _, doc)!;
+        Assert.NotEqual(Em3dBoundaryKind.Pec, stated.Faces.XMin);
+        Assert.True(stated.Min.X < -1e-6, "the stated 500 µm padding");
+    }
+
     /// <summary>R-pwl3-11/12 — fed ideal matched lines in place of solves (the standards and the 20 mm structure, wall to wall, in the
     /// fill's own ε), the calibration gives back that line, its diagnostics read the fill's ε_eff, and nothing is called non-passive.</summary>
     [Fact]

@@ -16,6 +16,7 @@ public sealed class WallStandardsCacheRunTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "crf-pwl3c-" + Guid.NewGuid().ToString("N")[..12]);
     private int _standards, _structures;
+    private readonly List<Em3dSolverId> _standardSolvers = [];
 
     public WallStandardsCacheRunTests() => Directory.CreateDirectory(_root);
 
@@ -39,6 +40,7 @@ public sealed class WallStandardsCacheRunTests : IDisposable
                 return Em3dRunService.Leg.Failed(Solver.Id, EmRunStatus.EngineError, EmDiagnostics.SolveFailed("stand-in"));
             }
             t._standards++;
+            t._standardSolvers.Add(Solver.Id);
             int n = problem.Ports.Count;
             var s = new Complex[n, n];
             for (int i = 0; i < n; i++) s[i, (i + n / 2) % n] = Complex.FromPolarCoordinates(1, -0.5);
@@ -47,8 +49,8 @@ public sealed class WallStandardsCacheRunTests : IDisposable
         }
     }
 
-    [Fact]
-    public void ASecondRunReusesEveryStandard_AndSolvesOnlyTheStructure()
+    /// <summary>testdata/pwl's stripline with a wall port at each end, and its Palace setup.</summary>
+    private (C3dDocument Doc, string Path, EmSetup Setup) Stripline()
     {
         string dir = FixturePaths.Require("testdata/pwl");
         var doc = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, "stripline_line_L20000um.c3d")))!.AsObject();
@@ -60,11 +62,17 @@ public sealed class WallStandardsCacheRunTests : IDisposable
             ["Rect"] = new JsonObject { ["Min"] = new JsonArray(-1717866, -1000000), ["Size"] = new JsonArray(3435732, 2000000) },
         };
         doc["Ports"] = new JsonArray(Port(1, 0), Port(2, 20000000));
-        File.Copy(Path.Combine(dir, "pwl.ctech"), Path.Combine(_root, "pwl.ctech"));
+        File.Copy(Path.Combine(dir, "pwl.ctech"), Path.Combine(_root, "pwl.ctech"), overwrite: true);
         string path = Path.Combine(_root, "s.c3d");
         File.WriteAllText(path, doc.ToJsonString());
         var loaded = C3dPersistence.LoadFromFile(path);
-        var setup = C3dSetups.ForRun(C3dSetups.Read(loaded).Single(s => s.Name == "Palace").Setup!, path);
+        return (loaded, path, C3dSetups.ForRun(C3dSetups.Read(loaded).Single(s => s.Name == "Palace").Setup!, path));
+    }
+
+    [Fact]
+    public void ASecondRunReusesEveryStandard_AndSolvesOnlyTheStructure()
+    {
+        var (loaded, path, setup) = Stripline();
         string results = Path.Combine(_root, "results");
         Em3dRunService.LegStandIn = (root, d) => root.StartsWith(_root, StringComparison.Ordinal) ? new Counting(d, this) : null;
 
@@ -75,6 +83,27 @@ public sealed class WallStandardsCacheRunTests : IDisposable
 
         EmRunService.RunThreeDView(setup, loaded, path, null, results);
         Assert.Equal(3, _standards);        // none solved again
+        Assert.Equal(2, _structures);
+
+        // A renamed setup with the same settings solves the same standards: its name is not part of their solve.
+        setup.Name = "Palace, renamed";
+        EmRunService.RunThreeDView(setup, loaded, path, null, results);
+        Assert.Equal(3, _standards);
+        Assert.Equal(3, _structures);
+    }
+
+    /// <summary>A comparison calibrates each solver's structure with standards THAT solver solved, never with the first solver's:
+    /// the gap's discretisation is what the error box removes, and it differs between solvers.</summary>
+    [Fact]
+    public void AComparison_SolvesEachSolversOwnStandards()
+    {
+        var (loaded, path, setup) = Stripline();
+        setup.Solver3D = Em3dSolverChoice.Compare([Em3dSolverId.Palace, Em3dSolverId.Emerge], Em3dSolverId.Palace);
+        Em3dRunService.LegStandIn = (root, d) => root.StartsWith(_root, StringComparison.Ordinal) ? new Counting(d, this) : null;
+
+        EmRunService.RunThreeDView(setup, loaded, path, null, Path.Combine(_root, "results"));
+        Assert.Equal(3, _standardSolvers.Count(x => x == Em3dSolverId.Palace));
+        Assert.Equal(3, _standardSolvers.Count(x => x == Em3dSolverId.Emerge));
         Assert.Equal(2, _structures);
     }
 }
