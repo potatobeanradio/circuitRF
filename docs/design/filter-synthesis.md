@@ -539,8 +539,8 @@ modes.
 **The window** (`src/Ui/Filters/FilterDesignerViewModel.cs`, `src/Ui/Views/Filters/`) is laid out as the Match
 Designer is.
 - On the left: the specification, the family filter, the substrate it found, then the realisers. Under each one it
-  shows whether it can build the filter and, if not, why. Below them, "What Place writes": the parameters and site
-  values.
+  shows whether it can build the filter and, if not, why: first its own check (`Supports`), then what realising it found
+  (below). Below them, "What Place writes": the parameters and site values.
 - On the right: one Data Display plot, as the Match Designer hosts its own. It shows |S21| and |S11| of the ideal ladder
   and of the selected realisation's bench, both run by the engine on every edit.
 - **Tools ▸ Filter Designer…** (both menu surfaces) opens it on no part: the default specification, every family. Place
@@ -554,6 +554,46 @@ Designer is.
   one read), and fills them with `PassiveSites.PlaceParts`. Part, site parts and wires go in one `PlaceSitePartsCommand`,
   so one Undo takes them all off.
 
+**Speed.** Measured by `TheDesigner_PathsOnATypicalSpec_AreTimed` on a 5-pole 0.1 dB Chebyshev bandpass, 2.28 to
+2.52 GHz, every shipped realiser, the shipped RO4350B board, a Debug build on one machine. "Shown" is until the realised
+response is on the plot.
+
+| Path | Before | After |
+|---|---|---|
+| Open, the window's default spec | 5.7 s | 3.1 s; the ideal at once. 0.3 s on the UI thread the first time (JIT), 1 ms after |
+| Fill the realiser list (16 `Supports`) | 0.2 ms | 0.4 ms; then each row realised in the background, 26 s for all 11 |
+| Select a realiser | 0.05 to 20.7 s (interdigital 20.7, open loop 4.8, tapped hairpin 3.1) | 0.05 to 0.19 s once its row is checked |
+| Edit a field (the ripple) | 9.1 s | 4.1 s, including the 0.25 s pause |
+| Combline, realise + bench, cold | 9.2 + 1.7 s | 2.9 + 0.06 s |
+| Interdigital, realise + bench, cold | 18.3 + 2.5 s | 9.4 + 0.07 s |
+| Open loop / tapped hairpin, realise, cold | 4.8 / 3.1 s | 3.7 / 2.4 s |
+
+Where the time went. `Supports` designs nothing (the list was 0.2 ms), and only the selected realiser was simulated, so
+neither was the cause. The ideal is 4 to 18 ms and a bench at most 0.2 s.
+- MCLA's cross-section fit is 9 to 11 N-line solves, each two field solves (C and C₀): 1.0 s for 5 strips, 1.6 s for 7.
+  The bench then solved the same cross-section again, 1.7 to 2.5 s, because the fit's widths were not on the plan's grid
+  and so missed the solver's cache.
+- MCRC's k(S) and Qe bisections are 30 halvings each, and every halving is a peak search over 601 frequencies of the
+  part's circuit model.
+- Nothing was kept: selecting a realiser again realised it again, and every keystroke started a realisation.
+
+What changed.
+- **The window** shows the ideal first, then realises and runs the selected realiser alone. Realisations are kept for
+  the process by specification, substrate and realiser (a running one is joined, not started twice; cleared whole at
+  256). Every listed realiser its check lets through is then realised in the background, one at a time, and its row
+  changes in place to "builds it" or "refuses: why": a check is cheap but not the last word (on this spec the
+  coupled-feed and stepped-impedance hairpins pass it and then cannot reach Qe). If the list's own first choice refuses,
+  the next is selected. A stale step is dropped when it ends; a running `Realise` cannot be interrupted. Typed fields
+  wait for 0.25 s without a keystroke; a choice runs at once. The bar beside "Realisers" shows after 0.1 s.
+- **The N-line solver** (`MicrostripMultiLineModel`) solves C and C₀ side by side. The results are bit-identical.
+- **The MCLA fit** steps on the plan's 2 nm grid, so its last solve is the bench's, from the cache. The stored widths and
+  gaps move by 1 nm at most.
+- **MCRC's bisection** stops once its bracket is under 1 nm (half the plan's grid) and 1e-7 of its range: 21 to 24
+  halvings in place of 30. A gap or tap moves by one grid step at most. Each coupled-modes call now has its own validity
+  reporter, so two realisers can run side by side (the selected one and the background check).
+
+The realiser, synthesis and device tests pass unchanged at their own tolerances.
+
 **Tests** (`tests/Ui.Tests/Synthesis/FilterDesignerTests.cs`) use a realiser of their own: a lumped Butterworth or
 Chebyshev lowpass written as MLAD sites.
 - The verb lists it, and says why it refuses a highpass.
@@ -565,6 +605,8 @@ Chebyshev lowpass written as MLAD sites.
 - The Designer preselects the family and lists the realiser, plots four traces, and refuses Place on a band the realiser
   cannot build. Its Place adds the ladder, two inductors and a capacitor, and one Undo takes them all off.
 - Opened with no schematic, it lists every family and realises the filter, and Place is greyed with its reason.
+- The timing harness above. It asserts that the UI thread's share of each path stays under a second and that the
+  checked list is truthful: every row its check let through is realised, and the coupled-feed hairpin says "refuses:".
 
 ## 6a. Tuning a synthesised filter
 
@@ -704,6 +746,16 @@ edge-coupled or zig-zag chain, which has no k or Qe to measure), `out-of-curve`.
   alone leaves out.
 - **MCLA: centring the combline's band.** Why: its skirts are not symmetric, so the 3 dB band sits about 1 % below a
   centre its resonators are tuned to. A small shift of the tuning frequency, found from the band edges, would centre it.
+- **Designer: the ideal with loss.** A second ideal pair whose L and C carry the unloaded Q of a resonator on the board
+  (its conductor and dielectric loss), or an unloaded-Q field. Why: the realised bench has the board's loss and the ideal
+  has none, so the passband comparison mixes loss with design error.
+- **Designer: a cancellation token through `IFilterRealiser.Realise`.** Why: a stale realisation runs to its end (9 s for
+  the 5-pole interdigital) and holds a core the new one wants.
+- **MCLA: the fit coarse, then fine.** Its steps on the field solver at half the resolution until within the 0.3 %, then
+  at full resolution to finish. Why: the fit's solves are nearly all of an MCLA realisation, and a coarse solve costs about
+  a tenth of a fine one.
+- **MCRC: the peak search narrowed to the last step's peaks.** Why: each halving sweeps 601 points over ±50 % of f0,
+  while the peaks move a fraction of a per cent from one halving to the next.
 - **MCLA: choosing h, or a combline's Y_a, for the process.** Why: the defaults fit a board. A die with a minimum gap
   wants the scale that keeps the narrowest gap at or above that minimum.
 

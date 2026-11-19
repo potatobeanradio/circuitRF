@@ -61,13 +61,23 @@ There are three ways in:
 | Family | Show only the realisers of one family, or of any. |
 
 The substrate comes from the schematic's technology: its default signal layer over its ground. Opened from Tools with no
-schematic, it comes from the workspace's default technology. The line under the form says which one it is. With no technology, a realiser that needs a substrate refuses, and says so.
+schematic, it comes from the workspace's default technology. The line under the form says which one it is. With no
+technology, a realiser that needs a substrate refuses, and says so.
+
+A choice from a list takes effect at once. A typed field waits until you pause typing for a quarter of a second, so the
+realisers do not run on every keystroke.
 
 ## The realisers {#realisers}
 
-The list shows every realiser of the chosen family. Under each one, it says **can build it**, or why it cannot: the band
-is not one it builds, the order is too high, and so on. The first realiser that can build the filter is selected. Select
-another one to compare.
+The list shows every realiser of the chosen family. Under each one, it first says **can build it; checking…**, or why it
+cannot: the band is not one it builds, the order is too high, and so on. That first answer is the realiser's quick check.
+Each realiser that passes it is then designed in the background, one after another, and its line changes to **builds it**
+or to **refuses:** and the reason. A realiser can pass the check and still refuse once it designs the filter, for example
+when a feed gap would be narrower than the board allows.
+
+The first realiser that can build the filter is selected. If it refuses once designed, the next one is selected. Select
+another one to compare. A design is kept for as long as the application runs, so selecting a realiser again, or going back
+to an earlier specification, shows its response at once.
 
 **What Place writes** lists the parameters the part will store and the value each site wants, plus any notes from the
 realiser.
@@ -82,6 +92,11 @@ The plot shows |S21| and |S11| in dB, in two pairs:
 
 The sweep runs from near DC to three times the cutoff for a lowpass, from a third of the cutoff to three times it for a
 highpass, and over two bandwidths either side of a band.
+
+The ideal pair appears at once. The realised pair joins it when the selected realiser has been designed. That takes under
+a tenth of a second for the closed-form designs. The hairpins and open loops take a few seconds, because their couplings
+are solved on the part's circuit model, and a coupled array up to about ten, because its cross-section is fitted with a
+field solver. A bar beside **Realisers** shows while the window waits.
 
 ## Place {#place}
 

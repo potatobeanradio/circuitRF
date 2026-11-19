@@ -65,8 +65,14 @@ part you placed yourself.</p>
 (MCRC) is selected; its realised response is overlaid on the ideal one.</figcaption>
 </figure>
 <h2 id="open">Opening it</h2>
-<p>Select an MLAD, MCRC or MCLA in a schematic and press <strong>Synthesise…</strong> in its Properties. The Designer opens with that part's
-family preselected, and <strong>Place</strong> puts the filter into that schematic.</p>
+<p>There are three ways in:</p>
+<ul>
+<li><strong>Tools ▸ Filter Designer…</strong> opens it on its default specification with every family listed. <strong>Place</strong> puts the filter into
+the schematic that was active when you opened it. With no schematic open, <strong>Place</strong> is greyed, and its tooltip says why.</li>
+<li><strong>Filter Designer…</strong> on a schematic's right-click menu, on an empty spot of the canvas, does the same for that schematic.</li>
+<li>Select an MLAD, MCRC or MCLA in a schematic and press <strong>Synthesise…</strong> in its Properties. The Designer opens with that
+part's family preselected, and <strong>Place</strong> puts the filter into that schematic.</li>
+</ul>
 <h2 id="spec">The specification</h2>
 <table>
 <thead>
@@ -114,12 +120,20 @@ family preselected, and <strong>Place</strong> puts the filter into that schemat
 </tr>
 </tbody>
 </table>
-<p>The substrate comes from the schematic's technology: its default signal layer over its ground. The line under the form
-says which one it is. With no technology, a realiser that needs a substrate refuses, and says so.</p>
+<p>The substrate comes from the schematic's technology: its default signal layer over its ground. Opened from Tools with no
+schematic, it comes from the workspace's default technology. The line under the form says which one it is. With no
+technology, a realiser that needs a substrate refuses, and says so.</p>
+<p>A choice from a list takes effect at once. A typed field waits until you pause typing for a quarter of a second, so the
+realisers do not run on every keystroke.</p>
 <h2 id="realisers">The realisers</h2>
-<p>The list shows every realiser of the chosen family. Under each one, it says <strong>can build it</strong>, or why it cannot: the band
-is not one it builds, the order is too high, and so on. The first realiser that can build the filter is selected. Select
-another one to compare.</p>
+<p>The list shows every realiser of the chosen family. Under each one, it first says <strong>can build it; checking…</strong>, or why it
+cannot: the band is not one it builds, the order is too high, and so on. That first answer is the realiser's quick check.
+Each realiser that passes it is then designed in the background, one after another, and its line changes to <strong>builds it</strong>
+or to <strong>refuses:</strong> and the reason. A realiser can pass the check and still refuse once it designs the filter, for example
+when a feed gap would be narrower than the board allows.</p>
+<p>The first realiser that can build the filter is selected. If it refuses once designed, the next one is selected. Select
+another one to compare. A design is kept for as long as the application runs, so selecting a realiser again, or going back
+to an earlier specification, shows its response at once.</p>
 <p><strong>What Place writes</strong> lists the parameters the part will store and the value each site wants, plus any notes from the
 realiser.</p>
 <h2 id="response">The response</h2>
@@ -132,6 +146,10 @@ substrate, between two ports of Z0.</li>
 </ul>
 <p>The sweep runs from near DC to three times the cutoff for a lowpass, from a third of the cutoff to three times it for a
 highpass, and over two bandwidths either side of a band.</p>
+<p>The ideal pair appears at once. The realised pair joins it when the selected realiser has been designed. That takes under
+a tenth of a second for the closed-form designs. The hairpins and open loops take a few seconds, because their couplings
+are solved on the part's circuit model, and a coupled array up to about ten, because its cross-section is fitted with a
+field solver. A bar beside <strong>Realisers</strong> shows while the window waits.</p>
 <h2 id="place">Place</h2>
 <p><strong>Place</strong> puts the part to the right of everything already in the schematic. It then puts a part on each of its sites, the
 way <a href="components.html#sites">Place Site Parts</a> does: an R, L or C of the site's value with the part's <code>Footprint</code> (or the board's

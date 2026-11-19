@@ -11,6 +11,7 @@ using CircuitRF.Design.Filters;
 using CircuitRF.Engine;
 using CircuitRF.Ui.Filters;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests.Synthesis;
 
@@ -19,7 +20,7 @@ namespace CircuitRF.Ui.Tests.Synthesis;
 /// realiser of its own: the <c>filter</c> verb end to end, the MCP mode's schema and one call through the adapter, and the
 /// Filter Designer's list and Place.
 /// </summary>
-public sealed class FilterDesignerTests : IDisposable
+public sealed class FilterDesignerTests(ITestOutputHelper output) : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "crf-filter-" + Guid.NewGuid().ToString("N")[..12]);
     public void Dispose() { try { Directory.Delete(_dir, true); } catch { /* best effort */ } }
@@ -199,5 +200,70 @@ public sealed class FilterDesignerTests : IDisposable
         Assert.True(vm.Realisation is not null, vm.Status);
         Assert.False(vm.PlaceCommand.CanExecute(null));
         Assert.Contains("No schematic", vm.PlaceTip);
+    }
+
+    /// <summary>
+    /// The Designer's own paths timed on a typical specification, the shipped realisers on the shipped RO4350B board: a
+    /// 5-pole 0.1 dB Chebyshev bandpass, 2.28 to 2.52 GHz (10 % at 2.4 GHz). Opening is on the window's own default
+    /// specification; the specification is then typed in; the list is one Refresh; each selection and the ripple's edit
+    /// run until their response is shown, and every listed realiser until it is checked; then the ideal and each realiser's
+    /// own realising and bench, cold. The times go to the test output (docs/design/filter-synthesis.md §6 records them). Asserted: the
+    /// UI thread's share stays small, and the checked list is truthful, the coupled-feed hairpin refusing what its check
+    /// let through.
+    /// </summary>
+    [Fact]
+    public async Task TheDesigner_PathsOnATypicalSpec_AreTimed()
+    {
+        var tech = CircuitRF.Design.Layout.ShippedTechnologies.Load(CircuitRF.Design.Layout.ShippedTechnologies.DefaultId);
+        var lines = new List<string>();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        double sync = 0.0;
+        FilterDesignerViewModel? vm = null;
+        async Task Time(string what, Action act)
+        {
+            clock.Restart();
+            act();
+            sync = Math.Max(sync, clock.Elapsed.TotalMilliseconds);
+            string ui = $"{clock.Elapsed.TotalMilliseconds:0.0} ms on the UI thread";
+            await vm!.Realising;
+            string shown = $"{clock.Elapsed.TotalMilliseconds:0} ms";
+            await vm.Checking;
+            lines.Add($"{what}: shown {shown}, list checked {clock.Elapsed.TotalMilliseconds:0} ms ({ui})"
+                      + (vm.Realisation is null ? $"; {vm.Status}" : ""));
+        }
+        await Time("open", () => vm = new FilterDesignerViewModel(null, technology: tech));
+        await Time("type 5 poles, 2.28 to 2.52 GHz", () => { vm!.Order = "5"; vm.F1 = "2.28 GHz"; vm.F2 = "2.52 GHz"; });
+        await Time($"list ({vm!.Realisers.Count} realisers)", vm.Refresh);
+
+        Assert.All(vm.Realisers.Where(r => r.Supported), r => Assert.True(r.Realised, r.Name));
+        Assert.StartsWith("refuses: ", vm.Realisers.Single(r => r.Name.StartsWith("Hairpin bandpass, coupled", StringComparison.Ordinal)).Status);
+        foreach (var row in vm.Realisers.Where(r => r.Supported).ToList())
+            await Time($"select {row.Name}", () => vm.Selected = row);
+        await Time("edit ripple", () => vm.Ripple = "0.2");
+        clock.Restart();
+        _ = new FilterDesignerViewModel(null, technology: tech);
+        lines.Add($"open again: {clock.Elapsed.TotalMilliseconds:0.0} ms on the UI thread");
+
+        // Cold: a ripple the window has not seen, so no cross-section of it is in the N-line solver's cache.
+        var spec = new FilterSpec(FilterResponse.Chebyshev, FilterBand.Bandpass, 5, 2.28e9, 2.52e9, 0.15);
+        var substrate = FilterSynthesisService.Substrate(tech, null, null, out _);
+        var f = FilterSynthesisService.Frequencies(spec, 401);
+        clock.Restart();
+        FilterSynthesisService.Response(FilterSynthesisService.Ideal(spec, 401), f, spec.Z0);
+        lines.Add($"ideal: {clock.Elapsed.TotalMilliseconds:0} ms");
+        foreach (var r in FilterRealisers.All.Where(r => r.Supports(spec, out _)))
+        {
+            clock.Restart();
+            try
+            {
+                var realisation = r.Realise(spec, substrate);
+                double realise = clock.Elapsed.TotalMilliseconds;
+                FilterSynthesisService.Response(FilterSynthesisService.Cnl(spec, realisation, r.Name, substrate, tech, 401, []), f, spec.Z0);
+                lines.Add($"cold {r.Name}: realise {realise:0} ms, bench {clock.Elapsed.TotalMilliseconds - realise:0} ms");
+            }
+            catch (CircuitRF.Core.Devices.ParameterRefusalException) { lines.Add($"cold {r.Name}: refuses in {clock.Elapsed.TotalMilliseconds:0} ms"); }
+        }
+        output.WriteLine(string.Join("\n", lines));
+        Assert.True(sync < 1000, string.Join("\n", lines));
     }
 }
