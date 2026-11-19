@@ -493,3 +493,17 @@ instance's `turns = 3` reached a kit generator as `3.0` and hashed to a differen
 **EM read a schematic-only cell as having no layout.** `EmPartKinds` classifies by the reference, and a cell with
 no layout view of its own was `NoLayout`, so `"*"` skipped it and a circuit-model EM run refused it, although
 Update Layout places its generator. A generator-drawn cell is a `Part`, as a `pdk://` part is.
+
+## A kit part valued by a corner variable did not elaborate in LVS
+
+A schematic whose kit part's model card names a corner variable (a `.param` only the kit's corner
+library defines) simulated, and `lvs` refused it with `lvs.schematic.elaboration-failed` ("expects a
+number, but is set to ...") and 0 schematic devices. `SchematicRead` extracted with
+`SchematicCircuit.Extract`, which binds no corners; Simulate and `check` extract with
+`SchematicCircuit.ExtractInWorkspace`, which binds the workspace's corner axes and the design's
+`CornerSelections`. `SchematicRead` now calls that too, and so does `PassiveSites.Read` (Place Site
+Parts refused the same schematic with the same sentence). A workspace with no corner axes extracts
+exactly as before. Gate: `tests/Ui.Tests/Lvs/WorkspaceCornerTests.cs`.
+
+`PinNetwork.Read` still extracts without corners, deliberately: its VAR block is the network's global
+variables, so binding a kit's corner section would turn every corner constant into a fit variable.

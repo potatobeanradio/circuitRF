@@ -99,7 +99,9 @@ public static class SchematicRead
         TestBench tb;
         try
         {
-            extracted = SchematicCircuit.Extract(model, benchName);
+            // With the workspace's kit corners bound, as Simulate binds them: a kit part's value or
+            // model card may name a corner variable that nothing else defines.
+            extracted = SchematicCircuit.ExtractInWorkspace(model, benchName, DiskCellResolver.Instance, cschPath);
             (lib, tb) = SchematicCircuit.RoundTrip(
                 SchematicCircuit.CnlTextOf(extracted, benchName),
                 benchName, SchematicCircuit.ReferenceBaseOf(cschPath));

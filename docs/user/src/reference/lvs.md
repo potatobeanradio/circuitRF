@@ -65,6 +65,10 @@ To do it, LVS resolves three things, all of which it finds for itself:
 | **the technology** | the stackup that layout references &mdash; which conductor each drawing layer is, which vias join which conductors, and **which conductor is the ground reference** |
 | **the schematic** | the cell's own `.csch`, read by the same extraction **Simulate** performs &mdash; but *not* the flattened, elaborated netlist. The hierarchy stays intact and the names stay yours; all LVS takes from elaboration is the resolved parameter **values** it compares |
 
+Those values come out with the workspace's kit corners bound, as Simulate binds them: the corner the
+schematic selects on each axis, else the kit's nominal one. A kit part whose value or model card names a
+corner variable therefore compares at the number it simulates with.
+
 The technology is not optional and is never guessed. Without it there is no way to know that a shape on
 one layer and a shape on another are the same conductor, or that a barrel between them joins them.
 
