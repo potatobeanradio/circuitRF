@@ -717,7 +717,9 @@ bench and run through `OptimizationRun`, meets both stop goals and centres withi
 measured curves. The pure part is `src/Core/Synthesis/Filters/CouplingCurves.cs`; the solver is a seam,
 `ICouplingCurveSolver` (a two-pin plan and a sweep in, S-parameters out), so Core stays EM-free. The Design layer's
 `CouplingCurvePlanarSolver` (`src/Design/Layout/Em/`) is its Planar MoM: the plan drawn as its PCell draws it, the copper
-unioned into one sheet on the substrate's grounded slab, an edge port on each pin, a coarse mesh, no de-embedding.
+unioned into one sheet on the substrate's grounded slab, an edge port on each pin, a coarse mesh, no de-embedding. The
+ports are grounded, as §6d's are: their source returns through the ground plane, so the outer cell's capacitance is not
+in series with them.
 
 **k against S** (Hong and Lancaster, [10.1002/0471221619](https://doi.org/10.1002/0471221619), §8.2). The bench is
 §4's: two resonators lightly fed by coupled strips 3·h off, or for the cross square's own pairs (S3, Sx) the square
@@ -741,6 +743,13 @@ edge-coupled or zig-zag chain, which has no k or Qe to measure), `out-of-curve`.
 
 **Tests.** `tests/Core.Tests/Synthesis/CouplingCurveTests.cs`: from synthetic S-parameters on the 21-point grid, a Q =
 300 pair's k to 1e-4, and Qe = 15 behind 30 ps of line to 1 %, and the curve read backwards and refused outside.
+`Benchmark`, `tests/Ui.Tests/Synthesis/CouplingCurveEmTests.cs`: the tapped hairpin for a 0.1 dB Chebyshev of order 5,
+2.2 to 2.6 GHz, on lossless 20 mil RO4350B, on the coarse mesh against the circuit model. One point of each curve:
+- k(1,2) at its circuit gap (0.213 mm): 0.101 against 0.133, 24 % low. The ports do not move it (0.101 on the series
+  gap as well), as a lightly fed pair's resonances are its own. The test allows 30 %.
+- Qe at the circuit tap (6.109 mm): 7.20 against 6.86, 5 % high. On the series gap the tap barely loaded the resonator,
+  and Qe read 7957. The test allows 10 %.
+- The two sweeps take about 6.5 min.
 
 ## 6c. Extraction and polish
 
@@ -984,9 +993,6 @@ default is 11 points.
 - **EM (§6d): shunt sites on grounded edge ports at the pin.** Why: a grown via takes the solve onto the general
   kernel, 30 to 100 times slower a point than the one-level one (§6d). The via's inductance would then go into the
   closing load, as the circuit bench's VIAGND has it.
-- **EM: §6b's coupling benches on grounded ports.** Why: `CouplingCurvePlanarSolver.Solve(plan, …)` still drives the
-  default series gap with no de-embedding. That cost §6d's bandpass 35 dB of passband, and a tapped Qe bench reads the
-  port's own loading.
 - **EM (§6d): de-embedded edge ports.** Why: ports 1 and 2 are solved without the two-line calibration, so the half
   cell beyond each cut is in |S11|. The calibrated run would sharpen the return loss, at a few calibration solves per
   point.
