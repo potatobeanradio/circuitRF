@@ -1,0 +1,94 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Mm",
+  "SnapDbu": 10000,
+  "AngleMode": "AnyAngle",
+  "Shapes": [
+    {
+      "$type": "Rect",
+      "X1": 0,
+      "Y1": -770000,
+      "X2": 20000000,
+      "Y2": 770000,
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 0,
+      "Y1": -10000000,
+      "X2": 20000000,
+      "Y2": 10000000,
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Label",
+      "X": 300000,
+      "Y": 0,
+      "Text": "1",
+      "Height": 400000,
+      "Rotation": "R0",
+      "IsPort": true,
+      "PortDirection": "R0",
+      "PortKind": "Internal",
+      "PortLayer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Style": "Regular",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Label",
+      "X": 19700000,
+      "Y": 0,
+      "Text": "2",
+      "Height": 400000,
+      "Rotation": "R0",
+      "IsPort": true,
+      "PortDirection": "R180",
+      "PortKind": "Internal",
+      "PortLayer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Style": "Regular",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 0,
+      "Y1": -300000,
+      "X2": 600000,
+      "Y2": 300000,
+      "Layer": {
+        "Layer": 7,
+        "Datatype": 0
+      }
+    },
+    {
+      "$type": "Rect",
+      "X1": 19400000,
+      "Y1": -300000,
+      "X2": 20000000,
+      "Y2": 300000,
+      "Layer": {
+        "Layer": 7,
+        "Datatype": 0
+      }
+    }
+  ],
+  "Instances": []
+}

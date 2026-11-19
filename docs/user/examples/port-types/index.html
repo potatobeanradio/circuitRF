@@ -1,0 +1,1656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Port Types</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/Port Types/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › Port Types</p>
+  </div>
+
+  <h1>Port Types</h1>
+  <p class="lede">Every port circuitRF has on the simplest structure each takes, run side by side: a microstrip line, a coupled pair, a coax, a waveguide, a Floquet cell and a line over conducting silicon, each port on every solver that runs it, measured against a closed form and against each other, with a table of where each port is best used and where to avoid it.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ Port Types</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>Every way circuitRF feeds a structure, each on the simplest structure it takes, run side by side. Each cell is one structure with an answer known in closed form where one exists; each of its ports is run on every solver that runs it, and the results are compared with the closed form and with each other. The first question a designer asks of a new structure is <em>which port should I use here?</em>; the table below answers it, and the sections after it show what each choice costs on structures where the right answer is known.</p>
+<p>Every number on this page came from running this workspace (the machine and versions are at the end). Nothing in <code>results/</code> is shipped: run any setup and its result lands there.</p>
+<h2 id="choosing-a-port">Choosing a port</h2>
+<p>Each port's own section in <strong>Help ▸ circuitRF Documentation</strong> (EM Setup ▸ Choosing a port holds this same table) says how to draw and set it up. The sections below measure the ones a simple structure can show.</p>
+<table>
+<thead>
+<tr>
+<th>Port</th>
+<th>Solvers</th>
+<th>Best used for</th>
+<th>Avoid when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Planar <strong>Edge</strong></td>
+<td>planar</td>
+<td>Lines on a layered board or MMIC entering the structure at a conductor's end; the fastest route to a de-embedded answer, the port discontinuity removed</td>
+<td>The structure has 3D features (connectors, bond wires, board edges that matter), or other metal sits within a few substrate heights of the feed and cannot be grouped with it</td>
+</tr>
+<tr>
+<td>Planar <strong>Internal</strong></td>
+<td>planar</td>
+<td>A component or device terminal inside the metal, between the metal and the ground plane</td>
+<td>Power enters the structure along a line: an internal port is not de-embedded and its own parasitic stays in the answer</td>
+</tr>
+<tr>
+<td>3D <strong>Lumped</strong></td>
+<td>Palace, EMerge, openEMS</td>
+<td>A small gap between two conductors: pads, a component site, a quick first setup on any solver</td>
+<td>The sheet is tall against the wavelength (thick substrate, high frequency): its series inductance stays in S11 and nothing removes it</td>
+</tr>
+<tr>
+<td>3D <strong>Lumped, turned</strong></td>
+<td>Palace, EMerge</td>
+<td>Pads placed at an angle, such as a part at 45°</td>
+<td>openEMS (refused); a gap that is not a true rectangle</td>
+</tr>
+<tr>
+<td>3D <strong>Lumped on a cylinder</strong></td>
+<td>openEMS</td>
+<td>A gap on a curved surface solved on a cylindrical grid, such as a birdcage coil</td>
+<td>Any other solver, or a structure not coaxial with the grid's axis</td>
+</tr>
+<tr>
+<td>3D <strong>Coaxial</strong></td>
+<td>Palace, EMerge; openEMS inside the model</td>
+<td>A connector or coax fed in its own TEM field, anywhere in the model</td>
+<td>A line that is not coaxial; on openEMS, a ring on a face of the air box</td>
+</tr>
+<tr>
+<td>3D <strong>Wave</strong></td>
+<td>Palace, EMerge, openEMS</td>
+<td>One line ending on the air box's face, fed and measured in its own mode, with no port parasitic</td>
+<td>The substrate is lossy or conducting enough that the face's mode can change from one frequency to the next; the line cannot run to the box's face; a coax on openEMS's Cartesian grid (use its cylindrical grid)</td>
+</tr>
+<tr>
+<td>3D <strong>Wave with terminals</strong></td>
+<td>openEMS any number; Palace two whose modes differ in speed; EMerge</td>
+<td>Coupled lines ending together on the box's face, in terminal S-parameters</td>
+<td>Lines in a homogeneous fill on Palace (use openEMS); three or more terminals on Palace</td>
+</tr>
+<tr>
+<td>3D <strong>Hollow-guide wave</strong></td>
+<td>Palace, EMerge (two modes: EMerge)</td>
+<td>Waveguide sections, transitions and filters</td>
+<td>Anything with a centre conductor; openEMS</td>
+</tr>
+<tr>
+<td>3D <strong>Floquet</strong></td>
+<td>EMerge</td>
+<td>One cell of an infinite array: frequency-selective surfaces, reflectarray and metasurface elements</td>
+<td>A finite structure, or a cell that cannot be made periodic on both side axes</td>
+</tr>
+<tr>
+<td>3D <strong>Wall</strong></td>
+<td>Palace, EMerge, openEMS</td>
+<td>Lines meeting a PEC wall: shielded circuits, RFIC stacks over conducting silicon, coupled lines or a bus at one wall; the port discontinuity and the coupling at the port are calibrated out</td>
+<td>The line cannot run straight and uniform to the wall for its end run; coupled lines whose modes travel at one speed; a face that must radiate (the wall is PEC); a cross-section so large that its standards cost more than the run</td>
+</tr>
+<tr>
+<td><strong>Component ports</strong></td>
+<td>planar, Palace, EMerge, openEMS</td>
+<td>A placed part's pads, with nothing drawn: every part's terminals at once</td>
+<td>A connection that is a line rather than a part</td>
+</tr>
+<tr>
+<td>Planar <strong>Internal delta gap</strong></td>
+<td>planar</td>
+<td>A lumped element or device cut into the middle of a conductor</td>
+<td>An end-fed line (use Edge)</td>
+</tr>
+<tr>
+<td>Cross-section <strong>conductor ends</strong></td>
+<td>cross-section kernel</td>
+<td>A uniform line or coupled lines from their cross-section alone, in milliseconds</td>
+<td>Anything that is not uniform along its length</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Reading the tables below.</strong> Each result is compared with its cell's reference over the band: the worst |ΔS11| and |ΔS21| (complex differences), the worst error in ∠S21, and the <strong>worst VSWR</strong> between the result's port reflections and the reference's, <code>RfHelpers.VswrFromGamma(reference, answer)</code>: s = (z₂ − z₁)/(z₂ + z₁*), which reads exactly 1 when the two are the same impedance (both in one real 50 Ω reference). The VSWR is the port-match figure, and RF circuit performance follows it; |ΔS21| is dominated by the phase of a long line, so the two sit side by side and neither stands in for the other. No VSWR is formed from a transmission term. <strong>Then the agreement matrix</strong>, the table to read first: every result of the cell against every other, each entry the worst VSWR between the two results' reflections at the frequencies they share, and beside it the worst |ΔS| of the transmission terms.</p>
+<h2 id="what-is-here">What is here</h2>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>View</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Microstrip</strong></td>
+<td>layout, 3D view</td>
+<td>A 50 Ω line, 20 mm, 1.54 mm wide, on 20 mil of PTFE-glass laminate (εr 2.2, tanδ 0.0009) with 18 µm copper. The layout's two edge ports run on the planar solver (<em>Edge · Planar</em>); the 3D view's two wave ports run as drawn (<em>Wave · Palace</em>, <em>· EMerge</em>, <em>· openEMS</em>) and as wall ports (<em>Wall · …</em>)</td>
+</tr>
+<tr>
+<td><strong>Microstrip Internal</strong></td>
+<td>layout</td>
+<td>The same line with internal ports (<em>Internal · Planar</em>): a port's planar kind lives on its label, so this is a copy of the layout</td>
+</tr>
+<tr>
+<td><strong>Microstrip Lumped</strong></td>
+<td>3D view</td>
+<td>The same line with air beyond each end and a lumped sheet from the floor to the strip at each end (<em>Lumped · …</em>)</td>
+</tr>
+<tr>
+<td><strong>Coupled Pair</strong></td>
+<td>layout, 3D view</td>
+<td>Two 1.5 mm strips 0.3 mm apart on the same laminate, 20 mm: planar edge ports, and a two-terminal wave port at each end of the 3D view, run as drawn (<em>Wave · …</em>) and as wall ports (<em>Wall · …</em>)</td>
+</tr>
+<tr>
+<td><strong>Coax</strong></td>
+<td>3D view</td>
+<td>The 3D Connector's coax, a 0.4 mm pin in a 1.34 mm PTFE bore (εr 2.1), 20 mm in a copper housing, with a wave port at each end</td>
+</tr>
+<tr>
+<td><strong>Coax Coaxial</strong></td>
+<td>3D view</td>
+<td>The same coax with an annular (coaxial) lumped port at each end</td>
+</tr>
+<tr>
+<td><strong>Waveguide</strong></td>
+<td>3D view</td>
+<td>An empty WR90 guide, 22.86 × 10.16 mm, 30 mm, 8–12 GHz: the air box's PEC faces are its walls, and each end is a hollow-guide wave port</td>
+</tr>
+<tr>
+<td><strong>Floquet Cell</strong></td>
+<td>3D view</td>
+<td>One 10 mm cell of an infinite 3 mm slab of εr 4, broadside, 1–20 GHz, between Floquet ports 5 mm above and below it</td>
+</tr>
+<tr>
+<td><strong>Line over Silicon</strong></td>
+<td>3D view</td>
+<td>A 10 µm line on 5 µm of oxide over 200 µm of 10 Ω·cm silicon, 2 mm, 1–40 GHz: wave ports as drawn, and as wall ports</td>
+</tr>
+<tr>
+<td><strong>Line over Silicon Lumped</strong></td>
+<td>3D view</td>
+<td>The same line with lumped ports</td>
+</tr>
+<tr>
+<td><strong>Microstrip Reference</strong>, <strong>Coupled Pair Reference</strong>, <strong>Coax Reference</strong></td>
+<td>schematic</td>
+<td>The closed forms the cells are compared with: an MLIN, an MCLIN and a TLIN between 50 Ω ports, each a test bench with its sweep</td>
+</tr>
+</tbody>
+</table>
+<p>The closed forms are the three <strong>… Reference</strong> cells, each a test bench whose schematic is the line between two 50 Ω ports (<code>circuitrf sparam &quot;Microstrip Reference/schematic/Microstrip Reference.csch&quot;</code> runs one), and <code>tech/board-and-connector.ctech</code> is the 3D Connector's technology with 18 µm copper and the slab's, the silicon's and the oxide's materials added.</p>
+<p><strong>Wave and Wall share one 3D view and one set of drawn ports.</strong> The ports are drawn as wave ports, and each <em>Wall · …</em> setup runs them as wall ports through its Analysis Setup's port table (<strong>Simulate ▸ Setup Analyses…</strong>, Kind column). Make <em>Wall · Palace</em> the active setup and watch the overlay: the wave port's whole-face region becomes a short gap from the PEC wall to the line, with the line cut back by it, and the face itself turns PEC. To make wall ports from nothing, right-click the air box's face where the lines end and choose <em>Make Port ▸ Wall</em>: one right-click writes one port per line. Lumped ports need sheets of their own, so they are on a second view of the same line.</p>
+<p><strong>Each solver's mesh is the one this series measured a port on.</strong> Palace runs at Standard quality on four frequencies (1, 4, 7 and 10 GHz) to keep its runs short; EMerge's elements are 0.05 λ with an edge refinement of 0.1 on the board cells (0.1 λ on the silicon; its Standard preset on the Floquet cell); openEMS's grid is 40 cells per wavelength, 60 where its wave port's current probe needs room round a strip over its floor, and a cylindrical grid about the coax's axis for the coax's wave port.</p>
+<h2 id="microstrip">Microstrip</h2>
+<p>A 50 Ω line, 20 mm long and 1.54 mm wide, on 20 mil (0.508 mm) of PTFE-glass laminate (εr 2.2, tanδ 0.0009), with 18 µm copper. The reference is circuitRF's closed form for it, the <strong>Microstrip Reference</strong> cell's schematic: an MLIN of the same line (Hammerstad–Jensen impedance, Kirschning–Jansen dispersion, conductor and dielectric loss) between two 50 Ω ports. At 4 GHz, where every sweep below has a point, it gives ε_eff 1.892.</p>
+<p>The 3D view's line is an 18 µm copper box over the laminate, the floor of the air box PEC beneath it and its other faces absorbing, the lid 5 mm above the strip. Its two ports are drawn as <strong>wave ports</strong> over the whole of each end face. The <strong>wall</strong> setups run those same ports as wall ports (the Kind column of their Analysis Setup); drawing them from nothing is one right-click, <em>Make Port ▸ Wall</em> on the air box's end face. The <strong>lumped</strong> view puts a sheet from the floor to the strip at each end of the same line, with 2 mm of air beyond it. The planar <strong>Edge</strong> ports are the layout's port labels at the line's ends; the <strong>Internal</strong> ports stand on a 0.6 mm via at each end (an internal port drives the via under it), so its line is 19.4 mm between the vias, and its setup integrates the vias' coupling directly (<code>DirectVerticalKernel</code>), because two vias 20 mm apart are past the fitted kernel's range at 10 GHz.</p>
+<table>
+<thead>
+<tr>
+<th>Port</th>
+<th>Solver</th>
+<th>worst |ΔS11|</th>
+<th>worst |ΔS21|</th>
+<th>worst ∠S21 error</th>
+<th>worst VSWR</th>
+<th>ε_eff at 4 GHz</th>
+<th>size</th>
+<th>time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Planar Edge</td>
+<td>planar</td>
+<td>1.6e−2</td>
+<td>3.5e−2</td>
+<td>2.03°</td>
+<td>1.0322</td>
+<td>1.866</td>
+<td>416 unknowns</td>
+<td>6 s</td>
+</tr>
+<tr>
+<td>Planar Internal</td>
+<td>planar</td>
+<td>1.0e−1</td>
+<td>3.9e−2</td>
+<td>2.17°</td>
+<td>1.2220</td>
+<td>1.913</td>
+<td>519 unknowns</td>
+<td>100 s</td>
+</tr>
+<tr>
+<td>Lumped</td>
+<td>Palace</td>
+<td>2.2e−2</td>
+<td>1.5e−1</td>
+<td>8.96°</td>
+<td>1.0444</td>
+<td>2.007</td>
+<td>144,004 unknowns</td>
+<td>111 s</td>
+</tr>
+<tr>
+<td>Lumped</td>
+<td>EMerge</td>
+<td>1.7e−2</td>
+<td>1.2e−1</td>
+<td>6.99°</td>
+<td>1.0357</td>
+<td>1.978</td>
+<td>305,038 unknowns</td>
+<td>60 s</td>
+</tr>
+<tr>
+<td>Lumped</td>
+<td>openEMS</td>
+<td>3.8e−2</td>
+<td>1.1e−1</td>
+<td>6.33°</td>
+<td>1.0782</td>
+<td>1.963</td>
+<td>134,976 cells</td>
+<td>45 s</td>
+</tr>
+<tr>
+<td>Wave</td>
+<td>Palace</td>
+<td>1.9e−2</td>
+<td>2.8e−2</td>
+<td>1.63°</td>
+<td>1.0377</td>
+<td>1.920</td>
+<td>172,948 unknowns</td>
+<td>2 min 49 s</td>
+</tr>
+<tr>
+<td>Wave</td>
+<td>EMerge</td>
+<td>1.6e−2</td>
+<td>4.9e−3</td>
+<td>0.16°</td>
+<td>1.0322</td>
+<td>1.894</td>
+<td>289,138 unknowns</td>
+<td>55 s</td>
+</tr>
+<tr>
+<td>Wave</td>
+<td>openEMS</td>
+<td>3.5e−2</td>
+<td>1.3e−2</td>
+<td>0.19°</td>
+<td>1.0728</td>
+<td>1.887</td>
+<td>239,400 cells</td>
+<td>69 s</td>
+</tr>
+<tr>
+<td>Wall</td>
+<td>Palace</td>
+<td>1.6e−2</td>
+<td>3.7e−2</td>
+<td>2.05°</td>
+<td>1.0331</td>
+<td>1.922</td>
+<td>313,264 unknowns</td>
+<td>14 min 10 s</td>
+</tr>
+<tr>
+<td>Wall</td>
+<td>EMerge</td>
+<td>1.9e−2</td>
+<td>1.5e−2</td>
+<td>0.80°</td>
+<td>1.0388</td>
+<td>1.905</td>
+<td>291,724 unknowns</td>
+<td>118 s</td>
+</tr>
+<tr>
+<td>Wall</td>
+<td>openEMS</td>
+<td>1.2e−2</td>
+<td>9.0e−3</td>
+<td>0.44°</td>
+<td>1.0241</td>
+<td>1.892</td>
+<td>87,024 cells</td>
+<td>100 s</td>
+</tr>
+<tr>
+<td>reference</td>
+<td>closed form</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>1.892</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Agreement</strong>, worst VSWR between the two results' reflections at 1, 4, 7, 10 GHz (the frequencies every result has):</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Planar Edge · planar</th>
+<th>Planar Internal · planar</th>
+<th>Lumped · Palace</th>
+<th>Lumped · EMerge</th>
+<th>Lumped · openEMS</th>
+<th>Wave · Palace</th>
+<th>Wave · EMerge</th>
+<th>Wave · openEMS</th>
+<th>Wall · Palace</th>
+<th>Wall · EMerge</th>
+<th>Wall · openEMS</th>
+<th>reference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Planar Edge · planar</strong></td>
+<td></td>
+<td>1.2211</td>
+<td>1.0691</td>
+<td>1.0399</td>
+<td>1.0718</td>
+<td>1.0563</td>
+<td>1.0268</td>
+<td>1.0554</td>
+<td>1.0227</td>
+<td>1.0338</td>
+<td>1.0218</td>
+<td>1.0242</td>
+</tr>
+<tr>
+<td><strong>Planar Internal · planar</strong></td>
+<td>1.2211</td>
+<td></td>
+<td>1.2645</td>
+<td>1.1939</td>
+<td>1.2273</td>
+<td>1.2190</td>
+<td>1.1971</td>
+<td>1.1946</td>
+<td>1.1976</td>
+<td>1.1853</td>
+<td>1.2022</td>
+<td>1.2220</td>
+</tr>
+<tr>
+<td><strong>Lumped · Palace</strong></td>
+<td>1.0691</td>
+<td>1.2645</td>
+<td></td>
+<td>1.0636</td>
+<td>1.1030</td>
+<td>1.0379</td>
+<td>1.0575</td>
+<td>1.0846</td>
+<td>1.0772</td>
+<td>1.0757</td>
+<td>1.0666</td>
+<td>1.0444</td>
+</tr>
+<tr>
+<td><strong>Lumped · EMerge</strong></td>
+<td>1.0399</td>
+<td>1.1939</td>
+<td>1.0636</td>
+<td></td>
+<td>1.0853</td>
+<td>1.0342</td>
+<td>1.0305</td>
+<td>1.0694</td>
+<td>1.0315</td>
+<td>1.0317</td>
+<td>1.0269</td>
+<td>1.0357</td>
+</tr>
+<tr>
+<td><strong>Lumped · openEMS</strong></td>
+<td>1.0718</td>
+<td>1.2273</td>
+<td>1.1030</td>
+<td>1.0853</td>
+<td></td>
+<td>1.0962</td>
+<td>1.0616</td>
+<td>1.0294</td>
+<td>1.0596</td>
+<td>1.0655</td>
+<td>1.0655</td>
+<td>1.0782</td>
+</tr>
+<tr>
+<td><strong>Wave · Palace</strong></td>
+<td>1.0563</td>
+<td>1.2190</td>
+<td>1.0379</td>
+<td>1.0342</td>
+<td>1.0962</td>
+<td></td>
+<td>1.0328</td>
+<td>1.0782</td>
+<td>1.0576</td>
+<td>1.0555</td>
+<td>1.0465</td>
+<td>1.0377</td>
+</tr>
+<tr>
+<td><strong>Wave · EMerge</strong></td>
+<td>1.0268</td>
+<td>1.1971</td>
+<td>1.0575</td>
+<td>1.0305</td>
+<td>1.0616</td>
+<td>1.0328</td>
+<td></td>
+<td>1.0444</td>
+<td>1.0382</td>
+<td>1.0329</td>
+<td>1.0252</td>
+<td>1.0215</td>
+</tr>
+<tr>
+<td><strong>Wave · openEMS</strong></td>
+<td>1.0554</td>
+<td>1.1946</td>
+<td>1.0846</td>
+<td>1.0694</td>
+<td>1.0294</td>
+<td>1.0782</td>
+<td>1.0444</td>
+<td></td>
+<td>1.0417</td>
+<td>1.0440</td>
+<td>1.0454</td>
+<td>1.0610</td>
+</tr>
+<tr>
+<td><strong>Wall · Palace</strong></td>
+<td>1.0227</td>
+<td>1.1976</td>
+<td>1.0772</td>
+<td>1.0315</td>
+<td>1.0596</td>
+<td>1.0576</td>
+<td>1.0382</td>
+<td>1.0417</td>
+<td></td>
+<td>1.0137</td>
+<td>1.0135</td>
+<td>1.0331</td>
+</tr>
+<tr>
+<td><strong>Wall · EMerge</strong></td>
+<td>1.0338</td>
+<td>1.1853</td>
+<td>1.0757</td>
+<td>1.0317</td>
+<td>1.0655</td>
+<td>1.0555</td>
+<td>1.0329</td>
+<td>1.0440</td>
+<td>1.0137</td>
+<td></td>
+<td>1.0144</td>
+<td>1.0325</td>
+</tr>
+<tr>
+<td><strong>Wall · openEMS</strong></td>
+<td>1.0218</td>
+<td>1.2022</td>
+<td>1.0666</td>
+<td>1.0269</td>
+<td>1.0655</td>
+<td>1.0465</td>
+<td>1.0252</td>
+<td>1.0454</td>
+<td>1.0135</td>
+<td>1.0144</td>
+<td></td>
+<td>1.0215</td>
+</tr>
+<tr>
+<td><strong>reference</strong></td>
+<td>1.0242</td>
+<td>1.2220</td>
+<td>1.0444</td>
+<td>1.0357</td>
+<td>1.0782</td>
+<td>1.0377</td>
+<td>1.0215</td>
+<td>1.0610</td>
+<td>1.0331</td>
+<td>1.0325</td>
+<td>1.0215</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>and worst |ΔS| of the transmission terms between them:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Planar Edge · planar</th>
+<th>Planar Internal · planar</th>
+<th>Lumped · Palace</th>
+<th>Lumped · EMerge</th>
+<th>Lumped · openEMS</th>
+<th>Wave · Palace</th>
+<th>Wave · EMerge</th>
+<th>Wave · openEMS</th>
+<th>Wall · Palace</th>
+<th>Wall · EMerge</th>
+<th>Wall · openEMS</th>
+<th>reference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Planar Edge · planar</strong></td>
+<td></td>
+<td>7.2e−2</td>
+<td>1.9e−1</td>
+<td>1.5e−1</td>
+<td>1.4e−1</td>
+<td>6.3e−2</td>
+<td>3.9e−2</td>
+<td>3.8e−2</td>
+<td>7.0e−2</td>
+<td>4.8e−2</td>
+<td>4.2e−2</td>
+<td>3.5e−2</td>
+</tr>
+<tr>
+<td><strong>Planar Internal · planar</strong></td>
+<td>7.2e−2</td>
+<td></td>
+<td>1.2e−1</td>
+<td>8.3e−2</td>
+<td>7.3e−2</td>
+<td>1.3e−2</td>
+<td>3.8e−2</td>
+<td>4.8e−2</td>
+<td>8.4e−3</td>
+<td>2.5e−2</td>
+<td>3.1e−2</td>
+<td>3.9e−2</td>
+</tr>
+<tr>
+<td><strong>Lumped · Palace</strong></td>
+<td>1.9e−1</td>
+<td>1.2e−1</td>
+<td></td>
+<td>3.5e−2</td>
+<td>4.7e−2</td>
+<td>1.3e−1</td>
+<td>1.5e−1</td>
+<td>1.6e−1</td>
+<td>1.2e−1</td>
+<td>1.4e−1</td>
+<td>1.5e−1</td>
+<td>1.5e−1</td>
+</tr>
+<tr>
+<td><strong>Lumped · EMerge</strong></td>
+<td>1.5e−1</td>
+<td>8.3e−2</td>
+<td>3.5e−2</td>
+<td></td>
+<td>1.2e−2</td>
+<td>9.2e−2</td>
+<td>1.2e−1</td>
+<td>1.3e−1</td>
+<td>8.5e−2</td>
+<td>1.1e−1</td>
+<td>1.1e−1</td>
+<td>1.2e−1</td>
+</tr>
+<tr>
+<td><strong>Lumped · openEMS</strong></td>
+<td>1.4e−1</td>
+<td>7.3e−2</td>
+<td>4.7e−2</td>
+<td>1.2e−2</td>
+<td></td>
+<td>8.1e−2</td>
+<td>1.1e−1</td>
+<td>1.1e−1</td>
+<td>7.4e−2</td>
+<td>9.7e−2</td>
+<td>1.0e−1</td>
+<td>1.1e−1</td>
+</tr>
+<tr>
+<td><strong>Wave · Palace</strong></td>
+<td>6.3e−2</td>
+<td>1.3e−2</td>
+<td>1.3e−1</td>
+<td>9.2e−2</td>
+<td>8.1e−2</td>
+<td></td>
+<td>2.6e−2</td>
+<td>3.5e−2</td>
+<td>1.1e−2</td>
+<td>1.6e−2</td>
+<td>2.1e−2</td>
+<td>2.8e−2</td>
+</tr>
+<tr>
+<td><strong>Wave · EMerge</strong></td>
+<td>3.9e−2</td>
+<td>3.8e−2</td>
+<td>1.5e−1</td>
+<td>1.2e−1</td>
+<td>1.1e−1</td>
+<td>2.6e−2</td>
+<td></td>
+<td>1.1e−2</td>
+<td>3.6e−2</td>
+<td>1.6e−2</td>
+<td>1.0e−2</td>
+<td>4.9e−3</td>
+</tr>
+<tr>
+<td><strong>Wave · openEMS</strong></td>
+<td>3.8e−2</td>
+<td>4.8e−2</td>
+<td>1.6e−1</td>
+<td>1.3e−1</td>
+<td>1.1e−1</td>
+<td>3.5e−2</td>
+<td>1.1e−2</td>
+<td></td>
+<td>4.6e−2</td>
+<td>2.7e−2</td>
+<td>2.1e−2</td>
+<td>1.3e−2</td>
+</tr>
+<tr>
+<td><strong>Wall · Palace</strong></td>
+<td>7.0e−2</td>
+<td>8.4e−3</td>
+<td>1.2e−1</td>
+<td>8.5e−2</td>
+<td>7.4e−2</td>
+<td>1.1e−2</td>
+<td>3.6e−2</td>
+<td>4.6e−2</td>
+<td></td>
+<td>2.3e−2</td>
+<td>2.8e−2</td>
+<td>3.7e−2</td>
+</tr>
+<tr>
+<td><strong>Wall · EMerge</strong></td>
+<td>4.8e−2</td>
+<td>2.5e−2</td>
+<td>1.4e−1</td>
+<td>1.1e−1</td>
+<td>9.7e−2</td>
+<td>1.6e−2</td>
+<td>1.6e−2</td>
+<td>2.7e−2</td>
+<td>2.3e−2</td>
+<td></td>
+<td>8.0e−3</td>
+<td>1.5e−2</td>
+</tr>
+<tr>
+<td><strong>Wall · openEMS</strong></td>
+<td>4.2e−2</td>
+<td>3.1e−2</td>
+<td>1.5e−1</td>
+<td>1.1e−1</td>
+<td>1.0e−1</td>
+<td>2.1e−2</td>
+<td>1.0e−2</td>
+<td>2.1e−2</td>
+<td>2.8e−2</td>
+<td>8.0e−3</td>
+<td></td>
+<td>9.0e−3</td>
+</tr>
+<tr>
+<td><strong>reference</strong></td>
+<td>3.5e−2</td>
+<td>3.9e−2</td>
+<td>1.5e−1</td>
+<td>1.2e−1</td>
+<td>1.1e−1</td>
+<td>2.8e−2</td>
+<td>4.9e−3</td>
+<td>1.3e−2</td>
+<td>3.7e−2</td>
+<td>1.5e−2</td>
+<td>9.0e−3</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><img class="readme-picture" src="pictures/microstrip-phase.png" alt="∠S21 error over frequency, every port" width="500"></p>
+<p><img class="readme-picture" src="pictures/microstrip-smith.png" alt="S11 of every port on a Smith chart" width="350"></p>
+<p><strong>What the numbers say.</strong> Every 3D wall port and the FEM solvers' wave ports land within VSWR 1.02–1.04 of the closed form's match (openEMS's wave port reads 1.073), and the three wall ports agree with each other more closely still, to VSWR 1.014: what separates them from the closed form is common to all of them, the full-wave line in its box against the closed form's ideal one, not the ports. The phase tells the ports apart. openEMS's and EMerge's wave ports and openEMS's wall port are within 0.16–0.44° of the closed form's ∠S21 over the band, and EMerge's wall port within 0.8°; Palace's wave and wall ports are 1.6° and 2.1° off, because Palace's line itself is 1.5 % slow here (ε_eff 1.92 against 1.892), which no port removes. The <strong>lumped</strong> sheets cost 6–9° of ∠S21 and read ε_eff 4–6 % high: the sheet's own series inductance, 0.5 mm tall, is in the answer, which is what the table's <em>Avoid when</em> says of a tall sheet. The planar <strong>Edge</strong> port is de-embedded and sits with the 3D ports, at VSWR 1.032; the planar <strong>Internal</strong> port is not, and its vias' inductance shows as VSWR 1.22, which is right for a component's terminal and wrong for a line's end.</p>
+<h2 id="coupled-pair">Coupled Pair</h2>
+<p>Two 1.5 mm strips 0.3 mm apart on the same laminate and copper, 20 mm long. The reference is the <strong>Coupled Pair Reference</strong> cell's schematic, circuitRF's MCLIN (Kirschning–Jansen coupled microstrip, each mode with its own dispersion and loss). Ports 1 and 2 are strip a's and strip b's near ends, 3 and 4 their far ends, so <strong>S31 is the thru</strong>, S21 the near-end coupling and S41 the far-end coupling; ε_eff below is read from the thru.</p>
+<p>The 3D view has a <strong>two-terminal wave port</strong> on each end face, run as drawn and as <strong>wall ports</strong> (one calibration group of two lines at each end). Palace's wall setup did not finish within the 20 minutes each Palace run was allowed (its three 4-port standards and the structure, at four frequencies), so it is not in the table; PWL-3's own measurement of a coupled pair on Palace's wall port is in the EM Setup chapter.</p>
+<table>
+<thead>
+<tr>
+<th>Port</th>
+<th>Solver</th>
+<th>worst |ΔS11|</th>
+<th>worst |ΔS31|</th>
+<th>worst ∠S31 error</th>
+<th>worst VSWR</th>
+<th>ε_eff at 4 GHz</th>
+<th>size</th>
+<th>time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Wave with terminals</td>
+<td>Palace</td>
+<td>2.4e−2</td>
+<td>3.9e−2</td>
+<td>2.31°</td>
+<td>1.0483</td>
+<td>1.871</td>
+<td>200,274 unknowns</td>
+<td>7 min 53 s</td>
+</tr>
+<tr>
+<td>Wave with terminals</td>
+<td>EMerge</td>
+<td>1.8e−2</td>
+<td>1.1e−2</td>
+<td>0.63°</td>
+<td>1.0357</td>
+<td>1.843</td>
+<td>492,108 unknowns</td>
+<td>2 min 26 s</td>
+</tr>
+<tr>
+<td>Wave with terminals</td>
+<td>openEMS</td>
+<td>2.9e−2</td>
+<td>1.9e−2</td>
+<td>0.63°</td>
+<td>1.0608</td>
+<td>1.844</td>
+<td>258,400 cells</td>
+<td>3 min 46 s</td>
+</tr>
+<tr>
+<td>Wall</td>
+<td>EMerge</td>
+<td>1.2e−2</td>
+<td>2.2e−2</td>
+<td>1.26°</td>
+<td>1.0247</td>
+<td>1.857</td>
+<td>499,312 unknowns</td>
+<td>6 min 39 s</td>
+</tr>
+<tr>
+<td>Wall</td>
+<td>openEMS</td>
+<td>7.4e−3</td>
+<td>1.3e−2</td>
+<td>0.75°</td>
+<td>1.0149</td>
+<td>1.843</td>
+<td>97,902 cells</td>
+<td>4 min 00 s</td>
+</tr>
+<tr>
+<td>reference</td>
+<td>closed form</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>1.834</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Agreement</strong>, worst VSWR between the two results' reflections at 1, 4, 7, 10 GHz (the frequencies every result has):</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Wave with terminals · Palace</th>
+<th>Wave with terminals · EMerge</th>
+<th>Wave with terminals · openEMS</th>
+<th>Wall · EMerge</th>
+<th>Wall · openEMS</th>
+<th>reference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Wave with terminals · Palace</strong></td>
+<td></td>
+<td>1.0566</td>
+<td>1.0894</td>
+<td>1.0717</td>
+<td>1.0626</td>
+<td>1.0483</td>
+</tr>
+<tr>
+<td><strong>Wave with terminals · EMerge</strong></td>
+<td>1.0566</td>
+<td></td>
+<td>1.0355</td>
+<td>1.0267</td>
+<td>1.0257</td>
+<td>1.0278</td>
+</tr>
+<tr>
+<td><strong>Wave with terminals · openEMS</strong></td>
+<td>1.0894</td>
+<td>1.0355</td>
+<td></td>
+<td>1.0382</td>
+<td>1.0398</td>
+<td>1.0512</td>
+</tr>
+<tr>
+<td><strong>Wall · EMerge</strong></td>
+<td>1.0717</td>
+<td>1.0267</td>
+<td>1.0382</td>
+<td></td>
+<td>1.0108</td>
+<td>1.0235</td>
+</tr>
+<tr>
+<td><strong>Wall · openEMS</strong></td>
+<td>1.0626</td>
+<td>1.0257</td>
+<td>1.0398</td>
+<td>1.0108</td>
+<td></td>
+<td>1.0142</td>
+</tr>
+<tr>
+<td><strong>reference</strong></td>
+<td>1.0483</td>
+<td>1.0278</td>
+<td>1.0512</td>
+<td>1.0235</td>
+<td>1.0142</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>and worst |ΔS| of the transmission terms between them:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Wave with terminals · Palace</th>
+<th>Wave with terminals · EMerge</th>
+<th>Wave with terminals · openEMS</th>
+<th>Wall · EMerge</th>
+<th>Wall · openEMS</th>
+<th>reference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Wave with terminals · Palace</strong></td>
+<td></td>
+<td>2.8e−2</td>
+<td>3.4e−2</td>
+<td>1.9e−2</td>
+<td>2.7e−2</td>
+<td>3.9e−2</td>
+</tr>
+<tr>
+<td><strong>Wave with terminals · EMerge</strong></td>
+<td>2.8e−2</td>
+<td></td>
+<td>1.7e−2</td>
+<td>1.1e−2</td>
+<td>9.0e−3</td>
+<td>1.1e−2</td>
+</tr>
+<tr>
+<td><strong>Wave with terminals · openEMS</strong></td>
+<td>3.4e−2</td>
+<td>1.7e−2</td>
+<td></td>
+<td>2.4e−2</td>
+<td>1.7e−2</td>
+<td>1.9e−2</td>
+</tr>
+<tr>
+<td><strong>Wall · EMerge</strong></td>
+<td>1.9e−2</td>
+<td>1.1e−2</td>
+<td>2.4e−2</td>
+<td></td>
+<td>9.5e−3</td>
+<td>2.1e−2</td>
+</tr>
+<tr>
+<td><strong>Wall · openEMS</strong></td>
+<td>2.7e−2</td>
+<td>9.0e−3</td>
+<td>1.7e−2</td>
+<td>9.5e−3</td>
+<td></td>
+<td>1.4e−2</td>
+</tr>
+<tr>
+<td><strong>reference</strong></td>
+<td>3.9e−2</td>
+<td>1.1e−2</td>
+<td>1.9e−2</td>
+<td>2.1e−2</td>
+<td>1.4e−2</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><img class="readme-picture" src="pictures/coupled-pair-phase.png" alt="∠S21 error over frequency, every port" width="500"></p>
+<p><img class="readme-picture" src="pictures/coupled-pair-smith.png" alt="S11 of every port on a Smith chart" width="350"></p>
+<p><strong>What the numbers say.</strong> The <strong>wall</strong> ports are closest to the closed form, openEMS's at VSWR 1.015 with ∠S31 within 0.75° and EMerge's at 1.025, and they agree with each other to VSWR 1.011: their calibration removes the port discontinuity and the coupling at the port together. The <strong>wave ports with terminals</strong> come next, VSWR 1.036 (EMerge), 1.048 (Palace) and 1.061 (openEMS), and Palace's thru is 2.3° off for the reason the Microstrip's was, its line's own speed. The planar Edge ports are not shown: in this run the planar solver's calibration group returned its two far-end ports in the wrong order, a defect this example found, recorded for a fix; it is not a property of the port.</p>
+<h2 id="coax">Coax</h2>
+<p>The 3D Connector's coax: a 0.4 mm copper pin in a 1.34 mm bore of PTFE (εr 2.1) through a copper housing, 20 mm long. Its impedance is exact, Z₀ = η₀/(2π√εr)·ln(D/d) = <strong>50.02 Ω</strong>, and its ε_eff is the PTFE's 2.1; the <strong>Coax Reference</strong> cell's schematic is that line, a TLIN, lossless (the PTFE's and the copper's loss over 20 mm are below 0.01 dB).</p>
+<p><strong>Coax</strong> has a <strong>wave port</strong> on each end face, a 2 mm square round the coax; <strong>Coax Coaxial</strong> has an <strong>annular lumped port</strong> across each end's PTFE ring, from the shell to the pin. The housing has 0.5 mm of air round it, because Palace selects each face of the air box in its mesh and a face the copper fills selects nothing. On openEMS the wave port runs on a <strong>cylindrical grid</strong> about the coax's axis, the grid's circles on the pin and the bore, which <code>check</code> recommends; the coaxial port is not run on openEMS, which refuses a ring on a face of the air box (its wall would short it).</p>
+<table>
+<thead>
+<tr>
+<th>Port</th>
+<th>Solver</th>
+<th>worst |ΔS11|</th>
+<th>worst |ΔS21|</th>
+<th>worst ∠S21 error</th>
+<th>worst VSWR</th>
+<th>ε_eff at 4 GHz</th>
+<th>size</th>
+<th>time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Coaxial</td>
+<td>Palace</td>
+<td>1.6e−3</td>
+<td>1.0e−2</td>
+<td>0.48°</td>
+<td>1.0032</td>
+<td>2.108</td>
+<td>285,720 unknowns</td>
+<td>2 min 12 s</td>
+</tr>
+<tr>
+<td>Coaxial</td>
+<td>EMerge</td>
+<td>7.4e−3</td>
+<td>1.6e−2</td>
+<td>0.88°</td>
+<td>1.0150</td>
+<td>2.113</td>
+<td>550,580 unknowns</td>
+<td>43 s</td>
+</tr>
+<tr>
+<td>Wave</td>
+<td>Palace</td>
+<td>4.4e−3</td>
+<td>1.2e−2</td>
+<td>0.59°</td>
+<td>1.0089</td>
+<td>2.113</td>
+<td>212,074 unknowns</td>
+<td>88 s</td>
+</tr>
+<tr>
+<td>Wave</td>
+<td>EMerge</td>
+<td>6.1e−3</td>
+<td>1.4e−2</td>
+<td>0.69°</td>
+<td>1.0136</td>
+<td>2.111</td>
+<td>518,906 unknowns</td>
+<td>37 s</td>
+</tr>
+<tr>
+<td>Wave</td>
+<td>openEMS</td>
+<td>1.2e−2</td>
+<td>4.1e−4</td>
+<td>0.01°</td>
+<td>1.0245</td>
+<td>2.100</td>
+<td>523,776 cells</td>
+<td>27 s</td>
+</tr>
+<tr>
+<td>reference</td>
+<td>closed form</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>2.100</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Agreement</strong>, worst VSWR between the two results' reflections at 1, 4, 7, 10 GHz (the frequencies every result has):</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Wave · Palace</th>
+<th>Wave · EMerge</th>
+<th>Wave · openEMS</th>
+<th>Coaxial · Palace</th>
+<th>Coaxial · EMerge</th>
+<th>reference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Wave · Palace</strong></td>
+<td></td>
+<td>1.0139</td>
+<td>1.0260</td>
+<td>1.0092</td>
+<td>1.0171</td>
+<td>1.0089</td>
+</tr>
+<tr>
+<td><strong>Wave · EMerge</strong></td>
+<td>1.0139</td>
+<td></td>
+<td>1.0297</td>
+<td>1.0097</td>
+<td>1.0081</td>
+<td>1.0116</td>
+</tr>
+<tr>
+<td><strong>Wave · openEMS</strong></td>
+<td>1.0260</td>
+<td>1.0297</td>
+<td></td>
+<td>1.0234</td>
+<td>1.0297</td>
+<td>1.0222</td>
+</tr>
+<tr>
+<td><strong>Coaxial · Palace</strong></td>
+<td>1.0092</td>
+<td>1.0097</td>
+<td>1.0234</td>
+<td></td>
+<td>1.0119</td>
+<td>1.0032</td>
+</tr>
+<tr>
+<td><strong>Coaxial · EMerge</strong></td>
+<td>1.0171</td>
+<td>1.0081</td>
+<td>1.0297</td>
+<td>1.0119</td>
+<td></td>
+<td>1.0134</td>
+</tr>
+<tr>
+<td><strong>reference</strong></td>
+<td>1.0089</td>
+<td>1.0116</td>
+<td>1.0222</td>
+<td>1.0032</td>
+<td>1.0134</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>and worst |ΔS| of the transmission terms between them:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Wave · Palace</th>
+<th>Wave · EMerge</th>
+<th>Wave · openEMS</th>
+<th>Coaxial · Palace</th>
+<th>Coaxial · EMerge</th>
+<th>reference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Wave · Palace</strong></td>
+<td></td>
+<td>5.1e−3</td>
+<td>1.2e−2</td>
+<td>5.6e−3</td>
+<td>5.1e−3</td>
+<td>1.2e−2</td>
+</tr>
+<tr>
+<td><strong>Wave · EMerge</strong></td>
+<td>5.1e−3</td>
+<td></td>
+<td>1.4e−2</td>
+<td>3.7e−3</td>
+<td>3.5e−3</td>
+<td>1.4e−2</td>
+</tr>
+<tr>
+<td><strong>Wave · openEMS</strong></td>
+<td>1.2e−2</td>
+<td>1.4e−2</td>
+<td></td>
+<td>1.0e−2</td>
+<td>1.6e−2</td>
+<td>4.0e−4</td>
+</tr>
+<tr>
+<td><strong>Coaxial · Palace</strong></td>
+<td>5.6e−3</td>
+<td>3.7e−3</td>
+<td>1.0e−2</td>
+<td></td>
+<td>7.0e−3</td>
+<td>1.0e−2</td>
+</tr>
+<tr>
+<td><strong>Coaxial · EMerge</strong></td>
+<td>5.1e−3</td>
+<td>3.5e−3</td>
+<td>1.6e−2</td>
+<td>7.0e−3</td>
+<td></td>
+<td>1.6e−2</td>
+</tr>
+<tr>
+<td><strong>reference</strong></td>
+<td>1.2e−2</td>
+<td>1.4e−2</td>
+<td>4.0e−4</td>
+<td>1.0e−2</td>
+<td>1.6e−2</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><img class="readme-picture" src="pictures/coax-phase.png" alt="∠S21 error over frequency, every port" width="500"></p>
+<p><img class="readme-picture" src="pictures/coax-smith.png" alt="S11 of every port on a Smith chart" width="350"></p>
+<p><strong>What the numbers say.</strong> Every port is within VSWR 1.025 of the exact line. Palace's <strong>coaxial</strong> port is closest (VSWR 1.003), and on openEMS's cylindrical grid the <strong>wave</strong> port's ∠S21 is within 0.01° of the closed form, the grid's circles lying on the pin and the bore; the FEM solvers read ε_eff 0.5 % high (0.5–0.9° at 10 GHz). On openEMS's Cartesian grid the same wave port staircased the bore in about 4 cells, and its answer was far off: run a coax on openEMS on the cylindrical grid <code>check</code> proposes.</p>
+<h2 id="waveguide">Waveguide</h2>
+<p>An empty WR90 guide, 22.86 × 10.16 mm, 30 mm long, swept 8–12 GHz. The air box's six faces are PEC and are the guide's walls; each end is a <strong>hollow-guide wave port</strong> normalised to its own mode (Z0 &quot;mode&quot;). The reference is exact: matched TE10 ports see S11 = 0 and S21 = e^(−jβL) with β = √(k₀² − (π/a)²), cut off at 6.557 GHz. openEMS refuses a hollow guide's port, so the guide runs on Palace and EMerge.</p>
+<table>
+<thead>
+<tr>
+<th>Port</th>
+<th>Solver</th>
+<th>worst |ΔS11|</th>
+<th>worst |ΔS21|</th>
+<th>worst ∠S21 error</th>
+<th>worst VSWR</th>
+<th>ε_eff</th>
+<th>size</th>
+<th>time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Hollow-guide wave</td>
+<td>Palace</td>
+<td>8.4e−6</td>
+<td>1.2e−4</td>
+<td>0.01°</td>
+<td>1.0000</td>
+<td>—</td>
+<td>194,000 unknowns</td>
+<td>2 min 15 s</td>
+</tr>
+<tr>
+<td>Hollow-guide wave</td>
+<td>EMerge</td>
+<td>7.0e−7</td>
+<td>8.0e−5</td>
+<td>0.00°</td>
+<td>1.0000</td>
+<td>—</td>
+<td>119,488 unknowns</td>
+<td>19 s</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Agreement</strong>, worst VSWR between the two results' reflections at 8, 12 GHz (the frequencies every result has):</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Hollow-guide wave · Palace</th>
+<th>Hollow-guide wave · EMerge</th>
+<th>reference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Hollow-guide wave · Palace</strong></td>
+<td></td>
+<td>1.0000</td>
+<td>1.0000</td>
+</tr>
+<tr>
+<td><strong>Hollow-guide wave · EMerge</strong></td>
+<td>1.0000</td>
+<td></td>
+<td>1.0000</td>
+</tr>
+<tr>
+<td><strong>reference</strong></td>
+<td>1.0000</td>
+<td>1.0000</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>and worst |ΔS| of the transmission terms between them:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Hollow-guide wave · Palace</th>
+<th>Hollow-guide wave · EMerge</th>
+<th>reference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Hollow-guide wave · Palace</strong></td>
+<td></td>
+<td>1.0e−4</td>
+<td>1.2e−4</td>
+</tr>
+<tr>
+<td><strong>Hollow-guide wave · EMerge</strong></td>
+<td>1.0e−4</td>
+<td></td>
+<td>1.6e−5</td>
+</tr>
+<tr>
+<td><strong>reference</strong></td>
+<td>1.2e−4</td>
+<td>1.6e−5</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><img class="readme-picture" src="pictures/waveguide-phase.png" alt="∠S21 error over frequency, every port" width="500"></p>
+<p><img class="readme-picture" src="pictures/waveguide-smith.png" alt="S11 of every port on a Smith chart" width="350"></p>
+<p><strong>What the numbers say.</strong> Both solvers' hollow-guide ports reproduce the exact TE10 line: |ΔS21| at most 1.2e-4 and VSWR 1.00002 on Palace, and the same to the last digit shown on EMerge. A mode-normalised wave port on a hollow guide is exact when the guide is.</p>
+<h2 id="floquet-cell">Floquet Cell</h2>
+<p>One 10 mm square cell of an infinite slab, 3 mm of εr 4, at broadside, swept 1–20 GHz. The cell's four side faces are periodic pairs, and a <strong>Floquet port</strong> covers the whole of each z face 5 mm from the slab, with two modes (TE00 and TM00, ports 1 and 2 below, 3 and 4 above). The reference is exact: a plane wave through air, the slab and air again, in the ports' own wave impedance. Only EMerge runs a Floquet port, here at its Standard mesh (the board cells' finer one reached the machine's memory at 20 GHz).</p>
+<table>
+<thead>
+<tr>
+<th>Port</th>
+<th>Solver</th>
+<th>worst |ΔS11|</th>
+<th>worst |ΔS31|</th>
+<th>worst ∠S31 error</th>
+<th>worst VSWR</th>
+<th>ε_eff</th>
+<th>size</th>
+<th>time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Floquet</td>
+<td>EMerge</td>
+<td>1.7e−3</td>
+<td>1.5e−3</td>
+<td>0.09°</td>
+<td>1.0043</td>
+<td>—</td>
+<td>20,000 unknowns</td>
+<td>7 s</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Agreement</strong>, worst VSWR between the two results' reflections at 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 GHz (the frequencies every result has):</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Floquet · EMerge</th>
+<th>reference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Floquet · EMerge</strong></td>
+<td></td>
+<td>1.0043</td>
+</tr>
+<tr>
+<td><strong>reference</strong></td>
+<td>1.0043</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>and worst |ΔS| of the transmission terms between them:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Floquet · EMerge</th>
+<th>reference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Floquet · EMerge</strong></td>
+<td></td>
+<td>1.5e−3</td>
+</tr>
+<tr>
+<td><strong>reference</strong></td>
+<td>1.5e−3</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><img class="readme-picture" src="pictures/floquet-cell-phase.png" alt="∠S21 error over frequency, every port" width="500"></p>
+<p><img class="readme-picture" src="pictures/floquet-cell-smith.png" alt="S11 of every port on a Smith chart" width="350"></p>
+<p><strong>What the numbers say.</strong> EMerge's Floquet ports reproduce the slab's exact transmission and reflection to |ΔS| 1.7e-3 and VSWR 1.0043 over 1–20 GHz, at its Standard mesh in 7 seconds.</p>
+<h2 id="line-over-silicon">Line over Silicon</h2>
+<p>A 10 µm copper line on 5 µm of oxide (εr 3.9) over 200 µm of 10 Ω·cm silicon (εr 11.9, σ 10 S/m) on a PEC floor, 2 mm long, swept 1–40 GHz. <strong>Nothing here has a closed form, so nothing below is an accuracy figure</strong>: the ports are compared with each other, and ε_eff is shown over the band from each. Over conducting silicon a line is slow at low frequency, its field reaching into the silicon, and approaches the oxide's at high frequency: that is the slow-wave mode, and a port that reads it wrongly says so in the agreement matrix.</p>
+<p>The view has <strong>wave ports</strong> on its end faces, run as drawn and as <strong>wall ports</strong>; <strong>Line over Silicon Lumped</strong> has lumped sheets from the floor to the line. Palace is not run on this cell (each of its line standards took about 15 minutes when this series measured one); EMerge's mesh is 0.1 λ here (its wall standards reached the machine's memory at 0.05).</p>
+<p>ε_eff and |Z_c| (Ω) over the band, as each result reads them (from its own S: Z_c is √(B/C) of its ABCD, the port's own parasitic included):</p>
+<table>
+<thead>
+<tr>
+<th>Port</th>
+<th>Solver</th>
+<th>1 GHz</th>
+<th>4 GHz</th>
+<th>10 GHz</th>
+<th>19 GHz</th>
+<th>28 GHz</th>
+<th>40 GHz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Lumped</td>
+<td>EMerge</td>
+<td>19.90 · 82</td>
+<td>16.42 · 93</td>
+<td>10.68 · 107</td>
+<td>7.20 · 115</td>
+<td>6.97 · 117</td>
+<td>6.93 · 132</td>
+</tr>
+<tr>
+<td>Lumped</td>
+<td>openEMS</td>
+<td>18.44 · 78</td>
+<td>16.16 · 97</td>
+<td>10.48 · 113</td>
+<td>6.77 · 124</td>
+<td>6.34 · 119</td>
+<td>6.65 · 128</td>
+</tr>
+<tr>
+<td>Wave</td>
+<td>EMerge</td>
+<td>12.95 · 57</td>
+<td>10.95 · 67</td>
+<td>7.78 · 90</td>
+<td>5.77 · 106</td>
+<td>5.52 · 114</td>
+<td>5.79 · 120</td>
+</tr>
+<tr>
+<td>Wave</td>
+<td>openEMS</td>
+<td>14.96 · 93</td>
+<td>13.61 · 99</td>
+<td>9.15 · 115</td>
+<td>5.80 · 128</td>
+<td>5.11 · 134</td>
+<td>5.61 · 139</td>
+</tr>
+<tr>
+<td>Wall</td>
+<td>EMerge</td>
+<td>20.30 · 105</td>
+<td>15.68 · 108</td>
+<td>9.52 · 122</td>
+<td>6.05 · 134</td>
+<td>5.49 · 140</td>
+<td>6.00 · 143</td>
+</tr>
+<tr>
+<td>Wall</td>
+<td>openEMS</td>
+<td>15.70 · 96</td>
+<td>13.87 · 102</td>
+<td>9.09 · 117</td>
+<td>5.75 · 130</td>
+<td>5.10 · 136</td>
+<td>5.64 · 139</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Agreement</strong>, worst VSWR between the two results' reflections at 1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34, 37, 40 GHz (the frequencies every result has):</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Wave · EMerge</th>
+<th>Wave · openEMS</th>
+<th>Wall · EMerge</th>
+<th>Wall · openEMS</th>
+<th>Lumped · EMerge</th>
+<th>Lumped · openEMS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Wave · EMerge</strong></td>
+<td></td>
+<td>1.7008</td>
+<td>1.7510</td>
+<td>1.7107</td>
+<td>1.5780</td>
+<td>1.6890</td>
+</tr>
+<tr>
+<td><strong>Wave · openEMS</strong></td>
+<td>1.7008</td>
+<td></td>
+<td>1.1927</td>
+<td>1.0461</td>
+<td>1.5814</td>
+<td>1.3297</td>
+</tr>
+<tr>
+<td><strong>Wall · EMerge</strong></td>
+<td>1.7510</td>
+<td>1.1927</td>
+<td></td>
+<td>1.1701</td>
+<td>1.4886</td>
+<td>1.2690</td>
+</tr>
+<tr>
+<td><strong>Wall · openEMS</strong></td>
+<td>1.7107</td>
+<td>1.0461</td>
+<td>1.1701</td>
+<td></td>
+<td>1.5940</td>
+<td>1.3446</td>
+</tr>
+<tr>
+<td><strong>Lumped · EMerge</strong></td>
+<td>1.5780</td>
+<td>1.5814</td>
+<td>1.4886</td>
+<td>1.5940</td>
+<td></td>
+<td>1.2266</td>
+</tr>
+<tr>
+<td><strong>Lumped · openEMS</strong></td>
+<td>1.6890</td>
+<td>1.3297</td>
+<td>1.2690</td>
+<td>1.3446</td>
+<td>1.2266</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>and worst |ΔS| of the transmission terms between them:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Wave · EMerge</th>
+<th>Wave · openEMS</th>
+<th>Wall · EMerge</th>
+<th>Wall · openEMS</th>
+<th>Lumped · EMerge</th>
+<th>Lumped · openEMS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Wave · EMerge</strong></td>
+<td></td>
+<td>7.5e−2</td>
+<td>1.1e−1</td>
+<td>7.7e−2</td>
+<td>2.4e−1</td>
+<td>1.7e−1</td>
+</tr>
+<tr>
+<td><strong>Wave · openEMS</strong></td>
+<td>7.5e−2</td>
+<td></td>
+<td>8.7e−2</td>
+<td>1.1e−2</td>
+<td>3.0e−1</td>
+<td>2.3e−1</td>
+</tr>
+<tr>
+<td><strong>Wall · EMerge</strong></td>
+<td>1.1e−1</td>
+<td>8.7e−2</td>
+<td></td>
+<td>7.8e−2</td>
+<td>2.2e−1</td>
+<td>1.4e−1</td>
+</tr>
+<tr>
+<td><strong>Wall · openEMS</strong></td>
+<td>7.7e−2</td>
+<td>1.1e−2</td>
+<td>7.8e−2</td>
+<td></td>
+<td>2.9e−1</td>
+<td>2.2e−1</td>
+</tr>
+<tr>
+<td><strong>Lumped · EMerge</strong></td>
+<td>2.4e−1</td>
+<td>3.0e−1</td>
+<td>2.2e−1</td>
+<td>2.9e−1</td>
+<td></td>
+<td>8.8e−2</td>
+</tr>
+<tr>
+<td><strong>Lumped · openEMS</strong></td>
+<td>1.7e−1</td>
+<td>2.3e−1</td>
+<td>1.4e−1</td>
+<td>2.2e−1</td>
+<td>8.8e−2</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><strong>What the numbers say.</strong> Read the agreement matrix, not a reference: there is none. openEMS's <strong>wave</strong> and <strong>wall</strong> ports agree with each other to VSWR 1.046, the closest pair here, and their ε_eff agree to within 5 % at 1 GHz (15.0 and 15.7) and 1 % from 10 GHz up, both following the slow-wave mode from about 15 at 1 GHz down to 5.1 at 28 GHz, and their |Z_c| agree to within 3 Ω across the band. EMerge's <strong>wave</strong> port is the one that stands apart, VSWR 1.58–1.75 against every other result and |Z_c| 57 Ω at 1 GHz where openEMS's two read 93 and 96: over conducting silicon the face's mode is what a wave port solves for, and it is the hard part, which is the table's <em>Avoid when</em> for a wave port. EMerge's wall port follows openEMS's within VSWR 1.17 and reads ε_eff 20 at 1 GHz, its calibration's line standards seeing the low-frequency slow wave more strongly; the <strong>lumped</strong> ports agree with each other (VSWR 1.23) and read ε_eff 1–1.5 higher than the calibrated ports above 10 GHz, their sheets' inductance included. No result jumps between neighbouring frequencies: every ε_eff curve is smooth across the band.</p>
+<h2 id="not-drawn-here">Not drawn here</h2>
+<ul>
+<li>The <strong>turned</strong> lumped port (pads at an angle) and a lumped <strong>gap on a cylinder</strong> (openEMS's cylindrical grid): see <strong>EM Setup ▸ Ports drawn as their corners</strong> and the <strong>Loop Sensor</strong> example.</li>
+<li><strong>Component ports</strong>: the <strong>MMIC Component Ports</strong> and <strong>PCB Component Ports</strong> examples.</li>
+<li>The planar <strong>internal delta gap</strong>, the planar Internal port's other form: <strong>EM Setup ▸ Ports</strong>.</li>
+<li>The <strong>cross-section</strong> kernel's conductor ends: the <strong>Klopfenstein Taper</strong> example.</li>
+</ul>
+<h2 id="measured-on">Measured on</h2>
+<p>An Apple M4 (10 cores, 16 GB), macOS 27.2, circuitRF's Release build; Palace 0.18.1 on 10 processes, EMerge 3.0.0, openEMS 0.37.0. A time is the run's wall clock, standards included for a wall port; no test holds a time.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

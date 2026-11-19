@@ -1,0 +1,195 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Mm",
+  "SnapDbu": 10000,
+  "Objects": [
+    {
+      "$type": "Box",
+      "Name": "air",
+      "Material": "Air",
+      "Min": [
+        0,
+        0,
+        0
+      ],
+      "Size": [
+        {
+          "Expr": "p",
+          "Unit": "Mm"
+        },
+        {
+          "Expr": "p",
+          "Unit": "Mm"
+        },
+        {
+          "Expr": "gap",
+          "Unit": "Mm"
+        }
+      ]
+    },
+    {
+      "$type": "Box",
+      "Name": "slab",
+      "Material": "Slab dielectric",
+      "Min": [
+        0,
+        0,
+        {
+          "Expr": "gap",
+          "Unit": "Mm"
+        }
+      ],
+      "Size": [
+        {
+          "Expr": "p",
+          "Unit": "Mm"
+        },
+        {
+          "Expr": "p",
+          "Unit": "Mm"
+        },
+        {
+          "Expr": "d",
+          "Unit": "Mm"
+        }
+      ]
+    },
+    {
+      "$type": "Box",
+      "Name": "air_above",
+      "Material": "Air",
+      "Min": [
+        0,
+        0,
+        {
+          "Expr": "gap + d",
+          "Unit": "Mm"
+        }
+      ],
+      "Size": [
+        {
+          "Expr": "p",
+          "Unit": "Mm"
+        },
+        {
+          "Expr": "p",
+          "Unit": "Mm"
+        },
+        {
+          "Expr": "gap",
+          "Unit": "Mm"
+        }
+      ]
+    }
+  ],
+  "Variables": [
+    {
+      "Name": "p",
+      "Expression": "10",
+      "Unit": "Mm"
+    },
+    {
+      "Name": "d",
+      "Expression": "3",
+      "Unit": "Mm"
+    },
+    {
+      "Name": "gap",
+      "Expression": "5",
+      "Unit": "Mm"
+    }
+  ],
+  "Ports": [
+    {
+      "Number": 1,
+      "Name": "P1",
+      "Kind": "Wave",
+      "Plane": "XY",
+      "Offset": 0,
+      "Rect": {
+        "Min": [
+          0,
+          0
+        ],
+        "Size": [
+          10000000,
+          10000000
+        ]
+      },
+      "Floquet": {
+        "Modes": 2
+      },
+      "Z0": "mode"
+    },
+    {
+      "Number": 3,
+      "Name": "P2",
+      "Kind": "Wave",
+      "Plane": "XY",
+      "Offset": 13000000,
+      "Rect": {
+        "Min": [
+          0,
+          0
+        ],
+        "Size": [
+          10000000,
+          10000000
+        ]
+      },
+      "Floquet": {
+        "Modes": 2
+      },
+      "Z0": "mode"
+    }
+  ],
+  "Setups": [
+    {
+      "FormatVersion": 1,
+      "Name": "Floquet · EMerge",
+      "Frequency": {
+        "StartExpr": "1",
+        "StopExpr": "20",
+        "StepExpr": "",
+        "NumPoints": 20,
+        "Mode": "PointCount",
+        "Kind": "Linear",
+        "StartUnit": "GHz",
+        "StopUnit": "GHz",
+        "StepUnit": "Hz"
+      },
+      "Port1Z0Real": 50,
+      "Port1Z0Imag": 0,
+      "Port2Z0Real": 50,
+      "Port2Z0Imag": 0,
+      "Solver3D": "Emerge",
+      "AirBox": {
+        "XMin": {
+          "PaddingUm": 0,
+          "Boundary": "Periodic"
+        },
+        "XMax": {
+          "PaddingUm": 0,
+          "Boundary": "Periodic"
+        },
+        "YMin": {
+          "PaddingUm": 0,
+          "Boundary": "Periodic"
+        },
+        "YMax": {
+          "PaddingUm": 0,
+          "Boundary": "Periodic"
+        },
+        "ZMin": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "ZMax": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        }
+      }
+    }
+  ]
+}

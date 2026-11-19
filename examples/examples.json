@@ -157,6 +157,11 @@
       "Summary": "How to set up a wave port: the 3D Connector's launch with its back end open and fed by a coaxial wave port on Palace and on openEMS, and an edge-coupled stripline pair whose four strip ends are each a terminal of a wave port on openEMS, plotted against Cohn's ideal coupled line."
     },
     {
+      "Folder": "Port Types",
+      "Title": "Port Types",
+      "Summary": "Every port circuitRF has on the simplest structure each takes, run side by side: a microstrip line, a coupled pair, a coax, a waveguide, a Floquet cell and a line over conducting silicon, each port on every solver that runs it, measured against a closed form and against each other, with a table of where each port is best used and where to avoid it."
+    },
+    {
       "Folder": "3D Eigenmode",
       "Title": "3D Eigenmode (a cavity resonance)",
       "Summary": "Is there a cavity resonance in my band? A 50 ohm line through an aluminium housing whose first mode lies inside 8-12 GHz, found by Palace's eigenmode solve and seen as a notch in a driven sweep, and the same housing with one grounded post, which shortens the cavity the mode sees and moves it above the band."
@@ -271,7 +276,7 @@
     { "Title": "Layout and Interchange", "Examples": ["PDK PCells", "LVS", "Artwork to Schematic"] },
     { "Title": "Power Distribution Networks", "Examples": ["Power Rail"] },
     { "Title": "Planar EM and Boards", "Examples": ["Klopfenstein Taper", "Dividers and Couplers", "Planar Filters", "MMIC Wilkinson", "RFIC Branch-Line", "PCB Component Ports", "MMIC Component Ports", "Via Contact Resistor", "Passivated Pad"] },
-    { "Title": "3D EM", "Examples": ["3D EM", "3D Package", "3D Connector", "3D Wave Ports", "3D Eigenmode", "Capacitance Extraction", "Test Pad Capacitance"] },
+    { "Title": "3D EM", "Examples": ["3D EM", "3D Package", "3D Connector", "3D Wave Ports", "Port Types", "3D Eigenmode", "Capacitance Extraction", "Test Pad Capacitance"] },
     { "Title": "Antennas and Arrays", "Examples": ["Patch Antenna", "Antenna Co-Simulation", "Phased Array", "Loop Sensor"] },
     { "Title": "SAR", "Examples": ["SAR MRI Loop Coil", "SAR Phone Dipole"] },
     { "Title": "Thermal", "Examples": ["Thermal Die to Heatsink", "Thermal Channel vs Surface", "Thermal Output Wires"] },

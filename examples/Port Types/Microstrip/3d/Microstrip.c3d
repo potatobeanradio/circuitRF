@@ -1,0 +1,460 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Mm",
+  "SnapDbu": 10000,
+  "Objects": [
+    {
+      "$type": "Box",
+      "Name": "laminate",
+      "Material": "PTFE-glass laminate",
+      "Min": [
+        0,
+        {
+          "Expr": "-wbox/2",
+          "Unit": "Mm"
+        },
+        0
+      ],
+      "Size": [
+        {
+          "Expr": "len",
+          "Unit": "Mm"
+        },
+        {
+          "Expr": "wbox",
+          "Unit": "Mm"
+        },
+        {
+          "Expr": "h",
+          "Unit": "Mm"
+        }
+      ]
+    },
+    {
+      "$type": "Box",
+      "Name": "strip",
+      "Material": "Copper",
+      "Min": [
+        0,
+        {
+          "Expr": "-w/2",
+          "Unit": "Mm"
+        },
+        {
+          "Expr": "h",
+          "Unit": "Mm"
+        }
+      ],
+      "Size": [
+        {
+          "Expr": "len",
+          "Unit": "Mm"
+        },
+        {
+          "Expr": "w",
+          "Unit": "Mm"
+        },
+        {
+          "Expr": "t",
+          "Unit": "Mm"
+        }
+      ]
+    }
+  ],
+  "Variables": [
+    {
+      "Name": "w",
+      "Expression": "1.54",
+      "Unit": "Mm"
+    },
+    {
+      "Name": "h",
+      "Expression": "0.508",
+      "Unit": "Mm"
+    },
+    {
+      "Name": "t",
+      "Expression": "0.018",
+      "Unit": "Mm"
+    },
+    {
+      "Name": "len",
+      "Expression": "20.0",
+      "Unit": "Mm"
+    },
+    {
+      "Name": "wbox",
+      "Expression": "15",
+      "Unit": "Mm"
+    }
+  ],
+  "Ports": [
+    {
+      "Number": 1,
+      "Name": "P1",
+      "Kind": "Wave",
+      "Plane": "YZ",
+      "Offset": 0,
+      "Rect": {
+        "Min": [
+          -7500000,
+          0
+        ],
+        "Size": [
+          15000000,
+          5526000
+        ]
+      },
+      "Z0": "50"
+    },
+    {
+      "Number": 2,
+      "Name": "P2",
+      "Kind": "Wave",
+      "Plane": "YZ",
+      "Offset": 20000000,
+      "Rect": {
+        "Min": [
+          -7500000,
+          0
+        ],
+        "Size": [
+          15000000,
+          5526000
+        ]
+      },
+      "Z0": "50"
+    }
+  ],
+  "Setups": [
+    {
+      "FormatVersion": 1,
+      "Name": "Wave · Palace",
+      "Frequency": {
+        "StartExpr": "1",
+        "StopExpr": "10",
+        "StepExpr": "",
+        "NumPoints": 4,
+        "Mode": "PointCount",
+        "Kind": "Linear",
+        "StartUnit": "GHz",
+        "StopUnit": "GHz",
+        "StepUnit": "Hz"
+      },
+      "Port1Z0Real": 50,
+      "Port1Z0Imag": 0,
+      "Port2Z0Real": 50,
+      "Port2Z0Imag": 0,
+      "Solver3D": "Palace",
+      "AirBox": {
+        "XMin": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "XMax": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "YMin": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "YMax": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "ZMin": {
+          "PaddingUm": 0,
+          "Boundary": "Pec"
+        },
+        "ZMax": {
+          "PaddingUm": 5000,
+          "Boundary": "Absorbing"
+        }
+      },
+      "Palace": {
+        "Quality": "Standard",
+        "AdaptiveMaxIterations": 0
+      }
+    },
+    {
+      "FormatVersion": 1,
+      "Name": "Wave · EMerge",
+      "Frequency": {
+        "StartExpr": "1",
+        "StopExpr": "10",
+        "StepExpr": "",
+        "NumPoints": 10,
+        "Mode": "PointCount",
+        "Kind": "Linear",
+        "StartUnit": "GHz",
+        "StopUnit": "GHz",
+        "StepUnit": "Hz"
+      },
+      "Port1Z0Real": 50,
+      "Port1Z0Imag": 0,
+      "Port2Z0Real": 50,
+      "Port2Z0Imag": 0,
+      "Solver3D": "Emerge",
+      "AirBox": {
+        "XMin": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "XMax": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "YMin": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "YMax": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "ZMin": {
+          "PaddingUm": 0,
+          "Boundary": "Pec"
+        },
+        "ZMax": {
+          "PaddingUm": 5000,
+          "Boundary": "Absorbing"
+        }
+      },
+      "Emerge": {
+        "MaxElementWavelengths": 0.05,
+        "EdgeRefinement": 0.1
+      }
+    },
+    {
+      "FormatVersion": 1,
+      "Name": "Wave · openEMS",
+      "Frequency": {
+        "StartExpr": "1",
+        "StopExpr": "10",
+        "StepExpr": "",
+        "NumPoints": 10,
+        "Mode": "PointCount",
+        "Kind": "Linear",
+        "StartUnit": "GHz",
+        "StopUnit": "GHz",
+        "StepUnit": "Hz"
+      },
+      "Port1Z0Real": 50,
+      "Port1Z0Imag": 0,
+      "Port2Z0Real": 50,
+      "Port2Z0Imag": 0,
+      "Solver3D": "OpenEms",
+      "AirBox": {
+        "XMin": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "XMax": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "YMin": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "YMax": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "ZMin": {
+          "PaddingUm": 0,
+          "Boundary": "Pec"
+        },
+        "ZMax": {
+          "PaddingUm": 5000,
+          "Boundary": "Absorbing"
+        }
+      },
+      "OpenEms": {
+        "CellsPerWavelength": 60
+      }
+    },
+    {
+      "FormatVersion": 1,
+      "Name": "Wall · Palace",
+      "Frequency": {
+        "StartExpr": "1",
+        "StopExpr": "10",
+        "StepExpr": "",
+        "NumPoints": 4,
+        "Mode": "PointCount",
+        "Kind": "Linear",
+        "StartUnit": "GHz",
+        "StopUnit": "GHz",
+        "StepUnit": "Hz"
+      },
+      "Port1Z0Real": 50,
+      "Port1Z0Imag": 0,
+      "Port2Z0Real": 50,
+      "Port2Z0Imag": 0,
+      "Solver3D": "Palace",
+      "AirBox": {
+        "XMin": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "XMax": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "YMin": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "YMax": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "ZMin": {
+          "PaddingUm": 0,
+          "Boundary": "Pec"
+        },
+        "ZMax": {
+          "PaddingUm": 5000,
+          "Boundary": "Absorbing"
+        }
+      },
+      "Palace": {
+        "Quality": "Standard",
+        "AdaptiveMaxIterations": 0
+      },
+      "Ports3D": [
+        {
+          "Port": 1,
+          "Kind": "Wall"
+        },
+        {
+          "Port": 2,
+          "Kind": "Wall"
+        }
+      ]
+    },
+    {
+      "FormatVersion": 1,
+      "Name": "Wall · EMerge",
+      "Frequency": {
+        "StartExpr": "1",
+        "StopExpr": "10",
+        "StepExpr": "",
+        "NumPoints": 10,
+        "Mode": "PointCount",
+        "Kind": "Linear",
+        "StartUnit": "GHz",
+        "StopUnit": "GHz",
+        "StepUnit": "Hz"
+      },
+      "Port1Z0Real": 50,
+      "Port1Z0Imag": 0,
+      "Port2Z0Real": 50,
+      "Port2Z0Imag": 0,
+      "Solver3D": "Emerge",
+      "AirBox": {
+        "XMin": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "XMax": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "YMin": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "YMax": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "ZMin": {
+          "PaddingUm": 0,
+          "Boundary": "Pec"
+        },
+        "ZMax": {
+          "PaddingUm": 5000,
+          "Boundary": "Absorbing"
+        }
+      },
+      "Emerge": {
+        "MaxElementWavelengths": 0.05,
+        "EdgeRefinement": 0.1
+      },
+      "Ports3D": [
+        {
+          "Port": 1,
+          "Kind": "Wall"
+        },
+        {
+          "Port": 2,
+          "Kind": "Wall"
+        }
+      ]
+    },
+    {
+      "FormatVersion": 1,
+      "Name": "Wall · openEMS",
+      "Frequency": {
+        "StartExpr": "1",
+        "StopExpr": "10",
+        "StepExpr": "",
+        "NumPoints": 10,
+        "Mode": "PointCount",
+        "Kind": "Linear",
+        "StartUnit": "GHz",
+        "StopUnit": "GHz",
+        "StepUnit": "Hz"
+      },
+      "Port1Z0Real": 50,
+      "Port1Z0Imag": 0,
+      "Port2Z0Real": 50,
+      "Port2Z0Imag": 0,
+      "Solver3D": "OpenEms",
+      "AirBox": {
+        "XMin": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "XMax": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "YMin": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "YMax": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "ZMin": {
+          "PaddingUm": 0,
+          "Boundary": "Pec"
+        },
+        "ZMax": {
+          "PaddingUm": 5000,
+          "Boundary": "Absorbing"
+        }
+      },
+      "OpenEms": {
+        "CellsPerWavelength": 40
+      },
+      "Ports3D": [
+        {
+          "Port": 1,
+          "Kind": "Wall"
+        },
+        {
+          "Port": 2,
+          "Kind": "Wall"
+        }
+      ]
+    }
+  ]
+}

@@ -192,6 +192,29 @@ point. The full mechanism, and how to tell it converged, is
 
 When adaptive sampling is unavailable the checkbox is disabled and says why in place of a tooltip.
 
+## Choosing a port {#choosing-a-port}
+
+Every way circuitRF feeds a structure, with where each is the right choice and where it is not. The **Port Types** example ([Examples ▸ Port Types](../examples/port-types/index.html)) runs each on the simplest structure it takes, against a closed form and against each other, and its README holds this same table beside the numbers behind it.
+
+| Port | Solvers | Best used for | Avoid when |
+|---|---|---|---|
+| Planar **Edge** | planar | Lines on a layered board or MMIC entering the structure at a conductor's end; the fastest route to a de-embedded answer, the port discontinuity removed | The structure has 3D features (connectors, bond wires, board edges that matter), or other metal sits within a few substrate heights of the feed and cannot be grouped with it |
+| Planar **Internal** | planar | A component or device terminal inside the metal, between the metal and the ground plane | Power enters the structure along a line: an internal port is not de-embedded and its own parasitic stays in the answer |
+| 3D **Lumped** | Palace, EMerge, openEMS | A small gap between two conductors: pads, a component site, a quick first setup on any solver | The sheet is tall against the wavelength (thick substrate, high frequency): its series inductance stays in S11 and nothing removes it |
+| 3D **Lumped, turned** | Palace, EMerge | Pads placed at an angle, such as a part at 45° | openEMS (refused); a gap that is not a true rectangle |
+| 3D **Lumped on a cylinder** | openEMS | A gap on a curved surface solved on a cylindrical grid, such as a birdcage coil | Any other solver, or a structure not coaxial with the grid's axis |
+| 3D **Coaxial** | Palace, EMerge; openEMS inside the model | A connector or coax fed in its own TEM field, anywhere in the model | A line that is not coaxial; on openEMS, a ring on a face of the air box |
+| 3D **Wave** | Palace, EMerge, openEMS | One line ending on the air box's face, fed and measured in its own mode, with no port parasitic | The substrate is lossy or conducting enough that the face's mode can change from one frequency to the next; the line cannot run to the box's face; a coax on openEMS's Cartesian grid (use its cylindrical grid) |
+| 3D **Wave with terminals** | openEMS any number; Palace two whose modes differ in speed; EMerge | Coupled lines ending together on the box's face, in terminal S-parameters | Lines in a homogeneous fill on Palace (use openEMS); three or more terminals on Palace |
+| 3D **Hollow-guide wave** | Palace, EMerge (two modes: EMerge) | Waveguide sections, transitions and filters | Anything with a centre conductor; openEMS |
+| 3D **Floquet** | EMerge | One cell of an infinite array: frequency-selective surfaces, reflectarray and metasurface elements | A finite structure, or a cell that cannot be made periodic on both side axes |
+| 3D **Wall** | Palace, EMerge, openEMS | Lines meeting a PEC wall: shielded circuits, RFIC stacks over conducting silicon, coupled lines or a bus at one wall; the port discontinuity and the coupling at the port are calibrated out | The line cannot run straight and uniform to the wall for its end run; coupled lines whose modes travel at one speed; a face that must radiate (the wall is PEC); a cross-section so large that its standards cost more than the run |
+| **Component ports** | planar, Palace, EMerge, openEMS | A placed part's pads, with nothing drawn: every part's terminals at once | A connection that is a line rather than a part |
+| Planar **Internal delta gap** | planar | A lumped element or device cut into the middle of a conductor | An end-fed line (use Edge) |
+| Cross-section **conductor ends** | cross-section kernel | A uniform line or coupled lines from their cross-section alone, in milliseconds | Anything that is not uniform along its length |
+
+Each port's own section: the planar **Edge**, **Internal** and **Internal delta gap** ports in [the planar solver's Ports](mom-engine.html#ports); [Wave ports](#wave-ports) and their [terminals](#wave-port-terminals); [Wall ports](#wall-ports); [Coaxial ports](#coaxial-ports); [the periodic cell and its Floquet ports](#periodic-cell); [the hollow guide](#hollow-two-modes); [ports drawn as their corners](#corner-ports), which is how a lumped port is turned; [Component ports](#component-ports); and the cross-section kernel's conductor ends under [Ports](#ports).
+
 ## Ports {#ports}
 
 Hover the **Ports** header for the explanation that matches the chosen kernel, because the two answer

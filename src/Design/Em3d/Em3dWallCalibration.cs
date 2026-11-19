@@ -646,7 +646,10 @@ public sealed class Em3dWallCalibration
                 switch (s.Primitive)
                 {
                     case Em3dBox b:
-                        if (a0 > slabLo + tol || a1 < slabHi - tol)
+                        // a wall port's own line has been cut back by its gap: it starts one gap in from the face
+                        double near0 = lineOf.ContainsKey(s.Name) && inward > 0 ? slabLo + gap : slabLo;
+                        double near1 = lineOf.ContainsKey(s.Name) && inward < 0 ? slabHi - gap : slabHi;
+                        if (a0 > near0 + tol || a1 < near1 - tol)
                             return No($"'{s.Name}' ends inside the {face} face's end run (its first {Mm(endRun)} mm); the line standards " +
                                       "reproduce an unchanging cross-section there. Run it to the face, or move it back.");
                         Add(s, lat == 0 ? b.Min.X : b.Min.Y, lat == 0 ? b.Max.X : b.Max.Y, b.Min.Z, b.Max.Z);

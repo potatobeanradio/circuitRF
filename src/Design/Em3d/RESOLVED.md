@@ -357,3 +357,13 @@ gate 3 at the default (`Gate3_OnOpenEms_…`, 8 s) and gate 4 at 40 (`Gate4_OnOp
 user docs say a coupled pair wants 40. Routine: the CSX model, the grid identity, the widening on given lines and the box note
 (`WallPortTests.OnOpenEms_…`, 4 tests); `LayoutWallPortTests` runs a layout's wall ports on openEMS too. The 148 tests of the
 wall-port, openEMS, FDTD, CSX and `check`/`explain` classes pass, and Firewall.
+
+## A wall port on a box-shaped line (PWL-7, 2026-11-18)
+
+`Em3dWallCalibration`'s section builder (`Section.Take`) checks that each conductor in a wall port's cross-section runs
+unbroken through the end run. The check compared an `Em3dBox`'s extent with the slab from the face. A wall port's own line is
+cut back by its gap g = min(w, h)/5 when the port is made, so its box starts at slab + g, not at the slab, and the check refused
+it ("ends inside end run"). A line drawn as an extruded path never met this, which is why PWL-3's tests passed. The fix moves
+the near end of the allowed range in by one gap, toward the inward side and only for a line the port owns. Other conductors in
+the section must still reach the face. The Port Types example's Microstrip, Coupled Pair and Line over Silicon draw their lines
+as boxes, and `check` is clean on all three.

@@ -1,0 +1,318 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Mm",
+  "SnapDbu": 10000,
+  "Objects": [
+    {
+      "$type": "Boolean",
+      "Name": "housing",
+      "Op": "Subtract",
+      "Blank": {
+        "$type": "Box",
+        "Material": "Copper",
+        "Min": [
+          0,
+          {
+            "Expr": "-hw/2",
+            "Unit": "Mm"
+          },
+          {
+            "Expr": "-hw/2",
+            "Unit": "Mm"
+          }
+        ],
+        "Size": [
+          {
+            "Expr": "len",
+            "Unit": "Mm"
+          },
+          {
+            "Expr": "hw",
+            "Unit": "Mm"
+          },
+          {
+            "Expr": "hw",
+            "Unit": "Mm"
+          }
+        ]
+      },
+      "Tools": [
+        {
+          "$type": "Cylinder",
+          "Name": "bore",
+          "Base": [
+            0,
+            0,
+            0
+          ],
+          "Axis": "X",
+          "Length": {
+            "Expr": "len",
+            "Unit": "Mm"
+          },
+          "Radius": {
+            "Expr": "bore_d/2",
+            "Unit": "Mm"
+          }
+        }
+      ]
+    },
+    {
+      "$type": "Cylinder",
+      "Name": "ptfe",
+      "Material": "PTFE",
+      "Base": [
+        0,
+        0,
+        0
+      ],
+      "Axis": "X",
+      "Length": {
+        "Expr": "len",
+        "Unit": "Mm"
+      },
+      "Radius": {
+        "Expr": "bore_d/2",
+        "Unit": "Mm"
+      }
+    },
+    {
+      "$type": "Cylinder",
+      "Name": "pin",
+      "Material": "Copper",
+      "Base": [
+        0,
+        0,
+        0
+      ],
+      "Axis": "X",
+      "Length": {
+        "Expr": "len",
+        "Unit": "Mm"
+      },
+      "Radius": {
+        "Expr": "pin_d/2",
+        "Unit": "Mm"
+      }
+    }
+  ],
+  "Variables": [
+    {
+      "Name": "pin_d",
+      "Expression": "0.4",
+      "Unit": "Mm"
+    },
+    {
+      "Name": "bore_d",
+      "Expression": "1.34",
+      "Unit": "Mm"
+    },
+    {
+      "Name": "hw",
+      "Expression": "3",
+      "Unit": "Mm"
+    },
+    {
+      "Name": "len",
+      "Expression": "20",
+      "Unit": "Mm"
+    }
+  ],
+  "Ports": [
+    {
+      "Number": 1,
+      "Name": "P1",
+      "Kind": "Wave",
+      "Plane": "YZ",
+      "Offset": 0,
+      "Rect": {
+        "Min": [
+          -1000000,
+          -1000000
+        ],
+        "Size": [
+          2000000,
+          2000000
+        ]
+      },
+      "Z0": "50"
+    },
+    {
+      "Number": 2,
+      "Name": "P2",
+      "Kind": "Wave",
+      "Plane": "YZ",
+      "Offset": 20000000,
+      "Rect": {
+        "Min": [
+          -1000000,
+          -1000000
+        ],
+        "Size": [
+          2000000,
+          2000000
+        ]
+      },
+      "Z0": "50"
+    }
+  ],
+  "Setups": [
+    {
+      "FormatVersion": 1,
+      "Name": "Wave · Palace",
+      "Frequency": {
+        "StartExpr": "1",
+        "StopExpr": "10",
+        "StepExpr": "",
+        "NumPoints": 4,
+        "Mode": "PointCount",
+        "Kind": "Linear",
+        "StartUnit": "GHz",
+        "StopUnit": "GHz",
+        "StepUnit": "Hz"
+      },
+      "Port1Z0Real": 50,
+      "Port1Z0Imag": 0,
+      "Port2Z0Real": 50,
+      "Port2Z0Imag": 0,
+      "Solver3D": "Palace",
+      "AirBox": {
+        "XMin": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "XMax": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "YMin": {
+          "PaddingUm": 500,
+          "Boundary": "Pec"
+        },
+        "YMax": {
+          "PaddingUm": 500,
+          "Boundary": "Pec"
+        },
+        "ZMin": {
+          "PaddingUm": 500,
+          "Boundary": "Pec"
+        },
+        "ZMax": {
+          "PaddingUm": 500,
+          "Boundary": "Pec"
+        }
+      },
+      "Palace": {
+        "Quality": "Standard",
+        "AdaptiveMaxIterations": 0
+      }
+    },
+    {
+      "FormatVersion": 1,
+      "Name": "Wave · EMerge",
+      "Frequency": {
+        "StartExpr": "1",
+        "StopExpr": "10",
+        "StepExpr": "",
+        "NumPoints": 10,
+        "Mode": "PointCount",
+        "Kind": "Linear",
+        "StartUnit": "GHz",
+        "StopUnit": "GHz",
+        "StepUnit": "Hz"
+      },
+      "Port1Z0Real": 50,
+      "Port1Z0Imag": 0,
+      "Port2Z0Real": 50,
+      "Port2Z0Imag": 0,
+      "Solver3D": "Emerge",
+      "AirBox": {
+        "XMin": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "XMax": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "YMin": {
+          "PaddingUm": 500,
+          "Boundary": "Pec"
+        },
+        "YMax": {
+          "PaddingUm": 500,
+          "Boundary": "Pec"
+        },
+        "ZMin": {
+          "PaddingUm": 500,
+          "Boundary": "Pec"
+        },
+        "ZMax": {
+          "PaddingUm": 500,
+          "Boundary": "Pec"
+        }
+      },
+      "Emerge": {
+        "MaxElementWavelengths": 0.05,
+        "EdgeRefinement": 0.1
+      }
+    },
+    {
+      "FormatVersion": 1,
+      "Name": "Wave · openEMS",
+      "Frequency": {
+        "StartExpr": "1",
+        "StopExpr": "10",
+        "StepExpr": "",
+        "NumPoints": 10,
+        "Mode": "PointCount",
+        "Kind": "Linear",
+        "StartUnit": "GHz",
+        "StopUnit": "GHz",
+        "StepUnit": "Hz"
+      },
+      "Port1Z0Real": 50,
+      "Port1Z0Imag": 0,
+      "Port2Z0Real": 50,
+      "Port2Z0Imag": 0,
+      "Solver3D": "OpenEms",
+      "AirBox": {
+        "XMin": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "XMax": {
+          "PaddingUm": 0,
+          "Boundary": "Absorbing"
+        },
+        "YMin": {
+          "PaddingUm": 500,
+          "Boundary": "Pec"
+        },
+        "YMax": {
+          "PaddingUm": 500,
+          "Boundary": "Pec"
+        },
+        "ZMin": {
+          "PaddingUm": 500,
+          "Boundary": "Pec"
+        },
+        "ZMax": {
+          "PaddingUm": 500,
+          "Boundary": "Pec"
+        }
+      },
+      "OpenEms": {
+        "Grid": "Cylindrical",
+        "Axis": "X",
+        "AxisOriginUm": [
+          0,
+          0,
+          0
+        ],
+        "CellsPerWavelength": 300
+      }
+    }
+  ]
+}

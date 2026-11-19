@@ -1,0 +1,29 @@
+{
+  "FormatVersion": 1,
+  "Name": "Edge · Planar",
+  "LayoutRef": "Microstrip/layout/Microstrip.clay",
+  "Frequency": {
+    "StartExpr": "1",
+    "StopExpr": "10",
+    "StepExpr": "",
+    "NumPoints": 10,
+    "Mode": "PointCount",
+    "Kind": "Linear",
+    "StartUnit": "GHz",
+    "StopUnit": "GHz",
+    "StepUnit": "Hz"
+  },
+  "AnalysisKind": "Planar",
+  "SignalStackupLayerName": "Top Copper",
+  "Port1Z0Real": 50,
+  "Port1Z0Imag": 0,
+  "Port2Z0Real": 50,
+  "Port2Z0Imag": 0,
+  "PlanarMesh": {
+    "Auto": true,
+    "CellsPerWavelength": 20,
+    "EdgeMesh": true,
+    "EdgeCells": 3
+  },
+  "DispersionCorrection": true
+}

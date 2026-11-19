@@ -1164,3 +1164,59 @@ with a reason where none is discovered). What building them found:
   links take them, and the generated page links correctly. Built by `tests/Ui.Tests/Examples/SddExampleAuthoring`
   (CRF_AUTHOR_SDD_EXAMPLE=1); gate `SddExampleTests`.
 - The SDD example's load grid is the Loadpull example's with 48 more points where the optima fall: on the 49-point grid the interpolated MXP sat off the centre of the innermost Pout contour (owner).
+
+## Port Types (brief PWL-7, 2026-11-18)
+
+A new workspace, `examples/Port Types/`. Each cell takes one port type on the simplest structure that shows it, run on every
+solver that runs that port. It is compared with a closed form (an MLIN, MCLIN or TLIN test bench in the three `… Reference`
+cells), or with an exact formula (the WR90 TE10 line; the slab's plane-wave transmission). Every cell has an agreement matrix:
+the worst VSWR between results' reflections and the worst |ΔS| of the transmission terms. The README opens with the
+**Choosing a port** table, and `docs/user/src/reference/em-setup.md` §Choosing a port carries the same table;
+`PortTypesExampleTests` holds the two identical.
+
+**Budget.** EMerge and openEMS were run in full. Palace was run on four frequencies (1, 4, 7, 10 GHz) at Standard quality,
+capped at about 20 minutes per run. Line over Silicon was run on EMerge and openEMS only.
+- Palace times: Microstrip Wall 850 s, Microstrip Wave 169 s, Coupled Pair Wave 473 s, Coax 88 and 132 s, Waveguide 135 s.
+- **Coupled Pair Wall on Palace was killed at the cap**: three 4-port standards plus the structure, at four frequencies. That
+  row is left out, and the README says so.
+
+**What the numbers say, in brief:**
+- Microstrip: every 3D wall port is within VSWR 1.02–1.04 of the MLIN. The three wall ports agree with each other to 1.014.
+- Lumped sheets cost 6–9° of ∠S21.
+- The planar Internal port reads VSWR 1.22. That is its vias' inductance, which is not de-embedded.
+- Coupled pair: the wall ports are closest to the MCLIN (openEMS 1.015).
+- Coax: Palace's coaxial port is closest (1.003).
+- The waveguide is exact on both solvers. The Floquet slab agrees to 1.0043.
+- Over silicon there is no reference. openEMS's wave and wall ports agree to 1.046, and EMerge's wave port is the outlier
+  (1.58–1.75 against everything else).
+
+**Things the runs taught, kept in the setups:**
+- **openEMS staircased the coax badly on a Cartesian grid.** Grading 1.1 still read ε_eff 3.62 for PTFE's 2.1. A cylindrical
+  grid about the coax's axis at 300 cells/λ, with circles on the pin and the bore, gives ∠S21 within 0.01° in 27 s. The table's
+  Wave row now says to avoid a coax on openEMS's Cartesian grid.
+- **openEMS's wave-port current probe needs room round a strip over its floor.** At 300 cells/λ the grid grew to 6.9 M cells;
+  60 cells/λ clears the probe on Microstrip and Coupled Pair.
+- **Palace selects each air-box face in its mesh**, so a face the coax housing fills selects nothing ("airbox faces selected
+  nothing"). The housing has 0.5 mm of air on its y and z sides.
+- **EMerge reached the machine's memory** on the Floquet cell at 20 GHz with the board mesh, and on the silicon wall standards
+  at 0.05 λ. They run at the Standard preset and at 0.1 λ.
+- **A planar Internal port needs a via to ground.** Two vias 20 mm apart at 10 GHz are past the fitted vertical kernel's range,
+  so that setup sets `DirectVerticalKernel`.
+- **TLIN's `E` is radians without a unit.** The coax reference writes `E=348.0338 deg`.
+- **The references are test-bench cells, not loose `.cnl` files.** `ExampleWorkspacesTests` refuses a netlist an example
+  ships, so each was drawn with `netlist --to-schematic`. The schematic's S matches the netlist's to the last digit.
+
+**Two defects found:**
+- **A wall port on a line drawn as a box was refused** ("ends inside end run"). The wall port cuts the line back by its gap, so
+  the line starts one gap in from the face, and the cross-section check wanted it to reach the face. Fixed in
+  `Em3dWallCalibration` (see `src/Design/Em3d/RESOLVED.md`). `PortTypesExampleTests.CheckIsClean` runs `check` over box-shaped
+  wall lines and allows no warning.
+- **Not fixed: the planar solver's grouped edge-port calibration returned a coupled pair's two far-end ports swapped**,
+  whatever order the labels were given in. The group's members appear to be ordered by transverse index
+  (`PlanarPort.TryFormCalibrationGroup`), not by port number. The planar Coupled Pair row is left out of the README, which
+  says why.
+
+**Tests.** `PortTypesExampleTests` has three routine tests: `check` is clean; the Choosing a port table is identical in the
+README and the user docs; and every figure in `expected-numbers.json` appears in the README. It also has one Benchmark test
+(Palace required) that reruns every recorded setup through the CLI and holds |ΔS|, ∠S21 and VSWR against the reference
+within the file's tolerance. Times are not held. No results are shipped.

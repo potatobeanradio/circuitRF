@@ -1308,8 +1308,8 @@ the same panel a `.cem` opens, less the layout row. The example has two: **Drive
 sweep from 2 to 30 GHz, and **Lid modes**, a Palace eigenmode solve. The **active** setup is the one
 **Run** runs and whose air box is drawn.
 
-**Ports.** **Shift+A P** draws one on the drawing plane, two corners; or right-click a flat rectangular
-face, *Make Port ▸ Lumped* or *Wave*. A wave port takes any flat face, a disc for one, as the rectangle round
+**Ports.** Which kind to use is [EM Setup ▸ Choosing a port](em-setup.html#choosing-a-port). **Shift+A P** draws one on the
+drawing plane, two corners; or right-click a flat rectangular face, *Make Port ▸ Lumped* or *Wave*. A wave port takes any flat face, a disc for one, as the rectangle round
 it, since its rectangle is only a region of the box's face. **Which kind a face can take depends on where it lies, not on what it
 was drawn as**: a wave port is a region of an air-box face (a sheet drawn there is the usual way to state one),
 and a lumped port bridges two conductors on opposite edges (a face of a small gap block does exactly that). The

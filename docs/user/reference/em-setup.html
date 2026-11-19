@@ -876,6 +876,105 @@ unchanged — the interpolant fills in between them, it never overwrites them. T
 point. The full mechanism, and how to tell it converged, is
 <a href="mom-engine.html#adaptive">in the engine chapter</a>.</p>
 <p>When adaptive sampling is unavailable the checkbox is disabled and says why in place of a tooltip.</p>
+<h2 id="choosing-a-port">Choosing a port</h2>
+<p>Every way circuitRF feeds a structure, with where each is the right choice and where it is not. The <strong>Port Types</strong> example (<a href="../examples/port-types/index.html">Examples ▸ Port Types</a>) runs each on the simplest structure it takes, against a closed form and against each other, and its README holds this same table beside the numbers behind it.</p>
+<table>
+<thead>
+<tr>
+<th>Port</th>
+<th>Solvers</th>
+<th>Best used for</th>
+<th>Avoid when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Planar <strong>Edge</strong></td>
+<td>planar</td>
+<td>Lines on a layered board or MMIC entering the structure at a conductor's end; the fastest route to a de-embedded answer, the port discontinuity removed</td>
+<td>The structure has 3D features (connectors, bond wires, board edges that matter), or other metal sits within a few substrate heights of the feed and cannot be grouped with it</td>
+</tr>
+<tr>
+<td>Planar <strong>Internal</strong></td>
+<td>planar</td>
+<td>A component or device terminal inside the metal, between the metal and the ground plane</td>
+<td>Power enters the structure along a line: an internal port is not de-embedded and its own parasitic stays in the answer</td>
+</tr>
+<tr>
+<td>3D <strong>Lumped</strong></td>
+<td>Palace, EMerge, openEMS</td>
+<td>A small gap between two conductors: pads, a component site, a quick first setup on any solver</td>
+<td>The sheet is tall against the wavelength (thick substrate, high frequency): its series inductance stays in S11 and nothing removes it</td>
+</tr>
+<tr>
+<td>3D <strong>Lumped, turned</strong></td>
+<td>Palace, EMerge</td>
+<td>Pads placed at an angle, such as a part at 45°</td>
+<td>openEMS (refused); a gap that is not a true rectangle</td>
+</tr>
+<tr>
+<td>3D <strong>Lumped on a cylinder</strong></td>
+<td>openEMS</td>
+<td>A gap on a curved surface solved on a cylindrical grid, such as a birdcage coil</td>
+<td>Any other solver, or a structure not coaxial with the grid's axis</td>
+</tr>
+<tr>
+<td>3D <strong>Coaxial</strong></td>
+<td>Palace, EMerge; openEMS inside the model</td>
+<td>A connector or coax fed in its own TEM field, anywhere in the model</td>
+<td>A line that is not coaxial; on openEMS, a ring on a face of the air box</td>
+</tr>
+<tr>
+<td>3D <strong>Wave</strong></td>
+<td>Palace, EMerge, openEMS</td>
+<td>One line ending on the air box's face, fed and measured in its own mode, with no port parasitic</td>
+<td>The substrate is lossy or conducting enough that the face's mode can change from one frequency to the next; the line cannot run to the box's face; a coax on openEMS's Cartesian grid (use its cylindrical grid)</td>
+</tr>
+<tr>
+<td>3D <strong>Wave with terminals</strong></td>
+<td>openEMS any number; Palace two whose modes differ in speed; EMerge</td>
+<td>Coupled lines ending together on the box's face, in terminal S-parameters</td>
+<td>Lines in a homogeneous fill on Palace (use openEMS); three or more terminals on Palace</td>
+</tr>
+<tr>
+<td>3D <strong>Hollow-guide wave</strong></td>
+<td>Palace, EMerge (two modes: EMerge)</td>
+<td>Waveguide sections, transitions and filters</td>
+<td>Anything with a centre conductor; openEMS</td>
+</tr>
+<tr>
+<td>3D <strong>Floquet</strong></td>
+<td>EMerge</td>
+<td>One cell of an infinite array: frequency-selective surfaces, reflectarray and metasurface elements</td>
+<td>A finite structure, or a cell that cannot be made periodic on both side axes</td>
+</tr>
+<tr>
+<td>3D <strong>Wall</strong></td>
+<td>Palace, EMerge, openEMS</td>
+<td>Lines meeting a PEC wall: shielded circuits, RFIC stacks over conducting silicon, coupled lines or a bus at one wall; the port discontinuity and the coupling at the port are calibrated out</td>
+<td>The line cannot run straight and uniform to the wall for its end run; coupled lines whose modes travel at one speed; a face that must radiate (the wall is PEC); a cross-section so large that its standards cost more than the run</td>
+</tr>
+<tr>
+<td><strong>Component ports</strong></td>
+<td>planar, Palace, EMerge, openEMS</td>
+<td>A placed part's pads, with nothing drawn: every part's terminals at once</td>
+<td>A connection that is a line rather than a part</td>
+</tr>
+<tr>
+<td>Planar <strong>Internal delta gap</strong></td>
+<td>planar</td>
+<td>A lumped element or device cut into the middle of a conductor</td>
+<td>An end-fed line (use Edge)</td>
+</tr>
+<tr>
+<td>Cross-section <strong>conductor ends</strong></td>
+<td>cross-section kernel</td>
+<td>A uniform line or coupled lines from their cross-section alone, in milliseconds</td>
+<td>Anything that is not uniform along its length</td>
+</tr>
+</tbody>
+</table>
+<p>Each port's own section: the planar <strong>Edge</strong>, <strong>Internal</strong> and <strong>Internal delta gap</strong> ports in <a href="mom-engine.html#ports">the planar solver's Ports</a>; <a href="#wave-ports">Wave ports</a> and their <a href="#wave-port-terminals">terminals</a>; <a href="#wall-ports">Wall ports</a>; <a href="#coaxial-ports">Coaxial ports</a>; <a href="#periodic-cell">the periodic cell and its Floquet ports</a>; <a href="#hollow-two-modes">the hollow guide</a>; <a href="#corner-ports">ports drawn as their corners</a>, which is how a lumped port is turned; <a href="#component-ports">Component ports</a>; and the cross-section kernel's conductor ends under <a href="#ports">Ports</a>.</p>
 <h2 id="ports">Ports</h2>
 <p>Hover the <strong>Ports</strong> header for the explanation that matches the chosen kernel, because the two answer
 &quot;where is the port?&quot; completely differently:</p>
