@@ -9,8 +9,8 @@ namespace CircuitRF.Design.Layout.Em;
 
 /// <summary>
 /// Planar MoM behind <see cref="ICouplingCurveSolver"/> (docs/design/filter-synthesis.md §6b): the plan drawn as its PCell
-/// draws it, the copper unioned into one sheet on the substrate's grounded slab, one edge port on each pin facing out, and
-/// the sweep solved without de-embedding (a bench is read for its resonances, which the ports' own steps barely move).
+/// draws it, the copper unioned into one sheet on the substrate's grounded slab, one grounded edge port on each pin facing
+/// out, and the sweep solved without de-embedding (a bench is read for its resonances, which the ports' own steps barely move).
 /// A realised filter's run (§6d) is the same solve on ports of its own.
 /// </summary>
 /// <param name="Mesh">The mesh; null is a coarse one, ten cells a wavelength and no edge cells.</param>
@@ -25,7 +25,7 @@ public sealed record CouplingCurvePlanarSolver(PlanarMeshSettings? Mesh = null, 
     public Complex[][,] Solve(PassivePlan plan, MicrostripSubstrate s, IReadOnlyList<double> fHz)
     {
         var cell = PassivePlanPCells.Draw(plan, null, PCellLayerSelection.Default);
-        return Solve(cell.Shapes, [.. cell.Pins.Select((p, i) => EdgePort(i + 1, p, 50.0))], s, fHz);
+        return Solve(cell.Shapes, [.. cell.Pins.Select((p, i) => EdgePort(i + 1, p, 50.0, grounded: true))], s, fHz);
     }
 
     /// <summary>An edge port on <paramref name="pin"/>, on the side it faces out of. <paramref name="grounded"/> makes it
