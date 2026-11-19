@@ -342,7 +342,14 @@ public sealed partial class PhasedArrayToolViewModel : ObservableObject, IDispos
             cmd = Then(cmd, new EditParameterCommand(model, row, expr, unit));
         if (Steering.Theta is { IsVar: false } || Steering.Phi is { IsVar: false })
             cmd = Then(cmd, Write(Steering.Field, Steering.Rewritten(Instance.Parameters, _dragAt.Theta, _dragAt.Phi)));
-        if (cmd is not null) Schematic.Execute(new NamedCommand($"Steer {Instance.InstanceName} to θ0 {_dragAt.Theta:0.##}°, φ0 {_dragAt.Phi:0.##}°", cmd));
+        // brief PCH-13 — on an end of a channel that picks the beams (BeamSelect auto or index), the run steers the array to the channel's
+        // choice whatever its steer() says, so a drag moved the beam and the release's solve put it back. The drag is the user steering by
+        // hand: the channel is set to manual and the other end keeps the beam it has, as Apply to array writes them.
+        bool channelPicks = cmd is not null && ChannelPicksTheBeams();
+        if (channelPicks) cmd = SteerByHand(cmd);
+        if (cmd is not null)
+            Schematic.Execute(new NamedCommand($"Steer {Instance.InstanceName} to θ0 {_dragAt.Theta:0.##}°, φ0 {_dragAt.Phi:0.##}°" +
+                                               (channelPicks ? $"; {Channel?.Channel ?? "the channel"} steered by hand" : ""), cmd));
     }
 
     // ── R-paa9-2: the aperture ──────────────────────────────────────────────────────────────────────────────

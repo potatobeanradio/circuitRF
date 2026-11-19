@@ -189,6 +189,44 @@ public sealed partial class PhasedArrayToolViewModel
         Schematic.Execute(new NamedCommand(description, cmd!));
     }
 
+    /// <summary>True when the array ends a channel whose BeamSelect is not manual, so the run, not the array's steer(), sets its beam.</summary>
+    private bool ChannelPicksTheBeams()
+    {
+        var ch = ChannelComponent() ?? (_session?.ChannelEnd() is var (inst, _) ? Schematic.EditModel.Components.FirstOrDefault(x => x.InstanceName == inst.InstanceName) : null);
+        if (ch is null) return false;
+        string word = ch.Parameters.FirstOrDefault(p => p.Name == "BeamSelect")?.Expression.Trim().Trim('"') ?? "";
+        return !word.Equals("manual", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// A drag's steering made to stick on a channel end: the OTHER end's chosen direction into its steer() (when the channel was scored),
+    /// BeamSelect=manual and the index keys removed, after <paramref name="dragged"/> — Apply to array, with the dragged end's direction the
+    /// user's own.
+    /// </summary>
+    private IUiCommand? SteerByHand(IUiCommand? dragged)
+    {
+        var ch = ChannelComponent() ?? (_session?.ChannelEnd() is var (inst, _) ? Schematic.EditModel.Components.FirstOrDefault(x => x.InstanceName == inst.InstanceName) : null);
+        if (ch is null) return dragged;
+        var model = Schematic.EditModel;
+        IUiCommand? cmd = dragged;
+        if (Channel?.Table is { } t)
+            foreach (var (steered, array, beam) in new[] { (t.TxSteered, t.TxArray, t.TxBeams[t.Chosen.Tx]), (t.RxSteered, t.RxArray, t.RxBeams[t.Chosen.Rx]) })
+            {
+                if (!steered || array is null || array == Instance.InstanceName
+                    || model.Components.FirstOrDefault(c => c.InstanceName == array) is not { } comp) continue;
+                var steering = PhasedArraySteering.Of(comp, model.Components);
+                if (!steering.Draggable) continue;
+                double th = Math.Round(beam.ThetaDeg, 2), ph = Math.Round(beam.PhiDeg, 2);
+                foreach (var (row, expr, unit) in steering.VarWrites(model.Components, th, ph))
+                    cmd = AndThen(cmd, new EditParameterCommand(model, row, expr, unit));
+                if (steering.Theta is { IsVar: false } || steering.Phi is { IsVar: false })
+                    cmd = AndThen(cmd, WriteOn(comp, steering.Field, steering.Rewritten(comp.Parameters, th, ph)));
+            }
+        cmd = AndThen(cmd, WriteOn(ch, "BeamSelect", "manual"));
+        foreach (string key in new[] { "TxBeam", "RxBeam", "BeamRank" }) cmd = AndThen(cmd, RemoveOn(ch, key));
+        return cmd;
+    }
+
     /// <summary>
     /// Apply to array: each steered end's chosen direction into its array's steer() (the VARs, or the literals, as a beam drag writes them)
     /// and BeamSelect=manual on the channel, its index keys removed — one undo step.

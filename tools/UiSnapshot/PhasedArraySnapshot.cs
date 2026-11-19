@@ -14,7 +14,8 @@ using CircuitRF.Ui.Views.PhasedArray;
 using SkiaSharp;
 
 /// <summary>
-/// brief-paa-9 — the Phased Array tool window on one array of a <c>.cnl</c> bench (<c>--phased-array bench.cnl</c>), the real window with its
+/// brief-paa-9 — the Phased Array tool window on one array of a <c>.cnl</c> bench (<c>--phased-array bench.cnl</c>, or a <c>.csch</c>, which opens
+/// as the application opens it and is saved back after each edit — point it at a copy), the real window with its
 /// view model's work run at once. A bench with no cell definitions is drawn as the schematic <c>netlist --to-schematic</c> draws and the tool
 /// netlists that drawing, as the application would; a bench that defines cells (a channel, an amplifier) cannot be drawn, so the tool sees
 /// the array instance and the VARs and evaluates the bench's own netlist.
@@ -27,6 +28,15 @@ static class PhasedArraySnapshot
     public static int Run(string cnl, string? block, string color, string tab, int drag, double dragTo, string output, double width, double height)
     {
         string full = Path.GetFullPath(cnl), dir = Path.GetDirectoryName(full)!;
+        // A .csch opens as the application opens it: its own drawing, the channel and every part in it, prepared from the drawing as it
+        // stands after each edit (saved back to the file first, so point this at a copy). A bench that defines cells is otherwise drawn
+        // without them, and an edit the tool makes to the channel would reach nothing.
+        if (full.EndsWith(".csch", StringComparison.OrdinalIgnoreCase))
+        {
+            var (loaded, _, _) = SchematicPersistence.LoadFromFile(full);
+            return Show(loaded, vm => { SchematicPersistence.SaveToFile(full, vm.EditModel, Path.GetFileNameWithoutExtension(full)); return PreparedCircuit.FromSchematic(full); },
+                        block, color, tab, drag, dragTo, output, width, height);
+        }
         // the bench's relative file references made absolute in memory, so the drawing (which has no folder of its own) and the netlist
         // the tool reads back from it name the same files
         string text = System.Text.RegularExpressions.Regex.Replace(File.ReadAllText(full), "(Record|File)=\"(?!/)([^\"]+)\"",
@@ -45,6 +55,12 @@ static class PhasedArraySnapshot
             model = Minimal(tb, block);
             prepare = _ => PreparedCircuit.FromText(text, dir, dir);
         }
+        return Show(model, prepare, block, color, tab, drag, dragTo, output, width, height);
+    }
+
+    private static int Show(SchematicEditModel model, Func<SchematicViewModel, PreparedCircuit?> prepare, string? block, string color, string tab,
+                            int drag, double dragTo, string output, double width, double height)
+    {
         var schematic = new SchematicViewModel(model);
         var instance = model.Components.First(c => c.Symbol == SymbolKind.PhasedArray && (block is null || c.InstanceName == block));
         var clock = Stopwatch.StartNew();

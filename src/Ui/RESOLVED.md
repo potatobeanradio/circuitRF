@@ -42648,3 +42648,11 @@ a run of the classes together failed deterministically ("0 parts replaced", 0 of
 - **The example carries `FT` (PT, driven from `GNB`) and `FR` (PR, receive pattern at `UE`).** Pictures (UiSnapshot `--phased-array
   … --block PT|PR [--pa-tab channel]`, looked at): PT 91.0 dBi at 14.4° and PR 39.3 dBi at 20.2°, each the drop's chosen pair; the
   Channel tab's rank 1 is the run's own pair at drop 1. The bench's own run still reproduces the README's MER/EVM/outage table.
+- **A beam drag on a channel end sticks.** With `BeamSelect` auto or index, the run steers a channel's arrays to the channel's choice
+  whatever their `steer()` says, so a drag moved the beam (the drag's own frames use the dragged weights) and the release's solve put
+  it back — and clicking a ray, which writes `BeamSelect=index`, made it look like the click had locked the beam. `EndDrag` now writes,
+  as one undo step, the dragged steering, the OTHER end's current direction into its `steer()` and `BeamSelect=manual` — Apply to
+  array, with the dragged end's direction the user's (`SteerByHand`). Without the other end's write, `manual` would drop it to its own
+  `steer()`. Gate: `BeamSelectionTests.ADragOnAChannelEnd_SteersByHand_AndTheBeamStaysWhereItWasDragged`. Picture: UiSnapshot
+  `--phased-array <copy of Array Link.csch> --block PT --pa-drag 3 --pa-to 30` — the beam settles at 29.7° (it returned to 14.4°).
+  The harness's `--phased-array` takes a `.csch` for this: a bench that defines cells is otherwise drawn without its channel.

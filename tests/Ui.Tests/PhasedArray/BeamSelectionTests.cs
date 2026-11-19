@@ -267,6 +267,50 @@ public sealed class BeamSelectionTests(ITestOutputHelper output) : IDisposable
     }
 
     /// <summary>
+    /// Brief PCH-13 — a beam drag on a channel end sticks. The channel picks the beams (BeamSelect unstated), and the run steers the
+    /// array to its choice whatever steer() says, so the drag moved the beam and the release's solve put it back. Released, the drag
+    /// writes the dragged steering, the other end's chosen direction and BeamSelect=manual as one undo step, and the settled frame
+    /// peaks where the beam was dragged.
+    /// </summary>
+    [Fact]
+    public void ADragOnAChannelEnd_SteersByHand_AndTheBeamStaysWhereItWasDragged()
+    {
+        string rays = Rays("drag.csv",
+            "0, 0, 12, 20, 18, 100", "10, -3, 13, 21, 17, 101", "20, -3, 11, 19, 19, 99",
+            "100, -5, 42, 200, 35, -80", "110, -8, 43, 201, 34, -79", "120, -8, 41, 199, 36, -81");
+        string cnl = Bench(rays).Replace("P1Tone:S1 f1 0 Num=1 Pavl=10 Z=50 Freq=5.9 GHz", "Port:P1 f1 0 Num=1 Z=50 Ohm") +
+                     "\nanalysis F1 type=fields block=PA1 freq=5.9 freqUnit=GHz drive=1\n";
+        var (lib, tb) = new CnlReader().Read(cnl, "bench", _dir);
+        var drawn = NetlistSchematic.Build(lib, tb, _dir);
+        drawn.Schematic!.SchematicDirectory = _dir;
+        var vm = new SchematicViewModel(drawn.Schematic);
+        PreparedCircuit? Prepare(SchematicViewModel s) => PreparedCircuit.FromText(SchematicCircuit.CnlTextOf(s.EditModel, "bench"), _dir, _dir);
+        var pa1 = vm.EditModel.Components.Single(c => c.InstanceName == "PA1");
+        var ch = vm.EditModel.Components.Single(c => c.InstanceName == "CH1");
+        using var tool = new PhasedArrayToolViewModel(vm, pa1, Prepare, new ImmediatePhasedArrayHost());
+        Assert.True(tool.Channel?.Table is not null, tool.ChannelStatus);
+        var t = tool.Channel!.Table!;
+        var rxBeam = t.RxBeams[t.Chosen.Rx];
+        double Var(string name) => SchematicNominal.Of(vm.EditModel.Components).Real(name, null)!.Value * 180 / Math.PI;
+        int before = vm.UndoRedo.Entries.Count();
+
+        Assert.True(tool.BeginDrag());
+        tool.DragToAngles(25, 60);
+        tool.EndDrag();
+
+        output.WriteLine($"t1 {Var("t1"):F2}° p1 {Var("p1"):F2}° t2 {Var("t2"):F2}° p2 {Var("p2"):F2}°; peak θ {tool.Frame?.Readouts.PeakThetaDeg:F2}°, φ {tool.Frame?.Readouts.PeakPhiDeg:F2}°");
+        Assert.Equal(before + 1, vm.UndoRedo.Entries.Count());
+        Assert.Equal("manual", ch.Parameters.Single(p => p.Name == "BeamSelect").Expression);
+        Assert.Equal(25.0, Var("t1"), 9);
+        Assert.Equal(60.0, Var("p1"), 9);
+        Assert.Equal(Math.Round(rxBeam.ThetaDeg, 2), Var("t2"), 9);
+        Assert.Equal(Math.Round(rxBeam.PhiDeg, 2), Var("p2"), 9);
+        Assert.True(tool.Frame is not null, tool.Status);
+        Assert.InRange(tool.Frame!.Readouts.PeakThetaDeg, 22, 28);
+        Assert.InRange(tool.Frame.Readouts.PeakPhiDeg, 55, 65);
+    }
+
+    /// <summary>
     /// A re-weighed evaluation (a steer VAR tuned, as a beam drag tunes it) on new beamformers takes the previous choice again — one
     /// weighing per end, no pairs scored — since every candidate replaces θ0 and φ0 and so none of them moved.
     /// </summary>
