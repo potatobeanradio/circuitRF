@@ -8343,7 +8343,8 @@ Write a bare number or <code>metre</code>: <code>m</code> means milli in every v
 as <code>x,y,z</code> in m/s, give each ray its Doppler.</li>
 <li><strong>Large scale.</strong> <code>PathLoss</code> is any model of the propagation library (<code>free</code>, <code>logdist</code>, <code>multislope</code>, <code>tworay</code>, <code>38901</code>,
 <code>P1238</code>, <code>P1411</code>, <code>P526</code>, <code>satellite</code>, <code>P1812</code>). Its parameters, and the added losses (gas, rain, clutter and the rest),
-are written beside it by the model's own names. <code>Rain=fixed</code> adds the attenuation at the stated availability.</li>
+are written beside it by the model's own names. A placed channel shows a dozen of its parameters; <strong>+</strong> in its
+Parameter dialog adds any other by name, with what it does. <code>Rain=fixed</code> adds the attenuation at the stated availability.</li>
 <li><strong>Drops.</strong> Each channel is one drop, numbered by <code>Drop</code> under <code>Seed</code>. A drop draws the shadowing from the model's σ (in dB,
 added to the loss; <code>Shadowing=off</code> holds it at 0). It also draws the line-of-sight state from the model's probability when
 <code>Los=auto</code>, and with <code>Rain=drawn</code> a time percentage, taking the rain exceeded for it. That rain is zero beyond P.530's 1 %

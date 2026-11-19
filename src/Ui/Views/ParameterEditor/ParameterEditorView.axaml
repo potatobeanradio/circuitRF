@@ -1642,6 +1642,14 @@
                     IsVisible="{Binding AllowsAddParameter}"
                     ToolTip.Tip="Add parameter group"
                     Command="{Binding AddGroupCommand}"/>
+            <!-- A Propagation Channel is placed with a dozen rows; its other parameters (the path-loss model's, its own,
+                 the added losses) are picked by name, with what each does, rather than all shown at once. -->
+            <Button Content="+"
+                    FontSize="11"
+                    Padding="8,3"
+                    IsVisible="{Binding ShowAddChannelParameter}"
+                    ToolTip.Tip="Add a parameter: the path-loss model's, the channel's own, or an added loss"
+                    Command="{Binding AddChannelParameterCommand}"/>
             <!-- An SDD's slots are two-dimensional and bounded by its port count, so the generic
                  "+" above cannot express them (it offered I[n], which duplicated a seeded I[n,0]
                  and then named ports that do not exist). It gets a picker over what this device

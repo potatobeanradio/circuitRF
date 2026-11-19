@@ -1766,6 +1766,11 @@ public static class ComponentTypeRegistry
             // it, now that the button and the row rename are both gone.
             SymbolKind.ZPort => !RxZMatrixEntry.IsMatch(parameterName) && parameterName != "NumPorts",
 
+            // A channel is placed with a dozen rows and every other parameter is added through its "+" picker
+            // (ChannelAddableParameters), so what was added can be taken away; what it was placed with cannot.
+            SymbolKind.PropagationChannel => !DefaultParameters(SymbolKind.PropagationChannel, 2)
+                .Any(d => string.Equals(d.Name, parameterName, StringComparison.Ordinal)),
+
             _ => false,
         };
     }
@@ -2998,6 +3003,33 @@ public static class ComponentTypeRegistry
             "Idc" => "The DC current, A, delivered into +. Constant in every analysis; an open at every frequency but DC.",
             _ => "",
         };
+    }
+
+    /// <summary>One parameter a placed Propagation Channel can be given, for its "+" picker.</summary>
+    /// <param name="Default">The model's own default as text, or "" when it works one out or needs none.</param>
+    public sealed record ChannelParameterChoice(string Name, string Unit, string Default, string Group, string Description);
+
+    /// <summary>
+    /// Every parameter a Propagation Channel with <paramref name="pathLoss"/> as its large-scale model can take: that
+    /// model's own first (what a user who has just picked it wants next), then the channel's own by editor group, then
+    /// the added losses. Another model's parameters are left out, since this channel would not read them.
+    /// </summary>
+    /// <remarks>
+    /// A channel is placed with a dozen rows. Its other ~100 parameters are offered rather than shown: most apply in one
+    /// mode only (beams, satellite states, a clustered delay line's angles), and a row for each would make every one
+    /// an explicit value, fixing the models' own defaults on the instance.
+    /// </remarks>
+    public static IReadOnlyList<ChannelParameterChoice> ChannelAddableParameters(string pathLoss)
+    {
+        var model = RfCore.Propagation.PropagationModels.All
+            .FirstOrDefault(m => m.Name.Equals(pathLoss.Trim().Trim('"'), StringComparison.OrdinalIgnoreCase));
+        string[] groups = ["Geometry", "Large scale", "Small scale", "Ends", "Realization", "Beam"];
+        var own = PropagationChannelModel.OwnParameters
+            .Select(n => new ChannelParameterChoice(n, "", PropagationChannelModel.AbsentValue.GetValueOrDefault(n, ""),
+                                                    ParameterGroup(SymbolKind.PropagationChannel, n)!, ChannelParameterDescription(n)))
+            .OrderBy(c => Array.IndexOf(groups, c.Group)).ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase);
+        static ChannelParameterChoice Of(RfCore.Propagation.ModelParameter p) => new(p.Name, p.Unit, p.Default, p.Group, p.Help);
+        return [.. (model?.Parameters ?? []).Select(Of), .. own, .. RfCore.Propagation.AddedLosses.Parameters.Select(Of)];
     }
 
     private static string ChannelParameterDescription(string name)

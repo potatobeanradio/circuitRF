@@ -90,6 +90,20 @@ public sealed partial class PropagationChannelModel : ComponentModel, IReportsWa
         "Shadowing", "States", "StateEnvironment",
     };
 
+    /// <summary>
+    /// The channel's own parameters whose absence is one fixed value, as text — the value its reader falls back to, read from here
+    /// so the two are one. The Parameter dialog's "+" seeds an added row with it, because a blank row draws no schematic label.
+    /// A parameter whose absence means "work it out" (Velocity, f0, an end's Az, Fading…) or whose presence alone changes the run
+    /// (BeamRank outside BeamSelect=rank) is deliberately not here.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> AbsentValue = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Seed"] = "1", ["Drop"] = "1", ["NakagamiM"] = "1", ["ScanLimit"] = "60",
+        ["Doppler"] = "classical", ["DopplerComp"] = "none", ["Shadowing"] = "on", ["States"] = "off", ["RayFrame"] = "global",
+    };
+
+    private static double AbsentNumber(string name) => double.Parse(AbsentValue[name], CultureInfo.InvariantCulture);
+
     /// <summary>Parameters every component may carry that belong to no model.</summary>
     private static readonly IReadOnlySet<string> Generic = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
@@ -306,7 +320,7 @@ public sealed partial class PropagationChannelModel : ComponentModel, IReportsWa
         }
         _txPol = Pol("TxPol");
         _rxPol = Pol("RxPol");
-        _rayFrameEnds = Word("RayFrame", "global").ToLowerInvariant() switch
+        _rayFrameEnds = Word("RayFrame", AbsentValue["RayFrame"]).ToLowerInvariant() switch
         {
             "global" => false,
             "ends" => true,
@@ -344,7 +358,7 @@ public sealed partial class PropagationChannelModel : ComponentModel, IReportsWa
         if (_rxTantK < 0) throw new ParameterRefusalException(PropagationChannelDiagnostics.AntennaTemperature());
         _timeOffset = Num("TimeOffset", 0);
         FrozenTimeS = _timeOffset;
-        _dopplerComp = Word("DopplerComp", "none").ToLowerInvariant() switch
+        _dopplerComp = Word("DopplerComp", AbsentValue["DopplerComp"]).ToLowerInvariant() switch
         {
             "none" => false,
             "common" => true,
@@ -356,9 +370,9 @@ public sealed partial class PropagationChannelModel : ComponentModel, IReportsWa
             _fading = TapFading.TryParseKind(fadingWord, out var fk) ? fk
                       : throw new ParameterRefusalException(PropagationChannelDiagnostics.Fading(fadingWord));
         _kFactorDb = p.ContainsKey("KFactor") ? Num("KFactor", 0) : null;
-        _nakagamiM = Num("NakagamiM", 1);
+        _nakagamiM = Num("NakagamiM", AbsentNumber("NakagamiM"));
         if (!(_nakagamiM >= 0.5)) throw new ParameterRefusalException(PropagationChannelDiagnostics.NakagamiM(_nakagamiM));
-        string dopplerWord = Word("Doppler", "classical");
+        string dopplerWord = Word("Doppler", AbsentValue["Doppler"]);
         if (!TapFading.TryParseSpectrum(dopplerWord, out _spectrum))
             throw new ParameterRefusalException(PropagationChannelDiagnostics.DopplerSpectrum(dopplerWord));
         _velocity = p.ContainsKey("Velocity") ? Num("Velocity", 0) : null;
@@ -368,8 +382,8 @@ public sealed partial class PropagationChannelModel : ComponentModel, IReportsWa
         if (!(sins >= 4) || sins != Math.Floor(sins)) throw new ParameterRefusalException(PropagationChannelDiagnostics.Sinusoids(sins));
         _sinusoids = (int)sins;
         _delaySpread = p.ContainsKey("DelaySpread") ? Num("DelaySpread", 0) : null;
-        _seed = unchecked((ulong)(long)Math.Round(Num("Seed", 1)));
-        _drop = (long)Math.Round(Num("Drop", 1));
+        _seed = unchecked((ulong)(long)Math.Round(Num("Seed", AbsentNumber("Seed"))));
+        _drop = (long)Math.Round(Num("Drop", AbsentNumber("Drop")));
         string multipath = Word("Multipath", "none").ToLowerInvariant();
         string profileWord = Word("Profile", "").Trim('"');
         if (profileWord.Length > 0 && multipath is not ("tdl" or "cdl"))
@@ -429,13 +443,13 @@ public sealed partial class PropagationChannelModel : ComponentModel, IReportsWa
                 throw new ParameterRefusalException(PropagationChannelDiagnostics.Multipath(w));
         }
         // brief-pch-10 R-pch10-1 / R-pch10-3 — the shadowing draw, and P.681's states
-        _shadowing = Word("Shadowing", "on").ToLowerInvariant() switch
+        _shadowing = Word("Shadowing", AbsentValue["Shadowing"]).ToLowerInvariant() switch
         {
             "on" => true,
             "off" => false,
             var sw => throw new ParameterRefusalException(PropagationChannelDiagnostics.Shadowing(sw)),
         };
-        switch (Word("States", "off").ToLowerInvariant())
+        switch (Word("States", AbsentValue["States"]).ToLowerInvariant())
         {
             case "off":
                 if (p.ContainsKey("StateEnvironment")) throw new ParameterRefusalException(PropagationChannelDiagnostics.States("off"));
@@ -484,7 +498,7 @@ public sealed partial class PropagationChannelModel : ComponentModel, IReportsWa
             "alternating" => BeamSearchMode.Alternating,
             var bs => throw new ParameterRefusalException(PropagationChannelDiagnostics.BeamSearch(bs)),
         };
-        _scanLimitDeg = Num("ScanLimit", 60);
+        _scanLimitDeg = Num("ScanLimit", AbsentNumber("ScanLimit"));
         if (!(_scanLimitDeg > 0 && _scanLimitDeg <= 90)) throw new ParameterRefusalException(PropagationChannelDiagnostics.ScanLimit(_scanLimitDeg));
         if (Word("Codebook", "").Trim('"') is { Length: > 0 } cb)
         {

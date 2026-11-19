@@ -42596,3 +42596,21 @@ IoT Link example's VAR turned `Fc = 868.95 MHz` into 868.95 Hz (and every row's 
 defaults). The design then failed elaboration with P.1238 refusing a frequency of "0.000001 GHz", which reads as an
 unrelated problem. `VarTextParser.ToParameters` now keeps what the text does not show for any name already on the VAR
 and takes only its expression. Gate: `VarEditorTextApplyTests` (fails on the old Apply).
+
+## Propagation Channel: "+" adds a parameter by name (discussion 75, 2026-11-19)
+
+A placed channel carries the dozen rows `DefaultParameters` seeds, and the dialog shows only the rows an instance has — so
+nothing in the GUI could add `Environment`, `Floors`, `Partitions`, `Fading`, `Seed` or `Drop`; a shipped example's channel
+showed rows a user had no way to make. About 110 parameters exist (60 the channel's own, 38 added losses, up to 14 per
+path-loss model), most applying in one mode only, so they are OFFERED rather than shown: the footer's **+** opens the
+searchable picker VerilogA's Add Parameter… uses, over `ComponentTypeRegistry.ChannelAddableParameters` — the chosen
+model's parameters first, then the channel's own by editor group, then the added losses; other models' parameters are left
+out. A pick is seeded at the model's stated default, else blank (no override). Added rows are removable (×); the placed
+dozen are not. Pictures (UiSnapshot, looked at): the example's CH1 dialog with the + and the × on added rows, and the picker
+after +. Gate: `PropagationChannelAddParameterTests`.
+
+**Follow-up, same day.** An added parameter that starts blank draws no schematic label, so ticking Display on one showed nothing.
+The nine channel parameters whose absence is one fixed value (`PropagationChannelModel.AbsentValue`: Seed, Drop, NakagamiM,
+ScanLimit, Doppler, DopplerComp, Shadowing, States, RayFrame) now arrive stating it; the model reads its fallbacks from the same
+table. One whose blank means "work it out" (Velocity, f0, an end's Az, Fading…) or whose presence alone changes the run (BeamRank)
+still starts blank and draws once given a value. Gate: `PropagationChannelAddParameterTests.AnAddedSeed_StatesItsValue_SoDisplayingItDrawsIt`.

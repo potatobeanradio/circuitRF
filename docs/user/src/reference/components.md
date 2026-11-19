@@ -4190,7 +4190,8 @@ PropagationChannel:CH1 tx rx Distance=250 TxHeight=10 RxHeight=1.5 PathLoss=twor
   as `x,y,z` in m/s, give each ray its Doppler.
 - **Large scale.** `PathLoss` is any model of the propagation library (`free`, `logdist`, `multislope`, `tworay`, `38901`,
   `P1238`, `P1411`, `P526`, `satellite`, `P1812`). Its parameters, and the added losses (gas, rain, clutter and the rest),
-  are written beside it by the model's own names. `Rain=fixed` adds the attenuation at the stated availability.
+  are written beside it by the model's own names. A placed channel shows a dozen of its parameters; **+** in its
+  Parameter dialog adds any other by name, with what it does. `Rain=fixed` adds the attenuation at the stated availability.
 - **Drops.** Each channel is one drop, numbered by `Drop` under `Seed`. A drop draws the shadowing from the model's σ (in dB,
   added to the loss; `Shadowing=off` holds it at 0). It also draws the line-of-sight state from the model's probability when
   `Los=auto`, and with `Rain=drawn` a time percentage, taking the rain exceeded for it. That rain is zero beyond P.530's 1 %

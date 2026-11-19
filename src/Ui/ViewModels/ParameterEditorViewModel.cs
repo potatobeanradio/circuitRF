@@ -1349,6 +1349,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(IsVerilogA));
         OnPropertyChanged(nameof(ShowCvEditorButton));
         OnPropertyChanged(nameof(ShowAddModelParameter));
+        OnPropertyChanged(nameof(ShowAddChannelParameter));
         OnPropertyChanged(nameof(AllowsAddParameter));
         OnPropertyChanged(nameof(ShowAddSddEquation));
         NotifyMklopfState();
@@ -1777,6 +1778,47 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
     /// <summary>True for a VerilogA component — the only one whose parameters come from a file.</summary>
     public bool ShowAddModelParameter => _target?.Symbol == SymbolKind.VerilogA;
+
+    /// <summary>True for a Propagation Channel: placed with a dozen rows, everything else is added from its picker.</summary>
+    public bool ShowAddChannelParameter => _target?.Symbol == SymbolKind.PropagationChannel;
+
+    /// <summary>
+    /// Adds one parameter to a Propagation Channel, chosen from what its path-loss model, the channel itself and the
+    /// added losses take (<see cref="ComponentTypeRegistry.ChannelAddableParameters"/>). Seeded at the model's own
+    /// default where it states one, otherwise blank, which is no override.
+    /// </summary>
+    /// <remarks>
+    /// Without it a placed channel could only ever carry the rows it was placed with: Environment, Floors, Fading,
+    /// Drop and the rest were reachable by copying a channel that already had them or by editing the file.
+    /// </remarks>
+    [RelayCommand]
+    private async Task AddChannelParameter()
+    {
+        if (_target is null || _schematicVm is null || PickModelParameterAsync is null) return;
+        if (_target.Symbol != SymbolKind.PropagationChannel) return;
+
+        string pathLoss = ParamValue(_target, "PathLoss");
+        var choices = ComponentTypeRegistry.ChannelAddableParameters(pathLoss)
+            .Select(c => new VerilogAParameterInfo(c.Name, c.Group, c.Unit, $"{c.Group}: {c.Description}",
+                                                   c.Default.Length > 0 ? c.Default : null))
+            .ToList();
+
+        var present = _target.Parameters.Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var picked  = await PickModelParameterAsync(
+            pathLoss.Length > 0 ? $"{_target.InstanceName} (PathLoss={pathLoss})" : _target.InstanceName, choices, present);
+        if (picked is null) return;
+
+        var updated = _target.Parameters.Select(p => p.Clone()).ToList();
+        updated.Add(new EditableParameter
+        {
+            Name            = picked.Name,
+            Expression      = picked.DefaultText ?? "",
+            Unit            = "",      // a bare number is the parameter's own SI unit, as the picker shows it
+            Dimension       = UnitDimension.None,
+            ShowOnSchematic = false,
+        });
+        _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, updated));
+    }
 
     /// <summary>
     /// Names on the component that the chosen model does not declare.
