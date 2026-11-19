@@ -322,6 +322,47 @@ public sealed class WallPortTests : IDisposable
         AssertGate4(TouchstoneIO.ReadFile(snp), err, eeffBound: 0.03);
     }
 
+    /// <summary>PWL-6 gate 1 — overview gate 3 on openEMS, at its default grid (20 cells per wavelength; about 8 s with its three
+    /// standards).</summary>
+    [DcRowFact(Em3dSolverId.OpenEms)]
+    [Trait("Category", "Benchmark")]
+    public void Gate3_OnOpenEms_TheCalibratedStriplineIsTheExactLine()
+    {
+        var (_, path) = Stripline(OnOpenEms);
+        string snp = Path.Combine(_root, "line_openems.s2p");
+        var (code, _, err) = RunCli("em", path, "--setup", "openEMS", "-o", snp);
+        Assert.True(code == 0, err);
+        Assert.Contains("wall standard(s) solved by openEMS", err);
+        AssertGate3(TouchstoneIO.ReadFile(snp));
+    }
+
+    /// <summary>PWL-6 gate 1 — overview gate 4 on openEMS, at 40 cells per wavelength (about a minute). The default 20 misses the
+    /// VSWR bound by 5e-4 at 10 GHz (1.0255): RESOLVED §PWL-6.</summary>
+    [DcRowFact(Em3dSolverId.OpenEms)]
+    [Trait("Category", "Benchmark")]
+    public void Gate4_OnOpenEms_TheCalibratedPairIsKernelAsCoupledLine()
+    {
+        string dir = FixturePaths.Require("testdata/pwl");
+        var doc = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, "coupled_line_L20000um.c3d")))!.AsObject();
+        foreach (var o in doc["Objects"]!.AsArray())
+            if (((string?)o!["Name"])!.StartsWith("strip", StringComparison.Ordinal)) { o["Rect"]!["Min"]![0] = 0; o["Rect"]!["Size"]![0] = Len; }
+        JsonObject Port(int n, long at, long y) => new()
+        {
+            ["Number"] = n, ["Name"] = $"P{n}", ["Kind"] = "Wall", ["Plane"] = "YZ", ["Offset"] = at, ["Z0"] = "50",
+            ["Rect"] = new JsonObject { ["Min"] = new JsonArray(y, 0), ["Size"] = new JsonArray(1200000, 1000000) },
+        };
+        doc["Ports"] = new JsonArray(Port(1, 0, -1350000), Port(2, 0, 150000), Port(3, Len, -1350000), Port(4, Len, 150000));
+        OnOpenEms(doc);
+        doc["Setups"]![0]!["OpenEms"] = new JsonObject { ["CellsPerWavelength"] = 40 };
+        File.Copy(Path.Combine(dir, "pwl.ctech"), Path.Combine(_root, "pwl.ctech"), overwrite: true);
+        string path = Path.Combine(_root, "pair_openems.c3d");
+        File.WriteAllText(path, doc.ToJsonString());
+        string snp = Path.Combine(_root, "pair_openems.s4p");
+        var (code, _, err) = RunCli("em", path, "--setup", "openEMS", "-o", snp);
+        Assert.True(code == 0, err);
+        AssertGate4(TouchstoneIO.ReadFile(snp), err, eeffBound: 0.03);
+    }
+
     private static (int Code, string Out, string Err) RunCli(params string[] args)
     {
         string cliDir = System.Reflection.CustomAttributeExtensions
@@ -539,6 +580,122 @@ public sealed class WallPortTests : IDisposable
         Assert.Empty(JsonNode.Parse(lowered.ProblemJson!)!["wavePorts"]!.AsArray());
     }
 
+    /// <summary>The fixture's setup run on openEMS.</summary>
+    private static void OnOpenEms(JsonObject d)
+    {
+        var setup = d["Setups"]![0]!.AsObject();
+        setup["Name"] = "openEMS";
+        setup["Solver3D"] = "OpenEms";
+        setup.Remove("Palace");
+    }
+
+    private Em3dProblem OpenEmsProblem(Action<JsonObject>? edit = null)
+    {
+        var (doc, path) = Stripline(d => { OnOpenEms(d); edit?.Invoke(d); });
+        var built = Assemble(doc, path, "openEMS");
+        Assert.True(built.Ok, built.Refusal);
+        return built.Problem!;
+    }
+
+    private static EmSetup OpenEmsSetup(C3dDocument doc) => C3dSetups.Read(doc).Single(s => s.Name == "openEMS").Setup!;
+
+    /// <summary>PWL-6 gate 2 — the CSX model of a wall port: its face a PEC boundary of the grid (not turned absorbing), and its gap
+    /// a lumped port between grid lines at the face and at the gap's end. No solver runs.</summary>
+    [Fact]
+    public void OnOpenEms_TheWallsFaceIsAPecBoundary_AndTheGapIsALumpedPortOnGridLines()
+    {
+        var problem = OpenEmsProblem();
+        var grid = CircuitRF.Engine.Em3d.FdtdGrid.Build(problem, CircuitRF.Engine.Em3d.OpenEmsGridSettings.Default, long.MaxValue);
+        var low = CircuitRF.Design.Em3d.CsxcadWriter.Write(problem, grid, CircuitRF.Engine.Em3d.OpenEmsGridSettings.Default,
+                                                           OpenEmsRunSettings.Default);
+        Assert.True(low.Ok, low.Refusal);
+        var xml = System.Xml.Linq.XDocument.Parse(low.Model!);
+        var bc = xml.Descendants("BoundaryCond").Single();
+        Assert.Equal("PEC", bc.Attribute("xmin")!.Value);
+        Assert.Equal("PEC", bc.Attribute("xmax")!.Value);
+        Assert.Contains(xml.Descendants("LumpedElement"), e => e.Attribute("Name")!.Value == "port1_resist");
+        Assert.Contains(0.0, grid.X.Lines);
+        Assert.Contains(grid.X.Lines, l => Math.Abs(l - 200e-6) < 1e-12);  // the gap's end is a line
+    }
+
+    /// <summary>PWL-6 R-pwl6-3 — a standard's grid round its ports is the structure's, as numbers: across the cross-section every
+    /// line, along the line every line of the end run from each wall (the far one mirrored).</summary>
+    [Fact]
+    public void OnOpenEms_EachStandardsGridRoundItsPorts_IsTheStructuresOwn()
+    {
+        var (doc, path) = Stripline(OnOpenEms);
+        var setup = OpenEmsSetup(doc);
+        var problem = Assemble(doc, path, "openEMS").Problem!;
+        var structure = CircuitRF.Design.Em3d.Em3dRunService.OpenEmsLinesOf(problem, setup)!;
+        var (cal, _) = CircuitRF.Design.Em3d.Em3dWallCalibration.Plan(problem, 1e9, 10e9, []);
+        foreach (var std in cal!.Standards)
+        {
+            var stdSetup = CircuitRF.Design.Em3d.Em3dRunService.WallStandardSetup(setup, std, structure);
+            var settings = CemOpenEms.ResolveGrid(stdSetup.OpenEms);
+            var grid = CircuitRF.Engine.Em3d.FdtdGrid.Build(std.Problem, settings, long.MaxValue);
+            Assert.Equal(structure[1], grid.Y.Lines);
+            Assert.Equal(structure[2], grid.Z.Lines);
+            // strictly inside the end run: on a short standard (two end runs long) the even fill puts a line on the end run's edge
+            var nearStructure = structure[0].Where(l => l < std.EndRunM - 1e-12).ToList();
+            Assert.Equal(nearStructure, grid.X.Lines.Where(l => l < std.EndRunM - 1e-12));
+            var farStandard = grid.X.Lines.Where(l => l > std.LengthM - std.EndRunM + 1e-12).Select(l => std.LengthM - l).Order();
+            Assert.Equal(nearStructure.Select(l => Math.Round(l, 12)), farStandard.Select(l => Math.Round(l, 12)));
+        }
+    }
+
+    /// <summary>PWL-6 R-pwl6-2 — a gap the grid cannot hold is widened to the first line past it, the line cut back there, and the
+    /// run says both lengths. circuitRF's own grid always keeps a port's extents as lines; a grid the setup GIVES
+    /// (OpenEms.GridLines, here every 0.5 mm along the line) need not, and the 200 µm gap falls between its lines.</summary>
+    [Fact]
+    public void OnOpenEms_AGapBetweenGivenGridLines_IsWidenedToTheNextLine_SayingSo()
+    {
+        static JsonArray Mm(IEnumerable<double> v) => new([.. v.Select(x => (JsonNode)JsonValue.Create(x)!)]);
+        var (doc, path) = Stripline(d =>
+        {
+            OnOpenEms(d);
+            d["Setups"]![0]!["OpenEms"] = new JsonObject
+            {
+                ["GridLines"] = new JsonObject
+                {
+                    ["Unit"] = "mm",
+                    ["X"] = Mm(Enumerable.Range(0, 41).Select(k => k * 0.5)),
+                    ["Y"] = Mm([-18.037595, -10, -5, -2, -1, -0.5, 0, 0.5, 1, 2, 5, 10, 18.037595]),
+                    ["Z"] = Mm([-1, -0.5, 0, 0.5, 1]),
+                },
+            };
+        });
+        var setup = OpenEmsSetup(doc);
+        var problem = Assemble(doc, path, "openEMS").Problem!;
+        var (widened, note, refusal) = C3dWallPorts.GapsOnGrid(problem, p => CircuitRF.Design.Em3d.Em3dRunService.OpenEmsLinesOf(p, setup));
+        Assert.Null(refusal);
+        Assert.NotNull(note);
+        Assert.Contains("200 → ", note);
+        var w = widened.Ports.Single(p => p.Number == 1).Wall!;
+        Assert.Equal(500e-6, w.GapM, 9);
+        var lines = CircuitRF.Design.Em3d.Em3dRunService.OpenEmsLinesOf(widened, setup)!;
+        Assert.Contains(lines[0], l => Math.Abs(l - w.GapM) < 1e-9);
+        double stripStart = widened.Sheets.Single(x => x.Name == "strip").Outline.Min(q => q.X);
+        Assert.Equal(w.GapM, stripStart, 9);
+    }
+
+    /// <summary>PWL-6 R-pwl6-4 — PEC faces beside a wall port's face close a box with the walls; its first mode below 1.5 × the
+    /// sweep's top is noted with the remedy. The fixture's PMC sides are not.</summary>
+    [Fact]
+    public void OnOpenEms_PecFacesBesideTheWall_AreNotedAsABox_PmcAreNot()
+    {
+        Assert.Null(C3dWallPorts.BoxModeNote(OpenEmsProblem()));
+        var boxed = OpenEmsProblem(d =>
+        {
+            var box = d["Setups"]![0]!["AirBox"]!.AsObject();
+            box["YMin"] = new JsonObject { ["PaddingUm"] = 0, ["Boundary"] = "Pec" };
+            box["YMax"] = new JsonObject { ["PaddingUm"] = 0, ["Boundary"] = "Pec" };
+        });
+        var note = C3dWallPorts.BoxModeNote(boxed);
+        Assert.NotNull(note);
+        Assert.Contains("(ymin, ymax) are PEC", note);
+        Assert.Contains("Make those faces PMC or Absorbing", note);
+    }
+
     [Fact]
     public void AWallPortOffTheFaces_IsRefusedNamingTheFace()
     {
@@ -561,15 +718,6 @@ public sealed class WallPortTests : IDisposable
         var built = Assemble(doc, path);
         Assert.False(built.Ok);
         Assert.Contains("not both", built.Refusal);
-    }
-
-    [Fact]
-    public void AWallPortOnOpenEms_IsRefusedNamingPalaceAndEMerge()
-    {
-        var (doc, path) = Stripline(d => d["Setups"]![0]!["Solver3D"] = "OpenEms");
-        var built = Assemble(doc, path);
-        Assert.False(built.Ok);
-        Assert.Contains("run on Palace and EMerge in this version; openEMS follows", built.Refusal);
     }
 
     [Fact]

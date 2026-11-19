@@ -126,12 +126,85 @@ public static class C3dWallPorts
         return c;
     }
 
-    /// <summary>R-pwl3-15 / PWL-5 — the solvers a wall port runs on: Palace and EMerge; openEMS refused by name until its brief.</summary>
-    public static string? SolverRefusal(IEnumerable<Em3dSolverId> solvers, string subject)
-        => solvers.Any(s => s == Em3dSolverId.OpenEms)
-            ? $"{subject} has wall ports, which run on Palace and EMerge in this version; openEMS follows. Choose Palace or EMerge for this " +
-              "setup, or make the ports wave or lumped ports to run it on openEMS."
-            : null;
+    /// <summary>
+    /// PWL-6 R-pwl6-2 — on a grid, a wall port's gap is whole cells: a line at the face and one at the gap's end. A gap the grid
+    /// cannot hold (its end merged into the face's line, or off every line) is widened to the first line in from the face, the line
+    /// cut back to it, with a note giving both lengths: the gap belongs to the error box, so its size does not reach the answer.
+    /// <paramref name="linesOf"/> gives a problem's grid lines (x, y, z, metres), or null when it has none.
+    /// </summary>
+    public static (Em3dProblem Problem, string? Note, string? Refusal) GapsOnGrid(Em3dProblem problem,
+                                                                                Func<Em3dProblem, IReadOnlyList<double>[]?> linesOf)
+    {
+        if (!problem.Ports.Any(p => p.Wall is not null) || linesOf(problem) is not { } lines) return (problem, null, null);
+        var ports = problem.Ports.ToList();
+        var said = new List<string>();
+        for (int i = 0; i < ports.Count; i++)
+        {
+            if (ports[i].Wall is not { } w) continue;
+            var la = lines[w.Axis];
+            double end = w.FaceAtM + w.Inward * w.GapM;
+            double next = la.Where(l => w.Inward * (l - w.FaceAtM) > 1e-12).Select(l => (double?)l)
+                            .OrderBy(l => Math.Abs(l!.Value - w.FaceAtM)).FirstOrDefault() ?? double.NaN;
+            if (double.IsNaN(next)) return (problem, null, $"Port {ports[i].Number}'s wall has no grid line in from its face.");
+            double cell = Math.Abs(next - w.FaceAtM);
+            if (la.Any(l => Math.Abs(l - end) <= 1e-3 * cell) && Math.Abs(end - w.FaceAtM) > 1e-3 * cell) continue;   // on a line
+            double gap = cell;
+            if (gap < w.GapM) gap = la.Where(l => w.Inward * (l - w.FaceAtM) >= w.GapM - 1e-12).Select(l => Math.Abs(l - w.FaceAtM)).DefaultIfEmpty(cell).Min();
+            double a0 = Math.Min(w.FaceAtM, w.FaceAtM + w.Inward * gap), a1 = Math.Max(w.FaceAtM, w.FaceAtM + w.Inward * gap);
+            var p = ports[i];
+            ports[i] = p with
+            {
+                Min = w.Axis == 0 ? p.Min with { X = a0 } : p.Min with { Y = a0 },
+                Max = w.Axis == 0 ? p.Max with { X = a1 } : p.Max with { Y = a1 },
+                Wall = w with { GapM = gap },
+            };
+            said.Add($"{(p.SourceLabel ?? p.Name)} {Um(w.GapM)} → {Um(gap)} µm");
+        }
+        if (said.Count == 0) return (problem, null, null);
+        var solids = problem.Solids.ToList();
+        var sheets = problem.Sheets.ToList();
+        var widened = ports.Where((q, k) => q.Wall is { } w && w.GapM != problem.Ports[k].Wall!.GapM).ToList();
+        if (Trim(solids, sheets, widened, 1e-9) is { } why) return (problem, null, why);
+        return (problem with { Ports = ports, Solids = solids, Sheets = sheets },
+                $"A wall port's gap is whole grid cells, and these were not: {string.Join("; ", said)}. The gap belongs to the calibration's " +
+                "error box, so its size does not reach the answer.", null);
+    }
+
+    /// <summary>
+    /// PWL-6 R-pwl6-4 — a wall port's face with PEC faces beside it (the box's faces across the line's width): with the two end
+    /// walls they make a closed box, and an FDTD run's broadband source rings in its modes. Noted, as openEMS's wave port notes
+    /// its own side walls, when the box's first mode (c / (2·w·√εr) on the face's width, the densest fill) is below
+    /// <see cref="CircuitRF.Engine.Em3d.FdtdWavePorts.SideWallMargin"/> × the sweep's top. Null when no face is so boxed.
+    /// </summary>
+    public static string? BoxModeNote(Em3dProblem problem)
+    {
+        var box = problem.Boundary;
+        var faces = box.Faces;
+        var said = new List<string>();
+        double fcLowest = double.PositiveInfinity;
+        foreach (var byFace in problem.Ports.Where(p => p.Wall is not null).GroupBy(p => p.Wall!.Face))
+        {
+            int lat = 1 - byFace.First().Wall!.Axis;
+            var beside = lat == 0 ? new[] { ("xmin", faces.XMin), ("xmax", faces.XMax) } : [("ymin", faces.YMin), ("ymax", faces.YMax)];
+            var pec = beside.Where(f => f.Item2 == Em3dBoundaryKind.Pec).Select(f => f.Item1).ToList();
+            if (pec.Count == 0) continue;
+            double w = lat == 0 ? box.Max.X - box.Min.X : box.Max.Y - box.Min.Y;
+            var materials = problem.Materials.ToDictionary(m => m.Name, StringComparer.Ordinal);
+            double n = Math.Max(1, problem.Solids.Where(x => x.Role != Em3dRole.Conductor && materials.ContainsKey(x.Material))
+                                              .Select(x => Math.Sqrt(Math.Max(1, materials[x.Material].Epsr * materials[x.Material].Mur)))
+                                              .DefaultIfEmpty(1).Max());
+            double fc = CircuitRF.Engine.Em3d.FdtdGrid.C0 / (2 * w * n);
+            if (fc >= CircuitRF.Engine.Em3d.FdtdWavePorts.SideWallMargin * problem.Frequency.StopHz) continue;
+            said.Add($"{byFace.Key} ({string.Join(", ", pec)})");
+            fcLowest = Math.Min(fcLowest, fc);
+        }
+        if (said.Count == 0) return null;
+        string G(double v) => v.ToString("G4", CultureInfo.InvariantCulture);
+        return $"The faces beside the wall ports on the {string.Join(" and ", said)} are PEC, so with the walls they close a box whose first " +
+               $"mode is near {G(fcLowest / 1e9)} GHz (c / (2·w·√εr) across the face), below {G(CircuitRF.Engine.Em3d.FdtdWavePorts.SideWallMargin)} × " +
+               $"the sweep's top ({G(problem.Frequency.StopHz / 1e9)} GHz). A time-domain source excites it, and the run rings there. Make " +
+               "those faces PMC or Absorbing.";
+    }
 
     /// <summary>
     /// The faces the document's modelled wall ports stand on, and a refusal when one of them also carries a wave port

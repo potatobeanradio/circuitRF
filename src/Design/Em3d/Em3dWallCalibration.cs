@@ -69,7 +69,46 @@ public sealed class Em3dWallCalibration
     private const double Eps0 = 8.8541878128e-12, Mu0Eps0 = 1.0 / (LineCalibration.C0 * LineCalibration.C0);
 
     /// <summary>One standard: its problem and the label its run is known by.</summary>
-    public sealed record Standard(string Label, Em3dProblem Problem, double LengthM);
+    public sealed record Standard(string Label, Em3dProblem Problem, double LengthM)
+    {
+        /// <summary>PWL-6 — where the standard stands: its near wall on <see cref="Axis"/> at <see cref="At"/>, the line running
+        /// <see cref="Inward"/> from it, and the end run copied from the structure at each wall.</summary>
+        public int Axis { get; init; }
+        public double At { get; init; }
+        public int Inward { get; init; } = 1;
+        public double EndRunM { get; init; }
+    }
+
+    /// <summary>
+    /// PWL-6 R-pwl6-3 — a standard's FDTD grid lines from the structure's (<paramref name="x"/>, <paramref name="y"/>,
+    /// <paramref name="z"/>, metres): across the cross-section the structure's own lines; along the line, the structure's lines
+    /// within the end run of its wall, copied at the near wall and mirrored at the far one, so the cells round each port are the
+    /// structure's cells; between them, an even fill no coarser than the structure's coarsest cell along the line.
+    /// </summary>
+    public static (List<double> X, List<double> Y, List<double> Z) StandardGridLines(Standard std, IReadOnlyList<double> x,
+                                                                                       IReadOnlyList<double> y, IReadOnlyList<double> z)
+    {
+        var along = std.Axis == 0 ? x : y;
+        const double Eps = 1e-12;
+        var dist = along.Select(l => std.Inward * (l - std.At)).Where(d => d >= -Eps && d <= std.EndRunM + Eps)
+                        .Select(d => Math.Max(d, 0)).Distinct().Order().ToList();
+        double coarsest = 0;
+        for (int i = 1; i < along.Count; i++) coarsest = Math.Max(coarsest, along[i] - along[i - 1]);
+        double far = std.LengthM, reach = dist.Count > 0 ? dist[^1] : 0;
+        var ds = new SortedSet<double>(dist);
+        foreach (double d in dist) ds.Add(far - d);
+        double lo = reach, hi = far - reach;
+        if (hi > lo + Eps)
+        {
+            int n = Math.Max(1, (int)Math.Ceiling((hi - lo) / Math.Max(coarsest, 1e-9) - 1e-9));
+            for (int k = 1; k < n; k++) ds.Add(lo + (hi - lo) * k / n);
+        }
+        // the two end runs meet in a short standard: lines closer than a nanometre are one
+        var merged = new List<double>();
+        foreach (double d in ds) if (merged.Count == 0 || d - merged[^1] > 1e-9) merged.Add(d);
+        var lines = merged.Select(d => std.At + std.Inward * d).Order().ToList();
+        return std.Axis == 0 ? (lines, [.. y], [.. z]) : ([.. x], lines, [.. z]);
+    }
 
     private sealed class Group
     {
@@ -185,7 +224,10 @@ public sealed class Em3dWallCalibration
             for (int k = 0; k < lengths.Length; k++)
             {
                 g.StandardIndex[k] = cal._standards.Count;
-                cal._standards.Add(new Standard($"wall {g.Section.Label} {Mm(lengths[k])} mm", g.Section.Build(problem, lengths[k]), lengths[k]));
+                cal._standards.Add(new Standard($"wall {g.Section.Label} {Mm(lengths[k])} mm", g.Section.Build(problem, lengths[k]), lengths[k])
+                {
+                    Axis = g.Axis, At = g.At, Inward = g.Inward, EndRunM = EndRunHeights * g.Height,
+                });
             }
         g.Calibrator = new LineCalibrator(g.ShortM, g.Deltas,
             conducts ? BetaAt : f => LineCalibration.EstimateBeta(eeff, f), predictFromHistory: !conducts);

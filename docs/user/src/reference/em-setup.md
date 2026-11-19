@@ -1804,12 +1804,20 @@ face. It needs no mode solve, so it does not depend on a face's mode being found
   wall-port face without being a port's line, since the wall shorts it there. `explain` (and `run dryRun=true`) lists each
   wall port and where its kind came from, each group and its standards, which standards are cached, and what the ones to
   solve cost beside the structure.
-- **Palace and EMerge, in this version.** openEMS refuses a wall port by name. On EMerge the gap is an ordinary lumped port
+- **Palace, EMerge and openEMS** all run it. On EMerge the gap is an ordinary lumped port
   touching the PEC face, and the standards are EMerge runs. **Give EMerge a finer mesh than its Standard preset for wall ports**:
   on the 50 Ω stripline, Standard (about 3,000 tetrahedra) left the calibrated port at VSWR 1.02 against the exact line with
   ε_eff 2.3 % high, while elements of 0.05 λ with an edge refinement of 0.1 (`"Emerge": { "MaxElementWavelengths": 0.05,
   "EdgeRefinement": 0.1 }`, about 39,000 tetrahedra, 30 s) gave VSWR 1.002 and ε_eff 0.25 % high. The error is the mesh's
   phase velocity in the line and its standards, not the port.
+- **On openEMS** the wall's face is a PEC boundary of the grid and the gap is whole cells: a line at the face and one at the
+  gap's end, so the gap is at least one cell (on a grid the setup gives, a gap between its lines is widened to the next line,
+  and the run says both lengths). Each standard's grid is the structure's own within the end run of each wall, copied line for
+  line, so the cells round the port are the same cells in the structure and in every standard. The default grid (20 cells per
+  wavelength) meets the stripline's bounds (VSWR 1.005 at 10 GHz); a coupled pair wants 40 (`"OpenEms": { "CellsPerWavelength":
+  40 }`), which brought it from VSWR 1.026 to 1.020 at 10 GHz, still about a minute. PEC faces beside the wall close a box
+  with it; the run notes the box's first mode when it falls below 1.5 × the sweep's top, and PMC or Absorbing side faces
+  remove it.
 
 In a `.c3d`:
 

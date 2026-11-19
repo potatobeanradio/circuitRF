@@ -78,7 +78,7 @@ public sealed class LayoutWallPortTests
     }
 
     [Fact]
-    public void ALayoutsWallPort_RunsOnEMerge_AndIsRefusedOnOpenEms()
+    public void ALayoutsWallPort_RunsOnEMergeAndOpenEms()
     {
         var onEmerge = Generate(s =>
         {
@@ -92,7 +92,7 @@ public sealed class LayoutWallPortTests
             s.Solver3D = Em3dSolverId.OpenEms;
             s.Ports3D = [new EmPort3D(1, Em3dPortKind.Wall), new EmPort3D(2, Em3dPortKind.Wall)];
         });
-        Assert.False(onOpenEms.Ok);
-        Assert.Contains("run on Palace and EMerge in this version; openEMS follows", onOpenEms.Refusal);
+        Assert.True(onOpenEms.Ok, onOpenEms.Refusal);
+        Assert.All(onOpenEms.Problem!.Ports, p => Assert.NotNull(p.Wall));
     }
 }

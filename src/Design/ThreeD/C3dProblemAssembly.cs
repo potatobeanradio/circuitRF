@@ -541,8 +541,6 @@ public static class C3dProblemAssembly
         if (mixedFace is not null) return No(mixedFace, e.Warnings);
         if (wallFaces.Count > 0 && setup.Problem3D == Em3dProblemType.Driven)
         {
-            // R-pwl3-15 / PWL-5 — Palace and EMerge; openEMS follows in its own brief.
-            if (C3dWallPorts.SolverRefusal(setup.Solver3D.Solvers, "This view") is { } notYet) return No(notYet, e.Warnings);
             if (C3dWallPorts.ForceFaces(setup, wallFaces) is { } forced) notes.Add(forced);
         }
 

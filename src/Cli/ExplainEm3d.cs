@@ -292,24 +292,38 @@ internal static class ExplainEm3d
         string root = CircuitRF.Cli.ResultsRoot.For(path, CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(
             System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path))!));
         var solverId = Em3dSolvers.Of(setup.Solver3D).FirstOrDefault()?.Id ?? Em3dSolverId.Palace;
+        // Each standard as the run solves it (its own setup: on openEMS the structure's grid round its ports), priced the way the
+        // structure is on that solver: Palace's element estimate, openEMS's cells and time; EMerge prices nothing ahead.
+        var structureLines = solverId == Em3dSolverId.OpenEms ? Em3dRunService.OpenEmsLinesOf(p, setup) : null;
         var palace = PalaceSettings.Resolve(setup.Palace);
-        var structure = Em3dRunService.EstimatePalace(p, palace);
-        long unknowns = structure?.Unknowns ?? 0, peak = structure?.MemoryBytes ?? 0;
+        (long Unknowns, long Bytes, string Words)? Price(Em3dProblem q, EmSetup s)
+        {
+            if (solverId == Em3dSolverId.OpenEms)
+            {
+                var g = FdtdGrid.Build(q, CemOpenEms.ResolveGrid(s.OpenEms), long.MaxValue);
+                double sec = OpenEmsTimeEstimate.Seconds(g, q.Ports.Count, OpenEmsTimeEstimate.Cores(null));
+                return (g.Cells, g.MemoryBytes, $"{g.Cells:N0} cells, about {OpenEmsTimeEstimate.Format(sec)}");
+            }
+            if (solverId == Em3dSolverId.Emerge) return null;
+            return Em3dRunService.EstimatePalace(q, palace) is { } e ? (e.Unknowns, e.MemoryBytes ?? 0, $"about {e.Unknowns:N0} unknowns") : null;
+        }
+        var structure = Price(p, setup);
+        long unknowns = structure?.Unknowns ?? 0, peak = structure?.Bytes ?? 0;
         int toSolve = 0;
+        string unit = solverId == Em3dSolverId.OpenEms ? "cells" : "unknowns";
         foreach (var std in cal!.Standards)
         {
-            if (File.Exists(Em3dWallCalibration.CachePath(root, std, setup, solverId))) { lines.Add($"standard '{std.Label}': cached, reused."); continue; }
+            var stdSetup = Em3dRunService.WallStandardSetup(setup, std, structureLines);
+            if (File.Exists(Em3dWallCalibration.CachePath(root, std, stdSetup, solverId))) { lines.Add($"standard '{std.Label}': cached, reused."); continue; }
             toSolve++;
-            var est = Em3dRunService.EstimatePalace(std.Problem, palace);
-            if (est is null) { lines.Add($"standard '{std.Label}': to solve."); continue; }
-            unknowns += est.Unknowns; peak = Math.Max(peak, est.MemoryBytes ?? 0);
-            lines.Add($"standard '{std.Label}': to solve, about {est.Unknowns:N0} unknowns" +
-                      (est.MemoryBytes is { } b ? $", about {b / 1e9:0.#} GB" : "") + ".");
+            if (Price(std.Problem, stdSetup) is not { } est) { lines.Add($"standard '{std.Label}': to solve."); continue; }
+            unknowns += est.Unknowns; peak = Math.Max(peak, est.Bytes);
+            lines.Add($"standard '{std.Label}': to solve, {est.Words}" + (est.Bytes > 0 ? $", about {MachineMemory.Format(est.Bytes)}" : "") + ".");
         }
         lines.Add(toSolve == 0
             ? $"All {cal.Standards.Count} standard(s) are cached: the run solves only the structure."
-            : $"{toSolve} of {cal.Standards.Count} standard(s) to solve before the structure, with this setup's solver and settings: about " +
-              $"{unknowns:N0} unknowns in all, the structure's included" + (peak > 0 ? $", the largest about {peak / 1e9:0.#} GB, since they run one after another." : "."));
+            : $"{toSolve} of {cal.Standards.Count} standard(s) to solve before the structure, with this setup's solver and settings" +
+              (unknowns > 0 ? $": about {unknowns:N0} {unit} in all, the structure's included" + (peak > 0 ? $", the largest about {MachineMemory.Format(peak)}, since they run one after another." : ".") : "."));
         return lines;
     }
 

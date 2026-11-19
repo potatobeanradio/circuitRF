@@ -283,7 +283,28 @@ public static partial class Em3dRunService
                                              [.. ports.Select(p => p.Z0)]);
         if (result.Error is { } singular) return Failed(singular);
 
+        // PWL-6 — a wall standard hands its raw S to the calibration; the structure's own is calibrated before anything is written,
+        // as on Palace and EMerge.
+        int np = ports.Count;
+        Complex[][,] AsArrays(Mat<Complex>[] m) => [.. m.Select(x => { var a = new Complex[np, np]; for (int i = 0; i < np; i++) for (int j = 0; j < np; j++) a[i, j] = x[i, j]; return a; })];
+        run.CaptureRaw?.Invoke(result.FrequenciesHz, AsArrays(result.S));
+        Complex[][,]? wallRaw = null;
+        if (run.Wall is { } wallCalibration)
+        {
+            var wallNotes = new List<string>();
+            wallRaw = AsArrays(result.S);
+            var calibrated = wallCalibration.Apply(result.FrequenciesHz, wallRaw, ports, wallNotes);
+            result = result with { S = [.. calibrated.Select(a => { var m = new Mat<Complex>(np, np); for (int i = 0; i < np; i++) for (int j = 0; j < np; j++) m[i, j] = a[i, j]; return m; })] };
+            log.Notes.AddRange(wallNotes);
+        }
+
         var data = BuildOpenEmsDataSet(result, ports, grid, runs, runSettings);
+        if (wallRaw is not null)
+        {
+            data.AddToGroup(OpenEmsGroup, Em3dWallCalibration.RawCube, Em3dWallCalibration.RawCubeOf(result.FrequenciesHz, wallRaw, ports));
+            foreach (var (name, cube) in run.Wall!.DiagnosticCubes(result.FrequenciesHz, ports)) data.AddToGroup(OpenEmsGroup, name, cube);
+        }
+        IReadOnlyList<string> wallLines = run.Wall?.HeaderLines() ?? [];
         // brief-em3d-116 R-em3d116-2e — each wave-port terminal's line, as it measured itself in its own run.
         log.Notes.AddRange(LineNotes(runs, lowering, freqs, data));
 
@@ -335,7 +356,7 @@ public static partial class Em3dRunService
         var dcLines = SpliceDc(data, problem, dc);
         var published = PublishDriven(run, Me, problem, data, openEms.DescribeVersion(), "cpu", new EmResultMesh(grid.Cells, "cells", null),
                                       (stagedBase, stamp) => WriteOpenEmsSnp(data, stagedBase, setup, problem, grid, plan.GridSettings, runSettings, lowering,
-                                                                             openEms, runs, dcLines, stamp),
+                                                                             openEms, runs, dcLines, stamp, wallLines),
                                       staging, fieldManifest);
 
         var comparisonFacts = new Em3dComparisonFacts(lowering.DielectricFitHz, lowering.PecSolids, lowering.SubCellWires,
@@ -552,7 +573,8 @@ public static partial class Em3dRunService
     private static string? WriteOpenEmsSnp(DataSet data, string snpBase, EmSetup setup, Em3dProblem problem, FdtdGridResult grid,
                                            OpenEmsGridSettings gridSettings, OpenEmsRunSettings runSettings, CsxcadLowering lowering,
                                            SolverInstallation openEms, IReadOnlyList<OpenEmsPortRun> runs,
-                                           IReadOnlyList<string>? dcLines = null, string? stamp = null)
+                                           IReadOnlyList<string>? dcLines = null, string? stamp = null,
+                                           IReadOnlyList<string>? wallLines = null)
     {
         string? group = data.Groups.FirstOrDefault(g => data.CubesIn(g).ContainsKey("S"));
         if (group is null) return "the solved DataSet carries no S cube";
@@ -573,8 +595,11 @@ public static partial class Em3dRunService
             lines.Add($"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' from '{Ascii(p.NegativeObject)}' " +
                       $"to '{Ascii(p.PositiveObject)}', " +
                       // brief-em3d-116 — a wave port's terminal: a fed line, measured by probes and referred to Z0 directly
-                      (p.Kind == Em3dPortKind.Wave ? "wave (fed line, voltage and current probes at the reference plane)" : "lumped") +
-                      $", {R(p.Z0.Real)} Ohm");
+                      (p.Kind == Em3dPortKind.Wave ? $"wave (fed line, voltage and current probes at the reference plane), {R(p.Z0.Real)} Ohm"
+                       // PWL-6 — a wall port says what its numbers are, as Palace's and EMerge's headers do
+                       : p.Wall is not null ? Em3dWallCalibration.SnpPortWords(p, setup.CalibrateWallPorts)
+                       : $"lumped, {R(p.Z0.Real)} Ohm"));
+        lines.AddRange(wallLines ?? []);
         lines.AddRange(Em3dPortMap.HeaderLines(problem.Ports, data));
         lines.AddRange(Em3dPortMap.Lines(problem.Ports));     // brief-em3d-93 — which document port each is, when one was off
         lines.Add($"circuitRF-EM 3D grid: {grid.X.Lines.Count} x {grid.Y.Lines.Count} x {grid.Z.Lines.Count} = {grid.Cells} cells; " +

@@ -308,3 +308,52 @@ one frequency: the raw stripline at 5 GHz, |S11| 0.12, S21 a few degrees past th
 - **Routine gate**: `OnEmerge_AWallPortsGapIsWrittenAsALumpedPortFromTheWall` (the script's port: origin on the wall, direction
   along the line, the 200 µm gap by the strip's width, no wave port). The script writer is untouched; the 146 routine EMerge
   tests are unchanged. `LayoutWallPortTests` now runs a layout's wall ports on EMerge and refuses them on openEMS.
+
+## PWL-6 — the wall port on openEMS (2026-11-18)
+
+`docs/briefs/brief-pwl-6-openems-wall-port.md`. Every solver now runs a wall port; `C3dWallPorts.SolverRefusal` and its two call
+sites are gone. Nothing in `CsxcadWriter` or `FdtdGrid` changed: the wall face was already written as a PEC boundary of the grid
+(R-pwl6-1; the CSX `BoundaryCond` reads `PEC` there), and the gap is the ordinary lumped port it lowers to.
+
+- **R-pwl6-2 — the gap is whole cells.** circuitRF's own grid keeps a port's extents as lines and never merges them (with
+  `MinCellUm` 500 against a 200 µm gap it still places both, and says "No lines merged"; the pair's 101.6 µm gap forces a cell
+  under its 120 µm minimum, with a warning). So the case arises only on a grid the SETUP gives (`OpenEms.GridLines`), where the
+  gap's end can fall between lines: `C3dWallPorts.GapsOnGrid` widens it to the next line, cuts the line back with the same
+  `Trim`, and notes both lengths. It runs before any leg prepares the problem and before the standards are planned from it.
+- **R-pwl6-3 — identical grids.** `Em3dWallCalibration.StandardGridLines`: a standard's y and z lines are the structure's, and
+  along the line the structure's lines within the end run of the wall, copied at the near wall and mirrored at the far one,
+  with an even fill between no coarser than the structure's coarsest cell. They reach the standard's run as explicit
+  `OpenEms.GridLines` in its setup (`Em3dRunService.WallStandardSetup`, which `explain` calls too), so the cache key — the setup
+  serialized — covers the structure's grid, which a standard's answer now depends on. Strictly inside the end run the lines are
+  equal as numbers (`OnOpenEms_EachStandardsGridRoundItsPorts_IsTheStructuresOwn`); a short standard is exactly two end runs
+  long, and its fill's one line lands on the end run's edge.
+- **R-pwl6-4** — `C3dWallPorts.BoxModeNote`: PEC faces beside a wall's face close a box with it; its first mode
+  (c / (2·w·√εr) across the face) below `FdtdWavePorts.SideWallMargin` (1.5) × the sweep's top is noted with PMC or Absorbing
+  as the remedy, on every openEMS run with wall ports. The fixtures' PMC/absorbing sides give none.
+- **R-pwl6-5** — `explain` prices openEMS standards from their own explicit grids (cells and `OpenEmsTimeEstimate`), and calls
+  one cached against the same standard setup the run keys it by. It had priced every solver's standards with Palace's
+  estimate; EMerge's now say only "to solve", as EMerge prices nothing ahead.
+- **The leg calibrates as Palace's and EMerge's do**, after `FdtdPortTransform.Solve` (its `Mat<Complex>[]` S into the
+  calibration's arrays and back); cubes into the openEMS group, the group lines and `SnpPortWords` into its header.
+
+### The gates, beside Palace's and EMerge's (VSWR at 1 / 5 / 10 GHz)
+
+| Stripline (gate 3) | VSWR | \|ΔS21\| worst | ε_eff | time |
+|---|---|---|---|---|
+| openEMS, default grid (20 cells/λ, 3,132 cells) | 1.0016 / 1.0001 / 1.0047 | 2.3e-2 | +0.74 % | 8 s |
+| openEMS, 40 cells/λ (15,840 cells) | 1.0017 / 1.0003 / 1.0007 | 5.5e-3 | +0.18 % | 8 s |
+| Palace, Standard | 1.0026 / 1.0014 / 1.0046 | 2.4e-2 | +0.8 % | ~25 min |
+| EMerge, 0.05 λ / edge 0.1 | 1.0003 / 1.0005 / 1.0017 | 7.3e-3 | +0.25 % | 30 s |
+
+| Coupled pair (gate 4) | VSWR | even / odd ε_eff at 1 GHz |
+|---|---|---|
+| openEMS, default grid (19,380 cells) | 1.0014 / 1.0054 / **1.0255** | +0.69 / −1.82 % |
+| openEMS, 40 cells/λ (45,080 cells, 55 s) | 1.0044 / 1.0047 / 1.0195 | +1.01 / −1.04 % |
+| Palace, Standard | 1.0174 / 1.0046 / 1.0062 | +3.3 % / within 3 % |
+| EMerge, 0.05 λ / edge 0.1 | 1.0047 / 1.0119 / 1.0118 | −0.13 / +0.55 % |
+
+openEMS's default grid meets gate 3 and misses gate 4's VSWR by 5e-4 at 10 GHz; 40 cells/λ meets both. The benchmark tests hold
+gate 3 at the default (`Gate3_OnOpenEms_…`, 8 s) and gate 4 at 40 (`Gate4_OnOpenEms_…`, 55 s, at the brief's own 3 %), and the
+user docs say a coupled pair wants 40. Routine: the CSX model, the grid identity, the widening on given lines and the box note
+(`WallPortTests.OnOpenEms_…`, 4 tests); `LayoutWallPortTests` runs a layout's wall ports on openEMS too. The 148 tests of the
+wall-port, openEMS, FDTD, CSX and `check`/`explain` classes pass, and Firewall.

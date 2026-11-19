@@ -383,6 +383,16 @@ public static partial class Em3dRunService
         }
 
         // ── each solver's lowering: no process yet ────────────────────────────────────────────
+        // PWL-6 R-pwl6-2 — on openEMS a wall port's gap is whole cells: widened to the first grid line where it is not, before any
+        // leg prepares the problem and before its standards are planned from it
+        if (!meshOnly && problem.Type == Em3dProblemType.Driven && problem.Ports.Any(p => p.Wall is not null) && legs.Any(l => l.Solver.Id == OpenEmsSolver.Id))
+        {
+            var (onGrid, gapNote, gapRefusal) = CircuitRF.Design.ThreeD.C3dWallPorts.GapsOnGrid(problem, p => OpenEmsLinesOf(p, setup));
+            if (gapRefusal is not null) return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded(WallSource, gapRefusal));
+            if (gapNote is not null) log.Notes.Add(gapNote);
+            problem = onGrid;
+            if (CircuitRF.Design.ThreeD.C3dWallPorts.BoxModeNote(problem) is { } boxed) log.Notes.Add(boxed);      // R-pwl6-4
+        }
         foreach (var leg in legs) leg.Prepare(problem, run);
         if (RadiationPatternIgnored(setup) is { } noPattern) log.Notes.Add(noPattern);
         if (legs.FirstOrDefault(l => l.Stop is not null)?.Stop is { } refused)
@@ -430,20 +440,21 @@ public static partial class Em3dRunService
         run.Log.Notes.AddRange(planNotes);
         if (refusal is not null) return new Stop(EmRunStatus.Refused, EmDiagnostics.Forwarded(WallSource, refusal));
         int reused = 0;
+        // PWL-6 R-pwl6-3 — on openEMS each standard's grid is the structure's round its ports
+        var structureLines = structureLeg.Solver.Id == OpenEmsSolver.Id ? OpenEmsLinesOf(problem, run.Setup) : null;
         for (int i = 0; i < wall!.Standards.Count; i++)
         {
             var std = wall.Standards[i];
             run.Ct.ThrowIfCancellationRequested();
+            var stdSetup = WallStandardSetup(run.Setup, std, structureLines);
             // R-pwl3-9 — a standard solved before, with the same problem, settings and solver, is not solved again.
-            string cachePath = Em3dWallCalibration.CachePath(run.ResultsRoot, std, run.Setup, structureLeg.Solver.Id);
+            string cachePath = Em3dWallCalibration.CachePath(run.ResultsRoot, std, stdSetup, structureLeg.Solver.Id);
             if (Em3dWallCalibration.TryLoad(cachePath, out var cachedHz, out var cachedS))
             {
                 wall.Capture(i, cachedHz, cachedS);
                 reused++;
                 continue;
             }
-            var stdSetup = run.Setup.Clone();
-            stdSetup.Name = $"{(run.Setup.Name is { Length: > 0 } n ? n : "setup")} {std.Label}";
             int index = i;
             var stdRun = run with
             {
@@ -468,6 +479,34 @@ public static partial class Em3dRunService
               (reused > 0 ? $", {reused} reused from an earlier run." : "."));
         run.Wall = wall;
         return null;
+    }
+
+    /// <summary>
+    /// The setup a wall standard is solved with: the run's own, named for the standard, and on openEMS with the standard's grid
+    /// given as explicit lines built from the structure's (<see cref="Em3dWallCalibration.StandardGridLines"/>). The run and
+    /// <c>explain</c> both ask this, so what explain prices and calls cached is what the run solves.
+    /// </summary>
+    public static EmSetup WallStandardSetup(EmSetup setup, Em3dWallCalibration.Standard std, IReadOnlyList<double>[]? structureLines)
+    {
+        var s = setup.Clone();
+        s.Name = $"{(setup.Name is { Length: > 0 } n ? n : "setup")} {std.Label}";
+        if (structureLines is { } l)
+        {
+            var (x, y, z) = Em3dWallCalibration.StandardGridLines(std, l[0], l[1], l[2]);
+            s.OpenEms ??= new CemOpenEms();
+            s.OpenEms.GridLines = new CemGridLines { Unit = "m", X = x, Y = y, Z = z };
+        }
+        return s;
+    }
+
+    /// <summary>The Cartesian FDTD grid openEMS would place for <paramref name="problem"/> under <paramref name="setup"/>, as x, y, z
+    /// lines in metres; null when the settings do not build or the grid is cylindrical.</summary>
+    public static IReadOnlyList<double>[]? OpenEmsLinesOf(Em3dProblem problem, EmSetup setup)
+    {
+        var gs = CemOpenEms.ResolveGrid(setup.OpenEms);
+        if (gs.Problems().Count > 0 || gs.Cylindrical is not null) return null;
+        var g = FdtdGrid.Build(problem, gs, long.MaxValue);
+        return [g.X.Lines, g.Y.Lines, g.Z.Lines];
     }
 
     /// <summary>The diagnostic source of a wall-port calibration's refusal.</summary>
