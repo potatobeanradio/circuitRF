@@ -633,6 +633,59 @@ edge-coupled or zig-zag chain, which has no k or Qe to measure), `out-of-curve`.
 **Tests.** `tests/Core.Tests/Synthesis/CouplingCurveTests.cs`: from synthetic S-parameters on the 21-point grid, a Q =
 300 pair's k to 1e-4, and Qe = 15 behind 30 ps of line to 1 %, and the curve read backwards and refused outside.
 
+### 6d. Planar EM from the designer
+
+**What it does.** `FilterEmService.Run(spec, realisation, substrate, frequencies, progress, token)`
+(`src/Design/Filters/`) solves a realisation on Planar MoM. It is the run the Filter Designer and `circuitrf filter --em`
+share. The spec gives the ports' Z0 and the bench the part is read from.
+- **The drawing.** The bench (§6) is elaborated, and the part's plan is the one its model stamps
+  (`PassiveSites.PlansOf`). `PassivePlanPCells.Draw` draws that plan, which is what the placed part's PCell draws, piece
+  for piece, so the values are read exactly as a run reads them.
+- **The solve** is §6b's `CouplingCurvePlanarSolver`, which now takes shapes and ports as well as a plan. The copper is
+  unioned into one sheet on the substrate's grounded slab, on the coarse mesh (ten cells a wavelength, no edge cells),
+  with at most 8 threads and no de-embedding.
+- **The ports.** Ports 1 and 2 are edge ports on pins 1 and 2, and their source returns through the ground plane
+  (Uncalibrated Ports). The default series gap is driven against the floating outer cell, so with no de-embedding that
+  cell's capacitance sits in series with each port. On the edge-coupled bandpass below, that left the passband at
+  −38 dB, and finer meshes made it worse. Each pin pair the realisation's sites use gets one more port, and parallel
+  parts on the same pins share it.
+  - A series site: the planar mesh cannot span a slot (`EmPlanarComponentPorts`), so a strip half the narrower pin wide
+    joins the two pins across the gap, and an internal delta-gap port is cut across it. The pads' faces stay gridlines,
+    so the cut lands between the pads. Shorted, the pair is solid metal.
+  - A shunt site: an internal port to ground at the foot of a via grown one via in from the pin
+    (`PlanarGroundPath`). The via is the board's 0.3 mm drill, or half the pad where that is narrower.
+- **Closing the sites.** Each site port is terminated in its parts' reflection Γ: R, jωL or 1/(jωC) in parallel, and a
+  via or 0 Ω is a short (Γ = −1). The two-port is S' = S_ee + S_es·Γ·(I − S_ss·Γ)⁻¹·S_se. The result carries the closed
+  two-port and, when there are sites, the raw N-port with the site names in port order.
+- **The verb.** `--em` runs it after the bench is written, at `--points` frequencies across the bench's sweep (11
+  without `--points`, since 401 full-wave points is not a quick look). It writes `<name>.em.s2p` beside the `.cnl` and
+  prints one line: the EM centre and the worst in-band |S11|, each with the circuit model's. The centre is midway between
+  the first and last crossings of |S21| 3 dB under its peak (for a lowpass or highpass, its first crossing, the edge).
+  Progress goes to stderr. A fuller set of figures is a later wiring.
+
+**What it leaves out.** The site parts' own lands and bodies: the strip and the grown via stand for the part. A shunt
+part's via is in the EM answer, while the circuit bench grounds the part ideally. Pins with no site stay open, as the
+bench leaves them.
+
+**What it costs.** The edge-coupled bandpass below solves in about 0.6 s a point. A grown via takes the solve onto
+the general kernel: the 1 GHz lumped Butterworth lowpass below (three sites) takes 20 to 60 s a point. So the verb's
+default is 11 points.
+
+**Refusals.** `filter.em.*`, before anything is meshed:
+- `sites`: a site of another role than R, L, C or via (a jumper or a load has no value to close its port with), a
+  site pin the drawing lacks, or a series site whose pins do not face each other across a straight gap.
+- `part`: a part with no plan, or no pins 1 and 2.
+- The verb's `refused`: no substrate, or the solve's own failure, such as a mesh past the solver's ceiling.
+
+**Tests** (`tests/Ui.Tests/Synthesis/FilterEmTests.cs`):
+- A lumped ladder with a jumper site, and with a site on a pin the part does not draw, is refused as `filter.em.sites`.
+- `Benchmark`: §6a's edge-coupled bandpass (0.5 dB Chebyshev, order 3, 2.28 to 2.52 GHz, the shipped 20 mil RO4350B),
+  through `filter --em` at 11 points. `bp.em.s2p` passes the band, and its |S21|²-weighted centre is the circuit
+  model's within 3 %: 2.352 GHz against 2.389 GHz, 1.6 % low. The run takes about 6 s.
+- `Benchmark`: the lumped Butterworth lowpass at 1 GHz on MLAD sites (shunt C, series L, shunt C), at 300 MHz and
+  1 GHz. Its ports are G1, G2-G3 and G4, and the raw N-port has five. The closed two-port passes 300 MHz, and at the
+  cutoff it is within 1.5 dB of the circuit model: −4.15 dB against −3.43 dB. The run takes about 37 s.
+
 ## 7. Possible enhancements
 
 1. **Even-order elliptic and inverse Chebyshev ladders.** The modified response, which moves the highest zero to
@@ -700,6 +753,21 @@ edge-coupled or zig-zag chain, which has no k or Qe to measure), `out-of-curve`.
   centre its resonators are tuned to. A small shift of the tuning frequency, found from the band edges, would centre it.
 - **MCLA: choosing h, or a combline's Y_a, for the process.** Why: the defaults fit a board. A die with a minimum gap
   wants the scale that keeps the narrowest gap at or above that minimum.
+
+- **EM (§6d): shunt sites on grounded edge ports at the pin.** Why: a grown via takes the solve onto the general
+  kernel, 30 to 100 times slower a point than the one-level one (§6d). The via's inductance would then go into the
+  closing load, as the circuit bench's VIAGND has it.
+- **EM: §6b's coupling benches on grounded ports.** Why: `CouplingCurvePlanarSolver.Solve(plan, …)` still drives the
+  default series gap with no de-embedding. That cost §6d's bandpass 35 dB of passband, and a tapped Qe bench reads the
+  port's own loading.
+- **EM (§6d): de-embedded edge ports.** Why: ports 1 and 2 are solved without the two-line calibration, so the half
+  cell beyond each cut is in |S11|. The calibrated run would sharpen the return loss, at a few calibration solves per
+  point.
+- **EM: the site parts' lands from their `Footprint`.** Why: the strip across a series gap and the via under a shunt pad
+  stand for the part. Drawing the footprint's lands would put their capacitance in the answer, as the circuit bench's
+  footprint does.
+- **EM: an adaptive sweep** (`PlanarAdaptiveSweep`). Why: a coarse uniform grid reads a narrow band's edges between
+  samples. Points placed where the response turns would give the edges at the same cost.
 
 ## 8. References
 

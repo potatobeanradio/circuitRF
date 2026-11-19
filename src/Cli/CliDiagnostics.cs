@@ -4392,7 +4392,7 @@ internal static class CliDiagnostics
     public static Diagnostic FilterUnknownOption(string option) => Diagnostic.Create(
         "filter.args.unknown-option", DiagnosticSeverity.Error,
         "filter does not take '{option}'. It takes --response, --band, --order, --f1, --f2, --ripple, --stop, --z0, --zeros, "
-      + "--tech, --signal, --ground, --realiser, --points, -o and --to-schematic.",
+      + "--tech, --signal, --ground, --realiser, --points, -o, --to-schematic and --em.",
         ("option", option));
 
     public static Diagnostic FilterBadValue(string option, string value, string wants) => Diagnostic.Create(
@@ -4429,6 +4429,11 @@ internal static class CliDiagnostics
     public static Diagnostic FilterOutputRequired() => Diagnostic.Create(
         "filter.output.required", DiagnosticSeverity.Error,
         "filter --realiser writes a netlist: name it with -o <file.cnl>.");
+
+    /// <summary>Why <c>--em</c> wrote nothing: no substrate, or the solve's own failure (a mesh past its ceiling). The
+    /// service's coded refusals (<c>filter.em.sites</c>, <c>filter.em.part</c>) are reported as they are.</summary>
+    public static Diagnostic FilterEmRefused(string why) => Diagnostic.Create(
+        "filter.em.refused", DiagnosticSeverity.Error, "--em wrote nothing: {why}", ("why", why));
 
     /// <summary>A realisation's note for the designer, or a site the bench left to the user.</summary>
     public static Diagnostic FilterNote(string note) => Diagnostic.Create(
