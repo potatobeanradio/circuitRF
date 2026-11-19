@@ -42588,3 +42588,11 @@ read `row.Kind` unguarded; the throw is on the UI thread, unhandled, and Remove 
 process — after the reference had already been removed and saved. `GdsfactoryKitDialog` already guarded its template.
 **Every code-built `FuncDataTemplate` must tolerate a null item**; `ItemTemplateNullItemTests` scans `src/Ui` for them
 (and was confirmed to fail with the guard removed).
+
+## The VAR editor's text mode dropped every variable's unit (discussion 75, 2026-11-19)
+
+Text mode shows `name = expression` only, and its Apply rebuilt every row from that text: adding `dist = 1` to the Indoor
+IoT Link example's VAR turned `Fc = 868.95 MHz` into 868.95 Hz (and every row's ShowOnSchematic/Dimension back to the
+defaults). The design then failed elaboration with P.1238 refusing a frequency of "0.000001 GHz", which reads as an
+unrelated problem. `VarTextParser.ToParameters` now keeps what the text does not show for any name already on the VAR
+and takes only its expression. Gate: `VarEditorTextApplyTests` (fails on the old Apply).

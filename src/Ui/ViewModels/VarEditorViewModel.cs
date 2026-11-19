@@ -201,11 +201,8 @@ public sealed partial class VarEditorViewModel : ObservableObject, IDisposable
     {
         if (_comp is null || _schematicVm is null) return;
 
-        var lines = VarTextParser.ParseLines(TextContent);
-        var newParams = lines
-            .Where(l => l.IsValid)
-            .Select(l => new EditableParameter { Name = l.Name!, Expression = l.Expression! })
-            .ToList();
+        var lines     = VarTextParser.ParseLines(TextContent);
+        var newParams = VarTextParser.ToParameters(lines, _comp.Parameters);
 
         // Only execute if something would actually change.
         bool changed = newParams.Count != _comp.Parameters.Count

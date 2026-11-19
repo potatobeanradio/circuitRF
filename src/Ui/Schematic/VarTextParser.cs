@@ -100,6 +100,32 @@ public static class VarTextParser
     }
 
     /// <summary>
+    /// The parameters the valid <paramref name="lines"/> describe, in order. A name that is already
+    /// in <paramref name="existing"/> keeps everything the text form does not show — its unit, its
+    /// on-schematic visibility, its dimension — and takes only the new expression.
+    /// </summary>
+    /// <remarks>
+    /// The text form is <c>name = expression</c> and carries no unit, so rebuilding a row from the
+    /// text alone silently dropped it: adding one variable as text turned <c>Fc = 868.95 MHz</c>
+    /// into 868.95 Hz.
+    /// </remarks>
+    public static List<EditableParameter> ToParameters(IReadOnlyList<VarLine> lines,
+                                                       IEnumerable<EditableParameter> existing)
+    {
+        var byName = new Dictionary<string, EditableParameter>(StringComparer.Ordinal);
+        foreach (var p in existing) byName.TryAdd(p.Name, p);
+
+        return [.. lines.Where(l => l.IsValid).Select(l =>
+        {
+            if (!byName.TryGetValue(l.Name!, out var old))
+                return new EditableParameter { Name = l.Name!, Expression = l.Expression! };
+            var kept = old.Clone();
+            kept.Expression = l.Expression!;
+            return kept;
+        })];
+    }
+
+    /// <summary>
     /// Serialises the current <paramref name="parameters"/> back to the
     /// "name = expression" text format (one per line, same order).
     /// Parameters with empty names are skipped.
