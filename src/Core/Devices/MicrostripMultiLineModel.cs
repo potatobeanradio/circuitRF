@@ -176,8 +176,10 @@ public sealed class MicrostripMultiLineModel : ComponentModel, IReportsWarnings,
             x += w[k] + (k < n - 1 ? s[k] : 0.0);
         }
         var cs = new LayeredCrossSection([new DielectricLayer(0.0, sub.HMeters, sub.EpsR)], null, strips);
+        // C and C₀ are two independent solves of one cross-section, so they run side by side.
+        var air = sub.EpsR > 1.0 ? Task.Run(() => QuasiStaticSolver2D.Solve(cs, airOnly: true).C) : null;
         var c = QuasiStaticSolver2D.Solve(cs).C;
-        var c0 = sub.EpsR > 1.0 ? QuasiStaticSolver2D.Solve(cs, airOnly: true).C : c;
+        var c0 = air?.Result ?? c;
 
         double fill = sub.EpsR > 1.0 ? sub.TanD * sub.EpsR / (sub.EpsR - 1.0) : 0.0;
         var cm = new Mat<double>(n, n);

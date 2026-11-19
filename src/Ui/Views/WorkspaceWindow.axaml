@@ -556,6 +556,8 @@
                     <NativeMenu>
                         <NativeMenuItem Header="harmonicaRF" Command="{Binding NewHarmonicaCommand}"/>
                         <NativeMenuItem Header="Match Designer" Command="{Binding NewMatchDesignerCommand}"/>
+                        <!-- The Filter Designer on no part; Place targets the active schematic. Mirrored below. -->
+                        <NativeMenuItem Header="Filter Designer…" Command="{Binding NewFilterDesignerCommand}"/>
                         <!-- The Signal Designer on no MOD_Source: design or read a signal, export it. Mirrored below. -->
                         <NativeMenuItem Header="Signal Designer" Command="{Binding NewSignalDesignerCommand}"/>
                         <!-- railRF (railrf.md §11.4). Needs NO workspace to open, for harmonicaRF's
@@ -1705,6 +1707,12 @@
                           Command="{Binding NewMatchDesignerCommand}"
                           ToolTip.Tip="Synthesise an impedance-matching network from two terminations and a band, then flatten it to a cell. Opens with or without a workspace.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="TransitConnectionVariant" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <!-- The Filter Designer on no part — hand-mirrored with the macOS NativeMenu above. -->
+                <MenuItem Header="_Filter Designer…"
+                          Command="{Binding NewFilterDesignerCommand}"
+                          ToolTip.Tip="Synthesise a filter from its specification: every realiser that can build it, the ideal and the realised response, and Place into the active schematic. Opens with or without a workspace.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="Waveform" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <!-- The Signal Designer on no MOD_Source — hand-mirrored with the macOS NativeMenu above. -->
                 <MenuItem Header="Si_gnal Designer"
