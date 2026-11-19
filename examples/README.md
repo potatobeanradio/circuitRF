@@ -42,7 +42,18 @@ picks and opens it there. The user's copy is theirs; nothing writes back into th
    (`![what it shows](pictures/name.png)`, relative to the README, PNG, JPEG, GIF, BMP or WebP);
    anything else degrades to plain text (`src/Ui/Markdown/`). A picture inside a sentence, or one
    that does not resolve, shows its alt text, so write the alt text as a sentence.
-7. Add its abstract to the user documentation's **Example Workspaces** page,
+7. **Turn every realistic-view option on in each 3D view (`.c3d`)**, unless the example has a reason to hide one: edges,
+   grid, overlays, air box, ports, boundaries and images. They are the `Look` block's `Show…` keys, off unless stated, which the
+   Look panel (*3D ▸ View ▸ Look…*, or the drop-down beside the Realistic toggle) sets and the document saves:
+
+   ```
+   "Look": { "ShowEdges": true, "ShowGrid": true, "ShowOverlays": true, "ShowAirBox": true,
+             "ShowPorts": true, "ShowBoundaries": true, "ShowImages": true },
+   ```
+
+   A user who opens an example in the realistic view should still see the ports, the air box and the boundaries that
+   make it an EM problem. An option left off on purpose is said in the README, beside the cell.
+8. Add its abstract to the user documentation's **Example Workspaces** page,
    `docs/user/src/examples/index.md`, under its topic's `##` section: a `###` heading with the menu title and an `{#ex-<folder>}` anchor, 100–250
    words on what it builds and shows, and a `*Folder:*` line naming the folder. Each heading is its own search result,
    which is how a user finds an example by subject. DocGen also renders this README, with its pictures, as

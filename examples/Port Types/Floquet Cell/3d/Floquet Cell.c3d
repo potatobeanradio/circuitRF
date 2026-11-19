@@ -144,6 +144,15 @@
       "Z0": "mode"
     }
   ],
+  "Look": {
+    "ShowEdges": true,
+    "ShowGrid": true,
+    "ShowOverlays": true,
+    "ShowAirBox": true,
+    "ShowPorts": true,
+    "ShowBoundaries": true,
+    "ShowImages": true
+  },
   "Setups": [
     {
       "FormatVersion": 1,
