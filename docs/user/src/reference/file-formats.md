@@ -391,6 +391,22 @@ cell by **relative path** and resolves its glyph through the cell's primary symb
 path shows a "Not Found" glyph, and a resolved cell with a missing primary symbol shows a
 plain-rectangle stand-in. The cell folder is the unit you copy to share or reuse a cell.
 
+Besides the parameters and the primaries, a `.ccell` may carry a **terminal map** (`Terminals`: for each
+port, its `Name` and the `LayoutPin` that is it; see [Terminal maps](lvs.html#terminals)) and a
+**`LayoutGenerator`**, the PCell that draws the cell wherever it is placed (see
+[A library cell drawn by a PCell](pcells.html#library-cell)). Both are optional and left out of the file
+when unset.
+
+```json
+{
+  "FormatVersion": 1,
+  "NumPorts": 2,
+  "LayoutGenerator": "MLIN",
+  "Parameters": [ { "Name": "W", "DefaultExpression": "1", "Unit": "mm" } ],
+  "Terminals": [ { "Port": 1, "Name": "a", "LayoutPin": "1" }, { "Port": 2, "Name": "b", "LayoutPin": "2" } ]
+}
+```
+
 ### Library = a folder of cells
 
 ```text
