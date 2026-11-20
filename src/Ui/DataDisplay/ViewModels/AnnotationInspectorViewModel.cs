@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CircuitRF.Render.DataDisplay;
@@ -22,6 +23,7 @@ public sealed class AnnotationInspectorViewModel : ObservableObject
             OnPropertyChanged(nameof(Content));
             OnPropertyChanged(nameof(FontSize));
             OnPropertyChanged(nameof(Rotation));
+            OnPropertyChanged(nameof(RotationIndex));
             OnPropertyChanged(nameof(LineStyle));
             OnPropertyChanged(nameof(ColorSwatch));
         };
@@ -34,6 +36,15 @@ public sealed class AnnotationInspectorViewModel : ObservableObject
     public string ShapeName => Annotation is CanvasBox ? "Box" : "Line";
     public CanvasLineStyle[] LineStyles { get; } = Enum.GetValues<CanvasLineStyle>();
     public CanvasTextRotation[] Rotations { get; } = Enum.GetValues<CanvasTextRotation>();
+
+    /// <summary>The rotation picker's rows, in degrees, in the order of <see cref="Rotations"/>.</summary>
+    public string[] RotationLabels { get; } = Enum.GetValues<CanvasTextRotation>().Select(r => $"{(int)r}°").ToArray();
+
+    public int RotationIndex
+    {
+        get => Array.IndexOf(Rotations, Rotation);
+        set { if (value >= 0 && value < Rotations.Length) Rotation = Rotations[value]; }
+    }
 
     public string Content
     {

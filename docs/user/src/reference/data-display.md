@@ -527,6 +527,14 @@ lands with its corner on the grid and a plot you resize lands with its edge on i
 come out the same size. A marker info box or floating legend you drag lands on it the same way. The grid
 is not drawn.
 
+**Text**, **Line** and **Box** put notes on the page. Text opens a box where you click: type, then
+press Enter (Shift+Enter starts a new line). Line and Box draw with one drag. Click an annotation to
+select it, drag it to move it, and drag an end or a corner to reshape it; a selected text's corner
+sets its wrap width. The Properties panel edits the selected one: a text's words, size and rotation, a
+line or box's solid or dashed stroke, and the colour of any of them. Delete removes it, and every
+change is one undo step. Annotations belong to the tab and are saved in the `.cdd`; exported pictures
+leave them out.
+
 A rectangular plot's graph area keeps its size and position as traces are added. When the Y axis names
 several traces, each further label is drawn outside the plot, to its left, and the right-hand axis is drawn
 outside it to the right. The plot's own box, which the grid snaps and a resize drags, does not move.

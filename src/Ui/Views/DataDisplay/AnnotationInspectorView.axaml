@@ -18,8 +18,8 @@
             </Grid>
             <Grid ColumnDefinitions="75,*">
                 <TextBlock Text="Rotation" VerticalAlignment="Center"/>
-                <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding Rotations}"
-                          SelectedItem="{Binding Rotation, Mode=TwoWay}" AutomationProperties.Name="Text rotation"/>
+                <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding RotationLabels}"
+                          SelectedIndex="{Binding RotationIndex, Mode=TwoWay}" AutomationProperties.Name="Text rotation"/>
             </Grid>
         </StackPanel>
         <StackPanel IsVisible="{Binding HasStroke}" Spacing="4">
