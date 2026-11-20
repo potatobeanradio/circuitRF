@@ -124,7 +124,7 @@ public class FileMenuRestructureTests
         // merged into one command: a restore point is a safety-net entry nobody else ever sees, and a
         // version is what the designer titles and sends out. §5's whole argument is that one history
         // cannot serve both, so one menu item cannot either.
-        "{Binding SaveMenuHeader}", "Save Schematic _As…", "Save S_ymbol As…", "Save _Layout As…", "Save Data Display As Te_mplate…", "Save Workspace _As…", "_Keep This State…", "Keep This _Version…", "---",
+        "{Binding SaveMenuHeader}", "Save A_ll", "Save Schematic _As…", "Save S_ymbol As…", "Save _Layout As…", "Save Data Display As Te_mplate…", "Save Workspace _As…", "_Keep This State…", "Keep This _Version…", "---",
         // Sharing a workspace with someone on another machine (owner request, 2026-08-15) — placed
         // under Save Workspace As… behind its own separator, because it is a different KIND of
         // save: it writes one portable file, not the workspace itself.
@@ -158,7 +158,7 @@ public class FileMenuRestructureTests
     [
         "New", "New Workspace…", "New Window", "---",
         "Open Workspace…", "Open Workspace in New Window…", "Open Recent", "Open", "---",
-        "Save", "Save Schematic As…", "Save Symbol As…", "Save Layout As…", "Save Data Display As Template…", "Save Workspace As…", "Keep This State…", "Keep This Version…", "---",
+        "Save", "Save All", "Save Schematic As…", "Save Symbol As…", "Save Layout As…", "Save Data Display As Template…", "Save Workspace As…", "Keep This State…", "Keep This Version…", "---",
         "Add Cell to Workspace…", "Reference Workspace…", "---",
         "Clone Workspace…", "Pull Changes", "Push Changes", "---",
         "Archive Workspace…", "Unarchive Workspace…", "---",
@@ -545,7 +545,7 @@ public class FileMenuRestructureTests
     public void SaveMenuHeader_NeitherBranchHasEllipsis()
     {
         var src = ReadRepoFile(Path.Combine("src", "Ui", "ViewModels", "WorkspaceViewModel.cs"));
-        Assert.Contains("public string SaveMenuHeader => ActiveSaveScope == SaveScope.SingleDoc ? \"Save\" : \"Save All\";", src);
+        Assert.Contains("public string SaveMenuHeader => \"Save\";", src);
     }
 
     /// <summary>
@@ -621,12 +621,14 @@ public class FileMenuRestructureTests
         Assert.Contains("InputGesture=\"Ctrl+O\"", src);           // Open Workspace…
         Assert.Contains("InputGesture=\"Ctrl+S\"", src);           // Save
         Assert.Contains("InputGesture=\"Ctrl+Shift+S\"", src);     // Save Workspace As…
+        Assert.Contains("InputGesture=\"Ctrl+Alt+S\"", src);       // Save All (GitHub #79)
         Assert.Contains("Gesture=\"Meta+N\"", src);
         Assert.Contains("Gesture=\"Meta+Shift+N\"", src);
         Assert.Contains("Gesture=\"Meta+Shift+D\"", src);
         Assert.Contains("Gesture=\"Meta+O\"", src);
         Assert.Contains("Gesture=\"Meta+S\"", src);
         Assert.Contains("Gesture=\"Meta+Shift+S\"", src);
+        Assert.Contains("Gesture=\"Meta+Alt+S\"", src);
     }
 
     /// <summary>

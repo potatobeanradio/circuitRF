@@ -391,8 +391,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     [ObservableProperty] private SaveScope _activeSaveScope = SaveScope.AllDocs;
 
     /// <summary>Menu label for the primary save action; bound by both the in-window menu and
-    /// updated on the NativeMenu via <see cref="SaveScopeChanged"/>.</summary>
-    public string SaveMenuHeader => ActiveSaveScope == SaveScope.SingleDoc ? "Save" : "Save All";
+    /// updated on the NativeMenu via <see cref="SaveScopeChanged"/>. Always "Save": File ▸ Save All is
+    /// its own item directly below, so a second "Save All" here would be two items of one name.</summary>
+    public string SaveMenuHeader => "Save";
 
     /// <summary>Fired after <see cref="ActiveSaveScope"/> changes so the NativeMenu code-behind
     /// can update the macOS menu bar label (same pattern as RecentWorkspacesChanged).</summary>
@@ -448,6 +449,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ImportModelCardCommand.NotifyCanExecuteChanged();
         ImportTechnologyCommand.NotifyCanExecuteChanged();
         ImportWirebondAsCellCommand.NotifyCanExecuteChanged();
+        ImportWireTableCommand.NotifyCanExecuteChanged();
         NewTechnologyCommand.NotifyCanExecuteChanged();
         NewEmSetupCommand.NotifyCanExecuteChanged();
         ManagePdksCommand.NotifyCanExecuteChanged();
@@ -4263,6 +4265,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     Messages,
                     activeDoc.ViewModel.EditModel.ResultsFileName);
                 await RefreshOpenDataDisplaysAsync(written);
+                ExportDataCommand.NotifyCanExecuteChanged();   // a scratch run's first results make Export ▸ Data usable
                 DataDisplayDocument? runDisplay = null;
                 bool createdDisplay = false;
                 if (written.Count > 0)
@@ -10469,7 +10472,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         await DataExporterDialog.ShowAsync(null, vm);
     }
 
-    private bool CanExportData() => GetResultsRoot() is not null;
+    /// <summary>A workspace's results, or a scratch run's in this session's folder. With neither there is nothing to export,
+    /// so the item is greyed rather than opening an empty exporter.</summary>
+    private bool CanExportData() => CurrentWorkspacePath is not null || Directory.Exists(GetResultsRoot());
 
     // ---- Layout export commands (item 8: File → Export → GDSII/DXF/Gerber) ------------------------
     // GDSII/DXF export logic lives entirely in the active LayoutEditorView's own code-behind (file
@@ -11903,7 +11908,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// same name, whether a repeated import duplicates or replaces — and guessing them would be the
     /// kind of silently-wrong answer a 600-wire table makes expensive to notice.
     /// </remarks>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(HasWorkspaceOpen))]
     private async Task ImportWireTable(Window? window)
     {
         var owner = ResolveOwner(window);
@@ -18147,6 +18152,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // processed first and stops the walk, so their document-specific Save is unaffected.
         window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.S, KeyModifiers.Control), Command = SaveAllDocumentsCommand, CommandParameter = window });
         window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.S, KeyModifiers.Meta),    Command = SaveAllDocumentsCommand, CommandParameter = window });
+        window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.S, KeyModifiers.Control | KeyModifiers.Alt), Command = SaveAllCommand, CommandParameter = window });
+        window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.S, KeyModifiers.Meta | KeyModifiers.Alt),    Command = SaveAllCommand, CommandParameter = window });
 
         // Ctrl+W / Cmd+W closes THIS torn-off window's own document. A MenuItem's InputGesture is
         // display-only in Avalonia, so the TornOffFileMenuView copy of the File menu shows the
@@ -18659,173 +18666,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 return;
             }
 
-            // AllDocs scope: save every dirty document.
-            //
-            // SL2 R-sl2-7/-8: a READ-ONLY document is excluded from every list below and reported
-            // instead. Save All is a SWEEP, not a per-document act, so the quit prompt's Save-As
-            // route is the wrong answer here — it would open one picker per read-only document, in a
-            // gesture the user made to avoid dialogs. Skipping loses nothing: the document stays open
-            // and stays dirty, and Save As on it (the route the message names) is one gesture away.
-            var readOnlyDirty = new List<IDockable>();
-            List<T> Writable<T>(IEnumerable<T> docs) where T : IDockable
-            {
-                var kept = new List<T>();
-                foreach (var d in docs)
-                {
-                    if (IsDocumentReadOnly(d)) readOnlyDirty.Add(d);
-                    else kept.Add(d);
-                }
-                return kept;
-            }
-
-            var dirtyScratch = _scratchDocs.Where(d => d.IsDirty).ToList();
-            var dirtyMaterialized = Writable(_openDocsByPath.Values
-                .OfType<SchematicDocument>()
-                .Where(d => d.IsDirty && !d.IsScratch));
-            var dirtyScratchSymbols = _scratchSymbols.Where(d => d.IsDirty).ToList();
-            var dirtyMaterializedSymbols = Writable(_openDocsByPath.Values
-                .OfType<SymbolEditorDocument>()
-                .Where(d => d.IsDirty && !d.IsScratch));
-            var dirtyScratchLayouts = _scratchLayouts.Where(d => d.IsDirty).ToList();
-            var dirtyMaterializedLayouts = Writable(_openDocsByPath.Values
-                .OfType<LayoutDocument>()
-                .Where(d => d.IsDirty && !d.IsScratch));
-            var dirtyTechDocs = Writable(_openDocsByPath.Values
-                .OfType<TechDocument>()
-                .Where(d => d.IsDirty));
-            var dirtyEmDocs = Writable(_openDocsByPath.Values
-                .OfType<EmSetupDocument>()
-                .Where(d => d.IsDirty));
-            var dirtyC3dDocs = Writable(_openDocsByPath.Values
-                .OfType<ThreeD.C3dEditorDocument>()
-                .Where(d => d.IsDirty));
-            var dirtyPartLibraries = Writable(_openDocsByPath.Values
-                .OfType<PartLibraryDocument>()
-                .Where(d => d.IsDirty));
-            var dirtyMaterialLibraries = Writable(_openDocsByPath.Values
-                .OfType<MaterialsDocument>()
-                .Where(d => d.IsDirty));
-
-            foreach (var skipped in readOnlyDirty)
-                ReportReadOnlySaveAsRoute(skipped, sweep: true);
-
-            bool anyDirty = dirtyScratch.Count > 0 || dirtyMaterialized.Count > 0
-                         || dirtyScratchSymbols.Count > 0 || dirtyMaterializedSymbols.Count > 0
-                         || dirtyScratchLayouts.Count > 0 || dirtyMaterializedLayouts.Count > 0
-                         || dirtyTechDocs.Count > 0 || dirtyEmDocs.Count > 0
-                         || dirtyPartLibraries.Count > 0 || dirtyC3dDocs.Count > 0
-                         || dirtyMaterialLibraries.Count > 0;
-            if (!anyDirty)
-            {
-                // "Nothing to save" would be a lie when the only dirty work was read-only — the
-                // per-document messages above have already said what actually happened.
-                if (readOnlyDirty.Count == 0) Messages.Info("Nothing to save.");
-                return;
-            }
-
-            // Scratch schematic docs → plan dialog → execute
-            if (dirtyScratch.Count > 0)
-            {
-                var builder     = new SavePlanBuilder(
-                    CurrentWorkspacePath, _lastWorkspaceParentDir, dirtyScratch.AsReadOnly());
-                var initialPlan = builder.Build();
-
-                var confirmedPlan = await new Views.Dialogs.SavePlanDialog(initialPlan, builder)
-                    .ShowDialog<SavePlan?>(window);
-                if (confirmedPlan is null) return;  // user cancelled
-
-                ExecuteSavePlan(confirmedPlan);
-            }
-
-            // brief vendorlib-12: a schematic inside a library model is asked about once per model before anything is
-            // written, and the model refreshed afterwards — the same rule as SaveSingleDocument's, so Save All is not a
-            // route around it.
-            var orphanedSchematics = _registry.GetOrphanedDirtyPaths(IsSessionReferenced).ToList();
-            var schematicPaths = dirtyMaterialized.Select(d => d.FilePath).OfType<string>().Concat(orphanedSchematics).ToList();
-            if (!await ConfirmModelEditsAsync(schematicPaths, window)) return;
-
-            // Already-materialized dirty schematic docs — write directly.
-            foreach (var doc in dirtyMaterialized)
-            {
-                if (doc.FilePath is null) continue;
-                try
-                {
-                    SchematicPersistence.SaveToFile(doc.FilePath, doc.ViewModel.EditModel, doc.Id);
-                    doc.Materialize(doc.FilePath);  // clears dirty (FilePath unchanged)
-                    NotifySessionSaved(doc.FilePath);
-                    Messages.Success("Saved", doc.FilePath);
-                }
-                catch (Exception ex)
-                {
-                    Messages.Error($"Failed to save '{doc.Id}': {ex.Message}");
-                }
-            }
-
-            // Dirty sessions with no open tab (orphaned by a prior "Don't Save" close or hier2+ pop-out).
-            foreach (var sessionPath in orphanedSchematics)
-            {
-                if (!_registry.TryGet(sessionPath, out var sessionVm)) continue;
-                try
-                {
-                    var cellName = Path.GetFileNameWithoutExtension(sessionPath);
-                    SchematicPersistence.SaveToFile(sessionPath, sessionVm!.EditModel, cellName);
-                    NotifySessionSaved(sessionPath);
-                    Messages.Success("Saved", sessionPath);
-                }
-                catch (Exception ex)
-                {
-                    Messages.Error($"Failed to save session '{sessionPath}': {ex.Message}");
-                }
-            }
-            await RefreshSavedModelsAsync(schematicPaths);
-
-            // Scratch symbol docs — per-doc offer dialog.
-            foreach (var symDoc in dirtyScratchSymbols)
-                await SaveScratchSymbol(symDoc, window);
-
-            // Already-materialized dirty symbol docs — write directly via VM.
-            foreach (var symDoc in dirtyMaterializedSymbols)
-                await SaveMaterializedSymbolDoc(symDoc, window);
-
-            // Scratch layout docs — per-doc offer dialog.
-            foreach (var layDoc in dirtyScratchLayouts)
-                await SaveScratchLayout(layDoc, window);
-
-            // Already-materialized dirty layout docs — write directly via VM.
-            foreach (var layDoc in dirtyMaterializedLayouts)
-                await SaveMaterializedLayoutDoc(layDoc, window);
-
-            // Dirty layout sessions with no open tab (orphaned by a prior "Don't Save" close or a pop-out).
-            foreach (var sessionPath in _layoutRegistry.GetOrphanedDirtyPaths(IsLayoutSessionReferenced))
-            {
-                if (!_layoutRegistry.TryGet(sessionPath, out var sessionVm)) continue;
-                try
-                {
-                    LayoutPersistence.SaveToFile(sessionPath, sessionVm!.Model);
-                    NotifyLayoutSessionSaved(sessionPath);
-                    Messages.Success("Saved", sessionPath);
-                }
-                catch (Exception ex)
-                {
-                    Messages.Error($"Failed to save layout session '{sessionPath}': {ex.Message}");
-                }
-            }
-
-            // Dirty technology docs — always materialized, direct write via VM.
-            foreach (var techDoc in dirtyTechDocs)
-                techDoc.ViewModel.SaveCommand.Execute(null);
-
-            // Dirty EM setups — R-em-9: never scratch, so the same direct write.
-            foreach (var emDoc in dirtyEmDocs)
-                emDoc.ViewModel.SaveCommand.Execute(null);
-
-            // Dirty 3D views (brief-em3d-43) — the same direct write; a scratch one asks where (3D editor bugs round 2).
-            foreach (var c3dDoc in dirtyC3dDocs)
-                await SaveC3dAsync(c3dDoc, window);
-
-            // Dirty material libraries (brief-em3d-53) — never scratch, the same direct write.
-            foreach (var matDoc in dirtyMaterialLibraries)
-                matDoc.ViewModel.SaveCommand.Execute(null);
+            // AllDocs scope: save every dirty document — the same sweep File ▸ Save All runs.
+            await SaveEveryDirtyDocumentAsync(window);
         }
         finally
         {
@@ -18839,6 +18681,227 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // Refresh Save's own visual enabled/disabled state immediately after a save completes,
             // per §3's "disabled with a reason" rule — see CanSaveAllDocuments's own doc comment for
             // why staleness here is cosmetic only, never a functional Ctrl+S block.
+            SaveAllDocumentsCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    /// <summary>
+    /// Saves every dirty document in the workspace — the sweep behind File ▸ Save All (GitHub #79) and
+    /// behind ⌘S/Ctrl+S when no document is active. Every kind <see cref="HasAnyDirtyWork"/> counts is
+    /// saved here: a kind that one counts and this skips is unsaved work that the menu said was saved.
+    /// </summary>
+    private async Task SaveEveryDirtyDocumentAsync(Window window)
+    {
+        // SL2 R-sl2-7/-8: a READ-ONLY document is excluded from every list below and reported
+        // instead. Save All is a SWEEP, not a per-document act, so the quit prompt's Save-As
+        // route is the wrong answer here — it would open one picker per read-only document, in a
+        // gesture the user made to avoid dialogs. Skipping loses nothing: the document stays open
+        // and stays dirty, and Save As on it (the route the message names) is one gesture away.
+        var readOnlyDirty = new List<IDockable>();
+        List<T> Writable<T>(IEnumerable<T> docs) where T : IDockable
+        {
+            var kept = new List<T>();
+            foreach (var d in docs)
+            {
+                if (IsDocumentReadOnly(d)) readOnlyDirty.Add(d);
+                else kept.Add(d);
+            }
+            return kept;
+        }
+
+        var dirtyScratch = _scratchDocs.Where(d => d.IsDirty).ToList();
+        var dirtyMaterialized = Writable(_openDocsByPath.Values
+            .OfType<SchematicDocument>()
+            .Where(d => d.IsDirty && !d.IsScratch));
+        var dirtyScratchSymbols = _scratchSymbols.Where(d => d.IsDirty).ToList();
+        var dirtyMaterializedSymbols = Writable(_openDocsByPath.Values
+            .OfType<SymbolEditorDocument>()
+            .Where(d => d.IsDirty && !d.IsScratch));
+        var dirtyScratchLayouts = _scratchLayouts.Where(d => d.IsDirty).ToList();
+        var dirtyMaterializedLayouts = Writable(_openDocsByPath.Values
+            .OfType<LayoutDocument>()
+            .Where(d => d.IsDirty && !d.IsScratch));
+        var dirtyTechDocs = Writable(_openDocsByPath.Values
+            .OfType<TechDocument>()
+            .Where(d => d.IsDirty));
+        var dirtyEmDocs = Writable(_openDocsByPath.Values
+            .OfType<EmSetupDocument>()
+            .Where(d => d.IsDirty));
+        var dirtyC3dDocs = Writable(_openDocsByPath.Values
+            .OfType<ThreeD.C3dEditorDocument>()
+            .Where(d => d.IsDirty));
+        var dirtyPartLibraries = Writable(_openDocsByPath.Values
+            .OfType<PartLibraryDocument>()
+            .Where(d => d.IsDirty));
+        var dirtyMaterialLibraries = Writable(_openDocsByPath.Values
+            .OfType<MaterialsDocument>()
+            .Where(d => d.IsDirty));
+        // A data display, a wBond and a Smith chart, materialized or scratch, as the quit prompt saves
+        // them: a scratch one asks for its path through the same save each kind has everywhere else.
+        var dirtyDisplays = Writable(_openDocsByPath.Values.OfType<DataDisplayDocument>()
+            .Concat(_scratchDataDisplays)
+            .Where(d => d.ViewModel.Window.HasUnsavedChanges()).Distinct());
+        var dirtyWBonds = Writable(_openDocsByPath.Values.OfType<WBondDocument>()
+            .Concat(_scratchWBonds).Where(d => d.IsDirty).Distinct());
+        var dirtySmith = Writable(_openDocsByPath.Values.OfType<SmithChartDocument>()
+            .Concat(_scratchSmithCharts).Where(d => d.IsDirty).Distinct());
+        var orphanedSchematics = _registry.GetOrphanedDirtyPaths(IsSessionReferenced).ToList();
+        var orphanedLayouts = _layoutRegistry.GetOrphanedDirtyPaths(IsLayoutSessionReferenced).ToList();
+
+        foreach (var skipped in readOnlyDirty)
+            ReportReadOnlySaveAsRoute(skipped, sweep: true);
+
+        bool anyDirty = dirtyScratch.Count > 0 || dirtyMaterialized.Count > 0
+                     || dirtyScratchSymbols.Count > 0 || dirtyMaterializedSymbols.Count > 0
+                     || dirtyScratchLayouts.Count > 0 || dirtyMaterializedLayouts.Count > 0
+                     || dirtyTechDocs.Count > 0 || dirtyEmDocs.Count > 0
+                     || dirtyPartLibraries.Count > 0 || dirtyC3dDocs.Count > 0
+                     || dirtyMaterialLibraries.Count > 0
+                     || dirtyDisplays.Count > 0 || dirtyWBonds.Count > 0 || dirtySmith.Count > 0
+                     || orphanedSchematics.Count > 0 || orphanedLayouts.Count > 0;
+        if (!anyDirty)
+        {
+            // "Nothing to save" would be a lie when the only dirty work was read-only — the
+            // per-document messages above have already said what actually happened.
+            if (readOnlyDirty.Count == 0) Messages.Info("Nothing to save.");
+            return;
+        }
+
+        // Scratch schematic docs → plan dialog → execute
+        if (dirtyScratch.Count > 0)
+        {
+            var builder     = new SavePlanBuilder(
+                CurrentWorkspacePath, _lastWorkspaceParentDir, dirtyScratch.AsReadOnly());
+            var initialPlan = builder.Build();
+
+            var confirmedPlan = await new Views.Dialogs.SavePlanDialog(initialPlan, builder)
+                .ShowDialog<SavePlan?>(window);
+            if (confirmedPlan is null) return;  // user cancelled
+
+            ExecuteSavePlan(confirmedPlan);
+        }
+
+        // brief vendorlib-12: a schematic inside a library model is asked about once per model before anything is
+        // written, and the model refreshed afterwards — the same rule as SaveSingleDocument's, so Save All is not a
+        // route around it.
+        var schematicPaths = dirtyMaterialized.Select(d => d.FilePath).OfType<string>().Concat(orphanedSchematics).ToList();
+        if (!await ConfirmModelEditsAsync(schematicPaths, window)) return;
+
+        // Already-materialized dirty schematic docs — write directly.
+        foreach (var doc in dirtyMaterialized)
+        {
+            if (doc.FilePath is null) continue;
+            try
+            {
+                SchematicPersistence.SaveToFile(doc.FilePath, doc.ViewModel.EditModel, doc.Id);
+                doc.Materialize(doc.FilePath);  // clears dirty (FilePath unchanged)
+                NotifySessionSaved(doc.FilePath);
+                Messages.Success("Saved", doc.FilePath);
+            }
+            catch (Exception ex)
+            {
+                Messages.Error($"Failed to save '{doc.Id}': {ex.Message}");
+            }
+        }
+
+        // Dirty sessions with no open tab (orphaned by a prior "Don't Save" close or hier2+ pop-out).
+        foreach (var sessionPath in orphanedSchematics)
+        {
+            if (!_registry.TryGet(sessionPath, out var sessionVm)) continue;
+            try
+            {
+                var cellName = Path.GetFileNameWithoutExtension(sessionPath);
+                SchematicPersistence.SaveToFile(sessionPath, sessionVm!.EditModel, cellName);
+                NotifySessionSaved(sessionPath);
+                Messages.Success("Saved", sessionPath);
+            }
+            catch (Exception ex)
+            {
+                Messages.Error($"Failed to save session '{sessionPath}': {ex.Message}");
+            }
+        }
+        await RefreshSavedModelsAsync(schematicPaths);
+
+        // Scratch symbol docs — per-doc offer dialog.
+        foreach (var symDoc in dirtyScratchSymbols)
+            await SaveScratchSymbol(symDoc, window);
+
+        // Already-materialized dirty symbol docs — write directly via VM.
+        foreach (var symDoc in dirtyMaterializedSymbols)
+            await SaveMaterializedSymbolDoc(symDoc, window);
+
+        // Scratch layout docs — per-doc offer dialog.
+        foreach (var layDoc in dirtyScratchLayouts)
+            await SaveScratchLayout(layDoc, window);
+
+        // Already-materialized dirty layout docs — write directly via VM.
+        foreach (var layDoc in dirtyMaterializedLayouts)
+            await SaveMaterializedLayoutDoc(layDoc, window);
+
+        // Dirty layout sessions with no open tab (orphaned by a prior "Don't Save" close or a pop-out).
+        foreach (var sessionPath in orphanedLayouts)
+        {
+            if (!_layoutRegistry.TryGet(sessionPath, out var sessionVm)) continue;
+            try
+            {
+                LayoutPersistence.SaveToFile(sessionPath, sessionVm!.Model);
+                NotifyLayoutSessionSaved(sessionPath);
+                Messages.Success("Saved", sessionPath);
+            }
+            catch (Exception ex)
+            {
+                Messages.Error($"Failed to save layout session '{sessionPath}': {ex.Message}");
+            }
+        }
+
+        // Dirty technology docs — always materialized, direct write via VM.
+        foreach (var techDoc in dirtyTechDocs)
+            techDoc.ViewModel.SaveCommand.Execute(null);
+
+        // Dirty EM setups — R-em-9: never scratch, so the same direct write.
+        foreach (var emDoc in dirtyEmDocs)
+            emDoc.ViewModel.SaveCommand.Execute(null);
+
+        // Dirty 3D views (brief-em3d-43) — the same direct write; a scratch one asks where (3D editor bugs round 2).
+        foreach (var c3dDoc in dirtyC3dDocs)
+            await SaveC3dAsync(c3dDoc, window);
+
+        // Dirty material libraries (brief-em3d-53) — never scratch, the same direct write.
+        foreach (var matDoc in dirtyMaterialLibraries)
+            matDoc.ViewModel.SaveCommand.Execute(null);
+
+        // Dirty part libraries (R-rail24-1a) — never scratch, the same direct write.
+        foreach (var libDoc in dirtyPartLibraries)
+            libDoc.ViewModel.SaveCommand.Execute(null);
+
+        foreach (var dd in dirtyDisplays)
+            await SaveDataDisplayDoc(dd, window);
+        foreach (var wb in dirtyWBonds)
+            await SaveWBondDoc(wb, window);
+        foreach (var sc in dirtySmith)
+            await SaveSmithChartDoc(sc, window);
+    }
+
+    /// <summary>
+    /// File ▸ Save All (Ctrl+Alt+S / ⌘⌥S, GitHub #79): every dirty document in the workspace, whichever
+    /// document is active, and then the <c>.cws</c>. ⌘S/Ctrl+S stays the ACTIVE document's save; this is
+    /// the one gesture that does not depend on where focus is.
+    /// </summary>
+    [RelayCommand]
+    private async Task SaveAll(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+        StoreLastTuned();
+        NoteWorkspaceWrite();
+        try
+        {
+            await SaveEveryDirtyDocumentAsync(window);
+        }
+        finally
+        {
+            if (CurrentWorkspacePath is not null)
+                WriteWorkspaceFile(CurrentWorkspacePath, silent: false);
             SaveAllDocumentsCommand.NotifyCanExecuteChanged();
         }
     }
